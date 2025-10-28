@@ -1,16 +1,18 @@
 // src/components/layout/Header.tsx
 // Application header with branding and theme toggle
 
-import { Link } from '@tanstack/react-router';
-import { Moon, Sun } from 'lucide-react';
-import { useTheme } from '../../hooks/use-theme';
+import { Link } from '@tanstack/react-router'
+import { Moon, Sun } from 'lucide-react'
+import { useTheme } from '../../hooks/use-theme'
+import { Switch } from '@/components/ui/switch'
 
 /**
  * Application header component
  * Displays app branding and provides dark mode toggle
  */
 export function Header() {
-  const { theme, toggleTheme } = useTheme();
+  const { resolvedTheme, toggleTheme } = useTheme()
+  const isDark = resolvedTheme === 'dark'
 
   return (
     <header className="border-b bg-background">
@@ -41,19 +43,17 @@ export function Header() {
         {/* Spacer */}
         <div className="flex-1" />
 
-        {/* Dark Mode Toggle */}
-        <button
-          onClick={toggleTheme}
-          className="p-2 rounded-md hover:bg-accent transition-colors"
-          aria-label={`Switch to ${theme === 'dark' ? 'light' : 'dark'} mode`}
-        >
-          {theme === 'dark' ? (
-            <Sun className="h-5 w-5" />
-          ) : (
-            <Moon className="h-5 w-5" />
-          )}
-        </button>
+        {/* Dark Mode Toggle with Switch */}
+        <div className="flex items-center gap-2">
+          <Sun className="h-4 w-4 text-muted-foreground" aria-hidden="true" />
+          <Switch
+            checked={isDark}
+            onCheckedChange={toggleTheme}
+            aria-label={`Switch to ${isDark ? 'light' : 'dark'} mode`}
+          />
+          <Moon className="h-4 w-4 text-muted-foreground" aria-hidden="true" />
+        </div>
       </div>
     </header>
-  );
+  )
 }

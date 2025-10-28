@@ -1,36 +1,37 @@
 // src/hooks/use-collaboration.ts
 // WebSocket connection hook for real-time collaboration
 
-import { useEffect, useRef, useState, useCallback } from 'react';
-import { io, Socket } from 'socket.io-client';
-import type { CursorPosition } from '@/data/schema';
+import { useCallback, useEffect, useRef, useState } from 'react'
+import { io } from 'socket.io-client'
+import type { Socket } from 'socket.io-client'
+import type { CursorPosition } from '@/data/schema'
 
 /**
  * Active collaborator data
  */
 export interface ActiveUser {
-  userId: string;
-  cursor?: CursorPosition;
-  lastActivityAt: string;
+  userId: string
+  cursor?: CursorPosition
+  lastActivityAt: string
 }
 
 /**
  * Connection state
  */
-export type ConnectionState = 'disconnected' | 'connecting' | 'connected';
+export type ConnectionState = 'disconnected' | 'connecting' | 'connected'
 
 /**
  * Collaboration hook return value
  */
 export interface UseCollaborationReturn {
-  socket: Socket | null;
-  connectionState: ConnectionState;
-  sessionId: string | null;
-  activeUsers: ActiveUser[];
-  emit: (event: string, data: any) => void;
-  on: (event: string, handler: (...args: any[]) => void) => void;
-  off: (event: string, handler: (...args: any[]) => void) => void;
-  requestSync: () => void;
+  socket: Socket | null
+  connectionState: ConnectionState
+  sessionId: string | null
+  activeUsers: Array<ActiveUser>
+  emit: (event: string, data: any) => void
+  on: (event: string, handler: (...args: Array<any>) => void) => void
+  off: (event: string, handler: (...args: Array<any>) => void) => void
+  requestSync: () => void
 }
 
 /**
@@ -66,25 +67,25 @@ export interface UseCollaborationReturn {
  */
 export function useCollaboration(
   whiteboardId: string,
-  userId: string
+  userId: string,
 ): UseCollaborationReturn {
-  const socketRef = useRef<Socket | null>(null);
+  const socketRef = useRef<Socket | null>(null)
   const [connectionState, setConnectionState] =
-    useState<ConnectionState>('disconnected');
-  const [sessionId, setSessionId] = useState<string | null>(null);
-  const [activeUsers, setActiveUsers] = useState<ActiveUser[]>([]);
+    useState<ConnectionState>('disconnected')
+  const [sessionId, setSessionId] = useState<string | null>(null)
+  const [activeUsers, setActiveUsers] = useState<Array<ActiveUser>>([])
 
   // Reconnection settings
-  const reconnectionAttempts = useRef(0);
-  const maxReconnectionAttempts = 5;
+  const reconnectionAttempts = useRef(0)
+  const maxReconnectionAttempts = 5
 
   useEffect(() => {
     if (!whiteboardId || !userId) {
-      return;
+      return
     }
 
     // Create socket connection
-    setConnectionState('connecting');
+    setConnectionState('connecting')
 
     const socket = io(`/whiteboard/${whiteboardId}`, {
       auth: { userId },
@@ -93,121 +94,158 @@ export function useCollaboration(
       reconnectionDelayMax: 5000,
       reconnectionAttempts: maxReconnectionAttempts,
       transports: ['websocket', 'polling'],
-    });
+    })
 
-    socketRef.current = socket;
+    socketRef.current = socket
 
     // Connection handlers
     socket.on('connect', () => {
-      console.log('Connected to whiteboard collaboration');
-      setConnectionState('connected');
-      reconnectionAttempts.current = 0;
-    });
+      console.log('Connected to whiteboard collaboration')
+      setConnectionState('connected')
+      reconnectionAttempts.current = 0
+    })
 
-    socket.on('connected', (data: { sessionId: string; activeUsers: ActiveUser[] }) => {
-      console.log('Collaboration session established:', data.sessionId);
-      setSessionId(data.sessionId);
-      setActiveUsers(data.activeUsers);
-    });
+    socket.on(
+      'connected',
+      (data: { sessionId: string; activeUsers: Array<ActiveUser> }) => {
+        console.log('Collaboration session established:', data.sessionId)
+        setSessionId(data.sessionId)
+        setActiveUsers(data.activeUsers)
+      },
+    )
 
     socket.on('disconnect', (reason) => {
-      console.log('Disconnected from whiteboard:', reason);
-      setConnectionState('disconnected');
-      setSessionId(null);
-    });
+      console.log('Disconnected from whiteboard:', reason)
+      setConnectionState('disconnected')
+      setSessionId(null)
+    })
 
     socket.on('connect_error', (error) => {
-      console.error('Connection error:', error);
-      reconnectionAttempts.current += 1;
+      console.error('Connection error:', error)
+      reconnectionAttempts.current += 1
 
       if (reconnectionAttempts.current >= maxReconnectionAttempts) {
-        console.error('Max reconnection attempts reached');
-        setConnectionState('disconnected');
+        console.error('Max reconnection attempts reached')
+        setConnectionState('disconnected')
       }
-    });
+    })
 
     socket.on('reconnect', (attemptNumber) => {
-      console.log(`Reconnected after ${attemptNumber} attempts`);
-      setConnectionState('connected');
-      reconnectionAttempts.current = 0;
+      console.log(`Reconnected after ${attemptNumber} attempts`)
+      setConnectionState('connected')
+      reconnectionAttempts.current = 0
 
       // Request full state sync after reconnection
-      socket.emit('sync:request');
-    });
+      socket.emit('sync:request')
+    })
 
     socket.on('reconnect_failed', () => {
-      console.error('Reconnection failed');
-      setConnectionState('disconnected');
-    });
+      console.error('Reconnection failed')
+      setConnectionState('disconnected')
+    })
 
     // Presence event handlers
-    socket.on('user:connected', (data: { userId: string; sessionId: string }) => {
-      console.log('User connected:', data.userId);
-      setActiveUsers((prev) => [
-        ...prev,
-        { userId: data.userId, lastActivityAt: new Date().toISOString() },
-      ]);
-    });
+    socket.on(
+      'user:connected',
+      (data: { userId: string; sessionId: string }) => {
+        console.log('User connected:', data.userId)
+        setActiveUsers((prev) => [
+          ...prev,
+          { userId: data.userId, lastActivityAt: new Date().toISOString() },
+        ])
+      },
+    )
 
     socket.on('user:disconnected', (data: { userId: string }) => {
-      console.log('User disconnected:', data.userId);
-      setActiveUsers((prev) => prev.filter((user) => user.userId !== data.userId));
-    });
-
-    socket.on('cursor:moved', (data: { userId: string; x: number; y: number }) => {
+      console.log('User disconnected:', data.userId)
       setActiveUsers((prev) =>
-        prev.map((user) =>
-          user.userId === data.userId
-            ? { ...user, cursor: { x: data.x, y: data.y } }
-            : user
+        prev.filter((user) => user.userId !== data.userId),
+      )
+    })
+
+    socket.on(
+      'cursor:moved',
+      (data: { userId: string; x: number; y: number }) => {
+        setActiveUsers((prev) =>
+          prev.map((user) =>
+            user.userId === data.userId
+              ? { ...user, cursor: { x: data.x, y: data.y } }
+              : user,
+          ),
         )
-      );
-    });
+      },
+    )
+
+    // Layout event handlers
+    socket.on('layout:compute', (data: { userId: string }) => {
+      console.log('Layout computation started by user:', data.userId)
+      // UI can show loading indicator
+    })
+
+    socket.on(
+      'layout:computed',
+      (data: {
+        positions: Array<{ id: string; x: number; y: number }>
+        userId: string
+      }) => {
+        console.log('Layout computed by user:', data.userId)
+        // Positions will be applied via query invalidation
+      },
+    )
 
     // Error handler
-    socket.on('error', (data: { event: string; error: string; message: string }) => {
-      console.error(`Collaboration error [${data.event}]:`, data.message);
-      // TODO: Show toast notification to user
-    });
+    socket.on(
+      'error',
+      (data: { event: string; error: string; message: string }) => {
+        console.error(`Collaboration error [${data.event}]:`, data.message)
+        // TODO: Show toast notification to user
+      },
+    )
 
     // Cleanup on unmount
     return () => {
-      console.log('Cleaning up collaboration connection');
-      socket.removeAllListeners();
-      socket.disconnect();
-      socketRef.current = null;
-    };
-  }, [whiteboardId, userId]);
+      console.log('Cleaning up collaboration connection')
+      socket.removeAllListeners()
+      socket.disconnect()
+      socketRef.current = null
+    }
+  }, [whiteboardId, userId])
 
   // Emit event to server
   const emit = useCallback((event: string, data: any) => {
     if (socketRef.current && socketRef.current.connected) {
-      socketRef.current.emit(event, data);
+      socketRef.current.emit(event, data)
     } else {
-      console.warn(`Cannot emit ${event}: socket not connected`);
+      console.warn(`Cannot emit ${event}: socket not connected`)
     }
-  }, []);
+  }, [])
 
   // Listen for event from server
-  const on = useCallback((event: string, handler: (...args: any[]) => void) => {
-    if (socketRef.current) {
-      socketRef.current.on(event, handler);
-    }
-  }, []);
+  const on = useCallback(
+    (event: string, handler: (...args: Array<any>) => void) => {
+      if (socketRef.current) {
+        socketRef.current.on(event, handler)
+      }
+    },
+    [],
+  )
 
   // Remove event listener
-  const off = useCallback((event: string, handler: (...args: any[]) => void) => {
-    if (socketRef.current) {
-      socketRef.current.off(event, handler);
-    }
-  }, []);
+  const off = useCallback(
+    (event: string, handler: (...args: Array<any>) => void) => {
+      if (socketRef.current) {
+        socketRef.current.off(event, handler)
+      }
+    },
+    [],
+  )
 
   // Request full state sync from server
   const requestSync = useCallback(() => {
     if (socketRef.current && socketRef.current.connected) {
-      socketRef.current.emit('sync:request');
+      socketRef.current.emit('sync:request')
     }
-  }, []);
+  }, [])
 
   return {
     socket: socketRef.current,
@@ -218,7 +256,7 @@ export function useCollaboration(
     on,
     off,
     requestSync,
-  };
+  }
 }
 
 /**
@@ -227,34 +265,31 @@ export function useCollaboration(
  * @param delay - Delay in milliseconds
  * @returns Throttled function
  */
-export function throttle<T extends (...args: any[]) => void>(
+export function throttle<T extends (...args: Array<any>) => void>(
   func: T,
-  delay: number
+  delay: number,
 ): (...args: Parameters<T>) => void {
-  let lastCall = 0;
-  let timeoutId: NodeJS.Timeout | null = null;
+  let lastCall = 0
+  let timeoutId: NodeJS.Timeout | null = null
 
   return function (...args: Parameters<T>) {
-    const now = Date.now();
-    const timeSinceLastCall = now - lastCall;
+    const now = Date.now()
+    const timeSinceLastCall = now - lastCall
 
     if (timeSinceLastCall >= delay) {
-      lastCall = now;
-      func(...args);
+      lastCall = now
+      func(...args)
     } else {
       // Schedule call at the end of delay period
       if (timeoutId) {
-        clearTimeout(timeoutId);
+        clearTimeout(timeoutId)
       }
-      timeoutId = setTimeout(
-        () => {
-          lastCall = Date.now();
-          func(...args);
-        },
-        delay - timeSinceLastCall
-      );
+      timeoutId = setTimeout(() => {
+        lastCall = Date.now()
+        func(...args)
+      }, delay - timeSinceLastCall)
     }
-  };
+  }
 }
 
 /**
@@ -263,18 +298,18 @@ export function throttle<T extends (...args: any[]) => void>(
  * @param delay - Delay in milliseconds
  * @returns Debounced function
  */
-export function debounce<T extends (...args: any[]) => void>(
+export function debounce<T extends (...args: Array<any>) => void>(
   func: T,
-  delay: number
+  delay: number,
 ): (...args: Parameters<T>) => void {
-  let timeoutId: NodeJS.Timeout | null = null;
+  let timeoutId: NodeJS.Timeout | null = null
 
   return function (...args: Parameters<T>) {
     if (timeoutId) {
-      clearTimeout(timeoutId);
+      clearTimeout(timeoutId)
     }
     timeoutId = setTimeout(() => {
-      func(...args);
-    }, delay);
-  };
+      func(...args)
+    }, delay)
+  }
 }

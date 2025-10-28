@@ -1,23 +1,19 @@
 // src/data/diagram-table.ts
 // Data access layer for DiagramTable entity
 
-import { prisma } from '@/db';
-import {
-  createTableSchema,
-  updateTableSchema,
-  type CreateTable,
-  type UpdateTable,
-} from './schema';
-import type { DiagramTable, Column, Relationship } from '@prisma/client';
+import { createTableSchema, updateTableSchema } from './schema'
+import type { CreateTable, UpdateTable } from './schema'
+import type { Column, DiagramTable, Relationship } from '@prisma/client'
+import { prisma } from '@/db'
 
 /**
  * DiagramTable with columns and relationships
  */
 export type DiagramTableWithRelations = DiagramTable & {
-  columns: Column[];
-  outgoingRelationships: Relationship[];
-  incomingRelationships: Relationship[];
-};
+  columns: Array<Column>
+  outgoingRelationships: Array<Relationship>
+  incomingRelationships: Array<Relationship>
+}
 
 /**
  * Create a new table
@@ -26,20 +22,20 @@ export type DiagramTableWithRelations = DiagramTable & {
  * @throws Error if validation fails or database operation fails
  */
 export async function createDiagramTable(
-  data: CreateTable
+  data: CreateTable,
 ): Promise<DiagramTable> {
   // Validate input with Zod schema
-  const validated = createTableSchema.parse(data);
+  const validated = createTableSchema.parse(data)
 
   try {
     const table = await prisma.diagramTable.create({
       data: validated,
-    });
-    return table;
+    })
+    return table
   } catch (error) {
     throw new Error(
-      `Failed to create table: ${error instanceof Error ? error.message : 'Unknown error'}`
-    );
+      `Failed to create table: ${error instanceof Error ? error.message : 'Unknown error'}`,
+    )
   }
 }
 
@@ -49,18 +45,18 @@ export async function createDiagramTable(
  * @returns Array of tables in the whiteboard
  */
 export async function findDiagramTablesByWhiteboardId(
-  whiteboardId: string
-): Promise<DiagramTable[]> {
+  whiteboardId: string,
+): Promise<Array<DiagramTable>> {
   try {
     const tables = await prisma.diagramTable.findMany({
       where: { whiteboardId },
       orderBy: { createdAt: 'asc' },
-    });
-    return tables;
+    })
+    return tables
   } catch (error) {
     throw new Error(
-      `Failed to fetch tables: ${error instanceof Error ? error.message : 'Unknown error'}`
-    );
+      `Failed to fetch tables: ${error instanceof Error ? error.message : 'Unknown error'}`,
+    )
   }
 }
 
@@ -70,8 +66,8 @@ export async function findDiagramTablesByWhiteboardId(
  * @returns Array of tables with columns and relationships
  */
 export async function findDiagramTablesByWhiteboardIdWithRelations(
-  whiteboardId: string
-): Promise<DiagramTableWithRelations[]> {
+  whiteboardId: string,
+): Promise<Array<DiagramTableWithRelations>> {
   try {
     const tables = await prisma.diagramTable.findMany({
       where: { whiteboardId },
@@ -81,12 +77,12 @@ export async function findDiagramTablesByWhiteboardIdWithRelations(
         incomingRelationships: true,
       },
       orderBy: { createdAt: 'asc' },
-    });
-    return tables;
+    })
+    return tables
   } catch (error) {
     throw new Error(
-      `Failed to fetch tables with relations: ${error instanceof Error ? error.message : 'Unknown error'}`
-    );
+      `Failed to fetch tables with relations: ${error instanceof Error ? error.message : 'Unknown error'}`,
+    )
   }
 }
 
@@ -96,17 +92,17 @@ export async function findDiagramTablesByWhiteboardIdWithRelations(
  * @returns Table or null if not found
  */
 export async function findDiagramTableById(
-  id: string
+  id: string,
 ): Promise<DiagramTable | null> {
   try {
     const table = await prisma.diagramTable.findUnique({
       where: { id },
-    });
-    return table;
+    })
+    return table
   } catch (error) {
     throw new Error(
-      `Failed to fetch table: ${error instanceof Error ? error.message : 'Unknown error'}`
-    );
+      `Failed to fetch table: ${error instanceof Error ? error.message : 'Unknown error'}`,
+    )
   }
 }
 
@@ -116,7 +112,7 @@ export async function findDiagramTableById(
  * @returns Table with columns and relationships or null if not found
  */
 export async function findDiagramTableByIdWithRelations(
-  id: string
+  id: string,
 ): Promise<DiagramTableWithRelations | null> {
   try {
     const table = await prisma.diagramTable.findUnique({
@@ -126,12 +122,12 @@ export async function findDiagramTableByIdWithRelations(
         outgoingRelationships: true,
         incomingRelationships: true,
       },
-    });
-    return table;
+    })
+    return table
   } catch (error) {
     throw new Error(
-      `Failed to fetch table with relations: ${error instanceof Error ? error.message : 'Unknown error'}`
-    );
+      `Failed to fetch table with relations: ${error instanceof Error ? error.message : 'Unknown error'}`,
+    )
   }
 }
 
@@ -144,21 +140,21 @@ export async function findDiagramTableByIdWithRelations(
  */
 export async function updateDiagramTable(
   id: string,
-  data: UpdateTable
+  data: UpdateTable,
 ): Promise<DiagramTable> {
   // Validate input with Zod schema
-  const validated = updateTableSchema.parse(data);
+  const validated = updateTableSchema.parse(data)
 
   try {
     const table = await prisma.diagramTable.update({
       where: { id },
       data: validated,
-    });
-    return table;
+    })
+    return table
   } catch (error) {
     throw new Error(
-      `Failed to update table: ${error instanceof Error ? error.message : 'Unknown error'}`
-    );
+      `Failed to update table: ${error instanceof Error ? error.message : 'Unknown error'}`,
+    )
   }
 }
 
@@ -172,18 +168,18 @@ export async function updateDiagramTable(
 export async function updateDiagramTablePosition(
   id: string,
   positionX: number,
-  positionY: number
+  positionY: number,
 ): Promise<DiagramTable> {
   try {
     const table = await prisma.diagramTable.update({
       where: { id },
       data: { positionX, positionY },
-    });
-    return table;
+    })
+    return table
   } catch (error) {
     throw new Error(
-      `Failed to update table position: ${error instanceof Error ? error.message : 'Unknown error'}`
-    );
+      `Failed to update table position: ${error instanceof Error ? error.message : 'Unknown error'}`,
+    )
   }
 }
 
@@ -197,11 +193,11 @@ export async function deleteDiagramTable(id: string): Promise<DiagramTable> {
   try {
     const table = await prisma.diagramTable.delete({
       where: { id },
-    });
-    return table;
+    })
+    return table
   } catch (error) {
     throw new Error(
-      `Failed to delete table: ${error instanceof Error ? error.message : 'Unknown error'}`
-    );
+      `Failed to delete table: ${error instanceof Error ? error.message : 'Unknown error'}`,
+    )
   }
 }

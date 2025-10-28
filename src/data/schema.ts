@@ -1,7 +1,7 @@
 // src/data/schema.ts
 // Zod validation schemas for all entities in the ER Diagram Whiteboard
 
-import { z } from 'zod';
+import { z } from 'zod'
 
 // ============================================================================
 // JSON Sub-Schemas (for nested JSON fields)
@@ -15,7 +15,7 @@ export const canvasStateSchema = z.object({
   zoom: z.number().min(0.1).max(5),
   offsetX: z.number().finite(),
   offsetY: z.number().finite(),
-});
+})
 
 /**
  * Routing points for relationship arrows
@@ -25,8 +25,8 @@ export const routingPointsSchema = z.array(
   z.object({
     x: z.number().finite(),
     y: z.number().finite(),
-  })
-);
+  }),
+)
 
 /**
  * Cursor position for collaboration
@@ -35,7 +35,7 @@ export const routingPointsSchema = z.array(
 export const cursorSchema = z.object({
   x: z.number().finite(),
   y: z.number().finite(),
-});
+})
 
 // ============================================================================
 // Enum Schemas
@@ -49,7 +49,7 @@ export const cardinalitySchema = z.enum([
   'ONE_TO_MANY',
   'MANY_TO_ONE',
   'MANY_TO_MANY',
-]);
+])
 
 /**
  * Allowed data types for columns
@@ -63,7 +63,7 @@ export const dataTypeSchema = z.enum([
   'text',
   'uuid',
   'json',
-]);
+])
 
 // ============================================================================
 // Project Schemas
@@ -75,12 +75,12 @@ export const dataTypeSchema = z.enum([
 export const createProjectSchema = z.object({
   name: z.string().min(1).max(255),
   description: z.string().max(1000).optional(),
-});
+})
 
 /**
  * Schema for updating an existing project
  */
-export const updateProjectSchema = createProjectSchema.partial();
+export const updateProjectSchema = createProjectSchema.partial()
 
 // ============================================================================
 // Folder Schemas
@@ -93,14 +93,14 @@ export const createFolderSchema = z.object({
   name: z.string().min(1).max(255),
   projectId: z.string().uuid(),
   parentFolderId: z.string().uuid().optional(),
-});
+})
 
 /**
  * Schema for updating an existing folder
  */
 export const updateFolderSchema = createFolderSchema
   .pick({ name: true })
-  .partial();
+  .partial()
 
 // ============================================================================
 // Whiteboard Schemas
@@ -115,12 +115,12 @@ export const createWhiteboardSchema = z.object({
   folderId: z.string().uuid().optional(),
   canvasState: canvasStateSchema.optional(),
   textSource: z.string().optional(),
-});
+})
 
 /**
  * Schema for updating an existing whiteboard
  */
-export const updateWhiteboardSchema = createWhiteboardSchema.partial();
+export const updateWhiteboardSchema = createWhiteboardSchema.partial()
 
 // ============================================================================
 // DiagramTable Schemas
@@ -137,14 +137,14 @@ export const createTableSchema = z.object({
   positionY: z.number().finite(),
   width: z.number().positive().optional(),
   height: z.number().positive().optional(),
-});
+})
 
 /**
  * Schema for updating an existing table
  */
 export const updateTableSchema = createTableSchema
   .omit({ whiteboardId: true })
-  .partial();
+  .partial()
 
 // ============================================================================
 // Column Schemas
@@ -163,14 +163,14 @@ export const createColumnSchema = z.object({
   isNullable: z.boolean().default(true),
   description: z.string().optional(),
   order: z.number().int().min(0).default(0),
-});
+})
 
 /**
  * Schema for updating an existing column
  */
 export const updateColumnSchema = createColumnSchema
   .omit({ tableId: true })
-  .partial();
+  .partial()
 
 // ============================================================================
 // Relationship Schemas
@@ -188,14 +188,14 @@ export const createRelationshipSchema = z.object({
   cardinality: cardinalitySchema,
   label: z.string().max(255).optional(),
   routingPoints: routingPointsSchema.optional(),
-});
+})
 
 /**
  * Schema for updating an existing relationship
  */
 export const updateRelationshipSchema = createRelationshipSchema
   .omit({ whiteboardId: true })
-  .partial();
+  .partial()
 
 // ============================================================================
 // CollaborationSession Schemas
@@ -209,42 +209,42 @@ export const createSessionSchema = z.object({
   userId: z.string().uuid(),
   socketId: z.string(),
   cursor: cursorSchema.optional(),
-});
+})
 
 /**
  * Schema for updating an existing collaboration session
  */
 export const updateSessionSchema = z.object({
   cursor: cursorSchema.optional(),
-});
+})
 
 // ============================================================================
 // Type Exports (inferred from schemas)
 // ============================================================================
 
-export type CanvasState = z.infer<typeof canvasStateSchema>;
-export type RoutingPoints = z.infer<typeof routingPointsSchema>;
-export type CursorPosition = z.infer<typeof cursorSchema>;
-export type Cardinality = z.infer<typeof cardinalitySchema>;
-export type DataType = z.infer<typeof dataTypeSchema>;
+export type CanvasState = z.infer<typeof canvasStateSchema>
+export type RoutingPoints = z.infer<typeof routingPointsSchema>
+export type CursorPosition = z.infer<typeof cursorSchema>
+export type Cardinality = z.infer<typeof cardinalitySchema>
+export type DataType = z.infer<typeof dataTypeSchema>
 
-export type CreateProject = z.infer<typeof createProjectSchema>;
-export type UpdateProject = z.infer<typeof updateProjectSchema>;
+export type CreateProject = z.infer<typeof createProjectSchema>
+export type UpdateProject = z.infer<typeof updateProjectSchema>
 
-export type CreateFolder = z.infer<typeof createFolderSchema>;
-export type UpdateFolder = z.infer<typeof updateFolderSchema>;
+export type CreateFolder = z.infer<typeof createFolderSchema>
+export type UpdateFolder = z.infer<typeof updateFolderSchema>
 
-export type CreateWhiteboard = z.infer<typeof createWhiteboardSchema>;
-export type UpdateWhiteboard = z.infer<typeof updateWhiteboardSchema>;
+export type CreateWhiteboard = z.infer<typeof createWhiteboardSchema>
+export type UpdateWhiteboard = z.infer<typeof updateWhiteboardSchema>
 
-export type CreateTable = z.infer<typeof createTableSchema>;
-export type UpdateTable = z.infer<typeof updateTableSchema>;
+export type CreateTable = z.infer<typeof createTableSchema>
+export type UpdateTable = z.infer<typeof updateTableSchema>
 
-export type CreateColumn = z.infer<typeof createColumnSchema>;
-export type UpdateColumn = z.infer<typeof updateColumnSchema>;
+export type CreateColumn = z.infer<typeof createColumnSchema>
+export type UpdateColumn = z.infer<typeof updateColumnSchema>
 
-export type CreateRelationship = z.infer<typeof createRelationshipSchema>;
-export type UpdateRelationship = z.infer<typeof updateRelationshipSchema>;
+export type CreateRelationship = z.infer<typeof createRelationshipSchema>
+export type UpdateRelationship = z.infer<typeof updateRelationshipSchema>
 
-export type CreateSession = z.infer<typeof createSessionSchema>;
-export type UpdateSession = z.infer<typeof updateSessionSchema>;
+export type CreateSession = z.infer<typeof createSessionSchema>
+export type UpdateSession = z.infer<typeof updateSessionSchema>

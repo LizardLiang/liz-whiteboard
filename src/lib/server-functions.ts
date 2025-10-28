@@ -1,22 +1,28 @@
 // src/lib/server-functions.ts
 // Server functions for whiteboard operations using TanStack Start
 
-import { createServerFn } from '@tanstack/react-start';
+import { createServerFn } from '@tanstack/react-start'
+import type { WhiteboardWithDiagram } from '@/data/whiteboard'
+import type { CreateTable } from '@/data/diagram-table'
+import type {
+  CreateRelationship,
+  RelationshipWithDetails,
+} from '@/data/relationship'
+import type { LayoutOptions, LayoutResult } from '@/lib/canvas/layout-engine'
 import {
   findWhiteboardByIdWithDiagram,
-  type WhiteboardWithDiagram,
-} from '@/data/whiteboard';
+  updateWhiteboardTextSource,
+} from '@/data/whiteboard'
 import {
   createDiagramTable,
   updateDiagramTablePosition,
-  type CreateTable,
-} from '@/data/diagram-table';
+} from '@/data/diagram-table'
 import {
   createRelationship,
-  findRelationshipsByWhiteboardId,
-  type CreateRelationship,
-} from '@/data/relationship';
-import type { Relationship } from '@prisma/client';
+  findRelationshipsByWhiteboardIdWithDetails,
+} from '@/data/relationship'
+import { computeLayout } from '@/lib/canvas/layout-engine'
+import { prisma } from '@/db'
 
 /**
  * Server function to fetch whiteboard with full diagram data
@@ -25,32 +31,37 @@ export const getWhiteboardWithDiagram = createServerFn({
   method: 'GET',
 })
   .inputValidator((whiteboardId: string) => whiteboardId)
-  .handler(async ({ data: whiteboardId }): Promise<WhiteboardWithDiagram | null> => {
-    try {
-      const whiteboard = await findWhiteboardByIdWithDiagram(whiteboardId);
-      return whiteboard;
-    } catch (error) {
-      console.error('Error fetching whiteboard:', error);
-      throw error;
-    }
-  });
+  .handler(
+    async ({ data: whiteboardId }): Promise<WhiteboardWithDiagram | null> => {
+      try {
+        const whiteboard = await findWhiteboardByIdWithDiagram(whiteboardId)
+        return whiteboard
+      } catch (error) {
+        console.error('Error fetching whiteboard:', error)
+        throw error
+      }
+    },
+  )
 
 /**
- * Server function to fetch relationships for a whiteboard
+ * Server function to fetch relationships for a whiteboard with full details
  */
 export const getWhiteboardRelationships = createServerFn({
   method: 'GET',
 })
   .inputValidator((whiteboardId: string) => whiteboardId)
-  .handler(async ({ data: whiteboardId }): Promise<Relationship[]> => {
-    try {
-      const relationships = await findRelationshipsByWhiteboardId(whiteboardId);
-      return relationships;
-    } catch (error) {
-      console.error('Error fetching relationships:', error);
-      throw error;
-    }
-  });
+  .handler(
+    async ({ data: whiteboardId }): Promise<Array<RelationshipWithDetails>> => {
+      try {
+        const relationships =
+          await findRelationshipsByWhiteboardIdWithDetails(whiteboardId)
+        return relationships
+      } catch (error) {
+        console.error('Error fetching relationships:', error)
+        throw error
+      }
+    },
+  )
 
 /**
  * Server function to create a new table
@@ -61,13 +72,13 @@ export const createTable = createServerFn({
   .inputValidator((data: CreateTable) => data)
   .handler(async ({ data }) => {
     try {
-      const table = await createDiagramTable(data);
-      return table;
+      const table = await createDiagramTable(data)
+      return table
     } catch (error) {
-      console.error('Error creating table:', error);
-      throw error;
+      console.error('Error creating table:', error)
+      throw error
     }
-  });
+  })
 
 /**
  * Server function to update table position
@@ -75,20 +86,22 @@ export const createTable = createServerFn({
 export const updateTablePosition = createServerFn({
   method: 'POST',
 })
-  .inputValidator((data: { id: string; positionX: number; positionY: number }) => data)
+  .inputValidator(
+    (data: { id: string; positionX: number; positionY: number }) => data,
+  )
   .handler(async ({ data }) => {
     try {
       const table = await updateDiagramTablePosition(
         data.id,
         data.positionX,
-        data.positionY
-      );
-      return table;
+        data.positionY,
+      )
+      return table
     } catch (error) {
-      console.error('Error updating table position:', error);
-      throw error;
+      console.error('Error updating table position:', error)
+      throw error
     }
-  });
+  })
 
 /**
  * Server function to create a new relationship
@@ -99,10 +112,107 @@ export const createRelationshipFn = createServerFn({
   .inputValidator((data: CreateRelationship) => data)
   .handler(async ({ data }) => {
     try {
-      const relationship = await createRelationship(data);
-      return relationship;
+      const relationship = await createRelationship(data)
+      return relationship
     } catch (error) {
-      console.error('Error creating relationship:', error);
-      throw error;
+      console.error('Error creating relationship:', error)
+      throw error
     }
-  });
+  })
+
+/**
+ * Server function to update whiteboard text source
+ */
+export const updateWhiteboardTextSourceFn = createServerFn({
+  method: 'POST',
+})
+  .inputValidator((data: { whiteboardId: string; textSource: string }) => data)
+  .handler(async ({ data }) => {
+    try {
+      const whiteboard = await updateWhiteboardTextSource(
+        data.whiteboardId,
+        data.textSource,
+      )
+      return whiteboard
+    } catch (error) {
+      console.error('Error updating text source:', error)
+      throw error
+    }
+  })
+
+/**
+ * Server function to compute automatic layout for whiteboard
+ * Runs layout algorithm and updates table positions in database
+ */
+export const computeAutoLayout = createServerFn({
+  method: 'POST',
+})
+  .inputValidator(
+    (data: { whiteboardId: string; options: LayoutOptions }) => data,
+  )
+  .handler(async ({ data }): Promise<LayoutResult> => {
+    try {
+      // Fetch whiteboard with tables and relationships
+      const whiteboard = await findWhiteboardByIdWithDiagram(data.whiteboardId)
+      if (!whiteboard) {
+        throw new Error('Whiteboard not found')
+      }
+
+      const relationships = await findRelationshipsByWhiteboardIdWithDetails(
+        data.whiteboardId,
+      )
+
+      // Compute layout
+      const layoutResult = computeLayout(
+        whiteboard.tables,
+        relationships,
+        data.options,
+      )
+
+      // Update table positions in database (batch update for performance)
+      await prisma.$transaction(
+        layoutResult.positions.map((pos) =>
+          prisma.diagramTable.update({
+            where: { id: pos.id },
+            data: {
+              positionX: pos.x,
+              positionY: pos.y,
+            },
+          }),
+        ),
+      )
+
+      return layoutResult
+    } catch (error) {
+      console.error('Error computing auto layout:', error)
+      throw error
+    }
+  })
+
+/**
+ * Server function to save canvas viewport state
+ * Stores zoom and pan position in whiteboard canvasState
+ */
+export const saveCanvasState = createServerFn({
+  method: 'POST',
+})
+  .inputValidator(
+    (data: {
+      whiteboardId: string
+      canvasState: { zoom: number; offsetX: number; offsetY: number }
+    }) => data,
+  )
+  .handler(async ({ data }) => {
+    try {
+      const whiteboard = await prisma.whiteboard.update({
+        where: { id: data.whiteboardId },
+        data: {
+          canvasState: data.canvasState,
+        },
+      })
+      return whiteboard
+    } catch (error) {
+      console.error('Error saving canvas state:', error)
+      throw error
+    }
+  })

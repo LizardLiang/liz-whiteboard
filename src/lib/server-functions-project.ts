@@ -1,8 +1,8 @@
 // src/lib/server-functions-project.ts
 // Server functions for project operations
 
-import { createServerFn } from '@tanstack/react-start';
-import { prisma } from '@/db';
+import { createServerFn } from '@tanstack/react-start'
+import { prisma } from '@/db'
 
 /**
  * Server function to fetch all projects with their whiteboards
@@ -18,10 +18,10 @@ export const getAllProjects = createServerFn({
         },
       },
       orderBy: { createdAt: 'desc' },
-    });
-    return projects;
+    })
+    return projects
   } catch (error) {
-    console.error('Error fetching projects:', error);
-    throw error;
+    console.error('Error fetching projects:', error)
+    throw error
   }
-});
+})

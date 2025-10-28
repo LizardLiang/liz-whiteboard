@@ -1,22 +1,22 @@
 // src/routes/api/relationships.ts
 // TanStack Start server functions for Relationship CRUD operations
 
-import { createServerFn } from '@tanstack/start';
-import { z } from 'zod';
+import { createServerFn } from '@tanstack/start'
+import { z } from 'zod'
 import {
   createRelationship,
-  findRelationshipsByWhiteboardId,
-  findRelationshipsByWhiteboardIdWithDetails,
+  deleteRelationship,
   findRelationshipById,
   findRelationshipByIdWithDetails,
   findRelationshipsByTableId,
+  findRelationshipsByWhiteboardId,
+  findRelationshipsByWhiteboardIdWithDetails,
   updateRelationship,
-  deleteRelationship,
-} from '@/data/relationship';
+} from '@/data/relationship'
 import {
   createRelationshipSchema,
   updateRelationshipSchema,
-} from '@/data/schema';
+} from '@/data/schema'
 
 /**
  * Get all relationships in a whiteboard
@@ -26,19 +26,19 @@ export const getRelationshipsByWhiteboardId = createServerFn(
   'GET',
   async (whiteboardId: string) => {
     // Validate UUID format
-    const idSchema = z.string().uuid();
-    idSchema.parse(whiteboardId);
+    const idSchema = z.string().uuid()
+    idSchema.parse(whiteboardId)
 
     try {
-      const relationships = await findRelationshipsByWhiteboardId(whiteboardId);
-      return relationships;
+      const relationships = await findRelationshipsByWhiteboardId(whiteboardId)
+      return relationships
     } catch (error) {
       throw new Error(
-        `Failed to fetch relationships: ${error instanceof Error ? error.message : 'Unknown error'}`
-      );
+        `Failed to fetch relationships: ${error instanceof Error ? error.message : 'Unknown error'}`,
+      )
     }
-  }
-);
+  },
+)
 
 /**
  * Get all relationships in a whiteboard with table/column details
@@ -48,21 +48,20 @@ export const getRelationshipsByWhiteboardIdWithDetails = createServerFn(
   'GET',
   async (whiteboardId: string) => {
     // Validate UUID format
-    const idSchema = z.string().uuid();
-    idSchema.parse(whiteboardId);
+    const idSchema = z.string().uuid()
+    idSchema.parse(whiteboardId)
 
     try {
-      const relationships = await findRelationshipsByWhiteboardIdWithDetails(
-        whiteboardId
-      );
-      return relationships;
+      const relationships =
+        await findRelationshipsByWhiteboardIdWithDetails(whiteboardId)
+      return relationships
     } catch (error) {
       throw new Error(
-        `Failed to fetch relationships with details: ${error instanceof Error ? error.message : 'Unknown error'}`
-      );
+        `Failed to fetch relationships with details: ${error instanceof Error ? error.message : 'Unknown error'}`,
+      )
     }
-  }
-);
+  },
+)
 
 /**
  * Get a single relationship by ID
@@ -72,22 +71,22 @@ export const getRelationship = createServerFn(
   'GET',
   async (relationshipId: string) => {
     // Validate UUID format
-    const idSchema = z.string().uuid();
-    idSchema.parse(relationshipId);
+    const idSchema = z.string().uuid()
+    idSchema.parse(relationshipId)
 
     try {
-      const relationship = await findRelationshipById(relationshipId);
+      const relationship = await findRelationshipById(relationshipId)
       if (!relationship) {
-        throw new Error('Relationship not found');
+        throw new Error('Relationship not found')
       }
-      return relationship;
+      return relationship
     } catch (error) {
       throw new Error(
-        `Failed to fetch relationship: ${error instanceof Error ? error.message : 'Unknown error'}`
-      );
+        `Failed to fetch relationship: ${error instanceof Error ? error.message : 'Unknown error'}`,
+      )
     }
-  }
-);
+  },
+)
 
 /**
  * Get a single relationship by ID with table/column details
@@ -97,22 +96,22 @@ export const getRelationshipWithDetails = createServerFn(
   'GET',
   async (relationshipId: string) => {
     // Validate UUID format
-    const idSchema = z.string().uuid();
-    idSchema.parse(relationshipId);
+    const idSchema = z.string().uuid()
+    idSchema.parse(relationshipId)
 
     try {
-      const relationship = await findRelationshipByIdWithDetails(relationshipId);
+      const relationship = await findRelationshipByIdWithDetails(relationshipId)
       if (!relationship) {
-        throw new Error('Relationship not found');
+        throw new Error('Relationship not found')
       }
-      return relationship;
+      return relationship
     } catch (error) {
       throw new Error(
-        `Failed to fetch relationship with details: ${error instanceof Error ? error.message : 'Unknown error'}`
-      );
+        `Failed to fetch relationship with details: ${error instanceof Error ? error.message : 'Unknown error'}`,
+      )
     }
-  }
-);
+  },
+)
 
 /**
  * Get all relationships connected to a table
@@ -122,19 +121,19 @@ export const getRelationshipsByTableId = createServerFn(
   'GET',
   async (tableId: string) => {
     // Validate UUID format
-    const idSchema = z.string().uuid();
-    idSchema.parse(tableId);
+    const idSchema = z.string().uuid()
+    idSchema.parse(tableId)
 
     try {
-      const relationships = await findRelationshipsByTableId(tableId);
-      return relationships;
+      const relationships = await findRelationshipsByTableId(tableId)
+      return relationships
     } catch (error) {
       throw new Error(
-        `Failed to fetch table relationships: ${error instanceof Error ? error.message : 'Unknown error'}`
-      );
+        `Failed to fetch table relationships: ${error instanceof Error ? error.message : 'Unknown error'}`,
+      )
     }
-  }
-);
+  },
+)
 
 /**
  * Create a new relationship
@@ -144,18 +143,18 @@ export const createRelationshipFn = createServerFn(
   'POST',
   async (data: unknown) => {
     // Validate input with Zod schema
-    const validated = createRelationshipSchema.parse(data);
+    const validated = createRelationshipSchema.parse(data)
 
     try {
-      const relationship = await createRelationship(validated);
-      return relationship;
+      const relationship = await createRelationship(validated)
+      return relationship
     } catch (error) {
       throw new Error(
-        `Failed to create relationship: ${error instanceof Error ? error.message : 'Unknown error'}`
-      );
+        `Failed to create relationship: ${error instanceof Error ? error.message : 'Unknown error'}`,
+      )
     }
-  }
-);
+  },
+)
 
 /**
  * Update an existing relationship
@@ -165,22 +164,22 @@ export const updateRelationshipFn = createServerFn(
   'PUT',
   async (params: { id: string; data: unknown }) => {
     // Validate UUID format
-    const idSchema = z.string().uuid();
-    idSchema.parse(params.id);
+    const idSchema = z.string().uuid()
+    idSchema.parse(params.id)
 
     // Validate update data with Zod schema
-    const validated = updateRelationshipSchema.parse(params.data);
+    const validated = updateRelationshipSchema.parse(params.data)
 
     try {
-      const relationship = await updateRelationship(params.id, validated);
-      return relationship;
+      const relationship = await updateRelationship(params.id, validated)
+      return relationship
     } catch (error) {
       throw new Error(
-        `Failed to update relationship: ${error instanceof Error ? error.message : 'Unknown error'}`
-      );
+        `Failed to update relationship: ${error instanceof Error ? error.message : 'Unknown error'}`,
+      )
     }
-  }
-);
+  },
+)
 
 /**
  * Delete a relationship by ID
@@ -190,16 +189,16 @@ export const deleteRelationshipFn = createServerFn(
   'DELETE',
   async (relationshipId: string) => {
     // Validate UUID format
-    const idSchema = z.string().uuid();
-    idSchema.parse(relationshipId);
+    const idSchema = z.string().uuid()
+    idSchema.parse(relationshipId)
 
     try {
-      const relationship = await deleteRelationship(relationshipId);
-      return relationship;
+      const relationship = await deleteRelationship(relationshipId)
+      return relationship
     } catch (error) {
       throw new Error(
-        `Failed to delete relationship: ${error instanceof Error ? error.message : 'Unknown error'}`
-      );
+        `Failed to delete relationship: ${error instanceof Error ? error.message : 'Unknown error'}`,
+      )
     }
-  }
-);
+  },
+)

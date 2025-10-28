@@ -1,0 +1,1114 @@
+openapi: 3.1.0
+info:
+  title: Collaborative ER Diagram Whiteboard API
+  version: 1.0.0
+  description: |
+    REST API for managing ER diagram whiteboards with real-time collaboration.
+    Uses TanStack Start server functions for API routes.
+
+servers:
+  - url: http://localhost:3000
+    description: Local development server
+
+tags:
+  - name: Projects
+    description: Project management endpoints
+  - name: Folders
+    description: Folder organization endpoints
+  - name: Whiteboards
+    description: Whiteboard CRUD endpoints
+  - name: Tables
+    description: ER diagram table operations
+  - name: Columns
+    description: Table column operations
+  - name: Relationships
+    description: Table relationship operations
+  - name: Layout
+    description: Automatic layout computation
+  - name: Collaboration
+    description: Real-time collaboration (WebSocket)
+
+paths:
+  # Projects
+  /api/projects:
+    get:
+      tags: [Projects]
+      summary: List all projects
+      responses:
+        '200':
+          description: List of projects
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/Project'
+
+    post:
+      tags: [Projects]
+      summary: Create a new project
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CreateProjectRequest'
+      responses:
+        '201':
+          description: Project created
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Project'
+        '400':
+          $ref: '#/components/responses/ValidationError'
+
+  /api/projects/{projectId}:
+    get:
+      tags: [Projects]
+      summary: Get project by ID with full tree
+      parameters:
+        - $ref: '#/components/parameters/ProjectId'
+      responses:
+        '200':
+          description: Project with folders and whiteboards
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ProjectWithTree'
+        '404':
+          $ref: '#/components/responses/NotFound'
+
+    patch:
+      tags: [Projects]
+      summary: Update project
+      parameters:
+        - $ref: '#/components/parameters/ProjectId'
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/UpdateProjectRequest'
+      responses:
+        '200':
+          description: Project updated
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Project'
+        '404':
+          $ref: '#/components/responses/NotFound'
+
+    delete:
+      tags: [Projects]
+      summary: Delete project (cascades to folders/whiteboards)
+      parameters:
+        - $ref: '#/components/parameters/ProjectId'
+      responses:
+        '204':
+          description: Project deleted
+        '404':
+          $ref: '#/components/responses/NotFound'
+
+  # Folders
+  /api/folders:
+    post:
+      tags: [Folders]
+      summary: Create a new folder
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CreateFolderRequest'
+      responses:
+        '201':
+          description: Folder created
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Folder'
+        '400':
+          $ref: '#/components/responses/ValidationError'
+
+  /api/folders/{folderId}:
+    get:
+      tags: [Folders]
+      summary: Get folder by ID
+      parameters:
+        - $ref: '#/components/parameters/FolderId'
+      responses:
+        '200':
+          description: Folder details
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/FolderWithContents'
+        '404':
+          $ref: '#/components/responses/NotFound'
+
+    patch:
+      tags: [Folders]
+      summary: Update folder (rename or move)
+      parameters:
+        - $ref: '#/components/parameters/FolderId'
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/UpdateFolderRequest'
+      responses:
+        '200':
+          description: Folder updated
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Folder'
+        '404':
+          $ref: '#/components/responses/NotFound'
+
+    delete:
+      tags: [Folders]
+      summary: Delete folder (cascades to contents)
+      parameters:
+        - $ref: '#/components/parameters/FolderId'
+      responses:
+        '204':
+          description: Folder deleted
+        '404':
+          $ref: '#/components/responses/NotFound'
+
+  # Whiteboards
+  /api/whiteboards:
+    get:
+      tags: [Whiteboards]
+      summary: List whiteboards (with optional filtering)
+      parameters:
+        - name: projectId
+          in: query
+          schema:
+            type: string
+            format: uuid
+        - name: folderId
+          in: query
+          schema:
+            type: string
+            format: uuid
+      responses:
+        '200':
+          description: List of whiteboards
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/Whiteboard'
+
+    post:
+      tags: [Whiteboards]
+      summary: Create a new whiteboard
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CreateWhiteboardRequest'
+      responses:
+        '201':
+          description: Whiteboard created
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Whiteboard'
+        '400':
+          $ref: '#/components/responses/ValidationError'
+
+  /api/whiteboards/{whiteboardId}:
+    get:
+      tags: [Whiteboards]
+      summary: Get whiteboard with full diagram data
+      parameters:
+        - $ref: '#/components/parameters/WhiteboardId'
+      responses:
+        '200':
+          description: Whiteboard with tables and relationships
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/WhiteboardWithDiagram'
+        '404':
+          $ref: '#/components/responses/NotFound'
+
+    patch:
+      tags: [Whiteboards]
+      summary: Update whiteboard (rename, save canvas state, update text source)
+      parameters:
+        - $ref: '#/components/parameters/WhiteboardId'
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/UpdateWhiteboardRequest'
+      responses:
+        '200':
+          description: Whiteboard updated
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Whiteboard'
+        '404':
+          $ref: '#/components/responses/NotFound'
+
+    delete:
+      tags: [Whiteboards]
+      summary: Delete whiteboard (cascades to diagram data)
+      parameters:
+        - $ref: '#/components/parameters/WhiteboardId'
+      responses:
+        '204':
+          description: Whiteboard deleted
+        '404':
+          $ref: '#/components/responses/NotFound'
+
+  # Tables
+  /api/whiteboards/{whiteboardId}/tables:
+    post:
+      tags: [Tables]
+      summary: Create a new table on whiteboard
+      parameters:
+        - $ref: '#/components/parameters/WhiteboardId'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CreateTableRequest'
+      responses:
+        '201':
+          description: Table created
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/DiagramTable'
+        '400':
+          $ref: '#/components/responses/ValidationError'
+
+  /api/tables/{tableId}:
+    patch:
+      tags: [Tables]
+      summary: Update table (rename, reposition, add description)
+      parameters:
+        - $ref: '#/components/parameters/TableId'
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/UpdateTableRequest'
+      responses:
+        '200':
+          description: Table updated
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/DiagramTable'
+        '404':
+          $ref: '#/components/responses/NotFound'
+
+    delete:
+      tags: [Tables]
+      summary: Delete table (cascades to columns and relationships)
+      parameters:
+        - $ref: '#/components/parameters/TableId'
+      responses:
+        '204':
+          description: Table deleted
+        '404':
+          $ref: '#/components/responses/NotFound'
+
+  # Columns
+  /api/tables/{tableId}/columns:
+    post:
+      tags: [Columns]
+      summary: Add a column to a table
+      parameters:
+        - $ref: '#/components/parameters/TableId'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CreateColumnRequest'
+      responses:
+        '201':
+          description: Column created
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Column'
+        '400':
+          $ref: '#/components/responses/ValidationError'
+
+  /api/columns/{columnId}:
+    patch:
+      tags: [Columns]
+      summary: Update column properties
+      parameters:
+        - $ref: '#/components/parameters/ColumnId'
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/UpdateColumnRequest'
+      responses:
+        '200':
+          description: Column updated
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Column'
+        '404':
+          $ref: '#/components/responses/NotFound'
+
+    delete:
+      tags: [Columns]
+      summary: Delete column (cascades to relationships)
+      parameters:
+        - $ref: '#/components/parameters/ColumnId'
+      responses:
+        '204':
+          description: Column deleted
+        '404':
+          $ref: '#/components/responses/NotFound'
+
+  # Relationships
+  /api/whiteboards/{whiteboardId}/relationships:
+    post:
+      tags: [Relationships]
+      summary: Create a relationship between tables
+      parameters:
+        - $ref: '#/components/parameters/WhiteboardId'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CreateRelationshipRequest'
+      responses:
+        '201':
+          description: Relationship created
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Relationship'
+        '400':
+          $ref: '#/components/responses/ValidationError'
+
+  /api/relationships/{relationshipId}:
+    patch:
+      tags: [Relationships]
+      summary: Update relationship (change cardinality, label, routing)
+      parameters:
+        - $ref: '#/components/parameters/RelationshipId'
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/UpdateRelationshipRequest'
+      responses:
+        '200':
+          description: Relationship updated
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Relationship'
+        '404':
+          $ref: '#/components/responses/NotFound'
+
+    delete:
+      tags: [Relationships]
+      summary: Delete relationship
+      parameters:
+        - $ref: '#/components/parameters/RelationshipId'
+      responses:
+        '204':
+          description: Relationship deleted
+        '404':
+          $ref: '#/components/responses/NotFound'
+
+  # Layout
+  /api/whiteboards/{whiteboardId}/layout:
+    post:
+      tags: [Layout]
+      summary: Compute automatic layout for diagram
+      description: |
+        Runs force-directed layout algorithm to position tables based on
+        relationship strength. Returns new positions for all tables.
+      parameters:
+        - $ref: '#/components/parameters/WhiteboardId'
+      requestBody:
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                maxIterations:
+                  type: integer
+                  default: 300
+                  description: Max simulation iterations
+      responses:
+        '200':
+          description: Layout computed
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  tablePositions:
+                    type: array
+                    items:
+                      type: object
+                      properties:
+                        tableId:
+                          type: string
+                          format: uuid
+                        positionX:
+                          type: number
+                        positionY:
+                          type: number
+        '404':
+          $ref: '#/components/responses/NotFound'
+
+  # Collaboration (WebSocket events documented separately)
+  /api/collaboration/active-users/{whiteboardId}:
+    get:
+      tags: [Collaboration]
+      summary: Get list of active collaborators on a whiteboard
+      parameters:
+        - $ref: '#/components/parameters/WhiteboardId'
+      responses:
+        '200':
+          description: List of active users
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/CollaborationSession'
+
+components:
+  parameters:
+    ProjectId:
+      name: projectId
+      in: path
+      required: true
+      schema:
+        type: string
+        format: uuid
+
+    FolderId:
+      name: folderId
+      in: path
+      required: true
+      schema:
+        type: string
+        format: uuid
+
+    WhiteboardId:
+      name: whiteboardId
+      in: path
+      required: true
+      schema:
+        type: string
+        format: uuid
+
+    TableId:
+      name: tableId
+      in: path
+      required: true
+      schema:
+        type: string
+        format: uuid
+
+    ColumnId:
+      name: columnId
+      in: path
+      required: true
+      schema:
+        type: string
+        format: uuid
+
+    RelationshipId:
+      name: relationshipId
+      in: path
+      required: true
+      schema:
+        type: string
+        format: uuid
+
+  schemas:
+    # Core entities
+    Project:
+      type: object
+      properties:
+        id:
+          type: string
+          format: uuid
+        name:
+          type: string
+          maxLength: 255
+        description:
+          type: string
+          maxLength: 1000
+        createdAt:
+          type: string
+          format: date-time
+        updatedAt:
+          type: string
+          format: date-time
+      required: [id, name, createdAt, updatedAt]
+
+    ProjectWithTree:
+      allOf:
+        - $ref: '#/components/schemas/Project'
+        - type: object
+          properties:
+            folders:
+              type: array
+              items:
+                $ref: '#/components/schemas/FolderWithContents'
+            whiteboards:
+              type: array
+              items:
+                $ref: '#/components/schemas/Whiteboard'
+
+    Folder:
+      type: object
+      properties:
+        id:
+          type: string
+          format: uuid
+        name:
+          type: string
+          maxLength: 255
+        projectId:
+          type: string
+          format: uuid
+        parentFolderId:
+          type: string
+          format: uuid
+          nullable: true
+        createdAt:
+          type: string
+          format: date-time
+        updatedAt:
+          type: string
+          format: date-time
+      required: [id, name, projectId, createdAt, updatedAt]
+
+    FolderWithContents:
+      allOf:
+        - $ref: '#/components/schemas/Folder'
+        - type: object
+          properties:
+            childFolders:
+              type: array
+              items:
+                $ref: '#/components/schemas/Folder'
+            whiteboards:
+              type: array
+              items:
+                $ref: '#/components/schemas/Whiteboard'
+
+    Whiteboard:
+      type: object
+      properties:
+        id:
+          type: string
+          format: uuid
+        name:
+          type: string
+          maxLength: 255
+        projectId:
+          type: string
+          format: uuid
+        folderId:
+          type: string
+          format: uuid
+          nullable: true
+        canvasState:
+          $ref: '#/components/schemas/CanvasState'
+        textSource:
+          type: string
+          nullable: true
+        createdAt:
+          type: string
+          format: date-time
+        updatedAt:
+          type: string
+          format: date-time
+      required: [id, name, projectId, createdAt, updatedAt]
+
+    WhiteboardWithDiagram:
+      allOf:
+        - $ref: '#/components/schemas/Whiteboard'
+        - type: object
+          properties:
+            tables:
+              type: array
+              items:
+                $ref: '#/components/schemas/DiagramTableWithDetails'
+
+    DiagramTable:
+      type: object
+      properties:
+        id:
+          type: string
+          format: uuid
+        whiteboardId:
+          type: string
+          format: uuid
+        name:
+          type: string
+          maxLength: 255
+        description:
+          type: string
+          nullable: true
+        positionX:
+          type: number
+        positionY:
+          type: number
+        width:
+          type: number
+          nullable: true
+        height:
+          type: number
+          nullable: true
+        createdAt:
+          type: string
+          format: date-time
+        updatedAt:
+          type: string
+          format: date-time
+      required:
+        [id, whiteboardId, name, positionX, positionY, createdAt, updatedAt]
+
+    DiagramTableWithDetails:
+      allOf:
+        - $ref: '#/components/schemas/DiagramTable'
+        - type: object
+          properties:
+            columns:
+              type: array
+              items:
+                $ref: '#/components/schemas/Column'
+            outgoingRelationships:
+              type: array
+              items:
+                $ref: '#/components/schemas/Relationship'
+
+    Column:
+      type: object
+      properties:
+        id:
+          type: string
+          format: uuid
+        tableId:
+          type: string
+          format: uuid
+        name:
+          type: string
+          maxLength: 255
+        dataType:
+          type: string
+          enum: [int, string, float, boolean, date, text, uuid, json]
+        isPrimaryKey:
+          type: boolean
+          default: false
+        isForeignKey:
+          type: boolean
+          default: false
+        isUnique:
+          type: boolean
+          default: false
+        isNullable:
+          type: boolean
+          default: true
+        description:
+          type: string
+          nullable: true
+        order:
+          type: integer
+          minimum: 0
+          default: 0
+        createdAt:
+          type: string
+          format: date-time
+        updatedAt:
+          type: string
+          format: date-time
+      required: [id, tableId, name, dataType, createdAt, updatedAt]
+
+    Relationship:
+      type: object
+      properties:
+        id:
+          type: string
+          format: uuid
+        whiteboardId:
+          type: string
+          format: uuid
+        sourceTableId:
+          type: string
+          format: uuid
+        targetTableId:
+          type: string
+          format: uuid
+        sourceColumnId:
+          type: string
+          format: uuid
+        targetColumnId:
+          type: string
+          format: uuid
+        cardinality:
+          type: string
+          enum: [ONE_TO_ONE, ONE_TO_MANY, MANY_TO_ONE, MANY_TO_MANY]
+        label:
+          type: string
+          maxLength: 255
+          nullable: true
+        routingPoints:
+          type: array
+          items:
+            $ref: '#/components/schemas/Point'
+          nullable: true
+        createdAt:
+          type: string
+          format: date-time
+        updatedAt:
+          type: string
+          format: date-time
+      required:
+        [
+          id,
+          whiteboardId,
+          sourceTableId,
+          targetTableId,
+          sourceColumnId,
+          targetColumnId,
+          cardinality,
+          createdAt,
+          updatedAt,
+        ]
+
+    CollaborationSession:
+      type: object
+      properties:
+        id:
+          type: string
+          format: uuid
+        whiteboardId:
+          type: string
+          format: uuid
+        userId:
+          type: string
+          format: uuid
+        socketId:
+          type: string
+        cursor:
+          $ref: '#/components/schemas/Point'
+        lastActivityAt:
+          type: string
+          format: date-time
+        createdAt:
+          type: string
+          format: date-time
+      required: [id, whiteboardId, userId, socketId, lastActivityAt, createdAt]
+
+    # Supporting types
+    CanvasState:
+      type: object
+      properties:
+        zoom:
+          type: number
+          minimum: 0.1
+          maximum: 5
+          default: 1
+        offsetX:
+          type: number
+          default: 0
+        offsetY:
+          type: number
+          default: 0
+      required: [zoom, offsetX, offsetY]
+
+    Point:
+      type: object
+      properties:
+        x:
+          type: number
+        y:
+          type: number
+      required: [x, y]
+
+    # Request bodies
+    CreateProjectRequest:
+      type: object
+      properties:
+        name:
+          type: string
+          minLength: 1
+          maxLength: 255
+        description:
+          type: string
+          maxLength: 1000
+      required: [name]
+
+    UpdateProjectRequest:
+      type: object
+      properties:
+        name:
+          type: string
+          minLength: 1
+          maxLength: 255
+        description:
+          type: string
+          maxLength: 1000
+
+    CreateFolderRequest:
+      type: object
+      properties:
+        name:
+          type: string
+          minLength: 1
+          maxLength: 255
+        projectId:
+          type: string
+          format: uuid
+        parentFolderId:
+          type: string
+          format: uuid
+      required: [name, projectId]
+
+    UpdateFolderRequest:
+      type: object
+      properties:
+        name:
+          type: string
+          minLength: 1
+          maxLength: 255
+        parentFolderId:
+          type: string
+          format: uuid
+
+    CreateWhiteboardRequest:
+      type: object
+      properties:
+        name:
+          type: string
+          minLength: 1
+          maxLength: 255
+        projectId:
+          type: string
+          format: uuid
+        folderId:
+          type: string
+          format: uuid
+        canvasState:
+          $ref: '#/components/schemas/CanvasState'
+        textSource:
+          type: string
+      required: [name, projectId]
+
+    UpdateWhiteboardRequest:
+      type: object
+      properties:
+        name:
+          type: string
+          minLength: 1
+          maxLength: 255
+        canvasState:
+          $ref: '#/components/schemas/CanvasState'
+        textSource:
+          type: string
+        folderId:
+          type: string
+          format: uuid
+
+    CreateTableRequest:
+      type: object
+      properties:
+        whiteboardId:
+          type: string
+          format: uuid
+        name:
+          type: string
+          minLength: 1
+          maxLength: 255
+        description:
+          type: string
+        positionX:
+          type: number
+        positionY:
+          type: number
+        width:
+          type: number
+        height:
+          type: number
+      required: [whiteboardId, name, positionX, positionY]
+
+    UpdateTableRequest:
+      type: object
+      properties:
+        name:
+          type: string
+          minLength: 1
+          maxLength: 255
+        description:
+          type: string
+        positionX:
+          type: number
+        positionY:
+          type: number
+        width:
+          type: number
+        height:
+          type: number
+
+    CreateColumnRequest:
+      type: object
+      properties:
+        tableId:
+          type: string
+          format: uuid
+        name:
+          type: string
+          minLength: 1
+          maxLength: 255
+        dataType:
+          type: string
+          enum: [int, string, float, boolean, date, text, uuid, json]
+        isPrimaryKey:
+          type: boolean
+        isForeignKey:
+          type: boolean
+        isUnique:
+          type: boolean
+        isNullable:
+          type: boolean
+        description:
+          type: string
+        order:
+          type: integer
+          minimum: 0
+      required: [tableId, name, dataType]
+
+    UpdateColumnRequest:
+      type: object
+      properties:
+        name:
+          type: string
+          minLength: 1
+          maxLength: 255
+        dataType:
+          type: string
+          enum: [int, string, float, boolean, date, text, uuid, json]
+        isPrimaryKey:
+          type: boolean
+        isForeignKey:
+          type: boolean
+        isUnique:
+          type: boolean
+        isNullable:
+          type: boolean
+        description:
+          type: string
+        order:
+          type: integer
+          minimum: 0
+
+    CreateRelationshipRequest:
+      type: object
+      properties:
+        whiteboardId:
+          type: string
+          format: uuid
+        sourceTableId:
+          type: string
+          format: uuid
+        targetTableId:
+          type: string
+          format: uuid
+        sourceColumnId:
+          type: string
+          format: uuid
+        targetColumnId:
+          type: string
+          format: uuid
+        cardinality:
+          type: string
+          enum: [ONE_TO_ONE, ONE_TO_MANY, MANY_TO_ONE, MANY_TO_MANY]
+        label:
+          type: string
+          maxLength: 255
+        routingPoints:
+          type: array
+          items:
+            $ref: '#/components/schemas/Point'
+      required:
+        [
+          whiteboardId,
+          sourceTableId,
+          targetTableId,
+          sourceColumnId,
+          targetColumnId,
+          cardinality,
+        ]
+
+    UpdateRelationshipRequest:
+      type: object
+      properties:
+        cardinality:
+          type: string
+          enum: [ONE_TO_ONE, ONE_TO_MANY, MANY_TO_ONE, MANY_TO_MANY]
+        label:
+          type: string
+          maxLength: 255
+        routingPoints:
+          type: array
+          items:
+            $ref: '#/components/schemas/Point'
+
+    # Error responses
+    Error:
+      type: object
+      properties:
+        error:
+          type: string
+        message:
+          type: string
+        details:
+          type: object
+      required: [error, message]
+
+  responses:
+    NotFound:
+      description: Resource not found
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Error'
+          example:
+            error: 'NOT_FOUND'
+            message: 'Whiteboard not found'
+
+    ValidationError:
+      description: Validation error
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Error'
+          example:
+            error: 'VALIDATION_ERROR'
+            message: 'Invalid request data'
+            details:
+              name: 'Name is required'

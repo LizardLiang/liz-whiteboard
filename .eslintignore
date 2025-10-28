@@ -1,0 +1,20 @@
+# Dependencies
+node_modules
+
+# Build outputs
+dist
+dist-ssr
+build
+.output
+.vinxi
+.nitro
+
+# Generated files
+src/routeTree.gen.ts
+*.min.js
+
+# Testing
+coverage
+
+# TanStack Start internals
+.tanstack

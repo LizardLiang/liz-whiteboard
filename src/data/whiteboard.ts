@@ -1,15 +1,15 @@
 // src/data/whiteboard.ts
 // Data access layer for Whiteboard entity
 
-import { prisma } from '@/db';
-import {
-  createWhiteboardSchema,
-  updateWhiteboardSchema,
-  type CreateWhiteboard,
-  type UpdateWhiteboard,
-  type CanvasState,
-} from './schema';
-import type { Whiteboard, DiagramTable, Column, Relationship } from '@prisma/client';
+import { createWhiteboardSchema, updateWhiteboardSchema } from './schema'
+import type { CanvasState, CreateWhiteboard, UpdateWhiteboard } from './schema'
+import type {
+  Column,
+  DiagramTable,
+  Relationship,
+  Whiteboard,
+} from '@prisma/client'
+import { prisma } from '@/db'
 
 /**
  * Whiteboard with full diagram data (tables, columns, relationships)
@@ -17,12 +17,12 @@ import type { Whiteboard, DiagramTable, Column, Relationship } from '@prisma/cli
 export type WhiteboardWithDiagram = Whiteboard & {
   tables: Array<
     DiagramTable & {
-      columns: Column[];
-      outgoingRelationships: Relationship[];
-      incomingRelationships: Relationship[];
+      columns: Array<Column>
+      outgoingRelationships: Array<Relationship>
+      incomingRelationships: Array<Relationship>
     }
-  >;
-};
+  >
+}
 
 /**
  * Create a new whiteboard
@@ -31,20 +31,20 @@ export type WhiteboardWithDiagram = Whiteboard & {
  * @throws Error if validation fails or database operation fails
  */
 export async function createWhiteboard(
-  data: CreateWhiteboard
+  data: CreateWhiteboard,
 ): Promise<Whiteboard> {
   // Validate input with Zod schema
-  const validated = createWhiteboardSchema.parse(data);
+  const validated = createWhiteboardSchema.parse(data)
 
   try {
     const whiteboard = await prisma.whiteboard.create({
       data: validated,
-    });
-    return whiteboard;
+    })
+    return whiteboard
   } catch (error) {
     throw new Error(
-      `Failed to create whiteboard: ${error instanceof Error ? error.message : 'Unknown error'}`
-    );
+      `Failed to create whiteboard: ${error instanceof Error ? error.message : 'Unknown error'}`,
+    )
   }
 }
 
@@ -54,18 +54,18 @@ export async function createWhiteboard(
  * @returns Array of whiteboards in the project
  */
 export async function findWhiteboardsByProjectId(
-  projectId: string
-): Promise<Whiteboard[]> {
+  projectId: string,
+): Promise<Array<Whiteboard>> {
   try {
     const whiteboards = await prisma.whiteboard.findMany({
       where: { projectId },
       orderBy: { updatedAt: 'desc' },
-    });
-    return whiteboards;
+    })
+    return whiteboards
   } catch (error) {
     throw new Error(
-      `Failed to fetch whiteboards: ${error instanceof Error ? error.message : 'Unknown error'}`
-    );
+      `Failed to fetch whiteboards: ${error instanceof Error ? error.message : 'Unknown error'}`,
+    )
   }
 }
 
@@ -75,18 +75,18 @@ export async function findWhiteboardsByProjectId(
  * @returns Array of whiteboards in the folder
  */
 export async function findWhiteboardsByFolderId(
-  folderId: string
-): Promise<Whiteboard[]> {
+  folderId: string,
+): Promise<Array<Whiteboard>> {
   try {
     const whiteboards = await prisma.whiteboard.findMany({
       where: { folderId },
       orderBy: { updatedAt: 'desc' },
-    });
-    return whiteboards;
+    })
+    return whiteboards
   } catch (error) {
     throw new Error(
-      `Failed to fetch whiteboards: ${error instanceof Error ? error.message : 'Unknown error'}`
-    );
+      `Failed to fetch whiteboards: ${error instanceof Error ? error.message : 'Unknown error'}`,
+    )
   }
 }
 
@@ -96,7 +96,7 @@ export async function findWhiteboardsByFolderId(
  * @returns Whiteboard with tables, columns, and relationships or null if not found
  */
 export async function findWhiteboardByIdWithDiagram(
-  id: string
+  id: string,
 ): Promise<WhiteboardWithDiagram | null> {
   try {
     const whiteboard = await prisma.whiteboard.findUnique({
@@ -110,12 +110,12 @@ export async function findWhiteboardByIdWithDiagram(
           },
         },
       },
-    });
-    return whiteboard;
+    })
+    return whiteboard
   } catch (error) {
     throw new Error(
-      `Failed to fetch whiteboard: ${error instanceof Error ? error.message : 'Unknown error'}`
-    );
+      `Failed to fetch whiteboard: ${error instanceof Error ? error.message : 'Unknown error'}`,
+    )
   }
 }
 
@@ -125,17 +125,17 @@ export async function findWhiteboardByIdWithDiagram(
  * @returns Whiteboard or null if not found
  */
 export async function findWhiteboardById(
-  id: string
+  id: string,
 ): Promise<Whiteboard | null> {
   try {
     const whiteboard = await prisma.whiteboard.findUnique({
       where: { id },
-    });
-    return whiteboard;
+    })
+    return whiteboard
   } catch (error) {
     throw new Error(
-      `Failed to fetch whiteboard: ${error instanceof Error ? error.message : 'Unknown error'}`
-    );
+      `Failed to fetch whiteboard: ${error instanceof Error ? error.message : 'Unknown error'}`,
+    )
   }
 }
 
@@ -148,21 +148,21 @@ export async function findWhiteboardById(
  */
 export async function updateWhiteboard(
   id: string,
-  data: UpdateWhiteboard
+  data: UpdateWhiteboard,
 ): Promise<Whiteboard> {
   // Validate input with Zod schema
-  const validated = updateWhiteboardSchema.parse(data);
+  const validated = updateWhiteboardSchema.parse(data)
 
   try {
     const whiteboard = await prisma.whiteboard.update({
       where: { id },
       data: validated,
-    });
-    return whiteboard;
+    })
+    return whiteboard
   } catch (error) {
     throw new Error(
-      `Failed to update whiteboard: ${error instanceof Error ? error.message : 'Unknown error'}`
-    );
+      `Failed to update whiteboard: ${error instanceof Error ? error.message : 'Unknown error'}`,
+    )
   }
 }
 
@@ -174,18 +174,18 @@ export async function updateWhiteboard(
  */
 export async function updateWhiteboardCanvasState(
   id: string,
-  canvasState: CanvasState
+  canvasState: CanvasState,
 ): Promise<Whiteboard> {
   try {
     const whiteboard = await prisma.whiteboard.update({
       where: { id },
       data: { canvasState },
-    });
-    return whiteboard;
+    })
+    return whiteboard
   } catch (error) {
     throw new Error(
-      `Failed to update canvas state: ${error instanceof Error ? error.message : 'Unknown error'}`
-    );
+      `Failed to update canvas state: ${error instanceof Error ? error.message : 'Unknown error'}`,
+    )
   }
 }
 
@@ -197,18 +197,18 @@ export async function updateWhiteboardCanvasState(
  */
 export async function updateWhiteboardTextSource(
   id: string,
-  textSource: string
+  textSource: string,
 ): Promise<Whiteboard> {
   try {
     const whiteboard = await prisma.whiteboard.update({
       where: { id },
       data: { textSource },
-    });
-    return whiteboard;
+    })
+    return whiteboard
   } catch (error) {
     throw new Error(
-      `Failed to update text source: ${error instanceof Error ? error.message : 'Unknown error'}`
-    );
+      `Failed to update text source: ${error instanceof Error ? error.message : 'Unknown error'}`,
+    )
   }
 }
 
@@ -222,11 +222,32 @@ export async function deleteWhiteboard(id: string): Promise<Whiteboard> {
   try {
     const whiteboard = await prisma.whiteboard.delete({
       where: { id },
-    });
-    return whiteboard;
+    })
+    return whiteboard
   } catch (error) {
     throw new Error(
-      `Failed to delete whiteboard: ${error instanceof Error ? error.message : 'Unknown error'}`
-    );
+      `Failed to delete whiteboard: ${error instanceof Error ? error.message : 'Unknown error'}`,
+    )
+  }
+}
+
+/**
+ * Find recent whiteboards (ordered by last updated)
+ * @param limit - Maximum number of whiteboards to return
+ * @returns Array of recent whiteboards
+ */
+export async function findRecentWhiteboards(
+  limit: number = 10,
+): Promise<Array<Whiteboard>> {
+  try {
+    const whiteboards = await prisma.whiteboard.findMany({
+      orderBy: { updatedAt: 'desc' },
+      take: limit,
+    })
+    return whiteboards
+  } catch (error) {
+    throw new Error(
+      `Failed to fetch recent whiteboards: ${error instanceof Error ? error.message : 'Unknown error'}`,
+    )
   }
 }

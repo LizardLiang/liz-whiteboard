@@ -1,14 +1,10 @@
 // src/data/column.ts
 // Data access layer for Column entity
 
-import { prisma } from '@/db';
-import {
-  createColumnSchema,
-  updateColumnSchema,
-  type CreateColumn,
-  type UpdateColumn,
-} from './schema';
-import type { Column } from '@prisma/client';
+import { createColumnSchema, updateColumnSchema } from './schema'
+import type { CreateColumn, UpdateColumn } from './schema'
+import type { Column } from '@prisma/client'
+import { prisma } from '@/db'
 
 /**
  * Create a new column
@@ -18,17 +14,17 @@ import type { Column } from '@prisma/client';
  */
 export async function createColumn(data: CreateColumn): Promise<Column> {
   // Validate input with Zod schema
-  const validated = createColumnSchema.parse(data);
+  const validated = createColumnSchema.parse(data)
 
   try {
     const column = await prisma.column.create({
       data: validated,
-    });
-    return column;
+    })
+    return column
   } catch (error) {
     throw new Error(
-      `Failed to create column: ${error instanceof Error ? error.message : 'Unknown error'}`
-    );
+      `Failed to create column: ${error instanceof Error ? error.message : 'Unknown error'}`,
+    )
   }
 }
 
@@ -38,20 +34,20 @@ export async function createColumn(data: CreateColumn): Promise<Column> {
  * @returns Array of created columns
  */
 export async function createColumns(
-  columns: CreateColumn[]
-): Promise<Column[]> {
+  columns: Array<CreateColumn>,
+): Promise<Array<Column>> {
   // Validate all inputs
-  const validated = columns.map((col) => createColumnSchema.parse(col));
+  const validated = columns.map((col) => createColumnSchema.parse(col))
 
   try {
     const result = await prisma.$transaction(
-      validated.map((data) => prisma.column.create({ data }))
-    );
-    return result;
+      validated.map((data) => prisma.column.create({ data })),
+    )
+    return result
   } catch (error) {
     throw new Error(
-      `Failed to create columns: ${error instanceof Error ? error.message : 'Unknown error'}`
-    );
+      `Failed to create columns: ${error instanceof Error ? error.message : 'Unknown error'}`,
+    )
   }
 }
 
@@ -60,17 +56,19 @@ export async function createColumns(
  * @param tableId - Table UUID
  * @returns Array of columns in the table (ordered by order field)
  */
-export async function findColumnsByTableId(tableId: string): Promise<Column[]> {
+export async function findColumnsByTableId(
+  tableId: string,
+): Promise<Array<Column>> {
   try {
     const columns = await prisma.column.findMany({
       where: { tableId },
       orderBy: { order: 'asc' },
-    });
-    return columns;
+    })
+    return columns
   } catch (error) {
     throw new Error(
-      `Failed to fetch columns: ${error instanceof Error ? error.message : 'Unknown error'}`
-    );
+      `Failed to fetch columns: ${error instanceof Error ? error.message : 'Unknown error'}`,
+    )
   }
 }
 
@@ -83,12 +81,12 @@ export async function findColumnById(id: string): Promise<Column | null> {
   try {
     const column = await prisma.column.findUnique({
       where: { id },
-    });
-    return column;
+    })
+    return column
   } catch (error) {
     throw new Error(
-      `Failed to fetch column: ${error instanceof Error ? error.message : 'Unknown error'}`
-    );
+      `Failed to fetch column: ${error instanceof Error ? error.message : 'Unknown error'}`,
+    )
   }
 }
 
@@ -101,21 +99,21 @@ export async function findColumnById(id: string): Promise<Column | null> {
  */
 export async function updateColumn(
   id: string,
-  data: UpdateColumn
+  data: UpdateColumn,
 ): Promise<Column> {
   // Validate input with Zod schema
-  const validated = updateColumnSchema.parse(data);
+  const validated = updateColumnSchema.parse(data)
 
   try {
     const column = await prisma.column.update({
       where: { id },
       data: validated,
-    });
-    return column;
+    })
+    return column
   } catch (error) {
     throw new Error(
-      `Failed to update column: ${error instanceof Error ? error.message : 'Unknown error'}`
-    );
+      `Failed to update column: ${error instanceof Error ? error.message : 'Unknown error'}`,
+    )
   }
 }
 
@@ -127,18 +125,18 @@ export async function updateColumn(
  */
 export async function updateColumnOrder(
   id: string,
-  order: number
+  order: number,
 ): Promise<Column> {
   try {
     const column = await prisma.column.update({
       where: { id },
       data: { order },
-    });
-    return column;
+    })
+    return column
   } catch (error) {
     throw new Error(
-      `Failed to update column order: ${error instanceof Error ? error.message : 'Unknown error'}`
-    );
+      `Failed to update column order: ${error instanceof Error ? error.message : 'Unknown error'}`,
+    )
   }
 }
 
@@ -152,12 +150,12 @@ export async function deleteColumn(id: string): Promise<Column> {
   try {
     const column = await prisma.column.delete({
       where: { id },
-    });
-    return column;
+    })
+    return column
   } catch (error) {
     throw new Error(
-      `Failed to delete column: ${error instanceof Error ? error.message : 'Unknown error'}`
-    );
+      `Failed to delete column: ${error instanceof Error ? error.message : 'Unknown error'}`,
+    )
   }
 }
 
@@ -167,8 +165,8 @@ export async function deleteColumn(id: string): Promise<Column> {
  * @returns Array of primary key columns
  */
 export async function findPrimaryKeyColumnsByTableId(
-  tableId: string
-): Promise<Column[]> {
+  tableId: string,
+): Promise<Array<Column>> {
   try {
     const columns = await prisma.column.findMany({
       where: {
@@ -176,12 +174,12 @@ export async function findPrimaryKeyColumnsByTableId(
         isPrimaryKey: true,
       },
       orderBy: { order: 'asc' },
-    });
-    return columns;
+    })
+    return columns
   } catch (error) {
     throw new Error(
-      `Failed to fetch primary key columns: ${error instanceof Error ? error.message : 'Unknown error'}`
-    );
+      `Failed to fetch primary key columns: ${error instanceof Error ? error.message : 'Unknown error'}`,
+    )
   }
 }
 
@@ -191,8 +189,8 @@ export async function findPrimaryKeyColumnsByTableId(
  * @returns Array of foreign key columns
  */
 export async function findForeignKeyColumnsByTableId(
-  tableId: string
-): Promise<Column[]> {
+  tableId: string,
+): Promise<Array<Column>> {
   try {
     const columns = await prisma.column.findMany({
       where: {
@@ -200,11 +198,11 @@ export async function findForeignKeyColumnsByTableId(
         isForeignKey: true,
       },
       orderBy: { order: 'asc' },
-    });
-    return columns;
+    })
+    return columns
   } catch (error) {
     throw new Error(
-      `Failed to fetch foreign key columns: ${error instanceof Error ? error.message : 'Unknown error'}`
-    );
+      `Failed to fetch foreign key columns: ${error instanceof Error ? error.message : 'Unknown error'}`,
+    )
   }
 }

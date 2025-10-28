@@ -1,20 +1,20 @@
 // src/routes/api/columns.ts
 // TanStack Start server functions for Column CRUD operations
 
-import { createServerFn } from '@tanstack/start';
-import { z } from 'zod';
+import { createServerFn } from '@tanstack/start'
+import { z } from 'zod'
 import {
   createColumn,
   createColumns,
-  findColumnsByTableId,
+  deleteColumn,
   findColumnById,
+  findColumnsByTableId,
+  findForeignKeyColumnsByTableId,
+  findPrimaryKeyColumnsByTableId,
   updateColumn,
   updateColumnOrder,
-  deleteColumn,
-  findPrimaryKeyColumnsByTableId,
-  findForeignKeyColumnsByTableId,
-} from '@/data/column';
-import { createColumnSchema, updateColumnSchema } from '@/data/schema';
+} from '@/data/column'
+import { createColumnSchema, updateColumnSchema } from '@/data/schema'
 
 /**
  * Get all columns in a table
@@ -24,19 +24,19 @@ export const getColumnsByTableId = createServerFn(
   'GET',
   async (tableId: string) => {
     // Validate UUID format
-    const idSchema = z.string().uuid();
-    idSchema.parse(tableId);
+    const idSchema = z.string().uuid()
+    idSchema.parse(tableId)
 
     try {
-      const columns = await findColumnsByTableId(tableId);
-      return columns;
+      const columns = await findColumnsByTableId(tableId)
+      return columns
     } catch (error) {
       throw new Error(
-        `Failed to fetch columns: ${error instanceof Error ? error.message : 'Unknown error'}`
-      );
+        `Failed to fetch columns: ${error instanceof Error ? error.message : 'Unknown error'}`,
+      )
     }
-  }
-);
+  },
+)
 
 /**
  * Get a single column by ID
@@ -44,21 +44,21 @@ export const getColumnsByTableId = createServerFn(
  */
 export const getColumn = createServerFn('GET', async (columnId: string) => {
   // Validate UUID format
-  const idSchema = z.string().uuid();
-  idSchema.parse(columnId);
+  const idSchema = z.string().uuid()
+  idSchema.parse(columnId)
 
   try {
-    const column = await findColumnById(columnId);
+    const column = await findColumnById(columnId)
     if (!column) {
-      throw new Error('Column not found');
+      throw new Error('Column not found')
     }
-    return column;
+    return column
   } catch (error) {
     throw new Error(
-      `Failed to fetch column: ${error instanceof Error ? error.message : 'Unknown error'}`
-    );
+      `Failed to fetch column: ${error instanceof Error ? error.message : 'Unknown error'}`,
+    )
   }
-});
+})
 
 /**
  * Get primary key columns in a table
@@ -68,19 +68,19 @@ export const getPrimaryKeyColumnsByTableId = createServerFn(
   'GET',
   async (tableId: string) => {
     // Validate UUID format
-    const idSchema = z.string().uuid();
-    idSchema.parse(tableId);
+    const idSchema = z.string().uuid()
+    idSchema.parse(tableId)
 
     try {
-      const columns = await findPrimaryKeyColumnsByTableId(tableId);
-      return columns;
+      const columns = await findPrimaryKeyColumnsByTableId(tableId)
+      return columns
     } catch (error) {
       throw new Error(
-        `Failed to fetch primary key columns: ${error instanceof Error ? error.message : 'Unknown error'}`
-      );
+        `Failed to fetch primary key columns: ${error instanceof Error ? error.message : 'Unknown error'}`,
+      )
     }
-  }
-);
+  },
+)
 
 /**
  * Get foreign key columns in a table
@@ -90,19 +90,19 @@ export const getForeignKeyColumnsByTableId = createServerFn(
   'GET',
   async (tableId: string) => {
     // Validate UUID format
-    const idSchema = z.string().uuid();
-    idSchema.parse(tableId);
+    const idSchema = z.string().uuid()
+    idSchema.parse(tableId)
 
     try {
-      const columns = await findForeignKeyColumnsByTableId(tableId);
-      return columns;
+      const columns = await findForeignKeyColumnsByTableId(tableId)
+      return columns
     } catch (error) {
       throw new Error(
-        `Failed to fetch foreign key columns: ${error instanceof Error ? error.message : 'Unknown error'}`
-      );
+        `Failed to fetch foreign key columns: ${error instanceof Error ? error.message : 'Unknown error'}`,
+      )
     }
-  }
-);
+  },
+)
 
 /**
  * Create a new column
@@ -110,17 +110,17 @@ export const getForeignKeyColumnsByTableId = createServerFn(
  */
 export const createColumnFn = createServerFn('POST', async (data: unknown) => {
   // Validate input with Zod schema
-  const validated = createColumnSchema.parse(data);
+  const validated = createColumnSchema.parse(data)
 
   try {
-    const column = await createColumn(validated);
-    return column;
+    const column = await createColumn(validated)
+    return column
   } catch (error) {
     throw new Error(
-      `Failed to create column: ${error instanceof Error ? error.message : 'Unknown error'}`
-    );
+      `Failed to create column: ${error instanceof Error ? error.message : 'Unknown error'}`,
+    )
   }
-});
+})
 
 /**
  * Create multiple columns in a single transaction
@@ -128,20 +128,20 @@ export const createColumnFn = createServerFn('POST', async (data: unknown) => {
  */
 export const createColumnsFn = createServerFn(
   'POST',
-  async (data: unknown[]) => {
+  async (data: Array<unknown>) => {
     // Validate all inputs with Zod schema
-    const validated = data.map((item) => createColumnSchema.parse(item));
+    const validated = data.map((item) => createColumnSchema.parse(item))
 
     try {
-      const columns = await createColumns(validated);
-      return columns;
+      const columns = await createColumns(validated)
+      return columns
     } catch (error) {
       throw new Error(
-        `Failed to create columns: ${error instanceof Error ? error.message : 'Unknown error'}`
-      );
+        `Failed to create columns: ${error instanceof Error ? error.message : 'Unknown error'}`,
+      )
     }
-  }
-);
+  },
+)
 
 /**
  * Update an existing column
@@ -151,22 +151,22 @@ export const updateColumnFn = createServerFn(
   'PUT',
   async (params: { id: string; data: unknown }) => {
     // Validate UUID format
-    const idSchema = z.string().uuid();
-    idSchema.parse(params.id);
+    const idSchema = z.string().uuid()
+    idSchema.parse(params.id)
 
     // Validate update data with Zod schema
-    const validated = updateColumnSchema.parse(params.data);
+    const validated = updateColumnSchema.parse(params.data)
 
     try {
-      const column = await updateColumn(params.id, validated);
-      return column;
+      const column = await updateColumn(params.id, validated)
+      return column
     } catch (error) {
       throw new Error(
-        `Failed to update column: ${error instanceof Error ? error.message : 'Unknown error'}`
-      );
+        `Failed to update column: ${error instanceof Error ? error.message : 'Unknown error'}`,
+      )
     }
-  }
-);
+  },
+)
 
 /**
  * Update column order (for reordering)
@@ -176,23 +176,23 @@ export const updateColumnOrderFn = createServerFn(
   'PUT',
   async (params: { id: string; order: number }) => {
     // Validate UUID format
-    const idSchema = z.string().uuid();
-    idSchema.parse(params.id);
+    const idSchema = z.string().uuid()
+    idSchema.parse(params.id)
 
     // Validate order value
-    const orderSchema = z.number().int().min(0);
-    orderSchema.parse(params.order);
+    const orderSchema = z.number().int().min(0)
+    orderSchema.parse(params.order)
 
     try {
-      const column = await updateColumnOrder(params.id, params.order);
-      return column;
+      const column = await updateColumnOrder(params.id, params.order)
+      return column
     } catch (error) {
       throw new Error(
-        `Failed to update column order: ${error instanceof Error ? error.message : 'Unknown error'}`
-      );
+        `Failed to update column order: ${error instanceof Error ? error.message : 'Unknown error'}`,
+      )
     }
-  }
-);
+  },
+)
 
 /**
  * Delete a column by ID
@@ -203,16 +203,16 @@ export const deleteColumnFn = createServerFn(
   'DELETE',
   async (columnId: string) => {
     // Validate UUID format
-    const idSchema = z.string().uuid();
-    idSchema.parse(columnId);
+    const idSchema = z.string().uuid()
+    idSchema.parse(columnId)
 
     try {
-      const column = await deleteColumn(columnId);
-      return column;
+      const column = await deleteColumn(columnId)
+      return column
     } catch (error) {
       throw new Error(
-        `Failed to delete column: ${error instanceof Error ? error.message : 'Unknown error'}`
-      );
+        `Failed to delete column: ${error instanceof Error ? error.message : 'Unknown error'}`,
+      )
     }
-  }
-);
+  },
+)

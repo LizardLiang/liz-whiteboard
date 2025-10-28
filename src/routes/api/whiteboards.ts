@@ -1,24 +1,25 @@
 // src/routes/api/whiteboards.ts
 // TanStack Start server functions for Whiteboard CRUD operations
 
-import { createServerFn } from '@tanstack/start';
-import { z } from 'zod';
+import { createServerFn } from '@tanstack/start'
+import { z } from 'zod'
 import {
   createWhiteboard,
-  findWhiteboardsByProjectId,
-  findWhiteboardsByFolderId,
-  findWhiteboardByIdWithDiagram,
+  deleteWhiteboard,
+  findRecentWhiteboards,
   findWhiteboardById,
+  findWhiteboardByIdWithDiagram,
+  findWhiteboardsByFolderId,
+  findWhiteboardsByProjectId,
   updateWhiteboard,
   updateWhiteboardCanvasState,
   updateWhiteboardTextSource,
-  deleteWhiteboard,
-} from '@/data/whiteboard';
+} from '@/data/whiteboard'
 import {
+  canvasStateSchema,
   createWhiteboardSchema,
   updateWhiteboardSchema,
-  canvasStateSchema,
-} from '@/data/schema';
+} from '@/data/schema'
 
 /**
  * Get all whiteboards in a project
@@ -28,19 +29,19 @@ export const getWhiteboardsByProject = createServerFn(
   'GET',
   async (projectId: string) => {
     // Validate UUID format
-    const idSchema = z.string().uuid();
-    idSchema.parse(projectId);
+    const idSchema = z.string().uuid()
+    idSchema.parse(projectId)
 
     try {
-      const whiteboards = await findWhiteboardsByProjectId(projectId);
-      return whiteboards;
+      const whiteboards = await findWhiteboardsByProjectId(projectId)
+      return whiteboards
     } catch (error) {
       throw new Error(
-        `Failed to fetch whiteboards: ${error instanceof Error ? error.message : 'Unknown error'}`
-      );
+        `Failed to fetch whiteboards: ${error instanceof Error ? error.message : 'Unknown error'}`,
+      )
     }
-  }
-);
+  },
+)
 
 /**
  * Get all whiteboards in a folder
@@ -50,19 +51,19 @@ export const getWhiteboardsByFolder = createServerFn(
   'GET',
   async (folderId: string) => {
     // Validate UUID format
-    const idSchema = z.string().uuid();
-    idSchema.parse(folderId);
+    const idSchema = z.string().uuid()
+    idSchema.parse(folderId)
 
     try {
-      const whiteboards = await findWhiteboardsByFolderId(folderId);
-      return whiteboards;
+      const whiteboards = await findWhiteboardsByFolderId(folderId)
+      return whiteboards
     } catch (error) {
       throw new Error(
-        `Failed to fetch whiteboards: ${error instanceof Error ? error.message : 'Unknown error'}`
-      );
+        `Failed to fetch whiteboards: ${error instanceof Error ? error.message : 'Unknown error'}`,
+      )
     }
-  }
-);
+  },
+)
 
 /**
  * Get a single whiteboard by ID with full diagram data
@@ -73,22 +74,22 @@ export const getWhiteboard = createServerFn(
   'GET',
   async (whiteboardId: string) => {
     // Validate UUID format
-    const idSchema = z.string().uuid();
-    idSchema.parse(whiteboardId);
+    const idSchema = z.string().uuid()
+    idSchema.parse(whiteboardId)
 
     try {
-      const whiteboard = await findWhiteboardByIdWithDiagram(whiteboardId);
+      const whiteboard = await findWhiteboardByIdWithDiagram(whiteboardId)
       if (!whiteboard) {
-        throw new Error('Whiteboard not found');
+        throw new Error('Whiteboard not found')
       }
-      return whiteboard;
+      return whiteboard
     } catch (error) {
       throw new Error(
-        `Failed to fetch whiteboard: ${error instanceof Error ? error.message : 'Unknown error'}`
-      );
+        `Failed to fetch whiteboard: ${error instanceof Error ? error.message : 'Unknown error'}`,
+      )
     }
-  }
-);
+  },
+)
 
 /**
  * Get a single whiteboard by ID (without diagram data)
@@ -98,22 +99,22 @@ export const getWhiteboardById = createServerFn(
   'GET',
   async (whiteboardId: string) => {
     // Validate UUID format
-    const idSchema = z.string().uuid();
-    idSchema.parse(whiteboardId);
+    const idSchema = z.string().uuid()
+    idSchema.parse(whiteboardId)
 
     try {
-      const whiteboard = await findWhiteboardById(whiteboardId);
+      const whiteboard = await findWhiteboardById(whiteboardId)
       if (!whiteboard) {
-        throw new Error('Whiteboard not found');
+        throw new Error('Whiteboard not found')
       }
-      return whiteboard;
+      return whiteboard
     } catch (error) {
       throw new Error(
-        `Failed to fetch whiteboard: ${error instanceof Error ? error.message : 'Unknown error'}`
-      );
+        `Failed to fetch whiteboard: ${error instanceof Error ? error.message : 'Unknown error'}`,
+      )
     }
-  }
-);
+  },
+)
 
 /**
  * Create a new whiteboard
@@ -123,18 +124,18 @@ export const createWhiteboardFn = createServerFn(
   'POST',
   async (data: unknown) => {
     // Validate input with Zod schema
-    const validated = createWhiteboardSchema.parse(data);
+    const validated = createWhiteboardSchema.parse(data)
 
     try {
-      const whiteboard = await createWhiteboard(validated);
-      return whiteboard;
+      const whiteboard = await createWhiteboard(validated)
+      return whiteboard
     } catch (error) {
       throw new Error(
-        `Failed to create whiteboard: ${error instanceof Error ? error.message : 'Unknown error'}`
-      );
+        `Failed to create whiteboard: ${error instanceof Error ? error.message : 'Unknown error'}`,
+      )
     }
-  }
-);
+  },
+)
 
 /**
  * Update an existing whiteboard
@@ -144,22 +145,22 @@ export const updateWhiteboardFn = createServerFn(
   'PUT',
   async (params: { id: string; data: unknown }) => {
     // Validate UUID format
-    const idSchema = z.string().uuid();
-    idSchema.parse(params.id);
+    const idSchema = z.string().uuid()
+    idSchema.parse(params.id)
 
     // Validate update data with Zod schema
-    const validated = updateWhiteboardSchema.parse(params.data);
+    const validated = updateWhiteboardSchema.parse(params.data)
 
     try {
-      const whiteboard = await updateWhiteboard(params.id, validated);
-      return whiteboard;
+      const whiteboard = await updateWhiteboard(params.id, validated)
+      return whiteboard
     } catch (error) {
       throw new Error(
-        `Failed to update whiteboard: ${error instanceof Error ? error.message : 'Unknown error'}`
-      );
+        `Failed to update whiteboard: ${error instanceof Error ? error.message : 'Unknown error'}`,
+      )
     }
-  }
-);
+  },
+)
 
 /**
  * Update whiteboard canvas state (zoom, pan)
@@ -169,25 +170,22 @@ export const updateCanvasState = createServerFn(
   'PUT',
   async (params: { id: string; canvasState: unknown }) => {
     // Validate UUID format
-    const idSchema = z.string().uuid();
-    idSchema.parse(params.id);
+    const idSchema = z.string().uuid()
+    idSchema.parse(params.id)
 
     // Validate canvas state with Zod schema
-    const validated = canvasStateSchema.parse(params.canvasState);
+    const validated = canvasStateSchema.parse(params.canvasState)
 
     try {
-      const whiteboard = await updateWhiteboardCanvasState(
-        params.id,
-        validated
-      );
-      return whiteboard;
+      const whiteboard = await updateWhiteboardCanvasState(params.id, validated)
+      return whiteboard
     } catch (error) {
       throw new Error(
-        `Failed to update canvas state: ${error instanceof Error ? error.message : 'Unknown error'}`
-      );
+        `Failed to update canvas state: ${error instanceof Error ? error.message : 'Unknown error'}`,
+      )
     }
-  }
-);
+  },
+)
 
 /**
  * Update whiteboard text source
@@ -197,26 +195,23 @@ export const updateTextSource = createServerFn(
   'PUT',
   async (params: { id: string; textSource: string }) => {
     // Validate UUID format
-    const idSchema = z.string().uuid();
-    idSchema.parse(params.id);
+    const idSchema = z.string().uuid()
+    idSchema.parse(params.id)
 
     // Validate text source
-    const textSourceSchema = z.string();
-    const validated = textSourceSchema.parse(params.textSource);
+    const textSourceSchema = z.string()
+    const validated = textSourceSchema.parse(params.textSource)
 
     try {
-      const whiteboard = await updateWhiteboardTextSource(
-        params.id,
-        validated
-      );
-      return whiteboard;
+      const whiteboard = await updateWhiteboardTextSource(params.id, validated)
+      return whiteboard
     } catch (error) {
       throw new Error(
-        `Failed to update text source: ${error instanceof Error ? error.message : 'Unknown error'}`
-      );
+        `Failed to update text source: ${error instanceof Error ? error.message : 'Unknown error'}`,
+      )
     }
-  }
-);
+  },
+)
 
 /**
  * Delete a whiteboard by ID
@@ -227,16 +222,34 @@ export const deleteWhiteboardFn = createServerFn(
   'DELETE',
   async (whiteboardId: string) => {
     // Validate UUID format
-    const idSchema = z.string().uuid();
-    idSchema.parse(whiteboardId);
+    const idSchema = z.string().uuid()
+    idSchema.parse(whiteboardId)
 
     try {
-      const whiteboard = await deleteWhiteboard(whiteboardId);
-      return whiteboard;
+      const whiteboard = await deleteWhiteboard(whiteboardId)
+      return whiteboard
     } catch (error) {
       throw new Error(
-        `Failed to delete whiteboard: ${error instanceof Error ? error.message : 'Unknown error'}`
-      );
+        `Failed to delete whiteboard: ${error instanceof Error ? error.message : 'Unknown error'}`,
+      )
     }
-  }
-);
+  },
+)
+
+/**
+ * Get recent whiteboards (ordered by last updated)
+ * @param limit - Maximum number of whiteboards to return (default: 10)
+ */
+export const getRecentWhiteboards = createServerFn(
+  'GET',
+  async (limit: number = 10) => {
+    try {
+      const whiteboards = await findRecentWhiteboards(limit)
+      return whiteboards
+    } catch (error) {
+      throw new Error(
+        `Failed to fetch recent whiteboards: ${error instanceof Error ? error.message : 'Unknown error'}`,
+      )
+    }
+  },
+)

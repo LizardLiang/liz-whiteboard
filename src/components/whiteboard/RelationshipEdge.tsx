@@ -1,26 +1,47 @@
 // src/components/whiteboard/RelationshipEdge.tsx
 // Konva component for rendering relationships between tables with cardinality notation
 
-import { Group, Arrow, Text, Line, Circle } from 'react-konva';
-import type { Relationship, DiagramTable, Column, Cardinality } from '@prisma/client';
-import { getColumnPosition, getColumnPositionLeft } from './TableNode';
+import { Arrow, Circle, Group, Line, Text } from 'react-konva'
+import { getColumnPosition, getColumnPositionLeft } from './TableNode'
+import type {
+  Cardinality,
+  Column,
+  DiagramTable,
+  Relationship,
+} from '@prisma/client'
 
 /**
  * RelationshipEdge component props
  */
 export interface RelationshipEdgeProps {
   /** Relationship data */
-  relationship: Relationship;
+  relationship: Relationship
   /** Source table with columns */
-  sourceTable: DiagramTable & { columns: Column[] };
+  sourceTable: DiagramTable & { columns: Array<Column> }
   /** Target table with columns */
-  targetTable: DiagramTable & { columns: Column[] };
+  targetTable: DiagramTable & { columns: Array<Column> }
   /** Whether this relationship is selected */
-  isSelected?: boolean;
+  isSelected?: boolean
   /** Callback when relationship is clicked */
-  onClick?: (relationshipId: string) => void;
-  /** Theme (light or dark mode) */
-  theme?: 'light' | 'dark';
+  onClick?: (relationshipId: string) => void
+}
+
+/**
+ * Get CSS variable value from document root
+ * @param varName - CSS variable name (e.g., '--relationship-stroke')
+ * @param fallback - Fallback value if variable not found
+ * @returns Color value
+ */
+function getCSSVariable(varName: string, fallback: string): string {
+  if (typeof window === 'undefined') return fallback
+  try {
+    const root = document.documentElement
+    const value = getComputedStyle(root).getPropertyValue(varName).trim()
+    return value || fallback
+  } catch (error) {
+    console.error(`Failed to read CSS variable ${varName}:`, error)
+    return fallback
+  }
 }
 
 /**
@@ -35,19 +56,7 @@ const RELATIONSHIP_STYLE = {
   cardinalityOffsetX: 20,
   cardinalityOffsetY: -15,
   crowFootSize: 12,
-  light: {
-    stroke: '#525252', // Neutral 600 - subtle gray for lines
-    selectedStroke: '#22c55e', // Green 500 - matches selected border
-    text: '#a3a3a3', // Neutral 400 - muted text
-    selectedText: '#22c55e', // Green 500 - bright green for selected
-  },
-  dark: {
-    stroke: '#525252', // Neutral 600 - subtle gray for lines
-    selectedStroke: '#22c55e', // Green 500 - matches selected border
-    text: '#a3a3a3', // Neutral 400 - muted text
-    selectedText: '#22c55e', // Green 500 - bright green for selected
-  },
-};
+}
 
 /**
  * Calculate the angle between two points (in radians)
@@ -57,8 +66,13 @@ const RELATIONSHIP_STYLE = {
  * @param y2 - End Y
  * @returns Angle in radians
  */
-function calculateAngle(x1: number, y1: number, x2: number, y2: number): number {
-  return Math.atan2(y2 - y1, x2 - x1);
+function calculateAngle(
+  x1: number,
+  y1: number,
+  x2: number,
+  y2: number,
+): number {
+  return Math.atan2(y2 - y1, x2 - x1)
 }
 
 /**
@@ -73,10 +87,10 @@ function calculateCrowFootPoints(
   x: number,
   y: number,
   angle: number,
-  size: number
-): number[][] {
-  const perpAngle1 = angle + Math.PI / 6; // 30 degrees
-  const perpAngle2 = angle - Math.PI / 6;
+  size: number,
+): Array<Array<number>> {
+  const perpAngle1 = angle + Math.PI / 6 // 30 degrees
+  const perpAngle2 = angle - Math.PI / 6
 
   // Three prongs of crow's foot
   const prong1 = [
@@ -84,21 +98,16 @@ function calculateCrowFootPoints(
     y,
     x - size * Math.cos(perpAngle1),
     y - size * Math.sin(perpAngle1),
-  ];
-  const prong2 = [
-    x,
-    y,
-    x - size * Math.cos(angle),
-    y - size * Math.sin(angle),
-  ];
+  ]
+  const prong2 = [x, y, x - size * Math.cos(angle), y - size * Math.sin(angle)]
   const prong3 = [
     x,
     y,
     x - size * Math.cos(perpAngle2),
     y - size * Math.sin(perpAngle2),
-  ];
+  ]
 
-  return [prong1, prong2, prong3];
+  return [prong1, prong2, prong3]
 }
 
 /**
@@ -106,18 +115,21 @@ function calculateCrowFootPoints(
  * @param cardinality - Cardinality enum value
  * @returns Display text for cardinality
  */
-function getCardinalityText(cardinality: Cardinality): { source: string; target: string } {
+function getCardinalityText(cardinality: Cardinality): {
+  source: string
+  target: string
+} {
   switch (cardinality) {
     case 'ONE_TO_ONE':
-      return { source: '1', target: '1' };
+      return { source: '1', target: '1' }
     case 'ONE_TO_MANY':
-      return { source: '1', target: 'N' };
+      return { source: '1', target: 'N' }
     case 'MANY_TO_ONE':
-      return { source: 'N', target: '1' };
+      return { source: 'N', target: '1' }
     case 'MANY_TO_MANY':
-      return { source: 'N', target: 'N' };
+      return { source: 'N', target: 'N' }
     default:
-      return { source: '', target: '' };
+      return { source: '', target: '' }
   }
 }
 
@@ -156,64 +168,85 @@ export function RelationshipEdge({
   targetTable,
   isSelected = false,
   onClick,
-  theme = 'light',
 }: RelationshipEdgeProps) {
-  const colors = RELATIONSHIP_STYLE[theme];
+  // Read theme-aware colors from CSS variables
+  const relationshipStroke = getCSSVariable('--relationship-stroke', '#525252')
+  const relationshipSelectedStroke = getCSSVariable(
+    '--relationship-selected-stroke',
+    '#22c55e',
+  )
+  const relationshipText = getCSSVariable('--relationship-text', '#a3a3a3')
+  const relationshipSelectedText = getCSSVariable(
+    '--relationship-selected-text',
+    '#22c55e',
+  )
+  const relationshipCircleBg = getCSSVariable(
+    '--relationship-circle-bg',
+    '#1a1a1a',
+  )
 
   // Find column indices in their respective tables
   const sourceColumnIndex = sourceTable.columns.findIndex(
-    (col) => col.id === relationship.sourceColumnId
-  );
+    (col) => col.id === relationship.sourceColumnId,
+  )
   const targetColumnIndex = targetTable.columns.findIndex(
-    (col) => col.id === relationship.targetColumnId
-  );
+    (col) => col.id === relationship.targetColumnId,
+  )
 
   if (sourceColumnIndex === -1 || targetColumnIndex === -1) {
-    console.error('Column not found in table for relationship:', relationship.id);
-    return null;
+    console.error(
+      'Column not found in table for relationship:',
+      relationship.id,
+    )
+    return null
   }
 
   // Get precise column positions
-  const sourcePos = getColumnPosition(sourceTable, sourceColumnIndex);
-  const targetPos = getColumnPositionLeft(targetTable, targetColumnIndex);
+  const sourcePos = getColumnPosition(sourceTable, sourceColumnIndex)
+  const targetPos = getColumnPositionLeft(targetTable, targetColumnIndex)
 
   // Calculate arrow angle
-  const angle = calculateAngle(sourcePos.x, sourcePos.y, targetPos.x, targetPos.y);
+  const angle = calculateAngle(
+    sourcePos.x,
+    sourcePos.y,
+    targetPos.x,
+    targetPos.y,
+  )
 
   // Calculate midpoint for label
-  const midX = (sourcePos.x + targetPos.x) / 2;
-  const midY = (sourcePos.y + targetPos.y) / 2;
+  const midX = (sourcePos.x + targetPos.x) / 2
+  const midY = (sourcePos.y + targetPos.y) / 2
 
   // Get cardinality text
-  const cardinalityText = getCardinalityText(relationship.cardinality);
+  const cardinalityText = getCardinalityText(relationship.cardinality)
 
   // Determine if we need crow's foot at source or target
   const showSourceCrowFoot =
     relationship.cardinality === 'MANY_TO_ONE' ||
-    relationship.cardinality === 'MANY_TO_MANY';
+    relationship.cardinality === 'MANY_TO_MANY'
   const showTargetCrowFoot =
     relationship.cardinality === 'ONE_TO_MANY' ||
-    relationship.cardinality === 'MANY_TO_MANY';
+    relationship.cardinality === 'MANY_TO_MANY'
 
   /**
    * Handle relationship click
    */
   const handleClick = () => {
-    onClick?.(relationship.id);
-  };
+    onClick?.(relationship.id)
+  }
 
   return (
     <Group onClick={handleClick} onTap={handleClick}>
       {/* Main arrow line */}
       <Arrow
         points={[sourcePos.x, sourcePos.y, targetPos.x, targetPos.y]}
-        stroke={isSelected ? colors.selectedStroke : colors.stroke}
+        stroke={isSelected ? relationshipSelectedStroke : relationshipStroke}
         strokeWidth={
           isSelected
             ? RELATIONSHIP_STYLE.selectedStrokeWidth
             : RELATIONSHIP_STYLE.strokeWidth
         }
-        fill={isSelected ? colors.selectedStroke : colors.stroke}
+        fill={isSelected ? relationshipSelectedStroke : relationshipStroke}
         pointerLength={showTargetCrowFoot ? 0 : RELATIONSHIP_STYLE.arrowSize}
         pointerWidth={showTargetCrowFoot ? 0 : RELATIONSHIP_STYLE.arrowSize}
         // Make it easier to click
@@ -226,12 +259,14 @@ export function RelationshipEdge({
           sourcePos.x,
           sourcePos.y,
           angle + Math.PI, // Reverse angle for source end
-          RELATIONSHIP_STYLE.crowFootSize
+          RELATIONSHIP_STYLE.crowFootSize,
         ).map((points, index) => (
           <Line
             key={`source-crow-${index}`}
             points={points}
-            stroke={isSelected ? colors.selectedStroke : colors.stroke}
+            stroke={
+              isSelected ? relationshipSelectedStroke : relationshipStroke
+            }
             strokeWidth={RELATIONSHIP_STYLE.strokeWidth}
           />
         ))}
@@ -242,12 +277,14 @@ export function RelationshipEdge({
           targetPos.x,
           targetPos.y,
           angle,
-          RELATIONSHIP_STYLE.crowFootSize
+          RELATIONSHIP_STYLE.crowFootSize,
         ).map((points, index) => (
           <Line
             key={`target-crow-${index}`}
             points={points}
-            stroke={isSelected ? colors.selectedStroke : colors.stroke}
+            stroke={
+              isSelected ? relationshipSelectedStroke : relationshipStroke
+            }
             strokeWidth={RELATIONSHIP_STYLE.strokeWidth}
           />
         ))}
@@ -259,8 +296,10 @@ export function RelationshipEdge({
             x={sourcePos.x + RELATIONSHIP_STYLE.cardinalityOffsetX}
             y={sourcePos.y + RELATIONSHIP_STYLE.cardinalityOffsetY}
             radius={10}
-            fill={'#1a1a1a'}
-            stroke={isSelected ? colors.selectedStroke : colors.stroke}
+            fill={relationshipCircleBg}
+            stroke={
+              isSelected ? relationshipSelectedStroke : relationshipStroke
+            }
             strokeWidth={1}
           />
           <Text
@@ -268,7 +307,7 @@ export function RelationshipEdge({
             y={sourcePos.y + RELATIONSHIP_STYLE.cardinalityOffsetY - 6}
             text={cardinalityText.source}
             fontSize={RELATIONSHIP_STYLE.fontSize}
-            fill={isSelected ? colors.selectedText : colors.text}
+            fill={isSelected ? relationshipSelectedText : relationshipText}
             fontStyle="bold"
           />
         </Group>
@@ -281,8 +320,10 @@ export function RelationshipEdge({
             x={targetPos.x - RELATIONSHIP_STYLE.cardinalityOffsetX}
             y={targetPos.y + RELATIONSHIP_STYLE.cardinalityOffsetY}
             radius={10}
-            fill={'#1a1a1a'}
-            stroke={isSelected ? colors.selectedStroke : colors.stroke}
+            fill={relationshipCircleBg}
+            stroke={
+              isSelected ? relationshipSelectedStroke : relationshipStroke
+            }
             strokeWidth={1}
           />
           <Text
@@ -290,7 +331,7 @@ export function RelationshipEdge({
             y={targetPos.y + RELATIONSHIP_STYLE.cardinalityOffsetY - 6}
             text={cardinalityText.target}
             fontSize={RELATIONSHIP_STYLE.fontSize}
-            fill={isSelected ? colors.selectedText : colors.text}
+            fill={isSelected ? relationshipSelectedText : relationshipText}
             fontStyle="bold"
           />
         </Group>
@@ -303,24 +344,29 @@ export function RelationshipEdge({
             x={midX}
             y={midY + RELATIONSHIP_STYLE.labelOffsetY}
             radius={6}
-            fill={'#1a1a1a'}
-            stroke={isSelected ? colors.selectedStroke : colors.stroke}
+            fill={relationshipCircleBg}
+            stroke={
+              isSelected ? relationshipSelectedStroke : relationshipStroke
+            }
             strokeWidth={1}
           />
           <Text
-            x={midX - (relationship.label.length * RELATIONSHIP_STYLE.fontSize) / 3}
+            x={
+              midX -
+              (relationship.label.length * RELATIONSHIP_STYLE.fontSize) / 3
+            }
             y={midY + RELATIONSHIP_STYLE.labelOffsetY - 20}
             text={relationship.label}
             fontSize={RELATIONSHIP_STYLE.fontSize}
-            fill={isSelected ? colors.selectedText : colors.text}
+            fill={isSelected ? relationshipSelectedText : relationshipText}
             padding={4}
             // Background for readability
-            shadowColor={'#1a1a1a'}
+            shadowColor={relationshipCircleBg}
             shadowBlur={8}
             shadowOpacity={0.8}
           />
         </Group>
       )}
     </Group>
-  );
+  )
 }

@@ -1,14 +1,10 @@
 // src/data/project.ts
 // Data access layer for Project entity
 
-import { prisma } from '@/db';
-import {
-  createProjectSchema,
-  updateProjectSchema,
-  type CreateProject,
-  type UpdateProject,
-} from './schema';
-import type { Project } from '@prisma/client';
+import { createProjectSchema, updateProjectSchema } from './schema'
+import type { CreateProject, UpdateProject } from './schema'
+import type { Project } from '@prisma/client'
+import { prisma } from '@/db'
 
 /**
  * Create a new project
@@ -18,17 +14,17 @@ import type { Project } from '@prisma/client';
  */
 export async function createProject(data: CreateProject): Promise<Project> {
   // Validate input with Zod schema
-  const validated = createProjectSchema.parse(data);
+  const validated = createProjectSchema.parse(data)
 
   try {
     const project = await prisma.project.create({
       data: validated,
-    });
-    return project;
+    })
+    return project
   } catch (error) {
     throw new Error(
-      `Failed to create project: ${error instanceof Error ? error.message : 'Unknown error'}`
-    );
+      `Failed to create project: ${error instanceof Error ? error.message : 'Unknown error'}`,
+    )
   }
 }
 
@@ -36,16 +32,16 @@ export async function createProject(data: CreateProject): Promise<Project> {
  * Find all projects
  * @returns Array of all projects
  */
-export async function findAllProjects(): Promise<Project[]> {
+export async function findAllProjects(): Promise<Array<Project>> {
   try {
     const projects = await prisma.project.findMany({
       orderBy: { createdAt: 'desc' },
-    });
-    return projects;
+    })
+    return projects
   } catch (error) {
     throw new Error(
-      `Failed to fetch projects: ${error instanceof Error ? error.message : 'Unknown error'}`
-    );
+      `Failed to fetch projects: ${error instanceof Error ? error.message : 'Unknown error'}`,
+    )
   }
 }
 
@@ -57,13 +53,13 @@ export async function findAllProjectsWithTree(): Promise<
   Array<
     Project & {
       folders: Array<{
-        id: string;
-        name: string;
-        parentFolderId: string | null;
-        childFolders: Array<{ id: string; name: string }>;
-        whiteboards: Array<{ id: string; name: string }>;
-      }>;
-      whiteboards: Array<{ id: string; name: string }>;
+        id: string
+        name: string
+        parentFolderId: string | null
+        childFolders: Array<{ id: string; name: string }>
+        whiteboards: Array<{ id: string; name: string }>
+      }>
+      whiteboards: Array<{ id: string; name: string }>
     }
   >
 > {
@@ -79,12 +75,12 @@ export async function findAllProjectsWithTree(): Promise<
         whiteboards: { select: { id: true, name: true } },
       },
       orderBy: { createdAt: 'desc' },
-    });
-    return projects;
+    })
+    return projects
   } catch (error) {
     throw new Error(
-      `Failed to fetch project tree: ${error instanceof Error ? error.message : 'Unknown error'}`
-    );
+      `Failed to fetch project tree: ${error instanceof Error ? error.message : 'Unknown error'}`,
+    )
   }
 }
 
@@ -97,12 +93,12 @@ export async function findProjectById(id: string): Promise<Project | null> {
   try {
     const project = await prisma.project.findUnique({
       where: { id },
-    });
-    return project;
+    })
+    return project
   } catch (error) {
     throw new Error(
-      `Failed to fetch project: ${error instanceof Error ? error.message : 'Unknown error'}`
-    );
+      `Failed to fetch project: ${error instanceof Error ? error.message : 'Unknown error'}`,
+    )
   }
 }
 
@@ -115,21 +111,21 @@ export async function findProjectById(id: string): Promise<Project | null> {
  */
 export async function updateProject(
   id: string,
-  data: UpdateProject
+  data: UpdateProject,
 ): Promise<Project> {
   // Validate input with Zod schema
-  const validated = updateProjectSchema.parse(data);
+  const validated = updateProjectSchema.parse(data)
 
   try {
     const project = await prisma.project.update({
       where: { id },
       data: validated,
-    });
-    return project;
+    })
+    return project
   } catch (error) {
     throw new Error(
-      `Failed to update project: ${error instanceof Error ? error.message : 'Unknown error'}`
-    );
+      `Failed to update project: ${error instanceof Error ? error.message : 'Unknown error'}`,
+    )
   }
 }
 
@@ -143,11 +139,11 @@ export async function deleteProject(id: string): Promise<Project> {
   try {
     const project = await prisma.project.delete({
       where: { id },
-    });
-    return project;
+    })
+    return project
   } catch (error) {
     throw new Error(
-      `Failed to delete project: ${error instanceof Error ? error.message : 'Unknown error'}`
-    );
+      `Failed to delete project: ${error instanceof Error ? error.message : 'Unknown error'}`,
+    )
   }
 }

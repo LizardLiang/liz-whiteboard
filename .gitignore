@@ -1,14 +1,54 @@
+# Dependencies
 node_modules
-.DS_Store
+
+# Build outputs
 dist
 dist-ssr
-*.local
-count.txt
-.env
+build
+.output
+.vinxi
 .nitro
 .tanstack
 .wrangler
-.output
-.vinxi
+
+# Environment variables
+.env
+.env.*
+!.env.example
+
+# Logs
+*.log
+npm-debug.log*
+pnpm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+
+# Prisma
+prisma/migrations/
+
+# Testing
+coverage
+*.lcov
+
+# OS files
+.DS_Store
+Thumbs.db
+
+# Editor directories
+.vscode
+.idea
+*.swp
+*.swo
+*~
+
+# Temporary files
+*.tmp
+*.local
+count.txt
 todos.json
 .mcp.json
+
+# TanStack Start cache
+.tanstack
+.claude
+.specify

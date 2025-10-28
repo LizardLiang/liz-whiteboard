@@ -52,6 +52,25 @@ code {
   --sidebar-accent-foreground: oklch(0.21 0.006 285.885);
   --sidebar-border: oklch(0.92 0.004 286.32);
   --sidebar-ring: oklch(0.871 0.006 286.286);
+
+  /* Canvas-specific colors for light mode */
+  --canvas-bg: #ffffff;
+  --canvas-grid: #e5e7eb;
+  --canvas-zoom-indicator-bg: #f3f4f6;
+  --canvas-zoom-indicator-text: #6b7280;
+  --canvas-zoom-indicator-border: #d1d5db;
+  --table-fill: #ffffff;
+  --table-stroke: #1f2937;
+  --table-header-bg: #f3f4f6;
+  --table-header-text: #374151;
+  --table-body-text: #111827;
+  --table-selected-border: #22c55e;
+  --table-shadow: rgba(0, 0, 0, 0.1);
+  --relationship-stroke: #6b7280;
+  --relationship-selected-stroke: #22c55e;
+  --relationship-text: #6b7280;
+  --relationship-selected-text: #22c55e;
+  --relationship-circle-bg: #ffffff;
 }
 
 .dark {
@@ -87,6 +106,25 @@ code {
   --sidebar-accent-foreground: oklch(0.985 0 0);
   --sidebar-border: oklch(0.274 0.006 286.033);
   --sidebar-ring: oklch(0.442 0.017 285.786);
+
+  /* Canvas-specific colors for dark mode */
+  --canvas-bg: #0a0a0a;
+  --canvas-grid: #262626;
+  --canvas-zoom-indicator-bg: #1a1a1a;
+  --canvas-zoom-indicator-text: #a3a3a3;
+  --canvas-zoom-indicator-border: #404040;
+  --table-fill: #262626;
+  --table-stroke: #404040;
+  --table-header-bg: #1a1a1a;
+  --table-header-text: #9ca3af;
+  --table-body-text: #d1d5db;
+  --table-selected-border: #22c55e;
+  --table-shadow: rgba(0, 0, 0, 0.6);
+  --relationship-stroke: #525252;
+  --relationship-selected-stroke: #22c55e;
+  --relationship-text: #a3a3a3;
+  --relationship-selected-text: #22c55e;
+  --relationship-circle-bg: #1a1a1a;
 }
 
 @theme inline {

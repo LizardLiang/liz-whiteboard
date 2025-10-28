@@ -1,22 +1,22 @@
 // src/routes/api/collaboration.ts
 // Socket.IO server integration for real-time collaboration
 
-import { Server as SocketIOServer } from 'socket.io';
-import type { Server as HTTPServer } from 'http';
+import { Server as SocketIOServer } from 'socket.io'
+import type { Server as HTTPServer } from 'node:http'
+import type { CursorPosition } from '@/data/schema'
 import {
   createCollaborationSession,
-  findActiveCollaborators,
   deleteCollaborationSession,
-  updateSessionActivity,
+  findActiveCollaborators,
   updateCollaborationSession,
-} from '@/data/collaboration';
-import type { CursorPosition } from '@/data/schema';
+  updateSessionActivity,
+} from '@/data/collaboration'
 
 /**
  * Socket.IO server instance
  * Initialized on first HTTP server creation
  */
-let io: SocketIOServer | null = null;
+let io: SocketIOServer | null = null
 
 /**
  * Initialize Socket.IO server with HTTP server
@@ -25,7 +25,7 @@ let io: SocketIOServer | null = null;
  */
 export function initializeSocketIO(httpServer: HTTPServer): SocketIOServer {
   if (io) {
-    return io;
+    return io
   }
 
   io = new SocketIOServer(httpServer, {
@@ -35,26 +35,29 @@ export function initializeSocketIO(httpServer: HTTPServer): SocketIOServer {
       credentials: true,
     },
     transports: ['websocket', 'polling'],
-  });
+  })
 
   // Setup namespace pattern for whiteboards
-  setupWhiteboardNamespace(io);
+  setupWhiteboardNamespace(io)
 
   // Cleanup stale sessions every 5 minutes
-  setInterval(async () => {
-    const { deleteStaleSession } = await import('~/data/collaboration');
-    try {
-      const deletedCount = await deleteStaleSession();
-      if (deletedCount > 0) {
-        console.log(`Cleaned up ${deletedCount} stale collaboration sessions`);
+  setInterval(
+    async () => {
+      const { deleteStaleSession } = await import('~/data/collaboration')
+      try {
+        const deletedCount = await deleteStaleSession()
+        if (deletedCount > 0) {
+          console.log(`Cleaned up ${deletedCount} stale collaboration sessions`)
+        }
+      } catch (error) {
+        console.error('Failed to cleanup stale sessions:', error)
       }
-    } catch (error) {
-      console.error('Failed to cleanup stale sessions:', error);
-    }
-  }, 5 * 60 * 1000);
+    },
+    5 * 60 * 1000,
+  )
 
-  console.log('Socket.IO server initialized');
-  return io;
+  console.log('Socket.IO server initialized')
+  return io
 }
 
 /**
@@ -62,7 +65,7 @@ export function initializeSocketIO(httpServer: HTTPServer): SocketIOServer {
  * @returns Socket.IO server instance or null if not initialized
  */
 export function getSocketIO(): SocketIOServer | null {
-  return io;
+  return io
 }
 
 /**
@@ -73,20 +76,20 @@ function setupWhiteboardNamespace(io: SocketIOServer): void {
   // Dynamic namespace for whiteboards
   io.of(/^\/whiteboard\/[\w-]+$/).on('connection', async (socket) => {
     // Extract whiteboard ID from namespace
-    const namespace = socket.nsp.name;
-    const whiteboardId = namespace.replace('/whiteboard/', '');
+    const namespace = socket.nsp.name
+    const whiteboardId = namespace.replace('/whiteboard/', '')
 
     // Get authentication from handshake
-    const { userId } = socket.handshake.auth;
+    const { userId } = socket.handshake.auth
 
     if (!userId) {
-      socket.disconnect(true);
-      return;
+      socket.disconnect(true)
+      return
     }
 
     console.log(
-      `User ${userId} connected to whiteboard ${whiteboardId} (socket: ${socket.id})`
-    );
+      `User ${userId} connected to whiteboard ${whiteboardId} (socket: ${socket.id})`,
+    )
 
     try {
       // Create collaboration session
@@ -94,10 +97,10 @@ function setupWhiteboardNamespace(io: SocketIOServer): void {
         whiteboardId,
         userId,
         socketId: socket.id,
-      });
+      })
 
       // Get active collaborators
-      const activeUsers = await findActiveCollaborators(whiteboardId);
+      const activeUsers = await findActiveCollaborators(whiteboardId)
 
       // Send connection acknowledgment with active users
       socket.emit('connected', {
@@ -109,40 +112,40 @@ function setupWhiteboardNamespace(io: SocketIOServer): void {
             cursor: s.cursor as CursorPosition | null,
             lastActivityAt: s.lastActivityAt.toISOString(),
           })),
-      });
+      })
 
       // Notify other users of new connection
       socket.broadcast.emit('user:connected', {
         userId,
         sessionId: session.id,
-      });
+      })
 
       // Setup event handlers
-      setupCollaborationEventHandlers(socket, whiteboardId, userId);
+      setupCollaborationEventHandlers(socket, whiteboardId, userId)
 
       // Handle disconnection
       socket.on('disconnect', async () => {
         console.log(
-          `User ${userId} disconnected from whiteboard ${whiteboardId}`
-        );
+          `User ${userId} disconnected from whiteboard ${whiteboardId}`,
+        )
 
         try {
-          await deleteCollaborationSession(socket.id);
-          socket.broadcast.emit('user:disconnected', { userId });
+          await deleteCollaborationSession(socket.id)
+          socket.broadcast.emit('user:disconnected', { userId })
         } catch (error) {
-          console.error('Failed to cleanup session on disconnect:', error);
+          console.error('Failed to cleanup session on disconnect:', error)
         }
-      });
+      })
     } catch (error) {
-      console.error('Failed to setup collaboration session:', error);
+      console.error('Failed to setup collaboration session:', error)
       socket.emit('error', {
         event: 'connection',
         error: 'SETUP_FAILED',
         message: 'Failed to establish collaboration session',
-      });
-      socket.disconnect(true);
+      })
+      socket.disconnect(true)
     }
-  });
+  })
 }
 
 /**
@@ -151,69 +154,63 @@ function setupWhiteboardNamespace(io: SocketIOServer): void {
 function setupCollaborationEventHandlers(
   socket: any,
   whiteboardId: string,
-  userId: string
+  userId: string,
 ): void {
   // Cursor update (throttled by client to 60Hz)
-  socket.on(
-    'cursor:update',
-    async (data: { x: number; y: number }) => {
-      try {
-        // Update cursor position in session
-        await updateCollaborationSession(socket.id, {
-          cursor: { x: data.x, y: data.y },
-        });
+  socket.on('cursor:update', async (data: { x: number; y: number }) => {
+    try {
+      // Update cursor position in session
+      await updateCollaborationSession(socket.id, {
+        cursor: { x: data.x, y: data.y },
+      })
 
-        // Broadcast to other users
-        socket.broadcast.emit('cursor:moved', {
-          userId,
-          x: data.x,
-          y: data.y,
-        });
-      } catch (error) {
-        console.error('Failed to update cursor:', error);
-      }
+      // Broadcast to other users
+      socket.broadcast.emit('cursor:moved', {
+        userId,
+        x: data.x,
+        y: data.y,
+      })
+    } catch (error) {
+      console.error('Failed to update cursor:', error)
     }
-  );
+  })
 
   // Activity heartbeat
-  socket.on(
-    'activity:heartbeat',
-    async (data: { action: string }) => {
-      try {
-        await updateSessionActivity(socket.id);
-      } catch (error) {
-        console.error('Failed to update activity:', error);
-      }
+  socket.on('activity:heartbeat', async (data: { action: string }) => {
+    try {
+      await updateSessionActivity(socket.id)
+    } catch (error) {
+      console.error('Failed to update activity:', error)
     }
-  );
+  })
 
   // Sync request (when client reconnects and needs full state)
   socket.on('sync:request', async () => {
     try {
       const { findWhiteboardByIdWithDiagram } = await import(
         '~/data/whiteboard'
-      );
-      const whiteboard = await findWhiteboardByIdWithDiagram(whiteboardId);
+      )
+      const whiteboard = await findWhiteboardByIdWithDiagram(whiteboardId)
 
       if (!whiteboard) {
         socket.emit('error', {
           event: 'sync:request',
           error: 'NOT_FOUND',
           message: 'Whiteboard not found',
-        });
-        return;
+        })
+        return
       }
 
-      socket.emit('sync:data', { whiteboard });
+      socket.emit('sync:data', { whiteboard })
     } catch (error) {
-      console.error('Failed to sync whiteboard data:', error);
+      console.error('Failed to sync whiteboard data:', error)
       socket.emit('error', {
         event: 'sync:request',
         error: 'SYNC_FAILED',
         message: 'Failed to sync whiteboard data',
-      });
+      })
     }
-  });
+  })
 
   // ========================================================================
   // Table mutation events
@@ -222,122 +219,136 @@ function setupCollaborationEventHandlers(
   // Table creation
   socket.on('table:create', async (data: any) => {
     try {
-      const { createDiagramTable } = await import('~/data/diagram-table');
-      const { createTableSchema } = await import('~/data/schema');
+      const { createDiagramTable } = await import('~/data/diagram-table')
+      const { createTableSchema } = await import('~/data/schema')
 
       // Validate input
       const validated = createTableSchema.parse({
         ...data,
         whiteboardId,
-      });
+      })
 
       // Create table in database
-      const table = await createDiagramTable(validated);
+      const table = await createDiagramTable(validated)
 
       // Broadcast to other users
       socket.broadcast.emit('table:created', {
         ...table,
         createdBy: userId,
-      });
+      })
 
       // Update session activity
-      await updateSessionActivity(socket.id);
+      await updateSessionActivity(socket.id)
     } catch (error) {
-      console.error('Failed to create table:', error);
+      console.error('Failed to create table:', error)
       socket.emit('error', {
         event: 'table:create',
         error: 'VALIDATION_ERROR',
-        message: error instanceof Error ? error.message : 'Failed to create table',
-      });
+        message:
+          error instanceof Error ? error.message : 'Failed to create table',
+      })
     }
-  });
+  })
 
   // Table position update (dragging)
-  socket.on('table:move', async (data: { tableId: string; positionX: number; positionY: number }) => {
-    try {
-      const { updateDiagramTablePosition } = await import('~/data/diagram-table');
+  socket.on(
+    'table:move',
+    async (data: { tableId: string; positionX: number; positionY: number }) => {
+      try {
+        const { updateDiagramTablePosition } = await import(
+          '~/data/diagram-table'
+        )
 
-      // Update position in database
-      await updateDiagramTablePosition(data.tableId, data.positionX, data.positionY);
+        // Update position in database
+        await updateDiagramTablePosition(
+          data.tableId,
+          data.positionX,
+          data.positionY,
+        )
 
-      // Broadcast to other users
-      socket.broadcast.emit('table:moved', {
-        tableId: data.tableId,
-        positionX: data.positionX,
-        positionY: data.positionY,
-        updatedBy: userId,
-      });
+        // Broadcast to other users
+        socket.broadcast.emit('table:moved', {
+          tableId: data.tableId,
+          positionX: data.positionX,
+          positionY: data.positionY,
+          updatedBy: userId,
+        })
 
-      // Update session activity
-      await updateSessionActivity(socket.id);
-    } catch (error) {
-      console.error('Failed to move table:', error);
-      socket.emit('error', {
-        event: 'table:move',
-        error: 'UPDATE_FAILED',
-        message: 'Failed to update table position',
-      });
-    }
-  });
+        // Update session activity
+        await updateSessionActivity(socket.id)
+      } catch (error) {
+        console.error('Failed to move table:', error)
+        socket.emit('error', {
+          event: 'table:move',
+          error: 'UPDATE_FAILED',
+          message: 'Failed to update table position',
+        })
+      }
+    },
+  )
 
   // Table update (name, description, etc.)
-  socket.on('table:update', async (data: { tableId: string; [key: string]: any }) => {
-    try {
-      const { updateDiagramTable } = await import('~/data/diagram-table');
-      const { updateTableSchema } = await import('~/data/schema');
+  socket.on(
+    'table:update',
+    async (data: { tableId: string; [key: string]: any }) => {
+      try {
+        const { updateDiagramTable } = await import('~/data/diagram-table')
+        const { updateTableSchema } = await import('~/data/schema')
 
-      const { tableId, ...updateData } = data;
+        const { tableId, ...updateData } = data
 
-      // Validate input
-      const validated = updateTableSchema.parse(updateData);
+        // Validate input
+        const validated = updateTableSchema.parse(updateData)
 
-      // Update table in database
-      const table = await updateDiagramTable(tableId, validated);
+        // Update table in database
+        const table = await updateDiagramTable(tableId, validated)
 
-      // Broadcast to other users
-      socket.broadcast.emit('table:updated', {
-        tableId,
-        ...validated,
-        updatedBy: userId,
-      });
+        // Broadcast to other users
+        socket.broadcast.emit('table:updated', {
+          tableId,
+          ...validated,
+          updatedBy: userId,
+        })
 
-      // Update session activity
-      await updateSessionActivity(socket.id);
-    } catch (error) {
-      console.error('Failed to update table:', error);
-      socket.emit('error', {
-        event: 'table:update',
-        error: 'UPDATE_FAILED',
-        message: error instanceof Error ? error.message : 'Failed to update table',
-      });
-    }
-  });
+        // Update session activity
+        await updateSessionActivity(socket.id)
+      } catch (error) {
+        console.error('Failed to update table:', error)
+        socket.emit('error', {
+          event: 'table:update',
+          error: 'UPDATE_FAILED',
+          message:
+            error instanceof Error ? error.message : 'Failed to update table',
+        })
+      }
+    },
+  )
 
   // Table deletion
   socket.on('table:delete', async (data: { tableId: string }) => {
     try {
-      const { deleteDiagramTable } = await import('~/data/diagram-table');
+      const { deleteDiagramTable } = await import('~/data/diagram-table')
 
       // Delete table from database (cascade deletes columns and relationships)
-      await deleteDiagramTable(data.tableId);
+      await deleteDiagramTable(data.tableId)
 
       // Broadcast to other users
       socket.broadcast.emit('table:deleted', {
         tableId: data.tableId,
         deletedBy: userId,
-      });
+      })
 
       // Update session activity
-      await updateSessionActivity(socket.id);
+      await updateSessionActivity(socket.id)
     } catch (error) {
-      console.error('Failed to delete table:', error);
+      console.error('Failed to delete table:', error)
       socket.emit('error', {
         event: 'table:delete',
         error: 'DELETE_FAILED',
         message: 'Failed to delete table',
-      });
+      })
     }
-  });
+  })
 
   // ========================================================================
   // Column mutation events
@@ -346,99 +357,105 @@ function setupCollaborationEventHandlers(
   // Column creation
   socket.on('column:create', async (data: any) => {
     try {
-      const { createColumn } = await import('~/data/column');
-      const { createColumnSchema } = await import('~/data/schema');
+      const { createColumn } = await import('~/data/column')
+      const { createColumnSchema } = await import('~/data/schema')
 
       // Validate input
-      const validated = createColumnSchema.parse(data);
+      const validated = createColumnSchema.parse(data)
 
       // Create column in database
-      const column = await createColumn(validated);
+      const column = await createColumn(validated)
 
       // Broadcast to other users
       socket.broadcast.emit('column:created', {
         ...column,
         createdBy: userId,
-      });
+      })
 
       // Update session activity
-      await updateSessionActivity(socket.id);
+      await updateSessionActivity(socket.id)
     } catch (error) {
-      console.error('Failed to create column:', error);
+      console.error('Failed to create column:', error)
       socket.emit('error', {
         event: 'column:create',
         error: 'VALIDATION_ERROR',
-        message: error instanceof Error ? error.message : 'Failed to create column',
-      });
+        message:
+          error instanceof Error ? error.message : 'Failed to create column',
+      })
     }
-  });
+  })
 
   // Column update
-  socket.on('column:update', async (data: { columnId: string; [key: string]: any }) => {
-    try {
-      const { updateColumn } = await import('~/data/column');
-      const { updateColumnSchema } = await import('~/data/schema');
+  socket.on(
+    'column:update',
+    async (data: { columnId: string; [key: string]: any }) => {
+      try {
+        const { updateColumn } = await import('~/data/column')
+        const { updateColumnSchema } = await import('~/data/schema')
 
-      const { columnId, ...updateData } = data;
+        const { columnId, ...updateData } = data
 
-      // Validate input
-      const validated = updateColumnSchema.parse(updateData);
+        // Validate input
+        const validated = updateColumnSchema.parse(updateData)
 
-      // Update column in database
-      const column = await updateColumn(columnId, validated);
+        // Update column in database
+        const column = await updateColumn(columnId, validated)
 
-      // Broadcast to other users
-      socket.broadcast.emit('column:updated', {
-        columnId,
-        tableId: column.tableId,
-        ...validated,
-        updatedBy: userId,
-      });
+        // Broadcast to other users
+        socket.broadcast.emit('column:updated', {
+          columnId,
+          tableId: column.tableId,
+          ...validated,
+          updatedBy: userId,
+        })
 
-      // Update session activity
-      await updateSessionActivity(socket.id);
-    } catch (error) {
-      console.error('Failed to update column:', error);
-      socket.emit('error', {
-        event: 'column:update',
-        error: 'UPDATE_FAILED',
-        message: error instanceof Error ? error.message : 'Failed to update column',
-      });
-    }
-  });
+        // Update session activity
+        await updateSessionActivity(socket.id)
+      } catch (error) {
+        console.error('Failed to update column:', error)
+        socket.emit('error', {
+          event: 'column:update',
+          error: 'UPDATE_FAILED',
+          message:
+            error instanceof Error ? error.message : 'Failed to update column',
+        })
+      }
+    },
+  )
 
   // Column deletion
   socket.on('column:delete', async (data: { columnId: string }) => {
     try {
-      const { deleteColumn, findColumnById } = await import('~/data/column');
+      const { deleteColumn, findColumnById } = await import('~/data/column')
 
       // Get column before deletion to know tableId
-      const column = await findColumnById(data.columnId);
+      const column = await findColumnById(data.columnId)
       if (!column) {
-        throw new Error('Column not found');
+        throw new Error('Column not found')
       }
 
       // Delete column from database (cascade deletes relationships)
-      await deleteColumn(data.columnId);
+      await deleteColumn(data.columnId)
 
       // Broadcast to other users
       socket.broadcast.emit('column:deleted', {
         columnId: data.columnId,
         tableId: column.tableId,
         deletedBy: userId,
-      });
+      })
 
       // Update session activity
-      await updateSessionActivity(socket.id);
+      await updateSessionActivity(socket.id)
     } catch (error) {
-      console.error('Failed to delete column:', error);
+      console.error('Failed to delete column:', error)
       socket.emit('error', {
         event: 'column:delete',
         error: 'DELETE_FAILED',
-        message: error instanceof Error ? error.message : 'Failed to delete column',
-      });
+        message:
+          error instanceof Error ? error.message : 'Failed to delete column',
+      })
     }
-  });
+  })
 
   // ========================================================================
   // Relationship mutation events
@@ -447,94 +464,103 @@ function setupCollaborationEventHandlers(
   // Relationship creation
   socket.on('relationship:create', async (data: any) => {
     try {
-      const { createRelationship } = await import('~/data/relationship');
-      const { createRelationshipSchema } = await import('~/data/schema');
+      const { createRelationship } = await import('~/data/relationship')
+      const { createRelationshipSchema } = await import('~/data/schema')
 
       // Validate input
       const validated = createRelationshipSchema.parse({
         ...data,
         whiteboardId,
-      });
+      })
 
       // Create relationship in database
-      const relationship = await createRelationship(validated);
+      const relationship = await createRelationship(validated)
 
       // Broadcast to other users
       socket.broadcast.emit('relationship:created', {
         ...relationship,
         createdBy: userId,
-      });
+      })
 
       // Update session activity
-      await updateSessionActivity(socket.id);
+      await updateSessionActivity(socket.id)
     } catch (error) {
-      console.error('Failed to create relationship:', error);
+      console.error('Failed to create relationship:', error)
       socket.emit('error', {
         event: 'relationship:create',
         error: 'VALIDATION_ERROR',
-        message: error instanceof Error ? error.message : 'Failed to create relationship',
-      });
+        message:
+          error instanceof Error
+            ? error.message
+            : 'Failed to create relationship',
+      })
     }
-  });
+  })
 
   // Relationship update
-  socket.on('relationship:update', async (data: { relationshipId: string; [key: string]: any }) => {
-    try {
-      const { updateRelationship } = await import('~/data/relationship');
-      const { updateRelationshipSchema } = await import('~/data/schema');
+  socket.on(
+    'relationship:update',
+    async (data: { relationshipId: string; [key: string]: any }) => {
+      try {
+        const { updateRelationship } = await import('~/data/relationship')
+        const { updateRelationshipSchema } = await import('~/data/schema')
 
-      const { relationshipId, ...updateData } = data;
+        const { relationshipId, ...updateData } = data
 
-      // Validate input
-      const validated = updateRelationshipSchema.parse(updateData);
+        // Validate input
+        const validated = updateRelationshipSchema.parse(updateData)
 
-      // Update relationship in database
-      await updateRelationship(relationshipId, validated);
+        // Update relationship in database
+        await updateRelationship(relationshipId, validated)
 
-      // Broadcast to other users
-      socket.broadcast.emit('relationship:updated', {
-        relationshipId,
-        ...validated,
-        updatedBy: userId,
-      });
+        // Broadcast to other users
+        socket.broadcast.emit('relationship:updated', {
+          relationshipId,
+          ...validated,
+          updatedBy: userId,
+        })
 
-      // Update session activity
-      await updateSessionActivity(socket.id);
-    } catch (error) {
-      console.error('Failed to update relationship:', error);
-      socket.emit('error', {
-        event: 'relationship:update',
-        error: 'UPDATE_FAILED',
-        message: error instanceof Error ? error.message : 'Failed to update relationship',
-      });
-    }
-  });
+        // Update session activity
+        await updateSessionActivity(socket.id)
+      } catch (error) {
+        console.error('Failed to update relationship:', error)
+        socket.emit('error', {
+          event: 'relationship:update',
+          error: 'UPDATE_FAILED',
+          message:
+            error instanceof Error
+              ? error.message
+              : 'Failed to update relationship',
+        })
+      }
+    },
+  )
 
   // Relationship deletion
   socket.on('relationship:delete', async (data: { relationshipId: string }) => {
     try {
-      const { deleteRelationship } = await import('~/data/relationship');
+      const { deleteRelationship } = await import('~/data/relationship')
 
       // Delete relationship from database
-      await deleteRelationship(data.relationshipId);
+      await deleteRelationship(data.relationshipId)
 
       // Broadcast to other users
       socket.broadcast.emit('relationship:deleted', {
         relationshipId: data.relationshipId,
         deletedBy: userId,
-      });
+      })
 
       // Update session activity
-      await updateSessionActivity(socket.id);
+      await updateSessionActivity(socket.id)
     } catch (error) {
-      console.error('Failed to delete relationship:', error);
+      console.error('Failed to delete relationship:', error)
       socket.emit('error', {
         event: 'relationship:delete',
         error: 'DELETE_FAILED',
         message: 'Failed to delete relationship',
-      });
+      })
     }
-  });
+  })
 }
 
 /**
@@ -546,15 +572,15 @@ function setupCollaborationEventHandlers(
 export function emitToWhiteboard(
   whiteboardId: string,
   event: string,
-  data: any
+  data: any,
 ): void {
   if (!io) {
-    console.error('Socket.IO server not initialized');
-    return;
+    console.error('Socket.IO server not initialized')
+    return
   }
 
-  const namespace = io.of(`/whiteboard/${whiteboardId}`);
-  namespace.emit(event, data);
+  const namespace = io.of(`/whiteboard/${whiteboardId}`)
+  namespace.emit(event, data)
 }
 
 /**
@@ -568,17 +594,17 @@ export function broadcastToWhiteboard(
   whiteboardId: string,
   socketId: string,
   event: string,
-  data: any
+  data: any,
 ): void {
   if (!io) {
-    console.error('Socket.IO server not initialized');
-    return;
+    console.error('Socket.IO server not initialized')
+    return
   }
 
-  const namespace = io.of(`/whiteboard/${whiteboardId}`);
+  const namespace = io.of(`/whiteboard/${whiteboardId}`)
   namespace.sockets.forEach((socket) => {
     if (socket.id !== socketId) {
-      socket.emit(event, data);
+      socket.emit(event, data)
     }
-  });
+  })
 }

@@ -1,14 +1,10 @@
 // src/data/collaboration.ts
 // Data access layer for CollaborationSession entity
 
-import { prisma } from '@/db';
-import {
-  createSessionSchema,
-  updateSessionSchema,
-  type CreateSession,
-  type UpdateSession,
-} from './schema';
-import type { CollaborationSession } from '@prisma/client';
+import { createSessionSchema, updateSessionSchema } from './schema'
+import type { CreateSession, UpdateSession } from './schema'
+import type { CollaborationSession } from '@prisma/client'
+import { prisma } from '@/db'
 
 /**
  * Create a new collaboration session
@@ -17,20 +13,20 @@ import type { CollaborationSession } from '@prisma/client';
  * @throws Error if validation fails or database operation fails
  */
 export async function createCollaborationSession(
-  data: CreateSession
+  data: CreateSession,
 ): Promise<CollaborationSession> {
   // Validate input with Zod schema
-  const validated = createSessionSchema.parse(data);
+  const validated = createSessionSchema.parse(data)
 
   try {
     const session = await prisma.collaborationSession.create({
       data: validated,
-    });
-    return session;
+    })
+    return session
   } catch (error) {
     throw new Error(
-      `Failed to create collaboration session: ${error instanceof Error ? error.message : 'Unknown error'}`
-    );
+      `Failed to create collaboration session: ${error instanceof Error ? error.message : 'Unknown error'}`,
+    )
   }
 }
 
@@ -41,9 +37,9 @@ export async function createCollaborationSession(
  * @returns Array of active sessions
  */
 export async function findActiveCollaborators(
-  whiteboardId: string
-): Promise<CollaborationSession[]> {
-  const fiveMinutesAgo = new Date(Date.now() - 5 * 60 * 1000);
+  whiteboardId: string,
+): Promise<Array<CollaborationSession>> {
+  const fiveMinutesAgo = new Date(Date.now() - 5 * 60 * 1000)
 
   try {
     const sessions = await prisma.collaborationSession.findMany({
@@ -52,12 +48,12 @@ export async function findActiveCollaborators(
         lastActivityAt: { gte: fiveMinutesAgo },
       },
       orderBy: { lastActivityAt: 'desc' },
-    });
-    return sessions;
+    })
+    return sessions
   } catch (error) {
     throw new Error(
-      `Failed to fetch active collaborators: ${error instanceof Error ? error.message : 'Unknown error'}`
-    );
+      `Failed to fetch active collaborators: ${error instanceof Error ? error.message : 'Unknown error'}`,
+    )
   }
 }
 
@@ -67,17 +63,17 @@ export async function findActiveCollaborators(
  * @returns Session or null if not found
  */
 export async function findSessionBySocketId(
-  socketId: string
+  socketId: string,
 ): Promise<CollaborationSession | null> {
   try {
     const session = await prisma.collaborationSession.findUnique({
       where: { socketId },
-    });
-    return session;
+    })
+    return session
   } catch (error) {
     throw new Error(
-      `Failed to fetch session: ${error instanceof Error ? error.message : 'Unknown error'}`
-    );
+      `Failed to fetch session: ${error instanceof Error ? error.message : 'Unknown error'}`,
+    )
   }
 }
 
@@ -90,21 +86,21 @@ export async function findSessionBySocketId(
  */
 export async function updateCollaborationSession(
   socketId: string,
-  data: UpdateSession
+  data: UpdateSession,
 ): Promise<CollaborationSession> {
   // Validate input with Zod schema
-  const validated = updateSessionSchema.parse(data);
+  const validated = updateSessionSchema.parse(data)
 
   try {
     const session = await prisma.collaborationSession.update({
       where: { socketId },
       data: validated,
-    });
-    return session;
+    })
+    return session
   } catch (error) {
     throw new Error(
-      `Failed to update collaboration session: ${error instanceof Error ? error.message : 'Unknown error'}`
-    );
+      `Failed to update collaboration session: ${error instanceof Error ? error.message : 'Unknown error'}`,
+    )
   }
 }
 
@@ -114,7 +110,7 @@ export async function updateCollaborationSession(
  * @returns Updated session
  */
 export async function updateSessionActivity(
-  socketId: string
+  socketId: string,
 ): Promise<CollaborationSession> {
   try {
     const session = await prisma.collaborationSession.update({
@@ -124,12 +120,12 @@ export async function updateSessionActivity(
         // We just need to trigger an update
         lastActivityAt: new Date(),
       },
-    });
-    return session;
+    })
+    return session
   } catch (error) {
     throw new Error(
-      `Failed to update session activity: ${error instanceof Error ? error.message : 'Unknown error'}`
-    );
+      `Failed to update session activity: ${error instanceof Error ? error.message : 'Unknown error'}`,
+    )
   }
 }
 
@@ -140,17 +136,17 @@ export async function updateSessionActivity(
  * @throws Error if session not found
  */
 export async function deleteCollaborationSession(
-  socketId: string
+  socketId: string,
 ): Promise<CollaborationSession> {
   try {
     const session = await prisma.collaborationSession.delete({
       where: { socketId },
-    });
-    return session;
+    })
+    return session
   } catch (error) {
     throw new Error(
-      `Failed to delete collaboration session: ${error instanceof Error ? error.message : 'Unknown error'}`
-    );
+      `Failed to delete collaboration session: ${error instanceof Error ? error.message : 'Unknown error'}`,
+    )
   }
 }
 
@@ -160,18 +156,18 @@ export async function deleteCollaborationSession(
  * @returns Count of deleted sessions
  */
 export async function deleteStaleSession(): Promise<number> {
-  const fiveMinutesAgo = new Date(Date.now() - 5 * 60 * 1000);
+  const fiveMinutesAgo = new Date(Date.now() - 5 * 60 * 1000)
 
   try {
     const result = await prisma.collaborationSession.deleteMany({
       where: {
         lastActivityAt: { lt: fiveMinutesAgo },
       },
-    });
-    return result.count;
+    })
+    return result.count
   } catch (error) {
     throw new Error(
-      `Failed to delete stale sessions: ${error instanceof Error ? error.message : 'Unknown error'}`
-    );
+      `Failed to delete stale sessions: ${error instanceof Error ? error.message : 'Unknown error'}`,
+    )
   }
 }

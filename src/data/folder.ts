@@ -1,14 +1,10 @@
 // src/data/folder.ts
 // Data access layer for Folder entity
 
-import { prisma } from '@/db';
-import {
-  createFolderSchema,
-  updateFolderSchema,
-  type CreateFolder,
-  type UpdateFolder,
-} from './schema';
-import type { Folder } from '@prisma/client';
+import { createFolderSchema, updateFolderSchema } from './schema'
+import type { CreateFolder, UpdateFolder } from './schema'
+import type { Folder } from '@prisma/client'
+import { prisma } from '@/db'
 
 /**
  * Create a new folder
@@ -18,17 +14,17 @@ import type { Folder } from '@prisma/client';
  */
 export async function createFolder(data: CreateFolder): Promise<Folder> {
   // Validate input with Zod schema
-  const validated = createFolderSchema.parse(data);
+  const validated = createFolderSchema.parse(data)
 
   try {
     const folder = await prisma.folder.create({
       data: validated,
-    });
-    return folder;
+    })
+    return folder
   } catch (error) {
     throw new Error(
-      `Failed to create folder: ${error instanceof Error ? error.message : 'Unknown error'}`
-    );
+      `Failed to create folder: ${error instanceof Error ? error.message : 'Unknown error'}`,
+    )
   }
 }
 
@@ -38,18 +34,18 @@ export async function createFolder(data: CreateFolder): Promise<Folder> {
  * @returns Array of folders in the project
  */
 export async function findFoldersByProjectId(
-  projectId: string
-): Promise<Folder[]> {
+  projectId: string,
+): Promise<Array<Folder>> {
   try {
     const folders = await prisma.folder.findMany({
       where: { projectId },
       orderBy: { createdAt: 'asc' },
-    });
-    return folders;
+    })
+    return folders
   } catch (error) {
     throw new Error(
-      `Failed to fetch folders: ${error instanceof Error ? error.message : 'Unknown error'}`
-    );
+      `Failed to fetch folders: ${error instanceof Error ? error.message : 'Unknown error'}`,
+    )
   }
 }
 
@@ -59,18 +55,18 @@ export async function findFoldersByProjectId(
  * @returns Array of child folders
  */
 export async function findChildFolders(
-  parentFolderId: string
-): Promise<Folder[]> {
+  parentFolderId: string,
+): Promise<Array<Folder>> {
   try {
     const folders = await prisma.folder.findMany({
       where: { parentFolderId },
       orderBy: { name: 'asc' },
-    });
-    return folders;
+    })
+    return folders
   } catch (error) {
     throw new Error(
-      `Failed to fetch child folders: ${error instanceof Error ? error.message : 'Unknown error'}`
-    );
+      `Failed to fetch child folders: ${error instanceof Error ? error.message : 'Unknown error'}`,
+    )
   }
 }
 
@@ -79,11 +75,9 @@ export async function findChildFolders(
  * @param id - Folder UUID
  * @returns Folder with whiteboards or null if not found
  */
-export async function findFolderByIdWithWhiteboards(
-  id: string
-): Promise<
+export async function findFolderByIdWithWhiteboards(id: string): Promise<
   | (Folder & {
-      whiteboards: Array<{ id: string; name: string; updatedAt: Date }>;
+      whiteboards: Array<{ id: string; name: string; updatedAt: Date }>
     })
   | null
 > {
@@ -96,12 +90,12 @@ export async function findFolderByIdWithWhiteboards(
           orderBy: { updatedAt: 'desc' },
         },
       },
-    });
-    return folder;
+    })
+    return folder
   } catch (error) {
     throw new Error(
-      `Failed to fetch folder: ${error instanceof Error ? error.message : 'Unknown error'}`
-    );
+      `Failed to fetch folder: ${error instanceof Error ? error.message : 'Unknown error'}`,
+    )
   }
 }
 
@@ -114,12 +108,12 @@ export async function findFolderById(id: string): Promise<Folder | null> {
   try {
     const folder = await prisma.folder.findUnique({
       where: { id },
-    });
-    return folder;
+    })
+    return folder
   } catch (error) {
     throw new Error(
-      `Failed to fetch folder: ${error instanceof Error ? error.message : 'Unknown error'}`
-    );
+      `Failed to fetch folder: ${error instanceof Error ? error.message : 'Unknown error'}`,
+    )
   }
 }
 
@@ -132,21 +126,21 @@ export async function findFolderById(id: string): Promise<Folder | null> {
  */
 export async function updateFolder(
   id: string,
-  data: UpdateFolder
+  data: UpdateFolder,
 ): Promise<Folder> {
   // Validate input with Zod schema
-  const validated = updateFolderSchema.parse(data);
+  const validated = updateFolderSchema.parse(data)
 
   try {
     const folder = await prisma.folder.update({
       where: { id },
       data: validated,
-    });
-    return folder;
+    })
+    return folder
   } catch (error) {
     throw new Error(
-      `Failed to update folder: ${error instanceof Error ? error.message : 'Unknown error'}`
-    );
+      `Failed to update folder: ${error instanceof Error ? error.message : 'Unknown error'}`,
+    )
   }
 }
 
@@ -160,11 +154,11 @@ export async function deleteFolder(id: string): Promise<Folder> {
   try {
     const folder = await prisma.folder.delete({
       where: { id },
-    });
-    return folder;
+    })
+    return folder
   } catch (error) {
     throw new Error(
-      `Failed to delete folder: ${error instanceof Error ? error.message : 'Unknown error'}`
-    );
+      `Failed to delete folder: ${error instanceof Error ? error.message : 'Unknown error'}`,
+    )
   }
 }

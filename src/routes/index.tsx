@@ -1,36 +1,89 @@
 // src/routes/index.tsx
 // Home page - Project Dashboard
 
-import { createFileRoute, Link } from '@tanstack/react-router';
-import { useQuery } from '@tanstack/react-query';
-import { Button } from '@/components/ui/button';
-import { Card, CardHeader, CardTitle, CardDescription, CardContent } from '@/components/ui/card';
-import { PlusCircle, FolderOpen, FileText } from 'lucide-react';
-import { getAllProjects } from '@/lib/server-functions-project';
+import { Link, createFileRoute } from '@tanstack/react-router'
+import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
+import { Clock, FileText, FolderOpen, PlusCircle } from 'lucide-react'
+import { useState } from 'react'
+import { Button } from '@/components/ui/button'
+import {
+  Card,
+  CardContent,
+  CardDescription,
+  CardHeader,
+  CardTitle,
+} from '@/components/ui/card'
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from '@/components/ui/dialog'
+import { Input } from '@/components/ui/input'
+import { Label } from '@/components/ui/label'
+import { Textarea } from '@/components/ui/textarea'
+import { createProjectFn, getProjectsWithTree } from '@/routes/api/projects'
+import { getRecentWhiteboards } from '@/routes/api/whiteboards'
 
 export const Route = createFileRoute('/')({
   component: HomePage,
-});
+})
 
 /**
  * Home page component - Project Dashboard
  * Shows list of projects and quick access to whiteboards
  */
 function HomePage() {
-  // Fetch all projects with their whiteboards
-  const { data: projects, isLoading } = useQuery({
-    queryKey: ['projects'],
+  const queryClient = useQueryClient()
+  const [showCreateProject, setShowCreateProject] = useState(false)
+  const [projectName, setProjectName] = useState('')
+  const [projectDescription, setProjectDescription] = useState('')
+
+  // Fetch all projects with their tree structure
+  const { data: projects, isLoading: projectsLoading } = useQuery({
+    queryKey: ['projects', 'tree'],
     queryFn: async () => {
-      return await getAllProjects();
+      return await getProjectsWithTree()
     },
-  });
+  })
+
+  // Fetch recent whiteboards
+  const { data: recentWhiteboards, isLoading: recentLoading } = useQuery({
+    queryKey: ['whiteboards', 'recent'],
+    queryFn: async () => {
+      return await getRecentWhiteboards(8)
+    },
+  })
+
+  // Create project mutation
+  const createProjectMutation = useMutation({
+    mutationFn: createProjectFn,
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['projects'] })
+      setShowCreateProject(false)
+      setProjectName('')
+      setProjectDescription('')
+    },
+  })
+
+  const handleCreateProject = async (e: React.FormEvent) => {
+    e.preventDefault()
+    await createProjectMutation.mutateAsync({
+      name: projectName,
+      description: projectDescription || undefined,
+    })
+  }
+
+  const isLoading = projectsLoading || recentLoading
 
   if (isLoading) {
     return (
       <div className="flex items-center justify-center min-h-screen bg-background">
         <p className="text-lg text-muted-foreground">Loading projects...</p>
       </div>
-    );
+    )
   }
 
   return (
@@ -45,7 +98,7 @@ function HomePage() {
                 Collaborative database schema design tool
               </p>
             </div>
-            <Button>
+            <Button onClick={() => setShowCreateProject(true)}>
               <PlusCircle className="mr-2 h-4 w-4" />
               New Project
             </Button>
@@ -64,78 +117,84 @@ function HomePage() {
               Get started by creating your first project to organize your ER
               diagrams
             </p>
-            <Button size="lg">
+            <Button size="lg" onClick={() => setShowCreateProject(true)}>
               <PlusCircle className="mr-2 h-5 w-5" />
               Create Your First Project
             </Button>
           </div>
         ) : (
-          // Projects list
           <div className="space-y-8">
-            {projects.map((project) => (
-              <div key={project.id}>
-                <div className="flex items-center justify-between mb-4">
-                  <div>
-                    <h2 className="text-2xl font-semibold">{project.name}</h2>
-                    {project.description && (
-                      <p className="text-muted-foreground mt-1">
-                        {project.description}
-                      </p>
-                    )}
-                  </div>
-                  <Button variant="outline" size="sm">
-                    <PlusCircle className="mr-2 h-4 w-4" />
-                    New Whiteboard
-                  </Button>
+            {/* Recent Whiteboards Section */}
+            {recentWhiteboards && recentWhiteboards.length > 0 && (
+              <div>
+                <div className="flex items-center gap-2 mb-4">
+                  <Clock className="h-5 w-5 text-muted-foreground" />
+                  <h2 className="text-2xl font-semibold">Recent Whiteboards</h2>
                 </div>
+                <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
+                  {recentWhiteboards.map((whiteboard) => (
+                    <Link
+                      key={whiteboard.id}
+                      to="/whiteboard/$whiteboardId"
+                      params={{ whiteboardId: whiteboard.id }}
+                    >
+                      <Card className="hover:border-primary transition-colors cursor-pointer h-full">
+                        <CardHeader>
+                          <div className="flex items-start justify-between">
+                            <FileText className="h-6 w-6 text-primary" />
+                          </div>
+                          <CardTitle className="mt-2 text-base">
+                            {whiteboard.name}
+                          </CardTitle>
+                          <CardDescription className="text-xs">
+                            {new Date(
+                              whiteboard.updatedAt,
+                            ).toLocaleDateString()}
+                          </CardDescription>
+                        </CardHeader>
+                      </Card>
+                    </Link>
+                  ))}
+                </div>
+              </div>
+            )}
 
-                {/* Whiteboards Grid */}
-                {project.whiteboards && project.whiteboards.length > 0 ? (
-                  <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-                    {project.whiteboards.map((whiteboard) => (
-                      <Link
-                        key={whiteboard.id}
-                        to="/whiteboard/$whiteboardId"
-                        params={{ whiteboardId: whiteboard.id }}
-                      >
-                        <Card className="hover:border-primary transition-colors cursor-pointer h-full">
-                          <CardHeader>
-                            <div className="flex items-start justify-between">
-                              <FileText className="h-8 w-8 text-primary" />
-                            </div>
-                            <CardTitle className="mt-4">
-                              {whiteboard.name}
-                            </CardTitle>
-                            <CardDescription>
-                              Last updated{' '}
-                              {new Date(whiteboard.updatedAt).toLocaleDateString()}
-                            </CardDescription>
-                          </CardHeader>
-                          <CardContent>
-                            <div className="text-sm text-muted-foreground">
-                              Click to open whiteboard
-                            </div>
-                          </CardContent>
-                        </Card>
-                      </Link>
-                    ))}
-                  </div>
-                ) : (
-                  <Card className="border-dashed">
-                    <CardContent className="flex flex-col items-center justify-center py-12">
-                      <FileText className="h-12 w-12 text-muted-foreground mb-3" />
-                      <p className="text-muted-foreground">
-                        No whiteboards in this project yet
-                      </p>
-                      <Button variant="outline" size="sm" className="mt-4">
-                        <PlusCircle className="mr-2 h-4 w-4" />
-                        Create Whiteboard
-                      </Button>
+            {/* Projects Section */}
+            <div>
+              <div className="flex items-center justify-between mb-4">
+                <h2 className="text-2xl font-semibold">All Projects</h2>
+              </div>
+              <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+                {projects.map((project) => (
+                  <Card
+                    key={project.id}
+                    className="hover:border-primary transition-colors"
+                  >
+                    <CardHeader>
+                      <div className="flex items-start justify-between">
+                        <FolderOpen className="h-8 w-8 text-primary" />
+                      </div>
+                      <CardTitle className="mt-4">{project.name}</CardTitle>
+                      {project.description && (
+                        <CardDescription>{project.description}</CardDescription>
+                      )}
+                    </CardHeader>
+                    <CardContent>
+                      <div className="text-sm text-muted-foreground space-y-1">
+                        <div>
+                          {project.folders?.length || 0} folder
+                          {project.folders?.length !== 1 ? 's' : ''}
+                        </div>
+                        <div>
+                          {project.whiteboards?.length || 0} whiteboard
+                          {project.whiteboards?.length !== 1 ? 's' : ''}
+                        </div>
+                      </div>
                     </CardContent>
                   </Card>
-                )}
+                ))}
               </div>
-            ))}
+            </div>
           </div>
         )}
       </div>
@@ -148,6 +207,58 @@ function HomePage() {
           </p>
         </div>
       </div>
+
+      {/* Create Project Dialog */}
+      <Dialog open={showCreateProject} onOpenChange={setShowCreateProject}>
+        <DialogContent>
+          <form onSubmit={handleCreateProject}>
+            <DialogHeader>
+              <DialogTitle>Create Project</DialogTitle>
+              <DialogDescription>
+                Create a new project to organize your whiteboards.
+              </DialogDescription>
+            </DialogHeader>
+            <div className="space-y-4 py-4">
+              <div className="space-y-2">
+                <Label htmlFor="name">Name</Label>
+                <Input
+                  id="name"
+                  value={projectName}
+                  onChange={(e) => setProjectName(e.target.value)}
+                  placeholder="My Project"
+                  required
+                />
+              </div>
+              <div className="space-y-2">
+                <Label htmlFor="description">Description (optional)</Label>
+                <Textarea
+                  id="description"
+                  value={projectDescription}
+                  onChange={(e) => setProjectDescription(e.target.value)}
+                  placeholder="Project description..."
+                  rows={3}
+                />
+              </div>
+            </div>
+            <DialogFooter>
+              <Button
+                type="button"
+                variant="outline"
+                onClick={() => {
+                  setShowCreateProject(false)
+                  setProjectName('')
+                  setProjectDescription('')
+                }}
+              >
+                Cancel
+              </Button>
+              <Button type="submit" disabled={!projectName.trim()}>
+                Create
+              </Button>
+            </DialogFooter>
+          </form>
+        </DialogContent>
+      </Dialog>
     </div>
-  );
+  )
 }

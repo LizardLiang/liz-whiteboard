@@ -1,8 +1,12 @@
 // src/components/whiteboard/Toolbar.tsx
 // Toolbar component for whiteboard actions (Add Table, Add Relationship)
 
-import { useState } from 'react';
-import { Button } from '@/components/ui/button';
+import { useState } from 'react'
+import type { Cardinality, Column, DiagramTable } from '@prisma/client'
+import type { CreateRelationship, CreateTable } from '@/data/schema'
+import { Button } from '@/components/ui/button'
+import { Switch } from '@/components/ui/switch'
+import { Label } from '@/components/ui/label'
 import {
   Dialog,
   DialogContent,
@@ -11,34 +15,57 @@ import {
   DialogHeader,
   DialogTitle,
   DialogTrigger,
-} from '@/components/ui/dialog';
-import { Input } from '@/components/ui/input';
-import { Label } from '@/components/ui/label';
-import { Textarea } from '@/components/ui/textarea';
+} from '@/components/ui/dialog'
+import { Input } from '@/components/ui/input'
+import { Textarea } from '@/components/ui/textarea'
 import {
   Select,
   SelectContent,
   SelectItem,
   SelectTrigger,
   SelectValue,
-} from '@/components/ui/select';
-import type { DiagramTable, Column, Cardinality } from '@prisma/client';
-import type { CreateTable, CreateRelationship } from '@/data/schema';
+} from '@/components/ui/select'
+
+/**
+ * Canvas zoom controls
+ */
+export interface ZoomControls {
+  /** Zoom in by one step */
+  zoomIn: () => void
+  /** Zoom out by one step */
+  zoomOut: () => void
+  /** Reset zoom to 100% */
+  resetZoom: () => void
+  /** Fit all content to viewport */
+  fitToScreen: () => void
+}
 
 /**
  * Toolbar component props
  */
 export interface ToolbarProps {
   /** Whiteboard ID for creating entities */
-  whiteboardId: string;
+  whiteboardId: string
   /** All tables in the whiteboard (for relationship dialog) */
-  tables: Array<DiagramTable & { columns: Column[] }>;
+  tables: Array<DiagramTable & { columns: Array<Column> }>
   /** Callback when table is created */
-  onCreateTable?: (data: CreateTable) => void | Promise<void>;
+  onCreateTable?: (data: CreateTable) => void | Promise<void>
   /** Callback when relationship is created */
-  onCreateRelationship?: (data: CreateRelationship) => void | Promise<void>;
+  onCreateRelationship?: (data: CreateRelationship) => void | Promise<void>
+  /** Callback when auto layout is triggered */
+  onAutoLayout?: () => void | Promise<void>
+  /** Whether auto layout is currently computing */
+  isAutoLayoutLoading?: boolean
+  /** Whether auto-layout is enabled (user preference) */
+  autoLayoutEnabled?: boolean
+  /** Callback when auto-layout preference changes */
+  onAutoLayoutEnabledChange?: (enabled: boolean) => void
+  /** Canvas zoom controls */
+  zoomControls?: ZoomControls
+  /** Current zoom level (0-5) for display */
+  currentZoom?: number
   /** Optional CSS class name */
-  className?: string;
+  className?: string
 }
 
 /**
@@ -53,7 +80,7 @@ const DATA_TYPES = [
   'text',
   'uuid',
   'json',
-] as const;
+] as const
 
 /**
  * Cardinality options for relationships
@@ -63,7 +90,7 @@ const CARDINALITIES: Array<{ value: Cardinality; label: string }> = [
   { value: 'ONE_TO_MANY', label: 'One to Many (1:N)' },
   { value: 'MANY_TO_ONE', label: 'Many to One (N:1)' },
   { value: 'MANY_TO_MANY', label: 'Many to Many (N:N)' },
-];
+]
 
 /**
  * Toolbar component for whiteboard actions
@@ -89,29 +116,35 @@ export function Toolbar({
   tables,
   onCreateTable,
   onCreateRelationship,
+  onAutoLayout,
+  isAutoLayoutLoading = false,
+  autoLayoutEnabled = true,
+  onAutoLayoutEnabledChange,
+  zoomControls,
+  currentZoom = 1,
   className = '',
 }: ToolbarProps) {
   // Table dialog state
-  const [tableDialogOpen, setTableDialogOpen] = useState(false);
-  const [tableName, setTableName] = useState('');
-  const [tableDescription, setTableDescription] = useState('');
+  const [tableDialogOpen, setTableDialogOpen] = useState(false)
+  const [tableName, setTableName] = useState('')
+  const [tableDescription, setTableDescription] = useState('')
 
   // Relationship dialog state
-  const [relationshipDialogOpen, setRelationshipDialogOpen] = useState(false);
-  const [sourceTableId, setSourceTableId] = useState<string>('');
-  const [targetTableId, setTargetTableId] = useState<string>('');
-  const [sourceColumnId, setSourceColumnId] = useState<string>('');
-  const [targetColumnId, setTargetColumnId] = useState<string>('');
-  const [cardinality, setCardinality] = useState<Cardinality>('ONE_TO_MANY');
-  const [relationshipLabel, setRelationshipLabel] = useState('');
+  const [relationshipDialogOpen, setRelationshipDialogOpen] = useState(false)
+  const [sourceTableId, setSourceTableId] = useState<string>('')
+  const [targetTableId, setTargetTableId] = useState<string>('')
+  const [sourceColumnId, setSourceColumnId] = useState<string>('')
+  const [targetColumnId, setTargetColumnId] = useState<string>('')
+  const [cardinality, setCardinality] = useState<Cardinality>('ONE_TO_MANY')
+  const [relationshipLabel, setRelationshipLabel] = useState('')
 
   /**
    * Handle table creation
    */
   const handleCreateTable = async () => {
     if (!tableName.trim()) {
-      alert('Table name is required');
-      return;
+      alert('Table name is required')
+      return
     }
 
     // Create table at a default position (center of canvas)
@@ -122,23 +155,28 @@ export function Toolbar({
       description: tableDescription.trim() || undefined,
       positionX: 400, // Default position
       positionY: 300,
-    };
+    }
 
-    await onCreateTable?.(tableData);
+    await onCreateTable?.(tableData)
 
     // Reset form and close dialog
-    setTableName('');
-    setTableDescription('');
-    setTableDialogOpen(false);
-  };
+    setTableName('')
+    setTableDescription('')
+    setTableDialogOpen(false)
+  }
 
   /**
    * Handle relationship creation
    */
   const handleCreateRelationship = async () => {
-    if (!sourceTableId || !targetTableId || !sourceColumnId || !targetColumnId) {
-      alert('Please select source and target tables and columns');
-      return;
+    if (
+      !sourceTableId ||
+      !targetTableId ||
+      !sourceColumnId ||
+      !targetColumnId
+    ) {
+      alert('Please select source and target tables and columns')
+      return
     }
 
     const relationshipData: CreateRelationship = {
@@ -149,30 +187,32 @@ export function Toolbar({
       targetColumnId,
       cardinality,
       label: relationshipLabel.trim() || undefined,
-    };
+    }
 
-    await onCreateRelationship?.(relationshipData);
+    await onCreateRelationship?.(relationshipData)
 
     // Reset form and close dialog
-    setSourceTableId('');
-    setTargetTableId('');
-    setSourceColumnId('');
-    setTargetColumnId('');
-    setCardinality('ONE_TO_MANY');
-    setRelationshipLabel('');
-    setRelationshipDialogOpen(false);
-  };
+    setSourceTableId('')
+    setTargetTableId('')
+    setSourceColumnId('')
+    setTargetColumnId('')
+    setCardinality('ONE_TO_MANY')
+    setRelationshipLabel('')
+    setRelationshipDialogOpen(false)
+  }
 
   // Get columns for selected source table
   const sourceColumns =
-    tables.find((t) => t.id === sourceTableId)?.columns ?? [];
+    tables.find((t) => t.id === sourceTableId)?.columns ?? []
 
   // Get columns for selected target table
   const targetColumns =
-    tables.find((t) => t.id === targetTableId)?.columns ?? [];
+    tables.find((t) => t.id === targetTableId)?.columns ?? []
 
   return (
-    <div className={`flex gap-2 p-4 border-b bg-background ${className}`}>
+    <div
+      className={`flex items-center gap-2 p-4 border-b bg-background ${className}`}
+    >
       {/* Add Table Dialog */}
       <Dialog open={tableDialogOpen} onOpenChange={setTableDialogOpen}>
         <DialogTrigger asChild>
@@ -196,7 +236,7 @@ export function Toolbar({
                 onChange={(e) => setTableName(e.target.value)}
                 onKeyDown={(e) => {
                   if (e.key === 'Enter') {
-                    handleCreateTable();
+                    handleCreateTable()
                   }
                 }}
               />
@@ -370,10 +410,153 @@ export function Toolbar({
         </DialogContent>
       </Dialog>
 
+      {/* Auto Layout Button */}
+      <Button
+        variant="outline"
+        onClick={onAutoLayout}
+        disabled={tables.length < 2 || isAutoLayoutLoading}
+      >
+        {isAutoLayoutLoading ? (
+          <>
+            <span className="mr-2 h-4 w-4 animate-spin rounded-full border-2 border-current border-t-transparent" />
+            Computing Layout...
+          </>
+        ) : (
+          'Auto Layout'
+        )}
+      </Button>
+
+      {/* Auto-Layout Preference Toggle */}
+      <div className="flex items-center gap-2 ml-2 px-3 py-2 border rounded-md">
+        <Switch
+          id="auto-layout-toggle"
+          checked={autoLayoutEnabled}
+          onCheckedChange={onAutoLayoutEnabledChange}
+        />
+        <Label
+          htmlFor="auto-layout-toggle"
+          className="text-sm font-normal cursor-pointer"
+        >
+          Auto-arrange new tables
+        </Label>
+      </div>
+
+      {/* Spacer to push zoom controls to the right */}
+      <div className="flex-1" />
+
+      {/* Zoom Controls */}
+      {zoomControls && (
+        <div className="flex items-center gap-2">
+          {/* Zoom Out */}
+          <Button
+            variant="outline"
+            size="icon"
+            onClick={zoomControls.zoomOut}
+            disabled={currentZoom <= 0.1}
+            title="Zoom Out (Ctrl/Cmd + -)"
+          >
+            <svg
+              xmlns="http://www.w3.org/2000/svg"
+              width="16"
+              height="16"
+              viewBox="0 0 24 24"
+              fill="none"
+              stroke="currentColor"
+              strokeWidth="2"
+              strokeLinecap="round"
+              strokeLinejoin="round"
+            >
+              <circle cx="11" cy="11" r="8" />
+              <path d="m21 21-4.35-4.35" />
+              <line x1="8" y1="11" x2="14" y2="11" />
+            </svg>
+          </Button>
+
+          {/* Zoom Level Display */}
+          <div className="flex items-center justify-center min-w-[60px] px-2 py-1 text-sm font-medium text-muted-foreground">
+            {Math.round(currentZoom * 100)}%
+          </div>
+
+          {/* Zoom In */}
+          <Button
+            variant="outline"
+            size="icon"
+            onClick={zoomControls.zoomIn}
+            disabled={currentZoom >= 5}
+            title="Zoom In (Ctrl/Cmd + +)"
+          >
+            <svg
+              xmlns="http://www.w3.org/2000/svg"
+              width="16"
+              height="16"
+              viewBox="0 0 24 24"
+              fill="none"
+              stroke="currentColor"
+              strokeWidth="2"
+              strokeLinecap="round"
+              strokeLinejoin="round"
+            >
+              <circle cx="11" cy="11" r="8" />
+              <path d="m21 21-4.35-4.35" />
+              <line x1="11" y1="8" x2="11" y2="14" />
+              <line x1="8" y1="11" x2="14" y2="11" />
+            </svg>
+          </Button>
+
+          {/* Fit to Screen */}
+          <Button
+            variant="outline"
+            size="icon"
+            onClick={zoomControls.fitToScreen}
+            title="Fit to Screen"
+          >
+            <svg
+              xmlns="http://www.w3.org/2000/svg"
+              width="16"
+              height="16"
+              viewBox="0 0 24 24"
+              fill="none"
+              stroke="currentColor"
+              strokeWidth="2"
+              strokeLinecap="round"
+              strokeLinejoin="round"
+            >
+              <path d="M8 3H5a2 2 0 0 0-2 2v3" />
+              <path d="M21 8V5a2 2 0 0 0-2-2h-3" />
+              <path d="M3 16v3a2 2 0 0 0 2 2h3" />
+              <path d="M16 21h3a2 2 0 0 0 2-2v-3" />
+            </svg>
+          </Button>
+
+          {/* Reset Zoom */}
+          <Button
+            variant="outline"
+            size="icon"
+            onClick={zoomControls.resetZoom}
+            title="Reset Zoom (Ctrl/Cmd + 0)"
+          >
+            <svg
+              xmlns="http://www.w3.org/2000/svg"
+              width="16"
+              height="16"
+              viewBox="0 0 24 24"
+              fill="none"
+              stroke="currentColor"
+              strokeWidth="2"
+              strokeLinecap="round"
+              strokeLinejoin="round"
+            >
+              <path d="M3 12a9 9 0 0 1 9-9 9.75 9.75 0 0 1 6.74 2.74L21 8" />
+              <path d="M21 3v5h-5" />
+              <path d="M21 12a9 9 0 0 1-9 9 9.75 9.75 0 0 1-6.74-2.74L3 16" />
+              <path d="M8 16H3v5" />
+            </svg>
+          </Button>
+        </div>
+      )}
+
       {/* Future: Add more toolbar actions */}
-      {/* - Auto-layout button */}
-      {/* - Zoom controls */}
       {/* - Export diagram */}
     </div>
-  );
+  )
 }
