@@ -11,7 +11,7 @@
 
 ## 📊 Implementation Progress Summary
 
-**Overall Progress**: 44/92 tasks complete (48%)
+**Overall Progress**: 55/92 tasks complete (60%)
 
 **Completed Phases**:
 - ✅ **Phase 1: Setup** (3/3 tasks) - Dependencies installed
@@ -19,9 +19,9 @@
 - ✅ **Phase 3: User Story 1** (11/11 tasks) - View ERD diagrams complete ✓
 - ✅ **Phase 4: User Story 2** (13/13 tasks) - Highlighting system complete
 - ✅ **Phase 5: User Story 3** (6/6 tasks) - Manual table positioning complete ✓
+- ✅ **Phase 6: User Story 4** (11/11 tasks) - ELK auto-layout complete ✓
 
 **Pending**:
-- ⏳ **Phase 6: User Story 4** (0/11 tasks) - ELK auto-layout
 - ⏳ **Phase 7: User Story 5** (0/9 tasks) - Real-time collaboration
 - ⏳ **Phase 8: User Story 6** (0/11 tasks) - Display modes
 - ⏳ **Phase 9: Polish** (0/17 tasks) - Optimization and cleanup
@@ -32,8 +32,11 @@
 - Interactive highlighting with animated particles
 - Drag-and-drop table positioning with database persistence
 - Automatic edge path recalculation when nodes move
+- **ELK hierarchical auto-layout with Web Worker (NEW!)**
+- **Batch position updates to database after auto-layout (NEW!)**
+- **Automatic fitView after layout completion (NEW!)**
 - Build passing with no TypeScript errors
-- 3/6 user stories complete (50% feature completion)
+- 4/6 user stories complete (67% feature completion)
 
 **Feature Flag**: `VITE_USE_REACT_FLOW` in `.env.local` (default: `false` for safe rollout)
 
@@ -164,17 +167,17 @@ Project structure: Web application (TanStack Start framework)
 
 ### Implementation for User Story 4
 
-- [ ] T045 [P] [US4] Create ELK Web Worker in `src/lib/react-flow/elk-layout.worker.ts` for non-blocking layout computation
-- [ ] T046 [US4] Implement `convertNodesToELKGraph` function in `src/lib/react-flow/elk-layout.ts` (depends on T045)
-- [ ] T047 [US4] Implement `applyELKLayout` function in `src/lib/react-flow/elk-layout.ts` (depends on T045)
-- [ ] T048 [US4] Implement `computeELKLayout` function with Web Worker integration in `src/lib/react-flow/elk-layout.ts` (depends on T046, T047)
-- [ ] T049 [US4] Create `useAutoLayout` custom hook in `src/lib/react-flow/elk-layout.ts` (depends on T048)
-- [ ] T050 [US4] Add auto-layout button to Toolbar component in `src/components/whiteboard/Toolbar.tsx`
-- [ ] T051 [US4] Wire auto-layout button to useAutoLayout hook in ReactFlowCanvas in `src/components/whiteboard/ReactFlowCanvas.tsx`
-- [ ] T052 [US4] Implement fitView after layout completion (with 100ms delay to allow React Flow to measure new positions) in `src/components/whiteboard/ReactFlowCanvas.tsx`
-- [ ] T053 [US4] Batch update table positions to database after auto-layout completes
-- [ ] T054 [US4] Verify ELK layout options: algorithm 'layered', direction 'RIGHT', appropriate spacing values
-- [ ] T055 [US4] Verify disconnected table groups are laid out separately with spacing between groups
+- [x] T045 [P] [US4] Create ELK Web Worker in `src/lib/react-flow/elk-layout.worker.ts` for non-blocking layout computation
+- [x] T046 [US4] Implement `convertNodesToELKGraph` function in `src/lib/react-flow/elk-layout.ts` (depends on T045)
+- [x] T047 [US4] Implement `applyELKLayout` function in `src/lib/react-flow/elk-layout.ts` (depends on T045)
+- [x] T048 [US4] Implement `computeELKLayout` function with Web Worker integration in `src/lib/react-flow/elk-layout.ts` (depends on T046, T047)
+- [x] T049 [US4] Create `useAutoLayout` custom hook in `src/lib/react-flow/use-auto-layout.ts` (depends on T048)
+- [x] T050 [US4] Add auto-layout button to Toolbar component (already exists in `src/components/whiteboard/Toolbar.tsx`)
+- [x] T051 [US4] Wire auto-layout to ReactFlowWhiteboard via onAutoLayoutReady callback in `src/routes/whiteboard/$whiteboardId.tsx`
+- [x] T052 [US4] Implement fitView after layout completion (with 100ms delay) in useAutoLayout hook
+- [x] T053 [US4] Batch update table positions to database after auto-layout completes via onLayoutComplete callback
+- [x] T054 [US4] Verify ELK layout options: algorithm 'layered', direction 'RIGHT', appropriate spacing values (DEFAULT_ELK_OPTIONS)
+- [x] T055 [US4] Verify disconnected table groups are laid out separately with spacing between groups (elk.spacing.componentComponent: '80')
 
 **Checkpoint**: At this point, users can trigger auto-layout. Tables arrange hierarchically and positions are saved.
 
