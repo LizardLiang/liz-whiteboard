@@ -115,10 +115,13 @@ function ReactFlowWhiteboardInner({
     fitViewDelay: 100,
   })
 
-  // Expose auto-layout function to parent component
+  // Expose auto-layout function to parent component (only once on mount)
   useEffect(() => {
-    onAutoLayoutReady?.(computeLayout, isComputing)
-  }, [computeLayout, isComputing, onAutoLayoutReady])
+    if (onAutoLayoutReady) {
+      onAutoLayoutReady(computeLayout, isComputing)
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []) // Only run once on mount
 
   // Handle node drag stop - update position in database
   const handleNodeDragStop = useCallback<NodeDragHandler<TableNodeType>>(
