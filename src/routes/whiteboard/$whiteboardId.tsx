@@ -76,6 +76,9 @@ function WhiteboardEditor() {
   const [isTextSyncEnabled, setIsTextSyncEnabled] = useState(true)
   const [isAutoLayoutComputing, setIsAutoLayoutComputing] = useState(false)
 
+  // React Flow auto-layout function (set via callback)
+  const [reactFlowAutoLayout, setReactFlowAutoLayout] = useState<(() => Promise<void>) | null>(null)
+
   // Canvas stage ref for programmatic zoom controls
   const stageRef = useRef<Konva.Stage>(null)
 
@@ -381,7 +384,7 @@ function WhiteboardEditor() {
 
   /**
    * Handle auto layout computation
-   * Computes optimal positions using d3-force and updates all tables
+   * Uses React Flow ELK layout when enabled, otherwise falls back to d3-force
    */
   const handleAutoLayout = useCallback(async () => {
     if (!whiteboardData?.whiteboard) return
@@ -392,41 +395,47 @@ function WhiteboardEditor() {
       // Emit WebSocket event to notify other users
       emit('layout:compute', { userId })
 
-      // Compute layout on server
-      const result = await computeAutoLayout({
-        data: {
-          whiteboardId,
-          options: {
-            width: window.innerWidth,
-            height: window.innerHeight - 160,
-            linkDistance: 200,
-            chargeStrength: -1000,
-            collisionPadding: 50,
-            iterations: 300,
-            handleClusters: true,
+      // Use React Flow auto-layout if available (feature flag enabled)
+      if (USE_REACT_FLOW && reactFlowAutoLayout) {
+        await reactFlowAutoLayout()
+        console.log('React Flow ELK layout computed')
+      } else {
+        // Fallback to d3-force layout (Konva)
+        const result = await computeAutoLayout({
+          data: {
+            whiteboardId,
+            options: {
+              width: window.innerWidth,
+              height: window.innerHeight - 160,
+              linkDistance: 200,
+              chargeStrength: -1000,
+              collisionPadding: 50,
+              iterations: 300,
+              handleClusters: true,
+            },
           },
-        },
-      })
+        })
 
-      console.log('Layout computed:', result.metadata)
+        console.log('Layout computed:', result.metadata)
 
-      // Emit computed positions to other users
-      emit('layout:computed', {
-        positions: result.positions,
-        userId,
-      })
+        // Emit computed positions to other users
+        emit('layout:computed', {
+          positions: result.positions,
+          userId,
+        })
 
-      // Invalidate query to fetch updated positions
-      await queryClient.invalidateQueries({
-        queryKey: ['whiteboard', whiteboardId],
-      })
+        // Invalidate query to fetch updated positions
+        await queryClient.invalidateQueries({
+          queryKey: ['whiteboard', whiteboardId],
+        })
+      }
     } catch (error) {
       console.error('Failed to compute auto layout:', error)
       alert('Failed to compute layout. Please try again.')
     } finally {
       setIsAutoLayoutComputing(false)
     }
-  }, [whiteboardData, whiteboardId, userId, emit, queryClient])
+  }, [whiteboardData, whiteboardId, userId, emit, queryClient, reactFlowAutoLayout])
 
   // Initialize textSource from database or sync from canvas when switching to text mode
   useEffect(() => {
@@ -609,6 +618,10 @@ function WhiteboardEditor() {
                 showMinimap={whiteboard.tables.length > 0}
                 showControls={true}
                 nodesDraggable={true}
+                onAutoLayoutReady={(computeLayout, isComputing) => {
+                  setReactFlowAutoLayout(() => computeLayout)
+                  setIsAutoLayoutComputing(isComputing)
+                }}
               />
             ) : (
               /* Konva Canvas (legacy) */
