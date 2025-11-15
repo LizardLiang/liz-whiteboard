@@ -2,15 +2,9 @@
 // Whiteboard item component for navigation tree
 
 import { Link } from '@tanstack/react-router'
-import { FileText, MoreVertical, Pencil, Trash2 } from 'lucide-react'
+import { FileText, Pencil, Trash2 } from 'lucide-react'
 import { useState } from 'react'
 import { Button } from '@/components/ui/button'
-import {
-  DropdownMenu,
-  DropdownMenuContent,
-  DropdownMenuItem,
-  DropdownMenuTrigger,
-} from '@/components/ui/dropdown-menu'
 
 /**
  * Props for WhiteboardItem component
@@ -86,46 +80,42 @@ export function WhiteboardItem({
         <span className="flex-1 truncate">{name}</span>
       </Link>
 
-      {/* Context Menu */}
+      {/* Action Buttons */}
       {(onRename || onDelete) && (
-        <DropdownMenu>
-          <DropdownMenuTrigger asChild>
+        <div className="absolute right-1 top-1 flex gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
+          {onRename && (
             <Button
               variant="ghost"
               size="sm"
-              className="absolute right-1 top-1 h-6 w-6 p-0 opacity-0 group-hover:opacity-100 transition-opacity"
-              onClick={(e) => e.stopPropagation()}
+              className="h-6 w-6 p-0"
+              onClick={(e) => {
+                e.preventDefault()
+                e.stopPropagation()
+                onRename(id, name)
+              }}
+              title="Rename"
             >
-              <MoreVertical className="h-3 w-3" />
-              <span className="sr-only">Open menu</span>
+              <Pencil className="h-3 w-3" />
+              <span className="sr-only">Rename</span>
             </Button>
-          </DropdownMenuTrigger>
-          <DropdownMenuContent align="end">
-            {onRename && (
-              <DropdownMenuItem
-                onClick={(e) => {
-                  e.stopPropagation()
-                  onRename(id, name)
-                }}
-              >
-                <Pencil className="mr-2 h-4 w-4" />
-                <span>Rename</span>
-              </DropdownMenuItem>
-            )}
-            {onDelete && (
-              <DropdownMenuItem
-                onClick={(e) => {
-                  e.stopPropagation()
-                  onDelete(id, name)
-                }}
-                className="text-destructive focus:text-destructive"
-              >
-                <Trash2 className="mr-2 h-4 w-4" />
-                <span>Delete</span>
-              </DropdownMenuItem>
-            )}
-          </DropdownMenuContent>
-        </DropdownMenu>
+          )}
+          {onDelete && (
+            <Button
+              variant="ghost"
+              size="sm"
+              className="h-6 w-6 p-0 text-destructive hover:text-destructive hover:bg-destructive/10"
+              onClick={(e) => {
+                e.preventDefault()
+                e.stopPropagation()
+                onDelete(id, name)
+              }}
+              title="Delete"
+            >
+              <Trash2 className="h-3 w-3" />
+              <span className="sr-only">Delete</span>
+            </Button>
+          )}
+        </div>
       )}
     </div>
   )

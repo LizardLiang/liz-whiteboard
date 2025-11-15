@@ -15,6 +15,7 @@ import type { DiagramAST } from '@/lib/parser/ast'
 import { Canvas, useCanvasControls } from '@/components/whiteboard/Canvas'
 import { TableNode } from '@/components/whiteboard/TableNode'
 import { RelationshipEdge } from '@/components/whiteboard/RelationshipEdge'
+import { ReactFlowWhiteboard } from '@/components/whiteboard/ReactFlowWhiteboard'
 import { Toolbar } from '@/components/whiteboard/Toolbar'
 import { TextEditor } from '@/components/whiteboard/TextEditor'
 import { Minimap } from '@/components/whiteboard/Minimap'
@@ -44,6 +45,11 @@ import {
 export const Route = createFileRoute('/whiteboard/$whiteboardId')({
   component: WhiteboardEditor,
 })
+
+/**
+ * Feature flag: Toggle between Konva (legacy) and React Flow (new)
+ */
+const USE_REACT_FLOW = import.meta.env.VITE_USE_REACT_FLOW === 'true'
 
 /**
  * Whiteboard Editor component
@@ -127,6 +133,41 @@ function WhiteboardEditor() {
   const { emit, on, off, connectionState } = useCollaboration(
     whiteboardId,
     userId,
+  )
+
+  /**
+   * Handle canvas viewport changes with debounced persistence
+   * Saves to database after 1 second of inactivity
+   */
+  const handleCanvasViewportChange = useCallback(
+    (viewport: CanvasViewport) => {
+      setCanvasViewport(viewport)
+
+      // Clear existing timer
+      if (saveCanvasStateTimerRef.current) {
+        clearTimeout(saveCanvasStateTimerRef.current)
+      }
+
+      // Debounce save for 1 second
+      saveCanvasStateTimerRef.current = setTimeout(async () => {
+        try {
+          await saveCanvasState({
+            data: {
+              whiteboardId,
+              canvasState: {
+                zoom: viewport.zoom,
+                offsetX: viewport.offsetX,
+                offsetY: viewport.offsetY,
+              },
+            },
+          })
+          console.log('Canvas state saved:', viewport)
+        } catch (error) {
+          console.error('Failed to save canvas state:', error)
+        }
+      }, 1000)
+    },
+    [whiteboardId],
   )
 
   // Canvas zoom controls
@@ -251,9 +292,9 @@ function WhiteboardEditor() {
   })
 
   const updateTextSourceMutation = useMutation({
-    mutationFn: async (textSource: string) => {
+    mutationFn: async (newTextSource: string) => {
       return await updateWhiteboardTextSourceFn({
-        data: { whiteboardId, textSource },
+        data: { whiteboardId, textSource: newTextSource },
       })
     },
     onSuccess: (updatedWhiteboard) => {
@@ -309,41 +350,6 @@ function WhiteboardEditor() {
       handleCanvasViewportChange(newViewport)
     },
     [canvasViewport.zoom, handleCanvasViewportChange],
-  )
-
-  /**
-   * Handle canvas viewport changes with debounced persistence
-   * Saves to database after 1 second of inactivity
-   */
-  const handleCanvasViewportChange = useCallback(
-    (viewport: CanvasViewport) => {
-      setCanvasViewport(viewport)
-
-      // Clear existing timer
-      if (saveCanvasStateTimerRef.current) {
-        clearTimeout(saveCanvasStateTimerRef.current)
-      }
-
-      // Debounce save for 1 second
-      saveCanvasStateTimerRef.current = setTimeout(async () => {
-        try {
-          await saveCanvasState({
-            data: {
-              whiteboardId,
-              canvasState: {
-                zoom: viewport.zoom,
-                offsetX: viewport.offsetX,
-                offsetY: viewport.offsetY,
-              },
-            },
-          })
-          console.log('Canvas state saved:', viewport)
-        } catch (error) {
-          console.error('Failed to save canvas state:', error)
-        }
-      }, 1000)
-    },
-    [whiteboardId],
   )
 
   /**
@@ -594,58 +600,69 @@ function WhiteboardEditor() {
             currentZoom={canvasViewport.zoom}
           />
 
-          {/* Canvas */}
+          {/* Canvas - Toggle between Konva and React Flow */}
           <div className="flex-1 overflow-hidden relative">
-            <Canvas
-              width={window.innerWidth}
-              height={window.innerHeight - 160} // Subtract header, tabs, and toolbar height
-              initialViewport={canvasViewport}
-              onViewportChange={handleCanvasViewportChange}
-              stageRef={stageRef}
-            >
-              {/* Render all tables */}
-              {whiteboard.tables.map((table) => (
-                <TableNode
-                  key={table.id}
-                  table={table}
-                  isSelected={selectedTableId === table.id}
-                  onClick={setSelectedTableId}
-                  onDragEnd={handleTableDragEnd}
-                />
-              ))}
-
-              {/* Render all relationships */}
-              {relationships.map((relationship) => {
-                const sourceTable = whiteboard.tables.find(
-                  (t) => t.id === relationship.sourceTableId,
-                )
-                const targetTable = whiteboard.tables.find(
-                  (t) => t.id === relationship.targetTableId,
-                )
-
-                if (!sourceTable || !targetTable) {
-                  console.warn(
-                    'Missing table for relationship:',
-                    relationship.id,
-                  )
-                  return null
-                }
-
-                return (
-                  <RelationshipEdge
-                    key={relationship.id}
-                    relationship={relationship}
-                    sourceTable={sourceTable}
-                    targetTable={targetTable}
-                    isSelected={selectedRelationshipId === relationship.id}
-                    onClick={setSelectedRelationshipId}
+            {USE_REACT_FLOW ? (
+              /* React Flow Canvas (new) */
+              <ReactFlowWhiteboard
+                whiteboardId={whiteboardId}
+                showMinimap={whiteboard.tables.length > 0}
+                showControls={true}
+                nodesDraggable={true}
+              />
+            ) : (
+              /* Konva Canvas (legacy) */
+              <Canvas
+                width={window.innerWidth}
+                height={window.innerHeight - 160} // Subtract header, tabs, and toolbar height
+                initialViewport={canvasViewport}
+                onViewportChange={handleCanvasViewportChange}
+                stageRef={stageRef}
+              >
+                {/* Render all tables */}
+                {whiteboard.tables.map((table) => (
+                  <TableNode
+                    key={table.id}
+                    table={table}
+                    isSelected={selectedTableId === table.id}
+                    onClick={setSelectedTableId}
+                    onDragEnd={handleTableDragEnd}
                   />
-                )
-              })}
-            </Canvas>
+                ))}
 
-            {/* Minimap - only show when there are tables */}
-            {whiteboard.tables.length > 0 && (
+                {/* Render all relationships */}
+                {relationships.map((relationship) => {
+                  const sourceTable = whiteboard.tables.find(
+                    (t) => t.id === relationship.sourceTableId,
+                  )
+                  const targetTable = whiteboard.tables.find(
+                    (t) => t.id === relationship.targetTableId,
+                  )
+
+                  if (!sourceTable || !targetTable) {
+                    console.warn(
+                      'Missing table for relationship:',
+                      relationship.id,
+                    )
+                    return null
+                  }
+
+                  return (
+                    <RelationshipEdge
+                      key={relationship.id}
+                      relationship={relationship}
+                      sourceTable={sourceTable}
+                      targetTable={targetTable}
+                      isSelected={selectedRelationshipId === relationship.id}
+                      onClick={setSelectedRelationshipId}
+                    />
+                  )
+                })}
+              </Canvas>
+            )}
+
+            {/* Minimap - only show when there are tables and using Konva */}
+            {!USE_REACT_FLOW && whiteboard.tables.length > 0 && (
               <Minimap
                 tables={whiteboard.tables}
                 viewport={canvasViewport}

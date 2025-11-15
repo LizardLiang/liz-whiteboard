@@ -5,6 +5,7 @@ import { Link, createFileRoute } from '@tanstack/react-router'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { Clock, FileText, FolderOpen, PlusCircle } from 'lucide-react'
 import { useState } from 'react'
+import { toast } from 'sonner'
 import { Button } from '@/components/ui/button'
 import {
   Card,
@@ -44,36 +45,45 @@ function HomePage() {
   // Fetch all projects with their tree structure
   const { data: projects, isLoading: projectsLoading } = useQuery({
     queryKey: ['projects', 'tree'],
-    queryFn: async () => {
-      return await getProjectsWithTree()
-    },
+    queryFn: () => getProjectsWithTree(),
   })
 
   // Fetch recent whiteboards
   const { data: recentWhiteboards, isLoading: recentLoading } = useQuery({
     queryKey: ['whiteboards', 'recent'],
-    queryFn: async () => {
-      return await getRecentWhiteboards(8)
-    },
+    queryFn: () => getRecentWhiteboards(8),
   })
 
   // Create project mutation
   const createProjectMutation = useMutation({
     mutationFn: createProjectFn,
-    onSuccess: () => {
+    onSuccess: (data) => {
       queryClient.invalidateQueries({ queryKey: ['projects'] })
+      queryClient.invalidateQueries({ queryKey: ['projects', 'tree'] })
       setShowCreateProject(false)
       setProjectName('')
       setProjectDescription('')
+      toast.success('Project created successfully!', {
+        description: `${data.name} has been added to your projects.`,
+      })
+    },
+    onError: (error: Error) => {
+      toast.error('Failed to create project', {
+        description: error.message || 'An unexpected error occurred. Please try again.',
+      })
     },
   })
 
   const handleCreateProject = async (e: React.FormEvent) => {
     e.preventDefault()
-    await createProjectMutation.mutateAsync({
-      name: projectName,
-      description: projectDescription || undefined,
-    })
+    try {
+      await createProjectMutation.mutateAsync({
+        name: projectName,
+        description: projectDescription || undefined,
+      })
+    } catch (error) {
+      // Error is already handled by onError callback
+    }
   }
 
   const isLoading = projectsLoading || recentLoading
@@ -108,7 +118,7 @@ function HomePage() {
 
       {/* Main Content */}
       <div className="container mx-auto px-4 py-8">
-        {!projects || projects.length === 0 ? (
+        {!projects || !Array.isArray(projects) || projects.length === 0 ? (
           // Empty state
           <div className="flex flex-col items-center justify-center py-20">
             <FolderOpen className="h-24 w-24 text-muted-foreground mb-4" />
@@ -125,7 +135,7 @@ function HomePage() {
         ) : (
           <div className="space-y-8">
             {/* Recent Whiteboards Section */}
-            {recentWhiteboards && recentWhiteboards.length > 0 && (
+            {recentWhiteboards && Array.isArray(recentWhiteboards) && recentWhiteboards.length > 0 && (
               <div>
                 <div className="flex items-center gap-2 mb-4">
                   <Clock className="h-5 w-5 text-muted-foreground" />
@@ -165,7 +175,7 @@ function HomePage() {
                 <h2 className="text-2xl font-semibold">All Projects</h2>
               </div>
               <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-                {projects.map((project) => (
+                {projects && Array.isArray(projects) && projects.map((project) => (
                   <Card
                     key={project.id}
                     className="hover:border-primary transition-colors"
@@ -252,8 +262,11 @@ function HomePage() {
               >
                 Cancel
               </Button>
-              <Button type="submit" disabled={!projectName.trim()}>
-                Create
+              <Button
+                type="submit"
+                disabled={!projectName.trim() || createProjectMutation.isPending}
+              >
+                {createProjectMutation.isPending ? 'Creating...' : 'Create'}
               </Button>
             </DialogFooter>
           </form>

@@ -1,0 +1,166 @@
+/* ============================================================================
+ * React Flow Theme for ER Diagram Whiteboard
+ * ============================================================================ */
+
+/* ----------------------------------------------------------------------------
+ * CSS Variables - Light Mode
+ * ---------------------------------------------------------------------------- */
+:root {
+  /* Table Node Colors */
+  --rf-table-bg: #ffffff;
+  --rf-table-border: #e5e7eb;
+  --rf-table-header-bg: #f9fafb;
+  --rf-table-header-text: #111827;
+  --rf-table-text: #374151;
+  --rf-table-hover-bg: #f3f4f6;
+
+  /* Column Indicators */
+  --rf-primary-key-color: #3b82f6;
+  --rf-foreign-key-color: #10b981;
+
+  /* Edge/Relationship Colors */
+  --rf-edge-stroke: #6b7280;
+  --rf-edge-stroke-hover: #111827;
+  --rf-edge-stroke-selected: #3b82f6;
+
+  /* Handle Colors */
+  --rf-handle-bg: #ffffff;
+  --rf-handle-border: #9ca3af;
+  --rf-handle-hover-bg: #3b82f6;
+  --rf-handle-hover-border: #2563eb;
+
+  /* Background */
+  --rf-background: #ffffff;
+  --rf-background-pattern: #f3f4f6;
+
+  /* Controls */
+  --rf-controls-bg: #ffffff;
+  --rf-controls-border: #e5e7eb;
+  --rf-controls-text: #374151;
+  --rf-controls-hover-bg: #f3f4f6;
+}
+
+/* ----------------------------------------------------------------------------
+ * CSS Variables - Dark Mode
+ * ---------------------------------------------------------------------------- */
+:root[class~="dark"] {
+  /* Table Node Colors */
+  --rf-table-bg: #1f2937;
+  --rf-table-border: #374151;
+  --rf-table-header-bg: #111827;
+  --rf-table-header-text: #f9fafb;
+  --rf-table-text: #d1d5db;
+  --rf-table-hover-bg: #374151;
+
+  /* Column Indicators */
+  --rf-primary-key-color: #60a5fa;
+  --rf-foreign-key-color: #34d399;
+
+  /* Edge/Relationship Colors */
+  --rf-edge-stroke: #9ca3af;
+  --rf-edge-stroke-hover: #f9fafb;
+  --rf-edge-stroke-selected: #60a5fa;
+
+  /* Handle Colors */
+  --rf-handle-bg: #1f2937;
+  --rf-handle-border: #6b7280;
+  --rf-handle-hover-bg: #60a5fa;
+  --rf-handle-hover-border: #3b82f6;
+
+  /* Background */
+  --rf-background: #111827;
+  --rf-background-pattern: #1f2937;
+
+  /* Controls */
+  --rf-controls-bg: #1f2937;
+  --rf-controls-border: #374151;
+  --rf-controls-text: #d1d5db;
+  --rf-controls-hover-bg: #374151;
+}
+
+/* ----------------------------------------------------------------------------
+ * React Flow Base Styles
+ * ---------------------------------------------------------------------------- */
+.react-flow {
+  background-color: var(--rf-background);
+}
+
+.react-flow__background {
+  background-color: var(--rf-background);
+}
+
+.react-flow__background-pattern {
+  fill: var(--rf-background-pattern);
+}
+
+/* ----------------------------------------------------------------------------
+ * Table Node Styles (will be populated in later tasks)
+ * ---------------------------------------------------------------------------- */
+.react-flow__node-erTable {
+  background: var(--rf-table-bg);
+  border: 1px solid var(--rf-table-border);
+  border-radius: 8px;
+  overflow: hidden;
+  box-shadow: 0 1px 3px 0 rgb(0 0 0 / 0.1);
+  min-width: 200px;
+}
+
+.react-flow__node-erTable.selected {
+  box-shadow: 0 0 0 2px var(--rf-edge-stroke-selected);
+}
+
+/* ----------------------------------------------------------------------------
+ * Relationship Edge Styles (will be populated in later tasks)
+ * ---------------------------------------------------------------------------- */
+.react-flow__edge-erRelationship path {
+  stroke: var(--rf-edge-stroke);
+  stroke-width: 2;
+}
+
+.react-flow__edge-erRelationship:hover path {
+  stroke: var(--rf-edge-stroke-hover);
+}
+
+.react-flow__edge-erRelationship.selected path {
+  stroke: var(--rf-edge-stroke-selected);
+  stroke-width: 3;
+}
+
+/* ----------------------------------------------------------------------------
+ * Handle Styles
+ * ---------------------------------------------------------------------------- */
+.react-flow__handle {
+  width: 10px;
+  height: 10px;
+  background: var(--rf-handle-bg);
+  border: 2px solid var(--rf-handle-border);
+}
+
+.react-flow__handle:hover {
+  background: var(--rf-handle-hover-bg);
+  border-color: var(--rf-handle-hover-border);
+}
+
+/* ----------------------------------------------------------------------------
+ * Controls Styles
+ * ---------------------------------------------------------------------------- */
+.react-flow__controls {
+  background: var(--rf-controls-bg);
+  border: 1px solid var(--rf-controls-border);
+  border-radius: 8px;
+  box-shadow: 0 1px 3px 0 rgb(0 0 0 / 0.1);
+}
+
+.react-flow__controls-button {
+  background: var(--rf-controls-bg);
+  color: var(--rf-controls-text);
+  border-bottom: 1px solid var(--rf-controls-border);
+}
+
+.react-flow__controls-button:hover {
+  background: var(--rf-controls-hover-bg);
+}
+
+.react-flow__controls-button:last-child {
+  border-bottom: none;
+}

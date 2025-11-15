@@ -326,7 +326,9 @@ function computeClusterLayout(
   // Extract positions
   return nodes.map((node) => ({
     id: node.id,
+    // eslint-disable-next-line @typescript-eslint/no-unnecessary-condition
     x: Math.round(node.x ?? node.table.positionX),
+    // eslint-disable-next-line @typescript-eslint/no-unnecessary-condition
     y: Math.round(node.y ?? node.table.positionY),
   }))
 }

@@ -1,7 +1,7 @@
 // src/lib/canvas/layout-worker.ts
 // Web Worker for offloading layout computation to prevent UI blocking
 
-import { computeLayout } from './layout-engine'
+import { computeLayout as computeLayoutEngine } from './layout-engine'
 import type { LayoutOptions, LayoutResult } from './layout-engine'
 import type { Column, DiagramTable, Relationship } from '@prisma/client'
 
@@ -45,7 +45,7 @@ if (typeof self !== 'undefined' && 'WorkerGlobalScope' in self) {
         const { tables, relationships, options } = event.data
 
         // Compute layout synchronously in worker thread
-        const result = computeLayout(tables, relationships, options)
+        const result = computeLayoutEngine(tables, relationships, options)
 
         // Send result back to main thread
         const message: LayoutResultMessage = {
@@ -110,6 +110,7 @@ export function createLayoutWorker() {
         if (event.data.type === 'result') {
           worker.removeEventListener('message', handleMessage)
           resolve(event.data.result)
+          // eslint-disable-next-line @typescript-eslint/no-unnecessary-condition
         } else if (event.data.type === 'error') {
           worker.removeEventListener('message', handleMessage)
           reject(new Error(event.data.error))

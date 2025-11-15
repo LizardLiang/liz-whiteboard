@@ -72,9 +72,9 @@ export function getSocketIO(): SocketIOServer | null {
  * Setup whiteboard namespace with connection handlers
  * Namespace pattern: /whiteboard/:whiteboardId
  */
-function setupWhiteboardNamespace(io: SocketIOServer): void {
+function setupWhiteboardNamespace(ioServer: SocketIOServer): void {
   // Dynamic namespace for whiteboards
-  io.of(/^\/whiteboard\/[\w-]+$/).on('connection', async (socket) => {
+  ioServer.of(/^\/whiteboard\/[\w-]+$/).on('connection', async (socket) => {
     // Extract whiteboard ID from namespace
     const namespace = socket.nsp.name
     const whiteboardId = namespace.replace('/whiteboard/', '')

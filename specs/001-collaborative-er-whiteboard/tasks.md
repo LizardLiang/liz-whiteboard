@@ -16,6 +16,7 @@
 ### What's New (This Session):
 
 **User Story 2 - Text-Based Diagram Creation** ✅ COMPLETE
+
 - Chevrotain parser with Mermaid-like syntax
 - Real-time text-to-diagram rendering with 500ms debounce
 - Syntax highlighting and error reporting
@@ -23,6 +24,7 @@
 - 40+ comprehensive test cases
 
 **User Story 3 - Automatic Diagram Layout** ✅ COMPLETE
+
 - d3-force layout engine with relationship strength calculation
 - Web Worker for non-blocking computation
 - "Auto Layout" button with smooth 500ms animations
@@ -30,6 +32,7 @@
 - Performance: <3s for 30 tables
 
 **User Story 4 - Organize Whiteboards** ✅ COMPLETE
+
 - Full project/folder hierarchy navigation
 - Drag-and-drop whiteboards between folders
 - Context menus, cascade delete
@@ -37,6 +40,7 @@
 - Supports 10 levels of folder nesting
 
 **User Story 6 - Canvas Navigation** ✅ COMPLETE
+
 - Zoom/pan controls with minimap
 - Mouse wheel zoom, fit-to-screen
 - 0.1x-5x zoom constraints
@@ -44,6 +48,7 @@
 - 60 FPS smooth performance
 
 **User Story 7 - Dark Mode** ✅ COMPLETE
+
 - Full dark theme support
 - Theme toggle in header
 - localStorage persistence
@@ -53,6 +58,7 @@
 ### Previously Completed:
 
 **User Story 1 - MVP** ✅ COMPLETE
+
 - Database Setup with Prisma
 - Server Functions (TanStack Start)
 - Whiteboard Editor with real-time mutations

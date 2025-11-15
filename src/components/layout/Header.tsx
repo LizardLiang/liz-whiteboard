@@ -3,6 +3,7 @@
 
 import { Link } from '@tanstack/react-router'
 import { Moon, Sun } from 'lucide-react'
+import { useState, useEffect } from 'react'
 import { useTheme } from '../../hooks/use-theme'
 import { Switch } from '@/components/ui/switch'
 
@@ -12,7 +13,13 @@ import { Switch } from '@/components/ui/switch'
  */
 export function Header() {
   const { resolvedTheme, toggleTheme } = useTheme()
+  const [mounted, setMounted] = useState(false)
   const isDark = resolvedTheme === 'dark'
+
+  // Avoid hydration mismatch by only rendering theme-dependent UI after mount
+  useEffect(() => {
+    setMounted(true)
+  }, [])
 
   return (
     <header className="border-b bg-background">
@@ -46,11 +53,20 @@ export function Header() {
         {/* Dark Mode Toggle with Switch */}
         <div className="flex items-center gap-2">
           <Sun className="h-4 w-4 text-muted-foreground" aria-hidden="true" />
-          <Switch
-            checked={isDark}
-            onCheckedChange={toggleTheme}
-            aria-label={`Switch to ${isDark ? 'light' : 'dark'} mode`}
-          />
+          {mounted ? (
+            <Switch
+              checked={isDark}
+              onCheckedChange={toggleTheme}
+              aria-label={`Switch to ${isDark ? 'light' : 'dark'} mode`}
+            />
+          ) : (
+            <Switch
+              checked={false}
+              onCheckedChange={() => {}}
+              aria-label="Theme toggle loading"
+              disabled
+            />
+          )}
           <Moon className="h-4 w-4 text-muted-foreground" aria-hidden="true" />
         </div>
       </div>
