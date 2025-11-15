@@ -77,7 +77,7 @@ function WhiteboardEditor() {
   const [isAutoLayoutComputing, setIsAutoLayoutComputing] = useState(false)
 
   // React Flow auto-layout function (set via callback)
-  const [reactFlowAutoLayout, setReactFlowAutoLayout] = useState<(() => Promise<void>) | null>(null)
+  const reactFlowAutoLayoutRef = useRef<(() => Promise<void>) | null>(null)
 
   // Canvas stage ref for programmatic zoom controls
   const stageRef = useRef<Konva.Stage>(null)
@@ -396,8 +396,8 @@ function WhiteboardEditor() {
       emit('layout:compute', { userId })
 
       // Use React Flow auto-layout if available (feature flag enabled)
-      if (USE_REACT_FLOW && reactFlowAutoLayout) {
-        await reactFlowAutoLayout()
+      if (USE_REACT_FLOW && reactFlowAutoLayoutRef.current) {
+        await reactFlowAutoLayoutRef.current()
         console.log('React Flow ELK layout computed')
       } else {
         // Fallback to d3-force layout (Konva)
@@ -435,7 +435,7 @@ function WhiteboardEditor() {
     } finally {
       setIsAutoLayoutComputing(false)
     }
-  }, [whiteboardData, whiteboardId, userId, emit, queryClient, reactFlowAutoLayout])
+  }, [whiteboardData, whiteboardId, userId, emit, queryClient])
 
   // Initialize textSource from database or sync from canvas when switching to text mode
   useEffect(() => {
@@ -618,10 +618,10 @@ function WhiteboardEditor() {
                 showMinimap={whiteboard.tables.length > 0}
                 showControls={true}
                 nodesDraggable={true}
-                onAutoLayoutReady={(computeLayout, isComputing) => {
-                  setReactFlowAutoLayout(() => computeLayout)
+                onAutoLayoutReady={useCallback((computeLayout, isComputing) => {
+                  reactFlowAutoLayoutRef.current = computeLayout
                   setIsAutoLayoutComputing(isComputing)
-                }}
+                }, [])}
               />
             ) : (
               /* Konva Canvas (legacy) */
