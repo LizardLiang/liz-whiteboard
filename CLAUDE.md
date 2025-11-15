@@ -135,6 +135,23 @@ This is a git repository. Use standard git commands for version control:
 - If shadcn component import fails: `bunx shadcn@latest add <component-name>`
 - If TypeScript errors: Check `tsconfig.json` paths are correct
 
+## Tool usage
+
+"When searching for content within files, use rg (ripgrep) instead of grep. When searching for files by name or path, use fd instead of find. These tools are faster and more efficient. For example:
+
+Use rg "search_term" to search file contents
+Use fd "filename_pattern" to search for files by name
+Use rg -l "pattern" to list files containing a pattern
+Use fd -e py to find all Python files"
+
 ---
 
 **Last Updated**: 2025-10-28
+
+## Active Technologies
+- TypeScript 5.7, React 19.2 (002-react-flow-migration)
+- PostgreSQL via Prisma (existing schema for tables, columns, relationships, positions) (002-react-flow-migration)
+- PostgreSQL via Prisma (existing schema preserved) (003-react-flow-migration)
+
+## Recent Changes
+- 002-react-flow-migration: Added TypeScript 5.7, React 19.2

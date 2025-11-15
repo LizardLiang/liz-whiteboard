@@ -1,7 +1,7 @@
 // src/routes/api/whiteboards.ts
 // TanStack Start server functions for Whiteboard CRUD operations
 
-import { createServerFn } from '@tanstack/start'
+import { createServerFn } from '@tanstack/react-start'
 import { z } from 'zod'
 import {
   createWhiteboard,

@@ -7,12 +7,12 @@ import {
   ChevronDown,
   ChevronRight,
   FolderPlus,
-  MoreVertical,
   Pencil,
   Plus,
   Trash2,
 } from 'lucide-react'
 import { useState } from 'react'
+import { toast } from 'sonner'
 import { FolderItem } from './FolderItem'
 import { WhiteboardItem } from './WhiteboardItem'
 import type { FolderWithChildren } from './FolderItem'
@@ -30,13 +30,6 @@ import {
   DialogHeader,
   DialogTitle,
 } from '@/components/ui/dialog'
-import {
-  DropdownMenu,
-  DropdownMenuContent,
-  DropdownMenuItem,
-  DropdownMenuSeparator,
-  DropdownMenuTrigger,
-} from '@/components/ui/dropdown-menu'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import {
@@ -109,25 +102,42 @@ export function ProjectTree() {
   // Fetch projects with tree structure
   const { data: projects, isLoading } = useQuery({
     queryKey: ['projects', 'tree'],
-    queryFn: async () => await getProjectsWithTree(),
+    queryFn: () => getProjectsWithTree(),
   })
 
   // Mutations
   const createProjectMutation = useMutation({
     mutationFn: createProjectFn,
-    onSuccess: () => {
+    onSuccess: (data) => {
       queryClient.invalidateQueries({ queryKey: ['projects'] })
+      queryClient.invalidateQueries({ queryKey: ['projects', 'tree'] })
       setDialogState({ type: 'none' })
       resetForm()
+      toast.success('Project created!', {
+        description: `${data.name} has been created successfully.`,
+      })
+    },
+    onError: (error: Error) => {
+      toast.error('Failed to create project', {
+        description: error.message || 'An unexpected error occurred.',
+      })
     },
   })
 
   const updateProjectMutation = useMutation({
     mutationFn: updateProjectFn,
-    onSuccess: () => {
+    onSuccess: (data) => {
       queryClient.invalidateQueries({ queryKey: ['projects'] })
       setDialogState({ type: 'none' })
       resetForm()
+      toast.success('Project updated!', {
+        description: `${data.name} has been updated successfully.`,
+      })
+    },
+    onError: (error: Error) => {
+      toast.error('Failed to update project', {
+        description: error.message || 'An unexpected error occurred.',
+      })
     },
   })
 
@@ -136,24 +146,48 @@ export function ProjectTree() {
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['projects'] })
       setDialogState({ type: 'none' })
+      toast.success('Project deleted', {
+        description: 'The project has been deleted successfully.',
+      })
+    },
+    onError: (error: Error) => {
+      toast.error('Failed to delete project', {
+        description: error.message || 'An unexpected error occurred.',
+      })
     },
   })
 
   const createFolderMutation = useMutation({
     mutationFn: createFolderFn,
-    onSuccess: () => {
+    onSuccess: (data) => {
       queryClient.invalidateQueries({ queryKey: ['projects'] })
       setDialogState({ type: 'none' })
       resetForm()
+      toast.success('Folder created!', {
+        description: `${data.name} has been created successfully.`,
+      })
+    },
+    onError: (error: Error) => {
+      toast.error('Failed to create folder', {
+        description: error.message || 'An unexpected error occurred.',
+      })
     },
   })
 
   const updateFolderMutation = useMutation({
     mutationFn: updateFolderFn,
-    onSuccess: () => {
+    onSuccess: (data) => {
       queryClient.invalidateQueries({ queryKey: ['projects'] })
       setDialogState({ type: 'none' })
       resetForm()
+      toast.success('Folder updated!', {
+        description: `${data.name} has been updated successfully.`,
+      })
+    },
+    onError: (error: Error) => {
+      toast.error('Failed to update folder', {
+        description: error.message || 'An unexpected error occurred.',
+      })
     },
   })
 
@@ -162,6 +196,14 @@ export function ProjectTree() {
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['projects'] })
       setDialogState({ type: 'none' })
+      toast.success('Folder deleted', {
+        description: 'The folder has been deleted successfully.',
+      })
+    },
+    onError: (error: Error) => {
+      toast.error('Failed to delete folder', {
+        description: error.message || 'An unexpected error occurred.',
+      })
     },
   })
 
@@ -171,21 +213,37 @@ export function ProjectTree() {
       queryClient.invalidateQueries({ queryKey: ['projects'] })
       setDialogState({ type: 'none' })
       resetForm()
+      toast.success('Whiteboard created!', {
+        description: `${whiteboard.name} has been created successfully.`,
+      })
       // Navigate to the new whiteboard
       navigate({
         to: '/whiteboard/$whiteboardId',
         params: { whiteboardId: whiteboard.id },
       })
     },
+    onError: (error: Error) => {
+      toast.error('Failed to create whiteboard', {
+        description: error.message || 'An unexpected error occurred.',
+      })
+    },
   })
 
   const updateWhiteboardMutation = useMutation({
     mutationFn: updateWhiteboardFn,
-    onSuccess: () => {
+    onSuccess: (data) => {
       queryClient.invalidateQueries({ queryKey: ['projects'] })
       queryClient.invalidateQueries({ queryKey: ['whiteboard'] })
       setDialogState({ type: 'none' })
       resetForm()
+      toast.success('Whiteboard updated!', {
+        description: `${data.name} has been updated successfully.`,
+      })
+    },
+    onError: (error: Error) => {
+      toast.error('Failed to update whiteboard', {
+        description: error.message || 'An unexpected error occurred.',
+      })
     },
   })
 
@@ -194,10 +252,18 @@ export function ProjectTree() {
     onSuccess: (_, deletedId) => {
       queryClient.invalidateQueries({ queryKey: ['projects'] })
       setDialogState({ type: 'none' })
+      toast.success('Whiteboard deleted', {
+        description: 'The whiteboard has been deleted successfully.',
+      })
       // Navigate home if we deleted the active whiteboard
       if (deletedId === activeWhiteboardId) {
         navigate({ to: '/' })
       }
+    },
+    onError: (error: Error) => {
+      toast.error('Failed to delete whiteboard', {
+        description: error.message || 'An unexpected error occurred.',
+      })
     },
   })
 
@@ -282,51 +348,63 @@ export function ProjectTree() {
   // Submit handlers
   const handleSubmitProject = async (e: React.FormEvent) => {
     e.preventDefault()
-    if (dialogState.type === 'createProject') {
-      await createProjectMutation.mutateAsync({
-        name: formName,
-        description: formDescription || undefined,
-      })
-    } else if (dialogState.type === 'editProject') {
-      await updateProjectMutation.mutateAsync({
-        id: dialogState.id,
-        data: {
+    try {
+      if (dialogState.type === 'createProject') {
+        await createProjectMutation.mutateAsync({
           name: formName,
           description: formDescription || undefined,
-        },
-      })
+        })
+      } else if (dialogState.type === 'editProject') {
+        await updateProjectMutation.mutateAsync({
+          id: dialogState.id,
+          data: {
+            name: formName,
+            description: formDescription || undefined,
+          },
+        })
+      }
+    } catch (error) {
+      console.error('Project submission error:', error)
     }
   }
 
   const handleSubmitFolder = async (e: React.FormEvent) => {
     e.preventDefault()
-    if (dialogState.type === 'createFolder') {
-      await createFolderMutation.mutateAsync({
-        name: formName,
-        projectId: formProjectId,
-        parentFolderId: formFolderId || undefined,
-      })
-    } else if (dialogState.type === 'editFolder') {
-      await updateFolderMutation.mutateAsync({
-        id: dialogState.id,
-        data: { name: formName },
-      })
+    try {
+      if (dialogState.type === 'createFolder') {
+        await createFolderMutation.mutateAsync({
+          name: formName,
+          projectId: formProjectId,
+          parentFolderId: formFolderId || undefined,
+        })
+      } else if (dialogState.type === 'editFolder') {
+        await updateFolderMutation.mutateAsync({
+          id: dialogState.id,
+          data: { name: formName },
+        })
+      }
+    } catch (error) {
+      console.error('Folder submission error:', error)
     }
   }
 
   const handleSubmitWhiteboard = async (e: React.FormEvent) => {
     e.preventDefault()
-    if (dialogState.type === 'createWhiteboard') {
-      await createWhiteboardMutation.mutateAsync({
-        name: formName,
-        projectId: formProjectId,
-        folderId: formFolderId || undefined,
-      })
-    } else if (dialogState.type === 'editWhiteboard') {
-      await updateWhiteboardMutation.mutateAsync({
-        id: dialogState.id,
-        data: { name: formName },
-      })
+    try {
+      if (dialogState.type === 'createWhiteboard') {
+        await createWhiteboardMutation.mutateAsync({
+          name: formName,
+          projectId: formProjectId,
+          folderId: formFolderId || undefined,
+        })
+      } else if (dialogState.type === 'editWhiteboard') {
+        await updateWhiteboardMutation.mutateAsync({
+          id: dialogState.id,
+          data: { name: formName },
+        })
+      }
+    } catch (error) {
+      console.error('Whiteboard submission error:', error)
     }
   }
 
@@ -376,7 +454,7 @@ export function ProjectTree() {
       </div>
 
       {/* Projects list */}
-      {!projects || projects.length === 0 ? (
+      {!projects || !Array.isArray(projects) || projects.length === 0 ? (
         <div className="px-3 py-2 text-sm text-muted-foreground">
           No projects yet. Create one to get started.
         </div>
@@ -413,64 +491,65 @@ export function ProjectTree() {
                     </div>
                   </div>
 
-                  {/* Project context menu */}
-                  <DropdownMenu>
-                    <DropdownMenuTrigger asChild>
-                      <Button
-                        variant="ghost"
-                        size="sm"
-                        className="absolute right-1 top-1 h-6 w-6 p-0 opacity-0 group-hover:opacity-100 transition-opacity"
-                        onClick={(e) => e.stopPropagation()}
-                      >
-                        <MoreVertical className="h-3 w-3" />
-                        <span className="sr-only">Open menu</span>
-                      </Button>
-                    </DropdownMenuTrigger>
-                    <DropdownMenuContent align="end">
-                      <DropdownMenuItem
-                        onClick={(e) => {
-                          e.stopPropagation()
-                          handleCreateWhiteboard(project.id)
-                        }}
-                      >
-                        <Plus className="mr-2 h-4 w-4" />
-                        <span>New Whiteboard</span>
-                      </DropdownMenuItem>
-                      <DropdownMenuItem
-                        onClick={(e) => {
-                          e.stopPropagation()
-                          handleCreateFolder(project.id)
-                        }}
-                      >
-                        <Plus className="mr-2 h-4 w-4" />
-                        <span>New Folder</span>
-                      </DropdownMenuItem>
-                      <DropdownMenuSeparator />
-                      <DropdownMenuItem
-                        onClick={(e) => {
-                          e.stopPropagation()
-                          handleEditProject(
-                            project.id,
-                            project.name,
-                            project.description || undefined,
-                          )
-                        }}
-                      >
-                        <Pencil className="mr-2 h-4 w-4" />
-                        <span>Rename</span>
-                      </DropdownMenuItem>
-                      <DropdownMenuItem
-                        onClick={(e) => {
-                          e.stopPropagation()
-                          handleDeleteProject(project.id, project.name)
-                        }}
-                        className="text-destructive focus:text-destructive"
-                      >
-                        <Trash2 className="mr-2 h-4 w-4" />
-                        <span>Delete</span>
-                      </DropdownMenuItem>
-                    </DropdownMenuContent>
-                  </DropdownMenu>
+                  {/* Project action buttons */}
+                  <div className="absolute right-1 top-1 flex gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
+                    <Button
+                      variant="ghost"
+                      size="sm"
+                      className="h-6 w-6 p-0"
+                      onClick={(e) => {
+                        e.stopPropagation()
+                        handleCreateWhiteboard(project.id)
+                      }}
+                      title="New Whiteboard"
+                    >
+                      <Plus className="h-3 w-3" />
+                      <span className="sr-only">New Whiteboard</span>
+                    </Button>
+                    <Button
+                      variant="ghost"
+                      size="sm"
+                      className="h-6 w-6 p-0"
+                      onClick={(e) => {
+                        e.stopPropagation()
+                        handleCreateFolder(project.id)
+                      }}
+                      title="New Folder"
+                    >
+                      <FolderPlus className="h-3 w-3" />
+                      <span className="sr-only">New Folder</span>
+                    </Button>
+                    <Button
+                      variant="ghost"
+                      size="sm"
+                      className="h-6 w-6 p-0"
+                      onClick={(e) => {
+                        e.stopPropagation()
+                        handleEditProject(
+                          project.id,
+                          project.name,
+                          project.description || undefined,
+                        )
+                      }}
+                      title="Rename"
+                    >
+                      <Pencil className="h-3 w-3" />
+                      <span className="sr-only">Rename</span>
+                    </Button>
+                    <Button
+                      variant="ghost"
+                      size="sm"
+                      className="h-6 w-6 p-0 text-destructive hover:text-destructive hover:bg-destructive/10"
+                      onClick={(e) => {
+                        e.stopPropagation()
+                        handleDeleteProject(project.id, project.name)
+                      }}
+                      title="Delete"
+                    >
+                      <Trash2 className="h-3 w-3" />
+                      <span className="sr-only">Delete</span>
+                    </Button>
+                  </div>
                 </div>
 
                 {/* Collapsible content */}

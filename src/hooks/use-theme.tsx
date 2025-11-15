@@ -1,76 +1,180 @@
 // src/hooks/use-theme.ts
-// Dark mode theme management hook using shadcn/ui theme system
+// Theme management hook with localStorage persistence and cross-tab synchronization
 
 import { createContext, useContext, useEffect, useState } from 'react'
 import type { ReactNode } from 'react'
 
-type Theme = 'light' | 'dark' | 'system'
+/**
+ * Theme mode options
+ * - 'light': Force light mode
+ * - 'dark': Force dark mode
+ * - 'system': Follow system preference
+ */
+export type Theme = 'light' | 'dark' | 'system'
 
+/**
+ * Theme context value interface
+ */
 interface ThemeContextValue {
   theme: Theme
   setTheme: (theme: Theme) => void
   toggleTheme: () => void
+  resolvedTheme: 'light' | 'dark'
 }
 
+/**
+ * Theme context
+ */
 const ThemeContext = createContext<ThemeContextValue | undefined>(undefined)
 
 /**
+ * Get the resolved theme (actual applied theme)
+ * Converts 'system' to 'light' or 'dark' based on system preference
+ */
+function getResolvedTheme(theme: Theme): 'light' | 'dark' {
+  if (theme === 'system') {
+    if (typeof window === 'undefined') return 'light'
+    return window.matchMedia('(prefers-color-scheme: dark)').matches
+      ? 'dark'
+      : 'light'
+  }
+  return theme
+}
+
+/**
+ * Apply theme class to document root
+ * Removes all theme classes and adds the resolved theme
+ */
+function applyTheme(theme: Theme): void {
+  if (typeof window === 'undefined') return
+
+  const root = window.document.documentElement
+  const resolved = getResolvedTheme(theme)
+
+  // Remove all theme classes
+  root.classList.remove('light', 'dark')
+
+  // Add resolved theme class
+  root.classList.add(resolved)
+}
+
+/**
+ * Get stored theme from localStorage
+ * Returns 'system' if not set or invalid
+ */
+function getStoredTheme(): Theme {
+  if (typeof window === 'undefined') return 'system'
+
+  try {
+    const stored = localStorage.getItem('theme')
+    if (stored === 'light' || stored === 'dark' || stored === 'system') {
+      return stored
+    }
+  } catch (error) {
+    console.error('Failed to read theme from localStorage:', error)
+  }
+
+  return 'system'
+}
+
+/**
  * Theme provider component
- * Manages dark mode state and applies theme classes to document root
+ * Manages theme state and applies theme classes to document root
  *
- * Theme persistence:
- * - Stored in localStorage as 'ui-theme'
- * - Synced across browser tabs using storage events
- * - Respects system preference when theme is set to 'system'
+ * Features:
+ * - Persists theme preference in localStorage
+ * - Synchronizes theme across browser tabs
+ * - Supports system preference detection
+ * - Provides toggle function for quick theme switching
+ *
+ * @example
+ * ```tsx
+ * function App() {
+ *   return (
+ *     <ThemeProvider>
+ *       <MyApp />
+ *     </ThemeProvider>
+ *   )
+ * }
+ * ```
  */
 export function ThemeProvider({ children }: { children: ReactNode }) {
-  const [theme, setThemeState] = useState<Theme>(() => {
-    // Initialize from localStorage or default to 'system'
-    if (typeof window !== 'undefined') {
-      const stored = localStorage.getItem('ui-theme') as Theme | null
-      return stored || 'system'
+  // Initialize theme from localStorage (use 'system' as default to avoid hydration mismatch)
+  const [theme, setThemeState] = useState<Theme>('system')
+
+  /**
+   * Set theme and persist to localStorage
+   */
+  const setTheme = (newTheme: Theme) => {
+    try {
+      localStorage.setItem('theme', newTheme)
+      setThemeState(newTheme)
+    } catch (error) {
+      console.error('Failed to save theme to localStorage:', error)
     }
-    return 'system'
-  })
+  }
 
+  /**
+   * Toggle between light and dark modes
+   * If current theme is 'system', toggles to opposite of resolved theme
+   */
+  const toggleTheme = () => {
+    const resolved = getResolvedTheme(theme)
+    const newTheme = resolved === 'dark' ? 'light' : 'dark'
+    setTheme(newTheme)
+  }
+
+  /**
+   * Load stored theme on mount (client-side only to avoid hydration mismatch)
+   */
   useEffect(() => {
-    const root = window.document.documentElement
+    const stored = getStoredTheme()
+    if (stored !== theme) {
+      setThemeState(stored)
+    }
+  }, [])
 
-    // Remove existing theme classes
-    root.classList.remove('light', 'dark')
-
-    // Determine effective theme (resolve 'system' to light/dark)
-    const effectiveTheme: 'light' | 'dark' =
-      theme === 'system'
-        ? window.matchMedia('(prefers-color-scheme: dark)').matches
-          ? 'dark'
-          : 'light'
-        : theme
-
-    // Apply theme class to root element
-    root.classList.add(effectiveTheme)
+  /**
+   * Apply theme when it changes
+   */
+  useEffect(() => {
+    applyTheme(theme)
   }, [theme])
 
+  /**
+   * Listen for system theme preference changes (when theme is 'system')
+   */
   useEffect(() => {
-    // Listen for system theme changes when in 'system' mode
-    if (theme === 'system') {
-      const mediaQuery = window.matchMedia('(prefers-color-scheme: dark)')
-      const handleChange = () => {
-        const root = window.document.documentElement
-        root.classList.remove('light', 'dark')
-        root.classList.add(mediaQuery.matches ? 'dark' : 'light')
-      }
+    if (theme !== 'system') return
 
-      mediaQuery.addEventListener('change', handleChange)
-      return () => mediaQuery.removeEventListener('change', handleChange)
+    const mediaQuery = window.matchMedia('(prefers-color-scheme: dark)')
+
+    const handleChange = () => {
+      // Re-apply theme when system preference changes
+      applyTheme(theme)
     }
+
+    mediaQuery.addEventListener('change', handleChange)
+    return () => mediaQuery.removeEventListener('change', handleChange)
   }, [theme])
 
+  /**
+   * Synchronize theme across browser tabs
+   * Listens to localStorage 'storage' event
+   */
   useEffect(() => {
-    // Sync theme across browser tabs
     const handleStorageChange = (e: StorageEvent) => {
-      if (e.key === 'ui-theme' && e.newValue) {
-        setThemeState(e.newValue as Theme)
+      // Only respond to theme changes from other tabs
+      if (e.key === 'theme' && e.newValue) {
+        const newTheme = e.newValue as Theme
+        if (
+          newTheme === 'light' ||
+          newTheme === 'dark' ||
+          // eslint-disable-next-line @typescript-eslint/no-unnecessary-condition
+          newTheme === 'system'
+        ) {
+          setThemeState(newTheme)
+        }
       }
     }
 
@@ -78,42 +182,36 @@ export function ThemeProvider({ children }: { children: ReactNode }) {
     return () => window.removeEventListener('storage', handleStorageChange)
   }, [])
 
-  const setTheme = (newTheme: Theme) => {
-    localStorage.setItem('ui-theme', newTheme)
-    setThemeState(newTheme)
-  }
-
-  const toggleTheme = () => {
-    // Toggle between light and dark (ignore system for toggle)
-    const currentEffective =
-      theme === 'system'
-        ? window.matchMedia('(prefers-color-scheme: dark)').matches
-          ? 'dark'
-          : 'light'
-        : theme
-
-    const newTheme = currentEffective === 'dark' ? 'light' : 'dark'
-    setTheme(newTheme)
-  }
-
   const value: ThemeContextValue = {
     theme,
     setTheme,
     toggleTheme,
+    resolvedTheme: getResolvedTheme(theme),
   }
 
   return <ThemeContext.Provider value={value}>{children}</ThemeContext.Provider>
 }
 
 /**
- * Hook to access theme context
- * Must be used within ThemeProvider
+ * Custom hook for accessing theme context
+ * Must be used within a ThemeProvider
+ *
+ * Features:
+ * - Access current theme mode
+ * - Change theme programmatically
+ * - Toggle between light and dark modes
+ * - Get resolved theme (light or dark)
  *
  * @example
  * ```tsx
- * function MyComponent() {
- *   const { theme, setTheme, toggleTheme } = useTheme();
- *   return <button onClick={toggleTheme}>Toggle Theme</button>;
+ * function ThemeToggle() {
+ *   const { theme, setTheme, toggleTheme, resolvedTheme } = useTheme()
+ *
+ *   return (
+ *     <button onClick={toggleTheme}>
+ *       Current: {resolvedTheme}
+ *     </button>
+ *   )
  * }
  * ```
  */

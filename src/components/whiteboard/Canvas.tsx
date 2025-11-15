@@ -229,15 +229,15 @@ export function Canvas({
 
       // Schedule RAF update
       rafIdRef.current = requestAnimationFrame(() => {
-        const stage = stageRef.current
-        if (!stage || !pendingViewportRef.current) return
+        const stageInstance = stageRef.current
+        if (!stageInstance || !pendingViewportRef.current) return
 
         // Apply position directly to stage (no state update during drag)
-        stage.position({
+        stageInstance.position({
           x: pendingViewportRef.current.offsetX,
           y: pendingViewportRef.current.offsetY,
         })
-        stage.batchDraw()
+        stageInstance.batchDraw()
 
         rafIdRef.current = null
       })
@@ -346,6 +346,7 @@ export function useCanvasControls(
    */
   const notifyViewportChange = useCallback(() => {
     const stage = stageRef.current
+    // eslint-disable-next-line @typescript-eslint/no-unnecessary-condition
     if (!stage || !onViewportChange) return
 
     onViewportChange({
@@ -360,6 +361,7 @@ export function useCanvasControls(
    */
   const zoomIn = useCallback(() => {
     const stage = stageRef.current
+    // eslint-disable-next-line @typescript-eslint/no-unnecessary-condition
     if (!stage) return
 
     const oldZoom = stage.scaleX()
@@ -392,6 +394,7 @@ export function useCanvasControls(
    */
   const zoomOut = useCallback(() => {
     const stage = stageRef.current
+    // eslint-disable-next-line @typescript-eslint/no-unnecessary-condition
     if (!stage) return
 
     const oldZoom = stage.scaleX()
@@ -424,6 +427,7 @@ export function useCanvasControls(
    */
   const resetZoom = useCallback(() => {
     const stage = stageRef.current
+    // eslint-disable-next-line @typescript-eslint/no-unnecessary-condition
     if (!stage) return
 
     stage.scale({ x: 1, y: 1 })
@@ -441,9 +445,11 @@ export function useCanvasControls(
   const fitToScreen = useCallback(
     (padding = 50) => {
       const stage = stageRef.current
+      // eslint-disable-next-line @typescript-eslint/no-unnecessary-condition
       if (!stage) return
 
       const layer = stage.getLayers()[0]
+      // eslint-disable-next-line @typescript-eslint/no-unnecessary-condition
       if (!layer) return
 
       // Get bounding box of all content

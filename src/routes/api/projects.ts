@@ -1,7 +1,7 @@
 // src/routes/api/projects.ts
 // TanStack Start server functions for Project CRUD operations
 
-import { createServerFn } from '@tanstack/start'
+import { createServerFn } from '@tanstack/react-start'
 import { z } from 'zod'
 import {
   createProject,
@@ -32,7 +32,9 @@ export const getProjects = createServerFn('GET', async () => {
  * Get all projects with their folder and whiteboard tree
  * Returns projects with nested folders and whiteboards for navigation
  */
-export const getProjectsWithTree = createServerFn('GET', async () => {
+export const getProjectsWithTree = createServerFn({
+  method: 'GET',
+}).handler(async () => {
   try {
     const projects = await findAllProjectsWithTree()
     return projects

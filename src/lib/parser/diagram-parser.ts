@@ -588,6 +588,7 @@ export function entitiesToText(
   }>,
 ): string {
   // Handle empty case
+  // eslint-disable-next-line @typescript-eslint/no-unnecessary-condition
   if (!tables || tables.length === 0) {
     return '# ER Diagram\n\n# No tables defined yet\n'
   }
@@ -602,6 +603,7 @@ export function entitiesToText(
     }
     text += ' {\n'
 
+    // eslint-disable-next-line @typescript-eslint/no-unnecessary-condition
     if (table.columns && table.columns.length > 0) {
       for (const column of table.columns) {
         text += `  ${column.name} ${column.dataType}`
@@ -620,6 +622,7 @@ export function entitiesToText(
   }
 
   // Generate relationship definitions
+  // eslint-disable-next-line @typescript-eslint/no-unnecessary-condition
   if (relationships && relationships.length > 0) {
     for (const rel of relationships) {
       // Handle both nested objects and IDs

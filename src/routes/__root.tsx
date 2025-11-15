@@ -9,6 +9,7 @@ import { TanStackDevtools } from '@tanstack/react-devtools'
 import { Header } from '../components/layout/Header'
 import { Sidebar } from '../components/layout/Sidebar'
 import { ThemeProvider } from '../hooks/use-theme'
+import { Toaster } from '../components/ui/sonner'
 
 import TanStackQueryDevtools from '../integrations/tanstack-query/devtools'
 
@@ -60,6 +61,7 @@ function RootDocument({ children }: { children: React.ReactNode }) {
               <main className="flex-1 overflow-auto">{children}</main>
             </div>
           </div>
+          <Toaster />
           <TanStackDevtools
             config={{
               position: 'bottom-right',

@@ -6,7 +6,6 @@ import {
   ChevronRight,
   Folder,
   FolderOpen,
-  MoreVertical,
   Pencil,
   Plus,
   Trash2,
@@ -20,13 +19,6 @@ import {
   CollapsibleContent,
   CollapsibleTrigger,
 } from '@/components/ui/collapsible'
-import {
-  DropdownMenu,
-  DropdownMenuContent,
-  DropdownMenuItem,
-  DropdownMenuSeparator,
-  DropdownMenuTrigger,
-} from '@/components/ui/dropdown-menu'
 
 /**
  * Maximum nesting depth for folders
@@ -158,69 +150,69 @@ export function FolderItem({
           </div>
         </div>
 
-        {/* Context Menu */}
-        <DropdownMenu>
-          <DropdownMenuTrigger asChild>
+        {/* Action Buttons */}
+        <div className="absolute right-1 top-1 flex gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
+          {onCreateWhiteboard && (
             <Button
               variant="ghost"
               size="sm"
-              className="absolute right-1 top-1 h-6 w-6 p-0 opacity-0 group-hover:opacity-100 transition-opacity"
-              onClick={(e) => e.stopPropagation()}
+              className="h-6 w-6 p-0"
+              onClick={(e) => {
+                e.stopPropagation()
+                onCreateWhiteboard(folder.id)
+              }}
+              title="New Whiteboard"
             >
-              <MoreVertical className="h-3 w-3" />
-              <span className="sr-only">Open menu</span>
+              <Plus className="h-3 w-3" />
+              <span className="sr-only">New Whiteboard</span>
             </Button>
-          </DropdownMenuTrigger>
-          <DropdownMenuContent align="end">
-            {onCreateWhiteboard && (
-              <DropdownMenuItem
-                onClick={(e) => {
-                  e.stopPropagation()
-                  onCreateWhiteboard(folder.id)
-                }}
-              >
-                <Plus className="mr-2 h-4 w-4" />
-                <span>New Whiteboard</span>
-              </DropdownMenuItem>
-            )}
-            {onCreateFolder && canNestDeeper && (
-              <DropdownMenuItem
-                onClick={(e) => {
-                  e.stopPropagation()
-                  onCreateFolder(folder.id)
-                }}
-              >
-                <Plus className="mr-2 h-4 w-4" />
-                <span>New Subfolder</span>
-              </DropdownMenuItem>
-            )}
-            {(onCreateWhiteboard || onCreateFolder) &&
-              (onRenameFolder || onDeleteFolder) && <DropdownMenuSeparator />}
-            {onRenameFolder && (
-              <DropdownMenuItem
-                onClick={(e) => {
-                  e.stopPropagation()
-                  onRenameFolder(folder.id, folder.name)
-                }}
-              >
-                <Pencil className="mr-2 h-4 w-4" />
-                <span>Rename</span>
-              </DropdownMenuItem>
-            )}
-            {onDeleteFolder && (
-              <DropdownMenuItem
-                onClick={(e) => {
-                  e.stopPropagation()
-                  onDeleteFolder(folder.id, folder.name)
-                }}
-                className="text-destructive focus:text-destructive"
-              >
-                <Trash2 className="mr-2 h-4 w-4" />
-                <span>Delete</span>
-              </DropdownMenuItem>
-            )}
-          </DropdownMenuContent>
-        </DropdownMenu>
+          )}
+          {onCreateFolder && canNestDeeper && (
+            <Button
+              variant="ghost"
+              size="sm"
+              className="h-6 w-6 p-0"
+              onClick={(e) => {
+                e.stopPropagation()
+                onCreateFolder(folder.id)
+              }}
+              title="New Subfolder"
+            >
+              <Folder className="h-3 w-3" />
+              <span className="sr-only">New Subfolder</span>
+            </Button>
+          )}
+          {onRenameFolder && (
+            <Button
+              variant="ghost"
+              size="sm"
+              className="h-6 w-6 p-0"
+              onClick={(e) => {
+                e.stopPropagation()
+                onRenameFolder(folder.id, folder.name)
+              }}
+              title="Rename"
+            >
+              <Pencil className="h-3 w-3" />
+              <span className="sr-only">Rename</span>
+            </Button>
+          )}
+          {onDeleteFolder && (
+            <Button
+              variant="ghost"
+              size="sm"
+              className="h-6 w-6 p-0 text-destructive hover:text-destructive hover:bg-destructive/10"
+              onClick={(e) => {
+                e.stopPropagation()
+                onDeleteFolder(folder.id, folder.name)
+              }}
+              title="Delete"
+            >
+              <Trash2 className="h-3 w-3" />
+              <span className="sr-only">Delete</span>
+            </Button>
+          )}
+        </div>
       </div>
 
       {/* Collapsible Content */}

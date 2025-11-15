@@ -2,6 +2,10 @@
 
 @import 'tw-animate-css';
 
+/* React Flow styles */
+@import '@xyflow/react/dist/style.css';
+@import './styles/react-flow-theme.css';
+
 @custom-variant dark (&:is(.dark *));
 
 body {

@@ -50,5 +50,6 @@ todos.json
 
 # TanStack Start cache
 .tanstack
-.claude
-.specify
+
+# Project planning and documentation (keep these in git)
+# .claude/ and .specify/ should be versioned for team collaboration

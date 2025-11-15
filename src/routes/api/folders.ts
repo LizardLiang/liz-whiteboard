@@ -1,7 +1,7 @@
 // src/routes/api/folders.ts
 // TanStack Start server functions for Folder CRUD operations
 
-import { createServerFn } from '@tanstack/start'
+import { createServerFn } from '@tanstack/react-start'
 import { z } from 'zod'
 import {
   createFolder,
