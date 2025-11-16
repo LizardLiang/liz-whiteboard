@@ -1,0 +1,96 @@
+// src/hooks/use-whiteboard-collaboration.ts
+// React Flow-specific WebSocket collaboration hook
+
+import { useCallback, useEffect } from 'react'
+import type { Node, Edge } from '@xyflow/react'
+import { useCollaboration } from './use-collaboration'
+import type { TableNodeType, RelationshipEdgeType } from '@/lib/react-flow/types'
+
+/**
+ * Position update event data from WebSocket
+ */
+export interface PositionUpdateEvent {
+  tableId: string
+  positionX: number
+  positionY: number
+  userId?: string
+}
+
+/**
+ * useWhiteboardCollaboration hook - React Flow integration for real-time collaboration
+ *
+ * This hook integrates the base WebSocket collaboration with React Flow's state management.
+ * It handles incoming position updates from other users and emits outgoing updates.
+ *
+ * @param whiteboardId - Whiteboard UUID to connect to
+ * @param userId - Current user UUID for authentication
+ * @param onPositionUpdate - Callback to update React Flow nodes when other users move tables
+ * @returns Collaboration state and emit function
+ *
+ * @example
+ * ```tsx
+ * const { connectionState, emitPositionUpdate } = useWhiteboardCollaboration(
+ *   whiteboardId,
+ *   userId,
+ *   (tableId, x, y) => {
+ *     // Update React Flow nodes state
+ *     setNodes((nds) =>
+ *       nds.map((node) =>
+ *         node.id === tableId ? { ...node, position: { x, y } } : node
+ *       )
+ *     )
+ *   }
+ * )
+ * ```
+ */
+export function useWhiteboardCollaboration(
+  whiteboardId: string,
+  userId: string,
+  onPositionUpdate: (tableId: string, positionX: number, positionY: number) => void
+) {
+  // Use the base collaboration hook
+  const { emit, on, off, connectionState, activeUsers } = useCollaboration(
+    whiteboardId,
+    userId
+  )
+
+  // Listen for table position updates from other users
+  useEffect(() => {
+    const handlePositionUpdate = (data: PositionUpdateEvent) => {
+      // Ignore updates from current user (already applied optimistically)
+      if (data.userId === userId) return
+
+      console.log('Position update from another user:', data)
+      onPositionUpdate(data.tableId, data.positionX, data.positionY)
+    }
+
+    // Register event listeners
+    on('table:moved', handlePositionUpdate)
+    on('table:position-updated', handlePositionUpdate) // Support both event names
+
+    // Cleanup on unmount
+    return () => {
+      off('table:moved', handlePositionUpdate)
+      off('table:position-updated', handlePositionUpdate)
+    }
+  }, [on, off, userId, onPositionUpdate])
+
+  // Emit position update to other users
+  const emitPositionUpdate = useCallback(
+    (tableId: string, positionX: number, positionY: number) => {
+      emit('table:move', {
+        tableId,
+        positionX,
+        positionY,
+        userId,
+      })
+    },
+    [emit, userId]
+  )
+
+  return {
+    connectionState,
+    activeUsers,
+    emitPositionUpdate,
+  }
+}

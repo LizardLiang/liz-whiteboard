@@ -20,6 +20,7 @@ import '@/styles/react-flow-theme.css';
 import type { TableNodeType, RelationshipEdgeType } from '@/lib/react-flow/types';
 import { nodeTypes, edgeTypes } from '@/lib/react-flow/node-types';
 import { calculateHighlighting } from '@/lib/react-flow/highlighting';
+import { CardinalityMarkerDefs } from './CardinalityMarkerDefs';
 
 /**
  * ReactFlowCanvas Props
@@ -164,6 +165,9 @@ export function ReactFlowCanvas({
 
   return (
     <div className={`react-flow-wrapper ${className}`} style={{ width: '100%', height: '100%' }}>
+      {/* Global SVG marker definitions for cardinality indicators */}
+      <CardinalityMarkerDefs />
+
       <ReactFlow
         nodes={nodes}
         edges={edges}
