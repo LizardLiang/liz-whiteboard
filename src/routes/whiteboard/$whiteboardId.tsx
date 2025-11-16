@@ -79,6 +79,10 @@ function WhiteboardEditor() {
   // React Flow auto-layout function (set via callback)
   const reactFlowAutoLayoutRef = useRef<(() => Promise<void>) | null>(null)
 
+  // React Flow display mode controls (set via callback)
+  const [reactFlowShowMode, setReactFlowShowMode] = useState<string>('ALL_FIELDS')
+  const reactFlowShowModeRef = useRef<((mode: string) => void) | null>(null)
+
   // Canvas stage ref for programmatic zoom controls
   const stageRef = useRef<Konva.Stage>(null)
 
@@ -437,6 +441,38 @@ function WhiteboardEditor() {
     }
   }, [whiteboardData, whiteboardId, userId, emit, queryClient])
 
+  /**
+   * Callback for React Flow to register its auto-layout function
+   */
+  const handleAutoLayoutReady = useCallback(
+    (computeLayout: () => Promise<void>, isComputing: boolean) => {
+      reactFlowAutoLayoutRef.current = computeLayout
+      setIsAutoLayoutComputing(isComputing)
+    },
+    [],
+  )
+
+  /**
+   * Callback for React Flow to register its display mode controls
+   */
+  const handleDisplayModeReady = useCallback(
+    (showMode: string, setShowMode: (mode: string) => void) => {
+      setReactFlowShowMode(showMode)
+      reactFlowShowModeRef.current = setShowMode
+    },
+    [],
+  )
+
+  /**
+   * Handle display mode change from Toolbar
+   */
+  const handleShowModeChange = useCallback((mode: string) => {
+    if (USE_REACT_FLOW && reactFlowShowModeRef.current) {
+      reactFlowShowModeRef.current(mode)
+      setReactFlowShowMode(mode)
+    }
+  }, [])
+
   // Initialize textSource from database or sync from canvas when switching to text mode
   useEffect(() => {
     if (activeTab === 'text' && whiteboardData?.whiteboard) {
@@ -607,6 +643,8 @@ function WhiteboardEditor() {
             onAutoLayoutEnabledChange={setAutoLayoutEnabled}
             zoomControls={canvasControls}
             currentZoom={canvasViewport.zoom}
+            showMode={USE_REACT_FLOW ? (reactFlowShowMode as any) : undefined}
+            onShowModeChange={USE_REACT_FLOW ? handleShowModeChange : undefined}
           />
 
           {/* Canvas - Toggle between Konva and React Flow */}
@@ -615,13 +653,12 @@ function WhiteboardEditor() {
               /* React Flow Canvas (new) */
               <ReactFlowWhiteboard
                 whiteboardId={whiteboardId}
+                userId={userId}
                 showMinimap={whiteboard.tables.length > 0}
                 showControls={true}
                 nodesDraggable={true}
-                onAutoLayoutReady={useCallback((computeLayout, isComputing) => {
-                  reactFlowAutoLayoutRef.current = computeLayout
-                  setIsAutoLayoutComputing(isComputing)
-                }, [])}
+                onAutoLayoutReady={handleAutoLayoutReady}
+                onDisplayModeReady={handleDisplayModeReady}
               />
             ) : (
               /* Konva Canvas (legacy) */

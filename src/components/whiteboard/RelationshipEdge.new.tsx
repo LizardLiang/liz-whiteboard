@@ -1,11 +1,12 @@
 import { memo } from 'react';
 import { BaseEdge, EdgeProps, getSmoothStepPath, EdgeLabelRenderer } from '@xyflow/react';
 import type { RelationshipEdgeData } from '@/lib/react-flow/types';
-import { CardinalityMarker } from './cardinality-markers';
+import { Z_INDEX } from '@/lib/react-flow/types';
 
 /**
  * Custom React Flow edge component for rendering ER diagram relationships
  * Displays relationship arrows with cardinality notation (crow's foot)
+ * Uses SVG marker definitions for cardinality indicators
  */
 export const RelationshipEdge = memo(
   ({
@@ -30,15 +31,28 @@ export const RelationshipEdge = memo(
 
     const { cardinality, label, isHighlighted } = data || {};
 
-    // Calculate angle for cardinality markers
-    const angle = Math.atan2(targetY - sourceY, targetX - sourceX);
+    // Determine marker IDs based on cardinality and highlight state
+    const getMarkerStart = () => {
+      const suffix = isHighlighted || selected ? 'Highlight' : '';
+      return `url(#zeroOrOneRight${suffix})`;
+    };
+
+    const getMarkerEnd = () => {
+      const suffix = isHighlighted || selected ? 'Highlight' : '';
+      if (cardinality === 'ONE_TO_ONE') {
+        return `url(#zeroOrOneLeft${suffix})`;
+      }
+      return `url(#zeroOrManyLeft${suffix})`;
+    };
 
     return (
       <>
-        {/* Main edge path */}
+        {/* Main edge path with cardinality markers */}
         <BaseEdge
           id={id}
           path={edgePath}
+          markerStart={getMarkerStart()}
+          markerEnd={getMarkerEnd()}
           style={{
             stroke: selected || isHighlighted ? 'var(--rf-edge-stroke-selected)' : 'var(--rf-edge-stroke)',
             strokeWidth: selected || isHighlighted ? 3 : 2,
@@ -60,24 +74,6 @@ export const RelationshipEdge = memo(
           </g>
         )}
 
-        {/* Cardinality marker at target */}
-        {cardinality && (
-          <g transform={`translate(${targetX}, ${targetY})`}>
-            <CardinalityMarker cardinality={cardinality} angle={angle} isTarget={true} />
-          </g>
-        )}
-
-        {/* Cardinality marker at source */}
-        {cardinality && (
-          <g transform={`translate(${sourceX}, ${sourceY})`}>
-            <CardinalityMarker
-              cardinality={cardinality}
-              angle={angle + Math.PI}
-              isTarget={false}
-            />
-          </g>
-        )}
-
         {/* Edge label */}
         {label && (
           <EdgeLabelRenderer>
@@ -93,6 +89,7 @@ export const RelationshipEdge = memo(
                 borderRadius: '4px',
                 border: '1px solid var(--rf-table-border)',
                 color: 'var(--rf-table-text)',
+                zIndex: Z_INDEX.EDGE_LABEL,
               }}
               className="nodrag nopan"
             >

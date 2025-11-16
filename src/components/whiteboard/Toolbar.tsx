@@ -4,6 +4,7 @@
 import { useState } from 'react'
 import type { Cardinality, Column, DiagramTable } from '@prisma/client'
 import type { CreateRelationship, CreateTable } from '@/data/schema'
+import type { ShowMode } from '@/lib/react-flow/types'
 import { Button } from '@/components/ui/button'
 import { Switch } from '@/components/ui/switch'
 import { Label } from '@/components/ui/label'
@@ -64,6 +65,10 @@ export interface ToolbarProps {
   zoomControls?: ZoomControls
   /** Current zoom level (0-5) for display */
   currentZoom?: number
+  /** Current display mode */
+  showMode?: ShowMode
+  /** Callback when display mode changes */
+  onShowModeChange?: (mode: ShowMode) => void
   /** Optional CSS class name */
   className?: string
 }
@@ -122,6 +127,8 @@ export function Toolbar({
   onAutoLayoutEnabledChange,
   zoomControls,
   currentZoom = 1,
+  showMode = 'ALL_FIELDS',
+  onShowModeChange,
   className = '',
 }: ToolbarProps) {
   // Table dialog state
@@ -440,6 +447,39 @@ export function Toolbar({
           Auto-arrange new tables
         </Label>
       </div>
+
+      {/* Display Mode Toggle */}
+      {onShowModeChange && (
+        <div className="flex items-center gap-2 border-l pl-4">
+          <Label className="text-sm text-muted-foreground">Display:</Label>
+          <div className="flex items-center gap-1">
+            <Button
+              variant={showMode === 'TABLE_NAME' ? 'default' : 'outline'}
+              size="sm"
+              onClick={() => onShowModeChange('TABLE_NAME')}
+              title="Show table names only"
+            >
+              Compact
+            </Button>
+            <Button
+              variant={showMode === 'KEY_ONLY' ? 'default' : 'outline'}
+              size="sm"
+              onClick={() => onShowModeChange('KEY_ONLY')}
+              title="Show table names and primary/foreign keys"
+            >
+              Keys
+            </Button>
+            <Button
+              variant={showMode === 'ALL_FIELDS' ? 'default' : 'outline'}
+              size="sm"
+              onClick={() => onShowModeChange('ALL_FIELDS')}
+              title="Show all columns"
+            >
+              All
+            </Button>
+          </div>
+        </div>
+      )}
 
       {/* Spacer to push zoom controls to the right */}
       <div className="flex-1" />
