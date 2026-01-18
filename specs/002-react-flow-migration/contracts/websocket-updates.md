@@ -109,16 +109,16 @@ socket.emit('node:position:update', {
 ```typescript
 socket.on('node:position:update', (event) => {
   // Set flag to prevent echo-back
-  isProcessingRemote = true;
+  isProcessingRemote = true
 
   // Update node position in store
-  updateNodePosition(event.nodeId, event.position);
+  updateNodePosition(event.nodeId, event.position)
 
   // Reset flag after render
   requestAnimationFrame(() => {
-    isProcessingRemote = false;
-  });
-});
+    isProcessingRemote = false
+  })
+})
 ```
 
 ### Node Added
@@ -431,9 +431,9 @@ Each update includes a timestamp and optional version number. The server applies
 // Server-side conflict resolution
 function resolveConflict(current, incoming) {
   if (!current.timestamp || incoming.timestamp > current.timestamp) {
-    return incoming;  // Apply newer update
+    return incoming // Apply newer update
   }
-  return current;  // Keep existing
+  return current // Keep existing
 }
 ```
 
@@ -460,9 +460,9 @@ socket.on('conflict:detected', (event) => {
   // Show toast notification
   toast.warning(
     `Your change to ${event.entityType} was overwritten by ${event.winningUsername}`,
-    { duration: 3000 }
-  );
-});
+    { duration: 3000 },
+  )
+})
 ```
 
 ---
@@ -510,14 +510,14 @@ const throttledPositionUpdate = throttle((nodeId, position) => {
     nodeId,
     position,
     userId: currentUser.id,
-    timestamp: Date.now()
-  });
-}, 100);  // 100ms = 10 updates/second
+    timestamp: Date.now(),
+  })
+}, 100) // 100ms = 10 updates/second
 
 // Usage in onNodeDrag handler
 const onNodeDrag: NodeDragHandler = (event, node) => {
-  throttledPositionUpdate(node.id, node.position);
-};
+  throttledPositionUpdate(node.id, node.position)
+}
 ```
 
 ### Server-Side Rate Limiting
@@ -526,16 +526,16 @@ const onNodeDrag: NodeDragHandler = (event, node) => {
 // Limit to 50 events per second per user
 const rateLimiter = new RateLimiter({
   windowMs: 1000,
-  max: 50
-});
+  max: 50,
+})
 
 socket.use((packet, next) => {
   if (rateLimiter.consume(socket.id)) {
-    next();
+    next()
   } else {
-    socket.emit('error', { message: 'Rate limit exceeded' });
+    socket.emit('error', { message: 'Rate limit exceeded' })
   }
-});
+})
 ```
 
 ---
@@ -559,19 +559,19 @@ socket.emit('error', {
 
 ```typescript
 socket.on('error', (error) => {
-  console.error('WebSocket error:', error);
+  console.error('WebSocket error:', error)
 
   switch (error.code) {
     case 'PERMISSION_DENIED':
-      toast.error('You do not have permission to edit this whiteboard');
-      break;
+      toast.error('You do not have permission to edit this whiteboard')
+      break
     case 'RATE_LIMIT':
-      toast.warning('Slow down! Too many updates');
-      break;
+      toast.warning('Slow down! Too many updates')
+      break
     default:
-      toast.error(error.message);
+      toast.error(error.message)
   }
-});
+})
 ```
 
 ---
@@ -582,33 +582,33 @@ socket.on('error', (error) => {
 
 ```typescript
 socket.on('disconnect', (reason) => {
-  console.log('Disconnected:', reason);
+  console.log('Disconnected:', reason)
   // Show offline indicator
-  setConnectionStatus('disconnected');
-});
+  setConnectionStatus('disconnected')
+})
 ```
 
 ### On Reconnect
 
 ```typescript
 socket.on('connect', () => {
-  console.log('Reconnected');
+  console.log('Reconnected')
 
   // Rejoin whiteboard room
   socket.emit('whiteboard:join', {
     whiteboardId,
     userId: currentUser.id,
-    username: currentUser.username
-  });
+    username: currentUser.username,
+  })
 
   // Request full state sync
   socket.emit('sync:request', {
     whiteboardId,
-    userId: currentUser.id
-  });
+    userId: currentUser.id,
+  })
 
-  setConnectionStatus('connected');
-});
+  setConnectionStatus('connected')
+})
 ```
 
 ---
@@ -618,59 +618,60 @@ socket.on('connect', () => {
 ### Client-Side Integration
 
 ```typescript
-import { io } from 'socket.io-client';
-import { useWhiteboardStore } from '@/stores/whiteboard';
+import { io } from 'socket.io-client'
+import { useWhiteboardStore } from '@/stores/whiteboard'
 
 export function useWebSocketSync(whiteboardId: string) {
-  const { updateNode, addNode, removeNode, updateEdge, addEdge, removeEdge } = useWhiteboardStore();
-  const [socket, setSocket] = useState<Socket | null>(null);
-  const isProcessingRemote = useRef(false);
+  const { updateNode, addNode, removeNode, updateEdge, addEdge, removeEdge } =
+    useWhiteboardStore()
+  const [socket, setSocket] = useState<Socket | null>(null)
+  const isProcessingRemote = useRef(false)
 
   useEffect(() => {
-    const socket = io(import.meta.env.VITE_WS_URL);
+    const socket = io(import.meta.env.VITE_WS_URL)
 
     // Join whiteboard
     socket.emit('whiteboard:join', {
       whiteboardId,
       userId: currentUser.id,
-      username: currentUser.username
-    });
+      username: currentUser.username,
+    })
 
     // Listen for node updates
     socket.on('node:position:update', (event) => {
-      isProcessingRemote.current = true;
-      updateNode(event.nodeId, { position: event.position });
+      isProcessingRemote.current = true
+      updateNode(event.nodeId, { position: event.position })
       requestAnimationFrame(() => {
-        isProcessingRemote.current = false;
-      });
-    });
+        isProcessingRemote.current = false
+      })
+    })
 
     socket.on('node:added', (event) => {
-      isProcessingRemote.current = true;
-      addNode(event.node);
+      isProcessingRemote.current = true
+      addNode(event.node)
       requestAnimationFrame(() => {
-        isProcessingRemote.current = false;
-      });
-    });
+        isProcessingRemote.current = false
+      })
+    })
 
     socket.on('node:deleted', (event) => {
-      isProcessingRemote.current = true;
-      removeNode(event.nodeId);
-      event.deletedEdgeIds.forEach(edgeId => removeEdge(edgeId));
+      isProcessingRemote.current = true
+      removeNode(event.nodeId)
+      event.deletedEdgeIds.forEach((edgeId) => removeEdge(edgeId))
       requestAnimationFrame(() => {
-        isProcessingRemote.current = false;
-      });
-    });
+        isProcessingRemote.current = false
+      })
+    })
 
     // Similar handlers for edge events...
 
-    setSocket(socket);
+    setSocket(socket)
 
     return () => {
-      socket.emit('whiteboard:leave', { whiteboardId, userId: currentUser.id });
-      socket.disconnect();
-    };
-  }, [whiteboardId]);
+      socket.emit('whiteboard:leave', { whiteboardId, userId: currentUser.id })
+      socket.disconnect()
+    }
+  }, [whiteboardId])
 
   return {
     socket,
@@ -682,11 +683,11 @@ export function useWebSocketSync(whiteboardId: string) {
           nodeId,
           updates,
           userId: currentUser.id,
-          timestamp: Date.now()
-        });
+          timestamp: Date.now(),
+        })
       }
-    }
-  };
+    },
+  }
 }
 ```
 

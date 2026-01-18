@@ -17,6 +17,7 @@
 5. **Real-time collaboration**: Konva's canvas-based approach has lower bandwidth requirements than DOM updates
 
 **However**, React Flow remains viable for:
+
 - Future lightweight diagram editors with <50 nodes
 - Scenarios where DOM interactivity (forms, buttons) is more important than raw performance
 - Teams preferring React ecosystem patterns over canvas APIs
@@ -30,18 +31,21 @@
 **Current Status**: Active development, v12.9.2 (latest as of 2025-11)
 
 **Migration History**:
+
 - The old `reactflow` package was rebranded to `@xyflow/react` with v12 release (Spring 2025)
 - Old `reactflow` package no longer receives updates (v11 is final)
 - All new projects should use `@xyflow/react`
 - The team confirmed the package name won't change again
 
 **React 19 Compatibility**:
+
 - Mostly compatible with React 19.2
 - Early 2025 versions (12.6.0) had zustand v4.4.0 compatibility issues with React 19
 - v12.9.2 has resolved these peer dependency issues
 - UI components fully support React 19 and Tailwind CSS 4
 
 **TypeScript Support Quality**:
+
 - **Excellent**: First-class TypeScript support with built-in type definitions
 - Exports comprehensive types: `Node`, `Edge`, `FitViewOptions`, `OnConnect`, `OnNodesChange`, `OnEdgesChange`, `OnNodeDrag`
 - Hooks like `useReactFlow`, `useNodeConnections`, `useNodesData`, `useStore` support generic type parameters
@@ -50,16 +54,17 @@
 
 **Bundle Size Comparison**:
 
-| Package | Version | Minified | Gzipped | Notes |
-|---------|---------|----------|---------|-------|
-| @xyflow/react | 12.9.2 | ~250 KB | ~75-80 KB | Includes d3-zoom as dependency |
-| react-konva | 19.2.0 | ~150 KB | ~48.6 KB | Wraps full Konva library |
-| konva | 10.0.8 | ~380 KB | ~54.9 KB | Includes all shapes/filters |
-| d3-force | 3.0.0 | ~60 KB | ~20 KB | Only force simulation module |
-| **Current Stack Total** | - | ~590 KB | ~122.9 KB | Konva + react-konva + d3-force |
-| **React Flow Alternative** | 12.9.2 | ~250 KB | ~75-80 KB | No d3-force needed |
+| Package                    | Version | Minified | Gzipped   | Notes                          |
+| -------------------------- | ------- | -------- | --------- | ------------------------------ |
+| @xyflow/react              | 12.9.2  | ~250 KB  | ~75-80 KB | Includes d3-zoom as dependency |
+| react-konva                | 19.2.0  | ~150 KB  | ~48.6 KB  | Wraps full Konva library       |
+| konva                      | 10.0.8  | ~380 KB  | ~54.9 KB  | Includes all shapes/filters    |
+| d3-force                   | 3.0.0   | ~60 KB   | ~20 KB    | Only force simulation module   |
+| **Current Stack Total**    | -       | ~590 KB  | ~122.9 KB | Konva + react-konva + d3-force |
+| **React Flow Alternative** | 12.9.2  | ~250 KB  | ~75-80 KB | No d3-force needed             |
 
 **Bundle Analysis**:
+
 - React Flow is lighter when replacing entire stack (saves ~47.9 KB gzipped)
 - However, React Flow includes d3-zoom which overlaps with Konva's built-in zoom/pan
 - For ER diagrams specifically, Konva's bundle is well-justified (diagram clarity > bundle size)
@@ -116,12 +121,14 @@ export const TableNode: React.FC<NodeProps<TableNodeData>> = ({ data, selected }
 ```
 
 **Handle Positioning**:
+
 - React Flow provides `Position` enum: `Top`, `Right`, `Bottom`, `Left`
 - For column-specific connections, use unique handle IDs: `${tableName}_${columnId}_target`
 - Horizontal flows typically use `Position.Left` (target) and `Position.Right` (source)
 - Multiple handles on same side require custom positioning via inline styles or CSS
 
 **Node Auto-Sizing**:
+
 - React Flow calculates node dimensions from DOM content
 - Custom nodes must be wrapped in `.react-flow__node` div (auto-handled)
 - Dimensions available via `useNodeConnections()` and `useStore()`
@@ -130,6 +137,7 @@ export const TableNode: React.FC<NodeProps<TableNodeData>> = ({ data, selected }
 **Styling Approaches**:
 
 1. **CSS Classes** (recommended for dark mode):
+
    ```css
    .table-node {
      border: 1px solid var(--color-border);
@@ -143,11 +151,12 @@ export const TableNode: React.FC<NodeProps<TableNodeData>> = ({ data, selected }
    ```
 
 2. **CSS Variables** (TailwindCSS compatible):
+
    ```typescript
    const style = {
      borderColor: isDark ? '#333' : '#ccc',
-     background: isDark ? '#1a1a1a' : '#fff'
-   };
+     background: isDark ? '#1a1a1a' : '#fff',
+   }
    ```
 
 3. **TailwindCSS Classes** (not ideal for canvas dynamic styling):
@@ -241,18 +250,19 @@ export const CardinalityEdge: React.FC<CardinalityEdgeProps> = ({
 const oneToOneMarker = `
   <line x1="-5" y1="0" x2="0" y2="0" stroke="currentColor" strokeWidth="2"/>
   <line x1="0" y1="0" x2="5" y2="0" stroke="currentColor" strokeWidth="2"/>
-`;
+`
 
 // One-to-many (crow's foot)
 const oneToManyMarker = `
   <polyline points="0,0 -5,-5 0,-3 5,-5" fill="none" stroke="currentColor" strokeWidth="1"/>
-`;
+`
 
 // Many-to-many (crow's foot both ends)
 // Requires separate startMarker and endMarker definitions
 ```
 
 **Edge Label Positioning**:
+
 - `getStraightPath()` returns `[edgePath, labelX, labelY]` for centered label
 - Alternative path utilities:
   - `getBezierPath()` - curved edges with label position
@@ -262,6 +272,7 @@ const oneToManyMarker = `
 - Styling via CSS classes: `.react-flow__edge-label`
 
 **Edge-to-Handle Connections**:
+
 - Specify `sourceHandle` and `targetHandle` in edge definition to connect to specific handles:
   ```typescript
   const edges = [
@@ -269,15 +280,16 @@ const oneToManyMarker = `
       id: 'e1',
       source: 'Users',
       target: 'Orders',
-      sourceHandle: 'Users_id_source',  // Specific handle ID
-      targetHandle: 'Orders_user_id_target'
-    }
-  ];
+      sourceHandle: 'Users_id_source', // Specific handle ID
+      targetHandle: 'Orders_user_id_target',
+    },
+  ]
   ```
 - Without explicit handle IDs, edges connect to default handles
 - Handle IDs must match format used in custom node component
 
 **Styling Approaches** (same as nodes):
+
 - CSS variables for light/dark mode support
 - Inline styles for dynamic coloring
 - Marker colors inherit from SVG context (use `currentColor`)
@@ -290,16 +302,17 @@ const oneToManyMarker = `
 
 **Test Conditions**: 100 nodes with custom data, dragging operations
 
-| Metric | Konva (Canvas) | React Flow (DOM) | Winner |
-|--------|---|---|---|
-| Initial render (no drag) | 60 FPS | 60 FPS | Tie |
-| Dragging simple nodes | 50+ FPS | 35-40 FPS | Konva |
-| Dragging complex nodes | 35-40 FPS (with DataGrid) | 25-30 FPS | Konva |
-| Panning/zooming | 60 FPS | 55-60 FPS | Tie |
-| Edge rendering (100 edges) | ~55 FPS | ~45 FPS | Konva |
-| Memory usage (100 nodes) | ~15-20 MB | ~25-30 MB | Konva |
+| Metric                     | Konva (Canvas)            | React Flow (DOM) | Winner |
+| -------------------------- | ------------------------- | ---------------- | ------ |
+| Initial render (no drag)   | 60 FPS                    | 60 FPS           | Tie    |
+| Dragging simple nodes      | 50+ FPS                   | 35-40 FPS        | Konva  |
+| Dragging complex nodes     | 35-40 FPS (with DataGrid) | 25-30 FPS        | Konva  |
+| Panning/zooming            | 60 FPS                    | 55-60 FPS        | Tie    |
+| Edge rendering (100 edges) | ~55 FPS                   | ~45 FPS          | Konva  |
+| Memory usage (100 nodes)   | ~15-20 MB                 | ~25-30 MB        | Konva  |
 
 **Explanation**:
+
 - **Konva**: Single canvas element, optimized rendering pipeline, minimal DOM overhead
 - **React Flow**: Each node/edge is DOM element, causing more reflows during interactions
 - **Sweet spot**: <50 nodes - both perform well; 100+ nodes - Konva has measurable advantage
@@ -307,6 +320,7 @@ const oneToManyMarker = `
 ### Viewport Culling & Virtual Rendering
 
 **React Flow Built-in Features**:
+
 - `onlyRenderVisibleElements` prop: Disable rendering of nodes outside viewport
 - Set to `false` by default (renders all nodes)
 - Improves performance with 1000+ nodes by skipping off-screen rendering
@@ -323,6 +337,7 @@ const oneToManyMarker = `
 ```
 
 **Konva Equivalent**:
+
 - No built-in viewport culling
 - Requires custom implementation using `viewport` calculations
 - Can be more performant if implemented efficiently (canvas context clip)
@@ -333,10 +348,12 @@ const oneToManyMarker = `
 **React Flow Recommendations**:
 
 1. **Memoization (CRITICAL)**:
+
    ```typescript
    const CustomNode = React.memo(({ data }) => <div>{data.label}</div>);
    const CustomEdge = React.memo((props) => <BaseEdge {...props} />);
    ```
+
    - Declare components outside parent component or use React.memo
    - Without memoization, all nodes re-render on any state change
 
@@ -354,6 +371,7 @@ const oneToManyMarker = `
    - Debounce layout calculations (500ms)
 
 **Comparison with Konva**:
+
 - Konva doesn't require memoization (canvas rendering is independent)
 - Konva's `batchDraw()` handles optimization automatically
 - React Flow requires more manual optimization effort
@@ -361,12 +379,14 @@ const oneToManyMarker = `
 ### Bundle Size Impact
 
 **For ER Diagram Use Case**:
+
 - Current Konva approach: 122.9 KB (gzipped)
 - React Flow approach: 75-80 KB (gzipped)
 - **Savings**: ~47.9 KB gzipped
 - **Trade-off**: 15-20% performance degradation for drag operations
 
 **Real-world Impact**:
+
 - At 50-70 nodes (typical ER diagram): imperceptible difference
 - At 100+ nodes: React Flow requires viewport culling to maintain 60 FPS
 - Bundle size savings negligible compared to React + TanStack Router overhead
@@ -378,6 +398,7 @@ const oneToManyMarker = `
 ### Creating a Complex Table Node
 
 **React Flow Approach**:
+
 ```typescript
 // Component is wrapped in div with positioning
 // Requires CSS for styling
@@ -385,16 +406,19 @@ const oneToManyMarker = `
 ```
 
 **Pros**:
+
 - Familiar React component API
 - Easy to embed interactive elements (inputs, buttons)
 - Better integration with React ecosystem
 
 **Cons**:
+
 - More manual positioning logic
 - Handle auto-layout is rudimentary
 - Requires CSS class/variable management
 
 **Konva Approach**:
+
 ```typescript
 // Uses shape-based API (Group, Rect, Text)
 // Positioning is imperative but predictable
@@ -402,11 +426,13 @@ const oneToManyMarker = `
 ```
 
 **Pros**:
+
 - Canvas rendering is optimized
 - Shapes have built-in dimensions/bounds
 - No CSS overhead
 
 **Cons**:
+
 - Less familiar API (not React-idiomatic)
 - Harder to embed rich interactive content
 - Custom event handling required
@@ -414,16 +440,19 @@ const oneToManyMarker = `
 ### Data Flow for Real-Time Collaboration
 
 **Both approaches**:
+
 - State updates flow through parent component
 - WebSocket events update node/edge arrays
 - Re-render occurs on state change
 
 **React Flow advantage**:
+
 - Standard React patterns for state management
 - Works seamlessly with TanStack Query subscriptions
 - Zustand store integration is natural
 
 **Konva advantage**:
+
 - More efficient re-renders (only affected shapes redraw)
 - Lower network bandwidth (canvas updates vs DOM updates)
 - Smaller diff for operational transformation
@@ -435,11 +464,13 @@ const oneToManyMarker = `
 ### 1. Crow's Foot Notation Implementation
 
 **React Flow**:
+
 - Requires custom SVG marker definitions
 - Labels and markers must be manually positioned
 - Works but requires more boilerplate than Konva
 
 **Konva**:
+
 - Native support for custom arrow heads via Konva.Arrow config
 - Text positioning relative to arrows is built-in
 - More natural fit for ER diagram semantics
@@ -447,12 +478,14 @@ const oneToManyMarker = `
 ### 2. Column-Level Connection Handling
 
 **React Flow**:
+
 - Handle approach works but requires careful ID management
 - Each column needs unique handle ID
 - Edge definitions must reference these IDs explicitly
 - Error-prone if IDs don't match
 
 **Konva**:
+
 - No Handle concept; connections are custom lines between points
 - More direct control over connection endpoints
 - Can dynamically calculate positions based on viewport
@@ -460,11 +493,13 @@ const oneToManyMarker = `
 ### 3. Theme/Dark Mode Support
 
 **React Flow**:
+
 - Requires CSS variable setup
 - Can use Tailwind's `dark:` prefix but doesn't apply to custom SVG
 - Markers may not respect theme changes without manual updates
 
 **Konva**:
+
 - Color values passed directly to shape config
 - Theme detection triggers re-render of affected shapes
 - Seamless dark mode support (already integrated in project)
@@ -472,12 +507,14 @@ const oneToManyMarker = `
 ### 4. Auto-Layout Integration
 
 **React Flow**:
+
 - No built-in layout algorithm
 - Requires separate library (Elk.js, Dagre, d3-force)
 - Layout results must be mapped back to node positions
 - Additional layer of complexity
 
 **Konva**:
+
 - D3-force integration already established (research.md)
 - Layout engine in Web Worker
 - Konva shapes directly accept layout coordinates
@@ -486,11 +523,13 @@ const oneToManyMarker = `
 ### 5. Viewport Culling Maturity
 
 **React Flow**:
+
 - Feature exists but may require optimization for very large graphs
 - Helps but not as sophisticated as canvas-based culling
 - Recommended for 1000+ nodes
 
 **Konva**:
+
 - Can implement custom viewport culling
 - Canvas clipping is more efficient than DOM visibility toggling
 - Better for 500+ nodes
@@ -500,12 +539,14 @@ const oneToManyMarker = `
 ## 7. React Flow UI Component Library
 
 **React Flow Provides**:
+
 - Database Schema Node component (ready-made for table visualization)
 - Built-in node types: input, output, default
 - Edge types: straight, step, smooth, smart
 - Limited customization without writing custom components
 
 **Our Custom Needs**:
+
 - Crow's foot notation (not provided)
 - Column-level handles for relationships
 - Key indicator rendering (PK/FK)
@@ -517,14 +558,14 @@ const oneToManyMarker = `
 
 ## 8. Maturity & Ecosystem
 
-| Factor | React Flow | Konva |
-|--------|---|---|
-| Package age | v12 (2025 rebranding) | Stable, 10+ years |
-| Community size | Medium (active) | Large (well-established) |
-| Issue resolution | 24-72 hours | 48-96 hours |
-| Documentation | Excellent | Excellent |
-| StackOverflow answers | ~500 Q&A | ~1000+ Q&A |
-| GitHub stars | ~20k | ~12k |
+| Factor                | React Flow            | Konva                    |
+| --------------------- | --------------------- | ------------------------ |
+| Package age           | v12 (2025 rebranding) | Stable, 10+ years        |
+| Community size        | Medium (active)       | Large (well-established) |
+| Issue resolution      | 24-72 hours           | 48-96 hours              |
+| Documentation         | Excellent             | Excellent                |
+| StackOverflow answers | ~500 Q&A              | ~1000+ Q&A               |
+| GitHub stars          | ~20k                  | ~12k                     |
 
 **React Flow**: Modern, actively maintained, but newer design patterns
 **Konva**: Battle-tested, stable, proven at scale
@@ -534,18 +575,21 @@ const oneToManyMarker = `
 ## 9. Migration Effort Estimate (If Reconsidered Later)
 
 ### Phase 1: Foundation (2-3 weeks)
+
 - Replace Konva rendering with React Flow
 - Implement custom TableNode component
 - Implement custom CardinalityEdge component
 - Integrate d3-force for layout
 
 ### Phase 2: Features (2-3 weeks)
+
 - Implement drag/drop interactions
 - Real-time collaboration sync
 - Viewport optimization
 - Dark mode styling
 
 ### Phase 3: Polish (1-2 weeks)
+
 - Performance optimization
 - Memoization & virtualization
 - Theme switching
@@ -559,6 +603,7 @@ const oneToManyMarker = `
 ## 10. Decision Matrix
 
 ### Must-Have Requirements:
+
 1. ER diagram rendering with column-level relationships ✓ Both
 2. Real-time collaboration ✓ Both (same WebSocket approach)
 3. Automatic layout with d3-force ✓ Both
@@ -566,6 +611,7 @@ const oneToManyMarker = `
 5. Crow's foot notation ✓ Konva (native), React Flow (custom)
 
 ### Performance Requirements:
+
 1. 100+ nodes with smooth drag ✓ Konva, ~ React Flow
 2. Panning/zooming responsiveness ✓ Both
 3. Edge rendering with many relationships ✓ Konva, ~ React Flow
@@ -573,12 +619,14 @@ const oneToManyMarker = `
 5. Minimal network bandwidth ~ Konva, ✓ React Flow (smaller bundles)
 
 ### Development Experience:
+
 1. React-idiomatic APIs ✓ React Flow, ~ Konva
 2. TypeScript support ✓ Both (Konva types via @types/konva)
 3. Component ecosystem ✓ React Flow, ~ Konva
 4. Documentation quality ✓ Both
 
 ### Risk Factors:
+
 1. Mid-project migration ✗ React Flow (unnecessary risk)
 2. Unknown unknowns ✓ Konva (proven approach)
 3. Team familiarity ✓ Konva (already in codebase)
@@ -589,9 +637,11 @@ const oneToManyMarker = `
 ## Conclusion & Recommendation
 
 ### For Current Project (MVP):
+
 **RECOMMENDATION: Stay with Konva**
 
 **Rationale**:
+
 1. **Lowest risk**: Already partially implemented, team familiar
 2. **Best performance**: Canvas rendering outperforms DOM for ER diagrams
 3. **Better fit**: Crow's foot notation, column-level handles more natural
@@ -599,9 +649,11 @@ const oneToManyMarker = `
 5. **Architecture alignment**: D3-force integration already designed for Konva
 
 ### For Future Lightweight Diagrams:
+
 **React Flow Viable Alternative**
 
 Consider React Flow if:
+
 - Supporting <50 nodes only
 - DOM interactivity (forms, buttons) is critical
 - Team prefers React ecosystem patterns
@@ -623,11 +675,13 @@ Consider React Flow if:
 ## References
 
 ### Official Documentation:
+
 - React Flow: https://reactflow.dev
 - Konva: https://konvajs.org
 - React-Konva: https://github.com/konvajs/react-konva
 
 ### Research Dates:
+
 - React Flow research: 2025-11-15
 - Package versions verified: 2025-11-15
 - Performance benchmarks: 2025 community reports

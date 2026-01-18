@@ -16,28 +16,28 @@ This document defines the data structures for React Flow-based ER diagram render
 React Flow nodes represent database tables in the ER diagram.
 
 ```typescript
-import { Node } from '@xyflow/react';
-import { DiagramTable, Column } from '@prisma/client';
+import { Node } from '@xyflow/react'
+import { DiagramTable, Column } from '@prisma/client'
 
 export type TableNodeData = {
   // Original database entities
-  table: DiagramTable;
-  columns: Column[];
+  table: DiagramTable
+  columns: Column[]
 
   // UI callbacks
-  onUpdate?: (tableId: string, updates: Partial<DiagramTable>) => void;
-  onColumnUpdate?: (columnId: string, updates: Partial<Column>) => void;
-  onDelete?: (tableId: string) => void;
+  onUpdate?: (tableId: string, updates: Partial<DiagramTable>) => void
+  onColumnUpdate?: (columnId: string, updates: Partial<Column>) => void
+  onDelete?: (tableId: string) => void
 
   // Visual state
-  isSelected?: boolean;
-  isHovered?: boolean;
+  isSelected?: boolean
+  isHovered?: boolean
 
   // Collaboration state
-  editingUser?: string | null; // Username of user currently editing this table
-};
+  editingUser?: string | null // Username of user currently editing this table
+}
 
-export type TableNode = Node<TableNodeData, 'erTable'>;
+export type TableNode = Node<TableNodeData, 'erTable'>
 
 // Example instance
 const exampleTableNode: TableNode = {
@@ -54,7 +54,7 @@ const exampleTableNode: TableNode = {
       width: 250,
       height: 150,
       createdAt: new Date(),
-      updatedAt: new Date()
+      updatedAt: new Date(),
     },
     columns: [
       {
@@ -68,7 +68,7 @@ const exampleTableNode: TableNode = {
         isUnique: true,
         orderIndex: 0,
         createdAt: new Date(),
-        updatedAt: new Date()
+        updatedAt: new Date(),
       },
       {
         id: 'col-uuid-2',
@@ -81,14 +81,14 @@ const exampleTableNode: TableNode = {
         isUnique: true,
         orderIndex: 1,
         createdAt: new Date(),
-        updatedAt: new Date()
-      }
+        updatedAt: new Date(),
+      },
     ],
     onUpdate: (tableId, updates) => {
       // Update table in database via API
-    }
-  }
-};
+    },
+  },
+}
 ```
 
 ### Edge Structure
@@ -96,30 +96,34 @@ const exampleTableNode: TableNode = {
 React Flow edges represent relationships between tables.
 
 ```typescript
-import { Edge } from '@xyflow/react';
-import { Relationship } from '@prisma/client';
+import { Edge } from '@xyflow/react'
+import { Relationship } from '@prisma/client'
 
-export type CardinalityType = 'ONE_TO_ONE' | 'ONE_TO_MANY' | 'MANY_TO_ONE' | 'MANY_TO_MANY';
+export type CardinalityType =
+  | 'ONE_TO_ONE'
+  | 'ONE_TO_MANY'
+  | 'MANY_TO_ONE'
+  | 'MANY_TO_MANY'
 
 export type RelationshipEdgeData = {
   // Original database entity
-  relationship: Relationship;
+  relationship: Relationship
 
   // Relationship metadata
-  cardinality: CardinalityType;
-  label?: string;
-  strength?: number; // For layout algorithm (0-1)
+  cardinality: CardinalityType
+  label?: string
+  strength?: number // For layout algorithm (0-1)
 
   // UI callbacks
-  onUpdate?: (relationshipId: string, updates: Partial<Relationship>) => void;
-  onDelete?: (relationshipId: string) => void;
+  onUpdate?: (relationshipId: string, updates: Partial<Relationship>) => void
+  onDelete?: (relationshipId: string) => void
 
   // Visual state
-  isSelected?: boolean;
-  isHovered?: boolean;
-};
+  isSelected?: boolean
+  isHovered?: boolean
+}
 
-export type RelationshipEdge = Edge<RelationshipEdgeData, 'erRelationship'>;
+export type RelationshipEdge = Edge<RelationshipEdgeData, 'erRelationship'>
 
 // Example instance
 const exampleRelationshipEdge: RelationshipEdge = {
@@ -128,7 +132,7 @@ const exampleRelationshipEdge: RelationshipEdge = {
   source: 'table-uuid-123', // users table
   target: 'table-uuid-456', // orders table
   sourceHandle: 'col-uuid-1-source', // users.id (right handle)
-  targetHandle: 'col-uuid-7-target',  // orders.user_id (left handle)
+  targetHandle: 'col-uuid-7-target', // orders.user_id (left handle)
   data: {
     relationship: {
       id: 'rel-uuid-789',
@@ -140,13 +144,13 @@ const exampleRelationshipEdge: RelationshipEdge = {
       relationshipType: 'ONE_TO_MANY',
       label: 'owns',
       createdAt: new Date(),
-      updatedAt: new Date()
+      updatedAt: new Date(),
     },
     cardinality: 'ONE_TO_MANY',
     label: 'owns',
-    strength: 0.8
-  }
-};
+    strength: 0.8,
+  },
+}
 ```
 
 ## Prisma Entity Mapping
@@ -214,48 +218,52 @@ model Relationship {
 ```typescript
 // Convert Prisma entities to React Flow format
 export function convertToReactFlowNodes(
-  tables: (DiagramTable & { columns: Column[] })[]
+  tables: (DiagramTable & { columns: Column[] })[],
 ): TableNode[] {
-  return tables.map(table => ({
+  return tables.map((table) => ({
     id: table.id,
     type: 'erTable' as const,
     position: {
       x: table.positionX,
-      y: table.positionY
+      y: table.positionY,
     },
     data: {
       table,
-      columns: table.columns.sort((a, b) => a.orderIndex - b.orderIndex)
-    }
-  }));
+      columns: table.columns.sort((a, b) => a.orderIndex - b.orderIndex),
+    },
+  }))
 }
 
 export function convertToReactFlowEdges(
-  relationships: Relationship[]
+  relationships: Relationship[],
 ): RelationshipEdge[] {
-  return relationships.map(rel => ({
+  return relationships.map((rel) => ({
     id: rel.id,
     type: 'erRelationship' as const,
     source: rel.sourceTableId,
     target: rel.targetTableId,
-    sourceHandle: rel.sourceColumnId ? `${rel.sourceColumnId}-source` : undefined,
-    targetHandle: rel.targetColumnId ? `${rel.targetColumnId}-target` : undefined,
+    sourceHandle: rel.sourceColumnId
+      ? `${rel.sourceColumnId}-source`
+      : undefined,
+    targetHandle: rel.targetColumnId
+      ? `${rel.targetColumnId}-target`
+      : undefined,
     data: {
       relationship: rel,
       cardinality: rel.relationshipType as CardinalityType,
-      label: rel.label || undefined
-    }
-  }));
+      label: rel.label || undefined,
+    },
+  }))
 }
 
 // Convert React Flow node position back to Prisma format
 export function extractPositionUpdates(
-  node: TableNode
+  node: TableNode,
 ): Pick<DiagramTable, 'positionX' | 'positionY'> {
   return {
     positionX: node.position.x,
-    positionY: node.position.y
-  };
+    positionY: node.position.y,
+  }
 }
 ```
 
@@ -264,17 +272,24 @@ export function extractPositionUpdates(
 ### Handle ID Convention
 
 Each column in a table node has two handles:
+
 - **Source handle** (right side): `{columnId}-source`
 - **Target handle** (left side): `{columnId}-target`
 
 ```typescript
-export function generateHandleId(columnId: string, type: 'source' | 'target'): string {
-  return `${columnId}-${type}`;
+export function generateHandleId(
+  columnId: string,
+  type: 'source' | 'target',
+): string {
+  return `${columnId}-${type}`
 }
 
-export function parseHandleId(handleId: string): { columnId: string; type: 'source' | 'target' } {
-  const [columnId, type] = handleId.split('-');
-  return { columnId, type: type as 'source' | 'target' };
+export function parseHandleId(handleId: string): {
+  columnId: string
+  type: 'source' | 'target'
+} {
+  const [columnId, type] = handleId.split('-')
+  return { columnId, type: type as 'source' | 'target' }
 }
 ```
 
@@ -284,10 +299,10 @@ export function parseHandleId(handleId: string): { columnId: string; type: 'sour
 export function calculateHandlePosition(
   columnIndex: number,
   headerHeight: number = 40,
-  rowHeight: number = 28
+  rowHeight: number = 28,
 ): number {
   // Position handle at vertical center of column row
-  return headerHeight + (columnIndex * rowHeight) + (rowHeight / 2);
+  return headerHeight + columnIndex * rowHeight + rowHeight / 2
 }
 ```
 
@@ -297,35 +312,35 @@ export function calculateHandlePosition(
 
 ```typescript
 export interface LayoutInput {
-  tables: (DiagramTable & { columns: Column[] })[];
-  relationships: Relationship[];
-  canvasWidth: number;
-  canvasHeight: number;
+  tables: (DiagramTable & { columns: Column[] })[]
+  relationships: Relationship[]
+  canvasWidth: number
+  canvasHeight: number
   options?: {
-    linkDistance?: number;
-    chargeStrength?: number;
-    iterations?: number;
-  };
+    linkDistance?: number
+    chargeStrength?: number
+    iterations?: number
+  }
 }
 
 export interface LayoutOutput {
-  positions: Record<string, { x: number; y: number }>;
+  positions: Record<string, { x: number; y: number }>
   metadata: {
-    computeTime: number;
-    iterations: number;
-    clusterCount: number;
-  };
+    computeTime: number
+    iterations: number
+    clusterCount: number
+  }
 }
 
 // Apply layout results to React Flow nodes
 export function applyLayoutToNodes(
   nodes: TableNode[],
-  layoutOutput: LayoutOutput
+  layoutOutput: LayoutOutput,
 ): TableNode[] {
-  return nodes.map(node => ({
+  return nodes.map((node) => ({
     ...node,
-    position: layoutOutput.positions[node.id] || node.position
-  }));
+    position: layoutOutput.positions[node.id] || node.position,
+  }))
 }
 ```
 
@@ -334,35 +349,39 @@ export function applyLayoutToNodes(
 ### React Flow Viewport
 
 ```typescript
-import { Viewport } from '@xyflow/react';
+import { Viewport } from '@xyflow/react'
 
 export interface ReactFlowViewport extends Viewport {
-  x: number;      // Pan offset X
-  y: number;      // Pan offset Y
-  zoom: number;   // Zoom level (0.1 to 5)
+  x: number // Pan offset X
+  y: number // Pan offset Y
+  zoom: number // Zoom level (0.1 to 5)
 }
 
 // Convert to/from existing CanvasViewport
 export interface CanvasViewport {
-  zoom: number;
-  offsetX: number;
-  offsetY: number;
+  zoom: number
+  offsetX: number
+  offsetY: number
 }
 
-export function convertToReactFlowViewport(cv: CanvasViewport): ReactFlowViewport {
+export function convertToReactFlowViewport(
+  cv: CanvasViewport,
+): ReactFlowViewport {
   return {
     x: cv.offsetX,
     y: cv.offsetY,
-    zoom: cv.zoom
-  };
+    zoom: cv.zoom,
+  }
 }
 
-export function convertToCanvasViewport(rfv: ReactFlowViewport): CanvasViewport {
+export function convertToCanvasViewport(
+  rfv: ReactFlowViewport,
+): CanvasViewport {
   return {
     zoom: rfv.zoom,
     offsetX: rfv.x,
-    offsetY: rfv.y
-  };
+    offsetY: rfv.y,
+  }
 }
 ```
 
@@ -371,35 +390,42 @@ export function convertToCanvasViewport(rfv: ReactFlowViewport): CanvasViewport 
 ### Zustand Store Schema
 
 ```typescript
-import { create } from 'zustand';
+import { create } from 'zustand'
 
 export interface WhiteboardState {
   // Core data
-  nodes: TableNode[];
-  edges: RelationshipEdge[];
-  viewport: ReactFlowViewport;
+  nodes: TableNode[]
+  edges: RelationshipEdge[]
+  viewport: ReactFlowViewport
 
   // UI state
-  selectedNodeIds: string[];
-  selectedEdgeIds: string[];
+  selectedNodeIds: string[]
+  selectedEdgeIds: string[]
 
   // Collaboration state
-  isProcessingRemote: boolean;
+  isProcessingRemote: boolean
   activeUsers: Array<{
-    userId: string;
-    username: string;
-    cursor?: { x: number; y: number };
-  }>;
+    userId: string
+    username: string
+    cursor?: { x: number; y: number }
+  }>
 
   // Actions
-  setNodes: (nodes: TableNode[] | ((prev: TableNode[]) => TableNode[])) => void;
-  setEdges: (edges: RelationshipEdge[] | ((prev: RelationshipEdge[]) => RelationshipEdge[])) => void;
-  updateNodePosition: (nodeId: string, position: { x: number; y: number }) => void;
-  addNode: (node: TableNode) => void;
-  removeNode: (nodeId: string) => void;
-  addEdge: (edge: RelationshipEdge) => void;
-  removeEdge: (edgeId: string) => void;
-  setViewport: (viewport: ReactFlowViewport) => void;
+  setNodes: (nodes: TableNode[] | ((prev: TableNode[]) => TableNode[])) => void
+  setEdges: (
+    edges:
+      | RelationshipEdge[]
+      | ((prev: RelationshipEdge[]) => RelationshipEdge[]),
+  ) => void
+  updateNodePosition: (
+    nodeId: string,
+    position: { x: number; y: number },
+  ) => void
+  addNode: (node: TableNode) => void
+  removeNode: (nodeId: string) => void
+  addEdge: (edge: RelationshipEdge) => void
+  removeEdge: (edgeId: string) => void
+  setViewport: (viewport: ReactFlowViewport) => void
 }
 ```
 
@@ -410,22 +436,22 @@ export interface WhiteboardState {
 ```typescript
 // Client → Server
 export interface NodeUpdateEvent {
-  type: 'node:update';
-  whiteboardId: string;
-  nodeId: string;
-  updates: Partial<TableNode>;
-  userId: string;
-  timestamp: number;
+  type: 'node:update'
+  whiteboardId: string
+  nodeId: string
+  updates: Partial<TableNode>
+  userId: string
+  timestamp: number
 }
 
 // Server → Clients
 export interface NodeUpdateBroadcast {
-  type: 'node:updated';
-  whiteboardId: string;
-  nodeId: string;
-  updates: Partial<TableNode>;
-  userId: string;
-  timestamp: number;
+  type: 'node:updated'
+  whiteboardId: string
+  nodeId: string
+  updates: Partial<TableNode>
+  userId: string
+  timestamp: number
 }
 ```
 
@@ -434,22 +460,22 @@ export interface NodeUpdateBroadcast {
 ```typescript
 // Client → Server
 export interface EdgeUpdateEvent {
-  type: 'edge:update';
-  whiteboardId: string;
-  edgeId: string;
-  updates: Partial<RelationshipEdge>;
-  userId: string;
-  timestamp: number;
+  type: 'edge:update'
+  whiteboardId: string
+  edgeId: string
+  updates: Partial<RelationshipEdge>
+  userId: string
+  timestamp: number
 }
 
 // Server → Clients
 export interface EdgeUpdateBroadcast {
-  type: 'edge:updated';
-  whiteboardId: string;
-  edgeId: string;
-  updates: Partial<RelationshipEdge>;
-  userId: string;
-  timestamp: number;
+  type: 'edge:updated'
+  whiteboardId: string
+  edgeId: string
+  updates: Partial<RelationshipEdge>
+  userId: string
+  timestamp: number
 }
 ```
 
@@ -470,8 +496,8 @@ export type {
   LayoutInput,
   LayoutOutput,
   ReactFlowViewport,
-  WhiteboardState
-};
+  WhiteboardState,
+}
 
 export {
   convertToReactFlowNodes,
@@ -482,8 +508,8 @@ export {
   calculateHandlePosition,
   applyLayoutToNodes,
   convertToReactFlowViewport,
-  convertToCanvasViewport
-};
+  convertToCanvasViewport,
+}
 ```
 
 ## Summary

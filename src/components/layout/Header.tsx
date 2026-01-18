@@ -3,7 +3,7 @@
 
 import { Link } from '@tanstack/react-router'
 import { Moon, Sun } from 'lucide-react'
-import { useState, useEffect } from 'react'
+import { useEffect, useState } from 'react'
 import { useTheme } from '../../hooks/use-theme'
 import { Switch } from '@/components/ui/switch'
 

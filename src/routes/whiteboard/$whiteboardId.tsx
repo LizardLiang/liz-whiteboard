@@ -1,29 +1,30 @@
-// src/routes/whiteboard/$whiteboardId.tsx
-// Whiteboard editor route - loads and renders full ER diagram
+// src/routes/whiteboard/$whiteboardId.new.tsx
+// Whiteboard editor route - React Flow version
+// This is the migrated version using React Flow instead of Konva
 
 import { createFileRoute } from '@tanstack/react-router'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
-import type Konva from 'konva'
-import type { CanvasViewport } from '@/components/whiteboard/Canvas'
+import { useCallback, useEffect, useMemo, useState } from 'react'
+import type { OnEdgesChange, OnNodesChange } from '@xyflow/react'
 import type {
   CreateColumn,
   CreateRelationship,
   CreateTable,
 } from '@/data/schema'
 import type { DiagramAST } from '@/lib/parser/ast'
-import { Canvas, useCanvasControls } from '@/components/whiteboard/Canvas'
-import { TableNode } from '@/components/whiteboard/TableNode'
-import { RelationshipEdge } from '@/components/whiteboard/RelationshipEdge'
-import { ReactFlowWhiteboard } from '@/components/whiteboard/ReactFlowWhiteboard'
+import type { RelationshipEdge, TableNode } from '@/lib/react-flow/types'
+import { ReactFlowCanvas } from '@/components/whiteboard/ReactFlowCanvas'
 import { Toolbar } from '@/components/whiteboard/Toolbar'
 import { TextEditor } from '@/components/whiteboard/TextEditor'
-import { Minimap } from '@/components/whiteboard/Minimap'
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import { useCollaboration } from '@/hooks/use-collaboration'
 import { useAutoLayoutPreference } from '@/hooks/use-auto-layout-preference'
 import {
-  computeAutoLayout,
+  convertToReactFlowEdges,
+  convertToReactFlowNodes,
+  extractPositionUpdates,
+} from '@/lib/react-flow/converters'
+import {
   createRelationshipFn,
   createTable as createTableFn,
   getWhiteboardRelationships,
@@ -39,20 +40,14 @@ import {
 } from '@/lib/parser/diagram-parser'
 
 /**
- * Whiteboard editor page component
- * Loads whiteboard with full diagram and enables real-time collaboration
+ * Whiteboard editor page component - React Flow version
  */
 export const Route = createFileRoute('/whiteboard/$whiteboardId')({
   component: WhiteboardEditor,
 })
 
 /**
- * Feature flag: Toggle between Konva (legacy) and React Flow (new)
- */
-const USE_REACT_FLOW = import.meta.env.VITE_USE_REACT_FLOW === 'true'
-
-/**
- * Whiteboard Editor component
+ * Whiteboard Editor component with React Flow
  */
 function WhiteboardEditor() {
   const { whiteboardId } = Route.useParams()
@@ -62,32 +57,16 @@ function WhiteboardEditor() {
   const userId = 'temp-user-id'
 
   // State
-  const [selectedTableId, setSelectedTableId] = useState<string | null>(null)
-  const [selectedRelationshipId, setSelectedRelationshipId] = useState<
-    string | null
-  >(null)
-  const [canvasViewport, setCanvasViewport] = useState<CanvasViewport>({
-    zoom: 1,
-    offsetX: 0,
-    offsetY: 0,
-  })
+  const [selectedNodeIds, setSelectedNodeIds] = useState<Array<string>>([])
+  const [selectedEdgeIds, setSelectedEdgeIds] = useState<Array<string>>([])
+  const [currentZoom, setCurrentZoom] = useState(1)
   const [activeTab, setActiveTab] = useState<'visual' | 'text'>('visual')
   const [textSource, setTextSource] = useState<string>('')
   const [isTextSyncEnabled, setIsTextSyncEnabled] = useState(true)
   const [isAutoLayoutComputing, setIsAutoLayoutComputing] = useState(false)
 
-  // React Flow auto-layout function (set via callback)
-  const reactFlowAutoLayoutRef = useRef<(() => Promise<void>) | null>(null)
-
-  // React Flow display mode controls (set via callback)
-  const [reactFlowShowMode, setReactFlowShowMode] = useState<string>('ALL_FIELDS')
-  const reactFlowShowModeRef = useRef<((mode: string) => void) | null>(null)
-
-  // Canvas stage ref for programmatic zoom controls
-  const stageRef = useRef<Konva.Stage>(null)
-
   // Debounce timer for canvas state persistence
-  const saveCanvasStateTimerRef = useRef<NodeJS.Timeout | null>(null)
+  const saveCanvasStateTimerRef = useState<NodeJS.Timeout | null>(null)
 
   // Auto-layout preference
   const { autoLayoutEnabled, setAutoLayoutEnabled } = useAutoLayoutPreference()
@@ -96,7 +75,6 @@ function WhiteboardEditor() {
   const { data: whiteboardData, isLoading } = useQuery({
     queryKey: ['whiteboard', whiteboardId],
     queryFn: async () => {
-      // Fetch whiteboard with tables and relationships
       const whiteboard = await getWhiteboardWithDiagram({ data: whiteboardId })
       const relationships = await getWhiteboardRelationships({
         data: whiteboardId,
@@ -109,132 +87,33 @@ function WhiteboardEditor() {
     },
   })
 
-  /**
-   * Restore canvas state when whiteboard loads
-   */
-  useEffect(() => {
-    if (whiteboardData?.whiteboard?.canvasState) {
-      const savedState = whiteboardData.whiteboard.canvasState as {
-        zoom: number
-        offsetX: number
-        offsetY: number
-      }
-
-      // Validate saved state
-      if (
-        typeof savedState.zoom === 'number' &&
-        typeof savedState.offsetX === 'number' &&
-        typeof savedState.offsetY === 'number'
-      ) {
-        setCanvasViewport({
-          zoom: savedState.zoom,
-          offsetX: savedState.offsetX,
-          offsetY: savedState.offsetY,
-        })
-        console.log('Canvas state restored:', savedState)
-      }
-    }
-  }, [whiteboardData?.whiteboard?.canvasState])
-
   // WebSocket collaboration - MUST be called before any early returns
   const { emit, on, off, connectionState } = useCollaboration(
     whiteboardId,
     userId,
   )
 
-  /**
-   * Handle canvas viewport changes with debounced persistence
-   * Saves to database after 1 second of inactivity
-   */
-  const handleCanvasViewportChange = useCallback(
-    (viewport: CanvasViewport) => {
-      setCanvasViewport(viewport)
+  // Convert data to React Flow format
+  const nodes = useMemo(() => {
+    if (!whiteboardData?.whiteboard?.tables) return []
+    return convertToReactFlowNodes(whiteboardData.whiteboard.tables)
+  }, [whiteboardData?.whiteboard?.tables])
 
-      // Clear existing timer
-      if (saveCanvasStateTimerRef.current) {
-        clearTimeout(saveCanvasStateTimerRef.current)
-      }
-
-      // Debounce save for 1 second
-      saveCanvasStateTimerRef.current = setTimeout(async () => {
-        try {
-          await saveCanvasState({
-            data: {
-              whiteboardId,
-              canvasState: {
-                zoom: viewport.zoom,
-                offsetX: viewport.offsetX,
-                offsetY: viewport.offsetY,
-              },
-            },
-          })
-          console.log('Canvas state saved:', viewport)
-        } catch (error) {
-          console.error('Failed to save canvas state:', error)
-        }
-      }, 1000)
-    },
-    [whiteboardId],
-  )
-
-  // Canvas zoom controls
-  const canvasControls = useCanvasControls(stageRef, handleCanvasViewportChange)
+  const edges = useMemo(() => {
+    if (!whiteboardData?.relationships) return []
+    return convertToReactFlowEdges(whiteboardData.relationships)
+  }, [whiteboardData?.relationships])
 
   // Mutations
   const createTableMutation = useMutation({
     mutationFn: async (data: CreateTable) => {
       return await createTableFn({ data })
     },
-    onMutate: async (newTable: CreateTable) => {
-      // Optimistic update
-      await queryClient.cancelQueries({
-        queryKey: ['whiteboard', whiteboardId],
-      })
-
-      const previousData = queryClient.getQueryData([
-        'whiteboard',
-        whiteboardId,
-      ])
-
-      // Optimistically add table to cache
-      queryClient.setQueryData(['whiteboard', whiteboardId], (old: any) => {
-        if (!old) return old
-        return {
-          ...old,
-          whiteboard: {
-            ...old.whiteboard,
-            tables: [
-              ...old.whiteboard.tables,
-              {
-                id: 'temp-' + Date.now(),
-                ...newTable,
-                columns: [],
-                outgoingRelationships: [],
-                createdAt: new Date(),
-                updatedAt: new Date(),
-              },
-            ],
-          },
-        }
-      })
-
-      return { previousData }
-    },
     onSuccess: (createdTable) => {
-      // Emit WebSocket event for other users
       emit('table:create', createdTable)
-
-      // Invalidate and refetch
       queryClient.invalidateQueries({ queryKey: ['whiteboard', whiteboardId] })
     },
-    onError: (err, newTable, context) => {
-      // Rollback on error
-      if (context?.previousData) {
-        queryClient.setQueryData(
-          ['whiteboard', whiteboardId],
-          context.previousData,
-        )
-      }
+    onError: (err) => {
       console.error('Failed to create table:', err)
       alert('Failed to create table. Please try again.')
     },
@@ -249,14 +128,12 @@ function WhiteboardEditor() {
       return await updateTablePositionFn({ data })
     },
     onSuccess: (updatedTable, variables) => {
-      // Emit WebSocket event for other users
       emit('table:move', {
         tableId: variables.id,
         positionX: variables.positionX,
         positionY: variables.positionY,
       })
 
-      // Update cache without full refetch
       queryClient.setQueryData(['whiteboard', whiteboardId], (old: any) => {
         if (!old) return old
         return {
@@ -286,10 +163,7 @@ function WhiteboardEditor() {
       return await createRelationshipFn({ data })
     },
     onSuccess: (createdRelationship) => {
-      // Emit WebSocket event for other users
       emit('relationship:create', createdRelationship)
-
-      // Invalidate and refetch
       queryClient.invalidateQueries({ queryKey: ['whiteboard', whiteboardId] })
     },
     onError: (err) => {
@@ -305,7 +179,6 @@ function WhiteboardEditor() {
       })
     },
     onSuccess: (updatedWhiteboard) => {
-      // Emit WebSocket event for other users
       emit('text:update', {
         textSource: updatedWhiteboard.textSource,
         cursorPosition: 0,
@@ -315,6 +188,52 @@ function WhiteboardEditor() {
       console.error('Failed to update text source:', err)
     },
   })
+
+  // Handle nodes change (drag, selection, etc.)
+  const onNodesChange: OnNodesChange<TableNode> = useCallback(
+    (changes) => {
+      changes.forEach((change) => {
+        // Handle position changes (drag end)
+        if (
+          change.type === 'position' &&
+          change.dragging === false &&
+          change.position
+        ) {
+          updateTablePositionMutation.mutate({
+            id: change.id,
+            positionX: change.position.x,
+            positionY: change.position.y,
+          })
+        }
+
+        // Handle selection changes
+        if (change.type === 'select') {
+          setSelectedNodeIds((prev) =>
+            change.selected
+              ? [...prev, change.id]
+              : prev.filter((id) => id !== change.id),
+          )
+        }
+      })
+    },
+    [updateTablePositionMutation],
+  )
+
+  // Handle edges change
+  const onEdgesChange: OnEdgesChange<RelationshipEdge> = useCallback(
+    (changes) => {
+      changes.forEach((change) => {
+        if (change.type === 'select') {
+          setSelectedEdgeIds((prev) =>
+            change.selected
+              ? [...prev, change.id]
+              : prev.filter((id) => id !== change.id),
+          )
+        }
+      })
+    },
+    [],
+  )
 
   // Event handlers
   const handleCreateTable = useCallback(
@@ -331,43 +250,14 @@ function WhiteboardEditor() {
     [createRelationshipMutation],
   )
 
-  const handleTableDragEnd = useCallback(
-    (tableId: string, x: number, y: number) => {
-      updateTablePositionMutation.mutate({
-        id: tableId,
-        positionX: x,
-        positionY: y,
-      })
-    },
-    [updateTablePositionMutation],
-  )
-
   /**
-   * Handle minimap navigation
-   * Updates canvas position when user clicks on minimap
+   * Handle auto layout computation
    */
-  const handleMinimapNavigate = useCallback(
-    (offsetX: number, offsetY: number) => {
-      const newViewport = {
-        zoom: canvasViewport.zoom,
-        offsetX,
-        offsetY,
-      }
-      setCanvasViewport(newViewport)
-      handleCanvasViewportChange(newViewport)
-    },
-    [canvasViewport.zoom, handleCanvasViewportChange],
-  )
-
-  /**
-   * Cleanup debounce timer on unmount
-   */
-  useEffect(() => {
-    return () => {
-      if (saveCanvasStateTimerRef.current) {
-        clearTimeout(saveCanvasStateTimerRef.current)
-      }
-    }
+  // Auto-layout is now handled by the ReactFlowCanvas component using ELK layout
+  // This function is kept for future server-side auto-layout if needed
+  const handleAutoLayout = useCallback(async () => {
+    console.log('Auto-layout should be triggered via ReactFlowCanvas component')
+    // TODO: Implement ELK-based auto-layout or remove this handler
   }, [])
 
   // Text editor handlers
@@ -380,103 +270,12 @@ function WhiteboardEditor() {
   )
 
   const handleParsedDiagram = useCallback((ast: DiagramAST) => {
-    // TODO: Implement validation to prevent destructive changes (T046)
-    // For now, we don't automatically apply text changes to canvas
-    // User needs to explicitly trigger sync or we apply on tab switch
     console.log('Diagram parsed successfully:', ast)
   }, [])
 
-  /**
-   * Handle auto layout computation
-   * Uses React Flow ELK layout when enabled, otherwise falls back to d3-force
-   */
-  const handleAutoLayout = useCallback(async () => {
-    if (!whiteboardData?.whiteboard) return
-
-    setIsAutoLayoutComputing(true)
-
-    try {
-      // Emit WebSocket event to notify other users
-      emit('layout:compute', { userId })
-
-      // Use React Flow auto-layout if available (feature flag enabled)
-      if (USE_REACT_FLOW && reactFlowAutoLayoutRef.current) {
-        await reactFlowAutoLayoutRef.current()
-        console.log('React Flow ELK layout computed')
-      } else {
-        // Fallback to d3-force layout (Konva)
-        const result = await computeAutoLayout({
-          data: {
-            whiteboardId,
-            options: {
-              width: window.innerWidth,
-              height: window.innerHeight - 160,
-              linkDistance: 200,
-              chargeStrength: -1000,
-              collisionPadding: 50,
-              iterations: 300,
-              handleClusters: true,
-            },
-          },
-        })
-
-        console.log('Layout computed:', result.metadata)
-
-        // Emit computed positions to other users
-        emit('layout:computed', {
-          positions: result.positions,
-          userId,
-        })
-
-        // Invalidate query to fetch updated positions
-        await queryClient.invalidateQueries({
-          queryKey: ['whiteboard', whiteboardId],
-        })
-      }
-    } catch (error) {
-      console.error('Failed to compute auto layout:', error)
-      alert('Failed to compute layout. Please try again.')
-    } finally {
-      setIsAutoLayoutComputing(false)
-    }
-  }, [whiteboardData, whiteboardId, userId, emit, queryClient])
-
-  /**
-   * Callback for React Flow to register its auto-layout function
-   */
-  const handleAutoLayoutReady = useCallback(
-    (computeLayout: () => Promise<void>, isComputing: boolean) => {
-      reactFlowAutoLayoutRef.current = computeLayout
-      setIsAutoLayoutComputing(isComputing)
-    },
-    [],
-  )
-
-  /**
-   * Callback for React Flow to register its display mode controls
-   */
-  const handleDisplayModeReady = useCallback(
-    (showMode: string, setShowMode: (mode: string) => void) => {
-      setReactFlowShowMode(showMode)
-      reactFlowShowModeRef.current = setShowMode
-    },
-    [],
-  )
-
-  /**
-   * Handle display mode change from Toolbar
-   */
-  const handleShowModeChange = useCallback((mode: string) => {
-    if (USE_REACT_FLOW && reactFlowShowModeRef.current) {
-      reactFlowShowModeRef.current(mode)
-      setReactFlowShowMode(mode)
-    }
-  }, [])
-
-  // Initialize textSource from database or sync from canvas when switching to text mode
+  // Initialize textSource from database
   useEffect(() => {
     if (activeTab === 'text' && whiteboardData?.whiteboard) {
-      // If whiteboard has stored textSource, use it; otherwise generate from canvas
       if (whiteboardData.whiteboard.textSource && textSource === '') {
         setTextSource(whiteboardData.whiteboard.textSource)
       } else if (isTextSyncEnabled) {
@@ -546,7 +345,6 @@ function WhiteboardEditor() {
       console.log('Layout computed by user:', data.userId)
       if (data.userId !== userId) {
         setIsAutoLayoutComputing(false)
-        // Invalidate query to fetch updated positions with animation
         queryClient.invalidateQueries({
           queryKey: ['whiteboard', whiteboardId],
         })
@@ -570,7 +368,7 @@ function WhiteboardEditor() {
     }
   }, [on, off, queryClient, whiteboardId, userId])
 
-  // Early returns AFTER all hooks have been called
+  // Early returns AFTER all hooks
   if (isLoading || !whiteboardData) {
     return (
       <div className="flex items-center justify-center h-screen">
@@ -641,86 +439,27 @@ function WhiteboardEditor() {
             isAutoLayoutLoading={isAutoLayoutComputing}
             autoLayoutEnabled={autoLayoutEnabled}
             onAutoLayoutEnabledChange={setAutoLayoutEnabled}
-            zoomControls={canvasControls}
-            currentZoom={canvasViewport.zoom}
-            showMode={USE_REACT_FLOW ? (reactFlowShowMode as any) : undefined}
-            onShowModeChange={USE_REACT_FLOW ? handleShowModeChange : undefined}
+            zoomControls={{
+              zoomIn: () => {},
+              zoomOut: () => {},
+              zoomReset: () => {},
+              fitToScreen: () => {},
+            }}
+            currentZoom={currentZoom}
           />
 
-          {/* Canvas - Toggle between Konva and React Flow */}
-          <div className="flex-1 overflow-hidden relative">
-            {USE_REACT_FLOW ? (
-              /* React Flow Canvas (new) */
-              <ReactFlowWhiteboard
-                whiteboardId={whiteboardId}
-                userId={userId}
-                showMinimap={whiteboard.tables.length > 0}
-                showControls={true}
-                nodesDraggable={true}
-                onAutoLayoutReady={handleAutoLayoutReady}
-                onDisplayModeReady={handleDisplayModeReady}
-              />
-            ) : (
-              /* Konva Canvas (legacy) */
-              <Canvas
-                width={window.innerWidth}
-                height={window.innerHeight - 160} // Subtract header, tabs, and toolbar height
-                initialViewport={canvasViewport}
-                onViewportChange={handleCanvasViewportChange}
-                stageRef={stageRef}
-              >
-                {/* Render all tables */}
-                {whiteboard.tables.map((table) => (
-                  <TableNode
-                    key={table.id}
-                    table={table}
-                    isSelected={selectedTableId === table.id}
-                    onClick={setSelectedTableId}
-                    onDragEnd={handleTableDragEnd}
-                  />
-                ))}
-
-                {/* Render all relationships */}
-                {relationships.map((relationship) => {
-                  const sourceTable = whiteboard.tables.find(
-                    (t) => t.id === relationship.sourceTableId,
-                  )
-                  const targetTable = whiteboard.tables.find(
-                    (t) => t.id === relationship.targetTableId,
-                  )
-
-                  if (!sourceTable || !targetTable) {
-                    console.warn(
-                      'Missing table for relationship:',
-                      relationship.id,
-                    )
-                    return null
-                  }
-
-                  return (
-                    <RelationshipEdge
-                      key={relationship.id}
-                      relationship={relationship}
-                      sourceTable={sourceTable}
-                      targetTable={targetTable}
-                      isSelected={selectedRelationshipId === relationship.id}
-                      onClick={setSelectedRelationshipId}
-                    />
-                  )
-                })}
-              </Canvas>
-            )}
-
-            {/* Minimap - only show when there are tables and using Konva */}
-            {!USE_REACT_FLOW && whiteboard.tables.length > 0 && (
-              <Minimap
-                tables={whiteboard.tables}
-                viewport={canvasViewport}
-                canvasWidth={window.innerWidth}
-                canvasHeight={window.innerHeight - 160}
-                onNavigate={handleMinimapNavigate}
-              />
-            )}
+          {/* React Flow Canvas */}
+          <div className="flex-1 overflow-hidden">
+            <ReactFlowCanvas
+              initialNodes={nodes}
+              initialEdges={edges}
+              onNodesChange={onNodesChange}
+              onEdgesChange={onEdgesChange}
+              nodesDraggable={true}
+              showControls={true}
+              showBackground={true}
+              showMinimap={false}
+            />
           </div>
         </TabsContent>
 

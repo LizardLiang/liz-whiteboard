@@ -9,19 +9,25 @@
  * - Real-time collaboration via WebSocket
  */
 
-import { useMemo, useCallback, useEffect, useState } from 'react'
-import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
-import type { NodeDragHandler } from '@xyflow/react'
-import { ReactFlowProvider, useNodesState, useEdgesState } from '@xyflow/react'
+import { useCallback, useEffect, useMemo, useState } from 'react'
+import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
+import { ReactFlowProvider, useEdgesState, useNodesState } from '@xyflow/react'
 import { ReactFlowCanvas } from './ReactFlowCanvas'
-import { convertTablesToNodes } from '@/lib/react-flow/convert-to-nodes'
-import { convertRelationshipsToEdges } from '@/lib/react-flow/convert-to-edges'
+import type { NodeDragHandler } from '@xyflow/react'
+import type {
+  RelationshipEdgeType,
+  ShowMode,
+  TableNodeType,
+} from '@/lib/react-flow/types'
+import {
+  convertRelationshipsToEdges,
+  convertTablesToNodes,
+} from '@/lib/react-flow/converters'
 import { useAutoLayout } from '@/lib/react-flow/use-auto-layout'
 import { extractPositionsForBatchUpdate } from '@/lib/react-flow/elk-layout'
-import type { TableNodeType, RelationshipEdgeType, ShowMode } from '@/lib/react-flow/types'
 import {
-  getWhiteboardWithDiagram,
   getWhiteboardRelationships,
+  getWhiteboardWithDiagram,
 } from '@/lib/server-functions'
 import { updateTablePositionFn } from '@/routes/api/tables'
 import { useWhiteboardCollaboration } from '@/hooks/use-whiteboard-collaboration'
@@ -41,9 +47,15 @@ export interface ReactFlowWhiteboardProps {
   /** Whether nodes are draggable */
   nodesDraggable?: boolean
   /** Callback to expose auto-layout function to parent */
-  onAutoLayoutReady?: (computeLayout: () => Promise<void>, isComputing: boolean) => void
+  onAutoLayoutReady?: (
+    computeLayout: () => Promise<void>,
+    isComputing: boolean,
+  ) => void
   /** Callback to expose display mode controls to parent */
-  onDisplayModeReady?: (showMode: ShowMode, setShowMode: (mode: ShowMode) => void) => void
+  onDisplayModeReady?: (
+    showMode: ShowMode,
+    setShowMode: (mode: ShowMode) => void,
+  ) => void
 }
 
 /**
@@ -62,19 +74,25 @@ function ReactFlowWhiteboardInner({
 }: {
   whiteboardId: string
   userId: string
-  initialNodes: TableNodeType[]
-  initialEdges: RelationshipEdgeType[]
+  initialNodes: Array<TableNodeType>
+  initialEdges: Array<RelationshipEdgeType>
   showMinimap: boolean
   showControls: boolean
   nodesDraggable: boolean
-  onAutoLayoutReady?: (computeLayout: () => Promise<void>, isComputing: boolean) => void
-  onDisplayModeReady?: (showMode: ShowMode, setShowMode: (mode: ShowMode) => void) => void
+  onAutoLayoutReady?: (
+    computeLayout: () => Promise<void>,
+    isComputing: boolean,
+  ) => void
+  onDisplayModeReady?: (
+    showMode: ShowMode,
+    setShowMode: (mode: ShowMode) => void,
+  ) => void
 }) {
   const queryClient = useQueryClient()
 
   // Local React Flow state (will be updated by collaboration)
-  const [nodes, setNodes] = useState<TableNodeType[]>(initialNodes)
-  const [edges, setEdges] = useState<RelationshipEdgeType[]>(initialEdges)
+  const [nodes, setNodes] = useState<Array<TableNodeType>>(initialNodes)
+  const [edges, setEdges] = useState<Array<RelationshipEdgeType>>(initialEdges)
 
   // Display mode state with localStorage persistence
   const [showMode, setShowMode] = useState<ShowMode>(() => {
@@ -95,7 +113,7 @@ function ReactFlowWhiteboardInner({
           ...node.data,
           showMode,
         },
-      }))
+      })),
     )
   }, [showMode])
 
@@ -118,15 +136,19 @@ function ReactFlowWhiteboardInner({
         prevNodes.map((node) =>
           node.id === tableId
             ? { ...node, position: { x: positionX, y: positionY } }
-            : node
-        )
+            : node,
+        ),
       )
-    }, [])
+    }, []),
   )
 
   // Mutation for updating table position
   const updatePositionMutation = useMutation({
-    mutationFn: async (params: { id: string; positionX: number; positionY: number }) => {
+    mutationFn: async (params: {
+      id: string
+      positionX: number
+      positionY: number
+    }) => {
       return await updateTablePositionFn(params)
     },
     onSuccess: (updatedTable) => {
@@ -142,7 +164,7 @@ function ReactFlowWhiteboardInner({
                   positionX: updatedTable.positionX,
                   positionY: updatedTable.positionY,
                 }
-              : t
+              : t,
           ),
         }
       })
@@ -161,9 +183,7 @@ function ReactFlowWhiteboardInner({
       try {
         // Update all positions (we can do this in parallel)
         await Promise.all(
-          positions.map((pos) =>
-            updatePositionMutation.mutateAsync(pos)
-          )
+          positions.map((pos) => updatePositionMutation.mutateAsync(pos)),
         )
         console.log('All positions updated after auto-layout')
       } catch (error) {
@@ -208,7 +228,7 @@ function ReactFlowWhiteboardInner({
       // Emit to other users via WebSocket
       emitPositionUpdate(node.id, x, y)
     },
-    [updatePositionMutation, emitPositionUpdate]
+    [updatePositionMutation, emitPositionUpdate],
   )
 
   // Render React Flow canvas with collaboration-aware state
@@ -281,7 +301,10 @@ export function ReactFlowWhiteboard({
       console.log('ReactFlowWhiteboard: No relationships data')
       return []
     }
-    console.log('ReactFlowWhiteboard: Converting relationships to edges', relationships)
+    console.log(
+      'ReactFlowWhiteboard: Converting relationships to edges',
+      relationships,
+    )
     const convertedEdges = convertRelationshipsToEdges(relationships)
     console.log('ReactFlowWhiteboard: Converted edges', convertedEdges)
     return convertedEdges

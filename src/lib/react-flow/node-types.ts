@@ -4,10 +4,10 @@
  * This file exports the node and edge type mappings for React Flow
  */
 
-import type { NodeTypes, EdgeTypes } from '@xyflow/react'
-// Import React Flow components (using .new suffix during migration)
-import { TableNode } from '@/components/whiteboard/TableNode.new'
-import { RelationshipEdge } from '@/components/whiteboard/RelationshipEdge.new'
+import type { EdgeTypes, NodeTypes } from '@xyflow/react'
+// Import React Flow components
+import { TableNode } from '@/components/whiteboard/TableNode'
+import { RelationshipEdge } from '@/components/whiteboard/RelationshipEdge'
 
 /**
  * React Flow node type registry

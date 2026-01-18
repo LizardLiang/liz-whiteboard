@@ -8,6 +8,7 @@
 **Based on comprehensive research, migrating to React Flow is NOT RECOMMENDED.**
 
 See [research.md](./research.md) for detailed findings. Key reasons:
+
 - Konva performs better for ER diagrams (50+ FPS vs 35-40 FPS)
 - Migration cost: 5-8 weeks with no significant feature gains
 - Bundle size savings negligible (~48 KB, 5% of total)
@@ -89,23 +90,23 @@ src/styles/
 
 ```typescript
 // src/lib/react-flow/types.ts
-import { Node, Edge } from '@xyflow/react';
-import { DiagramTable, Column, Relationship } from '@prisma/client';
+import { Node, Edge } from '@xyflow/react'
+import { DiagramTable, Column, Relationship } from '@prisma/client'
 
 export type TableNodeData = {
-  table: DiagramTable;
-  columns: Column[];
-};
+  table: DiagramTable
+  columns: Column[]
+}
 
-export type TableNode = Node<TableNodeData, 'erTable'>;
+export type TableNode = Node<TableNodeData, 'erTable'>
 
 export type RelationshipEdgeData = {
-  relationship: Relationship;
-  cardinality: string;
-  label?: string;
-};
+  relationship: Relationship
+  cardinality: string
+  label?: string
+}
 
-export type RelationshipEdge = Edge<RelationshipEdgeData, 'erRelationship'>;
+export type RelationshipEdge = Edge<RelationshipEdgeData, 'erRelationship'>
 ```
 
 See [data-model.md](./data-model.md) for complete type definitions.
@@ -114,35 +115,39 @@ See [data-model.md](./data-model.md) for complete type definitions.
 
 ```typescript
 // src/lib/react-flow/converters.ts
-import { TableNode, RelationshipEdge } from './types';
+import { TableNode, RelationshipEdge } from './types'
 
 export function convertToReactFlowNodes(
-  tables: (DiagramTable & { columns: Column[] })[]
+  tables: (DiagramTable & { columns: Column[] })[],
 ): TableNode[] {
-  return tables.map(table => ({
+  return tables.map((table) => ({
     id: table.id,
     type: 'erTable',
     position: { x: table.positionX, y: table.positionY },
-    data: { table, columns: table.columns }
-  }));
+    data: { table, columns: table.columns },
+  }))
 }
 
 export function convertToReactFlowEdges(
-  relationships: Relationship[]
+  relationships: Relationship[],
 ): RelationshipEdge[] {
-  return relationships.map(rel => ({
+  return relationships.map((rel) => ({
     id: rel.id,
     type: 'erRelationship',
     source: rel.sourceTableId,
     target: rel.targetTableId,
-    sourceHandle: rel.sourceColumnId ? `${rel.sourceColumnId}-source` : undefined,
-    targetHandle: rel.targetColumnId ? `${rel.targetColumnId}-target` : undefined,
+    sourceHandle: rel.sourceColumnId
+      ? `${rel.sourceColumnId}-source`
+      : undefined,
+    targetHandle: rel.targetColumnId
+      ? `${rel.targetColumnId}-target`
+      : undefined,
     data: {
       relationship: rel,
       cardinality: rel.relationshipType,
-      label: rel.label || undefined
-    }
-  }));
+      label: rel.label || undefined,
+    },
+  }))
 }
 ```
 
@@ -424,6 +429,7 @@ export async function benchmarkRenderPerformance() {
 ### Issue: Handles not connecting
 
 **Solution**: Ensure handle IDs match between source and target:
+
 ```typescript
 sourceHandle: `${sourceColumnId}-source`
 targetHandle: `${targetColumnId}-target`
@@ -432,15 +438,19 @@ targetHandle: `${targetColumnId}-target`
 ### Issue: Poor performance with many nodes
 
 **Solution**: Enable React.memo for custom components:
+
 ```typescript
-export const TableNode = React.memo(({ data, selected }: NodeProps<TableNodeData>) => {
-  // ...
-});
+export const TableNode = React.memo(
+  ({ data, selected }: NodeProps<TableNodeData>) => {
+    // ...
+  },
+)
 ```
 
 ### Issue: WebSocket echo-back loop
 
 **Solution**: Use `isProcessingRemote` flag:
+
 ```typescript
 if (!isProcessingRemote.current) {
   socket.emit('node:update', ...);
@@ -450,6 +460,7 @@ if (!isProcessingRemote.current) {
 ### Issue: Dark mode not working
 
 **Solution**: Ensure CSS variables are defined in both light/dark themes:
+
 ```css
 [data-theme='dark'] {
   --table-bg: #1f2937;
@@ -477,6 +488,7 @@ if (!isProcessingRemote.current) {
 ## Support
 
 For questions or issues during migration:
+
 1. Review [research.md](./research.md) for architecture decisions
 2. Check [contracts/](./contracts/) for interface specifications
 3. Refer to React Flow official documentation

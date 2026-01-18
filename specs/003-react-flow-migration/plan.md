@@ -17,6 +17,7 @@ Migrate the collaborative ERD whiteboard from Konva-based canvas rendering to Re
 
 **Language/Version**: TypeScript 5.7, React 19.2
 **Primary Dependencies**:
+
 - @xyflow/react 12.9.2 (already installed)
 - elkjs 0.10.0 (to be added)
 - TanStack Start 1.132 (existing)
@@ -29,12 +30,14 @@ Migrate the collaborative ERD whiteboard from Konva-based canvas rendering to Re
 **Target Platform**: Modern web browsers (Chrome, Firefox, Safari, Edge) with WebSocket support
 **Project Type**: Web application (TanStack Start full-stack React framework)
 **Performance Goals**:
+
 - 60 FPS canvas rendering with 100+ tables
 - <2 seconds initial render for 50 tables
 - <100ms highlight response on table click
 - <3 seconds auto-layout computation for 50 tables
 
 **Constraints**:
+
 - Must preserve existing database schema (DiagramTable, Column, Relationship models)
 - Must maintain backward compatibility with saved positions (positionX, positionY)
 - Must integrate with existing WebSocket collaboration infrastructure
@@ -42,13 +45,14 @@ Migrate the collaborative ERD whiteboard from Konva-based canvas rendering to Re
 - Desktop browser focus (mobile optimization out of scope)
 
 **Scale/Scope**:
+
 - Support 100+ tables per whiteboard
 - Handle 100+ concurrent collaborative users
 - Maintain smooth performance for diagrams with 200+ relationships
 
 ## Constitution Check
 
-*GATE: Must pass before Phase 0 research. Re-check after Phase 1 design.*
+_GATE: Must pass before Phase 0 research. Re-check after Phase 1 design._
 
 **Status**: N/A - No constitution file has been configured for this project yet.
 

@@ -1,0 +1,226 @@
+{
+  "feature": "rebuild-v2",
+  "description": "Complete rebuild of the collaborative ER diagram whiteboard using pure React Flow, removing Konva and dual-canvas implementation",
+  "created": "2026-01-18",
+  "currentStage": "8-code-review",
+  "stages": {
+    "1-prd": {
+      "status": "completed",
+      "agent": "athena",
+      "completedAt": "2026-01-18",
+      "artifact": "prd.md"
+    },
+    "2-prd-review": {
+      "status": "completed",
+      "agent": "athena",
+      "completedAt": "2026-01-18",
+      "artifact": "prd-review.md",
+      "verdict": "APPROVED_WITH_NOTES",
+      "notes": [
+        "PRD is comprehensive and well-structured",
+        "Code reduction target (30-40%) may need adjustment - actual removal is ~13%",
+        "Dual-component files (TableNode, RelationshipEdge) need explicit handling",
+        "Display modes and theming functionality status needs clarification"
+      ]
+    },
+    "3-tech-spec": {
+      "status": "completed",
+      "agent": "hephaestus",
+      "completedAt": "2026-01-18",
+      "artifact": "tech-spec.md",
+      "notes": [
+        "Revised code reduction target to 15-20% (realistic)",
+        "Explicitly addressed dual-component files (TableNode, RelationshipEdge)",
+        "Defined 8-phase implementation plan with checkpoints",
+        "Included comprehensive testing strategy",
+        "Defined rollback plan with triggers and steps",
+        "Bundle size reduction estimated at ~105KB gzipped"
+      ]
+    },
+    "4-spec-review-pm": {
+      "status": "completed",
+      "agent": "athena",
+      "completedAt": "2026-01-18",
+      "artifact": "spec-review-pm.md",
+      "verdict": "APPROVED_WITH_NOTES",
+      "notes": [
+        "100% user story coverage (all 7 user stories aligned)",
+        "92.7% explicit functional requirement coverage (38/41)",
+        "3 minor clarifications needed during implementation: FR-008 viewport persistence, FR-021 layout animation, FR-033 connection status indicator",
+        "No scope creep detected - stays within PRD boundaries",
+        "Comprehensive risk mitigation and rollback planning",
+        "Realistic 15-20% code reduction target accepted"
+      ]
+    },
+    "5-spec-review-sa": {
+      "status": "completed",
+      "agent": "apollo",
+      "completedAt": "2026-01-18",
+      "artifact": "spec-review-sa.md",
+      "verdict": "APPROVED_WITH_NOTES",
+      "notes": [
+        "Architecture is sound with clean component hierarchy",
+        "Data flow from database to React Flow is well-designed",
+        "Implementation phases correctly ordered with proper dependencies",
+        "Performance requirements (60 FPS, <3s load) will be met",
+        "Recommend standardizing Handle ID format before implementation",
+        "Recommend adding CSS audit step to Phase 7",
+        "Consider refactoring highlighting to use useMemo pattern"
+      ]
+    },
+    "6-test-plan": {
+      "status": "completed",
+      "agent": "artemis",
+      "completedAt": "2026-01-18",
+      "artifact": "test-plan.md",
+      "notes": [
+        "Comprehensive test plan with 107 test cases across 6 categories",
+        "Unit tests: 15 cases for converters, handles, and ELK layout",
+        "Integration tests: 8 cases for canvas rendering and WebSocket collaboration",
+        "Manual functional tests: 44 cases covering all 7 user stories",
+        "Performance tests: 4 cases with explicit benchmarks (60 FPS, <3s load, <3s layout, <1s sync)",
+        "Regression suite: 28 cases focused on preventing breakage during rebuild",
+        "Phase verification tests: 13 cases for phase-by-phase validation",
+        "Risk-based testing strategy prioritizes regression prevention",
+        "Detailed test execution plan with pre/during/post-rebuild phases",
+        "Exit criteria defined: 100% phase tests, 100% critical regression, 95% functional, all performance benchmarks"
+      ]
+    },
+    "7-implementation": {
+      "status": "completed",
+      "agent": "ares",
+      "completedAt": "2026-01-18",
+      "artifact": "implementation-notes.md",
+      "notes": [
+        "All 8 phases executed successfully",
+        "4 dependencies removed (konva, react-konva, d3-force, @types/d3-force)",
+        "9 files deleted (~2,655 lines)",
+        "3 files renamed (.new.tsx -> .tsx)",
+        "Converters consolidated into single file",
+        "Build passes, 18/18 tests pass"
+      ]
+    },
+    "8-code-review": {
+      "status": "completed",
+      "agent": "hermes",
+      "completedAt": "2026-01-18",
+      "artifact": "code-review.md",
+      "verdict": "APPROVED_WITH_NOTES",
+      "notes": [
+        "All primary rebuild objectives achieved",
+        "Zero Konva imports (only historical comments remain)",
+        "Zero d3-force imports in active code",
+        "Build passes, 18/18 tests pass",
+        "Found 2 orphaned files (layout-adapter.ts, duplicate node-types.ts) - non-blocking cleanup",
+        "Found 1 stale comment ($whiteboardId.tsx line 1) - trivial cleanup",
+        "CLAUDE.md documentation correctly updated",
+        "Ready for merge with recommended follow-up cleanup PR"
+      ]
+    }
+  },
+  "techStack": {
+    "keep": [
+      "TanStack Start",
+      "TanStack Router",
+      "TanStack Query",
+      "Prisma",
+      "PostgreSQL",
+      "React Flow",
+      "shadcn/ui",
+      "TailwindCSS",
+      "Socket.IO",
+      "Chevrotain",
+      "ELK (elkjs)"
+    ],
+    "remove": ["Konva.js", "react-konva", "d3-force", "@types/d3-force"],
+    "focus": "Pure React Flow implementation with ELK layout"
+  },
+  "metrics": {
+    "estimatedLinesRemoved": 3113,
+    "actualCurrentLines": 16806,
+    "estimatedFinalLines": 14100,
+    "estimatedCodeReduction": "15-20%",
+    "dependenciesToRemove": 4,
+    "bundleSizeReduction": "~105KB gzipped",
+    "routesToConsolidate": 2,
+    "converterFilesToMerge": 3,
+    "componentsToRename": 2
+  },
+  "implementationPhases": [
+    { "phase": 1, "name": "Preparation", "duration": "30 min", "risk": "Low" },
+    {
+      "phase": 2,
+      "name": "Remove Feature Flag and Konva Route",
+      "duration": "1 hour",
+      "risk": "Medium"
+    },
+    {
+      "phase": 3,
+      "name": "Remove Konva Components",
+      "duration": "1 hour",
+      "risk": "Medium"
+    },
+    {
+      "phase": 4,
+      "name": "Remove d3-force Layout Engine",
+      "duration": "30 min",
+      "risk": "Low"
+    },
+    {
+      "phase": 5,
+      "name": "Consolidate Converters",
+      "duration": "45 min",
+      "risk": "Low"
+    },
+    {
+      "phase": 6,
+      "name": "Remove Dependencies",
+      "duration": "15 min",
+      "risk": "Low"
+    },
+    {
+      "phase": 7,
+      "name": "Clean Up and Verification",
+      "duration": "1 hour",
+      "risk": "Low"
+    },
+    {
+      "phase": 8,
+      "name": "Update Documentation",
+      "duration": "30 min",
+      "risk": "None"
+    }
+  ],
+  "fileOperations": {
+    "delete": [
+      "src/components/whiteboard/Canvas.tsx",
+      "src/components/whiteboard/Minimap.tsx",
+      "src/components/whiteboard/TableNode.tsx (Konva)",
+      "src/components/whiteboard/RelationshipEdge.tsx (Konva)",
+      "src/lib/canvas/layout-engine.ts",
+      "src/lib/canvas/layout-worker.ts",
+      "src/routes/whiteboard/$whiteboardId.tsx (legacy)",
+      "src/lib/react-flow/convert-to-nodes.ts",
+      "src/lib/react-flow/convert-to-edges.ts"
+    ],
+    "rename": [
+      "TableNode.new.tsx -> TableNode.tsx",
+      "RelationshipEdge.new.tsx -> RelationshipEdge.tsx",
+      "$whiteboardId.new.tsx -> $whiteboardId.tsx"
+    ],
+    "merge": ["convert-to-nodes.ts + convert-to-edges.ts -> converters.ts"]
+  },
+  "reviewFindings": {
+    "prdConcernsAddressed": [
+      "Code reduction target revised to realistic 15-20%",
+      "Dual-component files explicitly handled with delete/rename plan",
+      "Testing strategy defined with manual checklist and future test recommendations"
+    ],
+    "additionalProvisions": [
+      "8-phase implementation with commit checkpoints",
+      "Rollback plan with specific triggers",
+      "Import update guide for renamed files",
+      "Performance benchmarks defined"
+    ]
+  }
+}

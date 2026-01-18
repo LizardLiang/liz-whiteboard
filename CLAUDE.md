@@ -1,157 +1,135 @@
-# Claude Code Instructions for liz-whiteboard
+# CLAUDE.md
 
-## Package Manager
+This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
 
-**CRITICAL**: This project uses **Bun** as the package manager, NOT npm or yarn.
+## Critical Rules
 
-- ✅ Use `bun install` to install dependencies
-- ✅ Use `bun add <package>` to add dependencies
-- ✅ Use `bun run <script>` to run scripts
-- ✅ Use `bunx shadcn@latest add <component>` to add shadcn/ui components
-- ❌ DO NOT use `npm`, `npx`, `yarn`, or `pnpm`
+**Package Manager**: Use **Bun** exclusively. Never use npm, npx, yarn, or pnpm.
 
-## UI Framework
-
-**CRITICAL**: This project uses **ONLY shadcn/ui and TailwindCSS** for UI.
-
-- ✅ Use shadcn/ui components (installed via `bunx shadcn@latest add <component>`)
-- ✅ Use TailwindCSS for styling
-- ✅ Use plain React/HTML if shadcn doesn't have the component
-- ❌ DO NOT use any other UI libraries (react-resizable-panels, Material-UI, Ant Design, etc.)
-
-## Tech Stack
-
-- **Runtime**: Bun
-- **Framework**: TanStack Start 1.132 (full-stack React framework)
-- **Router**: TanStack React Router 1.132
-- **State Management**: TanStack Query 5.66
-- **Database**: PostgreSQL via Prisma 6.16
-- **Validation**: Zod 4.1
-- **UI**: shadcn/ui + TailwindCSS 4.0
-- **Canvas**: Konva + react-konva
-- **Real-time**: Socket.IO
-- **Parser**: Chevrotain
-- **Layout**: d3-force
-
-## Project Structure
-
+```bash
+bun install              # Install dependencies
+bun add <package>        # Add dependency
+bun run <script>         # Run script
+bunx shadcn@latest add <component>  # Add shadcn component
 ```
-src/
-├── components/       # React components
-│   ├── ui/          # shadcn/ui components
-│   ├── whiteboard/  # Canvas components (Konva-based)
-│   ├── navigator/   # Project/folder navigation
-│   └── layout/      # App layout
-├── routes/          # TanStack Router routes
-├── lib/             # Utilities and business logic
-├── hooks/           # React hooks
-├── data/            # Data access layer (Prisma)
-└── styles.css       # Global styles
 
-prisma/
-└── schema.prisma    # Database schema
+**UI Framework**: Use **shadcn/ui + TailwindCSS** only. No other UI libraries (Material-UI, Ant Design, react-resizable-panels, etc.).
 
-specs/001-collaborative-er-whiteboard/
-├── spec.md          # Feature specification
-├── plan.md          # Implementation plan
-├── tasks.md         # Task breakdown
-├── data-model.md    # Database schema
-├── contracts/       # API/WebSocket contracts
-└── research.md      # Technical decisions
-```
+**Environment**: Variables are in `.env.local` (NOT `.env`).
 
 ## Common Commands
 
 ```bash
-# Install dependencies
-bun install
+bun run dev              # Development server (port 3000)
+bun run build            # Production build
+bun run test             # Run Vitest tests
+bun run check            # Format + lint with auto-fix
 
-# Development server
-bun run dev
-
-# Database operations
-bun run db:push      # Push schema changes
-bun run db:generate  # Generate Prisma client
-bun run db:migrate   # Create migration
-bun run db:studio    # Open Prisma Studio
-bun run db:seed      # Seed database
-
-# Code quality
-bun run lint         # Run ESLint
-bun run format       # Run Prettier
-bun run check        # Format + lint with auto-fix
-
-# Testing
-bun run test         # Run tests
-
-# Build
-bun run build        # Production build
-bun run serve        # Preview production build
-
-# Add shadcn/ui components
-bunx shadcn@latest add <component-name>
+# Database (Prisma)
+bun run db:generate      # Generate Prisma client
+bun run db:push          # Push schema changes
+bun run db:migrate       # Create migration
+bun run db:studio        # Open Prisma Studio
+bun run db:seed          # Seed database
 ```
 
-## Development Workflow
+## Architecture Overview
 
-1. **Read specification first**: Check `specs/001-collaborative-er-whiteboard/` for context
-2. **Follow task list**: Reference `specs/001-collaborative-er-whiteboard/tasks.md`
-3. **Use server functions**: TanStack Start server functions (not REST API)
-4. **Validate with Zod**: All inputs must use Zod schemas from `src/data/schema.ts`
-5. **Mark tasks complete**: Update `tasks.md` with [X] when done
+### Application Type
 
-## Important Notes
+Collaborative ER diagram whiteboard with real-time multi-user editing. Users define database schemas visually (drag tables, draw relationships) or via text syntax (Mermaid-like DSL).
 
-- Environment variables are in `.env.local` (NOT `.env`)
-- Database schema is in `prisma/schema.prisma`
-- Server functions use `createServerFn` from `@tanstack/react-start`
-- WebSocket events follow patterns in `specs/001-collaborative-er-whiteboard/contracts/websocket-events.md`
-- All UI must be accessible and responsive
-- Support dark mode (User Story 7)
+### Tech Stack
 
-## Git Repository
+- **Framework**: TanStack Start (full-stack React with SSR)
+- **Router**: TanStack React Router (file-based routing in `src/routes/`)
+- **State**: TanStack Query for server state
+- **Database**: PostgreSQL via Prisma (`prisma/schema.prisma`)
+- **Canvas**: React Flow (`@xyflow/react`) for diagram rendering
+- **Real-time**: Socket.IO for collaboration
+- **Parser**: Chevrotain for text syntax parsing
+- **Layout**: ELK (elkjs) for automatic diagram layout
 
-This is a git repository. Use standard git commands for version control:
+### Key Data Flow
 
-- `.gitignore` is already configured
-- Commit frequently with descriptive messages
-- Branch: `master` (main branch)
+```
+Text Editor (DSL)  <-->  Chevrotain Parser  <-->  AST
+                              |
+                              v
+                    Prisma Database (Tables, Columns, Relationships)
+                              |
+                              v
+                    React Flow (Nodes, Edges)
+                              |
+                              v
+                    WebSocket (Real-time sync)
+```
 
-## Quick Reference
+### Directory Structure
 
-| Task                   | Command                              |
-| ---------------------- | ------------------------------------ |
-| Install package        | `bun add <package>`                  |
-| Install dev package    | `bun add -d <package>`               |
-| Add shadcn component   | `bunx shadcn@latest add <component>` |
-| Run dev server         | `bun run dev`                        |
-| Push database schema   | `bun run db:push`                    |
-| Generate Prisma client | `bun run db:generate`                |
+```
+src/
+├── routes/              # TanStack Router pages + API routes
+│   ├── api/            # Server functions (createServerFn)
+│   └── whiteboard/     # Whiteboard editor pages
+├── components/
+│   ├── ui/             # shadcn/ui components
+│   └── whiteboard/     # React Flow canvas, TableNode, RelationshipEdge
+├── lib/
+│   ├── react-flow/     # Node/edge converters, ELK layout, types
+│   ├── parser/         # Chevrotain lexer/parser for DSL
+│   └── server-functions.ts
+├── data/               # Prisma data access + Zod schemas
+└── hooks/              # Collaboration hooks, auto-layout
+
+specs/                   # Feature specifications (spec.md, tasks.md, plan.md)
+prisma/schema.prisma     # Database schema
+```
+
+### Core Patterns
+
+**Server Functions**: Use `createServerFn` from `@tanstack/react-start` for server-side operations:
+
+```typescript
+export const myServerFn = createServerFn({ method: 'POST' })
+  .inputValidator((data: MyType) => data)
+  .handler(async ({ data }) => {
+    /* ... */
+  })
+```
+
+**Validation**: All inputs use Zod schemas defined in `src/data/schema.ts`.
+
+**React Flow Integration**:
+
+- Tables → Custom `TableNode` components with column-level handles
+- Relationships → Custom `RelationshipEdge` with cardinality markers
+- Positions stored in DB, converted to React Flow format via `src/lib/react-flow/converters.ts`
+
+**Real-time Collaboration**:
+
+- WebSocket events defined in `specs/001-collaborative-er-whiteboard/contracts/websocket-events.md`
+- `useCollaboration` hook for WebSocket connection
+- `useWhiteboardCollaboration` for React Flow-specific updates
+
+**Auto-layout**:
+
+- ELK hierarchical layout algorithm via `elkjs`
+- `useAutoLayout` hook for triggering layout computation
+- Layout computed client-side and positions batch-updated to database
+
+## Tool Usage
+
+Prefer `rg` (ripgrep) for content search and `fd` for file search:
+
+```bash
+rg "search_term"        # Search file contents
+fd "filename_pattern"   # Search by filename
+rg -l "pattern"         # List files containing pattern
+```
 
 ## Troubleshooting
 
-- If Prisma client is missing: `bun run db:generate`
-- If database is out of sync: `bun run db:push`
-- If shadcn component import fails: `bunx shadcn@latest add <component-name>`
-- If TypeScript errors: Check `tsconfig.json` paths are correct
-
-## Tool usage
-
-"When searching for content within files, use rg (ripgrep) instead of grep. When searching for files by name or path, use fd instead of find. These tools are faster and more efficient. For example:
-
-Use rg "search_term" to search file contents
-Use fd "filename_pattern" to search for files by name
-Use rg -l "pattern" to list files containing a pattern
-Use fd -e py to find all Python files"
-
----
-
-**Last Updated**: 2025-10-28
-
-## Active Technologies
-- TypeScript 5.7, React 19.2 (002-react-flow-migration)
-- PostgreSQL via Prisma (existing schema for tables, columns, relationships, positions) (002-react-flow-migration)
-- PostgreSQL via Prisma (existing schema preserved) (003-react-flow-migration)
-
-## Recent Changes
-- 002-react-flow-migration: Added TypeScript 5.7, React 19.2
+- **Prisma client missing**: `bun run db:generate`
+- **Database out of sync**: `bun run db:push`
+- **shadcn import fails**: `bunx shadcn@latest add <component-name>`

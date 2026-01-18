@@ -8,7 +8,6 @@ import type {
   CreateRelationship,
   RelationshipWithDetails,
 } from '@/data/relationship'
-import type { LayoutOptions, LayoutResult } from '@/lib/canvas/layout-engine'
 import {
   findWhiteboardByIdWithDiagram,
   updateWhiteboardTextSource,
@@ -21,7 +20,6 @@ import {
   createRelationship,
   findRelationshipsByWhiteboardIdWithDetails,
 } from '@/data/relationship'
-import { computeLayout } from '@/lib/canvas/layout-engine'
 import { prisma } from '@/db'
 
 /**
@@ -136,55 +134,6 @@ export const updateWhiteboardTextSourceFn = createServerFn({
       return whiteboard
     } catch (error) {
       console.error('Error updating text source:', error)
-      throw error
-    }
-  })
-
-/**
- * Server function to compute automatic layout for whiteboard
- * Runs layout algorithm and updates table positions in database
- */
-export const computeAutoLayout = createServerFn({
-  method: 'POST',
-})
-  .inputValidator(
-    (data: { whiteboardId: string; options: LayoutOptions }) => data,
-  )
-  .handler(async ({ data }): Promise<LayoutResult> => {
-    try {
-      // Fetch whiteboard with tables and relationships
-      const whiteboard = await findWhiteboardByIdWithDiagram(data.whiteboardId)
-      if (!whiteboard) {
-        throw new Error('Whiteboard not found')
-      }
-
-      const relationships = await findRelationshipsByWhiteboardIdWithDetails(
-        data.whiteboardId,
-      )
-
-      // Compute layout
-      const layoutResult = computeLayout(
-        whiteboard.tables,
-        relationships,
-        data.options,
-      )
-
-      // Update table positions in database (batch update for performance)
-      await prisma.$transaction(
-        layoutResult.positions.map((pos) =>
-          prisma.diagramTable.update({
-            where: { id: pos.id },
-            data: {
-              positionX: pos.x,
-              positionY: pos.y,
-            },
-          }),
-        ),
-      )
-
-      return layoutResult
-    } catch (error) {
-      console.error('Error computing auto layout:', error)
       throw error
     }
   })

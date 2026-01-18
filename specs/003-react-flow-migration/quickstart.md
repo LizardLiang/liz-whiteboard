@@ -18,16 +18,16 @@ This guide helps developers quickly understand and work with the React Flow-base
 
 ### Key Files
 
-| File | Purpose |
-|------|---------|
-| `src/components/whiteboard/ReactFlowCanvas.tsx` | Main canvas wrapper component |
-| `src/components/whiteboard/TableNode.tsx` | Custom table node component |
-| `src/components/whiteboard/RelationshipEdge.tsx` | Custom relationship edge component |
-| `src/lib/react-flow/convert-to-nodes.ts` | Convert database tables to React Flow nodes |
-| `src/lib/react-flow/convert-to-edges.ts` | Convert relationships to React Flow edges |
-| `src/lib/react-flow/elk-layout.ts` | ELK auto-layout integration |
-| `src/lib/react-flow/highlighting.ts` | Node/edge highlighting logic |
-| `src/hooks/use-whiteboard-collaboration.ts` | WebSocket real-time collaboration |
+| File                                             | Purpose                                     |
+| ------------------------------------------------ | ------------------------------------------- |
+| `src/components/whiteboard/ReactFlowCanvas.tsx`  | Main canvas wrapper component               |
+| `src/components/whiteboard/TableNode.tsx`        | Custom table node component                 |
+| `src/components/whiteboard/RelationshipEdge.tsx` | Custom relationship edge component          |
+| `src/lib/react-flow/convert-to-nodes.ts`         | Convert database tables to React Flow nodes |
+| `src/lib/react-flow/convert-to-edges.ts`         | Convert relationships to React Flow edges   |
+| `src/lib/react-flow/elk-layout.ts`               | ELK auto-layout integration                 |
+| `src/lib/react-flow/highlighting.ts`             | Node/edge highlighting logic                |
+| `src/hooks/use-whiteboard-collaboration.ts`      | WebSocket real-time collaboration           |
 
 ### Key Concepts
 
@@ -115,12 +115,8 @@ const handleNodeClick = (event: React.MouseEvent, node: Node) => {
 
 // Automatically apply highlighting when activeTableId changes
 useEffect(() => {
-  const { nodes: highlighted, edges: highlightedEdges } = highlightNodesAndEdges(
-    nodes,
-    edges,
-    activeTableId,
-    hoveredTableId
-  )
+  const { nodes: highlighted, edges: highlightedEdges } =
+    highlightNodesAndEdges(nodes, edges, activeTableId, hoveredTableId)
 
   setNodes(highlighted)
   setEdges(highlightedEdges)
@@ -162,36 +158,41 @@ const handleAutoLayout = async () => {
 
 ```typescript
 import { useQuery } from '@tanstack/react-query'
-import { convertTablesToNodes, convertRelationshipsToEdges } from '@/lib/react-flow'
+import {
+  convertTablesToNodes,
+  convertRelationshipsToEdges,
+} from '@/lib/react-flow'
 
 function useWhiteboardData(whiteboardId: string) {
   // Fetch tables
   const { data: tables } = useQuery({
     queryKey: ['tables', whiteboardId],
-    queryFn: () => db.diagramTable.findMany({
-      where: { whiteboardId },
-      include: { columns: true },
-    }),
+    queryFn: () =>
+      db.diagramTable.findMany({
+        where: { whiteboardId },
+        include: { columns: true },
+      }),
   })
 
   // Fetch relationships
   const { data: relationships } = useQuery({
     queryKey: ['relationships', whiteboardId],
-    queryFn: () => db.relationship.findMany({
-      where: { whiteboardId },
-      include: { sourceColumn: true, targetColumn: true },
-    }),
+    queryFn: () =>
+      db.relationship.findMany({
+        where: { whiteboardId },
+        include: { sourceColumn: true, targetColumn: true },
+      }),
   })
 
   // Convert to React Flow format
   const nodes = useMemo(
-    () => tables ? convertTablesToNodes(tables) : [],
-    [tables]
+    () => (tables ? convertTablesToNodes(tables) : []),
+    [tables],
   )
 
   const edges = useMemo(
-    () => relationships ? convertRelationshipsToEdges(relationships) : [],
-    [relationships]
+    () => (relationships ? convertRelationshipsToEdges(relationships) : []),
+    [relationships],
   )
 
   return { nodes, edges }
@@ -253,14 +254,19 @@ function useCollaboration(whiteboardId: string, setNodes, setEdges) {
         nds.map((node) =>
           node.id === tableId
             ? { ...node, position: { x: positionX, y: positionY } }
-            : node
-        )
+            : node,
+        ),
       )
     })
 
     // Send position update when dragging
     const sendPositionUpdate = (tableId: string, x: number, y: number) => {
-      socket.emit('table:position-update', { whiteboardId, tableId, positionX: x, positionY: y })
+      socket.emit('table:position-update', {
+        whiteboardId,
+        tableId,
+        positionX: x,
+        positionY: y,
+      })
     }
 
     return () => {
@@ -489,6 +495,7 @@ setNodes(nodes.map((node) => ...))
 ## Questions?
 
 If you encounter issues not covered in this guide:
+
 1. Check existing tests in `tests/unit/react-flow/`
 2. Review Liam ERD implementation for similar patterns
 3. Consult React Flow documentation

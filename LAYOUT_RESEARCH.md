@@ -22,6 +22,7 @@ Your project uses **Konva.js** for canvas rendering (not React Flow), and alread
 **Repository**: https://github.com/d3/d3-force
 
 #### Strengths
+
 - **Relationship-aware**: Customizable link strength based on connection count/shared neighbors
 - **Smooth animations**: Force simulation naturally produces aesthetic results
 - **Lightweight**: ~40KB minified, minimal dependencies
@@ -31,12 +32,14 @@ Your project uses **Konva.js** for canvas rendering (not React Flow), and alread
 - **Collision detection**: Prevents node overlaps
 
 #### Limitations
+
 - **No hierarchical layout**: Treats all edges equally in final layout
 - **Convergence time**: ~300 iterations needed for 30 nodes (25-50ms in worker)
 - **No layering**: Cannot force horizontal/vertical alignment for hierarchical schemas
 - **Manual tuning required**: Force parameters (charge, linkDistance) need adjustment per diagram type
 
 #### Performance Profile (30-50 nodes)
+
 ```
 Nodes: 30  → Computation: 15-25ms  → ✅ Acceptable
 Nodes: 50  → Computation: 40-60ms  → ✅ Acceptable
@@ -45,16 +48,17 @@ Nodes: 200+ → Computation: 500ms+  → ❌ Too slow
 ```
 
 #### Code Pattern (Your Implementation)
+
 ```typescript
 // Already in src/lib/canvas/layout-engine.ts
 computeLayout(tables, relationships, {
   width: 1920,
   height: 1080,
-  linkDistance: 200,        // Base distance for links
-  chargeStrength: -1000,    // Repulsion between nodes
-  collisionPadding: 50,     // Node spacing
-  iterations: 300,          // Simulation ticks
-  handleClusters: true      // Separate disconnected graphs
+  linkDistance: 200, // Base distance for links
+  chargeStrength: -1000, // Repulsion between nodes
+  collisionPadding: 50, // Node spacing
+  iterations: 300, // Simulation ticks
+  handleClusters: true, // Separate disconnected graphs
 })
 ```
 
@@ -67,6 +71,7 @@ computeLayout(tables, relationships, {
 **Use Case**: Hierarchical directed graphs
 
 #### Strengths
+
 - **Hierarchical quality**: Excellent for DAGs (Directed Acyclic Graphs)
 - **Fast**: 100+ nodes in <50ms
 - **Layering**: Automatically produces readable hierarchical layouts
@@ -75,6 +80,7 @@ computeLayout(tables, relationships, {
 - **Established**: Used in production by many graph visualization tools
 
 #### Limitations
+
 - **DAG assumption**: Struggles with cycles (ER diagrams have cycles)
 - **No relationship weighting**: Treats all edges equally
 - **Large bundle**: ~120KB minified
@@ -82,6 +88,7 @@ computeLayout(tables, relationships, {
 - **Rank layers**: Creates artificial vertical/horizontal clustering that may not reflect data relationships
 
 #### Code Pattern Example
+
 ```typescript
 import dagre from '@dagrejs/dagre'
 
@@ -89,19 +96,20 @@ const g = new dagre.graphlib.Graph()
 g.setGraph({})
 g.setDefaultEdgeLabel(() => ({}))
 
-tables.forEach(t => g.setNode(t.id, { width: 200, height: 100 }))
-relationships.forEach(r => g.setEdge(r.sourceTableId, r.targetTableId))
+tables.forEach((t) => g.setNode(t.id, { width: 200, height: 100 }))
+relationships.forEach((r) => g.setEdge(r.sourceTableId, r.targetTableId))
 
 dagre.layout(g)
 
 // Extract positions
-g.nodes().forEach(nodeId => {
+g.nodes().forEach((nodeId) => {
   const node = g.node(nodeId)
   positions[nodeId] = { x: node.x, y: node.y }
 })
 ```
 
 #### When to Use
+
 - ✅ Hierarchical schemas (e.g., User → Order → Product hierarchy)
 - ✅ Mostly DAG diagrams
 - ❌ Cyclic ER diagrams
@@ -116,6 +124,7 @@ g.nodes().forEach(nodeId => {
 **Use Case**: Multi-algorithm layout with many strategies
 
 #### Strengths
+
 - **Multiple algorithms**: Hierarchical, force-directed, tree, radial, polyline
 - **Excellent quality**: Academic-grade layout algorithms
 - **Cycle handling**: Handles cyclic graphs gracefully
@@ -125,6 +134,7 @@ g.nodes().forEach(nodeId => {
 - **React Flow compatible**: Works with React Flow layout engine
 
 #### Limitations
+
 - **Large bundle**: ~700KB+ (WASM compilation required)
 - **Complex configuration**: Steep learning curve (40+ parameters)
 - **Slow cold start**: Initial WASM load (100-200ms)
@@ -133,6 +143,7 @@ g.nodes().forEach(nodeId => {
 - **Licensing**: LGPL (copyleft - may affect commercial use)
 
 #### Performance Profile
+
 ```
 Nodes: 30  → First run: 150-200ms (includes WASM init)
 Nodes: 30  → Subsequent: 10-20ms
@@ -141,6 +152,7 @@ Nodes: 500 → Computation: 200-300ms
 ```
 
 #### Code Pattern Example
+
 ```typescript
 import ELK from 'elkjs/lib/elk.bundled'
 
@@ -151,12 +163,12 @@ const graph = {
     'elk.algorithm': 'mrtree', // or 'mrtree', 'force'
     'elk.spacing.nodeNode': '50',
   },
-  children: tables.map(t => ({
+  children: tables.map((t) => ({
     id: t.id,
     width: 200,
     height: 100,
   })),
-  edges: relationships.map(r => ({
+  edges: relationships.map((r) => ({
     id: r.id,
     sources: [r.sourceTableId],
     targets: [r.targetTableId],
@@ -167,6 +179,7 @@ const layouted = await elk.layout(graph)
 ```
 
 #### When to Use
+
 - ✅ Complex hierarchical/layered schemas
 - ✅ Large diagrams (100+ nodes)
 - ✅ Production system requiring best-in-class layout quality
@@ -184,6 +197,7 @@ const layouted = await elk.layout(graph)
 #### Improvements to Current System
 
 1. **Adaptive Iteration Count**
+
    ```typescript
    // Instead of fixed 300, use convergence detection
    function computeLayoutAdaptive(nodes, links, options) {
@@ -209,14 +223,16 @@ const layouted = await elk.layout(graph)
    ```
 
 2. **Relationship Strength Weighting** (You have this!)
+
    ```typescript
    // Your current formula works well:
    strength(A, B) = directConnections(A, B) + 0.5 * sharedNeighbors(A, B)
 
    // Could add: foreign key relationship type weighting
-   strength(A, B) = directConnections(A, B)
-                  + 0.5 * sharedNeighbors(A, B)
-                  + (hasForeignKeyReference(A, B) ? 0.3 : 0)
+   strength(A, B) =
+     directConnections(A, B) +
+     0.5 * sharedNeighbors(A, B) +
+     (hasForeignKeyReference(A, B) ? 0.3 : 0)
    ```
 
 3. **Warm Start for Incremental Updates**
@@ -244,7 +260,7 @@ const layoutResult = await computeLayoutAsync(tables, relationships, {
 })
 
 // Step 2: Update Konva node positions
-layoutResult.positions.forEach(pos => {
+layoutResult.positions.forEach((pos) => {
   const tableNode = tableGroupRefs[pos.id]
   tableNode.to({
     x: pos.x,
@@ -264,7 +280,7 @@ stageRef.current!.draw()
 function applyLayoutWithAnimation(
   positions: Array<{ id: string; x: number; y: number }>,
   tableRefs: Record<string, Konva.Group>,
-  duration: number = 0.5
+  duration: number = 0.5,
 ) {
   const animations: Array<Promise<void>> = []
 
@@ -274,14 +290,14 @@ function applyLayoutWithAnimation(
 
     // Konva to() method returns a Promise
     animations.push(
-      new Promise(resolve => {
+      new Promise((resolve) => {
         tableNode.to({
           x: pos.x,
           y: pos.y,
           duration,
           onFinish: () => resolve(),
         })
-      })
+      }),
     )
   }
 
@@ -381,6 +397,7 @@ function WhiteboardEditor() {
 ```
 
 **Why you're NOT using React Flow**:
+
 - React Flow adds ~200KB overhead
 - Konva is lower-level, more performant for dense graphs
 - Your team likely needs fine-grained control over rendering
@@ -390,24 +407,25 @@ function WhiteboardEditor() {
 
 ## 4. Performance Comparison Matrix
 
-| Metric | d3-force | dagre | elkjs | React Flow |
-|--------|----------|-------|-------|------------|
-| **30 nodes** | 15-25ms | 10-20ms | 50-100ms* | 30-50ms (+ React) |
-| **50 nodes** | 40-60ms | 20-40ms | 80-150ms* | 60-100ms (+ React) |
-| **100 nodes** | 150-200ms | 50-100ms | 150-250ms | 150-250ms (+ React) |
-| **Bundle Size** | 40KB | 120KB | 700KB+ | 200KB |
-| **Worker Thread** | ✅ Yes | ⚠️ Requires wrapper | ✅ Yes | ❌ Main thread |
-| **Relationship Weighted** | ✅ Yes | ❌ No | ✅ Yes | Via custom logic |
-| **Cycle Handling** | ✅ Good | ❌ Struggles | ✅ Good | ✅ Good |
-| **TypeScript** | ✅ Full | ✅ Good | ✅ Good | ✅ Excellent |
+| Metric                    | d3-force  | dagre               | elkjs      | React Flow          |
+| ------------------------- | --------- | ------------------- | ---------- | ------------------- |
+| **30 nodes**              | 15-25ms   | 10-20ms             | 50-100ms\* | 30-50ms (+ React)   |
+| **50 nodes**              | 40-60ms   | 20-40ms             | 80-150ms\* | 60-100ms (+ React)  |
+| **100 nodes**             | 150-200ms | 50-100ms            | 150-250ms  | 150-250ms (+ React) |
+| **Bundle Size**           | 40KB      | 120KB               | 700KB+     | 200KB               |
+| **Worker Thread**         | ✅ Yes    | ⚠️ Requires wrapper | ✅ Yes     | ❌ Main thread      |
+| **Relationship Weighted** | ✅ Yes    | ❌ No               | ✅ Yes     | Via custom logic    |
+| **Cycle Handling**        | ✅ Good   | ❌ Struggles        | ✅ Good    | ✅ Good             |
+| **TypeScript**            | ✅ Full   | ✅ Good             | ✅ Good    | ✅ Excellent        |
 
-*elkjs includes WASM init time; 2nd+ runs are 10-20ms
+\*elkjs includes WASM init time; 2nd+ runs are 10-20ms
 
 ---
 
 ## 5. Decision Framework
 
 ### Choose d3-force (Current) if:
+
 - ✅ Targeting 30-50 table diagrams
 - ✅ Need relationship strength weighting
 - ✅ Already invested in Konva + Web Worker
@@ -418,6 +436,7 @@ function WhiteboardEditor() {
 **Action**: Enhance current implementation with incremental updates and warm-start optimization.
 
 ### Choose dagre if:
+
 - ✅ Schemas are hierarchical (user → order → product)
 - ✅ Migrating to React Flow
 - ✅ Want guaranteed "readable" hierarchical output
@@ -427,6 +446,7 @@ function WhiteboardEditor() {
 **Action**: Requires architectural refactor; not recommended for current Konva setup.
 
 ### Choose elkjs if:
+
 - ✅ Targeting 100+ node diagrams
 - ✅ Need multiple layout algorithms (tree, force, hierarchical)
 - ✅ Production system with high layout quality requirements
@@ -437,6 +457,7 @@ function WhiteboardEditor() {
 **Action**: Wrapper needed for Konva integration; consider only for future phase.
 
 ### Choose React Flow if:
+
 - ✅ Planned refactor away from Konva
 - ✅ Need built-in edge rendering, node selection UI
 - ✅ User interaction patterns (selection, multiple nodes) are complex
@@ -461,7 +482,9 @@ export function computeLayoutAdaptive(
   relationships: Relationship[],
   options: LayoutOptions,
 ): LayoutResult {
-  const opts: Required<LayoutOptions> = { /* ... */ }
+  const opts: Required<LayoutOptions> = {
+    /* ... */
+  }
   const simulation = forceSimulation(nodes)
     /* ... setup forces ... */
     .stop()
@@ -486,7 +509,9 @@ export function computeLayoutAdaptive(
     previousEnergy = energy
   }
 
-  return { /* ... */ }
+  return {
+    /* ... */
+  }
 }
 
 // 2. Add warm-start for incremental updates
@@ -497,12 +522,12 @@ function computeLayoutWarmStart(
   relationships: Relationship[],
   options: LayoutOptions,
 ): LayoutResult {
-  const nodes = tables.map(table => {
+  const nodes = tables.map((table) => {
     if (newTableIds.has(table.id)) {
       // New table: start near related table
       const relatedTableIds = relationships
-        .filter(r => r.targetTableId === table.id)
-        .map(r => r.sourceTableId)
+        .filter((r) => r.targetTableId === table.id)
+        .map((r) => r.sourceTableId)
 
       if (relatedTableIds.length > 0) {
         const related = previousPositions.get(relatedTableIds[0])
@@ -541,11 +566,11 @@ export async function animateLayout(
   const layer = stageRef.current?.children?.[0] as Konva.Layer
   if (!layer) return
 
-  const animations = positions.map(pos => {
+  const animations = positions.map((pos) => {
     const tableNode = tableRefs[pos.id]
     if (!tableNode) return Promise.resolve()
 
-    return new Promise<void>(resolve => {
+    return new Promise<void>((resolve) => {
       tableNode.to({
         x: pos.x,
         y: pos.y,
@@ -634,7 +659,9 @@ function calculateRelationshipStrength(
 
   /* ... existing neighbor calculation ... */
 
-  const sharedNeighbors = [...aNeighbors].filter(n => bNeighbors.has(n)).length
+  const sharedNeighbors = [...aNeighbors].filter((n) =>
+    bNeighbors.has(n),
+  ).length
   strength += 0.5 * sharedNeighbors
 
   return Math.max(strength, 0.1)
@@ -649,13 +676,11 @@ Doesn't affect layout position (handled in arrow rendering), but can affect layo
 // Option: Different force strength based on cardinality
 const cardinalityMultiplier = {
   ONE_TO_ONE: 1.0,
-  ONE_TO_MANY: 1.3,  // Stronger pull for one-to-many
+  ONE_TO_MANY: 1.3, // Stronger pull for one-to-many
   MANY_TO_MANY: 0.8,
 }
 
-const strength = baseStrength * (
-  cardinalityMultiplier[rel.cardinality] ?? 1.0
-)
+const strength = baseStrength * (cardinalityMultiplier[rel.cardinality] ?? 1.0)
 ```
 
 ---
@@ -663,6 +688,7 @@ const strength = baseStrength * (
 ## 8. Best Practices for Your Implementation
 
 ### Do:
+
 - ✅ Keep layout computation in Web Worker (you're doing this!)
 - ✅ Run layout on diagram change, not on every position update
 - ✅ Cache layout results for diagram snapshots
@@ -672,6 +698,7 @@ const strength = baseStrength * (
 - ✅ Test with real schema samples (30-50 tables)
 
 ### Don't:
+
 - ❌ Run layout on every mouse move (too expensive)
 - ❌ Recompute layout when just panning/zooming
 - ❌ Use blocking synchronous layout on main thread
@@ -684,6 +711,7 @@ const strength = baseStrength * (
 ## 9. Code Changes Summary
 
 ### Your Current Implementation (Review)
+
 - ✅ `/src/lib/canvas/layout-engine.ts` - Excellent d3-force integration
 - ✅ `/src/lib/canvas/layout-worker.ts` - Web Worker offloading
 - ✅ `/src/hooks/use-auto-layout-preference.ts` - User preference handling
@@ -732,13 +760,16 @@ console.log(`Convergence: ${result.metadata.converged ?? 'unknown'}`)
 ```
 
 ### Test Cases
+
 - 5 tables, 2 relationships (< 1ms expected)
 - 15 tables, 20 relationships (5-10ms expected)
 - 30 tables, 60 relationships (20-30ms expected)
 - 50 tables, 100 relationships (50-80ms expected)
 
 ### Profiling
+
 Use Chrome DevTools Performance tab:
+
 1. Open whiteboard
 2. Open DevTools → Performance tab
 3. Click Record
@@ -755,6 +786,7 @@ Use Chrome DevTools Performance tab:
 **Decision**: Keep **d3-force + Konva** current implementation
 
 **Why**:
+
 1. Already implemented and working
 2. Excellent for 30-50 node ER diagrams (your target)
 3. Relationship-strength weighting matches spec requirements
@@ -763,6 +795,7 @@ Use Chrome DevTools Performance tab:
 6. Minimal migration risk
 
 **Next Steps**:
+
 1. Implement adaptive iteration count (high ROI, low effort)
 2. Add warm-start for incremental updates
 3. Add Konva animation wrapper for smooth transitions
@@ -790,4 +823,3 @@ If you exceed 100+ nodes regularly or need different layout styles (hierarchical
 │ Recommendation  │ ✅ Use now   │ Later    │ Phase 2   │ Future  │
 └─────────────────┴──────────────┴──────────┴───────────┴─────────┘
 ```
-

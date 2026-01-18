@@ -24,17 +24,19 @@ const socket = io('/whiteboard', {
 Sent when a user drags a table to a new position.
 
 **Payload**:
+
 ```typescript
 interface TablePositionUpdatePayload {
   whiteboardId: string
   tableId: string
   positionX: number
   positionY: number
-  userId?: string  // Optional user ID for tracking who made the change
+  userId?: string // Optional user ID for tracking who made the change
 }
 ```
 
 **Example**:
+
 ```typescript
 socket.emit('table:position-update', {
   whiteboardId: 'whiteboard-123',
@@ -54,6 +56,7 @@ socket.emit('table:position-update', {
 Sent when a user moves their cursor on the canvas (for collaborative cursor display).
 
 **Payload**:
+
 ```typescript
 interface CursorMovePayload {
   whiteboardId: string
@@ -65,6 +68,7 @@ interface CursorMovePayload {
 ```
 
 **Example**:
+
 ```typescript
 socket.emit('cursor:move', {
   whiteboardId: 'whiteboard-123',
@@ -84,6 +88,7 @@ socket.emit('cursor:move', {
 Sent when a user joins a whiteboard session.
 
 **Payload**:
+
 ```typescript
 interface JoinWhiteboardPayload {
   whiteboardId: string
@@ -93,6 +98,7 @@ interface JoinWhiteboardPayload {
 ```
 
 **Example**:
+
 ```typescript
 socket.emit('join-whiteboard', {
   whiteboardId: 'whiteboard-123',
@@ -110,6 +116,7 @@ socket.emit('join-whiteboard', {
 Sent when a user leaves a whiteboard session.
 
 **Payload**:
+
 ```typescript
 interface LeaveWhiteboardPayload {
   whiteboardId: string
@@ -118,6 +125,7 @@ interface LeaveWhiteboardPayload {
 ```
 
 **Example**:
+
 ```typescript
 socket.emit('leave-whiteboard', {
   whiteboardId: 'whiteboard-123',
@@ -136,6 +144,7 @@ socket.emit('leave-whiteboard', {
 Broadcasted when another user updates a table position.
 
 **Payload**:
+
 ```typescript
 interface TablePositionUpdatedPayload {
   whiteboardId: string
@@ -143,11 +152,12 @@ interface TablePositionUpdatedPayload {
   positionX: number
   positionY: number
   userId?: string
-  timestamp: number  // Unix timestamp in milliseconds
+  timestamp: number // Unix timestamp in milliseconds
 }
 ```
 
 **Example**:
+
 ```typescript
 socket.on('table:position-updated', (data) => {
   // Update React Flow node position
@@ -155,8 +165,8 @@ socket.on('table:position-updated', (data) => {
     nds.map((node) =>
       node.id === data.tableId
         ? { ...node, position: { x: data.positionX, y: data.positionY } }
-        : node
-    )
+        : node,
+    ),
   )
 })
 ```
@@ -168,6 +178,7 @@ socket.on('table:position-updated', (data) => {
 Broadcasted when another user moves their cursor.
 
 **Payload**:
+
 ```typescript
 interface CursorMovedPayload {
   whiteboardId: string
@@ -179,6 +190,7 @@ interface CursorMovedPayload {
 ```
 
 **Example**:
+
 ```typescript
 socket.on('cursor:moved', (data) => {
   // Update collaborative cursor position
@@ -193,6 +205,7 @@ socket.on('cursor:moved', (data) => {
 Broadcasted when a new user joins the whiteboard.
 
 **Payload**:
+
 ```typescript
 interface UserJoinedPayload {
   whiteboardId: string
@@ -203,6 +216,7 @@ interface UserJoinedPayload {
 ```
 
 **Example**:
+
 ```typescript
 socket.on('user:joined', (data) => {
   // Show notification: "Alice joined"
@@ -217,6 +231,7 @@ socket.on('user:joined', (data) => {
 Broadcasted when a user leaves the whiteboard.
 
 **Payload**:
+
 ```typescript
 interface UserLeftPayload {
   whiteboardId: string
@@ -226,6 +241,7 @@ interface UserLeftPayload {
 ```
 
 **Example**:
+
 ```typescript
 socket.on('user:left', (data) => {
   // Remove collaborative cursor
@@ -240,6 +256,7 @@ socket.on('user:left', (data) => {
 Broadcasted when a new table is created on the whiteboard.
 
 **Payload**:
+
 ```typescript
 interface TableCreatedPayload {
   whiteboardId: string
@@ -262,6 +279,7 @@ interface TableCreatedPayload {
 ```
 
 **Example**:
+
 ```typescript
 socket.on('table:created', (data) => {
   // Add new node to React Flow
@@ -277,6 +295,7 @@ socket.on('table:created', (data) => {
 Broadcasted when a table is deleted from the whiteboard.
 
 **Payload**:
+
 ```typescript
 interface TableDeletedPayload {
   whiteboardId: string
@@ -287,13 +306,16 @@ interface TableDeletedPayload {
 ```
 
 **Example**:
+
 ```typescript
 socket.on('table:deleted', (data) => {
   // Remove node from React Flow
   setNodes((nds) => nds.filter((node) => node.id !== data.tableId))
   // Remove related edges
   setEdges((eds) =>
-    eds.filter((edge) => edge.source !== data.tableId && edge.target !== data.tableId)
+    eds.filter(
+      (edge) => edge.source !== data.tableId && edge.target !== data.tableId,
+    ),
   )
 })
 ```
@@ -305,6 +327,7 @@ socket.on('table:deleted', (data) => {
 Broadcasted when a new relationship is created.
 
 **Payload**:
+
 ```typescript
 interface RelationshipCreatedPayload {
   whiteboardId: string
@@ -323,6 +346,7 @@ interface RelationshipCreatedPayload {
 ```
 
 **Example**:
+
 ```typescript
 socket.on('relationship:created', (data) => {
   // Add new edge to React Flow
@@ -338,6 +362,7 @@ socket.on('relationship:created', (data) => {
 Broadcasted when a relationship is deleted.
 
 **Payload**:
+
 ```typescript
 interface RelationshipDeletedPayload {
   whiteboardId: string
@@ -348,6 +373,7 @@ interface RelationshipDeletedPayload {
 ```
 
 **Example**:
+
 ```typescript
 socket.on('relationship:deleted', (data) => {
   // Remove edge from React Flow
@@ -364,6 +390,7 @@ socket.on('relationship:deleted', (data) => {
 Sent by server when an operation fails.
 
 **Payload**:
+
 ```typescript
 interface ErrorPayload {
   message: string
@@ -373,6 +400,7 @@ interface ErrorPayload {
 ```
 
 **Example**:
+
 ```typescript
 socket.on('error', (error) => {
   console.error('WebSocket error:', error.message)
@@ -427,6 +455,7 @@ socket.on('reconnect', (attemptNumber) => {
 All WebSocket events maintain the same structure and behavior as the Konva implementation. The migration to React Flow only affects how events are handled in the UI layer:
 
 **Konva Implementation**:
+
 ```typescript
 socket.on('table:position-updated', (data) => {
   // Update Konva shape position
@@ -437,6 +466,7 @@ socket.on('table:position-updated', (data) => {
 ```
 
 **React Flow Implementation**:
+
 ```typescript
 socket.on('table:position-updated', (data) => {
   // Update React Flow node position
@@ -444,8 +474,8 @@ socket.on('table:position-updated', (data) => {
     nds.map((node) =>
       node.id === data.tableId
         ? { ...node, position: { x: data.positionX, y: data.positionY } }
-        : node
-    )
+        : node,
+    ),
   )
 })
 ```
@@ -453,6 +483,7 @@ socket.on('table:position-updated', (data) => {
 ### Position Coordinate System
 
 Both Konva and React Flow use the same coordinate system:
+
 - Origin (0, 0) is top-left corner of canvas
 - Positive X extends to the right
 - Positive Y extends downward
@@ -473,7 +504,7 @@ import type { Node, Edge } from '@xyflow/react'
 export function useWhiteboardCollaboration(
   whiteboardId: string,
   setNodes: React.Dispatch<React.SetStateAction<Node[]>>,
-  setEdges: React.Dispatch<React.SetStateAction<Edge[]>>
+  setEdges: React.Dispatch<React.SetStateAction<Edge[]>>,
 ) {
   useEffect(() => {
     const socket = io('/whiteboard', {
@@ -493,8 +524,8 @@ export function useWhiteboardCollaboration(
         nds.map((node) =>
           node.id === data.tableId
             ? { ...node, position: { x: data.positionX, y: data.positionY } }
-            : node
-        )
+            : node,
+        ),
       )
     })
 
@@ -509,8 +540,9 @@ export function useWhiteboardCollaboration(
       setNodes((nds) => nds.filter((node) => node.id !== data.tableId))
       setEdges((eds) =>
         eds.filter(
-          (edge) => edge.source !== data.tableId && edge.target !== data.tableId
-        )
+          (edge) =>
+            edge.source !== data.tableId && edge.target !== data.tableId,
+        ),
       )
     })
 
@@ -527,7 +559,10 @@ export function useWhiteboardCollaboration(
 
     // Cleanup
     return () => {
-      socket.emit('leave-whiteboard', { whiteboardId, userId: getCurrentUserId() })
+      socket.emit('leave-whiteboard', {
+        whiteboardId,
+        userId: getCurrentUserId(),
+      })
       socket.disconnect()
     }
   }, [whiteboardId, setNodes, setEdges])

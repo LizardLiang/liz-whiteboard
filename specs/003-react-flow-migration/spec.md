@@ -5,7 +5,7 @@
 **Status**: Draft
 **Input**: User description: "read @.claude/liam-whiteboard-implementation.md and migrate all diagram drawing and whiteboard to use the same tech as liam"
 
-## User Scenarios & Testing *(mandatory)*
+## User Scenarios & Testing _(mandatory)_
 
 ### User Story 1 - View ERD Diagrams with Modern Canvas (Priority: P1)
 
@@ -118,7 +118,7 @@ Users need to toggle between different display modes to control how much informa
 - What happens when a table has no relationships? It should still be draggable and visible, possibly grouped with other unconnected tables.
 - How does the system handle very long table or column names? Text should truncate with ellipsis and show full name on hover.
 
-## Requirements *(mandatory)*
+## Requirements _(mandatory)_
 
 ### Functional Requirements
 
@@ -154,7 +154,7 @@ Users need to toggle between different display modes to control how much informa
 - **Canvas State**: Manages the current view of the whiteboard, contains zoom level, pan position, selected table reference, hovered table reference, and display mode setting
 - **Position Data**: Stores custom table positions set by users, linked to specific table and whiteboard, contains x and y coordinates, persists in database
 
-## Success Criteria *(mandatory)*
+## Success Criteria _(mandatory)_
 
 ### Measurable Outcomes
 

@@ -58,6 +58,7 @@ export interface ReactFlowCanvasProps {
 ```
 
 **Usage Example**:
+
 ```typescript
 <ReactFlowCanvas
   whiteboardId="whiteboard-123"
@@ -87,6 +88,7 @@ export const TableNode: React.FC<TableNodeProps>
 ```
 
 **Props Provided by React Flow**:
+
 - `id`: string - Node ID (table ID)
 - `data`: TableNodeData - Custom data (table entity, highlighting state, etc.)
 - `selected`: boolean - Whether node is selected
@@ -99,6 +101,7 @@ export const TableNode: React.FC<TableNodeProps>
 - `targetPosition`: Position - Default target handle position
 
 **Data Structure** (from `data-model.md`):
+
 ```typescript
 interface TableNodeData {
   table: DiagramTable & { columns: Column[] }
@@ -127,6 +130,7 @@ export const RelationshipEdge: React.FC<RelationshipEdgeProps>
 ```
 
 **Props Provided by React Flow**:
+
 - `id`: string - Edge ID (relationship ID)
 - `data`: RelationshipEdgeData - Custom data (relationship entity, cardinality, etc.)
 - `source`: string - Source node ID (source table ID)
@@ -142,6 +146,7 @@ export const RelationshipEdge: React.FC<RelationshipEdgeProps>
 - `selected`: boolean - Whether edge is selected
 
 **Data Structure** (from `data-model.md`):
+
 ```typescript
 interface RelationshipEdgeData {
   relationship: Relationship & {
@@ -199,11 +204,12 @@ export interface UseReactFlowCanvasReturn {
 }
 
 export function useReactFlowCanvas(
-  options: UseReactFlowCanvasOptions
+  options: UseReactFlowCanvasOptions,
 ): UseReactFlowCanvasReturn
 ```
 
 **Usage Example**:
+
 ```typescript
 const {
   nodes,
@@ -241,11 +247,12 @@ export interface UseHighlightingReturn {
 }
 
 export function useHighlighting(
-  options: UseHighlightingOptions
+  options: UseHighlightingOptions,
 ): UseHighlightingReturn
 ```
 
 **Usage Example**:
+
 ```typescript
 const { highlightedNodes, highlightedEdges } = useHighlighting({
   nodes,
@@ -275,11 +282,12 @@ export interface UseAutoLayoutReturn {
 }
 
 export function useAutoLayout(
-  options: UseAutoLayoutOptions
+  options: UseAutoLayoutOptions,
 ): UseAutoLayoutReturn
 ```
 
 **Usage Example**:
+
 ```typescript
 const { computeLayout, isComputing } = useAutoLayout({
   nodes,
@@ -333,24 +341,26 @@ export interface UseWhiteboardCollaborationReturn {
 }
 
 export function useWhiteboardCollaboration(
-  options: UseWhiteboardCollaborationOptions
+  options: UseWhiteboardCollaborationOptions,
 ): UseWhiteboardCollaborationReturn
 ```
 
 **Usage Example**:
+
 ```typescript
-const { updateTablePosition, isConnected, otherCursors } = useWhiteboardCollaboration({
-  whiteboardId: 'whiteboard-123',
-  userId: 'user-xyz',
-  userName: 'Alice',
-  onTablePositionUpdate: (id, x, y) => {
-    setNodes((nds) =>
-      nds.map((node) =>
-        node.id === id ? { ...node, position: { x, y } } : node
+const { updateTablePosition, isConnected, otherCursors } =
+  useWhiteboardCollaboration({
+    whiteboardId: 'whiteboard-123',
+    userId: 'user-xyz',
+    userName: 'Alice',
+    onTablePositionUpdate: (id, x, y) => {
+      setNodes((nds) =>
+        nds.map((node) =>
+          node.id === id ? { ...node, position: { x, y } } : node,
+        ),
       )
-    )
-  },
-})
+    },
+  })
 ```
 
 ---
@@ -369,7 +379,7 @@ export function convertTablesToNodes(
     showMode?: 'TABLE_NAME' | 'KEY_ONLY' | 'ALL_FIELDS'
     activeTableId?: string | null
     hoveredTableId?: string | null
-  }
+  },
 ): TableNodeType[]
 ```
 
@@ -390,7 +400,7 @@ export function convertRelationshipsToEdges(
   >,
   options?: {
     activeTableId?: string | null
-  }
+  },
 ): RelationshipEdgeType[]
 ```
 
@@ -408,7 +418,7 @@ export function computeELKLayout(
   options?: {
     direction?: 'UP' | 'DOWN' | 'LEFT' | 'RIGHT'
     spacing?: number
-  }
+  },
 ): Promise<TableNodeType[]>
 ```
 
@@ -424,7 +434,7 @@ export function highlightNodesAndEdges(
   nodes: TableNodeType[],
   edges: RelationshipEdgeType[],
   activeTableId: string | null,
-  hoveredTableId: string | null
+  hoveredTableId: string | null,
 ): {
   nodes: TableNodeType[]
   edges: RelationshipEdgeType[]
@@ -610,6 +620,7 @@ This contract is designed for **@xyflow/react v12.9.2**. Breaking changes in fut
 ### Backward Compatibility
 
 All type contracts maintain backward compatibility with:
+
 - Existing Prisma database schema (DiagramTable, Column, Relationship)
 - Existing TanStack Query data fetching patterns
 - Existing WebSocket event payloads
@@ -618,6 +629,7 @@ All type contracts maintain backward compatibility with:
 ### Migration Path
 
 When migrating from Konva to React Flow:
+
 1. Konva `CanvasViewport` → React Flow `ReactFlowViewport`
 2. Konva `TableShape` → React Flow `TableNodeType`
 3. Konva `RelationshipLine` → React Flow `RelationshipEdgeType`
@@ -629,6 +641,7 @@ When migrating from Konva to React Flow:
 ## Summary
 
 These type contracts provide:
+
 - **Type Safety**: Full TypeScript coverage for all React Flow integration
 - **API Stability**: Clear public API for components, hooks, and utilities
 - **Documentation**: Self-documenting code via TypeScript types

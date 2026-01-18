@@ -25,6 +25,7 @@ This document details how the Liam ERD project (`/home/shotup/programing/react/l
 ### Canvas Library: React Flow (@xyflow/react v12.8.6)
 
 **Why React Flow over Konva:**
+
 - **Declarative**: Nodes/edges are React components, not imperative shapes
 - **Built-in features**: Pan, zoom, drag, minimap, controls out-of-the-box
 - **SVG-based**: Better for diagrams with connections between nodes
@@ -32,23 +33,24 @@ This document details how the Liam ERD project (`/home/shotup/programing/react/l
 - **Automatic edge routing**: Handles connection paths automatically
 
 **React Flow Core Concepts:**
+
 ```typescript
 // Nodes are positioned boxes with custom content
 type Node = {
   id: string
-  type: string  // Maps to custom component
+  type: string // Maps to custom component
   position: { x: number; y: number }
-  data: any  // Custom data passed to component
+  data: any // Custom data passed to component
 }
 
 // Edges connect nodes via handles
 type Edge = {
   id: string
-  type: string  // Maps to custom component
-  source: string  // Source node ID
-  target: string  // Target node ID
-  sourceHandle?: string  // Specific connection point
-  targetHandle?: string  // Specific connection point
+  type: string // Maps to custom component
+  source: string // Source node ID
+  target: string // Target node ID
+  sourceHandle?: string // Specific connection point
+  targetHandle?: string // Specific connection point
   data?: any
 }
 ```
@@ -56,6 +58,7 @@ type Edge = {
 ### Layout Engine: ELK (elkjs v0.10.0)
 
 **Eclipse Layout Kernel** - Automatic graph layout algorithm
+
 - Algorithm: "layered" (hierarchical)
 - Handles table positioning automatically
 - Minimizes edge crossings
@@ -145,6 +148,7 @@ export const ERDRenderer = () => {
 ```
 
 **Key Responsibilities:**
+
 - Wraps everything in `ReactFlowProvider` (required for React Flow hooks)
 - Manages layout panels (sidebar + canvas)
 - Provides global toolbar and detail drawer
@@ -222,6 +226,7 @@ const ERDContent = () => {
 ```
 
 **Key Features:**
+
 - `useNodesState`/`useEdgesState`: React Flow built-in hooks for state management
 - Custom node/edge types mapped to React components
 - Event handlers for user interaction
@@ -488,6 +493,7 @@ export const CardinalityMarkers = () => {
 ```
 
 **Usage in Edge:**
+
 ```typescript
 <path
   markerStart="url(#zeroOrOneLeft)"
@@ -512,14 +518,13 @@ export const convertSchemaToNodes = (schema: Schema) => {
 
   // 2. Detect cardinality (ONE_TO_ONE vs ONE_TO_MANY)
   //    Based on UNIQUE constraints on foreign key columns
-  const relationshipsWithCardinality =
-    detectCardinality(relationships, tables)
+  const relationshipsWithCardinality = detectCardinality(relationships, tables)
 
   // 3. Create table nodes
-  const tableNodes: Node<TableNodeData>[] = tables.map(table => ({
+  const tableNodes: Node<TableNodeData>[] = tables.map((table) => ({
     id: table.name,
     type: 'table',
-    position: { x: 0, y: 0 },  // Will be set by layout
+    position: { x: 0, y: 0 }, // Will be set by layout
     data: {
       table,
       isActiveHighlighted: false,
@@ -532,8 +537,8 @@ export const convertSchemaToNodes = (schema: Schema) => {
   }))
 
   // 4. Create relationship edges
-  const edges: Edge<RelationshipEdgeData>[] =
-    relationshipsWithCardinality.map(rel => ({
+  const edges: Edge<RelationshipEdgeData>[] = relationshipsWithCardinality.map(
+    (rel) => ({
       id: rel.name,
       type: 'relationship',
       source: rel.primaryTableName,
@@ -546,7 +551,8 @@ export const convertSchemaToNodes = (schema: Schema) => {
       },
       markerStart: getMarkerStart(rel.cardinality),
       markerEnd: getMarkerEnd(rel.cardinality),
-    }))
+    }),
+  )
 
   // 5. Group non-related tables (optional optimization)
   const nonRelatedTables = findNonRelatedTables(tables, relationships)
@@ -564,7 +570,9 @@ const columnHandleId = (tableName: string, columnName: string) =>
 
 // Helper: Determine marker based on cardinality
 const getMarkerEnd = (cardinality: Cardinality) =>
-  cardinality === 'ONE_TO_ONE' ? 'url(#zeroOrOneRight)' : 'url(#zeroOrManyRight)'
+  cardinality === 'ONE_TO_ONE'
+    ? 'url(#zeroOrOneRight)'
+    : 'url(#zeroOrManyRight)'
 ```
 
 **Cardinality Detection Logic:**
@@ -574,18 +582,18 @@ const getMarkerEnd = (cardinality: Cardinality) =>
 ```typescript
 const detectCardinality = (
   foreignKey: ForeignKeyConstraint,
-  table: Table
+  table: Table,
 ): Cardinality => {
   const fkColumnNames = new Set(foreignKey.columnNames)
 
   // Check if there's a UNIQUE constraint covering ALL FK columns
-  const hasUniqueConstraint = Object.values(table.constraints).some(c => {
+  const hasUniqueConstraint = Object.values(table.constraints).some((c) => {
     if (c.type !== 'UNIQUE') return false
 
     const uniqueColumns = new Set(c.columnNames)
 
     // All FK columns must be in the UNIQUE constraint
-    return [...fkColumnNames].every(col => uniqueColumns.has(col))
+    return [...fkColumnNames].every((col) => uniqueColumns.has(col))
   })
 
   return hasUniqueConstraint ? 'ONE_TO_ONE' : 'ONE_TO_MANY'
@@ -605,17 +613,17 @@ const elk = new ELK()
 
 export const getElkLayout = async (
   nodes: Node[],
-  edges: Edge[]
+  edges: Edge[],
 ): Promise<Node[]> => {
   // Filter out hidden nodes
-  const visibleNodes = nodes.filter(n => !n.hidden)
+  const visibleNodes = nodes.filter((n) => !n.hidden)
 
   // Convert React Flow format to ELK format
   const elkGraph = {
     id: 'root',
     layoutOptions: {
       'elk.algorithm': 'layered',
-      'elk.direction': 'RIGHT',  // Left-to-right layout
+      'elk.direction': 'RIGHT', // Left-to-right layout
       'elk.layered.spacing.baseValue': '40',
       'elk.spacing.componentComponent': '80',
       'elk.layered.spacing.edgeNodeBetweenLayers': '120',
@@ -623,12 +631,12 @@ export const getElkLayout = async (
       'elk.layered.mergeEdges': 'true',
       'elk.layered.nodePlacement.strategy': 'INTERACTIVE',
     },
-    children: visibleNodes.map(node => ({
+    children: visibleNodes.map((node) => ({
       id: node.id,
       width: node.width || 200,
       height: node.height || 100,
     })),
-    edges: edges.map(edge => ({
+    edges: edges.map((edge) => ({
       id: edge.id,
       sources: [edge.source],
       targets: [edge.target],
@@ -639,8 +647,8 @@ export const getElkLayout = async (
   const layoutedGraph = await elk.layout(elkGraph)
 
   // Convert back to React Flow format
-  const layoutedNodes = visibleNodes.map(node => {
-    const elkNode = layoutedGraph.children?.find(n => n.id === node.id)
+  const layoutedNodes = visibleNodes.map((node) => {
+    const elkNode = layoutedGraph.children?.find((n) => n.id === node.id)
 
     return {
       ...node,
@@ -767,24 +775,21 @@ export const UserEditingProvider = ({ children }) => {
 
 ```typescript
 export const useNodeEventHandlers = () => {
-  const {
-    setActiveTableName,
-    setHoveredTableName,
-    resetSelectedNodeIds
-  } = useUserEditing()
+  const { setActiveTableName, setHoveredTableName, resetSelectedNodeIds } =
+    useUserEditing()
 
-  const handleNodeClick = useCallback((
-    event: React.MouseEvent,
-    node: Node
-  ) => {
-    // Set as active table
-    setActiveTableName(node.id)
+  const handleNodeClick = useCallback(
+    (event: React.MouseEvent, node: Node) => {
+      // Set as active table
+      setActiveTableName(node.id)
 
-    // Update URL
-    const url = new URL(window.location.href)
-    url.searchParams.set('table', node.id)
-    window.history.pushState({}, '', url)
-  }, [setActiveTableName])
+      // Update URL
+      const url = new URL(window.location.href)
+      url.searchParams.set('table', node.id)
+      window.history.pushState({}, '', url)
+    },
+    [setActiveTableName],
+  )
 
   const handlePaneClick = useCallback(() => {
     // Deselect all
@@ -792,30 +797,32 @@ export const useNodeEventHandlers = () => {
     resetSelectedNodeIds()
   }, [setActiveTableName, resetSelectedNodeIds])
 
-  const handleMouseEnterNode = useCallback((
-    event: React.MouseEvent,
-    node: Node
-  ) => {
-    setHoveredTableName(node.id)
-  }, [setHoveredTableName])
+  const handleMouseEnterNode = useCallback(
+    (event: React.MouseEvent, node: Node) => {
+      setHoveredTableName(node.id)
+    },
+    [setHoveredTableName],
+  )
 
   const handleMouseLeaveNode = useCallback(() => {
     setHoveredTableName(null)
   }, [setHoveredTableName])
 
-  const handleDragStopNode = useCallback((
-    event: React.MouseEvent,
-    node: Node,
-    nodes: Node[]
-  ) => {
-    // Persist custom positions
-    const positions = nodes.reduce((acc, n) => ({
-      ...acc,
-      [n.id]: n.position,
-    }), {})
+  const handleDragStopNode = useCallback(
+    (event: React.MouseEvent, node: Node, nodes: Node[]) => {
+      // Persist custom positions
+      const positions = nodes.reduce(
+        (acc, n) => ({
+          ...acc,
+          [n.id]: n.position,
+        }),
+        {},
+      )
 
-    localStorage.setItem('node-positions', JSON.stringify(positions))
-  }, [])
+      localStorage.setItem('node-positions', JSON.stringify(positions))
+    },
+    [],
+  )
 
   return {
     handleNodeClick,
@@ -840,14 +847,14 @@ export const highlightNodesAndEdges = (
   nodes: Node<TableNodeData>[],
   edges: Edge<RelationshipEdgeData>[],
   activeTableName: string | null,
-  hoveredTableName: string | null
+  hoveredTableName: string | null,
 ): {
   highlightedNodes: Node<TableNodeData>[]
   highlightedEdges: Edge<RelationshipEdgeData>[]
 } => {
   // Build edge map for quick lookups
   const edgeMap = new Map<string, Edge[]>()
-  edges.forEach(edge => {
+  edges.forEach((edge) => {
     const sourceEdges = edgeMap.get(edge.source) || []
     sourceEdges.push(edge)
     edgeMap.set(edge.source, sourceEdges)
@@ -865,7 +872,7 @@ export const highlightNodesAndEdges = (
 
     // Add all connected tables
     const connectedEdges = edgeMap.get(activeTableName) || []
-    connectedEdges.forEach(edge => {
+    connectedEdges.forEach((edge) => {
       relatedTableIds.add(edge.source)
       relatedTableIds.add(edge.target)
     })
@@ -875,19 +882,20 @@ export const highlightNodesAndEdges = (
     relatedTableIds.add(hoveredTableName)
 
     const connectedEdges = edgeMap.get(hoveredTableName) || []
-    connectedEdges.forEach(edge => {
+    connectedEdges.forEach((edge) => {
       relatedTableIds.add(edge.source)
       relatedTableIds.add(edge.target)
     })
   }
 
   // Update node highlighting
-  const highlightedNodes = nodes.map(node => ({
+  const highlightedNodes = nodes.map((node) => ({
     ...node,
     data: {
       ...node.data,
       isActiveHighlighted: node.id === activeTableName,
-      isHighlighted: relatedTableIds.has(node.id) && node.id !== activeTableName,
+      isHighlighted:
+        relatedTableIds.has(node.id) && node.id !== activeTableName,
       isTooltipVisible: node.id === hoveredTableName,
     },
     // Increase z-index for highlighted nodes
@@ -895,7 +903,7 @@ export const highlightNodesAndEdges = (
   }))
 
   // Update edge highlighting
-  const highlightedEdges = edges.map(edge => {
+  const highlightedEdges = edges.map((edge) => {
     const isConnectedToActive =
       edge.source === activeTableName || edge.target === activeTableName
     const isConnectedToHovered =
@@ -908,13 +916,13 @@ export const highlightNodesAndEdges = (
         isHighlighted: isConnectedToActive || isConnectedToHovered,
       },
       // Increase z-index for highlighted edges
-      zIndex: (isConnectedToActive || isConnectedToHovered) ? 1000 : 1,
+      zIndex: isConnectedToActive || isConnectedToHovered ? 1000 : 1,
     }
   })
 
   return {
     highlightedNodes,
-    highlightedEdges
+    highlightedEdges,
   }
 }
 ```
@@ -928,18 +936,17 @@ export const useHighlightNodesAndEdges = ({
   nodes,
   edges,
   setNodes,
-  setEdges
+  setEdges,
 }) => {
   const { activeTableName, hoveredTableName } = useUserEditing()
 
   useEffect(() => {
-    const { highlightedNodes, highlightedEdges } =
-      highlightNodesAndEdges(
-        nodes,
-        edges,
-        activeTableName,
-        hoveredTableName
-      )
+    const { highlightedNodes, highlightedEdges } = highlightNodesAndEdges(
+      nodes,
+      edges,
+      activeTableName,
+      hoveredTableName,
+    )
 
     setNodes(highlightedNodes)
     setEdges(highlightedEdges)
@@ -1017,7 +1024,7 @@ useEffect(() => {
     nodes,
     edges,
     activeTableName,
-    hoveredTableName
+    hoveredTableName,
   )
 
   // React Flow will re-render affected components
@@ -1123,15 +1130,15 @@ return (
 
 ### Differences from Konva
 
-| Feature | React Flow | Konva |
-|---------|-----------|-------|
-| Paradigm | Declarative | Imperative |
-| Node Types | React Components | Shapes (Rect, Text, etc.) |
-| Edges | Built-in with routing | Manual path drawing |
-| Pan/Zoom | Built-in | Manual implementation |
-| Event Handling | React events | Konva events |
-| Performance | Virtualized | Canvas-based |
-| Use Case | Diagrams, flows | Custom graphics, games |
+| Feature        | React Flow            | Konva                     |
+| -------------- | --------------------- | ------------------------- |
+| Paradigm       | Declarative           | Imperative                |
+| Node Types     | React Components      | Shapes (Rect, Text, etc.) |
+| Edges          | Built-in with routing | Manual path drawing       |
+| Pan/Zoom       | Built-in              | Manual implementation     |
+| Event Handling | React events          | Konva events              |
+| Performance    | Virtualized           | Canvas-based              |
+| Use Case       | Diagrams, flows       | Custom graphics, games    |
 
 ### Migration Considerations
 
@@ -1146,11 +1153,13 @@ If migrating from Konva to React Flow:
 ### Recommended Approach for liz-whiteboard
 
 **If keeping Konva:**
+
 - Study Liam's highlighting system logic
 - Adopt ELK for auto-layout
 - Implement similar node/edge state patterns
 
 **If migrating to React Flow:**
+
 - Follow Liam's component structure
 - Reuse existing data models (tables, relationships)
 - Integrate with existing collaboration (Socket.IO)

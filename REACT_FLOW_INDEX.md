@@ -9,7 +9,9 @@
 ## Quick Navigation
 
 ### For Executives / Project Managers
+
 Start here: **[RESEARCH_SUMMARY.txt](./RESEARCH_SUMMARY.txt)**
+
 - 2 min read
 - Executive summary
 - Cost-benefit analysis
@@ -17,7 +19,9 @@ Start here: **[RESEARCH_SUMMARY.txt](./RESEARCH_SUMMARY.txt)**
 - Approval checklist
 
 ### For Architects / Tech Leads
+
 Start here: **[REACT_FLOW_DECISION.md](./REACT_FLOW_DECISION.md)**
+
 - 40 pages
 - Architecture decisions documented
 - Rationale for each choice
@@ -26,7 +30,9 @@ Start here: **[REACT_FLOW_DECISION.md](./REACT_FLOW_DECISION.md)**
 - Risk mitigation
 
 ### For Developers Implementing
+
 Start here: **[REACT_FLOW_QUICK_START.md](./REACT_FLOW_QUICK_START.md)**
+
 - 15 pages
 - Copy-paste implementation code
 - Common patterns and examples
@@ -35,7 +41,9 @@ Start here: **[REACT_FLOW_QUICK_START.md](./REACT_FLOW_QUICK_START.md)**
 - Debugging tips
 
 ### For Deep Technical Dive
+
 Start here: **[REACT_FLOW_RESEARCH.md](./REACT_FLOW_RESEARCH.md)**
+
 - 80 pages
 - Comprehensive state management patterns
 - Real-time collaboration architecture
@@ -49,10 +57,12 @@ Start here: **[REACT_FLOW_RESEARCH.md](./REACT_FLOW_RESEARCH.md)**
 ## Document Overview
 
 ### 1. REACT_FLOW_QUICK_START.md (15 pages)
+
 **Time to read**: 10 minutes
 **Best for**: "Just show me the code"
 
 **Contains**:
+
 ```
 - Copy-paste Zustand store implementation
 - WebSocket sync hook
@@ -65,12 +75,14 @@ Start here: **[REACT_FLOW_RESEARCH.md](./REACT_FLOW_RESEARCH.md)**
 ```
 
 **When to use**:
+
 - Getting started with implementation
 - Solving specific problems
 - Looking for code examples
 - Need quick reference during coding
 
 **Key sections**:
+
 1. TL;DR: Copy-Paste Architecture (5 min)
 2. Common Patterns (10 min)
 3. Common Issues & Solutions (5 min)
@@ -80,10 +92,12 @@ Start here: **[REACT_FLOW_RESEARCH.md](./REACT_FLOW_RESEARCH.md)**
 ---
 
 ### 2. REACT_FLOW_DECISION.md (40 pages)
+
 **Time to read**: 30 minutes
 **Best for**: Architectural decisions
 
 **Contains**:
+
 ```
 - Executive summary with risk/complexity/payback
 - 5 key decisions explained
@@ -98,6 +112,7 @@ Start here: **[REACT_FLOW_RESEARCH.md](./REACT_FLOW_RESEARCH.md)**
 ```
 
 **When to use**:
+
 - Reviewing architecture with team
 - Understanding design tradeoffs
 - Getting approval from stakeholders
@@ -105,6 +120,7 @@ Start here: **[REACT_FLOW_RESEARCH.md](./REACT_FLOW_RESEARCH.md)**
 - Planning implementation phases
 
 **Key sections**:
+
 1. Executive Summary
 2. Decision: State Management (Zustand vs alternatives)
 3. Decision: Collaboration Pattern (event-based vs OT vs CRDT)
@@ -118,10 +134,12 @@ Start here: **[REACT_FLOW_RESEARCH.md](./REACT_FLOW_RESEARCH.md)**
 ---
 
 ### 3. REACT_FLOW_RESEARCH.md (80 pages)
+
 **Time to read**: 60 minutes
 **Best for**: Understanding all technical aspects
 
 **Contains**:
+
 ```
 - State management patterns (controlled vs uncontrolled)
 - Zustand store patterns
@@ -136,6 +154,7 @@ Start here: **[REACT_FLOW_RESEARCH.md](./REACT_FLOW_RESEARCH.md)**
 ```
 
 **When to use**:
+
 - Understanding React Flow state management deeply
 - Learning best practices for collaboration
 - Researching performance optimization
@@ -143,6 +162,7 @@ Start here: **[REACT_FLOW_RESEARCH.md](./REACT_FLOW_RESEARCH.md)**
 - Planning migration from Konva
 
 **Key sections**:
+
 1. State Management Patterns
    - Uncontrolled, controlled with hooks, external store
    - Immutability requirements
@@ -177,10 +197,12 @@ Start here: **[REACT_FLOW_RESEARCH.md](./REACT_FLOW_RESEARCH.md)**
 ---
 
 ### 4. RESEARCH_SUMMARY.txt (This file)
+
 **Time to read**: 5 minutes
 **Best for**: Quick reference
 
 **Contains**:
+
 ```
 - Executive summary
 - Key decisions (5 total)
@@ -195,6 +217,7 @@ Start here: **[REACT_FLOW_RESEARCH.md](./REACT_FLOW_RESEARCH.md)**
 ```
 
 **When to use**:
+
 - Refreshing on key points
 - Showing management the overview
 - Quick reference during meetings
@@ -246,6 +269,7 @@ START: Migrating Konva → React Flow
 ## Key Findings Summary
 
 ### 1. State Management: Use Zustand
+
 ```
 Why: Production-ready, easy WebSocket sync, selective subscriptions
 Not: useNodesState (limited), Redux (overkill), Context (performance)
@@ -253,6 +277,7 @@ Pattern: External store with actions that dispatch mutations
 ```
 
 ### 2. Collaboration: Event-Based Sync
+
 ```
 Why: Matches current Socket.IO, simple to implement, sufficient for LWW
 Not: State streaming (bandwidth), OT (complex), full CRDT (overkill for now)
@@ -260,6 +285,7 @@ Pattern: User action → store update → WebSocket broadcast
 ```
 
 ### 3. Conflicts: Timestamp-Based Last-Write-Wins
+
 ```
 Why: Per specification requirement, simple implementation
 Trade-off: Rare conflicts (5%) with 10+ concurrent users
@@ -267,6 +293,7 @@ Mitigation: Show toast notification when overwritten
 ```
 
 ### 4. Performance: Three-Layer Defense
+
 ```
 Layer 1: Selective Zustand subscriptions (only re-render on count change)
 Layer 2: useCallback memoization (stable function references)
@@ -275,6 +302,7 @@ Result: 60 FPS dragging with 50+ tables (3x faster than Konva)
 ```
 
 ### 5. Change Detection: isProcessingRemote Flag
+
 ```
 Purpose: Distinguish user actions from remote updates
 Location: Zustand store state
@@ -285,12 +313,12 @@ Pattern: Set flag when applying remote, check before broadcasting
 
 ## Implementation Timeline
 
-| Phase | Duration | Focus | Deliverable |
-|-------|----------|-------|-------------|
-| 1 | Week 1 | Foundation | Zustand store + React Flow component |
-| 2 | Week 2 | WebSocket | Real-time collaboration working |
-| 3 | Week 3 | Performance | 60 FPS with 50+ tables |
-| 4 | Week 4 | Migration | Konva removed, full feature parity |
+| Phase | Duration | Focus       | Deliverable                          |
+| ----- | -------- | ----------- | ------------------------------------ |
+| 1     | Week 1   | Foundation  | Zustand store + React Flow component |
+| 2     | Week 2   | WebSocket   | Real-time collaboration working      |
+| 3     | Week 3   | Performance | 60 FPS with 50+ tables               |
+| 4     | Week 4   | Migration   | Konva removed, full feature parity   |
 
 **Total: 4 weeks | Effort: 1-2 FTE | Risk: Low**
 
@@ -299,26 +327,31 @@ Pattern: Set flag when applying remote, check before broadcasting
 ## How to Use These Documents
 
 ### Scenario 1: "I need to present this to my team"
+
 1. Read RESEARCH_SUMMARY.txt (5 min)
 2. Print/share REACT_FLOW_DECISION.md (architecture decisions)
 3. Answer questions from REACT_FLOW_RESEARCH.md (technical depth)
 
 ### Scenario 2: "I'm starting implementation now"
+
 1. Read REACT_FLOW_QUICK_START.md section 1-4 (15 min)
 2. Copy code from section 1-5 (30 min)
 3. Reference troubleshooting when needed (ongoing)
 
 ### Scenario 3: "We hit a performance issue"
+
 1. Go to REACT_FLOW_RESEARCH.md section "Performance Optimization"
 2. Check REACT_FLOW_QUICK_START.md "Common Issues & Solutions"
 3. Use Chrome DevTools Profiler to identify bottleneck
 
 ### Scenario 4: "How do I handle [specific case]?"
+
 1. Search for the case in REACT_FLOW_RESEARCH.md
 2. Check "Common Patterns" in REACT_FLOW_QUICK_START.md
 3. See code examples for implementation
 
 ### Scenario 5: "Why did we choose Zustand over Redux?"
+
 1. Go to REACT_FLOW_DECISION.md "Alternative 2: Redux"
 2. Review rationale section
 3. Check cost-benefit analysis
@@ -343,6 +376,7 @@ Pattern: Set flag when applying remote, check before broadcasting
 ### Best Practice Checklist
 
 Before starting implementation, verify:
+
 - [ ] Team understands Zustand pattern
 - [ ] Socket.IO handlers updated
 - [ ] WebSocket events defined
@@ -353,6 +387,7 @@ Before starting implementation, verify:
 ### Code to Copy-Paste
 
 Located in REACT_FLOW_QUICK_START.md sections:
+
 1. **Zustand store** (src/lib/flow-store.ts)
 2. **Collaboration hook** (src/hooks/use-flow-collaboration.ts)
 3. **React Flow component** (src/components/FlowEditor.tsx)
@@ -362,6 +397,7 @@ Located in REACT_FLOW_QUICK_START.md sections:
 ### Common Patterns
 
 Located in REACT_FLOW_QUICK_START.md:
+
 - Throttle position updates
 - Selective subscriptions
 - Custom node component
@@ -371,6 +407,7 @@ Located in REACT_FLOW_QUICK_START.md:
 ### Troubleshooting
 
 Located in REACT_FLOW_QUICK_START.md:
+
 - Position updates not syncing
 - Dragging is laggy
 - Component re-renders too often
@@ -383,17 +420,20 @@ Located in REACT_FLOW_QUICK_START.md:
 ## Additional Resources
 
 ### Official Documentation
+
 - React Flow: https://reactflow.dev/
 - Zustand: https://github.com/pmndrs/zustand
 - Socket.IO: https://socket.io/docs/v4/
 - Yjs (for advanced CRDT): https://docs.yjs.dev/
 
 ### Example Projects
+
 - React Flow examples: https://reactflow.dev/examples
 - Zustand examples: https://github.com/pmndrs/zustand/tree/main/examples
 - Socket.IO examples: https://github.com/socketio/socket.io/tree/master/examples
 
 ### Related Technologies
+
 - Immer middleware (for undo/redo): https://github.com/pmndrs/immer
 - Devtools middleware (for debugging): https://github.com/pmndrs/zustand-devtools
 
@@ -402,6 +442,7 @@ Located in REACT_FLOW_QUICK_START.md:
 ## Status & Next Steps
 
 ### Current Status
+
 ✅ Research complete
 ✅ Architecture decided
 ✅ Implementation code provided
@@ -409,6 +450,7 @@ Located in REACT_FLOW_QUICK_START.md:
 ✅ Risk assessment done
 
 ### Next Steps
+
 1. **Review** - Team reads REACT_FLOW_DECISION.md
 2. **Approve** - Get sign-off on architecture
 3. **Plan** - Assign Phase 1 owner, create branch
@@ -417,6 +459,7 @@ Located in REACT_FLOW_QUICK_START.md:
 6. **Deploy** - Launch with feature flag
 
 ### Timeline
+
 - **This week**: Review & approval
 - **Next 4 weeks**: Implementation phases 1-4
 - **Post-launch**: Monitor and iterate
@@ -425,20 +468,19 @@ Located in REACT_FLOW_QUICK_START.md:
 
 ## Questions?
 
-| Question Type | Go To |
-|---|---|
-| "Why Zustand?" | REACT_FLOW_DECISION.md → State Management |
-| "How do I implement?" | REACT_FLOW_QUICK_START.md |
+| Question Type             | Go To                                             |
+| ------------------------- | ------------------------------------------------- |
+| "Why Zustand?"            | REACT_FLOW_DECISION.md → State Management         |
+| "How do I implement?"     | REACT_FLOW_QUICK_START.md                         |
 | "What about performance?" | REACT_FLOW_RESEARCH.md → Performance Optimization |
-| "How does sync work?" | REACT_FLOW_RESEARCH.md → Real-Time Collaboration |
-| "What are alternatives?" | REACT_FLOW_DECISION.md → Alternatives Considered |
-| "Is this safe?" | REACT_FLOW_DECISION.md → Risk Assessment |
-| "What's the timeline?" | RESEARCH_SUMMARY.txt → Migration Roadmap |
-| "Show me code" | REACT_FLOW_QUICK_START.md → TL;DR Section |
+| "How does sync work?"     | REACT_FLOW_RESEARCH.md → Real-Time Collaboration  |
+| "What are alternatives?"  | REACT_FLOW_DECISION.md → Alternatives Considered  |
+| "Is this safe?"           | REACT_FLOW_DECISION.md → Risk Assessment          |
+| "What's the timeline?"    | RESEARCH_SUMMARY.txt → Migration Roadmap          |
+| "Show me code"            | REACT_FLOW_QUICK_START.md → TL;DR Section         |
 
 ---
 
 **Research Status**: ✅ Complete
 **Ready for**: Implementation planning
 **Date**: 2025-11-15
-

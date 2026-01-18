@@ -13,6 +13,7 @@ This document consolidates research findings for migrating from Konva + d3-force
 **Recommendation**: Keep the current Konva + d3-force implementation and optimize it instead.
 
 **Rationale**:
+
 - Current implementation already provides excellent performance (50+ FPS with proper optimization)
 - Migration cost: 5-8 weeks effort with no significant feature gains
 - Konva better suited for ER diagrams (native arrow API, coordinate-based connections)
@@ -37,6 +38,7 @@ Instead of migrating, invest 4-6 hours in proven optimizations:
 **Question**: Should we use `reactflow` or `@xyflow/react`?
 
 **Finding**:
+
 - `@xyflow/react` is the new official package name (v12+)
 - Old `reactflow` package is deprecated but still maintained
 - Current stable version: v12.9.2 (Dec 2024)
@@ -44,6 +46,7 @@ Instead of migrating, invest 4-6 hours in proven optimizations:
 - First-class TypeScript support (better than Konva's @types/konva)
 
 **Bundle Size Comparison**:
+
 - Current: Konva (122.9 KB) + react-konva + d3-force = ~150 KB total
 - React Flow: @xyflow/react v12.9.2 = ~75-80 KB
 - **Savings**: ~48 KB (5% of typical app bundle)
@@ -58,6 +61,7 @@ Instead of migrating, invest 4-6 hours in proven optimizations:
 **Findings**:
 
 **Custom Node Pattern**:
+
 ```typescript
 // TableNode.tsx
 import { NodeProps, Handle, Position } from '@xyflow/react';
@@ -91,12 +95,14 @@ export function TableNode({ data }: NodeProps<TableNodeData>) {
 ```
 
 **Challenges Identified**:
+
 - Manual handle ID management required (`${tableName}_${columnId}_target`)
 - More complex than Konva's direct coordinate approach
 - Handle positioning must account for header height + row offsets
 - Re-rendering handles when columns change adds complexity
 
 **Comparison**:
+
 - **Konva**: Direct x,y coordinates, 2-3 lines of code
 - **React Flow**: Handle IDs, positioning logic, 20-30 lines per node
 
@@ -109,6 +115,7 @@ export function TableNode({ data }: NodeProps<TableNodeData>) {
 **Findings**:
 
 **Custom Edge Pattern**:
+
 ```typescript
 // RelationshipEdge.tsx
 import { EdgeProps, getSmoothStepPath } from '@xyflow/react';
@@ -134,6 +141,7 @@ export function RelationshipEdge({
 ```
 
 **Challenges**:
+
 - Custom SVG markers require 20-30 lines per cardinality type
 - Konva's native Arrow API handles this in 2-3 lines
 - Edge label positioning more complex in React Flow
@@ -147,6 +155,7 @@ export function RelationshipEdge({
 **Findings**:
 
 **Current Implementation Assessment**:
+
 - Existing d3-force implementation is **excellent**
 - Web Worker offloading ✅
 - Relationship strength weighting ✅
@@ -155,29 +164,33 @@ export function RelationshipEdge({
 
 **Layout Options Evaluated**:
 
-| Algorithm | Use Case | Performance | Complexity | Recommendation |
-|-----------|----------|-------------|------------|----------------|
-| **d3-force** (current) | Force-directed, ER diagrams | 28ms (30 nodes) | Low | **Keep & optimize** |
-| dagre | Hierarchical DAGs | 15-20ms | Medium | Not needed |
-| elkjs | Large graphs (100+ nodes) | 50-80ms | High | Overkill for MVP |
-| React Flow native | Basic positioning | N/A | Low | No layout algorithm |
+| Algorithm              | Use Case                    | Performance     | Complexity | Recommendation      |
+| ---------------------- | --------------------------- | --------------- | ---------- | ------------------- |
+| **d3-force** (current) | Force-directed, ER diagrams | 28ms (30 nodes) | Low        | **Keep & optimize** |
+| dagre                  | Hierarchical DAGs           | 15-20ms         | Medium     | Not needed          |
+| elkjs                  | Large graphs (100+ nodes)   | 50-80ms         | High       | Overkill for MVP    |
+| React Flow native      | Basic positioning           | N/A             | Low        | No layout algorithm |
 
 **Optimization Opportunities** (4-6 hours total):
+
 1. Convergence detection - exit early when stable (10-15% gain)
 2. Warm-start positions - new nodes near related tables (30-40% gain)
 3. Incremental layout - only recalculate affected nodes (70% gain)
 4. Animation wrapper - smooth transitions
 
 **Integration Pattern** (if using React Flow):
+
 ```typescript
 const applyLayout = async (nodes, edges) => {
-  const positions = await layoutWorker.compute(nodes, edges);
+  const positions = await layoutWorker.compute(nodes, edges)
 
-  setNodes(nodes.map((node) => ({
-    ...node,
-    position: positions[node.id]
-  })));
-};
+  setNodes(
+    nodes.map((node) => ({
+      ...node,
+      position: positions[node.id],
+    })),
+  )
+}
 ```
 
 **Decision**: Keep d3-force, implement optimizations (Phase 2+)
@@ -223,12 +236,14 @@ function WhiteboardCanvas() {
 ```
 
 **Performance Optimizations**:
+
 - Selective subscriptions (only re-render on count change, not position updates)
 - Throttle position updates to 100ms (10 updates/sec)
 - Batch multiple updates together
 - Use React.memo for custom nodes
 
 **Comparison with Konva**:
+
 - **Konva**: Lower bandwidth (only position deltas)
 - **React Flow**: Higher bandwidth (full node objects)
 - **Result**: Konva more efficient for real-time sync
@@ -241,20 +256,22 @@ function WhiteboardCanvas() {
 
 **Benchmark Results** (community data + documentation):
 
-| Scenario | Konva | React Flow | Winner |
-|----------|-------|-----------|--------|
-| Dragging simple nodes (50) | 50+ FPS | 35-40 FPS | **Konva** |
-| Dragging complex nodes (50) | 35-40 FPS | 25-30 FPS | **Konva** |
-| Edge rendering (100) | ~55 FPS | ~45 FPS | **Konva** |
-| Memory usage (100 nodes) | 15-20 MB | 25-30 MB | **Konva** |
-| Bundle size | 122.9 KB | 75-80 KB | React Flow (+48 KB savings) |
+| Scenario                    | Konva     | React Flow | Winner                      |
+| --------------------------- | --------- | ---------- | --------------------------- |
+| Dragging simple nodes (50)  | 50+ FPS   | 35-40 FPS  | **Konva**                   |
+| Dragging complex nodes (50) | 35-40 FPS | 25-30 FPS  | **Konva**                   |
+| Edge rendering (100)        | ~55 FPS   | ~45 FPS    | **Konva**                   |
+| Memory usage (100 nodes)    | 15-20 MB  | 25-30 MB   | **Konva**                   |
+| Bundle size                 | 122.9 KB  | 75-80 KB   | React Flow (+48 KB savings) |
 
 **React Flow Optimizations Available**:
+
 - Built-in viewport culling (automatically hides off-screen nodes)
 - Virtual rendering for 1000+ nodes
 - Lazy edge calculation
 
 **Konva Optimizations Available**:
+
 - Manual viewport culling needed
 - Layer caching
 - Shape caching
@@ -268,22 +285,26 @@ function WhiteboardCanvas() {
 **Analysis**:
 
 **Option A: Complete Cutover** (Recommended if migrating)
+
 - Timeline: 5-8 weeks
 - Risk: Medium (requires thorough testing)
 - Benefit: Clean architecture, no legacy code
 
 **Option B: Incremental Migration**
+
 - Timeline: 8-12 weeks
 - Risk: High (maintaining two rendering systems)
 - Benefit: Lower deployment risk
 
 **Testing Strategy**:
+
 - Visual regression testing (screenshot comparison)
 - Performance benchmarking (FPS, memory)
 - E2E tests for all user stories
 - Load testing (50-100 tables)
 
 **Data Migration**:
+
 - Position coordinates compatible (x, y same in both)
 - No database schema changes needed
 - Only code changes required
@@ -321,6 +342,7 @@ function WhiteboardCanvas() {
    - Expected gain: 70% faster for local changes
 
 **Expected Result**:
+
 - Same or better performance than React Flow
 - 1/40th the implementation cost
 - No migration risk
@@ -329,6 +351,7 @@ function WhiteboardCanvas() {
 ### When to Reconsider React Flow
 
 Only reconsider if requirements change to:
+
 - Need built-in minimap, controls, background grid (React Flow provides these)
 - Hard bundle size constraint (<75 KB required)
 - DOM interactivity becomes critical (forms, buttons in nodes)
@@ -338,6 +361,7 @@ Only reconsider if requirements change to:
 ## Research Artifacts
 
 Additional detailed research documents (created by research agents):
+
 - React Flow library evaluation
 - Layout algorithm comparison
 - State management patterns

@@ -12,6 +12,7 @@ This document defines the data structures and type definitions for integrating R
 The existing Prisma schema remains unchanged. For reference, the relevant models are:
 
 ### DiagramTable
+
 ```prisma
 model DiagramTable {
   id           String   @id @default(uuid())
@@ -31,6 +32,7 @@ model DiagramTable {
 ```
 
 ### Column
+
 ```prisma
 model Column {
   id           String   @id @default(uuid())
@@ -50,6 +52,7 @@ model Column {
 ```
 
 ### Relationship
+
 ```prisma
 model Relationship {
   id             String      @id @default(uuid())
@@ -73,9 +76,15 @@ model Relationship {
 ## React Flow Types
 
 ### Core React Flow Imports
+
 ```typescript
 import type { Node, Edge, NodeProps, EdgeProps } from '@xyflow/react'
-import type { DiagramTable, Column, Relationship, Cardinality } from '@prisma/client'
+import type {
+  DiagramTable,
+  Column,
+  Relationship,
+  Cardinality,
+} from '@prisma/client'
 ```
 
 ### TableNode Data Structure
@@ -191,7 +200,7 @@ export interface CanvasInteractionState {
  */
 export function convertTableToNode(
   table: DiagramTable & { columns: Column[] },
-  interactionState?: Partial<TableNodeData>
+  interactionState?: Partial<TableNodeData>,
 ): TableNodeType {
   return {
     id: table.id,
@@ -219,7 +228,7 @@ export function convertTableToNode(
  * Convert multiple DiagramTables to React Flow Nodes
  */
 export function convertTablesToNodes(
-  tables: (DiagramTable & { columns: Column[] })[]
+  tables: (DiagramTable & { columns: Column[] })[],
 ): TableNodeType[] {
   return tables.map((table) => convertTableToNode(table))
 }
@@ -233,15 +242,21 @@ export function convertRelationshipToEdge(
   relationship: Relationship & {
     sourceColumn: Column
     targetColumn: Column
-  }
+  },
 ): RelationshipEdgeType {
   return {
     id: relationship.id,
     type: 'relationship',
     source: relationship.sourceTableId,
     target: relationship.targetTableId,
-    sourceHandle: createHandleId(relationship.sourceTableId, relationship.sourceColumnId),
-    targetHandle: createHandleId(relationship.targetTableId, relationship.targetColumnId),
+    sourceHandle: createHandleId(
+      relationship.sourceTableId,
+      relationship.sourceColumnId,
+    ),
+    targetHandle: createHandleId(
+      relationship.targetTableId,
+      relationship.targetColumnId,
+    ),
     data: {
       relationship,
       cardinality: relationship.cardinality,
@@ -261,7 +276,7 @@ export function convertRelationshipsToEdges(
   relationships: (Relationship & {
     sourceColumn: Column
     targetColumn: Column
-  })[]
+  })[],
 ): RelationshipEdgeType[] {
   return relationships.map((rel) => convertRelationshipToEdge(rel))
 }
@@ -289,7 +304,7 @@ export function extractTablePosition(node: TableNodeType): {
  * Extract positions for all nodes (for batch update)
  */
 export function extractAllTablePositions(
-  nodes: TableNodeType[]
+  nodes: TableNodeType[],
 ): Array<{ id: string; positionX: number; positionY: number }> {
   return nodes.map(extractTablePosition)
 }
@@ -376,8 +391,8 @@ export interface ELKNode {
   id: string
   width: number
   height: number
-  x?: number  // Set by ELK after layout
-  y?: number  // Set by ELK after layout
+  x?: number // Set by ELK after layout
+  y?: number // Set by ELK after layout
 }
 
 /**
@@ -394,7 +409,7 @@ export interface ELKEdge {
  */
 export function convertNodesToELKGraph(
   nodes: TableNodeType[],
-  edges: RelationshipEdgeType[]
+  edges: RelationshipEdgeType[],
 ): ELKGraph {
   return {
     id: 'root',
@@ -423,7 +438,7 @@ export function convertNodesToELKGraph(
  */
 export function applyELKLayout(
   nodes: TableNodeType[],
-  elkNodes: ELKNode[]
+  elkNodes: ELKNode[],
 ): TableNodeType[] {
   const layoutMap = new Map(elkNodes.map((n) => [n.id, { x: n.x!, y: n.y! }]))
 
@@ -483,7 +498,7 @@ export function calculateHighlighting(
   nodes: TableNodeType[],
   edges: RelationshipEdgeType[],
   activeTableId: string | null,
-  hoveredTableId: string | null
+  hoveredTableId: string | null,
 ): HighlightResult {
   const edgeMap = buildEdgeMap(edges)
   const relatedTableIds = new Set<string>()
@@ -514,8 +529,7 @@ export function calculateHighlighting(
     data: {
       ...node.data,
       isActiveHighlighted: node.id === activeTableId,
-      isHighlighted:
-        relatedTableIds.has(node.id) && node.id !== activeTableId,
+      isHighlighted: relatedTableIds.has(node.id) && node.id !== activeTableId,
       isHovered: node.id === hoveredTableId,
     },
     zIndex: relatedTableIds.has(node.id) ? 1000 : 1,

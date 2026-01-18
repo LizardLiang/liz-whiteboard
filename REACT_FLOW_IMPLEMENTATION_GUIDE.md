@@ -300,20 +300,20 @@ export default TableNode;
 ### TypeScript Types
 
 ```typescript
-export type TableNode = Node<TableNodeData, 'table'>;
+export type TableNode = Node<TableNodeData, 'table'>
 
 export function createTableNode(
   id: string,
   name: string,
   columns: Column[],
-  position: { x: number; y: number }
+  position: { x: number; y: number },
 ): TableNode {
   return {
     id,
     type: 'table',
     position,
     data: { name, columns },
-  };
+  }
 }
 ```
 
@@ -529,7 +529,7 @@ export default CardinalityEdge;
 ### TypeScript Types
 
 ```typescript
-export type CardinalityEdgeType = Edge<CardinalityEdgeData, 'cardinality'>;
+export type CardinalityEdgeType = Edge<CardinalityEdgeData, 'cardinality'>
 
 export function createCardinalityEdge(
   id: string,
@@ -538,7 +538,7 @@ export function createCardinalityEdge(
   sourceHandle: string,
   targetHandle: string,
   cardinality: Cardinality = 'one-to-many',
-  label?: string
+  label?: string,
 ): CardinalityEdgeType {
   return {
     id,
@@ -548,7 +548,7 @@ export function createCardinalityEdge(
     targetHandle,
     type: 'cardinality',
     data: { cardinality, label },
-  };
+  }
 }
 ```
 
@@ -559,22 +559,22 @@ export function createCardinalityEdge(
 ### Layout Service
 
 ```typescript
-import { ForceLink, Simulation } from 'd3-force';
-import { Node, Edge } from '@xyflow/react';
-import { TableNodeData } from './TableNode';
+import { ForceLink, Simulation } from 'd3-force'
+import { Node, Edge } from '@xyflow/react'
+import { TableNodeData } from './TableNode'
 
 export async function computeLayout(
   nodes: Node<TableNodeData>[],
   edges: Edge[],
   width: number = 1024,
-  height: number = 768
+  height: number = 768,
 ): Promise<Array<{ id: string; x: number; y: number }>> {
   return new Promise((resolve) => {
     const simulation = new Simulation<Node<TableNodeData>>(nodes)
       .force('link', forceLink(edges).distance(150).strength(0.1))
       .force('charge', forceManyBody().strength(-500))
       .force('center', forceCenter(width / 2, height / 2))
-      .force('collision', forceCollide().radius(80));
+      .force('collision', forceCollide().radius(80))
 
     simulation.on('end', () => {
       resolve(
@@ -582,13 +582,13 @@ export async function computeLayout(
           id: node.id,
           x: node.x ?? 0,
           y: node.y ?? 0,
-        }))
-      );
-    });
+        })),
+      )
+    })
 
     // Run simulation for fixed iterations
-    simulation.tick(300);
-  });
+    simulation.tick(300)
+  })
 }
 
 /**
@@ -597,14 +597,14 @@ export async function computeLayout(
  */
 export function applyLayout(
   nodes: Node<TableNodeData>[],
-  layoutResults: Array<{ id: string; x: number; y: number }>
+  layoutResults: Array<{ id: string; x: number; y: number }>,
 ): Node<TableNodeData>[] {
-  const layoutMap = new Map(layoutResults.map((r) => [r.id, r]));
+  const layoutMap = new Map(layoutResults.map((r) => [r.id, r]))
 
   return nodes.map((node) => {
-    const layout = layoutMap.get(node.id);
-    return layout ? { ...node, position: { x: layout.x, y: layout.y } } : node;
-  });
+    const layout = layoutMap.get(node.id)
+    return layout ? { ...node, position: { x: layout.x, y: layout.y } } : node
+  })
 }
 ```
 
@@ -612,10 +612,15 @@ export function applyLayout(
 
 ```typescript
 const handleAutoLayout = useCallback(async () => {
-  const layoutResults = await computeLayout(nodes, edges, canvasWidth, canvasHeight);
-  const layoutedNodes = applyLayout(nodes, layoutResults);
-  setNodes(layoutedNodes);
-}, [nodes, edges, canvasWidth, canvasHeight, setNodes]);
+  const layoutResults = await computeLayout(
+    nodes,
+    edges,
+    canvasWidth,
+    canvasHeight,
+  )
+  const layoutedNodes = applyLayout(nodes, layoutResults)
+  setNodes(layoutedNodes)
+}, [nodes, edges, canvasWidth, canvasHeight, setNodes])
 ```
 
 ---
@@ -625,12 +630,12 @@ const handleAutoLayout = useCallback(async () => {
 ### Theme Context Setup
 
 ```typescript
-import { useTheme } from 'next-themes';
-import { useEffect } from 'react';
+import { useTheme } from 'next-themes'
+import { useEffect } from 'react'
 
 export function useCanvasTheme() {
-  const { theme } = useTheme();
-  const isDark = theme === 'dark';
+  const { theme } = useTheme()
+  const isDark = theme === 'dark'
 
   const themeVars = {
     'color-primary': isDark ? '#3b82f6' : '#2563eb',
@@ -643,12 +648,18 @@ export function useCanvasTheme() {
     'color-text': isDark ? '#f3f4f6' : '#111827',
     'color-text-secondary': isDark ? '#9ca3af' : '#6b7280',
     'color-success': isDark ? '#10b981' : '#059669',
-    'color-pk-bg': isDark ? 'rgba(34, 197, 94, 0.1)' : 'rgba(220, 252, 231, 0.5)',
-    'color-fk-bg': isDark ? 'rgba(59, 130, 246, 0.1)' : 'rgba(219, 234, 254, 0.5)',
-    'color-hover': isDark ? 'rgba(79, 70, 229, 0.1)' : 'rgba(238, 242, 255, 0.5)',
-  };
+    'color-pk-bg': isDark
+      ? 'rgba(34, 197, 94, 0.1)'
+      : 'rgba(220, 252, 231, 0.5)',
+    'color-fk-bg': isDark
+      ? 'rgba(59, 130, 246, 0.1)'
+      : 'rgba(219, 234, 254, 0.5)',
+    'color-hover': isDark
+      ? 'rgba(79, 70, 229, 0.1)'
+      : 'rgba(238, 242, 255, 0.5)',
+  }
 
-  return { isDark, themeVars };
+  return { isDark, themeVars }
 }
 ```
 
@@ -656,14 +667,14 @@ export function useCanvasTheme() {
 
 ```typescript
 export function WhiteboardCanvas() {
-  const { themeVars } = useCanvasTheme();
+  const { themeVars } = useCanvasTheme()
 
   useEffect(() => {
-    const root = document.documentElement;
+    const root = document.documentElement
     Object.entries(themeVars).forEach(([key, value]) => {
-      root.style.setProperty(`--${key}`, value);
-    });
-  }, [themeVars]);
+      root.style.setProperty(`--${key}`, value)
+    })
+  }, [themeVars])
 
   // ... rest of component
 }
@@ -676,11 +687,14 @@ export function WhiteboardCanvas() {
 ### Sync Service
 
 ```typescript
-import { Socket } from 'socket.io-client';
-import { Node, Edge, NodeChange, EdgeChange } from '@xyflow/react';
+import { Socket } from 'socket.io-client'
+import { Node, Edge, NodeChange, EdgeChange } from '@xyflow/react'
 
 export class WhiteboardSyncService {
-  constructor(private socket: Socket, private whiteboardId: string) {}
+  constructor(
+    private socket: Socket,
+    private whiteboardId: string,
+  ) {}
 
   /**
    * Emit local node changes to other users
@@ -690,7 +704,7 @@ export class WhiteboardSyncService {
       whiteboardId: this.whiteboardId,
       timestamp: Date.now(),
       change,
-    });
+    })
   }
 
   /**
@@ -701,7 +715,7 @@ export class WhiteboardSyncService {
       whiteboardId: this.whiteboardId,
       timestamp: Date.now(),
       change,
-    });
+    })
   }
 
   /**
@@ -710,14 +724,14 @@ export class WhiteboardSyncService {
   onNodeChange(callback: (change: NodeChange) => void) {
     this.socket.on('node:change', (data) => {
       // Verify timestamp ordering to avoid conflicts
-      callback(data.change);
-    });
+      callback(data.change)
+    })
   }
 
   onEdgeChange(callback: (change: EdgeChange) => void) {
     this.socket.on('edge:change', (data) => {
-      callback(data.change);
-    });
+      callback(data.change)
+    })
   }
 }
 ```
@@ -728,15 +742,15 @@ export class WhiteboardSyncService {
 const handleNodesChange = useCallback(
   (changes: NodeChange[]) => {
     // Update local state
-    onNodesChange(changes);
+    onNodesChange(changes)
 
     // Sync with other users
     changes.forEach((change) => {
-      syncService.syncNodeChange(change);
-    });
+      syncService.syncNodeChange(change)
+    })
   },
-  [onNodesChange, syncService]
-);
+  [onNodesChange, syncService],
+)
 ```
 
 ---
@@ -781,16 +795,16 @@ export function PerformanceMonitor() {
     const observer = new PerformanceObserver((list) => {
       for (const entry of list.getEntries()) {
         if (entry.duration > 16) {
-          console.warn(`Slow operation: ${entry.name} took ${entry.duration}ms`);
+          console.warn(`Slow operation: ${entry.name} took ${entry.duration}ms`)
         }
       }
-    });
+    })
 
-    observer.observe({ entryTypes: ['measure'] });
-    return () => observer.disconnect();
-  }, []);
+    observer.observe({ entryTypes: ['measure'] })
+    return () => observer.disconnect()
+  }, [])
 
-  return null;
+  return null
 }
 ```
 
@@ -799,34 +813,42 @@ export function PerformanceMonitor() {
 ## Common Pitfalls
 
 ### 1. Forgetting to Memoize Components
+
 **Problem**: Every render creates new component references, causing all nodes to re-render.
 **Solution**: Use `React.memo()` on TableNode and CardinalityEdge.
 
 ### 2. Handle ID Mismatches
+
 **Problem**: Edge's `sourceHandle` doesn't match node's handle ID.
 **Solution**: Use consistent naming: `${tableName}_${columnId}_source`.
 
 ### 3. Not Using useCallback for Handlers
+
 **Problem**: Inline arrow functions cause infinite re-renders.
 **Solution**: Wrap all handlers in `useCallback`.
 
 ### 4. Forgetting onlyRenderVisibleElements
+
 **Problem**: All nodes render even when off-screen (performance issue with 500+ nodes).
 **Solution**: Always set `onlyRenderVisibleElements={true}`.
 
 ### 5. Theme Variables Not Updating
+
 **Problem**: Dark mode toggle doesn't update canvas colors.
 **Solution**: Use CSS variables and update them in useEffect when theme changes.
 
 ### 6. SVG Markers in Wrong Scope
+
 **Problem**: SVG marker definitions inside component cause duplicates.
 **Solution**: Define markers once per edge using unique IDs with edge ID.
 
 ### 7. Not Handling Network Delays
+
 **Problem**: Rapid changes cause conflict with remote updates.
 **Solution**: Include timestamps and implement last-write-wins conflict resolution.
 
 ### 8. Layout Algorithm Blocking UI
+
 **Problem**: D3-force computation freezes the main thread.
 **Solution**: Run simulation in Web Worker (see layout-worker.ts in project).
 

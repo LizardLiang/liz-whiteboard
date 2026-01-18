@@ -20,32 +20,32 @@ Main wrapper component that replaces Konva's Canvas component.
 ```typescript
 export interface ReactFlowCanvasProps {
   /** Whiteboard ID for data loading */
-  whiteboardId: string;
+  whiteboardId: string
 
   /** Canvas dimensions */
-  width: number;
-  height: number;
+  width: number
+  height: number
 
   /** Initial viewport state */
-  initialViewport?: ReactFlowViewport;
+  initialViewport?: ReactFlowViewport
 
   /** Callback when viewport changes (zoom/pan) */
-  onViewportChange?: (viewport: ReactFlowViewport) => void;
+  onViewportChange?: (viewport: ReactFlowViewport) => void
 
   /** Enable/disable node dragging */
-  nodesDraggable?: boolean;
+  nodesDraggable?: boolean
 
   /** Enable/disable edge interaction */
-  edgesUpdatable?: boolean;
+  edgesUpdatable?: boolean
 
   /** Theme: 'light' or 'dark' */
-  theme?: 'light' | 'dark';
+  theme?: 'light' | 'dark'
 
   /** Optional CSS class */
-  className?: string;
+  className?: string
 
   /** Optional ref for programmatic control */
-  reactFlowRef?: React.RefObject<ReactFlowInstance>;
+  reactFlowRef?: React.RefObject<ReactFlowInstance>
 }
 ```
 
@@ -80,8 +80,8 @@ export function ReactFlowCanvas({
   edgesUpdatable = false,
   theme = 'light',
   className = '',
-  reactFlowRef
-}: ReactFlowCanvasProps): JSX.Element;
+  reactFlowRef,
+}: ReactFlowCanvasProps): JSX.Element
 ```
 
 #### Usage Example
@@ -150,7 +150,12 @@ export interface TableNodeProps extends NodeProps<TableNodeData> {
  *   Left handle          Right handle
  *   (target)             (source)
  */
-export function TableNode({ id, data, selected, dragging }: TableNodeProps): JSX.Element;
+export function TableNode({
+  id,
+  data,
+  selected,
+  dragging,
+}: TableNodeProps): JSX.Element
 ```
 
 #### Handle Configuration
@@ -275,8 +280,8 @@ export function RelationshipEdge({
   targetX,
   targetY,
   data,
-  selected
-}: RelationshipEdgeProps): JSX.Element;
+  selected,
+}: RelationshipEdgeProps): JSX.Element
 ```
 
 #### Cardinality Markers
@@ -320,7 +325,7 @@ const getMarkers = (cardinality: CardinalityType) => {
 #### Edge Path Calculation
 
 ```typescript
-import { getSmoothStepPath } from '@xyflow/react';
+import { getSmoothStepPath } from '@xyflow/react'
 
 // Calculate edge path with smooth corners
 const [edgePath, labelX, labelY] = getSmoothStepPath({
@@ -330,8 +335,8 @@ const [edgePath, labelX, labelY] = getSmoothStepPath({
   targetX,
   targetY,
   targetPosition,
-  borderRadius: 8
-});
+  borderRadius: 8,
+})
 ```
 
 ---
@@ -399,18 +404,18 @@ Hook for syncing React Flow state with WebSocket.
 
 ```typescript
 export interface UseReactFlowSyncOptions {
-  whiteboardId: string;
-  socket: Socket;
-  onRemoteUpdate?: (event: NodeUpdateBroadcast | EdgeUpdateBroadcast) => void;
+  whiteboardId: string
+  socket: Socket
+  onRemoteUpdate?: (event: NodeUpdateBroadcast | EdgeUpdateBroadcast) => void
 }
 
 export interface UseReactFlowSyncReturn {
-  nodes: TableNode[];
-  edges: RelationshipEdge[];
-  onNodesChange: OnNodesChange;
-  onEdgesChange: OnEdgesChange;
-  applyRemoteNodeUpdate: (event: NodeUpdateBroadcast) => void;
-  applyRemoteEdgeUpdate: (event: EdgeUpdateBroadcast) => void;
+  nodes: TableNode[]
+  edges: RelationshipEdge[]
+  onNodesChange: OnNodesChange
+  onEdgesChange: OnEdgesChange
+  applyRemoteNodeUpdate: (event: NodeUpdateBroadcast) => void
+  applyRemoteEdgeUpdate: (event: EdgeUpdateBroadcast) => void
 }
 
 /**
@@ -425,8 +430,8 @@ export interface UseReactFlowSyncReturn {
 export function useReactFlowSync({
   whiteboardId,
   socket,
-  onRemoteUpdate
-}: UseReactFlowSyncOptions): UseReactFlowSyncReturn;
+  onRemoteUpdate,
+}: UseReactFlowSyncOptions): UseReactFlowSyncReturn
 ```
 
 ### useLayoutTrigger
@@ -435,17 +440,19 @@ Hook for triggering automatic layout.
 
 ```typescript
 export interface UseLayoutTriggerOptions {
-  nodes: TableNode[];
-  edges: RelationshipEdge[];
-  canvasWidth: number;
-  canvasHeight: number;
-  onLayoutComplete?: (positions: Record<string, { x: number; y: number }>) => void;
+  nodes: TableNode[]
+  edges: RelationshipEdge[]
+  canvasWidth: number
+  canvasHeight: number
+  onLayoutComplete?: (
+    positions: Record<string, { x: number; y: number }>,
+  ) => void
 }
 
 export interface UseLayoutTriggerReturn {
-  triggerLayout: () => Promise<void>;
-  isLayouting: boolean;
-  layoutMetadata: LayoutOutput['metadata'] | null;
+  triggerLayout: () => Promise<void>
+  isLayouting: boolean
+  layoutMetadata: LayoutOutput['metadata'] | null
 }
 
 /**
@@ -461,8 +468,8 @@ export function useLayoutTrigger({
   edges,
   canvasWidth,
   canvasHeight,
-  onLayoutComplete
-}: UseLayoutTriggerOptions): UseLayoutTriggerReturn;
+  onLayoutComplete,
+}: UseLayoutTriggerOptions): UseLayoutTriggerReturn
 ```
 
 ---
@@ -474,8 +481,8 @@ export function useLayoutTrigger({
 ```typescript
 // Node drag end - persist position to database
 const onNodeDragStop: NodeDragHandler = (event, node) => {
-  const updates = extractPositionUpdates(node as TableNode);
-  await updateTablePosition(node.id, updates);
+  const updates = extractPositionUpdates(node as TableNode)
+  await updateTablePosition(node.id, updates)
 
   // Broadcast via WebSocket (if not remote update)
   if (!isProcessingRemote) {
@@ -485,20 +492,20 @@ const onNodeDragStop: NodeDragHandler = (event, node) => {
       nodeId: node.id,
       updates: { position: node.position },
       userId: currentUser.id,
-      timestamp: Date.now()
-    });
+      timestamp: Date.now(),
+    })
   }
-};
+}
 
 // Node selection
 const onNodeClick: NodeMouseHandler = (event, node) => {
-  setSelectedNodeIds([node.id]);
-};
+  setSelectedNodeIds([node.id])
+}
 
 // Node double-click - edit table
 const onNodeDoubleClick: NodeMouseHandler = (event, node) => {
-  openTableEditor(node.id);
-};
+  openTableEditor(node.id)
+}
 ```
 
 ### Edge Event Handlers
@@ -506,13 +513,13 @@ const onNodeDoubleClick: NodeMouseHandler = (event, node) => {
 ```typescript
 // Edge selection
 const onEdgeClick: EdgeMouseHandler = (event, edge) => {
-  setSelectedEdgeIds([edge.id]);
-};
+  setSelectedEdgeIds([edge.id])
+}
 
 // Edge delete (if edgesUpdatable enabled)
 const onEdgesDelete: OnEdgesDelete = (edges) => {
   edges.forEach(async (edge) => {
-    await deleteRelationship(edge.id);
+    await deleteRelationship(edge.id)
 
     // Broadcast via WebSocket
     socket.emit('edge:delete', {
@@ -520,10 +527,10 @@ const onEdgesDelete: OnEdgesDelete = (edges) => {
       whiteboardId,
       edgeId: edge.id,
       userId: currentUser.id,
-      timestamp: Date.now()
-    });
-  });
-};
+      timestamp: Date.now(),
+    })
+  })
+}
 ```
 
 ---

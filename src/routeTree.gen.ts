@@ -13,7 +13,6 @@ import { Route as IndexRouteImport } from './routes/index'
 import { Route as WhiteboardWhiteboardIdRouteImport } from './routes/whiteboard/$whiteboardId'
 import { Route as DemoTanstackQueryRouteImport } from './routes/demo/tanstack-query'
 import { Route as DemoPrismaRouteImport } from './routes/demo/prisma'
-import { Route as WhiteboardWhiteboardIdNewRouteImport } from './routes/whiteboard/$whiteboardId.new'
 import { Route as DemoStartServerFuncsRouteImport } from './routes/demo/start.server-funcs'
 import { Route as DemoStartApiRequestRouteImport } from './routes/demo/start.api-request'
 import { Route as DemoFormSimpleRouteImport } from './routes/demo/form.simple'
@@ -45,12 +44,6 @@ const DemoPrismaRoute = DemoPrismaRouteImport.update({
   path: '/demo/prisma',
   getParentRoute: () => rootRouteImport,
 } as any)
-const WhiteboardWhiteboardIdNewRoute =
-  WhiteboardWhiteboardIdNewRouteImport.update({
-    id: '/new',
-    path: '/new',
-    getParentRoute: () => WhiteboardWhiteboardIdRoute,
-  } as any)
 const DemoStartServerFuncsRoute = DemoStartServerFuncsRouteImport.update({
   id: '/demo/start/server-funcs',
   path: '/demo/start/server-funcs',
@@ -106,14 +99,13 @@ export interface FileRoutesByFullPath {
   '/': typeof IndexRoute
   '/demo/prisma': typeof DemoPrismaRoute
   '/demo/tanstack-query': typeof DemoTanstackQueryRoute
-  '/whiteboard/$whiteboardId': typeof WhiteboardWhiteboardIdRouteWithChildren
+  '/whiteboard/$whiteboardId': typeof WhiteboardWhiteboardIdRoute
   '/demo/api/names': typeof DemoApiNamesRoute
   '/demo/api/tq-todos': typeof DemoApiTqTodosRoute
   '/demo/form/address': typeof DemoFormAddressRoute
   '/demo/form/simple': typeof DemoFormSimpleRoute
   '/demo/start/api-request': typeof DemoStartApiRequestRoute
   '/demo/start/server-funcs': typeof DemoStartServerFuncsRoute
-  '/whiteboard/$whiteboardId/new': typeof WhiteboardWhiteboardIdNewRoute
   '/demo/start/ssr/data-only': typeof DemoStartSsrDataOnlyRoute
   '/demo/start/ssr/full-ssr': typeof DemoStartSsrFullSsrRoute
   '/demo/start/ssr/spa-mode': typeof DemoStartSsrSpaModeRoute
@@ -123,14 +115,13 @@ export interface FileRoutesByTo {
   '/': typeof IndexRoute
   '/demo/prisma': typeof DemoPrismaRoute
   '/demo/tanstack-query': typeof DemoTanstackQueryRoute
-  '/whiteboard/$whiteboardId': typeof WhiteboardWhiteboardIdRouteWithChildren
+  '/whiteboard/$whiteboardId': typeof WhiteboardWhiteboardIdRoute
   '/demo/api/names': typeof DemoApiNamesRoute
   '/demo/api/tq-todos': typeof DemoApiTqTodosRoute
   '/demo/form/address': typeof DemoFormAddressRoute
   '/demo/form/simple': typeof DemoFormSimpleRoute
   '/demo/start/api-request': typeof DemoStartApiRequestRoute
   '/demo/start/server-funcs': typeof DemoStartServerFuncsRoute
-  '/whiteboard/$whiteboardId/new': typeof WhiteboardWhiteboardIdNewRoute
   '/demo/start/ssr/data-only': typeof DemoStartSsrDataOnlyRoute
   '/demo/start/ssr/full-ssr': typeof DemoStartSsrFullSsrRoute
   '/demo/start/ssr/spa-mode': typeof DemoStartSsrSpaModeRoute
@@ -141,14 +132,13 @@ export interface FileRoutesById {
   '/': typeof IndexRoute
   '/demo/prisma': typeof DemoPrismaRoute
   '/demo/tanstack-query': typeof DemoTanstackQueryRoute
-  '/whiteboard/$whiteboardId': typeof WhiteboardWhiteboardIdRouteWithChildren
+  '/whiteboard/$whiteboardId': typeof WhiteboardWhiteboardIdRoute
   '/demo/api/names': typeof DemoApiNamesRoute
   '/demo/api/tq-todos': typeof DemoApiTqTodosRoute
   '/demo/form/address': typeof DemoFormAddressRoute
   '/demo/form/simple': typeof DemoFormSimpleRoute
   '/demo/start/api-request': typeof DemoStartApiRequestRoute
   '/demo/start/server-funcs': typeof DemoStartServerFuncsRoute
-  '/whiteboard/$whiteboardId/new': typeof WhiteboardWhiteboardIdNewRoute
   '/demo/start/ssr/data-only': typeof DemoStartSsrDataOnlyRoute
   '/demo/start/ssr/full-ssr': typeof DemoStartSsrFullSsrRoute
   '/demo/start/ssr/spa-mode': typeof DemoStartSsrSpaModeRoute
@@ -167,7 +157,6 @@ export interface FileRouteTypes {
     | '/demo/form/simple'
     | '/demo/start/api-request'
     | '/demo/start/server-funcs'
-    | '/whiteboard/$whiteboardId/new'
     | '/demo/start/ssr/data-only'
     | '/demo/start/ssr/full-ssr'
     | '/demo/start/ssr/spa-mode'
@@ -184,7 +173,6 @@ export interface FileRouteTypes {
     | '/demo/form/simple'
     | '/demo/start/api-request'
     | '/demo/start/server-funcs'
-    | '/whiteboard/$whiteboardId/new'
     | '/demo/start/ssr/data-only'
     | '/demo/start/ssr/full-ssr'
     | '/demo/start/ssr/spa-mode'
@@ -201,7 +189,6 @@ export interface FileRouteTypes {
     | '/demo/form/simple'
     | '/demo/start/api-request'
     | '/demo/start/server-funcs'
-    | '/whiteboard/$whiteboardId/new'
     | '/demo/start/ssr/data-only'
     | '/demo/start/ssr/full-ssr'
     | '/demo/start/ssr/spa-mode'
@@ -212,7 +199,7 @@ export interface RootRouteChildren {
   IndexRoute: typeof IndexRoute
   DemoPrismaRoute: typeof DemoPrismaRoute
   DemoTanstackQueryRoute: typeof DemoTanstackQueryRoute
-  WhiteboardWhiteboardIdRoute: typeof WhiteboardWhiteboardIdRouteWithChildren
+  WhiteboardWhiteboardIdRoute: typeof WhiteboardWhiteboardIdRoute
   DemoApiNamesRoute: typeof DemoApiNamesRoute
   DemoApiTqTodosRoute: typeof DemoApiTqTodosRoute
   DemoFormAddressRoute: typeof DemoFormAddressRoute
@@ -254,13 +241,6 @@ declare module '@tanstack/react-router' {
       fullPath: '/demo/prisma'
       preLoaderRoute: typeof DemoPrismaRouteImport
       parentRoute: typeof rootRouteImport
-    }
-    '/whiteboard/$whiteboardId/new': {
-      id: '/whiteboard/$whiteboardId/new'
-      path: '/new'
-      fullPath: '/whiteboard/$whiteboardId/new'
-      preLoaderRoute: typeof WhiteboardWhiteboardIdNewRouteImport
-      parentRoute: typeof WhiteboardWhiteboardIdRoute
     }
     '/demo/start/server-funcs': {
       id: '/demo/start/server-funcs'
@@ -335,25 +315,11 @@ declare module '@tanstack/react-router' {
   }
 }
 
-interface WhiteboardWhiteboardIdRouteChildren {
-  WhiteboardWhiteboardIdNewRoute: typeof WhiteboardWhiteboardIdNewRoute
-}
-
-const WhiteboardWhiteboardIdRouteChildren: WhiteboardWhiteboardIdRouteChildren =
-  {
-    WhiteboardWhiteboardIdNewRoute: WhiteboardWhiteboardIdNewRoute,
-  }
-
-const WhiteboardWhiteboardIdRouteWithChildren =
-  WhiteboardWhiteboardIdRoute._addFileChildren(
-    WhiteboardWhiteboardIdRouteChildren,
-  )
-
 const rootRouteChildren: RootRouteChildren = {
   IndexRoute: IndexRoute,
   DemoPrismaRoute: DemoPrismaRoute,
   DemoTanstackQueryRoute: DemoTanstackQueryRoute,
-  WhiteboardWhiteboardIdRoute: WhiteboardWhiteboardIdRouteWithChildren,
+  WhiteboardWhiteboardIdRoute: WhiteboardWhiteboardIdRoute,
   DemoApiNamesRoute: DemoApiNamesRoute,
   DemoApiTqTodosRoute: DemoApiTqTodosRoute,
   DemoFormAddressRoute: DemoFormAddressRoute,

@@ -4,6 +4,7 @@
 **Prerequisites**: plan.md, spec.md, research.md, data-model.md, contracts/
 
 **⚠️ IMPORTANT NOTICE**: Based on comprehensive research findings (see research.md), **migration to React Flow is NOT RECOMMENDED**. Research shows:
+
 - Konva performs better for ER diagrams (50+ FPS vs 35-40 FPS)
 - Migration cost: 5-8 weeks with no significant feature gains
 - Bundle size savings negligible (~48 KB, 5% of total)
@@ -33,11 +34,11 @@ Project uses single-repo structure: `src/`, `tests/` at repository root
 
 **Purpose**: Install React Flow and create foundational type definitions
 
-- [X] T001 Install @xyflow/react@^12.9.2 package via bun add
-- [X] T002 [P] Create type definitions in src/lib/react-flow/types.ts
-- [X] T003 [P] Create converter functions in src/lib/react-flow/converters.ts
-- [X] T004 [P] Create handle utilities in src/lib/react-flow/handles.ts
-- [X] T005 [P] Create theme CSS file in src/styles/react-flow-theme.css
+- [x] T001 Install @xyflow/react@^12.9.2 package via bun add
+- [x] T002 [P] Create type definitions in src/lib/react-flow/types.ts
+- [x] T003 [P] Create converter functions in src/lib/react-flow/converters.ts
+- [x] T004 [P] Create handle utilities in src/lib/react-flow/handles.ts
+- [x] T005 [P] Create theme CSS file in src/styles/react-flow-theme.css
 
 ---
 
@@ -47,12 +48,12 @@ Project uses single-repo structure: `src/`, `tests/` at repository root
 
 **⚠️ CRITICAL**: No user story work can begin until this phase is complete
 
-- [X] T006 Create TableNode component in src/components/whiteboard/TableNode.tsx
-- [X] T007 Create RelationshipEdge component in src/components/whiteboard/RelationshipEdge.tsx
-- [X] T008 Create ReactFlowCanvas wrapper in src/components/whiteboard/ReactFlowCanvas.tsx
-- [X] T009 Register custom node and edge types in src/components/whiteboard/node-types.ts
-- [X] T010 [P] Create viewport utilities in src/lib/react-flow/viewport.ts
-- [X] T011 [P] Add React Flow CSS imports to src/styles.css
+- [x] T006 Create TableNode component in src/components/whiteboard/TableNode.tsx
+- [x] T007 Create RelationshipEdge component in src/components/whiteboard/RelationshipEdge.tsx
+- [x] T008 Create ReactFlowCanvas wrapper in src/components/whiteboard/ReactFlowCanvas.tsx
+- [x] T009 Register custom node and edge types in src/components/whiteboard/node-types.ts
+- [x] T010 [P] Create viewport utilities in src/lib/react-flow/viewport.ts
+- [x] T011 [P] Add React Flow CSS imports to src/styles.css
 
 **Checkpoint**: Foundation ready - user story implementation can now begin in parallel
 
@@ -66,20 +67,20 @@ Project uses single-repo structure: `src/`, `tests/` at repository root
 
 ### Implementation for User Story 1
 
-- [X] T012 [US1] Update whiteboard route to use ReactFlowCanvas in src/routes/whiteboard/$whiteboardId.tsx
-- [X] T013 [US1] Implement data loading and conversion in ReactFlowCanvas component in src/components/whiteboard/ReactFlowCanvas.tsx
-- [X] T014 [P] [US1] Implement table header rendering in TableNode in src/components/whiteboard/TableNode.tsx
-- [X] T015 [P] [US1] Implement column list rendering in TableNode in src/components/whiteboard/TableNode.tsx
-- [X] T016 [US1] Implement column handle positioning logic in src/lib/react-flow/handles.ts
-- [X] T017 [P] [US1] Implement primary key indicators in TableNode in src/components/whiteboard/TableNode.tsx
-- [X] T018 [P] [US1] Implement foreign key indicators in TableNode in src/components/whiteboard/TableNode.tsx
-- [X] T019 [US1] Implement edge path calculation in RelationshipEdge in src/components/whiteboard/RelationshipEdge.tsx
-- [X] T020 [P] [US1] Implement cardinality markers (crow's foot notation) in src/components/whiteboard/cardinality-markers.tsx
-- [X] T021 [US1] Apply cardinality markers to RelationshipEdge in src/components/whiteboard/RelationshipEdge.tsx
-- [X] T022 [P] [US1] Style TableNode for light mode in src/styles/react-flow-theme.css
-- [X] T023 [P] [US1] Style RelationshipEdge for light mode in src/styles/react-flow-theme.css
-- [X] T024 [US1] Implement initial position loading from database in src/components/whiteboard/ReactFlowCanvas.tsx
-- [X] T025 [US1] Add fitView on initial load in src/components/whiteboard/ReactFlowCanvas.tsx
+- [x] T012 [US1] Update whiteboard route to use ReactFlowCanvas in src/routes/whiteboard/$whiteboardId.tsx
+- [x] T013 [US1] Implement data loading and conversion in ReactFlowCanvas component in src/components/whiteboard/ReactFlowCanvas.tsx
+- [x] T014 [P] [US1] Implement table header rendering in TableNode in src/components/whiteboard/TableNode.tsx
+- [x] T015 [P] [US1] Implement column list rendering in TableNode in src/components/whiteboard/TableNode.tsx
+- [x] T016 [US1] Implement column handle positioning logic in src/lib/react-flow/handles.ts
+- [x] T017 [P] [US1] Implement primary key indicators in TableNode in src/components/whiteboard/TableNode.tsx
+- [x] T018 [P] [US1] Implement foreign key indicators in TableNode in src/components/whiteboard/TableNode.tsx
+- [x] T019 [US1] Implement edge path calculation in RelationshipEdge in src/components/whiteboard/RelationshipEdge.tsx
+- [x] T020 [P] [US1] Implement cardinality markers (crow's foot notation) in src/components/whiteboard/cardinality-markers.tsx
+- [x] T021 [US1] Apply cardinality markers to RelationshipEdge in src/components/whiteboard/RelationshipEdge.tsx
+- [x] T022 [P] [US1] Style TableNode for light mode in src/styles/react-flow-theme.css
+- [x] T023 [P] [US1] Style RelationshipEdge for light mode in src/styles/react-flow-theme.css
+- [x] T024 [US1] Implement initial position loading from database in src/components/whiteboard/ReactFlowCanvas.tsx
+- [x] T025 [US1] Add fitView on initial load in src/components/whiteboard/ReactFlowCanvas.tsx
 
 **Checkpoint**: User Story 1 complete - diagrams render correctly in React Flow
 
@@ -93,14 +94,14 @@ Project uses single-repo structure: `src/`, `tests/` at repository root
 
 ### Implementation for User Story 2
 
-- [X] T026 [US2] Enable React Flow zoom controls in src/components/whiteboard/ReactFlowCanvas.tsx
-- [X] T027 [US2] Enable React Flow pan controls in src/components/whiteboard/ReactFlowCanvas.tsx
-- [X] T028 [US2] Add Controls component from React Flow in src/components/whiteboard/ReactFlowCanvas.tsx
-- [X] T029 [US2] Implement fit-to-screen button using fitView API in src/components/whiteboard/ReactFlowCanvas.tsx
-- [X] T030 [P] [US2] Create ZoomIndicator component in src/components/whiteboard/ZoomIndicator.tsx
-- [X] T031 [US2] Integrate ZoomIndicator with viewport state in src/components/whiteboard/ReactFlowCanvas.tsx
-- [X] T032 [US2] Configure zoom limits (min/max zoom levels) in src/components/whiteboard/ReactFlowCanvas.tsx
-- [X] T033 [US2] Configure pan boundaries in src/components/whiteboard/ReactFlowCanvas.tsx
+- [x] T026 [US2] Enable React Flow zoom controls in src/components/whiteboard/ReactFlowCanvas.tsx
+- [x] T027 [US2] Enable React Flow pan controls in src/components/whiteboard/ReactFlowCanvas.tsx
+- [x] T028 [US2] Add Controls component from React Flow in src/components/whiteboard/ReactFlowCanvas.tsx
+- [x] T029 [US2] Implement fit-to-screen button using fitView API in src/components/whiteboard/ReactFlowCanvas.tsx
+- [x] T030 [P] [US2] Create ZoomIndicator component in src/components/whiteboard/ZoomIndicator.tsx
+- [x] T031 [US2] Integrate ZoomIndicator with viewport state in src/components/whiteboard/ReactFlowCanvas.tsx
+- [x] T032 [US2] Configure zoom limits (min/max zoom levels) in src/components/whiteboard/ReactFlowCanvas.tsx
+- [x] T033 [US2] Configure pan boundaries in src/components/whiteboard/ReactFlowCanvas.tsx
 
 **Checkpoint**: User Stories 1 AND 2 complete - navigation works smoothly
 
@@ -114,16 +115,16 @@ Project uses single-repo structure: `src/`, `tests/` at repository root
 
 ### Implementation for User Story 4
 
-- [X] T034 [P] [US4] Create layout adapter in src/lib/react-flow/layout-adapter.ts
-- [X] T035 [US4] Adapt existing d3-force logic to output React Flow positions in src/lib/react-flow/layout-adapter.ts
-- [X] T036 [US4] Update layout worker to accept React Flow node format in src/lib/canvas/layout-worker.ts
-- [X] T037 [US4] Create layout trigger hook in src/hooks/use-layout-trigger.ts
-- [X] T038 [P] [US4] Create LayoutControls component in src/components/whiteboard/LayoutControls.tsx
-- [X] T039 [US4] Integrate LayoutControls with ReactFlowCanvas in src/components/whiteboard/ReactFlowCanvas.tsx
-- [X] T040 [US4] Implement applyLayout function to update node positions in src/components/whiteboard/ReactFlowCanvas.tsx
-- [X] T041 [US4] Add animated transitions for layout changes using React Flow in src/components/whiteboard/ReactFlowCanvas.tsx
-- [X] T042 [US4] Handle disconnected clusters in layout algorithm in src/lib/react-flow/layout-adapter.ts
-- [X] T043 [US4] Persist layout results to database in src/components/whiteboard/ReactFlowCanvas.tsx
+- [x] T034 [P] [US4] Create layout adapter in src/lib/react-flow/layout-adapter.ts
+- [x] T035 [US4] Adapt existing d3-force logic to output React Flow positions in src/lib/react-flow/layout-adapter.ts
+- [x] T036 [US4] Update layout worker to accept React Flow node format in src/lib/canvas/layout-worker.ts
+- [x] T037 [US4] Create layout trigger hook in src/hooks/use-layout-trigger.ts
+- [x] T038 [P] [US4] Create LayoutControls component in src/components/whiteboard/LayoutControls.tsx
+- [x] T039 [US4] Integrate LayoutControls with ReactFlowCanvas in src/components/whiteboard/ReactFlowCanvas.tsx
+- [x] T040 [US4] Implement applyLayout function to update node positions in src/components/whiteboard/ReactFlowCanvas.tsx
+- [x] T041 [US4] Add animated transitions for layout changes using React Flow in src/components/whiteboard/ReactFlowCanvas.tsx
+- [x] T042 [US4] Handle disconnected clusters in layout algorithm in src/lib/react-flow/layout-adapter.ts
+- [x] T043 [US4] Persist layout results to database in src/components/whiteboard/ReactFlowCanvas.tsx
 
 **Checkpoint**: User Stories 1, 2, AND 4 complete - automatic layout functional
 
@@ -137,12 +138,12 @@ Project uses single-repo structure: `src/`, `tests/` at repository root
 
 ### Implementation for User Story 3
 
-- [X] T044 [US3] Enable nodesDraggable prop in ReactFlowCanvas in src/components/whiteboard/ReactFlowCanvas.tsx
-- [X] T045 [US3] Implement onNodeDragStop handler in src/components/whiteboard/ReactFlowCanvas.tsx
-- [X] T046 [US3] Create position update API call in src/routes/api/tables.ts
-- [X] T047 [US3] Persist node position to database on drag stop in src/components/whiteboard/ReactFlowCanvas.tsx
-- [X] T048 [US3] Add drag visual feedback (cursor, node styling) in src/components/whiteboard/TableNode.tsx
-- [X] T049 [US3] Configure auto-pan behavior at canvas edges in src/components/whiteboard/ReactFlowCanvas.tsx
+- [x] T044 [US3] Enable nodesDraggable prop in ReactFlowCanvas in src/components/whiteboard/ReactFlowCanvas.tsx
+- [x] T045 [US3] Implement onNodeDragStop handler in src/components/whiteboard/ReactFlowCanvas.tsx
+- [x] T046 [US3] Create position update API call in src/routes/api/tables.ts
+- [x] T047 [US3] Persist node position to database on drag stop in src/components/whiteboard/ReactFlowCanvas.tsx
+- [x] T048 [US3] Add drag visual feedback (cursor, node styling) in src/components/whiteboard/TableNode.tsx
+- [x] T049 [US3] Configure auto-pan behavior at canvas edges in src/components/whiteboard/ReactFlowCanvas.tsx
 
 **Checkpoint**: User Stories 1-4 AND 3 complete - manual dragging works
 
@@ -156,15 +157,15 @@ Project uses single-repo structure: `src/`, `tests/` at repository root
 
 ### Implementation for User Story 7
 
-- [X] T050 [P] [US7] Generate handle IDs for each column in TableNode in src/components/whiteboard/TableNode.tsx
-- [X] T051 [P] [US7] Calculate vertical handle positions based on column index in src/lib/react-flow/handles.ts
-- [X] T052 [US7] Render source handles (right side) for each column in src/components/whiteboard/TableNode.tsx
-- [X] T053 [US7] Render target handles (left side) for each column in src/components/whiteboard/TableNode.tsx
-- [X] T054 [US7] Map sourceColumnId to sourceHandle in converter in src/lib/react-flow/converters.ts
-- [X] T055 [US7] Map targetColumnId to targetHandle in converter in src/lib/react-flow/converters.ts
-- [X] T056 [US7] Update edge rendering to connect to specific handles in src/components/whiteboard/RelationshipEdge.tsx
-- [X] T057 [P] [US7] Style handles for visibility and interaction in src/styles/react-flow-theme.css
-- [X] T058 [US7] Handle column reordering impact on handle positions in src/components/whiteboard/TableNode.tsx
+- [x] T050 [P] [US7] Generate handle IDs for each column in TableNode in src/components/whiteboard/TableNode.tsx
+- [x] T051 [P] [US7] Calculate vertical handle positions based on column index in src/lib/react-flow/handles.ts
+- [x] T052 [US7] Render source handles (right side) for each column in src/components/whiteboard/TableNode.tsx
+- [x] T053 [US7] Render target handles (left side) for each column in src/components/whiteboard/TableNode.tsx
+- [x] T054 [US7] Map sourceColumnId to sourceHandle in converter in src/lib/react-flow/converters.ts
+- [x] T055 [US7] Map targetColumnId to targetHandle in converter in src/lib/react-flow/converters.ts
+- [x] T056 [US7] Update edge rendering to connect to specific handles in src/components/whiteboard/RelationshipEdge.tsx
+- [x] T057 [P] [US7] Style handles for visibility and interaction in src/styles/react-flow-theme.css
+- [x] T058 [US7] Handle column reordering impact on handle positions in src/components/whiteboard/TableNode.tsx
 
 **Checkpoint**: User Stories 1-4, 3, AND 7 complete - column-specific connections work
 
@@ -178,22 +179,22 @@ Project uses single-repo structure: `src/`, `tests/` at repository root
 
 ### Implementation for User Story 5
 
-- [X] T059 [P] [US5] Create WebSocket sync hook in src/hooks/use-react-flow-sync.ts
-- [X] T060 [US5] Implement node position broadcast on drag in src/hooks/use-react-flow-sync.ts
-- [X] T061 [US5] Implement node added broadcast in src/hooks/use-react-flow-sync.ts
-- [X] T062 [US5] Implement node deleted broadcast in src/hooks/use-react-flow-sync.ts
-- [X] T063 [US5] Implement edge added broadcast in src/hooks/use-react-flow-sync.ts
-- [X] T064 [US5] Implement edge deleted broadcast in src/hooks/use-react-flow-sync.ts
-- [X] T065 [US5] Handle remote node position updates in src/hooks/use-react-flow-sync.ts
-- [X] T066 [US5] Handle remote node add events in src/hooks/use-react-flow-sync.ts
-- [X] T067 [US5] Handle remote node delete events in src/hooks/use-react-flow-sync.ts
-- [X] T068 [US5] Handle remote edge add events in src/hooks/use-react-flow-sync.ts
-- [X] T069 [US5] Handle remote edge delete events in src/hooks/use-react-flow-sync.ts
-- [X] T070 [US5] Prevent echo-back loop using isProcessingRemote flag in src/hooks/use-react-flow-sync.ts
-- [X] T071 [US5] Throttle position updates to 100ms in src/hooks/use-react-flow-sync.ts
-- [X] T072 [US5] Integrate sync hook with ReactFlowCanvas in src/components/whiteboard/ReactFlowCanvas.tsx
-- [X] T073 [P] [US5] Update server WebSocket handlers for React Flow events in src/routes/api/collaboration.ts
-- [X] T074 [US5] Implement state sync on reconnection in src/hooks/use-react-flow-sync.ts
+- [x] T059 [P] [US5] Create WebSocket sync hook in src/hooks/use-react-flow-sync.ts
+- [x] T060 [US5] Implement node position broadcast on drag in src/hooks/use-react-flow-sync.ts
+- [x] T061 [US5] Implement node added broadcast in src/hooks/use-react-flow-sync.ts
+- [x] T062 [US5] Implement node deleted broadcast in src/hooks/use-react-flow-sync.ts
+- [x] T063 [US5] Implement edge added broadcast in src/hooks/use-react-flow-sync.ts
+- [x] T064 [US5] Implement edge deleted broadcast in src/hooks/use-react-flow-sync.ts
+- [x] T065 [US5] Handle remote node position updates in src/hooks/use-react-flow-sync.ts
+- [x] T066 [US5] Handle remote node add events in src/hooks/use-react-flow-sync.ts
+- [x] T067 [US5] Handle remote node delete events in src/hooks/use-react-flow-sync.ts
+- [x] T068 [US5] Handle remote edge add events in src/hooks/use-react-flow-sync.ts
+- [x] T069 [US5] Handle remote edge delete events in src/hooks/use-react-flow-sync.ts
+- [x] T070 [US5] Prevent echo-back loop using isProcessingRemote flag in src/hooks/use-react-flow-sync.ts
+- [x] T071 [US5] Throttle position updates to 100ms in src/hooks/use-react-flow-sync.ts
+- [x] T072 [US5] Integrate sync hook with ReactFlowCanvas in src/components/whiteboard/ReactFlowCanvas.tsx
+- [x] T073 [P] [US5] Update server WebSocket handlers for React Flow events in src/routes/api/collaboration.ts
+- [x] T074 [US5] Implement state sync on reconnection in src/hooks/use-react-flow-sync.ts
 
 **Checkpoint**: All P1 and P2 user stories complete - collaboration functional
 
@@ -207,13 +208,13 @@ Project uses single-repo structure: `src/`, `tests/` at repository root
 
 ### Implementation for User Story 6
 
-- [X] T075 [P] [US6] Define dark mode CSS variables in src/styles/react-flow-theme.css
-- [X] T076 [P] [US6] Update TableNode styles to use theme CSS variables in src/styles/react-flow-theme.css
-- [X] T077 [P] [US6] Update RelationshipEdge styles to use theme CSS variables in src/styles/react-flow-theme.css
-- [X] T078 [US6] Apply theme to React Flow background in src/components/whiteboard/ReactFlowCanvas.tsx
-- [X] T079 [US6] Apply theme to React Flow Controls in src/components/whiteboard/ReactFlowCanvas.tsx
-- [X] T080 [US6] Ensure contrast ratios meet accessibility standards (4.5:1 minimum) in src/styles/react-flow-theme.css
-- [X] T081 [US6] Test theme switching for visual glitches in src/components/whiteboard/ReactFlowCanvas.tsx
+- [x] T075 [P] [US6] Define dark mode CSS variables in src/styles/react-flow-theme.css
+- [x] T076 [P] [US6] Update TableNode styles to use theme CSS variables in src/styles/react-flow-theme.css
+- [x] T077 [P] [US6] Update RelationshipEdge styles to use theme CSS variables in src/styles/react-flow-theme.css
+- [x] T078 [US6] Apply theme to React Flow background in src/components/whiteboard/ReactFlowCanvas.tsx
+- [x] T079 [US6] Apply theme to React Flow Controls in src/components/whiteboard/ReactFlowCanvas.tsx
+- [x] T080 [US6] Ensure contrast ratios meet accessibility standards (4.5:1 minimum) in src/styles/react-flow-theme.css
+- [x] T081 [US6] Test theme switching for visual glitches in src/components/whiteboard/ReactFlowCanvas.tsx
 
 **Checkpoint**: All user stories (P1-P3) complete - dark mode working
 
@@ -236,9 +237,9 @@ Project uses single-repo structure: `src/`, `tests/` at repository root
 - [ ] T090 Verify automatic layout completes under 3 seconds for 30 tables - **TESTING REQUIRED**
 - [ ] T091 Verify real-time collaboration latency under 2 seconds - **TESTING REQUIRED**
 - [ ] T092 [P] Visual regression testing (screenshot comparison) - **TESTING REQUIRED**
-- [X] T093 Bundle size analysis (verify within 10% of previous size)
-- [X] T094 [P] Update documentation in quickstart.md
-- [X] T095 Code cleanup and remove TODO comments
+- [x] T093 Bundle size analysis (verify within 10% of previous size)
+- [x] T094 [P] Update documentation in quickstart.md
+- [x] T095 Code cleanup and remove TODO comments
 - [ ] T096 Final acceptance testing across all user stories - **TESTING REQUIRED**
 
 ---
@@ -304,6 +305,7 @@ Task: "Style RelationshipEdge for light mode in src/styles/react-flow-theme.css"
 ### ⚠️ Reconsider Migration
 
 **Before starting implementation**, review research.md findings:
+
 - Current Konva implementation performs well (50+ FPS)
 - Migration offers minimal benefits (48 KB savings, 5% of bundle)
 - Alternative: Optimize Konva (4-6 hours vs 5-8 weeks)

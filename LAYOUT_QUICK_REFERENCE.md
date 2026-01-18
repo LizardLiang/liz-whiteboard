@@ -88,6 +88,7 @@ Optimization Opportunities:
 ## When Each Library Shines
 
 ### d3-force (Your Current Choice)
+
 ```
 Best for:                          Avoid if:
 ├─ 30-50 node diagrams             ├─ Need DAG hierarchical layout
@@ -99,6 +100,7 @@ Best for:                          Avoid if:
 ```
 
 ### dagre
+
 ```
 Best for:                          Avoid if:
 ├─ Hierarchical DAGs               ├─ Cyclic relationships (ER)
@@ -108,6 +110,7 @@ Best for:                          Avoid if:
 ```
 
 ### elkjs
+
 ```
 Best for:                          Avoid if:
 ├─ 100+ node diagrams              ├─ MVP phase
@@ -117,6 +120,7 @@ Best for:                          Avoid if:
 ```
 
 ### React Flow
+
 ```
 Best for:                          Avoid if:
 ├─ Full diagram UI ecosystem       ├─ Fine control needed
@@ -130,6 +134,7 @@ Best for:                          Avoid if:
 ## Quick Diagnostics
 
 ### "My layout is slow"
+
 ```
 Step 1: Add convergence detection (Phase 1, 30 min)
 Step 2: Measure with console.log()
@@ -141,6 +146,7 @@ Step 3: If still slow:
 ```
 
 ### "New tables don't position well"
+
 ```
 Solution: Add warm-start (Phase 2, 45 min)
 Position new nodes near related tables instead of center
@@ -148,6 +154,7 @@ Expected: Better visual layout immediately
 ```
 
 ### "Layout positions change instantly"
+
 ```
 Solution: Add animation (Phase 3, 30 min)
 Use Konva's .to() method for smooth transitions
@@ -155,6 +162,7 @@ Expected: Professional UX, better perceived performance
 ```
 
 ### "Adding one table is slow"
+
 ```
 Solution: Add incremental layout (Phase 4, 1.5 hours)
 Only recalculate affected nodes + neighbors
@@ -166,30 +174,41 @@ Expected: 28ms → 8ms for single table add
 ## Code Snippet Reference
 
 ### Measure Layout Time
+
 ```typescript
 const start = performance.now()
 const result = await computeLayoutAsync(tables, relationships, options)
 const duration = performance.now() - start
-console.log(`Layout: ${duration.toFixed(2)}ms, iterations: ${result.metadata.iterations}`)
+console.log(
+  `Layout: ${duration.toFixed(2)}ms, iterations: ${result.metadata.iterations}`,
+)
 ```
 
 ### Add Convergence Detection
+
 ```typescript
-const energy = nodes.reduce((sum, n) => sum + (n.vx??0)**2 + (n.vy??0)**2, 0)
+const energy = nodes.reduce(
+  (sum, n) => sum + (n.vx ?? 0) ** 2 + (n.vy ?? 0) ** 2,
+  0,
+)
 if (energy < 0.001) break // Converged!
 ```
 
 ### Animate Positions
+
 ```typescript
 await animateTableLayout(tableRefs, positions, { duration: 0.4 })
 ```
 
 ### Incremental Layout
+
 ```typescript
-const result = await computeLayoutAsync(
-  tables, relationships,
-  { width: 1920, height: 1080, preserveUnaffected: true, newTableIds }
-)
+const result = await computeLayoutAsync(tables, relationships, {
+  width: 1920,
+  height: 1080,
+  preserveUnaffected: true,
+  newTableIds,
+})
 ```
 
 ---
@@ -241,16 +260,16 @@ Phase 4: Incremental Layout (1.5 hours)
 
 ## FAQ One-Liners
 
-| Q | A |
-|---|---|
-| Should we use React Flow? | Not for MVP. Konva is better for dense diagrams. |
-| Will d3-force scale? | Yes to 100 nodes; needs optimization beyond. |
-| Is Web Worker necessary? | Yes! Prevents UI blocking during layout. |
-| Should we use elkjs? | Only if targeting 100+ nodes regularly (not MVP). |
-| Can we cache layouts? | Yes! Same input always produces same output. |
-| How much bundle size? | d3-force is already 40KB in your deps. |
-| When to switch libraries? | If requirements change significantly. |
-| What's the quick win? | Phase 1: 30 min work, 15% improvement. |
+| Q                         | A                                                 |
+| ------------------------- | ------------------------------------------------- |
+| Should we use React Flow? | Not for MVP. Konva is better for dense diagrams.  |
+| Will d3-force scale?      | Yes to 100 nodes; needs optimization beyond.      |
+| Is Web Worker necessary?  | Yes! Prevents UI blocking during layout.          |
+| Should we use elkjs?      | Only if targeting 100+ nodes regularly (not MVP). |
+| Can we cache layouts?     | Yes! Same input always produces same output.      |
+| How much bundle size?     | d3-force is already 40KB in your deps.            |
+| When to switch libraries? | If requirements change significantly.             |
+| What's the quick win?     | Phase 1: 30 min work, 15% improvement.            |
 
 ---
 
@@ -373,6 +392,7 @@ You'll know you made the right choice if:
 ## Print/Bookmark This Section
 
 **Most Used Information**:
+
 1. Performance table (top section)
 2. Decision matrix (top section)
 3. Optimization priority (mid section)
@@ -385,4 +405,3 @@ You'll know you made the right choice if:
 **Confidence**: 95% (high)
 **Risk**: Low (keeping proven implementation)
 **Status**: Ready to implement
-

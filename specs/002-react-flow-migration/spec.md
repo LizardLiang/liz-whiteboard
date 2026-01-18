@@ -5,7 +5,7 @@
 **Status**: Draft
 **Input**: User description: "remove the old render structure konva with d3-force, migrate it to use React Flow"
 
-## User Scenarios & Testing *(mandatory)*
+## User Scenarios & Testing _(mandatory)_
 
 ### User Story 1 - View ER Diagrams with React Flow (Priority: P1)
 
@@ -150,7 +150,7 @@ A database architect creates a relationship linking specific columns (e.g., User
 - What happens to viewport state persistence - does React Flow's viewport state format match the previous CanvasViewport interface?
 - How does React Flow handle relationship arrow styling (different cardinality notations like crow's foot) compared to custom Konva rendering?
 
-## Requirements *(mandatory)*
+## Requirements _(mandatory)_
 
 ### Functional Requirements
 
@@ -198,7 +198,7 @@ A database architect creates a relationship linking specific columns (e.g., User
 - **Edge Component**: A custom React component that renders relationship arrows with cardinality notation and labels
 - **Viewport State**: React Flow viewport configuration; includes zoom level, x/y offsets, fits to React Flow's viewport API
 
-## Success Criteria *(mandatory)*
+## Success Criteria _(mandatory)_
 
 ### Measurable Outcomes
 
