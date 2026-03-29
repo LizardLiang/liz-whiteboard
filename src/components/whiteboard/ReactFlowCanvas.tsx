@@ -1,55 +1,60 @@
-import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useState } from 'react'
 import {
-  ReactFlow,
   Background,
   Controls,
+  
   MiniMap,
-  useNodesState,
+  
+  
+  
+  
+  
+  
+  ReactFlow,
   useEdgesState,
-  type OnNodesChange,
-  type OnEdgesChange,
-  type OnConnect,
-  type FitViewOptions,
-  type Node,
-  type NodeMouseHandler,
-  type NodeDragHandler,
-} from '@xyflow/react';
-import '@xyflow/react/dist/style.css';
-import '@/styles/react-flow-theme.css';
+  useNodesState
+} from '@xyflow/react'
+import type {FitViewOptions, Node, NodeDragHandler, NodeMouseHandler, OnConnect, OnEdgesChange, OnNodesChange} from '@xyflow/react';
+import '@xyflow/react/dist/style.css'
+import '@/styles/react-flow-theme.css'
 
-import type { TableNodeType, RelationshipEdgeType } from '@/lib/react-flow/types';
-import { nodeTypes, edgeTypes } from '@/lib/react-flow/node-types';
-import { calculateHighlighting } from '@/lib/react-flow/highlighting';
-import { CardinalityMarkerDefs } from './CardinalityMarkerDefs';
+import { CardinalityMarkerDefs } from './CardinalityMarkerDefs'
+import type {
+  RelationshipEdgeType,
+  TableNodeType,
+} from '@/lib/react-flow/types'
+import { recalculateEdgesForDraggedNodes } from '@/lib/react-flow/edge-routing'
+import { edgeTypes, nodeTypes } from '@/lib/react-flow/node-types'
+import { calculateHighlighting } from '@/lib/react-flow/highlighting'
 
 /**
  * ReactFlowCanvas Props
  */
 export interface ReactFlowCanvasProps {
   /** Initial nodes (tables) */
-  initialNodes?: TableNodeType[];
+  initialNodes?: Array<TableNodeType>
   /** Initial edges (relationships) */
-  initialEdges?: RelationshipEdgeType[];
+  initialEdges?: Array<RelationshipEdgeType>
   /** Callback when nodes change (position, selection, etc.) */
-  onNodesChange?: OnNodesChange<TableNodeType>;
+  onNodesChange?: OnNodesChange<TableNodeType>
   /** Callback when edges change */
-  onEdgesChange?: OnEdgesChange<RelationshipEdgeType>;
+  onEdgesChange?: OnEdgesChange<RelationshipEdgeType>
   /** Callback when connection is created */
-  onConnect?: OnConnect;
+  onConnect?: OnConnect
   /** Callback when node drag stops (position update) */
-  onNodeDragStop?: NodeDragHandler<TableNodeType>;
+  onNodeDragStop?: NodeDragHandler<TableNodeType>
   /** Whether nodes are draggable */
-  nodesDraggable?: boolean;
+  nodesDraggable?: boolean
   /** Whether to show minimap */
-  showMinimap?: boolean;
+  showMinimap?: boolean
   /** Whether to show controls */
-  showControls?: boolean;
+  showControls?: boolean
   /** Whether to show background pattern */
-  showBackground?: boolean;
+  showBackground?: boolean
   /** Fit view options for initial render */
-  fitViewOptions?: FitViewOptions;
+  fitViewOptions?: FitViewOptions
   /** Additional className */
-  className?: string;
+  className?: string
 }
 
 /**
@@ -81,26 +86,39 @@ export function ReactFlowCanvas({
   fitViewOptions,
   className = '',
 }: ReactFlowCanvasProps) {
-  const [nodes, setNodes, handleNodesChange] = useNodesState<TableNodeType>(initialNodes);
-  const [edges, setEdges, handleEdgesChange] = useEdgesState<RelationshipEdgeType>(initialEdges);
+  const [nodes, setNodes, handleNodesChange] =
+    useNodesState<TableNodeType>(initialNodes)
+  const [edges, setEdges, handleEdgesChange] =
+    useEdgesState<RelationshipEdgeType>(initialEdges)
 
   // Selection and hover state for highlighting
-  const [activeTableId, setActiveTableId] = useState<string | null>(null);
-  const [hoveredTableId, setHoveredTableId] = useState<string | null>(null);
+  const [activeTableId, setActiveTableId] = useState<string | null>(null)
+  const [hoveredTableId, setHoveredTableId] = useState<string | null>(null)
 
   // Memoize node and edge types for performance
-  const memoizedNodeTypes = useMemo(() => nodeTypes, []);
-  const memoizedEdgeTypes = useMemo(() => edgeTypes, []);
+  const memoizedNodeTypes = useMemo(() => nodeTypes, [])
+  const memoizedEdgeTypes = useMemo(() => edgeTypes, [])
 
   // Update nodes when initialNodes changes
   useEffect(() => {
-    setNodes(initialNodes);
-  }, [initialNodes, setNodes]);
+    setNodes(initialNodes)
+  }, [initialNodes, setNodes])
 
-  // Update edges when initialEdges changes
+  // Update edges when initialEdges changes — immediately recalculate handles
+  // based on the current node positions so edges start pointing the right way.
   useEffect(() => {
-    setEdges(initialEdges);
-  }, [initialEdges, setEdges]);
+    if (initialEdges.length === 0) {
+      setEdges(initialEdges)
+      return
+    }
+    const allNodeIds = new Set(initialNodes.map((n) => n.id))
+    const recalculated = recalculateEdgesForDraggedNodes(
+      initialEdges,
+      initialNodes,
+      allNodeIds,
+    )
+    setEdges(recalculated)
+  }, [initialEdges, initialNodes, setEdges])
 
   // Apply highlighting when selection changes
   useEffect(() => {
@@ -108,63 +126,111 @@ export function ReactFlowCanvas({
       nodes,
       edges,
       activeTableId,
-      hoveredTableId
-    );
+      hoveredTableId,
+    )
 
     // Only update if highlighting state actually changed
-    setNodes(highlighted.nodes);
-    setEdges(highlighted.edges);
-  }, [activeTableId, hoveredTableId]); // Don't include nodes/edges to avoid infinite loop
+    setNodes(highlighted.nodes)
+    setEdges(highlighted.edges)
+  }, [activeTableId, hoveredTableId]) // Don't include nodes/edges to avoid infinite loop
 
   // Handle node click (selection)
   const onNodeClick = useCallback<NodeMouseHandler>((event, node) => {
-    setActiveTableId(node.id);
-  }, []);
+    setActiveTableId(node.id)
+  }, [])
 
   // Handle pane click (clear selection)
   const onPaneClick = useCallback(() => {
-    setActiveTableId(null);
-  }, []);
+    setActiveTableId(null)
+  }, [])
 
   // Handle node mouse enter (hover)
   const onNodeMouseEnter = useCallback<NodeMouseHandler>((event, node) => {
-    setHoveredTableId(node.id);
-  }, []);
+    setHoveredTableId(node.id)
+  }, [])
 
   // Handle node mouse leave (unhover)
   const onNodeMouseLeave = useCallback<NodeMouseHandler>((event, node) => {
-    setHoveredTableId(null);
-  }, []);
+    setHoveredTableId(null)
+  }, [])
+
+  // Helper: merge dragged node positions into the current nodes array so the
+  // recalculation always uses the latest coordinates even if React state is
+  // one frame behind.
+  const mergeCurrentPositions = useCallback(
+    (
+      node: TableNodeType,
+      draggedNodes: Array<TableNodeType>,
+    ): Array<TableNodeType> => {
+      // Build a quick lookup of updated positions from the drag event
+      const updatedPositions = new Map<string, { x: number; y: number }>()
+      updatedPositions.set(node.id, node.position)
+      draggedNodes.forEach((n) => updatedPositions.set(n.id, n.position))
+
+      return nodes.map((n) => {
+        const updated = updatedPositions.get(n.id)
+        return updated ? { ...n, position: updated } : n
+      })
+    },
+    [nodes],
+  )
+
+  // Recalculate edge handles whenever a node is dragged (live feedback).
+  // We merge the dragged node's latest position into the nodes array so the
+  // calculation is always based on current coordinates.
+  const onNodeDrag = useCallback<NodeDragHandler<TableNodeType>>(
+    (_event, node, draggedNodes) => {
+      const draggedIds = new Set(draggedNodes.map((n) => n.id))
+      draggedIds.add(node.id)
+
+      const currentNodes = mergeCurrentPositions(node, draggedNodes)
+      setEdges((prevEdges) =>
+        recalculateEdgesForDraggedNodes(prevEdges, currentNodes, draggedIds),
+      )
+    },
+    [mergeCurrentPositions, setEdges],
+  )
 
   // Handle node drag stop (position update)
   const onNodeDragStop = useCallback<NodeDragHandler<TableNodeType>>(
-    (event, node) => {
+    (event, node, draggedNodes) => {
+      // Final recalculation with latest positions
+      const draggedIds = new Set(draggedNodes.map((n) => n.id))
+      draggedIds.add(node.id)
+      const currentNodes = mergeCurrentPositions(node, draggedNodes)
+      setEdges((prevEdges) =>
+        recalculateEdgesForDraggedNodes(prevEdges, currentNodes, draggedIds),
+      )
+
       // Call the prop callback if provided
-      onNodeDragStopProp?.(event, node);
+      onNodeDragStopProp?.(event, node)
     },
-    [onNodeDragStopProp]
-  );
+    [onNodeDragStopProp, mergeCurrentPositions, setEdges],
+  )
 
   // Handle nodes change with custom callback
   const onNodesChange: OnNodesChange<TableNodeType> = useCallback(
     (changes) => {
-      handleNodesChange(changes);
-      onNodesChangeProp?.(changes);
+      handleNodesChange(changes)
+      onNodesChangeProp?.(changes)
     },
-    [handleNodesChange, onNodesChangeProp]
-  );
+    [handleNodesChange, onNodesChangeProp],
+  )
 
   // Handle edges change with custom callback
   const onEdgesChange: OnEdgesChange<RelationshipEdgeType> = useCallback(
     (changes) => {
-      handleEdgesChange(changes);
-      onEdgesChangeProp?.(changes);
+      handleEdgesChange(changes)
+      onEdgesChangeProp?.(changes)
     },
-    [handleEdgesChange, onEdgesChangeProp]
-  );
+    [handleEdgesChange, onEdgesChangeProp],
+  )
 
   return (
-    <div className={`react-flow-wrapper ${className}`} style={{ width: '100%', height: '100%' }}>
+    <div
+      className={`react-flow-wrapper ${className}`}
+      style={{ width: '100%', height: '100%' }}
+    >
       {/* Global SVG marker definitions for cardinality indicators */}
       <CardinalityMarkerDefs />
 
@@ -178,6 +244,7 @@ export function ReactFlowCanvas({
         onPaneClick={onPaneClick}
         onNodeMouseEnter={onNodeMouseEnter}
         onNodeMouseLeave={onNodeMouseLeave}
+        onNodeDrag={onNodeDrag}
         onNodeDragStop={onNodeDragStop}
         nodeTypes={memoizedNodeTypes}
         edgeTypes={memoizedEdgeTypes}
@@ -195,16 +262,18 @@ export function ReactFlowCanvas({
         }}
       >
         {showControls && <Controls />}
-        {showBackground && <Background color="var(--rf-background-pattern)" gap={16} />}
+        {showBackground && (
+          <Background color="var(--rf-background-pattern)" gap={16} />
+        )}
         {showMinimap && (
           <MiniMap
             nodeColor={(node) => {
-              return 'var(--rf-table-bg)';
+              return 'var(--rf-table-bg)'
             }}
             maskColor="rgba(0, 0, 0, 0.1)"
           />
         )}
       </ReactFlow>
     </div>
-  );
+  )
 }
