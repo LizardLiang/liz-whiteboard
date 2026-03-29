@@ -5,15 +5,15 @@
 
 import { useCallback, useState } from 'react'
 import { useReactFlow } from '@xyflow/react'
-import type { TableNodeType, RelationshipEdgeType } from './types'
 import { computeELKLayout } from './elk-layout'
+import type { RelationshipEdgeType, TableNodeType } from './types'
 
 /**
  * Auto-layout hook options
  */
 export interface UseAutoLayoutOptions {
   /** Callback after layout completes successfully */
-  onLayoutComplete?: (nodes: TableNodeType[]) => void
+  onLayoutComplete?: (nodes: Array<TableNodeType>) => void
   /** Callback when layout fails */
   onLayoutError?: (error: Error) => void
   /** Whether to fit view after layout (default: true) */
@@ -53,7 +53,9 @@ export interface UseAutoLayoutReturn {
  * </button>
  * ```
  */
-export function useAutoLayout(options: UseAutoLayoutOptions = {}): UseAutoLayoutReturn {
+export function useAutoLayout(
+  options: UseAutoLayoutOptions = {},
+): UseAutoLayoutReturn {
   const {
     onLayoutComplete,
     onLayoutError,
@@ -61,7 +63,10 @@ export function useAutoLayout(options: UseAutoLayoutOptions = {}): UseAutoLayout
     fitViewDelay = 100,
   } = options
 
-  const { getNodes, getEdges, setNodes, fitView } = useReactFlow<TableNodeType, RelationshipEdgeType>()
+  const { getNodes, getEdges, setNodes, fitView } = useReactFlow<
+    TableNodeType,
+    RelationshipEdgeType
+  >()
   const [isComputing, setIsComputing] = useState(false)
   const [error, setError] = useState<Error | null>(null)
 
@@ -94,7 +99,8 @@ export function useAutoLayout(options: UseAutoLayoutOptions = {}): UseAutoLayout
       // Call success callback
       onLayoutComplete?.(layoutedNodes)
     } catch (err) {
-      const error = err instanceof Error ? err : new Error('Unknown layout error')
+      const error =
+        err instanceof Error ? err : new Error('Unknown layout error')
       setError(error)
       onLayoutError?.(error)
       console.error('Auto-layout failed:', error)

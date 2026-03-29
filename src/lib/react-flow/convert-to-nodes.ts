@@ -4,15 +4,18 @@
  * Convert Prisma DiagramTable entities to React Flow nodes
  */
 
-import type { DiagramTable, Column } from '@prisma/client'
-import type { TableNodeType, TableNodeData, ShowMode } from './types'
+import type { Column, DiagramTable } from '@prisma/client'
+import type { ShowMode, TableNodeData, TableNodeType } from './types'
 
 /**
  * Extract table position from DiagramTable entity
  * @param table - DiagramTable with positionX and positionY
  * @returns Position object compatible with React Flow
  */
-export function extractTablePosition(table: DiagramTable): { x: number; y: number } {
+export function extractTablePosition(table: DiagramTable): {
+  x: number
+  y: number
+} {
   return {
     x: table.positionX,
     y: table.positionY,
@@ -26,8 +29,8 @@ export function extractTablePosition(table: DiagramTable): { x: number; y: numbe
  * @returns React Flow TableNodeType
  */
 export function convertTableToNode(
-  table: DiagramTable & { columns: Column[] },
-  options?: Partial<TableNodeData>
+  table: DiagramTable & { columns: Array<Column> },
+  options?: Partial<TableNodeData>,
 ): TableNodeType {
   const position = extractTablePosition(table)
 
@@ -56,10 +59,10 @@ export function convertTableToNode(
  * @returns Array of React Flow TableNodeType
  */
 export function convertTablesToNodes(
-  tables: (DiagramTable & { columns: Column[] })[],
-  showMode?: ShowMode
-): TableNodeType[] {
+  tables: Array<DiagramTable & { columns: Array<Column> }>,
+  showMode?: ShowMode,
+): Array<TableNodeType> {
   return tables.map((table) =>
-    convertTableToNode(table, showMode ? { showMode } : undefined)
+    convertTableToNode(table, showMode ? { showMode } : undefined),
   )
 }

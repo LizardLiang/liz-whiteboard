@@ -3,12 +3,12 @@
  * Implements crow's foot notation for relationship cardinality
  */
 
-import type { CardinalityType } from '@/lib/react-flow/types';
+import type { CardinalityType } from '@/lib/react-flow/types'
 
 export interface CardinalityMarkerProps {
-  cardinality: CardinalityType;
-  angle: number;
-  isTarget: boolean;
+  cardinality: CardinalityType
+  angle: number
+  isTarget: boolean
 }
 
 /**
@@ -24,35 +24,41 @@ export function CardinalityMarker({
   angle,
   isTarget,
 }: CardinalityMarkerProps) {
-  const size = 12;
-  const rotation = (angle * 180) / Math.PI;
+  const size = 12
+  const rotation = (angle * 180) / Math.PI
 
   // Determine marker type based on cardinality and position
   const showCrowFoot =
     (cardinality === 'ONE_TO_MANY' && isTarget) ||
     (cardinality === 'MANY_TO_ONE' && !isTarget) ||
-    cardinality === 'MANY_TO_MANY';
+    cardinality === 'MANY_TO_MANY'
 
   const showOne =
     cardinality === 'ONE_TO_ONE' ||
     (cardinality === 'ONE_TO_MANY' && !isTarget) ||
-    (cardinality === 'MANY_TO_ONE' && isTarget);
+    (cardinality === 'MANY_TO_ONE' && isTarget)
 
   if (showCrowFoot) {
-    return <CrowFootMarker size={size} rotation={rotation} />;
+    return <CrowFootMarker size={size} rotation={rotation} />
   }
 
   if (showOne) {
-    return <OneMarker size={size} rotation={rotation} />;
+    return <OneMarker size={size} rotation={rotation} />
   }
 
-  return null;
+  return null
 }
 
 /**
  * Crow's foot marker (three prongs for "many" side)
  */
-function CrowFootMarker({ size, rotation }: { size: number; rotation: number }) {
+function CrowFootMarker({
+  size,
+  rotation,
+}: {
+  size: number
+  rotation: number
+}) {
   return (
     <g transform={`rotate(${rotation})`}>
       {/* Upper prong */}
@@ -83,7 +89,7 @@ function CrowFootMarker({ size, rotation }: { size: number; rotation: number }) 
         strokeWidth={2}
       />
     </g>
-  );
+  )
 }
 
 /**
@@ -101,14 +107,20 @@ function OneMarker({ size, rotation }: { size: number; rotation: number }) {
         strokeWidth={2}
       />
     </g>
-  );
+  )
 }
 
 /**
  * Optional circle marker (for optional relationships)
  * Not currently used but available for future enhancement
  */
-export function OptionalMarker({ size, rotation }: { size: number; rotation: number }) {
+export function OptionalMarker({
+  size,
+  rotation,
+}: {
+  size: number
+  rotation: number
+}) {
   return (
     <g transform={`rotate(${rotation})`}>
       <circle
@@ -120,5 +132,5 @@ export function OptionalMarker({ size, rotation }: { size: number; rotation: num
         strokeWidth={2}
       />
     </g>
-  );
+  )
 }

@@ -22,7 +22,13 @@ export const CardinalityZeroOrOneLeftMarker = ({
   const sw = isHighlighted ? 1.6 : 1.2
 
   return (
-    <svg width="0" height="0" role="img" aria-label="Zero or One Left Marker" {...props}>
+    <svg
+      width="0"
+      height="0"
+      role="img"
+      aria-label="Zero or One Left Marker"
+      {...props}
+    >
       <defs>
         <marker
           id={id}

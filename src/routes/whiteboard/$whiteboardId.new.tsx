@@ -5,13 +5,14 @@
 import { createFileRoute } from '@tanstack/react-router'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { useCallback, useEffect, useMemo, useState } from 'react'
-import type { OnNodesChange, OnEdgesChange } from '@xyflow/react'
+import type { OnEdgesChange, OnNodesChange } from '@xyflow/react'
 import type {
   CreateColumn,
   CreateRelationship,
   CreateTable,
 } from '@/data/schema'
 import type { DiagramAST } from '@/lib/parser/ast'
+import type { RelationshipEdge, TableNode } from '@/lib/react-flow/types'
 import { ReactFlowCanvas } from '@/components/whiteboard/ReactFlowCanvas'
 import { Toolbar } from '@/components/whiteboard/Toolbar'
 import { TextEditor } from '@/components/whiteboard/TextEditor'
@@ -19,11 +20,10 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import { useCollaboration } from '@/hooks/use-collaboration'
 import { useAutoLayoutPreference } from '@/hooks/use-auto-layout-preference'
 import {
-  convertToReactFlowNodes,
   convertToReactFlowEdges,
+  convertToReactFlowNodes,
   extractPositionUpdates,
 } from '@/lib/react-flow/converters'
-import type { TableNode, RelationshipEdge } from '@/lib/react-flow/types'
 import {
   computeAutoLayout,
   createRelationshipFn,
@@ -58,8 +58,8 @@ function WhiteboardEditor() {
   const userId = 'temp-user-id'
 
   // State
-  const [selectedNodeIds, setSelectedNodeIds] = useState<string[]>([])
-  const [selectedEdgeIds, setSelectedEdgeIds] = useState<string[]>([])
+  const [selectedNodeIds, setSelectedNodeIds] = useState<Array<string>>([])
+  const [selectedEdgeIds, setSelectedEdgeIds] = useState<Array<string>>([])
   const [currentZoom, setCurrentZoom] = useState(1)
   const [activeTab, setActiveTab] = useState<'visual' | 'text'>('visual')
   const [textSource, setTextSource] = useState<string>('')
@@ -195,7 +195,11 @@ function WhiteboardEditor() {
     (changes) => {
       changes.forEach((change) => {
         // Handle position changes (drag end)
-        if (change.type === 'position' && change.dragging === false && change.position) {
+        if (
+          change.type === 'position' &&
+          change.dragging === false &&
+          change.position
+        ) {
           updateTablePositionMutation.mutate({
             id: change.id,
             positionX: change.position.x,
@@ -208,26 +212,29 @@ function WhiteboardEditor() {
           setSelectedNodeIds((prev) =>
             change.selected
               ? [...prev, change.id]
-              : prev.filter((id) => id !== change.id)
+              : prev.filter((id) => id !== change.id),
           )
         }
       })
     },
-    [updateTablePositionMutation]
+    [updateTablePositionMutation],
   )
 
   // Handle edges change
-  const onEdgesChange: OnEdgesChange<RelationshipEdge> = useCallback((changes) => {
-    changes.forEach((change) => {
-      if (change.type === 'select') {
-        setSelectedEdgeIds((prev) =>
-          change.selected
-            ? [...prev, change.id]
-            : prev.filter((id) => id !== change.id)
-        )
-      }
-    })
-  }, [])
+  const onEdgesChange: OnEdgesChange<RelationshipEdge> = useCallback(
+    (changes) => {
+      changes.forEach((change) => {
+        if (change.type === 'select') {
+          setSelectedEdgeIds((prev) =>
+            change.selected
+              ? [...prev, change.id]
+              : prev.filter((id) => id !== change.id),
+          )
+        }
+      })
+    },
+    [],
+  )
 
   // Event handlers
   const handleCreateTable = useCallback(

@@ -5,13 +5,13 @@
  * when tables are selected or hovered
  */
 
+import { Z_INDEX } from './types'
 import type {
-  TableNodeType,
-  RelationshipEdgeType,
   EdgeMap,
   HighlightResult,
+  RelationshipEdgeType,
+  TableNodeType,
 } from './types'
-import { Z_INDEX } from './types'
 
 /**
  * Build edge lookup map for fast relationship queries
@@ -22,8 +22,8 @@ import { Z_INDEX } from './types'
  * @param edges - Array of relationship edges
  * @returns Map of table ID to connected edges
  */
-export function buildEdgeMap(edges: RelationshipEdgeType[]): EdgeMap {
-  const map = new Map<string, RelationshipEdgeType[]>()
+export function buildEdgeMap(edges: Array<RelationshipEdgeType>): EdgeMap {
+  const map = new Map<string, Array<RelationshipEdgeType>>()
 
   edges.forEach((edge) => {
     // Add to source table's edges
@@ -53,10 +53,10 @@ export function buildEdgeMap(edges: RelationshipEdgeType[]): EdgeMap {
  * @returns Updated nodes and edges with highlighting state
  */
 export function calculateHighlighting(
-  nodes: TableNodeType[],
-  edges: RelationshipEdgeType[],
+  nodes: Array<TableNodeType>,
+  edges: Array<RelationshipEdgeType>,
   activeTableId: string | null,
-  hoveredTableId: string | null
+  hoveredTableId: string | null,
 ): HighlightResult {
   const edgeMap = buildEdgeMap(edges)
   const relatedTableIds = new Set<string>()
@@ -87,11 +87,12 @@ export function calculateHighlighting(
     data: {
       ...node.data,
       isActiveHighlighted: node.id === activeTableId,
-      isHighlighted:
-        relatedTableIds.has(node.id) && node.id !== activeTableId,
+      isHighlighted: relatedTableIds.has(node.id) && node.id !== activeTableId,
       isHovered: node.id === hoveredTableId,
     },
-    zIndex: relatedTableIds.has(node.id) ? Z_INDEX.NODE_HIGHLIGHTED : Z_INDEX.NODE_DEFAULT,
+    zIndex: relatedTableIds.has(node.id)
+      ? Z_INDEX.NODE_HIGHLIGHTED
+      : Z_INDEX.NODE_DEFAULT,
   }))
 
   // Update edge highlighting
@@ -107,7 +108,10 @@ export function calculateHighlighting(
         ...edge.data,
         isHighlighted: isConnectedToActive || isConnectedToHovered,
       },
-      zIndex: isConnectedToActive || isConnectedToHovered ? Z_INDEX.EDGE_HIGHLIGHTED : Z_INDEX.EDGE_DEFAULT,
+      zIndex:
+        isConnectedToActive || isConnectedToHovered
+          ? Z_INDEX.EDGE_HIGHLIGHTED
+          : Z_INDEX.EDGE_DEFAULT,
     }
   })
 
@@ -127,10 +131,10 @@ export function calculateHighlighting(
  * @returns Highlighted nodes and edges
  */
 export function useHighlighting(
-  nodes: TableNodeType[],
-  edges: RelationshipEdgeType[],
+  nodes: Array<TableNodeType>,
+  edges: Array<RelationshipEdgeType>,
   activeTableId: string | null,
-  hoveredTableId: string | null
+  hoveredTableId: string | null,
 ): HighlightResult {
   return calculateHighlighting(nodes, edges, activeTableId, hoveredTableId)
 }

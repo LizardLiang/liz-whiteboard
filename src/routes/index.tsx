@@ -69,7 +69,8 @@ function HomePage() {
     },
     onError: (error: Error) => {
       toast.error('Failed to create project', {
-        description: error.message || 'An unexpected error occurred. Please try again.',
+        description:
+          error.message || 'An unexpected error occurred. Please try again.',
       })
     },
   })
@@ -135,39 +136,43 @@ function HomePage() {
         ) : (
           <div className="space-y-8">
             {/* Recent Whiteboards Section */}
-            {recentWhiteboards && Array.isArray(recentWhiteboards) && recentWhiteboards.length > 0 && (
-              <div>
-                <div className="flex items-center gap-2 mb-4">
-                  <Clock className="h-5 w-5 text-muted-foreground" />
-                  <h2 className="text-2xl font-semibold">Recent Whiteboards</h2>
+            {recentWhiteboards &&
+              Array.isArray(recentWhiteboards) &&
+              recentWhiteboards.length > 0 && (
+                <div>
+                  <div className="flex items-center gap-2 mb-4">
+                    <Clock className="h-5 w-5 text-muted-foreground" />
+                    <h2 className="text-2xl font-semibold">
+                      Recent Whiteboards
+                    </h2>
+                  </div>
+                  <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
+                    {recentWhiteboards.map((whiteboard) => (
+                      <Link
+                        key={whiteboard.id}
+                        to="/whiteboard/$whiteboardId"
+                        params={{ whiteboardId: whiteboard.id }}
+                      >
+                        <Card className="hover:border-primary transition-colors cursor-pointer h-full">
+                          <CardHeader>
+                            <div className="flex items-start justify-between">
+                              <FileText className="h-6 w-6 text-primary" />
+                            </div>
+                            <CardTitle className="mt-2 text-base">
+                              {whiteboard.name}
+                            </CardTitle>
+                            <CardDescription className="text-xs">
+                              {new Date(
+                                whiteboard.updatedAt,
+                              ).toLocaleDateString()}
+                            </CardDescription>
+                          </CardHeader>
+                        </Card>
+                      </Link>
+                    ))}
+                  </div>
                 </div>
-                <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
-                  {recentWhiteboards.map((whiteboard) => (
-                    <Link
-                      key={whiteboard.id}
-                      to="/whiteboard/$whiteboardId"
-                      params={{ whiteboardId: whiteboard.id }}
-                    >
-                      <Card className="hover:border-primary transition-colors cursor-pointer h-full">
-                        <CardHeader>
-                          <div className="flex items-start justify-between">
-                            <FileText className="h-6 w-6 text-primary" />
-                          </div>
-                          <CardTitle className="mt-2 text-base">
-                            {whiteboard.name}
-                          </CardTitle>
-                          <CardDescription className="text-xs">
-                            {new Date(
-                              whiteboard.updatedAt,
-                            ).toLocaleDateString()}
-                          </CardDescription>
-                        </CardHeader>
-                      </Card>
-                    </Link>
-                  ))}
-                </div>
-              </div>
-            )}
+              )}
 
             {/* Projects Section */}
             <div>
@@ -175,34 +180,38 @@ function HomePage() {
                 <h2 className="text-2xl font-semibold">All Projects</h2>
               </div>
               <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-                {projects && Array.isArray(projects) && projects.map((project) => (
-                  <Card
-                    key={project.id}
-                    className="hover:border-primary transition-colors"
-                  >
-                    <CardHeader>
-                      <div className="flex items-start justify-between">
-                        <FolderOpen className="h-8 w-8 text-primary" />
-                      </div>
-                      <CardTitle className="mt-4">{project.name}</CardTitle>
-                      {project.description && (
-                        <CardDescription>{project.description}</CardDescription>
-                      )}
-                    </CardHeader>
-                    <CardContent>
-                      <div className="text-sm text-muted-foreground space-y-1">
-                        <div>
-                          {project.folders?.length || 0} folder
-                          {project.folders?.length !== 1 ? 's' : ''}
+                {projects &&
+                  Array.isArray(projects) &&
+                  projects.map((project) => (
+                    <Card
+                      key={project.id}
+                      className="hover:border-primary transition-colors"
+                    >
+                      <CardHeader>
+                        <div className="flex items-start justify-between">
+                          <FolderOpen className="h-8 w-8 text-primary" />
                         </div>
-                        <div>
-                          {project.whiteboards?.length || 0} whiteboard
-                          {project.whiteboards?.length !== 1 ? 's' : ''}
+                        <CardTitle className="mt-4">{project.name}</CardTitle>
+                        {project.description && (
+                          <CardDescription>
+                            {project.description}
+                          </CardDescription>
+                        )}
+                      </CardHeader>
+                      <CardContent>
+                        <div className="text-sm text-muted-foreground space-y-1">
+                          <div>
+                            {project.folders?.length || 0} folder
+                            {project.folders?.length !== 1 ? 's' : ''}
+                          </div>
+                          <div>
+                            {project.whiteboards?.length || 0} whiteboard
+                            {project.whiteboards?.length !== 1 ? 's' : ''}
+                          </div>
                         </div>
-                      </div>
-                    </CardContent>
-                  </Card>
-                ))}
+                      </CardContent>
+                    </Card>
+                  ))}
               </div>
             </div>
           </div>
@@ -264,7 +273,9 @@ function HomePage() {
               </Button>
               <Button
                 type="submit"
-                disabled={!projectName.trim() || createProjectMutation.isPending}
+                disabled={
+                  !projectName.trim() || createProjectMutation.isPending
+                }
               >
                 {createProjectMutation.isPending ? 'Creating...' : 'Create'}
               </Button>

@@ -5,8 +5,13 @@
  * with the existing Prisma database schema.
  */
 
-import type { Node, Edge } from '@xyflow/react'
-import type { DiagramTable, Column, Relationship, Cardinality } from '@prisma/client'
+import type { Edge, Node } from '@xyflow/react'
+import type {
+  Cardinality,
+  Column,
+  DiagramTable,
+  Relationship,
+} from '@prisma/client'
 
 /**
  * Display mode for table nodes
@@ -24,7 +29,7 @@ export type CardinalityType = Cardinality
 export interface TableNodeData {
   /** The table entity with its columns */
   table: DiagramTable & {
-    columns: Column[]
+    columns: Array<Column>
   }
 
   /** Whether this table is actively selected (clicked) */
@@ -110,8 +115,8 @@ export interface CanvasInteractionState {
 export interface ELKGraph {
   id: string
   layoutOptions: Record<string, string>
-  children: ELKNode[]
-  edges: ELKEdge[]
+  children: Array<ELKNode>
+  edges: Array<ELKEdge>
 }
 
 /**
@@ -121,8 +126,8 @@ export interface ELKNode {
   id: string
   width: number
   height: number
-  x?: number  // Set by ELK after layout
-  y?: number  // Set by ELK after layout
+  x?: number // Set by ELK after layout
+  y?: number // Set by ELK after layout
 }
 
 /**
@@ -130,22 +135,22 @@ export interface ELKNode {
  */
 export interface ELKEdge {
   id: string
-  sources: string[]
-  targets: string[]
+  sources: Array<string>
+  targets: Array<string>
 }
 
 /**
  * Result of highlighting calculation
  */
 export interface HighlightResult {
-  nodes: TableNodeType[]
-  edges: RelationshipEdgeType[]
+  nodes: Array<TableNodeType>
+  edges: Array<RelationshipEdgeType>
 }
 
 /**
  * Edge lookup map (for performance)
  */
-export type EdgeMap = Map<string, RelationshipEdgeType[]>
+export type EdgeMap = Map<string, Array<RelationshipEdgeType>>
 
 /**
  * Zoom constraints
