@@ -2,9 +2,12 @@
 // React Flow-specific WebSocket collaboration hook
 
 import { useCallback, useEffect } from 'react'
-import type { Node, Edge } from '@xyflow/react'
 import { useCollaboration } from './use-collaboration'
-import type { TableNodeType, RelationshipEdgeType } from '@/lib/react-flow/types'
+import type { Edge, Node } from '@xyflow/react'
+import type {
+  RelationshipEdgeType,
+  TableNodeType,
+} from '@/lib/react-flow/types'
 
 /**
  * Position update event data from WebSocket
@@ -46,12 +49,16 @@ export interface PositionUpdateEvent {
 export function useWhiteboardCollaboration(
   whiteboardId: string,
   userId: string,
-  onPositionUpdate: (tableId: string, positionX: number, positionY: number) => void
+  onPositionUpdate: (
+    tableId: string,
+    positionX: number,
+    positionY: number,
+  ) => void,
 ) {
   // Use the base collaboration hook
   const { emit, on, off, connectionState, activeUsers } = useCollaboration(
     whiteboardId,
-    userId
+    userId,
   )
 
   // Listen for table position updates from other users
@@ -85,7 +92,7 @@ export function useWhiteboardCollaboration(
         userId,
       })
     },
-    [emit, userId]
+    [emit, userId],
   )
 
   return {

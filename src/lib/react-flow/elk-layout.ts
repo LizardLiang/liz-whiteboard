@@ -3,9 +3,9 @@
  * Provides hierarchical auto-layout using Eclipse Layout Kernel (ELK)
  */
 
-import type { Node, Edge } from '@xyflow/react'
+import type { Edge, Node } from '@xyflow/react'
 import type { ELKNode } from 'elkjs'
-import type { TableNodeType, RelationshipEdgeType } from './types'
+import type { RelationshipEdgeType, TableNodeType } from './types'
 
 /**
  * ELK graph structure for layout computation
@@ -13,11 +13,11 @@ import type { TableNodeType, RelationshipEdgeType } from './types'
 export interface ELKGraph {
   id: string
   layoutOptions: Record<string, string>
-  children: ELKNode[]
+  children: Array<ELKNode>
   edges: Array<{
     id: string
-    sources: string[]
-    targets: string[]
+    sources: Array<string>
+    targets: Array<string>
   }>
 }
 
@@ -45,9 +45,9 @@ export const DEFAULT_ELK_OPTIONS = {
  * @returns ELK graph structure
  */
 export function convertNodesToELKGraph(
-  nodes: TableNodeType[],
-  edges: RelationshipEdgeType[],
-  layoutOptions: Record<string, string> = DEFAULT_ELK_OPTIONS
+  nodes: Array<TableNodeType>,
+  edges: Array<RelationshipEdgeType>,
+  layoutOptions: Record<string, string> = DEFAULT_ELK_OPTIONS,
 ): ELKGraph {
   return {
     id: 'root',
@@ -75,12 +75,12 @@ export function convertNodesToELKGraph(
  * @returns Updated React Flow nodes with new positions
  */
 export function applyELKLayout(
-  nodes: TableNodeType[],
-  elkNodes: ELKNode[]
-): TableNodeType[] {
+  nodes: Array<TableNodeType>,
+  elkNodes: Array<ELKNode>,
+): Array<TableNodeType> {
   // Create lookup map for O(1) position lookup
   const layoutMap = new Map(
-    elkNodes.map((n) => [n.id, { x: n.x ?? 0, y: n.y ?? 0 }])
+    elkNodes.map((n) => [n.id, { x: n.x ?? 0, y: n.y ?? 0 }]),
   )
 
   return nodes.map((node) => {
@@ -106,15 +106,15 @@ export function applyELKLayout(
  * @returns Promise resolving to updated nodes with computed positions
  */
 export async function computeELKLayout(
-  nodes: TableNodeType[],
-  edges: RelationshipEdgeType[],
-  layoutOptions?: Record<string, string>
-): Promise<TableNodeType[]> {
+  nodes: Array<TableNodeType>,
+  edges: Array<RelationshipEdgeType>,
+  layoutOptions?: Record<string, string>,
+): Promise<Array<TableNodeType>> {
   return new Promise((resolve, reject) => {
     // Create Web Worker
     const worker = new Worker(
       new URL('./elk-layout.worker.ts', import.meta.url),
-      { type: 'module' }
+      { type: 'module' },
     )
 
     // Set timeout to prevent hanging (10 seconds)
@@ -157,7 +157,7 @@ export async function computeELKLayout(
  * @returns Array of {id, x, y} objects for database update
  */
 export function extractPositionsForBatchUpdate(
-  nodes: TableNodeType[]
+  nodes: Array<TableNodeType>,
 ): Array<{ id: string; positionX: number; positionY: number }> {
   return nodes.map((node) => ({
     id: node.id,

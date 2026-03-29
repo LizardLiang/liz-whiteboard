@@ -15,11 +15,11 @@ const elk = new ELK()
 interface ELKLayoutMessage {
   id: string
   layoutOptions: Record<string, string>
-  children: ELKNode[]
+  children: Array<ELKNode>
   edges: Array<{
     id: string
-    sources: string[]
-    targets: string[]
+    sources: Array<string>
+    targets: Array<string>
   }>
 }
 

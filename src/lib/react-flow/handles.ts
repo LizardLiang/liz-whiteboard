@@ -8,8 +8,11 @@
  * @param type - 'source' (right side) or 'target' (left side)
  * @returns Handle ID in format: {columnId}-{type}
  */
-export function generateHandleId(columnId: string, type: 'source' | 'target'): string {
-  return `${columnId}-${type}`;
+export function generateHandleId(
+  columnId: string,
+  type: 'source' | 'target',
+): string {
+  return `${columnId}-${type}`
 }
 
 /**
@@ -17,12 +20,15 @@ export function generateHandleId(columnId: string, type: 'source' | 'target'): s
  * @param handleId - Handle ID in format: {columnId}-{type}
  * @returns Object with columnId and type
  */
-export function parseHandleId(handleId: string): { columnId: string; type: 'source' | 'target' } {
-  const lastDashIndex = handleId.lastIndexOf('-');
-  const columnId = handleId.substring(0, lastDashIndex);
-  const type = handleId.substring(lastDashIndex + 1) as 'source' | 'target';
+export function parseHandleId(handleId: string): {
+  columnId: string
+  type: 'source' | 'target'
+} {
+  const lastDashIndex = handleId.lastIndexOf('-')
+  const columnId = handleId.substring(0, lastDashIndex)
+  const type = handleId.substring(lastDashIndex + 1) as 'source' | 'target'
 
-  return { columnId, type };
+  return { columnId, type }
 }
 
 // ============================================================================
@@ -39,10 +45,10 @@ export function parseHandleId(handleId: string): { columnId: string; type: 'sour
 export function calculateHandlePosition(
   columnIndex: number,
   headerHeight: number = 40,
-  rowHeight: number = 28
+  rowHeight: number = 28,
 ): number {
   // Position handle at vertical center of column row
-  return headerHeight + (columnIndex * rowHeight) + (rowHeight / 2);
+  return headerHeight + columnIndex * rowHeight + rowHeight / 2
 }
 
 /**
@@ -55,8 +61,8 @@ export function calculateHandlePosition(
 export function getHandleStyle(
   columnIndex: number,
   headerHeight: number = 40,
-  rowHeight: number = 28
+  rowHeight: number = 28,
 ): { top: string } {
-  const topPx = calculateHandlePosition(columnIndex, headerHeight, rowHeight);
-  return { top: `${topPx}px` };
+  const topPx = calculateHandlePosition(columnIndex, headerHeight, rowHeight)
+  return { top: `${topPx}px` }
 }

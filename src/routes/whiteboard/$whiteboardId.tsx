@@ -80,7 +80,8 @@ function WhiteboardEditor() {
   const reactFlowAutoLayoutRef = useRef<(() => Promise<void>) | null>(null)
 
   // React Flow display mode controls (set via callback)
-  const [reactFlowShowMode, setReactFlowShowMode] = useState<string>('ALL_FIELDS')
+  const [reactFlowShowMode, setReactFlowShowMode] =
+    useState<string>('ALL_FIELDS')
   const reactFlowShowModeRef = useRef<((mode: string) => void) | null>(null)
 
   // Canvas stage ref for programmatic zoom controls

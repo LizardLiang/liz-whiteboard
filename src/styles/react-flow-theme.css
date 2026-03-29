@@ -56,7 +56,7 @@
 /* ----------------------------------------------------------------------------
  * CSS Variables - Dark Mode
  * ---------------------------------------------------------------------------- */
-:root[class~="dark"] {
+:root[class~='dark'] {
   /* Table Node Colors */
   --rf-table-bg: #1f2937;
   --rf-table-border: #374151;
@@ -142,7 +142,9 @@
 /* Base edge path — thin, elegant default */
 .react-flow__edge path.react-flow__edge-path {
   stroke-linecap: round;
-  transition: stroke-width 0.2s ease, opacity 0.2s ease;
+  transition:
+    stroke-width 0.2s ease,
+    opacity 0.2s ease;
 }
 
 /* Hover state — subtle thickening, visible elevation */

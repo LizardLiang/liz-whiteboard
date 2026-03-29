@@ -149,9 +149,11 @@ Use fd -e py to find all Python files"
 **Last Updated**: 2025-10-28
 
 ## Active Technologies
+
 - TypeScript 5.7, React 19.2 (002-react-flow-migration)
 - PostgreSQL via Prisma (existing schema for tables, columns, relationships, positions) (002-react-flow-migration)
 - PostgreSQL via Prisma (existing schema preserved) (003-react-flow-migration)
 
 ## Recent Changes
+
 - 002-react-flow-migration: Added TypeScript 5.7, React 19.2

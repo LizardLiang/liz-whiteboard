@@ -1,6 +1,6 @@
-import type { NodeTypes, EdgeTypes } from '@xyflow/react';
-import { TableNode } from './TableNode.new';
-import { RelationshipEdge } from './RelationshipEdge.new';
+import { TableNode } from './TableNode.new'
+import { RelationshipEdge } from './RelationshipEdge.new'
+import type { EdgeTypes, NodeTypes } from '@xyflow/react'
 
 /**
  * Custom node types for React Flow
@@ -8,7 +8,7 @@ import { RelationshipEdge } from './RelationshipEdge.new';
  */
 export const nodeTypes: NodeTypes = {
   erTable: TableNode,
-};
+}
 
 /**
  * Custom edge types for React Flow
@@ -16,4 +16,4 @@ export const nodeTypes: NodeTypes = {
  */
 export const edgeTypes: EdgeTypes = {
   erRelationship: RelationshipEdge,
-};
+}

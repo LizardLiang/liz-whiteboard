@@ -151,7 +151,7 @@ export function FolderItem({
         </div>
 
         {/* Action Buttons */}
-        <div className="absolute right-1 top-1 flex gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
+        <div className="absolute right-1 top-1 flex gap-1 opacity-0 group-hover:opacity-100 transition-opacity bg-sidebar rounded-md px-0.5">
           {onCreateWhiteboard && (
             <Button
               variant="ghost"
