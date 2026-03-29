@@ -4,8 +4,9 @@
  * Convert Prisma Relationship entities to React Flow edges
  */
 
-import type { Relationship, Column, Cardinality } from '@prisma/client'
-import type { RelationshipEdgeType, RelationshipEdgeData } from './types'
+import { createColumnHandleId } from './edge-routing'
+import type { Cardinality, Column, Relationship } from '@prisma/client'
+import type { RelationshipEdgeData, RelationshipEdgeType } from './types'
 
 /**
  * Create unique handle ID for column connection point
@@ -81,15 +82,24 @@ export function convertRelationshipToEdge(
   relationship: Relationship & {
     sourceColumn: Column
     targetColumn: Column
-  }
+  },
 ): RelationshipEdgeType {
   return {
     id: relationship.id,
     type: 'relationship',
     source: relationship.sourceTableId,
     target: relationship.targetTableId,
-    sourceHandle: createHandleId(relationship.sourceTableId, relationship.sourceColumnId),
-    targetHandle: createHandleId(relationship.targetTableId, relationship.targetColumnId),
+    // Default to right→left; ReactFlowCanvas will recalculate based on actual positions
+    sourceHandle: createColumnHandleId(
+      relationship.sourceTableId,
+      relationship.sourceColumnId,
+      'right',
+    ),
+    targetHandle: createColumnHandleId(
+      relationship.targetTableId,
+      relationship.targetColumnId,
+      'left',
+    ),
     data: {
       relationship,
       cardinality: relationship.cardinality,
@@ -109,10 +119,10 @@ export function convertRelationshipToEdge(
  * @returns Array of React Flow RelationshipEdgeType
  */
 export function convertRelationshipsToEdges(
-  relationships: (Relationship & {
+  relationships: Array<Relationship & {
     sourceColumn: Column
     targetColumn: Column
-  })[]
-): RelationshipEdgeType[] {
+  }>,
+): Array<RelationshipEdgeType> {
   return relationships.map((rel) => convertRelationshipToEdge(rel))
 }
