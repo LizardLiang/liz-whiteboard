@@ -42,13 +42,13 @@ export function parseHandleId(handleId: string): {
 export function getCardinalityMarkerStart(cardinality: Cardinality): string {
   switch (cardinality) {
     case 'ONE_TO_ONE':
-      return 'url(#zeroOrOneLeft)'
+      return 'url(#cardinality-one-left)'
     case 'ONE_TO_MANY':
-      return 'url(#zeroOrOneLeft)'
+      return 'url(#cardinality-one-left)'
     case 'MANY_TO_ONE':
-      return 'url(#zeroOrManyLeft)'
+      return 'url(#cardinality-many-left)'
     case 'MANY_TO_MANY':
-      return 'url(#zeroOrManyLeft)'
+      return 'url(#cardinality-many-left)'
   }
 }
 
@@ -61,13 +61,13 @@ export function getCardinalityMarkerStart(cardinality: Cardinality): string {
 export function getCardinalityMarkerEnd(cardinality: Cardinality): string {
   switch (cardinality) {
     case 'ONE_TO_ONE':
-      return 'url(#zeroOrOneRight)'
+      return 'url(#cardinality-one-right)'
     case 'ONE_TO_MANY':
-      return 'url(#zeroOrManyRight)'
+      return 'url(#cardinality-many-right)'
     case 'MANY_TO_ONE':
-      return 'url(#zeroOrOneRight)'
+      return 'url(#cardinality-one-right)'
     case 'MANY_TO_MANY':
-      return 'url(#zeroOrManyRight)'
+      return 'url(#cardinality-many-right)'
   }
 }
 

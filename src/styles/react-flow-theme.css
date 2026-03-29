@@ -19,9 +19,22 @@
   --rf-foreign-key-color: #10b981;
 
   /* Edge/Relationship Colors */
-  --rf-edge-stroke: #6b7280;
-  --rf-edge-stroke-hover: #111827;
+  --rf-edge-stroke: #94a3b8;
+  --rf-edge-stroke-hover: #475569;
   --rf-edge-stroke-selected: #3b82f6;
+
+  /* Edge Gradient (source → target directional flow) */
+  --rf-edge-gradient-start: #94a3b8;
+  --rf-edge-gradient-end: #cbd5e1;
+  --rf-edge-gradient-start-active: #3b82f6;
+  --rf-edge-gradient-end-active: #60a5fa;
+
+  /* Edge Glow (highlight/selection aura) */
+  --rf-edge-glow: rgba(59, 130, 246, 0.25);
+
+  /* Edge Labels */
+  --rf-edge-label-bg: rgba(255, 255, 255, 0.85);
+  --rf-edge-label-border: rgba(148, 163, 184, 0.3);
 
   /* Handle Colors */
   --rf-handle-bg: #ffffff;
@@ -57,9 +70,22 @@
   --rf-foreign-key-color: #34d399;
 
   /* Edge/Relationship Colors */
-  --rf-edge-stroke: #9ca3af;
-  --rf-edge-stroke-hover: #f9fafb;
+  --rf-edge-stroke: #64748b;
+  --rf-edge-stroke-hover: #cbd5e1;
   --rf-edge-stroke-selected: #60a5fa;
+
+  /* Edge Gradient (source → target directional flow) */
+  --rf-edge-gradient-start: #64748b;
+  --rf-edge-gradient-end: #475569;
+  --rf-edge-gradient-start-active: #60a5fa;
+  --rf-edge-gradient-end-active: #93c5fd;
+
+  /* Edge Glow (highlight/selection aura) */
+  --rf-edge-glow: rgba(96, 165, 250, 0.2);
+
+  /* Edge Labels */
+  --rf-edge-label-bg: rgba(31, 41, 55, 0.85);
+  --rf-edge-label-border: rgba(100, 116, 139, 0.3);
 
   /* Handle Colors */
   --rf-handle-bg: #1f2937;
@@ -94,7 +120,7 @@
 }
 
 /* ----------------------------------------------------------------------------
- * Table Node Styles (will be populated in later tasks)
+ * Table Node Styles
  * ---------------------------------------------------------------------------- */
 .react-flow__node-erTable {
   background: var(--rf-table-bg);
@@ -110,20 +136,29 @@
 }
 
 /* ----------------------------------------------------------------------------
- * Relationship Edge Styles (will be populated in later tasks)
+ * Relationship Edge Styles
  * ---------------------------------------------------------------------------- */
-.react-flow__edge-erRelationship path {
-  stroke: var(--rf-edge-stroke);
-  stroke-width: 2;
+
+/* Base edge path — thin, elegant default */
+.react-flow__edge path.react-flow__edge-path {
+  stroke-linecap: round;
+  transition: stroke-width 0.2s ease, opacity 0.2s ease;
 }
 
-.react-flow__edge-erRelationship:hover path {
-  stroke: var(--rf-edge-stroke-hover);
+/* Hover state — subtle thickening, visible elevation */
+.react-flow__edge:hover path.react-flow__edge-path {
+  stroke-width: 2.5;
+  filter: drop-shadow(0 0 3px var(--rf-edge-glow));
 }
 
-.react-flow__edge-erRelationship.selected path {
-  stroke: var(--rf-edge-stroke-selected);
-  stroke-width: 3;
+/* Selected state */
+.react-flow__edge.selected path.react-flow__edge-path {
+  stroke-width: 2.5;
+}
+
+/* Invisible interaction target — wider clickable area */
+.react-flow__edge-interaction {
+  stroke-width: 20;
 }
 
 /* ----------------------------------------------------------------------------
