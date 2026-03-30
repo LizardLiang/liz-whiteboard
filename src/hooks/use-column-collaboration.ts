@@ -8,7 +8,7 @@
  * This hook is the sole persistence path for column mutations.
  */
 
-import { useCallback, useEffect } from 'react'
+import { useCallback, useEffect, useRef } from 'react'
 import { useCollaboration } from './use-collaboration'
 import type { Column } from '@prisma/client'
 import type { DataType, UpdateColumn } from '@/data/schema'
@@ -44,6 +44,12 @@ export interface UseColumnCollaborationCallbacks {
   onColumnUpdated: (data: ColumnUpdatedEvent) => void
   onColumnDeleted: (data: ColumnDeletedEvent) => void
   onColumnError: (data: ColumnErrorEvent) => void
+  /**
+   * Called when the WebSocket reconnects after a disconnection.
+   * The consumer should re-fetch server state to discard any stale
+   * optimistic updates that were not confirmed before the disconnect.
+   */
+  onReconnect?: () => void
 }
 
 export function useColumnCollaboration(
@@ -57,6 +63,10 @@ export function useColumnCollaboration(
   )
 
   const isConnected = connectionState === 'connected'
+
+  // Track whether we have connected at least once so we can distinguish
+  // the initial connect from a reconnect for the onReconnect callback.
+  const hasConnectedRef = useRef(false)
 
   // Register event listeners
   useEffect(() => {
@@ -87,16 +97,30 @@ export function useColumnCollaboration(
       }
     }
 
+    // On reconnect, trigger a state refresh so stale optimistic updates
+    // that were not confirmed before the disconnect are replaced with
+    // authoritative server data.
+    const handleConnect = () => {
+      if (hasConnectedRef.current) {
+        // This is a reconnect — call the optional refresh callback
+        callbacks.onReconnect?.()
+      } else {
+        hasConnectedRef.current = true
+      }
+    }
+
     on('column:created', handleCreated)
     on('column:updated', handleUpdated)
     on('column:deleted', handleDeleted)
     on('error', handleError)
+    on('connect', handleConnect)
 
     return () => {
       off('column:created', handleCreated)
       off('column:updated', handleUpdated)
       off('column:deleted', handleDeleted)
       off('error', handleError)
+      off('connect', handleConnect)
     }
   }, [on, off, userId, callbacks])
 

@@ -5,12 +5,13 @@
 
 import { memo, useCallback, useMemo, useState } from 'react'
 import type { Column } from '@prisma/client'
-import type { TableNodeData, RelationshipEdgeType } from '@/lib/react-flow/types'
+import type { TableNodeData, RelationshipEdgeType, TableNodeType } from '@/lib/react-flow/types'
 import type { EditingField, ColumnRelationship } from './column/types'
 import type { DataType } from '@/data/schema'
 import { ColumnRow } from './column/ColumnRow'
 import { AddColumnRow } from './column/AddColumnRow'
 import { DeleteColumnDialog } from './column/DeleteColumnDialog'
+import { useNodes } from '@xyflow/react'
 
 interface TableNodeProps {
   data: TableNodeData
@@ -32,6 +33,18 @@ export const TableNode = memo(
     } = data
 
     const columns = table.columns
+
+    // Build a lookup map from tableId → tableName using the live node list
+    const allNodes = useNodes<TableNodeType['data']>()
+    const tableNameById = useMemo(() => {
+      const map = new Map<string, string>()
+      allNodes.forEach((node) => {
+        if (node.data?.table?.id && node.data?.table?.name) {
+          map.set(node.data.table.id, node.data.table.name)
+        }
+      })
+      return map
+    }, [allNodes])
 
     // --- Local editing state ---
     const [editingField, setEditingField] = useState<EditingField | null>(null)
@@ -152,14 +165,14 @@ export const TableNode = memo(
         const rel = edge.data!.relationship
         return {
           id: edge.id,
-          sourceTableName: rel.sourceTableId, // tableId fallback — names come from edge data
+          sourceTableName: tableNameById.get(rel.sourceTableId) ?? rel.sourceTableId,
           sourceColumnName: rel.sourceColumn.name,
-          targetTableName: rel.targetTableId,
+          targetTableName: tableNameById.get(rel.targetTableId) ?? rel.targetTableId,
           targetColumnName: rel.targetColumn.name,
           cardinality: edge.data!.cardinality,
         }
       })
-    }, [deletingColumn, columnEdgeMap])
+    }, [deletingColumn, columnEdgeMap, tableNameById])
 
     // --- Create handler ---
     const handleCreate = useCallback(

@@ -48,6 +48,7 @@ export const ColumnRow = memo(
     onCancelEdit,
     onToggleConstraint,
     onDelete,
+    edges: _edges,
   }: ColumnRowProps) => {
     const isEditingName =
       editingField?.columnId === column.id && editingField.field === 'name'
@@ -113,13 +114,13 @@ export const ColumnRow = memo(
           <Handle
             type="source"
             position={Position.Left}
-            id={createColumnHandleId(tableId, column.id, 'left')}
+            id={createColumnHandleId(tableId, column.id, 'left', 'source')}
             style={{ left: '-5px', opacity: 0, pointerEvents: 'none' }}
           />
           <Handle
             type="target"
             position={Position.Left}
-            id={createColumnHandleId(tableId, column.id, 'left')}
+            id={createColumnHandleId(tableId, column.id, 'left', 'target')}
             style={{ left: '-5px' }}
           />
 
@@ -233,13 +234,13 @@ export const ColumnRow = memo(
           <Handle
             type="source"
             position={Position.Right}
-            id={createColumnHandleId(tableId, column.id, 'right')}
+            id={createColumnHandleId(tableId, column.id, 'right', 'source')}
             style={{ right: '-5px' }}
           />
           <Handle
             type="target"
             position={Position.Right}
-            id={createColumnHandleId(tableId, column.id, 'right')}
+            id={createColumnHandleId(tableId, column.id, 'right', 'target')}
             style={{ right: '-5px', opacity: 0, pointerEvents: 'none' }}
           />
         </div>

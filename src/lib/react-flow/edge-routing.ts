@@ -17,18 +17,20 @@ const DEFAULT_NODE_HEIGHT = 150
 export type HandleSide = 'left' | 'right'
 
 /**
- * Build column-level handle ID with side information.
- * Format: `{tableId}__{columnId}__{side}`
+ * Build column-level handle ID with side and type information.
+ * Format: `{tableId}__{columnId}__{side}__{type}`
  *
- * React Flow matches handles by id + type (source/target), so source
- * and target handles on the same side share the same id.
+ * React Flow requires unique handle IDs within a node. Source and target
+ * handles on the same side must have distinct IDs so edge routing resolves
+ * to the correct handle.
  */
 export function createColumnHandleId(
   tableId: string,
   columnId: string,
   side: HandleSide,
+  type: 'source' | 'target' = 'source',
 ): string {
-  return `${tableId}__${columnId}__${side}`
+  return `${tableId}__${columnId}__${side}__${type}`
 }
 
 /**
@@ -90,11 +92,13 @@ export function recalculateEdgeHandles(
     edge.source,
     sourceColumnId,
     sourceSide,
+    'source',
   )
   const newTargetHandle = createColumnHandleId(
     edge.target,
     targetColumnId,
     targetSide,
+    'target',
   )
 
   if (
