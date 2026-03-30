@@ -15,7 +15,7 @@ export interface AddColumnRowProps {
   onCreate: (data: { name: string; dataType: DataType; order: number }) => Promise<void>
 }
 
-export function AddColumnRow({ tableId: _tableId, existingColumns, onCreate }: AddColumnRowProps) {
+export function AddColumnRow({ existingColumns, onCreate }: AddColumnRowProps) {
   const [isExpanded, setIsExpanded] = useState(false)
   const [name, setName] = useState('')
   const [dataType, setDataType] = useState<DataType>('string')

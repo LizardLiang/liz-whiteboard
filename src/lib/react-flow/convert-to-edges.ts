@@ -156,11 +156,13 @@ export function convertRelationshipToEdge(
       relationship.sourceTableId,
       relationship.sourceColumnId,
       'right',
+      'source',
     ),
     targetHandle: createColumnHandleId(
       relationship.targetTableId,
       relationship.targetColumnId,
       'left',
+      'target',
     ),
     data: {
       relationship,

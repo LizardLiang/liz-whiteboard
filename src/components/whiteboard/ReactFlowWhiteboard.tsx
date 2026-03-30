@@ -244,14 +244,34 @@ function ReactFlowWhiteboardInner({
     [],
   )
 
+  // Ref for onColumnError — breaks the circular dependency between
+  // useColumnCollaboration (needs callbacks) and useColumnMutations (provides onColumnError)
+  const onColumnErrorRef = useRef<(data: any) => void>(() => {})
+
+  // On WebSocket reconnect, re-fetch whiteboard data to replace any stale
+  // optimistic state that was never confirmed before the disconnect.
+  const handleReconnect = useCallback(() => {
+    queryClient.invalidateQueries({ queryKey: ['whiteboard', whiteboardId] })
+    queryClient.invalidateQueries({ queryKey: ['relationships', whiteboardId] })
+  }, [queryClient, whiteboardId])
+
+  // Ref for onReconnect — keeps the callback stable without re-registering socket listeners
+  const onReconnectRef = useRef(handleReconnect)
+  useEffect(() => {
+    onReconnectRef.current = handleReconnect
+  }, [handleReconnect])
+
   // Column mutations hook (optimistic updates + WebSocket emit)
   const columnMutationsCallbacks = useMemo(
     () => ({
       onColumnCreated,
       onColumnUpdated,
       onColumnDeleted,
-      onColumnError: (_data: any) => {
-        // Will be wired up after columnMutations is created below
+      onColumnError: (data: any) => {
+        onColumnErrorRef.current(data)
+      },
+      onReconnect: () => {
+        onReconnectRef.current()
       },
     }),
     [onColumnCreated, onColumnUpdated, onColumnDeleted],
@@ -273,6 +293,11 @@ function ReactFlowWhiteboardInner({
     emitColumnDelete,
     isConnected,
   )
+
+  // Wire onColumnError ref now that columnMutations is available
+  useEffect(() => {
+    onColumnErrorRef.current = columnMutations.onColumnError
+  }, [columnMutations.onColumnError])
 
   // Column mutation callbacks (outgoing — triggered by user interactions in TableNode)
   const handleColumnCreate = useCallback(
