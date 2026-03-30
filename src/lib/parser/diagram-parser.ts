@@ -60,11 +60,27 @@ const TextType = createToken({ name: 'TextType', pattern: /text/ })
 const UuidType = createToken({ name: 'UuidType', pattern: /uuid/ })
 const JsonType = createToken({ name: 'JsonType', pattern: /json/ })
 
-// Cardinality
-const OneToOne = createToken({ name: 'OneToOne', pattern: /one-to-one/ })
-const OneToMany = createToken({ name: 'OneToMany', pattern: /one-to-many/ })
-const ManyToOne = createToken({ name: 'ManyToOne', pattern: /many-to-one/ })
+// Cardinality — longer tokens must come before shorter ones that are prefixes
+const ManyToZeroOrMany = createToken({ name: 'ManyToZeroOrMany', pattern: /many-to-zero-or-many/ })
+const ManyToZeroOrOne = createToken({ name: 'ManyToZeroOrOne', pattern: /many-to-zero-or-one/ })
 const ManyToMany = createToken({ name: 'ManyToMany', pattern: /many-to-many/ })
+const ManyToOne = createToken({ name: 'ManyToOne', pattern: /many-to-one/ })
+const ZeroOrManyToZeroOrMany = createToken({ name: 'ZeroOrManyToZeroOrMany', pattern: /zero-or-many-to-zero-or-many/ })
+const ZeroOrManyToZeroOrOne = createToken({ name: 'ZeroOrManyToZeroOrOne', pattern: /zero-or-many-to-zero-or-one/ })
+const ZeroOrManyToMany = createToken({ name: 'ZeroOrManyToMany', pattern: /zero-or-many-to-many/ })
+const ZeroOrManyToOne = createToken({ name: 'ZeroOrManyToOne', pattern: /zero-or-many-to-one/ })
+const ZeroOrOneToZeroOrMany = createToken({ name: 'ZeroOrOneToZeroOrMany', pattern: /zero-or-one-to-zero-or-many/ })
+const ZeroOrOneToZeroOrOne = createToken({ name: 'ZeroOrOneToZeroOrOne', pattern: /zero-or-one-to-zero-or-one/ })
+const ZeroOrOneToMany = createToken({ name: 'ZeroOrOneToMany', pattern: /zero-or-one-to-many/ })
+const ZeroOrOneToOne = createToken({ name: 'ZeroOrOneToOne', pattern: /zero-or-one-to-one/ })
+const ZeroToMany = createToken({ name: 'ZeroToMany', pattern: /zero-to-many/ })
+const ZeroToOne = createToken({ name: 'ZeroToOne', pattern: /zero-to-one/ })
+const OneToMany = createToken({ name: 'OneToMany', pattern: /one-to-many/ })
+const OneToOne = createToken({ name: 'OneToOne', pattern: /one-to-one/ })
+const SelfReferencing = createToken({
+  name: 'SelfReferencing',
+  pattern: /self-referencing/,
+})
 
 // Symbols
 const LCurly = createToken({ name: 'LCurly', pattern: /{/ })
@@ -97,10 +113,24 @@ const allTokens = [
   Fk,
   Unique,
   Null,
-  OneToOne,
-  OneToMany,
-  ManyToOne,
+  // Cardinality tokens — longer patterns before shorter prefix matches
+  ManyToZeroOrMany,
+  ManyToZeroOrOne,
   ManyToMany,
+  ManyToOne,
+  ZeroOrManyToZeroOrMany,
+  ZeroOrManyToZeroOrOne,
+  ZeroOrManyToMany,
+  ZeroOrManyToOne,
+  ZeroOrOneToZeroOrMany,
+  ZeroOrOneToZeroOrOne,
+  ZeroOrOneToMany,
+  ZeroOrOneToOne,
+  ZeroToMany,
+  ZeroToOne,
+  OneToMany,
+  OneToOne,
+  SelfReferencing,
   // Data types
   IntType,
   StringType,
@@ -231,14 +261,27 @@ class DiagramParser extends CstParser {
   })
 
   /**
-   * Cardinality rule: one-to-one | one-to-many | many-to-one | many-to-many
+   * Cardinality rule: all 17 cardinality types
    */
   private cardinality = this.RULE('cardinality', () => {
     this.OR([
-      { ALT: () => this.CONSUME(OneToOne) },
-      { ALT: () => this.CONSUME(OneToMany) },
-      { ALT: () => this.CONSUME(ManyToOne) },
+      { ALT: () => this.CONSUME(ManyToZeroOrMany) },
+      { ALT: () => this.CONSUME(ManyToZeroOrOne) },
       { ALT: () => this.CONSUME(ManyToMany) },
+      { ALT: () => this.CONSUME(ManyToOne) },
+      { ALT: () => this.CONSUME(ZeroOrManyToZeroOrMany) },
+      { ALT: () => this.CONSUME(ZeroOrManyToZeroOrOne) },
+      { ALT: () => this.CONSUME(ZeroOrManyToMany) },
+      { ALT: () => this.CONSUME(ZeroOrManyToOne) },
+      { ALT: () => this.CONSUME(ZeroOrOneToZeroOrMany) },
+      { ALT: () => this.CONSUME(ZeroOrOneToZeroOrOne) },
+      { ALT: () => this.CONSUME(ZeroOrOneToMany) },
+      { ALT: () => this.CONSUME(ZeroOrOneToOne) },
+      { ALT: () => this.CONSUME(ZeroToMany) },
+      { ALT: () => this.CONSUME(ZeroToOne) },
+      { ALT: () => this.CONSUME(OneToMany) },
+      { ALT: () => this.CONSUME(OneToOne) },
+      { ALT: () => this.CONSUME(SelfReferencing) },
     ])
   })
 }
@@ -389,6 +432,19 @@ class DiagramVisitor extends BaseCstVisitor {
     if (ctx.OneToMany) return 'one-to-many'
     if (ctx.ManyToOne) return 'many-to-one'
     if (ctx.ManyToMany) return 'many-to-many'
+    if (ctx.ZeroToOne) return 'zero-to-one'
+    if (ctx.ZeroToMany) return 'zero-to-many'
+    if (ctx.SelfReferencing) return 'self-referencing'
+    if (ctx.ManyToZeroOrOne) return 'many-to-zero-or-one'
+    if (ctx.ManyToZeroOrMany) return 'many-to-zero-or-many'
+    if (ctx.ZeroOrOneToOne) return 'zero-or-one-to-one'
+    if (ctx.ZeroOrOneToMany) return 'zero-or-one-to-many'
+    if (ctx.ZeroOrOneToZeroOrOne) return 'zero-or-one-to-zero-or-one'
+    if (ctx.ZeroOrOneToZeroOrMany) return 'zero-or-one-to-zero-or-many'
+    if (ctx.ZeroOrManyToOne) return 'zero-or-many-to-one'
+    if (ctx.ZeroOrManyToMany) return 'zero-or-many-to-many'
+    if (ctx.ZeroOrManyToZeroOrOne) return 'zero-or-many-to-zero-or-one'
+    if (ctx.ZeroOrManyToZeroOrMany) return 'zero-or-many-to-zero-or-many'
     throw new Error('Unknown cardinality')
   }
 
@@ -481,17 +537,44 @@ export function parseDiagram(text: string): ParseResult {
  * Convert AST to database entities
  * Maps Cardinality enum values from text syntax to Prisma enum
  */
-function mapCardinality(
-  cardinality: Cardinality,
-): 'ONE_TO_ONE' | 'ONE_TO_MANY' | 'MANY_TO_ONE' | 'MANY_TO_MANY' {
-  const mapping: Record<
-    Cardinality,
-    'ONE_TO_ONE' | 'ONE_TO_MANY' | 'MANY_TO_ONE' | 'MANY_TO_MANY'
-  > = {
+type PrismaCardinality =
+  | 'ONE_TO_ONE'
+  | 'ONE_TO_MANY'
+  | 'MANY_TO_ONE'
+  | 'MANY_TO_MANY'
+  | 'ZERO_TO_ONE'
+  | 'ZERO_TO_MANY'
+  | 'SELF_REFERENCING'
+  | 'MANY_TO_ZERO_OR_ONE'
+  | 'MANY_TO_ZERO_OR_MANY'
+  | 'ZERO_OR_ONE_TO_ONE'
+  | 'ZERO_OR_ONE_TO_MANY'
+  | 'ZERO_OR_ONE_TO_ZERO_OR_ONE'
+  | 'ZERO_OR_ONE_TO_ZERO_OR_MANY'
+  | 'ZERO_OR_MANY_TO_ONE'
+  | 'ZERO_OR_MANY_TO_MANY'
+  | 'ZERO_OR_MANY_TO_ZERO_OR_ONE'
+  | 'ZERO_OR_MANY_TO_ZERO_OR_MANY'
+
+function mapCardinality(cardinality: Cardinality): PrismaCardinality {
+  const mapping: Record<Cardinality, PrismaCardinality> = {
     'one-to-one': 'ONE_TO_ONE',
     'one-to-many': 'ONE_TO_MANY',
     'many-to-one': 'MANY_TO_ONE',
     'many-to-many': 'MANY_TO_MANY',
+    'zero-to-one': 'ZERO_TO_ONE',
+    'zero-to-many': 'ZERO_TO_MANY',
+    'self-referencing': 'SELF_REFERENCING',
+    'many-to-zero-or-one': 'MANY_TO_ZERO_OR_ONE',
+    'many-to-zero-or-many': 'MANY_TO_ZERO_OR_MANY',
+    'zero-or-one-to-one': 'ZERO_OR_ONE_TO_ONE',
+    'zero-or-one-to-many': 'ZERO_OR_ONE_TO_MANY',
+    'zero-or-one-to-zero-or-one': 'ZERO_OR_ONE_TO_ZERO_OR_ONE',
+    'zero-or-one-to-zero-or-many': 'ZERO_OR_ONE_TO_ZERO_OR_MANY',
+    'zero-or-many-to-one': 'ZERO_OR_MANY_TO_ONE',
+    'zero-or-many-to-many': 'ZERO_OR_MANY_TO_MANY',
+    'zero-or-many-to-zero-or-one': 'ZERO_OR_MANY_TO_ZERO_OR_ONE',
+    'zero-or-many-to-zero-or-many': 'ZERO_OR_MANY_TO_ZERO_OR_MANY',
   }
   return mapping[cardinality]
 }
@@ -515,7 +598,7 @@ export function astToEntities(
     sourceColumn: string
     targetTable: string
     targetColumn: string
-    cardinality: 'ONE_TO_ONE' | 'ONE_TO_MANY' | 'MANY_TO_ONE' | 'MANY_TO_MANY'
+    cardinality: PrismaCardinality
     label?: string
   }>
 } {

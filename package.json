@@ -15,7 +15,8 @@
     "db:push": "dotenv -e .env.local -- prisma db push",
     "db:migrate": "dotenv -e .env.local -- prisma migrate dev",
     "db:studio": "dotenv -e .env.local -- prisma studio",
-    "db:seed": "dotenv -e .env.local -- prisma db seed"
+    "db:seed": "dotenv -e .env.local -- prisma db seed",
+    "db:seed-demo": "dotenv -e .env.local -- bun prisma/seed-ecommerce-demo.ts"
   },
   "dependencies": {
     "@prisma/client": "^6.16.3",

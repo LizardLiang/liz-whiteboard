@@ -64,6 +64,19 @@ export type Cardinality =
   | 'one-to-many'
   | 'many-to-one'
   | 'many-to-many'
+  | 'zero-to-one'
+  | 'zero-to-many'
+  | 'self-referencing'
+  | 'many-to-zero-or-one'
+  | 'many-to-zero-or-many'
+  | 'zero-or-one-to-one'
+  | 'zero-or-one-to-many'
+  | 'zero-or-one-to-zero-or-one'
+  | 'zero-or-one-to-zero-or-many'
+  | 'zero-or-many-to-one'
+  | 'zero-or-many-to-many'
+  | 'zero-or-many-to-zero-or-one'
+  | 'zero-or-many-to-zero-or-many'
 
 /**
  * Relationship definition between two tables

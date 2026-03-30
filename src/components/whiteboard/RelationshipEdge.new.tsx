@@ -10,22 +10,66 @@ import type { RelationshipEdgeData } from '@/lib/react-flow/types'
 import { Z_INDEX } from '@/lib/react-flow/types'
 
 // ── Layout constants ──
-// How far past the handle to push the base toward the table (negative = toward table)
+// How far past the handle to push the crow's foot prong tips toward the table
 const TABLE_INSET = 10
-// Crow's foot length (from prong tips at table to convergence point)
+// Crow's foot convergence point distance outward from handle
 const CROW_LENGTH = 2
 // Crow's foot half-spread (perpendicular distance of outer prongs)
 const CROW_SPREAD = 6
 // Curvature of outer prongs (quadratic bezier bow)
 const CROW_CURVE = 3
-// "One" bar distance from handle
-const BAR_DIST = 0
-// "One" bar half-height
+// Multiplicity bar inset toward table from handle
+const MULT_BAR_INSET = 2
+// Bar half-height (perpendicular extent of a bar symbol)
 const BAR_HALF = 6
-// Circle radius
-const CIRCLE_R = 3
-// Gap between last icon element and circle center
-const CIRCLE_GAP = 4
+// Open circle radius (for zero/optional symbol)
+const CIRCLE_R = 4
+// Gap between the multiplicity symbol outer edge and the optionality symbol center
+const OPT_GAP = 7
+
+const CARDINALITY_COLORS: Record<string, string> = {
+  ONE_TO_ONE: '#60a5fa',                    // blue
+  ONE_TO_MANY: '#34d399',                   // green
+  MANY_TO_ONE: '#a78bfa',                   // purple
+  MANY_TO_MANY: '#f97316',                  // orange
+  ZERO_TO_ONE: '#22d3ee',                   // cyan
+  ZERO_TO_MANY: '#facc15',                  // yellow
+  SELF_REFERENCING: '#f87171',              // red
+  MANY_TO_ZERO_OR_ONE: '#fb7185',           // rose
+  MANY_TO_ZERO_OR_MANY: '#e879f9',          // fuchsia
+  ZERO_OR_ONE_TO_ONE: '#4ade80',            // lime green
+  ZERO_OR_ONE_TO_MANY: '#86efac',           // light green
+  ZERO_OR_ONE_TO_ZERO_OR_ONE: '#67e8f9',    // light cyan
+  ZERO_OR_ONE_TO_ZERO_OR_MANY: '#a5f3fc',   // lighter cyan
+  ZERO_OR_MANY_TO_ONE: '#c084fc',           // light purple
+  ZERO_OR_MANY_TO_MANY: '#d8b4fe',          // lighter purple
+  ZERO_OR_MANY_TO_ZERO_OR_ONE: '#fda4af',   // light rose
+  ZERO_OR_MANY_TO_ZERO_OR_MANY: '#fbbf24',  // amber
+}
+
+const CARDINALITY_FLAGS: Record<string, { srcMany: boolean; srcOpt: boolean; tgtMany: boolean; tgtOpt: boolean }> = {
+  ONE_TO_ONE:                        { srcMany: false, srcOpt: false, tgtMany: false, tgtOpt: false },
+  ONE_TO_MANY:                       { srcMany: false, srcOpt: false, tgtMany: true,  tgtOpt: false },
+  MANY_TO_ONE:                       { srcMany: true,  srcOpt: false, tgtMany: false, tgtOpt: false },
+  MANY_TO_MANY:                      { srcMany: true,  srcOpt: false, tgtMany: true,  tgtOpt: false },
+  ZERO_TO_ONE:                       { srcMany: false, srcOpt: false, tgtMany: false, tgtOpt: true  },
+  ZERO_TO_MANY:                      { srcMany: false, srcOpt: false, tgtMany: true,  tgtOpt: true  },
+  SELF_REFERENCING:                  { srcMany: false, srcOpt: false, tgtMany: true,  tgtOpt: true  },
+  MANY_TO_ZERO_OR_ONE:               { srcMany: true,  srcOpt: false, tgtMany: false, tgtOpt: true  },
+  MANY_TO_ZERO_OR_MANY:              { srcMany: true,  srcOpt: false, tgtMany: true,  tgtOpt: true  },
+  ZERO_OR_ONE_TO_ONE:                { srcMany: false, srcOpt: true,  tgtMany: false, tgtOpt: false },
+  ZERO_OR_ONE_TO_MANY:               { srcMany: false, srcOpt: true,  tgtMany: true,  tgtOpt: false },
+  ZERO_OR_ONE_TO_ZERO_OR_ONE:        { srcMany: false, srcOpt: true,  tgtMany: false, tgtOpt: true  },
+  ZERO_OR_ONE_TO_ZERO_OR_MANY:       { srcMany: false, srcOpt: true,  tgtMany: true,  tgtOpt: true  },
+  ZERO_OR_MANY_TO_ONE:               { srcMany: true,  srcOpt: true,  tgtMany: false, tgtOpt: false },
+  ZERO_OR_MANY_TO_MANY:              { srcMany: true,  srcOpt: true,  tgtMany: true,  tgtOpt: false },
+  ZERO_OR_MANY_TO_ZERO_OR_ONE:       { srcMany: true,  srcOpt: true,  tgtMany: false, tgtOpt: true  },
+  ZERO_OR_MANY_TO_ZERO_OR_MANY:      { srcMany: true,  srcOpt: true,  tgtMany: true,  tgtOpt: true  },
+}
+
+function getCardinalityColor(cardinality: string | undefined): string {
+  return CARDINALITY_COLORS[cardinality ?? ''] ?? '#94a3b8'
+}
 
 function outwardAngle(position: Position): number {
   switch (position) {
@@ -41,131 +85,114 @@ function outwardAngle(position: Position): number {
 }
 
 /**
- * Render all cardinality indicators for one end of the edge.
+ * Render proper two-symbol crow's foot notation for one end of an edge.
  *
- * Layout along the outward direction from handle:
- *   [table border] ← handle ← crowfoot/bar ← circle ← edge line
+ * Standard crow's foot layout (reading outward from handle toward the edge line):
+ *   [table] ← handle ← [multiplicity: crow/bar] ··· [optionality: circle/bar] ← edge line
  *
- * - Crow's foot: prong tips at the handle point (touching the table),
- *   convergence at CROW_LENGTH outward.
- * - One bar: perpendicular line at BAR_DIST outward.
- * - Zero circle: after the bar or crow tip, at CIRCLE_GAP further out.
+ * Multiplicity symbol (closest to table, at handle):
+ *   - Crow's foot (⋈) = many
+ *   - Single perpendicular bar (|) = one
  *
- * Returns the total extent (distance from handle to outermost icon edge)
- * so the caller can clip the edge line.
+ * Optionality symbol (further out, OPT_GAP from multiplicity):
+ *   - Open circle (○) = zero / optional
+ *   - Single perpendicular bar (|) = mandatory / one
+ *
+ * Combined meanings:
+ *   bar  + bar    = exactly one  (||)
+ *   crow + bar    = one or many  (|⋈)
+ *   bar  + circle = zero or one  (○|)
+ *   crow + circle = zero or many (○⋈)
  */
 function CardinalityIndicator(props: {
   x: number
   y: number
   angle: number
   isMany: boolean
+  isOptional: boolean
   color: string
   sw: number
 }) {
-  const { x, y, angle, isMany, color, sw } = props
+  const { x, y, angle, isMany, isOptional, color, sw } = props
   const cos = Math.cos(angle)
   const sin = Math.sin(angle)
+  // Perpendicular unit vector (rotated 90°)
   const px = Math.sin(angle)
   const py = -Math.cos(angle)
 
-  if (isMany) {
-    // Crow's foot: base (prong tips) pushed past handle toward the table
-    const baseX = x - cos * TABLE_INSET
-    const baseY = y - sin * TABLE_INSET
-    const tipX = x + cos * CROW_LENGTH
-    const tipY = y + sin * CROW_LENGTH
-    const midX = (tipX + baseX) / 2
-    const midY = (tipY + baseY) / 2
+  // ── Multiplicity symbol (at handle, touching the table) ──
+  const multSymbol = isMany ? (
+    (() => {
+      // Crow's foot: prong tips at handle - TABLE_INSET, convergence at handle + CROW_LENGTH
+      const baseX = x - cos * TABLE_INSET
+      const baseY = y - sin * TABLE_INSET
+      const tipX = x + cos * CROW_LENGTH
+      const tipY = y + sin * CROW_LENGTH
+      const midX = (tipX + baseX) / 2
+      const midY = (tipY + baseY) / 2
+      return (
+        <g>
+          <path
+            d={`M ${tipX} ${tipY} Q ${midX - px * (CROW_SPREAD * 0.5 + CROW_CURVE)} ${midY - py * (CROW_SPREAD * 0.5 + CROW_CURVE)} ${baseX - px * CROW_SPREAD} ${baseY - py * CROW_SPREAD}`}
+            fill="none" stroke={color} strokeWidth={sw} strokeLinecap="round"
+          />
+          <line
+            x1={tipX} y1={tipY} x2={baseX} y2={baseY}
+            stroke={color} strokeWidth={sw} strokeLinecap="round"
+          />
+          <path
+            d={`M ${tipX} ${tipY} Q ${midX + px * (CROW_SPREAD * 0.5 + CROW_CURVE)} ${midY + py * (CROW_SPREAD * 0.5 + CROW_CURVE)} ${baseX + px * CROW_SPREAD} ${baseY + py * CROW_SPREAD}`}
+            fill="none" stroke={color} strokeWidth={sw} strokeLinecap="round"
+          />
+        </g>
+      )
+    })()
+  ) : (
+    // Single perpendicular bar, slightly inset toward table
+    <line
+      x1={x - cos * MULT_BAR_INSET - px * BAR_HALF}
+      y1={y - sin * MULT_BAR_INSET - py * BAR_HALF}
+      x2={x - cos * MULT_BAR_INSET + px * BAR_HALF}
+      y2={y - sin * MULT_BAR_INSET + py * BAR_HALF}
+      stroke={color} strokeWidth={sw} strokeLinecap="round"
+    />
+  )
 
-    // Circle right after the convergence point
-    const circleX = tipX + cos * CIRCLE_GAP
-    const circleY = tipY + sin * CIRCLE_GAP
+  // ── Optionality symbol (outward from multiplicity) ──
+  // Position: past multiplicity outer edge + OPT_GAP
+  const multExt = isMany ? CROW_LENGTH : 0
+  const optX = x + cos * (multExt + OPT_GAP)
+  const optY = y + sin * (multExt + OPT_GAP)
 
-    return (
-      <g>
-        {/* Upper prong */}
-        <path
-          d={`M ${tipX} ${tipY} Q ${midX - px * (CROW_SPREAD * 0.5 + CROW_CURVE)} ${midY - py * (CROW_SPREAD * 0.5 + CROW_CURVE)} ${baseX - px * CROW_SPREAD} ${baseY - py * CROW_SPREAD}`}
-          fill="none"
-          stroke={color}
-          strokeWidth={sw}
-          strokeLinecap="round"
-        />
-        {/* Center line */}
-        <line
-          x1={tipX}
-          y1={tipY}
-          x2={baseX}
-          y2={baseY}
-          stroke={color}
-          strokeWidth={sw}
-          strokeLinecap="round"
-        />
-        {/* Lower prong */}
-        <path
-          d={`M ${tipX} ${tipY} Q ${midX + px * (CROW_SPREAD * 0.5 + CROW_CURVE)} ${midY + py * (CROW_SPREAD * 0.5 + CROW_CURVE)} ${baseX + px * CROW_SPREAD} ${baseY + py * CROW_SPREAD}`}
-          fill="none"
-          stroke={color}
-          strokeWidth={sw}
-          strokeLinecap="round"
-        />
-        {/* Zero circle */}
-        <circle
-          cx={circleX}
-          cy={circleY}
-          r={CIRCLE_R}
-          fill="var(--rf-background)"
-          stroke={color}
-          strokeWidth={sw}
-        />
-      </g>
-    )
-  }
-
-  // "One" cross + circle — push slightly toward table
-  const barX = x - cos * 2
-  const barY = y - sin * 2
-  const circleX = barX + cos * CIRCLE_GAP
-  const circleY = barY + sin * CIRCLE_GAP
+  const optSymbol = isOptional ? (
+    // Open circle = zero / optional
+    <circle
+      cx={optX} cy={optY} r={CIRCLE_R}
+      fill="var(--rf-background)" stroke={color} strokeWidth={sw}
+    />
+  ) : (
+    // Single perpendicular bar = mandatory / one
+    <line
+      x1={optX - px * BAR_HALF}
+      y1={optY - py * BAR_HALF}
+      x2={optX + px * BAR_HALF}
+      y2={optY + py * BAR_HALF}
+      stroke={color} strokeWidth={sw} strokeLinecap="round"
+    />
+  )
 
   return (
     <g>
-      {/* Perpendicular bar */}
-      <line
-        x1={barX - px * BAR_HALF}
-        y1={barY - py * BAR_HALF}
-        x2={barX + px * BAR_HALF}
-        y2={barY + py * BAR_HALF}
-        stroke={color}
-        strokeWidth={sw}
-        strokeLinecap="round"
-      />
-      {/* Parallel bar (forms a cross with the perpendicular bar) */}
-      <line
-        x1={barX - cos * BAR_HALF}
-        y1={barY - sin * BAR_HALF}
-        x2={barX + cos * BAR_HALF}
-        y2={barY + sin * BAR_HALF}
-        stroke={color}
-        strokeWidth={sw}
-        strokeLinecap="round"
-      />
-      <circle
-        cx={circleX}
-        cy={circleY}
-        r={CIRCLE_R}
-        fill="var(--rf-background)"
-        stroke={color}
-        strokeWidth={sw}
-      />
+      {multSymbol}
+      {optSymbol}
     </g>
   )
 }
 
-/** Total extent of the indicator icons from the handle point */
+/** Total extent (outward from handle) that the indicator occupies — used to shorten the edge path */
 function indicatorExtent(isMany: boolean): number {
-  if (isMany) return CROW_LENGTH + CIRCLE_GAP + CIRCLE_R
-  return BAR_DIST + CIRCLE_GAP + CIRCLE_R
+  const multExt = isMany ? CROW_LENGTH : 0
+  return multExt + OPT_GAP + CIRCLE_R
 }
 
 export const RelationshipEdge = memo(
@@ -192,10 +219,12 @@ export const RelationshipEdge = memo(
       [targetPosition],
     )
 
-    const sourceIsMany =
-      cardinality === 'MANY_TO_ONE' || cardinality === 'MANY_TO_MANY'
-    const targetIsMany =
-      cardinality === 'ONE_TO_MANY' || cardinality === 'MANY_TO_MANY'
+    // Derive multiplicity and optionality from lookup table
+    const flags = CARDINALITY_FLAGS[cardinality ?? ''] ?? { srcMany: false, srcOpt: false, tgtMany: false, tgtOpt: false }
+    const sourceIsMany = flags.srcMany
+    const sourceIsOptional = flags.srcOpt
+    const targetIsMany = flags.tgtMany
+    const targetIsOptional = flags.tgtOpt
 
     // Shorten the path so it stops before the cardinality icons.
     // Move source/target inward by the icon extent.
@@ -219,9 +248,8 @@ export const RelationshipEdge = memo(
     const gradientId = `edge-gradient-${id}`
     const glowFilterId = `edge-glow-${id}`
 
-    const color = isActive
-      ? 'var(--rf-edge-stroke-selected)'
-      : 'var(--rf-edge-stroke)'
+    const cardinalityColor = getCardinalityColor(cardinality)
+    const color = isActive ? 'var(--rf-edge-stroke-selected)' : cardinalityColor
     const sw = isActive ? 1.6 : 1.2
 
     return (
@@ -238,17 +266,14 @@ export const RelationshipEdge = memo(
             <stop
               offset="0%"
               stopColor={
-                isActive
-                  ? 'var(--rf-edge-gradient-start-active)'
-                  : 'var(--rf-edge-gradient-start)'
+                isActive ? 'var(--rf-edge-gradient-start-active)' : cardinalityColor
               }
+              stopOpacity={isActive ? 1 : 0.7}
             />
             <stop
               offset="100%"
               stopColor={
-                isActive
-                  ? 'var(--rf-edge-gradient-end-active)'
-                  : 'var(--rf-edge-gradient-end)'
+                isActive ? 'var(--rf-edge-gradient-end-active)' : cardinalityColor
               }
             />
           </linearGradient>
@@ -303,6 +328,7 @@ export const RelationshipEdge = memo(
           y={sourceY}
           angle={srcAngle}
           isMany={sourceIsMany}
+          isOptional={sourceIsOptional}
           color={color}
           sw={sw}
         />
@@ -313,6 +339,7 @@ export const RelationshipEdge = memo(
           y={targetY}
           angle={tgtAngle}
           isMany={targetIsMany}
+          isOptional={targetIsOptional}
           color={color}
           sw={sw}
         />

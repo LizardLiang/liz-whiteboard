@@ -50,6 +50,36 @@ export function getCardinalityMarkerStart(cardinality: Cardinality): string {
       return 'url(#cardinality-many-left)'
     case 'MANY_TO_MANY':
       return 'url(#cardinality-many-left)'
+    case 'ZERO_TO_ONE':
+      return 'url(#cardinality-zero-one-left)'
+    case 'ZERO_TO_MANY':
+      return 'url(#cardinality-zero-many-left)'
+    case 'SELF_REFERENCING':
+      return 'url(#cardinality-one-left)'
+    // New types — source is many (|⋈)
+    case 'MANY_TO_ZERO_OR_ONE':
+      return 'url(#cardinality-many-left)'
+    case 'MANY_TO_ZERO_OR_MANY':
+      return 'url(#cardinality-many-left)'
+    case 'ZERO_OR_MANY_TO_ONE':
+      return 'url(#cardinality-zero-many-left)'
+    case 'ZERO_OR_MANY_TO_MANY':
+      return 'url(#cardinality-zero-many-left)'
+    case 'ZERO_OR_MANY_TO_ZERO_OR_ONE':
+      return 'url(#cardinality-zero-many-left)'
+    case 'ZERO_OR_MANY_TO_ZERO_OR_MANY':
+      return 'url(#cardinality-zero-many-left)'
+    // New types — source is one, optional (○|)
+    case 'ZERO_OR_ONE_TO_ONE':
+      return 'url(#cardinality-zero-one-left)'
+    case 'ZERO_OR_ONE_TO_MANY':
+      return 'url(#cardinality-zero-one-left)'
+    case 'ZERO_OR_ONE_TO_ZERO_OR_ONE':
+      return 'url(#cardinality-zero-one-left)'
+    case 'ZERO_OR_ONE_TO_ZERO_OR_MANY':
+      return 'url(#cardinality-zero-one-left)'
+    default:
+      return 'url(#cardinality-one-left)'
   }
 }
 
@@ -69,6 +99,38 @@ export function getCardinalityMarkerEnd(cardinality: Cardinality): string {
       return 'url(#cardinality-one-right)'
     case 'MANY_TO_MANY':
       return 'url(#cardinality-many-right)'
+    case 'ZERO_TO_ONE':
+      return 'url(#cardinality-one-right)'
+    case 'ZERO_TO_MANY':
+      return 'url(#cardinality-many-right)'
+    case 'SELF_REFERENCING':
+      return 'url(#cardinality-many-right)'
+    // New types — target is zero-or-one (○|)
+    case 'MANY_TO_ZERO_OR_ONE':
+      return 'url(#cardinality-zero-one-right)'
+    case 'ZERO_OR_ONE_TO_ZERO_OR_ONE':
+      return 'url(#cardinality-zero-one-right)'
+    case 'ZERO_OR_MANY_TO_ZERO_OR_ONE':
+      return 'url(#cardinality-zero-one-right)'
+    // New types — target is zero-or-many (○⋈)
+    case 'MANY_TO_ZERO_OR_MANY':
+      return 'url(#cardinality-zero-many-right)'
+    case 'ZERO_OR_ONE_TO_ZERO_OR_MANY':
+      return 'url(#cardinality-zero-many-right)'
+    case 'ZERO_OR_MANY_TO_ZERO_OR_MANY':
+      return 'url(#cardinality-zero-many-right)'
+    // New types — target is exactly one (||)
+    case 'ZERO_OR_ONE_TO_ONE':
+      return 'url(#cardinality-one-right)'
+    case 'ZERO_OR_MANY_TO_ONE':
+      return 'url(#cardinality-one-right)'
+    // New types — target is one-or-many (|⋈)
+    case 'ZERO_OR_ONE_TO_MANY':
+      return 'url(#cardinality-many-right)'
+    case 'ZERO_OR_MANY_TO_MANY':
+      return 'url(#cardinality-many-right)'
+    default:
+      return 'url(#cardinality-one-right)'
   }
 }
 
