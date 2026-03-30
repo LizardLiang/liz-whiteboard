@@ -60,6 +60,28 @@ export const CardinalityMarkerDefs = () => {
         color="var(--rf-edge-stroke-selected)"
         isHighlighted
       />
+
+      {/* ── Zero-or-one left markers (for ZERO_TO_ONE) ──── */}
+      <CardinalityZeroOrOneLeftMarker
+        id="cardinality-zero-one-left"
+        color="var(--rf-edge-stroke)"
+      />
+      <CardinalityZeroOrOneLeftMarker
+        id="cardinality-zero-one-left-highlight"
+        color="var(--rf-edge-stroke-selected)"
+        isHighlighted
+      />
+
+      {/* ── Zero-or-many left markers (for ZERO_TO_MANY) ── */}
+      <CardinalityZeroOrManyLeftMarker
+        id="cardinality-zero-many-left"
+        color="var(--rf-edge-stroke)"
+      />
+      <CardinalityZeroOrManyLeftMarker
+        id="cardinality-zero-many-left-highlight"
+        color="var(--rf-edge-stroke-selected)"
+        isHighlighted
+      />
     </div>
   )
 }
