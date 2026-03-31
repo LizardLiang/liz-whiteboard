@@ -206,15 +206,15 @@ export async function findProjectPageContent(
       throw new Error('Folder not found')
     }
 
-    // Fetch folders and whiteboards under this folder
+    // Fetch folders and whiteboards under this folder (projectId added for defense-in-depth)
     const [folders, whiteboards] = await Promise.all([
       prisma.folder.findMany({
-        where: { parentFolderId: folderId },
+        where: { projectId, parentFolderId: folderId },
         select: { id: true, name: true, createdAt: true },
         orderBy: { name: 'asc' },
       }),
       prisma.whiteboard.findMany({
-        where: { folderId },
+        where: { projectId, folderId },
         select: {
           id: true,
           name: true,
@@ -225,19 +225,27 @@ export async function findProjectPageContent(
       }),
     ])
 
-    // Build breadcrumb by walking up parentFolderId chain (depth-limited to 10)
+    // Build breadcrumb via single recursive CTE (one round-trip, no N+1)
+    // Starts at the target folder's parent and walks up to the root.
     const breadcrumb: ProjectPageContent['breadcrumb'] = []
-    let currentParentId: string | null = targetFolder.parentFolderId
-    let depth = 0
-    while (currentParentId && depth < 10) {
-      const ancestor = await prisma.folder.findUnique({
-        where: { id: currentParentId },
-        select: { id: true, name: true, parentFolderId: true },
-      })
-      if (!ancestor) break
-      breadcrumb.unshift({ id: ancestor.id, name: ancestor.name, type: 'folder' })
-      currentParentId = ancestor.parentFolderId
-      depth++
+    if (targetFolder.parentFolderId) {
+      type AncestorRow = { id: string; name: string; parentFolderId: string | null }
+      const ancestors = await prisma.$queryRaw<AncestorRow[]>`
+        WITH RECURSIVE ancestors AS (
+          SELECT id, name, "parentFolderId", "projectId"
+          FROM "Folder"
+          WHERE id = ${targetFolder.parentFolderId}
+          UNION ALL
+          SELECT f.id, f.name, f."parentFolderId", f."projectId"
+          FROM "Folder" f
+          INNER JOIN ancestors a ON f.id = a."parentFolderId"
+        )
+        SELECT id, name, "parentFolderId" FROM ancestors
+      `
+      // CTE returns leaf→root order; reverse to get root→leaf for the breadcrumb trail
+      for (const ancestor of ancestors.reverse()) {
+        breadcrumb.push({ id: ancestor.id, name: ancestor.name, type: 'folder' })
+      }
     }
     // Prepend project root
     breadcrumb.unshift({ id: project.id, name: project.name, type: 'project' })
