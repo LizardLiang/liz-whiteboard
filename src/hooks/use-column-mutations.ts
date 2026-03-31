@@ -37,6 +37,8 @@ type EmitColumnDelete = (columnId: string) => void
 export interface PendingMutation {
   type: 'create' | 'update' | 'delete'
   rollback: () => void
+  /** Queued updates to apply once a pending create resolves to a real ID */
+  pendingUpdates?: Array<Partial<UpdateColumn>>
 }
 
 export function useColumnMutations(
@@ -162,10 +164,22 @@ export function useColumnMutations(
             : node,
         ),
       )
-      // Remove the pending mutation now that it's confirmed
+
+      // Flush any updates that were queued while the create was still pending
+      const pendingCreate = pendingMutations.current.get(tempId)
+      const queuedUpdates = pendingCreate?.pendingUpdates ?? []
+
+      // Remove the pending create mutation now that it's confirmed
       pendingMutations.current.delete(tempId)
+
+      // Emit each queued update with the real DB ID
+      if (queuedUpdates.length > 0 && emitColumnUpdate) {
+        // Merge all queued updates into a single emission to avoid redundant round-trips
+        const merged = Object.assign({}, ...queuedUpdates) as Partial<UpdateColumn>
+        emitColumnUpdate(realId, merged)
+      }
     },
-    [setNodes],
+    [setNodes, emitColumnUpdate],
   )
 
   /**
@@ -232,6 +246,19 @@ export function useColumnMutations(
           )
         },
       })
+
+      // Guard: if columnId is still a pending create (temp UUID not yet confirmed by
+      // server), emitting an update now would send a temp ID the server doesn't know
+      // about, causing a "Record to update not found" error.  Queue the update
+      // instead — replaceTempId will flush queued updates once the real ID arrives.
+      const pendingCreate = pendingMutations.current.get(columnId)
+      if (pendingCreate?.type === 'create') {
+        if (!pendingCreate.pendingUpdates) {
+          pendingCreate.pendingUpdates = []
+        }
+        pendingCreate.pendingUpdates.push(data)
+        return
+      }
 
       // Emit via WebSocket
       if (emitColumnUpdate) {
@@ -349,7 +376,14 @@ export function useColumnMutations(
       if (isDuplicateName && data.name) {
         toast.error(`Column name '${data.name}' already exists in this table.`)
       } else if (data.message?.toLowerCase().includes('not found')) {
-        toast.error('Column was already deleted.')
+        // "Not found" means different things depending on which operation failed.
+        // For deletes it's safe to tell the user the column was already gone.
+        // For updates it's more likely a temp-ID race; give a more accurate message.
+        if (data.event === 'column:delete') {
+          toast.error('Column was already deleted.')
+        } else {
+          toast.error('Column not found — it may still be saving. Please try again.')
+        }
       } else {
         toast.error('Unable to save changes. Please try again.')
       }
