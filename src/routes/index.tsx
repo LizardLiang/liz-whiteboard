@@ -183,15 +183,12 @@ function HomePage() {
               <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
                 {projects &&
                   Array.isArray(projects) &&
-                  projects.map((project) => {
-                    // Find first whiteboard: check direct whiteboards, then folder whiteboards
-                    const firstDirectWhiteboard = project.whiteboards?.[0]
-                    const firstFolderWhiteboard =
-                      project.folders?.flatMap((f) => f.whiteboards ?? [])[0]
-                    const firstWhiteboard =
-                      firstDirectWhiteboard ?? firstFolderWhiteboard
-
-                    const cardContent = (
+                  projects.map((project) => (
+                    <Link
+                      key={project.id}
+                      to="/project/$projectId"
+                      params={{ projectId: project.id }}
+                    >
                       <Card className="hover:border-primary transition-colors cursor-pointer h-full">
                         <CardHeader>
                           <div className="flex items-start justify-between">
@@ -217,20 +214,8 @@ function HomePage() {
                           </div>
                         </CardContent>
                       </Card>
-                    )
-
-                    return firstWhiteboard ? (
-                      <Link
-                        key={project.id}
-                        to="/whiteboard/$whiteboardId"
-                        params={{ whiteboardId: firstWhiteboard.id }}
-                      >
-                        {cardContent}
-                      </Link>
-                    ) : (
-                      <div key={project.id}>{cardContent}</div>
-                    )
-                  })}
+                    </Link>
+                  ))}
               </div>
             </div>
           </div>

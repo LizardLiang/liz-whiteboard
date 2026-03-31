@@ -2,7 +2,7 @@
 // Project tree component for hierarchical navigation
 
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
-import { useNavigate, useParams } from '@tanstack/react-router'
+import { Link, useNavigate, useParams, useRouterState } from '@tanstack/react-router'
 import {
   ChevronDown,
   ChevronRight,
@@ -116,6 +116,11 @@ export function ProjectTree() {
   // Get current whiteboard ID from URL params
   const activeWhiteboardId =
     'whiteboardId' in params ? params.whiteboardId : undefined
+
+  // Get current pathname for route-based project highlighting
+  const currentPathname = useRouterState({
+    select: (s) => s.location.pathname,
+  })
 
   // Fetch projects with tree structure
   const { data: projects, isLoading } = useQuery({
@@ -429,12 +434,13 @@ export function ProjectTree() {
             const isExpanded = expandedProjects.has(project.id)
             const rootFolders = buildFolderTree(project.folders || [])
             const rootWhiteboards = project.whiteboards || []
+            // Active when URL is /project/:id or /project/:id/folder/:folderId
+            const isActiveProject = currentPathname.startsWith(`/project/${project.id}`)
 
             return (
               <Collapsible
                 key={project.id}
                 open={isExpanded}
-                onOpenChange={() => toggleProject(project.id)}
               >
                 <div className="group relative">
                   <div className="flex items-center gap-1 pr-8">
@@ -444,7 +450,10 @@ export function ProjectTree() {
                         variant="ghost"
                         size="sm"
                         className="h-8 w-8 p-0"
-                        onClick={(e) => e.stopPropagation()}
+                        onClick={(e) => {
+                          e.stopPropagation()
+                          toggleProject(project.id)
+                        }}
                       >
                         {isExpanded ? (
                           <ChevronDown className="h-4 w-4" />
@@ -454,12 +463,16 @@ export function ProjectTree() {
                       </Button>
                     </CollapsibleTrigger>
 
-                    <div className="flex items-center gap-2 flex-1 px-2 py-2 rounded-md hover:bg-accent/50 transition-colors">
+                    <Link
+                      to="/project/$projectId"
+                      params={{ projectId: project.id }}
+                      className={`flex items-center gap-2 flex-1 px-2 py-2 rounded-md hover:bg-accent/50 transition-colors ${isActiveProject ? 'bg-accent' : ''}`}
+                    >
                       <FolderPlus className="h-4 w-4 text-primary flex-shrink-0" />
                       <span className="text-sm font-medium flex-1 truncate">
                         {project.name}
                       </span>
-                    </div>
+                    </Link>
                   </div>
 
                   {/* Project action buttons */}
