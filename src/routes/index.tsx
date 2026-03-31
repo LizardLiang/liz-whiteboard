@@ -51,7 +51,7 @@ function HomePage() {
   // Fetch recent whiteboards
   const { data: recentWhiteboards, isLoading: recentLoading } = useQuery({
     queryKey: ['whiteboards', 'recent'],
-    queryFn: () => getRecentWhiteboards(8),
+    queryFn: () => getRecentWhiteboards({ data: 8 }),
   })
 
   // Create project mutation
