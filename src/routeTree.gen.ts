@@ -11,6 +11,7 @@
 import { Route as rootRouteImport } from './routes/__root'
 import { Route as IndexRouteImport } from './routes/index'
 import { Route as WhiteboardWhiteboardIdRouteImport } from './routes/whiteboard/$whiteboardId'
+import { Route as ProjectProjectIdRouteImport } from './routes/project.$projectId'
 import { Route as DemoTanstackQueryRouteImport } from './routes/demo/tanstack-query'
 import { Route as DemoPrismaRouteImport } from './routes/demo/prisma'
 import { Route as WhiteboardWhiteboardIdNewRouteImport } from './routes/whiteboard/$whiteboardId.new'
@@ -21,6 +22,7 @@ import { Route as DemoFormAddressRouteImport } from './routes/demo/form.address'
 import { Route as DemoApiTqTodosRouteImport } from './routes/demo/api.tq-todos'
 import { Route as DemoApiNamesRouteImport } from './routes/demo/api.names'
 import { Route as DemoStartSsrIndexRouteImport } from './routes/demo/start.ssr.index'
+import { Route as ProjectProjectIdFolderFolderIdRouteImport } from './routes/project.$projectId.folder.$folderId'
 import { Route as DemoStartSsrSpaModeRouteImport } from './routes/demo/start.ssr.spa-mode'
 import { Route as DemoStartSsrFullSsrRouteImport } from './routes/demo/start.ssr.full-ssr'
 import { Route as DemoStartSsrDataOnlyRouteImport } from './routes/demo/start.ssr.data-only'
@@ -33,6 +35,11 @@ const IndexRoute = IndexRouteImport.update({
 const WhiteboardWhiteboardIdRoute = WhiteboardWhiteboardIdRouteImport.update({
   id: '/whiteboard/$whiteboardId',
   path: '/whiteboard/$whiteboardId',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const ProjectProjectIdRoute = ProjectProjectIdRouteImport.update({
+  id: '/project/$projectId',
+  path: '/project/$projectId',
   getParentRoute: () => rootRouteImport,
 } as any)
 const DemoTanstackQueryRoute = DemoTanstackQueryRouteImport.update({
@@ -86,6 +93,12 @@ const DemoStartSsrIndexRoute = DemoStartSsrIndexRouteImport.update({
   path: '/demo/start/ssr/',
   getParentRoute: () => rootRouteImport,
 } as any)
+const ProjectProjectIdFolderFolderIdRoute =
+  ProjectProjectIdFolderFolderIdRouteImport.update({
+    id: '/folder/$folderId',
+    path: '/folder/$folderId',
+    getParentRoute: () => ProjectProjectIdRoute,
+  } as any)
 const DemoStartSsrSpaModeRoute = DemoStartSsrSpaModeRouteImport.update({
   id: '/demo/start/ssr/spa-mode',
   path: '/demo/start/ssr/spa-mode',
@@ -106,6 +119,7 @@ export interface FileRoutesByFullPath {
   '/': typeof IndexRoute
   '/demo/prisma': typeof DemoPrismaRoute
   '/demo/tanstack-query': typeof DemoTanstackQueryRoute
+  '/project/$projectId': typeof ProjectProjectIdRouteWithChildren
   '/whiteboard/$whiteboardId': typeof WhiteboardWhiteboardIdRouteWithChildren
   '/demo/api/names': typeof DemoApiNamesRoute
   '/demo/api/tq-todos': typeof DemoApiTqTodosRoute
@@ -117,12 +131,14 @@ export interface FileRoutesByFullPath {
   '/demo/start/ssr/data-only': typeof DemoStartSsrDataOnlyRoute
   '/demo/start/ssr/full-ssr': typeof DemoStartSsrFullSsrRoute
   '/demo/start/ssr/spa-mode': typeof DemoStartSsrSpaModeRoute
+  '/project/$projectId/folder/$folderId': typeof ProjectProjectIdFolderFolderIdRoute
   '/demo/start/ssr': typeof DemoStartSsrIndexRoute
 }
 export interface FileRoutesByTo {
   '/': typeof IndexRoute
   '/demo/prisma': typeof DemoPrismaRoute
   '/demo/tanstack-query': typeof DemoTanstackQueryRoute
+  '/project/$projectId': typeof ProjectProjectIdRouteWithChildren
   '/whiteboard/$whiteboardId': typeof WhiteboardWhiteboardIdRouteWithChildren
   '/demo/api/names': typeof DemoApiNamesRoute
   '/demo/api/tq-todos': typeof DemoApiTqTodosRoute
@@ -134,6 +150,7 @@ export interface FileRoutesByTo {
   '/demo/start/ssr/data-only': typeof DemoStartSsrDataOnlyRoute
   '/demo/start/ssr/full-ssr': typeof DemoStartSsrFullSsrRoute
   '/demo/start/ssr/spa-mode': typeof DemoStartSsrSpaModeRoute
+  '/project/$projectId/folder/$folderId': typeof ProjectProjectIdFolderFolderIdRoute
   '/demo/start/ssr': typeof DemoStartSsrIndexRoute
 }
 export interface FileRoutesById {
@@ -141,6 +158,7 @@ export interface FileRoutesById {
   '/': typeof IndexRoute
   '/demo/prisma': typeof DemoPrismaRoute
   '/demo/tanstack-query': typeof DemoTanstackQueryRoute
+  '/project/$projectId': typeof ProjectProjectIdRouteWithChildren
   '/whiteboard/$whiteboardId': typeof WhiteboardWhiteboardIdRouteWithChildren
   '/demo/api/names': typeof DemoApiNamesRoute
   '/demo/api/tq-todos': typeof DemoApiTqTodosRoute
@@ -152,6 +170,7 @@ export interface FileRoutesById {
   '/demo/start/ssr/data-only': typeof DemoStartSsrDataOnlyRoute
   '/demo/start/ssr/full-ssr': typeof DemoStartSsrFullSsrRoute
   '/demo/start/ssr/spa-mode': typeof DemoStartSsrSpaModeRoute
+  '/project/$projectId/folder/$folderId': typeof ProjectProjectIdFolderFolderIdRoute
   '/demo/start/ssr/': typeof DemoStartSsrIndexRoute
 }
 export interface FileRouteTypes {
@@ -160,6 +179,7 @@ export interface FileRouteTypes {
     | '/'
     | '/demo/prisma'
     | '/demo/tanstack-query'
+    | '/project/$projectId'
     | '/whiteboard/$whiteboardId'
     | '/demo/api/names'
     | '/demo/api/tq-todos'
@@ -171,12 +191,14 @@ export interface FileRouteTypes {
     | '/demo/start/ssr/data-only'
     | '/demo/start/ssr/full-ssr'
     | '/demo/start/ssr/spa-mode'
+    | '/project/$projectId/folder/$folderId'
     | '/demo/start/ssr'
   fileRoutesByTo: FileRoutesByTo
   to:
     | '/'
     | '/demo/prisma'
     | '/demo/tanstack-query'
+    | '/project/$projectId'
     | '/whiteboard/$whiteboardId'
     | '/demo/api/names'
     | '/demo/api/tq-todos'
@@ -188,12 +210,14 @@ export interface FileRouteTypes {
     | '/demo/start/ssr/data-only'
     | '/demo/start/ssr/full-ssr'
     | '/demo/start/ssr/spa-mode'
+    | '/project/$projectId/folder/$folderId'
     | '/demo/start/ssr'
   id:
     | '__root__'
     | '/'
     | '/demo/prisma'
     | '/demo/tanstack-query'
+    | '/project/$projectId'
     | '/whiteboard/$whiteboardId'
     | '/demo/api/names'
     | '/demo/api/tq-todos'
@@ -205,6 +229,7 @@ export interface FileRouteTypes {
     | '/demo/start/ssr/data-only'
     | '/demo/start/ssr/full-ssr'
     | '/demo/start/ssr/spa-mode'
+    | '/project/$projectId/folder/$folderId'
     | '/demo/start/ssr/'
   fileRoutesById: FileRoutesById
 }
@@ -212,6 +237,7 @@ export interface RootRouteChildren {
   IndexRoute: typeof IndexRoute
   DemoPrismaRoute: typeof DemoPrismaRoute
   DemoTanstackQueryRoute: typeof DemoTanstackQueryRoute
+  ProjectProjectIdRoute: typeof ProjectProjectIdRouteWithChildren
   WhiteboardWhiteboardIdRoute: typeof WhiteboardWhiteboardIdRouteWithChildren
   DemoApiNamesRoute: typeof DemoApiNamesRoute
   DemoApiTqTodosRoute: typeof DemoApiTqTodosRoute
@@ -239,6 +265,13 @@ declare module '@tanstack/react-router' {
       path: '/whiteboard/$whiteboardId'
       fullPath: '/whiteboard/$whiteboardId'
       preLoaderRoute: typeof WhiteboardWhiteboardIdRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/project/$projectId': {
+      id: '/project/$projectId'
+      path: '/project/$projectId'
+      fullPath: '/project/$projectId'
+      preLoaderRoute: typeof ProjectProjectIdRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/demo/tanstack-query': {
@@ -311,6 +344,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof DemoStartSsrIndexRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/project/$projectId/folder/$folderId': {
+      id: '/project/$projectId/folder/$folderId'
+      path: '/folder/$folderId'
+      fullPath: '/project/$projectId/folder/$folderId'
+      preLoaderRoute: typeof ProjectProjectIdFolderFolderIdRouteImport
+      parentRoute: typeof ProjectProjectIdRoute
+    }
     '/demo/start/ssr/spa-mode': {
       id: '/demo/start/ssr/spa-mode'
       path: '/demo/start/ssr/spa-mode'
@@ -335,6 +375,17 @@ declare module '@tanstack/react-router' {
   }
 }
 
+interface ProjectProjectIdRouteChildren {
+  ProjectProjectIdFolderFolderIdRoute: typeof ProjectProjectIdFolderFolderIdRoute
+}
+
+const ProjectProjectIdRouteChildren: ProjectProjectIdRouteChildren = {
+  ProjectProjectIdFolderFolderIdRoute: ProjectProjectIdFolderFolderIdRoute,
+}
+
+const ProjectProjectIdRouteWithChildren =
+  ProjectProjectIdRoute._addFileChildren(ProjectProjectIdRouteChildren)
+
 interface WhiteboardWhiteboardIdRouteChildren {
   WhiteboardWhiteboardIdNewRoute: typeof WhiteboardWhiteboardIdNewRoute
 }
@@ -353,6 +404,7 @@ const rootRouteChildren: RootRouteChildren = {
   IndexRoute: IndexRoute,
   DemoPrismaRoute: DemoPrismaRoute,
   DemoTanstackQueryRoute: DemoTanstackQueryRoute,
+  ProjectProjectIdRoute: ProjectProjectIdRouteWithChildren,
   WhiteboardWhiteboardIdRoute: WhiteboardWhiteboardIdRouteWithChildren,
   DemoApiNamesRoute: DemoApiNamesRoute,
   DemoApiTqTodosRoute: DemoApiTqTodosRoute,

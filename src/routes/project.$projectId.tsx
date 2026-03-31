@@ -2,7 +2,7 @@
 // Project root page — shows all folders and whiteboards at the project level.
 
 import { createFileRoute } from '@tanstack/react-router'
-import { useQuery, useQueryClient } from '@tanstack/react-query'
+import { useQuery } from '@tanstack/react-query'
 import { useState } from 'react'
 import { FolderPlus, Plus } from 'lucide-react'
 import { Button } from '@/components/ui/button'
@@ -20,7 +20,6 @@ export const Route = createFileRoute('/project/$projectId')({
 
 function ProjectPage() {
   const { projectId } = Route.useParams()
-  const queryClient = useQueryClient()
   const [whiteboardDialogOpen, setWhiteboardDialogOpen] = useState(false)
   const [folderDialogOpen, setFolderDialogOpen] = useState(false)
 
