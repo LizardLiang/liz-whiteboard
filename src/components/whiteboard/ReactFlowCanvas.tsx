@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import {
   Background,
   Controls,
@@ -95,6 +95,14 @@ export function ReactFlowCanvas({
   const [activeTableId, setActiveTableId] = useState<string | null>(null)
   const [hoveredTableId, setHoveredTableId] = useState<string | null>(null)
 
+  // Keep a ref to the latest edges so the highlighting effect can read current
+  // edges without adding them to its dependency array (which would cause an
+  // infinite loop via setEdges).
+  const edgesRef = useRef(edges)
+  useEffect(() => {
+    edgesRef.current = edges
+  })
+
   // Memoize node and edge types for performance
   const memoizedNodeTypes = useMemo(() => nodeTypes, [])
   const memoizedEdgeTypes = useMemo(() => edgeTypes, [])
@@ -141,19 +149,23 @@ export function ReactFlowCanvas({
     setEdges(recalculated)
   }, [initialEdges, initialNodes, setEdges])
 
-  // Apply highlighting when selection changes
+  // Apply highlighting when selection changes.
+  // Uses the functional updater form of setNodes so we always operate on the
+  // current node list rather than a stale closure snapshot. edgesRef.current
+  // provides the latest edges without adding edges to the dependency array
+  // (which would cause an infinite loop via setEdges).
   useEffect(() => {
-    const highlighted = calculateHighlighting(
-      nodes,
-      edges,
-      activeTableId,
-      hoveredTableId,
-    )
-
-    // Only update if highlighting state actually changed
-    setNodes(highlighted.nodes)
-    setEdges(highlighted.edges)
-  }, [activeTableId, hoveredTableId]) // Don't include nodes/edges to avoid infinite loop
+    setNodes((currentNodes) => {
+      const highlighted = calculateHighlighting(
+        currentNodes,
+        edgesRef.current,
+        activeTableId,
+        hoveredTableId,
+      )
+      setEdges(highlighted.edges)
+      return highlighted.nodes
+    })
+  }, [activeTableId, hoveredTableId, setNodes, setEdges])
 
   // Handle node click (selection)
   const onNodeClick = useCallback<NodeMouseHandler>((event, node) => {

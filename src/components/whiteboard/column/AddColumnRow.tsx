@@ -183,7 +183,6 @@ export function AddColumnRow({ existingColumns, onCreate }: AddColumnRowProps) {
       onClick={(e) => e.stopPropagation()}
       onPointerDown={(e) => {
         e.stopPropagation()
-        mouseDownInsideRef.current = true
       }}
     >
       <input
