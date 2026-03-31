@@ -11,8 +11,9 @@
 
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
-import { ReactFlowProvider } from '@xyflow/react'
+import { ReactFlowProvider, useReactFlow, useViewport } from '@xyflow/react'
 import { ReactFlowCanvas } from './ReactFlowCanvas'
+import type { ZoomControls } from './Toolbar'
 import { ConnectionStatusIndicator } from './ConnectionStatusIndicator'
 import type {
   RelationshipEdgeType,
@@ -34,6 +35,7 @@ import { useColumnMutations } from '@/hooks/use-column-mutations'
 import type { Column } from '@prisma/client'
 import type { CreateColumnPayload } from './column/types'
 import type { UpdateColumn } from '@/data/schema'
+import { getSessionUserId } from '@/lib/session-user-id'
 
 /**
  * ReactFlowWhiteboard Props
@@ -59,6 +61,10 @@ export interface ReactFlowWhiteboardProps {
     showMode: ShowMode,
     setShowMode: (mode: ShowMode) => void,
   ) => void
+  /** Callback to expose zoom controls and current zoom to parent */
+  onZoomControlsReady?: (controls: ZoomControls) => void
+  /** Callback to notify parent when viewport zoom changes */
+  onZoomChange?: (zoom: number) => void
 }
 
 /**
@@ -74,6 +80,8 @@ function ReactFlowWhiteboardInner({
   nodesDraggable,
   onAutoLayoutReady,
   onDisplayModeReady,
+  onZoomControlsReady,
+  onZoomChange,
 }: {
   whiteboardId: string
   userId: string
@@ -90,6 +98,8 @@ function ReactFlowWhiteboardInner({
     showMode: ShowMode,
     setShowMode: (mode: ShowMode) => void,
   ) => void
+  onZoomControlsReady?: (controls: ZoomControls) => void
+  onZoomChange?: (zoom: number) => void
 }) {
   const queryClient = useQueryClient()
 
@@ -125,9 +135,26 @@ function ReactFlowWhiteboardInner({
   }, [showMode])
 
   // Update local state when initial data changes (and attach callbacks)
-  // Callbacks refs are attached after they're defined below — see "Thread column mutation callbacks"
+  // Preserve existing callbacks from prev nodes so that a TanStack Query refetch
+  // (which updates initialNodes) does not wipe callbacks injected by later effects.
   useEffect(() => {
-    setNodes(initialNodes)
+    setNodes((prevNodes) => {
+      const prevNodeMap = new Map(prevNodes.map((n) => [n.id, n]))
+      return initialNodes.map((node) => {
+        const prev = prevNodeMap.get(node.id)
+        if (!prev) return node
+        // Preserve callbacks from previous node data, overwrite everything else
+        return {
+          ...node,
+          data: {
+            ...node.data,
+            onColumnCreate: prev.data.onColumnCreate,
+            onColumnUpdate: prev.data.onColumnUpdate,
+            onColumnDelete: prev.data.onColumnDelete,
+          },
+        }
+      })
+    })
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [initialNodes])
 
@@ -371,7 +398,7 @@ function ReactFlowWhiteboardInner({
       positionX: number
       positionY: number
     }) => {
-      return await updateTablePositionFn(params)
+      return await updateTablePositionFn({ data: params })
     },
     onSuccess: (updatedTable) => {
       // Update cache without full refetch for better performance
@@ -435,6 +462,34 @@ function ReactFlowWhiteboardInner({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []) // Only run once on mount
 
+  // React Flow zoom API (requires ReactFlowProvider context)
+  const reactFlowInstance = useReactFlow()
+  const viewport = useViewport()
+
+  // Build zoom controls and expose to parent once on mount
+  useEffect(() => {
+    if (onZoomControlsReady) {
+      const controls: ZoomControls = {
+        zoomIn: () => reactFlowInstance.zoomIn({ duration: 200 }),
+        zoomOut: () => reactFlowInstance.zoomOut({ duration: 200 }),
+        resetZoom: () => reactFlowInstance.setViewport(
+          { x: 0, y: 0, zoom: 1 },
+          { duration: 200 },
+        ),
+        fitToScreen: () => reactFlowInstance.fitView({ duration: 200, padding: 0.2 }),
+      }
+      onZoomControlsReady(controls)
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []) // Only run once on mount — reactFlowInstance is stable
+
+  // Notify parent when viewport zoom changes
+  useEffect(() => {
+    if (onZoomChange) {
+      onZoomChange(viewport.zoom)
+    }
+  }, [viewport.zoom, onZoomChange])
+
   // Handle node drag stop - update position in database and emit to other users
   const handleNodeDragStop = useCallback(
     (_event: React.MouseEvent, node: TableNodeType) => {
@@ -480,12 +535,14 @@ function ReactFlowWhiteboardInner({
  */
 export function ReactFlowWhiteboard({
   whiteboardId,
-  userId = 'temp-user-id', // TODO: Get from auth context
+  userId = getSessionUserId(), // Anonymous session-stable UUID; replace with auth when available
   showMinimap = false,
   showControls = true,
   nodesDraggable = true,
   onAutoLayoutReady,
   onDisplayModeReady,
+  onZoomControlsReady,
+  onZoomChange,
 }: ReactFlowWhiteboardProps) {
   // Fetch whiteboard data with tables
   const { data: whiteboardData, isLoading: isLoadingWhiteboard } = useQuery({
@@ -566,6 +623,8 @@ export function ReactFlowWhiteboard({
         nodesDraggable={nodesDraggable}
         onAutoLayoutReady={onAutoLayoutReady}
         onDisplayModeReady={onDisplayModeReady}
+        onZoomControlsReady={onZoomControlsReady}
+        onZoomChange={onZoomChange}
       />
     </ReactFlowProvider>
   )

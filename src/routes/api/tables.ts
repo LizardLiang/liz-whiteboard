@@ -19,13 +19,12 @@ import { createTableSchema, updateTableSchema } from '@/data/schema'
  * Get all tables in a whiteboard
  * @param whiteboardId - Whiteboard UUID
  */
-export const getTablesByWhiteboardId = createServerFn(
-  'GET',
-  async (whiteboardId: string) => {
-    // Validate UUID format
+export const getTablesByWhiteboardId = createServerFn({ method: 'GET' })
+  .inputValidator((whiteboardId: string) => {
     const idSchema = z.string().uuid()
-    idSchema.parse(whiteboardId)
-
+    return idSchema.parse(whiteboardId)
+  })
+  .handler(async ({ data: whiteboardId }) => {
     try {
       const tables = await findDiagramTablesByWhiteboardId(whiteboardId)
       return tables
@@ -34,20 +33,20 @@ export const getTablesByWhiteboardId = createServerFn(
         `Failed to fetch tables: ${error instanceof Error ? error.message : 'Unknown error'}`,
       )
     }
-  },
-)
+  })
 
 /**
  * Get all tables in a whiteboard with columns and relationships
  * @param whiteboardId - Whiteboard UUID
  */
-export const getTablesByWhiteboardIdWithRelations = createServerFn(
-  'GET',
-  async (whiteboardId: string) => {
-    // Validate UUID format
+export const getTablesByWhiteboardIdWithRelations = createServerFn({
+  method: 'GET',
+})
+  .inputValidator((whiteboardId: string) => {
     const idSchema = z.string().uuid()
-    idSchema.parse(whiteboardId)
-
+    return idSchema.parse(whiteboardId)
+  })
+  .handler(async ({ data: whiteboardId }) => {
     try {
       const tables =
         await findDiagramTablesByWhiteboardIdWithRelations(whiteboardId)
@@ -57,42 +56,41 @@ export const getTablesByWhiteboardIdWithRelations = createServerFn(
         `Failed to fetch tables with relations: ${error instanceof Error ? error.message : 'Unknown error'}`,
       )
     }
-  },
-)
+  })
 
 /**
  * Get a single table by ID
  * @param tableId - Table UUID
  */
-export const getTable = createServerFn('GET', async (tableId: string) => {
-  // Validate UUID format
-  const idSchema = z.string().uuid()
-  idSchema.parse(tableId)
-
-  try {
-    const table = await findDiagramTableById(tableId)
-    if (!table) {
-      throw new Error('Table not found')
+export const getTable = createServerFn({ method: 'GET' })
+  .inputValidator((tableId: string) => {
+    const idSchema = z.string().uuid()
+    return idSchema.parse(tableId)
+  })
+  .handler(async ({ data: tableId }) => {
+    try {
+      const table = await findDiagramTableById(tableId)
+      if (!table) {
+        throw new Error('Table not found')
+      }
+      return table
+    } catch (error) {
+      throw new Error(
+        `Failed to fetch table: ${error instanceof Error ? error.message : 'Unknown error'}`,
+      )
     }
-    return table
-  } catch (error) {
-    throw new Error(
-      `Failed to fetch table: ${error instanceof Error ? error.message : 'Unknown error'}`,
-    )
-  }
-})
+  })
 
 /**
  * Get a single table by ID with columns and relationships
  * @param tableId - Table UUID
  */
-export const getTableWithRelations = createServerFn(
-  'GET',
-  async (tableId: string) => {
-    // Validate UUID format
+export const getTableWithRelations = createServerFn({ method: 'GET' })
+  .inputValidator((tableId: string) => {
     const idSchema = z.string().uuid()
-    idSchema.parse(tableId)
-
+    return idSchema.parse(tableId)
+  })
+  .handler(async ({ data: tableId }) => {
     try {
       const table = await findDiagramTableByIdWithRelations(tableId)
       if (!table) {
@@ -104,73 +102,62 @@ export const getTableWithRelations = createServerFn(
         `Failed to fetch table with relations: ${error instanceof Error ? error.message : 'Unknown error'}`,
       )
     }
-  },
-)
+  })
 
 /**
  * Create a new table
  * @param data - Table creation data (name, position, etc.)
  */
-export const createTableFn = createServerFn('POST', async (data: unknown) => {
-  // Validate input with Zod schema
-  const validated = createTableSchema.parse(data)
-
-  try {
-    const table = await createDiagramTable(validated)
-    return table
-  } catch (error) {
-    throw new Error(
-      `Failed to create table: ${error instanceof Error ? error.message : 'Unknown error'}`,
-    )
-  }
-})
+export const createTableFn = createServerFn({ method: 'POST' })
+  .inputValidator((data: unknown) => createTableSchema.parse(data))
+  .handler(async ({ data }) => {
+    try {
+      const table = await createDiagramTable(data)
+      return table
+    } catch (error) {
+      throw new Error(
+        `Failed to create table: ${error instanceof Error ? error.message : 'Unknown error'}`,
+      )
+    }
+  })
 
 /**
  * Update an existing table
  * @param params - Object with id and data fields
  */
-export const updateTableFn = createServerFn(
-  'PUT',
-  async (params: { id: string; data: unknown }) => {
-    // Validate UUID format
-    const idSchema = z.string().uuid()
-    idSchema.parse(params.id)
-
-    // Validate update data with Zod schema
-    const validated = updateTableSchema.parse(params.data)
-
+export const updateTableFn = createServerFn({ method: 'POST' })
+  .inputValidator((params: unknown) => {
+    const schema = z.object({
+      id: z.string().uuid(),
+      data: updateTableSchema,
+    })
+    return schema.parse(params)
+  })
+  .handler(async ({ data: params }) => {
     try {
-      const table = await updateDiagramTable(params.id, validated)
+      const table = await updateDiagramTable(params.id, params.data)
       return table
     } catch (error) {
       throw new Error(
         `Failed to update table: ${error instanceof Error ? error.message : 'Unknown error'}`,
       )
     }
-  },
-)
+  })
 
 /**
  * Update table position (for drag-and-drop)
  * @param params - Object with id, positionX, positionY
  */
-export const updateTablePositionFn = createServerFn(
-  'PUT',
-  async (params: { id: string; positionX: number; positionY: number }) => {
-    // Validate UUID format
-    const idSchema = z.string().uuid()
-    idSchema.parse(params.id)
-
-    // Validate position values
-    const positionSchema = z.object({
+export const updateTablePositionFn = createServerFn({ method: 'POST' })
+  .inputValidator((params: unknown) => {
+    const schema = z.object({
+      id: z.string().uuid(),
       positionX: z.number().finite(),
       positionY: z.number().finite(),
     })
-    positionSchema.parse({
-      positionX: params.positionX,
-      positionY: params.positionY,
-    })
-
+    return schema.parse(params)
+  })
+  .handler(async ({ data: params }) => {
     try {
       const table = await updateDiagramTablePosition(
         params.id,
@@ -183,21 +170,19 @@ export const updateTablePositionFn = createServerFn(
         `Failed to update table position: ${error instanceof Error ? error.message : 'Unknown error'}`,
       )
     }
-  },
-)
+  })
 
 /**
  * Delete a table by ID
  * Cascade deletes all columns and relationships connected to this table
  * @param tableId - Table UUID
  */
-export const deleteTableFn = createServerFn(
-  'DELETE',
-  async (tableId: string) => {
-    // Validate UUID format
+export const deleteTableFn = createServerFn({ method: 'POST' })
+  .inputValidator((tableId: string) => {
     const idSchema = z.string().uuid()
-    idSchema.parse(tableId)
-
+    return idSchema.parse(tableId)
+  })
+  .handler(async ({ data: tableId }) => {
     try {
       const table = await deleteDiagramTable(tableId)
       return table
@@ -206,5 +191,4 @@ export const deleteTableFn = createServerFn(
         `Failed to delete table: ${error instanceof Error ? error.message : 'Unknown error'}`,
       )
     }
-  },
-)
+  })
