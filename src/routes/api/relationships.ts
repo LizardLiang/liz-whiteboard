@@ -22,13 +22,12 @@ import {
  * Get all relationships in a whiteboard
  * @param whiteboardId - Whiteboard UUID
  */
-export const getRelationshipsByWhiteboardId = createServerFn(
-  'GET',
-  async (whiteboardId: string) => {
-    // Validate UUID format
+export const getRelationshipsByWhiteboardId = createServerFn({ method: 'GET' })
+  .inputValidator((whiteboardId: string) => {
     const idSchema = z.string().uuid()
-    idSchema.parse(whiteboardId)
-
+    return idSchema.parse(whiteboardId)
+  })
+  .handler(async ({ data: whiteboardId }) => {
     try {
       const relationships = await findRelationshipsByWhiteboardId(whiteboardId)
       return relationships
@@ -37,20 +36,20 @@ export const getRelationshipsByWhiteboardId = createServerFn(
         `Failed to fetch relationships: ${error instanceof Error ? error.message : 'Unknown error'}`,
       )
     }
-  },
-)
+  })
 
 /**
  * Get all relationships in a whiteboard with table/column details
  * @param whiteboardId - Whiteboard UUID
  */
-export const getRelationshipsByWhiteboardIdWithDetails = createServerFn(
-  'GET',
-  async (whiteboardId: string) => {
-    // Validate UUID format
+export const getRelationshipsByWhiteboardIdWithDetails = createServerFn({
+  method: 'GET',
+})
+  .inputValidator((whiteboardId: string) => {
     const idSchema = z.string().uuid()
-    idSchema.parse(whiteboardId)
-
+    return idSchema.parse(whiteboardId)
+  })
+  .handler(async ({ data: whiteboardId }) => {
     try {
       const relationships =
         await findRelationshipsByWhiteboardIdWithDetails(whiteboardId)
@@ -60,20 +59,18 @@ export const getRelationshipsByWhiteboardIdWithDetails = createServerFn(
         `Failed to fetch relationships with details: ${error instanceof Error ? error.message : 'Unknown error'}`,
       )
     }
-  },
-)
+  })
 
 /**
  * Get a single relationship by ID
  * @param relationshipId - Relationship UUID
  */
-export const getRelationship = createServerFn(
-  'GET',
-  async (relationshipId: string) => {
-    // Validate UUID format
+export const getRelationship = createServerFn({ method: 'GET' })
+  .inputValidator((relationshipId: string) => {
     const idSchema = z.string().uuid()
-    idSchema.parse(relationshipId)
-
+    return idSchema.parse(relationshipId)
+  })
+  .handler(async ({ data: relationshipId }) => {
     try {
       const relationship = await findRelationshipById(relationshipId)
       if (!relationship) {
@@ -85,20 +82,18 @@ export const getRelationship = createServerFn(
         `Failed to fetch relationship: ${error instanceof Error ? error.message : 'Unknown error'}`,
       )
     }
-  },
-)
+  })
 
 /**
  * Get a single relationship by ID with table/column details
  * @param relationshipId - Relationship UUID
  */
-export const getRelationshipWithDetails = createServerFn(
-  'GET',
-  async (relationshipId: string) => {
-    // Validate UUID format
+export const getRelationshipWithDetails = createServerFn({ method: 'GET' })
+  .inputValidator((relationshipId: string) => {
     const idSchema = z.string().uuid()
-    idSchema.parse(relationshipId)
-
+    return idSchema.parse(relationshipId)
+  })
+  .handler(async ({ data: relationshipId }) => {
     try {
       const relationship = await findRelationshipByIdWithDetails(relationshipId)
       if (!relationship) {
@@ -110,20 +105,18 @@ export const getRelationshipWithDetails = createServerFn(
         `Failed to fetch relationship with details: ${error instanceof Error ? error.message : 'Unknown error'}`,
       )
     }
-  },
-)
+  })
 
 /**
  * Get all relationships connected to a table
  * @param tableId - Table UUID
  */
-export const getRelationshipsByTableId = createServerFn(
-  'GET',
-  async (tableId: string) => {
-    // Validate UUID format
+export const getRelationshipsByTableId = createServerFn({ method: 'GET' })
+  .inputValidator((tableId: string) => {
     const idSchema = z.string().uuid()
-    idSchema.parse(tableId)
-
+    return idSchema.parse(tableId)
+  })
+  .handler(async ({ data: tableId }) => {
     try {
       const relationships = await findRelationshipsByTableId(tableId)
       return relationships
@@ -132,66 +125,58 @@ export const getRelationshipsByTableId = createServerFn(
         `Failed to fetch table relationships: ${error instanceof Error ? error.message : 'Unknown error'}`,
       )
     }
-  },
-)
+  })
 
 /**
  * Create a new relationship
  * @param data - Relationship creation data (source/target tables/columns, cardinality)
  */
-export const createRelationshipFn = createServerFn(
-  'POST',
-  async (data: unknown) => {
-    // Validate input with Zod schema
-    const validated = createRelationshipSchema.parse(data)
-
+export const createRelationshipFn = createServerFn({ method: 'POST' })
+  .inputValidator((data: unknown) => createRelationshipSchema.parse(data))
+  .handler(async ({ data }) => {
     try {
-      const relationship = await createRelationship(validated)
+      const relationship = await createRelationship(data)
       return relationship
     } catch (error) {
       throw new Error(
         `Failed to create relationship: ${error instanceof Error ? error.message : 'Unknown error'}`,
       )
     }
-  },
-)
+  })
 
 /**
  * Update an existing relationship
  * @param params - Object with id and data fields
  */
-export const updateRelationshipFn = createServerFn(
-  'PUT',
-  async (params: { id: string; data: unknown }) => {
-    // Validate UUID format
-    const idSchema = z.string().uuid()
-    idSchema.parse(params.id)
-
-    // Validate update data with Zod schema
-    const validated = updateRelationshipSchema.parse(params.data)
-
+export const updateRelationshipFn = createServerFn({ method: 'POST' })
+  .inputValidator((params: unknown) => {
+    const schema = z.object({
+      id: z.string().uuid(),
+      data: updateRelationshipSchema,
+    })
+    return schema.parse(params)
+  })
+  .handler(async ({ data: params }) => {
     try {
-      const relationship = await updateRelationship(params.id, validated)
+      const relationship = await updateRelationship(params.id, params.data)
       return relationship
     } catch (error) {
       throw new Error(
         `Failed to update relationship: ${error instanceof Error ? error.message : 'Unknown error'}`,
       )
     }
-  },
-)
+  })
 
 /**
  * Delete a relationship by ID
  * @param relationshipId - Relationship UUID
  */
-export const deleteRelationshipFn = createServerFn(
-  'DELETE',
-  async (relationshipId: string) => {
-    // Validate UUID format
+export const deleteRelationshipFn = createServerFn({ method: 'POST' })
+  .inputValidator((relationshipId: string) => {
     const idSchema = z.string().uuid()
-    idSchema.parse(relationshipId)
-
+    return idSchema.parse(relationshipId)
+  })
+  .handler(async ({ data: relationshipId }) => {
     try {
       const relationship = await deleteRelationship(relationshipId)
       return relationship
@@ -200,5 +185,4 @@ export const deleteRelationshipFn = createServerFn(
         `Failed to delete relationship: ${error instanceof Error ? error.message : 'Unknown error'}`,
       )
     }
-  },
-)
+  })

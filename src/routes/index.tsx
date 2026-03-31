@@ -26,6 +26,7 @@ import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { Textarea } from '@/components/ui/textarea'
 import { createProjectFn, getProjectsWithTree } from '@/routes/api/projects'
+import type { CreateProject } from '@/data/schema'
 import { getRecentWhiteboards } from '@/routes/api/whiteboards'
 
 export const Route = createFileRoute('/')({
@@ -56,7 +57,7 @@ function HomePage() {
 
   // Create project mutation
   const createProjectMutation = useMutation({
-    mutationFn: createProjectFn,
+    mutationFn: (data: CreateProject) => createProjectFn({ data }),
     onSuccess: (data) => {
       queryClient.invalidateQueries({ queryKey: ['projects'] })
       queryClient.invalidateQueries({ queryKey: ['projects', 'tree'] })
@@ -182,36 +183,54 @@ function HomePage() {
               <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
                 {projects &&
                   Array.isArray(projects) &&
-                  projects.map((project) => (
-                    <Card
-                      key={project.id}
-                      className="hover:border-primary transition-colors"
-                    >
-                      <CardHeader>
-                        <div className="flex items-start justify-between">
-                          <FolderOpen className="h-8 w-8 text-primary" />
-                        </div>
-                        <CardTitle className="mt-4">{project.name}</CardTitle>
-                        {project.description && (
-                          <CardDescription>
-                            {project.description}
-                          </CardDescription>
-                        )}
-                      </CardHeader>
-                      <CardContent>
-                        <div className="text-sm text-muted-foreground space-y-1">
-                          <div>
-                            {project.folders?.length || 0} folder
-                            {project.folders?.length !== 1 ? 's' : ''}
+                  projects.map((project) => {
+                    // Find first whiteboard: check direct whiteboards, then folder whiteboards
+                    const firstDirectWhiteboard = project.whiteboards?.[0]
+                    const firstFolderWhiteboard =
+                      project.folders?.flatMap((f) => f.whiteboards ?? [])[0]
+                    const firstWhiteboard =
+                      firstDirectWhiteboard ?? firstFolderWhiteboard
+
+                    const cardContent = (
+                      <Card className="hover:border-primary transition-colors cursor-pointer h-full">
+                        <CardHeader>
+                          <div className="flex items-start justify-between">
+                            <FolderOpen className="h-8 w-8 text-primary" />
                           </div>
-                          <div>
-                            {project.whiteboards?.length || 0} whiteboard
-                            {project.whiteboards?.length !== 1 ? 's' : ''}
+                          <CardTitle className="mt-4">{project.name}</CardTitle>
+                          {project.description && (
+                            <CardDescription className="!text-muted-foreground">
+                              {project.description}
+                            </CardDescription>
+                          )}
+                        </CardHeader>
+                        <CardContent>
+                          <div className="text-sm text-muted-foreground space-y-1">
+                            <div>
+                              {project.folders?.length || 0} folder
+                              {project.folders?.length !== 1 ? 's' : ''}
+                            </div>
+                            <div>
+                              {project.whiteboards?.length || 0} whiteboard
+                              {project.whiteboards?.length !== 1 ? 's' : ''}
+                            </div>
                           </div>
-                        </div>
-                      </CardContent>
-                    </Card>
-                  ))}
+                        </CardContent>
+                      </Card>
+                    )
+
+                    return firstWhiteboard ? (
+                      <Link
+                        key={project.id}
+                        to="/whiteboard/$whiteboardId"
+                        params={{ whiteboardId: firstWhiteboard.id }}
+                      >
+                        {cardContent}
+                      </Link>
+                    ) : (
+                      <div key={project.id}>{cardContent}</div>
+                    )
+                  })}
               </div>
             </div>
           </div>

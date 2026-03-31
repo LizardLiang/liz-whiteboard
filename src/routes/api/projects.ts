@@ -17,16 +17,18 @@ import { createProjectSchema, updateProjectSchema } from '@/data/schema'
  * Get all projects
  * Returns array of all projects ordered by creation date (newest first)
  */
-export const getProjects = createServerFn('GET', async () => {
-  try {
-    const projects = await findAllProjects()
-    return projects
-  } catch (error) {
-    throw new Error(
-      `Failed to fetch projects: ${error instanceof Error ? error.message : 'Unknown error'}`,
-    )
-  }
-})
+export const getProjects = createServerFn({ method: 'GET' }).handler(
+  async () => {
+    try {
+      const projects = await findAllProjects()
+      return projects
+    } catch (error) {
+      throw new Error(
+        `Failed to fetch projects: ${error instanceof Error ? error.message : 'Unknown error'}`,
+      )
+    }
+  },
+)
 
 /**
  * Get all projects with their folder and whiteboard tree
@@ -49,79 +51,76 @@ export const getProjectsWithTree = createServerFn({
  * Get a single project by ID
  * @param projectId - Project UUID
  */
-export const getProject = createServerFn('GET', async (projectId: string) => {
-  // Validate UUID format
-  const idSchema = z.string().uuid()
-  idSchema.parse(projectId)
-
-  try {
-    const project = await findProjectById(projectId)
-    if (!project) {
-      throw new Error('Project not found')
+export const getProject = createServerFn({ method: 'GET' })
+  .inputValidator((projectId: string) => {
+    const idSchema = z.string().uuid()
+    return idSchema.parse(projectId)
+  })
+  .handler(async ({ data: projectId }) => {
+    try {
+      const project = await findProjectById(projectId)
+      if (!project) {
+        throw new Error('Project not found')
+      }
+      return project
+    } catch (error) {
+      throw new Error(
+        `Failed to fetch project: ${error instanceof Error ? error.message : 'Unknown error'}`,
+      )
     }
-    return project
-  } catch (error) {
-    throw new Error(
-      `Failed to fetch project: ${error instanceof Error ? error.message : 'Unknown error'}`,
-    )
-  }
-})
+  })
 
 /**
  * Create a new project
  * @param data - Project creation data (name, description)
  */
-export const createProjectFn = createServerFn('POST', async (data: unknown) => {
-  // Validate input with Zod schema
-  const validated = createProjectSchema.parse(data)
-
-  try {
-    const project = await createProject(validated)
-    return project
-  } catch (error) {
-    throw new Error(
-      `Failed to create project: ${error instanceof Error ? error.message : 'Unknown error'}`,
-    )
-  }
-})
+export const createProjectFn = createServerFn({ method: 'POST' })
+  .inputValidator((data: unknown) => createProjectSchema.parse(data))
+  .handler(async ({ data }) => {
+    try {
+      const project = await createProject(data)
+      return project
+    } catch (error) {
+      throw new Error(
+        `Failed to create project: ${error instanceof Error ? error.message : 'Unknown error'}`,
+      )
+    }
+  })
 
 /**
  * Update an existing project
  * @param params - Object with id and data fields
  */
-export const updateProjectFn = createServerFn(
-  'PUT',
-  async (params: { id: string; data: unknown }) => {
-    // Validate UUID format
-    const idSchema = z.string().uuid()
-    idSchema.parse(params.id)
-
-    // Validate update data with Zod schema
-    const validated = updateProjectSchema.parse(params.data)
-
+export const updateProjectFn = createServerFn({ method: 'POST' })
+  .inputValidator((params: unknown) => {
+    const schema = z.object({
+      id: z.string().uuid(),
+      data: updateProjectSchema,
+    })
+    return schema.parse(params)
+  })
+  .handler(async ({ data: params }) => {
     try {
-      const project = await updateProject(params.id, validated)
+      const project = await updateProject(params.id, params.data)
       return project
     } catch (error) {
       throw new Error(
         `Failed to update project: ${error instanceof Error ? error.message : 'Unknown error'}`,
       )
     }
-  },
-)
+  })
 
 /**
  * Delete a project by ID
  * Cascade deletes all folders and whiteboards within the project
  * @param projectId - Project UUID
  */
-export const deleteProjectFn = createServerFn(
-  'DELETE',
-  async (projectId: string) => {
-    // Validate UUID format
+export const deleteProjectFn = createServerFn({ method: 'POST' })
+  .inputValidator((projectId: string) => {
     const idSchema = z.string().uuid()
-    idSchema.parse(projectId)
-
+    return idSchema.parse(projectId)
+  })
+  .handler(async ({ data: projectId }) => {
     try {
       const project = await deleteProject(projectId)
       return project
@@ -130,5 +129,4 @@ export const deleteProjectFn = createServerFn(
         `Failed to delete project: ${error instanceof Error ? error.message : 'Unknown error'}`,
       )
     }
-  },
-)
+  })

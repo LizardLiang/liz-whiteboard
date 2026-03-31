@@ -7,7 +7,14 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
 import type { Column } from '@prisma/client'
 import type { DataType } from '@/data/schema'
-import { DataTypeSelector } from './DataTypeSelector'
+import { DATA_TYPES, DATA_TYPE_LABELS } from './types'
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from '@/components/ui/select'
 
 export interface AddColumnRowProps {
   tableId: string
@@ -19,9 +26,12 @@ export function AddColumnRow({ existingColumns, onCreate }: AddColumnRowProps) {
   const [isExpanded, setIsExpanded] = useState(false)
   const [name, setName] = useState('')
   const [dataType, setDataType] = useState<DataType>('string')
-  const [isSelectingType, setIsSelectingType] = useState(false)
   const inputRef = useRef<HTMLInputElement>(null)
+  const rowRef = useRef<HTMLDivElement>(null)
   const cancelledRef = useRef(false)
+  // Tracks whether pointer went down inside this row — guards against spurious blur-create
+  // when clicking the Radix Select trigger (pointerdown fires before blur)
+  const mouseDownInsideRef = useRef(false)
 
   // Auto-focus when expanded
   useEffect(() => {
@@ -30,11 +40,30 @@ export function AddColumnRow({ existingColumns, onCreate }: AddColumnRowProps) {
     }
   }, [isExpanded])
 
+  // Canvas clicks don't blur focused inputs (canvas is non-focusable).
+  // Document-level pointerdown listener closes the row when clicking outside.
+  useEffect(() => {
+    if (!isExpanded) return
+
+    const handleOutside = (e: PointerEvent) => {
+      const target = e.target as Element
+      // Click was inside this row
+      if (rowRef.current?.contains(target as Node)) return
+      // Click was inside a Radix portal (SelectContent dropdown)
+      if (target.closest?.('[data-radix-popper-content-wrapper]')) return
+      // Programmatically blur the input — handleBlur will call handleCreate/reset
+      inputRef.current?.blur()
+    }
+
+    // Capture phase so stopPropagation in ReactFlow layers doesn't block us
+    document.addEventListener('pointerdown', handleOutside, true)
+    return () => document.removeEventListener('pointerdown', handleOutside, true)
+  }, [isExpanded])
+
   const reset = useCallback(() => {
     setName('')
     setDataType('string')
     setIsExpanded(false)
-    setIsSelectingType(false)
     cancelledRef.current = false
   }, [])
 
@@ -52,11 +81,9 @@ export function AddColumnRow({ existingColumns, onCreate }: AddColumnRowProps) {
 
     await onCreate({ name: trimmed, dataType, order: nextOrder })
 
-    // Reset for rapid entry (PRD REQ-09 AC-09b)
+    // Reset for rapid entry
     setName('')
     setDataType('string')
-    setIsSelectingType(false)
-    // Keep expanded for rapid entry — user can Escape to close
     if (inputRef.current) {
       inputRef.current.focus()
     }
@@ -71,20 +98,20 @@ export function AddColumnRow({ existingColumns, onCreate }: AddColumnRowProps) {
       } else if (e.key === 'Escape') {
         cancelledRef.current = true
         reset()
-      } else if (e.key === 'Tab') {
-        // Tab moves to data type selector
-        e.preventDefault()
-        setIsSelectingType(true)
       }
     },
     [handleCreate, reset],
   )
 
   const handleBlur = useCallback(() => {
-    if (!cancelledRef.current && !isSelectingType) {
+    // Skip if the user clicked elsewhere inside this row (e.g. type select).
+    // mouseDownInsideRef is set on pointerdown (not mousedown) because Radix UI
+    // uses pointerdown internally — which fires before blur.
+    if (!cancelledRef.current && !mouseDownInsideRef.current) {
       handleCreate()
     }
-  }, [handleCreate, isSelectingType])
+    mouseDownInsideRef.current = false
+  }, [handleCreate])
 
   const handlePlusClick = useCallback((e: React.MouseEvent) => {
     e.stopPropagation()
@@ -95,7 +122,7 @@ export function AddColumnRow({ existingColumns, onCreate }: AddColumnRowProps) {
     return (
       <div
         style={{
-          padding: '4px 16px',
+          padding: '2px 8px 4px',
           borderTop: '1px solid var(--rf-table-border)',
         }}
       >
@@ -110,18 +137,24 @@ export function AddColumnRow({ existingColumns, onCreate }: AddColumnRowProps) {
             cursor: 'pointer',
             color: 'var(--rf-table-text)',
             opacity: 0.5,
-            fontSize: '18px',
+            fontSize: '16px',
             lineHeight: 1,
-            padding: '0 2px',
+            padding: '4px 8px',
             transition: 'opacity 0.1s',
             width: '100%',
             textAlign: 'left',
+            display: 'block',
+            borderRadius: '4px',
           }}
           onMouseEnter={(e) => {
-            ;(e.currentTarget as HTMLButtonElement).style.opacity = '1'
+            const btn = e.currentTarget as HTMLButtonElement
+            btn.style.opacity = '1'
+            btn.style.background = 'var(--rf-column-edit-bg, rgba(99,102,241,0.07))'
           }}
           onMouseLeave={(e) => {
-            ;(e.currentTarget as HTMLButtonElement).style.opacity = '0.5'
+            const btn = e.currentTarget as HTMLButtonElement
+            btn.style.opacity = '0.5'
+            btn.style.background = 'none'
           }}
         >
           +
@@ -132,79 +165,69 @@ export function AddColumnRow({ existingColumns, onCreate }: AddColumnRowProps) {
 
   return (
     <div
+      ref={rowRef}
       className="nodrag nowheel"
       style={{
         padding: '4px 8px',
         borderTop: '1px solid var(--rf-table-border)',
         display: 'flex',
         alignItems: 'center',
-        gap: '4px',
+        gap: '6px',
         background: 'var(--rf-column-edit-bg, rgba(99,102,241,0.05))',
+        minHeight: '36px',
       }}
       onClick={(e) => e.stopPropagation()}
-      onMouseDown={(e) => e.stopPropagation()}
+      onPointerDown={(e) => {
+        e.stopPropagation()
+        mouseDownInsideRef.current = true
+      }}
     >
-      {isSelectingType ? (
-        <DataTypeSelector
-          value={dataType}
-          onSelect={(dt) => {
-            setDataType(dt)
-            setIsSelectingType(false)
-            // Focus back on name input after type selection
-            setTimeout(() => inputRef.current?.focus(), 0)
+      <input
+        ref={inputRef}
+        type="text"
+        placeholder="column name"
+        value={name}
+        onChange={(e) => setName(e.target.value)}
+        onKeyDown={handleKeyDown}
+        onBlur={handleBlur}
+        className="nodrag nowheel"
+        style={{
+          flex: 1,
+          fontSize: '12px',
+          padding: '2px 4px',
+          border: '1px solid var(--rf-edge-stroke-selected, #6366f1)',
+          borderRadius: '3px',
+          background: 'transparent',
+          color: 'var(--rf-table-text)',
+          outline: 'none',
+          minWidth: 0,
+        }}
+        onClick={(e) => e.stopPropagation()}
+      />
+      <Select
+        value={dataType}
+        onValueChange={(val) => {
+          setDataType(val as DataType)
+          setTimeout(() => inputRef.current?.focus(), 0)
+        }}
+      >
+        <SelectTrigger
+          className="nodrag nowheel h-[28px] min-w-[80px] text-[11px] px-2 border-border/50 cursor-pointer"
+          aria-label={dataType}
+          onPointerDown={() => {
+            mouseDownInsideRef.current = true
           }}
-          onCancel={() => {
-            setIsSelectingType(false)
-            setTimeout(() => inputRef.current?.focus(), 0)
-          }}
-        />
-      ) : (
-        <>
-          <input
-            ref={inputRef}
-            type="text"
-            placeholder="column name"
-            value={name}
-            onChange={(e) => setName(e.target.value)}
-            onKeyDown={handleKeyDown}
-            onBlur={handleBlur}
-            className="nodrag nowheel"
-            style={{
-              flex: 1,
-              fontSize: '12px',
-              padding: '2px 4px',
-              border: '1px solid var(--rf-edge-stroke-selected, #6366f1)',
-              borderRadius: '3px',
-              background: 'transparent',
-              color: 'var(--rf-table-text)',
-              outline: 'none',
-              minWidth: 0,
-            }}
-            onClick={(e) => e.stopPropagation()}
-          />
-          <button
-            type="button"
-            onClick={(e) => {
-              e.stopPropagation()
-              setIsSelectingType(true)
-            }}
-            className="nodrag nowheel"
-            style={{
-              fontSize: '10px',
-              padding: '2px 4px',
-              border: '1px solid var(--rf-table-border)',
-              borderRadius: '3px',
-              background: 'transparent',
-              color: 'var(--rf-table-text)',
-              cursor: 'pointer',
-              flexShrink: 0,
-              opacity: 0.7,
-            }}
-          >
-            {dataType}
-          </button>
-        </>
-      )}
+        >
+          <SelectValue />
+        </SelectTrigger>
+        <SelectContent className="nodrag nowheel">
+          {DATA_TYPES.map((dt) => (
+            <SelectItem key={dt} value={dt} className="text-xs">
+              {DATA_TYPE_LABELS[dt]}
+            </SelectItem>
+          ))}
+        </SelectContent>
+      </Select>
     </div>
   )
 }

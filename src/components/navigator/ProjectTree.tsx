@@ -56,7 +56,14 @@ import {
   deleteWhiteboardFn,
   updateWhiteboardFn,
 } from '@/routes/api/whiteboards'
-import type { CreateWhiteboard, UpdateWhiteboard } from '@/data/schema'
+import type {
+  CreateFolder,
+  CreateProject,
+  CreateWhiteboard,
+  UpdateFolder,
+  UpdateProject,
+  UpdateWhiteboard,
+} from '@/data/schema'
 
 /**
  * Dialog state types
@@ -108,7 +115,7 @@ export function ProjectTree() {
 
   // Mutations
   const createProjectMutation = useMutation({
-    mutationFn: createProjectFn,
+    mutationFn: (data: CreateProject) => createProjectFn({ data }),
     onSuccess: (data) => {
       queryClient.invalidateQueries({ queryKey: ['projects'] })
       queryClient.invalidateQueries({ queryKey: ['projects', 'tree'] })
@@ -126,7 +133,8 @@ export function ProjectTree() {
   })
 
   const updateProjectMutation = useMutation({
-    mutationFn: updateProjectFn,
+    mutationFn: (data: { id: string; data: UpdateProject }) =>
+      updateProjectFn({ data }),
     onSuccess: (data) => {
       queryClient.invalidateQueries({ queryKey: ['projects'] })
       setDialogState({ type: 'none' })
@@ -143,7 +151,7 @@ export function ProjectTree() {
   })
 
   const deleteProjectMutation = useMutation({
-    mutationFn: deleteProjectFn,
+    mutationFn: (id: string) => deleteProjectFn({ data: id }),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['projects'] })
       setDialogState({ type: 'none' })
@@ -159,7 +167,7 @@ export function ProjectTree() {
   })
 
   const createFolderMutation = useMutation({
-    mutationFn: createFolderFn,
+    mutationFn: (data: CreateFolder) => createFolderFn({ data }),
     onSuccess: (data) => {
       queryClient.invalidateQueries({ queryKey: ['projects'] })
       setDialogState({ type: 'none' })
@@ -176,7 +184,8 @@ export function ProjectTree() {
   })
 
   const updateFolderMutation = useMutation({
-    mutationFn: updateFolderFn,
+    mutationFn: (data: { id: string; data: UpdateFolder }) =>
+      updateFolderFn({ data }),
     onSuccess: (data) => {
       queryClient.invalidateQueries({ queryKey: ['projects'] })
       setDialogState({ type: 'none' })
@@ -193,7 +202,7 @@ export function ProjectTree() {
   })
 
   const deleteFolderMutation = useMutation({
-    mutationFn: deleteFolderFn,
+    mutationFn: (id: string) => deleteFolderFn({ data: id }),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['projects'] })
       setDialogState({ type: 'none' })
@@ -477,7 +486,13 @@ export function ProjectTree() {
                 <div className="group relative">
                   <div className="flex items-center gap-1 pr-8">
                     <CollapsibleTrigger asChild>
-                      <Button variant="ghost" size="sm" className="h-8 w-8 p-0">
+                      <Button
+                        type="button"
+                        variant="ghost"
+                        size="sm"
+                        className="h-8 w-8 p-0"
+                        onClick={(e) => e.stopPropagation()}
+                      >
                         {isExpanded ? (
                           <ChevronDown className="h-4 w-4" />
                         ) : (
