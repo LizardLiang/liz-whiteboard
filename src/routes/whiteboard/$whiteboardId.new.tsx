@@ -18,6 +18,7 @@ import { Toolbar } from '@/components/whiteboard/Toolbar'
 import { TextEditor } from '@/components/whiteboard/TextEditor'
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import { useCollaboration } from '@/hooks/use-collaboration'
+import { getSessionUserId } from '@/lib/session-user-id'
 import { useAutoLayoutPreference } from '@/hooks/use-auto-layout-preference'
 import {
   convertToReactFlowEdges,
@@ -54,8 +55,8 @@ function WhiteboardEditor() {
   const { whiteboardId } = Route.useParams()
   const queryClient = useQueryClient()
 
-  // TODO: Get actual user ID from auth context
-  const userId = 'temp-user-id'
+  // Anonymous session-stable user ID. Replace with auth context when auth is implemented.
+  const userId = getSessionUserId()
 
   // State
   const [selectedNodeIds, setSelectedNodeIds] = useState<Array<string>>([])

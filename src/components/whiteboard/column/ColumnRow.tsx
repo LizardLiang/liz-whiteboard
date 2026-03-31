@@ -4,7 +4,7 @@
  * Phase 2+: interactive editing, delete button
  */
 
-import { memo, useCallback } from 'react'
+import { memo, useCallback, useState } from 'react'
 import { Handle, Position } from '@xyflow/react'
 import type { Column } from '@prisma/client'
 import type { RelationshipEdgeType } from '@/lib/react-flow/types'
@@ -55,6 +55,7 @@ export const ColumnRow = memo(
     const isEditingDataType =
       editingField?.columnId === column.id && editingField.field === 'dataType'
     const isEditing = isEditingName || isEditingDataType
+    const [isHoveringDataType, setIsHoveringDataType] = useState(false)
 
     const handleNameDoubleClick = useCallback(
       (e: React.MouseEvent) => {
@@ -104,7 +105,7 @@ export const ColumnRow = memo(
             position: 'relative',
             display: 'flex',
             alignItems: 'center',
-            gap: '4px',
+            gap: '8px',
             minHeight: '28px',
             background: isEditing ? 'var(--rf-column-edit-bg, rgba(99,102,241,0.08))' : 'transparent',
             outline: 'none',
@@ -141,6 +142,7 @@ export const ColumnRow = memo(
               flex: 1,
               display: 'flex',
               alignItems: 'center',
+              justifyContent: 'space-between',
               gap: '4px',
               minWidth: 0,
             }}
@@ -186,18 +188,28 @@ export const ColumnRow = memo(
                 <TooltipTrigger asChild>
                   <span
                     style={{
-                      color: 'var(--rf-table-text)',
-                      opacity: 0.6,
+                      color: isHoveringDataType ? 'var(--rf-edge-stroke-selected, #6366f1)' : 'var(--rf-table-text)',
+                      opacity: isHoveringDataType ? 1 : 0.6,
                       fontSize: '11px',
-                      cursor: 'text',
+                      cursor: 'pointer',
                       flexShrink: 0,
+                      width: '72px',
+                      textAlign: 'right',
+                      borderRadius: '3px',
+                      padding: '1px 3px',
+                      background: isHoveringDataType ? 'var(--rf-column-edit-bg, rgba(99,102,241,0.12))' : 'transparent',
+                      transition: 'background 0.1s, color 0.1s, opacity 0.1s',
+                      textDecoration: isHoveringDataType ? 'underline' : 'none',
+                      textDecorationStyle: 'dotted',
                     }}
                     onDoubleClick={handleDataTypeDoubleClick}
+                    onMouseEnter={() => setIsHoveringDataType(true)}
+                    onMouseLeave={() => setIsHoveringDataType(false)}
                   >
                     {column.dataType}
                   </span>
                 </TooltipTrigger>
-                <TooltipContent side="top">Double-click to edit</TooltipContent>
+                <TooltipContent side="top">Double-click to edit type</TooltipContent>
               </Tooltip>
             )}
           </div>

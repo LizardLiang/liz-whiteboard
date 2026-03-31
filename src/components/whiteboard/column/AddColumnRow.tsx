@@ -67,7 +67,7 @@ export function AddColumnRow({ existingColumns, onCreate }: AddColumnRowProps) {
     cancelledRef.current = false
   }, [])
 
-  const handleCreate = useCallback(async () => {
+  const handleCreate = useCallback(async (closeAfterSave = false) => {
     const trimmed = name.trim()
     if (!trimmed) {
       reset()
@@ -81,11 +81,15 @@ export function AddColumnRow({ existingColumns, onCreate }: AddColumnRowProps) {
 
     await onCreate({ name: trimmed, dataType, order: nextOrder })
 
-    // Reset for rapid entry
-    setName('')
-    setDataType('string')
-    if (inputRef.current) {
-      inputRef.current.focus()
+    if (closeAfterSave) {
+      reset()
+    } else {
+      // Reset for rapid entry (Enter key)
+      setName('')
+      setDataType('string')
+      if (inputRef.current) {
+        inputRef.current.focus()
+      }
     }
   }, [name, dataType, existingColumns, onCreate, reset])
 
@@ -108,7 +112,7 @@ export function AddColumnRow({ existingColumns, onCreate }: AddColumnRowProps) {
     // mouseDownInsideRef is set on pointerdown (not mousedown) because Radix UI
     // uses pointerdown internally — which fires before blur.
     if (!cancelledRef.current && !mouseDownInsideRef.current) {
-      handleCreate()
+      handleCreate(true) // close after blur-triggered save
     }
     mouseDownInsideRef.current = false
   }, [handleCreate])
@@ -204,6 +208,33 @@ export function AddColumnRow({ existingColumns, onCreate }: AddColumnRowProps) {
         }}
         onClick={(e) => e.stopPropagation()}
       />
+      <button
+        type="button"
+        aria-label="Save column"
+        className="nodrag nowheel"
+        onPointerDown={(e) => {
+          e.stopPropagation()
+          mouseDownInsideRef.current = true
+        }}
+        onClick={(e) => {
+          e.stopPropagation()
+          cancelledRef.current = false
+          handleCreate(true)
+        }}
+        style={{
+          background: 'var(--rf-edge-stroke-selected, #6366f1)',
+          border: 'none',
+          borderRadius: '3px',
+          color: '#fff',
+          cursor: 'pointer',
+          fontSize: '14px',
+          lineHeight: 1,
+          padding: '3px 6px',
+          flexShrink: 0,
+        }}
+      >
+        ✓
+      </button>
       <Select
         value={dataType}
         onValueChange={(val) => {

@@ -45,6 +45,12 @@ export interface UseColumnCollaborationCallbacks {
   onColumnDeleted: (data: ColumnDeletedEvent) => void
   onColumnError: (data: ColumnErrorEvent) => void
   /**
+   * Called when the server confirms a column:create emitted by this user.
+   * Provides the real DB column (with permanent ID) so the client can
+   * replace any optimistic temp ID it inserted locally.
+   */
+  onOwnColumnCreated?: (column: ColumnCreatedEvent) => void
+  /**
    * Called when the WebSocket reconnects after a disconnection.
    * The consumer should re-fetch server state to discard any stale
    * optimistic updates that were not confirmed before the disconnect.
@@ -71,8 +77,13 @@ export function useColumnCollaboration(
   // Register event listeners
   useEffect(() => {
     const handleCreated = (data: ColumnCreatedEvent) => {
-      // Ignore events from the current user (already applied optimistically)
-      if (data.createdBy === userId) return
+      if (data.createdBy === userId) {
+        // This is the server confirmation for our own create.
+        // Notify the consumer so it can replace the optimistic temp ID
+        // with the real database ID.
+        callbacks.onOwnColumnCreated?.(data)
+        return
+      }
       callbacks.onColumnCreated(data)
     }
 
