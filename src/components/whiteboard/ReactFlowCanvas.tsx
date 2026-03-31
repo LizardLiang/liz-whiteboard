@@ -111,9 +111,30 @@ export function ReactFlowCanvas({
       setEdges(initialEdges)
       return
     }
+
+    // Build a set of all column IDs that currently exist across all nodes.
+    // Edges referencing a deleted or stale column will be silently excluded
+    // to prevent the "[React Flow]: Couldn't create edge for source handle id"
+    // warning flood that occurs when handle IDs no longer match any registered handle.
+    const existingColumnIds = new Set<string>()
+    for (const node of initialNodes) {
+      for (const col of node.data.table.columns) {
+        existingColumnIds.add(col.id)
+      }
+    }
+
+    const validEdges = initialEdges.filter((edge) => {
+      const rel = edge.data?.relationship
+      if (!rel) return false
+      return (
+        existingColumnIds.has(rel.sourceColumnId) &&
+        existingColumnIds.has(rel.targetColumnId)
+      )
+    })
+
     const allNodeIds = new Set(initialNodes.map((n) => n.id))
     const recalculated = recalculateEdgesForDraggedNodes(
-      initialEdges,
+      validEdges,
       initialNodes,
       allNodeIds,
     )
