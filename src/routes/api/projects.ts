@@ -9,6 +9,7 @@ import {
   findAllProjects,
   findAllProjectsWithTree,
   findProjectById,
+  findProjectPageContent,
   updateProject,
 } from '@/data/project'
 import { createProjectSchema, updateProjectSchema } from '@/data/schema'
@@ -108,6 +109,26 @@ export const updateProjectFn = createServerFn({ method: 'POST' })
         `Failed to update project: ${error instanceof Error ? error.message : 'Unknown error'}`,
       )
     }
+  })
+
+/**
+ * Get project page content (folders + whiteboards at a given level)
+ * @param params - Object with projectId and optional folderId
+ */
+export const getProjectPageContent = createServerFn({ method: 'GET' })
+  .inputValidator((params: unknown) => {
+    const schema = z.object({
+      projectId: z.string().uuid(),
+      folderId: z.string().uuid().optional(),
+    })
+    return schema.parse(params)
+  })
+  .handler(async ({ data }) => {
+    const content = await findProjectPageContent(data.projectId, data.folderId)
+    if (!content) {
+      throw new Error('Project not found')
+    }
+    return content
   })
 
 /**
