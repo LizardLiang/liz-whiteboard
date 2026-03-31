@@ -56,6 +56,7 @@ import {
   deleteWhiteboardFn,
   updateWhiteboardFn,
 } from '@/routes/api/whiteboards'
+import type { CreateWhiteboard, UpdateWhiteboard } from '@/data/schema'
 
 /**
  * Dialog state types
@@ -208,7 +209,7 @@ export function ProjectTree() {
   })
 
   const createWhiteboardMutation = useMutation({
-    mutationFn: createWhiteboardFn,
+    mutationFn: (data: CreateWhiteboard) => createWhiteboardFn({ data }),
     onSuccess: (whiteboard) => {
       queryClient.invalidateQueries({ queryKey: ['projects'] })
       setDialogState({ type: 'none' })
@@ -230,7 +231,8 @@ export function ProjectTree() {
   })
 
   const updateWhiteboardMutation = useMutation({
-    mutationFn: updateWhiteboardFn,
+    mutationFn: (data: { id: string; data: UpdateWhiteboard }) =>
+      updateWhiteboardFn({ data }),
     onSuccess: (data) => {
       queryClient.invalidateQueries({ queryKey: ['projects'] })
       queryClient.invalidateQueries({ queryKey: ['whiteboard'] })
@@ -248,7 +250,8 @@ export function ProjectTree() {
   })
 
   const deleteWhiteboardMutation = useMutation({
-    mutationFn: deleteWhiteboardFn,
+    mutationFn: (whiteboardId: string) =>
+      deleteWhiteboardFn({ data: whiteboardId }),
     onSuccess: (_, deletedId) => {
       queryClient.invalidateQueries({ queryKey: ['projects'] })
       setDialogState({ type: 'none' })

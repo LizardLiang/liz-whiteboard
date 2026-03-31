@@ -155,6 +155,114 @@ Updated `ColumnRow.test.tsx` mock to accept the optional 4th parameter.
 - 160 tests: all passing
 - Build: clean (no TypeScript errors)
 
+## Bug Fix: PK Badge Always Visible (2026-03-31)
+
+**Files**: `src/components/whiteboard/column/ConstraintBadges.tsx`, `src/components/whiteboard/column/ConstraintBadges.test.tsx`
+
+### Problem
+
+A previous fix had wrapped the PK badge in `{localPK && (...)}` to prevent ghost rendering — but this entirely removed the badge when a field was not a primary key. Users had no way to toggle a non-PK field into a PK.
+
+### Fix Applied
+
+**ConstraintBadges.tsx**: Removed the conditional wrapper. PK badge now always renders with the same active/inactive visual pattern as N and U badges:
+- Active (localPK=true): amber background, white text, full opacity, amber border
+- Inactive (localPK=false): transparent background, table text color, 0.4 opacity, outline border
+- `aria-pressed` dynamically reflects `localPK` state
+- `aria-label` dynamically describes current state
+- `handlePKClick` (with its cascade logic: nullable=false, unique=true on enable) preserved intact
+
+**ConstraintBadges.test.tsx**:
+- TC-03-02: Updated from "PK badge NOT rendered when isPrimaryKey=false" to "PK badge always rendered; shows inactive style when isPrimaryKey=false" — asserts badge is present with `aria-pressed="false"`
+- TC-03-04b (new): Tests PK toggle OFF->ON and verifies cascade — `isPrimaryKey=true`, `isNullable=false`, `isUnique=true` all called
+
+### Test Results After Fix
+
+- TS-03 (ConstraintBadges): 13 tests, all passing (was 12 before adding TC-03-04b)
+- Total test suite: unchanged pass rate
+
+## Bug Fix: Socket.IO Never Initialized (2026-03-31)
+
+**File**: `vite.config.ts`
+
+### Problem
+
+`initializeSocketIO(httpServer)` was defined in `src/routes/api/collaboration.ts` but never called. The Socket.IO server was never mounted, causing `/socket.io` to return HTTP 404 and all collaboration connections to fail immediately.
+
+### Root Cause
+
+TanStack Start's server entry exports a `fetch` handler (Web standard), not a Node.js HTTP server. There was no call site that passed the underlying HTTP server to `initializeSocketIO`.
+
+### Fix Applied
+
+Added a `socketIOPlugin()` Vite plugin in `vite.config.ts`. The plugin uses the `configureServer` post-middleware hook to:
+
+1. Access `viteDevServer.httpServer` (the underlying Node.js `http.Server`)
+2. Load `src/routes/api/collaboration.ts` through the `"ssr"` environment's `RunnableDevEnvironment` runner — this honours `@/` path aliases and ensures Prisma and other server-only deps resolve correctly
+3. Call `initializeSocketIO(httpServer)` once on server startup
+
+Key finding: TanStack Start 1.132 names its SSR environment `"ssr"` (not `"server"`) for backwards compatibility with plugins that predate the Vite Environment API. Using `"server"` causes a silent fallback to the warn path.
+
+### Verification
+
+`GET /socket.io/?EIO=4&transport=polling` now returns HTTP 200 with a valid Socket.IO handshake:
+```
+0{"sid":"...","upgrades":["websocket"],"pingInterval":25000,"pingTimeout":20000,"maxPayload":1000000}
+```
+
 ## Known Issues / Deferred Debt
 
-None identified during implementation.
+**Production**: The `socketIOPlugin` only wires Socket.IO for the Vite dev server. A production deployment that does NOT use `vite preview` (i.e. a standalone Node.js server) would need a separate custom server entry point that creates an `http.Server`, mounts the TanStack Start fetch handler via `@hono/node-server` or similar, and calls `initializeSocketIO`. This is deferred until a production deployment target is chosen.
+
+## Bug Fix: New Whiteboard Navigation Shows "Not Found" (2026-03-31)
+
+**Files**: `src/routes/api/whiteboards.ts`, `src/components/navigator/ProjectTree.tsx`, `src/routes/index.tsx`
+
+### Root Cause
+
+All server functions in `src/routes/api/whiteboards.ts` used the OLD TanStack Start API:
+```ts
+createServerFn('POST', async (data) => { ... })
+```
+
+In TanStack Start 1.132, the Vite plugin (`@tanstack/start-plugin-core`) only transforms server functions whose source files contain `.handler(`. Because `whiteboards.ts` had no `.handler(` calls, the plugin NEVER processed the file. At runtime, calling these "functions" returned a builder object instead of making an HTTP request — no database operations were performed.
+
+When `createWhiteboardFn` was used as a TanStack Query `mutationFn`, it returned a plain JS object (the builder), not the created whiteboard. TanStack Query resolved with this object. `onSuccess(whiteboard)` received a builder object:
+- `whiteboard.id` = `undefined` → `navigate({ params: { whiteboardId: undefined } })`
+- The URL became `/whiteboard/undefined`
+- `getWhiteboardWithDiagram('undefined')` returned null → "Whiteboard not found"
+
+The same bug affected `updateWhiteboardFn`, `deleteWhiteboardFn`, and `getRecentWhiteboards`.
+
+### Fix Applied
+
+Rewrote all 10 functions in `src/routes/api/whiteboards.ts` using the new builder API:
+```ts
+export const createWhiteboardFn = createServerFn({ method: 'POST' })
+  .inputValidator((data: unknown) => createWhiteboardSchema.parse(data))
+  .handler(async ({ data }) => {
+    const whiteboard = await createWhiteboard(data)
+    return whiteboard
+  })
+```
+
+Updated callers in `ProjectTree.tsx` to use `{ data: ... }` wrapper required by new API:
+```ts
+mutationFn: (data: CreateWhiteboard) => createWhiteboardFn({ data }),
+```
+
+Updated `routes/index.tsx` query for recent whiteboards:
+```ts
+queryFn: () => getRecentWhiteboards({ data: 8 }),
+```
+
+Added `import type { CreateWhiteboard, UpdateWhiteboard }` to `ProjectTree.tsx` for proper typing.
+
+### Secondary Fix
+
+This also fixes ISSUE-007 ("Recent Whiteboards section absent") since `getRecentWhiteboards` was also broken by the same API mismatch.
+
+### Test Results
+
+- 160 tests pass (1 pre-existing failure in `AddColumnRow` unrelated to this fix)
+- No new TypeScript errors introduced (pre-existing errors from `folders.ts` and `projects.ts` which also use old API remain but are out of scope)
