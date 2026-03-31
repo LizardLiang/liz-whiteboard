@@ -7,10 +7,23 @@ import type { CursorPosition } from '@/data/schema'
 import {
   createCollaborationSession,
   deleteCollaborationSession,
+  deleteStaleSession,
   findActiveCollaborators,
   updateCollaborationSession,
   updateSessionActivity,
 } from '@/data/collaboration'
+import {
+  createTableSchema,
+  updateTableSchema,
+  createColumnSchema,
+  updateColumnSchema,
+  createRelationshipSchema,
+  updateRelationshipSchema,
+} from '@/data/schema'
+import { createDiagramTable, updateDiagramTable, deleteDiagramTable, updateDiagramTablePosition } from '@/data/diagram-table'
+import { findWhiteboardByIdWithDiagram } from '@/data/whiteboard'
+import { createColumn, updateColumn, deleteColumn, findColumnById } from '@/data/column'
+import { createRelationship, updateRelationship, deleteRelationship } from '@/data/relationship'
 
 /**
  * Socket.IO server instance
@@ -43,7 +56,6 @@ export function initializeSocketIO(httpServer: HTTPServer): SocketIOServer {
   // Cleanup stale sessions every 5 minutes
   setInterval(
     async () => {
-      const { deleteStaleSession } = await import('~/data/collaboration')
       try {
         const deletedCount = await deleteStaleSession()
         if (deletedCount > 0) {
@@ -187,10 +199,7 @@ function setupCollaborationEventHandlers(
   // Sync request (when client reconnects and needs full state)
   socket.on('sync:request', async () => {
     try {
-      const { findWhiteboardByIdWithDiagram } = await import(
-        '~/data/whiteboard'
-      )
-      const whiteboard = await findWhiteboardByIdWithDiagram(whiteboardId)
+const whiteboard = await findWhiteboardByIdWithDiagram(whiteboardId)
 
       if (!whiteboard) {
         socket.emit('error', {
@@ -219,8 +228,6 @@ function setupCollaborationEventHandlers(
   // Table creation
   socket.on('table:create', async (data: any) => {
     try {
-      const { createDiagramTable } = await import('~/data/diagram-table')
-      const { createTableSchema } = await import('~/data/schema')
 
       // Validate input
       const validated = createTableSchema.parse({
@@ -255,10 +262,6 @@ function setupCollaborationEventHandlers(
     'table:move',
     async (data: { tableId: string; positionX: number; positionY: number }) => {
       try {
-        const { updateDiagramTablePosition } = await import(
-          '~/data/diagram-table'
-        )
-
         // Update position in database
         await updateDiagramTablePosition(
           data.tableId,
@@ -292,8 +295,6 @@ function setupCollaborationEventHandlers(
     'table:update',
     async (data: { tableId: string; [key: string]: any }) => {
       try {
-        const { updateDiagramTable } = await import('~/data/diagram-table')
-        const { updateTableSchema } = await import('~/data/schema')
 
         const { tableId, ...updateData } = data
 
@@ -327,7 +328,6 @@ function setupCollaborationEventHandlers(
   // Table deletion
   socket.on('table:delete', async (data: { tableId: string }) => {
     try {
-      const { deleteDiagramTable } = await import('~/data/diagram-table')
 
       // Delete table from database (cascade deletes columns and relationships)
       await deleteDiagramTable(data.tableId)
@@ -357,8 +357,6 @@ function setupCollaborationEventHandlers(
   // Column creation
   socket.on('column:create', async (data: any) => {
     try {
-      const { createColumn } = await import('~/data/column')
-      const { createColumnSchema } = await import('~/data/schema')
 
       // Validate input
       const validated = createColumnSchema.parse(data)
@@ -368,6 +366,13 @@ function setupCollaborationEventHandlers(
 
       // Broadcast to other users
       socket.broadcast.emit('column:created', {
+        ...column,
+        createdBy: userId,
+      })
+
+      // Also confirm creation back to the originating socket so the client
+      // can replace its optimistic temp ID with the real database ID.
+      socket.emit('column:created', {
         ...column,
         createdBy: userId,
       })
@@ -390,8 +395,6 @@ function setupCollaborationEventHandlers(
     'column:update',
     async (data: { columnId: string; [key: string]: any }) => {
       try {
-        const { updateColumn } = await import('~/data/column')
-        const { updateColumnSchema } = await import('~/data/schema')
 
         const { columnId, ...updateData } = data
 
@@ -426,7 +429,6 @@ function setupCollaborationEventHandlers(
   // Column deletion
   socket.on('column:delete', async (data: { columnId: string }) => {
     try {
-      const { deleteColumn, findColumnById } = await import('~/data/column')
 
       // Get column before deletion to know tableId
       const column = await findColumnById(data.columnId)
@@ -464,8 +466,6 @@ function setupCollaborationEventHandlers(
   // Relationship creation
   socket.on('relationship:create', async (data: any) => {
     try {
-      const { createRelationship } = await import('~/data/relationship')
-      const { createRelationshipSchema } = await import('~/data/schema')
 
       // Validate input
       const validated = createRelationshipSchema.parse({
@@ -502,8 +502,6 @@ function setupCollaborationEventHandlers(
     'relationship:update',
     async (data: { relationshipId: string; [key: string]: any }) => {
       try {
-        const { updateRelationship } = await import('~/data/relationship')
-        const { updateRelationshipSchema } = await import('~/data/schema')
 
         const { relationshipId, ...updateData } = data
 
@@ -539,7 +537,6 @@ function setupCollaborationEventHandlers(
   // Relationship deletion
   socket.on('relationship:delete', async (data: { relationshipId: string }) => {
     try {
-      const { deleteRelationship } = await import('~/data/relationship')
 
       // Delete relationship from database
       await deleteRelationship(data.relationshipId)

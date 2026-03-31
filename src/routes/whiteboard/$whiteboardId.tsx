@@ -13,6 +13,7 @@ import type {
 } from '@/data/schema'
 import type { DiagramAST } from '@/lib/parser/ast'
 import { Canvas, useCanvasControls } from '@/components/whiteboard/Canvas'
+import type { ZoomControls } from '@/components/whiteboard/Toolbar'
 import { TableNode } from '@/components/whiteboard/TableNode'
 import { RelationshipEdge } from '@/components/whiteboard/RelationshipEdge'
 import { ReactFlowWhiteboard } from '@/components/whiteboard/ReactFlowWhiteboard'
@@ -21,6 +22,7 @@ import { TextEditor } from '@/components/whiteboard/TextEditor'
 import { Minimap } from '@/components/whiteboard/Minimap'
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import { useCollaboration } from '@/hooks/use-collaboration'
+import { getSessionUserId } from '@/lib/session-user-id'
 import { useAutoLayoutPreference } from '@/hooks/use-auto-layout-preference'
 import {
   computeAutoLayout,
@@ -58,8 +60,8 @@ function WhiteboardEditor() {
   const { whiteboardId } = Route.useParams()
   const queryClient = useQueryClient()
 
-  // TODO: Get actual user ID from auth context
-  const userId = 'temp-user-id'
+  // Anonymous session-stable user ID. Replace with auth context when auth is implemented.
+  const userId = getSessionUserId()
 
   // State
   const [selectedTableId, setSelectedTableId] = useState<string | null>(null)
@@ -83,6 +85,11 @@ function WhiteboardEditor() {
   const [reactFlowShowMode, setReactFlowShowMode] =
     useState<string>('ALL_FIELDS')
   const reactFlowShowModeRef = useRef<((mode: string) => void) | null>(null)
+
+  // React Flow zoom controls (set via callback from ReactFlowWhiteboard)
+  const [reactFlowZoomControls, setReactFlowZoomControls] =
+    useState<ZoomControls | null>(null)
+  const [reactFlowCurrentZoom, setReactFlowCurrentZoom] = useState<number>(1)
 
   // Canvas stage ref for programmatic zoom controls
   const stageRef = useRef<Konva.Stage>(null)
@@ -465,6 +472,20 @@ function WhiteboardEditor() {
   )
 
   /**
+   * Callback for React Flow to register its zoom controls
+   */
+  const handleZoomControlsReady = useCallback((controls: ZoomControls) => {
+    setReactFlowZoomControls(controls)
+  }, [])
+
+  /**
+   * Callback for React Flow to notify parent of viewport zoom changes
+   */
+  const handleZoomChange = useCallback((zoom: number) => {
+    setReactFlowCurrentZoom(zoom)
+  }, [])
+
+  /**
    * Handle display mode change from Toolbar
    */
   const handleShowModeChange = useCallback((mode: string) => {
@@ -642,8 +663,8 @@ function WhiteboardEditor() {
             isAutoLayoutLoading={isAutoLayoutComputing}
             autoLayoutEnabled={autoLayoutEnabled}
             onAutoLayoutEnabledChange={setAutoLayoutEnabled}
-            zoomControls={canvasControls}
-            currentZoom={canvasViewport.zoom}
+            zoomControls={USE_REACT_FLOW ? (reactFlowZoomControls ?? undefined) : canvasControls}
+            currentZoom={USE_REACT_FLOW ? reactFlowCurrentZoom : canvasViewport.zoom}
             showMode={USE_REACT_FLOW ? (reactFlowShowMode as any) : undefined}
             onShowModeChange={USE_REACT_FLOW ? handleShowModeChange : undefined}
           />
@@ -660,6 +681,8 @@ function WhiteboardEditor() {
                 nodesDraggable={true}
                 onAutoLayoutReady={handleAutoLayoutReady}
                 onDisplayModeReady={handleDisplayModeReady}
+                onZoomControlsReady={handleZoomControlsReady}
+                onZoomChange={handleZoomChange}
               />
             ) : (
               /* Konva Canvas (legacy) */

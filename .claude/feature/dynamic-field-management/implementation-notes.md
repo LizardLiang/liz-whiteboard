@@ -74,6 +74,22 @@ Implementing frontend inline column management for the ER diagram whiteboard. Ba
 
 ---
 
+---
+
+## Bug Fixes (Post-Pipeline)
+
+### ISSUE-005: Toolbar zoom controls non-functional in ReactFlow mode
+**Fix**: Added `onZoomControlsReady` and `onZoomChange` callback props to `ReactFlowWhiteboardProps`. Inside `ReactFlowWhiteboardInner`, `useReactFlow()` and `useViewport()` hooks from `@xyflow/react` are used to build a `ZoomControls` object (matching Toolbar's interface) and expose it via the callback. The parent (`$whiteboardId.tsx`) stores these in state and conditionally passes them to Toolbar when `USE_REACT_FLOW=true`.
+
+### ISSUE-006: Zoom percentage stuck at 100% in ReactFlow mode
+**Fix**: The `onZoomChange` callback fires on every `viewport.zoom` change (tracked via `useViewport()`), updating `reactFlowCurrentZoom` in the parent. This value is passed as `currentZoom` to Toolbar when in ReactFlow mode.
+
+**Files changed**:
+- `src/components/whiteboard/ReactFlowWhiteboard.tsx` — Added `useReactFlow`, `useViewport`, `ZoomControls` import; added two new props + implementation in `ReactFlowWhiteboardInner`; threaded props through outer `ReactFlowWhiteboard`
+- `src/routes/whiteboard/$whiteboardId.tsx` — Added `ZoomControls` import; added `reactFlowZoomControls`/`reactFlowCurrentZoom` state; added `handleZoomControlsReady`/`handleZoomChange` callbacks; wired Toolbar and ReactFlowWhiteboard
+
+---
+
 ## Deviations
 
 None. Implementation follows tech-spec.md exactly.

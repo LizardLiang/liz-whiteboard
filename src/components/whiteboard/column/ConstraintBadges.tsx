@@ -121,10 +121,10 @@ export const ConstraintBadges = memo(
     return (
       <div
         className="nodrag nowheel"
-        style={{ display: 'flex', gap: '2px', flexShrink: 0 }}
+        style={{ display: 'flex', gap: '2px', flexShrink: 0, width: '72px' }}
         onClick={(e) => e.stopPropagation()}
       >
-        {/* PK Badge — always visible */}
+        {/* PK Badge — always visible; active amber style when isPK, outline style when not */}
         <span
           role="button"
           aria-pressed={localPK}

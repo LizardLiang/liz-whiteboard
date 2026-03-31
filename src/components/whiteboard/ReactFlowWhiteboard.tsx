@@ -275,6 +275,9 @@ function ReactFlowWhiteboardInner({
   // useColumnCollaboration (needs callbacks) and useColumnMutations (provides onColumnError)
   const onColumnErrorRef = useRef<(data: any) => void>(() => {})
 
+  // Ref for replaceTempId — same pattern to avoid circular dependency
+  const replaceTempIdRef = useRef<(tableId: string, tempId: string, realId: string) => void>(() => {})
+
   // On WebSocket reconnect, re-fetch whiteboard data to replace any stale
   // optimistic state that was never confirmed before the disconnect.
   const handleReconnect = useCallback(() => {
@@ -296,6 +299,31 @@ function ReactFlowWhiteboardInner({
       onColumnDeleted,
       onColumnError: (data: any) => {
         onColumnErrorRef.current(data)
+      },
+      onOwnColumnCreated: (column: any) => {
+        // Server confirmed our own column:create — replace the optimistic temp ID
+        // with the real database ID. We find the matching pending column by
+        // tableId + name + order (the temp column will have a different id).
+        // Use a one-time setNodes read to locate the tempId before calling replaceTempId.
+        let tempId: string | undefined
+        setNodes((prevNodes) => {
+          const tableNode = prevNodes.find((n) => n.data.table.id === column.tableId)
+          if (tableNode) {
+            const match = tableNode.data.table.columns.find(
+              (c) =>
+                c.name === column.name &&
+                c.order === column.order &&
+                c.id !== column.id,
+            )
+            if (match) {
+              tempId = match.id
+            }
+          }
+          return prevNodes // no state change yet — just reading
+        })
+        if (tempId) {
+          replaceTempIdRef.current(column.tableId, tempId, column.id)
+        }
       },
       onReconnect: () => {
         onReconnectRef.current()
@@ -325,6 +353,11 @@ function ReactFlowWhiteboardInner({
   useEffect(() => {
     onColumnErrorRef.current = columnMutations.onColumnError
   }, [columnMutations.onColumnError])
+
+  // Wire replaceTempId ref now that columnMutations is available
+  useEffect(() => {
+    replaceTempIdRef.current = columnMutations.replaceTempId
+  }, [columnMutations.replaceTempId])
 
   // Column mutation callbacks (outgoing — triggered by user interactions in TableNode)
   const handleColumnCreate = useCallback(
