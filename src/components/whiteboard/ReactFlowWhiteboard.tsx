@@ -32,10 +32,14 @@ import { updateTablePositionFn } from '@/routes/api/tables'
 import { useWhiteboardCollaboration } from '@/hooks/use-whiteboard-collaboration'
 import { useColumnCollaboration } from '@/hooks/use-column-collaboration'
 import { useColumnMutations } from '@/hooks/use-column-mutations'
+import { useTableMutations } from '@/hooks/use-table-mutations'
+import { useTableDeletion } from '@/hooks/use-table-deletion'
 import type { Column } from '@prisma/client'
 import type { CreateColumnPayload } from './column/types'
 import type { UpdateColumn } from '@/data/schema'
 import { getSessionUserId } from '@/lib/session-user-id'
+import { DeleteTableDialog } from './DeleteTableDialog'
+import type { TableRelationship } from './DeleteTableDialog'
 
 /**
  * ReactFlowWhiteboard Props
@@ -111,6 +115,9 @@ function ReactFlowWhiteboardInner({
   const edgesRef = useRef(edges)
   useEffect(() => { edgesRef.current = edges }, [edges])
 
+  // Table deletion state — which table has been requested for deletion (opens dialog)
+  const [deletingTableId, setDeletingTableId] = useState<string | null>(null)
+
   // Display mode state with localStorage persistence
   const [showMode, setShowMode] = useState<ShowMode>(() => {
     // Restore from localStorage on mount
@@ -151,6 +158,7 @@ function ReactFlowWhiteboardInner({
             onColumnCreate: prev.data.onColumnCreate,
             onColumnUpdate: prev.data.onColumnUpdate,
             onColumnDelete: prev.data.onColumnDelete,
+            onRequestTableDelete: prev.data.onRequestTableDelete,
           },
         }
       })
@@ -175,8 +183,25 @@ function ReactFlowWhiteboardInner({
     )
   }, [edges])
 
-  // Real-time collaboration integration (table position events)
-  const { connectionState, emitPositionUpdate } = useWhiteboardCollaboration(
+  // Callback for when a remote user deletes a table
+  const onTableDeleted = useCallback((tableId: string) => {
+    setNodes((prev) => prev.filter((n) => n.id !== tableId))
+    setEdges((prev) =>
+      prev.filter(
+        (e) =>
+          e.data?.relationship.sourceTableId !== tableId &&
+          e.data?.relationship.targetTableId !== tableId,
+      ),
+    )
+    // Close dialog if it was open for this table
+    setDeletingTableId((prev) => (prev === tableId ? null : prev))
+  }, [])
+
+  // Ref for onTableError — breaks circular dependency between useWhiteboardCollaboration and useTableMutations
+  const onTableErrorRef = useRef<(data: any) => void>(() => {})
+
+  // Real-time collaboration integration (table position events + table deletion)
+  const { connectionState, emitPositionUpdate, emitTableDelete } = useWhiteboardCollaboration(
     whiteboardId,
     userId,
     useCallback((tableId: string, positionX: number, positionY: number) => {
@@ -189,6 +214,8 @@ function ReactFlowWhiteboardInner({
         ),
       )
     }, []),
+    onTableDeleted,
+    useCallback((data: any) => { onTableErrorRef.current(data) }, []),
   )
 
   // Column collaboration callbacks (incoming events from other users)
@@ -359,6 +386,22 @@ function ReactFlowWhiteboardInner({
     replaceTempIdRef.current = columnMutations.replaceTempId
   }, [columnMutations.replaceTempId])
 
+  // Table mutations hook (optimistic delete + rollback)
+  const tableMutations = useTableMutations(
+    setNodes,
+    setEdges,
+    emitTableDelete,
+    isConnected,
+  )
+
+  // Wire onTableError ref now that tableMutations is available
+  useEffect(() => {
+    onTableErrorRef.current = tableMutations.onTableError
+  }, [tableMutations.onTableError])
+
+  // Keyboard shortcut for table deletion (Delete/Backspace on selected node)
+  useTableDeletion((tableId: string) => setDeletingTableId(tableId))
+
   // Column mutation callbacks (outgoing — triggered by user interactions in TableNode)
   const handleColumnCreate = useCallback(
     (tableId: string, data: CreateColumnPayload) => {
@@ -381,13 +424,20 @@ function ReactFlowWhiteboardInner({
     [columnMutations],
   )
 
+  // Callback to request table deletion (opens dialog)
+  const handleRequestTableDelete = useCallback((tableId: string) => {
+    setDeletingTableId(tableId)
+  }, [])
+
   // Thread column mutation callbacks into node data via refs (stable identity)
   const handleColumnCreateRef = useRef(handleColumnCreate)
   const handleColumnUpdateRef = useRef(handleColumnUpdate)
   const handleColumnDeleteRef = useRef(handleColumnDelete)
+  const handleRequestTableDeleteRef = useRef(handleRequestTableDelete)
   useEffect(() => { handleColumnCreateRef.current = handleColumnCreate }, [handleColumnCreate])
   useEffect(() => { handleColumnUpdateRef.current = handleColumnUpdate }, [handleColumnUpdate])
   useEffect(() => { handleColumnDeleteRef.current = handleColumnDelete }, [handleColumnDelete])
+  useEffect(() => { handleRequestTableDeleteRef.current = handleRequestTableDelete }, [handleRequestTableDelete])
 
   // Inject column callbacks + isConnected into node data whenever isConnected changes
   useEffect(() => {
@@ -399,6 +449,7 @@ function ReactFlowWhiteboardInner({
           onColumnCreate: handleColumnCreateRef.current,
           onColumnUpdate: handleColumnUpdateRef.current,
           onColumnDelete: handleColumnDeleteRef.current,
+          onRequestTableDelete: handleRequestTableDeleteRef.current,
           isConnected,
         },
       })),
@@ -416,6 +467,7 @@ function ReactFlowWhiteboardInner({
           onColumnCreate: handleColumnCreateRef.current,
           onColumnUpdate: handleColumnUpdateRef.current,
           onColumnDelete: handleColumnDeleteRef.current,
+          onRequestTableDelete: handleRequestTableDeleteRef.current,
           edges: edgesRef.current,
           isConnected,
         },
@@ -541,10 +593,49 @@ function ReactFlowWhiteboardInner({
     [updatePositionMutation, emitPositionUpdate],
   )
 
+  // Compute dialog data for the deleting table
+  const deletingNode = deletingTableId
+    ? nodes.find((n) => n.id === deletingTableId) ?? null
+    : null
+
+  const tableDeleteAffectedRelationships = useMemo((): Array<TableRelationship> => {
+    if (!deletingTableId || !deletingNode) return []
+    const tableNameById = new Map(nodes.map((n) => [n.id, n.data.table.name]))
+    return edges
+      .filter(
+        (e) =>
+          e.data?.relationship.sourceTableId === deletingTableId ||
+          e.data?.relationship.targetTableId === deletingTableId,
+      )
+      .map((e) => {
+        const rel = e.data!.relationship
+        return {
+          id: e.id,
+          sourceTableName: tableNameById.get(rel.sourceTableId) ?? rel.sourceTableId,
+          sourceColumnName: rel.sourceColumn.name,
+          targetTableName: tableNameById.get(rel.targetTableId) ?? rel.targetTableId,
+          targetColumnName: rel.targetColumn.name,
+          cardinality: String(e.data!.cardinality),
+        }
+      })
+  }, [deletingTableId, deletingNode, nodes, edges])
+
   // Render React Flow canvas with collaboration-aware state
   return (
     <div style={{ position: 'relative', width: '100%', height: '100%' }}>
       <ConnectionStatusIndicator connectionState={connectionState} />
+      {deletingTableId && deletingNode && (
+        <DeleteTableDialog
+          tableName={deletingNode.data.table.name}
+          columnCount={deletingNode.data.table.columns.length}
+          affectedRelationships={tableDeleteAffectedRelationships}
+          onConfirm={() => {
+            tableMutations.deleteTable(deletingTableId)
+            setDeletingTableId(null)
+          }}
+          onCancel={() => setDeletingTableId(null)}
+        />
+      )}
       <ReactFlowCanvas
         initialNodes={nodes}
         initialEdges={edges}

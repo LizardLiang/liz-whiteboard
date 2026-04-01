@@ -3,11 +3,6 @@
 
 import { useCallback, useEffect } from 'react'
 import { useCollaboration } from './use-collaboration'
-import type { Edge, Node } from '@xyflow/react'
-import type {
-  RelationshipEdgeType,
-  TableNodeType,
-} from '@/lib/react-flow/types'
 import type { TableErrorEvent } from './use-table-mutations'
 
 /**
