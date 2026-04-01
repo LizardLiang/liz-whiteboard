@@ -128,7 +128,7 @@ table Users {
     expect(result.ast?.tables).toHaveLength(1)
   })
 
-  it('should handle all data types', () => {
+  it('should handle all original data types', () => {
     const input = `
 table AllTypes {
   col_int int
@@ -154,6 +154,103 @@ table AllTypes {
     expect(result.ast?.tables[0].columns[5].dataType).toBe('text')
     expect(result.ast?.tables[0].columns[6].dataType).toBe('uuid')
     expect(result.ast?.tables[0].columns[7].dataType).toBe('json')
+  })
+
+  it('should handle all new data types', () => {
+    const input = `
+table NewTypes {
+  col_bigint bigint
+  col_smallint smallint
+  col_double double
+  col_decimal decimal
+  col_serial serial
+  col_money money
+  col_char char
+  col_varchar varchar
+  col_bit bit
+  col_datetime datetime
+  col_timestamp timestamp
+  col_time time
+  col_binary binary
+  col_blob blob
+  col_xml xml
+  col_array array
+  col_enum enum
+}
+    `.trim()
+
+    const result = parseDiagram(input)
+
+    expect(result.success).toBe(true)
+    expect(result.ast?.tables[0].columns).toHaveLength(17)
+    expect(result.ast?.tables[0].columns[0].dataType).toBe('bigint')
+    expect(result.ast?.tables[0].columns[1].dataType).toBe('smallint')
+    expect(result.ast?.tables[0].columns[2].dataType).toBe('double')
+    expect(result.ast?.tables[0].columns[3].dataType).toBe('decimal')
+    expect(result.ast?.tables[0].columns[4].dataType).toBe('serial')
+    expect(result.ast?.tables[0].columns[5].dataType).toBe('money')
+    expect(result.ast?.tables[0].columns[6].dataType).toBe('char')
+    expect(result.ast?.tables[0].columns[7].dataType).toBe('varchar')
+    expect(result.ast?.tables[0].columns[8].dataType).toBe('bit')
+    expect(result.ast?.tables[0].columns[9].dataType).toBe('datetime')
+    expect(result.ast?.tables[0].columns[10].dataType).toBe('timestamp')
+    expect(result.ast?.tables[0].columns[11].dataType).toBe('time')
+    expect(result.ast?.tables[0].columns[12].dataType).toBe('binary')
+    expect(result.ast?.tables[0].columns[13].dataType).toBe('blob')
+    expect(result.ast?.tables[0].columns[14].dataType).toBe('xml')
+    expect(result.ast?.tables[0].columns[15].dataType).toBe('array')
+    expect(result.ast?.tables[0].columns[16].dataType).toBe('enum')
+  })
+
+  it('should correctly distinguish bigint from int, smallint from int', () => {
+    const input = `
+table NumericTypes {
+  a bigint
+  b smallint
+  c int
+}
+    `.trim()
+
+    const result = parseDiagram(input)
+
+    expect(result.success).toBe(true)
+    expect(result.ast?.tables[0].columns[0].dataType).toBe('bigint')
+    expect(result.ast?.tables[0].columns[1].dataType).toBe('smallint')
+    expect(result.ast?.tables[0].columns[2].dataType).toBe('int')
+  })
+
+  it('should correctly distinguish datetime from date, timestamp from time', () => {
+    const input = `
+table DateTypes {
+  a datetime
+  b date
+  c timestamp
+  d time
+}
+    `.trim()
+
+    const result = parseDiagram(input)
+
+    expect(result.success).toBe(true)
+    expect(result.ast?.tables[0].columns[0].dataType).toBe('datetime')
+    expect(result.ast?.tables[0].columns[1].dataType).toBe('date')
+    expect(result.ast?.tables[0].columns[2].dataType).toBe('timestamp')
+    expect(result.ast?.tables[0].columns[3].dataType).toBe('time')
+  })
+
+  it('should correctly distinguish varchar from char', () => {
+    const input = `
+table StringTypes {
+  a varchar
+  b char
+}
+    `.trim()
+
+    const result = parseDiagram(input)
+
+    expect(result.success).toBe(true)
+    expect(result.ast?.tables[0].columns[0].dataType).toBe('varchar')
+    expect(result.ast?.tables[0].columns[1].dataType).toBe('char')
   })
 
   it('should handle all cardinalities', () => {

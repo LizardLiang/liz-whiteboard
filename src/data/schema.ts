@@ -68,14 +68,38 @@ export const cardinalitySchema = z.enum([
  * Allowed data types for columns
  */
 export const dataTypeSchema = z.enum([
+  // Numeric
   'int',
-  'string',
+  'bigint',
+  'smallint',
   'float',
-  'boolean',
-  'date',
+  'double',
+  'decimal',
+  'serial',
+  'money',
+  // String
+  'string',
+  'char',
+  'varchar',
   'text',
-  'uuid',
+  // Boolean
+  'boolean',
+  'bit',
+  // Date/Time
+  'date',
+  'datetime',
+  'timestamp',
+  'time',
+  // Binary
+  'binary',
+  'blob',
+  // Structured
   'json',
+  'xml',
+  'array',
+  'enum',
+  // Identity
+  'uuid',
 ])
 
 // ============================================================================
