@@ -260,9 +260,20 @@ export function ReactFlowCanvas({
     [handleEdgesChange, onEdgesChangeProp],
   )
 
+  // Track whether a connection drag is in progress to reveal target handles
+  const [isConnecting, setIsConnecting] = useState(false)
+
+  const onConnectStart = useCallback(() => {
+    setIsConnecting(true)
+  }, [])
+
+  const onConnectEnd = useCallback(() => {
+    setIsConnecting(false)
+  }, [])
+
   return (
     <div
-      className={`react-flow-wrapper ${className}`}
+      className={`react-flow-wrapper ${isConnecting ? 'is-connecting' : ''} ${className}`}
       style={{ width: '100%', height: '100%' }}
     >
       {/* Global SVG marker definitions for cardinality indicators */}
@@ -274,6 +285,8 @@ export function ReactFlowCanvas({
         onNodesChange={onNodesChange}
         onEdgesChange={onEdgesChange}
         onConnect={onConnect}
+        onConnectStart={onConnectStart}
+        onConnectEnd={onConnectEnd}
         onNodeClick={onNodeClick}
         onPaneClick={onPaneClick}
         onNodeMouseEnter={onNodeMouseEnter}
@@ -283,7 +296,7 @@ export function ReactFlowCanvas({
         nodeTypes={memoizedNodeTypes}
         edgeTypes={memoizedEdgeTypes}
         nodesDraggable={nodesDraggable}
-        nodesConnectable={false}
+        nodesConnectable={true}
         elementsSelectable={true}
         fitView
         fitViewOptions={fitViewOptions}

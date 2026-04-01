@@ -34,6 +34,29 @@ export function createColumnHandleId(
 }
 
 /**
+ * Parse a column handle ID back into its components.
+ * Format: `{tableId}__{columnId}__{side}__{type}`
+ *
+ * Returns null if the handle ID doesn't match the expected format.
+ */
+export function parseColumnHandleId(handleId: string): {
+  tableId: string
+  columnId: string
+  side: HandleSide
+  type: 'source' | 'target'
+} | null {
+  const parts = handleId.split('__')
+  if (parts.length !== 4) return null
+
+  const [tableId, columnId, side, type] = parts
+
+  if (side !== 'left' && side !== 'right') return null
+  if (type !== 'source' && type !== 'target') return null
+
+  return { tableId, columnId, side, type }
+}
+
+/**
  * Get the center coordinates of a node.
  */
 function getNodeCenter(node: Node): { cx: number; cy: number } {

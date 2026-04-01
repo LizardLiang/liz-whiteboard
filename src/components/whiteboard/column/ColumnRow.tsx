@@ -126,12 +126,14 @@ export const ColumnRow = memo(
             type="source"
             position={Position.Left}
             id={createColumnHandleId(tableId, column.id, 'left', 'source')}
-            style={{ left: '-5px', opacity: 0, pointerEvents: 'none' }}
+            className="nodrag"
+            style={{ left: '-5px' }}
           />
           <Handle
             type="target"
             position={Position.Left}
             id={createColumnHandleId(tableId, column.id, 'left', 'target')}
+            className="nodrag"
             style={{ left: '-5px' }}
           />
 
@@ -267,13 +269,15 @@ export const ColumnRow = memo(
             type="source"
             position={Position.Right}
             id={createColumnHandleId(tableId, column.id, 'right', 'source')}
+            className="nodrag"
             style={{ right: '-5px' }}
           />
           <Handle
             type="target"
             position={Position.Right}
             id={createColumnHandleId(tableId, column.id, 'right', 'target')}
-            style={{ right: '-5px', opacity: 0, pointerEvents: 'none' }}
+            className="nodrag"
+            style={{ right: '-5px' }}
           />
         </div>
       </TooltipProvider>
