@@ -183,10 +183,12 @@ export function convertRelationshipToEdge(
  * @returns Array of React Flow RelationshipEdgeType
  */
 export function convertRelationshipsToEdges(
-  relationships: Array<Relationship & {
-    sourceColumn: Column
-    targetColumn: Column
-  }>,
+  relationships: Array<
+    Relationship & {
+      sourceColumn: Column
+      targetColumn: Column
+    }
+  >,
 ): Array<RelationshipEdgeType> {
   return relationships.map((rel) => convertRelationshipToEdge(rel))
 }

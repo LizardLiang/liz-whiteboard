@@ -1,9 +1,9 @@
 import { defineConfig, isRunnableDevEnvironment } from 'vite'
-import type { Plugin } from 'vite'
 import { tanstackStart } from '@tanstack/react-start/plugin/vite'
 import viteReact from '@vitejs/plugin-react'
 import viteTsConfigPaths from 'vite-tsconfig-paths'
 import tailwindcss from '@tailwindcss/vite'
+import type { Plugin } from 'vite'
 
 /**
  * Vite plugin that attaches Socket.IO to the dev server's HTTP server.
@@ -52,7 +52,7 @@ function socketIOPlugin(): Plugin {
           // The path must be absolute so the module runner can resolve it.
           const collaborationModule = (await serverEnv.runner.import(
             '/src/routes/api/collaboration.ts',
-          )) as { initializeSocketIO: (server: typeof httpServer) => unknown }
+          ))
 
           collaborationModule.initializeSocketIO(httpServer)
           console.log('[socket-io] Socket.IO attached to dev HTTP server.')

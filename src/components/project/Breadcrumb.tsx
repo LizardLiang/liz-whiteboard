@@ -12,7 +12,7 @@ interface BreadcrumbItem {
 }
 
 interface BreadcrumbProps {
-  items: BreadcrumbItem[]
+  items: Array<BreadcrumbItem>
   projectId: string
 }
 

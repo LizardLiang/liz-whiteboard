@@ -36,7 +36,9 @@ export function ConnectionStatusIndicator({
         borderRadius: '6px',
         fontSize: '13px',
         fontWeight: 500,
-        background: isReconnecting ? 'rgba(245, 158, 11, 0.15)' : 'rgba(239, 68, 68, 0.15)',
+        background: isReconnecting
+          ? 'rgba(245, 158, 11, 0.15)'
+          : 'rgba(239, 68, 68, 0.15)',
         border: `1px solid ${isReconnecting ? '#f59e0b' : '#ef4444'}`,
         color: isReconnecting ? '#b45309' : '#dc2626',
         pointerEvents: 'none',
@@ -53,7 +55,9 @@ export function ConnectionStatusIndicator({
           background: isReconnecting ? '#f59e0b' : '#ef4444',
           display: 'inline-block',
           flexShrink: 0,
-          animation: isReconnecting ? 'pulse 1.5s ease-in-out infinite' : 'none',
+          animation: isReconnecting
+            ? 'pulse 1.5s ease-in-out infinite'
+            : 'none',
         }}
       />
       {isReconnecting

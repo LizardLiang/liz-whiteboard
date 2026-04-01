@@ -5,9 +5,9 @@
  */
 
 import { useCallback, useEffect, useRef, useState } from 'react'
+import { DATA_TYPES, DATA_TYPE_LABELS } from './types'
 import type { Column } from '@prisma/client'
 import type { DataType } from '@/data/schema'
-import { DATA_TYPES, DATA_TYPE_LABELS } from './types'
 import {
   Select,
   SelectContent,
@@ -19,10 +19,18 @@ import {
 export interface AddColumnRowProps {
   tableId: string
   existingColumns: Array<Column>
-  onCreate: (data: { name: string; dataType: DataType; order: number }) => Promise<void>
+  onCreate: (data: {
+    name: string
+    dataType: DataType
+    order: number
+  }) => Promise<void>
 }
 
-export function AddColumnRow({ tableId, existingColumns, onCreate }: AddColumnRowProps) {
+export function AddColumnRow({
+  tableId,
+  existingColumns,
+  onCreate,
+}: AddColumnRowProps) {
   const [isExpanded, setIsExpanded] = useState(false)
   const [name, setName] = useState('')
   const [dataType, setDataType] = useState<DataType>('string')
@@ -60,7 +68,9 @@ export function AddColumnRow({ tableId, existingColumns, onCreate }: AddColumnRo
       }
       // Click was inside a Radix ContextMenu trigger wrapper
       if (target.closest?.('[data-radix-context-menu-trigger]')) {
-        const contextMenuTrigger = target.closest('[data-radix-context-menu-trigger]')
+        const contextMenuTrigger = target.closest(
+          '[data-radix-context-menu-trigger]',
+        )
         if (contextMenuTrigger?.contains(rowRef.current as Node)) {
           return
         }
@@ -83,36 +93,39 @@ export function AddColumnRow({ tableId, existingColumns, onCreate }: AddColumnRo
     cancelledRef.current = false
   }, [name, dataType, isExpanded])
 
-  const handleCreate = useCallback(async (closeAfterSave = false) => {
-    const trimmed = name.trim()
-    if (!trimmed) {
-      reset()
-      return
-    }
-
-    const nextOrder =
-      existingColumns.length > 0
-        ? Math.max(...existingColumns.map((c) => c.order)) + 1
-        : 0
-
-    try {
-      await onCreate({ name: trimmed, dataType, order: nextOrder })
-    } catch (error) {
-      console.error('Failed to create column:', error)
-      return
-    }
-
-    if (closeAfterSave) {
-      reset()
-    } else {
-      // Reset for rapid entry (Enter key)
-      setName('')
-      setDataType('string')
-      if (inputRef.current) {
-        inputRef.current.focus()
+  const handleCreate = useCallback(
+    async (closeAfterSave = false) => {
+      const trimmed = name.trim()
+      if (!trimmed) {
+        reset()
+        return
       }
-    }
-  }, [name, dataType, existingColumns, onCreate, reset, tableId])
+
+      const nextOrder =
+        existingColumns.length > 0
+          ? Math.max(...existingColumns.map((c) => c.order)) + 1
+          : 0
+
+      try {
+        await onCreate({ name: trimmed, dataType, order: nextOrder })
+      } catch (error) {
+        console.error('Failed to create column:', error)
+        return
+      }
+
+      if (closeAfterSave) {
+        reset()
+      } else {
+        // Reset for rapid entry (Enter key)
+        setName('')
+        setDataType('string')
+        if (inputRef.current) {
+          inputRef.current.focus()
+        }
+      }
+    },
+    [name, dataType, existingColumns, onCreate, reset, tableId],
+  )
 
   const handleKeyDown = useCallback(
     (e: React.KeyboardEvent<HTMLInputElement>) => {
@@ -174,7 +187,8 @@ export function AddColumnRow({ tableId, existingColumns, onCreate }: AddColumnRo
           onMouseEnter={(e) => {
             const btn = e.currentTarget as HTMLButtonElement
             btn.style.opacity = '1'
-            btn.style.background = 'var(--rf-column-edit-bg, rgba(99,102,241,0.07))'
+            btn.style.background =
+              'var(--rf-column-edit-bg, rgba(99,102,241,0.07))'
           }}
           onMouseLeave={(e) => {
             const btn = e.currentTarget as HTMLButtonElement

@@ -6,6 +6,7 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { Clock, FileText, FolderOpen, PlusCircle } from 'lucide-react'
 import { useState } from 'react'
 import { toast } from 'sonner'
+import type { CreateProject } from '@/data/schema'
 import { Button } from '@/components/ui/button'
 import {
   Card,
@@ -26,7 +27,6 @@ import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { Textarea } from '@/components/ui/textarea'
 import { createProjectFn, getProjectsWithTree } from '@/routes/api/projects'
-import type { CreateProject } from '@/data/schema'
 import { getRecentWhiteboards } from '@/routes/api/whiteboards'
 
 export const Route = createFileRoute('/')({

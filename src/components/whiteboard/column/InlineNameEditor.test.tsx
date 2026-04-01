@@ -3,13 +3,17 @@
 // TS-02: InlineNameEditor unit tests
 
 import { describe, expect, it, vi } from 'vitest'
-import { render, screen, fireEvent } from '@testing-library/react'
+import { fireEvent, render, screen } from '@testing-library/react'
 import { InlineNameEditor } from './InlineNameEditor'
 
 describe('InlineNameEditor', () => {
   it('TC-02-01: auto-focuses the input on mount', () => {
     render(
-      <InlineNameEditor value="test_col" onCommit={vi.fn()} onCancel={vi.fn()} />,
+      <InlineNameEditor
+        value="test_col"
+        onCommit={vi.fn()}
+        onCancel={vi.fn()}
+      />,
     )
     const input = screen.getByRole('textbox')
     expect(document.activeElement).toBe(input)
@@ -17,16 +21,24 @@ describe('InlineNameEditor', () => {
 
   it('TC-02-02: pre-fills with the current column name value', () => {
     render(
-      <InlineNameEditor value="my_column" onCommit={vi.fn()} onCancel={vi.fn()} />,
+      <InlineNameEditor
+        value="my_column"
+        onCommit={vi.fn()}
+        onCancel={vi.fn()}
+      />,
     )
-    const input = screen.getByRole('textbox') as HTMLInputElement
+    const input = screen.getByRole('textbox')
     expect(input.value).toBe('my_column')
   })
 
   it('TC-02-03: pressing Enter commits with the new value', () => {
     const onCommit = vi.fn()
     render(
-      <InlineNameEditor value="old_name" onCommit={onCommit} onCancel={vi.fn()} />,
+      <InlineNameEditor
+        value="old_name"
+        onCommit={onCommit}
+        onCancel={vi.fn()}
+      />,
     )
     const input = screen.getByRole('textbox')
     fireEvent.change(input, { target: { value: 'new_name' } })
@@ -38,7 +50,11 @@ describe('InlineNameEditor', () => {
     const onCommit = vi.fn()
     const onCancel = vi.fn()
     render(
-      <InlineNameEditor value="old_name" onCommit={onCommit} onCancel={onCancel} />,
+      <InlineNameEditor
+        value="old_name"
+        onCommit={onCommit}
+        onCancel={onCancel}
+      />,
     )
     const input = screen.getByRole('textbox')
     fireEvent.keyDown(input, { key: 'Escape' })
@@ -49,7 +65,11 @@ describe('InlineNameEditor', () => {
   it('TC-02-05: blurring with a valid non-empty value commits', () => {
     const onCommit = vi.fn()
     render(
-      <InlineNameEditor value="my_col" onCommit={onCommit} onCancel={vi.fn()} />,
+      <InlineNameEditor
+        value="my_col"
+        onCommit={onCommit}
+        onCancel={vi.fn()}
+      />,
     )
     const input = screen.getByRole('textbox')
     fireEvent.change(input, { target: { value: 'new_col' } })
@@ -61,7 +81,11 @@ describe('InlineNameEditor', () => {
     const onCommit = vi.fn()
     const onCancel = vi.fn()
     render(
-      <InlineNameEditor value="old_name" onCommit={onCommit} onCancel={onCancel} />,
+      <InlineNameEditor
+        value="old_name"
+        onCommit={onCommit}
+        onCancel={onCancel}
+      />,
     )
     const input = screen.getByRole('textbox')
     fireEvent.change(input, { target: { value: '' } })
@@ -74,7 +98,11 @@ describe('InlineNameEditor', () => {
   it('TC-02-07: blurring with empty value calls onCancel', () => {
     const onCancel = vi.fn()
     render(
-      <InlineNameEditor value="some_col" onCommit={vi.fn()} onCancel={onCancel} />,
+      <InlineNameEditor
+        value="some_col"
+        onCommit={vi.fn()}
+        onCancel={onCancel}
+      />,
     )
     const input = screen.getByRole('textbox')
     fireEvent.change(input, { target: { value: '' } })

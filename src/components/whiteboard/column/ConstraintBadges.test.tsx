@@ -2,8 +2,8 @@
 // src/components/whiteboard/column/ConstraintBadges.test.tsx
 // TS-03: ConstraintBadges unit tests
 
-import { describe, expect, it, vi, beforeEach, afterEach } from 'vitest'
-import { render, screen, fireEvent, act } from '@testing-library/react'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
+import { act, fireEvent, render, screen } from '@testing-library/react'
 import { ConstraintBadges } from './ConstraintBadges'
 
 const defaultProps = {
@@ -41,27 +41,47 @@ describe('ConstraintBadges', () => {
 
   it('TC-03-03: clicking PK badge (on->off) debounces and calls onToggle with isPrimaryKey=false', () => {
     const onToggle = vi.fn()
-    render(<ConstraintBadges {...defaultProps} isPrimaryKey={true} onToggle={onToggle} />)
+    render(
+      <ConstraintBadges
+        {...defaultProps}
+        isPrimaryKey={true}
+        onToggle={onToggle}
+      />,
+    )
     const pkBadge = screen.getByRole('button', { name: /toggle primary key/i })
     fireEvent.click(pkBadge)
     // Before debounce, no call
     expect(onToggle).not.toHaveBeenCalled()
     // Advance timers past 250ms debounce
-    act(() => { vi.advanceTimersByTime(300) })
+    act(() => {
+      vi.advanceTimersByTime(300)
+    })
     // Should be called with isPrimaryKey: false
     const calls = onToggle.mock.calls
-    expect(calls.some(([c, v]) => c === 'isPrimaryKey' && v === false)).toBe(true)
+    expect(calls.some(([c, v]) => c === 'isPrimaryKey' && v === false)).toBe(
+      true,
+    )
   })
 
   it('TC-03-04: clicking PK badge (on->off) calls onToggle with isPrimaryKey=false only', () => {
     const onToggle = vi.fn()
-    render(<ConstraintBadges {...defaultProps} isPrimaryKey={true} onToggle={onToggle} />)
+    render(
+      <ConstraintBadges
+        {...defaultProps}
+        isPrimaryKey={true}
+        onToggle={onToggle}
+      />,
+    )
     const pkBadge = screen.getByRole('button', { name: /toggle primary key/i })
     fireEvent.click(pkBadge)
-    act(() => { vi.advanceTimersByTime(300) })
+    act(() => {
+      vi.advanceTimersByTime(300)
+    })
     // Should only call with isPrimaryKey=false; not isNullable or isUnique
     const calls = onToggle.mock.calls
-    expect(calls.some(([c, v]) => c === 'isPrimaryKey' && v === false)).toBe(true)
+    expect(calls.some(([c, v]) => c === 'isPrimaryKey' && v === false)).toBe(
+      true,
+    )
     expect(calls.every(([c]) => c === 'isPrimaryKey')).toBe(true)
   })
 
@@ -82,10 +102,14 @@ describe('ConstraintBadges', () => {
     // After click, optimistic state updates immediately
     expect(pkBadge.getAttribute('aria-pressed')).toBe('true')
     // Advance past debounce
-    act(() => { vi.advanceTimersByTime(300) })
+    act(() => {
+      vi.advanceTimersByTime(300)
+    })
     const calls = onToggle.mock.calls
     // isPrimaryKey must be set to true
-    expect(calls.some(([c, v]) => c === 'isPrimaryKey' && v === true)).toBe(true)
+    expect(calls.some(([c, v]) => c === 'isPrimaryKey' && v === true)).toBe(
+      true,
+    )
     // cascade: isNullable must be set to false
     expect(calls.some(([c, v]) => c === 'isNullable' && v === false)).toBe(true)
     // cascade: isUnique must be set to true
@@ -101,10 +125,18 @@ describe('ConstraintBadges', () => {
 
   it('TC-03-06: clicking N badge toggles isNullable independently', () => {
     const onToggle = vi.fn()
-    render(<ConstraintBadges {...defaultProps} isNullable={true} onToggle={onToggle} />)
+    render(
+      <ConstraintBadges
+        {...defaultProps}
+        isNullable={true}
+        onToggle={onToggle}
+      />,
+    )
     const nBadge = screen.getByRole('button', { name: /toggle nullable/i })
     fireEvent.click(nBadge)
-    act(() => { vi.advanceTimersByTime(300) })
+    act(() => {
+      vi.advanceTimersByTime(300)
+    })
     expect(onToggle).toHaveBeenCalledWith('isNullable', false)
   })
 
@@ -117,15 +149,25 @@ describe('ConstraintBadges', () => {
 
   it('TC-03-08: clicking U badge toggles isUnique independently', () => {
     const onToggle = vi.fn()
-    render(<ConstraintBadges {...defaultProps} isUnique={false} onToggle={onToggle} />)
+    render(
+      <ConstraintBadges
+        {...defaultProps}
+        isUnique={false}
+        onToggle={onToggle}
+      />,
+    )
     const uBadge = screen.getByRole('button', { name: /toggle unique/i })
     fireEvent.click(uBadge)
-    act(() => { vi.advanceTimersByTime(300) })
+    act(() => {
+      vi.advanceTimersByTime(300)
+    })
     expect(onToggle).toHaveBeenCalledWith('isUnique', true)
   })
 
   it('TC-03-09: FK badge visible only when isForeignKey=true', () => {
-    const { rerender } = render(<ConstraintBadges {...defaultProps} isForeignKey={false} />)
+    const { rerender } = render(
+      <ConstraintBadges {...defaultProps} isForeignKey={false} />,
+    )
     expect(screen.queryByText('FK')).toBeNull()
 
     rerender(<ConstraintBadges {...defaultProps} isForeignKey={true} />)
@@ -141,7 +183,13 @@ describe('ConstraintBadges', () => {
 
   it('TC-03-11: debounce — rapid clicks on PK badge emit only once after 250ms', () => {
     const onToggle = vi.fn()
-    render(<ConstraintBadges {...defaultProps} isPrimaryKey={true} onToggle={onToggle} />)
+    render(
+      <ConstraintBadges
+        {...defaultProps}
+        isPrimaryKey={true}
+        onToggle={onToggle}
+      />,
+    )
     const pkBadge = screen.getByRole('button', { name: /toggle primary key/i })
 
     // Click 3 times rapidly — each click toggles state, but debounce should batch
@@ -153,7 +201,9 @@ describe('ConstraintBadges', () => {
     expect(onToggle).not.toHaveBeenCalled()
 
     // After 250ms, the isPrimaryKey timer fires once
-    act(() => { vi.advanceTimersByTime(300) })
+    act(() => {
+      vi.advanceTimersByTime(300)
+    })
 
     // The isPrimaryKey constraint fires exactly once (last scheduled value)
     const pkCalls = onToggle.mock.calls.filter(([c]) => c === 'isPrimaryKey')
@@ -175,11 +225,15 @@ describe('ConstraintBadges', () => {
 
     // Click PK then N within 250ms
     fireEvent.click(pkBadge)
-    act(() => { vi.advanceTimersByTime(100) })
+    act(() => {
+      vi.advanceTimersByTime(100)
+    })
     fireEvent.click(nBadge)
 
     // Advance past both debounces
-    act(() => { vi.advanceTimersByTime(300) })
+    act(() => {
+      vi.advanceTimersByTime(300)
+    })
 
     // Each constraint fires separately
     const pkCalls = onToggle.mock.calls.filter(([c]) => c === 'isPrimaryKey')

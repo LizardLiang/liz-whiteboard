@@ -6,12 +6,12 @@
 
 import { memo, useCallback, useState } from 'react'
 import { Handle, Position } from '@xyflow/react'
-import type { Column } from '@prisma/client'
-import type { RelationshipEdgeType } from '@/lib/react-flow/types'
-import type { EditingField } from './types'
 import { InlineNameEditor } from './InlineNameEditor'
 import { DataTypeSelector } from './DataTypeSelector'
 import { ConstraintBadges } from './ConstraintBadges'
+import type { Column } from '@prisma/client'
+import type { RelationshipEdgeType } from '@/lib/react-flow/types'
+import type { EditingField } from './types'
 import { createColumnHandleId } from '@/lib/react-flow/edge-routing'
 import {
   Tooltip,
@@ -26,7 +26,11 @@ export interface ColumnRowProps {
   isLast: boolean
   editingField: EditingField | null
   onStartEdit: (columnId: string, field: 'name' | 'dataType') => void
-  onCommitEdit: (columnId: string, field: 'name' | 'dataType', value: string) => void
+  onCommitEdit: (
+    columnId: string,
+    field: 'name' | 'dataType',
+    value: string,
+  ) => void
   onCancelEdit: () => void
   onToggleConstraint: (
     columnId: string,
@@ -111,7 +115,9 @@ export const ColumnRow = memo(
             alignItems: 'center',
             gap: '8px',
             minHeight: '28px',
-            background: isEditing ? 'var(--rf-column-edit-bg, rgba(99,102,241,0.08))' : 'transparent',
+            background: isEditing
+              ? 'var(--rf-column-edit-bg, rgba(99,102,241,0.08))'
+              : 'transparent',
             outline: 'none',
           }}
         >
@@ -192,7 +198,9 @@ export const ColumnRow = memo(
                 <TooltipTrigger asChild>
                   <span
                     style={{
-                      color: isHoveringDataType ? 'var(--rf-edge-stroke-selected, #6366f1)' : 'var(--rf-table-text)',
+                      color: isHoveringDataType
+                        ? 'var(--rf-edge-stroke-selected, #6366f1)'
+                        : 'var(--rf-table-text)',
                       opacity: isHoveringDataType ? 1 : 0.6,
                       fontSize: '11px',
                       cursor: 'pointer',
@@ -201,7 +209,9 @@ export const ColumnRow = memo(
                       textAlign: 'right',
                       borderRadius: '3px',
                       padding: '1px 3px',
-                      background: isHoveringDataType ? 'var(--rf-column-edit-bg, rgba(99,102,241,0.12))' : 'transparent',
+                      background: isHoveringDataType
+                        ? 'var(--rf-column-edit-bg, rgba(99,102,241,0.12))'
+                        : 'transparent',
                       transition: 'background 0.1s, color 0.1s, opacity 0.1s',
                       textDecoration: isHoveringDataType ? 'underline' : 'none',
                       textDecorationStyle: 'dotted',
@@ -217,7 +227,9 @@ export const ColumnRow = memo(
                     {column.dataType}
                   </span>
                 </TooltipTrigger>
-                <TooltipContent side="top">Double-click to edit type</TooltipContent>
+                <TooltipContent side="top">
+                  Double-click to edit type
+                </TooltipContent>
               </Tooltip>
             )}
           </div>
@@ -279,12 +291,10 @@ export const ColumnRow = memo(
     if (prev.onDelete !== next.onDelete) return false
 
     // Check if editing state changed for this column
-    const prevEditing = prev.editingField?.columnId === prev.column.id
-      ? prev.editingField
-      : null
-    const nextEditing = next.editingField?.columnId === next.column.id
-      ? next.editingField
-      : null
+    const prevEditing =
+      prev.editingField?.columnId === prev.column.id ? prev.editingField : null
+    const nextEditing =
+      next.editingField?.columnId === next.column.id ? next.editingField : null
     if (prevEditing?.field !== nextEditing?.field) return false
 
     return true

@@ -86,21 +86,81 @@
       "completed": "2026-03-30T14:00:00+08:00",
       "documents": ["implementation-notes.md"],
       "tasks": [
-        { "id": "1.1", "name": "Add new cardinality values to schema.prisma", "status": "complete" },
-        { "id": "1.2", "name": "Update cardinalitySchema Zod enum", "status": "complete" },
-        { "id": "1.3", "name": "Apply schema changes to database", "status": "complete" },
-        { "id": "1.4", "name": "Regenerate Prisma client", "status": "complete" },
-        { "id": "2.1", "name": "Add new marker defs to CardinalityMarkerDefs.tsx", "status": "complete" },
-        { "id": "2.2", "name": "Add new cardinality cases to convert-to-edges.ts", "status": "complete" },
-        { "id": "2.3", "name": "Add new cardinality cases to RelationshipEdge.tsx", "status": "complete" },
-        { "id": "2.4", "name": "Extend CARDINALITIES array in Toolbar.tsx", "status": "complete" },
-        { "id": "3.1", "name": "Create seed-ecommerce-demo.ts skeleton", "status": "complete" },
-        { "id": "3.2", "name": "Add db:seed-demo script to package.json", "status": "complete" },
-        { "id": "4.1", "name": "Define POSITIONS constant map", "status": "complete" },
-        { "id": "4.2", "name": "Create 14 DiagramTable records", "status": "complete" },
-        { "id": "4.3", "name": "Create ~85 columns across 14 tables", "status": "complete" },
-        { "id": "5.1", "name": "Create relationships #1-#9", "status": "complete" },
-        { "id": "5.2", "name": "Create relationships #10-#18", "status": "complete" }
+        {
+          "id": "1.1",
+          "name": "Add new cardinality values to schema.prisma",
+          "status": "complete"
+        },
+        {
+          "id": "1.2",
+          "name": "Update cardinalitySchema Zod enum",
+          "status": "complete"
+        },
+        {
+          "id": "1.3",
+          "name": "Apply schema changes to database",
+          "status": "complete"
+        },
+        {
+          "id": "1.4",
+          "name": "Regenerate Prisma client",
+          "status": "complete"
+        },
+        {
+          "id": "2.1",
+          "name": "Add new marker defs to CardinalityMarkerDefs.tsx",
+          "status": "complete"
+        },
+        {
+          "id": "2.2",
+          "name": "Add new cardinality cases to convert-to-edges.ts",
+          "status": "complete"
+        },
+        {
+          "id": "2.3",
+          "name": "Add new cardinality cases to RelationshipEdge.tsx",
+          "status": "complete"
+        },
+        {
+          "id": "2.4",
+          "name": "Extend CARDINALITIES array in Toolbar.tsx",
+          "status": "complete"
+        },
+        {
+          "id": "3.1",
+          "name": "Create seed-ecommerce-demo.ts skeleton",
+          "status": "complete"
+        },
+        {
+          "id": "3.2",
+          "name": "Add db:seed-demo script to package.json",
+          "status": "complete"
+        },
+        {
+          "id": "4.1",
+          "name": "Define POSITIONS constant map",
+          "status": "complete"
+        },
+        {
+          "id": "4.2",
+          "name": "Create 14 DiagramTable records",
+          "status": "complete"
+        },
+        {
+          "id": "4.3",
+          "name": "Create ~85 columns across 14 tables",
+          "status": "complete"
+        },
+        {
+          "id": "5.1",
+          "name": "Create relationships #1-#9",
+          "status": "complete"
+        },
+        {
+          "id": "5.2",
+          "name": "Create relationships #10-#18",
+          "status": "complete"
+        }
       ]
     },
     "10-prd-alignment": {

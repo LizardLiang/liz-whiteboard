@@ -4,6 +4,8 @@
  * Extra warning for FK columns
  */
 
+import type { Column } from '@prisma/client'
+import type { ColumnRelationship } from './types'
 import {
   AlertDialog,
   AlertDialogAction,
@@ -14,8 +16,6 @@ import {
   AlertDialogHeader,
   AlertDialogTitle,
 } from '@/components/ui/alert-dialog'
-import type { Column } from '@prisma/client'
-import type { ColumnRelationship } from './types'
 
 export interface DeleteColumnDialogProps {
   column: Column
@@ -31,15 +31,23 @@ export function DeleteColumnDialog({
   onCancel,
 }: DeleteColumnDialogProps) {
   return (
-    <AlertDialog open onOpenChange={(open) => { if (!open) onCancel() }}>
+    <AlertDialog
+      open
+      onOpenChange={(open) => {
+        if (!open) onCancel()
+      }}
+    >
       <AlertDialogContent>
         <AlertDialogHeader>
-          <AlertDialogTitle>Delete column &ldquo;{column.name}&rdquo;?</AlertDialogTitle>
+          <AlertDialogTitle>
+            Delete column &ldquo;{column.name}&rdquo;?
+          </AlertDialogTitle>
           <AlertDialogDescription asChild>
             <div>
               <p>
                 This column is involved in {affectedRelationships.length}{' '}
-                relationship{affectedRelationships.length !== 1 ? 's' : ''}. Deleting it will also remove:
+                relationship{affectedRelationships.length !== 1 ? 's' : ''}.
+                Deleting it will also remove:
               </p>
               <ul
                 style={{
@@ -49,10 +57,19 @@ export function DeleteColumnDialog({
                 }}
               >
                 {affectedRelationships.map((rel) => (
-                  <li key={rel.id} style={{ fontSize: '13px', marginBottom: '4px' }}>
+                  <li
+                    key={rel.id}
+                    style={{ fontSize: '13px', marginBottom: '4px' }}
+                  >
                     {rel.sourceTableName}.{rel.sourceColumnName} &rarr;{' '}
                     {rel.targetTableName}.{rel.targetColumnName}
-                    <span style={{ opacity: 0.6, fontSize: '11px', marginLeft: '4px' }}>
+                    <span
+                      style={{
+                        opacity: 0.6,
+                        fontSize: '11px',
+                        marginLeft: '4px',
+                      }}
+                    >
                       ({rel.cardinality})
                     </span>
                   </li>
@@ -70,8 +87,8 @@ export function DeleteColumnDialog({
                     fontSize: '13px',
                   }}
                 >
-                  Warning: This column is a foreign key. Deleting it will break the
-                  relationship referencing this column.
+                  Warning: This column is a foreign key. Deleting it will break
+                  the relationship referencing this column.
                 </p>
               )}
             </div>

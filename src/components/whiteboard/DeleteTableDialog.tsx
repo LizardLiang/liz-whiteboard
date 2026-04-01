@@ -3,6 +3,7 @@
  * Lists affected column count and relationships before deletion
  */
 
+import type { ColumnRelationship } from './column/types'
 import {
   AlertDialog,
   AlertDialogAction,
@@ -14,14 +15,11 @@ import {
   AlertDialogTitle,
 } from '@/components/ui/alert-dialog'
 
-export interface TableRelationship {
-  id: string
-  sourceTableName: string
-  sourceColumnName: string
-  targetTableName: string
-  targetColumnName: string
-  cardinality: string
-}
+/**
+ * Re-export ColumnRelationship as TableRelationship for semantic clarity.
+ * Both table and column deletion dialogs display the same relationship shape.
+ */
+export type TableRelationship = ColumnRelationship
 
 export interface DeleteTableDialogProps {
   tableName: string
@@ -39,19 +37,28 @@ export function DeleteTableDialog({
   onCancel,
 }: DeleteTableDialogProps) {
   return (
-    <AlertDialog open onOpenChange={(open) => { if (!open) onCancel() }}>
+    <AlertDialog
+      open
+      onOpenChange={(open) => {
+        if (!open) onCancel()
+      }}
+    >
       <AlertDialogContent>
         <AlertDialogHeader>
-          <AlertDialogTitle>Delete table &ldquo;{tableName}&rdquo;?</AlertDialogTitle>
+          <AlertDialogTitle>
+            Delete table &ldquo;{tableName}&rdquo;?
+          </AlertDialogTitle>
           <AlertDialogDescription asChild>
             <div>
               <p>
-                This will permanently delete {columnCount} column{columnCount !== 1 ? 's' : ''}.
+                This will permanently delete {columnCount} column
+                {columnCount !== 1 ? 's' : ''}.
               </p>
               {affectedRelationships.length > 0 && (
                 <>
                   <p style={{ marginTop: '8px' }}>
-                    It will also remove {affectedRelationships.length} relationship{affectedRelationships.length !== 1 ? 's' : ''}:
+                    It will also remove {affectedRelationships.length}{' '}
+                    relationship{affectedRelationships.length !== 1 ? 's' : ''}:
                   </p>
                   <ul
                     style={{
@@ -61,10 +68,19 @@ export function DeleteTableDialog({
                     }}
                   >
                     {affectedRelationships.map((rel) => (
-                      <li key={rel.id} style={{ fontSize: '13px', marginBottom: '4px' }}>
+                      <li
+                        key={rel.id}
+                        style={{ fontSize: '13px', marginBottom: '4px' }}
+                      >
                         {rel.sourceTableName}.{rel.sourceColumnName} &rarr;{' '}
                         {rel.targetTableName}.{rel.targetColumnName}
-                        <span style={{ opacity: 0.6, fontSize: '11px', marginLeft: '4px' }}>
+                        <span
+                          style={{
+                            opacity: 0.6,
+                            fontSize: '11px',
+                            marginLeft: '4px',
+                          }}
+                        >
                           ({rel.cardinality})
                         </span>
                       </li>

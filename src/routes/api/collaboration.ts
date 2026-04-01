@@ -2,6 +2,7 @@
 // Socket.IO server integration for real-time collaboration
 
 import { Server as SocketIOServer } from 'socket.io'
+import { z } from 'zod'
 import type { Server as HTTPServer } from 'node:http'
 import type { CursorPosition } from '@/data/schema'
 import {
@@ -13,17 +14,32 @@ import {
   updateSessionActivity,
 } from '@/data/collaboration'
 import {
-  createTableSchema,
-  updateTableSchema,
   createColumnSchema,
-  updateColumnSchema,
   createRelationshipSchema,
+  createTableSchema,
+  updateColumnSchema,
   updateRelationshipSchema,
+  updateTableSchema,
 } from '@/data/schema'
-import { createDiagramTable, updateDiagramTable, deleteDiagramTable, updateDiagramTablePosition } from '@/data/diagram-table'
+import {
+  createDiagramTable,
+  deleteDiagramTable,
+  findDiagramTableById,
+  updateDiagramTable,
+  updateDiagramTablePosition,
+} from '@/data/diagram-table'
 import { findWhiteboardByIdWithDiagram } from '@/data/whiteboard'
-import { createColumn, updateColumn, deleteColumn, findColumnById } from '@/data/column'
-import { createRelationship, updateRelationship, deleteRelationship } from '@/data/relationship'
+import {
+  createColumn,
+  deleteColumn,
+  findColumnById,
+  updateColumn,
+} from '@/data/column'
+import {
+  createRelationship,
+  deleteRelationship,
+  updateRelationship,
+} from '@/data/relationship'
 
 /**
  * Socket.IO server instance
@@ -199,7 +215,7 @@ function setupCollaborationEventHandlers(
   // Sync request (when client reconnects and needs full state)
   socket.on('sync:request', async () => {
     try {
-const whiteboard = await findWhiteboardByIdWithDiagram(whiteboardId)
+      const whiteboard = await findWhiteboardByIdWithDiagram(whiteboardId)
 
       if (!whiteboard) {
         socket.emit('error', {
@@ -228,7 +244,6 @@ const whiteboard = await findWhiteboardByIdWithDiagram(whiteboardId)
   // Table creation
   socket.on('table:create', async (data: any) => {
     try {
-
       // Validate input
       const validated = createTableSchema.parse({
         ...data,
@@ -295,7 +310,6 @@ const whiteboard = await findWhiteboardByIdWithDiagram(whiteboardId)
     'table:update',
     async (data: { tableId: string; [key: string]: any }) => {
       try {
-
         const { tableId, ...updateData } = data
 
         // Validate input
@@ -328,13 +342,36 @@ const whiteboard = await findWhiteboardByIdWithDiagram(whiteboardId)
   // Table deletion
   socket.on('table:delete', async (data: { tableId: string }) => {
     try {
+      // Validate input (HIGH-002: missing UUID validation)
+      const { tableId } = z.object({ tableId: z.string().uuid() }).parse(data)
+
+      // Ownership check: verify table belongs to this whiteboard (HIGH-001: IDOR)
+      const table = await findDiagramTableById(tableId)
+      if (!table) {
+        socket.emit('error', {
+          event: 'table:delete',
+          error: 'NOT_FOUND',
+          message: 'Table not found',
+          tableId,
+        })
+        return
+      }
+      if (table.whiteboardId !== whiteboardId) {
+        socket.emit('error', {
+          event: 'table:delete',
+          error: 'FORBIDDEN',
+          message: 'Table does not belong to this whiteboard',
+          tableId,
+        })
+        return
+      }
 
       // Delete table from database (cascade deletes columns and relationships)
-      await deleteDiagramTable(data.tableId)
+      await deleteDiagramTable(tableId)
 
       // Broadcast to other users
       socket.broadcast.emit('table:deleted', {
-        tableId: data.tableId,
+        tableId,
         deletedBy: userId,
       })
 
@@ -346,6 +383,7 @@ const whiteboard = await findWhiteboardByIdWithDiagram(whiteboardId)
         event: 'table:delete',
         error: 'DELETE_FAILED',
         message: 'Failed to delete table',
+        tableId: data.tableId,
       })
     }
   })
@@ -357,7 +395,6 @@ const whiteboard = await findWhiteboardByIdWithDiagram(whiteboardId)
   // Column creation
   socket.on('column:create', async (data: any) => {
     try {
-
       // Validate input
       const validated = createColumnSchema.parse(data)
 
@@ -393,9 +430,8 @@ const whiteboard = await findWhiteboardByIdWithDiagram(whiteboardId)
   // Column update
   socket.on(
     'column:update',
-    async (data: { columnId: string; [key: string]: any }) => {
+    async (data: { columnId: string; [key: string]: unknown }) => {
       try {
-
         const { columnId, ...updateData } = data
 
         // Validate input
@@ -429,7 +465,6 @@ const whiteboard = await findWhiteboardByIdWithDiagram(whiteboardId)
   // Column deletion
   socket.on('column:delete', async (data: { columnId: string }) => {
     try {
-
       // Get column before deletion to know tableId
       const column = await findColumnById(data.columnId)
       if (!column) {
@@ -466,7 +501,6 @@ const whiteboard = await findWhiteboardByIdWithDiagram(whiteboardId)
   // Relationship creation
   socket.on('relationship:create', async (data: any) => {
     try {
-
       // Validate input
       const validated = createRelationshipSchema.parse({
         ...data,
@@ -502,7 +536,6 @@ const whiteboard = await findWhiteboardByIdWithDiagram(whiteboardId)
     'relationship:update',
     async (data: { relationshipId: string; [key: string]: any }) => {
       try {
-
         const { relationshipId, ...updateData } = data
 
         // Validate input
@@ -537,7 +570,6 @@ const whiteboard = await findWhiteboardByIdWithDiagram(whiteboardId)
   // Relationship deletion
   socket.on('relationship:delete', async (data: { relationshipId: string }) => {
     try {
-
       // Delete relationship from database
       await deleteRelationship(data.relationshipId)
 

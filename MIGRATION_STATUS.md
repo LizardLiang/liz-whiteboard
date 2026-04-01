@@ -17,24 +17,28 @@ Based on comprehensive research (see `specs/002-react-flow-migration/research.md
 ## Completed Work
 
 ### ✅ Phase 1: Setup (T001-T005)
-- [X] T001: Installed @xyflow/react@12.9.3
-- [X] T002: Created type definitions in `src/lib/react-flow/types.ts`
-- [X] T003: Created converter functions in `src/lib/react-flow/converters.ts`
-- [X] T004: Created handle utilities in `src/lib/react-flow/handles.ts`
-- [X] T005: Created theme CSS in `src/styles/react-flow-theme.css`
+
+- [x] T001: Installed @xyflow/react@12.9.3
+- [x] T002: Created type definitions in `src/lib/react-flow/types.ts`
+- [x] T003: Created converter functions in `src/lib/react-flow/converters.ts`
+- [x] T004: Created handle utilities in `src/lib/react-flow/handles.ts`
+- [x] T005: Created theme CSS in `src/styles/react-flow-theme.css`
 
 ### ✅ Phase 2: Foundational Components (T006-T011)
-- [X] T006: Created TableNode component in `src/components/whiteboard/TableNode.new.tsx`
-- [X] T007: Created RelationshipEdge component in `src/components/whiteboard/RelationshipEdge.new.tsx`
-- [X] T008: Created ReactFlowCanvas wrapper in `src/components/whiteboard/ReactFlowCanvas.tsx`
-- [X] T009: Registered custom node/edge types in `src/components/whiteboard/node-types.ts`
-- [X] T010: Created viewport utilities in `src/lib/react-flow/viewport.ts`
-- [X] T011: Added React Flow CSS imports to `src/styles.css`
+
+- [x] T006: Created TableNode component in `src/components/whiteboard/TableNode.new.tsx`
+- [x] T007: Created RelationshipEdge component in `src/components/whiteboard/RelationshipEdge.new.tsx`
+- [x] T008: Created ReactFlowCanvas wrapper in `src/components/whiteboard/ReactFlowCanvas.tsx`
+- [x] T009: Registered custom node/edge types in `src/components/whiteboard/node-types.ts`
+- [x] T010: Created viewport utilities in `src/lib/react-flow/viewport.ts`
+- [x] T011: Added React Flow CSS imports to `src/styles.css`
 
 ## Remaining Work
 
 ### Phase 3-9: User Stories (T012-T081) - 70 tasks
+
 Implementation of all 7 user stories requiring:
+
 - Integration with existing whiteboard route
 - Data loading and conversion
 - Real-time collaboration sync updates
@@ -43,6 +47,7 @@ Implementation of all 7 user stories requiring:
 - Testing and validation
 
 ### Phase 10: Polish & Cleanup (T082-T096) - 15 tasks
+
 - Remove Konva dependencies
 - Remove old components
 - Performance testing
@@ -52,6 +57,7 @@ Implementation of all 7 user stories requiring:
 ## Current State
 
 ### New React Flow Components (Ready to Use)
+
 ```
 src/components/whiteboard/
 ├── TableNode.new.tsx          # React Flow table node
@@ -70,6 +76,7 @@ src/styles/
 ```
 
 ### Existing Konva Components (Still Active)
+
 ```
 src/components/whiteboard/
 ├── Canvas.tsx                 # Konva Stage wrapper
@@ -86,6 +93,7 @@ src/routes/whiteboard/
 ## Next Steps to Complete Migration
 
 ### 1. Update Whiteboard Route (T012-T025)
+
 Replace Konva usage in `src/routes/whiteboard/$whiteboardId.tsx`:
 
 ```typescript
@@ -96,25 +104,30 @@ import { RelationshipEdge } from '@/components/whiteboard/RelationshipEdge'
 
 // With:
 import { ReactFlowCanvas } from '@/components/whiteboard/ReactFlowCanvas'
-import { convertToReactFlowNodes, convertToReactFlowEdges } from '@/lib/react-flow/converters'
+import {
+  convertToReactFlowNodes,
+  convertToReactFlowEdges,
+} from '@/lib/react-flow/converters'
 ```
 
 ### 2. Implement Data Loading (T013)
+
 Convert Prisma entities to React Flow format:
 
 ```typescript
-const nodes = useMemo(() =>
-  convertToReactFlowNodes(whiteboard.tables),
-  [whiteboard.tables]
-);
+const nodes = useMemo(
+  () => convertToReactFlowNodes(whiteboard.tables),
+  [whiteboard.tables],
+)
 
-const edges = useMemo(() =>
-  convertToReactFlowEdges(relationships),
-  [relationships]
-);
+const edges = useMemo(
+  () => convertToReactFlowEdges(relationships),
+  [relationships],
+)
 ```
 
 ### 3. Handle Node Drag Events (T045-T047)
+
 Implement `onNodeDragStop` to persist positions:
 
 ```typescript
@@ -123,17 +136,20 @@ const onNodeDragStop = useCallback((event, node) => {
     id: node.id,
     positionX: node.position.x,
     positionY: node.position.y,
-  });
-}, []);
+  })
+}, [])
 ```
 
 ### 4. Adapt Layout Engine (T034-T043)
+
 Modify `src/lib/canvas/layout-worker.ts` to output React Flow positions.
 
 ### 5. Update WebSocket Events (T059-T074)
+
 Create `src/hooks/use-react-flow-sync.ts` for real-time collaboration.
 
 ### 6. Complete Remaining Tasks
+
 Follow `specs/002-react-flow-migration/tasks.md` systematically.
 
 ## Testing Strategy
@@ -160,6 +176,7 @@ If migration proves problematic:
 ## Files Created
 
 ### New Files (React Flow)
+
 - `src/lib/react-flow/types.ts` (177 lines)
 - `src/lib/react-flow/converters.ts` (94 lines)
 - `src/lib/react-flow/handles.ts` (64 lines)
@@ -171,10 +188,12 @@ If migration proves problematic:
 - `src/styles/react-flow-theme.css` (148 lines)
 
 ### Modified Files
+
 - `src/styles.css` (added React Flow imports)
 - `specs/002-react-flow-migration/tasks.md` (marked T001-T011 complete)
 
 ### Documentation
+
 - This file: `MIGRATION_STATUS.md`
 
 ## Recommendation

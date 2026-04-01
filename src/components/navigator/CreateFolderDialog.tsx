@@ -5,6 +5,7 @@
 import { useState } from 'react'
 import { useMutation, useQueryClient } from '@tanstack/react-query'
 import { toast } from 'sonner'
+import type { CreateFolder } from '@/data/schema'
 import { Button } from '@/components/ui/button'
 import {
   Dialog,
@@ -17,7 +18,6 @@ import {
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { createFolderFn } from '@/routes/api/folders'
-import type { CreateFolder } from '@/data/schema'
 
 interface CreateFolderDialogProps {
   open: boolean

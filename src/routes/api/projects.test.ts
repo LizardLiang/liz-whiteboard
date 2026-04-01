@@ -2,7 +2,15 @@
 // TS-10: Server function unit tests for getProjectPageContent
 // Tests Zod input validation and delegation to data layer
 
-import { describe, expect, it, vi, beforeEach } from 'vitest'
+import { beforeEach, describe, expect, it, vi } from 'vitest'
+
+import { z } from 'zod'
+import { findProjectPageContent } from '@/data/project'
+
+// We test the getProjectPageContent function's validation logic by
+// directly testing the schema validation it uses, since server functions
+// in TanStack Start are not straightforward to unit test in isolation.
+// Instead we test the Zod schema validation and data layer delegation.
 
 // Mock the data layer
 vi.mock('@/data/project', () => ({
@@ -14,14 +22,6 @@ vi.mock('@/data/project', () => ({
   findProjectById: vi.fn(),
   updateProject: vi.fn(),
 }))
-
-import { findProjectPageContent } from '@/data/project'
-
-// We test the getProjectPageContent function's validation logic by
-// directly testing the schema validation it uses, since server functions
-// in TanStack Start are not straightforward to unit test in isolation.
-// Instead we test the Zod schema validation and data layer delegation.
-import { z } from 'zod'
 
 const projectPageContentSchema = z.object({
   projectId: z.string().uuid(),
@@ -81,7 +81,10 @@ describe('getProjectPageContent data layer delegation', () => {
 
     // Simulate handler logic: call findProjectPageContent and throw if null
     const handler = async (data: { projectId: string; folderId?: string }) => {
-      const content = await findProjectPageContent(data.projectId, data.folderId)
+      const content = await findProjectPageContent(
+        data.projectId,
+        data.folderId,
+      )
       if (!content) {
         throw new Error('Project not found')
       }
@@ -103,7 +106,10 @@ describe('getProjectPageContent data layer delegation', () => {
     vi.mocked(findProjectPageContent).mockResolvedValue(mockContent)
 
     const handler = async (data: { projectId: string; folderId?: string }) => {
-      const content = await findProjectPageContent(data.projectId, data.folderId)
+      const content = await findProjectPageContent(
+        data.projectId,
+        data.folderId,
+      )
       if (!content) throw new Error('Project not found')
       return content
     }
@@ -118,19 +124,30 @@ describe('getProjectPageContent data layer delegation', () => {
       project: { id: 'proj-001', name: 'Test Project' },
       folders: [],
       whiteboards: [],
-      breadcrumb: [{ id: 'proj-001', name: 'Test Project', type: 'project' as const }],
+      breadcrumb: [
+        { id: 'proj-001', name: 'Test Project', type: 'project' as const },
+      ],
       currentFolder: { id: 'folder-001', name: 'Alpha' },
     }
     vi.mocked(findProjectPageContent).mockResolvedValue(mockContent)
 
     const handler = async (data: { projectId: string; folderId?: string }) => {
-      const content = await findProjectPageContent(data.projectId, data.folderId)
+      const content = await findProjectPageContent(
+        data.projectId,
+        data.folderId,
+      )
       if (!content) throw new Error('Project not found')
       return content
     }
 
-    const result = await handler({ projectId: 'proj-001', folderId: 'folder-001' })
-    expect(findProjectPageContent).toHaveBeenCalledWith('proj-001', 'folder-001')
+    const result = await handler({
+      projectId: 'proj-001',
+      folderId: 'folder-001',
+    })
+    expect(findProjectPageContent).toHaveBeenCalledWith(
+      'proj-001',
+      'folder-001',
+    )
     expect(result.currentFolder?.name).toBe('Alpha')
   })
 })

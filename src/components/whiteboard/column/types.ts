@@ -50,7 +50,7 @@ export const DATA_TYPE_LABELS: Record<DataType, string> = {
 /**
  * All valid data types (from Zod enum)
  */
-export const DATA_TYPES: DataType[] = [
+export const DATA_TYPES: Array<DataType> = [
   'int',
   'string',
   'float',

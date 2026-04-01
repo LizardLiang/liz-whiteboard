@@ -34,10 +34,7 @@ export function useTableDeletion(
 
       // Skip if focus is inside a column row or add-column row
       // (column row handles Delete itself via React onKeyDown)
-      if (
-        active.closest('.column-row') ||
-        active.closest('.add-column-row')
-      ) {
+      if (active.closest('.column-row') || active.closest('.add-column-row')) {
         return
       }
 

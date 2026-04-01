@@ -2,7 +2,10 @@
 // TS-09: Data layer unit tests for findProjectPageContent
 // Tests query filtering logic with mocked Prisma client
 
-import { describe, expect, it, vi, beforeEach } from 'vitest'
+import { beforeEach, describe, expect, it, vi } from 'vitest'
+
+import { findProjectPageContent } from './project'
+import { prisma } from '@/db'
 
 // Mock the db module before importing project functions
 vi.mock('@/db', () => ({
@@ -20,9 +23,6 @@ vi.mock('@/db', () => ({
     $queryRaw: vi.fn(),
   },
 }))
-
-import { prisma } from '@/db'
-import { findProjectPageContent } from './project'
 
 const mockProject = { id: 'proj-001', name: 'Test Project' }
 const mockFolders = [
@@ -56,7 +56,9 @@ describe('findProjectPageContent', () => {
     beforeEach(() => {
       vi.mocked(prisma.project.findUnique).mockResolvedValue(mockProject as any)
       vi.mocked(prisma.folder.findMany).mockResolvedValue(mockFolders as any)
-      vi.mocked(prisma.whiteboard.findMany).mockResolvedValue(mockWhiteboards as any)
+      vi.mocked(prisma.whiteboard.findMany).mockResolvedValue(
+        mockWhiteboards as any,
+      )
     })
 
     it('TC-09-01: queries folders with parentFolderId = null', async () => {
@@ -92,7 +94,9 @@ describe('findProjectPageContent', () => {
           _count: { tables: 3 },
         },
       ]
-      vi.mocked(prisma.whiteboard.findMany).mockResolvedValue(whiteboardWithTables as any)
+      vi.mocked(prisma.whiteboard.findMany).mockResolvedValue(
+        whiteboardWithTables as any,
+      )
 
       const result = await findProjectPageContent('proj-001')
 
@@ -127,9 +131,13 @@ describe('findProjectPageContent', () => {
 
     beforeEach(() => {
       vi.mocked(prisma.project.findUnique).mockResolvedValue(mockProject as any)
-      vi.mocked(prisma.folder.findUnique).mockResolvedValue(mockTargetFolder as any)
+      vi.mocked(prisma.folder.findUnique).mockResolvedValue(
+        mockTargetFolder as any,
+      )
       vi.mocked(prisma.folder.findMany).mockResolvedValue([] as any)
-      vi.mocked(prisma.whiteboard.findMany).mockResolvedValue(mockWhiteboards as any)
+      vi.mocked(prisma.whiteboard.findMany).mockResolvedValue(
+        mockWhiteboards as any,
+      )
     })
 
     it('TC-09-05: returns child folders and whiteboards for the folder', async () => {
@@ -185,7 +193,9 @@ describe('findProjectPageContent', () => {
         { id: 'folder-parent', name: 'Parent Folder', parentFolderId: null },
       ]
 
-      vi.mocked(prisma.folder.findUnique).mockResolvedValueOnce(childFolder as any)
+      vi.mocked(prisma.folder.findUnique).mockResolvedValueOnce(
+        childFolder as any,
+      )
       vi.mocked(prisma.$queryRaw).mockResolvedValueOnce(ancestorRows as any)
 
       const result = await findProjectPageContent('proj-001', 'folder-child')
@@ -193,10 +203,18 @@ describe('findProjectPageContent', () => {
       expect(result).not.toBeNull()
       const breadcrumb = result!.breadcrumb
       // Project root first
-      expect(breadcrumb[0]).toEqual({ id: 'proj-001', name: 'Test Project', type: 'project' })
+      expect(breadcrumb[0]).toEqual({
+        id: 'proj-001',
+        name: 'Test Project',
+        type: 'project',
+      })
       // Parent folder second
       expect(breadcrumb[1]).toEqual(
-        expect.objectContaining({ id: 'folder-parent', name: 'Parent Folder', type: 'folder' }),
+        expect.objectContaining({
+          id: 'folder-parent',
+          name: 'Parent Folder',
+          type: 'folder',
+        }),
       )
     })
 
@@ -207,7 +225,9 @@ describe('findProjectPageContent', () => {
         projectId: 'proj-other', // different project
         parentFolderId: null,
       }
-      vi.mocked(prisma.folder.findUnique).mockResolvedValue(crossProjectFolder as any)
+      vi.mocked(prisma.folder.findUnique).mockResolvedValue(
+        crossProjectFolder as any,
+      )
 
       await expect(
         findProjectPageContent('proj-001', 'folder-other'),

@@ -14,7 +14,7 @@ Three HIGH findings from Round 1 were targeted for fix. All three are confirmed 
 One new MEDIUM finding was introduced by the HIGH-02 fix (reconnect reconciliation).
 
 | Severity | Round 1 | Round 2 |
-|----------|---------|---------|
+| -------- | ------- | ------- |
 | CRITICAL | 0       | 0       |
 | HIGH     | 3       | 0       |
 | MEDIUM   | 3       | 4       |
@@ -240,15 +240,15 @@ layout breakage. No XSS risk due to React escaping.
 
 ## Breaking Changes Assessment (unchanged)
 
-| Area | Status |
-|------|--------|
-| `TableNodeData` interface | Added optional fields only. Backward compatible. |
-| `TableNode.new.tsx` API | Existing props unchanged. Non-breaking. |
-| `ReactFlowWhiteboard.tsx` props | No removed or renamed props. Non-breaking. |
-| Prisma schema | No removals. Cardinality enum extended with migration. Non-breaking. |
-| Exported symbols | All existing exports preserved. New exports are additive. |
+| Area                             | Status                                                                            |
+| -------------------------------- | --------------------------------------------------------------------------------- |
+| `TableNodeData` interface        | Added optional fields only. Backward compatible.                                  |
+| `TableNode.new.tsx` API          | Existing props unchanged. Non-breaking.                                           |
+| `ReactFlowWhiteboard.tsx` props  | No removed or renamed props. Non-breaking.                                        |
+| Prisma schema                    | No removals. Cardinality enum extended with migration. Non-breaking.              |
+| Exported symbols                 | All existing exports preserved. New exports are additive.                         |
 | `createColumnHandleId` signature | Fourth parameter added with default value. Backward compatible for 3-arg callers. |
 
 ---
 
-*"They called me mad. Then Troy burned."*
+_"They called me mad. Then Troy burned."_

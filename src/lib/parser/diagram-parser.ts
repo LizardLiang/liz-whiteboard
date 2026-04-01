@@ -61,18 +61,48 @@ const UuidType = createToken({ name: 'UuidType', pattern: /uuid/ })
 const JsonType = createToken({ name: 'JsonType', pattern: /json/ })
 
 // Cardinality — longer tokens must come before shorter ones that are prefixes
-const ManyToZeroOrMany = createToken({ name: 'ManyToZeroOrMany', pattern: /many-to-zero-or-many/ })
-const ManyToZeroOrOne = createToken({ name: 'ManyToZeroOrOne', pattern: /many-to-zero-or-one/ })
+const ManyToZeroOrMany = createToken({
+  name: 'ManyToZeroOrMany',
+  pattern: /many-to-zero-or-many/,
+})
+const ManyToZeroOrOne = createToken({
+  name: 'ManyToZeroOrOne',
+  pattern: /many-to-zero-or-one/,
+})
 const ManyToMany = createToken({ name: 'ManyToMany', pattern: /many-to-many/ })
 const ManyToOne = createToken({ name: 'ManyToOne', pattern: /many-to-one/ })
-const ZeroOrManyToZeroOrMany = createToken({ name: 'ZeroOrManyToZeroOrMany', pattern: /zero-or-many-to-zero-or-many/ })
-const ZeroOrManyToZeroOrOne = createToken({ name: 'ZeroOrManyToZeroOrOne', pattern: /zero-or-many-to-zero-or-one/ })
-const ZeroOrManyToMany = createToken({ name: 'ZeroOrManyToMany', pattern: /zero-or-many-to-many/ })
-const ZeroOrManyToOne = createToken({ name: 'ZeroOrManyToOne', pattern: /zero-or-many-to-one/ })
-const ZeroOrOneToZeroOrMany = createToken({ name: 'ZeroOrOneToZeroOrMany', pattern: /zero-or-one-to-zero-or-many/ })
-const ZeroOrOneToZeroOrOne = createToken({ name: 'ZeroOrOneToZeroOrOne', pattern: /zero-or-one-to-zero-or-one/ })
-const ZeroOrOneToMany = createToken({ name: 'ZeroOrOneToMany', pattern: /zero-or-one-to-many/ })
-const ZeroOrOneToOne = createToken({ name: 'ZeroOrOneToOne', pattern: /zero-or-one-to-one/ })
+const ZeroOrManyToZeroOrMany = createToken({
+  name: 'ZeroOrManyToZeroOrMany',
+  pattern: /zero-or-many-to-zero-or-many/,
+})
+const ZeroOrManyToZeroOrOne = createToken({
+  name: 'ZeroOrManyToZeroOrOne',
+  pattern: /zero-or-many-to-zero-or-one/,
+})
+const ZeroOrManyToMany = createToken({
+  name: 'ZeroOrManyToMany',
+  pattern: /zero-or-many-to-many/,
+})
+const ZeroOrManyToOne = createToken({
+  name: 'ZeroOrManyToOne',
+  pattern: /zero-or-many-to-one/,
+})
+const ZeroOrOneToZeroOrMany = createToken({
+  name: 'ZeroOrOneToZeroOrMany',
+  pattern: /zero-or-one-to-zero-or-many/,
+})
+const ZeroOrOneToZeroOrOne = createToken({
+  name: 'ZeroOrOneToZeroOrOne',
+  pattern: /zero-or-one-to-zero-or-one/,
+})
+const ZeroOrOneToMany = createToken({
+  name: 'ZeroOrOneToMany',
+  pattern: /zero-or-one-to-many/,
+})
+const ZeroOrOneToOne = createToken({
+  name: 'ZeroOrOneToOne',
+  pattern: /zero-or-one-to-one/,
+})
 const ZeroToMany = createToken({ name: 'ZeroToMany', pattern: /zero-to-many/ })
 const ZeroToOne = createToken({ name: 'ZeroToOne', pattern: /zero-to-one/ })
 const OneToMany = createToken({ name: 'OneToMany', pattern: /one-to-many/ })

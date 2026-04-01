@@ -2,15 +2,21 @@
 // src/components/whiteboard/column/AddColumnRow.test.tsx
 // TS-04: AddColumnRow unit tests
 
-import { describe, expect, it, vi, beforeEach, afterEach } from 'vitest'
-import { render, screen, fireEvent, act } from '@testing-library/react'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
+import { act, fireEvent, render, screen } from '@testing-library/react'
 import { AddColumnRow } from './AddColumnRow'
-import { mockColumn, mockPKColumn } from '@/test/fixtures'
 import type { Column } from '@prisma/client'
+import { mockColumn, mockPKColumn } from '@/test/fixtures'
 
 // Mock DataTypeSelector so we don't need to deal with Radix portal in jsdom
 vi.mock('./DataTypeSelector', () => ({
-  DataTypeSelector: ({ value, onSelect }: { value: string; onSelect: (v: string) => void }) => (
+  DataTypeSelector: ({
+    value,
+    onSelect,
+  }: {
+    value: string
+    onSelect: (v: string) => void
+  }) => (
     <select
       data-testid="data-type-selector"
       value={value}
@@ -125,9 +131,7 @@ describe('AddColumnRow', () => {
     fireEvent.change(nameInput, { target: { value: 'new_col' } })
     fireEvent.keyDown(nameInput, { key: 'Enter' })
 
-    expect(onCreate).toHaveBeenCalledWith(
-      expect.objectContaining({ order: 2 }),
-    )
+    expect(onCreate).toHaveBeenCalledWith(expect.objectContaining({ order: 2 }))
   })
 
   it('TC-04-07: pressing Escape with empty name discards the form without calling onCreate', () => {

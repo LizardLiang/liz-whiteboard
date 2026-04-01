@@ -24,9 +24,7 @@ export function TableNodeContextMenu({
 }: TableNodeContextMenuProps) {
   return (
     <ContextMenu>
-      <ContextMenuTrigger asChild>
-        {children}
-      </ContextMenuTrigger>
+      <ContextMenuTrigger asChild>{children}</ContextMenuTrigger>
       <ContextMenuContent>
         <ContextMenuItem
           className="text-destructive focus:text-destructive"

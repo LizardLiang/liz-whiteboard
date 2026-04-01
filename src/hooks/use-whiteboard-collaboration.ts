@@ -84,7 +84,10 @@ export function useWhiteboardCollaboration(
   useEffect(() => {
     if (!onTableDeleted) return
 
-    const handleTableDeleted = (data: { tableId: string; deletedBy: string }) => {
+    const handleTableDeleted = (data: {
+      tableId: string
+      deletedBy: string
+    }) => {
       // Ignore if we deleted it (already applied optimistically)
       if (data.deletedBy === userId) return
       onTableDeleted(data.tableId)

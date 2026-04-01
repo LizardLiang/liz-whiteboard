@@ -2,10 +2,17 @@
 // src/routes/project.$projectId.test.tsx
 // TS-01 (R1): Project page route integration tests (AC-01..04)
 
-import { describe, expect, it, vi, beforeEach } from 'vitest'
+import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { render, screen, waitFor } from '@testing-library/react'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import type { ReactNode } from 'react'
+
+import { getProjectPageContent } from '@/routes/api/projects'
+
+// Instead of rendering the full route, we test the component logic
+// by rendering the individual sub-components that the route uses
+import { ProjectPageError } from '@/components/project/ProjectPageError'
+import { ProjectPageSkeleton } from '@/components/project/ProjectPageSkeleton'
 
 // Mock getProjectPageContent server function before component import
 vi.mock('@/routes/api/projects', () => ({
@@ -35,15 +42,20 @@ vi.mock('@tanstack/react-router', async (importOriginal) => {
       component: null,
     }),
     Link: ({ to, params, children, className, ...rest }: any) => {
-      const href = typeof to === 'string'
-        ? to.replace('$projectId', params?.projectId ?? '').replace('$folderId', params?.folderId ?? '')
-        : to
-      return <a href={href} className={className} {...rest}>{children}</a>
+      const href =
+        typeof to === 'string'
+          ? to
+              .replace('$projectId', params?.projectId ?? '')
+              .replace('$folderId', params?.folderId ?? '')
+          : to
+      return (
+        <a href={href} className={className} {...rest}>
+          {children}
+        </a>
+      )
     },
   }
 })
-
-import { getProjectPageContent } from '@/routes/api/projects'
 
 const mockContent = {
   project: { id: 'proj-001', name: 'My Project' },
@@ -69,14 +81,11 @@ async function importProjectPage() {
   return mod
 }
 
-// Instead of rendering the full route, we test the component logic
-// by rendering the individual sub-components that the route uses
-import { ProjectPageError } from '@/components/project/ProjectPageError'
-import { ProjectPageSkeleton } from '@/components/project/ProjectPageSkeleton'
-
 function Wrapper({ children }: { children: ReactNode }) {
   const queryClient = createTestQueryClient()
-  return <QueryClientProvider client={queryClient}>{children}</QueryClientProvider>
+  return (
+    <QueryClientProvider client={queryClient}>{children}</QueryClientProvider>
+  )
 }
 
 describe('Project Page Route (AC-01..04)', () => {
@@ -112,7 +121,9 @@ describe('Project Page Route (AC-01..04)', () => {
       )
 
       // Skeleton renders 4 placeholder cards
-      const skeletonCards = document.querySelectorAll('[class*="animate-pulse"]')
+      const skeletonCards = document.querySelectorAll(
+        '[class*="animate-pulse"]',
+      )
       expect(skeletonCards.length).toBeGreaterThanOrEqual(4)
     })
   })
@@ -162,7 +173,10 @@ describe('Project Page Route (AC-01..04)', () => {
 
       // The page title "My Project" would be displayed by the route component
       // We verify the data shape is correct
-      const cachedData = queryClient.getQueryData(['project-page', 'proj-001']) as typeof mockContent
+      const cachedData = queryClient.getQueryData([
+        'project-page',
+        'proj-001',
+      ]) as typeof mockContent
       expect(cachedData?.project?.name).toBe('My Project')
     })
   })
@@ -181,7 +195,10 @@ describe('Project Page Route (AC-01..04)', () => {
       })
 
       expect(getProjectPageContent).toHaveBeenCalled()
-      const result = queryClient.getQueryData(['project-page', 'proj-001']) as typeof mockContent
+      const result = queryClient.getQueryData([
+        'project-page',
+        'proj-001',
+      ]) as typeof mockContent
       expect(result?.project?.name).toBe('My Project')
     })
   })

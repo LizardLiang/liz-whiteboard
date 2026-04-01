@@ -54,7 +54,11 @@ export interface TableNodeData extends Record<string, unknown> {
   onColumnCreate?: (tableId: string, data: CreateColumnPayload) => void
 
   /** Callback to update a column — fires WebSocket emit */
-  onColumnUpdate?: (columnId: string, tableId: string, data: Partial<UpdateColumn>) => void
+  onColumnUpdate?: (
+    columnId: string,
+    tableId: string,
+    data: Partial<UpdateColumn>,
+  ) => void
 
   /** Callback to delete a column — fires WebSocket emit */
   onColumnDelete?: (columnId: string, tableId: string) => void

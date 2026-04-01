@@ -2,7 +2,12 @@
 // Project tree component for hierarchical navigation
 
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
-import { Link, useNavigate, useParams, useRouterState } from '@tanstack/react-router'
+import {
+  Link,
+  useNavigate,
+  useParams,
+  useRouterState,
+} from '@tanstack/react-router'
 import {
   ChevronDown,
   ChevronRight,
@@ -18,6 +23,12 @@ import { WhiteboardItem } from './WhiteboardItem'
 import { CreateWhiteboardDialog } from './CreateWhiteboardDialog'
 import { CreateFolderDialog } from './CreateFolderDialog'
 import type { FolderWithChildren } from './FolderItem'
+import type {
+  CreateProject,
+  UpdateFolder,
+  UpdateProject,
+  UpdateWhiteboard,
+} from '@/data/schema'
 import { Button } from '@/components/ui/button'
 import {
   Collapsible,
@@ -41,20 +52,11 @@ import {
   getProjectsWithTree,
   updateProjectFn,
 } from '@/routes/api/projects'
-import {
-  deleteFolderFn,
-  updateFolderFn,
-} from '@/routes/api/folders'
+import { deleteFolderFn, updateFolderFn } from '@/routes/api/folders'
 import {
   deleteWhiteboardFn,
   updateWhiteboardFn,
 } from '@/routes/api/whiteboards'
-import type {
-  CreateProject,
-  UpdateFolder,
-  UpdateProject,
-  UpdateWhiteboard,
-} from '@/data/schema'
 
 /**
  * Dialog state types
@@ -435,13 +437,12 @@ export function ProjectTree() {
             const rootFolders = buildFolderTree(project.folders || [])
             const rootWhiteboards = project.whiteboards || []
             // Active when URL is /project/:id or /project/:id/folder/:folderId
-            const isActiveProject = currentPathname.startsWith(`/project/${project.id}`)
+            const isActiveProject = currentPathname.startsWith(
+              `/project/${project.id}`,
+            )
 
             return (
-              <Collapsible
-                key={project.id}
-                open={isExpanded}
-              >
+              <Collapsible key={project.id} open={isExpanded}>
                 <div className="group relative">
                   <div className="flex items-center gap-1 pr-8">
                     <CollapsibleTrigger asChild>
@@ -717,9 +718,7 @@ export function ProjectTree() {
           <form onSubmit={handleSubmitFolder}>
             <DialogHeader>
               <DialogTitle>Rename Folder</DialogTitle>
-              <DialogDescription>
-                Update the folder name.
-              </DialogDescription>
+              <DialogDescription>Update the folder name.</DialogDescription>
             </DialogHeader>
             <div className="space-y-4 py-4">
               <div className="space-y-2">
@@ -816,9 +815,7 @@ export function ProjectTree() {
           <form onSubmit={handleSubmitWhiteboard}>
             <DialogHeader>
               <DialogTitle>Rename Whiteboard</DialogTitle>
-              <DialogDescription>
-                Update the whiteboard name.
-              </DialogDescription>
+              <DialogDescription>Update the whiteboard name.</DialogDescription>
             </DialogHeader>
             <div className="space-y-4 py-4">
               <div className="space-y-2">

@@ -119,13 +119,13 @@ Section 7.1 correctly identifies that `socket.broadcast.emit` means the originat
 
 ## Issue Summary
 
-| ID | Severity | Category | Status | Issue |
-|----|----------|----------|--------|-------|
-| SA-C1 | Critical | Architecture / Data Flow | **RESOLVED** | Double persistence eliminated via WebSocket-only approach |
-| SA-M1 | Medium | Security | **RESOLVED** | Authorization gap documented in Section 15.1 |
-| SA-M2 | Medium | Performance | **RESOLVED** | 250ms per-constraint debounce added to Section 4.5 |
-| SA-R2-M1 | Medium | Documentation | NEW (non-blocking) | "Matches existing pattern" claim is factually inaccurate -- existing table code uses dual-path. Does not affect architecture. |
-| SA-R2-O1 | Low | Performance | NEW (observation) | Temp ID persistence until sync:request may cause React key change on reconciliation |
+| ID       | Severity | Category                 | Status             | Issue                                                                                                                         |
+| -------- | -------- | ------------------------ | ------------------ | ----------------------------------------------------------------------------------------------------------------------------- |
+| SA-C1    | Critical | Architecture / Data Flow | **RESOLVED**       | Double persistence eliminated via WebSocket-only approach                                                                     |
+| SA-M1    | Medium   | Security                 | **RESOLVED**       | Authorization gap documented in Section 15.1                                                                                  |
+| SA-M2    | Medium   | Performance              | **RESOLVED**       | 250ms per-constraint debounce added to Section 4.5                                                                            |
+| SA-R2-M1 | Medium   | Documentation            | NEW (non-blocking) | "Matches existing pattern" claim is factually inaccurate -- existing table code uses dual-path. Does not affect architecture. |
+| SA-R2-O1 | Low      | Performance              | NEW (observation)  | Temp ID persistence until sync:request may cause React key change on reconciliation                                           |
 
 ---
 

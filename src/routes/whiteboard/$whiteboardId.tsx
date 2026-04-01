@@ -12,8 +12,8 @@ import type {
   CreateTable,
 } from '@/data/schema'
 import type { DiagramAST } from '@/lib/parser/ast'
-import { Canvas, useCanvasControls } from '@/components/whiteboard/Canvas'
 import type { ZoomControls } from '@/components/whiteboard/Toolbar'
+import { Canvas, useCanvasControls } from '@/components/whiteboard/Canvas'
 import { TableNode } from '@/components/whiteboard/TableNode'
 import { RelationshipEdge } from '@/components/whiteboard/RelationshipEdge'
 import { ReactFlowWhiteboard } from '@/components/whiteboard/ReactFlowWhiteboard'
@@ -663,8 +663,14 @@ function WhiteboardEditor() {
             isAutoLayoutLoading={isAutoLayoutComputing}
             autoLayoutEnabled={autoLayoutEnabled}
             onAutoLayoutEnabledChange={setAutoLayoutEnabled}
-            zoomControls={USE_REACT_FLOW ? (reactFlowZoomControls ?? undefined) : canvasControls}
-            currentZoom={USE_REACT_FLOW ? reactFlowCurrentZoom : canvasViewport.zoom}
+            zoomControls={
+              USE_REACT_FLOW
+                ? (reactFlowZoomControls ?? undefined)
+                : canvasControls
+            }
+            currentZoom={
+              USE_REACT_FLOW ? reactFlowCurrentZoom : canvasViewport.zoom
+            }
             showMode={USE_REACT_FLOW ? (reactFlowShowMode as any) : undefined}
             onShowModeChange={USE_REACT_FLOW ? handleShowModeChange : undefined}
           />

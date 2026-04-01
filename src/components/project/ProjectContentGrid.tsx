@@ -4,12 +4,7 @@
 
 import { Link } from '@tanstack/react-router'
 import { FileText, Folder } from 'lucide-react'
-import {
-  Card,
-  CardContent,
-  CardHeader,
-  CardTitle,
-} from '@/components/ui/card'
+import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 
 interface ProjectContentGridProps {
   projectId: string
@@ -67,9 +62,7 @@ export function ProjectContentGrid({
             </CardHeader>
             <CardContent>
               <div className="text-sm text-muted-foreground space-y-1">
-                <div>
-                  {new Date(whiteboard.updatedAt).toLocaleDateString()}
-                </div>
+                <div>{new Date(whiteboard.updatedAt).toLocaleDateString()}</div>
                 <div>
                   {whiteboard._count.tables} table
                   {whiteboard._count.tables !== 1 ? 's' : ''}

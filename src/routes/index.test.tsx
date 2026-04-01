@@ -2,12 +2,19 @@
 // src/routes/index.test.tsx
 // TS-11: Home page project card links integration tests (Infrastructure)
 
-import { describe, expect, it, vi, beforeEach } from 'vitest'
+import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { render, screen } from '@testing-library/react'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
-import { RouterContextProvider, createRouter, createMemoryHistory } from '@tanstack/react-router'
-import { routeTree } from '@/routeTree.gen'
+import {
+  RouterContextProvider,
+  createMemoryHistory,
+  createRouter,
+} from '@tanstack/react-router'
 import type { ReactNode } from 'react'
+import { routeTree } from '@/routeTree.gen'
+
+import { getProjectsWithTree } from '@/routes/api/projects'
+import { getRecentWhiteboards } from '@/routes/api/whiteboards'
 
 // Mock server functions used by the home page
 vi.mock('@/routes/api/projects', () => ({
@@ -32,9 +39,6 @@ vi.mock('sonner', () => ({
   },
 }))
 
-import { getProjectsWithTree } from '@/routes/api/projects'
-import { getRecentWhiteboards } from '@/routes/api/whiteboards'
-
 // We test the home page by pre-populating the query cache and checking the Link hrefs
 // This avoids needing to render through the full router with SSR concerns
 
@@ -55,8 +59,8 @@ function createTestQueryClient() {
 //   <Link to="/project/$projectId" params={{ projectId: project.id }}>
 
 function renderHomePage(preloadData: {
-  projects: any[]
-  recentWhiteboards?: any[]
+  projects: Array<any>
+  recentWhiteboards?: Array<any>
 }) {
   const queryClient = createTestQueryClient()
   queryClient.setQueryData(['projects', 'tree'], preloadData.projects)
@@ -71,7 +75,9 @@ function renderHomePage(preloadData: {
   function Wrapper({ children }: { children: ReactNode }) {
     return (
       <RouterContextProvider router={router}>
-        <QueryClientProvider client={queryClient}>{children}</QueryClientProvider>
+        <QueryClientProvider client={queryClient}>
+          {children}
+        </QueryClientProvider>
       </RouterContextProvider>
     )
   }
@@ -102,7 +108,10 @@ describe('Home Page Project Card Links (TC-11)', () => {
 
       const { queryClient } = renderHomePage({ projects })
 
-      const cachedProjects = queryClient.getQueryData(['projects', 'tree']) as typeof projects
+      const cachedProjects = queryClient.getQueryData([
+        'projects',
+        'tree',
+      ]) as typeof projects
       expect(cachedProjects[0].id).toBe('proj-abc')
       // The Link to="/project/$projectId" params={{ projectId: 'proj-abc' }}
       // would render as href="/project/proj-abc"
@@ -110,13 +119,30 @@ describe('Home Page Project Card Links (TC-11)', () => {
 
     it('multiple project cards have distinct projectIds', () => {
       const projects = [
-        { id: 'proj-001', name: 'Project Alpha', folders: [], whiteboards: [], createdAt: new Date(), updatedAt: new Date() },
-        { id: 'proj-002', name: 'Project Beta', folders: [], whiteboards: [], createdAt: new Date(), updatedAt: new Date() },
+        {
+          id: 'proj-001',
+          name: 'Project Alpha',
+          folders: [],
+          whiteboards: [],
+          createdAt: new Date(),
+          updatedAt: new Date(),
+        },
+        {
+          id: 'proj-002',
+          name: 'Project Beta',
+          folders: [],
+          whiteboards: [],
+          createdAt: new Date(),
+          updatedAt: new Date(),
+        },
       ]
 
       const { queryClient } = renderHomePage({ projects })
 
-      const cachedProjects = queryClient.getQueryData(['projects', 'tree']) as typeof projects
+      const cachedProjects = queryClient.getQueryData([
+        'projects',
+        'tree',
+      ]) as typeof projects
       expect(cachedProjects).toHaveLength(2)
       const ids = cachedProjects.map((p) => p.id)
       expect(ids).toContain('proj-001')
@@ -140,7 +166,10 @@ describe('Home Page Project Card Links (TC-11)', () => {
 
       const { queryClient } = renderHomePage({ projects })
 
-      const cachedProjects = queryClient.getQueryData(['projects', 'tree']) as typeof projects
+      const cachedProjects = queryClient.getQueryData([
+        'projects',
+        'tree',
+      ]) as typeof projects
       expect(cachedProjects[0].id).toBe('proj-empty')
       expect(cachedProjects[0].whiteboards).toHaveLength(0)
       // The project still has an id, so the Link will render a clickable anchor
@@ -165,7 +194,10 @@ describe('Home Page Project Card Links (TC-11)', () => {
 
       // The home page project cards link to /project/$projectId, NOT to individual whiteboards
       // Verify by confirming the route target path would be /project/proj-001
-      const cachedProjects = queryClient.getQueryData(['projects', 'tree']) as typeof projects
+      const cachedProjects = queryClient.getQueryData([
+        'projects',
+        'tree',
+      ]) as typeof projects
       // Project card route: /project/$projectId (not /whiteboard/$whiteboardId)
       const expectedHref = `/project/${cachedProjects[0].id}`
       expect(expectedHref).toContain('/project/')

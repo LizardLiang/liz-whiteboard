@@ -15,22 +15,22 @@ Implemented the E-Commerce Demo Schema feature in 5 phases across 3 commits. The
 
 ## Files Created
 
-| File | Purpose |
-|------|---------|
+| File                            | Purpose                                                 |
+| ------------------------------- | ------------------------------------------------------- |
 | `prisma/seed-ecommerce-demo.ts` | Standalone seed script for E-Commerce demo (Phases 3-5) |
 
 ## Files Modified
 
-| File | Changes |
-|------|---------|
-| `schema.prisma` (root) | Added ZERO_TO_ONE, ZERO_TO_MANY, SELF_REFERENCING to Cardinality enum |
-| `prisma/schema.prisma` | Added ZERO_TO_ONE, ZERO_TO_MANY, SELF_REFERENCING to Cardinality enum |
-| `src/data/schema.ts` | Extended cardinalitySchema Zod enum to 7 values |
-| `src/lib/react-flow/convert-to-edges.ts` | Added cases for 3 new cardinalities in both marker switch statements + default fallback |
-| `src/components/whiteboard/Toolbar.tsx` | Extended CARDINALITIES array from 4 to 7 entries |
-| `src/components/whiteboard/RelationshipEdge.tsx` | Added getCardinalityText() cases for new types |
-| `src/components/whiteboard/CardinalityMarkerDefs.tsx` | Registered 4 new marker IDs (zero-one-left, zero-many-left + highlights) |
-| `package.json` | Added db:seed-demo script |
+| File                                                  | Changes                                                                                 |
+| ----------------------------------------------------- | --------------------------------------------------------------------------------------- |
+| `schema.prisma` (root)                                | Added ZERO_TO_ONE, ZERO_TO_MANY, SELF_REFERENCING to Cardinality enum                   |
+| `prisma/schema.prisma`                                | Added ZERO_TO_ONE, ZERO_TO_MANY, SELF_REFERENCING to Cardinality enum                   |
+| `src/data/schema.ts`                                  | Extended cardinalitySchema Zod enum to 7 values                                         |
+| `src/lib/react-flow/convert-to-edges.ts`              | Added cases for 3 new cardinalities in both marker switch statements + default fallback |
+| `src/components/whiteboard/Toolbar.tsx`               | Extended CARDINALITIES array from 4 to 7 entries                                        |
+| `src/components/whiteboard/RelationshipEdge.tsx`      | Added getCardinalityText() cases for new types                                          |
+| `src/components/whiteboard/CardinalityMarkerDefs.tsx` | Registered 4 new marker IDs (zero-one-left, zero-many-left + highlights)                |
+| `package.json`                                        | Added db:seed-demo script                                                               |
 
 ---
 
@@ -39,6 +39,7 @@ Implemented the E-Commerce Demo Schema feature in 5 phases across 3 commits. The
 ### Phase 1: Schema Extension
 
 **Discovery**: There are two schema files in the project:
+
 - `schema.prisma` (root directory) — this is the canonical schema used by the Prisma CLI
 - `prisma/schema.prisma` — appears to be a documentation copy (may be a duplicate artifact from project history)
 
@@ -51,6 +52,7 @@ Both were updated to keep them in sync. The prisma CLI reads from the root `sche
 ### Phase 2: UI Integration
 
 All 4 UI files updated independently:
+
 - `convert-to-edges.ts`: Added 3 new cases per switch statement plus `default` fallback
 - `Toolbar.tsx`: Extended CARDINALITIES array, Zero or One label is "Zero or One (0..1)"
 - `RelationshipEdge.tsx`: ZERO_TO_ONE → {0, 1}, ZERO_TO_MANY → {0, N}, SELF_REFERENCING → {1, N}
@@ -74,12 +76,12 @@ All 4 UI files updated independently:
 
 ## Deviations from Tech Spec
 
-| # | Deviation | Reason | Impact |
-|---|-----------|--------|--------|
-| 1 | Root `schema.prisma` is the canonical file (not `prisma/schema.prisma`) | Prisma CLI reads from CWD; root file is authoritative | Minor: both files updated |
-| 2 | Used `bun` instead of `ts-node` in `db:seed-demo` script | `ts-node` doesn't handle ESM modules; bun is the project runtime | Low: same execution result |
-| 3 | No `prisma.$transaction` wrapper in seed script | Accelerate 15-second limit on interactive transactions | Medium: partial failure risk if seed fails mid-run |
-| 4 | `customers.id` used as source for relationship #2 instead of `customers.email` | More canonical FK pattern; both satisfy the constraint | Cosmetic |
+| #   | Deviation                                                                      | Reason                                                           | Impact                                             |
+| --- | ------------------------------------------------------------------------------ | ---------------------------------------------------------------- | -------------------------------------------------- |
+| 1   | Root `schema.prisma` is the canonical file (not `prisma/schema.prisma`)        | Prisma CLI reads from CWD; root file is authoritative            | Minor: both files updated                          |
+| 2   | Used `bun` instead of `ts-node` in `db:seed-demo` script                       | `ts-node` doesn't handle ESM modules; bun is the project runtime | Low: same execution result                         |
+| 3   | No `prisma.$transaction` wrapper in seed script                                | Accelerate 15-second limit on interactive transactions           | Medium: partial failure risk if seed fails mid-run |
+| 4   | `customers.id` used as source for relationship #2 instead of `customers.email` | More canonical FK pattern; both satisfy the constraint           | Cosmetic                                           |
 
 ---
 
@@ -103,15 +105,15 @@ All 4 UI files updated independently:
 
 ## Test Results
 
-| Suite | Tests | Status |
-|-------|-------|--------|
-| `src/lib/parser/diagram-parser.test.ts` | 18 | PASS |
-| `src/data/schema.test.ts` | 16 | PASS |
-| `src/lib/react-flow/convert-to-edges.test.ts` | 16 | PASS |
-| `src/components/whiteboard/Toolbar.test.tsx` | 14 | PASS |
-| `src/components/whiteboard/RelationshipEdge.test.tsx` | 7 | PASS |
-| `src/components/whiteboard/CardinalityMarkerDefs.test.tsx` | 9 | PASS |
-| **Total** | **80** | **PASS** |
+| Suite                                                      | Tests  | Status   |
+| ---------------------------------------------------------- | ------ | -------- |
+| `src/lib/parser/diagram-parser.test.ts`                    | 18     | PASS     |
+| `src/data/schema.test.ts`                                  | 16     | PASS     |
+| `src/lib/react-flow/convert-to-edges.test.ts`              | 16     | PASS     |
+| `src/components/whiteboard/Toolbar.test.tsx`               | 14     | PASS     |
+| `src/components/whiteboard/RelationshipEdge.test.tsx`      | 7      | PASS     |
+| `src/components/whiteboard/CardinalityMarkerDefs.test.tsx` | 9      | PASS     |
+| **Total**                                                  | **80** | **PASS** |
 
 No test failures.
 
@@ -120,6 +122,7 @@ No test failures.
 ## Seed Script Verification
 
 Run results (first execution):
+
 ```
 [seed-demo] Demo seeded successfully!
 [seed-demo]   Project:       E-Commerce Demo (f7e2c119-2f07-4f78-87c2-23bc33f5ad8a)
@@ -130,6 +133,7 @@ Run results (first execution):
 ```
 
 Idempotency verified (second execution):
+
 ```
 [seed-demo] E-Commerce Demo project already exists (id: f7e2c119-...). Skipping seed.
 ```
@@ -140,24 +144,25 @@ Idempotency verified (second execution):
 
 Hera identified 6 gaps after initial implementation. All gaps closed on 2026-03-30:
 
-| Gap | Item | Resolution |
-|-----|------|------------|
-| AC-02 | Prisma migration file | Created `prisma/migrations/20260330000000_add_cardinality_enum_values/migration.sql` manually. `prisma migrate dev` is not supported with Prisma Accelerate (`prisma+postgres://`). The SQL documents the equivalent `ALTER TYPE "Cardinality" ADD VALUE` DDL applied via `db:push`. |
-| TS-2 | `src/data/schema.test.ts` | Created with 16 tests: all 7 values accepted, unknown values rejected, new values work in `createRelationshipSchema`. Note: Zod v4 UUID format is strict (RFC 4122 variant bits required) — test fixtures use proper v4 UUIDs. |
-| TS-8 | `src/lib/react-flow/convert-to-edges.test.ts` | Created with 16 tests: all 7 marker start/end IDs verified, default fallback verified as non-undefined. |
-| TS-9 | `src/components/whiteboard/Toolbar.test.tsx` | Created with 14 tests. Exported `CARDINALITIES` from `Toolbar.tsx` to make it testable. |
-| TS-10 | `src/components/whiteboard/RelationshipEdge.test.tsx` | Created with 7 tests. Exported `getCardinalityText` from `RelationshipEdge.tsx` to make it testable. |
-| TS-11 | `src/components/whiteboard/CardinalityMarkerDefs.test.tsx` | Created with 9 tests. Used `innerHTML` fallback for SVG `<marker>` ID detection (jsdom CSS selector `#id` does not match SVG namespace `<marker>` elements reliably). |
+| Gap   | Item                                                       | Resolution                                                                                                                                                                                                                                                                           |
+| ----- | ---------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| AC-02 | Prisma migration file                                      | Created `prisma/migrations/20260330000000_add_cardinality_enum_values/migration.sql` manually. `prisma migrate dev` is not supported with Prisma Accelerate (`prisma+postgres://`). The SQL documents the equivalent `ALTER TYPE "Cardinality" ADD VALUE` DDL applied via `db:push`. |
+| TS-2  | `src/data/schema.test.ts`                                  | Created with 16 tests: all 7 values accepted, unknown values rejected, new values work in `createRelationshipSchema`. Note: Zod v4 UUID format is strict (RFC 4122 variant bits required) — test fixtures use proper v4 UUIDs.                                                       |
+| TS-8  | `src/lib/react-flow/convert-to-edges.test.ts`              | Created with 16 tests: all 7 marker start/end IDs verified, default fallback verified as non-undefined.                                                                                                                                                                              |
+| TS-9  | `src/components/whiteboard/Toolbar.test.tsx`               | Created with 14 tests. Exported `CARDINALITIES` from `Toolbar.tsx` to make it testable.                                                                                                                                                                                              |
+| TS-10 | `src/components/whiteboard/RelationshipEdge.test.tsx`      | Created with 7 tests. Exported `getCardinalityText` from `RelationshipEdge.tsx` to make it testable.                                                                                                                                                                                 |
+| TS-11 | `src/components/whiteboard/CardinalityMarkerDefs.test.tsx` | Created with 9 tests. Used `innerHTML` fallback for SVG `<marker>` ID detection (jsdom CSS selector `#id` does not match SVG namespace `<marker>` elements reliably).                                                                                                                |
 
 **Exports added** (minimal surface, no breaking changes):
+
 - `CARDINALITIES` array in `Toolbar.tsx` — was `const`, now `export const`
 - `getCardinalityText` function in `RelationshipEdge.tsx` — was `function`, now `export function`
 
 ## Commits
 
-| Commit | Message |
-|--------|---------|
-| 032115a | feat(example-ecommerce-schema): Phase 1 - extend Cardinality enum with ZERO_TO_ONE, ZERO_TO_MANY, SELF_REFERENCING |
-| afdd40b | feat(example-ecommerce-schema): Phase 2 - wire new cardinality values into UI rendering pipeline |
-| 189f882 | feat(example-ecommerce-schema): Phases 3-5 - E-Commerce demo seed script |
-| (gap-fill) | feat(example-ecommerce-schema): close PRD alignment gaps - migration file + 5 unit test suites |
+| Commit     | Message                                                                                                            |
+| ---------- | ------------------------------------------------------------------------------------------------------------------ |
+| 032115a    | feat(example-ecommerce-schema): Phase 1 - extend Cardinality enum with ZERO_TO_ONE, ZERO_TO_MANY, SELF_REFERENCING |
+| afdd40b    | feat(example-ecommerce-schema): Phase 2 - wire new cardinality values into UI rendering pipeline                   |
+| 189f882    | feat(example-ecommerce-schema): Phases 3-5 - E-Commerce demo seed script                                           |
+| (gap-fill) | feat(example-ecommerce-schema): close PRD alignment gaps - migration file + 5 unit test suites                     |

@@ -4,10 +4,14 @@
 
 import { describe, expect, it } from 'vitest'
 import { render, screen } from '@testing-library/react'
-import { RouterContextProvider, createRouter, createMemoryHistory } from '@tanstack/react-router'
-import { routeTree } from '@/routeTree.gen'
+import {
+  RouterContextProvider,
+  createMemoryHistory,
+  createRouter,
+} from '@tanstack/react-router'
 import { ProjectContentGrid } from './ProjectContentGrid'
 import type { ReactNode } from 'react'
+import { routeTree } from '@/routeTree.gen'
 
 function createTestRouter() {
   const history = createMemoryHistory({ initialEntries: ['/'] })
@@ -16,7 +20,9 @@ function createTestRouter() {
 
 function RouterWrapper({ children }: { children: ReactNode }) {
   const router = createTestRouter()
-  return <RouterContextProvider router={router}>{children}</RouterContextProvider>
+  return (
+    <RouterContextProvider router={router}>{children}</RouterContextProvider>
+  )
 }
 
 function renderGrid(props: Parameters<typeof ProjectContentGrid>[0]) {
@@ -101,7 +107,9 @@ describe('ProjectContentGrid', () => {
       })
 
       const allLinks = document.querySelectorAll('a')
-      const linkTexts = Array.from(allLinks).map((a) => a.textContent?.trim() ?? '')
+      const linkTexts = Array.from(allLinks).map(
+        (a) => a.textContent?.trim() ?? '',
+      )
       const folderIndices = linkTexts
         .map((t, i) => (t.includes('Folder') ? i : -1))
         .filter((i) => i !== -1)
@@ -134,7 +142,9 @@ describe('ProjectContentGrid', () => {
     it('shows folder name text', () => {
       renderGrid({
         projectId: PROJECT_ID,
-        folders: [{ id: 'folder-001', name: 'Core Models', createdAt: new Date() }],
+        folders: [
+          { id: 'folder-001', name: 'Core Models', createdAt: new Date() },
+        ],
         whiteboards: [],
       })
 
@@ -228,7 +238,9 @@ describe('ProjectContentGrid', () => {
     it('folder card renders as a link with correct folder route href', () => {
       renderGrid({
         projectId: 'proj-001',
-        folders: [{ id: 'folder-xyz', name: 'Test Folder', createdAt: new Date() }],
+        folders: [
+          { id: 'folder-xyz', name: 'Test Folder', createdAt: new Date() },
+        ],
         whiteboards: [],
       })
 

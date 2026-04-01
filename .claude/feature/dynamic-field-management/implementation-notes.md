@@ -16,6 +16,7 @@ Implementing frontend inline column management for the ER diagram whiteboard. Ba
 ## Phases
 
 ### Phase 1: Foundation
+
 - [x] 1.1 Install alert-dialog, tooltip, dropdown-menu shadcn/ui components
 - [x] 1.2 Create `src/components/whiteboard/column/types.ts`
 - [x] 1.3 Extend `TableNodeData` with column mutation callbacks + edges prop
@@ -23,6 +24,7 @@ Implementing frontend inline column management for the ER diagram whiteboard. Ba
 - [x] 1.5 Refactor `TableNode.new.tsx` to use `<ColumnRow>`
 
 ### Phase 2: Column Editing
+
 - [x] 2.1 Create `InlineNameEditor` component
 - [x] 2.2 Create `DataTypeSelector` component
 - [x] 2.3 Create `ConstraintBadges` component
@@ -31,17 +33,20 @@ Implementing frontend inline column management for the ER diagram whiteboard. Ba
 - [x] 2.6 Add `editingField` local state to `TableNode.new.tsx`
 
 ### Phase 3: Column Creation
+
 - [x] 3.1 Create `AddColumnRow` component
 - [x] 3.2 Add `createColumn` function to `useColumnMutations`
 - [x] 3.3 Add `<AddColumnRow>` to `TableNode.new.tsx`
 
 ### Phase 4: Column Deletion
+
 - [x] 4.1 Create `DeleteColumnDialog` component
 - [x] 4.2 Add `deleteColumn` function to `useColumnMutations`
 - [x] 4.3 Add delete button to `ColumnRow`
 - [x] 4.4 Wire delete flow in `TableNode.new.tsx`
 
 ### Phase 5: Real-Time Sync
+
 - [x] 5.1 Create `useColumnCollaboration` hook
 - [x] 5.2 Create `ConnectionStatusIndicator` component
 - [x] 5.3 Wire WebSocket emitters into `useColumnMutations`
@@ -79,12 +84,15 @@ Implementing frontend inline column management for the ER diagram whiteboard. Ba
 ## Bug Fixes (Post-Pipeline)
 
 ### ISSUE-005: Toolbar zoom controls non-functional in ReactFlow mode
+
 **Fix**: Added `onZoomControlsReady` and `onZoomChange` callback props to `ReactFlowWhiteboardProps`. Inside `ReactFlowWhiteboardInner`, `useReactFlow()` and `useViewport()` hooks from `@xyflow/react` are used to build a `ZoomControls` object (matching Toolbar's interface) and expose it via the callback. The parent (`$whiteboardId.tsx`) stores these in state and conditionally passes them to Toolbar when `USE_REACT_FLOW=true`.
 
 ### ISSUE-006: Zoom percentage stuck at 100% in ReactFlow mode
+
 **Fix**: The `onZoomChange` callback fires on every `viewport.zoom` change (tracked via `useViewport()`), updating `reactFlowCurrentZoom` in the parent. This value is passed as `currentZoom` to Toolbar when in ReactFlow mode.
 
 **Files changed**:
+
 - `src/components/whiteboard/ReactFlowWhiteboard.tsx` — Added `useReactFlow`, `useViewport`, `ZoomControls` import; added two new props + implementation in `ReactFlowWhiteboardInner`; threaded props through outer `ReactFlowWhiteboard`
 - `src/routes/whiteboard/$whiteboardId.tsx` — Added `ZoomControls` import; added `reactFlowZoomControls`/`reactFlowCurrentZoom` state; added `handleZoomControlsReady`/`handleZoomChange` callbacks; wired Toolbar and ReactFlowWhiteboard
 
@@ -102,19 +110,19 @@ Tests written by Ares (2026-03-30) as a follow-up pass after PRD alignment found
 
 ### Test Files Created
 
-| File | Suite | Tests |
-|------|-------|-------|
-| `src/test/fixtures.ts` | Shared fixtures | — |
-| `src/test/setup.ts` | Vitest setup (cleanup) | — |
-| `src/components/whiteboard/ConnectionStatusIndicator.test.tsx` | TS-09 | 5 |
-| `src/components/whiteboard/column/InlineNameEditor.test.tsx` | TS-02 | 8 |
-| `src/components/whiteboard/column/ConstraintBadges.test.tsx` | TS-03 | 12 |
-| `src/components/whiteboard/column/DataTypeSelector.test.tsx` | TS-01 | 6 |
-| `src/components/whiteboard/column/DeleteColumnDialog.test.tsx` | TS-05 | 7 |
-| `src/components/whiteboard/column/AddColumnRow.test.tsx` | TS-04 | 8 |
-| `src/components/whiteboard/column/ColumnRow.test.tsx` | TS-06 | 10 |
-| `src/hooks/use-column-mutations.test.ts` | TS-07 + TS-13 | 14 |
-| `src/hooks/use-column-collaboration.test.ts` | TS-08 | 10 |
+| File                                                           | Suite                  | Tests |
+| -------------------------------------------------------------- | ---------------------- | ----- |
+| `src/test/fixtures.ts`                                         | Shared fixtures        | —     |
+| `src/test/setup.ts`                                            | Vitest setup (cleanup) | —     |
+| `src/components/whiteboard/ConnectionStatusIndicator.test.tsx` | TS-09                  | 5     |
+| `src/components/whiteboard/column/InlineNameEditor.test.tsx`   | TS-02                  | 8     |
+| `src/components/whiteboard/column/ConstraintBadges.test.tsx`   | TS-03                  | 12    |
+| `src/components/whiteboard/column/DataTypeSelector.test.tsx`   | TS-01                  | 6     |
+| `src/components/whiteboard/column/DeleteColumnDialog.test.tsx` | TS-05                  | 7     |
+| `src/components/whiteboard/column/AddColumnRow.test.tsx`       | TS-04                  | 8     |
+| `src/components/whiteboard/column/ColumnRow.test.tsx`          | TS-06                  | 10    |
+| `src/hooks/use-column-mutations.test.ts`                       | TS-07 + TS-13          | 14    |
+| `src/hooks/use-column-collaboration.test.ts`                   | TS-08                  | 10    |
 
 **Total tests added**: 80 (across 9 test files)
 **All tests pass**: Yes (160 total pass including pre-existing 80)
@@ -160,6 +168,7 @@ Added optional `onReconnect` callback to `UseColumnCollaborationCallbacks`. In `
 **Files**: `src/lib/react-flow/edge-routing.ts`, `src/lib/react-flow/convert-to-edges.ts`, `src/components/whiteboard/column/ColumnRow.tsx`
 
 Updated `createColumnHandleId` to accept an optional 4th `type: 'source' | 'target'` parameter (defaults to `'source'` for backward compatibility). Handle ID format is now `{tableId}__{columnId}__{side}__{type}`. Updated all call sites:
+
 - `ColumnRow.tsx`: left-source, left-target, right-source, right-target handles are now uniquely identified
 - `convert-to-edges.ts`: `sourceHandle` uses `'source'` type, `targetHandle` uses `'target'` type
 - `recalculateEdgeHandles`: same type-specific IDs
@@ -182,6 +191,7 @@ A previous fix had wrapped the PK badge in `{localPK && (...)}` to prevent ghost
 ### Fix Applied
 
 **ConstraintBadges.tsx**: Removed the conditional wrapper. PK badge now always renders with the same active/inactive visual pattern as N and U badges:
+
 - Active (localPK=true): amber background, white text, full opacity, amber border
 - Inactive (localPK=false): transparent background, table text color, 0.4 opacity, outline border
 - `aria-pressed` dynamically reflects `localPK` state
@@ -189,6 +199,7 @@ A previous fix had wrapped the PK badge in `{localPK && (...)}` to prevent ghost
 - `handlePKClick` (with its cascade logic: nullable=false, unique=true on enable) preserved intact
 
 **ConstraintBadges.test.tsx**:
+
 - TC-03-02: Updated from "PK badge NOT rendered when isPrimaryKey=false" to "PK badge always rendered; shows inactive style when isPrimaryKey=false" — asserts badge is present with `aria-pressed="false"`
 - TC-03-04b (new): Tests PK toggle OFF->ON and verifies cascade — `isPrimaryKey=true`, `isNullable=false`, `isUnique=true` all called
 
@@ -222,6 +233,7 @@ Key finding: TanStack Start 1.132 names its SSR environment `"ssr"` (not `"serve
 ### Verification
 
 `GET /socket.io/?EIO=4&transport=polling` now returns HTTP 200 with a valid Socket.IO handshake:
+
 ```
 0{"sid":"...","upgrades":["websocket"],"pingInterval":25000,"pingTimeout":20000,"maxPayload":1000000}
 ```
@@ -237,6 +249,7 @@ Key finding: TanStack Start 1.132 names its SSR environment `"ssr"` (not `"serve
 ### Root Cause
 
 All server functions in `src/routes/api/whiteboards.ts` used the OLD TanStack Start API:
+
 ```ts
 createServerFn('POST', async (data) => { ... })
 ```
@@ -244,6 +257,7 @@ createServerFn('POST', async (data) => { ... })
 In TanStack Start 1.132, the Vite plugin (`@tanstack/start-plugin-core`) only transforms server functions whose source files contain `.handler(`. Because `whiteboards.ts` had no `.handler(` calls, the plugin NEVER processed the file. At runtime, calling these "functions" returned a builder object instead of making an HTTP request — no database operations were performed.
 
 When `createWhiteboardFn` was used as a TanStack Query `mutationFn`, it returned a plain JS object (the builder), not the created whiteboard. TanStack Query resolved with this object. `onSuccess(whiteboard)` received a builder object:
+
 - `whiteboard.id` = `undefined` → `navigate({ params: { whiteboardId: undefined } })`
 - The URL became `/whiteboard/undefined`
 - `getWhiteboardWithDiagram('undefined')` returned null → "Whiteboard not found"
@@ -253,6 +267,7 @@ The same bug affected `updateWhiteboardFn`, `deleteWhiteboardFn`, and `getRecent
 ### Fix Applied
 
 Rewrote all 10 functions in `src/routes/api/whiteboards.ts` using the new builder API:
+
 ```ts
 export const createWhiteboardFn = createServerFn({ method: 'POST' })
   .inputValidator((data: unknown) => createWhiteboardSchema.parse(data))
@@ -263,11 +278,13 @@ export const createWhiteboardFn = createServerFn({ method: 'POST' })
 ```
 
 Updated callers in `ProjectTree.tsx` to use `{ data: ... }` wrapper required by new API:
+
 ```ts
 mutationFn: (data: CreateWhiteboard) => createWhiteboardFn({ data }),
 ```
 
 Updated `routes/index.tsx` query for recent whiteboards:
+
 ```ts
 queryFn: () => getRecentWhiteboards({ data: 8 }),
 ```

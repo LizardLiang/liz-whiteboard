@@ -14,11 +14,16 @@
 import { useCallback, useRef } from 'react'
 import { toast } from 'sonner'
 import type { Column } from '@prisma/client'
-import type { RelationshipEdgeType, TableNodeType } from '@/lib/react-flow/types'
+import type {
+  RelationshipEdgeType,
+  TableNodeType,
+} from '@/lib/react-flow/types'
 import type { DataType, UpdateColumn } from '@/data/schema'
 
 type SetNodes = React.Dispatch<React.SetStateAction<Array<TableNodeType>>>
-type SetEdges = React.Dispatch<React.SetStateAction<Array<RelationshipEdgeType>>>
+type SetEdges = React.Dispatch<
+  React.SetStateAction<Array<RelationshipEdgeType>>
+>
 
 type EmitColumnCreate = (data: {
   tableId: string
@@ -81,7 +86,7 @@ export function useColumnMutations(
         isPrimaryKey: false,
         isForeignKey: false,
         isUnique: false,
-        isNullable: true,
+        isNullable: false,
         description: null,
         createdAt: new Date(),
         updatedAt: new Date(),
@@ -184,7 +189,10 @@ export function useColumnMutations(
       // Emit each queued update with the real DB ID
       if (queuedUpdates.length > 0 && emitColumnUpdate) {
         // Merge all queued updates into a single emission to avoid redundant round-trips
-        const merged = Object.assign({}, ...queuedUpdates) as Partial<UpdateColumn>
+        const merged = Object.assign(
+          {},
+          ...queuedUpdates,
+        ) as Partial<UpdateColumn>
         emitColumnUpdate(realId, merged)
       }
     },
@@ -195,11 +203,7 @@ export function useColumnMutations(
    * Update a column optimistically then emit via WebSocket.
    */
   const updateColumn = useCallback(
-    (
-      columnId: string,
-      tableId: string,
-      data: Partial<UpdateColumn>,
-    ) => {
+    (columnId: string, tableId: string, data: Partial<UpdateColumn>) => {
       if (!isConnected) {
         toast.error('Not connected. Please wait for reconnection.')
         return
@@ -377,7 +381,14 @@ export function useColumnMutations(
    * Finds the pending mutation and invokes its rollback.
    */
   const onColumnError = useCallback(
-    (data: { event: string; error: string; message: string; columnId?: string; tableId?: string; name?: string }) => {
+    (data: {
+      event: string
+      error: string
+      message: string
+      columnId?: string
+      tableId?: string
+      name?: string
+    }) => {
       // Detect duplicate name error
       const isDuplicateName =
         data.message?.toLowerCase().includes('unique constraint') ||
@@ -393,7 +404,9 @@ export function useColumnMutations(
         if (data.event === 'column:delete') {
           toast.error('Column was already deleted.')
         } else {
-          toast.error('Column not found — it may still be saving. Please try again.')
+          toast.error(
+            'Column not found — it may still be saving. Please try again.',
+          )
         }
       } else {
         toast.error('Unable to save changes. Please try again.')
