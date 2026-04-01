@@ -299,3 +299,45 @@ This also fixes ISSUE-007 ("Recent Whiteboards section absent") since `getRecent
 
 - 160 tests pass (1 pre-existing failure in `AddColumnRow` unrelated to this fix)
 - No new TypeScript errors introduced (pre-existing errors from `folders.ts` and `projects.ts` which also use old API remain but are out of scope)
+
+## Enhancement: Searchable Combobox for DataTypeSelector (2026-04-01)
+
+**Files**: `src/components/whiteboard/column/DataTypeSelector.tsx`, `src/components/whiteboard/column/DataTypeSelector.test.tsx`, `src/components/ui/command.tsx`
+
+### Problem
+
+With the data type list expanded from 8 to 25 types, the flat shadcn `Select` dropdown became hard to navigate. Users had to scroll through all 25 items to find their target type.
+
+### Solution
+
+Replaced `Select` with a `Popover` + `Command` (combobox) pattern:
+
+- `CommandInput` provides a live search/filter input
+- `CommandGroup` renders the 25 types in 7 named category sections (Numeric, String, Boolean, Date/Time, Binary, Structured, Identity)
+- cmdk's built-in fuzzy filtering matches against `"${label} ${key}"` so both display labels and raw values are searchable
+
+### API Preserved
+
+External props (`value`, `onSelect`, `onCancel`) are unchanged. All callers work without modification.
+
+### React Flow Compatibility
+
+- `nodrag nowheel` classes applied to root `div`, `PopoverTrigger` button, and `PopoverContent`
+- `stopPropagation` on `onClick` and `onMouseDown` on the root div
+- `onOpenAutoFocus` prevented on `PopoverContent` to avoid focus-stealing conflicts with React Flow
+
+### Dependencies Added
+
+- `cmdk` (via `bunx shadcn@latest add command`) — new dependency
+- `src/components/ui/command.tsx` — new shadcn component file
+
+### Test Changes
+
+- TC-01-01: updated from "no free-text inputs" to "renders a combobox trigger button" — the combobox search input is an intentional affordance
+- TC-01-07 (new): verifies trigger displays the label of the current value
+- TC-01-08 (new): verifies trigger starts with `aria-expanded="false"` before auto-open timer fires
+
+### Test Results
+
+- 298 tests pass across 30 test files
+- 0 failures
