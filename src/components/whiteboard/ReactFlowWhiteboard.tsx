@@ -12,24 +12,44 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { ReactFlowProvider, useReactFlow, useViewport } from '@xyflow/react'
+import type { Connection } from '@xyflow/react'
 import { ReactFlowCanvas } from './ReactFlowCanvas'
 import { ConnectionStatusIndicator } from './ConnectionStatusIndicator'
 import { DeleteTableDialog } from './DeleteTableDialog'
+import {
+  Dialog,
+  DialogContent,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from '@/components/ui/dialog'
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from '@/components/ui/select'
+import { Button } from '@/components/ui/button'
+import { Label } from '@/components/ui/label'
 import type { ZoomControls } from './Toolbar'
 import type {
   RelationshipEdgeType,
   ShowMode,
   TableNodeType,
 } from '@/lib/react-flow/types'
+import type { Cardinality } from '@prisma/client'
 import type { Column } from '@prisma/client'
 import type { CreateColumnPayload } from './column/types'
 import type { UpdateColumn } from '@/data/schema'
 import type { TableRelationship } from './DeleteTableDialog'
+import { parseColumnHandleId } from '@/lib/react-flow/edge-routing'
 import { convertTablesToNodes } from '@/lib/react-flow/convert-to-nodes'
 import { convertRelationshipsToEdges } from '@/lib/react-flow/convert-to-edges'
 import { useAutoLayout } from '@/lib/react-flow/use-auto-layout'
 import { extractPositionsForBatchUpdate } from '@/lib/react-flow/elk-layout'
 import {
+  createRelationshipFn,
   getWhiteboardRelationships,
   getWhiteboardWithDiagram,
 } from '@/lib/server-functions'
@@ -40,6 +60,35 @@ import { useColumnMutations } from '@/hooks/use-column-mutations'
 import { useTableMutations } from '@/hooks/use-table-mutations'
 import { useTableDeletion } from '@/hooks/use-table-deletion'
 import { getSessionUserId } from '@/lib/session-user-id'
+
+/** Pending connection data waiting for cardinality selection */
+interface PendingConnection {
+  sourceTableId: string
+  sourceColumnId: string
+  targetTableId: string
+  targetColumnId: string
+}
+
+/** Cardinality options for the picker dialog */
+const CARDINALITY_OPTIONS: Array<{ value: Cardinality; label: string }> = [
+  { value: 'ONE_TO_ONE', label: 'One to One (1:1)' },
+  { value: 'ONE_TO_MANY', label: 'One to Many (1:N)' },
+  { value: 'MANY_TO_ONE', label: 'Many to One (N:1)' },
+  { value: 'MANY_TO_MANY', label: 'Many to Many (N:N)' },
+  { value: 'ZERO_TO_ONE', label: 'Zero to One (0:1)' },
+  { value: 'ZERO_TO_MANY', label: 'Zero to Many (0:N)' },
+  { value: 'SELF_REFERENCING', label: 'Self Referencing' },
+  { value: 'ZERO_OR_ONE_TO_ONE', label: 'Zero or One to One (0..1:1)' },
+  { value: 'ZERO_OR_ONE_TO_MANY', label: 'Zero or One to Many (0..1:N)' },
+  { value: 'ZERO_OR_MANY_TO_ONE', label: 'Zero or Many to One (0..N:1)' },
+  { value: 'ZERO_OR_MANY_TO_MANY', label: 'Zero or Many to Many (0..N:N)' },
+  { value: 'ZERO_OR_ONE_TO_ZERO_OR_ONE', label: 'Zero or One to Zero or One' },
+  { value: 'ZERO_OR_ONE_TO_ZERO_OR_MANY', label: 'Zero or One to Zero or Many' },
+  { value: 'MANY_TO_ZERO_OR_ONE', label: 'Many to Zero or One (N:0..1)' },
+  { value: 'MANY_TO_ZERO_OR_MANY', label: 'Many to Zero or Many (N:0..N)' },
+  { value: 'ZERO_OR_MANY_TO_ZERO_OR_ONE', label: 'Zero or Many to Zero or One' },
+  { value: 'ZERO_OR_MANY_TO_ZERO_OR_MANY', label: 'Zero or Many to Zero or Many' },
+]
 
 /**
  * ReactFlowWhiteboard Props
@@ -119,6 +168,12 @@ function ReactFlowWhiteboardInner({
 
   // Table deletion state — which table has been requested for deletion (opens dialog)
   const [deletingTableId, setDeletingTableId] = useState<string | null>(null)
+
+  // Cardinality picker dialog state for drag-to-connect
+  const [pendingConnection, setPendingConnection] =
+    useState<PendingConnection | null>(null)
+  const [selectedCardinality, setSelectedCardinality] =
+    useState<Cardinality>('ONE_TO_MANY')
 
   // Display mode state with localStorage persistence
   const [showMode, setShowMode] = useState<ShowMode>(() => {
@@ -450,6 +505,70 @@ function ReactFlowWhiteboardInner({
     setDeletingTableId(tableId)
   }, [])
 
+  // Relationship creation mutation (for drag-to-connect)
+  const createRelationshipMutation = useMutation({
+    mutationFn: async (data: {
+      whiteboardId: string
+      sourceTableId: string
+      targetTableId: string
+      sourceColumnId: string
+      targetColumnId: string
+      cardinality: Cardinality
+    }) => {
+      return await createRelationshipFn({ data })
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['relationships', whiteboardId] })
+      queryClient.invalidateQueries({ queryKey: ['whiteboard', whiteboardId] })
+    },
+    onError: (err) => {
+      console.error('Failed to create relationship:', err)
+    },
+  })
+
+  // Handle connection drag completion — parse handle IDs and open cardinality picker.
+  // In strict mode (default), source/target are guaranteed correct:
+  // source = node with the source handle (drag start), target = node with the target handle (drop).
+  const handleConnect = useCallback((connection: Connection) => {
+    const { source, target, sourceHandle, targetHandle } = connection
+    if (!source || !target || !sourceHandle || !targetHandle) return
+
+    const parsedSource = parseColumnHandleId(sourceHandle)
+    const parsedTarget = parseColumnHandleId(targetHandle)
+    if (!parsedSource || !parsedTarget) return
+
+    // Use connection.source/target (React Flow node IDs = table IDs) for table direction,
+    // and parsed handle IDs only for column IDs.
+    setPendingConnection({
+      sourceTableId: source,
+      sourceColumnId: parsedSource.columnId,
+      targetTableId: target,
+      targetColumnId: parsedTarget.columnId,
+    })
+    setSelectedCardinality('ONE_TO_MANY')
+  }, [])
+
+  // Confirm cardinality selection and create relationship
+  const handleCardinalityConfirm = useCallback(() => {
+    if (!pendingConnection) return
+
+    createRelationshipMutation.mutate({
+      whiteboardId,
+      sourceTableId: pendingConnection.sourceTableId,
+      targetTableId: pendingConnection.targetTableId,
+      sourceColumnId: pendingConnection.sourceColumnId,
+      targetColumnId: pendingConnection.targetColumnId,
+      cardinality: selectedCardinality,
+    })
+
+    setPendingConnection(null)
+  }, [pendingConnection, selectedCardinality, whiteboardId, createRelationshipMutation])
+
+  // Cancel pending connection
+  const handleCardinalityCancel = useCallback(() => {
+    setPendingConnection(null)
+  }, [])
+
   // Thread column mutation callbacks into node data via refs (stable identity)
   const handleColumnCreateRef = useRef(handleColumnCreate)
   const handleColumnUpdateRef = useRef(handleColumnUpdate)
@@ -673,6 +792,7 @@ function ReactFlowWhiteboardInner({
       <ReactFlowCanvas
         initialNodes={nodes}
         initialEdges={edges}
+        onConnect={handleConnect}
         onNodeDragStop={handleNodeDragStop}
         nodesDraggable={nodesDraggable}
         showMinimap={showMinimap}
@@ -683,6 +803,48 @@ function ReactFlowWhiteboardInner({
           includeHiddenNodes: false,
         }}
       />
+
+      {/* Cardinality Picker Dialog — shown after drag-to-connect */}
+      <Dialog
+        open={pendingConnection !== null}
+        onOpenChange={(open) => {
+          if (!open) handleCardinalityCancel()
+        }}
+      >
+        <DialogContent className="sm:max-w-sm">
+          <DialogHeader>
+            <DialogTitle>Set Relationship Cardinality</DialogTitle>
+          </DialogHeader>
+
+          <div className="py-4 space-y-2">
+            <Label htmlFor="cardinality-select">Cardinality</Label>
+            <Select
+              value={selectedCardinality}
+              onValueChange={(value) =>
+                setSelectedCardinality(value as Cardinality)
+              }
+            >
+              <SelectTrigger id="cardinality-select">
+                <SelectValue placeholder="Select cardinality" />
+              </SelectTrigger>
+              <SelectContent>
+                {CARDINALITY_OPTIONS.map((option) => (
+                  <SelectItem key={option.value} value={option.value}>
+                    {option.label}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          </div>
+
+          <DialogFooter>
+            <Button variant="outline" onClick={handleCardinalityCancel}>
+              Cancel
+            </Button>
+            <Button onClick={handleCardinalityConfirm}>Create</Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </div>
   )
 }
