@@ -144,8 +144,6 @@ export function DataTypeSelector({
           align="start"
           sideOffset={2}
           onOpenAutoFocus={(e) => e.preventDefault()}
-          onInteractOutside={() => handleOpenChange(false)}
-          onEscapeKeyDown={() => handleOpenChange(false)}
         >
           <Command>
             <CommandInput
@@ -161,7 +159,7 @@ export function DataTypeSelector({
                       key={dt}
                       value={`${DATA_TYPE_LABELS[dt]} ${dt}`}
                       onSelect={() => handleSelect(dt)}
-                      data-selected={dt === value}
+                      data-current={dt === value || undefined}
                       style={{ fontSize: '11px', padding: '3px 8px' }}
                     >
                       {DATA_TYPE_LABELS[dt]}
