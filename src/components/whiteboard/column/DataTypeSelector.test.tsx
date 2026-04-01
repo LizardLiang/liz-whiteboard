@@ -3,9 +3,19 @@
 // TS-01: DataTypeSelector unit tests
 
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
-import { act, render, screen } from '@testing-library/react'
+import { act, fireEvent, render, screen } from '@testing-library/react'
 import { DataTypeSelector } from './DataTypeSelector'
 import { DATA_TYPES, DATA_TYPE_LABELS } from './types'
+
+// cmdk uses ResizeObserver and scrollIntoView internally — polyfill for jsdom
+class ResizeObserverStub {
+  observe() {}
+  unobserve() {}
+  disconnect() {}
+}
+window.ResizeObserver = window.ResizeObserver ?? ResizeObserverStub
+// jsdom does not implement scrollIntoView; cmdk calls it when highlighting items
+Element.prototype.scrollIntoView = Element.prototype.scrollIntoView ?? function () {}
 
 describe('DataTypeSelector', () => {
   beforeEach(() => {
@@ -122,5 +132,89 @@ describe('DataTypeSelector', () => {
     // Before the setTimeout fires, the popover should be closed
     const combobox = screen.getByRole('combobox')
     expect(combobox.getAttribute('aria-expanded')).toBe('false')
+  })
+
+  it('TC-01-09: auto-opens after the setTimeout(0) fires', async () => {
+    render(
+      <DataTypeSelector value="string" onSelect={vi.fn()} onCancel={vi.fn()} />,
+    )
+    // Advance past the setTimeout(0) to trigger auto-open
+    act(() => {
+      vi.advanceTimersByTime(1)
+    })
+    // When open, there are two combobox elements: the trigger button and the cmdk search input.
+    // The trigger button has data-slot="popover-trigger"; check its aria-expanded.
+    const triggerButton = screen
+      .getAllByRole('combobox')
+      .find((el) => el.tagName === 'BUTTON')
+    expect(triggerButton).toBeTruthy()
+    expect(triggerButton!.getAttribute('aria-expanded')).toBe('true')
+  })
+
+  it('TC-01-10: clicking a type item calls onSelect with the correct value and does NOT call onCancel', () => {
+    const onSelect = vi.fn()
+    const onCancel = vi.fn()
+    render(
+      <DataTypeSelector value="string" onSelect={onSelect} onCancel={onCancel} />,
+    )
+    // Open the popover
+    act(() => {
+      vi.advanceTimersByTime(1)
+    })
+    // Use role="option" to target the cmdk item, not the group heading that also reads "Boolean"
+    const booleanItem = screen.getByRole('option', { name: /boolean/i })
+    fireEvent.click(booleanItem)
+    expect(onSelect).toHaveBeenCalledWith('boolean')
+    expect(onCancel).not.toHaveBeenCalled()
+  })
+
+  it('TC-01-11: pressing Escape calls onCancel exactly once (double-cancel guard)', () => {
+    const onCancel = vi.fn()
+    render(
+      <DataTypeSelector value="string" onSelect={vi.fn()} onCancel={onCancel} />,
+    )
+    // Open the popover
+    act(() => {
+      vi.advanceTimersByTime(1)
+    })
+    // Press Escape on the search input to close the popover
+    const searchInput = screen.getByPlaceholderText('Search types...')
+    fireEvent.keyDown(searchInput, { key: 'Escape' })
+    expect(onCancel).toHaveBeenCalledTimes(1)
+  })
+
+  it('TC-01-12: after selection, onCancel is NOT called', () => {
+    const onSelect = vi.fn()
+    const onCancel = vi.fn()
+    render(
+      <DataTypeSelector value="string" onSelect={onSelect} onCancel={onCancel} />,
+    )
+    // Open the popover
+    act(() => {
+      vi.advanceTimersByTime(1)
+    })
+    // Use role="option" to target the cmdk item (Integer appears only as an option, not a group heading)
+    const integerItem = screen.getByRole('option', { name: /integer/i })
+    fireEvent.click(integerItem)
+    // onSelect should fire, onCancel should not
+    expect(onSelect).toHaveBeenCalledWith('int')
+    expect(onCancel).toHaveBeenCalledTimes(0)
+  })
+
+  it('TC-01-13: typing in the search input filters the displayed options', () => {
+    render(
+      <DataTypeSelector value="string" onSelect={vi.fn()} onCancel={vi.fn()} />,
+    )
+    // Open the popover
+    act(() => {
+      vi.advanceTimersByTime(1)
+    })
+    // Type in the search box to filter
+    const searchInput = screen.getByPlaceholderText('Search types...')
+    fireEvent.change(searchInput, { target: { value: 'bool' } })
+    // The Boolean option should still be visible (matches "bool")
+    expect(screen.getByRole('option', { name: /boolean/i })).toBeTruthy()
+    // Integer option should no longer be visible (filtered out by "bool")
+    expect(screen.queryByRole('option', { name: /integer/i })).toBeNull()
   })
 })
