@@ -11,6 +11,7 @@ import type { DataType } from '@/data/schema'
 import { ColumnRow } from './column/ColumnRow'
 import { AddColumnRow } from './column/AddColumnRow'
 import { DeleteColumnDialog } from './column/DeleteColumnDialog'
+import { TableNodeContextMenu } from './TableNodeContextMenu'
 import { useNodes } from '@xyflow/react'
 
 interface TableNodeProps {
@@ -29,6 +30,7 @@ export const TableNode = memo(
       onColumnCreate,
       onColumnUpdate,
       onColumnDelete,
+      onRequestTableDelete,
       edges = [],
     } = data
 
@@ -174,6 +176,11 @@ export const TableNode = memo(
       })
     }, [deletingColumn, columnEdgeMap, tableNameById])
 
+    // --- Table delete handler ---
+    const handleRequestTableDelete = useCallback(() => {
+      onRequestTableDelete?.(table.id)
+    }, [onRequestTableDelete, table.id])
+
     // --- Create handler ---
     const handleCreate = useCallback(
       async (data: { name: string; dataType: DataType; order: number }) => {
@@ -193,6 +200,7 @@ export const TableNode = memo(
     }, [columns, showMode])
 
     return (
+      <TableNodeContextMenu onDeleteTable={handleRequestTableDelete}>
       <div
         className={`react-flow__node-erTable ${selected ? 'selected' : ''} ${highlightClass}`}
         style={{
@@ -264,6 +272,7 @@ export const TableNode = memo(
           />
         )}
       </div>
+      </TableNodeContextMenu>
     )
   },
   (prev: TableNodeProps, next: TableNodeProps) => {
@@ -278,6 +287,7 @@ export const TableNode = memo(
     if (prev.data.onColumnUpdate !== next.data.onColumnUpdate) return false
     if (prev.data.onColumnDelete !== next.data.onColumnDelete) return false
     if (prev.data.edges !== next.data.edges) return false
+    if (prev.data.onRequestTableDelete !== next.data.onRequestTableDelete) return false
     return true
   },
 )
