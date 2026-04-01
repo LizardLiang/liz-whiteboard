@@ -79,8 +79,12 @@ export const ColumnRow = memo(
           e.stopPropagation()
           onStartEdit(column.id, 'name')
         }
+        if (e.key === 'Delete' && !isEditing) {
+          e.stopPropagation()
+          onDelete(column)
+        }
       },
-      [column.id, onStartEdit],
+      [column, column.id, isEditing, onStartEdit, onDelete],
     )
 
     const handleDeleteClick = useCallback(

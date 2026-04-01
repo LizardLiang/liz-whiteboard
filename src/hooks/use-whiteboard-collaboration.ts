@@ -8,6 +8,7 @@ import type {
   RelationshipEdgeType,
   TableNodeType,
 } from '@/lib/react-flow/types'
+import type { TableErrorEvent } from './use-table-mutations'
 
 /**
  * Position update event data from WebSocket
@@ -54,6 +55,8 @@ export function useWhiteboardCollaboration(
     positionX: number,
     positionY: number,
   ) => void,
+  onTableDeleted?: (tableId: string) => void,
+  onTableError?: (data: TableErrorEvent) => void,
 ) {
   // Use the base collaboration hook
   const { emit, on, off, connectionState, activeUsers } = useCollaboration(
@@ -82,6 +85,38 @@ export function useWhiteboardCollaboration(
     }
   }, [on, off, userId, onPositionUpdate])
 
+  // Listen for table deletion events from other users
+  useEffect(() => {
+    if (!onTableDeleted) return
+
+    const handleTableDeleted = (data: { tableId: string; deletedBy: string }) => {
+      // Ignore if we deleted it (already applied optimistically)
+      if (data.deletedBy === userId) return
+      onTableDeleted(data.tableId)
+    }
+
+    on('table:deleted', handleTableDeleted)
+    return () => {
+      off('table:deleted', handleTableDeleted)
+    }
+  }, [on, off, userId, onTableDeleted])
+
+  // Listen for table:delete error events
+  useEffect(() => {
+    if (!onTableError) return
+
+    const handleError = (data: TableErrorEvent) => {
+      // Only handle table:delete errors — column errors are handled by useColumnCollaboration
+      if (data.event !== 'table:delete') return
+      onTableError(data)
+    }
+
+    on('error', handleError)
+    return () => {
+      off('error', handleError)
+    }
+  }, [on, off, onTableError])
+
   // Emit position update to other users
   const emitPositionUpdate = useCallback(
     (tableId: string, positionX: number, positionY: number) => {
@@ -95,9 +130,18 @@ export function useWhiteboardCollaboration(
     [emit, userId],
   )
 
+  // Emit table delete to server
+  const emitTableDelete = useCallback(
+    (tableId: string) => {
+      emit('table:delete', { tableId })
+    },
+    [emit],
+  )
+
   return {
     connectionState,
     activeUsers,
     emitPositionUpdate,
+    emitTableDelete,
   }
 }
