@@ -17,15 +17,13 @@ describe('DataTypeSelector', () => {
     vi.clearAllMocks()
   })
 
-  it('TC-01-01: renders a Select component (not a free-text input)', () => {
+  it('TC-01-01: renders a combobox trigger button (not a plain text input)', () => {
     render(
       <DataTypeSelector value="string" onSelect={vi.fn()} onCancel={vi.fn()} />,
     )
-    // Should not have a free-text input
-    const freeTextInputs = screen
-      .queryAllByRole('textbox')
-      .filter((el) => (el as HTMLInputElement).type === 'text')
-    expect(freeTextInputs.length).toBe(0)
+    // Should render a combobox role button as the trigger
+    const combobox = screen.getByRole('combobox')
+    expect(combobox).toBeTruthy()
   })
 
   it('TC-01-02: has exactly 25 data type options', () => {
@@ -107,5 +105,22 @@ describe('DataTypeSelector', () => {
     // The root div should have nodrag class
     const rootDiv = container.firstChild as HTMLElement
     expect(rootDiv.classList.contains('nodrag')).toBe(true)
+  })
+
+  it('TC-01-07: trigger displays the label of the current value', () => {
+    render(
+      <DataTypeSelector value="int" onSelect={vi.fn()} onCancel={vi.fn()} />,
+    )
+    const combobox = screen.getByRole('combobox')
+    expect(combobox.textContent).toBe('Integer')
+  })
+
+  it('TC-01-08: combobox trigger starts closed before auto-open timer fires', () => {
+    render(
+      <DataTypeSelector value="string" onSelect={vi.fn()} onCancel={vi.fn()} />,
+    )
+    // Before the setTimeout fires, the popover should be closed
+    const combobox = screen.getByRole('combobox')
+    expect(combobox.getAttribute('aria-expanded')).toBe('false')
   })
 })
