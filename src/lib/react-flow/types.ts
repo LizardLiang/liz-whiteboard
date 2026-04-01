@@ -59,6 +59,9 @@ export interface TableNodeData extends Record<string, unknown> {
   /** Callback to delete a column — fires WebSocket emit */
   onColumnDelete?: (columnId: string, tableId: string) => void
 
+  /** Callback to request table deletion — opens the confirmation dialog */
+  onRequestTableDelete?: (tableId: string) => void
+
   /** React Flow edges — passed down for delete confirmation relationship lookup */
   edges?: Array<RelationshipEdgeType>
 
