@@ -14,6 +14,7 @@
 import { useCallback, useRef } from 'react'
 import { toast } from 'sonner'
 import type { Column } from '@prisma/client'
+import { uuid } from '@/lib/uuid'
 import type {
   RelationshipEdgeType,
   TableNodeType,
@@ -75,7 +76,7 @@ export function useColumnMutations(
         return
       }
 
-      const tempId = crypto.randomUUID()
+      const tempId = uuid()
 
       const optimisticColumn: Column = {
         id: tempId,

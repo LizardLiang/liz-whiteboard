@@ -1,3 +1,5 @@
+import { uuid } from './uuid'
+
 /**
  * Returns a stable anonymous user ID for the current browser session.
  *
@@ -12,13 +14,13 @@ const SESSION_USER_ID_KEY = 'liz-whiteboard:session-user-id'
 
 export function getSessionUserId(): string {
   if (typeof sessionStorage === 'undefined') {
-    return crypto.randomUUID()
+    return uuid()
   }
   const existing = sessionStorage.getItem(SESSION_USER_ID_KEY)
   if (existing) {
     return existing
   }
-  const id = crypto.randomUUID()
+  const id = uuid()
   sessionStorage.setItem(SESSION_USER_ID_KEY, id)
   return id
 }
