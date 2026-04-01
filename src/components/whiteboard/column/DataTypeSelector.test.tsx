@@ -28,11 +28,11 @@ describe('DataTypeSelector', () => {
     expect(freeTextInputs.length).toBe(0)
   })
 
-  it('TC-01-02: has exactly 8 data type options', () => {
-    expect(DATA_TYPES).toHaveLength(8)
+  it('TC-01-02: has exactly 25 data type options', () => {
+    expect(DATA_TYPES).toHaveLength(25)
   })
 
-  it('TC-01-03: all 8 enum values are present in DATA_TYPES', () => {
+  it('TC-01-03: all original enum values are present in DATA_TYPES', () => {
     expect(DATA_TYPES).toContain('int')
     expect(DATA_TYPES).toContain('string')
     expect(DATA_TYPES).toContain('float')
@@ -41,6 +41,26 @@ describe('DataTypeSelector', () => {
     expect(DATA_TYPES).toContain('text')
     expect(DATA_TYPES).toContain('uuid')
     expect(DATA_TYPES).toContain('json')
+  })
+
+  it('TC-01-03b: all new enum values are present in DATA_TYPES', () => {
+    expect(DATA_TYPES).toContain('bigint')
+    expect(DATA_TYPES).toContain('smallint')
+    expect(DATA_TYPES).toContain('double')
+    expect(DATA_TYPES).toContain('decimal')
+    expect(DATA_TYPES).toContain('serial')
+    expect(DATA_TYPES).toContain('money')
+    expect(DATA_TYPES).toContain('char')
+    expect(DATA_TYPES).toContain('varchar')
+    expect(DATA_TYPES).toContain('bit')
+    expect(DATA_TYPES).toContain('datetime')
+    expect(DATA_TYPES).toContain('timestamp')
+    expect(DATA_TYPES).toContain('time')
+    expect(DATA_TYPES).toContain('binary')
+    expect(DATA_TYPES).toContain('blob')
+    expect(DATA_TYPES).toContain('xml')
+    expect(DATA_TYPES).toContain('array')
+    expect(DATA_TYPES).toContain('enum')
   })
 
   it('TC-01-04: displays user-friendly labels for data types', () => {
@@ -52,6 +72,23 @@ describe('DataTypeSelector', () => {
     expect(DATA_TYPE_LABELS['date']).toBe('Date')
     expect(DATA_TYPE_LABELS['text']).toBe('Text')
     expect(DATA_TYPE_LABELS['json']).toBe('JSON')
+    expect(DATA_TYPE_LABELS['bigint']).toBe('BigInt')
+    expect(DATA_TYPE_LABELS['smallint']).toBe('SmallInt')
+    expect(DATA_TYPE_LABELS['double']).toBe('Double')
+    expect(DATA_TYPE_LABELS['decimal']).toBe('Decimal')
+    expect(DATA_TYPE_LABELS['serial']).toBe('Serial')
+    expect(DATA_TYPE_LABELS['money']).toBe('Money')
+    expect(DATA_TYPE_LABELS['char']).toBe('Char')
+    expect(DATA_TYPE_LABELS['varchar']).toBe('VarChar')
+    expect(DATA_TYPE_LABELS['bit']).toBe('Bit')
+    expect(DATA_TYPE_LABELS['datetime']).toBe('DateTime')
+    expect(DATA_TYPE_LABELS['timestamp']).toBe('Timestamp')
+    expect(DATA_TYPE_LABELS['time']).toBe('Time')
+    expect(DATA_TYPE_LABELS['binary']).toBe('Binary')
+    expect(DATA_TYPE_LABELS['blob']).toBe('Blob')
+    expect(DATA_TYPE_LABELS['xml']).toBe('XML')
+    expect(DATA_TYPE_LABELS['array']).toBe('Array')
+    expect(DATA_TYPE_LABELS['enum']).toBe('Enum')
   })
 
   it('TC-01-05: each DATA_TYPE has a corresponding label entry', () => {

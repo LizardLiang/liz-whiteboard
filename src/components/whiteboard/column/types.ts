@@ -37,26 +37,74 @@ export interface ColumnRelationship {
  * Display labels for each data type
  */
 export const DATA_TYPE_LABELS: Record<DataType, string> = {
+  // Numeric
   int: 'Integer',
-  string: 'String',
+  bigint: 'BigInt',
+  smallint: 'SmallInt',
   float: 'Float',
-  boolean: 'Boolean',
-  date: 'Date',
+  double: 'Double',
+  decimal: 'Decimal',
+  serial: 'Serial',
+  money: 'Money',
+  // String
+  string: 'String',
+  char: 'Char',
+  varchar: 'VarChar',
   text: 'Text',
-  uuid: 'UUID',
+  // Boolean
+  boolean: 'Boolean',
+  bit: 'Bit',
+  // Date/Time
+  date: 'Date',
+  datetime: 'DateTime',
+  timestamp: 'Timestamp',
+  time: 'Time',
+  // Binary
+  binary: 'Binary',
+  blob: 'Blob',
+  // Structured
   json: 'JSON',
+  xml: 'XML',
+  array: 'Array',
+  enum: 'Enum',
+  // Identity
+  uuid: 'UUID',
 }
 
 /**
- * All valid data types (from Zod enum)
+ * All valid data types (from Zod enum), grouped logically
  */
 export const DATA_TYPES: Array<DataType> = [
+  // Numeric
   'int',
-  'string',
+  'bigint',
+  'smallint',
   'float',
-  'boolean',
-  'date',
+  'double',
+  'decimal',
+  'serial',
+  'money',
+  // String
+  'string',
+  'char',
+  'varchar',
   'text',
-  'uuid',
+  // Boolean
+  'boolean',
+  'bit',
+  // Date/Time
+  'date',
+  'datetime',
+  'timestamp',
+  'time',
+  // Binary
+  'binary',
+  'blob',
+  // Structured
   'json',
+  'xml',
+  'array',
+  'enum',
+  // Identity
+  'uuid',
 ]

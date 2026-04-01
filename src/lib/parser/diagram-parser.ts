@@ -50,15 +50,33 @@ const Fk = createToken({ name: 'Fk', pattern: /fk/ })
 const Unique = createToken({ name: 'Unique', pattern: /unique/ })
 const Null = createToken({ name: 'Null', pattern: /null/ })
 
-// Data types
+// Data types — longer/more-specific patterns MUST come before shorter prefix matches
+// e.g. BigintType before IntType, SmallintType before IntType, DatetimeType before DateType, etc.
+const BigintType = createToken({ name: 'BigintType', pattern: /bigint/ })
+const SmallintType = createToken({ name: 'SmallintType', pattern: /smallint/ })
 const IntType = createToken({ name: 'IntType', pattern: /int/ })
-const StringType = createToken({ name: 'StringType', pattern: /string/ })
+const DoubleType = createToken({ name: 'DoubleType', pattern: /double/ })
+const DecimalType = createToken({ name: 'DecimalType', pattern: /decimal/ })
 const FloatType = createToken({ name: 'FloatType', pattern: /float/ })
-const BooleanType = createToken({ name: 'BooleanType', pattern: /boolean/ })
-const DateType = createToken({ name: 'DateType', pattern: /date/ })
+const SerialType = createToken({ name: 'SerialType', pattern: /serial/ })
+const MoneyType = createToken({ name: 'MoneyType', pattern: /money/ })
+const StringType = createToken({ name: 'StringType', pattern: /string/ })
+const VarcharType = createToken({ name: 'VarcharType', pattern: /varchar/ })
+const CharType = createToken({ name: 'CharType', pattern: /char/ })
 const TextType = createToken({ name: 'TextType', pattern: /text/ })
-const UuidType = createToken({ name: 'UuidType', pattern: /uuid/ })
+const BooleanType = createToken({ name: 'BooleanType', pattern: /boolean/ })
+const BitType = createToken({ name: 'BitType', pattern: /bit/ })
+const DatetimeType = createToken({ name: 'DatetimeType', pattern: /datetime/ })
+const TimestampType = createToken({ name: 'TimestampType', pattern: /timestamp/ })
+const DateType = createToken({ name: 'DateType', pattern: /date/ })
+const TimeType = createToken({ name: 'TimeType', pattern: /time/ })
+const BinaryType = createToken({ name: 'BinaryType', pattern: /binary/ })
+const BlobType = createToken({ name: 'BlobType', pattern: /blob/ })
 const JsonType = createToken({ name: 'JsonType', pattern: /json/ })
+const XmlType = createToken({ name: 'XmlType', pattern: /xml/ })
+const ArrayType = createToken({ name: 'ArrayType', pattern: /array/ })
+const EnumType = createToken({ name: 'EnumType', pattern: /enum/ })
+const UuidType = createToken({ name: 'UuidType', pattern: /uuid/ })
 
 // Cardinality — longer tokens must come before shorter ones that are prefixes
 const ManyToZeroOrMany = createToken({
@@ -161,15 +179,32 @@ const allTokens = [
   OneToMany,
   OneToOne,
   SelfReferencing,
-  // Data types
+  // Data types — longer/more-specific patterns before shorter prefix matches
+  BigintType,
+  SmallintType,
   IntType,
-  StringType,
+  DoubleType,
+  DecimalType,
   FloatType,
-  BooleanType,
-  DateType,
+  SerialType,
+  MoneyType,
+  StringType,
+  VarcharType,
+  CharType,
   TextType,
-  UuidType,
+  BooleanType,
+  BitType,
+  DatetimeType,
+  TimestampType,
+  DateType,
+  TimeType,
+  BinaryType,
+  BlobType,
   JsonType,
+  XmlType,
+  ArrayType,
+  EnumType,
+  UuidType,
   // Symbols
   LCurly,
   RCurly,
@@ -243,18 +278,35 @@ class DiagramParser extends CstParser {
   })
 
   /**
-   * Data type rule: int | string | float | boolean | date | text | uuid | json
+   * Data type rule: all supported column data types
    */
   private dataType = this.RULE('dataType', () => {
     this.OR([
+      { ALT: () => this.CONSUME(BigintType) },
+      { ALT: () => this.CONSUME(SmallintType) },
       { ALT: () => this.CONSUME(IntType) },
-      { ALT: () => this.CONSUME(StringType) },
+      { ALT: () => this.CONSUME(DoubleType) },
+      { ALT: () => this.CONSUME(DecimalType) },
       { ALT: () => this.CONSUME(FloatType) },
-      { ALT: () => this.CONSUME(BooleanType) },
-      { ALT: () => this.CONSUME(DateType) },
+      { ALT: () => this.CONSUME(SerialType) },
+      { ALT: () => this.CONSUME(MoneyType) },
+      { ALT: () => this.CONSUME(StringType) },
+      { ALT: () => this.CONSUME(VarcharType) },
+      { ALT: () => this.CONSUME(CharType) },
       { ALT: () => this.CONSUME(TextType) },
-      { ALT: () => this.CONSUME(UuidType) },
+      { ALT: () => this.CONSUME(BooleanType) },
+      { ALT: () => this.CONSUME(BitType) },
+      { ALT: () => this.CONSUME(DatetimeType) },
+      { ALT: () => this.CONSUME(TimestampType) },
+      { ALT: () => this.CONSUME(DateType) },
+      { ALT: () => this.CONSUME(TimeType) },
+      { ALT: () => this.CONSUME(BinaryType) },
+      { ALT: () => this.CONSUME(BlobType) },
       { ALT: () => this.CONSUME(JsonType) },
+      { ALT: () => this.CONSUME(XmlType) },
+      { ALT: () => this.CONSUME(ArrayType) },
+      { ALT: () => this.CONSUME(EnumType) },
+      { ALT: () => this.CONSUME(UuidType) },
     ])
   })
 
@@ -416,14 +468,31 @@ class DiagramVisitor extends BaseCstVisitor {
   }
 
   dataType(ctx: any): ColumnNode['dataType'] {
+    if (ctx.BigintType) return 'bigint'
+    if (ctx.SmallintType) return 'smallint'
     if (ctx.IntType) return 'int'
-    if (ctx.StringType) return 'string'
+    if (ctx.DoubleType) return 'double'
+    if (ctx.DecimalType) return 'decimal'
     if (ctx.FloatType) return 'float'
-    if (ctx.BooleanType) return 'boolean'
-    if (ctx.DateType) return 'date'
+    if (ctx.SerialType) return 'serial'
+    if (ctx.MoneyType) return 'money'
+    if (ctx.StringType) return 'string'
+    if (ctx.VarcharType) return 'varchar'
+    if (ctx.CharType) return 'char'
     if (ctx.TextType) return 'text'
-    if (ctx.UuidType) return 'uuid'
+    if (ctx.BooleanType) return 'boolean'
+    if (ctx.BitType) return 'bit'
+    if (ctx.DatetimeType) return 'datetime'
+    if (ctx.TimestampType) return 'timestamp'
+    if (ctx.DateType) return 'date'
+    if (ctx.TimeType) return 'time'
+    if (ctx.BinaryType) return 'binary'
+    if (ctx.BlobType) return 'blob'
     if (ctx.JsonType) return 'json'
+    if (ctx.XmlType) return 'xml'
+    if (ctx.ArrayType) return 'array'
+    if (ctx.EnumType) return 'enum'
+    if (ctx.UuidType) return 'uuid'
     throw new Error('Unknown data type')
   }
 
