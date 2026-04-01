@@ -30,7 +30,9 @@ export function TableNodeContextMenu({
       <ContextMenuContent>
         <ContextMenuItem
           className="text-destructive focus:text-destructive"
-          onSelect={onDeleteTable}
+          onSelect={(e) => {
+            onDeleteTable()
+          }}
           disabled={disabled}
         >
           Delete table

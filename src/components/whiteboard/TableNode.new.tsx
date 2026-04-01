@@ -54,6 +54,9 @@ export const TableNode = memo(
     // Which column has a pending delete confirmation dialog
     const [deletingColumn, setDeletingColumn] = useState<Column | null>(null)
 
+    // Header hover state — controls X delete button visibility
+    const [isHeaderHovered, setIsHeaderHovered] = useState(false)
+
     // Determine visual state classes
     const highlightClass = isActiveHighlighted
       ? 'active-highlighted'
@@ -185,7 +188,12 @@ export const TableNode = memo(
     const handleCreate = useCallback(
       async (data: { name: string; dataType: DataType; order: number }) => {
         if (onColumnCreate) {
-          onColumnCreate(table.id, data)
+          try {
+            await onColumnCreate(table.id, data)
+          } catch (error) {
+            console.error('Failed to create column:', error)
+            throw error
+          }
         }
       },
       [table.id, onColumnCreate],
@@ -201,77 +209,121 @@ export const TableNode = memo(
 
     return (
       <TableNodeContextMenu onDeleteTable={handleRequestTableDelete}>
-      <div
-        className={`react-flow__node-erTable ${selected ? 'selected' : ''} ${highlightClass}`}
-        style={{
-          width: table.width ? `${table.width}px` : '280px',
-          minWidth: '200px',
-          opacity:
-            isActiveHighlighted || isHighlighted || isHovered || selected
-              ? 1
-              : 0.7,
-          transition: 'opacity 0.2s, box-shadow 0.2s',
-          boxShadow:
-            isActiveHighlighted || selected
-              ? '0 0 0 2px var(--rf-edge-stroke-selected)'
-              : isHighlighted
-                ? '0 0 0 1px var(--rf-edge-stroke-selected)'
-                : undefined,
-        }}
-      >
-        {/* Table Header */}
         <div
-          className="table-header"
+          className={`react-flow__node-erTable ${selected ? 'selected' : ''} ${highlightClass}`}
           style={{
-            padding: '12px 16px',
-            background: 'var(--rf-table-header-bg)',
-            borderBottom: '1px solid var(--rf-table-border)',
-            fontWeight: 600,
-            fontSize: '14px',
-            color: 'var(--rf-table-header-text)',
+            width: table.width ? `${table.width}px` : '280px',
+            minWidth: '200px',
+            opacity:
+              isActiveHighlighted || isHighlighted || isHovered || selected
+                ? 1
+                : 0.7,
+            transition: 'opacity 0.2s, box-shadow 0.2s',
+            boxShadow:
+              isActiveHighlighted || selected
+                ? '0 0 0 2px var(--rf-edge-stroke-selected)'
+                : isHighlighted
+                  ? '0 0 0 1px var(--rf-edge-stroke-selected)'
+                  : undefined,
           }}
         >
-          {table.name}
-        </div>
-
-        {/* Columns List */}
-        {showMode !== 'TABLE_NAME' && (
-          <div className="table-columns">
-            {(visibleColumns as Array<Column>).map((column: Column, index: number) => (
-              <ColumnRow
-                key={column.id}
-                column={column}
-                tableId={table.id}
-                isLast={index === visibleColumns.length - 1}
-                editingField={editingField}
-                onStartEdit={handleStartEdit}
-                onCommitEdit={handleCommitEdit}
-                onCancelEdit={handleCancelEdit}
-                onToggleConstraint={handleToggleConstraint}
-                onDelete={handleDeleteColumn}
-                edges={edges}
-              />
-            ))}
-
-            {/* Add Column Row */}
-            <AddColumnRow
-              tableId={table.id}
-              existingColumns={columns}
-              onCreate={handleCreate}
-            />
+          {/* Table Header */}
+          <div
+            className="table-header"
+            style={{
+              padding: '12px 16px',
+              background: 'var(--rf-table-header-bg)',
+              borderBottom: '1px solid var(--rf-table-border)',
+              fontWeight: 600,
+              fontSize: '14px',
+              color: 'var(--rf-table-header-text)',
+              position: 'relative',
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'space-between',
+            }}
+            onMouseEnter={() => {
+              setIsHeaderHovered(true)
+            }}
+            onMouseLeave={() => {
+              setIsHeaderHovered(false)
+            }}
+          >
+            <span
+              style={{
+                overflow: 'hidden',
+                textOverflow: 'ellipsis',
+                whiteSpace: 'nowrap',
+                flex: 1,
+              }}
+            >
+              {table.name}
+            </span>
+            {/* Delete button — visible on header hover */}
+            <button
+              type="button"
+              aria-label={`Delete table ${table.name}`}
+              onClick={(e) => {
+                e.stopPropagation()
+                handleRequestTableDelete()
+              }}
+              className="nodrag nowheel"
+              style={{
+                opacity: isHeaderHovered ? 1 : 0,
+                flexShrink: 0,
+                background: 'none',
+                border: 'none',
+                cursor: 'pointer',
+                padding: '2px',
+                color: 'var(--rf-table-header-text)',
+                transition: 'opacity 0.1s',
+                fontSize: '16px',
+                lineHeight: 1,
+                marginLeft: '4px',
+              }}
+            >
+              ×
+            </button>
           </div>
-        )}
 
-        {/* Delete Confirmation Dialog */}
-        {deletingColumn && (
-          <DeleteColumnDialog
-            column={deletingColumn}
-            affectedRelationships={affectedRelationships}
-            onConfirm={handleConfirmDelete}
-            onCancel={handleCancelDelete}
-          />
-        )}
-      </div>
+          {/* Columns List */}
+          {showMode !== 'TABLE_NAME' && (
+            <div className="table-columns">
+              {(visibleColumns as Array<Column>).map((column: Column, index: number) => (
+                <ColumnRow
+                  key={column.id}
+                  column={column}
+                  tableId={table.id}
+                  isLast={index === visibleColumns.length - 1}
+                  editingField={editingField}
+                  onStartEdit={handleStartEdit}
+                  onCommitEdit={handleCommitEdit}
+                  onCancelEdit={handleCancelEdit}
+                  onToggleConstraint={handleToggleConstraint}
+                  onDelete={handleDeleteColumn}
+                  edges={edges}
+                />
+              ))}
+
+              {/* Add Column Row */}
+              <AddColumnRow
+                tableId={table.id}
+                existingColumns={columns}
+                onCreate={handleCreate}
+              />
+            </div>
+          )}
+
+          {/* Delete Confirmation Dialog */}
+          {deletingColumn && (
+            <DeleteColumnDialog
+              column={deletingColumn}
+              affectedRelationships={affectedRelationships}
+              onConfirm={handleConfirmDelete}
+              onCancel={handleCancelDelete}
+            />
+          )}
+        </div>
       </TableNodeContextMenu>
     )
   },

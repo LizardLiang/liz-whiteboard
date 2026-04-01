@@ -207,8 +207,12 @@ export const ColumnRow = memo(
                       textDecorationStyle: 'dotted',
                     }}
                     onDoubleClick={handleDataTypeDoubleClick}
-                    onMouseEnter={() => setIsHoveringDataType(true)}
-                    onMouseLeave={() => setIsHoveringDataType(false)}
+                    onMouseEnter={() => {
+                      setIsHoveringDataType(true)
+                    }}
+                    onMouseLeave={() => {
+                      setIsHoveringDataType(false)
+                    }}
                   >
                     {column.dataType}
                   </span>

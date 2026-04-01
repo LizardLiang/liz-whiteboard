@@ -39,6 +39,8 @@ export interface PendingMutation {
   rollback: () => void
   /** Queued updates to apply once a pending create resolves to a real ID */
   pendingUpdates?: Array<Partial<UpdateColumn>>
+  /** For create mutations: the table this column belongs to (used for scoped rollback) */
+  tableId?: string
 }
 
 export function useColumnMutations(
@@ -59,7 +61,7 @@ export function useColumnMutations(
    * Create a column optimistically then emit via WebSocket.
    */
   const createColumn = useCallback(
-    async (
+    (
       tableId: string,
       data: { name: string; dataType: DataType; order: number },
     ) => {
@@ -69,6 +71,7 @@ export function useColumnMutations(
       }
 
       const tempId = crypto.randomUUID()
+
       const optimisticColumn: Column = {
         id: tempId,
         tableId,
@@ -85,8 +88,8 @@ export function useColumnMutations(
       }
 
       // Optimistic insert
-      setNodes((prev) =>
-        prev.map((node) =>
+      setNodes((prev) => {
+        const updated = prev.map((node) =>
           node.data.table.id === tableId
             ? {
                 ...node,
@@ -99,12 +102,14 @@ export function useColumnMutations(
                 },
               }
             : node,
-        ),
-      )
+        )
+        return updated
+      })
 
       // Store rollback
       pendingMutations.current.set(tempId, {
         type: 'create',
+        tableId,
         rollback: () => {
           setNodes((prev) =>
             prev.map((node) =>
@@ -146,8 +151,19 @@ export function useColumnMutations(
    */
   const replaceTempId = useCallback(
     (tableId: string, tempId: string, realId: string) => {
-      setNodes((prev) =>
-        prev.map((node) =>
+      // Read queued updates synchronously before entering the setNodes updater so
+      // we have them available to emit after the atomic state commit.
+      const pendingCreate = pendingMutations.current.get(tempId)
+      const queuedUpdates = pendingCreate?.pendingUpdates ?? []
+
+      setNodes((prev) => {
+        // Delete the pending-create entry atomically with the ID swap so that any
+        // column:update arriving between the setNodes call and React committing the
+        // new state still sees the temp ID in pendingMutations and queues itself
+        // rather than emitting the stale temp UUID to the server.
+        pendingMutations.current.delete(tempId)
+
+        return prev.map((node) =>
           node.data.table.id === tableId
             ? {
                 ...node,
@@ -162,15 +178,8 @@ export function useColumnMutations(
                 },
               }
             : node,
-        ),
-      )
-
-      // Flush any updates that were queued while the create was still pending
-      const pendingCreate = pendingMutations.current.get(tempId)
-      const queuedUpdates = pendingCreate?.pendingUpdates ?? []
-
-      // Remove the pending create mutation now that it's confirmed
-      pendingMutations.current.delete(tempId)
+        )
+      })
 
       // Emit each queued update with the real DB ID
       if (queuedUpdates.length > 0 && emitColumnUpdate) {
@@ -186,7 +195,7 @@ export function useColumnMutations(
    * Update a column optimistically then emit via WebSocket.
    */
   const updateColumn = useCallback(
-    async (
+    (
       columnId: string,
       tableId: string,
       data: Partial<UpdateColumn>,
@@ -221,7 +230,22 @@ export function useColumnMutations(
         return updated
       })
 
-      // Store rollback
+      // Guard: if columnId is still a pending create (temp UUID not yet confirmed by
+      // server), emitting an update now would send a temp ID the server doesn't know
+      // about, causing a "Record to update not found" error.  Queue the update
+      // instead — replaceTempId will flush queued updates once the real ID arrives.
+      // IMPORTANT: read the existing entry BEFORE writing the 'update' entry so we
+      // don't overwrite a 'create' entry and make this check always-false.
+      const existing = pendingMutations.current.get(columnId)
+      if (existing?.type === 'create') {
+        if (!existing.pendingUpdates) {
+          existing.pendingUpdates = []
+        }
+        existing.pendingUpdates.push(data)
+        return
+      }
+
+      // Store rollback (only reached when columnId is NOT a pending create)
       pendingMutations.current.set(columnId, {
         type: 'update',
         rollback: () => {
@@ -247,19 +271,6 @@ export function useColumnMutations(
         },
       })
 
-      // Guard: if columnId is still a pending create (temp UUID not yet confirmed by
-      // server), emitting an update now would send a temp ID the server doesn't know
-      // about, causing a "Record to update not found" error.  Queue the update
-      // instead — replaceTempId will flush queued updates once the real ID arrives.
-      const pendingCreate = pendingMutations.current.get(columnId)
-      if (pendingCreate?.type === 'create') {
-        if (!pendingCreate.pendingUpdates) {
-          pendingCreate.pendingUpdates = []
-        }
-        pendingCreate.pendingUpdates.push(data)
-        return
-      }
-
       // Emit via WebSocket
       if (emitColumnUpdate) {
         emitColumnUpdate(columnId, data)
@@ -272,7 +283,7 @@ export function useColumnMutations(
    * Delete a column optimistically (removes column + affected edges) then emit via WebSocket.
    */
   const deleteColumn = useCallback(
-    async (columnId: string, tableId: string) => {
+    (columnId: string, tableId: string) => {
       if (!isConnected) {
         toast.error('Not connected. Please wait for reconnection.')
         return
@@ -398,11 +409,15 @@ export function useColumnMutations(
           pendingMutations.current.delete(data.columnId)
         }
       } else {
-        // For create errors: rollback all pending creates for this table
+        // For create errors without a columnId: rollback pending creates.
+        // If tableId is known, only rollback creates for that specific table
+        // to avoid disturbing unrelated optimistic creates on other tables.
         pendingMutations.current.forEach((mutation, key) => {
           if (mutation.type === 'create') {
-            mutation.rollback()
-            pendingMutations.current.delete(key)
+            if (!data.tableId || mutation.tableId === data.tableId) {
+              mutation.rollback()
+              pendingMutations.current.delete(key)
+            }
           }
         })
       }
