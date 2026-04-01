@@ -405,7 +405,12 @@ function ReactFlowWhiteboardInner({
   // Column mutation callbacks (outgoing — triggered by user interactions in TableNode)
   const handleColumnCreate = useCallback(
     (tableId: string, data: CreateColumnPayload) => {
-      columnMutations.createColumn(tableId, data)
+      try {
+        columnMutations.createColumn(tableId, data)
+      } catch (error) {
+        console.error('Failed to create column:', error)
+        throw error
+      }
     },
     [columnMutations],
   )

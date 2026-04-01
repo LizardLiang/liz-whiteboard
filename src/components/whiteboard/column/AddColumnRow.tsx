@@ -22,7 +22,7 @@ export interface AddColumnRowProps {
   onCreate: (data: { name: string; dataType: DataType; order: number }) => Promise<void>
 }
 
-export function AddColumnRow({ existingColumns, onCreate }: AddColumnRowProps) {
+export function AddColumnRow({ tableId, existingColumns, onCreate }: AddColumnRowProps) {
   const [isExpanded, setIsExpanded] = useState(false)
   const [name, setName] = useState('')
   const [dataType, setDataType] = useState<DataType>('string')
@@ -43,21 +43,37 @@ export function AddColumnRow({ existingColumns, onCreate }: AddColumnRowProps) {
   // Canvas clicks don't blur focused inputs (canvas is non-focusable).
   // Document-level pointerdown listener closes the row when clicking outside.
   useEffect(() => {
-    if (!isExpanded) return
+    if (!isExpanded) {
+      return
+    }
 
     const handleOutside = (e: PointerEvent) => {
       const target = e.target as Element
+
       // Click was inside this row
-      if (rowRef.current?.contains(target as Node)) return
+      if (rowRef.current?.contains(target as Node)) {
+        return
+      }
       // Click was inside a Radix portal (SelectContent dropdown)
-      if (target.closest?.('[data-radix-popper-content-wrapper]')) return
+      if (target.closest?.('[data-radix-popper-content-wrapper]')) {
+        return
+      }
+      // Click was inside a Radix ContextMenu trigger wrapper
+      if (target.closest?.('[data-radix-context-menu-trigger]')) {
+        const contextMenuTrigger = target.closest('[data-radix-context-menu-trigger]')
+        if (contextMenuTrigger?.contains(rowRef.current as Node)) {
+          return
+        }
+      }
       // Programmatically blur the input — handleBlur will call handleCreate/reset
       inputRef.current?.blur()
     }
 
     // Capture phase so stopPropagation in ReactFlow layers doesn't block us
     document.addEventListener('pointerdown', handleOutside, true)
-    return () => document.removeEventListener('pointerdown', handleOutside, true)
+    return () => {
+      document.removeEventListener('pointerdown', handleOutside, true)
+    }
   }, [isExpanded])
 
   const reset = useCallback(() => {
@@ -65,7 +81,7 @@ export function AddColumnRow({ existingColumns, onCreate }: AddColumnRowProps) {
     setDataType('string')
     setIsExpanded(false)
     cancelledRef.current = false
-  }, [])
+  }, [name, dataType, isExpanded])
 
   const handleCreate = useCallback(async (closeAfterSave = false) => {
     const trimmed = name.trim()
@@ -79,7 +95,12 @@ export function AddColumnRow({ existingColumns, onCreate }: AddColumnRowProps) {
         ? Math.max(...existingColumns.map((c) => c.order)) + 1
         : 0
 
-    await onCreate({ name: trimmed, dataType, order: nextOrder })
+    try {
+      await onCreate({ name: trimmed, dataType, order: nextOrder })
+    } catch (error) {
+      console.error('Failed to create column:', error)
+      return
+    }
 
     if (closeAfterSave) {
       reset()
@@ -91,7 +112,7 @@ export function AddColumnRow({ existingColumns, onCreate }: AddColumnRowProps) {
         inputRef.current.focus()
       }
     }
-  }, [name, dataType, existingColumns, onCreate, reset])
+  }, [name, dataType, existingColumns, onCreate, reset, tableId])
 
   const handleKeyDown = useCallback(
     (e: React.KeyboardEvent<HTMLInputElement>) => {
