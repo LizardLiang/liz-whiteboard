@@ -17,12 +17,12 @@ The research evaluated whether React Flow (@xyflow/react) should replace the cur
 
 ### 1. Package Selection
 
-| Aspect | Finding |
-|--------|---------|
-| **Current Recommended Package** | `@xyflow/react` v12.9.2 (not old `reactflow`) |
-| **React 19 Compatibility** | Full support in v12.9.2; earlier versions had zustand issues |
-| **TypeScript Quality** | First-class support, comprehensive type exports |
-| **Migration Status** | v12+ migration complete; old `reactflow` no longer maintained |
+| Aspect                          | Finding                                                       |
+| ------------------------------- | ------------------------------------------------------------- |
+| **Current Recommended Package** | `@xyflow/react` v12.9.2 (not old `reactflow`)                 |
+| **React 19 Compatibility**      | Full support in v12.9.2; earlier versions had zustand issues  |
+| **TypeScript Quality**          | First-class support, comprehensive type exports               |
+| **Migration Status**            | v12+ migration complete; old `reactflow` no longer maintained |
 
 **Decision**: Use `@xyflow/react@12.9.2` if migration is reconsidered, but **not recommended** for current project.
 
@@ -31,6 +31,7 @@ The research evaluated whether React Flow (@xyflow/react) should replace the cur
 ### 2. Custom Nodes for Database Tables
 
 #### React Flow Approach:
+
 - Custom React components with Handle components for connection points
 - Each column requires unique handle ID: `${tableName}_${columnId}`
 - Auto-sizing from DOM content
@@ -41,6 +42,7 @@ The research evaluated whether React Flow (@xyflow/react) should replace the cur
 ```
 
 #### Konva Approach (Current):
+
 - Shapes-based API (Group, Rect, Text)
 - Direct coordinate control
 - Imperative but efficient positioning
@@ -53,12 +55,14 @@ The research evaluated whether React Flow (@xyflow/react) should replace the cur
 ### 3. Custom Edges with Cardinality Notation
 
 #### React Flow Implementation:
+
 - Custom SVG marker definitions for crow's foot notation
 - Markers require `<defs>` elements and `url(#marker-id)` references
 - Label positioning via `getStraightPath()` utility
 - Edge-to-handle routing with explicit IDs
 
 **Pattern**:
+
 ```typescript
 <marker id="marker-crowfoot" viewBox="-10 -10 20 20">
   <polyline points="0,0 -5,-5 0,-3 5,-5" ... />
@@ -67,6 +71,7 @@ The research evaluated whether React Flow (@xyflow/react) should replace the cur
 ```
 
 #### Konva Approach:
+
 - Native Konva.Arrow with configurable arrow heads
 - Text positioning relative to arrows (built-in)
 - Direct color/style control
@@ -80,42 +85,46 @@ The research evaluated whether React Flow (@xyflow/react) should replace the cur
 
 #### Benchmark Results (100 nodes):
 
-| Operation | Konva (Canvas) | React Flow (DOM) | Winner |
-|-----------|---|---|---|
-| Dragging simple nodes | 50+ FPS | 35-40 FPS | **Konva** ✓ |
-| Dragging complex nodes | 35-40 FPS | 25-30 FPS | **Konva** ✓ |
-| Panning/zooming | 60 FPS | 55-60 FPS | Tie |
-| Edge rendering (100 edges) | ~55 FPS | ~45 FPS | **Konva** ✓ |
-| Memory usage | ~15-20 MB | ~25-30 MB | **Konva** ✓ |
+| Operation                  | Konva (Canvas) | React Flow (DOM) | Winner      |
+| -------------------------- | -------------- | ---------------- | ----------- |
+| Dragging simple nodes      | 50+ FPS        | 35-40 FPS        | **Konva** ✓ |
+| Dragging complex nodes     | 35-40 FPS      | 25-30 FPS        | **Konva** ✓ |
+| Panning/zooming            | 60 FPS         | 55-60 FPS        | Tie         |
+| Edge rendering (100 edges) | ~55 FPS        | ~45 FPS          | **Konva** ✓ |
+| Memory usage               | ~15-20 MB      | ~25-30 MB        | **Konva** ✓ |
 
 **Performance Summary**:
+
 - **Konva wins at scale**: 15-20% better performance with 100+ nodes
 - **React Flow adequate**: <50 nodes, both perform equally
 - **Real-time sync**: Konva's canvas updates have lower bandwidth than DOM updates
 
 #### Viewport Culling:
+
 - **React Flow**: Built-in `onlyRenderVisibleElements` prop (helpful for 1000+ nodes)
 - **Konva**: No built-in culling; custom implementation possible (more efficient if done right)
 
 #### Bundle Size:
 
-| Package | Size (Gzipped) |
-|---------|---|
-| Current stack (Konva + d3-force) | 122.9 KB |
-| React Flow alternative | 75-80 KB |
-| **Savings** | ~47.9 KB |
-| **Impact** | Negligible vs React + TanStack overhead |
+| Package                          | Size (Gzipped)                          |
+| -------------------------------- | --------------------------------------- |
+| Current stack (Konva + d3-force) | 122.9 KB                                |
+| React Flow alternative           | 75-80 KB                                |
+| **Savings**                      | ~47.9 KB                                |
+| **Impact**                       | Negligible vs React + TanStack overhead |
 
 ---
 
 ### 5. Dark Mode Support
 
 #### React Flow:
+
 - CSS variables for theming
 - Markers may not automatically respect dark mode (manual updates needed)
 - Less integration with existing theme system
 
 #### Konva (Current):
+
 - Color values passed directly to shapes
 - Theme changes trigger targeted re-renders
 - Seamless with existing `next-themes` setup
@@ -128,12 +137,14 @@ The research evaluated whether React Flow (@xyflow/react) should replace the cur
 ### 6. Auto-Layout Integration
 
 #### React Flow:
+
 - No built-in layout algorithm
 - Requires external d3-force integration
 - Layout results must be mapped to node positions
 - Additional complexity layer
 
 #### Konva (Current):
+
 - D3-force already integrated (research.md)
 - Web Worker layout engine
 - Direct coordinate mapping to shapes
@@ -147,22 +158,22 @@ The research evaluated whether React Flow (@xyflow/react) should replace the cur
 
 Both approaches use same WebSocket strategy (Socket.IO), but:
 
-| Aspect | Konva | React Flow |
-|--------|-------|-----------|
-| Network bandwidth | Lower (canvas state updates) | Higher (DOM updates) |
-| Optimization effort | Less (canvas batching automatic) | More (memoization required) |
-| Operational transform | Natural fit (shape positions) | Requires component state sync |
+| Aspect                | Konva                            | React Flow                    |
+| --------------------- | -------------------------------- | ----------------------------- |
+| Network bandwidth     | Lower (canvas state updates)     | Higher (DOM updates)          |
+| Optimization effort   | Less (canvas batching automatic) | More (memoization required)   |
+| Operational transform | Natural fit (shape positions)    | Requires component state sync |
 
 ---
 
 ### 8. TypeScript Support Quality
 
-| Feature | Konva | React Flow |
-|---------|-------|-----------|
+| Feature          | Konva              | React Flow             |
+| ---------------- | ------------------ | ---------------------- |
 | Type definitions | Via `@types/konva` | Built-in (first-class) |
-| Generic types | Limited | Comprehensive |
-| Type narrowing | Basic | Advanced (union types) |
-| **Overall** | Good | Excellent |
+| Generic types    | Limited            | Comprehensive          |
+| Type narrowing   | Basic              | Advanced (union types) |
+| **Overall**      | Good               | Excellent              |
 
 **Note**: React Flow's type support is superior, but Konva's is sufficient for this project.
 
@@ -171,6 +182,7 @@ Both approaches use same WebSocket strategy (Socket.IO), but:
 ## Implementation Complexity Comparison
 
 ### React Flow Migration Effort:
+
 - Phase 1 (Foundation): 2-3 weeks
 - Phase 2 (Features): 2-3 weeks
 - Phase 3 (Polish): 1-2 weeks
@@ -178,6 +190,7 @@ Both approaches use same WebSocket strategy (Socket.IO), but:
 - **Risk Level**: Medium (patterns well-understood, good docs)
 
 ### Current Konva Approach:
+
 - Already partially implemented
 - Zero migration risk
 - Team familiar with codebase
@@ -187,6 +200,7 @@ Both approaches use same WebSocket strategy (Socket.IO), but:
 ## When to Consider React Flow
 
 React Flow becomes viable alternative **if**:
+
 1. Limiting to <50 nodes only (performance difference negligible)
 2. DOM interactivity (forms, buttons) is critical
 3. Team strongly prefers React component patterns
@@ -198,6 +212,7 @@ React Flow becomes viable alternative **if**:
 ## When Konva Remains Better
 
 Konva is superior **for this project because**:
+
 1. ✓ Complex ER diagrams with many relationships (100+ nodes expected)
 2. ✓ Column-level connection points (handles don't map well)
 3. ✓ Crow's foot notation rendering (natural fit with Arrow API)
@@ -211,20 +226,24 @@ Konva is superior **for this project because**:
 ## Specific Technical Insights
 
 ### 1. Column-Level Handle Management
+
 - React Flow requires manual unique IDs for each column's handles
 - Error-prone if IDs don't match edge definitions
 - Konva's approach (custom lines to coordinates) is less error-prone
 
 ### 2. Crow's Foot Notation Complexity
+
 - React Flow: 20-30 lines of SVG marker definition boilerplate per marker type
 - Konva: 2-3 lines of Arrow configuration
 - Konva approach is more maintainable
 
 ### 3. Theme Switching Implications
+
 - React Flow: Markers don't automatically update on theme change
 - Konva: Shapes re-render automatically with theme context
 
 ### 4. Memoization Burden
+
 - React Flow: Requires aggressive memoization (React.memo on all nodes/edges)
 - Konva: Canvas rendering independent of React component lifecycle
 - Konva requires less optimization effort
@@ -234,15 +253,18 @@ Konva is superior **for this project because**:
 ## Bundle Size Reality Check
 
 **Current Stack**: 122.9 KB gzipped
+
 - Konva 10.0.8: 54.9 KB
 - react-konva 19.2.0: 48.6 KB
 - d3-force 3.0.0: 20 KB
 - **Total**: 122.9 KB
 
 **React Flow Alternative**: 75-80 KB gzipped
+
 - @xyflow/react 12.9.2: 75-80 KB (includes d3-zoom)
 
 **Context**:
+
 - React 19.2: ~120 KB gzipped
 - TanStack Router/Query: ~200+ KB combined gzipped
 - **Verdict**: 48 KB savings are 5% of total bundle; not worth migration cost
@@ -252,17 +274,21 @@ Konva is superior **for this project because**:
 ## Recommendation for Stakeholders
 
 ### Short Term (Next 3-6 months):
+
 ✓ Continue Konva implementation as planned
+
 - Konva provides best performance/UX for ER diagrams
 - Migration would delay MVP by 5-8 weeks
 - Team already has implementation momentum
 
 ### Medium Term (6-12 months):
+
 - Monitor React Flow v13+ releases for improvements
 - Consider viewport culling optimizations for Konva if 500+ nodes needed
 - Evaluate TypeScript improvements for Konva types
 
 ### Long Term (12+ months):
+
 - If building lightweight diagram editor: React Flow viable alternative
 - If expanding to 1000+ node support: Custom viewport culling for Konva
 - If team wants React ecosystem patterns: Plan incremental migration during refactor
@@ -291,6 +317,7 @@ Konva is superior **for this project because**:
 ## Document References
 
 **Detailed Analysis**: See `/specs/001-collaborative-er-whiteboard/REACT_FLOW_RESEARCH.md` for:
+
 - Code examples and implementation patterns
 - Detailed performance benchmarks
 - Ecosystem and maturity comparison

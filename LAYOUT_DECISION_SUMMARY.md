@@ -44,11 +44,11 @@ Canvas: table nodes move to new positions
 ## Performance Profile (Your Implementation)
 
 | Diagram Size | Current Time | After Optimization | Improvement |
-|--------------|--------------|---------------------|-------------|
-| 5 tables | <1ms | <1ms | - |
-| 15 tables | 8ms | 6ms | 25% |
-| 30 tables | 28ms | 18ms | 36% |
-| 50 tables | 65ms | 42ms | 35% |
+| ------------ | ------------ | ------------------ | ----------- |
+| 5 tables     | <1ms         | <1ms               | -           |
+| 15 tables    | 8ms          | 6ms                | 25%         |
+| 30 tables    | 28ms         | 18ms               | 36%         |
+| 50 tables    | 65ms         | 42ms               | 35%         |
 
 **Conclusion**: You're well within acceptable range (< 200ms) for MVP scope.
 
@@ -122,16 +122,19 @@ Only recalculate affected nodes + neighbors when 1 table added/removed:
 **Total Effort**: 4-6 hours (can be parallelized)
 
 ### Week 1: Foundation
+
 - [ ] Add convergence detection (30 min)
 - [ ] Add diagnostic logging (15 min)
 - [ ] Test on real diagrams (30 min)
 
 ### Week 2: UX Enhancement
+
 - [ ] Implement warm-start (45 min)
 - [ ] Add animation wrapper (30 min)
 - [ ] Test visual feedback (30 min)
 
 ### Week 3: Advanced Optimization
+
 - [ ] Implement incremental layout (1 hour)
 - [ ] Update component to use all features (1 hour)
 - [ ] Comprehensive testing (1 hour)
@@ -143,12 +146,15 @@ Only recalculate affected nodes + neighbors when 1 table added/removed:
 ## When to Consider Alternatives
 
 ### dagre (Hierarchical Layout)
+
 **Consider if**:
+
 - Schemas naturally hierarchical (User → Order → Product)
 - Most relationships point in one direction (DAG structure)
 - Need guaranteed "readable" layered output
 
 **Don't use if**:
+
 - Have cyclic relationships (which ER diagrams do)
 - Need relationship strength weighting
 - Want to stay with Konva (dagre is React Flow-focused)
@@ -156,12 +162,15 @@ Only recalculate affected nodes + neighbors when 1 table added/removed:
 **Migration Effort**: Large (2-3 days), not recommended for MVP
 
 ### elkjs (Enterprise Layout)
+
 **Consider if**:
+
 - Targeting 100+ node diagrams
 - Need multiple layout algorithms
 - Can accept 700KB+ bundle size
 
 **Don't use if**:
+
 - MVP phase (overkill for 30-50 nodes)
 - Bundle size is constraint
 - Need to customize for FK relationships
@@ -170,13 +179,16 @@ Only recalculate affected nodes + neighbors when 1 table added/removed:
 **Migration Effort**: Very large (full refactor), not recommended
 
 ### React Flow Migration
+
 **Consider if**:
+
 - Need built-in node selection UI/editor
 - Want pre-built zoom/pan handling
 - Planned multi-user diagram editing gestures
 - Want community components (minimap, etc.)
 
 **Don't use if**:
+
 - Fine-grained rendering control needed
 - Performance is critical (adds React overhead)
 - Konva works well for your use case (it does)
@@ -270,10 +282,13 @@ Only recalculate affected nodes + neighbors when 1 table added/removed:
 ## FAQ
 
 ### Q: Should we use React Flow?
+
 **A**: Not for MVP. React Flow adds overhead (200KB+ bundle, React re-renders). Konva is better for dense graph visualization. Revisit in Phase 3+ if you need it.
 
 ### Q: Will d3-force scale to 100+ nodes?
+
 **A**: Yes, but with diminishing returns:
+
 - 30 nodes: 28ms ✅
 - 100 nodes: 200ms ⚠️ (needs optimization)
 - 500 nodes: 2000ms ❌ (use elkjs or optimize significantly)
@@ -281,10 +296,13 @@ Only recalculate affected nodes + neighbors when 1 table added/removed:
 MVP is 30-50 nodes, so you're good.
 
 ### Q: Should we use Yjs for CRDT collaboration?
+
 **A**: Not needed for MVP. Your spec says "last write wins", which is simpler. Yjs adds complexity + bundle size. Consider in Phase 2 if conflicts become problematic.
 
 ### Q: Is the Web Worker necessary?
+
 **A**: Yes! Without it:
+
 - 28ms layout blocks main thread
 - Canvas freezes, scroll stutters, inputs lag
 - With worker: 28ms on separate thread, main thread responsive
@@ -292,7 +310,9 @@ MVP is 30-50 nodes, so you're good.
 This is already correct in your implementation.
 
 ### Q: Can we cache layout results?
+
 **A**: Yes! After Phase 1, add:
+
 ```typescript
 const layoutCache = new Map<string, LayoutResult>()
 const cacheKey = `${tables.map(t => t.id).join(',')}-${relationships.length}`
@@ -307,7 +327,9 @@ return result
 ```
 
 ### Q: What about manual layout adjustments?
+
 **A**: Current d3-force is deterministic (same input = same output), but user-dragged positions should override. Consider:
+
 ```typescript
 if (userHasMovedTable(tableId)) {
   preserveUserPosition(tableId) // Don't auto-layout this table
@@ -319,18 +341,21 @@ if (userHasMovedTable(tableId)) {
 ## Deliverables from This Research
 
 ### 1. LAYOUT_RESEARCH.md (This File's Main Content)
+
 - Comprehensive comparison of d3-force, dagre, elkjs, React Flow
 - Performance profiles and benchmarks
 - Integration patterns for each library
 - Best practices and common pitfalls
 
 ### 2. LAYOUT_IMPLEMENTATION_GUIDE.md
+
 - Step-by-step implementation of 4 optimization phases
 - Code examples for each enhancement
 - Testing and benchmarking scripts
 - Troubleshooting guide
 
 ### 3. LAYOUT_DECISION_SUMMARY.md (This File)
+
 - Executive summary of research findings
 - Decision rationale
 - Quick-win opportunities
@@ -341,18 +366,21 @@ if (userHasMovedTable(tableId)) {
 ## Next Steps
 
 ### Immediately (This Sprint)
+
 1. Read LAYOUT_IMPLEMENTATION_GUIDE.md
 2. Prioritize Phase 1: Convergence Detection (30 min work, visible gain)
 3. Add diagnostics to log layout timing
 4. Benchmark your current implementation
 
 ### Next Sprint
+
 1. Implement warm-start (45 min)
 2. Add animation wrapper (30 min)
 3. Test on real whiteboard with 20-30 tables
 4. Gather performance metrics
 
 ### Future (After MVP)
+
 1. Implement incremental layout (1 hour)
 2. Monitor if users create 100+ node diagrams
 3. If scaling issues appear, consider elkjs
@@ -365,6 +393,7 @@ if (userHasMovedTable(tableId)) {
 **High confidence in this decision** (95%)
 
 **Reasoning**:
+
 1. You already have working implementation
 2. Performance is acceptable for target scale
 3. Low risk to enhance existing code
@@ -372,6 +401,7 @@ if (userHasMovedTable(tableId)) {
 5. Easy to pivot if requirements change
 
 **Risk factors** (5%):
+
 - If users create predominantly 100+ node diagrams (unlikely)
 - If relationship layout requirements change dramatically
 - If team wants to move to React Flow ecosystem
@@ -385,4 +415,3 @@ if (userHasMovedTable(tableId)) {
 Your current implementation is solid. The opportunity is in optimization, not replacement.
 
 **Estimated total time to production-ready layout system**: 6-8 hours of engineering work (can be distributed across 2-3 sprints).
-

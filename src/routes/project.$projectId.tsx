@@ -47,14 +47,17 @@ function ProjectPage() {
     return (
       <div className="container mx-auto px-4 py-8">
         <ProjectPageError
-          message={error instanceof Error ? error.message : 'Failed to load project'}
+          message={
+            error instanceof Error ? error.message : 'Failed to load project'
+          }
           onRetry={() => refetch()}
         />
       </div>
     )
   }
 
-  const isEmpty = content.folders.length === 0 && content.whiteboards.length === 0
+  const isEmpty =
+    content.folders.length === 0 && content.whiteboards.length === 0
 
   return (
     <div className="min-h-screen bg-background">
@@ -83,7 +86,9 @@ function ProjectPage() {
       {/* Main content */}
       <div className="container mx-auto px-4 py-8">
         {isEmpty ? (
-          <EmptyState onCreateWhiteboard={() => setWhiteboardDialogOpen(true)} />
+          <EmptyState
+            onCreateWhiteboard={() => setWhiteboardDialogOpen(true)}
+          />
         ) : (
           <ProjectContentGrid
             projectId={projectId}

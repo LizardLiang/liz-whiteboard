@@ -1,11 +1,6 @@
 import { memo, useMemo } from 'react'
-import {
-  EdgeLabelRenderer,
-  Position,
-  getSmoothStepPath,
-} from '@xyflow/react'
-import type {
-  EdgeProps} from '@xyflow/react';
+import { EdgeLabelRenderer, Position, getSmoothStepPath } from '@xyflow/react'
+import type { EdgeProps } from '@xyflow/react'
 import type { RelationshipEdgeData } from '@/lib/react-flow/types'
 import { Z_INDEX } from '@/lib/react-flow/types'
 
@@ -28,43 +23,101 @@ const CIRCLE_R = 4
 const OPT_GAP = 7
 
 const CARDINALITY_COLORS: Record<string, string> = {
-  ONE_TO_ONE: '#60a5fa',                    // blue
-  ONE_TO_MANY: '#34d399',                   // green
-  MANY_TO_ONE: '#a78bfa',                   // purple
-  MANY_TO_MANY: '#f97316',                  // orange
-  ZERO_TO_ONE: '#22d3ee',                   // cyan
-  ZERO_TO_MANY: '#facc15',                  // yellow
-  SELF_REFERENCING: '#f87171',              // red
-  MANY_TO_ZERO_OR_ONE: '#fb7185',           // rose
-  MANY_TO_ZERO_OR_MANY: '#e879f9',          // fuchsia
-  ZERO_OR_ONE_TO_ONE: '#4ade80',            // lime green
-  ZERO_OR_ONE_TO_MANY: '#86efac',           // light green
-  ZERO_OR_ONE_TO_ZERO_OR_ONE: '#67e8f9',    // light cyan
-  ZERO_OR_ONE_TO_ZERO_OR_MANY: '#a5f3fc',   // lighter cyan
-  ZERO_OR_MANY_TO_ONE: '#c084fc',           // light purple
-  ZERO_OR_MANY_TO_MANY: '#d8b4fe',          // lighter purple
-  ZERO_OR_MANY_TO_ZERO_OR_ONE: '#fda4af',   // light rose
-  ZERO_OR_MANY_TO_ZERO_OR_MANY: '#fbbf24',  // amber
+  ONE_TO_ONE: '#60a5fa', // blue
+  ONE_TO_MANY: '#34d399', // green
+  MANY_TO_ONE: '#a78bfa', // purple
+  MANY_TO_MANY: '#f97316', // orange
+  ZERO_TO_ONE: '#22d3ee', // cyan
+  ZERO_TO_MANY: '#facc15', // yellow
+  SELF_REFERENCING: '#f87171', // red
+  MANY_TO_ZERO_OR_ONE: '#fb7185', // rose
+  MANY_TO_ZERO_OR_MANY: '#e879f9', // fuchsia
+  ZERO_OR_ONE_TO_ONE: '#4ade80', // lime green
+  ZERO_OR_ONE_TO_MANY: '#86efac', // light green
+  ZERO_OR_ONE_TO_ZERO_OR_ONE: '#67e8f9', // light cyan
+  ZERO_OR_ONE_TO_ZERO_OR_MANY: '#a5f3fc', // lighter cyan
+  ZERO_OR_MANY_TO_ONE: '#c084fc', // light purple
+  ZERO_OR_MANY_TO_MANY: '#d8b4fe', // lighter purple
+  ZERO_OR_MANY_TO_ZERO_OR_ONE: '#fda4af', // light rose
+  ZERO_OR_MANY_TO_ZERO_OR_MANY: '#fbbf24', // amber
 }
 
-const CARDINALITY_FLAGS: Record<string, { srcMany: boolean; srcOpt: boolean; tgtMany: boolean; tgtOpt: boolean }> = {
-  ONE_TO_ONE:                        { srcMany: false, srcOpt: false, tgtMany: false, tgtOpt: false },
-  ONE_TO_MANY:                       { srcMany: false, srcOpt: false, tgtMany: true,  tgtOpt: false },
-  MANY_TO_ONE:                       { srcMany: true,  srcOpt: false, tgtMany: false, tgtOpt: false },
-  MANY_TO_MANY:                      { srcMany: true,  srcOpt: false, tgtMany: true,  tgtOpt: false },
-  ZERO_TO_ONE:                       { srcMany: false, srcOpt: false, tgtMany: false, tgtOpt: true  },
-  ZERO_TO_MANY:                      { srcMany: false, srcOpt: false, tgtMany: true,  tgtOpt: true  },
-  SELF_REFERENCING:                  { srcMany: false, srcOpt: false, tgtMany: true,  tgtOpt: true  },
-  MANY_TO_ZERO_OR_ONE:               { srcMany: true,  srcOpt: false, tgtMany: false, tgtOpt: true  },
-  MANY_TO_ZERO_OR_MANY:              { srcMany: true,  srcOpt: false, tgtMany: true,  tgtOpt: true  },
-  ZERO_OR_ONE_TO_ONE:                { srcMany: false, srcOpt: true,  tgtMany: false, tgtOpt: false },
-  ZERO_OR_ONE_TO_MANY:               { srcMany: false, srcOpt: true,  tgtMany: true,  tgtOpt: false },
-  ZERO_OR_ONE_TO_ZERO_OR_ONE:        { srcMany: false, srcOpt: true,  tgtMany: false, tgtOpt: true  },
-  ZERO_OR_ONE_TO_ZERO_OR_MANY:       { srcMany: false, srcOpt: true,  tgtMany: true,  tgtOpt: true  },
-  ZERO_OR_MANY_TO_ONE:               { srcMany: true,  srcOpt: true,  tgtMany: false, tgtOpt: false },
-  ZERO_OR_MANY_TO_MANY:              { srcMany: true,  srcOpt: true,  tgtMany: true,  tgtOpt: false },
-  ZERO_OR_MANY_TO_ZERO_OR_ONE:       { srcMany: true,  srcOpt: true,  tgtMany: false, tgtOpt: true  },
-  ZERO_OR_MANY_TO_ZERO_OR_MANY:      { srcMany: true,  srcOpt: true,  tgtMany: true,  tgtOpt: true  },
+const CARDINALITY_FLAGS: Record<
+  string,
+  { srcMany: boolean; srcOpt: boolean; tgtMany: boolean; tgtOpt: boolean }
+> = {
+  ONE_TO_ONE: { srcMany: false, srcOpt: false, tgtMany: false, tgtOpt: false },
+  ONE_TO_MANY: { srcMany: false, srcOpt: false, tgtMany: true, tgtOpt: false },
+  MANY_TO_ONE: { srcMany: true, srcOpt: false, tgtMany: false, tgtOpt: false },
+  MANY_TO_MANY: { srcMany: true, srcOpt: false, tgtMany: true, tgtOpt: false },
+  ZERO_TO_ONE: { srcMany: false, srcOpt: false, tgtMany: false, tgtOpt: true },
+  ZERO_TO_MANY: { srcMany: false, srcOpt: false, tgtMany: true, tgtOpt: true },
+  SELF_REFERENCING: {
+    srcMany: false,
+    srcOpt: false,
+    tgtMany: true,
+    tgtOpt: true,
+  },
+  MANY_TO_ZERO_OR_ONE: {
+    srcMany: true,
+    srcOpt: false,
+    tgtMany: false,
+    tgtOpt: true,
+  },
+  MANY_TO_ZERO_OR_MANY: {
+    srcMany: true,
+    srcOpt: false,
+    tgtMany: true,
+    tgtOpt: true,
+  },
+  ZERO_OR_ONE_TO_ONE: {
+    srcMany: false,
+    srcOpt: true,
+    tgtMany: false,
+    tgtOpt: false,
+  },
+  ZERO_OR_ONE_TO_MANY: {
+    srcMany: false,
+    srcOpt: true,
+    tgtMany: true,
+    tgtOpt: false,
+  },
+  ZERO_OR_ONE_TO_ZERO_OR_ONE: {
+    srcMany: false,
+    srcOpt: true,
+    tgtMany: false,
+    tgtOpt: true,
+  },
+  ZERO_OR_ONE_TO_ZERO_OR_MANY: {
+    srcMany: false,
+    srcOpt: true,
+    tgtMany: true,
+    tgtOpt: true,
+  },
+  ZERO_OR_MANY_TO_ONE: {
+    srcMany: true,
+    srcOpt: true,
+    tgtMany: false,
+    tgtOpt: false,
+  },
+  ZERO_OR_MANY_TO_MANY: {
+    srcMany: true,
+    srcOpt: true,
+    tgtMany: true,
+    tgtOpt: false,
+  },
+  ZERO_OR_MANY_TO_ZERO_OR_ONE: {
+    srcMany: true,
+    srcOpt: true,
+    tgtMany: false,
+    tgtOpt: true,
+  },
+  ZERO_OR_MANY_TO_ZERO_OR_MANY: {
+    srcMany: true,
+    srcOpt: true,
+    tgtMany: true,
+    tgtOpt: true,
+  },
 }
 
 function getCardinalityColor(cardinality: string | undefined): string {
@@ -134,15 +187,26 @@ function CardinalityIndicator(props: {
         <g>
           <path
             d={`M ${tipX} ${tipY} Q ${midX - px * (CROW_SPREAD * 0.5 + CROW_CURVE)} ${midY - py * (CROW_SPREAD * 0.5 + CROW_CURVE)} ${baseX - px * CROW_SPREAD} ${baseY - py * CROW_SPREAD}`}
-            fill="none" stroke={color} strokeWidth={sw} strokeLinecap="round"
+            fill="none"
+            stroke={color}
+            strokeWidth={sw}
+            strokeLinecap="round"
           />
           <line
-            x1={tipX} y1={tipY} x2={baseX} y2={baseY}
-            stroke={color} strokeWidth={sw} strokeLinecap="round"
+            x1={tipX}
+            y1={tipY}
+            x2={baseX}
+            y2={baseY}
+            stroke={color}
+            strokeWidth={sw}
+            strokeLinecap="round"
           />
           <path
             d={`M ${tipX} ${tipY} Q ${midX + px * (CROW_SPREAD * 0.5 + CROW_CURVE)} ${midY + py * (CROW_SPREAD * 0.5 + CROW_CURVE)} ${baseX + px * CROW_SPREAD} ${baseY + py * CROW_SPREAD}`}
-            fill="none" stroke={color} strokeWidth={sw} strokeLinecap="round"
+            fill="none"
+            stroke={color}
+            strokeWidth={sw}
+            strokeLinecap="round"
           />
         </g>
       )
@@ -154,7 +218,9 @@ function CardinalityIndicator(props: {
       y1={y - sin * MULT_BAR_INSET - py * BAR_HALF}
       x2={x - cos * MULT_BAR_INSET + px * BAR_HALF}
       y2={y - sin * MULT_BAR_INSET + py * BAR_HALF}
-      stroke={color} strokeWidth={sw} strokeLinecap="round"
+      stroke={color}
+      strokeWidth={sw}
+      strokeLinecap="round"
     />
   )
 
@@ -167,8 +233,12 @@ function CardinalityIndicator(props: {
   const optSymbol = isOptional ? (
     // Open circle = zero / optional
     <circle
-      cx={optX} cy={optY} r={CIRCLE_R}
-      fill="var(--rf-background)" stroke={color} strokeWidth={sw}
+      cx={optX}
+      cy={optY}
+      r={CIRCLE_R}
+      fill="var(--rf-background)"
+      stroke={color}
+      strokeWidth={sw}
     />
   ) : (
     // Single perpendicular bar = mandatory / one
@@ -177,7 +247,9 @@ function CardinalityIndicator(props: {
       y1={optY - py * BAR_HALF}
       x2={optX + px * BAR_HALF}
       y2={optY + py * BAR_HALF}
-      stroke={color} strokeWidth={sw} strokeLinecap="round"
+      stroke={color}
+      strokeWidth={sw}
+      strokeLinecap="round"
     />
   )
 
@@ -220,7 +292,12 @@ export const RelationshipEdge = memo(
     )
 
     // Derive multiplicity and optionality from lookup table
-    const flags = CARDINALITY_FLAGS[cardinality ?? ''] ?? { srcMany: false, srcOpt: false, tgtMany: false, tgtOpt: false }
+    const flags = CARDINALITY_FLAGS[cardinality ?? ''] ?? {
+      srcMany: false,
+      srcOpt: false,
+      tgtMany: false,
+      tgtOpt: false,
+    }
     const sourceIsMany = flags.srcMany
     const sourceIsOptional = flags.srcOpt
     const targetIsMany = flags.tgtMany
@@ -266,14 +343,18 @@ export const RelationshipEdge = memo(
             <stop
               offset="0%"
               stopColor={
-                isActive ? 'var(--rf-edge-gradient-start-active)' : cardinalityColor
+                isActive
+                  ? 'var(--rf-edge-gradient-start-active)'
+                  : cardinalityColor
               }
               stopOpacity={isActive ? 1 : 0.7}
             />
             <stop
               offset="100%"
               stopColor={
-                isActive ? 'var(--rf-edge-gradient-end-active)' : cardinalityColor
+                isActive
+                  ? 'var(--rf-edge-gradient-end-active)'
+                  : cardinalityColor
               }
             />
           </linearGradient>

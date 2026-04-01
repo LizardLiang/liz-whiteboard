@@ -2,11 +2,13 @@
 // src/components/navigator/CreateFolderDialog.test.tsx
 // TS-07 (R7) + TS-12 (TC-12-03): CreateFolderDialog unit/integration tests
 
-import { describe, expect, it, vi, beforeEach } from 'vitest'
-import { render, screen, fireEvent, waitFor } from '@testing-library/react'
+import { beforeEach, describe, expect, it, vi } from 'vitest'
+import { fireEvent, render, screen, waitFor } from '@testing-library/react'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { CreateFolderDialog } from './CreateFolderDialog'
 import type { ReactNode } from 'react'
+
+import { createFolderFn } from '@/routes/api/folders'
 
 // Mock the server function
 vi.mock('@/routes/api/folders', () => ({
@@ -22,8 +24,6 @@ vi.mock('sonner', () => ({
     error: vi.fn(),
   },
 }))
-
-import { createFolderFn } from '@/routes/api/folders'
 
 function createTestQueryClient() {
   return new QueryClient({
@@ -83,10 +83,18 @@ describe('CreateFolderDialog', () => {
 
   describe('TC-07-03: dialog pre-fills projectId and no parentFolderId for root context', () => {
     it('calls createFolderFn with projectId and no parentFolderId when at root', async () => {
-      const mockFolder = { id: 'folder-new', name: 'My Folder', projectId: 'proj-001' }
+      const mockFolder = {
+        id: 'folder-new',
+        name: 'My Folder',
+        projectId: 'proj-001',
+      }
       vi.mocked(createFolderFn).mockResolvedValue(mockFolder as any)
 
-      renderDialog({ open: true, projectId: 'proj-001', parentFolderId: undefined })
+      renderDialog({
+        open: true,
+        projectId: 'proj-001',
+        parentFolderId: undefined,
+      })
 
       const nameInput = screen.getByPlaceholderText('My Folder')
       fireEvent.change(nameInput, { target: { value: 'My Folder' } })
@@ -110,10 +118,18 @@ describe('CreateFolderDialog', () => {
 
   describe('TC-07-04: parentFolderId is set when inside a folder', () => {
     it('calls createFolderFn with parentFolderId when inside a folder', async () => {
-      const mockFolder = { id: 'folder-new', name: 'Sub Folder', projectId: 'proj-001' }
+      const mockFolder = {
+        id: 'folder-new',
+        name: 'Sub Folder',
+        projectId: 'proj-001',
+      }
       vi.mocked(createFolderFn).mockResolvedValue(mockFolder as any)
 
-      renderDialog({ open: true, projectId: 'proj-001', parentFolderId: 'folder-001' })
+      renderDialog({
+        open: true,
+        projectId: 'proj-001',
+        parentFolderId: 'folder-001',
+      })
 
       const nameInput = screen.getByPlaceholderText('My Folder')
       fireEvent.change(nameInput, { target: { value: 'Sub Folder' } })
@@ -136,7 +152,11 @@ describe('CreateFolderDialog', () => {
 
   describe('TC-12-03: query cache invalidation after folder creation', () => {
     it("invalidates ['project-page'] and ['projects'] keys on successful creation", async () => {
-      const mockFolder = { id: 'folder-new', name: 'Cache Test Folder', projectId: 'proj-001' }
+      const mockFolder = {
+        id: 'folder-new',
+        name: 'Cache Test Folder',
+        projectId: 'proj-001',
+      }
       vi.mocked(createFolderFn).mockResolvedValue(mockFolder as any)
 
       const queryClient = createTestQueryClient()

@@ -2,8 +2,8 @@
 // src/components/whiteboard/column/DataTypeSelector.test.tsx
 // TS-01: DataTypeSelector unit tests
 
-import { describe, expect, it, vi, beforeEach, afterEach } from 'vitest'
-import { render, screen, act } from '@testing-library/react'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
+import { act, render, screen } from '@testing-library/react'
 import { DataTypeSelector } from './DataTypeSelector'
 import { DATA_TYPES, DATA_TYPE_LABELS } from './types'
 

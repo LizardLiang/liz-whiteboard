@@ -70,31 +70,42 @@ export function useColumnCollaboration(
 
   const isConnected = connectionState === 'connected'
 
+  // Store callbacks in a ref so the listener effect does not need to re-run
+  // every time the callbacks object changes identity (e.g. on each render of
+  // the parent component). The ref is always kept up-to-date so handlers
+  // always call the latest version of each callback.
+  const callbacksRef = useRef(callbacks)
+  useEffect(() => {
+    callbacksRef.current = callbacks
+  })
+
   // Track whether we have connected at least once so we can distinguish
   // the initial connect from a reconnect for the onReconnect callback.
   const hasConnectedRef = useRef(false)
 
-  // Register event listeners
+  // Register event listeners — depends only on stable values (on, off, userId)
+  // so listeners are only torn down and re-registered on mount/unmount or when
+  // the socket instance or userId changes, not on every render.
   useEffect(() => {
     const handleCreated = (data: ColumnCreatedEvent) => {
       if (data.createdBy === userId) {
         // This is the server confirmation for our own create.
         // Notify the consumer so it can replace the optimistic temp ID
         // with the real database ID.
-        callbacks.onOwnColumnCreated?.(data)
+        callbacksRef.current.onOwnColumnCreated?.(data)
         return
       }
-      callbacks.onColumnCreated(data)
+      callbacksRef.current.onColumnCreated(data)
     }
 
     const handleUpdated = (data: ColumnUpdatedEvent) => {
       if (data.updatedBy === userId) return
-      callbacks.onColumnUpdated(data)
+      callbacksRef.current.onColumnUpdated(data)
     }
 
     const handleDeleted = (data: ColumnDeletedEvent) => {
       if (data.deletedBy === userId) return
-      callbacks.onColumnDeleted(data)
+      callbacksRef.current.onColumnDeleted(data)
     }
 
     const handleError = (data: ColumnErrorEvent) => {
@@ -104,7 +115,7 @@ export function useColumnCollaboration(
         data.event === 'column:update' ||
         data.event === 'column:delete'
       ) {
-        callbacks.onColumnError(data)
+        callbacksRef.current.onColumnError(data)
       }
     }
 
@@ -114,7 +125,7 @@ export function useColumnCollaboration(
     const handleConnect = () => {
       if (hasConnectedRef.current) {
         // This is a reconnect — call the optional refresh callback
-        callbacks.onReconnect?.()
+        callbacksRef.current.onReconnect?.()
       } else {
         hasConnectedRef.current = true
       }
@@ -133,7 +144,7 @@ export function useColumnCollaboration(
       off('error', handleError)
       off('connect', handleConnect)
     }
-  }, [on, off, userId, callbacks])
+  }, [on, off, userId])
 
   const emitColumnCreate = useCallback(
     (data: {

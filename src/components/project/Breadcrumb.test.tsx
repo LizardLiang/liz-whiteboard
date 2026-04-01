@@ -4,20 +4,26 @@
 
 import { describe, expect, it } from 'vitest'
 import { render, screen } from '@testing-library/react'
-import { RouterContextProvider, createRouter, createMemoryHistory } from '@tanstack/react-router'
-import { routeTree } from '@/routeTree.gen'
+import {
+  RouterContextProvider,
+  createMemoryHistory,
+  createRouter,
+} from '@tanstack/react-router'
 import { Breadcrumb } from './Breadcrumb'
 import type { ReactNode } from 'react'
+import { routeTree } from '@/routeTree.gen'
 
 function RouterWrapper({ children }: { children: ReactNode }) {
   const history = createMemoryHistory({ initialEntries: ['/'] })
   const router = createRouter({ routeTree, history })
-  return <RouterContextProvider router={router}>{children}</RouterContextProvider>
+  return (
+    <RouterContextProvider router={router}>{children}</RouterContextProvider>
+  )
 }
 
 type BreadcrumbItem = { id: string; name: string; type: 'project' | 'folder' }
 
-function renderBreadcrumb(items: BreadcrumbItem[], projectId: string) {
+function renderBreadcrumb(items: Array<BreadcrumbItem>, projectId: string) {
   return render(
     <RouterWrapper>
       <Breadcrumb items={items} projectId={projectId} />
@@ -33,7 +39,7 @@ describe('Breadcrumb', () => {
   })
 
   it('TC-08-02: renders two segments for one level of nesting (project + folder)', () => {
-    const items: BreadcrumbItem[] = [
+    const items: Array<BreadcrumbItem> = [
       { id: 'proj-001', name: 'My Project', type: 'project' },
       { id: 'folder-001', name: 'Alpha Folder', type: 'folder' },
     ]
@@ -44,7 +50,7 @@ describe('Breadcrumb', () => {
   })
 
   it('TC-08-03: renders full path for two levels of nesting (three segments)', () => {
-    const items: BreadcrumbItem[] = [
+    const items: Array<BreadcrumbItem> = [
       { id: 'proj-001', name: 'My Project', type: 'project' },
       { id: 'folder-001', name: 'Parent Folder', type: 'folder' },
       { id: 'folder-002', name: 'Child Folder', type: 'folder' },
@@ -57,7 +63,7 @@ describe('Breadcrumb', () => {
   })
 
   it('TC-08-04: project name segment renders as a clickable link to /project/:projectId', () => {
-    const items: BreadcrumbItem[] = [
+    const items: Array<BreadcrumbItem> = [
       { id: 'proj-001', name: 'My Project', type: 'project' },
       { id: 'folder-001', name: 'Alpha Folder', type: 'folder' },
     ]
@@ -69,7 +75,7 @@ describe('Breadcrumb', () => {
   })
 
   it('TC-08-05: non-last folder segment renders as a link to the folder URL', () => {
-    const items: BreadcrumbItem[] = [
+    const items: Array<BreadcrumbItem> = [
       { id: 'proj-001', name: 'My Project', type: 'project' },
       { id: 'folder-001', name: 'Parent Folder', type: 'folder' },
       { id: 'folder-002', name: 'Child Folder', type: 'folder' },
@@ -83,7 +89,7 @@ describe('Breadcrumb', () => {
   })
 
   it('last item renders as plain text (current location), not a link', () => {
-    const items: BreadcrumbItem[] = [
+    const items: Array<BreadcrumbItem> = [
       { id: 'proj-001', name: 'My Project', type: 'project' },
       { id: 'folder-001', name: 'Alpha Folder', type: 'folder' },
     ]
@@ -95,7 +101,7 @@ describe('Breadcrumb', () => {
   })
 
   it('renders a nav element when items are present', () => {
-    const items: BreadcrumbItem[] = [
+    const items: Array<BreadcrumbItem> = [
       { id: 'proj-001', name: 'My Project', type: 'project' },
       { id: 'folder-001', name: 'Alpha Folder', type: 'folder' },
     ]

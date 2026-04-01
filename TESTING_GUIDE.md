@@ -24,6 +24,7 @@ Server will start at: `http://0.0.0.0:3000`
 ### 3. Test Data Setup
 
 Use the existing demo data or create test whiteboards with varying complexity:
+
 - Small: 10 tables, 15 relationships
 - Medium: 30 tables, 50 relationships
 - Large: 50 tables, 100 relationships
@@ -61,26 +62,28 @@ Use the existing demo data or create test whiteboards with varying complexity:
    - Document FPS differences
 
 **Success Criteria**:
+
 - ✅ React Flow maintains ≥60 FPS during pan
 - ✅ React Flow maintains ≥60 FPS during zoom
 - ✅ Performance comparable to or better than Konva
 
 **How to check FPS**:
+
 ```javascript
 // In browser console
-let lastTime = performance.now();
-let frames = 0;
+let lastTime = performance.now()
+let frames = 0
 function measureFPS() {
-  frames++;
-  const currentTime = performance.now();
+  frames++
+  const currentTime = performance.now()
   if (currentTime >= lastTime + 1000) {
-    console.log(`FPS: ${frames}`);
-    frames = 0;
-    lastTime = currentTime;
+    console.log(`FPS: ${frames}`)
+    frames = 0
+    lastTime = currentTime
   }
-  requestAnimationFrame(measureFPS);
+  requestAnimationFrame(measureFPS)
 }
-measureFPS();
+measureFPS()
 ```
 
 ---
@@ -111,6 +114,7 @@ measureFPS();
    - Drag nodes: Edges should update in real-time
 
 **Success Criteria**:
+
 - ✅ All 100 edges render correctly
 - ✅ No lag when panning/zooming with 100 edges
 - ✅ Dragging nodes updates edges smoothly
@@ -129,13 +133,14 @@ measureFPS();
    - Mix of connected and disconnected clusters
 
 2. **Measure layout time**:
+
    ```javascript
    // Open browser console, then trigger auto layout
-   const startTime = performance.now();
+   const startTime = performance.now()
    // Click "Auto Layout" button
    // Wait for layout to complete
-   const endTime = performance.now();
-   console.log(`Layout time: ${(endTime - startTime) / 1000}s`);
+   const endTime = performance.now()
+   console.log(`Layout time: ${(endTime - startTime) / 1000}s`)
    ```
 
 3. **Verify layout quality**:
@@ -150,6 +155,7 @@ measureFPS();
    - Verify consistency
 
 **Success Criteria**:
+
 - ✅ Layout completes in <3 seconds
 - ✅ No node overlaps after layout
 - ✅ Visual layout is logical and readable
@@ -189,6 +195,7 @@ measureFPS();
    - Should be <2 seconds
 
 **Success Criteria**:
+
 - ✅ Table creation syncs in <2 seconds
 - ✅ Table movement syncs in <2 seconds
 - ✅ Relationship creation syncs in <2 seconds
@@ -196,6 +203,7 @@ measureFPS();
 - ✅ No visual conflicts or race conditions
 
 **Debug tool**:
+
 ```javascript
 // Monitor WebSocket events in console
 // Should see events logged as they occur
@@ -247,6 +255,7 @@ measureFPS();
    - Compare with Konva dark mode
 
 **Success Criteria**:
+
 - ✅ Table nodes visually match Konva
 - ✅ Edges visually match Konva
 - ✅ Cardinality markers match Konva
@@ -254,6 +263,7 @@ measureFPS();
 - ✅ No visual regressions or glitches
 
 **Visual checklist**:
+
 - [ ] Table headers match
 - [ ] Column rendering matches
 - [ ] Key indicators match
@@ -273,6 +283,7 @@ measureFPS();
 **Test each user story**:
 
 #### US1: View ER Diagrams
+
 - [ ] All tables render with correct names
 - [ ] All columns display with data types
 - [ ] Primary keys show 🔑 indicator
@@ -282,6 +293,7 @@ measureFPS();
 - [ ] Initial positions loaded from database
 
 #### US2: Interactive Canvas Navigation
+
 - [ ] Mouse wheel zooms in/out
 - [ ] Drag canvas to pan
 - [ ] Zoom controls work (+/- buttons)
@@ -292,6 +304,7 @@ measureFPS();
 - [ ] Smooth 60 FPS performance
 
 #### US3: Drag and Reposition Tables
+
 - [ ] Tables can be dragged
 - [ ] Edges update during drag
 - [ ] Position persists after drag
@@ -300,6 +313,7 @@ measureFPS();
 - [ ] Multiple tables can be selected and dragged
 
 #### US4: Apply Automatic Layout
+
 - [ ] Layout button triggers computation
 - [ ] Loading state shown during layout
 - [ ] Nodes reposition after layout
@@ -310,6 +324,7 @@ measureFPS();
 - [ ] Completes in <3 seconds for 30 tables
 
 #### US5: Real-Time Collaboration
+
 - [ ] Connection status indicator shows "Connected"
 - [ ] Remote table creation appears
 - [ ] Remote table movement syncs
@@ -320,6 +335,7 @@ measureFPS();
 - [ ] No echo-back loops
 
 #### US6: Dark Mode Theming
+
 - [ ] Toggle dark mode works
 - [ ] Tables render with dark colors
 - [ ] Edges render with dark colors
@@ -329,6 +345,7 @@ measureFPS();
 - [ ] Theme persists across sessions
 
 #### US7: Column-Level Endpoints
+
 - [ ] Edges connect to specific columns
 - [ ] Source handle aligns with source column
 - [ ] Target handle aligns with target column
@@ -337,6 +354,7 @@ measureFPS();
 - [ ] Column reordering updates handle positions
 
 **Success Criteria**:
+
 - ✅ All 7 user stories pass acceptance tests
 - ✅ No critical bugs found
 - ✅ Performance meets all targets
@@ -357,65 +375,65 @@ Environment: [Browser, OS, Hardware]
 
 ## T088: 50 Table Nodes Performance
 
-| Metric | React Flow | Konva | Winner |
-|--------|-----------|-------|--------|
-| Pan FPS | _____ | _____ | _____ |
-| Zoom FPS | _____ | _____ | _____ |
-| Subjective smoothness | _____ | _____ | _____ |
+| Metric                | React Flow | Konva  | Winner |
+| --------------------- | ---------- | ------ | ------ |
+| Pan FPS               | **\_**     | **\_** | **\_** |
+| Zoom FPS              | **\_**     | **\_** | **\_** |
+| Subjective smoothness | **\_**     | **\_** | **\_** |
 
 ## T089: 100 Edge Connections
 
-| Metric | React Flow | Konva | Winner |
-|--------|-----------|-------|--------|
-| Initial render time | _____ | _____ | _____ |
-| Pan FPS | _____ | _____ | _____ |
-| Drag FPS | _____ | _____ | _____ |
+| Metric              | React Flow | Konva  | Winner |
+| ------------------- | ---------- | ------ | ------ |
+| Initial render time | **\_**     | **\_** | **\_** |
+| Pan FPS             | **\_**     | **\_** | **\_** |
+| Drag FPS            | **\_**     | **\_** | **\_** |
 
 ## T090: Auto Layout Performance
 
-| Metric | React Flow | Konva | Winner |
-|--------|-----------|-------|--------|
-| 30 tables - Time 1 | _____ | _____ | _____ |
-| 30 tables - Time 2 | _____ | _____ | _____ |
-| 30 tables - Time 3 | _____ | _____ | _____ |
-| Average | _____ | _____ | _____ |
+| Metric             | React Flow | Konva  | Winner |
+| ------------------ | ---------- | ------ | ------ |
+| 30 tables - Time 1 | **\_**     | **\_** | **\_** |
+| 30 tables - Time 2 | **\_**     | **\_** | **\_** |
+| 30 tables - Time 3 | **\_**     | **\_** | **\_** |
+| Average            | **\_**     | **\_** | **\_** |
 
 ## T091: Collaboration Latency
 
-| Event | React Flow | Konva | Winner |
-|-------|-----------|-------|--------|
-| Table create | _____ | _____ | _____ |
-| Table move | _____ | _____ | _____ |
-| Relationship create | _____ | _____ | _____ |
-| Layout sync | _____ | _____ | _____ |
+| Event               | React Flow | Konva  | Winner |
+| ------------------- | ---------- | ------ | ------ |
+| Table create        | **\_**     | **\_** | **\_** |
+| Table move          | **\_**     | **\_** | **\_** |
+| Relationship create | **\_**     | **\_** | **\_** |
+| Layout sync         | **\_**     | **\_** | **\_** |
 
 ## T092: Visual Regression
 
-| Element | Match? | Notes |
-|---------|--------|-------|
-| Table nodes | ☐ | _____ |
-| Edges | ☐ | _____ |
-| Cardinality | ☐ | _____ |
-| Dark mode | ☐ | _____ |
+| Element     | Match? | Notes  |
+| ----------- | ------ | ------ |
+| Table nodes | ☐      | **\_** |
+| Edges       | ☐      | **\_** |
+| Cardinality | ☐      | **\_** |
+| Dark mode   | ☐      | **\_** |
 
 ## T096: Acceptance Tests
 
-| User Story | Pass? | Notes |
-|-----------|-------|-------|
-| US1: View ER Diagrams | ☐ | _____ |
-| US2: Navigation | ☐ | _____ |
-| US3: Drag Tables | ☐ | _____ |
-| US4: Auto Layout | ☐ | _____ |
-| US5: Collaboration | ☐ | _____ |
-| US6: Dark Mode | ☐ | _____ |
-| US7: Column Endpoints | ☐ | _____ |
+| User Story            | Pass? | Notes  |
+| --------------------- | ----- | ------ |
+| US1: View ER Diagrams | ☐     | **\_** |
+| US2: Navigation       | ☐     | **\_** |
+| US3: Drag Tables      | ☐     | **\_** |
+| US4: Auto Layout      | ☐     | **\_** |
+| US5: Collaboration    | ☐     | **\_** |
+| US6: Dark Mode        | ☐     | **\_** |
+| US7: Column Endpoints | ☐     | **\_** |
 
 ## Overall Recommendation
 
 ☐ **PROCEED**: React Flow meets or exceeds Konva performance
 ☐ **ABORT**: Optimize Konva instead (research recommendation)
 
-Reasoning: _____
+Reasoning: **\_**
 ```
 
 ---
@@ -423,6 +441,7 @@ Reasoning: _____
 ## Troubleshooting
 
 ### Server not starting
+
 ```bash
 # Check if database is running
 bun run db:push
@@ -435,16 +454,19 @@ lsof -i :3000
 ```
 
 ### React Flow route not loading
+
 - Verify route exists: `src/routes/whiteboard/$whiteboardId.new.tsx`
 - Check browser console for errors
 - Verify @xyflow/react is installed: `bun pm ls @xyflow/react`
 
 ### WebSocket not connecting
+
 - Check server logs for Socket.IO initialization
 - Verify firewall allows WebSocket connections
 - Check browser console for connection errors
 
 ### Performance issues
+
 - Open DevTools → Performance tab
 - Look for:
   - Long tasks (>50ms)
@@ -467,12 +489,14 @@ After completing tests, update:
 ## Decision Criteria
 
 ### Proceed with React Flow Migration if:
+
 - ✅ All performance targets met (60 FPS, <3s layout, <2s sync)
 - ✅ Visual quality matches Konva
 - ✅ All user stories pass acceptance tests
 - ✅ No critical bugs found
 
 ### Optimize Konva instead if:
+
 - ❌ React Flow underperforms vs Konva
 - ❌ Visual quality issues found
 - ❌ Critical bugs or missing features

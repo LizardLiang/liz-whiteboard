@@ -1,8 +1,8 @@
 // src/hooks/use-column-collaboration.test.ts
 // TS-08: useColumnCollaboration unit tests
 
-import { describe, expect, it, vi, beforeEach } from 'vitest'
-import { renderHook, act } from '@testing-library/react'
+import { beforeEach, describe, expect, it, vi } from 'vitest'
+import { act, renderHook } from '@testing-library/react'
 import { useColumnCollaboration } from './use-column-collaboration'
 
 // Mock useCollaboration so we control on/off/emit/connectionState
@@ -48,17 +48,13 @@ describe('useColumnCollaboration', () => {
   })
 
   it('TC-08-01: registers column:created listener on mount', () => {
-    renderHook(() =>
-      useColumnCollaboration(whiteboardId, userId, callbacks),
-    )
+    renderHook(() => useColumnCollaboration(whiteboardId, userId, callbacks))
     const registeredEvents = mockOn.mock.calls.map(([event]) => event)
     expect(registeredEvents).toContain('column:created')
   })
 
   it('TC-08-02: registers column:updated and column:deleted listeners on mount', () => {
-    renderHook(() =>
-      useColumnCollaboration(whiteboardId, userId, callbacks),
-    )
+    renderHook(() => useColumnCollaboration(whiteboardId, userId, callbacks))
     const registeredEvents = mockOn.mock.calls.map(([event]) => event)
     expect(registeredEvents).toContain('column:updated')
     expect(registeredEvents).toContain('column:deleted')
@@ -78,12 +74,12 @@ describe('useColumnCollaboration', () => {
   })
 
   it('TC-08-04: column:created from another user triggers onColumnCreated callback', () => {
-    renderHook(() =>
-      useColumnCollaboration(whiteboardId, userId, callbacks),
-    )
+    renderHook(() => useColumnCollaboration(whiteboardId, userId, callbacks))
 
     // Find the column:created handler registered via `on`
-    const createdCall = mockOn.mock.calls.find(([event]) => event === 'column:created')
+    const createdCall = mockOn.mock.calls.find(
+      ([event]) => event === 'column:created',
+    )
     const handler = createdCall?.[1]
     expect(handler).toBeDefined()
 
@@ -110,11 +106,11 @@ describe('useColumnCollaboration', () => {
   })
 
   it('TC-08-05: column:created from current user is ignored', () => {
-    renderHook(() =>
-      useColumnCollaboration(whiteboardId, userId, callbacks),
-    )
+    renderHook(() => useColumnCollaboration(whiteboardId, userId, callbacks))
 
-    const createdCall = mockOn.mock.calls.find(([event]) => event === 'column:created')
+    const createdCall = mockOn.mock.calls.find(
+      ([event]) => event === 'column:created',
+    )
     const handler = createdCall?.[1]
 
     // Simulate event from the current user
@@ -140,11 +136,11 @@ describe('useColumnCollaboration', () => {
   })
 
   it('TC-08-06: column:deleted event from another user triggers onColumnDeleted callback', () => {
-    renderHook(() =>
-      useColumnCollaboration(whiteboardId, userId, callbacks),
-    )
+    renderHook(() => useColumnCollaboration(whiteboardId, userId, callbacks))
 
-    const deletedCall = mockOn.mock.calls.find(([event]) => event === 'column:deleted')
+    const deletedCall = mockOn.mock.calls.find(
+      ([event]) => event === 'column:deleted',
+    )
     const handler = deletedCall?.[1]
 
     act(() => {
@@ -163,9 +159,7 @@ describe('useColumnCollaboration', () => {
   })
 
   it('TC-08-07: error event for column operation triggers onColumnError callback', () => {
-    renderHook(() =>
-      useColumnCollaboration(whiteboardId, userId, callbacks),
-    )
+    renderHook(() => useColumnCollaboration(whiteboardId, userId, callbacks))
 
     const errorCall = mockOn.mock.calls.find(([event]) => event === 'error')
     const handler = errorCall?.[1]
@@ -188,9 +182,7 @@ describe('useColumnCollaboration', () => {
   })
 
   it('TC-08-07b: non-column error event does NOT trigger onColumnError', () => {
-    renderHook(() =>
-      useColumnCollaboration(whiteboardId, userId, callbacks),
-    )
+    renderHook(() => useColumnCollaboration(whiteboardId, userId, callbacks))
 
     const errorCall = mockOn.mock.calls.find(([event]) => event === 'error')
     const handler = errorCall?.[1]
@@ -221,5 +213,26 @@ describe('useColumnCollaboration', () => {
       useColumnCollaboration(whiteboardId, userId, callbacks),
     )
     expect(result.current.isConnected).toBe(false)
+  })
+
+  // TC-TD-07-05: SA-M1 error filter cross-check
+  // useColumnCollaboration must NOT process table:delete errors
+  it('TC-TD-07-05: error event with event="table:delete" does NOT trigger onColumnError', () => {
+    renderHook(() => useColumnCollaboration(whiteboardId, userId, callbacks))
+
+    const errorCall = mockOn.mock.calls.find(([event]) => event === 'error')
+    const handler = errorCall?.[1]
+    expect(handler).toBeDefined()
+
+    act(() => {
+      handler({
+        event: 'table:delete',
+        error: 'Table not found',
+        message: 'Table deletion failed',
+        tableId: 'tbl-001',
+      })
+    })
+
+    expect(callbacks.onColumnError).not.toHaveBeenCalled()
   })
 })

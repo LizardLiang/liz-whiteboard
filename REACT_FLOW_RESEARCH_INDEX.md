@@ -9,13 +9,13 @@
 
 ## Quick Navigation
 
-| Document | Location | Purpose | Read Time |
-|----------|----------|---------|-----------|
-| **Executive Summary** | `/REACT_FLOW_EVALUATION_SUMMARY.md` | High-level findings and recommendation | 8-10 min |
-| **Detailed Research** | `/specs/001-collaborative-er-whiteboard/REACT_FLOW_RESEARCH.md` | Complete technical analysis | 20-25 min |
-| **Implementation Guide** | `/REACT_FLOW_IMPLEMENTATION_GUIDE.md` | Code patterns if migration needed | 15-20 min |
-| **Quick Reference** | `/REACT_FLOW_QUICK_START.md` | Installation, examples, CLI commands | 5 min |
-| **Decision Document** | `/REACT_FLOW_DECISION.md` | Detailed rationale, alternatives | 10-15 min |
+| Document                 | Location                                                        | Purpose                                | Read Time |
+| ------------------------ | --------------------------------------------------------------- | -------------------------------------- | --------- |
+| **Executive Summary**    | `/REACT_FLOW_EVALUATION_SUMMARY.md`                             | High-level findings and recommendation | 8-10 min  |
+| **Detailed Research**    | `/specs/001-collaborative-er-whiteboard/REACT_FLOW_RESEARCH.md` | Complete technical analysis            | 20-25 min |
+| **Implementation Guide** | `/REACT_FLOW_IMPLEMENTATION_GUIDE.md`                           | Code patterns if migration needed      | 15-20 min |
+| **Quick Reference**      | `/REACT_FLOW_QUICK_START.md`                                    | Installation, examples, CLI commands   | 5 min     |
+| **Decision Document**    | `/REACT_FLOW_DECISION.md`                                       | Detailed rationale, alternatives       | 10-15 min |
 
 ---
 
@@ -26,6 +26,7 @@
 **Why**: Performance, architecture fit, team momentum, and low migration risk justify keeping the current approach.
 
 **Summary of Findings**:
+
 - React Flow is mature and well-designed (v12.9.2 is current)
 - Performance at 100+ nodes: Konva wins (15-20% faster)
 - Bundle size savings (48 KB) minimal relative to total app size
@@ -39,9 +40,11 @@
 ## Document Overview
 
 ### 1. REACT_FLOW_EVALUATION_SUMMARY.md
+
 **Best For**: Decision makers, project stakeholders, quick overview
 
 **Contents**:
+
 - Package selection findings
 - Performance comparison (100 nodes benchmarks)
 - Bundle size analysis with real numbers
@@ -54,9 +57,11 @@
 ---
 
 ### 2. REACT_FLOW_RESEARCH.md (in /specs directory)
+
 **Best For**: Technical deep-dive, architects, implementation planning
 
 **Contents**:
+
 - 10 detailed research sections
 - @xyflow/react vs old reactflow comparison
 - Custom node implementation patterns
@@ -75,9 +80,11 @@
 ---
 
 ### 3. REACT_FLOW_IMPLEMENTATION_GUIDE.md
+
 **Best For**: Developers if migration becomes necessary
 
 **Contents**:
+
 - Step-by-step setup guide
 - Complete TableNode component with styling
 - Complete CardinalityEdge component with SVG markers
@@ -93,9 +100,11 @@
 ---
 
 ### 4. REACT_FLOW_QUICK_START.md
+
 **Best For**: Getting started quickly, reference guide
 
 **Contents**:
+
 - Installation commands
 - Basic setup boilerplate
 - Simple examples
@@ -109,9 +118,11 @@
 ---
 
 ### 5. REACT_FLOW_DECISION.md
+
 **Best For**: Understanding decision rationale, presenting to team
 
 **Contents**:
+
 - Detailed decision framework
 - Why Konva wins (with scoring)
 - Specific technical trade-offs
@@ -128,6 +139,7 @@
 ## Research Methodology
 
 ### Information Sources
+
 1. **Official Documentation**:
    - React Flow: reactflow.dev (v12 documentation)
    - Konva: konvajs.org
@@ -144,6 +156,7 @@
    - Specification requirements (100+ tables expected)
 
 ### Analysis Techniques
+
 1. **Feature Parity**: Mapped user requirements to both libraries
 2. **Performance Testing**: Researched benchmarks at different node counts
 3. **Bundle Analysis**: Compared minified + gzipped sizes
@@ -157,24 +170,29 @@
 ## Key Statistics from Research
 
 ### Performance Benchmarks
+
 - React Flow with 100 nodes (drag): 35-40 FPS
 - Konva with 100 nodes (drag): 50+ FPS
 - **Advantage**: Konva (15-20% better)
 
 ### Bundle Sizes (Gzipped)
+
 - Current Konva stack: 122.9 KB
 - React Flow alternative: 75-80 KB
 - **Savings**: 47.9 KB (5% of total app)
 
 ### TypeScript Support
+
 - React Flow: First-class, comprehensive types
 - Konva: Via @types/konva, good coverage
 
 ### Development Effort
+
 - React Flow migration: 5-8 weeks
 - Current Konva approach: Implemented, zero migration cost
 
 ### Node Limits
+
 - React Flow recommended: <500 nodes (without viewport culling)
 - Konva without optimization: <500 nodes
 - With optimization: 1000+ nodes feasible
@@ -184,18 +202,23 @@
 ## Critical Findings
 
 ### 1. React Flow v12 Rebranding
+
 Old `reactflow` package is deprecated. New `@xyflow/react` is the standard. **Impact**: Any future migration must use new package name.
 
 ### 2. Handle ID Management
+
 React Flow requires manual unique handle IDs for column-level connections. **Risk**: Easy to introduce bugs if IDs mismatch.
 
 ### 3. Crow's Foot Notation
+
 React Flow needs custom SVG marker definitions (~20-30 lines per marker type). Konva's native Arrow API is more concise. **Impact**: More boilerplate for ER diagrams.
 
 ### 4. Real-Time Sync Differences
+
 Konva canvas updates have lower network bandwidth than React Flow DOM updates. **Impact**: Better performance for high-frequency collaboration.
 
 ### 5. Theme Integration
+
 Konva's direct color configuration is tighter with existing dark mode system than React Flow's CSS variable approach. **Impact**: Slightly easier dark mode implementation.
 
 ---
@@ -232,26 +255,31 @@ Future scenarios where React Flow becomes attractive:
 ## How to Use These Documents
 
 ### For Project Managers/Stakeholders:
+
 1. Read: `/REACT_FLOW_EVALUATION_SUMMARY.md` (8-10 min)
 2. Conclusion: Clear recommendation with business impact
 
 ### For Architects/Team Leads:
+
 1. Read: `/REACT_FLOW_DECISION.md` (10-15 min)
 2. Reference: `/specs/001-collaborative-er-whiteboard/REACT_FLOW_RESEARCH.md` for deep questions
 3. Decision framework: Use scoring matrix to evaluate alternatives
 
 ### For Developers (Current):
+
 1. Reference: Current Konva implementation is validated as best approach
 2. Context: Understanding why certain technical decisions were made
 3. Future: Keep this research if considering React Flow later
 
 ### For Developers (If Migration Needed):
+
 1. Study: `/REACT_FLOW_IMPLEMENTATION_GUIDE.md`
 2. Reference: Code examples for custom nodes/edges/styling
 3. Timeline: Plan 5-8 weeks based on estimates
 4. Risk: Use mitigation strategies outlined in guide
 
 ### For Code Review:
+
 1. Check: `/REACT_FLOW_RESEARCH.md` performance section
 2. Validate: Ensure any future Konva changes align with documented patterns
 3. Monitor: Track performance metrics (should stay >50 FPS at 100 nodes)
@@ -282,21 +310,25 @@ All 14 research questions answered:
 ## Next Steps
 
 ### Immediate (MVP Phase):
+
 - Continue Konva implementation as planned
 - Reference this research if technical questions arise
 - Monitor performance metrics (target: >50 FPS at 100 nodes)
 
 ### Short Term (3-6 months):
+
 - Keep research documents in version control
 - Consider linking to this in architectural decision records
 - Monitor React Flow v13+ releases for improvements
 
 ### Medium Term (6-12 months):
+
 - If 500+ nodes needed: Evaluate viewport culling optimizations
 - If team composition changes: Reassess React ecosystem preference
 - If lightweight diagram feature added: Reconsidering React Flow for it
 
 ### Long Term (12+ months):
+
 - React Flow ecosystem likely to mature further
 - Konva's approach will continue proven stability
 - Make decisions based on then-current requirements
@@ -308,6 +340,7 @@ All 14 research questions answered:
 **Last Updated**: November 15, 2025
 **Research Completeness**: 100%
 **Package Versions Verified**: 2025-11-15
+
 - @xyflow/react: 12.9.2 (latest)
 - React: 19.2.0 (project version)
 - Konva: 10.0.8 (project version)
@@ -320,6 +353,7 @@ All 14 research questions answered:
 ## Questions & Contact
 
 For questions about this research:
+
 1. Check the specific document most relevant to your question
 2. Review the detailed research document: `/specs/001-collaborative-er-whiteboard/REACT_FLOW_RESEARCH.md`
 3. Consult official documentation links provided in each document

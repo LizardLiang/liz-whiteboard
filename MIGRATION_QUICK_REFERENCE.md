@@ -50,13 +50,13 @@ const onNodesChange = useCallback((changes) => {
 ### With Layout Algorithm
 
 ```typescript
-import { applyLayoutToNodes } from '@/lib/react-flow/types';
+import { applyLayoutToNodes } from '@/lib/react-flow/types'
 
 const applyLayout = async () => {
-  const layoutResult = await computeLayout(tables, relationships);
-  const updatedNodes = applyLayoutToNodes(nodes, layoutResult);
-  setNodes(updatedNodes);
-};
+  const layoutResult = await computeLayout(tables, relationships)
+  const updatedNodes = applyLayoutToNodes(nodes, layoutResult)
+  setNodes(updatedNodes)
+}
 ```
 
 ## Component API Reference
@@ -65,17 +65,17 @@ const applyLayout = async () => {
 
 ```typescript
 interface ReactFlowCanvasProps {
-  initialNodes?: TableNode[];
-  initialEdges?: RelationshipEdge[];
-  onNodesChange?: (changes) => void;
-  onEdgesChange?: (changes) => void;
-  onConnect?: (connection) => void;
-  nodesDraggable?: boolean;        // default: true
-  showMinimap?: boolean;            // default: false
-  showControls?: boolean;           // default: true
-  showBackground?: boolean;         // default: true
-  fitViewOptions?: FitViewOptions;
-  className?: string;
+  initialNodes?: TableNode[]
+  initialEdges?: RelationshipEdge[]
+  onNodesChange?: (changes) => void
+  onEdgesChange?: (changes) => void
+  onConnect?: (connection) => void
+  nodesDraggable?: boolean // default: true
+  showMinimap?: boolean // default: false
+  showControls?: boolean // default: true
+  showBackground?: boolean // default: true
+  fitViewOptions?: FitViewOptions
+  className?: string
 }
 ```
 
@@ -123,22 +123,22 @@ Automatically rendered by React Flow when edge type is `'erRelationship'`.
 
 ```typescript
 const nodes = convertToReactFlowNodes(
-  tables // Array<DiagramTable & { columns: Column[] }>
-);
+  tables, // Array<DiagramTable & { columns: Column[] }>
+)
 ```
 
 ### convertToReactFlowEdges
 
 ```typescript
 const edges = convertToReactFlowEdges(
-  relationships // Array<Relationship>
-);
+  relationships, // Array<Relationship>
+)
 ```
 
 ### extractPositionUpdates
 
 ```typescript
-const { positionX, positionY } = extractPositionUpdates(node);
+const { positionX, positionY } = extractPositionUpdates(node)
 ```
 
 ## Handle Utilities
@@ -146,17 +146,17 @@ const { positionX, positionY } = extractPositionUpdates(node);
 ### generateHandleId
 
 ```typescript
-const sourceHandle = generateHandleId(columnId, 'source');
+const sourceHandle = generateHandleId(columnId, 'source')
 // Returns: '{columnId}-source'
 
-const targetHandle = generateHandleId(columnId, 'target');
+const targetHandle = generateHandleId(columnId, 'target')
 // Returns: '{columnId}-target'
 ```
 
 ### parseHandleId
 
 ```typescript
-const { columnId, type } = parseHandleId('col-123-source');
+const { columnId, type } = parseHandleId('col-123-source')
 // Returns: { columnId: 'col-123', type: 'source' }
 ```
 
@@ -164,10 +164,10 @@ const { columnId, type } = parseHandleId('col-123-source');
 
 ```typescript
 const yPosition = calculateHandlePosition(
-  columnIndex,   // 0-based index
-  40,           // header height (default)
-  28            // row height (default)
-);
+  columnIndex, // 0-based index
+  40, // header height (default)
+  28, // row height (default)
+)
 ```
 
 ## Viewport Utilities
@@ -175,22 +175,22 @@ const yPosition = calculateHandlePosition(
 ### calculateFitViewport
 
 ```typescript
-import { calculateFitViewport } from '@/lib/react-flow/viewport';
+import { calculateFitViewport } from '@/lib/react-flow/viewport'
 
 const viewport = calculateFitViewport(
   nodes,
   window.innerWidth,
   window.innerHeight,
-  50  // padding
-);
+  50, // padding
+)
 ```
 
 ### clampZoom
 
 ```typescript
-import { clampZoom } from '@/lib/react-flow/viewport';
+import { clampZoom } from '@/lib/react-flow/viewport'
 
-const safeZoom = clampZoom(zoom); // Clamps to 0.1 - 5.0
+const safeZoom = clampZoom(zoom) // Clamps to 0.1 - 5.0
 ```
 
 ## Theme Integration
@@ -207,7 +207,7 @@ Theme CSS variables in `src/styles/react-flow-theme.css`:
   /* ... */
 }
 
-:root[class~="dark"] {
+:root[class~='dark'] {
   --rf-table-bg: #1f2937;
   --rf-table-border: #374151;
   /* ... */
@@ -280,6 +280,7 @@ export function WhiteboardEditor({ whiteboard, relationships }) {
 ### Handles not connecting
 
 Ensure handle IDs match on both nodes and edges:
+
 ```typescript
 sourceHandle: `${columnId}-source`
 targetHandle: `${columnId}-target`
@@ -292,8 +293,9 @@ Set `nodesDraggable={true}` on ReactFlowCanvas.
 ### Theme not applying
 
 Check that dark mode class is on root element:
+
 ```html
-<html class="dark">
+<html class="dark"></html>
 ```
 
 ### Layout positions incorrect

@@ -54,15 +54,19 @@
 ## Implementation Plan
 
 ### Phase 1: Diagnostic Improvements (30 min)
+
 **Goal**: Add observability without changing logic
 
 ### Phase 2: Performance Optimization (1.5 hours)
+
 **Goal**: Reduce layout computation time
 
 ### Phase 3: Animation Enhancement (1 hour)
+
 **Goal**: Improve UX with smooth transitions
 
 ### Phase 4: Incremental Layout (1.5 hours)
+
 **Goal**: Optimize for frequent small updates
 
 ---
@@ -83,9 +87,9 @@ export interface LayoutMetadata {
   iterations: number
   clusterCount: number
   computeTime: number
-  converged: boolean           // NEW
+  converged: boolean // NEW
   convergenceIteration?: number // NEW - when it converged
-  finalEnergy?: number          // NEW - for debugging
+  finalEnergy?: number // NEW - for debugging
 }
 
 // Add this function before computeClusterLayout()
@@ -106,7 +110,12 @@ function computeClusterLayout(
   tables: Array<DiagramTable & { columns: Array<Column> }>,
   relationships: Array<Relationship>,
   options: Required<LayoutOptions>,
-): { positions: Array<{ id: string; x: number; y: number }>; converged: boolean; iterations: number; finalEnergy: number } {
+): {
+  positions: Array<{ id: string; x: number; y: number }>
+  converged: boolean
+  iterations: number
+  finalEnergy: number
+} {
   // ... existing setup code ...
 
   const simulation = forceSimulation<LayoutNode>(nodes)
@@ -116,7 +125,7 @@ function computeClusterLayout(
   let previousEnergy = Infinity
   let convergedAt = -1
   const CONVERGENCE_THRESHOLD = 0.001 // Energy change threshold
-  const ENERGY_EPSILON = 0.0001       // Minimum energy to consider
+  const ENERGY_EPSILON = 0.0001 // Minimum energy to consider
 
   for (let i = 0; i < options.iterations; i++) {
     simulation.tick()
@@ -125,11 +134,14 @@ function computeClusterLayout(
 
     // Check if converged
     const energyChange = Math.abs(previousEnergy - currentEnergy)
-    if (currentEnergy < ENERGY_EPSILON || energyChange < CONVERGENCE_THRESHOLD) {
+    if (
+      currentEnergy < ENERGY_EPSILON ||
+      energyChange < CONVERGENCE_THRESHOLD
+    ) {
       convergedAt = i
       console.log(
         `Layout converged at iteration ${i}/${options.iterations} ` +
-        `(energy: ${currentEnergy.toFixed(6)})`
+          `(energy: ${currentEnergy.toFixed(6)})`,
       )
       break
     }
@@ -140,7 +152,7 @@ function computeClusterLayout(
   const finalEnergy = calculateSimulationEnergy(nodes)
 
   return {
-    positions: nodes.map(node => ({
+    positions: nodes.map((node) => ({
       id: node.id,
       x: Math.round(node.x ?? node.table.positionX),
       y: Math.round(node.y ?? node.table.positionY),
@@ -158,7 +170,9 @@ export function computeLayout(
   options: LayoutOptions,
 ): LayoutResult {
   const startTime = Date.now()
-  const opts: Required<LayoutOptions> = { /* ... */ }
+  const opts: Required<LayoutOptions> = {
+    /* ... */
+  }
 
   // ... existing logic ...
 
@@ -182,7 +196,11 @@ export function computeLayout(
       // Multi-cluster: combine metadata
       clusters.forEach((cluster, index) => {
         /* ... existing cluster logic ... */
-        const result = computeClusterLayout(cluster, clusterRelationships, clusterOptions)
+        const result = computeClusterLayout(
+          cluster,
+          clusterRelationships,
+          clusterOptions,
+        )
         totalIterations = Math.max(totalIterations, result.iterations)
         totalEnergy += result.finalEnergy
         totalConverged = totalConverged && result.converged
@@ -222,8 +240,8 @@ export interface LayoutResult {
     iterations: number
     clusterCount: number
     computeTime: number
-    converged?: boolean        // NEW
-    finalEnergy?: number       // NEW
+    converged?: boolean // NEW
+    finalEnergy?: number // NEW
     convergenceIteration?: number // NEW
   }
 }
@@ -253,8 +271,8 @@ if (typeof self !== 'undefined' && 'WorkerGlobalScope' in self) {
         // Log in worker console (visible in DevTools)
         console.log(
           `Worker: Layout computed in ${result.metadata.computeTime}ms, ` +
-          `converged: ${result.metadata.converged}, ` +
-          `iterations: ${result.metadata.iterations}`
+            `converged: ${result.metadata.converged}, ` +
+            `iterations: ${result.metadata.iterations}`,
         )
       } catch (error) {
         // ... error handling ...
@@ -271,14 +289,10 @@ if (typeof self !== 'undefined' && 'WorkerGlobalScope' in self) {
 const handleAutoLayout = async () => {
   setIsLayouting(true)
   try {
-    const result = await computeLayoutAsync(
-      tables,
-      relationships,
-      {
-        width: stageRef.current!.width(),
-        height: stageRef.current!.height(),
-      }
-    )
+    const result = await computeLayoutAsync(tables, relationships, {
+      width: stageRef.current!.width(),
+      height: stageRef.current!.height(),
+    })
 
     // NEW: Log metrics
     console.log('Layout Result:', {
@@ -293,8 +307,8 @@ const handleAutoLayout = async () => {
     if (toast) {
       toast.success(
         `Layout computed in ${result.metadata.computeTime}ms ` +
-        `(${result.metadata.iterations} iterations, ` +
-        `converged: ${result.metadata.converged})`
+          `(${result.metadata.iterations} iterations, ` +
+          `converged: ${result.metadata.converged})`,
       )
     }
 
@@ -307,6 +321,7 @@ const handleAutoLayout = async () => {
 ```
 
 **Expected Result**: You can now see in console/toast:
+
 - "Layout computed in 23ms (45 iterations, converged: true)"
 - Understand if diagrams converge quickly or hit iteration limit
 
@@ -363,17 +378,17 @@ export function computeLayoutWarmStart(
   ): { x: number; y: number } {
     // Find tables that reference this one (foreign keys pointing here)
     const incomingRels = relationships.filter(
-      r => r.targetTableId === tableId && !newTableIds.has(r.sourceTableId),
+      (r) => r.targetTableId === tableId && !newTableIds.has(r.sourceTableId),
     )
 
     // Find tables this one references
     const outgoingRels = relationships.filter(
-      r => r.sourceTableId === tableId && !newTableIds.has(r.targetTableId),
+      (r) => r.sourceTableId === tableId && !newTableIds.has(r.targetTableId),
     )
 
     const allRelatedTableIds = [
-      ...incomingRels.map(r => r.sourceTableId),
-      ...outgoingRels.map(r => r.targetTableId),
+      ...incomingRels.map((r) => r.sourceTableId),
+      ...outgoingRels.map((r) => r.targetTableId),
     ]
 
     // Use nearest related table's position as anchor
@@ -406,7 +421,7 @@ export function computeLayoutWarmStart(
   }
 
   // Create nodes with warm-started positions
-  const nodes: Array<LayoutNode> = tables.map(table => {
+  const nodes: Array<LayoutNode> = tables.map((table) => {
     const { width, height } = calculateTableDimensions(table)
 
     let x = table.positionX
@@ -438,7 +453,7 @@ export function computeLayoutWarmStart(
   // ... copy force setup, simulation, and convergence detection ...
 
   return {
-    positions: nodes.map(n => ({
+    positions: nodes.map((n) => ({
       id: n.id,
       x: Math.round(n.x ?? n.table.positionX),
       y: Math.round(n.y ?? n.table.positionY),
@@ -477,11 +492,13 @@ const handleAddTable = async (newTable: DiagramTable) => {
       height: stageRef.current!.height(),
     },
     previousPositions, // Pass previous positions
-    newTableIds,       // Pass new table IDs
+    newTableIds, // Pass new table IDs
   )
 
   // Save positions for next warm-start
-  const posMap = new Map(result.positions.map(p => [p.id, { x: p.x, y: p.y }]))
+  const posMap = new Map(
+    result.positions.map((p) => [p.id, { x: p.x, y: p.y }]),
+  )
   setPreviousPositions(posMap)
 
   await applyLayoutWithAnimation(result.positions)
@@ -489,6 +506,7 @@ const handleAddTable = async (newTable: DiagramTable) => {
 ```
 
 **Expected Impact**:
+
 - Adding 1 table to 30-table diagram: 30ms → 18ms
 - Better UX: new tables appear sensibly positioned
 
@@ -500,7 +518,7 @@ const handleAddTable = async (newTable: DiagramTable) => {
 
 **File**: Create `/src/lib/canvas/animation.ts`
 
-```typescript
+````typescript
 // src/lib/canvas/animation.ts
 import type Konva from 'konva'
 
@@ -534,10 +552,7 @@ export async function animateTableLayout(
   positions: Array<{ id: string; x: number; y: number }>,
   options: AnimationOptions = {},
 ): Promise<void> {
-  const {
-    duration = 0.4,
-    easing = Konva.Easings.EaseInOut,
-  } = options
+  const { duration = 0.4, easing = Konva.Easings.EaseInOut } = options
 
   // Collect all animation promises
   const animations: Promise<void>[] = []
@@ -546,7 +561,7 @@ export async function animateTableLayout(
     const tableNode = tableRefs[pos.id]
     if (!tableNode) continue
 
-    const animation = new Promise<void>(resolve => {
+    const animation = new Promise<void>((resolve) => {
       // Use Konva's to() method for animation
       tableNode.to({
         x: pos.x,
@@ -596,25 +611,28 @@ export async function animateTableLayoutStaggered(
     if (!tableNode) continue
 
     // Start animation with staggered delay
-    setTimeout(() => {
-      tableNode.to({
-        x: pos.x,
-        y: pos.y,
-        duration,
-        easing: Konva.Easings.EaseInOut,
-      })
-    }, i * staggerDelay * 1000)
+    setTimeout(
+      () => {
+        tableNode.to({
+          x: pos.x,
+          y: pos.y,
+          duration,
+          easing: Konva.Easings.EaseInOut,
+        })
+      },
+      i * staggerDelay * 1000,
+    )
   }
 
   // Wait for all animations (including stagger)
-  await new Promise(resolve =>
+  await new Promise((resolve) =>
     setTimeout(
       resolve,
       (positions.length - 1) * staggerDelay * 1000 + duration * 1000,
     ),
   )
 }
-```
+````
 
 ### 3.2 Use in Component
 
@@ -625,11 +643,10 @@ import { animateTableLayout, batchRedrawCanvas } from '@/lib/canvas/animation'
 const handleAutoLayout = async () => {
   setIsLayouting(true)
   try {
-    const result = await computeLayoutAsync(
-      tables,
-      relationships,
-      { width: 1920, height: 1080 },
-    )
+    const result = await computeLayoutAsync(tables, relationships, {
+      width: 1920,
+      height: 1080,
+    })
 
     // Animate transitions
     await animateTableLayout(tableRefs, result.positions, {
@@ -640,7 +657,7 @@ const handleAutoLayout = async () => {
     batchRedrawCanvas(stageRef)
 
     toast.success(
-      `Layout applied in ${result.metadata.computeTime}ms (${result.metadata.iterations} iterations)`
+      `Layout applied in ${result.metadata.computeTime}ms (${result.metadata.iterations} iterations)`,
     )
   } finally {
     setIsLayouting(false)
@@ -649,6 +666,7 @@ const handleAutoLayout = async () => {
 ```
 
 **Expected Impact**:
+
 - Smooth visual feedback when layout applies
 - Better perceived performance (animation hides compute time)
 - Professional UX
@@ -659,7 +677,7 @@ const handleAutoLayout = async () => {
 
 ### 4.1 Incremental Layout Function
 
-```typescript
+````typescript
 // Add to layout-engine.ts
 
 export interface IncrementalLayoutOptions extends LayoutOptions {
@@ -724,7 +742,7 @@ export function computeLayoutIncremental(
   if (affectedIds.size === 0) {
     // No affected tables - return current positions
     return {
-      positions: tables.map(t => ({
+      positions: tables.map((t) => ({
         id: t.id,
         x: t.positionX,
         y: t.positionY,
@@ -750,9 +768,9 @@ export function computeLayoutIncremental(
   }
 
   // Only layout affected tables
-  const tablesToLayout = tables.filter(t => expandedAffected.has(t.id))
+  const tablesToLayout = tables.filter((t) => expandedAffected.has(t.id))
   const relationshipsToLayout = relationships.filter(
-    r =>
+    (r) =>
       expandedAffected.has(r.sourceTableId) &&
       expandedAffected.has(r.targetTableId),
   )
@@ -775,11 +793,9 @@ export function computeLayoutIncremental(
   )
 
   // Merge with unaffected tables
-  const positionMap = new Map(
-    affectedLayout.positions.map(p => [p.id, p]),
-  )
+  const positionMap = new Map(affectedLayout.positions.map((p) => [p.id, p]))
 
-  const allPositions = tables.map(t => {
+  const allPositions = tables.map((t) => {
     if (positionMap.has(t.id)) {
       return positionMap.get(t.id)!
     }
@@ -797,7 +813,7 @@ export function computeLayoutIncremental(
     },
   }
 }
-```
+````
 
 ### 4.2 Use in Component
 
@@ -808,16 +824,12 @@ const handleAddTable = async (newTable: DiagramTable) => {
   setTables(updatedTables)
 
   // Use incremental layout - only new table and its neighbors recalculated
-  const result = await computeLayoutAsync(
-    updatedTables,
-    relationships,
-    {
-      width: 1920,
-      height: 1080,
-      preserveUnaffected: true,
-      newTableIds: new Set([newTable.id]),
-    },
-  )
+  const result = await computeLayoutAsync(updatedTables, relationships, {
+    width: 1920,
+    height: 1080,
+    preserveUnaffected: true,
+    newTableIds: new Set([newTable.id]),
+  })
 
   // Only affected tables animate (faster)
   await animateTableLayout(tableRefs, result.positions)
@@ -825,26 +837,23 @@ const handleAddTable = async (newTable: DiagramTable) => {
 
 // When removing a table
 const handleRemoveTable = async (tableId: string) => {
-  const updatedTables = tables.filter(t => t.id !== tableId)
+  const updatedTables = tables.filter((t) => t.id !== tableId)
   setTables(updatedTables)
 
   // Use incremental layout - only neighbors of deleted table recalculated
-  const result = await computeLayoutAsync(
-    updatedTables,
-    relationships,
-    {
-      width: 1920,
-      height: 1080,
-      preserveUnaffected: true,
-      affectedTableIds: new Set([tableId]), // Will expand to neighbors
-    },
-  )
+  const result = await computeLayoutAsync(updatedTables, relationships, {
+    width: 1920,
+    height: 1080,
+    preserveUnaffected: true,
+    affectedTableIds: new Set([tableId]), // Will expand to neighbors
+  })
 
   await animateTableLayout(tableRefs, result.positions)
 }
 ```
 
 **Expected Impact**:
+
 - Adding table to 30-table diagram: 30ms full layout → 10ms incremental
 - Better UX: immediate visual feedback for quick operations
 
@@ -954,6 +963,7 @@ describe('Layout Engine', () => {
 ```
 
 Run tests:
+
 ```bash
 bun run test
 ```
@@ -1032,15 +1042,12 @@ console.log('===========================\n')
 for (const tableCount of [5, 10, 15, 30, 50]) {
   const { tables, relationships } = generateDiagram(tableCount, 0.3)
 
-  const duration = benchmark(
-    `${tableCount} tables`,
-    () => {
-      computeLayout(tables, relationships, {
-        width: 1920,
-        height: 1080,
-      })
-    },
-  )
+  const duration = benchmark(`${tableCount} tables`, () => {
+    computeLayout(tables, relationships, {
+      width: 1920,
+      height: 1080,
+    })
+  })
 
   // Expected: roughly O(n^2) complexity
   console.log(`  Relationships: ${relationships.length}\n`)
@@ -1048,6 +1055,7 @@ for (const tableCount of [5, 10, 15, 30, 50]) {
 ```
 
 Run benchmark:
+
 ```bash
 bun test src/lib/canvas/__tests__/layout-benchmark.ts
 ```
@@ -1057,30 +1065,35 @@ bun test src/lib/canvas/__tests__/layout-benchmark.ts
 ## Summary: Implementation Checklist
 
 Phase 1 (30 min):
+
 - [ ] Add `converged` and `finalEnergy` to LayoutResult metadata
 - [ ] Implement `calculateSimulationEnergy()` function
 - [ ] Add convergence detection in `computeClusterLayout()`
 - [ ] Log metrics in component
 
 Phase 2 (1.5 hours):
+
 - [ ] Implement `computeLayoutWarmStart()` function
 - [ ] Add `previousPositions` state to component
 - [ ] Update layout call to use warm-start
 - [ ] Test with add-table flow
 
 Phase 3 (1 hour):
+
 - [ ] Create `/src/lib/canvas/animation.ts`
 - [ ] Implement `animateTableLayout()` function
 - [ ] Use in component's `handleAutoLayout()`
 - [ ] Test animation timing
 
 Phase 4 (1.5 hours):
+
 - [ ] Implement `computeLayoutIncremental()` function
 - [ ] Add incremental option to component
 - [ ] Use for add/remove table operations
 - [ ] Test performance improvement
 
 Testing & Docs (1 hour):
+
 - [ ] Create test suite
 - [ ] Create benchmark
 - [ ] Document in comments
@@ -1091,6 +1104,7 @@ Testing & Docs (1 hour):
 ## Expected Results
 
 ### Before Optimization
+
 ```
 30 tables + 60 relationships
 ├─ Layout time: 28ms
@@ -1100,6 +1114,7 @@ Testing & Docs (1 hour):
 ```
 
 ### After Optimization
+
 ```
 30 tables + 60 relationships (full layout)
 ├─ Layout time: 18ms
@@ -1115,6 +1130,7 @@ Adding 1 table to 30-table diagram (incremental)
 ```
 
 ### Performance Gain
+
 - **Full layout**: 28ms → 18ms (36% improvement)
 - **Incremental update**: 28ms → 8ms (71% improvement)
 - **User feedback**: Immediate due to animation
@@ -1124,21 +1140,24 @@ Adding 1 table to 30-table diagram (incremental)
 ## Troubleshooting
 
 ### Layout doesn't converge
+
 - Lower `CONVERGENCE_THRESHOLD` from 0.001 to 0.0001
 - Increase `iterations` in layout options
 - Check if diagram is sparse (many disconnected nodes)
 
 ### Animation stutters
+
 - Reduce animation duration from 0.4 to 0.2
 - Use `requestAnimationFrame` instead of Konva's `to()`
 - Profile with DevTools Performance tab
 
 ### Warm-start positions are bad
+
 - Adjust offset distance in `initializeNewNodePosition()` (currently 80-120)
 - Use farthest related node instead of nearest
 - Add multiple related nodes and average their position
 
 ### Incremental layout doesn't expand far enough
+
 - Expand affected neighbors further (currently 1 hop)
 - Add: `for (let i = 0; i < 2; i++) { /* expand again */ }`
-

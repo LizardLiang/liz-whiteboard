@@ -49,7 +49,9 @@ function FolderPage() {
     return (
       <div className="container mx-auto px-4 py-8">
         <ProjectPageError
-          message={error instanceof Error ? error.message : 'Failed to load folder'}
+          message={
+            error instanceof Error ? error.message : 'Failed to load folder'
+          }
           onRetry={() => refetch()}
         />
       </div>
@@ -57,7 +59,8 @@ function FolderPage() {
   }
 
   const folderName = content.currentFolder?.name ?? 'Folder'
-  const isEmpty = content.folders.length === 0 && content.whiteboards.length === 0
+  const isEmpty =
+    content.folders.length === 0 && content.whiteboards.length === 0
 
   return (
     <div className="min-h-screen bg-background">
@@ -87,7 +90,9 @@ function FolderPage() {
       {/* Main content */}
       <div className="container mx-auto px-4 py-8">
         {isEmpty ? (
-          <EmptyState onCreateWhiteboard={() => setWhiteboardDialogOpen(true)} />
+          <EmptyState
+            onCreateWhiteboard={() => setWhiteboardDialogOpen(true)}
+          />
         ) : (
           <ProjectContentGrid
             projectId={projectId}

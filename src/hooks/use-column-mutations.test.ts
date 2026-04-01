@@ -2,13 +2,16 @@
 // TS-07: useColumnMutations unit tests
 // TS-13: Optimistic UI update tests
 
-import { describe, expect, it, vi, beforeEach } from 'vitest'
-import { renderHook, act } from '@testing-library/react'
+import { beforeEach, describe, expect, it, vi } from 'vitest'
+import { act, renderHook } from '@testing-library/react'
 import { toast } from 'sonner'
 import { useColumnMutations } from './use-column-mutations'
-import { mockColumn, mockPKColumn, mockFKColumn } from '@/test/fixtures'
-import type { TableNodeType, RelationshipEdgeType } from '@/lib/react-flow/types'
+import type {
+  RelationshipEdgeType,
+  TableNodeType,
+} from '@/lib/react-flow/types'
 import type { Column } from '@prisma/client'
+import { mockColumn, mockFKColumn, mockPKColumn } from '@/test/fixtures'
 
 vi.mock('sonner', () => ({
   toast: {
@@ -41,7 +44,10 @@ const makeTableNode = (columns: Array<Column>): TableNodeType => ({
   },
 })
 
-const makeEdge = (sourceColumnId: string, targetColumnId: string): RelationshipEdgeType => ({
+const makeEdge = (
+  sourceColumnId: string,
+  targetColumnId: string,
+): RelationshipEdgeType => ({
   id: `edge-${sourceColumnId}`,
   source: 'tbl-001',
   target: 'tbl-002',
@@ -153,7 +159,9 @@ describe('useColumnMutations', () => {
       expect(setNodes).toHaveBeenCalled()
       // The optimistic column should be in nodes now
       const updatedNode = nodes.find((n) => n.data.table.id === 'tbl-001')
-      const newCol = updatedNode?.data.table.columns.find((c) => c.name === 'new_col')
+      const newCol = updatedNode?.data.table.columns.find(
+        (c) => c.name === 'new_col',
+      )
       expect(newCol).toBeTruthy()
       expect(newCol?.dataType).toBe('int')
     })
@@ -179,7 +187,9 @@ describe('useColumnMutations', () => {
       })
 
       const updatedNode = nodes.find((n) => n.data.table.id === 'tbl-001')
-      const newCol = updatedNode?.data.table.columns.find((c) => c.name === 'temp_col')
+      const newCol = updatedNode?.data.table.columns.find(
+        (c) => c.name === 'temp_col',
+      )
       expect(newCol?.id).toBeTruthy()
       expect(newCol?.id.length).toBeGreaterThan(0)
     })
@@ -206,7 +216,9 @@ describe('useColumnMutations', () => {
 
       expect(emitColumnCreate).not.toHaveBeenCalled()
       expect(setNodes).not.toHaveBeenCalled()
-      expect(toast.error).toHaveBeenCalledWith(expect.stringContaining('Not connected'))
+      expect(toast.error).toHaveBeenCalledWith(
+        expect.stringContaining('Not connected'),
+      )
     })
   })
 
@@ -224,10 +236,14 @@ describe('useColumnMutations', () => {
       )
 
       await act(async () => {
-        await result.current.updateColumn('col-001', 'tbl-001', { name: 'new_name' })
+        await result.current.updateColumn('col-001', 'tbl-001', {
+          name: 'new_name',
+        })
       })
 
-      expect(emitColumnUpdate).toHaveBeenCalledWith('col-001', { name: 'new_name' })
+      expect(emitColumnUpdate).toHaveBeenCalledWith('col-001', {
+        name: 'new_name',
+      })
     })
 
     it('TC-07-05 / TC-13-04: applies optimistic update before emit', async () => {
@@ -243,12 +259,16 @@ describe('useColumnMutations', () => {
       )
 
       await act(async () => {
-        await result.current.updateColumn('col-001', 'tbl-001', { name: 'updated_email' })
+        await result.current.updateColumn('col-001', 'tbl-001', {
+          name: 'updated_email',
+        })
       })
 
       expect(setNodes).toHaveBeenCalled()
       const updatedNode = nodes.find((n) => n.data.table.id === 'tbl-001')
-      const updatedCol = updatedNode?.data.table.columns.find((c) => c.id === 'col-001')
+      const updatedCol = updatedNode?.data.table.columns.find(
+        (c) => c.id === 'col-001',
+      )
       expect(updatedCol?.name).toBe('updated_email')
     })
 
@@ -265,7 +285,9 @@ describe('useColumnMutations', () => {
       )
 
       await act(async () => {
-        await result.current.updateColumn('col-001', 'tbl-001', { name: 'new_name' })
+        await result.current.updateColumn('col-001', 'tbl-001', {
+          name: 'new_name',
+        })
       })
 
       expect(emitColumnUpdate).not.toHaveBeenCalled()
@@ -310,7 +332,9 @@ describe('useColumnMutations', () => {
       })
 
       const updatedNode = nodes.find((n) => n.data.table.id === 'tbl-001')
-      const deletedCol = updatedNode?.data.table.columns.find((c) => c.id === 'col-001')
+      const deletedCol = updatedNode?.data.table.columns.find(
+        (c) => c.id === 'col-001',
+      )
       expect(deletedCol).toBeUndefined()
     })
 
@@ -360,7 +384,9 @@ describe('useColumnMutations', () => {
 
       // Verify column was added optimistically
       let updatedNode = nodes.find((n) => n.data.table.id === 'tbl-001')
-      expect(updatedNode?.data.table.columns.find((c) => c.name === 'new_col')).toBeTruthy()
+      expect(
+        updatedNode?.data.table.columns.find((c) => c.name === 'new_col'),
+      ).toBeTruthy()
 
       // Simulate server error for create
       act(() => {
@@ -374,7 +400,9 @@ describe('useColumnMutations', () => {
 
       // Column should be rolled back
       updatedNode = nodes.find((n) => n.data.table.id === 'tbl-001')
-      expect(updatedNode?.data.table.columns.find((c) => c.name === 'new_col')).toBeUndefined()
+      expect(
+        updatedNode?.data.table.columns.find((c) => c.name === 'new_col'),
+      ).toBeUndefined()
       expect(toast.error).toHaveBeenCalled()
     })
 
@@ -392,12 +420,16 @@ describe('useColumnMutations', () => {
 
       // Update the column
       await act(async () => {
-        await result.current.updateColumn('col-001', 'tbl-001', { name: 'updated_email' })
+        await result.current.updateColumn('col-001', 'tbl-001', {
+          name: 'updated_email',
+        })
       })
 
       // Verify optimistic update applied
       let node = nodes.find((n) => n.data.table.id === 'tbl-001')
-      expect(node?.data.table.columns.find((c) => c.id === 'col-001')?.name).toBe('updated_email')
+      expect(
+        node?.data.table.columns.find((c) => c.id === 'col-001')?.name,
+      ).toBe('updated_email')
 
       // Simulate server error
       act(() => {
@@ -412,7 +444,9 @@ describe('useColumnMutations', () => {
 
       // Column should revert to original name
       node = nodes.find((n) => n.data.table.id === 'tbl-001')
-      expect(node?.data.table.columns.find((c) => c.id === 'col-001')?.name).toBe('email')
+      expect(
+        node?.data.table.columns.find((c) => c.id === 'col-001')?.name,
+      ).toBe('email')
       expect(toast.error).toHaveBeenCalled()
     })
 
@@ -435,7 +469,9 @@ describe('useColumnMutations', () => {
 
       // Verify optimistic delete
       let node = nodes.find((n) => n.data.table.id === 'tbl-001')
-      expect(node?.data.table.columns.find((c) => c.id === 'col-001')).toBeUndefined()
+      expect(
+        node?.data.table.columns.find((c) => c.id === 'col-001'),
+      ).toBeUndefined()
 
       // Simulate server error
       act(() => {
@@ -450,7 +486,9 @@ describe('useColumnMutations', () => {
 
       // Column should be restored
       node = nodes.find((n) => n.data.table.id === 'tbl-001')
-      expect(node?.data.table.columns.find((c) => c.id === 'col-001')).toBeTruthy()
+      expect(
+        node?.data.table.columns.find((c) => c.id === 'col-001'),
+      ).toBeTruthy()
     })
 
     it('TC-13-06: rollback restores state to pre-mutation value', async () => {
@@ -469,7 +507,9 @@ describe('useColumnMutations', () => {
       const preMutationName = 'email'
 
       await act(async () => {
-        await result.current.updateColumn('col-001', 'tbl-001', { name: 'wrong_name' })
+        await result.current.updateColumn('col-001', 'tbl-001', {
+          name: 'wrong_name',
+        })
       })
 
       act(() => {
@@ -482,7 +522,9 @@ describe('useColumnMutations', () => {
       })
 
       const node = nodes.find((n) => n.data.table.id === 'tbl-001')
-      expect(node?.data.table.columns.find((c) => c.id === 'col-001')?.name).toBe(preMutationName)
+      expect(
+        node?.data.table.columns.find((c) => c.id === 'col-001')?.name,
+      ).toBe(preMutationName)
     })
   })
 })

@@ -4,6 +4,8 @@
  */
 
 import { useCallback, useEffect, useState } from 'react'
+import { DATA_TYPES, DATA_TYPE_LABELS } from './types'
+import type { DataType } from '@/data/schema'
 import {
   Select,
   SelectContent,
@@ -11,8 +13,6 @@ import {
   SelectTrigger,
   SelectValue,
 } from '@/components/ui/select'
-import type { DataType } from '@/data/schema'
-import { DATA_TYPES, DATA_TYPE_LABELS } from './types'
 
 export interface DataTypeSelectorProps {
   value: DataType

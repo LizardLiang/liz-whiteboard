@@ -173,17 +173,29 @@ export const createColumnSchema = z.object({
   isPrimaryKey: z.boolean().default(false),
   isForeignKey: z.boolean().default(false),
   isUnique: z.boolean().default(false),
-  isNullable: z.boolean().default(true),
+  isNullable: z.boolean().default(false),
   description: z.string().optional(),
   order: z.number().int().min(0).default(0),
 })
 
 /**
  * Schema for updating an existing column
+ *
+ * Defined independently (without basing on createColumnSchema) so that absent
+ * fields parse as `undefined` rather than inheriting the `.default()` values
+ * from createColumnSchema. This ensures only explicitly-provided fields are
+ * passed to Prisma, preventing silent overwrites (e.g. resetting isPrimaryKey
+ * to false when only isNullable was changed).
  */
-export const updateColumnSchema = createColumnSchema
-  .omit({ tableId: true })
-  .partial()
+export const updateColumnSchema = z.object({
+  name: z.string().min(1).max(255).optional(),
+  dataType: dataTypeSchema.optional(),
+  isPrimaryKey: z.boolean().optional(),
+  isForeignKey: z.boolean().optional(),
+  isUnique: z.boolean().optional(),
+  isNullable: z.boolean().optional(),
+  description: z.string().optional(),
+})
 
 // ============================================================================
 // Relationship Schemas

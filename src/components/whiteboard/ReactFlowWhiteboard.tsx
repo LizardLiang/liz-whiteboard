@@ -13,13 +13,18 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { ReactFlowProvider, useReactFlow, useViewport } from '@xyflow/react'
 import { ReactFlowCanvas } from './ReactFlowCanvas'
-import type { ZoomControls } from './Toolbar'
 import { ConnectionStatusIndicator } from './ConnectionStatusIndicator'
+import { DeleteTableDialog } from './DeleteTableDialog'
+import type { ZoomControls } from './Toolbar'
 import type {
   RelationshipEdgeType,
   ShowMode,
   TableNodeType,
 } from '@/lib/react-flow/types'
+import type { Column } from '@prisma/client'
+import type { CreateColumnPayload } from './column/types'
+import type { UpdateColumn } from '@/data/schema'
+import type { TableRelationship } from './DeleteTableDialog'
 import { convertTablesToNodes } from '@/lib/react-flow/convert-to-nodes'
 import { convertRelationshipsToEdges } from '@/lib/react-flow/convert-to-edges'
 import { useAutoLayout } from '@/lib/react-flow/use-auto-layout'
@@ -34,12 +39,7 @@ import { useColumnCollaboration } from '@/hooks/use-column-collaboration'
 import { useColumnMutations } from '@/hooks/use-column-mutations'
 import { useTableMutations } from '@/hooks/use-table-mutations'
 import { useTableDeletion } from '@/hooks/use-table-deletion'
-import type { Column } from '@prisma/client'
-import type { CreateColumnPayload } from './column/types'
-import type { UpdateColumn } from '@/data/schema'
 import { getSessionUserId } from '@/lib/session-user-id'
-import { DeleteTableDialog } from './DeleteTableDialog'
-import type { TableRelationship } from './DeleteTableDialog'
 
 /**
  * ReactFlowWhiteboard Props
@@ -113,7 +113,9 @@ function ReactFlowWhiteboardInner({
 
   // Keep a stable ref to edges for use inside callbacks without stale closure
   const edgesRef = useRef(edges)
-  useEffect(() => { edgesRef.current = edges }, [edges])
+  useEffect(() => {
+    edgesRef.current = edges
+  }, [edges])
 
   // Table deletion state — which table has been requested for deletion (opens dialog)
   const [deletingTableId, setDeletingTableId] = useState<string | null>(null)
@@ -163,7 +165,7 @@ function ReactFlowWhiteboardInner({
         }
       })
     })
-  // eslint-disable-next-line react-hooks/exhaustive-deps
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [initialNodes])
 
   useEffect(() => {
@@ -201,22 +203,25 @@ function ReactFlowWhiteboardInner({
   const onTableErrorRef = useRef<(data: any) => void>(() => {})
 
   // Real-time collaboration integration (table position events + table deletion)
-  const { connectionState, emitPositionUpdate, emitTableDelete } = useWhiteboardCollaboration(
-    whiteboardId,
-    userId,
-    useCallback((tableId: string, positionX: number, positionY: number) => {
-      // Update local React Flow nodes when other users move tables
-      setNodes((prevNodes) =>
-        prevNodes.map((node) =>
-          node.id === tableId
-            ? { ...node, position: { x: positionX, y: positionY } }
-            : node,
-        ),
-      )
-    }, []),
-    onTableDeleted,
-    useCallback((data: any) => { onTableErrorRef.current(data) }, []),
-  )
+  const { connectionState, emitPositionUpdate, emitTableDelete } =
+    useWhiteboardCollaboration(
+      whiteboardId,
+      userId,
+      useCallback((tableId: string, positionX: number, positionY: number) => {
+        // Update local React Flow nodes when other users move tables
+        setNodes((prevNodes) =>
+          prevNodes.map((node) =>
+            node.id === tableId
+              ? { ...node, position: { x: positionX, y: positionY } }
+              : node,
+          ),
+        )
+      }, []),
+      onTableDeleted,
+      useCallback((data: any) => {
+        onTableErrorRef.current(data)
+      }, []),
+    )
 
   // Column collaboration callbacks (incoming events from other users)
   const onColumnCreated = useCallback(
@@ -242,7 +247,12 @@ function ReactFlowWhiteboardInner({
   )
 
   const onColumnUpdated = useCallback(
-    (data: { columnId: string; tableId: string; updatedBy: string; [key: string]: any }) => {
+    (data: {
+      columnId: string
+      tableId: string
+      updatedBy: string
+      [key: string]: any
+    }) => {
       const { columnId, tableId, updatedBy: _updatedBy, ...rest } = data
       setNodes((prev) =>
         prev.map((node) =>
@@ -279,7 +289,9 @@ function ReactFlowWhiteboardInner({
                   ...node.data,
                   table: {
                     ...node.data.table,
-                    columns: node.data.table.columns.filter((c) => c.id !== columnId),
+                    columns: node.data.table.columns.filter(
+                      (c) => c.id !== columnId,
+                    ),
                   },
                 },
               }
@@ -303,7 +315,9 @@ function ReactFlowWhiteboardInner({
   const onColumnErrorRef = useRef<(data: any) => void>(() => {})
 
   // Ref for replaceTempId — same pattern to avoid circular dependency
-  const replaceTempIdRef = useRef<(tableId: string, tempId: string, realId: string) => void>(() => {})
+  const replaceTempIdRef = useRef<
+    (tableId: string, tempId: string, realId: string) => void
+  >(() => {})
 
   // On WebSocket reconnect, re-fetch whiteboard data to replace any stale
   // optimistic state that was never confirmed before the disconnect.
@@ -334,7 +348,9 @@ function ReactFlowWhiteboardInner({
         // Use a one-time setNodes read to locate the tempId before calling replaceTempId.
         let tempId: string | undefined
         setNodes((prevNodes) => {
-          const tableNode = prevNodes.find((n) => n.data.table.id === column.tableId)
+          const tableNode = prevNodes.find(
+            (n) => n.data.table.id === column.tableId,
+          )
           if (tableNode) {
             const match = tableNode.data.table.columns.find(
               (c) =>
@@ -439,10 +455,18 @@ function ReactFlowWhiteboardInner({
   const handleColumnUpdateRef = useRef(handleColumnUpdate)
   const handleColumnDeleteRef = useRef(handleColumnDelete)
   const handleRequestTableDeleteRef = useRef(handleRequestTableDelete)
-  useEffect(() => { handleColumnCreateRef.current = handleColumnCreate }, [handleColumnCreate])
-  useEffect(() => { handleColumnUpdateRef.current = handleColumnUpdate }, [handleColumnUpdate])
-  useEffect(() => { handleColumnDeleteRef.current = handleColumnDelete }, [handleColumnDelete])
-  useEffect(() => { handleRequestTableDeleteRef.current = handleRequestTableDelete }, [handleRequestTableDelete])
+  useEffect(() => {
+    handleColumnCreateRef.current = handleColumnCreate
+  }, [handleColumnCreate])
+  useEffect(() => {
+    handleColumnUpdateRef.current = handleColumnUpdate
+  }, [handleColumnUpdate])
+  useEffect(() => {
+    handleColumnDeleteRef.current = handleColumnDelete
+  }, [handleColumnDelete])
+  useEffect(() => {
+    handleRequestTableDeleteRef.current = handleRequestTableDelete
+  }, [handleRequestTableDelete])
 
   // Inject column callbacks + isConnected into node data whenever isConnected changes
   useEffect(() => {
@@ -459,7 +483,7 @@ function ReactFlowWhiteboardInner({
         },
       })),
     )
-  // eslint-disable-next-line react-hooks/exhaustive-deps
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [isConnected])
 
   // Also inject callbacks into nodes once on mount (initialNodes may not have them)
@@ -478,7 +502,7 @@ function ReactFlowWhiteboardInner({
         },
       })),
     )
-  // eslint-disable-next-line react-hooks/exhaustive-deps
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
 
   // Mutation for updating table position
@@ -562,11 +586,13 @@ function ReactFlowWhiteboardInner({
       const controls: ZoomControls = {
         zoomIn: () => reactFlowInstance.zoomIn({ duration: 200 }),
         zoomOut: () => reactFlowInstance.zoomOut({ duration: 200 }),
-        resetZoom: () => reactFlowInstance.setViewport(
-          { x: 0, y: 0, zoom: 1 },
-          { duration: 200 },
-        ),
-        fitToScreen: () => reactFlowInstance.fitView({ duration: 200, padding: 0.2 }),
+        resetZoom: () =>
+          reactFlowInstance.setViewport(
+            { x: 0, y: 0, zoom: 1 },
+            { duration: 200 },
+          ),
+        fitToScreen: () =>
+          reactFlowInstance.fitView({ duration: 200, padding: 0.2 }),
       }
       onZoomControlsReady(controls)
     }
@@ -600,30 +626,33 @@ function ReactFlowWhiteboardInner({
 
   // Compute dialog data for the deleting table
   const deletingNode = deletingTableId
-    ? nodes.find((n) => n.id === deletingTableId) ?? null
+    ? (nodes.find((n) => n.id === deletingTableId) ?? null)
     : null
 
-  const tableDeleteAffectedRelationships = useMemo((): Array<TableRelationship> => {
-    if (!deletingTableId || !deletingNode) return []
-    const tableNameById = new Map(nodes.map((n) => [n.id, n.data.table.name]))
-    return edges
-      .filter(
-        (e) =>
-          e.data?.relationship.sourceTableId === deletingTableId ||
-          e.data?.relationship.targetTableId === deletingTableId,
-      )
-      .map((e) => {
-        const rel = e.data!.relationship
-        return {
-          id: e.id,
-          sourceTableName: tableNameById.get(rel.sourceTableId) ?? rel.sourceTableId,
-          sourceColumnName: rel.sourceColumn.name,
-          targetTableName: tableNameById.get(rel.targetTableId) ?? rel.targetTableId,
-          targetColumnName: rel.targetColumn.name,
-          cardinality: String(e.data!.cardinality),
-        }
-      })
-  }, [deletingTableId, deletingNode, nodes, edges])
+  const tableDeleteAffectedRelationships =
+    useMemo((): Array<TableRelationship> => {
+      if (!deletingTableId || !deletingNode) return []
+      const tableNameById = new Map(nodes.map((n) => [n.id, n.data.table.name]))
+      return edges
+        .filter(
+          (e) =>
+            e.data?.relationship.sourceTableId === deletingTableId ||
+            e.data?.relationship.targetTableId === deletingTableId,
+        )
+        .map((e) => {
+          const rel = e.data!.relationship
+          return {
+            id: e.id,
+            sourceTableName:
+              tableNameById.get(rel.sourceTableId) ?? rel.sourceTableId,
+            sourceColumnName: rel.sourceColumn.name,
+            targetTableName:
+              tableNameById.get(rel.targetTableId) ?? rel.targetTableId,
+            targetColumnName: rel.targetColumn.name,
+            cardinality: String(e.data!.cardinality),
+          }
+        })
+    }, [deletingTableId, deletingNode, nodes, edges])
 
   // Render React Flow canvas with collaboration-aware state
   return (

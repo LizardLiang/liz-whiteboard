@@ -1443,9 +1443,7 @@ async function main() {
   console.log('[seed-demo]   Created: orders -> coupons (MANY_TO_MANY)')
 
   // ─── Step 6: Create "Cardinality Reference" Whiteboard ───────────────────
-  console.log(
-    '[seed-demo] Creating whiteboard "Cardinality Reference"...',
-  )
+  console.log('[seed-demo] Creating whiteboard "Cardinality Reference"...')
   const refWb = await prisma.whiteboard.create({
     data: {
       name: 'Cardinality Reference',
@@ -1461,16 +1459,16 @@ async function main() {
   // Row 2 (y=400): types 6-10 — x = 50, 430, 810, 1190, 1570
 
   const REF_ROWS: Array<{ x: number; y: number }> = [
-    { x: 50, y: 50 },   // 1
-    { x: 430, y: 50 },  // 2
-    { x: 810, y: 50 },  // 3
+    { x: 50, y: 50 }, // 1
+    { x: 430, y: 50 }, // 2
+    { x: 810, y: 50 }, // 3
     { x: 1190, y: 50 }, // 4
     { x: 1570, y: 50 }, // 5
-    { x: 50, y: 400 },  // 6
+    { x: 50, y: 400 }, // 6
     { x: 430, y: 400 }, // 7
     { x: 810, y: 400 }, // 8
-    { x: 1190, y: 400 },// 9
-    { x: 1570, y: 400 },// 10
+    { x: 1190, y: 400 }, // 9
+    { x: 1570, y: 400 }, // 10
   ]
 
   console.log('[seed-demo] Creating reference tables (20)...')
@@ -2264,7 +2262,9 @@ async function main() {
       label: 'MANY_TO_ZERO_OR_ONE',
     },
   })
-  console.log('[seed-demo]   R1: employees -> departments (MANY_TO_ZERO_OR_ONE)')
+  console.log(
+    '[seed-demo]   R1: employees -> departments (MANY_TO_ZERO_OR_ONE)',
+  )
 
   // R2: MANY_TO_ZERO_OR_MANY — students.id → courses.student_id
   await prisma.relationship.create({

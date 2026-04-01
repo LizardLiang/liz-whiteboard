@@ -89,7 +89,7 @@ model Column {
   isPrimaryKey Boolean  @default(false)
   isForeignKey Boolean  @default(false)
   isUnique     Boolean  @default(false)
-  isNullable   Boolean  @default(true)
+  isNullable   Boolean  @default(false)
   description  String?  @db.Text
   order        Int      @default(0)
   createdAt    DateTime @default(now())

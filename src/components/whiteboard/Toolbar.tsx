@@ -102,12 +102,24 @@ export const CARDINALITIES: Array<{ value: Cardinality; label: string }> = [
   { value: 'MANY_TO_ZERO_OR_MANY', label: 'Many to Zero or Many (N:0..N)' },
   { value: 'ZERO_OR_ONE_TO_ONE', label: 'Zero or One to One (0..1:1)' },
   { value: 'ZERO_OR_ONE_TO_MANY', label: 'Zero or One to Many (0..1:N)' },
-  { value: 'ZERO_OR_ONE_TO_ZERO_OR_ONE', label: 'Zero or One to Zero or One (0..1:0..1)' },
-  { value: 'ZERO_OR_ONE_TO_ZERO_OR_MANY', label: 'Zero or One to Zero or Many (0..1:0..N)' },
+  {
+    value: 'ZERO_OR_ONE_TO_ZERO_OR_ONE',
+    label: 'Zero or One to Zero or One (0..1:0..1)',
+  },
+  {
+    value: 'ZERO_OR_ONE_TO_ZERO_OR_MANY',
+    label: 'Zero or One to Zero or Many (0..1:0..N)',
+  },
   { value: 'ZERO_OR_MANY_TO_ONE', label: 'Zero or Many to One (0..N:1)' },
   { value: 'ZERO_OR_MANY_TO_MANY', label: 'Zero or Many to Many (0..N:N)' },
-  { value: 'ZERO_OR_MANY_TO_ZERO_OR_ONE', label: 'Zero or Many to Zero or One (0..N:0..1)' },
-  { value: 'ZERO_OR_MANY_TO_ZERO_OR_MANY', label: 'Zero or Many to Zero or Many (0..N:0..N)' },
+  {
+    value: 'ZERO_OR_MANY_TO_ZERO_OR_ONE',
+    label: 'Zero or Many to Zero or One (0..N:0..1)',
+  },
+  {
+    value: 'ZERO_OR_MANY_TO_ZERO_OR_MANY',
+    label: 'Zero or Many to Zero or Many (0..N:0..N)',
+  },
 ]
 
 /**

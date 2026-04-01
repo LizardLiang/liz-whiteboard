@@ -8,10 +8,15 @@
 
 import { useCallback, useRef } from 'react'
 import { toast } from 'sonner'
-import type { RelationshipEdgeType, TableNodeType } from '@/lib/react-flow/types'
+import type {
+  RelationshipEdgeType,
+  TableNodeType,
+} from '@/lib/react-flow/types'
 
 type SetNodes = React.Dispatch<React.SetStateAction<Array<TableNodeType>>>
-type SetEdges = React.Dispatch<React.SetStateAction<Array<RelationshipEdgeType>>>
+type SetEdges = React.Dispatch<
+  React.SetStateAction<Array<RelationshipEdgeType>>
+>
 
 interface PendingTableMutation {
   type: 'delete'
@@ -103,20 +108,17 @@ export function useTableMutations(
    * Called by useWhiteboardCollaboration when server sends an error event for table:delete.
    * Finds the pending mutation and invokes its rollback.
    */
-  const onTableError = useCallback(
-    (data: TableErrorEvent) => {
-      toast.error('Failed to delete table. Please try again.')
+  const onTableError = useCallback((data: TableErrorEvent) => {
+    toast.error('Failed to delete table. Please try again.')
 
-      if (data.tableId) {
-        const pending = pendingMutations.current.get(data.tableId)
-        if (pending) {
-          pending.rollback()
-          pendingMutations.current.delete(data.tableId)
-        }
+    if (data.tableId) {
+      const pending = pendingMutations.current.get(data.tableId)
+      if (pending) {
+        pending.rollback()
+        pendingMutations.current.delete(data.tableId)
       }
-    },
-    [],
-  )
+    }
+  }, [])
 
   return {
     deleteTable,

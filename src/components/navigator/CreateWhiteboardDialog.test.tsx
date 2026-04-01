@@ -2,13 +2,19 @@
 // src/components/navigator/CreateWhiteboardDialog.test.tsx
 // TS-05 (R5) + TS-12 (TC-12-01, TC-12-02): CreateWhiteboardDialog unit/integration tests
 
-import { describe, expect, it, vi, beforeEach } from 'vitest'
-import { render, screen, fireEvent, waitFor } from '@testing-library/react'
+import { beforeEach, describe, expect, it, vi } from 'vitest'
+import { fireEvent, render, screen, waitFor } from '@testing-library/react'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
-import { RouterContextProvider, createRouter, createMemoryHistory } from '@tanstack/react-router'
-import { routeTree } from '@/routeTree.gen'
+import {
+  RouterContextProvider,
+  createMemoryHistory,
+  createRouter,
+} from '@tanstack/react-router'
 import { CreateWhiteboardDialog } from './CreateWhiteboardDialog'
 import type { ReactNode } from 'react'
+import { routeTree } from '@/routeTree.gen'
+
+import { createWhiteboardFn } from '@/routes/api/whiteboards'
 
 // Mock the server function
 vi.mock('@/routes/api/whiteboards', () => ({
@@ -22,8 +28,6 @@ vi.mock('sonner', () => ({
     error: vi.fn(),
   },
 }))
-
-import { createWhiteboardFn } from '@/routes/api/whiteboards'
 
 function createTestQueryClient() {
   return new QueryClient({
@@ -40,7 +44,12 @@ function createTestRouter() {
 }
 
 function renderDialog(
-  props: { open: boolean; projectId: string; folderId?: string; onOpenChange?: (open: boolean) => void },
+  props: {
+    open: boolean
+    projectId: string
+    folderId?: string
+    onOpenChange?: (open: boolean) => void
+  },
   queryClient?: QueryClient,
 ) {
   const qc = queryClient ?? createTestQueryClient()
@@ -137,7 +146,11 @@ describe('CreateWhiteboardDialog', () => {
       const mockWhiteboard = { id: 'wb-new', name: 'Folder Board' }
       vi.mocked(createWhiteboardFn).mockResolvedValue(mockWhiteboard as any)
 
-      renderDialog({ open: true, projectId: 'proj-001', folderId: 'folder-001' })
+      renderDialog({
+        open: true,
+        projectId: 'proj-001',
+        folderId: 'folder-001',
+      })
 
       const nameInput = screen.getByPlaceholderText('My Whiteboard')
       fireEvent.change(nameInput, { target: { value: 'Folder Board' } })

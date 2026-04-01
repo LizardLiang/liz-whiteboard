@@ -3,10 +3,10 @@
 // TS-05: DeleteColumnDialog unit tests
 
 import { describe, expect, it, vi } from 'vitest'
-import { render, screen, fireEvent } from '@testing-library/react'
+import { fireEvent, render, screen } from '@testing-library/react'
 import { DeleteColumnDialog } from './DeleteColumnDialog'
-import { mockColumn, mockFKColumn } from '@/test/fixtures'
 import type { ColumnRelationship } from './types'
+import { mockColumn, mockFKColumn } from '@/test/fixtures'
 
 const mockRelationship: ColumnRelationship = {
   id: 'rel-001',

@@ -33,9 +33,9 @@ describe('CardinalityMarkerDefs', () => {
 
   it('registers cardinality-zero-one-left-highlight marker', () => {
     const { container } = render(<CardinalityMarkerDefs />)
-    expect(
-      hasMarkerId(container, 'cardinality-zero-one-left-highlight'),
-    ).toBe(true)
+    expect(hasMarkerId(container, 'cardinality-zero-one-left-highlight')).toBe(
+      true,
+    )
   })
 
   it('registers cardinality-zero-many-left marker', () => {
@@ -45,9 +45,9 @@ describe('CardinalityMarkerDefs', () => {
 
   it('registers cardinality-zero-many-left-highlight marker', () => {
     const { container } = render(<CardinalityMarkerDefs />)
-    expect(
-      hasMarkerId(container, 'cardinality-zero-many-left-highlight'),
-    ).toBe(true)
+    expect(hasMarkerId(container, 'cardinality-zero-many-left-highlight')).toBe(
+      true,
+    )
   })
 
   it('also retains pre-existing cardinality-one-left marker', () => {

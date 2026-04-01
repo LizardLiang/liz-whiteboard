@@ -1,7 +1,9 @@
 /**
  * ConstraintBadges — clickable PK/N/U badges and non-clickable FK badge
  * Per-constraint 250ms debounce on emit (optimistic update is immediate)
- * PK toggle ON auto-sets isNullable=false + isUnique=true
+ * PK toggle ON updates local N/U state for immediate UI feedback;
+ * the cascade (isNullable=false + isUnique=true) is handled server-side
+ * via handleToggleConstraint in TableNode — only ONE emit fires here.
  */
 
 import { memo, useCallback, useEffect, useRef, useState } from 'react'
@@ -33,12 +35,20 @@ export const ConstraintBadges = memo(
     const [localU, setLocalU] = useState(isUnique)
 
     // Sync local state when props change (from server or parent updates)
-    useEffect(() => { setLocalPK(isPrimaryKey) }, [isPrimaryKey])
-    useEffect(() => { setLocalN(isNullable) }, [isNullable])
-    useEffect(() => { setLocalU(isUnique) }, [isUnique])
+    useEffect(() => {
+      setLocalPK(isPrimaryKey)
+    }, [isPrimaryKey])
+    useEffect(() => {
+      setLocalN(isNullable)
+    }, [isNullable])
+    useEffect(() => {
+      setLocalU(isUnique)
+    }, [isUnique])
 
     // Per-constraint debounce timers
-    const timers = useRef<Map<Constraint, ReturnType<typeof setTimeout>>>(new Map())
+    const timers = useRef<Map<Constraint, ReturnType<typeof setTimeout>>>(
+      new Map(),
+    )
 
     const debouncedEmit = useCallback(
       (constraint: Constraint, value: boolean) => {
@@ -68,16 +78,14 @@ export const ConstraintBadges = memo(
         // Optimistic update
         setLocalPK(newVal)
         if (newVal) {
-          // PK ON: auto-set nullable=false, unique=true
+          // PK ON: update local visual state for immediate UI feedback.
           setLocalN(false)
           setLocalU(true)
-          debouncedEmit('isPrimaryKey', true)
+          // Also emit the cascade constraints
           debouncedEmit('isNullable', false)
           debouncedEmit('isUnique', true)
-        } else {
-          // PK OFF: only unset isPrimaryKey
-          debouncedEmit('isPrimaryKey', false)
         }
+        debouncedEmit('isPrimaryKey', newVal)
       },
       [localPK, debouncedEmit],
     )
@@ -135,9 +143,7 @@ export const ConstraintBadges = memo(
             background: localPK
               ? 'var(--rf-primary-key-color, #f59e0b)'
               : 'transparent',
-            color: localPK
-              ? '#fff'
-              : 'var(--rf-table-text)',
+            color: localPK ? '#fff' : 'var(--rf-table-text)',
             border: `1px solid ${localPK ? 'var(--rf-primary-key-color, #f59e0b)' : 'var(--rf-table-border, #e2e8f0)'}`,
             opacity: localPK ? 1 : 0.4,
           }}
@@ -172,9 +178,7 @@ export const ConstraintBadges = memo(
             background: localN
               ? 'var(--rf-nullable-color, #94a3b8)'
               : 'transparent',
-            color: localN
-              ? '#fff'
-              : 'var(--rf-table-text)',
+            color: localN ? '#fff' : 'var(--rf-table-text)',
             border: `1px solid ${localN ? 'var(--rf-nullable-color, #94a3b8)' : 'var(--rf-table-border, #e2e8f0)'}`,
             opacity: localN ? 1 : 0.4,
           }}
@@ -193,9 +197,7 @@ export const ConstraintBadges = memo(
             background: localU
               ? 'var(--rf-unique-color, #10b981)'
               : 'transparent',
-            color: localU
-              ? '#fff'
-              : 'var(--rf-table-text)',
+            color: localU ? '#fff' : 'var(--rf-table-text)',
             border: `1px solid ${localU ? 'var(--rf-unique-color, #10b981)' : 'var(--rf-table-border, #e2e8f0)'}`,
             opacity: localU ? 1 : 0.4,
           }}

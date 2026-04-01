@@ -4,15 +4,19 @@
  */
 
 import { memo, useCallback, useMemo, useState } from 'react'
-import type { Column } from '@prisma/client'
-import type { TableNodeData, RelationshipEdgeType, TableNodeType } from '@/lib/react-flow/types'
-import type { EditingField, ColumnRelationship } from './column/types'
-import type { DataType } from '@/data/schema'
+import { useNodes } from '@xyflow/react'
 import { ColumnRow } from './column/ColumnRow'
 import { AddColumnRow } from './column/AddColumnRow'
 import { DeleteColumnDialog } from './column/DeleteColumnDialog'
 import { TableNodeContextMenu } from './TableNodeContextMenu'
-import { useNodes } from '@xyflow/react'
+import type { Column } from '@prisma/client'
+import type {
+  RelationshipEdgeType,
+  TableNodeData,
+  TableNodeType,
+} from '@/lib/react-flow/types'
+import type { ColumnRelationship, EditingField } from './column/types'
+import type { DataType } from '@/data/schema'
 
 interface TableNodeProps {
   data: TableNodeData
@@ -69,18 +73,20 @@ export const TableNode = memo(
     // Pre-compute a map from columnId to affected edges for fast delete checks
     const columnEdgeMap = useMemo(() => {
       const map = new Map<string, Array<RelationshipEdgeType>>()
-      ;(edges as Array<RelationshipEdgeType>).forEach((edge: RelationshipEdgeType) => {
-        const srcId = edge.data?.relationship.sourceColumnId
-        const tgtId = edge.data?.relationship.targetColumnId
-        if (srcId) {
-          if (!map.has(srcId)) map.set(srcId, [])
-          map.get(srcId)!.push(edge)
-        }
-        if (tgtId && tgtId !== srcId) {
-          if (!map.has(tgtId)) map.set(tgtId, [])
-          map.get(tgtId)!.push(edge)
-        }
-      })
+      ;(edges).forEach(
+        (edge: RelationshipEdgeType) => {
+          const srcId = edge.data?.relationship.sourceColumnId
+          const tgtId = edge.data?.relationship.targetColumnId
+          if (srcId) {
+            if (!map.has(srcId)) map.set(srcId, [])
+            map.get(srcId)!.push(edge)
+          }
+          if (tgtId && tgtId !== srcId) {
+            if (!map.has(tgtId)) map.set(tgtId, [])
+            map.get(tgtId)!.push(edge)
+          }
+        },
+      )
       return map
     }, [edges])
 
@@ -96,7 +102,9 @@ export const TableNode = memo(
       (columnId: string, field: 'name' | 'dataType', value: string) => {
         setEditingField(null)
         if (!onColumnUpdate) return
-        onColumnUpdate(columnId, table.id, { [field]: value as unknown as Partial<DataType> })
+        onColumnUpdate(columnId, table.id, {
+          [field]: value as unknown as Partial<DataType>,
+        })
       },
       [table.id, onColumnUpdate],
     )
@@ -170,9 +178,11 @@ export const TableNode = memo(
         const rel = edge.data!.relationship
         return {
           id: edge.id,
-          sourceTableName: tableNameById.get(rel.sourceTableId) ?? rel.sourceTableId,
+          sourceTableName:
+            tableNameById.get(rel.sourceTableId) ?? rel.sourceTableId,
           sourceColumnName: rel.sourceColumn.name,
-          targetTableName: tableNameById.get(rel.targetTableId) ?? rel.targetTableId,
+          targetTableName:
+            tableNameById.get(rel.targetTableId) ?? rel.targetTableId,
           targetColumnName: rel.targetColumn.name,
           cardinality: edge.data!.cardinality,
         }
@@ -289,21 +299,23 @@ export const TableNode = memo(
           {/* Columns List */}
           {showMode !== 'TABLE_NAME' && (
             <div className="table-columns">
-              {(visibleColumns as Array<Column>).map((column: Column, index: number) => (
-                <ColumnRow
-                  key={column.id}
-                  column={column}
-                  tableId={table.id}
-                  isLast={index === visibleColumns.length - 1}
-                  editingField={editingField}
-                  onStartEdit={handleStartEdit}
-                  onCommitEdit={handleCommitEdit}
-                  onCancelEdit={handleCancelEdit}
-                  onToggleConstraint={handleToggleConstraint}
-                  onDelete={handleDeleteColumn}
-                  edges={edges}
-                />
-              ))}
+              {(visibleColumns).map(
+                (column: Column, index: number) => (
+                  <ColumnRow
+                    key={column.id}
+                    column={column}
+                    tableId={table.id}
+                    isLast={index === visibleColumns.length - 1}
+                    editingField={editingField}
+                    onStartEdit={handleStartEdit}
+                    onCommitEdit={handleCommitEdit}
+                    onCancelEdit={handleCancelEdit}
+                    onToggleConstraint={handleToggleConstraint}
+                    onDelete={handleDeleteColumn}
+                    edges={edges}
+                  />
+                ),
+              )}
 
               {/* Add Column Row */}
               <AddColumnRow
@@ -331,7 +343,8 @@ export const TableNode = memo(
     // Custom memo comparator: allow re-renders when columns change, skip position-only changes
     if (prev.data.table !== next.data.table) return false
     if (prev.data.showMode !== next.data.showMode) return false
-    if (prev.data.isActiveHighlighted !== next.data.isActiveHighlighted) return false
+    if (prev.data.isActiveHighlighted !== next.data.isActiveHighlighted)
+      return false
     if (prev.data.isHighlighted !== next.data.isHighlighted) return false
     if (prev.data.isHovered !== next.data.isHovered) return false
     if (prev.selected !== next.selected) return false
@@ -339,7 +352,8 @@ export const TableNode = memo(
     if (prev.data.onColumnUpdate !== next.data.onColumnUpdate) return false
     if (prev.data.onColumnDelete !== next.data.onColumnDelete) return false
     if (prev.data.edges !== next.data.edges) return false
-    if (prev.data.onRequestTableDelete !== next.data.onRequestTableDelete) return false
+    if (prev.data.onRequestTableDelete !== next.data.onRequestTableDelete)
+      return false
     return true
   },
 )

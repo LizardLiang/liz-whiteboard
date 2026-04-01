@@ -2,12 +2,21 @@
 // src/routes/project.$projectId.folder.$folderId.test.tsx
 // TS-03 (R3): Folder drill-down navigation integration tests (AC-11..15)
 
-import { describe, expect, it, vi, beforeEach } from 'vitest'
-import { render, screen, fireEvent, waitFor } from '@testing-library/react'
+import { beforeEach, describe, expect, it, vi } from 'vitest'
+import { fireEvent, render, screen, waitFor } from '@testing-library/react'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
-import { RouterContextProvider, createRouter, createMemoryHistory } from '@tanstack/react-router'
-import { routeTree } from '@/routeTree.gen'
+import {
+  RouterContextProvider,
+  createMemoryHistory,
+  createRouter,
+} from '@tanstack/react-router'
 import type { ReactNode } from 'react'
+import { routeTree } from '@/routeTree.gen'
+
+import { getProjectPageContent } from '@/routes/api/projects'
+import { ProjectContentGrid } from '@/components/project/ProjectContentGrid'
+import { Breadcrumb } from '@/components/project/Breadcrumb'
+import { ProjectPageError } from '@/components/project/ProjectPageError'
 
 // Mock getProjectPageContent
 vi.mock('@/routes/api/projects', () => ({
@@ -38,11 +47,6 @@ vi.mock('sonner', () => ({
   },
 }))
 
-import { getProjectPageContent } from '@/routes/api/projects'
-import { ProjectContentGrid } from '@/components/project/ProjectContentGrid'
-import { Breadcrumb } from '@/components/project/Breadcrumb'
-import { ProjectPageError } from '@/components/project/ProjectPageError'
-
 function createTestQueryClient() {
   return new QueryClient({
     defaultOptions: {
@@ -57,7 +61,13 @@ function createTestRouter(initialPath: string) {
   return createRouter({ routeTree, history })
 }
 
-function Wrapper({ children, initialPath = '/' }: { children: ReactNode; initialPath?: string }) {
+function Wrapper({
+  children,
+  initialPath = '/',
+}: {
+  children: ReactNode
+  initialPath?: string
+}) {
   const router = createTestRouter(initialPath)
   const queryClient = createTestQueryClient()
   return (
@@ -78,7 +88,9 @@ describe('Folder Page (AC-11..15)', () => {
         <Wrapper>
           <ProjectContentGrid
             projectId="proj-001"
-            folders={[{ id: 'folder-001', name: 'My Folder', createdAt: new Date() }]}
+            folders={[
+              { id: 'folder-001', name: 'My Folder', createdAt: new Date() },
+            ]}
             whiteboards={[]}
           />
         </Wrapper>,
@@ -95,10 +107,19 @@ describe('Folder Page (AC-11..15)', () => {
   describe('TC-03-02: folder view renders child folders and whiteboards', () => {
     it('ProjectContentGrid shows child folders and whiteboards with correct data', () => {
       const childFolders = [
-        { id: 'folder-child-001', name: 'Child Folder A', createdAt: new Date() },
+        {
+          id: 'folder-child-001',
+          name: 'Child Folder A',
+          createdAt: new Date(),
+        },
       ]
       const childWhiteboards = [
-        { id: 'wb-001', name: 'Child Board', updatedAt: new Date(), _count: { tables: 2 } },
+        {
+          id: 'wb-001',
+          name: 'Child Board',
+          updatedAt: new Date(),
+          _count: { tables: 2 },
+        },
       ]
 
       render(
@@ -182,7 +203,7 @@ describe('Folder Page (AC-11..15)', () => {
         'project-page',
         'proj-001',
         'folder-001',
-      ]) as any
+      ])
       // Verify the cache contains the folderId information
       expect(cachedData?.currentFolder?.id).toBe('folder-001')
     })

@@ -229,8 +229,12 @@ export async function findProjectPageContent(
     // Starts at the target folder's parent and walks up to the root.
     const breadcrumb: ProjectPageContent['breadcrumb'] = []
     if (targetFolder.parentFolderId) {
-      type AncestorRow = { id: string; name: string; parentFolderId: string | null }
-      const ancestors = await prisma.$queryRaw<AncestorRow[]>`
+      type AncestorRow = {
+        id: string
+        name: string
+        parentFolderId: string | null
+      }
+      const ancestors = await prisma.$queryRaw<Array<AncestorRow>>`
         WITH RECURSIVE ancestors AS (
           SELECT id, name, "parentFolderId", "projectId"
           FROM "Folder"
@@ -244,7 +248,11 @@ export async function findProjectPageContent(
       `
       // CTE returns leaf→root order; reverse to get root→leaf for the breadcrumb trail
       for (const ancestor of ancestors.reverse()) {
-        breadcrumb.push({ id: ancestor.id, name: ancestor.name, type: 'folder' })
+        breadcrumb.push({
+          id: ancestor.id,
+          name: ancestor.name,
+          type: 'folder',
+        })
       }
     }
     // Prepend project root

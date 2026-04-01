@@ -2,11 +2,13 @@
 // src/components/navigator/ProjectTree.test.tsx
 // TS-06 (R6): Sidebar navigation behavior — project name navigates, chevron expands
 
-import { describe, expect, it, vi, beforeEach } from 'vitest'
-import { render, screen, fireEvent, act } from '@testing-library/react'
+import { beforeEach, describe, expect, it, vi } from 'vitest'
+import { act, fireEvent, render, screen } from '@testing-library/react'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { ProjectTree } from './ProjectTree'
 import type { ReactNode } from 'react'
+
+import { getProjectsWithTree } from '@/routes/api/projects'
 
 // Mock all server functions used by ProjectTree
 vi.mock('@/routes/api/projects', () => ({
@@ -64,8 +66,6 @@ vi.mock('@tanstack/react-router', async (importOriginal) => {
   }
 })
 
-import { getProjectsWithTree } from '@/routes/api/projects'
-
 const mockProjects = [
   {
     id: 'proj-001',
@@ -91,7 +91,9 @@ function renderProjectTree() {
   const queryClient = createTestQueryClient()
 
   function Wrapper({ children }: { children: ReactNode }) {
-    return <QueryClientProvider client={queryClient}>{children}</QueryClientProvider>
+    return (
+      <QueryClientProvider client={queryClient}>{children}</QueryClientProvider>
+    )
   }
 
   return {
