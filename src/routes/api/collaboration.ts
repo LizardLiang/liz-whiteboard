@@ -38,6 +38,7 @@ import {
 import {
   createRelationship,
   deleteRelationship,
+  findRelationshipById,
   updateRelationship,
 } from '@/data/relationship'
 
@@ -569,13 +570,50 @@ function setupCollaborationEventHandlers(
 
   // Relationship deletion
   socket.on('relationship:delete', async (data: { relationshipId: string }) => {
+    let relationshipId: string | undefined
     try {
+      // Validate input: UUID format required
+      const parsed = z
+        .object({ relationshipId: z.string().uuid() })
+        .safeParse(data)
+      if (!parsed.success) {
+        socket.emit('error', {
+          event: 'relationship:delete',
+          error: 'VALIDATION_ERROR',
+          message: 'Invalid relationshipId: must be a UUID',
+          relationshipId: data.relationshipId,
+        })
+        return
+      }
+      relationshipId = parsed.data.relationshipId
+
+      // Ownership check: verify relationship belongs to this whiteboard (IDOR prevention)
+      const relationship = await findRelationshipById(relationshipId)
+      if (!relationship) {
+        socket.emit('error', {
+          event: 'relationship:delete',
+          error: 'NOT_FOUND',
+          message: 'Relationship not found',
+          relationshipId,
+        })
+        return
+      }
+      if (relationship.whiteboardId !== whiteboardId) {
+        socket.emit('error', {
+          event: 'relationship:delete',
+          error: 'FORBIDDEN',
+          message: 'Relationship does not belong to this whiteboard',
+          relationshipId,
+        })
+        return
+      }
+
       // Delete relationship from database
-      await deleteRelationship(data.relationshipId)
+      await deleteRelationship(relationshipId)
 
       // Broadcast to other users
       socket.broadcast.emit('relationship:deleted', {
-        relationshipId: data.relationshipId,
+        relationshipId,
         deletedBy: userId,
       })
 
@@ -587,6 +625,7 @@ function setupCollaborationEventHandlers(
         event: 'relationship:delete',
         error: 'DELETE_FAILED',
         message: 'Failed to delete relationship',
+        relationshipId: relationshipId ?? data.relationshipId,
       })
     }
   })
