@@ -1,6 +1,7 @@
-import { memo, useMemo } from 'react'
+import { memo, useMemo, useState } from 'react'
 import { EdgeLabelRenderer, Position, getSmoothStepPath } from '@xyflow/react'
 import type { EdgeProps } from '@xyflow/react'
+import { X } from 'lucide-react'
 import type { RelationshipEdgeData } from '@/lib/react-flow/types'
 import { Z_INDEX } from '@/lib/react-flow/types'
 
@@ -282,6 +283,11 @@ export const RelationshipEdge = memo(
     const { cardinality, label, isHighlighted } = data || {}
     const isActive = selected || isHighlighted
 
+    // Delete button visibility state
+    const [isHovered, setIsHovered] = useState(false)
+    const [isFocused, setIsFocused] = useState(false)
+    const isVisible = isHovered || selected || isFocused
+
     const srcAngle = useMemo(
       () => outwardAngle(sourcePosition),
       [sourcePosition],
@@ -378,6 +384,17 @@ export const RelationshipEdge = memo(
             </filter>
           )}
         </defs>
+
+        {/* Invisible wide hit-area for hover detection — must come before visible path */}
+        <path
+          d={edgePath}
+          fill="none"
+          stroke="transparent"
+          strokeWidth={20}
+          style={{ cursor: 'pointer', pointerEvents: 'visibleStroke' }}
+          onMouseEnter={() => setIsHovered(true)}
+          onMouseLeave={() => setIsHovered(false)}
+        />
 
         {/* Glow underlay */}
         {isActive && (
@@ -478,6 +495,62 @@ export const RelationshipEdge = memo(
             </div>
           </EdgeLabelRenderer>
         )}
+
+        {/* Delete button — hover/selection/focus reveal */}
+        <EdgeLabelRenderer>
+          {/* 44px touch hit target wrapping a 20px visual circle */}
+          <div
+            style={{
+              position: 'absolute',
+              transform: `translate(-50%, -50%) translate(${labelX}px,${labelY - (label ? 20 : 0)}px)`,
+              zIndex: Z_INDEX.EDGE_LABEL + 1,
+              // 44px touch hit target
+              width: '44px',
+              height: '44px',
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'center',
+              pointerEvents: isVisible ? 'all' : 'none',
+              opacity: isVisible ? 1 : 0,
+              transition: 'opacity 150ms ease',
+            }}
+            className="nodrag nopan"
+          >
+            <button
+              type="button"
+              aria-label="Delete relationship"
+              role="button"
+              className="nodrag nopan"
+              onFocus={() => setIsFocused(true)}
+              onBlur={() => setIsFocused(false)}
+              onClick={(e) => {
+                e.stopPropagation()
+                data?.onDelete?.(id)
+              }}
+              style={{
+                width: '20px',
+                height: '20px',
+                minWidth: '24px',
+                minHeight: '24px',
+                borderRadius: '50%',
+                border: 'none',
+                cursor: 'pointer',
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'center',
+                backgroundColor: cardinalityColor,
+                color: '#ffffff',
+                boxShadow: '0 1px 6px rgba(0,0,0,0.3), 0 0 0 2px rgba(0,0,0,0.08)',
+                backdropFilter: 'blur(4px)',
+                WebkitBackdropFilter: 'blur(4px)',
+                padding: 0,
+                outline: 'none',
+              }}
+            >
+              <X size={12} strokeWidth={2.5} aria-hidden="true" />
+            </button>
+          </div>
+        </EdgeLabelRenderer>
       </>
     )
   },

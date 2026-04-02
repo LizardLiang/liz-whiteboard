@@ -4,6 +4,7 @@
 import { useCallback, useEffect } from 'react'
 import { useCollaboration } from './use-collaboration'
 import type { TableErrorEvent } from './use-table-mutations'
+import type { RelationshipErrorEvent } from './use-relationship-mutations'
 
 /**
  * Position update event data from WebSocket
@@ -52,6 +53,8 @@ export function useWhiteboardCollaboration(
   ) => void,
   onTableDeleted?: (tableId: string) => void,
   onTableError?: (data: TableErrorEvent) => void,
+  onRelationshipDeleted?: (relationshipId: string) => void,
+  onRelationshipError?: (data: RelationshipErrorEvent) => void,
 ) {
   // Use the base collaboration hook
   const { emit, on, off, connectionState, activeUsers } = useCollaboration(
@@ -115,6 +118,41 @@ export function useWhiteboardCollaboration(
     }
   }, [on, off, onTableError])
 
+  // Listen for relationship deletion events from other users
+  useEffect(() => {
+    if (!onRelationshipDeleted) return
+
+    const handleRelationshipDeleted = (data: {
+      relationshipId: string
+      deletedBy: string
+    }) => {
+      // Ignore if we deleted it (already applied optimistically)
+      if (data.deletedBy === userId) return
+      onRelationshipDeleted(data.relationshipId)
+    }
+
+    on('relationship:deleted', handleRelationshipDeleted)
+    return () => {
+      off('relationship:deleted', handleRelationshipDeleted)
+    }
+  }, [on, off, userId, onRelationshipDeleted])
+
+  // Listen for relationship:delete error events
+  useEffect(() => {
+    if (!onRelationshipError) return
+
+    const handleError = (data: RelationshipErrorEvent) => {
+      // Only handle relationship:delete errors
+      if (data.event !== 'relationship:delete') return
+      onRelationshipError(data)
+    }
+
+    on('error', handleError)
+    return () => {
+      off('error', handleError)
+    }
+  }, [on, off, onRelationshipError])
+
   // Emit position update to other users
   const emitPositionUpdate = useCallback(
     (tableId: string, positionX: number, positionY: number) => {
@@ -136,10 +174,19 @@ export function useWhiteboardCollaboration(
     [emit],
   )
 
+  // Emit relationship delete to server
+  const emitRelationshipDelete = useCallback(
+    (relationshipId: string) => {
+      emit('relationship:delete', { relationshipId })
+    },
+    [emit],
+  )
+
   return {
     connectionState,
     activeUsers,
     emitPositionUpdate,
     emitTableDelete,
+    emitRelationshipDelete,
   }
 }
