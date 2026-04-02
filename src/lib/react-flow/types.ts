@@ -97,6 +97,9 @@ export interface RelationshipEdgeData extends Record<string, unknown> {
 
   /** Optional label to display on the edge */
   label?: string
+
+  /** Callback to delete this relationship (fires optimistic removal + WebSocket emit) */
+  onDelete?: (relationshipId: string) => void
 }
 
 /**
