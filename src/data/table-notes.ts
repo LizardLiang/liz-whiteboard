@@ -9,18 +9,18 @@ import { prisma } from '@/db'
 
 // Validation schemas for table notes operations
 export const updateTableNotesSchema = z.object({
-  tableId: z.string().cuid(),
+  tableId: z.string().uuid(),
   description: z.string().max(10000),
-  whiteboardId: z.string().cuid(),
-  userId: z.string().cuid(),
+  whiteboardId: z.string().uuid(),
+  userId: z.string().uuid(),
 })
 
 export const getTableNotesSchema = z.object({
-  tableId: z.string().cuid(),
+  tableId: z.string().uuid(),
 })
 
 export const bulkLoadNotesSchema = z.object({
-  tableIds: z.array(z.string().cuid()),
+  tableIds: z.array(z.string().uuid()),
 })
 
 /**
