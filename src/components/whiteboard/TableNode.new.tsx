@@ -221,12 +221,35 @@ export const TableNode = memo(
       return columns
     }, [columns, showMode])
 
+    // Auto-compute width to fit the longest column name
+    const autoWidth = useMemo(() => {
+      const MIN_WIDTH = 220
+      const MAX_WIDTH = 500
+
+      // Header: table name + fixed chrome (padding + buttons)
+      const headerWidth = table.name.length * 8.5 + 80
+
+      // Columns: name text + fixed chrome (badges + dataType + padding + gaps + delete)
+      const maxColumnWidth = columns.reduce((max, col) => {
+        const nameWidth = col.name.length * 7.5 + 200
+        return Math.max(max, nameWidth)
+      }, 0)
+
+      // User-stored width acts as a floor
+      const userWidth = table.width ?? 0
+
+      return Math.min(
+        Math.max(MIN_WIDTH, headerWidth, maxColumnWidth, userWidth),
+        MAX_WIDTH,
+      )
+    }, [table.name, table.width, columns])
+
     return (
       <TableNodeContextMenu onDeleteTable={handleRequestTableDelete}>
         <div
           className={`react-flow__node-erTable ${selected ? 'selected' : ''} ${highlightClass}`}
           style={{
-            width: table.width ? `${table.width}px` : '280px',
+            width: `${autoWidth}px`,
             minWidth: '200px',
             opacity:
               isActiveHighlighted || isHighlighted || isHovered || selected
