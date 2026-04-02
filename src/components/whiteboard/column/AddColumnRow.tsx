@@ -5,16 +5,9 @@
  */
 
 import { useCallback, useEffect, useRef, useState } from 'react'
-import { DATA_TYPES, DATA_TYPE_LABELS } from './types'
+import { DataTypeSelector } from './DataTypeSelector'
 import type { Column } from '@prisma/client'
 import type { DataType } from '@/data/schema'
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from '@/components/ui/select'
 
 export interface AddColumnRowProps {
   tableId: string
@@ -40,6 +33,7 @@ export function AddColumnRow({
   // Tracks whether pointer went down inside this row — guards against spurious blur-create
   // when clicking the Radix Select trigger (pointerdown fires before blur)
   const mouseDownInsideRef = useRef(false)
+  const isSubmittingRef = useRef(false)
 
   // Auto-focus when expanded
   useEffect(() => {
@@ -95,6 +89,7 @@ export function AddColumnRow({
 
   const handleCreate = useCallback(
     async (closeAfterSave = false) => {
+      if (isSubmittingRef.current) return
       const trimmed = name.trim()
       if (!trimmed) {
         reset()
@@ -106,12 +101,15 @@ export function AddColumnRow({
           ? Math.max(...existingColumns.map((c) => c.order)) + 1
           : 0
 
+      isSubmittingRef.current = true
       try {
         await onCreate({ name: trimmed, dataType, order: nextOrder })
       } catch (error) {
         console.error('Failed to create column:', error)
+        isSubmittingRef.current = false
         return
       }
+      isSubmittingRef.current = false
 
       if (closeAfterSave) {
         reset()
@@ -269,30 +267,19 @@ export function AddColumnRow({
       >
         ✓
       </button>
-      <Select
-        value={dataType}
-        onValueChange={(val) => {
-          setDataType(val as DataType)
-          setTimeout(() => inputRef.current?.focus(), 0)
+      <div
+        onPointerDown={() => {
+          mouseDownInsideRef.current = true
         }}
       >
-        <SelectTrigger
-          className="nodrag nowheel h-[28px] min-w-[80px] text-[11px] px-2 border-border/50 cursor-pointer"
-          aria-label={dataType}
-          onPointerDown={() => {
-            mouseDownInsideRef.current = true
+        <DataTypeSelector
+          value={dataType}
+          onSelect={(val) => {
+            setDataType(val)
+            setTimeout(() => inputRef.current?.focus(), 0)
           }}
-        >
-          <SelectValue />
-        </SelectTrigger>
-        <SelectContent className="nodrag nowheel">
-          {DATA_TYPES.map((dt) => (
-            <SelectItem key={dt} value={dt} className="text-xs">
-              {DATA_TYPE_LABELS[dt]}
-            </SelectItem>
-          ))}
-        </SelectContent>
-      </Select>
+        />
+      </div>
     </div>
   )
 }

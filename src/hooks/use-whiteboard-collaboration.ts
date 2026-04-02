@@ -55,6 +55,7 @@ export function useWhiteboardCollaboration(
   onTableError?: (data: TableErrorEvent) => void,
   onRelationshipDeleted?: (relationshipId: string) => void,
   onRelationshipError?: (data: RelationshipErrorEvent) => void,
+  onRelationshipUpdated?: (relationshipId: string, label: string) => void,
 ) {
   // Use the base collaboration hook
   const { emit, on, off, connectionState, activeUsers } = useCollaboration(
@@ -153,6 +154,26 @@ export function useWhiteboardCollaboration(
     }
   }, [on, off, onRelationshipError])
 
+  // Listen for relationship update events from other users
+  useEffect(() => {
+    if (!onRelationshipUpdated) return
+
+    const handleRelationshipUpdated = (data: {
+      relationshipId: string
+      label: string
+      updatedBy: string
+    }) => {
+      // Ignore if we updated it (already applied optimistically)
+      if (data.updatedBy === userId) return
+      onRelationshipUpdated(data.relationshipId, data.label)
+    }
+
+    on('relationship:updated', handleRelationshipUpdated)
+    return () => {
+      off('relationship:updated', handleRelationshipUpdated)
+    }
+  }, [on, off, userId, onRelationshipUpdated])
+
   // Emit position update to other users
   const emitPositionUpdate = useCallback(
     (tableId: string, positionX: number, positionY: number) => {
@@ -182,11 +203,20 @@ export function useWhiteboardCollaboration(
     [emit],
   )
 
+  // Emit relationship label update to server
+  const emitRelationshipUpdate = useCallback(
+    (relationshipId: string, label: string) => {
+      emit('relationship:update', { relationshipId, label })
+    },
+    [emit],
+  )
+
   return {
     connectionState,
     activeUsers,
     emitPositionUpdate,
     emitTableDelete,
     emitRelationshipDelete,
+    emitRelationshipUpdate,
   }
 }

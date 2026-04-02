@@ -72,6 +72,40 @@ export const DATA_TYPE_LABELS: Record<DataType, string> = {
 }
 
 /**
+ * Data types grouped by category for the type selector combobox.
+ */
+export const DATA_TYPE_GROUPS: Array<{ heading: string; types: Array<DataType> }> = [
+  {
+    heading: 'Numeric',
+    types: ['int', 'bigint', 'smallint', 'float', 'double', 'decimal', 'serial', 'money'],
+  },
+  {
+    heading: 'String',
+    types: ['string', 'char', 'varchar', 'text'],
+  },
+  {
+    heading: 'Boolean',
+    types: ['boolean', 'bit'],
+  },
+  {
+    heading: 'Date / Time',
+    types: ['date', 'datetime', 'timestamp', 'time'],
+  },
+  {
+    heading: 'Binary',
+    types: ['binary', 'blob'],
+  },
+  {
+    heading: 'Structured',
+    types: ['json', 'xml', 'array', 'enum'],
+  },
+  {
+    heading: 'Identity',
+    types: ['uuid'],
+  },
+]
+
+/**
  * All valid data types (from Zod enum), grouped logically
  */
 export const DATA_TYPES: Array<DataType> = [

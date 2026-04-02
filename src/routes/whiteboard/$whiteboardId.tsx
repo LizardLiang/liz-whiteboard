@@ -522,7 +522,10 @@ function WhiteboardEditor() {
       tableId: string
       positionX: number
       positionY: number
+      updatedBy?: string
     }) => {
+      // Ignore own moves — already applied via mutation's setQueryData
+      if (data.updatedBy === userId) return
       console.log('Table moved by another user:', data)
       queryClient.setQueryData(['whiteboard', whiteboardId], (old: any) => {
         if (!old) return old

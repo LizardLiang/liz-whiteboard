@@ -31,6 +31,7 @@ import {
   SelectValue,
 } from '@/components/ui/select'
 import { Button } from '@/components/ui/button'
+import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import type { ZoomControls } from './Toolbar'
 import type {
@@ -164,6 +165,14 @@ function ReactFlowWhiteboardInner({
   const [nodes, setNodes] = useState<Array<TableNodeType>>(initialNodes)
   const [edges, setEdges] = useState<Array<RelationshipEdgeType>>(initialEdges)
 
+  // Stable map of tableId → tableName derived from the query data.
+  // Recomputes only when tables are added, removed, or renamed — not on
+  // every position/highlight change — so TableNode memo isn't broken.
+  const tableNameById = useMemo(
+    () => new Map(initialNodes.map((n) => [n.data.table.id, n.data.table.name])),
+    [initialNodes],
+  )
+
   // Keep a stable ref to edges for use inside callbacks without stale closure
   const edgesRef = useRef(edges)
   useEffect(() => {
@@ -178,6 +187,7 @@ function ReactFlowWhiteboardInner({
     useState<PendingConnection | null>(null)
   const [selectedCardinality, setSelectedCardinality] =
     useState<Cardinality>('ONE_TO_MANY')
+  const [pendingLabel, setPendingLabel] = useState('')
 
   // Display mode state with localStorage persistence
   const [showMode, setShowMode] = useState<ShowMode>(() => {
@@ -208,27 +218,69 @@ function ReactFlowWhiteboardInner({
   useEffect(() => {
     setNodes((prevNodes) => {
       const prevNodeMap = new Map(prevNodes.map((n) => [n.id, n]))
-      return initialNodes.map((node) => {
+      return initialNodes.map((node): TableNodeType => {
         const prev = prevNodeMap.get(node.id)
-        if (!prev) return node
-        // Preserve callbacks from previous node data, overwrite everything else
+        if (!prev) {
+          // New node (e.g., just-created table): inject current callbacks so
+          // column mutations work immediately without waiting for the next
+          // isConnected change or a full re-mount.
+          return {
+            ...node,
+            data: {
+              ...node.data,
+              onColumnCreate: handleColumnCreateRef.current,
+              onColumnUpdate: handleColumnUpdateRef.current,
+              onColumnDelete: handleColumnDeleteRef.current,
+              onRequestTableDelete: handleRequestTableDeleteRef.current,
+              edges: edgesRef.current,
+              tableNameById,
+              isConnected,
+            },
+          }
+        }
+        // Preserve callbacks from previous node data, overwrite everything else.
+        // Also preserve any optimistic columns that are still pending server
+        // confirmation — if a refetch lands before the server acks a column:create,
+        // the DB snapshot won't include the column yet and would silently erase it
+        // from local state, causing the user to re-type the same name and hit a
+        // unique-constraint error on the second attempt.
+        const incomingColumns = (
+          node.data.table as { columns: Array<{ id: string }> }
+        ).columns
+        const prevColumns = prev.data.table.columns
+        // If the incoming cache snapshot has no columns but local state does,
+        // the cache is stale (e.g. position-only update landed before a full
+        // refetch). Preserve the local columns to avoid wiping them.
+        const baseColumns =
+          incomingColumns.length > 0 ? incomingColumns : prevColumns
+        const dbColumnIds = new Set(baseColumns.map((c) => c.id))
+        const optimisticColumns = prevColumns.filter(
+          (c) =>
+            !dbColumnIds.has(c.id) &&
+            columnMutations.pendingMutations.current.has(c.id),
+        )
         return {
           ...node,
           data: {
             ...node.data,
+            table: {
+              ...node.data.table,
+              columns: [...baseColumns, ...optimisticColumns],
+            },
             onColumnCreate: prev.data.onColumnCreate,
             onColumnUpdate: prev.data.onColumnUpdate,
             onColumnDelete: prev.data.onColumnDelete,
             onRequestTableDelete: prev.data.onRequestTableDelete,
+            tableNameById,
           },
         }
       })
     })
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [initialNodes])
+  }, [initialNodes, tableNameById])
 
-  // Update local edge state when initial data changes — preserve onDelete callback
-  // so that a TanStack Query refetch does not wipe the injected callback.
+  // Update local edge state when initial data changes — preserve onDelete and onLabelUpdate callbacks
+  // so that a TanStack Query refetch does not wipe the injected callbacks.
   useEffect(() => {
     setEdges((prevEdges) => {
       const prevEdgeMap = new Map(prevEdges.map((e) => [e.id, e]))
@@ -240,6 +292,7 @@ function ReactFlowWhiteboardInner({
           data: {
             ...edge.data!,
             onDelete: prev.data?.onDelete,
+            onLabelUpdate: prev.data?.onLabelUpdate,
           },
         }
       })
@@ -248,6 +301,8 @@ function ReactFlowWhiteboardInner({
 
   // When edges change, update the edges prop in all node data (for delete confirmation)
   useEffect(() => {
+    console.log(`[WHITEBOARD] edges-to-nodes effect fired — ${edges.length} edges → updating all ${nodes.length} nodes' data.edges prop`)
+    console.trace('[WHITEBOARD] edges-to-nodes stack trace')
     setNodes((prevNodes) =>
       prevNodes.map((node) => ({
         ...node,
@@ -257,6 +312,7 @@ function ReactFlowWhiteboardInner({
         },
       })),
     )
+  // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [edges])
 
   // Callback for when a remote user deletes a table
@@ -281,13 +337,27 @@ function ReactFlowWhiteboardInner({
     setEdges((prev) => prev.filter((e) => e.id !== relationshipId))
   }, [])
 
+  // Callback for when a remote user updates a relationship label
+  const onRelationshipUpdated = useCallback(
+    (relationshipId: string, label: string) => {
+      setEdges((prev) =>
+        prev.map((e) =>
+          e.id === relationshipId
+            ? { ...e, data: { ...e.data!, label: label || undefined } }
+            : e,
+        ),
+      )
+    },
+    [],
+  )
+
   // Ref for onRelationshipError — breaks circular dependency between useWhiteboardCollaboration and useRelationshipMutations
   const onRelationshipErrorRef = useRef<(data: RelationshipErrorEvent) => void>(
     () => {},
   )
 
-  // Real-time collaboration integration (table position events + table deletion + relationship deletion)
-  const { connectionState, emitPositionUpdate, emitTableDelete, emitRelationshipDelete } =
+  // Real-time collaboration integration (table position events + table deletion + relationship deletion/update)
+  const { connectionState, emitPositionUpdate, emitTableDelete, emitRelationshipDelete, emitRelationshipUpdate } =
     useWhiteboardCollaboration(
       whiteboardId,
       userId,
@@ -309,6 +379,7 @@ function ReactFlowWhiteboardInner({
       useCallback((data: RelationshipErrorEvent) => {
         onRelationshipErrorRef.current(data)
       }, []),
+      onRelationshipUpdated,
     )
 
   // Column collaboration callbacks (incoming events from other users)
@@ -503,11 +574,12 @@ function ReactFlowWhiteboardInner({
     onTableErrorRef.current = tableMutations.onTableError
   }, [tableMutations.onTableError])
 
-  // Relationship mutations hook (optimistic delete + rollback)
+  // Relationship mutations hook (optimistic delete + label update with rollback)
   const relationshipMutations = useRelationshipMutations(
     setEdges,
     emitRelationshipDelete,
     isConnected,
+    emitRelationshipUpdate,
   )
 
   // Wire onRelationshipError ref now that relationshipMutations is available
@@ -523,7 +595,15 @@ function ReactFlowWhiteboardInner({
     handleRelationshipDeleteRef.current = relationshipMutations.deleteRelationship
   }, [relationshipMutations.deleteRelationship])
 
-  // Inject onDelete callback into edge data whenever isConnected changes
+  // Stable ref for the updateRelationshipLabel callback — prevents stale closures in edge data
+  const handleRelationshipLabelUpdateRef = useRef(
+    relationshipMutations.updateRelationshipLabel,
+  )
+  useEffect(() => {
+    handleRelationshipLabelUpdateRef.current = relationshipMutations.updateRelationshipLabel
+  }, [relationshipMutations.updateRelationshipLabel])
+
+  // Inject onDelete and onLabelUpdate callbacks into edge data whenever isConnected changes
   useEffect(() => {
     setEdges((prevEdges) =>
       prevEdges.map((edge) => ({
@@ -531,13 +611,14 @@ function ReactFlowWhiteboardInner({
         data: {
           ...edge.data!,
           onDelete: handleRelationshipDeleteRef.current,
+          onLabelUpdate: handleRelationshipLabelUpdateRef.current,
         },
       })),
     )
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [isConnected])
 
-  // Also inject onDelete callback into edges once on mount
+  // Also inject onDelete and onLabelUpdate callbacks into edges once on mount
   useEffect(() => {
     setEdges((prevEdges) =>
       prevEdges.map((edge) => ({
@@ -545,6 +626,7 @@ function ReactFlowWhiteboardInner({
         data: {
           ...edge.data!,
           onDelete: handleRelationshipDeleteRef.current,
+          onLabelUpdate: handleRelationshipLabelUpdateRef.current,
         },
       })),
     )
@@ -640,14 +722,17 @@ function ReactFlowWhiteboardInner({
       sourceColumnId: pendingConnection.sourceColumnId,
       targetColumnId: pendingConnection.targetColumnId,
       cardinality: selectedCardinality,
+      label: pendingLabel.trim() || undefined,
     })
 
     setPendingConnection(null)
-  }, [pendingConnection, selectedCardinality, whiteboardId, createRelationshipMutation])
+    setPendingLabel('')
+  }, [pendingConnection, selectedCardinality, pendingLabel, whiteboardId, createRelationshipMutation])
 
   // Cancel pending connection
   const handleCardinalityCancel = useCallback(() => {
     setPendingConnection(null)
+    setPendingLabel('')
   }, [])
 
   // Thread column mutation callbacks into node data via refs (stable identity)
@@ -679,12 +764,13 @@ function ReactFlowWhiteboardInner({
           onColumnUpdate: handleColumnUpdateRef.current,
           onColumnDelete: handleColumnDeleteRef.current,
           onRequestTableDelete: handleRequestTableDeleteRef.current,
+          tableNameById,
           isConnected,
         },
       })),
     )
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [isConnected])
+  }, [isConnected, tableNameById])
 
   // Also inject callbacks into nodes once on mount (initialNodes may not have them)
   useEffect(() => {
@@ -698,6 +784,7 @@ function ReactFlowWhiteboardInner({
           onColumnDelete: handleColumnDeleteRef.current,
           onRequestTableDelete: handleRequestTableDeleteRef.current,
           edges: edgesRef.current,
+          tableNameById,
           isConnected,
         },
       })),
@@ -717,18 +804,21 @@ function ReactFlowWhiteboardInner({
     onSuccess: (updatedTable) => {
       // Update cache without full refetch for better performance
       queryClient.setQueryData(['whiteboard', whiteboardId], (old: any) => {
-        if (!old?.tables) return old
+        if (!old?.whiteboard?.tables) return old
         return {
           ...old,
-          tables: old.tables.map((t: any) =>
-            t.id === updatedTable.id
-              ? {
-                  ...t,
-                  positionX: updatedTable.positionX,
-                  positionY: updatedTable.positionY,
-                }
-              : t,
-          ),
+          whiteboard: {
+            ...old.whiteboard,
+            tables: old.whiteboard.tables.map((t: any) =>
+              t.id === updatedTable.id
+                ? {
+                    ...t,
+                    positionX: updatedTable.positionX,
+                    positionY: updatedTable.positionY,
+                  }
+                : t,
+            ),
+          },
         }
       })
     },
@@ -897,25 +987,37 @@ function ReactFlowWhiteboardInner({
             <DialogTitle>Set Relationship Cardinality</DialogTitle>
           </DialogHeader>
 
-          <div className="py-4 space-y-2">
-            <Label htmlFor="cardinality-select">Cardinality</Label>
-            <Select
-              value={selectedCardinality}
-              onValueChange={(value) =>
-                setSelectedCardinality(value as Cardinality)
-              }
-            >
-              <SelectTrigger id="cardinality-select">
-                <SelectValue placeholder="Select cardinality" />
-              </SelectTrigger>
-              <SelectContent>
-                {CARDINALITY_OPTIONS.map((option) => (
-                  <SelectItem key={option.value} value={option.value}>
-                    {option.label}
-                  </SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
+          <div className="py-4 space-y-4">
+            <div className="space-y-2">
+              <Label htmlFor="cardinality-select">Cardinality</Label>
+              <Select
+                value={selectedCardinality}
+                onValueChange={(value) =>
+                  setSelectedCardinality(value as Cardinality)
+                }
+              >
+                <SelectTrigger id="cardinality-select">
+                  <SelectValue placeholder="Select cardinality" />
+                </SelectTrigger>
+                <SelectContent>
+                  {CARDINALITY_OPTIONS.map((option) => (
+                    <SelectItem key={option.value} value={option.value}>
+                      {option.label}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+            <div className="space-y-2">
+              <Label htmlFor="relationship-label">Label (optional)</Label>
+              <Input
+                id="relationship-label"
+                value={pendingLabel}
+                onChange={(e) => setPendingLabel(e.target.value)}
+                placeholder="e.g. has many, belongs to"
+                maxLength={255}
+              />
+            </div>
           </div>
 
           <DialogFooter>
@@ -973,7 +1075,10 @@ export function ReactFlowWhiteboard({
       return []
     }
     console.log('ReactFlowWhiteboard: Converting tables to nodes', tables)
-    const convertedNodes = convertTablesToNodes(tables, 'ALL_FIELDS')
+    const convertedNodes = convertTablesToNodes(tables, 'ALL_FIELDS', {
+      whiteboardId,
+      userId,
+    })
     console.log('ReactFlowWhiteboard: Converted nodes', convertedNodes)
     return convertedNodes
   }, [whiteboardData?.whiteboard?.tables])

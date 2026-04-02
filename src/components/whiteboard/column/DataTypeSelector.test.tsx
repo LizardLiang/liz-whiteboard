@@ -127,7 +127,7 @@ describe('DataTypeSelector', () => {
 
   it('TC-01-08: combobox trigger starts closed before auto-open timer fires', () => {
     render(
-      <DataTypeSelector value="string" onSelect={vi.fn()} onCancel={vi.fn()} />,
+      <DataTypeSelector value="string" onSelect={vi.fn()} onCancel={vi.fn()} autoOpen />,
     )
     // Before the setTimeout fires, the popover should be closed
     const combobox = screen.getByRole('combobox')
@@ -136,7 +136,7 @@ describe('DataTypeSelector', () => {
 
   it('TC-01-09: auto-opens after the setTimeout(0) fires', async () => {
     render(
-      <DataTypeSelector value="string" onSelect={vi.fn()} onCancel={vi.fn()} />,
+      <DataTypeSelector value="string" onSelect={vi.fn()} onCancel={vi.fn()} autoOpen />,
     )
     // Advance past the setTimeout(0) to trigger auto-open
     act(() => {
@@ -155,7 +155,7 @@ describe('DataTypeSelector', () => {
     const onSelect = vi.fn()
     const onCancel = vi.fn()
     render(
-      <DataTypeSelector value="string" onSelect={onSelect} onCancel={onCancel} />,
+      <DataTypeSelector value="string" onSelect={onSelect} onCancel={onCancel} autoOpen />,
     )
     // Open the popover
     act(() => {
@@ -171,7 +171,7 @@ describe('DataTypeSelector', () => {
   it('TC-01-11: pressing Escape calls onCancel exactly once (double-cancel guard)', () => {
     const onCancel = vi.fn()
     render(
-      <DataTypeSelector value="string" onSelect={vi.fn()} onCancel={onCancel} />,
+      <DataTypeSelector value="string" onSelect={vi.fn()} onCancel={onCancel} autoOpen />,
     )
     // Open the popover
     act(() => {
@@ -187,7 +187,7 @@ describe('DataTypeSelector', () => {
     const onSelect = vi.fn()
     const onCancel = vi.fn()
     render(
-      <DataTypeSelector value="string" onSelect={onSelect} onCancel={onCancel} />,
+      <DataTypeSelector value="string" onSelect={onSelect} onCancel={onCancel} autoOpen />,
     )
     // Open the popover
     act(() => {
@@ -203,7 +203,7 @@ describe('DataTypeSelector', () => {
 
   it('TC-01-13: typing in the search input filters the displayed options', () => {
     render(
-      <DataTypeSelector value="string" onSelect={vi.fn()} onCancel={vi.fn()} />,
+      <DataTypeSelector value="string" onSelect={vi.fn()} onCancel={vi.fn()} autoOpen />,
     )
     // Open the popover
     act(() => {

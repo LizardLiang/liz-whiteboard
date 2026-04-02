@@ -194,6 +194,7 @@ export const ColumnRow = memo(
                 value={column.dataType as import('@/data/schema').DataType}
                 onSelect={(dt) => onCommitEdit(column.id, 'dataType', dt)}
                 onCancel={onCancelEdit}
+                autoOpen
               />
             ) : (
               <Tooltip>
@@ -215,7 +216,7 @@ export const ColumnRow = memo(
                         ? 'var(--rf-column-edit-bg, rgba(99,102,241,0.12))'
                         : 'transparent',
                       transition: 'background 0.1s, color 0.1s, opacity 0.1s',
-                      textDecoration: isHoveringDataType ? 'underline' : 'none',
+                      textDecorationLine: isHoveringDataType ? 'underline' : 'none',
                       textDecorationStyle: 'dotted',
                     }}
                     onDoubleClick={handleDataTypeDoubleClick}

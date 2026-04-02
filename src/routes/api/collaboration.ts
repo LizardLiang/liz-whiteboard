@@ -177,6 +177,14 @@ function setupWhiteboardNamespace(ioServer: SocketIOServer): void {
   })
 }
 
+async function safeUpdateSessionActivity(socketId: string): Promise<void> {
+  try {
+    await updateSessionActivity(socketId)
+  } catch {
+    // stale session — non-fatal
+  }
+}
+
 /**
  * Setup event handlers for collaboration events
  */
@@ -259,9 +267,6 @@ function setupCollaborationEventHandlers(
         ...table,
         createdBy: userId,
       })
-
-      // Update session activity
-      await updateSessionActivity(socket.id)
     } catch (error) {
       console.error('Failed to create table:', error)
       socket.emit('error', {
@@ -270,7 +275,9 @@ function setupCollaborationEventHandlers(
         message:
           error instanceof Error ? error.message : 'Failed to create table',
       })
+      return
     }
+    await safeUpdateSessionActivity(socket.id)
   })
 
   // Table position update (dragging)
@@ -292,9 +299,6 @@ function setupCollaborationEventHandlers(
           positionY: data.positionY,
           updatedBy: userId,
         })
-
-        // Update session activity
-        await updateSessionActivity(socket.id)
       } catch (error) {
         console.error('Failed to move table:', error)
         socket.emit('error', {
@@ -302,7 +306,9 @@ function setupCollaborationEventHandlers(
           error: 'UPDATE_FAILED',
           message: 'Failed to update table position',
         })
+        return
       }
+      await safeUpdateSessionActivity(socket.id)
     },
   )
 
@@ -325,9 +331,6 @@ function setupCollaborationEventHandlers(
           ...validated,
           updatedBy: userId,
         })
-
-        // Update session activity
-        await updateSessionActivity(socket.id)
       } catch (error) {
         console.error('Failed to update table:', error)
         socket.emit('error', {
@@ -336,7 +339,9 @@ function setupCollaborationEventHandlers(
           message:
             error instanceof Error ? error.message : 'Failed to update table',
         })
+        return
       }
+      await safeUpdateSessionActivity(socket.id)
     },
   )
 
@@ -375,9 +380,6 @@ function setupCollaborationEventHandlers(
         tableId,
         deletedBy: userId,
       })
-
-      // Update session activity
-      await updateSessionActivity(socket.id)
     } catch (error) {
       console.error('Failed to delete table:', error)
       socket.emit('error', {
@@ -386,7 +388,9 @@ function setupCollaborationEventHandlers(
         message: 'Failed to delete table',
         tableId: data.tableId,
       })
+      return
     }
+    await safeUpdateSessionActivity(socket.id)
   })
 
   // ========================================================================
@@ -395,9 +399,10 @@ function setupCollaborationEventHandlers(
 
   // Column creation
   socket.on('column:create', async (data: any) => {
+    let validated: ReturnType<typeof createColumnSchema.parse> | undefined
     try {
       // Validate input
-      const validated = createColumnSchema.parse(data)
+      validated = createColumnSchema.parse(data)
 
       // Create column in database
       const column = await createColumn(validated)
@@ -414,9 +419,6 @@ function setupCollaborationEventHandlers(
         ...column,
         createdBy: userId,
       })
-
-      // Update session activity
-      await updateSessionActivity(socket.id)
     } catch (error) {
       console.error('Failed to create column:', error)
       socket.emit('error', {
@@ -424,8 +426,12 @@ function setupCollaborationEventHandlers(
         error: 'VALIDATION_ERROR',
         message:
           error instanceof Error ? error.message : 'Failed to create column',
+        name: validated?.name,
+        tableId: validated?.tableId,
       })
+      return
     }
+    await safeUpdateSessionActivity(socket.id)
   })
 
   // Column update
@@ -448,9 +454,6 @@ function setupCollaborationEventHandlers(
           ...validated,
           updatedBy: userId,
         })
-
-        // Update session activity
-        await updateSessionActivity(socket.id)
       } catch (error) {
         console.error('Failed to update column:', error)
         socket.emit('error', {
@@ -459,7 +462,9 @@ function setupCollaborationEventHandlers(
           message:
             error instanceof Error ? error.message : 'Failed to update column',
         })
+        return
       }
+      await safeUpdateSessionActivity(socket.id)
     },
   )
 
@@ -481,9 +486,6 @@ function setupCollaborationEventHandlers(
         tableId: column.tableId,
         deletedBy: userId,
       })
-
-      // Update session activity
-      await updateSessionActivity(socket.id)
     } catch (error) {
       console.error('Failed to delete column:', error)
       socket.emit('error', {
@@ -492,7 +494,9 @@ function setupCollaborationEventHandlers(
         message:
           error instanceof Error ? error.message : 'Failed to delete column',
       })
+      return
     }
+    await safeUpdateSessionActivity(socket.id)
   })
 
   // ========================================================================
@@ -516,9 +520,6 @@ function setupCollaborationEventHandlers(
         ...relationship,
         createdBy: userId,
       })
-
-      // Update session activity
-      await updateSessionActivity(socket.id)
     } catch (error) {
       console.error('Failed to create relationship:', error)
       socket.emit('error', {
@@ -529,7 +530,9 @@ function setupCollaborationEventHandlers(
             ? error.message
             : 'Failed to create relationship',
       })
+      return
     }
+    await safeUpdateSessionActivity(socket.id)
   })
 
   // Relationship update
@@ -551,9 +554,6 @@ function setupCollaborationEventHandlers(
           ...validated,
           updatedBy: userId,
         })
-
-        // Update session activity
-        await updateSessionActivity(socket.id)
       } catch (error) {
         console.error('Failed to update relationship:', error)
         socket.emit('error', {
@@ -564,7 +564,9 @@ function setupCollaborationEventHandlers(
               ? error.message
               : 'Failed to update relationship',
         })
+        return
       }
+      await safeUpdateSessionActivity(socket.id)
     },
   )
 
@@ -616,9 +618,6 @@ function setupCollaborationEventHandlers(
         relationshipId,
         deletedBy: userId,
       })
-
-      // Update session activity
-      await updateSessionActivity(socket.id)
     } catch (error) {
       console.error('Failed to delete relationship:', error)
       socket.emit('error', {
@@ -627,7 +626,9 @@ function setupCollaborationEventHandlers(
         message: 'Failed to delete relationship',
         relationshipId: relationshipId ?? data.relationshipId,
       })
+      return
     }
+    await safeUpdateSessionActivity(socket.id)
   })
 }
 

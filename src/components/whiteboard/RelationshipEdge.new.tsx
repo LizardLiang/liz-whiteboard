@@ -1,4 +1,4 @@
-import { memo, useMemo, useState } from 'react'
+import { memo, useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { EdgeLabelRenderer, Position, getSmoothStepPath } from '@xyflow/react'
 import type { EdgeProps } from '@xyflow/react'
 import { X } from 'lucide-react'
@@ -288,6 +288,29 @@ export const RelationshipEdge = memo(
     const [isFocused, setIsFocused] = useState(false)
     const isVisible = isHovered || selected || isFocused
 
+    // Label editing state
+    const [isEditing, setIsEditing] = useState(false)
+    const [editValue, setEditValue] = useState(label ?? '')
+    const inputRef = useRef<HTMLInputElement>(null)
+
+    // Sync editValue when label updates from collaboration
+    useEffect(() => {
+      if (!isEditing) setEditValue(label ?? '')
+    }, [label, isEditing])
+
+    const commitLabel = useCallback(() => {
+      setIsEditing(false)
+      const trimmed = editValue.trim()
+      if (trimmed !== (label ?? '')) {
+        data?.onLabelUpdate?.(id, trimmed)
+      }
+    }, [editValue, label, data, id])
+
+    const cancelEdit = useCallback(() => {
+      setIsEditing(false)
+      setEditValue(label ?? '')
+    }, [label])
+
     const srcAngle = useMemo(
       () => outwardAngle(sourcePosition),
       [sourcePosition],
@@ -463,92 +486,142 @@ export const RelationshipEdge = memo(
           </g>
         )}
 
-        {/* Edge label */}
-        {label && (
-          <EdgeLabelRenderer>
-            <div
-              style={{
-                position: 'absolute',
-                transform: `translate(-50%, -50%) translate(${labelX}px,${labelY}px)`,
-                pointerEvents: 'all',
-                fontSize: '11px',
-                fontWeight: 500,
-                letterSpacing: '0.02em',
-                background: 'var(--rf-edge-label-bg)',
-                backdropFilter: 'blur(8px)',
-                WebkitBackdropFilter: 'blur(8px)',
-                padding: '3px 10px',
-                borderRadius: '6px',
-                border: '1px solid var(--rf-edge-label-border)',
-                color: isActive
-                  ? 'var(--rf-edge-stroke-selected)'
-                  : 'var(--rf-table-text)',
-                boxShadow: isActive
-                  ? '0 0 12px var(--rf-edge-glow)'
-                  : '0 1px 4px rgba(0,0,0,0.06)',
-                transition: 'color 0.2s, box-shadow 0.2s',
-                zIndex: Z_INDEX.EDGE_LABEL,
-              }}
-              className="nodrag nopan"
-            >
-              {label}
-            </div>
-          </EdgeLabelRenderer>
-        )}
-
-        {/* Delete button — hover/selection/focus reveal */}
+        {/* Label + delete button — flex row, no overlap */}
         <EdgeLabelRenderer>
-          {/* 44px touch hit target wrapping a 20px visual circle */}
           <div
+            className="nodrag nopan"
             style={{
               position: 'absolute',
-              transform: `translate(-50%, -50%) translate(${labelX}px,${labelY - (label ? 20 : 0)}px)`,
-              zIndex: Z_INDEX.EDGE_LABEL + 1,
-              // 44px touch hit target
-              width: '44px',
-              height: '44px',
-              display: 'flex',
+              transform: `translate(-50%, -50%) translate(${labelX}px,${labelY}px)`,
+              pointerEvents: 'all',
+              zIndex: Z_INDEX.EDGE_LABEL,
+              display: 'inline-flex',
               alignItems: 'center',
-              justifyContent: 'center',
-              pointerEvents: isVisible ? 'all' : 'none',
-              opacity: isVisible ? 1 : 0,
-              transition: 'opacity 150ms ease',
+              gap: '4px',
             }}
-            className="nodrag nopan"
+            onMouseEnter={() => setIsHovered(true)}
+            onMouseLeave={() => setIsHovered(false)}
           >
-            <button
-              type="button"
-              aria-label="Delete relationship"
-              role="button"
-              className="nodrag nopan"
-              onFocus={() => setIsFocused(true)}
-              onBlur={() => setIsFocused(false)}
-              onClick={(e) => {
-                e.stopPropagation()
-                data?.onDelete?.(id)
-              }}
+            {/* Label pill — visible when label exists, editing, or edge is active/hovered */}
+            {(isVisible || !!label || isEditing) && (
+              <div
+                style={{
+                  display: 'inline-flex',
+                  alignItems: 'center',
+                  background: 'var(--rf-edge-label-bg)',
+                  backdropFilter: 'blur(8px)',
+                  WebkitBackdropFilter: 'blur(8px)',
+                  borderRadius: '20px',
+                  border: isEditing
+                    ? '1px solid var(--rf-edge-stroke-selected)'
+                    : label
+                      ? `1px solid ${isActive ? 'var(--rf-edge-stroke-selected)' : 'var(--rf-edge-label-border)'}`
+                      : '1px dashed var(--rf-edge-label-border)',
+                  padding: '3px 10px',
+                  boxShadow: isEditing
+                    ? '0 0 12px var(--rf-edge-glow)'
+                    : isActive
+                      ? '0 0 8px var(--rf-edge-glow)'
+                      : '0 1px 4px rgba(0,0,0,0.06)',
+                  fontSize: '11px',
+                  fontWeight: 500,
+                  letterSpacing: '0.02em',
+                  color: isActive || isEditing
+                    ? 'var(--rf-edge-stroke-selected)'
+                    : 'var(--rf-table-text)',
+                  transition: 'border-color 0.2s, box-shadow 0.2s, color 0.2s',
+                }}
+              >
+                {isEditing ? (
+                  <input
+                    ref={inputRef}
+                    value={editValue}
+                    onChange={(e) => setEditValue(e.target.value.slice(0, 255))}
+                    onBlur={commitLabel}
+                    onKeyDown={(e) => {
+                      if (e.key === 'Enter') { e.preventDefault(); commitLabel() }
+                      if (e.key === 'Escape') { e.preventDefault(); cancelEdit() }
+                      e.stopPropagation()
+                    }}
+                    maxLength={255}
+                    autoFocus
+                    className="nodrag nopan"
+                    style={{
+                      background: 'transparent',
+                      border: 'none',
+                      outline: 'none',
+                      fontSize: '11px',
+                      fontWeight: 500,
+                      letterSpacing: '0.02em',
+                      color: 'var(--rf-edge-stroke-selected)',
+                      minWidth: '60px',
+                      width: `${Math.max(60, editValue.length * 7 + 16)}px`,
+                      padding: 0,
+                    }}
+                  />
+                ) : label ? (
+                  <span
+                    onDoubleClick={() => setIsEditing(true)}
+                    title="Double-click to edit"
+                    style={{ cursor: 'default', userSelect: 'none' }}
+                  >
+                    {label}
+                  </span>
+                ) : (
+                  <span
+                    onClick={() => setIsEditing(true)}
+                    style={{ fontStyle: 'italic', opacity: 0.55, cursor: 'pointer', userSelect: 'none' }}
+                  >
+                    + Add label
+                  </span>
+                )}
+              </div>
+            )}
+
+            {/* Delete button wrapper — always in DOM; opacity/pointerEvents control visibility */}
+            <div
               style={{
-                width: '20px',
-                height: '20px',
-                minWidth: '24px',
-                minHeight: '24px',
-                borderRadius: '50%',
-                border: 'none',
-                cursor: 'pointer',
+                opacity: isVisible ? 1 : 0,
+                pointerEvents: isVisible ? 'all' : 'none',
+                transition: 'opacity 150ms ease, background-color 0.15s',
                 display: 'flex',
                 alignItems: 'center',
                 justifyContent: 'center',
-                backgroundColor: cardinalityColor,
-                color: '#ffffff',
-                boxShadow: '0 1px 6px rgba(0,0,0,0.3), 0 0 0 2px rgba(0,0,0,0.08)',
-                backdropFilter: 'blur(4px)',
-                WebkitBackdropFilter: 'blur(4px)',
-                padding: 0,
-                outline: 'none',
               }}
             >
-              <X size={12} strokeWidth={2.5} aria-hidden="true" />
-            </button>
+              <button
+                type="button"
+                aria-label="Delete relationship"
+                className="nodrag nopan"
+                onFocus={() => setIsFocused(true)}
+                onBlur={() => setIsFocused(false)}
+                onClick={(e) => {
+                  e.stopPropagation()
+                  data?.onDelete?.(id)
+                }}
+                style={{
+                  width: '20px',
+                  height: '20px',
+                  minWidth: '24px',
+                  minHeight: '24px',
+                  borderRadius: '50%',
+                  border: 'none',
+                  cursor: 'pointer',
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                  backgroundColor: cardinalityColor,
+                  color: '#ffffff',
+                  boxShadow: '0 1px 6px rgba(0,0,0,0.3), 0 0 0 2px rgba(0,0,0,0.08)',
+                  backdropFilter: 'blur(4px)',
+                  WebkitBackdropFilter: 'blur(4px)',
+                  padding: 0,
+                  outline: 'none',
+                }}
+              >
+                <X size={12} strokeWidth={2.5} aria-hidden="true" />
+              </button>
+            </div>
           </div>
         </EdgeLabelRenderer>
       </>
