@@ -58,6 +58,10 @@ import { useWhiteboardCollaboration } from '@/hooks/use-whiteboard-collaboration
 import { useColumnCollaboration } from '@/hooks/use-column-collaboration'
 import { useColumnMutations } from '@/hooks/use-column-mutations'
 import { useTableMutations } from '@/hooks/use-table-mutations'
+import {
+  useRelationshipMutations,
+  type RelationshipErrorEvent,
+} from '@/hooks/use-relationship-mutations'
 import { useTableDeletion } from '@/hooks/use-table-deletion'
 import { getSessionUserId } from '@/lib/session-user-id'
 
@@ -223,8 +227,23 @@ function ReactFlowWhiteboardInner({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [initialNodes])
 
+  // Update local edge state when initial data changes — preserve onDelete callback
+  // so that a TanStack Query refetch does not wipe the injected callback.
   useEffect(() => {
-    setEdges(initialEdges)
+    setEdges((prevEdges) => {
+      const prevEdgeMap = new Map(prevEdges.map((e) => [e.id, e]))
+      return initialEdges.map((edge) => {
+        const prev = prevEdgeMap.get(edge.id)
+        if (!prev) return edge
+        return {
+          ...edge,
+          data: {
+            ...edge.data!,
+            onDelete: prev.data?.onDelete,
+          },
+        }
+      })
+    })
   }, [initialEdges])
 
   // When edges change, update the edges prop in all node data (for delete confirmation)
@@ -257,8 +276,18 @@ function ReactFlowWhiteboardInner({
   // Ref for onTableError — breaks circular dependency between useWhiteboardCollaboration and useTableMutations
   const onTableErrorRef = useRef<(data: any) => void>(() => {})
 
-  // Real-time collaboration integration (table position events + table deletion)
-  const { connectionState, emitPositionUpdate, emitTableDelete } =
+  // Callback for when a remote user deletes a relationship
+  const onRelationshipDeleted = useCallback((relationshipId: string) => {
+    setEdges((prev) => prev.filter((e) => e.id !== relationshipId))
+  }, [])
+
+  // Ref for onRelationshipError — breaks circular dependency between useWhiteboardCollaboration and useRelationshipMutations
+  const onRelationshipErrorRef = useRef<(data: RelationshipErrorEvent) => void>(
+    () => {},
+  )
+
+  // Real-time collaboration integration (table position events + table deletion + relationship deletion)
+  const { connectionState, emitPositionUpdate, emitTableDelete, emitRelationshipDelete } =
     useWhiteboardCollaboration(
       whiteboardId,
       userId,
@@ -275,6 +304,10 @@ function ReactFlowWhiteboardInner({
       onTableDeleted,
       useCallback((data: any) => {
         onTableErrorRef.current(data)
+      }, []),
+      onRelationshipDeleted,
+      useCallback((data: RelationshipErrorEvent) => {
+        onRelationshipErrorRef.current(data)
       }, []),
     )
 
@@ -469,6 +502,54 @@ function ReactFlowWhiteboardInner({
   useEffect(() => {
     onTableErrorRef.current = tableMutations.onTableError
   }, [tableMutations.onTableError])
+
+  // Relationship mutations hook (optimistic delete + rollback)
+  const relationshipMutations = useRelationshipMutations(
+    setEdges,
+    emitRelationshipDelete,
+    isConnected,
+  )
+
+  // Wire onRelationshipError ref now that relationshipMutations is available
+  useEffect(() => {
+    onRelationshipErrorRef.current = relationshipMutations.onRelationshipError
+  }, [relationshipMutations.onRelationshipError])
+
+  // Stable ref for the deleteRelationship callback — prevents stale closures in edge data
+  const handleRelationshipDeleteRef = useRef(
+    relationshipMutations.deleteRelationship,
+  )
+  useEffect(() => {
+    handleRelationshipDeleteRef.current = relationshipMutations.deleteRelationship
+  }, [relationshipMutations.deleteRelationship])
+
+  // Inject onDelete callback into edge data whenever isConnected changes
+  useEffect(() => {
+    setEdges((prevEdges) =>
+      prevEdges.map((edge) => ({
+        ...edge,
+        data: {
+          ...edge.data!,
+          onDelete: handleRelationshipDeleteRef.current,
+        },
+      })),
+    )
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [isConnected])
+
+  // Also inject onDelete callback into edges once on mount
+  useEffect(() => {
+    setEdges((prevEdges) =>
+      prevEdges.map((edge) => ({
+        ...edge,
+        data: {
+          ...edge.data!,
+          onDelete: handleRelationshipDeleteRef.current,
+        },
+      })),
+    )
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [])
 
   // Keyboard shortcut for table deletion (Delete/Backspace on selected node)
   useTableDeletion((tableId: string) => setDeletingTableId(tableId))
