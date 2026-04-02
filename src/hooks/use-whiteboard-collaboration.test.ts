@@ -194,3 +194,189 @@ describe('useWhiteboardCollaboration — table deletion extension', () => {
     expect(removedEvents).toContain('error')
   })
 })
+
+describe('useWhiteboardCollaboration — relationship events', () => {
+  const whiteboardId = 'wb-001'
+  const userId = 'user-current'
+
+  let onPositionUpdate: ReturnType<typeof vi.fn>
+  let onRelationshipDeleted: ReturnType<typeof vi.fn>
+  let onRelationshipError: ReturnType<typeof vi.fn>
+
+  beforeEach(() => {
+    onPositionUpdate = vi.fn()
+    onRelationshipDeleted = vi.fn()
+    onRelationshipError = vi.fn()
+    vi.clearAllMocks()
+  })
+
+  it('TC-RD-03-01: registers relationship:deleted listener on mount', () => {
+    renderHook(() =>
+      useWhiteboardCollaboration(
+        whiteboardId,
+        userId,
+        onPositionUpdate,
+        undefined,
+        undefined,
+        onRelationshipDeleted,
+        onRelationshipError,
+      ),
+    )
+
+    const registeredEvents = mockOn.mock.calls.map(([event]) => event)
+    expect(registeredEvents).toContain('relationship:deleted')
+  })
+
+  it('TC-RD-03-02: relationship:deleted from another user triggers onRelationshipDeleted', () => {
+    renderHook(() =>
+      useWhiteboardCollaboration(
+        whiteboardId,
+        userId,
+        onPositionUpdate,
+        undefined,
+        undefined,
+        onRelationshipDeleted,
+        onRelationshipError,
+      ),
+    )
+
+    const deletedCall = mockOn.mock.calls.find(
+      ([event]) => event === 'relationship:deleted',
+    )
+    const handler = deletedCall?.[1]
+    expect(handler).toBeDefined()
+
+    act(() => {
+      handler({ relationshipId: 'rel-001', deletedBy: 'user-other' })
+    })
+
+    expect(onRelationshipDeleted).toHaveBeenCalledWith('rel-001')
+  })
+
+  it('TC-RD-03-03: relationship:deleted from current user is ignored (no double-apply)', () => {
+    renderHook(() =>
+      useWhiteboardCollaboration(
+        whiteboardId,
+        userId,
+        onPositionUpdate,
+        undefined,
+        undefined,
+        onRelationshipDeleted,
+        onRelationshipError,
+      ),
+    )
+
+    const deletedCall = mockOn.mock.calls.find(
+      ([event]) => event === 'relationship:deleted',
+    )
+    const handler = deletedCall?.[1]
+
+    act(() => {
+      handler({ relationshipId: 'rel-001', deletedBy: userId }) // same user
+    })
+
+    expect(onRelationshipDeleted).not.toHaveBeenCalled()
+  })
+
+  it('TC-RD-03-05: emitRelationshipDelete emits correct WebSocket payload', () => {
+    const { result } = renderHook(() =>
+      useWhiteboardCollaboration(
+        whiteboardId,
+        userId,
+        onPositionUpdate,
+        undefined,
+        undefined,
+        onRelationshipDeleted,
+        onRelationshipError,
+      ),
+    )
+
+    act(() => {
+      result.current.emitRelationshipDelete('rel-001')
+    })
+
+    expect(mockEmit).toHaveBeenCalledWith('relationship:delete', {
+      relationshipId: 'rel-001',
+    })
+  })
+
+  it('TC-RD-03-06: error event with event="relationship:delete" triggers onRelationshipError', () => {
+    renderHook(() =>
+      useWhiteboardCollaboration(
+        whiteboardId,
+        userId,
+        onPositionUpdate,
+        undefined,
+        undefined,
+        onRelationshipDeleted,
+        onRelationshipError,
+      ),
+    )
+
+    // There may be multiple 'error' handlers registered (table + relationship)
+    const errorCalls = mockOn.mock.calls.filter(([event]) => event === 'error')
+    // Find the relationship error handler — it's the one registered by onRelationshipError effect
+    // We call all error handlers and verify the relationship one fires
+    const errorPayload = {
+      event: 'relationship:delete',
+      error: 'DELETE_FAILED',
+      message: 'Failed',
+      relationshipId: 'rel-001',
+    }
+
+    act(() => {
+      for (const call of errorCalls) {
+        call[1](errorPayload)
+      }
+    })
+
+    expect(onRelationshipError).toHaveBeenCalledWith(errorPayload)
+  })
+
+  it('TC-RD-03-07: error event for unrelated event type does NOT trigger onRelationshipError', () => {
+    renderHook(() =>
+      useWhiteboardCollaboration(
+        whiteboardId,
+        userId,
+        onPositionUpdate,
+        undefined,
+        undefined,
+        onRelationshipDeleted,
+        onRelationshipError,
+      ),
+    )
+
+    const errorCalls = mockOn.mock.calls.filter(([event]) => event === 'error')
+
+    act(() => {
+      for (const call of errorCalls) {
+        call[1]({
+          event: 'table:delete',
+          error: 'DELETE_FAILED',
+          tableId: 'tbl-001',
+        })
+      }
+    })
+
+    expect(onRelationshipError).not.toHaveBeenCalled()
+  })
+
+  it('TC-RD-03-08: relationship:deleted listener is cleaned up on unmount', () => {
+    const { unmount } = renderHook(() =>
+      useWhiteboardCollaboration(
+        whiteboardId,
+        userId,
+        onPositionUpdate,
+        undefined,
+        undefined,
+        onRelationshipDeleted,
+        onRelationshipError,
+      ),
+    )
+
+    unmount()
+
+    const removedEvents = mockOff.mock.calls.map(([event]) => event)
+    expect(removedEvents).toContain('relationship:deleted')
+  })
+})
