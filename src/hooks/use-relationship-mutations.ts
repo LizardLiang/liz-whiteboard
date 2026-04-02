@@ -15,7 +15,7 @@ type SetEdges = React.Dispatch<
 >
 
 interface PendingRelationshipMutation {
-  type: 'delete'
+  type: 'delete' | 'update'
   rollback: () => void
 }
 
@@ -30,6 +30,7 @@ export function useRelationshipMutations(
   setEdges: SetEdges,
   emitRelationshipDelete: ((relationshipId: string) => void) | null,
   isConnected: boolean,
+  emitRelationshipUpdate?: ((relationshipId: string, label: string) => void) | null,
 ) {
   /**
    * Track optimistic mutations for rollback on server error.
@@ -80,11 +81,60 @@ export function useRelationshipMutations(
   )
 
   /**
-   * Called by useWhiteboardCollaboration when server sends an error event for relationship:delete.
+   * Update a relationship label optimistically then emit via WebSocket.
+   */
+  const updateRelationshipLabel = useCallback(
+    (relationshipId: string, label: string) => {
+      if (!isConnected) {
+        toast.error('Not connected. Please wait for reconnection.')
+        return
+      }
+
+      let previousLabel: string | undefined
+
+      // Capture previous label for rollback and optimistically apply new label
+      setEdges((prev) => {
+        previousLabel = prev.find((e) => e.id === relationshipId)?.data?.label
+        return prev.map((e) =>
+          e.id === relationshipId
+            ? { ...e, data: { ...e.data!, label: label || undefined } }
+            : e,
+        )
+      })
+
+      // Store rollback closure that restores the previous label value
+      pendingMutations.current.set(relationshipId, {
+        type: 'update',
+        rollback: () => {
+          setEdges((prev) =>
+            prev.map((e) =>
+              e.id === relationshipId
+                ? { ...e, data: { ...e.data!, label: previousLabel } }
+                : e,
+            ),
+          )
+        },
+      })
+
+      // Emit via WebSocket
+      if (emitRelationshipUpdate) {
+        emitRelationshipUpdate(relationshipId, label)
+      }
+    },
+    [isConnected, setEdges, emitRelationshipUpdate],
+  )
+
+  /**
+   * Called by useWhiteboardCollaboration when server sends an error event for
+   * relationship:delete or relationship:update.
    * Finds the pending mutation and invokes its rollback.
    */
   const onRelationshipError = useCallback((data: RelationshipErrorEvent) => {
-    toast.error('Failed to delete relationship. Please try again.')
+    if (data.event === 'relationship:update') {
+      toast.error('Failed to update relationship label. Please try again.')
+    } else {
+      toast.error('Failed to delete relationship. Please try again.')
+    }
 
     if (data.relationshipId) {
       const pending = pendingMutations.current.get(data.relationshipId)
@@ -97,6 +147,7 @@ export function useRelationshipMutations(
 
   return {
     deleteRelationship,
+    updateRelationshipLabel,
     onRelationshipError,
   }
 }

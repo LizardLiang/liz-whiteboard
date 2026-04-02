@@ -7,7 +7,7 @@
  */
 
 import { useCallback, useEffect, useRef, useState } from 'react'
-import { DATA_TYPES, DATA_TYPE_LABELS } from './types'
+import { DATA_TYPE_GROUPS, DATA_TYPE_LABELS } from './types'
 import type { DataType } from '@/data/schema'
 import {
   Popover,
@@ -26,56 +26,24 @@ import {
 export interface DataTypeSelectorProps {
   value: DataType
   onSelect: (dataType: DataType) => void
-  onCancel: () => void
+  onCancel?: () => void
+  autoOpen?: boolean
 }
-
-/**
- * Data types grouped by category for display in the combobox.
- * Each group has a heading label and an array of DataType values.
- */
-const DATA_TYPE_GROUPS: Array<{ heading: string; types: DataType[] }> = [
-  {
-    heading: 'Numeric',
-    types: ['int', 'bigint', 'smallint', 'float', 'double', 'decimal', 'serial', 'money'],
-  },
-  {
-    heading: 'String',
-    types: ['string', 'char', 'varchar', 'text'],
-  },
-  {
-    heading: 'Boolean',
-    types: ['boolean', 'bit'],
-  },
-  {
-    heading: 'Date / Time',
-    types: ['date', 'datetime', 'timestamp', 'time'],
-  },
-  {
-    heading: 'Binary',
-    types: ['binary', 'blob'],
-  },
-  {
-    heading: 'Structured',
-    types: ['json', 'xml', 'array', 'enum'],
-  },
-  {
-    heading: 'Identity',
-    types: ['uuid'],
-  },
-]
 
 export function DataTypeSelector({
   value,
   onSelect,
   onCancel,
+  autoOpen = false,
 }: DataTypeSelectorProps) {
   const [open, setOpen] = useState(false)
   // Track whether a selection was made so we can distinguish close-via-select
   // from close-via-cancel (Escape or click outside)
   const selectionMadeRef = useRef(false)
 
-  // Auto-open on mount
+  // Auto-open on mount when requested (edit mode)
   useEffect(() => {
+    if (!autoOpen) return
     const timer = setTimeout(() => setOpen(true), 0)
     return () => clearTimeout(timer)
   }, [])
@@ -93,8 +61,8 @@ export function DataTypeSelector({
     (isOpen: boolean) => {
       setOpen(isOpen)
       if (!isOpen && !selectionMadeRef.current) {
-        // Closed without a selection (Escape or click outside) — cancel
-        onCancel()
+        // Closed without a selection (Escape or click outside) — cancel if handler provided
+        onCancel?.()
       }
       if (!isOpen) {
         selectionMadeRef.current = false

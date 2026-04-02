@@ -69,8 +69,17 @@ export interface TableNodeData extends Record<string, unknown> {
   /** React Flow edges — passed down for delete confirmation relationship lookup */
   edges?: Array<RelationshipEdgeType>
 
+  /** Map of tableId → tableName for FK relationship labels */
+  tableNameById?: Map<string, string>
+
   /** Whether the WebSocket is currently connected */
   isConnected?: boolean
+
+  /** Whiteboard ID for notes context */
+  whiteboardId?: string
+
+  /** User ID for notes collaboration */
+  userId?: string
 }
 
 /**
@@ -100,6 +109,9 @@ export interface RelationshipEdgeData extends Record<string, unknown> {
 
   /** Callback to delete this relationship (fires optimistic removal + WebSocket emit) */
   onDelete?: (relationshipId: string) => void
+
+  /** Callback to update this relationship's label (fires optimistic update + WebSocket emit) */
+  onLabelUpdate?: (relationshipId: string, label: string) => void
 }
 
 /**

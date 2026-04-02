@@ -90,9 +90,8 @@ describe('AddColumnRow', () => {
     )
     fireEvent.click(screen.getByRole('button', { name: /add new column/i }))
     // After expanding, the type selector shows the current dataType
-    // The Select trigger renders with role="combobox" and aria-label set to the current type
-    const typeSelector = screen.getByRole('combobox', { name: 'string' })
-    expect(typeSelector).toBeTruthy()
+    const typeSelector = screen.getByTestId('data-type-selector')
+    expect(typeSelector).toHaveProperty('value', 'string')
   })
 
   it('TC-04-05: pressing Enter with a valid name calls onCreate with correct payload', async () => {

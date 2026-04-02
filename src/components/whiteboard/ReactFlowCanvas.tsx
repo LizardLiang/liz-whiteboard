@@ -96,6 +96,10 @@ export function ReactFlowCanvas({
   const [activeTableId, setActiveTableId] = useState<string | null>(null)
   const [hoveredTableId, setHoveredTableId] = useState<string | null>(null)
 
+  // Track drag in progress — ReactFlow fires mouseLeave/mouseEnter when drag
+  // starts/stops, which would trigger unnecessary highlighting recalculations.
+  const isDraggingRef = useRef(false)
+
   // Keep a ref to the latest edges so the highlighting effect can read current
   // edges without adding them to its dependency array (which would cause an
   // infinite loop via setEdges).
@@ -163,7 +167,9 @@ export function ReactFlowCanvas({
         activeTableId,
         hoveredTableId,
       )
-      setEdges(highlighted.edges)
+      if (highlighted.edges !== edgesRef.current) {
+        setEdges(highlighted.edges)
+      }
       return highlighted.nodes
     })
   }, [activeTableId, hoveredTableId, setNodes, setEdges])
@@ -178,13 +184,15 @@ export function ReactFlowCanvas({
     setActiveTableId(null)
   }, [])
 
-  // Handle node mouse enter (hover)
-  const onNodeMouseEnter = useCallback<NodeMouseHandler>((event, node) => {
+  // Handle node mouse enter (hover) — skip during drag (ReactFlow fires this on drag end)
+  const onNodeMouseEnter = useCallback<NodeMouseHandler>((_event, node) => {
+    if (isDraggingRef.current) return
     setHoveredTableId(node.id)
   }, [])
 
-  // Handle node mouse leave (unhover)
-  const onNodeMouseLeave = useCallback<NodeMouseHandler>((event, node) => {
+  // Handle node mouse leave (unhover) — skip during drag (ReactFlow fires this on drag start)
+  const onNodeMouseLeave = useCallback<NodeMouseHandler>((_event, _node) => {
+    if (isDraggingRef.current) return
     setHoveredTableId(null)
   }, [])
 
@@ -209,6 +217,11 @@ export function ReactFlowCanvas({
     [nodes],
   )
 
+  // Mark drag as started — suppresses hover events that ReactFlow fires on drag begin
+  const onNodeDragStart = useCallback(() => {
+    isDraggingRef.current = true
+  }, [])
+
   // Recalculate edge handles whenever a node is dragged (live feedback).
   // We merge the dragged node's latest position into the nodes array so the
   // calculation is always based on current coordinates.
@@ -216,7 +229,6 @@ export function ReactFlowCanvas({
     (_event, node, draggedNodes) => {
       const draggedIds = new Set(draggedNodes.map((n) => n.id))
       draggedIds.add(node.id)
-
       const currentNodes = mergeCurrentPositions(node, draggedNodes)
       setEdges((prevEdges) =>
         recalculateEdgesForDraggedNodes(prevEdges, currentNodes, draggedIds),
@@ -228,6 +240,11 @@ export function ReactFlowCanvas({
   // Handle node drag stop (position update)
   const onNodeDragStop = useCallback<NodeDragHandler<TableNodeType>>(
     (event, node, draggedNodes) => {
+      isDraggingRef.current = false
+      // Restore hover on the node we just dropped (ReactFlow fires mouseEnter after
+      // dragStop which we suppressed, so manually set it here)
+      setHoveredTableId(node.id)
+
       // Final recalculation with latest positions
       const draggedIds = new Set(draggedNodes.map((n) => n.id))
       draggedIds.add(node.id)
@@ -235,7 +252,6 @@ export function ReactFlowCanvas({
       setEdges((prevEdges) =>
         recalculateEdgesForDraggedNodes(prevEdges, currentNodes, draggedIds),
       )
-
       // Call the prop callback if provided
       onNodeDragStopProp?.(event, node)
     },
@@ -291,6 +307,7 @@ export function ReactFlowCanvas({
         onPaneClick={onPaneClick}
         onNodeMouseEnter={onNodeMouseEnter}
         onNodeMouseLeave={onNodeMouseLeave}
+        onNodeDragStart={onNodeDragStart}
         onNodeDrag={onNodeDrag}
         onNodeDragStop={onNodeDragStop}
         nodeTypes={memoizedNodeTypes}
