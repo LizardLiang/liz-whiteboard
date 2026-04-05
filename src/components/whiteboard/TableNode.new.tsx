@@ -3,13 +3,11 @@
  * Supports inline column editing, creation, deletion, notes, and real-time sync
  */
 
-import React, { memo, useCallback, useMemo, useState, Suspense } from 'react'
+import { memo, useCallback, useMemo, useState } from 'react'
 import { ColumnRow } from './column/ColumnRow'
 import { AddColumnRow } from './column/AddColumnRow'
 import { DeleteColumnDialog } from './column/DeleteColumnDialog'
 import { TableNodeContextMenu } from './TableNodeContextMenu'
-import { TableNotesButton } from './TableNotesButton'
-import { useBulkTableNotes } from '@/hooks/useTableNotes'
 import type { Column } from '@prisma/client'
 import type {
   RelationshipEdgeType,
@@ -17,11 +15,6 @@ import type {
 } from '@/lib/react-flow/types'
 import type { ColumnRelationship, EditingField } from './column/types'
 import type { DataType } from '@/data/schema'
-
-// Lazy-loaded drawer to reduce initial bundle size
-const TableNoteDrawer = React.lazy(() =>
-  import('./TableNoteDrawer').then(module => ({ default: module.TableNoteDrawer }))
-)
 
 interface TableNodeProps {
   data: TableNodeData
@@ -42,9 +35,6 @@ export const TableNode = memo(
       onRequestTableDelete,
       edges = [],
       tableNameById = new Map(),
-      // Notes functionality context - will be added to TableNodeData interface
-      whiteboardId = 'unknown',
-      userId = 'unknown',
     } = data
 
     const columns = table.columns
@@ -57,13 +47,6 @@ export const TableNode = memo(
 
     // Header hover state — controls X delete button visibility
     const [isHeaderHovered, setIsHeaderHovered] = useState(false)
-
-    // Notes drawer state
-    const [isNotesDrawerOpen, setIsNotesDrawerOpen] = useState(false)
-
-    // Check if table has notes using bulk notes hook (more efficient than individual queries)
-    const { data: bulkNotesData } = useBulkTableNotes([table.id])
-    const hasNotes = Boolean(bulkNotesData?.notes?.[table.id]?.description?.trim())
 
     // Determine visual state classes
     const highlightClass = isActiveHighlighted
@@ -213,6 +196,15 @@ export const TableNode = memo(
       [table.id, onColumnCreate],
     )
 
+    // --- Column description (note) handler ---
+    const handleDescriptionUpdate = useCallback(
+      (columnId: string, description: string) => {
+        if (!onColumnUpdate) return
+        onColumnUpdate(columnId, table.id, { description })
+      },
+      [table.id, onColumnUpdate],
+    )
+
     // Filter columns based on display mode
     const visibleColumns = useMemo(() => {
       if (showMode === 'KEY_ONLY') {
@@ -299,15 +291,6 @@ export const TableNode = memo(
 
             {/* Header buttons container */}
             <div style={{ display: 'flex', alignItems: 'center', gap: '4px' }}>
-              {/* Notes button — always visible when header is hovered */}
-              <TableNotesButton
-                tableId={table.id}
-                hasNotes={hasNotes}
-                isActive={isNotesDrawerOpen}
-                onClick={() => setIsNotesDrawerOpen(true)}
-                className={`transition-opacity duration-100 ${isHeaderHovered ? 'opacity-100' : 'opacity-0'}`}
-              />
-
               {/* Delete button — visible on header hover */}
               <button
                 type="button"
@@ -351,6 +334,7 @@ export const TableNode = memo(
                     onCancelEdit={handleCancelEdit}
                     onToggleConstraint={handleToggleConstraint}
                     onDelete={handleDeleteColumn}
+                    onDescriptionUpdate={handleDescriptionUpdate}
                     edges={edges}
                   />
                 ),
@@ -375,19 +359,6 @@ export const TableNode = memo(
             />
           )}
 
-          {/* Notes Drawer - Lazy loaded and rendered outside the node */}
-          {isNotesDrawerOpen && (
-            <Suspense fallback={<div>Loading notes...</div>}>
-              <TableNoteDrawer
-                isOpen={isNotesDrawerOpen}
-                tableId={table.id}
-                tableName={table.name}
-                whiteboardId={whiteboardId}
-                userId={userId}
-                onClose={() => setIsNotesDrawerOpen(false)}
-              />
-            </Suspense>
-          )}
         </div>
       </TableNodeContextMenu>
     )
@@ -408,9 +379,6 @@ export const TableNode = memo(
     if (prev.data.tableNameById !== next.data.tableNameById) return false
     if (prev.data.onRequestTableDelete !== next.data.onRequestTableDelete)
       return false
-    // Compare whiteboard and user context for notes functionality
-    if (prev.data.whiteboardId !== next.data.whiteboardId) return false
-    if (prev.data.userId !== next.data.userId) return false
     return true
   },
 )

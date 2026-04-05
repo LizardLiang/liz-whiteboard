@@ -9,6 +9,7 @@ import { Handle, Position } from '@xyflow/react'
 import { InlineNameEditor } from './InlineNameEditor'
 import { DataTypeSelector } from './DataTypeSelector'
 import { ConstraintBadges } from './ConstraintBadges'
+import { ColumnNotePopover } from './ColumnNotePopover'
 import type { Column } from '@prisma/client'
 import type { RelationshipEdgeType } from '@/lib/react-flow/types'
 import type { EditingField } from './types'
@@ -38,6 +39,7 @@ export interface ColumnRowProps {
     value: boolean,
   ) => void
   onDelete: (column: Column) => void
+  onDescriptionUpdate: (columnId: string, description: string) => void
   edges: Array<RelationshipEdgeType>
 }
 
@@ -52,6 +54,7 @@ export const ColumnRow = memo(
     onCancelEdit,
     onToggleConstraint,
     onDelete,
+    onDescriptionUpdate,
     edges: _edges,
   }: ColumnRowProps) => {
     const isEditingName =
@@ -237,6 +240,12 @@ export const ColumnRow = memo(
             )}
           </div>
 
+          {/* Column note popover */}
+          <ColumnNotePopover
+            description={column.description}
+            onSave={(desc) => onDescriptionUpdate(column.id, desc)}
+          />
+
           {/* Delete button — hover visible */}
           <button
             type="button"
@@ -294,6 +303,7 @@ export const ColumnRow = memo(
     if (prev.onCancelEdit !== next.onCancelEdit) return false
     if (prev.onToggleConstraint !== next.onToggleConstraint) return false
     if (prev.onDelete !== next.onDelete) return false
+    if (prev.onDescriptionUpdate !== next.onDescriptionUpdate) return false
 
     // Check if editing state changed for this column
     const prevEditing =

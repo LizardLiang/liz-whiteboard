@@ -12,10 +12,12 @@ import {
 import { Breadcrumb } from './Breadcrumb'
 import type { ReactNode } from 'react'
 import { routeTree } from '@/routeTree.gen'
+import { QueryClient } from '@tanstack/react-query'
 
 function RouterWrapper({ children }: { children: ReactNode }) {
   const history = createMemoryHistory({ initialEntries: ['/'] })
-  const router = createRouter({ routeTree, history })
+  const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } })
+  const router = createRouter({ routeTree, history, context: { queryClient } })
   return (
     <RouterContextProvider router={router}>{children}</RouterContextProvider>
   )

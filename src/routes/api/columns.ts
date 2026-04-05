@@ -15,6 +15,7 @@ import {
   updateColumnOrder,
 } from '@/data/column'
 import { createColumnSchema, updateColumnSchema } from '@/data/schema'
+import { requireAuth } from '@/lib/auth/middleware'
 
 /**
  * Get all columns in a table
@@ -25,16 +26,18 @@ export const getColumnsByTableId = createServerFn({ method: 'GET' })
     const idSchema = z.string().uuid()
     return idSchema.parse(tableId)
   })
-  .handler(async ({ data: tableId }) => {
-    try {
-      const columns = await findColumnsByTableId(tableId)
-      return columns
-    } catch (error) {
-      throw new Error(
-        `Failed to fetch columns: ${error instanceof Error ? error.message : 'Unknown error'}`,
-      )
-    }
-  })
+  .handler(
+    requireAuth(async (_ctx, tableId) => {
+      try {
+        const columns = await findColumnsByTableId(tableId)
+        return columns
+      } catch (error) {
+        throw new Error(
+          `Failed to fetch columns: ${error instanceof Error ? error.message : 'Unknown error'}`,
+        )
+      }
+    }),
+  )
 
 /**
  * Get a single column by ID
@@ -45,19 +48,21 @@ export const getColumn = createServerFn({ method: 'GET' })
     const idSchema = z.string().uuid()
     return idSchema.parse(columnId)
   })
-  .handler(async ({ data: columnId }) => {
-    try {
-      const column = await findColumnById(columnId)
-      if (!column) {
-        throw new Error('Column not found')
+  .handler(
+    requireAuth(async (_ctx, columnId) => {
+      try {
+        const column = await findColumnById(columnId)
+        if (!column) {
+          throw new Error('Column not found')
+        }
+        return column
+      } catch (error) {
+        throw new Error(
+          `Failed to fetch column: ${error instanceof Error ? error.message : 'Unknown error'}`,
+        )
       }
-      return column
-    } catch (error) {
-      throw new Error(
-        `Failed to fetch column: ${error instanceof Error ? error.message : 'Unknown error'}`,
-      )
-    }
-  })
+    }),
+  )
 
 /**
  * Get primary key columns in a table
@@ -68,16 +73,18 @@ export const getPrimaryKeyColumnsByTableId = createServerFn({ method: 'GET' })
     const idSchema = z.string().uuid()
     return idSchema.parse(tableId)
   })
-  .handler(async ({ data: tableId }) => {
-    try {
-      const columns = await findPrimaryKeyColumnsByTableId(tableId)
-      return columns
-    } catch (error) {
-      throw new Error(
-        `Failed to fetch primary key columns: ${error instanceof Error ? error.message : 'Unknown error'}`,
-      )
-    }
-  })
+  .handler(
+    requireAuth(async (_ctx, tableId) => {
+      try {
+        const columns = await findPrimaryKeyColumnsByTableId(tableId)
+        return columns
+      } catch (error) {
+        throw new Error(
+          `Failed to fetch primary key columns: ${error instanceof Error ? error.message : 'Unknown error'}`,
+        )
+      }
+    }),
+  )
 
 /**
  * Get foreign key columns in a table
@@ -88,16 +95,18 @@ export const getForeignKeyColumnsByTableId = createServerFn({ method: 'GET' })
     const idSchema = z.string().uuid()
     return idSchema.parse(tableId)
   })
-  .handler(async ({ data: tableId }) => {
-    try {
-      const columns = await findForeignKeyColumnsByTableId(tableId)
-      return columns
-    } catch (error) {
-      throw new Error(
-        `Failed to fetch foreign key columns: ${error instanceof Error ? error.message : 'Unknown error'}`,
-      )
-    }
-  })
+  .handler(
+    requireAuth(async (_ctx, tableId) => {
+      try {
+        const columns = await findForeignKeyColumnsByTableId(tableId)
+        return columns
+      } catch (error) {
+        throw new Error(
+          `Failed to fetch foreign key columns: ${error instanceof Error ? error.message : 'Unknown error'}`,
+        )
+      }
+    }),
+  )
 
 /**
  * Create a new column
@@ -105,16 +114,18 @@ export const getForeignKeyColumnsByTableId = createServerFn({ method: 'GET' })
  */
 export const createColumnFn = createServerFn({ method: 'POST' })
   .inputValidator((data: unknown) => createColumnSchema.parse(data))
-  .handler(async ({ data }) => {
-    try {
-      const column = await createColumn(data)
-      return column
-    } catch (error) {
-      throw new Error(
-        `Failed to create column: ${error instanceof Error ? error.message : 'Unknown error'}`,
-      )
-    }
-  })
+  .handler(
+    requireAuth(async (_ctx, data) => {
+      try {
+        const column = await createColumn(data)
+        return column
+      } catch (error) {
+        throw new Error(
+          `Failed to create column: ${error instanceof Error ? error.message : 'Unknown error'}`,
+        )
+      }
+    }),
+  )
 
 /**
  * Create multiple columns in a single transaction
@@ -125,16 +136,18 @@ export const createColumnsFn = createServerFn({ method: 'POST' })
     const schema = z.array(createColumnSchema)
     return schema.parse(data)
   })
-  .handler(async ({ data }) => {
-    try {
-      const columns = await createColumns(data)
-      return columns
-    } catch (error) {
-      throw new Error(
-        `Failed to create columns: ${error instanceof Error ? error.message : 'Unknown error'}`,
-      )
-    }
-  })
+  .handler(
+    requireAuth(async (_ctx, data) => {
+      try {
+        const columns = await createColumns(data)
+        return columns
+      } catch (error) {
+        throw new Error(
+          `Failed to create columns: ${error instanceof Error ? error.message : 'Unknown error'}`,
+        )
+      }
+    }),
+  )
 
 /**
  * Update an existing column
@@ -148,16 +161,18 @@ export const updateColumnFn = createServerFn({ method: 'POST' })
     })
     return schema.parse(params)
   })
-  .handler(async ({ data: params }) => {
-    try {
-      const column = await updateColumn(params.id, params.data)
-      return column
-    } catch (error) {
-      throw new Error(
-        `Failed to update column: ${error instanceof Error ? error.message : 'Unknown error'}`,
-      )
-    }
-  })
+  .handler(
+    requireAuth(async (_ctx, params) => {
+      try {
+        const column = await updateColumn(params.id, params.data)
+        return column
+      } catch (error) {
+        throw new Error(
+          `Failed to update column: ${error instanceof Error ? error.message : 'Unknown error'}`,
+        )
+      }
+    }),
+  )
 
 /**
  * Update column order (for reordering)
@@ -171,16 +186,18 @@ export const updateColumnOrderFn = createServerFn({ method: 'POST' })
     })
     return schema.parse(params)
   })
-  .handler(async ({ data: params }) => {
-    try {
-      const column = await updateColumnOrder(params.id, params.order)
-      return column
-    } catch (error) {
-      throw new Error(
-        `Failed to update column order: ${error instanceof Error ? error.message : 'Unknown error'}`,
-      )
-    }
-  })
+  .handler(
+    requireAuth(async (_ctx, params) => {
+      try {
+        const column = await updateColumnOrder(params.id, params.order)
+        return column
+      } catch (error) {
+        throw new Error(
+          `Failed to update column order: ${error instanceof Error ? error.message : 'Unknown error'}`,
+        )
+      }
+    }),
+  )
 
 /**
  * Delete a column by ID
@@ -192,13 +209,15 @@ export const deleteColumnFn = createServerFn({ method: 'POST' })
     const idSchema = z.string().uuid()
     return idSchema.parse(columnId)
   })
-  .handler(async ({ data: columnId }) => {
-    try {
-      const column = await deleteColumn(columnId)
-      return column
-    } catch (error) {
-      throw new Error(
-        `Failed to delete column: ${error instanceof Error ? error.message : 'Unknown error'}`,
-      )
-    }
-  })
+  .handler(
+    requireAuth(async (_ctx, columnId) => {
+      try {
+        const column = await deleteColumn(columnId)
+        return column
+      } catch (error) {
+        throw new Error(
+          `Failed to delete column: ${error instanceof Error ? error.message : 'Unknown error'}`,
+        )
+      }
+    }),
+  )

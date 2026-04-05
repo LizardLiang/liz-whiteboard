@@ -57,6 +57,7 @@ import {
   deleteWhiteboardFn,
   updateWhiteboardFn,
 } from '@/routes/api/whiteboards'
+import { isUnauthorizedError } from '@/lib/auth/middleware'
 
 /**
  * Dialog state types
@@ -134,6 +135,10 @@ export function ProjectTree() {
   const createProjectMutation = useMutation({
     mutationFn: (data: CreateProject) => createProjectFn({ data }),
     onSuccess: (data) => {
+      if (isUnauthorizedError(data)) {
+        toast.error('Session expired', { description: 'Please log in again.' })
+        return
+      }
       queryClient.invalidateQueries({ queryKey: ['projects'] })
       queryClient.invalidateQueries({ queryKey: ['projects', 'tree'] })
       setDialogState({ type: 'none' })
@@ -153,6 +158,10 @@ export function ProjectTree() {
     mutationFn: (data: { id: string; data: UpdateProject }) =>
       updateProjectFn({ data }),
     onSuccess: (data) => {
+      if (isUnauthorizedError(data)) {
+        toast.error('Session expired', { description: 'Please log in again.' })
+        return
+      }
       queryClient.invalidateQueries({ queryKey: ['projects'] })
       setDialogState({ type: 'none' })
       resetForm()
@@ -187,6 +196,10 @@ export function ProjectTree() {
     mutationFn: (data: { id: string; data: UpdateFolder }) =>
       updateFolderFn({ data }),
     onSuccess: (data) => {
+      if (isUnauthorizedError(data)) {
+        toast.error('Session expired', { description: 'Please log in again.' })
+        return
+      }
       queryClient.invalidateQueries({ queryKey: ['projects'] })
       setDialogState({ type: 'none' })
       resetForm()
@@ -221,6 +234,10 @@ export function ProjectTree() {
     mutationFn: (data: { id: string; data: UpdateWhiteboard }) =>
       updateWhiteboardFn({ data }),
     onSuccess: (data) => {
+      if (isUnauthorizedError(data)) {
+        toast.error('Session expired', { description: 'Please log in again.' })
+        return
+      }
       queryClient.invalidateQueries({ queryKey: ['projects'] })
       queryClient.invalidateQueries({ queryKey: ['whiteboard'] })
       setDialogState({ type: 'none' })

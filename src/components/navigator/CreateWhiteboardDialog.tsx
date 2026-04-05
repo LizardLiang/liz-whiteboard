@@ -7,6 +7,7 @@ import { useNavigate } from '@tanstack/react-router'
 import { useMutation, useQueryClient } from '@tanstack/react-query'
 import { toast } from 'sonner'
 import type { CreateWhiteboard } from '@/data/schema'
+import { isUnauthorizedError } from '@/lib/auth/middleware'
 import { Button } from '@/components/ui/button'
 import {
   Dialog,
@@ -40,6 +41,10 @@ export function CreateWhiteboardDialog({
   const createWhiteboardMutation = useMutation({
     mutationFn: (data: CreateWhiteboard) => createWhiteboardFn({ data }),
     onSuccess: (whiteboard) => {
+      if (isUnauthorizedError(whiteboard)) {
+        toast.error('Session expired', { description: 'Please log in again.' })
+        return
+      }
       queryClient.invalidateQueries({ queryKey: ['projects'] })
       queryClient.invalidateQueries({ queryKey: ['project-page'] })
       onOpenChange(false)

@@ -14,6 +14,7 @@ import {
   updateDiagramTablePosition,
 } from '@/data/diagram-table'
 import { createTableSchema, updateTableSchema } from '@/data/schema'
+import { requireAuth } from '@/lib/auth/middleware'
 
 /**
  * Get all tables in a whiteboard
@@ -24,16 +25,18 @@ export const getTablesByWhiteboardId = createServerFn({ method: 'GET' })
     const idSchema = z.string().uuid()
     return idSchema.parse(whiteboardId)
   })
-  .handler(async ({ data: whiteboardId }) => {
-    try {
-      const tables = await findDiagramTablesByWhiteboardId(whiteboardId)
-      return tables
-    } catch (error) {
-      throw new Error(
-        `Failed to fetch tables: ${error instanceof Error ? error.message : 'Unknown error'}`,
-      )
-    }
-  })
+  .handler(
+    requireAuth(async (_ctx, whiteboardId) => {
+      try {
+        const tables = await findDiagramTablesByWhiteboardId(whiteboardId)
+        return tables
+      } catch (error) {
+        throw new Error(
+          `Failed to fetch tables: ${error instanceof Error ? error.message : 'Unknown error'}`,
+        )
+      }
+    }),
+  )
 
 /**
  * Get all tables in a whiteboard with columns and relationships
@@ -46,17 +49,19 @@ export const getTablesByWhiteboardIdWithRelations = createServerFn({
     const idSchema = z.string().uuid()
     return idSchema.parse(whiteboardId)
   })
-  .handler(async ({ data: whiteboardId }) => {
-    try {
-      const tables =
-        await findDiagramTablesByWhiteboardIdWithRelations(whiteboardId)
-      return tables
-    } catch (error) {
-      throw new Error(
-        `Failed to fetch tables with relations: ${error instanceof Error ? error.message : 'Unknown error'}`,
-      )
-    }
-  })
+  .handler(
+    requireAuth(async (_ctx, whiteboardId) => {
+      try {
+        const tables =
+          await findDiagramTablesByWhiteboardIdWithRelations(whiteboardId)
+        return tables
+      } catch (error) {
+        throw new Error(
+          `Failed to fetch tables with relations: ${error instanceof Error ? error.message : 'Unknown error'}`,
+        )
+      }
+    }),
+  )
 
 /**
  * Get a single table by ID
@@ -67,19 +72,21 @@ export const getTable = createServerFn({ method: 'GET' })
     const idSchema = z.string().uuid()
     return idSchema.parse(tableId)
   })
-  .handler(async ({ data: tableId }) => {
-    try {
-      const table = await findDiagramTableById(tableId)
-      if (!table) {
-        throw new Error('Table not found')
+  .handler(
+    requireAuth(async (_ctx, tableId) => {
+      try {
+        const table = await findDiagramTableById(tableId)
+        if (!table) {
+          throw new Error('Table not found')
+        }
+        return table
+      } catch (error) {
+        throw new Error(
+          `Failed to fetch table: ${error instanceof Error ? error.message : 'Unknown error'}`,
+        )
       }
-      return table
-    } catch (error) {
-      throw new Error(
-        `Failed to fetch table: ${error instanceof Error ? error.message : 'Unknown error'}`,
-      )
-    }
-  })
+    }),
+  )
 
 /**
  * Get a single table by ID with columns and relationships
@@ -90,19 +97,21 @@ export const getTableWithRelations = createServerFn({ method: 'GET' })
     const idSchema = z.string().uuid()
     return idSchema.parse(tableId)
   })
-  .handler(async ({ data: tableId }) => {
-    try {
-      const table = await findDiagramTableByIdWithRelations(tableId)
-      if (!table) {
-        throw new Error('Table not found')
+  .handler(
+    requireAuth(async (_ctx, tableId) => {
+      try {
+        const table = await findDiagramTableByIdWithRelations(tableId)
+        if (!table) {
+          throw new Error('Table not found')
+        }
+        return table
+      } catch (error) {
+        throw new Error(
+          `Failed to fetch table with relations: ${error instanceof Error ? error.message : 'Unknown error'}`,
+        )
       }
-      return table
-    } catch (error) {
-      throw new Error(
-        `Failed to fetch table with relations: ${error instanceof Error ? error.message : 'Unknown error'}`,
-      )
-    }
-  })
+    }),
+  )
 
 /**
  * Create a new table
@@ -110,16 +119,18 @@ export const getTableWithRelations = createServerFn({ method: 'GET' })
  */
 export const createTableFn = createServerFn({ method: 'POST' })
   .inputValidator((data: unknown) => createTableSchema.parse(data))
-  .handler(async ({ data }) => {
-    try {
-      const table = await createDiagramTable(data)
-      return table
-    } catch (error) {
-      throw new Error(
-        `Failed to create table: ${error instanceof Error ? error.message : 'Unknown error'}`,
-      )
-    }
-  })
+  .handler(
+    requireAuth(async (_ctx, data) => {
+      try {
+        const table = await createDiagramTable(data)
+        return table
+      } catch (error) {
+        throw new Error(
+          `Failed to create table: ${error instanceof Error ? error.message : 'Unknown error'}`,
+        )
+      }
+    }),
+  )
 
 /**
  * Update an existing table
@@ -133,16 +144,18 @@ export const updateTableFn = createServerFn({ method: 'POST' })
     })
     return schema.parse(params)
   })
-  .handler(async ({ data: params }) => {
-    try {
-      const table = await updateDiagramTable(params.id, params.data)
-      return table
-    } catch (error) {
-      throw new Error(
-        `Failed to update table: ${error instanceof Error ? error.message : 'Unknown error'}`,
-      )
-    }
-  })
+  .handler(
+    requireAuth(async (_ctx, params) => {
+      try {
+        const table = await updateDiagramTable(params.id, params.data)
+        return table
+      } catch (error) {
+        throw new Error(
+          `Failed to update table: ${error instanceof Error ? error.message : 'Unknown error'}`,
+        )
+      }
+    }),
+  )
 
 /**
  * Update table position (for drag-and-drop)
@@ -157,20 +170,22 @@ export const updateTablePositionFn = createServerFn({ method: 'POST' })
     })
     return schema.parse(params)
   })
-  .handler(async ({ data: params }) => {
-    try {
-      const table = await updateDiagramTablePosition(
-        params.id,
-        params.positionX,
-        params.positionY,
-      )
-      return table
-    } catch (error) {
-      throw new Error(
-        `Failed to update table position: ${error instanceof Error ? error.message : 'Unknown error'}`,
-      )
-    }
-  })
+  .handler(
+    requireAuth(async (_ctx, params) => {
+      try {
+        const table = await updateDiagramTablePosition(
+          params.id,
+          params.positionX,
+          params.positionY,
+        )
+        return table
+      } catch (error) {
+        throw new Error(
+          `Failed to update table position: ${error instanceof Error ? error.message : 'Unknown error'}`,
+        )
+      }
+    }),
+  )
 
 /**
  * Delete a table by ID
@@ -182,13 +197,15 @@ export const deleteTableFn = createServerFn({ method: 'POST' })
     const idSchema = z.string().uuid()
     return idSchema.parse(tableId)
   })
-  .handler(async ({ data: tableId }) => {
-    try {
-      const table = await deleteDiagramTable(tableId)
-      return table
-    } catch (error) {
-      throw new Error(
-        `Failed to delete table: ${error instanceof Error ? error.message : 'Unknown error'}`,
-      )
-    }
-  })
+  .handler(
+    requireAuth(async (_ctx, tableId) => {
+      try {
+        const table = await deleteDiagramTable(tableId)
+        return table
+      } catch (error) {
+        throw new Error(
+          `Failed to delete table: ${error instanceof Error ? error.message : 'Unknown error'}`,
+        )
+      }
+    }),
+  )

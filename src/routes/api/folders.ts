@@ -13,6 +13,7 @@ import {
   updateFolder,
 } from '@/data/folder'
 import { createFolderSchema, updateFolderSchema } from '@/data/schema'
+import { requireAuth } from '@/lib/auth/middleware'
 
 /**
  * Get all folders in a project
@@ -23,16 +24,18 @@ export const getFoldersByProject = createServerFn({ method: 'GET' })
     const idSchema = z.string().uuid()
     return idSchema.parse(projectId)
   })
-  .handler(async ({ data: projectId }) => {
-    try {
-      const folders = await findFoldersByProjectId(projectId)
-      return folders
-    } catch (error) {
-      throw new Error(
-        `Failed to fetch folders: ${error instanceof Error ? error.message : 'Unknown error'}`,
-      )
-    }
-  })
+  .handler(
+    requireAuth(async (_ctx, projectId) => {
+      try {
+        const folders = await findFoldersByProjectId(projectId)
+        return folders
+      } catch (error) {
+        throw new Error(
+          `Failed to fetch folders: ${error instanceof Error ? error.message : 'Unknown error'}`,
+        )
+      }
+    }),
+  )
 
 /**
  * Get child folders of a parent folder
@@ -43,16 +46,18 @@ export const getChildFolders = createServerFn({ method: 'GET' })
     const idSchema = z.string().uuid()
     return idSchema.parse(parentFolderId)
   })
-  .handler(async ({ data: parentFolderId }) => {
-    try {
-      const folders = await findChildFolders(parentFolderId)
-      return folders
-    } catch (error) {
-      throw new Error(
-        `Failed to fetch child folders: ${error instanceof Error ? error.message : 'Unknown error'}`,
-      )
-    }
-  })
+  .handler(
+    requireAuth(async (_ctx, parentFolderId) => {
+      try {
+        const folders = await findChildFolders(parentFolderId)
+        return folders
+      } catch (error) {
+        throw new Error(
+          `Failed to fetch child folders: ${error instanceof Error ? error.message : 'Unknown error'}`,
+        )
+      }
+    }),
+  )
 
 /**
  * Get a single folder by ID with its whiteboards
@@ -63,19 +68,21 @@ export const getFolder = createServerFn({ method: 'GET' })
     const idSchema = z.string().uuid()
     return idSchema.parse(folderId)
   })
-  .handler(async ({ data: folderId }) => {
-    try {
-      const folder = await findFolderByIdWithWhiteboards(folderId)
-      if (!folder) {
-        throw new Error('Folder not found')
+  .handler(
+    requireAuth(async (_ctx, folderId) => {
+      try {
+        const folder = await findFolderByIdWithWhiteboards(folderId)
+        if (!folder) {
+          throw new Error('Folder not found')
+        }
+        return folder
+      } catch (error) {
+        throw new Error(
+          `Failed to fetch folder: ${error instanceof Error ? error.message : 'Unknown error'}`,
+        )
       }
-      return folder
-    } catch (error) {
-      throw new Error(
-        `Failed to fetch folder: ${error instanceof Error ? error.message : 'Unknown error'}`,
-      )
-    }
-  })
+    }),
+  )
 
 /**
  * Get a single folder by ID (without relations)
@@ -86,19 +93,21 @@ export const getFolderById = createServerFn({ method: 'GET' })
     const idSchema = z.string().uuid()
     return idSchema.parse(folderId)
   })
-  .handler(async ({ data: folderId }) => {
-    try {
-      const folder = await findFolderById(folderId)
-      if (!folder) {
-        throw new Error('Folder not found')
+  .handler(
+    requireAuth(async (_ctx, folderId) => {
+      try {
+        const folder = await findFolderById(folderId)
+        if (!folder) {
+          throw new Error('Folder not found')
+        }
+        return folder
+      } catch (error) {
+        throw new Error(
+          `Failed to fetch folder: ${error instanceof Error ? error.message : 'Unknown error'}`,
+        )
       }
-      return folder
-    } catch (error) {
-      throw new Error(
-        `Failed to fetch folder: ${error instanceof Error ? error.message : 'Unknown error'}`,
-      )
-    }
-  })
+    }),
+  )
 
 /**
  * Create a new folder
@@ -106,16 +115,18 @@ export const getFolderById = createServerFn({ method: 'GET' })
  */
 export const createFolderFn = createServerFn({ method: 'POST' })
   .inputValidator((data: unknown) => createFolderSchema.parse(data))
-  .handler(async ({ data }) => {
-    try {
-      const folder = await createFolder(data)
-      return folder
-    } catch (error) {
-      throw new Error(
-        `Failed to create folder: ${error instanceof Error ? error.message : 'Unknown error'}`,
-      )
-    }
-  })
+  .handler(
+    requireAuth(async (_ctx, data) => {
+      try {
+        const folder = await createFolder(data)
+        return folder
+      } catch (error) {
+        throw new Error(
+          `Failed to create folder: ${error instanceof Error ? error.message : 'Unknown error'}`,
+        )
+      }
+    }),
+  )
 
 /**
  * Update an existing folder
@@ -129,16 +140,18 @@ export const updateFolderFn = createServerFn({ method: 'POST' })
     })
     return schema.parse(params)
   })
-  .handler(async ({ data: params }) => {
-    try {
-      const folder = await updateFolder(params.id, params.data)
-      return folder
-    } catch (error) {
-      throw new Error(
-        `Failed to update folder: ${error instanceof Error ? error.message : 'Unknown error'}`,
-      )
-    }
-  })
+  .handler(
+    requireAuth(async (_ctx, params) => {
+      try {
+        const folder = await updateFolder(params.id, params.data)
+        return folder
+      } catch (error) {
+        throw new Error(
+          `Failed to update folder: ${error instanceof Error ? error.message : 'Unknown error'}`,
+        )
+      }
+    }),
+  )
 
 /**
  * Delete a folder by ID
@@ -150,13 +163,15 @@ export const deleteFolderFn = createServerFn({ method: 'POST' })
     const idSchema = z.string().uuid()
     return idSchema.parse(folderId)
   })
-  .handler(async ({ data: folderId }) => {
-    try {
-      const folder = await deleteFolder(folderId)
-      return folder
-    } catch (error) {
-      throw new Error(
-        `Failed to delete folder: ${error instanceof Error ? error.message : 'Unknown error'}`,
-      )
-    }
-  })
+  .handler(
+    requireAuth(async (_ctx, folderId) => {
+      try {
+        const folder = await deleteFolder(folderId)
+        return folder
+      } catch (error) {
+        throw new Error(
+          `Failed to delete folder: ${error instanceof Error ? error.message : 'Unknown error'}`,
+        )
+      }
+    }),
+  )

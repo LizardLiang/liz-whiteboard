@@ -2,6 +2,7 @@
 // Zod validation schemas for all entities in the ER Diagram Whiteboard
 
 import { z } from 'zod'
+import { ProjectRole } from '@prisma/client'
 
 // ============================================================================
 // JSON Sub-Schemas (for nested JSON fields)
@@ -297,3 +298,78 @@ export type UpdateRelationship = z.infer<typeof updateRelationshipSchema>
 
 export type CreateSession = z.infer<typeof createSessionSchema>
 export type UpdateSession = z.infer<typeof updateSessionSchema>
+
+// ============================================================================
+// Auth Schemas
+// ============================================================================
+
+/**
+ * Schema for user registration input
+ */
+export const registerInputSchema = z.object({
+  username: z
+    .string()
+    .min(3, 'Username must be at least 3 characters')
+    .max(50, 'Username must be at most 50 characters')
+    .regex(
+      /^[a-zA-Z0-9_]+$/,
+      'Username must be alphanumeric with underscores only',
+    ),
+  email: z.string().email('Invalid email address').max(255),
+  password: z
+    .string()
+    .min(8, 'Password must be at least 8 characters')
+    .max(128, 'Password must be at most 128 characters'),
+})
+
+/**
+ * Schema for user login input
+ */
+export const loginInputSchema = z.object({
+  email: z.string().email('Invalid email address'),
+  password: z.string().min(1, 'Password is required'),
+  rememberMe: z.boolean().default(false),
+})
+
+// ============================================================================
+// Permission Schemas
+// ============================================================================
+
+/**
+ * Schema for ProjectRole enum
+ */
+export const projectRoleSchema = z.nativeEnum(ProjectRole)
+
+/**
+ * Schema for granting a permission (by email)
+ */
+export const grantPermissionSchema = z.object({
+  projectId: z.string().uuid(),
+  email: z.string().email(),
+  role: projectRoleSchema,
+})
+
+/**
+ * Schema for updating a permission
+ */
+export const updatePermissionSchema = z.object({
+  projectId: z.string().uuid(),
+  userId: z.string().uuid(),
+  role: projectRoleSchema,
+})
+
+/**
+ * Schema for revoking a permission
+ */
+export const revokePermissionSchema = z.object({
+  projectId: z.string().uuid(),
+  userId: z.string().uuid(),
+})
+
+// Auth type exports
+export type RegisterInput = z.infer<typeof registerInputSchema>
+export type LoginInput = z.infer<typeof loginInputSchema>
+export type ProjectRoleValue = z.infer<typeof projectRoleSchema>
+export type GrantPermission = z.infer<typeof grantPermissionSchema>
+export type UpdatePermission = z.infer<typeof updatePermissionSchema>
+export type RevokePermission = z.infer<typeof revokePermissionSchema>

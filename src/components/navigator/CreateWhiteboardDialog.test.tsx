@@ -38,9 +38,10 @@ function createTestQueryClient() {
   })
 }
 
-function createTestRouter() {
+function createTestRouter(queryClient?: ReturnType<typeof createTestQueryClient>) {
+  const qc = queryClient ?? createTestQueryClient()
   const history = createMemoryHistory({ initialEntries: ['/'] })
-  return createRouter({ routeTree, history })
+  return createRouter({ routeTree, history, context: { queryClient: qc } })
 }
 
 function renderDialog(
@@ -135,8 +136,8 @@ describe('CreateWhiteboardDialog', () => {
       fireEvent.click(submitButton)
 
       await waitFor(() => {
-        const callArgs = vi.mocked(createWhiteboardFn).mock.calls[0][0]
-        expect(callArgs.data.folderId).toBeUndefined()
+        const callArgs = vi.mocked(createWhiteboardFn).mock.calls[0]?.[0] as { data: { folderId?: string } }
+        expect(callArgs?.data.folderId).toBeUndefined()
       })
     })
   })

@@ -13,13 +13,14 @@ import {
   updateProject,
 } from '@/data/project'
 import { createProjectSchema, updateProjectSchema } from '@/data/schema'
+import { requireAuth } from '@/lib/auth/middleware'
 
 /**
  * Get all projects
  * Returns array of all projects ordered by creation date (newest first)
  */
 export const getProjects = createServerFn({ method: 'GET' }).handler(
-  async () => {
+  requireAuth(async () => {
     try {
       const projects = await findAllProjects()
       return projects
@@ -28,7 +29,7 @@ export const getProjects = createServerFn({ method: 'GET' }).handler(
         `Failed to fetch projects: ${error instanceof Error ? error.message : 'Unknown error'}`,
       )
     }
-  },
+  }),
 )
 
 /**
@@ -37,16 +38,18 @@ export const getProjects = createServerFn({ method: 'GET' }).handler(
  */
 export const getProjectsWithTree = createServerFn({
   method: 'GET',
-}).handler(async () => {
-  try {
-    const projects = await findAllProjectsWithTree()
-    return projects
-  } catch (error) {
-    throw new Error(
-      `Failed to fetch project tree: ${error instanceof Error ? error.message : 'Unknown error'}`,
-    )
-  }
-})
+}).handler(
+  requireAuth(async () => {
+    try {
+      const projects = await findAllProjectsWithTree()
+      return projects
+    } catch (error) {
+      throw new Error(
+        `Failed to fetch project tree: ${error instanceof Error ? error.message : 'Unknown error'}`,
+      )
+    }
+  }),
+)
 
 /**
  * Get a single project by ID
@@ -57,19 +60,21 @@ export const getProject = createServerFn({ method: 'GET' })
     const idSchema = z.string().uuid()
     return idSchema.parse(projectId)
   })
-  .handler(async ({ data: projectId }) => {
-    try {
-      const project = await findProjectById(projectId)
-      if (!project) {
-        throw new Error('Project not found')
+  .handler(
+    requireAuth(async (_ctx, projectId) => {
+      try {
+        const project = await findProjectById(projectId)
+        if (!project) {
+          throw new Error('Project not found')
+        }
+        return project
+      } catch (error) {
+        throw new Error(
+          `Failed to fetch project: ${error instanceof Error ? error.message : 'Unknown error'}`,
+        )
       }
-      return project
-    } catch (error) {
-      throw new Error(
-        `Failed to fetch project: ${error instanceof Error ? error.message : 'Unknown error'}`,
-      )
-    }
-  })
+    }),
+  )
 
 /**
  * Create a new project
@@ -77,16 +82,18 @@ export const getProject = createServerFn({ method: 'GET' })
  */
 export const createProjectFn = createServerFn({ method: 'POST' })
   .inputValidator((data: unknown) => createProjectSchema.parse(data))
-  .handler(async ({ data }) => {
-    try {
-      const project = await createProject(data)
-      return project
-    } catch (error) {
-      throw new Error(
-        `Failed to create project: ${error instanceof Error ? error.message : 'Unknown error'}`,
-      )
-    }
-  })
+  .handler(
+    requireAuth(async ({ user }, data) => {
+      try {
+        const project = await createProject({ ...data, ownerId: user.id })
+        return project
+      } catch (error) {
+        throw new Error(
+          `Failed to create project: ${error instanceof Error ? error.message : 'Unknown error'}`,
+        )
+      }
+    }),
+  )
 
 /**
  * Update an existing project
@@ -100,16 +107,18 @@ export const updateProjectFn = createServerFn({ method: 'POST' })
     })
     return schema.parse(params)
   })
-  .handler(async ({ data: params }) => {
-    try {
-      const project = await updateProject(params.id, params.data)
-      return project
-    } catch (error) {
-      throw new Error(
-        `Failed to update project: ${error instanceof Error ? error.message : 'Unknown error'}`,
-      )
-    }
-  })
+  .handler(
+    requireAuth(async (_ctx, params) => {
+      try {
+        const project = await updateProject(params.id, params.data)
+        return project
+      } catch (error) {
+        throw new Error(
+          `Failed to update project: ${error instanceof Error ? error.message : 'Unknown error'}`,
+        )
+      }
+    }),
+  )
 
 /**
  * Get project page content (folders + whiteboards at a given level)
@@ -123,13 +132,15 @@ export const getProjectPageContent = createServerFn({ method: 'GET' })
     })
     return schema.parse(params)
   })
-  .handler(async ({ data }) => {
-    const content = await findProjectPageContent(data.projectId, data.folderId)
-    if (!content) {
-      throw new Error('Project not found')
-    }
-    return content
-  })
+  .handler(
+    requireAuth(async (_ctx, data) => {
+      const content = await findProjectPageContent(data.projectId, data.folderId)
+      if (!content) {
+        throw new Error('Project not found')
+      }
+      return content
+    }),
+  )
 
 /**
  * Delete a project by ID
@@ -141,13 +152,15 @@ export const deleteProjectFn = createServerFn({ method: 'POST' })
     const idSchema = z.string().uuid()
     return idSchema.parse(projectId)
   })
-  .handler(async ({ data: projectId }) => {
-    try {
-      const project = await deleteProject(projectId)
-      return project
-    } catch (error) {
-      throw new Error(
-        `Failed to delete project: ${error instanceof Error ? error.message : 'Unknown error'}`,
-      )
-    }
-  })
+  .handler(
+    requireAuth(async (_ctx, projectId) => {
+      try {
+        const project = await deleteProject(projectId)
+        return project
+      } catch (error) {
+        throw new Error(
+          `Failed to delete project: ${error instanceof Error ? error.message : 'Unknown error'}`,
+        )
+      }
+    }),
+  )

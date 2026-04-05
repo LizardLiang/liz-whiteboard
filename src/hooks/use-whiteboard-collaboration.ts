@@ -1,7 +1,9 @@
 // src/hooks/use-whiteboard-collaboration.ts
 // React Flow-specific WebSocket collaboration hook
 
-import { useCallback, useEffect } from 'react'
+import { useCallback, useEffect, useRef } from 'react'
+import { useRouter } from '@tanstack/react-router'
+import { toast } from 'sonner'
 import { useCollaboration } from './use-collaboration'
 import type { TableErrorEvent } from './use-table-mutations'
 import type { RelationshipErrorEvent } from './use-relationship-mutations'
@@ -62,6 +64,8 @@ export function useWhiteboardCollaboration(
     whiteboardId,
     userId,
   )
+  const router = useRouter()
+  const redirectTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
 
   // Listen for table position updates from other users
   useEffect(() => {
@@ -173,6 +177,28 @@ export function useWhiteboardCollaboration(
       off('relationship:updated', handleRelationshipUpdated)
     }
   }, [on, off, userId, onRelationshipUpdated])
+
+  // Handle permission_revoked event: show toast + redirect to project list
+  useEffect(() => {
+    const handlePermissionRevoked = (data: { projectId: string }) => {
+      console.warn('Permission revoked for project:', data.projectId)
+      toast.error('Your access to this project has been removed', {
+        description: 'You will be redirected to the project list in 5 seconds.',
+        duration: 5000,
+      })
+      redirectTimerRef.current = setTimeout(() => {
+        router.navigate({ to: '/' })
+      }, 5000)
+    }
+
+    on('permission_revoked', handlePermissionRevoked)
+    return () => {
+      off('permission_revoked', handlePermissionRevoked)
+      if (redirectTimerRef.current) {
+        clearTimeout(redirectTimerRef.current)
+      }
+    }
+  }, [on, off, router])
 
   // Emit position update to other users
   const emitPositionUpdate = useCallback(

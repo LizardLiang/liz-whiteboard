@@ -56,18 +56,15 @@ export function convertTableToNode(
  * Convert multiple DiagramTables to React Flow Nodes
  * @param tables - Array of DiagramTable entities with columns
  * @param showMode - Display mode for all nodes (optional)
- * @param context - Additional context for nodes (whiteboardId, userId)
  * @returns Array of React Flow TableNodeType
  */
 export function convertTablesToNodes(
   tables: Array<DiagramTable & { columns: Array<Column> }>,
   showMode?: ShowMode,
-  context?: { whiteboardId?: string; userId?: string },
 ): Array<TableNodeType> {
   return tables.map((table) =>
     convertTableToNode(table, {
       ...(showMode ? { showMode } : {}),
-      ...context,
     }),
   )
 }
