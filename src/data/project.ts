@@ -8,17 +8,22 @@ import { prisma } from '@/db'
 
 /**
  * Create a new project
- * @param data - Project creation data (validated with Zod)
+ * @param data - Project creation data (validated with Zod) + optional ownerId
  * @returns Created project
  * @throws Error if validation fails or database operation fails
  */
-export async function createProject(data: CreateProject): Promise<Project> {
-  // Validate input with Zod schema
+export async function createProject(
+  data: CreateProject & { ownerId?: string },
+): Promise<Project> {
+  // Validate the base input fields with Zod schema
   const validated = createProjectSchema.parse(data)
 
   try {
     const project = await prisma.project.create({
-      data: validated,
+      data: {
+        ...validated,
+        ownerId: data.ownerId,
+      },
     })
     return project
   } catch (error) {

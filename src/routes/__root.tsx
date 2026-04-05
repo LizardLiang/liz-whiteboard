@@ -2,6 +2,7 @@ import {
   HeadContent,
   Scripts,
   createRootRouteWithContext,
+  redirect,
 } from '@tanstack/react-router'
 import { TanStackRouterDevtoolsPanel } from '@tanstack/react-router-devtools'
 import { TanStackDevtools } from '@tanstack/react-devtools'
@@ -10,16 +11,23 @@ import { Header } from '../components/layout/Header'
 import { Sidebar } from '../components/layout/Sidebar'
 import { ThemeProvider } from '../hooks/use-theme'
 import { Toaster } from '../components/ui/sonner'
+import { AuthProvider } from '../components/auth/AuthContext'
+import { SessionExpiredModal } from '../components/auth/SessionExpiredModal'
 
 import TanStackQueryDevtools from '../integrations/tanstack-query/devtools'
 
 import appCss from '../styles.css?url'
 
 import type { QueryClient } from '@tanstack/react-query'
+import { getCurrentUser } from './api/auth'
 
 interface MyRouterContext {
   queryClient: QueryClient
+  user?: { id: string; username: string; email: string }
 }
+
+// Routes that do not require authentication
+const PUBLIC_PATHS = ['/login', '/register']
 
 export const Route = createRootRouteWithContext<MyRouterContext>()({
   head: () => ({
@@ -43,10 +51,32 @@ export const Route = createRootRouteWithContext<MyRouterContext>()({
     ],
   }),
 
+  beforeLoad: async ({ location }) => {
+    // Allow public routes without auth
+    if (PUBLIC_PATHS.some((p) => location.pathname.startsWith(p))) {
+      return
+    }
+
+    // Check current session
+    const result = await getCurrentUser()
+    if (!result) {
+      throw redirect({
+        to: '/login',
+        search: { redirect: location.pathname },
+      })
+    }
+
+    return { user: result.user }
+  },
+
   shellComponent: RootDocument,
 })
 
 function RootDocument({ children }: { children: React.ReactNode }) {
+  const isPublicRoute =
+    typeof window !== 'undefined' &&
+    PUBLIC_PATHS.some((p) => window.location.pathname.startsWith(p))
+
   return (
     <html lang="en" suppressHydrationWarning>
       <head>
@@ -54,26 +84,35 @@ function RootDocument({ children }: { children: React.ReactNode }) {
       </head>
       <body>
         <ThemeProvider>
-          <div className="flex h-screen flex-col">
-            <Header />
-            <div className="flex flex-1 overflow-hidden">
-              <Sidebar />
-              <main className="flex-1 overflow-auto">{children}</main>
-            </div>
-          </div>
-          <Toaster />
-          <TanStackDevtools
-            config={{
-              position: 'bottom-right',
-            }}
-            plugins={[
-              {
-                name: 'Tanstack Router',
-                render: <TanStackRouterDevtoolsPanel />,
-              },
-              TanStackQueryDevtools,
-            ]}
-          />
+          <AuthProvider>
+            {isPublicRoute ? (
+              // Public routes: render content only (no header/sidebar)
+              <main>{children}</main>
+            ) : (
+              // Authenticated routes: render full shell
+              <div className="flex h-screen flex-col">
+                <Header />
+                <div className="flex flex-1 overflow-hidden">
+                  <Sidebar />
+                  <main className="flex-1 overflow-auto">{children}</main>
+                </div>
+              </div>
+            )}
+            <SessionExpiredModal />
+            <Toaster />
+            <TanStackDevtools
+              config={{
+                position: 'bottom-right',
+              }}
+              plugins={[
+                {
+                  name: 'Tanstack Router',
+                  render: <TanStackRouterDevtoolsPanel />,
+                },
+                TanStackQueryDevtools,
+              ]}
+            />
+          </AuthProvider>
         </ThemeProvider>
         <Scripts />
       </body>

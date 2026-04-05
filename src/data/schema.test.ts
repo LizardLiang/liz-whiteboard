@@ -1,8 +1,14 @@
 // src/data/schema.test.ts
-// Unit tests for cardinalitySchema Zod enum
+// Unit tests for cardinalitySchema Zod enum + auth schemas (TC-P1-01 through TC-P1-04)
 
 import { describe, expect, it } from 'vitest'
-import { cardinalitySchema, createRelationshipSchema } from './schema'
+import {
+  cardinalitySchema,
+  createRelationshipSchema,
+  registerInputSchema,
+  loginInputSchema,
+  projectRoleSchema,
+} from './schema'
 
 describe('cardinalitySchema', () => {
   describe('accepted values', () => {
@@ -91,5 +97,133 @@ describe('cardinalitySchema', () => {
       })
       expect(result.success).toBe(false)
     })
+  })
+})
+
+// ============================================================================
+// Auth Schema Tests
+// ============================================================================
+
+describe('registerInputSchema', () => {
+  // TC-P1-01: valid input accepted
+  it('TC-P1-01: accepts valid registration input', () => {
+    const result = registerInputSchema.safeParse({
+      username: 'alice_01',
+      email: 'alice@example.com',
+      password: 'secure123',
+    })
+    expect(result.success).toBe(true)
+    if (result.success) {
+      expect(result.data.username).toBe('alice_01')
+      expect(result.data.email).toBe('alice@example.com')
+      expect(result.data.password).toBe('secure123')
+    }
+  })
+
+  // TC-P1-02: boundary and invalid inputs rejected
+  describe('TC-P1-02: boundary and invalid inputs', () => {
+    it('rejects username with 2 characters', () => {
+      const result = registerInputSchema.safeParse({ username: 'ab', email: 'a@b.com', password: 'pass1234' })
+      expect(result.success).toBe(false)
+    })
+
+    it('rejects username with 51 characters', () => {
+      const result = registerInputSchema.safeParse({ username: 'a'.repeat(51), email: 'a@b.com', password: 'pass1234' })
+      expect(result.success).toBe(false)
+    })
+
+    it('rejects username containing a space', () => {
+      const result = registerInputSchema.safeParse({ username: 'alice bob', email: 'a@b.com', password: 'pass1234' })
+      expect(result.success).toBe(false)
+    })
+
+    it('rejects username containing a hyphen', () => {
+      const result = registerInputSchema.safeParse({ username: 'alice-bob', email: 'a@b.com', password: 'pass1234' })
+      expect(result.success).toBe(false)
+    })
+
+    it('rejects invalid email format', () => {
+      const result = registerInputSchema.safeParse({ username: 'alice', email: 'notanemail', password: 'pass1234' })
+      expect(result.success).toBe(false)
+    })
+
+    it('rejects password of 7 characters', () => {
+      const result = registerInputSchema.safeParse({ username: 'alice', email: 'a@b.com', password: 'short12' })
+      expect(result.success).toBe(false)
+    })
+
+    it('rejects password of 129 characters', () => {
+      const result = registerInputSchema.safeParse({ username: 'alice', email: 'a@b.com', password: 'a'.repeat(129) })
+      expect(result.success).toBe(false)
+    })
+
+    it('accepts password of exactly 8 characters', () => {
+      const result = registerInputSchema.safeParse({ username: 'alice', email: 'a@b.com', password: 'exactly8' })
+      expect(result.success).toBe(true)
+    })
+
+    it('accepts password of exactly 128 characters', () => {
+      const result = registerInputSchema.safeParse({ username: 'alice', email: 'a@b.com', password: 'a'.repeat(128) })
+      expect(result.success).toBe(true)
+    })
+
+    it('accepts username of exactly 3 characters', () => {
+      const result = registerInputSchema.safeParse({ username: 'abc', email: 'a@b.com', password: 'pass1234' })
+      expect(result.success).toBe(true)
+    })
+
+    it('accepts username of exactly 50 characters', () => {
+      const result = registerInputSchema.safeParse({ username: 'a'.repeat(50), email: 'a@b.com', password: 'pass1234' })
+      expect(result.success).toBe(true)
+    })
+  })
+})
+
+describe('loginInputSchema', () => {
+  // TC-P1-03: valid and invalid inputs
+  it('TC-P1-03: accepts valid login input', () => {
+    const result = loginInputSchema.safeParse({ email: 'a@b.com', password: 'x', rememberMe: false })
+    expect(result.success).toBe(true)
+  })
+
+  it('TC-P1-03: rejects missing password', () => {
+    const result = loginInputSchema.safeParse({ email: 'a@b.com' })
+    expect(result.success).toBe(false)
+  })
+
+  it('TC-P1-03: rejects empty password', () => {
+    const result = loginInputSchema.safeParse({ email: 'a@b.com', password: '' })
+    expect(result.success).toBe(false)
+  })
+
+  it('TC-P1-03: rememberMe defaults to false when absent', () => {
+    const result = loginInputSchema.safeParse({ email: 'a@b.com', password: 'pass' })
+    expect(result.success).toBe(true)
+    if (result.success) {
+      expect(result.data.rememberMe).toBe(false)
+    }
+  })
+})
+
+describe('projectRoleSchema', () => {
+  // TC-P1-04: projectRoleSchema values
+  it('TC-P1-04: accepts VIEWER', () => {
+    expect(projectRoleSchema.safeParse('VIEWER').success).toBe(true)
+  })
+
+  it('TC-P1-04: accepts EDITOR', () => {
+    expect(projectRoleSchema.safeParse('EDITOR').success).toBe(true)
+  })
+
+  it('TC-P1-04: accepts ADMIN', () => {
+    expect(projectRoleSchema.safeParse('ADMIN').success).toBe(true)
+  })
+
+  it('TC-P1-04: rejects OWNER (not a stored role)', () => {
+    expect(projectRoleSchema.safeParse('OWNER').success).toBe(false)
+  })
+
+  it('TC-P1-04: rejects lowercase viewer (case-sensitive)', () => {
+    expect(projectRoleSchema.safeParse('viewer').success).toBe(false)
   })
 })

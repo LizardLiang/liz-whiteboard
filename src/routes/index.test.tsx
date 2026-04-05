@@ -70,7 +70,7 @@ function renderHomePage(preloadData: {
   )
 
   const history = createMemoryHistory({ initialEntries: ['/'] })
-  const router = createRouter({ routeTree, history })
+  const router = createRouter({ routeTree, history, context: { queryClient } })
 
   function Wrapper({ children }: { children: ReactNode }) {
     return (

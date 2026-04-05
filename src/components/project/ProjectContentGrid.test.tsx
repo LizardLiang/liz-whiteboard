@@ -12,10 +12,12 @@ import {
 import { ProjectContentGrid } from './ProjectContentGrid'
 import type { ReactNode } from 'react'
 import { routeTree } from '@/routeTree.gen'
+import { QueryClient } from '@tanstack/react-query'
 
 function createTestRouter() {
   const history = createMemoryHistory({ initialEntries: ['/'] })
-  return createRouter({ routeTree, history })
+  const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } })
+  return createRouter({ routeTree, history, context: { queryClient } })
 }
 
 function RouterWrapper({ children }: { children: ReactNode }) {

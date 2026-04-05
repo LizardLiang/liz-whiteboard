@@ -10,6 +10,66 @@ datasource db {
   url      = env("DATABASE_URL")
 }
 
+// ============================================================================
+// Auth Models
+// ============================================================================
+
+enum ProjectRole {
+  VIEWER
+  EDITOR
+  ADMIN
+}
+
+model User {
+  id                   String    @id @default(uuid())
+  username             String    @unique @db.VarChar(50)
+  email                String    @unique @db.VarChar(255)
+  passwordHash         String    @db.Text
+  failedLoginAttempts  Int       @default(0)
+  lockedUntil          DateTime?
+  createdAt            DateTime  @default(now())
+  updatedAt            DateTime  @updatedAt
+
+  sessions              Session[]
+  ownedProjects         Project[]             @relation("ProjectOwner")
+  projectMemberships    ProjectMember[]
+  collaborationSessions CollaborationSession[]
+
+  @@index([email])
+}
+
+model Session {
+  id        String   @id @default(uuid())
+  tokenHash String   @unique @db.VarChar(64)
+  userId    String
+  expiresAt DateTime
+  createdAt DateTime @default(now())
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+  @@index([expiresAt])
+}
+
+model ProjectMember {
+  id        String      @id @default(uuid())
+  projectId String
+  userId    String
+  role      ProjectRole
+  createdAt DateTime    @default(now())
+  updatedAt DateTime    @updatedAt
+
+  project Project @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  user    User    @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([projectId, userId])
+  @@index([userId])
+}
+
+// ============================================================================
+// Project
+// ============================================================================
+
 model Project {
   id          String      @id @default(uuid())
   name        String      @db.VarChar(255)
@@ -17,10 +77,17 @@ model Project {
   createdAt   DateTime    @default(now())
   updatedAt   DateTime    @updatedAt
 
+  // Auth: nullable FK to User (nullable until first-user migration assigns existing projects)
+  ownerId     String?
+
   folders     Folder[]
   whiteboards Whiteboard[]
+  members     ProjectMember[]
+
+  owner User? @relation("ProjectOwner", fields: [ownerId], references: [id], onDelete: SetNull)
 
   @@index([createdAt])
+  @@index([ownerId])
 }
 
 model Folder {
@@ -50,10 +117,11 @@ model Whiteboard {
   createdAt   DateTime @default(now())
   updatedAt   DateTime @updatedAt
 
-  project  Project                @relation(fields: [projectId], references: [id], onDelete: Cascade)
-  folder   Folder?                @relation(fields: [folderId], references: [id], onDelete: Cascade)
-  tables   DiagramTable[]
-  sessions CollaborationSession[]
+  project       Project                @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  folder        Folder?                @relation(fields: [folderId], references: [id], onDelete: Cascade)
+  tables        DiagramTable[]
+  relationships Relationship[]
+  sessions      CollaborationSession[]
 
   @@index([projectId])
   @@index([folderId])
@@ -152,14 +220,16 @@ model Relationship {
 model CollaborationSession {
   id             String   @id @default(uuid())
   whiteboardId   String
-  userId         String   // Future: @db.Uuid reference to User table
+  userId         String
   socketId       String   @unique
   cursor         Json?
   lastActivityAt DateTime @updatedAt
   createdAt      DateTime @default(now())
 
   whiteboard Whiteboard @relation(fields: [whiteboardId], references: [id], onDelete: Cascade)
+  user       User       @relation(fields: [userId], references: [id], onDelete: Cascade)
 
   @@index([whiteboardId])
   @@index([lastActivityAt])
+  @@index([userId])
 }

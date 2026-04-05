@@ -1,0 +1,13 @@
+{
+  "agent_id": "a5afc06c3ebab80d5",
+  "tiers": {
+    "T1_correct": true,
+    "T2_safe": true,
+    "T3_clear": true,
+    "T4_minimal": true,
+    "T5_consistent": true,
+    "T6_resilient": true,
+    "T7_performant": true,
+    "T8_maintainable": true
+  }
+}

@@ -74,12 +74,6 @@ export interface TableNodeData extends Record<string, unknown> {
 
   /** Whether the WebSocket is currently connected */
   isConnected?: boolean
-
-  /** Whiteboard ID for notes context */
-  whiteboardId?: string
-
-  /** User ID for notes collaboration */
-  userId?: string
 }
 
 /**

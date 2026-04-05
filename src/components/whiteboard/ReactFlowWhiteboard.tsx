@@ -65,6 +65,7 @@ import {
 } from '@/hooks/use-relationship-mutations'
 import { useTableDeletion } from '@/hooks/use-table-deletion'
 import { getSessionUserId } from '@/lib/session-user-id'
+import { isUnauthorizedError } from '@/lib/auth/middleware'
 
 /** Pending connection data waiting for cardinality selection */
 interface PendingConnection {
@@ -802,6 +803,7 @@ function ReactFlowWhiteboardInner({
       return await updateTablePositionFn({ data: params })
     },
     onSuccess: (updatedTable) => {
+      if (isUnauthorizedError(updatedTable)) return
       // Update cache without full refetch for better performance
       queryClient.setQueryData(['whiteboard', whiteboardId], (old: any) => {
         if (!old?.whiteboard?.tables) return old
@@ -1067,25 +1069,24 @@ export function ReactFlowWhiteboard({
 
   // Convert tables to React Flow nodes with showMode
   const nodes = useMemo(() => {
-    // The whiteboardData has structure: {whiteboard: {..., tables: [...]}, relationships: [...]}
-    const tables = whiteboardData?.whiteboard?.tables
+    // Guard against AuthErrorResponse
+    if (!whiteboardData || isUnauthorizedError(whiteboardData)) return []
+    // whiteboardData is WhiteboardWithDiagram which directly has .tables
+    const tables = whiteboardData?.tables
 
     if (!tables || tables.length === 0) {
       console.log('ReactFlowWhiteboard: No tables data or empty array')
       return []
     }
     console.log('ReactFlowWhiteboard: Converting tables to nodes', tables)
-    const convertedNodes = convertTablesToNodes(tables, 'ALL_FIELDS', {
-      whiteboardId,
-      userId,
-    })
+    const convertedNodes = convertTablesToNodes(tables, 'ALL_FIELDS')
     console.log('ReactFlowWhiteboard: Converted nodes', convertedNodes)
     return convertedNodes
-  }, [whiteboardData?.whiteboard?.tables])
+  }, [whiteboardData])
 
   // Convert relationships to React Flow edges
   const edges = useMemo(() => {
-    if (!relationships) {
+    if (!relationships || isUnauthorizedError(relationships)) {
       console.log('ReactFlowWhiteboard: No relationships data')
       return []
     }

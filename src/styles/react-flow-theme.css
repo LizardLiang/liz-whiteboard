@@ -221,6 +221,14 @@
   background: var(--rf-table-hover-bg) !important;
 }
 
+.column-row:hover .column-note-btn {
+  opacity: 0.5 !important;
+}
+
+.column-row:hover .column-note-btn:hover {
+  opacity: 1 !important;
+}
+
 /* ----------------------------------------------------------------------------
  * Connection Line Styles
  * ---------------------------------------------------------------------------- */

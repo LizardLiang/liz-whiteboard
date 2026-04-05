@@ -41,6 +41,10 @@ import {
   findRelationshipById,
   updateRelationship,
 } from '@/data/relationship'
+import { parseSessionCookie } from '@/lib/auth/cookies'
+import { validateSessionToken } from '@/lib/auth/session'
+import { findEffectiveRole } from '@/data/permission'
+import { prisma } from '@/db'
 
 /**
  * Socket.IO server instance
@@ -62,9 +66,34 @@ export function initializeSocketIO(httpServer: HTTPServer): SocketIOServer {
     cors: {
       origin: process.env.CLIENT_URL || 'http://localhost:3000',
       methods: ['GET', 'POST'],
-      credentials: true,
+      credentials: true, // Required for cookies to be sent with handshake
     },
     transports: ['websocket', 'polling'],
+  })
+
+  // Auth middleware: runs on EVERY connection attempt, before 'connection' event.
+  // Reads the session_token cookie from the handshake headers and validates it.
+  io.use(async (socket, next) => {
+    try {
+      const cookieHeader = socket.handshake.headers.cookie ?? ''
+      const token = parseSessionCookie(cookieHeader)
+      if (!token) {
+        return next(new Error('UNAUTHORIZED'))
+      }
+
+      const authResult = await validateSessionToken(token)
+      if (!authResult) {
+        return next(new Error('UNAUTHORIZED'))
+      }
+
+      // Attach auth data to socket for use in event handlers
+      socket.data.userId = authResult.user.id
+      socket.data.sessionId = authResult.session.id
+      socket.data.sessionExpiresAt = authResult.session.expiresAt.getTime()
+      next()
+    } catch (error) {
+      next(new Error('UNAUTHORIZED'))
+    }
   })
 
   // Setup namespace pattern for whiteboards
@@ -108,8 +137,8 @@ function setupWhiteboardNamespace(ioServer: SocketIOServer): void {
     const namespace = socket.nsp.name
     const whiteboardId = namespace.replace('/whiteboard/', '')
 
-    // Get authentication from handshake
-    const { userId } = socket.handshake.auth
+    // userId is set by the io.use() handshake middleware (authenticated)
+    const userId = socket.data.userId as string
 
     if (!userId) {
       socket.disconnect(true)
@@ -186,6 +215,49 @@ async function safeUpdateSessionActivity(socketId: string): Promise<void> {
 }
 
 /**
+ * Check if the session is still valid (in-memory comparison, no DB round-trip).
+ * Returns true if expired.
+ */
+function isSessionExpired(socket: any): boolean {
+  return Date.now() > (socket.data.sessionExpiresAt as number)
+}
+
+/**
+ * Resolve the projectId for a given whiteboardId.
+ */
+async function getProjectIdForWhiteboard(
+  whiteboardId: string,
+): Promise<string | null> {
+  const whiteboard = await prisma.whiteboard.findUnique({
+    where: { id: whiteboardId },
+    select: { projectId: true },
+  })
+  return whiteboard?.projectId ?? null
+}
+
+/**
+ * Check that the socket user has EDITOR+ role on the whiteboard's project.
+ * Emits permission_revoked and disconnects if not.
+ * Returns true if access was denied (caller should return).
+ */
+async function denyIfInsufficientPermission(
+  socket: any,
+  whiteboardId: string,
+): Promise<boolean> {
+  const projectId = await getProjectIdForWhiteboard(whiteboardId)
+  if (!projectId) return false
+
+  const role = await findEffectiveRole(socket.data.userId, projectId)
+  const EDITOR_ROLES = ['EDITOR', 'ADMIN', 'OWNER']
+  if (!role || !EDITOR_ROLES.includes(role)) {
+    socket.emit('permission_revoked', { projectId })
+    socket.disconnect(true)
+    return true
+  }
+  return false
+}
+
+/**
  * Setup event handlers for collaboration events
  */
 function setupCollaborationEventHandlers(
@@ -252,6 +324,15 @@ function setupCollaborationEventHandlers(
 
   // Table creation
   socket.on('table:create', async (data: any) => {
+    // Check session expiry
+    if (isSessionExpired(socket)) {
+      socket.emit('session_expired')
+      socket.disconnect(true)
+      return
+    }
+    // Check permission
+    if (await denyIfInsufficientPermission(socket, whiteboardId)) return
+
     try {
       // Validate input
       const validated = createTableSchema.parse({
@@ -284,6 +365,13 @@ function setupCollaborationEventHandlers(
   socket.on(
     'table:move',
     async (data: { tableId: string; positionX: number; positionY: number }) => {
+      if (isSessionExpired(socket)) {
+        socket.emit('session_expired')
+        socket.disconnect(true)
+        return
+      }
+      if (await denyIfInsufficientPermission(socket, whiteboardId)) return
+
       try {
         // Update position in database
         await updateDiagramTablePosition(
@@ -316,6 +404,13 @@ function setupCollaborationEventHandlers(
   socket.on(
     'table:update',
     async (data: { tableId: string; [key: string]: any }) => {
+      if (isSessionExpired(socket)) {
+        socket.emit('session_expired')
+        socket.disconnect(true)
+        return
+      }
+      if (await denyIfInsufficientPermission(socket, whiteboardId)) return
+
       try {
         const { tableId, ...updateData } = data
 
@@ -347,6 +442,13 @@ function setupCollaborationEventHandlers(
 
   // Table deletion
   socket.on('table:delete', async (data: { tableId: string }) => {
+    if (isSessionExpired(socket)) {
+      socket.emit('session_expired')
+      socket.disconnect(true)
+      return
+    }
+    if (await denyIfInsufficientPermission(socket, whiteboardId)) return
+
     try {
       // Validate input (HIGH-002: missing UUID validation)
       const { tableId } = z.object({ tableId: z.string().uuid() }).parse(data)
@@ -399,6 +501,13 @@ function setupCollaborationEventHandlers(
 
   // Column creation
   socket.on('column:create', async (data: any) => {
+    if (isSessionExpired(socket)) {
+      socket.emit('session_expired')
+      socket.disconnect(true)
+      return
+    }
+    if (await denyIfInsufficientPermission(socket, whiteboardId)) return
+
     let validated: ReturnType<typeof createColumnSchema.parse> | undefined
     try {
       // Validate input
@@ -438,6 +547,13 @@ function setupCollaborationEventHandlers(
   socket.on(
     'column:update',
     async (data: { columnId: string; [key: string]: unknown }) => {
+      if (isSessionExpired(socket)) {
+        socket.emit('session_expired')
+        socket.disconnect(true)
+        return
+      }
+      if (await denyIfInsufficientPermission(socket, whiteboardId)) return
+
       try {
         const { columnId, ...updateData } = data
 
@@ -470,6 +586,13 @@ function setupCollaborationEventHandlers(
 
   // Column deletion
   socket.on('column:delete', async (data: { columnId: string }) => {
+    if (isSessionExpired(socket)) {
+      socket.emit('session_expired')
+      socket.disconnect(true)
+      return
+    }
+    if (await denyIfInsufficientPermission(socket, whiteboardId)) return
+
     try {
       // Get column before deletion to know tableId
       const column = await findColumnById(data.columnId)
@@ -505,6 +628,13 @@ function setupCollaborationEventHandlers(
 
   // Relationship creation
   socket.on('relationship:create', async (data: any) => {
+    if (isSessionExpired(socket)) {
+      socket.emit('session_expired')
+      socket.disconnect(true)
+      return
+    }
+    if (await denyIfInsufficientPermission(socket, whiteboardId)) return
+
     try {
       // Validate input
       const validated = createRelationshipSchema.parse({
@@ -539,6 +669,13 @@ function setupCollaborationEventHandlers(
   socket.on(
     'relationship:update',
     async (data: { relationshipId: string; [key: string]: any }) => {
+      if (isSessionExpired(socket)) {
+        socket.emit('session_expired')
+        socket.disconnect(true)
+        return
+      }
+      if (await denyIfInsufficientPermission(socket, whiteboardId)) return
+
       try {
         const { relationshipId, ...updateData } = data
 
@@ -572,6 +709,13 @@ function setupCollaborationEventHandlers(
 
   // Relationship deletion
   socket.on('relationship:delete', async (data: { relationshipId: string }) => {
+    if (isSessionExpired(socket)) {
+      socket.emit('session_expired')
+      socket.disconnect(true)
+      return
+    }
+    if (await denyIfInsufficientPermission(socket, whiteboardId)) return
+
     let relationshipId: string | undefined
     try {
       // Validate input: UUID format required

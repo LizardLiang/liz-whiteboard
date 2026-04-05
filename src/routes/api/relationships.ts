@@ -17,6 +17,7 @@ import {
   createRelationshipSchema,
   updateRelationshipSchema,
 } from '@/data/schema'
+import { requireAuth } from '@/lib/auth/middleware'
 
 /**
  * Get all relationships in a whiteboard
@@ -27,16 +28,18 @@ export const getRelationshipsByWhiteboardId = createServerFn({ method: 'GET' })
     const idSchema = z.string().uuid()
     return idSchema.parse(whiteboardId)
   })
-  .handler(async ({ data: whiteboardId }) => {
-    try {
-      const relationships = await findRelationshipsByWhiteboardId(whiteboardId)
-      return relationships
-    } catch (error) {
-      throw new Error(
-        `Failed to fetch relationships: ${error instanceof Error ? error.message : 'Unknown error'}`,
-      )
-    }
-  })
+  .handler(
+    requireAuth(async (_ctx, whiteboardId) => {
+      try {
+        const relationships = await findRelationshipsByWhiteboardId(whiteboardId)
+        return relationships
+      } catch (error) {
+        throw new Error(
+          `Failed to fetch relationships: ${error instanceof Error ? error.message : 'Unknown error'}`,
+        )
+      }
+    }),
+  )
 
 /**
  * Get all relationships in a whiteboard with table/column details
@@ -49,17 +52,19 @@ export const getRelationshipsByWhiteboardIdWithDetails = createServerFn({
     const idSchema = z.string().uuid()
     return idSchema.parse(whiteboardId)
   })
-  .handler(async ({ data: whiteboardId }) => {
-    try {
-      const relationships =
-        await findRelationshipsByWhiteboardIdWithDetails(whiteboardId)
-      return relationships
-    } catch (error) {
-      throw new Error(
-        `Failed to fetch relationships with details: ${error instanceof Error ? error.message : 'Unknown error'}`,
-      )
-    }
-  })
+  .handler(
+    requireAuth(async (_ctx, whiteboardId) => {
+      try {
+        const relationships =
+          await findRelationshipsByWhiteboardIdWithDetails(whiteboardId)
+        return relationships
+      } catch (error) {
+        throw new Error(
+          `Failed to fetch relationships with details: ${error instanceof Error ? error.message : 'Unknown error'}`,
+        )
+      }
+    }),
+  )
 
 /**
  * Get a single relationship by ID
@@ -70,19 +75,21 @@ export const getRelationship = createServerFn({ method: 'GET' })
     const idSchema = z.string().uuid()
     return idSchema.parse(relationshipId)
   })
-  .handler(async ({ data: relationshipId }) => {
-    try {
-      const relationship = await findRelationshipById(relationshipId)
-      if (!relationship) {
-        throw new Error('Relationship not found')
+  .handler(
+    requireAuth(async (_ctx, relationshipId) => {
+      try {
+        const relationship = await findRelationshipById(relationshipId)
+        if (!relationship) {
+          throw new Error('Relationship not found')
+        }
+        return relationship
+      } catch (error) {
+        throw new Error(
+          `Failed to fetch relationship: ${error instanceof Error ? error.message : 'Unknown error'}`,
+        )
       }
-      return relationship
-    } catch (error) {
-      throw new Error(
-        `Failed to fetch relationship: ${error instanceof Error ? error.message : 'Unknown error'}`,
-      )
-    }
-  })
+    }),
+  )
 
 /**
  * Get a single relationship by ID with table/column details
@@ -93,19 +100,21 @@ export const getRelationshipWithDetails = createServerFn({ method: 'GET' })
     const idSchema = z.string().uuid()
     return idSchema.parse(relationshipId)
   })
-  .handler(async ({ data: relationshipId }) => {
-    try {
-      const relationship = await findRelationshipByIdWithDetails(relationshipId)
-      if (!relationship) {
-        throw new Error('Relationship not found')
+  .handler(
+    requireAuth(async (_ctx, relationshipId) => {
+      try {
+        const relationship = await findRelationshipByIdWithDetails(relationshipId)
+        if (!relationship) {
+          throw new Error('Relationship not found')
+        }
+        return relationship
+      } catch (error) {
+        throw new Error(
+          `Failed to fetch relationship with details: ${error instanceof Error ? error.message : 'Unknown error'}`,
+        )
       }
-      return relationship
-    } catch (error) {
-      throw new Error(
-        `Failed to fetch relationship with details: ${error instanceof Error ? error.message : 'Unknown error'}`,
-      )
-    }
-  })
+    }),
+  )
 
 /**
  * Get all relationships connected to a table
@@ -116,16 +125,18 @@ export const getRelationshipsByTableId = createServerFn({ method: 'GET' })
     const idSchema = z.string().uuid()
     return idSchema.parse(tableId)
   })
-  .handler(async ({ data: tableId }) => {
-    try {
-      const relationships = await findRelationshipsByTableId(tableId)
-      return relationships
-    } catch (error) {
-      throw new Error(
-        `Failed to fetch table relationships: ${error instanceof Error ? error.message : 'Unknown error'}`,
-      )
-    }
-  })
+  .handler(
+    requireAuth(async (_ctx, tableId) => {
+      try {
+        const relationships = await findRelationshipsByTableId(tableId)
+        return relationships
+      } catch (error) {
+        throw new Error(
+          `Failed to fetch table relationships: ${error instanceof Error ? error.message : 'Unknown error'}`,
+        )
+      }
+    }),
+  )
 
 /**
  * Create a new relationship
@@ -133,16 +144,18 @@ export const getRelationshipsByTableId = createServerFn({ method: 'GET' })
  */
 export const createRelationshipFn = createServerFn({ method: 'POST' })
   .inputValidator((data: unknown) => createRelationshipSchema.parse(data))
-  .handler(async ({ data }) => {
-    try {
-      const relationship = await createRelationship(data)
-      return relationship
-    } catch (error) {
-      throw new Error(
-        `Failed to create relationship: ${error instanceof Error ? error.message : 'Unknown error'}`,
-      )
-    }
-  })
+  .handler(
+    requireAuth(async (_ctx, data) => {
+      try {
+        const relationship = await createRelationship(data)
+        return relationship
+      } catch (error) {
+        throw new Error(
+          `Failed to create relationship: ${error instanceof Error ? error.message : 'Unknown error'}`,
+        )
+      }
+    }),
+  )
 
 /**
  * Update an existing relationship
@@ -156,16 +169,18 @@ export const updateRelationshipFn = createServerFn({ method: 'POST' })
     })
     return schema.parse(params)
   })
-  .handler(async ({ data: params }) => {
-    try {
-      const relationship = await updateRelationship(params.id, params.data)
-      return relationship
-    } catch (error) {
-      throw new Error(
-        `Failed to update relationship: ${error instanceof Error ? error.message : 'Unknown error'}`,
-      )
-    }
-  })
+  .handler(
+    requireAuth(async (_ctx, params) => {
+      try {
+        const relationship = await updateRelationship(params.id, params.data)
+        return relationship
+      } catch (error) {
+        throw new Error(
+          `Failed to update relationship: ${error instanceof Error ? error.message : 'Unknown error'}`,
+        )
+      }
+    }),
+  )
 
 /**
  * Delete a relationship by ID
@@ -176,13 +191,15 @@ export const deleteRelationshipFn = createServerFn({ method: 'POST' })
     const idSchema = z.string().uuid()
     return idSchema.parse(relationshipId)
   })
-  .handler(async ({ data: relationshipId }) => {
-    try {
-      const relationship = await deleteRelationship(relationshipId)
-      return relationship
-    } catch (error) {
-      throw new Error(
-        `Failed to delete relationship: ${error instanceof Error ? error.message : 'Unknown error'}`,
-      )
-    }
-  })
+  .handler(
+    requireAuth(async (_ctx, relationshipId) => {
+      try {
+        const relationship = await deleteRelationship(relationshipId)
+        return relationship
+      } catch (error) {
+        throw new Error(
+          `Failed to delete relationship: ${error instanceof Error ? error.message : 'Unknown error'}`,
+        )
+      }
+    }),
+  )
