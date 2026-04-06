@@ -6,23 +6,25 @@ import { z } from 'zod'
 import {
   createProject,
   deleteProject,
-  findAllProjects,
-  findAllProjectsWithTree,
+  findAllProjectsForUser,
+  findAllProjectsWithTreeForUser,
   findProjectById,
   findProjectPageContent,
   updateProject,
 } from '@/data/project'
 import { createProjectSchema, updateProjectSchema } from '@/data/schema'
 import { requireAuth } from '@/lib/auth/middleware'
+import { findEffectiveRole } from '@/data/permission'
+import { hasMinimumRole } from '@/lib/auth/permissions'
 
 /**
- * Get all projects
- * Returns array of all projects ordered by creation date (newest first)
+ * Get all projects accessible to the authenticated user
+ * Returns projects the user owns or has membership in
  */
 export const getProjects = createServerFn({ method: 'GET' }).handler(
-  requireAuth(async () => {
+  requireAuth(async ({ user }) => {
     try {
-      const projects = await findAllProjects()
+      const projects = await findAllProjectsForUser(user.id)
       return projects
     } catch (error) {
       throw new Error(
@@ -33,15 +35,15 @@ export const getProjects = createServerFn({ method: 'GET' }).handler(
 )
 
 /**
- * Get all projects with their folder and whiteboard tree
+ * Get all projects with their folder and whiteboard tree (filtered to user's accessible projects)
  * Returns projects with nested folders and whiteboards for navigation
  */
 export const getProjectsWithTree = createServerFn({
   method: 'GET',
 }).handler(
-  requireAuth(async () => {
+  requireAuth(async ({ user }) => {
     try {
-      const projects = await findAllProjectsWithTree()
+      const projects = await findAllProjectsWithTreeForUser(user.id)
       return projects
     } catch (error) {
       throw new Error(
@@ -53,6 +55,7 @@ export const getProjectsWithTree = createServerFn({
 
 /**
  * Get a single project by ID
+ * Requires VIEWER+ role on the project.
  * @param projectId - Project UUID
  */
 export const getProject = createServerFn({ method: 'GET' })
@@ -61,7 +64,11 @@ export const getProject = createServerFn({ method: 'GET' })
     return idSchema.parse(projectId)
   })
   .handler(
-    requireAuth(async (_ctx, projectId) => {
+    requireAuth(async ({ user }, projectId) => {
+      const role = await findEffectiveRole(user.id, projectId)
+      if (!hasMinimumRole(role, 'VIEWER')) {
+        return { error: 'FORBIDDEN', status: 403, message: 'Access denied' } as const
+      }
       try {
         const project = await findProjectById(projectId)
         if (!project) {
@@ -108,7 +115,12 @@ export const updateProjectFn = createServerFn({ method: 'POST' })
     return schema.parse(params)
   })
   .handler(
-    requireAuth(async (_ctx, params) => {
+    requireAuth(async ({ user }, params) => {
+      // Requires ADMIN+ role to update project settings
+      const role = await findEffectiveRole(user.id, params.id)
+      if (!hasMinimumRole(role, 'ADMIN')) {
+        return { error: 'FORBIDDEN', status: 403, message: 'Access denied' } as const
+      }
       try {
         const project = await updateProject(params.id, params.data)
         return project
@@ -122,6 +134,7 @@ export const updateProjectFn = createServerFn({ method: 'POST' })
 
 /**
  * Get project page content (folders + whiteboards at a given level)
+ * Requires VIEWER+ role on the project.
  * @param params - Object with projectId and optional folderId
  */
 export const getProjectPageContent = createServerFn({ method: 'GET' })
@@ -133,7 +146,11 @@ export const getProjectPageContent = createServerFn({ method: 'GET' })
     return schema.parse(params)
   })
   .handler(
-    requireAuth(async (_ctx, data) => {
+    requireAuth(async ({ user }, data) => {
+      const role = await findEffectiveRole(user.id, data.projectId)
+      if (!hasMinimumRole(role, 'VIEWER')) {
+        return { error: 'FORBIDDEN', status: 403, message: 'Access denied' } as const
+      }
       const content = await findProjectPageContent(data.projectId, data.folderId)
       if (!content) {
         throw new Error('Project not found')
@@ -144,6 +161,7 @@ export const getProjectPageContent = createServerFn({ method: 'GET' })
 
 /**
  * Delete a project by ID
+ * Only OWNER can delete a project.
  * Cascade deletes all folders and whiteboards within the project
  * @param projectId - Project UUID
  */
@@ -153,7 +171,12 @@ export const deleteProjectFn = createServerFn({ method: 'POST' })
     return idSchema.parse(projectId)
   })
   .handler(
-    requireAuth(async (_ctx, projectId) => {
+    requireAuth(async ({ user }, projectId) => {
+      // Only OWNER can delete a project
+      const role = await findEffectiveRole(user.id, projectId)
+      if (!hasMinimumRole(role, 'OWNER')) {
+        return { error: 'FORBIDDEN', status: 403, message: 'Access denied' } as const
+      }
       try {
         const project = await deleteProject(projectId)
         return project

@@ -16,9 +16,35 @@ import {
 } from '@/data/column'
 import { createColumnSchema, updateColumnSchema } from '@/data/schema'
 import { requireAuth } from '@/lib/auth/middleware'
+import { findEffectiveRole } from '@/data/permission'
+import { hasMinimumRole } from '@/lib/auth/permissions'
+import { prisma } from '@/db'
+
+/**
+ * Resolve projectId for a table by table ID (via its whiteboard).
+ */
+async function getTableProjectId(tableId: string): Promise<string | null> {
+  const table = await prisma.diagramTable.findUnique({
+    where: { id: tableId },
+    select: { whiteboard: { select: { projectId: true } } },
+  })
+  return table?.whiteboard?.projectId ?? null
+}
+
+/**
+ * Resolve projectId for a column by column ID (via its table's whiteboard).
+ */
+async function getColumnProjectId(columnId: string): Promise<string | null> {
+  const column = await prisma.column.findUnique({
+    where: { id: columnId },
+    select: { table: { select: { whiteboard: { select: { projectId: true } } } } },
+  })
+  return column?.table?.whiteboard?.projectId ?? null
+}
 
 /**
  * Get all columns in a table
+ * Requires VIEWER+ role on the table's project.
  * @param tableId - Table UUID
  */
 export const getColumnsByTableId = createServerFn({ method: 'GET' })
@@ -27,7 +53,15 @@ export const getColumnsByTableId = createServerFn({ method: 'GET' })
     return idSchema.parse(tableId)
   })
   .handler(
-    requireAuth(async (_ctx, tableId) => {
+    requireAuth(async ({ user }, tableId) => {
+      const projectId = await getTableProjectId(tableId)
+      if (!projectId) {
+        throw new Error('Table not found')
+      }
+      const role = await findEffectiveRole(user.id, projectId)
+      if (!hasMinimumRole(role, 'VIEWER')) {
+        return { error: 'FORBIDDEN', status: 403, message: 'Access denied' } as const
+      }
       try {
         const columns = await findColumnsByTableId(tableId)
         return columns
@@ -41,6 +75,7 @@ export const getColumnsByTableId = createServerFn({ method: 'GET' })
 
 /**
  * Get a single column by ID
+ * Requires VIEWER+ role on the column's project.
  * @param columnId - Column UUID
  */
 export const getColumn = createServerFn({ method: 'GET' })
@@ -49,7 +84,15 @@ export const getColumn = createServerFn({ method: 'GET' })
     return idSchema.parse(columnId)
   })
   .handler(
-    requireAuth(async (_ctx, columnId) => {
+    requireAuth(async ({ user }, columnId) => {
+      const projectId = await getColumnProjectId(columnId)
+      if (!projectId) {
+        throw new Error('Column not found')
+      }
+      const role = await findEffectiveRole(user.id, projectId)
+      if (!hasMinimumRole(role, 'VIEWER')) {
+        return { error: 'FORBIDDEN', status: 403, message: 'Access denied' } as const
+      }
       try {
         const column = await findColumnById(columnId)
         if (!column) {
@@ -66,6 +109,7 @@ export const getColumn = createServerFn({ method: 'GET' })
 
 /**
  * Get primary key columns in a table
+ * Requires VIEWER+ role on the table's project.
  * @param tableId - Table UUID
  */
 export const getPrimaryKeyColumnsByTableId = createServerFn({ method: 'GET' })
@@ -74,7 +118,15 @@ export const getPrimaryKeyColumnsByTableId = createServerFn({ method: 'GET' })
     return idSchema.parse(tableId)
   })
   .handler(
-    requireAuth(async (_ctx, tableId) => {
+    requireAuth(async ({ user }, tableId) => {
+      const projectId = await getTableProjectId(tableId)
+      if (!projectId) {
+        throw new Error('Table not found')
+      }
+      const role = await findEffectiveRole(user.id, projectId)
+      if (!hasMinimumRole(role, 'VIEWER')) {
+        return { error: 'FORBIDDEN', status: 403, message: 'Access denied' } as const
+      }
       try {
         const columns = await findPrimaryKeyColumnsByTableId(tableId)
         return columns
@@ -88,6 +140,7 @@ export const getPrimaryKeyColumnsByTableId = createServerFn({ method: 'GET' })
 
 /**
  * Get foreign key columns in a table
+ * Requires VIEWER+ role on the table's project.
  * @param tableId - Table UUID
  */
 export const getForeignKeyColumnsByTableId = createServerFn({ method: 'GET' })
@@ -96,7 +149,15 @@ export const getForeignKeyColumnsByTableId = createServerFn({ method: 'GET' })
     return idSchema.parse(tableId)
   })
   .handler(
-    requireAuth(async (_ctx, tableId) => {
+    requireAuth(async ({ user }, tableId) => {
+      const projectId = await getTableProjectId(tableId)
+      if (!projectId) {
+        throw new Error('Table not found')
+      }
+      const role = await findEffectiveRole(user.id, projectId)
+      if (!hasMinimumRole(role, 'VIEWER')) {
+        return { error: 'FORBIDDEN', status: 403, message: 'Access denied' } as const
+      }
       try {
         const columns = await findForeignKeyColumnsByTableId(tableId)
         return columns
@@ -110,12 +171,21 @@ export const getForeignKeyColumnsByTableId = createServerFn({ method: 'GET' })
 
 /**
  * Create a new column
+ * Requires EDITOR+ role on the table's project.
  * @param data - Column creation data (name, dataType, etc.)
  */
 export const createColumnFn = createServerFn({ method: 'POST' })
   .inputValidator((data: unknown) => createColumnSchema.parse(data))
   .handler(
-    requireAuth(async (_ctx, data) => {
+    requireAuth(async ({ user }, data) => {
+      const projectId = await getTableProjectId(data.tableId)
+      if (!projectId) {
+        throw new Error('Table not found')
+      }
+      const role = await findEffectiveRole(user.id, projectId)
+      if (!hasMinimumRole(role, 'EDITOR')) {
+        return { error: 'FORBIDDEN', status: 403, message: 'Access denied' } as const
+      }
       try {
         const column = await createColumn(data)
         return column
@@ -129,6 +199,8 @@ export const createColumnFn = createServerFn({ method: 'POST' })
 
 /**
  * Create multiple columns in a single transaction
+ * Requires EDITOR+ role on the shared table's project.
+ * All columns in the batch must belong to tables in the same project.
  * @param data - Array of column creation data
  */
 export const createColumnsFn = createServerFn({ method: 'POST' })
@@ -137,7 +209,17 @@ export const createColumnsFn = createServerFn({ method: 'POST' })
     return schema.parse(data)
   })
   .handler(
-    requireAuth(async (_ctx, data) => {
+    requireAuth(async ({ user }, data) => {
+      if (data.length > 0) {
+        const projectId = await getTableProjectId(data[0].tableId)
+        if (!projectId) {
+          throw new Error('Table not found')
+        }
+        const role = await findEffectiveRole(user.id, projectId)
+        if (!hasMinimumRole(role, 'EDITOR')) {
+          return { error: 'FORBIDDEN', status: 403, message: 'Access denied' } as const
+        }
+      }
       try {
         const columns = await createColumns(data)
         return columns
@@ -151,6 +233,7 @@ export const createColumnsFn = createServerFn({ method: 'POST' })
 
 /**
  * Update an existing column
+ * Requires EDITOR+ role on the column's project.
  * @param params - Object with id and data fields
  */
 export const updateColumnFn = createServerFn({ method: 'POST' })
@@ -162,7 +245,15 @@ export const updateColumnFn = createServerFn({ method: 'POST' })
     return schema.parse(params)
   })
   .handler(
-    requireAuth(async (_ctx, params) => {
+    requireAuth(async ({ user }, params) => {
+      const projectId = await getColumnProjectId(params.id)
+      if (!projectId) {
+        throw new Error('Column not found')
+      }
+      const role = await findEffectiveRole(user.id, projectId)
+      if (!hasMinimumRole(role, 'EDITOR')) {
+        return { error: 'FORBIDDEN', status: 403, message: 'Access denied' } as const
+      }
       try {
         const column = await updateColumn(params.id, params.data)
         return column
@@ -176,6 +267,7 @@ export const updateColumnFn = createServerFn({ method: 'POST' })
 
 /**
  * Update column order (for reordering)
+ * Requires EDITOR+ role on the column's project.
  * @param params - Object with id and order
  */
 export const updateColumnOrderFn = createServerFn({ method: 'POST' })
@@ -187,7 +279,15 @@ export const updateColumnOrderFn = createServerFn({ method: 'POST' })
     return schema.parse(params)
   })
   .handler(
-    requireAuth(async (_ctx, params) => {
+    requireAuth(async ({ user }, params) => {
+      const projectId = await getColumnProjectId(params.id)
+      if (!projectId) {
+        throw new Error('Column not found')
+      }
+      const role = await findEffectiveRole(user.id, projectId)
+      if (!hasMinimumRole(role, 'EDITOR')) {
+        return { error: 'FORBIDDEN', status: 403, message: 'Access denied' } as const
+      }
       try {
         const column = await updateColumnOrder(params.id, params.order)
         return column
@@ -201,6 +301,7 @@ export const updateColumnOrderFn = createServerFn({ method: 'POST' })
 
 /**
  * Delete a column by ID
+ * Requires EDITOR+ role on the column's project.
  * Cascade deletes relationships referencing this column
  * @param columnId - Column UUID
  */
@@ -210,7 +311,15 @@ export const deleteColumnFn = createServerFn({ method: 'POST' })
     return idSchema.parse(columnId)
   })
   .handler(
-    requireAuth(async (_ctx, columnId) => {
+    requireAuth(async ({ user }, columnId) => {
+      const projectId = await getColumnProjectId(columnId)
+      if (!projectId) {
+        throw new Error('Column not found')
+      }
+      const role = await findEffectiveRole(user.id, projectId)
+      if (!hasMinimumRole(role, 'EDITOR')) {
+        return { error: 'FORBIDDEN', status: 403, message: 'Access denied' } as const
+      }
       try {
         const column = await deleteColumn(columnId)
         return column

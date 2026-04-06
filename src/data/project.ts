@@ -51,6 +51,78 @@ export async function findAllProjects(): Promise<Array<Project>> {
 }
 
 /**
+ * Find all projects accessible to a user (owner or ProjectMember)
+ * @param userId - User UUID
+ * @returns Array of projects the user owns or has membership in
+ */
+export async function findAllProjectsForUser(userId: string): Promise<Array<Project>> {
+  try {
+    const projects = await prisma.project.findMany({
+      where: {
+        OR: [
+          { ownerId: userId },
+          { members: { some: { userId } } },
+        ],
+      },
+      orderBy: { createdAt: 'desc' },
+    })
+    return projects
+  } catch (error) {
+    throw new Error(
+      `Failed to fetch projects for user: ${error instanceof Error ? error.message : 'Unknown error'}`,
+    )
+  }
+}
+
+/**
+ * Find all projects with their folder and whiteboard structure accessible to a user
+ * @param userId - User UUID
+ * @returns Array of projects with nested folders and whiteboards
+ */
+export async function findAllProjectsWithTreeForUser(
+  userId: string,
+): Promise<
+  Array<
+    Project & {
+      folders: Array<{
+        id: string
+        name: string
+        parentFolderId: string | null
+        childFolders: Array<{ id: string; name: string }>
+        whiteboards: Array<{ id: string; name: string }>
+      }>
+      whiteboards: Array<{ id: string; name: string }>
+    }
+  >
+> {
+  try {
+    const projects = await prisma.project.findMany({
+      where: {
+        OR: [
+          { ownerId: userId },
+          { members: { some: { userId } } },
+        ],
+      },
+      include: {
+        folders: {
+          include: {
+            childFolders: { select: { id: true, name: true } },
+            whiteboards: { select: { id: true, name: true } },
+          },
+        },
+        whiteboards: { select: { id: true, name: true } },
+      },
+      orderBy: { createdAt: 'desc' },
+    })
+    return projects
+  } catch (error) {
+    throw new Error(
+      `Failed to fetch project tree for user: ${error instanceof Error ? error.message : 'Unknown error'}`,
+    )
+  }
+}
+
+/**
  * Find all projects with their folder and whiteboard structure
  * @returns Array of projects with nested folders and whiteboards
  */

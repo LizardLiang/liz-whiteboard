@@ -13,7 +13,7 @@ import {
   buildClearCookieHeader,
 } from '@/lib/auth/cookies'
 import { checkLockout, recordFailedLogin, clearLockout } from '@/lib/auth/rate-limit'
-import { findUserByEmail } from '@/data/user'
+import { findUserByEmail, findUserByUsername } from '@/data/user'
 import { deleteAuthSession } from '@/data/session'
 import { hashToken } from '@/lib/auth/session'
 
@@ -36,6 +36,16 @@ export const registerUser = createServerFn({ method: 'POST' })
         message: 'Registration successful. Please log in.',
         redirect: '/login',
         newUser: false,
+      }
+    }
+
+    // Check for duplicate username (no anti-enumeration needed — usernames are public)
+    const existingUsername = await findUserByUsername(data.username)
+    if (existingUsername) {
+      return {
+        success: false,
+        error: 'VALIDATION_ERROR',
+        fields: { username: 'Username is already taken' },
       }
     }
 

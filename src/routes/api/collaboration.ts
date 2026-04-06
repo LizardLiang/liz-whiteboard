@@ -373,6 +373,27 @@ function setupCollaborationEventHandlers(
       if (await denyIfInsufficientPermission(socket, whiteboardId)) return
 
       try {
+        // Ownership check: verify table belongs to this whiteboard (IDOR prevention)
+        const table = await findDiagramTableById(data.tableId)
+        if (!table) {
+          socket.emit('error', {
+            event: 'table:move',
+            error: 'NOT_FOUND',
+            message: 'Table not found',
+            tableId: data.tableId,
+          })
+          return
+        }
+        if (table.whiteboardId !== whiteboardId) {
+          socket.emit('error', {
+            event: 'table:move',
+            error: 'FORBIDDEN',
+            message: 'Table does not belong to this whiteboard',
+            tableId: data.tableId,
+          })
+          return
+        }
+
         // Update position in database
         await updateDiagramTablePosition(
           data.tableId,
@@ -414,11 +435,32 @@ function setupCollaborationEventHandlers(
       try {
         const { tableId, ...updateData } = data
 
+        // Ownership check: verify table belongs to this whiteboard (IDOR prevention)
+        const tableRecord = await findDiagramTableById(tableId)
+        if (!tableRecord) {
+          socket.emit('error', {
+            event: 'table:update',
+            error: 'NOT_FOUND',
+            message: 'Table not found',
+            tableId,
+          })
+          return
+        }
+        if (tableRecord.whiteboardId !== whiteboardId) {
+          socket.emit('error', {
+            event: 'table:update',
+            error: 'FORBIDDEN',
+            message: 'Table does not belong to this whiteboard',
+            tableId,
+          })
+          return
+        }
+
         // Validate input
         const validated = updateTableSchema.parse(updateData)
 
         // Update table in database
-        const table = await updateDiagramTable(tableId, validated)
+        await updateDiagramTable(tableId, validated)
 
         // Broadcast to other users
         socket.broadcast.emit('table:updated', {
@@ -557,6 +599,28 @@ function setupCollaborationEventHandlers(
       try {
         const { columnId, ...updateData } = data
 
+        // Ownership check: verify column's table belongs to this whiteboard (IDOR prevention)
+        const columnRecord = await findColumnById(columnId)
+        if (!columnRecord) {
+          socket.emit('error', {
+            event: 'column:update',
+            error: 'NOT_FOUND',
+            message: 'Column not found',
+            columnId,
+          })
+          return
+        }
+        const ownerTable = await findDiagramTableById(columnRecord.tableId)
+        if (!ownerTable || ownerTable.whiteboardId !== whiteboardId) {
+          socket.emit('error', {
+            event: 'column:update',
+            error: 'FORBIDDEN',
+            message: 'Column does not belong to this whiteboard',
+            columnId,
+          })
+          return
+        }
+
         // Validate input
         const validated = updateColumnSchema.parse(updateData)
 
@@ -597,7 +661,25 @@ function setupCollaborationEventHandlers(
       // Get column before deletion to know tableId
       const column = await findColumnById(data.columnId)
       if (!column) {
-        throw new Error('Column not found')
+        socket.emit('error', {
+          event: 'column:delete',
+          error: 'NOT_FOUND',
+          message: 'Column not found',
+          columnId: data.columnId,
+        })
+        return
+      }
+
+      // Ownership check: verify column's table belongs to this whiteboard (IDOR prevention)
+      const ownerTable = await findDiagramTableById(column.tableId)
+      if (!ownerTable || ownerTable.whiteboardId !== whiteboardId) {
+        socket.emit('error', {
+          event: 'column:delete',
+          error: 'FORBIDDEN',
+          message: 'Column does not belong to this whiteboard',
+          columnId: data.columnId,
+        })
+        return
       }
 
       // Delete column from database (cascade deletes relationships)
@@ -678,6 +760,27 @@ function setupCollaborationEventHandlers(
 
       try {
         const { relationshipId, ...updateData } = data
+
+        // Ownership check: verify relationship belongs to this whiteboard (IDOR prevention)
+        const relationship = await findRelationshipById(relationshipId)
+        if (!relationship) {
+          socket.emit('error', {
+            event: 'relationship:update',
+            error: 'NOT_FOUND',
+            message: 'Relationship not found',
+            relationshipId,
+          })
+          return
+        }
+        if (relationship.whiteboardId !== whiteboardId) {
+          socket.emit('error', {
+            event: 'relationship:update',
+            error: 'FORBIDDEN',
+            message: 'Relationship does not belong to this whiteboard',
+            relationshipId,
+          })
+          return
+        }
 
         // Validate input
         const validated = updateRelationshipSchema.parse(updateData)
