@@ -14,9 +14,24 @@ import {
 } from '@/data/folder'
 import { createFolderSchema, updateFolderSchema } from '@/data/schema'
 import { requireAuth } from '@/lib/auth/middleware'
+import { findEffectiveRole } from '@/data/permission'
+import { hasMinimumRole } from '@/lib/auth/permissions'
+import { prisma } from '@/db'
+
+/**
+ * Resolve projectId for a folder by folder ID.
+ */
+async function getFolderProjectId(folderId: string): Promise<string | null> {
+  const folder = await prisma.folder.findUnique({
+    where: { id: folderId },
+    select: { projectId: true },
+  })
+  return folder?.projectId ?? null
+}
 
 /**
  * Get all folders in a project
+ * Requires VIEWER+ role on the project.
  * @param projectId - Project UUID
  */
 export const getFoldersByProject = createServerFn({ method: 'GET' })
@@ -25,7 +40,11 @@ export const getFoldersByProject = createServerFn({ method: 'GET' })
     return idSchema.parse(projectId)
   })
   .handler(
-    requireAuth(async (_ctx, projectId) => {
+    requireAuth(async ({ user }, projectId) => {
+      const role = await findEffectiveRole(user.id, projectId)
+      if (!hasMinimumRole(role, 'VIEWER')) {
+        return { error: 'FORBIDDEN', status: 403, message: 'Access denied' } as const
+      }
       try {
         const folders = await findFoldersByProjectId(projectId)
         return folders
@@ -39,6 +58,7 @@ export const getFoldersByProject = createServerFn({ method: 'GET' })
 
 /**
  * Get child folders of a parent folder
+ * Requires VIEWER+ role on the folder's project.
  * @param parentFolderId - Parent folder UUID
  */
 export const getChildFolders = createServerFn({ method: 'GET' })
@@ -47,7 +67,15 @@ export const getChildFolders = createServerFn({ method: 'GET' })
     return idSchema.parse(parentFolderId)
   })
   .handler(
-    requireAuth(async (_ctx, parentFolderId) => {
+    requireAuth(async ({ user }, parentFolderId) => {
+      const projectId = await getFolderProjectId(parentFolderId)
+      if (!projectId) {
+        throw new Error('Folder not found')
+      }
+      const role = await findEffectiveRole(user.id, projectId)
+      if (!hasMinimumRole(role, 'VIEWER')) {
+        return { error: 'FORBIDDEN', status: 403, message: 'Access denied' } as const
+      }
       try {
         const folders = await findChildFolders(parentFolderId)
         return folders
@@ -61,6 +89,7 @@ export const getChildFolders = createServerFn({ method: 'GET' })
 
 /**
  * Get a single folder by ID with its whiteboards
+ * Requires VIEWER+ role on the folder's project.
  * @param folderId - Folder UUID
  */
 export const getFolder = createServerFn({ method: 'GET' })
@@ -69,7 +98,15 @@ export const getFolder = createServerFn({ method: 'GET' })
     return idSchema.parse(folderId)
   })
   .handler(
-    requireAuth(async (_ctx, folderId) => {
+    requireAuth(async ({ user }, folderId) => {
+      const projectId = await getFolderProjectId(folderId)
+      if (!projectId) {
+        throw new Error('Folder not found')
+      }
+      const role = await findEffectiveRole(user.id, projectId)
+      if (!hasMinimumRole(role, 'VIEWER')) {
+        return { error: 'FORBIDDEN', status: 403, message: 'Access denied' } as const
+      }
       try {
         const folder = await findFolderByIdWithWhiteboards(folderId)
         if (!folder) {
@@ -86,6 +123,7 @@ export const getFolder = createServerFn({ method: 'GET' })
 
 /**
  * Get a single folder by ID (without relations)
+ * Requires VIEWER+ role on the folder's project.
  * @param folderId - Folder UUID
  */
 export const getFolderById = createServerFn({ method: 'GET' })
@@ -94,7 +132,15 @@ export const getFolderById = createServerFn({ method: 'GET' })
     return idSchema.parse(folderId)
   })
   .handler(
-    requireAuth(async (_ctx, folderId) => {
+    requireAuth(async ({ user }, folderId) => {
+      const projectId = await getFolderProjectId(folderId)
+      if (!projectId) {
+        throw new Error('Folder not found')
+      }
+      const role = await findEffectiveRole(user.id, projectId)
+      if (!hasMinimumRole(role, 'VIEWER')) {
+        return { error: 'FORBIDDEN', status: 403, message: 'Access denied' } as const
+      }
       try {
         const folder = await findFolderById(folderId)
         if (!folder) {
@@ -111,12 +157,17 @@ export const getFolderById = createServerFn({ method: 'GET' })
 
 /**
  * Create a new folder
+ * Requires EDITOR+ role on the project.
  * @param data - Folder creation data (name, projectId, optional parentFolderId)
  */
 export const createFolderFn = createServerFn({ method: 'POST' })
   .inputValidator((data: unknown) => createFolderSchema.parse(data))
   .handler(
-    requireAuth(async (_ctx, data) => {
+    requireAuth(async ({ user }, data) => {
+      const role = await findEffectiveRole(user.id, data.projectId)
+      if (!hasMinimumRole(role, 'EDITOR')) {
+        return { error: 'FORBIDDEN', status: 403, message: 'Access denied' } as const
+      }
       try {
         const folder = await createFolder(data)
         return folder
@@ -130,6 +181,7 @@ export const createFolderFn = createServerFn({ method: 'POST' })
 
 /**
  * Update an existing folder
+ * Requires EDITOR+ role on the folder's project.
  * @param params - Object with id and data fields
  */
 export const updateFolderFn = createServerFn({ method: 'POST' })
@@ -141,7 +193,15 @@ export const updateFolderFn = createServerFn({ method: 'POST' })
     return schema.parse(params)
   })
   .handler(
-    requireAuth(async (_ctx, params) => {
+    requireAuth(async ({ user }, params) => {
+      const projectId = await getFolderProjectId(params.id)
+      if (!projectId) {
+        throw new Error('Folder not found')
+      }
+      const role = await findEffectiveRole(user.id, projectId)
+      if (!hasMinimumRole(role, 'EDITOR')) {
+        return { error: 'FORBIDDEN', status: 403, message: 'Access denied' } as const
+      }
       try {
         const folder = await updateFolder(params.id, params.data)
         return folder
@@ -155,6 +215,7 @@ export const updateFolderFn = createServerFn({ method: 'POST' })
 
 /**
  * Delete a folder by ID
+ * Requires EDITOR+ role on the folder's project.
  * Cascade deletes all child folders and whiteboards within the folder
  * @param folderId - Folder UUID
  */
@@ -164,7 +225,15 @@ export const deleteFolderFn = createServerFn({ method: 'POST' })
     return idSchema.parse(folderId)
   })
   .handler(
-    requireAuth(async (_ctx, folderId) => {
+    requireAuth(async ({ user }, folderId) => {
+      const projectId = await getFolderProjectId(folderId)
+      if (!projectId) {
+        throw new Error('Folder not found')
+      }
+      const role = await findEffectiveRole(user.id, projectId)
+      if (!hasMinimumRole(role, 'EDITOR')) {
+        return { error: 'FORBIDDEN', status: 403, message: 'Access denied' } as const
+      }
       try {
         const folder = await deleteFolder(folderId)
         return folder

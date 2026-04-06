@@ -21,9 +21,37 @@ import {
   updateWhiteboardSchema,
 } from '@/data/schema'
 import { requireAuth } from '@/lib/auth/middleware'
+import { findEffectiveRole } from '@/data/permission'
+import { hasMinimumRole } from '@/lib/auth/permissions'
+import { prisma } from '@/db'
+
+/**
+ * Resolve projectId for a whiteboard by ID.
+ * Returns null if the whiteboard does not exist.
+ */
+async function getWhiteboardProjectId(whiteboardId: string): Promise<string | null> {
+  const wb = await prisma.whiteboard.findUnique({
+    where: { id: whiteboardId },
+    select: { projectId: true },
+  })
+  return wb?.projectId ?? null
+}
+
+/**
+ * Resolve projectId for a folder by ID.
+ * Returns null if the folder does not exist.
+ */
+async function getFolderProjectId(folderId: string): Promise<string | null> {
+  const folder = await prisma.folder.findUnique({
+    where: { id: folderId },
+    select: { projectId: true },
+  })
+  return folder?.projectId ?? null
+}
 
 /**
  * Get all whiteboards in a project
+ * Requires VIEWER+ role on the project.
  * @param projectId - Project UUID
  */
 export const getWhiteboardsByProject = createServerFn({ method: 'GET' })
@@ -32,7 +60,11 @@ export const getWhiteboardsByProject = createServerFn({ method: 'GET' })
     return idSchema.parse(projectId)
   })
   .handler(
-    requireAuth(async (_ctx, projectId) => {
+    requireAuth(async ({ user }, projectId) => {
+      const role = await findEffectiveRole(user.id, projectId)
+      if (!hasMinimumRole(role, 'VIEWER')) {
+        return { error: 'FORBIDDEN', status: 403, message: 'Access denied' } as const
+      }
       try {
         const whiteboards = await findWhiteboardsByProjectId(projectId)
         return whiteboards
@@ -46,6 +78,7 @@ export const getWhiteboardsByProject = createServerFn({ method: 'GET' })
 
 /**
  * Get all whiteboards in a folder
+ * Requires VIEWER+ role on the folder's project.
  * @param folderId - Folder UUID
  */
 export const getWhiteboardsByFolder = createServerFn({ method: 'GET' })
@@ -54,7 +87,15 @@ export const getWhiteboardsByFolder = createServerFn({ method: 'GET' })
     return idSchema.parse(folderId)
   })
   .handler(
-    requireAuth(async (_ctx, folderId) => {
+    requireAuth(async ({ user }, folderId) => {
+      const projectId = await getFolderProjectId(folderId)
+      if (!projectId) {
+        throw new Error('Folder not found')
+      }
+      const role = await findEffectiveRole(user.id, projectId)
+      if (!hasMinimumRole(role, 'VIEWER')) {
+        return { error: 'FORBIDDEN', status: 403, message: 'Access denied' } as const
+      }
       try {
         const whiteboards = await findWhiteboardsByFolderId(folderId)
         return whiteboards
@@ -69,6 +110,7 @@ export const getWhiteboardsByFolder = createServerFn({ method: 'GET' })
 /**
  * Get a single whiteboard by ID with full diagram data
  * Includes tables, columns, and relationships for rendering
+ * Requires VIEWER+ role on the whiteboard's project.
  * @param whiteboardId - Whiteboard UUID
  */
 export const getWhiteboard = createServerFn({ method: 'GET' })
@@ -77,7 +119,15 @@ export const getWhiteboard = createServerFn({ method: 'GET' })
     return idSchema.parse(whiteboardId)
   })
   .handler(
-    requireAuth(async (_ctx, whiteboardId) => {
+    requireAuth(async ({ user }, whiteboardId) => {
+      const projectId = await getWhiteboardProjectId(whiteboardId)
+      if (!projectId) {
+        throw new Error('Whiteboard not found')
+      }
+      const role = await findEffectiveRole(user.id, projectId)
+      if (!hasMinimumRole(role, 'VIEWER')) {
+        return { error: 'FORBIDDEN', status: 403, message: 'Access denied' } as const
+      }
       try {
         const whiteboard = await findWhiteboardByIdWithDiagram(whiteboardId)
         if (!whiteboard) {
@@ -94,6 +144,7 @@ export const getWhiteboard = createServerFn({ method: 'GET' })
 
 /**
  * Get a single whiteboard by ID (without diagram data)
+ * Requires VIEWER+ role on the whiteboard's project.
  * @param whiteboardId - Whiteboard UUID
  */
 export const getWhiteboardById = createServerFn({ method: 'GET' })
@@ -102,7 +153,15 @@ export const getWhiteboardById = createServerFn({ method: 'GET' })
     return idSchema.parse(whiteboardId)
   })
   .handler(
-    requireAuth(async (_ctx, whiteboardId) => {
+    requireAuth(async ({ user }, whiteboardId) => {
+      const projectId = await getWhiteboardProjectId(whiteboardId)
+      if (!projectId) {
+        throw new Error('Whiteboard not found')
+      }
+      const role = await findEffectiveRole(user.id, projectId)
+      if (!hasMinimumRole(role, 'VIEWER')) {
+        return { error: 'FORBIDDEN', status: 403, message: 'Access denied' } as const
+      }
       try {
         const whiteboard = await findWhiteboardById(whiteboardId)
         if (!whiteboard) {
@@ -119,12 +178,17 @@ export const getWhiteboardById = createServerFn({ method: 'GET' })
 
 /**
  * Create a new whiteboard
+ * Requires EDITOR+ role on the project.
  * @param data - Whiteboard creation data (name, projectId, optional folderId)
  */
 export const createWhiteboardFn = createServerFn({ method: 'POST' })
   .inputValidator((data: unknown) => createWhiteboardSchema.parse(data))
   .handler(
-    requireAuth(async (_ctx, data) => {
+    requireAuth(async ({ user }, data) => {
+      const role = await findEffectiveRole(user.id, data.projectId)
+      if (!hasMinimumRole(role, 'EDITOR')) {
+        return { error: 'FORBIDDEN', status: 403, message: 'Access denied' } as const
+      }
       try {
         const whiteboard = await createWhiteboard(data)
         return whiteboard
@@ -138,6 +202,7 @@ export const createWhiteboardFn = createServerFn({ method: 'POST' })
 
 /**
  * Update an existing whiteboard
+ * Requires EDITOR+ role on the whiteboard's project.
  * @param params - Object with id and data fields
  */
 export const updateWhiteboardFn = createServerFn({ method: 'POST' })
@@ -149,7 +214,15 @@ export const updateWhiteboardFn = createServerFn({ method: 'POST' })
     return schema.parse(params)
   })
   .handler(
-    requireAuth(async (_ctx, params) => {
+    requireAuth(async ({ user }, params) => {
+      const projectId = await getWhiteboardProjectId(params.id)
+      if (!projectId) {
+        throw new Error('Whiteboard not found')
+      }
+      const role = await findEffectiveRole(user.id, projectId)
+      if (!hasMinimumRole(role, 'EDITOR')) {
+        return { error: 'FORBIDDEN', status: 403, message: 'Access denied' } as const
+      }
       try {
         const whiteboard = await updateWhiteboard(params.id, params.data)
         return whiteboard
@@ -163,6 +236,7 @@ export const updateWhiteboardFn = createServerFn({ method: 'POST' })
 
 /**
  * Update whiteboard canvas state (zoom, pan)
+ * Requires EDITOR+ role on the whiteboard's project.
  * @param params - Object with id and canvasState fields
  */
 export const updateCanvasState = createServerFn({ method: 'POST' })
@@ -174,7 +248,15 @@ export const updateCanvasState = createServerFn({ method: 'POST' })
     return schema.parse(params)
   })
   .handler(
-    requireAuth(async (_ctx, params) => {
+    requireAuth(async ({ user }, params) => {
+      const projectId = await getWhiteboardProjectId(params.id)
+      if (!projectId) {
+        throw new Error('Whiteboard not found')
+      }
+      const role = await findEffectiveRole(user.id, projectId)
+      if (!hasMinimumRole(role, 'EDITOR')) {
+        return { error: 'FORBIDDEN', status: 403, message: 'Access denied' } as const
+      }
       try {
         const whiteboard = await updateWhiteboardCanvasState(
           params.id,
@@ -191,6 +273,7 @@ export const updateCanvasState = createServerFn({ method: 'POST' })
 
 /**
  * Update whiteboard text source
+ * Requires EDITOR+ role on the whiteboard's project.
  * @param params - Object with id and textSource fields
  */
 export const updateTextSource = createServerFn({ method: 'POST' })
@@ -202,7 +285,15 @@ export const updateTextSource = createServerFn({ method: 'POST' })
     return schema.parse(params)
   })
   .handler(
-    requireAuth(async (_ctx, params) => {
+    requireAuth(async ({ user }, params) => {
+      const projectId = await getWhiteboardProjectId(params.id)
+      if (!projectId) {
+        throw new Error('Whiteboard not found')
+      }
+      const role = await findEffectiveRole(user.id, projectId)
+      if (!hasMinimumRole(role, 'EDITOR')) {
+        return { error: 'FORBIDDEN', status: 403, message: 'Access denied' } as const
+      }
       try {
         const whiteboard = await updateWhiteboardTextSource(
           params.id,
@@ -219,6 +310,7 @@ export const updateTextSource = createServerFn({ method: 'POST' })
 
 /**
  * Delete a whiteboard by ID
+ * Requires EDITOR+ role on the whiteboard's project.
  * Cascade deletes all tables, columns, and relationships within the whiteboard
  * @param whiteboardId - Whiteboard UUID
  */
@@ -228,7 +320,15 @@ export const deleteWhiteboardFn = createServerFn({ method: 'POST' })
     return idSchema.parse(whiteboardId)
   })
   .handler(
-    requireAuth(async (_ctx, whiteboardId) => {
+    requireAuth(async ({ user }, whiteboardId) => {
+      const projectId = await getWhiteboardProjectId(whiteboardId)
+      if (!projectId) {
+        throw new Error('Whiteboard not found')
+      }
+      const role = await findEffectiveRole(user.id, projectId)
+      if (!hasMinimumRole(role, 'EDITOR')) {
+        return { error: 'FORBIDDEN', status: 403, message: 'Access denied' } as const
+      }
       try {
         const whiteboard = await deleteWhiteboard(whiteboardId)
         return whiteboard
@@ -242,14 +342,27 @@ export const deleteWhiteboardFn = createServerFn({ method: 'POST' })
 
 /**
  * Get recent whiteboards (ordered by last updated)
+ * Only returns whiteboards from projects the user has access to.
  * @param limit - Maximum number of whiteboards to return (default: 10)
  */
 export const getRecentWhiteboards = createServerFn({ method: 'GET' })
   .inputValidator((limit: number = 10) => limit)
   .handler(
-    requireAuth(async (_ctx, limit) => {
+    requireAuth(async ({ user }, limit) => {
       try {
-        const whiteboards = await findRecentWhiteboards(limit)
+        // Filter to only whiteboards in projects the user has access to
+        const whiteboards = await prisma.whiteboard.findMany({
+          where: {
+            project: {
+              OR: [
+                { ownerId: user.id },
+                { members: { some: { userId: user.id } } },
+              ],
+            },
+          },
+          orderBy: { updatedAt: 'desc' },
+          take: limit,
+        })
         return whiteboards
       } catch (error) {
         throw new Error(
