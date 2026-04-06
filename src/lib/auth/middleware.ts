@@ -1,24 +1,19 @@
 // src/lib/auth/middleware.ts
 // requireAuth higher-order function for wrapping createServerFn handlers
+// NOTE: This module imports @tanstack/react-start/server — it is SERVER-ONLY.
+// Client code should import type guards from '@/lib/auth/errors' instead.
 
 import { getRequest } from '@tanstack/react-start/server'
 import { getSessionFromCookie } from './cookies'
 import type { AuthUser, AuthSession } from './session'
 
+// Re-export error types/guards for server-side consumers
+export type { AuthErrorResponse, ForbiddenResponse } from './errors'
+export { isUnauthorizedError, isForbiddenError } from './errors'
+
 export interface AuthContext {
   user: AuthUser
   session: AuthSession
-}
-
-export interface AuthErrorResponse {
-  error: 'UNAUTHORIZED'
-  status: 401
-}
-
-export interface ForbiddenResponse {
-  error: 'FORBIDDEN'
-  status: 403
-  message: string
 }
 
 /**
@@ -55,30 +50,3 @@ export function requireAuth<TInput, TResult>(
   }
 }
 
-/**
- * Type guard to check if a result is an UNAUTHORIZED error
- */
-export function isUnauthorizedError(
-  result: unknown,
-): result is AuthErrorResponse {
-  return (
-    typeof result === 'object' &&
-    result !== null &&
-    'error' in result &&
-    (result as AuthErrorResponse).error === 'UNAUTHORIZED'
-  )
-}
-
-/**
- * Type guard to check if a result is a FORBIDDEN error
- */
-export function isForbiddenError(
-  result: unknown,
-): result is ForbiddenResponse {
-  return (
-    typeof result === 'object' &&
-    result !== null &&
-    'error' in result &&
-    (result as ForbiddenResponse).error === 'FORBIDDEN'
-  )
-}

@@ -64,39 +64,14 @@ export function initializeSocketIO(httpServer: HTTPServer): SocketIOServer {
 
   io = new SocketIOServer(httpServer, {
     cors: {
-      origin: process.env.CLIENT_URL || 'http://localhost:3000',
+      origin: process.env.CLIENT_URL || true,
       methods: ['GET', 'POST'],
       credentials: true, // Required for cookies to be sent with handshake
     },
     transports: ['websocket', 'polling'],
   })
 
-  // Auth middleware: runs on EVERY connection attempt, before 'connection' event.
-  // Reads the session_token cookie from the handshake headers and validates it.
-  io.use(async (socket, next) => {
-    try {
-      const cookieHeader = socket.handshake.headers.cookie ?? ''
-      const token = parseSessionCookie(cookieHeader)
-      if (!token) {
-        return next(new Error('UNAUTHORIZED'))
-      }
-
-      const authResult = await validateSessionToken(token)
-      if (!authResult) {
-        return next(new Error('UNAUTHORIZED'))
-      }
-
-      // Attach auth data to socket for use in event handlers
-      socket.data.userId = authResult.user.id
-      socket.data.sessionId = authResult.session.id
-      socket.data.sessionExpiresAt = authResult.session.expiresAt.getTime()
-      next()
-    } catch (error) {
-      next(new Error('UNAUTHORIZED'))
-    }
-  })
-
-  // Setup namespace pattern for whiteboards
+  // Setup namespace pattern for whiteboards (auth middleware applied inside)
   setupWhiteboardNamespace(io)
 
   // Cleanup stale sessions every 5 minutes
@@ -132,7 +107,34 @@ export function getSocketIO(): SocketIOServer | null {
  */
 function setupWhiteboardNamespace(ioServer: SocketIOServer): void {
   // Dynamic namespace for whiteboards
-  ioServer.of(/^\/whiteboard\/[\w-]+$/).on('connection', async (socket) => {
+  const whiteboardNsp = ioServer.of(/^\/whiteboard\/[\w-]+$/)
+
+  // Auth middleware: runs on EVERY connection attempt to this namespace.
+  // Reads the session_token cookie from the handshake headers and validates it.
+  whiteboardNsp.use(async (socket, next) => {
+    try {
+      const cookieHeader = socket.handshake.headers.cookie ?? ''
+      const token = parseSessionCookie(cookieHeader)
+      if (!token) {
+        return next(new Error('UNAUTHORIZED'))
+      }
+
+      const authResult = await validateSessionToken(token)
+      if (!authResult) {
+        return next(new Error('UNAUTHORIZED'))
+      }
+
+      // Attach auth data to socket for use in event handlers
+      socket.data.userId = authResult.user.id
+      socket.data.sessionId = authResult.session.id
+      socket.data.sessionExpiresAt = authResult.session.expiresAt.getTime()
+      next()
+    } catch (error) {
+      next(new Error('UNAUTHORIZED'))
+    }
+  })
+
+  whiteboardNsp.on('connection', async (socket) => {
     // Extract whiteboard ID from namespace
     const namespace = socket.nsp.name
     const whiteboardId = namespace.replace('/whiteboard/', '')
