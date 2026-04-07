@@ -3,8 +3,6 @@
 // NOTE: This module imports @tanstack/react-start/server — it is SERVER-ONLY.
 // Client code should import type guards from '@/lib/auth/errors' instead.
 
-import { getRequest } from '@tanstack/react-start/server'
-import { getSessionFromCookie } from './cookies'
 import type { AuthUser, AuthSession } from './session'
 
 // Re-export error types/guards for server-side consumers
@@ -38,6 +36,8 @@ export function requireAuth<TInput, TResult>(
   }: {
     data: TInput
   }): Promise<TResult | AuthErrorResponse> => {
+    const { getRequest } = await import('@tanstack/react-start/server')
+    const { getSessionFromCookie } = await import('./cookies')
     const request = getRequest()
     const authResult = await getSessionFromCookie(request)
     if (!authResult) {

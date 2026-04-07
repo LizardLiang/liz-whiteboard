@@ -64,6 +64,43 @@ function socketIOPlugin(): Plugin {
   }
 }
 
+/**
+ * Workaround for TanStack Start 1.133.x + Vite 7.x bug:
+ * `loadVirtualModule.js` imports `tanstack-start-injected-head-scripts:v`
+ * on the client side, but the resolver only applies to server environments.
+ * This stub resolves it on the client so hydration isn't blocked.
+ */
+function tanstackStartClientVirtualModules(): Plugin {
+  const virtualModules: Record<string, string> = {
+    'tanstack-start-injected-head-scripts:v':
+      'export const injectedHeadScripts = undefined;',
+    'tanstack-start-manifest:v': 'export default {};',
+    '#tanstack-start-server-fn-manifest': 'export default {};',
+  }
+  const resolvedPrefix = '\0tanstack-client-virtual:'
+
+  return {
+    name: 'tanstack-start-client-virtual-modules',
+    applyToEnvironment: (env) => env.config.consumer === 'client',
+    resolveId: {
+      filter: {
+        id: /^(tanstack-start-(injected-head-scripts|manifest):v|#tanstack-start-server-fn-manifest)$/,
+      },
+      handler(id) {
+        if (id in virtualModules) return resolvedPrefix + id
+        return null
+      },
+    },
+    load: {
+      filter: { id: /^\0tanstack-client-virtual:/ },
+      handler(id) {
+        const originalId = id.slice(resolvedPrefix.length)
+        return virtualModules[originalId] || null
+      },
+    },
+  }
+}
+
 const config = defineConfig({
   plugins: [
     // this is the plugin that enables path aliases
@@ -71,6 +108,7 @@ const config = defineConfig({
       projects: ['./tsconfig.json'],
     }),
     tailwindcss(),
+    tanstackStartClientVirtualModules(),
     tanstackStart(),
     viteReact(),
     socketIOPlugin(),

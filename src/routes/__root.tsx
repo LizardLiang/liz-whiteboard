@@ -3,6 +3,7 @@ import {
   Scripts,
   createRootRouteWithContext,
   redirect,
+  useRouterState,
 } from '@tanstack/react-router'
 import { TanStackRouterDevtoolsPanel } from '@tanstack/react-router-devtools'
 import { TanStackDevtools } from '@tanstack/react-devtools'
@@ -73,9 +74,8 @@ export const Route = createRootRouteWithContext<MyRouterContext>()({
 })
 
 function RootDocument({ children }: { children: React.ReactNode }) {
-  const isPublicRoute =
-    typeof window !== 'undefined' &&
-    PUBLIC_PATHS.some((p) => window.location.pathname.startsWith(p))
+  const pathname = useRouterState({ select: (s) => s.location.pathname })
+  const isPublicRoute = PUBLIC_PATHS.some((p) => pathname.startsWith(p))
 
   return (
     <html lang="en" suppressHydrationWarning>

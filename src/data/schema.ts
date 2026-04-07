@@ -2,7 +2,8 @@
 // Zod validation schemas for all entities in the ER Diagram Whiteboard
 
 import { z } from 'zod'
-import { ProjectRole } from '@prisma/client'
+// Mirrors the Prisma ProjectRole enum — avoids @prisma/client CJS/ESM interop issues in Vite
+const ProjectRole = { VIEWER: 'VIEWER', EDITOR: 'EDITOR', ADMIN: 'ADMIN' } as const
 
 // ============================================================================
 // JSON Sub-Schemas (for nested JSON fields)

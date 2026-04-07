@@ -65,7 +65,7 @@ import {
 } from '@/hooks/use-relationship-mutations'
 import { useTableDeletion } from '@/hooks/use-table-deletion'
 import { getSessionUserId } from '@/lib/session-user-id'
-import { isUnauthorizedError } from '@/lib/auth/middleware'
+import { isUnauthorizedError } from '@/lib/auth/errors'
 
 /** Pending connection data waiting for cardinality selection */
 interface PendingConnection {

@@ -57,7 +57,7 @@ import {
   deleteWhiteboardFn,
   updateWhiteboardFn,
 } from '@/routes/api/whiteboards'
-import { isUnauthorizedError } from '@/lib/auth/middleware'
+import { isUnauthorizedError } from '@/lib/auth/errors'
 
 /**
  * Dialog state types

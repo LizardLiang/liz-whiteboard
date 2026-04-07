@@ -1,21 +1,13 @@
 // src/routes/api/auth.ts
 // Authentication server functions: register, login, logout, getCurrentUser
+//
+// IMPORTANT: All server-only imports (prisma, session, crypto, etc.) MUST be
+// dynamic imports inside .handler() callbacks. Top-level imports of server
+// modules cause them to be bundled into the client, breaking hydration because
+// Node.js built-ins (node:crypto, etc.) aren't available in the browser.
 
 import { createServerFn } from '@tanstack/react-start'
-import { getRequest, setResponseHeader } from '@tanstack/react-start/server'
-import { prisma } from '@/db'
 import { registerInputSchema, loginInputSchema } from '@/data/schema'
-import { hashPassword, verifyPassword } from '@/lib/auth/password'
-import { createUserSession, validateSessionToken } from '@/lib/auth/session'
-import {
-  parseSessionCookie,
-  buildSetCookieHeader,
-  buildClearCookieHeader,
-} from '@/lib/auth/cookies'
-import { checkLockout, recordFailedLogin, clearLockout } from '@/lib/auth/rate-limit'
-import { findUserByEmail, findUserByUsername } from '@/data/user'
-import { deleteAuthSession } from '@/data/session'
-import { hashToken } from '@/lib/auth/session'
 
 const GENERIC_AUTH_ERROR = 'Invalid email or password'
 
@@ -27,6 +19,13 @@ const GENERIC_AUTH_ERROR = 'Invalid email or password'
 export const registerUser = createServerFn({ method: 'POST' })
   .inputValidator((data: unknown) => registerInputSchema.parse(data))
   .handler(async ({ data }) => {
+    const { setResponseHeader } = await import('@tanstack/react-start/server')
+    const { prisma } = await import('@/db')
+    const { hashPassword } = await import('@/lib/auth/password')
+    const { createUserSession } = await import('@/lib/auth/session')
+    const { buildSetCookieHeader } = await import('@/lib/auth/cookies')
+    const { findUserByEmail, findUserByUsername } = await import('@/data/user')
+
     // Check for duplicate email (anti-enumeration)
     const existingUser = await findUserByEmail(data.email)
     if (existingUser) {
@@ -97,6 +96,13 @@ export const registerUser = createServerFn({ method: 'POST' })
 export const loginUser = createServerFn({ method: 'POST' })
   .inputValidator((data: unknown) => loginInputSchema.parse(data))
   .handler(async ({ data }) => {
+    const { setResponseHeader } = await import('@tanstack/react-start/server')
+    const { createUserSession } = await import('@/lib/auth/session')
+    const { buildSetCookieHeader } = await import('@/lib/auth/cookies')
+    const { checkLockout, recordFailedLogin, clearLockout } = await import('@/lib/auth/rate-limit')
+    const { findUserByEmail } = await import('@/data/user')
+    const { verifyPassword } = await import('@/lib/auth/password')
+
     // Find user (return generic error if not found — anti-enumeration)
     const user = await findUserByEmail(data.email)
     if (!user) {
@@ -138,6 +144,12 @@ export const loginUser = createServerFn({ method: 'POST' })
  */
 export const logoutUser = createServerFn({ method: 'POST' }).handler(
   async () => {
+    const { getRequest, setResponseHeader } = await import('@tanstack/react-start/server')
+    const { prisma } = await import('@/db')
+    const { parseSessionCookie, buildClearCookieHeader } = await import('@/lib/auth/cookies')
+    const { deleteAuthSession } = await import('@/data/session')
+    const { hashToken } = await import('@/lib/auth/session')
+
     const request = getRequest()
     const cookieHeader = request.headers.get('cookie')
     const token = parseSessionCookie(cookieHeader)
@@ -166,6 +178,10 @@ export const logoutUser = createServerFn({ method: 'POST' }).handler(
  */
 export const getCurrentUser = createServerFn({ method: 'GET' }).handler(
   async () => {
+    const { getRequest } = await import('@tanstack/react-start/server')
+    const { parseSessionCookie } = await import('@/lib/auth/cookies')
+    const { validateSessionToken } = await import('@/lib/auth/session')
+
     const request = getRequest()
     const cookieHeader = request.headers.get('cookie')
     const token = parseSessionCookie(cookieHeader)
