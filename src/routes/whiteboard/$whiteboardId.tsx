@@ -211,20 +211,17 @@ function WhiteboardEditor() {
         if (!old) return old
         return {
           ...old,
-          whiteboard: {
-            ...old.whiteboard,
-            tables: [
-              ...old.whiteboard.tables,
-              {
-                id: 'temp-' + Date.now(),
-                ...newTable,
-                columns: [],
-                outgoingRelationships: [],
-                createdAt: new Date(),
-                updatedAt: new Date(),
-              },
-            ],
-          },
+          tables: [
+            ...(old.tables ?? []),
+            {
+              id: 'temp-' + Date.now(),
+              ...newTable,
+              columns: [],
+              outgoingRelationships: [],
+              createdAt: new Date(),
+              updatedAt: new Date(),
+            },
+          ],
         }
       })
 
@@ -272,18 +269,15 @@ function WhiteboardEditor() {
         if (!old) return old
         return {
           ...old,
-          whiteboard: {
-            ...old.whiteboard,
-            tables: old.whiteboard.tables.map((t: any) =>
-              t.id === updatedTable.id
-                ? {
-                    ...t,
-                    positionX: updatedTable.positionX,
-                    positionY: updatedTable.positionY,
-                  }
-                : t,
-            ),
-          },
+          tables: (old.tables ?? []).map((t: any) =>
+            t.id === updatedTable.id
+              ? {
+                  ...t,
+                  positionX: updatedTable.positionX,
+                  positionY: updatedTable.positionY,
+                }
+              : t,
+          ),
         }
       })
     },

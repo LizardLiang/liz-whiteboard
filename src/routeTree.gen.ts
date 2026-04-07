@@ -146,7 +146,7 @@ export interface FileRoutesByFullPath {
   '/demo/start/ssr/full-ssr': typeof DemoStartSsrFullSsrRoute
   '/demo/start/ssr/spa-mode': typeof DemoStartSsrSpaModeRoute
   '/project/$projectId/folder/$folderId': typeof ProjectProjectIdFolderFolderIdRoute
-  '/demo/start/ssr': typeof DemoStartSsrIndexRoute
+  '/demo/start/ssr/': typeof DemoStartSsrIndexRoute
 }
 export interface FileRoutesByTo {
   '/': typeof IndexRoute
@@ -212,7 +212,7 @@ export interface FileRouteTypes {
     | '/demo/start/ssr/full-ssr'
     | '/demo/start/ssr/spa-mode'
     | '/project/$projectId/folder/$folderId'
-    | '/demo/start/ssr'
+    | '/demo/start/ssr/'
   fileRoutesByTo: FileRoutesByTo
   to:
     | '/'
@@ -380,7 +380,7 @@ declare module '@tanstack/react-router' {
     '/demo/start/ssr/': {
       id: '/demo/start/ssr/'
       path: '/demo/start/ssr'
-      fullPath: '/demo/start/ssr'
+      fullPath: '/demo/start/ssr/'
       preLoaderRoute: typeof DemoStartSsrIndexRouteImport
       parentRoute: typeof rootRouteImport
     }

@@ -67,6 +67,9 @@ export function Header() {
             <rect x="3" y="14" width="7" height="7" />
           </svg>
           <span>ER Whiteboard</span>
+          <span className="ml-1 text-xs text-muted-foreground font-normal">
+            v0.1.0
+          </span>
         </Link>
 
         {/* Spacer */}

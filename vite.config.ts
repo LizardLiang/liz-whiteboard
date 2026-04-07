@@ -1,5 +1,6 @@
 import { defineConfig, isRunnableDevEnvironment } from 'vite'
 import { tanstackStart } from '@tanstack/react-start/plugin/vite'
+import { nitro } from 'nitro/vite'
 import viteReact from '@vitejs/plugin-react'
 import viteTsConfigPaths from 'vite-tsconfig-paths'
 import tailwindcss from '@tailwindcss/vite'
@@ -109,7 +110,13 @@ const config = defineConfig({
     }),
     tailwindcss(),
     tanstackStartClientVirtualModules(),
-    tanstackStart(),
+    tanstackStart({
+      router: {
+        routeFileIgnorePattern:
+          '\\.(test|spec)\\.(ts|tsx)$|^(auth|collaboration|columns|folders|permissions|projects|relationships|tables|whiteboards)\\.ts$',
+      },
+    }),
+    nitro({ preset: 'node_middleware' }),
     viteReact(),
     socketIOPlugin(),
   ],

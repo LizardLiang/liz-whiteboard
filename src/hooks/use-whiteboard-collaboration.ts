@@ -4,6 +4,7 @@
 import { useCallback, useEffect, useRef } from 'react'
 import { useRouter } from '@tanstack/react-router'
 import { toast } from 'sonner'
+import { useAuthContext } from '@/components/auth/AuthContext'
 import { useCollaboration } from './use-collaboration'
 import type { TableErrorEvent } from './use-table-mutations'
 import type { RelationshipErrorEvent } from './use-relationship-mutations'
@@ -60,9 +61,11 @@ export function useWhiteboardCollaboration(
   onRelationshipUpdated?: (relationshipId: string, label: string) => void,
 ) {
   // Use the base collaboration hook
+  const { triggerSessionExpired } = useAuthContext()
   const { emit, on, off, connectionState, activeUsers } = useCollaboration(
     whiteboardId,
     userId,
+    triggerSessionExpired,
   )
   const router = useRouter()
   const redirectTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
