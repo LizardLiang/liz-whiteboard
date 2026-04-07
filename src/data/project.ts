@@ -33,22 +33,7 @@ export async function createProject(
   }
 }
 
-/**
- * Find all projects
- * @returns Array of all projects
- */
-export async function findAllProjects(): Promise<Array<Project>> {
-  try {
-    const projects = await prisma.project.findMany({
-      orderBy: { createdAt: 'desc' },
-    })
-    return projects
-  } catch (error) {
-    throw new Error(
-      `Failed to fetch projects: ${error instanceof Error ? error.message : 'Unknown error'}`,
-    )
-  }
-}
+// findAllProjects (unfiltered) removed — replaced by findAllProjectsForUser
 
 /**
  * Find all projects accessible to a user (owner or ProjectMember)
@@ -122,44 +107,7 @@ export async function findAllProjectsWithTreeForUser(
   }
 }
 
-/**
- * Find all projects with their folder and whiteboard structure
- * @returns Array of projects with nested folders and whiteboards
- */
-export async function findAllProjectsWithTree(): Promise<
-  Array<
-    Project & {
-      folders: Array<{
-        id: string
-        name: string
-        parentFolderId: string | null
-        childFolders: Array<{ id: string; name: string }>
-        whiteboards: Array<{ id: string; name: string }>
-      }>
-      whiteboards: Array<{ id: string; name: string }>
-    }
-  >
-> {
-  try {
-    const projects = await prisma.project.findMany({
-      include: {
-        folders: {
-          include: {
-            childFolders: { select: { id: true, name: true } },
-            whiteboards: { select: { id: true, name: true } },
-          },
-        },
-        whiteboards: { select: { id: true, name: true } },
-      },
-      orderBy: { createdAt: 'desc' },
-    })
-    return projects
-  } catch (error) {
-    throw new Error(
-      `Failed to fetch project tree: ${error instanceof Error ? error.message : 'Unknown error'}`,
-    )
-  }
-}
+// findAllProjectsWithTree (unfiltered) removed — replaced by findAllProjectsWithTreeForUser
 
 /**
  * Find a project by ID

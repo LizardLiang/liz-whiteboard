@@ -20,40 +20,7 @@ import {
 import { requireAuth } from '@/lib/auth/middleware'
 import { findEffectiveRole } from '@/data/permission'
 import { hasMinimumRole } from '@/lib/auth/permissions'
-import { prisma } from '@/db'
-
-/**
- * Resolve projectId for a whiteboard by ID.
- */
-async function getWhiteboardProjectId(whiteboardId: string): Promise<string | null> {
-  const wb = await prisma.whiteboard.findUnique({
-    where: { id: whiteboardId },
-    select: { projectId: true },
-  })
-  return wb?.projectId ?? null
-}
-
-/**
- * Resolve projectId for a table by table ID (via its whiteboard).
- */
-async function getTableProjectId(tableId: string): Promise<string | null> {
-  const table = await prisma.diagramTable.findUnique({
-    where: { id: tableId },
-    select: { whiteboard: { select: { projectId: true } } },
-  })
-  return table?.whiteboard?.projectId ?? null
-}
-
-/**
- * Resolve projectId for a relationship by relationship ID (via its whiteboard).
- */
-async function getRelationshipProjectId(relationshipId: string): Promise<string | null> {
-  const rel = await prisma.relationship.findUnique({
-    where: { id: relationshipId },
-    select: { whiteboard: { select: { projectId: true } } },
-  })
-  return rel?.whiteboard?.projectId ?? null
-}
+import { getWhiteboardProjectId, getTableProjectId, getRelationshipProjectId } from '@/data/resolve-project'
 
 /**
  * Get all relationships in a whiteboard

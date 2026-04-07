@@ -23,31 +23,8 @@ import {
 import { requireAuth } from '@/lib/auth/middleware'
 import { findEffectiveRole } from '@/data/permission'
 import { hasMinimumRole } from '@/lib/auth/permissions'
+import { getWhiteboardProjectId, getFolderProjectId } from '@/data/resolve-project'
 import { prisma } from '@/db'
-
-/**
- * Resolve projectId for a whiteboard by ID.
- * Returns null if the whiteboard does not exist.
- */
-async function getWhiteboardProjectId(whiteboardId: string): Promise<string | null> {
-  const wb = await prisma.whiteboard.findUnique({
-    where: { id: whiteboardId },
-    select: { projectId: true },
-  })
-  return wb?.projectId ?? null
-}
-
-/**
- * Resolve projectId for a folder by ID.
- * Returns null if the folder does not exist.
- */
-async function getFolderProjectId(folderId: string): Promise<string | null> {
-  const folder = await prisma.folder.findUnique({
-    where: { id: folderId },
-    select: { projectId: true },
-  })
-  return folder?.projectId ?? null
-}
 
 /**
  * Get all whiteboards in a project

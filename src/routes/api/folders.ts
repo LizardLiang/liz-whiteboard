@@ -16,18 +16,7 @@ import { createFolderSchema, updateFolderSchema } from '@/data/schema'
 import { requireAuth } from '@/lib/auth/middleware'
 import { findEffectiveRole } from '@/data/permission'
 import { hasMinimumRole } from '@/lib/auth/permissions'
-import { prisma } from '@/db'
-
-/**
- * Resolve projectId for a folder by folder ID.
- */
-async function getFolderProjectId(folderId: string): Promise<string | null> {
-  const folder = await prisma.folder.findUnique({
-    where: { id: folderId },
-    select: { projectId: true },
-  })
-  return folder?.projectId ?? null
-}
+import { getFolderProjectId } from '@/data/resolve-project'
 
 /**
  * Get all folders in a project
