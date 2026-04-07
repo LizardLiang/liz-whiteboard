@@ -189,13 +189,17 @@ export const createColumnsFn = createServerFn({ method: 'POST' })
   .handler(
     requireAuth(async ({ user }, data) => {
       if (data.length > 0) {
-        const projectId = await getTableProjectId(data[0].tableId)
-        if (!projectId) {
-          throw new Error('Table not found')
-        }
-        const role = await findEffectiveRole(user.id, projectId)
-        if (!hasMinimumRole(role, 'EDITOR')) {
-          return { error: 'FORBIDDEN', status: 403, message: 'Access denied' } as const
+        // Verify EDITOR permission for every unique tableId in the batch (IDOR prevention)
+        const uniqueTableIds = [...new Set(data.map((c) => c.tableId))]
+        for (const tableId of uniqueTableIds) {
+          const projectId = await getTableProjectId(tableId)
+          if (!projectId) {
+            throw new Error(`Table not found: ${tableId}`)
+          }
+          const role = await findEffectiveRole(user.id, projectId)
+          if (!hasMinimumRole(role, 'EDITOR')) {
+            return { error: 'FORBIDDEN', status: 403, message: 'Access denied' } as const
+          }
         }
       }
       try {

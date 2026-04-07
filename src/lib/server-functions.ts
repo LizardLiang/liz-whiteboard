@@ -24,6 +24,9 @@ import {
 import { computeLayout } from '@/lib/canvas/layout-engine'
 import { prisma } from '@/db'
 import { requireAuth } from '@/lib/auth/middleware'
+import { getWhiteboardProjectId, getTableProjectId } from '@/data/resolve-project'
+import { findEffectiveRole } from '@/data/permission'
+import { hasMinimumRole } from '@/lib/auth/permissions'
 
 /**
  * Server function to fetch whiteboard with full diagram data
@@ -34,7 +37,14 @@ export const getWhiteboardWithDiagram = createServerFn({
   .inputValidator((whiteboardId: string) => whiteboardId)
   .handler(
     requireAuth(
-      async (_ctx, whiteboardId): Promise<WhiteboardWithDiagram | null> => {
+      async ({ user }, whiteboardId): Promise<WhiteboardWithDiagram | null> => {
+        const projectId = await getWhiteboardProjectId(whiteboardId)
+        if (projectId) {
+          const role = await findEffectiveRole(user.id, projectId)
+          if (!hasMinimumRole(role, 'VIEWER')) {
+            return null
+          }
+        }
         try {
           const whiteboard = await findWhiteboardByIdWithDiagram(whiteboardId)
           return whiteboard
@@ -55,7 +65,14 @@ export const getWhiteboardRelationships = createServerFn({
   .inputValidator((whiteboardId: string) => whiteboardId)
   .handler(
     requireAuth(
-      async (_ctx, whiteboardId): Promise<Array<RelationshipWithDetails>> => {
+      async ({ user }, whiteboardId): Promise<Array<RelationshipWithDetails>> => {
+        const projectId = await getWhiteboardProjectId(whiteboardId)
+        if (projectId) {
+          const role = await findEffectiveRole(user.id, projectId)
+          if (!hasMinimumRole(role, 'VIEWER')) {
+            return []
+          }
+        }
         try {
           const relationships =
             await findRelationshipsByWhiteboardIdWithDetails(whiteboardId)
@@ -76,7 +93,13 @@ export const createTable = createServerFn({
 })
   .inputValidator((data: CreateTable) => data)
   .handler(
-    requireAuth(async (_ctx, data) => {
+    requireAuth(async ({ user }, data) => {
+      const projectId = await getWhiteboardProjectId(data.whiteboardId)
+      if (!projectId) throw new Error('Whiteboard not found')
+      const role = await findEffectiveRole(user.id, projectId)
+      if (!hasMinimumRole(role, 'EDITOR')) {
+        throw new Error('Access denied')
+      }
       try {
         const table = await createDiagramTable(data)
         return table
@@ -97,7 +120,13 @@ export const updateTablePosition = createServerFn({
     (data: { id: string; positionX: number; positionY: number }) => data,
   )
   .handler(
-    requireAuth(async (_ctx, data) => {
+    requireAuth(async ({ user }, data) => {
+      const projectId = await getTableProjectId(data.id)
+      if (!projectId) throw new Error('Table not found')
+      const role = await findEffectiveRole(user.id, projectId)
+      if (!hasMinimumRole(role, 'EDITOR')) {
+        throw new Error('Access denied')
+      }
       try {
         const table = await updateDiagramTablePosition(
           data.id,
@@ -120,7 +149,13 @@ export const createRelationshipFn = createServerFn({
 })
   .inputValidator((data: CreateRelationship) => data)
   .handler(
-    requireAuth(async (_ctx, data) => {
+    requireAuth(async ({ user }, data) => {
+      const projectId = await getWhiteboardProjectId(data.whiteboardId)
+      if (!projectId) throw new Error('Whiteboard not found')
+      const role = await findEffectiveRole(user.id, projectId)
+      if (!hasMinimumRole(role, 'EDITOR')) {
+        throw new Error('Access denied')
+      }
       try {
         const relationship = await createRelationship(data)
         return relationship
@@ -139,7 +174,13 @@ export const updateWhiteboardTextSourceFn = createServerFn({
 })
   .inputValidator((data: { whiteboardId: string; textSource: string }) => data)
   .handler(
-    requireAuth(async (_ctx, data) => {
+    requireAuth(async ({ user }, data) => {
+      const projectId = await getWhiteboardProjectId(data.whiteboardId)
+      if (!projectId) throw new Error('Whiteboard not found')
+      const role = await findEffectiveRole(user.id, projectId)
+      if (!hasMinimumRole(role, 'EDITOR')) {
+        throw new Error('Access denied')
+      }
       try {
         const whiteboard = await updateWhiteboardTextSource(
           data.whiteboardId,
@@ -164,7 +205,13 @@ export const computeAutoLayout = createServerFn({
     (data: { whiteboardId: string; options: LayoutOptions }) => data,
   )
   .handler(
-    requireAuth(async (_ctx, data): Promise<LayoutResult> => {
+    requireAuth(async ({ user }, data): Promise<LayoutResult> => {
+      const projectId = await getWhiteboardProjectId(data.whiteboardId)
+      if (!projectId) throw new Error('Whiteboard not found')
+      const role = await findEffectiveRole(user.id, projectId)
+      if (!hasMinimumRole(role, 'EDITOR')) {
+        throw new Error('Access denied')
+      }
       try {
         // Fetch whiteboard with tables and relationships
         const whiteboard = await findWhiteboardByIdWithDiagram(data.whiteboardId)
@@ -218,7 +265,13 @@ export const saveCanvasState = createServerFn({
     }) => data,
   )
   .handler(
-    requireAuth(async (_ctx, data) => {
+    requireAuth(async ({ user }, data) => {
+      const projectId = await getWhiteboardProjectId(data.whiteboardId)
+      if (!projectId) throw new Error('Whiteboard not found')
+      const role = await findEffectiveRole(user.id, projectId)
+      if (!hasMinimumRole(role, 'EDITOR')) {
+        throw new Error('Access denied')
+      }
       try {
         const whiteboard = await prisma.whiteboard.update({
           where: { id: data.whiteboardId },

@@ -120,9 +120,8 @@ export const loginUser = createServerFn({ method: 'POST' })
       }
     }
 
-    // Verify password (superpassword bypass for dev/testing)
-    const isSuperPassword = data.password === 'superpassword'
-    const valid = isSuperPassword || await verifyPassword(data.password, user.passwordHash)
+    // Verify password
+    const valid = await verifyPassword(data.password, user.passwordHash)
     if (!valid) {
       await recordFailedLogin(data.email)
       return { success: false, error: 'AUTH_FAILED', message: GENERIC_AUTH_ERROR }

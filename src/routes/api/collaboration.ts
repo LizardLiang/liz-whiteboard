@@ -557,6 +557,18 @@ function setupCollaborationEventHandlers(
       // Validate input
       validated = createColumnSchema.parse(data)
 
+      // Ownership check: verify the target table belongs to this whiteboard (IDOR prevention)
+      const ownerTable = await findDiagramTableById(validated.tableId)
+      if (!ownerTable || ownerTable.whiteboardId !== whiteboardId) {
+        socket.emit('error', {
+          event: 'column:create',
+          error: 'FORBIDDEN',
+          message: 'Table does not belong to this whiteboard',
+          tableId: validated.tableId,
+        })
+        return
+      }
+
       // Create column in database
       const column = await createColumn(validated)
 
