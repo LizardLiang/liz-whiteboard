@@ -18,29 +18,7 @@ import { createColumnSchema, updateColumnSchema } from '@/data/schema'
 import { requireAuth } from '@/lib/auth/middleware'
 import { findEffectiveRole } from '@/data/permission'
 import { hasMinimumRole } from '@/lib/auth/permissions'
-import { prisma } from '@/db'
-
-/**
- * Resolve projectId for a table by table ID (via its whiteboard).
- */
-async function getTableProjectId(tableId: string): Promise<string | null> {
-  const table = await prisma.diagramTable.findUnique({
-    where: { id: tableId },
-    select: { whiteboard: { select: { projectId: true } } },
-  })
-  return table?.whiteboard?.projectId ?? null
-}
-
-/**
- * Resolve projectId for a column by column ID (via its table's whiteboard).
- */
-async function getColumnProjectId(columnId: string): Promise<string | null> {
-  const column = await prisma.column.findUnique({
-    where: { id: columnId },
-    select: { table: { select: { whiteboard: { select: { projectId: true } } } } },
-  })
-  return column?.table?.whiteboard?.projectId ?? null
-}
+import { getTableProjectId, getColumnProjectId } from '@/data/resolve-project'
 
 /**
  * Get all columns in a table
