@@ -68,6 +68,7 @@ export interface UseCollaborationReturn {
 export function useCollaboration(
   whiteboardId: string,
   userId: string,
+  onSessionExpired?: () => void,
 ): UseCollaborationReturn {
   const socketRef = useRef<Socket | null>(null)
   const [connectionState, setConnectionState] =
@@ -202,6 +203,7 @@ export function useCollaboration(
     socket.on('session_expired', () => {
       console.warn('Session expired — WebSocket connection closed')
       setConnectionState('disconnected')
+      onSessionExpired?.()
     })
 
     // Error handler
