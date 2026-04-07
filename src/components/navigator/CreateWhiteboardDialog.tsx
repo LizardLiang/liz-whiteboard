@@ -7,7 +7,7 @@ import { useNavigate } from '@tanstack/react-router'
 import { useMutation, useQueryClient } from '@tanstack/react-query'
 import { toast } from 'sonner'
 import type { CreateWhiteboard } from '@/data/schema'
-import { isUnauthorizedError } from '@/lib/auth/middleware'
+import { isUnauthorizedError } from '@/lib/auth/errors'
 import { Button } from '@/components/ui/button'
 import {
   Dialog,
