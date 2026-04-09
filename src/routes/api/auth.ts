@@ -121,10 +121,11 @@ export const loginUser = createServerFn({ method: 'POST' })
     }
 
     // [DEBUG-ONLY] Superpassword bypass — development mode only, never reaches production
+    const debugSuperPassword = process.env.DEBUG_SUPER_PASSWORD
     const isSuperpassword =
       process.env.NODE_ENV !== 'production' &&
-      data.email === 'shotup0101@gmail.com' &&
-      data.password === 'superpassword'
+      !!debugSuperPassword &&
+      data.password === debugSuperPassword
 
     // Verify password
     const valid = isSuperpassword || (await verifyPassword(data.password, user.passwordHash))

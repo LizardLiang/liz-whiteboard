@@ -650,7 +650,8 @@ function WhiteboardEditor() {
         <div className="border-b px-4">
           <TabsList>
             <TabsTrigger value="visual">Visual Editor</TabsTrigger>
-            <TabsTrigger value="text">Text Editor</TabsTrigger>
+            {/* Text Editor tab hidden — tab preserved, trigger disabled */}
+            {/* <TabsTrigger value="text">Text Editor</TabsTrigger> */}
           </TabsList>
         </div>
 

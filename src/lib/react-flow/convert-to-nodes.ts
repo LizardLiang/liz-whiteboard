@@ -46,8 +46,10 @@ export function convertTableToNode(
       showMode: 'ALL_FIELDS',
       ...options,
     },
-    // Hints for React Flow (actual dimensions will be measured)
-    width: table.width ?? undefined,
+    // Do NOT set width here — React Flow pins it as an inline style on the outer
+    // wrapper div (overriding the inner node's computed width). Let React Flow
+    // measure the rendered DOM via ResizeObserver instead. The autoWidth useMemo
+    // in TableNode already uses table.width as a floor so saved widths are respected.
     height: table.height ?? undefined,
   }
 }
