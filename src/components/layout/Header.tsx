@@ -9,7 +9,8 @@ import { Switch } from '@/components/ui/switch'
 import { Button } from '@/components/ui/button'
 import { logoutUser } from '@/routes/api/auth'
 import { useQueryClient } from '@tanstack/react-query'
-import { version } from '../../../package.json'
+
+declare const __APP_VERSION__: string
 
 /**
  * Application header component
@@ -69,7 +70,7 @@ export function Header() {
           </svg>
           <span>ER Whiteboard</span>
           <span className="ml-1 text-xs text-muted-foreground font-normal">
-            v{version}
+            v{__APP_VERSION__}
           </span>
         </Link>
 

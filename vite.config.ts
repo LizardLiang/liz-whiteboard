@@ -1,4 +1,5 @@
 import { defineConfig, isRunnableDevEnvironment } from 'vite'
+import { version } from './package.json'
 import { tanstackStart } from '@tanstack/react-start/plugin/vite'
 import { nitro } from 'nitro/vite'
 import viteReact from '@vitejs/plugin-react'
@@ -103,6 +104,9 @@ function tanstackStartClientVirtualModules(): Plugin {
 }
 
 const config = defineConfig({
+  define: {
+    __APP_VERSION__: JSON.stringify(version),
+  },
   plugins: [
     // this is the plugin that enables path aliases
     viteTsConfigPaths({
