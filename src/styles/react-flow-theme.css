@@ -126,9 +126,14 @@
   background: var(--rf-table-bg);
   border: 1px solid var(--rf-table-border);
   border-radius: 8px;
-  overflow: hidden;
+  overflow: visible;
   box-shadow: 0 1px 3px 0 rgb(0 0 0 / 0.1);
   min-width: 200px;
+}
+
+/* Clip the header's top corners to respect border-radius */
+.react-flow__node-erTable .table-header {
+  border-radius: 8px 8px 0 0;
 }
 
 .react-flow__node-erTable.selected {
@@ -166,16 +171,73 @@
 /* ----------------------------------------------------------------------------
  * Handle Styles
  * ---------------------------------------------------------------------------- */
+/* Base handle: hidden by default */
 .react-flow__handle {
   width: 10px;
   height: 10px;
   background: var(--rf-handle-bg);
   border: 2px solid var(--rf-handle-border);
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity 0.15s ease, background 0.15s ease, border-color 0.15s ease;
 }
 
-.react-flow__handle:hover {
+/* Override React Flow's .connectionindicator which forces pointer-events: all.
+   Source handles: hidden + non-interactive by default, shown on row hover.
+   Target handles: hidden but KEEP pointer-events so React Flow can detect
+   them as valid drop targets during connection drags. */
+.react-flow .react-flow__handle.connectionindicator {
+  opacity: 0;
+}
+
+/* Source handles: fully non-interactive by default (no accidental grabs) */
+.react-flow .react-flow__handle.source.connectionindicator {
+  pointer-events: none;
+}
+
+/* Show SOURCE handles on column-row hover with z-index above target handles
+   so the source handle always intercepts clicks at overlapping positions. */
+.column-row:hover > .react-flow__handle.source.connectionindicator {
+  opacity: 1;
+  pointer-events: all;
+  z-index: 2;
+}
+
+/* During active connection drag, show ALL target handles as drop zones.
+   .is-connecting is toggled by onConnectStart/onConnectEnd in ReactFlowCanvas. */
+.is-connecting .react-flow__handle.target.connectionindicator {
+  opacity: 1;
+}
+
+.column-row:hover > .react-flow__handle.source:hover {
   background: var(--rf-handle-hover-bg);
   border-color: var(--rf-handle-hover-border);
+}
+
+/* ----------------------------------------------------------------------------
+ * Column Row Hover Highlight
+ * ---------------------------------------------------------------------------- */
+.column-row:hover {
+  background: var(--rf-table-hover-bg) !important;
+}
+
+.column-row:hover .column-note-btn {
+  opacity: 0.5 !important;
+}
+
+.column-row:hover .column-note-btn:hover {
+  opacity: 1 !important;
+}
+
+/* ----------------------------------------------------------------------------
+ * Connection Line Styles
+ * ---------------------------------------------------------------------------- */
+.react-flow__connection-line {
+  stroke: var(--rf-edge-stroke-selected);
+  stroke-width: 2;
+  stroke-dasharray: 6 3;
+  fill: none;
+  opacity: 0.85;
 }
 
 /* ----------------------------------------------------------------------------

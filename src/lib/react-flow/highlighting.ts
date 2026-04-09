@@ -81,38 +81,54 @@ export function calculateHighlighting(
     })
   }
 
-  // Update node highlighting
-  const highlightedNodes = nodes.map((node) => ({
-    ...node,
-    data: {
-      ...node.data,
-      isActiveHighlighted: node.id === activeTableId,
-      isHighlighted: relatedTableIds.has(node.id) && node.id !== activeTableId,
-      isHovered: node.id === hoveredTableId,
-    },
-    zIndex: relatedTableIds.has(node.id)
+  // Update node highlighting — only create a new object when something actually changed
+  // so React.memo can skip re-renders for unaffected nodes
+  const highlightedNodes = nodes.map((node) => {
+    const isActiveHighlighted = node.id === activeTableId
+    const isHighlighted =
+      relatedTableIds.has(node.id) && node.id !== activeTableId
+    const isHovered = node.id === hoveredTableId
+    const newZIndex = relatedTableIds.has(node.id)
       ? Z_INDEX.NODE_HIGHLIGHTED
-      : Z_INDEX.NODE_DEFAULT,
-  }))
+      : Z_INDEX.NODE_DEFAULT
 
-  // Update edge highlighting
+    if (
+      node.data.isActiveHighlighted === isActiveHighlighted &&
+      node.data.isHighlighted === isHighlighted &&
+      node.data.isHovered === isHovered &&
+      node.zIndex === newZIndex
+    ) {
+      return node
+    }
+
+    return {
+      ...node,
+      data: { ...node.data, isActiveHighlighted, isHighlighted, isHovered },
+      zIndex: newZIndex,
+    }
+  })
+
+  // Update edge highlighting — only create a new object when isHighlighted changes
+  // so React.memo can skip re-renders for unaffected edges
   const highlightedEdges = edges.map((edge) => {
     const isConnectedToActive =
       edge.source === activeTableId || edge.target === activeTableId
     const isConnectedToHovered =
       edge.source === hoveredTableId || edge.target === hoveredTableId
+    const isHighlighted = isConnectedToActive || isConnectedToHovered
+    const newZIndex = isHighlighted
+      ? Z_INDEX.EDGE_HIGHLIGHTED
+      : Z_INDEX.EDGE_DEFAULT
+
+    if (edge.data?.isHighlighted === isHighlighted && edge.zIndex === newZIndex) {
+      return edge
+    }
 
     return {
       ...edge,
-      data: {
-        ...edge.data,
-        isHighlighted: isConnectedToActive || isConnectedToHovered,
-      },
-      zIndex:
-        isConnectedToActive || isConnectedToHovered
-          ? Z_INDEX.EDGE_HIGHLIGHTED
-          : Z_INDEX.EDGE_DEFAULT,
-    }
+      data: { ...edge.data, isHighlighted },
+      zIndex: newZIndex,
+    } as RelationshipEdgeType
   })
 
   return {

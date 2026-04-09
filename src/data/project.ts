@@ -8,17 +8,22 @@ import { prisma } from '@/db'
 
 /**
  * Create a new project
- * @param data - Project creation data (validated with Zod)
+ * @param data - Project creation data (validated with Zod) + optional ownerId
  * @returns Created project
  * @throws Error if validation fails or database operation fails
  */
-export async function createProject(data: CreateProject): Promise<Project> {
-  // Validate input with Zod schema
+export async function createProject(
+  data: CreateProject & { ownerId?: string },
+): Promise<Project> {
+  // Validate the base input fields with Zod schema
   const validated = createProjectSchema.parse(data)
 
   try {
     const project = await prisma.project.create({
-      data: validated,
+      data: {
+        ...validated,
+        ownerId: data.ownerId,
+      },
     })
     return project
   } catch (error) {
@@ -28,28 +33,40 @@ export async function createProject(data: CreateProject): Promise<Project> {
   }
 }
 
+// findAllProjects (unfiltered) removed — replaced by findAllProjectsForUser
+
 /**
- * Find all projects
- * @returns Array of all projects
+ * Find all projects accessible to a user (owner or ProjectMember)
+ * @param userId - User UUID
+ * @returns Array of projects the user owns or has membership in
  */
-export async function findAllProjects(): Promise<Array<Project>> {
+export async function findAllProjectsForUser(userId: string): Promise<Array<Project>> {
   try {
     const projects = await prisma.project.findMany({
+      where: {
+        OR: [
+          { ownerId: userId },
+          { members: { some: { userId } } },
+        ],
+      },
       orderBy: { createdAt: 'desc' },
     })
     return projects
   } catch (error) {
     throw new Error(
-      `Failed to fetch projects: ${error instanceof Error ? error.message : 'Unknown error'}`,
+      `Failed to fetch projects for user: ${error instanceof Error ? error.message : 'Unknown error'}`,
     )
   }
 }
 
 /**
- * Find all projects with their folder and whiteboard structure
+ * Find all projects with their folder and whiteboard structure accessible to a user
+ * @param userId - User UUID
  * @returns Array of projects with nested folders and whiteboards
  */
-export async function findAllProjectsWithTree(): Promise<
+export async function findAllProjectsWithTreeForUser(
+  userId: string,
+): Promise<
   Array<
     Project & {
       folders: Array<{
@@ -65,6 +82,12 @@ export async function findAllProjectsWithTree(): Promise<
 > {
   try {
     const projects = await prisma.project.findMany({
+      where: {
+        OR: [
+          { ownerId: userId },
+          { members: { some: { userId } } },
+        ],
+      },
       include: {
         folders: {
           include: {
@@ -79,10 +102,12 @@ export async function findAllProjectsWithTree(): Promise<
     return projects
   } catch (error) {
     throw new Error(
-      `Failed to fetch project tree: ${error instanceof Error ? error.message : 'Unknown error'}`,
+      `Failed to fetch project tree for user: ${error instanceof Error ? error.message : 'Unknown error'}`,
     )
   }
 }
+
+// findAllProjectsWithTree (unfiltered) removed — replaced by findAllProjectsWithTreeForUser
 
 /**
  * Find a project by ID
@@ -125,6 +150,152 @@ export async function updateProject(
   } catch (error) {
     throw new Error(
       `Failed to update project: ${error instanceof Error ? error.message : 'Unknown error'}`,
+    )
+  }
+}
+
+/**
+ * ProjectPageContent return type for findProjectPageContent
+ */
+export interface ProjectPageContent {
+  project: { id: string; name: string }
+  folders: Array<{
+    id: string
+    name: string
+    createdAt: Date
+  }>
+  whiteboards: Array<{
+    id: string
+    name: string
+    updatedAt: Date
+    _count: { tables: number }
+  }>
+  breadcrumb: Array<{
+    id: string
+    name: string
+    type: 'project' | 'folder'
+  }>
+  currentFolder?: { id: string; name: string }
+}
+
+/**
+ * Find project page content (folders + whiteboards at a given level)
+ * @param projectId - Project UUID
+ * @param folderId - Optional folder UUID for folder view
+ * @returns ProjectPageContent or null if project not found
+ */
+export async function findProjectPageContent(
+  projectId: string,
+  folderId?: string,
+): Promise<ProjectPageContent | null> {
+  try {
+    const project = await prisma.project.findUnique({
+      where: { id: projectId },
+      select: { id: true, name: true },
+    })
+    if (!project) return null
+
+    if (!folderId) {
+      // Root view: folders and whiteboards directly under the project
+      const [folders, whiteboards] = await Promise.all([
+        prisma.folder.findMany({
+          where: { projectId, parentFolderId: null },
+          select: { id: true, name: true, createdAt: true },
+          orderBy: { name: 'asc' },
+        }),
+        prisma.whiteboard.findMany({
+          where: { projectId, folderId: null },
+          select: {
+            id: true,
+            name: true,
+            updatedAt: true,
+            _count: { select: { tables: true } },
+          },
+          orderBy: { updatedAt: 'desc' },
+        }),
+      ])
+      return {
+        project,
+        folders,
+        whiteboards,
+        breadcrumb: [],
+      }
+    }
+
+    // Folder view: validate folder belongs to project
+    const targetFolder = await prisma.folder.findUnique({
+      where: { id: folderId },
+      select: { id: true, name: true, projectId: true, parentFolderId: true },
+    })
+    if (!targetFolder || targetFolder.projectId !== projectId) {
+      throw new Error('Folder not found')
+    }
+
+    // Fetch folders and whiteboards under this folder (projectId added for defense-in-depth)
+    const [folders, whiteboards] = await Promise.all([
+      prisma.folder.findMany({
+        where: { projectId, parentFolderId: folderId },
+        select: { id: true, name: true, createdAt: true },
+        orderBy: { name: 'asc' },
+      }),
+      prisma.whiteboard.findMany({
+        where: { projectId, folderId },
+        select: {
+          id: true,
+          name: true,
+          updatedAt: true,
+          _count: { select: { tables: true } },
+        },
+        orderBy: { updatedAt: 'desc' },
+      }),
+    ])
+
+    // Build breadcrumb via single recursive CTE (one round-trip, no N+1)
+    // Starts at the target folder's parent and walks up to the root.
+    const breadcrumb: ProjectPageContent['breadcrumb'] = []
+    if (targetFolder.parentFolderId) {
+      type AncestorRow = {
+        id: string
+        name: string
+        parentFolderId: string | null
+      }
+      const ancestors = await prisma.$queryRaw<Array<AncestorRow>>`
+        WITH RECURSIVE ancestors AS (
+          SELECT id, name, "parentFolderId", "projectId"
+          FROM "Folder"
+          WHERE id = ${targetFolder.parentFolderId}
+          UNION ALL
+          SELECT f.id, f.name, f."parentFolderId", f."projectId"
+          FROM "Folder" f
+          INNER JOIN ancestors a ON f.id = a."parentFolderId"
+        )
+        SELECT id, name, "parentFolderId" FROM ancestors
+      `
+      // CTE returns leaf→root order; reverse to get root→leaf for the breadcrumb trail
+      for (const ancestor of ancestors.reverse()) {
+        breadcrumb.push({
+          id: ancestor.id,
+          name: ancestor.name,
+          type: 'folder',
+        })
+      }
+    }
+    // Prepend project root
+    breadcrumb.unshift({ id: project.id, name: project.name, type: 'project' })
+
+    return {
+      project,
+      folders,
+      whiteboards,
+      breadcrumb,
+      currentFolder: { id: targetFolder.id, name: targetFolder.name },
+    }
+  } catch (error) {
+    if (error instanceof Error && error.message === 'Folder not found') {
+      throw error
+    }
+    throw new Error(
+      `Failed to fetch project page content: ${error instanceof Error ? error.message : 'Unknown error'}`,
     )
   }
 }

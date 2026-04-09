@@ -6,6 +6,7 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { Clock, FileText, FolderOpen, PlusCircle } from 'lucide-react'
 import { useState } from 'react'
 import { toast } from 'sonner'
+import type { CreateProject } from '@/data/schema'
 import { Button } from '@/components/ui/button'
 import {
   Card,
@@ -51,12 +52,12 @@ function HomePage() {
   // Fetch recent whiteboards
   const { data: recentWhiteboards, isLoading: recentLoading } = useQuery({
     queryKey: ['whiteboards', 'recent'],
-    queryFn: () => getRecentWhiteboards(8),
+    queryFn: () => getRecentWhiteboards({ data: 8 }),
   })
 
   // Create project mutation
   const createProjectMutation = useMutation({
-    mutationFn: createProjectFn,
+    mutationFn: (data: CreateProject) => createProjectFn({ data }),
     onSuccess: (data) => {
       queryClient.invalidateQueries({ queryKey: ['projects'] })
       queryClient.invalidateQueries({ queryKey: ['projects', 'tree'] })
@@ -183,34 +184,37 @@ function HomePage() {
                 {projects &&
                   Array.isArray(projects) &&
                   projects.map((project) => (
-                    <Card
+                    <Link
                       key={project.id}
-                      className="hover:border-primary transition-colors"
+                      to="/project/$projectId"
+                      params={{ projectId: project.id }}
                     >
-                      <CardHeader>
-                        <div className="flex items-start justify-between">
-                          <FolderOpen className="h-8 w-8 text-primary" />
-                        </div>
-                        <CardTitle className="mt-4">{project.name}</CardTitle>
-                        {project.description && (
-                          <CardDescription>
-                            {project.description}
-                          </CardDescription>
-                        )}
-                      </CardHeader>
-                      <CardContent>
-                        <div className="text-sm text-muted-foreground space-y-1">
-                          <div>
-                            {project.folders?.length || 0} folder
-                            {project.folders?.length !== 1 ? 's' : ''}
+                      <Card className="hover:border-primary transition-colors cursor-pointer h-full">
+                        <CardHeader>
+                          <div className="flex items-start justify-between">
+                            <FolderOpen className="h-8 w-8 text-primary" />
                           </div>
-                          <div>
-                            {project.whiteboards?.length || 0} whiteboard
-                            {project.whiteboards?.length !== 1 ? 's' : ''}
+                          <CardTitle className="mt-4">{project.name}</CardTitle>
+                          {project.description && (
+                            <CardDescription className="!text-muted-foreground">
+                              {project.description}
+                            </CardDescription>
+                          )}
+                        </CardHeader>
+                        <CardContent>
+                          <div className="text-sm text-muted-foreground space-y-1">
+                            <div>
+                              {project.folders?.length || 0} folder
+                              {project.folders?.length !== 1 ? 's' : ''}
+                            </div>
+                            <div>
+                              {project.whiteboards?.length || 0} whiteboard
+                              {project.whiteboards?.length !== 1 ? 's' : ''}
+                            </div>
                           </div>
-                        </div>
-                      </CardContent>
-                    </Card>
+                        </CardContent>
+                      </Card>
+                    </Link>
                   ))}
               </div>
             </div>

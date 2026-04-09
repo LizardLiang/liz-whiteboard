@@ -63,6 +63,8 @@ export function convertTablesToNodes(
   showMode?: ShowMode,
 ): Array<TableNodeType> {
   return tables.map((table) =>
-    convertTableToNode(table, showMode ? { showMode } : undefined),
+    convertTableToNode(table, {
+      ...(showMode ? { showMode } : {}),
+    }),
   )
 }

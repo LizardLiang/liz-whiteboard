@@ -50,21 +50,85 @@ const Fk = createToken({ name: 'Fk', pattern: /fk/ })
 const Unique = createToken({ name: 'Unique', pattern: /unique/ })
 const Null = createToken({ name: 'Null', pattern: /null/ })
 
-// Data types
+// Data types — longer/more-specific patterns MUST come before shorter prefix matches
+// e.g. BigintType before IntType, SmallintType before IntType, DatetimeType before DateType, etc.
+const BigintType = createToken({ name: 'BigintType', pattern: /bigint/ })
+const SmallintType = createToken({ name: 'SmallintType', pattern: /smallint/ })
 const IntType = createToken({ name: 'IntType', pattern: /int/ })
-const StringType = createToken({ name: 'StringType', pattern: /string/ })
+const DoubleType = createToken({ name: 'DoubleType', pattern: /double/ })
+const DecimalType = createToken({ name: 'DecimalType', pattern: /decimal/ })
 const FloatType = createToken({ name: 'FloatType', pattern: /float/ })
-const BooleanType = createToken({ name: 'BooleanType', pattern: /boolean/ })
-const DateType = createToken({ name: 'DateType', pattern: /date/ })
+const SerialType = createToken({ name: 'SerialType', pattern: /serial/ })
+const MoneyType = createToken({ name: 'MoneyType', pattern: /money/ })
+const StringType = createToken({ name: 'StringType', pattern: /string/ })
+const VarcharType = createToken({ name: 'VarcharType', pattern: /varchar/ })
+const CharType = createToken({ name: 'CharType', pattern: /char/ })
 const TextType = createToken({ name: 'TextType', pattern: /text/ })
-const UuidType = createToken({ name: 'UuidType', pattern: /uuid/ })
+const BooleanType = createToken({ name: 'BooleanType', pattern: /boolean/ })
+const BitType = createToken({ name: 'BitType', pattern: /bit/ })
+const DatetimeType = createToken({ name: 'DatetimeType', pattern: /datetime/ })
+const TimestampType = createToken({ name: 'TimestampType', pattern: /timestamp/ })
+const DateType = createToken({ name: 'DateType', pattern: /date/ })
+const TimeType = createToken({ name: 'TimeType', pattern: /time/ })
+const BinaryType = createToken({ name: 'BinaryType', pattern: /binary/ })
+const BlobType = createToken({ name: 'BlobType', pattern: /blob/ })
 const JsonType = createToken({ name: 'JsonType', pattern: /json/ })
+const XmlType = createToken({ name: 'XmlType', pattern: /xml/ })
+const ArrayType = createToken({ name: 'ArrayType', pattern: /array/ })
+const EnumType = createToken({ name: 'EnumType', pattern: /enum/ })
+const UuidType = createToken({ name: 'UuidType', pattern: /uuid/ })
 
-// Cardinality
-const OneToOne = createToken({ name: 'OneToOne', pattern: /one-to-one/ })
-const OneToMany = createToken({ name: 'OneToMany', pattern: /one-to-many/ })
-const ManyToOne = createToken({ name: 'ManyToOne', pattern: /many-to-one/ })
+// Cardinality — longer tokens must come before shorter ones that are prefixes
+const ManyToZeroOrMany = createToken({
+  name: 'ManyToZeroOrMany',
+  pattern: /many-to-zero-or-many/,
+})
+const ManyToZeroOrOne = createToken({
+  name: 'ManyToZeroOrOne',
+  pattern: /many-to-zero-or-one/,
+})
 const ManyToMany = createToken({ name: 'ManyToMany', pattern: /many-to-many/ })
+const ManyToOne = createToken({ name: 'ManyToOne', pattern: /many-to-one/ })
+const ZeroOrManyToZeroOrMany = createToken({
+  name: 'ZeroOrManyToZeroOrMany',
+  pattern: /zero-or-many-to-zero-or-many/,
+})
+const ZeroOrManyToZeroOrOne = createToken({
+  name: 'ZeroOrManyToZeroOrOne',
+  pattern: /zero-or-many-to-zero-or-one/,
+})
+const ZeroOrManyToMany = createToken({
+  name: 'ZeroOrManyToMany',
+  pattern: /zero-or-many-to-many/,
+})
+const ZeroOrManyToOne = createToken({
+  name: 'ZeroOrManyToOne',
+  pattern: /zero-or-many-to-one/,
+})
+const ZeroOrOneToZeroOrMany = createToken({
+  name: 'ZeroOrOneToZeroOrMany',
+  pattern: /zero-or-one-to-zero-or-many/,
+})
+const ZeroOrOneToZeroOrOne = createToken({
+  name: 'ZeroOrOneToZeroOrOne',
+  pattern: /zero-or-one-to-zero-or-one/,
+})
+const ZeroOrOneToMany = createToken({
+  name: 'ZeroOrOneToMany',
+  pattern: /zero-or-one-to-many/,
+})
+const ZeroOrOneToOne = createToken({
+  name: 'ZeroOrOneToOne',
+  pattern: /zero-or-one-to-one/,
+})
+const ZeroToMany = createToken({ name: 'ZeroToMany', pattern: /zero-to-many/ })
+const ZeroToOne = createToken({ name: 'ZeroToOne', pattern: /zero-to-one/ })
+const OneToMany = createToken({ name: 'OneToMany', pattern: /one-to-many/ })
+const OneToOne = createToken({ name: 'OneToOne', pattern: /one-to-one/ })
+const SelfReferencing = createToken({
+  name: 'SelfReferencing',
+  pattern: /self-referencing/,
+})
 
 // Symbols
 const LCurly = createToken({ name: 'LCurly', pattern: /{/ })
@@ -97,19 +161,50 @@ const allTokens = [
   Fk,
   Unique,
   Null,
-  OneToOne,
-  OneToMany,
-  ManyToOne,
+  // Cardinality tokens — longer patterns before shorter prefix matches
+  ManyToZeroOrMany,
+  ManyToZeroOrOne,
   ManyToMany,
-  // Data types
+  ManyToOne,
+  ZeroOrManyToZeroOrMany,
+  ZeroOrManyToZeroOrOne,
+  ZeroOrManyToMany,
+  ZeroOrManyToOne,
+  ZeroOrOneToZeroOrMany,
+  ZeroOrOneToZeroOrOne,
+  ZeroOrOneToMany,
+  ZeroOrOneToOne,
+  ZeroToMany,
+  ZeroToOne,
+  OneToMany,
+  OneToOne,
+  SelfReferencing,
+  // Data types — longer/more-specific patterns before shorter prefix matches
+  BigintType,
+  SmallintType,
   IntType,
-  StringType,
+  DoubleType,
+  DecimalType,
   FloatType,
-  BooleanType,
-  DateType,
+  SerialType,
+  MoneyType,
+  StringType,
+  VarcharType,
+  CharType,
   TextType,
-  UuidType,
+  BooleanType,
+  BitType,
+  DatetimeType,
+  TimestampType,
+  DateType,
+  TimeType,
+  BinaryType,
+  BlobType,
   JsonType,
+  XmlType,
+  ArrayType,
+  EnumType,
+  UuidType,
   // Symbols
   LCurly,
   RCurly,
@@ -183,18 +278,35 @@ class DiagramParser extends CstParser {
   })
 
   /**
-   * Data type rule: int | string | float | boolean | date | text | uuid | json
+   * Data type rule: all supported column data types
    */
   private dataType = this.RULE('dataType', () => {
     this.OR([
+      { ALT: () => this.CONSUME(BigintType) },
+      { ALT: () => this.CONSUME(SmallintType) },
       { ALT: () => this.CONSUME(IntType) },
-      { ALT: () => this.CONSUME(StringType) },
+      { ALT: () => this.CONSUME(DoubleType) },
+      { ALT: () => this.CONSUME(DecimalType) },
       { ALT: () => this.CONSUME(FloatType) },
-      { ALT: () => this.CONSUME(BooleanType) },
-      { ALT: () => this.CONSUME(DateType) },
+      { ALT: () => this.CONSUME(SerialType) },
+      { ALT: () => this.CONSUME(MoneyType) },
+      { ALT: () => this.CONSUME(StringType) },
+      { ALT: () => this.CONSUME(VarcharType) },
+      { ALT: () => this.CONSUME(CharType) },
       { ALT: () => this.CONSUME(TextType) },
-      { ALT: () => this.CONSUME(UuidType) },
+      { ALT: () => this.CONSUME(BooleanType) },
+      { ALT: () => this.CONSUME(BitType) },
+      { ALT: () => this.CONSUME(DatetimeType) },
+      { ALT: () => this.CONSUME(TimestampType) },
+      { ALT: () => this.CONSUME(DateType) },
+      { ALT: () => this.CONSUME(TimeType) },
+      { ALT: () => this.CONSUME(BinaryType) },
+      { ALT: () => this.CONSUME(BlobType) },
       { ALT: () => this.CONSUME(JsonType) },
+      { ALT: () => this.CONSUME(XmlType) },
+      { ALT: () => this.CONSUME(ArrayType) },
+      { ALT: () => this.CONSUME(EnumType) },
+      { ALT: () => this.CONSUME(UuidType) },
     ])
   })
 
@@ -231,14 +343,27 @@ class DiagramParser extends CstParser {
   })
 
   /**
-   * Cardinality rule: one-to-one | one-to-many | many-to-one | many-to-many
+   * Cardinality rule: all 17 cardinality types
    */
   private cardinality = this.RULE('cardinality', () => {
     this.OR([
-      { ALT: () => this.CONSUME(OneToOne) },
-      { ALT: () => this.CONSUME(OneToMany) },
-      { ALT: () => this.CONSUME(ManyToOne) },
+      { ALT: () => this.CONSUME(ManyToZeroOrMany) },
+      { ALT: () => this.CONSUME(ManyToZeroOrOne) },
       { ALT: () => this.CONSUME(ManyToMany) },
+      { ALT: () => this.CONSUME(ManyToOne) },
+      { ALT: () => this.CONSUME(ZeroOrManyToZeroOrMany) },
+      { ALT: () => this.CONSUME(ZeroOrManyToZeroOrOne) },
+      { ALT: () => this.CONSUME(ZeroOrManyToMany) },
+      { ALT: () => this.CONSUME(ZeroOrManyToOne) },
+      { ALT: () => this.CONSUME(ZeroOrOneToZeroOrMany) },
+      { ALT: () => this.CONSUME(ZeroOrOneToZeroOrOne) },
+      { ALT: () => this.CONSUME(ZeroOrOneToMany) },
+      { ALT: () => this.CONSUME(ZeroOrOneToOne) },
+      { ALT: () => this.CONSUME(ZeroToMany) },
+      { ALT: () => this.CONSUME(ZeroToOne) },
+      { ALT: () => this.CONSUME(OneToMany) },
+      { ALT: () => this.CONSUME(OneToOne) },
+      { ALT: () => this.CONSUME(SelfReferencing) },
     ])
   })
 }
@@ -343,14 +468,31 @@ class DiagramVisitor extends BaseCstVisitor {
   }
 
   dataType(ctx: any): ColumnNode['dataType'] {
+    if (ctx.BigintType) return 'bigint'
+    if (ctx.SmallintType) return 'smallint'
     if (ctx.IntType) return 'int'
-    if (ctx.StringType) return 'string'
+    if (ctx.DoubleType) return 'double'
+    if (ctx.DecimalType) return 'decimal'
     if (ctx.FloatType) return 'float'
-    if (ctx.BooleanType) return 'boolean'
-    if (ctx.DateType) return 'date'
+    if (ctx.SerialType) return 'serial'
+    if (ctx.MoneyType) return 'money'
+    if (ctx.StringType) return 'string'
+    if (ctx.VarcharType) return 'varchar'
+    if (ctx.CharType) return 'char'
     if (ctx.TextType) return 'text'
-    if (ctx.UuidType) return 'uuid'
+    if (ctx.BooleanType) return 'boolean'
+    if (ctx.BitType) return 'bit'
+    if (ctx.DatetimeType) return 'datetime'
+    if (ctx.TimestampType) return 'timestamp'
+    if (ctx.DateType) return 'date'
+    if (ctx.TimeType) return 'time'
+    if (ctx.BinaryType) return 'binary'
+    if (ctx.BlobType) return 'blob'
     if (ctx.JsonType) return 'json'
+    if (ctx.XmlType) return 'xml'
+    if (ctx.ArrayType) return 'array'
+    if (ctx.EnumType) return 'enum'
+    if (ctx.UuidType) return 'uuid'
     throw new Error('Unknown data type')
   }
 
@@ -389,6 +531,19 @@ class DiagramVisitor extends BaseCstVisitor {
     if (ctx.OneToMany) return 'one-to-many'
     if (ctx.ManyToOne) return 'many-to-one'
     if (ctx.ManyToMany) return 'many-to-many'
+    if (ctx.ZeroToOne) return 'zero-to-one'
+    if (ctx.ZeroToMany) return 'zero-to-many'
+    if (ctx.SelfReferencing) return 'self-referencing'
+    if (ctx.ManyToZeroOrOne) return 'many-to-zero-or-one'
+    if (ctx.ManyToZeroOrMany) return 'many-to-zero-or-many'
+    if (ctx.ZeroOrOneToOne) return 'zero-or-one-to-one'
+    if (ctx.ZeroOrOneToMany) return 'zero-or-one-to-many'
+    if (ctx.ZeroOrOneToZeroOrOne) return 'zero-or-one-to-zero-or-one'
+    if (ctx.ZeroOrOneToZeroOrMany) return 'zero-or-one-to-zero-or-many'
+    if (ctx.ZeroOrManyToOne) return 'zero-or-many-to-one'
+    if (ctx.ZeroOrManyToMany) return 'zero-or-many-to-many'
+    if (ctx.ZeroOrManyToZeroOrOne) return 'zero-or-many-to-zero-or-one'
+    if (ctx.ZeroOrManyToZeroOrMany) return 'zero-or-many-to-zero-or-many'
     throw new Error('Unknown cardinality')
   }
 
@@ -481,17 +636,44 @@ export function parseDiagram(text: string): ParseResult {
  * Convert AST to database entities
  * Maps Cardinality enum values from text syntax to Prisma enum
  */
-function mapCardinality(
-  cardinality: Cardinality,
-): 'ONE_TO_ONE' | 'ONE_TO_MANY' | 'MANY_TO_ONE' | 'MANY_TO_MANY' {
-  const mapping: Record<
-    Cardinality,
-    'ONE_TO_ONE' | 'ONE_TO_MANY' | 'MANY_TO_ONE' | 'MANY_TO_MANY'
-  > = {
+type PrismaCardinality =
+  | 'ONE_TO_ONE'
+  | 'ONE_TO_MANY'
+  | 'MANY_TO_ONE'
+  | 'MANY_TO_MANY'
+  | 'ZERO_TO_ONE'
+  | 'ZERO_TO_MANY'
+  | 'SELF_REFERENCING'
+  | 'MANY_TO_ZERO_OR_ONE'
+  | 'MANY_TO_ZERO_OR_MANY'
+  | 'ZERO_OR_ONE_TO_ONE'
+  | 'ZERO_OR_ONE_TO_MANY'
+  | 'ZERO_OR_ONE_TO_ZERO_OR_ONE'
+  | 'ZERO_OR_ONE_TO_ZERO_OR_MANY'
+  | 'ZERO_OR_MANY_TO_ONE'
+  | 'ZERO_OR_MANY_TO_MANY'
+  | 'ZERO_OR_MANY_TO_ZERO_OR_ONE'
+  | 'ZERO_OR_MANY_TO_ZERO_OR_MANY'
+
+function mapCardinality(cardinality: Cardinality): PrismaCardinality {
+  const mapping: Record<Cardinality, PrismaCardinality> = {
     'one-to-one': 'ONE_TO_ONE',
     'one-to-many': 'ONE_TO_MANY',
     'many-to-one': 'MANY_TO_ONE',
     'many-to-many': 'MANY_TO_MANY',
+    'zero-to-one': 'ZERO_TO_ONE',
+    'zero-to-many': 'ZERO_TO_MANY',
+    'self-referencing': 'SELF_REFERENCING',
+    'many-to-zero-or-one': 'MANY_TO_ZERO_OR_ONE',
+    'many-to-zero-or-many': 'MANY_TO_ZERO_OR_MANY',
+    'zero-or-one-to-one': 'ZERO_OR_ONE_TO_ONE',
+    'zero-or-one-to-many': 'ZERO_OR_ONE_TO_MANY',
+    'zero-or-one-to-zero-or-one': 'ZERO_OR_ONE_TO_ZERO_OR_ONE',
+    'zero-or-one-to-zero-or-many': 'ZERO_OR_ONE_TO_ZERO_OR_MANY',
+    'zero-or-many-to-one': 'ZERO_OR_MANY_TO_ONE',
+    'zero-or-many-to-many': 'ZERO_OR_MANY_TO_MANY',
+    'zero-or-many-to-zero-or-one': 'ZERO_OR_MANY_TO_ZERO_OR_ONE',
+    'zero-or-many-to-zero-or-many': 'ZERO_OR_MANY_TO_ZERO_OR_MANY',
   }
   return mapping[cardinality]
 }
@@ -515,7 +697,7 @@ export function astToEntities(
     sourceColumn: string
     targetTable: string
     targetColumn: string
-    cardinality: 'ONE_TO_ONE' | 'ONE_TO_MANY' | 'MANY_TO_ONE' | 'MANY_TO_MANY'
+    cardinality: PrismaCardinality
     label?: string
   }>
 } {

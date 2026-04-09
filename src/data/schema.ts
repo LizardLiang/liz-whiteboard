@@ -49,20 +49,57 @@ export const cardinalitySchema = z.enum([
   'ONE_TO_MANY',
   'MANY_TO_ONE',
   'MANY_TO_MANY',
+  'ZERO_TO_ONE',
+  'ZERO_TO_MANY',
+  'SELF_REFERENCING',
+  'MANY_TO_ZERO_OR_ONE',
+  'MANY_TO_ZERO_OR_MANY',
+  'ZERO_OR_ONE_TO_ONE',
+  'ZERO_OR_ONE_TO_MANY',
+  'ZERO_OR_ONE_TO_ZERO_OR_ONE',
+  'ZERO_OR_ONE_TO_ZERO_OR_MANY',
+  'ZERO_OR_MANY_TO_ONE',
+  'ZERO_OR_MANY_TO_MANY',
+  'ZERO_OR_MANY_TO_ZERO_OR_ONE',
+  'ZERO_OR_MANY_TO_ZERO_OR_MANY',
 ])
 
 /**
  * Allowed data types for columns
  */
 export const dataTypeSchema = z.enum([
+  // Numeric
   'int',
-  'string',
+  'bigint',
+  'smallint',
   'float',
-  'boolean',
-  'date',
+  'double',
+  'decimal',
+  'serial',
+  'money',
+  // String
+  'string',
+  'char',
+  'varchar',
   'text',
-  'uuid',
+  // Boolean
+  'boolean',
+  'bit',
+  // Date/Time
+  'date',
+  'datetime',
+  'timestamp',
+  'time',
+  // Binary
+  'binary',
+  'blob',
+  // Structured
   'json',
+  'xml',
+  'array',
+  'enum',
+  // Identity
+  'uuid',
 ])
 
 // ============================================================================
@@ -160,17 +197,29 @@ export const createColumnSchema = z.object({
   isPrimaryKey: z.boolean().default(false),
   isForeignKey: z.boolean().default(false),
   isUnique: z.boolean().default(false),
-  isNullable: z.boolean().default(true),
+  isNullable: z.boolean().default(false),
   description: z.string().optional(),
   order: z.number().int().min(0).default(0),
 })
 
 /**
  * Schema for updating an existing column
+ *
+ * Defined independently (without basing on createColumnSchema) so that absent
+ * fields parse as `undefined` rather than inheriting the `.default()` values
+ * from createColumnSchema. This ensures only explicitly-provided fields are
+ * passed to Prisma, preventing silent overwrites (e.g. resetting isPrimaryKey
+ * to false when only isNullable was changed).
  */
-export const updateColumnSchema = createColumnSchema
-  .omit({ tableId: true })
-  .partial()
+export const updateColumnSchema = z.object({
+  name: z.string().min(1).max(255).optional(),
+  dataType: dataTypeSchema.optional(),
+  isPrimaryKey: z.boolean().optional(),
+  isForeignKey: z.boolean().optional(),
+  isUnique: z.boolean().optional(),
+  isNullable: z.boolean().optional(),
+  description: z.string().optional(),
+})
 
 // ============================================================================
 // Relationship Schemas
@@ -248,3 +297,78 @@ export type UpdateRelationship = z.infer<typeof updateRelationshipSchema>
 
 export type CreateSession = z.infer<typeof createSessionSchema>
 export type UpdateSession = z.infer<typeof updateSessionSchema>
+
+// ============================================================================
+// Auth Schemas
+// ============================================================================
+
+/**
+ * Schema for user registration input
+ */
+export const registerInputSchema = z.object({
+  username: z
+    .string()
+    .min(3, 'Username must be at least 3 characters')
+    .max(50, 'Username must be at most 50 characters')
+    .regex(
+      /^[a-zA-Z0-9_]+$/,
+      'Username must be alphanumeric with underscores only',
+    ),
+  email: z.string().email('Invalid email address').max(255),
+  password: z
+    .string()
+    .min(8, 'Password must be at least 8 characters')
+    .max(128, 'Password must be at most 128 characters'),
+})
+
+/**
+ * Schema for user login input
+ */
+export const loginInputSchema = z.object({
+  email: z.string().email('Invalid email address'),
+  password: z.string().min(1, 'Password is required'),
+  rememberMe: z.boolean().default(false),
+})
+
+// ============================================================================
+// Permission Schemas
+// ============================================================================
+
+/**
+ * Schema for ProjectRole enum
+ */
+export const projectRoleSchema = z.enum(['VIEWER', 'EDITOR', 'ADMIN'])
+
+/**
+ * Schema for granting a permission (by email)
+ */
+export const grantPermissionSchema = z.object({
+  projectId: z.string().uuid(),
+  email: z.string().email(),
+  role: projectRoleSchema,
+})
+
+/**
+ * Schema for updating a permission
+ */
+export const updatePermissionSchema = z.object({
+  projectId: z.string().uuid(),
+  userId: z.string().uuid(),
+  role: projectRoleSchema,
+})
+
+/**
+ * Schema for revoking a permission
+ */
+export const revokePermissionSchema = z.object({
+  projectId: z.string().uuid(),
+  userId: z.string().uuid(),
+})
+
+// Auth type exports
+export type RegisterInput = z.infer<typeof registerInputSchema>
+export type LoginInput = z.infer<typeof loginInputSchema>
+export type ProjectRoleValue = z.infer<typeof projectRoleSchema>
+export type GrantPermission = z.infer<typeof grantPermissionSchema>
+export type UpdatePermission = z.infer<typeof updatePermissionSchema>
+export type RevokePermission = z.infer<typeof revokePermissionSchema>

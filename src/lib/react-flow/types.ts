@@ -12,6 +12,8 @@ import type {
   DiagramTable,
   Relationship,
 } from '@prisma/client'
+import type { CreateColumnPayload } from '@/components/whiteboard/column/types'
+import type { UpdateColumn } from '@/data/schema'
 
 /**
  * Display mode for table nodes
@@ -25,8 +27,9 @@ export type CardinalityType = Cardinality
 
 /**
  * Data structure for Table nodes in React Flow
+ * Extends Record<string, unknown> to satisfy React Flow's generic constraint
  */
-export interface TableNodeData {
+export interface TableNodeData extends Record<string, unknown> {
   /** The table entity with its columns */
   table: DiagramTable & {
     columns: Array<Column>
@@ -46,6 +49,31 @@ export interface TableNodeData {
 
   /** Map of column ID to cardinality for incoming relationships */
   targetColumnCardinalities?: Record<string, Cardinality>
+
+  /** Callback to create a column — fires WebSocket emit (WebSocket-only persistence) */
+  onColumnCreate?: (tableId: string, data: CreateColumnPayload) => void
+
+  /** Callback to update a column — fires WebSocket emit */
+  onColumnUpdate?: (
+    columnId: string,
+    tableId: string,
+    data: Partial<UpdateColumn>,
+  ) => void
+
+  /** Callback to delete a column — fires WebSocket emit */
+  onColumnDelete?: (columnId: string, tableId: string) => void
+
+  /** Callback to request table deletion — opens the confirmation dialog */
+  onRequestTableDelete?: (tableId: string) => void
+
+  /** React Flow edges — passed down for delete confirmation relationship lookup */
+  edges?: Array<RelationshipEdgeType>
+
+  /** Map of tableId → tableName for FK relationship labels */
+  tableNameById?: Map<string, string>
+
+  /** Whether the WebSocket is currently connected */
+  isConnected?: boolean
 }
 
 /**
@@ -55,8 +83,9 @@ export type TableNodeType = Node<TableNodeData, 'table'>
 
 /**
  * Data structure for Relationship edges in React Flow
+ * Extends Record<string, unknown> to satisfy React Flow's generic constraint
  */
-export interface RelationshipEdgeData {
+export interface RelationshipEdgeData extends Record<string, unknown> {
   /** The relationship entity */
   relationship: Relationship & {
     sourceColumn: Column
@@ -71,6 +100,12 @@ export interface RelationshipEdgeData {
 
   /** Optional label to display on the edge */
   label?: string
+
+  /** Callback to delete this relationship (fires optimistic removal + WebSocket emit) */
+  onDelete?: (relationshipId: string) => void
+
+  /** Callback to update this relationship's label (fires optimistic update + WebSocket emit) */
+  onLabelUpdate?: (relationshipId: string, label: string) => void
 }
 
 /**
