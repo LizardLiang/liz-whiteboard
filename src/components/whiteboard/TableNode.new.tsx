@@ -4,7 +4,6 @@
  */
 
 import { memo, useCallback, useEffect, useMemo, useState } from 'react'
-import { useReactFlow } from '@xyflow/react'
 import { ColumnRow } from './column/ColumnRow'
 import { AddColumnRow } from './column/AddColumnRow'
 import { DeleteColumnDialog } from './column/DeleteColumnDialog'
@@ -40,8 +39,6 @@ export const TableNode = memo(
     } = data
 
     const columns = table.columns
-
-    const { updateNode } = useReactFlow()
 
     // --- Local editing state ---
     const [editingField, setEditingField] = useState<EditingField | null>(null)
@@ -217,43 +214,19 @@ export const TableNode = memo(
       return columns
     }, [columns, showMode])
 
-    // Auto-compute width to fit the longest column name
-    const autoWidth = useMemo(() => {
-      const MIN_WIDTH = 220
-      const MAX_WIDTH = 500
-
-      // Header: table name + fixed chrome (padding + buttons)
-      const headerWidth = table.name.length * 8.5 + 80
-
-      // Columns: name text + fixed chrome (badges + dataType + padding + gaps + delete)
-      const maxColumnWidth = columns.reduce((max, col) => {
-        const nameWidth = col.name.length * 7.5 + 200
-        return Math.max(max, nameWidth)
-      }, 0)
-
-      // User-stored width acts as a floor
-      const userWidth = table.width ?? 0
-
-      return Math.min(
-        Math.max(MIN_WIDTH, headerWidth, maxColumnWidth, userWidth),
-        MAX_WIDTH,
-      )
-    }, [table.name, table.width, columns])
-
-    // Sync autoWidth back onto the React Flow node object so the outer NodeWrapper
-    // applies the correct width via its inline style (React Flow v12 reads node.width
-    // from the node object and pins it on the wrapper div, overriding any child styles).
-    useEffect(() => {
-      updateNode(id, { width: autoWidth })
-    }, [id, autoWidth, updateNode])
+    // Use CSS max-content so the browser measures actual rendered text width.
+    // Character-count estimates are unreliable; max-content lets each column row
+    // expand to its natural size. minWidth respects the user's manually-saved width.
+    const minWidth = Math.max(220, table.width ?? 0)
 
     return (
       <TableNodeContextMenu onDeleteTable={handleRequestTableDelete}>
         <div
           className={`react-flow__node-erTable ${selected ? 'selected' : ''} ${highlightClass}`}
           style={{
-            width: `${autoWidth}px`,
-            minWidth: '200px',
+            width: 'max-content',
+            minWidth: `${minWidth}px`,
+            maxWidth: '500px',
             opacity:
               isActiveHighlighted || isHighlighted || isHovered || selected
                 ? 1

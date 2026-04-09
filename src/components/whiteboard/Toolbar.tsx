@@ -442,22 +442,6 @@ export function Toolbar({
         </DialogContent>
       </Dialog>
 
-      {/* Auto Layout Button */}
-      <Button
-        variant="outline"
-        onClick={onAutoLayout}
-        disabled={tables.length < 2 || isAutoLayoutLoading}
-      >
-        {isAutoLayoutLoading ? (
-          <>
-            <span className="mr-2 h-4 w-4 animate-spin rounded-full border-2 border-current border-t-transparent" />
-            Computing Layout...
-          </>
-        ) : (
-          'Auto Layout'
-        )}
-      </Button>
-
       {/* Auto-Layout Preference Toggle */}
       <div className="flex items-center gap-2 ml-2 px-3 py-2 border rounded-md">
         <Switch
