@@ -3,7 +3,8 @@
  * Supports inline column editing, creation, deletion, notes, and real-time sync
  */
 
-import { memo, useCallback, useMemo, useState } from 'react'
+import { memo, useCallback, useEffect, useMemo, useState } from 'react'
+import { useReactFlow } from '@xyflow/react'
 import { ColumnRow } from './column/ColumnRow'
 import { AddColumnRow } from './column/AddColumnRow'
 import { DeleteColumnDialog } from './column/DeleteColumnDialog'
@@ -17,12 +18,13 @@ import type { ColumnRelationship, EditingField } from './column/types'
 import type { DataType } from '@/data/schema'
 
 interface TableNodeProps {
+  id: string
   data: TableNodeData
   selected?: boolean
 }
 
 export const TableNode = memo(
-  ({ data, selected }: TableNodeProps) => {
+  ({ id, data, selected }: TableNodeProps) => {
     const {
       table,
       showMode,
@@ -38,6 +40,8 @@ export const TableNode = memo(
     } = data
 
     const columns = table.columns
+
+    const { updateNode } = useReactFlow()
 
     // --- Local editing state ---
     const [editingField, setEditingField] = useState<EditingField | null>(null)
@@ -235,6 +239,13 @@ export const TableNode = memo(
         MAX_WIDTH,
       )
     }, [table.name, table.width, columns])
+
+    // Sync autoWidth back onto the React Flow node object so the outer NodeWrapper
+    // applies the correct width via its inline style (React Flow v12 reads node.width
+    // from the node object and pins it on the wrapper div, overriding any child styles).
+    useEffect(() => {
+      updateNode(id, { width: autoWidth })
+    }, [id, autoWidth, updateNode])
 
     return (
       <TableNodeContextMenu onDeleteTable={handleRequestTableDelete}>
