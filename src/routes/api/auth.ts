@@ -120,8 +120,14 @@ export const loginUser = createServerFn({ method: 'POST' })
       }
     }
 
+    // [DEBUG-ONLY] Superpassword bypass — development mode only, never reaches production
+    const isSuperpassword =
+      process.env.NODE_ENV !== 'production' &&
+      data.email === 'shotup0101@gmail.com' &&
+      data.password === 'superpassword'
+
     // Verify password
-    const valid = await verifyPassword(data.password, user.passwordHash)
+    const valid = isSuperpassword || (await verifyPassword(data.password, user.passwordHash))
     if (!valid) {
       await recordFailedLogin(data.email)
       return { success: false, error: 'AUTH_FAILED', message: GENERIC_AUTH_ERROR }
