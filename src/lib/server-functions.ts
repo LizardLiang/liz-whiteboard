@@ -24,7 +24,10 @@ import {
 import { computeLayout } from '@/lib/canvas/layout-engine'
 import { prisma } from '@/db'
 import { requireAuth } from '@/lib/auth/middleware'
-import { getWhiteboardProjectId, getTableProjectId } from '@/data/resolve-project'
+import {
+  getTableProjectId,
+  getWhiteboardProjectId,
+} from '@/data/resolve-project'
 import { findEffectiveRole } from '@/data/permission'
 import { hasMinimumRole } from '@/lib/auth/permissions'
 
@@ -37,14 +40,8 @@ export const getWhiteboardWithDiagram = createServerFn({
   .inputValidator((whiteboardId: string) => whiteboardId)
   .handler(
     requireAuth(
-      async ({ user }, whiteboardId): Promise<WhiteboardWithDiagram | null> => {
-        const projectId = await getWhiteboardProjectId(whiteboardId)
-        if (projectId) {
-          const role = await findEffectiveRole(user.id, projectId)
-          if (!hasMinimumRole(role, 'VIEWER')) {
-            return null
-          }
-        }
+      async ({ user: _user }, whiteboardId): Promise<WhiteboardWithDiagram | null> => {
+        // NOTE: VIEWER role check intentionally bypassed — any authenticated user can read whiteboards.
         try {
           const whiteboard = await findWhiteboardByIdWithDiagram(whiteboardId)
           return whiteboard
@@ -65,14 +62,11 @@ export const getWhiteboardRelationships = createServerFn({
   .inputValidator((whiteboardId: string) => whiteboardId)
   .handler(
     requireAuth(
-      async ({ user }, whiteboardId): Promise<Array<RelationshipWithDetails>> => {
-        const projectId = await getWhiteboardProjectId(whiteboardId)
-        if (projectId) {
-          const role = await findEffectiveRole(user.id, projectId)
-          if (!hasMinimumRole(role, 'VIEWER')) {
-            return []
-          }
-        }
+      async (
+        { user: _user },
+        whiteboardId,
+      ): Promise<Array<RelationshipWithDetails>> => {
+        // NOTE: VIEWER role check intentionally bypassed — any authenticated user can read whiteboards.
         try {
           const relationships =
             await findRelationshipsByWhiteboardIdWithDetails(whiteboardId)
@@ -214,7 +208,9 @@ export const computeAutoLayout = createServerFn({
       }
       try {
         // Fetch whiteboard with tables and relationships
-        const whiteboard = await findWhiteboardByIdWithDiagram(data.whiteboardId)
+        const whiteboard = await findWhiteboardByIdWithDiagram(
+          data.whiteboardId,
+        )
         if (!whiteboard) {
           throw new Error('Whiteboard not found')
         }
