@@ -36,37 +36,41 @@ export async function createProject(
 // findAllProjects (unfiltered) removed — replaced by findAllProjectsForUser
 
 /**
- * Find all projects accessible to a user (owner or ProjectMember)
- * @param userId - User UUID
- * @returns Array of projects the user owns or has membership in
+ * Find all projects accessible to a user.
+ * NOTE: Membership/invitation checks are intentionally bypassed here — any
+ * authenticated user can read all projects. The invitation system is preserved
+ * elsewhere (write/delete paths remain gated) and will be re-applied to reads
+ * once the invitation flow is complete.
+ * @param userId - User UUID (kept for API compatibility; not used for filtering)
+ * @returns Array of all projects
  */
-export async function findAllProjectsForUser(userId: string): Promise<Array<Project>> {
+export async function findAllProjectsForUser(
+  userId: string,
+): Promise<Array<Project>> {
+  // userId param retained for signature compatibility with callers.
+  void userId
   try {
     const projects = await prisma.project.findMany({
-      where: {
-        OR: [
-          { ownerId: userId },
-          { members: { some: { userId } } },
-        ],
-      },
       orderBy: { createdAt: 'desc' },
     })
     return projects
   } catch (error) {
     throw new Error(
-      `Failed to fetch projects for user: ${error instanceof Error ? error.message : 'Unknown error'}`,
+      `Failed to fetch projects: ${error instanceof Error ? error.message : 'Unknown error'}`,
     )
   }
 }
 
 /**
- * Find all projects with their folder and whiteboard structure accessible to a user
- * @param userId - User UUID
- * @returns Array of projects with nested folders and whiteboards
+ * Find all projects with their folder and whiteboard structure.
+ * NOTE: Membership/invitation checks are intentionally bypassed here — any
+ * authenticated user can read all projects. The invitation system is preserved
+ * elsewhere (write/delete paths remain gated) and will be re-applied to reads
+ * once the invitation flow is complete.
+ * @param userId - User UUID (kept for API compatibility; not used for filtering)
+ * @returns Array of all projects with nested folders and whiteboards
  */
-export async function findAllProjectsWithTreeForUser(
-  userId: string,
-): Promise<
+export async function findAllProjectsWithTreeForUser(userId: string): Promise<
   Array<
     Project & {
       folders: Array<{
@@ -80,14 +84,10 @@ export async function findAllProjectsWithTreeForUser(
     }
   >
 > {
+  // userId param retained for signature compatibility with callers.
+  void userId
   try {
     const projects = await prisma.project.findMany({
-      where: {
-        OR: [
-          { ownerId: userId },
-          { members: { some: { userId } } },
-        ],
-      },
       include: {
         folders: {
           include: {

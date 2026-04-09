@@ -55,7 +55,9 @@ export const getProjectsWithTree = createServerFn({
 
 /**
  * Get a single project by ID
- * Requires VIEWER+ role on the project.
+ * NOTE: VIEWER role check intentionally bypassed — any authenticated user can
+ * read any project. Write/delete paths remain gated. Invitation-based read
+ * access will be re-enabled once the invitation flow is complete.
  * @param projectId - Project UUID
  */
 export const getProject = createServerFn({ method: 'GET' })
@@ -64,11 +66,7 @@ export const getProject = createServerFn({ method: 'GET' })
     return idSchema.parse(projectId)
   })
   .handler(
-    requireAuth(async ({ user }, projectId) => {
-      const role = await findEffectiveRole(user.id, projectId)
-      if (!hasMinimumRole(role, 'VIEWER')) {
-        return { error: 'FORBIDDEN', status: 403, message: 'Access denied' } as const
-      }
+    requireAuth(async (_ctx, projectId) => {
       try {
         const project = await findProjectById(projectId)
         if (!project) {
@@ -119,7 +117,11 @@ export const updateProjectFn = createServerFn({ method: 'POST' })
       // Requires ADMIN+ role to update project settings
       const role = await findEffectiveRole(user.id, params.id)
       if (!hasMinimumRole(role, 'ADMIN')) {
-        return { error: 'FORBIDDEN', status: 403, message: 'Access denied' } as const
+        return {
+          error: 'FORBIDDEN',
+          status: 403,
+          message: 'Access denied',
+        } as const
       }
       try {
         const project = await updateProject(params.id, params.data)
@@ -134,7 +136,9 @@ export const updateProjectFn = createServerFn({ method: 'POST' })
 
 /**
  * Get project page content (folders + whiteboards at a given level)
- * Requires VIEWER+ role on the project.
+ * NOTE: VIEWER role check intentionally bypassed — any authenticated user can
+ * read any project's content. Write/delete paths remain gated. Invitation-based
+ * read access will be re-enabled once the invitation flow is complete.
  * @param params - Object with projectId and optional folderId
  */
 export const getProjectPageContent = createServerFn({ method: 'GET' })
@@ -146,12 +150,11 @@ export const getProjectPageContent = createServerFn({ method: 'GET' })
     return schema.parse(params)
   })
   .handler(
-    requireAuth(async ({ user }, data) => {
-      const role = await findEffectiveRole(user.id, data.projectId)
-      if (!hasMinimumRole(role, 'VIEWER')) {
-        return { error: 'FORBIDDEN', status: 403, message: 'Access denied' } as const
-      }
-      const content = await findProjectPageContent(data.projectId, data.folderId)
+    requireAuth(async (_ctx, data) => {
+      const content = await findProjectPageContent(
+        data.projectId,
+        data.folderId,
+      )
       if (!content) {
         throw new Error('Project not found')
       }
@@ -175,7 +178,11 @@ export const deleteProjectFn = createServerFn({ method: 'POST' })
       // Only OWNER can delete a project
       const role = await findEffectiveRole(user.id, projectId)
       if (!hasMinimumRole(role, 'OWNER')) {
-        return { error: 'FORBIDDEN', status: 403, message: 'Access denied' } as const
+        return {
+          error: 'FORBIDDEN',
+          status: 403,
+          message: 'Access denied',
+        } as const
       }
       try {
         const project = await deleteProject(projectId)
