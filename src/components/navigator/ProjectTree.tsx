@@ -2,7 +2,12 @@
 // Project tree component for hierarchical navigation
 
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
-import { useNavigate, useParams } from '@tanstack/react-router'
+import {
+  Link,
+  useNavigate,
+  useParams,
+  useRouterState,
+} from '@tanstack/react-router'
 import {
   ChevronDown,
   ChevronRight,
@@ -15,7 +20,15 @@ import { useState } from 'react'
 import { toast } from 'sonner'
 import { FolderItem } from './FolderItem'
 import { WhiteboardItem } from './WhiteboardItem'
+import { CreateWhiteboardDialog } from './CreateWhiteboardDialog'
+import { CreateFolderDialog } from './CreateFolderDialog'
 import type { FolderWithChildren } from './FolderItem'
+import type {
+  CreateProject,
+  UpdateFolder,
+  UpdateProject,
+  UpdateWhiteboard,
+} from '@/data/schema'
 import { Button } from '@/components/ui/button'
 import {
   Collapsible,
@@ -32,13 +45,6 @@ import {
 } from '@/components/ui/dialog'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from '@/components/ui/select'
 import { Textarea } from '@/components/ui/textarea'
 import {
   createProjectFn,
@@ -46,16 +52,12 @@ import {
   getProjectsWithTree,
   updateProjectFn,
 } from '@/routes/api/projects'
+import { deleteFolderFn, updateFolderFn } from '@/routes/api/folders'
 import {
-  createFolderFn,
-  deleteFolderFn,
-  updateFolderFn,
-} from '@/routes/api/folders'
-import {
-  createWhiteboardFn,
   deleteWhiteboardFn,
   updateWhiteboardFn,
 } from '@/routes/api/whiteboards'
+import { isUnauthorizedError } from '@/lib/auth/errors'
 
 /**
  * Dialog state types
@@ -65,16 +67,25 @@ type DialogState =
   | { type: 'createProject' }
   | { type: 'editProject'; id: string; name: string; description?: string }
   | { type: 'deleteProject'; id: string; name: string }
-  | { type: 'createFolder'; projectId: string; parentFolderId?: string }
   | { type: 'editFolder'; id: string; name: string }
   | { type: 'deleteFolder'; id: string; name: string }
-  | {
-      type: 'createWhiteboard'
-      projectId: string
-      folderId?: string
-    }
   | { type: 'editWhiteboard'; id: string; name: string }
   | { type: 'deleteWhiteboard'; id: string; name: string }
+
+/**
+ * State for the extracted create dialogs
+ */
+type CreateFolderDialogState = {
+  open: boolean
+  projectId: string
+  parentFolderId?: string
+}
+
+type CreateWhiteboardDialogState = {
+  open: boolean
+  projectId: string
+  folderId?: string
+}
 
 /**
  * ProjectTree component
@@ -88,16 +99,31 @@ export function ProjectTree() {
   const [expandedProjects, setExpandedProjects] = useState<Set<string>>(
     new Set(),
   )
+  const [createWhiteboardDialog, setCreateWhiteboardDialog] =
+    useState<CreateWhiteboardDialogState>({
+      open: false,
+      projectId: '',
+      folderId: undefined,
+    })
+  const [createFolderDialog, setCreateFolderDialog] =
+    useState<CreateFolderDialogState>({
+      open: false,
+      projectId: '',
+      parentFolderId: undefined,
+    })
 
   // Form state
   const [formName, setFormName] = useState('')
   const [formDescription, setFormDescription] = useState('')
-  const [formProjectId, setFormProjectId] = useState('')
-  const [formFolderId, setFormFolderId] = useState('')
 
   // Get current whiteboard ID from URL params
   const activeWhiteboardId =
     'whiteboardId' in params ? params.whiteboardId : undefined
+
+  // Get current pathname for route-based project highlighting
+  const currentPathname = useRouterState({
+    select: (s) => s.location.pathname,
+  })
 
   // Fetch projects with tree structure
   const { data: projects, isLoading } = useQuery({
@@ -107,8 +133,12 @@ export function ProjectTree() {
 
   // Mutations
   const createProjectMutation = useMutation({
-    mutationFn: createProjectFn,
+    mutationFn: (data: CreateProject) => createProjectFn({ data }),
     onSuccess: (data) => {
+      if (isUnauthorizedError(data)) {
+        toast.error('Session expired', { description: 'Please log in again.' })
+        return
+      }
       queryClient.invalidateQueries({ queryKey: ['projects'] })
       queryClient.invalidateQueries({ queryKey: ['projects', 'tree'] })
       setDialogState({ type: 'none' })
@@ -125,8 +155,13 @@ export function ProjectTree() {
   })
 
   const updateProjectMutation = useMutation({
-    mutationFn: updateProjectFn,
+    mutationFn: (data: { id: string; data: UpdateProject }) =>
+      updateProjectFn({ data }),
     onSuccess: (data) => {
+      if (isUnauthorizedError(data)) {
+        toast.error('Session expired', { description: 'Please log in again.' })
+        return
+      }
       queryClient.invalidateQueries({ queryKey: ['projects'] })
       setDialogState({ type: 'none' })
       resetForm()
@@ -142,7 +177,7 @@ export function ProjectTree() {
   })
 
   const deleteProjectMutation = useMutation({
-    mutationFn: deleteProjectFn,
+    mutationFn: (id: string) => deleteProjectFn({ data: id }),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['projects'] })
       setDialogState({ type: 'none' })
@@ -157,26 +192,14 @@ export function ProjectTree() {
     },
   })
 
-  const createFolderMutation = useMutation({
-    mutationFn: createFolderFn,
-    onSuccess: (data) => {
-      queryClient.invalidateQueries({ queryKey: ['projects'] })
-      setDialogState({ type: 'none' })
-      resetForm()
-      toast.success('Folder created!', {
-        description: `${data.name} has been created successfully.`,
-      })
-    },
-    onError: (error: Error) => {
-      toast.error('Failed to create folder', {
-        description: error.message || 'An unexpected error occurred.',
-      })
-    },
-  })
-
   const updateFolderMutation = useMutation({
-    mutationFn: updateFolderFn,
+    mutationFn: (data: { id: string; data: UpdateFolder }) =>
+      updateFolderFn({ data }),
     onSuccess: (data) => {
+      if (isUnauthorizedError(data)) {
+        toast.error('Session expired', { description: 'Please log in again.' })
+        return
+      }
       queryClient.invalidateQueries({ queryKey: ['projects'] })
       setDialogState({ type: 'none' })
       resetForm()
@@ -192,7 +215,7 @@ export function ProjectTree() {
   })
 
   const deleteFolderMutation = useMutation({
-    mutationFn: deleteFolderFn,
+    mutationFn: (id: string) => deleteFolderFn({ data: id }),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['projects'] })
       setDialogState({ type: 'none' })
@@ -207,31 +230,14 @@ export function ProjectTree() {
     },
   })
 
-  const createWhiteboardMutation = useMutation({
-    mutationFn: createWhiteboardFn,
-    onSuccess: (whiteboard) => {
-      queryClient.invalidateQueries({ queryKey: ['projects'] })
-      setDialogState({ type: 'none' })
-      resetForm()
-      toast.success('Whiteboard created!', {
-        description: `${whiteboard.name} has been created successfully.`,
-      })
-      // Navigate to the new whiteboard
-      navigate({
-        to: '/whiteboard/$whiteboardId',
-        params: { whiteboardId: whiteboard.id },
-      })
-    },
-    onError: (error: Error) => {
-      toast.error('Failed to create whiteboard', {
-        description: error.message || 'An unexpected error occurred.',
-      })
-    },
-  })
-
   const updateWhiteboardMutation = useMutation({
-    mutationFn: updateWhiteboardFn,
+    mutationFn: (data: { id: string; data: UpdateWhiteboard }) =>
+      updateWhiteboardFn({ data }),
     onSuccess: (data) => {
+      if (isUnauthorizedError(data)) {
+        toast.error('Session expired', { description: 'Please log in again.' })
+        return
+      }
       queryClient.invalidateQueries({ queryKey: ['projects'] })
       queryClient.invalidateQueries({ queryKey: ['whiteboard'] })
       setDialogState({ type: 'none' })
@@ -248,7 +254,8 @@ export function ProjectTree() {
   })
 
   const deleteWhiteboardMutation = useMutation({
-    mutationFn: deleteWhiteboardFn,
+    mutationFn: (whiteboardId: string) =>
+      deleteWhiteboardFn({ data: whiteboardId }),
     onSuccess: (_, deletedId) => {
       queryClient.invalidateQueries({ queryKey: ['projects'] })
       setDialogState({ type: 'none' })
@@ -271,8 +278,6 @@ export function ProjectTree() {
   const resetForm = () => {
     setFormName('')
     setFormDescription('')
-    setFormProjectId('')
-    setFormFolderId('')
   }
 
   const toggleProject = (projectId: string) => {
@@ -305,9 +310,7 @@ export function ProjectTree() {
   }
 
   const handleCreateFolder = (projectId: string, parentFolderId?: string) => {
-    setFormProjectId(projectId)
-    setFormFolderId(parentFolderId || '')
-    setDialogState({ type: 'createFolder', projectId, parentFolderId })
+    setCreateFolderDialog({ open: true, projectId, parentFolderId })
   }
 
   const handleEditFolder = (id: string, name: string) => {
@@ -320,9 +323,7 @@ export function ProjectTree() {
   }
 
   const handleCreateWhiteboard = (projectId: string, folderId?: string) => {
-    setFormProjectId(projectId)
-    setFormFolderId(folderId || '')
-    setDialogState({ type: 'createWhiteboard', projectId, folderId })
+    setCreateWhiteboardDialog({ open: true, projectId, folderId })
   }
 
   const handleEditWhiteboard = (id: string, name: string) => {
@@ -371,13 +372,7 @@ export function ProjectTree() {
   const handleSubmitFolder = async (e: React.FormEvent) => {
     e.preventDefault()
     try {
-      if (dialogState.type === 'createFolder') {
-        await createFolderMutation.mutateAsync({
-          name: formName,
-          projectId: formProjectId,
-          parentFolderId: formFolderId || undefined,
-        })
-      } else if (dialogState.type === 'editFolder') {
+      if (dialogState.type === 'editFolder') {
         await updateFolderMutation.mutateAsync({
           id: dialogState.id,
           data: { name: formName },
@@ -391,13 +386,7 @@ export function ProjectTree() {
   const handleSubmitWhiteboard = async (e: React.FormEvent) => {
     e.preventDefault()
     try {
-      if (dialogState.type === 'createWhiteboard') {
-        await createWhiteboardMutation.mutateAsync({
-          name: formName,
-          projectId: formProjectId,
-          folderId: formFolderId || undefined,
-        })
-      } else if (dialogState.type === 'editWhiteboard') {
+      if (dialogState.type === 'editWhiteboard') {
         await updateWhiteboardMutation.mutateAsync({
           id: dialogState.id,
           data: { name: formName },
@@ -464,17 +453,26 @@ export function ProjectTree() {
             const isExpanded = expandedProjects.has(project.id)
             const rootFolders = buildFolderTree(project.folders || [])
             const rootWhiteboards = project.whiteboards || []
+            // Active when URL is /project/:id or /project/:id/folder/:folderId
+            const isActiveProject = currentPathname.startsWith(
+              `/project/${project.id}`,
+            )
 
             return (
-              <Collapsible
-                key={project.id}
-                open={isExpanded}
-                onOpenChange={() => toggleProject(project.id)}
-              >
+              <Collapsible key={project.id} open={isExpanded}>
                 <div className="group relative">
                   <div className="flex items-center gap-1 pr-8">
                     <CollapsibleTrigger asChild>
-                      <Button variant="ghost" size="sm" className="h-8 w-8 p-0">
+                      <Button
+                        type="button"
+                        variant="ghost"
+                        size="sm"
+                        className="h-8 w-8 p-0"
+                        onClick={(e) => {
+                          e.stopPropagation()
+                          toggleProject(project.id)
+                        }}
+                      >
                         {isExpanded ? (
                           <ChevronDown className="h-4 w-4" />
                         ) : (
@@ -483,12 +481,16 @@ export function ProjectTree() {
                       </Button>
                     </CollapsibleTrigger>
 
-                    <div className="flex items-center gap-2 flex-1 px-2 py-2 rounded-md hover:bg-accent/50 transition-colors">
+                    <Link
+                      to="/project/$projectId"
+                      params={{ projectId: project.id }}
+                      className={`flex items-center gap-2 flex-1 px-2 py-2 rounded-md hover:bg-accent/50 transition-colors ${isActiveProject ? 'bg-accent' : ''}`}
+                    >
                       <FolderPlus className="h-4 w-4 text-primary flex-shrink-0" />
                       <span className="text-sm font-medium flex-1 truncate">
                         {project.name}
                       </span>
-                    </div>
+                    </Link>
                   </div>
 
                   {/* Project action buttons */}
@@ -709,12 +711,19 @@ export function ProjectTree() {
         </DialogContent>
       </Dialog>
 
-      {/* Folder Create/Edit Dialog */}
-      <Dialog
-        open={
-          dialogState.type === 'createFolder' ||
-          dialogState.type === 'editFolder'
+      {/* Create Folder Dialog (extracted component) */}
+      <CreateFolderDialog
+        open={createFolderDialog.open}
+        onOpenChange={(open) =>
+          setCreateFolderDialog((prev) => ({ ...prev, open }))
         }
+        projectId={createFolderDialog.projectId}
+        parentFolderId={createFolderDialog.parentFolderId}
+      />
+
+      {/* Folder Edit Dialog */}
+      <Dialog
+        open={dialogState.type === 'editFolder'}
         onOpenChange={(open) => {
           if (!open) {
             setDialogState({ type: 'none' })
@@ -725,16 +734,8 @@ export function ProjectTree() {
         <DialogContent>
           <form onSubmit={handleSubmitFolder}>
             <DialogHeader>
-              <DialogTitle>
-                {dialogState.type === 'createFolder'
-                  ? 'Create Folder'
-                  : 'Rename Folder'}
-              </DialogTitle>
-              <DialogDescription>
-                {dialogState.type === 'createFolder'
-                  ? 'Create a new folder to organize your whiteboards.'
-                  : 'Update the folder name.'}
-              </DialogDescription>
+              <DialogTitle>Rename Folder</DialogTitle>
+              <DialogDescription>Update the folder name.</DialogDescription>
             </DialogHeader>
             <div className="space-y-4 py-4">
               <div className="space-y-2">
@@ -760,7 +761,7 @@ export function ProjectTree() {
                 Cancel
               </Button>
               <Button type="submit" disabled={!formName.trim()}>
-                {dialogState.type === 'createFolder' ? 'Create' : 'Save'}
+                Save
               </Button>
             </DialogFooter>
           </form>
@@ -807,12 +808,19 @@ export function ProjectTree() {
         </DialogContent>
       </Dialog>
 
-      {/* Whiteboard Create/Edit Dialog */}
-      <Dialog
-        open={
-          dialogState.type === 'createWhiteboard' ||
-          dialogState.type === 'editWhiteboard'
+      {/* Create Whiteboard Dialog (extracted component) */}
+      <CreateWhiteboardDialog
+        open={createWhiteboardDialog.open}
+        onOpenChange={(open) =>
+          setCreateWhiteboardDialog((prev) => ({ ...prev, open }))
         }
+        projectId={createWhiteboardDialog.projectId}
+        folderId={createWhiteboardDialog.folderId}
+      />
+
+      {/* Whiteboard Edit Dialog */}
+      <Dialog
+        open={dialogState.type === 'editWhiteboard'}
         onOpenChange={(open) => {
           if (!open) {
             setDialogState({ type: 'none' })
@@ -823,16 +831,8 @@ export function ProjectTree() {
         <DialogContent>
           <form onSubmit={handleSubmitWhiteboard}>
             <DialogHeader>
-              <DialogTitle>
-                {dialogState.type === 'createWhiteboard'
-                  ? 'Create Whiteboard'
-                  : 'Rename Whiteboard'}
-              </DialogTitle>
-              <DialogDescription>
-                {dialogState.type === 'createWhiteboard'
-                  ? 'Create a new whiteboard for your ER diagrams.'
-                  : 'Update the whiteboard name.'}
-              </DialogDescription>
+              <DialogTitle>Rename Whiteboard</DialogTitle>
+              <DialogDescription>Update the whiteboard name.</DialogDescription>
             </DialogHeader>
             <div className="space-y-4 py-4">
               <div className="space-y-2">
@@ -858,7 +858,7 @@ export function ProjectTree() {
                 Cancel
               </Button>
               <Button type="submit" disabled={!formName.trim()}>
-                {dialogState.type === 'createWhiteboard' ? 'Create' : 'Save'}
+                Save
               </Button>
             </DialogFooter>
           </form>

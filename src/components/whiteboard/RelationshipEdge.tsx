@@ -115,7 +115,7 @@ function calculateCrowFootPoints(
  * @param cardinality - Cardinality enum value
  * @returns Display text for cardinality
  */
-function getCardinalityText(cardinality: Cardinality): {
+export function getCardinalityText(cardinality: Cardinality): {
   source: string
   target: string
 } {
@@ -128,6 +128,12 @@ function getCardinalityText(cardinality: Cardinality): {
       return { source: 'N', target: '1' }
     case 'MANY_TO_MANY':
       return { source: 'N', target: 'N' }
+    case 'ZERO_TO_ONE':
+      return { source: '0', target: '1' }
+    case 'ZERO_TO_MANY':
+      return { source: '0', target: 'N' }
+    case 'SELF_REFERENCING':
+      return { source: '1', target: 'N' }
     default:
       return { source: '', target: '' }
   }

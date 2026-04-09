@@ -68,6 +68,7 @@ export interface UseCollaborationReturn {
 export function useCollaboration(
   whiteboardId: string,
   userId: string,
+  onSessionExpired?: () => void,
 ): UseCollaborationReturn {
   const socketRef = useRef<Socket | null>(null)
   const [connectionState, setConnectionState] =
@@ -80,15 +81,19 @@ export function useCollaboration(
   const maxReconnectionAttempts = 5
 
   useEffect(() => {
-    if (!whiteboardId || !userId) {
+    if (!whiteboardId) {
       return
     }
 
     // Create socket connection
+    // NOTE: auth.userId is kept for backwards compat with any client code that
+    // reads it, but server-side auth now reads userId from the session cookie.
+    // withCredentials ensures the session_token cookie is sent with the handshake.
     setConnectionState('connecting')
 
     const socket = io(`/whiteboard/${whiteboardId}`, {
-      auth: { userId },
+      auth: userId ? { userId } : undefined,
+      withCredentials: true,
       reconnection: true,
       reconnectionDelay: 1000,
       reconnectionDelayMax: 5000,
@@ -193,12 +198,19 @@ export function useCollaboration(
       },
     )
 
+    // Session expired: server signals that the session token is no longer valid.
+    // The onSessionExpired callback (if provided) will trigger the SessionExpiredModal.
+    socket.on('session_expired', () => {
+      console.warn('Session expired — WebSocket connection closed')
+      setConnectionState('disconnected')
+      onSessionExpired?.()
+    })
+
     // Error handler
     socket.on(
       'error',
       (data: { event: string; error: string; message: string }) => {
         console.error(`Collaboration error [${data.event}]:`, data.message)
-        // TODO: Show toast notification to user
       },
     )
 

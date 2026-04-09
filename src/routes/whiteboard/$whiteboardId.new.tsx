@@ -5,8 +5,9 @@
 import { createFileRoute } from '@tanstack/react-router'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { useCallback, useEffect, useMemo, useState } from 'react'
-import type { OnEdgesChange, OnNodesChange } from '@xyflow/react'
+import type { Connection, OnEdgesChange, OnNodesChange } from '@xyflow/react'
 import type {
+  Cardinality,
   CreateColumn,
   CreateRelationship,
   CreateTable,
@@ -17,7 +18,24 @@ import { ReactFlowCanvas } from '@/components/whiteboard/ReactFlowCanvas'
 import { Toolbar } from '@/components/whiteboard/Toolbar'
 import { TextEditor } from '@/components/whiteboard/TextEditor'
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
+import {
+  Dialog,
+  DialogContent,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from '@/components/ui/dialog'
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from '@/components/ui/select'
+import { Button } from '@/components/ui/button'
+import { Label } from '@/components/ui/label'
 import { useCollaboration } from '@/hooks/use-collaboration'
+import { getSessionUserId } from '@/lib/session-user-id'
 import { useAutoLayoutPreference } from '@/hooks/use-auto-layout-preference'
 import {
   convertToReactFlowEdges,
@@ -39,6 +57,48 @@ import {
   entitiesToText,
   parseDiagram,
 } from '@/lib/parser/diagram-parser'
+import { parseColumnHandleId } from '@/lib/react-flow/edge-routing'
+
+/** Pending connection data waiting for cardinality selection */
+interface PendingConnection {
+  sourceTableId: string
+  sourceColumnId: string
+  targetTableId: string
+  targetColumnId: string
+}
+
+/** Common cardinality options shown at the top of the picker */
+const CARDINALITY_OPTIONS: Array<{ value: Cardinality; label: string }> = [
+  { value: 'ONE_TO_ONE', label: 'One to One (1:1)' },
+  { value: 'ONE_TO_MANY', label: 'One to Many (1:N)' },
+  { value: 'MANY_TO_ONE', label: 'Many to One (N:1)' },
+  { value: 'MANY_TO_MANY', label: 'Many to Many (N:N)' },
+  { value: 'ZERO_TO_ONE', label: 'Zero to One (0:1)' },
+  { value: 'ZERO_TO_MANY', label: 'Zero to Many (0:N)' },
+  { value: 'SELF_REFERENCING', label: 'Self Referencing' },
+  { value: 'ZERO_OR_ONE_TO_ONE', label: 'Zero or One to One (0..1:1)' },
+  { value: 'ZERO_OR_ONE_TO_MANY', label: 'Zero or One to Many (0..1:N)' },
+  { value: 'ZERO_OR_MANY_TO_ONE', label: 'Zero or Many to One (0..N:1)' },
+  { value: 'ZERO_OR_MANY_TO_MANY', label: 'Zero or Many to Many (0..N:N)' },
+  {
+    value: 'ZERO_OR_ONE_TO_ZERO_OR_ONE',
+    label: 'Zero or One to Zero or One',
+  },
+  {
+    value: 'ZERO_OR_ONE_TO_ZERO_OR_MANY',
+    label: 'Zero or One to Zero or Many',
+  },
+  { value: 'MANY_TO_ZERO_OR_ONE', label: 'Many to Zero or One (N:0..1)' },
+  { value: 'MANY_TO_ZERO_OR_MANY', label: 'Many to Zero or Many (N:0..N)' },
+  {
+    value: 'ZERO_OR_MANY_TO_ZERO_OR_ONE',
+    label: 'Zero or Many to Zero or One',
+  },
+  {
+    value: 'ZERO_OR_MANY_TO_ZERO_OR_MANY',
+    label: 'Zero or Many to Zero or Many',
+  },
+]
 
 /**
  * Whiteboard editor page component - React Flow version
@@ -54,8 +114,8 @@ function WhiteboardEditor() {
   const { whiteboardId } = Route.useParams()
   const queryClient = useQueryClient()
 
-  // TODO: Get actual user ID from auth context
-  const userId = 'temp-user-id'
+  // Anonymous session-stable user ID. Replace with auth context when auth is implemented.
+  const userId = getSessionUserId()
 
   // State
   const [selectedNodeIds, setSelectedNodeIds] = useState<Array<string>>([])
@@ -65,6 +125,12 @@ function WhiteboardEditor() {
   const [textSource, setTextSource] = useState<string>('')
   const [isTextSyncEnabled, setIsTextSyncEnabled] = useState(true)
   const [isAutoLayoutComputing, setIsAutoLayoutComputing] = useState(false)
+
+  // Cardinality picker dialog state
+  const [pendingConnection, setPendingConnection] =
+    useState<PendingConnection | null>(null)
+  const [selectedCardinality, setSelectedCardinality] =
+    useState<Cardinality>('ONE_TO_MANY')
 
   // Debounce timer for canvas state persistence
   const saveCanvasStateTimerRef = useState<NodeJS.Timeout | null>(null)
@@ -250,6 +316,62 @@ function WhiteboardEditor() {
     },
     [createRelationshipMutation],
   )
+
+  /**
+   * Handle a new connection drag from a column handle.
+   * Parses the handle IDs and opens the cardinality picker dialog.
+   */
+  const onConnect = useCallback(
+    (connection: Connection) => {
+      const { source, target, sourceHandle, targetHandle } = connection
+
+      if (!source || !target || !sourceHandle || !targetHandle) return
+
+      const parsedSource = parseColumnHandleId(sourceHandle)
+      const parsedTarget = parseColumnHandleId(targetHandle)
+
+      if (!parsedSource || !parsedTarget) return
+
+      setPendingConnection({
+        sourceTableId: parsedSource.tableId,
+        sourceColumnId: parsedSource.columnId,
+        targetTableId: parsedTarget.tableId,
+        targetColumnId: parsedTarget.columnId,
+      })
+      setSelectedCardinality('ONE_TO_MANY')
+    },
+    [],
+  )
+
+  /**
+   * Confirm cardinality selection and create the relationship.
+   */
+  const handleCardinalityConfirm = useCallback(() => {
+    if (!pendingConnection) return
+
+    handleCreateRelationship({
+      whiteboardId,
+      sourceTableId: pendingConnection.sourceTableId,
+      targetTableId: pendingConnection.targetTableId,
+      sourceColumnId: pendingConnection.sourceColumnId,
+      targetColumnId: pendingConnection.targetColumnId,
+      cardinality: selectedCardinality,
+    })
+
+    setPendingConnection(null)
+  }, [
+    pendingConnection,
+    selectedCardinality,
+    whiteboardId,
+    handleCreateRelationship,
+  ])
+
+  /**
+   * Cancel the pending connection — discard it.
+   */
+  const handleCardinalityCancel = useCallback(() => {
+    setPendingConnection(null)
+  }, [])
 
   /**
    * Handle auto layout computation
@@ -490,6 +612,7 @@ function WhiteboardEditor() {
               initialEdges={edges}
               onNodesChange={onNodesChange}
               onEdgesChange={onEdgesChange}
+              onConnect={onConnect}
               nodesDraggable={true}
               showControls={true}
               showBackground={true}
@@ -508,6 +631,48 @@ function WhiteboardEditor() {
           />
         </TabsContent>
       </Tabs>
+
+      {/* Cardinality Picker Dialog — shown when a connection drag completes */}
+      <Dialog
+        open={pendingConnection !== null}
+        onOpenChange={(open) => {
+          if (!open) handleCardinalityCancel()
+        }}
+      >
+        <DialogContent className="sm:max-w-sm">
+          <DialogHeader>
+            <DialogTitle>Set Relationship Cardinality</DialogTitle>
+          </DialogHeader>
+
+          <div className="py-4 space-y-2">
+            <Label htmlFor="cardinality-select">Cardinality</Label>
+            <Select
+              value={selectedCardinality}
+              onValueChange={(value) =>
+                setSelectedCardinality(value as Cardinality)
+              }
+            >
+              <SelectTrigger id="cardinality-select">
+                <SelectValue placeholder="Select cardinality" />
+              </SelectTrigger>
+              <SelectContent>
+                {CARDINALITY_OPTIONS.map((option) => (
+                  <SelectItem key={option.value} value={option.value}>
+                    {option.label}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          </div>
+
+          <DialogFooter>
+            <Button variant="outline" onClick={handleCardinalityCancel}>
+              Cancel
+            </Button>
+            <Button onClick={handleCardinalityConfirm}>Create</Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </div>
   )
 }

@@ -12,6 +12,7 @@ import type {
   CreateTable,
 } from '@/data/schema'
 import type { DiagramAST } from '@/lib/parser/ast'
+import type { ZoomControls } from '@/components/whiteboard/Toolbar'
 import { Canvas, useCanvasControls } from '@/components/whiteboard/Canvas'
 import { TableNode } from '@/components/whiteboard/TableNode'
 import { RelationshipEdge } from '@/components/whiteboard/RelationshipEdge'
@@ -21,6 +22,7 @@ import { TextEditor } from '@/components/whiteboard/TextEditor'
 import { Minimap } from '@/components/whiteboard/Minimap'
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import { useCollaboration } from '@/hooks/use-collaboration'
+import { getSessionUserId } from '@/lib/session-user-id'
 import { useAutoLayoutPreference } from '@/hooks/use-auto-layout-preference'
 import {
   computeAutoLayout,
@@ -58,8 +60,8 @@ function WhiteboardEditor() {
   const { whiteboardId } = Route.useParams()
   const queryClient = useQueryClient()
 
-  // TODO: Get actual user ID from auth context
-  const userId = 'temp-user-id'
+  // Anonymous session-stable user ID. Replace with auth context when auth is implemented.
+  const userId = getSessionUserId()
 
   // State
   const [selectedTableId, setSelectedTableId] = useState<string | null>(null)
@@ -84,6 +86,11 @@ function WhiteboardEditor() {
     useState<string>('ALL_FIELDS')
   const reactFlowShowModeRef = useRef<((mode: string) => void) | null>(null)
 
+  // React Flow zoom controls (set via callback from ReactFlowWhiteboard)
+  const [reactFlowZoomControls, setReactFlowZoomControls] =
+    useState<ZoomControls | null>(null)
+  const [reactFlowCurrentZoom, setReactFlowCurrentZoom] = useState<number>(1)
+
   // Canvas stage ref for programmatic zoom controls
   const stageRef = useRef<Konva.Stage>(null)
 
@@ -94,8 +101,10 @@ function WhiteboardEditor() {
   const { autoLayoutEnabled, setAutoLayoutEnabled } = useAutoLayoutPreference()
 
   // Fetch whiteboard data with TanStack Query
+  // NOTE: Uses 'whiteboard-page' key to avoid collision with ReactFlowWhiteboard's
+  // ['whiteboard', whiteboardId] query which returns a different shape (raw WhiteboardWithDiagram).
   const { data: whiteboardData, isLoading } = useQuery({
-    queryKey: ['whiteboard', whiteboardId],
+    queryKey: ['whiteboard-page', whiteboardId],
     queryFn: async () => {
       // Fetch whiteboard with tables and relationships
       const whiteboard = await getWhiteboardWithDiagram({ data: whiteboardId })
@@ -202,20 +211,17 @@ function WhiteboardEditor() {
         if (!old) return old
         return {
           ...old,
-          whiteboard: {
-            ...old.whiteboard,
-            tables: [
-              ...old.whiteboard.tables,
-              {
-                id: 'temp-' + Date.now(),
-                ...newTable,
-                columns: [],
-                outgoingRelationships: [],
-                createdAt: new Date(),
-                updatedAt: new Date(),
-              },
-            ],
-          },
+          tables: [
+            ...(old.tables ?? []),
+            {
+              id: 'temp-' + Date.now(),
+              ...newTable,
+              columns: [],
+              outgoingRelationships: [],
+              createdAt: new Date(),
+              updatedAt: new Date(),
+            },
+          ],
         }
       })
 
@@ -226,6 +232,7 @@ function WhiteboardEditor() {
       emit('table:create', createdTable)
 
       // Invalidate and refetch
+      queryClient.invalidateQueries({ queryKey: ['whiteboard-page', whiteboardId] })
       queryClient.invalidateQueries({ queryKey: ['whiteboard', whiteboardId] })
     },
     onError: (err, newTable, context) => {
@@ -262,18 +269,15 @@ function WhiteboardEditor() {
         if (!old) return old
         return {
           ...old,
-          whiteboard: {
-            ...old.whiteboard,
-            tables: old.whiteboard.tables.map((t: any) =>
-              t.id === updatedTable.id
-                ? {
-                    ...t,
-                    positionX: updatedTable.positionX,
-                    positionY: updatedTable.positionY,
-                  }
-                : t,
-            ),
-          },
+          tables: (old.tables ?? []).map((t: any) =>
+            t.id === updatedTable.id
+              ? {
+                  ...t,
+                  positionX: updatedTable.positionX,
+                  positionY: updatedTable.positionY,
+                }
+              : t,
+          ),
         }
       })
     },
@@ -291,6 +295,7 @@ function WhiteboardEditor() {
       emit('relationship:create', createdRelationship)
 
       // Invalidate and refetch
+      queryClient.invalidateQueries({ queryKey: ['whiteboard-page', whiteboardId] })
       queryClient.invalidateQueries({ queryKey: ['whiteboard', whiteboardId] })
     },
     onError: (err) => {
@@ -465,6 +470,20 @@ function WhiteboardEditor() {
   )
 
   /**
+   * Callback for React Flow to register its zoom controls
+   */
+  const handleZoomControlsReady = useCallback((controls: ZoomControls) => {
+    setReactFlowZoomControls(controls)
+  }, [])
+
+  /**
+   * Callback for React Flow to notify parent of viewport zoom changes
+   */
+  const handleZoomChange = useCallback((zoom: number) => {
+    setReactFlowCurrentZoom(zoom)
+  }, [])
+
+  /**
    * Handle display mode change from Toolbar
    */
   const handleShowModeChange = useCallback((mode: string) => {
@@ -494,6 +513,7 @@ function WhiteboardEditor() {
   useEffect(() => {
     const handleTableCreated = (table: any) => {
       console.log('Table created by another user:', table)
+      queryClient.invalidateQueries({ queryKey: ['whiteboard-page', whiteboardId] })
       queryClient.invalidateQueries({ queryKey: ['whiteboard', whiteboardId] })
     }
 
@@ -501,9 +521,12 @@ function WhiteboardEditor() {
       tableId: string
       positionX: number
       positionY: number
+      updatedBy?: string
     }) => {
+      // Ignore own moves — already applied via mutation's setQueryData
+      if (data.updatedBy === userId) return
       console.log('Table moved by another user:', data)
-      queryClient.setQueryData(['whiteboard', whiteboardId], (old: any) => {
+      queryClient.setQueryData(['whiteboard-page', whiteboardId], (old: any) => {
         if (!old) return old
         return {
           ...old,
@@ -517,10 +540,13 @@ function WhiteboardEditor() {
           },
         }
       })
+      // Also invalidate ReactFlowWhiteboard's query
+      queryClient.invalidateQueries({ queryKey: ['whiteboard', whiteboardId] })
     }
 
     const handleRelationshipCreated = (relationship: any) => {
       console.log('Relationship created by another user:', relationship)
+      queryClient.invalidateQueries({ queryKey: ['whiteboard-page', whiteboardId] })
       queryClient.invalidateQueries({ queryKey: ['whiteboard', whiteboardId] })
     }
 
@@ -530,6 +556,7 @@ function WhiteboardEditor() {
     }) => {
       console.log('Text updated by another user:', data.updatedBy)
       setTextSource(data.textSource)
+      queryClient.invalidateQueries({ queryKey: ['whiteboard-page', whiteboardId] })
       queryClient.invalidateQueries({ queryKey: ['whiteboard', whiteboardId] })
     }
 
@@ -642,8 +669,14 @@ function WhiteboardEditor() {
             isAutoLayoutLoading={isAutoLayoutComputing}
             autoLayoutEnabled={autoLayoutEnabled}
             onAutoLayoutEnabledChange={setAutoLayoutEnabled}
-            zoomControls={canvasControls}
-            currentZoom={canvasViewport.zoom}
+            zoomControls={
+              USE_REACT_FLOW
+                ? (reactFlowZoomControls ?? undefined)
+                : canvasControls
+            }
+            currentZoom={
+              USE_REACT_FLOW ? reactFlowCurrentZoom : canvasViewport.zoom
+            }
             showMode={USE_REACT_FLOW ? (reactFlowShowMode as any) : undefined}
             onShowModeChange={USE_REACT_FLOW ? handleShowModeChange : undefined}
           />
@@ -660,6 +693,8 @@ function WhiteboardEditor() {
                 nodesDraggable={true}
                 onAutoLayoutReady={handleAutoLayoutReady}
                 onDisplayModeReady={handleDisplayModeReady}
+                onZoomControlsReady={handleZoomControlsReady}
+                onZoomChange={handleZoomChange}
               />
             ) : (
               /* Konva Canvas (legacy) */

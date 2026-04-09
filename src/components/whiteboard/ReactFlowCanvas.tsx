@@ -1,20 +1,21 @@
-import { useCallback, useEffect, useMemo, useState } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import {
   Background,
   Controls,
-  
   MiniMap,
-  
-  
-  
-  
-  
-  
   ReactFlow,
   useEdgesState,
-  useNodesState
+  useNodesState,
 } from '@xyflow/react'
-import type {FitViewOptions, Node, NodeDragHandler, NodeMouseHandler, OnConnect, OnEdgesChange, OnNodesChange} from '@xyflow/react';
+import type {
+  FitViewOptions,
+  Node,
+  NodeDragHandler,
+  NodeMouseHandler,
+  OnConnect,
+  OnEdgesChange,
+  OnNodesChange,
+} from '@xyflow/react'
 import '@xyflow/react/dist/style.css'
 import '@/styles/react-flow-theme.css'
 
@@ -95,6 +96,18 @@ export function ReactFlowCanvas({
   const [activeTableId, setActiveTableId] = useState<string | null>(null)
   const [hoveredTableId, setHoveredTableId] = useState<string | null>(null)
 
+  // Track drag in progress — ReactFlow fires mouseLeave/mouseEnter when drag
+  // starts/stops, which would trigger unnecessary highlighting recalculations.
+  const isDraggingRef = useRef(false)
+
+  // Keep a ref to the latest edges so the highlighting effect can read current
+  // edges without adding them to its dependency array (which would cause an
+  // infinite loop via setEdges).
+  const edgesRef = useRef(edges)
+  useEffect(() => {
+    edgesRef.current = edges
+  })
+
   // Memoize node and edge types for performance
   const memoizedNodeTypes = useMemo(() => nodeTypes, [])
   const memoizedEdgeTypes = useMemo(() => edgeTypes, [])
@@ -111,28 +124,55 @@ export function ReactFlowCanvas({
       setEdges(initialEdges)
       return
     }
+
+    // Build a set of all column IDs that currently exist across all nodes.
+    // Edges referencing a deleted or stale column will be silently excluded
+    // to prevent the "[React Flow]: Couldn't create edge for source handle id"
+    // warning flood that occurs when handle IDs no longer match any registered handle.
+    const existingColumnIds = new Set<string>()
+    for (const node of initialNodes) {
+      for (const col of node.data.table.columns) {
+        existingColumnIds.add(col.id)
+      }
+    }
+
+    const validEdges = initialEdges.filter((edge) => {
+      const rel = edge.data?.relationship
+      if (!rel) return false
+      return (
+        existingColumnIds.has(rel.sourceColumnId) &&
+        existingColumnIds.has(rel.targetColumnId)
+      )
+    })
+
     const allNodeIds = new Set(initialNodes.map((n) => n.id))
     const recalculated = recalculateEdgesForDraggedNodes(
-      initialEdges,
+      validEdges,
       initialNodes,
       allNodeIds,
     )
     setEdges(recalculated)
   }, [initialEdges, initialNodes, setEdges])
 
-  // Apply highlighting when selection changes
+  // Apply highlighting when selection changes.
+  // Uses the functional updater form of setNodes so we always operate on the
+  // current node list rather than a stale closure snapshot. edgesRef.current
+  // provides the latest edges without adding edges to the dependency array
+  // (which would cause an infinite loop via setEdges).
   useEffect(() => {
-    const highlighted = calculateHighlighting(
-      nodes,
-      edges,
-      activeTableId,
-      hoveredTableId,
-    )
-
-    // Only update if highlighting state actually changed
-    setNodes(highlighted.nodes)
-    setEdges(highlighted.edges)
-  }, [activeTableId, hoveredTableId]) // Don't include nodes/edges to avoid infinite loop
+    setNodes((currentNodes) => {
+      const highlighted = calculateHighlighting(
+        currentNodes,
+        edgesRef.current,
+        activeTableId,
+        hoveredTableId,
+      )
+      if (highlighted.edges !== edgesRef.current) {
+        setEdges(highlighted.edges)
+      }
+      return highlighted.nodes
+    })
+  }, [activeTableId, hoveredTableId, setNodes, setEdges])
 
   // Handle node click (selection)
   const onNodeClick = useCallback<NodeMouseHandler>((event, node) => {
@@ -144,13 +184,15 @@ export function ReactFlowCanvas({
     setActiveTableId(null)
   }, [])
 
-  // Handle node mouse enter (hover)
-  const onNodeMouseEnter = useCallback<NodeMouseHandler>((event, node) => {
+  // Handle node mouse enter (hover) — skip during drag (ReactFlow fires this on drag end)
+  const onNodeMouseEnter = useCallback<NodeMouseHandler>((_event, node) => {
+    if (isDraggingRef.current) return
     setHoveredTableId(node.id)
   }, [])
 
-  // Handle node mouse leave (unhover)
-  const onNodeMouseLeave = useCallback<NodeMouseHandler>((event, node) => {
+  // Handle node mouse leave (unhover) — skip during drag (ReactFlow fires this on drag start)
+  const onNodeMouseLeave = useCallback<NodeMouseHandler>((_event, _node) => {
+    if (isDraggingRef.current) return
     setHoveredTableId(null)
   }, [])
 
@@ -175,6 +217,11 @@ export function ReactFlowCanvas({
     [nodes],
   )
 
+  // Mark drag as started — suppresses hover events that ReactFlow fires on drag begin
+  const onNodeDragStart = useCallback(() => {
+    isDraggingRef.current = true
+  }, [])
+
   // Recalculate edge handles whenever a node is dragged (live feedback).
   // We merge the dragged node's latest position into the nodes array so the
   // calculation is always based on current coordinates.
@@ -182,7 +229,6 @@ export function ReactFlowCanvas({
     (_event, node, draggedNodes) => {
       const draggedIds = new Set(draggedNodes.map((n) => n.id))
       draggedIds.add(node.id)
-
       const currentNodes = mergeCurrentPositions(node, draggedNodes)
       setEdges((prevEdges) =>
         recalculateEdgesForDraggedNodes(prevEdges, currentNodes, draggedIds),
@@ -194,6 +240,11 @@ export function ReactFlowCanvas({
   // Handle node drag stop (position update)
   const onNodeDragStop = useCallback<NodeDragHandler<TableNodeType>>(
     (event, node, draggedNodes) => {
+      isDraggingRef.current = false
+      // Restore hover on the node we just dropped (ReactFlow fires mouseEnter after
+      // dragStop which we suppressed, so manually set it here)
+      setHoveredTableId(node.id)
+
       // Final recalculation with latest positions
       const draggedIds = new Set(draggedNodes.map((n) => n.id))
       draggedIds.add(node.id)
@@ -201,7 +252,6 @@ export function ReactFlowCanvas({
       setEdges((prevEdges) =>
         recalculateEdgesForDraggedNodes(prevEdges, currentNodes, draggedIds),
       )
-
       // Call the prop callback if provided
       onNodeDragStopProp?.(event, node)
     },
@@ -226,9 +276,20 @@ export function ReactFlowCanvas({
     [handleEdgesChange, onEdgesChangeProp],
   )
 
+  // Track whether a connection drag is in progress to reveal target handles
+  const [isConnecting, setIsConnecting] = useState(false)
+
+  const onConnectStart = useCallback(() => {
+    setIsConnecting(true)
+  }, [])
+
+  const onConnectEnd = useCallback(() => {
+    setIsConnecting(false)
+  }, [])
+
   return (
     <div
-      className={`react-flow-wrapper ${className}`}
+      className={`react-flow-wrapper ${isConnecting ? 'is-connecting' : ''} ${className}`}
       style={{ width: '100%', height: '100%' }}
     >
       {/* Global SVG marker definitions for cardinality indicators */}
@@ -240,16 +301,19 @@ export function ReactFlowCanvas({
         onNodesChange={onNodesChange}
         onEdgesChange={onEdgesChange}
         onConnect={onConnect}
+        onConnectStart={onConnectStart}
+        onConnectEnd={onConnectEnd}
         onNodeClick={onNodeClick}
         onPaneClick={onPaneClick}
         onNodeMouseEnter={onNodeMouseEnter}
         onNodeMouseLeave={onNodeMouseLeave}
+        onNodeDragStart={onNodeDragStart}
         onNodeDrag={onNodeDrag}
         onNodeDragStop={onNodeDragStop}
         nodeTypes={memoizedNodeTypes}
         edgeTypes={memoizedEdgeTypes}
         nodesDraggable={nodesDraggable}
-        nodesConnectable={false}
+        nodesConnectable={true}
         elementsSelectable={true}
         fitView
         fitViewOptions={fitViewOptions}
