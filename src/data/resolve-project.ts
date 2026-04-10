@@ -8,7 +8,9 @@ import { prisma } from '@/db'
  * Resolve projectId for a whiteboard by ID.
  * Returns null if the whiteboard does not exist.
  */
-export async function getWhiteboardProjectId(whiteboardId: string): Promise<string | null> {
+export async function getWhiteboardProjectId(
+  whiteboardId: string,
+): Promise<string | null> {
   const wb = await prisma.whiteboard.findUnique({
     where: { id: whiteboardId },
     select: { projectId: true },
@@ -20,7 +22,9 @@ export async function getWhiteboardProjectId(whiteboardId: string): Promise<stri
  * Resolve projectId for a folder by ID.
  * Returns null if the folder does not exist.
  */
-export async function getFolderProjectId(folderId: string): Promise<string | null> {
+export async function getFolderProjectId(
+  folderId: string,
+): Promise<string | null> {
   const folder = await prisma.folder.findUnique({
     where: { id: folderId },
     select: { projectId: true },
@@ -32,7 +36,9 @@ export async function getFolderProjectId(folderId: string): Promise<string | nul
  * Resolve projectId for a table by table ID (via its whiteboard).
  * Returns null if the table does not exist.
  */
-export async function getTableProjectId(tableId: string): Promise<string | null> {
+export async function getTableProjectId(
+  tableId: string,
+): Promise<string | null> {
   const table = await prisma.diagramTable.findUnique({
     where: { id: tableId },
     select: { whiteboard: { select: { projectId: true } } },
@@ -44,10 +50,14 @@ export async function getTableProjectId(tableId: string): Promise<string | null>
  * Resolve projectId for a column by column ID (via its table's whiteboard).
  * Returns null if the column does not exist.
  */
-export async function getColumnProjectId(columnId: string): Promise<string | null> {
+export async function getColumnProjectId(
+  columnId: string,
+): Promise<string | null> {
   const column = await prisma.column.findUnique({
     where: { id: columnId },
-    select: { table: { select: { whiteboard: { select: { projectId: true } } } } },
+    select: {
+      table: { select: { whiteboard: { select: { projectId: true } } } },
+    },
   })
   return column?.table?.whiteboard?.projectId ?? null
 }
@@ -56,7 +66,9 @@ export async function getColumnProjectId(columnId: string): Promise<string | nul
  * Resolve projectId for a relationship by relationship ID (via its whiteboard).
  * Returns null if the relationship does not exist.
  */
-export async function getRelationshipProjectId(relationshipId: string): Promise<string | null> {
+export async function getRelationshipProjectId(
+  relationshipId: string,
+): Promise<string | null> {
   const rel = await prisma.relationship.findUnique({
     where: { id: relationshipId },
     select: { whiteboard: { select: { projectId: true } } },

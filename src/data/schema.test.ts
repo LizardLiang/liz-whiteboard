@@ -5,9 +5,9 @@ import { describe, expect, it } from 'vitest'
 import {
   cardinalitySchema,
   createRelationshipSchema,
-  registerInputSchema,
   loginInputSchema,
   projectRoleSchema,
+  registerInputSchema,
 } from './schema'
 
 describe('cardinalitySchema', () => {
@@ -123,57 +123,101 @@ describe('registerInputSchema', () => {
   // TC-P1-02: boundary and invalid inputs rejected
   describe('TC-P1-02: boundary and invalid inputs', () => {
     it('rejects username with 2 characters', () => {
-      const result = registerInputSchema.safeParse({ username: 'ab', email: 'a@b.com', password: 'pass1234' })
+      const result = registerInputSchema.safeParse({
+        username: 'ab',
+        email: 'a@b.com',
+        password: 'pass1234',
+      })
       expect(result.success).toBe(false)
     })
 
     it('rejects username with 51 characters', () => {
-      const result = registerInputSchema.safeParse({ username: 'a'.repeat(51), email: 'a@b.com', password: 'pass1234' })
+      const result = registerInputSchema.safeParse({
+        username: 'a'.repeat(51),
+        email: 'a@b.com',
+        password: 'pass1234',
+      })
       expect(result.success).toBe(false)
     })
 
     it('rejects username containing a space', () => {
-      const result = registerInputSchema.safeParse({ username: 'alice bob', email: 'a@b.com', password: 'pass1234' })
+      const result = registerInputSchema.safeParse({
+        username: 'alice bob',
+        email: 'a@b.com',
+        password: 'pass1234',
+      })
       expect(result.success).toBe(false)
     })
 
     it('rejects username containing a hyphen', () => {
-      const result = registerInputSchema.safeParse({ username: 'alice-bob', email: 'a@b.com', password: 'pass1234' })
+      const result = registerInputSchema.safeParse({
+        username: 'alice-bob',
+        email: 'a@b.com',
+        password: 'pass1234',
+      })
       expect(result.success).toBe(false)
     })
 
     it('rejects invalid email format', () => {
-      const result = registerInputSchema.safeParse({ username: 'alice', email: 'notanemail', password: 'pass1234' })
+      const result = registerInputSchema.safeParse({
+        username: 'alice',
+        email: 'notanemail',
+        password: 'pass1234',
+      })
       expect(result.success).toBe(false)
     })
 
     it('rejects password of 7 characters', () => {
-      const result = registerInputSchema.safeParse({ username: 'alice', email: 'a@b.com', password: 'short12' })
+      const result = registerInputSchema.safeParse({
+        username: 'alice',
+        email: 'a@b.com',
+        password: 'short12',
+      })
       expect(result.success).toBe(false)
     })
 
     it('rejects password of 129 characters', () => {
-      const result = registerInputSchema.safeParse({ username: 'alice', email: 'a@b.com', password: 'a'.repeat(129) })
+      const result = registerInputSchema.safeParse({
+        username: 'alice',
+        email: 'a@b.com',
+        password: 'a'.repeat(129),
+      })
       expect(result.success).toBe(false)
     })
 
     it('accepts password of exactly 8 characters', () => {
-      const result = registerInputSchema.safeParse({ username: 'alice', email: 'a@b.com', password: 'exactly8' })
+      const result = registerInputSchema.safeParse({
+        username: 'alice',
+        email: 'a@b.com',
+        password: 'exactly8',
+      })
       expect(result.success).toBe(true)
     })
 
     it('accepts password of exactly 128 characters', () => {
-      const result = registerInputSchema.safeParse({ username: 'alice', email: 'a@b.com', password: 'a'.repeat(128) })
+      const result = registerInputSchema.safeParse({
+        username: 'alice',
+        email: 'a@b.com',
+        password: 'a'.repeat(128),
+      })
       expect(result.success).toBe(true)
     })
 
     it('accepts username of exactly 3 characters', () => {
-      const result = registerInputSchema.safeParse({ username: 'abc', email: 'a@b.com', password: 'pass1234' })
+      const result = registerInputSchema.safeParse({
+        username: 'abc',
+        email: 'a@b.com',
+        password: 'pass1234',
+      })
       expect(result.success).toBe(true)
     })
 
     it('accepts username of exactly 50 characters', () => {
-      const result = registerInputSchema.safeParse({ username: 'a'.repeat(50), email: 'a@b.com', password: 'pass1234' })
+      const result = registerInputSchema.safeParse({
+        username: 'a'.repeat(50),
+        email: 'a@b.com',
+        password: 'pass1234',
+      })
       expect(result.success).toBe(true)
     })
   })
@@ -182,7 +226,11 @@ describe('registerInputSchema', () => {
 describe('loginInputSchema', () => {
   // TC-P1-03: valid and invalid inputs
   it('TC-P1-03: accepts valid login input', () => {
-    const result = loginInputSchema.safeParse({ email: 'a@b.com', password: 'x', rememberMe: false })
+    const result = loginInputSchema.safeParse({
+      email: 'a@b.com',
+      password: 'x',
+      rememberMe: false,
+    })
     expect(result.success).toBe(true)
   })
 
@@ -192,12 +240,18 @@ describe('loginInputSchema', () => {
   })
 
   it('TC-P1-03: rejects empty password', () => {
-    const result = loginInputSchema.safeParse({ email: 'a@b.com', password: '' })
+    const result = loginInputSchema.safeParse({
+      email: 'a@b.com',
+      password: '',
+    })
     expect(result.success).toBe(false)
   })
 
   it('TC-P1-03: rememberMe defaults to false when absent', () => {
-    const result = loginInputSchema.safeParse({ email: 'a@b.com', password: 'pass' })
+    const result = loginInputSchema.safeParse({
+      email: 'a@b.com',
+      password: 'pass',
+    })
     expect(result.success).toBe(true)
     if (result.success) {
       expect(result.data.rememberMe).toBe(false)

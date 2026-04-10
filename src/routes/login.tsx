@@ -1,14 +1,14 @@
 // src/routes/login.tsx
 // Login page — public route (no auth required)
 
-import { createFileRoute, Link, useRouter } from '@tanstack/react-router'
+import { Link, createFileRoute, useRouter } from '@tanstack/react-router'
 import { useState } from 'react'
 import { z } from 'zod'
+import { loginUser } from './api/auth'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { Switch } from '@/components/ui/switch'
-import { loginUser } from './api/auth'
 
 const searchSchema = z.object({
   redirect: z.string().optional().default('/'),
@@ -128,7 +128,10 @@ function LoginPage() {
         {/* Register link */}
         <p className="mt-6 text-center text-sm text-muted-foreground">
           Don&apos;t have an account?{' '}
-          <Link to="/register" className="font-medium underline underline-offset-4">
+          <Link
+            to="/register"
+            className="font-medium underline underline-offset-4"
+          >
             Register
           </Link>
         </p>

@@ -32,7 +32,11 @@ export const getFoldersByProject = createServerFn({ method: 'GET' })
     requireAuth(async ({ user }, projectId) => {
       const role = await findEffectiveRole(user.id, projectId)
       if (!hasMinimumRole(role, 'VIEWER')) {
-        return { error: 'FORBIDDEN', status: 403, message: 'Access denied' } as const
+        return {
+          error: 'FORBIDDEN',
+          status: 403,
+          message: 'Access denied',
+        } as const
       }
       try {
         const folders = await findFoldersByProjectId(projectId)
@@ -63,7 +67,11 @@ export const getChildFolders = createServerFn({ method: 'GET' })
       }
       const role = await findEffectiveRole(user.id, projectId)
       if (!hasMinimumRole(role, 'VIEWER')) {
-        return { error: 'FORBIDDEN', status: 403, message: 'Access denied' } as const
+        return {
+          error: 'FORBIDDEN',
+          status: 403,
+          message: 'Access denied',
+        } as const
       }
       try {
         const folders = await findChildFolders(parentFolderId)
@@ -94,7 +102,11 @@ export const getFolder = createServerFn({ method: 'GET' })
       }
       const role = await findEffectiveRole(user.id, projectId)
       if (!hasMinimumRole(role, 'VIEWER')) {
-        return { error: 'FORBIDDEN', status: 403, message: 'Access denied' } as const
+        return {
+          error: 'FORBIDDEN',
+          status: 403,
+          message: 'Access denied',
+        } as const
       }
       try {
         const folder = await findFolderByIdWithWhiteboards(folderId)
@@ -128,7 +140,11 @@ export const getFolderById = createServerFn({ method: 'GET' })
       }
       const role = await findEffectiveRole(user.id, projectId)
       if (!hasMinimumRole(role, 'VIEWER')) {
-        return { error: 'FORBIDDEN', status: 403, message: 'Access denied' } as const
+        return {
+          error: 'FORBIDDEN',
+          status: 403,
+          message: 'Access denied',
+        } as const
       }
       try {
         const folder = await findFolderById(folderId)
@@ -155,7 +171,11 @@ export const createFolderFn = createServerFn({ method: 'POST' })
     requireAuth(async ({ user }, data) => {
       const role = await findEffectiveRole(user.id, data.projectId)
       if (!hasMinimumRole(role, 'EDITOR')) {
-        return { error: 'FORBIDDEN', status: 403, message: 'Access denied' } as const
+        return {
+          error: 'FORBIDDEN',
+          status: 403,
+          message: 'Access denied',
+        } as const
       }
       try {
         const folder = await createFolder(data)
@@ -189,7 +209,11 @@ export const updateFolderFn = createServerFn({ method: 'POST' })
       }
       const role = await findEffectiveRole(user.id, projectId)
       if (!hasMinimumRole(role, 'EDITOR')) {
-        return { error: 'FORBIDDEN', status: 403, message: 'Access denied' } as const
+        return {
+          error: 'FORBIDDEN',
+          status: 403,
+          message: 'Access denied',
+        } as const
       }
       try {
         const folder = await updateFolder(params.id, params.data)
@@ -221,7 +245,11 @@ export const deleteFolderFn = createServerFn({ method: 'POST' })
       }
       const role = await findEffectiveRole(user.id, projectId)
       if (!hasMinimumRole(role, 'EDITOR')) {
-        return { error: 'FORBIDDEN', status: 403, message: 'Access denied' } as const
+        return {
+          error: 'FORBIDDEN',
+          status: 403,
+          message: 'Access denied',
+        } as const
       }
       try {
         const folder = await deleteFolder(folderId)

@@ -3,12 +3,13 @@
 
 import { useState } from 'react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
+import type { ProjectRole } from '@prisma/client'
 import {
   Sheet,
   SheetContent,
+  SheetDescription,
   SheetHeader,
   SheetTitle,
-  SheetDescription,
 } from '@/components/ui/sheet'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
@@ -22,19 +23,17 @@ import {
 } from '@/components/ui/select'
 import { Badge } from '@/components/ui/badge'
 import {
-  listProjectPermissions,
   grantPermission,
-  updatePermission,
+  listProjectPermissions,
   revokePermission,
+  updatePermission,
 } from '@/routes/api/permissions'
-import type { ProjectRole } from '@prisma/client'
 
 interface ProjectSharePanelProps {
   projectId: string
   open: boolean
   onOpenChange: (open: boolean) => void
 }
-
 
 /**
  * ProjectSharePanel renders a slide-out sheet for managing project permissions.
@@ -58,12 +57,16 @@ export function ProjectSharePanel({
   })
 
   const invalidate = () => {
-    queryClient.invalidateQueries({ queryKey: ['project-permissions', projectId] })
+    queryClient.invalidateQueries({
+      queryKey: ['project-permissions', projectId],
+    })
   }
 
   const grantMutation = useMutation({
     mutationFn: (vars: { email: string; role: ProjectRole }) =>
-      grantPermission({ data: { projectId, email: vars.email, role: vars.role } }),
+      grantPermission({
+        data: { projectId, email: vars.email, role: vars.role },
+      }),
     onSuccess: (result) => {
       if (result && 'error' in result) {
         setAddError((result as any).message || 'Failed to add user')

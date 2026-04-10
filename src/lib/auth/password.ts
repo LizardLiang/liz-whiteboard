@@ -1,8 +1,8 @@
 // src/lib/auth/password.ts
 // Password hashing using bcryptjs with SHA-256 pre-hash
 
-import bcrypt from 'bcryptjs'
 import { createHash } from 'node:crypto'
+import bcrypt from 'bcryptjs'
 
 const BCRYPT_ROUNDS = 12
 

@@ -1,12 +1,12 @@
 // src/lib/auth/session.ts
 // Session token generation, validation, and management
 
-import { randomBytes, createHash } from 'node:crypto'
+import { createHash, randomBytes } from 'node:crypto'
 import {
   createAuthSession,
-  findAuthSessionByTokenHash,
   deleteAuthSession,
   deleteExpiredAuthSessions,
+  findAuthSessionByTokenHash,
 } from '@/data/session'
 
 const SESSION_EXPIRY_DEFAULT = 24 * 60 * 60 * 1000 // 24 hours
@@ -59,7 +59,8 @@ export async function createUserSession(
   const token = generateSessionToken()
   const tokenHash = hashToken(token)
   const expiresAt = new Date(
-    Date.now() + (rememberMe ? SESSION_EXPIRY_REMEMBER : SESSION_EXPIRY_DEFAULT),
+    Date.now() +
+      (rememberMe ? SESSION_EXPIRY_REMEMBER : SESSION_EXPIRY_DEFAULT),
   )
 
   const session = await createAuthSession({ tokenHash, userId, expiresAt })

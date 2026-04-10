@@ -2,13 +2,13 @@
 // Application header with branding, theme toggle, and logout
 
 import { Link, useRouter } from '@tanstack/react-router'
-import { Moon, Sun, LogOut } from 'lucide-react'
+import { LogOut, Moon, Sun } from 'lucide-react'
 import { useEffect, useState } from 'react'
+import { useQueryClient } from '@tanstack/react-query'
 import { useTheme } from '../../hooks/use-theme'
 import { Switch } from '@/components/ui/switch'
 import { Button } from '@/components/ui/button'
 import { logoutUser } from '@/routes/api/auth'
-import { useQueryClient } from '@tanstack/react-query'
 
 declare const __APP_VERSION__: string
 

@@ -8,6 +8,11 @@
 
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 
+import { parseSessionCookie } from '@/lib/auth/cookies'
+import { validateSessionToken } from '@/lib/auth/session'
+import { createCollaborationSession } from '@/data/collaboration'
+import { findEffectiveRole } from '@/data/permission'
+
 vi.mock('@/lib/auth/cookies', () => ({
   parseSessionCookie: vi.fn(),
 }))
@@ -30,16 +35,12 @@ vi.mock('@/data/permission', () => ({
   findEffectiveRole: vi.fn(),
 }))
 
-import { parseSessionCookie } from '@/lib/auth/cookies'
-import { validateSessionToken } from '@/lib/auth/session'
-import { createCollaborationSession } from '@/data/collaboration'
-import { findEffectiveRole } from '@/data/permission'
-
 // ─────────────────────────────────────────────────────────────────────────────
 // Fixtures
 // ─────────────────────────────────────────────────────────────────────────────
 
-const SESSION_TOKEN = 'abcdef1234567890abcdef1234567890abcdef1234567890abcdef1234567890'
+const SESSION_TOKEN =
+  'abcdef1234567890abcdef1234567890abcdef1234567890abcdef1234567890'
 const USER_UUID = 'f47ac10b-58cc-4372-a567-0e02b2c3d479'
 const SESSION_ID = 'session-uuid-0000-0000-000000000001'
 const PROJECT_ID = 'project-uuid-000-0000-000000000001'
@@ -58,8 +59,11 @@ const mockAuthResult = {
 // ─────────────────────────────────────────────────────────────────────────────
 
 async function handshakeMiddleware(
-  socket: { handshake: { headers: Record<string, string> }; data: Record<string, any> },
-  next: (err?: Error) => void
+  socket: {
+    handshake: { headers: Record<string, string> }
+    data: Record<string, any>
+  },
+  next: (err?: Error) => void,
 ) {
   try {
     const cookieHeader = socket.handshake.headers.cookie ?? ''
@@ -83,9 +87,11 @@ async function handshakeMiddleware(
 }
 
 // Session expiry check (mirrors collaboration.ts event handler guard)
-function checkSessionExpiry(
-  socket: { data: { sessionExpiresAt: number }; emit: (event: string, data?: any) => void; disconnect: (force: boolean) => void },
-): boolean {
+function checkSessionExpiry(socket: {
+  data: { sessionExpiresAt: number }
+  emit: (event: string, data?: any) => void
+  disconnect: (force: boolean) => void
+}): boolean {
   if (Date.now() > socket.data.sessionExpiresAt) {
     socket.emit('session_expired')
     socket.disconnect(true)
@@ -96,11 +102,20 @@ function checkSessionExpiry(
 
 // Permission check on mutating events
 async function checkMutationPermission(
-  socket: { data: { userId: string }; emit: (event: string, data?: any) => void; disconnect: (force: boolean) => void },
-  projectId: string
+  socket: {
+    data: { userId: string }
+    emit: (event: string, data?: any) => void
+    disconnect: (force: boolean) => void
+  },
+  projectId: string,
 ): Promise<boolean> {
   const role = await findEffectiveRole(socket.data.userId, projectId)
-  const HIERARCHY: Record<string, number> = { VIEWER: 1, EDITOR: 2, ADMIN: 3, OWNER: 4 }
+  const HIERARCHY: Record<string, number> = {
+    VIEWER: 1,
+    EDITOR: 2,
+    ADMIN: 3,
+    OWNER: 4,
+  }
   const roleValue = role ? (HIERARCHY[role] ?? 0) : 0
   if (roleValue < HIERARCHY.EDITOR) {
     socket.emit('permission_revoked', { projectId })
@@ -112,11 +127,13 @@ async function checkMutationPermission(
 
 // ─────────────────────────────────────────────────────────────────────────────
 
-function buildMockSocket(overrides: Partial<{
-  cookieHeader: string
-  sessionExpiresAt: number
-  userId: string
-}> = {}) {
+function buildMockSocket(
+  overrides: Partial<{
+    cookieHeader: string
+    sessionExpiresAt: number
+    userId: string
+  }> = {},
+) {
   const emitSpy = vi.fn()
   const disconnectSpy = vi.fn()
   const nextSpy = vi.fn()
@@ -173,7 +190,9 @@ describe('TC-P5-01: handshake — no session cookie rejected', () => {
     vi.mocked(parseSessionCookie).mockReturnValue('invalid-token')
     vi.mocked(validateSessionToken).mockResolvedValue(null)
 
-    const { socket, nextSpy } = buildMockSocket({ cookieHeader: 'session_token=invalid-token' })
+    const { socket, nextSpy } = buildMockSocket({
+      cookieHeader: 'session_token=invalid-token',
+    })
     await handshakeMiddleware(socket, nextSpy)
 
     expect(nextSpy).toHaveBeenCalledWith(expect.any(Error))
@@ -191,7 +210,9 @@ describe('TC-P5-02: handshake — valid session accepted', () => {
     vi.mocked(parseSessionCookie).mockReturnValue(SESSION_TOKEN)
     vi.mocked(validateSessionToken).mockResolvedValue(mockAuthResult as any)
 
-    const { socket, nextSpy } = buildMockSocket({ cookieHeader: `session_token=${SESSION_TOKEN}` })
+    const { socket, nextSpy } = buildMockSocket({
+      cookieHeader: `session_token=${SESSION_TOKEN}`,
+    })
     await handshakeMiddleware(socket, nextSpy)
 
     expect(nextSpy).toHaveBeenCalledWith() // no args = success
@@ -202,7 +223,9 @@ describe('TC-P5-02: handshake — valid session accepted', () => {
     vi.mocked(parseSessionCookie).mockReturnValue(SESSION_TOKEN)
     vi.mocked(validateSessionToken).mockResolvedValue(mockAuthResult as any)
 
-    const { socket, nextSpy } = buildMockSocket({ cookieHeader: `session_token=${SESSION_TOKEN}` })
+    const { socket, nextSpy } = buildMockSocket({
+      cookieHeader: `session_token=${SESSION_TOKEN}`,
+    })
     await handshakeMiddleware(socket, nextSpy)
 
     expect(socket.data.userId).toBe(USER_UUID)
@@ -212,7 +235,9 @@ describe('TC-P5-02: handshake — valid session accepted', () => {
     vi.mocked(parseSessionCookie).mockReturnValue(SESSION_TOKEN)
     vi.mocked(validateSessionToken).mockResolvedValue(mockAuthResult as any)
 
-    const { socket, nextSpy } = buildMockSocket({ cookieHeader: `session_token=${SESSION_TOKEN}` })
+    const { socket, nextSpy } = buildMockSocket({
+      cookieHeader: `session_token=${SESSION_TOKEN}`,
+    })
     await handshakeMiddleware(socket, nextSpy)
 
     expect(socket.data.sessionId).toBe(SESSION_ID)
@@ -226,7 +251,9 @@ describe('TC-P5-02: handshake — valid session accepted', () => {
       session: { id: SESSION_ID, expiresAt: futureDate },
     } as any)
 
-    const { socket, nextSpy } = buildMockSocket({ cookieHeader: `session_token=${SESSION_TOKEN}` })
+    const { socket, nextSpy } = buildMockSocket({
+      cookieHeader: `session_token=${SESSION_TOKEN}`,
+    })
     await handshakeMiddleware(socket, nextSpy)
 
     expect(socket.data.sessionExpiresAt).toBe(futureDate.getTime())
@@ -299,33 +326,46 @@ describe('Permission check on mutating WebSocket events', () => {
   it('VIEWER emitting mutating event receives permission_revoked and gets disconnected', async () => {
     vi.mocked(findEffectiveRole).mockResolvedValue('VIEWER')
 
-    const { socket, emitSpy, disconnectSpy } = buildMockSocket({ userId: USER_UUID })
+    const { socket, emitSpy, disconnectSpy } = buildMockSocket({
+      userId: USER_UUID,
+    })
     const allowed = await checkMutationPermission(socket, PROJECT_ID)
 
     expect(allowed).toBe(false)
-    expect(emitSpy).toHaveBeenCalledWith('permission_revoked', { projectId: PROJECT_ID })
+    expect(emitSpy).toHaveBeenCalledWith('permission_revoked', {
+      projectId: PROJECT_ID,
+    })
     expect(disconnectSpy).toHaveBeenCalledWith(true)
   })
 
   it('null role emitting mutating event is rejected', async () => {
     vi.mocked(findEffectiveRole).mockResolvedValue(null)
 
-    const { socket, emitSpy, disconnectSpy } = buildMockSocket({ userId: USER_UUID })
+    const { socket, emitSpy, disconnectSpy } = buildMockSocket({
+      userId: USER_UUID,
+    })
     const allowed = await checkMutationPermission(socket, PROJECT_ID)
 
     expect(allowed).toBe(false)
-    expect(emitSpy).toHaveBeenCalledWith('permission_revoked', { projectId: PROJECT_ID })
+    expect(emitSpy).toHaveBeenCalledWith('permission_revoked', {
+      projectId: PROJECT_ID,
+    })
     expect(disconnectSpy).toHaveBeenCalledWith(true)
   })
 
   it('EDITOR emitting mutating event is allowed', async () => {
     vi.mocked(findEffectiveRole).mockResolvedValue('EDITOR')
 
-    const { socket, emitSpy, disconnectSpy } = buildMockSocket({ userId: USER_UUID })
+    const { socket, emitSpy, disconnectSpy } = buildMockSocket({
+      userId: USER_UUID,
+    })
     const allowed = await checkMutationPermission(socket, PROJECT_ID)
 
     expect(allowed).toBe(true)
-    expect(emitSpy).not.toHaveBeenCalledWith('permission_revoked', expect.anything())
+    expect(emitSpy).not.toHaveBeenCalledWith(
+      'permission_revoked',
+      expect.anything(),
+    )
     expect(disconnectSpy).not.toHaveBeenCalled()
   })
 

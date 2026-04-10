@@ -4,6 +4,17 @@
 
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 
+import { prisma } from '@/db'
+import {
+  deleteProjectMember,
+  findEffectiveRole,
+  findProjectMembers,
+  upsertProjectMember,
+} from '@/data/permission'
+import { findUserByEmail } from '@/data/user'
+import { getSessionFromCookie } from '@/lib/auth/cookies'
+import { hasMinimumRole } from '@/lib/auth/permissions'
+
 vi.mock('@tanstack/react-start/server', () => ({
   getRequest: vi.fn(() => new Request('http://localhost/')),
   setResponseHeader: vi.fn(),
@@ -40,17 +51,6 @@ vi.mock('@/lib/auth/cookies', () => ({
   getSessionFromCookie: vi.fn(),
 }))
 
-import { prisma } from '@/db'
-import {
-  findEffectiveRole,
-  findProjectMembers,
-  upsertProjectMember,
-  deleteProjectMember,
-} from '@/data/permission'
-import { findUserByEmail } from '@/data/user'
-import { getSessionFromCookie } from '@/lib/auth/cookies'
-import { hasMinimumRole } from '@/lib/auth/permissions'
-
 // ─────────────────────────────────────────────────────────────────────────────
 // Fixtures
 // ─────────────────────────────────────────────────────────────────────────────
@@ -62,19 +62,38 @@ const EDITOR_ID = 'editor-uuid-000-0000-000000000003'
 const VIEWER_ID = 'viewer-uuid-000-0000-000000000004'
 const TARGET_ID = 'target-uuid-000-0000-000000000005'
 
-const mockOwnerUser = { id: OWNER_ID, username: 'owner', email: 'owner@example.com' }
-const mockAdminUser = { id: ADMIN_ID, username: 'admin', email: 'admin@example.com' }
-const mockTargetUser = { id: TARGET_ID, username: 'target', email: 'target@example.com' }
+const mockOwnerUser = {
+  id: OWNER_ID,
+  username: 'owner',
+  email: 'owner@example.com',
+}
+const mockAdminUser = {
+  id: ADMIN_ID,
+  username: 'admin',
+  email: 'admin@example.com',
+}
+const mockTargetUser = {
+  id: TARGET_ID,
+  username: 'target',
+  email: 'target@example.com',
+}
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Core handler functions that mirror the permission server functions
 // (testing logic without the TanStack Start plumbing)
 // ─────────────────────────────────────────────────────────────────────────────
 
-async function listProjectPermissionsHandler(callerId: string, projectId: string) {
+async function listProjectPermissionsHandler(
+  callerId: string,
+  projectId: string,
+) {
   const role = await findEffectiveRole(callerId, projectId)
   if (!hasMinimumRole(role, 'ADMIN')) {
-    return { error: 'FORBIDDEN' as const, status: 403, message: 'Only ADMIN or OWNER can view permissions' }
+    return {
+      error: 'FORBIDDEN' as const,
+      status: 403,
+      message: 'Only ADMIN or OWNER can view permissions',
+    }
   }
 
   const project = await (prisma.project as any).findUnique({
@@ -96,16 +115,24 @@ async function listProjectPermissionsHandler(callerId: string, projectId: string
 
 async function grantPermissionHandler(
   callerId: string,
-  data: { projectId: string; email: string; role: string }
+  data: { projectId: string; email: string; role: string },
 ) {
   const effectiveRole = await findEffectiveRole(callerId, data.projectId)
   if (!hasMinimumRole(effectiveRole, 'ADMIN')) {
-    return { error: 'FORBIDDEN' as const, status: 403, message: 'Only ADMIN or OWNER can grant permissions' }
+    return {
+      error: 'FORBIDDEN' as const,
+      status: 403,
+      message: 'Only ADMIN or OWNER can grant permissions',
+    }
   }
 
   const targetUser = await findUserByEmail(data.email)
   if (!targetUser) {
-    return { error: 'USER_NOT_FOUND' as const, status: 404, message: 'No user found with that email address' }
+    return {
+      error: 'USER_NOT_FOUND' as const,
+      status: 404,
+      message: 'No user found with that email address',
+    }
   }
 
   const project = await (prisma.project as any).findUnique({
@@ -113,12 +140,20 @@ async function grantPermissionHandler(
     select: { ownerId: true },
   })
   if (project?.ownerId === targetUser.id) {
-    return { error: 'FORBIDDEN' as const, status: 403, message: "Cannot modify the project owner's access" }
+    return {
+      error: 'FORBIDDEN' as const,
+      status: 403,
+      message: "Cannot modify the project owner's access",
+    }
   }
 
   // Only OWNER can grant ADMIN role
   if (data.role === 'ADMIN' && effectiveRole !== 'OWNER') {
-    return { error: 'FORBIDDEN' as const, status: 403, message: 'Only OWNER can grant ADMIN role' }
+    return {
+      error: 'FORBIDDEN' as const,
+      status: 403,
+      message: 'Only OWNER can grant ADMIN role',
+    }
   }
 
   const member = await upsertProjectMember({
@@ -132,11 +167,15 @@ async function grantPermissionHandler(
 
 async function updatePermissionHandler(
   callerId: string,
-  data: { projectId: string; userId: string; role: string }
+  data: { projectId: string; userId: string; role: string },
 ) {
   const effectiveRole = await findEffectiveRole(callerId, data.projectId)
   if (!hasMinimumRole(effectiveRole, 'ADMIN')) {
-    return { error: 'FORBIDDEN' as const, status: 403, message: 'Only ADMIN or OWNER can update permissions' }
+    return {
+      error: 'FORBIDDEN' as const,
+      status: 403,
+      message: 'Only ADMIN or OWNER can update permissions',
+    }
   }
 
   const project = await (prisma.project as any).findUnique({
@@ -144,12 +183,20 @@ async function updatePermissionHandler(
     select: { ownerId: true },
   })
   if (project?.ownerId === data.userId) {
-    return { error: 'FORBIDDEN' as const, status: 403, message: 'Cannot change the project owner\'s role' }
+    return {
+      error: 'FORBIDDEN' as const,
+      status: 403,
+      message: "Cannot change the project owner's role",
+    }
   }
 
   const targetRole = await findEffectiveRole(data.userId, data.projectId)
   if (targetRole === 'ADMIN' && effectiveRole !== 'OWNER') {
-    return { error: 'FORBIDDEN' as const, status: 403, message: "Only the project owner can change an admin's role" }
+    return {
+      error: 'FORBIDDEN' as const,
+      status: 403,
+      message: "Only the project owner can change an admin's role",
+    }
   }
 
   const member = await upsertProjectMember({
@@ -163,11 +210,15 @@ async function updatePermissionHandler(
 
 async function revokePermissionHandler(
   callerId: string,
-  data: { projectId: string; userId: string }
+  data: { projectId: string; userId: string },
 ) {
   const effectiveRole = await findEffectiveRole(callerId, data.projectId)
   if (!hasMinimumRole(effectiveRole, 'ADMIN')) {
-    return { error: 'FORBIDDEN' as const, status: 403, message: 'Only ADMIN or OWNER can revoke permissions' }
+    return {
+      error: 'FORBIDDEN' as const,
+      status: 403,
+      message: 'Only ADMIN or OWNER can revoke permissions',
+    }
   }
 
   const project = await (prisma.project as any).findUnique({
@@ -175,12 +226,20 @@ async function revokePermissionHandler(
     select: { ownerId: true },
   })
   if (project?.ownerId === data.userId) {
-    return { error: 'FORBIDDEN' as const, status: 403, message: "Cannot remove the project owner's access" }
+    return {
+      error: 'FORBIDDEN' as const,
+      status: 403,
+      message: "Cannot remove the project owner's access",
+    }
   }
 
   const targetRole = await findEffectiveRole(data.userId, data.projectId)
   if (targetRole === 'ADMIN' && effectiveRole !== 'OWNER') {
-    return { error: 'FORBIDDEN' as const, status: 403, message: 'Only the project owner can remove an admin' }
+    return {
+      error: 'FORBIDDEN' as const,
+      status: 403,
+      message: 'Only the project owner can remove an admin',
+    }
   }
 
   await deleteProjectMember(data.projectId, data.userId)
@@ -223,7 +282,7 @@ describe('TC-P4-07: grantPermission role enforcement', () => {
 
     expect(result).toMatchObject({ success: true })
     expect(upsertProjectMember).toHaveBeenCalledWith(
-      expect.objectContaining({ role: 'EDITOR' })
+      expect.objectContaining({ role: 'EDITOR' }),
     )
   })
 
@@ -315,8 +374,8 @@ describe('TC-P4-08: updatePermission role constraints', () => {
 
   it('ADMIN cannot demote another ADMIN', async () => {
     vi.mocked(findEffectiveRole)
-      .mockResolvedValueOnce('ADMIN')    // caller's role
-      .mockResolvedValueOnce('ADMIN')    // target's role
+      .mockResolvedValueOnce('ADMIN') // caller's role
+      .mockResolvedValueOnce('ADMIN') // target's role
 
     vi.mocked(prisma.project.findUnique as any).mockResolvedValue({
       id: PROJECT_ID,
@@ -335,8 +394,8 @@ describe('TC-P4-08: updatePermission role constraints', () => {
 
   it('OWNER can demote another ADMIN', async () => {
     vi.mocked(findEffectiveRole)
-      .mockResolvedValueOnce('OWNER')    // caller's role
-      .mockResolvedValueOnce('ADMIN')    // target's role
+      .mockResolvedValueOnce('OWNER') // caller's role
+      .mockResolvedValueOnce('ADMIN') // target's role
 
     vi.mocked(prisma.project.findUnique as any).mockResolvedValue({
       id: PROJECT_ID,
@@ -360,7 +419,7 @@ describe('TC-P4-08: updatePermission role constraints', () => {
 
     expect(result).toMatchObject({ success: true })
     expect(upsertProjectMember).toHaveBeenCalledWith(
-      expect.objectContaining({ role: 'EDITOR' })
+      expect.objectContaining({ role: 'EDITOR' }),
     )
   })
 })
@@ -405,8 +464,8 @@ describe('TC-P4-09: revokePermission — owner protection', () => {
 
   it('ADMIN cannot remove another ADMIN (only OWNER can)', async () => {
     vi.mocked(findEffectiveRole)
-      .mockResolvedValueOnce('ADMIN')    // caller's role
-      .mockResolvedValueOnce('ADMIN')    // target's role
+      .mockResolvedValueOnce('ADMIN') // caller's role
+      .mockResolvedValueOnce('ADMIN') // target's role
 
     vi.mocked(prisma.project.findUnique as any).mockResolvedValue({
       id: PROJECT_ID,
@@ -424,8 +483,8 @@ describe('TC-P4-09: revokePermission — owner protection', () => {
 
   it('OWNER can remove a regular member', async () => {
     vi.mocked(findEffectiveRole)
-      .mockResolvedValueOnce('OWNER')    // caller's role
-      .mockResolvedValueOnce('EDITOR')   // target's role
+      .mockResolvedValueOnce('OWNER') // caller's role
+      .mockResolvedValueOnce('EDITOR') // target's role
 
     vi.mocked(prisma.project.findUnique as any).mockResolvedValue({
       id: PROJECT_ID,
@@ -469,7 +528,10 @@ describe('TC-P4-10: listProjectPermissions role enforcement', () => {
   it('null role (no access) caller gets 403', async () => {
     vi.mocked(findEffectiveRole).mockResolvedValue(null)
 
-    const result = await listProjectPermissionsHandler('random-user', PROJECT_ID)
+    const result = await listProjectPermissionsHandler(
+      'random-user',
+      PROJECT_ID,
+    )
 
     expect(result.error).toBe('FORBIDDEN')
   })
@@ -484,7 +546,11 @@ describe('TC-P4-10: listProjectPermissions role enforcement', () => {
         role: 'EDITOR',
         createdAt: new Date(),
         updatedAt: new Date(),
-        user: { id: EDITOR_ID, username: 'editor', email: 'editor@example.com' },
+        user: {
+          id: EDITOR_ID,
+          username: 'editor',
+          email: 'editor@example.com',
+        },
       },
     ] as any)
 

@@ -1,10 +1,10 @@
 import { defineConfig, isRunnableDevEnvironment } from 'vite'
-import { version } from './package.json'
 import { tanstackStart } from '@tanstack/react-start/plugin/vite'
 import { nitro } from 'nitro/vite'
 import viteReact from '@vitejs/plugin-react'
 import viteTsConfigPaths from 'vite-tsconfig-paths'
 import tailwindcss from '@tailwindcss/vite'
+import { version } from './package.json'
 import type { Plugin } from 'vite'
 
 /**
@@ -52,9 +52,9 @@ function socketIOPlugin(): Plugin {
         try {
           // Import the collaboration module in the SSR context.
           // The path must be absolute so the module runner can resolve it.
-          const collaborationModule = (await serverEnv.runner.import(
+          const collaborationModule = await serverEnv.runner.import(
             '/src/routes/api/collaboration.ts',
-          ))
+          )
 
           collaborationModule.initializeSocketIO(httpServer)
           console.log('[socket-io] Socket.IO attached to dev HTTP server.')

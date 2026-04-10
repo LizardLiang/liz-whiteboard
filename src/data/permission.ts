@@ -51,7 +51,9 @@ export async function upsertProjectMember(data: {
   role: ProjectRole
 }): Promise<ProjectMember> {
   return prisma.projectMember.upsert({
-    where: { projectId_userId: { projectId: data.projectId, userId: data.userId } },
+    where: {
+      projectId_userId: { projectId: data.projectId, userId: data.userId },
+    },
     create: data,
     update: { role: data.role },
   })

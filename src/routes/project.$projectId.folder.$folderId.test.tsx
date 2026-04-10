@@ -58,7 +58,9 @@ function createTestQueryClient() {
 
 function createTestRouter(initialPath: string) {
   const history = createMemoryHistory({ initialEntries: [initialPath] })
-  const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } })
+  const queryClient = new QueryClient({
+    defaultOptions: { queries: { retry: false } },
+  })
   return createRouter({ routeTree, history, context: { queryClient } })
 }
 

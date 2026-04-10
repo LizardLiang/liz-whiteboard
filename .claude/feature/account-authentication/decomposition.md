@@ -1,14 +1,14 @@
 # Decomposition: Account Authentication
 
-| Field | Value |
-|-------|-------|
-| **Feature** | Account Authentication |
-| **Agent** | Daedalus (Decomposition Agent) |
-| **Status** | Complete |
-| **Created** | 2026-04-03 |
-| **PRD Version** | 2 (Nemesis-approved) |
-| **Phases** | 5 |
-| **Total Tasks** | 27 |
+| Field           | Value                          |
+| --------------- | ------------------------------ |
+| **Feature**     | Account Authentication         |
+| **Agent**       | Daedalus (Decomposition Agent) |
+| **Status**      | Complete                       |
+| **Created**     | 2026-04-03                     |
+| **PRD Version** | 2 (Nemesis-approved)           |
+| **Phases**      | 5                              |
+| **Total Tasks** | 27                             |
 
 ---
 
@@ -74,20 +74,20 @@ Phase 5 can begin in parallel with Phase 4 once Phase 3 is complete.
 
 #### Wave 1 — Schema design (no prerequisites)
 
-| # | Task | Target File | Effort | Verify |
-|---|------|-------------|--------|--------|
-| 1.1 | Add User, Session, ProjectPermission, ProjectRole, AccountLockout models to Prisma schema; add ownerId (nullable) to Project; change CollaborationSession.userId to UUID FK | `prisma/schema.prisma` | M | `bunx prisma validate` exits 0 |
-| 1.2 | Add Zod schemas for auth entities: registerInputSchema (username 3-50 chars alphanumeric+undersscores, email, password 8-128 chars), loginInputSchema, projectRoleSchema, createPermissionSchema, updatePermissionSchema | `src/data/schema.ts` | S | `bun run test -- --testPathPattern=schema` passes |
+| #   | Task                                                                                                                                                                                                                     | Target File            | Effort | Verify                                            |
+| --- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ | ---------------------- | ------ | ------------------------------------------------- |
+| 1.1 | Add User, Session, ProjectPermission, ProjectRole, AccountLockout models to Prisma schema; add ownerId (nullable) to Project; change CollaborationSession.userId to UUID FK                                              | `prisma/schema.prisma` | M      | `bunx prisma validate` exits 0                    |
+| 1.2 | Add Zod schemas for auth entities: registerInputSchema (username 3-50 chars alphanumeric+undersscores, email, password 8-128 chars), loginInputSchema, projectRoleSchema, createPermissionSchema, updatePermissionSchema | `src/data/schema.ts`   | S      | `bun run test -- --testPathPattern=schema` passes |
 
 #### Wave 2 — Migration (depends on 1.1)
 
-| # | Task | Target File | Effort | Verify |
-|---|------|-------------|--------|--------|
-| 1.3 | Generate and commit Prisma migration for schema changes | `prisma/migrations/` | S | `bun run db:migrate` succeeds; migration file exists in `prisma/migrations/` |
-| 1.4 | Write data-access functions for User CRUD: `createUser`, `findUserByEmail`, `findUserByUsername`, `findUserById` | `src/data/user.ts` | S | Functions exported; TypeScript compiles with `bunx tsc --noEmit` |
-| 1.5 | Write data-access functions for Session CRUD: `createSession`, `findSessionById`, `deleteSession`, `deleteExpiredSessions` | `src/data/session.ts` | S | Functions exported; TypeScript compiles |
-| 1.6 | Write data-access functions for ProjectPermission: `createPermission`, `findPermissionsByProject`, `findPermissionsByUser`, `upsertPermission`, `deletePermission`, `findEffectiveRole` (returns highest role including owner) | `src/data/permission.ts` | M | Functions exported; TypeScript compiles |
-| 1.7 | Write AccountLockout data-access: `recordFailedAttempt`, `isAccountLocked`, `clearLockout` | `src/data/lockout.ts` | S | Functions exported; TypeScript compiles |
+| #   | Task                                                                                                                                                                                                                           | Target File              | Effort | Verify                                                                       |
+| --- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ | ------------------------ | ------ | ---------------------------------------------------------------------------- |
+| 1.3 | Generate and commit Prisma migration for schema changes                                                                                                                                                                        | `prisma/migrations/`     | S      | `bun run db:migrate` succeeds; migration file exists in `prisma/migrations/` |
+| 1.4 | Write data-access functions for User CRUD: `createUser`, `findUserByEmail`, `findUserByUsername`, `findUserById`                                                                                                               | `src/data/user.ts`       | S      | Functions exported; TypeScript compiles with `bunx tsc --noEmit`             |
+| 1.5 | Write data-access functions for Session CRUD: `createSession`, `findSessionById`, `deleteSession`, `deleteExpiredSessions`                                                                                                     | `src/data/session.ts`    | S      | Functions exported; TypeScript compiles                                      |
+| 1.6 | Write data-access functions for ProjectPermission: `createPermission`, `findPermissionsByProject`, `findPermissionsByUser`, `upsertPermission`, `deletePermission`, `findEffectiveRole` (returns highest role including owner) | `src/data/permission.ts` | M      | Functions exported; TypeScript compiles                                      |
+| 1.7 | Write AccountLockout data-access: `recordFailedAttempt`, `isAccountLocked`, `clearLockout`                                                                                                                                     | `src/data/lockout.ts`    | S      | Functions exported; TypeScript compiles                                      |
 
 ### Technical Notes
 
@@ -136,18 +136,18 @@ Phase 5 can begin in parallel with Phase 4 once Phase 3 is complete.
 
 #### Wave 1 — Core services (no intra-phase dependencies)
 
-| # | Task | Target File | Effort | Verify |
-|---|------|-------------|--------|--------|
-| 2.1 | Install password hashing library (Argon2id: `bun add argon2` or bcrypt: `bun add bcryptjs`); implement `hashPassword(plain: string): Promise<string>` and `verifyPassword(plain: string, hash: string): Promise<boolean>` | `src/lib/auth/password.ts` | S | Unit test: `hashPassword("test12345")` returns a non-plaintext string; `verifyPassword("test12345", hash)` returns true; hash time is 100-600ms measured in test |
-| 2.2 | Implement session token generation: `generateSessionToken(): string` using `crypto.randomBytes(32).toString('hex')` (no secure context needed); implement `createUserSession(userId, rememberMe)` which creates Session record with 24h or 30-day expiry; implement `validateSessionToken(token)` returning `{ user, session } | null` after checking expiry; implement `invalidateSession(sessionId)` | `src/lib/auth/session.ts` | M | Unit test: `createUserSession` writes to DB; `validateSessionToken` returns user for valid token; returns null for expired token; `invalidateSession` deletes session record |
-| 2.3 | Implement `getSessionFromRequest(request: Request): Promise<{ user, session } | null>` — reads cookie named `session_token` from request headers, delegates to `validateSessionToken`; implement `setSessionCookie(response, token, rememberMe)` and `clearSessionCookie(response)` — no `Secure` flag, `HttpOnly: true`, `SameSite: Lax` | `src/lib/auth/cookies.ts` | S | Unit test: parses `Cookie: session_token=<token>` header correctly; returns null for missing cookie |
-| 2.4 | Implement rate limiting: `recordFailedLogin(email)` increments counter; `checkLockout(email)` returns `{ locked: boolean, unlocksAt?: Date }`; automatically clears lockout after 15 minutes (lazy expiry check on read) | `src/lib/auth/rate-limit.ts` | S | Unit test: after 5 calls to `recordFailedLogin` for same email, `checkLockout` returns `locked: true`; after 15+ minutes simulated, `checkLockout` returns `locked: false` |
+| #   | Task                                                                                                                                                                                                                                                                                                                           | Target File                                                                                                                                                                                                                                     | Effort                    | Verify                                                                                                                                                                     |
+| --- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| 2.1 | Install password hashing library (Argon2id: `bun add argon2` or bcrypt: `bun add bcryptjs`); implement `hashPassword(plain: string): Promise<string>` and `verifyPassword(plain: string, hash: string): Promise<boolean>`                                                                                                      | `src/lib/auth/password.ts`                                                                                                                                                                                                                      | S                         | Unit test: `hashPassword("test12345")` returns a non-plaintext string; `verifyPassword("test12345", hash)` returns true; hash time is 100-600ms measured in test           |
+| 2.2 | Implement session token generation: `generateSessionToken(): string` using `crypto.randomBytes(32).toString('hex')` (no secure context needed); implement `createUserSession(userId, rememberMe)` which creates Session record with 24h or 30-day expiry; implement `validateSessionToken(token)` returning `{ user, session } | null`after checking expiry; implement`invalidateSession(sessionId)`                                                                                                                                                                             | `src/lib/auth/session.ts` | M                                                                                                                                                                          | Unit test: `createUserSession` writes to DB; `validateSessionToken` returns user for valid token; returns null for expired token; `invalidateSession` deletes session record |
+| 2.3 | Implement `getSessionFromRequest(request: Request): Promise<{ user, session }                                                                                                                                                                                                                                                  | null>`— reads cookie named`session_token`from request headers, delegates to`validateSessionToken`; implement `setSessionCookie(response, token, rememberMe)`and`clearSessionCookie(response)`— no`Secure`flag,`HttpOnly: true`, `SameSite: Lax` | `src/lib/auth/cookies.ts` | S                                                                                                                                                                          | Unit test: parses `Cookie: session_token=<token>` header correctly; returns null for missing cookie                                                                          |
+| 2.4 | Implement rate limiting: `recordFailedLogin(email)` increments counter; `checkLockout(email)` returns `{ locked: boolean, unlocksAt?: Date }`; automatically clears lockout after 15 minutes (lazy expiry check on read)                                                                                                       | `src/lib/auth/rate-limit.ts`                                                                                                                                                                                                                    | S                         | Unit test: after 5 calls to `recordFailedLogin` for same email, `checkLockout` returns `locked: true`; after 15+ minutes simulated, `checkLockout` returns `locked: false` |
 
 #### Wave 2 — Migration logic (depends on 2.2 for user creation pattern)
 
-| # | Task | Target File | Effort | Verify |
-|---|------|-------------|--------|--------|
-| 2.5 | Implement `migrateDataToFirstUser(userId: string): Promise<void>` — atomic Prisma transaction: sets `ownerId` on all Projects where `ownerId IS NULL` to the given userId; wraps in `prisma.$transaction()`; safe to call multiple times (idempotent after first user) | `src/lib/auth/first-user-migration.ts` | S | Unit test (with test DB or mock): all Projects with null ownerId have ownerId updated; Projects already owned are untouched |
+| #   | Task                                                                                                                                                                                                                                                                   | Target File                            | Effort | Verify                                                                                                                      |
+| --- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | -------------------------------------- | ------ | --------------------------------------------------------------------------------------------------------------------------- |
+| 2.5 | Implement `migrateDataToFirstUser(userId: string): Promise<void>` — atomic Prisma transaction: sets `ownerId` on all Projects where `ownerId IS NULL` to the given userId; wraps in `prisma.$transaction()`; safe to call multiple times (idempotent after first user) | `src/lib/auth/first-user-migration.ts` | S      | Unit test (with test DB or mock): all Projects with null ownerId have ownerId updated; Projects already owned are untouched |
 
 ### Technical Notes
 
@@ -201,31 +201,31 @@ Phase 5 can begin in parallel with Phase 4 once Phase 3 is complete.
 
 #### Wave 1 — Server functions and middleware (no intra-phase dependencies)
 
-| # | Task | Target File | Effort | Verify |
-|---|------|-------------|--------|--------|
-| 3.1 | Implement `requireAuth` middleware factory: `requireAuth<T>(handler: (ctx: { user, session }, input: T) => Promise<R>)` wrapping a `createServerFn` handler; extracts session via `getSessionFromRequest`; returns `{ error: 'UNAUTHORIZED', status: 401 }` if invalid | `src/lib/auth/middleware.ts` | S | Unit test: handler wrapped with `requireAuth` returns 401 for missing/expired session; passes `{ user, session }` to handler for valid session |
-| 3.2 | Implement `registerUser` server function: validate input with registerInputSchema, check lockout (unused for register but good hygiene), call `createUser` + `migrateDataToFirstUser` + `createSession` in transaction, set session cookie; for duplicate email return same "Registration successful. Please log in." response | `src/routes/api/auth.ts` | M | POST with valid data creates user in DB and sets `session_token` cookie; duplicate email returns same 200 response as success; password stored as hash not plaintext |
-| 3.3 | Implement `loginUser` server function: validate input, `checkLockout` (return lockout message if locked), `findUserByEmail`, `verifyPassword` (constant-time — Argon2/bcrypt handles this), `recordFailedLogin` on failure, `clearLockout` on success, `createSession`, set cookie; always return generic "Invalid email or password" on any failure | `src/routes/api/auth.ts` | M | Correct credentials → session cookie set + redirect; wrong password → generic error, no detail; locked account → lockout message |
-| 3.4 | Implement `logoutUser` server function: `invalidateSession`, clear cookie, redirect to /login | `src/routes/api/auth.ts` | S | Calling logoutUser deletes session from DB and response clears cookie |
-| 3.5 | Implement `getCurrentUser` server function: validates session, returns `{ user } | null`; used by `beforeLoad` to check auth state client-side | `src/routes/api/auth.ts` | S | Returns user for valid session; returns null for expired/missing session |
-| 3.6 | Apply `requireAuth` to all existing server functions in `src/routes/api/`: projects.ts, whiteboards.ts, tables.ts, columns.ts, relationships.ts, folders.ts, collaboration.ts | `src/routes/api/*.ts` | M | Each wrapped function returns 401 when called without a valid session cookie (test with curl or in unit tests) |
+| #   | Task                                                                                                                                                                                                                                                                                                                                                 | Target File                                                 | Effort                   | Verify                                                                                                                                                               |
+| --- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ----------------------------------------------------------- | ------------------------ | -------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------ |
+| 3.1 | Implement `requireAuth` middleware factory: `requireAuth<T>(handler: (ctx: { user, session }, input: T) => Promise<R>)` wrapping a `createServerFn` handler; extracts session via `getSessionFromRequest`; returns `{ error: 'UNAUTHORIZED', status: 401 }` if invalid                                                                               | `src/lib/auth/middleware.ts`                                | S                        | Unit test: handler wrapped with `requireAuth` returns 401 for missing/expired session; passes `{ user, session }` to handler for valid session                       |
+| 3.2 | Implement `registerUser` server function: validate input with registerInputSchema, check lockout (unused for register but good hygiene), call `createUser` + `migrateDataToFirstUser` + `createSession` in transaction, set session cookie; for duplicate email return same "Registration successful. Please log in." response                       | `src/routes/api/auth.ts`                                    | M                        | POST with valid data creates user in DB and sets `session_token` cookie; duplicate email returns same 200 response as success; password stored as hash not plaintext |
+| 3.3 | Implement `loginUser` server function: validate input, `checkLockout` (return lockout message if locked), `findUserByEmail`, `verifyPassword` (constant-time — Argon2/bcrypt handles this), `recordFailedLogin` on failure, `clearLockout` on success, `createSession`, set cookie; always return generic "Invalid email or password" on any failure | `src/routes/api/auth.ts`                                    | M                        | Correct credentials → session cookie set + redirect; wrong password → generic error, no detail; locked account → lockout message                                     |
+| 3.4 | Implement `logoutUser` server function: `invalidateSession`, clear cookie, redirect to /login                                                                                                                                                                                                                                                        | `src/routes/api/auth.ts`                                    | S                        | Calling logoutUser deletes session from DB and response clears cookie                                                                                                |
+| 3.5 | Implement `getCurrentUser` server function: validates session, returns `{ user }                                                                                                                                                                                                                                                                     | null`; used by `beforeLoad` to check auth state client-side | `src/routes/api/auth.ts` | S                                                                                                                                                                    | Returns user for valid session; returns null for expired/missing session |
+| 3.6 | Apply `requireAuth` to all existing server functions in `src/routes/api/`: projects.ts, whiteboards.ts, tables.ts, columns.ts, relationships.ts, folders.ts, collaboration.ts                                                                                                                                                                        | `src/routes/api/*.ts`                                       | M                        | Each wrapped function returns 401 when called without a valid session cookie (test with curl or in unit tests)                                                       |
 
 #### Wave 2 — Routes and root protection (depends on 3.1, 3.5)
 
-| # | Task | Target File | Effort | Verify |
-|---|------|-------------|--------|--------|
-| 3.7 | Add `beforeLoad` to root route that calls `getCurrentUser`; redirects to `/login?redirect=<pathname>` if null; skip redirect for /login and /register paths | `src/routes/__root.tsx` | S | Navigating to `/` without session redirects to `/login?redirect=/`; navigating to `/login` without session does not redirect loop |
-| 3.8 | Create `/login` route file and `LoginPage` component: email + password fields, "Remember me" checkbox, submit button with loading/disabled state, "Don't have an account? Register" link, calls `loginUser` server function, redirects to `?redirect` param or `/` on success | `src/routes/login.tsx` | M | Login with correct credentials redirects to app; login with wrong credentials shows "Invalid email or password"; "Remember me" unchecked sets 24h session |
-| 3.9 | Create `/register` route file and `RegisterPage` component: username + email + password fields, loading state, "Already have an account? Log in" link, calls `registerUser` server function, redirects to `/` on success (or shows "Registration successful. Please log in." if duplicate email) | `src/routes/register.tsx` | M | Registration with valid data redirects to app and user is logged in; duplicate email shows success message and redirects to /login |
-| 3.10 | Create `SessionExpiredModal` component: overlays current page on 401 response, "Log in again" button that navigates to `/login?redirect=<currentUrl>`, focus trap, keyboard-dismissible (Escape closes and redirects) | `src/components/auth/SessionExpiredModal.tsx` | M | Modal appears when any TanStack Query mutation or query returns 401; focus is trapped inside modal; pressing Escape or button navigates to /login |
-| 3.11 | Wire 401 handling into TanStack Query's global `onError` callback: intercepts responses with status 401 or `error: 'UNAUTHORIZED'`, triggers SessionExpiredModal display (via React context or Zustand atom) | `src/integrations/tanstack-query/client.ts` or query client setup | S | Any failed query/mutation with 401 causes modal to appear without page reload |
-| 3.12 | Add Logout button to `Header` component: calls `logoutUser`, clears client query cache (`queryClient.clear()`), navigates to /login | `src/components/layout/Header.tsx` | S | Clicking Logout redirects to /login; subsequent navigation to protected routes redirects back to /login |
+| #    | Task                                                                                                                                                                                                                                                                                             | Target File                                                       | Effort | Verify                                                                                                                                                    |
+| ---- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ | ----------------------------------------------------------------- | ------ | --------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| 3.7  | Add `beforeLoad` to root route that calls `getCurrentUser`; redirects to `/login?redirect=<pathname>` if null; skip redirect for /login and /register paths                                                                                                                                      | `src/routes/__root.tsx`                                           | S      | Navigating to `/` without session redirects to `/login?redirect=/`; navigating to `/login` without session does not redirect loop                         |
+| 3.8  | Create `/login` route file and `LoginPage` component: email + password fields, "Remember me" checkbox, submit button with loading/disabled state, "Don't have an account? Register" link, calls `loginUser` server function, redirects to `?redirect` param or `/` on success                    | `src/routes/login.tsx`                                            | M      | Login with correct credentials redirects to app; login with wrong credentials shows "Invalid email or password"; "Remember me" unchecked sets 24h session |
+| 3.9  | Create `/register` route file and `RegisterPage` component: username + email + password fields, loading state, "Already have an account? Log in" link, calls `registerUser` server function, redirects to `/` on success (or shows "Registration successful. Please log in." if duplicate email) | `src/routes/register.tsx`                                         | M      | Registration with valid data redirects to app and user is logged in; duplicate email shows success message and redirects to /login                        |
+| 3.10 | Create `SessionExpiredModal` component: overlays current page on 401 response, "Log in again" button that navigates to `/login?redirect=<currentUrl>`, focus trap, keyboard-dismissible (Escape closes and redirects)                                                                            | `src/components/auth/SessionExpiredModal.tsx`                     | M      | Modal appears when any TanStack Query mutation or query returns 401; focus is trapped inside modal; pressing Escape or button navigates to /login         |
+| 3.11 | Wire 401 handling into TanStack Query's global `onError` callback: intercepts responses with status 401 or `error: 'UNAUTHORIZED'`, triggers SessionExpiredModal display (via React context or Zustand atom)                                                                                     | `src/integrations/tanstack-query/client.ts` or query client setup | S      | Any failed query/mutation with 401 causes modal to appear without page reload                                                                             |
+| 3.12 | Add Logout button to `Header` component: calls `logoutUser`, clears client query cache (`queryClient.clear()`), navigates to /login                                                                                                                                                              | `src/components/layout/Header.tsx`                                | S      | Clicking Logout redirects to /login; subsequent navigation to protected routes redirects back to /login                                                   |
 
 #### Wave 3 — Empty states (depends on 3.8, 3.9)
 
-| # | Task | Target File | Effort | Verify |
-|---|------|-------------|--------|--------|
-| 3.13 | Update project list empty state to use PRD-specified copy: "No projects yet. Create your first project to get started." for first user (total projects = 0); "You don't have any projects yet. Create a new project or ask a teammate to share one with you." for user with no permissions | `src/components/project/EmptyState.tsx` | S | Empty state renders correct message based on project count vs permission count |
+| #    | Task                                                                                                                                                                                                                                                                                       | Target File                             | Effort | Verify                                                                         |
+| ---- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ | --------------------------------------- | ------ | ------------------------------------------------------------------------------ |
+| 3.13 | Update project list empty state to use PRD-specified copy: "No projects yet. Create your first project to get started." for first user (total projects = 0); "You don't have any projects yet. Create a new project or ask a teammate to share one with you." for user with no permissions | `src/components/project/EmptyState.tsx` | S      | Empty state renders correct message based on project count vs permission count |
 
 ### Technical Notes
 
@@ -277,27 +277,27 @@ Phase 5 can begin in parallel with Phase 4 once Phase 3 is complete.
 
 #### Wave 1 — Permission enforcement in data layer (no intra-phase prerequisites)
 
-| # | Task | Target File | Effort | Verify |
-|---|------|-------------|--------|--------|
-| 4.1 | Implement `findEffectiveRole(userId, projectId)`: checks project.ownerId (returns 'OWNER'), then ProjectPermission table (returns role), else returns null | `src/data/permission.ts` | S | Unit test: owner gets OWNER; user with EDITOR permission gets EDITOR; user with no entry gets null |
-| 4.2 | Update `findAllProjectsWithTree` and `findAllProjects` to accept `userId` param and filter to projects where user is owner or has permission entry | `src/data/project.ts` | S | Query only returns projects the specified user can access |
-| 4.3 | Update `findProjectById` to accept `userId` param and return null (or throw 403-typed error) if user has no access | `src/data/project.ts` | S | Non-permitted user cannot retrieve project data |
+| #   | Task                                                                                                                                                       | Target File              | Effort | Verify                                                                                             |
+| --- | ---------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------ | ------ | -------------------------------------------------------------------------------------------------- |
+| 4.1 | Implement `findEffectiveRole(userId, projectId)`: checks project.ownerId (returns 'OWNER'), then ProjectPermission table (returns role), else returns null | `src/data/permission.ts` | S      | Unit test: owner gets OWNER; user with EDITOR permission gets EDITOR; user with no entry gets null |
+| 4.2 | Update `findAllProjectsWithTree` and `findAllProjects` to accept `userId` param and filter to projects where user is owner or has permission entry         | `src/data/project.ts`    | S      | Query only returns projects the specified user can access                                          |
+| 4.3 | Update `findProjectById` to accept `userId` param and return null (or throw 403-typed error) if user has no access                                         | `src/data/project.ts`    | S      | Non-permitted user cannot retrieve project data                                                    |
 
 #### Wave 2 — Server function permission gates (depends on 4.1, 4.2, 4.3)
 
-| # | Task | Target File | Effort | Verify |
-|---|------|-------------|--------|--------|
-| 4.4 | Add permission checks to project server functions: getProjects/getProjectsWithTree (filter by userId), getProjectById (require access), createProject (sets ownerId), deleteProject (require OWNER or ADMIN), updateProject (require OWNER or ADMIN) | `src/routes/api/projects.ts` | M | Non-owner cannot delete project (returns 403); non-member cannot see project in list |
-| 4.5 | Add permission checks to whiteboard server functions: all whiteboard reads require VIEWER+; writes (create/update/delete whiteboard) require EDITOR+ | `src/routes/api/whiteboards.ts` | M | VIEWER role cannot create whiteboard (returns 403); EDITOR can |
-| 4.6 | Add permission checks to table/column/relationship server functions: reads require VIEWER+; writes require EDITOR+ | `src/routes/api/tables.ts`, `src/routes/api/columns.ts`, `src/routes/api/relationships.ts` | M | VIEWER cannot create table; EDITOR can |
-| 4.7 | Implement permission management server functions: `grantPermission(projectId, email, role)`, `updatePermission(projectId, userId, role)`, `revokePermission(projectId, userId)`, `listProjectPermissions(projectId)` — all require effective role ADMIN or OWNER; owner cannot be removed; admin cannot remove owner or other admins (only owner can demote admins) | `src/routes/api/permissions.ts` | M | Admin can add EDITOR; Admin cannot remove owner (returns 403); Owner can demote admin |
+| #   | Task                                                                                                                                                                                                                                                                                                                                                                | Target File                                                                                | Effort | Verify                                                                                |
+| --- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------ | ------ | ------------------------------------------------------------------------------------- |
+| 4.4 | Add permission checks to project server functions: getProjects/getProjectsWithTree (filter by userId), getProjectById (require access), createProject (sets ownerId), deleteProject (require OWNER or ADMIN), updateProject (require OWNER or ADMIN)                                                                                                                | `src/routes/api/projects.ts`                                                               | M      | Non-owner cannot delete project (returns 403); non-member cannot see project in list  |
+| 4.5 | Add permission checks to whiteboard server functions: all whiteboard reads require VIEWER+; writes (create/update/delete whiteboard) require EDITOR+                                                                                                                                                                                                                | `src/routes/api/whiteboards.ts`                                                            | M      | VIEWER role cannot create whiteboard (returns 403); EDITOR can                        |
+| 4.6 | Add permission checks to table/column/relationship server functions: reads require VIEWER+; writes require EDITOR+                                                                                                                                                                                                                                                  | `src/routes/api/tables.ts`, `src/routes/api/columns.ts`, `src/routes/api/relationships.ts` | M      | VIEWER cannot create table; EDITOR can                                                |
+| 4.7 | Implement permission management server functions: `grantPermission(projectId, email, role)`, `updatePermission(projectId, userId, role)`, `revokePermission(projectId, userId)`, `listProjectPermissions(projectId)` — all require effective role ADMIN or OWNER; owner cannot be removed; admin cannot remove owner or other admins (only owner can demote admins) | `src/routes/api/permissions.ts`                                                            | M      | Admin can add EDITOR; Admin cannot remove owner (returns 403); Owner can demote admin |
 
 #### Wave 3 — Permission management UI (depends on 4.7)
 
-| # | Task | Target File | Effort | Verify |
-|---|------|-------------|--------|--------|
-| 4.8 | Build `ProjectSharePanel` component: modal/sheet showing current permissions list (user + role), "Add user" form (email + role selector), role change dropdown, remove button per user; opens from "Share" button on project header | `src/components/project/ProjectSharePanel.tsx` | L | Owner can open Share panel; can add user by email; can change role; can remove non-owner user; panel does not show remove for owner row |
-| 4.9 | Add "Share" button to project header (visible only to OWNER and ADMIN); wire 403 responses in project routes to show "You do not have access to this project." and redirect to project list | `src/components/project/ProjectHeader.tsx` (or equivalent) | S | Share button only visible to OWNER/ADMIN; accessing a non-permitted project URL shows 403 message |
+| #   | Task                                                                                                                                                                                                                                | Target File                                                | Effort | Verify                                                                                                                                  |
+| --- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ---------------------------------------------------------- | ------ | --------------------------------------------------------------------------------------------------------------------------------------- |
+| 4.8 | Build `ProjectSharePanel` component: modal/sheet showing current permissions list (user + role), "Add user" form (email + role selector), role change dropdown, remove button per user; opens from "Share" button on project header | `src/components/project/ProjectSharePanel.tsx`             | L      | Owner can open Share panel; can add user by email; can change role; can remove non-owner user; panel does not show remove for owner row |
+| 4.9 | Add "Share" button to project header (visible only to OWNER and ADMIN); wire 403 responses in project routes to show "You do not have access to this project." and redirect to project list                                         | `src/components/project/ProjectHeader.tsx` (or equivalent) | S      | Share button only visible to OWNER/ADMIN; accessing a non-permitted project URL shows 403 message                                       |
 
 ### Technical Notes
 
@@ -344,19 +344,19 @@ Phase 5 can begin in parallel with Phase 4 once Phase 3 is complete.
 
 #### Wave 1 — Handshake auth (no intra-phase prerequisites)
 
-| # | Task | Target File | Effort | Verify |
-|---|------|-------------|--------|--------|
-| 5.1 | Add Socket.IO handshake middleware: reads `Cookie` header from `socket.handshake.headers`, parses `session_token`, calls `validateSessionToken`; calls `next(new Error('UNAUTHORIZED'))` if invalid; attaches `socket.data.userId` and `socket.data.sessionId` on success | `src/server/socket.ts` or equivalent Socket.IO setup file | M | Connecting without a valid session cookie results in connection refused; connecting with valid cookie establishes connection and socket.data.userId is set |
-| 5.2 | Update all collaboration event handlers to use `socket.data.userId` instead of any placeholder; update `CollaborationSession` record creation to use the real userId FK | `src/server/socket.ts` or collaboration handlers | S | CollaborationSession records in DB have a valid userId FK that references an existing User record |
+| #   | Task                                                                                                                                                                                                                                                                      | Target File                                               | Effort | Verify                                                                                                                                                     |
+| --- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | --------------------------------------------------------- | ------ | ---------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| 5.1 | Add Socket.IO handshake middleware: reads `Cookie` header from `socket.handshake.headers`, parses `session_token`, calls `validateSessionToken`; calls `next(new Error('UNAUTHORIZED'))` if invalid; attaches `socket.data.userId` and `socket.data.sessionId` on success | `src/server/socket.ts` or equivalent Socket.IO setup file | M      | Connecting without a valid session cookie results in connection refused; connecting with valid cookie establishes connection and socket.data.userId is set |
+| 5.2 | Update all collaboration event handlers to use `socket.data.userId` instead of any placeholder; update `CollaborationSession` record creation to use the real userId FK                                                                                                   | `src/server/socket.ts` or collaboration handlers          | S      | CollaborationSession records in DB have a valid userId FK that references an existing User record                                                          |
 
 #### Wave 2 — Session expiry and permission enforcement on active connections (depends on 5.1)
 
-| # | Task | Target File | Effort | Verify |
-|---|------|-------------|--------|--------|
-| 5.3 | Implement session expiry check on active connections: on each incoming event from a client, call `validateSessionToken(socket.data.sessionId)` (or compare against cached expiry); if expired, emit `session_expired` to that socket and call `socket.disconnect(true)` | `src/server/socket.ts` | M | When a session is manually expired in DB, the next event from that socket causes `session_expired` emit and disconnect |
-| 5.4 | Implement permission check on edit events: before processing any mutating event, call `findEffectiveRole(socket.data.userId, projectId)`; if role is null or VIEWER, emit `permission_revoked` with `{ projectId }` and disconnect that socket | `src/server/socket.ts` | S | Revoking a user's permission while they have an active WebSocket causes `permission_revoked` event on next edit event |
-| 5.5 | Client: handle `session_expired` Socket.IO event in `useWhiteboardCollaboration` hook — trigger SessionExpiredModal (reuse Phase 3 component via shared state/context) | `src/hooks/use-whiteboard-collaboration.ts` | S | `session_expired` event from server causes SessionExpiredModal to appear on whiteboard page |
-| 5.6 | Client: handle `permission_revoked` Socket.IO event — show toast "Your access to this project has been removed", redirect to project list after 5 seconds; cancel redirect if user navigates away manually | `src/hooks/use-whiteboard-collaboration.ts` | S | `permission_revoked` event causes toast + timed redirect to project list |
+| #   | Task                                                                                                                                                                                                                                                                    | Target File                                 | Effort | Verify                                                                                                                 |
+| --- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------- | ------ | ---------------------------------------------------------------------------------------------------------------------- |
+| 5.3 | Implement session expiry check on active connections: on each incoming event from a client, call `validateSessionToken(socket.data.sessionId)` (or compare against cached expiry); if expired, emit `session_expired` to that socket and call `socket.disconnect(true)` | `src/server/socket.ts`                      | M      | When a session is manually expired in DB, the next event from that socket causes `session_expired` emit and disconnect |
+| 5.4 | Implement permission check on edit events: before processing any mutating event, call `findEffectiveRole(socket.data.userId, projectId)`; if role is null or VIEWER, emit `permission_revoked` with `{ projectId }` and disconnect that socket                          | `src/server/socket.ts`                      | S      | Revoking a user's permission while they have an active WebSocket causes `permission_revoked` event on next edit event  |
+| 5.5 | Client: handle `session_expired` Socket.IO event in `useWhiteboardCollaboration` hook — trigger SessionExpiredModal (reuse Phase 3 component via shared state/context)                                                                                                  | `src/hooks/use-whiteboard-collaboration.ts` | S      | `session_expired` event from server causes SessionExpiredModal to appear on whiteboard page                            |
+| 5.6 | Client: handle `permission_revoked` Socket.IO event — show toast "Your access to this project has been removed", redirect to project list after 5 seconds; cancel redirect if user navigates away manually                                                              | `src/hooks/use-whiteboard-collaboration.ts` | S      | `permission_revoked` event causes toast + timed redirect to project list                                               |
 
 ### Technical Notes
 
@@ -383,6 +383,7 @@ Phase 5 can begin in parallel with Phase 4 once Phase 3 is complete.
 ### Error Handling
 
 All authentication errors must return structured responses, never raw exceptions:
+
 - `{ error: 'UNAUTHORIZED', status: 401 }` — session missing/expired
 - `{ error: 'FORBIDDEN', status: 403, message: '...' }` — insufficient permission
 - `{ error: 'VALIDATION_ERROR', status: 400, fields: { ... } }` — input validation failure
@@ -399,6 +400,7 @@ Log authentication events at INFO level: user registered (no PII beyond user ID)
 ### LAN HTTP Compatibility
 
 Every token/random ID generated in this feature must work without a secure context:
+
 - Use Node.js `crypto.randomBytes()` (built-in, no secure context requirement)
 - Never use `crypto.randomUUID()`, `window.crypto.getRandomValues()`, or Web Crypto API
 - Cookie `Secure` flag must be absent (not present, not set to false)
@@ -406,6 +408,7 @@ Every token/random ID generated in this feature must work without a secure conte
 ### Testing Approach
 
 Each phase should have unit tests for data-access functions and service functions. Integration tests should cover:
+
 - Full registration flow (new user, duplicate email)
 - Full login flow (success, wrong password, locked account)
 - Session expiry (HTTP and WebSocket)
@@ -415,14 +418,14 @@ Each phase should have unit tests for data-access functions and service function
 
 ## Effort Summary
 
-| Phase | Tasks | Effort Breakdown | Relative Size |
-|-------|-------|-----------------|---------------|
-| Phase 1: Database Layer | 7 | 1L, 4M, 2S | Medium |
-| Phase 2: Auth Core | 5 | 0L, 2M, 3S | Small-Medium |
-| Phase 3: Auth Routes + UI | 13 | 0L, 6M, 5S + 2M | Large |
-| Phase 4: Project Permissions | 9 | 1L, 5M, 3S | Large |
-| Phase 5: WebSocket Auth | 6 | 0L, 2M, 4S | Medium |
-| **Total** | **27** | | |
+| Phase                        | Tasks  | Effort Breakdown | Relative Size |
+| ---------------------------- | ------ | ---------------- | ------------- |
+| Phase 1: Database Layer      | 7      | 1L, 4M, 2S       | Medium        |
+| Phase 2: Auth Core           | 5      | 0L, 2M, 3S       | Small-Medium  |
+| Phase 3: Auth Routes + UI    | 13     | 0L, 6M, 5S + 2M  | Large         |
+| Phase 4: Project Permissions | 9      | 1L, 5M, 3S       | Large         |
+| Phase 5: WebSocket Auth      | 6      | 0L, 2M, 4S       | Medium        |
+| **Total**                    | **27** |                  |               |
 
 Effort key: S = ~2h, M = ~4h, L = ~6-8h
 
@@ -431,13 +434,16 @@ Effort key: S = ~2h, M = ~4h, L = ~6-8h
 ## Implementation Order
 
 **Strict sequence (cannot parallelize):**
+
 1. Phase 1 (database) → Phase 2 (auth core) → Phase 3 (routes + middleware)
 
 **After Phase 3:**
+
 - Phase 4 and Phase 5 can proceed in parallel if two developers are available
 - Phase 4 Wave 1-2 (data layer + server functions) can be done before Phase 4 Wave 3 (UI)
 
 **Recommended single-developer order:**
+
 1. Phase 1 (all waves)
 2. Phase 2 (all waves)
 3. Phase 3 (Wave 1 → Wave 2 → Wave 3)
@@ -448,11 +454,11 @@ Effort key: S = ~2h, M = ~4h, L = ~6-8h
 
 ## Risks
 
-| Risk | Phase | Severity | Mitigation |
-|------|-------|----------|-----------|
-| `CollaborationSession.userId` migration destroys existing session rows | Phase 1 | Medium | Decision: make userId nullable FK initially; existing rows can have userId=null until the next real session is created. Document in migration notes. |
-| Argon2 native addon fails to build on Bun/Linux | Phase 2 | Low | Fallback: bcryptjs (pure JS, no native addon, slower but no build issues) |
-| TanStack Start Nitro/Vinxi Socket.IO integration is undocumented | Phase 5 | High | Hephaestus must research and document the Socket.IO server setup pattern in the tech spec before Phase 5 implementation starts |
-| First-user race condition (two simultaneous registrations) | Phase 2-3 | Medium | Use Prisma interactive transaction with user count check inside the transaction; PostgreSQL serializable isolation or advisory lock if needed |
-| Session cookie not sent over LAN HTTP due to SameSite=Strict | Phase 3 | Medium | Use `SameSite=Lax` (not Strict); verify cookie is sent on navigations from external links on LAN |
-| `crypto.randomUUID()` accidentally used by a dependency | Phase 2-3 | Low | Code review gate: grep for `randomUUID` before PR merge |
+| Risk                                                                   | Phase     | Severity | Mitigation                                                                                                                                           |
+| ---------------------------------------------------------------------- | --------- | -------- | ---------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `CollaborationSession.userId` migration destroys existing session rows | Phase 1   | Medium   | Decision: make userId nullable FK initially; existing rows can have userId=null until the next real session is created. Document in migration notes. |
+| Argon2 native addon fails to build on Bun/Linux                        | Phase 2   | Low      | Fallback: bcryptjs (pure JS, no native addon, slower but no build issues)                                                                            |
+| TanStack Start Nitro/Vinxi Socket.IO integration is undocumented       | Phase 5   | High     | Hephaestus must research and document the Socket.IO server setup pattern in the tech spec before Phase 5 implementation starts                       |
+| First-user race condition (two simultaneous registrations)             | Phase 2-3 | Medium   | Use Prisma interactive transaction with user count check inside the transaction; PostgreSQL serializable isolation or advisory lock if needed        |
+| Session cookie not sent over LAN HTTP due to SameSite=Strict           | Phase 3   | Medium   | Use `SameSite=Lax` (not Strict); verify cookie is sent on navigations from external links on LAN                                                     |
+| `crypto.randomUUID()` accidentally used by a dependency                | Phase 2-3 | Low      | Code review gate: grep for `randomUUID` before PR merge                                                                                              |

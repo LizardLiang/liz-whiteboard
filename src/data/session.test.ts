@@ -3,6 +3,14 @@
 
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 
+import {
+  createAuthSession,
+  deleteAuthSession,
+  deleteExpiredAuthSessions,
+  findAuthSessionByTokenHash,
+} from './session'
+import { prisma } from '@/db'
+
 vi.mock('@/db', () => ({
   prisma: {
     session: {
@@ -13,14 +21,6 @@ vi.mock('@/db', () => ({
     },
   },
 }))
-
-import { prisma } from '@/db'
-import {
-  createAuthSession,
-  findAuthSessionByTokenHash,
-  deleteAuthSession,
-  deleteExpiredAuthSessions,
-} from './session'
 
 const mockSession = {
   id: 'a1b2c3d4-e5f6-7890-abcd-ef1234567890',

@@ -14,12 +14,12 @@
 import { useCallback, useRef } from 'react'
 import { toast } from 'sonner'
 import type { Column } from '@prisma/client'
-import { uuid } from '@/lib/uuid'
 import type {
   RelationshipEdgeType,
   TableNodeType,
 } from '@/lib/react-flow/types'
 import type { DataType, UpdateColumn } from '@/data/schema'
+import { uuid } from '@/lib/uuid'
 
 type SetNodes = React.Dispatch<React.SetStateAction<Array<TableNodeType>>>
 type SetEdges = React.Dispatch<

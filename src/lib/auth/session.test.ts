@@ -1,8 +1,16 @@
 // src/lib/auth/session.test.ts
 // Unit tests for session token generation and validation (TC-P2-04 through TC-P2-08)
 
-import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { createHash } from 'node:crypto'
+import { beforeEach, describe, expect, it, vi } from 'vitest'
+
+import {
+  createUserSession,
+  generateSessionToken,
+  hashToken,
+  validateSessionToken,
+} from './session'
+import { prisma } from '@/db'
 
 vi.mock('@/db', () => ({
   prisma: {
@@ -13,9 +21,6 @@ vi.mock('@/db', () => ({
     },
   },
 }))
-
-import { prisma } from '@/db'
-import { generateSessionToken, hashToken, createUserSession, validateSessionToken } from './session'
 
 const mockUser = {
   id: 'f47ac10b-58cc-4372-a567-0e02b2c3d479',
@@ -47,7 +52,8 @@ describe('session token', () => {
 
     it('is NOT a UUID format (confirms randomBytes not randomUUID)', () => {
       const token = generateSessionToken()
-      const uuidPattern = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/
+      const uuidPattern =
+        /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/
 
       expect(token).not.toMatch(uuidPattern)
     })
@@ -80,7 +86,13 @@ describe('session management', () => {
   // TC-P2-05: createUserSession stores tokenHash not raw token
   describe('TC-P2-05: createUserSession', () => {
     it('stores tokenHash (SHA-256 of raw token) not the raw token', async () => {
-      vi.mocked(prisma.session.create).mockResolvedValue({ id: 'session-id', tokenHash: 'hash', userId: 'user', expiresAt: new Date(), createdAt: new Date() } as any)
+      vi.mocked(prisma.session.create).mockResolvedValue({
+        id: 'session-id',
+        tokenHash: 'hash',
+        userId: 'user',
+        expiresAt: new Date(),
+        createdAt: new Date(),
+      } as any)
 
       const { token } = await createUserSession('user-uuid', false)
 
@@ -103,7 +115,13 @@ describe('session management', () => {
   // TC-P2-07: default expiry is 24 hours
   describe('TC-P2-07: createUserSession default expiry (24h)', () => {
     it('sets expiresAt to approximately 24 hours from now', async () => {
-      vi.mocked(prisma.session.create).mockResolvedValue({ id: 'session-id', tokenHash: 'hash', userId: 'user', expiresAt: new Date(), createdAt: new Date() } as any)
+      vi.mocked(prisma.session.create).mockResolvedValue({
+        id: 'session-id',
+        tokenHash: 'hash',
+        userId: 'user',
+        expiresAt: new Date(),
+        createdAt: new Date(),
+      } as any)
 
       const before = Date.now()
       await createUserSession('user-uuid', false)
@@ -123,7 +141,13 @@ describe('session management', () => {
   // TC-P2-08: rememberMe expiry is 30 days
   describe('TC-P2-08: createUserSession rememberMe expiry (30 days)', () => {
     it('sets expiresAt to approximately 30 days from now when rememberMe=true', async () => {
-      vi.mocked(prisma.session.create).mockResolvedValue({ id: 'session-id', tokenHash: 'hash', userId: 'user', expiresAt: new Date(), createdAt: new Date() } as any)
+      vi.mocked(prisma.session.create).mockResolvedValue({
+        id: 'session-id',
+        tokenHash: 'hash',
+        userId: 'user',
+        expiresAt: new Date(),
+        createdAt: new Date(),
+      } as any)
 
       const before = Date.now()
       await createUserSession('user-uuid', true)
@@ -151,7 +175,9 @@ describe('session management', () => {
         createdAt: new Date(),
         user: mockUser,
       }
-      vi.mocked(prisma.session.findUnique).mockResolvedValue(expiredSession as any)
+      vi.mocked(prisma.session.findUnique).mockResolvedValue(
+        expiredSession as any,
+      )
       vi.mocked(prisma.session.delete).mockResolvedValue(expiredSession as any)
 
       const result = await validateSessionToken('sometoken')
@@ -180,7 +206,9 @@ describe('session management', () => {
         createdAt: new Date(),
         user: mockUser,
       }
-      vi.mocked(prisma.session.findUnique).mockResolvedValue(validSession as any)
+      vi.mocked(prisma.session.findUnique).mockResolvedValue(
+        validSession as any,
+      )
 
       const result = await validateSessionToken('validtoken')
 

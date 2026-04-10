@@ -4,6 +4,27 @@
 
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 
+import { getRequest, setResponseHeader } from '@tanstack/react-start/server'
+import { prisma } from '@/db'
+import { findUserByEmail } from '@/data/user'
+import { deleteAuthSession } from '@/data/session'
+import { hashPassword, verifyPassword } from '@/lib/auth/password'
+import {
+  createUserSession,
+  hashToken,
+  validateSessionToken,
+} from '@/lib/auth/session'
+import {
+  buildClearCookieHeader,
+  buildSetCookieHeader,
+  parseSessionCookie,
+} from '@/lib/auth/cookies'
+import {
+  checkLockout,
+  clearLockout,
+  recordFailedLogin,
+} from '@/lib/auth/rate-limit'
+
 // Mock TanStack Start server context — must come before module imports
 vi.mock('@tanstack/react-start/server', () => ({
   getRequest: vi.fn(() => new Request('http://localhost/')),
@@ -65,19 +86,6 @@ vi.mock('@/lib/auth/rate-limit', () => ({
   clearLockout: vi.fn(),
 }))
 
-import { prisma } from '@/db'
-import { findUserByEmail } from '@/data/user'
-import { deleteAuthSession } from '@/data/session'
-import { hashPassword, verifyPassword } from '@/lib/auth/password'
-import { createUserSession, validateSessionToken, hashToken } from '@/lib/auth/session'
-import {
-  parseSessionCookie,
-  buildSetCookieHeader,
-  buildClearCookieHeader,
-} from '@/lib/auth/cookies'
-import { checkLockout, recordFailedLogin, clearLockout } from '@/lib/auth/rate-limit'
-import { setResponseHeader, getRequest } from '@tanstack/react-start/server'
-
 // User fixture
 const USER_UUID = 'f47ac10b-58cc-4372-a567-0e02b2c3d479'
 const mockUser = {
@@ -91,8 +99,10 @@ const mockUser = {
   updatedAt: new Date(),
 }
 
-const SESSION_TOKEN = 'abcdef1234567890abcdef1234567890abcdef1234567890abcdef1234567890'
-const SESSION_TOKEN_HASH = 'hash_of_token_64chars_aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa'
+const SESSION_TOKEN =
+  'abcdef1234567890abcdef1234567890abcdef1234567890abcdef1234567890'
+const SESSION_TOKEN_HASH =
+  'hash_of_token_64chars_aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa'
 const MOCK_SESSION = {
   id: 'session-uuid-1234',
   tokenHash: SESSION_TOKEN_HASH,
@@ -109,7 +119,11 @@ const MOCK_SESSION = {
 // ─────────────────────────────────────────────────────────────────────────────
 
 // Core registerUser handler logic (mirrors auth.ts without createServerFn plumbing)
-async function registerUserHandler(data: { username: string; email: string; password: string }) {
+async function registerUserHandler(data: {
+  username: string
+  email: string
+  password: string
+}) {
   const existingUser = await findUserByEmail(data.email)
   if (existingUser) {
     return {
@@ -127,7 +141,10 @@ async function registerUserHandler(data: { username: string; email: string; pass
       data: { username: data.username, email: data.email, passwordHash },
     })
     if (userCount === 0) {
-      await tx.project.updateMany({ where: { ownerId: null }, data: { ownerId: newUser.id } })
+      await tx.project.updateMany({
+        where: { ownerId: null },
+        data: { ownerId: newUser.id },
+      })
     }
     return newUser
   })
@@ -139,10 +156,18 @@ async function registerUserHandler(data: { username: string; email: string; pass
 }
 
 // Core loginUser handler logic
-async function loginUserHandler(data: { email: string; password: string; rememberMe: boolean }) {
+async function loginUserHandler(data: {
+  email: string
+  password: string
+  rememberMe: boolean
+}) {
   const user = await findUserByEmail(data.email)
   if (!user) {
-    return { success: false, error: 'AUTH_FAILED', message: 'Invalid email or password' }
+    return {
+      success: false,
+      error: 'AUTH_FAILED',
+      message: 'Invalid email or password',
+    }
   }
 
   const lockout = await checkLockout(data.email)
@@ -158,12 +183,19 @@ async function loginUserHandler(data: { email: string; password: string; remembe
   const valid = await verifyPassword(data.password, user.passwordHash)
   if (!valid) {
     await recordFailedLogin(data.email)
-    return { success: false, error: 'AUTH_FAILED', message: 'Invalid email or password' }
+    return {
+      success: false,
+      error: 'AUTH_FAILED',
+      message: 'Invalid email or password',
+    }
   }
 
   await clearLockout(user.id)
   const { token } = await createUserSession(user.id, data.rememberMe)
-  ;(setResponseHeader as any)('Set-Cookie', buildSetCookieHeader(token, data.rememberMe))
+  ;(setResponseHeader as any)(
+    'Set-Cookie',
+    buildSetCookieHeader(token, data.rememberMe),
+  )
 
   return { success: true, redirect: '/' }
 }
@@ -194,10 +226,10 @@ async function logoutUserHandler() {
 beforeEach(() => {
   vi.clearAllMocks()
   vi.mocked(buildSetCookieHeader).mockReturnValue(
-    'session_token=tok; HttpOnly; SameSite=Lax; Path=/; Max-Age=86400'
+    'session_token=tok; HttpOnly; SameSite=Lax; Path=/; Max-Age=86400',
   )
   vi.mocked(buildClearCookieHeader).mockReturnValue(
-    'session_token=; HttpOnly; SameSite=Lax; Path=/; Max-Age=0'
+    'session_token=; HttpOnly; SameSite=Lax; Path=/; Max-Age=0',
   )
 })
 
@@ -210,19 +242,24 @@ describe('registerUser', () => {
   it('TC-P3-03: creates user and session for a new email', async () => {
     vi.mocked(findUserByEmail).mockResolvedValue(null)
     vi.mocked(hashPassword).mockResolvedValue('$2b$12$hashedpassword...')
-    vi.mocked(createUserSession).mockResolvedValue({ token: SESSION_TOKEN, session: MOCK_SESSION as any })
+    vi.mocked(createUserSession).mockResolvedValue({
+      token: SESSION_TOKEN,
+      session: MOCK_SESSION as any,
+    })
 
     // Mock the transaction to call its callback
-    vi.mocked(prisma.$transaction as any).mockImplementation(async (fn: any) => {
-      const tx = {
-        user: {
-          count: vi.fn().mockResolvedValue(1), // Not first user
-          create: vi.fn().mockResolvedValue(mockUser),
-        },
-        project: { updateMany: vi.fn() },
-      }
-      return fn(tx)
-    })
+    vi.mocked(prisma.$transaction as any).mockImplementation(
+      async (fn: any) => {
+        const tx = {
+          user: {
+            count: vi.fn().mockResolvedValue(1), // Not first user
+            create: vi.fn().mockResolvedValue(mockUser),
+          },
+          project: { updateMany: vi.fn() },
+        }
+        return fn(tx)
+      },
+    )
 
     const result = await registerUserHandler({
       username: 'alice',
@@ -234,29 +271,37 @@ describe('registerUser', () => {
     expect(result.newUser).toBe(true)
     expect(result.redirect).toBe('/')
     expect(createUserSession).toHaveBeenCalled()
-    expect(setResponseHeader).toHaveBeenCalledWith('Set-Cookie', expect.stringContaining('session_token'))
+    expect(setResponseHeader).toHaveBeenCalledWith(
+      'Set-Cookie',
+      expect.stringContaining('session_token'),
+    )
   })
 
   // TC-P3-04: password is stored as hash, never plaintext
   it('TC-P3-04: password stored as bcrypt hash, never plaintext', async () => {
     vi.mocked(findUserByEmail).mockResolvedValue(null)
     vi.mocked(hashPassword).mockResolvedValue('$2b$12$KIX6vMPfNY1DF...')
-    vi.mocked(createUserSession).mockResolvedValue({ token: SESSION_TOKEN, session: MOCK_SESSION as any })
+    vi.mocked(createUserSession).mockResolvedValue({
+      token: SESSION_TOKEN,
+      session: MOCK_SESSION as any,
+    })
 
     let capturedCreateData: any = null
-    vi.mocked(prisma.$transaction as any).mockImplementation(async (fn: any) => {
-      const tx = {
-        user: {
-          count: vi.fn().mockResolvedValue(1),
-          create: vi.fn().mockImplementation(({ data }: { data: any }) => {
-            capturedCreateData = data
-            return Promise.resolve(mockUser)
-          }),
-        },
-        project: { updateMany: vi.fn() },
-      }
-      return fn(tx)
-    })
+    vi.mocked(prisma.$transaction as any).mockImplementation(
+      async (fn: any) => {
+        const tx = {
+          user: {
+            count: vi.fn().mockResolvedValue(1),
+            create: vi.fn().mockImplementation(({ data }: { data: any }) => {
+              capturedCreateData = data
+              return Promise.resolve(mockUser)
+            }),
+          },
+          project: { updateMany: vi.fn() },
+        }
+        return fn(tx)
+      },
+    )
 
     await registerUserHandler({
       username: 'alice',
@@ -295,17 +340,22 @@ describe('registerUser', () => {
     // New user response
     vi.mocked(findUserByEmail).mockResolvedValue(null)
     vi.mocked(hashPassword).mockResolvedValue('$2b$12$hashedpassword...')
-    vi.mocked(createUserSession).mockResolvedValue({ token: SESSION_TOKEN, session: MOCK_SESSION as any })
-    vi.mocked(prisma.$transaction as any).mockImplementation(async (fn: any) => {
-      const tx = {
-        user: {
-          count: vi.fn().mockResolvedValue(1),
-          create: vi.fn().mockResolvedValue(mockUser),
-        },
-        project: { updateMany: vi.fn() },
-      }
-      return fn(tx)
+    vi.mocked(createUserSession).mockResolvedValue({
+      token: SESSION_TOKEN,
+      session: MOCK_SESSION as any,
     })
+    vi.mocked(prisma.$transaction as any).mockImplementation(
+      async (fn: any) => {
+        const tx = {
+          user: {
+            count: vi.fn().mockResolvedValue(1),
+            create: vi.fn().mockResolvedValue(mockUser),
+          },
+          project: { updateMany: vi.fn() },
+        }
+        return fn(tx)
+      },
+    )
 
     const newUserResult = await registerUserHandler({
       username: 'alice',
@@ -334,24 +384,29 @@ describe('registerUser', () => {
   it('TC-P3-03b: first registered user triggers ownerless project migration', async () => {
     vi.mocked(findUserByEmail).mockResolvedValue(null)
     vi.mocked(hashPassword).mockResolvedValue('$2b$12$hashedpassword...')
-    vi.mocked(createUserSession).mockResolvedValue({ token: SESSION_TOKEN, session: MOCK_SESSION as any })
+    vi.mocked(createUserSession).mockResolvedValue({
+      token: SESSION_TOKEN,
+      session: MOCK_SESSION as any,
+    })
 
     let updateManyCalled = false
-    vi.mocked(prisma.$transaction as any).mockImplementation(async (fn: any) => {
-      const tx = {
-        user: {
-          count: vi.fn().mockResolvedValue(0), // First user
-          create: vi.fn().mockResolvedValue(mockUser),
-        },
-        project: {
-          updateMany: vi.fn().mockImplementation(() => {
-            updateManyCalled = true
-            return Promise.resolve({ count: 2 })
-          }),
-        },
-      }
-      return fn(tx)
-    })
+    vi.mocked(prisma.$transaction as any).mockImplementation(
+      async (fn: any) => {
+        const tx = {
+          user: {
+            count: vi.fn().mockResolvedValue(0), // First user
+            create: vi.fn().mockResolvedValue(mockUser),
+          },
+          project: {
+            updateMany: vi.fn().mockImplementation(() => {
+              updateManyCalled = true
+              return Promise.resolve({ count: 2 })
+            }),
+          },
+        }
+        return fn(tx)
+      },
+    )
 
     await registerUserHandler({
       username: 'alice',
@@ -374,9 +429,12 @@ describe('loginUser', () => {
     vi.mocked(checkLockout).mockResolvedValue({ locked: false })
     vi.mocked(verifyPassword).mockResolvedValue(true)
     vi.mocked(clearLockout).mockResolvedValue()
-    vi.mocked(createUserSession).mockResolvedValue({ token: SESSION_TOKEN, session: MOCK_SESSION as any })
+    vi.mocked(createUserSession).mockResolvedValue({
+      token: SESSION_TOKEN,
+      session: MOCK_SESSION as any,
+    })
     vi.mocked(buildSetCookieHeader).mockReturnValue(
-      'session_token=tok; HttpOnly; SameSite=Lax; Path=/; Max-Age=86400'
+      'session_token=tok; HttpOnly; SameSite=Lax; Path=/; Max-Age=86400',
     )
 
     const result = await loginUserHandler({
@@ -391,9 +449,10 @@ describe('loginUser', () => {
     expect(clearLockout).toHaveBeenCalledWith(USER_UUID)
     expect(setResponseHeader).toHaveBeenCalledWith(
       'Set-Cookie',
-      expect.stringContaining('HttpOnly')
+      expect.stringContaining('HttpOnly'),
     )
-    const cookieValue = vi.mocked(buildSetCookieHeader).mock.results[0]?.value ?? ''
+    const cookieValue =
+      vi.mocked(buildSetCookieHeader).mock.results[0]?.value ?? ''
     expect(cookieValue).toContain('SameSite=Lax')
     expect(cookieValue).not.toContain('Secure')
   })
@@ -470,13 +529,16 @@ describe('logoutUser', () => {
     })
     vi.mocked(deleteAuthSession).mockResolvedValue()
     vi.mocked(buildClearCookieHeader).mockReturnValue(
-      'session_token=; HttpOnly; SameSite=Lax; Path=/; Max-Age=0'
+      'session_token=; HttpOnly; SameSite=Lax; Path=/; Max-Age=0',
     )
 
     const result = await logoutUserHandler()
 
     expect(deleteAuthSession).toHaveBeenCalledWith(MOCK_SESSION.id)
-    expect(setResponseHeader).toHaveBeenCalledWith('Set-Cookie', expect.stringContaining('Max-Age=0'))
+    expect(setResponseHeader).toHaveBeenCalledWith(
+      'Set-Cookie',
+      expect.stringContaining('Max-Age=0'),
+    )
     expect(result.redirect).toBe('/login')
   })
 
@@ -509,7 +571,10 @@ describe('logoutUser', () => {
     const result = await logoutUserHandler()
 
     expect(deleteAuthSession).not.toHaveBeenCalled()
-    expect(setResponseHeader).toHaveBeenCalledWith('Set-Cookie', expect.stringContaining('Max-Age=0'))
+    expect(setResponseHeader).toHaveBeenCalledWith(
+      'Set-Cookie',
+      expect.stringContaining('Max-Age=0'),
+    )
     expect(result.redirect).toBe('/login')
   })
 })
@@ -528,7 +593,9 @@ describe('TC-P3-23: requireAuth wrapper returns 401 for all auth-protected funct
     vi.mocked(getSessionFromCookie).mockResolvedValue(null)
 
     // Temporarily override getRequest to return a request with no cookie
-    vi.mocked(getRequest as any).mockReturnValue(new Request('http://localhost/'))
+    vi.mocked(getRequest as any).mockReturnValue(
+      new Request('http://localhost/'),
+    )
 
     const handler = vi.fn().mockResolvedValue({ projects: [] })
     const wrapped = requireAuth(handler)
