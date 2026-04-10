@@ -5,6 +5,13 @@
 
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 
+import {
+  createWhiteboard,
+  findWhiteboardByIdWithDiagram,
+} from '@/data/whiteboard'
+import { findEffectiveRole } from '@/data/permission'
+import { hasMinimumRole } from '@/lib/auth/permissions'
+
 vi.mock('@tanstack/react-start/server', () => ({
   getRequest: vi.fn(() => new Request('http://localhost/')),
   setResponseHeader: vi.fn(),
@@ -41,10 +48,6 @@ vi.mock('@/lib/auth/permissions', () => ({
   hasMinimumRole: vi.fn(),
 }))
 
-import { findWhiteboardByIdWithDiagram, createWhiteboard } from '@/data/whiteboard'
-import { findEffectiveRole } from '@/data/permission'
-import { hasMinimumRole } from '@/lib/auth/permissions'
-
 // ─────────────────────────────────────────────────────────────────────────────
 // Fixtures
 // ─────────────────────────────────────────────────────────────────────────────
@@ -76,7 +79,11 @@ async function getWhiteboardHandler(userId: string, whiteboardId: string) {
   const role = await findEffectiveRole(userId, (whiteboard as any).projectId)
   const permitted = hasMinimumRole(role, 'VIEWER')
   if (!permitted) {
-    return { error: 'FORBIDDEN' as const, status: 403, message: 'You do not have access to this whiteboard.' }
+    return {
+      error: 'FORBIDDEN' as const,
+      status: 403,
+      message: 'You do not have access to this whiteboard.',
+    }
   }
 
   return whiteboard
@@ -84,13 +91,17 @@ async function getWhiteboardHandler(userId: string, whiteboardId: string) {
 
 async function createWhiteboardHandler(
   userId: string,
-  data: { name: string; projectId: string; folderId?: string }
+  data: { name: string; projectId: string; folderId?: string },
 ) {
   // Whiteboard creation requires EDITOR or above on the project
   const role = await findEffectiveRole(userId, data.projectId)
   const permitted = hasMinimumRole(role, 'EDITOR')
   if (!permitted) {
-    return { error: 'FORBIDDEN' as const, status: 403, message: 'Only EDITOR or above can create whiteboards.' }
+    return {
+      error: 'FORBIDDEN' as const,
+      status: 403,
+      message: 'Only EDITOR or above can create whiteboards.',
+    }
   }
 
   const whiteboard = await createWhiteboard(data)
@@ -103,11 +114,18 @@ beforeEach(() => {
   vi.clearAllMocks()
   // Default: hasMinimumRole delegates to real role hierarchy
   vi.mocked(hasMinimumRole).mockImplementation((role, required) => {
-    const HIERARCHY: Record<string, number> = { VIEWER: 1, EDITOR: 2, ADMIN: 3, OWNER: 4 }
+    const HIERARCHY: Record<string, number> = {
+      VIEWER: 1,
+      EDITOR: 2,
+      ADMIN: 3,
+      OWNER: 4,
+    }
     if (!role) return false
     return (HIERARCHY[role] ?? 0) >= (HIERARCHY[required] ?? 0)
   })
-  vi.mocked(findWhiteboardByIdWithDiagram).mockResolvedValue(mockWhiteboard as any)
+  vi.mocked(findWhiteboardByIdWithDiagram).mockResolvedValue(
+    mockWhiteboard as any,
+  )
 })
 
 // ─────────────────────────────────────────────────────────────────────────────

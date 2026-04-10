@@ -219,7 +219,9 @@ export const ColumnRow = memo(
                         ? 'var(--rf-column-edit-bg, rgba(99,102,241,0.12))'
                         : 'transparent',
                       transition: 'background 0.1s, color 0.1s, opacity 0.1s',
-                      textDecorationLine: isHoveringDataType ? 'underline' : 'none',
+                      textDecorationLine: isHoveringDataType
+                        ? 'underline'
+                        : 'none',
                       textDecorationStyle: 'dotted',
                     }}
                     onDoubleClick={handleDataTypeDoubleClick}

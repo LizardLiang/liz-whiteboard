@@ -120,7 +120,10 @@ export function calculateHighlighting(
       ? Z_INDEX.EDGE_HIGHLIGHTED
       : Z_INDEX.EDGE_DEFAULT
 
-    if (edge.data?.isHighlighted === isHighlighted && edge.zIndex === newZIndex) {
+    if (
+      edge.data?.isHighlighted === isHighlighted &&
+      edge.zIndex === newZIndex
+    ) {
       return edge
     }
 

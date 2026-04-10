@@ -5,7 +5,7 @@
 // TC-P3-25: Accessibility — labels and aria-live regions
 
 import { beforeEach, describe, expect, it, vi } from 'vitest'
-import { render, screen, fireEvent, waitFor } from '@testing-library/react'
+import { fireEvent, render, screen, waitFor } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import React, { useState } from 'react'
 import { registerInputSchema } from '@/data/schema'
@@ -16,7 +16,11 @@ import { registerInputSchema } from '@/data/schema'
 // ─────────────────────────────────────────────────────────────────────────────
 
 interface RegisterPageProps {
-  onRegister: (data: { username: string; email: string; password: string }) => Promise<{
+  onRegister: (data: {
+    username: string
+    email: string
+    password: string
+  }) => Promise<{
     success?: boolean
     newUser?: boolean
     message?: string
@@ -56,7 +60,9 @@ function RegisterPage({ onRegister, onNavigate }: RegisterPageProps) {
       if (response?.newUser) {
         onNavigate(response.redirect || '/')
       } else {
-        setSuccessMessage(response?.message || 'Registration successful. Please log in.')
+        setSuccessMessage(
+          response?.message || 'Registration successful. Please log in.',
+        )
       }
     } catch {
       setErrors({ form: 'Something went wrong. Please try again.' })
@@ -70,7 +76,12 @@ function RegisterPage({ onRegister, onNavigate }: RegisterPageProps) {
   }
 
   return (
-    <form onSubmit={handleSubmit} aria-busy={isSubmitting} noValidate data-testid="register-form">
+    <form
+      onSubmit={handleSubmit}
+      aria-busy={isSubmitting}
+      noValidate
+      data-testid="register-form"
+    >
       {errors.form && (
         <div role="alert" aria-live="polite" data-testid="form-error">
           {errors.form}
@@ -146,10 +157,14 @@ function RegisterPage({ onRegister, onNavigate }: RegisterPageProps) {
 // ─────────────────────────────────────────────────────────────────────────────
 
 function renderRegisterPage(
-  onRegister: RegisterPageProps['onRegister'] = vi.fn().mockResolvedValue({ newUser: true, redirect: '/' }),
-  onNavigate: RegisterPageProps['onNavigate'] = vi.fn()
+  onRegister: RegisterPageProps['onRegister'] = vi
+    .fn()
+    .mockResolvedValue({ newUser: true, redirect: '/' }),
+  onNavigate: RegisterPageProps['onNavigate'] = vi.fn(),
 ) {
-  return render(<RegisterPage onRegister={onRegister} onNavigate={onNavigate} />)
+  return render(
+    <RegisterPage onRegister={onRegister} onNavigate={onNavigate} />,
+  )
 }
 
 beforeEach(() => {
@@ -218,7 +233,9 @@ describe('TC-P3-14: RegisterPage loading state', () => {
   it('disables submit button while submitting', async () => {
     let resolveFn!: (value: any) => void
     const mockRegister = vi.fn().mockReturnValue(
-      new Promise((resolve) => { resolveFn = resolve })
+      new Promise((resolve) => {
+        resolveFn = resolve
+      }),
     )
 
     const user = userEvent.setup()
@@ -232,7 +249,9 @@ describe('TC-P3-14: RegisterPage loading state', () => {
     fireEvent.click(btn)
 
     await waitFor(() => {
-      expect((screen.getByTestId('submit-btn') as HTMLButtonElement).disabled).toBe(true)
+      expect(
+        (screen.getByTestId('submit-btn')).disabled,
+      ).toBe(true)
     })
 
     resolveFn({ success: true, newUser: true, redirect: '/' })
@@ -241,7 +260,9 @@ describe('TC-P3-14: RegisterPage loading state', () => {
   it('shows loading text on submit button while submitting', async () => {
     let resolveFn!: (value: any) => void
     const mockRegister = vi.fn().mockReturnValue(
-      new Promise((resolve) => { resolveFn = resolve })
+      new Promise((resolve) => {
+        resolveFn = resolve
+      }),
     )
 
     const user = userEvent.setup()
@@ -263,7 +284,9 @@ describe('TC-P3-14: RegisterPage loading state', () => {
   it('form has aria-busy attribute while submitting', async () => {
     let resolveFn!: (value: any) => void
     const mockRegister = vi.fn().mockReturnValue(
-      new Promise((resolve) => { resolveFn = resolve })
+      new Promise((resolve) => {
+        resolveFn = resolve
+      }),
     )
 
     const user = userEvent.setup()

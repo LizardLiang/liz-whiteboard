@@ -4,10 +4,10 @@
 import { useCallback, useEffect, useRef } from 'react'
 import { useRouter } from '@tanstack/react-router'
 import { toast } from 'sonner'
-import { useAuthContext } from '@/components/auth/AuthContext'
 import { useCollaboration } from './use-collaboration'
 import type { TableErrorEvent } from './use-table-mutations'
 import type { RelationshipErrorEvent } from './use-relationship-mutations'
+import { useAuthContext } from '@/components/auth/AuthContext'
 
 /**
  * Position update event data from WebSocket

@@ -13,7 +13,9 @@ export type ForbiddenResponse = {
   message: string
 }
 
-export function isUnauthorizedError(value: unknown): value is AuthErrorResponse {
+export function isUnauthorizedError(
+  value: unknown,
+): value is AuthErrorResponse {
   return (
     typeof value === 'object' &&
     value !== null &&

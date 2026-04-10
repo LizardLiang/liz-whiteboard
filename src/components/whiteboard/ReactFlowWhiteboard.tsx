@@ -12,10 +12,24 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { ReactFlowProvider, useReactFlow, useViewport } from '@xyflow/react'
-import type { Connection } from '@xyflow/react'
 import { ReactFlowCanvas } from './ReactFlowCanvas'
 import { ConnectionStatusIndicator } from './ConnectionStatusIndicator'
 import { DeleteTableDialog } from './DeleteTableDialog'
+import type { Connection } from '@xyflow/react'
+import type { ZoomControls } from './Toolbar'
+import type {
+  RelationshipEdgeType,
+  ShowMode,
+  TableNodeType,
+} from '@/lib/react-flow/types'
+import type { Cardinality, Column  } from '@prisma/client'
+import type { CreateColumnPayload } from './column/types'
+import type { UpdateColumn } from '@/data/schema'
+import type { TableRelationship } from './DeleteTableDialog'
+import type {RelationshipErrorEvent} from '@/hooks/use-relationship-mutations';
+import { Button } from '@/components/ui/button'
+import { Input } from '@/components/ui/input'
+import { Label } from '@/components/ui/label'
 import {
   Dialog,
   DialogContent,
@@ -30,20 +44,6 @@ import {
   SelectTrigger,
   SelectValue,
 } from '@/components/ui/select'
-import { Button } from '@/components/ui/button'
-import { Input } from '@/components/ui/input'
-import { Label } from '@/components/ui/label'
-import type { ZoomControls } from './Toolbar'
-import type {
-  RelationshipEdgeType,
-  ShowMode,
-  TableNodeType,
-} from '@/lib/react-flow/types'
-import type { Cardinality } from '@prisma/client'
-import type { Column } from '@prisma/client'
-import type { CreateColumnPayload } from './column/types'
-import type { UpdateColumn } from '@/data/schema'
-import type { TableRelationship } from './DeleteTableDialog'
 import { parseColumnHandleId } from '@/lib/react-flow/edge-routing'
 import { convertTablesToNodes } from '@/lib/react-flow/convert-to-nodes'
 import { convertRelationshipsToEdges } from '@/lib/react-flow/convert-to-edges'
@@ -60,8 +60,8 @@ import { useColumnCollaboration } from '@/hooks/use-column-collaboration'
 import { useColumnMutations } from '@/hooks/use-column-mutations'
 import { useTableMutations } from '@/hooks/use-table-mutations'
 import {
-  useRelationshipMutations,
-  type RelationshipErrorEvent,
+  
+  useRelationshipMutations
 } from '@/hooks/use-relationship-mutations'
 import { useTableDeletion } from '@/hooks/use-table-deletion'
 import { getSessionUserId } from '@/lib/session-user-id'
@@ -89,11 +89,20 @@ const CARDINALITY_OPTIONS: Array<{ value: Cardinality; label: string }> = [
   { value: 'ZERO_OR_MANY_TO_ONE', label: 'Zero or Many to One (0..N:1)' },
   { value: 'ZERO_OR_MANY_TO_MANY', label: 'Zero or Many to Many (0..N:N)' },
   { value: 'ZERO_OR_ONE_TO_ZERO_OR_ONE', label: 'Zero or One to Zero or One' },
-  { value: 'ZERO_OR_ONE_TO_ZERO_OR_MANY', label: 'Zero or One to Zero or Many' },
+  {
+    value: 'ZERO_OR_ONE_TO_ZERO_OR_MANY',
+    label: 'Zero or One to Zero or Many',
+  },
   { value: 'MANY_TO_ZERO_OR_ONE', label: 'Many to Zero or One (N:0..1)' },
   { value: 'MANY_TO_ZERO_OR_MANY', label: 'Many to Zero or Many (N:0..N)' },
-  { value: 'ZERO_OR_MANY_TO_ZERO_OR_ONE', label: 'Zero or Many to Zero or One' },
-  { value: 'ZERO_OR_MANY_TO_ZERO_OR_MANY', label: 'Zero or Many to Zero or Many' },
+  {
+    value: 'ZERO_OR_MANY_TO_ZERO_OR_ONE',
+    label: 'Zero or Many to Zero or One',
+  },
+  {
+    value: 'ZERO_OR_MANY_TO_ZERO_OR_MANY',
+    label: 'Zero or Many to Zero or Many',
+  },
 ]
 
 /**
@@ -170,7 +179,8 @@ function ReactFlowWhiteboardInner({
   // Recomputes only when tables are added, removed, or renamed — not on
   // every position/highlight change — so TableNode memo isn't broken.
   const tableNameById = useMemo(
-    () => new Map(initialNodes.map((n) => [n.data.table.id, n.data.table.name])),
+    () =>
+      new Map(initialNodes.map((n) => [n.data.table.id, n.data.table.name])),
     [initialNodes],
   )
 
@@ -302,7 +312,9 @@ function ReactFlowWhiteboardInner({
 
   // When edges change, update the edges prop in all node data (for delete confirmation)
   useEffect(() => {
-    console.log(`[WHITEBOARD] edges-to-nodes effect fired — ${edges.length} edges → updating all ${nodes.length} nodes' data.edges prop`)
+    console.log(
+      `[WHITEBOARD] edges-to-nodes effect fired — ${edges.length} edges → updating all ${nodes.length} nodes' data.edges prop`,
+    )
     console.trace('[WHITEBOARD] edges-to-nodes stack trace')
     setNodes((prevNodes) =>
       prevNodes.map((node) => ({
@@ -313,7 +325,7 @@ function ReactFlowWhiteboardInner({
         },
       })),
     )
-  // eslint-disable-next-line react-hooks/exhaustive-deps
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [edges])
 
   // Callback for when a remote user deletes a table
@@ -358,30 +370,35 @@ function ReactFlowWhiteboardInner({
   )
 
   // Real-time collaboration integration (table position events + table deletion + relationship deletion/update)
-  const { connectionState, emitPositionUpdate, emitTableDelete, emitRelationshipDelete, emitRelationshipUpdate } =
-    useWhiteboardCollaboration(
-      whiteboardId,
-      userId,
-      useCallback((tableId: string, positionX: number, positionY: number) => {
-        // Update local React Flow nodes when other users move tables
-        setNodes((prevNodes) =>
-          prevNodes.map((node) =>
-            node.id === tableId
-              ? { ...node, position: { x: positionX, y: positionY } }
-              : node,
-          ),
-        )
-      }, []),
-      onTableDeleted,
-      useCallback((data: any) => {
-        onTableErrorRef.current(data)
-      }, []),
-      onRelationshipDeleted,
-      useCallback((data: RelationshipErrorEvent) => {
-        onRelationshipErrorRef.current(data)
-      }, []),
-      onRelationshipUpdated,
-    )
+  const {
+    connectionState,
+    emitPositionUpdate,
+    emitTableDelete,
+    emitRelationshipDelete,
+    emitRelationshipUpdate,
+  } = useWhiteboardCollaboration(
+    whiteboardId,
+    userId,
+    useCallback((tableId: string, positionX: number, positionY: number) => {
+      // Update local React Flow nodes when other users move tables
+      setNodes((prevNodes) =>
+        prevNodes.map((node) =>
+          node.id === tableId
+            ? { ...node, position: { x: positionX, y: positionY } }
+            : node,
+        ),
+      )
+    }, []),
+    onTableDeleted,
+    useCallback((data: any) => {
+      onTableErrorRef.current(data)
+    }, []),
+    onRelationshipDeleted,
+    useCallback((data: RelationshipErrorEvent) => {
+      onRelationshipErrorRef.current(data)
+    }, []),
+    onRelationshipUpdated,
+  )
 
   // Column collaboration callbacks (incoming events from other users)
   const onColumnCreated = useCallback(
@@ -593,7 +610,8 @@ function ReactFlowWhiteboardInner({
     relationshipMutations.deleteRelationship,
   )
   useEffect(() => {
-    handleRelationshipDeleteRef.current = relationshipMutations.deleteRelationship
+    handleRelationshipDeleteRef.current =
+      relationshipMutations.deleteRelationship
   }, [relationshipMutations.deleteRelationship])
 
   // Stable ref for the updateRelationshipLabel callback — prevents stale closures in edge data
@@ -601,7 +619,8 @@ function ReactFlowWhiteboardInner({
     relationshipMutations.updateRelationshipLabel,
   )
   useEffect(() => {
-    handleRelationshipLabelUpdateRef.current = relationshipMutations.updateRelationshipLabel
+    handleRelationshipLabelUpdateRef.current =
+      relationshipMutations.updateRelationshipLabel
   }, [relationshipMutations.updateRelationshipLabel])
 
   // Inject onDelete and onLabelUpdate callbacks into edge data whenever isConnected changes
@@ -682,7 +701,9 @@ function ReactFlowWhiteboardInner({
       return await createRelationshipFn({ data })
     },
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ['relationships', whiteboardId] })
+      queryClient.invalidateQueries({
+        queryKey: ['relationships', whiteboardId],
+      })
       queryClient.invalidateQueries({ queryKey: ['whiteboard', whiteboardId] })
     },
     onError: (err) => {
@@ -728,7 +749,13 @@ function ReactFlowWhiteboardInner({
 
     setPendingConnection(null)
     setPendingLabel('')
-  }, [pendingConnection, selectedCardinality, pendingLabel, whiteboardId, createRelationshipMutation])
+  }, [
+    pendingConnection,
+    selectedCardinality,
+    pendingLabel,
+    whiteboardId,
+    createRelationshipMutation,
+  ])
 
   // Cancel pending connection
   const handleCardinalityCancel = useCallback(() => {

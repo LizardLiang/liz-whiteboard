@@ -5,18 +5,18 @@ import { createServerFn } from '@tanstack/react-start'
 import { requireAuth } from '@/lib/auth/middleware'
 import { hasMinimumRole } from '@/lib/auth/permissions'
 import {
-  findEffectiveRole,
   createProjectMember,
+  deleteProjectMember,
+  findEffectiveRole,
   findProjectMembers,
   upsertProjectMember,
-  deleteProjectMember,
 } from '@/data/permission'
 import { findUserByEmail } from '@/data/user'
 import { prisma } from '@/db'
 import {
   grantPermissionSchema,
-  updatePermissionSchema,
   revokePermissionSchema,
+  updatePermissionSchema,
 } from '@/data/schema'
 
 /**
@@ -97,7 +97,7 @@ export const grantPermission = createServerFn({ method: 'POST' })
         return {
           error: 'FORBIDDEN' as const,
           status: 403,
-          message: 'Cannot modify the project owner\'s access',
+          message: "Cannot modify the project owner's access",
         }
       }
 
@@ -135,7 +135,7 @@ export const updatePermission = createServerFn({ method: 'POST' })
         return {
           error: 'FORBIDDEN' as const,
           status: 403,
-          message: 'Only the project owner can change an admin\'s role',
+          message: "Only the project owner can change an admin's role",
         }
       }
 
@@ -177,7 +177,7 @@ export const revokePermission = createServerFn({ method: 'POST' })
         return {
           error: 'FORBIDDEN' as const,
           status: 403,
-          message: 'Cannot remove the project owner\'s access',
+          message: "Cannot remove the project owner's access",
         }
       }
 

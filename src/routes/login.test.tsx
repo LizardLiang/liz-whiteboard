@@ -6,7 +6,7 @@
 // TC-P3-25: Accessibility — labels and aria-live regions
 
 import { beforeEach, describe, expect, it, vi } from 'vitest'
-import { render, screen, fireEvent, waitFor } from '@testing-library/react'
+import { fireEvent, render, screen, waitFor } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import React, { useState } from 'react'
 
@@ -16,7 +16,11 @@ import React, { useState } from 'react'
 // ─────────────────────────────────────────────────────────────────────────────
 
 interface LoginPageProps {
-  onSubmit: (data: { email: string; password: string; rememberMe: boolean }) => Promise<{
+  onSubmit: (data: {
+    email: string
+    password: string
+    rememberMe: boolean
+  }) => Promise<{
     success?: boolean
     message?: string
     redirect?: string
@@ -50,13 +54,14 @@ function LoginPage({ onSubmit, onNavigate }: LoginPageProps) {
   }
 
   return (
-    <form onSubmit={handleSubmit} aria-busy={isSubmitting} noValidate data-testid="login-form">
+    <form
+      onSubmit={handleSubmit}
+      aria-busy={isSubmitting}
+      noValidate
+      data-testid="login-form"
+    >
       {error && (
-        <div
-          role="alert"
-          aria-live="polite"
-          data-testid="error-message"
-        >
+        <div role="alert" aria-live="polite" data-testid="error-message">
           {error}
         </div>
       )}
@@ -107,8 +112,10 @@ function LoginPage({ onSubmit, onNavigate }: LoginPageProps) {
 // ─────────────────────────────────────────────────────────────────────────────
 
 function renderLoginPage(
-  onSubmit: LoginPageProps['onSubmit'] = vi.fn().mockResolvedValue({ success: true, redirect: '/' }),
-  onNavigate: LoginPageProps['onNavigate'] = vi.fn()
+  onSubmit: LoginPageProps['onSubmit'] = vi
+    .fn()
+    .mockResolvedValue({ success: true, redirect: '/' }),
+  onNavigate: LoginPageProps['onNavigate'] = vi.fn(),
 ) {
   return render(<LoginPage onSubmit={onSubmit} onNavigate={onNavigate} />)
 }
@@ -170,7 +177,9 @@ describe('TC-P3-15: LoginPage render', () => {
 describe('TC-P3-16: redirect param on successful login', () => {
   it('navigates to redirect URL on success', async () => {
     const mockNavigate = vi.fn()
-    const mockSubmit = vi.fn().mockResolvedValue({ success: true, redirect: '/project/abc' })
+    const mockSubmit = vi
+      .fn()
+      .mockResolvedValue({ success: true, redirect: '/project/abc' })
 
     const user = userEvent.setup()
     renderLoginPage(mockSubmit, mockNavigate)
@@ -186,7 +195,9 @@ describe('TC-P3-16: redirect param on successful login', () => {
 
   it('navigates to / when redirect is not specified', async () => {
     const mockNavigate = vi.fn()
-    const mockSubmit = vi.fn().mockResolvedValue({ success: true, redirect: '/' })
+    const mockSubmit = vi
+      .fn()
+      .mockResolvedValue({ success: true, redirect: '/' })
 
     const user = userEvent.setup()
     renderLoginPage(mockSubmit, mockNavigate)
@@ -269,7 +280,9 @@ describe('TC-P3-17: LoginPage error message', () => {
   it('submit button is disabled while submitting', async () => {
     let resolveFn!: (value: any) => void
     const mockSubmit = vi.fn().mockReturnValue(
-      new Promise((resolve) => { resolveFn = resolve })
+      new Promise((resolve) => {
+        resolveFn = resolve
+      }),
     )
 
     const user = userEvent.setup()
@@ -280,7 +293,9 @@ describe('TC-P3-17: LoginPage error message', () => {
     fireEvent.click(screen.getByTestId('submit-btn'))
 
     await waitFor(() => {
-      expect((screen.getByTestId('submit-btn') as HTMLButtonElement).disabled).toBe(true)
+      expect(
+        (screen.getByTestId('submit-btn')).disabled,
+      ).toBe(true)
     })
 
     resolveFn({ success: true, redirect: '/' })
@@ -311,7 +326,9 @@ describe('TC-P3-25: LoginPage accessibility', () => {
   it('form has aria-busy attribute during submission', async () => {
     let resolveFn!: (value: any) => void
     const mockSubmit = vi.fn().mockReturnValue(
-      new Promise((resolve) => { resolveFn = resolve })
+      new Promise((resolve) => {
+        resolveFn = resolve
+      }),
     )
 
     const user = userEvent.setup()

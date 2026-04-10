@@ -32,7 +32,9 @@ export function EmptyState({
     <div className="flex flex-col items-center justify-center py-20">
       <FolderOpen className="h-24 w-24 text-muted-foreground mb-4" />
       <h2 className="text-2xl font-semibold mb-2">{title}</h2>
-      <p className="text-muted-foreground mb-6 text-center max-w-md">{message}</p>
+      <p className="text-muted-foreground mb-6 text-center max-w-md">
+        {message}
+      </p>
       {variant !== 'no-permissions' && (
         <Button size="lg" onClick={onCreateWhiteboard}>
           Create your first whiteboard

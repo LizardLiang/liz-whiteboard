@@ -3,6 +3,13 @@
 
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 
+import { getSessionFromCookie } from './cookies'
+import {
+  isForbiddenError,
+  isUnauthorizedError,
+  requireAuth,
+} from './middleware'
+
 // Mock the TanStack Start server request context
 vi.mock('@tanstack/react-start/server', () => ({
   getRequest: vi.fn(() => new Request('http://localhost/')),
@@ -12,9 +19,6 @@ vi.mock('@tanstack/react-start/server', () => ({
 vi.mock('./cookies', () => ({
   getSessionFromCookie: vi.fn(),
 }))
-
-import { getSessionFromCookie } from './cookies'
-import { requireAuth, isUnauthorizedError, isForbiddenError } from './middleware'
 
 const mockUser = {
   id: 'f47ac10b-58cc-4372-a567-0e02b2c3d479',
@@ -55,7 +59,7 @@ describe('requireAuth', () => {
       session: mockSession as any,
     })
 
-    const capturedCtx: any[] = []
+    const capturedCtx: Array<any> = []
     const innerHandler = vi.fn().mockImplementation(async (ctx: any) => {
       capturedCtx.push(ctx)
       return { success: true }
@@ -75,7 +79,9 @@ describe('requireAuth', () => {
 
 describe('isUnauthorizedError', () => {
   it('returns true for { error: "UNAUTHORIZED", status: 401 }', () => {
-    expect(isUnauthorizedError({ error: 'UNAUTHORIZED', status: 401 })).toBe(true)
+    expect(isUnauthorizedError({ error: 'UNAUTHORIZED', status: 401 })).toBe(
+      true,
+    )
   })
 
   it('returns false for normal result objects', () => {
@@ -93,7 +99,13 @@ describe('isUnauthorizedError', () => {
 
 describe('isForbiddenError', () => {
   it('returns true for { error: "FORBIDDEN", status: 403 }', () => {
-    expect(isForbiddenError({ error: 'FORBIDDEN', status: 403, message: 'No access' })).toBe(true)
+    expect(
+      isForbiddenError({
+        error: 'FORBIDDEN',
+        status: 403,
+        message: 'No access',
+      }),
+    ).toBe(true)
   })
 
   it('returns false for unauthorized errors', () => {

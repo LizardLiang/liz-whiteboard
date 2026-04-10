@@ -8,12 +8,17 @@
  *
  * Usage: bun run server.prod.ts
  */
-import { createServer, type IncomingMessage, type ServerResponse } from 'node:http'
-import { join, extname } from 'node:path'
-import { stat, readFile } from 'node:fs/promises'
+import {
+  
+  
+  createServer
+} from 'node:http'
+import { extname, join } from 'node:path'
+import { readFile, stat } from 'node:fs/promises'
 // @ts-expect-error — Nitro build output has no type declarations
 import { middleware } from './.output/server/index.mjs'
 import { initializeSocketIO } from './src/routes/api/collaboration'
+import type {IncomingMessage, ServerResponse} from 'node:http';
 
 const port = Number(process.env.PORT) || 3000
 const host = process.env.HOST || '0.0.0.0'
@@ -40,7 +45,10 @@ const MIME_TYPES: Record<string, string> = {
   '.webmanifest': 'application/manifest+json',
 }
 
-async function serveStatic(req: IncomingMessage, res: ServerResponse): Promise<boolean> {
+async function serveStatic(
+  req: IncomingMessage,
+  res: ServerResponse,
+): Promise<boolean> {
   const url = new URL(req.url || '/', `http://${req.headers.host}`)
   const pathname = decodeURIComponent(url.pathname)
 

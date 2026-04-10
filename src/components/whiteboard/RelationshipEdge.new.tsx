@@ -1,7 +1,7 @@
 import { memo, useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { EdgeLabelRenderer, Position, getSmoothStepPath } from '@xyflow/react'
-import type { EdgeProps } from '@xyflow/react'
 import { X } from 'lucide-react'
+import type { EdgeProps } from '@xyflow/react'
 import type { RelationshipEdgeData } from '@/lib/react-flow/types'
 import { Z_INDEX } from '@/lib/react-flow/types'
 
@@ -526,9 +526,10 @@ export const RelationshipEdge = memo(
                   fontSize: '11px',
                   fontWeight: 500,
                   letterSpacing: '0.02em',
-                  color: isActive || isEditing
-                    ? 'var(--rf-edge-stroke-selected)'
-                    : 'var(--rf-table-text)',
+                  color:
+                    isActive || isEditing
+                      ? 'var(--rf-edge-stroke-selected)'
+                      : 'var(--rf-table-text)',
                   transition: 'border-color 0.2s, box-shadow 0.2s, color 0.2s',
                 }}
               >
@@ -539,8 +540,14 @@ export const RelationshipEdge = memo(
                     onChange={(e) => setEditValue(e.target.value.slice(0, 255))}
                     onBlur={commitLabel}
                     onKeyDown={(e) => {
-                      if (e.key === 'Enter') { e.preventDefault(); commitLabel() }
-                      if (e.key === 'Escape') { e.preventDefault(); cancelEdit() }
+                      if (e.key === 'Enter') {
+                        e.preventDefault()
+                        commitLabel()
+                      }
+                      if (e.key === 'Escape') {
+                        e.preventDefault()
+                        cancelEdit()
+                      }
                       e.stopPropagation()
                     }}
                     maxLength={255}
@@ -570,7 +577,12 @@ export const RelationshipEdge = memo(
                 ) : (
                   <span
                     onClick={() => setIsEditing(true)}
-                    style={{ fontStyle: 'italic', opacity: 0.55, cursor: 'pointer', userSelect: 'none' }}
+                    style={{
+                      fontStyle: 'italic',
+                      opacity: 0.55,
+                      cursor: 'pointer',
+                      userSelect: 'none',
+                    }}
                   >
                     + Add label
                   </span>
@@ -612,7 +624,8 @@ export const RelationshipEdge = memo(
                   justifyContent: 'center',
                   backgroundColor: cardinalityColor,
                   color: '#ffffff',
-                  boxShadow: '0 1px 6px rgba(0,0,0,0.3), 0 0 0 2px rgba(0,0,0,0.08)',
+                  boxShadow:
+                    '0 1px 6px rgba(0,0,0,0.3), 0 0 0 2px rgba(0,0,0,0.08)',
                   backdropFilter: 'blur(4px)',
                   WebkitBackdropFilter: 'blur(4px)',
                   padding: 0,

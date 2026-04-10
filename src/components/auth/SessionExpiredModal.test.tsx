@@ -3,8 +3,14 @@
 // TC-P3-18: SessionExpiredModal renders, keyboard dismissal, navigation
 
 import { beforeEach, describe, expect, it, vi } from 'vitest'
-import { render, screen, fireEvent } from '@testing-library/react'
+import { act, fireEvent, render, screen  } from '@testing-library/react'
 import React from 'react'
+
+// ─────────────────────────────────────────────────────────────────────────────
+// AuthContext integration test
+// ─────────────────────────────────────────────────────────────────────────────
+
+import { AuthProvider, useAuthContext } from './AuthContext'
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Self-contained modal test component (no router/auth context dependency)
@@ -16,7 +22,10 @@ interface SessionExpiredModalTestProps {
   onLogin: () => void
 }
 
-function SessionExpiredModalTest({ isOpen, onLogin }: SessionExpiredModalTestProps) {
+function SessionExpiredModalTest({
+  isOpen,
+  onLogin,
+}: SessionExpiredModalTestProps) {
   if (!isOpen) return null
 
   return (
@@ -29,7 +38,8 @@ function SessionExpiredModalTest({ isOpen, onLogin }: SessionExpiredModalTestPro
     >
       <h2 id="session-expired-title">Your session has expired</h2>
       <p id="session-expired-desc">
-        You have been logged out due to inactivity. Please log in again to continue.
+        You have been logged out due to inactivity. Please log in again to
+        continue.
       </p>
       <button onClick={onLogin} data-testid="login-again-btn">
         Log in again
@@ -86,7 +96,7 @@ describe('TC-P3-18: SessionExpiredModal', () => {
 
   it('dialog does not render when isOpen transitions from true to false', () => {
     const { rerender } = render(
-      <SessionExpiredModalTest isOpen={true} onLogin={mockNavigate} />
+      <SessionExpiredModalTest isOpen={true} onLogin={mockNavigate} />,
     )
     expect(screen.getByRole('dialog')).toBeTruthy()
 
@@ -98,7 +108,8 @@ describe('TC-P3-18: SessionExpiredModal', () => {
 describe('TC-P3-18: SessionExpiredModal — accessibility', () => {
   it('dialog contains descriptive text explaining why session expired', () => {
     render(<SessionExpiredModalTest isOpen={true} onLogin={mockNavigate} />)
-    const content = screen.getByTestId('session-expired-modal').textContent || ''
+    const content =
+      screen.getByTestId('session-expired-modal').textContent || ''
     expect(content).toMatch(/logged out/i)
   })
 
@@ -120,13 +131,6 @@ describe('TC-P3-18: SessionExpiredModal — accessibility', () => {
   })
 })
 
-// ─────────────────────────────────────────────────────────────────────────────
-// AuthContext integration test
-// ─────────────────────────────────────────────────────────────────────────────
-
-import { act } from '@testing-library/react'
-import { AuthProvider, useAuthContext } from './AuthContext'
-
 describe('TC-P3-18: SessionExpiredModal via AuthContext', () => {
   it('SessionExpiredModal is hidden when sessionExpired is false in context', () => {
     let contextValue: any
@@ -144,7 +148,7 @@ describe('TC-P3-18: SessionExpiredModal via AuthContext', () => {
     render(
       <AuthProvider>
         <TestConsumer />
-      </AuthProvider>
+      </AuthProvider>,
     )
 
     expect(contextValue.sessionExpired).toBe(false)
@@ -167,7 +171,7 @@ describe('TC-P3-18: SessionExpiredModal via AuthContext', () => {
     render(
       <AuthProvider>
         <TestConsumer />
-      </AuthProvider>
+      </AuthProvider>,
     )
 
     act(() => {

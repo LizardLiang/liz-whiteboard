@@ -61,20 +61,18 @@ export const TableNode = memo(
     // Pre-compute a map from columnId to affected edges for fast delete checks
     const columnEdgeMap = useMemo(() => {
       const map = new Map<string, Array<RelationshipEdgeType>>()
-      ;(edges).forEach(
-        (edge: RelationshipEdgeType) => {
-          const srcId = edge.data?.relationship.sourceColumnId
-          const tgtId = edge.data?.relationship.targetColumnId
-          if (srcId) {
-            if (!map.has(srcId)) map.set(srcId, [])
-            map.get(srcId)!.push(edge)
-          }
-          if (tgtId && tgtId !== srcId) {
-            if (!map.has(tgtId)) map.set(tgtId, [])
-            map.get(tgtId)!.push(edge)
-          }
-        },
-      )
+      edges.forEach((edge: RelationshipEdgeType) => {
+        const srcId = edge.data?.relationship.sourceColumnId
+        const tgtId = edge.data?.relationship.targetColumnId
+        if (srcId) {
+          if (!map.has(srcId)) map.set(srcId, [])
+          map.get(srcId)!.push(edge)
+        }
+        if (tgtId && tgtId !== srcId) {
+          if (!map.has(tgtId)) map.set(tgtId, [])
+          map.get(tgtId)!.push(edge)
+        }
+      })
       return map
     }, [edges])
 
@@ -305,24 +303,22 @@ export const TableNode = memo(
           {/* Columns List */}
           {showMode !== 'TABLE_NAME' && (
             <div className="table-columns">
-              {(visibleColumns).map(
-                (column: Column, index: number) => (
-                  <ColumnRow
-                    key={column.id}
-                    column={column}
-                    tableId={table.id}
-                    isLast={index === visibleColumns.length - 1}
-                    editingField={editingField}
-                    onStartEdit={handleStartEdit}
-                    onCommitEdit={handleCommitEdit}
-                    onCancelEdit={handleCancelEdit}
-                    onToggleConstraint={handleToggleConstraint}
-                    onDelete={handleDeleteColumn}
-                    onDescriptionUpdate={handleDescriptionUpdate}
-                    edges={edges}
-                  />
-                ),
-              )}
+              {visibleColumns.map((column: Column, index: number) => (
+                <ColumnRow
+                  key={column.id}
+                  column={column}
+                  tableId={table.id}
+                  isLast={index === visibleColumns.length - 1}
+                  editingField={editingField}
+                  onStartEdit={handleStartEdit}
+                  onCommitEdit={handleCommitEdit}
+                  onCancelEdit={handleCancelEdit}
+                  onToggleConstraint={handleToggleConstraint}
+                  onDelete={handleDeleteColumn}
+                  onDescriptionUpdate={handleDescriptionUpdate}
+                  edges={edges}
+                />
+              ))}
 
               {/* Add Column Row */}
               <AddColumnRow
@@ -342,7 +338,6 @@ export const TableNode = memo(
               onCancel={handleCancelDelete}
             />
           )}
-
         </div>
       </TableNodeContextMenu>
     )

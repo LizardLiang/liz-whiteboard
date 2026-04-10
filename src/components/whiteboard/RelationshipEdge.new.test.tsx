@@ -4,7 +4,7 @@
 import React from 'react'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { cleanup, fireEvent, render, screen } from '@testing-library/react'
-import { ReactFlowProvider, Position } from '@xyflow/react'
+import { Position, ReactFlowProvider } from '@xyflow/react'
 import { RelationshipEdge } from './RelationshipEdge.new'
 import type { RelationshipEdgeData } from '@/lib/react-flow/types'
 
@@ -24,13 +24,15 @@ vi.mock('@xyflow/react', async (importOriginal) => {
 
 const VALID_RELATIONSHIP_ID = 'a1b2c3d4-e5f6-7890-abcd-ef1234567890'
 
-function makeEdgeProps(overrides: Partial<{
-  id: string
-  selected: boolean
-  onDelete: ((id: string) => void) | undefined
-  label: string | undefined
-  cardinality: string
-}> = {}) {
+function makeEdgeProps(
+  overrides: Partial<{
+    id: string
+    selected: boolean
+    onDelete: ((id: string) => void) | undefined
+    label: string | undefined
+    cardinality: string
+  }> = {},
+) {
   const {
     id = VALID_RELATIONSHIP_ID,
     selected = false,

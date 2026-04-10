@@ -4,21 +4,21 @@ const prisma = new PrismaClient()
 
 async function main() {
   console.log('Applying auth schema changes...')
-  
+
   // Check if User table already exists
-  const tables = await prisma.$queryRaw<Array<{tablename: string}>>`
+  const tables = await prisma.$queryRaw<Array<{ tablename: string }>>`
     SELECT tablename FROM pg_tables WHERE schemaname = 'public' AND tablename = 'User'
   `
-  
-  if ((tables as Array<{tablename: string}>).length > 0) {
+
+  if ((tables as Array<{ tablename: string }>).length > 0) {
     console.log('User table already exists, skipping creation')
     return
   }
-  
+
   // Create ProjectRole enum
   await prisma.$executeRaw`CREATE TYPE "ProjectRole" AS ENUM ('VIEWER', 'EDITOR', 'ADMIN')`
   console.log('Created ProjectRole enum')
-  
+
   // Create User table
   await prisma.$executeRaw`
     CREATE TABLE "User" (
@@ -34,11 +34,11 @@ async function main() {
     )
   `
   console.log('Created User table')
-  
+
   await prisma.$executeRaw`CREATE UNIQUE INDEX "User_username_key" ON "User"("username")`
   await prisma.$executeRaw`CREATE UNIQUE INDEX "User_email_key" ON "User"("email")`
   await prisma.$executeRaw`CREATE INDEX "User_email_idx" ON "User"("email")`
-  
+
   // Create Session table
   await prisma.$executeRaw`
     CREATE TABLE "Session" (
@@ -54,13 +54,13 @@ async function main() {
   await prisma.$executeRaw`CREATE INDEX "Session_userId_idx" ON "Session"("userId")`
   await prisma.$executeRaw`ALTER TABLE "Session" ADD CONSTRAINT "Session_userId_fkey" FOREIGN KEY ("userId") REFERENCES "User"("id") ON DELETE CASCADE`
   console.log('Created Session table')
-  
+
   // Add ownerId to Project
   await prisma.$executeRaw`ALTER TABLE "Project" ADD COLUMN "ownerId" UUID`
   await prisma.$executeRaw`CREATE INDEX "Project_ownerId_idx" ON "Project"("ownerId")`
   await prisma.$executeRaw`ALTER TABLE "Project" ADD CONSTRAINT "Project_ownerId_fkey" FOREIGN KEY ("ownerId") REFERENCES "User"("id") ON DELETE SET NULL`
   console.log('Added ownerId to Project')
-  
+
   // Create ProjectMember table
   await prisma.$executeRaw`
     CREATE TABLE "ProjectMember" (
@@ -77,7 +77,7 @@ async function main() {
   await prisma.$executeRaw`ALTER TABLE "ProjectMember" ADD CONSTRAINT "ProjectMember_projectId_fkey" FOREIGN KEY ("projectId") REFERENCES "Project"("id") ON DELETE CASCADE`
   await prisma.$executeRaw`ALTER TABLE "ProjectMember" ADD CONSTRAINT "ProjectMember_userId_fkey" FOREIGN KEY ("userId") REFERENCES "User"("id") ON DELETE CASCADE`
   console.log('Created ProjectMember table')
-  
+
   // Update CollaborationSession to add userId FK
   await prisma.$executeRaw`DELETE FROM "CollaborationSession"`
   console.log('Cleared CollaborationSession rows')
@@ -86,8 +86,10 @@ async function main() {
   await prisma.$executeRaw`CREATE INDEX "CollaborationSession_userId_idx" ON "CollaborationSession"("userId")`
   await prisma.$executeRaw`ALTER TABLE "CollaborationSession" ADD CONSTRAINT "CollaborationSession_userId_fkey" FOREIGN KEY ("userId") REFERENCES "User"("id") ON DELETE CASCADE`
   console.log('Updated CollaborationSession with userId FK')
-  
+
   console.log('All schema changes applied successfully!')
 }
 
-main().catch(console.error).finally(() => prisma.$disconnect())
+main()
+  .catch(console.error)
+  .finally(() => prisma.$disconnect())

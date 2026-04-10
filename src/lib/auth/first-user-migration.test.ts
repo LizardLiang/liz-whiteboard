@@ -3,6 +3,9 @@
 
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 
+import { migrateDataToFirstUser } from './first-user-migration'
+import { prisma } from '@/db'
+
 vi.mock('@/db', () => ({
   prisma: {
     project: {
@@ -10,9 +13,6 @@ vi.mock('@/db', () => ({
     },
   },
 }))
-
-import { prisma } from '@/db'
-import { migrateDataToFirstUser } from './first-user-migration'
 
 describe('migrateDataToFirstUser', () => {
   beforeEach(() => {
