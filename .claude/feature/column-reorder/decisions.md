@@ -94,6 +94,15 @@ All BLOCKER and WARNING items addressed:
 | W4: forgetTable not wired | `forgetTable()` exposed from hook; wired into `onTableDeleted` in ReactFlowWhiteboard |
 | W5: sequential DB reads | Parallelised with `Promise.all([findDiagramTableById, findColumnsByTableId])` |
 
+### Code Review Round 2 (Hermes) — 2026-04-30
+
+| Finding | Tier | Rationale | Required Fix |
+|---------|------|-----------|--------------|
+| B1-A: TableNode.new.tsx:246-329 + use-column-reorder-mutations.ts:384 — queue-full guard at reconcileAfterDrop is unreachable in practice | Tier 1 (Correct) + Tier 6 (Resilient) | The `if (preDragOrder.length === 0) return` guard in `reconcileAfterDrop` only fires when `preDragOrderRef.current` is empty. The ref is initialized empty at mount and only ever WRITTEN (never reset between drags). After any successful drag, the ref holds a non-empty value indefinitely. A queue-full state can only exist after 5 successful drag-drops, so the ref is always populated when the guard is checked. Net effect: the original B1 bug (queue-full drop pushes a 6th entry past the cap, emits to server, corrupts state) is unfixed. | Reset `preDragOrderRef.current = []` and `preDragColumnsRef.current = []` at the start of `handleDragStart` BEFORE the `isQueueFullForTable` check, so a rejected drag-start clears stale state. Add a regression test that exercises queue-full + real `newOrder` (not the cancel path INT-36 already covers) through `reconcileAfterDrop` and asserts no setNodes/emit calls. |
+| W4-A: use-table-mutations.ts:48-105 — forgetTable not called on local table deletion | Tier 8 (Maintainable, M10) | The Round 2 fix wired `forgetTable` into the `onTableDeleted` callback used by `useWhiteboardCollaboration` for the remote `table:deleted` socket event. Local deletes via `tableMutations.deleteTable` directly call `setNodes((prev) => prev.filter(...))` and bypass `onTableDeleted`, so the six per-table refs in `useColumnReorderMutations` (queueByTable, lastOptimisticByTable, lastConfirmedOrderByTable, dirtyByTable, bufferedRemoteByTable, localDraggingByTable) leak across local create/reorder/delete cycles. | Either add an `onLocalTableDeleted` callback parameter to `useTableMutations` and wire it to `columnReorderMutations.forgetTable`, or reroute the local-delete path through the existing `onTableDeleted` callback so both paths converge. |
+
+Full review at `.claude/feature/column-reorder/code-review.md`. Verdict: **Changes Required**.
+
 ## Final Resolution
 
 <!-- Athena will update this after all reviews are resolved -->
