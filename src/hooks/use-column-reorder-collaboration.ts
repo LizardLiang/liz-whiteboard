@@ -12,7 +12,7 @@
 
 import { useCallback, useEffect, useRef } from 'react'
 import { useCollaboration } from './use-collaboration'
-import type { UseColumnReorderMutationsReturn } from './use-column-reorder-mutations'
+import type { ColumnReorderErrorCode, UseColumnReorderMutationsReturn } from './use-column-reorder-mutations'
 import type { TableNodeType } from '@/lib/react-flow/types'
 
 type SetNodes = React.Dispatch<React.SetStateAction<Array<TableNodeType>>>
@@ -30,7 +30,7 @@ export interface ColumnReorderAckEvent {
 
 export interface ColumnReorderErrorEvent {
   event: string
-  error: string
+  error: ColumnReorderErrorCode | string
   message: string
   tableId?: string
 }

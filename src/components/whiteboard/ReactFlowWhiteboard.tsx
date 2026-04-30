@@ -232,11 +232,32 @@ function ReactFlowWhiteboardInner({
   // Seed lastConfirmedOrder from initial whiteboard data (SA-H1).
   // Called when initialNodes changes (first load + reconnect refetch).
   // seedConfirmedOrderFromServer is idempotent — only sets baseline if not already present.
+  //
+  // MEDIUM-01: On reconnect refetch (justReconnectedRef.current === true), also call
+  // onSyncReconcile so AC-08e/f toasts fire when the server order diverges from the
+  // last optimistic order (e.g. reorder was lost during disconnect). Per Cassandra LOW-03,
+  // refresh lastConfirmedOrderByTable unconditionally on reconnect so the stale pre-disconnect
+  // baseline does not cause false-positive toasts on the NEXT reconnect.
   useEffect(() => {
+    const isReconnect = justReconnectedRef.current
+    if (isReconnect) {
+      justReconnectedRef.current = false
+    }
+
     initialNodes.forEach((node) => {
       const tableId = node.data.table.id
       const serverOrder = node.data.table.columns.map((c) => c.id)
-      columnReorderMutations.seedConfirmedOrderFromServer(tableId, serverOrder)
+
+      if (isReconnect) {
+        // Refresh confirmed-order baseline so it reflects post-disconnect server state,
+        // then check if our optimistic order diverged (AC-08e/f).
+        // seedConfirmedOrderFromServer is idempotent (no-op if already seeded on first load),
+        // so we call onSyncReconcile directly and let the ack handler manage lastConfirmed.
+        columnReorderMutations.onSyncReconcile(tableId, serverOrder)
+      } else {
+        // Initial load: seed the baseline (idempotent)
+        columnReorderMutations.seedConfirmedOrderFromServer(tableId, serverOrder)
+      }
     })
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [initialNodes])
@@ -330,10 +351,6 @@ function ReactFlowWhiteboardInner({
 
   // When edges change, update the edges prop in all node data (for delete confirmation)
   useEffect(() => {
-    console.log(
-      `[WHITEBOARD] edges-to-nodes effect fired — ${edges.length} edges → updating all ${nodes.length} nodes' data.edges prop`,
-    )
-    console.trace('[WHITEBOARD] edges-to-nodes stack trace')
     setNodes((prevNodes) =>
       prevNodes.map((node) => ({
         ...node,
@@ -358,7 +375,9 @@ function ReactFlowWhiteboardInner({
     )
     // Close dialog if it was open for this table
     setDeletingTableId((prev) => (prev === tableId ? null : prev))
-  }, [])
+    // W4 (M10): clean up all per-table reorder state to prevent unbounded ref growth
+    columnReorderMutations.forgetTable(tableId)
+  }, [columnReorderMutations])
 
   // Ref for onTableError — breaks circular dependency between useWhiteboardCollaboration and useTableMutations
   const onTableErrorRef = useRef<(data: any) => void>(() => {})
@@ -516,7 +535,12 @@ function ReactFlowWhiteboardInner({
 
   // On WebSocket reconnect, re-fetch whiteboard data to replace any stale
   // optimistic state that was never confirmed before the disconnect.
+  // MEDIUM-01: flag set to true on reconnect so the initialNodes effect knows
+  // to call onSyncReconcile after the TanStack Query refetch settles.
+  const justReconnectedRef = useRef(false)
+
   const handleReconnect = useCallback(() => {
+    justReconnectedRef.current = true
     queryClient.invalidateQueries({ queryKey: ['whiteboard', whiteboardId] })
     queryClient.invalidateQueries({ queryKey: ['relationships', whiteboardId] })
   }, [queryClient, whiteboardId])

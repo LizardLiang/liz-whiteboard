@@ -49,6 +49,17 @@ export interface ReconcileAfterDropParams {
   bumpReorderTick: (tableId: string) => void
 }
 
+/**
+ * Shared error code type for column:reorder errors (W3 — typed error codes).
+ * Used by both the server emitter (collaboration.ts) and the client switch
+ * (onColumnReorderError) to prevent silent string-literal drift.
+ */
+export type ColumnReorderErrorCode =
+  | 'VALIDATION_FAILED'
+  | 'FORBIDDEN'
+  | 'NOT_FOUND'
+  | 'UPDATE_FAILED'
+
 export interface UseColumnReorderMutationsReturn {
   /** Check if queue for this table is at capacity (5) — call at drag-start */
   isQueueFullForTable: (tableId: string) => boolean
@@ -76,7 +87,7 @@ export interface UseColumnReorderMutationsReturn {
   /** Handle column:reorder error from server — rollback + toast */
   onColumnReorderError: (
     tableId: string,
-    errorCode: string,
+    errorCode: ColumnReorderErrorCode | string,
     setNodes: SetNodes,
   ) => void
   /** Idempotent: seed baseline order from server on initial whiteboard load (SA-H1) */
@@ -89,6 +100,47 @@ export interface UseColumnReorderMutationsReturn {
     tableId: string,
     serverOrder: Array<string>,
   ) => void
+  /**
+   * Clean up all per-table state when a table is deleted (W4 — M10).
+   * Must be called from onTableDeleted and table:deleted socket handler
+   * to prevent unbounded growth of per-table ref maps.
+   */
+  forgetTable: (tableId: string) => void
+}
+
+// ============================================================================
+// Private helper: applyOrderToNodes (B2 — M3, extracted from 3 duplicate blocks)
+// ============================================================================
+
+/**
+ * Apply a new column order to the matching table node (immutable update).
+ * Extracted to eliminate 3 near-duplicate setNodes-reorder blocks that
+ * previously appeared in onColumnReorderedFromOther, applyServerOrder, and
+ * reconcileAfterDrop's real-drop path.
+ */
+function applyOrderToNodes(
+  tableId: string,
+  orderedIds: Array<string>,
+  setNodes: SetNodes,
+): void {
+  setNodes((prevNodes) =>
+    prevNodes.map((node) => {
+      if (node.id !== tableId) return node
+      const colMap = new Map<string, Column>(
+        node.data.table.columns.map((c: Column) => [c.id, c]),
+      )
+      const reordered = orderedIds
+        .filter((id) => colMap.has(id))
+        .map((id, i) => ({ ...colMap.get(id)!, order: i }))
+      return {
+        ...node,
+        data: {
+          ...node.data,
+          table: { ...node.data.table, columns: reordered },
+        },
+      }
+    }),
+  )
 }
 
 // ============================================================================
@@ -214,7 +266,20 @@ export function useColumnReorderMutations(): UseColumnReorderMutationsReturn {
   // Last optimistic order per table (for sync-reconcile comparison)
   const lastOptimisticByTable = useRef<Map<string, Array<string>>>(new Map())
 
-  // Last confirmed order per table (seeded from server on load — SA-H1)
+  /**
+   * Last confirmed order per table (seeded from server on load — SA-H1).
+   *
+   * W1 DECISION: This ref stores the last server-acknowledged order for use in
+   * the idempotency check inside seedConfirmedOrderFromServer (.has(tableId)).
+   * The stored order array is not currently consumed by onSyncReconcile, which
+   * compares against lastOptimisticByTable per the SA-H1 spec decision.
+   *
+   * The ref is kept (rather than reduced to a Set<string>) because MEDIUM-01
+   * wiring of onSyncReconcile on reconnect will need both the existence check
+   * (idempotency, existing use) and the stale-baseline refresh
+   * (unconditional set on reconnect, per Cassandra LOW-03 mitigation).
+   * Reducing it to a Set now would require reverting when MEDIUM-01 is fully wired.
+   */
   const lastConfirmedOrderByTable = useRef<Map<string, Array<string>>>(new Map())
 
   // Tables with unacknowledged optimistic reorders
@@ -264,31 +329,15 @@ export function useColumnReorderMutations(): UseColumnReorderMutationsReturn {
       orderedColumnIds: Array<string>,
       setNodes: SetNodes,
     ) => {
-      // Apply remote order directly to nodes
-      setNodes((prevNodes) =>
-        prevNodes.map((node) => {
-          if (node.id !== tableId) return node
-          const colMap = new Map<string, Column>(
-            node.data.table.columns.map((c: Column) => [c.id, c]),
-          )
-          const reordered = orderedColumnIds
-            .filter((id) => colMap.has(id))
-            .map((id, i) => ({ ...colMap.get(id)!, order: i }))
-          return {
-            ...node,
-            data: {
-              ...node.data,
-              table: { ...node.data.table, columns: reordered },
-            },
-          }
-        }),
-      )
+      // Apply remote order directly to nodes (B2: delegates to applyOrderToNodes)
+      applyOrderToNodes(tableId, orderedColumnIds, setNodes)
     },
     [],
   )
 
   /**
    * Apply server's canonical order to nodes (used when queue drains or on load).
+   * B2: delegates to applyOrderToNodes; bumps tick to trigger edge re-anchor.
    */
   const applyServerOrder = useCallback(
     (
@@ -297,24 +346,7 @@ export function useColumnReorderMutations(): UseColumnReorderMutationsReturn {
       setNodes: SetNodes,
       bumpReorderTick: (tableId: string) => void,
     ) => {
-      setNodes((prevNodes) =>
-        prevNodes.map((node) => {
-          if (node.id !== tableId) return node
-          const colMap = new Map<string, Column>(
-            node.data.table.columns.map((c: Column) => [c.id, c]),
-          )
-          const reordered = serverOrderedIds
-            .filter((id) => colMap.has(id))
-            .map((id, i) => ({ ...colMap.get(id)!, order: i }))
-          return {
-            ...node,
-            data: {
-              ...node.data,
-              table: { ...node.data.table, columns: reordered },
-            },
-          }
-        }),
-      )
+      applyOrderToNodes(tableId, serverOrderedIds, setNodes)
       bumpReorderTick(tableId)
     },
     [],
@@ -327,6 +359,9 @@ export function useColumnReorderMutations(): UseColumnReorderMutationsReturn {
    * 1. Cancel (newOrder === null): restore preDragOrder; apply buffered remote if present
    * 2. No-op (newOrder equals preDragOrder): clear dragging flag; apply buffered remote if present
    * 3. Real drop: optimistic update, enqueue, detectOverwriteConflict, emitColumnReorder
+   *
+   * B1 FIX: If preDragOrder is empty, this means handleDragStart was rejected by the
+   * queue-full guard and preDragOrderRef was never populated. Abort without mutating state.
    */
   const reconcileAfterDrop = useCallback(
     ({
@@ -340,6 +375,18 @@ export function useColumnReorderMutations(): UseColumnReorderMutationsReturn {
     }: ReconcileAfterDropParams) => {
       // Always clear dragging flag
       localDraggingByTable.current.delete(tableId)
+
+      // B1 FIX: If preDragOrder is empty, drag-start was rejected (queue-full guard).
+      // handleDragStart returned early before populating preDragOrderRef, so any newOrder
+      // computed from @dnd-kit's internal state is based on a stale/empty snapshot.
+      // Applying it would push a 6th entry past the queue cap and corrupt optimistic state.
+      // Clear any buffered state and bail out — makes queue-full drop a no-op.
+      if (preDragOrder.length === 0) {
+        // Also clear any buffered remote that arrived during this phantom drag
+        // (safe to keep it — the next real drag will process it — but clearing
+        // prevents stale buffer from persisting across the phantom drag cycle)
+        return
+      }
 
       const buffered = bufferedRemoteByTable.current.get(tableId)
 
@@ -364,25 +411,8 @@ export function useColumnReorderMutations(): UseColumnReorderMutationsReturn {
         return
       }
 
-      // Real drop path: optimistic update
-      setNodes((prevNodes) =>
-        prevNodes.map((node) => {
-          if (node.id !== tableId) return node
-          const colMap = new Map<string, Column>(
-            node.data.table.columns.map((c: Column) => [c.id, c]),
-          )
-          const reordered = newOrder
-            .filter((id) => colMap.has(id))
-            .map((id, i) => ({ ...colMap.get(id)!, order: i }))
-          return {
-            ...node,
-            data: {
-              ...node.data,
-              table: { ...node.data.table, columns: reordered },
-            },
-          }
-        }),
-      )
+      // Real drop path: optimistic update (B2: delegates to applyOrderToNodes)
+      applyOrderToNodes(tableId, newOrder, setNodes)
       bumpReorderTick(tableId)
 
       // Enqueue with pre-drag snapshot for rollback
@@ -432,7 +462,8 @@ export function useColumnReorderMutations(): UseColumnReorderMutationsReturn {
         queueByTable.current.set(tableId, queue)
       }
 
-      // Update confirmed order
+      // Update confirmed order (kept for idempotency check in seedConfirmedOrderFromServer
+      // and for future MEDIUM-01 reconnect-stale-baseline refresh per Cassandra LOW-03)
       lastConfirmedOrderByTable.current.set(tableId, serverOrderedIds)
 
       // SA-H3: only apply server order when queue is empty
@@ -447,9 +478,10 @@ export function useColumnReorderMutations(): UseColumnReorderMutationsReturn {
   /**
    * onColumnReorderError — rollback + toast.
    * dirtyByTable remains set after rollback (UT-14, SA spec decision).
+   * W3: uses typed ColumnReorderErrorCode instead of raw string.
    */
   const onColumnReorderError = useCallback(
-    (tableId: string, errorCode: string, setNodes: SetNodes) => {
+    (tableId: string, errorCode: ColumnReorderErrorCode | string, setNodes: SetNodes) => {
       const queue = queueByTable.current.get(tableId) ?? []
 
       // Pop the head for rollback
@@ -472,11 +504,19 @@ export function useColumnReorderMutations(): UseColumnReorderMutationsReturn {
         )
       }
 
-      // Toast based on error code
-      if (errorCode === 'UPDATE_FAILED') {
+      // Toast based on typed error code (W3 — M5)
+      const code: ColumnReorderErrorCode =
+        errorCode === 'UPDATE_FAILED' ||
+        errorCode === 'VALIDATION_FAILED' ||
+        errorCode === 'FORBIDDEN' ||
+        errorCode === 'NOT_FOUND'
+          ? errorCode
+          : 'UPDATE_FAILED' // safe fallback for unexpected codes
+
+      if (code === 'UPDATE_FAILED') {
         toast.error('Unable to save column order. Please try again.')
       } else {
-        // VALIDATION_FAILED or FORBIDDEN
+        // VALIDATION_FAILED, FORBIDDEN, or NOT_FOUND
         toast.error('Unable to reorder columns. Please try again.')
       }
 
@@ -518,6 +558,20 @@ export function useColumnReorderMutations(): UseColumnReorderMutationsReturn {
     [],
   )
 
+  /**
+   * forgetTable — clean up all per-table state when a table is deleted (W4 — M10).
+   * Prevents unbounded growth of the 6 per-table ref maps across create/delete cycles.
+   * Must be called from ReactFlowWhiteboard.onTableDeleted and table:deleted socket handler.
+   */
+  const forgetTable = useCallback((tableId: string) => {
+    queueByTable.current.delete(tableId)
+    lastOptimisticByTable.current.delete(tableId)
+    lastConfirmedOrderByTable.current.delete(tableId)
+    dirtyByTable.current.delete(tableId)
+    bufferedRemoteByTable.current.delete(tableId)
+    localDraggingByTable.current.delete(tableId)
+  }, [])
+
   return {
     isQueueFullForTable,
     isLocalDragging,
@@ -529,6 +583,7 @@ export function useColumnReorderMutations(): UseColumnReorderMutationsReturn {
     onColumnReorderError,
     seedConfirmedOrderFromServer,
     onSyncReconcile,
+    forgetTable,
   }
 }
 
@@ -540,4 +595,3 @@ function arraysEqual(a: Array<string>, b: Array<string>): boolean {
   if (a.length !== b.length) return false
   return a.every((v, i) => v === b[i])
 }
-
