@@ -376,15 +376,17 @@ export function useColumnReorderMutations(): UseColumnReorderMutationsReturn {
       // Always clear dragging flag
       localDraggingByTable.current.delete(tableId)
 
-      // B1 FIX: If preDragOrder is empty, drag-start was rejected (queue-full guard).
-      // handleDragStart returned early before populating preDragOrderRef, so any newOrder
-      // computed from @dnd-kit's internal state is based on a stale/empty snapshot.
-      // Applying it would push a 6th entry past the queue cap and corrupt optimistic state.
-      // Clear any buffered state and bail out — makes queue-full drop a no-op.
+      // B1-A FIX: If preDragOrder is empty, the pre-drag snapshot was never captured.
+      // This happens in two cases:
+      //   (1) Queue-full guard fired: TableNode.handleDragStart resets both refs to []
+      //       before checking the queue, so a rejected drag leaves them empty. Any
+      //       newOrder from @dnd-kit would be computed from stale column state and must
+      //       not be applied — it would push a 6th entry past the queue cap (≤5) and
+      //       corrupt optimistic state.
+      //   (2) Any other path where preDragOrderRef was never populated (unusual teardown,
+      //       component remount mid-gesture, etc.).
+      // Either way: bail out — makes the phantom drop a no-op.
       if (preDragOrder.length === 0) {
-        // Also clear any buffered remote that arrived during this phantom drag
-        // (safe to keep it — the next real drag will process it — but clearing
-        // prevents stale buffer from persisting across the phantom drag cycle)
         return
       }
 

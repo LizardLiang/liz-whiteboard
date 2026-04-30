@@ -1108,6 +1108,10 @@ function ReactFlowWhiteboardInner({
           affectedRelationships={tableDeleteAffectedRelationships}
           onConfirm={() => {
             tableMutations.deleteTable(deletingTableId)
+            // W4-A: clean up per-table reorder state on local delete path.
+            // forgetTable is also called in onTableDeleted for the remote path —
+            // this call covers the case where the current user deletes a table.
+            columnReorderMutations.forgetTable(deletingTableId)
             setDeletingTableId(null)
           }}
           onCancel={() => setDeletingTableId(null)}
