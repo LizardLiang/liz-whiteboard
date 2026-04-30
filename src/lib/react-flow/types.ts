@@ -74,6 +74,21 @@ export interface TableNodeData extends Record<string, unknown> {
 
   /** Whether the WebSocket is currently connected */
   isConnected?: boolean
+
+  /** Column reorder: reconcile after a drag drop (SA-H4 single entry-point) */
+  onColumnReorder?: (params: import('@/hooks/use-column-reorder-mutations').ReconcileAfterDropParams) => void
+
+  /** Column reorder: emit column:reorder to server */
+  emitColumnReorder?: (tableId: string, orderedColumnIds: Array<string>) => void
+
+  /** Column reorder: check if queue is full for this table */
+  isQueueFullForTable?: (tableId: string) => boolean
+
+  /** Column reorder: mark table as actively dragging */
+  setLocalDragging?: (tableId: string, isDragging: boolean) => void
+
+  /** Column reorder: bump the reorder tick to trigger updateNodeInternals */
+  bumpReorderTick?: (tableId: string) => void
 }
 
 /**

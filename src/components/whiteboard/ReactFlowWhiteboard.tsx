@@ -9,9 +9,9 @@
  * - Real-time collaboration via WebSocket
  */
 
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
-import { ReactFlowProvider, useReactFlow, useViewport } from '@xyflow/react'
+import { ReactFlowProvider, useReactFlow, useUpdateNodeInternals, useViewport } from '@xyflow/react'
 import { ReactFlowCanvas } from './ReactFlowCanvas'
 import { ConnectionStatusIndicator } from './ConnectionStatusIndicator'
 import { DeleteTableDialog } from './DeleteTableDialog'
@@ -64,6 +64,8 @@ import {
   useRelationshipMutations
 } from '@/hooks/use-relationship-mutations'
 import { useTableDeletion } from '@/hooks/use-table-deletion'
+import { useColumnReorderMutations } from '@/hooks/use-column-reorder-mutations'
+import { useColumnReorderCollaboration } from '@/hooks/use-column-reorder-collaboration'
 import { getSessionUserId } from '@/lib/session-user-id'
 import { isUnauthorizedError } from '@/lib/auth/errors'
 
@@ -171,6 +173,10 @@ function ReactFlowWhiteboardInner({
 }) {
   const queryClient = useQueryClient()
 
+  // Column reorder mutations — must be initialized early since seedConfirmedOrderFromServer
+  // is called from the initialNodes effect below
+  const columnReorderMutations = useColumnReorderMutations()
+
   // Local React Flow state (will be updated by collaboration)
   const [nodes, setNodes] = useState<Array<TableNodeType>>(initialNodes)
   const [edges, setEdges] = useState<Array<RelationshipEdgeType>>(initialEdges)
@@ -222,6 +228,18 @@ function ReactFlowWhiteboardInner({
       })),
     )
   }, [showMode])
+
+  // Seed lastConfirmedOrder from initial whiteboard data (SA-H1).
+  // Called when initialNodes changes (first load + reconnect refetch).
+  // seedConfirmedOrderFromServer is idempotent — only sets baseline if not already present.
+  useEffect(() => {
+    initialNodes.forEach((node) => {
+      const tableId = node.data.table.id
+      const serverOrder = node.data.table.columns.map((c) => c.id)
+      columnReorderMutations.seedConfirmedOrderFromServer(tableId, serverOrder)
+    })
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [initialNodes])
 
   // Update local state when initial data changes (and attach callbacks)
   // Preserve existing callbacks from prev nodes so that a TanStack Query refetch
@@ -605,6 +623,43 @@ function ReactFlowWhiteboardInner({
     onRelationshipErrorRef.current = relationshipMutations.onRelationshipError
   }, [relationshipMutations.onRelationshipError])
 
+  // -------------------------------------------------------------------------
+  // Column reorder state (optimistic state + FIFO queue already initialized above)
+  // -------------------------------------------------------------------------
+
+  // Tick counter per table — incremented on every local or remote reorder to
+  // trigger updateNodeInternals and keep edges anchored (Spike S2, SA-M1)
+  const [reorderTickByTable, setReorderTickByTable] = useState<
+    Record<string, number>
+  >({})
+
+  const bumpReorderTick = useCallback((tableId: string) => {
+    setReorderTickByTable((prev) => ({
+      ...prev,
+      [tableId]: (prev[tableId] ?? 0) + 1,
+    }))
+  }, [])
+
+  // updateNodeInternals via useLayoutEffect — must be useLayoutEffect (not useEffect)
+  // to run synchronously after DOM mutation before browser paint (SA-M1, Spike S2)
+  const updateNodeInternals = useUpdateNodeInternals()
+  useLayoutEffect(() => {
+    Object.keys(reorderTickByTable).forEach((tableId) => {
+      updateNodeInternals(tableId)
+    })
+  }, [reorderTickByTable, updateNodeInternals])
+
+  // Column reorder collaboration (emits + listens for WS events)
+  const { emitColumnReorder } = useColumnReorderCollaboration(
+    whiteboardId,
+    userId,
+    {
+      setNodes,
+      bumpReorderTick,
+      mutations: columnReorderMutations,
+    },
+  )
+
   // Stable ref for the deleteRelationship callback — prevents stale closures in edge data
   const handleRelationshipDeleteRef = useRef(
     relationshipMutations.deleteRelationship,
@@ -688,6 +743,19 @@ function ReactFlowWhiteboardInner({
     setDeletingTableId(tableId)
   }, [])
 
+  // Column reorder callback — wraps reconcileAfterDrop with real setNodes
+  const handleColumnReorder = useCallback(
+    (params: import('@/hooks/use-column-reorder-mutations').ReconcileAfterDropParams) => {
+      columnReorderMutations.reconcileAfterDrop({
+        ...params,
+        setNodes,
+        bumpReorderTick,
+        emitColumnReorder,
+      })
+    },
+    [columnReorderMutations, setNodes, bumpReorderTick, emitColumnReorder],
+  )
+
   // Relationship creation mutation (for drag-to-connect)
   const createRelationshipMutation = useMutation({
     mutationFn: async (data: {
@@ -768,6 +836,9 @@ function ReactFlowWhiteboardInner({
   const handleColumnUpdateRef = useRef(handleColumnUpdate)
   const handleColumnDeleteRef = useRef(handleColumnDelete)
   const handleRequestTableDeleteRef = useRef(handleRequestTableDelete)
+  const handleColumnReorderRef = useRef(handleColumnReorder)
+  const emitColumnReorderRef = useRef(emitColumnReorder)
+  const bumpReorderTickRef = useRef(bumpReorderTick)
   useEffect(() => {
     handleColumnCreateRef.current = handleColumnCreate
   }, [handleColumnCreate])
@@ -780,6 +851,15 @@ function ReactFlowWhiteboardInner({
   useEffect(() => {
     handleRequestTableDeleteRef.current = handleRequestTableDelete
   }, [handleRequestTableDelete])
+  useEffect(() => {
+    handleColumnReorderRef.current = handleColumnReorder
+  }, [handleColumnReorder])
+  useEffect(() => {
+    emitColumnReorderRef.current = emitColumnReorder
+  }, [emitColumnReorder])
+  useEffect(() => {
+    bumpReorderTickRef.current = bumpReorderTick
+  }, [bumpReorderTick])
 
   // Inject column callbacks + isConnected into node data whenever isConnected changes
   useEffect(() => {
@@ -792,6 +872,16 @@ function ReactFlowWhiteboardInner({
           onColumnUpdate: handleColumnUpdateRef.current,
           onColumnDelete: handleColumnDeleteRef.current,
           onRequestTableDelete: handleRequestTableDeleteRef.current,
+          onColumnReorder: (params: import('@/hooks/use-column-reorder-mutations').ReconcileAfterDropParams) =>
+            handleColumnReorderRef.current(params),
+          emitColumnReorder: (tableId: string, ids: Array<string>) =>
+            emitColumnReorderRef.current(tableId, ids),
+          isQueueFullForTable: (tableId: string) =>
+            columnReorderMutations.isQueueFullForTable(tableId),
+          setLocalDragging: (tableId: string, dragging: boolean) =>
+            columnReorderMutations.setLocalDragging(tableId, dragging),
+          bumpReorderTick: (tableId: string) =>
+            bumpReorderTickRef.current(tableId),
           tableNameById,
           isConnected,
         },
@@ -811,6 +901,16 @@ function ReactFlowWhiteboardInner({
           onColumnUpdate: handleColumnUpdateRef.current,
           onColumnDelete: handleColumnDeleteRef.current,
           onRequestTableDelete: handleRequestTableDeleteRef.current,
+          onColumnReorder: (params: import('@/hooks/use-column-reorder-mutations').ReconcileAfterDropParams) =>
+            handleColumnReorderRef.current(params),
+          emitColumnReorder: (tableId: string, ids: Array<string>) =>
+            emitColumnReorderRef.current(tableId, ids),
+          isQueueFullForTable: (tableId: string) =>
+            columnReorderMutations.isQueueFullForTable(tableId),
+          setLocalDragging: (tableId: string, dragging: boolean) =>
+            columnReorderMutations.setLocalDragging(tableId, dragging),
+          bumpReorderTick: (tableId: string) =>
+            bumpReorderTickRef.current(tableId),
           edges: edgesRef.current,
           tableNameById,
           isConnected,
@@ -1067,7 +1167,7 @@ function ReactFlowWhiteboardInner({
  */
 export function ReactFlowWhiteboard({
   whiteboardId,
-  userId = getSessionUserId(), // Anonymous session-stable UUID; replace with auth when available
+  userId = getSessionUserId(), // fallback only — callers should pass the authenticated user's DB ID
   showMinimap = false,
   showControls = true,
   nodesDraggable = true,
