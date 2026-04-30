@@ -46,6 +46,12 @@ export const DragHandle = memo(
               type="button"
               ref={setActivatorNodeRef}
               {...listeners}
+              onPointerDown={(e) => {
+                // Stop bubbling to React Flow canvas — without this, RF starts
+                // panning and wins the setPointerCapture race against @dnd-kit.
+                e.stopPropagation()
+                ;(listeners as Record<string, (e: React.PointerEvent) => void> | undefined)?.onPointerDown?.(e)
+              }}
               aria-label={`Reorder column ${columnName}`}
               className="nodrag nowheel column-drag-handle"
               style={{
