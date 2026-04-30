@@ -746,8 +746,16 @@ function setupCollaborationEventHandlers(
       const validated = reorderColumnsSchema.parse(data)
       const { tableId, orderedColumnIds } = validated
 
+      // W5 (M6): parallelise the two independent reads — ownership check and
+      // column fetch do not depend on each other's result.
+      // Trade-off: one wasted column query when ownership fails (rare path).
+      // This halves p50 latency on the happy path.
+      const [table, currentColumns] = await Promise.all([
+        findDiagramTableById(tableId),
+        findColumnsByTableId(tableId),
+      ])
+
       // IDOR check: tableId must belong to this whiteboard
-      const table = await findDiagramTableById(tableId)
       if (!table) {
         socket.emit('error', {
           event: 'column:reorder',
@@ -766,9 +774,6 @@ function setupCollaborationEventHandlers(
         })
         return
       }
-
-      // Fetch current columns to validate IDs and perform FM-07 merge
-      const currentColumns = await findColumnsByTableId(tableId)
       const currentColumnIds = new Set(currentColumns.map((c) => c.id))
 
       // Validate: every supplied ID must belong to this table

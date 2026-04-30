@@ -289,6 +289,13 @@ export const TableNode = memo(
 
         if (!onColumnReorder || !emitColumnReorder || !bumpReorderTick) return
 
+        // B1 FIX: If preDragOrderRef is empty, handleDragStart was rejected by the
+        // queue-full guard. @dnd-kit continued the drag anyway (returning from onDragStart
+        // does not cancel it). reconcileAfterDrop checks preDragOrder.length === 0 and
+        // aborts, but we pass it through here so the guard lives in one place (SA-H4).
+        // Passing preDragOrderRef.current as-is (empty array) is sufficient — the
+        // reconcileAfterDrop early-return will catch it.
+
         const tableId = table.id
         const currentColumns = columns
 
@@ -443,6 +450,7 @@ export const TableNode = memo(
               onDragOver={handleDragOver}
               onDragEnd={handleDragEnd}
               onDragCancel={handleDragCancel}
+              autoScroll={false}
             >
               <SortableContext
                 items={visibleColumns.map((c: Column) => c.id)}
