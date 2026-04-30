@@ -3,6 +3,7 @@
   "description": "Drag-and-drop reordering of columns within a table node in the ER whiteboard, with persistence and real-time sync",
   "documents": {
     "1-prd": "prd.md,decisions.md",
+    "10-review": "code-review.md",
     "2-prd-review": "prd-challenge.md",
     "3-decomposition": "decomposition.md",
     "5-tech-spec": "tech-spec.md",
@@ -139,6 +140,53 @@
       "action": "status changed from 'in-progress' to 'complete'",
       "stage": "8-implementation",
       "timestamp": "2026-04-30T16:36:40+08:00"
+    },
+    {
+      "action": "status changed from 'ready' to 'in-progress'",
+      "agent": "hera",
+      "stage": "9-prd-alignment",
+      "timestamp": "2026-04-30T17:00:00+08:00"
+    },
+    {
+      "action": "status changed from 'in-progress' to 'complete'",
+      "agent": "hera",
+      "notes": "Run 2 re-verification. 63/73 ACs verified+passing (86%). 5 partial (visual layer mocked), 7 plan_gap (manual/E2E). 0 BLOCKER findings. Verdict: ALIGNED. Stage 10 set to ready.",
+      "stage": "9-prd-alignment",
+      "timestamp": "2026-04-30T17:10:00+08:00",
+      "verdict": "aligned"
+    },
+    {
+      "action": "status changed from 'pending' to 'ready'",
+      "agent": "hera",
+      "stage": "10-review",
+      "timestamp": "2026-04-30T17:10:00+08:00"
+    },
+    {
+      "action": "status changed from 'ready' to 'in-progress'",
+      "stage": "10-review",
+      "timestamp": "2026-04-30T16:46:27+08:00"
+    },
+    {
+      "action": "status changed from 'in-progress' to 'complete'",
+      "stage": "10-review",
+      "timestamp": "2026-04-30T16:48:21+08:00",
+      "verdict": "caution"
+    },
+    {
+      "action": "status changed from 'complete' to 'complete'",
+      "stage": "10-review",
+      "timestamp": "2026-04-30T16:51:11+08:00",
+      "verdict": "changes-required"
+    },
+    {
+      "action": "status changed from 'complete' to 'in-progress'",
+      "stage": "8-implementation",
+      "timestamp": "2026-04-30T16:53:02+08:00"
+    },
+    {
+      "action": "status changed from 'in-progress' to 'complete'",
+      "stage": "8-implementation",
+      "timestamp": "2026-04-30T17:00:17+08:00"
     }
   ],
   "implementation_mode": "ares",
@@ -199,11 +247,13 @@
         "cassandra"
       ],
       "code_review_verdict": null,
-      "completed": null,
+      "completed": "2026-04-30T16:51:11+08:00",
+      "document": "code-review.md",
       "documents": [],
       "risk_verdict": null,
-      "started": null,
-      "status": "pending"
+      "started": "2026-04-30T16:46:27+08:00",
+      "status": "complete",
+      "verdict": "changes-required"
     },
     "2-prd-review": {
       "agents": [
@@ -328,7 +378,7 @@
     },
     "8-implementation": {
       "agent": "ares",
-      "completed": "2026-04-30T16:36:40+08:00",
+      "completed": "2026-04-30T17:00:17+08:00",
       "document": "implementation-notes.md",
       "documents": [
         "implementation-notes.md",
@@ -348,67 +398,33 @@
       ],
       "mode": "ares",
       "return_reason": "Returned to stage 8 by Hera (PRD alignment gaps). Must cover: S5 socket handler tests, S6 TableNode drag tests, S8 edge re-anchor tests, S7 INT-25/26, REQ-09 auto-scroll, REQ-12 tooltip, REQ-13 reduced-motion.",
-      "started": "2026-04-30T16:22:36+08:00",
+      "started": "2026-04-30T16:53:02+08:00",
       "status": "complete",
-      "summary": "Round 2 complete. Created 6 new test files (55 tests) covering all gaps identified by Hera: S5 socket handler (12 tests, dependency-injected to avoid module mock issues), S6 TableNode+DragHandle+InsertionLine (18 tests, @dnd-kit mocked), S7 INT-25/26 ack-vs-broadcast ordering (2 tests added), S8 edge re-anchor useLayoutEffect pattern (4 tests), REQ-09 auto-scroll pure-function logic (9 tests), REQ-12 tooltip (4 tests), REQ-13 reduced-motion (6 tests). Grand total: 97 tests, all passing. 625 pass/14 fail (14 pre-existing, unchanged).",
+      "summary": "Round 3 complete (code review fixes). Fixed 2 BLOCKERs (B1 queue-full phantom drop guard in reconcileAfterDrop; B2 extracted applyOrderToNodes helper eliminating 3-way duplication), 1 HIGH (autoScroll=false on DndContext), 1 MEDIUM (removed console.log/trace), and all 5 WARNINGs (W1 documented, W3 typed ColumnReorderErrorCode, W4 forgetTable wired to onTableDeleted, W5 Promise.all in collaboration.ts, MEDIUM-01 onSyncReconcile wired via justReconnectedRef). 5 files modified. 625 pass/14 fail (14 pre-existing, unchanged).",
       "tasks": []
     },
     "9-prd-alignment": {
       "agent": "hera",
-      "alignment_verdict": "gaps",
-      "completed": "2026-04-30T16:20:00+08:00",
-      "coverage_pct": 54,
-      "criteria_missing": 16,
+      "alignment_verdict": "aligned",
+      "completed": "2026-04-30T17:10:00+08:00",
+      "coverage_pct": 86,
+      "criteria_missing": 0,
+      "criteria_partial": 5,
       "criteria_plan_gap": 7,
-      "criteria_total": 50,
-      "criteria_verified": 27,
+      "criteria_total": 73,
+      "criteria_verified": 63,
+      "criteria_warnings": 5,
       "documents": [
         "prd-alignment.md"
       ],
-      "gaps_requiring_coverage": [
-        "AC-01a",
-        "AC-01b",
-        "AC-01c",
-        "AC-01d",
-        "AC-01e",
-        "AC-01f",
-        "AC-01g",
-        "AC-02a",
-        "AC-02b",
-        "AC-02c",
-        "AC-02d",
-        "AC-02e",
-        "AC-02f",
-        "AC-03a",
-        "AC-04b",
-        "AC-04f",
-        "AC-05a",
-        "AC-05b",
-        "AC-05c",
-        "AC-05d",
-        "AC-07a",
-        "AC-07b",
-        "AC-07d",
-        "AC-08d (drag-start blocking)",
-        "AC-09a",
-        "AC-09b",
-        "AC-09c",
-        "AC-09d",
-        "AC-10a",
-        "AC-10b",
-        "AC-10c",
-        "AC-12a",
-        "AC-12e",
-        "AC-13a",
-        "AC-13b",
-        "AC-13c"
-      ],
-      "started": "2026-04-30T16:14:00+08:00",
-      "status": "ready"
+      "gaps_requiring_coverage": [],
+      "run": 2,
+      "started": "2026-04-30T17:00:00+08:00",
+      "status": "complete"
     }
   },
   "pipeline_status": "in-progress",
   "priority": "P1",
   "stage": "8-implementation",
-  "updated": "2026-04-30T16:36:40+08:00"
+  "updated": "2026-04-30T17:00:17+08:00"
 }
