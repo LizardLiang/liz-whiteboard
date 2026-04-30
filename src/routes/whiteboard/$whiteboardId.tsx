@@ -60,8 +60,12 @@ function WhiteboardEditor() {
   const { whiteboardId } = Route.useParams()
   const queryClient = useQueryClient()
 
-  // Anonymous session-stable user ID. Replace with auth context when auth is implemented.
-  const userId = getSessionUserId()
+  // Use the authenticated user's DB ID so the server's `createdBy` field matches.
+  // getSessionUserId() was a placeholder — it generated a random sessionStorage UUID
+  // that never matched the server's auth user ID, causing column:created confirmations
+  // to be treated as remote-user events and duplicating optimistic columns.
+  const { user } = Route.useRouteContext()
+  const userId = user?.id ?? getSessionUserId()
 
   // State
   const [selectedTableId, setSelectedTableId] = useState<string | null>(null)
