@@ -2,16 +2,20 @@
  * ColumnRow — renders a single column in the TableNode
  * Phase 1: skeleton (display only, no editing)
  * Phase 2+: interactive editing, delete button
+ * column-reorder: DragHandle integration via useSortable
  */
 
 import { memo, useCallback, useState } from 'react'
 import { Handle, Position } from '@xyflow/react'
+import { useSortable } from '@dnd-kit/sortable'
+import { CSS } from '@dnd-kit/utilities'
 import { InlineNameEditor } from './InlineNameEditor'
 import { DataTypeSelector } from './DataTypeSelector'
 import { ConstraintBadges } from './ConstraintBadges'
 import { ColumnNotePopover } from './ColumnNotePopover'
+import { DragHandle } from './DragHandle'
 import type { Column } from '@prisma/client'
-import type { RelationshipEdgeType } from '@/lib/react-flow/types'
+import type { RelationshipEdgeType, ShowMode } from '@/lib/react-flow/types'
 import type { EditingField } from './types'
 import { createColumnHandleId } from '@/lib/react-flow/edge-routing'
 import {
@@ -41,6 +45,8 @@ export interface ColumnRowProps {
   onDelete: (column: Column) => void
   onDescriptionUpdate: (columnId: string, description: string) => void
   edges: Array<RelationshipEdgeType>
+  /** Whether drag handles should be shown (only in ALL_FIELDS mode) */
+  showMode?: ShowMode
 }
 
 export const ColumnRow = memo(
@@ -56,6 +62,7 @@ export const ColumnRow = memo(
     onDelete,
     onDescriptionUpdate,
     edges: _edges,
+    showMode = 'ALL_FIELDS',
   }: ColumnRowProps) => {
     const isEditingName =
       editingField?.columnId === column.id && editingField.field === 'name'
@@ -63,6 +70,23 @@ export const ColumnRow = memo(
       editingField?.columnId === column.id && editingField.field === 'dataType'
     const isEditing = isEditingName || isEditingDataType
     const [isHoveringDataType, setIsHoveringDataType] = useState(false)
+
+    // useSortable integration for drag-and-drop reordering
+    const {
+      attributes,
+      listeners,
+      setNodeRef,
+      setActivatorNodeRef,
+      transform,
+      transition,
+      isDragging,
+    } = useSortable({ id: column.id })
+
+    const sortableStyle = {
+      transform: CSS.Transform.toString(transform),
+      transition,
+      opacity: isDragging ? 0.5 : 1,
+    }
 
     const handleNameDoubleClick = useCallback(
       (e: React.MouseEvent) => {
@@ -105,8 +129,8 @@ export const ColumnRow = memo(
     return (
       <TooltipProvider>
         <div
+          ref={setNodeRef}
           className={`column-row group${isEditing ? ' editing' : ''}`}
-          tabIndex={0}
           onKeyDown={handleKeyDown}
           style={{
             padding: '4px 16px 4px 8px',
@@ -122,8 +146,18 @@ export const ColumnRow = memo(
               ? 'var(--rf-column-edit-bg, rgba(99,102,241,0.08))'
               : 'transparent',
             outline: 'none',
+            ...sortableStyle,
           }}
+          {...attributes}
         >
+          {/* Drag handle — visible in ALL_FIELDS mode only (AC-01f) */}
+          <DragHandle
+            columnName={column.name}
+            isDragging={isDragging}
+            setActivatorNodeRef={setActivatorNodeRef}
+            listeners={listeners as Record<string, (...args: Array<unknown>) => unknown> | undefined}
+            show={showMode === 'ALL_FIELDS'}
+          />
           {/* Left-side handles */}
           <Handle
             type="source"
@@ -306,6 +340,7 @@ export const ColumnRow = memo(
     if (prev.onToggleConstraint !== next.onToggleConstraint) return false
     if (prev.onDelete !== next.onDelete) return false
     if (prev.onDescriptionUpdate !== next.onDescriptionUpdate) return false
+    if (prev.showMode !== next.showMode) return false
 
     // Check if editing state changed for this column
     const prevEditing =
