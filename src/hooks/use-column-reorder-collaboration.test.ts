@@ -237,4 +237,147 @@ describe('useColumnReorderCollaboration (Suite S7)', () => {
       expect.objectContaining({ reorderedBy: undefined }),
     )
   })
+
+  // ============================================================================
+  // INT-25/INT-26: ack vs broadcast ordering at queue depth ≥ 2 (SA-M2, AC-07d)
+  //
+  // These tests verify that the collaboration hook correctly routes events to the
+  // mutations layer and that the mutations layer (useColumnReorderMutations)
+  // maintains correct ordering semantics when multiple reorders are in-flight.
+  //
+  // The hook itself routes: ack → onColumnReorderAck, broadcast → buffer/apply.
+  // The ordering guarantee (SA-H3) lives in onColumnReorderAck (defers applyServerOrder
+  // until queue is empty). These tests verify the hook routes correctly so the
+  // mutations hook can enforce the ordering contract.
+  // ============================================================================
+
+  it('INT-25: ack vs broadcast — forward order at queue depth 2 (ack#1 then broadcast#2)', () => {
+    // At queue depth 2: ack(#1) arrives first, then broadcast(#2).
+    // The hook should route ack(#1) to onColumnReorderAck and broadcast(#2) to
+    // onColumnReorderedFromOther (since we're not locally dragging for the broadcast).
+    const { mutations, setNodes, bumpReorderTick } = makeCallbacks()
+
+    // Not locally dragging when broadcast arrives (reorder already dropped)
+    mutations.isLocalDragging.mockReturnValue(false)
+
+    renderHook(() =>
+      useColumnReorderCollaboration(WHITEBOARD_ID, USER_ID, {
+        setNodes,
+        bumpReorderTick,
+        mutations,
+      }),
+    )
+
+    const ackHandler = mockOn.mock.calls.find(
+      ([event]) => event === 'column:reorder:ack',
+    )?.[1]
+    const reorderedHandler = mockOn.mock.calls.find(
+      ([event]) => event === 'column:reordered',
+    )?.[1]
+
+    expect(ackHandler).toBeDefined()
+    expect(reorderedHandler).toBeDefined()
+
+    // Simulate ack for reorder #1 arriving first
+    act(() => {
+      ackHandler({
+        tableId: TABLE_ID,
+        orderedColumnIds: ['col-B', 'col-A', 'col-C'],
+      })
+    })
+
+    // Verify ack routed to onColumnReorderAck (queue pop happens in mutations)
+    expect(mutations.onColumnReorderAck).toHaveBeenCalledTimes(1)
+    expect(mutations.onColumnReorderAck).toHaveBeenCalledWith(
+      TABLE_ID,
+      ['col-B', 'col-A', 'col-C'],
+      setNodes,
+      bumpReorderTick,
+    )
+
+    // Then broadcast for reorder #2 arrives — not locally dragging → applied directly
+    act(() => {
+      reorderedHandler({
+        tableId: TABLE_ID,
+        orderedColumnIds: ['col-C', 'col-B', 'col-A'],
+        reorderedBy: 'other-user',
+      })
+    })
+
+    // Broadcast applied directly since not locally dragging
+    expect(mutations.onColumnReorderedFromOther).toHaveBeenCalledTimes(1)
+    expect(mutations.onColumnReorderedFromOther).toHaveBeenCalledWith(
+      TABLE_ID,
+      ['col-C', 'col-B', 'col-A'],
+      setNodes,
+    )
+
+    // bufferRemoteReorder was NOT called (not dragging)
+    expect(mutations.bufferRemoteReorder).not.toHaveBeenCalled()
+  })
+
+  it('INT-26: ack vs broadcast — reverse arrival order stress (broadcast#2 before ack#1)', () => {
+    // Stress test: broadcast for reorder #2 arrives BEFORE ack for reorder #1.
+    // The hook must still route correctly:
+    //   - If locally dragging when broadcast arrives → buffer it
+    //   - When ack arrives → route to onColumnReorderAck
+    // End state: no snap-back, mutations receives both events correctly.
+    const { mutations, setNodes, bumpReorderTick } = makeCallbacks()
+
+    // Initially dragging (so broadcast #2 gets buffered)
+    mutations.isLocalDragging.mockReturnValue(true)
+
+    renderHook(() =>
+      useColumnReorderCollaboration(WHITEBOARD_ID, USER_ID, {
+        setNodes,
+        bumpReorderTick,
+        mutations,
+      }),
+    )
+
+    const ackHandler = mockOn.mock.calls.find(
+      ([event]) => event === 'column:reorder:ack',
+    )?.[1]
+    const reorderedHandler = mockOn.mock.calls.find(
+      ([event]) => event === 'column:reordered',
+    )?.[1]
+
+    // Broadcast for reorder #2 arrives FIRST while still dragging → buffered
+    act(() => {
+      reorderedHandler({
+        tableId: TABLE_ID,
+        orderedColumnIds: ['col-C', 'col-B', 'col-A'],
+        reorderedBy: 'other-user',
+      })
+    })
+
+    // Should be buffered (not applied directly) since isLocalDragging = true
+    expect(mutations.bufferRemoteReorder).toHaveBeenCalledWith({
+      tableId: TABLE_ID,
+      orderedColumnIds: ['col-C', 'col-B', 'col-A'],
+      reorderedBy: 'other-user',
+    })
+    expect(mutations.onColumnReorderedFromOther).not.toHaveBeenCalled()
+
+    // Now ack for reorder #1 arrives → routed to onColumnReorderAck
+    act(() => {
+      ackHandler({
+        tableId: TABLE_ID,
+        orderedColumnIds: ['col-B', 'col-A', 'col-C'],
+      })
+    })
+
+    expect(mutations.onColumnReorderAck).toHaveBeenCalledTimes(1)
+    expect(mutations.onColumnReorderAck).toHaveBeenCalledWith(
+      TABLE_ID,
+      ['col-B', 'col-A', 'col-C'],
+      setNodes,
+      bumpReorderTick,
+    )
+
+    // The broadcast was correctly buffered (not applied during drag) — no snap-back.
+    // reconcileAfterDrop (called separately when drag ends) will flush the buffer.
+    expect(mutations.bufferRemoteReorder).toHaveBeenCalledTimes(1)
+    expect(mutations.onColumnReorderedFromOther).not.toHaveBeenCalled()
+  })
 })

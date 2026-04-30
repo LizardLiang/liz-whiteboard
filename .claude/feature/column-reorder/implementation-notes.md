@@ -3,8 +3,8 @@
 **Feature**: column-reorder
 **Agent**: Ares
 **Date**: 2026-04-30
-**Status**: Complete
-**Based on**: Tech Spec v2 (revised), Test Plan v1, Decomposition v1
+**Status**: Complete (Round 2 — Additional Tests for PRD Alignment)
+**Based on**: Tech Spec v2 (revised), Test Plan v1, Decomposition v1, Hera PRD Alignment Report
 
 ---
 
@@ -25,10 +25,16 @@ Implemented drag-and-drop column reordering within table nodes in the ER whitebo
 | `src/components/whiteboard/column/InsertionLine.tsx` | 2px accent-color drop indicator |
 | `src/data/column.test.ts` | Suite S2: reorderColumns() data layer tests (5 tests) |
 | `src/hooks/use-column-reorder-mutations.test.ts` | Suites S3, S4, S9: detectOverwriteConflict + hook state machine (25 tests) |
-| `src/hooks/use-column-reorder-collaboration.test.ts` | Suite S7: collaboration hook (6 tests) |
+| `src/hooks/use-column-reorder-collaboration.test.ts` | Suite S7: collaboration hook (6 tests) + INT-25/26 ordering (2 tests) |
 | `specs/001-collaborative-er-whiteboard/contracts/websocket-events.md` | Documents all WS events including 3 new column:reorder events |
+| `src/routes/api/column-reorder-collaboration.test.ts` | Suite S5: socket handler (12 tests) — Round 2 |
+| `src/components/whiteboard/TableNode.test.tsx` | Suite S6: drag handle, InsertionLine, queue-full (18 tests) — Round 2 |
+| `src/components/whiteboard/ReactFlowWhiteboard.test.tsx` | Suite S8: edge re-anchor + seed (4 tests) — Round 2 |
+| `src/hooks/use-column-reorder-auto-scroll.test.ts` | REQ-09: auto-scroll logic (9 tests) — Round 2 |
+| `src/components/whiteboard/column/DragHandle.test.tsx` | REQ-12: tooltip tests (4 tests) — Round 2 |
+| `src/hooks/use-prefers-reduced-motion.test.ts` | REQ-13: reduced-motion compliance (6 tests) — Round 2 |
 
-**Total new files: 9**
+**Total new files: 15**
 
 ---
 
@@ -53,6 +59,8 @@ Implemented drag-and-drop column reordering within table nodes in the ER whitebo
 
 ## Tests Written
 
+### Round 1 (initial implementation)
+
 | Suite | File | Tests | Status |
 |-------|------|-------|--------|
 | S1: Zod Schema | `src/data/schema.test.ts` | 6 | Passing |
@@ -62,24 +70,46 @@ Implemented drag-and-drop column reordering within table nodes in the ER whitebo
 | S7: Collaboration Hook | `src/hooks/use-column-reorder-collaboration.test.ts` | 6 | Passing |
 | S9: No-Op Reconciliation | `src/hooks/use-column-reorder-mutations.test.ts` | 6 | Passing |
 
-**Total: 42 tests written, all passing**
+**Round 1 total: 42 tests**
+
+### Round 2 (PRD alignment gap coverage — Hera findings)
+
+| Suite | File | Tests | Status | ACs Covered |
+|-------|------|-------|--------|-------------|
+| S5: Socket Handler | `src/routes/api/column-reorder-collaboration.test.ts` | 12 | Passing | AC-04b, AC-04f, AC-07a, AC-07b, FM-03, FM-07 |
+| S6: TableNode Drag | `src/components/whiteboard/TableNode.test.tsx` | 18 | Passing | AC-01a-f, AC-02a-f, AC-08d, AC-10a-c |
+| S7 INT-25/26: Ack/Broadcast Order | `src/hooks/use-column-reorder-collaboration.test.ts` | 2 | Passing | AC-07d, SA-M2 |
+| S8: Edge Re-Anchor | `src/components/whiteboard/ReactFlowWhiteboard.test.tsx` | 4 | Passing | AC-05a-d, SA-H1 |
+| REQ-09: Auto-Scroll | `src/hooks/use-column-reorder-auto-scroll.test.ts` | 9 | Passing | AC-09a-d, AC-13c |
+| REQ-12: Tooltip | `src/components/whiteboard/column/DragHandle.test.tsx` | 4 | Passing | AC-12a, AC-12e |
+| REQ-13: Reduced-Motion | `src/hooks/use-prefers-reduced-motion.test.ts` | 6 | Passing | AC-13a-c |
+
+**Round 2 total: 55 tests**
+
+**Grand total: 97 tests written, all passing**
 
 Deferred (per test-plan):
-- S5 (Socket handler integration) — deferred; would require full Socket.IO test harness setup
-- S6 (TableNode drag behavior) — deferred; requires @dnd-kit test utils setup
-- S8 (Edge re-anchor) — deferred; requires ReactFlow test provider
 - S10 (E2E) — deferred; requires Playwright setup
 
 ---
 
 ## Test Results
 
+### Round 1 baseline
 ```
 Test Files: 54 passed (1 failing — pre-existing: use-whiteboard-collaboration.test.ts AuthProvider)
 Tests:      570 passed, 14 failed (all 14 pre-existing failures in use-whiteboard-collaboration.test.ts)
 ```
 
-Pre-existing failure baseline (before this implementation): 17 failed (same file). My changes did not introduce any new failures, and actually fixed 3 existing failures.
+### Round 2 (after adding 55 tests)
+```
+Test Files: 60 passed (1 failing — same pre-existing file)
+Tests:      625 passed, 14 failed (all 14 pre-existing failures in use-whiteboard-collaboration.test.ts)
+```
+
+Zero new failures introduced. All 55 new tests pass.
+
+**Key technical decision**: S5 socket handler tests use dependency injection (injected `deps` object) rather than `vi.mock` module-level mocking. This approach was required because Zod's `.uuid()` validation was catching test UUIDs that didn't conform to RFC 4122 v4 format (version nibble must be `4`, variant nibble must be `8`/`9`/`a`/`b`). All test UUID constants use valid v4 UUIDs.
 
 ---
 
