@@ -247,6 +247,17 @@ export const TableNode = memo(
       (event: DragStartEvent) => {
         const tableId = table.id
 
+        // B1-A FIX: Reset snapshot refs BEFORE the queue-full guard.
+        // If the guard rejects this drag and returns early, the refs are left empty.
+        // reconcileAfterDrop checks preDragOrder.length === 0 and treats the drop
+        // as a no-op — catching the case where @dnd-kit fires handleDragEnd even
+        // though handleDragStart returned early (it cannot cancel the gesture).
+        // Without this reset, a stale snapshot from a previous successful drag would
+        // be in the refs, causing the guard at reconcileAfterDrop:384 to be bypassed
+        // and the drop to corrupt state (queue entry pushed, column:reorder emitted).
+        preDragOrderRef.current = []
+        preDragColumnsRef.current = []
+
         // SA-M3: queue-full guard at drag-start
         if (isQueueFullForTable?.(tableId)) {
           toast.warning('Slow down — previous reorders still saving')
@@ -289,12 +300,14 @@ export const TableNode = memo(
 
         if (!onColumnReorder || !emitColumnReorder || !bumpReorderTick) return
 
-        // B1 FIX: If preDragOrderRef is empty, handleDragStart was rejected by the
-        // queue-full guard. @dnd-kit continued the drag anyway (returning from onDragStart
-        // does not cancel it). reconcileAfterDrop checks preDragOrder.length === 0 and
-        // aborts, but we pass it through here so the guard lives in one place (SA-H4).
-        // Passing preDragOrderRef.current as-is (empty array) is sufficient — the
-        // reconcileAfterDrop early-return will catch it.
+        // B1-A FIX: preDragOrderRef is empty in two scenarios:
+        // (1) The queue-full guard in handleDragStart fired: we cleared the refs before
+        //     returning, so they are empty. @dnd-kit fires handleDragEnd regardless because
+        //     returning from onDragStart does not cancel the gesture.
+        // (2) handleDragStart was never reached (mount state, unusual teardown, etc.).
+        // In both cases, passing the empty preDragOrderRef.current to reconcileAfterDrop
+        // is correct — the guard at reconcileAfterDrop:384 (preDragOrder.length === 0)
+        // treats the drop as a no-op and returns early. The guard lives in one place (SA-H4).
 
         const tableId = table.id
         const currentColumns = columns

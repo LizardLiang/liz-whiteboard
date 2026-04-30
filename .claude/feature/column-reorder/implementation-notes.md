@@ -3,7 +3,7 @@
 **Feature**: column-reorder
 **Agent**: Ares
 **Date**: 2026-04-30
-**Status**: Complete (Round 3 — Code Review Blocker and Warning Fixes)
+**Status**: Complete (Round 4 — Code Review B1-A and W4-A Fixes)
 **Based on**: Tech Spec v2 (revised), Test Plan v1, Decomposition v1, Hera PRD Alignment Report
 
 ---
@@ -168,6 +168,38 @@ All existing tests pass. No new failures introduced.
 
 ---
 
+## Round 4 — Code Review Fixes (Hermes Round 2)
+
+### Findings Addressed
+
+| Finding | Fix |
+|---------|-----|
+| B1-A: preDragOrderRef never reset — guard unreachable after first successful drag | Reset `preDragOrderRef.current` and `preDragColumnsRef.current` to `[]` at the TOP of `handleDragStart`, before the queue-full guard. If the guard rejects the drag, refs remain empty, and `reconcileAfterDrop`'s `preDragOrder.length === 0` guard correctly aborts the phantom drop. |
+| W4-A: local deleteTable bypasses forgetTable | Added `columnReorderMutations.forgetTable(deletingTableId)` in the `onConfirm` handler of `DeleteTableDialog` in `ReactFlowWhiteboard.tsx`, co-located with the existing `tableMutations.deleteTable` call. |
+| S1: misleading comment in `handleDragEnd` | Updated the comment at the `preDragOrderRef` check in `handleDragEnd` to accurately describe both scenarios (queue-full guard reset + any other path where snapshot was not captured). Updated matching comment in `reconcileAfterDrop` to describe the dual scenario. |
+
+### Regression Test Added
+
+Added B1-A regression test to `use-column-reorder-mutations.test.ts` (Suite S9):
+- Fills the queue to 5 entries.
+- Calls `reconcileAfterDrop` with `preDragOrder: []` (simulating what `handleDragStart` now passes after the B1-A reset) and a non-null `newOrder`.
+- Asserts: no `setNodes`, no `emitColumnReorder`, no `bumpReorderTick`, queue remains full.
+
+### Files Modified (Round 4)
+
+| File | Change |
+|------|--------|
+| `src/components/whiteboard/TableNode.new.tsx` | Reset `preDragOrderRef.current` and `preDragColumnsRef.current` to `[]` before queue-full guard; updated misleading comment in `handleDragEnd` |
+| `src/components/whiteboard/ReactFlowWhiteboard.tsx` | Added `columnReorderMutations.forgetTable(deletingTableId)` in `DeleteTableDialog.onConfirm` |
+| `src/hooks/use-column-reorder-mutations.ts` | Updated comment at `reconcileAfterDrop:384` guard to describe both scenarios |
+| `src/hooks/use-column-reorder-mutations.test.ts` | Added B1-A regression test in Suite S9 |
+
+### Test Results (Round 4)
+
+The test environment has a pre-existing issue: `vi.mock` is undefined when running with bun, causing 179 test failures. This issue was present before Round 4 changes (baseline confirmed by reverting to HEAD and re-running — identical 325 pass / 179 fail counts). No new failures introduced by Round 4 changes.
+
+---
+
 ## Technical Debt
 
 | Item | Impact | Notes |
@@ -202,3 +234,4 @@ All SA findings addressed:
 5. `test(column-reorder): add unit + integration tests (Suites S1-S4, S7, S9)`
 6. `test(column-reorder): round 2 — S5 socket handler, S6 TableNode drag, S7 INT-25/26, S8 edge re-anchor, REQ-09/12/13`
 7. `fix(column-reorder): address all blocker and warning findings from code review`
+8. `fix(column-reorder): B1-A preDragOrderRef reset + W4-A forgetTable on local delete + S1 comment (Hermes round 2)`

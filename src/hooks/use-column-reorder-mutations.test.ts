@@ -694,6 +694,70 @@ describe('reconcileAfterDrop no-op reconciliation (Suite S9)', () => {
     expect(emitColumnReorder).not.toHaveBeenCalled()
   })
 
+  it('B1-A regression: queue-full drop with stale preDragOrder cleared by handleDragStart reset — reconcileAfterDrop is a no-op', () => {
+    // Reproduces the B1-A bug scenario:
+    // 1. 5 successful drags fill the queue. Each drag leaves preDragOrderRef non-empty.
+    // 2. On drag #6, handleDragStart resets the refs to [] BEFORE the queue-full check,
+    //    then returns early. preDragOrderRef is now [].
+    // 3. @dnd-kit fires handleDragEnd anyway (cannot cancel). reconcileAfterDrop is called
+    //    with an empty preDragOrder — the guard must reject it as a no-op.
+    // Before the B1-A fix, preDragOrder would still hold the order from drag #5,
+    // the guard would not fire, and a 6th queue entry would be pushed + emitted.
+    const { result } = renderHook(() => useColumnReorderMutations())
+    const setNodes = vi.fn()
+    const bumpReorderTick = vi.fn()
+    const emitColumnReorder = vi.fn()
+
+    const orders = [
+      ['col-B', 'col-A', 'col-C', 'col-D', 'col-E'],
+      ['col-C', 'col-B', 'col-A', 'col-D', 'col-E'],
+      ['col-D', 'col-C', 'col-B', 'col-A', 'col-E'],
+      ['col-E', 'col-D', 'col-C', 'col-B', 'col-A'],
+      ['col-A', 'col-E', 'col-D', 'col-C', 'col-B'],
+    ]
+
+    // Enqueue 5 drags to fill the queue
+    act(() => {
+      for (const newOrder of orders) {
+        result.current.reconcileAfterDrop({
+          tableId: 'tbl-001',
+          preDragOrder: COLS,
+          newOrder,
+          preState: COLS.map((id, i) => makeColumn(id, i)),
+          emitColumnReorder,
+          setNodes,
+          bumpReorderTick,
+        })
+      }
+    })
+
+    expect(result.current.isQueueFullForTable('tbl-001')).toBe(true)
+    setNodes.mockClear()
+    emitColumnReorder.mockClear()
+    bumpReorderTick.mockClear()
+
+    // Simulate drag #6: handleDragStart reset refs to [] before returning early.
+    // reconcileAfterDrop is called with empty preDragOrder (as TableNode now does).
+    const staleNewOrder = ['col-B', 'col-C', 'col-A', 'col-D', 'col-E']
+    act(() => {
+      result.current.reconcileAfterDrop({
+        tableId: 'tbl-001',
+        preDragOrder: [], // refs were reset to [] by handleDragStart before queue-full guard fired
+        newOrder: staleNewOrder,
+        preState: COLS.map((id, i) => makeColumn(id, i)),
+        emitColumnReorder,
+        setNodes,
+        bumpReorderTick,
+      })
+    })
+
+    // Guard must fire: no state mutation, no emit, queue still at 5
+    expect(setNodes).not.toHaveBeenCalled()
+    expect(emitColumnReorder).not.toHaveBeenCalled()
+    expect(bumpReorderTick).not.toHaveBeenCalled()
+    expect(result.current.isQueueFullForTable('tbl-001')).toBe(true)
+  })
+
   it('INT-36: queue-full faux-cancel — buffer not set (drag never started)', () => {
     const { result } = renderHook(() => useColumnReorderMutations())
     const setNodes = vi.fn()
