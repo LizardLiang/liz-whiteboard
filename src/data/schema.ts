@@ -203,6 +203,17 @@ export const createColumnSchema = z.object({
 })
 
 /**
+ * Schema for batch-reordering columns within a table.
+ * orderedColumnIds must contain at least 1 UUID (the complete desired order).
+ * Max 500 as a sanity cap — tables with more columns are unsupported in V1.
+ * All IDs must use .uuid() per project convention (never .cuid()).
+ */
+export const reorderColumnsSchema = z.object({
+  tableId: z.string().uuid(),
+  orderedColumnIds: z.array(z.string().uuid()).min(1).max(500),
+})
+
+/**
  * Schema for updating an existing column
  *
  * Defined independently (without basing on createColumnSchema) so that absent
@@ -291,6 +302,7 @@ export type UpdateTable = z.infer<typeof updateTableSchema>
 
 export type CreateColumn = z.infer<typeof createColumnSchema>
 export type UpdateColumn = z.infer<typeof updateColumnSchema>
+export type ReorderColumns = z.infer<typeof reorderColumnsSchema>
 
 export type CreateRelationship = z.infer<typeof createRelationshipSchema>
 export type UpdateRelationship = z.infer<typeof updateRelationshipSchema>
