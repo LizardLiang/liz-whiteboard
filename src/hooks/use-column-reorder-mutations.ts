@@ -97,14 +97,77 @@ export interface UseColumnReorderMutationsReturn {
 // ============================================================================
 
 /**
+ * Find the single column that was explicitly moved by comparing two orderings.
+ * Returns the column that, when removed from both arrays, leaves the remaining
+ * elements in identical relative order (i.e., all other columns were merely displaced).
+ * Returns null if no such single column exists (multi-column move or complex scenario).
+ */
+function findExplicitlyMoved(
+  preDragOrder: Array<string>,
+  newOrder: Array<string>,
+): string | null {
+  for (const id of newOrder) {
+    const preDragWithout = preDragOrder.filter((e) => e !== id)
+    const newOrderWithout = newOrder.filter((e) => e !== id)
+    if (
+      preDragWithout.length === newOrderWithout.length &&
+      preDragWithout.every((v, i) => v === newOrderWithout[i])
+    ) {
+      return id
+    }
+  }
+  return null
+}
+
+/**
+ * Compute the moved-set: columns that were explicitly moved (not just displaced).
+ * Primary strategy: find the single column that was the drag target.
+ * Fallback (multi-column scenario): use all columns whose absolute position changed.
+ * Returns empty set if the two orders are identical (no-op).
+ */
+function computeMovedSet(
+  preDragOrder: Array<string>,
+  newOrder: Array<string>,
+): Set<string> {
+  // Fast path: no-op (orders are identical)
+  if (arraysEqual(preDragOrder, newOrder)) {
+    return new Set()
+  }
+
+  const singleMoved = findExplicitlyMoved(preDragOrder, newOrder)
+  if (singleMoved !== null) {
+    return new Set([singleMoved])
+  }
+
+  // Fallback: absolute position change (for multi-element moves)
+  const preDragPosition = new Map<string, number>()
+  preDragOrder.forEach((id, i) => preDragPosition.set(id, i))
+  const newPosition = new Map<string, number>()
+  newOrder.forEach((id, i) => newPosition.set(id, i))
+
+  const moved = new Set<string>()
+  for (const id of newOrder) {
+    const pre = preDragPosition.get(id)
+    const cur = newPosition.get(id)
+    if (pre !== undefined && cur !== undefined && pre !== cur) {
+      moved.add(id)
+    }
+  }
+  return moved
+}
+
+/**
  * Detect whether a buffered remote reorder conflicts with the local drop.
  *
  * Uses column-level intersection check (SA-H2, AC-14e):
- * 1. Compute A's moved-set: columns whose position changed between preDragOrder and localFinal
- * 2. Compute B's moved-set: columns whose position changed between preDragOrder and bufferedRemote.orderedColumnIds
+ * 1. Compute A's moved-set: the column(s) A explicitly moved (not just displaced)
+ * 2. Compute B's moved-set: the column(s) B explicitly moved (not just displaced)
  * 3. Find sharedMoved = A ∩ B
  * 4. For each column in sharedMoved, compare its final index in localFinal vs bufferedRemote
  * 5. If any shared column ends up at a different index → conflict
+ *
+ * Uses findExplicitlyMoved to identify the drag target (displaced columns excluded).
+ * Falls back to absolute position change for multi-column moves.
  *
  * Returns false when bufferedRemote is null/undefined (no remote event to compare).
  */
@@ -117,35 +180,14 @@ export function detectOverwriteConflict(
 
   const remoteOrder = bufferedRemote.orderedColumnIds
 
-  // Build position maps from each order
-  const preDragPosition = new Map<string, number>()
-  preDragOrder.forEach((id, i) => preDragPosition.set(id, i))
+  const movedByA = computeMovedSet(preDragOrder, localFinal)
+  const movedByB = computeMovedSet(preDragOrder, remoteOrder)
 
   const localFinalPosition = new Map<string, number>()
   localFinal.forEach((id, i) => localFinalPosition.set(id, i))
 
   const remotePosition = new Map<string, number>()
   remoteOrder.forEach((id, i) => remotePosition.set(id, i))
-
-  // A's moved-set: columns whose index changed between preDrag and localFinal
-  const movedByA = new Set<string>()
-  for (const id of localFinal) {
-    const pre = preDragPosition.get(id)
-    const local = localFinalPosition.get(id)
-    if (pre !== undefined && local !== undefined && pre !== local) {
-      movedByA.add(id)
-    }
-  }
-
-  // B's moved-set: columns whose index changed between preDrag and remoteOrder
-  const movedByB = new Set<string>()
-  for (const id of remoteOrder) {
-    const pre = preDragPosition.get(id)
-    const remote = remotePosition.get(id)
-    if (pre !== undefined && remote !== undefined && pre !== remote) {
-      movedByB.add(id)
-    }
-  }
 
   // Check shared moved columns: if any are at different final positions → conflict
   for (const id of movedByA) {
