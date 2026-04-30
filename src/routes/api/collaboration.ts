@@ -17,6 +17,7 @@ import {
   createColumnSchema,
   createRelationshipSchema,
   createTableSchema,
+  reorderColumnsSchema,
   updateColumnSchema,
   updateRelationshipSchema,
   updateTableSchema,
@@ -33,6 +34,8 @@ import {
   createColumn,
   deleteColumn,
   findColumnById,
+  findColumnsByTableId,
+  reorderColumns,
   updateColumn,
 } from '@/data/column'
 import {
@@ -720,6 +723,107 @@ function setupCollaborationEventHandlers(
         error: 'DELETE_FAILED',
         message:
           error instanceof Error ? error.message : 'Failed to delete column',
+      })
+      return
+    }
+    await safeUpdateSessionActivity(socket.id)
+  })
+
+  // Column reorder
+  socket.on('column:reorder', async (data: unknown) => {
+    if (isSessionExpired(socket)) {
+      socket.emit('session_expired')
+      socket.disconnect(true)
+      return
+    }
+    // V1: denyIfInsufficientPermission is a no-op stub per PRD OQ-3.
+    // Wired here for forward-compatibility when RBAC is restored.
+    // TODO(SA-L1): restore real permission check — update all column:* handlers in one pass.
+    if (await denyIfInsufficientPermission(socket, whiteboardId)) return
+
+    try {
+      // Validate input with Zod schema
+      const validated = reorderColumnsSchema.parse(data)
+      const { tableId, orderedColumnIds } = validated
+
+      // IDOR check: tableId must belong to this whiteboard
+      const table = await findDiagramTableById(tableId)
+      if (!table) {
+        socket.emit('error', {
+          event: 'column:reorder',
+          error: 'FORBIDDEN',
+          message: 'Table not found',
+          tableId,
+        })
+        return
+      }
+      if (table.whiteboardId !== whiteboardId) {
+        socket.emit('error', {
+          event: 'column:reorder',
+          error: 'FORBIDDEN',
+          message: 'Table does not belong to this whiteboard',
+          tableId,
+        })
+        return
+      }
+
+      // Fetch current columns to validate IDs and perform FM-07 merge
+      const currentColumns = await findColumnsByTableId(tableId)
+      const currentColumnIds = new Set(currentColumns.map((c) => c.id))
+
+      // Validate: every supplied ID must belong to this table
+      const seenIds = new Set<string>()
+      for (const id of orderedColumnIds) {
+        if (!currentColumnIds.has(id)) {
+          socket.emit('error', {
+            event: 'column:reorder',
+            error: 'VALIDATION_FAILED',
+            message: `Column ${id} does not belong to table ${tableId}`,
+            tableId,
+          })
+          return
+        }
+        if (seenIds.has(id)) {
+          socket.emit('error', {
+            event: 'column:reorder',
+            error: 'VALIDATION_FAILED',
+            message: `Duplicate column ID ${id} in orderedColumnIds`,
+            tableId,
+          })
+          return
+        }
+        seenIds.add(id)
+      }
+
+      // FM-07 merge: append any columns the client omitted, in ascending existing-order
+      const suppliedSet = new Set(orderedColumnIds)
+      const missingColumns = currentColumns
+        .filter((c) => !suppliedSet.has(c.id))
+        .sort((a, b) => a.order - b.order)
+      const mergedOrderedIds = [...orderedColumnIds, ...missingColumns.map((c) => c.id)]
+
+      // Persist via single Prisma transaction (REQ-03)
+      await reorderColumns(tableId, mergedOrderedIds)
+
+      // Broadcast the merged order to all other clients
+      socket.broadcast.emit('column:reordered', {
+        tableId,
+        orderedColumnIds: mergedOrderedIds,
+        reorderedBy: userId,
+      })
+
+      // Ack to originating socket only (not broadcast)
+      socket.emit('column:reorder:ack', {
+        tableId,
+        orderedColumnIds: mergedOrderedIds,
+      })
+    } catch (error) {
+      console.error('Failed to reorder columns:', error)
+      socket.emit('error', {
+        event: 'column:reorder',
+        error: 'UPDATE_FAILED',
+        message:
+          error instanceof Error ? error.message : 'Failed to reorder columns',
       })
       return
     }
