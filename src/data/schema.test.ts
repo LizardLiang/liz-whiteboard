@@ -8,6 +8,7 @@ import {
   loginInputSchema,
   projectRoleSchema,
   registerInputSchema,
+  reorderColumnsSchema,
 } from './schema'
 
 describe('cardinalitySchema', () => {
@@ -279,5 +280,62 @@ describe('projectRoleSchema', () => {
 
   it('TC-P1-04: rejects lowercase viewer (case-sensitive)', () => {
     expect(projectRoleSchema.safeParse('viewer').success).toBe(false)
+  })
+})
+
+// Suite S1: reorderColumnsSchema (UT-01 through UT-06)
+describe('reorderColumnsSchema', () => {
+  // Use standard v4 UUID format (xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx)
+  const validUuid = 'f47ac10b-58cc-4372-a567-0e02b2c3d479'
+  const anotherUuid = '550e8400-e29b-41d4-a716-446655440000'
+
+  it('UT-01: valid schema parses correctly', () => {
+    const result = reorderColumnsSchema.safeParse({
+      tableId: validUuid,
+      orderedColumnIds: [validUuid, anotherUuid],
+    })
+    expect(result.success).toBe(true)
+  })
+
+  it('UT-02: rejects non-UUID tableId', () => {
+    const result = reorderColumnsSchema.safeParse({
+      tableId: 'not-a-uuid',
+      orderedColumnIds: [validUuid],
+    })
+    expect(result.success).toBe(false)
+  })
+
+  it('UT-03: rejects empty orderedColumnIds array', () => {
+    const result = reorderColumnsSchema.safeParse({
+      tableId: validUuid,
+      orderedColumnIds: [],
+    })
+    expect(result.success).toBe(false)
+  })
+
+  it('UT-04: rejects non-UUID entries in orderedColumnIds', () => {
+    const result = reorderColumnsSchema.safeParse({
+      tableId: validUuid,
+      orderedColumnIds: ['not-a-uuid'],
+    })
+    expect(result.success).toBe(false)
+  })
+
+  it('UT-05: accepts array of exactly 1 UUID', () => {
+    const result = reorderColumnsSchema.safeParse({
+      tableId: validUuid,
+      orderedColumnIds: [validUuid],
+    })
+    expect(result.success).toBe(true)
+  })
+
+  it('UT-06: rejects array exceeding 500 entries', () => {
+    // Use the same valid UUID 501 times (contents don't matter for the max-length check)
+    const ids = Array.from({ length: 501 }, () => validUuid)
+    const result = reorderColumnsSchema.safeParse({
+      tableId: validUuid,
+      orderedColumnIds: ids,
+    })
+    expect(result.success).toBe(false)
   })
 })

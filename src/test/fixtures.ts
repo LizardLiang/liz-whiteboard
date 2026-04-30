@@ -38,6 +38,27 @@ export const mockFKColumn: Column = {
   order: 2,
 }
 
+// Ordered column list for reorder tests (5 columns, A-E) — Suite S3, S4, S9
+const BASE = {
+  tableId: 'tbl-001',
+  dataType: 'string' as const,
+  isPrimaryKey: false,
+  isForeignKey: false,
+  isNullable: true,
+  isUnique: false,
+  description: null as string | null,
+  createdAt: new Date('2026-01-01'),
+  updatedAt: new Date('2026-01-01'),
+}
+
+export const mockOrderedColumns: Array<Column> = [
+  { ...BASE, id: 'col-A', name: 'id', order: 0, dataType: 'uuid', isPrimaryKey: true, isNullable: false, isUnique: true },
+  { ...BASE, id: 'col-B', name: 'email', order: 1 },
+  { ...BASE, id: 'col-C', name: 'name', order: 2 },
+  { ...BASE, id: 'col-D', name: 'createdAt', order: 3, dataType: 'timestamp' },
+  { ...BASE, id: 'col-E', name: 'updatedAt', order: 4, dataType: 'timestamp' },
+]
+
 export const mockRelationship = {
   id: 'rel-001',
   sourceColumnId: 'col-fk',
