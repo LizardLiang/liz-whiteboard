@@ -129,6 +129,16 @@
       "action": "status changed from 'in-progress' to 'complete'",
       "stage": "8-implementation",
       "timestamp": "2026-04-30T16:13:09+08:00"
+    },
+    {
+      "action": "status changed from 'ready' to 'in-progress'",
+      "stage": "8-implementation",
+      "timestamp": "2026-04-30T16:22:36+08:00"
+    },
+    {
+      "action": "status changed from 'in-progress' to 'complete'",
+      "stage": "8-implementation",
+      "timestamp": "2026-04-30T16:36:40+08:00"
     }
   ],
   "implementation_mode": "ares",
@@ -318,7 +328,7 @@
     },
     "8-implementation": {
       "agent": "ares",
-      "completed": "2026-04-30T16:13:09+08:00",
+      "completed": "2026-04-30T16:36:40+08:00",
       "document": "implementation-notes.md",
       "documents": [
         "implementation-notes.md",
@@ -337,25 +347,68 @@
         "specs/001-collaborative-er-whiteboard/contracts/websocket-events.md"
       ],
       "mode": "ares",
-      "started": "2026-04-30T15:52:26+08:00",
+      "return_reason": "Returned to stage 8 by Hera (PRD alignment gaps). Must cover: S5 socket handler tests, S6 TableNode drag tests, S8 edge re-anchor tests, S7 INT-25/26, REQ-09 auto-scroll, REQ-12 tooltip, REQ-13 reduced-motion.",
+      "started": "2026-04-30T16:22:36+08:00",
       "status": "complete",
-      "summary": "Created 9 files, modified 10. 42 tests written across Suites S1-S4, S7, S9 — all passing. Suites S5, S6, S8, S10 deferred (require test harness setup not yet in place). Key deviation: detectOverwriteConflict uses findExplicitlyMoved algorithm (excludes displaced columns) instead of absolute-position diff to avoid false positives in disjoint-move cases (matches all 9 Suite S3 boundary tests). DragOverlay lacks @dnd-kit/modifiers (separate package not installed) — no data impact.",
+      "summary": "Round 2 complete. Created 6 new test files (55 tests) covering all gaps identified by Hera: S5 socket handler (12 tests, dependency-injected to avoid module mock issues), S6 TableNode+DragHandle+InsertionLine (18 tests, @dnd-kit mocked), S7 INT-25/26 ack-vs-broadcast ordering (2 tests added), S8 edge re-anchor useLayoutEffect pattern (4 tests), REQ-09 auto-scroll pure-function logic (9 tests), REQ-12 tooltip (4 tests), REQ-13 reduced-motion (6 tests). Grand total: 97 tests, all passing. 625 pass/14 fail (14 pre-existing, unchanged).",
       "tasks": []
     },
     "9-prd-alignment": {
       "agent": "hera",
-      "alignment_verdict": null,
-      "completed": null,
-      "coverage_pct": 0,
-      "criteria_total": 0,
-      "criteria_verified": 0,
-      "documents": [],
-      "started": null,
+      "alignment_verdict": "gaps",
+      "completed": "2026-04-30T16:20:00+08:00",
+      "coverage_pct": 54,
+      "criteria_missing": 16,
+      "criteria_plan_gap": 7,
+      "criteria_total": 50,
+      "criteria_verified": 27,
+      "documents": [
+        "prd-alignment.md"
+      ],
+      "gaps_requiring_coverage": [
+        "AC-01a",
+        "AC-01b",
+        "AC-01c",
+        "AC-01d",
+        "AC-01e",
+        "AC-01f",
+        "AC-01g",
+        "AC-02a",
+        "AC-02b",
+        "AC-02c",
+        "AC-02d",
+        "AC-02e",
+        "AC-02f",
+        "AC-03a",
+        "AC-04b",
+        "AC-04f",
+        "AC-05a",
+        "AC-05b",
+        "AC-05c",
+        "AC-05d",
+        "AC-07a",
+        "AC-07b",
+        "AC-07d",
+        "AC-08d (drag-start blocking)",
+        "AC-09a",
+        "AC-09b",
+        "AC-09c",
+        "AC-09d",
+        "AC-10a",
+        "AC-10b",
+        "AC-10c",
+        "AC-12a",
+        "AC-12e",
+        "AC-13a",
+        "AC-13b",
+        "AC-13c"
+      ],
+      "started": "2026-04-30T16:14:00+08:00",
       "status": "ready"
     }
   },
   "pipeline_status": "in-progress",
   "priority": "P1",
   "stage": "8-implementation",
-  "updated": "2026-04-30T16:13:09+08:00"
+  "updated": "2026-04-30T16:36:40+08:00"
 }
