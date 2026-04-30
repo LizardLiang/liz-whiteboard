@@ -1,0 +1,361 @@
+{
+  "created": "2026-04-30T00:00:00+08:00",
+  "description": "Drag-and-drop reordering of columns within a table node in the ER whiteboard, with persistence and real-time sync",
+  "documents": {
+    "1-prd": "prd.md,decisions.md",
+    "2-prd-review": "prd-challenge.md",
+    "3-decomposition": "decomposition.md",
+    "5-tech-spec": "tech-spec.md",
+    "6-spec-review-sa": "spec-review-sa.md",
+    "7-test-plan": "test-plan.md",
+    "8-implementation": "implementation-notes.md"
+  },
+  "feature": "column-reorder",
+  "history": [
+    {
+      "action": "started",
+      "agent": "kratos",
+      "notes": "Feature initialized — P1 High. Drag-and-drop column reorder within table nodes in the ER whiteboard.",
+      "stage": "1-prd",
+      "timestamp": "2026-04-30T00:00:00+08:00"
+    },
+    {
+      "action": "status changed from 'in-progress' to 'complete'",
+      "stage": "1-prd",
+      "timestamp": "2026-04-30T14:08:31+08:00"
+    },
+    {
+      "action": "status changed from 'pending' to 'in-progress'",
+      "stage": "2-prd-review",
+      "timestamp": "2026-04-30T14:09:21+08:00"
+    },
+    {
+      "action": "status changed from 'in-progress' to 'complete'",
+      "stage": "2-prd-review",
+      "timestamp": "2026-04-30T14:10:57+08:00",
+      "verdict": "revisions"
+    },
+    {
+      "action": "revision round 1 complete (PRD revised by Athena addressing 5 BLOCKING + 9 MAJOR + 6 MINOR Nemesis findings)",
+      "agent": "athena",
+      "notes": "Added REQ-12 (tooltip), REQ-13 (reduced-motion), REQ-14 (overwrite notification), REQ-15 (toast guidance); REQ-03 transactional mandate; REQ-08 AC-08e reconnect-mismatch detection; Section 12 WCAG debt; Section 13 required spikes; metric methodology + LAN target.",
+      "revision": 1,
+      "stage": "1-prd"
+    },
+    {
+      "action": "status changed from 'complete' to 'in-progress'",
+      "stage": "2-prd-review",
+      "timestamp": "2026-04-30T14:23:19+08:00"
+    },
+    {
+      "action": "status changed from 'in-progress' to 'complete'",
+      "stage": "2-prd-review",
+      "timestamp": "2026-04-30T14:25:03+08:00",
+      "verdict": "approved"
+    },
+    {
+      "action": "status changed from 'pending' to 'in-progress'",
+      "agent": "hephaestus",
+      "stage": "5-tech-spec",
+      "timestamp": "2026-04-30T14:30:00+08:00"
+    },
+    {
+      "action": "status changed from 'in-progress' to 'complete'",
+      "agent": "hephaestus",
+      "notes": "Tech spec written; spikes S1 (nodrag/nowheel pattern) and S2 (updateNodeInternals required) resolved by codebase inspection; @dnd-kit/{core,sortable,utilities} chosen.",
+      "stage": "5-tech-spec",
+      "timestamp": "2026-04-30T15:00:00+08:00"
+    },
+    {
+      "action": "status changed from 'pending' to 'in-progress'",
+      "stage": "6-spec-review-sa",
+      "timestamp": "2026-04-30T15:18:44+08:00"
+    },
+    {
+      "action": "status changed from 'in-progress' to 'complete'",
+      "stage": "6-spec-review-sa",
+      "timestamp": "2026-04-30T15:24:21+08:00",
+      "verdict": "concerns"
+    },
+    {
+      "action": "status changed from 'complete' to 'in-progress'",
+      "stage": "5-tech-spec",
+      "timestamp": "2026-04-30T15:25:30+08:00"
+    },
+    {
+      "action": "status changed from 'in-progress' to 'complete'",
+      "stage": "5-tech-spec",
+      "timestamp": "2026-04-30T15:35:23+08:00"
+    },
+    {
+      "action": "status changed from 'complete' to 'in-progress'",
+      "stage": "6-spec-review-sa",
+      "timestamp": "2026-04-30T15:38:01+08:00"
+    },
+    {
+      "action": "status changed from 'in-progress' to 'complete'",
+      "stage": "6-spec-review-sa",
+      "timestamp": "2026-04-30T15:40:41+08:00",
+      "verdict": "sound"
+    },
+    {
+      "action": "status changed from 'pending' to 'ready'",
+      "stage": "7-test-plan",
+      "timestamp": "2026-04-30T15:40:46+08:00"
+    },
+    {
+      "action": "status changed from 'ready' to 'in-progress'",
+      "stage": "7-test-plan",
+      "timestamp": "2026-04-30T15:42:13+08:00"
+    },
+    {
+      "action": "status changed from 'in-progress' to 'complete'",
+      "stage": "7-test-plan",
+      "timestamp": "2026-04-30T15:45:38+08:00"
+    },
+    {
+      "action": "status changed from 'skipped' to 'complete'",
+      "agent": "daedalus",
+      "notes": "Decomposition produced retroactively: 4 phases, 22 tasks, critical path Phase 1 → 2 → 3 → 4. Output target: local (decomposition.md).",
+      "stage": "3-decomposition",
+      "timestamp": "2026-04-30T16:00:00+08:00"
+    },
+    {
+      "action": "status changed from 'pending' to 'in-progress'",
+      "stage": "8-implementation",
+      "timestamp": "2026-04-30T15:52:26+08:00"
+    },
+    {
+      "action": "status changed from 'in-progress' to 'complete'",
+      "stage": "8-implementation",
+      "timestamp": "2026-04-30T16:13:09+08:00"
+    }
+  ],
+  "implementation_mode": "ares",
+  "mode": "normal",
+  "pipeline": {
+    "1-prd": {
+      "agent": "athena",
+      "check_failures": [
+        {
+          "checks_failed": [
+            "prd.md not found in \\home\\shotup\\programing\\react\\liz-whiteboard\\.claude\\feature\\column-reorder",
+            "decisions.md not found in \\home\\shotup\\programing\\react\\liz-whiteboard\\.claude\\feature\\column-reorder"
+          ],
+          "retries_exhausted": true,
+          "tier": 1,
+          "timestamp": "2026-04-30T13:57:21+08:00"
+        },
+        {
+          "checks_failed": [
+            "prd.md not found in \\home\\shotup\\programing\\react\\liz-whiteboard\\.claude\\feature\\column-reorder",
+            "decisions.md not found in \\home\\shotup\\programing\\react\\liz-whiteboard\\.claude\\feature\\column-reorder"
+          ],
+          "retries_exhausted": true,
+          "tier": 1,
+          "timestamp": "2026-04-30T14:03:46+08:00"
+        },
+        {
+          "checks_failed": [
+            "prd.md not found in \\home\\shotup\\programing\\react\\liz-whiteboard\\.claude\\feature\\column-reorder",
+            "decisions.md not found in \\home\\shotup\\programing\\react\\liz-whiteboard\\.claude\\feature\\column-reorder"
+          ],
+          "retries_exhausted": true,
+          "tier": 1,
+          "timestamp": "2026-04-30T14:05:24+08:00"
+        },
+        {
+          "checks_failed": [
+            "prd.md not found in \\home\\shotup\\programing\\react\\liz-whiteboard\\.claude\\feature\\column-reorder",
+            "decisions.md not found in \\home\\shotup\\programing\\react\\liz-whiteboard\\.claude\\feature\\column-reorder"
+          ],
+          "retries_exhausted": true,
+          "tier": 1,
+          "timestamp": "2026-04-30T14:07:02+08:00"
+        }
+      ],
+      "completed": "2026-04-30T14:08:31+08:00",
+      "document": "prd.md,decisions.md",
+      "documents": [],
+      "gap_analysis_rounds": 0,
+      "revision": 1,
+      "revision_notes": "Round 1 revisions complete; addressed all 5 BLOCKING items (FM-05 silent overwrite, FM-04 silent reorder loss, p95 methodology, optimistic methodology, first-time discovery) and all 9 MAJOR items from Nemesis prd-challenge.md.",
+      "started": "2026-04-30T00:00:00+08:00",
+      "status": "complete"
+    },
+    "10-review": {
+      "agents": [
+        "hermes",
+        "cassandra"
+      ],
+      "code_review_verdict": null,
+      "completed": null,
+      "documents": [],
+      "risk_verdict": null,
+      "started": null,
+      "status": "pending"
+    },
+    "2-prd-review": {
+      "agents": [
+        "nemesis"
+      ],
+      "check_failures": [
+        {
+          "checks_failed": [
+            "prd-review.md not found in \\home\\shotup\\programing\\react\\liz-whiteboard\\.claude\\feature\\column-reorder"
+          ],
+          "retries_exhausted": true,
+          "tier": 1,
+          "timestamp": "2026-04-30T14:10:48+08:00"
+        },
+        {
+          "checks_failed": [
+            "prd-review.md not found in \\home\\shotup\\programing\\react\\liz-whiteboard\\.claude\\feature\\column-reorder"
+          ],
+          "retries_exhausted": true,
+          "tier": 1,
+          "timestamp": "2026-04-30T14:12:59+08:00"
+        },
+        {
+          "checks_failed": [
+            "prd-review.md not found in \\home\\shotup\\programing\\react\\liz-whiteboard\\.claude\\feature\\column-reorder"
+          ],
+          "retries_exhausted": true,
+          "tier": 1,
+          "timestamp": "2026-04-30T14:14:38+08:00"
+        },
+        {
+          "checks_failed": [
+            "prd-review.md not found in \\home\\shotup\\programing\\react\\liz-whiteboard\\.claude\\feature\\column-reorder"
+          ],
+          "retries_exhausted": true,
+          "tier": 1,
+          "timestamp": "2026-04-30T14:16:16+08:00"
+        },
+        {
+          "checks_failed": [
+            "prd-review.md not found in \\home\\shotup\\programing\\react\\liz-whiteboard\\.claude\\feature\\column-reorder"
+          ],
+          "retries_exhausted": true,
+          "tier": 1,
+          "timestamp": "2026-04-30T14:17:53+08:00"
+        },
+        {
+          "checks_failed": [
+            "prd-review.md not found in \\home\\shotup\\programing\\react\\liz-whiteboard\\.claude\\feature\\column-reorder"
+          ],
+          "retries_exhausted": true,
+          "tier": 1,
+          "timestamp": "2026-04-30T14:19:33+08:00"
+        },
+        {
+          "checks_failed": [
+            "prd-review.md not found in \\home\\shotup\\programing\\react\\liz-whiteboard\\.claude\\feature\\column-reorder"
+          ],
+          "retries_exhausted": true,
+          "tier": 1,
+          "timestamp": "2026-04-30T14:21:14+08:00"
+        }
+      ],
+      "completed": "2026-04-30T14:25:03+08:00",
+      "document": "prd-challenge.md",
+      "documents": [],
+      "nemesis_verdict": "approved",
+      "started": "2026-04-30T14:23:19+08:00",
+      "status": "complete",
+      "verdict": "approved"
+    },
+    "3-decomposition": {
+      "agent": "daedalus",
+      "completed": "2026-04-30T16:00:00+08:00",
+      "documents": [
+        "decomposition.md"
+      ],
+      "output_targets": [
+        "local"
+      ],
+      "started": "2026-04-30T16:00:00+08:00",
+      "status": "complete"
+    },
+    "4-discuss": {
+      "agent": "themis",
+      "completed": null,
+      "documents": [],
+      "started": null,
+      "status": "skipped"
+    },
+    "5-tech-spec": {
+      "agent": "hephaestus",
+      "based_on_prd_version": 1,
+      "completed": "2026-04-30T15:35:23+08:00",
+      "document": "tech-spec.md",
+      "documents": [
+        "tech-spec.md"
+      ],
+      "revision": 1,
+      "revision_notes": "Round 1 revisions complete; addressed all 4 HIGH (SA-H1 lastConfirmedOrder seed-on-load + lastOptimisticByTable comparison; SA-H2 column-level intersection overwrite check; SA-H3 ack defers applyServerOrder until queue empty; SA-H4 single reconcileAfterDrop entry-point) + 3 MEDIUM (SA-M1 useLayoutEffect; SA-M2 ack-vs-broadcast ordering test added; SA-M3 queue-full guard moved to handleDragStart) + 2 LOW (SA-L1 RBAC stub note; SA-L2 websocket-events.md doc task) findings from Apollo's spec-review-sa.md.",
+      "started": "2026-04-30T15:25:30+08:00",
+      "status": "complete",
+      "summary": "v2 (revised after Apollo SA review): Uses @dnd-kit/core+sortable behind React Flow's nodrag/nowheel pattern (Spike S1 PASS) with explicit useUpdateNodeInternals(tableId) via useLayoutEffect for AC-05d-compliant edge re-anchoring (Spike S2 + SA-M1). Adds new column:reorder/column:reordered/column:reorder:ack WebSocket protocol with single Prisma transaction batch update, server-side FM-07 merge, and per-table FIFO queue (≤5) gated at handleDragStart (SA-M3). Drop reconciliation goes through a single reconcileAfterDrop entry-point (SA-H4) that runs the column-level overwrite check (SA-H2) and applies buffered remote on no-op drops (AC-14f). Ack handling defers applyServerOrder until queue empty to prevent in-flight snap-back (SA-H3). Sync-reconcile compares server vs. lastOptimisticByTable and fires AC-08e/f toast when dirty, with lastConfirmedOrder seeded from initial whiteboard load to handle first-ever-reorder loss (SA-H1). 7 files to create, 7 to modify (added websocket-events.md per SA-L2), 3 dependencies added; no DB migration needed."
+    },
+    "6-spec-review-sa": {
+      "agent": "apollo",
+      "completed": "2026-04-30T15:40:41+08:00",
+      "document": "spec-review-sa.md",
+      "documents": [],
+      "started": "2026-04-30T15:38:01+08:00",
+      "status": "complete",
+      "verdict": "sound"
+    },
+    "7-test-plan": {
+      "agent": "artemis",
+      "completed": "2026-04-30T15:45:38+08:00",
+      "document": "test-plan.md",
+      "documents": [],
+      "started": "2026-04-30T15:42:13+08:00",
+      "status": "complete",
+      "summary": "68 test cases: 30 unit, 28 integration, 10 E2E across 10 suites. All 9 P0 requirements covered (REQ-01 through REQ-07, REQ-14, REQ-15). Highest-risk areas: detectOverwriteConflict intersection logic (9 boundary unit tests, Suite S3), ack-vs-broadcast ordering at queue depth \u003e= 2 including reverse-arrival stress (SA-M2, INT-25/26), cancelActiveDrag cleanup under queue-full path (SA-L3, INT-20), and no-op-drop reconciliation with buffered remote (AC-14f, Suite S9 with 6 cases)."
+    },
+    "8-implementation": {
+      "agent": "ares",
+      "completed": "2026-04-30T16:13:09+08:00",
+      "document": "implementation-notes.md",
+      "documents": [
+        "implementation-notes.md",
+        "src/data/schema.ts",
+        "src/data/column.ts",
+        "src/routes/api/collaboration.ts",
+        "src/hooks/use-prefers-reduced-motion.ts",
+        "src/hooks/use-column-reorder-mutations.ts",
+        "src/hooks/use-column-reorder-collaboration.ts",
+        "src/components/whiteboard/column/DragHandle.tsx",
+        "src/components/whiteboard/column/InsertionLine.tsx",
+        "src/components/whiteboard/column/ColumnRow.tsx",
+        "src/components/whiteboard/TableNode.new.tsx",
+        "src/components/whiteboard/ReactFlowWhiteboard.tsx",
+        "src/lib/react-flow/types.ts",
+        "specs/001-collaborative-er-whiteboard/contracts/websocket-events.md"
+      ],
+      "mode": "ares",
+      "started": "2026-04-30T15:52:26+08:00",
+      "status": "complete",
+      "summary": "Created 9 files, modified 10. 42 tests written across Suites S1-S4, S7, S9 — all passing. Suites S5, S6, S8, S10 deferred (require test harness setup not yet in place). Key deviation: detectOverwriteConflict uses findExplicitlyMoved algorithm (excludes displaced columns) instead of absolute-position diff to avoid false positives in disjoint-move cases (matches all 9 Suite S3 boundary tests). DragOverlay lacks @dnd-kit/modifiers (separate package not installed) — no data impact.",
+      "tasks": []
+    },
+    "9-prd-alignment": {
+      "agent": "hera",
+      "alignment_verdict": null,
+      "completed": null,
+      "coverage_pct": 0,
+      "criteria_total": 0,
+      "criteria_verified": 0,
+      "documents": [],
+      "started": null,
+      "status": "ready"
+    }
+  },
+  "pipeline_status": "in-progress",
+  "priority": "P1",
+  "stage": "8-implementation",
+  "updated": "2026-04-30T16:13:09+08:00"
+}
