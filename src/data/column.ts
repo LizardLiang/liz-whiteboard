@@ -184,6 +184,61 @@ export async function findPrimaryKeyColumnsByTableId(
 }
 
 /**
+ * Reorder all columns in a table in a single atomic transaction.
+ * The orderedColumnIds array defines the desired order — each column is assigned
+ * order = index (0-based) matching its position in the array.
+ *
+ * Validation: all IDs must belong to the given tableId. Any mismatch throws.
+ * Persistence: wraps all updates in a single prisma.$transaction (REQ-03).
+ *
+ * @param tableId - Table UUID that owns all columns
+ * @param orderedColumnIds - Desired column order (complete list)
+ * @returns Array of updated columns in the new order
+ * @throws Error if orderedColumnIds is empty, or if any ID does not belong to tableId
+ */
+export async function reorderColumns(
+  tableId: string,
+  orderedColumnIds: Array<string>,
+): Promise<Array<Column>> {
+  if (orderedColumnIds.length === 0) {
+    throw new Error('orderedColumnIds must not be empty')
+  }
+
+  // Fetch current columns to validate ownership
+  const currentColumns = await prisma.column.findMany({
+    where: { tableId },
+  })
+
+  const ownedIds = new Set(currentColumns.map((c) => c.id))
+
+  // Validate that every supplied ID belongs to this table
+  for (const id of orderedColumnIds) {
+    if (!ownedIds.has(id)) {
+      throw new Error(
+        `Column ${id} does not belong to table ${tableId}`,
+      )
+    }
+  }
+
+  // Build transaction: update each column's order to its array index
+  try {
+    const updates = orderedColumnIds.map((id, index) =>
+      prisma.column.update({
+        where: { id },
+        data: { order: index },
+      }),
+    )
+
+    const updated = await prisma.$transaction(updates)
+    return updated
+  } catch (error) {
+    throw new Error(
+      `Failed to reorder columns: ${error instanceof Error ? error.message : 'Unknown error'}`,
+    )
+  }
+}
+
+/**
  * Find foreign key columns in a table
  * @param tableId - Table UUID
  * @returns Array of foreign key columns
