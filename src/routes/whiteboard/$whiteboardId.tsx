@@ -23,9 +23,7 @@ import { Minimap } from '@/components/whiteboard/Minimap'
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import { useCollaboration } from '@/hooks/use-collaboration'
 import { getSessionUserId } from '@/lib/session-user-id'
-import { useAutoLayoutPreference } from '@/hooks/use-auto-layout-preference'
 import {
-  computeAutoLayout,
   createRelationshipFn,
   createTable as createTableFn,
   getWhiteboardRelationships,
@@ -80,11 +78,6 @@ function WhiteboardEditor() {
   const [activeTab, setActiveTab] = useState<'visual' | 'text'>('visual')
   const [textSource, setTextSource] = useState<string>('')
   const [isTextSyncEnabled, setIsTextSyncEnabled] = useState(true)
-  const [isAutoLayoutComputing, setIsAutoLayoutComputing] = useState(false)
-
-  // React Flow auto-layout function (set via callback)
-  const reactFlowAutoLayoutRef = useRef<(() => Promise<void>) | null>(null)
-
   // React Flow display mode controls (set via callback)
   const [reactFlowShowMode, setReactFlowShowMode] =
     useState<string>('ALL_FIELDS')
@@ -100,9 +93,6 @@ function WhiteboardEditor() {
 
   // Debounce timer for canvas state persistence
   const saveCanvasStateTimerRef = useRef<NodeJS.Timeout | null>(null)
-
-  // Auto-layout preference
-  const { autoLayoutEnabled, setAutoLayoutEnabled } = useAutoLayoutPreference()
 
   // Fetch whiteboard data with TanStack Query
   // NOTE: Uses 'whiteboard-page' key to avoid collision with ReactFlowWhiteboard's
@@ -401,72 +391,6 @@ function WhiteboardEditor() {
   }, [])
 
   /**
-   * Handle auto layout computation
-   * Uses React Flow ELK layout when enabled, otherwise falls back to d3-force
-   */
-  const handleAutoLayout = useCallback(async () => {
-    if (!whiteboardData?.whiteboard) return
-
-    setIsAutoLayoutComputing(true)
-
-    try {
-      // Emit WebSocket event to notify other users
-      emit('layout:compute', { userId })
-
-      // Use React Flow auto-layout if available (feature flag enabled)
-      if (USE_REACT_FLOW && reactFlowAutoLayoutRef.current) {
-        await reactFlowAutoLayoutRef.current()
-        console.log('React Flow ELK layout computed')
-      } else {
-        // Fallback to d3-force layout (Konva)
-        const result = await computeAutoLayout({
-          data: {
-            whiteboardId,
-            options: {
-              width: window.innerWidth,
-              height: window.innerHeight - 160,
-              linkDistance: 200,
-              chargeStrength: -1000,
-              collisionPadding: 50,
-              iterations: 300,
-              handleClusters: true,
-            },
-          },
-        })
-
-        console.log('Layout computed:', result.metadata)
-
-        // Emit computed positions to other users
-        emit('layout:computed', {
-          positions: result.positions,
-          userId,
-        })
-
-        // Invalidate query to fetch updated positions
-        await queryClient.invalidateQueries({
-          queryKey: ['whiteboard', whiteboardId],
-        })
-      }
-    } catch (error) {
-      console.error('Failed to compute auto layout:', error)
-      alert('Failed to compute layout. Please try again.')
-    } finally {
-      setIsAutoLayoutComputing(false)
-    }
-  }, [whiteboardData, whiteboardId, userId, emit, queryClient])
-
-  /**
-   * Callback for React Flow to register its auto-layout function
-   */
-  const handleAutoLayoutReady = useCallback(
-    (computeLayout: () => Promise<void>, isComputing: boolean) => {
-      reactFlowAutoLayoutRef.current = computeLayout
-      setIsAutoLayoutComputing(isComputing)
-    },
-    [],
-  )
-
-  /**
    * Callback for React Flow to register its display mode controls
    */
   const handleDisplayModeReady = useCallback(
@@ -581,41 +505,16 @@ function WhiteboardEditor() {
       queryClient.invalidateQueries({ queryKey: ['whiteboard', whiteboardId] })
     }
 
-    const handleLayoutCompute = (data: { userId: string }) => {
-      console.log('Layout computation started by user:', data.userId)
-      if (data.userId !== userId) {
-        setIsAutoLayoutComputing(true)
-      }
-    }
-
-    const handleLayoutComputed = (data: {
-      positions: Array<{ id: string; x: number; y: number }>
-      userId: string
-    }) => {
-      console.log('Layout computed by user:', data.userId)
-      if (data.userId !== userId) {
-        setIsAutoLayoutComputing(false)
-        // Invalidate query to fetch updated positions with animation
-        queryClient.invalidateQueries({
-          queryKey: ['whiteboard', whiteboardId],
-        })
-      }
-    }
-
     on('table:created', handleTableCreated)
     on('table:moved', handleTableMoved)
     on('relationship:created', handleRelationshipCreated)
     on('text:updated', handleTextUpdated)
-    on('layout:compute', handleLayoutCompute)
-    on('layout:computed', handleLayoutComputed)
 
     return () => {
       off('table:created', handleTableCreated)
       off('table:moved', handleTableMoved)
       off('relationship:created', handleRelationshipCreated)
       off('text:updated', handleTextUpdated)
-      off('layout:compute', handleLayoutCompute)
-      off('layout:computed', handleLayoutComputed)
     }
   }, [on, off, queryClient, whiteboardId, userId])
 
@@ -681,39 +580,32 @@ function WhiteboardEditor() {
           value="visual"
           className="flex-1 flex flex-col overflow-hidden m-0"
         >
-          {/* Toolbar */}
-          <Toolbar
-            whiteboardId={whiteboardId}
-            tables={whiteboard.tables}
-            onCreateTable={handleCreateTable}
-            onCreateRelationship={handleCreateRelationship}
-            onAutoLayout={handleAutoLayout}
-            isAutoLayoutLoading={isAutoLayoutComputing}
-            autoLayoutEnabled={autoLayoutEnabled}
-            onAutoLayoutEnabledChange={setAutoLayoutEnabled}
-            zoomControls={
-              USE_REACT_FLOW
-                ? (reactFlowZoomControls ?? undefined)
-                : canvasControls
-            }
-            currentZoom={
-              USE_REACT_FLOW ? reactFlowCurrentZoom : canvasViewport.zoom
-            }
-            showMode={USE_REACT_FLOW ? (reactFlowShowMode as any) : undefined}
-            onShowModeChange={USE_REACT_FLOW ? handleShowModeChange : undefined}
-          />
+          {/* Toolbar — rendered by ReactFlowWhiteboardInner when USE_REACT_FLOW is true.
+               For the Konva (legacy) path, we render a separate toolbar here. */}
+          {!USE_REACT_FLOW && (
+            <Toolbar
+              whiteboardId={whiteboardId}
+              tables={whiteboard.tables}
+              tableCount={whiteboard.tables.length}
+              onCreateTable={handleCreateTable}
+              onCreateRelationship={handleCreateRelationship}
+              zoomControls={canvasControls}
+              currentZoom={canvasViewport.zoom}
+            />
+          )}
 
           {/* Canvas - Toggle between Konva and React Flow */}
           <div className="flex-1 overflow-hidden relative">
             {USE_REACT_FLOW ? (
-              /* React Flow Canvas (new) */
+              /* React Flow Canvas (new) — includes its own Toolbar */
               <ReactFlowWhiteboard
                 whiteboardId={whiteboardId}
                 userId={userId}
                 showMinimap={whiteboard.tables.length > 0}
                 showControls={true}
                 nodesDraggable={true}
-                onAutoLayoutReady={handleAutoLayoutReady}
+                onCreateTable={handleCreateTable}
+                onCreateRelationship={handleCreateRelationship}
                 onDisplayModeReady={handleDisplayModeReady}
                 onZoomControlsReady={handleZoomControlsReady}
                 onZoomChange={handleZoomChange}

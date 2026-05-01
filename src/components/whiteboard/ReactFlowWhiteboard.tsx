@@ -47,13 +47,15 @@ import {
 import { parseColumnHandleId } from '@/lib/react-flow/edge-routing'
 import { convertTablesToNodes } from '@/lib/react-flow/convert-to-nodes'
 import { convertRelationshipsToEdges } from '@/lib/react-flow/convert-to-edges'
-import { useAutoLayout } from '@/lib/react-flow/use-auto-layout'
-import { extractPositionsForBatchUpdate } from '@/lib/react-flow/elk-layout'
 import {
   createRelationshipFn,
   getWhiteboardRelationships,
   getWhiteboardWithDiagram,
 } from '@/lib/server-functions'
+import { Toolbar } from './Toolbar'
+import { AutoLayoutConfirmDialog } from './AutoLayoutConfirmDialog'
+import { useD3ForceLayout } from '@/hooks/use-d3-force-layout'
+import { useAutoLayoutOrchestrator } from '@/hooks/use-auto-layout-orchestrator'
 import { updateTablePositionFn } from '@/routes/api/tables'
 import { useWhiteboardCollaboration } from '@/hooks/use-whiteboard-collaboration'
 import { useColumnCollaboration } from '@/hooks/use-column-collaboration'
@@ -121,11 +123,10 @@ export interface ReactFlowWhiteboardProps {
   showControls?: boolean
   /** Whether nodes are draggable */
   nodesDraggable?: boolean
-  /** Callback to expose auto-layout function to parent */
-  onAutoLayoutReady?: (
-    computeLayout: () => Promise<void>,
-    isComputing: boolean,
-  ) => void
+  /** Callback when a new table is created via the toolbar */
+  onCreateTable?: (data: import('@/data/schema').CreateTable) => void | Promise<void>
+  /** Callback when a new relationship is created via the toolbar */
+  onCreateRelationship?: (data: import('@/data/schema').CreateRelationship) => void | Promise<void>
   /** Callback to expose display mode controls to parent */
   onDisplayModeReady?: (
     showMode: ShowMode,
@@ -148,7 +149,8 @@ function ReactFlowWhiteboardInner({
   showMinimap,
   showControls,
   nodesDraggable,
-  onAutoLayoutReady,
+  onCreateTable,
+  onCreateRelationship,
   onDisplayModeReady,
   onZoomControlsReady,
   onZoomChange,
@@ -160,10 +162,8 @@ function ReactFlowWhiteboardInner({
   showMinimap: boolean
   showControls: boolean
   nodesDraggable: boolean
-  onAutoLayoutReady?: (
-    computeLayout: () => Promise<void>,
-    isComputing: boolean,
-  ) => void
+  onCreateTable?: (data: import('@/data/schema').CreateTable) => void | Promise<void>
+  onCreateRelationship?: (data: import('@/data/schema').CreateRelationship) => void | Promise<void>
   onDisplayModeReady?: (
     showMode: ShowMode,
     setShowMode: (mode: ShowMode) => void,
@@ -414,6 +414,7 @@ function ReactFlowWhiteboardInner({
   const {
     connectionState,
     emitPositionUpdate,
+    emitBulkPositionUpdate,
     emitTableDelete,
     emitRelationshipDelete,
     emitRelationshipUpdate,
@@ -439,6 +440,19 @@ function ReactFlowWhiteboardInner({
       onRelationshipErrorRef.current(data)
     }, []),
     onRelationshipUpdated,
+    // onBulkPositionUpdate — applies Auto Layout broadcast from collaborators.
+    // One setNodes call satisfies the "one render tick" atomicity contract (FR-009).
+    useCallback(
+      (positions: Array<{ tableId: string; positionX: number; positionY: number }>) => {
+        setNodes((nds) =>
+          nds.map((n) => {
+            const p = positions.find((pp) => pp.tableId === n.id)
+            return p ? { ...n, position: { x: p.positionX, y: p.positionY } } : n
+          }),
+        )
+      },
+      [],
+    ),
   )
 
   // Column collaboration callbacks (incoming events from other users)
@@ -988,36 +1002,22 @@ function ReactFlowWhiteboardInner({
     },
   })
 
-  // Auto-layout hook
-  const { computeLayout, isComputing } = useAutoLayout({
-    onLayoutComplete: async (nodes) => {
-      // Batch update all positions to database
-      const positions = extractPositionsForBatchUpdate(nodes)
+  // d3-force layout hook (wraps the pure computeD3ForceLayout engine)
+  const { runLayout: runD3ForceLayout } = useD3ForceLayout()
 
-      try {
-        // Update all positions (we can do this in parallel)
-        await Promise.all(
-          positions.map((pos) => updatePositionMutation.mutateAsync(pos)),
-        )
-        console.log('All positions updated after auto-layout')
-      } catch (error) {
-        console.error('Failed to update positions after auto-layout:', error)
-      }
-    },
-    onLayoutError: (error) => {
-      console.error('Auto-layout failed:', error)
-    },
-    fitViewAfterLayout: true,
-    fitViewDelay: 100,
+  // Auto Layout orchestrator — owns the full flow:
+  // button click → optional dialog → layout → optimistic setNodes → persist → broadcast → fitView
+  const {
+    isRunning: isAutoLayoutRunning,
+    showConfirmDialog: showAutoLayoutDialog,
+    handleAutoLayoutClick,
+    handleConfirm: handleAutoLayoutConfirm,
+    handleCancel: handleAutoLayoutCancel,
+  } = useAutoLayoutOrchestrator({
+    whiteboardId,
+    runD3ForceLayout,
+    emitBulkPositionUpdate,
   })
-
-  // Expose auto-layout function to parent component (only once on mount)
-  useEffect(() => {
-    if (onAutoLayoutReady) {
-      onAutoLayoutReady(computeLayout, isComputing)
-    }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []) // Only run once on mount
 
   // Expose display mode controls to parent component (only once on mount)
   useEffect(() => {
@@ -1106,8 +1106,50 @@ function ReactFlowWhiteboardInner({
     }, [deletingTableId, deletingNode, nodes, edges])
 
   // Render React Flow canvas with collaboration-aware state
+  // Derive tables list from nodes for the Toolbar
+  const toolbarTables = useMemo(
+    () => nodes.map((n) => n.data.table),
+    [nodes],
+  )
+
+  // Zoom controls for the Toolbar (reuse the already-initialized reactFlowInstance/viewport above)
+  const toolbarZoomControls: ZoomControls = useMemo(
+    () => ({
+      zoomIn: () => reactFlowInstance.zoomIn({ duration: 200 }),
+      zoomOut: () => reactFlowInstance.zoomOut({ duration: 200 }),
+      resetZoom: () =>
+        reactFlowInstance.setViewport({ x: 0, y: 0, zoom: 1 }, { duration: 200 }),
+      fitToScreen: () => reactFlowInstance.fitView({ duration: 200, padding: 0.2 }),
+    }),
+    [reactFlowInstance],
+  )
+
   return (
-    <div style={{ position: 'relative', width: '100%', height: '100%' }}>
+    <div style={{ display: 'flex', flexDirection: 'column', width: '100%', height: '100%' }}>
+      {/* Toolbar — owned by ReactFlowWhiteboardInner so auto-layout orchestrator can control it */}
+      <Toolbar
+        whiteboardId={whiteboardId}
+        tables={toolbarTables as any}
+        onCreateTable={onCreateTable}
+        onCreateRelationship={onCreateRelationship}
+        tableCount={nodes.length}
+        onAutoLayoutClick={() => handleAutoLayoutClick(nodes.length)}
+        isAutoLayoutRunning={isAutoLayoutRunning}
+        zoomControls={toolbarZoomControls}
+        currentZoom={viewport.zoom}
+        showMode={showMode}
+        onShowModeChange={setShowMode}
+      />
+
+      {/* Auto Layout confirmation dialog (shown when tableCount > 50) */}
+      <AutoLayoutConfirmDialog
+        open={showAutoLayoutDialog}
+        tableCount={nodes.length}
+        onConfirm={handleAutoLayoutConfirm}
+        onCancel={handleAutoLayoutCancel}
+      />
+
+      <div style={{ position: 'relative', flex: 1 }}>
       <ConnectionStatusIndicator connectionState={connectionState} />
       {deletingTableId && deletingNode && (
         <DeleteTableDialog
@@ -1194,6 +1236,7 @@ function ReactFlowWhiteboardInner({
           </DialogFooter>
         </DialogContent>
       </Dialog>
+      </div>
     </div>
   )
 }
@@ -1208,7 +1251,8 @@ export function ReactFlowWhiteboard({
   showMinimap = false,
   showControls = true,
   nodesDraggable = true,
-  onAutoLayoutReady,
+  onCreateTable,
+  onCreateRelationship,
   onDisplayModeReady,
   onZoomControlsReady,
   onZoomChange,
@@ -1281,7 +1325,7 @@ export function ReactFlowWhiteboard({
     )
   }
 
-  // Wrap in ReactFlowProvider to enable hooks like useAutoLayout
+  // Wrap in ReactFlowProvider to enable hooks like useAutoLayoutOrchestrator
   return (
     <ReactFlowProvider>
       <ReactFlowWhiteboardInner
@@ -1292,7 +1336,8 @@ export function ReactFlowWhiteboard({
         showMinimap={showMinimap}
         showControls={showControls}
         nodesDraggable={nodesDraggable}
-        onAutoLayoutReady={onAutoLayoutReady}
+        onCreateTable={onCreateTable}
+        onCreateRelationship={onCreateRelationship}
         onDisplayModeReady={onDisplayModeReady}
         onZoomControlsReady={onZoomControlsReady}
         onZoomChange={onZoomChange}
