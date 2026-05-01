@@ -1,8 +1,8 @@
 // src/components/whiteboard/AutoLayoutConfirmDialog.test.tsx
 // A11y tests for AutoLayoutConfirmDialog — TC-AL-D-01 through D-09
 
-import { describe, it, expect, vi } from 'vitest'
-import { render, screen, fireEvent } from '@testing-library/react'
+import { describe, expect, it, vi } from 'vitest'
+import { fireEvent, render, screen } from '@testing-library/react'
 import { AutoLayoutConfirmDialog } from './AutoLayoutConfirmDialog'
 
 function renderDialog(props: Partial<React.ComponentProps<typeof AutoLayoutConfirmDialog>> = {}) {

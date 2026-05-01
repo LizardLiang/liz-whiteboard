@@ -2,6 +2,7 @@
 // Server functions for whiteboard operations using TanStack Start
 
 import { createServerFn } from '@tanstack/react-start'
+import type { BulkUpdatePositions } from '@/data/schema'
 import type { WhiteboardWithDiagram } from '@/data/whiteboard'
 import type { CreateTable } from '@/data/diagram-table'
 import type {
@@ -28,10 +29,7 @@ import {
   getTableProjectId,
   getWhiteboardProjectId,
 } from '@/data/resolve-project'
-import {
-  bulkUpdatePositionsSchema,
-  type BulkUpdatePositions,
-} from '@/data/schema'
+import { bulkUpdatePositionsSchema } from '@/data/schema'
 // TODO: restore these imports when permission checks are re-enabled — temporarily disabled
 // import { findEffectiveRole } from '@/data/permission'
 // import { hasMinimumRole } from '@/lib/auth/permissions'

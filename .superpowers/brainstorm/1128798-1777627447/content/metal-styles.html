@@ -1,0 +1,351 @@
+<h2>Table Node — Metal Style Directions</h2>
+<p class="subtitle">Three interpretations of a "metal material" aesthetic. Click a card to select.</p>
+
+<style>
+  .style-grid {
+    display: grid;
+    grid-template-columns: repeat(3, 1fr);
+    gap: 28px;
+    margin-top: 24px;
+  }
+
+  /* ---------- shared ER table mockup structure ---------- */
+  .er-table {
+    border-radius: 8px;
+    overflow: hidden;
+    width: 210px;
+    font-family: 'JetBrains Mono', 'Fira Code', 'Cascadia Code', monospace;
+    font-size: 12px;
+    user-select: none;
+  }
+  .er-header {
+    padding: 10px 14px;
+    font-size: 13px;
+    font-weight: 700;
+    letter-spacing: 0.04em;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+  }
+  .er-col {
+    padding: 5px 14px;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    font-size: 11px;
+  }
+  .er-col:last-child { border-bottom: none !important; }
+  .badge {
+    font-size: 9px;
+    font-weight: 700;
+    padding: 1px 5px;
+    border-radius: 3px;
+    letter-spacing: 0.05em;
+    flex-shrink: 0;
+  }
+  .col-type {
+    margin-left: auto;
+    font-size: 10px;
+    opacity: 0.55;
+  }
+
+  /* ---------- Style A: Brushed Steel ---------- */
+  .a-table {
+    background: linear-gradient(180deg, #1e2330 0%, #181c28 100%);
+    border: 1px solid #3a4560;
+    box-shadow:
+      0 0 0 1px rgba(120,140,200,0.08),
+      0 8px 24px rgba(0,0,0,0.55),
+      0 2px 4px rgba(0,0,0,0.4);
+  }
+  .a-header {
+    background: linear-gradient(135deg, #2a3148 0%, #1e2636 60%, #232b40 100%);
+    color: #c8d4f0;
+    border-bottom: 1px solid #3a4560;
+    text-shadow: 0 1px 2px rgba(0,0,0,0.5);
+  }
+  .a-header-icon { color: #5b7bdc; font-size: 14px; }
+  .a-col {
+    color: #9aacce;
+    border-bottom: 1px solid rgba(58,69,96,0.6);
+  }
+  .a-col:hover { background: rgba(90,110,180,0.08); }
+  .a-pk-badge { background: rgba(91,123,220,0.2); color: #7da0f5; border: 1px solid rgba(91,123,220,0.35); }
+  .a-fk-badge { background: rgba(52,211,153,0.15); color: #5dd6a8; border: 1px solid rgba(52,211,153,0.3); }
+  .a-selected {
+    box-shadow:
+      0 0 0 2px #5b7bdc,
+      0 0 12px rgba(91,123,220,0.35),
+      0 8px 24px rgba(0,0,0,0.55);
+  }
+
+  /* ---------- Style B: Dark Chrome / Industrial ---------- */
+  .b-table {
+    background: #141414;
+    border: 1px solid #333;
+    box-shadow:
+      0 0 0 1px rgba(255,255,255,0.04),
+      inset 0 1px 0 rgba(255,255,255,0.06),
+      0 10px 30px rgba(0,0,0,0.7);
+  }
+  .b-header {
+    background: linear-gradient(180deg, #282828 0%, #1c1c1c 100%);
+    color: #e8e8e8;
+    border-bottom: 1px solid #333;
+    position: relative;
+  }
+  .b-header::after {
+    content: '';
+    position: absolute;
+    bottom: 0; left: 0; right: 0;
+    height: 1px;
+    background: linear-gradient(90deg, transparent, rgba(255,255,255,0.12), transparent);
+  }
+  .b-header-icon { color: #ff6b35; font-size: 14px; }
+  .b-col {
+    color: #aaa;
+    border-bottom: 1px solid rgba(60,60,60,0.8);
+  }
+  .b-pk-badge { background: rgba(255,107,53,0.15); color: #ff8c5a; border: 1px solid rgba(255,107,53,0.3); }
+  .b-fk-badge { background: rgba(0,200,200,0.12); color: #00cccc; border: 1px solid rgba(0,200,200,0.25); }
+  .b-selected {
+    box-shadow:
+      0 0 0 2px #ff6b35,
+      0 0 16px rgba(255,107,53,0.3),
+      0 10px 30px rgba(0,0,0,0.7);
+  }
+
+  /* ---------- Style C: Gunmetal / Titanium ---------- */
+  .c-table {
+    background: linear-gradient(180deg, #252930 0%, #1d2026 100%);
+    border: 1px solid transparent;
+    background-clip: padding-box;
+    box-shadow:
+      0 0 0 1px rgba(180,190,210,0.14),
+      0 4px 6px rgba(0,0,0,0.3),
+      0 12px 28px rgba(0,0,0,0.5);
+    position: relative;
+  }
+  .c-table::before {
+    content: '';
+    position: absolute;
+    inset: -1px;
+    border-radius: 9px;
+    background: linear-gradient(135deg, rgba(200,210,230,0.2) 0%, rgba(120,130,150,0.08) 50%, rgba(200,210,230,0.15) 100%);
+    z-index: -1;
+    pointer-events: none;
+  }
+  .c-header {
+    background: linear-gradient(135deg, #31363f 0%, #272b33 100%);
+    color: #dde3ef;
+    border-bottom: 1px solid rgba(180,190,210,0.12);
+  }
+  .c-header-icon { color: #a78bfa; font-size: 14px; }
+  .c-col {
+    color: #9ca3b0;
+    border-bottom: 1px solid rgba(180,190,210,0.07);
+  }
+  .c-pk-badge { background: rgba(167,139,250,0.18); color: #c4b5fd; border: 1px solid rgba(167,139,250,0.3); }
+  .c-fk-badge { background: rgba(94,234,212,0.12); color: #5eead4; border: 1px solid rgba(94,234,212,0.25); }
+  .c-selected {
+    box-shadow:
+      0 0 0 2px #a78bfa,
+      0 0 16px rgba(167,139,250,0.3),
+      0 12px 28px rgba(0,0,0,0.5);
+  }
+
+  /* ---------- preview panels ---------- */
+  .preview-panel {
+    background: #0d1117;
+    border-radius: 10px;
+    padding: 28px 20px;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 12px;
+  }
+
+  .style-label {
+    margin-top: 10px;
+    font-size: 13px;
+    font-weight: 700;
+    color: var(--text, #e0e0e0);
+    letter-spacing: 0.05em;
+    text-transform: uppercase;
+  }
+  .style-desc {
+    font-size: 12px;
+    color: var(--muted, #888);
+    text-align: center;
+    line-height: 1.5;
+    max-width: 180px;
+  }
+
+  .cards { grid-template-columns: repeat(3, 1fr) !important; }
+  .card { flex-direction: column; }
+  .card-image { padding: 0 !important; }
+  .card-body { padding: 12px 16px !important; }
+</style>
+
+<div class="cards">
+
+  <!-- A: Brushed Steel -->
+  <div class="card" data-choice="A" onclick="toggleSelect(this)">
+    <div class="card-image">
+      <div class="preview-panel">
+        <div class="er-table a-table a-selected">
+          <div class="er-header a-header">
+            <span class="a-header-icon">⬡</span> users
+          </div>
+          <div class="er-col a-col">
+            <span class="badge a-pk-badge">PK</span>
+            <span>id</span>
+            <span class="col-type">uuid</span>
+          </div>
+          <div class="er-col a-col">
+            <span style="width:28px"></span>
+            <span>email</span>
+            <span class="col-type">varchar</span>
+          </div>
+          <div class="er-col a-col">
+            <span style="width:28px"></span>
+            <span>created_at</span>
+            <span class="col-type">timestamp</span>
+          </div>
+          <div class="er-col a-col">
+            <span class="badge a-fk-badge">FK</span>
+            <span>org_id</span>
+            <span class="col-type">uuid</span>
+          </div>
+        </div>
+
+        <div class="er-table a-table" style="width:170px;">
+          <div class="er-header a-header">
+            <span class="a-header-icon">⬡</span> orders
+          </div>
+          <div class="er-col a-col">
+            <span class="badge a-pk-badge">PK</span>
+            <span>id</span>
+            <span class="col-type">uuid</span>
+          </div>
+          <div class="er-col a-col">
+            <span class="badge a-fk-badge">FK</span>
+            <span>user_id</span>
+            <span class="col-type">uuid</span>
+          </div>
+        </div>
+      </div>
+    </div>
+    <div class="card-body">
+      <h3>A — Brushed Steel</h3>
+      <p>Deep navy-gunmetal base, subtle diagonal gradient simulating brushed metal. Steel-blue accents, cool and technical.</p>
+    </div>
+  </div>
+
+  <!-- B: Dark Chrome -->
+  <div class="card" data-choice="B" onclick="toggleSelect(this)">
+    <div class="card-image">
+      <div class="preview-panel">
+        <div class="er-table b-table b-selected">
+          <div class="er-header b-header">
+            <span class="b-header-icon">▣</span> users
+          </div>
+          <div class="er-col b-col">
+            <span class="badge b-pk-badge">PK</span>
+            <span>id</span>
+            <span class="col-type">uuid</span>
+          </div>
+          <div class="er-col b-col">
+            <span style="width:28px"></span>
+            <span>email</span>
+            <span class="col-type">varchar</span>
+          </div>
+          <div class="er-col b-col">
+            <span style="width:28px"></span>
+            <span>created_at</span>
+            <span class="col-type">timestamp</span>
+          </div>
+          <div class="er-col b-col">
+            <span class="badge b-fk-badge">FK</span>
+            <span>org_id</span>
+            <span class="col-type">uuid</span>
+          </div>
+        </div>
+
+        <div class="er-table b-table" style="width:170px;">
+          <div class="er-header b-header">
+            <span class="b-header-icon">▣</span> orders
+          </div>
+          <div class="er-col b-col">
+            <span class="badge b-pk-badge">PK</span>
+            <span>id</span>
+            <span class="col-type">uuid</span>
+          </div>
+          <div class="er-col b-col">
+            <span class="badge b-fk-badge">FK</span>
+            <span>user_id</span>
+            <span class="col-type">uuid</span>
+          </div>
+        </div>
+      </div>
+    </div>
+    <div class="card-body">
+      <h3>B — Dark Chrome</h3>
+      <p>Pure black body, near-invisible depth via inner highlights. Warm orange PK accents — industrial, high-contrast.</p>
+    </div>
+  </div>
+
+  <!-- C: Gunmetal / Titanium -->
+  <div class="card" data-choice="C" onclick="toggleSelect(this)">
+    <div class="card-image">
+      <div class="preview-panel">
+        <div class="er-table c-table c-selected">
+          <div class="er-header c-header">
+            <span class="c-header-icon">◈</span> users
+          </div>
+          <div class="er-col c-col">
+            <span class="badge c-pk-badge">PK</span>
+            <span>id</span>
+            <span class="col-type">uuid</span>
+          </div>
+          <div class="er-col c-col">
+            <span style="width:28px"></span>
+            <span>email</span>
+            <span class="col-type">varchar</span>
+          </div>
+          <div class="er-col c-col">
+            <span style="width:28px"></span>
+            <span>created_at</span>
+            <span class="col-type">timestamp</span>
+          </div>
+          <div class="er-col c-col">
+            <span class="badge c-fk-badge">FK</span>
+            <span>org_id</span>
+            <span class="col-type">uuid</span>
+          </div>
+        </div>
+
+        <div class="er-table c-table" style="width:170px;">
+          <div class="er-header c-header">
+            <span class="c-header-icon">◈</span> orders
+          </div>
+          <div class="er-col c-col">
+            <span class="badge c-pk-badge">PK</span>
+            <span>id</span>
+            <span class="col-type">uuid</span>
+          </div>
+          <div class="er-col c-col">
+            <span class="badge c-fk-badge">FK</span>
+            <span>user_id</span>
+            <span class="col-type">uuid</span>
+          </div>
+        </div>
+      </div>
+    </div>
+    <div class="card-body">
+      <h3>C — Gunmetal / Titanium</h3>
+      <p>Warm dark gray with a metallic border shimmer. Violet PK badges, teal FK badges. Sophisticated and premium.</p>
+    </div>
+  </div>
+
+</div>

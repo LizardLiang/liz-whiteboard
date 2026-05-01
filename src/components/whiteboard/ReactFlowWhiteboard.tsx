@@ -15,6 +15,8 @@ import { ReactFlowProvider, useReactFlow, useUpdateNodeInternals, useViewport } 
 import { ReactFlowCanvas } from './ReactFlowCanvas'
 import { ConnectionStatusIndicator } from './ConnectionStatusIndicator'
 import { DeleteTableDialog } from './DeleteTableDialog'
+import { Toolbar } from './Toolbar'
+import { AutoLayoutConfirmDialog } from './AutoLayoutConfirmDialog'
 import type { Connection } from '@xyflow/react'
 import type { ZoomControls } from './Toolbar'
 import type {
@@ -24,7 +26,7 @@ import type {
 } from '@/lib/react-flow/types'
 import type { Cardinality, Column  } from '@prisma/client'
 import type { CreateColumnPayload } from './column/types'
-import type { UpdateColumn } from '@/data/schema'
+import type { CreateRelationship, CreateTable, UpdateColumn } from '@/data/schema'
 import type { TableRelationship } from './DeleteTableDialog'
 import type {RelationshipErrorEvent} from '@/hooks/use-relationship-mutations';
 import { Button } from '@/components/ui/button'
@@ -52,8 +54,6 @@ import {
   getWhiteboardRelationships,
   getWhiteboardWithDiagram,
 } from '@/lib/server-functions'
-import { Toolbar } from './Toolbar'
-import { AutoLayoutConfirmDialog } from './AutoLayoutConfirmDialog'
 import { useD3ForceLayout } from '@/hooks/use-d3-force-layout'
 import { useAutoLayoutOrchestrator } from '@/hooks/use-auto-layout-orchestrator'
 import { updateTablePositionFn } from '@/routes/api/tables'
@@ -124,9 +124,9 @@ export interface ReactFlowWhiteboardProps {
   /** Whether nodes are draggable */
   nodesDraggable?: boolean
   /** Callback when a new table is created via the toolbar */
-  onCreateTable?: (data: import('@/data/schema').CreateTable) => void | Promise<void>
+  onCreateTable?: (data: CreateTable) => void | Promise<void>
   /** Callback when a new relationship is created via the toolbar */
-  onCreateRelationship?: (data: import('@/data/schema').CreateRelationship) => void | Promise<void>
+  onCreateRelationship?: (data: CreateRelationship) => void | Promise<void>
   /** Callback to expose display mode controls to parent */
   onDisplayModeReady?: (
     showMode: ShowMode,
@@ -162,8 +162,8 @@ function ReactFlowWhiteboardInner({
   showMinimap: boolean
   showControls: boolean
   nodesDraggable: boolean
-  onCreateTable?: (data: import('@/data/schema').CreateTable) => void | Promise<void>
-  onCreateRelationship?: (data: import('@/data/schema').CreateRelationship) => void | Promise<void>
+  onCreateTable?: (data: CreateTable) => void | Promise<void>
+  onCreateRelationship?: (data: CreateRelationship) => void | Promise<void>
   onDisplayModeReady?: (
     showMode: ShowMode,
     setShowMode: (mode: ShowMode) => void,

@@ -5,12 +5,12 @@
 // Does NOT call setNodes — the orchestrator (use-auto-layout-orchestrator) owns that.
 
 import { useCallback, useState } from 'react'
-import { computeD3ForceLayout } from '@/lib/auto-layout/d3-force-layout'
+import type { RelationshipEdgeType, TableNodeType } from '@/lib/react-flow/types'
 import type { LayoutOutputPosition } from '@/lib/auto-layout/d3-force-layout'
-import type { TableNodeType, RelationshipEdgeType } from '@/lib/react-flow/types'
+import { computeD3ForceLayout } from '@/lib/auto-layout/d3-force-layout'
 
 export interface UseD3ForceLayoutOptions {
-  onLayoutComplete?: (positions: LayoutOutputPosition[]) => void
+  onLayoutComplete?: (positions: Array<LayoutOutputPosition>) => void
   onLayoutError?: (error: Error) => void
 }
 
@@ -20,9 +20,9 @@ export interface UseD3ForceLayoutResult {
    * Resolves to an array of { id, x, y } positions or null if an error occurred.
    */
   runLayout: (
-    nodes: TableNodeType[],
-    edges: RelationshipEdgeType[],
-  ) => Promise<LayoutOutputPosition[] | null>
+    nodes: Array<TableNodeType>,
+    edges: Array<RelationshipEdgeType>,
+  ) => Promise<Array<LayoutOutputPosition> | null>
   /** True while the layout is computing */
   isRunning: boolean
   /** The last error, or null */
@@ -52,9 +52,9 @@ export function useD3ForceLayout(
 
   const runLayout = useCallback(
     async (
-      nodes: TableNodeType[],
-      edges: RelationshipEdgeType[],
-    ): Promise<LayoutOutputPosition[] | null> => {
+      nodes: Array<TableNodeType>,
+      edges: Array<RelationshipEdgeType>,
+    ): Promise<Array<LayoutOutputPosition> | null> => {
       setIsRunning(true)
       setError(null)
 
@@ -63,8 +63,10 @@ export function useD3ForceLayout(
         const layoutNodes = nodes.map((n) => ({
           id: n.id,
           // Verbatim copy of elk-layout.ts:58-59 dimension fallback strategy
-          width: n.measured?.width ?? (n.width as number | undefined) ?? 250,
-          height: n.measured?.height ?? (n.height as number | undefined) ?? 150,
+          // eslint-disable-next-line @typescript-eslint/no-unnecessary-condition
+          width: n.measured?.width ?? (n.width as number) ?? 250,
+          // eslint-disable-next-line @typescript-eslint/no-unnecessary-condition
+          height: n.measured?.height ?? (n.height as number) ?? 150,
         }))
 
         // Convert React Flow edges to layout input (source/target table IDs)
@@ -77,9 +79,9 @@ export function useD3ForceLayout(
         onLayoutComplete?.(positions)
         return positions
       } catch (err) {
-        const error = err instanceof Error ? err : new Error(String(err))
-        setError(error)
-        onLayoutError?.(error)
+        const layoutError = err instanceof Error ? err : new Error(String(err))
+        setError(layoutError)
+        onLayoutError?.(layoutError)
         return null
       } finally {
         setIsRunning(false)

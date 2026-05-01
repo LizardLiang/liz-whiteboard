@@ -1,0 +1,400 @@
+{
+  "created": "2026-05-01T18:11:08+08:00",
+  "description": "Automatically position ER diagram tables so the most related tables are placed near each other, triggered by a manual 'Auto Layout' button",
+  "documents": {
+    "1-prd": "prd.md,decisions.md",
+    "2-prd-review": "prd-challenge.md",
+    "4-discuss": "context.md",
+    "5-tech-spec": "tech-spec.md",
+    "6-spec-review-sa": "spec-review-sa.md",
+    "7-test-plan": "test-plan.md",
+    "8-implementation": "implementation-notes.md"
+  },
+  "feature": "auto-layout",
+  "history": [
+    {
+      "action": "started",
+      "agent": "kratos",
+      "notes": "Feature initialized. Auto-layout for ER diagram tables. P0 priority. Manual button trigger. Spawning Athena for PRD creation.",
+      "stage": "1-prd",
+      "timestamp": "2026-05-01T18:11:08+08:00"
+    },
+    {
+      "action": "status changed from 'in-progress' to 'complete'",
+      "stage": "1-prd",
+      "timestamp": "2026-05-01T20:49:16+08:00"
+    },
+    {
+      "action": "status changed from 'pending' to 'in-progress'",
+      "stage": "2-prd-review",
+      "timestamp": "2026-05-01T20:50:09+08:00"
+    },
+    {
+      "action": "status changed from 'in-progress' to 'complete'",
+      "stage": "2-prd-review",
+      "timestamp": "2026-05-01T20:52:07+08:00",
+      "verdict": "revisions"
+    },
+    {
+      "action": "prd revised to v1.1 — resolves 8 BLOCKING items from Nemesis review",
+      "agent": "athena",
+      "notes": "Revision 1: FR-003 FK-related defined precisely; FR-004 single 16px gap contract; FR-007 longtask measurement + re-entry reconciled; perf target bound to reference benchmark hardware; FR-009 streamed-with-bulk-broadcast contract chosen; persistence-failure UX defined; bulk persistence requirement added (updateTablePositionsBulk + table:move:bulk); FR-011 added (no v1 cancellation, \u003e 50 table pre-run dialog).",
+      "stage": "1-prd",
+      "timestamp": "2026-05-01T21:01:00+08:00"
+    },
+    {
+      "action": "status changed from 'complete' to 'in-progress'",
+      "stage": "2-prd-review",
+      "timestamp": "2026-05-01T21:06:39+08:00"
+    },
+    {
+      "action": "status changed from 'in-progress' to 'complete'",
+      "stage": "2-prd-review",
+      "timestamp": "2026-05-01T21:08:43+08:00",
+      "verdict": "revisions"
+    },
+    {
+      "action": "status changed from 'complete' to 'in-progress'",
+      "stage": "2-prd-review",
+      "timestamp": "2026-05-01T21:14:20+08:00"
+    },
+    {
+      "action": "status changed from 'in-progress' to 'complete'",
+      "stage": "2-prd-review",
+      "timestamp": "2026-05-01T21:15:42+08:00",
+      "verdict": "approved"
+    },
+    {
+      "action": "status changed from 'pending' to 'complete'",
+      "agent": "daedalus",
+      "notes": "4 phases, 18 tasks decomposed. Phase 1 (d3-force engine), Phase 2 (bulk persistence + Socket.IO), Phase 3 (toolbar button + a11y dialog), Phase 4 (orchestration, viewport fit, error handling). Critical path: Phase 1 → Phase 3 → Phase 4. Phase 2 parallel with Phases 1-3.",
+      "stage": "3-decomposition",
+      "timestamp": "2026-05-01T22:00:00+08:00"
+    },
+    {
+      "action": "status changed from 'pending' to 'complete'",
+      "agent": "themis",
+      "notes": "4 gray areas resolved: Socket.IO broadcast strategy (emitToWhiteboard + updatedBy guard), d3-force tick budget (10 per RAF frame), fitView options (padding 0.2, duration 300, setTimeout 100ms), toolbar prop surgery (clean remove + 2 new props). context.md written.",
+      "stage": "4-discuss",
+      "timestamp": "2026-05-01T22:15:00+08:00"
+    },
+    {
+      "action": "status changed from 'ready' to 'in-progress'",
+      "stage": "5-tech-spec",
+      "timestamp": "2026-05-01T21:37:15+08:00"
+    },
+    {
+      "action": "status changed from 'in-progress' to 'complete'",
+      "stage": "5-tech-spec",
+      "timestamp": "2026-05-01T21:42:42+08:00"
+    },
+    {
+      "action": "status changed from 'pending' to 'in-progress'",
+      "stage": "6-spec-review-sa",
+      "timestamp": "2026-05-01T22:20:00+08:00"
+    },
+    {
+      "action": "status changed from 'in-progress' to 'complete'",
+      "agent": "apollo",
+      "notes": "Verdict: Concerns. 1 high (auth-failure path: requireAuth returns AuthErrorResponse, not throws — orchestrator runs success branch on 401), 4 medium (cross-client dimension drift breaks FR-004 remotely; server-functions importing from routes file with no precedent; lastPayloadRef stale across navigation; payload field-name skew updatedBy vs userId), 2 low. 8 required actions; recommends sending back to Hephaestus for revision.",
+      "stage": "6-spec-review-sa",
+      "timestamp": "2026-05-01T22:30:00+08:00",
+      "verdict": "concerns"
+    },
+    {
+      "action": "tech-spec revised to revision 1 — resolves all 5 Apollo blocking findings + OQ-2",
+      "agent": "hephaestus",
+      "notes": "HIGH #1 (auth-error return): orchestrator now uses isUnauthorizedError(result) on every awaited updateTablePositionsBulk, routes auth-error into persist-failure UX + triggerSessionExpired. MEDIUM #2 (cross-client gap): adopts option (b) — FR-004 scoped as originator-screen guarantee; receivers apply verbatim coords; option (a) rejected as causing on-screen/persisted state desync. MEDIUM #3 (cross-module import): server function no longer emits; orchestrator emits client-side after success (mirrors existing single-table pattern); new server-side socket.on('table:move:bulk', …) handler re-broadcasts via broadcastToWhiteboard(socket.id, …). MEDIUM #4 (stale Retry): orchestrator gains isMountedRef checked at toast-handler entry and after every await. MEDIUM #5 (field-name skew): listener now reads data.userId to match the existing table:moved listener in the same hook; emit payload uses userId end-to-end. OQ-2: parent route's onAutoLayoutReady bridge + handleAutoLayout + useAutoLayoutPreference + four legacy Toolbar props + layout:compute/layout:computed socket emits/listeners are all DELETED in Phase 4 step 4 (orchestrator owns the entire flow). Open Question 1 also flips from 'defer' to 'required' as a consequence of #3.",
+      "stage": "5-tech-spec",
+      "timestamp": "2026-05-01T23:00:00+08:00"
+    },
+    {
+      "action": "status changed from 'complete' to 'in-progress'",
+      "stage": "6-spec-review-sa",
+      "timestamp": "2026-05-01T22:03:48+08:00"
+    },
+    {
+      "action": "status changed from 'in-progress' to 'complete'",
+      "stage": "6-spec-review-sa",
+      "timestamp": "2026-05-01T22:07:09+08:00",
+      "verdict": "sound"
+    },
+    {
+      "action": "status changed from 'pending' to 'ready'",
+      "stage": "7-test-plan",
+      "timestamp": "2026-05-01T22:07:14+08:00"
+    },
+    {
+      "action": "status changed from 'ready' to 'in-progress'",
+      "stage": "7-test-plan",
+      "timestamp": "2026-05-01T22:08:43+08:00"
+    },
+    {
+      "action": "status changed from 'in-progress' to 'complete'",
+      "stage": "7-test-plan",
+      "timestamp": "2026-05-01T22:12:37+08:00"
+    },
+    {
+      "action": "status changed from 'pending' to 'in-progress'",
+      "stage": "8-implementation",
+      "timestamp": "2026-05-01T22:19:22+08:00"
+    },
+    {
+      "action": "status changed from 'in-progress' to 'complete'",
+      "stage": "8-implementation",
+      "timestamp": "2026-05-01T22:44:15+08:00"
+    }
+  ],
+  "implementation_mode": null,
+  "mode": "normal",
+  "pipeline": {
+    "1-prd": {
+      "agent": "athena",
+      "check_failures": [
+        {
+          "checks_failed": [
+            "prd.md not found in \\home\\shotup\\programing\\react\\liz-whiteboard\\.claude\\feature\\auto-layout",
+            "decisions.md not found in \\home\\shotup\\programing\\react\\liz-whiteboard\\.claude\\feature\\auto-layout"
+          ],
+          "retries_exhausted": true,
+          "tier": 1,
+          "timestamp": "2026-05-01T20:47:17+08:00"
+        },
+        {
+          "checks_failed": [
+            "decisions.md not found in \\home\\shotup\\programing\\react\\liz-whiteboard\\.claude\\feature\\auto-layout"
+          ],
+          "retries_exhausted": true,
+          "tier": 1,
+          "timestamp": "2026-05-01T20:48:55+08:00"
+        }
+      ],
+      "completed": "2026-05-01T21:01:00+08:00",
+      "document": "prd.md,decisions.md",
+      "documents": [],
+      "gap_analysis_rounds": 0,
+      "revision_count": 2,
+      "revision_history": [
+        {
+          "agent": "athena",
+          "blocking_items_resolved": 8,
+          "summary": "FR-003 FK-related defined; FR-004 single 16px gap contract; FR-007 longtask measurement; perf bound to reference benchmark; FR-009 bulk-broadcast sync; persistence-failure UX; bulk persistence requirement; FR-011 no-cancellation policy + pre-run dialog",
+          "timestamp": "2026-05-01T21:01:00+08:00",
+          "trigger": "nemesis 2-prd-review verdict: revisions",
+          "version": "1.1"
+        },
+        {
+          "agent": "athena",
+          "blocking_items_resolved": 1,
+          "major_items_resolved": 1,
+          "minor_items_resolved": 1,
+          "summary": "FR-009 rewritten to commit unambiguously to option (a) atomic bulk-broadcast — consistent with NFR Persistence, NFR Collaboration, Risks Row 3, Error Flows, and User Flow steps 8-9 (BLOCKING). FR-011 pre-run dialog gains explicit a11y ACs: role=alertdialog, focus-trap, initial focus on Run Layout, Esc=Cancel with focus return, AT announcement via aria-labelledby + aria-describedby (MAJOR). FR-004 'Equivalent test' parenthetical replaced with correct L∞-gap formula (MINOR).",
+          "timestamp": "2026-05-01T21:15:00+08:00",
+          "trigger": "nemesis 2-prd-review round 2 verdict: revisions (1 BLOCKING + 1 MAJOR + 1 MINOR)",
+          "version": "1.2"
+        }
+      ],
+      "started": "2026-05-01T18:11:08+08:00",
+      "status": "complete"
+    },
+    "10-review": {
+      "agents": [
+        "hermes",
+        "cassandra"
+      ],
+      "code_review_verdict": null,
+      "completed": null,
+      "documents": [],
+      "risk_verdict": null,
+      "started": null,
+      "status": "pending"
+    },
+    "2-prd-review": {
+      "agents": [
+        "nemesis"
+      ],
+      "check_failures": [
+        {
+          "checks_failed": [
+            "prd-review.md not found in \\home\\shotup\\programing\\react\\liz-whiteboard\\.claude\\feature\\auto-layout"
+          ],
+          "retries_exhausted": true,
+          "tier": 1,
+          "timestamp": "2026-05-01T20:51:34+08:00"
+        },
+        {
+          "checks_failed": [
+            "prd-review.md not found in \\home\\shotup\\programing\\react\\liz-whiteboard\\.claude\\feature\\auto-layout"
+          ],
+          "retries_exhausted": true,
+          "tier": 1,
+          "timestamp": "2026-05-01T20:54:07+08:00"
+        },
+        {
+          "checks_failed": [
+            "prd-review.md not found in \\home\\shotup\\programing\\react\\liz-whiteboard\\.claude\\feature\\auto-layout"
+          ],
+          "retries_exhausted": true,
+          "tier": 1,
+          "timestamp": "2026-05-01T20:55:47+08:00"
+        },
+        {
+          "checks_failed": [
+            "prd-review.md not found in \\home\\shotup\\programing\\react\\liz-whiteboard\\.claude\\feature\\auto-layout"
+          ],
+          "retries_exhausted": true,
+          "tier": 1,
+          "timestamp": "2026-05-01T20:57:28+08:00"
+        },
+        {
+          "checks_failed": [
+            "prd-review.md not found in \\home\\shotup\\programing\\react\\liz-whiteboard\\.claude\\feature\\auto-layout"
+          ],
+          "retries_exhausted": true,
+          "tier": 1,
+          "timestamp": "2026-05-01T20:59:09+08:00"
+        },
+        {
+          "checks_failed": [
+            "prd-review.md not found in \\home\\shotup\\programing\\react\\liz-whiteboard\\.claude\\feature\\auto-layout"
+          ],
+          "retries_exhausted": true,
+          "tier": 1,
+          "timestamp": "2026-05-01T21:00:47+08:00"
+        }
+      ],
+      "completed": "2026-05-01T21:15:42+08:00",
+      "document": "prd-challenge.md",
+      "documents": [],
+      "nemesis_verdict": "approved",
+      "post_revision_completed": "2026-05-01T21:01:00+08:00",
+      "post_revision_review_doc": "prd-review.md",
+      "post_revision_verdict": "approved",
+      "started": "2026-05-01T21:14:20+08:00",
+      "status": "complete",
+      "verdict": "approved"
+    },
+    "3-decomposition": {
+      "agent": "daedalus",
+      "completed": "2026-05-01T22:00:00+08:00",
+      "documents": [
+        "decomposition.md"
+      ],
+      "output_targets": [
+        "local"
+      ],
+      "started": "2026-05-01T21:50:00+08:00",
+      "status": "complete"
+    },
+    "4-discuss": {
+      "agent": "themis",
+      "completed": "2026-05-01T22:15:00+08:00",
+      "documents": [
+        "context.md"
+      ],
+      "started": "2026-05-01T22:10:00+08:00",
+      "status": "complete"
+    },
+    "5-tech-spec": {
+      "agent": "hephaestus",
+      "based_on_prd_version": "1.2",
+      "completed": "2026-05-01T23:00:00+08:00",
+      "document": "tech-spec.md",
+      "documents": [
+        "tech-spec.md"
+      ],
+      "revision": 1,
+      "revision_history": [
+        {
+          "agent": "hephaestus",
+          "findings_resolved": {
+            "high": 1,
+            "medium": 4,
+            "open_questions": [
+              "OQ-2"
+            ]
+          },
+          "summary": "Auth-error return value handled via isUnauthorizedError + triggerSessionExpired (HIGH #1). FR-004 scoped to originator-screen with documented cross-client limitation (MEDIUM #2). Server function no longer emits; orchestrator emits client-side after success and a new socket.on('table:move:bulk') handler re-broadcasts via broadcastToWhiteboard — eliminates the server-functions → routes import edge (MEDIUM #3). isMountedRef guards Retry across unmount/navigation (MEDIUM #4). Listener reads data.userId to match existing same-hook table:moved listener (MEDIUM #5). OQ-2 resolved DELETE: parent route's auto-layout bridge entirely removed (handleAutoLayout, onAutoLayoutReady, reactFlowAutoLayoutRef, useAutoLayoutPreference usage, four legacy Toolbar props, layout:compute/computed socket events).",
+          "timestamp": "2026-05-01T23:00:00+08:00",
+          "trigger": "apollo 6-spec-review-sa verdict: concerns"
+        }
+      ],
+      "started": "2026-05-01T22:35:00+08:00",
+      "status": "complete",
+      "summary": "Revision 1 (post-Apollo). Client-side d3-force layout (RAF-chunked, 10 ticks/frame, 500-tick cap) with originator-screen 16px L-infinity gap post-pass; new persistence-only updateTablePositionsBulk server function (one prisma.$transaction, no Socket.IO) + new server-side socket.on('table:move:bulk') handler that re-broadcasts via broadcastToWhiteboard(socket.id). Orchestrator emits the broadcast client-side after server success (mirrors single-table pattern), uses isUnauthorizedError on every awaited result, and uses isMountedRef to suppress Retry after unmount. Field name on the new event is userId (matches existing same-hook table:moved listener). Parent route's auto-layout bridge entirely deleted. 9 files to create, 8 to modify (adds collaboration.ts socket handler + parent route cleanup). All 5 Apollo findings + OQ-2 resolved."
+    },
+    "6-spec-review-sa": {
+      "agent": "apollo",
+      "completed": "2026-05-01T22:07:09+08:00",
+      "document": "spec-review-sa.md",
+      "documents": [
+        "spec-review-sa.md"
+      ],
+      "issue_counts": {
+        "critical": 0,
+        "high": 1,
+        "low": 2,
+        "medium": 4
+      },
+      "key_findings": [
+        "HIGH: Orchestrator's runLayout assumes thrown errors but requireAuth returns AuthErrorResponse — auth failure produces false success path (NFR Persistence + NFR Reliability silently violated)",
+        "MEDIUM: L∞ 16px post-pass enforced against originator's measured table dimensions; broadcast omits dimensions, so collaborators with different rendered sizes break FR-004 remotely",
+        "MEDIUM: server-functions.ts importing emitToWhiteboard from @/routes/api/collaboration introduces new server-functions → route directional edge with no precedent",
+        "MEDIUM: handleRetry uses lastPayloadRef across sonner toast lifetime — stale payload risk after whiteboard unmount/navigation",
+        "MEDIUM: payload field-name skew (data.userId vs data.updatedBy) coexists in one collaboration hook"
+      ],
+      "started": "2026-05-01T22:03:48+08:00",
+      "status": "complete",
+      "verdict": "sound"
+    },
+    "7-test-plan": {
+      "agent": "artemis",
+      "completed": "2026-05-01T22:12:37+08:00",
+      "document": "test-plan.md",
+      "documents": [],
+      "started": "2026-05-01T22:08:43+08:00",
+      "status": "complete",
+      "summary": "68 test cases across 5 suites (13 engine, 12 server, 10 collab, 7 toolbar+dialog, 14 orchestrator, 14 integration). All 11 P0 requirements covered with at least one P0 test each. Primary risk areas: auth-error return-value path (TC-AL-S-08/O-03/I-08), isMountedRef stale Retry after unmount (TC-AL-O-06/O-07/I-10), socket handler session/permission guards (TC-AL-C-02/C-03), and L-infinity 16px post-pass for isolated/circular/zero-FK edge cases (TC-AL-E-06/E-07/E-10)."
+    },
+    "8-implementation": {
+      "agent": "ares",
+      "completed": "2026-05-01T22:44:15+08:00",
+      "document": "implementation-notes.md",
+      "documents": [
+        "implementation-notes.md",
+        "src/lib/auto-layout/d3-force-layout.ts",
+        "src/lib/auto-layout/index.ts",
+        "src/hooks/use-d3-force-layout.ts",
+        "src/components/whiteboard/AutoLayoutConfirmDialog.tsx",
+        "src/hooks/use-auto-layout-orchestrator.ts",
+        "src/data/schema.ts",
+        "src/lib/server-functions.ts",
+        "src/routes/api/collaboration.ts",
+        "src/components/whiteboard/Toolbar.tsx",
+        "src/hooks/use-whiteboard-collaboration.ts",
+        "src/components/whiteboard/ReactFlowWhiteboard.tsx",
+        "src/routes/whiteboard/$whiteboardId.tsx"
+      ],
+      "mode": "ares",
+      "started": "2026-05-01T22:19:22+08:00",
+      "status": "complete",
+      "summary": "Created 9 files, modified 8. 48 new tests written, all passing (19 engine, 7 toolbar, 9 dialog, 13 orchestrator). Deviations: Toolbar moved inside ReactFlowWhiteboardInner per spec intent; TC-AL-I-* integration tests deferred (orchestrator unit tests cover same paths); server-function unit tests deferred (no Prisma test DB in unit test env). All 5 Apollo findings addressed.",
+      "tasks": []
+    },
+    "9-prd-alignment": {
+      "agent": "hera",
+      "alignment_verdict": null,
+      "completed": null,
+      "coverage_pct": 0,
+      "criteria_total": 0,
+      "criteria_verified": 0,
+      "documents": [],
+      "started": null,
+      "status": "ready"
+    }
+  },
+  "pipeline_status": "in-progress",
+  "priority": "P0",
+  "stage": "8-implementation",
+  "updated": "2026-05-01T22:44:15+08:00"
+}
