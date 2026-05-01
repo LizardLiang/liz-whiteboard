@@ -1,12 +1,12 @@
 // src/components/whiteboard/Toolbar.tsx
-// Toolbar component for whiteboard actions (Add Table, Add Relationship)
+// Toolbar component for whiteboard actions (Add Table, Add Relationship, Auto Layout)
 
 import { useState } from 'react'
+import { Loader2 } from 'lucide-react'
 import type { Cardinality, Column, DiagramTable } from '@prisma/client'
 import type { CreateRelationship, CreateTable } from '@/data/schema'
 import type { ShowMode } from '@/lib/react-flow/types'
 import { Button } from '@/components/ui/button'
-import { Switch } from '@/components/ui/switch'
 import { Label } from '@/components/ui/label'
 import {
   Dialog,
@@ -53,14 +53,12 @@ export interface ToolbarProps {
   onCreateTable?: (data: CreateTable) => void | Promise<void>
   /** Callback when relationship is created */
   onCreateRelationship?: (data: CreateRelationship) => void | Promise<void>
-  /** Callback when auto layout is triggered */
-  onAutoLayout?: () => void | Promise<void>
-  /** Whether auto layout is currently computing */
-  isAutoLayoutLoading?: boolean
-  /** Whether auto-layout is enabled (user preference) */
-  autoLayoutEnabled?: boolean
-  /** Callback when auto-layout preference changes */
-  onAutoLayoutEnabledChange?: (enabled: boolean) => void
+  /** Total number of tables — drives the Auto Layout button enable/disable guard */
+  tableCount: number
+  /** Callback when the Auto Layout button is clicked */
+  onAutoLayoutClick?: () => void | Promise<void>
+  /** Whether auto layout is currently running */
+  isAutoLayoutRunning?: boolean
   /** Canvas zoom controls */
   zoomControls?: ZoomControls
   /** Current zoom level (0-5) for display */
@@ -146,10 +144,9 @@ export function Toolbar({
   tables,
   onCreateTable,
   onCreateRelationship,
-  onAutoLayout,
-  isAutoLayoutLoading = false,
-  autoLayoutEnabled = true,
-  onAutoLayoutEnabledChange,
+  tableCount,
+  onAutoLayoutClick,
+  isAutoLayoutRunning = false,
   zoomControls,
   currentZoom = 1,
   showMode = 'ALL_FIELDS',
@@ -442,20 +439,33 @@ export function Toolbar({
         </DialogContent>
       </Dialog>
 
-      {/* Auto-Layout Preference Toggle */}
-      <div className="flex items-center gap-2 ml-2 px-3 py-2 border rounded-md">
-        <Switch
-          id="auto-layout-toggle"
-          checked={autoLayoutEnabled}
-          onCheckedChange={onAutoLayoutEnabledChange}
-        />
-        <Label
-          htmlFor="auto-layout-toggle"
-          className="text-sm font-normal cursor-pointer"
+      {/* Auto Layout Button */}
+      {/* Wrap in a span so the tooltip works even when the button is disabled
+          (a disabled button does not fire mouse events in all browsers). */}
+      <span
+        title={
+          tableCount < 2
+            ? 'Add at least 2 tables to use Auto Layout'
+            : tableCount > 50
+              ? 'Layout cannot be cancelled once started.'
+              : 'Automatically arrange tables based on FK relationships.'
+        }
+      >
+        <Button
+          variant="outline"
+          disabled={tableCount < 2 || isAutoLayoutRunning}
+          onClick={() => void onAutoLayoutClick?.()}
         >
-          Auto-arrange new tables
-        </Label>
-      </div>
+          {isAutoLayoutRunning ? (
+            <>
+              <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+              Running…
+            </>
+          ) : (
+            'Auto Layout'
+          )}
+        </Button>
+      </span>
 
       {/* Display Mode Toggle */}
       {onShowModeChange && (
