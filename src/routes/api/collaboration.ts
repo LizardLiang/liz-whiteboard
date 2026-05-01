@@ -18,6 +18,7 @@ import {
   createRelationshipSchema,
   createTableSchema,
   reorderColumnsSchema,
+  tableMoveBulkBroadcastSchema,
   updateColumnSchema,
   updateRelationshipSchema,
   updateTableSchema,
@@ -454,19 +455,23 @@ function setupCollaborationEventHandlers(
       }
       if (await denyIfInsufficientPermission(socket, whiteboardId)) return
 
-      // Minimal payload shape validation before re-broadcasting.
-      if (
-        !data ||
-        !Array.isArray(data.positions) ||
-        data.positions.length === 0
-      ) {
+      // Full schema validation before re-broadcasting.
+      // Rejects NaN/Infinity coordinates and non-UUID IDs that would corrupt
+      // every collaborator's React Flow canvas (B1 security fix).
+      const parsed = tableMoveBulkBroadcastSchema.safeParse(data)
+      if (!parsed.success) {
+        socket.emit('error', {
+          event: 'table:move:bulk',
+          error: 'VALIDATION_ERROR',
+          message: 'Invalid table:move:bulk payload',
+        })
         return
       }
 
       // Re-broadcast to every OTHER client in this whiteboard namespace.
       // broadcastToWhiteboard excludes the sender by socketId, so the originator
       // does not receive a copy of its own emit.
-      broadcastToWhiteboard(whiteboardId, socket.id, 'table:move:bulk', data)
+      broadcastToWhiteboard(whiteboardId, socket.id, 'table:move:bulk', parsed.data)
 
       await safeUpdateSessionActivity(socket.id)
     },

@@ -411,3 +411,28 @@ export const bulkUpdatePositionsSchema = z.object({
 })
 
 export type BulkUpdatePositions = z.infer<typeof bulkUpdatePositionsSchema>
+
+/**
+ * Schema for the table:move:bulk socket broadcast payload.
+ * Validated server-side before re-broadcasting to all collaborators.
+ * - userId must be a UUID (wire format uses userId throughout)
+ * - Each position entry must have finite numeric coordinates (rejects NaN / Infinity)
+ * - tableId uses the wire-format field name (positionX/positionY), matching
+ *   the existing table:moved event convention
+ * - 500-entry cap matches bulkUpdatePositionsSchema
+ */
+export const tableMoveBulkBroadcastSchema = z.object({
+  userId: z.string().uuid(),
+  positions: z
+    .array(
+      z.object({
+        tableId: z.string().uuid(),
+        positionX: z.number().finite(),
+        positionY: z.number().finite(),
+      }),
+    )
+    .min(1)
+    .max(500),
+})
+
+export type TableMoveBulkBroadcast = z.infer<typeof tableMoveBulkBroadcastSchema>

@@ -9,6 +9,7 @@ import {
   projectRoleSchema,
   registerInputSchema,
   reorderColumnsSchema,
+  tableMoveBulkBroadcastSchema,
 } from './schema'
 
 describe('cardinalitySchema', () => {
@@ -335,6 +336,87 @@ describe('reorderColumnsSchema', () => {
     const result = reorderColumnsSchema.safeParse({
       tableId: validUuid,
       orderedColumnIds: ids,
+    })
+    expect(result.success).toBe(false)
+  })
+})
+
+// ============================================================================
+// tableMoveBulkBroadcastSchema — B1 security validation tests
+// TC-AL-C-B1-01 through TC-AL-C-B1-08
+// ============================================================================
+
+describe('tableMoveBulkBroadcastSchema (B1 socket payload validation)', () => {
+  const validUserId = 'f47ac10b-58cc-4372-a567-0e02b2c3d479'
+  const validTableId = '550e8400-e29b-41d4-a716-446655440000'
+
+  const validPayload = {
+    userId: validUserId,
+    positions: [{ tableId: validTableId, positionX: 100, positionY: 200 }],
+  }
+
+  it('TC-AL-C-B1-01: accepts a valid payload', () => {
+    const result = tableMoveBulkBroadcastSchema.safeParse(validPayload)
+    expect(result.success).toBe(true)
+  })
+
+  it('TC-AL-C-B1-02: rejects NaN positionX', () => {
+    const result = tableMoveBulkBroadcastSchema.safeParse({
+      ...validPayload,
+      positions: [{ tableId: validTableId, positionX: NaN, positionY: 200 }],
+    })
+    expect(result.success).toBe(false)
+  })
+
+  it('TC-AL-C-B1-03: rejects string positionY', () => {
+    const result = tableMoveBulkBroadcastSchema.safeParse({
+      ...validPayload,
+      positions: [{ tableId: validTableId, positionX: 100, positionY: 'string' }],
+    })
+    expect(result.success).toBe(false)
+  })
+
+  it('TC-AL-C-B1-04: rejects Infinity in coordinates', () => {
+    const result = tableMoveBulkBroadcastSchema.safeParse({
+      ...validPayload,
+      positions: [{ tableId: validTableId, positionX: Infinity, positionY: 0 }],
+    })
+    expect(result.success).toBe(false)
+  })
+
+  it('TC-AL-C-B1-05: rejects non-UUID tableId in positions', () => {
+    const result = tableMoveBulkBroadcastSchema.safeParse({
+      ...validPayload,
+      positions: [{ tableId: 'not-a-uuid', positionX: 10, positionY: 20 }],
+    })
+    expect(result.success).toBe(false)
+  })
+
+  it('TC-AL-C-B1-06: rejects non-UUID userId', () => {
+    const result = tableMoveBulkBroadcastSchema.safeParse({
+      ...validPayload,
+      userId: 'attacker',
+    })
+    expect(result.success).toBe(false)
+  })
+
+  it('TC-AL-C-B1-07: rejects empty positions array', () => {
+    const result = tableMoveBulkBroadcastSchema.safeParse({
+      userId: validUserId,
+      positions: [],
+    })
+    expect(result.success).toBe(false)
+  })
+
+  it('TC-AL-C-B1-08: rejects positions array exceeding 500 entries', () => {
+    const manyPositions = Array.from({ length: 501 }, () => ({
+      tableId: validTableId,
+      positionX: 0,
+      positionY: 0,
+    }))
+    const result = tableMoveBulkBroadcastSchema.safeParse({
+      userId: validUserId,
+      positions: manyPositions,
     })
     expect(result.success).toBe(false)
   })

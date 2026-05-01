@@ -20,6 +20,7 @@ import { useReactFlow } from '@xyflow/react'
 import { toast } from 'sonner'
 import type { Edge, Node } from '@xyflow/react'
 import type { LayoutOutputPosition } from '@/lib/auto-layout/d3-force-layout'
+import { applyBulkPositions } from '@/lib/auto-layout'
 import { isUnauthorizedError } from '@/lib/auth/errors'
 import { useAuthContext } from '@/components/auth/AuthContext'
 import { updateTablePositionsBulk } from '@/lib/server-functions'
@@ -187,13 +188,9 @@ export function useAutoLayoutOrchestrator({
         return
       }
 
-      // Step 2 — Optimistic local apply (before network round-trip)
-      setNodes((prev) =>
-        prev.map((n) => {
-          const p = positions.find((pp) => pp.id === n.id)
-          return p ? { ...n, position: { x: p.x, y: p.y } } : n
-        }),
-      )
+      // Step 2 — Optimistic local apply (before network round-trip).
+      // applyBulkPositions builds a Map for O(n) lookup (B3 fix).
+      setNodes((prev) => applyBulkPositions(prev, positions))
 
       // Step 3 — Stash payload BEFORE the await so Retry can re-submit
       const payload: BulkPayload = {
