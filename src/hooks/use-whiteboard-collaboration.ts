@@ -46,6 +46,18 @@ export interface PositionUpdateEvent {
  * )
  * ```
  */
+/**
+ * Bulk position update event data from Auto Layout broadcast
+ */
+export interface BulkPositionUpdateEvent {
+  positions: Array<{
+    tableId: string
+    positionX: number
+    positionY: number
+  }>
+  userId: string
+}
+
 export function useWhiteboardCollaboration(
   whiteboardId: string,
   userId: string,
@@ -59,6 +71,9 @@ export function useWhiteboardCollaboration(
   onRelationshipDeleted?: (relationshipId: string) => void,
   onRelationshipError?: (data: RelationshipErrorEvent) => void,
   onRelationshipUpdated?: (relationshipId: string, label: string) => void,
+  onBulkPositionUpdate?: (
+    positions: Array<{ tableId: string; positionX: number; positionY: number }>,
+  ) => void,
 ) {
   // Use the base collaboration hook
   const { triggerSessionExpired } = useAuthContext()
@@ -203,6 +218,36 @@ export function useWhiteboardCollaboration(
     }
   }, [on, off, router])
 
+  // Listen for bulk position updates from other users (Auto Layout broadcast)
+  // NOTE on field names — both this listener and the existing table:moved listener
+  // use `data.userId` for the sender-id field. The mutation-event family
+  // (table:updated / table:deleted / column:updated) uses `updatedBy`; that's a
+  // different convention in different hooks. Picking userId here keeps both
+  // listeners in this hook consistent and avoids the muscle-memory bug where a
+  // future reader writes data.userId in a handler that should read data.updatedBy
+  // (or vice versa) and the guard silently fails (resolves Apollo Finding 5).
+  // Pre-existing latent bug (out of scope for Auto Layout): collaboration.ts:418-423
+  // emits the legacy table:moved event with `updatedBy` while the listener at
+  // lines 75-77 reads `data.userId`. Auto Layout does NOT touch that legacy emit;
+  // new code uses `userId` end-to-end on the new `table:move:bulk` event.
+  useEffect(() => {
+    if (!onBulkPositionUpdate) return
+
+    const handler = (data: BulkPositionUpdateEvent) => {
+      // Defensive sender-guard: broadcastToWhiteboard already excludes the
+      // sender on the server, but we keep this guard for parity with the
+      // existing table:moved listener and as a defense against any future
+      // change that might re-route the broadcast through emitToWhiteboard.
+      if (data.userId === userId) return
+      onBulkPositionUpdate(data.positions)
+    }
+
+    on('table:move:bulk', handler)
+    return () => {
+      off('table:move:bulk', handler)
+    }
+  }, [on, off, userId, onBulkPositionUpdate])
+
   // Emit position update to other users
   const emitPositionUpdate = useCallback(
     (tableId: string, positionX: number, positionY: number) => {
@@ -212,6 +257,24 @@ export function useWhiteboardCollaboration(
         positionY,
         userId,
       })
+    },
+    [emit, userId],
+  )
+
+  // Emit bulk position update after Auto Layout persistence succeeds.
+  // The server-side socket.on('table:move:bulk') handler re-broadcasts to
+  // every OTHER socket in the namespace via broadcastToWhiteboard(socket.id).
+  // Field name is `userId` (not `updatedBy`) for parity with the table:moved
+  // listener in this same hook (resolves Apollo Finding 5).
+  const emitBulkPositionUpdate = useCallback(
+    (
+      positions: Array<{
+        tableId: string
+        positionX: number
+        positionY: number
+      }>,
+    ) => {
+      emit('table:move:bulk', { positions, userId })
     },
     [emit, userId],
   )
@@ -244,6 +307,7 @@ export function useWhiteboardCollaboration(
     connectionState,
     activeUsers,
     emitPositionUpdate,
+    emitBulkPositionUpdate,
     emitTableDelete,
     emitRelationshipDelete,
     emitRelationshipUpdate,
