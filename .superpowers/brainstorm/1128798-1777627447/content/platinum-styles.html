@@ -1,0 +1,336 @@
+<h2>Platinum Style Directions</h2>
+<p class="subtitle">Three takes on platinum metal. Click to select.</p>
+
+<style>
+  .er-table {
+    border-radius: 8px;
+    overflow: hidden;
+    width: 210px;
+    font-family: 'JetBrains Mono', 'Fira Code', monospace;
+    font-size: 12px;
+    user-select: none;
+    position: relative;
+  }
+  .er-header {
+    padding: 10px 14px;
+    font-size: 13px;
+    font-weight: 700;
+    letter-spacing: 0.06em;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    text-transform: uppercase;
+  }
+  .er-col {
+    padding: 6px 14px;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    font-size: 11px;
+  }
+  .er-col:last-child { border-bottom: none !important; }
+  .badge {
+    font-size: 9px;
+    font-weight: 800;
+    padding: 1px 5px;
+    border-radius: 3px;
+    letter-spacing: 0.08em;
+    flex-shrink: 0;
+    text-transform: uppercase;
+  }
+  .col-name { flex: 1; }
+  .col-type {
+    font-size: 10px;
+    opacity: 0.45;
+    letter-spacing: 0.02em;
+  }
+
+  /* ── A: Platinum Plate ─────────────────────────────── */
+  /* Bright, lustrous silver-platinum surface, dark engraved text */
+  .a-wrap {
+    background: linear-gradient(145deg, #e8e8e8 0%, #d0d0d2 40%, #c4c4c8 60%, #d8d8da 100%);
+    border-radius: 9px;
+    padding: 1px;
+    box-shadow:
+      0 2px 4px rgba(0,0,0,0.4),
+      0 10px 32px rgba(0,0,0,0.5),
+      inset 0 1px 0 rgba(255,255,255,0.9);
+  }
+  .a-table {
+    background: linear-gradient(160deg, #dcdcde 0%, #c8c8cc 35%, #b8b8bc 65%, #ccccce 100%);
+    border: none;
+  }
+  .a-header {
+    background: linear-gradient(135deg, #e2e2e4 0%, #c4c4c8 50%, #d4d4d8 100%);
+    color: #1a1a22;
+    border-bottom: 1px solid rgba(0,0,0,0.15);
+    font-size: 12px;
+  }
+  .a-dot { width: 8px; height: 8px; border-radius: 50%; background: #1a1a22; opacity: 0.6; flex-shrink: 0; }
+  .a-col { color: #2a2a32; border-bottom: 1px solid rgba(0,0,0,0.08); }
+  .a-pk  { background: rgba(0,0,0,0.12); color: #111; border: 1px solid rgba(0,0,0,0.2); }
+  .a-fk  { background: rgba(0,0,0,0.07); color: #333; border: 1px solid rgba(0,0,0,0.12); }
+  .a-ring {
+    box-shadow:
+      0 0 0 2px #b0b0b4,
+      0 0 0 4px rgba(180,180,190,0.4),
+      0 2px 4px rgba(0,0,0,0.4),
+      0 10px 32px rgba(0,0,0,0.5);
+  }
+
+  /* ── B: Dark Platinum ──────────────────────────────── */
+  /* Deep dark body, platinum-silver header as a metallic crown */
+  .b-wrap {
+    border-radius: 9px;
+    padding: 1px;
+    background: linear-gradient(135deg, rgba(210,210,220,0.5) 0%, rgba(100,100,110,0.2) 50%, rgba(210,210,220,0.4) 100%);
+    box-shadow:
+      0 8px 28px rgba(0,0,0,0.7),
+      0 2px 6px rgba(0,0,0,0.5);
+  }
+  .b-table {
+    background: #121318;
+    border: none;
+  }
+  .b-header {
+    background: linear-gradient(135deg, #d8d8dc 0%, #b4b4bc 40%, #c8c8ce 70%, #dcdce0 100%);
+    color: #0e0e14;
+    border-bottom: none;
+    font-size: 12px;
+    position: relative;
+  }
+  .b-header::after {
+    content: '';
+    position: absolute;
+    bottom: 0; left: 0; right: 0; height: 1px;
+    background: rgba(0,0,0,0.25);
+  }
+  .b-dot { width: 7px; height: 7px; border-radius: 50%; background: #0e0e14; opacity: 0.5; flex-shrink: 0; }
+  .b-col { color: #9898a4; border-bottom: 1px solid rgba(255,255,255,0.04); }
+  .b-pk  { background: rgba(210,210,230,0.14); color: #d4d4e4; border: 1px solid rgba(210,210,230,0.25); }
+  .b-fk  { background: rgba(150,210,220,0.12); color: #96d2dc; border: 1px solid rgba(150,210,220,0.22); }
+  .b-ring {
+    background: linear-gradient(135deg, rgba(230,230,240,0.7) 0%, rgba(150,150,160,0.4) 50%, rgba(230,230,240,0.65) 100%);
+    box-shadow:
+      0 8px 28px rgba(0,0,0,0.7),
+      0 0 20px rgba(200,200,220,0.15);
+  }
+
+  /* ── C: Frosted Platinum ───────────────────────────── */
+  /* Semi-translucent matte platinum with a frosted glass / anodized feel */
+  .c-wrap {
+    border-radius: 9px;
+    padding: 1px;
+    background: linear-gradient(130deg, rgba(220,222,232,0.6) 0%, rgba(180,182,196,0.3) 50%, rgba(220,222,235,0.55) 100%);
+    box-shadow:
+      0 8px 32px rgba(0,0,0,0.6),
+      0 2px 8px rgba(0,0,0,0.4);
+  }
+  .c-table {
+    background: linear-gradient(160deg, rgba(38,40,52,0.95) 0%, rgba(28,30,40,0.98) 100%);
+    border: none;
+    backdrop-filter: blur(12px);
+  }
+  .c-header {
+    background: linear-gradient(135deg, rgba(210,212,228,0.18) 0%, rgba(180,182,200,0.1) 100%);
+    color: #d8dae8;
+    border-bottom: 1px solid rgba(200,204,224,0.12);
+    font-size: 12px;
+  }
+  .c-dot { width: 7px; height: 7px; border-radius: 50%; background: linear-gradient(135deg,#e0e2f0,#a8aac0); flex-shrink: 0; }
+  .c-col { color: #8890a8; border-bottom: 1px solid rgba(200,204,224,0.06); }
+  .c-pk  { background: rgba(200,202,230,0.16); color: #c8cae8; border: 1px solid rgba(200,202,230,0.28); }
+  .c-fk  { background: rgba(130,210,220,0.11); color: #82d2dc; border: 1px solid rgba(130,210,220,0.22); }
+  .c-ring {
+    background: linear-gradient(130deg, rgba(220,222,240,0.75) 0%, rgba(180,182,200,0.45) 50%, rgba(220,222,240,0.7) 100%);
+    box-shadow:
+      0 8px 32px rgba(0,0,0,0.6),
+      0 0 24px rgba(200,204,240,0.12);
+  }
+
+  .preview-panel {
+    background: #0a0b0e;
+    border-radius: 10px;
+    padding: 28px 20px;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 14px;
+  }
+  .cards { grid-template-columns: repeat(3, 1fr) !important; }
+  .card { flex-direction: column; }
+  .card-image { padding: 0 !important; }
+  .card-body { padding: 12px 16px !important; }
+</style>
+
+<div class="cards">
+
+  <!-- A: Platinum Plate -->
+  <div class="card" data-choice="A" onclick="toggleSelect(this)">
+    <div class="card-image">
+      <div class="preview-panel">
+        <div class="a-wrap a-ring">
+          <div class="er-table a-table">
+            <div class="er-header a-header">
+              <div class="a-dot"></div> users
+            </div>
+            <div class="er-col a-col">
+              <span class="badge a-pk">PK</span>
+              <span class="col-name">id</span>
+              <span class="col-type">uuid</span>
+            </div>
+            <div class="er-col a-col">
+              <span style="width:28px"></span>
+              <span class="col-name">email</span>
+              <span class="col-type">varchar</span>
+            </div>
+            <div class="er-col a-col">
+              <span style="width:28px"></span>
+              <span class="col-name">created_at</span>
+              <span class="col-type">timestamptz</span>
+            </div>
+            <div class="er-col a-col">
+              <span class="badge a-fk">FK</span>
+              <span class="col-name">org_id</span>
+              <span class="col-type">uuid</span>
+            </div>
+          </div>
+        </div>
+        <div class="a-wrap" style="width:175px">
+          <div class="er-table a-table" style="width:100%">
+            <div class="er-header a-header">
+              <div class="a-dot"></div> orders
+            </div>
+            <div class="er-col a-col">
+              <span class="badge a-pk">PK</span>
+              <span class="col-name">id</span>
+              <span class="col-type">uuid</span>
+            </div>
+            <div class="er-col a-col">
+              <span class="badge a-fk">FK</span>
+              <span class="col-name">user_id</span>
+              <span class="col-type">uuid</span>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+    <div class="card-body">
+      <h3>A — Platinum Plate</h3>
+      <p>Full platinum surface — lustrous silver gradient body, dark engraved text. Like machined platinum hardware.</p>
+    </div>
+  </div>
+
+  <!-- B: Dark Platinum -->
+  <div class="card" data-choice="B" onclick="toggleSelect(this)">
+    <div class="card-image">
+      <div class="preview-panel">
+        <div class="b-wrap b-ring">
+          <div class="er-table b-table">
+            <div class="er-header b-header">
+              <div class="b-dot"></div> users
+            </div>
+            <div class="er-col b-col">
+              <span class="badge b-pk">PK</span>
+              <span class="col-name">id</span>
+              <span class="col-type">uuid</span>
+            </div>
+            <div class="er-col b-col">
+              <span style="width:28px"></span>
+              <span class="col-name">email</span>
+              <span class="col-type">varchar</span>
+            </div>
+            <div class="er-col b-col">
+              <span style="width:28px"></span>
+              <span class="col-name">created_at</span>
+              <span class="col-type">timestamptz</span>
+            </div>
+            <div class="er-col b-col">
+              <span class="badge b-fk">FK</span>
+              <span class="col-name">org_id</span>
+              <span class="col-type">uuid</span>
+            </div>
+          </div>
+        </div>
+        <div class="b-wrap" style="width:175px">
+          <div class="er-table b-table" style="width:100%">
+            <div class="er-header b-header">
+              <div class="b-dot"></div> orders
+            </div>
+            <div class="er-col b-col">
+              <span class="badge b-pk">PK</span>
+              <span class="col-name">id</span>
+              <span class="col-type">uuid</span>
+            </div>
+            <div class="er-col b-col">
+              <span class="badge b-fk">FK</span>
+              <span class="col-name">user_id</span>
+              <span class="col-type">uuid</span>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+    <div class="card-body">
+      <h3>B — Dark Platinum</h3>
+      <p>Near-black body, platinum-silver header crown. Metallic border trim. Like a premium device with a platinum bezel.</p>
+    </div>
+  </div>
+
+  <!-- C: Frosted Platinum -->
+  <div class="card" data-choice="C" onclick="toggleSelect(this)">
+    <div class="card-image">
+      <div class="preview-panel">
+        <div class="c-wrap c-ring">
+          <div class="er-table c-table">
+            <div class="er-header c-header">
+              <div class="c-dot"></div> users
+            </div>
+            <div class="er-col c-col">
+              <span class="badge c-pk">PK</span>
+              <span class="col-name">id</span>
+              <span class="col-type">uuid</span>
+            </div>
+            <div class="er-col c-col">
+              <span style="width:28px"></span>
+              <span class="col-name">email</span>
+              <span class="col-type">varchar</span>
+            </div>
+            <div class="er-col c-col">
+              <span style="width:28px"></span>
+              <span class="col-name">created_at</span>
+              <span class="col-type">timestamptz</span>
+            </div>
+            <div class="er-col c-col">
+              <span class="badge c-fk">FK</span>
+              <span class="col-name">org_id</span>
+              <span class="col-type">uuid</span>
+            </div>
+          </div>
+        </div>
+        <div class="c-wrap" style="width:175px">
+          <div class="er-table c-table" style="width:100%">
+            <div class="er-header c-header">
+              <div class="c-dot"></div> orders
+            </div>
+            <div class="er-col c-col">
+              <span class="badge c-pk">PK</span>
+              <span class="col-name">id</span>
+              <span class="col-type">uuid</span>
+            </div>
+            <div class="er-col c-col">
+              <span class="badge c-fk">FK</span>
+              <span class="col-name">user_id</span>
+              <span class="col-type">uuid</span>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+    <div class="card-body">
+      <h3>C — Frosted Platinum</h3>
+      <p>Dark translucent body with platinum-tinted shimmer border. Matte frosted feel — like anodized platinum glass.</p>
+    </div>
+  </div>
+
+</div>

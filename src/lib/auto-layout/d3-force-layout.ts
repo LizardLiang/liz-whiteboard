@@ -136,7 +136,7 @@ const POST_PASS_MAX_SWEEPS = 5
  * smaller gap component. Runs up to POST_PASS_MAX_SWEEPS times to absorb
  * cascade effects.
  */
-export function enforceGapPostPass(nodes: SimNode[]): void {
+export function enforceGapPostPass(nodes: Array<SimNode>): void {
   for (let sweep = 0; sweep < POST_PASS_MAX_SWEEPS; sweep++) {
     let anyViolation = false
 
@@ -209,9 +209,9 @@ export function enforceGapPostPass(nodes: SimNode[]): void {
  * - Never produces a longtask ≥ 200 ms (10-tick RAF budget per frame).
  */
 export async function computeD3ForceLayout(
-  nodes: LayoutInputNode[],
-  edges: LayoutInputEdge[],
-): Promise<LayoutOutputPosition[]> {
+  nodes: Array<LayoutInputNode>,
+  edges: Array<LayoutInputEdge>,
+): Promise<Array<LayoutOutputPosition>> {
   if (nodes.length === 0) {
     throw new Error('No nodes to layout')
   }
@@ -222,7 +222,7 @@ export async function computeD3ForceLayout(
   }
 
   // Build simulation nodes (d3 mutates x/y in place)
-  const simNodes: SimNode[] = nodes.map((n, i) => ({
+  const simNodes: Array<SimNode> = nodes.map((n, i) => ({
     id: n.id,
     width: n.width,
     height: n.height,
@@ -233,7 +233,7 @@ export async function computeD3ForceLayout(
 
   // Build simulation links (only between valid node IDs)
   const nodeIds = new Set(simNodes.map((n) => n.id))
-  const simLinks: SimLink[] = edges
+  const simLinks: Array<SimLink> = edges
     .filter((e) => nodeIds.has(e.source) && nodeIds.has(e.target))
     .map((e) => ({ source: e.source, target: e.target }))
 

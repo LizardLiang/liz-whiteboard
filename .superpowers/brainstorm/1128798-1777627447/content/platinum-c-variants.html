@@ -1,0 +1,231 @@
+<h2>Frosted Platinum — Color Variants</h2>
+<p class="subtitle">Same structure as C, different color treatments. Click to select.</p>
+
+<style>
+  .er-table {
+    border-radius: 7px;
+    overflow: hidden;
+    width: 200px;
+    font-family: 'JetBrains Mono', 'Fira Code', monospace;
+    font-size: 12px;
+    user-select: none;
+    position: relative;
+  }
+  .er-header {
+    padding: 9px 13px;
+    font-size: 11.5px;
+    font-weight: 700;
+    letter-spacing: 0.07em;
+    text-transform: uppercase;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+  }
+  .er-col {
+    padding: 5px 13px;
+    display: flex;
+    align-items: center;
+    gap: 7px;
+    font-size: 11px;
+  }
+  .er-col:last-child { border-bottom: none !important; }
+  .badge {
+    font-size: 8.5px;
+    font-weight: 800;
+    padding: 1px 5px;
+    border-radius: 3px;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+    flex-shrink: 0;
+  }
+  .col-name { flex: 1; }
+  .col-type { font-size: 10px; opacity: 0.4; }
+
+  .wrap {
+    border-radius: 8px;
+    padding: 1px;
+  }
+
+  /* ── 1: Warm Champagne ── */
+  .w1 { background: linear-gradient(135deg, rgba(230,218,196,0.55) 0%, rgba(180,168,148,0.28) 50%, rgba(228,216,196,0.5) 100%);
+        box-shadow: 0 8px 28px rgba(0,0,0,0.6), 0 2px 6px rgba(0,0,0,0.4); }
+  .w1-sel { background: linear-gradient(135deg, rgba(230,218,196,0.8) 0%, rgba(180,168,148,0.5) 50%, rgba(228,216,196,0.75) 100%);
+             box-shadow: 0 8px 28px rgba(0,0,0,0.6), 0 0 20px rgba(220,200,160,0.18); }
+  .t1 { background: linear-gradient(160deg, rgba(42,38,34,0.97) 0%, rgba(30,26,22,0.99) 100%); }
+  .h1 { background: linear-gradient(135deg, rgba(220,208,186,0.16) 0%, rgba(180,168,148,0.09) 100%);
+        color: #ddd4bc; border-bottom: 1px solid rgba(210,195,165,0.11); }
+  .d1 { width: 7px; height: 7px; border-radius: 50%; background: linear-gradient(135deg,#e8d8b8,#b8a888); flex-shrink:0; }
+  .r1 { color: #8a8278; border-bottom: 1px solid rgba(210,195,165,0.06); }
+  .p1 { background: rgba(220,208,180,0.15); color: #d4c8a8; border: 1px solid rgba(220,208,180,0.26); }
+  .f1 { background: rgba(160,210,190,0.1); color: #96cebb; border: 1px solid rgba(160,210,190,0.2); }
+
+  /* ── 2: Onyx & Silver ── */
+  .w2 { background: linear-gradient(130deg, rgba(240,240,248,0.55) 0%, rgba(160,160,175,0.28) 50%, rgba(240,240,248,0.5) 100%);
+        box-shadow: 0 8px 32px rgba(0,0,0,0.75), 0 2px 8px rgba(0,0,0,0.5); }
+  .w2-sel { background: linear-gradient(130deg, rgba(240,240,252,0.85) 0%, rgba(160,160,185,0.55) 50%, rgba(240,240,252,0.8) 100%);
+             box-shadow: 0 8px 32px rgba(0,0,0,0.75), 0 0 24px rgba(220,220,245,0.15); }
+  .t2 { background: linear-gradient(160deg, #0c0c0e 0%, #080808 100%); }
+  .h2 { background: linear-gradient(135deg, rgba(240,240,250,0.13) 0%, rgba(200,200,215,0.07) 100%);
+        color: #e4e4f0; border-bottom: 1px solid rgba(240,240,255,0.08); }
+  .d2 { width: 7px; height: 7px; border-radius: 50%; background: linear-gradient(135deg,#f0f0f8,#b0b0c8); flex-shrink:0; }
+  .r2 { color: #707080; border-bottom: 1px solid rgba(240,240,255,0.04); }
+  .p2 { background: rgba(230,230,245,0.13); color: #d8d8f0; border: 1px solid rgba(230,230,245,0.22); }
+  .f2 { background: rgba(110,200,230,0.1); color: #7ec8e8; border: 1px solid rgba(110,200,230,0.2); }
+
+  /* ── 3: Slate & Platinum ── */
+  .w3 { background: linear-gradient(130deg, rgba(196,206,228,0.5) 0%, rgba(136,150,178,0.25) 50%, rgba(196,208,228,0.48) 100%);
+        box-shadow: 0 8px 28px rgba(0,0,0,0.65), 0 2px 6px rgba(0,0,0,0.45); }
+  .w3-sel { background: linear-gradient(130deg, rgba(196,208,240,0.78) 0%, rgba(136,152,190,0.48) 50%, rgba(196,210,240,0.74) 100%);
+             box-shadow: 0 8px 28px rgba(0,0,0,0.65), 0 0 22px rgba(180,196,240,0.14); }
+  .t3 { background: linear-gradient(160deg, rgba(26,30,44,0.97) 0%, rgba(18,22,34,0.99) 100%); }
+  .h3 { background: linear-gradient(135deg, rgba(180,192,228,0.14) 0%, rgba(140,158,200,0.07) 100%);
+        color: #c4d0e8; border-bottom: 1px solid rgba(180,196,230,0.1); }
+  .d3 { width: 7px; height: 7px; border-radius: 50%; background: linear-gradient(135deg,#c8d8f4,#8898c8); flex-shrink:0; }
+  .r3 { color: #7880a0; border-bottom: 1px solid rgba(180,196,230,0.06); }
+  .p3 { background: rgba(180,194,240,0.15); color: #b8cef8; border: 1px solid rgba(180,194,240,0.26); }
+  .f3 { background: rgba(100,220,200,0.1); color: #64dcc8; border: 1px solid rgba(100,220,200,0.2); }
+
+  /* ── 4: Smoke & Rose Silver ── */
+  .w4 { background: linear-gradient(130deg, rgba(228,210,218,0.52) 0%, rgba(172,152,164,0.26) 50%, rgba(228,212,220,0.5) 100%);
+        box-shadow: 0 8px 28px rgba(0,0,0,0.62), 0 2px 6px rgba(0,0,0,0.42); }
+  .w4-sel { background: linear-gradient(130deg, rgba(236,216,226,0.8) 0%, rgba(180,158,172,0.5) 50%, rgba(236,218,228,0.76) 100%);
+             box-shadow: 0 8px 28px rgba(0,0,0,0.62), 0 0 20px rgba(220,190,210,0.16); }
+  .t4 { background: linear-gradient(160deg, rgba(36,28,34,0.97) 0%, rgba(26,20,26,0.99) 100%); }
+  .h4 { background: linear-gradient(135deg, rgba(218,196,208,0.14) 0%, rgba(175,152,168,0.08) 100%);
+        color: #d8c0cc; border-bottom: 1px solid rgba(210,185,200,0.1); }
+  .d4 { width: 7px; height: 7px; border-radius: 50%; background: linear-gradient(135deg,#e4c8d8,#b498aa); flex-shrink:0; }
+  .r4 { color: #887480; border-bottom: 1px solid rgba(210,185,200,0.06); }
+  .p4 { background: rgba(216,192,210,0.15); color: #d4b8cc; border: 1px solid rgba(216,192,210,0.26); }
+  .f4 { background: rgba(140,210,200,0.1); color: #90d4c8; border: 1px solid rgba(140,210,200,0.2); }
+
+  .preview-panel {
+    background: #08090c;
+    border-radius: 10px;
+    padding: 24px 16px;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 12px;
+  }
+
+  .cards { grid-template-columns: repeat(2, 1fr) !important; }
+  .card { flex-direction: column; }
+  .card-image { padding: 0 !important; }
+  .card-body { padding: 12px 16px !important; }
+</style>
+
+<div class="cards">
+
+  <!-- 1: Warm Champagne -->
+  <div class="card" data-choice="1" onclick="toggleSelect(this)">
+    <div class="card-image">
+      <div class="preview-panel">
+        <div class="wrap w1 w1-sel">
+          <div class="er-table t1">
+            <div class="er-header h1"><div class="d1"></div> users</div>
+            <div class="er-col r1"><span class="badge p1">PK</span><span class="col-name">id</span><span class="col-type">uuid</span></div>
+            <div class="er-col r1"><span style="width:26px"></span><span class="col-name">email</span><span class="col-type">varchar</span></div>
+            <div class="er-col r1"><span style="width:26px"></span><span class="col-name">created_at</span><span class="col-type">timestamptz</span></div>
+            <div class="er-col r1"><span class="badge f1">FK</span><span class="col-name">org_id</span><span class="col-type">uuid</span></div>
+          </div>
+        </div>
+        <div class="wrap w1" style="width:170px">
+          <div class="er-table t1" style="width:100%">
+            <div class="er-header h1"><div class="d1"></div> orders</div>
+            <div class="er-col r1"><span class="badge p1">PK</span><span class="col-name">id</span><span class="col-type">uuid</span></div>
+            <div class="er-col r1"><span class="badge f1">FK</span><span class="col-name">user_id</span><span class="col-type">uuid</span></div>
+          </div>
+        </div>
+      </div>
+    </div>
+    <div class="card-body">
+      <h3>1 — Warm Champagne</h3>
+      <p>Dark warm-brown body, champagne-gold platinum border shimmer. Refined and rich.</p>
+    </div>
+  </div>
+
+  <!-- 2: Onyx & Silver -->
+  <div class="card" data-choice="2" onclick="toggleSelect(this)">
+    <div class="card-image">
+      <div class="preview-panel">
+        <div class="wrap w2 w2-sel">
+          <div class="er-table t2">
+            <div class="er-header h2"><div class="d2"></div> users</div>
+            <div class="er-col r2"><span class="badge p2">PK</span><span class="col-name">id</span><span class="col-type">uuid</span></div>
+            <div class="er-col r2"><span style="width:26px"></span><span class="col-name">email</span><span class="col-type">varchar</span></div>
+            <div class="er-col r2"><span style="width:26px"></span><span class="col-name">created_at</span><span class="col-type">timestamptz</span></div>
+            <div class="er-col r2"><span class="badge f2">FK</span><span class="col-name">org_id</span><span class="col-type">uuid</span></div>
+          </div>
+        </div>
+        <div class="wrap w2" style="width:170px">
+          <div class="er-table t2" style="width:100%">
+            <div class="er-header h2"><div class="d2"></div> orders</div>
+            <div class="er-col r2"><span class="badge p2">PK</span><span class="col-name">id</span><span class="col-type">uuid</span></div>
+            <div class="er-col r2"><span class="badge f2">FK</span><span class="col-name">user_id</span><span class="col-type">uuid</span></div>
+          </div>
+        </div>
+      </div>
+    </div>
+    <div class="card-body">
+      <h3>2 — Onyx & Silver</h3>
+      <p>Pure black body, cold neutral silver-white border. Maximum contrast, minimal color. Like jewelry-grade onyx.</p>
+    </div>
+  </div>
+
+  <!-- 3: Slate & Platinum -->
+  <div class="card" data-choice="3" onclick="toggleSelect(this)">
+    <div class="card-image">
+      <div class="preview-panel">
+        <div class="wrap w3 w3-sel">
+          <div class="er-table t3">
+            <div class="er-header h3"><div class="d3"></div> users</div>
+            <div class="er-col r3"><span class="badge p3">PK</span><span class="col-name">id</span><span class="col-type">uuid</span></div>
+            <div class="er-col r3"><span style="width:26px"></span><span class="col-name">email</span><span class="col-type">varchar</span></div>
+            <div class="er-col r3"><span style="width:26px"></span><span class="col-name">created_at</span><span class="col-type">timestamptz</span></div>
+            <div class="er-col r3"><span class="badge f3">FK</span><span class="col-name">org_id</span><span class="col-type">uuid</span></div>
+          </div>
+        </div>
+        <div class="wrap w3" style="width:170px">
+          <div class="er-table t3" style="width:100%">
+            <div class="er-header h3"><div class="d3"></div> orders</div>
+            <div class="er-col r3"><span class="badge p3">PK</span><span class="col-name">id</span><span class="col-type">uuid</span></div>
+            <div class="er-col r3"><span class="badge f3">FK</span><span class="col-name">user_id</span><span class="col-type">uuid</span></div>
+          </div>
+        </div>
+      </div>
+    </div>
+    <div class="card-body">
+      <h3>3 — Slate & Platinum</h3>
+      <p>Deep blue-slate body, cool platinum-blue border shimmer. Technical and precise — like aerospace aluminum.</p>
+    </div>
+  </div>
+
+  <!-- 4: Smoke & Rose Silver -->
+  <div class="card" data-choice="4" onclick="toggleSelect(this)">
+    <div class="card-image">
+      <div class="preview-panel">
+        <div class="wrap w4 w4-sel">
+          <div class="er-table t4">
+            <div class="er-header h4"><div class="d4"></div> users</div>
+            <div class="er-col r4"><span class="badge p4">PK</span><span class="col-name">id</span><span class="col-type">uuid</span></div>
+            <div class="er-col r4"><span style="width:26px"></span><span class="col-name">email</span><span class="col-type">varchar</span></div>
+            <div class="er-col r4"><span style="width:26px"></span><span class="col-name">created_at</span><span class="col-type">timestamptz</span></div>
+            <div class="er-col r4"><span class="badge f4">FK</span><span class="col-name">org_id</span><span class="col-type">uuid</span></div>
+          </div>
+        </div>
+        <div class="wrap w4" style="width:170px">
+          <div class="er-table t4" style="width:100%">
+            <div class="er-header h4"><div class="d4"></div> orders</div>
+            <div class="er-col r4"><span class="badge p4">PK</span><span class="col-name">id</span><span class="col-type">uuid</span></div>
+            <div class="er-col r4"><span class="badge f4">FK</span><span class="col-name">user_id</span><span class="col-type">uuid</span></div>
+          </div>
+        </div>
+      </div>
+    </div>
+    <div class="card-body">
+      <h3>4 — Smoke & Rose Silver</h3>
+      <p>Dark warm-smoke body, rose-silver border with subtle pink tone. Soft yet metallic — like platinum with a warm tint.</p>
+    </div>
+  </div>
+
+</div>

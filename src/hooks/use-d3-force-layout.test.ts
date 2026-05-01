@@ -1,19 +1,17 @@
 // src/hooks/use-d3-force-layout.test.ts
 // Unit tests for useD3ForceLayout hook — TC-AL-E-12 and TC-AL-E-13
 
-import { describe, it, expect, vi, beforeEach } from 'vitest'
-import { renderHook, act } from '@testing-library/react'
-import { useD3ForceLayout } from './use-d3-force-layout'
+import { beforeEach, describe, expect, it, vi } from 'vitest'
+import { act, renderHook } from '@testing-library/react'
 
-// ---------------------------------------------------------------------------
-// Mocks
-// ---------------------------------------------------------------------------
-
-// Mock computeD3ForceLayout so tests are synchronous and controlled
+// Mock computeD3ForceLayout so tests are synchronous and controlled (vi.mock is hoisted)
 vi.mock('@/lib/auto-layout/d3-force-layout', () => ({
   computeD3ForceLayout: vi.fn(),
 }))
 
+// eslint-disable-next-line import/first
+import { useD3ForceLayout } from './use-d3-force-layout'
+// eslint-disable-next-line import/first
 import { computeD3ForceLayout } from '@/lib/auto-layout/d3-force-layout'
 
 const mockComputeLayout = computeD3ForceLayout as ReturnType<typeof vi.fn>
@@ -39,7 +37,7 @@ const NODES = [
   } as any,
 ]
 
-const EDGES = [] as any[]
+const EDGES = [] as Array<any>
 
 const POSITIONS = [
   { id: 'T1', x: 0, y: 0 },

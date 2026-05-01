@@ -1,0 +1,291 @@
+<h2>Platinum — Refined Options</h2>
+<p class="subtitle">Based on real platinum color values (#E5E4E2, #D3D6D8, #AEAEB2). Click to select.</p>
+
+<style>
+  .er-table {
+    border-radius: 7px;
+    overflow: hidden;
+    width: 205px;
+    font-family: 'JetBrains Mono', 'Fira Code', monospace;
+    font-size: 12px;
+    user-select: none;
+    position: relative;
+  }
+  .er-header {
+    padding: 9px 13px;
+    font-size: 11px;
+    font-weight: 700;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+  }
+  .er-col {
+    padding: 5px 13px;
+    display: flex;
+    align-items: center;
+    gap: 7px;
+    font-size: 11px;
+  }
+  .er-col:last-child { border-bottom: none !important; }
+  .badge {
+    font-size: 8px;
+    font-weight: 800;
+    padding: 1px 5px;
+    border-radius: 3px;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+    flex-shrink: 0;
+  }
+  .col-name { flex: 1; }
+  .col-type { font-size: 10px; opacity: 0.38; letter-spacing: 0.01em; }
+
+  .wrap { border-radius: 8px; padding: 1px; }
+
+  /* ── 1: Pure Platinum ──────────────────────────────────
+     Near-black body, 7-stop metallic sheen border, silver text */
+  .w1 {
+    background: linear-gradient(135deg,
+      #1a1a1a 0%, #3a3a3a 20%, #c8c8c8 40%,
+      #e8e8e8 50%, #c0c0c0 60%, #2e2e2e 80%, #111111 100%);
+    box-shadow: 0 10px 32px rgba(0,0,0,0.75), 0 2px 6px rgba(0,0,0,0.5);
+  }
+  .w1-sel {
+    box-shadow:
+      0 10px 32px rgba(0,0,0,0.75),
+      0 0 0 1px #e5e4e2,
+      0 0 18px rgba(229,228,226,0.2);
+  }
+  .t1 { background: #0f0f12; }
+  .h1 {
+    background: linear-gradient(135deg, #1c1c20 0%, #141416 100%);
+    color: #e5e4e2;
+    border-bottom: 1px solid rgba(229,228,226,0.1);
+  }
+  .d1 {
+    width: 6px; height: 6px; border-radius: 50%;
+    background: linear-gradient(135deg, #e5e4e2, #aeaeb2);
+    flex-shrink: 0;
+  }
+  .r1 { color: #aeaeb2; border-bottom: 1px solid rgba(229,228,226,0.06); }
+  .p1 { background: rgba(229,228,226,0.12); color: #e5e4e2; border: 1px solid rgba(229,228,226,0.22); }
+  .f1 { background: rgba(199,199,204,0.08); color: #c7c7cc; border: 1px solid rgba(199,199,204,0.16); }
+
+  /* ── 2: Platinum + Steel Blue ──────────────────────────
+     Same platinum body/border, steel-blue PK accent */
+  .w2 {
+    background: linear-gradient(135deg,
+      #1a1a1a 0%, #3a3a3a 20%, #c8c8c8 40%,
+      #e8e8e8 50%, #c0c0c0 60%, #2e2e2e 80%, #111111 100%);
+    box-shadow: 0 10px 32px rgba(0,0,0,0.75), 0 2px 6px rgba(0,0,0,0.5);
+  }
+  .w2-sel {
+    box-shadow:
+      0 10px 32px rgba(0,0,0,0.75),
+      0 0 0 1px #e5e4e2,
+      0 0 20px rgba(229,228,226,0.2);
+  }
+  .t2 { background: #0f0f12; }
+  .h2 {
+    background: linear-gradient(135deg, #1c1c20 0%, #141416 100%);
+    color: #e5e4e2;
+    border-bottom: 1px solid rgba(229,228,226,0.1);
+  }
+  .d2 {
+    width: 6px; height: 6px; border-radius: 50%;
+    background: linear-gradient(135deg, #e5e4e2, #aeaeb2);
+    flex-shrink: 0;
+  }
+  .r2 { color: #aeaeb2; border-bottom: 1px solid rgba(229,228,226,0.06); }
+  .p2 { background: rgba(96,165,250,0.14); color: #93c5fd; border: 1px solid rgba(96,165,250,0.26); }
+  .f2 { background: rgba(52,211,153,0.1); color: #6ee7b7; border: 1px solid rgba(52,211,153,0.2); }
+
+  /* ── 3: Slate Platinum ─────────────────────────────────
+     Dark slate body (#0e1015), cooler platinum tones, blue-silver text */
+  .w3 {
+    background: linear-gradient(135deg,
+      #22252e 0%, #44484f 20%, #c4c8d0 40%,
+      #dce0e8 50%, #b8bcc4 60%, #34383e 80%, #0e1015 100%);
+    box-shadow: 0 10px 32px rgba(0,0,0,0.7), 0 2px 6px rgba(0,0,0,0.45);
+  }
+  .w3-sel {
+    box-shadow:
+      0 10px 32px rgba(0,0,0,0.7),
+      0 0 0 1px #dce0e8,
+      0 0 20px rgba(196,200,215,0.2);
+  }
+  .t3 { background: linear-gradient(160deg, #0e1015 0%, #0a0c10 100%); }
+  .h3 {
+    background: linear-gradient(135deg, #181c24 0%, #10141c 100%);
+    color: #dce0e8;
+    border-bottom: 1px solid rgba(196,200,215,0.1);
+  }
+  .d3 {
+    width: 6px; height: 6px; border-radius: 50%;
+    background: linear-gradient(135deg, #dce0e8, #9ca0b0);
+    flex-shrink: 0;
+  }
+  .r3 { color: #9ca0b0; border-bottom: 1px solid rgba(196,200,215,0.06); }
+  .p3 { background: rgba(196,200,228,0.13); color: #d4d8f0; border: 1px solid rgba(196,200,228,0.24); }
+  .f3 { background: rgba(100,210,220,0.1); color: #78ccd8; border: 1px solid rgba(100,210,220,0.2); }
+
+  /* ── 4: Matte Platinum (Apple-inspired) ────────────────
+     Body #1c1c1e (Apple dark), #8E8E93 / #AEAEB2 / #C7C7CC palette */
+  .w4 {
+    background: linear-gradient(135deg,
+      rgba(174,174,178,0.5) 0%, rgba(120,120,128,0.25) 40%,
+      rgba(199,199,204,0.5) 60%, rgba(142,142,147,0.28) 100%);
+    box-shadow: 0 10px 32px rgba(0,0,0,0.65), 0 2px 6px rgba(0,0,0,0.4);
+  }
+  .w4-sel {
+    box-shadow:
+      0 10px 32px rgba(0,0,0,0.65),
+      0 0 0 1px #c7c7cc,
+      0 0 18px rgba(199,199,204,0.18);
+  }
+  .t4 { background: #1c1c1e; }
+  .h4 {
+    background: linear-gradient(135deg, #2c2c2e 0%, #1c1c1e 100%);
+    color: #e5e4e2;
+    border-bottom: 1px solid rgba(174,174,178,0.15);
+  }
+  .d4 {
+    width: 6px; height: 6px; border-radius: 50%;
+    background: linear-gradient(135deg, #e5e4e2, #aeaeb2);
+    flex-shrink: 0;
+  }
+  .r4 { color: #8e8e93; border-bottom: 1px solid rgba(174,174,178,0.09); }
+  .p4 { background: rgba(199,199,204,0.12); color: #c7c7cc; border: 1px solid rgba(199,199,204,0.22); }
+  .f4 { background: rgba(100,210,195,0.1); color: #64d2c4; border: 1px solid rgba(100,210,195,0.2); }
+
+  .preview-panel {
+    background: #060609;
+    border-radius: 10px;
+    padding: 24px 16px;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 12px;
+  }
+  .cards { grid-template-columns: repeat(2, 1fr) !important; }
+  .card { flex-direction: column; }
+  .card-image { padding: 0 !important; }
+  .card-body { padding: 12px 16px !important; }
+</style>
+
+<div class="cards">
+
+  <!-- 1: Pure Platinum -->
+  <div class="card" data-choice="1" onclick="toggleSelect(this)">
+    <div class="card-image">
+      <div class="preview-panel">
+        <div class="wrap w1 w1-sel">
+          <div class="er-table t1">
+            <div class="er-header h1"><div class="d1"></div> users</div>
+            <div class="er-col r1"><span class="badge p1">PK</span><span class="col-name">id</span><span class="col-type">uuid</span></div>
+            <div class="er-col r1"><span style="width:27px"></span><span class="col-name">email</span><span class="col-type">varchar</span></div>
+            <div class="er-col r1"><span style="width:27px"></span><span class="col-name">created_at</span><span class="col-type">timestamptz</span></div>
+            <div class="er-col r1"><span class="badge f1">FK</span><span class="col-name">org_id</span><span class="col-type">uuid</span></div>
+          </div>
+        </div>
+        <div class="wrap w1" style="width:172px">
+          <div class="er-table t1" style="width:100%">
+            <div class="er-header h1"><div class="d1"></div> orders</div>
+            <div class="er-col r1"><span class="badge p1">PK</span><span class="col-name">id</span><span class="col-type">uuid</span></div>
+            <div class="er-col r1"><span class="badge f1">FK</span><span class="col-name">user_id</span><span class="col-type">uuid</span></div>
+          </div>
+        </div>
+      </div>
+    </div>
+    <div class="card-body">
+      <h3>1 — Pure Platinum</h3>
+      <p>Near-black body, 7-stop metallic sheen border, monochrome silver text. No color accents — fully precious-metal.</p>
+    </div>
+  </div>
+
+  <!-- 2: Platinum + Steel Blue -->
+  <div class="card" data-choice="2" onclick="toggleSelect(this)">
+    <div class="card-image">
+      <div class="preview-panel">
+        <div class="wrap w2 w2-sel">
+          <div class="er-table t2">
+            <div class="er-header h2"><div class="d2"></div> users</div>
+            <div class="er-col r2"><span class="badge p2">PK</span><span class="col-name">id</span><span class="col-type">uuid</span></div>
+            <div class="er-col r2"><span style="width:27px"></span><span class="col-name">email</span><span class="col-type">varchar</span></div>
+            <div class="er-col r2"><span style="width:27px"></span><span class="col-name">created_at</span><span class="col-type">timestamptz</span></div>
+            <div class="er-col r2"><span class="badge f2">FK</span><span class="col-name">org_id</span><span class="col-type">uuid</span></div>
+          </div>
+        </div>
+        <div class="wrap w2" style="width:172px">
+          <div class="er-table t2" style="width:100%">
+            <div class="er-header h2"><div class="d2"></div> orders</div>
+            <div class="er-col r2"><span class="badge p2">PK</span><span class="col-name">id</span><span class="col-type">uuid</span></div>
+            <div class="er-col r2"><span class="badge f2">FK</span><span class="col-name">user_id</span><span class="col-type">uuid</span></div>
+          </div>
+        </div>
+      </div>
+    </div>
+    <div class="card-body">
+      <h3>2 — Platinum + Blue</h3>
+      <p>Same platinum body & border, steel-blue PK / emerald FK. Platinum frame with functional color cues.</p>
+    </div>
+  </div>
+
+  <!-- 3: Slate Platinum -->
+  <div class="card" data-choice="3" onclick="toggleSelect(this)">
+    <div class="card-image">
+      <div class="preview-panel">
+        <div class="wrap w3 w3-sel">
+          <div class="er-table t3">
+            <div class="er-header h3"><div class="d3"></div> users</div>
+            <div class="er-col r3"><span class="badge p3">PK</span><span class="col-name">id</span><span class="col-type">uuid</span></div>
+            <div class="er-col r3"><span style="width:27px"></span><span class="col-name">email</span><span class="col-type">varchar</span></div>
+            <div class="er-col r3"><span style="width:27px"></span><span class="col-name">created_at</span><span class="col-type">timestamptz</span></div>
+            <div class="er-col r3"><span class="badge f3">FK</span><span class="col-name">org_id</span><span class="col-type">uuid</span></div>
+          </div>
+        </div>
+        <div class="wrap w3" style="width:172px">
+          <div class="er-table t3" style="width:100%">
+            <div class="er-header h3"><div class="d3"></div> orders</div>
+            <div class="er-col r3"><span class="badge p3">PK</span><span class="col-name">id</span><span class="col-type">uuid</span></div>
+            <div class="er-col r3"><span class="badge f3">FK</span><span class="col-name">user_id</span><span class="col-type">uuid</span></div>
+          </div>
+        </div>
+      </div>
+    </div>
+    <div class="card-body">
+      <h3>3 — Slate Platinum</h3>
+      <p>Dark slate (#0e1015) body, cooler blue-silver platinum border. LoL/Hextech inspired — cool and technical.</p>
+    </div>
+  </div>
+
+  <!-- 4: Matte Platinum (Apple) -->
+  <div class="card" data-choice="4" onclick="toggleSelect(this)">
+    <div class="card-image">
+      <div class="preview-panel">
+        <div class="wrap w4 w4-sel">
+          <div class="er-table t4">
+            <div class="er-header h4"><div class="d4"></div> users</div>
+            <div class="er-col r4"><span class="badge p4">PK</span><span class="col-name">id</span><span class="col-type">uuid</span></div>
+            <div class="er-col r4"><span style="width:27px"></span><span class="col-name">email</span><span class="col-type">varchar</span></div>
+            <div class="er-col r4"><span style="width:27px"></span><span class="col-name">created_at</span><span class="col-type">timestamptz</span></div>
+            <div class="er-col r4"><span class="badge f4">FK</span><span class="col-name">org_id</span><span class="col-type">uuid</span></div>
+          </div>
+        </div>
+        <div class="wrap w4" style="width:172px">
+          <div class="er-table t4" style="width:100%">
+            <div class="er-header h4"><div class="d4"></div> orders</div>
+            <div class="er-col r4"><span class="badge p4">PK</span><span class="col-name">id</span><span class="col-type">uuid</span></div>
+            <div class="er-col r4"><span class="badge f4">FK</span><span class="col-name">user_id</span><span class="col-type">uuid</span></div>
+          </div>
+        </div>
+      </div>
+    </div>
+    <div class="card-body">
+      <h3>4 — Matte Platinum</h3>
+      <p>Apple #1c1c1e dark body, #8E8E93–#C7C7CC SF palette. Soft matte platinum border — refined, minimal.</p>
+    </div>
+  </div>
+
+</div>

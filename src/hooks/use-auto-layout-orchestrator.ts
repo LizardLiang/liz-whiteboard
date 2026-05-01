@@ -18,11 +18,11 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { useReactFlow } from '@xyflow/react'
 import { toast } from 'sonner'
+import type { Edge, Node } from '@xyflow/react'
+import type { LayoutOutputPosition } from '@/lib/auto-layout/d3-force-layout'
 import { isUnauthorizedError } from '@/lib/auth/errors'
 import { useAuthContext } from '@/components/auth/AuthContext'
 import { updateTablePositionsBulk } from '@/lib/server-functions'
-import type { Node, Edge } from '@xyflow/react'
-import type { LayoutOutputPosition } from '@/lib/auto-layout/d3-force-layout'
 
 // ---------------------------------------------------------------------------
 // Types
@@ -37,9 +37,9 @@ export interface UseAutoLayoutOrchestratorArgs {
   whiteboardId: string
   /** The d3-force layout function from useD3ForceLayout */
   runD3ForceLayout: (
-    nodes: Node[],
-    edges: Edge[],
-  ) => Promise<LayoutOutputPosition[] | null>
+    nodes: Array<Node>,
+    edges: Array<Edge>,
+  ) => Promise<Array<LayoutOutputPosition> | null>
   /** Emits table:move:bulk after successful persistence */
   emitBulkPositionUpdate: (
     positions: Array<{ tableId: string; positionX: number; positionY: number }>,
@@ -129,7 +129,6 @@ export function useAutoLayoutOrchestrator({
       toast.success(`Layout applied to ${positionsCount} tables`)
       return true
     },
-    // eslint-disable-next-line react-hooks/exhaustive-deps
     [fitView, triggerSessionExpired],
   )
 
@@ -145,6 +144,7 @@ export function useAutoLayoutOrchestrator({
       const result = await updateTablePositionsBulk({
         data: lastPayloadRef.current,
       })
+      // eslint-disable-next-line @typescript-eslint/no-unnecessary-condition
       if (!isMountedRef.current) return // re-check after await
 
       const ok = handlePersistResult(result, lastPayloadRef.current.positions.length)
@@ -157,9 +157,11 @@ export function useAutoLayoutOrchestrator({
             positionY: p.positionY,
           })),
         )
+        // eslint-disable-next-line @typescript-eslint/no-unnecessary-condition
         if (isMountedRef.current) setPersistError(null)
       }
     } catch (err) {
+      // eslint-disable-next-line @typescript-eslint/no-unnecessary-condition
       if (!isMountedRef.current) return
       setPersistError(err)
       toast.error('Auto Layout could not be saved on retry. Please try again.')
@@ -209,6 +211,7 @@ export function useAutoLayoutOrchestrator({
       try {
         result = await updateTablePositionsBulk({ data: payload })
       } catch (persistErr) {
+        // eslint-disable-next-line @typescript-eslint/no-unnecessary-condition
         if (!isMountedRef.current) return
         console.error('Auto Layout persist failed:', persistErr)
         setPersistError(persistErr)
@@ -229,6 +232,7 @@ export function useAutoLayoutOrchestrator({
         // No fitView on persist failure (PRD NFR Persistence — failure UX).
       }
 
+      // eslint-disable-next-line @typescript-eslint/no-unnecessary-condition
       if (!isMountedRef.current) return
 
       // Step 5 — Handle result (auth-error or success)

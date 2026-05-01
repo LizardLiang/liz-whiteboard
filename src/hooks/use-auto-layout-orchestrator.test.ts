@@ -1,11 +1,11 @@
 // src/hooks/use-auto-layout-orchestrator.test.ts
 // Unit tests for useAutoLayoutOrchestrator — TC-AL-O-01 through O-13
 
-import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest'
-import { renderHook, act } from '@testing-library/react'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
+import { act, renderHook } from '@testing-library/react'
 
 // ---------------------------------------------------------------------------
-// Mocks (order matters — must be before hook imports)
+// Mocks (order matters — must be before hook imports; vi.mock is hoisted)
 // ---------------------------------------------------------------------------
 
 vi.mock('@xyflow/react', () => ({
@@ -27,10 +27,15 @@ vi.mock('@/components/auth/AuthContext', () => ({
   useAuthContext: vi.fn(),
 }))
 
+// eslint-disable-next-line import/first
 import { useReactFlow } from '@xyflow/react'
+// eslint-disable-next-line import/first
 import { toast } from 'sonner'
+// eslint-disable-next-line import/first
 import { updateTablePositionsBulk } from '@/lib/server-functions'
+// eslint-disable-next-line import/first
 import { useAuthContext } from '@/components/auth/AuthContext'
+// eslint-disable-next-line import/first, import/order
 import { useAutoLayoutOrchestrator } from './use-auto-layout-orchestrator'
 
 const mockSetNodes = vi.fn()
