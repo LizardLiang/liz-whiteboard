@@ -7,8 +7,6 @@
 
 import { memo, useCallback, useState } from 'react'
 import { Handle, Position } from '@xyflow/react'
-import { useSortable } from '@dnd-kit/sortable'
-import { CSS } from '@dnd-kit/utilities'
 import { InlineNameEditor } from './InlineNameEditor'
 import { DataTypeSelector } from './DataTypeSelector'
 import { ConstraintBadges } from './ConstraintBadges'
@@ -45,8 +43,11 @@ export interface ColumnRowProps {
   onDelete: (column: Column) => void
   onDescriptionUpdate: (columnId: string, description: string) => void
   edges: Array<RelationshipEdgeType>
-  /** Whether drag handles should be shown (only in ALL_FIELDS mode) */
   showMode?: ShowMode
+  /** Called when user presses pointer on the drag handle */
+  onDragHandlePointerDown?: (e: React.PointerEvent) => void
+  /** Whether this column is the one currently being dragged */
+  isDraggingActive?: boolean
 }
 
 export const ColumnRow = memo(
@@ -63,6 +64,8 @@ export const ColumnRow = memo(
     onDescriptionUpdate,
     edges: _edges,
     showMode = 'ALL_FIELDS',
+    onDragHandlePointerDown,
+    isDraggingActive = false,
   }: ColumnRowProps) => {
     const isEditingName =
       editingField?.columnId === column.id && editingField.field === 'name'
@@ -70,23 +73,6 @@ export const ColumnRow = memo(
       editingField?.columnId === column.id && editingField.field === 'dataType'
     const isEditing = isEditingName || isEditingDataType
     const [isHoveringDataType, setIsHoveringDataType] = useState(false)
-
-    // useSortable integration for drag-and-drop reordering
-    const {
-      attributes,
-      listeners,
-      setNodeRef,
-      setActivatorNodeRef,
-      transform,
-      transition,
-      isDragging,
-    } = useSortable({ id: column.id })
-
-    const sortableStyle = {
-      transform: CSS.Transform.toString(transform),
-      transition,
-      opacity: isDragging ? 0.5 : 1,
-    }
 
     const handleNameDoubleClick = useCallback(
       (e: React.MouseEvent) => {
@@ -129,7 +115,6 @@ export const ColumnRow = memo(
     return (
       <TooltipProvider>
         <div
-          ref={setNodeRef}
           className={`column-row group${isEditing ? ' editing' : ''}`}
           onKeyDown={handleKeyDown}
           style={{
@@ -146,16 +131,14 @@ export const ColumnRow = memo(
               ? 'var(--rf-column-edit-bg, rgba(99,102,241,0.08))'
               : 'transparent',
             outline: 'none',
-            ...sortableStyle,
+            opacity: isDraggingActive ? 0.4 : 1,
           }}
-          {...attributes}
         >
-          {/* Drag handle — visible in ALL_FIELDS mode only (AC-01f) */}
+          {/* Drag handle — visible in ALL_FIELDS mode only */}
           <DragHandle
             columnName={column.name}
-            isDragging={isDragging}
-            setActivatorNodeRef={setActivatorNodeRef}
-            listeners={listeners as Record<string, (...args: Array<unknown>) => unknown> | undefined}
+            isDragging={isDraggingActive}
+            onPointerDown={onDragHandlePointerDown}
             show={showMode === 'ALL_FIELDS'}
           />
           {/* Left-side handles */}

@@ -1,22 +1,10 @@
 /**
  * TableNode — interactive React Flow node for ER diagram tables
  * Supports inline column editing, creation, deletion, notes, and real-time sync
- * column-reorder: DndContext + SortableContext integration for drag-to-reorder
+ * column-reorder: raw pointer-event drag (setPointerCapture approach)
  */
 
-import { memo, useCallback, useMemo, useRef, useState } from 'react'
-import {
-  DndContext,
-  DragOverlay,
-  PointerSensor,
-  useSensor,
-  useSensors,
-} from '@dnd-kit/core'
-import {
-  SortableContext,
-  verticalListSortingStrategy,
-  arrayMove,
-} from '@dnd-kit/sortable'
+import { memo, useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { ColumnRow } from './column/ColumnRow'
 import { AddColumnRow } from './column/AddColumnRow'
 import { DeleteColumnDialog } from './column/DeleteColumnDialog'
@@ -30,7 +18,6 @@ import type {
 } from '@/lib/react-flow/types'
 import type { ColumnRelationship, EditingField } from './column/types'
 import type { DataType } from '@/data/schema'
-import type { DragStartEvent, DragEndEvent, DragOverEvent } from '@dnd-kit/core'
 import { usePrefersReducedMotion } from '@/hooks/use-prefers-reduced-motion'
 
 // Row height constant for InsertionLine positioning (matches minHeight in ColumnRow)
@@ -74,18 +61,15 @@ export const TableNode = memo(
     // Header hover state — controls X delete button visibility
     const [isHeaderHovered, setIsHeaderHovered] = useState(false)
 
-    // --- Drag-and-drop reorder state ---
+    // --- Drag-and-drop reorder state (raw pointer events) ---
     const [activeId, setActiveId] = useState<string | null>(null)
     const [overIndex, setOverIndex] = useState<number | null>(null)
     const preDragOrderRef = useRef<Array<string>>([])
     const preDragColumnsRef = useRef<Array<Column>>([])
     const prefersReducedMotion = usePrefersReducedMotion()
-
-    const sensors = useSensors(
-      useSensor(PointerSensor, {
-        activationConstraint: { distance: 4 },
-      }),
-    )
+    // Snapshot of column row rects captured at drag start (viewport coords)
+    const columnRectsRef = useRef<Array<{ id: string; top: number; bottom: number; mid: number }>>([])
+    const columnRowsRef = useRef<HTMLDivElement | null>(null)
 
     // Determine visual state classes
     const highlightClass = isActiveHighlighted
@@ -242,130 +226,125 @@ export const TableNode = memo(
       [table.id, onColumnUpdate],
     )
 
-    // --- Drag-and-drop reorder handlers ---
-    const handleDragStart = useCallback(
-      (event: DragStartEvent) => {
-        const tableId = table.id
-
-        // B1-A FIX: Reset snapshot refs BEFORE the queue-full guard.
-        // If the guard rejects this drag and returns early, the refs are left empty.
-        // reconcileAfterDrop checks preDragOrder.length === 0 and treats the drop
-        // as a no-op — catching the case where @dnd-kit fires handleDragEnd even
-        // though handleDragStart returned early (it cannot cancel the gesture).
-        // Without this reset, a stale snapshot from a previous successful drag would
-        // be in the refs, causing the guard at reconcileAfterDrop:384 to be bypassed
-        // and the drop to corrupt state (queue entry pushed, column:reorder emitted).
-        preDragOrderRef.current = []
-        preDragColumnsRef.current = []
-
-        // SA-M3: queue-full guard at drag-start
-        if (isQueueFullForTable?.(tableId)) {
-          toast.warning('Slow down — previous reorders still saving')
-          return
-        }
-
-        performance.mark('column-reorder:drag-start')
-        const draggedId = String(event.active.id)
-        setActiveId(draggedId)
-        setLocalDragging?.(tableId, true)
-
-        // Capture pre-drag snapshot
-        preDragOrderRef.current = columns.map((c: Column) => c.id)
-        preDragColumnsRef.current = [...columns]
-      },
-      [table.id, columns, isQueueFullForTable, setLocalDragging],
-    )
-
-    const handleDragOver = useCallback(
-      (event: DragOverEvent) => {
-        if (!event.over) {
-          setOverIndex(null)
-          return
-        }
-        const idx = columns.findIndex(
-          (c: Column) => c.id === String(event.over!.id),
-        )
-        setOverIndex(idx >= 0 ? idx : null)
-      },
-      [columns],
-    )
-
-    const handleDragEnd = useCallback(
-      (event: DragEndEvent) => {
-        performance.mark('column-reorder:drop')
-
-        const { active, over } = event
-        setActiveId(null)
-        setOverIndex(null)
-
-        if (!onColumnReorder || !emitColumnReorder || !bumpReorderTick) return
-
-        // B1-A FIX: preDragOrderRef is empty in two scenarios:
-        // (1) The queue-full guard in handleDragStart fired: we cleared the refs before
-        //     returning, so they are empty. @dnd-kit fires handleDragEnd regardless because
-        //     returning from onDragStart does not cancel the gesture.
-        // (2) handleDragStart was never reached (mount state, unusual teardown, etc.).
-        // In both cases, passing the empty preDragOrderRef.current to reconcileAfterDrop
-        // is correct — the guard at reconcileAfterDrop:384 (preDragOrder.length === 0)
-        // treats the drop as a no-op and returns early. The guard lives in one place (SA-H4).
-
-        const tableId = table.id
-        const currentColumns = columns
-
-        let newOrder: Array<string> | null = null
-
-        if (over && active.id !== over.id) {
-          const oldIndex = currentColumns.findIndex(
-            (c: Column) => c.id === String(active.id),
-          )
-          const newIndex = currentColumns.findIndex(
-            (c: Column) => c.id === String(over.id),
-          )
-          if (oldIndex >= 0 && newIndex >= 0) {
-            const currentOrder = currentColumns.map((c: Column) => c.id)
-            newOrder = arrayMove(currentOrder, oldIndex, newIndex)
-          }
-        }
-
-        onColumnReorder({
-          tableId,
-          preDragOrder: preDragOrderRef.current,
-          newOrder,
-          preState: preDragColumnsRef.current,
-          emitColumnReorder,
-          // setNodes not available here — will be a no-op; real setNodes is in ReactFlowWhiteboard
-          setNodes: (() => {}) as any,
-          bumpReorderTick,
-        })
-      },
-      [table.id, columns, onColumnReorder, emitColumnReorder, bumpReorderTick],
-    )
-
-    const handleDragCancel = useCallback(() => {
-      performance.mark('column-reorder:cancel')
-      setActiveId(null)
-      setOverIndex(null)
-
-      if (!onColumnReorder || !emitColumnReorder || !bumpReorderTick) return
-
-      onColumnReorder({
-        tableId: table.id,
-        preDragOrder: preDragOrderRef.current,
-        newOrder: null, // cancel path
-        preState: preDragColumnsRef.current,
-        emitColumnReorder,
-        setNodes: (() => {}) as any,
-        bumpReorderTick,
-      })
-    }, [table.id, onColumnReorder, emitColumnReorder, bumpReorderTick])
-
-    // Filter columns based on display mode
+    // Filter columns based on display mode (declared early — used in drag handler below)
     const visibleColumns = useMemo(() => {
       if (showMode === 'KEY_ONLY') {
         return columns.filter((c: Column) => c.isPrimaryKey || c.isForeignKey)
       }
       return columns
     }, [columns, showMode])
+
+    // --- Raw pointer drag reorder ---
+    // Compute which index the pointer is over given a clientY and column rects snapshot
+    const computeTargetIndex = (clientY: number): number => {
+      const rects = columnRectsRef.current
+      if (rects.length === 0) return 0
+      for (let i = 0; i < rects.length; i++) {
+        if (clientY < rects[i].mid) return i
+      }
+      return rects.length - 1
+    }
+
+    const handleDragHandlePointerDown = useCallback(
+      (e: React.PointerEvent, columnId: string) => {
+        e.preventDefault()
+        e.stopPropagation()
+
+        if (isQueueFullForTable?.(table.id)) {
+          toast.warning('Slow down — previous reorders still saving')
+          return
+        }
+
+        // Capture pointer so all subsequent events come here, bypassing React Flow
+        ;(e.target as HTMLElement).setPointerCapture(e.pointerId)
+
+        // Snapshot column row rects from the DOM right now (fresh viewport coords)
+        const rowEls = columnRowsRef.current?.querySelectorAll<HTMLElement>('.column-row')
+        if (rowEls) {
+          columnRectsRef.current = Array.from(rowEls).map((el, i) => {
+            const r = el.getBoundingClientRect()
+            return { id: visibleColumns[i]?.id ?? '', top: r.top, bottom: r.bottom, mid: r.top + r.height / 2 }
+          })
+        }
+
+        const dragIndex = visibleColumns.findIndex((c: Column) => c.id === columnId)
+
+        preDragOrderRef.current = columns.map((c: Column) => c.id)
+        preDragColumnsRef.current = [...columns]
+        setActiveId(columnId)
+        setOverIndex(dragIndex)
+        setLocalDragging?.(table.id, true)
+        document.body.style.cursor = 'grabbing'
+      },
+      [table.id, columns, visibleColumns, isQueueFullForTable, setLocalDragging],
+    )
+
+    // Document-level pointermove/pointerup while a column drag is active
+    useEffect(() => {
+      if (!activeId) return
+
+      const onMove = (e: PointerEvent) => {
+        const idx = computeTargetIndex(e.clientY)
+        setOverIndex(idx)
+      }
+
+      const onUp = (e: PointerEvent) => {
+        document.body.style.cursor = ''
+        const newOverIndex = computeTargetIndex(e.clientY)
+        const oldIndex = preDragOrderRef.current.indexOf(activeId)
+        setActiveId(null)
+        setOverIndex(null)
+        setLocalDragging?.(table.id, false)
+
+        if (!onColumnReorder || !emitColumnReorder || !bumpReorderTick) return
+
+        let newOrder: Array<string> | null = null
+        if (newOverIndex !== oldIndex && oldIndex >= 0) {
+          const arr = [...preDragOrderRef.current]
+          arr.splice(oldIndex, 1)
+          arr.splice(newOverIndex, 0, preDragOrderRef.current[oldIndex])
+          newOrder = arr
+        }
+
+        onColumnReorder({
+          tableId: table.id,
+          preDragOrder: preDragOrderRef.current,
+          newOrder,
+          preState: preDragColumnsRef.current,
+          emitColumnReorder,
+          setNodes: (() => {}) as any,
+          bumpReorderTick,
+        })
+      }
+
+      const onCancel = () => {
+        document.body.style.cursor = ''
+        setActiveId(null)
+        setOverIndex(null)
+        setLocalDragging?.(table.id, false)
+        if (onColumnReorder && emitColumnReorder && bumpReorderTick) {
+          onColumnReorder({
+            tableId: table.id,
+            preDragOrder: preDragOrderRef.current,
+            newOrder: null,
+            preState: preDragColumnsRef.current,
+            emitColumnReorder,
+            setNodes: (() => {}) as any,
+            bumpReorderTick,
+          })
+        }
+      }
+
+      document.addEventListener('pointermove', onMove)
+      document.addEventListener('pointerup', onUp)
+      document.addEventListener('pointercancel', onCancel)
+      return () => {
+        document.removeEventListener('pointermove', onMove)
+        document.removeEventListener('pointerup', onUp)
+        document.removeEventListener('pointercancel', onCancel)
+      }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [activeId])
 
     // Use CSS max-content so the browser measures actual rendered text width.
     // Character-count estimates are unreliable; max-content lets each column row
@@ -457,84 +436,46 @@ export const TableNode = memo(
 
           {/* Columns List */}
           {showMode !== 'TABLE_NAME' && (
-            <DndContext
-              sensors={sensors}
-              onDragStart={handleDragStart}
-              onDragOver={handleDragOver}
-              onDragEnd={handleDragEnd}
-              onDragCancel={handleDragCancel}
-              autoScroll={false}
+            <div
+              ref={columnRowsRef}
+              className="table-columns"
+              style={{ position: 'relative' }}
             >
-              <SortableContext
-                items={visibleColumns.map((c: Column) => c.id)}
-                strategy={verticalListSortingStrategy}
-              >
-                <div className="table-columns" style={{ position: 'relative' }}>
-                  {/* InsertionLine — shows drop position during drag */}
-                  <InsertionLine
-                    visible={activeId !== null && overIndex !== null}
-                    targetIndex={overIndex ?? 0}
-                    rowHeight={COLUMN_ROW_HEIGHT}
-                    prefersReducedMotion={prefersReducedMotion}
-                  />
+              {/* InsertionLine — shows drop position during drag */}
+              <InsertionLine
+                visible={activeId !== null && overIndex !== null}
+                targetIndex={overIndex ?? 0}
+                rowHeight={COLUMN_ROW_HEIGHT}
+                prefersReducedMotion={prefersReducedMotion}
+              />
 
-                  {visibleColumns.map((column: Column, index: number) => (
-                    <ColumnRow
-                      key={column.id}
-                      column={column}
-                      tableId={table.id}
-                      isLast={index === visibleColumns.length - 1}
-                      editingField={editingField}
-                      onStartEdit={handleStartEdit}
-                      onCommitEdit={handleCommitEdit}
-                      onCancelEdit={handleCancelEdit}
-                      onToggleConstraint={handleToggleConstraint}
-                      onDelete={handleDeleteColumn}
-                      onDescriptionUpdate={handleDescriptionUpdate}
-                      edges={edges}
-                      showMode={showMode}
-                    />
-                  ))}
+              {visibleColumns.map((column: Column, index: number) => (
+                <ColumnRow
+                  key={column.id}
+                  column={column}
+                  tableId={table.id}
+                  isLast={index === visibleColumns.length - 1}
+                  editingField={editingField}
+                  onStartEdit={handleStartEdit}
+                  onCommitEdit={handleCommitEdit}
+                  onCancelEdit={handleCancelEdit}
+                  onToggleConstraint={handleToggleConstraint}
+                  onDelete={handleDeleteColumn}
+                  onDescriptionUpdate={handleDescriptionUpdate}
+                  edges={edges}
+                  showMode={showMode}
+                  isDraggingActive={activeId === column.id}
+                  onDragHandlePointerDown={(e) => handleDragHandlePointerDown(e, column.id)}
+                />
+              ))}
 
-                  {/* Add Column Row */}
-                  <AddColumnRow
-                    tableId={table.id}
-                    existingColumns={columns}
-                    onCreate={handleCreate}
-                  />
-                </div>
-              </SortableContext>
-
-              {/* DragOverlay — ghost row shown at cursor during drag */}
-              <DragOverlay
-                dropAnimation={prefersReducedMotion ? null : undefined}
-              >
-                {activeId && (() => {
-                  const activeColumn = visibleColumns.find(
-                    (c: Column) => c.id === activeId,
-                  )
-                  if (!activeColumn) return null
-                  return (
-                    <div style={{ opacity: 0.8 }}>
-                      <ColumnRow
-                        column={activeColumn}
-                        tableId={table.id}
-                        isLast={false}
-                        editingField={null}
-                        onStartEdit={() => {}}
-                        onCommitEdit={() => {}}
-                        onCancelEdit={() => {}}
-                        onToggleConstraint={() => {}}
-                        onDelete={() => {}}
-                        onDescriptionUpdate={() => {}}
-                        edges={[]}
-                        showMode={showMode}
-                      />
-                    </div>
-                  )
-                })()}
-              </DragOverlay>
-            </DndContext>
+              {/* Add Column Row */}
+              <AddColumnRow
+                tableId={table.id}
+                existingColumns={columns}
+                onCreate={handleCreate}
+              />
+            </div>
           )}
 
           {/* Delete Confirmation Dialog */}

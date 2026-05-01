@@ -65,6 +65,8 @@ export interface UseColumnReorderMutationsReturn {
   isQueueFullForTable: (tableId: string) => boolean
   /** Check if local drag is active for a table (used by collaboration hook) */
   isLocalDragging: (tableId: string) => boolean
+  /** True when ANY table column is being dragged — use to disable RF panOnDrag */
+  isAnyColumnDragging: () => boolean
   /** Mark a table as actively dragging (called at handleDragStart) */
   setLocalDragging: (tableId: string, isDragging: boolean) => void
   /** Buffer a remote reorder event received during active local drag */
@@ -302,6 +304,10 @@ export function useColumnReorderMutations(): UseColumnReorderMutationsReturn {
     return localDraggingByTable.current.has(tableId)
   }, [])
 
+  const isAnyColumnDragging = useCallback((): boolean => {
+    return localDraggingByTable.current.size > 0
+  }, [])
+
   const setLocalDragging = useCallback(
     (tableId: string, isDragging: boolean) => {
       if (isDragging) {
@@ -373,28 +379,16 @@ export function useColumnReorderMutations(): UseColumnReorderMutationsReturn {
       setNodes,
       bumpReorderTick,
     }: ReconcileAfterDropParams) => {
-      // Always clear dragging flag
+
       localDraggingByTable.current.delete(tableId)
 
-      // B1-A FIX: If preDragOrder is empty, the pre-drag snapshot was never captured.
-      // This happens in two cases:
-      //   (1) Queue-full guard fired: TableNode.handleDragStart resets both refs to []
-      //       before checking the queue, so a rejected drag leaves them empty. Any
-      //       newOrder from @dnd-kit would be computed from stale column state and must
-      //       not be applied — it would push a 6th entry past the queue cap (≤5) and
-      //       corrupt optimistic state.
-      //   (2) Any other path where preDragOrderRef was never populated (unusual teardown,
-      //       component remount mid-gesture, etc.).
-      // Either way: bail out — makes the phantom drop a no-op.
       if (preDragOrder.length === 0) {
         return
       }
 
       const buffered = bufferedRemoteByTable.current.get(tableId)
 
-      // Cancel path: newOrder === null (Escape key)
       if (newOrder === null) {
-        // Apply buffered remote if present (AC-14f, AC-10c)
         if (buffered) {
           bufferedRemoteByTable.current.delete(tableId)
           applyServerOrder(tableId, buffered.orderedColumnIds, setNodes, bumpReorderTick)
@@ -402,10 +396,8 @@ export function useColumnReorderMutations(): UseColumnReorderMutationsReturn {
         return
       }
 
-      // No-op path: order unchanged
       const isNoOp = arraysEqual(newOrder, preDragOrder)
       if (isNoOp) {
-        // Apply buffered remote if present (AC-14f)
         if (buffered) {
           bufferedRemoteByTable.current.delete(tableId)
           applyServerOrder(tableId, buffered.orderedColumnIds, setNodes, bumpReorderTick)
@@ -413,24 +405,16 @@ export function useColumnReorderMutations(): UseColumnReorderMutationsReturn {
         return
       }
 
-      // Real drop path: optimistic update (B2: delegates to applyOrderToNodes)
       applyOrderToNodes(tableId, newOrder, setNodes)
       bumpReorderTick(tableId)
 
-      // Enqueue with pre-drag snapshot for rollback
       const queue = queueByTable.current.get(tableId) ?? []
-      queue.push({
-        tableId,
-        optimisticOrder: newOrder,
-        preState,
-      })
+      queue.push({ tableId, optimisticOrder: newOrder, preState })
       queueByTable.current.set(tableId, queue)
 
-      // Track optimistic state for sync-reconcile
       lastOptimisticByTable.current.set(tableId, newOrder)
       dirtyByTable.current.add(tableId)
 
-      // Check for overwrite conflict with buffered remote (REQ-14, SA-H2)
       if (buffered) {
         bufferedRemoteByTable.current.delete(tableId)
         if (detectOverwriteConflict(preDragOrder, newOrder, buffered)) {
@@ -440,7 +424,6 @@ export function useColumnReorderMutations(): UseColumnReorderMutationsReturn {
         }
       }
 
-      // Emit to server
       emitColumnReorder(tableId, newOrder)
     },
     [applyServerOrder],
@@ -577,6 +560,7 @@ export function useColumnReorderMutations(): UseColumnReorderMutationsReturn {
   return {
     isQueueFullForTable,
     isLocalDragging,
+    isAnyColumnDragging,
     setLocalDragging,
     bufferRemoteReorder,
     onColumnReorderedFromOther,

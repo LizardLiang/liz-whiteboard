@@ -119,9 +119,7 @@ vi.mock('@dnd-kit/sortable', () => ({
   }),
   useSortable: vi.fn((opts: { id: string }) => ({
     attributes: { 'aria-roledescription': 'sortable' },
-    listeners: { onPointerDown: vi.fn() },
     setNodeRef: vi.fn(),
-    setActivatorNodeRef: vi.fn(),
     transform: null,
     transition: undefined,
     isDragging: false,
@@ -316,9 +314,7 @@ describe('TableNode drag behavior (Suite S6)', () => {
     const { useSortable } = vi.mocked(await import('@dnd-kit/sortable'))
     useSortable.mockImplementation((opts: { id: string }) => ({
       attributes: { 'aria-roledescription': 'sortable' },
-      listeners: { onPointerDown: vi.fn() },
       setNodeRef: vi.fn(),
-      setActivatorNodeRef: vi.fn(),
       transform: null,
       transition: undefined,
       isDragging: opts.id === col1.id, // only first column is "dragging"
@@ -383,8 +379,6 @@ describe('DragHandle component (Suite S6 — REQ-12)', () => {
       <DragHandle
         columnName="email"
         isDragging={false}
-        setActivatorNodeRef={vi.fn()}
-        listeners={{}}
         show={true}
       />,
     )
@@ -400,8 +394,6 @@ describe('DragHandle component (Suite S6 — REQ-12)', () => {
       <DragHandle
         columnName="id"
         isDragging={false}
-        setActivatorNodeRef={vi.fn()}
-        listeners={{}}
         show={true}
       />,
     )
@@ -418,8 +410,6 @@ describe('DragHandle component (Suite S6 — REQ-12)', () => {
       <DragHandle
         columnName="created_at"
         isDragging={false}
-        setActivatorNodeRef={vi.fn()}
-        listeners={{}}
         show={true}
       />,
     )
@@ -434,8 +424,6 @@ describe('DragHandle component (Suite S6 — REQ-12)', () => {
       <DragHandle
         columnName="email"
         isDragging={false}
-        setActivatorNodeRef={vi.fn()}
-        listeners={{}}
         show={false}
       />,
     )
@@ -451,8 +439,6 @@ describe('DragHandle component (Suite S6 — REQ-12)', () => {
       <DragHandle
         columnName="email"
         isDragging={true}
-        setActivatorNodeRef={vi.fn()}
-        listeners={{}}
         show={true}
       />,
     )
@@ -468,8 +454,6 @@ describe('DragHandle component (Suite S6 — REQ-12)', () => {
       <DragHandle
         columnName="email"
         isDragging={false}
-        setActivatorNodeRef={vi.fn()}
-        listeners={{}}
         show={true}
       />,
     )

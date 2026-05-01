@@ -1,4 +1,4 @@
-import { defineConfig, isRunnableDevEnvironment } from 'vite'
+import { defineConfig } from 'vite'
 import { tanstackStart } from '@tanstack/react-start/plugin/vite'
 import { nitro } from 'nitro/vite'
 import viteReact from '@vitejs/plugin-react'
@@ -34,33 +34,9 @@ function socketIOPlugin(): Plugin {
           return
         }
 
-        // Find the SSR server environment so we can import server-side modules
-        // through the module runner (honours path aliases and server-only deps).
-        // TanStack Start 1.132 names this environment "ssr" (not "server") for
-        // backwards compatibility with plugins that don't understand the new
-        // Vite Environment API.
-        const serverEnvName = 'ssr'
-        const serverEnv = viteDevServer.environments[serverEnvName]
-
-        if (!serverEnv || !isRunnableDevEnvironment(serverEnv)) {
-          console.warn(
-            '[socket-io] Server environment not found or not runnable. Socket.IO not initialized.',
-          )
-          return
-        }
-
-        try {
-          // Import the collaboration module in the SSR context.
-          // The path must be absolute so the module runner can resolve it.
-          const collaborationModule = await serverEnv.runner.import(
-            '/src/routes/api/collaboration.ts',
-          )
-
-          collaborationModule.initializeSocketIO(httpServer)
-          console.log('[socket-io] Socket.IO attached to dev HTTP server.')
-        } catch (err) {
-          console.error('[socket-io] Failed to initialize Socket.IO:', err)
-        }
+        // Socket.IO in dev is handled by the standalone server.dev.ts process.
+        // Vite proxies /socket.io/* to it (see server.proxy config below).
+        console.log('[socket-io] Dev mode: Socket.IO runs via server.dev.ts (proxied from Vite).')
       }
     },
   }
@@ -103,9 +79,20 @@ function tanstackStartClientVirtualModules(): Plugin {
   }
 }
 
+const SOCKET_IO_DEV_PORT = 3010
+
 const config = defineConfig({
   define: {
     __APP_VERSION__: JSON.stringify(version),
+  },
+  server: {
+    proxy: {
+      '/socket.io': {
+        target: `http://localhost:${SOCKET_IO_DEV_PORT}`,
+        ws: true,
+        changeOrigin: true,
+      },
+    },
   },
   plugins: [
     // this is the plugin that enables path aliases

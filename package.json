@@ -5,6 +5,7 @@
   "type": "module",
   "scripts": {
     "dev": "vite dev --host 0.0.0.0 --port 3000",
+    "dev:server": "dotenv -e .env.local -- bun run server.dev.ts",
     "build": "vite build",
     "serve": "vite preview",
     "test": "vitest run",

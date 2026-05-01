@@ -46,6 +46,8 @@ export interface ReactFlowCanvasProps {
   onNodeDragStop?: NodeDragHandler<TableNodeType>
   /** Whether nodes are draggable */
   nodesDraggable?: boolean
+  /** Whether canvas panning on drag is enabled */
+  panOnDrag?: boolean
   /** Whether to show minimap */
   showMinimap?: boolean
   /** Whether to show controls */
@@ -81,6 +83,7 @@ export function ReactFlowCanvas({
   onConnect,
   onNodeDragStop: onNodeDragStopProp,
   nodesDraggable = true,
+  panOnDrag = true,
   showMinimap = false,
   showControls = true,
   showBackground = true,
@@ -313,6 +316,7 @@ export function ReactFlowCanvas({
         nodeTypes={memoizedNodeTypes}
         edgeTypes={memoizedEdgeTypes}
         nodesDraggable={nodesDraggable}
+        panOnDrag={panOnDrag}
         nodesConnectable={true}
         elementsSelectable={true}
         fitView
