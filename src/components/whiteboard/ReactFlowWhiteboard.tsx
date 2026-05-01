@@ -56,6 +56,7 @@ import {
 } from '@/lib/server-functions'
 import { useD3ForceLayout } from '@/hooks/use-d3-force-layout'
 import { useAutoLayoutOrchestrator } from '@/hooks/use-auto-layout-orchestrator'
+import { applyBulkPositions } from '@/lib/auto-layout'
 import { updateTablePositionFn } from '@/routes/api/tables'
 import { useWhiteboardCollaboration } from '@/hooks/use-whiteboard-collaboration'
 import { useColumnCollaboration } from '@/hooks/use-column-collaboration'
@@ -442,14 +443,12 @@ function ReactFlowWhiteboardInner({
     onRelationshipUpdated,
     // onBulkPositionUpdate — applies Auto Layout broadcast from collaborators.
     // One setNodes call satisfies the "one render tick" atomicity contract (FR-009).
+    // Normalise wire-format {tableId, positionX, positionY} → {id, x, y} at the
+    // boundary so applyBulkPositions can use its O(n) Map lookup (B3 fix).
     useCallback(
       (positions: Array<{ tableId: string; positionX: number; positionY: number }>) => {
-        setNodes((nds) =>
-          nds.map((n) => {
-            const p = positions.find((pp) => pp.tableId === n.id)
-            return p ? { ...n, position: { x: p.positionX, y: p.positionY } } : n
-          }),
-        )
+        const normalised = positions.map((p) => ({ id: p.tableId, x: p.positionX, y: p.positionY }))
+        setNodes((nds) => applyBulkPositions(nds, normalised))
       },
       [],
     ),

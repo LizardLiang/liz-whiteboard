@@ -3,6 +3,7 @@
   "description": "Automatically position ER diagram tables so the most related tables are placed near each other, triggered by a manual 'Auto Layout' button",
   "documents": {
     "1-prd": "prd.md,decisions.md",
+    "10-review": "code-review.md",
     "2-prd-review": "prd-challenge.md",
     "4-discuss": "context.md",
     "5-tech-spec": "tech-spec.md",
@@ -143,6 +144,30 @@
       "action": "status changed from 'in-progress' to 'complete'",
       "stage": "8-implementation",
       "timestamp": "2026-05-01T22:44:15+08:00"
+    },
+    {
+      "action": "status changed from 'ready' to 'in-progress'",
+      "stage": "10-review",
+      "timestamp": "2026-05-01T23:08:41+08:00"
+    },
+    {
+      "action": "status changed from 'in-progress' to 'complete'",
+      "stage": "10-review",
+      "timestamp": "2026-05-01T23:10:33+08:00",
+      "verdict": "caution"
+    },
+    {
+      "action": "status changed from 'complete' to 'complete'",
+      "stage": "10-review",
+      "timestamp": "2026-05-01T23:16:15+08:00",
+      "verdict": "revisions"
+    },
+    {
+      "action": "fixed 3 Hermes BLOCKERs: B1 (socket payload validation), B2 (parallel DB queries), B3 (applyBulkPositions helper extracted)",
+      "agent": "ares",
+      "notes": "B1: tableMoveBulkBroadcastSchema added to schema.ts; collaboration.ts handler uses safeParse + emits error on failure; 8 unit tests. B2: Promise.all([getWhiteboardProjectId, prisma.diagramTable.findMany]) in updateTablePositionsBulk. B3: applyBulkPositions O(n) helper in auto-layout/index.ts; both setNodes call sites updated; 6 unit tests. Total new tests: 14. No regressions.",
+      "stage": "8-implementation",
+      "timestamp": "2026-05-01T23:35:00+08:00"
     }
   ],
   "implementation_mode": null,
@@ -203,11 +228,13 @@
         "cassandra"
       ],
       "code_review_verdict": null,
-      "completed": null,
+      "completed": "2026-05-01T23:16:15+08:00",
+      "document": "code-review.md",
       "documents": [],
       "risk_verdict": null,
-      "started": null,
-      "status": "pending"
+      "started": "2026-05-01T23:08:41+08:00",
+      "status": "complete",
+      "verdict": "revisions"
     },
     "2-prd-review": {
       "agents": [
@@ -364,10 +391,12 @@
         "implementation-notes.md",
         "src/lib/auto-layout/d3-force-layout.ts",
         "src/lib/auto-layout/index.ts",
+        "src/lib/auto-layout/apply-bulk-positions.test.ts",
         "src/hooks/use-d3-force-layout.ts",
         "src/components/whiteboard/AutoLayoutConfirmDialog.tsx",
         "src/hooks/use-auto-layout-orchestrator.ts",
         "src/data/schema.ts",
+        "src/data/schema.test.ts",
         "src/lib/server-functions.ts",
         "src/routes/api/collaboration.ts",
         "src/components/whiteboard/Toolbar.tsx",
@@ -376,25 +405,28 @@
         "src/routes/whiteboard/$whiteboardId.tsx"
       ],
       "mode": "ares",
+      "revised": "2026-05-01T23:30:00+08:00",
       "started": "2026-05-01T22:19:22+08:00",
       "status": "complete",
-      "summary": "Created 9 files, modified 8. 48 new tests written, all passing (19 engine, 7 toolbar, 9 dialog, 13 orchestrator). Deviations: Toolbar moved inside ReactFlowWhiteboardInner per spec intent; TC-AL-I-* integration tests deferred (orchestrator unit tests cover same paths); server-function unit tests deferred (no Prisma test DB in unit test env). All 5 Apollo findings addressed.",
+      "summary": "Created 10 files, modified 9. 62 new tests written, all passing (initial 48 + 14 for B1/B3 blockers). Hermes blocker fixes: B1 (security) — added tableMoveBulkBroadcastSchema to schema.ts, socket handler validates via safeParse before rebroadcast, 8 unit tests; B2 (perf) — parallelised getWhiteboardProjectId + diagramTable.findMany with Promise.all in updateTablePositionsBulk; B3 (maintainability) — extracted applyBulkPositions O(n) helper to auto-layout/index.ts, replaced O(n²) Array.find-in-map at both call sites, 6 unit tests. No new test failures introduced.",
       "tasks": []
     },
     "9-prd-alignment": {
       "agent": "hera",
-      "alignment_verdict": null,
-      "completed": null,
-      "coverage_pct": 0,
-      "criteria_total": 0,
-      "criteria_verified": 0,
-      "documents": [],
-      "started": null,
-      "status": "ready"
+      "alignment_verdict": "aligned",
+      "completed": "2026-05-01T23:30:00+08:00",
+      "coverage_pct": 100,
+      "criteria_total": 15,
+      "criteria_verified": 15,
+      "documents": [
+        "prd-alignment.md"
+      ],
+      "started": "2026-05-01T23:15:00+08:00",
+      "status": "complete"
     }
   },
   "pipeline_status": "in-progress",
   "priority": "P0",
-  "stage": "8-implementation",
-  "updated": "2026-05-01T22:44:15+08:00"
+  "stage": "10-review",
+  "updated": "2026-05-01T23:16:15+08:00"
 }

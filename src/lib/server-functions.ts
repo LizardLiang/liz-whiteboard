@@ -167,9 +167,17 @@ export const updateTablePositionsBulk = createServerFn({ method: 'POST' })
         const { whiteboardId, positions } = data
 
         // IDOR guard: verify the whiteboard exists AND every supplied
-        // position.id belongs to it. Single findMany → Set to keep the guard
-        // at ONE DB round-trip regardless of N positions (preserves the 2 s budget).
-        const projectId = await getWhiteboardProjectId(whiteboardId)
+        // position.id belongs to it. Both queries are independent — run in
+        // parallel to avoid a serial round-trip penalty (B2 fix).
+        // In the rare "whiteboard not found" case the findMany returns [] (wasted
+        // query), but the request still rejects correctly on the projectId check.
+        const [projectId, owned] = await Promise.all([
+          getWhiteboardProjectId(whiteboardId),
+          prisma.diagramTable.findMany({
+            where: { whiteboardId },
+            select: { id: true },
+          }),
+        ])
         if (!projectId) throw new Error('Whiteboard not found')
         // TODO: restore permission check — temporarily disabled (matches the
         // codebase pattern in createTable / updateTablePosition)
@@ -177,10 +185,6 @@ export const updateTablePositionsBulk = createServerFn({ method: 'POST' })
         void _user // user identity is not needed here; the orchestrator owns the
         //            sender-id field on the socket payload
 
-        const owned = await prisma.diagramTable.findMany({
-          where: { whiteboardId },
-          select: { id: true },
-        })
         const ownedIds = new Set(owned.map((t) => t.id))
         for (const p of positions) {
           if (!ownedIds.has(p.id)) {
