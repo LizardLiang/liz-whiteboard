@@ -1,7 +1,7 @@
 /**
  * TableNode — interactive React Flow node for ER diagram tables
  * Supports inline column editing, creation, deletion, notes, and real-time sync
- * column-reorder: raw pointer-event drag (setPointerCapture approach)
+ * column-reorder: raw pointer-event drag (document-level listeners, rAF throttled)
  */
 
 import { memo, useCallback, useEffect, useMemo, useRef, useState } from 'react'
@@ -234,6 +234,11 @@ export const TableNode = memo(
       return columns
     }, [columns, showMode])
 
+    // Keep a ref to visibleColumns so the pointermove handler can re-read rects
+    // without capturing a stale closure value when columns change during drag
+    const visibleColumnsRef = useRef(visibleColumns)
+    useEffect(() => { visibleColumnsRef.current = visibleColumns }, [visibleColumns])
+
     // --- Raw pointer drag reorder ---
     // Compute which index the pointer is over given a clientY and column rects snapshot
     const computeTargetIndex = (clientY: number): number => {
@@ -247,16 +252,14 @@ export const TableNode = memo(
 
     const handleDragHandlePointerDown = useCallback(
       (e: React.PointerEvent, columnId: string) => {
-        e.preventDefault()
-        e.stopPropagation()
-
+        // Queue-full check BEFORE preventDefault so click behaves normally when rejected
         if (isQueueFullForTable?.(table.id)) {
           toast.warning('Slow down — previous reorders still saving')
           return
         }
 
-        // Capture pointer so all subsequent events come here, bypassing React Flow
-        ;(e.target as HTMLElement).setPointerCapture(e.pointerId)
+        e.preventDefault()
+        e.stopPropagation()
 
         // Snapshot column row rects from the DOM right now (fresh viewport coords)
         const rowEls = columnRowsRef.current?.querySelectorAll<HTMLElement>('.column-row')
@@ -283,9 +286,24 @@ export const TableNode = memo(
     useEffect(() => {
       if (!activeId) return
 
+      // rAF handle is declared inside the effect so each effect instance has its own
+      let frame: number | null = null
+
       const onMove = (e: PointerEvent) => {
-        const idx = computeTargetIndex(e.clientY)
-        setOverIndex(idx)
+        if (frame !== null) return
+        frame = requestAnimationFrame(() => {
+          frame = null
+          // Re-read rects fresh in case canvas scrolled/zoomed since drag started
+          const rowEls = columnRowsRef.current?.querySelectorAll<HTMLElement>('.column-row')
+          if (rowEls && rowEls.length > 0) {
+            columnRectsRef.current = Array.from(rowEls).map((el, i) => {
+              const r = el.getBoundingClientRect()
+              return { id: visibleColumnsRef.current[i]?.id ?? '', top: r.top, bottom: r.bottom, mid: r.top + r.height / 2 }
+            })
+          }
+          const idx = computeTargetIndex(e.clientY)
+          setOverIndex(idx)
+        })
       }
 
       const onUp = (e: PointerEvent) => {
@@ -339,9 +357,15 @@ export const TableNode = memo(
       document.addEventListener('pointerup', onUp)
       document.addEventListener('pointercancel', onCancel)
       return () => {
+        if (frame !== null) cancelAnimationFrame(frame)
         document.removeEventListener('pointermove', onMove)
         document.removeEventListener('pointerup', onUp)
         document.removeEventListener('pointercancel', onCancel)
+        // If we unmount while drag is active (table deleted, route change, etc.), restore state
+        if (activeId) {
+          document.body.style.cursor = ''
+          setLocalDragging?.(table.id, false)
+        }
       }
     // eslint-disable-next-line react-hooks/exhaustive-deps
     }, [activeId])
