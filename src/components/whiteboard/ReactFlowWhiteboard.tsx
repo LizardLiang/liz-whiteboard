@@ -177,6 +177,10 @@ function ReactFlowWhiteboardInner({
   // is called from the initialNodes effect below
   const columnReorderMutations = useColumnReorderMutations()
 
+  // Disable RF panOnDrag while a column is being dragged — prevents canvas
+  // panning from stealing pointermove events and corrupting collision detection.
+  const [isColumnDragging, setIsColumnDragging] = useState(false)
+
   // Local React Flow state (will be updated by collaboration)
   const [nodes, setNodes] = useState<Array<TableNodeType>>(initialNodes)
   const [edges, setEdges] = useState<Array<RelationshipEdgeType>>(initialEdges)
@@ -902,8 +906,10 @@ function ReactFlowWhiteboardInner({
             emitColumnReorderRef.current(tableId, ids),
           isQueueFullForTable: (tableId: string) =>
             columnReorderMutations.isQueueFullForTable(tableId),
-          setLocalDragging: (tableId: string, dragging: boolean) =>
-            columnReorderMutations.setLocalDragging(tableId, dragging),
+          setLocalDragging: (tableId: string, dragging: boolean) => {
+            columnReorderMutations.setLocalDragging(tableId, dragging)
+            setIsColumnDragging(columnReorderMutations.isAnyColumnDragging())
+          },
           bumpReorderTick: (tableId: string) =>
             bumpReorderTickRef.current(tableId),
           tableNameById,
@@ -931,8 +937,10 @@ function ReactFlowWhiteboardInner({
             emitColumnReorderRef.current(tableId, ids),
           isQueueFullForTable: (tableId: string) =>
             columnReorderMutations.isQueueFullForTable(tableId),
-          setLocalDragging: (tableId: string, dragging: boolean) =>
-            columnReorderMutations.setLocalDragging(tableId, dragging),
+          setLocalDragging: (tableId: string, dragging: boolean) => {
+            columnReorderMutations.setLocalDragging(tableId, dragging)
+            setIsColumnDragging(columnReorderMutations.isAnyColumnDragging())
+          },
           bumpReorderTick: (tableId: string) =>
             bumpReorderTickRef.current(tableId),
           edges: edgesRef.current,
@@ -1123,6 +1131,7 @@ function ReactFlowWhiteboardInner({
         onConnect={handleConnect}
         onNodeDragStop={handleNodeDragStop}
         nodesDraggable={nodesDraggable}
+        panOnDrag={!isColumnDragging}
         showMinimap={showMinimap}
         showControls={showControls}
         showBackground={true}

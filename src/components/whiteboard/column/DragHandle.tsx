@@ -1,13 +1,3 @@
-/**
- * DragHandle — drag handle button for column reordering
- *
- * Renders a GripVertical icon with:
- * - nodrag nowheel classes (Spike S1: React Flow pointer suppression)
- * - aria-label for accessibility (AC-01d)
- * - shadcn Tooltip with 400ms delay (AC-12a)
- * - useSortable activatorNodeRef integration
- */
-
 import { memo } from 'react'
 import { GripVertical } from 'lucide-react'
 import {
@@ -20,22 +10,12 @@ import {
 export interface DragHandleProps {
   columnName: string
   isDragging: boolean
-  /** Ref passed from useSortable to set the activator node */
-  setActivatorNodeRef: (element: HTMLElement | null) => void
-  /** Listeners from useSortable (onPointerDown etc.) */
-  listeners: Record<string, (...args: Array<unknown>) => unknown> | undefined
-  /** Whether to show the drag handle (only in ALL_FIELDS mode) */
+  onPointerDown?: (e: React.PointerEvent) => void
   show: boolean
 }
 
 export const DragHandle = memo(
-  ({
-    columnName,
-    isDragging,
-    setActivatorNodeRef,
-    listeners,
-    show,
-  }: DragHandleProps) => {
+  ({ columnName, isDragging, onPointerDown, show }: DragHandleProps) => {
     if (!show) return null
 
     return (
@@ -44,14 +24,7 @@ export const DragHandle = memo(
           <TooltipTrigger asChild>
             <button
               type="button"
-              ref={setActivatorNodeRef}
-              {...listeners}
-              onPointerDown={(e) => {
-                // Stop bubbling to React Flow canvas — without this, RF starts
-                // panning and wins the setPointerCapture race against @dnd-kit.
-                e.stopPropagation()
-                ;(listeners as Record<string, (e: React.PointerEvent) => void> | undefined)?.onPointerDown?.(e)
-              }}
+              onPointerDown={onPointerDown}
               aria-label={`Reorder column ${columnName}`}
               className="nodrag nowheel column-drag-handle"
               style={{
