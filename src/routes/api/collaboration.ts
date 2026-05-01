@@ -434,6 +434,44 @@ function setupCollaborationEventHandlers(
     },
   )
 
+  // Bulk table position update (Auto Layout broadcast re-emit).
+  // Persistence already happened via the updateTablePositionsBulk server function;
+  // this handler only fans out the event to other clients in the same whiteboard
+  // namespace. The originator's client emits this event after the server function
+  // resolves successfully (mirrors the existing single-table table:move pattern).
+  // Apollo R2-1: includes the standard auth prelude used by all other handlers.
+  socket.on(
+    'table:move:bulk',
+    async (data: {
+      positions: Array<{ tableId: string; positionX: number; positionY: number }>
+      userId: string
+    }) => {
+      // Standard auth prelude — matches every other handler in this file (Apollo R2-1).
+      if (isSessionExpired(socket)) {
+        socket.emit('session_expired')
+        socket.disconnect(true)
+        return
+      }
+      if (await denyIfInsufficientPermission(socket, whiteboardId)) return
+
+      // Minimal payload shape validation before re-broadcasting.
+      if (
+        !data ||
+        !Array.isArray(data.positions) ||
+        data.positions.length === 0
+      ) {
+        return
+      }
+
+      // Re-broadcast to every OTHER client in this whiteboard namespace.
+      // broadcastToWhiteboard excludes the sender by socketId, so the originator
+      // does not receive a copy of its own emit.
+      broadcastToWhiteboard(whiteboardId, socket.id, 'table:move:bulk', data)
+
+      await safeUpdateSessionActivity(socket.id)
+    },
+  )
+
   // Table update (name, description, etc.)
   socket.on(
     'table:update',

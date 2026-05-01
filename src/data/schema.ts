@@ -384,3 +384,30 @@ export type ProjectRoleValue = z.infer<typeof projectRoleSchema>
 export type GrantPermission = z.infer<typeof grantPermissionSchema>
 export type UpdatePermission = z.infer<typeof updatePermissionSchema>
 export type RevokePermission = z.infer<typeof revokePermissionSchema>
+
+// ============================================================================
+// Auto Layout Schemas
+// ============================================================================
+
+/**
+ * Schema for bulk-updating table positions (used by Auto Layout).
+ * - whiteboardId scopes the IDOR guard
+ * - positions[] must contain ≥ 1 entry; each id must be a UUID
+ * - 500-entry cap as a sanity bound (auto-layout supported size is ≤ 100;
+ *   larger payloads suggest a bug or abuse and are rejected client-side)
+ */
+export const bulkUpdatePositionsSchema = z.object({
+  whiteboardId: z.string().uuid(),
+  positions: z
+    .array(
+      z.object({
+        id: z.string().uuid(),
+        positionX: z.number().finite(),
+        positionY: z.number().finite(),
+      }),
+    )
+    .min(1)
+    .max(500),
+})
+
+export type BulkUpdatePositions = z.infer<typeof bulkUpdatePositionsSchema>

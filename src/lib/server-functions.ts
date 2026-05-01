@@ -28,6 +28,10 @@ import {
   getTableProjectId,
   getWhiteboardProjectId,
 } from '@/data/resolve-project'
+import {
+  bulkUpdatePositionsSchema,
+  type BulkUpdatePositions,
+} from '@/data/schema'
 // TODO: restore these imports when permission checks are re-enabled — temporarily disabled
 // import { findEffectiveRole } from '@/data/permission'
 // import { hasMinimumRole } from '@/lib/auth/permissions'
@@ -138,6 +142,72 @@ export const updateTablePosition = createServerFn({
         throw error
       }
     }),
+  )
+
+/**
+ * Server function to bulk-update table positions (used by Auto Layout).
+ *
+ * Persists N positions atomically in a single prisma.$transaction.
+ * Does NOT emit any Socket.IO event — the originator's client emits the
+ * table:move:bulk broadcast after this call resolves successfully
+ * (mirrors the existing single-table updateTablePositionMutation.onSuccess pattern;
+ * resolves Apollo Finding 3 — eliminates the server-functions → routes import edge).
+ *
+ * NOTE: requireAuth returns AuthErrorResponse on session expiry — it does NOT throw.
+ * Callers MUST check the resolved value with isUnauthorizedError() from @/lib/auth/errors.
+ */
+export const updateTablePositionsBulk = createServerFn({ method: 'POST' })
+  .inputValidator((data: BulkUpdatePositions) =>
+    bulkUpdatePositionsSchema.parse(data),
+  )
+  .handler(
+    requireAuth(
+      async (
+        { user: _user },
+        data,
+      ): Promise<{ success: true; count: number }> => {
+        const { whiteboardId, positions } = data
+
+        // IDOR guard: verify the whiteboard exists AND every supplied
+        // position.id belongs to it. Single findMany → Set to keep the guard
+        // at ONE DB round-trip regardless of N positions (preserves the 2 s budget).
+        const projectId = await getWhiteboardProjectId(whiteboardId)
+        if (!projectId) throw new Error('Whiteboard not found')
+        // TODO: restore permission check — temporarily disabled (matches the
+        // codebase pattern in createTable / updateTablePosition)
+        void projectId
+        void _user // user identity is not needed here; the orchestrator owns the
+        //            sender-id field on the socket payload
+
+        const owned = await prisma.diagramTable.findMany({
+          where: { whiteboardId },
+          select: { id: true },
+        })
+        const ownedIds = new Set(owned.map((t) => t.id))
+        for (const p of positions) {
+          if (!ownedIds.has(p.id)) {
+            throw new Error('Table does not belong to this whiteboard')
+          }
+        }
+
+        try {
+          // Single transaction — all-or-nothing per NFR Reliability.
+          await prisma.$transaction(
+            positions.map((p) =>
+              prisma.diagramTable.update({
+                where: { id: p.id },
+                data: { positionX: p.positionX, positionY: p.positionY },
+              }),
+            ),
+          )
+        } catch (error) {
+          console.error('Error bulk-updating table positions:', error)
+          throw error
+        }
+
+        return { success: true, count: positions.length }
+      },
+    ),
   )
 
 /**
