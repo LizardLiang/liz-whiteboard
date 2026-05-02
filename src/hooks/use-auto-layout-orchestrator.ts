@@ -21,6 +21,7 @@ import { toast } from 'sonner'
 import type { Edge, Node } from '@xyflow/react'
 import type { LayoutOutputPosition } from '@/lib/auto-layout/d3-force-layout'
 import { applyBulkPositions } from '@/lib/auto-layout'
+import { recalculateEdgesForDraggedNodes } from '@/lib/react-flow/edge-routing'
 import { isUnauthorizedError } from '@/lib/auth/errors'
 import { useAuthContext } from '@/components/auth/AuthContext'
 import { updateTablePositionsBulk } from '@/lib/server-functions'
@@ -73,7 +74,7 @@ export function useAutoLayoutOrchestrator({
   runD3ForceLayout,
   emitBulkPositionUpdate,
 }: UseAutoLayoutOrchestratorArgs): UseAutoLayoutOrchestratorResult {
-  const { setNodes, getNodes, getEdges, fitView } = useReactFlow()
+  const { setNodes, setEdges, getNodes, getEdges, fitView } = useReactFlow()
   const { triggerSessionExpired } = useAuthContext()
 
   const [isRunning, setIsRunning] = useState(false)
@@ -189,8 +190,12 @@ export function useAutoLayoutOrchestrator({
       }
 
       // Step 2 — Optimistic local apply (before network round-trip).
-      // applyBulkPositions builds a Map for O(n) lookup (B3 fix).
-      setNodes((prev) => applyBulkPositions(prev, positions))
+      // Build updated nodes once so we can pass the same array to both
+      // setNodes and edge-handle recalculation.
+      const updatedNodes = applyBulkPositions(getNodes(), positions)
+      setNodes(updatedNodes)
+      const allMovedIds = new Set(positions.map((p) => p.id))
+      setEdges((prev) => recalculateEdgesForDraggedNodes(prev, updatedNodes, allMovedIds))
 
       // Step 3 — Stash payload BEFORE the await so Retry can re-submit
       const payload: BulkPayload = {
@@ -255,6 +260,7 @@ export function useAutoLayoutOrchestrator({
     getNodes,
     getEdges,
     setNodes,
+    setEdges,
     handlePersistResult,
     emitBulkPositionUpdate,
     handleRetry,
