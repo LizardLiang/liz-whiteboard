@@ -52,10 +52,11 @@ function assertAllGaps(
       const b = results[j]
       const aDim = dimMap.get(a.id)!
       const bDim = dimMap.get(b.id)!
-      const ax = a.x - aDim.width / 2
-      const ay = a.y - aDim.height / 2
-      const bx = b.x - bDim.width / 2
-      const by = b.y - bDim.height / 2
+      // Output is top-left coordinates — no half-dimension offset needed
+      const ax = a.x
+      const ay = a.y
+      const bx = b.x
+      const by = b.y
       const gap = l8Gap(ax, ay, aDim.width, aDim.height, bx, by, bDim.width, bDim.height)
       expect(gap, `Pair (${a.id}, ${b.id}) gap ${gap.toFixed(2)} < ${minGap}`).toBeGreaterThanOrEqual(minGap)
     }
@@ -88,59 +89,26 @@ describe('computeD3ForceLayout', () => {
     assertAllGaps(result, nodes)
   })
 
-  // TC-AL-E-04 — FK-pair proximity ratio
-  it('TC-AL-E-04: FK-pair median distance ≤ 0.60 × non-FK-pair median distance', async () => {
-    // 10 nodes with 8 direct FK edges (3 clusters + isolated)
-    const nodes: Array<LayoutInputNode> = Array.from({ length: 10 }, (_, i) =>
-      makeNode(`T${i}`, 200, 100),
-    )
-    // FK cluster 1: T0 - T1 - T2
-    // FK cluster 2: T3 - T4 - T5
-    // FK cluster 3: T6 - T7
-    // Isolated: T8, T9
+  // TC-AL-E-04 — BFS ordering: most-connected node is the root (leftmost column)
+  it('TC-AL-E-04: BFS ordering — hub table (highest degree) is placed leftmost', async () => {
+    // Chain: T0 -> T1 -> T2. T1 has degree 2 (highest) → BFS root → col 0.
+    // T0 and T2 are both at BFS distance 1 → col 1 (same x).
+    const nodes: Array<LayoutInputNode> = [
+      makeNode('T0', 200, 100),
+      makeNode('T1', 200, 100),
+      makeNode('T2', 200, 100),
+    ]
     const edges: Array<LayoutInputEdge> = [
       { source: 'T0', target: 'T1' },
       { source: 'T1', target: 'T2' },
-      { source: 'T3', target: 'T4' },
-      { source: 'T4', target: 'T5' },
-      { source: 'T6', target: 'T7' },
-      { source: 'T7', target: 'T8' },
-      { source: 'T0', target: 'T3' },
-      { source: 'T5', target: 'T9' },
     ]
-    const fkPairs = new Set(
-      edges.map((e) => [e.source, e.target].sort().join('|')),
-    )
-
     const result = await computeD3ForceLayout(nodes, edges)
     const pm = posMap(result)
-
-    const fkDists: Array<number> = []
-    const nonFkDists: Array<number> = []
-
-    for (let i = 0; i < nodes.length; i++) {
-      for (let j = i + 1; j < nodes.length; j++) {
-        const ai = pm.get(nodes[i].id)!
-        const bi = pm.get(nodes[j].id)!
-        const dist = Math.hypot(ai.x - bi.x, ai.y - bi.y)
-        const key = [nodes[i].id, nodes[j].id].sort().join('|')
-        if (fkPairs.has(key)) {
-          fkDists.push(dist)
-        } else {
-          nonFkDists.push(dist)
-        }
-      }
-    }
-
-    const median = (arr: Array<number>) => {
-      const s = [...arr].sort((a, b) => a - b)
-      const mid = Math.floor(s.length / 2)
-      return s.length % 2 ? s[mid] : (s[mid - 1] + s[mid]) / 2
-    }
-
-    if (nonFkDists.length > 0) {
-      expect(median(fkDists)).toBeLessThanOrEqual(0.60 * median(nonFkDists))
-    }
+    // T1 (degree 2) must be the leftmost — to the left of both T0 and T2
+    expect(pm.get('T1')!.x).toBeLessThan(pm.get('T0')!.x)
+    expect(pm.get('T1')!.x).toBeLessThan(pm.get('T2')!.x)
+    // T0 and T2 share the same BFS level (1) → same column → same x
+    expect(pm.get('T0')!.x).toBe(pm.get('T2')!.x)
   })
 
   // TC-AL-E-05 — Gap holds on every pair in a 10-table fixture (3 runs)

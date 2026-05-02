@@ -68,27 +68,43 @@ function getNodeCenter(node: Node): { cx: number; cy: number } {
   }
 }
 
+// Minimum clear horizontal gap (px) required before we treat nodes as
+// being in different columns. Below this threshold the nodes are considered
+// vertically aligned and we use same-side handles to avoid looping beziers.
+const COLUMN_GAP_THRESHOLD = 20
+
 /**
  * Determine which side each table should use for the edge connection,
  * based on relative horizontal position of the two nodes.
  *
- * - Source is LEFT of target  → source RIGHT, target LEFT
- * - Source is RIGHT of target → source LEFT, target RIGHT
+ * - Source clearly LEFT of target  → source RIGHT, target LEFT
+ * - Source clearly RIGHT of target → source LEFT, target RIGHT
+ * - Same column (bounding boxes overlap or are within COLUMN_GAP_THRESHOLD)
+ *   → source RIGHT, target RIGHT  (compact "C" curve on the right side,
+ *     avoids the large loop that right→left produces for same-column nodes)
  */
 export function calculateBestSides(
   sourceNode: Node,
   targetNode: Node,
 ): { sourceSide: HandleSide; targetSide: HandleSide } {
-  const src = getNodeCenter(sourceNode)
-  const tgt = getNodeCenter(targetNode)
+  const srcW = sourceNode.measured?.width ?? sourceNode.width ?? DEFAULT_NODE_WIDTH
+  const tgtW = targetNode.measured?.width ?? targetNode.width ?? DEFAULT_NODE_WIDTH
 
-  const dx = tgt.cx - src.cx
+  const srcLeft = sourceNode.position.x
+  const srcRight = srcLeft + srcW
+  const tgtLeft = targetNode.position.x
+  const tgtRight = tgtLeft + tgtW
 
-  if (dx >= 0) {
+  if (tgtLeft > srcRight + COLUMN_GAP_THRESHOLD) {
+    // Target is clearly to the right
     return { sourceSide: 'right', targetSide: 'left' }
-  } else {
+  }
+  if (srcLeft > tgtRight + COLUMN_GAP_THRESHOLD) {
+    // Target is clearly to the left
     return { sourceSide: 'left', targetSide: 'right' }
   }
+  // Same column or overlapping — route as a "C" on the right side
+  return { sourceSide: 'right', targetSide: 'right' }
 }
 
 /**
