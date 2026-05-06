@@ -14,12 +14,12 @@
 import { useCallback, useRef } from 'react'
 import { toast } from 'sonner'
 import type { Column } from '@prisma/client'
-import { uuid } from '@/lib/uuid'
 import type {
   RelationshipEdgeType,
   TableNodeType,
 } from '@/lib/react-flow/types'
 import type { DataType, UpdateColumn } from '@/data/schema'
+import { uuid } from '@/lib/uuid'
 
 type SetNodes = React.Dispatch<React.SetStateAction<Array<TableNodeType>>>
 type SetEdges = React.Dispatch<
@@ -39,6 +39,7 @@ type EmitColumnCreate = (data: {
 
 type EmitColumnUpdate = (columnId: string, data: Partial<UpdateColumn>) => void
 type EmitColumnDelete = (columnId: string) => void
+type EmitColumnDuplicate = (columnId: string) => void
 
 export interface PendingMutation {
   type: 'create' | 'update' | 'delete'
@@ -56,6 +57,7 @@ export function useColumnMutations(
   emitColumnUpdate: EmitColumnUpdate | null,
   emitColumnDelete: EmitColumnDelete | null,
   isConnected: boolean,
+  emitColumnDuplicate: EmitColumnDuplicate | null = null,
 ) {
   /**
    * Track optimistic mutations for rollback on server error.
@@ -378,6 +380,135 @@ export function useColumnMutations(
   )
 
   /**
+   * Duplicate a column optimistically then emit via WebSocket.
+   *
+   * Optimistic strategy:
+   *  1. Insert a temp column (with name `<original>_copy` and order = source.order + 1)
+   *     immediately below the source, shifting siblings in local state.
+   *  2. Emit `column:duplicate` to the server.
+   *  3. On `column:duplicated` confirmation (onOwnColumnDuplicated in ReactFlowWhiteboard),
+   *     replace the temp ID with the real DB ID via replaceTempId.
+   *  4. On error, roll back the optimistic insert.
+   */
+  const duplicateColumn = useCallback(
+    (sourceColumn: Column) => {
+      if (!isConnected) {
+        toast.error('Not connected. Please wait for reconnection.')
+        return
+      }
+
+      const tempId = uuid()
+      const newOrder = sourceColumn.order + 1
+      const tableId = sourceColumn.tableId
+
+      const optimisticColumn: Column = {
+        id: tempId,
+        tableId,
+        name: `${sourceColumn.name}_copy`,
+        dataType: sourceColumn.dataType,
+        order: newOrder,
+        isPrimaryKey: false,
+        isForeignKey: false,
+        isUnique: sourceColumn.isUnique,
+        isNullable: sourceColumn.isNullable,
+        description: sourceColumn.description,
+        createdAt: new Date(),
+        updatedAt: new Date(),
+      }
+
+      // Optimistic insert: shift siblings with order >= newOrder up by 1, then insert
+      setNodes((prev) =>
+        prev.map((node) => {
+          if (node.data.table.id !== tableId) return node
+          const shiftedColumns = node.data.table.columns.map((c) =>
+            c.order >= newOrder && c.id !== sourceColumn.id
+              ? { ...c, order: c.order + 1 }
+              : c,
+          )
+          return {
+            ...node,
+            data: {
+              ...node.data,
+              table: {
+                ...node.data.table,
+                columns: [...shiftedColumns, optimisticColumn].sort(
+                  (a, b) => a.order - b.order,
+                ),
+              },
+            },
+          }
+        }),
+      )
+
+      // Store rollback
+      pendingMutations.current.set(tempId, {
+        type: 'create',
+        tableId,
+        rollback: () => {
+          setNodes((prev) =>
+            prev.map((node) => {
+              if (node.data.table.id !== tableId) return node
+              // Remove the optimistic column and un-shift siblings
+              const withoutOptimistic = node.data.table.columns.filter(
+                (c) => c.id !== tempId,
+              )
+              const unshifted = withoutOptimistic.map((c) =>
+                c.order > newOrder ? { ...c, order: c.order - 1 } : c,
+              )
+              return {
+                ...node,
+                data: {
+                  ...node.data,
+                  table: {
+                    ...node.data.table,
+                    columns: unshifted.sort((a, b) => a.order - b.order),
+                  },
+                },
+              }
+            }),
+          )
+        },
+      })
+
+      // Emit via WebSocket
+      if (emitColumnDuplicate) {
+        emitColumnDuplicate(sourceColumn.id)
+      }
+    },
+    [isConnected, setNodes, emitColumnDuplicate],
+  )
+
+  /**
+   * Called by useColumnCollaboration when a remote user duplicates a column.
+   * Inserts the real column into local state and shifts sibling orders.
+   */
+  const onRemoteColumnDuplicated = useCallback(
+    (data: { column: Column; sourceColumnId: string; tableId: string }) => {
+      const { column, tableId } = data
+      setNodes((prev) =>
+        prev.map((node) => {
+          if (node.data.table.id !== tableId) return node
+          // Shift existing columns with order >= new column's order
+          const shifted = node.data.table.columns.map((c) =>
+            c.order >= column.order ? { ...c, order: c.order + 1 } : c,
+          )
+          return {
+            ...node,
+            data: {
+              ...node.data,
+              table: {
+                ...node.data.table,
+                columns: [...shifted, column].sort((a, b) => a.order - b.order),
+              },
+            },
+          }
+        }),
+      )
+    },
+    [setNodes],
+  )
+
+  /**
    * Called by useColumnCollaboration when server sends an error event.
    * Finds the pending mutation and invokes its rollback.
    */
@@ -443,8 +574,10 @@ export function useColumnMutations(
     createColumn,
     updateColumn,
     deleteColumn,
+    duplicateColumn,
     replaceTempId,
     onColumnError,
+    onRemoteColumnDuplicated,
     pendingMutations,
   }
 }

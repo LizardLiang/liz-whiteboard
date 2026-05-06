@@ -32,6 +32,7 @@ import { findWhiteboardByIdWithDiagram } from '@/data/whiteboard'
 import {
   createColumn,
   deleteColumn,
+  duplicateColumn,
   findColumnById,
   updateColumn,
 } from '@/data/column'
@@ -712,6 +713,73 @@ function setupCollaborationEventHandlers(
         error: 'DELETE_FAILED',
         message:
           error instanceof Error ? error.message : 'Failed to delete column',
+      })
+      return
+    }
+    await safeUpdateSessionActivity(socket.id)
+  })
+
+  // Column duplicate
+  socket.on('column:duplicate', async (data: { columnId: string }) => {
+    if (isSessionExpired(socket)) {
+      socket.emit('session_expired')
+      socket.disconnect(true)
+      return
+    }
+    if (await denyIfInsufficientPermission(socket, whiteboardId)) return
+
+    try {
+      // Validate input
+      const { columnId } = z.object({ columnId: z.string().uuid() }).parse(data)
+
+      // Load source column to verify ownership (IDOR prevention)
+      const sourceColumn = await findColumnById(columnId)
+      if (!sourceColumn) {
+        socket.emit('error', {
+          event: 'column:duplicate',
+          error: 'NOT_FOUND',
+          message: 'Column not found',
+          columnId,
+        })
+        return
+      }
+      const ownerTable = await findDiagramTableById(sourceColumn.tableId)
+      if (!ownerTable || ownerTable.whiteboardId !== whiteboardId) {
+        socket.emit('error', {
+          event: 'column:duplicate',
+          error: 'FORBIDDEN',
+          message: 'Column does not belong to this whiteboard',
+          columnId,
+        })
+        return
+      }
+
+      // Perform the duplicate (shifts siblings + creates new column)
+      const newColumn = await duplicateColumn(columnId)
+
+      // The payload broadcast includes the siblings that shifted so clients can
+      // re-sort without a full refetch.  We embed the new column and the
+      // sourceOrder so clients know where to insert it.
+      const broadcastPayload = {
+        column: { ...newColumn, createdBy: userId },
+        sourceColumnId: columnId,
+        tableId: newColumn.tableId,
+        createdBy: userId,
+      }
+
+      // Broadcast to all other users
+      socket.broadcast.emit('column:duplicated', broadcastPayload)
+
+      // Confirm back to originating socket so it can replace the optimistic entry
+      socket.emit('column:duplicated', broadcastPayload)
+    } catch (error) {
+      console.error('Failed to duplicate column:', error)
+      socket.emit('error', {
+        event: 'column:duplicate',
+        error: 'DUPLICATE_FAILED',
+        message:
+          error instanceof Error ? error.message : 'Failed to duplicate column',
+        columnId: data.columnId,
       })
       return
     }

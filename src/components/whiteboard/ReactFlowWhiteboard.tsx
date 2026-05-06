@@ -12,10 +12,24 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { ReactFlowProvider, useReactFlow, useViewport } from '@xyflow/react'
-import type { Connection } from '@xyflow/react'
 import { ReactFlowCanvas } from './ReactFlowCanvas'
 import { ConnectionStatusIndicator } from './ConnectionStatusIndicator'
 import { DeleteTableDialog } from './DeleteTableDialog'
+import type { Connection } from '@xyflow/react'
+import type { ZoomControls } from './Toolbar'
+import type {
+  RelationshipEdgeType,
+  ShowMode,
+  TableNodeType,
+} from '@/lib/react-flow/types'
+import type { Cardinality, Column  } from '@prisma/client'
+import type { CreateColumnPayload } from './column/types'
+import type { UpdateColumn } from '@/data/schema'
+import type { TableRelationship } from './DeleteTableDialog'
+import type {RelationshipErrorEvent} from '@/hooks/use-relationship-mutations';
+import { Button } from '@/components/ui/button'
+import { Input } from '@/components/ui/input'
+import { Label } from '@/components/ui/label'
 import {
   Dialog,
   DialogContent,
@@ -30,20 +44,6 @@ import {
   SelectTrigger,
   SelectValue,
 } from '@/components/ui/select'
-import { Button } from '@/components/ui/button'
-import { Input } from '@/components/ui/input'
-import { Label } from '@/components/ui/label'
-import type { ZoomControls } from './Toolbar'
-import type {
-  RelationshipEdgeType,
-  ShowMode,
-  TableNodeType,
-} from '@/lib/react-flow/types'
-import type { Cardinality } from '@prisma/client'
-import type { Column } from '@prisma/client'
-import type { CreateColumnPayload } from './column/types'
-import type { UpdateColumn } from '@/data/schema'
-import type { TableRelationship } from './DeleteTableDialog'
 import { parseColumnHandleId } from '@/lib/react-flow/edge-routing'
 import { convertTablesToNodes } from '@/lib/react-flow/convert-to-nodes'
 import { convertRelationshipsToEdges } from '@/lib/react-flow/convert-to-edges'
@@ -60,8 +60,8 @@ import { useColumnCollaboration } from '@/hooks/use-column-collaboration'
 import { useColumnMutations } from '@/hooks/use-column-mutations'
 import { useTableMutations } from '@/hooks/use-table-mutations'
 import {
-  useRelationshipMutations,
-  type RelationshipErrorEvent,
+  
+  useRelationshipMutations
 } from '@/hooks/use-relationship-mutations'
 import { useTableDeletion } from '@/hooks/use-table-deletion'
 import { getSessionUserId } from '@/lib/session-user-id'
@@ -89,11 +89,20 @@ const CARDINALITY_OPTIONS: Array<{ value: Cardinality; label: string }> = [
   { value: 'ZERO_OR_MANY_TO_ONE', label: 'Zero or Many to One (0..N:1)' },
   { value: 'ZERO_OR_MANY_TO_MANY', label: 'Zero or Many to Many (0..N:N)' },
   { value: 'ZERO_OR_ONE_TO_ZERO_OR_ONE', label: 'Zero or One to Zero or One' },
-  { value: 'ZERO_OR_ONE_TO_ZERO_OR_MANY', label: 'Zero or One to Zero or Many' },
+  {
+    value: 'ZERO_OR_ONE_TO_ZERO_OR_MANY',
+    label: 'Zero or One to Zero or Many',
+  },
   { value: 'MANY_TO_ZERO_OR_ONE', label: 'Many to Zero or One (N:0..1)' },
   { value: 'MANY_TO_ZERO_OR_MANY', label: 'Many to Zero or Many (N:0..N)' },
-  { value: 'ZERO_OR_MANY_TO_ZERO_OR_ONE', label: 'Zero or Many to Zero or One' },
-  { value: 'ZERO_OR_MANY_TO_ZERO_OR_MANY', label: 'Zero or Many to Zero or Many' },
+  {
+    value: 'ZERO_OR_MANY_TO_ZERO_OR_ONE',
+    label: 'Zero or Many to Zero or One',
+  },
+  {
+    value: 'ZERO_OR_MANY_TO_ZERO_OR_MANY',
+    label: 'Zero or Many to Zero or Many',
+  },
 ]
 
 /**
@@ -170,7 +179,8 @@ function ReactFlowWhiteboardInner({
   // Recomputes only when tables are added, removed, or renamed — not on
   // every position/highlight change — so TableNode memo isn't broken.
   const tableNameById = useMemo(
-    () => new Map(initialNodes.map((n) => [n.data.table.id, n.data.table.name])),
+    () =>
+      new Map(initialNodes.map((n) => [n.data.table.id, n.data.table.name])),
     [initialNodes],
   )
 
@@ -232,6 +242,7 @@ function ReactFlowWhiteboardInner({
               onColumnCreate: handleColumnCreateRef.current,
               onColumnUpdate: handleColumnUpdateRef.current,
               onColumnDelete: handleColumnDeleteRef.current,
+              onColumnDuplicate: handleColumnDuplicateRef.current,
               onRequestTableDelete: handleRequestTableDeleteRef.current,
               edges: edgesRef.current,
               tableNameById,
@@ -271,6 +282,7 @@ function ReactFlowWhiteboardInner({
             onColumnCreate: prev.data.onColumnCreate,
             onColumnUpdate: prev.data.onColumnUpdate,
             onColumnDelete: prev.data.onColumnDelete,
+            onColumnDuplicate: prev.data.onColumnDuplicate,
             onRequestTableDelete: prev.data.onRequestTableDelete,
             tableNameById,
           },
@@ -302,7 +314,9 @@ function ReactFlowWhiteboardInner({
 
   // When edges change, update the edges prop in all node data (for delete confirmation)
   useEffect(() => {
-    console.log(`[WHITEBOARD] edges-to-nodes effect fired — ${edges.length} edges → updating all ${nodes.length} nodes' data.edges prop`)
+    console.log(
+      `[WHITEBOARD] edges-to-nodes effect fired — ${edges.length} edges → updating all ${nodes.length} nodes' data.edges prop`,
+    )
     console.trace('[WHITEBOARD] edges-to-nodes stack trace')
     setNodes((prevNodes) =>
       prevNodes.map((node) => ({
@@ -313,7 +327,7 @@ function ReactFlowWhiteboardInner({
         },
       })),
     )
-  // eslint-disable-next-line react-hooks/exhaustive-deps
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [edges])
 
   // Callback for when a remote user deletes a table
@@ -358,30 +372,35 @@ function ReactFlowWhiteboardInner({
   )
 
   // Real-time collaboration integration (table position events + table deletion + relationship deletion/update)
-  const { connectionState, emitPositionUpdate, emitTableDelete, emitRelationshipDelete, emitRelationshipUpdate } =
-    useWhiteboardCollaboration(
-      whiteboardId,
-      userId,
-      useCallback((tableId: string, positionX: number, positionY: number) => {
-        // Update local React Flow nodes when other users move tables
-        setNodes((prevNodes) =>
-          prevNodes.map((node) =>
-            node.id === tableId
-              ? { ...node, position: { x: positionX, y: positionY } }
-              : node,
-          ),
-        )
-      }, []),
-      onTableDeleted,
-      useCallback((data: any) => {
-        onTableErrorRef.current(data)
-      }, []),
-      onRelationshipDeleted,
-      useCallback((data: RelationshipErrorEvent) => {
-        onRelationshipErrorRef.current(data)
-      }, []),
-      onRelationshipUpdated,
-    )
+  const {
+    connectionState,
+    emitPositionUpdate,
+    emitTableDelete,
+    emitRelationshipDelete,
+    emitRelationshipUpdate,
+  } = useWhiteboardCollaboration(
+    whiteboardId,
+    userId,
+    useCallback((tableId: string, positionX: number, positionY: number) => {
+      // Update local React Flow nodes when other users move tables
+      setNodes((prevNodes) =>
+        prevNodes.map((node) =>
+          node.id === tableId
+            ? { ...node, position: { x: positionX, y: positionY } }
+            : node,
+        ),
+      )
+    }, []),
+    onTableDeleted,
+    useCallback((data: any) => {
+      onTableErrorRef.current(data)
+    }, []),
+    onRelationshipDeleted,
+    useCallback((data: RelationshipErrorEvent) => {
+      onRelationshipErrorRef.current(data)
+    }, []),
+    onRelationshipUpdated,
+  )
 
   // Column collaboration callbacks (incoming events from other users)
   const onColumnCreated = useCallback(
@@ -479,6 +498,9 @@ function ReactFlowWhiteboardInner({
     (tableId: string, tempId: string, realId: string) => void
   >(() => {})
 
+  // Ref for onRemoteColumnDuplicated — avoids circular dep with columnMutations
+  const onRemoteColumnDuplicatedRef = useRef<(data: any) => void>(() => {})
+
   // On WebSocket reconnect, re-fetch whiteboard data to replace any stale
   // optimistic state that was never confirmed before the disconnect.
   const handleReconnect = useCallback(() => {
@@ -528,6 +550,37 @@ function ReactFlowWhiteboardInner({
           replaceTempIdRef.current(column.tableId, tempId, column.id)
         }
       },
+      onColumnDuplicated: (data: any) => {
+        // Remote user duplicated a column — insert it into local state
+        onRemoteColumnDuplicatedRef.current(data)
+      },
+      onOwnColumnDuplicated: (data: any) => {
+        // Server confirmed our own column:duplicate — replace the optimistic temp ID
+        // with the real database ID. The optimistic column has name `<original>_copy`
+        // and order = sourceColumn.order + 1; match by tableId + order + prefix.
+        const column = data.column
+        let tempId: string | undefined
+        setNodes((prevNodes) => {
+          const tableNode = prevNodes.find(
+            (n) => n.data.table.id === column.tableId,
+          )
+          if (tableNode) {
+            const match = tableNode.data.table.columns.find(
+              (c) =>
+                c.order === column.order &&
+                c.id !== column.id &&
+                c.name.endsWith('_copy'),
+            )
+            if (match) {
+              tempId = match.id
+            }
+          }
+          return prevNodes // no state change yet — just reading
+        })
+        if (tempId) {
+          replaceTempIdRef.current(column.tableId, tempId, column.id)
+        }
+      },
       onReconnect: () => {
         onReconnectRef.current()
       },
@@ -539,6 +592,7 @@ function ReactFlowWhiteboardInner({
     emitColumnCreate,
     emitColumnUpdate,
     emitColumnDelete,
+    emitColumnDuplicate,
     isConnected,
     connectionState: _columnConnectionState,
   } = useColumnCollaboration(whiteboardId, userId, columnMutationsCallbacks)
@@ -550,6 +604,7 @@ function ReactFlowWhiteboardInner({
     emitColumnUpdate,
     emitColumnDelete,
     isConnected,
+    emitColumnDuplicate,
   )
 
   // Wire onColumnError ref now that columnMutations is available
@@ -561,6 +616,12 @@ function ReactFlowWhiteboardInner({
   useEffect(() => {
     replaceTempIdRef.current = columnMutations.replaceTempId
   }, [columnMutations.replaceTempId])
+
+  // Wire onRemoteColumnDuplicated ref now that columnMutations is available
+  useEffect(() => {
+    onRemoteColumnDuplicatedRef.current =
+      columnMutations.onRemoteColumnDuplicated
+  }, [columnMutations.onRemoteColumnDuplicated])
 
   // Table mutations hook (optimistic delete + rollback)
   const tableMutations = useTableMutations(
@@ -593,7 +654,8 @@ function ReactFlowWhiteboardInner({
     relationshipMutations.deleteRelationship,
   )
   useEffect(() => {
-    handleRelationshipDeleteRef.current = relationshipMutations.deleteRelationship
+    handleRelationshipDeleteRef.current =
+      relationshipMutations.deleteRelationship
   }, [relationshipMutations.deleteRelationship])
 
   // Stable ref for the updateRelationshipLabel callback — prevents stale closures in edge data
@@ -601,7 +663,8 @@ function ReactFlowWhiteboardInner({
     relationshipMutations.updateRelationshipLabel,
   )
   useEffect(() => {
-    handleRelationshipLabelUpdateRef.current = relationshipMutations.updateRelationshipLabel
+    handleRelationshipLabelUpdateRef.current =
+      relationshipMutations.updateRelationshipLabel
   }, [relationshipMutations.updateRelationshipLabel])
 
   // Inject onDelete and onLabelUpdate callbacks into edge data whenever isConnected changes
@@ -664,6 +727,13 @@ function ReactFlowWhiteboardInner({
     [columnMutations],
   )
 
+  const handleColumnDuplicate = useCallback(
+    (column: Column) => {
+      columnMutations.duplicateColumn(column)
+    },
+    [columnMutations],
+  )
+
   // Callback to request table deletion (opens dialog)
   const handleRequestTableDelete = useCallback((tableId: string) => {
     setDeletingTableId(tableId)
@@ -682,7 +752,9 @@ function ReactFlowWhiteboardInner({
       return await createRelationshipFn({ data })
     },
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ['relationships', whiteboardId] })
+      queryClient.invalidateQueries({
+        queryKey: ['relationships', whiteboardId],
+      })
       queryClient.invalidateQueries({ queryKey: ['whiteboard', whiteboardId] })
     },
     onError: (err) => {
@@ -728,7 +800,13 @@ function ReactFlowWhiteboardInner({
 
     setPendingConnection(null)
     setPendingLabel('')
-  }, [pendingConnection, selectedCardinality, pendingLabel, whiteboardId, createRelationshipMutation])
+  }, [
+    pendingConnection,
+    selectedCardinality,
+    pendingLabel,
+    whiteboardId,
+    createRelationshipMutation,
+  ])
 
   // Cancel pending connection
   const handleCardinalityCancel = useCallback(() => {
@@ -740,6 +818,7 @@ function ReactFlowWhiteboardInner({
   const handleColumnCreateRef = useRef(handleColumnCreate)
   const handleColumnUpdateRef = useRef(handleColumnUpdate)
   const handleColumnDeleteRef = useRef(handleColumnDelete)
+  const handleColumnDuplicateRef = useRef(handleColumnDuplicate)
   const handleRequestTableDeleteRef = useRef(handleRequestTableDelete)
   useEffect(() => {
     handleColumnCreateRef.current = handleColumnCreate
@@ -750,6 +829,9 @@ function ReactFlowWhiteboardInner({
   useEffect(() => {
     handleColumnDeleteRef.current = handleColumnDelete
   }, [handleColumnDelete])
+  useEffect(() => {
+    handleColumnDuplicateRef.current = handleColumnDuplicate
+  }, [handleColumnDuplicate])
   useEffect(() => {
     handleRequestTableDeleteRef.current = handleRequestTableDelete
   }, [handleRequestTableDelete])
@@ -764,6 +846,7 @@ function ReactFlowWhiteboardInner({
           onColumnCreate: handleColumnCreateRef.current,
           onColumnUpdate: handleColumnUpdateRef.current,
           onColumnDelete: handleColumnDeleteRef.current,
+          onColumnDuplicate: handleColumnDuplicateRef.current,
           onRequestTableDelete: handleRequestTableDeleteRef.current,
           tableNameById,
           isConnected,
@@ -783,6 +866,7 @@ function ReactFlowWhiteboardInner({
           onColumnCreate: handleColumnCreateRef.current,
           onColumnUpdate: handleColumnUpdateRef.current,
           onColumnDelete: handleColumnDeleteRef.current,
+          onColumnDuplicate: handleColumnDuplicateRef.current,
           onRequestTableDelete: handleRequestTableDeleteRef.current,
           edges: edgesRef.current,
           tableNameById,

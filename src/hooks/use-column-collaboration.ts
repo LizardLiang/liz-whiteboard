@@ -30,6 +30,13 @@ export interface ColumnDeletedEvent {
   deletedBy: string
 }
 
+export interface ColumnDuplicatedEvent {
+  column: Column & { createdBy: string }
+  sourceColumnId: string
+  tableId: string
+  createdBy: string
+}
+
 export interface ColumnErrorEvent {
   event: string
   error: string
@@ -50,6 +57,17 @@ export interface UseColumnCollaborationCallbacks {
    * replace any optimistic temp ID it inserted locally.
    */
   onOwnColumnCreated?: (column: ColumnCreatedEvent) => void
+  /**
+   * Called when a column:duplicated event arrives (from self or other users).
+   * Provides the new column and the source column ID so the client can insert
+   * the duplicate directly below the source in local state.
+   */
+  onColumnDuplicated?: (data: ColumnDuplicatedEvent) => void
+  /**
+   * Called when the server confirms a column:duplicate emitted by this user.
+   * Used to replace the optimistic duplicate with the real DB column.
+   */
+  onOwnColumnDuplicated?: (data: ColumnDuplicatedEvent) => void
   /**
    * Called when the WebSocket reconnects after a disconnection.
    * The consumer should re-fetch server state to discard any stale
@@ -108,12 +126,22 @@ export function useColumnCollaboration(
       callbacksRef.current.onColumnDeleted(data)
     }
 
+    const handleDuplicated = (data: ColumnDuplicatedEvent) => {
+      if (data.createdBy === userId) {
+        // Server confirmation for our own duplicate — replace optimistic entry
+        callbacksRef.current.onOwnColumnDuplicated?.(data)
+        return
+      }
+      callbacksRef.current.onColumnDuplicated?.(data)
+    }
+
     const handleError = (data: ColumnErrorEvent) => {
       // Only handle column-related errors
       if (
         data.event === 'column:create' ||
         data.event === 'column:update' ||
-        data.event === 'column:delete'
+        data.event === 'column:delete' ||
+        data.event === 'column:duplicate'
       ) {
         callbacksRef.current.onColumnError(data)
       }
@@ -134,6 +162,7 @@ export function useColumnCollaboration(
     on('column:created', handleCreated)
     on('column:updated', handleUpdated)
     on('column:deleted', handleDeleted)
+    on('column:duplicated', handleDuplicated)
     on('error', handleError)
     on('connect', handleConnect)
 
@@ -141,6 +170,7 @@ export function useColumnCollaboration(
       off('column:created', handleCreated)
       off('column:updated', handleUpdated)
       off('column:deleted', handleDeleted)
+      off('column:duplicated', handleDuplicated)
       off('error', handleError)
       off('connect', handleConnect)
     }
@@ -188,10 +218,22 @@ export function useColumnCollaboration(
     [emit, isConnected],
   )
 
+  const emitColumnDuplicate = useCallback(
+    (columnId: string) => {
+      if (!isConnected) {
+        console.warn('Cannot emit column:duplicate: not connected')
+        return
+      }
+      emit('column:duplicate', { columnId })
+    },
+    [emit, isConnected],
+  )
+
   return {
     emitColumnCreate,
     emitColumnUpdate,
     emitColumnDelete,
+    emitColumnDuplicate,
     isConnected,
     connectionState,
   }
