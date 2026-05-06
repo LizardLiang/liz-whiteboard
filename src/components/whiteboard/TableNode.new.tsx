@@ -32,6 +32,7 @@ export const TableNode = memo(
       onColumnCreate,
       onColumnUpdate,
       onColumnDelete,
+      onColumnDuplicate,
       onRequestTableDelete,
       edges = [],
       tableNameById = new Map(),
@@ -60,20 +61,18 @@ export const TableNode = memo(
     // Pre-compute a map from columnId to affected edges for fast delete checks
     const columnEdgeMap = useMemo(() => {
       const map = new Map<string, Array<RelationshipEdgeType>>()
-      ;(edges).forEach(
-        (edge: RelationshipEdgeType) => {
-          const srcId = edge.data?.relationship.sourceColumnId
-          const tgtId = edge.data?.relationship.targetColumnId
-          if (srcId) {
-            if (!map.has(srcId)) map.set(srcId, [])
-            map.get(srcId)!.push(edge)
-          }
-          if (tgtId && tgtId !== srcId) {
-            if (!map.has(tgtId)) map.set(tgtId, [])
-            map.get(tgtId)!.push(edge)
-          }
-        },
-      )
+      edges.forEach((edge: RelationshipEdgeType) => {
+        const srcId = edge.data?.relationship.sourceColumnId
+        const tgtId = edge.data?.relationship.targetColumnId
+        if (srcId) {
+          if (!map.has(srcId)) map.set(srcId, [])
+          map.get(srcId)!.push(edge)
+        }
+        if (tgtId && tgtId !== srcId) {
+          if (!map.has(tgtId)) map.set(tgtId, [])
+          map.get(tgtId)!.push(edge)
+        }
+      })
       return map
     }, [edges])
 
@@ -180,6 +179,16 @@ export const TableNode = memo(
     const handleRequestTableDelete = useCallback(() => {
       onRequestTableDelete?.(table.id)
     }, [onRequestTableDelete, table.id])
+
+    // --- Duplicate handler ---
+    const handleDuplicateColumn = useCallback(
+      (column: Column) => {
+        if (onColumnDuplicate) {
+          onColumnDuplicate(column)
+        }
+      },
+      [onColumnDuplicate],
+    )
 
     // --- Create handler ---
     const handleCreate = useCallback(
@@ -321,24 +330,23 @@ export const TableNode = memo(
           {/* Columns List */}
           {showMode !== 'TABLE_NAME' && (
             <div className="table-columns">
-              {(visibleColumns).map(
-                (column: Column, index: number) => (
-                  <ColumnRow
-                    key={column.id}
-                    column={column}
-                    tableId={table.id}
-                    isLast={index === visibleColumns.length - 1}
-                    editingField={editingField}
-                    onStartEdit={handleStartEdit}
-                    onCommitEdit={handleCommitEdit}
-                    onCancelEdit={handleCancelEdit}
-                    onToggleConstraint={handleToggleConstraint}
-                    onDelete={handleDeleteColumn}
-                    onDescriptionUpdate={handleDescriptionUpdate}
-                    edges={edges}
-                  />
-                ),
-              )}
+              {visibleColumns.map((column: Column, index: number) => (
+                <ColumnRow
+                  key={column.id}
+                  column={column}
+                  tableId={table.id}
+                  isLast={index === visibleColumns.length - 1}
+                  editingField={editingField}
+                  onStartEdit={handleStartEdit}
+                  onCommitEdit={handleCommitEdit}
+                  onCancelEdit={handleCancelEdit}
+                  onToggleConstraint={handleToggleConstraint}
+                  onDelete={handleDeleteColumn}
+                  onDuplicate={handleDuplicateColumn}
+                  onDescriptionUpdate={handleDescriptionUpdate}
+                  edges={edges}
+                />
+              ))}
 
               {/* Add Column Row */}
               <AddColumnRow
@@ -358,7 +366,6 @@ export const TableNode = memo(
               onCancel={handleCancelDelete}
             />
           )}
-
         </div>
       </TableNodeContextMenu>
     )
@@ -375,6 +382,8 @@ export const TableNode = memo(
     if (prev.data.onColumnCreate !== next.data.onColumnCreate) return false
     if (prev.data.onColumnUpdate !== next.data.onColumnUpdate) return false
     if (prev.data.onColumnDelete !== next.data.onColumnDelete) return false
+    if (prev.data.onColumnDuplicate !== next.data.onColumnDuplicate)
+      return false
     if (prev.data.edges !== next.data.edges) return false
     if (prev.data.tableNameById !== next.data.tableNameById) return false
     if (prev.data.onRequestTableDelete !== next.data.onRequestTableDelete)

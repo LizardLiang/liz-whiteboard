@@ -184,6 +184,67 @@ export async function findPrimaryKeyColumnsByTableId(
 }
 
 /**
+ * Duplicate a column by ID, inserting it directly below the source.
+ *
+ * The new column receives:
+ *  - name: `<original>_copy` (falls back to `<original>_copy2`, `_copy3`, … on conflict)
+ *  - same dataType, isPrimaryKey=false, isForeignKey=false, isUnique, isNullable, description
+ *  - order: source.order + 1 (all columns with order ≥ that value are shifted down first)
+ *
+ * @param columnId - Source column UUID
+ * @returns The newly created column
+ * @throws Error if the source column is not found
+ */
+export async function duplicateColumn(columnId: string): Promise<Column> {
+  // Load source column
+  const source = await prisma.column.findUnique({ where: { id: columnId } })
+  if (!source) {
+    throw new Error(`Column not found: ${columnId}`)
+  }
+
+  const newOrder = source.order + 1
+
+  // Shift all sibling columns with order >= newOrder down by 1 to make room
+  await prisma.column.updateMany({
+    where: {
+      tableId: source.tableId,
+      order: { gte: newOrder },
+    },
+    data: { order: { increment: 1 } },
+  })
+
+  // Build a unique name (try _copy, then _copy2, _copy3, …)
+  const baseName = `${source.name}_copy`
+  let candidateName = baseName
+  let suffix = 2
+
+  while (true) {
+    const conflict = await prisma.column.findUnique({
+      where: { tableId_name: { tableId: source.tableId, name: candidateName } },
+    })
+    if (!conflict) break
+    candidateName = `${baseName}${suffix}`
+    suffix++
+  }
+
+  const newColumn = await prisma.column.create({
+    data: {
+      tableId: source.tableId,
+      name: candidateName,
+      dataType: source.dataType,
+      isPrimaryKey: false,
+      isForeignKey: false,
+      isUnique: source.isUnique,
+      isNullable: source.isNullable,
+      description: source.description,
+      order: newOrder,
+    },
+  })
+
+  return newColumn
+}
+
+/**
  * Find foreign key columns in a table
  * @param tableId - Table UUID
  * @returns Array of foreign key columns
