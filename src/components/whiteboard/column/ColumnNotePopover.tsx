@@ -3,7 +3,7 @@
  * Auto-saves via debounced callback through the existing column update pipeline.
  */
 
-import { useState, useCallback, useEffect } from 'react'
+import { useCallback, useEffect, useState } from 'react'
 import { useDebouncedCallback } from 'use-debounce'
 import { StickyNote } from 'lucide-react'
 import {

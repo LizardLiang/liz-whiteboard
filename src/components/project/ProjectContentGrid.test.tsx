@@ -9,14 +9,16 @@ import {
   createMemoryHistory,
   createRouter,
 } from '@tanstack/react-router'
+import { QueryClient } from '@tanstack/react-query'
 import { ProjectContentGrid } from './ProjectContentGrid'
 import type { ReactNode } from 'react'
 import { routeTree } from '@/routeTree.gen'
-import { QueryClient } from '@tanstack/react-query'
 
 function createTestRouter() {
   const history = createMemoryHistory({ initialEntries: ['/'] })
-  const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } })
+  const queryClient = new QueryClient({
+    defaultOptions: { queries: { retry: false } },
+  })
   return createRouter({ routeTree, history, context: { queryClient } })
 }
 

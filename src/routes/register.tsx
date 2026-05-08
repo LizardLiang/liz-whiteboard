@@ -1,13 +1,13 @@
 // src/routes/register.tsx
 // Registration page — public route (no auth required)
 
-import { createFileRoute, Link, useRouter } from '@tanstack/react-router'
+import { Link, createFileRoute, useRouter } from '@tanstack/react-router'
 import { useState } from 'react'
+import { registerUser } from './api/auth'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { registerInputSchema } from '@/data/schema'
-import { registerUser } from './api/auth'
 
 export const Route = createFileRoute('/register')({
   component: RegisterPage,
@@ -66,7 +66,9 @@ function RegisterPage() {
         router.navigate({ to: response.redirect || '/' })
       } else {
         // Duplicate email (anti-enumeration): show success message, redirect to login
-        setSuccessMessage(response.message || 'Registration successful. Please log in.')
+        setSuccessMessage(
+          response.message || 'Registration successful. Please log in.',
+        )
         setTimeout(() => {
           router.navigate({ to: '/login' })
         }, 2000)
@@ -84,7 +86,9 @@ function RegisterPage() {
         <div className="w-full max-w-sm text-center">
           <div className="mb-4 rounded-md bg-green-50 border border-green-200 px-4 py-6 text-sm text-green-800 dark:bg-green-950 dark:border-green-800 dark:text-green-200">
             <p className="font-medium">{successMessage}</p>
-            <p className="mt-1 text-xs text-muted-foreground">Redirecting to login...</p>
+            <p className="mt-1 text-xs text-muted-foreground">
+              Redirecting to login...
+            </p>
           </div>
         </div>
       </div>
@@ -221,7 +225,10 @@ function RegisterPage() {
         {/* Login link */}
         <p className="mt-6 text-center text-sm text-muted-foreground">
           Already have an account?{' '}
-          <Link to="/login" className="font-medium underline underline-offset-4">
+          <Link
+            to="/login"
+            className="font-medium underline underline-offset-4"
+          >
             Log in
           </Link>
         </p>

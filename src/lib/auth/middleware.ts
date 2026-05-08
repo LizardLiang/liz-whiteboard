@@ -3,7 +3,7 @@
 // NOTE: This module imports @tanstack/react-start/server — it is SERVER-ONLY.
 // Client code should import type guards from '@/lib/auth/errors' instead.
 
-import type { AuthUser, AuthSession } from './session'
+import type { AuthSession, AuthUser } from './session'
 
 // Re-export error types/guards for server-side consumers
 export type { AuthErrorResponse, ForbiddenResponse } from './errors'
@@ -43,10 +43,6 @@ export function requireAuth<TInput, TResult>(
     if (!authResult) {
       return { error: 'UNAUTHORIZED', status: 401 } as AuthErrorResponse
     }
-    return handler(
-      { user: authResult.user, session: authResult.session },
-      data,
-    )
+    return handler({ user: authResult.user, session: authResult.session }, data)
   }
 }
-

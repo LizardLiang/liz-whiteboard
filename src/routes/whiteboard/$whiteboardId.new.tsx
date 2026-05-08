@@ -321,27 +321,24 @@ function WhiteboardEditor() {
    * Handle a new connection drag from a column handle.
    * Parses the handle IDs and opens the cardinality picker dialog.
    */
-  const onConnect = useCallback(
-    (connection: Connection) => {
-      const { source, target, sourceHandle, targetHandle } = connection
+  const onConnect = useCallback((connection: Connection) => {
+    const { source, target, sourceHandle, targetHandle } = connection
 
-      if (!source || !target || !sourceHandle || !targetHandle) return
+    if (!source || !target || !sourceHandle || !targetHandle) return
 
-      const parsedSource = parseColumnHandleId(sourceHandle)
-      const parsedTarget = parseColumnHandleId(targetHandle)
+    const parsedSource = parseColumnHandleId(sourceHandle)
+    const parsedTarget = parseColumnHandleId(targetHandle)
 
-      if (!parsedSource || !parsedTarget) return
+    if (!parsedSource || !parsedTarget) return
 
-      setPendingConnection({
-        sourceTableId: parsedSource.tableId,
-        sourceColumnId: parsedSource.columnId,
-        targetTableId: parsedTarget.tableId,
-        targetColumnId: parsedTarget.columnId,
-      })
-      setSelectedCardinality('ONE_TO_MANY')
-    },
-    [],
-  )
+    setPendingConnection({
+      sourceTableId: parsedSource.tableId,
+      sourceColumnId: parsedSource.columnId,
+      targetTableId: parsedTarget.tableId,
+      targetColumnId: parsedTarget.columnId,
+    })
+    setSelectedCardinality('ONE_TO_MANY')
+  }, [])
 
   /**
    * Confirm cardinality selection and create the relationship.

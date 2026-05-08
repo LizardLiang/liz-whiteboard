@@ -67,7 +67,11 @@ export const getProject = createServerFn({ method: 'GET' })
     requireAuth(async ({ user }, projectId) => {
       const role = await findEffectiveRole(user.id, projectId)
       if (!hasMinimumRole(role, 'VIEWER')) {
-        return { error: 'FORBIDDEN', status: 403, message: 'Access denied' } as const
+        return {
+          error: 'FORBIDDEN',
+          status: 403,
+          message: 'Access denied',
+        } as const
       }
       try {
         const project = await findProjectById(projectId)
@@ -119,7 +123,11 @@ export const updateProjectFn = createServerFn({ method: 'POST' })
       // Requires ADMIN+ role to update project settings
       const role = await findEffectiveRole(user.id, params.id)
       if (!hasMinimumRole(role, 'ADMIN')) {
-        return { error: 'FORBIDDEN', status: 403, message: 'Access denied' } as const
+        return {
+          error: 'FORBIDDEN',
+          status: 403,
+          message: 'Access denied',
+        } as const
       }
       try {
         const project = await updateProject(params.id, params.data)
@@ -149,9 +157,16 @@ export const getProjectPageContent = createServerFn({ method: 'GET' })
     requireAuth(async ({ user }, data) => {
       const role = await findEffectiveRole(user.id, data.projectId)
       if (!hasMinimumRole(role, 'VIEWER')) {
-        return { error: 'FORBIDDEN', status: 403, message: 'Access denied' } as const
+        return {
+          error: 'FORBIDDEN',
+          status: 403,
+          message: 'Access denied',
+        } as const
       }
-      const content = await findProjectPageContent(data.projectId, data.folderId)
+      const content = await findProjectPageContent(
+        data.projectId,
+        data.folderId,
+      )
       if (!content) {
         throw new Error('Project not found')
       }
@@ -175,7 +190,11 @@ export const deleteProjectFn = createServerFn({ method: 'POST' })
       // Only OWNER can delete a project
       const role = await findEffectiveRole(user.id, projectId)
       if (!hasMinimumRole(role, 'OWNER')) {
-        return { error: 'FORBIDDEN', status: 403, message: 'Access denied' } as const
+        return {
+          error: 'FORBIDDEN',
+          status: 403,
+          message: 'Access denied',
+        } as const
       }
       try {
         const project = await deleteProject(projectId)

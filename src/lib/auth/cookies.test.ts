@@ -3,8 +3,8 @@
 
 import { describe, expect, it } from 'vitest'
 import {
-  buildSetCookieHeader,
   buildClearCookieHeader,
+  buildSetCookieHeader,
   parseSessionCookie,
 } from './cookies'
 

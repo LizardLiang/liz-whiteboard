@@ -1,23 +1,28 @@
-import { defineConfig, isRunnableDevEnvironment } from 'vite'
+import { defineConfig } from 'vite'
 import { tanstackStart } from '@tanstack/react-start/plugin/vite'
 import { nitro } from 'nitro/vite'
 import viteReact from '@vitejs/plugin-react'
 import viteTsConfigPaths from 'vite-tsconfig-paths'
 import tailwindcss from '@tailwindcss/vite'
+import * as esbuild from 'esbuild'
+import { mkdirSync } from 'node:fs'
+import { join } from 'node:path'
+import { pathToFileURL } from 'node:url'
 import type { Plugin } from 'vite'
 
 /**
  * Vite plugin that attaches Socket.IO to the dev server's HTTP server.
  *
- * TanStack Start uses Vite's environment API. The underlying Node.js HTTP
- * server is exposed as `viteDevServer.httpServer`. We import the
- * collaboration module through the SSR environment runner (same pattern
- * used by TanStack Start's own dev-server plugin) so Prisma and other
- * server-only imports resolve correctly.
+ * Nitro (used by TanStack Start) runs server code in a Node.js Worker thread
+ * via the `node-worker` env-runner, so the Worker's module scope is isolated
+ * from the main thread. The Vite `ssr` environment no longer exists (replaced
+ * by Nitro's `FetchableDevEnvironment`), and globalThis is not shared across
+ * thread boundaries.
  *
- * The returned function from `configureServer` is the "post-middleware"
- * hook — it runs AFTER all other plugins' middleware is registered, which
- * ensures the HTTP server is fully configured before Socket.IO attaches.
+ * The only clean way to call `initializeSocketIO(httpServer)` from the main
+ * thread is to bundle `collaboration.ts` with esbuild (which resolves `@/`
+ * tsconfig path aliases) and import the resulting plain-ESM bundle directly.
+ * npm packages are kept external so the installed versions are used at runtime.
  */
 function socketIOPlugin(): Plugin {
   return {
@@ -33,28 +38,31 @@ function socketIOPlugin(): Plugin {
           return
         }
 
-        // Find the SSR server environment so we can import server-side modules
-        // through the module runner (honours path aliases and server-only deps).
-        // TanStack Start 1.132 names this environment "ssr" (not "server") for
-        // backwards compatibility with plugins that don't understand the new
-        // Vite Environment API.
-        const serverEnvName = 'ssr'
-        const serverEnv = viteDevServer.environments[serverEnvName]
-
-        if (!serverEnv || !isRunnableDevEnvironment(serverEnv)) {
-          console.warn(
-            '[socket-io] Server environment not found or not runnable. Socket.IO not initialized.',
-          )
-          return
-        }
+        const root = process.cwd()
+        const outDir = join(root, 'node_modules', '.cache', 'socket-io-dev')
+        const outFile = join(outDir, 'collaboration.mjs')
 
         try {
-          // Import the collaboration module in the SSR context.
-          // The path must be absolute so the module runner can resolve it.
-          const collaborationModule = (await serverEnv.runner.import(
-            '/src/routes/api/collaboration.ts',
-          ))
+          mkdirSync(outDir, { recursive: true })
 
+          // Bundle collaboration.ts so @/ path aliases are resolved at build time.
+          // npm packages stay external — Node.js will resolve them from node_modules.
+          await esbuild.build({
+            entryPoints: [join(root, 'src/routes/api/collaboration.ts')],
+            outfile: outFile,
+            bundle: true,
+            format: 'esm',
+            platform: 'node',
+            target: 'node20',
+            packages: 'external',
+            tsconfig: join(root, 'tsconfig.json'),
+            logLevel: 'silent',
+          })
+
+          // Cache-bust the import so restarting the dev server picks up changes.
+          const collaborationModule = await import(
+            `${pathToFileURL(outFile).href}?t=${Date.now()}`
+          )
           collaborationModule.initializeSocketIO(httpServer)
           console.log('[socket-io] Socket.IO attached to dev HTTP server.')
         } catch (err) {

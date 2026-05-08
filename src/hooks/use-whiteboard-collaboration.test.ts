@@ -6,6 +6,18 @@ import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { act, renderHook } from '@testing-library/react'
 import { useWhiteboardCollaboration } from './use-whiteboard-collaboration'
 
+vi.mock('@tanstack/react-router', () => ({
+  useRouter: () => ({ navigate: vi.fn() }),
+}))
+
+vi.mock('@/components/auth/AuthContext', () => ({
+  useAuthContext: () => ({
+    sessionExpired: false,
+    triggerSessionExpired: vi.fn(),
+    dismissSessionExpired: vi.fn(),
+  }),
+}))
+
 // Mock useCollaboration so we control on/off/emit
 const mockOn = vi.fn()
 const mockOff = vi.fn()

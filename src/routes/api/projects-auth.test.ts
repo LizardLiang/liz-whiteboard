@@ -7,6 +7,10 @@
 
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 
+import { createProject, deleteProject, findProjectById } from '@/data/project'
+import { findEffectiveRole } from '@/data/permission'
+import { hasMinimumRole } from '@/lib/auth/permissions'
+
 vi.mock('@tanstack/react-start/server', () => ({
   getRequest: vi.fn(() => new Request('http://localhost/')),
   setResponseHeader: vi.fn(),
@@ -42,10 +46,6 @@ vi.mock('@/lib/auth/permissions', () => ({
   hasMinimumRole: vi.fn(),
 }))
 
-import { createProject, findProjectById, deleteProject } from '@/data/project'
-import { findEffectiveRole } from '@/data/permission'
-import { hasMinimumRole } from '@/lib/auth/permissions'
-
 // ─────────────────────────────────────────────────────────────────────────────
 // Fixtures
 // ─────────────────────────────────────────────────────────────────────────────
@@ -66,7 +66,10 @@ const mockProject = {
 // Handler mirrors (same pattern as permissions.test.ts)
 // ─────────────────────────────────────────────────────────────────────────────
 
-async function createProjectHandler(userId: string, data: { name: string; description?: string }) {
+async function createProjectHandler(
+  userId: string,
+  data: { name: string; description?: string },
+) {
   const project = await createProject({ ...data, ownerId: userId })
   return project
 }
@@ -106,7 +109,12 @@ beforeEach(() => {
   vi.clearAllMocks()
   // Default: hasMinimumRole delegates to real logic
   vi.mocked(hasMinimumRole).mockImplementation((role, required) => {
-    const HIERARCHY: Record<string, number> = { VIEWER: 1, EDITOR: 2, ADMIN: 3, OWNER: 4 }
+    const HIERARCHY: Record<string, number> = {
+      VIEWER: 1,
+      EDITOR: 2,
+      ADMIN: 3,
+      OWNER: 4,
+    }
     if (!role) return false
     return (HIERARCHY[role] ?? 0) >= (HIERARCHY[required] ?? 0)
   })
@@ -123,7 +131,7 @@ describe('TC-P4-01: createProject sets ownerId', () => {
     await createProjectHandler(USER_ID, { name: 'My Project' })
 
     expect(createProject).toHaveBeenCalledWith(
-      expect.objectContaining({ ownerId: USER_ID })
+      expect.objectContaining({ ownerId: USER_ID }),
     )
   })
 
