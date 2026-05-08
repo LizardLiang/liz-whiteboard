@@ -13,7 +13,7 @@
     "format": "prettier",
     "check": "prettier --write . && eslint --fix",
     "post-cta-init": "npx create-db@latest",
-    "db:generate": "dotenv -e .env.local -- prisma generate",
+    "db:generate": "dotenv -e .env.local -- prisma generate --no-engine",
     "db:push": "dotenv -e .env.local -- prisma db push",
     "db:migrate": "dotenv -e .env.local -- prisma migrate dev",
     "db:studio": "dotenv -e .env.local -- prisma studio",

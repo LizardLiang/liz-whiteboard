@@ -41,6 +41,7 @@ export interface ColumnRowProps {
     value: boolean,
   ) => void
   onDelete: (column: Column) => void
+  onDuplicate?: (column: Column) => void
   onDescriptionUpdate: (columnId: string, description: string) => void
   edges: Array<RelationshipEdgeType>
   showMode?: ShowMode
@@ -61,6 +62,7 @@ export const ColumnRow = memo(
     onCancelEdit,
     onToggleConstraint,
     onDelete,
+    onDuplicate,
     onDescriptionUpdate,
     edges: _edges,
     showMode = 'ALL_FIELDS',
@@ -110,6 +112,14 @@ export const ColumnRow = memo(
         onDelete(column)
       },
       [column, onDelete],
+    )
+
+    const handleDuplicateClick = useCallback(
+      (e: React.MouseEvent) => {
+        e.stopPropagation()
+        onDuplicate?.(column)
+      },
+      [column, onDuplicate],
     )
 
     return (
@@ -265,6 +275,39 @@ export const ColumnRow = memo(
             onSave={(desc) => onDescriptionUpdate(column.id, desc)}
           />
 
+          {/* Duplicate button — hover visible */}
+          <Tooltip>
+            <TooltipTrigger asChild>
+              <button
+                type="button"
+                aria-label={`Duplicate column ${column.name}`}
+                onClick={handleDuplicateClick}
+                className="nodrag nowheel"
+                style={{
+                  opacity: 0,
+                  flexShrink: 0,
+                  background: 'none',
+                  border: 'none',
+                  cursor: 'pointer',
+                  padding: '2px',
+                  color: 'var(--rf-table-text)',
+                  transition: 'opacity 0.1s',
+                  fontSize: '11px',
+                  lineHeight: 1,
+                }}
+                onMouseEnter={(e) => {
+                  ;(e.currentTarget as HTMLButtonElement).style.opacity = '1'
+                }}
+                onMouseLeave={(e) => {
+                  ;(e.currentTarget as HTMLButtonElement).style.opacity = '0'
+                }}
+              >
+                ⧉
+              </button>
+            </TooltipTrigger>
+            <TooltipContent side="top">Duplicate field</TooltipContent>
+          </Tooltip>
+
           {/* Delete button — hover visible */}
           <button
             type="button"
@@ -322,6 +365,7 @@ export const ColumnRow = memo(
     if (prev.onCancelEdit !== next.onCancelEdit) return false
     if (prev.onToggleConstraint !== next.onToggleConstraint) return false
     if (prev.onDelete !== next.onDelete) return false
+    if (prev.onDuplicate !== next.onDuplicate) return false
     if (prev.onDescriptionUpdate !== next.onDescriptionUpdate) return false
     if (prev.showMode !== next.showMode) return false
 

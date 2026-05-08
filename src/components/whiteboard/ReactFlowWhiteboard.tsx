@@ -286,6 +286,7 @@ function ReactFlowWhiteboardInner({
               onColumnCreate: handleColumnCreateRef.current,
               onColumnUpdate: handleColumnUpdateRef.current,
               onColumnDelete: handleColumnDeleteRef.current,
+              onColumnDuplicate: handleColumnDuplicateRef.current,
               onRequestTableDelete: handleRequestTableDeleteRef.current,
               edges: edgesRef.current,
               tableNameById,
@@ -325,6 +326,7 @@ function ReactFlowWhiteboardInner({
             onColumnCreate: prev.data.onColumnCreate,
             onColumnUpdate: prev.data.onColumnUpdate,
             onColumnDelete: prev.data.onColumnDelete,
+            onColumnDuplicate: prev.data.onColumnDuplicate,
             onRequestTableDelete: prev.data.onRequestTableDelete,
             tableNameById,
           },
@@ -550,6 +552,9 @@ function ReactFlowWhiteboardInner({
     (tableId: string, tempId: string, realId: string) => void
   >(() => {})
 
+  // Ref for onRemoteColumnDuplicated — avoids circular dep with columnMutations
+  const onRemoteColumnDuplicatedRef = useRef<(data: any) => void>(() => {})
+
   // On WebSocket reconnect, re-fetch whiteboard data to replace any stale
   // optimistic state that was never confirmed before the disconnect.
   // MEDIUM-01: flag set to true on reconnect so the initialNodes effect knows
@@ -604,6 +609,37 @@ function ReactFlowWhiteboardInner({
           replaceTempIdRef.current(column.tableId, tempId, column.id)
         }
       },
+      onColumnDuplicated: (data: any) => {
+        // Remote user duplicated a column — insert it into local state
+        onRemoteColumnDuplicatedRef.current(data)
+      },
+      onOwnColumnDuplicated: (data: any) => {
+        // Server confirmed our own column:duplicate — replace the optimistic temp ID
+        // with the real database ID. The optimistic column has name `<original>_copy`
+        // and order = sourceColumn.order + 1; match by tableId + order + prefix.
+        const column = data.column
+        let tempId: string | undefined
+        setNodes((prevNodes) => {
+          const tableNode = prevNodes.find(
+            (n) => n.data.table.id === column.tableId,
+          )
+          if (tableNode) {
+            const match = tableNode.data.table.columns.find(
+              (c) =>
+                c.order === column.order &&
+                c.id !== column.id &&
+                c.name.endsWith('_copy'),
+            )
+            if (match) {
+              tempId = match.id
+            }
+          }
+          return prevNodes // no state change yet — just reading
+        })
+        if (tempId) {
+          replaceTempIdRef.current(column.tableId, tempId, column.id)
+        }
+      },
       onReconnect: () => {
         onReconnectRef.current()
       },
@@ -615,6 +651,7 @@ function ReactFlowWhiteboardInner({
     emitColumnCreate,
     emitColumnUpdate,
     emitColumnDelete,
+    emitColumnDuplicate,
     isConnected,
     connectionState: _columnConnectionState,
   } = useColumnCollaboration(whiteboardId, userId, columnMutationsCallbacks)
@@ -626,6 +663,7 @@ function ReactFlowWhiteboardInner({
     emitColumnUpdate,
     emitColumnDelete,
     isConnected,
+    emitColumnDuplicate,
   )
 
   // Wire onColumnError ref now that columnMutations is available
@@ -637,6 +675,12 @@ function ReactFlowWhiteboardInner({
   useEffect(() => {
     replaceTempIdRef.current = columnMutations.replaceTempId
   }, [columnMutations.replaceTempId])
+
+  // Wire onRemoteColumnDuplicated ref now that columnMutations is available
+  useEffect(() => {
+    onRemoteColumnDuplicatedRef.current =
+      columnMutations.onRemoteColumnDuplicated
+  }, [columnMutations.onRemoteColumnDuplicated])
 
   // Table mutations hook (optimistic delete + rollback)
   const tableMutations = useTableMutations(
@@ -779,6 +823,13 @@ function ReactFlowWhiteboardInner({
     [columnMutations],
   )
 
+  const handleColumnDuplicate = useCallback(
+    (column: Column) => {
+      columnMutations.duplicateColumn(column)
+    },
+    [columnMutations],
+  )
+
   // Callback to request table deletion (opens dialog)
   const handleRequestTableDelete = useCallback((tableId: string) => {
     setDeletingTableId(tableId)
@@ -876,6 +927,7 @@ function ReactFlowWhiteboardInner({
   const handleColumnCreateRef = useRef(handleColumnCreate)
   const handleColumnUpdateRef = useRef(handleColumnUpdate)
   const handleColumnDeleteRef = useRef(handleColumnDelete)
+  const handleColumnDuplicateRef = useRef(handleColumnDuplicate)
   const handleRequestTableDeleteRef = useRef(handleRequestTableDelete)
   const handleColumnReorderRef = useRef(handleColumnReorder)
   const emitColumnReorderRef = useRef(emitColumnReorder)
@@ -889,6 +941,9 @@ function ReactFlowWhiteboardInner({
   useEffect(() => {
     handleColumnDeleteRef.current = handleColumnDelete
   }, [handleColumnDelete])
+  useEffect(() => {
+    handleColumnDuplicateRef.current = handleColumnDuplicate
+  }, [handleColumnDuplicate])
   useEffect(() => {
     handleRequestTableDeleteRef.current = handleRequestTableDelete
   }, [handleRequestTableDelete])
@@ -912,6 +967,7 @@ function ReactFlowWhiteboardInner({
           onColumnCreate: handleColumnCreateRef.current,
           onColumnUpdate: handleColumnUpdateRef.current,
           onColumnDelete: handleColumnDeleteRef.current,
+          onColumnDuplicate: handleColumnDuplicateRef.current,
           onRequestTableDelete: handleRequestTableDeleteRef.current,
           onColumnReorder: (params: import('@/hooks/use-column-reorder-mutations').ReconcileAfterDropParams) =>
             handleColumnReorderRef.current(params),
@@ -943,6 +999,7 @@ function ReactFlowWhiteboardInner({
           onColumnCreate: handleColumnCreateRef.current,
           onColumnUpdate: handleColumnUpdateRef.current,
           onColumnDelete: handleColumnDeleteRef.current,
+          onColumnDuplicate: handleColumnDuplicateRef.current,
           onRequestTableDelete: handleRequestTableDeleteRef.current,
           onColumnReorder: (params: import('@/hooks/use-column-reorder-mutations').ReconcileAfterDropParams) =>
             handleColumnReorderRef.current(params),
