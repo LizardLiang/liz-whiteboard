@@ -6,7 +6,7 @@
 // would prevent cookies from being sent over HTTP.
 
 import { validateSessionToken } from './session'
-import type { AuthUser, AuthSession } from './session'
+import type { AuthSession, AuthUser } from './session'
 
 const COOKIE_NAME = 'session_token'
 

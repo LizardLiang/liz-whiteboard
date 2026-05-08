@@ -1,13 +1,13 @@
 # Implementation Notes: Account Authentication
 
-| Field | Value |
-|-------|-------|
-| **Feature** | Account Authentication |
-| **Agent** | Ares (Implementation Agent) |
-| **Status** | Complete |
-| **Started** | 2026-04-03 |
+| Field         | Value                                 |
+| ------------- | ------------------------------------- |
+| **Feature**   | Account Authentication                |
+| **Agent**     | Ares (Implementation Agent)           |
+| **Status**    | Complete                              |
+| **Started**   | 2026-04-03                            |
 | **Tech Spec** | tech-spec.md (Hephaestus, 2026-04-03) |
-| **Test Plan** | test-plan.md (Artemis, 2026-04-03) |
+| **Test Plan** | test-plan.md (Artemis, 2026-04-03)    |
 
 ---
 
@@ -20,6 +20,7 @@ Implementing a complete self-hosted authentication system across 5 phases: datab
 ## Progress
 
 ### Phase 1: Database Layer
+
 - [x] 1.1 Updated `prisma/schema.prisma` — added User, Session, ProjectMember, ProjectRole enum; modified Project (ownerId), CollaborationSession (userId FK)
 - [x] 1.2 Added Zod schemas to `src/data/schema.ts` — registerInputSchema, loginInputSchema, projectRoleSchema, permission schemas
 - [x] 1.3 Generated Prisma migration
@@ -29,6 +30,7 @@ Implementing a complete self-hosted authentication system across 5 phases: datab
 - [x] 1.7 Lockout functions moved to rate-limit.ts in Phase 2 (fields are on User model per tech spec)
 
 ### Phase 2: Auth Core
+
 - [x] 2.1 Created `src/lib/auth/password.ts` — hashPassword, verifyPassword (bcryptjs + SHA-256 pre-hash)
 - [x] 2.2 Created `src/lib/auth/session.ts` — generateSessionToken, hashToken, createUserSession, validateSessionToken, invalidateSession, deleteExpiredSessions
 - [x] 2.3 Created `src/lib/auth/cookies.ts` — parseSessionCookie, getSessionFromCookie, buildSetCookieHeader, buildClearCookieHeader
@@ -36,6 +38,7 @@ Implementing a complete self-hosted authentication system across 5 phases: datab
 - [x] 2.5 Created `src/lib/auth/first-user-migration.ts` — migrateDataToFirstUser
 
 ### Phase 3: Auth Routes, Middleware, UI
+
 - [x] 3.1 Created `src/lib/auth/middleware.ts` — requireAuth wrapper
 - [x] 3.2-3.5 Created `src/routes/api/auth.ts` — registerUser, loginUser, logoutUser, getCurrentUser
 - [x] 3.6 Applied requireAuth to all existing server function files
@@ -48,6 +51,7 @@ Implementing a complete self-hosted authentication system across 5 phases: datab
 - [x] 3.13 Updated `src/integrations/tanstack-query/root-provider.tsx` — global 401 interception
 
 ### Phase 4: Project-Level Permissions
+
 - [x] 4.1 Implemented findEffectiveRole in `src/data/permission.ts`
 - [x] 4.2-4.3 Updated `src/data/project.ts` — userId filtering
 - [x] 4.4 Updated `src/routes/api/projects.ts` — permission gates
@@ -58,6 +62,7 @@ Implementing a complete self-hosted authentication system across 5 phases: datab
 - [x] 4.9 Created `src/lib/auth/permissions.ts` — hasMinimumRole helper
 
 ### Phase 5: WebSocket Authentication
+
 - [x] 5.1 Updated `src/routes/api/collaboration.ts` — io.use() handshake middleware
 - [x] 5.2 Updated collaboration event handlers to use socket.data.userId
 - [x] 5.3 Added session expiry check on active connections
@@ -98,6 +103,7 @@ The new auth tables (User, Session, ProjectMember, ProjectRole enum, Project.own
 5. Run `bun run db:generate` to regenerate the Prisma client
 
 Alternatively, run the migration script directly with a direct Postgres connection:
+
 ```
 DATABASE_URL="postgres://..." bun scripts/apply-auth-schema.ts
 ```
@@ -160,12 +166,14 @@ Until this migration is applied, the app will fail at runtime when auth function
 ## Tests Written
 
 Phase 1 (Data Layer):
+
 - `src/data/schema.test.ts` — added registerInputSchema, loginInputSchema, projectRoleSchema tests (TC-P1-01 through TC-P1-04) — 16 new test cases
 - `src/data/user.test.ts` — createUser, findUserByEmail, findUserById (TC-P1-05) — 5 test cases
 - `src/data/session.test.ts` — createAuthSession, findAuthSessionByTokenHash, deleteAuthSession, deleteExpiredAuthSessions (TC-P1-06) — 6 test cases
 - `src/data/permission.test.ts` — findEffectiveRole (TC-P1-07) — 4 test cases
 
 Phase 2 (Auth Core):
+
 - `src/lib/auth/password.test.ts` — hashPassword, verifyPassword, SHA-256 pre-hash (TC-P2-01 through TC-P2-03) — 9 test cases
 - `src/lib/auth/session.test.ts` — generateSessionToken, hashToken, createUserSession, validateSessionToken (TC-P2-04 through TC-P2-08) — 11 test cases
 - `src/lib/auth/cookies.test.ts` — buildSetCookieHeader, parseSessionCookie, buildClearCookieHeader (TC-P2-11 through TC-P2-13) — 14 test cases
@@ -173,9 +181,11 @@ Phase 2 (Auth Core):
 - `src/lib/auth/first-user-migration.test.ts` — migrateDataToFirstUser (TC-P2-09 through TC-P2-10) — 3 test cases
 
 Phase 3 (Middleware):
+
 - `src/lib/auth/middleware.test.ts` — requireAuth, isUnauthorizedError, isForbiddenError (TC-P3-01 through TC-P3-02) — 9 test cases
 
 Phase 3 (Auth server functions — added in test coverage pass):
+
 - `src/routes/api/auth.test.ts` — registerUser, loginUser, logoutUser server function logic (TC-P3-03 through TC-P3-12, TC-P3-24) — 13 test cases
   - Pattern: extracts core handler logic (minus createServerFn plumbing) and tests directly with mocked deps
 - `src/routes/register.test.tsx` — RegisterPage component (TC-P3-13, TC-P3-14, TC-P3-25) — 12 test cases
@@ -186,11 +196,13 @@ Phase 3 (Auth server functions — added in test coverage pass):
 - `src/components/auth/SessionExpiredModal.test.tsx` — SessionExpiredModal (TC-P3-18) + AuthContext integration — 12 test cases
 
 Phase 4 (Permission enforcement — added in test coverage pass):
+
 - `src/routes/api/permissions.test.ts` — grantPermission, updatePermission, revokePermission, listProjectPermissions (TC-P4-07 through TC-P4-10) — 17 test cases
 - `src/routes/api/projects-auth.test.ts` — createProject ownerId, getProjectById 403, deleteProject role enforcement, permission revocation (TC-P4-01, TC-P4-03, TC-P4-06, TC-P4-11) — 11 test cases
 - `src/routes/api/whiteboards.test.ts` — whiteboard read/write permission gates (TC-P4-04, TC-P4-05) — 10 test cases
 
 Phase 5 (WebSocket auth — added in test coverage pass):
+
 - `src/server/socket.test.ts` — handshake middleware, session expiry, permission enforcement, CollaborationSession userId (TC-P5-01 through TC-P5-04, TC-P5-08) — 16 test cases
 - `src/hooks/use-whiteboard-collaboration-auth.test.ts` — permission_revoked event handler (TC-P5-06) — 4 test cases
 
@@ -205,7 +217,9 @@ Phase 5 (WebSocket auth — added in test coverage pass):
 After Hermes code review and Cassandra risk analysis, the following blockers were fixed:
 
 ### BLOCKER 1: Permission gates on HTTP server functions
+
 Added `findEffectiveRole` + `hasMinimumRole` authorization checks to every server function in:
+
 - `src/routes/api/projects.ts` — VIEWER+ for reads, ADMIN+ for updates, OWNER-only for delete; `getProjects`/`getProjectsWithTree` now filter by user membership
 - `src/routes/api/whiteboards.ts` — VIEWER+ for reads, EDITOR+ for writes/deletes; `getRecentWhiteboards` filtered to user-accessible projects
 - `src/routes/api/tables.ts` — VIEWER+ for reads, EDITOR+ for writes/deletes; project resolved via whiteboard
@@ -214,14 +228,18 @@ Added `findEffectiveRole` + `hasMinimumRole` authorization checks to every serve
 - `src/routes/api/folders.ts` — VIEWER+ for reads, EDITOR+ for writes/deletes; project resolved from folder
 
 Also added to `src/data/project.ts`:
+
 - `findAllProjectsForUser(userId)` — filtered by owner or ProjectMember
 - `findAllProjectsWithTreeForUser(userId)` — same filter with full tree
 
 ### BLOCKER 2: Duplicate username causes 500
+
 Added `findUserByUsername` check before user creation in `src/routes/api/auth.ts`. Returns field-level error `{ success: false, error: 'VALIDATION_ERROR', fields: { username: 'Username is already taken' } }` instead of letting Prisma throw a unique constraint violation.
 
 ### HIGH: WebSocket IDOR in collaboration handlers
+
 Added whiteboard ownership checks in `src/routes/api/collaboration.ts`:
+
 - `table:move` — fetches table, verifies `table.whiteboardId === whiteboardId` before updating position
 - `table:update` — same ownership check before applying update
 - `column:update` — fetches column, fetches parent table, verifies `table.whiteboardId === whiteboardId`
@@ -229,6 +247,7 @@ Added whiteboard ownership checks in `src/routes/api/collaboration.ts`:
 - `relationship:update` — fetches relationship, verifies `relationship.whiteboardId === whiteboardId`
 
 ### WARNING: Dead AuthAwareQueryProvider code
+
 Removed `AuthAwareQueryProvider`, `buildQueryClient`, and `check401` from `src/integrations/tanstack-query/root-provider.tsx`. Added inline documentation explaining that 401 interception relies on `beforeLoad` in `__root.tsx` and WebSocket `session_expired` events. Mutation-level 401 interception is not wired up due to architectural constraint (AuthContext is inside the route tree; QueryClient Provider wraps outside it).
 
 ---

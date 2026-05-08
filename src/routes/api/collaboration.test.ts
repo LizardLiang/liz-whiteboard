@@ -4,6 +4,10 @@
 
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 
+// We need to import after mocks are set up
+import { deleteRelationship, findRelationshipById } from '@/data/relationship'
+import { updateSessionActivity } from '@/data/collaboration'
+
 // Mock all data layer modules
 vi.mock('@/data/relationship', () => ({
   createRelationship: vi.fn(),
@@ -41,13 +45,6 @@ vi.mock('@/data/column', () => ({
 vi.mock('@/data/whiteboard', () => ({
   findWhiteboardByIdWithDiagram: vi.fn(),
 }))
-
-// We need to import after mocks are set up
-import {
-  deleteRelationship,
-  findRelationshipById,
-} from '@/data/relationship'
-import { updateSessionActivity } from '@/data/collaboration'
 
 // Import the module under test — we call setupCollaborationEventHandlers indirectly
 // by requiring the internal function. Since it's not exported, we test it by
@@ -124,8 +121,9 @@ describe('relationship:delete handler', () => {
     const { z } = await import('zod')
     const { findRelationshipById: findRel, deleteRelationship: deleteRel } =
       await import('@/data/relationship')
-    const { updateSessionActivity: updateActivity } =
-      await import('@/data/collaboration')
+    const { updateSessionActivity: updateActivity } = await import(
+      '@/data/collaboration'
+    )
 
     // Mirror the handler implementation from collaboration.ts
     socket.on(

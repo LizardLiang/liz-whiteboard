@@ -17,7 +17,10 @@ import { createTableSchema, updateTableSchema } from '@/data/schema'
 import { requireAuth } from '@/lib/auth/middleware'
 import { findEffectiveRole } from '@/data/permission'
 import { hasMinimumRole } from '@/lib/auth/permissions'
-import { getWhiteboardProjectId, getTableProjectId } from '@/data/resolve-project'
+import {
+  getTableProjectId,
+  getWhiteboardProjectId,
+} from '@/data/resolve-project'
 
 /**
  * Get all tables in a whiteboard
@@ -37,7 +40,11 @@ export const getTablesByWhiteboardId = createServerFn({ method: 'GET' })
       }
       const role = await findEffectiveRole(user.id, projectId)
       if (!hasMinimumRole(role, 'VIEWER')) {
-        return { error: 'FORBIDDEN', status: 403, message: 'Access denied' } as const
+        return {
+          error: 'FORBIDDEN',
+          status: 403,
+          message: 'Access denied',
+        } as const
       }
       try {
         const tables = await findDiagramTablesByWhiteboardId(whiteboardId)
@@ -70,7 +77,11 @@ export const getTablesByWhiteboardIdWithRelations = createServerFn({
       }
       const role = await findEffectiveRole(user.id, projectId)
       if (!hasMinimumRole(role, 'VIEWER')) {
-        return { error: 'FORBIDDEN', status: 403, message: 'Access denied' } as const
+        return {
+          error: 'FORBIDDEN',
+          status: 403,
+          message: 'Access denied',
+        } as const
       }
       try {
         const tables =
@@ -102,7 +113,11 @@ export const getTable = createServerFn({ method: 'GET' })
       }
       const role = await findEffectiveRole(user.id, projectId)
       if (!hasMinimumRole(role, 'VIEWER')) {
-        return { error: 'FORBIDDEN', status: 403, message: 'Access denied' } as const
+        return {
+          error: 'FORBIDDEN',
+          status: 403,
+          message: 'Access denied',
+        } as const
       }
       try {
         const table = await findDiagramTableById(tableId)
@@ -136,7 +151,11 @@ export const getTableWithRelations = createServerFn({ method: 'GET' })
       }
       const role = await findEffectiveRole(user.id, projectId)
       if (!hasMinimumRole(role, 'VIEWER')) {
-        return { error: 'FORBIDDEN', status: 403, message: 'Access denied' } as const
+        return {
+          error: 'FORBIDDEN',
+          status: 403,
+          message: 'Access denied',
+        } as const
       }
       try {
         const table = await findDiagramTableByIdWithRelations(tableId)
@@ -167,7 +186,11 @@ export const createTableFn = createServerFn({ method: 'POST' })
       }
       const role = await findEffectiveRole(user.id, projectId)
       if (!hasMinimumRole(role, 'EDITOR')) {
-        return { error: 'FORBIDDEN', status: 403, message: 'Access denied' } as const
+        return {
+          error: 'FORBIDDEN',
+          status: 403,
+          message: 'Access denied',
+        } as const
       }
       try {
         const table = await createDiagramTable(data)
@@ -201,7 +224,11 @@ export const updateTableFn = createServerFn({ method: 'POST' })
       }
       const role = await findEffectiveRole(user.id, projectId)
       if (!hasMinimumRole(role, 'EDITOR')) {
-        return { error: 'FORBIDDEN', status: 403, message: 'Access denied' } as const
+        return {
+          error: 'FORBIDDEN',
+          status: 403,
+          message: 'Access denied',
+        } as const
       }
       try {
         const table = await updateDiagramTable(params.id, params.data)
@@ -236,7 +263,11 @@ export const updateTablePositionFn = createServerFn({ method: 'POST' })
       }
       const role = await findEffectiveRole(user.id, projectId)
       if (!hasMinimumRole(role, 'EDITOR')) {
-        return { error: 'FORBIDDEN', status: 403, message: 'Access denied' } as const
+        return {
+          error: 'FORBIDDEN',
+          status: 403,
+          message: 'Access denied',
+        } as const
       }
       try {
         const table = await updateDiagramTablePosition(
@@ -272,7 +303,11 @@ export const deleteTableFn = createServerFn({ method: 'POST' })
       }
       const role = await findEffectiveRole(user.id, projectId)
       if (!hasMinimumRole(role, 'EDITOR')) {
-        return { error: 'FORBIDDEN', status: 403, message: 'Access denied' } as const
+        return {
+          error: 'FORBIDDEN',
+          status: 403,
+          message: 'Access denied',
+        } as const
       }
       try {
         const table = await deleteDiagramTable(tableId)

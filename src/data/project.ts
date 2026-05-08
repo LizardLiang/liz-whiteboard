@@ -40,14 +40,13 @@ export async function createProject(
  * @param userId - User UUID
  * @returns Array of projects the user owns or has membership in
  */
-export async function findAllProjectsForUser(userId: string): Promise<Array<Project>> {
+export async function findAllProjectsForUser(
+  userId: string,
+): Promise<Array<Project>> {
   try {
     const projects = await prisma.project.findMany({
       where: {
-        OR: [
-          { ownerId: userId },
-          { members: { some: { userId } } },
-        ],
+        OR: [{ ownerId: userId }, { members: { some: { userId } } }],
       },
       orderBy: { createdAt: 'desc' },
     })
@@ -64,9 +63,7 @@ export async function findAllProjectsForUser(userId: string): Promise<Array<Proj
  * @param userId - User UUID
  * @returns Array of projects with nested folders and whiteboards
  */
-export async function findAllProjectsWithTreeForUser(
-  userId: string,
-): Promise<
+export async function findAllProjectsWithTreeForUser(userId: string): Promise<
   Array<
     Project & {
       folders: Array<{
@@ -83,10 +80,7 @@ export async function findAllProjectsWithTreeForUser(
   try {
     const projects = await prisma.project.findMany({
       where: {
-        OR: [
-          { ownerId: userId },
-          { members: { some: { userId } } },
-        ],
+        OR: [{ ownerId: userId }, { members: { some: { userId } } }],
       },
       include: {
         folders: {

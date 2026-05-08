@@ -3,6 +3,9 @@
 
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 
+import { checkLockout, clearLockout, recordFailedLogin } from './rate-limit'
+import { prisma } from '@/db'
+
 vi.mock('@/db', () => ({
   prisma: {
     user: {
@@ -11,9 +14,6 @@ vi.mock('@/db', () => ({
     },
   },
 }))
-
-import { prisma } from '@/db'
-import { checkLockout, recordFailedLogin, clearLockout } from './rate-limit'
 
 describe('rate limiting', () => {
   beforeEach(() => {

@@ -3,6 +3,9 @@
 
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 
+import { findEffectiveRole } from './permission'
+import { prisma } from '@/db'
+
 vi.mock('@/db', () => ({
   prisma: {
     project: {
@@ -17,9 +20,6 @@ vi.mock('@/db', () => ({
     },
   },
 }))
-
-import { prisma } from '@/db'
-import { findEffectiveRole } from './permission'
 
 describe('permission data-access', () => {
   beforeEach(() => {

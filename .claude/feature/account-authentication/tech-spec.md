@@ -1,12 +1,12 @@
 # Technical Specification: Account Authentication
 
-| Field | Value |
-|-------|-------|
-| **Feature** | Account Authentication |
-| **Author** | Hephaestus (Tech Spec Agent) |
-| **Status** | Complete |
-| **Created** | 2026-04-03 |
-| **Based On** | prd.md v2 (Nemesis-approved) |
+| Field                | Value                           |
+| -------------------- | ------------------------------- |
+| **Feature**          | Account Authentication          |
+| **Author**           | Hephaestus (Tech Spec Agent)    |
+| **Status**           | Complete                        |
+| **Created**          | 2026-04-03                      |
+| **Based On**         | prd.md v2 (Nemesis-approved)    |
 | **Locked Decisions** | context.md (Themis, 2026-04-03) |
 
 ---
@@ -198,12 +198,17 @@ The migration uses `prisma migrate dev` with a custom SQL block for step 6. The 
 ```typescript
 // Auth schemas
 export const registerInputSchema = z.object({
-  username: z.string()
+  username: z
+    .string()
     .min(3, 'Username must be at least 3 characters')
     .max(50, 'Username must be at most 50 characters')
-    .regex(/^[a-zA-Z0-9_]+$/, 'Username must be alphanumeric with underscores only'),
+    .regex(
+      /^[a-zA-Z0-9_]+$/,
+      'Username must be alphanumeric with underscores only',
+    ),
   email: z.string().email('Invalid email address').max(255),
-  password: z.string()
+  password: z
+    .string()
     .min(8, 'Password must be at least 8 characters')
     .max(128, 'Password must be at most 128 characters'),
 })
@@ -244,6 +249,7 @@ export const revokePermissionSchema = z.object({
 All auth server functions use `createServerFn` from `@tanstack/react-start`.
 
 #### `registerUser`
+
 - **Method:** POST
 - **Input:** `registerInputSchema`
 - **Logic:**
@@ -256,6 +262,7 @@ All auth server functions use `createServerFn` from `@tanstack/react-start`.
 - **Response shape:** `{ success: boolean, message?: string, redirect: string }`
 
 #### `loginUser`
+
 - **Method:** POST
 - **Input:** `loginInputSchema`
 - **Logic:**
@@ -267,12 +274,14 @@ All auth server functions use `createServerFn` from `@tanstack/react-start`.
 - **Response shape:** `{ success: boolean, error?: string, message?: string, redirect?: string }`
 
 #### `logoutUser`
+
 - **Method:** POST
 - **Input:** None (session from cookie)
 - **Logic:** Delete Session from DB, clear cookie, return redirect to `/login`
 - **Requires auth:** Yes
 
 #### `getCurrentUser`
+
 - **Method:** GET
 - **Input:** None (session from cookie)
 - **Logic:** Validate session, return `{ user: { id, username, email } }` or `null`
@@ -283,23 +292,27 @@ All auth server functions use `createServerFn` from `@tanstack/react-start`.
 All require auth via `requireAuth` wrapper.
 
 #### `listProjectPermissions`
+
 - **Method:** GET
 - **Input:** `{ projectId: string }`
 - **Requires:** ADMIN or OWNER effective role on project
 - **Returns:** Array of `{ user: { id, username, email }, role: ProjectRole }` plus owner info
 
 #### `grantPermission`
+
 - **Method:** POST
 - **Input:** `grantPermissionSchema`
 - **Requires:** ADMIN or OWNER
 - **Logic:** Find user by email (return error if not found), create ProjectMember entry. If user already has a membership, update role instead.
 
 #### `updatePermission`
+
 - **Method:** POST
 - **Input:** `updatePermissionSchema`
 - **Requires:** ADMIN or OWNER. Additional rule: only OWNER can change an ADMIN's role.
 
 #### `revokePermission`
+
 - **Method:** POST
 - **Input:** `revokePermissionSchema`
 - **Requires:** ADMIN or OWNER. Rules: owner cannot be removed (ownership is on Project.ownerId, not in ProjectMember). Only OWNER can remove an ADMIN.
@@ -307,6 +320,7 @@ All require auth via `requireAuth` wrapper.
 ### 4.3 Existing Server Functions: Auth Wrapping
 
 Every server function in these files gets wrapped with `requireAuth`:
+
 - `src/routes/api/projects.ts`
 - `src/routes/api/whiteboards.ts`
 - `src/routes/api/tables.ts`
@@ -323,9 +337,16 @@ import { getWebRequest } from '@tanstack/react-start'
 import { getSessionFromCookie } from './cookies'
 
 export function requireAuth<TInput, TResult>(
-  handler: (ctx: { user: AuthUser; session: AuthSession }, input: TInput) => Promise<TResult>
+  handler: (
+    ctx: { user: AuthUser; session: AuthSession },
+    input: TInput,
+  ) => Promise<TResult>,
 ) {
-  return async ({ data }: { data: TInput }): Promise<TResult | AuthErrorResponse> => {
+  return async ({
+    data,
+  }: {
+    data: TInput
+  }): Promise<TResult | AuthErrorResponse> => {
     const request = getWebRequest()
     const authResult = await getSessionFromCookie(request)
     if (!authResult) {
@@ -344,7 +365,7 @@ export const getProjects = createServerFn({ method: 'GET' }).handler(
   async () => {
     const projects = await findAllProjects()
     return projects
-  }
+  },
 )
 
 // After
@@ -352,7 +373,7 @@ export const getProjects = createServerFn({ method: 'GET' }).handler(
   requireAuth(async ({ user }) => {
     const projects = await findAllProjectsForUser(user.id)
     return projects
-  })
+  }),
 )
 ```
 
@@ -360,12 +381,12 @@ export const getProjects = createServerFn({ method: 'GET' }).handler(
 
 All auth-related errors follow these structured shapes:
 
-| Status | Shape | When |
-|--------|-------|------|
-| 401 | `{ error: 'UNAUTHORIZED', status: 401 }` | Missing or expired session |
-| 403 | `{ error: 'FORBIDDEN', status: 403, message: string }` | Insufficient permission |
-| 400 | `{ error: 'VALIDATION_ERROR', status: 400, fields: Record<string, string> }` | Input validation failure |
-| 429 | `{ error: 'LOCKED', status: 429, message: string, unlocksAt: string }` | Account lockout |
+| Status | Shape                                                                        | When                       |
+| ------ | ---------------------------------------------------------------------------- | -------------------------- |
+| 401    | `{ error: 'UNAUTHORIZED', status: 401 }`                                     | Missing or expired session |
+| 403    | `{ error: 'FORBIDDEN', status: 403, message: string }`                       | Insufficient permission    |
+| 400    | `{ error: 'VALIDATION_ERROR', status: 400, fields: Record<string, string> }` | Input validation failure   |
+| 429    | `{ error: 'LOCKED', status: 429, message: string, unlocksAt: string }`       | Account lockout            |
 
 ---
 
@@ -388,7 +409,10 @@ export async function hashPassword(password: string): Promise<string> {
   return bcrypt.hash(sha256, BCRYPT_ROUNDS)
 }
 
-export async function verifyPassword(password: string, hash: string): Promise<boolean> {
+export async function verifyPassword(
+  password: string,
+  hash: string,
+): Promise<boolean> {
   const sha256 = createHash('sha256').update(password).digest('hex')
   return bcrypt.compare(sha256, hash)
 }
@@ -400,8 +424,8 @@ export async function verifyPassword(password: string, hash: string): Promise<bo
 import { randomBytes, createHash } from 'node:crypto'
 import { prisma } from '@/db'
 
-const SESSION_EXPIRY_DEFAULT = 24 * 60 * 60 * 1000  // 24 hours
-const SESSION_EXPIRY_REMEMBER = 30 * 24 * 60 * 60 * 1000  // 30 days
+const SESSION_EXPIRY_DEFAULT = 24 * 60 * 60 * 1000 // 24 hours
+const SESSION_EXPIRY_REMEMBER = 30 * 24 * 60 * 60 * 1000 // 30 days
 
 export function generateSessionToken(): string {
   return randomBytes(32).toString('hex')
@@ -415,19 +439,21 @@ export async function createUserSession(userId: string, rememberMe: boolean) {
   const token = generateSessionToken()
   const tokenHash = hashToken(token)
   const expiresAt = new Date(
-    Date.now() + (rememberMe ? SESSION_EXPIRY_REMEMBER : SESSION_EXPIRY_DEFAULT)
+    Date.now() +
+      (rememberMe ? SESSION_EXPIRY_REMEMBER : SESSION_EXPIRY_DEFAULT),
   )
 
   const session = await prisma.session.create({
     data: { tokenHash, userId, expiresAt },
   })
 
-  return { session, token }  // token goes to cookie, session.tokenHash stays in DB
+  return { session, token } // token goes to cookie, session.tokenHash stays in DB
 }
 
-export async function validateSessionToken(
-  token: string
-): Promise<{ user: AuthUser; session: { id: string; expiresAt: Date } } | null> {
+export async function validateSessionToken(token: string): Promise<{
+  user: AuthUser
+  session: { id: string; expiresAt: Date }
+} | null> {
   const tokenHash = hashToken(token)
   const session = await prisma.session.findUnique({
     where: { tokenHash },
@@ -470,8 +496,8 @@ export function parseSessionCookie(cookieHeader: string | null): string | null {
   if (!cookieHeader) return null
   const match = cookieHeader
     .split(';')
-    .map(c => c.trim())
-    .find(c => c.startsWith(`${COOKIE_NAME}=`))
+    .map((c) => c.trim())
+    .find((c) => c.startsWith(`${COOKIE_NAME}=`))
   return match ? match.split('=')[1] : null
 }
 
@@ -482,7 +508,10 @@ export async function getSessionFromCookie(request: Request) {
   return validateSessionToken(token)
 }
 
-export function buildSetCookieHeader(token: string, rememberMe: boolean): string {
+export function buildSetCookieHeader(
+  token: string,
+  rememberMe: boolean,
+): string {
   const maxAge = rememberMe ? 30 * 24 * 60 * 60 : 24 * 60 * 60
   return `${COOKIE_NAME}=${token}; HttpOnly; SameSite=Lax; Path=/; Max-Age=${maxAge}`
 }
@@ -500,14 +529,16 @@ Note: The `Secure` flag is intentionally absent. The developer accesses the app 
 import { prisma } from '@/db'
 
 const MAX_ATTEMPTS = 5
-const LOCKOUT_DURATION_MS = 15 * 60 * 1000  // 15 minutes
+const LOCKOUT_DURATION_MS = 15 * 60 * 1000 // 15 minutes
 
-export async function checkLockout(email: string): Promise<{ locked: boolean; unlocksAt?: Date }> {
+export async function checkLockout(
+  email: string,
+): Promise<{ locked: boolean; unlocksAt?: Date }> {
   const user = await prisma.user.findUnique({
     where: { email },
     select: { lockedUntil: true },
   })
-  if (!user) return { locked: false }  // Unknown user: no lockout (anti-enumeration)
+  if (!user) return { locked: false } // Unknown user: no lockout (anti-enumeration)
   if (user.lockedUntil && user.lockedUntil > new Date()) {
     return { locked: true, unlocksAt: user.lockedUntil }
   }
@@ -519,12 +550,13 @@ export async function recordFailedLogin(email: string): Promise<void> {
     where: { email },
     select: { id: true, failedLoginAttempts: true, lockedUntil: true },
   })
-  if (!user) return  // Unknown user: silently discard (anti-enumeration)
+  if (!user) return // Unknown user: silently discard (anti-enumeration)
 
   // If lockout has expired, reset counter
-  const currentAttempts = (user.lockedUntil && user.lockedUntil <= new Date())
-    ? 1
-    : user.failedLoginAttempts + 1
+  const currentAttempts =
+    user.lockedUntil && user.lockedUntil <= new Date()
+      ? 1
+      : user.failedLoginAttempts + 1
 
   const updates: any = { failedLoginAttempts: currentAttempts }
   if (currentAttempts >= MAX_ATTEMPTS) {
@@ -588,7 +620,7 @@ The root route's `beforeLoad` hook calls `getCurrentUser` to check auth state. I
 export const Route = createRootRouteWithContext<MyRouterContext>()({
   beforeLoad: async ({ location }) => {
     const publicPaths = ['/login', '/register']
-    if (publicPaths.some(p => location.pathname.startsWith(p))) {
+    if (publicPaths.some((p) => location.pathname.startsWith(p))) {
       return
     }
     const result = await getCurrentUser()
@@ -696,6 +728,7 @@ const queryClient = new QueryClient({
 | `src/data/collaboration.ts` | Update types to reflect non-nullable userId FK |
 
 **Sequence:**
+
 1. Schema changes + Zod schemas (Wave 1: tasks 1.1, 1.2)
 2. Generate migration (Wave 2: task 1.3)
 3. Data access functions (Wave 2: tasks 1.4-1.7, parallel)
@@ -714,6 +747,7 @@ const queryClient = new QueryClient({
 **New dependency:** `bun add bcryptjs` and `bun add -d @types/bcryptjs`
 
 **Sequence:**
+
 1. Password, session, cookie, rate-limit services (Wave 1: tasks 2.1-2.4, parallel)
 2. First-user migration (Wave 2: task 2.5)
 
@@ -745,6 +779,7 @@ const queryClient = new QueryClient({
 | `src/integrations/tanstack-query/root-provider.tsx` | Add global 401 error interception |
 
 **Sequence:**
+
 1. Server functions + middleware (Wave 1: tasks 3.1-3.6)
 2. Routes + root protection + modal + header (Wave 2: tasks 3.7-3.12)
 3. Empty states (Wave 3: task 3.13)
@@ -777,13 +812,17 @@ const ROLE_HIERARCHY = { VIEWER: 1, EDITOR: 2, ADMIN: 3, OWNER: 4 } as const
 
 type EffectiveRole = keyof typeof ROLE_HIERARCHY
 
-export function hasMinimumRole(effective: EffectiveRole | null, required: EffectiveRole): boolean {
+export function hasMinimumRole(
+  effective: EffectiveRole | null,
+  required: EffectiveRole,
+): boolean {
   if (!effective) return false
   return ROLE_HIERARCHY[effective] >= ROLE_HIERARCHY[required]
 }
 ```
 
 **Sequence:**
+
 1. Permission enforcement in data layer (Wave 1: tasks 4.1-4.3)
 2. Server function permission gates (Wave 2: tasks 4.4-4.7)
 3. Permission management UI (Wave 3: tasks 4.8-4.9)
@@ -805,7 +844,7 @@ export function initializeSocketIO(httpServer: HTTPServer): SocketIOServer {
     cors: {
       origin: process.env.CLIENT_URL || 'http://localhost:3000',
       methods: ['GET', 'POST'],
-      credentials: true,  // Required for cookies to be sent
+      credentials: true, // Required for cookies to be sent
     },
     transports: ['websocket', 'polling'],
   })
@@ -851,7 +890,7 @@ export function initializeSocketIO(httpServer: HTTPServer): SocketIOServer {
 ```typescript
 const socket = io(`/whiteboard/${whiteboardId}`, {
   // auth: { userId },  -- REMOVED: server gets userId from session cookie
-  withCredentials: true,  // ADDED: ensures cookies are sent with handshake
+  withCredentials: true, // ADDED: ensures cookies are sent with handshake
   reconnection: true,
   reconnectionDelay: 1000,
   reconnectionDelayMax: 5000,
@@ -891,6 +930,7 @@ return
 | `src/hooks/use-whiteboard-collaboration.ts` | Handle `permission_revoked` with toast + redirect |
 
 **Sequence:**
+
 1. Handshake auth middleware + update event handlers (Wave 1: tasks 5.1-5.2)
 2. Session expiry + permission enforcement + client handlers (Wave 2: tasks 5.3-5.6)
 
@@ -900,74 +940,79 @@ return
 
 ### Files to Create (17 files)
 
-| File | Phase |
-|------|-------|
-| `src/data/user.ts` | 1 |
-| `src/data/session.ts` | 1 |
-| `src/data/permission.ts` | 1 |
-| `prisma/migrations/YYYYMMDD_account_auth/migration.sql` | 1 |
-| `src/lib/auth/password.ts` | 2 |
-| `src/lib/auth/session.ts` | 2 |
-| `src/lib/auth/cookies.ts` | 2 |
-| `src/lib/auth/rate-limit.ts` | 2 |
-| `src/lib/auth/first-user-migration.ts` | 2 |
-| `src/lib/auth/middleware.ts` | 3 |
-| `src/lib/auth/permissions.ts` | 3 |
-| `src/routes/api/auth.ts` | 3 |
-| `src/routes/login.tsx` | 3 |
-| `src/routes/register.tsx` | 3 |
-| `src/components/auth/SessionExpiredModal.tsx` | 3 |
-| `src/components/auth/AuthContext.tsx` | 3 |
-| `src/routes/api/permissions.ts` | 4 |
-| `src/components/project/ProjectSharePanel.tsx` | 4 |
+| File                                                    | Phase |
+| ------------------------------------------------------- | ----- |
+| `src/data/user.ts`                                      | 1     |
+| `src/data/session.ts`                                   | 1     |
+| `src/data/permission.ts`                                | 1     |
+| `prisma/migrations/YYYYMMDD_account_auth/migration.sql` | 1     |
+| `src/lib/auth/password.ts`                              | 2     |
+| `src/lib/auth/session.ts`                               | 2     |
+| `src/lib/auth/cookies.ts`                               | 2     |
+| `src/lib/auth/rate-limit.ts`                            | 2     |
+| `src/lib/auth/first-user-migration.ts`                  | 2     |
+| `src/lib/auth/middleware.ts`                            | 3     |
+| `src/lib/auth/permissions.ts`                           | 3     |
+| `src/routes/api/auth.ts`                                | 3     |
+| `src/routes/login.tsx`                                  | 3     |
+| `src/routes/register.tsx`                               | 3     |
+| `src/components/auth/SessionExpiredModal.tsx`           | 3     |
+| `src/components/auth/AuthContext.tsx`                   | 3     |
+| `src/routes/api/permissions.ts`                         | 4     |
+| `src/components/project/ProjectSharePanel.tsx`          | 4     |
 
 ### Files to Modify (15 files)
 
-| File | Phase |
-|------|-------|
-| `prisma/schema.prisma` | 1 |
-| `src/data/schema.ts` | 1 |
-| `src/data/collaboration.ts` | 1 |
-| `src/data/project.ts` | 3, 4 |
-| `src/routes/__root.tsx` | 3 |
-| `src/routes/api/projects.ts` | 3, 4 |
-| `src/routes/api/whiteboards.ts` | 3, 4 |
-| `src/routes/api/tables.ts` | 3, 4 |
-| `src/routes/api/columns.ts` | 3, 4 |
-| `src/routes/api/relationships.ts` | 3, 4 |
-| `src/routes/api/folders.ts` | 3 |
-| `src/lib/server-functions.ts` | 3 |
-| `src/components/layout/Header.tsx` | 3 |
-| `src/integrations/tanstack-query/root-provider.tsx` | 3 |
-| `src/routes/api/collaboration.ts` | 5 |
-| `src/hooks/use-collaboration.ts` | 5 |
-| `src/hooks/use-whiteboard-collaboration.ts` | 5 |
+| File                                                | Phase |
+| --------------------------------------------------- | ----- |
+| `prisma/schema.prisma`                              | 1     |
+| `src/data/schema.ts`                                | 1     |
+| `src/data/collaboration.ts`                         | 1     |
+| `src/data/project.ts`                               | 3, 4  |
+| `src/routes/__root.tsx`                             | 3     |
+| `src/routes/api/projects.ts`                        | 3, 4  |
+| `src/routes/api/whiteboards.ts`                     | 3, 4  |
+| `src/routes/api/tables.ts`                          | 3, 4  |
+| `src/routes/api/columns.ts`                         | 3, 4  |
+| `src/routes/api/relationships.ts`                   | 3, 4  |
+| `src/routes/api/folders.ts`                         | 3     |
+| `src/lib/server-functions.ts`                       | 3     |
+| `src/components/layout/Header.tsx`                  | 3     |
+| `src/integrations/tanstack-query/root-provider.tsx` | 3     |
+| `src/routes/api/collaboration.ts`                   | 5     |
+| `src/hooks/use-collaboration.ts`                    | 5     |
+| `src/hooks/use-whiteboard-collaboration.ts`         | 5     |
 
 ---
 
 ## 9. Security Considerations
 
 ### 9.1 Password Storage
+
 - Passwords are SHA-256 pre-hashed (to avoid bcrypt 72-byte truncation) then bcrypt-hashed at cost factor 12
 - Plaintext passwords are never logged, stored, or transmitted beyond the initial HTTP request body
 
 ### 9.2 Session Security
+
 - Session tokens: 256-bit random (32 bytes hex = 64 characters), generated via `crypto.randomBytes(32)` (server-side Node.js, no secure context required)
 - Database stores SHA-256 hash of token, never the raw token
 - Cookie flags: `HttpOnly` (no JS access), `SameSite=Lax` (CSRF mitigation), `Path=/` (all routes). No `Secure` flag (HTTP LAN compatibility)
 - Session cleanup: expired sessions are lazily deleted on validation + periodic cleanup job
 
 ### 9.3 Anti-Enumeration
+
 - Login failure: always returns "Invalid email or password" regardless of whether email exists
 - Registration with duplicate email: returns "Registration successful. Please log in." and redirects to /login (no session created)
 - Lockout: only applies to existing users. Failed attempts against non-existent emails are silently discarded
 
 ### 9.4 Rate Limiting
+
 - 5 consecutive failed login attempts per email triggers 15-minute lockout
 - Lockout is lazy-expiry: checked on read, counter resets after lockout period
 - Not IP-based (acceptable for LAN where IP pools are small)
 
 ### 9.5 LAN HTTP Compatibility
+
 - No `crypto.randomUUID()` anywhere (requires secure context)
 - No `Secure` cookie flag (would break HTTP)
 - Startup warning logged if HTTPS is not detected
@@ -992,6 +1037,7 @@ All auth UI follows WCAG 2.1 AA:
 ## 11. Testing Strategy
 
 ### Unit Tests
+
 - `src/lib/auth/password.test.ts`: hash/verify correctness, timing (200-500ms), wrong password rejection
 - `src/lib/auth/session.test.ts`: token generation uniqueness, session creation/validation/expiry/deletion
 - `src/lib/auth/rate-limit.test.ts`: lockout after 5 attempts, auto-unlock after 15 minutes
@@ -999,6 +1045,7 @@ All auth UI follows WCAG 2.1 AA:
 - `src/data/permission.test.ts`: effective role resolution (owner > admin > editor > viewer > null)
 
 ### Integration Tests
+
 - Registration flow: new user, duplicate email, first-user migration
 - Login flow: success, wrong password, locked account, non-existent email
 - Session: create, validate, expire, logout
@@ -1006,6 +1053,7 @@ All auth UI follows WCAG 2.1 AA:
 - Route protection: unauthenticated redirect, authenticated access
 
 ### Manual Testing
+
 - LAN HTTP: verify cookies are sent and received over non-HTTPS LAN connection
 - Session expiry modal: let session expire while editing, verify modal appears
 - WebSocket: connect without cookie, verify rejection; connect with expired session, verify disconnect
@@ -1015,12 +1063,14 @@ All auth UI follows WCAG 2.1 AA:
 ## 12. Dependencies
 
 ### New Packages
-| Package | Version | Purpose |
-|---------|---------|---------|
-| `bcryptjs` | ^3.0.2 | Password hashing (pure JS, no native deps) |
-| `@types/bcryptjs` | ^3.0.0 | TypeScript types (dev dependency) |
+
+| Package           | Version | Purpose                                    |
+| ----------------- | ------- | ------------------------------------------ |
+| `bcryptjs`        | ^3.0.2  | Password hashing (pure JS, no native deps) |
+| `@types/bcryptjs` | ^3.0.0  | TypeScript types (dev dependency)          |
 
 ### Existing Packages (no changes)
+
 - `socket.io` / `socket.io-client` ^4.8.1 (already installed)
 - `zod` (already installed, Zod 4.1)
 - `@prisma/client` / `prisma` ^6.16.3 (already installed)

@@ -18,7 +18,7 @@ import { createColumnSchema, updateColumnSchema } from '@/data/schema'
 import { requireAuth } from '@/lib/auth/middleware'
 import { findEffectiveRole } from '@/data/permission'
 import { hasMinimumRole } from '@/lib/auth/permissions'
-import { getTableProjectId, getColumnProjectId } from '@/data/resolve-project'
+import { getColumnProjectId, getTableProjectId } from '@/data/resolve-project'
 
 /**
  * Get all columns in a table
@@ -38,7 +38,11 @@ export const getColumnsByTableId = createServerFn({ method: 'GET' })
       }
       const role = await findEffectiveRole(user.id, projectId)
       if (!hasMinimumRole(role, 'VIEWER')) {
-        return { error: 'FORBIDDEN', status: 403, message: 'Access denied' } as const
+        return {
+          error: 'FORBIDDEN',
+          status: 403,
+          message: 'Access denied',
+        } as const
       }
       try {
         const columns = await findColumnsByTableId(tableId)
@@ -69,7 +73,11 @@ export const getColumn = createServerFn({ method: 'GET' })
       }
       const role = await findEffectiveRole(user.id, projectId)
       if (!hasMinimumRole(role, 'VIEWER')) {
-        return { error: 'FORBIDDEN', status: 403, message: 'Access denied' } as const
+        return {
+          error: 'FORBIDDEN',
+          status: 403,
+          message: 'Access denied',
+        } as const
       }
       try {
         const column = await findColumnById(columnId)
@@ -103,7 +111,11 @@ export const getPrimaryKeyColumnsByTableId = createServerFn({ method: 'GET' })
       }
       const role = await findEffectiveRole(user.id, projectId)
       if (!hasMinimumRole(role, 'VIEWER')) {
-        return { error: 'FORBIDDEN', status: 403, message: 'Access denied' } as const
+        return {
+          error: 'FORBIDDEN',
+          status: 403,
+          message: 'Access denied',
+        } as const
       }
       try {
         const columns = await findPrimaryKeyColumnsByTableId(tableId)
@@ -134,7 +146,11 @@ export const getForeignKeyColumnsByTableId = createServerFn({ method: 'GET' })
       }
       const role = await findEffectiveRole(user.id, projectId)
       if (!hasMinimumRole(role, 'VIEWER')) {
-        return { error: 'FORBIDDEN', status: 403, message: 'Access denied' } as const
+        return {
+          error: 'FORBIDDEN',
+          status: 403,
+          message: 'Access denied',
+        } as const
       }
       try {
         const columns = await findForeignKeyColumnsByTableId(tableId)
@@ -162,7 +178,11 @@ export const createColumnFn = createServerFn({ method: 'POST' })
       }
       const role = await findEffectiveRole(user.id, projectId)
       if (!hasMinimumRole(role, 'EDITOR')) {
-        return { error: 'FORBIDDEN', status: 403, message: 'Access denied' } as const
+        return {
+          error: 'FORBIDDEN',
+          status: 403,
+          message: 'Access denied',
+        } as const
       }
       try {
         const column = await createColumn(data)
@@ -198,7 +218,11 @@ export const createColumnsFn = createServerFn({ method: 'POST' })
           }
           const role = await findEffectiveRole(user.id, projectId)
           if (!hasMinimumRole(role, 'EDITOR')) {
-            return { error: 'FORBIDDEN', status: 403, message: 'Access denied' } as const
+            return {
+              error: 'FORBIDDEN',
+              status: 403,
+              message: 'Access denied',
+            } as const
           }
         }
       }
@@ -234,7 +258,11 @@ export const updateColumnFn = createServerFn({ method: 'POST' })
       }
       const role = await findEffectiveRole(user.id, projectId)
       if (!hasMinimumRole(role, 'EDITOR')) {
-        return { error: 'FORBIDDEN', status: 403, message: 'Access denied' } as const
+        return {
+          error: 'FORBIDDEN',
+          status: 403,
+          message: 'Access denied',
+        } as const
       }
       try {
         const column = await updateColumn(params.id, params.data)
@@ -268,7 +296,11 @@ export const updateColumnOrderFn = createServerFn({ method: 'POST' })
       }
       const role = await findEffectiveRole(user.id, projectId)
       if (!hasMinimumRole(role, 'EDITOR')) {
-        return { error: 'FORBIDDEN', status: 403, message: 'Access denied' } as const
+        return {
+          error: 'FORBIDDEN',
+          status: 403,
+          message: 'Access denied',
+        } as const
       }
       try {
         const column = await updateColumnOrder(params.id, params.order)
@@ -300,7 +332,11 @@ export const deleteColumnFn = createServerFn({ method: 'POST' })
       }
       const role = await findEffectiveRole(user.id, projectId)
       if (!hasMinimumRole(role, 'EDITOR')) {
-        return { error: 'FORBIDDEN', status: 403, message: 'Access denied' } as const
+        return {
+          error: 'FORBIDDEN',
+          status: 403,
+          message: 'Access denied',
+        } as const
       }
       try {
         const column = await deleteColumn(columnId)

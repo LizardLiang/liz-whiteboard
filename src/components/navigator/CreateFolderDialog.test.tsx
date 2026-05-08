@@ -110,7 +110,9 @@ describe('CreateFolderDialog', () => {
             }),
           }),
         )
-        const callArgs = vi.mocked(createFolderFn).mock.calls[0]?.[0] as { data: { parentFolderId?: string } }
+        const callArgs = vi.mocked(createFolderFn).mock.calls[0]?.[0] as {
+          data: { parentFolderId?: string }
+        }
         expect(callArgs?.data.parentFolderId).toBeUndefined()
       })
     })

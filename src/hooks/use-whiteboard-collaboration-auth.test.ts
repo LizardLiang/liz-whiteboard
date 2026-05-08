@@ -6,6 +6,9 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { act, renderHook } from '@testing-library/react'
 
+import { toast } from 'sonner'
+import { useWhiteboardCollaboration } from './use-whiteboard-collaboration'
+
 // Must mock before imports
 vi.mock('sonner', () => ({
   toast: {
@@ -47,9 +50,6 @@ vi.mock('@/components/auth/AuthContext', () => ({
   }),
 }))
 
-import { toast } from 'sonner'
-import { useWhiteboardCollaboration } from './use-whiteboard-collaboration'
-
 beforeEach(() => {
   vi.clearAllMocks()
   mockNavigate.mockReset()
@@ -69,21 +69,17 @@ describe('TC-P5-06: permission_revoked event handler', () => {
   const userId = 'user-current'
 
   it('registers a permission_revoked event listener on mount', () => {
-    renderHook(() =>
-      useWhiteboardCollaboration(whiteboardId, userId, vi.fn())
-    )
+    renderHook(() => useWhiteboardCollaboration(whiteboardId, userId, vi.fn()))
 
     const registeredEvents = mockOn.mock.calls.map(([event]: [string]) => event)
     expect(registeredEvents).toContain('permission_revoked')
   })
 
   it('shows toast.error when permission_revoked is received', () => {
-    renderHook(() =>
-      useWhiteboardCollaboration(whiteboardId, userId, vi.fn())
-    )
+    renderHook(() => useWhiteboardCollaboration(whiteboardId, userId, vi.fn()))
 
     const permissionRevokedCall = mockOn.mock.calls.find(
-      ([event]: [string]) => event === 'permission_revoked'
+      ([event]: [string]) => event === 'permission_revoked',
     )
     const handler = permissionRevokedCall?.[1]
     expect(handler).toBeDefined()
@@ -94,17 +90,15 @@ describe('TC-P5-06: permission_revoked event handler', () => {
 
     expect(toast.error).toHaveBeenCalledWith(
       expect.stringContaining('access'),
-      expect.objectContaining({ duration: expect.any(Number) })
+      expect.objectContaining({ duration: expect.any(Number) }),
     )
   })
 
   it('schedules redirect to / after 5 seconds on permission_revoked', () => {
-    renderHook(() =>
-      useWhiteboardCollaboration(whiteboardId, userId, vi.fn())
-    )
+    renderHook(() => useWhiteboardCollaboration(whiteboardId, userId, vi.fn()))
 
     const permissionRevokedCall = mockOn.mock.calls.find(
-      ([event]: [string]) => event === 'permission_revoked'
+      ([event]: [string]) => event === 'permission_revoked',
     )
     const handler = permissionRevokedCall?.[1]
 
@@ -125,11 +119,11 @@ describe('TC-P5-06: permission_revoked event handler', () => {
 
   it('cleans up permission_revoked listener and timer on unmount', () => {
     const { unmount } = renderHook(() =>
-      useWhiteboardCollaboration(whiteboardId, userId, vi.fn())
+      useWhiteboardCollaboration(whiteboardId, userId, vi.fn()),
     )
 
     const permissionRevokedCall = mockOn.mock.calls.find(
-      ([event]: [string]) => event === 'permission_revoked'
+      ([event]: [string]) => event === 'permission_revoked',
     )
     const handler = permissionRevokedCall?.[1]
 

@@ -24,7 +24,10 @@ import {
 import { computeLayout } from '@/lib/canvas/layout-engine'
 import { prisma } from '@/db'
 import { requireAuth } from '@/lib/auth/middleware'
-import { getWhiteboardProjectId, getTableProjectId } from '@/data/resolve-project'
+import {
+  getTableProjectId,
+  getWhiteboardProjectId,
+} from '@/data/resolve-project'
 import { findEffectiveRole } from '@/data/permission'
 import { hasMinimumRole } from '@/lib/auth/permissions'
 
@@ -65,7 +68,10 @@ export const getWhiteboardRelationships = createServerFn({
   .inputValidator((whiteboardId: string) => whiteboardId)
   .handler(
     requireAuth(
-      async ({ user }, whiteboardId): Promise<Array<RelationshipWithDetails>> => {
+      async (
+        { user },
+        whiteboardId,
+      ): Promise<Array<RelationshipWithDetails>> => {
         const projectId = await getWhiteboardProjectId(whiteboardId)
         if (projectId) {
           const role = await findEffectiveRole(user.id, projectId)
@@ -214,7 +220,9 @@ export const computeAutoLayout = createServerFn({
       }
       try {
         // Fetch whiteboard with tables and relationships
-        const whiteboard = await findWhiteboardByIdWithDiagram(data.whiteboardId)
+        const whiteboard = await findWhiteboardByIdWithDiagram(
+          data.whiteboardId,
+        )
         if (!whiteboard) {
           throw new Error('Whiteboard not found')
         }

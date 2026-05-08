@@ -7,7 +7,7 @@
 // Node.js built-ins (node:crypto, etc.) aren't available in the browser.
 
 import { createServerFn } from '@tanstack/react-start'
-import { registerInputSchema, loginInputSchema } from '@/data/schema'
+import { loginInputSchema, registerInputSchema } from '@/data/schema'
 
 const GENERIC_AUTH_ERROR = 'Invalid email or password'
 
@@ -99,14 +99,20 @@ export const loginUser = createServerFn({ method: 'POST' })
     const { setResponseHeader } = await import('@tanstack/react-start/server')
     const { createUserSession } = await import('@/lib/auth/session')
     const { buildSetCookieHeader } = await import('@/lib/auth/cookies')
-    const { checkLockout, recordFailedLogin, clearLockout } = await import('@/lib/auth/rate-limit')
+    const { checkLockout, recordFailedLogin, clearLockout } = await import(
+      '@/lib/auth/rate-limit'
+    )
     const { findUserByEmail } = await import('@/data/user')
     const { verifyPassword } = await import('@/lib/auth/password')
 
     // Find user (return generic error if not found — anti-enumeration)
     const user = await findUserByEmail(data.email)
     if (!user) {
-      return { success: false, error: 'AUTH_FAILED', message: GENERIC_AUTH_ERROR }
+      return {
+        success: false,
+        error: 'AUTH_FAILED',
+        message: GENERIC_AUTH_ERROR,
+      }
     }
 
     // Check lockout
@@ -124,14 +130,21 @@ export const loginUser = createServerFn({ method: 'POST' })
     const valid = await verifyPassword(data.password, user.passwordHash)
     if (!valid) {
       await recordFailedLogin(data.email)
-      return { success: false, error: 'AUTH_FAILED', message: GENERIC_AUTH_ERROR }
+      return {
+        success: false,
+        error: 'AUTH_FAILED',
+        message: GENERIC_AUTH_ERROR,
+      }
     }
 
     // Success: clear lockout, create session, set cookie
     await clearLockout(user.id)
     const { token } = await createUserSession(user.id, data.rememberMe)
 
-    setResponseHeader('Set-Cookie', buildSetCookieHeader(token, data.rememberMe))
+    setResponseHeader(
+      'Set-Cookie',
+      buildSetCookieHeader(token, data.rememberMe),
+    )
 
     console.log(`[auth] User logged in: ${user.id}`)
 
@@ -143,9 +156,13 @@ export const loginUser = createServerFn({ method: 'POST' })
  */
 export const logoutUser = createServerFn({ method: 'POST' }).handler(
   async () => {
-    const { getRequest, setResponseHeader } = await import('@tanstack/react-start/server')
+    const { getRequest, setResponseHeader } = await import(
+      '@tanstack/react-start/server'
+    )
     const { prisma } = await import('@/db')
-    const { parseSessionCookie, buildClearCookieHeader } = await import('@/lib/auth/cookies')
+    const { parseSessionCookie, buildClearCookieHeader } = await import(
+      '@/lib/auth/cookies'
+    )
     const { deleteAuthSession } = await import('@/data/session')
     const { hashToken } = await import('@/lib/auth/session')
 

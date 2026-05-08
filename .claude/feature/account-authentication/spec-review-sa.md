@@ -1,11 +1,11 @@
 # Spec Review (SA) -- Account Authentication
 
-| Field | Value |
-|-------|-------|
-| **Reviewer** | Apollo (Architecture Review Agent) |
-| **Date** | 2026-04-03 |
-| **Spec Version** | tech-spec.md (2026-04-03) |
-| **Verdict** | **Sound** |
+| Field            | Value                              |
+| ---------------- | ---------------------------------- |
+| **Reviewer**     | Apollo (Architecture Review Agent) |
+| **Date**         | 2026-04-03                         |
+| **Spec Version** | tech-spec.md (2026-04-03)          |
+| **Verdict**      | **Sound**                          |
 
 ---
 
@@ -20,6 +20,7 @@ The tech spec is architecturally sound. No critical issues. No high-severity iss
 ### 2.1 Component Separation -- PASS
 
 The spec cleanly separates concerns across well-defined layers:
+
 - **Data layer** (`src/data/user.ts`, `session.ts`, `permission.ts`): Pure Prisma CRUD, consistent with existing `src/data/project.ts` patterns.
 - **Auth services** (`src/lib/auth/*.ts`): Password, session, cookie, rate-limit, and first-user-migration are each in their own module. No circular dependencies.
 - **Middleware** (`src/lib/auth/middleware.ts`): The `requireAuth` wrapper pattern is explicit and testable. Each server function opts in, which avoids accidental bypass.
@@ -28,6 +29,7 @@ The spec cleanly separates concerns across well-defined layers:
 ### 2.2 Design Appropriateness -- PASS
 
 The spec matches the requirements without over-engineering:
+
 - Server-side sessions with hashed tokens in the database is the correct choice for a self-hosted app with no external auth provider.
 - `ProjectMember` table with a `ProjectRole` enum is the simplest model that satisfies the viewer/editor/admin requirement. The `@@unique([projectId, userId])` constraint prevents duplicate memberships.
 - Owner is determined by `Project.ownerId` rather than a role row, which correctly models the immutability of ownership.
@@ -36,6 +38,7 @@ The spec matches the requirements without over-engineering:
 ### 2.3 Scalability -- PASS (with notes)
 
 This is a LAN tool, so web-scale concerns are not applicable. Within the stated scope:
+
 - Session lookup is by `tokenHash` with a `@unique` index -- O(1) lookup, no table scan.
 - `ProjectMember` has indices on `userId` and `(projectId, userId)` unique constraint -- permission lookups are efficient.
 - The `expiresAt` index on `Session` supports the expired-session cleanup query.
@@ -93,6 +96,7 @@ This is a LAN tool, so web-scale concerns are not applicable. Within the stated 
 ### 4.1 Auth Overhead Per Request -- PASS
 
 Each authenticated request adds:
+
 1. Cookie parsing (string split, negligible)
 2. SHA-256 hash of token (sub-millisecond)
 3. Database lookup by indexed `tokenHash` column (sub-millisecond for indexed unique lookup)
@@ -165,15 +169,15 @@ The spec mentions "lazily deleted on validation + periodic cleanup job" (Section
 
 ## 7. PRD Alignment Check
 
-| PRD Requirement | Tech Spec Coverage | Status |
-|----------------|-------------------|--------|
-| AUTH-REG-01 through AUTH-REG-04 | Registration server function, register route, first-user migration | Covered |
-| AUTH-LOGIN-01 through AUTH-LOGIN-06 | Login server function, login route, remember me, loading states | Covered |
-| AUTH-GUARD-01 through AUTH-GUARD-04 | Root beforeLoad, requireAuth wrapper, Socket.IO io.use() middleware | Covered |
-| AUTH-PERM-01 through AUTH-PERM-05 | ProjectMember table, role hierarchy, permission server functions, revocation events | Covered |
-| Rate limiting (5 attempts / 15 min) | rate-limit.ts with lockout fields on User | Covered |
-| Empty states | EmptyState component referenced | Covered |
-| Accessibility (WCAG 2.1 AA) | Section 10 addresses labels, aria-*, focus management, keyboard nav | Covered |
+| PRD Requirement                     | Tech Spec Coverage                                                                  | Status  |
+| ----------------------------------- | ----------------------------------------------------------------------------------- | ------- |
+| AUTH-REG-01 through AUTH-REG-04     | Registration server function, register route, first-user migration                  | Covered |
+| AUTH-LOGIN-01 through AUTH-LOGIN-06 | Login server function, login route, remember me, loading states                     | Covered |
+| AUTH-GUARD-01 through AUTH-GUARD-04 | Root beforeLoad, requireAuth wrapper, Socket.IO io.use() middleware                 | Covered |
+| AUTH-PERM-01 through AUTH-PERM-05   | ProjectMember table, role hierarchy, permission server functions, revocation events | Covered |
+| Rate limiting (5 attempts / 15 min) | rate-limit.ts with lockout fields on User                                           | Covered |
+| Empty states                        | EmptyState component referenced                                                     | Covered |
+| Accessibility (WCAG 2.1 AA)         | Section 10 addresses labels, aria-\*, focus management, keyboard nav                | Covered |
 
 No PRD requirements are missing from the tech spec.
 
@@ -181,11 +185,11 @@ No PRD requirements are missing from the tech spec.
 
 ## 8. Issues Summary
 
-| # | Severity | Category | Issue | Recommendation |
-|---|----------|----------|-------|---------------|
-| 1 | Medium | Performance | Expired session cleanup has no scheduled caller. `deleteExpiredSessions()` is defined but never invoked periodically. | Add a `setInterval` in server initialization (e.g., every 1 hour) to call `deleteExpiredSessions()`, or piggyback on the existing 5-minute collaboration session cleanup interval. |
-| 2 | Low | Security | Registration timing side-channel: duplicate email returns faster than new registration (no bcrypt hash). Attacker could distinguish "email exists" from "new email" by measuring response time. | Add a constant-time delay or compute a dummy bcrypt hash on duplicate-email paths. Low priority for LAN context. |
-| 3 | Low | Completeness | The file inventory lists 17 new + 15 modified = 32 files, but the Phase 5 section adds `src/hooks/use-whiteboard-collaboration.ts` as a modified file that is not in the Phase 3 table. The total in Section 8 shows 15 modified files but the actual count across all phases is 16-17. | Reconcile the file inventory in Section 8 with the per-phase file tables. Minor bookkeeping. |
+| #   | Severity | Category     | Issue                                                                                                                                                                                                                                                                                   | Recommendation                                                                                                                                                                     |
+| --- | -------- | ------------ | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| 1   | Medium   | Performance  | Expired session cleanup has no scheduled caller. `deleteExpiredSessions()` is defined but never invoked periodically.                                                                                                                                                                   | Add a `setInterval` in server initialization (e.g., every 1 hour) to call `deleteExpiredSessions()`, or piggyback on the existing 5-minute collaboration session cleanup interval. |
+| 2   | Low      | Security     | Registration timing side-channel: duplicate email returns faster than new registration (no bcrypt hash). Attacker could distinguish "email exists" from "new email" by measuring response time.                                                                                         | Add a constant-time delay or compute a dummy bcrypt hash on duplicate-email paths. Low priority for LAN context.                                                                   |
+| 3   | Low      | Completeness | The file inventory lists 17 new + 15 modified = 32 files, but the Phase 5 section adds `src/hooks/use-whiteboard-collaboration.ts` as a modified file that is not in the Phase 3 table. The total in Section 8 shows 15 modified files but the actual count across all phases is 16-17. | Reconcile the file inventory in Section 8 with the per-phase file tables. Minor bookkeeping.                                                                                       |
 
 ---
 

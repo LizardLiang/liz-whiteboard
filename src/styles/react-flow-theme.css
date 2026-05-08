@@ -179,7 +179,10 @@
   border: 2px solid var(--rf-handle-border);
   opacity: 0;
   pointer-events: none;
-  transition: opacity 0.15s ease, background 0.15s ease, border-color 0.15s ease;
+  transition:
+    opacity 0.15s ease,
+    background 0.15s ease,
+    border-color 0.15s ease;
 }
 
 /* Override React Flow's .connectionindicator which forces pointer-events: all.

@@ -1,6 +1,7 @@
 # Arena Deltas: account-authentication
 
 ## Baseline
+
 - **Feature**: account-authentication
 - **Git Hash**: dfd225b849051dfd86166fed3c1555ad10528c38
 - **Branch**: feature/dynamic-field-management

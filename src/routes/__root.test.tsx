@@ -3,13 +3,13 @@
 // TC-P3-21: Root beforeLoad — /login and /register do not cause redirect loop
 // TC-P3-22: Root beforeLoad — valid session allows navigation through
 
-import { describe, expect, it, vi, beforeEach } from 'vitest'
+import { beforeEach, describe, expect, it, vi } from 'vitest'
+
+import { getCurrentUser } from './api/auth'
 
 vi.mock('./api/auth', () => ({
   getCurrentUser: vi.fn(),
 }))
-
-import { getCurrentUser } from './api/auth'
 
 // We test the beforeLoad logic in isolation, not through the full router,
 // because the router requires a full app environment.

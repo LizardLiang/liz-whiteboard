@@ -74,10 +74,22 @@ export const DATA_TYPE_LABELS: Record<DataType, string> = {
 /**
  * Data types grouped by category for the type selector combobox.
  */
-export const DATA_TYPE_GROUPS: Array<{ heading: string; types: Array<DataType> }> = [
+export const DATA_TYPE_GROUPS: Array<{
+  heading: string
+  types: Array<DataType>
+}> = [
   {
     heading: 'Numeric',
-    types: ['int', 'bigint', 'smallint', 'float', 'double', 'decimal', 'serial', 'money'],
+    types: [
+      'int',
+      'bigint',
+      'smallint',
+      'float',
+      'double',
+      'decimal',
+      'serial',
+      'money',
+    ],
   },
   {
     heading: 'String',

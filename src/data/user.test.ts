@@ -3,6 +3,9 @@
 
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 
+import { createUser, findUserByEmail, findUserById } from './user'
+import { prisma } from '@/db'
+
 // Mock the db module before imports that use it
 vi.mock('@/db', () => ({
   prisma: {
@@ -13,9 +16,6 @@ vi.mock('@/db', () => ({
     },
   },
 }))
-
-import { prisma } from '@/db'
-import { createUser, findUserByEmail, findUserById } from './user'
 
 const mockUser = {
   id: 'f47ac10b-58cc-4372-a567-0e02b2c3d479',

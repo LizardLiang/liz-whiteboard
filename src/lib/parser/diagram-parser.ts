@@ -67,7 +67,10 @@ const TextType = createToken({ name: 'TextType', pattern: /text/ })
 const BooleanType = createToken({ name: 'BooleanType', pattern: /boolean/ })
 const BitType = createToken({ name: 'BitType', pattern: /bit/ })
 const DatetimeType = createToken({ name: 'DatetimeType', pattern: /datetime/ })
-const TimestampType = createToken({ name: 'TimestampType', pattern: /timestamp/ })
+const TimestampType = createToken({
+  name: 'TimestampType',
+  pattern: /timestamp/,
+})
 const DateType = createToken({ name: 'DateType', pattern: /date/ })
 const TimeType = createToken({ name: 'TimeType', pattern: /time/ })
 const BinaryType = createToken({ name: 'BinaryType', pattern: /binary/ })

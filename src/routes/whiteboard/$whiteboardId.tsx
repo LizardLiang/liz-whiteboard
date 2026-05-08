@@ -232,7 +232,9 @@ function WhiteboardEditor() {
       emit('table:create', createdTable)
 
       // Invalidate and refetch
-      queryClient.invalidateQueries({ queryKey: ['whiteboard-page', whiteboardId] })
+      queryClient.invalidateQueries({
+        queryKey: ['whiteboard-page', whiteboardId],
+      })
       queryClient.invalidateQueries({ queryKey: ['whiteboard', whiteboardId] })
     },
     onError: (err, newTable, context) => {
@@ -295,7 +297,9 @@ function WhiteboardEditor() {
       emit('relationship:create', createdRelationship)
 
       // Invalidate and refetch
-      queryClient.invalidateQueries({ queryKey: ['whiteboard-page', whiteboardId] })
+      queryClient.invalidateQueries({
+        queryKey: ['whiteboard-page', whiteboardId],
+      })
       queryClient.invalidateQueries({ queryKey: ['whiteboard', whiteboardId] })
     },
     onError: (err) => {
@@ -513,7 +517,9 @@ function WhiteboardEditor() {
   useEffect(() => {
     const handleTableCreated = (table: any) => {
       console.log('Table created by another user:', table)
-      queryClient.invalidateQueries({ queryKey: ['whiteboard-page', whiteboardId] })
+      queryClient.invalidateQueries({
+        queryKey: ['whiteboard-page', whiteboardId],
+      })
       queryClient.invalidateQueries({ queryKey: ['whiteboard', whiteboardId] })
     }
 
@@ -526,27 +532,36 @@ function WhiteboardEditor() {
       // Ignore own moves — already applied via mutation's setQueryData
       if (data.updatedBy === userId) return
       console.log('Table moved by another user:', data)
-      queryClient.setQueryData(['whiteboard-page', whiteboardId], (old: any) => {
-        if (!old) return old
-        return {
-          ...old,
-          whiteboard: {
-            ...old.whiteboard,
-            tables: old.whiteboard.tables.map((t: any) =>
-              t.id === data.tableId
-                ? { ...t, positionX: data.positionX, positionY: data.positionY }
-                : t,
-            ),
-          },
-        }
-      })
+      queryClient.setQueryData(
+        ['whiteboard-page', whiteboardId],
+        (old: any) => {
+          if (!old) return old
+          return {
+            ...old,
+            whiteboard: {
+              ...old.whiteboard,
+              tables: old.whiteboard.tables.map((t: any) =>
+                t.id === data.tableId
+                  ? {
+                      ...t,
+                      positionX: data.positionX,
+                      positionY: data.positionY,
+                    }
+                  : t,
+              ),
+            },
+          }
+        },
+      )
       // Also invalidate ReactFlowWhiteboard's query
       queryClient.invalidateQueries({ queryKey: ['whiteboard', whiteboardId] })
     }
 
     const handleRelationshipCreated = (relationship: any) => {
       console.log('Relationship created by another user:', relationship)
-      queryClient.invalidateQueries({ queryKey: ['whiteboard-page', whiteboardId] })
+      queryClient.invalidateQueries({
+        queryKey: ['whiteboard-page', whiteboardId],
+      })
       queryClient.invalidateQueries({ queryKey: ['whiteboard', whiteboardId] })
     }
 
@@ -556,7 +571,9 @@ function WhiteboardEditor() {
     }) => {
       console.log('Text updated by another user:', data.updatedBy)
       setTextSource(data.textSource)
-      queryClient.invalidateQueries({ queryKey: ['whiteboard-page', whiteboardId] })
+      queryClient.invalidateQueries({
+        queryKey: ['whiteboard-page', whiteboardId],
+      })
       queryClient.invalidateQueries({ queryKey: ['whiteboard', whiteboardId] })
     }
 

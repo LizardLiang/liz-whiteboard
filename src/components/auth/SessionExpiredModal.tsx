@@ -2,16 +2,16 @@
 // Modal shown when a session expires (HTTP 401 or WebSocket session_expired event)
 
 import { useRouter } from '@tanstack/react-router'
+import { useAuthContext } from './AuthContext'
 import {
   Dialog,
   DialogContent,
-  DialogHeader,
-  DialogTitle,
   DialogDescription,
   DialogFooter,
+  DialogHeader,
+  DialogTitle,
 } from '@/components/ui/dialog'
 import { Button } from '@/components/ui/button'
-import { useAuthContext } from './AuthContext'
 
 /**
  * SessionExpiredModal renders a dialog when the user's session has expired.
@@ -35,7 +35,10 @@ export function SessionExpiredModal() {
   }
 
   return (
-    <Dialog open={sessionExpired} onOpenChange={(open) => !open && handleLogin()}>
+    <Dialog
+      open={sessionExpired}
+      onOpenChange={(open) => !open && handleLogin()}
+    >
       <DialogContent
         className="sm:max-w-md"
         onEscapeKeyDown={handleLogin}

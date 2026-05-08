@@ -25,9 +25,7 @@ export async function createAuthSession(data: {
  * @param tokenHash - SHA-256 hash of the raw session token
  * @returns Session with user or null if not found
  */
-export async function findAuthSessionByTokenHash(
-  tokenHash: string,
-): Promise<
+export async function findAuthSessionByTokenHash(tokenHash: string): Promise<
   | (Session & {
       user: { id: string; username: string; email: string }
     })

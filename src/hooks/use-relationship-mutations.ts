@@ -30,7 +30,9 @@ export function useRelationshipMutations(
   setEdges: SetEdges,
   emitRelationshipDelete: ((relationshipId: string) => void) | null,
   isConnected: boolean,
-  emitRelationshipUpdate?: ((relationshipId: string, label: string) => void) | null,
+  emitRelationshipUpdate?:
+    | ((relationshipId: string, label: string) => void)
+    | null,
 ) {
   /**
    * Track optimistic mutations for rollback on server error.
