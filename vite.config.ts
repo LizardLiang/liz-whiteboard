@@ -10,15 +10,16 @@ import type { Plugin } from 'vite'
 /**
  * Vite plugin that attaches Socket.IO to the dev server's HTTP server.
  *
- * TanStack Start uses Vite's environment API. The underlying Node.js HTTP
- * server is exposed as `viteDevServer.httpServer`. We import the
- * collaboration module through the SSR environment runner (same pattern
- * used by TanStack Start's own dev-server plugin) so Prisma and other
- * server-only imports resolve correctly.
+ * Nitro (used by TanStack Start) runs server code in a Node.js Worker thread
+ * via the `node-worker` env-runner, so the Worker's module scope is isolated
+ * from the main thread. The Vite `ssr` environment no longer exists (replaced
+ * by Nitro's `FetchableDevEnvironment`), and globalThis is not shared across
+ * thread boundaries.
  *
- * The returned function from `configureServer` is the "post-middleware"
- * hook — it runs AFTER all other plugins' middleware is registered, which
- * ensures the HTTP server is fully configured before Socket.IO attaches.
+ * The only clean way to call `initializeSocketIO(httpServer)` from the main
+ * thread is to bundle `collaboration.ts` with esbuild (which resolves `@/`
+ * tsconfig path aliases) and import the resulting plain-ESM bundle directly.
+ * npm packages are kept external so the installed versions are used at runtime.
  */
 function socketIOPlugin(): Plugin {
   return {

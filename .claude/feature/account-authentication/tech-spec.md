@@ -450,9 +450,7 @@ export async function createUserSession(userId: string, rememberMe: boolean) {
   return { session, token } // token goes to cookie, session.tokenHash stays in DB
 }
 
-export async function validateSessionToken(
-  token: string,
-): Promise<{
+export async function validateSessionToken(token: string): Promise<{
   user: AuthUser
   session: { id: string; expiresAt: Date }
 } | null> {

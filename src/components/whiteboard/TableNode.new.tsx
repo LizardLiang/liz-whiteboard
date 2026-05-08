@@ -40,6 +40,7 @@ export const TableNode = memo(
       onColumnCreate,
       onColumnUpdate,
       onColumnDelete,
+      onColumnDuplicate,
       onRequestTableDelete,
       edges = [],
       tableNameById = new Map(),
@@ -201,6 +202,16 @@ export const TableNode = memo(
     const handleRequestTableDelete = useCallback(() => {
       onRequestTableDelete?.(table.id)
     }, [onRequestTableDelete, table.id])
+
+    // --- Duplicate handler ---
+    const handleDuplicateColumn = useCallback(
+      (column: Column) => {
+        if (onColumnDuplicate) {
+          onColumnDuplicate(column)
+        }
+      },
+      [onColumnDuplicate],
+    )
 
     // --- Create handler ---
     const handleCreate = useCallback(
@@ -472,7 +483,6 @@ export const TableNode = memo(
                 rowHeight={COLUMN_ROW_HEIGHT}
                 prefersReducedMotion={prefersReducedMotion}
               />
-
               {visibleColumns.map((column: Column, index: number) => (
                 <ColumnRow
                   key={column.id}
@@ -485,6 +495,7 @@ export const TableNode = memo(
                   onCancelEdit={handleCancelEdit}
                   onToggleConstraint={handleToggleConstraint}
                   onDelete={handleDeleteColumn}
+                  onDuplicate={handleDuplicateColumn}
                   onDescriptionUpdate={handleDescriptionUpdate}
                   edges={edges}
                   showMode={showMode}
@@ -527,6 +538,8 @@ export const TableNode = memo(
     if (prev.data.onColumnCreate !== next.data.onColumnCreate) return false
     if (prev.data.onColumnUpdate !== next.data.onColumnUpdate) return false
     if (prev.data.onColumnDelete !== next.data.onColumnDelete) return false
+    if (prev.data.onColumnDuplicate !== next.data.onColumnDuplicate)
+      return false
     if (prev.data.edges !== next.data.edges) return false
     if (prev.data.tableNameById !== next.data.tableNameById) return false
     if (prev.data.onRequestTableDelete !== next.data.onRequestTableDelete)
