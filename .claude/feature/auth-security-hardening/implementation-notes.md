@@ -176,6 +176,80 @@ The spec (§3.9) mentions `findEffectiveRole(...)` + `hasMinimumRole(...)` as a 
 
 ---
 
+## Code Review Fixes (Stage 12 — 2026-05-09)
+
+Resolved all 3 BLOCKER and 2 HIGH findings from Hermes + Cassandra code review.
+
+### BLOCKER-1: HTTP 401 interceptor wired to production code path
+
+**Problem:** `requireAuth()` resolves `{ error: 'UNAUTHORIZED', status: 401 }` as a value (never throws). `QueryCache.onError` / `MutationCache.onError` only fire on rejected promises — so `dispatchUnauthorized()` was never called in production.
+
+**Fix:** Added `onSuccess` hooks to both `QueryCache` and `MutationCache` that call `isUnauthorizedError()` (from `@/lib/auth/errors`) on resolved data. Any resolved `{error: 'UNAUTHORIZED', status: 401}` now dispatches `HTTP_UNAUTHORIZED` on `httpAuthEvents`. The old `isUnauthorizedError` local name collision was resolved by renaming it to `isErrorWith401Status`.
+
+**Files modified:** `src/integrations/tanstack-query/root-provider.tsx`
+
+**Files created:** `src/integrations/tanstack-query/root-provider.test.ts` (TC-HTTP401-01/02/03)
+
+**Tests:** TC-HTTP401-01 proves `QueryCache.onSuccess` fires on resolved 401. TC-HTTP401-02 proves `MutationCache.onSuccess` fires on resolved 401. TC-HTTP401-03 proves listener cleanup prevents double-fire.
+
+---
+
+### BLOCKER-2: Size-bounded Maps in require-role.ts + log-sample.ts
+
+**Problem:** `denialCounter` (require-role.ts) and `lastLogAt` (log-sample.ts) were unbounded Map instances that grew indefinitely with unique userId × event entries.
+
+**Fix:** Added `MAX_ENTRIES = 1000` cap with eviction-of-oldest on new key insert (Map iteration is insertion-ordered). Only new keys trigger eviction — incrementing existing keys does not.
+
+**Files modified:** `src/lib/auth/require-role.ts`, `src/lib/auth/log-sample.ts`
+
+**Tests added:** `TC-RR-BOUNDED` in require-role.test.ts; `TC-LOG-BOUNDED` in log-sample.test.ts.
+
+---
+
+### BLOCKER-3 + HIGH-3: BatchColumnForm Tailwind/shadcn rewrite + BATCH_DENIED banner fix
+
+**BLOCKER-3:** Replaced all `style={{...}}` inline props with Tailwind classes. Used `Button`, `Input`, `Alert`, `AlertDescription` from `@/components/ui/`.
+
+**HIGH-3:** Added separate `genericError` state for non-RBAC errors. Bisection affordance (Try first half / Try second half) now only renders on confirmed `BATCH_DENIED`. Network/500/validation errors show a neutral "Save failed. Please try again." message instead.
+
+**Files modified:** `src/components/whiteboard/BatchColumnForm.tsx`
+
+**Tests:** All 9 existing TC-BUX tests continue to pass.
+
+---
+
+### HIGH-1: ESLint AST rule tightened — discarded findEffectiveRole no longer passes
+
+**Problem:** `bodyCallsRequireServerFnRole` returned `true` on first match of `findEffectiveRole` OR `hasMinimumRole` independently. A handler could call `findEffectiveRole(userId, projectId)` and discard the result — no actual RBAC check — and the ESLint rule would pass.
+
+**Fix:** Replaced single-boolean walker with `collectCalleeNames(node, Set)` that accumulates all call names in the body. `bodyCallsRequireServerFnRole` now returns `true` only if:
+- `requireServerFnRole` is present (preferred pattern), OR
+- BOTH `findEffectiveRole` AND `hasMinimumRole` are present (legacy paired assertion).
+
+Also fixed `IfStatement` traversal to include `node.test` (so `if (!hasMinimumRole(...))` is detected correctly), and added `UnaryExpression` / `LogicalExpression` handling.
+
+**Files modified:** `tools/eslint-rules/require-server-fn-authz.cjs`, `tools/eslint-rules/require-server-fn-authz.js`
+
+**Files created:** `tools/eslint-rules/__fixtures__/discarded-findEffectiveRole.ts`
+
+**Tests added:** TC-ESLINT-09 in require-server-fn-authz.test.js (2 cases: discarded-only → fails; both-present → passes).
+
+---
+
+### Final Test Results (Stage 12)
+
+| Suite | Tests | Result |
+|-------|-------|--------|
+| root-provider interceptor | 3 | PASS |
+| require-role (incl. bounded Map) | 21 | PASS |
+| log-sample (incl. bounded Map) | 5 | PASS |
+| BatchColumnForm | 9 | PASS |
+| ESLint rule self-tests | 10 | PASS |
+| **Total passing** | **794** | PASS |
+| Pre-existing failures | 8 | FAIL (unchanged) |
+
+---
+
 ## PRD Alignment Gap Closure (Round 3 — AC-20 Final)
 
 Closed on 2026-05-09 after Hera returned 97% verdict with AC-20 as the sole remaining gap.

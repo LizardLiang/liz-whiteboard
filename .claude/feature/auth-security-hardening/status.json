@@ -3,6 +3,7 @@
   "description": "Fix 5 security vulnerabilities in PR #97 auth implementation: superpassword bypass, 2x WebSocket IDOR (column:create + batch column RBAC), session_expired modal wiring, missing RBAC on server functions",
   "documents": {
     "1-prd": "prd.md,decisions.md",
+    "11-review": "code-review.md",
     "2-prd-review": "prd-challenge.md",
     "5-tech-spec": "tech-spec.md",
     "6-spec-review-pm": "spec-review-pm.md",
@@ -114,33 +115,66 @@
     },
     {
       "action": "status changed from 'ready' to 'complete'",
+      "coverage_pct": 73,
+      "notes": "8 criteria with BLOCKER gaps: AC-13/14/15/17 (batch UX component missing entirely), AC-18 (TC-MODAL-01 weak assertion), AC-20 (HTTP 401 path tests missing), AC-21 (focus assertion TC-MODAL-02 missing), AC-22 (draft persistence tests missing)",
       "stage": "10-prd-alignment",
       "timestamp": "2026-05-09T13:10:00+08:00",
-      "verdict": "gaps",
-      "coverage_pct": 73,
-      "notes": "8 criteria with BLOCKER gaps: AC-13/14/15/17 (batch UX component missing entirely), AC-18 (TC-MODAL-01 weak assertion), AC-20 (HTTP 401 path tests missing), AC-21 (focus assertion TC-MODAL-02 missing), AC-22 (draft persistence tests missing)"
+      "verdict": "gaps"
     },
     {
       "action": "status changed from 'complete' to 'ready'",
+      "notes": "Returned to Ares — must cover AC-13/14/15/17/18/20/21/22",
       "stage": "9-implementation",
-      "timestamp": "2026-05-09T13:10:00+08:00",
-      "notes": "Returned to Ares — must cover AC-13/14/15/17/18/20/21/22"
+      "timestamp": "2026-05-09T13:10:00+08:00"
     },
     {
       "action": "status changed from 'complete' to 'complete' (re-run 2)",
       "agent": "hera",
+      "coverage_pct": 97,
+      "notes": "7 of 8 gaps closed. AC-20 (SEC-MODAL-03) remains: HTTP 401 → triggerSessionExpired path not implemented. Tests bypass missing implementation. Returning to Ares for AC-20 only.",
       "stage": "10-prd-alignment",
       "timestamp": "2026-05-09T14:30:00+08:00",
-      "verdict": "gaps",
-      "coverage_pct": 97,
-      "notes": "7 of 8 gaps closed. AC-20 (SEC-MODAL-03) remains: HTTP 401 → triggerSessionExpired path not implemented. Tests bypass missing implementation. Returning to Ares for AC-20 only."
+      "verdict": "gaps"
     },
     {
       "action": "AC-20 closed — event-bus implementation complete",
       "agent": "ares",
+      "notes": "Created src/lib/auth/http-events.ts. Wired QueryClient/MutationCache to dispatch HTTP_UNAUTHORIZED. Wired AuthContext useEffect to listen and call triggerSessionExpired(). Rewrote TC-HTTP401-01/02 to test real interceptor. 787 passing, 8 pre-existing failures unchanged.",
       "stage": "9-implementation",
-      "timestamp": "2026-05-09T15:35:00+08:00",
-      "notes": "Created src/lib/auth/http-events.ts. Wired QueryClient/MutationCache to dispatch HTTP_UNAUTHORIZED. Wired AuthContext useEffect to listen and call triggerSessionExpired(). Rewrote TC-HTTP401-01/02 to test real interceptor. 787 passing, 8 pre-existing failures unchanged."
+      "timestamp": "2026-05-09T15:35:00+08:00"
+    },
+    {
+      "action": "status changed to 'complete' (re-run 3 — final)",
+      "agent": "hera",
+      "coverage_pct": 100,
+      "notes": "AC-20 verified. httpAuthEvents EventTarget + HTTP_UNAUTHORIZED constant bridge QueryClient → AuthContext. TC-HTTP401-01/02 exercise real event bus (dispatch + listener cleanup). 30/30 criteria verified and passing. 787 passing, 8 pre-existing failures unchanged.",
+      "stage": "10-prd-alignment",
+      "timestamp": "2026-05-09T15:50:00+08:00",
+      "verdict": "aligned"
+    },
+    {
+      "action": "status changed from 'ready' to 'in-progress'",
+      "stage": "11-review",
+      "timestamp": "2026-05-09T15:41:08+08:00"
+    },
+    {
+      "action": "status changed from 'in-progress' to 'complete'",
+      "stage": "11-review",
+      "timestamp": "2026-05-09T15:42:48+08:00",
+      "verdict": "caution"
+    },
+    {
+      "action": "status changed from 'complete' to 'complete'",
+      "stage": "11-review",
+      "timestamp": "2026-05-09T15:43:00+08:00",
+      "verdict": "changes-requested"
+    },
+    {
+      "action": "status changed from 'pending' to 'complete'",
+      "agent": "ares",
+      "notes": "Fixed 3 BLOCKER + 2 HIGH findings. BLOCKER-1: QueryCache/MutationCache onSuccess now fires HTTP_UNAUTHORIZED on resolved 401 payloads. BLOCKER-2: denialCounter + lastLogAt capped at 1000 entries with oldest-eviction. BLOCKER-3+HIGH-3: BatchColumnForm rewritten with Tailwind/shadcn; generic errors now show neutral message (no bisection). HIGH-1: ESLint rule tightened to require paired findEffectiveRole+hasMinimumRole (discarded single call no longer passes). 794 passing, 8 pre-existing failures unchanged.",
+      "stage": "12-review-fixes",
+      "timestamp": "2026-05-09T16:30:00+08:00"
     }
   ],
   "implementation_mode": null,
@@ -177,27 +211,38 @@
     },
     "10-prd-alignment": {
       "agent": "hera",
-      "alignment_verdict": "gaps",
-      "coverage_pct": 97,
-      "criteria_missing": ["AC-20"],
-      "completed": "2026-05-09T14:30:00+08:00",
-      "documents": ["prd-alignment.md"],
-      "status": "complete",
-      "run": 2,
-      "notes": "Re-run after Ares gap-closure round 2. AC-13/14/15/17/18/21/22 verified. AC-20 remains: HTTP 401 transport to triggerSessionExpired not implemented."
+      "alignment_verdict": "aligned",
+      "completed": "2026-05-09T15:50:00+08:00",
+      "coverage_pct": 100,
+      "criteria_missing": [],
+      "documents": [
+        "prd-alignment.md"
+      ],
+      "notes": "Final re-run. AC-20 verified: httpAuthEvents EventTarget bridges QueryClient → AuthContext. TC-HTTP401-01/02 exercise real event bus. 30/30 criteria verified and passing.",
+      "run": 3,
+      "status": "complete"
     },
     "11-review": {
       "agents": [
         "hermes",
         "cassandra"
       ],
+      "completed": "2026-05-09T15:43:00+08:00",
+      "document": "code-review.md",
       "documents": [],
-      "status": "pending"
+      "started": "2026-05-09T15:41:08+08:00",
+      "status": "complete",
+      "verdict": "changes-requested"
     },
     "12-review-fixes": {
       "agent": "ares",
-      "documents": [],
-      "status": "pending"
+      "completed": "2026-05-09T16:30:00+08:00",
+      "documents": [
+        "implementation-notes.md"
+      ],
+      "started": "2026-05-09T15:43:00+08:00",
+      "status": "complete",
+      "summary": "Fixed 3 BLOCKER + 2 HIGH findings from Hermes/Cassandra review. Created 2 files (root-provider.test.ts, discarded-findEffectiveRole.ts), modified 9 files. 7 new tests added; 794 total passing, 8 pre-existing failures unchanged. No spec deviations."
     },
     "2-prd-review": {
       "agent": "nemesis",
@@ -299,14 +344,14 @@
       "completed": "2026-05-09T15:35:00+08:00",
       "document": "implementation-notes.md",
       "documents": [],
+      "needs_coverage": [],
       "started": "2026-05-09T12:12:46+08:00",
       "status": "complete",
-      "needs_coverage": [],
       "summary": "Created 19 files (+1 gap-closure-3: http-events.ts), modified 28 files. AC-20 closed: event-bus pattern implemented — httpAuthEvents (EventTarget) in src/lib/auth/http-events.ts; QueryClient/MutationCache fire HTTP_UNAUTHORIZED on any 401; AuthContext useEffect listens and calls triggerSessionExpired(). TC-HTTP401-01/02 rewritten to exercise real interceptor (dispatch event, assert listener fires; remove listener, assert no double-fire). 787 passing, 8 pre-existing failures unchanged. All 22 ACs now fully covered."
     }
   },
   "pipeline_status": "in_progress",
   "priority": "P0",
-  "stage": "9-implementation",
-  "updated": "2026-05-09T15:35:00+08:00"
+  "stage": "12-review-fixes",
+  "updated": "2026-05-09T16:30:00+08:00"
 }
