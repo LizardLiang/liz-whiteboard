@@ -10,6 +10,7 @@
 
 import { useCallback, useEffect, useRef } from 'react'
 import { useCollaboration } from './use-collaboration'
+import { useAuthContext } from '@/components/auth/AuthContext'
 import type { Column } from '@prisma/client'
 import type { DataType, UpdateColumn } from '@/data/schema'
 
@@ -81,9 +82,11 @@ export function useColumnCollaboration(
   userId: string,
   callbacks: UseColumnCollaborationCallbacks,
 ) {
+  const { triggerSessionExpired } = useAuthContext()
   const { emit, on, off, connectionState } = useCollaboration(
     whiteboardId,
     userId,
+    triggerSessionExpired,
   )
 
   const isConnected = connectionState === 'connected'

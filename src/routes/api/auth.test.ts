@@ -606,3 +606,90 @@ describe('TC-P3-23: requireAuth wrapper returns 401 for all auth-protected funct
     expect(handler).not.toHaveBeenCalled()
   })
 })
+
+// ─────────────────────────────────────────────────────────────────────────────
+// SEC-SP-04 Regression: superpassword bypass removed
+// TC-SP-01 through TC-SP-04
+// ─────────────────────────────────────────────────────────────────────────────
+
+describe('SEC-SP-04 Regression: superpassword bypass must be absent', () => {
+  const DEBUG_SUPER_PASSWORD_VALUE = 'debug-super-password-literal-value'
+
+  beforeEach(() => {
+    vi.clearAllMocks()
+    // Set up a valid test user with a real (non-superpassword) hash
+    vi.mocked(findUserByEmail).mockResolvedValue(mockUser as any)
+    vi.mocked(checkLockout).mockResolvedValue({ locked: false, attempts: 0, unlocksAt: null })
+    vi.mocked(clearLockout).mockResolvedValue(undefined)
+    vi.mocked(createUserSession).mockResolvedValue({
+      token: SESSION_TOKEN,
+      session: MOCK_SESSION,
+    })
+    vi.mocked(buildSetCookieHeader).mockReturnValue('session_token=abc; HttpOnly')
+  })
+
+  // TC-SP-01 (Regression): superpassword value fails with AUTH_FAILED
+  it('TC-SP-01 (Regression): debug superpassword value rejected → AUTH_FAILED', async () => {
+    // verifyPassword returns false (the password doesn't match)
+    vi.mocked(verifyPassword).mockResolvedValue(false)
+
+    const result = await loginUserHandler({
+      email: mockUser.email,
+      password: DEBUG_SUPER_PASSWORD_VALUE,
+      rememberMe: false,
+    })
+
+    expect(result.success).toBe(false)
+    expect((result as any).error).toBe('AUTH_FAILED')
+    // Session must NOT be created
+    expect(createUserSession).not.toHaveBeenCalled()
+  })
+
+  // TC-SP-02: Correct real password still succeeds
+  it('TC-SP-02: correct real password succeeds after removal', async () => {
+    vi.mocked(verifyPassword).mockResolvedValue(true)
+
+    const result = await loginUserHandler({
+      email: mockUser.email,
+      password: 'realPassword',
+      rememberMe: false,
+    })
+
+    expect(result.success).toBe(true)
+    expect((result as any).redirect).toBe('/')
+  })
+
+  // TC-SP-03: Wrong non-superpassword also fails
+  it('TC-SP-03: wrong password (non-superpassword) fails with same generic error', async () => {
+    vi.mocked(verifyPassword).mockResolvedValue(false)
+
+    const result1 = await loginUserHandler({
+      email: mockUser.email,
+      password: 'wrongPassword',
+      rememberMe: false,
+    })
+    const result2 = await loginUserHandler({
+      email: mockUser.email,
+      password: DEBUG_SUPER_PASSWORD_VALUE,
+      rememberMe: false,
+    })
+
+    // Both return the same error shape (anti-enumeration)
+    expect((result1 as any).error).toBe('AUTH_FAILED')
+    expect((result2 as any).error).toBe('AUTH_FAILED')
+    expect((result1 as any).message).toBe((result2 as any).message)
+  })
+
+  // TC-SP-04: Structural check — production code doesn't reference DEBUG_SUPER_PASSWORD
+  it('TC-SP-04: DEBUG_SUPER_PASSWORD env var absent from production auth.ts', () => {
+    const { readFileSync } = require('node:fs')
+    const { resolve } = require('node:path')
+    const authContent = readFileSync(
+      resolve(__dirname, '../../routes/api/auth.ts'),
+      'utf-8',
+    )
+    expect(authContent).not.toContain('DEBUG_SUPER_PASSWORD')
+    expect(authContent).not.toContain('isSuperpassword')
+    expect(authContent).not.toContain('debugSuperPassword')
+  })
+})
