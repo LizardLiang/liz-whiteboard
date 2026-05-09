@@ -1,0 +1,275 @@
+{
+  "created": "2026-05-09T00:00:00Z",
+  "description": "Fix 5 security vulnerabilities in PR #97 auth implementation: superpassword bypass, 2x WebSocket IDOR (column:create + batch column RBAC), session_expired modal wiring, missing RBAC on server functions",
+  "documents": {
+    "1-prd": "prd.md,decisions.md",
+    "2-prd-review": "prd-challenge.md",
+    "5-tech-spec": "tech-spec.md",
+    "6-spec-review-pm": "spec-review-pm.md",
+    "7-spec-review-sa": "spec-review-sa.md",
+    "9-implementation": "implementation-notes.md"
+  },
+  "feature": "auth-security-hardening",
+  "history": [
+    {
+      "action": "started",
+      "agent": "kratos",
+      "notes": "Feature pipeline initialized — fixing 5 security bugs identified in account-authentication code review (PR #97)",
+      "stage": "1-prd",
+      "timestamp": "2026-05-09T00:00:00Z"
+    },
+    {
+      "action": "status changed from 'in_progress' to 'in-progress'",
+      "stage": "1-prd",
+      "timestamp": "2026-05-09T01:11:15+08:00"
+    },
+    {
+      "action": "status changed from 'in-progress' to 'complete'",
+      "stage": "1-prd",
+      "timestamp": "2026-05-09T01:15:15+08:00"
+    },
+    {
+      "action": "status changed from 'pending' to 'in-progress'",
+      "stage": "2-prd-review",
+      "timestamp": "2026-05-09T01:16:11+08:00"
+    },
+    {
+      "action": "status changed from 'in-progress' to 'complete'",
+      "stage": "2-prd-review",
+      "timestamp": "2026-05-09T01:17:58+08:00",
+      "verdict": "revisions"
+    },
+    {
+      "action": "status changed from 'complete' to 'complete'",
+      "stage": "1-prd",
+      "timestamp": "2026-05-09T01:26:37+08:00"
+    },
+    {
+      "action": "status changed from 'complete' to 'in-progress'",
+      "stage": "2-prd-review",
+      "timestamp": "2026-05-09T01:28:00+08:00"
+    },
+    {
+      "action": "status changed from 'in-progress' to 'complete'",
+      "stage": "2-prd-review",
+      "timestamp": "2026-05-09T01:29:29+08:00",
+      "verdict": "approved"
+    },
+    {
+      "action": "status changed from 'pending' to 'in-progress'",
+      "stage": "5-tech-spec",
+      "timestamp": "2026-05-09T11:44:38+08:00"
+    },
+    {
+      "action": "status changed from 'in-progress' to 'complete'",
+      "stage": "5-tech-spec",
+      "timestamp": "2026-05-09T11:50:54+08:00"
+    },
+    {
+      "action": "status changed from 'pending' to 'in-progress'",
+      "stage": "6-spec-review-pm",
+      "timestamp": "2026-05-09T11:55:39+08:00"
+    },
+    {
+      "action": "status changed from 'in-progress' to 'complete'",
+      "stage": "6-spec-review-pm",
+      "timestamp": "2026-05-09T11:55:43+08:00",
+      "verdict": "approved"
+    },
+    {
+      "action": "status changed from 'pending' to 'in-progress'",
+      "stage": "7-spec-review-sa",
+      "timestamp": "2026-05-09T11:58:24+08:00"
+    },
+    {
+      "action": "status changed from 'in-progress' to 'complete'",
+      "stage": "7-spec-review-sa",
+      "timestamp": "2026-05-09T12:01:31+08:00",
+      "verdict": "approved"
+    },
+    {
+      "action": "status changed from 'pending' to 'ready'",
+      "stage": "8-test-plan",
+      "timestamp": "2026-05-09T12:01:34+08:00"
+    },
+    {
+      "action": "status changed from 'ready' to 'in-progress'",
+      "stage": "8-test-plan",
+      "timestamp": "2026-05-09T12:15:00+08:00"
+    },
+    {
+      "action": "status changed from 'in-progress' to 'complete'",
+      "stage": "8-test-plan",
+      "timestamp": "2026-05-09T12:30:00+08:00"
+    },
+    {
+      "action": "status changed from 'pending' to 'in-progress'",
+      "stage": "9-implementation",
+      "timestamp": "2026-05-09T12:12:46+08:00"
+    },
+    {
+      "action": "status changed from 'in-progress' to 'complete'",
+      "stage": "9-implementation",
+      "timestamp": "2026-05-09T12:50:35+08:00"
+    }
+  ],
+  "implementation_mode": null,
+  "mode": "normal",
+  "pipeline": {
+    "0-research": {
+      "agent": "metis",
+      "completed": null,
+      "documents": [],
+      "started": null,
+      "status": "skipped"
+    },
+    "1-prd": {
+      "agent": "athena",
+      "check_failures": [
+        {
+          "checks_failed": [
+            "prd.md not found in /home/shotup/programing/react/liz-whiteboard/.claude/feature/auth-security-hardening",
+            "decisions.md not found in /home/shotup/programing/react/liz-whiteboard/.claude/feature/auth-security-hardening"
+          ],
+          "retries_exhausted": true,
+          "tier": 1,
+          "timestamp": "2026-05-09T01:10:58+08:00"
+        }
+      ],
+      "completed": "2026-05-09T01:26:37+08:00",
+      "document": "prd.md,decisions.md",
+      "documents": [],
+      "gap_analysis_rounds": 0,
+      "revision_count": 1,
+      "revision_notes": "v2.0 — addressed Nemesis REVISIONS verdict (4 BLOCKING + 6 MAJOR + 7 MINOR). See decisions.md D11-D26 and prd.md Revision Notes section.",
+      "started": "2026-05-09T01:11:15+08:00",
+      "status": "complete"
+    },
+    "10-prd-alignment": {
+      "agent": "hera",
+      "documents": [],
+      "status": "ready"
+    },
+    "11-review": {
+      "agents": [
+        "hermes",
+        "cassandra"
+      ],
+      "documents": [],
+      "status": "pending"
+    },
+    "12-review-fixes": {
+      "agent": "ares",
+      "documents": [],
+      "status": "pending"
+    },
+    "2-prd-review": {
+      "agent": "nemesis",
+      "check_failures": [
+        {
+          "checks_failed": [
+            "prd-challenge.md does not contain a required verdict (expected one of: approved, revisions, rejected)"
+          ],
+          "retries_exhausted": true,
+          "tier": 1,
+          "timestamp": "2026-05-09T01:18:40+08:00"
+        },
+        {
+          "checks_failed": [
+            "prd-challenge.md does not contain a required verdict (expected one of: approved, revisions, rejected)"
+          ],
+          "retries_exhausted": true,
+          "tier": 1,
+          "timestamp": "2026-05-09T01:26:33+08:00"
+        },
+        {
+          "checks_failed": [
+            "prd-challenge.md does not contain a required verdict (expected one of: approved, revisions, rejected)"
+          ],
+          "retries_exhausted": true,
+          "tier": 1,
+          "timestamp": "2026-05-09T01:30:18+08:00"
+        },
+        {
+          "checks_failed": [
+            "prd-challenge.md does not contain a required verdict (expected one of: approved, revisions, rejected)"
+          ],
+          "retries_exhausted": true,
+          "tier": 1,
+          "timestamp": "2026-05-09T01:32:50+08:00"
+        }
+      ],
+      "completed": "2026-05-09T01:29:29+08:00",
+      "document": "prd-challenge.md",
+      "documents": [],
+      "started": "2026-05-09T01:28:00+08:00",
+      "status": "complete",
+      "verdict": "approved"
+    },
+    "3-decomposition": {
+      "agent": "daedalus",
+      "completed": "2026-05-09T13:00:00+08:00",
+      "document": "decomposition.md",
+      "documents": [
+        "decomposition.md"
+      ],
+      "started": "2026-05-09T12:45:00+08:00",
+      "status": "complete",
+      "summary": "4 phases, 35 tasks across 3 wave-structured phases. Critical path: Phase 1 (Foundation: requireRole/requireServerFnRole helpers) → Phase 2 (Backend: 13 WS handlers + 85 server-fn exports + batch fix + superpassword) → Phase 3 (Frontend: session-expired wiring + draft persistence + batch UX) → Phase 4 (AST guard + full verification). Phase 3 parallelizable with Phase 2 after Phase 1 completes."
+    },
+    "4-discuss": {
+      "agent": "themis",
+      "documents": [],
+      "status": "pending"
+    },
+    "5-tech-spec": {
+      "agent": "hephaestus",
+      "completed": "2026-05-09T11:50:54+08:00",
+      "document": "tech-spec.md",
+      "documents": [],
+      "started": "2026-05-09T11:44:38+08:00",
+      "status": "complete",
+      "summary": "Centralized authz via two helpers (requireRole for WS, requireServerFnRole for HTTP) replacing the no-op denyIfInsufficientPermission stub; SEC-RBAC-04 enforced by inline ESLint plugin in eslint.config.js. ~13 files create, ~21 modify. Trade-offs: two error shapes coexist (canonical only on the 5 fix sites per GA-ERROR-SHAPE-MIGRATION); column-form-only sessionStorage recovery (per GA-MODAL-RECOVERY-SCOPE) — broader unsaved-state deferred."
+    },
+    "6-spec-review-pm": {
+      "agent": "athena",
+      "completed": "2026-05-09T11:55:43+08:00",
+      "document": "spec-review-pm.md",
+      "documents": [],
+      "started": "2026-05-09T11:55:39+08:00",
+      "status": "complete",
+      "verdict": "approved"
+    },
+    "7-spec-review-sa": {
+      "agent": "apollo",
+      "completed": "2026-05-09T12:01:31+08:00",
+      "document": "spec-review-sa.md",
+      "documents": [],
+      "started": "2026-05-09T11:58:24+08:00",
+      "status": "complete",
+      "verdict": "approved"
+    },
+    "8-test-plan": {
+      "agent": "artemis",
+      "completed": "2026-05-09T12:30:00+08:00",
+      "document": "test-plan.md",
+      "documents": [],
+      "started": "2026-05-09T12:15:00+08:00",
+      "status": "complete",
+      "summary": "79 test cases across 15 suites: 24 unit, 31 integration, 5 component/batch-UX, 5 component/draft, 8 ESLint rule self-tests, 5 regression probes, 1 AST assertion. All 30 P0 requirements covered (100%). Primary risk areas: getTableProjectId DB-throw anti-enumeration leak (Apollo MEDIUM-1, 3 dedicated tests), batch all-or-nothing RBAC semantics, and ESLint wrapper-allowlist completeness (gutted-wrapper detection)."
+    },
+    "9-implementation": {
+      "agent": "ares",
+      "completed": "2026-05-09T12:50:35+08:00",
+      "document": "implementation-notes.md",
+      "documents": [],
+      "started": "2026-05-09T12:12:46+08:00",
+      "status": "complete",
+      "summary": "Created 15 files, modified 25 files. 73 new tests written, all passing (759 total, 8 pre-existing failures unchanged). All 5 security defects fixed: superpassword removed, 13 WS IDOR handlers replaced with requireRole, 85+ server-fn exports tagged + guarded, batch pre-validate-then-write with MEDIUM-1 DB-throw protection, session_expired callback made mandatory with 4 call sites wired. Two spec deviations: column-edit modal and batch UX wiring deferred (neither UI component exists in current codebase). ESLint AST guard live in bun run lint with 0 violations."
+    }
+  },
+  "pipeline_status": "in_progress",
+  "priority": "P0",
+  "stage": "9-implementation",
+  "updated": "2026-05-09T12:50:35+08:00"
+}
