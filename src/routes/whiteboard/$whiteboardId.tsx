@@ -22,6 +22,7 @@ import { TextEditor } from '@/components/whiteboard/TextEditor'
 import { Minimap } from '@/components/whiteboard/Minimap'
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import { useCollaboration } from '@/hooks/use-collaboration'
+import { useAuthContext } from '@/components/auth/AuthContext'
 import { getSessionUserId } from '@/lib/session-user-id'
 import {
   createRelationshipFn,
@@ -64,6 +65,7 @@ function WhiteboardEditor() {
   // to be treated as remote-user events and duplicating optimistic columns.
   const { user } = Route.useRouteContext()
   const userId = user?.id ?? getSessionUserId()
+  const { triggerSessionExpired } = useAuthContext()
 
   // State
   const [selectedTableId, setSelectedTableId] = useState<string | null>(null)
@@ -144,6 +146,7 @@ function WhiteboardEditor() {
   const { emit, on, off, connectionState } = useCollaboration(
     whiteboardId,
     userId,
+    triggerSessionExpired,
   )
 
   /**

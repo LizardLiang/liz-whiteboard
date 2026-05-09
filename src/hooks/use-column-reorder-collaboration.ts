@@ -12,6 +12,7 @@
 
 import { useCallback, useEffect, useRef } from 'react'
 import { useCollaboration } from './use-collaboration'
+import { useAuthContext } from '@/components/auth/AuthContext'
 import type { ColumnReorderErrorCode, UseColumnReorderMutationsReturn } from './use-column-reorder-mutations'
 import type { TableNodeType } from '@/lib/react-flow/types'
 
@@ -46,9 +47,11 @@ export function useColumnReorderCollaboration(
   userId: string,
   callbacks: UseColumnReorderCollaborationCallbacks,
 ) {
+  const { triggerSessionExpired } = useAuthContext()
   const { emit, on, off, connectionState } = useCollaboration(
     whiteboardId,
     userId,
+    triggerSessionExpired,
   )
 
   const isConnected = connectionState === 'connected'

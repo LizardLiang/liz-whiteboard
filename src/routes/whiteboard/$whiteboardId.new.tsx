@@ -35,6 +35,7 @@ import {
 import { Button } from '@/components/ui/button'
 import { Label } from '@/components/ui/label'
 import { useCollaboration } from '@/hooks/use-collaboration'
+import { useAuthContext } from '@/components/auth/AuthContext'
 import { getSessionUserId } from '@/lib/session-user-id'
 import { useAutoLayoutPreference } from '@/hooks/use-auto-layout-preference'
 import {
@@ -116,6 +117,7 @@ function WhiteboardEditor() {
 
   // Anonymous session-stable user ID. Replace with auth context when auth is implemented.
   const userId = getSessionUserId()
+  const { triggerSessionExpired } = useAuthContext()
 
   // State
   const [selectedNodeIds, setSelectedNodeIds] = useState<Array<string>>([])
@@ -158,6 +160,7 @@ function WhiteboardEditor() {
   const { emit, on, off, connectionState } = useCollaboration(
     whiteboardId,
     userId,
+    triggerSessionExpired,
   )
 
   // Convert data to React Flow format

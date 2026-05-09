@@ -68,7 +68,7 @@ export interface UseCollaborationReturn {
 export function useCollaboration(
   whiteboardId: string,
   userId: string,
-  onSessionExpired?: () => void,
+  onSessionExpired: () => void,
 ): UseCollaborationReturn {
   const socketRef = useRef<Socket | null>(null)
   const [connectionState, setConnectionState] =
@@ -203,14 +203,32 @@ export function useCollaboration(
     socket.on('session_expired', () => {
       console.warn('Session expired — WebSocket connection closed')
       setConnectionState('disconnected')
-      onSessionExpired?.()
+      try {
+        onSessionExpired()
+      } catch {
+        // TC-MODAL-04: if triggerSessionExpired throws, fall back to hard navigation
+        // so the UI is never stuck in a broken state.
+        if (typeof window !== 'undefined') {
+          window.location.assign(`/login?redirect=${encodeURIComponent(window.location.pathname)}`)
+        }
+      }
     })
 
     // Error handler
     socket.on(
       'error',
-      (data: { event: string; error: string; message: string }) => {
-        console.error(`Collaboration error [${data.event}]:`, data.message)
+      (data: { event?: string; error?: string; code?: 'FORBIDDEN' | 'BATCH_DENIED'; message: string }) => {
+        if (data.code === 'BATCH_DENIED') {
+          // SEC-BATCH-UX-02: route to banner state — the caller component handles
+          // rendering; we log and let the component re-emit via its own error handler.
+          console.warn(`[auth] BATCH_DENIED on event=${data.event ?? 'unknown'}:`, data.message)
+        } else if (data.code === 'FORBIDDEN') {
+          // SEC-ERR-02: canonical auth denial — toast (components handle this via on/off)
+          console.warn(`[auth] FORBIDDEN on event=${data.event ?? 'unknown'}`)
+        } else {
+          // Legacy error shape (AD-5): non-auth errors keep existing logging
+          console.error(`Collaboration error [${data.event ?? 'unknown'}]:`, data.message)
+        }
       },
     )
 

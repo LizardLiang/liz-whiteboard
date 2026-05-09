@@ -410,3 +410,105 @@ describe('TC-P5-08: CollaborationSession created with real userId from socket.da
     expect(createCall.userId).not.toMatch(/^placeholder/)
   })
 })
+
+// ─────────────────────────────────────────────────────────────────────────────
+// SEC-WS-04 Regression: requireRole emits canonical FORBIDDEN error shape
+// Tests the new requireRole helper (AD-1) replacing the old no-op.
+// TC-WS-01 through TC-WS-06
+// ─────────────────────────────────────────────────────────────────────────────
+
+vi.mock('@/data/resolve-project', () => ({
+  getWhiteboardProjectId: vi.fn(),
+}))
+
+vi.mock('@/lib/auth/log-sample', () => ({
+  logSampledError: vi.fn(),
+}))
+
+import { getWhiteboardProjectId } from '@/data/resolve-project'
+import { requireRole, getDenialCount } from '@/lib/auth/require-role'
+import type { WSAuthErrorPayload } from '@/lib/auth/require-role'
+
+function buildAuthSocket(userId = USER_UUID) {
+  const emit = vi.fn() as (e: string, p: WSAuthErrorPayload) => void
+  return {
+    data: { userId },
+    emit,
+  }
+}
+
+describe('SEC-WS-04: requireRole emits canonical FORBIDDEN when denied', () => {
+  beforeEach(() => {
+    vi.mocked(getWhiteboardProjectId).mockResolvedValue(PROJECT_ID)
+    vi.clearAllMocks()
+  })
+
+  // TC-WS-01 (Regression): Unauthorized user receives FORBIDDEN, no DB write (checked via no createColumn call)
+  it('TC-WS-01 (Regression): null role → FORBIDDEN emitted, returns true', async () => {
+    vi.mocked(findEffectiveRole).mockResolvedValue(null)
+    const socket = buildAuthSocket()
+    const denied = await requireRole(socket, 'wb-1', 'column:create', 'EDITOR')
+    expect(denied).toBe(true)
+    expect(socket.emit).toHaveBeenCalledWith('error', expect.objectContaining({
+      code: 'FORBIDDEN',
+      event: 'column:create',
+    }))
+  })
+
+  // TC-WS-02: Authorized EDITOR emitting column:create succeeds
+  it('TC-WS-02: EDITOR role → returns false (allowed), no error event', async () => {
+    vi.mocked(findEffectiveRole).mockResolvedValue('EDITOR')
+    const socket = buildAuthSocket()
+    const denied = await requireRole(socket, 'wb-1', 'column:create', 'EDITOR')
+    expect(denied).toBe(false)
+    expect(socket.emit).not.toHaveBeenCalled()
+  })
+
+  // TC-WS-03: VIEWER denied
+  it('TC-WS-03: VIEWER role → FORBIDDEN emitted', async () => {
+    vi.mocked(findEffectiveRole).mockResolvedValue('VIEWER')
+    const socket = buildAuthSocket()
+    const denied = await requireRole(socket, 'wb-1', 'column:create', 'EDITOR')
+    expect(denied).toBe(true)
+    expect(socket.emit).toHaveBeenCalledWith('error', expect.objectContaining({
+      code: 'FORBIDDEN',
+    }))
+  })
+
+  // TC-WS-04: Denial counter increments
+  it('TC-WS-04: denial counter increments per user per event', async () => {
+    vi.mocked(findEffectiveRole).mockResolvedValue(null)
+    const userId = `ws04-user-${Date.now()}`
+    const socket = buildAuthSocket(userId)
+    await requireRole(socket, 'wb-1', 'column:create', 'EDITOR')
+    await requireRole(socket, 'wb-1', 'column:create', 'EDITOR')
+    expect(getDenialCount(userId, 'column:create')).toBe(2)
+  })
+
+  // TC-WS-05: Log contains userId and event but not email
+  it('TC-WS-05: WARN log contains userId + event, no PII beyond userId', async () => {
+    vi.mocked(findEffectiveRole).mockResolvedValue('VIEWER')
+    const warnSpy = vi.spyOn(console, 'warn').mockImplementation(() => {})
+    const socket = buildAuthSocket('user-pii-test')
+    await requireRole(socket, 'wb-warn', 'column:create', 'EDITOR')
+    const logMsg = warnSpy.mock.calls[0]?.[0] as string | undefined
+    expect(logMsg).toContain('user=user-pii-test')
+    expect(logMsg).toContain('event=column:create')
+    expect(logMsg).not.toContain('@')
+    warnSpy.mockRestore()
+  })
+
+  // TC-WS-06: Whiteboard not found → FORBIDDEN (anti-enumeration)
+  it('TC-WS-06: whiteboard not found → FORBIDDEN (same shape, indistinguishable)', async () => {
+    vi.mocked(getWhiteboardProjectId).mockResolvedValue(null)
+    const socket = buildAuthSocket()
+    const denied = await requireRole(socket, 'wb-missing', 'column:create', 'EDITOR')
+    expect(denied).toBe(true)
+    expect(socket.emit).toHaveBeenCalledWith('error', expect.objectContaining({
+      code: 'FORBIDDEN',
+      event: 'column:create',
+    }))
+    // findEffectiveRole must NOT be called when projectId is null (anti-enumeration)
+    expect(vi.mocked(findEffectiveRole)).not.toHaveBeenCalled()
+  })
+})
