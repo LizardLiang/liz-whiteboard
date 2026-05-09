@@ -425,9 +425,12 @@ vi.mock('@/lib/auth/log-sample', () => ({
   logSampledError: vi.fn(),
 }))
 
+// eslint-disable-next-line import/first
 import { getWhiteboardProjectId } from '@/data/resolve-project'
-import { requireRole, getDenialCount } from '@/lib/auth/require-role'
+// eslint-disable-next-line import/first, import/order
 import type { WSAuthErrorPayload } from '@/lib/auth/require-role'
+// eslint-disable-next-line import/first, import/order
+import { getDenialCount, requireRole } from '@/lib/auth/require-role'
 
 function buildAuthSocket(userId = USER_UUID) {
   const emit = vi.fn() as (e: string, p: WSAuthErrorPayload) => void

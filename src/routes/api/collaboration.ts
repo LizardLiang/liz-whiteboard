@@ -232,8 +232,6 @@ function isSessionExpired(socket: any): boolean {
 /**
  * Resolve the projectId for a given whiteboardId.
  */
-// eslint-disable-next-line @typescript-eslint/no-unused-vars
-// @ts-expect-error — unused after permission bypass; restore when checks are re-enabled
 async function getProjectIdForWhiteboard(
   whiteboardId: string,
 ): Promise<string | null> {

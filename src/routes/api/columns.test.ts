@@ -8,18 +8,13 @@
 // instead we mirror its pre-validate-then-write handler logic here.
 
 import { beforeEach, describe, expect, it, vi } from 'vitest'
-import {
-  BatchDeniedError,
-  ForbiddenError,
-  requireServerFnRole,
-} from '@/lib/auth/require-role'
 
 vi.mock('@/data/resolve-project', () => ({
   getTableProjectId: vi.fn(),
 }))
 
 vi.mock('@/lib/auth/require-role', async (importOriginal) => {
-  const actual = await importOriginal<typeof import('@/lib/auth/require-role')>()
+  const actual = await importOriginal<{ BatchDeniedError: typeof import('@/lib/auth/require-role').BatchDeniedError; ForbiddenError: typeof import('@/lib/auth/require-role').ForbiddenError; requireServerFnRole: typeof import('@/lib/auth/require-role').requireServerFnRole }>()
   return {
     ...actual,
     requireServerFnRole: vi.fn(),
@@ -34,9 +29,18 @@ vi.mock('@/data/column', () => ({
   createColumns: vi.fn(),
 }))
 
+// eslint-disable-next-line import/first
 import { getTableProjectId } from '@/data/resolve-project'
+// eslint-disable-next-line import/first
 import { logSampledError } from '@/lib/auth/log-sample'
+// eslint-disable-next-line import/first
 import { createColumns } from '@/data/column'
+// eslint-disable-next-line import/first
+import {
+  BatchDeniedError,
+  ForbiddenError,
+  requireServerFnRole,
+} from '@/lib/auth/require-role'
 
 const mockGetTableProjectId = vi.mocked(getTableProjectId)
 const mockRequireServerFnRole = vi.mocked(requireServerFnRole)
@@ -54,7 +58,7 @@ interface ColumnInput {
   dataType: string
 }
 
-async function createColumnsBatchHandler(userId: string, data: ColumnInput[]) {
+async function createColumnsBatchHandler(userId: string, data: Array<ColumnInput>) {
   if (data.length === 0) return []
 
   const uniqueTableIds = [...new Set(data.map((c) => c.tableId))]
@@ -87,6 +91,8 @@ async function createColumnsBatchHandler(userId: string, data: ColumnInput[]) {
 function makeColumnInput(tableId: string, i: number = 0): ColumnInput {
   return { tableId, name: `col_${i}`, dataType: 'string' }
 }
+
+type ColumnInputArray = Array<ColumnInput>
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Suite 7 — SEC-BATCH-04

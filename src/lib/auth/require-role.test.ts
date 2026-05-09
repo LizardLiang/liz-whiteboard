@@ -5,14 +5,6 @@
 // TC-ERR-01 through TC-ERR-04
 
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
-import {
-  BatchDeniedError,
-  ForbiddenError,
-  getDenialCount,
-  requireRole,
-  requireServerFnRole,
-  type WSAuthErrorPayload,
-} from './require-role'
 
 // Mock the data layer so tests never touch the DB
 vi.mock('@/data/permission', () => ({
@@ -27,9 +19,22 @@ vi.mock('@/lib/auth/log-sample', () => ({
   logSampledError: vi.fn(),
 }))
 
+// eslint-disable-next-line import/first
 import { findEffectiveRole } from '@/data/permission'
+// eslint-disable-next-line import/first
 import { getWhiteboardProjectId } from '@/data/resolve-project'
+// eslint-disable-next-line import/first
 import { logSampledError } from '@/lib/auth/log-sample'
+// eslint-disable-next-line import/first, import/order
+import type { WSAuthErrorPayload } from './require-role'
+// eslint-disable-next-line import/first, import/order
+import {
+  BatchDeniedError,
+  ForbiddenError,
+  getDenialCount,
+  requireRole,
+  requireServerFnRole,
+} from './require-role'
 
 const mockFindEffectiveRole = vi.mocked(findEffectiveRole)
 const mockGetWhiteboardProjectId = vi.mocked(getWhiteboardProjectId)
