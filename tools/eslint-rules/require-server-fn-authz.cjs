@@ -38,60 +38,85 @@ function getRequiresTag(jsDocComment) {
 }
 
 /**
- * Walk a function body (BlockStatement or expression) and check whether
- * it (or a nested call) contains a call to `requireServerFnRole` OR the
- * legacy `findEffectiveRole` + `hasMinimumRole` pattern (spec §3.9 resilience).
+ * Collect all call expression callee names in a body node (recursive).
+ * Returns a Set of all function names called anywhere in the body.
+ *
+ * HIGH-1 fix: replaced the old `bodyCallsRequireServerFnRole` single-boolean
+ * check with a Set collector so we can require BOTH `findEffectiveRole` AND
+ * `hasMinimumRole` when the legacy pattern is used. Previously, a discarded
+ * `findEffectiveRole(...)` call (result not used) would pass the rule — the
+ * paired assertion now closes that bypass. (Cassandra HIGH-1)
  */
-function bodyCallsRequireServerFnRole(node) {
-  if (!node) return false
+function collectCalleeNames(node, names) {
+  if (!node) return
   if (node.type === 'CallExpression') {
     const callee = node.callee
     const calleeName =
       callee.type === 'Identifier' ? callee.name :
       callee.type === 'MemberExpression' ? callee.property.name :
       null
-
-    if (
-      calleeName === 'requireServerFnRole' ||
-      // Legacy pattern (AD-5: already-correct files use findEffectiveRole + hasMinimumRole)
-      calleeName === 'findEffectiveRole' ||
-      calleeName === 'hasMinimumRole'
-    ) {
-      return true
-    }
-    // Recurse into arguments
-    return node.arguments.some(bodyCallsRequireServerFnRole)
+    if (calleeName) names.add(calleeName)
+    node.arguments.forEach((arg) => collectCalleeNames(arg, names))
+    return
   }
   if (node.type === 'AwaitExpression') {
-    return bodyCallsRequireServerFnRole(node.argument)
+    collectCalleeNames(node.argument, names)
+    return
   }
   if (node.type === 'BlockStatement') {
-    return node.body.some(bodyCallsRequireServerFnRole)
+    node.body.forEach((s) => collectCalleeNames(s, names))
+    return
   }
   if (node.type === 'ExpressionStatement') {
-    return bodyCallsRequireServerFnRole(node.expression)
+    collectCalleeNames(node.expression, names)
+    return
   }
   if (node.type === 'ReturnStatement') {
-    return bodyCallsRequireServerFnRole(node.argument)
+    collectCalleeNames(node.argument, names)
+    return
   }
   if (node.type === 'TryStatement') {
-    return (
-      bodyCallsRequireServerFnRole(node.block) ||
-      bodyCallsRequireServerFnRole(node.handler?.body)
-    )
+    collectCalleeNames(node.block, names)
+    collectCalleeNames(node.handler?.body, names)
+    return
   }
   if (node.type === 'IfStatement') {
-    return (
-      bodyCallsRequireServerFnRole(node.consequent) ||
-      bodyCallsRequireServerFnRole(node.alternate)
-    )
+    // Traverse the condition (test), consequent, and alternate
+    // e.g. if (!hasMinimumRole(...)) — hasMinimumRole is in node.test
+    collectCalleeNames(node.test, names)
+    collectCalleeNames(node.consequent, names)
+    collectCalleeNames(node.alternate, names)
+    return
+  }
+  if (node.type === 'UnaryExpression' || node.type === 'LogicalExpression') {
+    // Handle !hasMinimumRole(...) (UnaryExpression) and a && b (LogicalExpression)
+    collectCalleeNames(node.argument ?? node.left, names)
+    if (node.right) collectCalleeNames(node.right, names)
+    return
   }
   if (node.type === 'VariableDeclaration') {
-    return node.declarations.some((d) => bodyCallsRequireServerFnRole(d.init))
+    node.declarations.forEach((d) => collectCalleeNames(d.init, names))
+    return
   }
   if (node.type === 'ForOfStatement' || node.type === 'ForInStatement' || node.type === 'ForStatement') {
-    return bodyCallsRequireServerFnRole(node.body)
+    collectCalleeNames(node.body, names)
   }
+}
+
+/**
+ * Return true if the body satisfies RBAC requirements:
+ *   (a) calls `requireServerFnRole` (preferred pattern), OR
+ *   (b) calls BOTH `findEffectiveRole` AND `hasMinimumRole` (legacy pattern, paired assertion).
+ *
+ * A single `findEffectiveRole` call with a discarded result does NOT pass.
+ */
+function bodyCallsRequireServerFnRole(node) {
+  if (!node) return false
+  const names = new Set()
+  collectCalleeNames(node, names)
+  if (names.has('requireServerFnRole')) return true
+  // Legacy pattern: both halves must be present
+  if (names.has('findEffectiveRole') && names.has('hasMinimumRole')) return true
   return false
 }
 

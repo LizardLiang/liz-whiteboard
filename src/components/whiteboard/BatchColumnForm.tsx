@@ -1,9 +1,18 @@
 // src/components/whiteboard/BatchColumnForm.tsx
 // SEC-BATCH-UX: Batch column creation form with per-row entries, BATCH_DENIED banner,
 // and keyboard-reachable bisection affordance (SEC-BATCH-UX-01/02/03/05).
+//
+// BLOCKER-3 fix: Replaced all inline styles with Tailwind classes and shadcn/ui
+// components (Button, Input, Alert, AlertDescription). No hardcoded color literals.
+//
+// HIGH-3 fix: Separate state for BATCH_DENIED denial vs generic errors. Bisection
+// affordance only shown on confirmed BATCH_DENIED. Generic errors show a neutral message.
 
 import React, { useCallback, useId, useRef, useState } from 'react'
 import type { DataType } from '@/data/schema'
+import { Alert, AlertDescription } from '@/components/ui/alert'
+import { Button } from '@/components/ui/button'
+import { Input } from '@/components/ui/input'
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Types
@@ -52,6 +61,9 @@ const DATA_TYPES: Array<DataType> = [
 const BATCH_DENIED_MESSAGE =
   'This batch could not be saved. One or more items target a resource you no longer have access to.'
 
+const GENERIC_ERROR_MESSAGE =
+  'Save failed. Please try again.'
+
 // ─────────────────────────────────────────────────────────────────────────────
 // Component
 // ─────────────────────────────────────────────────────────────────────────────
@@ -65,6 +77,7 @@ const BATCH_DENIED_MESSAGE =
  * - On BATCH_DENIED: preserves all input, shows denial banner (SEC-BATCH-UX-01/02).
  * - Bisection affordance: "Try first half" / "Try second half" buttons (SEC-BATCH-UX-03).
  * - Banner has role="alert" for screen-reader announcement (PRD §12).
+ * - On generic errors (network, 500s): shows neutral "Save failed" message — no bisection.
  */
 export function BatchColumnForm({
   tableId,
@@ -83,7 +96,9 @@ export function BatchColumnForm({
     return [makeRow()]
   })
 
+  // HIGH-3 fix: separate state for RBAC denial vs generic errors
   const [denied, setDenied] = useState(false)
+  const [genericError, setGenericError] = useState(false)
   const [submitting, setSubmitting] = useState(false)
 
   // ── Row operations ──────────────────────────────────────────────────────────
@@ -116,6 +131,7 @@ export function BatchColumnForm({
 
       setSubmitting(true)
       setDenied(false)
+      setGenericError(false)
       try {
         await onSubmit(
           nonEmpty.map((r, idx) => ({
@@ -128,17 +144,18 @@ export function BatchColumnForm({
         // Success — close if no error
         onClose?.()
       } catch (error: unknown) {
-        // SEC-BATCH-UX-01: preserve ALL input on any error; only show banner on BATCH_DENIED
+        // HIGH-3 fix: only show BATCH_DENIED banner + bisection for RBAC denials.
+        // Network errors, 500s, validation errors show a neutral generic message.
         const errorCode =
           error instanceof Error &&
           'errorCode' in error &&
           (error as { errorCode: string }).errorCode
         if (errorCode === 'BATCH_DENIED' || (error instanceof Error && error.message.includes('BATCH_DENIED'))) {
-          setDenied(true)
           // SEC-BATCH-UX-01: input preserved — no form reset
+          setDenied(true)
         } else {
-          // Surface other errors without clearing form
-          setDenied(true) // show generic banner
+          // Non-RBAC error — show neutral message, no bisection affordance
+          setGenericError(true)
         }
       } finally {
         setSubmitting(false)
@@ -173,65 +190,56 @@ export function BatchColumnForm({
     <form
       aria-label="Batch column creation"
       onSubmit={handleSubmitAll}
-      style={{ display: 'flex', flexDirection: 'column', gap: '8px', padding: '12px' }}
+      className="flex flex-col gap-2 p-3"
     >
-      {/* SEC-BATCH-UX-02: denial banner with role="alert" (PRD §12) */}
+      {/* SEC-BATCH-UX-02: BATCH_DENIED denial banner with bisection affordance */}
       {denied && (
-        <div
-          role="alert"
+        <Alert
+          variant="destructive"
           aria-live="assertive"
           aria-describedby={bannerId}
-          style={{
-            background: 'rgba(239,68,68,0.1)',
-            border: '1px solid rgba(239,68,68,0.4)',
-            borderRadius: '4px',
-            padding: '8px 12px',
-            fontSize: '13px',
-            color: '#dc2626',
-          }}
         >
-          <span id={bannerId}>{BATCH_DENIED_MESSAGE}</span>
-          {/* SEC-BATCH-UX-03: bisection affordance — keyboard reachable (tabIndex makes these naturally focusable) */}
+          <AlertDescription id={bannerId} className="text-sm">
+            {BATCH_DENIED_MESSAGE}
+          </AlertDescription>
+          {/* SEC-BATCH-UX-03: bisection affordance — only shown on RBAC denial */}
           {rows.length > 1 && (
-            <div style={{ marginTop: '8px', display: 'flex', gap: '8px' }}>
-              <button
+            <div className="mt-2 flex gap-2">
+              <Button
                 ref={firstBisectRef}
                 type="button"
+                variant="outline"
+                size="sm"
                 aria-label="Try first half of batch"
                 onClick={handleTryFirstHalf}
                 disabled={submitting}
-                style={{
-                  fontSize: '12px',
-                  padding: '4px 8px',
-                  border: '1px solid #dc2626',
-                  borderRadius: '3px',
-                  background: 'transparent',
-                  color: '#dc2626',
-                  cursor: 'pointer',
-                }}
+                className="border-destructive text-destructive hover:bg-destructive/10"
               >
                 Try first half
-              </button>
-              <button
+              </Button>
+              <Button
                 type="button"
+                variant="outline"
+                size="sm"
                 aria-label="Try second half of batch"
                 onClick={handleTrySecondHalf}
                 disabled={submitting}
-                style={{
-                  fontSize: '12px',
-                  padding: '4px 8px',
-                  border: '1px solid #dc2626',
-                  borderRadius: '3px',
-                  background: 'transparent',
-                  color: '#dc2626',
-                  cursor: 'pointer',
-                }}
+                className="border-destructive text-destructive hover:bg-destructive/10"
               >
                 Try second half
-              </button>
+              </Button>
             </div>
           )}
-        </div>
+        </Alert>
+      )}
+
+      {/* Generic error banner (network errors, 500s, etc.) — no bisection */}
+      {genericError && (
+        <Alert variant="destructive" aria-live="assertive">
+          <AlertDescription className="text-sm">
+            {GENERIC_ERROR_MESSAGE}
+          </AlertDescription>
+        </Alert>
       )}
 
       {/* Row list */}
@@ -240,32 +248,21 @@ export function BatchColumnForm({
           <div
             key={row.id}
             role="listitem"
-            style={{
-              display: 'flex',
-              alignItems: 'center',
-              gap: '6px',
-              marginBottom: '4px',
-            }}
+            className="flex items-center gap-1.5 mb-1"
           >
-            <label style={{ display: 'none' }} htmlFor={`col-name-${row.id}`}>
+            <label className="sr-only" htmlFor={`col-name-${row.id}`}>
               Column {idx + 1} name
             </label>
-            <input
+            <Input
               id={`col-name-${row.id}`}
               type="text"
               aria-label={`Column ${idx + 1} name`}
               placeholder="column name"
               value={row.name}
               onChange={(e) => updateRowName(row.id, e.target.value)}
-              style={{
-                flex: 1,
-                fontSize: '12px',
-                padding: '3px 6px',
-                border: '1px solid #ccc',
-                borderRadius: '3px',
-              }}
+              className="flex-1 h-7 text-xs px-2"
             />
-            <label style={{ display: 'none' }} htmlFor={`col-type-${row.id}`}>
+            <label className="sr-only" htmlFor={`col-type-${row.id}`}>
               Column {idx + 1} type
             </label>
             <select
@@ -273,13 +270,7 @@ export function BatchColumnForm({
               aria-label={`Column ${idx + 1} type`}
               value={row.dataType}
               onChange={(e) => updateRowDataType(row.id, e.target.value as DataType)}
-              style={{
-                fontSize: '12px',
-                padding: '3px 4px',
-                border: '1px solid #ccc',
-                borderRadius: '3px',
-                maxWidth: '100px',
-              }}
+              className="text-xs px-1.5 py-1 border border-input rounded-md bg-background text-foreground max-w-[100px] focus:outline-none focus:ring-1 focus:ring-ring"
             >
               {DATA_TYPES.map((t) => (
                 <option key={t} value={t}>
@@ -287,79 +278,54 @@ export function BatchColumnForm({
                 </option>
               ))}
             </select>
-            <button
+            <Button
               type="button"
+              variant="ghost"
+              size="icon-sm"
               aria-label={`Remove column ${idx + 1}`}
               onClick={() => removeRow(row.id)}
-              style={{
-                fontSize: '14px',
-                padding: '2px 6px',
-                border: 'none',
-                background: 'transparent',
-                cursor: 'pointer',
-                color: '#999',
-              }}
+              className="text-muted-foreground hover:text-foreground"
             >
               ×
-            </button>
+            </Button>
           </div>
         ))}
       </div>
 
       {/* Add row button */}
-      <button
+      <Button
         type="button"
+        variant="outline"
+        size="sm"
         aria-label="Add column row"
         onClick={addRow}
-        style={{
-          alignSelf: 'flex-start',
-          fontSize: '12px',
-          padding: '4px 8px',
-          border: '1px dashed #aaa',
-          borderRadius: '3px',
-          background: 'transparent',
-          cursor: 'pointer',
-        }}
+        className="self-start border-dashed"
       >
         + Add row
-      </button>
+      </Button>
 
       {/* Actions */}
-      <div style={{ display: 'flex', gap: '8px', justifyContent: 'flex-end' }}>
+      <div className="flex gap-2 justify-end">
         {onClose && (
-          <button
+          <Button
             type="button"
+            variant="outline"
+            size="sm"
             aria-label="Cancel batch column creation"
             onClick={onClose}
             disabled={submitting}
-            style={{
-              fontSize: '13px',
-              padding: '5px 12px',
-              border: '1px solid #ccc',
-              borderRadius: '4px',
-              background: 'transparent',
-              cursor: 'pointer',
-            }}
           >
             Cancel
-          </button>
+          </Button>
         )}
-        <button
+        <Button
           type="submit"
+          size="sm"
           aria-label="Save all columns"
           disabled={submitting}
-          style={{
-            fontSize: '13px',
-            padding: '5px 12px',
-            border: 'none',
-            borderRadius: '4px',
-            background: '#6366f1',
-            color: '#fff',
-            cursor: 'pointer',
-          }}
         >
           {submitting ? 'Saving…' : 'Save all'}
-        </button>
+        </Button>
       </div>
     </form>
   )

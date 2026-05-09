@@ -54,13 +54,34 @@ export type WSAuthErrorPayload = {
 // ─────────────────────────────────────────────────────────────────────────────
 // Per-(userId, event) denial counter (SEC-WS-03)
 // In-process, non-durable — resets on server restart.
+//
+// Size-bounded: at most MAX_DENIAL_ENTRIES entries. When full, the oldest
+// entry (first in insertion order) is evicted before inserting a new key.
+// This prevents unbounded growth on long-running servers. (Hermes BLOCKER-2)
 // ─────────────────────────────────────────────────────────────────────────────
 
+const MAX_DENIAL_ENTRIES = 1_000
 const denialCounter = new Map<string, number>()
+
+function evictOldestDenial(): void {
+  if (denialCounter.size >= MAX_DENIAL_ENTRIES) {
+    const oldestKey = denialCounter.keys().next().value
+    if (oldestKey !== undefined) {
+      denialCounter.delete(oldestKey)
+    }
+  }
+}
 
 function incrementDenialCounter(userId: string, eventName: string): void {
   const key = `${userId}:${eventName}`
-  denialCounter.set(key, (denialCounter.get(key) ?? 0) + 1)
+  const existing = denialCounter.get(key)
+  if (existing === undefined) {
+    // New key — evict oldest if at capacity before inserting
+    evictOldestDenial()
+    denialCounter.set(key, 1)
+  } else {
+    denialCounter.set(key, existing + 1)
+  }
 }
 
 /**
