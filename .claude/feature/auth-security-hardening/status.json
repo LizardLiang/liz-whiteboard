@@ -350,8 +350,8 @@
       "summary": "Created 19 files (+1 gap-closure-3: http-events.ts), modified 28 files. AC-20 closed: event-bus pattern implemented — httpAuthEvents (EventTarget) in src/lib/auth/http-events.ts; QueryClient/MutationCache fire HTTP_UNAUTHORIZED on any 401; AuthContext useEffect listens and calls triggerSessionExpired(). TC-HTTP401-01/02 rewritten to exercise real interceptor (dispatch event, assert listener fires; remove listener, assert no double-fire). 787 passing, 8 pre-existing failures unchanged. All 22 ACs now fully covered."
     }
   },
-  "pipeline_status": "in_progress",
+  "pipeline_status": "complete",
   "priority": "P0",
-  "stage": "12-review-fixes",
-  "updated": "2026-05-09T16:30:00+08:00"
+  "stage": "complete",
+  "updated": "2026-05-09T16:45:00+08:00"
 }
