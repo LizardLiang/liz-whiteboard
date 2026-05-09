@@ -25,11 +25,13 @@ import {
   getTableProjectId,
   getWhiteboardProjectId,
 } from '@/data/resolve-project'
+import { requireServerFnRole } from '@/lib/auth/require-role'
 
 /**
  * Get all relationships in a whiteboard
  * Requires VIEWER+ role on the whiteboard's project.
  * @param whiteboardId - Whiteboard UUID
+ * @requires viewer
  */
 export const getRelationshipsByWhiteboardId = createServerFn({ method: 'GET' })
   .inputValidator((whiteboardId: string) => {
@@ -66,6 +68,7 @@ export const getRelationshipsByWhiteboardId = createServerFn({ method: 'GET' })
  * Get all relationships in a whiteboard with table/column details
  * Requires VIEWER+ role on the whiteboard's project.
  * @param whiteboardId - Whiteboard UUID
+ * @requires viewer
  */
 export const getRelationshipsByWhiteboardIdWithDetails = createServerFn({
   method: 'GET',
@@ -104,6 +107,7 @@ export const getRelationshipsByWhiteboardIdWithDetails = createServerFn({
  * Get a single relationship by ID
  * Requires VIEWER+ role on the relationship's project.
  * @param relationshipId - Relationship UUID
+ * @requires viewer
  */
 export const getRelationship = createServerFn({ method: 'GET' })
   .inputValidator((relationshipId: string) => {
@@ -142,6 +146,7 @@ export const getRelationship = createServerFn({ method: 'GET' })
  * Get a single relationship by ID with table/column details
  * Requires VIEWER+ role on the relationship's project.
  * @param relationshipId - Relationship UUID
+ * @requires viewer
  */
 export const getRelationshipWithDetails = createServerFn({ method: 'GET' })
   .inputValidator((relationshipId: string) => {
@@ -181,6 +186,7 @@ export const getRelationshipWithDetails = createServerFn({ method: 'GET' })
  * Get all relationships connected to a table
  * Requires VIEWER+ role on the table's project.
  * @param tableId - Table UUID
+ * @requires viewer
  */
 export const getRelationshipsByTableId = createServerFn({ method: 'GET' })
   .inputValidator((tableId: string) => {
@@ -216,24 +222,14 @@ export const getRelationshipsByTableId = createServerFn({ method: 'GET' })
  * Create a new relationship
  * Requires EDITOR+ role on the whiteboard's project.
  * @param data - Relationship creation data (source/target tables/columns, cardinality)
+ * @requires editor
  */
 export const createRelationshipFn = createServerFn({ method: 'POST' })
   .inputValidator((data: unknown) => createRelationshipSchema.parse(data))
   .handler(
-    requireAuth(async ({ user: _user }, data) => {
+    requireAuth(async ({ user }, data) => {
       const projectId = await getWhiteboardProjectId(data.whiteboardId)
-      if (!projectId) {
-        throw new Error('Whiteboard not found')
-      }
-      // TODO: restore permission check — temporarily disabled
-      // const role = await findEffectiveRole(user.id, projectId)
-      // if (!hasMinimumRole(role, 'EDITOR')) {
-      //   return {
-      //     error: 'FORBIDDEN',
-      //     status: 403,
-      //     message: 'Access denied',
-      //   } as const
-      // }
+      await requireServerFnRole(user.id, projectId, 'EDITOR')
       try {
         const relationship = await createRelationship(data)
         return relationship
@@ -249,6 +245,7 @@ export const createRelationshipFn = createServerFn({ method: 'POST' })
  * Update an existing relationship
  * Requires EDITOR+ role on the relationship's project.
  * @param params - Object with id and data fields
+ * @requires editor
  */
 export const updateRelationshipFn = createServerFn({ method: 'POST' })
   .inputValidator((params: unknown) => {
@@ -259,20 +256,9 @@ export const updateRelationshipFn = createServerFn({ method: 'POST' })
     return schema.parse(params)
   })
   .handler(
-    requireAuth(async ({ user: _user }, params) => {
+    requireAuth(async ({ user }, params) => {
       const projectId = await getRelationshipProjectId(params.id)
-      if (!projectId) {
-        throw new Error('Relationship not found')
-      }
-      // TODO: restore permission check — temporarily disabled
-      // const role = await findEffectiveRole(user.id, projectId)
-      // if (!hasMinimumRole(role, 'EDITOR')) {
-      //   return {
-      //     error: 'FORBIDDEN',
-      //     status: 403,
-      //     message: 'Access denied',
-      //   } as const
-      // }
+      await requireServerFnRole(user.id, projectId, 'EDITOR')
       try {
         const relationship = await updateRelationship(params.id, params.data)
         return relationship
@@ -288,6 +274,7 @@ export const updateRelationshipFn = createServerFn({ method: 'POST' })
  * Delete a relationship by ID
  * Requires EDITOR+ role on the relationship's project.
  * @param relationshipId - Relationship UUID
+ * @requires editor
  */
 export const deleteRelationshipFn = createServerFn({ method: 'POST' })
   .inputValidator((relationshipId: string) => {
@@ -295,20 +282,9 @@ export const deleteRelationshipFn = createServerFn({ method: 'POST' })
     return idSchema.parse(relationshipId)
   })
   .handler(
-    requireAuth(async ({ user: _user }, relationshipId) => {
+    requireAuth(async ({ user }, relationshipId) => {
       const projectId = await getRelationshipProjectId(relationshipId)
-      if (!projectId) {
-        throw new Error('Relationship not found')
-      }
-      // TODO: restore permission check — temporarily disabled
-      // const role = await findEffectiveRole(user.id, projectId)
-      // if (!hasMinimumRole(role, 'EDITOR')) {
-      //   return {
-      //     error: 'FORBIDDEN',
-      //     status: 403,
-      //     message: 'Access denied',
-      //   } as const
-      // }
+      await requireServerFnRole(user.id, projectId, 'EDITOR')
       try {
         const relationship = await deleteRelationship(relationshipId)
         return relationship

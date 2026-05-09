@@ -6,7 +6,12 @@ import { prisma } from '@/db'
 import { requireAuth } from '@/lib/auth/middleware'
 
 /**
- * Server function to fetch all projects with their whiteboards
+ * Fetch all projects accessible to the authenticated user.
+ * The user's role on each project is enforced at the DB layer
+ * (project.ownerId or ProjectMember membership) — no additional
+ * per-resource RBAC check is needed for this listing endpoint.
+ *
+ * @requires authenticated
  */
 export const getAllProjects = createServerFn({
   method: 'GET',

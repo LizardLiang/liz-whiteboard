@@ -114,7 +114,6 @@ describe('requireRole', () => {
   // TC-RR-06: denial counter increments cumulatively
   it('TC-RR-06: denial counter increments 3x across 3 calls', async () => {
     mockFindEffectiveRole.mockResolvedValue('VIEWER')
-    const socket = makeMockSocket('user-count-test')
     // Reset by using a unique user+event combo per test (counter is cumulative in-process)
     const userId = `user-rr06-${Date.now()}`
     const sock = { data: { userId }, emit: vi.fn() as (e: string, p: WSAuthErrorPayload) => void }

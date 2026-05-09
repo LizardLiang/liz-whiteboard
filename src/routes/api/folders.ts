@@ -22,6 +22,7 @@ import { getFolderProjectId } from '@/data/resolve-project'
  * Get all folders in a project
  * Requires VIEWER+ role on the project.
  * @param projectId - Project UUID
+ * @requires viewer
  */
 export const getFoldersByProject = createServerFn({ method: 'GET' })
   .inputValidator((projectId: string) => {
@@ -53,6 +54,7 @@ export const getFoldersByProject = createServerFn({ method: 'GET' })
  * Get child folders of a parent folder
  * Requires VIEWER+ role on the folder's project.
  * @param parentFolderId - Parent folder UUID
+ * @requires viewer
  */
 export const getChildFolders = createServerFn({ method: 'GET' })
   .inputValidator((parentFolderId: string) => {
@@ -88,6 +90,7 @@ export const getChildFolders = createServerFn({ method: 'GET' })
  * Get a single folder by ID with its whiteboards
  * Requires VIEWER+ role on the folder's project.
  * @param folderId - Folder UUID
+ * @requires viewer
  */
 export const getFolder = createServerFn({ method: 'GET' })
   .inputValidator((folderId: string) => {
@@ -126,6 +129,7 @@ export const getFolder = createServerFn({ method: 'GET' })
  * Get a single folder by ID (without relations)
  * Requires VIEWER+ role on the folder's project.
  * @param folderId - Folder UUID
+ * @requires viewer
  */
 export const getFolderById = createServerFn({ method: 'GET' })
   .inputValidator((folderId: string) => {
@@ -164,6 +168,7 @@ export const getFolderById = createServerFn({ method: 'GET' })
  * Create a new folder
  * Requires EDITOR+ role on the project.
  * @param data - Folder creation data (name, projectId, optional parentFolderId)
+ * @requires editor
  */
 export const createFolderFn = createServerFn({ method: 'POST' })
   .inputValidator((data: unknown) => createFolderSchema.parse(data))
@@ -192,6 +197,7 @@ export const createFolderFn = createServerFn({ method: 'POST' })
  * Update an existing folder
  * Requires EDITOR+ role on the folder's project.
  * @param params - Object with id and data fields
+ * @requires editor
  */
 export const updateFolderFn = createServerFn({ method: 'POST' })
   .inputValidator((params: unknown) => {
@@ -231,6 +237,7 @@ export const updateFolderFn = createServerFn({ method: 'POST' })
  * Requires EDITOR+ role on the folder's project.
  * Cascade deletes all child folders and whiteboards within the folder
  * @param folderId - Folder UUID
+ * @requires editor
  */
 export const deleteFolderFn = createServerFn({ method: 'POST' })
   .inputValidator((folderId: string) => {

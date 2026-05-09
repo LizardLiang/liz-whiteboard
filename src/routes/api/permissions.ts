@@ -22,6 +22,8 @@ import {
 /**
  * List all permissions for a project.
  * Requires ADMIN or OWNER effective role.
+ *
+ * @requires admin
  */
 export const listProjectPermissions = createServerFn({ method: 'GET' })
   .inputValidator((projectId: unknown) => {
@@ -64,6 +66,8 @@ export const listProjectPermissions = createServerFn({ method: 'GET' })
 /**
  * Grant a permission to a user by email.
  * Requires ADMIN or OWNER effective role.
+ *
+ * @requires admin
  */
 export const grantPermission = createServerFn({ method: 'POST' })
   .inputValidator((data: unknown) => grantPermissionSchema.parse(data))
@@ -115,6 +119,8 @@ export const grantPermission = createServerFn({ method: 'POST' })
 /**
  * Update a user's role on a project.
  * Requires ADMIN or OWNER. Only OWNER can change an ADMIN's role.
+ *
+ * @requires admin
  */
 export const updatePermission = createServerFn({ method: 'POST' })
   .inputValidator((data: unknown) => updatePermissionSchema.parse(data))
@@ -154,6 +160,8 @@ export const updatePermission = createServerFn({ method: 'POST' })
  * Requires ADMIN or OWNER. Rules:
  * - Owner cannot be removed (ownership is on Project.ownerId)
  * - Only OWNER can remove an ADMIN
+ *
+ * @requires admin
  */
 export const revokePermission = createServerFn({ method: 'POST' })
   .inputValidator((data: unknown) => revokePermissionSchema.parse(data))
