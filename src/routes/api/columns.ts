@@ -19,11 +19,18 @@ import { requireAuth } from '@/lib/auth/middleware'
 import { findEffectiveRole } from '@/data/permission'
 import { hasMinimumRole } from '@/lib/auth/permissions'
 import { getColumnProjectId, getTableProjectId } from '@/data/resolve-project'
+import {
+  requireServerFnRole,
+  ForbiddenError,
+  BatchDeniedError,
+} from '@/lib/auth/require-role'
+import { logSampledError } from '@/lib/auth/log-sample'
 
 /**
  * Get all columns in a table
  * Requires VIEWER+ role on the table's project.
  * @param tableId - Table UUID
+ * @requires viewer
  */
 export const getColumnsByTableId = createServerFn({ method: 'GET' })
   .inputValidator((tableId: string) => {
@@ -59,6 +66,7 @@ export const getColumnsByTableId = createServerFn({ method: 'GET' })
  * Get a single column by ID
  * Requires VIEWER+ role on the column's project.
  * @param columnId - Column UUID
+ * @requires viewer
  */
 export const getColumn = createServerFn({ method: 'GET' })
   .inputValidator((columnId: string) => {
@@ -97,6 +105,7 @@ export const getColumn = createServerFn({ method: 'GET' })
  * Get primary key columns in a table
  * Requires VIEWER+ role on the table's project.
  * @param tableId - Table UUID
+ * @requires viewer
  */
 export const getPrimaryKeyColumnsByTableId = createServerFn({ method: 'GET' })
   .inputValidator((tableId: string) => {
@@ -132,6 +141,7 @@ export const getPrimaryKeyColumnsByTableId = createServerFn({ method: 'GET' })
  * Get foreign key columns in a table
  * Requires VIEWER+ role on the table's project.
  * @param tableId - Table UUID
+ * @requires viewer
  */
 export const getForeignKeyColumnsByTableId = createServerFn({ method: 'GET' })
   .inputValidator((tableId: string) => {
@@ -167,24 +177,14 @@ export const getForeignKeyColumnsByTableId = createServerFn({ method: 'GET' })
  * Create a new column
  * Requires EDITOR+ role on the table's project.
  * @param data - Column creation data (name, dataType, etc.)
+ * @requires editor
  */
 export const createColumnFn = createServerFn({ method: 'POST' })
   .inputValidator((data: unknown) => createColumnSchema.parse(data))
   .handler(
-    requireAuth(async ({ user: _user }, data) => {
+    requireAuth(async ({ user }, data) => {
       const projectId = await getTableProjectId(data.tableId)
-      if (!projectId) {
-        throw new Error('Table not found')
-      }
-      // TODO: restore permission check — temporarily disabled
-      // const role = await findEffectiveRole(user.id, projectId)
-      // if (!hasMinimumRole(role, 'EDITOR')) {
-      //   return {
-      //     error: 'FORBIDDEN',
-      //     status: 403,
-      //     message: 'Access denied',
-      //   } as const
-      // }
+      await requireServerFnRole(user.id, projectId, 'EDITOR')
       try {
         const column = await createColumn(data)
         return column
@@ -197,10 +197,15 @@ export const createColumnFn = createServerFn({ method: 'POST' })
   )
 
 /**
- * Create multiple columns in a single transaction
- * Requires EDITOR+ role on the shared table's project.
- * All columns in the batch must belong to tables in the same project.
- * @param data - Array of column creation data
+ * Create multiple columns in a single transaction.
+ * Pre-validate-then-write batch RBAC per AD-3 (GA-RBAC-BATCH-SHORT-CIRCUIT):
+ * RBAC for every item is checked FIRST; if any item fails, the entire batch is
+ * rejected with BatchDeniedError — no DB writes occur.
+ * SEC-BATCH-03: item index and tableId are never leaked in the error response.
+ * Apollo MEDIUM-1: getTableProjectId DB throws are caught here and converted to
+ * BatchDeniedError (prevents raw error propagation that could leak tableId).
+ *
+ * @requires editor
  */
 export const createColumnsFn = createServerFn({ method: 'POST' })
   .inputValidator((data: unknown) => {
@@ -208,26 +213,36 @@ export const createColumnsFn = createServerFn({ method: 'POST' })
     return schema.parse(data)
   })
   .handler(
-    requireAuth(async ({ user: _user }, data) => {
-      if (data.length > 0) {
-        // Verify EDITOR permission for every unique tableId in the batch (IDOR prevention)
-        const uniqueTableIds = [...new Set(data.map((c) => c.tableId))]
-        for (const tableId of uniqueTableIds) {
-          const projectId = await getTableProjectId(tableId)
-          if (!projectId) {
-            throw new Error(`Table not found: ${tableId}`)
+    requireAuth(async ({ user }, data) => {
+      if (data.length === 0) return []
+
+      // Step 1: PRE-VALIDATE — RBAC for every unique tableId before any write.
+      const uniqueTableIds = [...new Set(data.map((c) => c.tableId))]
+      for (const tableId of uniqueTableIds) {
+        let projectId: string | null
+        try {
+          projectId = await getTableProjectId(tableId)
+        } catch (error) {
+          // MEDIUM-1: DB throw during getTableProjectId must NOT leak tableId via raw error
+          logSampledError({
+            userId: user.id,
+            errorClass: 'BATCH_RBAC_LOOKUP_FAILED',
+            message: error instanceof Error ? error.message : String(error),
+          })
+          throw new BatchDeniedError()
+        }
+        try {
+          await requireServerFnRole(user.id, projectId, 'EDITOR')
+        } catch (error) {
+          if (error instanceof ForbiddenError) {
+            // SEC-BATCH-03: do NOT leak which tableId failed
+            throw new BatchDeniedError()
           }
-          // TODO: restore permission check — temporarily disabled
-          // const role = await findEffectiveRole(user.id, projectId)
-          // if (!hasMinimumRole(role, 'EDITOR')) {
-          //   return {
-          //     error: 'FORBIDDEN',
-          //     status: 403,
-          //     message: 'Access denied',
-          //   } as const
-          // }
+          throw error
         }
       }
+
+      // Step 2: WRITE — only reached when every item passed RBAC.
       try {
         const columns = await createColumns(data)
         return columns
@@ -243,6 +258,7 @@ export const createColumnsFn = createServerFn({ method: 'POST' })
  * Update an existing column
  * Requires EDITOR+ role on the column's project.
  * @param params - Object with id and data fields
+ * @requires editor
  */
 export const updateColumnFn = createServerFn({ method: 'POST' })
   .inputValidator((params: unknown) => {
@@ -253,20 +269,9 @@ export const updateColumnFn = createServerFn({ method: 'POST' })
     return schema.parse(params)
   })
   .handler(
-    requireAuth(async ({ user: _user }, params) => {
+    requireAuth(async ({ user }, params) => {
       const projectId = await getColumnProjectId(params.id)
-      if (!projectId) {
-        throw new Error('Column not found')
-      }
-      // TODO: restore permission check — temporarily disabled
-      // const role = await findEffectiveRole(_user.id, projectId)
-      // if (!hasMinimumRole(role, 'EDITOR')) {
-      //   return {
-      //     error: 'FORBIDDEN',
-      //     status: 403,
-      //     message: 'Access denied',
-      //   } as const
-      // }
+      await requireServerFnRole(user.id, projectId, 'EDITOR')
       try {
         const column = await updateColumn(params.id, params.data)
         return column
@@ -282,6 +287,7 @@ export const updateColumnFn = createServerFn({ method: 'POST' })
  * Update column order (for reordering)
  * Requires EDITOR+ role on the column's project.
  * @param params - Object with id and order
+ * @requires editor
  */
 export const updateColumnOrderFn = createServerFn({ method: 'POST' })
   .inputValidator((params: unknown) => {
@@ -292,20 +298,9 @@ export const updateColumnOrderFn = createServerFn({ method: 'POST' })
     return schema.parse(params)
   })
   .handler(
-    requireAuth(async ({ user: _user }, params) => {
+    requireAuth(async ({ user }, params) => {
       const projectId = await getColumnProjectId(params.id)
-      if (!projectId) {
-        throw new Error('Column not found')
-      }
-      // TODO: restore permission check — temporarily disabled
-      // const role = await findEffectiveRole(_user.id, projectId)
-      // if (!hasMinimumRole(role, 'EDITOR')) {
-      //   return {
-      //     error: 'FORBIDDEN',
-      //     status: 403,
-      //     message: 'Access denied',
-      //   } as const
-      // }
+      await requireServerFnRole(user.id, projectId, 'EDITOR')
       try {
         const column = await updateColumnOrder(params.id, params.order)
         return column
@@ -322,6 +317,7 @@ export const updateColumnOrderFn = createServerFn({ method: 'POST' })
  * Requires EDITOR+ role on the column's project.
  * Cascade deletes relationships referencing this column
  * @param columnId - Column UUID
+ * @requires editor
  */
 export const deleteColumnFn = createServerFn({ method: 'POST' })
   .inputValidator((columnId: string) => {
@@ -329,20 +325,9 @@ export const deleteColumnFn = createServerFn({ method: 'POST' })
     return idSchema.parse(columnId)
   })
   .handler(
-    requireAuth(async ({ user: _user }, columnId) => {
+    requireAuth(async ({ user }, columnId) => {
       const projectId = await getColumnProjectId(columnId)
-      if (!projectId) {
-        throw new Error('Column not found')
-      }
-      // TODO: restore permission check — temporarily disabled
-      // const role = await findEffectiveRole(user.id, projectId)
-      // if (!hasMinimumRole(role, 'EDITOR')) {
-      //   return {
-      //     error: 'FORBIDDEN',
-      //     status: 403,
-      //     message: 'Access denied',
-      //   } as const
-      // }
+      await requireServerFnRole(user.id, projectId, 'EDITOR')
       try {
         const column = await deleteColumn(columnId)
         return column

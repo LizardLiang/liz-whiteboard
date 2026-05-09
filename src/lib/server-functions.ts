@@ -30,12 +30,10 @@ import {
   getWhiteboardProjectId,
 } from '@/data/resolve-project'
 import { bulkUpdatePositionsSchema } from '@/data/schema'
-// TODO: restore these imports when permission checks are re-enabled — temporarily disabled
-// import { findEffectiveRole } from '@/data/permission'
-// import { hasMinimumRole } from '@/lib/auth/permissions'
+import { requireServerFnRole } from '@/lib/auth/require-role'
 
 /**
- * Server function to fetch whiteboard with full diagram data
+ * @requires viewer
  */
 export const getWhiteboardWithDiagram = createServerFn({
   method: 'GET',
@@ -43,8 +41,9 @@ export const getWhiteboardWithDiagram = createServerFn({
   .inputValidator((whiteboardId: string) => whiteboardId)
   .handler(
     requireAuth(
-      async ({ user: _user }, whiteboardId): Promise<WhiteboardWithDiagram | null> => {
-        // NOTE: VIEWER role check intentionally bypassed — any authenticated user can read whiteboards.
+      async ({ user }, whiteboardId): Promise<WhiteboardWithDiagram | null> => {
+        const projectId = await getWhiteboardProjectId(whiteboardId)
+        await requireServerFnRole(user.id, projectId, 'VIEWER')
         try {
           const whiteboard = await findWhiteboardByIdWithDiagram(whiteboardId)
           return whiteboard
@@ -57,7 +56,7 @@ export const getWhiteboardWithDiagram = createServerFn({
   )
 
 /**
- * Server function to fetch relationships for a whiteboard with full details
+ * @requires viewer
  */
 export const getWhiteboardRelationships = createServerFn({
   method: 'GET',
@@ -66,10 +65,11 @@ export const getWhiteboardRelationships = createServerFn({
   .handler(
     requireAuth(
       async (
-        { user: _user },
+        { user },
         whiteboardId,
       ): Promise<Array<RelationshipWithDetails>> => {
-        // NOTE: VIEWER role check intentionally bypassed — any authenticated user can read whiteboards.
+        const projectId = await getWhiteboardProjectId(whiteboardId)
+        await requireServerFnRole(user.id, projectId, 'VIEWER')
         try {
           const relationships =
             await findRelationshipsByWhiteboardIdWithDetails(whiteboardId)
@@ -83,22 +83,16 @@ export const getWhiteboardRelationships = createServerFn({
   )
 
 /**
- * Server function to create a new table
+ * @requires editor
  */
 export const createTable = createServerFn({
   method: 'POST',
 })
   .inputValidator((data: CreateTable) => data)
   .handler(
-    requireAuth(async ({ user: _user }, data) => {
+    requireAuth(async ({ user }, data) => {
       const projectId = await getWhiteboardProjectId(data.whiteboardId)
-      if (!projectId) throw new Error('Whiteboard not found')
-      // TODO: restore permission check — temporarily disabled
-      // const role = await findEffectiveRole(_user.id, projectId)
-      // if (!hasMinimumRole(role, 'EDITOR')) {
-      //   throw new Error('Access denied')
-      // }
-      void projectId
+      await requireServerFnRole(user.id, projectId, 'EDITOR')
       try {
         const table = await createDiagramTable(data)
         return table
@@ -110,7 +104,7 @@ export const createTable = createServerFn({
   )
 
 /**
- * Server function to update table position
+ * @requires editor
  */
 export const updateTablePosition = createServerFn({
   method: 'POST',
@@ -119,15 +113,9 @@ export const updateTablePosition = createServerFn({
     (data: { id: string; positionX: number; positionY: number }) => data,
   )
   .handler(
-    requireAuth(async ({ user: _user }, data) => {
+    requireAuth(async ({ user }, data) => {
       const projectId = await getTableProjectId(data.id)
-      if (!projectId) throw new Error('Table not found')
-      // TODO: restore permission check — temporarily disabled
-      // const role = await findEffectiveRole(_user.id, projectId)
-      // if (!hasMinimumRole(role, 'EDITOR')) {
-      //   throw new Error('Access denied')
-      // }
-      void projectId
+      await requireServerFnRole(user.id, projectId, 'EDITOR')
       try {
         const table = await updateDiagramTablePosition(
           data.id,
@@ -153,6 +141,8 @@ export const updateTablePosition = createServerFn({
  *
  * NOTE: requireAuth returns AuthErrorResponse on session expiry — it does NOT throw.
  * Callers MUST check the resolved value with isUnauthorizedError() from @/lib/auth/errors.
+ *
+ * @requires editor
  */
 export const updateTablePositionsBulk = createServerFn({ method: 'POST' })
   .inputValidator((data: BulkUpdatePositions) =>
@@ -161,7 +151,7 @@ export const updateTablePositionsBulk = createServerFn({ method: 'POST' })
   .handler(
     requireAuth(
       async (
-        { user: _user },
+        { user },
         data,
       ): Promise<{ success: true; count: number }> => {
         const { whiteboardId, positions } = data
@@ -178,12 +168,7 @@ export const updateTablePositionsBulk = createServerFn({ method: 'POST' })
             select: { id: true },
           }),
         ])
-        if (!projectId) throw new Error('Whiteboard not found')
-        // TODO: restore permission check — temporarily disabled (matches the
-        // codebase pattern in createTable / updateTablePosition)
-        void projectId
-        void _user // user identity is not needed here; the orchestrator owns the
-        //            sender-id field on the socket payload
+        await requireServerFnRole(user.id, projectId, 'EDITOR')
 
         const ownedIds = new Set(owned.map((t) => t.id))
         for (const p of positions) {
@@ -213,22 +198,16 @@ export const updateTablePositionsBulk = createServerFn({ method: 'POST' })
   )
 
 /**
- * Server function to create a new relationship
+ * @requires editor
  */
 export const createRelationshipFn = createServerFn({
   method: 'POST',
 })
   .inputValidator((data: CreateRelationship) => data)
   .handler(
-    requireAuth(async ({ user: _user }, data) => {
+    requireAuth(async ({ user }, data) => {
       const projectId = await getWhiteboardProjectId(data.whiteboardId)
-      if (!projectId) throw new Error('Whiteboard not found')
-      // TODO: restore permission check — temporarily disabled
-      // const role = await findEffectiveRole(_user.id, projectId)
-      // if (!hasMinimumRole(role, 'EDITOR')) {
-      //   throw new Error('Access denied')
-      // }
-      void projectId
+      await requireServerFnRole(user.id, projectId, 'EDITOR')
       try {
         const relationship = await createRelationship(data)
         return relationship
@@ -240,22 +219,16 @@ export const createRelationshipFn = createServerFn({
   )
 
 /**
- * Server function to update whiteboard text source
+ * @requires editor
  */
 export const updateWhiteboardTextSourceFn = createServerFn({
   method: 'POST',
 })
   .inputValidator((data: { whiteboardId: string; textSource: string }) => data)
   .handler(
-    requireAuth(async ({ user: _user }, data) => {
+    requireAuth(async ({ user }, data) => {
       const projectId = await getWhiteboardProjectId(data.whiteboardId)
-      if (!projectId) throw new Error('Whiteboard not found')
-      // TODO: restore permission check — temporarily disabled
-      // const role = await findEffectiveRole(_user.id, projectId)
-      // if (!hasMinimumRole(role, 'EDITOR')) {
-      //   throw new Error('Access denied')
-      // }
-      void projectId
+      await requireServerFnRole(user.id, projectId, 'EDITOR')
       try {
         const whiteboard = await updateWhiteboardTextSource(
           data.whiteboardId,
@@ -272,6 +245,8 @@ export const updateWhiteboardTextSourceFn = createServerFn({
 /**
  * Server function to compute automatic layout for whiteboard
  * Runs layout algorithm and updates table positions in database
+ *
+ * @requires editor
  */
 export const computeAutoLayout = createServerFn({
   method: 'POST',
@@ -280,15 +255,9 @@ export const computeAutoLayout = createServerFn({
     (data: { whiteboardId: string; options: LayoutOptions }) => data,
   )
   .handler(
-    requireAuth(async ({ user: _user }, data): Promise<LayoutResult> => {
+    requireAuth(async ({ user }, data): Promise<LayoutResult> => {
       const projectId = await getWhiteboardProjectId(data.whiteboardId)
-      if (!projectId) throw new Error('Whiteboard not found')
-      // TODO: restore permission check — temporarily disabled
-      // const role = await findEffectiveRole(_user.id, projectId)
-      // if (!hasMinimumRole(role, 'EDITOR')) {
-      //   throw new Error('Access denied')
-      // }
-      void projectId
+      await requireServerFnRole(user.id, projectId, 'EDITOR')
       try {
         // Fetch whiteboard with tables and relationships
         const whiteboard = await findWhiteboardByIdWithDiagram(
@@ -333,6 +302,8 @@ export const computeAutoLayout = createServerFn({
 /**
  * Server function to save canvas viewport state
  * Stores zoom and pan position in whiteboard canvasState
+ *
+ * @requires editor
  */
 export const saveCanvasState = createServerFn({
   method: 'POST',
@@ -344,15 +315,9 @@ export const saveCanvasState = createServerFn({
     }) => data,
   )
   .handler(
-    requireAuth(async ({ user: _user }, data) => {
+    requireAuth(async ({ user }, data) => {
       const projectId = await getWhiteboardProjectId(data.whiteboardId)
-      if (!projectId) throw new Error('Whiteboard not found')
-      // TODO: restore permission check — temporarily disabled
-      // const role = await findEffectiveRole(_user.id, projectId)
-      // if (!hasMinimumRole(role, 'EDITOR')) {
-      //   throw new Error('Access denied')
-      // }
-      void projectId
+      await requireServerFnRole(user.id, projectId, 'EDITOR')
       try {
         const whiteboard = await prisma.whiteboard.update({
           where: { id: data.whiteboardId },

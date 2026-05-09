@@ -28,11 +28,13 @@ import {
   getWhiteboardProjectId,
 } from '@/data/resolve-project'
 import { prisma } from '@/db'
+import { requireServerFnRole } from '@/lib/auth/require-role'
 
 /**
  * Get all whiteboards in a project
  * Requires VIEWER+ role on the project.
  * @param projectId - Project UUID
+ * @requires viewer
  */
 export const getWhiteboardsByProject = createServerFn({ method: 'GET' })
   .inputValidator((projectId: string) => {
@@ -64,6 +66,7 @@ export const getWhiteboardsByProject = createServerFn({ method: 'GET' })
  * Get all whiteboards in a folder
  * Requires VIEWER+ role on the folder's project.
  * @param folderId - Folder UUID
+ * @requires viewer
  */
 export const getWhiteboardsByFolder = createServerFn({ method: 'GET' })
   .inputValidator((folderId: string) => {
@@ -100,6 +103,7 @@ export const getWhiteboardsByFolder = createServerFn({ method: 'GET' })
  * Includes tables, columns, and relationships for rendering
  * Requires VIEWER+ role on the whiteboard's project.
  * @param whiteboardId - Whiteboard UUID
+ * @requires viewer
  */
 export const getWhiteboard = createServerFn({ method: 'GET' })
   .inputValidator((whiteboardId: string) => {
@@ -138,6 +142,7 @@ export const getWhiteboard = createServerFn({ method: 'GET' })
  * Get a single whiteboard by ID (without diagram data)
  * Requires VIEWER+ role on the whiteboard's project.
  * @param whiteboardId - Whiteboard UUID
+ * @requires viewer
  */
 export const getWhiteboardById = createServerFn({ method: 'GET' })
   .inputValidator((whiteboardId: string) => {
@@ -176,20 +181,13 @@ export const getWhiteboardById = createServerFn({ method: 'GET' })
  * Create a new whiteboard
  * Requires EDITOR+ role on the project.
  * @param data - Whiteboard creation data (name, projectId, optional folderId)
+ * @requires editor
  */
 export const createWhiteboardFn = createServerFn({ method: 'POST' })
   .inputValidator((data: unknown) => createWhiteboardSchema.parse(data))
   .handler(
-    requireAuth(async ({ user: _user }, data) => {
-      // TODO: restore permission check — temporarily disabled
-      // const role = await findEffectiveRole(_user.id, data.projectId)
-      // if (!hasMinimumRole(role, 'EDITOR')) {
-      //   return {
-      //     error: 'FORBIDDEN',
-      //     status: 403,
-      //     message: 'Access denied',
-      //   } as const
-      // }
+    requireAuth(async ({ user }, data) => {
+      await requireServerFnRole(user.id, data.projectId, 'EDITOR')
       try {
         const whiteboard = await createWhiteboard(data)
         return whiteboard
@@ -205,6 +203,7 @@ export const createWhiteboardFn = createServerFn({ method: 'POST' })
  * Update an existing whiteboard
  * Requires EDITOR+ role on the whiteboard's project.
  * @param params - Object with id and data fields
+ * @requires editor
  */
 export const updateWhiteboardFn = createServerFn({ method: 'POST' })
   .inputValidator((params: unknown) => {
@@ -215,20 +214,9 @@ export const updateWhiteboardFn = createServerFn({ method: 'POST' })
     return schema.parse(params)
   })
   .handler(
-    requireAuth(async ({ user: _user }, params) => {
+    requireAuth(async ({ user }, params) => {
       const projectId = await getWhiteboardProjectId(params.id)
-      if (!projectId) {
-        throw new Error('Whiteboard not found')
-      }
-      // TODO: restore permission check — temporarily disabled
-      // const role = await findEffectiveRole(_user.id, projectId)
-      // if (!hasMinimumRole(role, 'EDITOR')) {
-      //   return {
-      //     error: 'FORBIDDEN',
-      //     status: 403,
-      //     message: 'Access denied',
-      //   } as const
-      // }
+      await requireServerFnRole(user.id, projectId, 'EDITOR')
       try {
         const whiteboard = await updateWhiteboard(params.id, params.data)
         return whiteboard
@@ -244,6 +232,7 @@ export const updateWhiteboardFn = createServerFn({ method: 'POST' })
  * Update whiteboard canvas state (zoom, pan)
  * Requires EDITOR+ role on the whiteboard's project.
  * @param params - Object with id and canvasState fields
+ * @requires editor
  */
 export const updateCanvasState = createServerFn({ method: 'POST' })
   .inputValidator((params: unknown) => {
@@ -254,20 +243,9 @@ export const updateCanvasState = createServerFn({ method: 'POST' })
     return schema.parse(params)
   })
   .handler(
-    requireAuth(async ({ user: _user }, params) => {
+    requireAuth(async ({ user }, params) => {
       const projectId = await getWhiteboardProjectId(params.id)
-      if (!projectId) {
-        throw new Error('Whiteboard not found')
-      }
-      // TODO: restore permission check — temporarily disabled
-      // const role = await findEffectiveRole(_user.id, projectId)
-      // if (!hasMinimumRole(role, 'EDITOR')) {
-      //   return {
-      //     error: 'FORBIDDEN',
-      //     status: 403,
-      //     message: 'Access denied',
-      //   } as const
-      // }
+      await requireServerFnRole(user.id, projectId, 'EDITOR')
       try {
         const whiteboard = await updateWhiteboardCanvasState(
           params.id,
@@ -286,6 +264,7 @@ export const updateCanvasState = createServerFn({ method: 'POST' })
  * Update whiteboard text source
  * Requires EDITOR+ role on the whiteboard's project.
  * @param params - Object with id and textSource fields
+ * @requires editor
  */
 export const updateTextSource = createServerFn({ method: 'POST' })
   .inputValidator((params: unknown) => {
@@ -296,20 +275,9 @@ export const updateTextSource = createServerFn({ method: 'POST' })
     return schema.parse(params)
   })
   .handler(
-    requireAuth(async ({ user: _user }, params) => {
+    requireAuth(async ({ user }, params) => {
       const projectId = await getWhiteboardProjectId(params.id)
-      if (!projectId) {
-        throw new Error('Whiteboard not found')
-      }
-      // TODO: restore permission check — temporarily disabled
-      // const role = await findEffectiveRole(_user.id, projectId)
-      // if (!hasMinimumRole(role, 'EDITOR')) {
-      //   return {
-      //     error: 'FORBIDDEN',
-      //     status: 403,
-      //     message: 'Access denied',
-      //   } as const
-      // }
+      await requireServerFnRole(user.id, projectId, 'EDITOR')
       try {
         const whiteboard = await updateWhiteboardTextSource(
           params.id,
@@ -329,6 +297,7 @@ export const updateTextSource = createServerFn({ method: 'POST' })
  * Requires EDITOR+ role on the whiteboard's project.
  * Cascade deletes all tables, columns, and relationships within the whiteboard
  * @param whiteboardId - Whiteboard UUID
+ * @requires editor
  */
 export const deleteWhiteboardFn = createServerFn({ method: 'POST' })
   .inputValidator((whiteboardId: string) => {
@@ -336,20 +305,9 @@ export const deleteWhiteboardFn = createServerFn({ method: 'POST' })
     return idSchema.parse(whiteboardId)
   })
   .handler(
-    requireAuth(async ({ user: _user }, whiteboardId) => {
+    requireAuth(async ({ user }, whiteboardId) => {
       const projectId = await getWhiteboardProjectId(whiteboardId)
-      if (!projectId) {
-        throw new Error('Whiteboard not found')
-      }
-      // TODO: restore permission check — temporarily disabled
-      // const role = await findEffectiveRole(user.id, projectId)
-      // if (!hasMinimumRole(role, 'EDITOR')) {
-      //   return {
-      //     error: 'FORBIDDEN',
-      //     status: 403,
-      //     message: 'Access denied',
-      //   } as const
-      // }
+      await requireServerFnRole(user.id, projectId, 'EDITOR')
       try {
         const whiteboard = await deleteWhiteboard(whiteboardId)
         return whiteboard
@@ -364,7 +322,9 @@ export const deleteWhiteboardFn = createServerFn({ method: 'POST' })
 /**
  * Get recent whiteboards (ordered by last updated)
  * Only returns whiteboards from projects the user has access to.
+ * DB-level filter enforces user-scoped visibility — no additional per-resource RBAC needed.
  * @param limit - Maximum number of whiteboards to return (default: 10)
+ * @requires authenticated
  */
 export const getRecentWhiteboards = createServerFn({ method: 'GET' })
   .inputValidator((limit: number = 10) => limit)

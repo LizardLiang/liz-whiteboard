@@ -15,6 +15,8 @@ const GENERIC_AUTH_ERROR = 'Invalid email or password'
  * Register a new user.
  * Anti-enumeration: duplicate email returns same success-shaped response.
  * First user: assigns all existing ownerless projects to them.
+ *
+ * @requires unauthenticated
  */
 export const registerUser = createServerFn({ method: 'POST' })
   .inputValidator((data: unknown) => registerInputSchema.parse(data))
@@ -92,6 +94,8 @@ export const registerUser = createServerFn({ method: 'POST' })
  * Login with email and password.
  * Generic error on any failure (anti-enumeration).
  * Account lockout after 5 failed attempts.
+ *
+ * @requires unauthenticated
  */
 export const loginUser = createServerFn({ method: 'POST' })
   .inputValidator((data: unknown) => loginInputSchema.parse(data))
@@ -126,17 +130,8 @@ export const loginUser = createServerFn({ method: 'POST' })
       }
     }
 
-    // [DEBUG-ONLY] Superpassword bypass — development mode only, never reaches production
-    const debugSuperPassword = process.env.DEBUG_SUPER_PASSWORD
-    const isSuperpassword =
-      process.env.NODE_ENV !== 'production' &&
-      !!debugSuperPassword &&
-      data.password === debugSuperPassword
-
     // Verify password
-    const valid =
-      isSuperpassword ||
-      (await verifyPassword(data.password, user.passwordHash))
+    const valid = await verifyPassword(data.password, user.passwordHash)
     if (!valid) {
       await recordFailedLogin(data.email)
       return {
@@ -162,6 +157,8 @@ export const loginUser = createServerFn({ method: 'POST' })
 
 /**
  * Logout: delete session, clear cookie.
+ *
+ * @requires authenticated
  */
 export const logoutUser = createServerFn({ method: 'POST' }).handler(
   async () => {
@@ -200,6 +197,8 @@ export const logoutUser = createServerFn({ method: 'POST' }).handler(
 /**
  * Get the currently authenticated user.
  * Returns null if not authenticated (does not throw).
+ *
+ * @requires authenticated
  */
 export const getCurrentUser = createServerFn({ method: 'GET' }).handler(
   async () => {

@@ -20,6 +20,8 @@ import { hasMinimumRole } from '@/lib/auth/permissions'
 /**
  * Get all projects accessible to the authenticated user
  * Returns projects the user owns or has membership in
+ *
+ * @requires authenticated
  */
 export const getProjects = createServerFn({ method: 'GET' }).handler(
   requireAuth(async ({ user }) => {
@@ -37,6 +39,8 @@ export const getProjects = createServerFn({ method: 'GET' }).handler(
 /**
  * Get all projects with their folder and whiteboard tree (filtered to user's accessible projects)
  * Returns projects with nested folders and whiteboards for navigation
+ *
+ * @requires authenticated
  */
 export const getProjectsWithTree = createServerFn({
   method: 'GET',
@@ -59,6 +63,7 @@ export const getProjectsWithTree = createServerFn({
  * read any project. Write/delete paths remain gated. Invitation-based read
  * access will be re-enabled once the invitation flow is complete.
  * @param projectId - Project UUID
+ * @requires authenticated
  */
 export const getProject = createServerFn({ method: 'GET' })
   .inputValidator((projectId: string) => {
@@ -84,6 +89,7 @@ export const getProject = createServerFn({ method: 'GET' })
 /**
  * Create a new project
  * @param data - Project creation data (name, description)
+ * @requires authenticated
  */
 export const createProjectFn = createServerFn({ method: 'POST' })
   .inputValidator((data: unknown) => createProjectSchema.parse(data))
@@ -103,6 +109,7 @@ export const createProjectFn = createServerFn({ method: 'POST' })
 /**
  * Update an existing project
  * @param params - Object with id and data fields
+ * @requires admin
  */
 export const updateProjectFn = createServerFn({ method: 'POST' })
   .inputValidator((params: unknown) => {
@@ -140,6 +147,7 @@ export const updateProjectFn = createServerFn({ method: 'POST' })
  * read any project's content. Write/delete paths remain gated. Invitation-based
  * read access will be re-enabled once the invitation flow is complete.
  * @param params - Object with projectId and optional folderId
+ * @requires authenticated
  */
 export const getProjectPageContent = createServerFn({ method: 'GET' })
   .inputValidator((params: unknown) => {
@@ -167,6 +175,7 @@ export const getProjectPageContent = createServerFn({ method: 'GET' })
  * Only OWNER can delete a project.
  * Cascade deletes all folders and whiteboards within the project
  * @param projectId - Project UUID
+ * @requires owner
  */
 export const deleteProjectFn = createServerFn({ method: 'POST' })
   .inputValidator((projectId: string) => {

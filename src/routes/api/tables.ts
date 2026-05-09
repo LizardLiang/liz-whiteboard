@@ -21,11 +21,13 @@ import {
   getTableProjectId,
   getWhiteboardProjectId,
 } from '@/data/resolve-project'
+import { requireServerFnRole } from '@/lib/auth/require-role'
 
 /**
  * Get all tables in a whiteboard
  * Requires VIEWER+ role on the whiteboard's project.
  * @param whiteboardId - Whiteboard UUID
+ * @requires viewer
  */
 export const getTablesByWhiteboardId = createServerFn({ method: 'GET' })
   .inputValidator((whiteboardId: string) => {
@@ -61,6 +63,7 @@ export const getTablesByWhiteboardId = createServerFn({ method: 'GET' })
  * Get all tables in a whiteboard with columns and relationships
  * Requires VIEWER+ role on the whiteboard's project.
  * @param whiteboardId - Whiteboard UUID
+ * @requires viewer
  */
 export const getTablesByWhiteboardIdWithRelations = createServerFn({
   method: 'GET',
@@ -99,6 +102,7 @@ export const getTablesByWhiteboardIdWithRelations = createServerFn({
  * Get a single table by ID
  * Requires VIEWER+ role on the table's project.
  * @param tableId - Table UUID
+ * @requires viewer
  */
 export const getTable = createServerFn({ method: 'GET' })
   .inputValidator((tableId: string) => {
@@ -137,6 +141,7 @@ export const getTable = createServerFn({ method: 'GET' })
  * Get a single table by ID with columns and relationships
  * Requires VIEWER+ role on the table's project.
  * @param tableId - Table UUID
+ * @requires viewer
  */
 export const getTableWithRelations = createServerFn({ method: 'GET' })
   .inputValidator((tableId: string) => {
@@ -175,24 +180,14 @@ export const getTableWithRelations = createServerFn({ method: 'GET' })
  * Create a new table
  * Requires EDITOR+ role on the whiteboard's project.
  * @param data - Table creation data (name, position, etc.)
+ * @requires editor
  */
 export const createTableFn = createServerFn({ method: 'POST' })
   .inputValidator((data: unknown) => createTableSchema.parse(data))
   .handler(
-    requireAuth(async ({ user: _user }, data) => {
+    requireAuth(async ({ user }, data) => {
       const projectId = await getWhiteboardProjectId(data.whiteboardId)
-      if (!projectId) {
-        throw new Error('Whiteboard not found')
-      }
-      // TODO: restore permission check — temporarily disabled
-      // const role = await findEffectiveRole(user.id, projectId)
-      // if (!hasMinimumRole(role, 'EDITOR')) {
-      //   return {
-      //     error: 'FORBIDDEN',
-      //     status: 403,
-      //     message: 'Access denied',
-      //   } as const
-      // }
+      await requireServerFnRole(user.id, projectId, 'EDITOR')
       try {
         const table = await createDiagramTable(data)
         return table
@@ -208,6 +203,7 @@ export const createTableFn = createServerFn({ method: 'POST' })
  * Update an existing table
  * Requires EDITOR+ role on the table's project.
  * @param params - Object with id and data fields
+ * @requires editor
  */
 export const updateTableFn = createServerFn({ method: 'POST' })
   .inputValidator((params: unknown) => {
@@ -218,20 +214,9 @@ export const updateTableFn = createServerFn({ method: 'POST' })
     return schema.parse(params)
   })
   .handler(
-    requireAuth(async ({ user: _user }, params) => {
+    requireAuth(async ({ user }, params) => {
       const projectId = await getTableProjectId(params.id)
-      if (!projectId) {
-        throw new Error('Table not found')
-      }
-      // TODO: restore permission check — temporarily disabled
-      // const role = await findEffectiveRole(_user.id, projectId)
-      // if (!hasMinimumRole(role, 'EDITOR')) {
-      //   return {
-      //     error: 'FORBIDDEN',
-      //     status: 403,
-      //     message: 'Access denied',
-      //   } as const
-      // }
+      await requireServerFnRole(user.id, projectId, 'EDITOR')
       try {
         const table = await updateDiagramTable(params.id, params.data)
         return table
@@ -247,6 +232,7 @@ export const updateTableFn = createServerFn({ method: 'POST' })
  * Update table position (for drag-and-drop)
  * Requires EDITOR+ role on the table's project.
  * @param params - Object with id, positionX, positionY
+ * @requires editor
  */
 export const updateTablePositionFn = createServerFn({ method: 'POST' })
   .inputValidator((params: unknown) => {
@@ -258,20 +244,9 @@ export const updateTablePositionFn = createServerFn({ method: 'POST' })
     return schema.parse(params)
   })
   .handler(
-    requireAuth(async ({ user: _user }, params) => {
+    requireAuth(async ({ user }, params) => {
       const projectId = await getTableProjectId(params.id)
-      if (!projectId) {
-        throw new Error('Table not found')
-      }
-      // TODO: restore permission check — temporarily disabled
-      // const role = await findEffectiveRole(_user.id, projectId)
-      // if (!hasMinimumRole(role, 'EDITOR')) {
-      //   return {
-      //     error: 'FORBIDDEN',
-      //     status: 403,
-      //     message: 'Access denied',
-      //   } as const
-      // }
+      await requireServerFnRole(user.id, projectId, 'EDITOR')
       try {
         const table = await updateDiagramTablePosition(
           params.id,
@@ -292,6 +267,7 @@ export const updateTablePositionFn = createServerFn({ method: 'POST' })
  * Requires EDITOR+ role on the table's project.
  * Cascade deletes all columns and relationships connected to this table
  * @param tableId - Table UUID
+ * @requires editor
  */
 export const deleteTableFn = createServerFn({ method: 'POST' })
   .inputValidator((tableId: string) => {
@@ -299,20 +275,9 @@ export const deleteTableFn = createServerFn({ method: 'POST' })
     return idSchema.parse(tableId)
   })
   .handler(
-    requireAuth(async ({ user: _user }, tableId) => {
+    requireAuth(async ({ user }, tableId) => {
       const projectId = await getTableProjectId(tableId)
-      if (!projectId) {
-        throw new Error('Table not found')
-      }
-      // TODO: restore permission check — temporarily disabled
-      // const role = await findEffectiveRole(user.id, projectId)
-      // if (!hasMinimumRole(role, 'EDITOR')) {
-      //   return {
-      //     error: 'FORBIDDEN',
-      //     status: 403,
-      //     message: 'Access denied',
-      //   } as const
-      // }
+      await requireServerFnRole(user.id, projectId, 'EDITOR')
       try {
         const table = await deleteDiagramTable(tableId)
         return table
