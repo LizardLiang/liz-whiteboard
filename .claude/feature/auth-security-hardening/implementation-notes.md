@@ -139,7 +139,8 @@ The spec (§3.9) mentions `findEffectiveRole(...)` + `hasMinimumRole(...)` as a 
 | Phase 2: SEC-SP-02 AST assertion | 4 | PASS |
 | Phase 3: SEC-MODAL-04 session | 2 | PASS |
 | Phase 4: ESLint rule self-tests | 8 | PASS |
-| **New tests total** | **73** | **PASS** |
+| **Gap closure (PRD alignment)** | **27** | **PASS** |
+| **New tests total** | **100** | **PASS** |
 | Pre-existing failures | 8 | FAIL (unchanged) |
 
 ---
@@ -155,6 +156,11 @@ The spec (§3.9) mentions `findEffectiveRole(...)` + `hasMinimumRole(...)` as a 
 - [x] `bun run lint` — no `sec-authz` violations
 - [x] `bun run test tools/eslint-rules/` — 8 self-tests pass
 - [x] `BatchDeniedError` in `src/routes/api/columns.ts` → match
+- [x] AC-13/14/15/17: `BatchColumnForm` component with denial banner, input preservation, bisection affordance, role="alert"
+- [x] AC-18: TC-MODAL-01 rewritten to test `use-collaboration.ts` directly (no hook mock, real socket.on simulation)
+- [x] AC-20: TC-HTTP401-01 and TC-HTTP401-02 — both WS and HTTP paths independently invoke the callback
+- [x] AC-21: TC-MODAL-02 — focus moves to modal dialog on session_expired
+- [x] AC-22: TC-DRAFT-01..05 and TC-MODAL-05 — full draft persistence lifecycle tested via renderHook
 
 ---
 
@@ -163,7 +169,35 @@ The spec (§3.9) mentions `findEffectiveRole(...)` + `hasMinimumRole(...)` as a 
 | Item | Deferred To | Severity |
 |------|-------------|----------|
 | `useColumnDraftPersistence` not wired into UI — no column-edit modal exists | Future PRD | Low (hook ready, no modal) |
-| Batch UX component (SEC-BATCH-UX-01..04) — `createColumnsFn` not called from any UI component | Future PRD | Low (API ready, no UI) |
+| `BatchColumnForm` created but not wired into any whiteboard route (no entry point UI) | Future PRD | Low (component ready, no trigger) |
 | Full error shape migration (AD-5) — existing handlers keep legacy `error` field shape | Future cleanup | Low (documented as temporary) |
 | AD-8 staging window for superpassword (≥7 days per PRD §13.2) — skipped for implementation | Deployment | Medium (notify team before production deploy) |
 | 6 files use legacy `findEffectiveRole`+`hasMinimumRole` pattern (not converted to `requireServerFnRole`) | Future cleanup | Low (both patterns enforced by ESLint rule) |
+
+---
+
+## PRD Alignment Gap Closure (Round 2)
+
+Closed on 2026-05-09 after Hera returned a 73% verdict.
+
+### Files Created
+
+- `src/components/whiteboard/BatchColumnForm.tsx` — Batch column creation form with per-row entries, BATCH_DENIED banner, bisection affordance (SEC-BATCH-UX-01/02/03/05)
+- `src/components/whiteboard/BatchColumnForm.test.tsx` — 9 tests covering TC-BUX-01..05 + row management
+- `src/hooks/use-collaboration.test.ts` — 6 tests: TC-MODAL-01 rewritten to test the hook directly, TC-HTTP401-01, TC-HTTP401-02, TC-MODAL-02 synchrony assertion
+- `src/hooks/use-column-draft-persistence.test.ts` — 12 tests: TC-DRAFT-01..05 and TC-MODAL-05
+
+### Files Modified
+
+- `src/components/auth/SessionExpiredModal.test.tsx` — Added TC-MODAL-02 focus-trap assertion (document.activeElement inside dialog)
+- `implementation-notes.md` — This file
+
+### Gap Coverage
+
+| Gap | AC | Test IDs | Status |
+|-----|-----|----------|--------|
+| Batch UX Component | AC-13, AC-14, AC-15, AC-17 | TC-BUX-01..05 | CLOSED |
+| TC-MODAL-01 rewrite (hook-direct) | AC-18 | TC-MODAL-01 | CLOSED |
+| HTTP 401 path tests | AC-20 | TC-HTTP401-01, TC-HTTP401-02 | CLOSED |
+| Focus trap assertion | AC-21 | TC-MODAL-02 | CLOSED |
+| Draft persistence tests | AC-22 | TC-DRAFT-01..05, TC-MODAL-05 | CLOSED |

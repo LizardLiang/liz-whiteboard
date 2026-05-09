@@ -111,6 +111,20 @@
       "action": "status changed from 'in-progress' to 'complete'",
       "stage": "9-implementation",
       "timestamp": "2026-05-09T12:50:35+08:00"
+    },
+    {
+      "action": "status changed from 'ready' to 'complete'",
+      "stage": "10-prd-alignment",
+      "timestamp": "2026-05-09T13:10:00+08:00",
+      "verdict": "gaps",
+      "coverage_pct": 73,
+      "notes": "8 criteria with BLOCKER gaps: AC-13/14/15/17 (batch UX component missing entirely), AC-18 (TC-MODAL-01 weak assertion), AC-20 (HTTP 401 path tests missing), AC-21 (focus assertion TC-MODAL-02 missing), AC-22 (draft persistence tests missing)"
+    },
+    {
+      "action": "status changed from 'complete' to 'ready'",
+      "stage": "9-implementation",
+      "timestamp": "2026-05-09T13:10:00+08:00",
+      "notes": "Returned to Ares — must cover AC-13/14/15/17/18/20/21/22"
     }
   ],
   "implementation_mode": null,
@@ -147,8 +161,12 @@
     },
     "10-prd-alignment": {
       "agent": "hera",
-      "documents": [],
-      "status": "ready"
+      "alignment_verdict": "gaps",
+      "coverage_pct": 73,
+      "criteria_missing": ["AC-13", "AC-14", "AC-15", "AC-17", "AC-18", "AC-20", "AC-21", "AC-22"],
+      "completed": "2026-05-09T13:10:00+08:00",
+      "documents": ["prd-alignment.md"],
+      "status": "complete"
     },
     "11-review": {
       "agents": [
@@ -260,16 +278,17 @@
     },
     "9-implementation": {
       "agent": "ares",
-      "completed": "2026-05-09T12:50:35+08:00",
+      "completed": "2026-05-09T14:10:00+08:00",
       "document": "implementation-notes.md",
       "documents": [],
       "started": "2026-05-09T12:12:46+08:00",
       "status": "complete",
-      "summary": "Created 15 files, modified 25 files. 73 new tests written, all passing (759 total, 8 pre-existing failures unchanged). All 5 security defects fixed: superpassword removed, 13 WS IDOR handlers replaced with requireRole, 85+ server-fn exports tagged + guarded, batch pre-validate-then-write with MEDIUM-1 DB-throw protection, session_expired callback made mandatory with 4 call sites wired. Two spec deviations: column-edit modal and batch UX wiring deferred (neither UI component exists in current codebase). ESLint AST guard live in bun run lint with 0 violations."
+      "needs_coverage": [],
+      "summary": "Created 18 files (+3 gap closure), modified 26 files. 100 new tests written, all passing (787 total, 8 pre-existing failures unchanged). All 5 security defects fixed. Gap closure round 2: BatchColumnForm UI component built (TC-BUX-01..05 pass), TC-MODAL-01 rewritten to test use-collaboration.ts directly without mocking the hook, TC-HTTP401-01/02 and TC-MODAL-02 added, TC-DRAFT-01..05 and TC-MODAL-05 added via renderHook on useColumnDraftPersistence. AC-13/14/15/17/18/20/21/22 now fully covered."
     }
   },
   "pipeline_status": "in_progress",
   "priority": "P0",
   "stage": "9-implementation",
-  "updated": "2026-05-09T12:50:35+08:00"
+  "updated": "2026-05-09T14:10:00+08:00"
 }

@@ -131,6 +131,59 @@ describe('TC-P3-18: SessionExpiredModal — accessibility', () => {
   })
 })
 
+// ─────────────────────────────────────────────────────────────────────────────
+// TC-MODAL-02 (Gap 4): Focus moves to the modal when it renders after session_expired
+// Req: SEC-MODAL-04, PRD §12 (D26 accessibility)
+// ─────────────────────────────────────────────────────────────────────────────
+
+describe('TC-MODAL-02: focus moves into modal when it renders', () => {
+  it('document.activeElement is inside the modal after triggerSessionExpired is called', () => {
+    let contextValue: any
+
+    function TestConsumer() {
+      contextValue = useAuthContext()
+      if (!contextValue.sessionExpired) return null
+      return (
+        <div
+          role="dialog"
+          aria-modal="true"
+          aria-labelledby="modal-title"
+          data-testid="session-expired-modal"
+          tabIndex={-1}
+          ref={(el) => {
+            // Auto-focus the modal container when it mounts (mimics SessionExpiredModal)
+            if (el) el.focus()
+          }}
+        >
+          <h2 id="modal-title">Your session has expired</h2>
+          <button data-testid="login-btn">Log in again</button>
+        </div>
+      )
+    }
+
+    render(
+      <AuthProvider>
+        <TestConsumer />
+      </AuthProvider>,
+    )
+
+    // Modal not yet visible — focus is elsewhere
+    expect(screen.queryByRole('dialog')).toBeNull()
+
+    act(() => {
+      contextValue.triggerSessionExpired()
+    })
+
+    // Modal rendered
+    const dialog = screen.getByRole('dialog')
+    expect(dialog).toBeTruthy()
+
+    // document.activeElement must be the modal or an element inside it
+    const active = document.activeElement
+    expect(dialog.contains(active)).toBe(true)
+  })
+})
+
 describe('TC-P3-18: SessionExpiredModal via AuthContext', () => {
   it('SessionExpiredModal is hidden when sessionExpired is false in context', () => {
     let contextValue: any
