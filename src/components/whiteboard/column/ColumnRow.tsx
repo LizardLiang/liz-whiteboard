@@ -157,14 +157,14 @@ export const ColumnRow = memo(
             position={Position.Left}
             id={createColumnHandleId(tableId, column.id, 'left', 'source')}
             className="nodrag"
-            style={{ left: '-5px' }}
+            style={{ left: '-14px' }}
           />
           <Handle
             type="target"
             position={Position.Left}
             id={createColumnHandleId(tableId, column.id, 'left', 'target')}
             className="nodrag"
-            style={{ left: '-5px' }}
+            style={{ left: '-14px' }}
           />
 
           {/* Constraint Badges */}
@@ -342,14 +342,14 @@ export const ColumnRow = memo(
             position={Position.Right}
             id={createColumnHandleId(tableId, column.id, 'right', 'source')}
             className="nodrag"
-            style={{ right: '-5px' }}
+            style={{ right: '-14px' }}
           />
           <Handle
             type="target"
             position={Position.Right}
             id={createColumnHandleId(tableId, column.id, 'right', 'target')}
             className="nodrag"
-            style={{ right: '-5px' }}
+            style={{ right: '-14px' }}
           />
         </div>
       </TooltipProvider>

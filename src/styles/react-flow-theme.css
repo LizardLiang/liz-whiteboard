@@ -171,37 +171,36 @@
 /* ----------------------------------------------------------------------------
  * Handle Styles
  * ---------------------------------------------------------------------------- */
-/* Base handle: hidden by default */
+/* Handle: large transparent hit area, visual dot rendered via ::before.
+   The element is 28×28px so at 50% zoom the clickable target is still 14px on
+   screen. The ::before draws the 10px visual dot centered inside. */
 .react-flow__handle {
-  width: 10px;
-  height: 10px;
-  background: var(--rf-handle-bg);
-  border: 2px solid var(--rf-handle-border);
-  opacity: 0;
+  width: 28px;
+  height: 28px;
+  background: transparent;
+  border: none;
+  border-radius: 50%;
+  opacity: 1;
   pointer-events: none;
-  transition:
-    opacity 0.15s ease,
-    background 0.15s ease,
-    border-color 0.15s ease;
-  /* Position context for the hit-area pseudo-element */
   position: absolute;
 }
 
-/* Enlarged transparent hit area — keeps visual dot the same size but extends
-   the clickable region so handles remain easy to grab when zoomed out.
-   The pseudo-element is 24×24px centered on the 10×10 dot, giving 7px of
-   extra reach in each direction at 100% zoom (scales proportionally). */
+/* Visual dot — hidden by default */
 .react-flow__handle::before {
   content: '';
   position: absolute;
   top: 50%;
   left: 50%;
   transform: translate(-50%, -50%);
-  width: 24px;
-  height: 24px;
+  width: 10px;
+  height: 10px;
   border-radius: 50%;
   background: transparent;
-  /* No pointer-events declaration needed — pseudo-elements inherit from parent */
+  border: 2px solid transparent;
+  transition:
+    background 0.15s ease,
+    border-color 0.15s ease;
+  pointer-events: none;
 }
 
 /* Override React Flow's .connectionindicator which forces pointer-events: all.
@@ -209,7 +208,7 @@
    Target handles: hidden but KEEP pointer-events so React Flow can detect
    them as valid drop targets during connection drags. */
 .react-flow .react-flow__handle.connectionindicator {
-  opacity: 0;
+  opacity: 1;
 }
 
 /* Source handles: fully non-interactive by default (no accidental grabs) */
@@ -217,21 +216,29 @@
   pointer-events: none;
 }
 
-/* Show SOURCE handles on column-row hover with z-index above target handles
-   so the source handle always intercepts clicks at overlapping positions. */
+/* Show SOURCE handles on column-row hover */
 .column-row:hover > .react-flow__handle.source.connectionindicator {
-  opacity: 1;
   pointer-events: all;
   z-index: 2;
+}
+
+.column-row:hover > .react-flow__handle.source.connectionindicator::before {
+  background: var(--rf-handle-bg);
+  border-color: var(--rf-handle-border);
 }
 
 /* During active connection drag, show ALL target handles as drop zones.
    .is-connecting is toggled by onConnectStart/onConnectEnd in ReactFlowCanvas. */
 .is-connecting .react-flow__handle.target.connectionindicator {
-  opacity: 1;
+  pointer-events: all;
 }
 
-.column-row:hover > .react-flow__handle.source:hover {
+.is-connecting .react-flow__handle.target.connectionindicator::before {
+  background: var(--rf-handle-bg);
+  border-color: var(--rf-handle-border);
+}
+
+.column-row:hover > .react-flow__handle.source:hover::before {
   background: var(--rf-handle-hover-bg);
   border-color: var(--rf-handle-hover-border);
 }
