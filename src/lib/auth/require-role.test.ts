@@ -128,6 +128,29 @@ describe('requireRole', () => {
     expect(getDenialCount(userId, 'evt:counter')).toBe(3)
   })
 
+  // TC-RR-BOUNDED: denial counter Map is size-bounded (Hermes BLOCKER-2)
+  // Uses 1001 unique keys to exceed the 1000-entry cap and verifies the oldest is evicted.
+  it('TC-RR-BOUNDED: denialCounter evicts oldest entry when at capacity (1001 unique keys)', async () => {
+    mockFindEffectiveRole.mockResolvedValue('VIEWER')
+    // We need to test the eviction logic by calling incrementDenialCounter directly
+    // via requireRole with 1001 unique userId:eventName combinations.
+    // After 1001 entries, the first entry should be evicted and have count 0.
+    const firstUserId = `user-bounded-first-${Date.now()}`
+    const firstSocket = { data: { userId: firstUserId }, emit: vi.fn() as (e: string, p: WSAuthErrorPayload) => void }
+    // Insert first entry
+    await requireRole(firstSocket, 'wb-1', 'bounded:event', 'EDITOR')
+    expect(getDenialCount(firstUserId, 'bounded:event')).toBe(1)
+
+    // Fill up to capacity (1001 additional unique entries to trigger eviction)
+    for (let i = 0; i < 1001; i++) {
+      const sock = { data: { userId: `user-bounded-filler-${Date.now()}-${i}` }, emit: vi.fn() as (e: string, p: WSAuthErrorPayload) => void }
+      await requireRole(sock, 'wb-1', 'bounded:event', 'EDITOR')
+    }
+
+    // The first entry should have been evicted (count drops back to 0)
+    expect(getDenialCount(firstUserId, 'bounded:event')).toBe(0)
+  })
+
   // TC-RR-11: OWNER satisfies EDITOR minimum
   it('TC-RR-11: OWNER role satisfies EDITOR minimum — returns false', async () => {
     mockFindEffectiveRole.mockResolvedValue('OWNER')

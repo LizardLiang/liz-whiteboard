@@ -203,6 +203,72 @@ describe('TC-ESLINT-06: @requires unauthenticated → rule passes (pre-auth esca
 })
 
 // ─────────────────────────────────────────────────────────────────────────────
+// TC-ESLINT-09: Cassandra HIGH-1 — discarded findEffectiveRole (no hasMinimumRole) → rule fails
+// A handler that calls findEffectiveRole but discards the result (never calls
+// hasMinimumRole) must be rejected. The old rule accepted findEffectiveRole alone.
+// ─────────────────────────────────────────────────────────────────────────────
+
+describe('TC-ESLINT-09: discarded findEffectiveRole without hasMinimumRole → rule fails', () => {
+  it('should report error when findEffectiveRole result is discarded (no hasMinimumRole)', () => {
+    let hasError = false
+    try {
+      ruleTester.run('require-server-fn-authz', rule, {
+        valid: [],
+        invalid: [
+          {
+            code: `
+              import { createServerFn } from '@tanstack/react-start'
+              function requireAuth(fn) { return fn }
+              /** @requires editor */
+              export const discardedRoleFn = createServerFn({ method: 'GET' })
+                .handler(
+                  requireAuth(async ({ user }, projectId) => {
+                    await findEffectiveRole(user.id, projectId)
+                    return { data: 'sensitive' }
+                  }),
+                )
+            `,
+            errors: [{ messageId: 'missingRequiresCall' }],
+          },
+        ],
+      })
+    } catch (e) {
+      hasError = true
+    }
+    expect(hasError).toBe(false)
+  })
+
+  it('should pass when BOTH findEffectiveRole AND hasMinimumRole are called (legacy pattern)', () => {
+    let hasError = false
+    try {
+      ruleTester.run('require-server-fn-authz', rule, {
+        valid: [
+          {
+            code: `
+              import { createServerFn } from '@tanstack/react-start'
+              function requireAuth(fn) { return fn }
+              /** @requires editor */
+              export const legacyPairFn = createServerFn({ method: 'GET' })
+                .handler(
+                  requireAuth(async ({ user }, projectId) => {
+                    const role = await findEffectiveRole(user.id, projectId)
+                    if (!hasMinimumRole(role, 'EDITOR')) throw new Error('Forbidden')
+                    return { data: 'ok' }
+                  }),
+                )
+            `,
+          },
+        ],
+        invalid: [],
+      })
+    } catch (e) {
+      hasError = true
+    }
+    expect(hasError).toBe(false)
+  })
+})
+
+// ─────────────────────────────────────────────────────────────────────────────
 // TC-ESLINT-07 + TC-ESLINT-08: SEC-MODAL-02 — session_expired single-registration
 // Implemented as Vitest meta-test counting session_expired registrations in src/
 // (acceptable alternative per test-plan constraint: "RuleTester cross-file state awkward")
