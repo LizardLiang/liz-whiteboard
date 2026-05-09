@@ -183,6 +183,25 @@
     opacity 0.15s ease,
     background 0.15s ease,
     border-color 0.15s ease;
+  /* Position context for the hit-area pseudo-element */
+  position: absolute;
+}
+
+/* Enlarged transparent hit area — keeps visual dot the same size but extends
+   the clickable region so handles remain easy to grab when zoomed out.
+   The pseudo-element is 24×24px centered on the 10×10 dot, giving 7px of
+   extra reach in each direction at 100% zoom (scales proportionally). */
+.react-flow__handle::before {
+  content: '';
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  transform: translate(-50%, -50%);
+  width: 24px;
+  height: 24px;
+  border-radius: 50%;
+  background: transparent;
+  /* No pointer-events declaration needed — pseudo-elements inherit from parent */
 }
 
 /* Override React Flow's .connectionindicator which forces pointer-events: all.
