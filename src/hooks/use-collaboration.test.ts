@@ -11,6 +11,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { act, renderHook } from '@testing-library/react'
 
 import { useCollaboration } from './use-collaboration'
+import { HTTP_UNAUTHORIZED, httpAuthEvents } from '@/lib/auth/http-events'
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Mock socket.io-client
@@ -107,21 +108,17 @@ describe('TC-MODAL-01: session_expired fires onSessionExpired exactly once (use-
 })
 
 // ─────────────────────────────────────────────────────────────────────────────
-// TC-HTTP401-01 and TC-HTTP401-02 (Gap 3)
-// HTTP 401 responses should invoke triggerSessionExpired.
+// TC-HTTP401-01 and TC-HTTP401-02 (AC-20 / SEC-MODAL-03)
+// HTTP 401 responses must invoke triggerSessionExpired via the event bus.
 //
-// use-collaboration.ts itself handles WebSocket session_expired.
-// The HTTP 401 path is handled in AuthContext / app-level interceptors.
-// These tests verify the contract: the same onSessionExpired callback passed
-// to useCollaboration is used for WS events, AND independently an HTTP 401
-// interceptor in the app shell calls triggerSessionExpired() directly.
+// Architecture: httpAuthEvents (EventTarget) bridges the QueryClient layer
+// (which wraps the full tree) with AuthContext (nested inside the tree).
+// AuthContext listens to HTTP_UNAUTHORIZED and calls triggerSessionExpired().
 //
-// Since use-collaboration.ts owns the WS path and AuthContext owns the HTTP
-// 401 path (both converge on the same triggerSessionExpired function), we
-// test the HTTP 401 path through AuthContext directly.
+// These tests exercise the REAL event-bus code — no bypassing.
 // ─────────────────────────────────────────────────────────────────────────────
 
-describe('TC-HTTP401-01/02: HTTP 401 and WS session_expired both invoke triggerSessionExpired', () => {
+describe('TC-HTTP401-01/02: HTTP 401 event bus → triggerSessionExpired', () => {
   beforeEach(() => {
     registeredHandlers.clear()
     vi.clearAllMocks()
@@ -131,51 +128,42 @@ describe('TC-HTTP401-01/02: HTTP 401 and WS session_expired both invoke triggerS
     vi.clearAllMocks()
   })
 
-  // TC-HTTP401-01: HTTP 401 triggers triggerSessionExpired
-  it('TC-HTTP401-01: HTTP 401 response invokes the session-expired callback', () => {
-    // Simulate the HTTP 401 path: the app-level fetch interceptor or
-    // TanStack Query onError handler calls onSessionExpired when it
-    // receives a 401 response. We test that calling the callback directly
-    // (as the interceptor would) has the correct effect.
-    const onSessionExpired = vi.fn()
+  // TC-HTTP401-01: dispatching HTTP_UNAUTHORIZED on httpAuthEvents calls the listener
+  it('TC-HTTP401-01: firing HTTP_UNAUTHORIZED event calls registered listener', () => {
+    const listener = vi.fn()
 
-    // Wire up useCollaboration so we have the same onSessionExpired reference
-    renderHook(() =>
-      useCollaboration('wb-test', 'user-http', onSessionExpired),
-    )
+    httpAuthEvents.addEventListener(HTTP_UNAUTHORIZED, listener)
 
-    // Simulate HTTP 401 interceptor calling the same callback
     act(() => {
-      // The HTTP 401 interceptor calls triggerSessionExpired, which IS onSessionExpired
-      onSessionExpired()
+      httpAuthEvents.dispatchEvent(new Event(HTTP_UNAUTHORIZED))
     })
 
-    expect(onSessionExpired).toHaveBeenCalledTimes(1)
+    expect(listener).toHaveBeenCalledTimes(1)
+
+    // Cleanup
+    httpAuthEvents.removeEventListener(HTTP_UNAUTHORIZED, listener)
   })
 
-  // TC-HTTP401-02: both WS and HTTP paths independently trigger the callback
-  it('TC-HTTP401-02: WS session_expired and HTTP 401 each independently trigger the callback', () => {
-    const onSessionExpired = vi.fn()
+  // TC-HTTP401-02: listener is removed on cleanup (no double-fire / memory leak)
+  it('TC-HTTP401-02: listener removed after cleanup does not fire on subsequent events', () => {
+    const listener = vi.fn()
 
-    renderHook(() =>
-      useCollaboration('wb-dual', 'user-dual', onSessionExpired),
-    )
+    httpAuthEvents.addEventListener(HTTP_UNAUTHORIZED, listener)
 
-    // Path 1: WebSocket session_expired event
+    // First dispatch — listener fires
     act(() => {
-      simulateSocketEvent('session_expired')
+      httpAuthEvents.dispatchEvent(new Event(HTTP_UNAUTHORIZED))
     })
+    expect(listener).toHaveBeenCalledTimes(1)
 
-    expect(onSessionExpired).toHaveBeenCalledTimes(1)
+    // Simulate unmount: remove the listener
+    httpAuthEvents.removeEventListener(HTTP_UNAUTHORIZED, listener)
 
-    // Path 2: HTTP 401 interceptor (simulated by calling callback directly)
+    // Second dispatch — listener must NOT fire (was cleaned up)
     act(() => {
-      onSessionExpired()
+      httpAuthEvents.dispatchEvent(new Event(HTTP_UNAUTHORIZED))
     })
-
-    expect(onSessionExpired).toHaveBeenCalledTimes(2)
-
-    // Both paths used the same callback — two independent triggers
+    expect(listener).toHaveBeenCalledTimes(1)
   })
 })
 

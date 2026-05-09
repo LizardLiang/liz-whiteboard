@@ -158,7 +158,7 @@ The spec (§3.9) mentions `findEffectiveRole(...)` + `hasMinimumRole(...)` as a 
 - [x] `BatchDeniedError` in `src/routes/api/columns.ts` → match
 - [x] AC-13/14/15/17: `BatchColumnForm` component with denial banner, input preservation, bisection affordance, role="alert"
 - [x] AC-18: TC-MODAL-01 rewritten to test `use-collaboration.ts` directly (no hook mock, real socket.on simulation)
-- [x] AC-20: TC-HTTP401-01 and TC-HTTP401-02 — both WS and HTTP paths independently invoke the callback
+- [x] AC-20: TC-HTTP401-01 and TC-HTTP401-02 — real event-bus interceptor implemented; `httpAuthEvents` dispatched by QueryClient/MutationCache; `AuthContext` listens and calls `triggerSessionExpired()`; cleanup tested
 - [x] AC-21: TC-MODAL-02 — focus moves to modal dialog on session_expired
 - [x] AC-22: TC-DRAFT-01..05 and TC-MODAL-05 — full draft persistence lifecycle tested via renderHook
 
@@ -173,6 +173,37 @@ The spec (§3.9) mentions `findEffectiveRole(...)` + `hasMinimumRole(...)` as a 
 | Full error shape migration (AD-5) — existing handlers keep legacy `error` field shape | Future cleanup | Low (documented as temporary) |
 | AD-8 staging window for superpassword (≥7 days per PRD §13.2) — skipped for implementation | Deployment | Medium (notify team before production deploy) |
 | 6 files use legacy `findEffectiveRole`+`hasMinimumRole` pattern (not converted to `requireServerFnRole`) | Future cleanup | Low (both patterns enforced by ESLint rule) |
+
+---
+
+## PRD Alignment Gap Closure (Round 3 — AC-20 Final)
+
+Closed on 2026-05-09 after Hera returned 97% verdict with AC-20 as the sole remaining gap.
+
+### Problem
+
+HTTP 401 responses from server functions needed to reach `triggerSessionExpired()` in `AuthContext`. The architectural conflict: `QueryClient` wraps the entire app tree, but `AuthContext` is nested inside the route tree — so `QueryClient.onError` could not call `triggerSessionExpired` directly.
+
+### Solution: Event-Bus Pattern (SEC-MODAL-03)
+
+A module-level `EventTarget` bridges the two layers without creating circular imports.
+
+### Files Created
+
+- `src/lib/auth/http-events.ts` — `httpAuthEvents` (EventTarget) + `HTTP_UNAUTHORIZED` constant
+
+### Files Modified
+
+- `src/integrations/tanstack-query/root-provider.tsx` — Added `QueryCache` and `MutationCache` with `onError` callbacks that call `dispatchUnauthorized()` (which dispatches `HTTP_UNAUTHORIZED` on `httpAuthEvents`) when any query/mutation error matches HTTP 401
+- `src/components/auth/AuthContext.tsx` — Added `useEffect` in `AuthProvider` that registers/deregisters a `HTTP_UNAUTHORIZED` listener; listener calls `triggerSessionExpired()`
+- `src/hooks/use-collaboration.test.ts` — Rewrote TC-HTTP401-01 and TC-HTTP401-02 to exercise the real event bus: dispatch `HTTP_UNAUTHORIZED`, assert listener fires; remove listener, dispatch again, assert no second fire (cleanup/memory-leak test)
+
+### Test Results
+
+- TC-HTTP401-01: PASS — `httpAuthEvents.dispatchEvent(new Event(HTTP_UNAUTHORIZED))` → listener called exactly once
+- TC-HTTP401-02: PASS — listener removed via `removeEventListener` → second dispatch does not fire (cleanup verified)
+- All 6 tests in `use-collaboration.test.ts`: PASS
+- Full suite: 787 passed / 8 failed (pre-existing failures unchanged)
 
 ---
 

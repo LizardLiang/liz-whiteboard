@@ -1,7 +1,8 @@
 // src/components/auth/AuthContext.tsx
 // React context for auth state and session-expired modal trigger
 
-import { createContext, useCallback, useContext, useState } from 'react'
+import { createContext, useCallback, useContext, useEffect, useState } from 'react'
+import { HTTP_UNAUTHORIZED, httpAuthEvents } from '@/lib/auth/http-events'
 
 interface AuthContextValue {
   /** Whether the session-expired modal should be shown */
@@ -29,6 +30,15 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   const dismissSessionExpired = useCallback(() => {
     setSessionExpired(false)
   }, [])
+
+  // SEC-MODAL-03: listen for HTTP 401 events dispatched by the QueryClient
+  // (via the event bus in http-events.ts). This bridges the architectural gap
+  // where QueryClient wraps the full tree but AuthContext is nested inside it.
+  useEffect(() => {
+    const handler = () => triggerSessionExpired()
+    httpAuthEvents.addEventListener(HTTP_UNAUTHORIZED, handler)
+    return () => httpAuthEvents.removeEventListener(HTTP_UNAUTHORIZED, handler)
+  }, [triggerSessionExpired])
 
   return (
     <AuthContext.Provider
