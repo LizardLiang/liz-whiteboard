@@ -7,10 +7,6 @@
 // TanStack Start server-function wrapper.
 
 import { beforeEach, describe, expect, it, vi } from 'vitest'
-import {
-  ForbiddenError,
-  requireServerFnRole,
-} from '@/lib/auth/require-role'
 
 vi.mock('@/data/permission', () => ({
   findEffectiveRole: vi.fn(),
@@ -20,7 +16,13 @@ vi.mock('@/lib/auth/log-sample', () => ({
   logSampledError: vi.fn(),
 }))
 
+// eslint-disable-next-line import/first
 import { findEffectiveRole } from '@/data/permission'
+// eslint-disable-next-line import/first
+import {
+  ForbiddenError,
+  requireServerFnRole,
+} from '@/lib/auth/require-role'
 
 const mockFindEffectiveRole = vi.mocked(findEffectiveRole)
 

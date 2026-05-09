@@ -2,7 +2,8 @@
 // Centralized authorization primitives for WebSocket handlers and server functions.
 // AD-1: replaces the no-op denyIfInsufficientPermission stub.
 
-import { findEffectiveRole, type EffectiveRole } from '@/data/permission'
+import type { EffectiveRole } from '@/data/permission'
+import { findEffectiveRole } from '@/data/permission'
 import { hasMinimumRole } from '@/lib/auth/permissions'
 import { logSampledError } from '@/lib/auth/log-sample'
 import { getWhiteboardProjectId } from '@/data/resolve-project'

@@ -5,6 +5,15 @@ import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { act, renderHook } from '@testing-library/react'
 import { useColumnCollaboration } from './use-column-collaboration'
 
+// Mock useAuthContext — required after SEC-MODAL-04 fix (AD-7)
+vi.mock('@/components/auth/AuthContext', () => ({
+  useAuthContext: () => ({
+    sessionExpired: false,
+    triggerSessionExpired: vi.fn(),
+    dismissSessionExpired: vi.fn(),
+  }),
+}))
+
 // Mock useCollaboration so we control on/off/emit/connectionState
 const mockOn = vi.fn()
 const mockOff = vi.fn()
