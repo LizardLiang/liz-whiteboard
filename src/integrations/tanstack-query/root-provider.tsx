@@ -1,15 +1,46 @@
-import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
+import { MutationCache, QueryCache, QueryClient, QueryClientProvider } from '@tanstack/react-query'
+import { HTTP_UNAUTHORIZED, httpAuthEvents } from '@/lib/auth/http-events'
 
-// NOTE: 401 interception for mutations is handled via the beforeLoad auth guard
-// in __root.tsx, which redirects to /login on session expiry. The SessionExpiredModal
-// is triggered by the WebSocket session_expired event in use-whiteboard-collaboration.ts.
-// Mutation-level 401 interception via QueryClient is not wired up here because
-// AuthContext (required for triggerSessionExpired) is nested inside the route tree
-// while the QueryClient Provider must wrap the entire tree. Any mutation returning
-// 401 will result in stale data until the next navigation triggers beforeLoad.
+// Fire HTTP_UNAUTHORIZED on the event bus when any query or mutation receives
+// an HTTP 401 error. AuthContext listens to this event and calls
+// triggerSessionExpired() so the SessionExpiredModal appears.
+function isUnauthorizedError(error: unknown): boolean {
+  if (error instanceof Error) {
+    // TanStack Start server functions throw errors whose message includes the
+    // status code, e.g. "Unauthorized" or contain a statusCode field.
+    const msg = error.message.toLowerCase()
+    if (msg.includes('unauthorized') || msg.includes('401')) {
+      return true
+    }
+    // Check statusCode property on the error (set by some server fn wrappers)
+    if (typeof (error as Record<string, unknown>).statusCode === 'number') {
+      return (error as Record<string, unknown>).statusCode === 401
+    }
+  }
+  return false
+}
+
+function dispatchUnauthorized() {
+  httpAuthEvents.dispatchEvent(new Event(HTTP_UNAUTHORIZED))
+}
 
 export function getContext() {
-  const queryClient = new QueryClient()
+  const queryClient = new QueryClient({
+    queryCache: new QueryCache({
+      onError: (error) => {
+        if (isUnauthorizedError(error)) {
+          dispatchUnauthorized()
+        }
+      },
+    }),
+    mutationCache: new MutationCache({
+      onError: (error) => {
+        if (isUnauthorizedError(error)) {
+          dispatchUnauthorized()
+        }
+      },
+    }),
+  })
   return {
     queryClient,
   }
