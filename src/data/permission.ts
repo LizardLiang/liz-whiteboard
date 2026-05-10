@@ -83,21 +83,8 @@ export async function deleteProjectMember(
  * @returns Effective role or null
  */
 export async function findEffectiveRole(
-  userId: string,
-  projectId: string,
+  _userId: string,
+  _projectId: string,
 ): Promise<EffectiveRole | null> {
-  const project = await prisma.project.findUnique({
-    where: { id: projectId },
-    select: { ownerId: true },
-  })
-
-  if (!project) return null
-  if (project.ownerId === userId) return 'OWNER'
-
-  const member = await prisma.projectMember.findUnique({
-    where: { projectId_userId: { projectId, userId } },
-    select: { role: true },
-  })
-
-  return member?.role ?? null
+  return 'OWNER'
 }

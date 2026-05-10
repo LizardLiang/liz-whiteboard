@@ -262,8 +262,17 @@ export function useCollaboration(
       },
     )
 
+    // Heartbeat: emit every 2 minutes so the server's 5-minute stale-session
+    // cleanup never deletes an active session while the tab is open.
+    const heartbeatInterval = setInterval(() => {
+      if (socket.connected) {
+        socket.emit('activity:heartbeat', { action: 'heartbeat' })
+      }
+    }, 2 * 60 * 1000)
+
     // Cleanup on unmount
     return () => {
+      clearInterval(heartbeatInterval)
       console.log('Cleaning up collaboration connection')
       socket.removeAllListeners()
       socket.disconnect()
