@@ -7,7 +7,7 @@
 // requireAuth() returns the 401 payload as a resolved value, not a thrown error,
 // so onError cannot catch it. The onSuccess branch is the production code path.
 
-import { describe, expect, it, beforeEach, afterEach } from 'vitest'
+import { afterEach, beforeEach, describe, expect, it } from 'vitest'
 import { getContext } from './root-provider'
 import { HTTP_UNAUTHORIZED, httpAuthEvents } from '@/lib/auth/http-events'
 
@@ -33,7 +33,10 @@ describe('TC-HTTP401-01: QueryClient onSuccess fires HTTP_UNAUTHORIZED on resolv
     // Simulate requireAuth returning a resolved 401 payload (the production code path)
     await queryClient.fetchQuery({
       queryKey: ['test-401-query'],
-      queryFn: async () => ({ error: 'UNAUTHORIZED' as const, status: 401 as const }),
+      queryFn: async () => ({
+        error: 'UNAUTHORIZED' as const,
+        status: 401 as const,
+      }),
       retry: false,
     })
 
@@ -63,10 +66,16 @@ describe('TC-HTTP401-02: MutationCache onSuccess fires HTTP_UNAUTHORIZED on reso
     const { queryClient } = getContext()
 
     // Simulate a mutation (server function) returning a resolved 401 payload
-    await queryClient.getMutationCache().build(queryClient, {
-      mutationFn: async () => ({ error: 'UNAUTHORIZED' as const, status: 401 as const }),
-      retry: false,
-    }).execute(undefined)
+    await queryClient
+      .getMutationCache()
+      .build(queryClient, {
+        mutationFn: async () => ({
+          error: 'UNAUTHORIZED' as const,
+          status: 401 as const,
+        }),
+        retry: false,
+      })
+      .execute(undefined)
 
     expect(fired).toBe(true)
 
@@ -77,7 +86,9 @@ describe('TC-HTTP401-02: MutationCache onSuccess fires HTTP_UNAUTHORIZED on reso
 describe('TC-HTTP401-03: HTTP_UNAUTHORIZED listener cleanup prevents double-fire', () => {
   it('removing listener prevents subsequent events from being received', async () => {
     let fireCount = 0
-    const listener = () => { fireCount++ }
+    const listener = () => {
+      fireCount++
+    }
 
     httpAuthEvents.addEventListener(HTTP_UNAUTHORIZED, listener)
     httpAuthEvents.dispatchEvent(new Event(HTTP_UNAUTHORIZED))

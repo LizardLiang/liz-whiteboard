@@ -14,7 +14,11 @@ vi.mock('@/data/resolve-project', () => ({
 }))
 
 vi.mock('@/lib/auth/require-role', async (importOriginal) => {
-  const actual = await importOriginal<{ BatchDeniedError: typeof import('@/lib/auth/require-role').BatchDeniedError; ForbiddenError: typeof import('@/lib/auth/require-role').ForbiddenError; requireServerFnRole: typeof import('@/lib/auth/require-role').requireServerFnRole }>()
+  const actual = await importOriginal<{
+    BatchDeniedError: typeof import('@/lib/auth/require-role').BatchDeniedError
+    ForbiddenError: typeof import('@/lib/auth/require-role').ForbiddenError
+    requireServerFnRole: typeof import('@/lib/auth/require-role').requireServerFnRole
+  }>()
   return {
     ...actual,
     requireServerFnRole: vi.fn(),
@@ -58,7 +62,10 @@ interface ColumnInput {
   dataType: string
 }
 
-async function createColumnsBatchHandler(userId: string, data: Array<ColumnInput>) {
+async function createColumnsBatchHandler(
+  userId: string,
+  data: Array<ColumnInput>,
+) {
   if (data.length === 0) return []
 
   const uniqueTableIds = [...new Set(data.map((c) => c.tableId))]
@@ -120,7 +127,9 @@ describe('createColumnsBatch — batch RBAC (SEC-BATCH-04)', () => {
       makeColumnInput('tableId-B', 1),
     ]
 
-    await expect(createColumnsBatchHandler('user-1', batch)).rejects.toThrow(BatchDeniedError)
+    await expect(createColumnsBatchHandler('user-1', batch)).rejects.toThrow(
+      BatchDeniedError,
+    )
     expect(mockCreateColumns).not.toHaveBeenCalled()
   })
 
@@ -138,7 +147,9 @@ describe('createColumnsBatch — batch RBAC (SEC-BATCH-04)', () => {
   // TC-BATCH-03: Fully unauthorized → BatchDeniedError
   it('TC-BATCH-03: fully unauthorized → BatchDeniedError', async () => {
     mockRequireServerFnRole.mockRejectedValue(new ForbiddenError())
-    await expect(createColumnsBatchHandler('user-1', [makeColumnInput('tbl-1')])).rejects.toThrow(BatchDeniedError)
+    await expect(
+      createColumnsBatchHandler('user-1', [makeColumnInput('tbl-1')]),
+    ).rejects.toThrow(BatchDeniedError)
     expect(mockCreateColumns).not.toHaveBeenCalled()
   })
 
@@ -149,12 +160,16 @@ describe('createColumnsBatch — batch RBAC (SEC-BATCH-04)', () => {
 
     let caught: unknown
     try {
-      await createColumnsBatchHandler('user-1', [makeColumnInput('secret-table-abc123')])
+      await createColumnsBatchHandler('user-1', [
+        makeColumnInput('secret-table-abc123'),
+      ])
     } catch (e) {
       caught = e
     }
     expect(caught).toBeInstanceOf(BatchDeniedError)
-    expect((caught as BatchDeniedError).message).not.toContain('secret-table-abc123')
+    expect((caught as BatchDeniedError).message).not.toContain(
+      'secret-table-abc123',
+    )
     expect((caught as BatchDeniedError).message).not.toMatch(/item \d+|index/i)
   })
 
@@ -170,14 +185,18 @@ describe('createColumnsBatch — batch RBAC (SEC-BATCH-04)', () => {
   it('TC-BATCH-06: single authorized item → success', async () => {
     const written = [{ id: 'c1' }]
     mockCreateColumns.mockResolvedValue(written as any)
-    const result = await createColumnsBatchHandler('user-1', [makeColumnInput('tbl-1')])
+    const result = await createColumnsBatchHandler('user-1', [
+      makeColumnInput('tbl-1'),
+    ])
     expect(result).toEqual(written)
   })
 
   // TC-BATCH-07: Single unauthorized item → BatchDeniedError
   it('TC-BATCH-07: single unauthorized → BatchDeniedError', async () => {
     mockRequireServerFnRole.mockRejectedValue(new ForbiddenError())
-    await expect(createColumnsBatchHandler('user-1', [makeColumnInput('tbl-denied')])).rejects.toThrow(BatchDeniedError)
+    await expect(
+      createColumnsBatchHandler('user-1', [makeColumnInput('tbl-denied')]),
+    ).rejects.toThrow(BatchDeniedError)
     expect(mockCreateColumns).not.toHaveBeenCalled()
   })
 })
@@ -205,11 +224,15 @@ describe('createColumnsBatch — getTableProjectId DB throws (Apollo MEDIUM-1)',
       caught = e
     }
     expect(caught).toBeInstanceOf(BatchDeniedError)
-    expect((caught as BatchDeniedError).message).not.toContain('table-id-abc123')
+    expect((caught as BatchDeniedError).message).not.toContain(
+      'table-id-abc123',
+    )
     expect(mockCreateColumns).not.toHaveBeenCalled()
-    expect(mockLogSampledError).toHaveBeenCalledWith(expect.objectContaining({
-      errorClass: 'BATCH_RBAC_LOOKUP_FAILED',
-    }))
+    expect(mockLogSampledError).toHaveBeenCalledWith(
+      expect.objectContaining({
+        errorClass: 'BATCH_RBAC_LOOKUP_FAILED',
+      }),
+    )
   })
 
   // TC-GTPI-02: DB throw on item 2 → BatchDeniedError (item 1's pass doesn't cause partial write)
@@ -219,7 +242,9 @@ describe('createColumnsBatch — getTableProjectId DB throws (Apollo MEDIUM-1)',
       .mockRejectedValueOnce(new Error('DB timeout on tbl-b'))
 
     const batch = [makeColumnInput('tbl-a', 0), makeColumnInput('tbl-b', 1)]
-    await expect(createColumnsBatchHandler('user-1', batch)).rejects.toThrow(BatchDeniedError)
+    await expect(createColumnsBatchHandler('user-1', batch)).rejects.toThrow(
+      BatchDeniedError,
+    )
     expect(mockCreateColumns).not.toHaveBeenCalled()
   })
 
@@ -231,7 +256,9 @@ describe('createColumnsBatch — getTableProjectId DB throws (Apollo MEDIUM-1)',
 
     let caught: unknown
     try {
-      await createColumnsBatchHandler('user-1', [makeColumnInput('tbl-missing')])
+      await createColumnsBatchHandler('user-1', [
+        makeColumnInput('tbl-missing'),
+      ])
     } catch (e) {
       caught = e
     }

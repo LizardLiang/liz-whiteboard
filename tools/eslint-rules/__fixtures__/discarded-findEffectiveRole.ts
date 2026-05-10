@@ -7,17 +7,19 @@
 import { createServerFn } from '@tanstack/react-start'
 
 declare function requireAuth(fn: any): any
-declare function findEffectiveRole(userId: string, projectId: string): Promise<string | null>
+declare function findEffectiveRole(
+  userId: string,
+  projectId: string,
+): Promise<string | null>
 
 // VIOLATION: findEffectiveRole called but result discarded, no hasMinimumRole
 /**
  * @requires editor
  */
-export const discardedRoleFn = createServerFn({ method: 'GET' })
-  .handler(
-    requireAuth(async ({ user }: any, projectId: string) => {
-      // Call findEffectiveRole but throw away the result — RBAC is bypassed
-      await findEffectiveRole(user.id, projectId)
-      return { data: 'sensitive data' }
-    }),
-  )
+export const discardedRoleFn = createServerFn({ method: 'GET' }).handler(
+  requireAuth(async ({ user }: any, projectId: string) => {
+    // Call findEffectiveRole but throw away the result — RBAC is bypassed
+    await findEffectiveRole(user.id, projectId)
+    return { data: 'sensitive data' }
+  }),
+)

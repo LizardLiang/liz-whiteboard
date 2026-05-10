@@ -1,7 +1,13 @@
 // src/components/auth/AuthContext.tsx
 // React context for auth state and session-expired modal trigger
 
-import { createContext, useCallback, useContext, useEffect, useState } from 'react'
+import {
+  createContext,
+  useCallback,
+  useContext,
+  useEffect,
+  useState,
+} from 'react'
 import { HTTP_UNAUTHORIZED, httpAuthEvents } from '@/lib/auth/http-events'
 
 interface AuthContextValue {

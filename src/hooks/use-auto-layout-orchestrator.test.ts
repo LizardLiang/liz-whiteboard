@@ -44,7 +44,10 @@ const mockGetEdges = vi.fn(() => [])
 const mockFitView = vi.fn()
 const mockTriggerSessionExpired = vi.fn()
 
-const AUTH_ERROR_RESPONSE = { error: 'UNAUTHORIZED' as const, status: 401 as const }
+const AUTH_ERROR_RESPONSE = {
+  error: 'UNAUTHORIZED' as const,
+  status: 401 as const,
+}
 
 // Default hook args
 const WB_ID = '11111111-1111-1111-1111-111111111111'
@@ -69,14 +72,12 @@ beforeEach(() => {
 
   mockRunD3ForceLayout = vi.fn()
   mockEmitBulkPositionUpdate = vi.fn()
-
   ;(useReactFlow as ReturnType<typeof vi.fn>).mockReturnValue({
     setNodes: mockSetNodes,
     getNodes: mockGetNodes,
     getEdges: mockGetEdges,
     fitView: mockFitView,
   })
-
   ;(useAuthContext as ReturnType<typeof vi.fn>).mockReturnValue({
     triggerSessionExpired: mockTriggerSessionExpired,
   })
@@ -94,7 +95,9 @@ describe('useAutoLayoutOrchestrator', () => {
   it('TC-AL-O-01: success path — setNodes, persist, emit, fitView, toast', async () => {
     vi.useFakeTimers()
     mockRunD3ForceLayout.mockResolvedValueOnce(POSITIONS)
-    ;(updateTablePositionsBulk as ReturnType<typeof vi.fn>).mockResolvedValueOnce({
+    ;(
+      updateTablePositionsBulk as ReturnType<typeof vi.fn>
+    ).mockResolvedValueOnce({
       success: true,
       count: 2,
     })
@@ -115,8 +118,16 @@ describe('useAutoLayoutOrchestrator', () => {
       data: {
         whiteboardId: WB_ID,
         positions: expect.arrayContaining([
-          { id: POSITIONS[0].id, positionX: POSITIONS[0].x, positionY: POSITIONS[0].y },
-          { id: POSITIONS[1].id, positionX: POSITIONS[1].x, positionY: POSITIONS[1].y },
+          {
+            id: POSITIONS[0].id,
+            positionX: POSITIONS[0].x,
+            positionY: POSITIONS[0].y,
+          },
+          {
+            id: POSITIONS[1].id,
+            positionX: POSITIONS[1].x,
+            positionY: POSITIONS[1].y,
+          },
         ]),
       },
     })
@@ -124,7 +135,11 @@ describe('useAutoLayoutOrchestrator', () => {
     // emitBulkPositionUpdate called with correct payload
     expect(mockEmitBulkPositionUpdate).toHaveBeenCalledWith(
       expect.arrayContaining([
-        { tableId: POSITIONS[0].id, positionX: POSITIONS[0].x, positionY: POSITIONS[0].y },
+        {
+          tableId: POSITIONS[0].id,
+          positionX: POSITIONS[0].x,
+          positionY: POSITIONS[0].y,
+        },
       ]),
     )
 
@@ -161,9 +176,9 @@ describe('useAutoLayoutOrchestrator', () => {
   it('TC-AL-O-03: auth error — persist-failure UX, no success toast, no fitView, no emit', async () => {
     vi.useFakeTimers()
     mockRunD3ForceLayout.mockResolvedValueOnce(POSITIONS)
-    ;(updateTablePositionsBulk as ReturnType<typeof vi.fn>).mockResolvedValueOnce(
-      AUTH_ERROR_RESPONSE,
-    )
+    ;(
+      updateTablePositionsBulk as ReturnType<typeof vi.fn>
+    ).mockResolvedValueOnce(AUTH_ERROR_RESPONSE)
 
     const { result } = renderHook(() =>
       useAutoLayoutOrchestrator(makeHookArgs()),
@@ -194,9 +209,9 @@ describe('useAutoLayoutOrchestrator', () => {
   it('TC-AL-O-04: persist throws — persist-failure UX, no fitView, no emit', async () => {
     vi.useFakeTimers()
     mockRunD3ForceLayout.mockResolvedValueOnce(POSITIONS)
-    ;(updateTablePositionsBulk as ReturnType<typeof vi.fn>).mockRejectedValueOnce(
-      new Error('DB connection lost'),
-    )
+    ;(
+      updateTablePositionsBulk as ReturnType<typeof vi.fn>
+    ).mockRejectedValueOnce(new Error('DB connection lost'))
 
     const { result } = renderHook(() =>
       useAutoLayoutOrchestrator(makeHookArgs()),
@@ -258,9 +273,9 @@ describe('useAutoLayoutOrchestrator', () => {
   it('TC-AL-O-06: retry after unmount — updateTablePositionsBulk NOT called', async () => {
     // Bring to persist-failure state
     mockRunD3ForceLayout.mockResolvedValueOnce(POSITIONS)
-    ;(updateTablePositionsBulk as ReturnType<typeof vi.fn>).mockRejectedValueOnce(
-      new Error('DB error'),
-    )
+    ;(
+      updateTablePositionsBulk as ReturnType<typeof vi.fn>
+    ).mockRejectedValueOnce(new Error('DB error'))
 
     const { result, unmount } = renderHook(() =>
       useAutoLayoutOrchestrator(makeHookArgs()),
@@ -288,9 +303,9 @@ describe('useAutoLayoutOrchestrator', () => {
     // Simpler version: bring to persist-failure state, unmount, call handleRetry
     // — the entry-point guard in handleRetry prevents any calls.
     mockRunD3ForceLayout.mockResolvedValueOnce(POSITIONS)
-    ;(updateTablePositionsBulk as ReturnType<typeof vi.fn>).mockRejectedValueOnce(
-      new Error('DB error'),
-    )
+    ;(
+      updateTablePositionsBulk as ReturnType<typeof vi.fn>
+    ).mockRejectedValueOnce(new Error('DB error'))
 
     const { result, unmount } = renderHook(() =>
       useAutoLayoutOrchestrator(makeHookArgs()),
@@ -320,7 +335,9 @@ describe('useAutoLayoutOrchestrator', () => {
   // TC-AL-O-08 — handleAutoLayoutClick with tableCount ≤ 50: runs immediately
   it('TC-AL-O-08: tableCount ≤ 50 runs layout immediately without dialog', async () => {
     mockRunD3ForceLayout.mockResolvedValueOnce(POSITIONS)
-    ;(updateTablePositionsBulk as ReturnType<typeof vi.fn>).mockResolvedValueOnce({
+    ;(
+      updateTablePositionsBulk as ReturnType<typeof vi.fn>
+    ).mockResolvedValueOnce({
       success: true,
       count: 2,
     })
@@ -354,7 +371,9 @@ describe('useAutoLayoutOrchestrator', () => {
   // TC-AL-O-10 — handleConfirm: hides dialog and calls runLayout
   it('TC-AL-O-10: handleConfirm hides dialog and runs layout', async () => {
     mockRunD3ForceLayout.mockResolvedValueOnce(POSITIONS)
-    ;(updateTablePositionsBulk as ReturnType<typeof vi.fn>).mockResolvedValueOnce({
+    ;(
+      updateTablePositionsBulk as ReturnType<typeof vi.fn>
+    ).mockResolvedValueOnce({
       success: true,
       count: 2,
     })
@@ -400,7 +419,9 @@ describe('useAutoLayoutOrchestrator', () => {
   // TC-AL-O-12 — isRunning transitions
   it('TC-AL-O-12: isRunning is false before run, and false after successful run', async () => {
     mockRunD3ForceLayout.mockResolvedValueOnce(POSITIONS)
-    ;(updateTablePositionsBulk as ReturnType<typeof vi.fn>).mockResolvedValueOnce({
+    ;(
+      updateTablePositionsBulk as ReturnType<typeof vi.fn>
+    ).mockResolvedValueOnce({
       success: true,
       count: 2,
     })
@@ -440,9 +461,9 @@ describe('useAutoLayoutOrchestrator', () => {
     // Clear call counts (but keep mock implementations)
     vi.clearAllMocks()
     // Re-apply the return values that were consumed
-    ;(updateTablePositionsBulk as ReturnType<typeof vi.fn>).mockResolvedValueOnce(
-      AUTH_ERROR_RESPONSE,
-    )
+    ;(
+      updateTablePositionsBulk as ReturnType<typeof vi.fn>
+    ).mockResolvedValueOnce(AUTH_ERROR_RESPONSE)
 
     // Retry → auth error
     await act(async () => {

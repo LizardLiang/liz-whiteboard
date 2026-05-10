@@ -27,6 +27,7 @@ import type {
 import { recalculateEdgesForDraggedNodes } from '@/lib/react-flow/edge-routing'
 import { edgeTypes, nodeTypes } from '@/lib/react-flow/node-types'
 import { calculateHighlighting } from '@/lib/react-flow/highlighting'
+import { VIEWPORT_CONSTRAINTS } from '@/lib/react-flow/viewport'
 
 /**
  * ReactFlowCanvas Props
@@ -321,8 +322,8 @@ export function ReactFlowCanvas({
         elementsSelectable={true}
         fitView
         fitViewOptions={fitViewOptions}
-        minZoom={0.1}
-        maxZoom={2}
+        minZoom={VIEWPORT_CONSTRAINTS.minZoom}
+        maxZoom={VIEWPORT_CONSTRAINTS.maxZoom}
         panOnScroll={true}
         defaultEdgeOptions={{
           type: 'relationship',

@@ -371,7 +371,9 @@ describe('tableMoveBulkBroadcastSchema (B1 socket payload validation)', () => {
   it('TC-AL-C-B1-03: rejects string positionY', () => {
     const result = tableMoveBulkBroadcastSchema.safeParse({
       ...validPayload,
-      positions: [{ tableId: validTableId, positionX: 100, positionY: 'string' }],
+      positions: [
+        { tableId: validTableId, positionX: 100, positionY: 'string' },
+      ],
     })
     expect(result.success).toBe(false)
   })

@@ -1,4 +1,9 @@
-import { MutationCache, QueryCache, QueryClient, QueryClientProvider } from '@tanstack/react-query'
+import {
+  MutationCache,
+  QueryCache,
+  QueryClient,
+  QueryClientProvider,
+} from '@tanstack/react-query'
 import { HTTP_UNAUTHORIZED, httpAuthEvents } from '@/lib/auth/http-events'
 import { isUnauthorizedError } from '@/lib/auth/errors'
 

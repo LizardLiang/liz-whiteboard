@@ -3,7 +3,11 @@
 import { createServerFn } from '@tanstack/react-start'
 
 declare function requireAuth(fn: any): any
-declare function requireServerFnRole(userId: string, projectId: string | null, role: string): Promise<void>
+declare function requireServerFnRole(
+  userId: string,
+  projectId: string | null,
+  role: string,
+): Promise<void>
 declare function getWhiteboardProjectId(id: string): Promise<string | null>
 
 /**

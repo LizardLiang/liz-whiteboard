@@ -293,9 +293,7 @@ describe('TC-P3-17: LoginPage error message', () => {
     fireEvent.click(screen.getByTestId('submit-btn'))
 
     await waitFor(() => {
-      expect(
-        (screen.getByTestId('submit-btn')).disabled,
-      ).toBe(true)
+      expect(screen.getByTestId('submit-btn').disabled).toBe(true)
     })
 
     resolveFn({ success: true, redirect: '/' })

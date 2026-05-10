@@ -1,8 +1,8 @@
 // src/hooks/use-column-reorder-collaboration.test.ts
 // Suite S7: useColumnReorderCollaboration (INT-21 through INT-26)
 
-import { describe, expect, it, vi, beforeEach } from 'vitest'
-import { renderHook, act } from '@testing-library/react'
+import { beforeEach, describe, expect, it, vi } from 'vitest'
+import { act, renderHook } from '@testing-library/react'
 import { useColumnReorderCollaboration } from './use-column-reorder-collaboration'
 
 // Mock useAuthContext — required after SEC-MODAL-04 fix (AD-7)

@@ -52,7 +52,16 @@ const BASE = {
 }
 
 export const mockOrderedColumns: Array<Column> = [
-  { ...BASE, id: 'col-A', name: 'id', order: 0, dataType: 'uuid', isPrimaryKey: true, isNullable: false, isUnique: true },
+  {
+    ...BASE,
+    id: 'col-A',
+    name: 'id',
+    order: 0,
+    dataType: 'uuid',
+    isPrimaryKey: true,
+    isNullable: false,
+    isUnique: true,
+  },
   { ...BASE, id: 'col-B', name: 'email', order: 1 },
   { ...BASE, id: 'col-C', name: 'name', order: 2 },
   { ...BASE, id: 'col-D', name: 'createdAt', order: 3, dataType: 'timestamp' },

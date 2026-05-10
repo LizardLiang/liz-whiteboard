@@ -4,7 +4,7 @@
 // Covers: AC-05a-d (useLayoutEffect + updateNodeInternals), SA-H1 (seed on load)
 
 import { beforeEach, describe, expect, it, vi } from 'vitest'
-import { renderHook, act } from '@testing-library/react'
+import { act, renderHook } from '@testing-library/react'
 import React from 'react'
 
 // ============================================================================
@@ -38,7 +38,8 @@ vi.mock('@tanstack/react-query', () => ({
   useMutation: vi.fn(() => ({ mutate: vi.fn(), isPending: false })),
   useQueryClient: vi.fn(() => ({ invalidateQueries: vi.fn() })),
   QueryClient: class QueryClient {},
-  QueryClientProvider: ({ children }: { children: React.ReactNode }) => children,
+  QueryClientProvider: ({ children }: { children: React.ReactNode }) =>
+    children,
 }))
 
 vi.mock('@/hooks/use-whiteboard-collaboration', () => ({
@@ -146,7 +147,9 @@ describe('ReactFlowWhiteboard edge re-anchor (Suite S8)', () => {
     // that mirrors the ReactFlowWhiteboard implementation.
 
     const useReorderTickEffect = () => {
-      const [reorderTickByTable, setReorderTickByTable] = React.useState<Record<string, number>>({})
+      const [reorderTickByTable, setReorderTickByTable] = React.useState<
+        Record<string, number>
+      >({})
       const updateNodeInternals = mockUpdateNodeInternals
 
       const bumpReorderTick = React.useCallback((tableId: string) => {
@@ -190,7 +193,9 @@ describe('ReactFlowWhiteboard edge re-anchor (Suite S8)', () => {
     // bumpReorderTick is called, triggering updateNodeInternals via useLayoutEffect.
 
     const useReorderTickEffect = () => {
-      const [reorderTickByTable, setReorderTickByTable] = React.useState<Record<string, number>>({})
+      const [reorderTickByTable, setReorderTickByTable] = React.useState<
+        Record<string, number>
+      >({})
       const updateNodeInternals = mockUpdateNodeInternals
 
       const bumpReorderTick = React.useCallback((tableId: string) => {
@@ -225,7 +230,9 @@ describe('ReactFlowWhiteboard edge re-anchor (Suite S8)', () => {
   // INT-29: multiple tables each get updateNodeInternals called independently (AC-05b, AC-05c)
   it('INT-29: updateNodeInternals called once per table on each reorder tick', () => {
     const useReorderTickEffect = () => {
-      const [reorderTickByTable, setReorderTickByTable] = React.useState<Record<string, number>>({})
+      const [reorderTickByTable, setReorderTickByTable] = React.useState<
+        Record<string, number>
+      >({})
       const updateNodeInternals = mockUpdateNodeInternals
 
       const bumpReorderTick = React.useCallback((tableId: string) => {
@@ -272,7 +279,12 @@ describe('ReactFlowWhiteboard edge re-anchor (Suite S8)', () => {
 
     const seedConfirmedOrderFromServer = vi.fn()
 
-    const useInitialSeed = (nodes: Array<{ id: string; data: { table: { id: string; columns: Array<{ id: string }> } } }>) => {
+    const useInitialSeed = (
+      nodes: Array<{
+        id: string
+        data: { table: { id: string; columns: Array<{ id: string }> } }
+      }>,
+    ) => {
       React.useEffect(() => {
         nodes.forEach((node) => {
           const tableId = node.data.table.id
@@ -301,9 +313,7 @@ describe('ReactFlowWhiteboard edge re-anchor (Suite S8)', () => {
         data: {
           table: {
             id: 'tbl-2',
-            columns: [
-              { id: '00000003-0000-4000-a000-000000000003' },
-            ],
+            columns: [{ id: '00000003-0000-4000-a000-000000000003' }],
           },
         },
       },
@@ -313,13 +323,12 @@ describe('ReactFlowWhiteboard edge re-anchor (Suite S8)', () => {
 
     // seedConfirmedOrderFromServer should be called once per table
     expect(seedConfirmedOrderFromServer).toHaveBeenCalledTimes(2)
-    expect(seedConfirmedOrderFromServer).toHaveBeenCalledWith(
-      'tbl-1',
-      ['00000001-0000-4000-a000-000000000001', '00000002-0000-4000-a000-000000000002'],
-    )
-    expect(seedConfirmedOrderFromServer).toHaveBeenCalledWith(
-      'tbl-2',
-      ['00000003-0000-4000-a000-000000000003'],
-    )
+    expect(seedConfirmedOrderFromServer).toHaveBeenCalledWith('tbl-1', [
+      '00000001-0000-4000-a000-000000000001',
+      '00000002-0000-4000-a000-000000000002',
+    ])
+    expect(seedConfirmedOrderFromServer).toHaveBeenCalledWith('tbl-2', [
+      '00000003-0000-4000-a000-000000000003',
+    ])
   })
 })

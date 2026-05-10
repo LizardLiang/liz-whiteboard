@@ -5,8 +5,13 @@
 //         AC-08d (queue-full at drag-start)
 
 import { beforeEach, describe, expect, it, vi } from 'vitest'
-import { render, screen, fireEvent } from '@testing-library/react'
+import { fireEvent, render, screen } from '@testing-library/react'
 import React from 'react'
+
+import { toast } from 'sonner'
+import { TableNode } from './TableNode.new'
+import type { Column } from '@prisma/client'
+import type { TableNodeData } from '@/lib/react-flow/types'
 
 // ============================================================================
 // Mocks
@@ -34,7 +39,10 @@ vi.mock('@/lib/react-flow/edge-routing', () => ({
     columnId: string,
     side: string,
     type?: string,
-  ) => (type ? `${tableId}-${columnId}-${side}-${type}` : `${tableId}-${columnId}-${side}`),
+  ) =>
+    type
+      ? `${tableId}-${columnId}-${side}-${type}`
+      : `${tableId}-${columnId}-${side}`,
 }))
 
 // Mock DataTypeSelector to avoid Radix portal complexity
@@ -102,7 +110,7 @@ vi.mock('@dnd-kit/core', () => ({
   ),
   PointerSensor: class PointerSensor {},
   useSensor: vi.fn((sensor: any) => sensor),
-  useSensors: vi.fn((...sensors: any[]) => sensors),
+  useSensors: vi.fn((...sensors: Array<any>) => sensors),
 }))
 
 // Mock @dnd-kit/sortable
@@ -111,7 +119,7 @@ vi.mock('@dnd-kit/sortable', () => ({
     <div data-testid="sortable-context">{children}</div>
   ),
   verticalListSortingStrategy: {},
-  arrayMove: vi.fn((arr: any[], from: number, to: number): any[] => {
+  arrayMove: vi.fn((arr: Array<any>, from: number, to: number): Array<any> => {
     const result = [...arr]
     const [removed] = result.splice(from, 1)
     result.splice(to, 0, removed)
@@ -140,18 +148,15 @@ vi.mock('@/hooks/use-prefers-reduced-motion', () => ({
   usePrefersReducedMotion: vi.fn(() => false),
 }))
 
-import { toast } from 'sonner'
-import { TableNode } from './TableNode.new'
-import type { Column } from '@prisma/client'
-import type { TableNodeData } from '@/lib/react-flow/types'
-
 // ============================================================================
 // Test fixtures
 // ============================================================================
 
 const TABLE_ID = 'f47ac10b-58cc-4372-a567-0e02b2c3d479'
 
-const makeColumn = (override: Partial<Column> & { id: string; name: string; order: number }): Column => ({
+const makeColumn = (
+  override: Partial<Column> & { id: string; name: string; order: number },
+): Column => ({
   tableId: TABLE_ID,
   dataType: 'string',
   isPrimaryKey: false,
@@ -164,9 +169,22 @@ const makeColumn = (override: Partial<Column> & { id: string; name: string; orde
   ...override,
 })
 
-const col1 = makeColumn({ id: '00000001-0000-4000-a000-000000000001', name: 'id', order: 0, isPrimaryKey: true })
-const col2 = makeColumn({ id: '00000002-0000-4000-a000-000000000002', name: 'email', order: 1 })
-const col3 = makeColumn({ id: '00000003-0000-4000-a000-000000000003', name: 'name', order: 2 })
+const col1 = makeColumn({
+  id: '00000001-0000-4000-a000-000000000001',
+  name: 'id',
+  order: 0,
+  isPrimaryKey: true,
+})
+const col2 = makeColumn({
+  id: '00000002-0000-4000-a000-000000000002',
+  name: 'email',
+  order: 1,
+})
+const col3 = makeColumn({
+  id: '00000003-0000-4000-a000-000000000003',
+  name: 'name',
+  order: 2,
+})
 
 function makeTableData(overrides?: Partial<TableNodeData>): TableNodeData {
   return {
@@ -289,7 +307,11 @@ describe('TableNode drag behavior (Suite S6)', () => {
     const onColumnReorder = vi.fn()
     const emitColumnReorder = vi.fn()
     const bumpReorderTick = vi.fn()
-    const data = makeTableData({ onColumnReorder, emitColumnReorder, bumpReorderTick })
+    const data = makeTableData({
+      onColumnReorder,
+      emitColumnReorder,
+      bumpReorderTick,
+    })
 
     render(<TableNode id={TABLE_ID} data={data} />)
 
@@ -341,7 +363,11 @@ describe('TableNode drag behavior (Suite S6)', () => {
     const onColumnReorder = vi.fn()
     const emitColumnReorder = vi.fn()
     const bumpReorderTick = vi.fn()
-    const data = makeTableData({ onColumnReorder, emitColumnReorder, bumpReorderTick })
+    const data = makeTableData({
+      onColumnReorder,
+      emitColumnReorder,
+      bumpReorderTick,
+    })
 
     render(<TableNode id={TABLE_ID} data={data} />)
 
@@ -375,13 +401,7 @@ describe('DragHandle component (Suite S6 — REQ-12)', () => {
   it('AC-01a: DragHandle renders a button element', async () => {
     const { DragHandle } = await import('./column/DragHandle')
 
-    render(
-      <DragHandle
-        columnName="email"
-        isDragging={false}
-        show={true}
-      />,
-    )
+    render(<DragHandle columnName="email" isDragging={false} show={true} />)
 
     const btn = screen.getByRole('button', { name: /Reorder column email/i })
     expect(btn).toBeTruthy()
@@ -390,13 +410,7 @@ describe('DragHandle component (Suite S6 — REQ-12)', () => {
   it('AC-01c: DragHandle has nodrag and nowheel classes', async () => {
     const { DragHandle } = await import('./column/DragHandle')
 
-    render(
-      <DragHandle
-        columnName="id"
-        isDragging={false}
-        show={true}
-      />,
-    )
+    render(<DragHandle columnName="id" isDragging={false} show={true} />)
 
     const btn = screen.getByLabelText('Reorder column id')
     expect(btn.className).toContain('nodrag')
@@ -407,11 +421,7 @@ describe('DragHandle component (Suite S6 — REQ-12)', () => {
     const { DragHandle } = await import('./column/DragHandle')
 
     render(
-      <DragHandle
-        columnName="created_at"
-        isDragging={false}
-        show={true}
-      />,
+      <DragHandle columnName="created_at" isDragging={false} show={true} />,
     )
 
     expect(screen.getByLabelText('Reorder column created_at')).toBeTruthy()
@@ -421,11 +431,7 @@ describe('DragHandle component (Suite S6 — REQ-12)', () => {
     const { DragHandle } = await import('./column/DragHandle')
 
     const { container } = render(
-      <DragHandle
-        columnName="email"
-        isDragging={false}
-        show={false}
-      />,
+      <DragHandle columnName="email" isDragging={false} show={false} />,
     )
 
     expect(container.firstChild).toBeNull()
@@ -435,13 +441,7 @@ describe('DragHandle component (Suite S6 — REQ-12)', () => {
   it('AC-02a: isDragging=true changes cursor to grabbing', async () => {
     const { DragHandle } = await import('./column/DragHandle')
 
-    render(
-      <DragHandle
-        columnName="email"
-        isDragging={true}
-        show={true}
-      />,
-    )
+    render(<DragHandle columnName="email" isDragging={true} show={true} />)
 
     const btn = screen.getByLabelText('Reorder column email')
     expect(btn.style.cursor).toBe('grabbing')
@@ -450,13 +450,7 @@ describe('DragHandle component (Suite S6 — REQ-12)', () => {
   it('AC-02b: isDragging=false shows grab cursor', async () => {
     const { DragHandle } = await import('./column/DragHandle')
 
-    render(
-      <DragHandle
-        columnName="email"
-        isDragging={false}
-        show={true}
-      />,
-    )
+    render(<DragHandle columnName="email" isDragging={false} show={true} />)
 
     const btn = screen.getByLabelText('Reorder column email')
     expect(btn.style.cursor).toBe('grab')

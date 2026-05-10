@@ -435,4 +435,6 @@ export const tableMoveBulkBroadcastSchema = z.object({
     .max(500),
 })
 
-export type TableMoveBulkBroadcast = z.infer<typeof tableMoveBulkBroadcastSchema>
+export type TableMoveBulkBroadcast = z.infer<
+  typeof tableMoveBulkBroadcastSchema
+>

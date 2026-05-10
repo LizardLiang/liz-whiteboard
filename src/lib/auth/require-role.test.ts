@@ -72,10 +72,13 @@ describe('requireRole', () => {
     const socket = makeMockSocket('user-2')
     const denied = await requireRole(socket, 'wb-1', 'column:create', 'EDITOR')
     expect(denied).toBe(true)
-    expect(socket.emit).toHaveBeenCalledWith('error', expect.objectContaining({
-      code: 'FORBIDDEN',
-      event: 'column:create',
-    }))
+    expect(socket.emit).toHaveBeenCalledWith(
+      'error',
+      expect.objectContaining({
+        code: 'FORBIDDEN',
+        event: 'column:create',
+      }),
+    )
     expect(getDenialCount('user-2', 'column:create')).toBeGreaterThanOrEqual(1)
   })
 
@@ -85,20 +88,31 @@ describe('requireRole', () => {
     const socket = makeMockSocket('user-3')
     const denied = await requireRole(socket, 'wb-1', 'column:create', 'EDITOR')
     expect(denied).toBe(true)
-    expect(socket.emit).toHaveBeenCalledWith('error', expect.objectContaining({
-      code: 'FORBIDDEN',
-    }))
+    expect(socket.emit).toHaveBeenCalledWith(
+      'error',
+      expect.objectContaining({
+        code: 'FORBIDDEN',
+      }),
+    )
   })
 
   // TC-RR-04: whiteboard not found (null projectId) emits FORBIDDEN, findEffectiveRole not called
   it('TC-RR-04: null projectId emits FORBIDDEN, findEffectiveRole not called', async () => {
     mockGetWhiteboardProjectId.mockResolvedValue(null)
     const socket = makeMockSocket('user-4')
-    const denied = await requireRole(socket, 'wb-missing', 'column:create', 'EDITOR')
+    const denied = await requireRole(
+      socket,
+      'wb-missing',
+      'column:create',
+      'EDITOR',
+    )
     expect(denied).toBe(true)
-    expect(socket.emit).toHaveBeenCalledWith('error', expect.objectContaining({
-      code: 'FORBIDDEN',
-    }))
+    expect(socket.emit).toHaveBeenCalledWith(
+      'error',
+      expect.objectContaining({
+        code: 'FORBIDDEN',
+      }),
+    )
     expect(mockFindEffectiveRole).not.toHaveBeenCalled()
   })
 
@@ -106,14 +120,21 @@ describe('requireRole', () => {
   it('TC-RR-05: role lookup throws → fails closed, does not rethrow', async () => {
     mockFindEffectiveRole.mockRejectedValue(new Error('DB_TIMEOUT'))
     const socket = makeMockSocket('user-5')
-    await expect(requireRole(socket, 'wb-1', 'column:create', 'EDITOR')).resolves.toBe(true)
-    expect(socket.emit).toHaveBeenCalledWith('error', expect.objectContaining({
-      code: 'FORBIDDEN',
-    }))
-    expect(mockLogSampledError).toHaveBeenCalledWith(expect.objectContaining({
-      userId: 'user-5',
-      errorClass: 'RBAC_LOOKUP_FAILED',
-    }))
+    await expect(
+      requireRole(socket, 'wb-1', 'column:create', 'EDITOR'),
+    ).resolves.toBe(true)
+    expect(socket.emit).toHaveBeenCalledWith(
+      'error',
+      expect.objectContaining({
+        code: 'FORBIDDEN',
+      }),
+    )
+    expect(mockLogSampledError).toHaveBeenCalledWith(
+      expect.objectContaining({
+        userId: 'user-5',
+        errorClass: 'RBAC_LOOKUP_FAILED',
+      }),
+    )
   })
 
   // TC-RR-06: denial counter increments cumulatively
@@ -121,7 +142,10 @@ describe('requireRole', () => {
     mockFindEffectiveRole.mockResolvedValue('VIEWER')
     // Reset by using a unique user+event combo per test (counter is cumulative in-process)
     const userId = `user-rr06-${Date.now()}`
-    const sock = { data: { userId }, emit: vi.fn() as (e: string, p: WSAuthErrorPayload) => void }
+    const sock = {
+      data: { userId },
+      emit: vi.fn() as (e: string, p: WSAuthErrorPayload) => void,
+    }
     await requireRole(sock, 'wb-1', 'evt:counter', 'EDITOR')
     await requireRole(sock, 'wb-1', 'evt:counter', 'EDITOR')
     await requireRole(sock, 'wb-1', 'evt:counter', 'EDITOR')
@@ -136,14 +160,20 @@ describe('requireRole', () => {
     // via requireRole with 1001 unique userId:eventName combinations.
     // After 1001 entries, the first entry should be evicted and have count 0.
     const firstUserId = `user-bounded-first-${Date.now()}`
-    const firstSocket = { data: { userId: firstUserId }, emit: vi.fn() as (e: string, p: WSAuthErrorPayload) => void }
+    const firstSocket = {
+      data: { userId: firstUserId },
+      emit: vi.fn() as (e: string, p: WSAuthErrorPayload) => void,
+    }
     // Insert first entry
     await requireRole(firstSocket, 'wb-1', 'bounded:event', 'EDITOR')
     expect(getDenialCount(firstUserId, 'bounded:event')).toBe(1)
 
     // Fill up to capacity (1001 additional unique entries to trigger eviction)
     for (let i = 0; i < 1001; i++) {
-      const sock = { data: { userId: `user-bounded-filler-${Date.now()}-${i}` }, emit: vi.fn() as (e: string, p: WSAuthErrorPayload) => void }
+      const sock = {
+        data: { userId: `user-bounded-filler-${Date.now()}-${i}` },
+        emit: vi.fn() as (e: string, p: WSAuthErrorPayload) => void,
+      }
       await requireRole(sock, 'wb-1', 'bounded:event', 'EDITOR')
     }
 
@@ -173,8 +203,13 @@ describe('requireRole', () => {
     mockFindEffectiveRole.mockResolvedValue('VIEWER')
     const socket = makeMockSocket()
     await requireRole(socket, 'wb-1', 'column:create', 'EDITOR')
-    const [, payload] = vi.mocked(socket.emit).mock.calls[0] as [string, WSAuthErrorPayload]
-    expect(Object.keys(payload).sort()).toEqual(['code', 'event', 'message'].sort())
+    const [, payload] = vi.mocked(socket.emit).mock.calls[0] as [
+      string,
+      WSAuthErrorPayload,
+    ]
+    expect(Object.keys(payload).sort()).toEqual(
+      ['code', 'event', 'message'].sort(),
+    )
     expect(payload.code).toBe('FORBIDDEN')
     expect(payload.event).toBe('column:create')
     expect(typeof payload.message).toBe('string')
@@ -202,13 +237,17 @@ describe('requireServerFnRole', () => {
   // TC-RR-07: authorized user resolves without throwing
   it('TC-RR-07: authorized EDITOR resolves without throw', async () => {
     mockFindEffectiveRole.mockResolvedValue('EDITOR')
-    await expect(requireServerFnRole('user-1', 'project-1', 'EDITOR')).resolves.toBeUndefined()
+    await expect(
+      requireServerFnRole('user-1', 'project-1', 'EDITOR'),
+    ).resolves.toBeUndefined()
   })
 
   // TC-RR-08: insufficient role throws ForbiddenError
   it('TC-RR-08: VIEWER on EDITOR-required throws ForbiddenError with status 403', async () => {
     mockFindEffectiveRole.mockResolvedValue('VIEWER')
-    await expect(requireServerFnRole('user-1', 'project-1', 'EDITOR')).rejects.toThrow(ForbiddenError)
+    await expect(
+      requireServerFnRole('user-1', 'project-1', 'EDITOR'),
+    ).rejects.toThrow(ForbiddenError)
     try {
       await requireServerFnRole('user-1', 'project-1', 'EDITOR')
     } catch (e) {
@@ -219,7 +258,9 @@ describe('requireServerFnRole', () => {
 
   // TC-RR-09: null projectId throws ForbiddenError, findEffectiveRole not called
   it('TC-RR-09: null projectId throws ForbiddenError without calling findEffectiveRole', async () => {
-    await expect(requireServerFnRole('user-1', null, 'EDITOR')).rejects.toThrow(ForbiddenError)
+    await expect(requireServerFnRole('user-1', null, 'EDITOR')).rejects.toThrow(
+      ForbiddenError,
+    )
     expect(mockFindEffectiveRole).not.toHaveBeenCalled()
   })
 
@@ -233,22 +274,30 @@ describe('requireServerFnRole', () => {
       caught = e
     }
     expect(caught).toBeInstanceOf(ForbiddenError)
-    expect((caught as ForbiddenError).message).not.toContain('CONN_POOL_EXHAUSTED')
-    expect(mockLogSampledError).toHaveBeenCalledWith(expect.objectContaining({
-      errorClass: 'RBAC_LOOKUP_FAILED',
-    }))
+    expect((caught as ForbiddenError).message).not.toContain(
+      'CONN_POOL_EXHAUSTED',
+    )
+    expect(mockLogSampledError).toHaveBeenCalledWith(
+      expect.objectContaining({
+        errorClass: 'RBAC_LOOKUP_FAILED',
+      }),
+    )
   })
 
   // TC-RR-11 (server fn variant): OWNER satisfies EDITOR minimum
   it('TC-RR-11: OWNER satisfies EDITOR — resolves', async () => {
     mockFindEffectiveRole.mockResolvedValue('OWNER')
-    await expect(requireServerFnRole('user-1', 'project-1', 'EDITOR')).resolves.toBeUndefined()
+    await expect(
+      requireServerFnRole('user-1', 'project-1', 'EDITOR'),
+    ).resolves.toBeUndefined()
   })
 
   // TC-RR-12 (server fn variant): VIEWER does not satisfy EDITOR
   it('TC-RR-12: VIEWER does not satisfy EDITOR — throws', async () => {
     mockFindEffectiveRole.mockResolvedValue('VIEWER')
-    await expect(requireServerFnRole('user-1', 'project-1', 'EDITOR')).rejects.toThrow(ForbiddenError)
+    await expect(
+      requireServerFnRole('user-1', 'project-1', 'EDITOR'),
+    ).rejects.toThrow(ForbiddenError)
   })
 })
 
@@ -280,7 +329,9 @@ describe('BatchDeniedError', () => {
     const e = new BatchDeniedError()
     expect(e.status).toBe(403)
     expect(e.errorCode).toBe('BATCH_DENIED')
-    expect(e.message).toContain('One or more items target a resource you no longer have access to')
+    expect(e.message).toContain(
+      'One or more items target a resource you no longer have access to',
+    )
   })
 
   // TC-ERR-04: message does NOT expose tableId, item index, or projectId

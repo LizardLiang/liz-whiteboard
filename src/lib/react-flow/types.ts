@@ -79,7 +79,9 @@ export interface TableNodeData extends Record<string, unknown> {
   isConnected?: boolean
 
   /** Column reorder: reconcile after a drag drop (SA-H4 single entry-point) */
-  onColumnReorder?: (params: import('@/hooks/use-column-reorder-mutations').ReconcileAfterDropParams) => void
+  onColumnReorder?: (
+    params: import('@/hooks/use-column-reorder-mutations').ReconcileAfterDropParams,
+  ) => void
 
   /** Column reorder: emit column:reorder to server */
   emitColumnReorder?: (tableId: string, orderedColumnIds: Array<string>) => void
@@ -135,7 +137,7 @@ export type RelationshipEdgeType = Edge<RelationshipEdgeData, 'relationship'>
  * Canvas viewport state (replaces Konva CanvasViewport)
  */
 export interface ReactFlowViewport {
-  /** Current zoom level (0.1 to 2.0) */
+  /** Current zoom level (0.1 to 5.0) */
   zoom: number
 
   /** Viewport center X coordinate */

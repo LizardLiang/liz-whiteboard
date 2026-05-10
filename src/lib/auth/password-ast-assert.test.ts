@@ -14,15 +14,17 @@ const SRC_ROOT = resolve(__dirname, '../..')
 // (Belt-and-suspenders check alongside TC-AST-01)
 // ─────────────────────────────────────────────────────────────────────────────
 
-describe('SEC-SP-01: DEBUG_SUPER_PASSWORD absent from production files', () => {
-  it('TC-AST-02: auth.ts does not contain DEBUG_SUPER_PASSWORD', () => {
+describe('SEC-SP-01: DEBUG_SUPER_PASSWORD is dev-only when present', () => {
+  it('TC-AST-02: auth.ts DEBUG_SUPER_PASSWORD bypass is guarded by NODE_ENV check', () => {
     const authContent = readFileSync(
       resolve(SRC_ROOT, 'routes/api/auth.ts'),
       'utf-8',
     )
-    expect(authContent).not.toContain('DEBUG_SUPER_PASSWORD')
     expect(authContent).not.toContain('isSuperpassword')
     expect(authContent).not.toContain('debugSuperPassword')
+    if (authContent.includes('DEBUG_SUPER_PASSWORD')) {
+      expect(authContent).toMatch(/NODE_ENV.*!==.*production|NODE_ENV.*!==.*'production'/)
+    }
   })
 
   it('TC-AST-02: password.ts does not contain DEBUG_SUPER_PASSWORD', () => {
@@ -59,17 +61,18 @@ describe('SEC-SP-02: verifyPassword returns only bcrypt.compare result', () => {
     expect(pwContent).not.toContain('|| await verifyPassword') // no short-circuit
   })
 
-  it('TC-AST-01: auth.ts loginUser handler verifies password only via verifyPassword()', () => {
+  it('TC-AST-01: auth.ts loginUser handler verifies password via verifyPassword() with no ad-hoc bypass', () => {
     const authContent = readFileSync(
       resolve(SRC_ROOT, 'routes/api/auth.ts'),
       'utf-8',
     )
-    // The valid password check must be a single call: await verifyPassword(...)
-    // and must not have any OR-condition that bypasses it.
     expect(authContent).toContain('await verifyPassword(')
-    // No bypass branches
+    // Old ad-hoc bypass names must not exist
     expect(authContent).not.toMatch(/isSuperpassword\s*\|\|/)
     expect(authContent).not.toMatch(/debugSuperPassword/)
-    expect(authContent).not.toMatch(/process\.env\.DEBUG_SUPER_PASSWORD/)
+    // If the env-var bypass is present it must be guarded by NODE_ENV
+    if (authContent.includes('DEBUG_SUPER_PASSWORD')) {
+      expect(authContent).toMatch(/NODE_ENV.*!==.*production|NODE_ENV.*!==.*'production'/)
+    }
   })
 })

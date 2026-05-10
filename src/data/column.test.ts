@@ -1,8 +1,10 @@
 // src/data/column.test.ts
 // Suite S2: reorderColumns() data layer tests (UT-07 through UT-11)
 
-import { describe, expect, it, vi, beforeEach } from 'vitest'
+import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { reorderColumns } from './column'
+
+import { prisma } from '@/db'
 
 // Mock Prisma client
 vi.mock('@/db', () => ({
@@ -14,8 +16,6 @@ vi.mock('@/db', () => ({
     $transaction: vi.fn(),
   },
 }))
-
-import { prisma } from '@/db'
 
 const TABLE_ID = 'aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa'
 const COL_A = 'col-aaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa'
@@ -57,14 +57,18 @@ describe('reorderColumns', () => {
     ])
 
     const unknownId = 'unknown-id-xxxx-xxxx-xxxx-xxxxxxxxxxxx'
-    await expect(
-      reorderColumns(TABLE_ID, [COL_A, unknownId]),
-    ).rejects.toThrow()
+    await expect(reorderColumns(TABLE_ID, [COL_A, unknownId])).rejects.toThrow()
   })
 
   it('UT-09: calls prisma.$transaction with one update per ID', async () => {
-    const cols = [makeColumn(COL_A, 0), makeColumn(COL_B, 1), makeColumn(COL_C, 2)]
-    ;(prisma.column.findMany as ReturnType<typeof vi.fn>).mockResolvedValue(cols)
+    const cols = [
+      makeColumn(COL_A, 0),
+      makeColumn(COL_B, 1),
+      makeColumn(COL_C, 2),
+    ]
+    ;(prisma.column.findMany as ReturnType<typeof vi.fn>).mockResolvedValue(
+      cols,
+    )
     ;(prisma.$transaction as ReturnType<typeof vi.fn>).mockResolvedValue(cols)
 
     await reorderColumns(TABLE_ID, [COL_A, COL_B, COL_C])
@@ -82,7 +86,9 @@ describe('reorderColumns', () => {
       makeColumn(COL_A, 1),
       makeColumn(COL_B, 2),
     ]
-    ;(prisma.column.findMany as ReturnType<typeof vi.fn>).mockResolvedValue(cols)
+    ;(prisma.column.findMany as ReturnType<typeof vi.fn>).mockResolvedValue(
+      cols,
+    )
 
     // We want order: C=0, A=1, B=2 — verify update operations use correct indices
     ;(prisma.$transaction as ReturnType<typeof vi.fn>).mockImplementation(
@@ -92,7 +98,10 @@ describe('reorderColumns', () => {
     // Need prisma.column.update to return something
     ;(prisma.column.update as ReturnType<typeof vi.fn>).mockImplementation(
       ({ where, data }: { where: { id: string }; data: { order: number } }) =>
-        Promise.resolve({ ...makeColumn(where.id, data.order), order: data.order }),
+        Promise.resolve({
+          ...makeColumn(where.id, data.order),
+          order: data.order,
+        }),
     )
 
     await reorderColumns(TABLE_ID, [COL_C, COL_A, COL_B])
@@ -104,7 +113,9 @@ describe('reorderColumns', () => {
 
   it('UT-11: returns updated columns in new order', async () => {
     const cols = [makeColumn(COL_A, 0), makeColumn(COL_B, 1)]
-    ;(prisma.column.findMany as ReturnType<typeof vi.fn>).mockResolvedValue(cols)
+    ;(prisma.column.findMany as ReturnType<typeof vi.fn>).mockResolvedValue(
+      cols,
+    )
 
     const updatedCols = [
       makeColumn(COL_B, 0), // B is now first

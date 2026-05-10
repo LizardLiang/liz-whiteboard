@@ -67,9 +67,7 @@ describe('TC-MODAL-01: session_expired fires onSessionExpired exactly once (use-
   it('calls onSessionExpired exactly once when session_expired fires', () => {
     const onSessionExpired = vi.fn()
 
-    renderHook(() =>
-      useCollaboration('wb-test', 'user-test', onSessionExpired),
-    )
+    renderHook(() => useCollaboration('wb-test', 'user-test', onSessionExpired))
 
     // Simulate the WebSocket server emitting session_expired
     act(() => {
@@ -82,9 +80,7 @@ describe('TC-MODAL-01: session_expired fires onSessionExpired exactly once (use-
   it('does not call onSessionExpired before session_expired fires', () => {
     const onSessionExpired = vi.fn()
 
-    renderHook(() =>
-      useCollaboration('wb-test', 'user-test', onSessionExpired),
-    )
+    renderHook(() => useCollaboration('wb-test', 'user-test', onSessionExpired))
 
     // No event fired yet
     expect(onSessionExpired).toHaveBeenCalledTimes(0)
@@ -93,9 +89,7 @@ describe('TC-MODAL-01: session_expired fires onSessionExpired exactly once (use-
   it('handles second session_expired event without throwing', () => {
     const onSessionExpired = vi.fn()
 
-    renderHook(() =>
-      useCollaboration('wb-test', 'user-test', onSessionExpired),
-    )
+    renderHook(() => useCollaboration('wb-test', 'user-test', onSessionExpired))
 
     act(() => {
       simulateSocketEvent('session_expired')
@@ -182,7 +176,7 @@ describe('TC-MODAL-02: onSessionExpired is called synchronously (enabling focus 
   })
 
   it('onSessionExpired is called synchronously within the session_expired handler', () => {
-    const callOrder: string[] = []
+    const callOrder: Array<string> = []
     const onSessionExpired = vi.fn(() => {
       callOrder.push('onSessionExpired')
     })
@@ -200,7 +194,11 @@ describe('TC-MODAL-02: onSessionExpired is called synchronously (enabling focus 
     callOrder.push('after-event')
 
     // onSessionExpired was called between before-event and after-event
-    expect(callOrder).toEqual(['before-event', 'onSessionExpired', 'after-event'])
+    expect(callOrder).toEqual([
+      'before-event',
+      'onSessionExpired',
+      'after-event',
+    ])
     expect(onSessionExpired).toHaveBeenCalledTimes(1)
   })
 })

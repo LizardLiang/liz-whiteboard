@@ -37,7 +37,9 @@ function socketIOPlugin(): Plugin {
 
         // Socket.IO in dev is handled by the standalone server.dev.ts process.
         // Vite proxies /socket.io/* to it (see server.proxy config below).
-        console.log('[socket-io] Dev mode: Socket.IO runs via server.dev.ts (proxied from Vite).')
+        console.log(
+          '[socket-io] Dev mode: Socket.IO runs via server.dev.ts (proxied from Vite).',
+        )
       }
     },
   }

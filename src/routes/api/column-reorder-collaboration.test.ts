@@ -12,15 +12,20 @@ import { reorderColumnsSchema } from '@/data/schema'
 
 interface ColumnReorderDeps {
   findDiagramTableById: (tableId: string) => Promise<any>
-  findColumnsByTableId: (tableId: string) => Promise<Array<{ id: string; order: number }>>
-  reorderColumns: (tableId: string, orderedColumnIds: Array<string>) => Promise<any>
+  findColumnsByTableId: (
+    tableId: string,
+  ) => Promise<Array<{ id: string; order: number }>>
+  reorderColumns: (
+    tableId: string,
+    orderedColumnIds: Array<string>,
+  ) => Promise<any>
   updateSessionActivity: (socketId: string) => Promise<void>
 }
 
 function createColumnReorderHandler(
   socket: {
-    emit: (...args: any[]) => void
-    broadcast: { emit: (...args: any[]) => void }
+    emit: (...args: Array<any>) => void
+    broadcast: { emit: (...args: Array<any>) => void }
     data: { sessionExpiresAt: number }
     disconnect: (force: boolean) => void
     id: string
@@ -207,7 +212,11 @@ describe('column:reorder socket handler (Suite S5)', () => {
 
     // AC-07a: reorderColumns called with correct merged args
     expect(deps.reorderColumns).toHaveBeenCalledWith(TABLE_ID, [
-      COL_B, COL_A, COL_C, COL_D, COL_E,
+      COL_B,
+      COL_A,
+      COL_C,
+      COL_D,
+      COL_E,
     ])
 
     // AC-04b: broadcast to other clients with reorderedBy field
@@ -330,7 +339,11 @@ describe('column:reorder socket handler (Suite S5)', () => {
 
     // COL_D (order=3) appended after the 4 supplied IDs
     expect(deps.reorderColumns).toHaveBeenCalledWith(TABLE_ID, [
-      COL_B, COL_A, COL_C, COL_E, COL_D,
+      COL_B,
+      COL_A,
+      COL_C,
+      COL_E,
+      COL_D,
     ])
 
     // Ack includes the merged order
@@ -354,7 +367,9 @@ describe('column:reorder socket handler (Suite S5)', () => {
 
     // Missing: COL_B (order:1) appended first, COL_D (order:3) appended second
     expect(deps.reorderColumns).toHaveBeenCalledWith(TABLE_ID, [
-      COL_A, COL_C, COL_E,
+      COL_A,
+      COL_C,
+      COL_E,
       COL_B, // order:1
       COL_D, // order:3
     ])
@@ -396,7 +411,9 @@ describe('column:reorder socket handler (Suite S5)', () => {
     expect(ackCall).toBeDefined()
     const ackPayload = ackCall![1]
     expect(ackPayload.orderedColumnIds).toEqual([
-      COL_C, COL_A, COL_E,
+      COL_C,
+      COL_A,
+      COL_E,
       COL_B, // order:1, appended first
       COL_D, // order:3, appended second
     ])

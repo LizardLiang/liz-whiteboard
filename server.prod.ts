@@ -8,17 +8,13 @@
  *
  * Usage: bun run server.prod.ts
  */
-import {
-  
-  
-  createServer
-} from 'node:http'
+import { createServer } from 'node:http'
 import { extname, join } from 'node:path'
 import { readFile, stat } from 'node:fs/promises'
 // @ts-expect-error — Nitro build output has no type declarations
 import { middleware } from './.output/server/index.mjs'
 import { initializeSocketIO } from './src/routes/api/collaboration'
-import type {IncomingMessage, ServerResponse} from 'node:http';
+import type { IncomingMessage, ServerResponse } from 'node:http'
 
 const port = Number(process.env.PORT) || 3000
 const host = process.env.HOST || '0.0.0.0'

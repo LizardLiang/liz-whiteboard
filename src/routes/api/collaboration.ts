@@ -49,6 +49,8 @@ import {
 import { parseSessionCookie } from '@/lib/auth/cookies'
 import { validateSessionToken } from '@/lib/auth/session'
 import { requireRole } from '@/lib/auth/require-role'
+import { findEffectiveRole } from '@/data/permission'
+import { hasMinimumRole } from '@/lib/auth/permissions'
 import { prisma } from '@/db'
 
 /**
@@ -157,6 +159,28 @@ function setupWhiteboardNamespace(ioServer: SocketIOServer): void {
     )
 
     try {
+      // Authorization check: verify user has at least VIEWER access to this whiteboard.
+      // The WebSocket auth middleware only validates the session cookie (authenticated),
+      // not project-level RBAC. We must do that here before creating any session.
+      const projectId = await getProjectIdForWhiteboard(whiteboardId)
+      if (!projectId) {
+        socket.emit('whiteboard:unauthorized', {
+          code: 'NOT_FOUND',
+          message: 'Whiteboard not found.',
+        })
+        socket.disconnect(true)
+        return
+      }
+      const role = await findEffectiveRole(userId, projectId)
+      if (!hasMinimumRole(role, 'VIEWER')) {
+        socket.emit('whiteboard:unauthorized', {
+          code: 'FORBIDDEN',
+          message: 'You do not have access to this whiteboard.',
+        })
+        socket.disconnect(true)
+        return
+      }
+
       // Create collaboration session
       const session = await createCollaborationSession({
         whiteboardId,
@@ -330,7 +354,10 @@ function setupCollaborationEventHandlers(
       return
     }
     // Check permission
-    if (await denyIfInsufficientPermission(socket, whiteboardId, 'table:create')) return
+    if (
+      await denyIfInsufficientPermission(socket, whiteboardId, 'table:create')
+    )
+      return
 
     try {
       // Validate input
@@ -369,7 +396,10 @@ function setupCollaborationEventHandlers(
         socket.disconnect(true)
         return
       }
-      if (await denyIfInsufficientPermission(socket, whiteboardId, 'table:move')) return
+      if (
+        await denyIfInsufficientPermission(socket, whiteboardId, 'table:move')
+      )
+        return
 
       try {
         // Ownership check: verify table belongs to this whiteboard (IDOR prevention)
@@ -429,7 +459,11 @@ function setupCollaborationEventHandlers(
   socket.on(
     'table:move:bulk',
     async (data: {
-      positions: Array<{ tableId: string; positionX: number; positionY: number }>
+      positions: Array<{
+        tableId: string
+        positionX: number
+        positionY: number
+      }>
       userId: string
     }) => {
       // Standard auth prelude — matches every other handler in this file (Apollo R2-1).
@@ -438,7 +472,14 @@ function setupCollaborationEventHandlers(
         socket.disconnect(true)
         return
       }
-      if (await denyIfInsufficientPermission(socket, whiteboardId, 'table:move:bulk')) return
+      if (
+        await denyIfInsufficientPermission(
+          socket,
+          whiteboardId,
+          'table:move:bulk',
+        )
+      )
+        return
 
       // Full schema validation before re-broadcasting.
       // Rejects NaN/Infinity coordinates and non-UUID IDs that would corrupt
@@ -456,7 +497,12 @@ function setupCollaborationEventHandlers(
       // Re-broadcast to every OTHER client in this whiteboard namespace.
       // broadcastToWhiteboard excludes the sender by socketId, so the originator
       // does not receive a copy of its own emit.
-      broadcastToWhiteboard(whiteboardId, socket.id, 'table:move:bulk', parsed.data)
+      broadcastToWhiteboard(
+        whiteboardId,
+        socket.id,
+        'table:move:bulk',
+        parsed.data,
+      )
 
       await safeUpdateSessionActivity(socket.id)
     },
@@ -471,7 +517,10 @@ function setupCollaborationEventHandlers(
         socket.disconnect(true)
         return
       }
-      if (await denyIfInsufficientPermission(socket, whiteboardId, 'table:update')) return
+      if (
+        await denyIfInsufficientPermission(socket, whiteboardId, 'table:update')
+      )
+        return
 
       try {
         const { tableId, ...updateData } = data
@@ -530,7 +579,10 @@ function setupCollaborationEventHandlers(
       socket.disconnect(true)
       return
     }
-    if (await denyIfInsufficientPermission(socket, whiteboardId, 'table:delete')) return
+    if (
+      await denyIfInsufficientPermission(socket, whiteboardId, 'table:delete')
+    )
+      return
 
     try {
       // Validate input (HIGH-002: missing UUID validation)
@@ -589,7 +641,10 @@ function setupCollaborationEventHandlers(
       socket.disconnect(true)
       return
     }
-    if (await denyIfInsufficientPermission(socket, whiteboardId, 'column:create')) return
+    if (
+      await denyIfInsufficientPermission(socket, whiteboardId, 'column:create')
+    )
+      return
 
     let validated: ReturnType<typeof createColumnSchema.parse> | undefined
     try {
@@ -647,7 +702,14 @@ function setupCollaborationEventHandlers(
         socket.disconnect(true)
         return
       }
-      if (await denyIfInsufficientPermission(socket, whiteboardId, 'column:update')) return
+      if (
+        await denyIfInsufficientPermission(
+          socket,
+          whiteboardId,
+          'column:update',
+        )
+      )
+        return
 
       try {
         const { columnId, ...updateData } = data
@@ -708,7 +770,10 @@ function setupCollaborationEventHandlers(
       socket.disconnect(true)
       return
     }
-    if (await denyIfInsufficientPermission(socket, whiteboardId, 'column:delete')) return
+    if (
+      await denyIfInsufficientPermission(socket, whiteboardId, 'column:delete')
+    )
+      return
 
     try {
       // Get column before deletion to know tableId
@@ -764,7 +829,10 @@ function setupCollaborationEventHandlers(
       socket.disconnect(true)
       return
     }
-    if (await denyIfInsufficientPermission(socket, whiteboardId, 'column:reorder')) return
+    if (
+      await denyIfInsufficientPermission(socket, whiteboardId, 'column:reorder')
+    )
+      return
 
     try {
       // Validate input with Zod schema
@@ -830,7 +898,10 @@ function setupCollaborationEventHandlers(
       const missingColumns = currentColumns
         .filter((c) => !suppliedSet.has(c.id))
         .sort((a, b) => a.order - b.order)
-      const mergedOrderedIds = [...orderedColumnIds, ...missingColumns.map((c) => c.id)]
+      const mergedOrderedIds = [
+        ...orderedColumnIds,
+        ...missingColumns.map((c) => c.id),
+      ]
 
       // Persist via single Prisma transaction (REQ-03)
       await reorderColumns(tableId, mergedOrderedIds)
@@ -867,7 +938,14 @@ function setupCollaborationEventHandlers(
       socket.disconnect(true)
       return
     }
-    if (await denyIfInsufficientPermission(socket, whiteboardId, 'column:duplicate')) return
+    if (
+      await denyIfInsufficientPermission(
+        socket,
+        whiteboardId,
+        'column:duplicate',
+      )
+    )
+      return
 
     try {
       // Validate input
@@ -938,7 +1016,14 @@ function setupCollaborationEventHandlers(
       socket.disconnect(true)
       return
     }
-    if (await denyIfInsufficientPermission(socket, whiteboardId, 'relationship:create')) return
+    if (
+      await denyIfInsufficientPermission(
+        socket,
+        whiteboardId,
+        'relationship:create',
+      )
+    )
+      return
 
     try {
       // Validate input
@@ -979,7 +1064,14 @@ function setupCollaborationEventHandlers(
         socket.disconnect(true)
         return
       }
-      if (await denyIfInsufficientPermission(socket, whiteboardId, 'relationship:update')) return
+      if (
+        await denyIfInsufficientPermission(
+          socket,
+          whiteboardId,
+          'relationship:update',
+        )
+      )
+        return
 
       try {
         const { relationshipId, ...updateData } = data
@@ -1040,7 +1132,14 @@ function setupCollaborationEventHandlers(
       socket.disconnect(true)
       return
     }
-    if (await denyIfInsufficientPermission(socket, whiteboardId, 'relationship:delete')) return
+    if (
+      await denyIfInsufficientPermission(
+        socket,
+        whiteboardId,
+        'relationship:delete',
+      )
+    )
+      return
 
     let relationshipId: string | undefined
     try {

@@ -10,7 +10,11 @@
 // Outputs top-left coordinates matching React Flow's node.position contract.
 // Returns a Promise so the call-site API is unchanged.
 
-import type { Simulation, SimulationLinkDatum, SimulationNodeDatum } from 'd3-force'
+import type {
+  Simulation,
+  SimulationLinkDatum,
+  SimulationNodeDatum,
+} from 'd3-force'
 
 // ---------------------------------------------------------------------------
 // Types
@@ -88,8 +92,14 @@ export function simulateChunked(
 // ---------------------------------------------------------------------------
 
 function l8Gap(
-  ax: number, ay: number, aw: number, ah: number,
-  bx: number, by: number, bw: number, bh: number,
+  ax: number,
+  ay: number,
+  aw: number,
+  ah: number,
+  bx: number,
+  by: number,
+  bw: number,
+  bh: number,
 ): number {
   const gapX = Math.max(ax - (bx + bw), bx - (ax + aw))
   const gapY = Math.max(ay - (by + bh), by - (ay + ah))
@@ -148,8 +158,8 @@ export function enforceGapPostPass(nodes: Array<SimNode>): void {
 // Layered layout (left-to-right columns)
 // ---------------------------------------------------------------------------
 
-const COL_GAP = 80  // horizontal gap between columns
-const ROW_GAP = 32  // vertical gap between nodes within a column
+const COL_GAP = 80 // horizontal gap between columns
+const ROW_GAP = 32 // vertical gap between nodes within a column
 
 /**
  * Assign each node a column index via longest-path topological sort.
@@ -163,9 +173,12 @@ function assignLayersBFS(
 
   // Build undirected adjacency — FK direction is child→parent, so directed BFS
   // from the hub parent would find no outgoing edges and never expand.
-  const adj = new Map<string, string[]>()
+  const adj = new Map<string, Array<string>>()
   const degree = new Map<string, number>()
-  for (const n of nodes) { adj.set(n.id, []); degree.set(n.id, 0) }
+  for (const n of nodes) {
+    adj.set(n.id, [])
+    degree.set(n.id, 0)
+  }
   for (const e of edges) {
     if (!nodeSet.has(e.source) || !nodeSet.has(e.target)) continue
     adj.get(e.source)!.push(e.target)
@@ -188,7 +201,8 @@ function assignLayersBFS(
     for (const id of unvisited) {
       const d = degree.get(id)!
       if (d > bestDegree || (d === bestDegree && id < root)) {
-        bestDegree = d; root = id
+        bestDegree = d
+        root = id
       }
     }
 
@@ -284,8 +298,14 @@ function placeIsolatedNodes(
   let clusterRight = 0
   let clusterTop = 0
   if (connected.length > 0) {
-    clusterRight = connected.reduce((max, n) => Math.max(max, n.x + n.width / 2), -Infinity)
-    clusterTop = connected.reduce((min, n) => Math.min(min, n.y - n.height / 2), Infinity)
+    clusterRight = connected.reduce(
+      (max, n) => Math.max(max, n.x + n.width / 2),
+      -Infinity,
+    )
+    clusterTop = connected.reduce(
+      (min, n) => Math.min(min, n.y - n.height / 2),
+      Infinity,
+    )
   }
 
   const startX = clusterRight + COL_GAP
@@ -321,7 +341,10 @@ export async function computeD3ForceLayout(
 
   // Split connected vs isolated
   const connectedIds = new Set<string>()
-  for (const e of edges) { connectedIds.add(e.source); connectedIds.add(e.target) }
+  for (const e of edges) {
+    connectedIds.add(e.source)
+    connectedIds.add(e.target)
+  }
   const connectedNodes = nodes.filter((n) => connectedIds.has(n.id))
   const isolatedNodes = nodes.filter((n) => !connectedIds.has(n.id))
 
@@ -341,7 +364,11 @@ export async function computeD3ForceLayout(
 
   // Isolated nodes below the cluster (center coords)
   const isoSimNodes: Array<SimNode> = isolatedNodes.map((n) => ({
-    id: n.id, width: n.width, height: n.height, x: 0, y: 0,
+    id: n.id,
+    width: n.width,
+    height: n.height,
+    x: 0,
+    y: 0,
   }))
   placeIsolatedNodes(isoSimNodes, connSimNodes)
 
@@ -351,7 +378,15 @@ export async function computeD3ForceLayout(
 
   // Convert center → top-left for React Flow
   return [
-    ...connSimNodes.map((n) => ({ id: n.id, x: n.x - n.width / 2, y: n.y - n.height / 2 })),
-    ...isoSimNodes.map((n) => ({ id: n.id, x: n.x - n.width / 2, y: n.y - n.height / 2 })),
+    ...connSimNodes.map((n) => ({
+      id: n.id,
+      x: n.x - n.width / 2,
+      y: n.y - n.height / 2,
+    })),
+    ...isoSimNodes.map((n) => ({
+      id: n.id,
+      x: n.x - n.width / 2,
+      y: n.y - n.height / 2,
+    })),
   ]
 }

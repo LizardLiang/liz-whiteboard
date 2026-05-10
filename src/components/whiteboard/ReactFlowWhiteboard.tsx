@@ -9,9 +9,21 @@
  * - Real-time collaboration via WebSocket
  */
 
-import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
+import {
+  useCallback,
+  useEffect,
+  useLayoutEffect,
+  useMemo,
+  useRef,
+  useState,
+} from 'react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
-import { ReactFlowProvider, useReactFlow, useUpdateNodeInternals, useViewport } from '@xyflow/react'
+import {
+  ReactFlowProvider,
+  useReactFlow,
+  useUpdateNodeInternals,
+  useViewport,
+} from '@xyflow/react'
 import { ReactFlowCanvas } from './ReactFlowCanvas'
 import { ConnectionStatusIndicator } from './ConnectionStatusIndicator'
 import { DeleteTableDialog } from './DeleteTableDialog'
@@ -24,11 +36,15 @@ import type {
   ShowMode,
   TableNodeType,
 } from '@/lib/react-flow/types'
-import type { Cardinality, Column  } from '@prisma/client'
+import type { Cardinality, Column } from '@prisma/client'
 import type { CreateColumnPayload } from './column/types'
-import type { CreateRelationship, CreateTable, UpdateColumn } from '@/data/schema'
+import type {
+  CreateRelationship,
+  CreateTable,
+  UpdateColumn,
+} from '@/data/schema'
 import type { TableRelationship } from './DeleteTableDialog'
-import type {RelationshipErrorEvent} from '@/hooks/use-relationship-mutations';
+import type { RelationshipErrorEvent } from '@/hooks/use-relationship-mutations'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
@@ -62,10 +78,7 @@ import { useWhiteboardCollaboration } from '@/hooks/use-whiteboard-collaboration
 import { useColumnCollaboration } from '@/hooks/use-column-collaboration'
 import { useColumnMutations } from '@/hooks/use-column-mutations'
 import { useTableMutations } from '@/hooks/use-table-mutations'
-import {
-  
-  useRelationshipMutations
-} from '@/hooks/use-relationship-mutations'
+import { useRelationshipMutations } from '@/hooks/use-relationship-mutations'
 import { useTableDeletion } from '@/hooks/use-table-deletion'
 import { useColumnReorderMutations } from '@/hooks/use-column-reorder-mutations'
 import { useColumnReorderCollaboration } from '@/hooks/use-column-reorder-collaboration'
@@ -261,7 +274,10 @@ function ReactFlowWhiteboardInner({
         columnReorderMutations.onSyncReconcile(tableId, serverOrder)
       } else {
         // Initial load: seed the baseline (idempotent)
-        columnReorderMutations.seedConfirmedOrderFromServer(tableId, serverOrder)
+        columnReorderMutations.seedConfirmedOrderFromServer(
+          tableId,
+          serverOrder,
+        )
       }
     })
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -371,20 +387,23 @@ function ReactFlowWhiteboardInner({
   }, [edges])
 
   // Callback for when a remote user deletes a table
-  const onTableDeleted = useCallback((tableId: string) => {
-    setNodes((prev) => prev.filter((n) => n.id !== tableId))
-    setEdges((prev) =>
-      prev.filter(
-        (e) =>
-          e.data?.relationship.sourceTableId !== tableId &&
-          e.data?.relationship.targetTableId !== tableId,
-      ),
-    )
-    // Close dialog if it was open for this table
-    setDeletingTableId((prev) => (prev === tableId ? null : prev))
-    // W4 (M10): clean up all per-table reorder state to prevent unbounded ref growth
-    columnReorderMutations.forgetTable(tableId)
-  }, [columnReorderMutations])
+  const onTableDeleted = useCallback(
+    (tableId: string) => {
+      setNodes((prev) => prev.filter((n) => n.id !== tableId))
+      setEdges((prev) =>
+        prev.filter(
+          (e) =>
+            e.data?.relationship.sourceTableId !== tableId &&
+            e.data?.relationship.targetTableId !== tableId,
+        ),
+      )
+      // Close dialog if it was open for this table
+      setDeletingTableId((prev) => (prev === tableId ? null : prev))
+      // W4 (M10): clean up all per-table reorder state to prevent unbounded ref growth
+      columnReorderMutations.forgetTable(tableId)
+    },
+    [columnReorderMutations],
+  )
 
   // Ref for onTableError — breaks circular dependency between useWhiteboardCollaboration and useTableMutations
   const onTableErrorRef = useRef<(data: any) => void>(() => {})
@@ -448,8 +467,18 @@ function ReactFlowWhiteboardInner({
     // Normalise wire-format {tableId, positionX, positionY} → {id, x, y} at the
     // boundary so applyBulkPositions can use its O(n) Map lookup (B3 fix).
     useCallback(
-      (positions: Array<{ tableId: string; positionX: number; positionY: number }>) => {
-        const normalised = positions.map((p) => ({ id: p.tableId, x: p.positionX, y: p.positionY }))
+      (
+        positions: Array<{
+          tableId: string
+          positionX: number
+          positionY: number
+        }>,
+      ) => {
+        const normalised = positions.map((p) => ({
+          id: p.tableId,
+          x: p.positionX,
+          y: p.positionY,
+        }))
         setNodes((nds) => applyBulkPositions(nds, normalised))
       },
       [],
@@ -837,7 +866,9 @@ function ReactFlowWhiteboardInner({
 
   // Column reorder callback — wraps reconcileAfterDrop with real setNodes
   const handleColumnReorder = useCallback(
-    (params: import('@/hooks/use-column-reorder-mutations').ReconcileAfterDropParams) => {
+    (
+      params: import('@/hooks/use-column-reorder-mutations').ReconcileAfterDropParams,
+    ) => {
       columnReorderMutations.reconcileAfterDrop({
         ...params,
         setNodes,
@@ -969,8 +1000,9 @@ function ReactFlowWhiteboardInner({
           onColumnDelete: handleColumnDeleteRef.current,
           onColumnDuplicate: handleColumnDuplicateRef.current,
           onRequestTableDelete: handleRequestTableDeleteRef.current,
-          onColumnReorder: (params: import('@/hooks/use-column-reorder-mutations').ReconcileAfterDropParams) =>
-            handleColumnReorderRef.current(params),
+          onColumnReorder: (
+            params: import('@/hooks/use-column-reorder-mutations').ReconcileAfterDropParams,
+          ) => handleColumnReorderRef.current(params),
           emitColumnReorder: (tableId: string, ids: Array<string>) =>
             emitColumnReorderRef.current(tableId, ids),
           isQueueFullForTable: (tableId: string) =>
@@ -1001,8 +1033,9 @@ function ReactFlowWhiteboardInner({
           onColumnDelete: handleColumnDeleteRef.current,
           onColumnDuplicate: handleColumnDuplicateRef.current,
           onRequestTableDelete: handleRequestTableDeleteRef.current,
-          onColumnReorder: (params: import('@/hooks/use-column-reorder-mutations').ReconcileAfterDropParams) =>
-            handleColumnReorderRef.current(params),
+          onColumnReorder: (
+            params: import('@/hooks/use-column-reorder-mutations').ReconcileAfterDropParams,
+          ) => handleColumnReorderRef.current(params),
           emitColumnReorder: (tableId: string, ids: Array<string>) =>
             emitColumnReorderRef.current(tableId, ids),
           isQueueFullForTable: (tableId: string) =>
@@ -1163,10 +1196,7 @@ function ReactFlowWhiteboardInner({
 
   // Render React Flow canvas with collaboration-aware state
   // Derive tables list from nodes for the Toolbar
-  const toolbarTables = useMemo(
-    () => nodes.map((n) => n.data.table),
-    [nodes],
-  )
+  const toolbarTables = useMemo(() => nodes.map((n) => n.data.table), [nodes])
 
   // Zoom controls for the Toolbar (reuse the already-initialized reactFlowInstance/viewport above)
   const toolbarZoomControls: ZoomControls = useMemo(
@@ -1174,14 +1204,25 @@ function ReactFlowWhiteboardInner({
       zoomIn: () => reactFlowInstance.zoomIn({ duration: 200 }),
       zoomOut: () => reactFlowInstance.zoomOut({ duration: 200 }),
       resetZoom: () =>
-        reactFlowInstance.setViewport({ x: 0, y: 0, zoom: 1 }, { duration: 200 }),
-      fitToScreen: () => reactFlowInstance.fitView({ duration: 200, padding: 0.2 }),
+        reactFlowInstance.setViewport(
+          { x: 0, y: 0, zoom: 1 },
+          { duration: 200 },
+        ),
+      fitToScreen: () =>
+        reactFlowInstance.fitView({ duration: 200, padding: 0.2 }),
     }),
     [reactFlowInstance],
   )
 
   return (
-    <div style={{ display: 'flex', flexDirection: 'column', width: '100%', height: '100%' }}>
+    <div
+      style={{
+        display: 'flex',
+        flexDirection: 'column',
+        width: '100%',
+        height: '100%',
+      }}
+    >
       {/* Toolbar — owned by ReactFlowWhiteboardInner so auto-layout orchestrator can control it */}
       <Toolbar
         whiteboardId={whiteboardId}
@@ -1206,92 +1247,92 @@ function ReactFlowWhiteboardInner({
       />
 
       <div style={{ position: 'relative', flex: 1 }}>
-      <ConnectionStatusIndicator connectionState={connectionState} />
-      {deletingTableId && deletingNode && (
-        <DeleteTableDialog
-          tableName={deletingNode.data.table.name}
-          columnCount={deletingNode.data.table.columns.length}
-          affectedRelationships={tableDeleteAffectedRelationships}
-          onConfirm={() => {
-            tableMutations.deleteTable(deletingTableId)
-            // W4-A: clean up per-table reorder state on local delete path.
-            // forgetTable is also called in onTableDeleted for the remote path —
-            // this call covers the case where the current user deletes a table.
-            columnReorderMutations.forgetTable(deletingTableId)
-            setDeletingTableId(null)
+        <ConnectionStatusIndicator connectionState={connectionState} />
+        {deletingTableId && deletingNode && (
+          <DeleteTableDialog
+            tableName={deletingNode.data.table.name}
+            columnCount={deletingNode.data.table.columns.length}
+            affectedRelationships={tableDeleteAffectedRelationships}
+            onConfirm={() => {
+              tableMutations.deleteTable(deletingTableId)
+              // W4-A: clean up per-table reorder state on local delete path.
+              // forgetTable is also called in onTableDeleted for the remote path —
+              // this call covers the case where the current user deletes a table.
+              columnReorderMutations.forgetTable(deletingTableId)
+              setDeletingTableId(null)
+            }}
+            onCancel={() => setDeletingTableId(null)}
+          />
+        )}
+        <ReactFlowCanvas
+          initialNodes={nodes}
+          initialEdges={edges}
+          onConnect={handleConnect}
+          onNodeDragStop={handleNodeDragStop}
+          nodesDraggable={nodesDraggable}
+          panOnDrag={!isColumnDragging}
+          showMinimap={showMinimap}
+          showControls={showControls}
+          showBackground={true}
+          fitViewOptions={{
+            padding: 0.2,
+            includeHiddenNodes: false,
           }}
-          onCancel={() => setDeletingTableId(null)}
         />
-      )}
-      <ReactFlowCanvas
-        initialNodes={nodes}
-        initialEdges={edges}
-        onConnect={handleConnect}
-        onNodeDragStop={handleNodeDragStop}
-        nodesDraggable={nodesDraggable}
-        panOnDrag={!isColumnDragging}
-        showMinimap={showMinimap}
-        showControls={showControls}
-        showBackground={true}
-        fitViewOptions={{
-          padding: 0.2,
-          includeHiddenNodes: false,
-        }}
-      />
 
-      {/* Cardinality Picker Dialog — shown after drag-to-connect */}
-      <Dialog
-        open={pendingConnection !== null}
-        onOpenChange={(open) => {
-          if (!open) handleCardinalityCancel()
-        }}
-      >
-        <DialogContent className="sm:max-w-sm">
-          <DialogHeader>
-            <DialogTitle>Set Relationship Cardinality</DialogTitle>
-          </DialogHeader>
+        {/* Cardinality Picker Dialog — shown after drag-to-connect */}
+        <Dialog
+          open={pendingConnection !== null}
+          onOpenChange={(open) => {
+            if (!open) handleCardinalityCancel()
+          }}
+        >
+          <DialogContent className="sm:max-w-sm">
+            <DialogHeader>
+              <DialogTitle>Set Relationship Cardinality</DialogTitle>
+            </DialogHeader>
 
-          <div className="py-4 space-y-4">
-            <div className="space-y-2">
-              <Label htmlFor="cardinality-select">Cardinality</Label>
-              <Select
-                value={selectedCardinality}
-                onValueChange={(value) =>
-                  setSelectedCardinality(value as Cardinality)
-                }
-              >
-                <SelectTrigger id="cardinality-select">
-                  <SelectValue placeholder="Select cardinality" />
-                </SelectTrigger>
-                <SelectContent>
-                  {CARDINALITY_OPTIONS.map((option) => (
-                    <SelectItem key={option.value} value={option.value}>
-                      {option.label}
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
+            <div className="py-4 space-y-4">
+              <div className="space-y-2">
+                <Label htmlFor="cardinality-select">Cardinality</Label>
+                <Select
+                  value={selectedCardinality}
+                  onValueChange={(value) =>
+                    setSelectedCardinality(value as Cardinality)
+                  }
+                >
+                  <SelectTrigger id="cardinality-select">
+                    <SelectValue placeholder="Select cardinality" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {CARDINALITY_OPTIONS.map((option) => (
+                      <SelectItem key={option.value} value={option.value}>
+                        {option.label}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+              <div className="space-y-2">
+                <Label htmlFor="relationship-label">Label (optional)</Label>
+                <Input
+                  id="relationship-label"
+                  value={pendingLabel}
+                  onChange={(e) => setPendingLabel(e.target.value)}
+                  placeholder="e.g. has many, belongs to"
+                  maxLength={255}
+                />
+              </div>
             </div>
-            <div className="space-y-2">
-              <Label htmlFor="relationship-label">Label (optional)</Label>
-              <Input
-                id="relationship-label"
-                value={pendingLabel}
-                onChange={(e) => setPendingLabel(e.target.value)}
-                placeholder="e.g. has many, belongs to"
-                maxLength={255}
-              />
-            </div>
-          </div>
 
-          <DialogFooter>
-            <Button variant="outline" onClick={handleCardinalityCancel}>
-              Cancel
-            </Button>
-            <Button onClick={handleCardinalityConfirm}>Create</Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
+            <DialogFooter>
+              <Button variant="outline" onClick={handleCardinalityCancel}>
+                Cancel
+              </Button>
+              <Button onClick={handleCardinalityConfirm}>Create</Button>
+            </DialogFooter>
+          </DialogContent>
+        </Dialog>
       </div>
     </div>
   )

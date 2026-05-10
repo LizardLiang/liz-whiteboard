@@ -10,9 +10,9 @@
 
 import { useCallback, useEffect, useRef } from 'react'
 import { useCollaboration } from './use-collaboration'
-import { useAuthContext } from '@/components/auth/AuthContext'
 import type { Column } from '@prisma/client'
 import type { DataType, UpdateColumn } from '@/data/schema'
+import { useAuthContext } from '@/components/auth/AuthContext'
 
 export interface ColumnCreatedEvent extends Column {
   createdBy: string

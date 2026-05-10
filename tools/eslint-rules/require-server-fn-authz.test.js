@@ -295,7 +295,9 @@ function countSessionExpiredInSrc() {
         if (f.endsWith('.test.ts') || f.endsWith('.test.tsx')) continue
         const content = readFileSync(full, 'utf-8')
         // Count socket.on('session_expired', ...) literal registrations
-        const matches = content.match(/socket\.on\s*\(\s*['"]session_expired['"]/g)
+        const matches = content.match(
+          /socket\.on\s*\(\s*['"]session_expired['"]/g,
+        )
         if (matches) count += matches.length
       }
     }

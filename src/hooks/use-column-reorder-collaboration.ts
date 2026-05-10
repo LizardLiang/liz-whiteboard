@@ -12,9 +12,12 @@
 
 import { useCallback, useEffect, useRef } from 'react'
 import { useCollaboration } from './use-collaboration'
-import { useAuthContext } from '@/components/auth/AuthContext'
-import type { ColumnReorderErrorCode, UseColumnReorderMutationsReturn } from './use-column-reorder-mutations'
+import type {
+  ColumnReorderErrorCode,
+  UseColumnReorderMutationsReturn,
+} from './use-column-reorder-mutations'
 import type { TableNodeType } from '@/lib/react-flow/types'
+import { useAuthContext } from '@/components/auth/AuthContext'
 
 type SetNodes = React.Dispatch<React.SetStateAction<Array<TableNodeType>>>
 
@@ -67,7 +70,8 @@ export function useColumnReorderCollaboration(
       const { tableId, orderedColumnIds, reorderedBy } = data
 
       // Guard against malformed server payload: reorderedBy may be undefined
-      const safeReorderedBy = typeof reorderedBy === 'string' ? reorderedBy : undefined
+      const safeReorderedBy =
+        typeof reorderedBy === 'string' ? reorderedBy : undefined
 
       if (callbacksRef.current.mutations.isLocalDragging(tableId)) {
         // Buffer the remote event while we are mid-drag

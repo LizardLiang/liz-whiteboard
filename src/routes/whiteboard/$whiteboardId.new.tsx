@@ -2,7 +2,7 @@
 // Whiteboard editor route - React Flow version
 // This is the migrated version using React Flow instead of Konva
 
-import { createFileRoute } from '@tanstack/react-router'
+import { Link, createFileRoute } from '@tanstack/react-router'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import type { Connection, OnEdgesChange, OnNodesChange } from '@xyflow/react'
@@ -141,7 +141,7 @@ function WhiteboardEditor() {
   const { autoLayoutEnabled, setAutoLayoutEnabled } = useAutoLayoutPreference()
 
   // Fetch whiteboard data with TanStack Query
-  const { data: whiteboardData, isLoading } = useQuery({
+  const { data: whiteboardData, isLoading, isError } = useQuery({
     queryKey: ['whiteboard', whiteboardId],
     queryFn: async () => {
       const whiteboard = await getWhiteboardWithDiagram({ data: whiteboardId })
@@ -526,7 +526,29 @@ function WhiteboardEditor() {
   }, [on, off, queryClient, whiteboardId, userId])
 
   // Early returns AFTER all hooks
-  if (isLoading || !whiteboardData) {
+  if (isLoading) {
+    return (
+      <div className="flex items-center justify-center h-screen">
+        <p className="text-lg text-muted-foreground">Loading whiteboard...</p>
+      </div>
+    )
+  }
+
+  if (isError) {
+    return (
+      <div className="flex flex-col items-center justify-center h-screen gap-4">
+        <p className="text-lg font-semibold">Access denied</p>
+        <p className="text-sm text-muted-foreground">
+          You don't have access to this whiteboard.
+        </p>
+        <Link to="/" className="text-sm text-primary underline underline-offset-4">
+          Back to dashboard
+        </Link>
+      </div>
+    )
+  }
+
+  if (!whiteboardData) {
     return (
       <div className="flex items-center justify-center h-screen">
         <p className="text-lg text-muted-foreground">Loading whiteboard...</p>
@@ -538,8 +560,14 @@ function WhiteboardEditor() {
 
   if (!whiteboard) {
     return (
-      <div className="flex items-center justify-center h-screen">
-        <p className="text-lg text-muted-foreground">Whiteboard not found</p>
+      <div className="flex flex-col items-center justify-center h-screen gap-4">
+        <p className="text-lg font-semibold">Whiteboard not found</p>
+        <p className="text-sm text-muted-foreground">
+          This whiteboard does not exist or you don't have access to it.
+        </p>
+        <Link to="/" className="text-sm text-primary underline underline-offset-4">
+          Back to dashboard
+        </Link>
       </div>
     )
   }

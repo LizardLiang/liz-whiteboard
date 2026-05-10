@@ -5,7 +5,10 @@
 // Does NOT call setNodes — the orchestrator (use-auto-layout-orchestrator) owns that.
 
 import { useCallback, useState } from 'react'
-import type { RelationshipEdgeType, TableNodeType } from '@/lib/react-flow/types'
+import type {
+  RelationshipEdgeType,
+  TableNodeType,
+} from '@/lib/react-flow/types'
 import type { LayoutOutputPosition } from '@/lib/auto-layout/d3-force-layout'
 import { computeD3ForceLayout } from '@/lib/auto-layout/d3-force-layout'
 

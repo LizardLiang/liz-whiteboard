@@ -214,9 +214,7 @@ export async function reorderColumns(
   // Validate that every supplied ID belongs to this table
   for (const id of orderedColumnIds) {
     if (!ownedIds.has(id)) {
-      throw new Error(
-        `Column ${id} does not belong to table ${tableId}`,
-      )
+      throw new Error(`Column ${id} does not belong to table ${tableId}`)
     }
   }
 

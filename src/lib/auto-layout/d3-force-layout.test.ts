@@ -57,8 +57,20 @@ function assertAllGaps(
       const ay = a.y
       const bx = b.x
       const by = b.y
-      const gap = l8Gap(ax, ay, aDim.width, aDim.height, bx, by, bDim.width, bDim.height)
-      expect(gap, `Pair (${a.id}, ${b.id}) gap ${gap.toFixed(2)} < ${minGap}`).toBeGreaterThanOrEqual(minGap)
+      const gap = l8Gap(
+        ax,
+        ay,
+        aDim.width,
+        aDim.height,
+        bx,
+        by,
+        bDim.width,
+        bDim.height,
+      )
+      expect(
+        gap,
+        `Pair (${a.id}, ${b.id}) gap ${gap.toFixed(2)} < ${minGap}`,
+      ).toBeGreaterThanOrEqual(minGap)
     }
   }
 }
@@ -69,7 +81,9 @@ function assertAllGaps(
 
 describe('computeD3ForceLayout', () => {
   it('TC-AL-E-01: rejects with error when called with 0 nodes', async () => {
-    await expect(computeD3ForceLayout([], [])).rejects.toThrow('No nodes to layout')
+    await expect(computeD3ForceLayout([], [])).rejects.toThrow(
+      'No nodes to layout',
+    )
   })
 
   // TC-AL-E-02 — Single table
@@ -84,7 +98,10 @@ describe('computeD3ForceLayout', () => {
 
   // TC-AL-E-03 — Two tables, no FK edges: gap ≥ 16 px
   it('TC-AL-E-03: two tables with no FK edges satisfy L∞ gap ≥ 16 px', async () => {
-    const nodes: Array<LayoutInputNode> = [makeNode('A', 200, 100), makeNode('B', 200, 100)]
+    const nodes: Array<LayoutInputNode> = [
+      makeNode('A', 200, 100),
+      makeNode('B', 200, 100),
+    ]
     const result = await computeD3ForceLayout(nodes, [])
     assertAllGaps(result, nodes)
   })
@@ -161,7 +178,9 @@ describe('computeD3ForceLayout', () => {
 
   // TC-AL-E-08 — Single table, 0 FK: resolves without crash (gap assertion skipped)
   it('TC-AL-E-08: single node with 0 edges resolves without throwing', async () => {
-    await expect(computeD3ForceLayout([makeNode('X')], [])).resolves.toBeDefined()
+    await expect(
+      computeD3ForceLayout([makeNode('X')], []),
+    ).resolves.toBeDefined()
   })
 
   // TC-AL-E-09 — Fully-connected schema: gap contract still asserted
@@ -232,10 +251,16 @@ describe('enforceGapPostPass', () => {
 
     const ax = nodes[0].x - nodes[0].width / 2
     const bx = nodes[1].x - nodes[1].width / 2
-    const gapX = Math.max(ax - (bx + nodes[1].width), bx - (ax + nodes[0].width))
+    const gapX = Math.max(
+      ax - (bx + nodes[1].width),
+      bx - (ax + nodes[0].width),
+    )
     const ay = nodes[0].y - nodes[0].height / 2
     const by = nodes[1].y - nodes[1].height / 2
-    const gapY = Math.max(ay - (by + nodes[1].height), by - (ay + nodes[0].height))
+    const gapY = Math.max(
+      ay - (by + nodes[1].height),
+      by - (ay + nodes[0].height),
+    )
     const gap = Math.max(gapX, gapY)
 
     expect(gap).toBeGreaterThanOrEqual(16)
