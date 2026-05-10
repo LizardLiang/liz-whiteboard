@@ -215,18 +215,13 @@
       "completed": "2026-05-09T15:50:00+08:00",
       "coverage_pct": 100,
       "criteria_missing": [],
-      "documents": [
-        "prd-alignment.md"
-      ],
+      "documents": ["prd-alignment.md"],
       "notes": "Final re-run. AC-20 verified: httpAuthEvents EventTarget bridges QueryClient → AuthContext. TC-HTTP401-01/02 exercise real event bus. 30/30 criteria verified and passing.",
       "run": 3,
       "status": "complete"
     },
     "11-review": {
-      "agents": [
-        "hermes",
-        "cassandra"
-      ],
+      "agents": ["hermes", "cassandra"],
       "completed": "2026-05-09T15:43:00+08:00",
       "document": "code-review.md",
       "documents": [],
@@ -237,9 +232,7 @@
     "12-review-fixes": {
       "agent": "ares",
       "completed": "2026-05-09T16:30:00+08:00",
-      "documents": [
-        "implementation-notes.md"
-      ],
+      "documents": ["implementation-notes.md"],
       "started": "2026-05-09T15:43:00+08:00",
       "status": "complete",
       "summary": "Fixed 3 BLOCKER + 2 HIGH findings from Hermes/Cassandra review. Created 2 files (root-provider.test.ts, discarded-findEffectiveRole.ts), modified 9 files. 7 new tests added; 794 total passing, 8 pre-existing failures unchanged. No spec deviations."
@@ -291,9 +284,7 @@
       "agent": "daedalus",
       "completed": "2026-05-09T13:00:00+08:00",
       "document": "decomposition.md",
-      "documents": [
-        "decomposition.md"
-      ],
+      "documents": ["decomposition.md"],
       "started": "2026-05-09T12:45:00+08:00",
       "status": "complete",
       "summary": "4 phases, 35 tasks across 3 wave-structured phases. Critical path: Phase 1 (Foundation: requireRole/requireServerFnRole helpers) → Phase 2 (Backend: 13 WS handlers + 85 server-fn exports + batch fix + superpassword) → Phase 3 (Frontend: session-expired wiring + draft persistence + batch UX) → Phase 4 (AST guard + full verification). Phase 3 parallelizable with Phase 2 after Phase 1 completes."

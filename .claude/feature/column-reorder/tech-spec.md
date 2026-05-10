@@ -163,19 +163,19 @@ The PRD (Section 13) made two spikes mandatory before this spec could be written
 
 ### 1.3 New / Modified Modules at a Glance
 
-| File | Status | Purpose |
-| --- | --- | --- |
-| `src/data/column.ts` | MODIFY | Add `reorderColumns(tableId, orderedColumnIds[])` — single Prisma transaction batch update. |
-| `src/data/schema.ts` | MODIFY | Add `reorderColumnsSchema` Zod schema. |
-| `src/routes/api/collaboration.ts` | MODIFY | Add `socket.on('column:reorder', ...)` handler with IDOR + FM-07 merge. |
-| `src/hooks/use-column-reorder-mutations.ts` | CREATE | Optimistic state, FIFO queue (≤5, drag-start gate per SA-M3), `reconcileAfterDrop` single drop entry-point (SA-H4), `detectOverwriteConflict` column-level overwrite check (SA-H2), `onColumnReorderAck` queue-depth-aware (SA-H3), `seedConfirmedOrderFromServer` + `onSyncReconcile` (SA-H1) for AC-08e/f. |
-| `src/hooks/use-column-reorder-collaboration.ts` | CREATE | Emits `column:reorder`; listens to `column:reordered`, buffers when local drag active, surfaces errors. |
-| `src/components/whiteboard/column/ColumnRow.tsx` | MODIFY | Add `useSortable` wiring; render drag handle (`GripVertical`) with `nodrag nowheel`; expose `aria-label`; tooltip via existing shadcn `Tooltip`. |
-| `src/components/whiteboard/TableNode.new.tsx` | MODIFY | Wrap visible column list in `DndContext` + `SortableContext`; render `<DragOverlay>` (ghost row) and `<InsertionLine>`; cancel on Escape; respect `prefers-reduced-motion`. |
-| `src/components/whiteboard/column/InsertionLine.tsx` | CREATE | Tiny presentational component for the 2px accent-color drop indicator with hysteresis logic. |
-| `src/components/whiteboard/column/DragHandle.tsx` | CREATE | Drag handle button: `GripVertical` icon + tooltip + `nodrag nowheel` + sortable listeners. |
-| `src/components/whiteboard/ReactFlowWhiteboard.tsx` | MODIFY | Wire `useColumnReorderMutations` + `useColumnReorderCollaboration`; pass mutations API down to `TableNode` data; trigger `updateNodeInternals` per reorder tick via `useLayoutEffect` (SA-M1); call `seedConfirmedOrderFromServer` on initial whiteboard load and `onSyncReconcile` after reconnect refetch (SA-H1). |
-| `package.json` | MODIFY | Add `@dnd-kit/core`, `@dnd-kit/sortable`, `@dnd-kit/utilities` (peer-dependency-only of sortable). |
+| File                                                 | Status | Purpose                                                                                                                                                                                                                                                                                                              |
+| ---------------------------------------------------- | ------ | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `src/data/column.ts`                                 | MODIFY | Add `reorderColumns(tableId, orderedColumnIds[])` — single Prisma transaction batch update.                                                                                                                                                                                                                          |
+| `src/data/schema.ts`                                 | MODIFY | Add `reorderColumnsSchema` Zod schema.                                                                                                                                                                                                                                                                               |
+| `src/routes/api/collaboration.ts`                    | MODIFY | Add `socket.on('column:reorder', ...)` handler with IDOR + FM-07 merge.                                                                                                                                                                                                                                              |
+| `src/hooks/use-column-reorder-mutations.ts`          | CREATE | Optimistic state, FIFO queue (≤5, drag-start gate per SA-M3), `reconcileAfterDrop` single drop entry-point (SA-H4), `detectOverwriteConflict` column-level overwrite check (SA-H2), `onColumnReorderAck` queue-depth-aware (SA-H3), `seedConfirmedOrderFromServer` + `onSyncReconcile` (SA-H1) for AC-08e/f.         |
+| `src/hooks/use-column-reorder-collaboration.ts`      | CREATE | Emits `column:reorder`; listens to `column:reordered`, buffers when local drag active, surfaces errors.                                                                                                                                                                                                              |
+| `src/components/whiteboard/column/ColumnRow.tsx`     | MODIFY | Add `useSortable` wiring; render drag handle (`GripVertical`) with `nodrag nowheel`; expose `aria-label`; tooltip via existing shadcn `Tooltip`.                                                                                                                                                                     |
+| `src/components/whiteboard/TableNode.new.tsx`        | MODIFY | Wrap visible column list in `DndContext` + `SortableContext`; render `<DragOverlay>` (ghost row) and `<InsertionLine>`; cancel on Escape; respect `prefers-reduced-motion`.                                                                                                                                          |
+| `src/components/whiteboard/column/InsertionLine.tsx` | CREATE | Tiny presentational component for the 2px accent-color drop indicator with hysteresis logic.                                                                                                                                                                                                                         |
+| `src/components/whiteboard/column/DragHandle.tsx`    | CREATE | Drag handle button: `GripVertical` icon + tooltip + `nodrag nowheel` + sortable listeners.                                                                                                                                                                                                                           |
+| `src/components/whiteboard/ReactFlowWhiteboard.tsx`  | MODIFY | Wire `useColumnReorderMutations` + `useColumnReorderCollaboration`; pass mutations API down to `TableNode` data; trigger `updateNodeInternals` per reorder tick via `useLayoutEffect` (SA-M1); call `seedConfirmedOrderFromServer` on initial whiteboard load and `onSyncReconcile` after reconnect refetch (SA-H1). |
+| `package.json`                                       | MODIFY | Add `@dnd-kit/core`, `@dnd-kit/sortable`, `@dnd-kit/utilities` (peer-dependency-only of sortable).                                                                                                                                                                                                                   |
 
 ### 1.4 Dependencies Added
 
@@ -378,7 +378,8 @@ socket.on(
       console.error('Failed to reorder columns:', error)
       socket.emit('error', {
         event: 'column:reorder',
-        error: error instanceof z.ZodError ? 'VALIDATION_FAILED' : 'UPDATE_FAILED',
+        error:
+          error instanceof z.ZodError ? 'VALIDATION_FAILED' : 'UPDATE_FAILED',
         message:
           error instanceof Error ? error.message : 'Failed to reorder columns',
         tableId: parsed?.tableId,
@@ -398,11 +399,11 @@ The `column:reordered` (broadcast) is sent to OTHER sockets via `socket.broadcas
 
 **Errors emitted to client**:
 
-| Error code | Trigger | Toast (per REQ-15) |
-| --- | --- | --- |
-| `FORBIDDEN` | IDOR (table not in whiteboard) | "You don't have permission to reorder columns in this table." |
-| `VALIDATION_FAILED` | Zod fail OR unknown ID OR duplicates | "Unable to reorder columns. Please try again." |
-| `UPDATE_FAILED` | Prisma transaction error | "Unable to save column order. Please try again." |
+| Error code          | Trigger                              | Toast (per REQ-15)                                            |
+| ------------------- | ------------------------------------ | ------------------------------------------------------------- |
+| `FORBIDDEN`         | IDOR (table not in whiteboard)       | "You don't have permission to reorder columns in this table." |
+| `VALIDATION_FAILED` | Zod fail OR unknown ID OR duplicates | "Unable to reorder columns. Please try again."                |
+| `UPDATE_FAILED`     | Prisma transaction error             | "Unable to save column order. Please try again."              |
 
 ### 2.3 Frontend — Drag Behavior (DnD-Kit)
 
@@ -474,7 +475,11 @@ File: `src/components/whiteboard/column/DragHandle.tsx` (NEW)
 
 ```tsx
 import { GripVertical } from 'lucide-react'
-import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip'
+import {
+  Tooltip,
+  TooltipContent,
+  TooltipTrigger,
+} from '@/components/ui/tooltip'
 import { useSortable } from '@dnd-kit/sortable'
 
 interface DragHandleProps {
@@ -483,8 +488,14 @@ interface DragHandleProps {
   isDragging: boolean
 }
 
-export function DragHandle({ columnId, columnName, isDragging }: DragHandleProps) {
-  const { attributes, listeners, setActivatorNodeRef } = useSortable({ id: columnId })
+export function DragHandle({
+  columnId,
+  columnName,
+  isDragging,
+}: DragHandleProps) {
+  const { attributes, listeners, setActivatorNodeRef } = useSortable({
+    id: columnId,
+  })
 
   // Tooltip dismissed during drag (AC-12d): the Tooltip is unmounted while isDragging
   // is true, by conditionally wrapping. open={undefined} during drag also works.
@@ -528,6 +539,7 @@ export function DragHandle({ columnId, columnName, isDragging }: DragHandleProps
 **Why `nodrag nowheel`**: Spike S1 outcome — these classes prevent React Flow's canvas from intercepting the pointerdown.
 
 **Tooltip behavior** (REQ-12):
+
 - `aria-label="Reorder column [name]"` (AC-01d) on the button itself, screen-reader-announced regardless of tooltip visibility.
 - shadcn `Tooltip` defaults to a 700ms delay; we override to 400ms via `<TooltipProvider delayDuration={400}>` at the table level (AC-12a).
 - `aria-describedby` is automatically wired by Radix Tooltip when the tooltip is open (AC-12e).
@@ -540,9 +552,9 @@ export function DragHandle({ columnId, columnName, isDragging }: DragHandleProps
 ```tsx
 // inside ColumnRow
 const {
-  attributes,           // unused — we attach to the handle via setActivatorNodeRef
+  attributes, // unused — we attach to the handle via setActivatorNodeRef
   listeners: _listeners, // unused (handle owns them)
-  setNodeRef,           // attached to the row's outer div
+  setNodeRef, // attached to the row's outer div
   transform,
   transition,
   isDragging,
@@ -588,66 +600,72 @@ const [activeId, setActiveId] = useState<string | null>(null)
 const [overId, setOverId] = useState<string | null>(null)
 const preDragOrderRef = useRef<string[] | null>(null)
 
-const handleDragStart = useCallback((event: DragStartEvent) => {
-  // SA-M3: queue-full check at drag-START (not drag-end). If the per-table FIFO
-  // is already at the AC-08d cap of 5, we must NOT let the drag begin — otherwise
-  // the user sees an optimistic ghost row and then a snap-back when the drop is
-  // silently dropped. Tell the user up front and cancel.
-  if (reorderMutations.isQueueFullForTable(table.id)) {
-    toast.warning('Slow down — previous reorders still saving')
-    // We can't "cancel" @dnd-kit's drag once onDragStart returns; instead, we
-    // set a sentinel so handleDragEnd treats this as a forced cancel.
-    preDragOrderRef.current = null
-    setActiveId(null)
-    setOverId(null)
-    // Ask @dnd-kit to cancel by dispatching a synthetic Escape (cleanest path
-    // available without forking the sensor). Implementation in §2.4.1 exposes a
-    // `cancelActiveDrag()` helper from the parent that calls into the sensor.
-    cancelActiveDrag()
-    return
-  }
-  setActiveId(event.active.id as string)
-  preDragOrderRef.current = visibleColumns.map((c) => c.id)
-  // SA-H4: mark this table as locally-dragging so incoming column:reordered
-  // events for the same table get buffered instead of applied (AC-07c / AC-14a).
-  reorderMutations.setLocalDragging(table.id, true)
-}, [visibleColumns, reorderMutations, table.id, cancelActiveDrag])
+const handleDragStart = useCallback(
+  (event: DragStartEvent) => {
+    // SA-M3: queue-full check at drag-START (not drag-end). If the per-table FIFO
+    // is already at the AC-08d cap of 5, we must NOT let the drag begin — otherwise
+    // the user sees an optimistic ghost row and then a snap-back when the drop is
+    // silently dropped. Tell the user up front and cancel.
+    if (reorderMutations.isQueueFullForTable(table.id)) {
+      toast.warning('Slow down — previous reorders still saving')
+      // We can't "cancel" @dnd-kit's drag once onDragStart returns; instead, we
+      // set a sentinel so handleDragEnd treats this as a forced cancel.
+      preDragOrderRef.current = null
+      setActiveId(null)
+      setOverId(null)
+      // Ask @dnd-kit to cancel by dispatching a synthetic Escape (cleanest path
+      // available without forking the sensor). Implementation in §2.4.1 exposes a
+      // `cancelActiveDrag()` helper from the parent that calls into the sensor.
+      cancelActiveDrag()
+      return
+    }
+    setActiveId(event.active.id as string)
+    preDragOrderRef.current = visibleColumns.map((c) => c.id)
+    // SA-H4: mark this table as locally-dragging so incoming column:reordered
+    // events for the same table get buffered instead of applied (AC-07c / AC-14a).
+    reorderMutations.setLocalDragging(table.id, true)
+  },
+  [visibleColumns, reorderMutations, table.id, cancelActiveDrag],
+)
 
 const handleDragOver = useCallback((event: DragOverEvent) => {
   setOverId(event.over?.id ? (event.over.id as string) : null)
 }, [])
 
-const handleDragEnd = useCallback((event: DragEndEvent) => {
-  // performance.mark for the metric-instrumentation harness (Section 3 of PRD)
-  performance.mark('column-reorder:drop')
+const handleDragEnd = useCallback(
+  (event: DragEndEvent) => {
+    // performance.mark for the metric-instrumentation harness (Section 3 of PRD)
+    performance.mark('column-reorder:drop')
 
-  const activeIdLocal = event.active.id as string
-  const overIdLocal = event.over?.id as string | undefined
+    const activeIdLocal = event.active.id as string
+    const overIdLocal = event.over?.id as string | undefined
 
-  setActiveId(null)
-  setOverId(null)
+    setActiveId(null)
+    setOverId(null)
 
-  // SA-H4: every drop (no-op or not, valid or not) must run reconcileAfterDrop
-  // so localDraggingByTable is cleared and any buffered remote reorder is
-  // applied or reconciled. Compute newOrder first (or null if drop was invalid),
-  // then route through the single reconcile path.
-  let newOrder: string[] | null = null
-  if (overIdLocal && preDragOrderRef.current) {
-    const oldIndex = preDragOrderRef.current.indexOf(activeIdLocal)
-    const newIndex = preDragOrderRef.current.indexOf(overIdLocal)
-    if (oldIndex !== -1 && newIndex !== -1) {
-      newOrder = arrayMove(preDragOrderRef.current, oldIndex, newIndex)
+    // SA-H4: every drop (no-op or not, valid or not) must run reconcileAfterDrop
+    // so localDraggingByTable is cleared and any buffered remote reorder is
+    // applied or reconciled. Compute newOrder first (or null if drop was invalid),
+    // then route through the single reconcile path.
+    let newOrder: string[] | null = null
+    if (overIdLocal && preDragOrderRef.current) {
+      const oldIndex = preDragOrderRef.current.indexOf(activeIdLocal)
+      const newIndex = preDragOrderRef.current.indexOf(overIdLocal)
+      if (oldIndex !== -1 && newIndex !== -1) {
+        newOrder = arrayMove(preDragOrderRef.current, oldIndex, newIndex)
+      }
     }
-  }
 
-  reorderMutations.reconcileAfterDrop({
-    tableId: table.id,
-    preDragOrder: preDragOrderRef.current,
-    newOrder, // null = invalid drop, treated as no-op
-  })
+    reorderMutations.reconcileAfterDrop({
+      tableId: table.id,
+      preDragOrder: preDragOrderRef.current,
+      newOrder, // null = invalid drop, treated as no-op
+    })
 
-  preDragOrderRef.current = null
-}, [reorderMutations, table.id])
+    preDragOrderRef.current = null
+  },
+  [reorderMutations, table.id],
+)
 
 const handleDragCancel = useCallback(() => {
   // AC-10a/b/c: Escape during drag → ghost & line vanish, no DB, no WS.
@@ -762,7 +780,7 @@ export function useColumnReorderMutations(
 
 ```typescript
 type PendingReorder = {
-  preState: string[]   // pre-optimistic order (for rollback)
+  preState: string[] // pre-optimistic order (for rollback)
   optimistic: string[] // sent to server
   emittedAt: number
 }
@@ -875,17 +893,21 @@ function reconcileAfterDrop(args: {
   }
 
   // (5) Apply optimistic state, capture preState for rollback, enqueue, emit.
-  applyLocalOptimistic(tableId, newOrder, /* outPreState */ (preState) => {
-    const prevQueue = pendingByTable.current.get(tableId) ?? []
-    pendingByTable.current.set(tableId, [
-      ...prevQueue,
-      { preState, optimistic: newOrder, emittedAt: performance.now() },
-    ])
-    // SA-H1: capture the optimistic order at every enqueue.
-    lastOptimisticByTable.current.set(tableId, newOrder)
-    dirtyByTable.current.add(tableId)
-    emitColumnReorder?.({ tableId, orderedColumnIds: newOrder })
-  })
+  applyLocalOptimistic(
+    tableId,
+    newOrder,
+    /* outPreState */ (preState) => {
+      const prevQueue = pendingByTable.current.get(tableId) ?? []
+      pendingByTable.current.set(tableId, [
+        ...prevQueue,
+        { preState, optimistic: newOrder, emittedAt: performance.now() },
+      ])
+      // SA-H1: capture the optimistic order at every enqueue.
+      lastOptimisticByTable.current.set(tableId, newOrder)
+      dirtyByTable.current.add(tableId)
+      emitColumnReorder?.({ tableId, orderedColumnIds: newOrder })
+    },
+  )
 }
 ```
 
@@ -911,7 +933,10 @@ function applyLocalOptimistic(
         .filter((c): c is Column => c !== null)
       return {
         ...node,
-        data: { ...node.data, table: { ...node.data.table, columns: reordered } },
+        data: {
+          ...node.data,
+          table: { ...node.data.table, columns: reordered },
+        },
       }
     }),
   )
@@ -936,9 +961,9 @@ function applyLocalOptimistic(
  * Returns true iff the toast should fire.
  */
 function detectOverwriteConflict(
-  preDragOrder: string[],   // both clients' shared baseline at A's dragStart
+  preDragOrder: string[], // both clients' shared baseline at A's dragStart
   bufferedRemote: string[], // B's order received during A's drag
-  localFinal: string[],     // A's order at drop
+  localFinal: string[], // A's order at drop
 ): boolean {
   // Compute the set of columns each side moved relative to the shared baseline.
   const movedByA = collectMovedColumnIds(preDragOrder, localFinal)
@@ -962,7 +987,10 @@ function detectOverwriteConflict(
   return false // same columns, same final positions — A and B agreed
 }
 
-function collectMovedColumnIds(baseline: string[], after: string[]): Set<string> {
+function collectMovedColumnIds(
+  baseline: string[],
+  after: string[],
+): Set<string> {
   // A column is "moved" if its index in `after` differs from its index in `baseline`.
   // We assume `baseline` and `after` contain the same set of IDs (they are
   // both the same table's columns at near-simultaneous moments, modulo
@@ -979,7 +1007,7 @@ function collectMovedColumnIds(baseline: string[], after: string[]): Set<string>
 }
 ```
 
-**Why intersection-of-moved (not pairwise positional comparison)?** AC-14e's "no toast when B reordered different columns" cleanly maps to "no toast when the intersection of moved-columns is empty". The pairwise positional check (`buffered[i] !== local[i]`) gives false positives whenever A's move *displaces* a column B didn't touch — which is the dominant case in N=30 tables and is exactly the false-positive class Apollo flagged.
+**Why intersection-of-moved (not pairwise positional comparison)?** AC-14e's "no toast when B reordered different columns" cleanly maps to "no toast when the intersection of moved-columns is empty". The pairwise positional check (`buffered[i] !== local[i]`) gives false positives whenever A's move _displaces_ a column B didn't touch — which is the dominant case in N=30 tables and is exactly the false-positive class Apollo flagged.
 
 **Why store the FULL preState (not just oldIndex/newIndex) in PendingReorder**: a rollback that restores the exact pre-drag column array survives concurrent edits to other columns (e.g., a `column:created` arriving while our reorder is in-flight). Storing only oldIndex/newIndex would force us to reconstruct the array at rollback time and could produce wrong results if columns were added/deleted in between.
 
@@ -988,7 +1016,10 @@ function collectMovedColumnIds(baseline: string[], after: string[]): Set<string>
 #### 2.4.3 Reconcile-on-Ack and -on-Error
 
 ```typescript
-function onColumnReorderAck(data: { tableId: string; orderedColumnIds: string[] }) {
+function onColumnReorderAck(data: {
+  tableId: string
+  orderedColumnIds: string[]
+}) {
   const queue = pendingByTable.current.get(data.tableId) ?? []
   if (queue.length === 0) return // duplicate ack — ignore
   const head = queue[0]
@@ -1090,7 +1121,10 @@ function applyServerOrder(tableId: string, orderedIds: string[]) {
         .filter((c): c is Column => c !== null)
       return {
         ...node,
-        data: { ...node.data, table: { ...node.data.table, columns: reordered } },
+        data: {
+          ...node.data,
+          table: { ...node.data.table, columns: reordered },
+        },
       }
     }),
   )
@@ -1200,7 +1234,7 @@ The original draft only populated `lastConfirmedOrder` from ack and broadcast ha
 ```typescript
 // in useColumnReorderMutations
 function seedConfirmedOrderFromServer(
-  tables: Array<{ id: string, columns: Array<{ id: string }> }>,
+  tables: Array<{ id: string; columns: Array<{ id: string }> }>,
 ) {
   for (const table of tables) {
     const order = table.columns.map((c) => c.id)
@@ -1222,9 +1256,9 @@ This is called from `ReactFlowWhiteboard` once when `whiteboardData` first becom
 **The fix per SA-H1**: compare the server-fetched order against `lastOptimisticByTable[tableId]` (captured at every enqueue), not against `lastConfirmedOrder`. The `dirtyByTable` flag controls whether a mismatch is silently reconciled or surfaces as a toast.
 
 ```typescript
-function onSyncReconcile(
-  whiteboardData: { tables: Array<{ id: string, columns: Array<{ id: string }> }> },
-) {
+function onSyncReconcile(whiteboardData: {
+  tables: Array<{ id: string; columns: Array<{ id: string }> }>
+}) {
   for (const table of whiteboardData.tables) {
     const serverOrder = table.columns.map((c) => c.id)
     const wasDirty = dirtyByTable.current.has(table.id)
@@ -1234,7 +1268,11 @@ function onSyncReconcile(
     // is on-screen) rather than lastConfirmed (what the server last told us).
     // If the user enqueued a reorder that was lost (FM-04 path), then
     // lastOptimistic ≠ serverOrder while wasDirty === true — toast fires.
-    if (wasDirty && lastOptimistic && !arraysEqual(serverOrder, lastOptimistic)) {
+    if (
+      wasDirty &&
+      lastOptimistic &&
+      !arraysEqual(serverOrder, lastOptimistic)
+    ) {
       toast(
         'Your last column reorder may not have saved. ' +
           'Please verify the order and try again if needed.',
@@ -1293,11 +1331,11 @@ useEffect(() => {
 
 Per PRD Section 3, all three latency metrics must be measurable via `performance.mark`. The marks are placed at the points named in the PRD:
 
-| Mark | Location |
-| --- | --- |
-| `column-reorder:drop` | First line of `handleDragEnd` in TableNode |
-| `column-reorder:local-paint` | Inside a `requestAnimationFrame` callback scheduled immediately after `setNodes` in `useColumnReorderMutations.reorderColumns` |
-| `column-reorder:remote-paint` | Inside a `requestAnimationFrame` callback scheduled immediately after `applyServerOrder` in `onColumnReorderedFromOther` |
+| Mark                          | Location                                                                                                                       |
+| ----------------------------- | ------------------------------------------------------------------------------------------------------------------------------ |
+| `column-reorder:drop`         | First line of `handleDragEnd` in TableNode                                                                                     |
+| `column-reorder:local-paint`  | Inside a `requestAnimationFrame` callback scheduled immediately after `setNodes` in `useColumnReorderMutations.reorderColumns` |
+| `column-reorder:remote-paint` | Inside a `requestAnimationFrame` callback scheduled immediately after `applyServerOrder` in `onColumnReorderedFromOther`       |
 
 These marks emit no UI; they exist for the test harness Artemis will write in stage 7. The marks have negligible runtime cost (~50ns each in modern browsers). They are present in production builds — that's intentional (web-vitals collection is already in use; reorder marks join the same telemetry surface).
 
@@ -1307,9 +1345,10 @@ A single hook reads the preference once per drag start:
 
 ```typescript
 function usePrefersReducedMotion() {
-  const [prefers, setPrefers] = useState(() =>
-    typeof window !== 'undefined' &&
-    window.matchMedia('(prefers-reduced-motion: reduce)').matches,
+  const [prefers, setPrefers] = useState(
+    () =>
+      typeof window !== 'undefined' &&
+      window.matchMedia('(prefers-reduced-motion: reduce)').matches,
   )
   useEffect(() => {
     const mql = window.matchMedia('(prefers-reduced-motion: reduce)')
@@ -1322,6 +1361,7 @@ function usePrefersReducedMotion() {
 ```
 
 The value flows down to:
+
 - `<DragOverlay dropAnimation={prefers ? null : defaultDropAnimation}>` (no zoom-back animation on cancel)
 - `ColumnRow.style.transition` (omitted when `prefers === true`)
 - The autoscroll modifier — `@dnd-kit/core` exposes `autoScroll` config with a `enabled` flag and `acceleration`/`speed` knobs. `prefers` → `speed: 300, acceleration: 1` (linear). Default → `speed: 600, acceleration: 10`.
@@ -1470,65 +1510,65 @@ Not in V1. Architecture-open hook: when REQ-11 is promoted, add `KeyboardSensor`
 
 How each PRD AC is satisfied (cross-reference for Apollo's spec review):
 
-| AC | Mechanism |
-| --- | --- |
-| AC-01a/b | `DragHandle` rendered in every `ColumnRow`, always visible |
-| AC-01c | `cursor: grab` / `cursor: grabbing` styles in `DragHandle.tsx` |
-| AC-01d | `aria-label="Reorder column [name]"` on the handle button |
-| AC-01e | `setActivatorNodeRef` on the handle only; row body has `setNodeRef` (collision rect only) |
-| AC-01f | Drag handle rendered inside `showMode !== 'TABLE_NAME'` block (existing condition in `TableNode.new.tsx:304`) |
-| AC-01g | `nodrag nowheel` on the handle (Spike S1) |
-| AC-02a | `ColumnRow` style `opacity: isDragging ? 0.5 : 1`; layout preserved (no display:none) |
-| AC-02b | `<DragOverlay>` renders a copy at 80% opacity (style override on the ghost ColumnRow) |
-| AC-02c | `snapCenterToCursor` modifier + custom `+8px / +8px` offset modifier |
-| AC-02d | `closestCenter` collision detection + insertion line rendered at gap; hysteresis from `closestCenter`'s tie-break |
-| AC-02e | `restrictToParentElement` + `restrictToVerticalAxis` modifiers |
-| AC-02f | DragOverlay unmounted, InsertionLine `visible={false}` on `onDragEnd`/`onDragCancel` |
-| AC-03a | `reorderColumns` writes to DB; subsequent reload reads via `findColumnsByTableId orderBy:asc` |
-| AC-03b | `prisma.$transaction` — atomic by Postgres semantics |
-| AC-03c | Per-row `prisma.column.update` inside transaction |
-| AC-03d | No-op detected inside `reconcileAfterDrop` (`isNoOp` branch) — never enqueues, never emits |
-| AC-03e | Re-sequenced to 0..N-1 in `reorderColumns` |
-| AC-03f | Server validates length + duplicates + subset (§2.2.3) |
-| AC-04a | Localhost p95 <500ms / LAN p95 <1000ms — measured via `performance.mark` (§2.5) |
-| AC-04b | `socket.broadcast.emit` is namespace-scoped to `/whiteboard/:id` |
-| AC-04c | `setNodes` + `updateNodeInternals` in same commit via `useLayoutEffect` (SA-M1) |
-| AC-04d | No-op detected client-side; emit never fires |
-| AC-04e | Server error event handled by `onColumnReorderError` → revert + toast |
-| AC-04f | IDOR check #1 (table↔whiteboard) + IDOR check #2 (every id ∈ table) (§2.2.3) |
-| AC-05a/b/c | Handle IDs are stable; `updateNodeInternals` re-anchors |
-| AC-05d | Same-commit `setNodes` + tick bump → `useLayoutEffect` → `updateNodeInternals` (pre-paint, SA-M1) |
-| AC-06a/b/c/d | `reconcileAfterDrop` `isNoOp` branch (newOrder===null OR `arraysEqual(newOrder, preDragOrder)`); zero writes, zero emits, zero toasts unless a buffered remote needs to be applied (AC-14f) |
-| AC-07a | Server is single source of truth; whichever `column:reorder` arrives last wins |
-| AC-07b | All clients receive `column:reordered` with the winning ordered list |
-| AC-07c | `localDraggingByTable` set during drag → incoming `column:reordered` is buffered, not applied |
-| AC-07d | Server's ack OR broadcast is the final state; `onColumnReorderAck` reconciles divergences |
-| AC-08a | Local optimistic update happens synchronously inside `setNodes`; rAF mark confirms paint |
-| AC-08b | No reconciliation needed when ack matches optimistic order |
-| AC-08c | Rollback in `onColumnReorderError`; toast wording per REQ-15 |
-| AC-08d | FIFO bounded to 5; 6th drag is gated at `handleDragStart` via `isQueueFullForTable` (SA-M3) — never starts |
-| AC-08e/f | `onSyncReconcile` compares server vs. `lastOptimisticByTable[tableId]`; `dirtyByTable` flag controls toast; `lastConfirmedOrder` seeded from initial whiteboard load so first-ever-reorder-loss is detectable (SA-H1) |
-| AC-09a/b/c | `<DndContext autoScroll={{ speed: 600 …}}>` with viewport-only `canScroll` |
-| AC-09d | `prefersReducedMotion` toggles speed to 300 + acceleration: 1 (linear) |
-| AC-10a/b/c | `onDragCancel` handler + window-level `keydown` Escape listener |
-| AC-11a-e | DEFERRED to V2 (REQ-11 P2; WCAG debt logged) |
-| AC-12a | `<TooltipProvider delayDuration={400}>` |
-| AC-12b | Existing `@/components/ui/tooltip` shadcn component |
-| AC-12c | Tooltip is hover-triggered; touch devices have no hover |
-| AC-12d | `if (isDragging) return handle` short-circuit unmounts Tooltip |
-| AC-12e | Radix Tooltip auto-wires `aria-describedby` |
-| AC-13a | DragOverlay `dropAnimation: prefersReducedMotion ? null : default`; ColumnRow transition omitted under reduced motion |
-| AC-13b | InsertionLine has no CSS transition by default |
-| AC-13c | `usePrefersReducedMotion` reads once at drag start (in TableNode); the value is captured into a ref for the duration of the drag |
-| AC-14a | `handleDragStart` sets `localDraggingByTable[tableId]`; `onColumnReorderedFromOther` checks the flag and buffers in `bufferedRemoteByTable` (SA-H4) |
-| AC-14b | `reconcileAfterDrop` compares `bufferedRemoteByTable.get(tableId)` vs `newOrder` via `detectOverwriteConflict` (SA-H2) |
-| AC-14c | Toast text matches PRD verbatim |
-| AC-14d | `duration: 8000` on `toast()` |
-| AC-14e | `detectOverwriteConflict` (column-level intersection of moved-columns + final-position comparison); fires only when A and B both moved at least one common column AND their final positions for at least one such column differ. Disjoint moves → no toast. (SA-H2) |
-| AC-14f | `reconcileAfterDrop` no-op branch: when drop is no-op or cancelled, applies `bufferedRemoteByTable.get(tableId)` via `applyServerOrder` and clears the buffer; no toast (SA-H4) |
-| AC-14g | `emitColumnReorder` is called as the last step in `reconcileAfterDrop`'s real-reorder branch, after the SA-H2 toast logic |
-| AC-15a/b | Toast wording in §2.4.3 / §2.4.1 — "try again", never "refresh" |
-| AC-15c | Existing `sonner` toast (already imported in `ReactFlowWhiteboard.tsx`) |
+| AC           | Mechanism                                                                                                                                                                                                                                                           |
+| ------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| AC-01a/b     | `DragHandle` rendered in every `ColumnRow`, always visible                                                                                                                                                                                                          |
+| AC-01c       | `cursor: grab` / `cursor: grabbing` styles in `DragHandle.tsx`                                                                                                                                                                                                      |
+| AC-01d       | `aria-label="Reorder column [name]"` on the handle button                                                                                                                                                                                                           |
+| AC-01e       | `setActivatorNodeRef` on the handle only; row body has `setNodeRef` (collision rect only)                                                                                                                                                                           |
+| AC-01f       | Drag handle rendered inside `showMode !== 'TABLE_NAME'` block (existing condition in `TableNode.new.tsx:304`)                                                                                                                                                       |
+| AC-01g       | `nodrag nowheel` on the handle (Spike S1)                                                                                                                                                                                                                           |
+| AC-02a       | `ColumnRow` style `opacity: isDragging ? 0.5 : 1`; layout preserved (no display:none)                                                                                                                                                                               |
+| AC-02b       | `<DragOverlay>` renders a copy at 80% opacity (style override on the ghost ColumnRow)                                                                                                                                                                               |
+| AC-02c       | `snapCenterToCursor` modifier + custom `+8px / +8px` offset modifier                                                                                                                                                                                                |
+| AC-02d       | `closestCenter` collision detection + insertion line rendered at gap; hysteresis from `closestCenter`'s tie-break                                                                                                                                                   |
+| AC-02e       | `restrictToParentElement` + `restrictToVerticalAxis` modifiers                                                                                                                                                                                                      |
+| AC-02f       | DragOverlay unmounted, InsertionLine `visible={false}` on `onDragEnd`/`onDragCancel`                                                                                                                                                                                |
+| AC-03a       | `reorderColumns` writes to DB; subsequent reload reads via `findColumnsByTableId orderBy:asc`                                                                                                                                                                       |
+| AC-03b       | `prisma.$transaction` — atomic by Postgres semantics                                                                                                                                                                                                                |
+| AC-03c       | Per-row `prisma.column.update` inside transaction                                                                                                                                                                                                                   |
+| AC-03d       | No-op detected inside `reconcileAfterDrop` (`isNoOp` branch) — never enqueues, never emits                                                                                                                                                                          |
+| AC-03e       | Re-sequenced to 0..N-1 in `reorderColumns`                                                                                                                                                                                                                          |
+| AC-03f       | Server validates length + duplicates + subset (§2.2.3)                                                                                                                                                                                                              |
+| AC-04a       | Localhost p95 <500ms / LAN p95 <1000ms — measured via `performance.mark` (§2.5)                                                                                                                                                                                     |
+| AC-04b       | `socket.broadcast.emit` is namespace-scoped to `/whiteboard/:id`                                                                                                                                                                                                    |
+| AC-04c       | `setNodes` + `updateNodeInternals` in same commit via `useLayoutEffect` (SA-M1)                                                                                                                                                                                     |
+| AC-04d       | No-op detected client-side; emit never fires                                                                                                                                                                                                                        |
+| AC-04e       | Server error event handled by `onColumnReorderError` → revert + toast                                                                                                                                                                                               |
+| AC-04f       | IDOR check #1 (table↔whiteboard) + IDOR check #2 (every id ∈ table) (§2.2.3)                                                                                                                                                                                       |
+| AC-05a/b/c   | Handle IDs are stable; `updateNodeInternals` re-anchors                                                                                                                                                                                                             |
+| AC-05d       | Same-commit `setNodes` + tick bump → `useLayoutEffect` → `updateNodeInternals` (pre-paint, SA-M1)                                                                                                                                                                   |
+| AC-06a/b/c/d | `reconcileAfterDrop` `isNoOp` branch (newOrder===null OR `arraysEqual(newOrder, preDragOrder)`); zero writes, zero emits, zero toasts unless a buffered remote needs to be applied (AC-14f)                                                                         |
+| AC-07a       | Server is single source of truth; whichever `column:reorder` arrives last wins                                                                                                                                                                                      |
+| AC-07b       | All clients receive `column:reordered` with the winning ordered list                                                                                                                                                                                                |
+| AC-07c       | `localDraggingByTable` set during drag → incoming `column:reordered` is buffered, not applied                                                                                                                                                                       |
+| AC-07d       | Server's ack OR broadcast is the final state; `onColumnReorderAck` reconciles divergences                                                                                                                                                                           |
+| AC-08a       | Local optimistic update happens synchronously inside `setNodes`; rAF mark confirms paint                                                                                                                                                                            |
+| AC-08b       | No reconciliation needed when ack matches optimistic order                                                                                                                                                                                                          |
+| AC-08c       | Rollback in `onColumnReorderError`; toast wording per REQ-15                                                                                                                                                                                                        |
+| AC-08d       | FIFO bounded to 5; 6th drag is gated at `handleDragStart` via `isQueueFullForTable` (SA-M3) — never starts                                                                                                                                                          |
+| AC-08e/f     | `onSyncReconcile` compares server vs. `lastOptimisticByTable[tableId]`; `dirtyByTable` flag controls toast; `lastConfirmedOrder` seeded from initial whiteboard load so first-ever-reorder-loss is detectable (SA-H1)                                               |
+| AC-09a/b/c   | `<DndContext autoScroll={{ speed: 600 …}}>` with viewport-only `canScroll`                                                                                                                                                                                          |
+| AC-09d       | `prefersReducedMotion` toggles speed to 300 + acceleration: 1 (linear)                                                                                                                                                                                              |
+| AC-10a/b/c   | `onDragCancel` handler + window-level `keydown` Escape listener                                                                                                                                                                                                     |
+| AC-11a-e     | DEFERRED to V2 (REQ-11 P2; WCAG debt logged)                                                                                                                                                                                                                        |
+| AC-12a       | `<TooltipProvider delayDuration={400}>`                                                                                                                                                                                                                             |
+| AC-12b       | Existing `@/components/ui/tooltip` shadcn component                                                                                                                                                                                                                 |
+| AC-12c       | Tooltip is hover-triggered; touch devices have no hover                                                                                                                                                                                                             |
+| AC-12d       | `if (isDragging) return handle` short-circuit unmounts Tooltip                                                                                                                                                                                                      |
+| AC-12e       | Radix Tooltip auto-wires `aria-describedby`                                                                                                                                                                                                                         |
+| AC-13a       | DragOverlay `dropAnimation: prefersReducedMotion ? null : default`; ColumnRow transition omitted under reduced motion                                                                                                                                               |
+| AC-13b       | InsertionLine has no CSS transition by default                                                                                                                                                                                                                      |
+| AC-13c       | `usePrefersReducedMotion` reads once at drag start (in TableNode); the value is captured into a ref for the duration of the drag                                                                                                                                    |
+| AC-14a       | `handleDragStart` sets `localDraggingByTable[tableId]`; `onColumnReorderedFromOther` checks the flag and buffers in `bufferedRemoteByTable` (SA-H4)                                                                                                                 |
+| AC-14b       | `reconcileAfterDrop` compares `bufferedRemoteByTable.get(tableId)` vs `newOrder` via `detectOverwriteConflict` (SA-H2)                                                                                                                                              |
+| AC-14c       | Toast text matches PRD verbatim                                                                                                                                                                                                                                     |
+| AC-14d       | `duration: 8000` on `toast()`                                                                                                                                                                                                                                       |
+| AC-14e       | `detectOverwriteConflict` (column-level intersection of moved-columns + final-position comparison); fires only when A and B both moved at least one common column AND their final positions for at least one such column differ. Disjoint moves → no toast. (SA-H2) |
+| AC-14f       | `reconcileAfterDrop` no-op branch: when drop is no-op or cancelled, applies `bufferedRemoteByTable.get(tableId)` via `applyServerOrder` and clears the buffer; no toast (SA-H4)                                                                                     |
+| AC-14g       | `emitColumnReorder` is called as the last step in `reconcileAfterDrop`'s real-reorder branch, after the SA-H2 toast logic                                                                                                                                           |
+| AC-15a/b     | Toast wording in §2.4.3 / §2.4.1 — "try again", never "refresh"                                                                                                                                                                                                     |
+| AC-15c       | Existing `sonner` toast (already imported in `ReactFlowWhiteboard.tsx`)                                                                                                                                                                                             |
 
 ---
 
@@ -1536,27 +1576,27 @@ How each PRD AC is satisfied (cross-reference for Apollo's spec review):
 
 Decisions made by Hephaestus while writing this spec, in priority order per the Decision Criteria framework (consistency → simplicity → reversibility → performance):
 
-| Decision | Why | Trade-off given up |
-| --- | --- | --- |
-| Use `@dnd-kit/core` + `@dnd-kit/sortable` (not `react-dnd` or custom) | `@dnd-kit` is the modern community default; pointer-based; Spike S1 confirmed it composes cleanly with `nodrag` classes; smaller bundle than `react-dnd`; explicit support for "handle owns activation" via `setActivatorNodeRef`. | `react-dnd` has a longer track record and more drag types (file drop, etc.) — irrelevant here. |
-| Re-sequence `order` to 0..N-1 on every transaction (not sparse) | Simpler invariants; the existing `AddColumnRow` only ever appends, so sparse-spacing's mid-insert benefit has no payoff. | Future cross-table column move would benefit from sparse spacing — but that feature is OOS V1 and can re-introduce sparsity later. |
-| Single Prisma `$transaction` of N `column.update` calls (not raw SQL) | Matches the pattern in `createColumns` (column.ts:36-52); keeps Prisma type safety; well within latency budget at N≤30. | Lower-level `$executeRaw` would be ~5× faster at the SQL level, irrelevant at our scale. |
-| Server emits `column:reorder:ack` to sender (separate from `column:reordered` broadcast to others) | Lets the FIFO queue resolve the head entry deterministically. Avoids the design wart of "emit broadcast to sender just to ignore it". | Slight protocol asymmetry vs. `column:create` (which emits the same `column:created` to sender + others). The `column:create` reuse exists because of temp-ID swap logic, which doesn't apply to reorder. |
-| Use `closestCenter` collision detection (not `closestCorners` or `pointerWithin`) | `closestCenter` gives the midpoint-snap behavior PRD AC-02d requires for vertical lists of uniform height. Documented `@dnd-kit` choice for sortable lists. | `pointerWithin` is more "natural" for free-form drops but produces erratic insertion-line jumps in tight rows. |
-| Use `restrictToParentElement` + `restrictToVerticalAxis` modifiers (constrain to source table only) | AC-02e requires drag scope to source table. These modifiers enforce it. | Cross-table drag would require different modifiers — out of scope. |
-| FIFO queue is per-table (not global) | Two reorders on different tables are unrelated; no reason to serialize them. AC-08d's "5 pending" bound applies per-table. | A global queue would simplify the toast logic ("slow down" applies to anything in flight), but is a worse user experience. |
-| Capture `preDragOrderRef` at dragStart (not read live `visibleColumns` at drop) | Robust against incoming `column:reordered`/`column:created`/`column:deleted` arriving mid-drag and mutating `visibleColumns`. Deterministic optimistic computation. | Slight memory overhead (≤30 UUIDs × 36 chars ≈ 1KB per drag). |
-| `updateNodeInternals` triggered via state-bumped tick (not direct call from mutations hook) | The hook returns `updateNodeInternals` from `useUpdateNodeInternals`, which is only available inside the React Flow context. Routing the trigger through a state-tick keeps the hook React-Flow-context-agnostic. | Slightly more indirection — but the hook is more reusable. |
-| No `KeyboardSensor` in V1 | REQ-11 is P2 stretch; WCAG debt is explicitly accepted in PRD Section 12. Architecture remains open. | V1 ships without WCAG 2.1.1 Level A conformance for the reorder operation — a known, logged debt. |
-| Auto-scroll override to `speed: 600 px/s` (override `@dnd-kit`'s ~750 default) | PRD AC-09a sets 600 as the explicit target with a 20% tolerance window. 750 vs 600 is 25% — outside the window. | Slightly slower scroll than the library default. Empirical implementation tuning required (Phase 5). |
-| Server-side merge of FM-07 (not client-side) | The server is the only source of truth that knows the table's current canonical column set. Client trying to merge before emit would race against `column:created` events the server has but client hasn't. | More complex server validation logic — but it lives in one place. |
-| `useLayoutEffect` for `updateNodeInternals` (not `useEffect`) — SA-M1 resolved | AC-05d's "edges re-anchor in the same render pass — no flicker" is a pre-paint guarantee. `useEffect` runs after paint by spec; `useLayoutEffect` runs before paint and is React's only documented hook for pre-paint side effects. The component is client-only (TanStack Start hydration boundary), so the SSR warning of `useLayoutEffect` does not apply here. | None — `useLayoutEffect` is strictly better for this use case; the only theoretical downside (SSR warning) is irrelevant. |
-| Defer `applyServerOrder` on ack until queue is empty (SA-H3) | Calling `applyServerOrder` while later optimistic reorders are still in flight overwrites their state and produces a visible snap-back, violating AC-04c. Recording the ack as confirmed and waiting for the final ack (queue-empty) preserves the optimistic display for in-flight items. | Sub-second window where an FM-07-merged column may not appear in the user's view until the queue drains. Within PRD's "subsecond reconciliation" tolerance for FM-07. |
-| Compare against `lastOptimisticByTable` (not `lastConfirmedOrder`) in `onSyncReconcile` (SA-H1) | The first-ever-reorder-loss case has `lastConfirmedOrder === undefined` until an ack arrives. Comparing against the user's last optimistic intent guarantees the toast fires whenever the user's intent diverges from the server truth, regardless of how the divergence happened (FM-04 emit-never-arrived, FM-04 server-crashed-pre-broadcast, partition-during-ack). | Slight memory overhead — one Map<tableId, string[]> tracking optimistic intent. Already required for the queue's preState anyway. |
-| Seed `lastConfirmedOrder` from initial whiteboard load (SA-H1) | Without an initial seed, `lastConfirmedOrder` is undefined for any table the user has never successfully ack'd a reorder on, breaking AC-08e/f's first-ever-reorder-loss case. Seeding from the server's order on initial load guarantees a baseline. | None — seeding is idempotent and adds no runtime cost. |
-| Column-level intersection check for REQ-14 overwrite (not full-array equality) — SA-H2 | AC-14e explicitly states the toast suppresses when B's reorder touched columns A did not. Full-array `arraysEqual` produces false positives whenever any column moved in A's reorder, even if B's moves were disjoint from A's. The intersection-of-moved-columns + final-position comparison precisely implements AC-14e. | Slightly more compute (O(N) Map construction + O(N) intersection at N≤30 — negligible). |
-| Single `reconcileAfterDrop` entry-point on every drop (SA-H4) | AC-14f requires applying buffered-remote on no-op drop. Branching `handleDragEnd` to early-return on no-op silently dropped the buffered-remote application path. Routing every drop through one function — including the cancelled and invalid cases — guarantees the buffer is always inspected and `localDraggingByTable` is always cleared. | Slightly more code in the mutations hook; offset by simpler call sites in `TableNode`. |
-| Queue-full check at `handleDragStart` (not drag-end) — SA-M3 | AC-08d's "do not initiate" semantics are best honored by refusing the drag before any optimistic visual occurs. Checking at drag-end produces phantom optimistic ghost rows and snap-backs that thrash the UI. | Slight UX friction — user can attempt a 6th drag and be told "wait" instead of seeing partial feedback; this is the correct trade-off per the AC. |
+| Decision                                                                                            | Why                                                                                                                                                                                                                                                                                                                                                                     | Trade-off given up                                                                                                                                                                                        |
+| --------------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Use `@dnd-kit/core` + `@dnd-kit/sortable` (not `react-dnd` or custom)                               | `@dnd-kit` is the modern community default; pointer-based; Spike S1 confirmed it composes cleanly with `nodrag` classes; smaller bundle than `react-dnd`; explicit support for "handle owns activation" via `setActivatorNodeRef`.                                                                                                                                      | `react-dnd` has a longer track record and more drag types (file drop, etc.) — irrelevant here.                                                                                                            |
+| Re-sequence `order` to 0..N-1 on every transaction (not sparse)                                     | Simpler invariants; the existing `AddColumnRow` only ever appends, so sparse-spacing's mid-insert benefit has no payoff.                                                                                                                                                                                                                                                | Future cross-table column move would benefit from sparse spacing — but that feature is OOS V1 and can re-introduce sparsity later.                                                                        |
+| Single Prisma `$transaction` of N `column.update` calls (not raw SQL)                               | Matches the pattern in `createColumns` (column.ts:36-52); keeps Prisma type safety; well within latency budget at N≤30.                                                                                                                                                                                                                                                 | Lower-level `$executeRaw` would be ~5× faster at the SQL level, irrelevant at our scale.                                                                                                                  |
+| Server emits `column:reorder:ack` to sender (separate from `column:reordered` broadcast to others)  | Lets the FIFO queue resolve the head entry deterministically. Avoids the design wart of "emit broadcast to sender just to ignore it".                                                                                                                                                                                                                                   | Slight protocol asymmetry vs. `column:create` (which emits the same `column:created` to sender + others). The `column:create` reuse exists because of temp-ID swap logic, which doesn't apply to reorder. |
+| Use `closestCenter` collision detection (not `closestCorners` or `pointerWithin`)                   | `closestCenter` gives the midpoint-snap behavior PRD AC-02d requires for vertical lists of uniform height. Documented `@dnd-kit` choice for sortable lists.                                                                                                                                                                                                             | `pointerWithin` is more "natural" for free-form drops but produces erratic insertion-line jumps in tight rows.                                                                                            |
+| Use `restrictToParentElement` + `restrictToVerticalAxis` modifiers (constrain to source table only) | AC-02e requires drag scope to source table. These modifiers enforce it.                                                                                                                                                                                                                                                                                                 | Cross-table drag would require different modifiers — out of scope.                                                                                                                                        |
+| FIFO queue is per-table (not global)                                                                | Two reorders on different tables are unrelated; no reason to serialize them. AC-08d's "5 pending" bound applies per-table.                                                                                                                                                                                                                                              | A global queue would simplify the toast logic ("slow down" applies to anything in flight), but is a worse user experience.                                                                                |
+| Capture `preDragOrderRef` at dragStart (not read live `visibleColumns` at drop)                     | Robust against incoming `column:reordered`/`column:created`/`column:deleted` arriving mid-drag and mutating `visibleColumns`. Deterministic optimistic computation.                                                                                                                                                                                                     | Slight memory overhead (≤30 UUIDs × 36 chars ≈ 1KB per drag).                                                                                                                                             |
+| `updateNodeInternals` triggered via state-bumped tick (not direct call from mutations hook)         | The hook returns `updateNodeInternals` from `useUpdateNodeInternals`, which is only available inside the React Flow context. Routing the trigger through a state-tick keeps the hook React-Flow-context-agnostic.                                                                                                                                                       | Slightly more indirection — but the hook is more reusable.                                                                                                                                                |
+| No `KeyboardSensor` in V1                                                                           | REQ-11 is P2 stretch; WCAG debt is explicitly accepted in PRD Section 12. Architecture remains open.                                                                                                                                                                                                                                                                    | V1 ships without WCAG 2.1.1 Level A conformance for the reorder operation — a known, logged debt.                                                                                                         |
+| Auto-scroll override to `speed: 600 px/s` (override `@dnd-kit`'s ~750 default)                      | PRD AC-09a sets 600 as the explicit target with a 20% tolerance window. 750 vs 600 is 25% — outside the window.                                                                                                                                                                                                                                                         | Slightly slower scroll than the library default. Empirical implementation tuning required (Phase 5).                                                                                                      |
+| Server-side merge of FM-07 (not client-side)                                                        | The server is the only source of truth that knows the table's current canonical column set. Client trying to merge before emit would race against `column:created` events the server has but client hasn't.                                                                                                                                                             | More complex server validation logic — but it lives in one place.                                                                                                                                         |
+| `useLayoutEffect` for `updateNodeInternals` (not `useEffect`) — SA-M1 resolved                      | AC-05d's "edges re-anchor in the same render pass — no flicker" is a pre-paint guarantee. `useEffect` runs after paint by spec; `useLayoutEffect` runs before paint and is React's only documented hook for pre-paint side effects. The component is client-only (TanStack Start hydration boundary), so the SSR warning of `useLayoutEffect` does not apply here.      | None — `useLayoutEffect` is strictly better for this use case; the only theoretical downside (SSR warning) is irrelevant.                                                                                 |
+| Defer `applyServerOrder` on ack until queue is empty (SA-H3)                                        | Calling `applyServerOrder` while later optimistic reorders are still in flight overwrites their state and produces a visible snap-back, violating AC-04c. Recording the ack as confirmed and waiting for the final ack (queue-empty) preserves the optimistic display for in-flight items.                                                                              | Sub-second window where an FM-07-merged column may not appear in the user's view until the queue drains. Within PRD's "subsecond reconciliation" tolerance for FM-07.                                     |
+| Compare against `lastOptimisticByTable` (not `lastConfirmedOrder`) in `onSyncReconcile` (SA-H1)     | The first-ever-reorder-loss case has `lastConfirmedOrder === undefined` until an ack arrives. Comparing against the user's last optimistic intent guarantees the toast fires whenever the user's intent diverges from the server truth, regardless of how the divergence happened (FM-04 emit-never-arrived, FM-04 server-crashed-pre-broadcast, partition-during-ack). | Slight memory overhead — one Map<tableId, string[]> tracking optimistic intent. Already required for the queue's preState anyway.                                                                         |
+| Seed `lastConfirmedOrder` from initial whiteboard load (SA-H1)                                      | Without an initial seed, `lastConfirmedOrder` is undefined for any table the user has never successfully ack'd a reorder on, breaking AC-08e/f's first-ever-reorder-loss case. Seeding from the server's order on initial load guarantees a baseline.                                                                                                                   | None — seeding is idempotent and adds no runtime cost.                                                                                                                                                    |
+| Column-level intersection check for REQ-14 overwrite (not full-array equality) — SA-H2              | AC-14e explicitly states the toast suppresses when B's reorder touched columns A did not. Full-array `arraysEqual` produces false positives whenever any column moved in A's reorder, even if B's moves were disjoint from A's. The intersection-of-moved-columns + final-position comparison precisely implements AC-14e.                                              | Slightly more compute (O(N) Map construction + O(N) intersection at N≤30 — negligible).                                                                                                                   |
+| Single `reconcileAfterDrop` entry-point on every drop (SA-H4)                                       | AC-14f requires applying buffered-remote on no-op drop. Branching `handleDragEnd` to early-return on no-op silently dropped the buffered-remote application path. Routing every drop through one function — including the cancelled and invalid cases — guarantees the buffer is always inspected and `localDraggingByTable` is always cleared.                         | Slightly more code in the mutations hook; offset by simpler call sites in `TableNode`.                                                                                                                    |
+| Queue-full check at `handleDragStart` (not drag-end) — SA-M3                                        | AC-08d's "do not initiate" semantics are best honored by refusing the drag before any optimistic visual occurs. Checking at drag-end produces phantom optimistic ghost rows and snap-backs that thrash the UI.                                                                                                                                                          | Slight UX friction — user can attempt a 6th drag and be told "wait" instead of seeing partial feedback; this is the correct trade-off per the AC.                                                         |
 
 ---
 

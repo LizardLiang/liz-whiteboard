@@ -10,13 +10,13 @@
 
 ## Summary
 
-| Property | Value |
-|----------|-------|
-| Total Phases | 4 |
-| Total Tasks | 22 |
-| Critical Path | Phase 1 → Phase 2 → Phase 3 → Phase 4 |
+| Property               | Value                                                                                     |
+| ---------------------- | ----------------------------------------------------------------------------------------- |
+| Total Phases           | 4                                                                                         |
+| Total Tasks            | 22                                                                                        |
+| Critical Path          | Phase 1 → Phase 2 → Phase 3 → Phase 4                                                     |
 | Parallel Opportunities | Phase 1 waves run in parallel; Phase 2 Task 2.1 unblocks all Phase 3 tasks simultaneously |
-| No DB Migration | Column.order field already exists in schema |
+| No DB Migration        | Column.order field already exists in schema                                               |
 
 ---
 
@@ -71,12 +71,12 @@ Phase 4 (UI + Integration)
 
 ### Tasks
 
-| # | Task | File | Wave | Effort | Verify |
-|---|------|------|------|--------|--------|
-| 1.1 | Install @dnd-kit packages | `package.json` | 1 | XS | `bun pm ls \| grep @dnd-kit \| wc -l` should output `3` |
-| 1.2 | Add `reorderColumnsSchema` to schema.ts | `src/data/schema.ts` | 1 | XS | `bun run tsc --noEmit` passes; `grep -n "reorderColumnsSchema" src/data/schema.ts` returns a match |
-| 1.3 | Add `reorderColumns()` function to column.ts | `src/data/column.ts` | 1 | S | `bun run tsc --noEmit` passes; `grep -n "reorderColumns" src/data/column.ts` returns a match |
-| 1.4 | Document new WebSocket events | `specs/001-collaborative-er-whiteboard/contracts/websocket-events.md` | 1 | XS | `grep -n "column:reorder" specs/001-collaborative-er-whiteboard/contracts/websocket-events.md` returns at least 3 matches (`column:reorder`, `column:reordered`, `column:reorder:ack`) |
+| #   | Task                                         | File                                                                  | Wave | Effort | Verify                                                                                                                                                                                 |
+| --- | -------------------------------------------- | --------------------------------------------------------------------- | ---- | ------ | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| 1.1 | Install @dnd-kit packages                    | `package.json`                                                        | 1    | XS     | `bun pm ls \| grep @dnd-kit \| wc -l` should output `3`                                                                                                                                |
+| 1.2 | Add `reorderColumnsSchema` to schema.ts      | `src/data/schema.ts`                                                  | 1    | XS     | `bun run tsc --noEmit` passes; `grep -n "reorderColumnsSchema" src/data/schema.ts` returns a match                                                                                     |
+| 1.3 | Add `reorderColumns()` function to column.ts | `src/data/column.ts`                                                  | 1    | S      | `bun run tsc --noEmit` passes; `grep -n "reorderColumns" src/data/column.ts` returns a match                                                                                           |
+| 1.4 | Document new WebSocket events                | `specs/001-collaborative-er-whiteboard/contracts/websocket-events.md` | 1    | XS     | `grep -n "column:reorder" specs/001-collaborative-er-whiteboard/contracts/websocket-events.md` returns at least 3 matches (`column:reorder`, `column:reordered`, `column:reorder:ack`) |
 
 **Technical Notes**:
 
@@ -115,9 +115,9 @@ Phase 4 (UI + Integration)
 
 ### Tasks
 
-| # | Task | File | Wave | Effort | Verify |
-|---|------|------|------|--------|--------|
-| 2.1 | Add `column:reorder` socket handler | `src/routes/api/collaboration.ts` | 1 | M | `grep -n "column:reorder" src/routes/api/collaboration.ts` returns matches for both `socket.on` and `socket.emit`; `bun run tsc --noEmit` passes |
+| #   | Task                                | File                              | Wave | Effort | Verify                                                                                                                                           |
+| --- | ----------------------------------- | --------------------------------- | ---- | ------ | ------------------------------------------------------------------------------------------------------------------------------------------------ |
+| 2.1 | Add `column:reorder` socket handler | `src/routes/api/collaboration.ts` | 1    | M      | `grep -n "column:reorder" src/routes/api/collaboration.ts` returns matches for both `socket.on` and `socket.emit`; `bun run tsc --noEmit` passes |
 
 **Technical Notes**:
 
@@ -164,11 +164,11 @@ Phase 4 (UI + Integration)
 
 ### Tasks
 
-| # | Task | File | Wave | Effort | Verify |
-|---|------|------|------|--------|--------|
-| 3.1 | Create `use-prefers-reduced-motion.ts` | `src/hooks/use-prefers-reduced-motion.ts` | 1 | XS | `bun run tsc --noEmit` passes; `grep -n "matchMedia" src/hooks/use-prefers-reduced-motion.ts` returns a match |
-| 3.2 | Create `use-column-reorder-mutations.ts` | `src/hooks/use-column-reorder-mutations.ts` | 1 | L | `bun run tsc --noEmit` passes; `grep -n "detectOverwriteConflict\|reconcileAfterDrop\|seedConfirmedOrderFromServer" src/hooks/use-column-reorder-mutations.ts \| wc -l` output >= 3 |
-| 3.3 | Create `use-column-reorder-collaboration.ts` | `src/hooks/use-column-reorder-collaboration.ts` | 2 | M | `bun run tsc --noEmit` passes; `grep -n "column:reorder:ack\|column:reordered" src/hooks/use-column-reorder-collaboration.ts \| wc -l` output >= 2 |
+| #   | Task                                         | File                                            | Wave | Effort | Verify                                                                                                                                                                              |
+| --- | -------------------------------------------- | ----------------------------------------------- | ---- | ------ | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| 3.1 | Create `use-prefers-reduced-motion.ts`       | `src/hooks/use-prefers-reduced-motion.ts`       | 1    | XS     | `bun run tsc --noEmit` passes; `grep -n "matchMedia" src/hooks/use-prefers-reduced-motion.ts` returns a match                                                                       |
+| 3.2 | Create `use-column-reorder-mutations.ts`     | `src/hooks/use-column-reorder-mutations.ts`     | 1    | L      | `bun run tsc --noEmit` passes; `grep -n "detectOverwriteConflict\|reconcileAfterDrop\|seedConfirmedOrderFromServer" src/hooks/use-column-reorder-mutations.ts \| wc -l` output >= 3 |
+| 3.3 | Create `use-column-reorder-collaboration.ts` | `src/hooks/use-column-reorder-collaboration.ts` | 2    | M      | `bun run tsc --noEmit` passes; `grep -n "column:reorder:ack\|column:reordered" src/hooks/use-column-reorder-collaboration.ts \| wc -l` output >= 2                                  |
 
 **Technical Notes for 3.2 (`use-column-reorder-mutations`)**:
 
@@ -232,20 +232,20 @@ Phase 4 (UI + Integration)
 
 ### Tasks
 
-| # | Task | File | Wave | Effort | Verify |
-|---|------|------|------|--------|--------|
-| 4.1 | Create `DragHandle.tsx` | `src/components/whiteboard/column/DragHandle.tsx` | 1 | S | `bun run tsc --noEmit` passes; `grep -n "nodrag nowheel\|setActivatorNodeRef\|GripVertical" src/components/whiteboard/column/DragHandle.tsx \| wc -l` output >= 3 |
-| 4.2 | Create `InsertionLine.tsx` | `src/components/whiteboard/column/InsertionLine.tsx` | 1 | S | `bun run tsc --noEmit` passes; `grep -n "InsertionLine" src/components/whiteboard/column/InsertionLine.tsx` returns a match |
-| 4.3 | Modify `ColumnRow.tsx` to integrate useSortable + DragHandle | `src/components/whiteboard/column/ColumnRow.tsx` | 2 | M | `grep -n "useSortable\|DragHandle\|nodrag nowheel" src/components/whiteboard/column/ColumnRow.tsx \| wc -l` output >= 3; `bun run tsc --noEmit` passes |
-| 4.4 | Modify `TableNode.new.tsx` to add DndContext + SortableContext | `src/components/whiteboard/TableNode.new.tsx` | 2 | L | `grep -n "DndContext\|SortableContext\|DragOverlay\|InsertionLine\|handleDragEnd\|handleDragCancel" src/components/whiteboard/TableNode.new.tsx \| wc -l` output >= 6; `bun run tsc --noEmit` passes |
-| 4.5 | Modify `ReactFlowWhiteboard.tsx` to wire hooks + updateNodeInternals | `src/components/whiteboard/ReactFlowWhiteboard.tsx` | 3 | M | `grep -n "useColumnReorderMutations\|useColumnReorderCollaboration\|useLayoutEffect\|updateNodeInternals\|seedConfirmedOrderFromServer" src/components/whiteboard/ReactFlowWhiteboard.tsx \| wc -l` output >= 5; `bun run tsc --noEmit` passes |
-| 4.6 | Write test suite S1 (`reorderColumnsSchema`) | `src/data/schema.test.ts` | 3 | S | `bun run test -- --testPathPattern=schema` passes with 6 new passing tests |
-| 4.7 | Write test suite S2 (`reorderColumns` data layer) | `src/data/column.test.ts` | 3 | S | `bun run test -- --testPathPattern=column` passes with 5 new passing tests |
-| 4.8 | Write test suites S3 + S4 + S9 (mutations hook) | `src/hooks/use-column-reorder-mutations.test.ts` | 3 | L | `bun run test -- --testPathPattern=use-column-reorder-mutations` passes with 25 new passing tests (9+10+6) |
-| 4.9 | Write test suite S5 (socket handler) | `src/routes/api/collaboration.test.ts` | 3 | M | `bun run test -- --testPathPattern=collaboration` passes with 12 new tests, no existing test regressions |
-| 4.10 | Write test suite S6 (drag behavior — TableNode) | `src/components/whiteboard/TableNode.test.tsx` | 3 | M | `bun run test -- --testPathPattern=TableNode` passes with 10 new passing tests |
-| 4.11 | Write test suites S7 + S8 (collaboration hook + edge re-anchor) | `src/hooks/use-column-reorder-collaboration.test.ts` and `src/components/whiteboard/ReactFlowWhiteboard.test.tsx` | 3 | M | `bun run test -- --testPathPattern=use-column-reorder-collaboration\|ReactFlowWhiteboard` passes with 10 new tests (6+4) |
-| 4.12 | Write test fixtures | `src/test/fixtures.ts` | 3 | XS | `grep -n "mockOrderedColumns\|mockTableNodeWithEdge" src/test/fixtures.ts \| wc -l` output >= 2 |
+| #    | Task                                                                 | File                                                                                                              | Wave | Effort | Verify                                                                                                                                                                                                                                         |
+| ---- | -------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------- | ---- | ------ | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| 4.1  | Create `DragHandle.tsx`                                              | `src/components/whiteboard/column/DragHandle.tsx`                                                                 | 1    | S      | `bun run tsc --noEmit` passes; `grep -n "nodrag nowheel\|setActivatorNodeRef\|GripVertical" src/components/whiteboard/column/DragHandle.tsx \| wc -l` output >= 3                                                                              |
+| 4.2  | Create `InsertionLine.tsx`                                           | `src/components/whiteboard/column/InsertionLine.tsx`                                                              | 1    | S      | `bun run tsc --noEmit` passes; `grep -n "InsertionLine" src/components/whiteboard/column/InsertionLine.tsx` returns a match                                                                                                                    |
+| 4.3  | Modify `ColumnRow.tsx` to integrate useSortable + DragHandle         | `src/components/whiteboard/column/ColumnRow.tsx`                                                                  | 2    | M      | `grep -n "useSortable\|DragHandle\|nodrag nowheel" src/components/whiteboard/column/ColumnRow.tsx \| wc -l` output >= 3; `bun run tsc --noEmit` passes                                                                                         |
+| 4.4  | Modify `TableNode.new.tsx` to add DndContext + SortableContext       | `src/components/whiteboard/TableNode.new.tsx`                                                                     | 2    | L      | `grep -n "DndContext\|SortableContext\|DragOverlay\|InsertionLine\|handleDragEnd\|handleDragCancel" src/components/whiteboard/TableNode.new.tsx \| wc -l` output >= 6; `bun run tsc --noEmit` passes                                           |
+| 4.5  | Modify `ReactFlowWhiteboard.tsx` to wire hooks + updateNodeInternals | `src/components/whiteboard/ReactFlowWhiteboard.tsx`                                                               | 3    | M      | `grep -n "useColumnReorderMutations\|useColumnReorderCollaboration\|useLayoutEffect\|updateNodeInternals\|seedConfirmedOrderFromServer" src/components/whiteboard/ReactFlowWhiteboard.tsx \| wc -l` output >= 5; `bun run tsc --noEmit` passes |
+| 4.6  | Write test suite S1 (`reorderColumnsSchema`)                         | `src/data/schema.test.ts`                                                                                         | 3    | S      | `bun run test -- --testPathPattern=schema` passes with 6 new passing tests                                                                                                                                                                     |
+| 4.7  | Write test suite S2 (`reorderColumns` data layer)                    | `src/data/column.test.ts`                                                                                         | 3    | S      | `bun run test -- --testPathPattern=column` passes with 5 new passing tests                                                                                                                                                                     |
+| 4.8  | Write test suites S3 + S4 + S9 (mutations hook)                      | `src/hooks/use-column-reorder-mutations.test.ts`                                                                  | 3    | L      | `bun run test -- --testPathPattern=use-column-reorder-mutations` passes with 25 new passing tests (9+10+6)                                                                                                                                     |
+| 4.9  | Write test suite S5 (socket handler)                                 | `src/routes/api/collaboration.test.ts`                                                                            | 3    | M      | `bun run test -- --testPathPattern=collaboration` passes with 12 new tests, no existing test regressions                                                                                                                                       |
+| 4.10 | Write test suite S6 (drag behavior — TableNode)                      | `src/components/whiteboard/TableNode.test.tsx`                                                                    | 3    | M      | `bun run test -- --testPathPattern=TableNode` passes with 10 new passing tests                                                                                                                                                                 |
+| 4.11 | Write test suites S7 + S8 (collaboration hook + edge re-anchor)      | `src/hooks/use-column-reorder-collaboration.test.ts` and `src/components/whiteboard/ReactFlowWhiteboard.test.tsx` | 3    | M      | `bun run test -- --testPathPattern=use-column-reorder-collaboration\|ReactFlowWhiteboard` passes with 10 new tests (6+4)                                                                                                                       |
+| 4.12 | Write test fixtures                                                  | `src/test/fixtures.ts`                                                                                            | 3    | XS     | `grep -n "mockOrderedColumns\|mockTableNodeWithEdge" src/test/fixtures.ts \| wc -l` output >= 2                                                                                                                                                |
 
 **Technical Notes for 4.1 (DragHandle)**:
 
@@ -317,17 +317,18 @@ Phase 4 (UI + Integration)
 
 All toasts use the existing `sonner` toast library (no new toast UI). Exact text strings are load-bearing — see test-plan Section 8. None may include the word "refresh" (REQ-15 AC-15a).
 
-| Trigger | Text |
-|---------|------|
-| VALIDATION_FAILED / FORBIDDEN | "Unable to reorder columns. Please try again." |
-| UPDATE_FAILED | "Unable to save column order. Please try again." |
+| Trigger                         | Text                                                                                                               |
+| ------------------------------- | ------------------------------------------------------------------------------------------------------------------ |
+| VALIDATION_FAILED / FORBIDDEN   | "Unable to reorder columns. Please try again."                                                                     |
+| UPDATE_FAILED                   | "Unable to save column order. Please try again."                                                                   |
 | Overwrite notification (REQ-14) | "Another collaborator reordered columns while you were dragging. Your order was applied — theirs was overwritten." |
-| Reconnect reconcile (AC-08e) | "Your last column reorder may not have saved. Please verify the order and try again if needed." |
-| Queue full (AC-08d) | "Slow down — previous reorders still saving" |
+| Reconnect reconcile (AC-08e)    | "Your last column reorder may not have saved. Please verify the order and try again if needed."                    |
+| Queue full (AC-08d)             | "Slow down — previous reorders still saving"                                                                       |
 
 ### Reduced-Motion
 
 `use-prefers-reduced-motion.ts` is the single source of truth. Consumed by:
+
 - `TableNode.new.tsx` — controls `DragOverlay` `dropAnimation` and sensor easing
 - `InsertionLine.tsx` — controls CSS transition on position change
 - Auto-scroll velocity: 300 px/s when reduced-motion, 600 px/s otherwise (per REQ-09 AC-09a/AC-09d)
@@ -339,6 +340,7 @@ The socket handler's IDOR check mirrors the existing `column:update` pattern at 
 ### Performance Marks
 
 Per PRD Section 3 measurement methodology — these must be placed exactly:
+
 - `performance.mark('column-reorder:drop')` — first line of `handleDragEnd`, before any computation
 - `performance.mark('column-reorder:local-paint')` — inside `requestAnimationFrame` callback after DOM read confirms new order
 - `performance.mark('column-reorder:remote-paint')` — on remote client, in rAF after `column:reordered` handler confirms new DOM order
@@ -347,14 +349,14 @@ Per PRD Section 3 measurement methodology — these must be placed exactly:
 
 ## Risk Register
 
-| Risk | Phase | Likelihood | Impact | Mitigation |
-|------|-------|-----------|--------|------------|
-| `useLayoutEffect` fires before React Flow internal layout is ready, causing `updateNodeInternals` to be a no-op | 4 | Low | High | Spike S2 confirmed `useLayoutEffect` is correct timing. If edges still lag, add a fallback 0ms `setTimeout` inside the `useLayoutEffect` body. |
-| `@dnd-kit` `PointerSensor` conflicts with React Flow on non-standard input (trackpad momentum, stylus) | 4 | Low | Medium | Spike S1 confirmed the `nodrag nowheel` pattern suppresses React Flow. If edge cases emerge, increase `distance` activation constraint from 4 to 8. |
-| `detectOverwriteConflict` false positives (fires toast when no real conflict) | 3 | Medium | Low | Suite S3 covers 9 boundary cases. If false positives appear in testing, adjust the column-level intersection check (not the positional array equality). |
-| FM-07 merge produces non-deterministic order when multiple columns have the same existing `order` value | 2 | Low | Medium | Sort by `(order, id)` as a tiebreaker if `order` values are not unique (can happen if the add-column path ever assigns duplicate `order` values). |
-| `dirtyByTable` remaining set after error rollback causes a redundant reconcile toast | 3 | Medium | Low | Documented and pinned in UT-14 (test-plan §6.1). This is expected V1 behavior per current spec; if judged too noisy, clear `dirtyByTable` on error and update UT-14 consciously. |
-| Zod `.uuid()` vs `.cuid()` — project has historical `.cuid()` usage that caused bugs | 1 | Low | Medium | `reorderColumnsSchema` must use `.uuid()` for all ID fields per project convention. Ares must verify this before merging. |
+| Risk                                                                                                            | Phase | Likelihood | Impact | Mitigation                                                                                                                                                                       |
+| --------------------------------------------------------------------------------------------------------------- | ----- | ---------- | ------ | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `useLayoutEffect` fires before React Flow internal layout is ready, causing `updateNodeInternals` to be a no-op | 4     | Low        | High   | Spike S2 confirmed `useLayoutEffect` is correct timing. If edges still lag, add a fallback 0ms `setTimeout` inside the `useLayoutEffect` body.                                   |
+| `@dnd-kit` `PointerSensor` conflicts with React Flow on non-standard input (trackpad momentum, stylus)          | 4     | Low        | Medium | Spike S1 confirmed the `nodrag nowheel` pattern suppresses React Flow. If edge cases emerge, increase `distance` activation constraint from 4 to 8.                              |
+| `detectOverwriteConflict` false positives (fires toast when no real conflict)                                   | 3     | Medium     | Low    | Suite S3 covers 9 boundary cases. If false positives appear in testing, adjust the column-level intersection check (not the positional array equality).                          |
+| FM-07 merge produces non-deterministic order when multiple columns have the same existing `order` value         | 2     | Low        | Medium | Sort by `(order, id)` as a tiebreaker if `order` values are not unique (can happen if the add-column path ever assigns duplicate `order` values).                                |
+| `dirtyByTable` remaining set after error rollback causes a redundant reconcile toast                            | 3     | Medium     | Low    | Documented and pinned in UT-14 (test-plan §6.1). This is expected V1 behavior per current spec; if judged too noisy, clear `dirtyByTable` on error and update UT-14 consciously. |
+| Zod `.uuid()` vs `.cuid()` — project has historical `.cuid()` usage that caused bugs                            | 1     | Low        | Medium | `reorderColumnsSchema` must use `.uuid()` for all ID fields per project convention. Ares must verify this before merging.                                                        |
 
 ---
 
@@ -369,12 +371,12 @@ Per PRD Section 3 measurement methodology — these must be placed exactly:
 
 ## Effort Summary
 
-| Phase | Tasks | Effort |
-|-------|-------|--------|
-| Phase 1: Foundation | 4 | 3 × XS + 1 × S = ~3h |
-| Phase 2: Server Layer | 1 | 1 × M = ~2h |
-| Phase 3: Client Hooks | 3 | 1 × XS + 1 × L + 1 × M = ~5h |
-| Phase 4: UI + Integration | 14 | 2 × S + 2 × M + 2 × L + 5 × M + 1 × XS = ~14h |
-| **Total** | **22** | **~24h** |
+| Phase                     | Tasks  | Effort                                        |
+| ------------------------- | ------ | --------------------------------------------- |
+| Phase 1: Foundation       | 4      | 3 × XS + 1 × S = ~3h                          |
+| Phase 2: Server Layer     | 1      | 1 × M = ~2h                                   |
+| Phase 3: Client Hooks     | 3      | 1 × XS + 1 × L + 1 × M = ~5h                  |
+| Phase 4: UI + Integration | 14     | 2 × S + 2 × M + 2 × L + 5 × M + 1 × XS = ~14h |
+| **Total**                 | **22** | **~24h**                                      |
 
 Effort key: XS = ~30min, S = ~1h, M = ~2h, L = ~4h

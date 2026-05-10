@@ -49,8 +49,8 @@ function HomePage() {
     queryFn: () => getProjectsWithTree(),
   })
 
-  // Fetch recent whiteboards
-  const { data: recentWhiteboards, isLoading: recentLoading } = useQuery({
+  // Fetch recent whiteboards (own projects only — rendered independently of projectsLoading)
+  const { data: recentWhiteboards } = useQuery({
     queryKey: ['whiteboards', 'recent'],
     queryFn: () => getRecentWhiteboards({ data: 8 }),
   })
@@ -88,9 +88,11 @@ function HomePage() {
     }
   }
 
-  const isLoading = projectsLoading || recentLoading
-
-  if (isLoading) {
+  // Only block on projectsLoading — the recent whiteboards section renders
+  // independently. Blocking on recentLoading as well would hide the project
+  // grid (and its navigation Links) while the secondary query settles, causing
+  // clicks on project cards to silently fail during that window.
+  if (projectsLoading) {
     return (
       <div className="flex items-center justify-center min-h-screen bg-background">
         <p className="text-lg text-muted-foreground">Loading projects...</p>

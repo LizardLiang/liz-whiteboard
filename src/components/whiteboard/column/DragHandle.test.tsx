@@ -4,8 +4,8 @@
 // Tests: tooltip "Drag to reorder" appears after 400ms hover on drag handle;
 //        aria-describedby links handle to tooltip.
 
-import { beforeEach, afterEach, describe, expect, it, vi } from 'vitest'
-import { render, screen, fireEvent, act, waitFor } from '@testing-library/react'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
+import { act, fireEvent, render, screen, waitFor } from '@testing-library/react'
 import { DragHandle } from './DragHandle'
 
 // ============================================================================

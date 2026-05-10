@@ -11,11 +11,11 @@
 ## Summary
 
 | Severity | Count |
-|----------|-------|
-| Critical | 0 |
-| High | 0 |
-| Medium | 1 |
-| Low | 3 |
+| -------- | ----- |
+| Critical | 0     |
+| High     | 0     |
+| Medium   | 1     |
+| Low      | 3     |
 
 Verdict is **Clear**: 0 CRITICAL, 0 HIGH findings. 1 MEDIUM finding (residual, reduced from original MEDIUM-02). 3 LOW findings (carried from Round 1, 2 unchanged, 1 with a documentation gap noted).
 
@@ -148,14 +148,14 @@ The comment at `use-column-reorder-mutations.ts:274-281` explicitly acknowledges
 
 ## Spec Risk Cross-Check
 
-| Tech Spec Risk | Round 1 Status | Round 2 Status |
-|----------------|---------------|----------------|
-| R#1 useEffect→useLayoutEffect | Retired (confirmed) | No change |
-| R#2 @dnd-kit autoScroll canvas coupling | HIGH-01 | RESOLVED — autoScroll={false} |
-| R#3 Tooltip+drag mount lifecycle | Mitigated | No change |
-| R#4 queue-full cancel path (SA-L3) | HIGH-02 | RESOLVED — preDragOrder.length === 0 guard |
-| R#5 30-column performance threshold | Acceptable | No change |
-| R#6 ack ordering at queue depth ≥2 | Mitigated | No change |
+| Tech Spec Risk                          | Round 1 Status      | Round 2 Status                             |
+| --------------------------------------- | ------------------- | ------------------------------------------ |
+| R#1 useEffect→useLayoutEffect           | Retired (confirmed) | No change                                  |
+| R#2 @dnd-kit autoScroll canvas coupling | HIGH-01             | RESOLVED — autoScroll={false}              |
+| R#3 Tooltip+drag mount lifecycle        | Mitigated           | No change                                  |
+| R#4 queue-full cancel path (SA-L3)      | HIGH-02             | RESOLVED — preDragOrder.length === 0 guard |
+| R#5 30-column performance threshold     | Acceptable          | No change                                  |
+| R#6 ack ordering at queue depth ≥2      | Mitigated           | No change                                  |
 
 ---
 

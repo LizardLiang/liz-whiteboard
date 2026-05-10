@@ -429,7 +429,7 @@ vi.mock('@/lib/auth/log-sample', () => ({
 import { getWhiteboardProjectId } from '@/data/resolve-project'
 // eslint-disable-next-line import/first, import/order
 import type { WSAuthErrorPayload } from '@/lib/auth/require-role'
-// eslint-disable-next-line import/first, import/order
+// eslint-disable-next-line import/first
 import { getDenialCount, requireRole } from '@/lib/auth/require-role'
 
 function buildAuthSocket(userId = USER_UUID) {
@@ -452,10 +452,13 @@ describe('SEC-WS-04: requireRole emits canonical FORBIDDEN when denied', () => {
     const socket = buildAuthSocket()
     const denied = await requireRole(socket, 'wb-1', 'column:create', 'EDITOR')
     expect(denied).toBe(true)
-    expect(socket.emit).toHaveBeenCalledWith('error', expect.objectContaining({
-      code: 'FORBIDDEN',
-      event: 'column:create',
-    }))
+    expect(socket.emit).toHaveBeenCalledWith(
+      'error',
+      expect.objectContaining({
+        code: 'FORBIDDEN',
+        event: 'column:create',
+      }),
+    )
   })
 
   // TC-WS-02: Authorized EDITOR emitting column:create succeeds
@@ -473,9 +476,12 @@ describe('SEC-WS-04: requireRole emits canonical FORBIDDEN when denied', () => {
     const socket = buildAuthSocket()
     const denied = await requireRole(socket, 'wb-1', 'column:create', 'EDITOR')
     expect(denied).toBe(true)
-    expect(socket.emit).toHaveBeenCalledWith('error', expect.objectContaining({
-      code: 'FORBIDDEN',
-    }))
+    expect(socket.emit).toHaveBeenCalledWith(
+      'error',
+      expect.objectContaining({
+        code: 'FORBIDDEN',
+      }),
+    )
   })
 
   // TC-WS-04: Denial counter increments
@@ -505,12 +511,20 @@ describe('SEC-WS-04: requireRole emits canonical FORBIDDEN when denied', () => {
   it('TC-WS-06: whiteboard not found → FORBIDDEN (same shape, indistinguishable)', async () => {
     vi.mocked(getWhiteboardProjectId).mockResolvedValue(null)
     const socket = buildAuthSocket()
-    const denied = await requireRole(socket, 'wb-missing', 'column:create', 'EDITOR')
+    const denied = await requireRole(
+      socket,
+      'wb-missing',
+      'column:create',
+      'EDITOR',
+    )
     expect(denied).toBe(true)
-    expect(socket.emit).toHaveBeenCalledWith('error', expect.objectContaining({
-      code: 'FORBIDDEN',
-      event: 'column:create',
-    }))
+    expect(socket.emit).toHaveBeenCalledWith(
+      'error',
+      expect.objectContaining({
+        code: 'FORBIDDEN',
+        event: 'column:create',
+      }),
+    )
     // findEffectiveRole must NOT be called when projectId is null (anti-enumeration)
     expect(vi.mocked(findEffectiveRole)).not.toHaveBeenCalled()
   })

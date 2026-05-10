@@ -2,7 +2,7 @@
 // Unit tests for Toolbar — CARDINALITIES array + Auto Layout button (TC-AL-T-01 through T-07)
 
 import { describe, expect, it, vi } from 'vitest'
-import { render, screen, fireEvent } from '@testing-library/react'
+import { fireEvent, render, screen } from '@testing-library/react'
 import { CARDINALITIES, Toolbar } from './Toolbar'
 
 // ---------------------------------------------------------------------------
@@ -23,7 +23,9 @@ function makeTable(id: string) {
   }
 }
 
-function renderToolbar(props: Partial<React.ComponentProps<typeof Toolbar>> = {}) {
+function renderToolbar(
+  props: Partial<React.ComponentProps<typeof Toolbar>> = {},
+) {
   const defaults = {
     whiteboardId: 'wb-1',
     tables: [makeTable('1'), makeTable('2')],
@@ -63,9 +65,7 @@ describe('Toolbar Auto Layout button', () => {
   it('TC-AL-T-04: shows loading state and is disabled when isAutoLayoutRunning is true', () => {
     renderToolbar({ tableCount: 5, isAutoLayoutRunning: true })
     const btns = screen.getAllByRole('button')
-    const autoLayoutBtn = btns.find((b) =>
-      /running/i.test(b.textContent ?? ''),
-    )
+    const autoLayoutBtn = btns.find((b) => /running/i.test(b.textContent ?? ''))
     expect(autoLayoutBtn).toBeDefined()
     expect(autoLayoutBtn!.hasAttribute('disabled')).toBe(true)
   })
@@ -73,7 +73,11 @@ describe('Toolbar Auto Layout button', () => {
   // TC-AL-T-05 — Button click calls onAutoLayoutClick when enabled
   it('TC-AL-T-05: clicking button calls onAutoLayoutClick when enabled', () => {
     const spy = vi.fn()
-    renderToolbar({ tableCount: 3, isAutoLayoutRunning: false, onAutoLayoutClick: spy })
+    renderToolbar({
+      tableCount: 3,
+      isAutoLayoutRunning: false,
+      onAutoLayoutClick: spy,
+    })
     const btn = screen.getByRole('button', { name: /auto layout/i })
     fireEvent.click(btn)
     expect(spy).toHaveBeenCalledTimes(1)

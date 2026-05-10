@@ -87,8 +87,10 @@ export function calculateBestSides(
   sourceNode: Node,
   targetNode: Node,
 ): { sourceSide: HandleSide; targetSide: HandleSide } {
-  const srcW = sourceNode.measured?.width ?? sourceNode.width ?? DEFAULT_NODE_WIDTH
-  const tgtW = targetNode.measured?.width ?? targetNode.width ?? DEFAULT_NODE_WIDTH
+  const srcW =
+    sourceNode.measured?.width ?? sourceNode.width ?? DEFAULT_NODE_WIDTH
+  const tgtW =
+    targetNode.measured?.width ?? targetNode.width ?? DEFAULT_NODE_WIDTH
 
   const srcLeft = sourceNode.position.x
   const srcRight = srcLeft + srcW

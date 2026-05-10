@@ -9,7 +9,10 @@ import { dirname, resolve } from 'node:path'
 // The rule uses CommonJS exports (ESLint 9 flat-config compatible).
 const require = createRequire(import.meta.url)
 const requireServerFnAuthzRule = require(
-  resolve(dirname(fileURLToPath(import.meta.url)), 'tools/eslint-rules/require-server-fn-authz.cjs')
+  resolve(
+    dirname(fileURLToPath(import.meta.url)),
+    'tools/eslint-rules/require-server-fn-authz.cjs',
+  ),
 )
 
 // Inline plugin definition (AD-2: no separate npm package, no build step)

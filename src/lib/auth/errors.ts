@@ -2,6 +2,19 @@
 // Auth error response types and type guards.
 // Import these directly rather than via middleware to avoid server-only deps in client code.
 
+/**
+ * Shared auth error codes — used by server (auth.ts) and client (register.tsx, login.tsx).
+ * Keep this file free of server-only imports so it can be imported anywhere.
+ */
+export const AUTH_ERROR_CODES = {
+  VALIDATION_ERROR: 'VALIDATION_ERROR',
+  AUTH_FAILED: 'AUTH_FAILED',
+  LOCKED: 'LOCKED',
+} as const
+
+export type AuthErrorCode =
+  (typeof AUTH_ERROR_CODES)[keyof typeof AUTH_ERROR_CODES]
+
 export type AuthErrorResponse = {
   error: 'UNAUTHORIZED'
   status: 401

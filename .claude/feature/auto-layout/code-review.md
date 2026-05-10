@@ -11,15 +11,15 @@
 
 ## Summary
 
-| Metric | Value |
-|--------|-------|
-| Files reviewed | 12 (5 new + 7 modified) |
-| Tests run | Per implementation notes — 48 new, all passing |
-| Tier checklist | All 8 tiers reviewed and marked complete |
-| BLOCKERs | 3 |
-| WARNINGs | 4 |
-| SUGGESTIONs | 5 |
-| Auto-fixes applied | 0 (no purely mechanical fixes) |
+| Metric             | Value                                          |
+| ------------------ | ---------------------------------------------- |
+| Files reviewed     | 12 (5 new + 7 modified)                        |
+| Tests run          | Per implementation notes — 48 new, all passing |
+| Tier checklist     | All 8 tiers reviewed and marked complete       |
+| BLOCKERs           | 3                                              |
+| WARNINGs           | 4                                              |
+| SUGGESTIONs        | 5                                              |
+| Auto-fixes applied | 0 (no purely mechanical fixes)                 |
 
 The implementation is structurally sound: Apollo's five spec-review findings are all visibly addressed; the orchestrator's auth-error / unmount guards are correct; the post-pass enforces the L∞ contract; and the legacy bridge is cleanly deleted from `$whiteboardId.tsx`. However, three BLOCKERs gate approval — one is a security gap on the new socket handler, one is a missed concurrency on the server function, and one is a cross-file copy-paste that should be unified before a third copy is introduced.
 
@@ -27,16 +27,16 @@ The implementation is structurally sound: Apollo's five spec-review findings are
 
 ## Tier Checklist
 
-| Tier | Status |
-|------|--------|
-| T1 Correct | Complete — 1 SUGGESTION |
-| T2 Safe | Complete — 1 BLOCKER |
-| T3 Clear | Complete — 3 SUGGESTIONs |
-| T4 Minimal | Complete — 1 WARNING + 1 SUGGESTION |
-| T5 Consistent | Complete — clean |
-| T6 Resilient | Complete — 2 WARNINGs |
-| T7 Performant | Complete — 1 WARNING |
-| T8 Maintainable | Complete — 2 BLOCKERs + 1 WARNING |
+| Tier            | Status                              |
+| --------------- | ----------------------------------- |
+| T1 Correct      | Complete — 1 SUGGESTION             |
+| T2 Safe         | Complete — 1 BLOCKER                |
+| T3 Clear        | Complete — 3 SUGGESTIONs            |
+| T4 Minimal      | Complete — 1 WARNING + 1 SUGGESTION |
+| T5 Consistent   | Complete — clean                    |
+| T6 Resilient    | Complete — 2 WARNINGs               |
+| T7 Performant   | Complete — 1 WARNING                |
+| T8 Maintainable | Complete — 2 BLOCKERs + 1 WARNING   |
 
 `.claude/tmp/hermes-checklist.json` — all 8 tiers true.
 
@@ -69,11 +69,16 @@ The server-side `updateTablePositionsBulk` server function does validate (via `b
 // src/data/schema.ts
 export const tableMoveBulkBroadcastSchema = z.object({
   userId: z.string().uuid(),
-  positions: z.array(z.object({
-    tableId: z.string().uuid(),
-    positionX: z.number().finite(),
-    positionY: z.number().finite(),
-  })).min(1).max(500),
+  positions: z
+    .array(
+      z.object({
+        tableId: z.string().uuid(),
+        positionX: z.number().finite(),
+        positionY: z.number().finite(),
+      }),
+    )
+    .min(1)
+    .max(500),
 })
 ```
 
@@ -96,10 +101,11 @@ broadcastToWhiteboard(whiteboardId, socket.id, 'table:move:bulk', parsed.data)
 **Why**: Two independent queries run sequentially:
 
 ```ts
-const projectId = await getWhiteboardProjectId(whiteboardId)  // round-trip 1
+const projectId = await getWhiteboardProjectId(whiteboardId) // round-trip 1
 if (!projectId) throw new Error('Whiteboard not found')
 // ...
-const owned = await prisma.diagramTable.findMany({           // round-trip 2
+const owned = await prisma.diagramTable.findMany({
+  // round-trip 2
   where: { whiteboardId },
   select: { id: true },
 })
@@ -131,6 +137,7 @@ In the rare "whiteboard not found" case, the `findMany` returns `[]` (a wasted q
 ### B3 — Copy-paste pattern: `setNodes(prev => prev.map(n => positions.find(p => p.id === n.id) ? ... : n))`
 
 **Files**:
+
 - `src/hooks/use-auto-layout-orchestrator.ts:191-196`
 - `src/components/whiteboard/ReactFlowWhiteboard.tsx:447-452`
 
@@ -223,7 +230,7 @@ if (anyViolation) {
 
 This is a single line that buys observability — when a user reports "tables overlapped after Auto Layout," you have a console signal pointing at the exact failure mode.
 
-**Optional (better)**: Replace the fixed sweep cap with a "sweep until no violation OR 2*n iterations" heuristic. For a tightly-packed n=100, 200 sweeps is still milliseconds. But the dev-warning is the must-have.
+**Optional (better)**: Replace the fixed sweep cap with a "sweep until no violation OR 2\*n iterations" heuristic. For a tightly-packed n=100, 200 sweeps is still milliseconds. But the dev-warning is the must-have.
 
 ---
 
@@ -344,7 +351,7 @@ This is tracked debt, not a bug.
 
 A short list of patterns this PR did right that future Hermes runs should expect to see:
 
-1. **Apollo's five findings are visibly handled.** `isUnauthorizedError(result)` runs on every awaited persist result. `isMountedRef` guards every state setter and the Retry handler entry point. The orchestrator emits `table:move:bulk` *after* server-function success — server-function does not import from `routes/api/collaboration`. The new socket handler includes the standard `isSessionExpired` + `denyIfInsufficientPermission` + `safeUpdateSessionActivity` prelude. Field name `userId` is consistent end-to-end on the new event.
+1. **Apollo's five findings are visibly handled.** `isUnauthorizedError(result)` runs on every awaited persist result. `isMountedRef` guards every state setter and the Retry handler entry point. The orchestrator emits `table:move:bulk` _after_ server-function success — server-function does not import from `routes/api/collaboration`. The new socket handler includes the standard `isSessionExpired` + `denyIfInsufficientPermission` + `safeUpdateSessionActivity` prelude. Field name `userId` is consistent end-to-end on the new event.
 
 2. **The L∞ post-pass is deterministic.** Tie-breaker by lexicographic ID, axis selected by smaller-gap component, slack added to handle floating-point boundary. Tests TC-AL-E-03/05/06/07/09 exercise the contract on isolated, circular, and fully-connected fixtures.
 
@@ -406,15 +413,15 @@ Re-spawn Hermes after these are addressed.
 
 ## Status
 
-| Field | Value |
-|-------|-------|
-| Document | `code-review.md` |
-| Verdict | Changes Required |
-| BLOCKERs | 3 (B1 Tier 2, B2 Tier 8, B3 Tier 8) |
-| WARNINGs | 4 (W1 Tier 6, W2 Tier 6, W3 Tier 4, W4 Tier 8) |
-| SUGGESTIONs | 5 |
-| Auto-fixes | 0 |
-| Tier checklist | All 8 marked complete |
+| Field          | Value                                          |
+| -------------- | ---------------------------------------------- |
+| Document       | `code-review.md`                               |
+| Verdict        | Changes Required                               |
+| BLOCKERs       | 3 (B1 Tier 2, B2 Tier 8, B3 Tier 8)            |
+| WARNINGs       | 4 (W1 Tier 6, W2 Tier 6, W3 Tier 4, W4 Tier 8) |
+| SUGGESTIONs    | 5                                              |
+| Auto-fixes     | 0                                              |
+| Tier checklist | All 8 marked complete                          |
 
 ---
 
@@ -426,27 +433,27 @@ Re-spawn Hermes after these are addressed.
 
 ## Summary
 
-| Metric | Round 1 | Round 2 |
-|--------|---------|---------|
-| BLOCKERs | 3 | **0** |
-| WARNINGs | 4 | 4 (carried over, none new, none gating) |
-| SUGGESTIONs | 5 | 5 (carried over) |
-| New tests | 48 | +14 (8 for B1 schema, 6 for B3 helper) |
-| Tier checklist | All 8 complete | All 8 complete |
+| Metric         | Round 1        | Round 2                                 |
+| -------------- | -------------- | --------------------------------------- |
+| BLOCKERs       | 3              | **0**                                   |
+| WARNINGs       | 4              | 4 (carried over, none new, none gating) |
+| SUGGESTIONs    | 5              | 5 (carried over)                        |
+| New tests      | 48             | +14 (8 for B1 schema, 6 for B3 helper)  |
+| Tier checklist | All 8 complete | All 8 complete                          |
 
 All three round-1 BLOCKERs are resolved with correct fixes that match the proposed remediation. The round-1 WARNINGs (W1-W4) and SUGGESTIONs (S1-S5) were not incidentally fixed; they remain non-gating per round-1 verdict language and are carried forward for follow-up.
 
 ## Tier Checklist (Round 2)
 
-| Tier | Round 2 Status |
-|------|----------------|
-| T1 Correct | Verified — all three fixes are functionally correct |
-| T2 Safe | Verified — B1's schema validation closes the DoS vector |
-| T3 Clear | Verified — fix sites are commented, helper has JSDoc |
-| T4 Minimal | Verified — B3 helper unifies the duplicated pattern |
-| T5 Consistent | Verified — schema follows existing Zod conventions |
-| T6 Resilient | Verified — socket handler emits structured error on validation failure |
-| T7 Performant | Verified — B2 parallel queries + B3 O(n) Map lookup |
+| Tier            | Round 2 Status                                                                  |
+| --------------- | ------------------------------------------------------------------------------- |
+| T1 Correct      | Verified — all three fixes are functionally correct                             |
+| T2 Safe         | Verified — B1's schema validation closes the DoS vector                         |
+| T3 Clear        | Verified — fix sites are commented, helper has JSDoc                            |
+| T4 Minimal      | Verified — B3 helper unifies the duplicated pattern                             |
+| T5 Consistent   | Verified — schema follows existing Zod conventions                              |
+| T6 Resilient    | Verified — socket handler emits structured error on validation failure          |
+| T7 Performant   | Verified — B2 parallel queries + B3 O(n) Map lookup                             |
 | T8 Maintainable | Verified — M3 (copy-paste) and M6 (missed concurrency) anti-patterns eliminated |
 
 `.claude/tmp/hermes-checklist.json` — all 8 tiers true.
@@ -456,6 +463,7 @@ All three round-1 BLOCKERs are resolved with correct fixes that match the propos
 ### B1 — Socket payload validation — RESOLVED
 
 **Files verified**:
+
 - `src/data/schema.ts:424-438` — `tableMoveBulkBroadcastSchema` defined with `.uuid()` userId, `.uuid()` tableId, `.finite()` coordinates, `.min(1).max(500)` cap. Type export `TableMoveBulkBroadcast` exists.
 - `src/routes/api/collaboration.ts:444-478` — handler runs auth prelude (`isSessionExpired`, `denyIfInsufficientPermission`) **before** schema validation (correct order — don't validate input from unauthorized callers). On `safeParse` failure, emits structured `error` event with `event`, `error: 'VALIDATION_ERROR'`, `message`. On success, broadcasts `parsed.data` (not raw `data`) — confirmed at line 474.
 - `src/data/schema.test.ts:349-423` — 8 unit tests cover the exact attack vectors flagged in round 1: NaN positionX, string positionY, Infinity coordinates, non-UUID tableId, non-UUID userId, empty array, > 500 entries, plus a positive-case smoke test. Test IDs (`TC-AL-C-B1-01` through `-08`) match the existing project convention.
@@ -484,6 +492,7 @@ The two independent queries now run in parallel. The "wasted query in the not-fo
 ### B3 — applyBulkPositions helper — RESOLVED
 
 **Files verified**:
+
 - `src/lib/auto-layout/index.ts:26-37` — `applyBulkPositions<N>(nodes, positions)` builds a Map from positions in a single pass, then maps over nodes — O(n) total. Generic constraint correctly requires `{ id: string; position: { x: number; y: number } }` so React Flow node types satisfy it. Returns new array; unmatched nodes are returned by reference unchanged (correct shallow optimisation).
 - `src/hooks/use-auto-layout-orchestrator.ts:23, 193` — orchestrator imports from the barrel and calls `applyBulkPositions(prev, positions)` directly (positions are already in `{id, x, y}` shape from `runD3ForceLayout`).
 - `src/components/whiteboard/ReactFlowWhiteboard.tsx:59, 448-452` — collaboration callback normalises wire-format `{tableId, positionX, positionY}` to `{id, x, y}` at the boundary, then calls `applyBulkPositions(nds, normalised)`. Boundary normalisation is the right choice here — it keeps the wire format intact for the socket layer while letting the helper stay React Flow-shaped.
@@ -495,18 +504,19 @@ The two independent queries now run in parallel. The "wasted query in the not-fo
 
 None of the four round-1 WARNINGs were incidentally fixed. None regressed.
 
-| ID | File | Status | Notes |
-|----|------|--------|-------|
-| W1 | `src/lib/auto-layout/d3-force-layout.ts:71-99` (`simulateChunked`) | UNFIXED | No try/catch wrapper; throw inside `simulation.tick()` still hangs the outer Promise. |
-| W2 | `src/lib/auto-layout/d3-force-layout.ts:139-192` (`enforceGapPostPass`) | UNFIXED | Post-pass exhaustion still exits silently after 5 sweeps. No `console.warn` was added. |
-| W3 | `src/hooks/use-d3-force-layout.ts:12-15, 46-49, 79, 84` | UNFIXED | `UseD3ForceLayoutOptions` and the unused `onLayoutComplete`/`onLayoutError` callbacks remain. |
-| W4 | `src/hooks/use-whiteboard-collaboration.ts:61-77` | UNFIXED | Hook still takes 9 positional arguments. Round 1 noted W4 was "bundled with B3" — Ares chose boundary-normalisation inside the existing useCallback rather than restructuring the hook signature. |
+| ID  | File                                                                    | Status  | Notes                                                                                                                                                                                             |
+| --- | ----------------------------------------------------------------------- | ------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| W1  | `src/lib/auto-layout/d3-force-layout.ts:71-99` (`simulateChunked`)      | UNFIXED | No try/catch wrapper; throw inside `simulation.tick()` still hangs the outer Promise.                                                                                                             |
+| W2  | `src/lib/auto-layout/d3-force-layout.ts:139-192` (`enforceGapPostPass`) | UNFIXED | Post-pass exhaustion still exits silently after 5 sweeps. No `console.warn` was added.                                                                                                            |
+| W3  | `src/hooks/use-d3-force-layout.ts:12-15, 46-49, 79, 84`                 | UNFIXED | `UseD3ForceLayoutOptions` and the unused `onLayoutComplete`/`onLayoutError` callbacks remain.                                                                                                     |
+| W4  | `src/hooks/use-whiteboard-collaboration.ts:61-77`                       | UNFIXED | Hook still takes 9 positional arguments. Round 1 noted W4 was "bundled with B3" — Ares chose boundary-normalisation inside the existing useCallback rather than restructuring the hook signature. |
 
 These are non-gating per round-1 verdict language ("Once the BLOCKERs are resolved, the WARNINGs (W1-W4) and SUGGESTIONs (S1-S5) are recommended but not gating"). They remain open as follow-up work and are not regressions.
 
 ## Refactoring Recommended (carried over)
 
 The round-1 refactoring recommendations remain valid and unchanged:
+
 - Socket payload schemas → `src/data/schema.ts` (B1 took the first step — the next handler should follow the same pattern)
 - `useWhiteboardCollaboration` options-object migration (W4) — now bounded to a one-call-site rename
 - `useD3ForceLayout` options API drop (W3) — pure dead-code removal

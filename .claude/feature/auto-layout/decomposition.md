@@ -2,14 +2,14 @@
 
 ## Document Info
 
-| Field | Value |
-|-------|-------|
-| **Feature** | Auto Layout |
-| **Author** | Daedalus (Decomposition Agent) |
-| **PRD Version** | 1.2 |
-| **Date** | 2026-05-01 |
-| **Phases** | 4 |
-| **Total Tasks** | 18 |
+| Field           | Value                          |
+| --------------- | ------------------------------ |
+| **Feature**     | Auto Layout                    |
+| **Author**      | Daedalus (Decomposition Agent) |
+| **PRD Version** | 1.2                            |
+| **Date**        | 2026-05-01                     |
+| **Phases**      | 4                              |
+| **Total Tasks** | 18                             |
 
 ---
 
@@ -42,12 +42,12 @@ Phase 3 depends on Phase 1 (calls the layout engine) and Phase 2 (calls the bulk
 
 ## Phase Summary
 
-| # | Phase | Tasks | Key Output | Blocks |
-|---|-------|-------|------------|--------|
-| 1 | Force-Directed Layout Engine | 5 | `useD3ForceLayout` hook | Phase 3, Phase 4 |
-| 2 | Bulk Persistence + Collaboration | 4 | `updateTablePositionsBulk` + `table:move:bulk` | Phase 4 |
-| 3 | Toolbar Button + Confirmation Dialog | 5 | Updated `Toolbar.tsx` + `AutoLayoutConfirmDialog` | Phase 4 |
-| 4 | Orchestration, Viewport Fit + Error Handling | 4 | Wired `ReactFlowWhiteboard.tsx` | — |
+| #   | Phase                                        | Tasks | Key Output                                        | Blocks           |
+| --- | -------------------------------------------- | ----- | ------------------------------------------------- | ---------------- |
+| 1   | Force-Directed Layout Engine                 | 5     | `useD3ForceLayout` hook                           | Phase 3, Phase 4 |
+| 2   | Bulk Persistence + Collaboration             | 4     | `updateTablePositionsBulk` + `table:move:bulk`    | Phase 4          |
+| 3   | Toolbar Button + Confirmation Dialog         | 5     | Updated `Toolbar.tsx` + `AutoLayoutConfirmDialog` | Phase 4          |
+| 4   | Orchestration, Viewport Fit + Error Handling | 4     | Wired `ReactFlowWhiteboard.tsx`                   | —                |
 
 **Critical Path:** Phase 1 → Phase 3 → Phase 4
 
@@ -99,6 +99,7 @@ Verify: `bun run test -- --testPathPattern=d3-force-layout` — unit tests for (
 **Task 1.2 — Create `src/lib/auto-layout/d3-force-layout.test.ts`**
 
 Unit tests for `computeD3ForceLayout`:
+
 - 0 tables → rejects with "No nodes to layout"
 - 1 table → resolves, returns original position
 - 2 tables, no FK → gap ≥ 16px for every pair
@@ -118,12 +119,14 @@ React hook that wraps `computeD3ForceLayout` and exposes the layout result in Re
 
 ```ts
 function useD3ForceLayout(options?: {
-  onLayoutComplete?: (positions: Array<{ id: string; x: number; y: number }>) => void
+  onLayoutComplete?: (
+    positions: Array<{ id: string; x: number; y: number }>,
+  ) => void
   onLayoutError?: (error: Error) => void
 }): {
   runLayout: (
     nodes: Array<TableNodeType>,
-    edges: Array<RelationshipEdgeType>
+    edges: Array<RelationshipEdgeType>,
   ) => Promise<Array<{ id: string; x: number; y: number }>>
   isRunning: boolean
   error: Error | null
@@ -143,6 +146,7 @@ Verify: `bun run test -- --testPathPattern=use-d3-force-layout` — tests that `
 **Task 1.4 — Create `src/hooks/use-d3-force-layout.test.ts`**
 
 Unit tests for the hook:
+
 - `isRunning` is true during `runLayout`, false before and after
 - On successful layout, returns positions array
 - On `computeD3ForceLayout` error, sets `error`, returns null, does not throw
@@ -221,13 +225,20 @@ Verify: `bun run test -- --testPathPattern=server-functions` passes; manual: POS
 Add a Socket.IO server event handler for `table:move:bulk` **emitted by the client** (this is for future use; the v1 PRD requires server-emitted broadcast only, but the server needs to handle the incoming client event that triggers the server function). In v1, Auto Layout uses the TanStack Start server function path (`updateTablePositionsBulk`) — the server function internally emits the server-side `table:move:bulk` broadcast. Add the corresponding `socket.on('table:move:bulk', ...)` handler that validates auth/session, validates input schema, performs bulk DB update via `prisma.$transaction`, and broadcasts `table:move:bulk` to other clients via `socket.broadcast.emit`. This dual path (server function + socket event handler) is consistent with how per-table `table:move` / `updateTablePosition` are structured today.
 
 Payload schema (incoming from client):
+
 ```ts
-{ positions: Array<{ tableId: string; positionX: number; positionY: number }> }
+{
+  positions: Array<{ tableId: string; positionX: number; positionY: number }>
+}
 ```
 
 Payload schema (outgoing broadcast):
+
 ```ts
-{ positions: Array<{ tableId: string; positionX: number; positionY: number }>; updatedBy: string }
+{
+  positions: Array<{ tableId: string; positionX: number; positionY: number }>
+  updatedBy: string
+}
 ```
 
 Target file: `src/routes/api/collaboration.ts` (add to `setupCollaborationEventHandlers`)
@@ -241,11 +252,15 @@ Verify: `bun run test -- --testPathPattern=collaboration` passes; Zod schema val
 ```ts
 export const bulkUpdatePositionsSchema = z.object({
   whiteboardId: z.string().uuid(),
-  positions: z.array(z.object({
-    id: z.string().uuid(),
-    positionX: z.number(),
-    positionY: z.number(),
-  })).min(1),
+  positions: z
+    .array(
+      z.object({
+        id: z.string().uuid(),
+        positionX: z.number(),
+        positionY: z.number(),
+      }),
+    )
+    .min(1),
 })
 export type BulkUpdatePositions = z.infer<typeof bulkUpdatePositionsSchema>
 ```
@@ -268,7 +283,7 @@ Verify: `bun run test -- --testPathPattern=server-functions` all passing
 ### Technical Notes
 
 - `getSocketIO()` is already exported from `src/routes/api/collaboration.ts`. Import it in `server-functions.ts` to emit the broadcast after the transaction.
-- The Socket.IO namespace for the whiteboard is `/whiteboard/${whiteboardId}` — use `io.of(\`/whiteboard/${whiteboardId}\`)` and call `.emit('table:move:bulk', payload)` to reach all connected sockets in that namespace (including the sender, since sender has already applied positions locally). Alternatively, track the sender's socket ID and use `socket.broadcast.emit` in the socket handler; in the server-function path, emit to the namespace with `io.of(ns).emit(...)`.
+- The Socket.IO namespace for the whiteboard is `/whiteboard/${whiteboardId}` — use `io.of(\`/whiteboard/${whiteboardId}\`)`and call`.emit('table:move:bulk', payload)`to reach all connected sockets in that namespace (including the sender, since sender has already applied positions locally). Alternatively, track the sender's socket ID and use`socket.broadcast.emit`in the socket handler; in the server-function path, emit to the namespace with`io.of(ns).emit(...)`.
 - The `table:move:bulk` event name must be consistent between the server broadcast and the client listener added in Phase 4.
 - No Prisma schema changes are needed; bulk update uses existing `diagramTable` model.
 
@@ -302,6 +317,7 @@ All UI changes required for the Auto Layout entry point: the "Auto Layout" butto
 **Task 3.1 — Add Auto Layout button to `src/components/whiteboard/Toolbar.tsx`**
 
 Add props to `ToolbarProps`:
+
 ```ts
 tableCount: number           // total tables in whiteboard (for disable guard)
 onAutoLayoutClick?: () => void | Promise<void>
@@ -311,6 +327,7 @@ isAutoLayoutRunning?: boolean
 Remove the existing `onAutoLayout`, `isAutoLayoutLoading`, `autoLayoutEnabled`, and `onAutoLayoutEnabledChange` props — those drove the old ELK preference toggle; they are replaced by the explicit `onAutoLayoutClick` / `isAutoLayoutRunning` props.
 
 Button behaviour:
+
 - Disabled when `tableCount < 2`; tooltip: "Add at least 2 tables to use Auto Layout"
 - Disabled when `isAutoLayoutRunning === true`; shows spinner (shadcn `Button` with `disabled` + Lucide `Loader2` spinning icon or equivalent SVG)
 - Label: "Auto Layout" with a tooltip "Automatically arrange tables based on FK relationships. Layout cannot be cancelled once started." when `tableCount > 50`; otherwise "Automatically arrange tables based on FK relationships."
@@ -327,6 +344,7 @@ Verify: `bun run test -- --testPathPattern=Toolbar` passes; visual check: button
 A standalone dialog for the > 50 table pre-run warning. Must satisfy all FR-011 accessibility requirements:
 
 Props:
+
 ```ts
 interface AutoLayoutConfirmDialogProps {
   open: boolean
@@ -337,6 +355,7 @@ interface AutoLayoutConfirmDialogProps {
 ```
 
 Requirements:
+
 - Use shadcn `Dialog` primitive but override `role` to `alertdialog` via `DialogContent` props (shadcn's `Dialog` uses `role="dialog"` by default; set `role="alertdialog"` explicitly on the content element)
 - `aria-labelledby` pointing to dialog title element ID
 - `aria-describedby` pointing to description paragraph ID
@@ -346,6 +365,7 @@ Requirements:
 - On dialog close (Cancel, Esc, or Run Layout): return focus to the toolbar Auto Layout button — pass a `triggerRef` prop or use the `onOpenChange` pattern to re-focus the trigger
 
 Dialog content:
+
 - Title: "Apply Auto Layout?"
 - Body: "This whiteboard has {tableCount} tables. Auto Layout may take several seconds and cannot be cancelled once started. Existing positions will be overwritten. Continue?"
 - Buttons: "Cancel" (outline) and "Run Layout" (default/primary)
@@ -357,6 +377,7 @@ Verify: `bun run test -- --testPathPattern=AutoLayoutConfirmDialog` passes a11y 
 **Task 3.3 — Unit tests for Toolbar Auto Layout button**
 
 Add to / update `src/components/whiteboard/Toolbar.test.tsx`:
+
 - Button is visible with label "Auto Layout"
 - Button is disabled when `tableCount < 2`
 - Button is disabled when `isAutoLayoutRunning === true` and shows loading indicator
@@ -371,6 +392,7 @@ Verify: `bun run test -- --testPathPattern=Toolbar` all passing
 **Task 3.4 — Unit tests for `AutoLayoutConfirmDialog`**
 
 Create `src/components/whiteboard/AutoLayoutConfirmDialog.test.tsx`:
+
 - Renders with `role="alertdialog"`
 - `aria-labelledby` and `aria-describedby` attributes are present and point to valid elements
 - "Run Layout" button has `autoFocus` or receives focus on open
@@ -431,16 +453,19 @@ Wire together all prior phases inside `ReactFlowWhiteboard.tsx`. This phase owns
 **Task 4.1 — Add `table:move:bulk` collaboration listener in `src/hooks/use-whiteboard-collaboration.ts`**
 
 Add a new `emitBulkPositionUpdate` function (for future direct socket use) and, more critically, register a `table:move:bulk` incoming event listener that:
+
 - Receives `{ positions: Array<{ tableId, positionX, positionY }>, updatedBy }` from the server
 - Calls a `onBulkPositionUpdate` callback prop (same pattern as existing per-table callbacks)
 - Applies all positions in one `setNodes` call inside the callback — enforcing the "one render tick" contract
 
 Extend return type of `useWhiteboardCollaboration`:
+
 ```ts
 emitBulkPositionUpdate: (positions: Array<{ tableId: string; positionX: number; positionY: number }>) => void
 ```
 
 And add a new hook option:
+
 ```ts
 onBulkPositionUpdate?: (positions: Array<{ tableId: string; positionX: number; positionY: number }>) => void
 ```
@@ -490,6 +515,7 @@ Verify: `bun run test -- --testPathPattern=ReactFlowWhiteboard` passes; manual e
 **Task 4.4 — Integration and regression tests**
 
 Add to / extend `src/components/whiteboard/ReactFlowWhiteboard.test.tsx`:
+
 - Clicking Auto Layout with 2 tables: triggers layout, calls `updateTablePositionsBulk`, calls `fitView`
 - Clicking Auto Layout with 1 table: button is disabled, no layout runs
 - Clicking Auto Layout with 51 tables: dialog appears, clicking Cancel aborts, clicking Run Layout proceeds
@@ -528,6 +554,7 @@ Verify: `bun run test -- --testPathPattern=ReactFlowWhiteboard` all passing
 ### Error Handling Strategy
 
 All error boundaries follow the same pattern established in the codebase:
+
 - `console.error(...)` for server-side errors
 - Sonner toast for client-facing errors
 - Never throw to the React error boundary for recoverable user-action errors
@@ -557,15 +584,15 @@ All error boundaries follow the same pattern established in the codebase:
 
 ## Risks and Mitigations
 
-| Risk | Phase | Mitigation |
-|------|-------|------------|
-| d3-force produces overlapping tables on dense graphs despite collision force | 1 | Deterministic post-pass in `computeD3ForceLayout` guarantees 16px L∞ gap; tested in Phase 1 unit tests |
-| 100-table layout exceeds 2s budget | 1 | 500-tick hard cap + RAF chunking; benchmark in Phase 1 tests with 100-node fixture |
-| `table:move:bulk` Socket.IO broadcast emitted from inside server function (cross-module dependency) | 2 | `getSocketIO()` is already exported from `collaboration.ts`; import path is clean |
-| shadcn `Dialog` does not set `role="alertdialog"` | 3 | Use shadcn `alert-dialog` primitives (`AlertDialog`, `AlertDialogContent`) which already carry `role="alertdialog"`; fallback: override via HTML attribute |
-| Focus management for dialog initial focus on "Run Layout" | 3 | `autoFocus` attribute on Run Layout button; test in `AutoLayoutConfirmDialog.test.tsx` |
-| `fitView` fires before React Flow has measured new node sizes | 4 | 100ms `setTimeout` delay before `fitView` — matches existing pattern in `use-auto-layout.ts` |
-| Two users clicking Auto Layout simultaneously | 4 | Last-write-wins per whiteboard at DB level; both transactions are atomic; second commit wins |
+| Risk                                                                                                | Phase | Mitigation                                                                                                                                                 |
+| --------------------------------------------------------------------------------------------------- | ----- | ---------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| d3-force produces overlapping tables on dense graphs despite collision force                        | 1     | Deterministic post-pass in `computeD3ForceLayout` guarantees 16px L∞ gap; tested in Phase 1 unit tests                                                     |
+| 100-table layout exceeds 2s budget                                                                  | 1     | 500-tick hard cap + RAF chunking; benchmark in Phase 1 tests with 100-node fixture                                                                         |
+| `table:move:bulk` Socket.IO broadcast emitted from inside server function (cross-module dependency) | 2     | `getSocketIO()` is already exported from `collaboration.ts`; import path is clean                                                                          |
+| shadcn `Dialog` does not set `role="alertdialog"`                                                   | 3     | Use shadcn `alert-dialog` primitives (`AlertDialog`, `AlertDialogContent`) which already carry `role="alertdialog"`; fallback: override via HTML attribute |
+| Focus management for dialog initial focus on "Run Layout"                                           | 3     | `autoFocus` attribute on Run Layout button; test in `AutoLayoutConfirmDialog.test.tsx`                                                                     |
+| `fitView` fires before React Flow has measured new node sizes                                       | 4     | 100ms `setTimeout` delay before `fitView` — matches existing pattern in `use-auto-layout.ts`                                                               |
+| Two users clicking Auto Layout simultaneously                                                       | 4     | Last-write-wins per whiteboard at DB level; both transactions are atomic; second commit wins                                                               |
 
 ---
 

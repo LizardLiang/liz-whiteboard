@@ -210,12 +210,12 @@ Unchanged from Round 1. The added `seedConfirmedOrderFromServer` and `onSyncReco
 
 ## Summary
 
-| Severity | Round 1 Count | Round 2 Count | Findings |
-|----------|---------------|---------------|----------|
-| Critical | 0 | 0 | — |
-| High     | 4 | **0** | All resolved (SA-H1, SA-H2, SA-H3, SA-H4) |
-| Medium   | 3 | **0** | All resolved (SA-M1, SA-M2, SA-M3) |
-| Low      | 2 | **1** | SA-L1, SA-L2 resolved; SA-L3 (new, non-blocking) |
+| Severity | Round 1 Count | Round 2 Count | Findings                                         |
+| -------- | ------------- | ------------- | ------------------------------------------------ |
+| Critical | 0             | 0             | —                                                |
+| High     | 4             | **0**         | All resolved (SA-H1, SA-H2, SA-H3, SA-H4)        |
+| Medium   | 3             | **0**         | All resolved (SA-M1, SA-M2, SA-M3)               |
+| Low      | 2             | **1**         | SA-L1, SA-L2 resolved; SA-L3 (new, non-blocking) |
 
 **Verdict**: **Sound**
 

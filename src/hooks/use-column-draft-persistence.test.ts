@@ -71,7 +71,9 @@ describe('TC-DRAFT-01: saveDraft writes to sessionStorage with correct key', () 
 
     expect(window.sessionStorage.getItem('draft:wb-abc:col-xyz')).toBeTruthy()
     // Must NOT write to a different key
-    expect(window.sessionStorage.getItem('draft:wb-abc:col-xyz-other')).toBeNull()
+    expect(
+      window.sessionStorage.getItem('draft:wb-abc:col-xyz-other'),
+    ).toBeNull()
   })
 })
 
@@ -286,7 +288,10 @@ describe('TC-MODAL-05: draft persists through session_expired → re-auth cycle'
     )
 
     act(() => {
-      initialHook.current.saveDraft({ name: 'important_column', dataType: 'uuid' })
+      initialHook.current.saveDraft({
+        name: 'important_column',
+        dataType: 'uuid',
+      })
     })
 
     // Advance debounce — draft written to sessionStorage

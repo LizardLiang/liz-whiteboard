@@ -149,7 +149,10 @@ export function useAutoLayoutOrchestrator({
       // eslint-disable-next-line @typescript-eslint/no-unnecessary-condition
       if (!isMountedRef.current) return // re-check after await
 
-      const ok = handlePersistResult(result, lastPayloadRef.current.positions.length)
+      const ok = handlePersistResult(
+        result,
+        lastPayloadRef.current.positions.length,
+      )
       if (ok) {
         // Re-emit the broadcast on successful retry.
         emitBulkPositionUpdate(
@@ -195,7 +198,9 @@ export function useAutoLayoutOrchestrator({
       const updatedNodes = applyBulkPositions(getNodes(), positions)
       setNodes(updatedNodes)
       const allMovedIds = new Set(positions.map((p) => p.id))
-      setEdges((prev) => recalculateEdgesForDraggedNodes(prev, updatedNodes, allMovedIds))
+      setEdges((prev) =>
+        recalculateEdgesForDraggedNodes(prev, updatedNodes, allMovedIds),
+      )
 
       // Step 3 — Stash payload BEFORE the await so Retry can re-submit
       const payload: BulkPayload = {

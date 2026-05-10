@@ -150,10 +150,7 @@ export const updateTablePositionsBulk = createServerFn({ method: 'POST' })
   )
   .handler(
     requireAuth(
-      async (
-        { user },
-        data,
-      ): Promise<{ success: true; count: number }> => {
+      async ({ user }, data): Promise<{ success: true; count: number }> => {
         const { whiteboardId, positions } = data
 
         // IDOR guard: verify the whiteboard exists AND every supplied

@@ -8,6 +8,7 @@ import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { registerInputSchema } from '@/data/schema'
+import { AUTH_ERROR_CODES } from '@/lib/auth/errors'
 
 export const Route = createFileRoute('/register')({
   component: RegisterPage,
@@ -64,7 +65,16 @@ function RegisterPage() {
       if (response.newUser) {
         // Genuine new user: auto-logged in, redirect to app
         router.navigate({ to: response.redirect || '/' })
-      } else {
+      } else if (response.error === AUTH_ERROR_CODES.VALIDATION_ERROR) {
+        // Server-side field validation error (e.g. username already taken)
+        if (response.fields && Object.keys(response.fields).length > 0) {
+          setErrors({ ...response.fields } as Record<string, string>)
+        } else {
+          setErrors({
+            form: 'Validation failed. Please check your input and try again.',
+          })
+        }
+      } else if (response.success === true) {
         // Duplicate email (anti-enumeration): show success message, redirect to login
         setSuccessMessage(
           response.message || 'Registration successful. Please log in.',
@@ -72,6 +82,9 @@ function RegisterPage() {
         setTimeout(() => {
           router.navigate({ to: '/login' })
         }, 2000)
+      } else {
+        // Unrecognized response — do not show false success
+        setErrors({ form: 'Something went wrong. Please try again.' })
       }
     } catch {
       setErrors({ form: 'Something went wrong. Please try again.' })

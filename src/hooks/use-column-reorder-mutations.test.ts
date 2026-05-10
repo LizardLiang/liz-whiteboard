@@ -1,8 +1,9 @@
 // src/hooks/use-column-reorder-mutations.test.ts
 // Suites S3 (detectOverwriteConflict), S4 (useColumnReorderMutations), S9 (no-op reconciliation)
 
-import { describe, expect, it, vi, beforeEach } from 'vitest'
-import { renderHook, act } from '@testing-library/react'
+import { beforeEach, describe, expect, it, vi } from 'vitest'
+import { act, renderHook } from '@testing-library/react'
+import { toast } from 'sonner'
 import {
   detectOverwriteConflict,
   useColumnReorderMutations,
@@ -16,8 +17,6 @@ vi.mock('sonner', () => ({
     info: vi.fn(),
   },
 }))
-
-import { toast } from 'sonner'
 
 // ============================================================================
 // Suite S3: detectOverwriteConflict — boundary cases (UT-18 through UT-26)
@@ -34,7 +33,9 @@ describe('detectOverwriteConflict (Suite S3)', () => {
       tableId: 'tbl-001',
       orderedColumnIds: ['col-E', 'col-A', 'col-B', 'col-C', 'col-D'],
     }
-    expect(detectOverwriteConflict(preDragOrder, localFinal, bufferedRemote)).toBe(false)
+    expect(
+      detectOverwriteConflict(preDragOrder, localFinal, bufferedRemote),
+    ).toBe(false)
   })
 
   it('UT-19: shared move, same final index — no toast', () => {
@@ -44,7 +45,9 @@ describe('detectOverwriteConflict (Suite S3)', () => {
       tableId: 'tbl-001',
       orderedColumnIds: ['col-C', 'col-A', 'col-B', 'col-D', 'col-E'],
     }
-    expect(detectOverwriteConflict(preDragOrder, localFinal, bufferedRemote)).toBe(false)
+    expect(
+      detectOverwriteConflict(preDragOrder, localFinal, bufferedRemote),
+    ).toBe(false)
   })
 
   it('UT-20: shared move, different final index — toast', () => {
@@ -56,7 +59,9 @@ describe('detectOverwriteConflict (Suite S3)', () => {
       orderedColumnIds: ['col-A', 'col-B', 'col-D', 'col-E', 'col-C'],
     }
     // localFinal has C at 0; remote has C at 4 — different → conflict
-    expect(detectOverwriteConflict(preDragOrder, localFinal, bufferedRemote)).toBe(true)
+    expect(
+      detectOverwriteConflict(preDragOrder, localFinal, bufferedRemote),
+    ).toBe(true)
   })
 
   it('UT-21: A moves multiple cols, B moves one shared', () => {
@@ -67,7 +72,9 @@ describe('detectOverwriteConflict (Suite S3)', () => {
       orderedColumnIds: ['col-C', 'col-A', 'col-B', 'col-D', 'col-E'],
     }
     // C is at idx 4 in localFinal, at idx 0 in remote — different
-    expect(detectOverwriteConflict(preDragOrder, localFinal, bufferedRemote)).toBe(true)
+    expect(
+      detectOverwriteConflict(preDragOrder, localFinal, bufferedRemote),
+    ).toBe(true)
   })
 
   it('UT-22: A moves multiple cols (fallback path), B moves one to same slot A did', () => {
@@ -82,7 +89,9 @@ describe('detectOverwriteConflict (Suite S3)', () => {
       tableId: 'tbl-001',
       orderedColumnIds: ['col-C', 'col-A', 'col-B', 'col-D', 'col-E'],
     }
-    expect(detectOverwriteConflict(preDragOrder, localFinal, bufferedRemote)).toBe(false)
+    expect(
+      detectOverwriteConflict(preDragOrder, localFinal, bufferedRemote),
+    ).toBe(false)
   })
 
   it('UT-23: bufferedRemote is null — returns false', () => {
@@ -97,16 +106,17 @@ describe('detectOverwriteConflict (Suite S3)', () => {
       orderedColumnIds: ['col-E', 'col-D', 'col-C', 'col-B', 'col-A'],
     }
     // A moved nothing — movedByA={}; sharedMoved={}
-    expect(detectOverwriteConflict(preDragOrder, localFinal, bufferedRemote)).toBe(false)
+    expect(
+      detectOverwriteConflict(preDragOrder, localFinal, bufferedRemote),
+    ).toBe(false)
   })
 
   it('UT-25: single-column table — column moved to same slot', () => {
     expect(
-      detectOverwriteConflict(
-        ['col-A'],
-        ['col-A'],
-        { tableId: 'tbl', orderedColumnIds: ['col-A'] },
-      ),
+      detectOverwriteConflict(['col-A'], ['col-A'], {
+        tableId: 'tbl',
+        orderedColumnIds: ['col-A'],
+      }),
     ).toBe(false)
   })
 
@@ -119,7 +129,9 @@ describe('detectOverwriteConflict (Suite S3)', () => {
     }
     // Both moved all 5; shared=all; check each position
     // C: local=0, remote=4 — conflict
-    expect(detectOverwriteConflict(preDragOrder, localFinal, bufferedRemote)).toBe(true)
+    expect(
+      detectOverwriteConflict(preDragOrder, localFinal, bufferedRemote),
+    ).toBe(true)
   })
 })
 
@@ -349,13 +361,23 @@ describe('useColumnReorderMutations (Suite S4)', () => {
     // Note: ack matching is sequential (FIFO), so both acks pop the queue head
     act(() => {
       // "ack #2 arrives first" — but we pop head (#1 in queue)
-      result.current.onColumnReorderAck('tbl-001', order2, setNodes, bumpReorderTick)
+      result.current.onColumnReorderAck(
+        'tbl-001',
+        order2,
+        setNodes,
+        bumpReorderTick,
+      )
     })
 
     expect(setNodes).not.toHaveBeenCalled() // queue depth 2→1
 
     act(() => {
-      result.current.onColumnReorderAck('tbl-001', order2, setNodes, bumpReorderTick)
+      result.current.onColumnReorderAck(
+        'tbl-001',
+        order2,
+        setNodes,
+        bumpReorderTick,
+      )
     })
 
     expect(setNodes).toHaveBeenCalled() // queue depth 1→0

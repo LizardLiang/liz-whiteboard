@@ -1,14 +1,14 @@
 # Tech Spec Review — Architecture (Apollo)
 
-| Field | Value |
-|-------|-------|
-| **Feature** | Auto Layout |
-| **Reviewer** | Apollo (SA Review Agent) |
-| **Spec Author** | Hephaestus |
-| **PRD Version** | 1.2 |
-| **Spec File** | tech-spec.md |
-| **Date** | 2026-05-01 |
-| **Verdict** | **Concerns** |
+| Field           | Value                    |
+| --------------- | ------------------------ |
+| **Feature**     | Auto Layout              |
+| **Reviewer**    | Apollo (SA Review Agent) |
+| **Spec Author** | Hephaestus               |
+| **PRD Version** | 1.2                      |
+| **Spec File**   | tech-spec.md             |
+| **Date**        | 2026-05-01               |
+| **Verdict**     | **Concerns**             |
 
 ---
 
@@ -42,6 +42,7 @@ However, **one high-severity gap and four medium-severity concerns** need resolu
 This breaks the **NFR Persistence — failure UX** contract (the user must be informed of the local/remote divergence) and breaks **NFR Reliability** (no false success).
 
 **Required change:** The spec's orchestrator contract must:
+
 - Treat the resolved value as either a success body `{success:true; count:number}` or an `AuthErrorResponse`. Use `isUnauthorizedError(result)` (or shape-check on `result.error === 'UNAUTHORIZED'`) before treating it as success.
 - Route any auth-failure value into the persistence-failure UX (toast + Retry + keep optimistic state) rather than the success branch. The user can choose to re-authenticate and retry.
 - Update the §4 error table to distinguish "thrown" errors (DB, IDOR) from "returned" auth errors.
@@ -64,6 +65,7 @@ If table B's measured height is 240 px on the originator and 320 px on the colla
 **Why it matters architecturally:** FR-004 is asserted as "every pair (A, B)" without qualifying "originator's view" — the PRD's reliability contract claims atomicity is preserved on **both** local and remote screens. The spec inherits FR-004 from PRD without addressing this gap.
 
 **Required change (pick one):**
+
 - (Recommended) Compute layout against a **canonical table dimension** (e.g., always treat each table as 250 × 150 for layout purposes, regardless of measured state). This produces deterministic gaps everywhere and matches `elk-layout.ts`'s 250/150 fallback already used in the legacy path. Trade-off: gaps may be visually loose around collapsed tables and tight around tall tables, but they will never overlap.
 - Document the limitation explicitly in §6 ("the 16 px contract is enforced against the originator's measured dimensions; collaborators with different rendered dimensions may see < 16 px gaps until they re-trigger layout") and update FR-004 in PRD if needed.
 - Include `width`/`height` in the broadcast payload and have the receiver run a local re-pass — this is heavier and creates new race conditions; not recommended.
@@ -81,6 +83,7 @@ If table B's measured height is 240 px on the originator and 320 px on the colla
 **Why it matters architecturally:** This wires together two top-level modules in a way that creates a directional dependency that did not exist before, with no precedent in the codebase. Any future refactor that splits the route file or adds top-level initialization will affect every server function that calls `updateTablePositionsBulk`.
 
 **Required change (pick one):**
+
 - (Recommended) Move `emitToWhiteboard` and `broadcastToWhiteboard` (and the `io` reference they share) to a dedicated `src/lib/collaboration/socket-emit.ts` (or `src/lib/socket/emit.ts`). Have both `collaboration.ts` and `server-functions.ts` import from there. This re-establishes a clean dependency direction.
 - If keeping the current location, the spec must explicitly verify (and document) that importing `@/routes/api/collaboration` from a non-route context has no unintended top-level evaluation effects (Socket.IO server registration, route-table mutation, etc.).
 
@@ -100,6 +103,7 @@ If table B's measured height is 240 px on the originator and 320 px on the colla
 **Why it matters architecturally:** The persistence-failure-with-Retry contract assumes the user is still focused on the whiteboard when they click Retry. The spec doesn't bound the Retry's lifetime or scope. This is a small but real correctness hole; it also produces a confusing UX where Retry succeeds but writes stale data.
 
 **Required change:**
+
 - Bound the Retry: dismiss the failure toast on whiteboard unmount / navigation, or capture the whiteboardId snapshot and refuse Retry if it no longer matches the current active whiteboard.
 - Optionally: add a TTL (e.g., 60 s) after which the toast auto-dismisses and the Retry is no longer offered.
 - Document this in §7 Phase 4 alongside the existing failure flow.
@@ -117,6 +121,7 @@ If table B's measured height is 240 px on the originator and 320 px on the colla
 **Why it matters architecturally:** Two payload field names for the same field in one hook is a maintenance trap. A future reader will write `data.userId` in the bulk handler by muscle memory and the guard will silently fail (every collaborator re-applies positions they already see, no observable bug, but doubled CPU and a future debugging nightmare).
 
 **Required change:**
+
 - Pick one convention for the new event. Recommend `updatedBy` (already used by `table:updated` / `table:deleted` / `column:updated` in the project). The spec already does this. Add a comment in `use-whiteboard-collaboration.ts` next to both listeners noting the divergence and pointing at the legacy bug as out-of-scope.
 - Update Appendix B to reflect the actual `data.userId` read in the legacy listener, not the claimed `updatedBy` read.
 
@@ -153,13 +158,13 @@ If table B's measured height is 240 px on the originator and 320 px on the colla
 
 ## Soundness Per Dimension
 
-| Dimension | Verdict | Notes |
-|-----------|---------|-------|
-| Architecture soundness | **Sound** | Client compute + single transaction + single broadcast is the right shape. Component boundaries (engine ↔ hook ↔ orchestrator ↔ collaboration) are well-separated and individually testable. |
-| Security | **Concerns** | IDOR guard is correct (single `findMany` + Set lookup). Auth-failure handling gap (Finding 1) is the dominant security-adjacent issue: a session-expired user sees a false success. RBAC is consciously stubbed — pre-existing codebase condition, not Auto Layout's scope. Input validation via Zod is comprehensive. |
-| Performance | **Sound** | RAF + 10-tick budget + 500-tick cap is well-reasoned and meets the FR-007 longtask contract. Single transaction collapses 100 round-trips to 1. Post-pass is O(n²) but bounded — fine. The only performance-adjacent risk is the cross-client dimension drift in Finding 2, which is correctness-shaped not speed-shaped. |
-| Maintainability | **Concerns** | The cross-module import in Finding 3 and the field-name skew in Finding 5 both add long-term friction. The deletion of legacy ELK paths (per the locked clean-removal decision) is good. OQ-2 left open as "audit in Phase 4" is a maintenance smell. |
-| Integration | **Concerns** | Mostly clean: Toolbar prop surgery, collaboration hook signature change, AlertDialog primitive use are all idiomatic. The auth-error contract mismatch (Finding 1) is fundamentally an integration issue (the orchestrator integrates incorrectly with `requireAuth`'s actual return contract). |
+| Dimension              | Verdict      | Notes                                                                                                                                                                                                                                                                                                                     |
+| ---------------------- | ------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Architecture soundness | **Sound**    | Client compute + single transaction + single broadcast is the right shape. Component boundaries (engine ↔ hook ↔ orchestrator ↔ collaboration) are well-separated and individually testable.                                                                                                                           |
+| Security               | **Concerns** | IDOR guard is correct (single `findMany` + Set lookup). Auth-failure handling gap (Finding 1) is the dominant security-adjacent issue: a session-expired user sees a false success. RBAC is consciously stubbed — pre-existing codebase condition, not Auto Layout's scope. Input validation via Zod is comprehensive.    |
+| Performance            | **Sound**    | RAF + 10-tick budget + 500-tick cap is well-reasoned and meets the FR-007 longtask contract. Single transaction collapses 100 round-trips to 1. Post-pass is O(n²) but bounded — fine. The only performance-adjacent risk is the cross-client dimension drift in Finding 2, which is correctness-shaped not speed-shaped. |
+| Maintainability        | **Concerns** | The cross-module import in Finding 3 and the field-name skew in Finding 5 both add long-term friction. The deletion of legacy ELK paths (per the locked clean-removal decision) is good. OQ-2 left open as "audit in Phase 4" is a maintenance smell.                                                                     |
+| Integration            | **Concerns** | Mostly clean: Toolbar prop surgery, collaboration hook signature change, AlertDialog primitive use are all idiomatic. The auth-error contract mismatch (Finding 1) is fundamentally an integration issue (the orchestrator integrates incorrectly with `requireAuth`'s actual return contract).                           |
 
 ---
 
@@ -167,23 +172,23 @@ If table B's measured height is 240 px on the originator and 320 px on the colla
 
 All four locked decisions are reflected correctly in the spec:
 
-| Locked Decision | Reflected? | Where |
-|-----------------|------------|-------|
-| `emitToWhiteboard` + `updatedBy === currentUserId` guard | Yes | §4 + Phase 4 step 1 |
-| 10 ticks per RAF frame, 500-tick cap | Yes | §6 + Phase 1 step 1 |
-| `fitView({ padding: 0.2, duration: 300 })` after `setTimeout(..., 100)` | Yes | Phase 4 step 2 (`runLayout` success branch) |
-| Toolbar prop clean-remove + add | Yes | Phase 3 step 1 |
+| Locked Decision                                                         | Reflected? | Where                                       |
+| ----------------------------------------------------------------------- | ---------- | ------------------------------------------- |
+| `emitToWhiteboard` + `updatedBy === currentUserId` guard                | Yes        | §4 + Phase 4 step 1                         |
+| 10 ticks per RAF frame, 500-tick cap                                    | Yes        | §6 + Phase 1 step 1                         |
+| `fitView({ padding: 0.2, duration: 300 })` after `setTimeout(..., 100)` | Yes        | Phase 4 step 2 (`runLayout` success branch) |
+| Toolbar prop clean-remove + add                                         | Yes        | Phase 3 step 1                              |
 
 ---
 
 ## Issue Count
 
 | Severity | Count |
-|----------|-------|
-| Critical | 0 |
-| High | 1 |
-| Medium | 4 |
-| Low | 2 |
+| -------- | ----- |
+| Critical | 0     |
+| High     | 1     |
+| Medium   | 4     |
+| Low      | 2     |
 
 ---
 
@@ -214,26 +219,26 @@ All four locked decisions are reflected correctly in the spec:
 
 # Round 2 Review (Re-review after Hephaestus revision 1)
 
-| Field | Value |
-|-------|-------|
-| **Reviewer** | Apollo (SA Review Agent) |
-| **Spec Revision** | 1 |
-| **Date** | 2026-05-01 |
-| **Round 2 Verdict** | **Sound** |
+| Field               | Value                    |
+| ------------------- | ------------------------ |
+| **Reviewer**        | Apollo (SA Review Agent) |
+| **Spec Revision**   | 1                        |
+| **Date**            | 2026-05-01               |
+| **Round 2 Verdict** | **Sound**                |
 
 ## Verification of Round 1 Findings
 
 All 5 round-1 blocking findings + both open questions have been verified against the revised `tech-spec.md`:
 
-| # | Finding | Round 2 Status | Where Resolved |
-|---|---------|----------------|----------------|
-| 1 | HIGH — Auth-error return value (`isUnauthorizedError` check after every `await`) | **RESOLVED** | §4 lines 230-232, 306-323 (resolved-value table); §7 Phase 4 lines 633-651 (`handlePersistResult` branch); 668-686 (`runRetry` re-check after await); auth-failure path also calls `triggerSessionExpired()` per Apollo recommendation. Regression test added at §7 Phase 4 step 5. |
-| 2 | MEDIUM — L∞ gap scope as originator-screen guarantee | **RESOLVED** | §1 line 28 (Goals scoped explicitly to "originator's screen"); §2 line 149 (Key Design Decisions row); §6 lines 436-445 (full cross-client contract section: broadcast carries no dimensions, receivers apply verbatim, mitigation path documented, scoping note for PM). Hephaestus chose option (b) over Apollo's preferred canonical-dimensions option (a′) and gave a defensible rationale: option (a′) would desync visible state from persisted state on all clients. Acceptable. |
-| 3 | MEDIUM — Circular import (`server-functions.ts` → `routes/api/collaboration`) | **RESOLVED** | §1 line 22, §2 lines 53-54, §4 line 235 + 293 (server function does NOT import `emitToWhiteboard`); §4 lines 325-344 + §7 Phase 2 step 3 (new server-side `socket.on('table:move:bulk', …)` handler re-broadcasts via `broadcastToWhiteboard(whiteboardId, socket.id, …)`); §7 Phase 4 lines 718-727 (orchestrator emits client-side after server-function success — mirrors existing single-table pattern at `$whiteboardId.tsx:265-271`). Clean directional dependency restored. |
-| 4 | MEDIUM — Stale Retry across unmount/navigation | **RESOLVED** | §7 Phase 4 lines 622-629 (`isMountedRef` set true on mount, false on unmount); 643, 665, 720, 730, 739, 749 (mount-checks at toast-handler entry, after every await, and around every state setter). Regression test added: "Retry after unmount: simulate the toast Retry click after the component unmounts — `updateTablePositionsBulk` must NOT be called." |
-| 5 | MEDIUM — Field-name skew (`data.userId` vs `data.updatedBy`) | **RESOLVED** | §3 lines 199-208 (payload uses `userId` end-to-end); §7 Phase 4 lines 557-582 (listener reads `data.userId` matching the existing same-hook `table:moved` listener verbatim, with an inline code comment noting the convention and pointing at the legacy `collaboration.ts:418-423` emit/listener mismatch as out-of-scope). Appendix B row corrected. |
-| OQ-1 | `socket.on('table:move:bulk')` server handler — was "deferred", now required | **RESOLVED** | §4 lines 346-348, §7 Phase 2 step 3 line 526, Open Questions table line 826: "Resolved (revision 1) — REQUIRED, not deferred." Now on the critical path. |
-| OQ-2 | `onAutoLayoutReady` bridge | **RESOLVED** | §1 line 24, §7 Phase 4 step 4 (line 794), Files-to-Modify line 492, Open Questions table line 827: explicit DELETE — `reactFlowAutoLayoutRef`, `isAutoLayoutComputing`, `handleAutoLayout`, `handleAutoLayoutReady`, `useAutoLayoutPreference` usage, `computeAutoLayout` import, four legacy `<Toolbar>` props, and `layout:compute`/`layout:computed` socket emits + listeners are all removed in `$whiteboardId.tsx`. The orchestrator owns the entire flow inside `ReactFlowWhiteboard.tsx`. |
+| #    | Finding                                                                          | Round 2 Status | Where Resolved                                                                                                                                                                                                                                                                                                                                                                                                                                                                                   |
+| ---- | -------------------------------------------------------------------------------- | -------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| 1    | HIGH — Auth-error return value (`isUnauthorizedError` check after every `await`) | **RESOLVED**   | §4 lines 230-232, 306-323 (resolved-value table); §7 Phase 4 lines 633-651 (`handlePersistResult` branch); 668-686 (`runRetry` re-check after await); auth-failure path also calls `triggerSessionExpired()` per Apollo recommendation. Regression test added at §7 Phase 4 step 5.                                                                                                                                                                                                              |
+| 2    | MEDIUM — L∞ gap scope as originator-screen guarantee                             | **RESOLVED**   | §1 line 28 (Goals scoped explicitly to "originator's screen"); §2 line 149 (Key Design Decisions row); §6 lines 436-445 (full cross-client contract section: broadcast carries no dimensions, receivers apply verbatim, mitigation path documented, scoping note for PM). Hephaestus chose option (b) over Apollo's preferred canonical-dimensions option (a′) and gave a defensible rationale: option (a′) would desync visible state from persisted state on all clients. Acceptable.          |
+| 3    | MEDIUM — Circular import (`server-functions.ts` → `routes/api/collaboration`)    | **RESOLVED**   | §1 line 22, §2 lines 53-54, §4 line 235 + 293 (server function does NOT import `emitToWhiteboard`); §4 lines 325-344 + §7 Phase 2 step 3 (new server-side `socket.on('table:move:bulk', …)` handler re-broadcasts via `broadcastToWhiteboard(whiteboardId, socket.id, …)`); §7 Phase 4 lines 718-727 (orchestrator emits client-side after server-function success — mirrors existing single-table pattern at `$whiteboardId.tsx:265-271`). Clean directional dependency restored.               |
+| 4    | MEDIUM — Stale Retry across unmount/navigation                                   | **RESOLVED**   | §7 Phase 4 lines 622-629 (`isMountedRef` set true on mount, false on unmount); 643, 665, 720, 730, 739, 749 (mount-checks at toast-handler entry, after every await, and around every state setter). Regression test added: "Retry after unmount: simulate the toast Retry click after the component unmounts — `updateTablePositionsBulk` must NOT be called."                                                                                                                                  |
+| 5    | MEDIUM — Field-name skew (`data.userId` vs `data.updatedBy`)                     | **RESOLVED**   | §3 lines 199-208 (payload uses `userId` end-to-end); §7 Phase 4 lines 557-582 (listener reads `data.userId` matching the existing same-hook `table:moved` listener verbatim, with an inline code comment noting the convention and pointing at the legacy `collaboration.ts:418-423` emit/listener mismatch as out-of-scope). Appendix B row corrected.                                                                                                                                          |
+| OQ-1 | `socket.on('table:move:bulk')` server handler — was "deferred", now required     | **RESOLVED**   | §4 lines 346-348, §7 Phase 2 step 3 line 526, Open Questions table line 826: "Resolved (revision 1) — REQUIRED, not deferred." Now on the critical path.                                                                                                                                                                                                                                                                                                                                         |
+| OQ-2 | `onAutoLayoutReady` bridge                                                       | **RESOLVED**   | §1 line 24, §7 Phase 4 step 4 (line 794), Files-to-Modify line 492, Open Questions table line 827: explicit DELETE — `reactFlowAutoLayoutRef`, `isAutoLayoutComputing`, `handleAutoLayout`, `handleAutoLayoutReady`, `useAutoLayoutPreference` usage, `computeAutoLayout` import, four legacy `<Toolbar>` props, and `layout:compute`/`layout:computed` socket emits + listeners are all removed in `$whiteboardId.tsx`. The orchestrator owns the entire flow inside `ReactFlowWhiteboard.tsx`. |
 
 All 5 round-1 findings are resolved. The two informational lows (Findings 6 + 7) are also addressed in Appendix C. The revision is faithful to the spirit of the original feedback and goes beyond minimum compliance (e.g., adding `triggerSessionExpired()` to the auth-failure path; documenting the cross-client gap limitation in PRD-feedback-loop terms rather than just code comments).
 
@@ -260,30 +265,38 @@ socket.on('event', async (data) => {
 })
 ```
 
-The spec's new handler does none of this — it calls `broadcastToWhiteboard(whiteboardId, socket.id, 'table:move:bulk', data)` directly with no validation, no session check, no permission check, and no `safeUpdateSessionActivity` call. While `whiteboardNsp.use(...)` guards the namespace at connect time, the per-handler `isSessionExpired` check exists precisely to defend against session lapses *during* a connected session — that's why every other handler runs it.
+The spec's new handler does none of this — it calls `broadcastToWhiteboard(whiteboardId, socket.id, 'table:move:bulk', data)` directly with no validation, no session check, no permission check, and no `safeUpdateSessionActivity` call. While `whiteboardNsp.use(...)` guards the namespace at connect time, the per-handler `isSessionExpired` check exists precisely to defend against session lapses _during_ a connected session — that's why every other handler runs it.
 
 **Why it matters architecturally:** The bulk broadcast is a higher-impact operation than a single-table drag (it overwrites every collaborator's whiteboard layout in one tick). Allowing this to fire from a session-expired-but-still-connected socket — or from a user whose permission was revoked mid-session — is a defense-in-depth gap. It also breaks the codebase's established pattern, which would be a maintenance smell flagged in any future audit.
 
 **Required change (recommended):** Add the standard prelude to the new handler, plus a payload-shape validation:
 
 ```ts
-socket.on('table:move:bulk', async (data: {
-  positions: Array<{ tableId: string; positionX: number; positionY: number }>
-  userId: string
-}) => {
-  if (isSessionExpired(socket)) {
-    socket.emit('session_expired')
-    socket.disconnect(true)
-    return
-  }
-  if (await denyIfInsufficientPermission(socket, whiteboardId)) return
+socket.on(
+  'table:move:bulk',
+  async (data: {
+    positions: Array<{ tableId: string; positionX: number; positionY: number }>
+    userId: string
+  }) => {
+    if (isSessionExpired(socket)) {
+      socket.emit('session_expired')
+      socket.disconnect(true)
+      return
+    }
+    if (await denyIfInsufficientPermission(socket, whiteboardId)) return
 
-  // Light shape validation; reject obviously malformed payloads.
-  if (!data || !Array.isArray(data.positions) || typeof data.userId !== 'string') return
+    // Light shape validation; reject obviously malformed payloads.
+    if (
+      !data ||
+      !Array.isArray(data.positions) ||
+      typeof data.userId !== 'string'
+    )
+      return
 
-  broadcastToWhiteboard(whiteboardId, socket.id, 'table:move:bulk', data)
-  await safeUpdateSessionActivity(socket.id)
-})
+    broadcastToWhiteboard(whiteboardId, socket.id, 'table:move:bulk', data)
+    await safeUpdateSessionActivity(socket.id)
+  },
+)
 ```
 
 This brings the handler in line with every existing socket handler in the file and addresses the implicit "handler validates the payload shape" claim Hephaestus made at §7 Phase 2 step 3 (the current code sketch performs no validation).
@@ -316,23 +329,23 @@ This brings the handler in line with every existing socket handler in the file a
 
 ## Updated Soundness Per Dimension (Round 2)
 
-| Dimension | Round 1 | Round 2 | Notes |
-|-----------|---------|---------|-------|
-| Architecture soundness | Sound | **Sound** | The revised broadcast architecture (server function persistence-only + client-emitted broadcast + server `socket.on` re-broadcast) is *better* than the original spec — it mirrors the existing single-table pattern instead of inventing a new server-functions → routes edge. |
-| Security | Concerns | **Sound** (with R2-1 caveat) | Auth-failure handling (Finding 1) is now correctly modelled. The new R2-1 finding is a defense-in-depth gap on the server-side socket handler — important to fix but a one-block copy-paste, not an architectural reshape. IDOR guard, Zod validation, and namespace-level auth all remain solid. |
-| Performance | Sound | **Sound** | RAF + 10-tick budget + 500-tick cap + single transaction unchanged. The new client-emit-then-broadcast shape adds one local emit between server-function resolve and visible-confirmation; sub-millisecond overhead, no impact on the 2 s p95 budget. |
-| Maintainability | Concerns | **Sound** | Cross-module import (round 1 Finding 3) is gone. Field-name skew (round 1 Finding 5) is documented with an inline comment. OQ-2 is closed (delete the bridge), not deferred. The R2-3 broadcast-mechanism inconsistency is the only remaining maintainability nit, and it's a low. |
-| Integration | Concerns | **Sound** | Auth-error contract is now correctly integrated (`isUnauthorizedError`). Toolbar prop surgery, AlertDialog, and collaboration hook signature change are all idiomatic. The parent route's auto-layout bridge is cleanly removed. |
+| Dimension              | Round 1  | Round 2                      | Notes                                                                                                                                                                                                                                                                                             |
+| ---------------------- | -------- | ---------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Architecture soundness | Sound    | **Sound**                    | The revised broadcast architecture (server function persistence-only + client-emitted broadcast + server `socket.on` re-broadcast) is _better_ than the original spec — it mirrors the existing single-table pattern instead of inventing a new server-functions → routes edge.                   |
+| Security               | Concerns | **Sound** (with R2-1 caveat) | Auth-failure handling (Finding 1) is now correctly modelled. The new R2-1 finding is a defense-in-depth gap on the server-side socket handler — important to fix but a one-block copy-paste, not an architectural reshape. IDOR guard, Zod validation, and namespace-level auth all remain solid. |
+| Performance            | Sound    | **Sound**                    | RAF + 10-tick budget + 500-tick cap + single transaction unchanged. The new client-emit-then-broadcast shape adds one local emit between server-function resolve and visible-confirmation; sub-millisecond overhead, no impact on the 2 s p95 budget.                                             |
+| Maintainability        | Concerns | **Sound**                    | Cross-module import (round 1 Finding 3) is gone. Field-name skew (round 1 Finding 5) is documented with an inline comment. OQ-2 is closed (delete the bridge), not deferred. The R2-3 broadcast-mechanism inconsistency is the only remaining maintainability nit, and it's a low.                |
+| Integration            | Concerns | **Sound**                    | Auth-error contract is now correctly integrated (`isUnauthorizedError`). Toolbar prop surgery, AlertDialog, and collaboration hook signature change are all idiomatic. The parent route's auto-layout bridge is cleanly removed.                                                                  |
 
 ## Round 2 Issue Count
 
-| Severity | Count |
-|----------|-------|
-| Critical | 0 |
-| High | 0 |
-| Medium | 1 (R2-1: socket-handler guard skip) |
-| Low | 2 (R2-2: validation claim mismatch, R2-3: broadcast-mechanism inconsistency) |
-| Info | 1 (R2-4: `useAutoLayoutPreference` still consumed in `.new.tsx`) |
+| Severity | Count                                                                        |
+| -------- | ---------------------------------------------------------------------------- |
+| Critical | 0                                                                            |
+| High     | 0                                                                            |
+| Medium   | 1 (R2-1: socket-handler guard skip)                                          |
+| Low      | 2 (R2-2: validation claim mismatch, R2-3: broadcast-mechanism inconsistency) |
+| Info     | 1 (R2-4: `useAutoLayoutPreference` still consumed in `.new.tsx`)             |
 
 ## Verdict Math
 

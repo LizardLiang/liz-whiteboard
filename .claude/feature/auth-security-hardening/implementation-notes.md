@@ -1,12 +1,12 @@
 # Implementation Notes: Auth Security Hardening
 
-| Field | Value |
-| --- | --- |
-| Feature | auth-security-hardening |
-| Agent | Ares |
-| Phase | 9-implementation |
-| Status | complete |
-| Date | 2026-05-09 |
+| Field            | Value                                        |
+| ---------------- | -------------------------------------------- |
+| Feature          | auth-security-hardening                      |
+| Agent            | Ares                                         |
+| Phase            | 9-implementation                             |
+| Status           | complete                                     |
+| Date             | 2026-05-09                                   |
 | Source Documents | tech-spec.md, decomposition.md, test-plan.md |
 
 ---
@@ -40,9 +40,11 @@ Fixed 5 P0 security vulnerabilities from PR #97: superpassword bypass, WebSocket
 ### Files Modified
 
 **WebSocket (SEC-WS-01..04):**
+
 - `src/routes/api/collaboration.ts` — replaced `denyIfInsufficientPermission` no-op with real `requireRole` wrapper; added `eventName` param to all 13 call sites; restored `findEffectiveRole` import; removed eslint-disable/ts-expect-error/unused-variable annotations
 
 **Server Functions (SEC-RBAC-01..05):**
+
 - `src/lib/server-functions.ts` — 8 exports: `@requires viewer/editor` JSDoc + `requireServerFnRole` calls
 - `src/lib/server-functions-project.ts` — 1 export: `@requires authenticated` JSDoc
 - `src/routes/api/whiteboards.ts` — 11 exports: JSDoc tags + 5 new `requireServerFnRole` calls
@@ -53,9 +55,11 @@ Fixed 5 P0 security vulnerabilities from PR #97: superpassword bypass, WebSocket
 - `src/routes/api/projects.ts` — 8 exports: JSDoc tags (existing `findEffectiveRole` pattern preserved)
 
 **Batch RBAC (SEC-BATCH-01..04, Apollo MEDIUM-1):**
+
 - `src/routes/api/columns.ts` — 10 exports: JSDoc tags + `requireServerFnRole` calls; `createColumnsFn` rewritten with pre-validate-then-write loop; `getTableProjectId` throws caught and converted to `BatchDeniedError` (MEDIUM-1)
 
 **Superpassword (SEC-SP-01..04, AD-8):**
+
 - `src/routes/api/auth.ts` — deleted superpassword bypass (`debugSuperPassword`, `isSuperpassword`, OR-wrapping); added `@requires unauthenticated/authenticated` JSDoc to all 4 exports
 
 ### Files Created (Tests)
@@ -75,6 +79,7 @@ Fixed 5 P0 security vulnerabilities from PR #97: superpassword bypass, WebSocket
 ### Files Modified
 
 **Session callback (SEC-MODAL-01..04, AD-7):**
+
 - `src/hooks/use-collaboration.ts` — made `onSessionExpired` mandatory; added fallback hard-nav on `triggerSessionExpired` throw (TC-MODAL-04); added `BATCH_DENIED` vs `FORBIDDEN` routing in error handler (AD-5)
 - `src/hooks/use-column-collaboration.ts` — imports `useAuthContext`, passes `triggerSessionExpired` to `useCollaboration`
 - `src/hooks/use-column-reorder-collaboration.ts` — same
@@ -82,6 +87,7 @@ Fixed 5 P0 security vulnerabilities from PR #97: superpassword bypass, WebSocket
 - `src/routes/whiteboard/$whiteboardId.new.tsx` — same
 
 **Session test fixes:**
+
 - `src/hooks/use-column-collaboration.test.ts` — added `useAuthContext` mock (required by AD-7 change)
 - `src/hooks/use-column-reorder-collaboration.test.ts` — same
 
@@ -90,6 +96,7 @@ Fixed 5 P0 security vulnerabilities from PR #97: superpassword bypass, WebSocket
 - `src/hooks/use-column-draft-persistence.ts` — debounce-write sessionStorage hook keyed by `draft:${whiteboardId}:${columnId}` with 30-min TTL; exposes `saveDraft`, `applyDraft`, `discardDraft`, `clearDraft` (SEC-MODAL-05, AD-4)
 
 **Tests:**
+
 - `src/hooks/use-whiteboard-collaboration-auth.test.ts` (extended) — 2 SEC-MODAL-04 tests (TC-MODAL-01, TC-MODAL-03)
 
 ### Deviation: Column-Edit Modal Wire (P3-W2-1)
@@ -127,21 +134,21 @@ The spec (§3.9) mentions `findEffectiveRole(...)` + `hasMinimumRole(...)` as a 
 
 ## Test Results Summary
 
-| Suite | Tests | Result |
-|-------|-------|--------|
-| Phase 1: requireRole unit | 24 | PASS |
-| Phase 1: logSampledError unit | 4 | PASS |
-| Phase 1: ForbiddenError/BatchDeniedError | 4 | PASS (in require-role.test.ts) |
-| Phase 2: SEC-WS-04 WS regression | 6 | PASS |
-| Phase 2: SEC-BATCH-04 batch RBAC | 10 | PASS |
-| Phase 2: SEC-RBAC-05 tier denial | 7 | PASS |
-| Phase 2: SEC-SP-04 superpassword | 4 | PASS |
-| Phase 2: SEC-SP-02 AST assertion | 4 | PASS |
-| Phase 3: SEC-MODAL-04 session | 2 | PASS |
-| Phase 4: ESLint rule self-tests | 8 | PASS |
-| **Gap closure (PRD alignment)** | **27** | **PASS** |
-| **New tests total** | **100** | **PASS** |
-| Pre-existing failures | 8 | FAIL (unchanged) |
+| Suite                                    | Tests   | Result                         |
+| ---------------------------------------- | ------- | ------------------------------ |
+| Phase 1: requireRole unit                | 24      | PASS                           |
+| Phase 1: logSampledError unit            | 4       | PASS                           |
+| Phase 1: ForbiddenError/BatchDeniedError | 4       | PASS (in require-role.test.ts) |
+| Phase 2: SEC-WS-04 WS regression         | 6       | PASS                           |
+| Phase 2: SEC-BATCH-04 batch RBAC         | 10      | PASS                           |
+| Phase 2: SEC-RBAC-05 tier denial         | 7       | PASS                           |
+| Phase 2: SEC-SP-04 superpassword         | 4       | PASS                           |
+| Phase 2: SEC-SP-02 AST assertion         | 4       | PASS                           |
+| Phase 3: SEC-MODAL-04 session            | 2       | PASS                           |
+| Phase 4: ESLint rule self-tests          | 8       | PASS                           |
+| **Gap closure (PRD alignment)**          | **27**  | **PASS**                       |
+| **New tests total**                      | **100** | **PASS**                       |
+| Pre-existing failures                    | 8       | FAIL (unchanged)               |
 
 ---
 
@@ -166,13 +173,13 @@ The spec (§3.9) mentions `findEffectiveRole(...)` + `hasMinimumRole(...)` as a 
 
 ## Technical Debt
 
-| Item | Deferred To | Severity |
-|------|-------------|----------|
-| `useColumnDraftPersistence` not wired into UI — no column-edit modal exists | Future PRD | Low (hook ready, no modal) |
-| `BatchColumnForm` created but not wired into any whiteboard route (no entry point UI) | Future PRD | Low (component ready, no trigger) |
-| Full error shape migration (AD-5) — existing handlers keep legacy `error` field shape | Future cleanup | Low (documented as temporary) |
-| AD-8 staging window for superpassword (≥7 days per PRD §13.2) — skipped for implementation | Deployment | Medium (notify team before production deploy) |
-| 6 files use legacy `findEffectiveRole`+`hasMinimumRole` pattern (not converted to `requireServerFnRole`) | Future cleanup | Low (both patterns enforced by ESLint rule) |
+| Item                                                                                                     | Deferred To    | Severity                                      |
+| -------------------------------------------------------------------------------------------------------- | -------------- | --------------------------------------------- |
+| `useColumnDraftPersistence` not wired into UI — no column-edit modal exists                              | Future PRD     | Low (hook ready, no modal)                    |
+| `BatchColumnForm` created but not wired into any whiteboard route (no entry point UI)                    | Future PRD     | Low (component ready, no trigger)             |
+| Full error shape migration (AD-5) — existing handlers keep legacy `error` field shape                    | Future cleanup | Low (documented as temporary)                 |
+| AD-8 staging window for superpassword (≥7 days per PRD §13.2) — skipped for implementation               | Deployment     | Medium (notify team before production deploy) |
+| 6 files use legacy `findEffectiveRole`+`hasMinimumRole` pattern (not converted to `requireServerFnRole`) | Future cleanup | Low (both patterns enforced by ESLint rule)   |
 
 ---
 
@@ -223,6 +230,7 @@ Resolved all 3 BLOCKER and 2 HIGH findings from Hermes + Cassandra code review.
 **Problem:** `bodyCallsRequireServerFnRole` returned `true` on first match of `findEffectiveRole` OR `hasMinimumRole` independently. A handler could call `findEffectiveRole(userId, projectId)` and discard the result — no actual RBAC check — and the ESLint rule would pass.
 
 **Fix:** Replaced single-boolean walker with `collectCalleeNames(node, Set)` that accumulates all call names in the body. `bodyCallsRequireServerFnRole` now returns `true` only if:
+
 - `requireServerFnRole` is present (preferred pattern), OR
 - BOTH `findEffectiveRole` AND `hasMinimumRole` are present (legacy paired assertion).
 
@@ -238,15 +246,15 @@ Also fixed `IfStatement` traversal to include `node.test` (so `if (!hasMinimumRo
 
 ### Final Test Results (Stage 12)
 
-| Suite | Tests | Result |
-|-------|-------|--------|
-| root-provider interceptor | 3 | PASS |
-| require-role (incl. bounded Map) | 21 | PASS |
-| log-sample (incl. bounded Map) | 5 | PASS |
-| BatchColumnForm | 9 | PASS |
-| ESLint rule self-tests | 10 | PASS |
-| **Total passing** | **794** | PASS |
-| Pre-existing failures | 8 | FAIL (unchanged) |
+| Suite                            | Tests   | Result           |
+| -------------------------------- | ------- | ---------------- |
+| root-provider interceptor        | 3       | PASS             |
+| require-role (incl. bounded Map) | 21      | PASS             |
+| log-sample (incl. bounded Map)   | 5       | PASS             |
+| BatchColumnForm                  | 9       | PASS             |
+| ESLint rule self-tests           | 10      | PASS             |
+| **Total passing**                | **794** | PASS             |
+| Pre-existing failures            | 8       | FAIL (unchanged) |
 
 ---
 
@@ -299,10 +307,10 @@ Closed on 2026-05-09 after Hera returned a 73% verdict.
 
 ### Gap Coverage
 
-| Gap | AC | Test IDs | Status |
-|-----|-----|----------|--------|
-| Batch UX Component | AC-13, AC-14, AC-15, AC-17 | TC-BUX-01..05 | CLOSED |
-| TC-MODAL-01 rewrite (hook-direct) | AC-18 | TC-MODAL-01 | CLOSED |
-| HTTP 401 path tests | AC-20 | TC-HTTP401-01, TC-HTTP401-02 | CLOSED |
-| Focus trap assertion | AC-21 | TC-MODAL-02 | CLOSED |
-| Draft persistence tests | AC-22 | TC-DRAFT-01..05, TC-MODAL-05 | CLOSED |
+| Gap                               | AC                         | Test IDs                     | Status |
+| --------------------------------- | -------------------------- | ---------------------------- | ------ |
+| Batch UX Component                | AC-13, AC-14, AC-15, AC-17 | TC-BUX-01..05                | CLOSED |
+| TC-MODAL-01 rewrite (hook-direct) | AC-18                      | TC-MODAL-01                  | CLOSED |
+| HTTP 401 path tests               | AC-20                      | TC-HTTP401-01, TC-HTTP401-02 | CLOSED |
+| Focus trap assertion              | AC-21                      | TC-MODAL-02                  | CLOSED |
+| Draft persistence tests           | AC-22                      | TC-DRAFT-01..05, TC-MODAL-05 | CLOSED |

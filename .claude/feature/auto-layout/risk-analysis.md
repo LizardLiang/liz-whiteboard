@@ -2,15 +2,15 @@
 
 ## Document Info
 
-| Field | Value |
-|-------|-------|
-| **Feature** | Auto Layout |
-| **Agent** | Cassandra (Risk Analyst) |
-| **Stage** | 10-review |
-| **Date** | 2026-05-01 |
-| **Verdict** | Caution (Round 2 — unchanged) |
-| **Tech Spec Revision** | 1 (post-Apollo) |
-| **Review Rounds** | 2 (Round 1: 2 High, 4 Medium, 2 Low; Round 2: 0 High, 5 Medium, 2 Low) |
+| Field                  | Value                                                                  |
+| ---------------------- | ---------------------------------------------------------------------- |
+| **Feature**            | Auto Layout                                                            |
+| **Agent**              | Cassandra (Risk Analyst)                                               |
+| **Stage**              | 10-review                                                              |
+| **Date**               | 2026-05-01                                                             |
+| **Verdict**            | Caution (Round 2 — unchanged)                                          |
+| **Tech Spec Revision** | 1 (post-Apollo)                                                        |
+| **Review Rounds**      | 2 (Round 1: 2 High, 4 Medium, 2 Low; Round 2: 0 High, 5 Medium, 2 Low) |
 
 ---
 
@@ -24,21 +24,21 @@ Round 1 had 2 High findings. Both are now closed: HIGH-02 (socket payload valida
 
 ## Delta: Files Analyzed
 
-| File | Type |
-|------|------|
-| `src/lib/auto-layout/d3-force-layout.ts` | New |
-| `src/lib/auto-layout/index.ts` | New |
-| `src/hooks/use-d3-force-layout.ts` | New |
-| `src/components/whiteboard/AutoLayoutConfirmDialog.tsx` | New |
-| `src/hooks/use-auto-layout-orchestrator.ts` | New |
-| `src/hooks/use-auto-layout-orchestrator.test.ts` | New |
-| `src/data/schema.ts` | Modified |
-| `src/lib/server-functions.ts` | Modified |
-| `src/routes/api/collaboration.ts` | Modified |
-| `src/components/whiteboard/Toolbar.tsx` | Modified |
-| `src/hooks/use-whiteboard-collaboration.ts` | Modified |
-| `src/components/whiteboard/ReactFlowWhiteboard.tsx` | Modified |
-| `src/routes/whiteboard/$whiteboardId.tsx` | Modified |
+| File                                                    | Type     |
+| ------------------------------------------------------- | -------- |
+| `src/lib/auto-layout/d3-force-layout.ts`                | New      |
+| `src/lib/auto-layout/index.ts`                          | New      |
+| `src/hooks/use-d3-force-layout.ts`                      | New      |
+| `src/components/whiteboard/AutoLayoutConfirmDialog.tsx` | New      |
+| `src/hooks/use-auto-layout-orchestrator.ts`             | New      |
+| `src/hooks/use-auto-layout-orchestrator.test.ts`        | New      |
+| `src/data/schema.ts`                                    | Modified |
+| `src/lib/server-functions.ts`                           | Modified |
+| `src/routes/api/collaboration.ts`                       | Modified |
+| `src/components/whiteboard/Toolbar.tsx`                 | Modified |
+| `src/hooks/use-whiteboard-collaboration.ts`             | Modified |
+| `src/components/whiteboard/ReactFlowWhiteboard.tsx`     | Modified |
+| `src/routes/whiteboard/$whiteboardId.tsx`               | Modified |
 
 ---
 
@@ -71,6 +71,7 @@ The handler validates that `data.positions` is a non-empty array, but performs n
 The server function path (`updateTablePositionsBulk`) is fully Zod-validated and IDOR-guarded. But this socket handler is a separate code path — it re-broadcasts whatever the originator sends without touching the database. A compromised originator can push arbitrary coordinate data to all collaborators without it being persisted, causing visual corruption on every connected client in the whiteboard.
 
 The check at lines 458-463 is:
+
 ```ts
 if (!data || !Array.isArray(data.positions) || data.positions.length === 0) {
   return
@@ -186,6 +187,7 @@ The low-severity concern: the toast's `onClick: () => void handleRetry()` uses a
 ### Scope
 
 Ares fixed 3 Hermes blockers (B1, B2, B3). This re-review verifies:
+
 - HIGH-02 (socket payload validation) — claimed fixed via `tableMoveBulkBroadcastSchema`
 - HIGH-01 (auth contract untested) — residual risk reassessment with HIGH-02 now closed
 - Whether any MEDIUM findings were incidentally addressed
@@ -195,19 +197,20 @@ Ares fixed 3 Hermes blockers (B1, B2, B3). This re-review verifies:
 ### HIGH-02 — Verified: RESOLVED
 
 **Code inspected:**
+
 - `src/data/schema.ts` lines 424–436: `tableMoveBulkBroadcastSchema`
 - `src/routes/api/collaboration.ts` lines 461–474: `table:move:bulk` handler
 - `src/data/schema.test.ts` lines 349–423: TC-AL-C-B1-01 through TC-AL-C-B1-08
 
 **Schema constraints verified:**
 
-| Field | Constraint | Correct |
-|-------|-----------|---------|
-| `userId` | `z.string().uuid()` | Yes — rejects non-UUID strings |
-| `positions[].tableId` | `z.string().uuid()` | Yes — rejects SQL injection strings and non-UUID values |
-| `positions[].positionX` | `z.number().finite()` | Yes — rejects `NaN`, `Infinity`, `-Infinity`, and non-numbers |
-| `positions[].positionY` | `z.number().finite()` | Yes — same |
-| `positions` array length | `.min(1).max(500)` | Yes — matches `bulkUpdatePositionsSchema` cap |
+| Field                    | Constraint            | Correct                                                       |
+| ------------------------ | --------------------- | ------------------------------------------------------------- |
+| `userId`                 | `z.string().uuid()`   | Yes — rejects non-UUID strings                                |
+| `positions[].tableId`    | `z.string().uuid()`   | Yes — rejects SQL injection strings and non-UUID values       |
+| `positions[].positionX`  | `z.number().finite()` | Yes — rejects `NaN`, `Infinity`, `-Infinity`, and non-numbers |
+| `positions[].positionY`  | `z.number().finite()` | Yes — same                                                    |
+| `positions` array length | `.min(1).max(500)`    | Yes — matches `bulkUpdatePositionsSchema` cap                 |
 
 **Handler fix verified:** The handler calls `tableMoveBulkBroadcastSchema.safeParse(data)` (not `parse` — no uncaught throw), emits `VALIDATION_ERROR` on failure, and passes `parsed.data` (the schema-validated object, not the raw input) to `broadcastToWhiteboard`. The broadcast path can no longer carry NaN/Infinity coordinates or non-UUID IDs to collaborators.
 
@@ -235,12 +238,12 @@ This is a maintainability/regression-detection gap, not a live correctness defec
 
 ### MEDIUM findings — Incidental Fix Assessment
 
-| Finding | Addressed by B1/B2/B3? | Assessment |
-|---------|------------------------|------------|
-| MEDIUM-01 (socket handler test skeleton) | No | Unchanged. No `collaboration.test.ts` created. |
-| MEDIUM-02 (stale `handleRetry` closure) | No | `handlePersistResult` dependency array still `[fitView, triggerSessionExpired]` — confirmed by code inspection at line 133. `handleRetry` is not in the array. |
-| MEDIUM-03 (post-pass O(n²) sweep cap) | No | `POST_PASS_MAX_SWEEPS = 5` and greedy nudge algorithm unchanged. |
-| MEDIUM-04 (`computeAutoLayout` IDOR gap) | No | Pre-existing; not touched. |
+| Finding                                  | Addressed by B1/B2/B3? | Assessment                                                                                                                                                     |
+| ---------------------------------------- | ---------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| MEDIUM-01 (socket handler test skeleton) | No                     | Unchanged. No `collaboration.test.ts` created.                                                                                                                 |
+| MEDIUM-02 (stale `handleRetry` closure)  | No                     | `handlePersistResult` dependency array still `[fitView, triggerSessionExpired]` — confirmed by code inspection at line 133. `handleRetry` is not in the array. |
+| MEDIUM-03 (post-pass O(n²) sweep cap)    | No                     | `POST_PASS_MAX_SWEEPS = 5` and greedy nudge algorithm unchanged.                                                                                               |
+| MEDIUM-04 (`computeAutoLayout` IDOR gap) | No                     | Pre-existing; not touched.                                                                                                                                     |
 
 None of the four Medium findings were addressed. The net Medium count after reclassifying HIGH-01 is **5 Medium findings**.
 
@@ -248,12 +251,12 @@ None of the four Medium findings were addressed. The net Medium count after recl
 
 ### Round 2 Verdict: CAUTION (unchanged)
 
-| Severity | Round 1 | Round 2 | Change |
-|----------|---------|---------|--------|
-| Critical | 0 | 0 | — |
-| High | 2 | 0 | HIGH-02 resolved; HIGH-01 downgraded |
-| Medium | 4 | 5 | +1 (HIGH-01 reclassified) |
-| Low | 2 | 2 | — |
+| Severity | Round 1 | Round 2 | Change                               |
+| -------- | ------- | ------- | ------------------------------------ |
+| Critical | 0       | 0       | —                                    |
+| High     | 2       | 0       | HIGH-02 resolved; HIGH-01 downgraded |
+| Medium   | 4       | 5       | +1 (HIGH-01 reclassified)            |
+| Low      | 2       | 2       | —                                    |
 
 The verdict remains **Caution** (5 Medium findings exceeds the Clear threshold of fewer than 3 Medium). However, the risk profile has materially improved: both High findings are closed. The remaining Medium findings are all in the maintainability and test-coverage category — no active security vulnerabilities or correctness defects remain.
 
@@ -265,11 +268,11 @@ The feature is safe to ship. The 5 Medium findings should be tracked in the post
 
 The test plan specified 68 test cases. 48 were implemented. The 20 deferred tests fall into three groups:
 
-| Group | Tests | Residual Risk |
-|-------|-------|---------------|
-| TC-AL-S-* (12) — server-function unit tests | HIGH-01 above | Medium. Auth-contract regression would not be caught. |
-| TC-AL-C-01–C-06 (6) — socket handler | MEDIUM-01 above | Low today (correctness by copy-paste); Medium when RBAC is restored. |
-| TC-AL-I-01–I-14 (14) — integration tests | Orchestrator unit tests cover same logic paths (documented by Ares). | Low. Redundant with TC-AL-O-* in terms of branch coverage. |
+| Group                                        | Tests                                                                | Residual Risk                                                        |
+| -------------------------------------------- | -------------------------------------------------------------------- | -------------------------------------------------------------------- |
+| TC-AL-S-\* (12) — server-function unit tests | HIGH-01 above                                                        | Medium. Auth-contract regression would not be caught.                |
+| TC-AL-C-01–C-06 (6) — socket handler         | MEDIUM-01 above                                                      | Low today (correctness by copy-paste); Medium when RBAC is restored. |
+| TC-AL-I-01–I-14 (14) — integration tests     | Orchestrator unit tests cover same logic paths (documented by Ares). | Low. Redundant with TC-AL-O-\* in terms of branch coverage.          |
 
 The orchestrator unit suite (TC-AL-O-01 through O-13, all 13 passing) is the most important single test suite for this feature's critical paths and provides strong confidence in the core flow.
 
@@ -277,16 +280,16 @@ The orchestrator unit suite (TC-AL-O-01 through O-13, all 13 passing) is the mos
 
 ## Security Checklist
 
-| Area | Status |
-|------|--------|
-| SQL injection via Zod inputs | Protected — `bulkUpdatePositionsSchema` rejects non-UUID IDs and non-finite numbers before any DB query |
-| IDOR on server function | Protected — two-step: `getWhiteboardProjectId` + `findMany` Set membership check for all position IDs |
-| IDOR on socket handler | Not applicable — socket handler does no DB writes; it re-broadcasts the payload only |
-| Socket payload size DoS | Partially exposed — HIGH-02: no per-entry validation or array-length cap on the socket handler's broadcast path |
-| Auth bypass on server function | Protected — `requireAuth` enforced; `isUnauthorizedError` checked in orchestrator |
-| Auth bypass on socket | Protected — namespace-level handshake auth (`whiteboardNsp.use`) + per-handler `isSessionExpired` prelude |
-| Secret leakage | None — no new secrets introduced |
-| Unsafe defaults | None — simulation started with `.stop()`, RAF-chunked, no auto-loop |
+| Area                           | Status                                                                                                          |
+| ------------------------------ | --------------------------------------------------------------------------------------------------------------- |
+| SQL injection via Zod inputs   | Protected — `bulkUpdatePositionsSchema` rejects non-UUID IDs and non-finite numbers before any DB query         |
+| IDOR on server function        | Protected — two-step: `getWhiteboardProjectId` + `findMany` Set membership check for all position IDs           |
+| IDOR on socket handler         | Not applicable — socket handler does no DB writes; it re-broadcasts the payload only                            |
+| Socket payload size DoS        | Partially exposed — HIGH-02: no per-entry validation or array-length cap on the socket handler's broadcast path |
+| Auth bypass on server function | Protected — `requireAuth` enforced; `isUnauthorizedError` checked in orchestrator                               |
+| Auth bypass on socket          | Protected — namespace-level handshake auth (`whiteboardNsp.use`) + per-handler `isSessionExpired` prelude       |
+| Secret leakage                 | None — no new secrets introduced                                                                                |
+| Unsafe defaults                | None — simulation started with `.stop()`, RAF-chunked, no auto-loop                                             |
 
 ---
 
@@ -295,11 +298,11 @@ The orchestrator unit suite (TC-AL-O-01 through O-13, all 13 passing) is the mos
 **Findings count (Round 2):**
 
 | Severity | Round 1 | Round 2 |
-|----------|---------|---------|
-| Critical | 0 | 0 |
-| High | 2 | 0 |
-| Medium | 4 | 5 |
-| Low | 2 | 2 |
+| -------- | ------- | ------- |
+| Critical | 0       | 0       |
+| High     | 2       | 0       |
+| Medium   | 4       | 5       |
+| Low      | 2       | 2       |
 
 Both High findings from Round 1 are resolved: HIGH-02 (socket payload validation) is fixed and tested; HIGH-01 (auth contract untested) is downgraded to Medium after reassessment — production behavior is correct and the auth-error path is covered by orchestrator unit tests on the consumer side.
 

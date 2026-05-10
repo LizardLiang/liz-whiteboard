@@ -16,10 +16,12 @@ This file captures feature-specific discoveries and changes that are NOT yet in 
 ## External Research (Athena + Mimir)
 
 **Research Conducted**:
+
 - {topic} researched via {source}
 - Key findings: {summary}
 
 **Cached Insights**:
+
 - `.claude/.Arena/insights/{topic}-{date}.md` - {description}
 
 ---
@@ -27,18 +29,23 @@ This file captures feature-specific discoveries and changes that are NOT yet in 
 ## Codebase Discoveries (Hephaestus)
 
 **New Directories**:
+
 - `{path}/` - {purpose}
 
 **New Files**:
+
 - `{path}/file.ts` - {purpose}
 
 **Dependencies Added**:
+
 - `{package}@{version}` - {purpose}
 
 **Architecture Changes**:
+
 - {description of new patterns or services}
 
 **Source References**:
+
 - See tech-spec.md section X for details
 
 ---
@@ -46,9 +53,11 @@ This file captures feature-specific discoveries and changes that are NOT yet in 
 ## Architecture Validation (Apollo)
 
 **Patterns Verified**:
+
 - {pattern} follows existing {convention}
 
 **Notes**:
+
 - {any architectural concerns or recommendations}
 
 ---
@@ -66,6 +75,7 @@ This file captures feature-specific discoveries and changes that are NOT yet in 
 | {path} | {description} | Done |
 
 **Key Implementation Notes**:
+
 - {important implementation details}
 - {any deviations from tech spec}
 
@@ -74,11 +84,13 @@ This file captures feature-specific discoveries and changes that are NOT yet in 
 ## Code Review Notes (Hermes)
 
 **Quality Assessment**:
+
 - Code quality: {assessment}
 - Test coverage: {percentage}%
 - Security review: {passed/concerns}
 
 **Ready for Integration**:
+
 - [x] All code complete
 - [x] Tests passing
 - [x] No security issues
@@ -91,23 +103,28 @@ This file captures feature-specific discoveries and changes that are NOT yet in 
 When integrating these deltas into Master Arena:
 
 ### tech-stack.md
+
 - [ ] Add new dependencies: {list}
 - [ ] Update versions: {list}
 
 ### architecture.md
+
 - [ ] Document new services: {list}
 - [ ] Update component diagram
 - [ ] Add new patterns: {list}
 
 ### file-structure.md
+
 - [ ] Add new directories: {list}
 - [ ] Update key files list
 
 ### conventions.md
+
 - [ ] Document any new conventions discovered
 - [ ] Note any exceptions to existing patterns
 
 ### project-overview.md
+
 - [ ] Update if feature significantly changes project scope
 
 ---
@@ -116,9 +133,9 @@ When integrating these deltas into Master Arena:
 
 If this delta contradicted Master Arena, document here:
 
-| Arena Claimed | Delta Found | Resolution |
-|---------------|-------------|------------|
-| {old value} | {new value} | {how resolved} |
+| Arena Claimed | Delta Found | Resolution     |
+| ------------- | ----------- | -------------- |
+| {old value}   | {new value} | {how resolved} |
 
 ---
 

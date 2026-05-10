@@ -1,12 +1,12 @@
 # Risk Analysis: Auth Security Hardening
 
-| Field | Value |
-| --- | --- |
+| Field   | Value                   |
+| ------- | ----------------------- |
 | Feature | auth-security-hardening |
-| Analyst | Cassandra |
-| Stage | 11-review |
-| Date | 2026-05-09 |
-| Verdict | Caution |
+| Analyst | Cassandra               |
+| Stage   | 11-review               |
+| Date    | 2026-05-09              |
+| Verdict | Caution                 |
 
 ---
 
@@ -171,11 +171,11 @@ None.
 Three HIGH findings (H-1, H-2, H-3), all addressable without architectural changes. Zero CRITICAL findings.
 
 | Severity | Count |
-|----------|-------|
-| Critical | 0 |
-| High | 3 |
-| Medium | 7 |
-| Low | 3 |
+| -------- | ----- |
+| Critical | 0     |
+| High     | 3     |
+| Medium   | 7     |
+| Low      | 3     |
 
 H-1 (ESLint rule can be satisfied with `findEffectiveRole` alone) weakens the ongoing enforcement guarantee. H-2 (getAllProjects data exposure) is a pre-existing IDOR that the feature explicitly endorsed. H-3 (BatchColumnForm shows RBAC message on all errors) is a correctness and UX issue that does not break security but misleads users.
 

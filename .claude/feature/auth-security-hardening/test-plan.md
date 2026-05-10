@@ -1,38 +1,38 @@
 # Test Plan: Auth Security Hardening
 
-| Field | Value |
-| --- | --- |
-| Feature | auth-security-hardening |
-| Author | Artemis (QA Agent) |
-| Date | 2026-05-09 |
-| PRD | prd.md v2.0 |
-| Tech Spec | tech-spec.md v1 (Hephaestus) |
+| Field        | Value                                                   |
+| ------------ | ------------------------------------------------------- |
+| Feature      | auth-security-hardening                                 |
+| Author       | Artemis (QA Agent)                                      |
+| Date         | 2026-05-09                                              |
+| PRD          | prd.md v2.0                                             |
+| Tech Spec    | tech-spec.md v1 (Hephaestus)                            |
 | Spec Reviews | spec-review-pm.md (Approved), spec-review-sa.md (Sound) |
-| Framework | Vitest + @testing-library/react + jsdom |
-| Test Runner | `bun run test` |
+| Framework    | Vitest + @testing-library/react + jsdom                 |
+| Test Runner  | `bun run test`                                          |
 
 ---
 
 ## Coverage Summary
 
-| Suite | Test Count | Priority |
-| --- | --- | --- |
-| Unit — `requireRole` / `requireServerFnRole` helpers | 14 | P0 |
-| Unit — `logSampledError` dedup | 4 | P1 |
-| Unit — `BatchDeniedError` / `ForbiddenError` shapes | 4 | P0 |
-| Unit — `verifyPassword` AST assertion (SEC-SP-02) | 2 | P0 |
-| Integration — Superpassword removal (SEC-SP-04) | 4 | P0 |
-| Integration — WebSocket `column:create` authz (SEC-WS-04) | 6 | P0 |
-| Integration — Batch RBAC all-or-nothing (SEC-BATCH-04) | 7 | P0 |
-| Integration — `getTableProjectId` throw path (Apollo MEDIUM-1) | 3 | P0 |
-| Component — Batch UX contract (SEC-BATCH-UX-05) | 5 | P0 |
-| Integration — Session-expired WebSocket path (SEC-MODAL-04) | 5 | P0 |
-| Integration — Session-expired HTTP 401 path (SEC-MODAL-03) | 3 | P0 |
-| Component — Column-form draft restore (SEC-MODAL-05) | 5 | P0 |
-| Integration — RBAC per-tier denial (SEC-RBAC-05) | 4 | P0 |
-| Static — ESLint rule self-tests (SEC-RBAC-04 + SEC-MODAL-02) | 8 | P0 |
-| Regression — Five pre/post defect probes | 5 | P0 |
-| **Total** | **79** | |
+| Suite                                                          | Test Count | Priority |
+| -------------------------------------------------------------- | ---------- | -------- |
+| Unit — `requireRole` / `requireServerFnRole` helpers           | 14         | P0       |
+| Unit — `logSampledError` dedup                                 | 4          | P1       |
+| Unit — `BatchDeniedError` / `ForbiddenError` shapes            | 4          | P0       |
+| Unit — `verifyPassword` AST assertion (SEC-SP-02)              | 2          | P0       |
+| Integration — Superpassword removal (SEC-SP-04)                | 4          | P0       |
+| Integration — WebSocket `column:create` authz (SEC-WS-04)      | 6          | P0       |
+| Integration — Batch RBAC all-or-nothing (SEC-BATCH-04)         | 7          | P0       |
+| Integration — `getTableProjectId` throw path (Apollo MEDIUM-1) | 3          | P0       |
+| Component — Batch UX contract (SEC-BATCH-UX-05)                | 5          | P0       |
+| Integration — Session-expired WebSocket path (SEC-MODAL-04)    | 5          | P0       |
+| Integration — Session-expired HTTP 401 path (SEC-MODAL-03)     | 3          | P0       |
+| Component — Column-form draft restore (SEC-MODAL-05)           | 5          | P0       |
+| Integration — RBAC per-tier denial (SEC-RBAC-05)               | 4          | P0       |
+| Static — ESLint rule self-tests (SEC-RBAC-04 + SEC-MODAL-02)   | 8          | P0       |
+| Regression — Five pre/post defect probes                       | 5          | P0       |
+| **Total**                                                      | **79**     |          |
 
 **P0 requirements covered: 30 / 30 (100%).**
 Primary risk areas: `getTableProjectId` DB-throw anti-enumeration leak (Apollo MEDIUM-1), RBAC batch semantics (all-or-nothing pre-validate-then-write), ESLint rule wrapper-allowlist completeness.
@@ -705,13 +705,13 @@ Uses ESLint's `RuleTester` API. Each test lints a small fixture string or fixtur
 
 These five tests are the PRD §6 "fail-before-fix, pass-after-fix" mandate (D6). Each maps to exactly one of the five defects. They should be tagged or grouped so CI can run them in isolation as a regression gate.
 
-| Test ID | Defect | Fails Before | Passes After |
-| --- | --- | --- | --- |
-| TC-REG-01 | Superpassword bypass | TC-SP-01 | Phase 6.2 |
-| TC-REG-02 | WebSocket IDOR `column:create` | TC-WS-01 | Phase 2.1 |
-| TC-REG-03 | Batch RBAC gap | TC-BATCH-01 | Phase 4.1 |
-| TC-REG-04 | Session-expired modal unwired | TC-MODAL-01 | Phase 5.1 |
-| TC-REG-05 | Server-function RBAC missing | TC-RBAC-01 | Phase 3.2 |
+| Test ID   | Defect                         | Fails Before | Passes After |
+| --------- | ------------------------------ | ------------ | ------------ |
+| TC-REG-01 | Superpassword bypass           | TC-SP-01     | Phase 6.2    |
+| TC-REG-02 | WebSocket IDOR `column:create` | TC-WS-01     | Phase 2.1    |
+| TC-REG-03 | Batch RBAC gap                 | TC-BATCH-01  | Phase 4.1    |
+| TC-REG-04 | Session-expired modal unwired  | TC-MODAL-01  | Phase 5.1    |
+| TC-REG-05 | Server-function RBAC missing   | TC-RBAC-01   | Phase 3.2    |
 
 These are not separate test cases — each of the five is the first test in its respective integration suite (TC-SP-01, TC-WS-01, TC-BATCH-01, TC-MODAL-01, TC-RBAC-01). They are collected here as a named set for PRD traceability.
 
@@ -721,39 +721,39 @@ These are not separate test cases — each of the five is the first test in its 
 
 ## Requirements Coverage Matrix
 
-| Requirement ID | Test Cases | P0? |
-| --- | --- | --- |
-| SEC-SP-01 | TC-SP-04, TC-AST-02 | P0 |
-| SEC-SP-02 | TC-AST-01 | P0 |
-| SEC-SP-03 | TC-SP-02 | P0 |
-| SEC-SP-04 | TC-SP-01 (TC-REG-01) | P0 |
-| SEC-WS-01 | TC-WS-01, TC-WS-02, TC-WS-03, TC-WS-06 | P0 |
-| SEC-WS-02 | TC-RR-01, TC-RR-07 | P0 |
-| SEC-WS-03 | TC-WS-04, TC-WS-05, TC-RR-06, TC-RR-14 | P0 |
-| SEC-WS-04 | TC-WS-01 (TC-REG-02) | P0 |
-| SEC-BATCH-01 | TC-BATCH-01, TC-BATCH-02 | P0 |
-| SEC-BATCH-02 | TC-BATCH-01, TC-GTPI-02 | P0 |
-| SEC-BATCH-03 | TC-BATCH-04, TC-ERR-04, TC-GTPI-01 | P0 |
-| SEC-BATCH-04 | TC-BATCH-01 (TC-REG-03), TC-BATCH-02, TC-BATCH-03 | P0 |
-| SEC-BATCH-UX-01 | TC-BUX-01 | P0 |
-| SEC-BATCH-UX-02 | TC-BUX-02 | P0 |
-| SEC-BATCH-UX-03 | TC-BUX-03, TC-BUX-04 | P0 |
-| SEC-BATCH-UX-04 | TC-ERR-03, TC-WS-01 (BATCH_DENIED shape) | P0 |
-| SEC-BATCH-UX-05 | TC-BUX-01 through TC-BUX-05 | P0 |
-| SEC-MODAL-01 | TC-MODAL-01 (TC-REG-04) | P0 |
-| SEC-MODAL-02 | TC-ESLINT-07, TC-ESLINT-08, TC-MODAL-03 | P0 |
-| SEC-MODAL-03 | TC-HTTP401-01, TC-HTTP401-02, TC-HTTP401-03 | P0 |
-| SEC-MODAL-04 | TC-MODAL-01, TC-MODAL-02, TC-MODAL-03 | P0 |
-| SEC-MODAL-05 | TC-MODAL-05, TC-DRAFT-01 through TC-DRAFT-05 | P0 |
-| SEC-RBAC-01 | TC-RR-07, TC-RR-08, TC-RBAC-01 through TC-RBAC-04 | P0 |
-| SEC-RBAC-02 | TC-RBAC-04 | P0 |
-| SEC-RBAC-03 | TC-ESLINT-01, TC-ESLINT-02 (JSDoc presence validates by implication) | P0 |
-| SEC-RBAC-04 | TC-ESLINT-01 through TC-ESLINT-06 | P0 |
-| SEC-RBAC-05 | TC-RBAC-01 through TC-RBAC-04 (TC-REG-05 = TC-RBAC-01) | P0 |
-| SEC-ERR-01 | TC-ERR-01, TC-ERR-02, TC-RR-08 | P0 |
-| SEC-ERR-02 | TC-RR-02, TC-RR-13, TC-WS-01 | P0 |
-| SEC-ERR-03 | TC-RR-04, TC-RR-09, TC-WS-06, TC-BATCH-04, TC-GTPI-01, TC-GTPI-03 | P0 |
-| Apollo MEDIUM-1 | TC-GTPI-01, TC-GTPI-02, TC-GTPI-03 | P0 |
+| Requirement ID  | Test Cases                                                           | P0? |
+| --------------- | -------------------------------------------------------------------- | --- |
+| SEC-SP-01       | TC-SP-04, TC-AST-02                                                  | P0  |
+| SEC-SP-02       | TC-AST-01                                                            | P0  |
+| SEC-SP-03       | TC-SP-02                                                             | P0  |
+| SEC-SP-04       | TC-SP-01 (TC-REG-01)                                                 | P0  |
+| SEC-WS-01       | TC-WS-01, TC-WS-02, TC-WS-03, TC-WS-06                               | P0  |
+| SEC-WS-02       | TC-RR-01, TC-RR-07                                                   | P0  |
+| SEC-WS-03       | TC-WS-04, TC-WS-05, TC-RR-06, TC-RR-14                               | P0  |
+| SEC-WS-04       | TC-WS-01 (TC-REG-02)                                                 | P0  |
+| SEC-BATCH-01    | TC-BATCH-01, TC-BATCH-02                                             | P0  |
+| SEC-BATCH-02    | TC-BATCH-01, TC-GTPI-02                                              | P0  |
+| SEC-BATCH-03    | TC-BATCH-04, TC-ERR-04, TC-GTPI-01                                   | P0  |
+| SEC-BATCH-04    | TC-BATCH-01 (TC-REG-03), TC-BATCH-02, TC-BATCH-03                    | P0  |
+| SEC-BATCH-UX-01 | TC-BUX-01                                                            | P0  |
+| SEC-BATCH-UX-02 | TC-BUX-02                                                            | P0  |
+| SEC-BATCH-UX-03 | TC-BUX-03, TC-BUX-04                                                 | P0  |
+| SEC-BATCH-UX-04 | TC-ERR-03, TC-WS-01 (BATCH_DENIED shape)                             | P0  |
+| SEC-BATCH-UX-05 | TC-BUX-01 through TC-BUX-05                                          | P0  |
+| SEC-MODAL-01    | TC-MODAL-01 (TC-REG-04)                                              | P0  |
+| SEC-MODAL-02    | TC-ESLINT-07, TC-ESLINT-08, TC-MODAL-03                              | P0  |
+| SEC-MODAL-03    | TC-HTTP401-01, TC-HTTP401-02, TC-HTTP401-03                          | P0  |
+| SEC-MODAL-04    | TC-MODAL-01, TC-MODAL-02, TC-MODAL-03                                | P0  |
+| SEC-MODAL-05    | TC-MODAL-05, TC-DRAFT-01 through TC-DRAFT-05                         | P0  |
+| SEC-RBAC-01     | TC-RR-07, TC-RR-08, TC-RBAC-01 through TC-RBAC-04                    | P0  |
+| SEC-RBAC-02     | TC-RBAC-04                                                           | P0  |
+| SEC-RBAC-03     | TC-ESLINT-01, TC-ESLINT-02 (JSDoc presence validates by implication) | P0  |
+| SEC-RBAC-04     | TC-ESLINT-01 through TC-ESLINT-06                                    | P0  |
+| SEC-RBAC-05     | TC-RBAC-01 through TC-RBAC-04 (TC-REG-05 = TC-RBAC-01)               | P0  |
+| SEC-ERR-01      | TC-ERR-01, TC-ERR-02, TC-RR-08                                       | P0  |
+| SEC-ERR-02      | TC-RR-02, TC-RR-13, TC-WS-01                                         | P0  |
+| SEC-ERR-03      | TC-RR-04, TC-RR-09, TC-WS-06, TC-BATCH-04, TC-GTPI-01, TC-GTPI-03    | P0  |
+| Apollo MEDIUM-1 | TC-GTPI-01, TC-GTPI-02, TC-GTPI-03                                   | P0  |
 
 **All 30 PRD P0 requirements covered. Apollo MEDIUM-1 explicitly covered.**
 
@@ -761,21 +761,21 @@ These are not separate test cases — each of the five is the first test in its 
 
 ## File Delivery Map
 
-| Test File | Suite(s) | Status |
-| --- | --- | --- |
-| `src/lib/auth/require-role.test.ts` | 1, 3 | New |
-| `src/lib/auth/log-sample.test.ts` | 2 | New |
-| `src/lib/auth/password-ast-assert.test.ts` | 4 | New |
-| `src/routes/api/auth.test.ts` | 5 | Extend |
-| `src/server/socket.test.ts` | 6 | Extend |
-| `src/routes/api/columns.test.ts` | 7, 8 | New |
-| `src/components/whiteboard/<column-batch-form>.test.tsx` | 9 | New (path TBD) |
-| `src/hooks/use-whiteboard-collaboration-auth.test.ts` | 10, 11 | Extend |
-| `src/components/whiteboard/<column-edit-modal>.test.tsx` | 12 | New (path TBD) |
-| `src/lib/server-functions.test.ts` | 13 | New |
-| `tools/eslint-rules/require-server-fn-authz.test.js` | 14 | New |
-| `tools/eslint-rules/__fixtures__/good-server-fn.ts` | 14 | New |
-| `tools/eslint-rules/__fixtures__/bad-server-fn.ts` | 14 | New |
+| Test File                                                | Suite(s) | Status         |
+| -------------------------------------------------------- | -------- | -------------- |
+| `src/lib/auth/require-role.test.ts`                      | 1, 3     | New            |
+| `src/lib/auth/log-sample.test.ts`                        | 2        | New            |
+| `src/lib/auth/password-ast-assert.test.ts`               | 4        | New            |
+| `src/routes/api/auth.test.ts`                            | 5        | Extend         |
+| `src/server/socket.test.ts`                              | 6        | Extend         |
+| `src/routes/api/columns.test.ts`                         | 7, 8     | New            |
+| `src/components/whiteboard/<column-batch-form>.test.tsx` | 9        | New (path TBD) |
+| `src/hooks/use-whiteboard-collaboration-auth.test.ts`    | 10, 11   | Extend         |
+| `src/components/whiteboard/<column-edit-modal>.test.tsx` | 12       | New (path TBD) |
+| `src/lib/server-functions.test.ts`                       | 13       | New            |
+| `tools/eslint-rules/require-server-fn-authz.test.js`     | 14       | New            |
+| `tools/eslint-rules/__fixtures__/good-server-fn.ts`      | 14       | New            |
+| `tools/eslint-rules/__fixtures__/bad-server-fn.ts`       | 14       | New            |
 
 Two component file paths (column-batch-form, column-edit-modal) are TBD — Ares resolves during Phase 4.3 and Phase 5.3 using `rg "createColumnsFn"` and `rg "createColumnSchema|updateColumnSchema" src/components`.
 
@@ -783,28 +783,28 @@ Two component file paths (column-batch-form, column-edit-modal) are TBD — Ares
 
 ## Edge Cases and Attacker Scenarios
 
-| Scenario | Coverage |
-| --- | --- |
+| Scenario                                                                                | Coverage                                                          |
+| --------------------------------------------------------------------------------------- | ----------------------------------------------------------------- |
 | Submitting batch where item N targets a non-existent whiteboard (not just unauthorized) | TC-GTPI-03, TC-WS-06 — same FORBIDDEN response, indistinguishable |
-| DB unreachable during RBAC check for a WebSocket event | TC-RR-05 — fail-closed, FORBIDDEN emitted |
-| DB unreachable during `getTableProjectId` for batch item | TC-GTPI-01 — BatchDeniedError, no raw error propagation |
-| Duplicate `session_expired` socket registrations added by future developer | TC-ESLINT-07, TC-MODAL-03 |
-| New `createServerFn` export added without `@requires` JSDoc | TC-ESLINT-01 |
-| New `createServerFn` export with fake annotation but no real `requireServerFnRole` call | TC-ESLINT-02 |
-| Wrapper HOF (`withAuth`) that no-ops `requireServerFnRole` ("gutted wrapper") | TC-ESLINT-05 |
-| User with OWNER role calling EDITOR-required function | TC-RR-11 — must be allowed (tier hierarchy) |
-| `triggerSessionExpired` itself throws | TC-MODAL-04 — fallback to hard nav, no stuck UI |
-| Session-expired fires mid-batch-column-operation | TC-MODAL-05 — draft persisted before modal redirect |
-| Superpassword env var set but bypass code deleted | TC-SP-01, TC-SP-04 — both confirm denial |
+| DB unreachable during RBAC check for a WebSocket event                                  | TC-RR-05 — fail-closed, FORBIDDEN emitted                         |
+| DB unreachable during `getTableProjectId` for batch item                                | TC-GTPI-01 — BatchDeniedError, no raw error propagation           |
+| Duplicate `session_expired` socket registrations added by future developer              | TC-ESLINT-07, TC-MODAL-03                                         |
+| New `createServerFn` export added without `@requires` JSDoc                             | TC-ESLINT-01                                                      |
+| New `createServerFn` export with fake annotation but no real `requireServerFnRole` call | TC-ESLINT-02                                                      |
+| Wrapper HOF (`withAuth`) that no-ops `requireServerFnRole` ("gutted wrapper")           | TC-ESLINT-05                                                      |
+| User with OWNER role calling EDITOR-required function                                   | TC-RR-11 — must be allowed (tier hierarchy)                       |
+| `triggerSessionExpired` itself throws                                                   | TC-MODAL-04 — fallback to hard nav, no stuck UI                   |
+| Session-expired fires mid-batch-column-operation                                        | TC-MODAL-05 — draft persisted before modal redirect               |
+| Superpassword env var set but bypass code deleted                                       | TC-SP-01, TC-SP-04 — both confirm denial                          |
 
 ---
 
 ## Known Constraints and Mitigations
 
-| Constraint | Mitigation |
-| --- | --- |
-| Pre-existing jsdom component test failures (119/166 passing baseline) | New component tests explicitly set `environment: 'jsdom'` in their describe block or vitest config override; baseline count tracked separately |
-| Column-edit modal and column-batch-form file paths unknown at plan time | Suites 9 and 12 specify what to test; Ares confirms paths during implementation; test skeletons use `// TODO: confirm path` comments |
-| ESLint cross-file `Program:exit` state in flat config may be awkward | TC-ESLINT-07/08 allow an alternative: Vitest meta-test that uses `rg` output to count `session_expired` registrations — acceptable per PRD D20 |
-| Real Socket.IO loopback tests are bonus (D10 constraint) | All socket tests mock the socket; integration loop-back tests are explicitly optional |
-| Phase 6.1 instrumentation (AD-8) is a pre-merge step, not a test | TC-SP-04 and TC-AST-02 validate post-removal; the instrumentation phase is verified by §13.5 checklist, not by test |
+| Constraint                                                              | Mitigation                                                                                                                                     |
+| ----------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------- |
+| Pre-existing jsdom component test failures (119/166 passing baseline)   | New component tests explicitly set `environment: 'jsdom'` in their describe block or vitest config override; baseline count tracked separately |
+| Column-edit modal and column-batch-form file paths unknown at plan time | Suites 9 and 12 specify what to test; Ares confirms paths during implementation; test skeletons use `// TODO: confirm path` comments           |
+| ESLint cross-file `Program:exit` state in flat config may be awkward    | TC-ESLINT-07/08 allow an alternative: Vitest meta-test that uses `rg` output to count `session_expired` registrations — acceptable per PRD D20 |
+| Real Socket.IO loopback tests are bonus (D10 constraint)                | All socket tests mock the socket; integration loop-back tests are explicitly optional                                                          |
+| Phase 6.1 instrumentation (AD-8) is a pre-merge step, not a test        | TC-SP-04 and TC-AST-02 validate post-removal; the instrumentation phase is verified by §13.5 checklist, not by test                            |

@@ -160,7 +160,13 @@ describe('SEC-MODAL-04: session_expired socket event triggers triggerSessionExpi
 
   // TC-MODAL-01 (Regression): session_expired → triggerSessionExpired called once
   it('TC-MODAL-01 (Regression): session_expired event invokes triggerSessionExpired exactly once', () => {
-    renderHook(() => useWhiteboardCollaboration(whiteboardId, userId, mockTriggerSessionExpired))
+    renderHook(() =>
+      useWhiteboardCollaboration(
+        whiteboardId,
+        userId,
+        mockTriggerSessionExpired,
+      ),
+    )
 
     // Find the session_expired handler registered via useCollaboration
     // useWhiteboardCollaboration registers its own listeners; the session_expired
@@ -173,7 +179,9 @@ describe('SEC-MODAL-04: session_expired socket event triggers triggerSessionExpi
 
     if (sessionExpiredCall) {
       const handler = sessionExpiredCall[1]
-      act(() => { handler() })
+      act(() => {
+        handler()
+      })
       expect(mockTriggerSessionExpired).toHaveBeenCalledTimes(1)
     } else {
       // The hook passes triggerSessionExpired as the 3rd arg to useCollaboration,
@@ -186,7 +194,13 @@ describe('SEC-MODAL-04: session_expired socket event triggers triggerSessionExpi
 
   // TC-MODAL-03: Single session_expired listener (no duplicate registrations)
   it('TC-MODAL-03: session_expired registered at most once (no duplicate handlers)', () => {
-    renderHook(() => useWhiteboardCollaboration(whiteboardId, userId, mockTriggerSessionExpired))
+    renderHook(() =>
+      useWhiteboardCollaboration(
+        whiteboardId,
+        userId,
+        mockTriggerSessionExpired,
+      ),
+    )
 
     const sessionExpiredRegistrations = mockOn.mock.calls.filter(
       ([event]: [string]) => event === 'session_expired',

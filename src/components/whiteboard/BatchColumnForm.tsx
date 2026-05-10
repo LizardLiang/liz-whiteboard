@@ -32,7 +32,14 @@ export interface BatchColumnFormProps {
    * Should throw BatchDeniedError on RBAC failure — the form catches it
    * and shows the denial banner (SEC-BATCH-UX-01).
    */
-  onSubmit: (rows: Array<{ tableId: string; name: string; dataType: DataType; order: number }>) => Promise<void>
+  onSubmit: (
+    rows: Array<{
+      tableId: string
+      name: string
+      dataType: DataType
+      order: number
+    }>,
+  ) => Promise<void>
   /** Called when the form is dismissed (cancel or success). */
   onClose?: () => void
   /** Optional initial rows (for pre-seeded batch). */
@@ -52,17 +59,37 @@ function makeRow(name = '', dataType: DataType = 'string'): BatchColumnRow {
 }
 
 const DATA_TYPES: Array<DataType> = [
-  'string', 'int', 'bigint', 'smallint', 'float', 'double', 'decimal',
-  'serial', 'money', 'char', 'varchar', 'text', 'boolean', 'bit',
-  'date', 'datetime', 'timestamp', 'time', 'binary', 'blob',
-  'json', 'xml', 'array', 'enum', 'uuid',
+  'string',
+  'int',
+  'bigint',
+  'smallint',
+  'float',
+  'double',
+  'decimal',
+  'serial',
+  'money',
+  'char',
+  'varchar',
+  'text',
+  'boolean',
+  'bit',
+  'date',
+  'datetime',
+  'timestamp',
+  'time',
+  'binary',
+  'blob',
+  'json',
+  'xml',
+  'array',
+  'enum',
+  'uuid',
 ]
 
 const BATCH_DENIED_MESSAGE =
   'This batch could not be saved. One or more items target a resource you no longer have access to.'
 
-const GENERIC_ERROR_MESSAGE =
-  'Save failed. Please try again.'
+const GENERIC_ERROR_MESSAGE = 'Save failed. Please try again.'
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Component
@@ -150,7 +177,10 @@ export function BatchColumnForm({
           error instanceof Error &&
           'errorCode' in error &&
           (error as { errorCode: string }).errorCode
-        if (errorCode === 'BATCH_DENIED' || (error instanceof Error && error.message.includes('BATCH_DENIED'))) {
+        if (
+          errorCode === 'BATCH_DENIED' ||
+          (error instanceof Error && error.message.includes('BATCH_DENIED'))
+        ) {
           // SEC-BATCH-UX-01: input preserved — no form reset
           setDenied(true)
         } else {
@@ -269,7 +299,9 @@ export function BatchColumnForm({
               id={`col-type-${row.id}`}
               aria-label={`Column ${idx + 1} type`}
               value={row.dataType}
-              onChange={(e) => updateRowDataType(row.id, e.target.value as DataType)}
+              onChange={(e) =>
+                updateRowDataType(row.id, e.target.value as DataType)
+              }
               className="text-xs px-1.5 py-1 border border-input rounded-md bg-background text-foreground max-w-[100px] focus:outline-none focus:ring-1 focus:ring-ring"
             >
               {DATA_TYPES.map((t) => (

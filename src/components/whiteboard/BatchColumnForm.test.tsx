@@ -58,7 +58,7 @@ describe('TC-BUX-01: Batch form retains input after BATCH_DENIED', () => {
     })
 
     // Verify all 3 inputs are pre-filled
-    const inputs = screen.getAllByRole('textbox') as HTMLInputElement[]
+    const inputs = screen.getAllByRole('textbox')
     expect(inputs).toHaveLength(3)
     expect(inputs[0].value).toBe('col_a')
     expect(inputs[1].value).toBe('col_b')
@@ -66,14 +66,16 @@ describe('TC-BUX-01: Batch form retains input after BATCH_DENIED', () => {
 
     // Submit the form
     await act(async () => {
-      fireEvent.submit(screen.getByRole('form', { name: /batch column creation/i }))
+      fireEvent.submit(
+        screen.getByRole('form', { name: /batch column creation/i }),
+      )
     })
 
     // Wait for async rejection to settle
     await act(async () => {})
 
     // Input values must be preserved — no clear/reset
-    const inputsAfter = screen.getAllByRole('textbox') as HTMLInputElement[]
+    const inputsAfter = screen.getAllByRole('textbox')
     expect(inputsAfter).toHaveLength(3)
     expect(inputsAfter[0].value).toBe('col_a')
     expect(inputsAfter[1].value).toBe('col_b')
@@ -95,7 +97,9 @@ describe('TC-BUX-02: Denial banner with canonical message', () => {
     })
 
     await act(async () => {
-      fireEvent.submit(screen.getByRole('form', { name: /batch column creation/i }))
+      fireEvent.submit(
+        screen.getByRole('form', { name: /batch column creation/i }),
+      )
     })
 
     await act(async () => {})
@@ -125,14 +129,18 @@ describe('TC-BUX-03: Bisection affordance present in DOM', () => {
     })
 
     await act(async () => {
-      fireEvent.submit(screen.getByRole('form', { name: /batch column creation/i }))
+      fireEvent.submit(
+        screen.getByRole('form', { name: /batch column creation/i }),
+      )
     })
 
     await act(async () => {})
 
     // At least one bisection button must exist
     const firstHalfBtn = screen.getByRole('button', { name: /try first half/i })
-    const secondHalfBtn = screen.getByRole('button', { name: /try second half/i })
+    const secondHalfBtn = screen.getByRole('button', {
+      name: /try second half/i,
+    })
     expect(firstHalfBtn).toBeTruthy()
     expect(secondHalfBtn).toBeTruthy()
   })
@@ -156,7 +164,9 @@ describe('TC-BUX-04: Bisection affordance keyboard reachable', () => {
     })
 
     await act(async () => {
-      fireEvent.submit(screen.getByRole('form', { name: /batch column creation/i }))
+      fireEvent.submit(
+        screen.getByRole('form', { name: /batch column creation/i }),
+      )
     })
 
     await act(async () => {})
@@ -197,7 +207,9 @@ describe('TC-BUX-05: Banner has role="alert" for accessibility', () => {
     })
 
     await act(async () => {
-      fireEvent.submit(screen.getByRole('form', { name: /batch column creation/i }))
+      fireEvent.submit(
+        screen.getByRole('form', { name: /batch column creation/i }),
+      )
     })
 
     await act(async () => {})
@@ -219,7 +231,7 @@ describe('TC-BUX-05: Banner has role="alert" for accessibility', () => {
 describe('BatchColumnForm: row management', () => {
   it('renders one empty row by default', () => {
     renderForm()
-    const inputs = screen.getAllByRole('textbox') as HTMLInputElement[]
+    const inputs = screen.getAllByRole('textbox')
     expect(inputs).toHaveLength(1)
     expect(inputs[0].value).toBe('')
   })
@@ -239,9 +251,11 @@ describe('BatchColumnForm: row management', () => {
         { name: 'col_2', dataType: 'int' },
       ],
     })
-    const removeButtons = screen.getAllByRole('button', { name: /remove column/i })
+    const removeButtons = screen.getAllByRole('button', {
+      name: /remove column/i,
+    })
     fireEvent.click(removeButtons[0])
-    const inputs = screen.getAllByRole('textbox') as HTMLInputElement[]
+    const inputs = screen.getAllByRole('textbox')
     expect(inputs).toHaveLength(1)
     expect(inputs[0].value).toBe('col_2')
   })
@@ -259,13 +273,19 @@ describe('BatchColumnForm: row management', () => {
     })
 
     await act(async () => {
-      fireEvent.submit(screen.getByRole('form', { name: /batch column creation/i }))
+      fireEvent.submit(
+        screen.getByRole('form', { name: /batch column creation/i }),
+      )
     })
 
     await act(async () => {})
 
     expect(onSubmit).toHaveBeenCalledWith([
-      expect.objectContaining({ tableId: 'tbl-test', name: 'id', dataType: 'uuid' }),
+      expect.objectContaining({
+        tableId: 'tbl-test',
+        name: 'id',
+        dataType: 'uuid',
+      }),
     ])
   })
 })

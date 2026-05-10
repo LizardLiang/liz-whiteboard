@@ -279,25 +279,18 @@
       "status": "complete"
     },
     "10-review": {
-      "agents": [
-        "hermes",
-        "cassandra"
-      ],
+      "agents": ["hermes", "cassandra"],
       "code_review_verdict": null,
       "completed": "2026-04-30T17:32:53+08:00",
       "document": "code-review.md",
-      "documents": [
-        "risk-analysis.md"
-      ],
+      "documents": ["risk-analysis.md"],
       "risk_verdict": "clear",
       "started": "2026-04-30T17:04:11+08:00",
       "status": "complete",
       "verdict": "approved"
     },
     "2-prd-review": {
-      "agents": [
-        "nemesis"
-      ],
+      "agents": ["nemesis"],
       "check_failures": [
         {
           "checks_failed": [
@@ -367,12 +360,8 @@
     "3-decomposition": {
       "agent": "daedalus",
       "completed": "2026-04-30T16:00:00+08:00",
-      "documents": [
-        "decomposition.md"
-      ],
-      "output_targets": [
-        "local"
-      ],
+      "documents": ["decomposition.md"],
+      "output_targets": ["local"],
       "started": "2026-04-30T16:00:00+08:00",
       "status": "complete"
     },
@@ -388,9 +377,7 @@
       "based_on_prd_version": 1,
       "completed": "2026-04-30T15:35:23+08:00",
       "document": "tech-spec.md",
-      "documents": [
-        "tech-spec.md"
-      ],
+      "documents": ["tech-spec.md"],
       "revision": 1,
       "revision_notes": "Round 1 revisions complete; addressed all 4 HIGH (SA-H1 lastConfirmedOrder seed-on-load + lastOptimisticByTable comparison; SA-H2 column-level intersection overwrite check; SA-H3 ack defers applyServerOrder until queue empty; SA-H4 single reconcileAfterDrop entry-point) + 3 MEDIUM (SA-M1 useLayoutEffect; SA-M2 ack-vs-broadcast ordering test added; SA-M3 queue-full guard moved to handleDragStart) + 2 LOW (SA-L1 RBAC stub note; SA-L2 websocket-events.md doc task) findings from Apollo's spec-review-sa.md.",
       "started": "2026-04-30T15:25:30+08:00",
@@ -453,9 +440,7 @@
       "criteria_total": 73,
       "criteria_verified": 63,
       "criteria_warnings": 5,
-      "documents": [
-        "prd-alignment.md"
-      ],
+      "documents": ["prd-alignment.md"],
       "gaps_requiring_coverage": [],
       "run": 2,
       "started": "2026-04-30T17:00:00+08:00",

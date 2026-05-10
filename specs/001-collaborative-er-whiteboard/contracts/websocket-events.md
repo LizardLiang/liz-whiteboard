@@ -12,6 +12,7 @@ Events are namespaced by whiteboard ID: `/whiteboard/:whiteboardId`.
 Emitted when a user creates a new column.
 
 **Payload:**
+
 ```json
 {
   "tableId": "uuid",
@@ -40,6 +41,7 @@ Broadcast to all other users when a column is created.
 Emitted when a user updates a column field.
 
 **Payload:**
+
 ```json
 {
   "columnId": "uuid",
@@ -85,6 +87,7 @@ Emitted when a user drags a column to a new position and drops it.
 The client sends the complete desired order for the table's columns.
 
 **Payload:**
+
 ```json
 {
   "tableId": "uuid",
@@ -93,6 +96,7 @@ The client sends the complete desired order for the table's columns.
 ```
 
 **Validation:**
+
 - `tableId` must be a valid UUID belonging to the current whiteboard (IDOR check)
 - `orderedColumnIds` must be a non-empty array of UUIDs (min 1, max 500)
 - All IDs must belong to the specified table
@@ -108,6 +112,7 @@ Broadcast to all users **except the sender** when a column reorder is persisted.
 The payload includes the fully-merged+re-sequenced order (including any FM-07 appended columns).
 
 **Payload:**
+
 ```json
 {
   "tableId": "uuid",
@@ -128,6 +133,7 @@ The payload contains the server's canonical merged+re-sequenced order, which may
 from the client's optimistic order if FM-07 appended missing columns.
 
 **Payload:**
+
 ```json
 {
   "tableId": "uuid",
@@ -136,6 +142,7 @@ from the client's optimistic order if FM-07 appended missing columns.
 ```
 
 **Client behavior:**
+
 - Pop the head of the FIFO queue for this table
 - If queue depth drops to 0, apply the server's canonical order to local state
 - If queue depth > 0, do NOT apply yet (SA-H3: prevents in-flight snap-back)
@@ -149,6 +156,7 @@ from the client's optimistic order if FM-07 appended missing columns.
 Emitted to the originating client on handler failure.
 
 **Payload:**
+
 ```json
 {
   "event": "column:reorder",
@@ -158,6 +166,7 @@ Emitted to the originating client on handler failure.
 ```
 
 **Error codes for `column:reorder`:**
+
 - `FORBIDDEN` — `tableId` belongs to a different whiteboard (IDOR)
 - `VALIDATION_FAILED` — Zod parse failure, unknown column IDs, or duplicate IDs
 - `UPDATE_FAILED` — Prisma transaction failure
@@ -167,41 +176,57 @@ Emitted to the originating client on handler failure.
 ## Table Events
 
 ### `table:create` (Client → Server)
+
 ### `table:created` (Server → Client, broadcast)
+
 ### `table:move` (Client → Server)
+
 ### `table:moved` (Server → Client, broadcast)
+
 ### `table:update` (Client → Server)
+
 ### `table:updated` (Server → Client, broadcast)
+
 ### `table:delete` (Client → Server)
+
 ### `table:deleted` (Server → Client, broadcast)
 
-*(Details omitted — see collaboration.ts handler implementations)*
+_(Details omitted — see collaboration.ts handler implementations)_
 
 ---
 
 ## Relationship Events
 
 ### `relationship:create` (Client → Server)
+
 ### `relationship:created` (Server → Client, broadcast)
+
 ### `relationship:update` (Client → Server)
+
 ### `relationship:updated` (Server → Client, broadcast)
+
 ### `relationship:delete` (Client → Server)
+
 ### `relationship:deleted` (Server → Client, broadcast)
 
-*(Details omitted — see collaboration.ts handler implementations)*
+_(Details omitted — see collaboration.ts handler implementations)_
 
 ---
 
 ## Session Events
 
 ### `sync:state` (Server → Client)
+
 Initial state broadcast on join.
 
 ### `sync:request` (Client → Server)
+
 Client requests a full state resync (e.g., after reconnect).
 
 ### `collaborator:joined` / `collaborator:left`
+
 Broadcast when users join or leave the whiteboard.
 
 ### `session_expired`
+
 Sent when the user's session has expired — client should redirect to login.

@@ -16,23 +16,23 @@ Implemented drag-and-drop column reordering within table nodes in the ER whitebo
 
 ## Files Created
 
-| File | Purpose |
-|------|---------|
-| `src/hooks/use-prefers-reduced-motion.ts` | Single source of truth for prefers-reduced-motion |
-| `src/hooks/use-column-reorder-mutations.ts` | Optimistic state, FIFO queue (≤5), detectOverwriteConflict, reconcileAfterDrop |
-| `src/hooks/use-column-reorder-collaboration.ts` | WS emitter/listener for column:reorder events |
-| `src/components/whiteboard/column/DragHandle.tsx` | Drag handle button: GripVertical + Tooltip + nodrag nowheel |
-| `src/components/whiteboard/column/InsertionLine.tsx` | 2px accent-color drop indicator |
-| `src/data/column.test.ts` | Suite S2: reorderColumns() data layer tests (5 tests) |
-| `src/hooks/use-column-reorder-mutations.test.ts` | Suites S3, S4, S9: detectOverwriteConflict + hook state machine (25 tests) |
-| `src/hooks/use-column-reorder-collaboration.test.ts` | Suite S7: collaboration hook (6 tests) + INT-25/26 ordering (2 tests) |
-| `specs/001-collaborative-er-whiteboard/contracts/websocket-events.md` | Documents all WS events including 3 new column:reorder events |
-| `src/routes/api/column-reorder-collaboration.test.ts` | Suite S5: socket handler (12 tests) — Round 2 |
-| `src/components/whiteboard/TableNode.test.tsx` | Suite S6: drag handle, InsertionLine, queue-full (18 tests) — Round 2 |
-| `src/components/whiteboard/ReactFlowWhiteboard.test.tsx` | Suite S8: edge re-anchor + seed (4 tests) — Round 2 |
-| `src/hooks/use-column-reorder-auto-scroll.test.ts` | REQ-09: auto-scroll logic (9 tests) — Round 2 |
-| `src/components/whiteboard/column/DragHandle.test.tsx` | REQ-12: tooltip tests (4 tests) — Round 2 |
-| `src/hooks/use-prefers-reduced-motion.test.ts` | REQ-13: reduced-motion compliance (6 tests) — Round 2 |
+| File                                                                  | Purpose                                                                        |
+| --------------------------------------------------------------------- | ------------------------------------------------------------------------------ |
+| `src/hooks/use-prefers-reduced-motion.ts`                             | Single source of truth for prefers-reduced-motion                              |
+| `src/hooks/use-column-reorder-mutations.ts`                           | Optimistic state, FIFO queue (≤5), detectOverwriteConflict, reconcileAfterDrop |
+| `src/hooks/use-column-reorder-collaboration.ts`                       | WS emitter/listener for column:reorder events                                  |
+| `src/components/whiteboard/column/DragHandle.tsx`                     | Drag handle button: GripVertical + Tooltip + nodrag nowheel                    |
+| `src/components/whiteboard/column/InsertionLine.tsx`                  | 2px accent-color drop indicator                                                |
+| `src/data/column.test.ts`                                             | Suite S2: reorderColumns() data layer tests (5 tests)                          |
+| `src/hooks/use-column-reorder-mutations.test.ts`                      | Suites S3, S4, S9: detectOverwriteConflict + hook state machine (25 tests)     |
+| `src/hooks/use-column-reorder-collaboration.test.ts`                  | Suite S7: collaboration hook (6 tests) + INT-25/26 ordering (2 tests)          |
+| `specs/001-collaborative-er-whiteboard/contracts/websocket-events.md` | Documents all WS events including 3 new column:reorder events                  |
+| `src/routes/api/column-reorder-collaboration.test.ts`                 | Suite S5: socket handler (12 tests) — Round 2                                  |
+| `src/components/whiteboard/TableNode.test.tsx`                        | Suite S6: drag handle, InsertionLine, queue-full (18 tests) — Round 2          |
+| `src/components/whiteboard/ReactFlowWhiteboard.test.tsx`              | Suite S8: edge re-anchor + seed (4 tests) — Round 2                            |
+| `src/hooks/use-column-reorder-auto-scroll.test.ts`                    | REQ-09: auto-scroll logic (9 tests) — Round 2                                  |
+| `src/components/whiteboard/column/DragHandle.test.tsx`                | REQ-12: tooltip tests (4 tests) — Round 2                                      |
+| `src/hooks/use-prefers-reduced-motion.test.ts`                        | REQ-13: reduced-motion compliance (6 tests) — Round 2                          |
 
 **Total new files: 15**
 
@@ -40,18 +40,18 @@ Implemented drag-and-drop column reordering within table nodes in the ER whitebo
 
 ## Files Modified
 
-| File | Changes |
-|------|---------|
-| `src/data/schema.ts` | Added `reorderColumnsSchema` (uuid, min 1, max 500) + `ReorderColumns` type |
-| `src/data/column.ts` | Added `reorderColumns()` — single Prisma $transaction batch update |
-| `src/routes/api/collaboration.ts` | Added `column:reorder` socket handler with IDOR check + FM-07 merge |
-| `src/components/whiteboard/column/ColumnRow.tsx` | Added useSortable, DragHandle, showMode prop |
-| `src/components/whiteboard/TableNode.new.tsx` | Added DndContext, SortableContext, DragOverlay, InsertionLine, drag handlers |
+| File                                                | Changes                                                                                |
+| --------------------------------------------------- | -------------------------------------------------------------------------------------- |
+| `src/data/schema.ts`                                | Added `reorderColumnsSchema` (uuid, min 1, max 500) + `ReorderColumns` type            |
+| `src/data/column.ts`                                | Added `reorderColumns()` — single Prisma $transaction batch update                     |
+| `src/routes/api/collaboration.ts`                   | Added `column:reorder` socket handler with IDOR check + FM-07 merge                    |
+| `src/components/whiteboard/column/ColumnRow.tsx`    | Added useSortable, DragHandle, showMode prop                                           |
+| `src/components/whiteboard/TableNode.new.tsx`       | Added DndContext, SortableContext, DragOverlay, InsertionLine, drag handlers           |
 | `src/components/whiteboard/ReactFlowWhiteboard.tsx` | Added reorder hooks, useLayoutEffect+updateNodeInternals, seedConfirmedOrderFromServer |
-| `src/lib/react-flow/types.ts` | Added 5 reorder-related fields to TableNodeData |
-| `src/data/schema.test.ts` | Added Suite S1: reorderColumnsSchema tests (6 tests) |
-| `src/test/fixtures.ts` | Added mockOrderedColumns fixture (5 columns A-E) |
-| `package.json` | Added @dnd-kit/core, @dnd-kit/sortable, @dnd-kit/utilities |
+| `src/lib/react-flow/types.ts`                       | Added 5 reorder-related fields to TableNodeData                                        |
+| `src/data/schema.test.ts`                           | Added Suite S1: reorderColumnsSchema tests (6 tests)                                   |
+| `src/test/fixtures.ts`                              | Added mockOrderedColumns fixture (5 columns A-E)                                       |
+| `package.json`                                      | Added @dnd-kit/core, @dnd-kit/sortable, @dnd-kit/utilities                             |
 
 **Total files modified: 10**
 
@@ -61,34 +61,35 @@ Implemented drag-and-drop column reordering within table nodes in the ER whitebo
 
 ### Round 1 (initial implementation)
 
-| Suite | File | Tests | Status |
-|-------|------|-------|--------|
-| S1: Zod Schema | `src/data/schema.test.ts` | 6 | Passing |
-| S2: Data Layer | `src/data/column.test.ts` | 5 | Passing |
-| S3: detectOverwriteConflict | `src/hooks/use-column-reorder-mutations.test.ts` | 9 | Passing |
-| S4: useColumnReorderMutations | `src/hooks/use-column-reorder-mutations.test.ts` | 10 | Passing |
-| S7: Collaboration Hook | `src/hooks/use-column-reorder-collaboration.test.ts` | 6 | Passing |
-| S9: No-Op Reconciliation | `src/hooks/use-column-reorder-mutations.test.ts` | 6 | Passing |
+| Suite                         | File                                                 | Tests | Status  |
+| ----------------------------- | ---------------------------------------------------- | ----- | ------- |
+| S1: Zod Schema                | `src/data/schema.test.ts`                            | 6     | Passing |
+| S2: Data Layer                | `src/data/column.test.ts`                            | 5     | Passing |
+| S3: detectOverwriteConflict   | `src/hooks/use-column-reorder-mutations.test.ts`     | 9     | Passing |
+| S4: useColumnReorderMutations | `src/hooks/use-column-reorder-mutations.test.ts`     | 10    | Passing |
+| S7: Collaboration Hook        | `src/hooks/use-column-reorder-collaboration.test.ts` | 6     | Passing |
+| S9: No-Op Reconciliation      | `src/hooks/use-column-reorder-mutations.test.ts`     | 6     | Passing |
 
 **Round 1 total: 42 tests**
 
 ### Round 2 (PRD alignment gap coverage — Hera findings)
 
-| Suite | File | Tests | Status | ACs Covered |
-|-------|------|-------|--------|-------------|
-| S5: Socket Handler | `src/routes/api/column-reorder-collaboration.test.ts` | 12 | Passing | AC-04b, AC-04f, AC-07a, AC-07b, FM-03, FM-07 |
-| S6: TableNode Drag | `src/components/whiteboard/TableNode.test.tsx` | 18 | Passing | AC-01a-f, AC-02a-f, AC-08d, AC-10a-c |
-| S7 INT-25/26: Ack/Broadcast Order | `src/hooks/use-column-reorder-collaboration.test.ts` | 2 | Passing | AC-07d, SA-M2 |
-| S8: Edge Re-Anchor | `src/components/whiteboard/ReactFlowWhiteboard.test.tsx` | 4 | Passing | AC-05a-d, SA-H1 |
-| REQ-09: Auto-Scroll | `src/hooks/use-column-reorder-auto-scroll.test.ts` | 9 | Passing | AC-09a-d, AC-13c |
-| REQ-12: Tooltip | `src/components/whiteboard/column/DragHandle.test.tsx` | 4 | Passing | AC-12a, AC-12e |
-| REQ-13: Reduced-Motion | `src/hooks/use-prefers-reduced-motion.test.ts` | 6 | Passing | AC-13a-c |
+| Suite                             | File                                                     | Tests | Status  | ACs Covered                                  |
+| --------------------------------- | -------------------------------------------------------- | ----- | ------- | -------------------------------------------- |
+| S5: Socket Handler                | `src/routes/api/column-reorder-collaboration.test.ts`    | 12    | Passing | AC-04b, AC-04f, AC-07a, AC-07b, FM-03, FM-07 |
+| S6: TableNode Drag                | `src/components/whiteboard/TableNode.test.tsx`           | 18    | Passing | AC-01a-f, AC-02a-f, AC-08d, AC-10a-c         |
+| S7 INT-25/26: Ack/Broadcast Order | `src/hooks/use-column-reorder-collaboration.test.ts`     | 2     | Passing | AC-07d, SA-M2                                |
+| S8: Edge Re-Anchor                | `src/components/whiteboard/ReactFlowWhiteboard.test.tsx` | 4     | Passing | AC-05a-d, SA-H1                              |
+| REQ-09: Auto-Scroll               | `src/hooks/use-column-reorder-auto-scroll.test.ts`       | 9     | Passing | AC-09a-d, AC-13c                             |
+| REQ-12: Tooltip                   | `src/components/whiteboard/column/DragHandle.test.tsx`   | 4     | Passing | AC-12a, AC-12e                               |
+| REQ-13: Reduced-Motion            | `src/hooks/use-prefers-reduced-motion.test.ts`           | 6     | Passing | AC-13a-c                                     |
 
 **Round 2 total: 55 tests**
 
 **Grand total: 97 tests written, all passing**
 
 Deferred (per test-plan):
+
 - S10 (E2E) — deferred; requires Playwright setup
 
 ---
@@ -96,12 +97,14 @@ Deferred (per test-plan):
 ## Test Results
 
 ### Round 1 baseline
+
 ```
 Test Files: 54 passed (1 failing — pre-existing: use-whiteboard-collaboration.test.ts AuthProvider)
 Tests:      570 passed, 14 failed (all 14 pre-existing failures in use-whiteboard-collaboration.test.ts)
 ```
 
 ### Round 2 (after adding 55 tests)
+
 ```
 Test Files: 60 passed (1 failing — same pre-existing file)
 Tests:      625 passed, 14 failed (all 14 pre-existing failures in use-whiteboard-collaboration.test.ts)
@@ -144,18 +147,18 @@ The modifiers package is referenced in the tech spec for `DragOverlay` but not a
 
 ### Fixes Applied
 
-| Finding | Fix |
-|---------|-----|
-| B1: queue-full phantom drop corrupts state | `reconcileAfterDrop` now guards `preDragOrder.length === 0` — phantom drops are no-ops |
-| B2: 3x setNodes-reorder duplication (M3) | Extracted `applyOrderToNodes(tableId, orderedIds, setNodes)` private helper |
-| HIGH-01: autoScroll scrolls React Flow canvas | Added `autoScroll={false}` to `DndContext` in `TableNode.new.tsx` |
-| MEDIUM-04: console.log/trace in production | Removed both debug statements from edges-to-nodes effect in `ReactFlowWhiteboard.tsx` |
-| MEDIUM-01: onSyncReconcile never called | Added `justReconnectedRef` flag; initialNodes effect calls `onSyncReconcile` on reconnect |
-| W1: lastConfirmedOrderByTable dead state | Kept as `Map<string, Array<string>>`; documented rationale inline (needed for future LOW-03 stale-baseline refresh) |
-| W2: setNodes: () => {} as any | Pre-existing pattern kept with documented invariant; full refactor deferred as tech debt |
-| W3: stringly-typed error codes | Exported `ColumnReorderErrorCode` union; `onColumnReorderError` uses typed guard |
-| W4: forgetTable not wired | `forgetTable()` exposed and wired into `onTableDeleted` in `ReactFlowWhiteboard.tsx` |
-| W5: sequential DB reads | `Promise.all([findDiagramTableById, findColumnsByTableId])` in `collaboration.ts` |
+| Finding                                       | Fix                                                                                                                 |
+| --------------------------------------------- | ------------------------------------------------------------------------------------------------------------------- |
+| B1: queue-full phantom drop corrupts state    | `reconcileAfterDrop` now guards `preDragOrder.length === 0` — phantom drops are no-ops                              |
+| B2: 3x setNodes-reorder duplication (M3)      | Extracted `applyOrderToNodes(tableId, orderedIds, setNodes)` private helper                                         |
+| HIGH-01: autoScroll scrolls React Flow canvas | Added `autoScroll={false}` to `DndContext` in `TableNode.new.tsx`                                                   |
+| MEDIUM-04: console.log/trace in production    | Removed both debug statements from edges-to-nodes effect in `ReactFlowWhiteboard.tsx`                               |
+| MEDIUM-01: onSyncReconcile never called       | Added `justReconnectedRef` flag; initialNodes effect calls `onSyncReconcile` on reconnect                           |
+| W1: lastConfirmedOrderByTable dead state      | Kept as `Map<string, Array<string>>`; documented rationale inline (needed for future LOW-03 stale-baseline refresh) |
+| W2: setNodes: () => {} as any                 | Pre-existing pattern kept with documented invariant; full refactor deferred as tech debt                            |
+| W3: stringly-typed error codes                | Exported `ColumnReorderErrorCode` union; `onColumnReorderError` uses typed guard                                    |
+| W4: forgetTable not wired                     | `forgetTable()` exposed and wired into `onTableDeleted` in `ReactFlowWhiteboard.tsx`                                |
+| W5: sequential DB reads                       | `Promise.all([findDiagramTableById, findColumnsByTableId])` in `collaboration.ts`                                   |
 
 ### Test Results (Round 3)
 
@@ -172,27 +175,28 @@ All existing tests pass. No new failures introduced.
 
 ### Findings Addressed
 
-| Finding | Fix |
-|---------|-----|
+| Finding                                                                           | Fix                                                                                                                                                                                                                                                                                     |
+| --------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | B1-A: preDragOrderRef never reset — guard unreachable after first successful drag | Reset `preDragOrderRef.current` and `preDragColumnsRef.current` to `[]` at the TOP of `handleDragStart`, before the queue-full guard. If the guard rejects the drag, refs remain empty, and `reconcileAfterDrop`'s `preDragOrder.length === 0` guard correctly aborts the phantom drop. |
-| W4-A: local deleteTable bypasses forgetTable | Added `columnReorderMutations.forgetTable(deletingTableId)` in the `onConfirm` handler of `DeleteTableDialog` in `ReactFlowWhiteboard.tsx`, co-located with the existing `tableMutations.deleteTable` call. |
-| S1: misleading comment in `handleDragEnd` | Updated the comment at the `preDragOrderRef` check in `handleDragEnd` to accurately describe both scenarios (queue-full guard reset + any other path where snapshot was not captured). Updated matching comment in `reconcileAfterDrop` to describe the dual scenario. |
+| W4-A: local deleteTable bypasses forgetTable                                      | Added `columnReorderMutations.forgetTable(deletingTableId)` in the `onConfirm` handler of `DeleteTableDialog` in `ReactFlowWhiteboard.tsx`, co-located with the existing `tableMutations.deleteTable` call.                                                                             |
+| S1: misleading comment in `handleDragEnd`                                         | Updated the comment at the `preDragOrderRef` check in `handleDragEnd` to accurately describe both scenarios (queue-full guard reset + any other path where snapshot was not captured). Updated matching comment in `reconcileAfterDrop` to describe the dual scenario.                  |
 
 ### Regression Test Added
 
 Added B1-A regression test to `use-column-reorder-mutations.test.ts` (Suite S9):
+
 - Fills the queue to 5 entries.
 - Calls `reconcileAfterDrop` with `preDragOrder: []` (simulating what `handleDragStart` now passes after the B1-A reset) and a non-null `newOrder`.
 - Asserts: no `setNodes`, no `emitColumnReorder`, no `bumpReorderTick`, queue remains full.
 
 ### Files Modified (Round 4)
 
-| File | Change |
-|------|--------|
-| `src/components/whiteboard/TableNode.new.tsx` | Reset `preDragOrderRef.current` and `preDragColumnsRef.current` to `[]` before queue-full guard; updated misleading comment in `handleDragEnd` |
-| `src/components/whiteboard/ReactFlowWhiteboard.tsx` | Added `columnReorderMutations.forgetTable(deletingTableId)` in `DeleteTableDialog.onConfirm` |
-| `src/hooks/use-column-reorder-mutations.ts` | Updated comment at `reconcileAfterDrop:384` guard to describe both scenarios |
-| `src/hooks/use-column-reorder-mutations.test.ts` | Added B1-A regression test in Suite S9 |
+| File                                                | Change                                                                                                                                         |
+| --------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------- |
+| `src/components/whiteboard/TableNode.new.tsx`       | Reset `preDragOrderRef.current` and `preDragColumnsRef.current` to `[]` before queue-full guard; updated misleading comment in `handleDragEnd` |
+| `src/components/whiteboard/ReactFlowWhiteboard.tsx` | Added `columnReorderMutations.forgetTable(deletingTableId)` in `DeleteTableDialog.onConfirm`                                                   |
+| `src/hooks/use-column-reorder-mutations.ts`         | Updated comment at `reconcileAfterDrop:384` guard to describe both scenarios                                                                   |
+| `src/hooks/use-column-reorder-mutations.test.ts`    | Added B1-A regression test in Suite S9                                                                                                         |
 
 ### Test Results (Round 4)
 
@@ -202,19 +206,20 @@ The test environment has a pre-existing issue: `vi.mock` is undefined when runni
 
 ## Technical Debt
 
-| Item | Impact | Notes |
-|------|--------|-------|
-| DragOverlay lacks vertical/parent modifiers | Low | Ghost can drift outside table; UX only, no data impact. @dnd-kit/modifiers not installed. |
-| `setNodes: (() => {}) as any` in TableNode | Low | Workaround documented; correct setNodes always injected via ReactFlowWhiteboard wrapper |
-| ~~`onSyncReconcile` not wired to reconnect refetch~~ | ~~Medium~~ | Fixed in Round 3 — MEDIUM-01 wired via justReconnectedRef |
+| Item                                                 | Impact     | Notes                                                                                     |
+| ---------------------------------------------------- | ---------- | ----------------------------------------------------------------------------------------- |
+| DragOverlay lacks vertical/parent modifiers          | Low        | Ghost can drift outside table; UX only, no data impact. @dnd-kit/modifiers not installed. |
+| `setNodes: (() => {}) as any` in TableNode           | Low        | Workaround documented; correct setNodes always injected via ReactFlowWhiteboard wrapper   |
+| ~~`onSyncReconcile` not wired to reconnect refetch~~ | ~~Medium~~ | Fixed in Round 3 — MEDIUM-01 wired via justReconnectedRef                                 |
 
 ---
 
 ## Spec Compliance
 
 All SA findings addressed:
+
 - SA-H1: `seedConfirmedOrderFromServer` idempotent, called on initial load
-- SA-H2: column-level intersection overwrite check with `findExplicitlyMoved` 
+- SA-H2: column-level intersection overwrite check with `findExplicitlyMoved`
 - SA-H3: `onColumnReorderAck` defers `applyServerOrder` until queue drains
 - SA-H4: `reconcileAfterDrop` is single drop entry-point
 - SA-M1: `useLayoutEffect` (not `useEffect`) for `updateNodeInternals`

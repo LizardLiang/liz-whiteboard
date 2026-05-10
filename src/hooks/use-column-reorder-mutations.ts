@@ -98,10 +98,7 @@ export interface UseColumnReorderMutationsReturn {
     serverOrder: Array<string>,
   ) => void
   /** Check divergence after reconnect refetch — fires AC-08e toast if dirty (SA-H1) */
-  onSyncReconcile: (
-    tableId: string,
-    serverOrder: Array<string>,
-  ) => void
+  onSyncReconcile: (tableId: string, serverOrder: Array<string>) => void
   /**
    * Clean up all per-table state when a table is deleted (W4 — M10).
    * Must be called from onTableDeleted and table:deleted socket handler
@@ -282,13 +279,17 @@ export function useColumnReorderMutations(): UseColumnReorderMutationsReturn {
    * (unconditional set on reconnect, per Cassandra LOW-03 mitigation).
    * Reducing it to a Set now would require reverting when MEDIUM-01 is fully wired.
    */
-  const lastConfirmedOrderByTable = useRef<Map<string, Array<string>>>(new Map())
+  const lastConfirmedOrderByTable = useRef<Map<string, Array<string>>>(
+    new Map(),
+  )
 
   // Tables with unacknowledged optimistic reorders
   const dirtyByTable = useRef<Set<string>>(new Set())
 
   // Buffered remote reorders (received while local drag is active)
-  const bufferedRemoteByTable = useRef<Map<string, BufferedRemoteReorder>>(new Map())
+  const bufferedRemoteByTable = useRef<Map<string, BufferedRemoteReorder>>(
+    new Map(),
+  )
 
   // Tables currently being locally dragged
   const localDraggingByTable = useRef<Set<string>>(new Set())
@@ -319,22 +320,15 @@ export function useColumnReorderMutations(): UseColumnReorderMutationsReturn {
     [],
   )
 
-  const bufferRemoteReorder = useCallback(
-    (event: BufferedRemoteReorder) => {
-      // Only buffer if we are actively dragging this table
-      if (localDraggingByTable.current.has(event.tableId)) {
-        bufferedRemoteByTable.current.set(event.tableId, event)
-      }
-    },
-    [],
-  )
+  const bufferRemoteReorder = useCallback((event: BufferedRemoteReorder) => {
+    // Only buffer if we are actively dragging this table
+    if (localDraggingByTable.current.has(event.tableId)) {
+      bufferedRemoteByTable.current.set(event.tableId, event)
+    }
+  }, [])
 
   const onColumnReorderedFromOther = useCallback(
-    (
-      tableId: string,
-      orderedColumnIds: Array<string>,
-      setNodes: SetNodes,
-    ) => {
+    (tableId: string, orderedColumnIds: Array<string>, setNodes: SetNodes) => {
       // Apply remote order directly to nodes (B2: delegates to applyOrderToNodes)
       applyOrderToNodes(tableId, orderedColumnIds, setNodes)
     },
@@ -379,7 +373,6 @@ export function useColumnReorderMutations(): UseColumnReorderMutationsReturn {
       setNodes,
       bumpReorderTick,
     }: ReconcileAfterDropParams) => {
-
       localDraggingByTable.current.delete(tableId)
 
       if (preDragOrder.length === 0) {
@@ -391,7 +384,12 @@ export function useColumnReorderMutations(): UseColumnReorderMutationsReturn {
       if (newOrder === null) {
         if (buffered) {
           bufferedRemoteByTable.current.delete(tableId)
-          applyServerOrder(tableId, buffered.orderedColumnIds, setNodes, bumpReorderTick)
+          applyServerOrder(
+            tableId,
+            buffered.orderedColumnIds,
+            setNodes,
+            bumpReorderTick,
+          )
         }
         return
       }
@@ -400,7 +398,12 @@ export function useColumnReorderMutations(): UseColumnReorderMutationsReturn {
       if (isNoOp) {
         if (buffered) {
           bufferedRemoteByTable.current.delete(tableId)
-          applyServerOrder(tableId, buffered.orderedColumnIds, setNodes, bumpReorderTick)
+          applyServerOrder(
+            tableId,
+            buffered.orderedColumnIds,
+            setNodes,
+            bumpReorderTick,
+          )
         }
         return
       }
@@ -466,7 +469,11 @@ export function useColumnReorderMutations(): UseColumnReorderMutationsReturn {
    * W3: uses typed ColumnReorderErrorCode instead of raw string.
    */
   const onColumnReorderError = useCallback(
-    (tableId: string, errorCode: ColumnReorderErrorCode | string, setNodes: SetNodes) => {
+    (
+      tableId: string,
+      errorCode: ColumnReorderErrorCode | string,
+      setNodes: SetNodes,
+    ) => {
       const queue = queueByTable.current.get(tableId) ?? []
 
       // Pop the head for rollback

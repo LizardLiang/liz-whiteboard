@@ -107,9 +107,7 @@ describe('useD3ForceLayout', () => {
     mockComputeLayout.mockRejectedValueOnce(testError)
 
     const onLayoutError = vi.fn()
-    const { result } = renderHook(() =>
-      useD3ForceLayout({ onLayoutError }),
-    )
+    const { result } = renderHook(() => useD3ForceLayout({ onLayoutError }))
 
     let positions: any
     await act(async () => {

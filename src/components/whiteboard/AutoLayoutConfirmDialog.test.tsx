@@ -5,7 +5,9 @@ import { describe, expect, it, vi } from 'vitest'
 import { fireEvent, render, screen } from '@testing-library/react'
 import { AutoLayoutConfirmDialog } from './AutoLayoutConfirmDialog'
 
-function renderDialog(props: Partial<React.ComponentProps<typeof AutoLayoutConfirmDialog>> = {}) {
+function renderDialog(
+  props: Partial<React.ComponentProps<typeof AutoLayoutConfirmDialog>> = {},
+) {
   const defaults = {
     open: true,
     tableCount: 55,
@@ -64,7 +66,9 @@ describe('AutoLayoutConfirmDialog', () => {
     // autoFocus attribute should be present on the Radix action element or its child
     const hasAutoFocus =
       runBtn.hasAttribute('autofocus') ||
-      (runBtn.firstElementChild as HTMLElement | null)?.hasAttribute('autofocus') ||
+      (runBtn.firstElementChild as HTMLElement | null)?.hasAttribute(
+        'autofocus',
+      ) ||
       document.activeElement === runBtn ||
       document.activeElement?.closest('[role="alertdialog"]') !== null
     expect(hasAutoFocus).toBe(true)

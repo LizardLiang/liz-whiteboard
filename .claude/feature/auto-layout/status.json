@@ -240,10 +240,7 @@
       "status": "complete"
     },
     "10-review": {
-      "agents": [
-        "hermes",
-        "cassandra"
-      ],
+      "agents": ["hermes", "cassandra"],
       "code_review_verdict": null,
       "completed": "2026-05-01T23:28:24+08:00",
       "document": "code-review.md",
@@ -254,9 +251,7 @@
       "verdict": "approved"
     },
     "2-prd-review": {
-      "agents": [
-        "nemesis"
-      ],
+      "agents": ["nemesis"],
       "check_failures": [
         {
           "checks_failed": [
@@ -321,21 +316,15 @@
     "3-decomposition": {
       "agent": "daedalus",
       "completed": "2026-05-01T22:00:00+08:00",
-      "documents": [
-        "decomposition.md"
-      ],
-      "output_targets": [
-        "local"
-      ],
+      "documents": ["decomposition.md"],
+      "output_targets": ["local"],
       "started": "2026-05-01T21:50:00+08:00",
       "status": "complete"
     },
     "4-discuss": {
       "agent": "themis",
       "completed": "2026-05-01T22:15:00+08:00",
-      "documents": [
-        "context.md"
-      ],
+      "documents": ["context.md"],
       "started": "2026-05-01T22:10:00+08:00",
       "status": "complete"
     },
@@ -344,9 +333,7 @@
       "based_on_prd_version": "1.2",
       "completed": "2026-05-01T23:00:00+08:00",
       "document": "tech-spec.md",
-      "documents": [
-        "tech-spec.md"
-      ],
+      "documents": ["tech-spec.md"],
       "revision": 1,
       "revision_history": [
         {
@@ -354,9 +341,7 @@
           "findings_resolved": {
             "high": 1,
             "medium": 4,
-            "open_questions": [
-              "OQ-2"
-            ]
+            "open_questions": ["OQ-2"]
           },
           "summary": "Auth-error return value handled via isUnauthorizedError + triggerSessionExpired (HIGH #1). FR-004 scoped to originator-screen with documented cross-client limitation (MEDIUM #2). Server function no longer emits; orchestrator emits client-side after success and a new socket.on('table:move:bulk') handler re-broadcasts via broadcastToWhiteboard — eliminates the server-functions → routes import edge (MEDIUM #3). isMountedRef guards Retry across unmount/navigation (MEDIUM #4). Listener reads data.userId to match existing same-hook table:moved listener (MEDIUM #5). OQ-2 resolved DELETE: parent route's auto-layout bridge entirely removed (handleAutoLayout, onAutoLayoutReady, reactFlowAutoLayoutRef, useAutoLayoutPreference usage, four legacy Toolbar props, layout:compute/computed socket events).",
           "timestamp": "2026-05-01T23:00:00+08:00",
@@ -371,9 +356,7 @@
       "agent": "apollo",
       "completed": "2026-05-01T22:07:09+08:00",
       "document": "spec-review-sa.md",
-      "documents": [
-        "spec-review-sa.md"
-      ],
+      "documents": ["spec-review-sa.md"],
       "issue_counts": {
         "critical": 0,
         "high": 1,
@@ -435,9 +418,7 @@
       "coverage_pct": 100,
       "criteria_total": 15,
       "criteria_verified": 15,
-      "documents": [
-        "prd-alignment.md"
-      ],
+      "documents": ["prd-alignment.md"],
       "started": "2026-05-01T23:15:00+08:00",
       "status": "complete"
     }

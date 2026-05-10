@@ -23,11 +23,11 @@ Tier checklist (`hermes-checklist.json`): all 8 tiers reviewed and marked comple
 
 ## Round 2 Finding Verification
 
-| Finding | Round 2 Severity | Round 3 Status | Notes |
-|---------|------------------|----------------|-------|
-| B1-A — Queue-full guard at `reconcileAfterDrop` unreachable | BLOCKER | **Resolved** | preDragOrderRef + preDragColumnsRef now reset to `[]` at TableNode.new.tsx:258-259, ahead of the queue-full guard at line 262. reconcileAfterDrop's empty-preDragOrder guard now correctly fires on rejected drags after a session of successful drags. |
-| W4-A — `forgetTable` not called on local delete | WARNING | **Resolved** | columnReorderMutations.forgetTable(deletingTableId) added at ReactFlowWhiteboard.tsx:1114, co-located with tableMutations.deleteTable(deletingTableId) at line 1110. |
-| S1 — Misleading comment in handleDragEnd / reconcileAfterDrop | SUGGESTION | **Resolved** | Comments at TableNode.new.tsx:250-257, 303-310 and use-column-reorder-mutations.ts:379-391 accurately describe both scenarios (queue-full rejection AND never-started). |
+| Finding                                                       | Round 2 Severity | Round 3 Status | Notes                                                                                                                                                                                                                                                   |
+| ------------------------------------------------------------- | ---------------- | -------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| B1-A — Queue-full guard at `reconcileAfterDrop` unreachable   | BLOCKER          | **Resolved**   | preDragOrderRef + preDragColumnsRef now reset to `[]` at TableNode.new.tsx:258-259, ahead of the queue-full guard at line 262. reconcileAfterDrop's empty-preDragOrder guard now correctly fires on rejected drags after a session of successful drags. |
+| W4-A — `forgetTable` not called on local delete               | WARNING          | **Resolved**   | columnReorderMutations.forgetTable(deletingTableId) added at ReactFlowWhiteboard.tsx:1114, co-located with tableMutations.deleteTable(deletingTableId) at line 1110.                                                                                    |
+| S1 — Misleading comment in handleDragEnd / reconcileAfterDrop | SUGGESTION       | **Resolved**   | Comments at TableNode.new.tsx:250-257, 303-310 and use-column-reorder-mutations.ts:379-391 accurately describe both scenarios (queue-full rejection AND never-started).                                                                                 |
 
 ---
 
@@ -38,26 +38,25 @@ Tier checklist (`hermes-checklist.json`): all 8 tiers reviewed and marked comple
 Confirmed at `src/components/whiteboard/TableNode.new.tsx:246-277`:
 
 ```ts
-const handleDragStart = useCallback(
-  (event: DragStartEvent) => {
-    const tableId = table.id
+const handleDragStart = useCallback((event: DragStartEvent) => {
+  const tableId = table.id
 
-    // B1-A FIX: Reset snapshot refs BEFORE the queue-full guard.
-    // ... (full comment explains the queue-full + stale-ref scenario)
-    preDragOrderRef.current = []
-    preDragColumnsRef.current = []
+  // B1-A FIX: Reset snapshot refs BEFORE the queue-full guard.
+  // ... (full comment explains the queue-full + stale-ref scenario)
+  preDragOrderRef.current = []
+  preDragColumnsRef.current = []
 
-    // SA-M3: queue-full guard at drag-start
-    if (isQueueFullForTable?.(tableId)) {
-      toast.warning('Slow down — previous reorders still saving')
-      return
-    }
-    // ... successful drag captures snapshot at end of callback
-  },
-)
+  // SA-M3: queue-full guard at drag-start
+  if (isQueueFullForTable?.(tableId)) {
+    toast.warning('Slow down — previous reorders still saving')
+    return
+  }
+  // ... successful drag captures snapshot at end of callback
+})
 ```
 
 Trace verification:
+
 1. Mount: `preDragOrderRef.current = []`. Queue empty, queue-full impossible.
 2. Drag #1–5 succeed: each call resets refs to `[]`, guard passes, captures fresh `[c1,c2,c3]` at the end. Queue grows to 5.
 3. Drag #6: `handleDragStart` resets to `[]`, queue-full guard fires, returns early. **Refs are now `[]`** — the prior fix had left them populated from drag #5.
@@ -82,6 +81,7 @@ onConfirm={() => {
 ```
 
 Both delete paths now clean up the six per-table reorder maps:
+
 - Local: ReactFlowWhiteboard.tsx:1114 (DeleteTableDialog.onConfirm)
 - Remote: ReactFlowWhiteboard.tsx:379 (onTableDeleted callback fired by socket event)
 
@@ -120,11 +120,11 @@ This test would have caught the original B1-A miss: without the ref reset, the t
 
 ## Findings Summary (Round 3)
 
-| Severity | Count |
-|----------|-------|
-| BLOCKER | 0 |
-| WARNING | 0 |
-| SUGGESTION | 0 |
+| Severity   | Count |
+| ---------- | ----- |
+| BLOCKER    | 0     |
+| WARNING    | 0     |
+| SUGGESTION | 0     |
 
 All Round 2 findings are resolved. No new findings in Round 3.
 
@@ -132,16 +132,16 @@ All Round 2 findings are resolved. No new findings in Round 3.
 
 ## Tier Review (Round 3)
 
-| Tier | Status | Notes |
-|------|--------|-------|
-| 1 — Correct | clean | B1-A resolved; reconcile guard now reachable. Regression test pins the scenario. |
-| 2 — Safe | clean | No security-relevant changes this round. |
-| 3 — Clear | clean | Comments at all three sites accurately describe both scenarios. |
-| 4 — Minimal | clean | Two ref resets + one forgetTable call + one regression test. No bloat. |
-| 5 — Consistent | clean | Patterns match codebase conventions. |
-| 6 — Resilient | clean | Reset-before-guard pattern survives future modifications; W4-A closes ref-leak. |
-| 7 — Performant | clean | Two array assignments per drag-start, negligible. |
-| 8 — Maintainable | clean | M10 (unbounded growth) closed by W4-A. No new anti-patterns. |
+| Tier             | Status | Notes                                                                            |
+| ---------------- | ------ | -------------------------------------------------------------------------------- |
+| 1 — Correct      | clean  | B1-A resolved; reconcile guard now reachable. Regression test pins the scenario. |
+| 2 — Safe         | clean  | No security-relevant changes this round.                                         |
+| 3 — Clear        | clean  | Comments at all three sites accurately describe both scenarios.                  |
+| 4 — Minimal      | clean  | Two ref resets + one forgetTable call + one regression test. No bloat.           |
+| 5 — Consistent   | clean  | Patterns match codebase conventions.                                             |
+| 6 — Resilient    | clean  | Reset-before-guard pattern survives future modifications; W4-A closes ref-leak.  |
+| 7 — Performant   | clean  | Two array assignments per drag-start, negligible.                                |
+| 8 — Maintainable | clean  | M10 (unbounded growth) closed by W4-A. No new anti-patterns.                     |
 
 ---
 

@@ -5,12 +5,12 @@
  */
 
 import { memo, useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import { toast } from 'sonner'
 import { ColumnRow } from './column/ColumnRow'
 import { AddColumnRow } from './column/AddColumnRow'
 import { DeleteColumnDialog } from './column/DeleteColumnDialog'
 import { InsertionLine } from './column/InsertionLine'
 import { TableNodeContextMenu } from './TableNodeContextMenu'
-import { toast } from 'sonner'
 import type { Column } from '@prisma/client'
 import type {
   RelationshipEdgeType,
@@ -69,7 +69,9 @@ export const TableNode = memo(
     const preDragColumnsRef = useRef<Array<Column>>([])
     const prefersReducedMotion = usePrefersReducedMotion()
     // Snapshot of column row rects captured at drag start (viewport coords)
-    const columnRectsRef = useRef<Array<{ id: string; top: number; bottom: number; mid: number }>>([])
+    const columnRectsRef = useRef<
+      Array<{ id: string; top: number; bottom: number; mid: number }>
+    >([])
     const columnRowsRef = useRef<HTMLDivElement | null>(null)
 
     // Determine visual state classes
@@ -248,7 +250,9 @@ export const TableNode = memo(
     // Keep a ref to visibleColumns so the pointermove handler can re-read rects
     // without capturing a stale closure value when columns change during drag
     const visibleColumnsRef = useRef(visibleColumns)
-    useEffect(() => { visibleColumnsRef.current = visibleColumns }, [visibleColumns])
+    useEffect(() => {
+      visibleColumnsRef.current = visibleColumns
+    }, [visibleColumns])
 
     // --- Raw pointer drag reorder ---
     // Compute which index the pointer is over given a clientY and column rects snapshot
@@ -273,15 +277,23 @@ export const TableNode = memo(
         e.stopPropagation()
 
         // Snapshot column row rects from the DOM right now (fresh viewport coords)
-        const rowEls = columnRowsRef.current?.querySelectorAll<HTMLElement>('.column-row')
+        const rowEls =
+          columnRowsRef.current?.querySelectorAll<HTMLElement>('.column-row')
         if (rowEls) {
           columnRectsRef.current = Array.from(rowEls).map((el, i) => {
             const r = el.getBoundingClientRect()
-            return { id: visibleColumns[i]?.id ?? '', top: r.top, bottom: r.bottom, mid: r.top + r.height / 2 }
+            return {
+              id: visibleColumns[i]?.id ?? '',
+              top: r.top,
+              bottom: r.bottom,
+              mid: r.top + r.height / 2,
+            }
           })
         }
 
-        const dragIndex = visibleColumns.findIndex((c: Column) => c.id === columnId)
+        const dragIndex = visibleColumns.findIndex(
+          (c: Column) => c.id === columnId,
+        )
 
         preDragOrderRef.current = columns.map((c: Column) => c.id)
         preDragColumnsRef.current = [...columns]
@@ -290,7 +302,13 @@ export const TableNode = memo(
         setLocalDragging?.(table.id, true)
         document.body.style.cursor = 'grabbing'
       },
-      [table.id, columns, visibleColumns, isQueueFullForTable, setLocalDragging],
+      [
+        table.id,
+        columns,
+        visibleColumns,
+        isQueueFullForTable,
+        setLocalDragging,
+      ],
     )
 
     // Document-level pointermove/pointerup while a column drag is active
@@ -305,11 +323,17 @@ export const TableNode = memo(
         frame = requestAnimationFrame(() => {
           frame = null
           // Re-read rects fresh in case canvas scrolled/zoomed since drag started
-          const rowEls = columnRowsRef.current?.querySelectorAll<HTMLElement>('.column-row')
+          const rowEls =
+            columnRowsRef.current?.querySelectorAll<HTMLElement>('.column-row')
           if (rowEls && rowEls.length > 0) {
             columnRectsRef.current = Array.from(rowEls).map((el, i) => {
               const r = el.getBoundingClientRect()
-              return { id: visibleColumnsRef.current[i]?.id ?? '', top: r.top, bottom: r.bottom, mid: r.top + r.height / 2 }
+              return {
+                id: visibleColumnsRef.current[i]?.id ?? '',
+                top: r.top,
+                bottom: r.bottom,
+                mid: r.top + r.height / 2,
+              }
             })
           }
           const idx = computeTargetIndex(e.clientY)
@@ -378,7 +402,7 @@ export const TableNode = memo(
           setLocalDragging?.(table.id, false)
         }
       }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
+      // eslint-disable-next-line react-hooks/exhaustive-deps
     }, [activeId])
 
     // Use CSS max-content so the browser measures actual rendered text width.
@@ -500,7 +524,9 @@ export const TableNode = memo(
                   edges={edges}
                   showMode={showMode}
                   isDraggingActive={activeId === column.id}
-                  onDragHandlePointerDown={(e) => handleDragHandlePointerDown(e, column.id)}
+                  onDragHandlePointerDown={(e) =>
+                    handleDragHandlePointerDown(e, column.id)
+                  }
                 />
               ))}
 
@@ -545,8 +571,10 @@ export const TableNode = memo(
     if (prev.data.onRequestTableDelete !== next.data.onRequestTableDelete)
       return false
     if (prev.data.onColumnReorder !== next.data.onColumnReorder) return false
-    if (prev.data.emitColumnReorder !== next.data.emitColumnReorder) return false
-    if (prev.data.isQueueFullForTable !== next.data.isQueueFullForTable) return false
+    if (prev.data.emitColumnReorder !== next.data.emitColumnReorder)
+      return false
+    if (prev.data.isQueueFullForTable !== next.data.isQueueFullForTable)
+      return false
     if (prev.data.setLocalDragging !== next.data.setLocalDragging) return false
     if (prev.data.bumpReorderTick !== next.data.bumpReorderTick) return false
     return true

@@ -3,7 +3,8 @@ title: RTK & Token Reduction Strategies for Kratos
 cached: 2026-05-09
 valid_until: 2026-08-07
 source: Mimir research
-tags: [kratos, token-reduction, cost-optimization, prompt-caching, model-routing]
+tags:
+  [kratos, token-reduction, cost-optimization, prompt-caching, model-routing]
 ---
 
 # RTK & Token Reduction Strategies for Kratos
@@ -33,16 +34,16 @@ Cache reads cost 0.1x base input price (90% discount). Every Kratos agent curren
 
 Opus 4.6 costs 40% more than Sonnet 4.6 (SWE-bench: 80.8% vs 79.6% — 1.2pp gap).
 
-| Stage | Agent | Recommended | Rationale |
-|-------|-------|-------------|-----------|
-| PRD writing | Athena | Sonnet 4.6 | Creative synthesis, not deep reasoning |
-| Tech spec | Hephaestus | Sonnet 4.6 | Within Sonnet's capability |
-| Task decomposition | Hephaestus | Haiku 4.5 | Structured extraction |
-| Implementation | Ares | Sonnet 4.6 | 40% cheaper, 1.2pp quality gap |
-| Test planning | Artemis | Haiku 4.5 | Low reasoning demand |
-| Code review | Hermes/Cassandra | Sonnet 4.6 | Reasoning needed, not Opus depth |
-| Red-team risk | Cassandra | Opus (optional) | Only stage where Opus depth may justify cost |
-| Orchestration/routing | Kratos | Haiku 4.5 | Classification, not reasoning |
+| Stage                 | Agent            | Recommended     | Rationale                                    |
+| --------------------- | ---------------- | --------------- | -------------------------------------------- |
+| PRD writing           | Athena           | Sonnet 4.6      | Creative synthesis, not deep reasoning       |
+| Tech spec             | Hephaestus       | Sonnet 4.6      | Within Sonnet's capability                   |
+| Task decomposition    | Hephaestus       | Haiku 4.5       | Structured extraction                        |
+| Implementation        | Ares             | Sonnet 4.6      | 40% cheaper, 1.2pp quality gap               |
+| Test planning         | Artemis          | Haiku 4.5       | Low reasoning demand                         |
+| Code review           | Hermes/Cassandra | Sonnet 4.6      | Reasoning needed, not Opus depth             |
+| Red-team risk         | Cassandra        | Opus (optional) | Only stage where Opus depth may justify cost |
+| Orchestration/routing | Kratos           | Haiku 4.5       | Classification, not reasoning                |
 
 **Opus-as-advisor pattern:** Use Opus once at pipeline start for high-level constraints, then hand to Sonnet for all execution. Result: 11% cost reduction + 2% quality improvement.
 
@@ -51,15 +52,16 @@ Opus 4.6 costs 40% more than Sonnet 4.6 (SWE-bench: 80.8% vs 79.6% — 1.2pp gap
 Full-context forwarding in 4-agent pipelines results in 20+ calls each carrying the entire growing transcript. Selective forwarding: **70–90% context reduction**.
 
 Each agent outputs:
+
 - `<stage>.md` — full human-readable document (never forwarded downstream)
 - `<stage>-summary.yaml` — structured handoff payload only
 
-| From | To | Summary contains |
-|------|----|-----------------|
-| Athena (PRD) | Hephaestus | Acceptance criteria, data constraints, API shape, key decisions — no narrative |
-| Hephaestus (spec) | Ares | Component list, function signatures, file paths, data model delta — no rationale |
-| Ares (impl) | Artemis | Files changed, functions added/modified, edge cases — no narrative |
-| Any stage | Reviewer | Diff + test results only |
+| From              | To         | Summary contains                                                                 |
+| ----------------- | ---------- | -------------------------------------------------------------------------------- |
+| Athena (PRD)      | Hephaestus | Acceptance criteria, data constraints, API shape, key decisions — no narrative   |
+| Hephaestus (spec) | Ares       | Component list, function signatures, file paths, data model delta — no rationale |
+| Ares (impl)       | Artemis    | Files changed, functions added/modified, edge cases — no narrative               |
+| Any stage         | Reviewer   | Diff + test results only                                                         |
 
 ### 4. Output Format Discipline — Impact: MEDIUM / Effort: LOW
 
@@ -93,14 +95,14 @@ Install RTK and register PreToolUse hook in Ares agent init. Transparently rewri
 
 ## Implementation Priority for Kratos
 
-| # | Technique | Effort | Expected Savings |
-|---|-----------|--------|-----------------|
-| 1 | Prompt caching (1h TTL) on all agent system prompts | 1 day | 50–80% input cost on repeated calls |
-| 2 | Model routing: Ares+Athena→Sonnet; Artemis/decomp→Haiku | 2 hours | 30–40% overall cost |
-| 3 | Selective context forwarding (YAML summary schemas) | 2 days | 60–70% input reduction downstream |
-| 4 | Output format discipline (YAML handoffs, terse rules) | 1 day | 20–40% output token reduction |
-| 5 | RTK for Ares bash tool calls | 1 hour | 60–90% on CLI output tokens |
-| 6 | Rolling summarization + observation masking for Ares | 3 days | 30–50% context reduction long sessions |
+| #   | Technique                                               | Effort  | Expected Savings                       |
+| --- | ------------------------------------------------------- | ------- | -------------------------------------- |
+| 1   | Prompt caching (1h TTL) on all agent system prompts     | 1 day   | 50–80% input cost on repeated calls    |
+| 2   | Model routing: Ares+Athena→Sonnet; Artemis/decomp→Haiku | 2 hours | 30–40% overall cost                    |
+| 3   | Selective context forwarding (YAML summary schemas)     | 2 days  | 60–70% input reduction downstream      |
+| 4   | Output format discipline (YAML handoffs, terse rules)   | 1 day   | 20–40% output token reduction          |
+| 5   | RTK for Ares bash tool calls                            | 1 hour  | 60–90% on CLI output tokens            |
+| 6   | Rolling summarization + observation masking for Ares    | 3 days  | 30–50% context reduction long sessions |
 
 **Total realistic reduction applying all six: 65–80% of current token spend.** First three alone deliver 60%+ at ~3 days effort.
 

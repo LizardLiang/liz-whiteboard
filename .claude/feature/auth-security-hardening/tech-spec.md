@@ -1,14 +1,14 @@
 # Tech Spec: Auth Security Hardening
 
-| Field | Value |
-| --- | --- |
-| Feature | auth-security-hardening |
-| Author | Hephaestus |
-| Status | Draft (v1) |
-| Created | 2026-05-09 |
-| Source PRD | `.claude/feature/auth-security-hardening/prd.md` v2.0 |
-| Approved Approach | A — Centralized Authz Middleware |
-| Locked Decisions | GA-RBAC-BATCH-SHORT-CIRCUIT (PRE_VALIDATE_THEN_WRITE), GA-MODAL-RECOVERY-SCOPE (COLUMN_FORM_ONLY), GA-ESLINT-RULE-PACKAGING (INLINE_PLUGIN_IN_FLAT_CONFIG), GA-ERROR-SHAPE-MIGRATION (FIVE_FIXES_ONLY) |
+| Field             | Value                                                                                                                                                                                                  |
+| ----------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| Feature           | auth-security-hardening                                                                                                                                                                                |
+| Author            | Hephaestus                                                                                                                                                                                             |
+| Status            | Draft (v1)                                                                                                                                                                                             |
+| Created           | 2026-05-09                                                                                                                                                                                             |
+| Source PRD        | `.claude/feature/auth-security-hardening/prd.md` v2.0                                                                                                                                                  |
+| Approved Approach | A — Centralized Authz Middleware                                                                                                                                                                       |
+| Locked Decisions  | GA-RBAC-BATCH-SHORT-CIRCUIT (PRE_VALIDATE_THEN_WRITE), GA-MODAL-RECOVERY-SCOPE (COLUMN_FORM_ONLY), GA-ESLINT-RULE-PACKAGING (INLINE_PLUGIN_IN_FLAT_CONFIG), GA-ERROR-SHAPE-MIGRATION (FIVE_FIXES_ONLY) |
 
 ---
 
@@ -71,21 +71,21 @@ This appendix discharges the PRD requirement that Hephaestus's enumeration produ
 
 `src/routes/api/collaboration.ts` defines `denyIfInsufficientPermission()` (line 258) as an `async () => false` no-op. Every mutation handler calls it as a guard, so **every** WebSocket mutation is currently affected, not just `column:create`. Affected handlers:
 
-| Handler | Line | Triage |
-| --- | --- | --- |
-| `table:create` | 341 | **In-scope** (covered transitively by AD-1 — fixing the helper fixes all of these) |
-| `table:move` | 380 | In-scope (same) |
-| `table:move:bulk` | 446 | In-scope (same) |
-| `table:update` | 482 | In-scope (same) |
-| `table:delete` | 543 | In-scope (same) |
-| `column:create` | 602 | In-scope (named in PRD SEC-WS-01) |
-| `column:update` | 658 | In-scope (same) |
-| `column:delete` | 721 | In-scope (same) |
-| `column:reorder` | 777 | In-scope (same) |
-| `column:duplicate` | 883 | In-scope (same) |
-| `relationship:create` | 954 | In-scope (same) |
-| `relationship:update` | 993 | In-scope (same) |
-| `relationship:delete` | 1056 | In-scope (same) |
+| Handler               | Line | Triage                                                                             |
+| --------------------- | ---- | ---------------------------------------------------------------------------------- |
+| `table:create`        | 341  | **In-scope** (covered transitively by AD-1 — fixing the helper fixes all of these) |
+| `table:move`          | 380  | In-scope (same)                                                                    |
+| `table:move:bulk`     | 446  | In-scope (same)                                                                    |
+| `table:update`        | 482  | In-scope (same)                                                                    |
+| `table:delete`        | 543  | In-scope (same)                                                                    |
+| `column:create`       | 602  | In-scope (named in PRD SEC-WS-01)                                                  |
+| `column:update`       | 658  | In-scope (same)                                                                    |
+| `column:delete`       | 721  | In-scope (same)                                                                    |
+| `column:reorder`      | 777  | In-scope (same)                                                                    |
+| `column:duplicate`    | 883  | In-scope (same)                                                                    |
+| `relationship:create` | 954  | In-scope (same)                                                                    |
+| `relationship:update` | 993  | In-scope (same)                                                                    |
+| `relationship:delete` | 1056 | In-scope (same)                                                                    |
 
 **Triage:** All in-scope. Replacing the no-op stub with the real implementation closes all 13 handlers in one change, satisfying SEC-WS-01 (which named only `column:create`) plus the 12 others by transitive coverage. Zero new-feature, zero accepted-risk.
 
@@ -93,33 +93,33 @@ This appendix discharges the PRD requirement that Hephaestus's enumeration produ
 
 `rg "TODO: restore permission check"` against `src/lib/`, `src/routes/api/` shows the same pattern repeated across 28 server-function exports. Counts per file:
 
-| File | `createServerFn` exports | Triage |
-| --- | --- | --- |
-| `src/lib/server-functions.ts` | 10 | In-scope (PRD SEC-RBAC-01 names this file explicitly) |
-| `src/lib/server-functions-project.ts` | 2 | In-scope (extends SEC-RBAC-01 by AD-1's enumeration; aligns with the "every export across `src/lib/`" net cast by SEC-RBAC-04) |
-| `src/routes/api/columns.ts` | 10 | In-scope (server-function file under `src/routes/`; SEC-RBAC-04 requires the AST rule to detect `src/routes/api/*.ts` as well) |
-| `src/routes/api/whiteboards.ts` | 11 | In-scope |
-| `src/routes/api/projects.ts` | 8 | In-scope |
-| `src/routes/api/folders.ts` | 8 | In-scope |
-| `src/routes/api/tables.ts` | 9 | In-scope |
-| `src/routes/api/relationships.ts` | 9 | In-scope |
-| `src/routes/api/permissions.ts` | 5 | In-scope |
-| `src/routes/api/auth.ts` | 5 | **Accepted-risk** for `loginUser`, `registerUser`, `logoutUser`, `getCurrentUser` — these are pre-auth or self-auth functions. They are annotated `@requires authenticated` (or are unauthenticated by design — login/register). The AST rule whitelists endpoints that have an explicit `@requires unauthenticated` JSDoc tag. |
-| `src/data/demo.punk-songs.ts` | 2 | **Accepted-risk** — demo file, not a production code path. Annotated `@requires authenticated` because all routes require login per the auth PRD; no per-resource permission applies. |
-| `src/routes/demo/prisma.tsx` | 3 | **Accepted-risk** — demo route. Same disposition as above. |
-| `src/routes/demo/start.server-funcs.tsx` | 4 | **Accepted-risk** — demo route. Same disposition. |
-| `src/routes/api/auth.test.ts` | 2 | Test fixture — outside lint scope (test files). |
+| File                                     | `createServerFn` exports | Triage                                                                                                                                                                                                                                                                                                                          |
+| ---------------------------------------- | ------------------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `src/lib/server-functions.ts`            | 10                       | In-scope (PRD SEC-RBAC-01 names this file explicitly)                                                                                                                                                                                                                                                                           |
+| `src/lib/server-functions-project.ts`    | 2                        | In-scope (extends SEC-RBAC-01 by AD-1's enumeration; aligns with the "every export across `src/lib/`" net cast by SEC-RBAC-04)                                                                                                                                                                                                  |
+| `src/routes/api/columns.ts`              | 10                       | In-scope (server-function file under `src/routes/`; SEC-RBAC-04 requires the AST rule to detect `src/routes/api/*.ts` as well)                                                                                                                                                                                                  |
+| `src/routes/api/whiteboards.ts`          | 11                       | In-scope                                                                                                                                                                                                                                                                                                                        |
+| `src/routes/api/projects.ts`             | 8                        | In-scope                                                                                                                                                                                                                                                                                                                        |
+| `src/routes/api/folders.ts`              | 8                        | In-scope                                                                                                                                                                                                                                                                                                                        |
+| `src/routes/api/tables.ts`               | 9                        | In-scope                                                                                                                                                                                                                                                                                                                        |
+| `src/routes/api/relationships.ts`        | 9                        | In-scope                                                                                                                                                                                                                                                                                                                        |
+| `src/routes/api/permissions.ts`          | 5                        | In-scope                                                                                                                                                                                                                                                                                                                        |
+| `src/routes/api/auth.ts`                 | 5                        | **Accepted-risk** for `loginUser`, `registerUser`, `logoutUser`, `getCurrentUser` — these are pre-auth or self-auth functions. They are annotated `@requires authenticated` (or are unauthenticated by design — login/register). The AST rule whitelists endpoints that have an explicit `@requires unauthenticated` JSDoc tag. |
+| `src/data/demo.punk-songs.ts`            | 2                        | **Accepted-risk** — demo file, not a production code path. Annotated `@requires authenticated` because all routes require login per the auth PRD; no per-resource permission applies.                                                                                                                                           |
+| `src/routes/demo/prisma.tsx`             | 3                        | **Accepted-risk** — demo route. Same disposition as above.                                                                                                                                                                                                                                                                      |
+| `src/routes/demo/start.server-funcs.tsx` | 4                        | **Accepted-risk** — demo route. Same disposition.                                                                                                                                                                                                                                                                               |
+| `src/routes/api/auth.test.ts`            | 2                        | Test fixture — outside lint scope (test files).                                                                                                                                                                                                                                                                                 |
 
 **Total in-scope server-function exports: ~85.** All 85 receive either `requireServerFnRole(ctx, resourceId, minRole)` or an explicit `@requires authenticated` JSDoc tag. The auth-route exports get a new `@requires unauthenticated` tag handled as a special case by the AST rule.
 
 ### 2.3 Batch endpoints
 
-| Endpoint | File / Line | Triage |
-| --- | --- | --- |
-| `createColumnsFn` (HTTP) | `src/routes/api/columns.ts` line 205 | In-scope. PRD SEC-BATCH-01..04 directly applies. Currently iterates per-tableId for permission checks but the check is a TODO no-op (lines 220-228). Fix per AD-3. |
-| `column:reorder` (WebSocket) | `src/routes/api/collaboration.ts` line 777 | In-scope (same family). Already validates per-item ownership; needs RBAC bolted on per AD-1. Not a "batch RBAC gap" today (it operates on a single tableId), but the handler is part of the broader AD-1 sweep. |
-| `table:move:bulk` (WebSocket) | `src/routes/api/collaboration.ts` line 446 | In-scope. Already operates against the namespace-level `whiteboardId` (one project), so per-item RBAC isn't a concern for this endpoint — the standard auth prelude (AD-1) is sufficient. |
-| `updateTablePositionsBulk` (HTTP) | `src/lib/server-functions.ts` line 157 | In-scope. Single-whiteboard scope, same disposition as `table:move:bulk`. RBAC via AD-1's `requireServerFnRole`. |
+| Endpoint                          | File / Line                                | Triage                                                                                                                                                                                                          |
+| --------------------------------- | ------------------------------------------ | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `createColumnsFn` (HTTP)          | `src/routes/api/columns.ts` line 205       | In-scope. PRD SEC-BATCH-01..04 directly applies. Currently iterates per-tableId for permission checks but the check is a TODO no-op (lines 220-228). Fix per AD-3.                                              |
+| `column:reorder` (WebSocket)      | `src/routes/api/collaboration.ts` line 777 | In-scope (same family). Already validates per-item ownership; needs RBAC bolted on per AD-1. Not a "batch RBAC gap" today (it operates on a single tableId), but the handler is part of the broader AD-1 sweep. |
+| `table:move:bulk` (WebSocket)     | `src/routes/api/collaboration.ts` line 446 | In-scope. Already operates against the namespace-level `whiteboardId` (one project), so per-item RBAC isn't a concern for this endpoint — the standard auth prelude (AD-1) is sufficient.                       |
+| `updateTablePositionsBulk` (HTTP) | `src/lib/server-functions.ts` line 157     | In-scope. Single-whiteboard scope, same disposition as `table:move:bulk`. RBAC via AD-1's `requireServerFnRole`.                                                                                                |
 
 ### 2.4 New defects discovered during enumeration
 
@@ -320,7 +320,8 @@ Each of the 13 call sites (table:create, table:move, etc.) gets the eventName pa
 // Before:
 if (await denyIfInsufficientPermission(socket, whiteboardId)) return
 // After:
-if (await denyIfInsufficientPermission(socket, whiteboardId, 'column:create')) return
+if (await denyIfInsufficientPermission(socket, whiteboardId, 'column:create'))
+  return
 ```
 
 Restore the `findEffectiveRole` import (line 52) and delete the eslint-disable + ts-expect-error comments.
@@ -438,12 +439,14 @@ export function useCollaboration(
 ```
 
 Update three call sites:
+
 - `src/hooks/use-column-collaboration.ts` line 84
 - `src/hooks/use-column-reorder-collaboration.ts` line 49
 - `src/routes/whiteboard/$whiteboardId.tsx` line 144
 - `src/routes/whiteboard/$whiteboardId.new.tsx` line 158
 
 Each adds:
+
 ```ts
 const { triggerSessionExpired } = useAuthContext()
 const { emit, on, off, ... } = useCollaboration(whiteboardId, userId, triggerSessionExpired)
@@ -483,14 +486,14 @@ The rule **also** asserts that `socket.on('session_expired', ...)` (string liter
 
 ### 3.10 Test files
 
-| Test | File | Asserts |
-| --- | --- | --- |
-| SEC-SP-04 (superpassword removed) | `src/routes/api/auth.test.ts` (extend) | Login with the previously-hardcoded `DEBUG_SUPER_PASSWORD` value fails with `error: 'AUTH_FAILED'`. AST sub-assertion: `verifyPassword` body contains `bcrypt.compare` and no other truthy return path. |
-| SEC-WS-04 (column:create authz) | `src/server/socket.test.ts` (extend) | Mock `findEffectiveRole` to return `null`; emit `column:create`; assert no DB write + assert `error` event with `code: 'FORBIDDEN', event: 'column:create'`. |
-| SEC-BATCH-04 + SEC-BATCH-UX-05 | `src/routes/api/columns.test.ts` (new) + `src/components/whiteboard/<column-batch>.test.tsx` (new) | (a) HTTP: mixed batch → throws BatchDeniedError, zero rows written. (b) UI: simulate BatchDeniedError → form input retained, banner visible, bisection affordance reachable via Tab key. |
-| SEC-MODAL-04 + SEC-MODAL-05 | `src/hooks/use-whiteboard-collaboration-auth.test.ts` (extend) + `src/components/whiteboard/<column-edit>.test.tsx` (new for SEC-MODAL-05) | (a) Emit `session_expired` → `triggerSessionExpired` called once; focus moves to modal. (b) Open column-edit modal, type changes → sessionStorage populated. Trigger session-expired flow → re-mount modal → form prefilled with draft + Apply/Discard banner visible. |
-| SEC-RBAC-05 (per-tier denial) | `src/lib/server-functions.test.ts` (new) — 4 tests | Viewer-required: getWhiteboardWithDiagram with no membership → ForbiddenError. Editor-required: createTable with VIEWER role → ForbiddenError. Admin-required: a representative permissions endpoint with EDITOR role → ForbiddenError. Owner-required: project-delete with ADMIN role → ForbiddenError. (Specific endpoints picked during implementation per role tier.) |
-| AST guard self-test | `tools/eslint-rules/require-server-fn-authz.test.js` (new) | Lints fixture files: (a) `createServerFn` without RBAC call → fail. (b) `createServerFn` with `@requires editor` JSDoc but no `requireServerFnRole` call → fail. (c) `createServerFn` with `@requires authenticated` JSDoc → pass (escape hatch). (d) `withAuth(fn)` wrapper not in allowlist → fail. (e) Two files with `socket.on('session_expired', ...)` → fail. |
+| Test                              | File                                                                                                                                       | Asserts                                                                                                                                                                                                                                                                                                                                                                   |
+| --------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| SEC-SP-04 (superpassword removed) | `src/routes/api/auth.test.ts` (extend)                                                                                                     | Login with the previously-hardcoded `DEBUG_SUPER_PASSWORD` value fails with `error: 'AUTH_FAILED'`. AST sub-assertion: `verifyPassword` body contains `bcrypt.compare` and no other truthy return path.                                                                                                                                                                   |
+| SEC-WS-04 (column:create authz)   | `src/server/socket.test.ts` (extend)                                                                                                       | Mock `findEffectiveRole` to return `null`; emit `column:create`; assert no DB write + assert `error` event with `code: 'FORBIDDEN', event: 'column:create'`.                                                                                                                                                                                                              |
+| SEC-BATCH-04 + SEC-BATCH-UX-05    | `src/routes/api/columns.test.ts` (new) + `src/components/whiteboard/<column-batch>.test.tsx` (new)                                         | (a) HTTP: mixed batch → throws BatchDeniedError, zero rows written. (b) UI: simulate BatchDeniedError → form input retained, banner visible, bisection affordance reachable via Tab key.                                                                                                                                                                                  |
+| SEC-MODAL-04 + SEC-MODAL-05       | `src/hooks/use-whiteboard-collaboration-auth.test.ts` (extend) + `src/components/whiteboard/<column-edit>.test.tsx` (new for SEC-MODAL-05) | (a) Emit `session_expired` → `triggerSessionExpired` called once; focus moves to modal. (b) Open column-edit modal, type changes → sessionStorage populated. Trigger session-expired flow → re-mount modal → form prefilled with draft + Apply/Discard banner visible.                                                                                                    |
+| SEC-RBAC-05 (per-tier denial)     | `src/lib/server-functions.test.ts` (new) — 4 tests                                                                                         | Viewer-required: getWhiteboardWithDiagram with no membership → ForbiddenError. Editor-required: createTable with VIEWER role → ForbiddenError. Admin-required: a representative permissions endpoint with EDITOR role → ForbiddenError. Owner-required: project-delete with ADMIN role → ForbiddenError. (Specific endpoints picked during implementation per role tier.) |
+| AST guard self-test               | `tools/eslint-rules/require-server-fn-authz.test.js` (new)                                                                                 | Lints fixture files: (a) `createServerFn` without RBAC call → fail. (b) `createServerFn` with `@requires editor` JSDoc but no `requireServerFnRole` call → fail. (c) `createServerFn` with `@requires authenticated` JSDoc → pass (escape hatch). (d) `withAuth(fn)` wrapper not in allowlist → fail. (e) Two files with `socket.on('session_expired', ...)` → fail.      |
 
 ---
 
@@ -499,17 +502,20 @@ The rule **also** asserts that `socket.on('session_expired', ...)` (string liter
 The 5-tech-spec stage has no `decomposition.md` (stage 3 was skipped per `status.json: 3-decomposition.skipped`). Phases below are organized by natural module boundaries and dependencies.
 
 ### Phase 1: Foundation (no behavior change yet)
+
 1.1. Create `src/lib/auth/log-sample.ts` (AD-6).  
 1.2. Create `src/lib/auth/require-role.ts` with `requireRole`, `requireServerFnRole`, `ForbiddenError`, `BatchDeniedError`, `getDenialCount`, `WSAuthErrorPayload` (§3.1).  
 1.3. Add unit tests for both helpers (mock `findEffectiveRole`, assert deny / allow / throw paths).
 
 ### Phase 2: WebSocket fix (covers SEC-WS-01..04)
+
 2.1. Modify `src/routes/api/collaboration.ts` `denyIfInsufficientPermission` to delegate to `requireRole` (§3.3).  
 2.2. Add the `eventName` parameter to all 13 call sites.  
 2.3. Restore the `findEffectiveRole` import (line 52); delete the `eslint-disable`, `@ts-expect-error`, and unused-variable comments.  
 2.4. Extend `src/server/socket.test.ts` for SEC-WS-04 regression.
 
 ### Phase 3: Server-function fix (covers SEC-RBAC-01..05)
+
 3.1. Add JSDoc `@requires <role>` to every export across `src/lib/server-functions.ts`, `src/lib/server-functions-project.ts`, `src/routes/api/{columns,whiteboards,projects,folders,tables,relationships,permissions,auth}.ts`. Use the lowercase set `{authenticated, unauthenticated, viewer, editor, admin, owner}` per PRD SEC-RBAC-03.  
 3.2. Replace each `// TODO: restore permission check` block with `await requireServerFnRole(user.id, projectId, 'EDITOR' | 'VIEWER' | ...)`.  
 3.3. Read-only functions (`getWhiteboardWithDiagram`, `getWhiteboardRelationships`, `getAllProjects`, etc.) use `'VIEWER'`. Write functions use `'EDITOR'`. Permission/membership-management functions use `'ADMIN'` or `'OWNER'` per the original auth PRD's role contract.  
@@ -517,27 +523,32 @@ The 5-tech-spec stage has no `decomposition.md` (stage 3 was skipped per `status
 3.5. Add SEC-RBAC-05 regression tests in a new `src/lib/server-functions.test.ts`.
 
 ### Phase 4: Batch fix (covers SEC-BATCH-01..04)
+
 4.1. Modify `createColumnsFn` per §3.5 (pre-validate-then-write, `BatchDeniedError`).  
 4.2. Add SEC-BATCH-04 HTTP test in new `src/routes/api/columns.test.ts`.  
 4.3. Find the column-batch UI component (Ares: `bunx rg "createColumnsFn"`); implement SEC-BATCH-UX-01..04 (preserve form input, show banner with the canonical message, expose per-row "save individually" button, route on `code === 'BATCH_DENIED'`).  
 4.4. Add SEC-BATCH-UX-05 component test.
 
 ### Phase 5: Session-expired modal fix (covers SEC-MODAL-01..05)
+
 5.1. Modify `src/hooks/use-collaboration.ts`: tighten `onSessionExpired` to required (§3.7).  
 5.2. Update four call sites to pass `triggerSessionExpired` from `useAuthContext()`.  
 5.3. Implement column-form recovery store (AD-4 / §3.8):
-  - Add `useColumnDraftPersistence(whiteboardId, columnId)` hook in `src/hooks/use-column-draft-persistence.ts`.
-  - Wire into the column-edit modal component (Ares confirms file path).
-  - Add Apply/Discard banner shown on modal mount when a draft exists.
-5.4. Extend SEC-MODAL-04 test (focus assertion). Add SEC-MODAL-05 component test for draft restore.
+
+- Add `useColumnDraftPersistence(whiteboardId, columnId)` hook in `src/hooks/use-column-draft-persistence.ts`.
+- Wire into the column-edit modal component (Ares confirms file path).
+- Add Apply/Discard banner shown on modal mount when a draft exists.
+  5.4. Extend SEC-MODAL-04 test (focus assertion). Add SEC-MODAL-05 component test for draft restore.
 
 ### Phase 6: Superpassword removal + pre-merge migration (covers SEC-SP-01..04, §13)
+
 6.1. **Pre-merge instrumentation (AD-8):** add the `console.warn('[auth] DEBUG_SUPER_PASSWORD bypass used', ...)` log line. Deploy to staging. Wait ≥7 calendar days per PRD §13.2; verify §13.5 checklist (zero superpassword warns in 24h, all dev passwords reset).  
 6.2. **Merge commit:** delete `debugSuperPassword`, `isSuperpassword`, and the OR-wrapping in `src/routes/api/auth.ts`. Single line becomes `const valid = await verifyPassword(data.password, user.passwordHash)`.  
 6.3. Add SEC-SP-04 regression test in `src/routes/api/auth.test.ts`.  
 6.4. Add SEC-SP-02 AST assertion: a small Vitest test that uses `@typescript-eslint/parser` to parse `src/lib/auth/password.ts`, find `verifyPassword`, and assert every `ReturnStatement` traces back to `bcrypt.compare(...)`. (This is a one-off — does not need the full ESLint plugin treatment.)
 
 ### Phase 7: AST guards (covers SEC-RBAC-04, SEC-MODAL-02)
+
 7.1. Create `tools/eslint-rules/require-server-fn-authz.js` per §3.9.  
 7.2. Inline-register the plugin in `eslint.config.js` per AD-2.  
 7.3. Run `bun run lint` — should pass (Phases 3-5 already added the JSDoc tags + helper calls).  
@@ -545,8 +556,9 @@ The 5-tech-spec stage has no `decomposition.md` (stage 3 was skipped per `status
 7.5. Confirm the rule fires on a deliberate negative-case fixture (a `createServerFn` without RBAC) and passes the codebase as-is.
 
 ### Phase 8: Verification
+
 8.1. `bun run lint` — clean (AST guard happy).  
-8.2. `bun run test` — all SEC-* regression tests pass.  
+8.2. `bun run test` — all SEC-\* regression tests pass.  
 8.3. Manual: try login with the (deleted) DEBUG_SUPER_PASSWORD value → fails. Try `column:create` against a whiteboard you have no role on → receives `error` event with `code: 'FORBIDDEN'`. Submit a mixed batch → `BatchDeniedError`. Trigger a forced session-expiry → modal appears, column-edit draft restored after re-auth.  
 8.4. Update §13.5 PR checklist boxes.
 
@@ -555,6 +567,7 @@ The 5-tech-spec stage has no `decomposition.md` (stage 3 was skipped per `status
 ## 5. Files: Create / Modify
 
 ### Create
+
 - `src/lib/auth/require-role.ts` — `requireRole`, `requireServerFnRole`, `ForbiddenError`, `BatchDeniedError`, `WSAuthErrorPayload`, `getDenialCount`. (§3.1)
 - `src/lib/auth/log-sample.ts` — `logSampledError`. (§3.2)
 - `src/hooks/use-column-draft-persistence.ts` — sessionStorage draft hook for AD-4 / §3.8.
@@ -570,6 +583,7 @@ The 5-tech-spec stage has no `decomposition.md` (stage 3 was skipped per `status
 - `src/lib/auth/password-ast-assert.test.ts` — SEC-SP-02 one-off AST assertion (Phase 6.4).
 
 ### Modify
+
 - `src/routes/api/collaboration.ts` — replace `denyIfInsufficientPermission` no-op with real wrapper; add `eventName` to 13 call sites; restore `findEffectiveRole` import; delete TODO/eslint-disable/ts-expect-error annotations.
 - `src/lib/server-functions.ts` — add JSDoc `@requires <role>` + `requireServerFnRole` to all 10 exports; throw `ForbiddenError` instead of generic `Error('Whiteboard not found')` for permission denials.
 - `src/lib/server-functions-project.ts` — same treatment for 2 exports.
@@ -596,6 +610,7 @@ The 5-tech-spec stage has no `decomposition.md` (stage 3 was skipped per `status
 **Counts:** ~13 files to create, ~21 files to modify.
 
 ### Out of scope (explicitly NOT touched)
+
 - `src/data/demo.punk-songs.ts`, `src/routes/demo/*` — annotated `@requires authenticated` only; no `requireServerFnRole` (no per-resource permission applies). The AST rule whitelists demo paths via the `@requires authenticated` escape hatch.
 - The 13 ad-hoc `socket.emit('error', { event, error: 'NOT_FOUND' | 'VALIDATION_ERROR' | ... })` shapes elsewhere in `collaboration.ts` — keep current shape per AD-5. Only the auth-denial emit (centralized in `requireRole`) uses the canonical SEC-ERR-02 shape.
 
@@ -616,6 +631,7 @@ Status: `403`. Body: `{ "error": "FORBIDDEN", "message": "You do not have access
 ### 7.2 WebSocket error event shape (canonical, SEC-ERR-02)
 
 Event name: `error`. Payload:
+
 ```ts
 {
   code: 'FORBIDDEN' | 'BATCH_DENIED',
@@ -641,15 +657,15 @@ Allowed values, lowercase: `authenticated`, `unauthenticated`, `viewer`, `editor
 
 ## 8. Risks & Mitigations
 
-| Risk | Likelihood | Mitigation |
-| --- | --- | --- |
-| AST rule produces false positives on existing valid code | Medium | Phase 7 runs the rule against the full codebase before declaring done. Phases 3-5 add the markers; Phase 7 turns on enforcement. |
-| `requireRole` adds DB round-trip per WS event → latency regression | Low | `findEffectiveRole` is a 2-row lookup against indexed columns. p99 < 5ms expected. If observed regression, add an in-process LRU cache keyed by `(userId, projectId)` with 30s TTL — out of scope for v1. |
-| Coexisting error shapes confuse client-side error routing | Medium | The client already treats unknown `error` payloads as logs only (use-collaboration.ts line 211). New canonical shape is additive — old behavior preserved. AD-5 documents the temporary state. |
-| Inline ESLint plugin breaks `bun run lint` startup | Low | Plugin file uses CommonJS-compatible export. Tested standalone before wiring into config. ESLint 9 flat config supports inline plugin objects natively. |
-| sessionStorage column draft survives across tabs / users | Low | Draft key includes `whiteboardId` + `columnId` — a different user's column won't collide. Discard prompt lets the user reject if confused. Out of scope: cross-tab isolation. |
-| Pre-merge superpassword instrumentation (AD-8) leaks the bypass exists in code review | Low | The branch already exists in PR #97 — instrumentation just adds a log line. Reviewers reading this spec know the bypass is being removed; no new information. |
-| Column-edit modal file path unknown at spec time | Low | §3.8 / Phase 5.3 instructs Ares to `bunx rg "createColumnSchema|updateColumnSchema" src/components`. The repo convention places these under `src/components/whiteboard/` — confirmed by file listing. |
+| Risk                                                                                  | Likelihood | Mitigation                                                                                                                                                                                                |
+| ------------------------------------------------------------------------------------- | ---------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------- |
+| AST rule produces false positives on existing valid code                              | Medium     | Phase 7 runs the rule against the full codebase before declaring done. Phases 3-5 add the markers; Phase 7 turns on enforcement.                                                                          |
+| `requireRole` adds DB round-trip per WS event → latency regression                    | Low        | `findEffectiveRole` is a 2-row lookup against indexed columns. p99 < 5ms expected. If observed regression, add an in-process LRU cache keyed by `(userId, projectId)` with 30s TTL — out of scope for v1. |
+| Coexisting error shapes confuse client-side error routing                             | Medium     | The client already treats unknown `error` payloads as logs only (use-collaboration.ts line 211). New canonical shape is additive — old behavior preserved. AD-5 documents the temporary state.            |
+| Inline ESLint plugin breaks `bun run lint` startup                                    | Low        | Plugin file uses CommonJS-compatible export. Tested standalone before wiring into config. ESLint 9 flat config supports inline plugin objects natively.                                                   |
+| sessionStorage column draft survives across tabs / users                              | Low        | Draft key includes `whiteboardId` + `columnId` — a different user's column won't collide. Discard prompt lets the user reject if confused. Out of scope: cross-tab isolation.                             |
+| Pre-merge superpassword instrumentation (AD-8) leaks the bypass exists in code review | Low        | The branch already exists in PR #97 — instrumentation just adds a log line. Reviewers reading this spec know the bypass is being removed; no new information.                                             |
+| Column-edit modal file path unknown at spec time                                      | Low        | §3.8 / Phase 5.3 instructs Ares to `bunx rg "createColumnSchema                                                                                                                                           | updateColumnSchema" src/components`. The repo convention places these under `src/components/whiteboard/` — confirmed by file listing. |
 
 ---
 

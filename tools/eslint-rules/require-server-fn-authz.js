@@ -50,9 +50,11 @@ function collectCalleeNames(node, names) {
   if (node.type === 'CallExpression') {
     const callee = node.callee
     const calleeName =
-      callee.type === 'Identifier' ? callee.name :
-      callee.type === 'MemberExpression' ? callee.property.name :
-      null
+      callee.type === 'Identifier'
+        ? callee.name
+        : callee.type === 'MemberExpression'
+          ? callee.property.name
+          : null
     if (calleeName) names.add(calleeName)
     node.arguments.forEach((arg) => collectCalleeNames(arg, names))
     return
@@ -95,7 +97,11 @@ function collectCalleeNames(node, names) {
     node.declarations.forEach((d) => collectCalleeNames(d.init, names))
     return
   }
-  if (node.type === 'ForOfStatement' || node.type === 'ForInStatement' || node.type === 'ForStatement') {
+  if (
+    node.type === 'ForOfStatement' ||
+    node.type === 'ForInStatement' ||
+    node.type === 'ForStatement'
+  ) {
     collectCalleeNames(node.body, names)
   }
 }
@@ -124,7 +130,10 @@ function resolveHandlerBody(handlerArg) {
   if (!handlerArg) return null
 
   // Direct arrow/function: .handler(async (ctx, data) => { ... })
-  if (handlerArg.type === 'ArrowFunctionExpression' || handlerArg.type === 'FunctionExpression') {
+  if (
+    handlerArg.type === 'ArrowFunctionExpression' ||
+    handlerArg.type === 'FunctionExpression'
+  ) {
     return handlerArg.body
   }
 
@@ -132,9 +141,11 @@ function resolveHandlerBody(handlerArg) {
   if (handlerArg.type === 'CallExpression') {
     const callee = handlerArg.callee
     const wrapperName =
-      callee.type === 'Identifier' ? callee.name :
-      callee.type === 'MemberExpression' ? callee.property.name :
-      null
+      callee.type === 'Identifier'
+        ? callee.name
+        : callee.type === 'MemberExpression'
+          ? callee.property.name
+          : null
 
     if (!ALLOWED_WRAPPERS.has(wrapperName)) {
       return { __notAllowed: true, wrapperName }
@@ -142,7 +153,11 @@ function resolveHandlerBody(handlerArg) {
 
     // Recurse into the wrapper's first argument
     const innerFn = handlerArg.arguments[0]
-    if (innerFn && (innerFn.type === 'ArrowFunctionExpression' || innerFn.type === 'FunctionExpression')) {
+    if (
+      innerFn &&
+      (innerFn.type === 'ArrowFunctionExpression' ||
+        innerFn.type === 'FunctionExpression')
+    ) {
       return innerFn.body
     }
   }
@@ -181,10 +196,7 @@ const rule = {
       CallExpression(node) {
         // Detect: createServerFn({ method: ... })
         const callee = node.callee
-        if (
-          callee.type !== 'Identifier' ||
-          callee.name !== 'createServerFn'
-        ) {
+        if (callee.type !== 'Identifier' || callee.name !== 'createServerFn') {
           return
         }
 

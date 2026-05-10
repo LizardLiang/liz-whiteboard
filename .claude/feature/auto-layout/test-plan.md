@@ -2,16 +2,16 @@
 
 ## Document Info
 
-| Field | Value |
-|-------|-------|
-| **Feature** | Auto Layout |
-| **Author** | Artemis (QA Agent) |
-| **PRD Version** | 1.2 |
-| **Tech Spec Revision** | 1 (post-Apollo) |
-| **Date** | 2026-05-01 |
-| **Test Framework** | Vitest + @testing-library/react (jsdom) |
-| **Test Command** | `bun run test` |
-| **Priority** | P0 |
+| Field                  | Value                                   |
+| ---------------------- | --------------------------------------- |
+| **Feature**            | Auto Layout                             |
+| **Author**             | Artemis (QA Agent)                      |
+| **PRD Version**        | 1.2                                     |
+| **Tech Spec Revision** | 1 (post-Apollo)                         |
+| **Date**               | 2026-05-01                              |
+| **Test Framework**     | Vitest + @testing-library/react (jsdom) |
+| **Test Command**       | `bun run test`                          |
+| **Priority**           | P0                                      |
 
 ---
 
@@ -44,23 +44,23 @@ This test plan covers the full Auto Layout feature as specified in `prd.md` v1.2
 
 ## 2. Requirements → Coverage Matrix
 
-| Req ID | Requirement | Min Test Level | Suite(s) |
-|--------|-------------|---------------|----------|
-| FR-001 | Auto Layout button visible in toolbar when ≥ 1 table | Unit | TS-TOOLBAR |
-| FR-002 | Button disabled with tooltip when 0 or 1 tables | Unit | TS-TOOLBAR |
-| FR-003 | FK-related tables placed closer than unrelated | Unit | TS-ENGINE |
-| FR-004 | Every pair has L∞ gap ≥ 16 px after post-pass | Unit | TS-ENGINE |
-| FR-005 | Every table receives a new position (no fixed tables) | Unit | TS-ORCH |
-| FR-006 | Viewport auto-fits after layout | Integration | TS-ORCH, TS-INTEGRATION |
-| FR-007 | No longtask ≥ 200 ms during run | Unit (per-tick timing) | TS-ENGINE |
-| FR-008 | New positions persist on reload | Integration | TS-SERVER |
-| FR-009 | Collaborators apply all positions in one render tick via `table:move:bulk` | Unit + Integration | TS-COLLAB, TS-INTEGRATION |
-| FR-010 | 0-FK whiteboard produces non-overlapping layout | Unit | TS-ENGINE |
-| FR-011 | Pre-run dialog for > 50 tables with full a11y | Unit + Integration | TS-DIALOG, TS-INTEGRATION |
-| NFR-Auth | Auth failure → persist-failure UX (no false success) | Unit + Integration | TS-SERVER, TS-ORCH, TS-INTEGRATION |
-| NFR-Reliability | No partial layout state on either screen | Unit + Integration | TS-ORCH, TS-INTEGRATION |
-| NFR-Persistence | Retry after persist failure re-submits payload | Unit + Integration | TS-ORCH, TS-INTEGRATION |
-| R2-1 | Socket handler runs session/permission guards | Unit | TS-COLLAB |
+| Req ID          | Requirement                                                                | Min Test Level         | Suite(s)                           |
+| --------------- | -------------------------------------------------------------------------- | ---------------------- | ---------------------------------- |
+| FR-001          | Auto Layout button visible in toolbar when ≥ 1 table                       | Unit                   | TS-TOOLBAR                         |
+| FR-002          | Button disabled with tooltip when 0 or 1 tables                            | Unit                   | TS-TOOLBAR                         |
+| FR-003          | FK-related tables placed closer than unrelated                             | Unit                   | TS-ENGINE                          |
+| FR-004          | Every pair has L∞ gap ≥ 16 px after post-pass                              | Unit                   | TS-ENGINE                          |
+| FR-005          | Every table receives a new position (no fixed tables)                      | Unit                   | TS-ORCH                            |
+| FR-006          | Viewport auto-fits after layout                                            | Integration            | TS-ORCH, TS-INTEGRATION            |
+| FR-007          | No longtask ≥ 200 ms during run                                            | Unit (per-tick timing) | TS-ENGINE                          |
+| FR-008          | New positions persist on reload                                            | Integration            | TS-SERVER                          |
+| FR-009          | Collaborators apply all positions in one render tick via `table:move:bulk` | Unit + Integration     | TS-COLLAB, TS-INTEGRATION          |
+| FR-010          | 0-FK whiteboard produces non-overlapping layout                            | Unit                   | TS-ENGINE                          |
+| FR-011          | Pre-run dialog for > 50 tables with full a11y                              | Unit + Integration     | TS-DIALOG, TS-INTEGRATION          |
+| NFR-Auth        | Auth failure → persist-failure UX (no false success)                       | Unit + Integration     | TS-SERVER, TS-ORCH, TS-INTEGRATION |
+| NFR-Reliability | No partial layout state on either screen                                   | Unit + Integration     | TS-ORCH, TS-INTEGRATION            |
+| NFR-Persistence | Retry after persist failure re-submits payload                             | Unit + Integration     | TS-ORCH, TS-INTEGRATION            |
+| R2-1            | Socket handler runs session/permission guards                              | Unit                   | TS-COLLAB                          |
 
 ---
 
@@ -69,6 +69,7 @@ This test plan covers the full Auto Layout feature as specified in `prd.md` v1.2
 ### TS-ENGINE — d3-force Layout Engine
 
 **Files:**
+
 - `src/lib/auto-layout/d3-force-layout.test.ts`
 - `src/hooks/use-d3-force-layout.test.ts`
 
@@ -181,6 +182,7 @@ This test plan covers the full Auto Layout feature as specified in `prd.md` v1.2
 **File:** `use-d3-force-layout.test.ts`  
 **Setup:** Mock `computeD3ForceLayout` to resolve after a deferred tick. Use `renderHook`.  
 **Expected:**
+
 - `isRunning` is `false` before `runLayout` is called.
 - `isRunning` becomes `true` while awaiting.
 - `isRunning` returns to `false` after the promise resolves.
@@ -194,6 +196,7 @@ This test plan covers the full Auto Layout feature as specified in `prd.md` v1.2
 **File:** `use-d3-force-layout.test.ts`  
 **Setup:** Mock `computeD3ForceLayout` to reject. Call `runLayout`.  
 **Expected:**
+
 - `error` is set to the thrown error.
 - `runLayout` returns `null` (no positions).
 - `isRunning` is `false` afterwards.
@@ -204,6 +207,7 @@ This test plan covers the full Auto Layout feature as specified in `prd.md` v1.2
 ### TS-SERVER — Bulk Persistence Server Function
 
 **Files:**
+
 - `src/lib/server-functions.test.ts` (append to existing) or `src/lib/server-functions-bulk.test.ts`
 - `src/data/schema.test.ts` (append `bulkUpdatePositionsSchema` cases)
 
@@ -280,6 +284,7 @@ This test plan covers the full Auto Layout feature as specified in `prd.md` v1.2
 **File:** `server-functions.test.ts`  
 **Setup:** Simulate an expired session (mock `requireAuth` to return `{ error: 'UNAUTHORIZED', status: 401 }`).  
 **Expected:**
+
 - The function **resolves** (does not throw).
 - The resolved value passes `isUnauthorizedError(result) === true`.
 - The resolved value has shape `{ error: 'UNAUTHORIZED', status: 401 }`.
@@ -293,6 +298,7 @@ This test plan covers the full Auto Layout feature as specified in `prd.md` v1.2
 **File:** `server-functions.test.ts`  
 **Setup:** Mock `prisma.$transaction` to throw a Prisma error mid-way.  
 **Expected:**
+
 - The function re-throws.
 - DB state: all position rows remain at their pre-call values (no partial updates).
 
@@ -328,6 +334,7 @@ This test plan covers the full Auto Layout feature as specified in `prd.md` v1.2
 ### TS-COLLAB — Socket.IO Collaboration Handler
 
 **Files:**
+
 - `src/server/socket.test.ts` (append) or `src/routes/api/collaboration.test.ts`
 - `src/hooks/use-whiteboard-collaboration.test.ts` (append)
 
@@ -341,6 +348,7 @@ This test plan covers the full Auto Layout feature as specified in `prd.md` v1.2
 **File:** `collaboration.test.ts`  
 **Setup:** Two sockets connected to the same whiteboard namespace. Socket A emits `table:move:bulk` with a valid payload.  
 **Expected:**
+
 - Socket B receives `table:move:bulk` with the verbatim payload.
 - Socket A does NOT receive the event (sender excluded by `broadcastToWhiteboard`).
 
@@ -352,6 +360,7 @@ This test plan covers the full Auto Layout feature as specified in `prd.md` v1.2
 **File:** `collaboration.test.ts`  
 **Setup:** Connect a socket; mock `isSessionExpired(socket)` to return `true`; emit `table:move:bulk` from that socket.  
 **Expected:**
+
 - `socket.emit('session_expired')` is called.
 - `socket.disconnect(true)` is called.
 - No `broadcastToWhiteboard` call is made.
@@ -418,6 +427,7 @@ This test plan covers the full Auto Layout feature as specified in `prd.md` v1.2
 **File:** `use-whiteboard-collaboration.test.ts`  
 **Setup:** Render the hook with `onBulkPositionUpdate`; inspect `mockOn` calls; unmount; inspect `mockOff` calls.  
 **Expected:**
+
 - `mockOn` was called with `'table:move:bulk'`.
 - `mockOff` was called with `'table:move:bulk'` on unmount.
 
@@ -589,6 +599,7 @@ This test plan covers the full Auto Layout feature as specified in `prd.md` v1.2
 **Req:** FR-005, FR-006, FR-008, FR-009, FR-022  
 **Setup:** Mock `runD3ForceLayout` to resolve with 2 positions. Mock `updateTablePositionsBulk` to resolve `{ success: true, count: 2 }`. Call `runLayout`.  
 **Expected (in order):**
+
 1. `setNodes` called once with all new positions (optimistic apply).
 2. `updateTablePositionsBulk` called once with the correct payload.
 3. `emitBulkPositionUpdate` called with the correct positions.
@@ -603,6 +614,7 @@ This test plan covers the full Auto Layout feature as specified in `prd.md` v1.2
 **Req:** Error Flow 1  
 **Setup:** Mock `runD3ForceLayout` to throw. Call `runLayout`.  
 **Expected:**
+
 - `setNodes` NOT called (diagram left in pre-click positions).
 - `updateTablePositionsBulk` NOT called.
 - `emitBulkPositionUpdate` NOT called.
@@ -616,11 +628,12 @@ This test plan covers the full Auto Layout feature as specified in `prd.md` v1.2
 **Req:** Apollo R1 Finding 1 (HIGH) — `isUnauthorizedError` return value  
 **File:** `use-auto-layout-orchestrator.test.ts`  
 **Setup:**
+
 - Mock `runD3ForceLayout` to resolve with positions.
 - Mock `updateTablePositionsBulk` to resolve with `{ error: 'UNAUTHORIZED', status: 401 }`.
 - Spy on `triggerSessionExpired`.
 - Call `runLayout`.  
-**Expected:**
+  **Expected:**
 - `setNodes` IS called (optimistic apply precedes the await).
 - `isUnauthorizedError(result)` returns `true` → enters the auth-error branch.
 - `triggerSessionExpired()` is called.
@@ -637,6 +650,7 @@ This test plan covers the full Auto Layout feature as specified in `prd.md` v1.2
 **Req:** NFR-Persistence failure UX  
 **Setup:** Mock `updateTablePositionsBulk` to throw a generic Error. Call `runLayout`.  
 **Expected:**
+
 - `setNodes` IS called (optimistic apply).
 - `toast.error(...)` called with Retry action.
 - `fitView(...)` NOT called.
@@ -650,6 +664,7 @@ This test plan covers the full Auto Layout feature as specified in `prd.md` v1.2
 **Req:** NFR-Persistence failure UX — Retry  
 **Setup:** Bring hook to persist-failure state (TC-AL-O-04 setup). Mock `updateTablePositionsBulk` to resolve successfully on the retry call. Call `handleRetry`.  
 **Expected:**
+
 - `updateTablePositionsBulk` called with the same payload as the original run (from `lastPayloadRef`).
 - `emitBulkPositionUpdate` called.
 - `runD3ForceLayout` NOT called again (no recompute).
@@ -662,10 +677,12 @@ This test plan covers the full Auto Layout feature as specified in `prd.md` v1.2
 **Req:** Apollo R1 Finding 4 (MEDIUM) — `isMountedRef` stale Retry guard  
 **File:** `use-auto-layout-orchestrator.test.ts`  
 **Setup:**
+
 1. Bring hook to persist-failure state.
 2. Unmount the hook (simulates navigation away).
 3. Simulate clicking the Retry action in the sonner toast (call the Retry `onClick` handler directly).  
-**Expected:**
+   **Expected:**
+
 - `updateTablePositionsBulk` is NOT called (the `isMountedRef.current === false` check fires first).
 - No state updates occur after unmount.
 
@@ -740,6 +757,7 @@ This test plan covers the full Auto Layout feature as specified in `prd.md` v1.2
 **Req:** FR-001, FR-005, FR-006, FR-008  
 **Setup:** Render `ReactFlowWhiteboard` with 2 table nodes. Mock the orchestrator to resolve successfully. Click "Auto Layout".  
 **Expected:**
+
 - `setNodes` called once with 2 updated positions.
 - `updateTablePositionsBulk` called with both table IDs.
 - `fitView` called after 100 ms delay.
@@ -792,6 +810,7 @@ This test plan covers the full Auto Layout feature as specified in `prd.md` v1.2
 **Req:** NFR-Persistence failure UX  
 **Setup:** Mock `updateTablePositionsBulk` to throw. Click "Auto Layout".  
 **Expected:**
+
 - `setNodes` was called (positions visible locally).
 - Error toast with "Retry" button visible.
 - `fitView` NOT called.
@@ -803,6 +822,7 @@ This test plan covers the full Auto Layout feature as specified in `prd.md` v1.2
 **Req:** Apollo R1 Finding 1 (HIGH)  
 **Setup:** Mock `updateTablePositionsBulk` to resolve `{ error: 'UNAUTHORIZED', status: 401 }`. Click "Auto Layout".  
 **Expected:**
+
 - `toast.success(...)` NOT called.
 - `fitView` NOT called.
 - `triggerSessionExpired()` called.
@@ -856,6 +876,7 @@ This test plan covers the full Auto Layout feature as specified in `prd.md` v1.2
 **File:** `src/routes/whiteboard/$whiteboardId.test.tsx` (or a TypeScript compile-only check)  
 **Setup:** Verify `$whiteboardId.tsx` source file (via rg or compile check).  
 **Expected:**
+
 - `reactFlowAutoLayoutRef` does not exist.
 - `handleAutoLayout` does not exist.
 - `handleAutoLayoutReady` / `onAutoLayoutReady` prop does not exist.
@@ -868,24 +889,24 @@ This test plan covers the full Auto Layout feature as specified in `prd.md` v1.2
 
 The following table summarises the edge cases that must be covered across the test suites, with the primary test ID that covers each:
 
-| Edge Case | Risk | Primary Test |
-|-----------|------|-------------|
-| Zero tables | Button disabled, no crash | TC-AL-T-02, TC-AL-I-03 |
-| Single table | Button disabled, engine returns | TC-AL-E-02, TC-AL-T-02, TC-AL-I-02 |
-| All tables isolated (no FK) | FR-010 still applies 16px gap | TC-AL-E-06, TC-AL-E-03 |
-| Circular FK (A→B→C→A) | All 3 pairs satisfy 16px gap | TC-AL-E-07 |
-| Fully-connected schema | Proximity assertion skipped | TC-AL-E-09 |
-| Session expiry mid-bulk-emit (socket handler) | No broadcast; session_expired emitted | TC-AL-C-02 |
-| Auth error returned (not thrown) from server function | No false success path | TC-AL-S-08, TC-AL-O-03, TC-AL-I-08 |
-| Retry after component unmount | `updateTablePositionsBulk` not called | TC-AL-O-06, TC-AL-I-10 |
-| `isMountedRef` mid-await guard | No state mutation after unmount | TC-AL-O-07 |
-| Collaborator same-userId guard | Own event ignored | TC-AL-C-08, TC-AL-I-12 |
-| > 50 tables: dialog opened | FR-011 pre-run warning | TC-AL-D-01–08, TC-AL-I-04–06 |
-| > 500 positions: Zod rejects | Safety cap | TC-AL-S-04 |
-| `Infinity` / `NaN` coordinate | Zod rejects | TC-AL-S-06 |
-| Transaction partial failure | Full rollback | TC-AL-S-09 |
-| IDOR: foreign table ID | Rejected before transaction | TC-AL-S-02 |
-| Socket handler skipping guards | Defense-in-depth | TC-AL-C-02, TC-AL-C-03 |
+| Edge Case                                             | Risk                                  | Primary Test                       |
+| ----------------------------------------------------- | ------------------------------------- | ---------------------------------- |
+| Zero tables                                           | Button disabled, no crash             | TC-AL-T-02, TC-AL-I-03             |
+| Single table                                          | Button disabled, engine returns       | TC-AL-E-02, TC-AL-T-02, TC-AL-I-02 |
+| All tables isolated (no FK)                           | FR-010 still applies 16px gap         | TC-AL-E-06, TC-AL-E-03             |
+| Circular FK (A→B→C→A)                                 | All 3 pairs satisfy 16px gap          | TC-AL-E-07                         |
+| Fully-connected schema                                | Proximity assertion skipped           | TC-AL-E-09                         |
+| Session expiry mid-bulk-emit (socket handler)         | No broadcast; session_expired emitted | TC-AL-C-02                         |
+| Auth error returned (not thrown) from server function | No false success path                 | TC-AL-S-08, TC-AL-O-03, TC-AL-I-08 |
+| Retry after component unmount                         | `updateTablePositionsBulk` not called | TC-AL-O-06, TC-AL-I-10             |
+| `isMountedRef` mid-await guard                        | No state mutation after unmount       | TC-AL-O-07                         |
+| Collaborator same-userId guard                        | Own event ignored                     | TC-AL-C-08, TC-AL-I-12             |
+| > 50 tables: dialog opened                            | FR-011 pre-run warning                | TC-AL-D-01–08, TC-AL-I-04–06       |
+| > 500 positions: Zod rejects                          | Safety cap                            | TC-AL-S-04                         |
+| `Infinity` / `NaN` coordinate                         | Zod rejects                           | TC-AL-S-06                         |
+| Transaction partial failure                           | Full rollback                         | TC-AL-S-09                         |
+| IDOR: foreign table ID                                | Rejected before transaction           | TC-AL-S-02                         |
+| Socket handler skipping guards                        | Defense-in-depth                      | TC-AL-C-02, TC-AL-C-03             |
 
 ---
 
@@ -893,40 +914,40 @@ The following table summarises the edge cases that must be covered across the te
 
 All 11 P0 requirements (FR-001 through FR-011) and the four Apollo-flagged high/medium risks have at least one P0-priority test case. The table below maps each P0 item to its primary P0 test(s):
 
-| Item | P0 Test(s) |
-|------|-----------|
-| FR-001 (button visible) | TC-AL-T-01, TC-AL-I-01 |
-| FR-002 (button disabled) | TC-AL-T-02, TC-AL-T-03, TC-AL-I-02, TC-AL-I-03 |
-| FR-003 (FK proximity) | TC-AL-E-04 |
-| FR-004 (16px L∞ gap) | TC-AL-E-03, TC-AL-E-05, TC-AL-E-06, TC-AL-E-07 |
-| FR-005 (all positions overwritten) | TC-AL-O-01, TC-AL-I-01 |
-| FR-006 (fitView) | TC-AL-O-01, TC-AL-I-01 |
-| FR-007 (no longtask) | TC-AL-E-10, TC-AL-E-11 |
-| FR-008 (positions persist) | TC-AL-S-01, TC-AL-I-01 |
-| FR-009 (atomic bulk broadcast) | TC-AL-C-01, TC-AL-C-07, TC-AL-I-11 |
-| FR-010 (0 FK → non-overlapping) | TC-AL-E-03, TC-AL-E-06 |
-| FR-011 (pre-run dialog + a11y) | TC-AL-D-01–08, TC-AL-I-04–06 |
-| Apollo R1 Finding 1 (auth error return) | TC-AL-S-08, TC-AL-O-03, TC-AL-I-08 |
-| Apollo R1 Finding 4 (isMountedRef Retry) | TC-AL-O-06, TC-AL-O-07, TC-AL-I-10 |
-| Apollo R2-1 (socket session/permission guards) | TC-AL-C-02, TC-AL-C-03 |
-| Apollo Finding 5 (userId sender guard) | TC-AL-C-08, TC-AL-C-10, TC-AL-I-12 |
+| Item                                           | P0 Test(s)                                     |
+| ---------------------------------------------- | ---------------------------------------------- |
+| FR-001 (button visible)                        | TC-AL-T-01, TC-AL-I-01                         |
+| FR-002 (button disabled)                       | TC-AL-T-02, TC-AL-T-03, TC-AL-I-02, TC-AL-I-03 |
+| FR-003 (FK proximity)                          | TC-AL-E-04                                     |
+| FR-004 (16px L∞ gap)                           | TC-AL-E-03, TC-AL-E-05, TC-AL-E-06, TC-AL-E-07 |
+| FR-005 (all positions overwritten)             | TC-AL-O-01, TC-AL-I-01                         |
+| FR-006 (fitView)                               | TC-AL-O-01, TC-AL-I-01                         |
+| FR-007 (no longtask)                           | TC-AL-E-10, TC-AL-E-11                         |
+| FR-008 (positions persist)                     | TC-AL-S-01, TC-AL-I-01                         |
+| FR-009 (atomic bulk broadcast)                 | TC-AL-C-01, TC-AL-C-07, TC-AL-I-11             |
+| FR-010 (0 FK → non-overlapping)                | TC-AL-E-03, TC-AL-E-06                         |
+| FR-011 (pre-run dialog + a11y)                 | TC-AL-D-01–08, TC-AL-I-04–06                   |
+| Apollo R1 Finding 1 (auth error return)        | TC-AL-S-08, TC-AL-O-03, TC-AL-I-08             |
+| Apollo R1 Finding 4 (isMountedRef Retry)       | TC-AL-O-06, TC-AL-O-07, TC-AL-I-10             |
+| Apollo R2-1 (socket session/permission guards) | TC-AL-C-02, TC-AL-C-03                         |
+| Apollo Finding 5 (userId sender guard)         | TC-AL-C-08, TC-AL-C-10, TC-AL-I-12             |
 
 ---
 
 ## 6. Test File → Responsible Party (for Ares)
 
-| Test File | Phase | Suite(s) |
-|-----------|-------|---------|
-| `src/lib/auto-layout/d3-force-layout.test.ts` | 1 | TS-ENGINE (TC-AL-E-01 – E-11) |
-| `src/hooks/use-d3-force-layout.test.ts` | 1 | TS-ENGINE (TC-AL-E-12 – E-13) |
-| `src/data/schema.test.ts` (append) | 2 | TS-SERVER (TC-AL-S-11 – S-12) |
-| `src/lib/server-functions.test.ts` (append) or `server-functions-bulk.test.ts` | 2 | TS-SERVER (TC-AL-S-01 – S-10) |
-| `src/routes/api/collaboration.test.ts` (append) | 2 | TS-COLLAB (TC-AL-C-01 – C-06) |
-| `src/hooks/use-whiteboard-collaboration.test.ts` (append) | 4 | TS-COLLAB (TC-AL-C-07 – C-10) |
-| `src/components/whiteboard/Toolbar.test.tsx` (update) | 3 | TS-TOOLBAR (TC-AL-T-01 – T-07) |
-| `src/components/whiteboard/AutoLayoutConfirmDialog.test.tsx` (create) | 3 | TS-DIALOG (TC-AL-D-01 – D-09) |
-| `src/hooks/use-auto-layout-orchestrator.test.ts` (create) | 4 | TS-ORCH (TC-AL-O-01 – O-13) |
-| `src/components/whiteboard/ReactFlowWhiteboard.test.tsx` (append) | 4 | TS-INTEGRATION (TC-AL-I-01 – I-14) |
+| Test File                                                                      | Phase | Suite(s)                           |
+| ------------------------------------------------------------------------------ | ----- | ---------------------------------- |
+| `src/lib/auto-layout/d3-force-layout.test.ts`                                  | 1     | TS-ENGINE (TC-AL-E-01 – E-11)      |
+| `src/hooks/use-d3-force-layout.test.ts`                                        | 1     | TS-ENGINE (TC-AL-E-12 – E-13)      |
+| `src/data/schema.test.ts` (append)                                             | 2     | TS-SERVER (TC-AL-S-11 – S-12)      |
+| `src/lib/server-functions.test.ts` (append) or `server-functions-bulk.test.ts` | 2     | TS-SERVER (TC-AL-S-01 – S-10)      |
+| `src/routes/api/collaboration.test.ts` (append)                                | 2     | TS-COLLAB (TC-AL-C-01 – C-06)      |
+| `src/hooks/use-whiteboard-collaboration.test.ts` (append)                      | 4     | TS-COLLAB (TC-AL-C-07 – C-10)      |
+| `src/components/whiteboard/Toolbar.test.tsx` (update)                          | 3     | TS-TOOLBAR (TC-AL-T-01 – T-07)     |
+| `src/components/whiteboard/AutoLayoutConfirmDialog.test.tsx` (create)          | 3     | TS-DIALOG (TC-AL-D-01 – D-09)      |
+| `src/hooks/use-auto-layout-orchestrator.test.ts` (create)                      | 4     | TS-ORCH (TC-AL-O-01 – O-13)        |
+| `src/components/whiteboard/ReactFlowWhiteboard.test.tsx` (append)              | 4     | TS-INTEGRATION (TC-AL-I-01 – I-14) |
 
 ---
 
