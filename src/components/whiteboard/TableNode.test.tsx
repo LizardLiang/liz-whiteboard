@@ -10,7 +10,7 @@ import React from 'react'
 
 import { toast } from 'sonner'
 import { TableNode } from './TableNode.new'
-import type { Column } from '@prisma/client'
+import type { Column } from '@/data/models'
 import type { TableNodeData } from '@/lib/react-flow/types'
 
 // ============================================================================

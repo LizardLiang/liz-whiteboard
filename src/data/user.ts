@@ -1,8 +1,8 @@
 // src/data/user.ts
 // Data access layer for User entity
 
-import type { User } from '@prisma/client'
-import { prisma } from '@/db'
+import type { User } from '@/data/models'
+import { db, genId, insert, mapUser, nowMs } from '@/db'
 
 /**
  * Create a new user
@@ -14,10 +14,17 @@ export async function createUser(data: {
   email: string
   passwordHash: string
 }): Promise<User> {
-  const user = await prisma.user.create({
-    data,
+  const id = genId()
+  const ts = nowMs()
+  insert('User', {
+    id,
+    username: data.username,
+    email: data.email,
+    passwordHash: data.passwordHash,
+    createdAt: ts,
+    updatedAt: ts,
   })
-  return user
+  return mapUser(db.prepare('SELECT * FROM "User" WHERE "id" = ?').get(id))!
 }
 
 /**
@@ -26,10 +33,9 @@ export async function createUser(data: {
  * @returns User or null if not found
  */
 export async function findUserByEmail(email: string): Promise<User | null> {
-  const user = await prisma.user.findUnique({
-    where: { email },
-  })
-  return user
+  return mapUser(
+    db.prepare('SELECT * FROM "User" WHERE "email" = ?').get(email),
+  )
 }
 
 /**
@@ -40,10 +46,9 @@ export async function findUserByEmail(email: string): Promise<User | null> {
 export async function findUserByUsername(
   username: string,
 ): Promise<User | null> {
-  const user = await prisma.user.findUnique({
-    where: { username },
-  })
-  return user
+  return mapUser(
+    db.prepare('SELECT * FROM "User" WHERE "username" = ?').get(username),
+  )
 }
 
 /**
@@ -52,10 +57,7 @@ export async function findUserByUsername(
  * @returns User or null if not found
  */
 export async function findUserById(id: string): Promise<User | null> {
-  const user = await prisma.user.findUnique({
-    where: { id },
-  })
-  return user
+  return mapUser(db.prepare('SELECT * FROM "User" WHERE "id" = ?').get(id))
 }
 
 /**
@@ -63,5 +65,6 @@ export async function findUserById(id: string): Promise<User | null> {
  * @returns Total user count
  */
 export async function countUsers(): Promise<number> {
-  return prisma.user.count()
+  const row = db.prepare('SELECT count(*) AS c FROM "User"').get()
+  return Number(row!.c)
 }

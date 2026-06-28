@@ -10,7 +10,7 @@
 
 import { useCallback, useEffect, useRef } from 'react'
 import { useCollaboration } from './use-collaboration'
-import type { Column } from '@prisma/client'
+import type { Column } from '@/data/models'
 import type { DataType, UpdateColumn } from '@/data/schema'
 import { useAuthContext } from '@/components/auth/AuthContext'
 

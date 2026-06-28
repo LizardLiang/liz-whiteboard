@@ -36,7 +36,8 @@ import type {
   ShowMode,
   TableNodeType,
 } from '@/lib/react-flow/types'
-import type { Cardinality, Column } from '@prisma/client'
+import type { Column } from '@/data/models'
+import type { Cardinality } from '@/data/schema'
 import type { CreateColumnPayload } from './column/types'
 import type {
   CreateRelationship,

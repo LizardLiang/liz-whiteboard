@@ -1,239 +1,133 @@
-import { PrismaClient } from '@prisma/client'
-
-const prisma = new PrismaClient()
+// seed.ts
+// Seeds the SQLite database with a small deterministic ER diagram.
+// Uses the raw-SQLite data layer (no ORM). Run with: bun seed.ts
+import { db } from '@/db'
+import { createProject } from '@/data/project'
+import { createWhiteboard } from '@/data/whiteboard'
+import { createDiagramTable } from '@/data/diagram-table'
+import { createColumn, createColumns } from '@/data/column'
+import { createRelationship } from '@/data/relationship'
 
 async function main() {
   console.log('🌱 Seeding database...')
 
-  // Clear existing data (in order to respect foreign key constraints)
-  await prisma.relationship.deleteMany()
-  await prisma.column.deleteMany()
-  await prisma.diagramTable.deleteMany()
-  await prisma.whiteboard.deleteMany()
-  await prisma.folder.deleteMany()
-  await prisma.project.deleteMany()
+  // Clear existing diagram data (FK cascade order). Importing `@/db` above has
+  // already ensured the schema exists.
+  db.exec(
+    'DELETE FROM "Relationship"; DELETE FROM "Column"; DELETE FROM "DiagramTable"; DELETE FROM "Whiteboard"; DELETE FROM "Folder"; DELETE FROM "Project";',
+  )
 
-  // Create a sample project
-  const project = await prisma.project.create({
-    data: {
-      name: 'E-commerce Platform',
-      description: 'Database schema for an e-commerce application',
-    },
+  const project = await createProject({
+    name: 'E-commerce Platform',
+    description: 'Database schema for an e-commerce application',
   })
   console.log(`✅ Created project: ${project.name}`)
 
-  // Create a whiteboard
-  const whiteboard = await prisma.whiteboard.create({
-    data: {
-      name: 'User & Product Schema',
-      projectId: project.id,
-      canvasState: { zoom: 1, offsetX: 0, offsetY: 0 },
-    },
+  const whiteboard = await createWhiteboard({
+    name: 'User & Product Schema',
+    projectId: project.id,
+    canvasState: { zoom: 1, offsetX: 0, offsetY: 0 },
   })
   console.log(`✅ Created whiteboard: ${whiteboard.name}`)
 
-  // Create Users table
-  const usersTable = await prisma.diagramTable.create({
-    data: {
-      whiteboardId: whiteboard.id,
-      name: 'Users',
-      description: 'User accounts and authentication',
-      positionX: 100,
-      positionY: 100,
-      width: 250,
-      height: null,
-    },
+  // Users table
+  const usersTable = await createDiagramTable({
+    whiteboardId: whiteboard.id,
+    name: 'Users',
+    description: 'User accounts and authentication',
+    positionX: 100,
+    positionY: 100,
+    width: 250,
   })
-
-  // Create columns for Users table
-  const userIdColumn = await prisma.column.create({
-    data: {
-      tableId: usersTable.id,
-      name: 'id',
-      dataType: 'uuid',
-      isPrimaryKey: true,
-      isForeignKey: false,
-      isNullable: false,
-      order: 0,
-    },
+  const userIdColumn = await createColumn({
+    tableId: usersTable.id,
+    name: 'id',
+    dataType: 'uuid',
+    isPrimaryKey: true,
+    order: 0,
   })
+  await createColumns([
+    { tableId: usersTable.id, name: 'email', dataType: 'string', order: 1 },
+    { tableId: usersTable.id, name: 'name', dataType: 'string', order: 2 },
+    { tableId: usersTable.id, name: 'created_at', dataType: 'date', order: 3 },
+  ])
+  console.log('✅ Created Users table with columns')
 
-  await prisma.column.createMany({
-    data: [
-      {
-        tableId: usersTable.id,
-        name: 'email',
-        dataType: 'string',
-        isPrimaryKey: false,
-        isForeignKey: false,
-        isNullable: false,
-        order: 1,
-      },
-      {
-        tableId: usersTable.id,
-        name: 'name',
-        dataType: 'string',
-        isPrimaryKey: false,
-        isForeignKey: false,
-        isNullable: false,
-        order: 2,
-      },
-      {
-        tableId: usersTable.id,
-        name: 'created_at',
-        dataType: 'date',
-        isPrimaryKey: false,
-        isForeignKey: false,
-        isNullable: false,
-        order: 3,
-      },
-    ],
+  // Products table
+  const productsTable = await createDiagramTable({
+    whiteboardId: whiteboard.id,
+    name: 'Products',
+    description: 'Product catalog',
+    positionX: 500,
+    positionY: 100,
+    width: 250,
   })
-  console.log(`✅ Created Users table with columns`)
-
-  // Create Products table
-  const productsTable = await prisma.diagramTable.create({
-    data: {
-      whiteboardId: whiteboard.id,
-      name: 'Products',
-      description: 'Product catalog',
-      positionX: 500,
-      positionY: 100,
-      width: 250,
-      height: null,
-    },
+  await createColumn({
+    tableId: productsTable.id,
+    name: 'id',
+    dataType: 'uuid',
+    isPrimaryKey: true,
+    order: 0,
   })
-
-  // Create columns for Products table
-  const productIdColumn = await prisma.column.create({
-    data: {
+  await createColumns([
+    { tableId: productsTable.id, name: 'name', dataType: 'string', order: 1 },
+    { tableId: productsTable.id, name: 'price', dataType: 'float', order: 2 },
+    {
       tableId: productsTable.id,
-      name: 'id',
-      dataType: 'uuid',
-      isPrimaryKey: true,
-      isForeignKey: false,
-      isNullable: false,
-      order: 0,
+      name: 'description',
+      dataType: 'text',
+      isNullable: true,
+      order: 3,
     },
-  })
+  ])
+  console.log('✅ Created Products table with columns')
 
-  await prisma.column.createMany({
-    data: [
-      {
-        tableId: productsTable.id,
-        name: 'name',
-        dataType: 'string',
-        isPrimaryKey: false,
-        isForeignKey: false,
-        isNullable: false,
-        order: 1,
-      },
-      {
-        tableId: productsTable.id,
-        name: 'price',
-        dataType: 'float',
-        isPrimaryKey: false,
-        isForeignKey: false,
-        isNullable: false,
-        order: 2,
-      },
-      {
-        tableId: productsTable.id,
-        name: 'description',
-        dataType: 'text',
-        isPrimaryKey: false,
-        isForeignKey: false,
-        isNullable: true,
-        order: 3,
-      },
-    ],
+  // Orders table
+  const ordersTable = await createDiagramTable({
+    whiteboardId: whiteboard.id,
+    name: 'Orders',
+    description: 'Customer orders',
+    positionX: 300,
+    positionY: 400,
+    width: 250,
   })
-  console.log(`✅ Created Products table with columns`)
-
-  // Create Orders table
-  const ordersTable = await prisma.diagramTable.create({
-    data: {
-      whiteboardId: whiteboard.id,
-      name: 'Orders',
-      description: 'Customer orders',
-      positionX: 300,
-      positionY: 400,
-      width: 250,
-      height: null,
-    },
+  await createColumn({
+    tableId: ordersTable.id,
+    name: 'id',
+    dataType: 'uuid',
+    isPrimaryKey: true,
+    order: 0,
   })
-
-  // Create columns for Orders table
-  const orderIdColumn = await prisma.column.create({
-    data: {
+  const orderUserIdColumn = await createColumn({
+    tableId: ordersTable.id,
+    name: 'user_id',
+    dataType: 'uuid',
+    isForeignKey: true,
+    order: 1,
+  })
+  await createColumns([
+    {
       tableId: ordersTable.id,
-      name: 'id',
-      dataType: 'uuid',
-      isPrimaryKey: true,
-      isForeignKey: false,
-      isNullable: false,
-      order: 0,
+      name: 'total_amount',
+      dataType: 'float',
+      order: 2,
     },
-  })
+    { tableId: ordersTable.id, name: 'status', dataType: 'string', order: 3 },
+    { tableId: ordersTable.id, name: 'created_at', dataType: 'date', order: 4 },
+  ])
+  console.log('✅ Created Orders table with columns')
 
-  const orderUserIdColumn = await prisma.column.create({
-    data: {
-      tableId: ordersTable.id,
-      name: 'user_id',
-      dataType: 'uuid',
-      isPrimaryKey: false,
-      isForeignKey: true,
-      isNullable: false,
-      order: 1,
-    },
+  // Relationship: Users -> Orders (ONE_TO_MANY)
+  await createRelationship({
+    whiteboardId: whiteboard.id,
+    sourceTableId: usersTable.id,
+    targetTableId: ordersTable.id,
+    sourceColumnId: userIdColumn.id,
+    targetColumnId: orderUserIdColumn.id,
+    cardinality: 'ONE_TO_MANY',
+    label: 'places',
   })
-
-  await prisma.column.createMany({
-    data: [
-      {
-        tableId: ordersTable.id,
-        name: 'total_amount',
-        dataType: 'float',
-        isPrimaryKey: false,
-        isForeignKey: false,
-        isNullable: false,
-        order: 2,
-      },
-      {
-        tableId: ordersTable.id,
-        name: 'status',
-        dataType: 'string',
-        isPrimaryKey: false,
-        isForeignKey: false,
-        isNullable: false,
-        order: 3,
-      },
-      {
-        tableId: ordersTable.id,
-        name: 'created_at',
-        dataType: 'date',
-        isPrimaryKey: false,
-        isForeignKey: false,
-        isNullable: false,
-        order: 4,
-      },
-    ],
-  })
-  console.log(`✅ Created Orders table with columns`)
-
-  // Create relationship: Users -> Orders (ONE_TO_MANY)
-  await prisma.relationship.create({
-    data: {
-      whiteboardId: whiteboard.id,
-      sourceTableId: usersTable.id,
-      targetTableId: ordersTable.id,
-      sourceColumnId: userIdColumn.id,
-      targetColumnId: orderUserIdColumn.id,
-      cardinality: 'ONE_TO_MANY',
-      label: 'places',
-    },
-  })
-  console.log(`✅ Created relationship: Users -> Orders`)
+  console.log('✅ Created relationship: Users -> Orders')
 
   console.log('🎉 Database seeded successfully!')
   console.log(`   Project ID: ${project.id}`)
@@ -241,11 +135,7 @@ async function main() {
   console.log(`   Open: http://localhost:3000/whiteboard/${whiteboard.id}`)
 }
 
-main()
-  .catch((e) => {
-    console.error('❌ Error seeding database:', e)
-    process.exit(1)
-  })
-  .finally(async () => {
-    await prisma.$disconnect()
-  })
+main().catch((e) => {
+  console.error('❌ Error seeding database:', e)
+  process.exit(1)
+})

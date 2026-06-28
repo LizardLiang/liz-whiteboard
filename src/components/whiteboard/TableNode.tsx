@@ -5,7 +5,7 @@ import { useEffect, useRef } from 'react'
 import { Group, Line, Rect, Text } from 'react-konva'
 import type Konva from 'konva'
 import type { KonvaEventObject } from 'konva/lib/Node'
-import type { Column, DiagramTable } from '@prisma/client'
+import type { Column, DiagramTable } from '@/data/models'
 
 /**
  * TableNode component props

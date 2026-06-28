@@ -2,20 +2,22 @@
 // Server functions for whiteboard operations using TanStack Start
 
 import { createServerFn } from '@tanstack/react-start'
-import type { BulkUpdatePositions } from '@/data/schema'
-import type { WhiteboardWithDiagram } from '@/data/whiteboard'
-import type { CreateTable } from '@/data/diagram-table'
 import type {
+  BulkUpdatePositions,
   CreateRelationship,
-  RelationshipWithDetails,
-} from '@/data/relationship'
+  CreateTable,
+} from '@/data/schema'
+import type { WhiteboardWithDiagram } from '@/data/whiteboard'
+import type { RelationshipWithDetails } from '@/data/relationship'
 import type { LayoutOptions, LayoutResult } from '@/lib/canvas/layout-engine'
 import {
   findWhiteboardByIdWithDiagram,
+  updateWhiteboardCanvasState,
   updateWhiteboardTextSource,
 } from '@/data/whiteboard'
 import {
   createDiagramTable,
+  findDiagramTablesByWhiteboardId,
   updateDiagramTablePosition,
 } from '@/data/diagram-table'
 import {
@@ -23,7 +25,7 @@ import {
   findRelationshipsByWhiteboardIdWithDetails,
 } from '@/data/relationship'
 import { computeLayout } from '@/lib/canvas/layout-engine'
-import { prisma } from '@/db'
+import { nowMs, transaction, update } from '@/db'
 import { requireAuth } from '@/lib/auth/middleware'
 import {
   getTableProjectId,
@@ -133,7 +135,7 @@ export const updateTablePosition = createServerFn({
 /**
  * Server function to bulk-update table positions (used by Auto Layout).
  *
- * Persists N positions atomically in a single prisma.$transaction.
+ * Persists N positions atomically in a single SQLite transaction.
  * Does NOT emit any Socket.IO event — the originator's client emits the
  * table:move:bulk broadcast after this call resolves successfully
  * (mirrors the existing single-table updateTablePositionMutation.onSuccess pattern;
@@ -160,10 +162,7 @@ export const updateTablePositionsBulk = createServerFn({ method: 'POST' })
         // query), but the request still rejects correctly on the projectId check.
         const [projectId, owned] = await Promise.all([
           getWhiteboardProjectId(whiteboardId),
-          prisma.diagramTable.findMany({
-            where: { whiteboardId },
-            select: { id: true },
-          }),
+          findDiagramTablesByWhiteboardId(whiteboardId),
         ])
         await requireServerFnRole(user.id, projectId, 'EDITOR')
 
@@ -176,14 +175,16 @@ export const updateTablePositionsBulk = createServerFn({ method: 'POST' })
 
         try {
           // Single transaction — all-or-nothing per NFR Reliability.
-          await prisma.$transaction(
-            positions.map((p) =>
-              prisma.diagramTable.update({
-                where: { id: p.id },
-                data: { positionX: p.positionX, positionY: p.positionY },
-              }),
-            ),
-          )
+          transaction(() => {
+            const ts = nowMs()
+            for (const p of positions) {
+              update('DiagramTable', p.id, {
+                positionX: p.positionX,
+                positionY: p.positionY,
+                updatedAt: ts,
+              })
+            }
+          })
         } catch (error) {
           console.error('Error bulk-updating table positions:', error)
           throw error
@@ -276,17 +277,16 @@ export const computeAutoLayout = createServerFn({
         )
 
         // Update table positions in database (batch update for performance)
-        await prisma.$transaction(
-          layoutResult.positions.map((pos) =>
-            prisma.diagramTable.update({
-              where: { id: pos.id },
-              data: {
-                positionX: pos.x,
-                positionY: pos.y,
-              },
-            }),
-          ),
-        )
+        transaction(() => {
+          const ts = nowMs()
+          for (const pos of layoutResult.positions) {
+            update('DiagramTable', pos.id, {
+              positionX: pos.x,
+              positionY: pos.y,
+              updatedAt: ts,
+            })
+          }
+        })
 
         return layoutResult
       } catch (error) {
@@ -316,12 +316,10 @@ export const saveCanvasState = createServerFn({
       const projectId = await getWhiteboardProjectId(data.whiteboardId)
       await requireServerFnRole(user.id, projectId, 'EDITOR')
       try {
-        const whiteboard = await prisma.whiteboard.update({
-          where: { id: data.whiteboardId },
-          data: {
-            canvasState: data.canvasState,
-          },
-        })
+        const whiteboard = await updateWhiteboardCanvasState(
+          data.whiteboardId,
+          data.canvasState,
+        )
         return whiteboard
       } catch (error) {
         console.error('Error saving canvas state:', error)

@@ -1,86 +1,40 @@
 // src/routes/api/permissions.test.ts
-// Phase 4 permission management tests
-// TC-P4-07 through TC-P4-10
+// Phase 4 permission-management integration tests (TC-P4-07 through TC-P4-10).
+//
+// These exercise the real permission server-function logic against an in-memory
+// SQLite database. The handler functions below mirror the createServerFn
+// handlers in permissions.ts; all DB-backed calls are REAL (project/user
+// lookups + ProjectMember CRUD). The ONLY mock is `findEffectiveRole`, which is
+// currently a non-DB-backed stub (it always returns 'OWNER'), so it is mocked
+// to drive the role-based branches the tests cover — exactly the seam the
+// original suite controlled.
 
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 
-import { prisma } from '@/db'
 import {
   deleteProjectMember,
   findEffectiveRole,
   findProjectMembers,
   upsertProjectMember,
 } from '@/data/permission'
-import { findUserByEmail } from '@/data/user'
-import { getSessionFromCookie } from '@/lib/auth/cookies'
+import { findUserByEmail, findUserById } from '@/data/user'
+import { findProjectById } from '@/data/project'
 import { hasMinimumRole } from '@/lib/auth/permissions'
+import { makeProject, makeUser, resetDb } from '@/test/db-helpers'
 
-vi.mock('@tanstack/react-start/server', () => ({
-  getRequest: vi.fn(() => new Request('http://localhost/')),
-  setResponseHeader: vi.fn(),
-}))
+// Keep the real ProjectMember CRUD; mock only the (stubbed) role resolver.
+vi.mock('@/data/permission', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('@/data/permission')>()
+  return {
+    ...actual,
+    findEffectiveRole: vi.fn(),
+  }
+})
 
-vi.mock('@/db', () => ({
-  prisma: {
-    project: {
-      findUnique: vi.fn(),
-    },
-    projectMember: {
-      create: vi.fn(),
-      findMany: vi.fn(),
-      findUnique: vi.fn(),
-      upsert: vi.fn(),
-      delete: vi.fn(),
-    },
-  },
-}))
-
-vi.mock('@/data/permission', () => ({
-  findEffectiveRole: vi.fn(),
-  createProjectMember: vi.fn(),
-  findProjectMembers: vi.fn(),
-  upsertProjectMember: vi.fn(),
-  deleteProjectMember: vi.fn(),
-}))
-
-vi.mock('@/data/user', () => ({
-  findUserByEmail: vi.fn(),
-}))
-
-vi.mock('@/lib/auth/cookies', () => ({
-  getSessionFromCookie: vi.fn(),
-}))
+const mockedFindEffectiveRole = vi.mocked(findEffectiveRole)
 
 // ─────────────────────────────────────────────────────────────────────────────
-// Fixtures
-// ─────────────────────────────────────────────────────────────────────────────
-
-const PROJECT_ID = 'a1b2c3d4-e5f6-7890-abcd-ef1234567890'
-const OWNER_ID = 'owner-uuid-0000-0000-000000000001'
-const ADMIN_ID = 'admin-uuid-0000-0000-000000000002'
-const EDITOR_ID = 'editor-uuid-000-0000-000000000003'
-const VIEWER_ID = 'viewer-uuid-000-0000-000000000004'
-const TARGET_ID = 'target-uuid-000-0000-000000000005'
-
-const mockOwnerUser = {
-  id: OWNER_ID,
-  username: 'owner',
-  email: 'owner@example.com',
-}
-const mockAdminUser = {
-  id: ADMIN_ID,
-  username: 'admin',
-  email: 'admin@example.com',
-}
-const mockTargetUser = {
-  id: TARGET_ID,
-  username: 'target',
-  email: 'target@example.com',
-}
-
-// ─────────────────────────────────────────────────────────────────────────────
-// Core handler functions that mirror the permission server functions
-// (testing logic without the TanStack Start plumbing)
+// Handlers mirroring permissions.ts logic, using the REAL data layer.
 // ─────────────────────────────────────────────────────────────────────────────
 
 async function listProjectPermissionsHandler(
@@ -96,15 +50,18 @@ async function listProjectPermissionsHandler(
     }
   }
 
-  const project = await (prisma.project as any).findUnique({
-    where: { id: projectId },
-    include: { owner: { select: { id: true, username: true, email: true } } },
-  })
+  const project = await findProjectById(projectId)
+  const ownerUser = project?.ownerId
+    ? await findUserById(project.ownerId)
+    : null
+  const owner = ownerUser
+    ? { id: ownerUser.id, username: ownerUser.username, email: ownerUser.email }
+    : null
 
   const members = await findProjectMembers(projectId)
   return {
-    owner: project?.owner ?? null,
-    members: members.map((m: any) => ({
+    owner,
+    members: members.map((m) => ({
       userId: m.userId,
       username: m.user.username,
       email: m.user.email,
@@ -135,10 +92,7 @@ async function grantPermissionHandler(
     }
   }
 
-  const project = await (prisma.project as any).findUnique({
-    where: { id: data.projectId },
-    select: { ownerId: true },
-  })
+  const project = await findProjectById(data.projectId)
   if (project?.ownerId === targetUser.id) {
     return {
       error: 'FORBIDDEN' as const,
@@ -147,7 +101,7 @@ async function grantPermissionHandler(
     }
   }
 
-  // Only OWNER can grant ADMIN role
+  // Only OWNER can grant the ADMIN role.
   if (data.role === 'ADMIN' && effectiveRole !== 'OWNER') {
     return {
       error: 'FORBIDDEN' as const,
@@ -178,10 +132,7 @@ async function updatePermissionHandler(
     }
   }
 
-  const project = await (prisma.project as any).findUnique({
-    where: { id: data.projectId },
-    select: { ownerId: true },
-  })
+  const project = await findProjectById(data.projectId)
   if (project?.ownerId === data.userId) {
     return {
       error: 'FORBIDDEN' as const,
@@ -221,10 +172,7 @@ async function revokePermissionHandler(
     }
   }
 
-  const project = await (prisma.project as any).findUnique({
-    where: { id: data.projectId },
-    select: { ownerId: true },
-  })
+  const project = await findProjectById(data.projectId)
   if (project?.ownerId === data.userId) {
     return {
       error: 'FORBIDDEN' as const,
@@ -247,14 +195,32 @@ async function revokePermissionHandler(
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
+// Seeded fixtures (real rows)
+// ─────────────────────────────────────────────────────────────────────────────
+
+let OWNER_ID = ''
+let ADMIN_ID = ''
+let EDITOR_ID = ''
+let TARGET_ID = ''
+let PROJECT_ID = ''
+
+/** Count ProjectMember rows for a project (read-back assertion helper). */
+async function memberRole(
+  projectId: string,
+  userId: string,
+): Promise<string | undefined> {
+  const members = await findProjectMembers(projectId)
+  return members.find((m) => m.userId === userId)?.role
+}
 
 beforeEach(() => {
+  resetDb()
   vi.clearAllMocks()
-  vi.mocked(prisma.project.findUnique as any).mockResolvedValue({
-    id: PROJECT_ID,
-    ownerId: OWNER_ID,
-    owner: mockOwnerUser,
-  })
+  OWNER_ID = makeUser({ username: 'owner', email: 'owner@example.com' }).id
+  ADMIN_ID = makeUser({ username: 'admin', email: 'admin@example.com' }).id
+  EDITOR_ID = makeUser({ username: 'editor', email: 'editor@example.com' }).id
+  TARGET_ID = makeUser({ username: 'target', email: 'target@example.com' }).id
+  PROJECT_ID = makeProject({ name: 'Test Project', ownerId: OWNER_ID }).id
 })
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -263,16 +229,7 @@ beforeEach(() => {
 
 describe('TC-P4-07: grantPermission role enforcement', () => {
   it('ADMIN can grant EDITOR role to a new user', async () => {
-    vi.mocked(findEffectiveRole).mockResolvedValue('ADMIN')
-    vi.mocked(findUserByEmail).mockResolvedValue(mockTargetUser as any)
-    vi.mocked(upsertProjectMember).mockResolvedValue({
-      id: 'member-1',
-      projectId: PROJECT_ID,
-      userId: TARGET_ID,
-      role: 'EDITOR',
-      createdAt: new Date(),
-      updatedAt: new Date(),
-    })
+    mockedFindEffectiveRole.mockResolvedValue('ADMIN')
 
     const result = await grantPermissionHandler(ADMIN_ID, {
       projectId: PROJECT_ID,
@@ -281,14 +238,12 @@ describe('TC-P4-07: grantPermission role enforcement', () => {
     })
 
     expect(result).toMatchObject({ success: true })
-    expect(upsertProjectMember).toHaveBeenCalledWith(
-      expect.objectContaining({ role: 'EDITOR' }),
-    )
+    // Real membership row persisted with the EDITOR role.
+    expect(await memberRole(PROJECT_ID, TARGET_ID)).toBe('EDITOR')
   })
 
   it('ADMIN cannot grant ADMIN role (only OWNER can grant ADMIN)', async () => {
-    vi.mocked(findEffectiveRole).mockResolvedValue('ADMIN')
-    vi.mocked(findUserByEmail).mockResolvedValue(mockTargetUser as any)
+    mockedFindEffectiveRole.mockResolvedValue('ADMIN')
 
     const result = await grantPermissionHandler(ADMIN_ID, {
       projectId: PROJECT_ID,
@@ -297,20 +252,12 @@ describe('TC-P4-07: grantPermission role enforcement', () => {
     })
 
     expect(result.error).toBe('FORBIDDEN')
-    expect(upsertProjectMember).not.toHaveBeenCalled()
+    // No membership was created.
+    expect(await memberRole(PROJECT_ID, TARGET_ID)).toBeUndefined()
   })
 
   it('OWNER can grant ADMIN role', async () => {
-    vi.mocked(findEffectiveRole).mockResolvedValue('OWNER')
-    vi.mocked(findUserByEmail).mockResolvedValue(mockTargetUser as any)
-    vi.mocked(upsertProjectMember).mockResolvedValue({
-      id: 'member-1',
-      projectId: PROJECT_ID,
-      userId: TARGET_ID,
-      role: 'ADMIN',
-      createdAt: new Date(),
-      updatedAt: new Date(),
-    })
+    mockedFindEffectiveRole.mockResolvedValue('OWNER')
 
     const result = await grantPermissionHandler(OWNER_ID, {
       projectId: PROJECT_ID,
@@ -319,10 +266,11 @@ describe('TC-P4-07: grantPermission role enforcement', () => {
     })
 
     expect(result).toMatchObject({ success: true })
+    expect(await memberRole(PROJECT_ID, TARGET_ID)).toBe('ADMIN')
   })
 
   it('non-ADMIN caller cannot grant any permissions', async () => {
-    vi.mocked(findEffectiveRole).mockResolvedValue('EDITOR')
+    mockedFindEffectiveRole.mockResolvedValue('EDITOR')
 
     const result = await grantPermissionHandler(EDITOR_ID, {
       projectId: PROJECT_ID,
@@ -332,11 +280,11 @@ describe('TC-P4-07: grantPermission role enforcement', () => {
 
     expect(result.error).toBe('FORBIDDEN')
     expect(result.status).toBe(403)
+    expect(await memberRole(PROJECT_ID, TARGET_ID)).toBeUndefined()
   })
 
-  it('returns USER_NOT_FOUND when target email does not exist', async () => {
-    vi.mocked(findEffectiveRole).mockResolvedValue('ADMIN')
-    vi.mocked(findUserByEmail).mockResolvedValue(null)
+  it('returns USER_NOT_FOUND when the target email does not exist', async () => {
+    mockedFindEffectiveRole.mockResolvedValue('ADMIN')
 
     const result = await grantPermissionHandler(ADMIN_ID, {
       projectId: PROJECT_ID,
@@ -347,20 +295,28 @@ describe('TC-P4-07: grantPermission role enforcement', () => {
     expect(result.error).toBe('USER_NOT_FOUND')
     expect(result.status).toBe(404)
   })
+
+  it('cannot grant a permission that targets the project owner', async () => {
+    mockedFindEffectiveRole.mockResolvedValue('ADMIN')
+
+    const result = await grantPermissionHandler(ADMIN_ID, {
+      projectId: PROJECT_ID,
+      email: 'owner@example.com',
+      role: 'EDITOR',
+    })
+
+    expect(result.error).toBe('FORBIDDEN')
+    expect(result.message).toContain('owner')
+  })
 })
 
 // ─────────────────────────────────────────────────────────────────────────────
-// TC-P4-08: updatePermission — admin cannot demote owner; only owner can demote admin
+// TC-P4-08: updatePermission — admin cannot demote owner; only owner demotes admin
 // ─────────────────────────────────────────────────────────────────────────────
 
 describe('TC-P4-08: updatePermission role constraints', () => {
-  it('ADMIN cannot change OWNER role (owner ID detected from ownerId)', async () => {
-    vi.mocked(findEffectiveRole).mockResolvedValue('ADMIN')
-    // Project has OWNER_ID as ownerId
-    vi.mocked(prisma.project.findUnique as any).mockResolvedValue({
-      id: PROJECT_ID,
-      ownerId: OWNER_ID,
-    })
+  it('ADMIN cannot change the OWNER role (detected via project.ownerId)', async () => {
+    mockedFindEffectiveRole.mockResolvedValue('ADMIN')
 
     const result = await updatePermissionHandler(ADMIN_ID, {
       projectId: PROJECT_ID,
@@ -369,46 +325,39 @@ describe('TC-P4-08: updatePermission role constraints', () => {
     })
 
     expect(result.error).toBe('FORBIDDEN')
-    expect(upsertProjectMember).not.toHaveBeenCalled()
+    expect(await memberRole(PROJECT_ID, OWNER_ID)).toBeUndefined()
   })
 
   it('ADMIN cannot demote another ADMIN', async () => {
-    vi.mocked(findEffectiveRole)
+    mockedFindEffectiveRole
       .mockResolvedValueOnce('ADMIN') // caller's role
       .mockResolvedValueOnce('ADMIN') // target's role
-
-    vi.mocked(prisma.project.findUnique as any).mockResolvedValue({
-      id: PROJECT_ID,
-      ownerId: OWNER_ID, // target is not the owner
+    // Seed the target admin as an existing ADMIN member.
+    await upsertProjectMember({
+      projectId: PROJECT_ID,
+      userId: EDITOR_ID,
+      role: 'ADMIN',
     })
 
     const result = await updatePermissionHandler(ADMIN_ID, {
       projectId: PROJECT_ID,
-      userId: 'another-admin-uuid',
+      userId: EDITOR_ID,
       role: 'EDITOR',
     })
 
     expect(result.error).toBe('FORBIDDEN')
-    expect(upsertProjectMember).not.toHaveBeenCalled()
+    // Role unchanged (still ADMIN).
+    expect(await memberRole(PROJECT_ID, EDITOR_ID)).toBe('ADMIN')
   })
 
   it('OWNER can demote another ADMIN', async () => {
-    vi.mocked(findEffectiveRole)
+    mockedFindEffectiveRole
       .mockResolvedValueOnce('OWNER') // caller's role
       .mockResolvedValueOnce('ADMIN') // target's role
-
-    vi.mocked(prisma.project.findUnique as any).mockResolvedValue({
-      id: PROJECT_ID,
-      ownerId: OWNER_ID,
-    })
-
-    vi.mocked(upsertProjectMember).mockResolvedValue({
-      id: 'member-1',
+    await upsertProjectMember({
       projectId: PROJECT_ID,
       userId: ADMIN_ID,
-      role: 'EDITOR',
-      createdAt: new Date(),
-      updatedAt: new Date(),
+      role: 'ADMIN',
     })
 
     const result = await updatePermissionHandler(OWNER_ID, {
@@ -418,23 +367,17 @@ describe('TC-P4-08: updatePermission role constraints', () => {
     })
 
     expect(result).toMatchObject({ success: true })
-    expect(upsertProjectMember).toHaveBeenCalledWith(
-      expect.objectContaining({ role: 'EDITOR' }),
-    )
+    expect(await memberRole(PROJECT_ID, ADMIN_ID)).toBe('EDITOR')
   })
 })
 
 // ─────────────────────────────────────────────────────────────────────────────
-// TC-P4-09: revokePermission — owner cannot be removed
+// TC-P4-09: revokePermission — owner protection
 // ─────────────────────────────────────────────────────────────────────────────
 
 describe('TC-P4-09: revokePermission — owner protection', () => {
   it('ADMIN cannot remove the project owner', async () => {
-    vi.mocked(findEffectiveRole).mockResolvedValue('ADMIN')
-    vi.mocked(prisma.project.findUnique as any).mockResolvedValue({
-      id: PROJECT_ID,
-      ownerId: OWNER_ID,
-    })
+    mockedFindEffectiveRole.mockResolvedValue('ADMIN')
 
     const result = await revokePermissionHandler(ADMIN_ID, {
       projectId: PROJECT_ID,
@@ -443,15 +386,10 @@ describe('TC-P4-09: revokePermission — owner protection', () => {
 
     expect(result.error).toBe('FORBIDDEN')
     expect(result.message).toContain('owner')
-    expect(deleteProjectMember).not.toHaveBeenCalled()
   })
 
-  it('OWNER cannot revoke own ownership (owner is not in ProjectMember table)', async () => {
-    vi.mocked(findEffectiveRole).mockResolvedValue('OWNER')
-    vi.mocked(prisma.project.findUnique as any).mockResolvedValue({
-      id: PROJECT_ID,
-      ownerId: OWNER_ID,
-    })
+  it('OWNER cannot revoke their own ownership', async () => {
+    mockedFindEffectiveRole.mockResolvedValue('OWNER')
 
     const result = await revokePermissionHandler(OWNER_ID, {
       projectId: PROJECT_ID,
@@ -459,38 +397,38 @@ describe('TC-P4-09: revokePermission — owner protection', () => {
     })
 
     expect(result.error).toBe('FORBIDDEN')
-    expect(deleteProjectMember).not.toHaveBeenCalled()
   })
 
   it('ADMIN cannot remove another ADMIN (only OWNER can)', async () => {
-    vi.mocked(findEffectiveRole)
+    mockedFindEffectiveRole
       .mockResolvedValueOnce('ADMIN') // caller's role
       .mockResolvedValueOnce('ADMIN') // target's role
-
-    vi.mocked(prisma.project.findUnique as any).mockResolvedValue({
-      id: PROJECT_ID,
-      ownerId: OWNER_ID,
+    await upsertProjectMember({
+      projectId: PROJECT_ID,
+      userId: EDITOR_ID,
+      role: 'ADMIN',
     })
 
     const result = await revokePermissionHandler(ADMIN_ID, {
       projectId: PROJECT_ID,
-      userId: 'another-admin-uuid',
+      userId: EDITOR_ID,
     })
 
     expect(result.error).toBe('FORBIDDEN')
-    expect(deleteProjectMember).not.toHaveBeenCalled()
+    // Membership still present (not deleted).
+    expect(await memberRole(PROJECT_ID, EDITOR_ID)).toBe('ADMIN')
   })
 
   it('OWNER can remove a regular member', async () => {
-    vi.mocked(findEffectiveRole)
+    mockedFindEffectiveRole
       .mockResolvedValueOnce('OWNER') // caller's role
       .mockResolvedValueOnce('EDITOR') // target's role
-
-    vi.mocked(prisma.project.findUnique as any).mockResolvedValue({
-      id: PROJECT_ID,
-      ownerId: OWNER_ID,
+    await upsertProjectMember({
+      projectId: PROJECT_ID,
+      userId: EDITOR_ID,
+      role: 'EDITOR',
     })
-    vi.mocked(deleteProjectMember).mockResolvedValue()
+    expect(await memberRole(PROJECT_ID, EDITOR_ID)).toBe('EDITOR')
 
     const result = await revokePermissionHandler(OWNER_ID, {
       projectId: PROJECT_ID,
@@ -498,7 +436,8 @@ describe('TC-P4-09: revokePermission — owner protection', () => {
     })
 
     expect(result).toMatchObject({ success: true })
-    expect(deleteProjectMember).toHaveBeenCalledWith(PROJECT_ID, EDITOR_ID)
+    // Membership row deleted from the DB.
+    expect(await memberRole(PROJECT_ID, EDITOR_ID)).toBeUndefined()
   })
 })
 
@@ -508,16 +447,16 @@ describe('TC-P4-09: revokePermission — owner protection', () => {
 
 describe('TC-P4-10: listProjectPermissions role enforcement', () => {
   it('VIEWER caller gets 403', async () => {
-    vi.mocked(findEffectiveRole).mockResolvedValue('VIEWER')
+    mockedFindEffectiveRole.mockResolvedValue('VIEWER')
 
-    const result = await listProjectPermissionsHandler(VIEWER_ID, PROJECT_ID)
+    const result = await listProjectPermissionsHandler(EDITOR_ID, PROJECT_ID)
 
     expect(result.error).toBe('FORBIDDEN')
     expect(result.status).toBe(403)
   })
 
   it('EDITOR caller gets 403', async () => {
-    vi.mocked(findEffectiveRole).mockResolvedValue('EDITOR')
+    mockedFindEffectiveRole.mockResolvedValue('EDITOR')
 
     const result = await listProjectPermissionsHandler(EDITOR_ID, PROJECT_ID)
 
@@ -526,44 +465,32 @@ describe('TC-P4-10: listProjectPermissions role enforcement', () => {
   })
 
   it('null role (no access) caller gets 403', async () => {
-    vi.mocked(findEffectiveRole).mockResolvedValue(null)
+    mockedFindEffectiveRole.mockResolvedValue(null)
 
-    const result = await listProjectPermissionsHandler(
-      'random-user',
-      PROJECT_ID,
-    )
+    const result = await listProjectPermissionsHandler(TARGET_ID, PROJECT_ID)
 
     expect(result.error).toBe('FORBIDDEN')
   })
 
-  it('ADMIN caller gets the member list', async () => {
-    vi.mocked(findEffectiveRole).mockResolvedValue('ADMIN')
-    vi.mocked(findProjectMembers).mockResolvedValue([
-      {
-        id: 'member-1',
-        projectId: PROJECT_ID,
-        userId: EDITOR_ID,
-        role: 'EDITOR',
-        createdAt: new Date(),
-        updatedAt: new Date(),
-        user: {
-          id: EDITOR_ID,
-          username: 'editor',
-          email: 'editor@example.com',
-        },
-      },
-    ] as any)
+  it('ADMIN caller gets the member list with owner info', async () => {
+    mockedFindEffectiveRole.mockResolvedValue('ADMIN')
+    await upsertProjectMember({
+      projectId: PROJECT_ID,
+      userId: EDITOR_ID,
+      role: 'EDITOR',
+    })
 
     const result = await listProjectPermissionsHandler(ADMIN_ID, PROJECT_ID)
 
     expect(result.error).toBeUndefined()
+    expect((result as any).owner.id).toBe(OWNER_ID)
     expect((result as any).members).toHaveLength(1)
     expect((result as any).members[0].role).toBe('EDITOR')
+    expect((result as any).members[0].email).toBe('editor@example.com')
   })
 
-  it('OWNER caller gets the member list', async () => {
-    vi.mocked(findEffectiveRole).mockResolvedValue('OWNER')
-    vi.mocked(findProjectMembers).mockResolvedValue([])
+  it('OWNER caller gets an (empty) member list', async () => {
+    mockedFindEffectiveRole.mockResolvedValue('OWNER')
 
     const result = await listProjectPermissionsHandler(OWNER_ID, PROJECT_ID)
 

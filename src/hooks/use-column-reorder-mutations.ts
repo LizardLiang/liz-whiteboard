@@ -13,7 +13,7 @@
 
 import { useCallback, useRef } from 'react'
 import { toast } from 'sonner'
-import type { Column } from '@prisma/client'
+import type { Column } from '@/data/models'
 import type { TableNodeType } from '@/lib/react-flow/types'
 
 // ============================================================================

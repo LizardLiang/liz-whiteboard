@@ -4,7 +4,7 @@
  * Convert Prisma DiagramTable entities to React Flow nodes
  */
 
-import type { Column, DiagramTable } from '@prisma/client'
+import type { Column, DiagramTable } from '@/data/models'
 import type { ShowMode, TableNodeData, TableNodeType } from './types'
 
 /**

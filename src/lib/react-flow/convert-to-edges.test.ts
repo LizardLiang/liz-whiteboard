@@ -6,7 +6,7 @@ import {
   getCardinalityMarkerEnd,
   getCardinalityMarkerStart,
 } from './convert-to-edges'
-import type { Cardinality } from '@prisma/client'
+import type { Cardinality } from '@/data/schema'
 
 describe('getCardinalityMarkerStart', () => {
   it('returns correct marker ID for ONE_TO_ONE', () => {

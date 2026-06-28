@@ -1,7 +1,7 @@
 // src/test/fixtures.ts
 // Shared test fixtures for dynamic-field-management tests
 
-import type { Column } from '@prisma/client'
+import type { Column } from '@/data/models'
 
 export const mockColumn: Column = {
   id: 'col-001',

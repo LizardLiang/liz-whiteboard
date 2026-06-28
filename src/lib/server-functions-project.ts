@@ -2,7 +2,8 @@
 // Server functions for project operations
 
 import { createServerFn } from '@tanstack/react-start'
-import { prisma } from '@/db'
+import { findAllProjectsForUser } from '@/data/project'
+import { findWhiteboardsByProjectId } from '@/data/whiteboard'
 import { requireAuth } from '@/lib/auth/middleware'
 
 /**
@@ -16,17 +17,15 @@ import { requireAuth } from '@/lib/auth/middleware'
 export const getAllProjects = createServerFn({
   method: 'GET',
 }).handler(
-  requireAuth(async () => {
+  requireAuth(async ({ user }) => {
     try {
-      const projects = await prisma.project.findMany({
-        include: {
-          whiteboards: {
-            orderBy: { updatedAt: 'desc' },
-          },
-        },
-        orderBy: { createdAt: 'desc' },
-      })
-      return projects
+      const projects = await findAllProjectsForUser(user.id)
+      return Promise.all(
+        projects.map(async (project) => ({
+          ...project,
+          whiteboards: await findWhiteboardsByProjectId(project.id),
+        })),
+      )
     } catch (error) {
       console.error('Error fetching projects:', error)
       throw error

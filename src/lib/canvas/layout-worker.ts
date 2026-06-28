@@ -3,7 +3,7 @@
 
 import { computeLayout as computeLayoutEngine } from './layout-engine'
 import type { LayoutOptions, LayoutResult } from './layout-engine'
-import type { Column, DiagramTable, Relationship } from '@prisma/client'
+import type { Column, DiagramTable, Relationship } from '@/data/models'
 
 /**
  * Message sent to worker to compute layout

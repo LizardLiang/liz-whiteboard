@@ -3,12 +3,8 @@
 
 import { Arrow, Circle, Group, Line, Text } from 'react-konva'
 import { getColumnPosition, getColumnPositionLeft } from './TableNode'
-import type {
-  Cardinality,
-  Column,
-  DiagramTable,
-  Relationship,
-} from '@prisma/client'
+import type { Column, DiagramTable, Relationship } from '@/data/models'
+import type { Cardinality } from '@/data/schema'
 
 /**
  * RelationshipEdge component props

@@ -1,7 +1,7 @@
 // src/lib/auth/first-user-migration.ts
 // Assigns all ownerless projects to the first registered user.
 
-import { prisma } from '@/db'
+import { db, nowMs } from '@/db'
 
 /**
  * Assigns all existing ownerless Projects to the given user.
@@ -11,8 +11,7 @@ import { prisma } from '@/db'
  * @param userId - The newly registered user's UUID
  */
 export async function migrateDataToFirstUser(userId: string): Promise<void> {
-  await prisma.project.updateMany({
-    where: { ownerId: null },
-    data: { ownerId: userId },
-  })
+  db.prepare(
+    'UPDATE "Project" SET "ownerId" = ?, "updatedAt" = ? WHERE "ownerId" IS NULL',
+  ).run(userId, nowMs())
 }

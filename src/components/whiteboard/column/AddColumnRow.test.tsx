@@ -5,7 +5,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { act, fireEvent, render, screen } from '@testing-library/react'
 import { AddColumnRow } from './AddColumnRow'
-import type { Column } from '@prisma/client'
+import type { Column } from '@/data/models'
 import { mockColumn, mockPKColumn } from '@/test/fixtures'
 
 // Mock DataTypeSelector so we don't need to deal with Radix portal in jsdom

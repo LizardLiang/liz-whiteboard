@@ -6,7 +6,7 @@
 
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { DataTypeSelector } from './DataTypeSelector'
-import type { Column } from '@prisma/client'
+import type { Column } from '@/data/models'
 import type { DataType } from '@/data/schema'
 
 export interface AddColumnRowProps {

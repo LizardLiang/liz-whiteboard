@@ -5,14 +5,13 @@ import { createServerFn } from '@tanstack/react-start'
 import { requireAuth } from '@/lib/auth/middleware'
 import { hasMinimumRole } from '@/lib/auth/permissions'
 import {
-  createProjectMember,
   deleteProjectMember,
   findEffectiveRole,
   findProjectMembers,
   upsertProjectMember,
 } from '@/data/permission'
-import { findUserByEmail } from '@/data/user'
-import { prisma } from '@/db'
+import { findUserByEmail, findUserById } from '@/data/user'
+import { findProjectById } from '@/data/project'
 import {
   grantPermissionSchema,
   revokePermissionSchema,
@@ -42,17 +41,22 @@ export const listProjectPermissions = createServerFn({ method: 'GET' })
       }
 
       // Get project owner info
-      const project = await prisma.project.findUnique({
-        where: { id: projectId },
-        include: {
-          owner: { select: { id: true, username: true, email: true } },
-        },
-      })
+      const project = await findProjectById(projectId)
+      const ownerUser = project?.ownerId
+        ? await findUserById(project.ownerId)
+        : null
+      const owner = ownerUser
+        ? {
+            id: ownerUser.id,
+            username: ownerUser.username,
+            email: ownerUser.email,
+          }
+        : null
 
       const members = await findProjectMembers(projectId)
 
       return {
-        owner: project?.owner ?? null,
+        owner,
         members: members.map((m) => ({
           userId: m.userId,
           username: m.user.username,
@@ -93,10 +97,7 @@ export const grantPermission = createServerFn({ method: 'POST' })
       }
 
       // Prevent modifying the owner
-      const project = await prisma.project.findUnique({
-        where: { id: data.projectId },
-        select: { ownerId: true },
-      })
+      const project = await findProjectById(data.projectId)
       if (project?.ownerId === targetUser.id) {
         return {
           error: 'FORBIDDEN' as const,
@@ -177,10 +178,7 @@ export const revokePermission = createServerFn({ method: 'POST' })
       }
 
       // Prevent removing the owner
-      const project = await prisma.project.findUnique({
-        where: { id: data.projectId },
-        select: { ownerId: true },
-      })
+      const project = await findProjectById(data.projectId)
       if (project?.ownerId === data.userId) {
         return {
           error: 'FORBIDDEN' as const,

@@ -5,6 +5,12 @@
 // TC-P5-03: session expiry on active connection — emits session_expired and disconnects
 // TC-P5-04: valid session allows event processing
 // TC-P5-08: CollaborationSession records use real userId FK
+//
+// Phase 4 JWT auth path (confused-deputy fix):
+// TC-JWT-01: valid collab JWT in handshake.auth.token is accepted
+// TC-JWT-02: invalid collab JWT in handshake.auth.token is rejected (not falling through to cookie)
+// TC-JWT-03: auth.token present + invalid → UNAUTHORIZED (no cookie fallback)
+// TC-JWT-04: no auth.token → cookie path still works (backward compat)
 
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 
@@ -529,3 +535,145 @@ describe('SEC-WS-04: requireRole emits canonical FORBIDDEN when denied', () => {
     expect(vi.mocked(findEffectiveRole)).not.toHaveBeenCalled()
   })
 })
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Phase 4 JWT auth path — handshake middleware with collab-audience JWT
+// Tests the dual-path io.use() logic from collaboration.ts (Phase 4):
+//   - auth.token present + valid → JWT path (sets userId=sub, sessionExpiresAt=exp*1000)
+//   - auth.token present + invalid → UNAUTHORIZED (no cookie fallback)
+//   - auth.token absent → cookie path (existing browser auth)
+// TC-JWT-01 through TC-JWT-04
+// ─────────────────────────────────────────────────────────────────────────────
+
+vi.mock('@/lib/oauth/collab-verify', () => ({
+  validateCollabToken: vi.fn(),
+}))
+
+// eslint-disable-next-line import/first
+import { validateCollabToken } from '@/lib/oauth/collab-verify'
+
+const COLLAB_USER_ID = 'collab-user-f47ac10b-58cc-4372-a567'
+const COLLAB_EXP = Math.floor(Date.now() / 1000) + 120 // 2 minutes from now
+
+// The dual-path handshake middleware (extracted from collaboration.ts Phase 4)
+async function jwtAwarHandshakeMiddleware(
+  socket: {
+    handshake: {
+      auth: Record<string, unknown>
+      headers: Record<string, string>
+    }
+    data: Record<string, any>
+  },
+  next: (err?: Error) => void,
+) {
+  try {
+    // JWT path (MCP server)
+    const authToken = socket.handshake.auth?.token
+    if (authToken && typeof authToken === 'string') {
+      try {
+        const payload = await (validateCollabToken as any)(authToken)
+        socket.data.userId = payload.sub
+        socket.data.sessionId = ''
+        socket.data.sessionExpiresAt = payload.exp * 1000
+        return next()
+      } catch {
+        return next(new Error('UNAUTHORIZED'))
+      }
+    }
+
+    // Cookie path (existing browser auth)
+    const cookieHeader = socket.handshake.headers.cookie ?? ''
+    const token = (parseSessionCookie as any)(cookieHeader)
+    if (!token) return next(new Error('UNAUTHORIZED'))
+
+    const authResult = await (validateSessionToken as any)(token)
+    if (!authResult) return next(new Error('UNAUTHORIZED'))
+
+    socket.data.userId = authResult.user.id
+    socket.data.sessionId = authResult.session.id
+    socket.data.sessionExpiresAt = authResult.session.expiresAt.getTime()
+    next()
+  } catch {
+    next(new Error('UNAUTHORIZED'))
+  }
+}
+
+function buildJwtSocket(overrides: {
+  authToken?: string
+  cookieHeader?: string
+} = {}) {
+  const nextSpy = vi.fn()
+  const socket = {
+    handshake: {
+      auth: overrides.authToken ? { token: overrides.authToken } : {},
+      headers: overrides.cookieHeader ? { cookie: overrides.cookieHeader } : {},
+    },
+    data: {} as Record<string, any>,
+  }
+  return { socket, nextSpy }
+}
+
+// TC-JWT-01: valid collab JWT → accepted, userId=sub, sessionExpiresAt=exp*1000
+describe('TC-JWT-01: valid collab JWT in auth.token accepted', () => {
+  it('sets userId from sub and sessionExpiresAt from exp', async () => {
+    vi.mocked(validateCollabToken).mockResolvedValue({
+      sub: COLLAB_USER_ID,
+      exp: COLLAB_EXP,
+    })
+    const { socket, nextSpy } = buildJwtSocket({ authToken: 'valid.collab.jwt' })
+    await jwtAwarHandshakeMiddleware(socket, nextSpy)
+
+    expect(nextSpy).toHaveBeenCalledWith() // no error = success
+    expect(socket.data.userId).toBe(COLLAB_USER_ID)
+    expect(socket.data.sessionExpiresAt).toBe(COLLAB_EXP * 1000)
+    expect(socket.data.sessionId).toBe('')
+  })
+})
+
+// TC-JWT-02: invalid collab JWT → UNAUTHORIZED, cookie path NOT tried
+describe('TC-JWT-02: invalid collab JWT rejected, no cookie fallback', () => {
+  it('calls next with UNAUTHORIZED when auth.token fails validation', async () => {
+    vi.mocked(validateCollabToken).mockRejectedValue(new Error('invalid JWT'))
+    const { socket, nextSpy } = buildJwtSocket({
+      authToken: 'bad.jwt.token',
+      cookieHeader: `session_token=${SESSION_TOKEN}`, // cookie present but must NOT be used
+    })
+    await jwtAwarHandshakeMiddleware(socket, nextSpy)
+
+    expect(nextSpy).toHaveBeenCalledWith(expect.any(Error))
+    const err = nextSpy.mock.calls[0][0]
+    expect(err.message).toBe('UNAUTHORIZED')
+    // validateSessionToken must NOT have been called (no cookie fallback)
+    expect(vi.mocked(validateSessionToken)).not.toHaveBeenCalled()
+  })
+})
+
+// TC-JWT-03: no auth.token, valid cookie → cookie path works (backward compat)
+describe('TC-JWT-03: no auth.token falls back to cookie path', () => {
+  it('accepts valid cookie when auth.token is absent', async () => {
+    vi.mocked(parseSessionCookie).mockReturnValue(SESSION_TOKEN)
+    vi.mocked(validateSessionToken).mockResolvedValue(mockAuthResult as any)
+    const { socket, nextSpy } = buildJwtSocket({
+      cookieHeader: `session_token=${SESSION_TOKEN}`,
+    })
+    await jwtAwarHandshakeMiddleware(socket, nextSpy)
+
+    expect(nextSpy).toHaveBeenCalledWith()
+    expect(socket.data.userId).toBe(USER_UUID)
+    expect(validateCollabToken).not.toHaveBeenCalled()
+  })
+})
+
+// TC-JWT-04: no auth.token, no cookie → UNAUTHORIZED
+describe('TC-JWT-04: no auth.token and no cookie → UNAUTHORIZED', () => {
+  it('rejects when neither auth.token nor cookie is present', async () => {
+    vi.mocked(parseSessionCookie).mockReturnValue(null)
+    const { socket, nextSpy } = buildJwtSocket()
+    await jwtAwarHandshakeMiddleware(socket, nextSpy)
+
+    expect(nextSpy).toHaveBeenCalledWith(expect.any(Error))
+    const err = nextSpy.mock.calls[0][0]
+    expect(err.message).toBe('UNAUTHORIZED')
+  })
+})
+

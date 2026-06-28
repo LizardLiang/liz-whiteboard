@@ -3,7 +3,7 @@
 
 import { useState } from 'react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
-import type { ProjectRole } from '@prisma/client'
+import type { ProjectRoleValue as ProjectRole } from '@/data/schema'
 import {
   Sheet,
   SheetContent,

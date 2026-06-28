@@ -4,7 +4,7 @@
  * Extra warning for FK columns
  */
 
-import type { Column } from '@prisma/client'
+import type { Column } from '@/data/models'
 import type { ColumnRelationship } from './types'
 import {
   AlertDialog,

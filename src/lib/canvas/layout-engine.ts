@@ -9,7 +9,7 @@ import {
   forceSimulation,
 } from 'd3-force'
 import type { SimulationLinkDatum, SimulationNodeDatum } from 'd3-force'
-import type { Column, DiagramTable, Relationship } from '@prisma/client'
+import type { Column, DiagramTable, Relationship } from '@/data/models'
 
 /**
  * Layout node representing a table in the simulation

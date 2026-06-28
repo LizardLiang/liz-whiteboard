@@ -3,8 +3,8 @@
 
 import { createFolderSchema, updateFolderSchema } from './schema'
 import type { CreateFolder, UpdateFolder } from './schema'
-import type { Folder } from '@prisma/client'
-import { prisma } from '@/db'
+import type { Folder } from './models'
+import { db, genId, insert, mapFolder, nowMs, update } from '@/db'
 
 /**
  * Create a new folder
@@ -17,10 +17,19 @@ export async function createFolder(data: CreateFolder): Promise<Folder> {
   const validated = createFolderSchema.parse(data)
 
   try {
-    const folder = await prisma.folder.create({
-      data: validated,
+    const id = genId()
+    const ts = nowMs()
+    insert('Folder', {
+      id,
+      name: validated.name,
+      projectId: validated.projectId,
+      parentFolderId: validated.parentFolderId ?? null,
+      createdAt: ts,
+      updatedAt: ts,
     })
-    return folder
+    return mapFolder(
+      db.prepare('SELECT * FROM "Folder" WHERE "id" = ?').get(id),
+    )!
   } catch (error) {
     throw new Error(
       `Failed to create folder: ${error instanceof Error ? error.message : 'Unknown error'}`,
@@ -37,11 +46,12 @@ export async function findFoldersByProjectId(
   projectId: string,
 ): Promise<Array<Folder>> {
   try {
-    const folders = await prisma.folder.findMany({
-      where: { projectId },
-      orderBy: { createdAt: 'asc' },
-    })
-    return folders
+    return db
+      .prepare(
+        'SELECT * FROM "Folder" WHERE "projectId" = ? ORDER BY "createdAt" ASC',
+      )
+      .all(projectId)
+      .map((r) => mapFolder(r)!)
   } catch (error) {
     throw new Error(
       `Failed to fetch folders: ${error instanceof Error ? error.message : 'Unknown error'}`,
@@ -58,11 +68,12 @@ export async function findChildFolders(
   parentFolderId: string,
 ): Promise<Array<Folder>> {
   try {
-    const folders = await prisma.folder.findMany({
-      where: { parentFolderId },
-      orderBy: { name: 'asc' },
-    })
-    return folders
+    return db
+      .prepare(
+        'SELECT * FROM "Folder" WHERE "parentFolderId" = ? ORDER BY "name" ASC',
+      )
+      .all(parentFolderId)
+      .map((r) => mapFolder(r)!)
   } catch (error) {
     throw new Error(
       `Failed to fetch child folders: ${error instanceof Error ? error.message : 'Unknown error'}`,
@@ -82,16 +93,23 @@ export async function findFolderByIdWithWhiteboards(id: string): Promise<
   | null
 > {
   try {
-    const folder = await prisma.folder.findUnique({
-      where: { id },
-      include: {
-        whiteboards: {
-          select: { id: true, name: true, updatedAt: true },
-          orderBy: { updatedAt: 'desc' },
-        },
-      },
-    })
-    return folder
+    const folder = mapFolder(
+      db.prepare('SELECT * FROM "Folder" WHERE "id" = ?').get(id),
+    )
+    if (!folder) return null
+
+    const whiteboards = db
+      .prepare(
+        'SELECT * FROM "Whiteboard" WHERE "folderId" = ? ORDER BY "updatedAt" DESC',
+      )
+      .all(id)
+      .map((r) => ({
+        id: r.id as string,
+        name: r.name as string,
+        updatedAt: new Date(Number(r.updatedAt)),
+      }))
+
+    return { ...folder, whiteboards }
   } catch (error) {
     throw new Error(
       `Failed to fetch folder: ${error instanceof Error ? error.message : 'Unknown error'}`,
@@ -106,10 +124,9 @@ export async function findFolderByIdWithWhiteboards(id: string): Promise<
  */
 export async function findFolderById(id: string): Promise<Folder | null> {
   try {
-    const folder = await prisma.folder.findUnique({
-      where: { id },
-    })
-    return folder
+    return mapFolder(
+      db.prepare('SELECT * FROM "Folder" WHERE "id" = ?').get(id),
+    )
   } catch (error) {
     throw new Error(
       `Failed to fetch folder: ${error instanceof Error ? error.message : 'Unknown error'}`,
@@ -132,11 +149,12 @@ export async function updateFolder(
   const validated = updateFolderSchema.parse(data)
 
   try {
-    const folder = await prisma.folder.update({
-      where: { id },
-      data: validated,
-    })
-    return folder
+    const values: Record<string, unknown> = { updatedAt: nowMs() }
+    if (validated.name !== undefined) values.name = validated.name
+    update('Folder', id, values)
+    return mapFolder(
+      db.prepare('SELECT * FROM "Folder" WHERE "id" = ?').get(id),
+    )!
   } catch (error) {
     throw new Error(
       `Failed to update folder: ${error instanceof Error ? error.message : 'Unknown error'}`,
@@ -152,10 +170,12 @@ export async function updateFolder(
  */
 export async function deleteFolder(id: string): Promise<Folder> {
   try {
-    const folder = await prisma.folder.delete({
-      where: { id },
-    })
-    return folder
+    const existing = mapFolder(
+      db.prepare('SELECT * FROM "Folder" WHERE "id" = ?').get(id),
+    )
+    if (!existing) throw new Error('Folder not found')
+    db.prepare('DELETE FROM "Folder" WHERE "id" = ?').run(id)
+    return existing
   } catch (error) {
     throw new Error(
       `Failed to delete folder: ${error instanceof Error ? error.message : 'Unknown error'}`,

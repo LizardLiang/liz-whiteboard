@@ -4,7 +4,8 @@
 // Lockout fields (failedLoginAttempts, lockedUntil) live on the User model.
 // Anti-enumeration: operations on non-existent emails are silently discarded.
 
-import { prisma } from '@/db'
+import { findUserByEmail } from '@/data/user'
+import { nowMs, toDbDate, update } from '@/db'
 
 const MAX_ATTEMPTS = 5
 const LOCKOUT_DURATION_MS = 15 * 60 * 1000 // 15 minutes
@@ -19,10 +20,7 @@ const LOCKOUT_DURATION_MS = 15 * 60 * 1000 // 15 minutes
 export async function checkLockout(
   email: string,
 ): Promise<{ locked: boolean; unlocksAt?: Date }> {
-  const user = await prisma.user.findUnique({
-    where: { email },
-    select: { lockedUntil: true },
-  })
+  const user = await findUserByEmail(email)
 
   if (!user) return { locked: false } // Unknown user: no lockout (anti-enumeration)
 
@@ -41,10 +39,7 @@ export async function checkLockout(
  * @param email - Email address that failed login
  */
 export async function recordFailedLogin(email: string): Promise<void> {
-  const user = await prisma.user.findUnique({
-    where: { email },
-    select: { id: true, failedLoginAttempts: true, lockedUntil: true },
-  })
+  const user = await findUserByEmail(email)
 
   if (!user) return // Unknown user: silently discard (anti-enumeration)
 
@@ -54,15 +49,16 @@ export async function recordFailedLogin(email: string): Promise<void> {
       ? 1
       : user.failedLoginAttempts + 1
 
-  const updates: { failedLoginAttempts: number; lockedUntil?: Date } = {
+  const updates: Record<string, unknown> = {
     failedLoginAttempts: currentAttempts,
+    updatedAt: nowMs(),
   }
 
   if (currentAttempts >= MAX_ATTEMPTS) {
-    updates.lockedUntil = new Date(Date.now() + LOCKOUT_DURATION_MS)
+    updates.lockedUntil = toDbDate(new Date(Date.now() + LOCKOUT_DURATION_MS))
   }
 
-  await prisma.user.update({ where: { id: user.id }, data: updates })
+  update('User', user.id, updates)
 }
 
 /**
@@ -71,8 +67,9 @@ export async function recordFailedLogin(email: string): Promise<void> {
  * @param userId - User UUID (not email, as we have it after successful auth)
  */
 export async function clearLockout(userId: string): Promise<void> {
-  await prisma.user.update({
-    where: { id: userId },
-    data: { failedLoginAttempts: 0, lockedUntil: null },
+  update('User', userId, {
+    failedLoginAttempts: 0,
+    lockedUntil: null,
+    updatedAt: nowMs(),
   })
 }

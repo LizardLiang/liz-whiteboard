@@ -10,7 +10,7 @@ import type {
   RelationshipEdgeType,
   TableNodeType,
 } from '@/lib/react-flow/types'
-import type { Column } from '@prisma/client'
+import type { Column } from '@/data/models'
 import { mockColumn, mockFKColumn, mockPKColumn } from '@/test/fixtures'
 
 vi.mock('sonner', () => ({

@@ -2,7 +2,7 @@
 // Minimap component for canvas navigation - provides overview of entire diagram
 
 import { useEffect, useRef } from 'react'
-import type { DiagramTable } from '@prisma/client'
+import type { DiagramTable } from '@/data/models'
 import type { CanvasViewport } from './Canvas'
 
 /**

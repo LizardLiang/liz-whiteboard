@@ -12,7 +12,7 @@ import {
 } from 'lucide-react'
 import { useState } from 'react'
 import { WhiteboardItem } from './WhiteboardItem'
-import type { Folder as FolderType, Whiteboard } from '@prisma/client'
+import type { Folder as FolderType, Whiteboard } from '@/data/models'
 import { Button } from '@/components/ui/button'
 import {
   Collapsible,

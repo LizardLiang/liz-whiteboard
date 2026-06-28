@@ -23,7 +23,7 @@ export const registerUser = createServerFn({ method: 'POST' })
   .inputValidator((data: unknown) => registerInputSchema.parse(data))
   .handler(async ({ data }) => {
     const { setResponseHeader } = await import('@tanstack/react-start/server')
-    const { prisma } = await import('@/db')
+    const { transaction, db, genId, nowMs, mapUser } = await import('@/db')
     const { hashPassword } = await import('@/lib/auth/password')
     const { createUserSession } = await import('@/lib/auth/session')
     const { buildSetCookieHeader } = await import('@/lib/auth/cookies')
@@ -55,26 +55,26 @@ export const registerUser = createServerFn({ method: 'POST' })
     const passwordHash = await hashPassword(data.password)
 
     // Create user and optionally migrate ownerless projects (atomic transaction)
-    const user = await prisma.$transaction(async (tx) => {
-      const userCount = await tx.user.count()
+    const user = transaction(() => {
+      const userCount = Number(
+        (db.prepare('SELECT count(*) AS c FROM "User"').get() as { c: number })
+          .c,
+      )
 
-      const newUser = await tx.user.create({
-        data: {
-          username: data.username,
-          email: data.email,
-          passwordHash,
-        },
-      })
+      const id = genId()
+      const ts = nowMs()
+      db.prepare(
+        'INSERT INTO "User" ("id", "username", "email", "passwordHash", "failedLoginAttempts", "createdAt", "updatedAt") VALUES (?, ?, ?, ?, 0, ?, ?)',
+      ).run(id, data.username, data.email, passwordHash, ts, ts)
 
       // First user: assign all ownerless projects
       if (userCount === 0) {
-        await tx.project.updateMany({
-          where: { ownerId: null },
-          data: { ownerId: newUser.id },
-        })
+        db.prepare(
+          'UPDATE "Project" SET "ownerId" = ?, "updatedAt" = ? WHERE "ownerId" IS NULL',
+        ).run(id, ts)
       }
 
-      return newUser
+      return mapUser(db.prepare('SELECT * FROM "User" WHERE "id" = ?').get(id))!
     })
 
     // Create session and set cookie
@@ -171,7 +171,7 @@ export const logoutUser = createServerFn({ method: 'POST' }).handler(
     const { getRequest, setResponseHeader } = await import(
       '@tanstack/react-start/server'
     )
-    const { prisma } = await import('@/db')
+    const { db } = await import('@/db')
     const { parseSessionCookie, buildClearCookieHeader } = await import(
       '@/lib/auth/cookies'
     )
@@ -185,10 +185,9 @@ export const logoutUser = createServerFn({ method: 'POST' }).handler(
     if (token) {
       const tokenHash = hashToken(token)
       // Find and delete the session
-      const session = await prisma.session.findUnique({
-        where: { tokenHash },
-        select: { id: true, userId: true },
-      })
+      const session = db
+        .prepare('SELECT "id", "userId" FROM "Session" WHERE "tokenHash" = ?')
+        .get(tokenHash) as { id: string; userId: string } | undefined
       if (session) {
         await deleteAuthSession(session.id)
         console.log(`[auth] User logged out: ${session.userId}`)

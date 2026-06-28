@@ -5,7 +5,8 @@
  */
 
 import { createColumnHandleId } from './edge-routing'
-import type { Cardinality, Column, Relationship } from '@prisma/client'
+import type { Column, Relationship } from '@/data/models'
+import type { Cardinality } from '@/data/schema'
 import type { RelationshipEdgeData, RelationshipEdgeType } from './types'
 
 /**

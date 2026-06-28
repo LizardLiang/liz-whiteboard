@@ -1,0 +1,17 @@
+node_modules
+.output
+.vinxi
+.nitro
+.tanstack
+dist
+prisma/*.db
+prisma/*.db-journal
+.env
+.env.*
+*.log
+.DS_Store
+Thumbs.db
+dogfood-output
+scripts
+specs
+coverage

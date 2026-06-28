@@ -55,7 +55,7 @@ log "Build complete."
 
 # ── Step 2: Sync files to VPS ─────────────────
 log "Ensuring remote directory exists..."
-ssh "$SSH_HOST" "mkdir -p $DEPLOY_PATH/{logs,node_modules/.prisma,node_modules/@prisma}"
+ssh "$SSH_HOST" "mkdir -p $DEPLOY_PATH/{logs,data}"
 
 log "Syncing files to $SSH_HOST:$DEPLOY_PATH..."
 rsync -azP --delete \
@@ -79,18 +79,9 @@ rsync -azP --delete \
   src/ \
   "$SSH_HOST:$DEPLOY_PATH/src/"
 
-rsync -azP --delete \
-  prisma/ \
-  "$SSH_HOST:$DEPLOY_PATH/prisma/"
-
-# Sync node_modules needed for production (Prisma client, etc.)
-rsync -azP --delete \
-  node_modules/.prisma/ \
-  "$SSH_HOST:$DEPLOY_PATH/node_modules/.prisma/"
-
-rsync -azP --delete \
-  node_modules/@prisma/ \
-  "$SSH_HOST:$DEPLOY_PATH/node_modules/@prisma/"
+# Note: the SQLite database lives in data/app.db on the server and is created
+# automatically on first run (src/db.ts). It is intentionally NOT synced so
+# deploys never overwrite production data.
 
 log "Files synced."
 

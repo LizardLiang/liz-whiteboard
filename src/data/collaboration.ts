@@ -3,8 +3,17 @@
 
 import { createSessionSchema, updateSessionSchema } from './schema'
 import type { CreateSession, UpdateSession } from './schema'
-import type { CollaborationSession } from '@prisma/client'
-import { prisma } from '@/db'
+import type { CollaborationSession } from './models'
+import {
+  db,
+  genId,
+  insert,
+  mapCollaborationSession,
+  nowMs,
+  toDbDate,
+  toDbJson,
+  update,
+} from '@/db'
 
 /**
  * Create a new collaboration session
@@ -19,10 +28,20 @@ export async function createCollaborationSession(
   const validated = createSessionSchema.parse(data)
 
   try {
-    const session = await prisma.collaborationSession.create({
-      data: validated,
+    const id = genId()
+    const ts = nowMs()
+    insert('CollaborationSession', {
+      id,
+      whiteboardId: validated.whiteboardId,
+      userId: validated.userId,
+      socketId: validated.socketId,
+      cursor: toDbJson(validated.cursor),
+      lastActivityAt: ts,
+      createdAt: ts,
     })
-    return session
+    return mapCollaborationSession(
+      db.prepare('SELECT * FROM "CollaborationSession" WHERE "id" = ?').get(id),
+    )!
   } catch (error) {
     throw new Error(
       `Failed to create collaboration session: ${error instanceof Error ? error.message : 'Unknown error'}`,
@@ -42,14 +61,12 @@ export async function findActiveCollaborators(
   const fiveMinutesAgo = new Date(Date.now() - 5 * 60 * 1000)
 
   try {
-    const sessions = await prisma.collaborationSession.findMany({
-      where: {
-        whiteboardId,
-        lastActivityAt: { gte: fiveMinutesAgo },
-      },
-      orderBy: { lastActivityAt: 'desc' },
-    })
-    return sessions
+    return db
+      .prepare(
+        'SELECT * FROM "CollaborationSession" WHERE "whiteboardId" = ? AND "lastActivityAt" >= ? ORDER BY "lastActivityAt" DESC',
+      )
+      .all(whiteboardId, toDbDate(fiveMinutesAgo))
+      .map((r) => mapCollaborationSession(r)!)
   } catch (error) {
     throw new Error(
       `Failed to fetch active collaborators: ${error instanceof Error ? error.message : 'Unknown error'}`,
@@ -66,10 +83,11 @@ export async function findSessionBySocketId(
   socketId: string,
 ): Promise<CollaborationSession | null> {
   try {
-    const session = await prisma.collaborationSession.findUnique({
-      where: { socketId },
-    })
-    return session
+    return mapCollaborationSession(
+      db
+        .prepare('SELECT * FROM "CollaborationSession" WHERE "socketId" = ?')
+        .get(socketId),
+    )
   } catch (error) {
     throw new Error(
       `Failed to fetch session: ${error instanceof Error ? error.message : 'Unknown error'}`,
@@ -92,11 +110,23 @@ export async function updateCollaborationSession(
   const validated = updateSessionSchema.parse(data)
 
   try {
-    const session = await prisma.collaborationSession.update({
-      where: { socketId },
-      data: validated,
-    })
-    return session
+    const existing = mapCollaborationSession(
+      db
+        .prepare('SELECT * FROM "CollaborationSession" WHERE "socketId" = ?')
+        .get(socketId),
+    )
+    if (!existing) throw new Error('Collaboration session not found')
+
+    // lastActivityAt mirrors Prisma's @updatedAt — bump it on every update
+    const values: Record<string, unknown> = { lastActivityAt: nowMs() }
+    if (validated.cursor !== undefined)
+      values.cursor = toDbJson(validated.cursor)
+    update('CollaborationSession', existing.id, values)
+    return mapCollaborationSession(
+      db
+        .prepare('SELECT * FROM "CollaborationSession" WHERE "socketId" = ?')
+        .get(socketId),
+    )!
   } catch (error) {
     throw new Error(
       `Failed to update collaboration session: ${error instanceof Error ? error.message : 'Unknown error'}`,
@@ -113,15 +143,19 @@ export async function updateSessionActivity(
   socketId: string,
 ): Promise<CollaborationSession> {
   try {
-    const session = await prisma.collaborationSession.update({
-      where: { socketId },
-      data: {
-        // lastActivityAt is auto-updated via @updatedAt in schema
-        // We just need to trigger an update
-        lastActivityAt: new Date(),
-      },
-    })
-    return session
+    const existing = mapCollaborationSession(
+      db
+        .prepare('SELECT * FROM "CollaborationSession" WHERE "socketId" = ?')
+        .get(socketId),
+    )
+    if (!existing) throw new Error('Collaboration session not found')
+
+    update('CollaborationSession', existing.id, { lastActivityAt: nowMs() })
+    return mapCollaborationSession(
+      db
+        .prepare('SELECT * FROM "CollaborationSession" WHERE "socketId" = ?')
+        .get(socketId),
+    )!
   } catch (error) {
     throw new Error(
       `Failed to update session activity: ${error instanceof Error ? error.message : 'Unknown error'}`,
@@ -139,10 +173,16 @@ export async function deleteCollaborationSession(
   socketId: string,
 ): Promise<CollaborationSession> {
   try {
-    const session = await prisma.collaborationSession.delete({
-      where: { socketId },
-    })
-    return session
+    const existing = mapCollaborationSession(
+      db
+        .prepare('SELECT * FROM "CollaborationSession" WHERE "socketId" = ?')
+        .get(socketId),
+    )
+    if (!existing) throw new Error('Collaboration session not found')
+    db.prepare('DELETE FROM "CollaborationSession" WHERE "socketId" = ?').run(
+      socketId,
+    )
+    return existing
   } catch (error) {
     throw new Error(
       `Failed to delete collaboration session: ${error instanceof Error ? error.message : 'Unknown error'}`,
@@ -159,12 +199,16 @@ export async function deleteStaleSession(): Promise<number> {
   const fiveMinutesAgo = new Date(Date.now() - 5 * 60 * 1000)
 
   try {
-    const result = await prisma.collaborationSession.deleteMany({
-      where: {
-        lastActivityAt: { lt: fiveMinutesAgo },
-      },
-    })
-    return result.count
+    const row = db
+      .prepare(
+        'SELECT count(*) AS c FROM "CollaborationSession" WHERE "lastActivityAt" < ?',
+      )
+      .get(toDbDate(fiveMinutesAgo))
+    const count = Number(row?.c ?? 0)
+    db.prepare(
+      'DELETE FROM "CollaborationSession" WHERE "lastActivityAt" < ?',
+    ).run(toDbDate(fiveMinutesAgo))
+    return count
   } catch (error) {
     throw new Error(
       `Failed to delete stale sessions: ${error instanceof Error ? error.message : 'Unknown error'}`,

@@ -1,8 +1,9 @@
 // src/lib/auth/session.test.ts
-// Unit tests for session token generation and validation (TC-P2-04 through TC-P2-08)
+// Integration tests for session token generation and validation
+// (TC-P2-04 through TC-P2-08) against a real in-memory SQLite database.
 
 import { createHash } from 'node:crypto'
-import { beforeEach, describe, expect, it, vi } from 'vitest'
+import { beforeEach, describe, expect, it } from 'vitest'
 
 import {
   createUserSession,
@@ -10,27 +11,19 @@ import {
   hashToken,
   validateSessionToken,
 } from './session'
-import { prisma } from '@/db'
+import { db } from '@/db'
+import { createAuthSession } from '@/data/session'
+import { makeUser, resetDb } from '@/test/db-helpers'
 
-vi.mock('@/db', () => ({
-  prisma: {
-    session: {
-      create: vi.fn(),
-      findUnique: vi.fn(),
-      delete: vi.fn(),
-    },
-  },
-}))
+beforeEach(() => resetDb())
 
-const mockUser = {
-  id: 'f47ac10b-58cc-4372-a567-0e02b2c3d479',
-  username: 'alice',
-  email: 'alice@example.com',
-  passwordHash: '$2b$12$hashed',
-  failedLoginAttempts: 0,
-  lockedUntil: null,
-  createdAt: new Date(),
-  updatedAt: new Date(),
+// Read a Session row directly from the DB by its token hash.
+function findSessionRowByHash(tokenHash: string) {
+  return db
+    .prepare('SELECT * FROM "Session" WHERE "tokenHash" = ?')
+    .get(tokenHash) as
+    | { id: string; tokenHash: string; userId: string; expiresAt: number }
+    | undefined
 }
 
 describe('session token', () => {
@@ -79,59 +72,41 @@ describe('session token', () => {
 })
 
 describe('session management', () => {
-  beforeEach(() => {
-    vi.clearAllMocks()
-  })
-
   // TC-P2-05: createUserSession stores tokenHash not raw token
   describe('TC-P2-05: createUserSession', () => {
     it('stores tokenHash (SHA-256 of raw token) not the raw token', async () => {
-      vi.mocked(prisma.session.create).mockResolvedValue({
-        id: 'session-id',
-        tokenHash: 'hash',
-        userId: 'user',
-        expiresAt: new Date(),
-        createdAt: new Date(),
-      } as any)
+      const { id: userId } = makeUser()
 
-      const { token } = await createUserSession('user-uuid', false)
+      const { token, session } = await createUserSession(userId, false)
 
-      const createCall = vi.mocked(prisma.session.create).mock.calls[0][0]
-      const { tokenHash } = createCall.data as { tokenHash: string }
-
-      // tokenHash must be 64 chars (SHA-256)
-      expect(tokenHash).toHaveLength(64)
-      expect(tokenHash).toMatch(/^[0-9a-f]{64}$/)
-
-      // raw token must differ from tokenHash
-      expect(token).not.toBe(tokenHash)
-
-      // SHA-256(token) must equal tokenHash
+      // The raw token must NOT be present in the DB; only its hash is stored.
       const expectedHash = createHash('sha256').update(token).digest('hex')
-      expect(tokenHash).toBe(expectedHash)
+      const row = findSessionRowByHash(expectedHash)
+
+      expect(row).toBeDefined()
+      expect(row!.tokenHash).toHaveLength(64)
+      expect(row!.tokenHash).toMatch(/^[0-9a-f]{64}$/)
+      expect(row!.tokenHash).toBe(expectedHash)
+      // Raw token differs from the stored hash, and the raw token is not stored.
+      expect(token).not.toBe(row!.tokenHash)
+      expect(findSessionRowByHash(token)).toBeUndefined()
+      // Returned session id matches the persisted row.
+      expect(session.id).toBe(row!.id)
+      expect(row!.userId).toBe(userId)
     })
   })
 
   // TC-P2-07: default expiry is 24 hours
   describe('TC-P2-07: createUserSession default expiry (24h)', () => {
     it('sets expiresAt to approximately 24 hours from now', async () => {
-      vi.mocked(prisma.session.create).mockResolvedValue({
-        id: 'session-id',
-        tokenHash: 'hash',
-        userId: 'user',
-        expiresAt: new Date(),
-        createdAt: new Date(),
-      } as any)
+      const { id: userId } = makeUser()
 
       const before = Date.now()
-      await createUserSession('user-uuid', false)
+      const { session } = await createUserSession(userId, false)
       const after = Date.now()
 
-      const createCall = vi.mocked(prisma.session.create).mock.calls[0][0]
-      const { expiresAt } = createCall.data as { expiresAt: Date }
-
       const expectedMs = 24 * 60 * 60 * 1000
-      const expiresMs = expiresAt.getTime()
+      const expiresMs = session.expiresAt.getTime()
 
       expect(expiresMs).toBeGreaterThanOrEqual(before + expectedMs - 1000)
       expect(expiresMs).toBeLessThanOrEqual(after + expectedMs + 1000)
@@ -141,23 +116,14 @@ describe('session management', () => {
   // TC-P2-08: rememberMe expiry is 30 days
   describe('TC-P2-08: createUserSession rememberMe expiry (30 days)', () => {
     it('sets expiresAt to approximately 30 days from now when rememberMe=true', async () => {
-      vi.mocked(prisma.session.create).mockResolvedValue({
-        id: 'session-id',
-        tokenHash: 'hash',
-        userId: 'user',
-        expiresAt: new Date(),
-        createdAt: new Date(),
-      } as any)
+      const { id: userId } = makeUser()
 
       const before = Date.now()
-      await createUserSession('user-uuid', true)
+      const { session } = await createUserSession(userId, true)
       const after = Date.now()
 
-      const createCall = vi.mocked(prisma.session.create).mock.calls[0][0]
-      const { expiresAt } = createCall.data as { expiresAt: Date }
-
       const expectedMs = 30 * 24 * 60 * 60 * 1000
-      const expiresMs = expiresAt.getTime()
+      const expiresMs = session.expiresAt.getTime()
 
       expect(expiresMs).toBeGreaterThanOrEqual(before + expectedMs - 1000)
       expect(expiresMs).toBeLessThanOrEqual(after + expectedMs + 1000)
@@ -166,55 +132,69 @@ describe('session management', () => {
 
   // TC-P2-06: validateSessionToken returns null for expired session
   describe('TC-P2-06: validateSessionToken', () => {
-    it('returns null and deletes expired session', async () => {
-      const expiredSession = {
-        id: 'session-id',
-        tokenHash: 'hash',
-        userId: 'user-id',
-        expiresAt: new Date(Date.now() - 3600000), // 1 hour ago
-        createdAt: new Date(),
-        user: mockUser,
-      }
-      vi.mocked(prisma.session.findUnique).mockResolvedValue(
-        expiredSession as any,
-      )
-      vi.mocked(prisma.session.delete).mockResolvedValue(expiredSession as any)
+    it('returns null and deletes an expired session', async () => {
+      const { id: userId } = makeUser()
 
-      const result = await validateSessionToken('sometoken')
+      // Seed an already-expired session directly via the data layer.
+      const rawToken = generateSessionToken()
+      const tokenHash = hashToken(rawToken)
+      const session = await createAuthSession({
+        tokenHash,
+        userId,
+        expiresAt: new Date(Date.now() - 3600_000), // 1 hour ago
+      })
+      expect(findSessionRowByHash(tokenHash)).toBeDefined()
+
+      const result = await validateSessionToken(rawToken)
 
       expect(result).toBeNull()
-      expect(prisma.session.delete).toHaveBeenCalledWith({
-        where: { id: 'session-id' },
-      })
+      // Lazy expiry: the expired row must have been deleted from the DB.
+      expect(findSessionRowByHash(tokenHash)).toBeUndefined()
+      expect(
+        db.prepare('SELECT * FROM "Session" WHERE "id" = ?').get(session.id),
+      ).toBeUndefined()
     })
 
-    it('returns null for unknown token without calling delete', async () => {
-      vi.mocked(prisma.session.findUnique).mockResolvedValue(null)
+    it('returns null for an unknown token and leaves other sessions intact', async () => {
+      const { id: userId } = makeUser()
+      // A valid, unrelated session that must survive the unknown-token lookup.
+      const { token: goodToken } = await createUserSession(userId, false)
+      const goodHash = hashToken(goodToken)
 
       const result = await validateSessionToken('unknowntoken')
 
       expect(result).toBeNull()
-      expect(prisma.session.delete).not.toHaveBeenCalled()
+      // No deletion happened: the unrelated valid session is still present.
+      expect(findSessionRowByHash(goodHash)).toBeDefined()
     })
 
-    it('returns user and session for valid non-expired session', async () => {
-      const validSession = {
-        id: 'session-id',
-        tokenHash: 'hash',
-        userId: mockUser.id,
-        expiresAt: new Date(Date.now() + 3600000), // 1 hour from now
-        createdAt: new Date(),
-        user: mockUser,
-      }
-      vi.mocked(prisma.session.findUnique).mockResolvedValue(
-        validSession as any,
-      )
+    it('returns the user and session for a valid non-expired session', async () => {
+      const { id: userId } = makeUser({
+        username: 'alice',
+        email: 'alice@example.com',
+      })
 
-      const result = await validateSessionToken('validtoken')
+      const { token, session } = await createUserSession(userId, false)
+
+      const result = await validateSessionToken(token)
 
       expect(result).not.toBeNull()
-      expect(result?.user.id).toBe(mockUser.id)
-      expect(result?.session.id).toBe('session-id')
+      expect(result?.user.id).toBe(userId)
+      expect(result?.user.username).toBe('alice')
+      expect(result?.user.email).toBe('alice@example.com')
+      expect(result?.session.id).toBe(session.id)
+      // The expiry is returned as a Date (mapper output).
+      expect(result?.session.expiresAt).toBeInstanceOf(Date)
+    })
+
+    it('keeps a valid session in the DB after validation', async () => {
+      const { id: userId } = makeUser()
+      const { token } = await createUserSession(userId, false)
+      const hash = hashToken(token)
+
+      await validateSessionToken(token)
+
+      expect(findSessionRowByHash(hash)).toBeDefined()
     })
   })
 })

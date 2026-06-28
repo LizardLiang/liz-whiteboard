@@ -110,7 +110,22 @@ const config = defineConfig({
           '\\.(test|spec)\\.(ts|tsx)$|^(auth|collaboration|columns|folders|permissions|projects|relationships|tables|whiteboards)\\.ts$',
       },
     }),
-    nitro({ preset: 'node_middleware' }),
+    nitro({
+      preset: 'node_middleware',
+      // OAuth AS: serve /.well-known/* endpoints via Nitro before TanStack
+      // Start handles requests. TanStack Router file scanner excludes dotfiles
+      // so these paths cannot be TanStack Router routes.
+      handlers: [
+        {
+          route: '/.well-known/oauth-authorization-server',
+          handler: './src/lib/oauth/handlers/as-metadata',
+        },
+        {
+          route: '/.well-known/jwks.json',
+          handler: './src/lib/oauth/handlers/jwks',
+        },
+      ],
+    }),
     viteReact(),
     socketIOPlugin(),
   ],

@@ -4,7 +4,7 @@
  */
 
 import type { TableNode } from './types'
-import type { Column, DiagramTable, Relationship } from '@prisma/client'
+import type { Column, DiagramTable, Relationship } from '@/data/models'
 
 /**
  * Layout computation options

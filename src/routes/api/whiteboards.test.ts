@@ -1,7 +1,13 @@
 // src/routes/api/whiteboards.test.ts
-// Phase 4 whiteboard permission tests
+// Phase 4 whiteboard permission integration tests (real in-memory SQLite DB).
+//
 // TC-P4-04: Whiteboard read requires VIEWER or above
 // TC-P4-05: Whiteboard write requires EDITOR or above; VIEWER gets 403
+//
+// All DB-backed calls are REAL (createWhiteboard / findWhiteboardByIdWithDiagram
+// against the in-memory DB). The ONLY mock is `findEffectiveRole`, which is
+// currently a non-DB-backed stub (always returns 'OWNER'), so it is mocked to
+// drive the role-based branches. `hasMinimumRole` is the real pure helper.
 
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 
@@ -11,72 +17,35 @@ import {
 } from '@/data/whiteboard'
 import { findEffectiveRole } from '@/data/permission'
 import { hasMinimumRole } from '@/lib/auth/permissions'
+import { db } from '@/db'
+import {
+  makeProject,
+  makeUser,
+  makeWhiteboard,
+  resetDb,
+} from '@/test/db-helpers'
 
-vi.mock('@tanstack/react-start/server', () => ({
-  getRequest: vi.fn(() => new Request('http://localhost/')),
-  setResponseHeader: vi.fn(),
-}))
+// Keep the real data layer; mock only the (stubbed) role resolver.
+vi.mock('@/data/permission', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('@/data/permission')>()
+  return {
+    ...actual,
+    findEffectiveRole: vi.fn(),
+  }
+})
 
-vi.mock('@/db', () => ({
-  prisma: {
-    whiteboard: {
-      findUnique: vi.fn(),
-      create: vi.fn(),
-      findMany: vi.fn(),
-    },
-  },
-}))
-
-vi.mock('@/data/whiteboard', () => ({
-  findWhiteboardByIdWithDiagram: vi.fn(),
-  findWhiteboardById: vi.fn(),
-  createWhiteboard: vi.fn(),
-  deleteWhiteboard: vi.fn(),
-  findWhiteboardsByProjectId: vi.fn(),
-  updateWhiteboard: vi.fn(),
-  updateWhiteboardCanvasState: vi.fn(),
-  updateWhiteboardTextSource: vi.fn(),
-  findWhiteboardsByFolderId: vi.fn(),
-  findRecentWhiteboards: vi.fn(),
-}))
-
-vi.mock('@/data/permission', () => ({
-  findEffectiveRole: vi.fn(),
-}))
-
-vi.mock('@/lib/auth/permissions', () => ({
-  hasMinimumRole: vi.fn(),
-}))
-
-// ─────────────────────────────────────────────────────────────────────────────
-// Fixtures
-// ─────────────────────────────────────────────────────────────────────────────
-
-const WHITEBOARD_ID = 'wb-a1b2c3d4-e5f6-7890-abcd-ef1234567890'
-const PROJECT_ID = 'proj-a1b2c3d4-e5f6-7890-abcd-ef1234567890'
-const USER_ID = 'user-f47ac10b-58cc-4372-a567-0e02b2c3d479'
-
-const mockWhiteboard = {
-  id: WHITEBOARD_ID,
-  name: 'Test Whiteboard',
-  projectId: PROJECT_ID,
-  folderId: null,
-  tables: [],
-  relationships: [],
-  createdAt: new Date(),
-  updatedAt: new Date(),
-}
+const mockedFindEffectiveRole = vi.mocked(findEffectiveRole)
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Whiteboard handler mirrors (AC-18: whiteboards inherit project permissions)
 // ─────────────────────────────────────────────────────────────────────────────
 
 async function getWhiteboardHandler(userId: string, whiteboardId: string) {
-  // Must look up project from whiteboard to check permission
+  // Must look up project from whiteboard to check permission.
   const whiteboard = await findWhiteboardByIdWithDiagram(whiteboardId)
   if (!whiteboard) throw new Error('Whiteboard not found')
 
-  const role = await findEffectiveRole(userId, (whiteboard as any).projectId)
+  const role = await findEffectiveRole(userId, whiteboard.projectId)
   const permitted = hasMinimumRole(role, 'VIEWER')
   if (!permitted) {
     return {
@@ -93,7 +62,7 @@ async function createWhiteboardHandler(
   userId: string,
   data: { name: string; projectId: string; folderId?: string },
 ) {
-  // Whiteboard creation requires EDITOR or above on the project
+  // Whiteboard creation requires EDITOR or above on the project.
   const role = await findEffectiveRole(userId, data.projectId)
   const permitted = hasMinimumRole(role, 'EDITOR')
   if (!permitted) {
@@ -109,23 +78,30 @@ async function createWhiteboardHandler(
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
+// Seeded fixtures (real rows)
+// ─────────────────────────────────────────────────────────────────────────────
+
+let USER_ID = ''
+let PROJECT_ID = ''
+let WHITEBOARD_ID = ''
+
+/** Count whiteboard rows in a project (read-back assertion helper). */
+function whiteboardCount(projectId: string): number {
+  const row = db
+    .prepare('SELECT COUNT(*) AS c FROM "Whiteboard" WHERE "projectId" = ?')
+    .get(projectId)
+  return Number(row?.c ?? 0)
+}
 
 beforeEach(() => {
+  resetDb()
   vi.clearAllMocks()
-  // Default: hasMinimumRole delegates to real role hierarchy
-  vi.mocked(hasMinimumRole).mockImplementation((role, required) => {
-    const HIERARCHY: Record<string, number> = {
-      VIEWER: 1,
-      EDITOR: 2,
-      ADMIN: 3,
-      OWNER: 4,
-    }
-    if (!role) return false
-    return (HIERARCHY[role] ?? 0) >= (HIERARCHY[required] ?? 0)
-  })
-  vi.mocked(findWhiteboardByIdWithDiagram).mockResolvedValue(
-    mockWhiteboard as any,
-  )
+  USER_ID = makeUser({ username: 'owner', email: 'owner@example.com' }).id
+  PROJECT_ID = makeProject({ name: 'Test Project', ownerId: USER_ID }).id
+  WHITEBOARD_ID = makeWhiteboard({
+    projectId: PROJECT_ID,
+    name: 'Test Whiteboard',
+  }).id
 })
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -134,7 +110,7 @@ beforeEach(() => {
 
 describe('TC-P4-04: getWhiteboard permission check (VIEWER or above)', () => {
   it('returns 403 when user has no role on the project', async () => {
-    vi.mocked(findEffectiveRole).mockResolvedValue(null)
+    mockedFindEffectiveRole.mockResolvedValue(null)
 
     const result = await getWhiteboardHandler(USER_ID, WHITEBOARD_ID)
 
@@ -142,16 +118,17 @@ describe('TC-P4-04: getWhiteboard permission check (VIEWER or above)', () => {
     expect((result as any).status).toBe(403)
   })
 
-  it('returns the whiteboard for VIEWER role', async () => {
-    vi.mocked(findEffectiveRole).mockResolvedValue('VIEWER')
+  it('returns the real whiteboard for VIEWER role', async () => {
+    mockedFindEffectiveRole.mockResolvedValue('VIEWER')
 
     const result = await getWhiteboardHandler(USER_ID, WHITEBOARD_ID)
 
     expect((result as any).id).toBe(WHITEBOARD_ID)
+    expect((result as any).projectId).toBe(PROJECT_ID)
   })
 
   it('returns the whiteboard for EDITOR role', async () => {
-    vi.mocked(findEffectiveRole).mockResolvedValue('EDITOR')
+    mockedFindEffectiveRole.mockResolvedValue('EDITOR')
 
     const result = await getWhiteboardHandler(USER_ID, WHITEBOARD_ID)
 
@@ -159,20 +136,20 @@ describe('TC-P4-04: getWhiteboard permission check (VIEWER or above)', () => {
   })
 
   it('returns the whiteboard for OWNER role', async () => {
-    vi.mocked(findEffectiveRole).mockResolvedValue('OWNER')
+    mockedFindEffectiveRole.mockResolvedValue('OWNER')
 
     const result = await getWhiteboardHandler(USER_ID, WHITEBOARD_ID)
 
     expect((result as any).id).toBe(WHITEBOARD_ID)
   })
 
-  it('permission is checked against projectId from the whiteboard (inheritance)', async () => {
-    vi.mocked(findEffectiveRole).mockResolvedValue('VIEWER')
+  it('permission is checked against the projectId from the whiteboard (inheritance)', async () => {
+    mockedFindEffectiveRole.mockResolvedValue('VIEWER')
 
     await getWhiteboardHandler(USER_ID, WHITEBOARD_ID)
 
-    // findEffectiveRole must be called with the whiteboard's projectId — not an arbitrary value
-    expect(findEffectiveRole).toHaveBeenCalledWith(USER_ID, PROJECT_ID)
+    // findEffectiveRole must be called with the whiteboard's real projectId.
+    expect(mockedFindEffectiveRole).toHaveBeenCalledWith(USER_ID, PROJECT_ID)
   })
 })
 
@@ -181,8 +158,9 @@ describe('TC-P4-04: getWhiteboard permission check (VIEWER or above)', () => {
 // ─────────────────────────────────────────────────────────────────────────────
 
 describe('TC-P4-05: createWhiteboard permission check (EDITOR or above)', () => {
-  it('VIEWER role cannot create whiteboard (403)', async () => {
-    vi.mocked(findEffectiveRole).mockResolvedValue('VIEWER')
+  it('VIEWER role cannot create whiteboard (403); none created', async () => {
+    mockedFindEffectiveRole.mockResolvedValue('VIEWER')
+    const before = whiteboardCount(PROJECT_ID)
 
     const result = await createWhiteboardHandler(USER_ID, {
       name: 'New Board',
@@ -191,11 +169,12 @@ describe('TC-P4-05: createWhiteboard permission check (EDITOR or above)', () => 
 
     expect((result as any).error).toBe('FORBIDDEN')
     expect((result as any).status).toBe(403)
-    expect(createWhiteboard).not.toHaveBeenCalled()
+    expect(whiteboardCount(PROJECT_ID)).toBe(before)
   })
 
-  it('null role cannot create whiteboard', async () => {
-    vi.mocked(findEffectiveRole).mockResolvedValue(null)
+  it('null role cannot create whiteboard; none created', async () => {
+    mockedFindEffectiveRole.mockResolvedValue(null)
+    const before = whiteboardCount(PROJECT_ID)
 
     const result = await createWhiteboardHandler(USER_ID, {
       name: 'New Board',
@@ -203,43 +182,47 @@ describe('TC-P4-05: createWhiteboard permission check (EDITOR or above)', () => 
     })
 
     expect((result as any).error).toBe('FORBIDDEN')
-    expect(createWhiteboard).not.toHaveBeenCalled()
+    expect(whiteboardCount(PROJECT_ID)).toBe(before)
   })
 
-  it('EDITOR role can create whiteboard', async () => {
-    vi.mocked(findEffectiveRole).mockResolvedValue('EDITOR')
-    vi.mocked(createWhiteboard).mockResolvedValue(mockWhiteboard as any)
+  it('EDITOR role can create whiteboard; row persisted', async () => {
+    mockedFindEffectiveRole.mockResolvedValue('EDITOR')
+    const before = whiteboardCount(PROJECT_ID)
 
     const result = await createWhiteboardHandler(USER_ID, {
       name: 'New Board',
       projectId: PROJECT_ID,
     })
 
-    expect(createWhiteboard).toHaveBeenCalled()
-    expect((result as any).id).toBe(WHITEBOARD_ID)
+    expect((result as any).name).toBe('New Board')
+    expect((result as any).projectId).toBe(PROJECT_ID)
+    expect(whiteboardCount(PROJECT_ID)).toBe(before + 1)
+    // Read it back from the DB.
+    const persisted = await findWhiteboardByIdWithDiagram((result as any).id)
+    expect(persisted?.name).toBe('New Board')
   })
 
   it('ADMIN role can create whiteboard', async () => {
-    vi.mocked(findEffectiveRole).mockResolvedValue('ADMIN')
-    vi.mocked(createWhiteboard).mockResolvedValue(mockWhiteboard as any)
+    mockedFindEffectiveRole.mockResolvedValue('ADMIN')
+    const before = whiteboardCount(PROJECT_ID)
 
-    const result = await createWhiteboardHandler(USER_ID, {
+    await createWhiteboardHandler(USER_ID, {
       name: 'New Board',
       projectId: PROJECT_ID,
     })
 
-    expect(createWhiteboard).toHaveBeenCalled()
+    expect(whiteboardCount(PROJECT_ID)).toBe(before + 1)
   })
 
   it('OWNER role can create whiteboard', async () => {
-    vi.mocked(findEffectiveRole).mockResolvedValue('OWNER')
-    vi.mocked(createWhiteboard).mockResolvedValue(mockWhiteboard as any)
+    mockedFindEffectiveRole.mockResolvedValue('OWNER')
+    const before = whiteboardCount(PROJECT_ID)
 
-    const result = await createWhiteboardHandler(USER_ID, {
+    await createWhiteboardHandler(USER_ID, {
       name: 'New Board',
       projectId: PROJECT_ID,
     })
 
-    expect(createWhiteboard).toHaveBeenCalled()
+    expect(whiteboardCount(PROJECT_ID)).toBe(before + 1)
   })
 })

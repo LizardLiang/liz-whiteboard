@@ -1,8 +1,16 @@
 // src/data/session.ts
 // Data access layer for auth Session entity (not CollaborationSession)
 
-import type { Session } from '@prisma/client'
-import { prisma } from '@/db'
+import type { Session } from '@/data/models'
+import { db, genId, insert, mapSession, nowMs, toDbDate } from '@/db'
+
+/**
+ * Session joined with a minimal user selection (mirrors the Prisma
+ * `include: { user: { select: { id, username, email } } }` shape).
+ */
+export type SessionWithUser = Session & {
+  user: { id: string; username: string; email: string }
+}
 
 /**
  * Create an auth session
@@ -14,10 +22,18 @@ export async function createAuthSession(data: {
   userId: string
   expiresAt: Date
 }): Promise<Session> {
-  const session = await prisma.session.create({
-    data,
+  const id = genId()
+  const ts = nowMs()
+  insert('Session', {
+    id,
+    tokenHash: data.tokenHash,
+    userId: data.userId,
+    expiresAt: toDbDate(data.expiresAt),
+    createdAt: ts,
   })
-  return session
+  return mapSession(
+    db.prepare('SELECT * FROM "Session" WHERE "id" = ?').get(id),
+  )!
 }
 
 /**
@@ -25,17 +41,27 @@ export async function createAuthSession(data: {
  * @param tokenHash - SHA-256 hash of the raw session token
  * @returns Session with user or null if not found
  */
-export async function findAuthSessionByTokenHash(tokenHash: string): Promise<
-  | (Session & {
-      user: { id: string; username: string; email: string }
-    })
-  | null
-> {
-  const session = await prisma.session.findUnique({
-    where: { tokenHash },
-    include: { user: { select: { id: true, username: true, email: true } } },
-  })
-  return session
+export async function findAuthSessionByTokenHash(
+  tokenHash: string,
+): Promise<SessionWithUser | null> {
+  const session = mapSession(
+    db.prepare('SELECT * FROM "Session" WHERE "tokenHash" = ?').get(tokenHash),
+  )
+  if (!session) return null
+
+  const user = db
+    .prepare('SELECT "id", "username", "email" FROM "User" WHERE "id" = ?')
+    .get(session.userId)
+  if (!user) return null
+
+  return {
+    ...session,
+    user: {
+      id: user.id as string,
+      username: user.username as string,
+      email: user.email as string,
+    },
+  }
 }
 
 /**
@@ -43,11 +69,11 @@ export async function findAuthSessionByTokenHash(tokenHash: string): Promise<
  * @param id - Session UUID
  */
 export async function deleteAuthSession(id: string): Promise<void> {
-  await prisma.session
-    .delete({
-      where: { id },
-    })
-    .catch(() => {})
+  try {
+    db.prepare('DELETE FROM "Session" WHERE "id" = ?').run(id)
+  } catch {
+    // ignore
+  }
 }
 
 /**
@@ -55,8 +81,12 @@ export async function deleteAuthSession(id: string): Promise<void> {
  * @returns Count of deleted sessions
  */
 export async function deleteExpiredAuthSessions(): Promise<number> {
-  const result = await prisma.session.deleteMany({
-    where: { expiresAt: { lt: new Date() } },
-  })
-  return result.count
+  const ts = nowMs()
+  const count = Number(
+    db
+      .prepare('SELECT count(*) AS c FROM "Session" WHERE "expiresAt" < ?')
+      .get(ts)!.c,
+  )
+  db.prepare('DELETE FROM "Session" WHERE "expiresAt" < ?').run(ts)
+  return count
 }

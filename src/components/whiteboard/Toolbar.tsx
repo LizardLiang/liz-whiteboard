@@ -3,7 +3,8 @@
 
 import { useState } from 'react'
 import { Loader2 } from 'lucide-react'
-import type { Cardinality, Column, DiagramTable } from '@prisma/client'
+import type { Column, DiagramTable } from '@/data/models'
+import type { Cardinality } from '@/data/schema'
 import type { CreateRelationship, CreateTable } from '@/data/schema'
 import type { ShowMode } from '@/lib/react-flow/types'
 import { Button } from '@/components/ui/button'

@@ -1,72 +1,202 @@
 // src/data/permission.test.ts
-// Unit tests for permission data-access functions (TC-P1-07)
+// Integration tests for permission (ProjectMember) data-access functions.
+// Runs against an in-memory SQLite DB (vitest.config sets DATABASE_URL=:memory:).
 
-import { beforeEach, describe, expect, it, vi } from 'vitest'
+import { beforeEach, describe, expect, it } from 'vitest'
 
-import { findEffectiveRole } from './permission'
-import { prisma } from '@/db'
+import {
+  createProjectMember,
+  deleteProjectMember,
+  findEffectiveRole,
+  findProjectMembers,
+  findProjectMembersByUser,
+  upsertProjectMember,
+} from './permission'
+import { db } from '@/db'
+import { makeProject, makeUser, resetDb } from '@/test/db-helpers'
 
-vi.mock('@/db', () => ({
-  prisma: {
-    project: {
-      findUnique: vi.fn(),
-    },
-    projectMember: {
-      findUnique: vi.fn(),
-      findMany: vi.fn(),
-      create: vi.fn(),
-      upsert: vi.fn(),
-      delete: vi.fn(),
-    },
-  },
-}))
+beforeEach(() => resetDb())
 
 describe('permission data-access', () => {
-  beforeEach(() => {
-    vi.clearAllMocks()
+  describe('createProjectMember', () => {
+    it('inserts a membership and returns the mapped row', async () => {
+      const owner = makeUser()
+      const member = makeUser()
+      const project = makeProject({ ownerId: owner.id })
+
+      const created = await createProjectMember({
+        projectId: project.id,
+        userId: member.id,
+        role: 'EDITOR',
+      })
+
+      expect(created.projectId).toBe(project.id)
+      expect(created.userId).toBe(member.id)
+      expect(created.role).toBe('EDITOR')
+      expect(created.createdAt).toBeInstanceOf(Date)
+
+      // Read-back via raw db
+      const row = db
+        .prepare('SELECT * FROM "ProjectMember" WHERE "id" = ?')
+        .get(created.id) as { role: string } | undefined
+      expect(row?.role).toBe('EDITOR')
+    })
   })
 
-  describe('TC-P1-07: findEffectiveRole', () => {
-    it('returns OWNER when userId matches project ownerId', async () => {
-      vi.mocked(prisma.project.findUnique).mockResolvedValue({
-        ownerId: 'user-A',
-      } as any)
+  describe('findProjectMembers', () => {
+    it('returns members each with a nested user selection', async () => {
+      const owner = makeUser()
+      const project = makeProject({ ownerId: owner.id })
+      const alice = makeUser({ username: 'alice', email: 'alice@example.com' })
+      const bob = makeUser({ username: 'bob', email: 'bob@example.com' })
 
-      const role = await findEffectiveRole('user-A', 'project-1')
-
-      expect(role).toBe('OWNER')
-    })
-
-    it('returns ProjectMember role when userId does not match ownerId', async () => {
-      vi.mocked(prisma.project.findUnique).mockResolvedValue({
-        ownerId: 'user-B',
-      } as any)
-      vi.mocked(prisma.projectMember.findUnique).mockResolvedValue({
+      await createProjectMember({
+        projectId: project.id,
+        userId: alice.id,
         role: 'EDITOR',
-      } as any)
+      })
+      await createProjectMember({
+        projectId: project.id,
+        userId: bob.id,
+        role: 'VIEWER',
+      })
 
-      const role = await findEffectiveRole('user-A', 'project-1')
+      const members = await findProjectMembers(project.id)
 
-      expect(role).toBe('EDITOR')
+      expect(members).toHaveLength(2)
+      const byUser = new Map(members.map((m) => [m.userId, m]))
+
+      const aliceMember = byUser.get(alice.id)!
+      expect(aliceMember.role).toBe('EDITOR')
+      expect(aliceMember.user).toEqual({
+        id: alice.id,
+        username: 'alice',
+        email: 'alice@example.com',
+      })
+
+      const bobMember = byUser.get(bob.id)!
+      expect(bobMember.role).toBe('VIEWER')
+      expect(bobMember.user.username).toBe('bob')
     })
 
-    it('returns null when no membership found', async () => {
-      vi.mocked(prisma.project.findUnique).mockResolvedValue({
-        ownerId: 'user-B',
-      } as any)
-      vi.mocked(prisma.projectMember.findUnique).mockResolvedValue(null)
+    it('returns an empty array when project has no members', async () => {
+      const owner = makeUser()
+      const project = makeProject({ ownerId: owner.id })
 
-      const role = await findEffectiveRole('user-C', 'project-1')
+      const members = await findProjectMembers(project.id)
+      expect(members).toEqual([])
+    })
+  })
 
-      expect(role).toBeNull()
+  describe('findProjectMembersByUser', () => {
+    it('returns all memberships for a user across projects', async () => {
+      const user = makeUser()
+      const owner = makeUser()
+      const projectA = makeProject({ name: 'A', ownerId: owner.id })
+      const projectB = makeProject({ name: 'B', ownerId: owner.id })
+
+      await createProjectMember({
+        projectId: projectA.id,
+        userId: user.id,
+        role: 'EDITOR',
+      })
+      await createProjectMember({
+        projectId: projectB.id,
+        userId: user.id,
+        role: 'VIEWER',
+      })
+
+      const memberships = await findProjectMembersByUser(user.id)
+      expect(memberships).toHaveLength(2)
+      expect(memberships.map((m) => m.projectId).sort()).toEqual(
+        [projectA.id, projectB.id].sort(),
+      )
+    })
+  })
+
+  describe('upsertProjectMember', () => {
+    it('inserts when no membership exists', async () => {
+      const owner = makeUser()
+      const member = makeUser()
+      const project = makeProject({ ownerId: owner.id })
+
+      const result = await upsertProjectMember({
+        projectId: project.id,
+        userId: member.id,
+        role: 'VIEWER',
+      })
+
+      expect(result.role).toBe('VIEWER')
+      const count = db
+        .prepare(
+          'SELECT COUNT(*) AS c FROM "ProjectMember" WHERE "projectId" = ? AND "userId" = ?',
+        )
+        .get(project.id, member.id) as { c: number }
+      expect(count.c).toBe(1)
     })
 
-    it('returns null when project does not exist', async () => {
-      vi.mocked(prisma.project.findUnique).mockResolvedValue(null)
+    it('updates the role on conflict instead of inserting a duplicate', async () => {
+      const owner = makeUser()
+      const member = makeUser()
+      const project = makeProject({ ownerId: owner.id })
 
-      const role = await findEffectiveRole('user-A', 'nonexistent-project')
+      await upsertProjectMember({
+        projectId: project.id,
+        userId: member.id,
+        role: 'VIEWER',
+      })
+      const updated = await upsertProjectMember({
+        projectId: project.id,
+        userId: member.id,
+        role: 'EDITOR',
+      })
 
-      expect(role).toBeNull()
+      expect(updated.role).toBe('EDITOR')
+      const count = db
+        .prepare(
+          'SELECT COUNT(*) AS c FROM "ProjectMember" WHERE "projectId" = ? AND "userId" = ?',
+        )
+        .get(project.id, member.id) as { c: number }
+      expect(count.c).toBe(1)
+    })
+  })
+
+  describe('deleteProjectMember', () => {
+    it('removes an existing membership', async () => {
+      const owner = makeUser()
+      const member = makeUser()
+      const project = makeProject({ ownerId: owner.id })
+
+      await createProjectMember({
+        projectId: project.id,
+        userId: member.id,
+        role: 'EDITOR',
+      })
+
+      await deleteProjectMember(project.id, member.id)
+
+      const row = db
+        .prepare(
+          'SELECT * FROM "ProjectMember" WHERE "projectId" = ? AND "userId" = ?',
+        )
+        .get(project.id, member.id)
+      expect(row).toBeUndefined()
+    })
+
+    it('does not throw when membership does not exist', async () => {
+      await expect(
+        deleteProjectMember('no-project', 'no-user'),
+      ).resolves.toBeUndefined()
+    })
+  })
+
+  describe('findEffectiveRole', () => {
+    it('returns OWNER for the project owner', async () => {
+      const owner = makeUser()
+      const project = makeProject({ ownerId: owner.id })
+
+      const role = await findEffectiveRole(owner.id, project.id)
+      expect(role).toBe('OWNER')
     })
   })
 })

@@ -6,7 +6,6 @@ import { z } from 'zod'
 import {
   createWhiteboard,
   deleteWhiteboard,
-  findRecentWhiteboards,
   findWhiteboardById,
   findWhiteboardByIdWithDiagram,
   findWhiteboardsByFolderId,
@@ -27,7 +26,7 @@ import {
   getFolderProjectId,
   getWhiteboardProjectId,
 } from '@/data/resolve-project'
-import { prisma } from '@/db'
+import { db, mapWhiteboard } from '@/db'
 import { requireServerFnRole } from '@/lib/auth/require-role'
 
 /**
@@ -332,18 +331,20 @@ export const getRecentWhiteboards = createServerFn({ method: 'GET' })
     requireAuth(async ({ user }, limit) => {
       try {
         // Filter to only whiteboards in projects the user has access to
-        const whiteboards = await prisma.whiteboard.findMany({
-          where: {
-            project: {
-              OR: [
-                { ownerId: user.id },
-                { members: { some: { userId: user.id } } },
-              ],
-            },
-          },
-          orderBy: { updatedAt: 'desc' },
-          take: limit,
-        })
+        const whiteboards = db
+          .prepare(
+            `SELECT w.* FROM "Whiteboard" w
+             JOIN "Project" p ON p."id" = w."projectId"
+             WHERE p."ownerId" = ?
+                OR EXISTS (
+                  SELECT 1 FROM "ProjectMember" m
+                  WHERE m."projectId" = p."id" AND m."userId" = ?
+                )
+             ORDER BY w."updatedAt" DESC
+             LIMIT ?`,
+          )
+          .all(user.id, user.id, limit)
+          .map((r) => mapWhiteboard(r)!)
         return whiteboards
       } catch (error) {
         throw new Error(

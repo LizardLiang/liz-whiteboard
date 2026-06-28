@@ -1,10 +1,19 @@
 // src/data/permission.ts
 // Data access layer for ProjectMember (permission) entity
 
-import type { ProjectMember, ProjectRole } from '@prisma/client'
-import { prisma } from '@/db'
+import type { ProjectMember } from '@/data/models'
+import type { ProjectRoleValue as ProjectRole } from '@/data/schema'
+import { db, genId, insert, mapProjectMember, nowMs } from '@/db'
 
 export type EffectiveRole = 'OWNER' | ProjectRole
+
+/**
+ * ProjectMember joined with a minimal user selection (mirrors the Prisma
+ * `include: { user: { select: { id, username, email } } }` shape).
+ */
+export type ProjectMemberWithUser = ProjectMember & {
+  user: { id: string; username: string; email: string }
+}
 
 /**
  * Create a project member (grant permission)
@@ -14,22 +23,44 @@ export async function createProjectMember(data: {
   userId: string
   role: ProjectRole
 }): Promise<ProjectMember> {
-  return prisma.projectMember.create({ data })
+  const id = genId()
+  const ts = nowMs()
+  insert('ProjectMember', {
+    id,
+    projectId: data.projectId,
+    userId: data.userId,
+    role: data.role,
+    createdAt: ts,
+    updatedAt: ts,
+  })
+  return mapProjectMember(
+    db.prepare('SELECT * FROM "ProjectMember" WHERE "id" = ?').get(id),
+  )!
 }
 
 /**
  * Find all members of a project
  */
-export async function findProjectMembers(projectId: string): Promise<
-  Array<
-    ProjectMember & {
-      user: { id: string; username: string; email: string }
+export async function findProjectMembers(
+  projectId: string,
+): Promise<Array<ProjectMemberWithUser>> {
+  const members = db
+    .prepare('SELECT * FROM "ProjectMember" WHERE "projectId" = ?')
+    .all(projectId)
+    .map((r) => mapProjectMember(r)!)
+
+  return members.map((member) => {
+    const user = db
+      .prepare('SELECT "id", "username", "email" FROM "User" WHERE "id" = ?')
+      .get(member.userId)
+    return {
+      ...member,
+      user: {
+        id: user!.id as string,
+        username: user!.username as string,
+        email: user!.email as string,
+      },
     }
-  >
-> {
-  return prisma.projectMember.findMany({
-    where: { projectId },
-    include: { user: { select: { id: true, username: true, email: true } } },
   })
 }
 
@@ -39,7 +70,10 @@ export async function findProjectMembers(projectId: string): Promise<
 export async function findProjectMembersByUser(
   userId: string,
 ): Promise<Array<ProjectMember>> {
-  return prisma.projectMember.findMany({ where: { userId } })
+  return db
+    .prepare('SELECT * FROM "ProjectMember" WHERE "userId" = ?')
+    .all(userId)
+    .map((r) => mapProjectMember(r)!)
 }
 
 /**
@@ -50,13 +84,18 @@ export async function upsertProjectMember(data: {
   userId: string
   role: ProjectRole
 }): Promise<ProjectMember> {
-  return prisma.projectMember.upsert({
-    where: {
-      projectId_userId: { projectId: data.projectId, userId: data.userId },
-    },
-    create: data,
-    update: { role: data.role },
-  })
+  const id = genId()
+  const ts = nowMs()
+  db.prepare(
+    'INSERT INTO "ProjectMember" ("id", "projectId", "userId", "role", "createdAt", "updatedAt") VALUES (?, ?, ?, ?, ?, ?) ON CONFLICT("projectId", "userId") DO UPDATE SET "role" = excluded."role", "updatedAt" = excluded."updatedAt"',
+  ).run(id, data.projectId, data.userId, data.role, ts, ts)
+  return mapProjectMember(
+    db
+      .prepare(
+        'SELECT * FROM "ProjectMember" WHERE "projectId" = ? AND "userId" = ?',
+      )
+      .get(data.projectId, data.userId),
+  )!
 }
 
 /**
@@ -66,11 +105,13 @@ export async function deleteProjectMember(
   projectId: string,
   userId: string,
 ): Promise<void> {
-  await prisma.projectMember
-    .delete({
-      where: { projectId_userId: { projectId, userId } },
-    })
-    .catch(() => {})
+  try {
+    db.prepare(
+      'DELETE FROM "ProjectMember" WHERE "projectId" = ? AND "userId" = ?',
+    ).run(projectId, userId)
+  } catch {
+    // ignore
+  }
 }
 
 /**

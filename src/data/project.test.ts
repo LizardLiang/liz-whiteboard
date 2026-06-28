@@ -1,245 +1,288 @@
 // src/data/project.test.ts
-// TS-09: Data layer unit tests for findProjectPageContent
-// Tests query filtering logic with mocked Prisma client
+// Integration tests for findProjectPageContent (and related project reads)
+// against a real in-memory SQLite database (DATABASE_URL=:memory:).
+// Verifies folder/whiteboard filtering, breadcrumb via recursive CTE, and
+// _count.tables — the behaviors the original mock-based tests asserted.
 
-import { beforeEach, describe, expect, it, vi } from 'vitest'
+import { beforeEach, describe, expect, it } from 'vitest'
 
-import { findProjectPageContent } from './project'
-import { prisma } from '@/db'
+import { findAllProjectsWithTreeForUser, findProjectPageContent } from './project'
+import { db, genId, nowMs } from '@/db'
+import {
+  makeProject,
+  makeTable,
+  makeUser,
+  makeWhiteboard,
+  resetDb,
+} from '@/test/db-helpers'
 
-// Mock the db module before importing project functions
-vi.mock('@/db', () => ({
-  prisma: {
-    project: {
-      findUnique: vi.fn(),
-    },
-    folder: {
-      findMany: vi.fn(),
-      findUnique: vi.fn(),
-    },
-    whiteboard: {
-      findMany: vi.fn(),
-    },
-    $queryRaw: vi.fn(),
-  },
-}))
+/** Insert a Folder row directly (no fixture maker exists for folders). */
+function makeFolder(opts: {
+  projectId: string
+  name?: string
+  parentFolderId?: string | null
+}): { id: string } {
+  const id = genId()
+  const ts = nowMs()
+  db.prepare(
+    'INSERT INTO "Folder" ("id","name","projectId","parentFolderId","createdAt","updatedAt") VALUES (?,?,?,?,?,?)',
+  ).run(
+    id,
+    opts.name ?? 'Test Folder',
+    opts.projectId,
+    opts.parentFolderId ?? null,
+    ts,
+    ts,
+  )
+  return { id }
+}
 
-const mockProject = { id: 'proj-001', name: 'Test Project' }
-const mockFolders = [
-  { id: 'folder-001', name: 'Alpha Folder', createdAt: new Date('2026-01-01') },
-  { id: 'folder-002', name: 'Beta Folder', createdAt: new Date('2026-01-02') },
-]
-const mockWhiteboards = [
-  {
-    id: 'wb-001',
-    name: 'Schema Design',
-    updatedAt: new Date('2026-03-30'),
-    _count: { tables: 3 },
-  },
-]
+/** Put a whiteboard inside a folder (the maker always creates root-level ones). */
+function moveWhiteboardToFolder(whiteboardId: string, folderId: string): void {
+  db.prepare('UPDATE "Whiteboard" SET "folderId" = ? WHERE "id" = ?').run(
+    folderId,
+    whiteboardId,
+  )
+}
 
-beforeEach(() => {
-  vi.clearAllMocks()
-})
+beforeEach(() => resetDb())
 
 describe('findProjectPageContent', () => {
   describe('TC-09-07: returns null when projectId does not exist', () => {
     it('returns null for non-existent project', async () => {
-      vi.mocked(prisma.project.findUnique).mockResolvedValue(null)
-
-      const result = await findProjectPageContent('non-existent-uuid')
+      const result = await findProjectPageContent(genId())
       expect(result).toBeNull()
     })
   })
 
   describe('root view (no folderId)', () => {
-    beforeEach(() => {
-      vi.mocked(prisma.project.findUnique).mockResolvedValue(mockProject as any)
-      vi.mocked(prisma.folder.findMany).mockResolvedValue(mockFolders as any)
-      vi.mocked(prisma.whiteboard.findMany).mockResolvedValue(
-        mockWhiteboards as any,
-      )
+    it('TC-09-01: returns only folders with parentFolderId = null', async () => {
+      const p = makeProject({ name: 'Test Project' })
+      const root = makeFolder({ projectId: p.id, name: 'Root Folder' })
+      // A nested folder must NOT appear in the root view.
+      makeFolder({
+        projectId: p.id,
+        name: 'Nested Folder',
+        parentFolderId: root.id,
+      })
+
+      const result = await findProjectPageContent(p.id)
+
+      expect(result).not.toBeNull()
+      expect(result!.folders).toHaveLength(1)
+      expect(result!.folders[0].name).toBe('Root Folder')
     })
 
-    it('TC-09-01: queries folders with parentFolderId = null', async () => {
-      await findProjectPageContent('proj-001')
+    it('TC-09-02: returns only whiteboards with folderId = null', async () => {
+      const p = makeProject()
+      const folder = makeFolder({ projectId: p.id })
+      makeWhiteboard({ projectId: p.id, name: 'Root WB' })
+      const nested = makeWhiteboard({ projectId: p.id, name: 'Nested WB' })
+      moveWhiteboardToFolder(nested.id, folder.id)
 
-      expect(prisma.folder.findMany).toHaveBeenCalledWith(
-        expect.objectContaining({
-          where: expect.objectContaining({
-            parentFolderId: null,
-          }),
-        }),
-      )
-    })
+      const result = await findProjectPageContent(p.id)
 
-    it('TC-09-02: queries whiteboards with folderId = null', async () => {
-      await findProjectPageContent('proj-001')
-
-      expect(prisma.whiteboard.findMany).toHaveBeenCalledWith(
-        expect.objectContaining({
-          where: expect.objectContaining({
-            folderId: null,
-          }),
-        }),
-      )
+      expect(result).not.toBeNull()
+      expect(result!.whiteboards).toHaveLength(1)
+      expect(result!.whiteboards[0].name).toBe('Root WB')
     })
 
     it('TC-09-03: returns whiteboards with _count.tables', async () => {
-      const whiteboardWithTables = [
-        {
-          id: 'wb-001',
-          name: 'Schema Design',
-          updatedAt: new Date('2026-03-30'),
-          _count: { tables: 3 },
-        },
-      ]
-      vi.mocked(prisma.whiteboard.findMany).mockResolvedValue(
-        whiteboardWithTables as any,
-      )
+      const p = makeProject()
+      const wb = makeWhiteboard({ projectId: p.id, name: 'Schema Design' })
+      makeTable({ whiteboardId: wb.id, name: 'users' })
+      makeTable({ whiteboardId: wb.id, name: 'orders' })
+      makeTable({ whiteboardId: wb.id, name: 'products' })
 
-      const result = await findProjectPageContent('proj-001')
+      const result = await findProjectPageContent(p.id)
 
       expect(result).not.toBeNull()
       expect(result!.whiteboards[0]._count.tables).toBe(3)
     })
 
     it('TC-09-04: breadcrumb is empty for root view', async () => {
-      const result = await findProjectPageContent('proj-001')
+      const p = makeProject()
+      const result = await findProjectPageContent(p.id)
 
       expect(result).not.toBeNull()
       expect(result!.breadcrumb).toEqual([])
     })
 
-    it('returns project, folders and whiteboards', async () => {
-      const result = await findProjectPageContent('proj-001')
+    it('returns project, folders and whiteboards with real shapes', async () => {
+      const p = makeProject({ name: 'Test Project' })
+      makeFolder({ projectId: p.id, name: 'Alpha Folder' })
+      const wb = makeWhiteboard({ projectId: p.id, name: 'Schema Design' })
+
+      const result = await findProjectPageContent(p.id)
 
       expect(result).not.toBeNull()
-      expect(result!.project).toEqual(mockProject)
-      expect(result!.folders).toEqual(mockFolders)
-      expect(result!.whiteboards).toEqual(mockWhiteboards)
+      expect(result!.project).toEqual({ id: p.id, name: 'Test Project' })
+      expect(result!.folders[0]).toEqual(
+        expect.objectContaining({ name: 'Alpha Folder' }),
+      )
+      // Mapper returns a real Date for createdAt.
+      expect(result!.folders[0].createdAt).toBeInstanceOf(Date)
+      expect(result!.whiteboards[0]).toEqual(
+        expect.objectContaining({ id: wb.id, name: 'Schema Design' }),
+      )
+      expect(result!.whiteboards[0].updatedAt).toBeInstanceOf(Date)
+    })
+
+    it('orders folders by name ASC', async () => {
+      const p = makeProject()
+      makeFolder({ projectId: p.id, name: 'Beta' })
+      makeFolder({ projectId: p.id, name: 'Alpha' })
+
+      const result = await findProjectPageContent(p.id)
+
+      expect(result!.folders.map((f) => f.name)).toEqual(['Alpha', 'Beta'])
     })
   })
 
   describe('folder view (with folderId)', () => {
-    const mockTargetFolder = {
-      id: 'folder-001',
-      name: 'Alpha Folder',
-      projectId: 'proj-001',
-      parentFolderId: null,
-    }
-
-    beforeEach(() => {
-      vi.mocked(prisma.project.findUnique).mockResolvedValue(mockProject as any)
-      vi.mocked(prisma.folder.findUnique).mockResolvedValue(
-        mockTargetFolder as any,
-      )
-      vi.mocked(prisma.folder.findMany).mockResolvedValue([] as any)
-      vi.mocked(prisma.whiteboard.findMany).mockResolvedValue(
-        mockWhiteboards as any,
-      )
-    })
-
     it('TC-09-05: returns child folders and whiteboards for the folder', async () => {
-      const childFolders = [
-        { id: 'folder-child-001', name: 'Child Folder', createdAt: new Date() },
-      ]
-      vi.mocked(prisma.folder.findMany).mockResolvedValue(childFolders as any)
+      const p = makeProject()
+      const folder = makeFolder({ projectId: p.id, name: 'Alpha Folder' })
+      const child = makeFolder({
+        projectId: p.id,
+        name: 'Child Folder',
+        parentFolderId: folder.id,
+      })
+      const wb = makeWhiteboard({ projectId: p.id, name: 'Folder WB' })
+      moveWhiteboardToFolder(wb.id, folder.id)
+      // A root-level whiteboard must NOT leak into the folder view.
+      makeWhiteboard({ projectId: p.id, name: 'Root WB' })
 
-      const result = await findProjectPageContent('proj-001', 'folder-001')
+      const result = await findProjectPageContent(p.id, folder.id)
 
       expect(result).not.toBeNull()
-      expect(result!.folders).toEqual(childFolders)
-      expect(result!.whiteboards).toEqual(mockWhiteboards)
-      // Should query child folders by parentFolderId AND projectId (defense-in-depth)
-      expect(prisma.folder.findMany).toHaveBeenCalledWith(
-        expect.objectContaining({
-          where: expect.objectContaining({
-            projectId: 'proj-001',
-            parentFolderId: 'folder-001',
-          }),
-        }),
-      )
-      // Should query whiteboards by folderId AND projectId (defense-in-depth)
-      expect(prisma.whiteboard.findMany).toHaveBeenCalledWith(
-        expect.objectContaining({
-          where: expect.objectContaining({
-            projectId: 'proj-001',
-            folderId: 'folder-001',
-          }),
-        }),
-      )
+      expect(result!.folders).toHaveLength(1)
+      expect(result!.folders[0].id).toBe(child.id)
+      expect(result!.whiteboards).toHaveLength(1)
+      expect(result!.whiteboards[0].id).toBe(wb.id)
+      expect(result!.currentFolder).toEqual({
+        id: folder.id,
+        name: 'Alpha Folder',
+      })
     })
 
-    it('TC-09-06: breadcrumb includes project root at minimum when folder has no parent', async () => {
-      const result = await findProjectPageContent('proj-001', 'folder-001')
+    it('TC-09-06: breadcrumb has only project root when folder has no parent', async () => {
+      const p = makeProject({ name: 'Test Project' })
+      const folder = makeFolder({ projectId: p.id, name: 'Alpha Folder' })
+
+      const result = await findProjectPageContent(p.id, folder.id)
 
       expect(result).not.toBeNull()
-      // breadcrumb should have project entry prepended
       expect(result!.breadcrumb).toEqual([
-        { id: 'proj-001', name: 'Test Project', type: 'project' },
+        { id: p.id, name: 'Test Project', type: 'project' },
       ])
     })
 
-    it('TC-09-06: breadcrumb includes ancestor folders in chain', async () => {
-      const childFolder = {
-        id: 'folder-child',
+    it('TC-09-06: breadcrumb includes ancestor folders in root→leaf order', async () => {
+      const p = makeProject({ name: 'Test Project' })
+      const parent = makeFolder({ projectId: p.id, name: 'Parent Folder' })
+      const child = makeFolder({
+        projectId: p.id,
         name: 'Child Folder',
-        projectId: 'proj-001',
-        parentFolderId: 'folder-parent',
-      }
-      // Recursive CTE returns rows in leaf→root order; implementation reverses them
-      const ancestorRows = [
-        { id: 'folder-parent', name: 'Parent Folder', parentFolderId: null },
-      ]
+        parentFolderId: parent.id,
+      })
 
-      vi.mocked(prisma.folder.findUnique).mockResolvedValueOnce(
-        childFolder as any,
-      )
-      vi.mocked(prisma.$queryRaw).mockResolvedValueOnce(ancestorRows as any)
-
-      const result = await findProjectPageContent('proj-001', 'folder-child')
+      const result = await findProjectPageContent(p.id, child.id)
 
       expect(result).not.toBeNull()
       const breadcrumb = result!.breadcrumb
-      // Project root first
       expect(breadcrumb[0]).toEqual({
-        id: 'proj-001',
+        id: p.id,
         name: 'Test Project',
         type: 'project',
       })
-      // Parent folder second
-      expect(breadcrumb[1]).toEqual(
-        expect.objectContaining({
-          id: 'folder-parent',
-          name: 'Parent Folder',
-          type: 'folder',
-        }),
-      )
+      expect(breadcrumb[1]).toEqual({
+        id: parent.id,
+        name: 'Parent Folder',
+        type: 'folder',
+      })
+      expect(breadcrumb).toHaveLength(2)
+    })
+
+    it('TC-09-06: breadcrumb walks a multi-level ancestor chain', async () => {
+      const p = makeProject({ name: 'Test Project' })
+      const grandparent = makeFolder({ projectId: p.id, name: 'Grandparent' })
+      const parent = makeFolder({
+        projectId: p.id,
+        name: 'Parent',
+        parentFolderId: grandparent.id,
+      })
+      const child = makeFolder({
+        projectId: p.id,
+        name: 'Child',
+        parentFolderId: parent.id,
+      })
+
+      const result = await findProjectPageContent(p.id, child.id)
+
+      expect(result!.breadcrumb.map((b) => b.name)).toEqual([
+        'Test Project',
+        'Grandparent',
+        'Parent',
+      ])
     })
 
     it('TC-09-08: throws "Folder not found" for cross-project folder access', async () => {
-      const crossProjectFolder = {
-        id: 'folder-other',
-        name: 'Other Project Folder',
-        projectId: 'proj-other', // different project
-        parentFolderId: null,
-      }
-      vi.mocked(prisma.folder.findUnique).mockResolvedValue(
-        crossProjectFolder as any,
-      )
+      const p1 = makeProject({ name: 'Project One' })
+      const p2 = makeProject({ name: 'Project Two' })
+      const otherFolder = makeFolder({ projectId: p2.id, name: 'Other Folder' })
 
       await expect(
-        findProjectPageContent('proj-001', 'folder-other'),
+        findProjectPageContent(p1.id, otherFolder.id),
       ).rejects.toThrow('Folder not found')
     })
 
     it('TC-09-08: throws "Folder not found" when folderId does not exist', async () => {
-      vi.mocked(prisma.folder.findUnique).mockResolvedValue(null)
+      const p = makeProject()
 
       await expect(
-        findProjectPageContent('proj-001', 'non-existent-folder'),
+        findProjectPageContent(p.id, genId()),
       ).rejects.toThrow('Folder not found')
     })
+  })
+})
+
+describe('findAllProjectsWithTreeForUser', () => {
+  it('returns all projects with nested folders and whiteboards', async () => {
+    const user = makeUser()
+    const p = makeProject({ name: 'Tree Project', ownerId: user.id })
+    const folder = makeFolder({ projectId: p.id, name: 'F1' })
+    const childFolder = makeFolder({
+      projectId: p.id,
+      name: 'F1-child',
+      parentFolderId: folder.id,
+    })
+    const rootWb = makeWhiteboard({ projectId: p.id, name: 'Root WB' })
+    const folderWb = makeWhiteboard({ projectId: p.id, name: 'Folder WB' })
+    moveWhiteboardToFolder(folderWb.id, folder.id)
+
+    const tree = await findAllProjectsWithTreeForUser(user.id)
+
+    expect(tree).toHaveLength(1)
+    const proj = tree[0]
+    expect(proj.id).toBe(p.id)
+    expect(proj.name).toBe('Tree Project')
+
+    // Project-level whiteboards include all whiteboards in the project.
+    expect(proj.whiteboards.map((w) => w.id).sort()).toEqual(
+      [rootWb.id, folderWb.id].sort(),
+    )
+
+    expect(proj.folders).toHaveLength(2)
+    const f1 = proj.folders.find((f) => f.id === folder.id)!
+    expect(f1.parentFolderId).toBeNull()
+    expect(f1.childFolders).toEqual([{ id: childFolder.id, name: 'F1-child' }])
+    expect(f1.whiteboards).toEqual([{ id: folderWb.id, name: 'Folder WB' }])
+  })
+
+  it('returns an empty array when there are no projects', async () => {
+    const user = makeUser()
+    const tree = await findAllProjectsWithTreeForUser(user.id)
+    expect(tree).toEqual([])
   })
 })

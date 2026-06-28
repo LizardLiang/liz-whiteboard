@@ -30,7 +30,10 @@ import {
   updateDiagramTable,
   updateDiagramTablePosition,
 } from '@/data/diagram-table'
-import { findWhiteboardByIdWithDiagram } from '@/data/whiteboard'
+import {
+  findWhiteboardById,
+  findWhiteboardByIdWithDiagram,
+} from '@/data/whiteboard'
 import {
   createColumn,
   deleteColumn,
@@ -41,6 +44,7 @@ import {
   updateColumn,
 } from '@/data/column'
 import {
+  assertRelationshipEndpointsValid,
   createRelationship,
   deleteRelationship,
   findRelationshipById,
@@ -48,7 +52,34 @@ import {
 } from '@/data/relationship'
 import { parseSessionCookie } from '@/lib/auth/cookies'
 import { validateSessionToken } from '@/lib/auth/session'
-import { prisma } from '@/db'
+import { validateCollabToken } from '@/lib/oauth/collab-verify'
+import { db } from '@/db'
+
+// ---------------------------------------------------------------------------
+// FR-022 — Sender acknowledgement type
+// ---------------------------------------------------------------------------
+
+/**
+ * Ack callback payload for MCP write tools.
+ * Passed as the trailing callback argument when a client emits with emitWithAck.
+ * Browser clients emit without a callback (cb is undefined) — always use cb?.().
+ */
+type AckResult =
+  | {
+      ok: true
+      entity: unknown
+      cascade?: { relationships?: number; columns?: number }
+    }
+  | {
+      ok: false
+      code:
+        | 'VALIDATION_ERROR'
+        | 'NOT_FOUND'
+        | 'FORBIDDEN'
+        | 'SESSION_EXPIRED'
+        | 'INTERNAL_ERROR'
+      message: string
+    }
 
 /**
  * Socket.IO server instance
@@ -114,9 +145,40 @@ function setupWhiteboardNamespace(ioServer: SocketIOServer): void {
   const whiteboardNsp = ioServer.of(/^\/whiteboard\/[\w-]+$/)
 
   // Auth middleware: runs on EVERY connection attempt to this namespace.
-  // Reads the session_token cookie from the handshake headers and validates it.
+  //
+  // Two auth paths (in priority order):
+  //
+  // 1. JWT path (MCP server): the MCP backend sends a short-lived collab-audience
+  //    JWT in socket.handshake.auth.token (set via socket.io SetAuth on the Go
+  //    socket.io-client-go). The JWT was issued by /api/collab-token and has:
+  //      iss=AS issuer, aud=COLLAB_RESOURCE_URI, sub=User.id, exp=now+120s.
+  //    On success: socket.data.userId=sub, socket.data.sessionExpiresAt=exp*1000.
+  //
+  // 2. Cookie path (browser app, existing): reads session_token cookie from
+  //    handshake headers and validates via validateSessionToken. Unchanged.
+  //
+  // The two paths are mutually exclusive per connection; JWT path is tried first.
   whiteboardNsp.use(async (socket, next) => {
     try {
+      // --- JWT path (MCP server) ---
+      const authToken = (socket.handshake.auth as Record<string, unknown>)?.token
+      if (authToken && typeof authToken === 'string') {
+        try {
+          const payload = await validateCollabToken(authToken)
+          socket.data.userId = payload.sub
+          socket.data.sessionId = '' // no DB session for JWT auth path
+          socket.data.sessionExpiresAt = payload.exp * 1000
+          return next()
+        } catch (jwtErr) {
+          // JWT present but invalid — reject immediately rather than falling
+          // through to cookie path. A caller that sends auth.token but has an
+          // invalid JWT should not silently succeed via cookie.
+          console.warn('[collab] JWT auth failed:', jwtErr)
+          return next(new Error('UNAUTHORIZED'))
+        }
+      }
+
+      // --- Cookie path (browser app) ---
       const cookieHeader = socket.handshake.headers.cookie ?? ''
       const token = parseSessionCookie(cookieHeader)
       if (!token) {
@@ -234,10 +296,7 @@ function isSessionExpired(socket: any): boolean {
 async function getProjectIdForWhiteboard(
   whiteboardId: string,
 ): Promise<string | null> {
-  const whiteboard = await prisma.whiteboard.findUnique({
-    where: { id: whiteboardId },
-    select: { projectId: true },
-  })
+  const whiteboard = await findWhiteboardById(whiteboardId)
   return whiteboard?.projectId ?? null
 }
 
@@ -321,60 +380,85 @@ function setupCollaborationEventHandlers(
   // ========================================================================
 
   // Table creation
-  socket.on('table:create', async (data: any) => {
-    // Check session expiry
-    if (isSessionExpired(socket)) {
-      socket.emit('session_expired')
-      socket.disconnect(true)
-      return
-    }
-    // Check permission
-    if (
-      await denyIfInsufficientPermission(socket, whiteboardId, 'table:create')
-    )
-      return
+  socket.on(
+    'table:create',
+    async (data: any, cb?: (res: AckResult) => void) => {
+      // Check session expiry
+      if (isSessionExpired(socket)) {
+        socket.emit('session_expired')
+        socket.disconnect(true)
+        cb?.({ ok: false, code: 'SESSION_EXPIRED', message: 'Session expired' })
+        return
+      }
+      // Check permission
+      if (
+        await denyIfInsufficientPermission(socket, whiteboardId, 'table:create')
+      ) {
+        cb?.({
+          ok: false,
+          code: 'FORBIDDEN',
+          message: 'Insufficient permission',
+        })
+        return
+      }
 
-    try {
-      // Validate input
-      const validated = createTableSchema.parse({
-        ...data,
-        whiteboardId,
-      })
+      try {
+        // Validate input
+        const validated = createTableSchema.parse({
+          ...data,
+          whiteboardId,
+        })
 
-      // Create table in database
-      const table = await createDiagramTable(validated)
+        // Create table in database
+        const table = await createDiagramTable(validated)
 
-      // Broadcast to other users
-      socket.broadcast.emit('table:created', {
-        ...table,
-        createdBy: userId,
-      })
-    } catch (error) {
-      console.error('Failed to create table:', error)
-      socket.emit('error', {
-        event: 'table:create',
-        error: 'VALIDATION_ERROR',
-        message:
-          error instanceof Error ? error.message : 'Failed to create table',
-      })
-      return
-    }
-    await safeUpdateSessionActivity(socket.id)
-  })
+        // Broadcast to other users
+        socket.broadcast.emit('table:created', {
+          ...table,
+          createdBy: userId,
+        })
+
+        // FR-022: ack to sender (MCP or any emitWithAck caller)
+        cb?.({ ok: true, entity: table })
+      } catch (error) {
+        console.error('Failed to create table:', error)
+        const message =
+          error instanceof Error ? error.message : 'Failed to create table'
+        socket.emit('error', {
+          event: 'table:create',
+          error: 'VALIDATION_ERROR',
+          message,
+        })
+        cb?.({ ok: false, code: 'VALIDATION_ERROR', message })
+        return
+      }
+      await safeUpdateSessionActivity(socket.id)
+    },
+  )
 
   // Table position update (dragging)
   socket.on(
     'table:move',
-    async (data: { tableId: string; positionX: number; positionY: number }) => {
+    async (
+      data: { tableId: string; positionX: number; positionY: number },
+      cb?: (res: AckResult) => void,
+    ) => {
       if (isSessionExpired(socket)) {
         socket.emit('session_expired')
         socket.disconnect(true)
+        cb?.({ ok: false, code: 'SESSION_EXPIRED', message: 'Session expired' })
         return
       }
       if (
         await denyIfInsufficientPermission(socket, whiteboardId, 'table:move')
-      )
+      ) {
+        cb?.({
+          ok: false,
+          code: 'FORBIDDEN',
+          message: 'Insufficient permission',
+        })
         return
+      }
 
       try {
         // Ownership check: verify table belongs to this whiteboard (IDOR prevention)
@@ -386,6 +470,7 @@ function setupCollaborationEventHandlers(
             message: 'Table not found',
             tableId: data.tableId,
           })
+          cb?.({ ok: false, code: 'NOT_FOUND', message: 'Table not found' })
           return
         }
         if (table.whiteboardId !== whiteboardId) {
@@ -394,6 +479,11 @@ function setupCollaborationEventHandlers(
             error: 'FORBIDDEN',
             message: 'Table does not belong to this whiteboard',
             tableId: data.tableId,
+          })
+          cb?.({
+            ok: false,
+            code: 'FORBIDDEN',
+            message: 'Table does not belong to this whiteboard',
           })
           return
         }
@@ -412,13 +502,25 @@ function setupCollaborationEventHandlers(
           positionY: data.positionY,
           updatedBy: userId,
         })
+
+        // FR-022: ack to sender
+        cb?.({
+          ok: true,
+          entity: {
+            id: data.tableId,
+            positionX: data.positionX,
+            positionY: data.positionY,
+          },
+        })
       } catch (error) {
         console.error('Failed to move table:', error)
+        const message = 'Failed to update table position'
         socket.emit('error', {
           event: 'table:move',
           error: 'UPDATE_FAILED',
-          message: 'Failed to update table position',
+          message,
         })
+        cb?.({ ok: false, code: 'INTERNAL_ERROR', message })
         return
       }
       await safeUpdateSessionActivity(socket.id)
@@ -472,11 +574,14 @@ function setupCollaborationEventHandlers(
       // Re-broadcast to every OTHER client in this whiteboard namespace.
       // broadcastToWhiteboard excludes the sender by socketId, so the originator
       // does not receive a copy of its own emit.
+      // WARNING-5 fix: override the client-supplied userId with the server-validated
+      // socket.data.userId (the `userId` in scope here is set from socket.data.userId
+      // by the connection handler before setupCollaborationEventHandlers is called).
       broadcastToWhiteboard(
         whiteboardId,
         socket.id,
         'table:move:bulk',
-        parsed.data,
+        { ...parsed.data, userId },
       )
 
       await safeUpdateSessionActivity(socket.id)
@@ -486,16 +591,26 @@ function setupCollaborationEventHandlers(
   // Table update (name, description, etc.)
   socket.on(
     'table:update',
-    async (data: { tableId: string; [key: string]: any }) => {
+    async (
+      data: { tableId: string; [key: string]: any },
+      cb?: (res: AckResult) => void,
+    ) => {
       if (isSessionExpired(socket)) {
         socket.emit('session_expired')
         socket.disconnect(true)
+        cb?.({ ok: false, code: 'SESSION_EXPIRED', message: 'Session expired' })
         return
       }
       if (
         await denyIfInsufficientPermission(socket, whiteboardId, 'table:update')
-      )
+      ) {
+        cb?.({
+          ok: false,
+          code: 'FORBIDDEN',
+          message: 'Insufficient permission',
+        })
         return
+      }
 
       try {
         const { tableId, ...updateData } = data
@@ -509,6 +624,7 @@ function setupCollaborationEventHandlers(
             message: 'Table not found',
             tableId,
           })
+          cb?.({ ok: false, code: 'NOT_FOUND', message: 'Table not found' })
           return
         }
         if (tableRecord.whiteboardId !== whiteboardId) {
@@ -518,6 +634,11 @@ function setupCollaborationEventHandlers(
             message: 'Table does not belong to this whiteboard',
             tableId,
           })
+          cb?.({
+            ok: false,
+            code: 'FORBIDDEN',
+            message: 'Table does not belong to this whiteboard',
+          })
           return
         }
 
@@ -525,7 +646,7 @@ function setupCollaborationEventHandlers(
         const validated = updateTableSchema.parse(updateData)
 
         // Update table in database
-        await updateDiagramTable(tableId, validated)
+        const updatedTable = await updateDiagramTable(tableId, validated)
 
         // Broadcast to other users
         socket.broadcast.emit('table:updated', {
@@ -533,14 +654,19 @@ function setupCollaborationEventHandlers(
           ...validated,
           updatedBy: userId,
         })
+
+        // FR-022: ack to sender
+        cb?.({ ok: true, entity: updatedTable })
       } catch (error) {
         console.error('Failed to update table:', error)
+        const message =
+          error instanceof Error ? error.message : 'Failed to update table'
         socket.emit('error', {
           event: 'table:update',
           error: 'UPDATE_FAILED',
-          message:
-            error instanceof Error ? error.message : 'Failed to update table',
+          message,
         })
+        cb?.({ ok: false, code: 'VALIDATION_ERROR', message })
         return
       }
       await safeUpdateSessionActivity(socket.id)
@@ -548,133 +674,200 @@ function setupCollaborationEventHandlers(
   )
 
   // Table deletion
-  socket.on('table:delete', async (data: { tableId: string }) => {
-    if (isSessionExpired(socket)) {
-      socket.emit('session_expired')
-      socket.disconnect(true)
-      return
-    }
-    if (
-      await denyIfInsufficientPermission(socket, whiteboardId, 'table:delete')
-    )
-      return
-
-    try {
-      // Validate input (HIGH-002: missing UUID validation)
-      const { tableId } = z.object({ tableId: z.string().uuid() }).parse(data)
-
-      // Ownership check: verify table belongs to this whiteboard (HIGH-001: IDOR)
-      const table = await findDiagramTableById(tableId)
-      if (!table) {
-        socket.emit('error', {
-          event: 'table:delete',
-          error: 'NOT_FOUND',
-          message: 'Table not found',
-          tableId,
-        })
+  socket.on(
+    'table:delete',
+    async (data: { tableId: string }, cb?: (res: AckResult) => void) => {
+      if (isSessionExpired(socket)) {
+        socket.emit('session_expired')
+        socket.disconnect(true)
+        cb?.({ ok: false, code: 'SESSION_EXPIRED', message: 'Session expired' })
         return
       }
-      if (table.whiteboardId !== whiteboardId) {
-        socket.emit('error', {
-          event: 'table:delete',
-          error: 'FORBIDDEN',
-          message: 'Table does not belong to this whiteboard',
-          tableId,
+      if (
+        await denyIfInsufficientPermission(socket, whiteboardId, 'table:delete')
+      ) {
+        cb?.({
+          ok: false,
+          code: 'FORBIDDEN',
+          message: 'Insufficient permission',
         })
         return
       }
 
-      // Delete table from database (cascade deletes columns and relationships)
-      await deleteDiagramTable(tableId)
+      try {
+        // Validate input (HIGH-002: missing UUID validation)
+        const { tableId } = z.object({ tableId: z.string().uuid() }).parse(data)
 
-      // Broadcast to other users
-      socket.broadcast.emit('table:deleted', {
-        tableId,
-        deletedBy: userId,
-      })
-    } catch (error) {
-      console.error('Failed to delete table:', error)
-      socket.emit('error', {
-        event: 'table:delete',
-        error: 'DELETE_FAILED',
-        message: 'Failed to delete table',
-        tableId: data.tableId,
-      })
-      return
-    }
-    await safeUpdateSessionActivity(socket.id)
-  })
+        // Ownership check: verify table belongs to this whiteboard (HIGH-001: IDOR)
+        const table = await findDiagramTableById(tableId)
+        if (!table) {
+          socket.emit('error', {
+            event: 'table:delete',
+            error: 'NOT_FOUND',
+            message: 'Table not found',
+            tableId,
+          })
+          cb?.({ ok: false, code: 'NOT_FOUND', message: 'Table not found' })
+          return
+        }
+        if (table.whiteboardId !== whiteboardId) {
+          socket.emit('error', {
+            event: 'table:delete',
+            error: 'FORBIDDEN',
+            message: 'Table does not belong to this whiteboard',
+            tableId,
+          })
+          cb?.({
+            ok: false,
+            code: 'FORBIDDEN',
+            message: 'Table does not belong to this whiteboard',
+          })
+          return
+        }
+
+        // FR-022: count cascade entities before delete (for ack payload)
+        const relationshipCount = Number(
+          (
+            db
+              .prepare(
+                'SELECT count(*) AS c FROM "Relationship" WHERE "sourceTableId" = ? OR "targetTableId" = ?',
+              )
+              .get(tableId, tableId) as { c: number }
+          ).c,
+        )
+        const columnCount = Number(
+          (
+            db
+              .prepare('SELECT count(*) AS c FROM "Column" WHERE "tableId" = ?')
+              .get(tableId) as { c: number }
+          ).c,
+        )
+
+        // Delete table from database (cascade deletes columns and relationships)
+        await deleteDiagramTable(tableId)
+
+        // Broadcast to other users
+        socket.broadcast.emit('table:deleted', {
+          tableId,
+          deletedBy: userId,
+        })
+
+        // FR-022: ack to sender with cascade counts
+        cb?.({
+          ok: true,
+          entity: { id: tableId },
+          cascade: { relationships: relationshipCount, columns: columnCount },
+        })
+      } catch (error) {
+        console.error('Failed to delete table:', error)
+        const message = 'Failed to delete table'
+        socket.emit('error', {
+          event: 'table:delete',
+          error: 'DELETE_FAILED',
+          message,
+          tableId: data.tableId,
+        })
+        cb?.({ ok: false, code: 'INTERNAL_ERROR', message })
+        return
+      }
+      await safeUpdateSessionActivity(socket.id)
+    },
+  )
 
   // ========================================================================
   // Column mutation events
   // ========================================================================
 
   // Column creation
-  socket.on('column:create', async (data: any) => {
-    if (isSessionExpired(socket)) {
-      socket.emit('session_expired')
-      socket.disconnect(true)
-      return
-    }
-    if (
-      await denyIfInsufficientPermission(socket, whiteboardId, 'column:create')
-    )
-      return
-
-    let validated: ReturnType<typeof createColumnSchema.parse> | undefined
-    try {
-      // Validate input
-      validated = createColumnSchema.parse(data)
-
-      // Ownership check: verify the target table belongs to this whiteboard (IDOR prevention)
-      const ownerTable = await findDiagramTableById(validated.tableId)
-      if (!ownerTable || ownerTable.whiteboardId !== whiteboardId) {
-        socket.emit('error', {
-          event: 'column:create',
-          error: 'FORBIDDEN',
-          message: 'Table does not belong to this whiteboard',
-          tableId: validated.tableId,
-        })
+  socket.on(
+    'column:create',
+    async (data: any, cb?: (res: AckResult) => void) => {
+      if (isSessionExpired(socket)) {
+        socket.emit('session_expired')
+        socket.disconnect(true)
+        cb?.({ ok: false, code: 'SESSION_EXPIRED', message: 'Session expired' })
+        return
+      }
+      if (
+        await denyIfInsufficientPermission(socket, whiteboardId, 'column:create')
+      ) {
+        cb?.({ ok: false, code: 'FORBIDDEN', message: 'Insufficient permission' })
         return
       }
 
-      // Create column in database
-      const column = await createColumn(validated)
+      let validated: ReturnType<typeof createColumnSchema.parse> | undefined
+      try {
+        // Validate input
+        validated = createColumnSchema.parse(data)
 
-      // Broadcast to other users
-      socket.broadcast.emit('column:created', {
-        ...column,
-        createdBy: userId,
-      })
+        // Ownership check: verify the target table belongs to this whiteboard (IDOR prevention)
+        const ownerTable = await findDiagramTableById(validated.tableId)
+        if (!ownerTable || ownerTable.whiteboardId !== whiteboardId) {
+          socket.emit('error', {
+            event: 'column:create',
+            error: 'FORBIDDEN',
+            message: 'Table does not belong to this whiteboard',
+            tableId: validated.tableId,
+          })
+          cb?.({
+            ok: false,
+            code: 'FORBIDDEN',
+            message: 'Table does not belong to this whiteboard',
+          })
+          return
+        }
 
-      // Also confirm creation back to the originating socket so the client
-      // can replace its optimistic temp ID with the real database ID.
-      socket.emit('column:created', {
-        ...column,
-        createdBy: userId,
-      })
-    } catch (error) {
-      console.error('Failed to create column:', error)
-      socket.emit('error', {
-        event: 'column:create',
-        error: 'VALIDATION_ERROR',
-        message:
-          error instanceof Error ? error.message : 'Failed to create column',
-        name: validated?.name,
-        tableId: validated?.tableId,
-      })
-      return
-    }
-    await safeUpdateSessionActivity(socket.id)
-  })
+        // Create column in database
+        const column = await createColumn(validated)
+
+        // Broadcast to other users
+        socket.broadcast.emit('column:created', {
+          ...column,
+          createdBy: userId,
+        })
+
+        // Also confirm creation back to the originating socket so the client
+        // can replace its optimistic temp ID with the real database ID.
+        socket.emit('column:created', {
+          ...column,
+          createdBy: userId,
+        })
+
+        // FR-022: ack callback for MCP write tools
+        cb?.({ ok: true, entity: column })
+      } catch (error) {
+        console.error('Failed to create column:', error)
+        socket.emit('error', {
+          event: 'column:create',
+          error: 'VALIDATION_ERROR',
+          message:
+            error instanceof Error ? error.message : 'Failed to create column',
+          name: validated?.name,
+          tableId: validated?.tableId,
+        })
+        cb?.({
+          ok: false,
+          code: 'VALIDATION_ERROR',
+          message:
+            error instanceof Error ? error.message : 'Failed to create column',
+        })
+        return
+      }
+      await safeUpdateSessionActivity(socket.id)
+    },
+  )
 
   // Column update
   socket.on(
     'column:update',
-    async (data: { columnId: string; [key: string]: unknown }) => {
+    async (
+      data: { columnId: string; [key: string]: unknown },
+      cb?: (res: AckResult) => void,
+    ) => {
       if (isSessionExpired(socket)) {
         socket.emit('session_expired')
         socket.disconnect(true)
+        cb?.({ ok: false, code: 'SESSION_EXPIRED', message: 'Session expired' })
         return
       }
       if (
@@ -683,8 +876,14 @@ function setupCollaborationEventHandlers(
           whiteboardId,
           'column:update',
         )
-      )
+      ) {
+        cb?.({
+          ok: false,
+          code: 'FORBIDDEN',
+          message: 'Insufficient permission',
+        })
         return
+      }
 
       try {
         const { columnId, ...updateData } = data
@@ -698,6 +897,7 @@ function setupCollaborationEventHandlers(
             message: 'Column not found',
             columnId,
           })
+          cb?.({ ok: false, code: 'NOT_FOUND', message: 'Column not found' })
           return
         }
         const ownerTable = await findDiagramTableById(columnRecord.tableId)
@@ -707,6 +907,11 @@ function setupCollaborationEventHandlers(
             error: 'FORBIDDEN',
             message: 'Column does not belong to this whiteboard',
             columnId,
+          })
+          cb?.({
+            ok: false,
+            code: 'FORBIDDEN',
+            message: 'Column does not belong to this whiteboard',
           })
           return
         }
@@ -724,14 +929,19 @@ function setupCollaborationEventHandlers(
           ...validated,
           updatedBy: userId,
         })
+
+        // FR-022: ack to sender
+        cb?.({ ok: true, entity: column })
       } catch (error) {
         console.error('Failed to update column:', error)
+        const message =
+          error instanceof Error ? error.message : 'Failed to update column'
         socket.emit('error', {
           event: 'column:update',
           error: 'UPDATE_FAILED',
-          message:
-            error instanceof Error ? error.message : 'Failed to update column',
+          message,
         })
+        cb?.({ ok: false, code: 'VALIDATION_ERROR', message })
         return
       }
       await safeUpdateSessionActivity(socket.id)
@@ -739,172 +949,243 @@ function setupCollaborationEventHandlers(
   )
 
   // Column deletion
-  socket.on('column:delete', async (data: { columnId: string }) => {
-    if (isSessionExpired(socket)) {
-      socket.emit('session_expired')
-      socket.disconnect(true)
-      return
-    }
-    if (
-      await denyIfInsufficientPermission(socket, whiteboardId, 'column:delete')
-    )
-      return
-
-    try {
-      // Get column before deletion to know tableId
-      const column = await findColumnById(data.columnId)
-      if (!column) {
-        socket.emit('error', {
-          event: 'column:delete',
-          error: 'NOT_FOUND',
-          message: 'Column not found',
-          columnId: data.columnId,
+  socket.on(
+    'column:delete',
+    async (data: { columnId: string }, cb?: (res: AckResult) => void) => {
+      if (isSessionExpired(socket)) {
+        socket.emit('session_expired')
+        socket.disconnect(true)
+        cb?.({ ok: false, code: 'SESSION_EXPIRED', message: 'Session expired' })
+        return
+      }
+      if (
+        await denyIfInsufficientPermission(
+          socket,
+          whiteboardId,
+          'column:delete',
+        )
+      ) {
+        cb?.({
+          ok: false,
+          code: 'FORBIDDEN',
+          message: 'Insufficient permission',
         })
         return
       }
 
-      // Ownership check: verify column's table belongs to this whiteboard (IDOR prevention)
-      const ownerTable = await findDiagramTableById(column.tableId)
-      if (!ownerTable || ownerTable.whiteboardId !== whiteboardId) {
+      try {
+        // Get column before deletion to know tableId
+        const column = await findColumnById(data.columnId)
+        if (!column) {
+          socket.emit('error', {
+            event: 'column:delete',
+            error: 'NOT_FOUND',
+            message: 'Column not found',
+            columnId: data.columnId,
+          })
+          cb?.({ ok: false, code: 'NOT_FOUND', message: 'Column not found' })
+          return
+        }
+
+        // Ownership check: verify column's table belongs to this whiteboard (IDOR prevention)
+        const ownerTable = await findDiagramTableById(column.tableId)
+        if (!ownerTable || ownerTable.whiteboardId !== whiteboardId) {
+          socket.emit('error', {
+            event: 'column:delete',
+            error: 'FORBIDDEN',
+            message: 'Column does not belong to this whiteboard',
+            columnId: data.columnId,
+          })
+          cb?.({
+            ok: false,
+            code: 'FORBIDDEN',
+            message: 'Column does not belong to this whiteboard',
+          })
+          return
+        }
+
+        // FR-022: count cascade relationships before delete
+        const relationshipCount = Number(
+          (
+            db
+              .prepare(
+                'SELECT count(*) AS c FROM "Relationship" WHERE "sourceColumnId" = ? OR "targetColumnId" = ?',
+              )
+              .get(data.columnId, data.columnId) as { c: number }
+          ).c,
+        )
+
+        // Delete column from database (cascade deletes relationships)
+        await deleteColumn(data.columnId)
+
+        // Broadcast to other users
+        socket.broadcast.emit('column:deleted', {
+          columnId: data.columnId,
+          tableId: column.tableId,
+          deletedBy: userId,
+        })
+
+        // FR-022: ack to sender with cascade count
+        cb?.({
+          ok: true,
+          entity: { id: data.columnId },
+          cascade: { relationships: relationshipCount },
+        })
+      } catch (error) {
+        console.error('Failed to delete column:', error)
+        const message =
+          error instanceof Error ? error.message : 'Failed to delete column'
         socket.emit('error', {
           event: 'column:delete',
-          error: 'FORBIDDEN',
-          message: 'Column does not belong to this whiteboard',
-          columnId: data.columnId,
+          error: 'DELETE_FAILED',
+          message,
         })
+        cb?.({ ok: false, code: 'INTERNAL_ERROR', message })
         return
       }
-
-      // Delete column from database (cascade deletes relationships)
-      await deleteColumn(data.columnId)
-
-      // Broadcast to other users
-      socket.broadcast.emit('column:deleted', {
-        columnId: data.columnId,
-        tableId: column.tableId,
-        deletedBy: userId,
-      })
-    } catch (error) {
-      console.error('Failed to delete column:', error)
-      socket.emit('error', {
-        event: 'column:delete',
-        error: 'DELETE_FAILED',
-        message:
-          error instanceof Error ? error.message : 'Failed to delete column',
-      })
-      return
-    }
-    await safeUpdateSessionActivity(socket.id)
-  })
+      await safeUpdateSessionActivity(socket.id)
+    },
+  )
 
   // Column reorder
-  socket.on('column:reorder', async (data: unknown) => {
-    if (isSessionExpired(socket)) {
-      socket.emit('session_expired')
-      socket.disconnect(true)
-      return
-    }
-    if (
-      await denyIfInsufficientPermission(socket, whiteboardId, 'column:reorder')
-    )
-      return
-
-    try {
-      // Validate input with Zod schema
-      const validated = reorderColumnsSchema.parse(data)
-      const { tableId, orderedColumnIds } = validated
-
-      // W5 (M6): parallelise the two independent reads — ownership check and
-      // column fetch do not depend on each other's result.
-      // Trade-off: one wasted column query when ownership fails (rare path).
-      // This halves p50 latency on the happy path.
-      const [table, currentColumns] = await Promise.all([
-        findDiagramTableById(tableId),
-        findColumnsByTableId(tableId),
-      ])
-
-      // IDOR check: tableId must belong to this whiteboard
-      if (!table) {
-        socket.emit('error', {
-          event: 'column:reorder',
-          error: 'FORBIDDEN',
-          message: 'Table not found',
-          tableId,
-        })
+  socket.on(
+    'column:reorder',
+    async (data: unknown, cb?: (res: AckResult) => void) => {
+      if (isSessionExpired(socket)) {
+        socket.emit('session_expired')
+        socket.disconnect(true)
+        cb?.({ ok: false, code: 'SESSION_EXPIRED', message: 'Session expired' })
         return
       }
-      if (table.whiteboardId !== whiteboardId) {
-        socket.emit('error', {
-          event: 'column:reorder',
-          error: 'FORBIDDEN',
-          message: 'Table does not belong to this whiteboard',
-          tableId,
-        })
+      if (
+        await denyIfInsufficientPermission(socket, whiteboardId, 'column:reorder')
+      ) {
+        cb?.({ ok: false, code: 'FORBIDDEN', message: 'Insufficient permission' })
         return
       }
-      const currentColumnIds = new Set(currentColumns.map((c) => c.id))
 
-      // Validate: every supplied ID must belong to this table
-      const seenIds = new Set<string>()
-      for (const id of orderedColumnIds) {
-        if (!currentColumnIds.has(id)) {
+      try {
+        // Validate input with Zod schema
+        const validated = reorderColumnsSchema.parse(data)
+        const { tableId, orderedColumnIds } = validated
+
+        // W5 (M6): parallelise the two independent reads — ownership check and
+        // column fetch do not depend on each other's result.
+        // Trade-off: one wasted column query when ownership fails (rare path).
+        // This halves p50 latency on the happy path.
+        const [table, currentColumns] = await Promise.all([
+          findDiagramTableById(tableId),
+          findColumnsByTableId(tableId),
+        ])
+
+        // IDOR check: tableId must belong to this whiteboard
+        if (!table) {
           socket.emit('error', {
             event: 'column:reorder',
-            error: 'VALIDATION_FAILED',
-            message: `Column ${id} does not belong to table ${tableId}`,
+            error: 'FORBIDDEN',
+            message: 'Table not found',
             tableId,
+          })
+          cb?.({ ok: false, code: 'NOT_FOUND', message: 'Table not found' })
+          return
+        }
+        if (table.whiteboardId !== whiteboardId) {
+          socket.emit('error', {
+            event: 'column:reorder',
+            error: 'FORBIDDEN',
+            message: 'Table does not belong to this whiteboard',
+            tableId,
+          })
+          cb?.({
+            ok: false,
+            code: 'FORBIDDEN',
+            message: 'Table does not belong to this whiteboard',
           })
           return
         }
-        if (seenIds.has(id)) {
-          socket.emit('error', {
-            event: 'column:reorder',
-            error: 'VALIDATION_FAILED',
-            message: `Duplicate column ID ${id} in orderedColumnIds`,
-            tableId,
-          })
-          return
+        const currentColumnIds = new Set(currentColumns.map((c) => c.id))
+
+        // Validate: every supplied ID must belong to this table
+        const seenIds = new Set<string>()
+        for (const id of orderedColumnIds) {
+          if (!currentColumnIds.has(id)) {
+            socket.emit('error', {
+              event: 'column:reorder',
+              error: 'VALIDATION_FAILED',
+              message: `Column ${id} does not belong to table ${tableId}`,
+              tableId,
+            })
+            cb?.({
+              ok: false,
+              code: 'VALIDATION_ERROR',
+              message: `Column ${id} does not belong to table ${tableId}`,
+            })
+            return
+          }
+          if (seenIds.has(id)) {
+            socket.emit('error', {
+              event: 'column:reorder',
+              error: 'VALIDATION_FAILED',
+              message: `Duplicate column ID ${id} in orderedColumnIds`,
+              tableId,
+            })
+            cb?.({
+              ok: false,
+              code: 'VALIDATION_ERROR',
+              message: `Duplicate column ID ${id} in orderedColumnIds`,
+            })
+            return
+          }
+          seenIds.add(id)
         }
-        seenIds.add(id)
+
+        // FM-07 merge: append any columns the client omitted, in ascending existing-order
+        const suppliedSet = new Set(orderedColumnIds)
+        const missingColumns = currentColumns
+          .filter((c) => !suppliedSet.has(c.id))
+          .sort((a, b) => a.order - b.order)
+        const mergedOrderedIds = [
+          ...orderedColumnIds,
+          ...missingColumns.map((c) => c.id),
+        ]
+
+        // Persist via single Prisma transaction (REQ-03)
+        await reorderColumns(tableId, mergedOrderedIds)
+
+        // Broadcast the merged order to all other clients
+        socket.broadcast.emit('column:reordered', {
+          tableId,
+          orderedColumnIds: mergedOrderedIds,
+          reorderedBy: userId,
+        })
+
+        // Ack to originating socket only (not broadcast)
+        socket.emit('column:reorder:ack', {
+          tableId,
+          orderedColumnIds: mergedOrderedIds,
+        })
+
+        // FR-022: ack callback for MCP write tools
+        cb?.({ ok: true, entity: { tableId, orderedColumnIds: mergedOrderedIds } })
+      } catch (error) {
+        console.error('Failed to reorder columns:', error)
+        socket.emit('error', {
+          event: 'column:reorder',
+          error: 'UPDATE_FAILED',
+          message:
+            error instanceof Error ? error.message : 'Failed to reorder columns',
+        })
+        cb?.({
+          ok: false,
+          code: 'VALIDATION_ERROR',
+          message:
+            error instanceof Error ? error.message : 'Failed to reorder columns',
+        })
+        return
       }
-
-      // FM-07 merge: append any columns the client omitted, in ascending existing-order
-      const suppliedSet = new Set(orderedColumnIds)
-      const missingColumns = currentColumns
-        .filter((c) => !suppliedSet.has(c.id))
-        .sort((a, b) => a.order - b.order)
-      const mergedOrderedIds = [
-        ...orderedColumnIds,
-        ...missingColumns.map((c) => c.id),
-      ]
-
-      // Persist via single Prisma transaction (REQ-03)
-      await reorderColumns(tableId, mergedOrderedIds)
-
-      // Broadcast the merged order to all other clients
-      socket.broadcast.emit('column:reordered', {
-        tableId,
-        orderedColumnIds: mergedOrderedIds,
-        reorderedBy: userId,
-      })
-
-      // Ack to originating socket only (not broadcast)
-      socket.emit('column:reorder:ack', {
-        tableId,
-        orderedColumnIds: mergedOrderedIds,
-      })
-    } catch (error) {
-      console.error('Failed to reorder columns:', error)
-      socket.emit('error', {
-        event: 'column:reorder',
-        error: 'UPDATE_FAILED',
-        message:
-          error instanceof Error ? error.message : 'Failed to reorder columns',
-      })
-      return
-    }
-    await safeUpdateSessionActivity(socket.id)
-  })
+      await safeUpdateSessionActivity(socket.id)
+    },
+  )
 
   // Column duplicate
   socket.on('column:duplicate', async (data: { columnId: string }) => {
@@ -985,58 +1266,77 @@ function setupCollaborationEventHandlers(
   // ========================================================================
 
   // Relationship creation
-  socket.on('relationship:create', async (data: any) => {
-    if (isSessionExpired(socket)) {
-      socket.emit('session_expired')
-      socket.disconnect(true)
-      return
-    }
-    if (
-      await denyIfInsufficientPermission(
-        socket,
-        whiteboardId,
-        'relationship:create',
-      )
-    )
-      return
+  socket.on(
+    'relationship:create',
+    async (data: any, cb?: (res: AckResult) => void) => {
+      if (isSessionExpired(socket)) {
+        socket.emit('session_expired')
+        socket.disconnect(true)
+        cb?.({ ok: false, code: 'SESSION_EXPIRED', message: 'Session expired' })
+        return
+      }
+      if (
+        await denyIfInsufficientPermission(
+          socket,
+          whiteboardId,
+          'relationship:create',
+        )
+      ) {
+        cb?.({
+          ok: false,
+          code: 'FORBIDDEN',
+          message: 'Insufficient permission',
+        })
+        return
+      }
 
-    try {
-      // Validate input
-      const validated = createRelationshipSchema.parse({
-        ...data,
-        whiteboardId,
-      })
+      try {
+        // Validate input
+        const validated = createRelationshipSchema.parse({
+          ...data,
+          whiteboardId,
+        })
 
-      // Create relationship in database
-      const relationship = await createRelationship(validated)
+        // Create relationship in database
+        const relationship = await createRelationship(validated)
 
-      // Broadcast to other users
-      socket.broadcast.emit('relationship:created', {
-        ...relationship,
-        createdBy: userId,
-      })
-    } catch (error) {
-      console.error('Failed to create relationship:', error)
-      socket.emit('error', {
-        event: 'relationship:create',
-        error: 'VALIDATION_ERROR',
-        message:
+        // Broadcast to other users
+        socket.broadcast.emit('relationship:created', {
+          ...relationship,
+          createdBy: userId,
+        })
+
+        // FR-022: ack to sender
+        cb?.({ ok: true, entity: relationship })
+      } catch (error) {
+        console.error('Failed to create relationship:', error)
+        const message =
           error instanceof Error
             ? error.message
-            : 'Failed to create relationship',
-      })
-      return
-    }
-    await safeUpdateSessionActivity(socket.id)
-  })
+            : 'Failed to create relationship'
+        socket.emit('error', {
+          event: 'relationship:create',
+          error: 'VALIDATION_ERROR',
+          message,
+        })
+        cb?.({ ok: false, code: 'VALIDATION_ERROR', message })
+        return
+      }
+      await safeUpdateSessionActivity(socket.id)
+    },
+  )
 
   // Relationship update
   socket.on(
     'relationship:update',
-    async (data: { relationshipId: string; [key: string]: any }) => {
+    async (
+      data: { relationshipId: string; [key: string]: any },
+      cb?: (res: AckResult) => void,
+    ) => {
       if (isSessionExpired(socket)) {
         socket.emit('session_expired')
         socket.disconnect(true)
+        cb?.({ ok: false, code: 'SESSION_EXPIRED', message: 'Session expired' })
         return
       }
       if (
@@ -1045,8 +1345,14 @@ function setupCollaborationEventHandlers(
           whiteboardId,
           'relationship:update',
         )
-      )
+      ) {
+        cb?.({
+          ok: false,
+          code: 'FORBIDDEN',
+          message: 'Insufficient permission',
+        })
         return
+      }
 
       try {
         const { relationshipId, ...updateData } = data
@@ -1060,6 +1366,11 @@ function setupCollaborationEventHandlers(
             message: 'Relationship not found',
             relationshipId,
           })
+          cb?.({
+            ok: false,
+            code: 'NOT_FOUND',
+            message: 'Relationship not found',
+          })
           return
         }
         if (relationship.whiteboardId !== whiteboardId) {
@@ -1069,14 +1380,64 @@ function setupCollaborationEventHandlers(
             message: 'Relationship does not belong to this whiteboard',
             relationshipId,
           })
+          cb?.({
+            ok: false,
+            code: 'FORBIDDEN',
+            message: 'Relationship does not belong to this whiteboard',
+          })
           return
         }
 
         // Validate input
         const validated = updateRelationshipSchema.parse(updateData)
 
+        // Apollo SA-2: Merged-endpoint referential-integrity validation
+        // Run whenever any endpoint field is present in the update.
+        const endpointFields = [
+          'sourceTableId',
+          'targetTableId',
+          'sourceColumnId',
+          'targetColumnId',
+        ] as const
+        const hasEndpointChange = endpointFields.some(
+          (f) => validated[f] !== undefined,
+        )
+        if (hasEndpointChange) {
+          // Compute merged endpoints (patch overrides current values)
+          const mergedEndpoints = {
+            sourceTableId:
+              validated.sourceTableId ?? relationship.sourceTableId,
+            targetTableId:
+              validated.targetTableId ?? relationship.targetTableId,
+            sourceColumnId:
+              validated.sourceColumnId ?? relationship.sourceColumnId,
+            targetColumnId:
+              validated.targetColumnId ?? relationship.targetColumnId,
+            whiteboardId: relationship.whiteboardId,
+          }
+          try {
+            await assertRelationshipEndpointsValid(mergedEndpoints)
+          } catch (integrityError) {
+            const message =
+              integrityError instanceof Error
+                ? integrityError.message
+                : 'Referential integrity violation'
+            socket.emit('error', {
+              event: 'relationship:update',
+              error: 'VALIDATION_ERROR',
+              message,
+              relationshipId,
+            })
+            cb?.({ ok: false, code: 'VALIDATION_ERROR', message })
+            return
+          }
+        }
+
         // Update relationship in database
-        await updateRelationship(relationshipId, validated)
+        const updatedRelationship = await updateRelationship(
+          relationshipId,
+          validated,
+        )
 
         // Broadcast to other users
         socket.broadcast.emit('relationship:updated', {
@@ -1084,16 +1445,21 @@ function setupCollaborationEventHandlers(
           ...validated,
           updatedBy: userId,
         })
+
+        // FR-022: ack to sender
+        cb?.({ ok: true, entity: updatedRelationship })
       } catch (error) {
         console.error('Failed to update relationship:', error)
+        const message =
+          error instanceof Error
+            ? error.message
+            : 'Failed to update relationship'
         socket.emit('error', {
           event: 'relationship:update',
           error: 'UPDATE_FAILED',
-          message:
-            error instanceof Error
-              ? error.message
-              : 'Failed to update relationship',
+          message,
         })
+        cb?.({ ok: false, code: 'VALIDATION_ERROR', message })
         return
       }
       await safeUpdateSessionActivity(socket.id)
@@ -1101,79 +1467,109 @@ function setupCollaborationEventHandlers(
   )
 
   // Relationship deletion
-  socket.on('relationship:delete', async (data: { relationshipId: string }) => {
-    if (isSessionExpired(socket)) {
-      socket.emit('session_expired')
-      socket.disconnect(true)
-      return
-    }
-    if (
-      await denyIfInsufficientPermission(
-        socket,
-        whiteboardId,
-        'relationship:delete',
-      )
-    )
-      return
-
-    let relationshipId: string | undefined
-    try {
-      // Validate input: UUID format required
-      const parsed = z
-        .object({ relationshipId: z.string().uuid() })
-        .safeParse(data)
-      if (!parsed.success) {
-        socket.emit('error', {
-          event: 'relationship:delete',
-          error: 'VALIDATION_ERROR',
-          message: 'Invalid relationshipId: must be a UUID',
-          relationshipId: data.relationshipId,
+  socket.on(
+    'relationship:delete',
+    async (data: { relationshipId: string }, cb?: (res: AckResult) => void) => {
+      if (isSessionExpired(socket)) {
+        socket.emit('session_expired')
+        socket.disconnect(true)
+        cb?.({ ok: false, code: 'SESSION_EXPIRED', message: 'Session expired' })
+        return
+      }
+      if (
+        await denyIfInsufficientPermission(
+          socket,
+          whiteboardId,
+          'relationship:delete',
+        )
+      ) {
+        cb?.({
+          ok: false,
+          code: 'FORBIDDEN',
+          message: 'Insufficient permission',
         })
         return
       }
-      relationshipId = parsed.data.relationshipId
 
-      // Ownership check: verify relationship belongs to this whiteboard (IDOR prevention)
-      const relationship = await findRelationshipById(relationshipId)
-      if (!relationship) {
-        socket.emit('error', {
-          event: 'relationship:delete',
-          error: 'NOT_FOUND',
-          message: 'Relationship not found',
+      let relationshipId: string | undefined
+      try {
+        // Validate input: UUID format required
+        const parsed = z
+          .object({ relationshipId: z.string().uuid() })
+          .safeParse(data)
+        if (!parsed.success) {
+          socket.emit('error', {
+            event: 'relationship:delete',
+            error: 'VALIDATION_ERROR',
+            message: 'Invalid relationshipId: must be a UUID',
+            relationshipId: data.relationshipId,
+          })
+          cb?.({
+            ok: false,
+            code: 'VALIDATION_ERROR',
+            message: 'Invalid relationshipId: must be a UUID',
+          })
+          return
+        }
+        relationshipId = parsed.data.relationshipId
+
+        // Ownership check: verify relationship belongs to this whiteboard (IDOR prevention)
+        const relationship = await findRelationshipById(relationshipId)
+        if (!relationship) {
+          socket.emit('error', {
+            event: 'relationship:delete',
+            error: 'NOT_FOUND',
+            message: 'Relationship not found',
+            relationshipId,
+          })
+          cb?.({
+            ok: false,
+            code: 'NOT_FOUND',
+            message: 'Relationship not found',
+          })
+          return
+        }
+        if (relationship.whiteboardId !== whiteboardId) {
+          socket.emit('error', {
+            event: 'relationship:delete',
+            error: 'FORBIDDEN',
+            message: 'Relationship does not belong to this whiteboard',
+            relationshipId,
+          })
+          cb?.({
+            ok: false,
+            code: 'FORBIDDEN',
+            message: 'Relationship does not belong to this whiteboard',
+          })
+          return
+        }
+
+        // Delete relationship from database
+        await deleteRelationship(relationshipId)
+
+        // Broadcast to other users
+        socket.broadcast.emit('relationship:deleted', {
           relationshipId,
+          deletedBy: userId,
         })
-        return
-      }
-      if (relationship.whiteboardId !== whiteboardId) {
+
+        // FR-022: ack to sender
+        cb?.({ ok: true, entity: { id: relationshipId } })
+      } catch (error) {
+        console.error('Failed to delete relationship:', error)
+        const message = 'Failed to delete relationship'
         socket.emit('error', {
           event: 'relationship:delete',
-          error: 'FORBIDDEN',
-          message: 'Relationship does not belong to this whiteboard',
-          relationshipId,
+          error: 'DELETE_FAILED',
+          message,
+          relationshipId: relationshipId ?? data.relationshipId,
         })
+        cb?.({ ok: false, code: 'INTERNAL_ERROR', message })
         return
       }
-
-      // Delete relationship from database
-      await deleteRelationship(relationshipId)
-
-      // Broadcast to other users
-      socket.broadcast.emit('relationship:deleted', {
-        relationshipId,
-        deletedBy: userId,
-      })
-    } catch (error) {
-      console.error('Failed to delete relationship:', error)
-      socket.emit('error', {
-        event: 'relationship:delete',
-        error: 'DELETE_FAILED',
-        message: 'Failed to delete relationship',
-        relationshipId: relationshipId ?? data.relationshipId,
-      })
-      return
-    }
-    await safeUpdateSessionActivity(socket.id)
-  })
+      await safeUpdateSessionActivity(socket.id)
+    },
+  )
 }
 
 /**

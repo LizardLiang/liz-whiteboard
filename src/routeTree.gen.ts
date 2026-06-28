@@ -9,13 +9,15 @@
 // Additionally, you should also exclude this file from your linter and/or formatter to prevent it from being checked or modified.
 
 import { Route as rootRouteImport } from './routes/__root'
+import { Route as TokenRouteImport } from './routes/token'
 import { Route as RegisterRouteImport } from './routes/register'
 import { Route as LoginRouteImport } from './routes/login'
+import { Route as AuthorizeRouteImport } from './routes/authorize'
 import { Route as IndexRouteImport } from './routes/index'
 import { Route as WhiteboardWhiteboardIdRouteImport } from './routes/whiteboard/$whiteboardId'
 import { Route as ProjectProjectIdRouteImport } from './routes/project.$projectId'
 import { Route as DemoTanstackQueryRouteImport } from './routes/demo/tanstack-query'
-import { Route as DemoPrismaRouteImport } from './routes/demo/prisma'
+import { Route as ApiCollabTokenRouteImport } from './routes/api/collab-token'
 import { Route as WhiteboardWhiteboardIdNewRouteImport } from './routes/whiteboard/$whiteboardId.new'
 import { Route as DemoStartServerFuncsRouteImport } from './routes/demo/start.server-funcs'
 import { Route as DemoStartApiRequestRouteImport } from './routes/demo/start.api-request'
@@ -29,6 +31,11 @@ import { Route as DemoStartSsrSpaModeRouteImport } from './routes/demo/start.ssr
 import { Route as DemoStartSsrFullSsrRouteImport } from './routes/demo/start.ssr.full-ssr'
 import { Route as DemoStartSsrDataOnlyRouteImport } from './routes/demo/start.ssr.data-only'
 
+const TokenRoute = TokenRouteImport.update({
+  id: '/token',
+  path: '/token',
+  getParentRoute: () => rootRouteImport,
+} as any)
 const RegisterRoute = RegisterRouteImport.update({
   id: '/register',
   path: '/register',
@@ -37,6 +44,11 @@ const RegisterRoute = RegisterRouteImport.update({
 const LoginRoute = LoginRouteImport.update({
   id: '/login',
   path: '/login',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const AuthorizeRoute = AuthorizeRouteImport.update({
+  id: '/authorize',
+  path: '/authorize',
   getParentRoute: () => rootRouteImport,
 } as any)
 const IndexRoute = IndexRouteImport.update({
@@ -59,9 +71,9 @@ const DemoTanstackQueryRoute = DemoTanstackQueryRouteImport.update({
   path: '/demo/tanstack-query',
   getParentRoute: () => rootRouteImport,
 } as any)
-const DemoPrismaRoute = DemoPrismaRouteImport.update({
-  id: '/demo/prisma',
-  path: '/demo/prisma',
+const ApiCollabTokenRoute = ApiCollabTokenRouteImport.update({
+  id: '/api/collab-token',
+  path: '/api/collab-token',
   getParentRoute: () => rootRouteImport,
 } as any)
 const WhiteboardWhiteboardIdNewRoute =
@@ -129,9 +141,11 @@ const DemoStartSsrDataOnlyRoute = DemoStartSsrDataOnlyRouteImport.update({
 
 export interface FileRoutesByFullPath {
   '/': typeof IndexRoute
+  '/authorize': typeof AuthorizeRoute
   '/login': typeof LoginRoute
   '/register': typeof RegisterRoute
-  '/demo/prisma': typeof DemoPrismaRoute
+  '/token': typeof TokenRoute
+  '/api/collab-token': typeof ApiCollabTokenRoute
   '/demo/tanstack-query': typeof DemoTanstackQueryRoute
   '/project/$projectId': typeof ProjectProjectIdRouteWithChildren
   '/whiteboard/$whiteboardId': typeof WhiteboardWhiteboardIdRouteWithChildren
@@ -150,9 +164,11 @@ export interface FileRoutesByFullPath {
 }
 export interface FileRoutesByTo {
   '/': typeof IndexRoute
+  '/authorize': typeof AuthorizeRoute
   '/login': typeof LoginRoute
   '/register': typeof RegisterRoute
-  '/demo/prisma': typeof DemoPrismaRoute
+  '/token': typeof TokenRoute
+  '/api/collab-token': typeof ApiCollabTokenRoute
   '/demo/tanstack-query': typeof DemoTanstackQueryRoute
   '/project/$projectId': typeof ProjectProjectIdRouteWithChildren
   '/whiteboard/$whiteboardId': typeof WhiteboardWhiteboardIdRouteWithChildren
@@ -172,9 +188,11 @@ export interface FileRoutesByTo {
 export interface FileRoutesById {
   __root__: typeof rootRouteImport
   '/': typeof IndexRoute
+  '/authorize': typeof AuthorizeRoute
   '/login': typeof LoginRoute
   '/register': typeof RegisterRoute
-  '/demo/prisma': typeof DemoPrismaRoute
+  '/token': typeof TokenRoute
+  '/api/collab-token': typeof ApiCollabTokenRoute
   '/demo/tanstack-query': typeof DemoTanstackQueryRoute
   '/project/$projectId': typeof ProjectProjectIdRouteWithChildren
   '/whiteboard/$whiteboardId': typeof WhiteboardWhiteboardIdRouteWithChildren
@@ -195,9 +213,11 @@ export interface FileRouteTypes {
   fileRoutesByFullPath: FileRoutesByFullPath
   fullPaths:
     | '/'
+    | '/authorize'
     | '/login'
     | '/register'
-    | '/demo/prisma'
+    | '/token'
+    | '/api/collab-token'
     | '/demo/tanstack-query'
     | '/project/$projectId'
     | '/whiteboard/$whiteboardId'
@@ -216,9 +236,11 @@ export interface FileRouteTypes {
   fileRoutesByTo: FileRoutesByTo
   to:
     | '/'
+    | '/authorize'
     | '/login'
     | '/register'
-    | '/demo/prisma'
+    | '/token'
+    | '/api/collab-token'
     | '/demo/tanstack-query'
     | '/project/$projectId'
     | '/whiteboard/$whiteboardId'
@@ -237,9 +259,11 @@ export interface FileRouteTypes {
   id:
     | '__root__'
     | '/'
+    | '/authorize'
     | '/login'
     | '/register'
-    | '/demo/prisma'
+    | '/token'
+    | '/api/collab-token'
     | '/demo/tanstack-query'
     | '/project/$projectId'
     | '/whiteboard/$whiteboardId'
@@ -259,9 +283,11 @@ export interface FileRouteTypes {
 }
 export interface RootRouteChildren {
   IndexRoute: typeof IndexRoute
+  AuthorizeRoute: typeof AuthorizeRoute
   LoginRoute: typeof LoginRoute
   RegisterRoute: typeof RegisterRoute
-  DemoPrismaRoute: typeof DemoPrismaRoute
+  TokenRoute: typeof TokenRoute
+  ApiCollabTokenRoute: typeof ApiCollabTokenRoute
   DemoTanstackQueryRoute: typeof DemoTanstackQueryRoute
   ProjectProjectIdRoute: typeof ProjectProjectIdRouteWithChildren
   WhiteboardWhiteboardIdRoute: typeof WhiteboardWhiteboardIdRouteWithChildren
@@ -279,6 +305,13 @@ export interface RootRouteChildren {
 
 declare module '@tanstack/react-router' {
   interface FileRoutesByPath {
+    '/token': {
+      id: '/token'
+      path: '/token'
+      fullPath: '/token'
+      preLoaderRoute: typeof TokenRouteImport
+      parentRoute: typeof rootRouteImport
+    }
     '/register': {
       id: '/register'
       path: '/register'
@@ -291,6 +324,13 @@ declare module '@tanstack/react-router' {
       path: '/login'
       fullPath: '/login'
       preLoaderRoute: typeof LoginRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/authorize': {
+      id: '/authorize'
+      path: '/authorize'
+      fullPath: '/authorize'
+      preLoaderRoute: typeof AuthorizeRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/': {
@@ -321,11 +361,11 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof DemoTanstackQueryRouteImport
       parentRoute: typeof rootRouteImport
     }
-    '/demo/prisma': {
-      id: '/demo/prisma'
-      path: '/demo/prisma'
-      fullPath: '/demo/prisma'
-      preLoaderRoute: typeof DemoPrismaRouteImport
+    '/api/collab-token': {
+      id: '/api/collab-token'
+      path: '/api/collab-token'
+      fullPath: '/api/collab-token'
+      preLoaderRoute: typeof ApiCollabTokenRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/whiteboard/$whiteboardId/new': {
@@ -442,9 +482,11 @@ const WhiteboardWhiteboardIdRouteWithChildren =
 
 const rootRouteChildren: RootRouteChildren = {
   IndexRoute: IndexRoute,
+  AuthorizeRoute: AuthorizeRoute,
   LoginRoute: LoginRoute,
   RegisterRoute: RegisterRoute,
-  DemoPrismaRoute: DemoPrismaRoute,
+  TokenRoute: TokenRoute,
+  ApiCollabTokenRoute: ApiCollabTokenRoute,
   DemoTanstackQueryRoute: DemoTanstackQueryRoute,
   ProjectProjectIdRoute: ProjectProjectIdRouteWithChildren,
   WhiteboardWhiteboardIdRoute: WhiteboardWhiteboardIdRouteWithChildren,

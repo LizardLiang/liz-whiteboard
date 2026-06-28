@@ -2,7 +2,7 @@
 // Shared helpers to resolve projectId from child resources.
 // Used by server function files for permission checks.
 
-import { prisma } from '@/db'
+import { db } from '@/db'
 
 /**
  * Resolve projectId for a whiteboard by ID.
@@ -11,11 +11,10 @@ import { prisma } from '@/db'
 export async function getWhiteboardProjectId(
   whiteboardId: string,
 ): Promise<string | null> {
-  const wb = await prisma.whiteboard.findUnique({
-    where: { id: whiteboardId },
-    select: { projectId: true },
-  })
-  return wb?.projectId ?? null
+  const wb = db
+    .prepare('SELECT "projectId" FROM "Whiteboard" WHERE "id" = ?')
+    .get(whiteboardId)
+  return (wb?.projectId as string | undefined) ?? null
 }
 
 /**
@@ -25,11 +24,10 @@ export async function getWhiteboardProjectId(
 export async function getFolderProjectId(
   folderId: string,
 ): Promise<string | null> {
-  const folder = await prisma.folder.findUnique({
-    where: { id: folderId },
-    select: { projectId: true },
-  })
-  return folder?.projectId ?? null
+  const folder = db
+    .prepare('SELECT "projectId" FROM "Folder" WHERE "id" = ?')
+    .get(folderId)
+  return (folder?.projectId as string | undefined) ?? null
 }
 
 /**
@@ -39,11 +37,15 @@ export async function getFolderProjectId(
 export async function getTableProjectId(
   tableId: string,
 ): Promise<string | null> {
-  const table = await prisma.diagramTable.findUnique({
-    where: { id: tableId },
-    select: { whiteboard: { select: { projectId: true } } },
-  })
-  return table?.whiteboard?.projectId ?? null
+  const row = db
+    .prepare(
+      `SELECT w."projectId" AS "projectId"
+       FROM "DiagramTable" t
+       INNER JOIN "Whiteboard" w ON w."id" = t."whiteboardId"
+       WHERE t."id" = ?`,
+    )
+    .get(tableId)
+  return (row?.projectId as string | undefined) ?? null
 }
 
 /**
@@ -53,13 +55,16 @@ export async function getTableProjectId(
 export async function getColumnProjectId(
   columnId: string,
 ): Promise<string | null> {
-  const column = await prisma.column.findUnique({
-    where: { id: columnId },
-    select: {
-      table: { select: { whiteboard: { select: { projectId: true } } } },
-    },
-  })
-  return column?.table?.whiteboard?.projectId ?? null
+  const row = db
+    .prepare(
+      `SELECT w."projectId" AS "projectId"
+       FROM "Column" c
+       INNER JOIN "DiagramTable" t ON t."id" = c."tableId"
+       INNER JOIN "Whiteboard" w ON w."id" = t."whiteboardId"
+       WHERE c."id" = ?`,
+    )
+    .get(columnId)
+  return (row?.projectId as string | undefined) ?? null
 }
 
 /**
@@ -69,9 +74,13 @@ export async function getColumnProjectId(
 export async function getRelationshipProjectId(
   relationshipId: string,
 ): Promise<string | null> {
-  const rel = await prisma.relationship.findUnique({
-    where: { id: relationshipId },
-    select: { whiteboard: { select: { projectId: true } } },
-  })
-  return rel?.whiteboard?.projectId ?? null
+  const row = db
+    .prepare(
+      `SELECT w."projectId" AS "projectId"
+       FROM "Relationship" r
+       INNER JOIN "Whiteboard" w ON w."id" = r."whiteboardId"
+       WHERE r."id" = ?`,
+    )
+    .get(relationshipId)
+  return (row?.projectId as string | undefined) ?? null
 }

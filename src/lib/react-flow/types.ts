@@ -6,12 +6,8 @@
  */
 
 import type { Edge, Node } from '@xyflow/react'
-import type {
-  Cardinality,
-  Column,
-  DiagramTable,
-  Relationship,
-} from '@prisma/client'
+import type { Column, DiagramTable, Relationship } from '@/data/models'
+import type { Cardinality } from '@/data/schema'
 import type { CreateColumnPayload } from '@/components/whiteboard/column/types'
 import type { UpdateColumn } from '@/data/schema'
 

@@ -3,8 +3,8 @@
 
 import { createProjectSchema, updateProjectSchema } from './schema'
 import type { CreateProject, UpdateProject } from './schema'
-import type { Project } from '@prisma/client'
-import { prisma } from '@/db'
+import type { Project } from './models'
+import { db, genId, insert, mapProject, nowMs, update } from '@/db'
 
 /**
  * Create a new project
@@ -19,13 +19,19 @@ export async function createProject(
   const validated = createProjectSchema.parse(data)
 
   try {
-    const project = await prisma.project.create({
-      data: {
-        ...validated,
-        ownerId: data.ownerId,
-      },
+    const id = genId()
+    const ts = nowMs()
+    insert('Project', {
+      id,
+      name: validated.name,
+      description: validated.description ?? null,
+      ownerId: data.ownerId ?? null,
+      createdAt: ts,
+      updatedAt: ts,
     })
-    return project
+    return mapProject(
+      db.prepare('SELECT * FROM "Project" WHERE "id" = ?').get(id),
+    )!
   } catch (error) {
     throw new Error(
       `Failed to create project: ${error instanceof Error ? error.message : 'Unknown error'}`,
@@ -50,10 +56,10 @@ export async function findAllProjectsForUser(
   // userId param retained for signature compatibility with callers.
   void userId
   try {
-    const projects = await prisma.project.findMany({
-      orderBy: { createdAt: 'desc' },
-    })
-    return projects
+    return db
+      .prepare('SELECT * FROM "Project" ORDER BY "createdAt" DESC')
+      .all()
+      .map((r) => mapProject(r)!)
   } catch (error) {
     throw new Error(
       `Failed to fetch projects: ${error instanceof Error ? error.message : 'Unknown error'}`,
@@ -87,19 +93,45 @@ export async function findAllProjectsWithTreeForUser(userId: string): Promise<
   // userId param retained for signature compatibility with callers.
   void userId
   try {
-    const projects = await prisma.project.findMany({
-      include: {
-        folders: {
-          include: {
-            childFolders: { select: { id: true, name: true } },
-            whiteboards: { select: { id: true, name: true } },
-          },
-        },
-        whiteboards: { select: { id: true, name: true } },
-      },
-      orderBy: { createdAt: 'desc' },
+    const projects = db
+      .prepare('SELECT * FROM "Project" ORDER BY "createdAt" DESC')
+      .all()
+      .map((r) => mapProject(r)!)
+
+    return projects.map((project) => {
+      const folders = db
+        .prepare('SELECT * FROM "Folder" WHERE "projectId" = ?')
+        .all(project.id)
+        .map((r) => {
+          const folderId = r.id as string
+          const childFolders = db
+            .prepare(
+              'SELECT "id", "name" FROM "Folder" WHERE "parentFolderId" = ?',
+            )
+            .all(folderId)
+            .map((c) => ({ id: c.id as string, name: c.name as string }))
+          const whiteboards = db
+            .prepare(
+              'SELECT "id", "name" FROM "Whiteboard" WHERE "folderId" = ?',
+            )
+            .all(folderId)
+            .map((w) => ({ id: w.id as string, name: w.name as string }))
+          return {
+            id: folderId,
+            name: r.name as string,
+            parentFolderId: (r.parentFolderId as string | null) ?? null,
+            childFolders,
+            whiteboards,
+          }
+        })
+
+      const whiteboards = db
+        .prepare('SELECT "id", "name" FROM "Whiteboard" WHERE "projectId" = ?')
+        .all(project.id)
+        .map((w) => ({ id: w.id as string, name: w.name as string }))
+
+      return { ...project, folders, whiteboards }
     })
-    return projects
   } catch (error) {
     throw new Error(
       `Failed to fetch project tree for user: ${error instanceof Error ? error.message : 'Unknown error'}`,
@@ -116,10 +148,9 @@ export async function findAllProjectsWithTreeForUser(userId: string): Promise<
  */
 export async function findProjectById(id: string): Promise<Project | null> {
   try {
-    const project = await prisma.project.findUnique({
-      where: { id },
-    })
-    return project
+    return mapProject(
+      db.prepare('SELECT * FROM "Project" WHERE "id" = ?').get(id),
+    )
   } catch (error) {
     throw new Error(
       `Failed to fetch project: ${error instanceof Error ? error.message : 'Unknown error'}`,
@@ -142,11 +173,14 @@ export async function updateProject(
   const validated = updateProjectSchema.parse(data)
 
   try {
-    const project = await prisma.project.update({
-      where: { id },
-      data: validated,
-    })
-    return project
+    const values: Record<string, unknown> = { updatedAt: nowMs() }
+    if (validated.name !== undefined) values.name = validated.name
+    if (validated.description !== undefined)
+      values.description = validated.description
+    update('Project', id, values)
+    return mapProject(
+      db.prepare('SELECT * FROM "Project" WHERE "id" = ?').get(id),
+    )!
   } catch (error) {
     throw new Error(
       `Failed to update project: ${error instanceof Error ? error.message : 'Unknown error'}`,
@@ -188,32 +222,50 @@ export async function findProjectPageContent(
   projectId: string,
   folderId?: string,
 ): Promise<ProjectPageContent | null> {
+  // Map a whiteboard row (id, name, updatedAt) + its table count to shape.
+  const mapWhiteboardRow = (r: Record<string, unknown>) => {
+    const wbId = r.id as string
+    const countRow = db
+      .prepare('SELECT COUNT(*) AS "count" FROM "DiagramTable" WHERE "whiteboardId" = ?')
+      .get(wbId)
+    return {
+      id: wbId,
+      name: r.name as string,
+      updatedAt: new Date(Number(r.updatedAt)),
+      _count: { tables: Number(countRow?.count ?? 0) },
+    }
+  }
+
+  const mapFolderRow = (r: Record<string, unknown>) => ({
+    id: r.id as string,
+    name: r.name as string,
+    createdAt: new Date(Number(r.createdAt)),
+  })
+
   try {
-    const project = await prisma.project.findUnique({
-      where: { id: projectId },
-      select: { id: true, name: true },
-    })
-    if (!project) return null
+    const projectRow = db
+      .prepare('SELECT "id", "name" FROM "Project" WHERE "id" = ?')
+      .get(projectId)
+    if (!projectRow) return null
+    const project = {
+      id: projectRow.id as string,
+      name: projectRow.name as string,
+    }
 
     if (!folderId) {
       // Root view: folders and whiteboards directly under the project
-      const [folders, whiteboards] = await Promise.all([
-        prisma.folder.findMany({
-          where: { projectId, parentFolderId: null },
-          select: { id: true, name: true, createdAt: true },
-          orderBy: { name: 'asc' },
-        }),
-        prisma.whiteboard.findMany({
-          where: { projectId, folderId: null },
-          select: {
-            id: true,
-            name: true,
-            updatedAt: true,
-            _count: { select: { tables: true } },
-          },
-          orderBy: { updatedAt: 'desc' },
-        }),
-      ])
+      const folders = db
+        .prepare(
+          'SELECT "id", "name", "createdAt" FROM "Folder" WHERE "projectId" = ? AND "parentFolderId" IS NULL ORDER BY "name" ASC',
+        )
+        .all(projectId)
+        .map(mapFolderRow)
+      const whiteboards = db
+        .prepare(
+          'SELECT "id", "name", "updatedAt" FROM "Whiteboard" WHERE "projectId" = ? AND "folderId" IS NULL ORDER BY "updatedAt" DESC',
+        )
+        .all(projectId)
+        .map(mapWhiteboardRow)
       return {
         project,
         folders,
@@ -223,32 +275,33 @@ export async function findProjectPageContent(
     }
 
     // Folder view: validate folder belongs to project
-    const targetFolder = await prisma.folder.findUnique({
-      where: { id: folderId },
-      select: { id: true, name: true, projectId: true, parentFolderId: true },
-    })
-    if (!targetFolder || targetFolder.projectId !== projectId) {
+    const targetFolderRow = db
+      .prepare(
+        'SELECT "id", "name", "projectId", "parentFolderId" FROM "Folder" WHERE "id" = ?',
+      )
+      .get(folderId)
+    if (!targetFolderRow || targetFolderRow.projectId !== projectId) {
       throw new Error('Folder not found')
+    }
+    const targetFolder = {
+      id: targetFolderRow.id as string,
+      name: targetFolderRow.name as string,
+      parentFolderId: (targetFolderRow.parentFolderId as string | null) ?? null,
     }
 
     // Fetch folders and whiteboards under this folder (projectId added for defense-in-depth)
-    const [folders, whiteboards] = await Promise.all([
-      prisma.folder.findMany({
-        where: { projectId, parentFolderId: folderId },
-        select: { id: true, name: true, createdAt: true },
-        orderBy: { name: 'asc' },
-      }),
-      prisma.whiteboard.findMany({
-        where: { projectId, folderId },
-        select: {
-          id: true,
-          name: true,
-          updatedAt: true,
-          _count: { select: { tables: true } },
-        },
-        orderBy: { updatedAt: 'desc' },
-      }),
-    ])
+    const folders = db
+      .prepare(
+        'SELECT "id", "name", "createdAt" FROM "Folder" WHERE "projectId" = ? AND "parentFolderId" = ? ORDER BY "name" ASC',
+      )
+      .all(projectId, folderId)
+      .map(mapFolderRow)
+    const whiteboards = db
+      .prepare(
+        'SELECT "id", "name", "updatedAt" FROM "Whiteboard" WHERE "projectId" = ? AND "folderId" = ? ORDER BY "updatedAt" DESC',
+      )
+      .all(projectId, folderId)
+      .map(mapWhiteboardRow)
 
     // Build breadcrumb via single recursive CTE (one round-trip, no N+1)
     // Starts at the target folder's parent and walks up to the root.
@@ -259,18 +312,20 @@ export async function findProjectPageContent(
         name: string
         parentFolderId: string | null
       }
-      const ancestors = await prisma.$queryRaw<Array<AncestorRow>>`
-        WITH RECURSIVE ancestors AS (
-          SELECT id, name, "parentFolderId", "projectId"
-          FROM "Folder"
-          WHERE id = ${targetFolder.parentFolderId}
-          UNION ALL
-          SELECT f.id, f.name, f."parentFolderId", f."projectId"
-          FROM "Folder" f
-          INNER JOIN ancestors a ON f.id = a."parentFolderId"
+      const ancestors = db
+        .prepare(
+          `WITH RECURSIVE ancestors AS (
+            SELECT id, name, "parentFolderId", "projectId"
+            FROM "Folder"
+            WHERE id = ?
+            UNION ALL
+            SELECT f.id, f.name, f."parentFolderId", f."projectId"
+            FROM "Folder" f
+            INNER JOIN ancestors a ON f.id = a."parentFolderId"
+          )
+          SELECT id, name, "parentFolderId" FROM ancestors`,
         )
-        SELECT id, name, "parentFolderId" FROM ancestors
-      `
+        .all(targetFolder.parentFolderId) as Array<AncestorRow>
       // CTE returns leaf→root order; reverse to get root→leaf for the breadcrumb trail
       for (const ancestor of ancestors.reverse()) {
         breadcrumb.push({
@@ -308,10 +363,12 @@ export async function findProjectPageContent(
  */
 export async function deleteProject(id: string): Promise<Project> {
   try {
-    const project = await prisma.project.delete({
-      where: { id },
-    })
-    return project
+    const existing = mapProject(
+      db.prepare('SELECT * FROM "Project" WHERE "id" = ?').get(id),
+    )
+    if (!existing) throw new Error('Project not found')
+    db.prepare('DELETE FROM "Project" WHERE "id" = ?').run(id)
+    return existing
   } catch (error) {
     throw new Error(
       `Failed to delete project: ${error instanceof Error ? error.message : 'Unknown error'}`,

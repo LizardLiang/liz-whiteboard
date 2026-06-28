@@ -11,7 +11,7 @@ import { AddColumnRow } from './column/AddColumnRow'
 import { DeleteColumnDialog } from './column/DeleteColumnDialog'
 import { InsertionLine } from './column/InsertionLine'
 import { TableNodeContextMenu } from './TableNodeContextMenu'
-import type { Column } from '@prisma/client'
+import type { Column } from '@/data/models'
 import type {
   RelationshipEdgeType,
   TableNodeData,
