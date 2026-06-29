@@ -2,8 +2,17 @@
 // Unit tests for computeD3ForceLayout — covers TC-AL-E-01 through TC-AL-E-11
 
 import { describe, expect, it } from 'vitest'
-import { computeD3ForceLayout, enforceGapPostPass } from './d3-force-layout'
-import type { LayoutInputEdge, LayoutInputNode } from './d3-force-layout'
+import {
+  COL_GAP,
+  EDGE_LABEL_MARGIN,
+  computeD3ForceLayout,
+  computeLabelPillHeight,
+  computeLabelPillWidth,
+  computeRequiredColGap,
+  enforceEdgeLabelGap,
+  enforceGapPostPass,
+} from './d3-force-layout'
+import type { LayoutInputEdge, LayoutInputNode, SimNode } from './d3-force-layout'
 
 // ---------------------------------------------------------------------------
 // Helpers
@@ -234,6 +243,149 @@ describe('computeD3ForceLayout', () => {
     expect(result).toHaveLength(2)
     // Verify gap is still correct (proves ticks ran, simulation settled)
     assertAllGaps(result, nodes)
+  })
+
+  // TC-AL-E-12 — Dynamic col gap leaves room for the actual label pill
+  it('TC-AL-E-12: dynamic column gap leaves room for a 30-char label pill between adjacent columns', async () => {
+    // 30-char label: computeLabelPillWidth = max(60, 30×7) + 22 = 210 + 22 = 232px (jsdom fallback)
+    // Required gap = srcExt(11) + margin(16) + 232 + margin(16) + tgtExt(11) = 286px
+    // Old fixed COL_GAP=200 would give horizGap=200px — FAILS at 264px assertion.
+    // New code: computeRequiredColGap raises gap to 286px — PASSES.
+    const label = 'a'.repeat(30)
+    const nodes: Array<LayoutInputNode> = [
+      makeNode('A', 250, 200),
+      makeNode('B', 250, 200),
+    ]
+    const edges: Array<LayoutInputEdge> = [{ source: 'A', target: 'B', label }]
+    const result = await computeD3ForceLayout(nodes, edges)
+    const pm = posMap(result)
+    const aRight = pm.get('A')!.x + 250
+    const bLeft = pm.get('B')!.x
+    const horizGap = bLeft - aRight
+    const pillWidth = computeLabelPillWidth(label)
+    const minRequired = pillWidth + 2 * EDGE_LABEL_MARGIN
+    expect(
+      horizGap,
+      `Horizontal gap ${horizGap.toFixed(2)} < required ${minRequired} (pillWidth=${pillWidth}, COL_GAP floor=${COL_GAP})`,
+    ).toBeGreaterThanOrEqual(minRequired)
+  })
+
+  // TC-AL-E-13 — enforceEdgeLabelGap does not move edge endpoints
+  it('TC-AL-E-13: enforceEdgeLabelGap does not move edge endpoints when no third node intrudes', () => {
+    const nodes: Array<SimNode> = [
+      { id: 'A', x: 0, y: 0, width: 200, height: 100 },
+      { id: 'B', x: 800, y: 0, width: 200, height: 100 },
+    ]
+    const edges: Array<LayoutInputEdge> = [{ source: 'A', target: 'B' }]
+    const xA = nodes[0].x
+    const yA = nodes[0].y
+    const xB = nodes[1].x
+    const yB = nodes[1].y
+    enforceEdgeLabelGap(nodes, edges)
+    // Endpoints are skipped by the algorithm — must not move
+    expect(nodes[0].x).toBe(xA)
+    expect(nodes[0].y).toBe(yA)
+    expect(nodes[1].x).toBe(xB)
+    expect(nodes[1].y).toBe(yB)
+  })
+
+  // TC-AL-E-14 — enforceEdgeLabelGap pushes a third node out of the edge-label zone
+  it('TC-AL-E-14: enforceEdgeLabelGap pushes a third node out of the edge-label zone', () => {
+    // A and B are far apart; C sits at the zone midpoint and intrudes.
+    // Label "intrude" → pillWidth = max(60, 7×7) + 22 = 60+22 = 82px (jsdom fallback)
+    const label = 'intrude'
+    const A: SimNode = { id: 'A', x: 0, y: 0, width: 200, height: 100 }
+    const B: SimNode = { id: 'B', x: 500, y: 0, width: 200, height: 100 }
+    const C: SimNode = { id: 'C', x: 250, y: 0, width: 200, height: 100 }
+    const edgeDef: LayoutInputEdge = { source: 'A', target: 'B', label }
+
+    enforceEdgeLabelGap([A, B, C], [edgeDef])
+
+    // Recompute label zone using the same formula as the production code.
+    // Cardinality undefined → both flags false → extents = OPT_GAP_EXTENT + CIRCLE_R = 11px each.
+    const leftExt = 11 // cardinalityIndicatorExtent(false) = 0 + 7 + 4
+    const rightExt = 11
+    const pillWidth = computeLabelPillWidth(label)
+    const pillHeight = computeLabelPillHeight()
+    // midX accounts for cardinality extents (mirrors production enforceEdgeLabelGap)
+    const midX = (A.x + A.width / 2 + leftExt + B.x - B.width / 2 - rightExt) / 2
+    const midY = (A.y + B.y) / 2
+    const zoneW = Math.max(pillWidth, leftExt + rightExt) + 2 * EDGE_LABEL_MARGIN
+    const zoneH = pillHeight + 2 * EDGE_LABEL_MARGIN
+    const lx = midX - zoneW / 2
+    const ly = midY - zoneH / 2
+
+    const cx = C.x - C.width / 2
+    const cy = C.y - C.height / 2
+    const overlapX = cx < lx + zoneW && cx + C.width > lx
+    const overlapY = cy < ly + zoneH && cy + C.height > ly
+
+    expect(overlapX && overlapY, 'C still overlaps label zone after enforcement').toBe(false)
+  })
+
+  // TC-AL-E-15 — All-pairs gap ≥ MIN_GAP=48 still holds after enforceEdgeLabelGap
+  it('TC-AL-E-15: 48 px L∞ gap holds on every pair after full pipeline with 10 nodes and 5 edges', async () => {
+    const nodes: Array<LayoutInputNode> = Array.from({ length: 10 }, (_, i) =>
+      makeNode(`M${i}`, 250, 150),
+    )
+    const edges: Array<LayoutInputEdge> = [
+      { source: 'M0', target: 'M1' },
+      { source: 'M1', target: 'M2' },
+      { source: 'M3', target: 'M4' },
+      { source: 'M5', target: 'M6' },
+      { source: 'M7', target: 'M8' },
+    ]
+    const result = await computeD3ForceLayout(nodes, edges)
+    assertAllGaps(result, nodes, 48)
+  })
+
+  // TC-AL-E-16 — Long label (50+ chars) that would fail under a 120px fixed-constant assumption
+  it('TC-AL-E-16: 50-char label gets full dynamic gap — fails under fixed EDGE_LABEL_W=120', async () => {
+    // 50-char label: computeLabelPillWidth = max(60, 50×7) + 22 = 350 + 22 = 372px (jsdom fallback)
+    // Required: 11 + 16 + 372 + 16 + 11 = 426px (ONE_TO_MANY: srcMany=false, tgtMany=true → 13px)
+    // Under old approach: COL_GAP=200, EDGE_LABEL_W=120 → zone only 152px wide → FAIL at 404px.
+    // Under new approach: effectiveColGap = 426px → gap ≥ 404px → PASS.
+    const label = 'a'.repeat(50)
+    const nodes: Array<LayoutInputNode> = [
+      makeNode('X', 250, 200),
+      makeNode('Y', 250, 200),
+    ]
+    const edges: Array<LayoutInputEdge> = [
+      { source: 'X', target: 'Y', label, cardinality: 'ONE_TO_MANY' },
+    ]
+    const result = await computeD3ForceLayout(nodes, edges)
+    const pm = posMap(result)
+    const xRight = pm.get('X')!.x + 250
+    const yLeft = pm.get('Y')!.x
+    const horizGap = yLeft - xRight
+    const pillWidth = computeLabelPillWidth(label)
+    const minRequired = pillWidth + 2 * EDGE_LABEL_MARGIN // 372 + 32 = 404px
+    expect(
+      horizGap,
+      `Horizontal gap ${horizGap.toFixed(2)} < required ${minRequired}; old fixed 120px constant would only give ~200px gap`,
+    ).toBeGreaterThanOrEqual(minRequired)
+  })
+
+  // TC-AL-E-17 — computeRequiredColGap scales with label content
+  it('TC-AL-E-17: computeRequiredColGap scales with label length, not a fixed constant', () => {
+    // Short label (5 chars): min(60, ...) → pill = max(60, 35)+22 = 82px → required = 82+32+22 = 136
+    const shortEdges: Array<LayoutInputEdge> = [
+      { source: 'A', target: 'B', label: 'hello' },
+    ]
+    // Long label (40 chars): pill = max(60, 280)+22 = 302px → required = 302+32+22 = 356
+    const longEdges: Array<LayoutInputEdge> = [
+      { source: 'A', target: 'B', label: 'a'.repeat(40) },
+    ]
+    const shortGap = computeRequiredColGap(shortEdges)
+    const longGap = computeRequiredColGap(longEdges)
+    // Long label must demand a larger column gap than short label
+    expect(longGap).toBeGreaterThan(shortGap)
+    // Short label pill is ≤ 120px (old constant) but gap is still based on real content
+    expect(computeLabelPillWidth('hello')).toBeLessThanOrEqual(120)
+    // Long label pill exceeds 120px — proves the fix is necessary
+    expect(computeLabelPillWidth('a'.repeat(40))).toBeGreaterThan(120)
+    // Long gap must cover full pill
+    expect(longGap).toBeGreaterThanOrEqual(computeLabelPillWidth('a'.repeat(40)) + 2 * EDGE_LABEL_MARGIN)
   })
 })
 

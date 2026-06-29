@@ -62,6 +62,15 @@ export function useD3ForceLayout(
       setError(null)
 
       try {
+        // Warn about nodes without measured dimensions (timing issue: ResizeObserver
+        // may not have fired yet). Layout still runs with the 250×150 fallback.
+        const unmeasured = nodes.filter((n) => !n.measured)
+        if (unmeasured.length > 0) {
+          console.warn(
+            `Auto Layout: ${unmeasured.length} node(s) have no measured dimensions; using 250×150 fallback. IDs: ${unmeasured.map((n) => n.id).join(', ')}`,
+          )
+        }
+
         // Convert React Flow nodes to layout input, reading measured dimensions
         const layoutNodes = nodes.map((n) => ({
           id: n.id,
@@ -72,10 +81,14 @@ export function useD3ForceLayout(
           height: n.measured?.height ?? (n.height as number) ?? 150,
         }))
 
-        // Convert React Flow edges to layout input (source/target table IDs)
+        // Convert React Flow edges to layout input.
+        // Pass label and cardinality so the layout engine can compute per-edge
+        // label pill sizes from actual content (not a fixed constant).
         const layoutEdges = edges.map((e) => ({
           source: e.source,
           target: e.target,
+          label: e.data?.label ?? undefined,
+          cardinality: e.data?.cardinality ?? undefined,
         }))
 
         const positions = await computeD3ForceLayout(layoutNodes, layoutEdges)
