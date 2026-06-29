@@ -89,6 +89,14 @@ db.exec('PRAGMA journal_mode = WAL;')
   const posXCol = colInfo.find((c) => c['name'] === 'positionX')
   if (posXCol && posXCol['notnull'] === 1) {
     // Columns are still NOT NULL — run the rebuild migration.
+    //
+    // CRITICAL: foreign keys MUST be disabled for a table-rebuild. With
+    // foreign_keys=ON (set at startup above), `DROP TABLE "DiagramTable"`
+    // performs an implicit DELETE of every row, which fires the ON DELETE
+    // CASCADE on Column and Relationship and WIPES them. PRAGMA foreign_keys
+    // is a no-op inside a transaction, so it must be toggled OUTSIDE the
+    // BEGIN/COMMIT (see SQLite's documented 12-step ALTER TABLE procedure).
+    db.exec('PRAGMA foreign_keys = OFF')
     db.exec('BEGIN EXCLUSIVE')
     try {
       db.exec(`
@@ -123,8 +131,19 @@ db.exec('PRAGMA journal_mode = WAL;')
       db.exec('COMMIT')
     } catch (err) {
       db.exec('ROLLBACK')
+      db.exec('PRAGMA foreign_keys = ON')
       throw new Error(
         `DiagramTable nullable-position migration failed: ${err instanceof Error ? err.message : String(err)}`,
+      )
+    }
+    // Re-enable foreign keys and verify the rebuild left no dangling references
+    // (Column.tableId / Relationship.* still point at the rebuilt rows since the
+    // primary keys were copied unchanged).
+    db.exec('PRAGMA foreign_keys = ON')
+    const fkViolations = db.prepare('PRAGMA foreign_key_check').all()
+    if (fkViolations.length > 0) {
+      throw new Error(
+        `DiagramTable nullable-position migration left ${fkViolations.length} FK violation(s)`,
       )
     }
   }
