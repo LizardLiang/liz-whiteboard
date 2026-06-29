@@ -38,7 +38,17 @@ function LoginPage() {
       const result = await loginUser({ data: { email, password, rememberMe } })
 
       if (result.success) {
-        router.navigate({ to: redirect || '/' })
+        // `/authorize` is a server-only route (its GET handler issues the OAuth
+        // code and 302s to the client's redirect_uri). A client-side
+        // router.navigate would NOT invoke that handler, so the OAuth flow would
+        // stall and never reach the caller's loopback callback. Use a full
+        // browser navigation so the server handler runs.
+        const target = redirect || '/'
+        if (target.startsWith('/authorize')) {
+          window.location.assign(target)
+        } else {
+          router.navigate({ to: target })
+        }
       } else {
         setError(result.message || 'Invalid email or password')
       }
