@@ -67,7 +67,11 @@ export const getProjectsWithTree = createServerFn({
  */
 export const getProject = createServerFn({ method: 'GET' })
   .inputValidator((projectId: string) => {
-    const idSchema = z.string().uuid()
+    // Accept any non-empty id, not just UUIDs: seed/legacy projects (e.g.
+    // "test-project-id") have non-UUID ids and must remain operable. The id is
+    // an opaque key used only in parameterized lookups; authz is enforced
+    // separately by role checks.
+    const idSchema = z.string().min(1)
     return idSchema.parse(projectId)
   })
   .handler(
@@ -114,7 +118,7 @@ export const createProjectFn = createServerFn({ method: 'POST' })
 export const updateProjectFn = createServerFn({ method: 'POST' })
   .inputValidator((params: unknown) => {
     const schema = z.object({
-      id: z.string().uuid(),
+      id: z.string().min(1),
       data: updateProjectSchema,
     })
     return schema.parse(params)
@@ -152,7 +156,7 @@ export const updateProjectFn = createServerFn({ method: 'POST' })
 export const getProjectPageContent = createServerFn({ method: 'GET' })
   .inputValidator((params: unknown) => {
     const schema = z.object({
-      projectId: z.string().uuid(),
+      projectId: z.string().min(1),
       folderId: z.string().uuid().optional(),
     })
     return schema.parse(params)
@@ -179,7 +183,11 @@ export const getProjectPageContent = createServerFn({ method: 'GET' })
  */
 export const deleteProjectFn = createServerFn({ method: 'POST' })
   .inputValidator((projectId: string) => {
-    const idSchema = z.string().uuid()
+    // Accept any non-empty id, not just UUIDs: seed/legacy projects (e.g.
+    // "test-project-id") have non-UUID ids and must remain operable. The id is
+    // an opaque key used only in parameterized lookups; authz is enforced
+    // separately by role checks.
+    const idSchema = z.string().min(1)
     return idSchema.parse(projectId)
   })
   .handler(
