@@ -4,6 +4,10 @@ import { X } from 'lucide-react'
 import type { EdgeProps } from '@xyflow/react'
 import type { RelationshipEdgeData } from '@/lib/react-flow/types'
 import { Z_INDEX } from '@/lib/react-flow/types'
+import {
+  clampSameSideLabelX,
+  computeLabelPillWidth,
+} from '@/lib/auto-layout/d3-force-layout'
 
 // ── Layout constants ──
 // How far past the handle to push the crow's foot prong tips toward the table
@@ -351,6 +355,22 @@ export const RelationshipEdge = memo(
       borderRadius: 16,
     })
 
+    // Clamp the label's X position so the pill doesn't overlap either endpoint
+    // table body. getSmoothStepPath returns the geometric path midpoint; for
+    // same-side (right→right or left→left) C-curves with long labels the pill
+    // can extend back over the source table. The clamp ensures:
+    //   right→right: pill left edge ≥ max(sourceX, targetX) + margin
+    //   left→left:   pill right edge ≤ min(sourceX, targetX) − margin
+    const labelPillWidth = computeLabelPillWidth(label ?? '')
+    const displayLabelX = clampSameSideLabelX(
+      labelX,
+      labelPillWidth,
+      sourceX,
+      sourcePosition,
+      targetX,
+      targetPosition,
+    )
+
     const gradientId = `edge-gradient-${id}`
     const glowFilterId = `edge-glow-${id}`
 
@@ -492,7 +512,7 @@ export const RelationshipEdge = memo(
             className="nodrag nopan"
             style={{
               position: 'absolute',
-              transform: `translate(-50%, -50%) translate(${labelX}px,${labelY}px)`,
+              transform: `translate(-50%, -50%) translate(${displayLabelX}px,${labelY}px)`,
               pointerEvents: 'all',
               zIndex: Z_INDEX.EDGE_LABEL,
               display: 'inline-flex',

@@ -429,6 +429,166 @@ export function enforceEdgeLabelGap(
 }
 
 // ---------------------------------------------------------------------------
+// Same-side label X clamping — render-time helper used by RelationshipEdge.new.tsx
+// ---------------------------------------------------------------------------
+
+/**
+ * Minimum clearance between a handle position and the nearest pill edge (px).
+ * Small enough to keep labels visually close to the edge, large enough to
+ * provide breathing room from the table body.
+ */
+export const LABEL_PILL_CLAMP_MARGIN = 8
+
+/**
+ * Clamp a label's X position so the pill doesn't overlap either endpoint's
+ * table body when both handles exit from the same side (right→right or left→left).
+ *
+ * `getSmoothStepPath` returns the geometric path midpoint as `labelX`. For
+ * same-side C-curves with long labels the pill can extend back over the source
+ * or target table body. This function clamps labelX so that:
+ *
+ *   right→right: pill left edge ≥ max(sourceX, targetX) + LABEL_PILL_CLAMP_MARGIN
+ *   left→left:   pill right edge ≤ min(sourceX, targetX) − LABEL_PILL_CLAMP_MARGIN
+ *
+ * For cross-column routing (right→left or left→right) the midpoint already sits
+ * in the inter-table gap guaranteed by `computeRequiredColGap` — no clamp applied.
+ *
+ * @param labelX     Raw labelX from getSmoothStepPath (canvas coordinates)
+ * @param pillWidth  Pill outer width from computeLabelPillWidth()
+ * @param sourceX    Source handle X (canvas coordinates)
+ * @param sourceSide Handle side of the source node ('left' | 'right')
+ * @param targetX    Target handle X (canvas coordinates)
+ * @param targetSide Handle side of the target node ('left' | 'right')
+ */
+export function clampSameSideLabelX(
+  labelX: number,
+  pillWidth: number,
+  sourceX: number,
+  sourceSide: string,
+  targetX: number,
+  targetSide: string,
+): number {
+  if (pillWidth <= 0) return labelX
+  if (sourceSide === 'right' && targetSide === 'right') {
+    // C-curve exits right: pill must be entirely to the right of both handles
+    const minX =
+      Math.max(sourceX, targetX) + pillWidth / 2 + LABEL_PILL_CLAMP_MARGIN
+    return Math.max(labelX, minX)
+  }
+  if (sourceSide === 'left' && targetSide === 'left') {
+    // C-curve exits left: pill must be entirely to the left of both handles
+    const maxX =
+      Math.min(sourceX, targetX) - pillWidth / 2 - LABEL_PILL_CLAMP_MARGIN
+    return Math.min(labelX, maxX)
+  }
+  // Cross-column (right→left or left→right): no clamp needed
+  return labelX
+}
+
+// ---------------------------------------------------------------------------
+// Label-vs-label pairwise collision resolution
+// ---------------------------------------------------------------------------
+
+/**
+ * Separate overlapping edge-label pills by adjusting unique node positions.
+ *
+ * For each pair of labelled edges, estimates the label centre as the midpoint
+ * between node centres and checks whether the two pill AABBs intersect
+ * (including EDGE_LABEL_MARGIN as buffer). When they do, the node unique to
+ * the lower-y-label edge is pushed downward. The nudge factor is ×2 because
+ * label midY = (S.y + T.y)/2 — moving one endpoint by d shifts midY by d/2.
+ *
+ * Runs up to POST_PASS_MAX_SWEEPS iterations to converge.
+ */
+export function enforceLabelLabelGap(
+  nodes: Array<SimNode>,
+  edges: Array<LayoutInputEdge>,
+): void {
+  const pillH = computeLabelPillHeight()
+
+  for (let sweep = 0; sweep < POST_PASS_MAX_SWEEPS; sweep++) {
+    let anyViolation = false
+
+    // Build estimated label AABB centre for each labelled edge
+    const labelBoxes: Array<{
+      edgeIdx: number
+      cx: number
+      cy: number
+      w: number
+      h: number
+    }> = []
+
+    for (let i = 0; i < edges.length; i++) {
+      const edge = edges[i]
+      const sourceNode = nodes.find((n) => n.id === edge.source)
+      const targetNode = nodes.find((n) => n.id === edge.target)
+      if (!sourceNode || !targetNode) continue
+
+      const pillW = computeLabelPillWidth(edge.label ?? '')
+      if (pillW <= 0) continue // skip unlabelled edges
+
+      labelBoxes.push({
+        edgeIdx: i,
+        cx: (sourceNode.x + targetNode.x) / 2,
+        cy: (sourceNode.y + targetNode.y) / 2,
+        w: pillW,
+        h: pillH,
+      })
+    }
+
+    // Check all pairs for overlap
+    for (let i = 0; i < labelBoxes.length; i++) {
+      for (let j = i + 1; j < labelBoxes.length; j++) {
+        const a = labelBoxes[i]
+        const b = labelBoxes[j]
+
+        // Full AABB overlap on X axis
+        const overlapX = (a.w + b.w) / 2 - Math.abs(a.cx - b.cx)
+        // Y overlap including a margin gap between pills
+        const overlapY =
+          (a.h + b.h) / 2 + EDGE_LABEL_MARGIN - Math.abs(a.cy - b.cy)
+
+        if (overlapX > 0 && overlapY > 0) {
+          anyViolation = true
+
+          const edgeA = edges[a.edgeIdx]
+          const edgeB = edges[b.edgeIdx]
+
+          // Lower label = higher cy value (y increases downward in canvas coords)
+          const lowerEdge = a.cy >= b.cy ? edgeA : edgeB
+          const upperEdge = a.cy >= b.cy ? edgeB : edgeA
+
+          // Nudge ×2: moving one endpoint by d shifts label midY by d/2
+          const nudge = 2 * (overlapY + POST_PASS_SLACK)
+
+          // Find the unique node of the lower edge (not shared with upper edge)
+          const upperIds = new Set([upperEdge.source, upperEdge.target])
+          const uniqueId = upperIds.has(lowerEdge.source)
+            ? lowerEdge.target
+            : upperIds.has(lowerEdge.target)
+              ? lowerEdge.source
+              : null // no shared node
+
+          if (uniqueId !== null) {
+            const node = nodes.find((n) => n.id === uniqueId)
+            if (node) node.y += nudge
+          } else {
+            // No shared node: push both lower-edge endpoints down by nudge/2 each
+            // (combined shift of nudge/2 on midY equals overlapY + slack)
+            const srcNode = nodes.find((n) => n.id === lowerEdge.source)
+            const tgtNode = nodes.find((n) => n.id === lowerEdge.target)
+            if (srcNode) srcNode.y += nudge / 2
+            if (tgtNode) tgtNode.y += nudge / 2
+          }
+        }
+      }
+    }
+
+    if (!anyViolation) break
+  }
+}
+
+// ---------------------------------------------------------------------------
 // Layered layout (left-to-right columns)
 // ---------------------------------------------------------------------------
 
@@ -666,6 +826,8 @@ export async function computeD3ForceLayout(
   if (isoSimNodes.length > 0) {
     enforceEdgeLabelGap([...connSimNodes, ...isoSimNodes], edges)
   }
+  // Separate overlapping label pills (pairwise label-vs-label)
+  enforceLabelLabelGap(connSimNodes, edges)
   // Final gap sweep to clean up any node-node overlaps introduced by label-gap expansion
   enforceGapPostPass([...connSimNodes, ...isoSimNodes])
 

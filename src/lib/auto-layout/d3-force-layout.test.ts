@@ -5,11 +5,14 @@ import { describe, expect, it } from 'vitest'
 import {
   COL_GAP,
   EDGE_LABEL_MARGIN,
+  LABEL_PILL_CLAMP_MARGIN,
+  clampSameSideLabelX,
   computeD3ForceLayout,
   computeLabelPillHeight,
   computeLabelPillWidth,
   computeRequiredColGap,
   enforceEdgeLabelGap,
+  enforceLabelLabelGap,
   enforceGapPostPass,
 } from './d3-force-layout'
 import type { LayoutInputEdge, LayoutInputNode, SimNode } from './d3-force-layout'
@@ -386,6 +389,102 @@ describe('computeD3ForceLayout', () => {
     expect(computeLabelPillWidth('a'.repeat(40))).toBeGreaterThan(120)
     // Long gap must cover full pill
     expect(longGap).toBeGreaterThanOrEqual(computeLabelPillWidth('a'.repeat(40)) + 2 * EDGE_LABEL_MARGIN)
+  })
+})
+
+// ---------------------------------------------------------------------------
+// enforceLabelLabelGap unit tests
+// ---------------------------------------------------------------------------
+
+describe('enforceLabelLabelGap', () => {
+  // TC-AL-E-18 — separates stacked same-source label pills
+  it('TC-AL-E-18: separates overlapping label pills for same-source stacked edges', () => {
+    // Source S at (0,0); targets A and B stacked close in same column.
+    // Labels are identical FK names — each pill is ~120px wide, ~24px tall.
+    // Initial label-midY values: (S.y + A.y)/2 = 100, (S.y + B.y)/2 = 120.
+    // Gap between centres = 20px < pillH(24) + margin(16) = 40 → overlap.
+    const edgeLabel = 'FK_Relationship'
+    const S: SimNode = { id: 'S', x: 0, y: 0, width: 200, height: 100 }
+    const A: SimNode = { id: 'A', x: 0, y: 200, width: 200, height: 100 }
+    const B: SimNode = { id: 'B', x: 0, y: 240, width: 200, height: 100 }
+
+    const pillH = computeLabelPillHeight()
+    const pillW = computeLabelPillWidth(edgeLabel)
+
+    // Verify labels DO overlap before the fix
+    const cyA_before = (S.y + A.y) / 2 // 100
+    const cyB_before = (S.y + B.y) / 2 // 120
+    const overlapBefore =
+      (pillH + pillH) / 2 + EDGE_LABEL_MARGIN - Math.abs(cyA_before - cyB_before)
+    expect(overlapBefore).toBeGreaterThan(0)
+
+    const edges: Array<LayoutInputEdge> = [
+      { source: 'S', target: 'A', label: edgeLabel },
+      { source: 'S', target: 'B', label: edgeLabel },
+    ]
+    enforceLabelLabelGap([S, A, B], edges)
+
+    // After fix: label centres must be at least (pillH + EDGE_LABEL_MARGIN) apart
+    const cyA_after = (S.y + A.y) / 2
+    const cyB_after = (S.y + B.y) / 2
+    const separation = Math.abs(cyA_after - cyB_after)
+    expect(
+      separation,
+      `Label centre separation ${separation.toFixed(2)}px < required ${pillH + EDGE_LABEL_MARGIN}px`,
+    ).toBeGreaterThanOrEqual(pillH + EDGE_LABEL_MARGIN - 1) // −1 for POST_PASS_SLACK rounding
+
+    // Pills must not intersect: |cy_A - cy_B| >= (h_A + h_B)/2 = pillH
+    expect(separation).toBeGreaterThanOrEqual(pillH)
+
+    // Suppress unused-variable lint for pillW (verified via computeLabelPillWidth call above)
+    void pillW
+  })
+})
+
+// ---------------------------------------------------------------------------
+// clampSameSideLabelX unit tests
+// ---------------------------------------------------------------------------
+
+describe('clampSameSideLabelX', () => {
+  // TC-AL-E-19 — pushes pill right of source/target handles on right→right routing
+  it('TC-AL-E-19: clears pill from both handles on right→right routing', () => {
+    // Simulates a long FK label exiting right side of a 200px-wide table at x=0
+    // (handle is at sourceX = targetX = 200).
+    // getSmoothStepPath midpoint is ~210px — pill extends back leftward into the table.
+    const label = 'FK_EmSigEvalCategoryScoreMapping' // 32 chars → pill = max(60,224)+22 = 246px
+    const pillW = computeLabelPillWidth(label)
+    const sourceX = 200
+    const targetX = 200
+    const rawLabelX = 210 // path midpoint barely past the right edge
+
+    // Without clamping: pill left edge = 210 - pillW/2 → inside the table
+    expect(rawLabelX - pillW / 2).toBeLessThan(sourceX)
+
+    const clamped = clampSameSideLabelX(
+      rawLabelX,
+      pillW,
+      sourceX,
+      'right',
+      targetX,
+      'right',
+    )
+
+    // After clamping: pill left edge must clear the rightmost handle + margin
+    const minLabelX =
+      Math.max(sourceX, targetX) + pillW / 2 + LABEL_PILL_CLAMP_MARGIN
+    expect(clamped).toBeGreaterThanOrEqual(minLabelX)
+
+    // Pill left edge clears source table body
+    expect(clamped - pillW / 2).toBeGreaterThanOrEqual(sourceX + LABEL_PILL_CLAMP_MARGIN - 1)
+  })
+
+  // TC-AL-E-20 — is a no-op for cross-column right→left routing
+  it('TC-AL-E-20: is a no-op for cross-column right→left routing', () => {
+    const label = 'a'.repeat(50)
+    const pillW = computeLabelPillWidth(label)
+    const labelX = 500 // midpoint in the gap between tables
+    const clamped = clampSameSideLabelX(labelX, pillW, 200, 'right', 800, 'left')
+    expect(clamped).toBe(labelX)
   })
 })
 
