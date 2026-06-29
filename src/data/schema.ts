@@ -170,8 +170,8 @@ export const createTableSchema = z.object({
   whiteboardId: z.string().uuid(),
   name: z.string().min(1).max(255),
   description: z.string().optional(),
-  positionX: z.number().finite(),
-  positionY: z.number().finite(),
+  positionX: z.number().finite().optional(),
+  positionY: z.number().finite().optional(),
   width: z.number().positive().optional(),
   height: z.number().positive().optional(),
 })

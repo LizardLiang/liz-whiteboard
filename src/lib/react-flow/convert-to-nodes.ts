@@ -8,14 +8,20 @@ import type { Column, DiagramTable } from '@/data/models'
 import type { ShowMode, TableNodeData, TableNodeType } from './types'
 
 /**
- * Extract table position from DiagramTable entity
- * @param table - DiagramTable with positionX and positionY
- * @returns Position object compatible with React Flow
+ * Extract table position from DiagramTable entity.
+ * When positionX or positionY is null (table has no assigned position yet),
+ * returns {x: -99999, y: -99999} so the node is placed far off-canvas.
+ * React Flow still renders and measures the node via ResizeObserver at this
+ * position, allowing client-side position resolution to compute a
+ * non-overlapping placement once dimensions are known.
  */
 export function extractTablePosition(table: DiagramTable): {
   x: number
   y: number
 } {
+  if (table.positionX === null || table.positionY === null) {
+    return { x: -99999, y: -99999 }
+  }
   return {
     x: table.positionX,
     y: table.positionY,
@@ -44,6 +50,7 @@ export function convertTableToNode(
       isHighlighted: false,
       isHovered: false,
       showMode: 'ALL_FIELDS',
+      positionPending: table.positionX === null || table.positionY === null,
       ...options,
     },
     // Do NOT set width here — React Flow pins it as an inline style on the outer

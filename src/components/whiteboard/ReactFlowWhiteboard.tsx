@@ -20,6 +20,7 @@ import {
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import {
   ReactFlowProvider,
+  useNodesInitialized,
   useReactFlow,
   useUpdateNodeInternals,
   useViewport,
@@ -65,6 +66,7 @@ import {
 } from '@/components/ui/select'
 import { parseColumnHandleId } from '@/lib/react-flow/edge-routing'
 import { convertTablesToNodes } from '@/lib/react-flow/convert-to-nodes'
+import { resolvePendingPositions } from '@/lib/react-flow/resolve-pending-positions'
 import { convertRelationshipsToEdges } from '@/lib/react-flow/convert-to-edges'
 import {
   createRelationshipFn,
@@ -1120,6 +1122,75 @@ function ReactFlowWhiteboardInner({
   // React Flow zoom API (requires ReactFlowProvider context)
   const reactFlowInstance = useReactFlow()
   const viewport = useViewport()
+  const nodesInitialized = useNodesInitialized()
+
+  // ── Client-side position resolution ────────────────────────────────────────
+  // Tables created by the MCP server without an explicit position arrive with
+  // positionPending=true and are placed at {-99999, -99999} (off-canvas) so
+  // React Flow can still render and measure them via ResizeObserver.
+  //
+  // Once React Flow finishes measuring (nodesInitialized changes OR nodes
+  // changes with pending nodes), this effect computes a non-overlapping layout
+  // position for each pending node and emits table:move with isInit=true.
+  //
+  // The server applies a first-write-wins guard: if another client already
+  // wrote a position, the server acks without writing again so both clients
+  // converge on the same value.
+
+  // Track which table IDs have already had their init position emitted so we
+  // don't re-emit on every re-render. Cleared when the whiteboard ID changes.
+  const resolvedPendingIdsRef = useRef<Set<string>>(new Set())
+  useEffect(() => {
+    // Clear the resolved set when the whiteboard changes.
+    resolvedPendingIdsRef.current = new Set()
+  }, [whiteboardId])
+
+  useEffect(() => {
+    // Find all locally pending nodes.
+    const pendingNodes = nodes.filter((n) => n.data.positionPending)
+    if (pendingNodes.length === 0) return
+
+    // Get the live RF node list (which carries measured dimensions).
+    const rfNodes = reactFlowInstance.getNodes()
+    const rfNodeMap = new Map(rfNodes.map((n) => [n.id, n] as const))
+
+    // Only proceed when every pending node has been measured.
+    const measuredPending = pendingNodes
+      .map((pn) => rfNodeMap.get(pn.id))
+      .filter((n): n is NonNullable<typeof n> => n?.measured !== undefined)
+
+    if (measuredPending.length !== pendingNodes.length) return
+
+    // Exclude nodes whose position was already emitted this session.
+    const unresolved = measuredPending.filter(
+      (n) => !resolvedPendingIdsRef.current.has(n.id),
+    )
+    if (unresolved.length === 0) return
+
+    const rfAllNodes = rfNodes
+    const placements = resolvePendingPositions(unresolved as any, rfAllNodes as any)
+    if (placements.length === 0) return
+
+    // Apply positions locally so the nodes appear on-canvas immediately.
+    setNodes((prev) =>
+      prev.map((n) => {
+        const p = placements.find((pl) => pl.id === n.id)
+        if (!p) return n
+        return {
+          ...n,
+          position: { x: p.x, y: p.y },
+          data: { ...n.data, positionPending: false },
+        }
+      }),
+    )
+
+    // Persist to server with first-write-wins guard.
+    placements.forEach(({ id, x, y }) => {
+      resolvedPendingIdsRef.current.add(id)
+      emitPositionUpdate(id, x, y, true)
+    })
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [nodes, nodesInitialized, emitPositionUpdate])
 
   // Build zoom controls and expose to parent once on mount
   useEffect(() => {

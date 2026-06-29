@@ -248,14 +248,18 @@ export function useWhiteboardCollaboration(
     }
   }, [on, off, userId, onBulkPositionUpdate])
 
-  // Emit position update to other users
+  // Emit position update to other users.
+  // isInit=true signals the server to apply a first-write-wins guard: if the
+  // table already has a position (set by another client that loaded first),
+  // the server acks without writing to the DB or broadcasting.
   const emitPositionUpdate = useCallback(
-    (tableId: string, positionX: number, positionY: number) => {
+    (tableId: string, positionX: number, positionY: number, isInit = false) => {
       emit('table:move', {
         tableId,
         positionX,
         positionY,
         userId,
+        isInit,
       })
     },
     [emit, userId],

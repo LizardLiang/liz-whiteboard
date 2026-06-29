@@ -79,8 +79,8 @@ export interface DiagramTable {
   whiteboardId: string
   name: string
   description: string | null
-  positionX: number
-  positionY: number
+  positionX: number | null
+  positionY: number | null
   width: number | null
   height: number | null
   createdAt: Date

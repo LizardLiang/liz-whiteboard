@@ -64,8 +64,8 @@ export async function createDiagramTable(
       whiteboardId: validated.whiteboardId,
       name: validated.name,
       description: validated.description ?? null,
-      positionX: validated.positionX,
-      positionY: validated.positionY,
+      positionX: validated.positionX ?? null,
+      positionY: validated.positionY ?? null,
       width: validated.width ?? null,
       height: validated.height ?? null,
       createdAt: ts,
@@ -220,6 +220,47 @@ export async function updateDiagramTablePosition(
   } catch (error) {
     throw new Error(
       `Failed to update table position: ${error instanceof Error ? error.message : 'Unknown error'}`,
+    )
+  }
+}
+
+/**
+ * Atomically initialize table position using a first-write-wins conditional UPDATE.
+ *
+ * Runs: UPDATE "DiagramTable" SET positionX=?, positionY=?, updatedAt=?
+ *       WHERE id=? AND positionX IS NULL
+ *
+ * This eliminates the TOCTOU window that exists when a read-then-write pattern is
+ * used across an async gap: two concurrent socket handlers can both observe
+ * positionX=null on the read, but only the first UPDATE that reaches SQLite will
+ * match the WHERE clause and change a row (changes=1). The second will match no
+ * rows (changes=0) and leave the winner's value intact.
+ *
+ * @param id - Table UUID
+ * @param positionX - X coordinate to write if positionX is currently NULL
+ * @param positionY - Y coordinate to write if positionY is currently NULL
+ * @returns { changes: 1 if this caller won the race (row updated), 0 if already set;
+ *            row: current authoritative DiagramTable row (or null if id not found) }
+ */
+export async function initDiagramTablePosition(
+  id: string,
+  positionX: number,
+  positionY: number,
+): Promise<{ changes: number; row: DiagramTable | null }> {
+  try {
+    const ts = nowMs()
+    const result = db
+      .prepare(
+        `UPDATE "DiagramTable" SET "positionX" = ?, "positionY" = ?, "updatedAt" = ? WHERE "id" = ? AND "positionX" IS NULL`,
+      )
+      .run(positionX, positionY, ts, id) as { changes: number }
+    const row = mapDiagramTable(
+      db.prepare('SELECT * FROM "DiagramTable" WHERE "id" = ?').get(id),
+    )
+    return { changes: result.changes, row }
+  } catch (error) {
+    throw new Error(
+      `Failed to initialize table position: ${error instanceof Error ? error.message : 'Unknown error'}`,
     )
   }
 }

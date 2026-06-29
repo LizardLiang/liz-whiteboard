@@ -31,6 +31,15 @@ export interface TableNodeData extends Record<string, unknown> {
     columns: Array<Column>
   }
 
+  /**
+   * True when this table has no position in the DB (positionX/positionY are
+   * null). The node is placed off-canvas at {-99999, -99999} so React Flow
+   * still renders and measures it via ResizeObserver. Once measured, a
+   * useEffect in ReactFlowWhiteboardInner resolves a non-overlapping position
+   * and emits table:move with isInit=true to persist it (first-write-wins).
+   */
+  positionPending?: boolean
+
   /** Whether this table is actively selected (clicked) */
   isActiveHighlighted: boolean
 

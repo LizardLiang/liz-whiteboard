@@ -27,6 +27,7 @@ import {
   createDiagramTable,
   deleteDiagramTable,
   findDiagramTableById,
+  initDiagramTablePosition,
   updateDiagramTable,
   updateDiagramTablePosition,
 } from '@/data/diagram-table'
@@ -440,7 +441,12 @@ function setupCollaborationEventHandlers(
   socket.on(
     'table:move',
     async (
-      data: { tableId: string; positionX: number; positionY: number },
+      data: {
+        tableId: string
+        positionX: number
+        positionY: number
+        isInit?: boolean
+      },
       cb?: (res: AckResult) => void,
     ) => {
       if (isSessionExpired(socket)) {
@@ -488,7 +494,58 @@ function setupCollaborationEventHandlers(
           return
         }
 
-        // Update position in database
+        // First-write-wins guard for client-side position initialization.
+        //
+        // When isInit=true the client is writing the first non-overlapping
+        // position it computed after measuring the rendered node. We use an
+        // atomic conditional UPDATE (WHERE positionX IS NULL) to eliminate the
+        // TOCTOU race that exists with a read-then-write pattern: two concurrent
+        // handlers could both observe positionX=null on the earlier read and
+        // both write, making it last-write-wins instead of first-write-wins.
+        //
+        // initDiagramTablePosition returns { changes, row }:
+        //   changes=1 → this caller won; broadcast and ack the written position.
+        //   changes=0 → another client already set the position; ack the current
+        //               DB value without broadcasting, so all clients converge.
+        const isInit = Boolean(data.isInit)
+        if (isInit) {
+          const { changes, row } = await initDiagramTablePosition(
+            data.tableId,
+            data.positionX,
+            data.positionY,
+          )
+          if (changes > 0) {
+            // This client won the race — broadcast so other clients update.
+            socket.broadcast.emit('table:moved', {
+              tableId: data.tableId,
+              positionX: data.positionX,
+              positionY: data.positionY,
+              updatedBy: userId,
+            })
+            cb?.({
+              ok: true,
+              entity: {
+                id: data.tableId,
+                positionX: data.positionX,
+                positionY: data.positionY,
+              },
+            })
+          } else {
+            // Another client already initialized — ack the authoritative DB value.
+            cb?.({
+              ok: true,
+              entity: {
+                id: data.tableId,
+                positionX: row?.positionX ?? null,
+                positionY: row?.positionY ?? null,
+              },
+            })
+          }
+          await safeUpdateSessionActivity(socket.id)
+          return
+        }
+
+        // Regular (non-init) move — unconditional update + broadcast.
         await updateDiagramTablePosition(
           data.tableId,
           data.positionX,

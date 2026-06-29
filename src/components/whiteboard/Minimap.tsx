@@ -80,6 +80,9 @@ export function Minimap({
     let maxY = -Infinity
 
     tables.forEach((table) => {
+      // Skip tables whose position has not been resolved yet (null = pending
+      // client-side position resolution — they sit off-canvas at -99999,-99999).
+      if (table.positionX === null || table.positionY === null) return
       minX = Math.min(minX, table.positionX)
       minY = Math.min(minY, table.positionY)
       maxX = Math.max(maxX, table.positionX + TABLE_WIDTH)
@@ -162,6 +165,8 @@ export function Minimap({
     ctx.lineWidth = 1
 
     tables.forEach((table) => {
+      // Skip tables without a resolved position (pending client-side layout).
+      if (table.positionX === null || table.positionY === null) return
       const pos = worldToMinimap(table.positionX, table.positionY)
       const w = TABLE_WIDTH * scale
       const h = TABLE_HEIGHT * scale

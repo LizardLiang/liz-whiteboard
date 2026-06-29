@@ -70,6 +70,66 @@ export const db: SqliteDatabase = openDatabase()
 // already-populated database.
 db.exec('PRAGMA foreign_keys = ON;')
 db.exec('PRAGMA journal_mode = WAL;')
+
+// ── Migration: relax NOT NULL on DiagramTable.positionX/positionY ──────────
+// The original schema had `"positionX" REAL NOT NULL` and `"positionY" REAL
+// NOT NULL`. Client-side position resolution requires these columns to be
+// nullable so MCP-created tables can be stored without a position until the
+// first browser client measures and assigns one.
+//
+// SQLite does not support ALTER COLUMN, so we perform a table-rebuild migration
+// under an EXCLUSIVE transaction. The migration is idempotent: it only runs when
+// PRAGMA table_info("DiagramTable") still shows notnull=1 for positionX.
+//
+// Existing rows are copied unchanged (their current float values are preserved).
+{
+  const colInfo = db
+    .prepare(`PRAGMA table_info("DiagramTable")`)
+    .all() as Array<Record<string, unknown>>
+  const posXCol = colInfo.find((c) => c['name'] === 'positionX')
+  if (posXCol && posXCol['notnull'] === 1) {
+    // Columns are still NOT NULL — run the rebuild migration.
+    db.exec('BEGIN EXCLUSIVE')
+    try {
+      db.exec(`
+        CREATE TABLE "DiagramTable_v2" (
+          "id" TEXT NOT NULL PRIMARY KEY,
+          "whiteboardId" TEXT NOT NULL,
+          "name" TEXT NOT NULL,
+          "description" TEXT,
+          "positionX" REAL,
+          "positionY" REAL,
+          "width" REAL,
+          "height" REAL,
+          "createdAt" DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+          "updatedAt" DATETIME NOT NULL,
+          CONSTRAINT "DiagramTable_whiteboardId_fkey" FOREIGN KEY ("whiteboardId") REFERENCES "Whiteboard" ("id") ON DELETE CASCADE ON UPDATE CASCADE
+        )
+      `)
+      db.exec(
+        `INSERT INTO "DiagramTable_v2" ("id", "whiteboardId", "name", "description", "positionX", "positionY", "width", "height", "createdAt", "updatedAt") SELECT "id", "whiteboardId", "name", "description", "positionX", "positionY", "width", "height", "createdAt", "updatedAt" FROM "DiagramTable"`,
+      )
+      db.exec(`DROP TABLE "DiagramTable"`)
+      db.exec(
+        `ALTER TABLE "DiagramTable_v2" RENAME TO "DiagramTable"`,
+      )
+      // Re-create indexes that reference DiagramTable.
+      db.exec(
+        `CREATE INDEX IF NOT EXISTS "DiagramTable_whiteboardId_idx" ON "DiagramTable"("whiteboardId")`,
+      )
+      db.exec(
+        `CREATE UNIQUE INDEX IF NOT EXISTS "DiagramTable_whiteboardId_name_key" ON "DiagramTable"("whiteboardId", "name")`,
+      )
+      db.exec('COMMIT')
+    } catch (err) {
+      db.exec('ROLLBACK')
+      throw new Error(
+        `DiagramTable nullable-position migration failed: ${err instanceof Error ? err.message : String(err)}`,
+      )
+    }
+  }
+}
+
 db.exec(SCHEMA_SQL)
 
 // ── Primitive helpers ────────────────────────────────────────────────────────
@@ -236,8 +296,8 @@ export function mapDiagramTable(r: Row): DiagramTable | null {
     whiteboardId: r.whiteboardId as string,
     name: r.name as string,
     description: (r.description as string | null) ?? null,
-    positionX: Number(r.positionX),
-    positionY: Number(r.positionY),
+    positionX: r.positionX == null ? null : Number(r.positionX),
+    positionY: r.positionY == null ? null : Number(r.positionY),
     width: r.width == null ? null : Number(r.width),
     height: r.height == null ? null : Number(r.height),
     createdAt: fromDbDate(r.createdAt),
