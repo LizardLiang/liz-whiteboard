@@ -494,6 +494,7 @@ function WhiteboardEditor() {
         queryKey: ['whiteboard-page', whiteboardId],
       })
       queryClient.invalidateQueries({ queryKey: ['whiteboard', whiteboardId] })
+      queryClient.invalidateQueries({ queryKey: ['relationships', whiteboardId] })
     }
 
     const handleTextUpdated = (data: {

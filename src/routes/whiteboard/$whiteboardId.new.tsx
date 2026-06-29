@@ -477,6 +477,7 @@ function WhiteboardEditor() {
     const handleRelationshipCreated = (relationship: any) => {
       console.log('Relationship created by another user:', relationship)
       queryClient.invalidateQueries({ queryKey: ['whiteboard', whiteboardId] })
+      queryClient.invalidateQueries({ queryKey: ['relationships', whiteboardId] })
     }
 
     const handleTextUpdated = (data: {
