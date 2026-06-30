@@ -25,6 +25,7 @@ import {
   useUpdateNodeInternals,
   useViewport,
 } from '@xyflow/react'
+import { Minimize2 } from 'lucide-react'
 import { ReactFlowCanvas } from './ReactFlowCanvas'
 import { ConnectionStatusIndicator } from './ConnectionStatusIndicator'
 import { DeleteTableDialog } from './DeleteTableDialog'
@@ -89,6 +90,7 @@ import { useColumnReorderMutations } from '@/hooks/use-column-reorder-mutations'
 import { useColumnReorderCollaboration } from '@/hooks/use-column-reorder-collaboration'
 import { getSessionUserId } from '@/lib/session-user-id'
 import { isUnauthorizedError } from '@/lib/auth/errors'
+import { useZenMode } from '@/hooks/use-zen-mode'
 
 /** Pending connection data waiting for cardinality selection */
 interface PendingConnection {
@@ -191,6 +193,9 @@ function ReactFlowWhiteboardInner({
   onZoomChange?: (zoom: number) => void
 }) {
   const queryClient = useQueryClient()
+
+  // Zen mode — hides the toolbar; a floating button restores the chrome
+  const { isZenMode, toggleZenMode, exitZenMode } = useZenMode()
 
   // Column reorder mutations — must be initialized early since seedConfirmedOrderFromServer
   // is called from the initialNodes effect below
@@ -1323,20 +1328,24 @@ function ReactFlowWhiteboardInner({
         height: '100%',
       }}
     >
-      {/* Toolbar — owned by ReactFlowWhiteboardInner so auto-layout orchestrator can control it */}
-      <Toolbar
-        whiteboardId={whiteboardId}
-        tables={toolbarTables as any}
-        onCreateTable={onCreateTable}
-        onCreateRelationship={onCreateRelationship}
-        tableCount={nodes.length}
-        onAutoLayoutClick={() => handleAutoLayoutClick(nodes.length)}
-        isAutoLayoutRunning={isAutoLayoutRunning}
-        zoomControls={toolbarZoomControls}
-        currentZoom={viewport.zoom}
-        showMode={showMode}
-        onShowModeChange={setShowMode}
-      />
+      {/* Toolbar — owned by ReactFlowWhiteboardInner so auto-layout orchestrator can control it.
+          Hidden in zen mode. */}
+      {!isZenMode && (
+        <Toolbar
+          whiteboardId={whiteboardId}
+          tables={toolbarTables as any}
+          onCreateTable={onCreateTable}
+          onCreateRelationship={onCreateRelationship}
+          tableCount={nodes.length}
+          onAutoLayoutClick={() => handleAutoLayoutClick(nodes.length)}
+          isAutoLayoutRunning={isAutoLayoutRunning}
+          zoomControls={toolbarZoomControls}
+          currentZoom={viewport.zoom}
+          showMode={showMode}
+          onShowModeChange={setShowMode}
+          onZenModeToggle={toggleZenMode}
+        />
+      )}
 
       {/* Auto Layout confirmation dialog (shown when tableCount > 50) */}
       <AutoLayoutConfirmDialog
@@ -1348,6 +1357,20 @@ function ReactFlowWhiteboardInner({
 
       <div style={{ position: 'relative', flex: 1 }}>
         <ConnectionStatusIndicator connectionState={connectionState} />
+
+        {/* Floating exit button — the only chrome shown in zen mode */}
+        {isZenMode && (
+          <Button
+            variant="outline"
+            size="sm"
+            onClick={exitZenMode}
+            title="Exit Zen Mode (\)"
+            className="absolute bottom-4 right-4 z-10"
+          >
+            <Minimize2 className="mr-2 h-4 w-4" />
+            Exit Zen
+          </Button>
+        )}
         {deletingTableId && deletingNode && (
           <DeleteTableDialog
             tableName={deletingNode.data.table.name}

@@ -22,6 +22,7 @@ import { TextEditor } from '@/components/whiteboard/TextEditor'
 import { Minimap } from '@/components/whiteboard/Minimap'
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import { useCollaboration } from '@/hooks/use-collaboration'
+import { useZenMode } from '@/hooks/use-zen-mode'
 import { useAuthContext } from '@/components/auth/AuthContext'
 import { getSessionUserId } from '@/lib/session-user-id'
 import {
@@ -93,6 +94,9 @@ function WhiteboardEditor() {
   // Canvas stage ref for programmatic zoom controls
   const stageRef = useRef<Konva.Stage>(null)
 
+  // Zen mode — hides all UI chrome so only the canvas is visible
+  const { isZenMode, toggleZenMode } = useZenMode()
+
   // Debounce timer for canvas state persistence
   const saveCanvasStateTimerRef = useRef<NodeJS.Timeout | null>(null)
 
@@ -114,6 +118,33 @@ function WhiteboardEditor() {
       }
     },
   })
+
+  /**
+   * Toggle zen mode with the `\` (backslash) shortcut — the Figma/Sketch
+   * convention for "hide UI". Ignored while typing in a form field so the key
+   * still types normally inside dialogs and editors.
+   */
+  useEffect(() => {
+    const handleKeyDown = (event: KeyboardEvent) => {
+      if (event.key !== '\\') return
+
+      const target = event.target as HTMLElement | null
+      const tag = target?.tagName
+      if (
+        tag === 'INPUT' ||
+        tag === 'TEXTAREA' ||
+        target?.isContentEditable
+      ) {
+        return
+      }
+
+      event.preventDefault()
+      toggleZenMode()
+    }
+
+    window.addEventListener('keydown', handleKeyDown)
+    return () => window.removeEventListener('keydown', handleKeyDown)
+  }, [toggleZenMode])
 
   /**
    * Restore canvas state when whiteboard loads
@@ -571,27 +602,29 @@ function WhiteboardEditor() {
 
   return (
     <div className="flex flex-col h-screen bg-background">
-      {/* Header */}
-      <div className="flex items-center justify-between px-4 py-2 border-b">
-        <h1 className="text-xl font-semibold">{whiteboard.name}</h1>
-        <div className="flex items-center gap-2">
-          <span
-            className={`text-sm ${
-              connectionState === 'connected'
-                ? 'text-green-600'
+      {/* Header — hidden in zen mode */}
+      {!isZenMode && (
+        <div className="flex items-center justify-between px-4 py-2 border-b">
+          <h1 className="text-xl font-semibold">{whiteboard.name}</h1>
+          <div className="flex items-center gap-2">
+            <span
+              className={`text-sm ${
+                connectionState === 'connected'
+                  ? 'text-green-600'
+                  : connectionState === 'connecting'
+                    ? 'text-yellow-600'
+                    : 'text-red-600'
+              }`}
+            >
+              {connectionState === 'connected'
+                ? 'Connected'
                 : connectionState === 'connecting'
-                  ? 'text-yellow-600'
-                  : 'text-red-600'
-            }`}
-          >
-            {connectionState === 'connected'
-              ? 'Connected'
-              : connectionState === 'connecting'
-                ? 'Connecting...'
-                : 'Disconnected'}
-          </span>
+                  ? 'Connecting...'
+                  : 'Disconnected'}
+            </span>
+          </div>
         </div>
-      </div>
+      )}
 
       {/* Mode Tabs */}
       <Tabs
@@ -599,13 +632,15 @@ function WhiteboardEditor() {
         onValueChange={(value) => setActiveTab(value as 'visual' | 'text')}
         className="flex-1 flex flex-col overflow-hidden"
       >
-        <div className="border-b px-4">
-          <TabsList>
-            <TabsTrigger value="visual">Visual Editor</TabsTrigger>
-            {/* Text Editor tab hidden — tab preserved, trigger disabled */}
-            {/* <TabsTrigger value="text">Text Editor</TabsTrigger> */}
-          </TabsList>
-        </div>
+        {!isZenMode && (
+          <div className="border-b px-4">
+            <TabsList>
+              <TabsTrigger value="visual">Visual Editor</TabsTrigger>
+              {/* Text Editor tab hidden — tab preserved, trigger disabled */}
+              {/* <TabsTrigger value="text">Text Editor</TabsTrigger> */}
+            </TabsList>
+          </div>
+        )}
 
         {/* Visual Editor Tab */}
         <TabsContent
@@ -614,7 +649,7 @@ function WhiteboardEditor() {
         >
           {/* Toolbar — rendered by ReactFlowWhiteboardInner when USE_REACT_FLOW is true.
                For the Konva (legacy) path, we render a separate toolbar here. */}
-          {!USE_REACT_FLOW && (
+          {!USE_REACT_FLOW && !isZenMode && (
             <Toolbar
               whiteboardId={whiteboardId}
               tables={whiteboard.tables}

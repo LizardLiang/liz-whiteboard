@@ -2,7 +2,7 @@
 // Toolbar component for whiteboard actions (Add Table, Add Relationship, Auto Layout)
 
 import { useState } from 'react'
-import { Loader2 } from 'lucide-react'
+import { Loader2, Maximize2 } from 'lucide-react'
 import type { Column, DiagramTable } from '@/data/models'
 import type { Cardinality } from '@/data/schema'
 import type { CreateRelationship, CreateTable } from '@/data/schema'
@@ -68,6 +68,8 @@ export interface ToolbarProps {
   showMode?: ShowMode
   /** Callback when display mode changes */
   onShowModeChange?: (mode: ShowMode) => void
+  /** Callback to enter zen mode (hides all chrome). When omitted, no zen button is rendered. */
+  onZenModeToggle?: () => void
   /** Optional CSS class name */
   className?: string
 }
@@ -152,6 +154,7 @@ export function Toolbar({
   currentZoom = 1,
   showMode = 'ALL_FIELDS',
   onShowModeChange,
+  onZenModeToggle,
   className = '',
 }: ToolbarProps) {
   // Table dialog state
@@ -613,6 +616,18 @@ export function Toolbar({
             </svg>
           </Button>
         </div>
+      )}
+
+      {/* Zen Mode — hides all chrome, leaving only the canvas */}
+      {onZenModeToggle && (
+        <Button
+          variant="outline"
+          size="icon"
+          onClick={onZenModeToggle}
+          title="Zen Mode (\)"
+        >
+          <Maximize2 className="h-4 w-4" />
+        </Button>
       )}
 
       {/* Future: Add more toolbar actions */}

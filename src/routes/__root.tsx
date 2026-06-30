@@ -11,6 +11,7 @@ import { TanStackDevtools } from '@tanstack/react-devtools'
 import { Header } from '../components/layout/Header'
 import { Sidebar } from '../components/layout/Sidebar'
 import { ThemeProvider } from '../hooks/use-theme'
+import { useZenMode } from '../hooks/use-zen-mode'
 import { Toaster } from '../components/ui/sonner'
 import { AuthProvider } from '../components/auth/AuthContext'
 import { SessionExpiredModal } from '../components/auth/SessionExpiredModal'
@@ -76,6 +77,7 @@ export const Route = createRootRouteWithContext<MyRouterContext>()({
 function RootDocument({ children }: { children: React.ReactNode }) {
   const pathname = useRouterState({ select: (s) => s.location.pathname })
   const isPublicRoute = PUBLIC_PATHS.some((p) => pathname.startsWith(p))
+  const { isZenMode } = useZenMode()
 
   return (
     <html lang="en" suppressHydrationWarning>
@@ -88,6 +90,9 @@ function RootDocument({ children }: { children: React.ReactNode }) {
             {isPublicRoute ? (
               // Public routes: render content only (no header/sidebar)
               <main>{children}</main>
+            ) : isZenMode ? (
+              // Zen mode: hide the global shell, canvas fills the viewport
+              <main className="h-screen overflow-auto">{children}</main>
             ) : (
               // Authenticated routes: render full shell
               <div className="flex h-screen flex-col">
