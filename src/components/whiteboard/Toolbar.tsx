@@ -624,7 +624,7 @@ export function Toolbar({
           variant="outline"
           size="icon"
           onClick={onZenModeToggle}
-          title="Zen Mode (\)"
+          title="Zen Mode (z)"
         >
           <Maximize2 className="h-4 w-4" />
         </Button>

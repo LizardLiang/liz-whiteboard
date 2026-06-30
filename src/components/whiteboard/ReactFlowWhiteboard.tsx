@@ -1364,7 +1364,7 @@ function ReactFlowWhiteboardInner({
             variant="outline"
             size="sm"
             onClick={exitZenMode}
-            title="Exit Zen Mode (\)"
+            title="Exit Zen Mode (z)"
             className="absolute bottom-4 right-4 z-10"
           >
             <Minimize2 className="mr-2 h-4 w-4" />

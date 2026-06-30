@@ -120,13 +120,14 @@ function WhiteboardEditor() {
   })
 
   /**
-   * Toggle zen mode with the `\` (backslash) shortcut — the Figma/Sketch
-   * convention for "hide UI". Ignored while typing in a form field so the key
-   * still types normally inside dialogs and editors.
+   * Toggle zen mode with the `z` shortcut. Ignored when a modifier is held
+   * (so Ctrl/Cmd+Z undo is never hijacked) and while typing in a form field
+   * so the key still types normally inside dialogs and editors.
    */
   useEffect(() => {
     const handleKeyDown = (event: KeyboardEvent) => {
-      if (event.key !== '\\') return
+      if (event.key.toLowerCase() !== 'z') return
+      if (event.ctrlKey || event.metaKey || event.altKey) return
 
       const target = event.target as HTMLElement | null
       const tag = target?.tagName
