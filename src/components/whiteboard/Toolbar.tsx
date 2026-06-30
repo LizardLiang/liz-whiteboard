@@ -720,15 +720,16 @@ export function Toolbar({
           </DialogContent>
         </Dialog>
 
-        {/* MCP connection URL copy button */}
+        {/* MCP setup command copy button */}
         {mcpEndpointUrl && (
           <Button
             variant="outline"
             size="icon"
-            title={`Copy MCP URL: ${mcpEndpointUrl}`}
+            title={`Copy MCP setup command:\nclaude mcp add --transport http liz-whiteboard ${mcpEndpointUrl}`}
             onClick={() => {
-              navigator.clipboard.writeText(mcpEndpointUrl)
-              toast.success('MCP URL copied to clipboard')
+              const setupCommand = `claude mcp add --transport http liz-whiteboard ${mcpEndpointUrl}`
+              navigator.clipboard.writeText(setupCommand)
+              toast.success('MCP setup command copied — paste it in your terminal')
             }}
           >
             <Link2 className="h-4 w-4" />
