@@ -73,29 +73,36 @@ export const Route = createFileRoute('/authorize')({
           )
         }
 
-        console.log(`[authorize] client_id=${clientId} scope=${JSON.stringify(scope)} redirect_uri=${redirectUri}`)
-
         // Validate scope
         // RFC 6749 §3.3: the AS may grant a narrower set of scopes than requested.
-        // Grant the intersection of requested scopes and supported scopes.
-        // Return invalid_scope only when the client requests scopes but NONE of
-        // them are supported (e.g. scope=offline_access with no whiteboard).
-        // This makes the AS tolerant of clients that append OIDC scopes like
-        // offline_access alongside the supported whiteboard scope.
+        //
+        // First-party clients (firstParty: true) are fully trusted — always grant
+        // the full supported scope regardless of what was requested. This tolerates
+        // OAuth client bugs that truncate or mangle scope strings (e.g. Claude Code
+        // sends "whiteboa" instead of "whiteboard" due to an off-by-two parsing bug
+        // in the go-sdk WWW-Authenticate scope extractor).
+        //
+        // Third-party clients: grant the intersection of requested ∩ supported.
+        // Return invalid_scope only when the client requests specific scopes but
+        // NONE of them are supported (e.g. scope=openid with no whiteboard at all).
         const requestedScopes = scope.split(' ').filter(Boolean)
         const grantedScopes = requestedScopes.filter(
           (s) => config.scopes.includes(s),
         )
-        if (requestedScopes.length > 0 && grantedScopes.length === 0) {
-          // Client requested specific scopes but none are supported by this AS.
+        if (!client.firstParty && requestedScopes.length > 0 && grantedScopes.length === 0) {
+          // Third-party client requested scopes but none are supported by this AS.
           const redirectError = new URL(redirectUri)
           redirectError.searchParams.set('error', 'invalid_scope')
           if (state) redirectError.searchParams.set('state', state)
           return Response.redirect(redirectError.toString(), 302)
         }
 
-        const effectiveScope =
-          grantedScopes.length > 0 ? grantedScopes.join(' ') : 'whiteboard'
+        // First-party clients always get the full supported scope set, bypassing
+        // any scope truncation bugs in the client's OAuth implementation.
+        // Third-party clients get the intersection, falling back to full scope if empty.
+        const effectiveScope = client.firstParty
+          ? config.scopes.join(' ')
+          : (grantedScopes.length > 0 ? grantedScopes.join(' ') : config.scopes.join(' '))
 
         // Validate resource (RFC 8707) — optional for first increment; warn if absent
         const effectiveResource = resource || config.mcpResourceUri
