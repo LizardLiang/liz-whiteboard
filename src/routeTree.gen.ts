@@ -10,6 +10,7 @@
 
 import { Route as rootRouteImport } from './routes/__root'
 import { Route as TokenRouteImport } from './routes/token'
+import { Route as RevokeRouteImport } from './routes/revoke'
 import { Route as RegisterRouteImport } from './routes/register'
 import { Route as LoginRouteImport } from './routes/login'
 import { Route as AuthorizeRouteImport } from './routes/authorize'
@@ -34,6 +35,11 @@ import { Route as DemoStartSsrDataOnlyRouteImport } from './routes/demo/start.ss
 const TokenRoute = TokenRouteImport.update({
   id: '/token',
   path: '/token',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const RevokeRoute = RevokeRouteImport.update({
+  id: '/revoke',
+  path: '/revoke',
   getParentRoute: () => rootRouteImport,
 } as any)
 const RegisterRoute = RegisterRouteImport.update({
@@ -144,6 +150,7 @@ export interface FileRoutesByFullPath {
   '/authorize': typeof AuthorizeRoute
   '/login': typeof LoginRoute
   '/register': typeof RegisterRoute
+  '/revoke': typeof RevokeRoute
   '/token': typeof TokenRoute
   '/api/collab-token': typeof ApiCollabTokenRoute
   '/demo/tanstack-query': typeof DemoTanstackQueryRoute
@@ -167,6 +174,7 @@ export interface FileRoutesByTo {
   '/authorize': typeof AuthorizeRoute
   '/login': typeof LoginRoute
   '/register': typeof RegisterRoute
+  '/revoke': typeof RevokeRoute
   '/token': typeof TokenRoute
   '/api/collab-token': typeof ApiCollabTokenRoute
   '/demo/tanstack-query': typeof DemoTanstackQueryRoute
@@ -191,6 +199,7 @@ export interface FileRoutesById {
   '/authorize': typeof AuthorizeRoute
   '/login': typeof LoginRoute
   '/register': typeof RegisterRoute
+  '/revoke': typeof RevokeRoute
   '/token': typeof TokenRoute
   '/api/collab-token': typeof ApiCollabTokenRoute
   '/demo/tanstack-query': typeof DemoTanstackQueryRoute
@@ -216,6 +225,7 @@ export interface FileRouteTypes {
     | '/authorize'
     | '/login'
     | '/register'
+    | '/revoke'
     | '/token'
     | '/api/collab-token'
     | '/demo/tanstack-query'
@@ -239,6 +249,7 @@ export interface FileRouteTypes {
     | '/authorize'
     | '/login'
     | '/register'
+    | '/revoke'
     | '/token'
     | '/api/collab-token'
     | '/demo/tanstack-query'
@@ -262,6 +273,7 @@ export interface FileRouteTypes {
     | '/authorize'
     | '/login'
     | '/register'
+    | '/revoke'
     | '/token'
     | '/api/collab-token'
     | '/demo/tanstack-query'
@@ -286,6 +298,7 @@ export interface RootRouteChildren {
   AuthorizeRoute: typeof AuthorizeRoute
   LoginRoute: typeof LoginRoute
   RegisterRoute: typeof RegisterRoute
+  RevokeRoute: typeof RevokeRoute
   TokenRoute: typeof TokenRoute
   ApiCollabTokenRoute: typeof ApiCollabTokenRoute
   DemoTanstackQueryRoute: typeof DemoTanstackQueryRoute
@@ -310,6 +323,13 @@ declare module '@tanstack/react-router' {
       path: '/token'
       fullPath: '/token'
       preLoaderRoute: typeof TokenRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/revoke': {
+      id: '/revoke'
+      path: '/revoke'
+      fullPath: '/revoke'
+      preLoaderRoute: typeof RevokeRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/register': {
@@ -485,6 +505,7 @@ const rootRouteChildren: RootRouteChildren = {
   AuthorizeRoute: AuthorizeRoute,
   LoginRoute: LoginRoute,
   RegisterRoute: RegisterRoute,
+  RevokeRoute: RevokeRoute,
   TokenRoute: TokenRoute,
   ApiCollabTokenRoute: ApiCollabTokenRoute,
   DemoTanstackQueryRoute: DemoTanstackQueryRoute,

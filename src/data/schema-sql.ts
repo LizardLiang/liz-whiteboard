@@ -167,4 +167,20 @@ CREATE INDEX IF NOT EXISTS "CollaborationSession_userId_idx" ON "CollaborationSe
 CREATE INDEX IF NOT EXISTS "CollaborationSession_socketId_key" ON "CollaborationSession"("socketId");
 CREATE UNIQUE INDEX IF NOT EXISTS "CollaborationSession_socketId_unique" ON "CollaborationSession"("socketId");
 CREATE INDEX IF NOT EXISTS "CollaborationSession_lastActivityAt_idx" ON "CollaborationSession"("lastActivityAt");
+
+CREATE TABLE IF NOT EXISTS "OauthRefreshToken" (
+    "tokenHash"  TEXT    NOT NULL PRIMARY KEY,
+    "familyId"   TEXT    NOT NULL,
+    "userId"     TEXT    NOT NULL,
+    "clientId"   TEXT    NOT NULL,
+    "scope"      TEXT    NOT NULL,
+    "resource"   TEXT    NOT NULL,
+    "rotated"    INTEGER NOT NULL DEFAULT 0,
+    "expiresAt"  INTEGER NOT NULL,
+    "createdAt"  INTEGER NOT NULL DEFAULT (unixepoch('now') * 1000)
+);
+
+CREATE INDEX IF NOT EXISTS "OauthRefreshToken_familyId_idx"  ON "OauthRefreshToken"("familyId");
+CREATE INDEX IF NOT EXISTS "OauthRefreshToken_userId_idx"    ON "OauthRefreshToken"("userId");
+CREATE INDEX IF NOT EXISTS "OauthRefreshToken_expiresAt_idx" ON "OauthRefreshToken"("expiresAt");
 `

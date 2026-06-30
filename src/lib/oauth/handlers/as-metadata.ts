@@ -22,6 +22,7 @@ export default defineEventHandler((event) => {
     authorization_endpoint: `${issuer}/authorize`,
     token_endpoint: `${issuer}/token`,
     jwks_uri: `${issuer}/.well-known/jwks.json`,
+    revocation_endpoint: `${issuer}/revoke`,
     // DCR is deferred to a later slice
     // registration_endpoint: `${issuer}/register`,
     scopes_supported: config.scopes,

@@ -74,11 +74,18 @@ export const Route = createFileRoute('/authorize')({
         }
 
         // Validate scope
+        // RFC 6749 §3.3: the AS may grant a narrower set of scopes than requested.
+        // Grant the intersection of requested scopes and supported scopes.
+        // Return invalid_scope only when the client requests scopes but NONE of
+        // them are supported (e.g. scope=offline_access with no whiteboard).
+        // This makes the AS tolerant of clients that append OIDC scopes like
+        // offline_access alongside the supported whiteboard scope.
         const requestedScopes = scope.split(' ').filter(Boolean)
-        const invalidScopes = requestedScopes.filter(
-          (s) => !config.scopes.includes(s),
+        const grantedScopes = requestedScopes.filter(
+          (s) => config.scopes.includes(s),
         )
-        if (invalidScopes.length > 0) {
+        if (requestedScopes.length > 0 && grantedScopes.length === 0) {
+          // Client requested specific scopes but none are supported by this AS.
           const redirectError = new URL(redirectUri)
           redirectError.searchParams.set('error', 'invalid_scope')
           if (state) redirectError.searchParams.set('state', state)
@@ -86,7 +93,7 @@ export const Route = createFileRoute('/authorize')({
         }
 
         const effectiveScope =
-          requestedScopes.length > 0 ? requestedScopes.join(' ') : 'whiteboard'
+          grantedScopes.length > 0 ? grantedScopes.join(' ') : 'whiteboard'
 
         // Validate resource (RFC 8707) — optional for first increment; warn if absent
         const effectiveResource = resource || config.mcpResourceUri

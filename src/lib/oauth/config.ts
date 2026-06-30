@@ -100,8 +100,11 @@ export function getOAuthConfig(): OAuthConfig {
     mcpClientSecret: process.env.MCP_CLIENT_SECRET ?? '',
     collabTokenTtl: 120,       // 2 min — deliberately short, cached in MCP server
     scopes: ['whiteboard'],
-    accessTokenTtl: 600,      // 10 min
-    refreshTokenTtl: 604800,  // 7 days
+    // Env-configurable TTLs (seconds). Defaults:
+    //   access token  — 3600 (1 hr); operators wanting 10-min set OAUTH_ACCESS_TOKEN_TTL=600
+    //   refresh token — 604800 (7 days)
+    accessTokenTtl:  Number(process.env.OAUTH_ACCESS_TOKEN_TTL  ?? '3600'),
+    refreshTokenTtl: Number(process.env.OAUTH_REFRESH_TOKEN_TTL ?? '604800'),
     authCodeTtl: 120,         // 2 min
     clients: loadClients(),
   }

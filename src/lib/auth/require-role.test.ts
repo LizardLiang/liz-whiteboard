@@ -242,46 +242,32 @@ describe('requireServerFnRole', () => {
     ).resolves.toBeUndefined()
   })
 
-  // TC-RR-08: insufficient role throws ForbiddenError
-  it('TC-RR-08: VIEWER on EDITOR-required throws ForbiddenError with status 403', async () => {
+  // TC-RR-08: VIEWER on EDITOR-required — resolves (RBAC deferred, commit 75e8f38)
+  // When RBAC is restored this should revert to: rejects.toThrow(ForbiddenError) with status 403.
+  it('TC-RR-08: VIEWER on EDITOR-required — resolves because RBAC is deferred', async () => {
     mockFindEffectiveRole.mockResolvedValue('VIEWER')
     await expect(
       requireServerFnRole('user-1', 'project-1', 'EDITOR'),
-    ).rejects.toThrow(ForbiddenError)
-    try {
-      await requireServerFnRole('user-1', 'project-1', 'EDITOR')
-    } catch (e) {
-      expect((e as ForbiddenError).status).toBe(403)
-      expect((e as ForbiddenError).errorCode).toBe('FORBIDDEN')
-    }
+    ).resolves.toBeUndefined()
   })
 
-  // TC-RR-09: null projectId throws ForbiddenError, findEffectiveRole not called
-  it('TC-RR-09: null projectId throws ForbiddenError without calling findEffectiveRole', async () => {
-    await expect(requireServerFnRole('user-1', null, 'EDITOR')).rejects.toThrow(
-      ForbiddenError,
-    )
+  // TC-RR-09: null projectId — resolves (RBAC deferred; no DB lookup happens)
+  // When RBAC is restored this should revert to: rejects.toThrow(ForbiddenError).
+  it('TC-RR-09: null projectId — resolves without calling findEffectiveRole (RBAC deferred)', async () => {
+    await expect(requireServerFnRole('user-1', null, 'EDITOR')).resolves.toBeUndefined()
+    // findEffectiveRole is still not called (no-op never reaches DB)
     expect(mockFindEffectiveRole).not.toHaveBeenCalled()
   })
 
-  // TC-RR-10: role lookup throws → rethrows as ForbiddenError, logs sampled error
-  it('TC-RR-10: DB throw → rethrows as ForbiddenError, original error not leaked', async () => {
+  // TC-RR-10: DB throw is never reached because requireServerFnRole is a no-op (RBAC deferred)
+  // When RBAC is restored this should verify ForbiddenError is thrown and error not leaked.
+  it('TC-RR-10: DB configured to throw — resolves because RBAC is deferred (no DB call)', async () => {
     mockFindEffectiveRole.mockRejectedValue(new Error('CONN_POOL_EXHAUSTED'))
-    let caught: unknown
-    try {
-      await requireServerFnRole('user-1', 'project-1', 'EDITOR')
-    } catch (e) {
-      caught = e
-    }
-    expect(caught).toBeInstanceOf(ForbiddenError)
-    expect((caught as ForbiddenError).message).not.toContain(
-      'CONN_POOL_EXHAUSTED',
-    )
-    expect(mockLogSampledError).toHaveBeenCalledWith(
-      expect.objectContaining({
-        errorClass: 'RBAC_LOOKUP_FAILED',
-      }),
-    )
+    // No-op never calls findEffectiveRole, so the rejection is never triggered.
+    await expect(
+      requireServerFnRole('user-1', 'project-1', 'EDITOR'),
+    ).resolves.toBeUndefined()
+    expect(mockFindEffectiveRole).not.toHaveBeenCalled()
   })
 
   // TC-RR-11 (server fn variant): OWNER satisfies EDITOR minimum
@@ -292,12 +278,13 @@ describe('requireServerFnRole', () => {
     ).resolves.toBeUndefined()
   })
 
-  // TC-RR-12 (server fn variant): VIEWER does not satisfy EDITOR
-  it('TC-RR-12: VIEWER does not satisfy EDITOR — throws', async () => {
+  // TC-RR-12 (server fn variant): VIEWER on EDITOR-required — resolves (RBAC deferred)
+  // When RBAC is restored this should revert to: rejects.toThrow(ForbiddenError).
+  it('TC-RR-12: VIEWER on EDITOR-required — resolves because RBAC is deferred', async () => {
     mockFindEffectiveRole.mockResolvedValue('VIEWER')
     await expect(
       requireServerFnRole('user-1', 'project-1', 'EDITOR'),
-    ).rejects.toThrow(ForbiddenError)
+    ).resolves.toBeUndefined()
   })
 })
 

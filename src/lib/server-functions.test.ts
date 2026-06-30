@@ -30,46 +30,50 @@ const PROJECT_ID = 'project-rbac-test-001'
 // SEC-RBAC-05: Per-tier denial regression
 // ─────────────────────────────────────────────────────────────────────────────
 
+// NOTE (2026-06-30): requireServerFnRole is currently a no-op stub. RBAC was intentionally
+// removed in commit 75e8f38 ("fix(auth): remove project-level RBAC from WebSocket and server
+// functions") and the deferral is tracked in:
+//   .claude/feature/auth-security-hardening/DEFERRED-websocket-rbac.md
+//
+// All tests below verify the CURRENT behaviour (always resolves for any authenticated user).
+// When RBAC is restored, revert these tests to the enforcement assertions they were originally
+// written with.
+
 describe('requireServerFnRole — per-tier denial (SEC-RBAC-05)', () => {
   beforeEach(() => {
     vi.clearAllMocks()
   })
 
-  // TC-RBAC-01 (Regression): VIEWER denied on EDITOR-required function
-  it('TC-RBAC-01 (Regression): VIEWER role denied on EDITOR-required function → ForbiddenError', async () => {
+  // TC-RBAC-01: VIEWER on EDITOR-required — resolves (RBAC deferred)
+  it('TC-RBAC-01 (Regression): VIEWER role — resolves because RBAC is deferred', async () => {
     mockFindEffectiveRole.mockResolvedValue('VIEWER')
     await expect(
       requireServerFnRole(USER_ID, PROJECT_ID, 'EDITOR'),
-    ).rejects.toThrow(ForbiddenError)
-    const err = await requireServerFnRole(USER_ID, PROJECT_ID, 'EDITOR').catch(
-      (e) => e,
-    )
-    expect(err.status).toBe(403)
-    expect(err.errorCode).toBe('FORBIDDEN')
+    ).resolves.toBeUndefined()
   })
 
-  // TC-RBAC-02 (Regression): EDITOR denied on ADMIN-required function
-  it('TC-RBAC-02 (Regression): EDITOR role denied on ADMIN-required function → ForbiddenError', async () => {
+  // TC-RBAC-02: EDITOR on ADMIN-required — resolves (RBAC deferred)
+  it('TC-RBAC-02 (Regression): EDITOR role — resolves because RBAC is deferred', async () => {
     mockFindEffectiveRole.mockResolvedValue('EDITOR')
     await expect(
       requireServerFnRole(USER_ID, PROJECT_ID, 'ADMIN'),
-    ).rejects.toThrow(ForbiddenError)
+    ).resolves.toBeUndefined()
   })
 
-  // TC-RBAC-03 (Regression): ADMIN denied on OWNER-required function (e.g., deleteProjectFn)
-  it('TC-RBAC-03 (Regression): ADMIN role denied on OWNER-required function → ForbiddenError', async () => {
+  // TC-RBAC-03: ADMIN on OWNER-required — resolves (RBAC deferred)
+  it('TC-RBAC-03 (Regression): ADMIN role — resolves because RBAC is deferred', async () => {
     mockFindEffectiveRole.mockResolvedValue('ADMIN')
     await expect(
       requireServerFnRole(USER_ID, PROJECT_ID, 'OWNER'),
-    ).rejects.toThrow(ForbiddenError)
+    ).resolves.toBeUndefined()
   })
 
-  // TC-RBAC-04 (Regression): null role (no membership) denied on VIEWER-required read function
-  it('TC-RBAC-04 (Regression): null role denied on VIEWER-required function → ForbiddenError', async () => {
+  // TC-RBAC-04: null role on VIEWER-required — resolves (RBAC deferred)
+  it('TC-RBAC-04 (Regression): null role — resolves because RBAC is deferred', async () => {
     mockFindEffectiveRole.mockResolvedValue(null)
     await expect(
       requireServerFnRole(USER_ID, PROJECT_ID, 'VIEWER'),
-    ).rejects.toThrow(ForbiddenError)
+    ).resolves.toBeUndefined()
   })
 
   // Role hierarchy: OWNER satisfies EDITOR
@@ -88,11 +92,9 @@ describe('requireServerFnRole — per-tier denial (SEC-RBAC-05)', () => {
     ).resolves.toBeUndefined()
   })
 
-  // null projectId → ForbiddenError regardless of role (anti-enumeration)
-  it('null projectId → ForbiddenError without calling findEffectiveRole', async () => {
-    await expect(requireServerFnRole(USER_ID, null, 'VIEWER')).rejects.toThrow(
-      ForbiddenError,
-    )
+  // null projectId — resolves (RBAC deferred; anti-enumeration check removed with RBAC)
+  it('null projectId → resolves (RBAC deferred, findEffectiveRole not called)', async () => {
+    await expect(requireServerFnRole(USER_ID, null, 'VIEWER')).resolves.toBeUndefined()
     expect(mockFindEffectiveRole).not.toHaveBeenCalled()
   })
 })

@@ -156,7 +156,7 @@ async function handleRefreshTokenGrant(body: URLSearchParams): Promise<Response>
   }
 
   const { rotateRefreshToken } = await import('@/lib/oauth/tokens')
-  const result = await rotateRefreshToken(refreshToken, config)
+  const result = await rotateRefreshToken(refreshToken, clientId, config)
 
   if (!result) {
     return tokenError('invalid_grant', 'Refresh token is invalid or expired')
