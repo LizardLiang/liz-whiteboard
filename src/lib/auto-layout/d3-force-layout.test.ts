@@ -5,11 +5,15 @@ import { describe, expect, it } from 'vitest'
 import {
   COL_GAP,
   EDGE_LABEL_MARGIN,
+  EDGE_SEP,
   LABEL_PILL_CLAMP_MARGIN,
+  assignLayersBFS,
   clampSameSideLabelX,
   computeD3ForceLayout,
+  computeEdgeBundleOffsets,
   computeLabelPillHeight,
   computeLabelPillWidth,
+  computeMaxCorridorBundleWidth,
   computeRequiredColGap,
   enforceEdgeLabelGap,
   enforceLabelLabelGap,
@@ -485,6 +489,104 @@ describe('clampSameSideLabelX', () => {
     const labelX = 500 // midpoint in the gap between tables
     const clamped = clampSameSideLabelX(labelX, pillW, 200, 'right', 800, 'left')
     expect(clamped).toBe(labelX)
+  })
+})
+
+// ---------------------------------------------------------------------------
+// Edge bundle offset tests — TC-AL-E-21 through TC-AL-E-25
+// ---------------------------------------------------------------------------
+
+describe('computeEdgeBundleOffsets', () => {
+  // TC-AL-E-21 — single edge gets zero offsets
+  it('TC-AL-E-21: single edge in a corridor → both offsets are 0', () => {
+    const nodes = [makeNode('A'), makeNode('B')]
+    const edges: Array<LayoutInputEdge> = [{ id: 'e1', source: 'A', target: 'B' }]
+    const layers = assignLayersBFS(nodes, edges)
+    const result = computeEdgeBundleOffsets(edges, layers)
+    expect(result).toHaveLength(1)
+    expect(result[0].handleYOffset).toBe(0)
+    expect(result[0].centerXOffset).toBe(0)
+  })
+
+  // TC-AL-E-22 — 2 edges between same table pair get symmetric offsets
+  it('TC-AL-E-22: 2 edges same table pair → centerXOffset and handleYOffset are symmetric', () => {
+    const nodes = [makeNode('A'), makeNode('B')]
+    const edges: Array<LayoutInputEdge> = [
+      { id: 'e1', source: 'A', target: 'B' },
+      { id: 'e2', source: 'A', target: 'B' },
+    ]
+    const layers = assignLayersBFS(nodes, edges)
+    const result = computeEdgeBundleOffsets(edges, layers)
+    expect(result).toHaveLength(2)
+    const xOffsets = result.map((r) => r.centerXOffset).sort((a, b) => a - b)
+    expect(xOffsets[0]).toBeCloseTo(-EDGE_SEP / 2)
+    expect(xOffsets[1]).toBeCloseTo(+EDGE_SEP / 2)
+    expect(xOffsets[0] + xOffsets[1]).toBeCloseTo(0)
+    const yOffsets = result.map((r) => r.handleYOffset).sort((a, b) => a - b)
+    expect(yOffsets[0]).toBeCloseTo(-EDGE_SEP / 2)
+    expect(yOffsets[1]).toBeCloseTo(+EDGE_SEP / 2)
+  })
+
+  // TC-AL-E-23 — 3 edges in the same column corridor, all different table pairs
+  //   Hub has degree 3 → BFS root → col 0; A, B, C each degree 1 → col 1.
+  //   All 3 edges cross corridor (0,1). No same-table-pair sub-bundle size > 1,
+  //   so handleYOffset is 0 for all; centerXOffset spreads ±EDGE_SEP.
+  it('TC-AL-E-23: 3 edges same column corridor, different table pairs → centerXOffset spread ±EDGE_SEP, handleYOffset all 0', () => {
+    const nodes = [makeNode('Hub'), makeNode('A'), makeNode('B'), makeNode('C')]
+    const edges: Array<LayoutInputEdge> = [
+      { id: 'e1', source: 'A', target: 'Hub' },
+      { id: 'e2', source: 'B', target: 'Hub' },
+      { id: 'e3', source: 'C', target: 'Hub' },
+    ]
+    // Hub has degree 3 (highest) → col 0; A, B, C each have degree 1 → col 1.
+    // All 3 edges cross corridor (0,1).
+    const layers = assignLayersBFS(nodes, edges)
+    const result = computeEdgeBundleOffsets(edges, layers)
+    expect(result).toHaveLength(3)
+    const xOffsets = result.map((r) => r.centerXOffset).sort((a, b) => a - b)
+    expect(xOffsets[0]).toBeCloseTo(-EDGE_SEP)
+    expect(xOffsets[1]).toBeCloseTo(0)
+    expect(xOffsets[2]).toBeCloseTo(+EDGE_SEP)
+    // No same-table-pair bundle of size > 1: all handleYOffset = 0
+    result.forEach((r) => expect(r.handleYOffset).toBeCloseTo(0))
+  })
+})
+
+describe('computeMaxCorridorBundleWidth', () => {
+  // TC-AL-E-24 — N edges in one corridor → (N-1) × EDGE_SEP
+  it('TC-AL-E-24: computeMaxCorridorBundleWidth → (N-1)×EDGE_SEP for N edges in one corridor', () => {
+    const nodes = [makeNode('A'), makeNode('B')]
+    const edges: Array<LayoutInputEdge> = [
+      { id: 'e1', source: 'A', target: 'B' },
+      { id: 'e2', source: 'A', target: 'B' },
+      { id: 'e3', source: 'A', target: 'B' },
+    ]
+    const layers = assignLayersBFS(nodes, edges)
+    const extra = computeMaxCorridorBundleWidth(edges, layers)
+    expect(extra).toBeCloseTo(2 * EDGE_SEP) // (3-1) × EDGE_SEP
+  })
+})
+
+describe('computeD3ForceLayout — bundle colGap growth', () => {
+  // TC-AL-E-25 — 3 parallel edges between same table pair grow colGap by 2×EDGE_SEP
+  it('TC-AL-E-25: 3 edges between same table pair grow colGap by 2×EDGE_SEP', async () => {
+    const nodes = [makeNode('A', 250, 200), makeNode('B', 250, 200)]
+    const edges: Array<LayoutInputEdge> = [
+      { id: 'e1', source: 'A', target: 'B' },
+      { id: 'e2', source: 'A', target: 'B' },
+      { id: 'e3', source: 'A', target: 'B' },
+    ]
+    const result = await computeD3ForceLayout(nodes, edges)
+    const pm = posMap(result)
+    const aRight = pm.get('A')!.x + 250
+    const bLeft = pm.get('B')!.x
+    const horizGap = bLeft - aRight
+    // 3 edges → bundle extra = 2×EDGE_SEP; base = computeRequiredColGap (unlabelled = COL_GAP floor)
+    const minExpected = computeRequiredColGap(edges) + 2 * EDGE_SEP
+    expect(
+      horizGap,
+      `colGap ${horizGap.toFixed(2)} < base+bundle_extra ${minExpected.toFixed(2)}`,
+    ).toBeGreaterThanOrEqual(minExpected)
   })
 })
 

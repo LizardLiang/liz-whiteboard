@@ -284,8 +284,12 @@ export const RelationshipEdge = memo(
     data,
     selected,
   }: EdgeProps<RelationshipEdgeData>) => {
-    const { cardinality, label, isHighlighted } = data || {}
+    const { cardinality, label, isHighlighted, bundleHandleYOffset, bundleCenterXOffset } = data || {}
     const isActive = selected || isHighlighted
+
+    // Bundle offsets — 0 when edge is not in a multi-edge bundle
+    const bundleYOff = bundleHandleYOffset ?? 0
+    const bundleXOff = bundleCenterXOffset ?? 0
 
     // Delete button visibility state
     const [isHovered, setIsHovered] = useState(false)
@@ -345,14 +349,24 @@ export const RelationshipEdge = memo(
     const adjTargetX = targetX + Math.cos(tgtAngle) * tgtExt
     const adjTargetY = targetY + Math.sin(tgtAngle) * tgtExt
 
+    // Bundle Y offset — stacks on top of the cardinality-indicator shortening.
+    // Separates horizontal entry/exit segments for same-table-pair multi-edges.
+    const bundledSourceY = adjSourceY + bundleYOff
+    const bundledTargetY = adjTargetY + bundleYOff
+
+    // Bundle X offset — fans vertical step segments within the column corridor.
+    const defaultCenterX = (adjSourceX + adjTargetX) / 2
+    const bundledCenterX = defaultCenterX + bundleXOff
+
     const [edgePath, labelX, labelY] = getSmoothStepPath({
       sourceX: adjSourceX,
-      sourceY: adjSourceY,
+      sourceY: bundledSourceY,
       sourcePosition,
       targetX: adjTargetX,
-      targetY: adjTargetY,
+      targetY: bundledTargetY,
       targetPosition,
       borderRadius: 16,
+      centerX: bundledCenterX,
     })
 
     // Clamp the label's X position so the pill doesn't overlap either endpoint
@@ -463,10 +477,10 @@ export const RelationshipEdge = memo(
           style={{ transition: 'stroke-width 0.2s ease' }}
         />
 
-        {/* Source cardinality */}
+        {/* Source cardinality — shifted by bundle Y offset so indicator tip meets fanned path */}
         <CardinalityIndicator
           x={sourceX}
-          y={sourceY}
+          y={sourceY + bundleYOff}
           angle={srcAngle}
           isMany={sourceIsMany}
           isOptional={sourceIsOptional}
@@ -474,10 +488,10 @@ export const RelationshipEdge = memo(
           sw={sw}
         />
 
-        {/* Target cardinality */}
+        {/* Target cardinality — shifted by bundle Y offset so indicator tip meets fanned path */}
         <CardinalityIndicator
           x={targetX}
-          y={targetY}
+          y={targetY + bundleYOff}
           angle={tgtAngle}
           isMany={targetIsMany}
           isOptional={targetIsOptional}

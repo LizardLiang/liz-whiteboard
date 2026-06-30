@@ -9,23 +9,37 @@ import type {
   RelationshipEdgeType,
   TableNodeType,
 } from '@/lib/react-flow/types'
-import type { LayoutOutputPosition } from '@/lib/auto-layout/d3-force-layout'
-import { computeD3ForceLayout } from '@/lib/auto-layout/d3-force-layout'
+import type {
+  LayoutOutputEdge,
+  LayoutOutputPosition,
+} from '@/lib/auto-layout/d3-force-layout'
+import {
+  assignLayersBFS,
+  computeD3ForceLayout,
+  computeEdgeBundleOffsets,
+} from '@/lib/auto-layout/d3-force-layout'
+
+export interface LayoutResult {
+  /** Node positions to apply via applyBulkPositions */
+  positions: Array<LayoutOutputPosition>
+  /** Per-edge bundle offsets to apply to edge data */
+  edgeOffsets: Array<LayoutOutputEdge>
+}
 
 export interface UseD3ForceLayoutOptions {
-  onLayoutComplete?: (positions: Array<LayoutOutputPosition>) => void
+  onLayoutComplete?: (result: LayoutResult) => void
   onLayoutError?: (error: Error) => void
 }
 
 export interface UseD3ForceLayoutResult {
   /**
    * Run the layout computation.
-   * Resolves to an array of { id, x, y } positions or null if an error occurred.
+   * Resolves to { positions, edgeOffsets } or null if an error occurred.
    */
   runLayout: (
     nodes: Array<TableNodeType>,
     edges: Array<RelationshipEdgeType>,
-  ) => Promise<Array<LayoutOutputPosition> | null>
+  ) => Promise<LayoutResult | null>
   /** True while the layout is computing */
   isRunning: boolean
   /** The last error, or null */
@@ -57,7 +71,7 @@ export function useD3ForceLayout(
     async (
       nodes: Array<TableNodeType>,
       edges: Array<RelationshipEdgeType>,
-    ): Promise<Array<LayoutOutputPosition> | null> => {
+    ): Promise<LayoutResult | null> => {
       setIsRunning(true)
       setError(null)
 
@@ -82,9 +96,11 @@ export function useD3ForceLayout(
         }))
 
         // Convert React Flow edges to layout input.
+        // Pass id so computeEdgeBundleOffsets can emit per-edge offsets keyed by id.
         // Pass label and cardinality so the layout engine can compute per-edge
         // label pill sizes from actual content (not a fixed constant).
         const layoutEdges = edges.map((e) => ({
+          id: e.id,
           source: e.source,
           target: e.target,
           label: e.data?.label ?? undefined,
@@ -92,8 +108,16 @@ export function useD3ForceLayout(
         }))
 
         const positions = await computeD3ForceLayout(layoutNodes, layoutEdges)
-        onLayoutComplete?.(positions)
-        return positions
+
+        // Compute per-edge bundle offsets (O(n+e), negligible cost).
+        // Re-runs assignLayersBFS over all layout nodes — isolated nodes have
+        // degree 0 so they don't affect the connected cluster's corridor keys.
+        const layers = assignLayersBFS(layoutNodes, layoutEdges)
+        const edgeOffsets = computeEdgeBundleOffsets(layoutEdges, layers)
+
+        const result: LayoutResult = { positions, edgeOffsets }
+        onLayoutComplete?.(result)
+        return result
       } catch (err) {
         const layoutError = err instanceof Error ? err : new Error(String(err))
         setError(layoutError)

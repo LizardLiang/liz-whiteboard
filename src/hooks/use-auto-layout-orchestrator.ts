@@ -19,7 +19,7 @@ import { useCallback, useEffect, useRef, useState } from 'react'
 import { useReactFlow } from '@xyflow/react'
 import { toast } from 'sonner'
 import type { Edge, Node } from '@xyflow/react'
-import type { LayoutOutputPosition } from '@/lib/auto-layout/d3-force-layout'
+import type { LayoutOutputEdge, LayoutOutputPosition } from '@/lib/auto-layout/d3-force-layout'
 import { applyBulkPositions } from '@/lib/auto-layout'
 import { recalculateEdgesForDraggedNodes } from '@/lib/react-flow/edge-routing'
 import { isUnauthorizedError } from '@/lib/auth/errors'
@@ -41,7 +41,7 @@ export interface UseAutoLayoutOrchestratorArgs {
   runD3ForceLayout: (
     nodes: Array<Node>,
     edges: Array<Edge>,
-  ) => Promise<Array<LayoutOutputPosition> | null>
+  ) => Promise<{ positions: Array<LayoutOutputPosition>; edgeOffsets: Array<LayoutOutputEdge> } | null>
   /** Emits table:move:bulk after successful persistence */
   emitBulkPositionUpdate: (
     positions: Array<{ tableId: string; positionX: number; positionY: number }>,
@@ -182,27 +182,47 @@ export function useAutoLayoutOrchestrator({
 
     try {
       // Step 1 — Compute layout (may return null on error)
-      const positions = await runD3ForceLayout(getNodes(), getEdges())
+      const layoutResult = await runD3ForceLayout(getNodes(), getEdges())
 
       if (!isMountedRef.current) return
-      if (!positions) {
+      if (!layoutResult) {
         // runD3ForceLayout already sets error state on the hook and calls onLayoutError;
         // the orchestrator surfaces the user-facing toast here.
         toast.error('Auto Layout failed — please try again.')
         return
       }
 
+      const { positions, edgeOffsets } = layoutResult
+
       // Step 2 — Optimistic local apply (before network round-trip).
       // Build updated nodes once so we can pass the same array to both
       // setNodes and edge-handle recalculation.
       const updatedNodes = applyBulkPositions(getNodes(), positions)
       setNodes(updatedNodes)
+
+      // Build a lookup for fast per-edge offset access
+      const offsetById = new Map(edgeOffsets.map((o) => [o.id, o]))
       const allMovedIds = new Set(positions.map((p) => p.id))
-      setEdges((prev) =>
-        recalculateEdgesForDraggedNodes(prev, updatedNodes, allMovedIds),
-      )
+
+      setEdges((prev) => {
+        // Apply bundle offsets to edge data first, then recalculate handle sides.
+        const withOffsets = prev.map((e) => {
+          const off = offsetById.get(e.id)
+          if (!off || (off.handleYOffset === 0 && off.centerXOffset === 0)) return e
+          return {
+            ...e,
+            data: {
+              ...e.data,
+              bundleHandleYOffset: off.handleYOffset,
+              bundleCenterXOffset: off.centerXOffset,
+            },
+          }
+        })
+        return recalculateEdgesForDraggedNodes(withOffsets, updatedNodes, allMovedIds)
+      })
 
       // Step 3 — Stash payload BEFORE the await so Retry can re-submit
+      // (Bundle offsets are UI-only; only node positions are persisted.)
       const payload: BulkPayload = {
         whiteboardId,
         positions: positions.map((p) => ({

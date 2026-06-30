@@ -30,6 +30,12 @@ export interface LayoutInputNode {
 }
 
 export interface LayoutInputEdge {
+  /**
+   * Unique edge ID — used by computeEdgeBundleOffsets to emit per-edge offsets
+   * back to the renderer. Optional so existing callers without IDs still compile;
+   * bundle offset functions fall back to '' for deterministic sorting.
+   */
+  id?: string
   /** Source table ID */
   source: string
   /** Target table ID */
@@ -51,6 +57,28 @@ export interface LayoutOutputPosition {
   id: string
   x: number
   y: number
+}
+
+/**
+ * Per-edge bundle offset data returned alongside node positions.
+ * Applied by RelationshipEdge.new.tsx to separate parallel/coincident edges.
+ */
+export interface LayoutOutputEdge {
+  /** Edge ID matching LayoutInputEdge.id */
+  id: string
+  /**
+   * Y offset (px) applied to source and target handle positions before
+   * calling getSmoothStepPath. Separates horizontal segments for
+   * same-table-pair bundles (multi-edges or near-coincident edges).
+   * Positive = downward in canvas coordinates.
+   */
+  handleYOffset: number
+  /**
+   * X offset (px) applied to getSmoothStepPath's centerX parameter relative
+   * to the natural corridor midpoint. Separates vertical step segments for
+   * all edges in the same column corridor.
+   */
+  centerXOffset: number
 }
 
 // ---------------------------------------------------------------------------
@@ -600,11 +628,36 @@ export function enforceLabelLabelGap(
 export const COL_GAP = 80
 const ROW_GAP = 80 // vertical gap between nodes within a column
 
+// ---------------------------------------------------------------------------
+// Edge-bundle separation constants
+// ---------------------------------------------------------------------------
+
+/**
+ * Inactive stroke width (px) of the main edge path.
+ * Source of truth: RelationshipEdge.new.tsx — strokeWidth={isActive ? 2.5 : 1.5}
+ * The inactive (default) width is used because bundles pile up during normal
+ * (non-selected) rendering.
+ */
+export const EDGE_STROKE_WIDTH = 1.5
+
+/**
+ * Minimum visual gap between adjacent parallel edges in a bundle (px).
+ * Small fixed separation gap — acceptable per project rule: a small fixed
+ * MARGIN/separation-gap constant is acceptable.
+ */
+export const EDGE_BUNDLE_MARGIN = 4
+
+/**
+ * Centre-to-centre distance between adjacent parallel edges in a bundle (px).
+ * Derived from actual stroke width + minimum gap.
+ */
+export const EDGE_SEP = EDGE_STROKE_WIDTH + EDGE_BUNDLE_MARGIN // 5.5 px
+
 /**
  * Assign each node a column index via longest-path topological sort.
  * Nodes in cycles are placed in the column after the deepest reachable node.
  */
-function assignLayersBFS(
+export function assignLayersBFS(
   nodes: Array<LayoutInputNode>,
   edges: Array<LayoutInputEdge>,
 ): Map<string, number> {
@@ -678,14 +731,15 @@ function assignLayersBFS(
  * their neighbours in col 2, etc. Nodes stack vertically within each column.
  * Returns SimNodes with center coordinates (x, y).
  *
- * @param colGap - Inter-column gap (px). Use computeRequiredColGap() to derive from edge labels.
+ * @param colGap  - Inter-column gap (px). Use computeRequiredColGap() to derive from edge labels.
+ * @param layers  - Pre-computed layer map from assignLayersBFS (avoids double computation).
  */
 function layeredPlacement(
   nodes: Array<LayoutInputNode>,
-  edges: Array<LayoutInputEdge>,
   colGap: number,
+  layers: Map<string, number>,
 ): Array<SimNode> {
-  const layer = assignLayersBFS(nodes, edges)
+  const layer = layers
 
   // Group by column (BFS level)
   const cols = new Map<number, Array<LayoutInputNode>>()
@@ -719,6 +773,119 @@ function layeredPlacement(
   }
 
   return simNodes
+}
+
+// ---------------------------------------------------------------------------
+// Edge bundle offset computation
+// ---------------------------------------------------------------------------
+
+/**
+ * Maximum extra corridor width (px) required to fan parallel edges in the
+ * busiest column corridor. Returns 0 when no corridor has more than 1 edge.
+ *
+ * Formula: max over all (srcCol, tgtCol) corridors of (N − 1) × EDGE_SEP
+ * where N = count of edges crossing that corridor.
+ *
+ * This value is ADDED to effectiveColGap inside computeD3ForceLayout so the
+ * fanned vertical step segments fit without competing for space with label pills.
+ */
+export function computeMaxCorridorBundleWidth(
+  edges: Array<LayoutInputEdge>,
+  layers: Map<string, number>,
+): number {
+  const counts = new Map<string, number>()
+  for (const edge of edges) {
+    const a = layers.get(edge.source) ?? 0
+    const b = layers.get(edge.target) ?? 0
+    const key = `${Math.min(a, b)}:${Math.max(a, b)}`
+    counts.set(key, (counts.get(key) ?? 0) + 1)
+  }
+  let max = 0
+  for (const n of counts.values()) {
+    if (n > 1) max = Math.max(max, (n - 1) * EDGE_SEP)
+  }
+  return max
+}
+
+/**
+ * Compute per-edge bundle offsets for separating parallel/coincident edges.
+ *
+ * Pass A — column-corridor centerXOffset:
+ *   Groups all edges by (minCol, maxCol) corridor. Within each group (sorted by
+ *   edge.id for determinism), assigns centerXOffset = (i − (n−1)/2) × EDGE_SEP.
+ *   This fans the vertical step segments of getSmoothStepPath horizontally.
+ *
+ * Pass B — table-pair handleYOffset:
+ *   Groups all edges by normalised (minNodeId, maxNodeId) table pair. Within each
+ *   sub-bundle (sorted by edge.id), assigns handleYOffset = (i − (n−1)/2) × EDGE_SEP
+ *   when the sub-bundle size > 1. Separates horizontal entry/exit segments for
+ *   multi-edges between the same table pair.
+ *
+ * Middle edge in each group is unshifted (offset = 0). Outer edges receive
+ * symmetric positive/negative offsets. Sum of all offsets in a group = 0.
+ */
+export function computeEdgeBundleOffsets(
+  edges: Array<LayoutInputEdge>,
+  layers: Map<string, number>,
+): Array<LayoutOutputEdge> {
+  // Initialise output — one entry per input edge (same order)
+  const result: Array<LayoutOutputEdge> = edges.map((e) => ({
+    id: e.id ?? '',
+    handleYOffset: 0,
+    centerXOffset: 0,
+  }))
+
+  // ── Pass A: centerXOffset by column corridor ──────────────────────────────
+  const corridorGroups = new Map<string, Array<number>>() // key → indices into edges[]
+  for (let i = 0; i < edges.length; i++) {
+    const edge = edges[i]
+    const a = layers.get(edge.source) ?? 0
+    const b = layers.get(edge.target) ?? 0
+    const key = `${Math.min(a, b)}:${Math.max(a, b)}`
+    if (!corridorGroups.has(key)) corridorGroups.set(key, [])
+    corridorGroups.get(key)!.push(i)
+  }
+
+  for (const indices of corridorGroups.values()) {
+    const n = indices.length
+    if (n <= 1) continue // single edge in corridor — no offset needed
+    // Sort by id for determinism
+    indices.sort((a, b) => {
+      const idA = edges[a].id ?? ''
+      const idB = edges[b].id ?? ''
+      return idA < idB ? -1 : idA > idB ? 1 : 0
+    })
+    for (let i = 0; i < n; i++) {
+      result[indices[i]].centerXOffset = (i - (n - 1) / 2) * EDGE_SEP
+    }
+  }
+
+  // ── Pass B: handleYOffset by table-pair sub-bundle ────────────────────────
+  const pairGroups = new Map<string, Array<number>>() // key → indices into edges[]
+  for (let i = 0; i < edges.length; i++) {
+    const edge = edges[i]
+    const a = edge.source
+    const b = edge.target
+    const key = a < b ? `${a}:${b}` : `${b}:${a}`
+    if (!pairGroups.has(key)) pairGroups.set(key, [])
+    pairGroups.get(key)!.push(i)
+  }
+
+  for (const indices of pairGroups.values()) {
+    const n = indices.length
+    if (n <= 1) continue // single edge for this table pair — offset stays 0
+    // Sort by id for determinism
+    indices.sort((a, b) => {
+      const idA = edges[a].id ?? ''
+      const idB = edges[b].id ?? ''
+      return idA < idB ? -1 : idA > idB ? 1 : 0
+    })
+    for (let i = 0; i < n; i++) {
+      result[indices[i]].handleYOffset = (i - (n - 1) / 2) * EDGE_SEP
+    }
+  }
+
+  return result
 }
 
 // ---------------------------------------------------------------------------
@@ -800,11 +967,18 @@ export async function computeD3ForceLayout(
     })
   }
 
-  // Derive column gap from actual edge labels and cardinality indicators
-  const effectiveColGap = computeRequiredColGap(edges)
+  // Compute layer assignments once — reused for both placement and bundle offsets
+  const layers = assignLayersBFS(connectedNodes, edges)
+
+  // Derive column gap from actual edge labels and cardinality indicators,
+  // then widen by the maximum bundle spread needed across all corridors so that
+  // fanned vertical step segments fit without overlapping label pills.
+  const labelColGap = computeRequiredColGap(edges)
+  const bundleExtra = computeMaxCorridorBundleWidth(edges, layers)
+  const effectiveColGap = labelColGap + bundleExtra
 
   // Layered placement for connected nodes (center coords)
-  const connSimNodes = layeredPlacement(connectedNodes, edges, effectiveColGap)
+  const connSimNodes = layeredPlacement(connectedNodes, effectiveColGap, layers)
   enforceGapPostPass(connSimNodes)
 
   // Isolated nodes below the cluster (center coords)

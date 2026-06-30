@@ -131,6 +131,22 @@ export interface RelationshipEdgeData extends Record<string, unknown> {
 
   /** Callback to update this relationship's label (fires optimistic update + WebSocket emit) */
   onLabelUpdate?: (relationshipId: string, label: string) => void
+
+  /**
+   * Per-edge Y offset (px) for source/target handle positions, computed by
+   * computeEdgeBundleOffsets() to fan parallel edges in same-table-pair bundles.
+   * Applied by RelationshipEdge.new.tsx to getSmoothStepPath sourceY/targetY
+   * and to CardinalityIndicator y position. 0 when edge is not in a bundle.
+   */
+  bundleHandleYOffset?: number
+
+  /**
+   * Per-edge X offset (px) relative to the corridor center, computed by
+   * computeEdgeBundleOffsets() to fan parallel edges' vertical step segments.
+   * Applied by RelationshipEdge.new.tsx to getSmoothStepPath centerX. 0 when
+   * edge is not in a bundle.
+   */
+  bundleCenterXOffset?: number
 }
 
 /**

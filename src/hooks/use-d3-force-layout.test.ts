@@ -4,9 +4,13 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { act, renderHook } from '@testing-library/react'
 
-// Mock computeD3ForceLayout so tests are synchronous and controlled (vi.mock is hoisted)
+// Mock the layout engine so tests are synchronous and controlled (vi.mock is hoisted)
 vi.mock('@/lib/auto-layout/d3-force-layout', () => ({
   computeD3ForceLayout: vi.fn(),
+  // assignLayersBFS and computeEdgeBundleOffsets are called by the hook after
+  // computeD3ForceLayout resolves. Return minimal no-op stubs.
+  assignLayersBFS: vi.fn(() => new Map<string, number>()),
+  computeEdgeBundleOffsets: vi.fn(() => []),
 }))
 
 // eslint-disable-next-line import/first
@@ -88,17 +92,20 @@ describe('useD3ForceLayout', () => {
     expect(result.current.error).toBeNull()
   })
 
-  it('TC-AL-E-12 (cont): returns positions array on success', async () => {
+  it('TC-AL-E-12 (cont): returns { positions, edgeOffsets } on success', async () => {
     mockComputeLayout.mockResolvedValueOnce(POSITIONS)
 
     const { result } = renderHook(() => useD3ForceLayout())
 
-    let positions: any
+    let layoutResult: any
     await act(async () => {
-      positions = await result.current.runLayout(NODES, EDGES)
+      layoutResult = await result.current.runLayout(NODES, EDGES)
     })
 
-    expect(positions).toEqual(POSITIONS)
+    // runLayout now returns { positions, edgeOffsets } — not a raw array
+    expect(layoutResult).not.toBeNull()
+    expect(layoutResult.positions).toEqual(POSITIONS)
+    expect(Array.isArray(layoutResult.edgeOffsets)).toBe(true)
   })
 
   // TC-AL-E-13 — Error surfaced without mutating nodes
@@ -132,11 +139,12 @@ describe('useD3ForceLayout', () => {
     })
     expect(result.current.error).toBeTruthy()
 
-    let positions: any
+    let layoutResult: any
     await act(async () => {
-      positions = await result.current.runLayout(NODES, EDGES)
+      layoutResult = await result.current.runLayout(NODES, EDGES)
     })
-    expect(positions).toEqual(POSITIONS)
+    // After a successful run, positions are inside the LayoutResult wrapper
+    expect(layoutResult?.positions).toEqual(POSITIONS)
     expect(result.current.error).toBeNull()
   })
 
