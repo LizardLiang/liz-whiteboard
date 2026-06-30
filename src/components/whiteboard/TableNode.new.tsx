@@ -42,6 +42,7 @@ export const TableNode = memo(
       onColumnDelete,
       onColumnDuplicate,
       onRequestTableDelete,
+      onFocusTable,
       edges = [],
       tableNameById = new Map(),
       onColumnReorder,
@@ -411,7 +412,10 @@ export const TableNode = memo(
     const minWidth = Math.max(220, table.width ?? 0)
 
     return (
-      <TableNodeContextMenu onDeleteTable={handleRequestTableDelete}>
+      <TableNodeContextMenu
+        onDeleteTable={handleRequestTableDelete}
+        onFocusTable={() => onFocusTable?.(table.id)}
+      >
         <div
           className={`react-flow__node-erTable ${selected ? 'selected' : ''} ${highlightClass}`}
           style={{
@@ -570,6 +574,7 @@ export const TableNode = memo(
     if (prev.data.tableNameById !== next.data.tableNameById) return false
     if (prev.data.onRequestTableDelete !== next.data.onRequestTableDelete)
       return false
+    if (prev.data.onFocusTable !== next.data.onFocusTable) return false
     if (prev.data.onColumnReorder !== next.data.onColumnReorder) return false
     if (prev.data.emitColumnReorder !== next.data.emitColumnReorder)
       return false

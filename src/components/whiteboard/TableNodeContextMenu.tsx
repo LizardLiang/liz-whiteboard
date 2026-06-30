@@ -7,6 +7,7 @@ import {
   ContextMenu,
   ContextMenuContent,
   ContextMenuItem,
+  ContextMenuSeparator,
   ContextMenuShortcut,
   ContextMenuTrigger,
 } from '@/components/ui/context-menu'
@@ -14,12 +15,14 @@ import {
 export interface TableNodeContextMenuProps {
   children: React.ReactNode
   onDeleteTable: () => void
+  onFocusTable?: () => void
   disabled?: boolean
 }
 
 export function TableNodeContextMenu({
   children,
   onDeleteTable,
+  onFocusTable,
   disabled,
 }: TableNodeContextMenuProps) {
   return (
@@ -27,8 +30,18 @@ export function TableNodeContextMenu({
       <ContextMenuTrigger asChild>{children}</ContextMenuTrigger>
       <ContextMenuContent>
         <ContextMenuItem
+          onSelect={() => {
+            onFocusTable?.()
+          }}
+          disabled={disabled}
+        >
+          Focus view
+          <ContextMenuShortcut>F</ContextMenuShortcut>
+        </ContextMenuItem>
+        <ContextMenuSeparator />
+        <ContextMenuItem
           className="text-destructive focus:text-destructive"
-          onSelect={(e) => {
+          onSelect={() => {
             onDeleteTable()
           }}
           disabled={disabled}

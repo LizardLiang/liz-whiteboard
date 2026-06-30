@@ -74,6 +74,9 @@ export interface TableNodeData extends Record<string, unknown> {
   /** Callback to request table deletion — opens the confirmation dialog */
   onRequestTableDelete?: (tableId: string) => void
 
+  /** Callback to open the Focus view overlay for this table */
+  onFocusTable?: (tableId: string) => void
+
   /** React Flow edges — passed down for delete confirmation relationship lookup */
   edges?: Array<RelationshipEdgeType>
 

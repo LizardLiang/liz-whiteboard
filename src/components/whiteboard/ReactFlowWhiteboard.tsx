@@ -83,6 +83,8 @@ import { useColumnMutations } from '@/hooks/use-column-mutations'
 import { useTableMutations } from '@/hooks/use-table-mutations'
 import { useRelationshipMutations } from '@/hooks/use-relationship-mutations'
 import { useTableDeletion } from '@/hooks/use-table-deletion'
+import { useTableFocus } from '@/hooks/use-table-focus'
+import { TableFocusOverlay } from './TableFocusOverlay'
 import { useColumnReorderMutations } from '@/hooks/use-column-reorder-mutations'
 import { useColumnReorderCollaboration } from '@/hooks/use-column-reorder-collaboration'
 import { getSessionUserId } from '@/lib/session-user-id'
@@ -220,6 +222,9 @@ function ReactFlowWhiteboardInner({
   // Table deletion state — which table has been requested for deletion (opens dialog)
   const [deletingTableId, setDeletingTableId] = useState<string | null>(null)
 
+  // Focus overlay state — which table is currently being focused (opens overlay)
+  const [focusedTableId, setFocusedTableId] = useState<string | null>(null)
+
   // Cardinality picker dialog state for drag-to-connect
   const [pendingConnection, setPendingConnection] =
     useState<PendingConnection | null>(null)
@@ -307,6 +312,8 @@ function ReactFlowWhiteboardInner({
               onColumnDelete: handleColumnDeleteRef.current,
               onColumnDuplicate: handleColumnDuplicateRef.current,
               onRequestTableDelete: handleRequestTableDeleteRef.current,
+              onFocusTable: (tableId: string) =>
+                handleFocusTableRef.current(tableId),
               edges: edgesRef.current,
               tableNameById,
               isConnected,
@@ -347,6 +354,7 @@ function ReactFlowWhiteboardInner({
             onColumnDelete: prev.data.onColumnDelete,
             onColumnDuplicate: prev.data.onColumnDuplicate,
             onRequestTableDelete: prev.data.onRequestTableDelete,
+            onFocusTable: prev.data.onFocusTable,
             tableNameById,
           },
         }
@@ -828,6 +836,12 @@ function ReactFlowWhiteboardInner({
   // Keyboard shortcut for table deletion (Delete/Backspace on selected node)
   useTableDeletion((tableId: string) => setDeletingTableId(tableId))
 
+  // Keyboard shortcut for focus overlay (f key on selected node)
+  useTableFocus(
+    (tableId) => handleFocusTableRef.current(tableId),
+    focusedTableId !== null,
+  )
+
   // Column mutation callbacks (outgoing — triggered by user interactions in TableNode)
   const handleColumnCreate = useCallback(
     (tableId: string, data: CreateColumnPayload) => {
@@ -866,6 +880,12 @@ function ReactFlowWhiteboardInner({
   const handleRequestTableDelete = useCallback((tableId: string) => {
     setDeletingTableId(tableId)
   }, [])
+
+  // Callback to open the Focus view overlay for a table
+  const handleFocusTable = useCallback(
+    (tableId: string) => setFocusedTableId(tableId),
+    [],
+  )
 
   // Column reorder callback — wraps reconcileAfterDrop with real setNodes
   const handleColumnReorder = useCallback(
@@ -963,6 +983,7 @@ function ReactFlowWhiteboardInner({
   const handleColumnDeleteRef = useRef(handleColumnDelete)
   const handleColumnDuplicateRef = useRef(handleColumnDuplicate)
   const handleRequestTableDeleteRef = useRef(handleRequestTableDelete)
+  const handleFocusTableRef = useRef(handleFocusTable)
   const handleColumnReorderRef = useRef(handleColumnReorder)
   const emitColumnReorderRef = useRef(emitColumnReorder)
   const bumpReorderTickRef = useRef(bumpReorderTick)
@@ -981,6 +1002,9 @@ function ReactFlowWhiteboardInner({
   useEffect(() => {
     handleRequestTableDeleteRef.current = handleRequestTableDelete
   }, [handleRequestTableDelete])
+  useEffect(() => {
+    handleFocusTableRef.current = handleFocusTable
+  }, [handleFocusTable])
   useEffect(() => {
     handleColumnReorderRef.current = handleColumnReorder
   }, [handleColumnReorder])
@@ -1003,6 +1027,8 @@ function ReactFlowWhiteboardInner({
           onColumnDelete: handleColumnDeleteRef.current,
           onColumnDuplicate: handleColumnDuplicateRef.current,
           onRequestTableDelete: handleRequestTableDeleteRef.current,
+          onFocusTable: (tableId: string) =>
+            handleFocusTableRef.current(tableId),
           onColumnReorder: (
             params: import('@/hooks/use-column-reorder-mutations').ReconcileAfterDropParams,
           ) => handleColumnReorderRef.current(params),
@@ -1036,6 +1062,8 @@ function ReactFlowWhiteboardInner({
           onColumnDelete: handleColumnDeleteRef.current,
           onColumnDuplicate: handleColumnDuplicateRef.current,
           onRequestTableDelete: handleRequestTableDeleteRef.current,
+          onFocusTable: (tableId: string) =>
+            handleFocusTableRef.current(tableId),
           onColumnReorder: (
             params: import('@/hooks/use-column-reorder-mutations').ReconcileAfterDropParams,
           ) => handleColumnReorderRef.current(params),
@@ -1350,6 +1378,17 @@ function ReactFlowWhiteboardInner({
             padding: 0.2,
             includeHiddenNodes: false,
           }}
+        />
+
+        {/* Focus View Overlay — read-only sub-canvas for the selected table + 1-hop neighbors */}
+        <TableFocusOverlay
+          open={focusedTableId !== null}
+          onOpenChange={(open) => {
+            if (!open) setFocusedTableId(null)
+          }}
+          focusedTableId={focusedTableId}
+          nodes={nodes}
+          edges={edges}
         />
 
         {/* Cardinality Picker Dialog — shown after drag-to-connect */}
