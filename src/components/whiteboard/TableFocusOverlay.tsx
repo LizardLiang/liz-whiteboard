@@ -6,7 +6,7 @@
  * node data so the sub-canvas is fully read-only.
  */
 
-import { useMemo } from 'react'
+import { useCallback, useEffect, useMemo, useState } from 'react'
 import { ReactFlowProvider } from '@xyflow/react'
 import {
   Dialog,
@@ -34,10 +34,35 @@ export function TableFocusOverlay({
   nodes,
   edges,
 }: TableFocusOverlayProps) {
+  // Internal navigation state — seeded from the prop, reset on fresh open.
+  const [activeFocusId, setActiveFocusId] = useState<string | null>(
+    focusedTableId,
+  )
+  const [focusHistory, setFocusHistory] = useState<string[]>([])
+
+  // Sync to the incoming prop whenever the overlay is opened or the prop changes
+  // (covers re-opening on a different table via `f` or context menu).
+  useEffect(() => {
+    if (open && focusedTableId) {
+      setActiveFocusId(focusedTableId)
+      setFocusHistory([])
+    }
+  }, [open, focusedTableId])
+
+  // Re-focus to a neighbor node — pushes current focal id onto history stack.
+  const handleRefocus = useCallback(
+    (newId: string) => {
+      if (newId === activeFocusId) return
+      setFocusHistory((h) => [...h, activeFocusId!])
+      setActiveFocusId(newId)
+    },
+    [activeFocusId],
+  )
+
   // Compute the set of related table IDs: the focal table + all 1-hop neighbors
   const { focusNodes, focusEdges, focusedTableName, relatedCount } =
     useMemo(() => {
-      if (!focusedTableId) {
+      if (!activeFocusId) {
         return {
           focusNodes: [],
           focusEdges: [],
@@ -48,15 +73,17 @@ export function TableFocusOverlay({
 
       const edgeMap = buildEdgeMap(edges)
       const relatedTableIds = new Set<string>()
-      relatedTableIds.add(focusedTableId)
+      relatedTableIds.add(activeFocusId)
 
-      const connectedEdges = edgeMap.get(focusedTableId) ?? []
+      const connectedEdges = edgeMap.get(activeFocusId) ?? []
       for (const edge of connectedEdges) {
         relatedTableIds.add(edge.source)
         relatedTableIds.add(edge.target)
       }
 
-      // Filter nodes to the related set and strip mutation callbacks
+      // Filter nodes to the related set and strip mutation callbacks.
+      // Neighbor nodes (not the focal node) receive onFocusTable so clicking
+      // "Focus view" in their context menu re-targets the overlay without closing.
       const filteredNodes: Array<TableNodeType> = nodes
         .filter((n) => relatedTableIds.has(n.id))
         .map((n) => ({
@@ -68,7 +95,8 @@ export function TableFocusOverlay({
             onColumnDelete: undefined,
             onColumnDuplicate: undefined,
             onRequestTableDelete: undefined,
-            onFocusTable: undefined,
+            // Focal node is not re-targetable via context menu; neighbors are.
+            onFocusTable: n.id !== activeFocusId ? handleRefocus : undefined,
             // Column reorder persists via these callbacks — strip so a drag
             // inside the read-only overlay cannot mutate or emit to the server.
             onColumnReorder: undefined,
@@ -90,8 +118,8 @@ export function TableFocusOverlay({
             : e.data,
         }))
 
-      const focalNode = nodes.find((n) => n.id === focusedTableId)
-      const name = focalNode?.data.table.name ?? focusedTableId
+      const focalNode = nodes.find((n) => n.id === activeFocusId)
+      const name = focalNode?.data.table.name ?? activeFocusId
 
       // Related count excludes the focal table itself
       const neighborCount = relatedTableIds.size - 1
@@ -102,13 +130,29 @@ export function TableFocusOverlay({
         focusedTableName: name,
         relatedCount: neighborCount,
       }
-    }, [focusedTableId, nodes, edges])
+    }, [activeFocusId, nodes, edges, handleRefocus])
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="sm:max-w-4xl h-[70vh] flex flex-col overflow-hidden">
+      <DialogContent className="sm:max-w-[95vw] h-[90vh] flex flex-col overflow-hidden p-4">
         <DialogHeader>
-          <DialogTitle>Focus: {focusedTableName}</DialogTitle>
+          <div className="flex items-center gap-2">
+            {focusHistory.length > 0 && (
+              <button
+                type="button"
+                onClick={() => {
+                  const prev = focusHistory[focusHistory.length - 1]
+                  setFocusHistory((h) => h.slice(0, -1))
+                  setActiveFocusId(prev)
+                }}
+                className="text-muted-foreground hover:text-foreground text-sm"
+                aria-label="Go back"
+              >
+                ← Back
+              </button>
+            )}
+            <DialogTitle>Focus: {focusedTableName}</DialogTitle>
+          </div>
           <DialogDescription>
             {relatedCount === 0
               ? 'No directly related tables'
@@ -125,6 +169,9 @@ export function TableFocusOverlay({
               showMinimap={false}
               showBackground={true}
               fitViewOptions={{ padding: 0.25 }}
+              onNodeClick={(nodeId) => {
+                if (nodeId !== activeFocusId) handleRefocus(nodeId)
+              }}
             />
           </ReactFlowProvider>
         </div>

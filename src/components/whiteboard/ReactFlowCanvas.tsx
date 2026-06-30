@@ -5,6 +5,7 @@ import {
   MiniMap,
   ReactFlow,
   useEdgesState,
+  useNodesInitialized,
   useNodesState,
 } from '@xyflow/react'
 import type {
@@ -60,6 +61,8 @@ export interface ReactFlowCanvasProps {
   fitViewOptions?: FitViewOptions
   /** Additional className */
   className?: string
+  /** Callback when a node is clicked — receives the node id */
+  onNodeClick?: (nodeId: string) => void
 }
 
 /**
@@ -84,6 +87,7 @@ export function ReactFlowCanvas({
   onEdgesChange: onEdgesChangeProp,
   onConnect,
   onNodeDragStop: onNodeDragStopProp,
+  onNodeClick: onNodeClickProp,
   nodesDraggable = true,
   panOnDrag = true,
   showMinimap = false,
@@ -104,6 +108,11 @@ export function ReactFlowCanvas({
   // Track drag in progress — ReactFlow fires mouseLeave/mouseEnter when drag
   // starts/stops, which would trigger unnecessary highlighting recalculations.
   const isDraggingRef = useRef(false)
+
+  // Track whether React Flow has measured all nodes; used for one-shot
+  // post-measure edge re-routing inside the overlay (Enhancement 2).
+  const nodesInitialized = useNodesInitialized()
+  const hasReRoutedAfterMeasureRef = useRef(false)
 
   // Keep a ref to the latest edges so the highlighting effect can read current
   // edges without adding them to its dependency array (which would cause an
@@ -186,6 +195,27 @@ export function ReactFlowCanvas({
     setEdges(withOffsets)
   }, [initialEdges, initialNodes, setEdges])
 
+  // Reset the one-shot re-routing guard whenever the node set changes (e.g.
+  // overlay re-opened with a different focal table).
+  useEffect(() => {
+    hasReRoutedAfterMeasureRef.current = false
+  }, [initialNodes])
+
+  // One-shot re-route after React Flow measures nodes. The internal `nodes`
+  // value carries `measured` widths at this point, giving accurate handle-side
+  // choices. On the main canvas this is a harmless no-op (same handles already
+  // chosen by drag routing). On the overlay it corrects the initial pass which
+  // ran with DEFAULT_NODE_WIDTH fallbacks.
+  useEffect(() => {
+    if (!nodesInitialized || hasReRoutedAfterMeasureRef.current) return
+    hasReRoutedAfterMeasureRef.current = true
+    setEdges((prevEdges) => {
+      if (prevEdges.length === 0) return prevEdges
+      const allIds = new Set(nodes.map((n) => n.id))
+      return recalculateEdgesForDraggedNodes(prevEdges, nodes, allIds)
+    })
+  }, [nodesInitialized, nodes, setEdges])
+
   // Apply highlighting when selection changes.
   // Uses the functional updater form of setNodes so we always operate on the
   // current node list rather than a stale closure snapshot. edgesRef.current
@@ -206,10 +236,11 @@ export function ReactFlowCanvas({
     })
   }, [activeTableId, hoveredTableId, setNodes, setEdges])
 
-  // Handle node click (selection)
-  const onNodeClick = useCallback<NodeMouseHandler>((event, node) => {
+  // Handle node click (selection + optional external callback)
+  const onNodeClick = useCallback<NodeMouseHandler>((_event, node) => {
     setActiveTableId(node.id)
-  }, [])
+    onNodeClickProp?.(node.id)
+  }, [onNodeClickProp])
 
   // Handle pane click (clear selection)
   const onPaneClick = useCallback(() => {
