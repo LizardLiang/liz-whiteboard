@@ -18,6 +18,7 @@ import {
 import { ReactFlowCanvas } from './ReactFlowCanvas'
 import { buildEdgeMap } from '@/lib/react-flow/highlighting'
 import type { RelationshipEdgeType, TableNodeType } from '@/lib/react-flow/types'
+import { computeD3ForceLayout } from '@/lib/auto-layout/d3-force-layout'
 
 export interface TableFocusOverlayProps {
   open: boolean
@@ -39,6 +40,8 @@ export function TableFocusOverlay({
     focusedTableId,
   )
   const [focusHistory, setFocusHistory] = useState<string[]>([])
+  const [overlayPositions, setOverlayPositions] =
+    useState<Map<string, { x: number; y: number }> | null>(null)
 
   // Sync to the incoming prop whenever the overlay is opened or the prop changes
   // (covers re-opening on a different table via `f` or context menu).
@@ -71,7 +74,28 @@ export function TableFocusOverlay({
         }
       }
 
-      const edgeMap = buildEdgeMap(edges)
+      // Pre-filter stale edges: mirror the column-existence guard used in
+      // ReactFlowCanvas.tsx (lines 153-160) so that edges referencing deleted
+      // columns are excluded before building the neighbor set. Without this,
+      // a stale edge can add an unrelated table to relatedTableIds even though
+      // ReactFlowCanvas will later drop the edge — producing a table with no
+      // visible connecting line in the overlay.
+      const existingColumnIds = new Set<string>()
+      for (const node of nodes) {
+        for (const col of node.data.table.columns) {
+          existingColumnIds.add(col.id)
+        }
+      }
+      const validEdges = edges.filter((e) => {
+        const rel = e.data?.relationship
+        if (!rel) return false
+        return (
+          existingColumnIds.has(rel.sourceColumnId) &&
+          existingColumnIds.has(rel.targetColumnId)
+        )
+      })
+
+      const edgeMap = buildEdgeMap(validEdges)
       const relatedTableIds = new Set<string>()
       relatedTableIds.add(activeFocusId)
 
@@ -107,7 +131,7 @@ export function TableFocusOverlay({
       // Filter edges to those whose both endpoints are in the related set,
       // and strip relationship mutation callbacks so the overlay edge controls
       // (delete relationship, edit label) are read-only.
-      const filteredEdges: Array<RelationshipEdgeType> = edges
+      const filteredEdges: Array<RelationshipEdgeType> = validEdges
         .filter(
           (e) => relatedTableIds.has(e.source) && relatedTableIds.has(e.target),
         )
@@ -131,6 +155,59 @@ export function TableFocusOverlay({
         relatedCount: neighborCount,
       }
     }, [activeFocusId, nodes, edges, handleRefocus])
+
+  // Run compact D3 layout for the overlay subset whenever the focal table changes.
+  // Positions are stored in overlayPositions and NEVER persisted to the DB or
+  // main canvas. nodesDraggable={false} and no drag callbacks ensure that.
+  useEffect(() => {
+    setOverlayPositions(null)
+
+    if (focusNodes.length === 0) return
+
+    const layoutNodes = focusNodes.map((n) => ({
+      id: n.id,
+      width: n.measured?.width ?? (n.width as number | undefined) ?? 250,
+      height: n.measured?.height ?? (n.height as number | undefined) ?? 150,
+    }))
+    const layoutEdges = focusEdges.map((e) => ({
+      id: e.id,
+      source: e.source,
+      target: e.target,
+      label: e.data?.label ?? undefined,
+      cardinality: e.data?.cardinality ? String(e.data.cardinality) : undefined,
+    }))
+
+    let cancelled = false
+    computeD3ForceLayout(layoutNodes, layoutEdges)
+      .then((positions) => {
+        if (cancelled) return
+        setOverlayPositions(
+          new Map(positions.map((p) => [p.id, { x: p.x, y: p.y }])),
+        )
+      })
+      .catch(() => {
+        // single-node case throws "No nodes to layout" but is guarded above by
+        // focusNodes.length === 0; other errors are silently ignored so the
+        // overlay still renders with original positions as fallback.
+      })
+
+    return () => {
+      cancelled = true
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [activeFocusId])
+
+  // Merge compact overlay positions into focusNodes.
+  // When overlayPositions is null (first frame or focus change), falls back to
+  // focusNodes so fitView uses original positions until layout resolves.
+  const overlayNodes = useMemo(() => {
+    if (!overlayPositions) return focusNodes
+    return focusNodes.map((n) => {
+      const pos = overlayPositions.get(n.id)
+      if (!pos) return n
+      return { ...n, position: pos }
+    })
+  }, [focusNodes, overlayPositions])
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
@@ -162,7 +239,7 @@ export function TableFocusOverlay({
         <div className="flex-1 overflow-hidden relative min-h-0">
           <ReactFlowProvider>
             <ReactFlowCanvas
-              initialNodes={focusNodes}
+              initialNodes={overlayNodes}
               initialEdges={focusEdges}
               nodesDraggable={false}
               showControls={true}
