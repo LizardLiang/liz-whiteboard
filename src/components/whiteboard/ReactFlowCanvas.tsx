@@ -25,6 +25,7 @@ import type {
   TableNodeType,
 } from '@/lib/react-flow/types'
 import { recalculateEdgesForDraggedNodes } from '@/lib/react-flow/edge-routing'
+import { assignLayersBFS, computeEdgeBundleOffsets } from '@/lib/auto-layout/d3-force-layout'
 import { edgeTypes, nodeTypes } from '@/lib/react-flow/node-types'
 import { calculateHighlighting } from '@/lib/react-flow/highlighting'
 import { VIEWPORT_CONSTRAINTS } from '@/lib/react-flow/viewport'
@@ -155,7 +156,34 @@ export function ReactFlowCanvas({
       initialNodes,
       allNodeIds,
     )
-    setEdges(recalculated)
+    // Compute per-edge bundle offsets so parallel edges fan out consistently
+    // after a page reload (they are not persisted; derive them from DB data).
+    const layoutNodes = initialNodes.map((n) => ({
+      id: n.id,
+      width: (n.measured?.width ?? (n.width as number)) ?? 250,
+      height: (n.measured?.height ?? (n.height as number)) ?? 150,
+    }))
+    const layoutEdges = recalculated.map((e) => ({
+      id: e.id,
+      source: e.source,
+      target: e.target,
+    }))
+    const layers = assignLayersBFS(layoutNodes, layoutEdges)
+    const bundleOffsets = computeEdgeBundleOffsets(layoutEdges, layers)
+    const offsetById = new Map(bundleOffsets.map((o) => [o.id, o]))
+    const withOffsets = recalculated.map((e) => {
+      const off = offsetById.get(e.id)
+      if (!off || (off.handleYOffset === 0 && off.centerXOffset === 0)) return e
+      return {
+        ...e,
+        data: {
+          ...e.data!,
+          bundleHandleYOffset: off.handleYOffset,
+          bundleCenterXOffset: off.centerXOffset,
+        },
+      }
+    })
+    setEdges(withOffsets)
   }, [initialEdges, initialNodes, setEdges])
 
   // Apply highlighting when selection changes.
