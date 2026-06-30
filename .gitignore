@@ -61,3 +61,6 @@ scripts/pg-snapshot.json
 
 # Local SQLite database
 /data/
+
+# Generated dogfooding/e2e output
+dogfood-output/
