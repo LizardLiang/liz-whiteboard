@@ -2,7 +2,8 @@
 // Toolbar component for whiteboard actions (Add Table, Add Relationship, Auto Layout)
 
 import { useState } from 'react'
-import { Loader2, Maximize2 } from 'lucide-react'
+import { HelpCircle, Link2, Loader2, Maximize2 } from 'lucide-react'
+import { toast } from 'sonner'
 import type { Column, DiagramTable } from '@/data/models'
 import type { Cardinality } from '@/data/schema'
 import type { CreateRelationship, CreateTable } from '@/data/schema'
@@ -70,6 +71,8 @@ export interface ToolbarProps {
   onShowModeChange?: (mode: ShowMode) => void
   /** Callback to enter zen mode (hides all chrome). When omitted, no zen button is rendered. */
   onZenModeToggle?: () => void
+  /** MCP endpoint URL — when provided, a Copy-MCP-URL button is rendered */
+  mcpEndpointUrl?: string
   /** Optional CSS class name */
   className?: string
 }
@@ -155,8 +158,12 @@ export function Toolbar({
   showMode = 'ALL_FIELDS',
   onShowModeChange,
   onZenModeToggle,
+  mcpEndpointUrl,
   className = '',
 }: ToolbarProps) {
+  // Help dialog state
+  const [helpOpen, setHelpOpen] = useState(false)
+
   // Table dialog state
   const [tableDialogOpen, setTableDialogOpen] = useState(false)
   const [tableName, setTableName] = useState('')
@@ -617,6 +624,117 @@ export function Toolbar({
           </Button>
         </div>
       )}
+
+      {/* Help button — keyboard shortcuts reference */}
+      <div className="border-l pl-2 flex items-center gap-1">
+        <Dialog open={helpOpen} onOpenChange={setHelpOpen}>
+          <DialogTrigger asChild>
+            <Button variant="outline" size="icon" title="Keyboard shortcuts">
+              <HelpCircle className="h-4 w-4" />
+            </Button>
+          </DialogTrigger>
+          <DialogContent className="sm:max-w-[420px]">
+            <DialogHeader>
+              <DialogTitle>Keyboard Shortcuts</DialogTitle>
+            </DialogHeader>
+            <table className="w-full text-sm">
+              <thead>
+                <tr className="border-b">
+                  <th className="py-2 text-left font-medium text-muted-foreground">
+                    Key
+                  </th>
+                  <th className="py-2 text-left font-medium text-muted-foreground">
+                    Action
+                  </th>
+                </tr>
+              </thead>
+              <tbody className="divide-y">
+                <tr>
+                  <td className="py-2 pr-4">
+                    <kbd className="rounded border px-1.5 py-0.5 font-mono text-xs">
+                      z
+                    </kbd>
+                  </td>
+                  <td className="py-2">Toggle Zen Mode</td>
+                </tr>
+                <tr>
+                  <td className="py-2 pr-4">
+                    <kbd className="rounded border px-1.5 py-0.5 font-mono text-xs">
+                      f
+                    </kbd>
+                  </td>
+                  <td className="py-2">
+                    Open Focus Overlay on selected table
+                  </td>
+                </tr>
+                <tr>
+                  <td className="py-2 pr-4">
+                    <kbd className="rounded border px-1.5 py-0.5 font-mono text-xs">
+                      Delete
+                    </kbd>
+                    {' / '}
+                    <kbd className="rounded border px-1.5 py-0.5 font-mono text-xs">
+                      Backspace
+                    </kbd>
+                  </td>
+                  <td className="py-2">Delete selected table</td>
+                </tr>
+                <tr>
+                  <td className="py-2 pr-4">
+                    <kbd className="rounded border px-1.5 py-0.5 font-mono text-xs">
+                      Ctrl/Cmd
+                    </kbd>
+                    {' + '}
+                    <kbd className="rounded border px-1.5 py-0.5 font-mono text-xs">
+                      -
+                    </kbd>
+                  </td>
+                  <td className="py-2">Zoom Out</td>
+                </tr>
+                <tr>
+                  <td className="py-2 pr-4">
+                    <kbd className="rounded border px-1.5 py-0.5 font-mono text-xs">
+                      Ctrl/Cmd
+                    </kbd>
+                    {' + '}
+                    <kbd className="rounded border px-1.5 py-0.5 font-mono text-xs">
+                      +
+                    </kbd>
+                  </td>
+                  <td className="py-2">Zoom In</td>
+                </tr>
+                <tr>
+                  <td className="py-2 pr-4">
+                    <kbd className="rounded border px-1.5 py-0.5 font-mono text-xs">
+                      Ctrl/Cmd
+                    </kbd>
+                    {' + '}
+                    <kbd className="rounded border px-1.5 py-0.5 font-mono text-xs">
+                      0
+                    </kbd>
+                  </td>
+                  <td className="py-2">Reset zoom to 100%</td>
+                </tr>
+              </tbody>
+            </table>
+          </DialogContent>
+        </Dialog>
+
+        {/* MCP connection URL copy button */}
+        {mcpEndpointUrl && (
+          <Button
+            variant="outline"
+            size="icon"
+            title={`Copy MCP URL: ${mcpEndpointUrl}`}
+            onClick={() => {
+              navigator.clipboard.writeText(mcpEndpointUrl)
+              toast.success('MCP URL copied to clipboard')
+            }}
+          >
+            <Link2 className="h-4 w-4" />
+          </Button>
+        )}
+      </div>
 
       {/* Zen Mode — hides all chrome, leaving only the canvas */}
       {onZenModeToggle && (

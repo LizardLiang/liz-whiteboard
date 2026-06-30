@@ -71,6 +71,7 @@ import { resolvePendingPositions } from '@/lib/react-flow/resolve-pending-positi
 import { convertRelationshipsToEdges } from '@/lib/react-flow/convert-to-edges'
 import {
   createRelationshipFn,
+  getMcpEndpointUrl,
   getWhiteboardRelationships,
   getWhiteboardWithDiagram,
 } from '@/lib/server-functions'
@@ -193,6 +194,14 @@ function ReactFlowWhiteboardInner({
   onZoomChange?: (zoom: number) => void
 }) {
   const queryClient = useQueryClient()
+
+  // Fetch MCP endpoint URL once — env var does not change at runtime
+  const { data: mcpEndpointUrl } = useQuery({
+    queryKey: ['mcp-endpoint-url'],
+    queryFn: () => getMcpEndpointUrl(),
+    staleTime: Infinity,
+    gcTime: Infinity,
+  })
 
   // Zen mode — hides the toolbar; a floating button restores the chrome
   const { isZenMode, toggleZenMode, exitZenMode } = useZenMode()
@@ -1344,6 +1353,7 @@ function ReactFlowWhiteboardInner({
           showMode={showMode}
           onShowModeChange={setShowMode}
           onZenModeToggle={toggleZenMode}
+          mcpEndpointUrl={mcpEndpointUrl ?? undefined}
         />
       )}
 

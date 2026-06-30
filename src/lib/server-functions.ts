@@ -27,6 +27,7 @@ import {
 import { computeLayout } from '@/lib/canvas/layout-engine'
 import { nowMs, transaction, update } from '@/db'
 import { requireAuth } from '@/lib/auth/middleware'
+import { getOAuthConfig } from '@/lib/oauth/config'
 import {
   getTableProjectId,
   getWhiteboardProjectId,
@@ -295,6 +296,18 @@ export const computeAutoLayout = createServerFn({
       }
     }),
   )
+
+/**
+ * Returns the MCP endpoint URL for the user to connect an AI client.
+ * The value comes from MCP_RESOURCE_URI env var via getOAuthConfig().
+ * @requires viewer (auth enforced for consistency; the URL is not sensitive)
+ */
+export const getMcpEndpointUrl = createServerFn({ method: 'GET' }).handler(
+  requireAuth(async (): Promise<string> => {
+    const { mcpResourceUri } = getOAuthConfig()
+    return mcpResourceUri
+  }),
+)
 
 /**
  * Server function to save canvas viewport state
