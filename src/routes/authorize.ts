@@ -73,6 +73,8 @@ export const Route = createFileRoute('/authorize')({
           )
         }
 
+        console.log(`[authorize] client_id=${clientId} scope=${JSON.stringify(scope)} redirect_uri=${redirectUri}`)
+
         // Validate scope
         // RFC 6749 §3.3: the AS may grant a narrower set of scopes than requested.
         // Grant the intersection of requested scopes and supported scopes.
