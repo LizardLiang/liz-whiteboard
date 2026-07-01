@@ -7,9 +7,9 @@
 
 import type { Edge, Node } from '@xyflow/react'
 import type { Column, DiagramTable, Relationship } from '@/data/models'
-import type { Cardinality } from '@/data/schema'
+import type { Cardinality, UpdateColumn } from '@/data/schema'
 import type { CreateColumnPayload } from '@/components/whiteboard/column/types'
-import type { UpdateColumn } from '@/data/schema'
+import type { Dialect } from '@/lib/ddl-generator'
 
 /**
  * Display mode for table nodes
@@ -76,6 +76,9 @@ export interface TableNodeData extends Record<string, unknown> {
 
   /** Callback to open the Focus view overlay for this table */
   onFocusTable?: (tableId: string) => void
+
+  /** Callback to export this table's CREATE TABLE DDL in the given dialect */
+  onExportDdl?: (tableId: string, dialect: Dialect) => void
 
   /** React Flow edges — passed down for delete confirmation relationship lookup */
   edges?: Array<RelationshipEdgeType>

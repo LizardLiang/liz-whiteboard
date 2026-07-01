@@ -18,6 +18,7 @@ import type {
 } from '@/lib/react-flow/types'
 import type { ColumnRelationship, EditingField } from './column/types'
 import type { DataType } from '@/data/schema'
+import type { Dialect } from '@/lib/ddl-generator'
 import { usePrefersReducedMotion } from '@/hooks/use-prefers-reduced-motion'
 
 // Row height constant for InsertionLine positioning (matches minHeight in ColumnRow)
@@ -43,6 +44,7 @@ export const TableNode = memo(
       onColumnDuplicate,
       onRequestTableDelete,
       onFocusTable,
+      onExportDdl,
       edges = [],
       tableNameById = new Map(),
       onColumnReorder,
@@ -205,6 +207,14 @@ export const TableNode = memo(
     const handleRequestTableDelete = useCallback(() => {
       onRequestTableDelete?.(table.id)
     }, [onRequestTableDelete, table.id])
+
+    // --- Export DDL handler ---
+    const handleExportDdl = useCallback(
+      (dialect: Dialect) => {
+        onExportDdl?.(table.id, dialect)
+      },
+      [onExportDdl, table.id],
+    )
 
     // --- Duplicate handler ---
     const handleDuplicateColumn = useCallback(
@@ -415,6 +425,7 @@ export const TableNode = memo(
       <TableNodeContextMenu
         onDeleteTable={handleRequestTableDelete}
         onFocusTable={() => onFocusTable?.(table.id)}
+        onExportDdl={handleExportDdl}
       >
         <div
           className={`react-flow__node-erTable ${selected ? 'selected' : ''} ${highlightClass}`}
@@ -575,6 +586,7 @@ export const TableNode = memo(
     if (prev.data.onRequestTableDelete !== next.data.onRequestTableDelete)
       return false
     if (prev.data.onFocusTable !== next.data.onFocusTable) return false
+    if (prev.data.onExportDdl !== next.data.onExportDdl) return false
     if (prev.data.onColumnReorder !== next.data.onColumnReorder) return false
     if (prev.data.emitColumnReorder !== next.data.emitColumnReorder)
       return false

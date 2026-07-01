@@ -31,6 +31,7 @@ import { ConnectionStatusIndicator } from './ConnectionStatusIndicator'
 import { DeleteTableDialog } from './DeleteTableDialog'
 import { Toolbar } from './Toolbar'
 import { AutoLayoutConfirmDialog } from './AutoLayoutConfirmDialog'
+import { TableFocusOverlay } from './TableFocusOverlay'
 import type { Connection } from '@xyflow/react'
 import type { ZoomControls } from './Toolbar'
 import type {
@@ -39,15 +40,16 @@ import type {
   TableNodeType,
 } from '@/lib/react-flow/types'
 import type { Column } from '@/data/models'
-import type { Cardinality } from '@/data/schema'
-import type { CreateColumnPayload } from './column/types'
 import type {
+  Cardinality,
   CreateRelationship,
   CreateTable,
   UpdateColumn,
 } from '@/data/schema'
+import type { CreateColumnPayload } from './column/types'
 import type { TableRelationship } from './DeleteTableDialog'
 import type { RelationshipErrorEvent } from '@/hooks/use-relationship-mutations'
+import type { Dialect } from '@/lib/ddl-generator'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
@@ -86,7 +88,11 @@ import { useTableMutations } from '@/hooks/use-table-mutations'
 import { useRelationshipMutations } from '@/hooks/use-relationship-mutations'
 import { useTableDeletion } from '@/hooks/use-table-deletion'
 import { useTableFocus } from '@/hooks/use-table-focus'
-import { TableFocusOverlay } from './TableFocusOverlay'
+import {
+  buildDiagramTablesFromFlow,
+  exportTableDdl,
+  useTableExportDdl,
+} from '@/hooks/use-table-export-ddl'
 import { useColumnReorderMutations } from '@/hooks/use-column-reorder-mutations'
 import { useColumnReorderCollaboration } from '@/hooks/use-column-reorder-collaboration'
 import { getSessionUserId } from '@/lib/session-user-id'
@@ -218,6 +224,13 @@ function ReactFlowWhiteboardInner({
   const [nodes, setNodes] = useState<Array<TableNodeType>>(initialNodes)
   const [edges, setEdges] = useState<Array<RelationshipEdgeType>>(initialEdges)
 
+  // Node/edge accessors for DDL export (reads current React Flow state,
+  // including relationships carried on edges — see use-table-export-ddl.ts)
+  const { getNodes, getEdges } = useReactFlow<
+    TableNodeType,
+    RelationshipEdgeType
+  >()
+
   // Stable map of tableId → tableName derived from the query data.
   // Recomputes only when tables are added, removed, or renamed — not on
   // every position/highlight change — so TableNode memo isn't broken.
@@ -328,6 +341,8 @@ function ReactFlowWhiteboardInner({
               onRequestTableDelete: handleRequestTableDeleteRef.current,
               onFocusTable: (tableId: string) =>
                 handleFocusTableRef.current(tableId),
+              onExportDdl: (tableId: string, dialect: Dialect) =>
+                handleExportDdlRef.current(tableId, dialect),
               edges: edgesRef.current,
               tableNameById,
               isConnected,
@@ -369,6 +384,7 @@ function ReactFlowWhiteboardInner({
             onColumnDuplicate: prev.data.onColumnDuplicate,
             onRequestTableDelete: prev.data.onRequestTableDelete,
             onFocusTable: prev.data.onFocusTable,
+            onExportDdl: prev.data.onExportDdl,
             tableNameById,
           },
         }
@@ -856,6 +872,9 @@ function ReactFlowWhiteboardInner({
     focusedTableId !== null,
   )
 
+  // Keyboard shortcut for DDL export (d key on selected node, default dialect: mssql)
+  useTableExportDdl()
+
   // Column mutation callbacks (outgoing — triggered by user interactions in TableNode)
   const handleColumnCreate = useCallback(
     (tableId: string, data: CreateColumnPayload) => {
@@ -899,6 +918,15 @@ function ReactFlowWhiteboardInner({
   const handleFocusTable = useCallback(
     (tableId: string) => setFocusedTableId(tableId),
     [],
+  )
+
+  // Callback to export a table's CREATE TABLE DDL (context-menu submenu)
+  const handleExportDdl = useCallback(
+    (tableId: string, dialect: Dialect) => {
+      const tables = buildDiagramTablesFromFlow(getNodes(), getEdges())
+      void exportTableDdl(tables, tableId, dialect)
+    },
+    [getNodes, getEdges],
   )
 
   // Column reorder callback — wraps reconcileAfterDrop with real setNodes
@@ -998,6 +1026,7 @@ function ReactFlowWhiteboardInner({
   const handleColumnDuplicateRef = useRef(handleColumnDuplicate)
   const handleRequestTableDeleteRef = useRef(handleRequestTableDelete)
   const handleFocusTableRef = useRef(handleFocusTable)
+  const handleExportDdlRef = useRef(handleExportDdl)
   const handleColumnReorderRef = useRef(handleColumnReorder)
   const emitColumnReorderRef = useRef(emitColumnReorder)
   const bumpReorderTickRef = useRef(bumpReorderTick)
@@ -1019,6 +1048,9 @@ function ReactFlowWhiteboardInner({
   useEffect(() => {
     handleFocusTableRef.current = handleFocusTable
   }, [handleFocusTable])
+  useEffect(() => {
+    handleExportDdlRef.current = handleExportDdl
+  }, [handleExportDdl])
   useEffect(() => {
     handleColumnReorderRef.current = handleColumnReorder
   }, [handleColumnReorder])
@@ -1043,6 +1075,8 @@ function ReactFlowWhiteboardInner({
           onRequestTableDelete: handleRequestTableDeleteRef.current,
           onFocusTable: (tableId: string) =>
             handleFocusTableRef.current(tableId),
+          onExportDdl: (tableId: string, dialect: Dialect) =>
+            handleExportDdlRef.current(tableId, dialect),
           onColumnReorder: (
             params: import('@/hooks/use-column-reorder-mutations').ReconcileAfterDropParams,
           ) => handleColumnReorderRef.current(params),
@@ -1078,6 +1112,8 @@ function ReactFlowWhiteboardInner({
           onRequestTableDelete: handleRequestTableDeleteRef.current,
           onFocusTable: (tableId: string) =>
             handleFocusTableRef.current(tableId),
+          onExportDdl: (tableId: string, dialect: Dialect) =>
+            handleExportDdlRef.current(tableId, dialect),
           onColumnReorder: (
             params: import('@/hooks/use-column-reorder-mutations').ReconcileAfterDropParams,
           ) => handleColumnReorderRef.current(params),
@@ -1210,7 +1246,10 @@ function ReactFlowWhiteboardInner({
     if (unresolved.length === 0) return
 
     const rfAllNodes = rfNodes
-    const placements = resolvePendingPositions(unresolved as any, rfAllNodes as any)
+    const placements = resolvePendingPositions(
+      unresolved as any,
+      rfAllNodes as any,
+    )
     if (placements.length === 0) return
 
     // Apply positions locally so the nodes appear on-canvas immediately.
@@ -1231,7 +1270,7 @@ function ReactFlowWhiteboardInner({
       resolvedPendingIdsRef.current.add(id)
       emitPositionUpdate(id, x, y, true)
     })
-  // eslint-disable-next-line react-hooks/exhaustive-deps
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [nodes, nodesInitialized, emitPositionUpdate])
 
   // Build zoom controls and expose to parent once on mount
