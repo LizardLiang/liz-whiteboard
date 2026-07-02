@@ -16,7 +16,10 @@ import {
   DialogTitle,
 } from '@/components/ui/dialog'
 import { ReactFlowCanvas } from './ReactFlowCanvas'
-import { buildEdgeMap } from '@/lib/react-flow/highlighting'
+import {
+  filterValidEdges,
+  getDirectlyRelatedTableIds,
+} from '@/lib/react-flow/highlighting'
 import type { RelationshipEdgeType, TableNodeType } from '@/lib/react-flow/types'
 import { computeD3ForceLayout } from '@/lib/auto-layout/d3-force-layout'
 
@@ -88,36 +91,23 @@ export function TableFocusOverlay({
         }
       }
 
-      // Pre-filter stale edges: mirror the column-existence guard used in
-      // ReactFlowCanvas.tsx (lines 153-160) so that edges referencing deleted
-      // columns are excluded before building the neighbor set. Without this,
-      // a stale edge can add an unrelated table to relatedTableIds even though
-      // ReactFlowCanvas will later drop the edge — producing a table with no
-      // visible connecting line in the overlay.
-      const existingColumnIds = new Set<string>()
-      for (const node of nodes) {
-        for (const col of node.data.table.columns) {
-          existingColumnIds.add(col.id)
-        }
-      }
-      const validEdges = edges.filter((e) => {
-        const rel = e.data?.relationship
-        if (!rel) return false
-        return (
-          existingColumnIds.has(rel.sourceColumnId) &&
-          existingColumnIds.has(rel.targetColumnId)
-        )
-      })
+      // Pre-filter stale edges: excludes edges referencing deleted columns
+      // before building the neighbor set and before filtering edges below.
+      // Without this, a stale edge can add an unrelated table to
+      // relatedTableIds even though ReactFlowCanvas will later drop the
+      // edge — producing a table with no visible connecting line in the
+      // overlay. Shared with ReactFlowCanvas.tsx's initialEdges effect.
+      const validEdges = filterValidEdges(nodes, edges)
 
-      const edgeMap = buildEdgeMap(validEdges)
-      const relatedTableIds = new Set<string>()
-      relatedTableIds.add(activeFocusId)
-
-      const connectedEdges = edgeMap.get(activeFocusId) ?? []
-      for (const edge of connectedEdges) {
-        relatedTableIds.add(edge.source)
-        relatedTableIds.add(edge.target)
-      }
+      // Shared 1-hop-neighbor helper — used for the neighbor id set.
+      // filteredEdges below still derives from validEdges directly (not the
+      // helper's relatedEdges) because it needs ALL edges among the related
+      // set (including edges between two neighbor tables), not just edges
+      // touching activeFocusId.
+      const { relatedTableIds } = getDirectlyRelatedTableIds(
+        activeFocusId,
+        validEdges,
+      )
 
       // Filter nodes to the related set and strip mutation callbacks.
       // Neighbor nodes (not the focal node) receive onFocusTable so clicking

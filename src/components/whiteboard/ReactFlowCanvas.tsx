@@ -28,8 +28,16 @@ import type {
 import { recalculateEdgesForDraggedNodes } from '@/lib/react-flow/edge-routing'
 import { assignLayersBFS, computeEdgeBundleOffsets } from '@/lib/auto-layout/d3-force-layout'
 import { edgeTypes, nodeTypes } from '@/lib/react-flow/node-types'
-import { calculateHighlighting } from '@/lib/react-flow/highlighting'
+import {
+  calculateHighlighting,
+  filterValidEdges,
+  getDirectlyRelatedTableIds,
+} from '@/lib/react-flow/highlighting'
 import { VIEWPORT_CONSTRAINTS } from '@/lib/react-flow/viewport'
+import { TableHoverPreview } from './TableHoverPreview'
+
+/** Delay (ms) a table must be hovered before the preview card appears. */
+const HOVER_PREVIEW_DELAY_MS = 450
 
 /**
  * ReactFlowCanvas Props
@@ -63,6 +71,11 @@ export interface ReactFlowCanvasProps {
   className?: string
   /** Callback when a node is clicked — receives the node id */
   onNodeClick?: (nodeId: string) => void
+  /**
+   * True while a modal/dialog such as TableFocusOverlay is open, to prevent
+   * the hover preview card from appearing behind/alongside it.
+   */
+  suppressHoverPreview?: boolean
 }
 
 /**
@@ -95,6 +108,7 @@ export function ReactFlowCanvas({
   showBackground = true,
   fitViewOptions,
   className = '',
+  suppressHoverPreview = false,
 }: ReactFlowCanvasProps) {
   const [nodes, setNodes, handleNodesChange] =
     useNodesState<TableNodeType>(initialNodes)
@@ -104,6 +118,20 @@ export function ReactFlowCanvas({
   // Selection and hover state for highlighting
   const [activeTableId, setActiveTableId] = useState<string | null>(null)
   const [hoveredTableId, setHoveredTableId] = useState<string | null>(null)
+
+  // Hover-preview card state: which table's preview to show (if any) and
+  // where to anchor it, driven by a debounce timer separate from
+  // hoveredTableId (which sets/clears immediately for highlighting).
+  const [hoverPreviewTableId, setHoverPreviewTableId] = useState<
+    string | null
+  >(null)
+  const [hoverPreviewAnchor, setHoverPreviewAnchor] = useState<{
+    x: number
+    y: number
+  } | null>(null)
+  const hoverPreviewTimerRef = useRef<ReturnType<typeof setTimeout> | null>(
+    null,
+  )
 
   // Track drag in progress — ReactFlow fires mouseLeave/mouseEnter when drag
   // starts/stops, which would trigger unnecessary highlighting recalculations.
@@ -139,25 +167,11 @@ export function ReactFlowCanvas({
       return
     }
 
-    // Build a set of all column IDs that currently exist across all nodes.
-    // Edges referencing a deleted or stale column will be silently excluded
-    // to prevent the "[React Flow]: Couldn't create edge for source handle id"
-    // warning flood that occurs when handle IDs no longer match any registered handle.
-    const existingColumnIds = new Set<string>()
-    for (const node of initialNodes) {
-      for (const col of node.data.table.columns) {
-        existingColumnIds.add(col.id)
-      }
-    }
-
-    const validEdges = initialEdges.filter((edge) => {
-      const rel = edge.data?.relationship
-      if (!rel) return false
-      return (
-        existingColumnIds.has(rel.sourceColumnId) &&
-        existingColumnIds.has(rel.targetColumnId)
-      )
-    })
+    // Edges referencing a deleted or stale column are silently excluded to
+    // prevent the "[React Flow]: Couldn't create edge for source handle id"
+    // warning flood that occurs when handle IDs no longer match any
+    // registered handle. Shared with TableFocusOverlay.tsx.
+    const validEdges = filterValidEdges(initialNodes, initialEdges)
 
     const allNodeIds = new Set(initialNodes.map((n) => n.id))
     const recalculated = recalculateEdgesForDraggedNodes(
@@ -248,13 +262,36 @@ export function ReactFlowCanvas({
   }, [])
 
   // Handle node mouse enter (hover) — skip during drag (ReactFlow fires this on drag end)
-  const onNodeMouseEnter = useCallback<NodeMouseHandler>((_event, node) => {
-    if (isDraggingRef.current) return
-    setHoveredTableId(node.id)
-  }, [])
+  const onNodeMouseEnter = useCallback<NodeMouseHandler>(
+    (event, node) => {
+      if (isDraggingRef.current) return
+      setHoveredTableId(node.id)
+
+      if (suppressHoverPreview) return
+      if (hoverPreviewTimerRef.current) {
+        clearTimeout(hoverPreviewTimerRef.current)
+      }
+      const anchorX = event.clientX
+      const anchorY = event.clientY
+      hoverPreviewTimerRef.current = setTimeout(() => {
+        setHoverPreviewTableId(node.id)
+        setHoverPreviewAnchor({ x: anchorX, y: anchorY })
+      }, HOVER_PREVIEW_DELAY_MS)
+    },
+    [suppressHoverPreview],
+  )
 
   // Handle node mouse leave (unhover) — skip during drag (ReactFlow fires this on drag start)
   const onNodeMouseLeave = useCallback<NodeMouseHandler>((_event, _node) => {
+    if (hoverPreviewTimerRef.current) {
+      clearTimeout(hoverPreviewTimerRef.current)
+      hoverPreviewTimerRef.current = null
+    }
+    // A stale preview card must not survive a mouse-leave even if the
+    // drag-suppression guard below skips the hoveredTableId reset.
+    setHoverPreviewTableId(null)
+    setHoverPreviewAnchor(null)
+
     if (isDraggingRef.current) return
     setHoveredTableId(null)
   }, [])
@@ -283,7 +320,57 @@ export function ReactFlowCanvas({
   // Mark drag as started — suppresses hover events that ReactFlow fires on drag begin
   const onNodeDragStart = useCallback(() => {
     isDraggingRef.current = true
+    // A dragged table must never show a stale preview card following the cursor.
+    if (hoverPreviewTimerRef.current) {
+      clearTimeout(hoverPreviewTimerRef.current)
+      hoverPreviewTimerRef.current = null
+    }
+    setHoverPreviewTableId(null)
+    setHoverPreviewAnchor(null)
   }, [])
+
+  // Clear any pending hover-preview timer on unmount.
+  useEffect(() => {
+    return () => {
+      if (hoverPreviewTimerRef.current) {
+        clearTimeout(hoverPreviewTimerRef.current)
+      }
+    }
+  }, [])
+
+  // When suppression turns on (e.g. TableFocusOverlay opens) while a hover
+  // timer is pending or a preview is already showing, cancel/clear both.
+  // Without this, a timer started just before suppression can still fire
+  // mid-suppression and set hoverPreviewTableId/anchor; when suppression
+  // later lifts, the card would reappear at a stale anchor with no hover.
+  useEffect(() => {
+    if (!suppressHoverPreview) return
+    if (hoverPreviewTimerRef.current) {
+      clearTimeout(hoverPreviewTimerRef.current)
+      hoverPreviewTimerRef.current = null
+    }
+    setHoverPreviewTableId(null)
+    setHoverPreviewAnchor(null)
+  }, [suppressHoverPreview])
+
+  // Resolve the hover-preview card's data from the current hover target.
+  // Re-checks suppressHoverPreview at render time (not just at timer-start
+  // time) in case the Focus Overlay opens via a different interaction path
+  // while a preview is already showing.
+  const hoverPreviewData = useMemo(() => {
+    if (!hoverPreviewTableId || suppressHoverPreview) return null
+    return getDirectlyRelatedTableIds(hoverPreviewTableId, edges)
+  }, [hoverPreviewTableId, suppressHoverPreview, edges])
+
+  const hoverPreviewTable = useMemo(() => {
+    if (!hoverPreviewTableId) return undefined
+    return nodes.find((n) => n.id === hoverPreviewTableId)
+  }, [hoverPreviewTableId, nodes])
+
+  const allNodesById = useMemo(
+    () => new Map(nodes.map((n) => [n.id, n])),
+    [nodes],
+  )
 
   // Recalculate edge handles whenever a node is dragged (live feedback).
   // We merge the dragged node's latest position into the nodes array so the
@@ -402,6 +489,14 @@ export function ReactFlowCanvas({
           />
         )}
       </ReactFlow>
+      {hoverPreviewTable && hoverPreviewAnchor && hoverPreviewData && (
+        <TableHoverPreview
+          table={hoverPreviewTable}
+          relatedEdges={hoverPreviewData.relatedEdges}
+          allNodesById={allNodesById}
+          anchorPosition={hoverPreviewAnchor}
+        />
+      )}
     </div>
   )
 }

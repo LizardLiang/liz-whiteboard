@@ -1450,6 +1450,7 @@ function ReactFlowWhiteboardInner({
             padding: 0.2,
             includeHiddenNodes: false,
           }}
+          suppressHoverPreview={focusedTableId !== null}
         />
 
         {/* Focus View Overlay — read-only sub-canvas for the selected table + 1-hop neighbors */}
