@@ -15,6 +15,7 @@ const ALL_TABLES = [
   'DiagramTable',
   'Whiteboard',
   'Folder',
+  'ProjectInvite',
   'ProjectMember',
   'Session',
   'Project',

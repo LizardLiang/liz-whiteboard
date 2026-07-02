@@ -3,7 +3,10 @@
 
 import { useState } from 'react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
-import type { ProjectRoleValue as ProjectRole } from '@/data/schema'
+import type {
+  InviteExpiryHours,
+  ProjectRoleValue as ProjectRole,
+} from '@/data/schema'
 import {
   Sheet,
   SheetContent,
@@ -28,6 +31,51 @@ import {
   revokePermission,
   updatePermission,
 } from '@/routes/api/permissions'
+import {
+  createProjectInvite,
+  listProjectInvites,
+  revokeInvite,
+} from '@/routes/api/invites'
+
+const EXPIRY_OPTIONS: Array<{ value: InviteExpiryHours; label: string }> = [
+  { value: 1, label: '1 hour' },
+  { value: 24, label: '24 hours' },
+  { value: 24 * 7, label: '7 days' },
+  { value: 24 * 30, label: '30 days' },
+]
+
+/** VIEWER/EDITOR/ADMIN role choices — shared by every role Select in this
+ * panel (add-a-person, existing-member role change, invite-link role). */
+const ROLE_OPTIONS: Array<{ value: ProjectRole; label: string }> = [
+  { value: 'VIEWER', label: 'Viewer' },
+  { value: 'EDITOR', label: 'Editor' },
+  { value: 'ADMIN', label: 'Admin' },
+]
+
+function RoleSelectItems() {
+  return (
+    <>
+      {ROLE_OPTIONS.map((opt) => (
+        <SelectItem key={opt.value} value={opt.value}>
+          {opt.label}
+        </SelectItem>
+      ))}
+    </>
+  )
+}
+
+/** Client-safe invite shape returned by listProjectInvites (tokenHash omitted). */
+interface InviteListItem {
+  id: string
+  role: ProjectRole
+  maxUses: number | null
+  usedCount: number
+  expiresAt: string | Date
+  revokedAt: string | Date | null
+  createdAt: string | Date
+  createdByUserId: string
+  createdByUsername: string | null
+}
 
 interface ProjectSharePanelProps {
   projectId: string
@@ -50,15 +98,35 @@ export function ProjectSharePanel({
   const [addRole, setAddRole] = useState<ProjectRole>('VIEWER')
   const [addError, setAddError] = useState<string | null>(null)
 
+  const [inviteRole, setInviteRole] = useState<ProjectRole>('VIEWER')
+  const [inviteExpiresInHours, setInviteExpiresInHours] =
+    useState<InviteExpiryHours>(24 * 7)
+  const [createdInviteToken, setCreatedInviteToken] = useState<string | null>(
+    null,
+  )
+  const [copied, setCopied] = useState(false)
+
   const { data, isLoading } = useQuery({
     queryKey: ['project-permissions', projectId],
     queryFn: () => listProjectPermissions({ data: projectId }),
     enabled: open,
   })
 
+  const { data: invitesData, isLoading: isInvitesLoading } = useQuery({
+    queryKey: ['project-invites', projectId],
+    queryFn: () => listProjectInvites({ data: projectId }),
+    enabled: open,
+  })
+
   const invalidate = () => {
     queryClient.invalidateQueries({
       queryKey: ['project-permissions', projectId],
+    })
+  }
+
+  const invalidateInvites = () => {
+    queryClient.invalidateQueries({
+      queryKey: ['project-invites', projectId],
     })
   }
 
@@ -94,6 +162,31 @@ export function ProjectSharePanel({
     onSuccess: invalidate,
   })
 
+  const createInviteMutation = useMutation({
+    mutationFn: () =>
+      createProjectInvite({
+        data: {
+          projectId,
+          role: inviteRole,
+          expiresInHours: inviteExpiresInHours,
+        },
+      }),
+    onSuccess: (result) => {
+      if ('error' in result) return
+      // Only place in the whole feature the raw token is ever available —
+      // display it once, never persist it beyond this local state, never log it.
+      setCreatedInviteToken(result.token)
+      setCopied(false)
+      invalidateInvites()
+    },
+  })
+
+  const revokeInviteMutation = useMutation({
+    mutationFn: (inviteId: string) =>
+      revokeInvite({ data: { projectId, inviteId } }),
+    onSuccess: invalidateInvites,
+  })
+
   const handleAddUser = (e: React.FormEvent) => {
     e.preventDefault()
     setAddError(null)
@@ -101,8 +194,18 @@ export function ProjectSharePanel({
     grantMutation.mutate({ email: addEmail, role: addRole })
   }
 
+  const handleCopyInviteLink = async () => {
+    if (!createdInviteToken) return
+    const url = `${window.location.origin}/invite/${createdInviteToken}`
+    await navigator.clipboard.writeText(url)
+    setCopied(true)
+  }
+
   const permissions =
     data && !('error' in data) ? data : { owner: null, members: [] }
+
+  const invites: Array<InviteListItem> =
+    invitesData && !('error' in invitesData) ? invitesData.invites : []
 
   return (
     <Sheet open={open} onOpenChange={onOpenChange}>
@@ -135,9 +238,7 @@ export function ProjectSharePanel({
                   <SelectValue />
                 </SelectTrigger>
                 <SelectContent>
-                  <SelectItem value="VIEWER">Viewer</SelectItem>
-                  <SelectItem value="EDITOR">Editor</SelectItem>
-                  <SelectItem value="ADMIN">Admin</SelectItem>
+                  <RoleSelectItems />
                 </SelectContent>
               </Select>
             </div>
@@ -212,9 +313,7 @@ export function ProjectSharePanel({
                         <SelectValue />
                       </SelectTrigger>
                       <SelectContent>
-                        <SelectItem value="VIEWER">Viewer</SelectItem>
-                        <SelectItem value="EDITOR">Editor</SelectItem>
-                        <SelectItem value="ADMIN">Admin</SelectItem>
+                        <RoleSelectItems />
                       </SelectContent>
                     </Select>
                     <Button
@@ -233,6 +332,140 @@ export function ProjectSharePanel({
                 {permissions.members.length === 0 && !permissions.owner && (
                   <li className="text-sm text-muted-foreground py-2">
                     No members yet.
+                  </li>
+                )}
+              </ul>
+            )}
+          </div>
+
+          {/* Create invite link */}
+          <div className="space-y-3 border-t pt-6">
+            <Label className="text-sm font-medium">Invite by link</Label>
+            <div className="flex gap-2">
+              <Select
+                value={inviteRole}
+                onValueChange={(v) => setInviteRole(v as ProjectRole)}
+              >
+                <SelectTrigger className="flex-1" aria-label="Invite role">
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  <RoleSelectItems />
+                </SelectContent>
+              </Select>
+              <Select
+                value={String(inviteExpiresInHours)}
+                onValueChange={(v) =>
+                  setInviteExpiresInHours(Number(v))
+                }
+              >
+                <SelectTrigger className="flex-1" aria-label="Link expiry">
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  {EXPIRY_OPTIONS.map((opt) => (
+                    <SelectItem key={opt.value} value={String(opt.value)}>
+                      {opt.label}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+            <Button
+              size="sm"
+              className="w-full"
+              disabled={createInviteMutation.isPending}
+              onClick={() => createInviteMutation.mutate()}
+            >
+              {createInviteMutation.isPending
+                ? 'Creating link...'
+                : 'Create link'}
+            </Button>
+
+            {createdInviteToken && (
+              <div className="space-y-1">
+                <div className="flex gap-2">
+                  <Input
+                    readOnly
+                    value={`${window.location.origin}/invite/${createdInviteToken}`}
+                    aria-label="Invite link"
+                    className="flex-1 text-xs"
+                    onFocus={(e) => e.target.select()}
+                  />
+                  <Button
+                    type="button"
+                    size="sm"
+                    variant="outline"
+                    onClick={handleCopyInviteLink}
+                  >
+                    {copied ? 'Copied' : 'Copy'}
+                  </Button>
+                </div>
+                <p className="text-xs text-muted-foreground">
+                  This link won't be shown again — copy it now.
+                </p>
+              </div>
+            )}
+          </div>
+
+          {/* Outstanding invite links */}
+          <div>
+            <Label className="text-sm font-medium">Outstanding links</Label>
+            {isInvitesLoading ? (
+              <p className="mt-2 text-sm text-muted-foreground">Loading...</p>
+            ) : (
+              <ul className="mt-2 space-y-2" aria-label="Outstanding invite links">
+                {invites.map((invite) => {
+                  const isRevoked = invite.revokedAt !== null
+                  const isExpired =
+                    new Date(invite.expiresAt).getTime() < Date.now()
+                  const isInactive = isRevoked || isExpired
+                  return (
+                    <li
+                      key={invite.id}
+                      className="flex items-center gap-2 rounded-md border px-3 py-2"
+                    >
+                      <div className="flex-1 min-w-0">
+                        <div className="flex items-center gap-2">
+                          <Badge variant="secondary">{invite.role}</Badge>
+                          {isRevoked && (
+                            <span className="text-xs text-destructive">
+                              Revoked
+                            </span>
+                          )}
+                          {!isRevoked && isExpired && (
+                            <span className="text-xs text-muted-foreground">
+                              Expired
+                            </span>
+                          )}
+                        </div>
+                        <p className="text-xs text-muted-foreground truncate">
+                          Expires{' '}
+                          {new Date(invite.expiresAt).toLocaleDateString()} ·{' '}
+                          {invite.usedCount}
+                          {invite.maxUses !== null
+                            ? `/${invite.maxUses}`
+                            : ''}{' '}
+                          use{invite.usedCount === 1 ? '' : 's'}
+                        </p>
+                      </div>
+                      <Button
+                        variant="ghost"
+                        size="sm"
+                        className="h-7 px-2 text-xs text-muted-foreground hover:text-destructive"
+                        onClick={() => revokeInviteMutation.mutate(invite.id)}
+                        aria-label={`Revoke ${invite.role} invite link`}
+                        disabled={isInactive || revokeInviteMutation.isPending}
+                      >
+                        Revoke
+                      </Button>
+                    </li>
+                  )
+                })}
+
+                {invites.length === 0 && (
+                  <li className="text-sm text-muted-foreground py-2">
+                    No outstanding links.
                   </li>
                 )}
               </ul>

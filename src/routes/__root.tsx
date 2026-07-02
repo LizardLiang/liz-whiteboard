@@ -29,7 +29,13 @@ interface MyRouterContext {
 }
 
 // Routes that do not require authentication
-const PUBLIC_PATHS = ['/login', '/register']
+// '/invite' is public because invite links are designed to be opened by
+// logged-out visitors (see src/routes/invite.$token.tsx) — the landing page
+// itself does its own client-side getCurrentUser check to decide whether to
+// show sign-in/register CTAs or an "Accept invite" button. Actually
+// redeeming the invite still requires auth (enforced server-side by
+// redeemInvite's requireAuth wrapper).
+const PUBLIC_PATHS = ['/login', '/register', '/invite']
 
 export const Route = createRootRouteWithContext<MyRouterContext>()({
   head: () => ({

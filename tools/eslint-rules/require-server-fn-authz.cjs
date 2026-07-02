@@ -8,6 +8,9 @@
 
 'use strict'
 
+const fs = require('node:fs')
+const path = require('node:path')
+
 const ALLOWED_REQUIRES_VALUES = new Set([
   'authenticated',
   'unauthenticated',
@@ -112,7 +115,11 @@ function collectCalleeNames(node, names) {
 /**
  * Return true if the body satisfies RBAC requirements:
  *   (a) calls `requireServerFnRole` (preferred pattern), OR
- *   (b) calls BOTH `findEffectiveRole` AND `hasMinimumRole` (legacy pattern, paired assertion).
+ *   (b) calls BOTH `findEffectiveRole` AND `hasMinimumRole` (legacy pattern, paired assertion), OR
+ *   (c) calls `requireMinimumRole` (shared-helper pattern — a thin wrapper
+ *       that itself calls findEffectiveRole+hasMinimumRole internally; see
+ *       src/routes/api/invites.ts. Trusted the same way requireServerFnRole
+ *       is trusted — both are named, singular, project-defined RBAC gates).
  *
  * A single `findEffectiveRole` call with a discarded result does NOT pass.
  */
@@ -121,16 +128,170 @@ function bodyCallsRequireServerFnRole(node) {
   const names = new Set()
   collectCalleeNames(node, names)
   if (names.has('requireServerFnRole')) return true
+  if (names.has('requireMinimumRole')) return true
   // Legacy pattern: both halves must be present
   if (names.has('findEffectiveRole') && names.has('hasMinimumRole')) return true
   return false
 }
 
 /**
+ * Find a module-level function-like declaration matching `name` directly in
+ * `programBody` (no cross-file resolution). Supports:
+ *   function name(...) { ... }
+ *   export function name(...) { ... }
+ *   const/let name = (...) => { ... }
+ *   export const/let name = (...) => { ... }
+ * Returns the function's body node, or null if not found.
+ */
+function findLocalFunctionBody(programBody, name) {
+  if (!programBody) return null
+  const isFunctionLike = (n) =>
+    n &&
+    (n.type === 'ArrowFunctionExpression' ||
+      n.type === 'FunctionExpression' ||
+      n.type === 'FunctionDeclaration')
+
+  for (const stmt of programBody) {
+    const decl = stmt.type === 'ExportNamedDeclaration' ? stmt.declaration : stmt
+    if (!decl) continue
+
+    if (decl.type === 'FunctionDeclaration' && decl.id?.name === name) {
+      return decl.body
+    }
+    if (decl.type === 'VariableDeclaration') {
+      for (const d of decl.declarations) {
+        if (
+          d.id?.type === 'Identifier' &&
+          d.id.name === name &&
+          isFunctionLike(d.init)
+        ) {
+          return d.init.body
+        }
+      }
+    }
+  }
+  return null
+}
+
+/**
+ * Find the ImportDeclaration source (module specifier) that brings `name`
+ * into scope as a named import, e.g. `import { name } from '@/lib/x'` ->
+ * '@/lib/x'. Returns null if `name` isn't imported (or is a default/
+ * namespace import — not supported, project convention is named exports).
+ */
+function findImportSource(programBody, name) {
+  for (const stmt of programBody) {
+    if (stmt.type !== 'ImportDeclaration') continue
+    for (const spec of stmt.specifiers) {
+      if (
+        spec.type === 'ImportSpecifier' &&
+        spec.local.type === 'Identifier' &&
+        spec.local.name === name
+      ) {
+        return stmt.source.value
+      }
+    }
+  }
+  return null
+}
+
+const PROJECT_ROOT = path.resolve(__dirname, '..', '..')
+const SRC_ROOT = path.join(PROJECT_ROOT, 'src')
+const RESOLVED_EXTENSIONS = ['.ts', '.tsx', '/index.ts', '/index.tsx']
+
+/** Resolve a module specifier (relative or '@/'-aliased) to an absolute file path on disk. Returns null if unresolvable (e.g. a node_modules package — never trusted silently). */
+function resolveSpecifierToFile(fromFile, source) {
+  let base
+  if (source.startsWith('@/')) {
+    base = path.join(SRC_ROOT, source.slice(2))
+  } else if (source.startsWith('.')) {
+    base = path.resolve(path.dirname(fromFile), source)
+  } else {
+    return null // bare package specifier — not a project-local file, don't trust
+  }
+
+  if (fs.existsSync(base) && fs.statSync(base).isFile()) return base
+  for (const ext of RESOLVED_EXTENSIONS) {
+    const candidate = base + ext
+    if (fs.existsSync(candidate) && fs.statSync(candidate).isFile()) {
+      return candidate
+    }
+  }
+  return null
+}
+
+// Cache parsed ASTs per file for the lifetime of this lint run (a single
+// target module, e.g. src/lib/invite/handlers.ts, is commonly imported by
+// several createServerFn wrappers in the same file).
+const parsedFileCache = new Map()
+
+/** Parse a project TS/TSX file into its Program body (AST). Returns null on read/parse failure. */
+function parseFileBody(filePath) {
+  if (parsedFileCache.has(filePath)) return parsedFileCache.get(filePath)
+
+  let body = null
+  try {
+    const tsParser = require('@typescript-eslint/parser')
+    const sourceText = fs.readFileSync(filePath, 'utf8')
+    const ast = tsParser.parse(sourceText, {
+      ecmaVersion: 2022,
+      sourceType: 'module',
+      ecmaFeatures: { jsx: filePath.endsWith('.tsx') },
+    })
+    body = ast.body
+  } catch {
+    body = null
+  }
+
+  parsedFileCache.set(filePath, body)
+  return body
+}
+
+/**
+ * Resolve an Identifier to a function-like declaration's body, checking the
+ * current file first and, if not found there, following a named import to
+ * another project-local (@/... or relative) file — so
+ * `.handler(requireAuth(namedHandlerFn))` is checked correctly whether
+ * `namedHandlerFn` is declared in the same module (extracted for direct
+ * unit-testing) or in a dedicated server-only handlers module (kept out of
+ * the same file specifically so client-imported sibling exports, e.g. the
+ * createServerFn consts themselves, don't drag that file's data-layer
+ * imports into the client bundle — see src/lib/invite/handlers.ts).
+ * Bounded to a few hops to avoid pathological re-export chains.
+ */
+function resolveModuleLevelFunctionBody(
+  programBody,
+  name,
+  currentFile,
+  hopsRemaining = 3,
+) {
+  const local = findLocalFunctionBody(programBody, name)
+  if (local) return local
+
+  if (hopsRemaining <= 0 || !currentFile) return null
+
+  const source = findImportSource(programBody, name)
+  if (!source) return null
+
+  const resolvedFile = resolveSpecifierToFile(currentFile, source)
+  if (!resolvedFile) return null
+
+  const importedBody = parseFileBody(resolvedFile)
+  if (!importedBody) return null
+
+  return resolveModuleLevelFunctionBody(
+    importedBody,
+    name,
+    resolvedFile,
+    hopsRemaining - 1,
+  )
+}
+
+/**
  * Find the inner arrow function body from a .handler(requireAuth(async ...)) chain.
  * Returns the inner function's body or null.
  */
-function resolveHandlerBody(handlerArg) {
+function resolveHandlerBody(handlerArg, programBody, currentFile) {
   if (!handlerArg) return null
 
   // Direct arrow/function: .handler(async (ctx, data) => { ... })
@@ -141,7 +302,17 @@ function resolveHandlerBody(handlerArg) {
     return handlerArg.body
   }
 
+  // Direct named-function reference: .handler(namedHandlerFn)
+  if (handlerArg.type === 'Identifier') {
+    return resolveModuleLevelFunctionBody(
+      programBody,
+      handlerArg.name,
+      currentFile,
+    )
+  }
+
   // Wrapped: .handler(requireAuth(async (ctx, data) => { ... }))
+  //      or: .handler(requireAuth(namedHandlerFn))
   if (handlerArg.type === 'CallExpression') {
     const callee = handlerArg.callee
     const wrapperName =
@@ -163,6 +334,13 @@ function resolveHandlerBody(handlerArg) {
         innerFn.type === 'FunctionExpression')
     ) {
       return innerFn.body
+    }
+    if (innerFn && innerFn.type === 'Identifier') {
+      return resolveModuleLevelFunctionBody(
+        programBody,
+        innerFn.name,
+        currentFile,
+      )
     }
   }
 
@@ -269,7 +447,12 @@ const rule = {
 
         // ── 3. Check handler body calls requireServerFnRole ───────────────
         const handlerArg = handlerNode.arguments[0]
-        const bodyOrFlag = resolveHandlerBody(handlerArg)
+        const programBody = context.getSourceCode().ast.body
+        const bodyOrFlag = resolveHandlerBody(
+          handlerArg,
+          programBody,
+          context.getFilename(),
+        )
 
         if (bodyOrFlag && bodyOrFlag.__notAllowed) {
           context.report({

@@ -19,7 +19,7 @@ vi.mock('./api/auth', () => ({
 //   if (!result) throw redirect({ to: '/login', search: { redirect: pathname } })
 //   return { user: result.user }
 
-const PUBLIC_PATHS = ['/login', '/register']
+const PUBLIC_PATHS = ['/login', '/register', '/invite']
 
 async function simulateBeforeLoad(pathname: string) {
   // Mirror the beforeLoad logic exactly as implemented in __root.tsx
@@ -100,6 +100,19 @@ describe('TC-P3-21: beforeLoad — public routes skip auth check', () => {
       const outcome = await simulateBeforeLoad('/login')
       expect(outcome.redirected).toBe(false)
     }
+  })
+
+  // Invite-by-URL plan: /invite/$token must be reachable by logged-out
+  // visitors (the landing page does its own client-side getCurrentUser
+  // check to decide whether to show sign-in/register CTAs or the accept
+  // button — actual redemption is still auth-gated server-side).
+  it('/invite/:token does NOT redirect even when getCurrentUser returns null', async () => {
+    vi.mocked(getCurrentUser).mockResolvedValue(null)
+
+    const outcome = await simulateBeforeLoad('/invite/abc123')
+
+    expect(outcome.redirected).toBe(false)
+    expect(getCurrentUser).not.toHaveBeenCalled()
   })
 })
 

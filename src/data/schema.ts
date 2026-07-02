@@ -377,6 +377,48 @@ export const revokePermissionSchema = z.object({
   userId: z.string().uuid(),
 })
 
+// ============================================================================
+// Invite Schemas
+// ============================================================================
+
+/**
+ * Allowed invite-link expiry durations (hours). A fixed closed set — matches
+ * the existing "small closed set of options" style used for dataTypeSchema/
+ * cardinalitySchema — rather than an arbitrary duration.
+ */
+export const inviteExpiryHoursSchema = z.union([
+  z.literal(1),
+  z.literal(24),
+  z.literal(24 * 7),
+  z.literal(24 * 30),
+])
+
+/**
+ * Schema for creating a project invite link.
+ */
+export const createInviteSchema = z.object({
+  projectId: z.string().uuid(),
+  role: projectRoleSchema,
+  expiresInHours: inviteExpiryHoursSchema.default(24 * 7),
+})
+
+/**
+ * Schema for revoking a project invite link.
+ */
+export const revokeInviteSchema = z.object({
+  projectId: z.string().uuid(),
+  inviteId: z.string().uuid(),
+})
+
+/**
+ * Schema for redeeming a project invite link. `token` is the raw
+ * crypto-random bearer token (not a UUID) — validated for non-emptiness
+ * only, the hash lookup itself rejects anything that doesn't match.
+ */
+export const redeemInviteSchema = z.object({
+  token: z.string().min(1),
+})
+
 // Auth type exports
 export type RegisterInput = z.infer<typeof registerInputSchema>
 export type LoginInput = z.infer<typeof loginInputSchema>
@@ -384,6 +426,11 @@ export type ProjectRoleValue = z.infer<typeof projectRoleSchema>
 export type GrantPermission = z.infer<typeof grantPermissionSchema>
 export type UpdatePermission = z.infer<typeof updatePermissionSchema>
 export type RevokePermission = z.infer<typeof revokePermissionSchema>
+
+export type InviteExpiryHours = z.infer<typeof inviteExpiryHoursSchema>
+export type CreateInvite = z.infer<typeof createInviteSchema>
+export type RevokeInvite = z.infer<typeof revokeInviteSchema>
+export type RedeemInvite = z.infer<typeof redeemInviteSchema>
 
 // ============================================================================
 // Auto Layout Schemas

@@ -3,19 +3,31 @@
 
 import { Link, createFileRoute, useRouter } from '@tanstack/react-router'
 import { useState } from 'react'
+import { z } from 'zod'
 import { registerUser } from './api/auth'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { registerInputSchema } from '@/data/schema'
 import { AUTH_ERROR_CODES } from '@/lib/auth/errors'
+import { sanitizeRedirect } from '@/lib/safe-redirect'
+
+const searchSchema = z.object({
+  redirect: z.string().optional().default('/'),
+})
 
 export const Route = createFileRoute('/register')({
+  validateSearch: searchSchema,
   component: RegisterPage,
 })
 
 function RegisterPage() {
   const router = useRouter()
+  const { redirect: rawRedirect } = Route.useSearch()
+  // S1: reject any redirect that isn't same-origin-relative (blocks
+  // "//evil.com" and "/\evil.com" open-redirect payloads) before it's ever
+  // handed to router.navigate/Link.
+  const redirect = sanitizeRedirect(rawRedirect)
 
   const [username, setUsername] = useState('')
   const [email, setEmail] = useState('')
@@ -63,8 +75,10 @@ function RegisterPage() {
       })
 
       if (response.newUser) {
-        // Genuine new user: auto-logged in, redirect to app
-        router.navigate({ to: response.redirect || '/' })
+        // Genuine new user: auto-logged in, redirect to the caller-provided
+        // target (e.g. an invite link) if present, else the server's default.
+        const target = redirect !== '/' ? redirect : response.redirect || '/'
+        router.navigate({ to: target })
       } else if (response.error === AUTH_ERROR_CODES.VALIDATION_ERROR) {
         // Server-side field validation error (e.g. username already taken)
         if (response.fields && Object.keys(response.fields).length > 0) {
@@ -80,7 +94,7 @@ function RegisterPage() {
           response.message || 'Registration successful. Please log in.',
         )
         setTimeout(() => {
-          router.navigate({ to: '/login' })
+          router.navigate({ to: '/login', search: { redirect } })
         }, 2000)
       } else {
         // Unrecognized response — do not show false success

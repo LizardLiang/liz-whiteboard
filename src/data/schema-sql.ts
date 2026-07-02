@@ -183,4 +183,23 @@ CREATE TABLE IF NOT EXISTS "OauthRefreshToken" (
 CREATE INDEX IF NOT EXISTS "OauthRefreshToken_familyId_idx"  ON "OauthRefreshToken"("familyId");
 CREATE INDEX IF NOT EXISTS "OauthRefreshToken_userId_idx"    ON "OauthRefreshToken"("userId");
 CREATE INDEX IF NOT EXISTS "OauthRefreshToken_expiresAt_idx" ON "OauthRefreshToken"("expiresAt");
+
+CREATE TABLE IF NOT EXISTS "ProjectInvite" (
+    "id" TEXT NOT NULL PRIMARY KEY,
+    "projectId" TEXT NOT NULL,
+    "role" TEXT NOT NULL,
+    "tokenHash" TEXT NOT NULL,
+    "createdByUserId" TEXT NOT NULL,
+    "maxUses" INTEGER,
+    "usedCount" INTEGER NOT NULL DEFAULT 0,
+    "expiresAt" INTEGER NOT NULL,
+    "revokedAt" INTEGER,
+    "createdAt" INTEGER NOT NULL DEFAULT (unixepoch('now') * 1000),
+    CONSTRAINT "ProjectInvite_projectId_fkey" FOREIGN KEY ("projectId") REFERENCES "Project" ("id") ON DELETE CASCADE ON UPDATE CASCADE,
+    CONSTRAINT "ProjectInvite_createdByUserId_fkey" FOREIGN KEY ("createdByUserId") REFERENCES "User" ("id") ON DELETE CASCADE ON UPDATE CASCADE
+);
+
+CREATE UNIQUE INDEX IF NOT EXISTS "ProjectInvite_tokenHash_key" ON "ProjectInvite"("tokenHash");
+CREATE INDEX IF NOT EXISTS "ProjectInvite_projectId_idx" ON "ProjectInvite"("projectId");
+CREATE INDEX IF NOT EXISTS "ProjectInvite_expiresAt_idx" ON "ProjectInvite"("expiresAt");
 `

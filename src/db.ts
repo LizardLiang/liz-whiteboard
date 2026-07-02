@@ -21,6 +21,7 @@ import type {
   Folder,
   JsonValue,
   Project,
+  ProjectInvite,
   ProjectMember,
   Relationship,
   Session,
@@ -151,6 +152,33 @@ db.exec('PRAGMA journal_mode = WAL;')
 
 db.exec(SCHEMA_SQL)
 
+// Backfill ownerless projects to a pre-designated account (by email), if it
+// already exists. Runs once per process at DB-init time, before any HTTP
+// request (and therefore before any registration, including
+// first-user-migration's registration-time "assign to whoever registers
+// first" fallback) — see src/lib/auth/owner-email-backfill.ts's module
+// comment for the full ordering rationale.
+//
+// Deliberately a DYNAMIC import, not a static top-level one: this module
+// (owner-email-backfill.ts) itself does `import { db, nowMs } from '@/db'`,
+// which would make a static top-level import here a genuine circular
+// dependency — each module needing the other's top-level bindings before
+// either has finished initializing. That crashes with a real
+// "Cannot access 'X' before initialization" TDZ error (confirmed
+// empirically: it fires or not depending on which module a given test file
+// happens to import first, i.e. it's load-order-dependent, not a
+// theoretical concern). A dynamic import() defers evaluation until after
+// this module's own top-level code — including `export const db = ...` —
+// has already run, so by the time owner-email-backfill.ts's `import { db }`
+// resolves, `db` is fully initialized.
+import('./lib/auth/owner-email-backfill')
+  .then(({ backfillOwnerlessProjectsByEmail }) =>
+    backfillOwnerlessProjectsByEmail(),
+  )
+  .catch((err: unknown) => {
+    console.error('[db] owner-email-backfill failed:', err)
+  })
+
 // ── Primitive helpers ────────────────────────────────────────────────────────
 
 /** Generate a v4 UUID (server-side; node:crypto works over HTTP, unlike browser Web Crypto). */
@@ -279,6 +307,22 @@ export function mapProject(r: Row): Project | null {
     createdAt: fromDbDate(r.createdAt),
     updatedAt: fromDbDate(r.updatedAt),
     ownerId: (r.ownerId as string | null) ?? null,
+  }
+}
+
+export function mapProjectInvite(r: Row): ProjectInvite | null {
+  if (!r) return null
+  return {
+    id: r.id as string,
+    projectId: r.projectId as string,
+    role: r.role as ProjectRoleValue,
+    tokenHash: r.tokenHash as string,
+    createdByUserId: r.createdByUserId as string,
+    maxUses: r.maxUses == null ? null : Number(r.maxUses),
+    usedCount: Number(r.usedCount),
+    expiresAt: fromDbDate(r.expiresAt),
+    revokedAt: r.revokedAt == null ? null : fromDbDate(r.revokedAt),
+    createdAt: fromDbDate(r.createdAt),
   }
 }
 

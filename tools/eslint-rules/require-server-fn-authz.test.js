@@ -269,6 +269,196 @@ describe('TC-ESLINT-09: discarded findEffectiveRole without hasMinimumRole → r
 })
 
 // ─────────────────────────────────────────────────────────────────────────────
+// TC-ESLINT-10: requireMinimumRole shared-helper pattern → rule passes
+// (invite-by-URL feature review, W4: extracted ADMIN+ gate helper)
+// ─────────────────────────────────────────────────────────────────────────────
+
+describe('TC-ESLINT-10: requireAuth wrapper + requireMinimumRole call → rule passes', () => {
+  it('should pass when the handler body calls requireMinimumRole directly', () => {
+    let hasError = false
+    try {
+      ruleTester.run('require-server-fn-authz', rule, {
+        valid: [
+          {
+            code: `
+              import { createServerFn } from '@tanstack/react-start'
+              function requireAuth(fn) { return fn }
+              /** @requires admin */
+              export const createThing = createServerFn({ method: 'POST' })
+                .handler(
+                  requireAuth(async ({ user }, data) => {
+                    const denial = await requireMinimumRole(user.id, data.projectId, 'ADMIN', 'nope')
+                    if (denial) return denial
+                    return { success: true }
+                  }),
+                )
+            `,
+          },
+        ],
+        invalid: [],
+      })
+    } catch (e) {
+      hasError = true
+    }
+    expect(hasError).toBe(false)
+  })
+})
+
+// ─────────────────────────────────────────────────────────────────────────────
+// TC-ESLINT-11: .handler(requireAuth(namedHandlerFn)) — named function
+// reference resolved to its module-level declaration (invite-by-URL W6:
+// handlers extracted as standalone exported functions for direct unit
+// testing, with the createServerFn wrapper just delegating to them).
+// ─────────────────────────────────────────────────────────────────────────────
+
+describe('TC-ESLINT-11: requireAuth(namedHandlerFn) resolves to the named function body', () => {
+  it('should pass when the RBAC call lives inside the referenced module-level function', () => {
+    let hasError = false
+    try {
+      ruleTester.run('require-server-fn-authz', rule, {
+        valid: [
+          {
+            code: `
+              import { createServerFn } from '@tanstack/react-start'
+              function requireAuth(fn) { return fn }
+              export async function createThingHandler(ctx, data) {
+                const denial = await requireMinimumRole(ctx.user.id, data.projectId, 'ADMIN', 'nope')
+                if (denial) return denial
+                return { success: true }
+              }
+              /** @requires admin */
+              export const createThing = createServerFn({ method: 'POST' })
+                .handler(requireAuth(createThingHandler))
+            `,
+          },
+        ],
+        invalid: [],
+      })
+    } catch (e) {
+      hasError = true
+    }
+    expect(hasError).toBe(false)
+  })
+
+  it('should still fail when the referenced function does not call an RBAC gate', () => {
+    let hasError = false
+    try {
+      ruleTester.run('require-server-fn-authz', rule, {
+        valid: [],
+        invalid: [
+          {
+            code: `
+              import { createServerFn } from '@tanstack/react-start'
+              function requireAuth(fn) { return fn }
+              export async function unguardedHandler(ctx, data) {
+                return { data: 'sensitive' }
+              }
+              /** @requires admin */
+              export const leakyThing = createServerFn({ method: 'POST' })
+                .handler(requireAuth(unguardedHandler))
+            `,
+            errors: [{ messageId: 'missingRequiresCall' }],
+          },
+        ],
+      })
+    } catch (e) {
+      hasError = true
+    }
+    expect(hasError).toBe(false)
+  })
+})
+
+// ─────────────────────────────────────────────────────────────────────────────
+// TC-ESLINT-12: cross-file resolution — .handler(requireAuth(namedHandlerFn))
+// where namedHandlerFn is IMPORTED from another project file (mirrors the
+// src/routes/api/invites.ts -> src/lib/invite/handlers.ts split done to fix
+// the client-bundle leak: handler logic + its db imports must live in a
+// module the client never imports, so the createServerFn wrapper file
+// references it, rather than declaring it locally).
+// ─────────────────────────────────────────────────────────────────────────────
+
+describe('TC-ESLINT-12: requireAuth(namedHandlerFn) resolves across a real file import', () => {
+  const fixturesDir = resolve(__dirname, '__fixtures__')
+
+  it('passes when the imported handler calls requireMinimumRole', () => {
+    let hasError = false
+    try {
+      ruleTester.run('require-server-fn-authz', rule, {
+        valid: [
+          {
+            filename: resolve(fixturesDir, 'wrapper-for-guarded-handler.ts'),
+            code: `
+              import { createServerFn } from '@tanstack/react-start'
+              import { guardedHandler } from './cross-file-handler'
+              function requireAuth(fn) { return fn }
+              /** @requires admin */
+              export const createThing = createServerFn({ method: 'POST' })
+                .handler(requireAuth(guardedHandler))
+            `,
+          },
+        ],
+        invalid: [],
+      })
+    } catch (e) {
+      hasError = true
+    }
+    expect(hasError).toBe(false)
+  })
+
+  it('fails when the imported handler has no RBAC gate call', () => {
+    let hasError = false
+    try {
+      ruleTester.run('require-server-fn-authz', rule, {
+        valid: [],
+        invalid: [
+          {
+            filename: resolve(fixturesDir, 'wrapper-for-unguarded-handler.ts'),
+            code: `
+              import { createServerFn } from '@tanstack/react-start'
+              import { unguardedHandler } from './cross-file-handler'
+              function requireAuth(fn) { return fn }
+              /** @requires admin */
+              export const leakyThing = createServerFn({ method: 'POST' })
+                .handler(requireAuth(unguardedHandler))
+            `,
+            errors: [{ messageId: 'missingRequiresCall' }],
+          },
+        ],
+      })
+    } catch (e) {
+      hasError = true
+    }
+    expect(hasError).toBe(false)
+  })
+
+  it('fails closed (does not silently pass) when the import target cannot be resolved', () => {
+    let hasError = false
+    try {
+      ruleTester.run('require-server-fn-authz', rule, {
+        valid: [],
+        invalid: [
+          {
+            filename: resolve(fixturesDir, 'wrapper-for-missing-handler.ts'),
+            code: `
+              import { createServerFn } from '@tanstack/react-start'
+              import { doesNotExistHandler } from './does-not-exist-file'
+              function requireAuth(fn) { return fn }
+              /** @requires admin */
+              export const mysteryThing = createServerFn({ method: 'POST' })
+                .handler(requireAuth(doesNotExistHandler))
+            `,
+            errors: [{ messageId: 'missingRequiresCall' }],
+          },
+        ],
+      })
+    } catch (e) {
+      hasError = true
+    }
+    expect(hasError).toBe(false)
+  })
+})
+
+// ─────────────────────────────────────────────────────────────────────────────
 // TC-ESLINT-07 + TC-ESLINT-08: SEC-MODAL-02 — session_expired single-registration
 // Implemented as Vitest meta-test counting session_expired registrations in src/
 // (acceptable alternative per test-plan constraint: "RuleTester cross-file state awkward")

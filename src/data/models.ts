@@ -54,6 +54,19 @@ export interface Project {
   ownerId: string | null
 }
 
+export interface ProjectInvite {
+  id: string
+  projectId: string
+  role: ProjectRoleValue
+  tokenHash: string
+  createdByUserId: string
+  maxUses: number | null
+  usedCount: number
+  expiresAt: Date
+  revokedAt: Date | null
+  createdAt: Date
+}
+
 export interface Folder {
   id: string
   name: string
