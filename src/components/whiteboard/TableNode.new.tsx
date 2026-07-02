@@ -5,12 +5,14 @@
  */
 
 import { memo, useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import { Link2 } from 'lucide-react'
 import { toast } from 'sonner'
 import { ColumnRow } from './column/ColumnRow'
 import { AddColumnRow } from './column/AddColumnRow'
 import { DeleteColumnDialog } from './column/DeleteColumnDialog'
 import { InsertionLine } from './column/InsertionLine'
 import { TableNodeContextMenu } from './TableNodeContextMenu'
+import { TableRelationsPanel } from './TableRelationsPanel'
 import { useWhiteboardPermissions } from './whiteboard-permissions-context'
 import type { Column } from '@/data/models'
 import type {
@@ -20,6 +22,7 @@ import type {
 import type { ColumnRelationship, EditingField } from './column/types'
 import type { DataType } from '@/data/schema'
 import type { Dialect } from '@/lib/ddl-generator'
+import { getDirectlyRelatedTableIds } from '@/lib/react-flow/highlighting'
 import { usePrefersReducedMotion } from '@/hooks/use-prefers-reduced-motion'
 
 // Row height constant for InsertionLine positioning (matches minHeight in ColumnRow)
@@ -40,6 +43,7 @@ export const TableNode = memo(
       isActiveHighlighted,
       isHighlighted,
       isHovered,
+      isRelationsPreviewOpen,
       onColumnCreate,
       onColumnUpdate,
       onColumnDelete,
@@ -47,7 +51,9 @@ export const TableNode = memo(
       onRequestTableDelete,
       onFocusTable,
       onExportDdl,
+      onPreviewRelations,
       edges = [],
+      relationsEdges = [],
       tableNameById = new Map(),
       onColumnReorder,
       emitColumnReorder,
@@ -105,6 +111,17 @@ export const TableNode = memo(
       })
       return map
     }, [edges])
+
+    // Related edges for the attached relations panel (1-hop neighbors).
+    // Sourced from relationsEdges (pre-filtered via filterValidEdges), NOT
+    // the raw `edges` above — a relationship whose sourceColumn/targetColumn
+    // snapshot references a column deleted elsewhere must never reach the
+    // panel, or it would render a connection line naming a column that no
+    // longer exists.
+    const relatedEdges = useMemo(
+      () => getDirectlyRelatedTableIds(table.id, relationsEdges).relatedEdges,
+      [table.id, relationsEdges],
+    )
 
     // --- Edit handlers ---
     const handleStartEdit = useCallback(
@@ -428,10 +445,12 @@ export const TableNode = memo(
         onDeleteTable={handleRequestTableDelete}
         onFocusTable={() => onFocusTable?.(table.id)}
         onExportDdl={handleExportDdl}
+        onPreviewRelations={() => onPreviewRelations?.(table.id)}
       >
         <div
           className={`react-flow__node-erTable ${selected ? 'selected' : ''} ${highlightClass}`}
           style={{
+            position: 'relative',
             width: 'max-content',
             minWidth: `${minWidth}px`,
             maxWidth: '500px',
@@ -483,6 +502,46 @@ export const TableNode = memo(
 
             {/* Header buttons container */}
             <div style={{ display: 'flex', alignItems: 'center', gap: '4px' }}>
+              {/* Relations preview trigger — always visible, not gated by
+                  canEdit (relations viewing is a read-only action, matches
+                  the un-gated "Show relations" context-menu item). */}
+              <button
+                type="button"
+                aria-label={
+                  isRelationsPreviewOpen
+                    ? `Hide relations for ${table.name}`
+                    : `Show relations for ${table.name}`
+                }
+                aria-pressed={isRelationsPreviewOpen}
+                data-testid="table-relations-trigger"
+                title={
+                  isRelationsPreviewOpen
+                    ? 'Hide relations (r)'
+                    : 'Show relations (r)'
+                }
+                onClick={(e) => {
+                  e.stopPropagation()
+                  onPreviewRelations?.(table.id)
+                }}
+                className="nodrag nowheel"
+                style={{
+                  opacity: 1,
+                  flexShrink: 0,
+                  background: 'none',
+                  border: 'none',
+                  cursor: 'pointer',
+                  padding: '2px',
+                  display: 'flex',
+                  alignItems: 'center',
+                  color: isRelationsPreviewOpen
+                    ? 'var(--rf-edge-stroke-selected)'
+                    : 'var(--rf-table-header-text)',
+                  transition: 'color 0.1s',
+                }}
+              >
+                <Link2 size={14} />
+              </button>
+
               {/* Delete button — visible on header hover. View-only viewers
                   don't get this affordance at all (server also blocks it). */}
               {canEdit && (
@@ -562,6 +621,17 @@ export const TableNode = memo(
             </div>
           )}
 
+          {/* Relations Panel — attached "drawer" shown via `r` shortcut / context menu.
+              Renders regardless of showMode since related-table connections are
+              independent of which columns are currently visible. */}
+          {isRelationsPreviewOpen && (
+            <TableRelationsPanel
+              table={table}
+              relatedEdges={relatedEdges}
+              tableNameById={tableNameById}
+            />
+          )}
+
           {/* Delete Confirmation Dialog */}
           {deletingColumn && (
             <DeleteColumnDialog
@@ -583,6 +653,10 @@ export const TableNode = memo(
       return false
     if (prev.data.isHighlighted !== next.data.isHighlighted) return false
     if (prev.data.isHovered !== next.data.isHovered) return false
+    if (prev.data.isRelationsPreviewOpen !== next.data.isRelationsPreviewOpen)
+      return false
+    if (prev.data.onPreviewRelations !== next.data.onPreviewRelations)
+      return false
     if (prev.selected !== next.selected) return false
     if (prev.data.onColumnCreate !== next.data.onColumnCreate) return false
     if (prev.data.onColumnUpdate !== next.data.onColumnUpdate) return false
@@ -590,6 +664,7 @@ export const TableNode = memo(
     if (prev.data.onColumnDuplicate !== next.data.onColumnDuplicate)
       return false
     if (prev.data.edges !== next.data.edges) return false
+    if (prev.data.relationsEdges !== next.data.relationsEdges) return false
     if (prev.data.tableNameById !== next.data.tableNameById) return false
     if (prev.data.onRequestTableDelete !== next.data.onRequestTableDelete)
       return false

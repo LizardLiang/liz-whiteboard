@@ -49,6 +49,13 @@ export interface TableNodeData extends Record<string, unknown> {
   /** Whether this table is currently hovered */
   isHovered: boolean
 
+  /**
+   * Whether this table's relations panel is currently expanded, driven by
+   * the `r` shortcut / context menu — computed centrally in
+   * calculateHighlighting.
+   */
+  isRelationsPreviewOpen: boolean
+
   /** Current display mode */
   showMode: ShowMode
 
@@ -80,8 +87,22 @@ export interface TableNodeData extends Record<string, unknown> {
   /** Callback to export this table's CREATE TABLE DDL in the given dialect */
   onExportDdl?: (tableId: string, dialect: Dialect) => void
 
+  /** Callback to toggle the relations panel open/closed for this table */
+  onPreviewRelations?: (tableId: string) => void
+
   /** React Flow edges — passed down for delete confirmation relationship lookup */
   edges?: Array<RelationshipEdgeType>
+
+  /**
+   * Edges pre-filtered via filterValidEdges (stale/deleted-column-safe) —
+   * used exclusively by the relations panel's relatedEdges computation in
+   * TableNode.new.tsx. Unlike `edges` above (raw, unfiltered, shared with
+   * delete-confirmation lookups), a relationship whose sourceColumn/
+   * targetColumn snapshot references a column deleted elsewhere must never
+   * reach the panel, or it would render a connection line naming a column
+   * that no longer exists.
+   */
+  relationsEdges?: Array<RelationshipEdgeType>
 
   /** Map of tableId → tableName for FK relationship labels */
   tableNameById?: Map<string, string>
@@ -264,4 +285,5 @@ export const Z_INDEX = {
   EDGE_DEFAULT: 1,
   EDGE_HIGHLIGHTED: 1000,
   EDGE_LABEL: 1001,
+  NODE_RELATIONS_PREVIEW: 2000,
 } as const

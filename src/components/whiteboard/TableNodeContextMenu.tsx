@@ -21,6 +21,7 @@ export interface TableNodeContextMenuProps {
   onDeleteTable: () => void
   onFocusTable?: () => void
   onExportDdl?: (dialect: Dialect) => void
+  onPreviewRelations?: () => void
   disabled?: boolean
 }
 
@@ -29,6 +30,7 @@ export function TableNodeContextMenu({
   onDeleteTable,
   onFocusTable,
   onExportDdl,
+  onPreviewRelations,
   disabled,
 }: TableNodeContextMenuProps) {
   return (
@@ -43,6 +45,15 @@ export function TableNodeContextMenu({
         >
           Focus view
           <ContextMenuShortcut>F</ContextMenuShortcut>
+        </ContextMenuItem>
+        <ContextMenuItem
+          onSelect={() => {
+            onPreviewRelations?.()
+          }}
+          disabled={disabled}
+        >
+          Show relations
+          <ContextMenuShortcut>R</ContextMenuShortcut>
         </ContextMenuItem>
         <ContextMenuSub>
           <ContextMenuSubTrigger disabled={disabled}>

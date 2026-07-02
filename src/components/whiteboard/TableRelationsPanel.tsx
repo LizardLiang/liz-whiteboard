@@ -1,0 +1,139 @@
+/**
+ * TableRelationsPanel — canvas-space "drawer" attached directly below a
+ * table node's own column list, shown when the `r` keyboard shortcut or the
+ * "Show relations" context-menu item is used on that table. Rendered as an
+ * absolutely-positioned child of TableNode.new.tsx's own DOM element, so it
+ * pans and zooms (including content scaling with zoom) exactly like the
+ * rest of the table node — no manual position/anchor tracking required.
+ *
+ * Lists every directly-related (1-hop) table with a field-to-field
+ * connection line (e.g. `Orders.customer_id → Customers.id`) derived from
+ * the relationship's sourceColumnId/targetColumnId, instead of separate
+ * PK/FK badge lists.
+ */
+
+import type { Column, DiagramTable } from '@/data/models'
+import type { RelationshipEdgeType } from '@/lib/react-flow/types'
+
+export interface TableRelationsPanelProps {
+  table: DiagramTable & { columns: Array<Column> }
+  relatedEdges: Array<RelationshipEdgeType>
+  tableNameById: Map<string, string>
+}
+
+export function TableRelationsPanel({
+  table,
+  relatedEdges,
+  tableNameById,
+}: TableRelationsPanelProps) {
+  return (
+    <div
+      data-testid="table-relations-panel"
+      className="nodrag nowheel"
+      style={{
+        position: 'absolute',
+        top: '100%',
+        left: 0,
+        marginTop: '-1px',
+        width: 'max-content',
+        maxWidth: '360px',
+        maxHeight: '50vh',
+        overflowY: 'auto',
+        background: 'var(--rf-table-bg)',
+        border: '1px solid var(--rf-table-border)',
+        borderRadius: '0 0 8px 8px',
+        boxShadow: '0 4px 12px rgba(0, 0, 0, 0.15)',
+        padding: '10px 12px',
+        fontSize: '12px',
+        color: 'var(--rf-table-text)',
+      }}
+    >
+      <div
+        style={{
+          fontWeight: 700,
+          fontSize: '13px',
+          color: 'var(--rf-table-header-text)',
+          marginBottom: '6px',
+        }}
+      >
+        Related tables
+      </div>
+
+      {relatedEdges.length === 0 ? (
+        <div style={{ color: 'var(--rf-table-text)', opacity: 0.7 }}>
+          No related tables
+        </div>
+      ) : (
+        <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
+          {relatedEdges.map((edge) => {
+            const rel = edge.data?.relationship
+            if (!rel) return null
+
+            const hoveredIsSource = rel.sourceTableId === table.id
+            const hoveredColumn = hoveredIsSource
+              ? rel.sourceColumn
+              : rel.targetColumn
+            const relatedColumn = hoveredIsSource
+              ? rel.targetColumn
+              : rel.sourceColumn
+            const relatedTableId = hoveredIsSource
+              ? rel.targetTableId
+              : rel.sourceTableId
+
+            if (!tableNameById.has(relatedTableId)) {
+              return null
+            }
+
+            const relatedTableName = tableNameById.get(relatedTableId)
+            const relationshipText = edge.data?.label || edge.data?.cardinality || ''
+
+            return (
+              <div
+                key={edge.id}
+                data-testid="relations-panel-row"
+                style={{
+                  borderTop: '1px solid var(--rf-table-border)',
+                  paddingTop: '6px',
+                }}
+              >
+                <div style={{ fontWeight: 600 }}>{relatedTableName}</div>
+                <div
+                  data-testid="relations-panel-connection"
+                  style={{
+                    marginTop: '4px',
+                    fontFamily:
+                      'ui-monospace, SFMono-Regular, Menlo, Consolas, monospace',
+                    fontSize: '11px',
+                    display: 'flex',
+                    flexWrap: 'wrap',
+                    alignItems: 'center',
+                    gap: '4px',
+                  }}
+                >
+                  <span>
+                    {table.name}.{hoveredColumn.name}
+                  </span>
+                  <span>{'→'}</span>
+                  <span>
+                    {relatedTableName}.{relatedColumn.name}
+                  </span>
+                </div>
+                {relationshipText && (
+                  <div
+                    style={{
+                      marginTop: '4px',
+                      opacity: 0.75,
+                      fontSize: '11px',
+                    }}
+                  >
+                    {relationshipText}
+                  </div>
+                )}
+              </div>
+            )
+          })}
+        </div>
+      )}
+    </div>
+  )
+}

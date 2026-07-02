@@ -1,17 +1,18 @@
 /**
  * useTableExportDdl — keyboard shortcut (d) handler for table DDL export
  *
- * Registers a document-level keydown listener that intercepts bare `d` on a
- * single selected table node and copies that table's CREATE TABLE DDL
- * (default dialect: mssql) to the clipboard, showing a Sonner toast.
+ * Intercepts bare `d` on a single selected table node and copies that
+ * table's CREATE TABLE DDL (default dialect: mssql) to the clipboard,
+ * showing a Sonner toast.
  *
- * Mirrors useTableFocus's guard structure exactly (same input-focus/editable
- * guards so it doesn't fire while typing in a column name).
+ * Guard/dispatch logic (same input-focus/editable guards so it doesn't fire
+ * while typing in a column name) is shared with the other table-scoped
+ * shortcuts via useSingleSelectedTableShortcut.
  *
  * Must be used inside a ReactFlowProvider context (calls useReactFlow).
  */
 
-import { useEffect } from 'react'
+import { useCallback } from 'react'
 import { useReactFlow } from '@xyflow/react'
 import { toast } from 'sonner'
 import type { Dialect } from '@/lib/ddl-generator'
@@ -21,6 +22,7 @@ import type {
   TableNodeType,
 } from '@/lib/react-flow/types'
 import { generateTableDDL } from '@/lib/ddl-generator'
+import { useSingleSelectedTableShortcut } from './use-single-selected-table-shortcut'
 
 const DEFAULT_SHORTCUT_DIALECT: Dialect = 'mssql'
 
@@ -94,44 +96,13 @@ export function useTableExportDdl(): void {
     RelationshipEdgeType
   >()
 
-  useEffect(() => {
-    const handler = (e: KeyboardEvent) => {
-      // Only bare lowercase 'd' — any modifier disqualifies
-      if (e.key !== 'd') return
-      if (e.shiftKey || e.ctrlKey || e.metaKey || e.altKey) return
-
-      const active = document.activeElement
-      if (!active) return
-
-      // Skip if focus is on an input, textarea, or contenteditable element
-      const tag = active.tagName.toLowerCase()
-      if (
-        tag === 'input' ||
-        tag === 'textarea' ||
-        active.getAttribute('contenteditable') === 'true'
-      ) {
-        return
-      }
-
-      // Skip if focus is inside a column row or add-column row
-      // (column rows handle their own key events)
-      if (active.closest('.column-row') || active.closest('.add-column-row')) {
-        return
-      }
-
-      // Read currently selected nodes
-      const selectedNodes = getNodes().filter((n) => n.selected)
-
-      // Only act on exactly one selected node
-      if (selectedNodes.length !== 1) return
-
+  const onTrigger = useCallback(
+    (tableId: string) => {
       const tables = buildDiagramTablesFromFlow(getNodes(), getEdges())
-      void exportTableDdl(tables, selectedNodes[0].id, DEFAULT_SHORTCUT_DIALECT)
-    }
+      void exportTableDdl(tables, tableId, DEFAULT_SHORTCUT_DIALECT)
+    },
+    [getNodes, getEdges],
+  )
 
-    document.addEventListener('keydown', handler)
-    return () => {
-      document.removeEventListener('keydown', handler)
-    }
-  }, [getNodes, getEdges])
+  useSingleSelectedTableShortcut({ key: 'd', onTrigger })
 }

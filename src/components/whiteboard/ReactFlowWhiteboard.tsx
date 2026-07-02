@@ -72,6 +72,7 @@ import {
   SelectValue,
 } from '@/components/ui/select'
 import { parseColumnHandleId } from '@/lib/react-flow/edge-routing'
+import { filterValidEdges } from '@/lib/react-flow/highlighting'
 import { convertTablesToNodes } from '@/lib/react-flow/convert-to-nodes'
 import { resolvePendingPositions } from '@/lib/react-flow/resolve-pending-positions'
 import { convertRelationshipsToEdges } from '@/lib/react-flow/convert-to-edges'
@@ -92,6 +93,7 @@ import { useTableMutations } from '@/hooks/use-table-mutations'
 import { useRelationshipMutations } from '@/hooks/use-relationship-mutations'
 import { useTableDeletion } from '@/hooks/use-table-deletion'
 import { useTableFocus } from '@/hooks/use-table-focus'
+import { useTableRelationsPreview } from '@/hooks/use-table-relations-preview'
 import {
   buildDiagramTablesFromFlow,
   exportTableDdl,
@@ -260,11 +262,27 @@ function ReactFlowWhiteboardInner({
     edgesRef.current = edges
   }, [edges])
 
+  // Pre-filtered edges (stale/deleted-column-safe, via filterValidEdges)
+  // for the relations panel only — kept in a ref (parallel to edgesRef) so
+  // the mount-only node-data injection effect can read a fresh value
+  // without adding nodes/edges to its dependency array. `edges` itself stays
+  // raw/unfiltered for delete-confirmation lookups (columnEdgeMap) — see
+  // TableNodeData.relationsEdges doc comment.
+  const validEdgesForPanelRef = useRef<Array<RelationshipEdgeType>>([])
+  useEffect(() => {
+    validEdgesForPanelRef.current = filterValidEdges(nodes, edges)
+  }, [nodes, edges])
+
   // Table deletion state — which table has been requested for deletion (opens dialog)
   const [deletingTableId, setDeletingTableId] = useState<string | null>(null)
 
   // Focus overlay state — which table is currently being focused (opens overlay)
   const [focusedTableId, setFocusedTableId] = useState<string | null>(null)
+
+  // Relations panel state — which table's attached relations panel is open
+  const [relationsPreviewTableId, setRelationsPreviewTableId] = useState<
+    string | null
+  >(null)
 
   // Cardinality picker dialog state for drag-to-connect
   const [pendingConnection, setPendingConnection] =
@@ -357,7 +375,10 @@ function ReactFlowWhiteboardInner({
                 handleFocusTableRef.current(tableId),
               onExportDdl: (tableId: string, dialect: Dialect) =>
                 handleExportDdlRef.current(tableId, dialect),
+              onPreviewRelations: (tableId: string) =>
+                handleTogglePreviewTableRef.current(tableId),
               edges: edgesRef.current,
+              relationsEdges: validEdgesForPanelRef.current,
               tableNameById,
               isConnected,
             },
@@ -399,6 +420,7 @@ function ReactFlowWhiteboardInner({
             onRequestTableDelete: prev.data.onRequestTableDelete,
             onFocusTable: prev.data.onFocusTable,
             onExportDdl: prev.data.onExportDdl,
+            onPreviewRelations: prev.data.onPreviewRelations,
             tableNameById,
           },
         }
@@ -886,6 +908,13 @@ function ReactFlowWhiteboardInner({
     focusedTableId !== null,
   )
 
+  // Keyboard shortcut for the relations panel (r key on selected node) —
+  // suppressed while the Focus Overlay is open
+  useTableRelationsPreview(
+    (tableId) => handleTogglePreviewTableRef.current(tableId),
+    focusedTableId !== null,
+  )
+
   // Keyboard shortcut for DDL export (d key on selected node, default dialect: mssql)
   useTableExportDdl()
 
@@ -933,6 +962,22 @@ function ReactFlowWhiteboardInner({
     (tableId: string) => setFocusedTableId(tableId),
     [],
   )
+
+  // Callback to toggle a table's relations panel open/closed (pressing the
+  // same table's shortcut/menu-item again closes it)
+  const handleTogglePreviewTable = useCallback((tableId: string) => {
+    setRelationsPreviewTableId((current) =>
+      current === tableId ? null : tableId,
+    )
+  }, [])
+
+  // Force-close an open relations panel when the Focus Overlay opens —
+  // defensive cleanliness; the panel would otherwise just sit harmlessly
+  // hidden behind the modal, but explicit closure avoids surprising
+  // residual state when the dialog closes again.
+  useEffect(() => {
+    if (focusedTableId !== null) setRelationsPreviewTableId(null)
+  }, [focusedTableId])
 
   // Callback to export a table's CREATE TABLE DDL (context-menu submenu)
   const handleExportDdl = useCallback(
@@ -1040,6 +1085,7 @@ function ReactFlowWhiteboardInner({
   const handleColumnDuplicateRef = useRef(handleColumnDuplicate)
   const handleRequestTableDeleteRef = useRef(handleRequestTableDelete)
   const handleFocusTableRef = useRef(handleFocusTable)
+  const handleTogglePreviewTableRef = useRef(handleTogglePreviewTable)
   const handleExportDdlRef = useRef(handleExportDdl)
   const handleColumnReorderRef = useRef(handleColumnReorder)
   const emitColumnReorderRef = useRef(emitColumnReorder)
@@ -1062,6 +1108,9 @@ function ReactFlowWhiteboardInner({
   useEffect(() => {
     handleFocusTableRef.current = handleFocusTable
   }, [handleFocusTable])
+  useEffect(() => {
+    handleTogglePreviewTableRef.current = handleTogglePreviewTable
+  }, [handleTogglePreviewTable])
   useEffect(() => {
     handleExportDdlRef.current = handleExportDdl
   }, [handleExportDdl])
@@ -1091,6 +1140,8 @@ function ReactFlowWhiteboardInner({
             handleFocusTableRef.current(tableId),
           onExportDdl: (tableId: string, dialect: Dialect) =>
             handleExportDdlRef.current(tableId, dialect),
+          onPreviewRelations: (tableId: string) =>
+            handleTogglePreviewTableRef.current(tableId),
           onColumnReorder: (
             params: import('@/hooks/use-column-reorder-mutations').ReconcileAfterDropParams,
           ) => handleColumnReorderRef.current(params),
@@ -1128,6 +1179,8 @@ function ReactFlowWhiteboardInner({
             handleFocusTableRef.current(tableId),
           onExportDdl: (tableId: string, dialect: Dialect) =>
             handleExportDdlRef.current(tableId, dialect),
+          onPreviewRelations: (tableId: string) =>
+            handleTogglePreviewTableRef.current(tableId),
           onColumnReorder: (
             params: import('@/hooks/use-column-reorder-mutations').ReconcileAfterDropParams,
           ) => handleColumnReorderRef.current(params),
@@ -1142,6 +1195,7 @@ function ReactFlowWhiteboardInner({
           bumpReorderTick: (tableId: string) =>
             bumpReorderTickRef.current(tableId),
           edges: edgesRef.current,
+          relationsEdges: validEdgesForPanelRef.current,
           tableNameById,
           isConnected,
         },
@@ -1466,6 +1520,8 @@ function ReactFlowWhiteboardInner({
             padding: 0.2,
             includeHiddenNodes: false,
           }}
+          relationsPreviewTableId={relationsPreviewTableId}
+          onPaneClick={() => setRelationsPreviewTableId(null)}
         />
 
         {/* Focus View Overlay — read-only sub-canvas for the selected table + 1-hop neighbors */}

@@ -104,4 +104,22 @@ describe('TableNodeContextMenu', () => {
     const menuContent = screen.getByRole('menu')
     expect(menuContent.textContent).toContain('Del')
   })
+
+  it('TC-TD-02-08: "Show relations" item renders with shortcut "R" and calls onPreviewRelations on select', () => {
+    const onPreviewRelations = vi.fn()
+    render(
+      <TableNodeContextMenu
+        onDeleteTable={vi.fn()}
+        onPreviewRelations={onPreviewRelations}
+      >
+        <div data-testid="node">Table</div>
+      </TableNodeContextMenu>,
+    )
+    fireEvent.contextMenu(screen.getByTestId('node'))
+    const menuItem = screen.getByRole('menuitem', { name: /show relations/i })
+    expect(menuItem.textContent).toContain('R')
+
+    fireEvent.click(menuItem)
+    expect(onPreviewRelations).toHaveBeenCalledOnce()
+  })
 })

@@ -12,7 +12,7 @@ import { toast } from 'sonner'
 import { TableNode } from './TableNode.new'
 import { WhiteboardPermissionsProvider } from './whiteboard-permissions-context'
 import type { Column } from '@/data/models'
-import type { TableNodeData } from '@/lib/react-flow/types'
+import type { RelationshipEdgeType, TableNodeData } from '@/lib/react-flow/types'
 
 // WhiteboardPermissionsContext now defaults to canEdit: false (fail-closed).
 // This suite exercises drag/column behavior that requires write access, so
@@ -218,7 +218,9 @@ function makeTableData(overrides?: Partial<TableNodeData>): TableNodeData {
     isActiveHighlighted: false,
     isHighlighted: false,
     isHovered: false,
+    isRelationsPreviewOpen: false,
     edges: [],
+    relationsEdges: [],
     tableNameById: new Map(),
     onColumnCreate: vi.fn(),
     onColumnUpdate: vi.fn(),
@@ -449,6 +451,164 @@ describe('TableNode canEdit gating (WhiteboardPermissionsContext)', () => {
     expect(
       screen.queryByRole('button', { name: /add new column/i }),
     ).toBeNull()
+  })
+})
+
+// ============================================================================
+// Relations trigger button (header icon button — always-visible affordance
+// for opening/closing the attached relations panel via onPreviewRelations)
+// ============================================================================
+
+describe('TableNode relations trigger button', () => {
+  beforeEach(() => {
+    vi.clearAllMocks()
+  })
+
+  it('calls onPreviewRelations with table.id when clicked', () => {
+    const onPreviewRelations = vi.fn()
+    const data = makeTableData({ onPreviewRelations })
+    render(<TableNode id={TABLE_ID} data={data} />)
+
+    const trigger = screen.getByTestId('table-relations-trigger')
+    fireEvent.click(trigger)
+
+    expect(onPreviewRelations).toHaveBeenCalledWith(TABLE_ID)
+  })
+
+  it('sets aria-pressed="true" when isRelationsPreviewOpen is true', () => {
+    const data = makeTableData({ isRelationsPreviewOpen: true })
+    render(<TableNode id={TABLE_ID} data={data} />)
+
+    const trigger = screen.getByTestId('table-relations-trigger')
+    expect(trigger.getAttribute('aria-pressed')).toBe('true')
+  })
+
+  it('sets aria-pressed="false" when isRelationsPreviewOpen is false', () => {
+    const data = makeTableData({ isRelationsPreviewOpen: false })
+    render(<TableNode id={TABLE_ID} data={data} />)
+
+    const trigger = screen.getByTestId('table-relations-trigger')
+    expect(trigger.getAttribute('aria-pressed')).toBe('false')
+  })
+
+  it('renders regardless of canEdit (read-only affordance, not gated)', () => {
+    const data = makeTableData()
+    render(
+      <WhiteboardPermissionsProvider value={{ canEdit: false }}>
+        <TableNode id={TABLE_ID} data={data} />
+      </WhiteboardPermissionsProvider>,
+    )
+
+    expect(screen.getByTestId('table-relations-trigger')).toBeTruthy()
+  })
+
+  it('does not affect the delete button hover-visibility gating', () => {
+    const data = makeTableData()
+    render(
+      <WhiteboardPermissionsProvider value={{ canEdit: true }}>
+        <TableNode id={TABLE_ID} data={data} />
+      </WhiteboardPermissionsProvider>,
+    )
+
+    const deleteButton = screen.getByRole('button', { name: /delete table/i })
+    // Not header-hovered yet — delete button stays opacity 0
+    expect(deleteButton.style.opacity).toBe('0')
+
+    const header = deleteButton.closest('.table-header') as HTMLElement
+    fireEvent.mouseEnter(header)
+    expect(deleteButton.style.opacity).toBe('1')
+
+    // The relations trigger is unaffected by hover — always opacity 1
+    const trigger = screen.getByTestId('table-relations-trigger')
+    expect(trigger.style.opacity).toBe('1')
+  })
+})
+
+// ============================================================================
+// Relations panel — stale-column edge filtering (Hermes review BLOCKER 1)
+// TableNode.new.tsx must derive the panel's relatedEdges from
+// data.relationsEdges (pre-filtered via filterValidEdges upstream in
+// ReactFlowWhiteboard.tsx), never from the raw data.edges array — a
+// relationship whose sourceColumn/targetColumn snapshot still names a
+// column deleted elsewhere must never leak into the panel.
+// ============================================================================
+
+describe('TableNode relations panel — stale-column edge filtering', () => {
+  const RELATED_TABLE_ID = 'b47ac10b-58cc-4372-a567-0e02b2c3d480'
+
+  function makeRelationEdge(
+    id: string,
+    targetColumn: { id: string; name: string },
+  ): RelationshipEdgeType {
+    return {
+      id,
+      type: 'relationship',
+      source: TABLE_ID,
+      target: RELATED_TABLE_ID,
+      data: {
+        relationship: {
+          id,
+          whiteboardId: 'wb-1',
+          sourceTableId: TABLE_ID,
+          targetTableId: RELATED_TABLE_ID,
+          sourceColumnId: col1.id,
+          targetColumnId: targetColumn.id,
+          cardinality: 'ONE_TO_MANY',
+          label: null,
+          routingPoints: null,
+          createdAt: new Date('2026-01-01'),
+          updatedAt: new Date('2026-01-01'),
+          sourceColumn: col1,
+          targetColumn: {
+            id: targetColumn.id,
+            tableId: RELATED_TABLE_ID,
+            name: targetColumn.name,
+            dataType: 'string',
+            isPrimaryKey: false,
+            isForeignKey: true,
+            isUnique: false,
+            isNullable: true,
+            description: null,
+            order: 0,
+            createdAt: new Date('2026-01-01'),
+            updatedAt: new Date('2026-01-01'),
+          },
+        },
+        cardinality: 'ONE_TO_MANY',
+        isHighlighted: false,
+      },
+    } as unknown as RelationshipEdgeType
+  }
+
+  it('renders only the row backed by relationsEdges (filtered), ignoring a stale-column edge present only in the raw edges field', () => {
+    // Still-valid: the related table's "order_id" column exists live.
+    const validEdge = makeRelationEdge('edge-valid', {
+      id: 'order-col-1',
+      name: 'order_id',
+    })
+    // Stale: this edge's targetColumn snapshot names "old_order_id", a
+    // column deleted on the related table client-side. A caller that ran
+    // filterValidEdges correctly excludes it from relationsEdges, but it
+    // can still linger in the raw, unfiltered `edges` field.
+    const staleEdge = makeRelationEdge('edge-stale', {
+      id: 'deleted-col-1',
+      name: 'old_order_id',
+    })
+
+    const data = makeTableData({
+      isRelationsPreviewOpen: true,
+      edges: [validEdge, staleEdge],
+      relationsEdges: [validEdge],
+      tableNameById: new Map([[RELATED_TABLE_ID, 'Orders']]),
+    })
+
+    render(<TableNode id={TABLE_ID} data={data} />)
+
+    expect(screen.getAllByTestId('relations-panel-row')).toHaveLength(1)
+    const connection = screen.getByTestId('relations-panel-connection')
+    expect(connection.textContent).toContain('order_id')
+    expect(connection.textContent).not.toContain('old_order_id')
+    expect(screen.queryByText(/old_order_id/)).toBeNull()
   })
 })
 

@@ -28,7 +28,10 @@ import type {
 import { recalculateEdgesForDraggedNodes } from '@/lib/react-flow/edge-routing'
 import { assignLayersBFS, computeEdgeBundleOffsets } from '@/lib/auto-layout/d3-force-layout'
 import { edgeTypes, nodeTypes } from '@/lib/react-flow/node-types'
-import { calculateHighlighting } from '@/lib/react-flow/highlighting'
+import {
+  calculateHighlighting,
+  filterValidEdges,
+} from '@/lib/react-flow/highlighting'
 import { VIEWPORT_CONSTRAINTS } from '@/lib/react-flow/viewport'
 
 /**
@@ -63,6 +66,15 @@ export interface ReactFlowCanvasProps {
   className?: string
   /** Callback when a node is clicked — receives the node id */
   onNodeClick?: (nodeId: string) => void
+  /**
+   * ID of the table whose relations panel is currently open (if any) —
+   * threaded into calculateHighlighting so that table's node wrapper gets
+   * the top z-index tier (its attached panel must render above every other
+   * node/edge, regardless of neighbor hover/selection state).
+   */
+  relationsPreviewTableId?: string | null
+  /** Callback fired when the pane (empty canvas) is clicked */
+  onPaneClick?: () => void
 }
 
 /**
@@ -95,6 +107,8 @@ export function ReactFlowCanvas({
   showBackground = true,
   fitViewOptions,
   className = '',
+  relationsPreviewTableId = null,
+  onPaneClick: onPaneClickProp,
 }: ReactFlowCanvasProps) {
   const [nodes, setNodes, handleNodesChange] =
     useNodesState<TableNodeType>(initialNodes)
@@ -139,25 +153,11 @@ export function ReactFlowCanvas({
       return
     }
 
-    // Build a set of all column IDs that currently exist across all nodes.
-    // Edges referencing a deleted or stale column will be silently excluded
-    // to prevent the "[React Flow]: Couldn't create edge for source handle id"
-    // warning flood that occurs when handle IDs no longer match any registered handle.
-    const existingColumnIds = new Set<string>()
-    for (const node of initialNodes) {
-      for (const col of node.data.table.columns) {
-        existingColumnIds.add(col.id)
-      }
-    }
-
-    const validEdges = initialEdges.filter((edge) => {
-      const rel = edge.data?.relationship
-      if (!rel) return false
-      return (
-        existingColumnIds.has(rel.sourceColumnId) &&
-        existingColumnIds.has(rel.targetColumnId)
-      )
-    })
+    // Edges referencing a deleted or stale column are silently excluded to
+    // prevent the "[React Flow]: Couldn't create edge for source handle id"
+    // warning flood that occurs when handle IDs no longer match any
+    // registered handle. Shared with TableFocusOverlay.tsx.
+    const validEdges = filterValidEdges(initialNodes, initialEdges)
 
     const allNodeIds = new Set(initialNodes.map((n) => n.id))
     const recalculated = recalculateEdgesForDraggedNodes(
@@ -228,13 +228,20 @@ export function ReactFlowCanvas({
         edgesRef.current,
         activeTableId,
         hoveredTableId,
+        relationsPreviewTableId,
       )
       if (highlighted.edges !== edgesRef.current) {
         setEdges(highlighted.edges)
       }
       return highlighted.nodes
     })
-  }, [activeTableId, hoveredTableId, setNodes, setEdges])
+  }, [
+    activeTableId,
+    hoveredTableId,
+    relationsPreviewTableId,
+    setNodes,
+    setEdges,
+  ])
 
   // Handle node click (selection + optional external callback)
   const onNodeClick = useCallback<NodeMouseHandler>((_event, node) => {
@@ -245,13 +252,17 @@ export function ReactFlowCanvas({
   // Handle pane click (clear selection)
   const onPaneClick = useCallback(() => {
     setActiveTableId(null)
-  }, [])
+    onPaneClickProp?.()
+  }, [onPaneClickProp])
 
   // Handle node mouse enter (hover) — skip during drag (ReactFlow fires this on drag end)
-  const onNodeMouseEnter = useCallback<NodeMouseHandler>((_event, node) => {
-    if (isDraggingRef.current) return
-    setHoveredTableId(node.id)
-  }, [])
+  const onNodeMouseEnter = useCallback<NodeMouseHandler>(
+    (_event, node) => {
+      if (isDraggingRef.current) return
+      setHoveredTableId(node.id)
+    },
+    [],
+  )
 
   // Handle node mouse leave (unhover) — skip during drag (ReactFlow fires this on drag start)
   const onNodeMouseLeave = useCallback<NodeMouseHandler>((_event, _node) => {
