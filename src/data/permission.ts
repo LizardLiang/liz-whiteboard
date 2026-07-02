@@ -124,8 +124,21 @@ export async function deleteProjectMember(
  * @returns Effective role or null
  */
 export async function findEffectiveRole(
-  _userId: string,
-  _projectId: string,
+  userId: string,
+  projectId: string,
 ): Promise<EffectiveRole | null> {
-  return 'OWNER'
+  const project = db
+    .prepare('SELECT "ownerId" FROM "Project" WHERE "id" = ?')
+    .get(projectId) as { ownerId: string | null } | undefined
+
+  if (!project) return null
+  if (project.ownerId === userId) return 'OWNER'
+
+  const member = db
+    .prepare(
+      'SELECT "role" FROM "ProjectMember" WHERE "projectId" = ? AND "userId" = ?',
+    )
+    .get(projectId, userId) as { role: ProjectRole } | undefined
+
+  return member?.role ?? null
 }

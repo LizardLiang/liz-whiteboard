@@ -242,32 +242,46 @@ describe('requireServerFnRole', () => {
     ).resolves.toBeUndefined()
   })
 
-  // TC-RR-08: VIEWER on EDITOR-required — resolves (RBAC deferred, commit 75e8f38)
-  // When RBAC is restored this should revert to: rejects.toThrow(ForbiddenError) with status 403.
-  it('TC-RR-08: VIEWER on EDITOR-required — resolves because RBAC is deferred', async () => {
+  // TC-RR-08: VIEWER on EDITOR-required — rejects with ForbiddenError (RBAC restored)
+  it('TC-RR-08: VIEWER on EDITOR-required — rejects with ForbiddenError', async () => {
     mockFindEffectiveRole.mockResolvedValue('VIEWER')
     await expect(
       requireServerFnRole('user-1', 'project-1', 'EDITOR'),
-    ).resolves.toBeUndefined()
+    ).rejects.toThrow(ForbiddenError)
   })
 
-  // TC-RR-09: null projectId — resolves (RBAC deferred; no DB lookup happens)
-  // When RBAC is restored this should revert to: rejects.toThrow(ForbiddenError).
-  it('TC-RR-09: null projectId — resolves without calling findEffectiveRole (RBAC deferred)', async () => {
-    await expect(requireServerFnRole('user-1', null, 'EDITOR')).resolves.toBeUndefined()
-    // findEffectiveRole is still not called (no-op never reaches DB)
+  // TC-RR-09: null projectId — rejects with ForbiddenError; no DB lookup happens
+  // (SEC-ERR-03: not-found is indistinguishable from unauthorized)
+  it('TC-RR-09: null projectId — rejects with ForbiddenError without calling findEffectiveRole', async () => {
+    await expect(
+      requireServerFnRole('user-1', null, 'EDITOR'),
+    ).rejects.toThrow(ForbiddenError)
     expect(mockFindEffectiveRole).not.toHaveBeenCalled()
   })
 
-  // TC-RR-10: DB throw is never reached because requireServerFnRole is a no-op (RBAC deferred)
-  // When RBAC is restored this should verify ForbiddenError is thrown and error not leaked.
-  it('TC-RR-10: DB configured to throw — resolves because RBAC is deferred (no DB call)', async () => {
+  // TC-RR-10: role-lookup throws — fails closed, rejects with ForbiddenError, error not leaked
+  it('TC-RR-10: DB configured to throw — fails closed, rejects with ForbiddenError', async () => {
     mockFindEffectiveRole.mockRejectedValue(new Error('CONN_POOL_EXHAUSTED'))
-    // No-op never calls findEffectiveRole, so the rejection is never triggered.
     await expect(
       requireServerFnRole('user-1', 'project-1', 'EDITOR'),
-    ).resolves.toBeUndefined()
-    expect(mockFindEffectiveRole).not.toHaveBeenCalled()
+    ).rejects.toThrow(ForbiddenError)
+    expect(mockLogSampledError).toHaveBeenCalledWith(
+      expect.objectContaining({
+        userId: 'user-1',
+        errorClass: 'RBAC_LOOKUP_FAILED',
+        message: 'CONN_POOL_EXHAUSTED',
+      }),
+    )
+  })
+
+  // TC-RR-05 (server fn variant): role-lookup throws — fails closed, message not leaked
+  it('TC-RR-05 (server fn): role lookup throws — fails closed, ForbiddenError does not leak raw message', async () => {
+    mockFindEffectiveRole.mockRejectedValue(new Error('CONN_POOL_EXHAUSTED'))
+    const err = await requireServerFnRole('user-1', 'project-1', 'EDITOR').catch(
+      (e) => e,
+    )
+    expect(err).toBeInstanceOf(ForbiddenError)
+    expect((err as Error).message).not.toContain('CONN_POOL_EXHAUSTED')
   })
 
   // TC-RR-11 (server fn variant): OWNER satisfies EDITOR minimum
@@ -278,13 +292,12 @@ describe('requireServerFnRole', () => {
     ).resolves.toBeUndefined()
   })
 
-  // TC-RR-12 (server fn variant): VIEWER on EDITOR-required — resolves (RBAC deferred)
-  // When RBAC is restored this should revert to: rejects.toThrow(ForbiddenError).
-  it('TC-RR-12: VIEWER on EDITOR-required — resolves because RBAC is deferred', async () => {
+  // TC-RR-12 (server fn variant): VIEWER on EDITOR-required — rejects with ForbiddenError
+  it('TC-RR-12: VIEWER on EDITOR-required — rejects with ForbiddenError', async () => {
     mockFindEffectiveRole.mockResolvedValue('VIEWER')
     await expect(
       requireServerFnRole('user-1', 'project-1', 'EDITOR'),
-    ).resolves.toBeUndefined()
+    ).rejects.toThrow(ForbiddenError)
   })
 })
 

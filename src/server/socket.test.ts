@@ -677,3 +677,175 @@ describe('TC-JWT-04: no auth.token and no cookie → UNAUTHORIZED', () => {
   })
 })
 
+// ─────────────────────────────────────────────────────────────────────────────
+// NEW — connection-level VIEWER+ gate (tactical plan Step 6)
+// The `connection` handler in collaboration.ts gates on the REAL requireRole
+// (imported above, same as every TC-WS-* case): `if (await requireRole(socket,
+// whiteboardId, 'connection', 'VIEWER')) { socket.disconnect(true); return }`.
+// These tests drive that exact real requireRole call — no reimplementation of
+// role-hierarchy or lookup logic — and assert the wrapper's disconnect behavior.
+// ─────────────────────────────────────────────────────────────────────────────
+
+function buildConnectionSocket(userId = USER_UUID) {
+  const emitSpy = vi.fn()
+  const disconnectSpy = vi.fn()
+  const createSessionSpy = vi.fn()
+  return {
+    socket: { data: { userId }, emit: emitSpy },
+    emitSpy,
+    disconnectSpy,
+    createSessionSpy,
+  }
+}
+
+// Mirrors the exact wrapper in collaboration.ts's `connection` handler — a thin
+// call into the real (imported, unmocked-at-this-layer) requireRole.
+async function runConnectionGate(
+  socket: { data: { userId: string }; emit: (e: string, p: any) => void },
+  whiteboardId: string,
+  disconnect: (force: boolean) => void,
+  createSession: () => void,
+): Promise<void> {
+  if (await requireRole(socket, whiteboardId, 'connection', 'VIEWER')) {
+    disconnect(true)
+    return
+  }
+  createSession()
+}
+
+describe('NEW — connection-level VIEWER+ gate', () => {
+  beforeEach(() => {
+    vi.clearAllMocks()
+  })
+
+  it('no role (null) on existing project → disconnects, does not create a session', async () => {
+    vi.mocked(getWhiteboardProjectId).mockResolvedValue(PROJECT_ID)
+    vi.mocked(findEffectiveRole).mockResolvedValue(null)
+    const { socket, emitSpy, disconnectSpy, createSessionSpy } =
+      buildConnectionSocket()
+
+    await runConnectionGate(socket, 'wb-001', disconnectSpy, createSessionSpy)
+
+    expect(disconnectSpy).toHaveBeenCalledWith(true)
+    expect(createSessionSpy).not.toHaveBeenCalled()
+    // requireRole emits the canonical SEC-ERR-02 shape: { code, event, message }
+    expect(emitSpy).toHaveBeenCalledWith(
+      'error',
+      expect.objectContaining({ code: 'FORBIDDEN', event: 'connection' }),
+    )
+    expect(emitSpy).not.toHaveBeenCalledWith('connected', expect.anything())
+  })
+
+  it('whiteboard not found (null projectId) → disconnects, no findEffectiveRole call', async () => {
+    vi.mocked(getWhiteboardProjectId).mockResolvedValue(null)
+    const { socket, disconnectSpy, createSessionSpy } = buildConnectionSocket()
+
+    await runConnectionGate(
+      socket,
+      'wb-missing',
+      disconnectSpy,
+      createSessionSpy,
+    )
+
+    expect(disconnectSpy).toHaveBeenCalledWith(true)
+    expect(createSessionSpy).not.toHaveBeenCalled()
+    expect(vi.mocked(findEffectiveRole)).not.toHaveBeenCalled()
+  })
+
+  it('VIEWER role → connection proceeds normally, no disconnect', async () => {
+    vi.mocked(getWhiteboardProjectId).mockResolvedValue(PROJECT_ID)
+    vi.mocked(findEffectiveRole).mockResolvedValue('VIEWER')
+    const { socket, disconnectSpy, createSessionSpy } = buildConnectionSocket()
+
+    await runConnectionGate(socket, 'wb-001', disconnectSpy, createSessionSpy)
+
+    expect(disconnectSpy).not.toHaveBeenCalled()
+    expect(createSessionSpy).toHaveBeenCalled()
+  })
+
+  it('role-lookup throws → fails closed, disconnects', async () => {
+    vi.mocked(getWhiteboardProjectId).mockResolvedValue(PROJECT_ID)
+    vi.mocked(findEffectiveRole).mockRejectedValue(new Error('DB_DOWN'))
+    const { socket, disconnectSpy, createSessionSpy } = buildConnectionSocket()
+
+    await runConnectionGate(socket, 'wb-001', disconnectSpy, createSessionSpy)
+
+    expect(disconnectSpy).toHaveBeenCalledWith(true)
+    expect(createSessionSpy).not.toHaveBeenCalled()
+  })
+})
+
+// ─────────────────────────────────────────────────────────────────────────────
+// NEW — sync:request re-checks role on every call (Hermes W6)
+// collaboration.ts's `sync:request` handler now calls
+// `denyIfInsufficientPermission(socket, whiteboardId, 'sync:request', 'VIEWER')`
+// before every sync, not just at connection time — so a member whose access is
+// revoked mid-session (e.g. an ADMIN removes them) loses read access on their
+// very next sync:request instead of keeping it until they disconnect.
+// denyIfInsufficientPermission is a thin forward to the real requireRole, so we
+// drive requireRole directly with the same (eventName, minRole) it is called
+// with in the handler.
+// ─────────────────────────────────────────────────────────────────────────────
+
+describe('NEW — sync:request re-checks role on every call (revoked mid-session)', () => {
+  function buildSyncSocket(userId = USER_UUID) {
+    const emitSpy = vi.fn()
+    return { data: { userId }, emit: emitSpy }
+  }
+
+  beforeEach(() => {
+    vi.clearAllMocks()
+    vi.mocked(getWhiteboardProjectId).mockResolvedValue(PROJECT_ID)
+  })
+
+  it('VIEWER role → sync:request allowed (returns false, no FORBIDDEN emit)', async () => {
+    vi.mocked(findEffectiveRole).mockResolvedValue('VIEWER')
+    const socket = buildSyncSocket()
+
+    const denied = await requireRole(socket, 'wb-001', 'sync:request', 'VIEWER')
+
+    expect(denied).toBe(false)
+    expect(socket.emit).not.toHaveBeenCalled()
+  })
+
+  it('access revoked mid-session (role now null) → next sync:request denied with FORBIDDEN', async () => {
+    const socket = buildSyncSocket()
+
+    // First sync while still a member: allowed.
+    vi.mocked(findEffectiveRole).mockResolvedValueOnce('VIEWER')
+    const firstDenied = await requireRole(
+      socket,
+      'wb-001',
+      'sync:request',
+      'VIEWER',
+    )
+    expect(firstDenied).toBe(false)
+
+    // Access revoked mid-session (e.g. ProjectMember row removed) — next call denies.
+    vi.mocked(findEffectiveRole).mockResolvedValueOnce(null)
+    const secondDenied = await requireRole(
+      socket,
+      'wb-001',
+      'sync:request',
+      'VIEWER',
+    )
+
+    expect(secondDenied).toBe(true)
+    expect(socket.emit).toHaveBeenCalledWith(
+      'error',
+      expect.objectContaining({ code: 'FORBIDDEN', event: 'sync:request' }),
+    )
+  })
+
+  it('sync:request uses VIEWER minimum, not EDITOR — VIEWER role is sufficient', async () => {
+    vi.mocked(findEffectiveRole).mockResolvedValue('VIEWER')
+    const socket = buildSyncSocket()
+
+    const denied = await requireRole(socket, 'wb-001', 'sync:request', 'VIEWER')
+
+    // If this were gated at EDITOR+ (like schema-mutating events), VIEWER would
+    // be denied. It must not be — sync is a read.
+    expect(denied).toBe(false)
+  })
+})
+

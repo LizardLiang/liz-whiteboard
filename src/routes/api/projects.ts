@@ -59,11 +59,8 @@ export const getProjectsWithTree = createServerFn({
 
 /**
  * Get a single project by ID
- * NOTE: VIEWER role check intentionally bypassed — any authenticated user can
- * read any project. Write/delete paths remain gated. Invitation-based read
- * access will be re-enabled once the invitation flow is complete.
  * @param projectId - Project UUID
- * @requires authenticated
+ * @requires authenticated, VIEWER+
  */
 export const getProject = createServerFn({ method: 'GET' })
   .inputValidator((projectId: string) => {
@@ -75,7 +72,16 @@ export const getProject = createServerFn({ method: 'GET' })
     return idSchema.parse(projectId)
   })
   .handler(
-    requireAuth(async (_ctx, projectId) => {
+    requireAuth(async ({ user }, projectId) => {
+      // Requires VIEWER+ role to read this project
+      const role = await findEffectiveRole(user.id, projectId)
+      if (!hasMinimumRole(role, 'VIEWER')) {
+        return {
+          error: 'FORBIDDEN',
+          status: 403,
+          message: 'Access denied',
+        } as const
+      }
       try {
         const project = await findProjectById(projectId)
         if (!project) {
@@ -147,11 +153,8 @@ export const updateProjectFn = createServerFn({ method: 'POST' })
 
 /**
  * Get project page content (folders + whiteboards at a given level)
- * NOTE: VIEWER role check intentionally bypassed — any authenticated user can
- * read any project's content. Write/delete paths remain gated. Invitation-based
- * read access will be re-enabled once the invitation flow is complete.
  * @param params - Object with projectId and optional folderId
- * @requires authenticated
+ * @requires authenticated, VIEWER+
  */
 export const getProjectPageContent = createServerFn({ method: 'GET' })
   .inputValidator((params: unknown) => {
@@ -162,7 +165,16 @@ export const getProjectPageContent = createServerFn({ method: 'GET' })
     return schema.parse(params)
   })
   .handler(
-    requireAuth(async (_ctx, data) => {
+    requireAuth(async ({ user }, data) => {
+      // Requires VIEWER+ role to read this project's page content
+      const role = await findEffectiveRole(user.id, data.projectId)
+      if (!hasMinimumRole(role, 'VIEWER')) {
+        return {
+          error: 'FORBIDDEN',
+          status: 403,
+          message: 'Access denied',
+        } as const
+      }
       const content = await findProjectPageContent(
         data.projectId,
         data.folderId,
@@ -170,7 +182,7 @@ export const getProjectPageContent = createServerFn({ method: 'GET' })
       if (!content) {
         throw new Error('Project not found')
       }
-      return content
+      return { ...content, viewerRole: role }
     }),
   )
 

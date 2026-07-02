@@ -31,10 +31,7 @@ import {
   updateDiagramTable,
   updateDiagramTablePosition,
 } from '@/data/diagram-table'
-import {
-  findWhiteboardById,
-  findWhiteboardByIdWithDiagram,
-} from '@/data/whiteboard'
+import { findWhiteboardByIdWithDiagram } from '@/data/whiteboard'
 import {
   createColumn,
   deleteColumn,
@@ -54,6 +51,8 @@ import {
 import { parseSessionCookie } from '@/lib/auth/cookies'
 import { validateSessionToken } from '@/lib/auth/session'
 import { validateCollabToken } from '@/lib/oauth/collab-verify'
+import { requireRole } from '@/lib/auth/require-role'
+import type { EffectiveRole } from '@/data/permission'
 import { db } from '@/db'
 
 // ---------------------------------------------------------------------------
@@ -218,6 +217,19 @@ function setupWhiteboardNamespace(ioServer: SocketIOServer): void {
       `User ${userId} connected to whiteboard ${whiteboardId} (socket: ${socket.id})`,
     )
 
+    // Authorization check: verify the user has at least VIEWER access to this
+    // whiteboard's project before creating any session or emitting any data.
+    // The io.use() handshake middleware only validates authentication, not
+    // project-level RBAC — any authenticated user could otherwise join any
+    // whiteboard's live collab namespace. Reuses requireRole (AD-1) so the
+    // emitted payload matches the canonical SEC-ERR-02 shape the client expects
+    // ({ code: 'FORBIDDEN', event, message }) and fail-closed behavior is shared
+    // with every other gated event.
+    if (await requireRole(socket, whiteboardId, 'connection', 'VIEWER')) {
+      socket.disconnect(true)
+      return
+    }
+
     try {
       // Create collaboration session
       const session = await createCollaborationSession({
@@ -292,27 +304,19 @@ function isSessionExpired(socket: any): boolean {
 }
 
 /**
- * Resolve the projectId for a given whiteboardId.
- */
-async function getProjectIdForWhiteboard(
-  whiteboardId: string,
-): Promise<string | null> {
-  const whiteboard = await findWhiteboardById(whiteboardId)
-  return whiteboard?.projectId ?? null
-}
-
-/**
- * Check that the socket user has EDITOR+ role on the whiteboard's project.
- * Returns true if access was denied (caller should return immediately).
- * On denial, emits the canonical SEC-ERR-02 error event on the socket.
- * Wraps requireRole from src/lib/auth/require-role.ts (AD-1).
+ * Check that the socket user has at least `minRole` on the whiteboard's project
+ * (default: EDITOR, for schema-mutating handlers). Returns true if access was
+ * denied (caller should return immediately). On denial, emits the canonical
+ * SEC-ERR-02 error event on the socket. Wraps requireRole from
+ * src/lib/auth/require-role.ts (AD-1).
  */
 async function denyIfInsufficientPermission(
-  _socket: { data: { userId: string }; emit: (e: string, p: any) => void },
-  _whiteboardId: string,
-  _eventName: string,
+  socket: { data: { userId: string }; emit: (e: string, p: any) => void },
+  whiteboardId: string,
+  eventName: string,
+  minRole: EffectiveRole = 'EDITOR',
 ): Promise<boolean> {
-  return false
+  return requireRole(socket, whiteboardId, eventName, minRole)
 }
 
 /**
@@ -351,8 +355,22 @@ function setupCollaborationEventHandlers(
     }
   })
 
-  // Sync request (when client reconnects and needs full state)
+  // Sync request (when client reconnects and needs full state).
+  // Re-checks role on every call (not just at connection time) so a member
+  // whose access is revoked mid-session loses read access before disconnect.
+  // VIEWER minimum — sync is a read, not a mutation.
   socket.on('sync:request', async () => {
+    if (
+      await denyIfInsufficientPermission(
+        socket,
+        whiteboardId,
+        'sync:request',
+        'VIEWER',
+      )
+    ) {
+      return
+    }
+
     try {
       const whiteboard = await findWhiteboardByIdWithDiagram(whiteboardId)
 

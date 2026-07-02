@@ -192,9 +192,27 @@ export async function requireRole(
  * @param minRole           - Minimum effective role required (default: EDITOR)
  */
 export async function requireServerFnRole(
-  _userId: string,
-  _resourceProjectId: string | null,
-  _minRole: EffectiveRole = 'EDITOR',
+  userId: string,
+  resourceProjectId: string | null,
+  minRole: EffectiveRole = 'EDITOR',
 ): Promise<void> {
-  // RBAC removed — any authenticated user can access any whiteboard
+  if (!resourceProjectId) {
+    // SEC-ERR-03: not-found is indistinguishable from unauthorized
+    throw new ForbiddenError()
+  }
+  let role: EffectiveRole | null = null
+  try {
+    role = await findEffectiveRole(userId, resourceProjectId)
+  } catch (error) {
+    // AD-6: fail closed — log the raw error server-side, throw generic ForbiddenError
+    logSampledError({
+      userId,
+      errorClass: 'RBAC_LOOKUP_FAILED',
+      message: error instanceof Error ? error.message : String(error),
+    })
+    throw new ForbiddenError()
+  }
+  if (!hasMinimumRole(role, minRole)) {
+    throw new ForbiddenError()
+  }
 }

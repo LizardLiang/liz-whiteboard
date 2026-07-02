@@ -43,22 +43,19 @@ export async function createProject(
 
 /**
  * Find all projects accessible to a user.
- * NOTE: Membership/invitation checks are intentionally bypassed here — any
- * authenticated user can read all projects. The invitation system is preserved
- * elsewhere (write/delete paths remain gated) and will be re-applied to reads
- * once the invitation flow is complete.
- * @param userId - User UUID (kept for API compatibility; not used for filtering)
- * @returns Array of all projects
+ * Scoped to projects the user owns or is an explicit ProjectMember of.
+ * @param userId - User UUID
+ * @returns Array of projects owned by or shared with the user
  */
 export async function findAllProjectsForUser(
   userId: string,
 ): Promise<Array<Project>> {
-  // userId param retained for signature compatibility with callers.
-  void userId
   try {
     return db
-      .prepare('SELECT * FROM "Project" ORDER BY "createdAt" DESC')
-      .all()
+      .prepare(
+        'SELECT * FROM "Project" WHERE "ownerId" = ? OR "id" IN (SELECT "projectId" FROM "ProjectMember" WHERE "userId" = ?) ORDER BY "createdAt" DESC',
+      )
+      .all(userId, userId)
       .map((r) => mapProject(r)!)
   } catch (error) {
     throw new Error(
@@ -69,12 +66,9 @@ export async function findAllProjectsForUser(
 
 /**
  * Find all projects with their folder and whiteboard structure.
- * NOTE: Membership/invitation checks are intentionally bypassed here — any
- * authenticated user can read all projects. The invitation system is preserved
- * elsewhere (write/delete paths remain gated) and will be re-applied to reads
- * once the invitation flow is complete.
- * @param userId - User UUID (kept for API compatibility; not used for filtering)
- * @returns Array of all projects with nested folders and whiteboards
+ * Scoped to projects the user owns or is an explicit ProjectMember of.
+ * @param userId - User UUID
+ * @returns Array of projects owned by or shared with the user, with nested folders and whiteboards
  */
 export async function findAllProjectsWithTreeForUser(userId: string): Promise<
   Array<
@@ -90,12 +84,12 @@ export async function findAllProjectsWithTreeForUser(userId: string): Promise<
     }
   >
 > {
-  // userId param retained for signature compatibility with callers.
-  void userId
   try {
     const projects = db
-      .prepare('SELECT * FROM "Project" ORDER BY "createdAt" DESC')
-      .all()
+      .prepare(
+        'SELECT * FROM "Project" WHERE "ownerId" = ? OR "id" IN (SELECT "projectId" FROM "ProjectMember" WHERE "userId" = ?) ORDER BY "createdAt" DESC',
+      )
+      .all(userId, userId)
       .map((r) => mapProject(r)!)
 
     return projects.map((project) => {

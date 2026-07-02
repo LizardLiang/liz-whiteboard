@@ -10,6 +10,7 @@ import type {
 import type { WhiteboardWithDiagram } from '@/data/whiteboard'
 import type { RelationshipWithDetails } from '@/data/relationship'
 import type { LayoutOptions, LayoutResult } from '@/lib/canvas/layout-engine'
+import type { EffectiveRole } from '@/data/permission'
 import {
   findWhiteboardByIdWithDiagram,
   updateWhiteboardCanvasState,
@@ -34,6 +35,17 @@ import {
 } from '@/data/resolve-project'
 import { bulkUpdatePositionsSchema } from '@/data/schema'
 import { requireServerFnRole } from '@/lib/auth/require-role'
+import { findEffectiveRole } from '@/data/permission'
+
+/**
+ * WhiteboardWithDiagram plus the requesting user's effective role on the
+ * whiteboard's project — mirrors getProjectPageContent's viewerRole field,
+ * enabling the client to gate write affordances (Add Table/Relationship,
+ * drag) without a second round-trip.
+ */
+export type WhiteboardWithDiagramAndRole = WhiteboardWithDiagram & {
+  viewerRole: EffectiveRole | null
+}
 
 /**
  * @requires viewer
@@ -44,12 +56,19 @@ export const getWhiteboardWithDiagram = createServerFn({
   .inputValidator((whiteboardId: string) => whiteboardId)
   .handler(
     requireAuth(
-      async ({ user }, whiteboardId): Promise<WhiteboardWithDiagram | null> => {
+      async (
+        { user },
+        whiteboardId,
+      ): Promise<WhiteboardWithDiagramAndRole | null> => {
         const projectId = await getWhiteboardProjectId(whiteboardId)
         await requireServerFnRole(user.id, projectId, 'VIEWER')
         try {
           const whiteboard = await findWhiteboardByIdWithDiagram(whiteboardId)
-          return whiteboard
+          if (!whiteboard) return null
+          // projectId is guaranteed non-null here — requireServerFnRole
+          // throws ForbiddenError above when it is null.
+          const viewerRole = await findEffectiveRole(user.id, projectId!)
+          return { ...whiteboard, viewerRole }
         } catch (error) {
           console.error('Error fetching whiteboard:', error)
           throw error

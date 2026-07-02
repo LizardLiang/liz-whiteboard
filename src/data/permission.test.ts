@@ -198,5 +198,62 @@ describe('permission data-access', () => {
       const role = await findEffectiveRole(owner.id, project.id)
       expect(role).toBe('OWNER')
     })
+
+    it('returns the member role (EDITOR) when a ProjectMember row exists', async () => {
+      const owner = makeUser()
+      const member = makeUser()
+      const project = makeProject({ ownerId: owner.id })
+      await createProjectMember({
+        projectId: project.id,
+        userId: member.id,
+        role: 'EDITOR',
+      })
+
+      const role = await findEffectiveRole(member.id, project.id)
+      expect(role).toBe('EDITOR')
+    })
+
+    it('returns the member role (VIEWER) when a ProjectMember row exists', async () => {
+      const owner = makeUser()
+      const member = makeUser()
+      const project = makeProject({ ownerId: owner.id })
+      await createProjectMember({
+        projectId: project.id,
+        userId: member.id,
+        role: 'VIEWER',
+      })
+
+      const role = await findEffectiveRole(member.id, project.id)
+      expect(role).toBe('VIEWER')
+    })
+
+    it('returns the member role (ADMIN) when a ProjectMember row exists', async () => {
+      const owner = makeUser()
+      const member = makeUser()
+      const project = makeProject({ ownerId: owner.id })
+      await createProjectMember({
+        projectId: project.id,
+        userId: member.id,
+        role: 'ADMIN',
+      })
+
+      const role = await findEffectiveRole(member.id, project.id)
+      expect(role).toBe('ADMIN')
+    })
+
+    it('returns null when there is no owner match and no membership row', async () => {
+      const owner = makeUser()
+      const stranger = makeUser()
+      const project = makeProject({ ownerId: owner.id })
+
+      const role = await findEffectiveRole(stranger.id, project.id)
+      expect(role).toBeNull()
+    })
+
+    it('returns null when the project does not exist', async () => {
+      const stranger = makeUser()
+      const role = await findEffectiveRole(stranger.id, 'no-such-project')
+      expect(role).toBeNull()
+    })
   })
 })

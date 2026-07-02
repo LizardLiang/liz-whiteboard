@@ -6,7 +6,12 @@
 
 import { beforeEach, describe, expect, it } from 'vitest'
 
-import { findAllProjectsWithTreeForUser, findProjectPageContent } from './project'
+import {
+  findAllProjectsForUser,
+  findAllProjectsWithTreeForUser,
+  findProjectPageContent,
+} from './project'
+import { createProjectMember } from './permission'
 import { db, genId, nowMs } from '@/db'
 import {
   makeProject,
@@ -284,5 +289,82 @@ describe('findAllProjectsWithTreeForUser', () => {
     const user = makeUser()
     const tree = await findAllProjectsWithTreeForUser(user.id)
     expect(tree).toEqual([])
+  })
+
+  it('excludes projects owned by a different, unrelated user', async () => {
+    const user = makeUser()
+    const otherUser = makeUser()
+    const ownProject = makeProject({ name: 'Mine', ownerId: user.id })
+    makeProject({ name: 'Not Mine', ownerId: otherUser.id })
+
+    const tree = await findAllProjectsWithTreeForUser(user.id)
+
+    expect(tree).toHaveLength(1)
+    expect(tree[0].id).toBe(ownProject.id)
+  })
+
+  it('includes projects the user is an explicit ProjectMember of', async () => {
+    const owner = makeUser()
+    const member = makeUser()
+    const sharedProject = makeProject({ name: 'Shared', ownerId: owner.id })
+    await createProjectMember({
+      projectId: sharedProject.id,
+      userId: member.id,
+      role: 'VIEWER',
+    })
+
+    const tree = await findAllProjectsWithTreeForUser(member.id)
+
+    expect(tree).toHaveLength(1)
+    expect(tree[0].id).toBe(sharedProject.id)
+  })
+})
+
+describe('findAllProjectsForUser', () => {
+  it('returns projects owned by the user', async () => {
+    const user = makeUser()
+    const p = makeProject({ name: 'Mine', ownerId: user.id })
+
+    const projects = await findAllProjectsForUser(user.id)
+
+    expect(projects).toHaveLength(1)
+    expect(projects[0].id).toBe(p.id)
+  })
+
+  it('returns projects the user is an explicit ProjectMember of', async () => {
+    const owner = makeUser()
+    const member = makeUser()
+    const sharedProject = makeProject({ name: 'Shared', ownerId: owner.id })
+    await createProjectMember({
+      projectId: sharedProject.id,
+      userId: member.id,
+      role: 'EDITOR',
+    })
+
+    const projects = await findAllProjectsForUser(member.id)
+
+    expect(projects).toHaveLength(1)
+    expect(projects[0].id).toBe(sharedProject.id)
+  })
+
+  it('excludes projects owned by a different, unrelated user', async () => {
+    const user = makeUser()
+    const otherUser = makeUser()
+    const ownProject = makeProject({ name: 'Mine', ownerId: user.id })
+    makeProject({ name: 'Not Mine', ownerId: otherUser.id })
+
+    const projects = await findAllProjectsForUser(user.id)
+
+    expect(projects).toHaveLength(1)
+    expect(projects[0].id).toBe(ownProject.id)
+  })
+
+  it('returns an empty array when there are no accessible projects', async () => {
+    const user = makeUser()
+    const otherUser = makeUser()
+    makeProject({ name: 'Not Mine', ownerId: otherUser.id })
+
+    const projects = await findAllProjectsForUser(user.id)
+    expect(projects).toEqual([])
   })
 })
