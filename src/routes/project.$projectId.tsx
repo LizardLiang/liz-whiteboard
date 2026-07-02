@@ -4,24 +4,29 @@
 import { createFileRoute } from '@tanstack/react-router'
 import { useQuery } from '@tanstack/react-query'
 import { useState } from 'react'
-import { FolderPlus, Plus } from 'lucide-react'
+import { FolderPlus, Plus, Share2 } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { ProjectContentGrid } from '@/components/project/ProjectContentGrid'
 import { ProjectPageSkeleton } from '@/components/project/ProjectPageSkeleton'
 import { ProjectPageError } from '@/components/project/ProjectPageError'
+import { ProjectAccessDenied } from '@/components/project/ProjectAccessDenied'
 import { EmptyState } from '@/components/project/EmptyState'
 import { CreateWhiteboardDialog } from '@/components/navigator/CreateWhiteboardDialog'
 import { CreateFolderDialog } from '@/components/navigator/CreateFolderDialog'
+import { ProjectSharePanel } from '@/components/project/ProjectSharePanel'
 import { getProjectPageContent } from '@/routes/api/projects'
+import { hasMinimumRole } from '@/lib/auth/permissions'
+import { isForbiddenError } from '@/lib/auth/errors'
 
 export const Route = createFileRoute('/project/$projectId')({
   component: ProjectPage,
 })
 
-function ProjectPage() {
+export function ProjectPage() {
   const { projectId } = Route.useParams()
   const [whiteboardDialogOpen, setWhiteboardDialogOpen] = useState(false)
   const [folderDialogOpen, setFolderDialogOpen] = useState(false)
+  const [shareOpen, setShareOpen] = useState(false)
 
   const {
     data: content,
@@ -56,6 +61,16 @@ function ProjectPage() {
     )
   }
 
+  // getProjectPageContent resolves (does not throw) a FORBIDDEN payload when
+  // the viewer lacks VIEWER+ role — guard before touching content.folders.
+  if (isForbiddenError(content)) {
+    return (
+      <div className="container mx-auto px-4 py-8">
+        <ProjectAccessDenied message={content.message} />
+      </div>
+    )
+  }
+
   const isEmpty =
     content.folders.length === 0 && content.whiteboards.length === 0
 
@@ -67,6 +82,12 @@ function ProjectPage() {
           <div className="flex items-center justify-between">
             <h1 className="text-3xl font-bold">{content.project.name}</h1>
             <div className="flex items-center gap-2">
+              {hasMinimumRole(content.viewerRole, 'ADMIN') && (
+                <Button variant="outline" onClick={() => setShareOpen(true)}>
+                  <Share2 className="mr-2 h-4 w-4" />
+                  Share
+                </Button>
+              )}
               <Button
                 variant="outline"
                 onClick={() => setFolderDialogOpen(true)}
@@ -110,6 +131,11 @@ function ProjectPage() {
         onOpenChange={setFolderDialogOpen}
         projectId={projectId}
         parentFolderId={undefined}
+      />
+      <ProjectSharePanel
+        projectId={projectId}
+        open={shareOpen}
+        onOpenChange={setShareOpen}
       />
     </div>
   )

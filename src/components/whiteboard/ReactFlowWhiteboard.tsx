@@ -32,6 +32,8 @@ import { DeleteTableDialog } from './DeleteTableDialog'
 import { Toolbar } from './Toolbar'
 import { AutoLayoutConfirmDialog } from './AutoLayoutConfirmDialog'
 import { TableFocusOverlay } from './TableFocusOverlay'
+import { WhiteboardAccessDenied } from './WhiteboardAccessDenied'
+import { WhiteboardPermissionsProvider } from './whiteboard-permissions-context'
 import type { Connection } from '@xyflow/react'
 import type { ZoomControls } from './Toolbar'
 import type {
@@ -40,6 +42,7 @@ import type {
   TableNodeType,
 } from '@/lib/react-flow/types'
 import type { Column } from '@/data/models'
+import type { EffectiveRole } from '@/data/permission'
 import type {
   Cardinality,
   CreateRelationship,
@@ -50,6 +53,7 @@ import type { CreateColumnPayload } from './column/types'
 import type { TableRelationship } from './DeleteTableDialog'
 import type { RelationshipErrorEvent } from '@/hooks/use-relationship-mutations'
 import type { Dialect } from '@/lib/ddl-generator'
+import { hasMinimumRole } from '@/lib/auth/permissions'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
@@ -96,7 +100,7 @@ import {
 import { useColumnReorderMutations } from '@/hooks/use-column-reorder-mutations'
 import { useColumnReorderCollaboration } from '@/hooks/use-column-reorder-collaboration'
 import { getSessionUserId } from '@/lib/session-user-id'
-import { isUnauthorizedError } from '@/lib/auth/errors'
+import { classifyQueryFailure, isUnauthorizedError } from '@/lib/auth/errors'
 import { useZenMode } from '@/hooks/use-zen-mode'
 
 /** Pending connection data waiting for cardinality selection */
@@ -151,10 +155,13 @@ export interface ReactFlowWhiteboardProps {
   showControls?: boolean
   /** Whether nodes are draggable */
   nodesDraggable?: boolean
+  /** Requesting user's effective role on the whiteboard's project — gates
+   * write affordances (Add Table/Relationship, dragging) in the toolbar. */
+  viewerRole?: EffectiveRole | null
   /** Callback when a new table is created via the toolbar */
-  onCreateTable?: (data: CreateTable) => void | Promise<void>
+  onCreateTable?: (data: CreateTable) => void | Promise<unknown>
   /** Callback when a new relationship is created via the toolbar */
-  onCreateRelationship?: (data: CreateRelationship) => void | Promise<void>
+  onCreateRelationship?: (data: CreateRelationship) => void | Promise<unknown>
   /** Callback to expose display mode controls to parent */
   onDisplayModeReady?: (
     showMode: ShowMode,
@@ -177,6 +184,7 @@ function ReactFlowWhiteboardInner({
   showMinimap,
   showControls,
   nodesDraggable,
+  viewerRole = null,
   onCreateTable,
   onCreateRelationship,
   onDisplayModeReady,
@@ -190,8 +198,9 @@ function ReactFlowWhiteboardInner({
   showMinimap: boolean
   showControls: boolean
   nodesDraggable: boolean
-  onCreateTable?: (data: CreateTable) => void | Promise<void>
-  onCreateRelationship?: (data: CreateRelationship) => void | Promise<void>
+  viewerRole?: EffectiveRole | null
+  onCreateTable?: (data: CreateTable) => void | Promise<unknown>
+  onCreateRelationship?: (data: CreateRelationship) => void | Promise<unknown>
   onDisplayModeReady?: (
     showMode: ShowMode,
     setShowMode: (mode: ShowMode) => void,
@@ -200,6 +209,11 @@ function ReactFlowWhiteboardInner({
   onZoomChange?: (zoom: number) => void
 }) {
   const queryClient = useQueryClient()
+
+  // Requesting user's effective write permission — gates the toolbar's Add
+  // Table/Relationship buttons and (via WhiteboardPermissionsProvider below)
+  // node-level write affordances like Add Column.
+  const canEdit = hasMinimumRole(viewerRole, 'EDITOR')
 
   // Fetch MCP endpoint URL once — env var does not change at runtime
   const { data: mcpEndpointUrl } = useQuery({
@@ -1368,6 +1382,7 @@ function ReactFlowWhiteboardInner({
   )
 
   return (
+    <WhiteboardPermissionsProvider value={{ canEdit }}>
     <div
       style={{
         display: 'flex',
@@ -1393,6 +1408,7 @@ function ReactFlowWhiteboardInner({
           onShowModeChange={setShowMode}
           onZenModeToggle={toggleZenMode}
           mcpEndpointUrl={mcpEndpointUrl ?? undefined}
+          viewerRole={viewerRole}
         />
       )}
 
@@ -1518,6 +1534,7 @@ function ReactFlowWhiteboardInner({
         </Dialog>
       </div>
     </div>
+    </WhiteboardPermissionsProvider>
   )
 }
 
@@ -1531,6 +1548,7 @@ export function ReactFlowWhiteboard({
   showMinimap = false,
   showControls = true,
   nodesDraggable = true,
+  viewerRole = null,
   onCreateTable,
   onCreateRelationship,
   onDisplayModeReady,
@@ -1538,7 +1556,12 @@ export function ReactFlowWhiteboard({
   onZoomChange,
 }: ReactFlowWhiteboardProps) {
   // Fetch whiteboard data with tables
-  const { data: whiteboardData, isLoading: isLoadingWhiteboard } = useQuery({
+  const {
+    data: whiteboardData,
+    isLoading: isLoadingWhiteboard,
+    isError: isErrorWhiteboard,
+    error: whiteboardError,
+  } = useQuery({
     queryKey: ['whiteboard', whiteboardId],
     queryFn: async () => {
       return await getWhiteboardWithDiagram({ data: whiteboardId })
@@ -1596,8 +1619,19 @@ export function ReactFlowWhiteboard({
     )
   }
 
-  // Error state
+  // Error/missing state — getWhiteboardWithDiagram throws ForbiddenError on
+  // RBAC denial (react-query never populates `data` for a rejected query),
+  // but a rejected query can just as easily be a network error, a 500, or a
+  // genuine not-found. Only render the access-denied state when the error is
+  // actually a ForbiddenError — everything else falls back to a generic
+  // failure message so it isn't mislabeled "you don't have access".
   if (!whiteboardData) {
+    if (
+      isErrorWhiteboard &&
+      classifyQueryFailure({ error: whiteboardError }) === 'forbidden'
+    ) {
+      return <WhiteboardAccessDenied />
+    }
     return (
       <div className="flex items-center justify-center h-full">
         <div className="text-destructive">Failed to load whiteboard</div>
@@ -1616,6 +1650,7 @@ export function ReactFlowWhiteboard({
         showMinimap={showMinimap}
         showControls={showControls}
         nodesDraggable={nodesDraggable}
+        viewerRole={viewerRole}
         onCreateTable={onCreateTable}
         onCreateRelationship={onCreateRelationship}
         onDisplayModeReady={onDisplayModeReady}

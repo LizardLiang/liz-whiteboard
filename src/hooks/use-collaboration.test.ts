@@ -169,6 +169,106 @@ describe('TC-HTTP401-01/02: HTTP 401 event bus → triggerSessionExpired', () =>
 // Here we verify the focus management contract at the hook level.
 // ─────────────────────────────────────────────────────────────────────────────
 
+// ─────────────────────────────────────────────────────────────────────────────
+// authorization-denial-ux-gaps plan, step B.2: the 'error' event's
+// code === 'FORBIDDEN' branch must set isUnauthorized when the denial is on
+// the initial namespace connection (event === 'connection') — this is the
+// case where the server also disconnects the socket, which previously left
+// the whiteboard route stuck at "Connecting..." with no user-facing state
+// change (only a console.warn).
+// ─────────────────────────────────────────────────────────────────────────────
+
+describe('TC-WB-AUTHZ-01: socket error FORBIDDEN on connection sets isUnauthorized', () => {
+  beforeEach(() => {
+    registeredHandlers.clear()
+    vi.clearAllMocks()
+  })
+
+  afterEach(() => {
+    vi.clearAllMocks()
+  })
+
+  it('sets isUnauthorized true when error event has code FORBIDDEN and event connection', () => {
+    const { result } = renderHook(() =>
+      useCollaboration('wb-forbidden', 'user-test', vi.fn()),
+    )
+
+    expect(result.current.isUnauthorized).toBe(false)
+
+    act(() => {
+      simulateSocketEvent('error', {
+        code: 'FORBIDDEN',
+        event: 'connection',
+        message: 'You do not have access to perform this action.',
+      })
+    })
+
+    expect(result.current.isUnauthorized).toBe(true)
+  })
+
+  it('does not set isUnauthorized for a FORBIDDEN denial on a non-connection event (e.g. table:create)', () => {
+    const { result } = renderHook(() =>
+      useCollaboration('wb-forbidden-2', 'user-test', vi.fn()),
+    )
+
+    act(() => {
+      simulateSocketEvent('error', {
+        code: 'FORBIDDEN',
+        event: 'table:create',
+        message: 'You do not have access to perform this action.',
+      })
+    })
+
+    // Gated writes surface via toast at the mutation call site, not a
+    // whiteboard-wide access-denied state — the user can still view.
+    expect(result.current.isUnauthorized).toBe(false)
+  })
+
+  it('does not set isUnauthorized for BATCH_DENIED errors', () => {
+    const { result } = renderHook(() =>
+      useCollaboration('wb-batch', 'user-test', vi.fn()),
+    )
+
+    act(() => {
+      simulateSocketEvent('error', {
+        code: 'BATCH_DENIED',
+        event: 'column:create:batch',
+        message: 'This batch could not be saved.',
+      })
+    })
+
+    expect(result.current.isUnauthorized).toBe(false)
+  })
+
+  // Hermes W1: isUnauthorized previously never reset — once true for one
+  // whiteboard, navigating to a different whiteboard the user DOES have
+  // access to stayed stuck on the access-denied state.
+  it('resets isUnauthorized to false when the connection effect re-runs for a new whiteboardId', () => {
+    const { result, rerender } = renderHook(
+      ({ whiteboardId }: { whiteboardId: string }) =>
+        useCollaboration(whiteboardId, 'user-test', vi.fn()),
+      { initialProps: { whiteboardId: 'wb-denied' } },
+    )
+
+    act(() => {
+      simulateSocketEvent('error', {
+        code: 'FORBIDDEN',
+        event: 'connection',
+        message: 'You do not have access to perform this action.',
+      })
+    })
+    expect(result.current.isUnauthorized).toBe(true)
+
+    // Switch to a different whiteboard — the connection effect re-runs
+    // (whiteboardId is a dependency) and must not carry the prior
+    // whiteboard's denial forward.
+    registeredHandlers.clear()
+    rerender({ whiteboardId: 'wb-allowed' })
+
+    expect(result.current.isUnauthorized).toBe(false)
+  })
+})
+
 describe('TC-MODAL-02: onSessionExpired is called synchronously (enabling focus management)', () => {
   beforeEach(() => {
     registeredHandlers.clear()

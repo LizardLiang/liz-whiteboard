@@ -8,6 +8,8 @@ import type { Column, DiagramTable } from '@/data/models'
 import type { Cardinality } from '@/data/schema'
 import type { CreateRelationship, CreateTable } from '@/data/schema'
 import type { ShowMode } from '@/lib/react-flow/types'
+import type { EffectiveRole } from '@/data/permission'
+import { hasMinimumRole } from '@/lib/auth/permissions'
 import { Button } from '@/components/ui/button'
 import { Label } from '@/components/ui/label'
 import {
@@ -51,10 +53,12 @@ export interface ToolbarProps {
   whiteboardId: string
   /** All tables in the whiteboard (for relationship dialog) */
   tables: Array<DiagramTable & { columns: Array<Column> }>
-  /** Callback when table is created */
-  onCreateTable?: (data: CreateTable) => void | Promise<void>
-  /** Callback when relationship is created */
-  onCreateRelationship?: (data: CreateRelationship) => void | Promise<void>
+  /** Callback when table is created. Should reject on failure — Toolbar
+   * keeps the dialog open and re-throws so callers can surface a toast. */
+  onCreateTable?: (data: CreateTable) => void | Promise<unknown>
+  /** Callback when relationship is created. Should reject on failure —
+   * Toolbar keeps the dialog open and re-throws so callers can surface a toast. */
+  onCreateRelationship?: (data: CreateRelationship) => void | Promise<unknown>
   /** Total number of tables — drives the Auto Layout button enable/disable guard */
   tableCount: number
   /** Callback when the Auto Layout button is clicked */
@@ -73,6 +77,12 @@ export interface ToolbarProps {
   onZenModeToggle?: () => void
   /** MCP endpoint URL — when provided, a Copy-MCP-URL button is rendered */
   mcpEndpointUrl?: string
+  /** Requesting user's effective role on the whiteboard's project. When
+   * below EDITOR, write affordances (Add Table, Add Relationship) are
+   * disabled — server-side enforcement already blocks the underlying
+   * mutations; this is UX-only. Omitted/undefined is treated as full access
+   * for backward compatibility with existing callers that don't pass it. */
+  viewerRole?: EffectiveRole | null
   /** Optional CSS class name */
   className?: string
 }
@@ -159,8 +169,14 @@ export function Toolbar({
   onShowModeChange,
   onZenModeToggle,
   mcpEndpointUrl,
+  viewerRole,
   className = '',
 }: ToolbarProps) {
+  // Write affordances (Add Table, Add Relationship) require EDITOR+.
+  // viewerRole === undefined means the caller didn't opt into role gating —
+  // treated as full access for backward compatibility with existing callers.
+  const canEdit = viewerRole === undefined || hasMinimumRole(viewerRole, 'EDITOR')
+
   // Help dialog state
   const [helpOpen, setHelpOpen] = useState(false)
 
@@ -197,9 +213,16 @@ export function Toolbar({
       positionY: 300,
     }
 
-    await onCreateTable?.(tableData)
+    try {
+      await onCreateTable?.(tableData)
+    } catch {
+      // Rejection is re-thrown by the caller's mutateAsync — the mutation's
+      // own onError handler surfaces the user-facing toast. Keep the dialog
+      // open so the user doesn't lose their input and can retry or cancel.
+      return
+    }
 
-    // Reset form and close dialog
+    // Reset form and close dialog — only on success
     setTableName('')
     setTableDescription('')
     setTableDialogOpen(false)
@@ -229,9 +252,16 @@ export function Toolbar({
       label: relationshipLabel.trim() || undefined,
     }
 
-    await onCreateRelationship?.(relationshipData)
+    try {
+      await onCreateRelationship?.(relationshipData)
+    } catch {
+      // Rejection is re-thrown by the caller's mutateAsync — the mutation's
+      // own onError handler surfaces the user-facing toast. Keep the dialog
+      // open so the user doesn't lose their input and can retry or cancel.
+      return
+    }
 
-    // Reset form and close dialog
+    // Reset form and close dialog — only on success
     setSourceTableId('')
     setTargetTableId('')
     setSourceColumnId('')
@@ -256,7 +286,17 @@ export function Toolbar({
       {/* Add Table Dialog */}
       <Dialog open={tableDialogOpen} onOpenChange={setTableDialogOpen}>
         <DialogTrigger asChild>
-          <Button variant="default">Add Table</Button>
+          <Button
+            variant="default"
+            disabled={!canEdit}
+            title={
+              canEdit
+                ? undefined
+                : 'You have view-only access to this whiteboard.'
+            }
+          >
+            Add Table
+          </Button>
         </DialogTrigger>
         <DialogContent className="sm:max-w-[425px]">
           <DialogHeader>
@@ -313,7 +353,15 @@ export function Toolbar({
         onOpenChange={setRelationshipDialogOpen}
       >
         <DialogTrigger asChild>
-          <Button variant="default" disabled={tables.length < 2}>
+          <Button
+            variant="default"
+            disabled={tables.length < 2 || !canEdit}
+            title={
+              !canEdit
+                ? 'You have view-only access to this whiteboard.'
+                : undefined
+            }
+          >
             Add Relationship
           </Button>
         </DialogTrigger>

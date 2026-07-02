@@ -11,6 +11,7 @@ import { AddColumnRow } from './column/AddColumnRow'
 import { DeleteColumnDialog } from './column/DeleteColumnDialog'
 import { InsertionLine } from './column/InsertionLine'
 import { TableNodeContextMenu } from './TableNodeContextMenu'
+import { useWhiteboardPermissions } from './whiteboard-permissions-context'
 import type { Column } from '@/data/models'
 import type {
   RelationshipEdgeType,
@@ -32,6 +33,7 @@ interface TableNodeProps {
 
 export const TableNode = memo(
   ({ data, selected }: TableNodeProps) => {
+    const { canEdit } = useWhiteboardPermissions()
     const {
       table,
       showMode,
@@ -481,30 +483,33 @@ export const TableNode = memo(
 
             {/* Header buttons container */}
             <div style={{ display: 'flex', alignItems: 'center', gap: '4px' }}>
-              {/* Delete button — visible on header hover */}
-              <button
-                type="button"
-                aria-label={`Delete table ${table.name}`}
-                onClick={(e) => {
-                  e.stopPropagation()
-                  handleRequestTableDelete()
-                }}
-                className="nodrag nowheel"
-                style={{
-                  opacity: isHeaderHovered ? 1 : 0,
-                  flexShrink: 0,
-                  background: 'none',
-                  border: 'none',
-                  cursor: 'pointer',
-                  padding: '2px',
-                  color: 'var(--rf-table-header-text)',
-                  transition: 'opacity 0.1s',
-                  fontSize: '16px',
-                  lineHeight: 1,
-                }}
-              >
-                ×
-              </button>
+              {/* Delete button — visible on header hover. View-only viewers
+                  don't get this affordance at all (server also blocks it). */}
+              {canEdit && (
+                <button
+                  type="button"
+                  aria-label={`Delete table ${table.name}`}
+                  onClick={(e) => {
+                    e.stopPropagation()
+                    handleRequestTableDelete()
+                  }}
+                  className="nodrag nowheel"
+                  style={{
+                    opacity: isHeaderHovered ? 1 : 0,
+                    flexShrink: 0,
+                    background: 'none',
+                    border: 'none',
+                    cursor: 'pointer',
+                    padding: '2px',
+                    color: 'var(--rf-table-header-text)',
+                    transition: 'opacity 0.1s',
+                    fontSize: '16px',
+                    lineHeight: 1,
+                  }}
+                >
+                  ×
+                </button>
+              )}
             </div>
           </div>
 
@@ -545,12 +550,15 @@ export const TableNode = memo(
                 />
               ))}
 
-              {/* Add Column Row */}
-              <AddColumnRow
-                tableId={table.id}
-                existingColumns={columns}
-                onCreate={handleCreate}
-              />
+              {/* Add Column Row — hidden for view-only viewers (server also
+                  blocks the underlying createColumnsFn mutation). */}
+              {canEdit && (
+                <AddColumnRow
+                  tableId={table.id}
+                  existingColumns={columns}
+                  onCreate={handleCreate}
+                />
+              )}
             </div>
           )}
 

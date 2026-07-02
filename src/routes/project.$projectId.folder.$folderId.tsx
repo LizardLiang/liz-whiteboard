@@ -9,17 +9,19 @@ import { Button } from '@/components/ui/button'
 import { ProjectContentGrid } from '@/components/project/ProjectContentGrid'
 import { ProjectPageSkeleton } from '@/components/project/ProjectPageSkeleton'
 import { ProjectPageError } from '@/components/project/ProjectPageError'
+import { ProjectAccessDenied } from '@/components/project/ProjectAccessDenied'
 import { EmptyState } from '@/components/project/EmptyState'
 import { Breadcrumb } from '@/components/project/Breadcrumb'
 import { CreateWhiteboardDialog } from '@/components/navigator/CreateWhiteboardDialog'
 import { CreateFolderDialog } from '@/components/navigator/CreateFolderDialog'
 import { getProjectPageContent } from '@/routes/api/projects'
+import { isForbiddenError } from '@/lib/auth/errors'
 
 export const Route = createFileRoute('/project/$projectId/folder/$folderId')({
   component: FolderPage,
 })
 
-function FolderPage() {
+export function FolderPage() {
   const { projectId, folderId } = Route.useParams()
   const [whiteboardDialogOpen, setWhiteboardDialogOpen] = useState(false)
   const [folderDialogOpen, setFolderDialogOpen] = useState(false)
@@ -54,6 +56,16 @@ function FolderPage() {
           }
           onRetry={() => refetch()}
         />
+      </div>
+    )
+  }
+
+  // getProjectPageContent resolves (does not throw) a FORBIDDEN payload when
+  // the viewer lacks VIEWER+ role — guard before touching content.folders.
+  if (isForbiddenError(content)) {
+    return (
+      <div className="container mx-auto px-4 py-8">
+        <ProjectAccessDenied message={content.message} />
       </div>
     )
   }

@@ -4,6 +4,7 @@
 import { Link, createFileRoute } from '@tanstack/react-router'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import { toast } from 'sonner'
 import type Konva from 'konva'
 import type { CanvasViewport } from '@/components/whiteboard/Canvas'
 import type {
@@ -17,6 +18,7 @@ import { Canvas, useCanvasControls } from '@/components/whiteboard/Canvas'
 import { TableNode } from '@/components/whiteboard/TableNode'
 import { RelationshipEdge } from '@/components/whiteboard/RelationshipEdge'
 import { ReactFlowWhiteboard } from '@/components/whiteboard/ReactFlowWhiteboard'
+import { WhiteboardAccessDenied } from '@/components/whiteboard/WhiteboardAccessDenied'
 import { Toolbar } from '@/components/whiteboard/Toolbar'
 import { TextEditor } from '@/components/whiteboard/TextEditor'
 import { Minimap } from '@/components/whiteboard/Minimap'
@@ -39,6 +41,11 @@ import {
   entitiesToText,
   parseDiagram,
 } from '@/lib/parser/diagram-parser'
+import {
+  classifyQueryFailure,
+  isThrownForbiddenError,
+} from '@/lib/auth/errors'
+import { hasMinimumRole } from '@/lib/auth/permissions'
 
 /**
  * Whiteboard editor page component
@@ -103,7 +110,12 @@ function WhiteboardEditor() {
   // Fetch whiteboard data with TanStack Query
   // NOTE: Uses 'whiteboard-page' key to avoid collision with ReactFlowWhiteboard's
   // ['whiteboard', whiteboardId] query which returns a different shape (raw WhiteboardWithDiagram).
-  const { data: whiteboardData, isLoading, isError } = useQuery({
+  const {
+    data: whiteboardData,
+    isLoading,
+    isError,
+    error: whiteboardPageError,
+  } = useQuery({
     queryKey: ['whiteboard-page', whiteboardId],
     queryFn: async () => {
       // Fetch whiteboard with tables and relationships
@@ -175,7 +187,7 @@ function WhiteboardEditor() {
   }, [whiteboardData?.whiteboard?.canvasState])
 
   // WebSocket collaboration - MUST be called before any early returns
-  const { emit, on, off, connectionState } = useCollaboration(
+  const { emit, on, off, connectionState, isUnauthorized } = useCollaboration(
     whiteboardId,
     userId,
     triggerSessionExpired,
@@ -275,7 +287,11 @@ function WhiteboardEditor() {
         )
       }
       console.error('Failed to create table:', err)
-      alert('Failed to create table. Please try again.')
+      toast.error(
+        isThrownForbiddenError(err)
+          ? 'You do not have permission to add tables to this whiteboard.'
+          : 'Failed to create table. Please try again.',
+      )
     },
   })
 
@@ -333,7 +349,11 @@ function WhiteboardEditor() {
     },
     onError: (err) => {
       console.error('Failed to create relationship:', err)
-      alert('Failed to create relationship. Please try again.')
+      toast.error(
+        isThrownForbiddenError(err)
+          ? 'You do not have permission to add relationships to this whiteboard.'
+          : 'Failed to create relationship. Please try again.',
+      )
     },
   })
 
@@ -356,16 +376,19 @@ function WhiteboardEditor() {
   })
 
   // Event handlers
+  // Use mutateAsync (not mutate) so the promise returned to Toolbar.tsx
+  // actually reflects success/failure — Toolbar keeps its dialog open on
+  // rejection instead of closing optimistically before the mutation settles.
   const handleCreateTable = useCallback(
     (data: CreateTable) => {
-      createTableMutation.mutate(data)
+      return createTableMutation.mutateAsync(data)
     },
     [createTableMutation],
   )
 
   const handleCreateRelationship = useCallback(
     (data: CreateRelationship) => {
-      createRelationshipMutation.mutate(data)
+      return createRelationshipMutation.mutateAsync(data)
     },
     [createRelationshipMutation],
   )
@@ -563,12 +586,35 @@ function WhiteboardEditor() {
     )
   }
 
+  // isUnauthorized covers the case where the collaboration socket's namespace
+  // connection was denied (RBAC) — the server only emits this on an actual
+  // FORBIDDEN denial, so it's always an access-denied case.
+  if (isUnauthorized) {
+    return (
+      <div className="flex items-center justify-center h-screen">
+        <WhiteboardAccessDenied />
+      </div>
+    )
+  }
+
+  // A rejected whiteboard-page query can be a permissions denial, but it can
+  // just as easily be a network error, a 500, or a genuine not-found — only
+  // render the access-denied state when the error is actually a
+  // ForbiddenError so other failures aren't mislabeled "you don't have
+  // access".
   if (isError) {
+    if (classifyQueryFailure({ error: whiteboardPageError }) === 'forbidden') {
+      return (
+        <div className="flex items-center justify-center h-screen">
+          <WhiteboardAccessDenied />
+        </div>
+      )
+    }
     return (
       <div className="flex flex-col items-center justify-center h-screen gap-4">
-        <p className="text-lg font-semibold">Access denied</p>
+        <p className="text-lg font-semibold">Failed to load whiteboard</p>
         <p className="text-sm text-muted-foreground">
-          You don't have access to this whiteboard.
+          Something went wrong loading this whiteboard. Please try again.
         </p>
         <Link to="/" className="text-sm text-primary underline underline-offset-4">
           Back to dashboard
@@ -586,6 +632,8 @@ function WhiteboardEditor() {
   }
 
   const { whiteboard, relationships } = whiteboardData
+  const viewerRole = whiteboard?.viewerRole ?? null
+  const canEdit = hasMinimumRole(viewerRole, 'EDITOR')
 
   if (!whiteboard) {
     return (
@@ -659,6 +707,7 @@ function WhiteboardEditor() {
               onCreateRelationship={handleCreateRelationship}
               zoomControls={canvasControls}
               currentZoom={canvasViewport.zoom}
+              viewerRole={viewerRole}
             />
           )}
 
@@ -671,7 +720,8 @@ function WhiteboardEditor() {
                 userId={userId}
                 showMinimap={whiteboard.tables.length > 0}
                 showControls={true}
-                nodesDraggable={true}
+                nodesDraggable={canEdit}
+                viewerRole={viewerRole}
                 onCreateTable={handleCreateTable}
                 onCreateRelationship={handleCreateRelationship}
                 onDisplayModeReady={handleDisplayModeReady}

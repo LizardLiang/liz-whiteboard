@@ -32,6 +32,10 @@ vi.mock('@/components/navigator/CreateFolderDialog', () => ({
   CreateFolderDialog: () => null,
 }))
 
+vi.mock('@/components/project/ProjectSharePanel', () => ({
+  ProjectSharePanel: () => null,
+}))
+
 // Mock router hooks since this component is route-level and uses Route.useParams
 vi.mock('@tanstack/react-router', async (importOriginal) => {
   const actual = await importOriginal<typeof import('@tanstack/react-router')>()
@@ -62,6 +66,7 @@ const mockContent = {
   folders: [],
   whiteboards: [],
   breadcrumb: [],
+  viewerRole: null as string | null,
 }
 
 function createTestQueryClient() {
@@ -200,6 +205,95 @@ describe('Project Page Route (AC-01..04)', () => {
         'proj-001',
       ]) as typeof mockContent
       expect(result?.project?.name).toBe('My Project')
+    })
+  })
+
+  describe('Share button visibility (gated by viewerRole)', () => {
+    async function renderProjectPage(viewerRole: string | null) {
+      vi.mocked(getProjectPageContent).mockResolvedValue({
+        ...mockContent,
+        viewerRole,
+      } as any)
+
+      const { ProjectPage } = await importProjectPage()
+
+      const queryClient = createTestQueryClient()
+      queryClient.setQueryData(['project-page', 'proj-001'], {
+        ...mockContent,
+        viewerRole,
+      })
+
+      render(
+        <QueryClientProvider client={queryClient}>
+          <ProjectPage />
+        </QueryClientProvider>,
+      )
+
+      await waitFor(() => screen.getByText('My Project'))
+    }
+
+    it('renders the Share button when viewerRole is OWNER', async () => {
+      await renderProjectPage('OWNER')
+      expect(screen.queryByRole('button', { name: /share/i })).toBeTruthy()
+    })
+
+    it('renders the Share button when viewerRole is ADMIN', async () => {
+      await renderProjectPage('ADMIN')
+      expect(screen.queryByRole('button', { name: /share/i })).toBeTruthy()
+    })
+
+    it('does not render the Share button when viewerRole is EDITOR', async () => {
+      await renderProjectPage('EDITOR')
+      expect(screen.queryByRole('button', { name: /share/i })).toBeNull()
+    })
+
+    it('does not render the Share button when viewerRole is VIEWER', async () => {
+      await renderProjectPage('VIEWER')
+      expect(screen.queryByRole('button', { name: /share/i })).toBeNull()
+    })
+
+    it('does not render the Share button when viewerRole is null', async () => {
+      await renderProjectPage(null)
+      expect(screen.queryByRole('button', { name: /share/i })).toBeNull()
+    })
+  })
+
+  // Regression test for authorization-denial-ux-gaps: getProjectPageContent
+  // resolves (does not throw) a { error: 'FORBIDDEN', status: 403 } payload
+  // when the viewer lacks VIEWER+ role. Before the fix, this fell through to
+  // `content.folders.length` unguarded and crashed with a TypeError caught by
+  // the router's generic CatchBoundary instead of showing an access-denied
+  // state with a way home.
+  describe('Forbidden content (non-member access)', () => {
+    it('renders an access-denied state instead of crashing on content.folders.length', async () => {
+      vi.mocked(getProjectPageContent).mockResolvedValue({
+        error: 'FORBIDDEN',
+        status: 403,
+        message: 'Access denied',
+      } as any)
+
+      const { ProjectPage } = await importProjectPage()
+      const queryClient = createTestQueryClient()
+
+      render(
+        <QueryClientProvider client={queryClient}>
+          <ProjectPage />
+        </QueryClientProvider>,
+      )
+
+      await waitFor(() =>
+        expect(
+          screen.getByText(/you don't have access to this project/i),
+        ).toBeTruthy(),
+      )
+
+      // A way home
+      expect(screen.getByText(/back to dashboard/i)).toBeTruthy()
+
+      // Must not have thrown a TypeError from unguarded content.folders.length —
+      // if the guard were missing, render() itself would have thrown and this
+      // test would never reach the assertions above.
+      expect(screen.queryByText('My Project')).toBeNull()
     })
   })
 })

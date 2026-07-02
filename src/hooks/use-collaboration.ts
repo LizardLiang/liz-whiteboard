@@ -92,6 +92,10 @@ export function useCollaboration(
     // reads it, but server-side auth now reads userId from the session cookie.
     // withCredentials ensures the session_token cookie is sent with the handshake.
     setConnectionState('connecting')
+    // Reset from any prior connection's denial — otherwise switching to a
+    // new whiteboardId the user DOES have access to stays stuck on the
+    // access-denied state from the previous whiteboard.
+    setIsUnauthorized(false)
 
     const socket = io(`/whiteboard/${whiteboardId}`, {
       auth: userId ? { userId } : undefined,
@@ -200,21 +204,6 @@ export function useCollaboration(
       },
     )
 
-    // Unauthorized: server rejected the connection due to insufficient RBAC permissions.
-    // The HTTP query will also fail with a ForbiddenError (isError=true on the route),
-    // so the UI will already show an error state. This handler ensures the socket is
-    // cleanly treated as disconnected and logs the denial.
-    socket.on(
-      'whiteboard:unauthorized',
-      (data: { code: string; message: string }) => {
-        console.warn(
-          `[auth] WebSocket access denied for whiteboard ${whiteboardId}: ${data.code} — ${data.message}`,
-        )
-        setIsUnauthorized(true)
-        setConnectionState('disconnected')
-      },
-    )
-
     // Session expired: server signals that the session token is no longer valid.
     // The onSessionExpired callback (if provided) will trigger the SessionExpiredModal.
     socket.on('session_expired', () => {
@@ -250,8 +239,16 @@ export function useCollaboration(
             data.message,
           )
         } else if (data.code === 'FORBIDDEN') {
-          // SEC-ERR-02: canonical auth denial — toast (components handle this via on/off)
+          // SEC-ERR-02: canonical auth denial — toast (components handle this via on/off).
+          // When the denial happens on the initial namespace connection (rather than a
+          // later gated event like table:create), the server also disconnects the socket
+          // (see routes/api/collaboration.ts) — surface that as isUnauthorized so the
+          // whiteboard route can render a friendly access-denied state instead of a
+          // stuck "Connecting..." indicator.
           console.warn(`[auth] FORBIDDEN on event=${data.event ?? 'unknown'}`)
+          if (data.event === 'connection') {
+            setIsUnauthorized(true)
+          }
         } else {
           // Legacy error shape (AD-5): non-auth errors keep existing logging
           console.error(

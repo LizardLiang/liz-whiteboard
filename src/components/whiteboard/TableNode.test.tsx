@@ -10,8 +10,20 @@ import React from 'react'
 
 import { toast } from 'sonner'
 import { TableNode } from './TableNode.new'
+import { WhiteboardPermissionsProvider } from './whiteboard-permissions-context'
 import type { Column } from '@/data/models'
 import type { TableNodeData } from '@/lib/react-flow/types'
+
+// WhiteboardPermissionsContext now defaults to canEdit: false (fail-closed).
+// This suite exercises drag/column behavior that requires write access, so
+// every render is wrapped with an explicit canEdit: true provider.
+function renderTableNode(props: React.ComponentProps<typeof TableNode>) {
+  return render(
+    <WhiteboardPermissionsProvider value={{ canEdit: true }}>
+      <TableNode {...props} />
+    </WhiteboardPermissionsProvider>,
+  )
+}
 
 // ============================================================================
 // Mocks
@@ -238,7 +250,7 @@ describe('TableNode drag behavior (Suite S6)', () => {
   // INT-01: drag handle renders on each column row (AC-01a, AC-01d)
   it('INT-01: drag handle renders for each column in ALL_FIELDS mode', () => {
     const data = makeTableData()
-    render(<TableNode id={TABLE_ID} data={data} />)
+    renderTableNode({ id: TABLE_ID, data })
 
     // DragHandle renders one button per column with aria-label "Reorder column <name>"
     expect(screen.getByLabelText('Reorder column id')).toBeTruthy()
@@ -249,7 +261,7 @@ describe('TableNode drag behavior (Suite S6)', () => {
   // INT-01 negative: drag handles NOT rendered when showMode !== ALL_FIELDS (AC-01f)
   it('INT-01-neg: drag handles NOT rendered in KEY_ONLY mode (AC-01f)', () => {
     const data = makeTableData({ showMode: 'KEY_ONLY' })
-    render(<TableNode id={TABLE_ID} data={data} />)
+    renderTableNode({ id: TABLE_ID, data })
 
     // In KEY_ONLY mode, DragHandle show={false} — buttons not rendered
     expect(screen.queryByLabelText(/Reorder column/)).toBeNull()
@@ -258,7 +270,7 @@ describe('TableNode drag behavior (Suite S6)', () => {
   // INT-03: drag handle has nodrag nowheel classes (Spike S1)
   it('INT-03: drag handle button has nodrag and nowheel CSS classes', () => {
     const data = makeTableData()
-    render(<TableNode id={TABLE_ID} data={data} />)
+    renderTableNode({ id: TABLE_ID, data })
 
     const dragHandle = screen.getByLabelText('Reorder column id')
     expect(dragHandle.className).toContain('nodrag')
@@ -274,7 +286,7 @@ describe('TableNode drag behavior (Suite S6)', () => {
     const setLocalDragging = vi.fn()
     const data = makeTableData({ isQueueFullForTable, setLocalDragging })
 
-    render(<TableNode id={TABLE_ID} data={data} />)
+    renderTableNode({ id: TABLE_ID, data })
 
     // Fire pointerdown on the drag handle for col1 — this invokes handleDragHandlePointerDown,
     // which checks isQueueFullForTable first and returns early (showing toast) if true.
@@ -300,7 +312,7 @@ describe('TableNode drag behavior (Suite S6)', () => {
       bumpReorderTick,
     })
 
-    render(<TableNode id={TABLE_ID} data={data} />)
+    renderTableNode({ id: TABLE_ID, data })
 
     // Trigger drag cancel via the captured handler
     const latestImpl = mockDragCancelHandler.getMockImplementation()
@@ -335,7 +347,7 @@ describe('TableNode drag behavior (Suite S6)', () => {
   it('INT-04: pointerdown on drag handle activates drag (setLocalDragging called, cursor set)', () => {
     const setLocalDragging = vi.fn()
     const data = makeTableData({ setLocalDragging })
-    render(<TableNode id={TABLE_ID} data={data} />)
+    renderTableNode({ id: TABLE_ID, data })
 
     const dragHandle = screen.getByLabelText('Reorder column id')
     fireEvent.pointerDown(dragHandle)
@@ -359,7 +371,7 @@ describe('TableNode drag behavior (Suite S6)', () => {
       bumpReorderTick,
     })
 
-    render(<TableNode id={TABLE_ID} data={data} />)
+    renderTableNode({ id: TABLE_ID, data })
 
     // First start drag
     const startImpl = mockDragStartHandler.getMockImplementation()
@@ -380,6 +392,63 @@ describe('TableNode drag behavior (Suite S6)', () => {
       // Same source/target → newOrder is null (no arrayMove called)
       expect(call.newOrder).toBeNull()
     }
+  })
+})
+
+// ============================================================================
+// canEdit gating (WhiteboardPermissionsContext) — Hermes W3
+// Delete-table button and Add Column row are write affordances; server-side
+// RBAC already blocks the underlying mutations for VIEWERs, this is the
+// client-side UX gate that hides them.
+// ============================================================================
+
+describe('TableNode canEdit gating (WhiteboardPermissionsContext)', () => {
+  beforeEach(() => {
+    vi.clearAllMocks()
+  })
+
+  it('hides the delete-table button and Add Column row when canEdit is false', () => {
+    const data = makeTableData()
+    render(
+      <WhiteboardPermissionsProvider value={{ canEdit: false }}>
+        <TableNode id={TABLE_ID} data={data} />
+      </WhiteboardPermissionsProvider>,
+    )
+
+    expect(
+      screen.queryByRole('button', { name: /delete table/i }),
+    ).toBeNull()
+    expect(
+      screen.queryByRole('button', { name: /add new column/i }),
+    ).toBeNull()
+  })
+
+  it('shows the delete-table button and Add Column row when canEdit is true', () => {
+    const data = makeTableData()
+    render(
+      <WhiteboardPermissionsProvider value={{ canEdit: true }}>
+        <TableNode id={TABLE_ID} data={data} />
+      </WhiteboardPermissionsProvider>,
+    )
+
+    expect(
+      screen.getByRole('button', { name: /delete table/i }),
+    ).toBeTruthy()
+    expect(
+      screen.getByRole('button', { name: /add new column/i }),
+    ).toBeTruthy()
+  })
+
+  it('hides write affordances when rendered outside any WhiteboardPermissionsProvider (fail-closed default)', () => {
+    const data = makeTableData()
+    render(<TableNode id={TABLE_ID} data={data} />)
+
+    expect(
+      screen.queryByRole('button', { name: /delete table/i }),
+    ).toBeNull()
+    expect(
+      screen.queryByRole('button', { name: /add new column/i }),
+    ).toBeNull()
   })
 })
 

@@ -2,7 +2,7 @@
 // Unit tests for Toolbar — CARDINALITIES array + Auto Layout button (TC-AL-T-01 through T-07)
 
 import { describe, expect, it, vi } from 'vitest'
-import { fireEvent, render, screen } from '@testing-library/react'
+import { fireEvent, render, screen, waitFor } from '@testing-library/react'
 import { CARDINALITIES, Toolbar } from './Toolbar'
 
 // ---------------------------------------------------------------------------
@@ -100,6 +100,108 @@ describe('Toolbar Auto Layout button', () => {
   it('TC-AL-T-07: "Auto-arrange new tables" switch is not rendered', () => {
     renderToolbar({ tableCount: 5 })
     expect(screen.queryByText(/auto-arrange new tables/i)).toBeNull()
+  })
+})
+
+// ---------------------------------------------------------------------------
+// authorization-denial-ux-gaps plan, step D.3: Add Table/Add Relationship
+// disabled when viewerRole is below EDITOR.
+// ---------------------------------------------------------------------------
+
+describe('Toolbar write affordances gated by viewerRole', () => {
+  it('Add Table and Add Relationship are enabled when viewerRole is omitted (backward compat)', () => {
+    renderToolbar({})
+    expect(
+      screen.getByRole('button', { name: /add table/i }).hasAttribute('disabled'),
+    ).toBe(false)
+    expect(
+      screen
+        .getByRole('button', { name: /add relationship/i })
+        .hasAttribute('disabled'),
+    ).toBe(false)
+  })
+
+  it('Add Table and Add Relationship are enabled for EDITOR', () => {
+    renderToolbar({ viewerRole: 'EDITOR' })
+    expect(
+      screen.getByRole('button', { name: /add table/i }).hasAttribute('disabled'),
+    ).toBe(false)
+    expect(
+      screen
+        .getByRole('button', { name: /add relationship/i })
+        .hasAttribute('disabled'),
+    ).toBe(false)
+  })
+
+  it('Add Table and Add Relationship are enabled for OWNER', () => {
+    renderToolbar({ viewerRole: 'OWNER' })
+    expect(
+      screen.getByRole('button', { name: /add table/i }).hasAttribute('disabled'),
+    ).toBe(false)
+  })
+
+  it('Add Table and Add Relationship are disabled for VIEWER', () => {
+    renderToolbar({ viewerRole: 'VIEWER' })
+    expect(
+      screen.getByRole('button', { name: /add table/i }).hasAttribute('disabled'),
+    ).toBe(true)
+    expect(
+      screen
+        .getByRole('button', { name: /add relationship/i })
+        .hasAttribute('disabled'),
+    ).toBe(true)
+  })
+
+  it('Add Table and Add Relationship are disabled for null viewerRole (no access)', () => {
+    renderToolbar({ viewerRole: null })
+    expect(
+      screen.getByRole('button', { name: /add table/i }).hasAttribute('disabled'),
+    ).toBe(true)
+  })
+})
+
+// ---------------------------------------------------------------------------
+// authorization-denial-ux-gaps plan, step C.1: the table-create dialog must
+// stay open (not optimistically close) when onCreateTable rejects, so the
+// user doesn't lose their input and the mutation's onError toast is visible
+// against the still-open dialog.
+// ---------------------------------------------------------------------------
+
+describe('Toolbar dialog stays open on create failure', () => {
+  it('Add Table dialog stays open and form is preserved when onCreateTable rejects', async () => {
+    const onCreateTable = vi.fn().mockRejectedValue(new Error('Forbidden'))
+    renderToolbar({ onCreateTable })
+
+    fireEvent.click(screen.getByRole('button', { name: /^add table$/i }))
+    const nameInput = screen.getByLabelText(/table name/i)
+    fireEvent.change(nameInput, { target: { value: 'Users' } })
+    fireEvent.click(screen.getByRole('button', { name: /create table/i }))
+
+    await waitFor(() => expect(onCreateTable).toHaveBeenCalledTimes(1))
+
+    // Dialog is still open — the Create Table button is still present.
+    expect(screen.getByRole('button', { name: /create table/i })).toBeTruthy()
+    // Form input value was not reset.
+    expect(screen.getByLabelText<HTMLInputElement>(/table name/i).value).toBe(
+      'Users',
+    )
+  })
+
+  it('Add Table dialog closes and form resets when onCreateTable resolves', async () => {
+    const onCreateTable = vi.fn().mockResolvedValue(undefined)
+    renderToolbar({ onCreateTable })
+
+    fireEvent.click(screen.getByRole('button', { name: /^add table$/i }))
+    const nameInput = screen.getByLabelText(/table name/i)
+    fireEvent.change(nameInput, { target: { value: 'Users' } })
+    fireEvent.click(screen.getByRole('button', { name: /create table/i }))
+
+    await waitFor(() => expect(onCreateTable).toHaveBeenCalledTimes(1))
+
+    // Dialog closed — Create Table button no longer in the document.
+    await waitFor(() =>
+      expect(screen.queryByRole('button', { name: /create table/i })).toBeNull(),
+    )
   })
 })
 
