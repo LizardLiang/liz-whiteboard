@@ -244,6 +244,29 @@ describe('TableRelationsPanel', () => {
     expect(screen.queryAllByTestId('relations-panel-row')).toHaveLength(0)
   })
 
+  it('defaults to right-side placement', () => {
+    // getBoundingClientRect() always returns an all-zero rect in jsdom (no
+    // real layout engine), so the auto-flip's overflow check can never
+    // observe a real overflow here — it deterministically resolves to
+    // 'right' in this environment. This test only pins the default; the
+    // left-flip branch requires manual/browser verification.
+    const table = makeTable('table-a', 'Users', [
+      { id: 'a-col-1', name: 'id', isPrimaryKey: true },
+    ])
+
+    render(
+      <TableRelationsPanel
+        table={table}
+        relatedEdges={[]}
+        tableNameById={new Map([[table.id, table.name]])}
+      />,
+    )
+
+    expect(screen.getByTestId('table-relations-panel').dataset.side).toBe(
+      'right',
+    )
+  })
+
   it('renders exactly one row for a self-referencing relationship edge', () => {
     // Regression guard for the getDirectlyRelatedTableIds dedup fix: a
     // self-referencing edge (source === target === table.id) must produce

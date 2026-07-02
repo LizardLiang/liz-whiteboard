@@ -1,10 +1,15 @@
 /**
- * TableRelationsPanel — canvas-space "drawer" attached directly below a
- * table node's own column list, shown when the `r` keyboard shortcut or the
- * "Show relations" context-menu item is used on that table. Rendered as an
+ * TableRelationsPanel — canvas-space "drawer" attached to the side of a
+ * table node, shown when the `r` keyboard shortcut or the "Show relations"
+ * context-menu item is used on that table. Rendered as an
  * absolutely-positioned child of TableNode.new.tsx's own DOM element, so it
  * pans and zooms (including content scaling with zoom) exactly like the
  * rest of the table node — no manual position/anchor tracking required.
+ *
+ * Anchors to the right of the node by default, and flips to the left when
+ * it would overflow the right edge of the viewport (measured post-render
+ * via getBoundingClientRect, matching the pattern used for column-row rect
+ * snapshots in TableNode.new.tsx).
  *
  * Lists every directly-related (1-hop) table with a field-to-field
  * connection line (e.g. `Orders.customer_id → Customers.id`) derived from
@@ -12,6 +17,8 @@
  * PK/FK badge lists.
  */
 
+import { useLayoutEffect, useRef, useState } from 'react'
+import type { CSSProperties } from 'react'
 import type { Column, DiagramTable } from '@/data/models'
 import type { RelationshipEdgeType } from '@/lib/react-flow/types'
 
@@ -26,22 +33,48 @@ export function TableRelationsPanel({
   relatedEdges,
   tableNameById,
 }: TableRelationsPanelProps) {
+  const panelRef = useRef<HTMLDivElement>(null)
+  const [side, setSide] = useState<'left' | 'right'>('right')
+
+  // Post-render measurement: getBoundingClientRect gives real screen pixels
+  // (the panel is transformed by React Flow's pan/zoom), so "room on the
+  // right" can only be known after the panel has actually rendered on the
+  // right. useLayoutEffect (not useEffect) resolves this before paint so no
+  // flicker is visible when the side flips.
+  // Note: getBoundingClientRect() always returns an all-zero rect in jsdom
+  // (no real layout engine), so this flip cannot be meaningfully exercised
+  // by Vitest/RTL — it will always resolve `overflowsRight = false` there.
+  // Manual/browser verification is required to confirm the flip.
+  useLayoutEffect(() => {
+    const el = panelRef.current
+    if (!el) return
+    const rect = el.getBoundingClientRect()
+    const overflowsRight = rect.right > window.innerWidth - 8
+    setSide(overflowsRight ? 'left' : 'right')
+  }, [relatedEdges, table.id])
+
+  const sideStyle: CSSProperties =
+    side === 'right'
+      ? { left: '100%', marginLeft: '10px' }
+      : { right: '100%', marginRight: '10px' }
+
   return (
     <div
+      ref={panelRef}
       data-testid="table-relations-panel"
+      data-side={side}
       className="nodrag nowheel"
       style={{
         position: 'absolute',
-        top: '100%',
-        left: 0,
-        marginTop: '-1px',
+        top: 0,
+        ...sideStyle,
         width: 'max-content',
         maxWidth: '360px',
         maxHeight: '50vh',
         overflowY: 'auto',
         background: 'var(--rf-table-bg)',
         border: '1px solid var(--rf-table-border)',
-        borderRadius: '0 0 8px 8px',
+        borderRadius: '8px',
         boxShadow: '0 4px 12px rgba(0, 0, 0, 0.15)',
         padding: '10px 12px',
         fontSize: '12px',
