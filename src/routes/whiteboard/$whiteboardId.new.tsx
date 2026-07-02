@@ -16,8 +16,6 @@ import type { DiagramAST } from '@/lib/parser/ast'
 import type { RelationshipEdge, TableNode } from '@/lib/react-flow/types'
 import { ReactFlowCanvas } from '@/components/whiteboard/ReactFlowCanvas'
 import { Toolbar } from '@/components/whiteboard/Toolbar'
-import { TextEditor } from '@/components/whiteboard/TextEditor'
-import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import {
   Dialog,
   DialogContent,
@@ -597,25 +595,8 @@ function WhiteboardEditor() {
         </div>
       </div>
 
-      {/* Mode Tabs */}
-      <Tabs
-        value={activeTab}
-        onValueChange={(value) => setActiveTab(value as 'visual' | 'text')}
-        className="flex-1 flex flex-col overflow-hidden"
-      >
-        <div className="border-b px-4">
-          <TabsList>
-            <TabsTrigger value="visual">Visual Editor</TabsTrigger>
-            {/* Text Editor tab hidden — tab preserved, trigger disabled */}
-            {/* <TabsTrigger value="text">Text Editor</TabsTrigger> */}
-          </TabsList>
-        </div>
-
-        {/* Visual Editor Tab */}
-        <TabsContent
-          value="visual"
-          className="flex-1 flex flex-col overflow-hidden m-0"
-        >
+      {/* Whiteboard canvas */}
+      <div className="flex-1 flex flex-col overflow-hidden">
           {/* Toolbar */}
           <Toolbar
             whiteboardId={whiteboardId}
@@ -649,18 +630,7 @@ function WhiteboardEditor() {
               showMinimap={false}
             />
           </div>
-        </TabsContent>
-
-        {/* Text Editor Tab */}
-        <TabsContent value="text" className="flex-1 overflow-hidden m-0">
-          <TextEditor
-            value={textSource}
-            onChange={handleTextChange}
-            onParsedDiagram={handleParsedDiagram}
-            placeholder="# Enter diagram syntax here..."
-          />
-        </TabsContent>
-      </Tabs>
+        </div>
 
       {/* Cardinality Picker Dialog — shown when a connection drag completes */}
       <Dialog

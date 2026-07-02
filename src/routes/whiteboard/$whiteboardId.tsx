@@ -20,9 +20,7 @@ import { RelationshipEdge } from '@/components/whiteboard/RelationshipEdge'
 import { ReactFlowWhiteboard } from '@/components/whiteboard/ReactFlowWhiteboard'
 import { WhiteboardAccessDenied } from '@/components/whiteboard/WhiteboardAccessDenied'
 import { Toolbar } from '@/components/whiteboard/Toolbar'
-import { TextEditor } from '@/components/whiteboard/TextEditor'
 import { Minimap } from '@/components/whiteboard/Minimap'
-import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import { useCollaboration } from '@/hooks/use-collaboration'
 import { useZenMode } from '@/hooks/use-zen-mode'
 import { useAuthContext } from '@/components/auth/AuthContext'
@@ -675,27 +673,8 @@ function WhiteboardEditor() {
         </div>
       )}
 
-      {/* Mode Tabs */}
-      <Tabs
-        value={activeTab}
-        onValueChange={(value) => setActiveTab(value as 'visual' | 'text')}
-        className="flex-1 flex flex-col overflow-hidden"
-      >
-        {!isZenMode && (
-          <div className="border-b px-4">
-            <TabsList>
-              <TabsTrigger value="visual">Visual Editor</TabsTrigger>
-              {/* Text Editor tab hidden — tab preserved, trigger disabled */}
-              {/* <TabsTrigger value="text">Text Editor</TabsTrigger> */}
-            </TabsList>
-          </div>
-        )}
-
-        {/* Visual Editor Tab */}
-        <TabsContent
-          value="visual"
-          className="flex-1 flex flex-col overflow-hidden m-0"
-        >
+      {/* Whiteboard canvas */}
+      <div className="flex-1 flex flex-col overflow-hidden">
           {/* Toolbar — rendered by ReactFlowWhiteboardInner when USE_REACT_FLOW is true.
                For the Konva (legacy) path, we render a separate toolbar here. */}
           {!USE_REACT_FLOW && !isZenMode && (
@@ -790,18 +769,7 @@ function WhiteboardEditor() {
               />
             )}
           </div>
-        </TabsContent>
-
-        {/* Text Editor Tab */}
-        <TabsContent value="text" className="flex-1 overflow-hidden m-0">
-          <TextEditor
-            value={textSource}
-            onChange={handleTextChange}
-            onParsedDiagram={handleParsedDiagram}
-            placeholder="# Enter diagram syntax here..."
-          />
-        </TabsContent>
-      </Tabs>
+        </div>
     </div>
   )
 }
