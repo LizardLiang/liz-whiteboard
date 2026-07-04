@@ -94,6 +94,7 @@ import { useTableMutations } from '@/hooks/use-table-mutations'
 import { useRelationshipMutations } from '@/hooks/use-relationship-mutations'
 import { useTableDeletion } from '@/hooks/use-table-deletion'
 import { useTableFocus } from '@/hooks/use-table-focus'
+import { useMinimapFocusShortcut } from '@/hooks/use-minimap-focus-shortcut'
 import { useTableRelationsPreview } from '@/hooks/use-table-relations-preview'
 import {
   buildDiagramTablesFromFlow,
@@ -293,6 +294,10 @@ function ReactFlowWhiteboardInner({
     null,
   )
   const [focusRequestToken, setFocusRequestToken] = useState(0)
+
+  // Minimap focus state — the `m` shortcut enlarges the minimap for an easier
+  // click/drag target. Ephemeral (no persistence, unlike zen mode).
+  const [minimapExpanded, setMinimapExpanded] = useState(false)
 
   // Navigate the canvas to a table (from the search palette). Bump the token
   // first so re-selecting the currently-focused table still re-fires the jump.
@@ -957,6 +962,23 @@ function ReactFlowWhiteboardInner({
   // Keyboard shortcut for DDL export (d key on selected node, default dialect: mssql)
   useTableExportDdl()
 
+  // Keyboard shortcut for the minimap (m to expand/focus, Escape to collapse) —
+  // suppressed while the Focus Overlay or search palette is open, and inert
+  // when the minimap is hidden.
+  useMinimapFocusShortcut({
+    expanded: minimapExpanded,
+    onToggle: () => setMinimapExpanded((v) => !v),
+    onCollapse: () => setMinimapExpanded(false),
+    suppressed: focusedTableId !== null || searchOpen,
+    enabled: showMinimap,
+  })
+
+  // Collapse the enlarged minimap whenever it becomes hidden, so it can't
+  // reappear already-expanded when shown again.
+  useEffect(() => {
+    if (!showMinimap && minimapExpanded) setMinimapExpanded(false)
+  }, [showMinimap, minimapExpanded])
+
   // Column mutation callbacks (outgoing — triggered by user interactions in TableNode)
   const handleColumnCreate = useCallback(
     (tableId: string, data: CreateColumnPayload) => {
@@ -1562,6 +1584,7 @@ function ReactFlowWhiteboardInner({
           nodesDraggable={nodesDraggable}
           panOnDrag={!isColumnDragging}
           showMinimap={showMinimap}
+          minimapExpanded={minimapExpanded}
           showControls={showControls}
           showBackground={true}
           fitViewOptions={{

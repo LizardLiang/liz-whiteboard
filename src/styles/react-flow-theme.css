@@ -292,3 +292,17 @@
 .react-flow__controls-button:last-child {
   border-bottom: none;
 }
+
+/* ----------------------------------------------------------------------------
+ * MiniMap - focus/expanded state (m shortcut)
+ * ---------------------------------------------------------------------------- */
+
+/* Highlighted ring when the minimap is expanded via the `m` shortcut, giving a
+ * clear focus indicator. Uses the theme-aware selected-edge color so it works
+ * in both light and dark mode. */
+.react-flow__minimap.minimap-focused {
+  border-radius: 6px;
+  outline: 2px solid var(--rf-edge-stroke-selected);
+  outline-offset: 2px;
+  box-shadow: 0 0 0 4px rgb(59 130 246 / 0.15);
+}

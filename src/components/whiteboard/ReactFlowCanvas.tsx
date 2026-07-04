@@ -86,6 +86,12 @@ export interface ReactFlowCanvasProps {
   focusRequestTableId?: string | null
   /** Monotonic token that triggers a focus request when it increments. */
   focusRequestToken?: number
+  /**
+   * When true, the minimap renders enlarged with a focus ring — driven by the
+   * `m` shortcut wired in the parent (`ReactFlowWhiteboard`). Sizing is applied
+   * inline; the focus ring comes from the `minimap-focused` CSS class.
+   */
+  minimapExpanded?: boolean
 }
 
 /**
@@ -122,6 +128,7 @@ export function ReactFlowCanvas({
   onPaneClick: onPaneClickProp,
   focusRequestTableId = null,
   focusRequestToken = 0,
+  minimapExpanded = false,
 }: ReactFlowCanvasProps) {
   const [nodes, setNodes, handleNodesChange] =
     useNodesState<TableNodeType>(initialNodes)
@@ -454,6 +461,12 @@ export function ReactFlowCanvas({
             maskColor="rgba(0, 0, 0, 0.1)"
             pannable
             onClick={onMinimapClick}
+            className={minimapExpanded ? 'minimap-focused' : undefined}
+            style={{
+              width: minimapExpanded ? 360 : 200,
+              height: minimapExpanded ? 260 : 150,
+              transition: 'width 150ms ease, height 150ms ease',
+            }}
           />
         )}
       </ReactFlow>

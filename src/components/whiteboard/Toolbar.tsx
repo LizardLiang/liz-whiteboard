@@ -743,6 +743,14 @@ export function Toolbar({
                 <tr>
                   <td className="py-2 pr-4">
                     <kbd className="rounded border px-1.5 py-0.5 font-mono text-xs">
+                      m
+                    </kbd>
+                  </td>
+                  <td className="py-2">Expand/focus the minimap</td>
+                </tr>
+                <tr>
+                  <td className="py-2 pr-4">
+                    <kbd className="rounded border px-1.5 py-0.5 font-mono text-xs">
                       Delete
                     </kbd>
                     {' / '}
