@@ -297,12 +297,40 @@
  * MiniMap - focus/expanded state (m shortcut)
  * ---------------------------------------------------------------------------- */
 
-/* Highlighted ring when the minimap is expanded via the `m` shortcut, giving a
- * clear focus indicator. Uses the theme-aware selected-edge color so it works
- * in both light and dark mode. */
-.react-flow__minimap.minimap-focused {
+/* Focused minimap (m shortcut): relocate from the corner to the center of the
+ * canvas as an overlay, sized proportionally to the viewport (capped so it
+ * never overflows small screens), with a theme-aware focus ring. Scoped under
+ * .react-flow-wrapper so it out-specifies React Flow's own
+ * `.react-flow__panel.bottom.right` positioning (equal-specificity otherwise). */
+.react-flow-wrapper .react-flow__minimap.minimap-focused {
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  right: auto;
+  bottom: auto;
+  transform: translate(-50%, -50%);
+  /* Cancel React Flow's default .react-flow__panel 15px margin so the
+   * translate(-50%,-50%) lands the minimap dead-center, not offset by 15px. */
+  margin: 0;
+  width: min(60vw, 720px);
+  height: min(60vh, 520px);
+  z-index: 6;
   border-radius: 6px;
   outline: 2px solid var(--rf-edge-stroke-selected);
   outline-offset: 2px;
   box-shadow: 0 0 0 4px rgb(59 130 246 / 0.15);
+  /* Corner→center offsets can't tween (auto), so animate the felt bits. */
+  transition:
+    opacity 150ms ease,
+    box-shadow 150ms ease;
+}
+
+/* Dim backdrop behind the centered minimap. Rendered inside the canvas wrapper
+ * so it dims only the canvas region (not the sidebar/toolbar). Sits below the
+ * minimap (z 6) and above nodes/controls. */
+.react-flow-wrapper .minimap-backdrop {
+  position: absolute;
+  inset: 0;
+  z-index: 5;
+  background: rgb(0 0 0 / 0.25);
 }

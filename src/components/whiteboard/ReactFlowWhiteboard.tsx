@@ -1585,6 +1585,7 @@ function ReactFlowWhiteboardInner({
           panOnDrag={!isColumnDragging}
           showMinimap={showMinimap}
           minimapExpanded={minimapExpanded}
+          onMinimapCollapse={() => setMinimapExpanded(false)}
           showControls={showControls}
           showBackground={true}
           fitViewOptions={{

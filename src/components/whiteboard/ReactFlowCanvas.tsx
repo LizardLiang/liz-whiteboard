@@ -87,11 +87,17 @@ export interface ReactFlowCanvasProps {
   /** Monotonic token that triggers a focus request when it increments. */
   focusRequestToken?: number
   /**
-   * When true, the minimap renders enlarged with a focus ring — driven by the
-   * `m` shortcut wired in the parent (`ReactFlowWhiteboard`). Sizing is applied
-   * inline; the focus ring comes from the `minimap-focused` CSS class.
+   * When true, the minimap renders as an enlarged, centered overlay with a
+   * focus ring and a dim backdrop — driven by the `m` shortcut wired in the
+   * parent (`ReactFlowWhiteboard`). Sizing/positioning come from the
+   * `minimap-focused` CSS class.
    */
   minimapExpanded?: boolean
+  /**
+   * Called when the focused minimap should collapse — fired by clicking the dim
+   * backdrop. Keyboard collapse (`m`/`Escape`) is handled by the parent's hook.
+   */
+  onMinimapCollapse?: () => void
 }
 
 /**
@@ -129,6 +135,7 @@ export function ReactFlowCanvas({
   focusRequestTableId = null,
   focusRequestToken = 0,
   minimapExpanded = false,
+  onMinimapCollapse,
 }: ReactFlowCanvasProps) {
   const [nodes, setNodes, handleNodesChange] =
     useNodesState<TableNodeType>(initialNodes)
@@ -453,6 +460,9 @@ export function ReactFlowCanvas({
         {showBackground && (
           <Background color="var(--rf-background-pattern)" gap={16} />
         )}
+        {showMinimap && minimapExpanded && (
+          <div className="minimap-backdrop" onClick={onMinimapCollapse} />
+        )}
         {showMinimap && (
           <MiniMap
             nodeColor={(node) => {
@@ -462,11 +472,6 @@ export function ReactFlowCanvas({
             pannable
             onClick={onMinimapClick}
             className={minimapExpanded ? 'minimap-focused' : undefined}
-            style={{
-              width: minimapExpanded ? 360 : 200,
-              height: minimapExpanded ? 260 : 150,
-              transition: 'width 150ms ease, height 150ms ease',
-            }}
           />
         )}
       </ReactFlow>
