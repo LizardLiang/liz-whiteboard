@@ -3,8 +3,12 @@ set -euo pipefail
 
 # ──────────────────────────────────────────────
 # Deploy script for liz-whiteboard
-# Builds locally, syncs to VPS, runs migrations,
-# and restarts the app via PM2.
+# Builds locally, syncs app code to the VPS, and
+# restarts the app via PM2.
+#
+# The database is NOT managed here — it is already
+# migrated and lives outside this deploy path. This
+# script never creates, syncs, or migrates the DB.
 # ──────────────────────────────────────────────
 
 # Configuration
@@ -41,9 +45,6 @@ fi
 log "Installing dependencies..."
 bun install --frozen-lockfile
 
-log "Generating Prisma client..."
-bun run db:generate
-
 log "Building application..."
 bun run build
 
@@ -55,7 +56,7 @@ log "Build complete."
 
 # ── Step 2: Sync files to VPS ─────────────────
 log "Ensuring remote directory exists..."
-ssh "$SSH_HOST" "mkdir -p $DEPLOY_PATH/{logs,data}"
+ssh "$SSH_HOST" "mkdir -p $DEPLOY_PATH/logs"
 
 log "Syncing files to $SSH_HOST:$DEPLOY_PATH..."
 rsync -azP --delete \
@@ -78,10 +79,6 @@ rsync -azP --delete \
   --exclude='*.spec.*' \
   src/ \
   "$SSH_HOST:$DEPLOY_PATH/src/"
-
-# Note: the SQLite database lives in data/app.db on the server and is created
-# automatically on first run (src/db.ts). It is intentionally NOT synced so
-# deploys never overwrite production data.
 
 log "Files synced."
 
