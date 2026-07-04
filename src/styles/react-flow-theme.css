@@ -325,6 +325,15 @@
     box-shadow 150ms ease;
 }
 
+/* React Flow renders the map as an inner <svg> with fixed width/height attrs
+ * (the MiniMap `width`/`height` props, default 200×150). Enlarging only the
+ * outer panel leaves that svg tiny in the corner — so force it to fill the
+ * focused panel; its viewBox then scales the whole map up to the big size. */
+.react-flow-wrapper .react-flow__minimap.minimap-focused .react-flow__minimap-svg {
+  width: 100%;
+  height: 100%;
+}
+
 /* Dim backdrop behind the centered minimap. Rendered inside the canvas wrapper
  * so it dims only the canvas region (not the sidebar/toolbar). Sits below the
  * minimap (z 6) and above nodes/controls. */
