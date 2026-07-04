@@ -284,7 +284,13 @@ export const RelationshipEdge = memo(
     data,
     selected,
   }: EdgeProps<RelationshipEdgeData>) => {
-    const { cardinality, label, isHighlighted, bundleHandleYOffset, bundleCenterXOffset } = data || {}
+    const {
+      cardinality,
+      label,
+      isHighlighted,
+      bundleHandleYOffset,
+      bundleCenterXOffset,
+    } = data || {}
     const isActive = selected || isHighlighted
 
     // Bundle offsets — 0 when edge is not in a multi-edge bundle

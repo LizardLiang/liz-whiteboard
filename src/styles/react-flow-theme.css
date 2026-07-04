@@ -329,7 +329,9 @@
  * (the MiniMap `width`/`height` props, default 200×150). Enlarging only the
  * outer panel leaves that svg tiny in the corner — so force it to fill the
  * focused panel; its viewBox then scales the whole map up to the big size. */
-.react-flow-wrapper .react-flow__minimap.minimap-focused .react-flow__minimap-svg {
+.react-flow-wrapper
+  .react-flow__minimap.minimap-focused
+  .react-flow__minimap-svg {
   width: 100%;
   height: 100%;
 }

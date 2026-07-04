@@ -91,9 +91,9 @@ describe('requireServerFnRole — per-tier denial (SEC-RBAC-05)', () => {
   // null projectId — rejects with ForbiddenError (SEC-ERR-03 anti-enumeration);
   // findEffectiveRole must not be called
   it('null projectId → rejects with ForbiddenError, findEffectiveRole not called', async () => {
-    await expect(
-      requireServerFnRole(USER_ID, null, 'VIEWER'),
-    ).rejects.toThrow(ForbiddenError)
+    await expect(requireServerFnRole(USER_ID, null, 'VIEWER')).rejects.toThrow(
+      ForbiddenError,
+    )
     expect(mockFindEffectiveRole).not.toHaveBeenCalled()
   })
 })

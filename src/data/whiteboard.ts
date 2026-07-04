@@ -173,7 +173,8 @@ export async function updateWhiteboard(
   try {
     const values: Record<string, unknown> = { updatedAt: nowMs() }
     if (validated.name !== undefined) values.name = validated.name
-    if (validated.projectId !== undefined) values.projectId = validated.projectId
+    if (validated.projectId !== undefined)
+      values.projectId = validated.projectId
     if (validated.folderId !== undefined) values.folderId = validated.folderId
     if (validated.canvasState !== undefined)
       values.canvasState = toDbJson(validated.canvasState)

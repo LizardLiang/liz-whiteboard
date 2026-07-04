@@ -39,10 +39,7 @@ import {
   entitiesToText,
   parseDiagram,
 } from '@/lib/parser/diagram-parser'
-import {
-  classifyQueryFailure,
-  isThrownForbiddenError,
-} from '@/lib/auth/errors'
+import { classifyQueryFailure, isThrownForbiddenError } from '@/lib/auth/errors'
 import { hasMinimumRole } from '@/lib/auth/permissions'
 
 /**
@@ -141,11 +138,7 @@ function WhiteboardEditor() {
 
       const target = event.target as HTMLElement | null
       const tag = target?.tagName
-      if (
-        tag === 'INPUT' ||
-        tag === 'TEXTAREA' ||
-        target?.isContentEditable
-      ) {
+      if (tag === 'INPUT' || tag === 'TEXTAREA' || target?.isContentEditable) {
         return
       }
 
@@ -547,7 +540,9 @@ function WhiteboardEditor() {
         queryKey: ['whiteboard-page', whiteboardId],
       })
       queryClient.invalidateQueries({ queryKey: ['whiteboard', whiteboardId] })
-      queryClient.invalidateQueries({ queryKey: ['relationships', whiteboardId] })
+      queryClient.invalidateQueries({
+        queryKey: ['relationships', whiteboardId],
+      })
     }
 
     const handleTextUpdated = (data: {
@@ -614,7 +609,10 @@ function WhiteboardEditor() {
         <p className="text-sm text-muted-foreground">
           Something went wrong loading this whiteboard. Please try again.
         </p>
-        <Link to="/" className="text-sm text-primary underline underline-offset-4">
+        <Link
+          to="/"
+          className="text-sm text-primary underline underline-offset-4"
+        >
           Back to dashboard
         </Link>
       </div>
@@ -640,7 +638,10 @@ function WhiteboardEditor() {
         <p className="text-sm text-muted-foreground">
           This whiteboard does not exist or you don't have access to it.
         </p>
-        <Link to="/" className="text-sm text-primary underline underline-offset-4">
+        <Link
+          to="/"
+          className="text-sm text-primary underline underline-offset-4"
+        >
           Back to dashboard
         </Link>
       </div>
@@ -675,101 +676,101 @@ function WhiteboardEditor() {
 
       {/* Whiteboard canvas */}
       <div className="flex-1 flex flex-col overflow-hidden">
-          {/* Toolbar — rendered by ReactFlowWhiteboardInner when USE_REACT_FLOW is true.
+        {/* Toolbar — rendered by ReactFlowWhiteboardInner when USE_REACT_FLOW is true.
                For the Konva (legacy) path, we render a separate toolbar here. */}
-          {!USE_REACT_FLOW && !isZenMode && (
-            <Toolbar
+        {!USE_REACT_FLOW && !isZenMode && (
+          <Toolbar
+            whiteboardId={whiteboardId}
+            tables={whiteboard.tables}
+            tableCount={whiteboard.tables.length}
+            onCreateTable={handleCreateTable}
+            onCreateRelationship={handleCreateRelationship}
+            zoomControls={canvasControls}
+            currentZoom={canvasViewport.zoom}
+            viewerRole={viewerRole}
+          />
+        )}
+
+        {/* Canvas - Toggle between Konva and React Flow */}
+        <div className="flex-1 overflow-hidden relative">
+          {USE_REACT_FLOW ? (
+            /* React Flow Canvas (new) — includes its own Toolbar */
+            <ReactFlowWhiteboard
               whiteboardId={whiteboardId}
-              tables={whiteboard.tables}
-              tableCount={whiteboard.tables.length}
+              userId={userId}
+              showMinimap={whiteboard.tables.length > 0}
+              showControls={true}
+              nodesDraggable={canEdit}
+              viewerRole={viewerRole}
               onCreateTable={handleCreateTable}
               onCreateRelationship={handleCreateRelationship}
-              zoomControls={canvasControls}
-              currentZoom={canvasViewport.zoom}
-              viewerRole={viewerRole}
+              onDisplayModeReady={handleDisplayModeReady}
+              onZoomControlsReady={handleZoomControlsReady}
+              onZoomChange={handleZoomChange}
             />
+          ) : (
+            /* Konva Canvas (legacy) */
+            <Canvas
+              width={window.innerWidth}
+              height={window.innerHeight - 160} // Subtract header, tabs, and toolbar height
+              initialViewport={canvasViewport}
+              onViewportChange={handleCanvasViewportChange}
+              stageRef={stageRef}
+            >
+              {/* Render all tables */}
+              {whiteboard.tables.map((table) => (
+                <TableNode
+                  key={table.id}
+                  table={table}
+                  isSelected={selectedTableId === table.id}
+                  onClick={setSelectedTableId}
+                  onDragEnd={handleTableDragEnd}
+                />
+              ))}
+
+              {/* Render all relationships */}
+              {relationships.map((relationship) => {
+                const sourceTable = whiteboard.tables.find(
+                  (t) => t.id === relationship.sourceTableId,
+                )
+                const targetTable = whiteboard.tables.find(
+                  (t) => t.id === relationship.targetTableId,
+                )
+
+                if (!sourceTable || !targetTable) {
+                  console.warn(
+                    'Missing table for relationship:',
+                    relationship.id,
+                  )
+                  return null
+                }
+
+                return (
+                  <RelationshipEdge
+                    key={relationship.id}
+                    relationship={relationship}
+                    sourceTable={sourceTable}
+                    targetTable={targetTable}
+                    isSelected={selectedRelationshipId === relationship.id}
+                    onClick={setSelectedRelationshipId}
+                  />
+                )
+              })}
+            </Canvas>
           )}
 
-          {/* Canvas - Toggle between Konva and React Flow */}
-          <div className="flex-1 overflow-hidden relative">
-            {USE_REACT_FLOW ? (
-              /* React Flow Canvas (new) — includes its own Toolbar */
-              <ReactFlowWhiteboard
-                whiteboardId={whiteboardId}
-                userId={userId}
-                showMinimap={whiteboard.tables.length > 0}
-                showControls={true}
-                nodesDraggable={canEdit}
-                viewerRole={viewerRole}
-                onCreateTable={handleCreateTable}
-                onCreateRelationship={handleCreateRelationship}
-                onDisplayModeReady={handleDisplayModeReady}
-                onZoomControlsReady={handleZoomControlsReady}
-                onZoomChange={handleZoomChange}
-              />
-            ) : (
-              /* Konva Canvas (legacy) */
-              <Canvas
-                width={window.innerWidth}
-                height={window.innerHeight - 160} // Subtract header, tabs, and toolbar height
-                initialViewport={canvasViewport}
-                onViewportChange={handleCanvasViewportChange}
-                stageRef={stageRef}
-              >
-                {/* Render all tables */}
-                {whiteboard.tables.map((table) => (
-                  <TableNode
-                    key={table.id}
-                    table={table}
-                    isSelected={selectedTableId === table.id}
-                    onClick={setSelectedTableId}
-                    onDragEnd={handleTableDragEnd}
-                  />
-                ))}
-
-                {/* Render all relationships */}
-                {relationships.map((relationship) => {
-                  const sourceTable = whiteboard.tables.find(
-                    (t) => t.id === relationship.sourceTableId,
-                  )
-                  const targetTable = whiteboard.tables.find(
-                    (t) => t.id === relationship.targetTableId,
-                  )
-
-                  if (!sourceTable || !targetTable) {
-                    console.warn(
-                      'Missing table for relationship:',
-                      relationship.id,
-                    )
-                    return null
-                  }
-
-                  return (
-                    <RelationshipEdge
-                      key={relationship.id}
-                      relationship={relationship}
-                      sourceTable={sourceTable}
-                      targetTable={targetTable}
-                      isSelected={selectedRelationshipId === relationship.id}
-                      onClick={setSelectedRelationshipId}
-                    />
-                  )
-                })}
-              </Canvas>
-            )}
-
-            {/* Minimap - only show when there are tables and using Konva */}
-            {!USE_REACT_FLOW && whiteboard.tables.length > 0 && (
-              <Minimap
-                tables={whiteboard.tables}
-                viewport={canvasViewport}
-                canvasWidth={window.innerWidth}
-                canvasHeight={window.innerHeight - 160}
-                onNavigate={handleMinimapNavigate}
-              />
-            )}
-          </div>
+          {/* Minimap - only show when there are tables and using Konva */}
+          {!USE_REACT_FLOW && whiteboard.tables.length > 0 && (
+            <Minimap
+              tables={whiteboard.tables}
+              viewport={canvasViewport}
+              canvasWidth={window.innerWidth}
+              canvasHeight={window.innerHeight - 160}
+              onNavigate={handleMinimapNavigate}
+            />
+          )}
         </div>
+      </div>
     </div>
   )
 }

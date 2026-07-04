@@ -118,7 +118,8 @@ export function TableRelationsPanel({
             }
 
             const relatedTableName = tableNameById.get(relatedTableId)
-            const relationshipText = edge.data?.label || edge.data?.cardinality || ''
+            const relationshipText =
+              edge.data?.label || edge.data?.cardinality || ''
 
             return (
               <div

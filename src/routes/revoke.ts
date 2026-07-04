@@ -23,7 +23,10 @@ export const Route = createFileRoute('/revoke')({
           body = new URLSearchParams(text)
         } catch {
           return new Response(
-            JSON.stringify({ error: 'invalid_request', error_description: 'Could not parse request body' }),
+            JSON.stringify({
+              error: 'invalid_request',
+              error_description: 'Could not parse request body',
+            }),
             { status: 400, headers: { 'Content-Type': 'application/json' } },
           )
         }
@@ -33,18 +36,26 @@ export const Route = createFileRoute('/revoke')({
 
         if (!token) {
           return new Response(
-            JSON.stringify({ error: 'invalid_request', error_description: 'token is required' }),
+            JSON.stringify({
+              error: 'invalid_request',
+              error_description: 'token is required',
+            }),
             { status: 400, headers: { 'Content-Type': 'application/json' } },
           )
         }
 
         // Validate client_id is in the allowlist.
-        const { getOAuthConfig, findClient } = await import('@/lib/oauth/config')
+        const { getOAuthConfig, findClient } = await import(
+          '@/lib/oauth/config'
+        )
         const config = getOAuthConfig()
 
         if (!clientId || !findClient(clientId, config)) {
           return new Response(
-            JSON.stringify({ error: 'invalid_client', error_description: 'Unknown client_id' }),
+            JSON.stringify({
+              error: 'invalid_client',
+              error_description: 'Unknown client_id',
+            }),
             { status: 401, headers: { 'Content-Type': 'application/json' } },
           )
         }
@@ -55,7 +66,9 @@ export const Route = createFileRoute('/revoke')({
         const revoked = revokeRefreshToken(token, clientId)
 
         if (revoked) {
-          console.log(`[oauth/revoke] Revoked token family for client=${clientId}`)
+          console.log(
+            `[oauth/revoke] Revoked token family for client=${clientId}`,
+          )
         }
 
         // RFC 7009 §2.2: always 200, empty JSON body.

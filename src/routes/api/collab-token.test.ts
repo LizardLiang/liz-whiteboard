@@ -7,12 +7,20 @@
 // and test it against the real key-generation and signing path.
 // Database interactions use an in-memory SQLite via resetDb / makeUser helpers.
 
-import { afterEach, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest'
+import {
+  afterEach,
+  beforeAll,
+  beforeEach,
+  describe,
+  expect,
+  it,
+  vi,
+} from 'vitest'
 import { jwtVerify } from 'jose'
+import { _resetIpRateLimitForTests, checkIpRateLimit } from './collab-token'
 import { getOAuthConfig } from '@/lib/oauth/config'
-import { getSigningKeyPair, _resetKeyPairForTests } from '@/lib/oauth/keys'
+import { _resetKeyPairForTests, getSigningKeyPair } from '@/lib/oauth/keys'
 import { makeUser, resetDb } from '@/test/db-helpers'
-import { checkIpRateLimit, _resetIpRateLimitForTests } from './collab-token'
 
 // Stub process.env for the endpoint's config reads.
 const TEST_CLIENT_ID = 'mcp-server'
@@ -52,23 +60,29 @@ async function handleCollabToken(body: unknown): Promise<Response> {
 
   const config = getOAuthConfig()
 
-  if (!config.mcpClientSecret) return err('server_error', 'MCP_CLIENT_SECRET is not configured', 500)
-  if (client_id !== config.mcpClientId) return err('invalid_client', 'Unknown client_id', 401)
+  if (!config.mcpClientSecret)
+    return err('server_error', 'MCP_CLIENT_SECRET is not configured', 500)
+  if (client_id !== config.mcpClientId)
+    return err('invalid_client', 'Unknown client_id', 401)
 
   // ── Constant-time secret comparison (HMAC-SHA256) ─────────────────────────
   const { timingSafeEqual, createHmac } = await import('node:crypto')
   const hmacKey = config.mcpClientSecret
-  const expectedDigest = createHmac('sha256', hmacKey).update(config.mcpClientSecret).digest()
-  const providedDigest = createHmac('sha256', hmacKey).update(client_secret).digest()
+  const expectedDigest = createHmac('sha256', hmacKey)
+    .update(config.mcpClientSecret)
+    .digest()
+  const providedDigest = createHmac('sha256', hmacKey)
+    .update(client_secret)
+    .digest()
   if (!timingSafeEqual(expectedDigest, providedDigest)) {
     return err('invalid_client', 'Invalid client_secret', 401)
   }
 
   // User lookup
   const { db } = await import('@/db')
-  const userRow = db.prepare('SELECT id FROM "User" WHERE id = ?').get(user_id) as
-    | { id: string }
-    | undefined
+  const userRow = db
+    .prepare('SELECT id FROM "User" WHERE id = ?')
+    .get(user_id) as { id: string } | undefined
   if (!userRow) return err('invalid_request', 'user_id not found', 404)
 
   // Issue JWT
@@ -87,13 +101,20 @@ async function handleCollabToken(body: unknown): Promise<Response> {
     .sign(privateKey)
 
   return new Response(
-    JSON.stringify({ token, token_type: 'Bearer', expires_in: config.collabTokenTtl }),
+    JSON.stringify({
+      token,
+      token_type: 'Bearer',
+      expires_in: config.collabTokenTtl,
+    }),
     { status: 200, headers: { 'Content-Type': 'application/json' } },
   )
 }
 
 function err(error: string, description?: string, status = 400): Response {
-  return new Response(JSON.stringify({ error, error_description: description }), { status })
+  return new Response(
+    JSON.stringify({ error, error_description: description }),
+    { status },
+  )
 }
 
 // ─────────────────────────────────────────────────────────────────────────────

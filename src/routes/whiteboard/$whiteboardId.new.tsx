@@ -139,7 +139,11 @@ function WhiteboardEditor() {
   const { autoLayoutEnabled, setAutoLayoutEnabled } = useAutoLayoutPreference()
 
   // Fetch whiteboard data with TanStack Query
-  const { data: whiteboardData, isLoading, isError } = useQuery({
+  const {
+    data: whiteboardData,
+    isLoading,
+    isError,
+  } = useQuery({
     queryKey: ['whiteboard', whiteboardId],
     queryFn: async () => {
       const whiteboard = await getWhiteboardWithDiagram({ data: whiteboardId })
@@ -475,7 +479,9 @@ function WhiteboardEditor() {
     const handleRelationshipCreated = (relationship: any) => {
       console.log('Relationship created by another user:', relationship)
       queryClient.invalidateQueries({ queryKey: ['whiteboard', whiteboardId] })
-      queryClient.invalidateQueries({ queryKey: ['relationships', whiteboardId] })
+      queryClient.invalidateQueries({
+        queryKey: ['relationships', whiteboardId],
+      })
     }
 
     const handleTextUpdated = (data: {
@@ -540,7 +546,10 @@ function WhiteboardEditor() {
         <p className="text-sm text-muted-foreground">
           You don't have access to this whiteboard.
         </p>
-        <Link to="/" className="text-sm text-primary underline underline-offset-4">
+        <Link
+          to="/"
+          className="text-sm text-primary underline underline-offset-4"
+        >
           Back to dashboard
         </Link>
       </div>
@@ -564,7 +573,10 @@ function WhiteboardEditor() {
         <p className="text-sm text-muted-foreground">
           This whiteboard does not exist or you don't have access to it.
         </p>
-        <Link to="/" className="text-sm text-primary underline underline-offset-4">
+        <Link
+          to="/"
+          className="text-sm text-primary underline underline-offset-4"
+        >
           Back to dashboard
         </Link>
       </div>
@@ -597,40 +609,40 @@ function WhiteboardEditor() {
 
       {/* Whiteboard canvas */}
       <div className="flex-1 flex flex-col overflow-hidden">
-          {/* Toolbar */}
-          <Toolbar
-            whiteboardId={whiteboardId}
-            tables={whiteboard.tables}
-            onCreateTable={handleCreateTable}
-            onCreateRelationship={handleCreateRelationship}
-            onAutoLayout={handleAutoLayout}
-            isAutoLayoutLoading={isAutoLayoutComputing}
-            autoLayoutEnabled={autoLayoutEnabled}
-            onAutoLayoutEnabledChange={setAutoLayoutEnabled}
-            zoomControls={{
-              zoomIn: () => {},
-              zoomOut: () => {},
-              zoomReset: () => {},
-              fitToScreen: () => {},
-            }}
-            currentZoom={currentZoom}
-          />
+        {/* Toolbar */}
+        <Toolbar
+          whiteboardId={whiteboardId}
+          tables={whiteboard.tables}
+          onCreateTable={handleCreateTable}
+          onCreateRelationship={handleCreateRelationship}
+          onAutoLayout={handleAutoLayout}
+          isAutoLayoutLoading={isAutoLayoutComputing}
+          autoLayoutEnabled={autoLayoutEnabled}
+          onAutoLayoutEnabledChange={setAutoLayoutEnabled}
+          zoomControls={{
+            zoomIn: () => {},
+            zoomOut: () => {},
+            zoomReset: () => {},
+            fitToScreen: () => {},
+          }}
+          currentZoom={currentZoom}
+        />
 
-          {/* React Flow Canvas */}
-          <div className="flex-1 overflow-hidden">
-            <ReactFlowCanvas
-              initialNodes={nodes}
-              initialEdges={edges}
-              onNodesChange={onNodesChange}
-              onEdgesChange={onEdgesChange}
-              onConnect={onConnect}
-              nodesDraggable={true}
-              showControls={true}
-              showBackground={true}
-              showMinimap={false}
-            />
-          </div>
+        {/* React Flow Canvas */}
+        <div className="flex-1 overflow-hidden">
+          <ReactFlowCanvas
+            initialNodes={nodes}
+            initialEdges={edges}
+            onNodesChange={onNodesChange}
+            onEdgesChange={onEdgesChange}
+            onConnect={onConnect}
+            nodesDraggable={true}
+            showControls={true}
+            showBackground={true}
+            showMinimap={false}
+          />
         </div>
+      </div>
 
       {/* Cardinality Picker Dialog — shown when a connection drag completes */}
       <Dialog

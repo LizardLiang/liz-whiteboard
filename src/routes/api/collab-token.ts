@@ -65,7 +65,8 @@ export const Route = createFileRoute('/api/collab-token')({
           return new Response(
             JSON.stringify({
               error: 'too_many_requests',
-              error_description: 'Rate limit exceeded. Try again in 60 seconds.',
+              error_description:
+                'Rate limit exceeded. Try again in 60 seconds.',
             }),
             {
               status: 429,
@@ -82,11 +83,19 @@ export const Route = createFileRoute('/api/collab-token')({
         try {
           const contentType = request.headers.get('content-type') ?? ''
           if (!contentType.includes('application/json')) {
-            return collabTokenError('invalid_request', 'Content-Type must be application/json', 400)
+            return collabTokenError(
+              'invalid_request',
+              'Content-Type must be application/json',
+              400,
+            )
           }
           rawBody = await request.json()
         } catch {
-          return collabTokenError('invalid_request', 'Could not parse request body', 400)
+          return collabTokenError(
+            'invalid_request',
+            'Could not parse request body',
+            400,
+          )
         }
 
         // ── Type validation ────────────────────────────────────────────────────
@@ -94,10 +103,16 @@ export const Route = createFileRoute('/api/collab-token')({
         // enforces a predictable contract before any secret comparison.
         const body = rawBody as Record<string, unknown>
         if (typeof body.client_id !== 'string') {
-          return collabTokenError('invalid_request', 'client_id must be a string')
+          return collabTokenError(
+            'invalid_request',
+            'client_id must be a string',
+          )
         }
         if (typeof body.client_secret !== 'string') {
-          return collabTokenError('invalid_request', 'client_secret must be a string')
+          return collabTokenError(
+            'invalid_request',
+            'client_secret must be a string',
+          )
         }
         if (typeof body.user_id !== 'string') {
           return collabTokenError('invalid_request', 'user_id must be a string')
@@ -107,9 +122,15 @@ export const Route = createFileRoute('/api/collab-token')({
         const client_secret: string = body.client_secret
         const user_id: string = body.user_id
 
-        if (!client_id) return collabTokenError('invalid_request', 'client_id is required')
-        if (!client_secret) return collabTokenError('invalid_request', 'client_secret is required')
-        if (!user_id) return collabTokenError('invalid_request', 'user_id is required')
+        if (!client_id)
+          return collabTokenError('invalid_request', 'client_id is required')
+        if (!client_secret)
+          return collabTokenError(
+            'invalid_request',
+            'client_secret is required',
+          )
+        if (!user_id)
+          return collabTokenError('invalid_request', 'user_id is required')
 
         // Load config and validate client credentials
         const { getOAuthConfig } = await import('@/lib/oauth/config')
@@ -117,7 +138,11 @@ export const Route = createFileRoute('/api/collab-token')({
 
         // Reject empty secrets even in dev (forces explicit config for this endpoint)
         if (!config.mcpClientSecret) {
-          return collabTokenError('server_error', 'MCP_CLIENT_SECRET is not configured', 500)
+          return collabTokenError(
+            'server_error',
+            'MCP_CLIENT_SECRET is not configured',
+            500,
+          )
         }
 
         if (client_id !== config.mcpClientId) {
@@ -138,7 +163,11 @@ export const Route = createFileRoute('/api/collab-token')({
           .update(client_secret)
           .digest()
         if (!timingSafeEqual(expectedDigest, providedDigest)) {
-          return collabTokenError('invalid_client', 'Invalid client_secret', 401)
+          return collabTokenError(
+            'invalid_client',
+            'Invalid client_secret',
+            401,
+          )
         }
 
         // Verify the user_id exists in the database (prevents forgery of unknown users)
@@ -200,7 +229,10 @@ function collabTokenError(
   status = 400,
 ): Response {
   return new Response(
-    JSON.stringify({ error, ...(description ? { error_description: description } : {}) }),
+    JSON.stringify({
+      error,
+      ...(description ? { error_description: description } : {}),
+    }),
     {
       status,
       headers: {

@@ -35,13 +35,13 @@ const isBun = typeof (globalThis as { Bun?: unknown }).Bun !== 'undefined'
 
 /** Minimal shared surface of bun:sqlite / node:sqlite we rely on. */
 interface SqliteStatement {
-  get(...params: Array<unknown>): Record<string, unknown> | undefined
-  all(...params: Array<unknown>): Array<Record<string, unknown>>
-  run(...params: Array<unknown>): unknown
+  get: (...params: Array<unknown>) => Record<string, unknown> | undefined
+  all: (...params: Array<unknown>) => Array<Record<string, unknown>>
+  run: (...params: Array<unknown>) => unknown
 }
 interface SqliteDatabase {
-  prepare(sql: string): SqliteStatement
-  exec(sql: string): void
+  prepare: (sql: string) => SqliteStatement
+  exec: (sql: string) => void
 }
 
 function openDatabase(): SqliteDatabase {
@@ -86,7 +86,7 @@ db.exec('PRAGMA journal_mode = WAL;')
 {
   const colInfo = db
     .prepare(`PRAGMA table_info("DiagramTable")`)
-    .all() as Array<Record<string, unknown>>
+    .all()
   const posXCol = colInfo.find((c) => c['name'] === 'positionX')
   if (posXCol && posXCol['notnull'] === 1) {
     // Columns are still NOT NULL — run the rebuild migration.
@@ -119,9 +119,7 @@ db.exec('PRAGMA journal_mode = WAL;')
         `INSERT INTO "DiagramTable_v2" ("id", "whiteboardId", "name", "description", "positionX", "positionY", "width", "height", "createdAt", "updatedAt") SELECT "id", "whiteboardId", "name", "description", "positionX", "positionY", "width", "height", "createdAt", "updatedAt" FROM "DiagramTable"`,
       )
       db.exec(`DROP TABLE "DiagramTable"`)
-      db.exec(
-        `ALTER TABLE "DiagramTable_v2" RENAME TO "DiagramTable"`,
-      )
+      db.exec(`ALTER TABLE "DiagramTable_v2" RENAME TO "DiagramTable"`)
       // Re-create indexes that reference DiagramTable.
       db.exec(
         `CREATE INDEX IF NOT EXISTS "DiagramTable_whiteboardId_idx" ON "DiagramTable"("whiteboardId")`,

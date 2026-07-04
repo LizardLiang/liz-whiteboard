@@ -36,7 +36,7 @@ export const Route = createFileRoute('/authorize')({
         const resource = params.get('resource') ?? ''
 
         // --- Validate required params ---
-        const errors: string[] = []
+        const errors: Array<string> = []
         if (responseType !== 'code') errors.push('response_type must be "code"')
         if (!clientId) errors.push('client_id is required')
         if (!redirectUri) errors.push('redirect_uri is required')
@@ -60,7 +60,10 @@ export const Route = createFileRoute('/authorize')({
         const client = findClient(clientId, config)
         if (!client) {
           return new Response(
-            JSON.stringify({ error: 'unauthorized_client', description: 'Unknown client_id' }),
+            JSON.stringify({
+              error: 'unauthorized_client',
+              description: 'Unknown client_id',
+            }),
             { status: 400, headers: { 'Content-Type': 'application/json' } },
           )
         }
@@ -68,7 +71,10 @@ export const Route = createFileRoute('/authorize')({
         // Exact redirect_uri match (RFC 6749 §4.1.2.1)
         if (!client.redirectUris.includes(redirectUri)) {
           return new Response(
-            JSON.stringify({ error: 'invalid_request', description: 'redirect_uri mismatch' }),
+            JSON.stringify({
+              error: 'invalid_request',
+              description: 'redirect_uri mismatch',
+            }),
             { status: 400, headers: { 'Content-Type': 'application/json' } },
           )
         }
@@ -86,10 +92,14 @@ export const Route = createFileRoute('/authorize')({
         // Return invalid_scope only when the client requests specific scopes but
         // NONE of them are supported (e.g. scope=openid with no whiteboard at all).
         const requestedScopes = scope.split(' ').filter(Boolean)
-        const grantedScopes = requestedScopes.filter(
-          (s) => config.scopes.includes(s),
+        const grantedScopes = requestedScopes.filter((s) =>
+          config.scopes.includes(s),
         )
-        if (!client.firstParty && requestedScopes.length > 0 && grantedScopes.length === 0) {
+        if (
+          !client.firstParty &&
+          requestedScopes.length > 0 &&
+          grantedScopes.length === 0
+        ) {
           // Third-party client requested scopes but none are supported by this AS.
           const redirectError = new URL(redirectUri)
           redirectError.searchParams.set('error', 'invalid_scope')
@@ -102,7 +112,9 @@ export const Route = createFileRoute('/authorize')({
         // Third-party clients get the intersection, falling back to full scope if empty.
         const effectiveScope = client.firstParty
           ? config.scopes.join(' ')
-          : (grantedScopes.length > 0 ? grantedScopes.join(' ') : config.scopes.join(' '))
+          : grantedScopes.length > 0
+            ? grantedScopes.join(' ')
+            : config.scopes.join(' ')
 
         // Validate resource (RFC 8707) — optional for first increment; warn if absent
         const effectiveResource = resource || config.mcpResourceUri

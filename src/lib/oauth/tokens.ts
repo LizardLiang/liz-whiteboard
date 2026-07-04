@@ -16,11 +16,11 @@
 //     rotated=1  → already rotated (stale)
 //   Replaying a stale token signals theft → entire grant family is revoked.
 
-import { SignJWT } from 'jose'
 import { createHash, randomBytes, randomUUID } from 'node:crypto'
+import { SignJWT } from 'jose'
 import { getSigningKeyPair } from './keys'
-import { db, nowMs, transaction } from '@/db'
 import type { OAuthConfig } from './config'
+import { db, nowMs, transaction } from '@/db'
 
 export interface AccessTokenResult {
   accessToken: string
@@ -94,11 +94,22 @@ export async function issueTokens(
   const expiresAt = nowMs() + config.refreshTokenTtl * 1000
   const createdAt = nowMs()
 
-  db.prepare(`
+  db.prepare(
+    `
     INSERT INTO "OauthRefreshToken"
       (tokenHash, familyId, userId, clientId, scope, resource, rotated, expiresAt, createdAt)
     VALUES (?, ?, ?, ?, ?, ?, 0, ?, ?)
-  `).run(tokenHash, effectiveFamilyId, params.userId, params.clientId, params.scope, params.resource, expiresAt, createdAt)
+  `,
+  ).run(
+    tokenHash,
+    effectiveFamilyId,
+    params.userId,
+    params.clientId,
+    params.scope,
+    params.resource,
+    expiresAt,
+    createdAt,
+  )
 
   // Opportunistic sweep of expired rows (runs at write time, no background timer).
   db.prepare(`DELETE FROM "OauthRefreshToken" WHERE expiresAt < ?`).run(nowMs())
@@ -131,11 +142,15 @@ export async function rotateRefreshToken(
 ): Promise<AccessTokenResult | null> {
   const tokenHash = hashToken(refreshToken)
 
-  const row = db.prepare(`
+  const row = db
+    .prepare(
+      `
     SELECT tokenHash, familyId, userId, clientId, scope, resource, rotated, expiresAt
     FROM "OauthRefreshToken"
     WHERE tokenHash = ?
-  `).get(tokenHash) as RefreshTokenRow | undefined
+  `,
+    )
+    .get(tokenHash) as RefreshTokenRow | undefined
 
   if (!row) {
     // Token unknown — truly invalid (never issued or already swept after expiry).
@@ -149,13 +164,17 @@ export async function rotateRefreshToken(
     console.warn(
       `[oauth] REUSE DETECTED family=${row.familyId} userId=${row.userId} clientId=${clientId}`,
     )
-    db.prepare(`DELETE FROM "OauthRefreshToken" WHERE familyId = ?`).run(row.familyId)
+    db.prepare(`DELETE FROM "OauthRefreshToken" WHERE familyId = ?`).run(
+      row.familyId,
+    )
     return null
   }
 
   if (row.expiresAt < nowMs()) {
     // Expired active token — clean it up.
-    db.prepare(`DELETE FROM "OauthRefreshToken" WHERE tokenHash = ?`).run(tokenHash)
+    db.prepare(`DELETE FROM "OauthRefreshToken" WHERE tokenHash = ?`).run(
+      tokenHash,
+    )
     return null
   }
 
@@ -173,14 +192,29 @@ export async function rotateRefreshToken(
   // Atomically mark old token as rotated AND insert new token.
   // JWT signing happens after the transaction (it's async; the DB ops are sync).
   transaction(() => {
-    db.prepare(`UPDATE "OauthRefreshToken" SET rotated = 1 WHERE tokenHash = ?`).run(tokenHash)
-    db.prepare(`
+    db.prepare(
+      `UPDATE "OauthRefreshToken" SET rotated = 1 WHERE tokenHash = ?`,
+    ).run(tokenHash)
+    db.prepare(
+      `
       INSERT INTO "OauthRefreshToken"
         (tokenHash, familyId, userId, clientId, scope, resource, rotated, expiresAt, createdAt)
       VALUES (?, ?, ?, ?, ?, ?, 0, ?, ?)
-    `).run(newHash, row.familyId, row.userId, row.clientId, row.scope, row.resource, newExpiresAt, newCreatedAt)
+    `,
+    ).run(
+      newHash,
+      row.familyId,
+      row.userId,
+      row.clientId,
+      row.scope,
+      row.resource,
+      newExpiresAt,
+      newCreatedAt,
+    )
     // Sweep expired rows opportunistically.
-    db.prepare(`DELETE FROM "OauthRefreshToken" WHERE expiresAt < ?`).run(nowMs())
+    db.prepare(`DELETE FROM "OauthRefreshToken" WHERE expiresAt < ?`).run(
+      nowMs(),
+    )
   })
 
   // Sign the new JWT (async — outside the synchronous DB transaction).
@@ -217,14 +251,22 @@ export async function rotateRefreshToken(
  */
 export function revokeRefreshToken(token: string, clientId: string): boolean {
   const tokenHash = hashToken(token)
-  const row = db.prepare(`
+  const row = db
+    .prepare(
+      `
     SELECT familyId, clientId FROM "OauthRefreshToken" WHERE tokenHash = ?
-  `).get(tokenHash) as Pick<RefreshTokenRow, 'familyId' | 'clientId'> | undefined
+  `,
+    )
+    .get(tokenHash) as
+    | Pick<RefreshTokenRow, 'familyId' | 'clientId'>
+    | undefined
 
   if (!row) return false
   if (row.clientId !== clientId) return false
 
-  db.prepare(`DELETE FROM "OauthRefreshToken" WHERE familyId = ?`).run(row.familyId)
+  db.prepare(`DELETE FROM "OauthRefreshToken" WHERE familyId = ?`).run(
+    row.familyId,
+  )
   return true
 }
 

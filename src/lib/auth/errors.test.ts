@@ -57,9 +57,9 @@ describe('isThrownForbiddenError', () => {
     expect(isThrownForbiddenError(null)).toBe(false)
     expect(isThrownForbiddenError(undefined)).toBe(false)
     expect(isThrownForbiddenError('error string')).toBe(false)
-    expect(isThrownForbiddenError({ status: 403, errorCode: 'FORBIDDEN' })).toBe(
-      false,
-    )
+    expect(
+      isThrownForbiddenError({ status: 403, errorCode: 'FORBIDDEN' }),
+    ).toBe(false)
   })
 })
 
@@ -81,15 +81,15 @@ describe('classifyQueryFailure', () => {
 
   // Thrown ForbiddenError shape (getWhiteboardWithDiagram, etc.)
   it('classifies a thrown ForbiddenError (error) as forbidden', () => {
-    expect(
-      classifyQueryFailure({ error: new ForbiddenErrorLike() }),
-    ).toBe('forbidden')
+    expect(classifyQueryFailure({ error: new ForbiddenErrorLike() })).toBe(
+      'forbidden',
+    )
   })
 
   it('classifies a generic thrown Error (error) as generic — network/500/not-found', () => {
-    expect(
-      classifyQueryFailure({ error: new Error('fetch failed') }),
-    ).toBe('generic')
+    expect(classifyQueryFailure({ error: new Error('fetch failed') })).toBe(
+      'generic',
+    )
   })
 
   it('classifies no data and no error as generic (e.g. still-pending state guarded elsewhere)', () => {
@@ -119,10 +119,8 @@ describe('isForbiddenError / isUnauthorizedError (existing guards, sanity)', () 
     )
   })
 
-  it('the two guards do not cross-match each other\'s shape', () => {
-    expect(isForbiddenError({ error: 'UNAUTHORIZED', status: 401 })).toBe(
-      false,
-    )
+  it("the two guards do not cross-match each other's shape", () => {
+    expect(isForbiddenError({ error: 'UNAUTHORIZED', status: 401 })).toBe(false)
     expect(
       isUnauthorizedError({ error: 'FORBIDDEN', status: 403, message: 'x' }),
     ).toBe(false)

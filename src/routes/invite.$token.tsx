@@ -99,7 +99,9 @@ export function InvitePage() {
         </p>
 
         {isUserLoading ? (
-          <p className="mt-6 text-sm text-muted-foreground">Checking your account...</p>
+          <p className="mt-6 text-sm text-muted-foreground">
+            Checking your account...
+          </p>
         ) : currentUser ? (
           <Button
             className="mt-6 w-full"

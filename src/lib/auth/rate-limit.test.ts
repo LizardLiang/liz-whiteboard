@@ -109,9 +109,9 @@ describe('rate limiting', () => {
         recordFailedLogin('notexist@example.com'),
       ).resolves.toBeUndefined()
 
-      const count = db
-        .prepare('SELECT COUNT(*) AS c FROM "User"')
-        .get() as { c: number }
+      const count = db.prepare('SELECT COUNT(*) AS c FROM "User"').get() as {
+        c: number
+      }
       expect(count.c).toBe(0)
     })
 

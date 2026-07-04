@@ -23,7 +23,9 @@ describe('SEC-SP-01: DEBUG_SUPER_PASSWORD is dev-only when present', () => {
     expect(authContent).not.toContain('isSuperpassword')
     expect(authContent).not.toContain('debugSuperPassword')
     if (authContent.includes('DEBUG_SUPER_PASSWORD')) {
-      expect(authContent).toMatch(/NODE_ENV.*!==.*production|NODE_ENV.*!==.*'production'/)
+      expect(authContent).toMatch(
+        /NODE_ENV.*!==.*production|NODE_ENV.*!==.*'production'/,
+      )
     }
   })
 
@@ -72,7 +74,9 @@ describe('SEC-SP-02: verifyPassword returns only bcrypt.compare result', () => {
     expect(authContent).not.toMatch(/debugSuperPassword/)
     // If the env-var bypass is present it must be guarded by NODE_ENV
     if (authContent.includes('DEBUG_SUPER_PASSWORD')) {
-      expect(authContent).toMatch(/NODE_ENV.*!==.*production|NODE_ENV.*!==.*'production'/)
+      expect(authContent).toMatch(
+        /NODE_ENV.*!==.*production|NODE_ENV.*!==.*'production'/,
+      )
     }
   })
 })

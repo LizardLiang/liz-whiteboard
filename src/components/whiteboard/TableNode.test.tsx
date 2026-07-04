@@ -12,7 +12,10 @@ import { toast } from 'sonner'
 import { TableNode } from './TableNode.new'
 import { WhiteboardPermissionsProvider } from './whiteboard-permissions-context'
 import type { Column } from '@/data/models'
-import type { RelationshipEdgeType, TableNodeData } from '@/lib/react-flow/types'
+import type {
+  RelationshipEdgeType,
+  TableNodeData,
+} from '@/lib/react-flow/types'
 
 // WhiteboardPermissionsContext now defaults to canEdit: false (fail-closed).
 // This suite exercises drag/column behavior that requires write access, so
@@ -417,12 +420,8 @@ describe('TableNode canEdit gating (WhiteboardPermissionsContext)', () => {
       </WhiteboardPermissionsProvider>,
     )
 
-    expect(
-      screen.queryByRole('button', { name: /delete table/i }),
-    ).toBeNull()
-    expect(
-      screen.queryByRole('button', { name: /add new column/i }),
-    ).toBeNull()
+    expect(screen.queryByRole('button', { name: /delete table/i })).toBeNull()
+    expect(screen.queryByRole('button', { name: /add new column/i })).toBeNull()
   })
 
   it('shows the delete-table button and Add Column row when canEdit is true', () => {
@@ -433,24 +432,16 @@ describe('TableNode canEdit gating (WhiteboardPermissionsContext)', () => {
       </WhiteboardPermissionsProvider>,
     )
 
-    expect(
-      screen.getByRole('button', { name: /delete table/i }),
-    ).toBeTruthy()
-    expect(
-      screen.getByRole('button', { name: /add new column/i }),
-    ).toBeTruthy()
+    expect(screen.getByRole('button', { name: /delete table/i })).toBeTruthy()
+    expect(screen.getByRole('button', { name: /add new column/i })).toBeTruthy()
   })
 
   it('hides write affordances when rendered outside any WhiteboardPermissionsProvider (fail-closed default)', () => {
     const data = makeTableData()
     render(<TableNode id={TABLE_ID} data={data} />)
 
-    expect(
-      screen.queryByRole('button', { name: /delete table/i }),
-    ).toBeNull()
-    expect(
-      screen.queryByRole('button', { name: /add new column/i }),
-    ).toBeNull()
+    expect(screen.queryByRole('button', { name: /delete table/i })).toBeNull()
+    expect(screen.queryByRole('button', { name: /add new column/i })).toBeNull()
   })
 })
 

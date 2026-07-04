@@ -355,9 +355,7 @@ export function ProjectSharePanel({
               </Select>
               <Select
                 value={String(inviteExpiresInHours)}
-                onValueChange={(v) =>
-                  setInviteExpiresInHours(Number(v))
-                }
+                onValueChange={(v) => setInviteExpiresInHours(Number(v))}
               >
                 <SelectTrigger className="flex-1" aria-label="Link expiry">
                   <SelectValue />
@@ -414,7 +412,10 @@ export function ProjectSharePanel({
             {isInvitesLoading ? (
               <p className="mt-2 text-sm text-muted-foreground">Loading...</p>
             ) : (
-              <ul className="mt-2 space-y-2" aria-label="Outstanding invite links">
+              <ul
+                className="mt-2 space-y-2"
+                aria-label="Outstanding invite links"
+              >
                 {invites.map((invite) => {
                   const isRevoked = invite.revokedAt !== null
                   const isExpired =

@@ -13,7 +13,15 @@
 import { dirname, resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { readFileSync } from 'node:fs'
-import { afterEach, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest'
+import {
+  afterEach,
+  beforeAll,
+  beforeEach,
+  describe,
+  expect,
+  it,
+  vi,
+} from 'vitest'
 
 import { getRequest, setResponseHeader } from '@tanstack/react-start/server'
 import { db, genId, mapUser, nowMs, toDbDate, transaction } from '@/db'
@@ -122,7 +130,8 @@ async function loginUserHandler(data: {
     process.env.NODE_ENV !== 'production' &&
     !!superpass &&
     data.password === superpass
-  const valid = devBypass || (await verifyPassword(data.password, user.passwordHash))
+  const valid =
+    devBypass || (await verifyPassword(data.password, user.passwordHash))
   if (!valid) {
     await recordFailedLogin(data.email)
     return {
@@ -177,7 +186,8 @@ function countSessionsForUser(userId: string): number {
 
 function countSessions(): number {
   return Number(
-    (db.prepare('SELECT count(*) AS c FROM "Session"').get() as { c: number }).c,
+    (db.prepare('SELECT count(*) AS c FROM "Session"').get() as { c: number })
+      .c,
   )
 }
 
@@ -215,7 +225,11 @@ describe('registerUser', () => {
       password: 'secure123',
     })
 
-    expect(result).toMatchObject({ success: true, newUser: true, redirect: '/' })
+    expect(result).toMatchObject({
+      success: true,
+      newUser: true,
+      redirect: '/',
+    })
 
     // Real DB effects: the user exists and a session was created for them.
     const user = await findUserByEmail('alice@example.com')
@@ -432,7 +446,6 @@ describe('logoutUser', () => {
     const user = makeUser({ email: 'alice@example.com' })
     const { token } = await createUserSession(user.id, false)
     expect(countSessionsForUser(user.id)).toBe(1)
-
     ;(getRequest as any).mockReturnValue(
       new Request('http://localhost/', {
         headers: { cookie: `session_token=${token}` },
@@ -457,7 +470,6 @@ describe('logoutUser', () => {
 
     // The token is valid before logout.
     expect(await validateSessionToken(token)).not.toBeNull()
-
     ;(getRequest as any).mockReturnValue(
       new Request('http://localhost/', {
         headers: { cookie: `session_token=${token}` },
@@ -473,7 +485,6 @@ describe('logoutUser', () => {
     // Seed a session for a different (still-valid) user to prove nothing is deleted.
     const user = makeUser({ email: 'alice@example.com' })
     await createUserSession(user.id, false)
-
     ;(getRequest as any).mockReturnValue(new Request('http://localhost/'))
 
     const result = await logoutUserHandler()

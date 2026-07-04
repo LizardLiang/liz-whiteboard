@@ -190,13 +190,7 @@ describe('calculateHighlighting — relationsPreviewTableId (5th param)', () => 
     const nodeB = makeNode('b')
     const edges: Array<RelationshipEdgeType> = []
 
-    const result = calculateHighlighting(
-      [nodeA, nodeB],
-      edges,
-      null,
-      null,
-      'a',
-    )
+    const result = calculateHighlighting([nodeA, nodeB], edges, null, null, 'a')
 
     const highlightedA = result.nodes.find((n) => n.id === 'a')!
     expect(highlightedA.zIndex).toBe(Z_INDEX.NODE_RELATIONS_PREVIEW)
@@ -208,13 +202,7 @@ describe('calculateHighlighting — relationsPreviewTableId (5th param)', () => 
     const nodeB = makeNode('b')
     const edges: Array<RelationshipEdgeType> = []
 
-    const result = calculateHighlighting(
-      [nodeA, nodeB],
-      edges,
-      null,
-      null,
-      'a',
-    )
+    const result = calculateHighlighting([nodeA, nodeB], edges, null, null, 'a')
 
     const highlightedB = result.nodes.find((n) => n.id === 'b')!
     expect(highlightedB.data.isRelationsPreviewOpen).toBe(false)

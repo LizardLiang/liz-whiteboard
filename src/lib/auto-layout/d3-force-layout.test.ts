@@ -16,10 +16,14 @@ import {
   computeMaxCorridorBundleWidth,
   computeRequiredColGap,
   enforceEdgeLabelGap,
-  enforceLabelLabelGap,
   enforceGapPostPass,
+  enforceLabelLabelGap,
 } from './d3-force-layout'
-import type { LayoutInputEdge, LayoutInputNode, SimNode } from './d3-force-layout'
+import type {
+  LayoutInputEdge,
+  LayoutInputNode,
+  SimNode,
+} from './d3-force-layout'
 
 // ---------------------------------------------------------------------------
 // Helpers
@@ -315,9 +319,11 @@ describe('computeD3ForceLayout', () => {
     const pillWidth = computeLabelPillWidth(label)
     const pillHeight = computeLabelPillHeight()
     // midX accounts for cardinality extents (mirrors production enforceEdgeLabelGap)
-    const midX = (A.x + A.width / 2 + leftExt + B.x - B.width / 2 - rightExt) / 2
+    const midX =
+      (A.x + A.width / 2 + leftExt + B.x - B.width / 2 - rightExt) / 2
     const midY = (A.y + B.y) / 2
-    const zoneW = Math.max(pillWidth, leftExt + rightExt) + 2 * EDGE_LABEL_MARGIN
+    const zoneW =
+      Math.max(pillWidth, leftExt + rightExt) + 2 * EDGE_LABEL_MARGIN
     const zoneH = pillHeight + 2 * EDGE_LABEL_MARGIN
     const lx = midX - zoneW / 2
     const ly = midY - zoneH / 2
@@ -327,7 +333,10 @@ describe('computeD3ForceLayout', () => {
     const overlapX = cx < lx + zoneW && cx + C.width > lx
     const overlapY = cy < ly + zoneH && cy + C.height > ly
 
-    expect(overlapX && overlapY, 'C still overlaps label zone after enforcement').toBe(false)
+    expect(
+      overlapX && overlapY,
+      'C still overlaps label zone after enforcement',
+    ).toBe(false)
   })
 
   // TC-AL-E-15 — All-pairs gap ≥ MIN_GAP=48 still holds after enforceEdgeLabelGap
@@ -392,7 +401,9 @@ describe('computeD3ForceLayout', () => {
     // Long label pill exceeds 120px — proves the fix is necessary
     expect(computeLabelPillWidth('a'.repeat(40))).toBeGreaterThan(120)
     // Long gap must cover full pill
-    expect(longGap).toBeGreaterThanOrEqual(computeLabelPillWidth('a'.repeat(40)) + 2 * EDGE_LABEL_MARGIN)
+    expect(longGap).toBeGreaterThanOrEqual(
+      computeLabelPillWidth('a'.repeat(40)) + 2 * EDGE_LABEL_MARGIN,
+    )
   })
 })
 
@@ -419,7 +430,9 @@ describe('enforceLabelLabelGap', () => {
     const cyA_before = (S.y + A.y) / 2 // 100
     const cyB_before = (S.y + B.y) / 2 // 120
     const overlapBefore =
-      (pillH + pillH) / 2 + EDGE_LABEL_MARGIN - Math.abs(cyA_before - cyB_before)
+      (pillH + pillH) / 2 +
+      EDGE_LABEL_MARGIN -
+      Math.abs(cyA_before - cyB_before)
     expect(overlapBefore).toBeGreaterThan(0)
 
     const edges: Array<LayoutInputEdge> = [
@@ -479,7 +492,9 @@ describe('clampSameSideLabelX', () => {
     expect(clamped).toBeGreaterThanOrEqual(minLabelX)
 
     // Pill left edge clears source table body
-    expect(clamped - pillW / 2).toBeGreaterThanOrEqual(sourceX + LABEL_PILL_CLAMP_MARGIN - 1)
+    expect(clamped - pillW / 2).toBeGreaterThanOrEqual(
+      sourceX + LABEL_PILL_CLAMP_MARGIN - 1,
+    )
   })
 
   // TC-AL-E-20 — is a no-op for cross-column right→left routing
@@ -487,7 +502,14 @@ describe('clampSameSideLabelX', () => {
     const label = 'a'.repeat(50)
     const pillW = computeLabelPillWidth(label)
     const labelX = 500 // midpoint in the gap between tables
-    const clamped = clampSameSideLabelX(labelX, pillW, 200, 'right', 800, 'left')
+    const clamped = clampSameSideLabelX(
+      labelX,
+      pillW,
+      200,
+      'right',
+      800,
+      'left',
+    )
     expect(clamped).toBe(labelX)
   })
 })
@@ -500,7 +522,9 @@ describe('computeEdgeBundleOffsets', () => {
   // TC-AL-E-21 — single edge gets zero offsets
   it('TC-AL-E-21: single edge in a corridor → both offsets are 0', () => {
     const nodes = [makeNode('A'), makeNode('B')]
-    const edges: Array<LayoutInputEdge> = [{ id: 'e1', source: 'A', target: 'B' }]
+    const edges: Array<LayoutInputEdge> = [
+      { id: 'e1', source: 'A', target: 'B' },
+    ]
     const layers = assignLayersBFS(nodes, edges)
     const result = computeEdgeBundleOffsets(edges, layers)
     expect(result).toHaveLength(1)

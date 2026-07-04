@@ -185,8 +185,10 @@ export async function updateDiagramTable(
     if (validated.name !== undefined) values.name = validated.name
     if (validated.description !== undefined)
       values.description = validated.description
-    if (validated.positionX !== undefined) values.positionX = validated.positionX
-    if (validated.positionY !== undefined) values.positionY = validated.positionY
+    if (validated.positionX !== undefined)
+      values.positionX = validated.positionX
+    if (validated.positionY !== undefined)
+      values.positionY = validated.positionY
     if (validated.width !== undefined) values.width = validated.width
     if (validated.height !== undefined) values.height = validated.height
     update('DiagramTable', id, values)

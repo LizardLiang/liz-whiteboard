@@ -15,7 +15,7 @@
 export interface OAuthClient {
   clientId: string
   /** Exact allowed redirect URIs */
-  redirectUris: string[]
+  redirectUris: Array<string>
   /** Display name for consent page */
   name: string
   /** If true, auto-approve without showing consent UI (first-party clients) */
@@ -44,14 +44,14 @@ export interface OAuthConfig {
   /** Collab-audience JWT TTL in seconds (default 120 = 2 min) */
   collabTokenTtl: number
   /** Supported scopes */
-  scopes: string[]
+  scopes: Array<string>
   /** Access token TTL in seconds (default 600 = 10 min) */
   accessTokenTtl: number
   /** Refresh token TTL in seconds (default 604800 = 7 days) */
   refreshTokenTtl: number
   /** Authorization code TTL in seconds (default 120 = 2 min) */
   authCodeTtl: number
-  clients: OAuthClient[]
+  clients: Array<OAuthClient>
 }
 
 /** First-party MCP client (Claude.ai / Claude Code) — registered by allowlist */
@@ -70,14 +70,16 @@ const DEFAULT_MCP_CLIENT: OAuthClient = {
   firstParty: true,
 }
 
-function loadClients(): OAuthClient[] {
+function loadClients(): Array<OAuthClient> {
   const raw = process.env.OAUTH_ALLOWED_CLIENTS
   if (!raw) return [DEFAULT_MCP_CLIENT]
   try {
-    const parsed = JSON.parse(raw) as OAuthClient[]
+    const parsed = JSON.parse(raw) as Array<OAuthClient>
     return parsed
   } catch {
-    console.warn('[oauth] OAUTH_ALLOWED_CLIENTS is not valid JSON; using default client list')
+    console.warn(
+      '[oauth] OAUTH_ALLOWED_CLIENTS is not valid JSON; using default client list',
+    )
     return [DEFAULT_MCP_CLIENT]
   }
 }
@@ -98,14 +100,14 @@ export function getOAuthConfig(): OAuthConfig {
     // the endpoint rejects empty secrets.
     mcpClientId: process.env.MCP_CLIENT_ID ?? 'mcp-server',
     mcpClientSecret: process.env.MCP_CLIENT_SECRET ?? '',
-    collabTokenTtl: 120,       // 2 min — deliberately short, cached in MCP server
+    collabTokenTtl: 120, // 2 min — deliberately short, cached in MCP server
     scopes: ['whiteboard'],
     // Env-configurable TTLs (seconds). Defaults:
     //   access token  — 3600 (1 hr); operators wanting 10-min set OAUTH_ACCESS_TOKEN_TTL=600
     //   refresh token — 604800 (7 days)
-    accessTokenTtl:  Number(process.env.OAUTH_ACCESS_TOKEN_TTL  ?? '3600'),
+    accessTokenTtl: Number(process.env.OAUTH_ACCESS_TOKEN_TTL ?? '3600'),
     refreshTokenTtl: Number(process.env.OAUTH_REFRESH_TOKEN_TTL ?? '604800'),
-    authCodeTtl: 120,         // 2 min
+    authCodeTtl: 120, // 2 min
     clients: loadClients(),
   }
 }

@@ -253,9 +253,9 @@ describe('requireServerFnRole', () => {
   // TC-RR-09: null projectId — rejects with ForbiddenError; no DB lookup happens
   // (SEC-ERR-03: not-found is indistinguishable from unauthorized)
   it('TC-RR-09: null projectId — rejects with ForbiddenError without calling findEffectiveRole', async () => {
-    await expect(
-      requireServerFnRole('user-1', null, 'EDITOR'),
-    ).rejects.toThrow(ForbiddenError)
+    await expect(requireServerFnRole('user-1', null, 'EDITOR')).rejects.toThrow(
+      ForbiddenError,
+    )
     expect(mockFindEffectiveRole).not.toHaveBeenCalled()
   })
 
@@ -277,9 +277,11 @@ describe('requireServerFnRole', () => {
   // TC-RR-05 (server fn variant): role-lookup throws — fails closed, message not leaked
   it('TC-RR-05 (server fn): role lookup throws — fails closed, ForbiddenError does not leak raw message', async () => {
     mockFindEffectiveRole.mockRejectedValue(new Error('CONN_POOL_EXHAUSTED'))
-    const err = await requireServerFnRole('user-1', 'project-1', 'EDITOR').catch(
-      (e) => e,
-    )
+    const err = await requireServerFnRole(
+      'user-1',
+      'project-1',
+      'EDITOR',
+    ).catch((e) => e)
     expect(err).toBeInstanceOf(ForbiddenError)
     expect((err as Error).message).not.toContain('CONN_POOL_EXHAUSTED')
   })

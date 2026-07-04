@@ -26,7 +26,11 @@ export const Route = createFileRoute('/token')({
           const text = await request.text()
           body = new URLSearchParams(text)
         } catch {
-          return tokenError('invalid_request', 'Could not parse request body', 400)
+          return tokenError(
+            'invalid_request',
+            'Could not parse request body',
+            400,
+          )
         }
 
         const grantType = body.get('grant_type') ?? ''
@@ -36,7 +40,11 @@ export const Route = createFileRoute('/token')({
         } else if (grantType === 'refresh_token') {
           return handleRefreshTokenGrant(body)
         } else {
-          return tokenError('unsupported_grant_type', `Unsupported grant_type: ${grantType}`, 400)
+          return tokenError(
+            'unsupported_grant_type',
+            `Unsupported grant_type: ${grantType}`,
+            400,
+          )
         }
       },
     },
@@ -53,7 +61,10 @@ function tokenError(
   status = 400,
 ): Response {
   return new Response(
-    JSON.stringify({ error, ...(description ? { error_description: description } : {}) }),
+    JSON.stringify({
+      error,
+      ...(description ? { error_description: description } : {}),
+    }),
     {
       status,
       headers: {
@@ -72,8 +83,10 @@ async function handleAuthCodeGrant(body: URLSearchParams): Promise<Response> {
 
   if (!code) return tokenError('invalid_request', 'code is required')
   if (!clientId) return tokenError('invalid_request', 'client_id is required')
-  if (!redirectUri) return tokenError('invalid_request', 'redirect_uri is required')
-  if (!codeVerifier) return tokenError('invalid_request', 'code_verifier is required')
+  if (!redirectUri)
+    return tokenError('invalid_request', 'redirect_uri is required')
+  if (!codeVerifier)
+    return tokenError('invalid_request', 'code_verifier is required')
 
   // Validate client exists
   const { getOAuthConfig, findClient } = await import('@/lib/oauth/config')
@@ -87,7 +100,10 @@ async function handleAuthCodeGrant(body: URLSearchParams): Promise<Response> {
   const { consumeAuthCode } = await import('@/lib/oauth/codes')
   const authCode = consumeAuthCode(code)
   if (!authCode) {
-    return tokenError('invalid_grant', 'Authorization code is invalid, expired, or already used')
+    return tokenError(
+      'invalid_grant',
+      'Authorization code is invalid, expired, or already used',
+    )
   }
 
   // Verify client_id matches what was used at /authorize
@@ -103,7 +119,10 @@ async function handleAuthCodeGrant(body: URLSearchParams): Promise<Response> {
   // Verify PKCE code_verifier against stored challenge
   const { verifyS256 } = await import('@/lib/oauth/pkce')
   if (!verifyS256(codeVerifier, authCode.codeChallenge)) {
-    return tokenError('invalid_grant', 'PKCE code_verifier does not match code_challenge')
+    return tokenError(
+      'invalid_grant',
+      'PKCE code_verifier does not match code_challenge',
+    )
   }
 
   // Issue tokens
@@ -140,11 +159,14 @@ async function handleAuthCodeGrant(body: URLSearchParams): Promise<Response> {
   )
 }
 
-async function handleRefreshTokenGrant(body: URLSearchParams): Promise<Response> {
+async function handleRefreshTokenGrant(
+  body: URLSearchParams,
+): Promise<Response> {
   const refreshToken = body.get('refresh_token') ?? ''
   const clientId = body.get('client_id') ?? ''
 
-  if (!refreshToken) return tokenError('invalid_request', 'refresh_token is required')
+  if (!refreshToken)
+    return tokenError('invalid_request', 'refresh_token is required')
   if (!clientId) return tokenError('invalid_request', 'client_id is required')
 
   const { getOAuthConfig, findClient } = await import('@/lib/oauth/config')
@@ -162,9 +184,7 @@ async function handleRefreshTokenGrant(body: URLSearchParams): Promise<Response>
     return tokenError('invalid_grant', 'Refresh token is invalid or expired')
   }
 
-  console.log(
-    `[oauth/token] Rotated refresh token for client=${clientId}`,
-  )
+  console.log(`[oauth/token] Rotated refresh token for client=${clientId}`)
 
   return new Response(
     JSON.stringify({

@@ -23,7 +23,7 @@ export interface AuthCode {
   codeChallengeMethod: 'S256'
   resource: string
   scope: string
-  expiresAt: number  // unix ms
+  expiresAt: number // unix ms
   used: boolean
 }
 

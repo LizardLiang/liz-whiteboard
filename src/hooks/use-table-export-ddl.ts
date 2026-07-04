@@ -15,6 +15,7 @@
 import { useCallback } from 'react'
 import { useReactFlow } from '@xyflow/react'
 import { toast } from 'sonner'
+import { useSingleSelectedTableShortcut } from './use-single-selected-table-shortcut'
 import type { Dialect } from '@/lib/ddl-generator'
 import type { DiagramTableWithRelations } from '@/data/diagram-table'
 import type {
@@ -22,7 +23,6 @@ import type {
   TableNodeType,
 } from '@/lib/react-flow/types'
 import { generateTableDDL } from '@/lib/ddl-generator'
-import { useSingleSelectedTableShortcut } from './use-single-selected-table-shortcut'
 
 const DEFAULT_SHORTCUT_DIALECT: Dialect = 'mssql'
 

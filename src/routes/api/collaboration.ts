@@ -5,6 +5,7 @@ import { Server as SocketIOServer } from 'socket.io'
 import { z } from 'zod'
 import type { Server as HTTPServer } from 'node:http'
 import type { CursorPosition } from '@/data/schema'
+import type { EffectiveRole } from '@/data/permission'
 import {
   createCollaborationSession,
   deleteCollaborationSession,
@@ -52,7 +53,6 @@ import { parseSessionCookie } from '@/lib/auth/cookies'
 import { validateSessionToken } from '@/lib/auth/session'
 import { validateCollabToken } from '@/lib/oauth/collab-verify'
 import { requireRole } from '@/lib/auth/require-role'
-import type { EffectiveRole } from '@/data/permission'
 import { db } from '@/db'
 
 // ---------------------------------------------------------------------------
@@ -161,7 +161,8 @@ function setupWhiteboardNamespace(ioServer: SocketIOServer): void {
   whiteboardNsp.use(async (socket, next) => {
     try {
       // --- JWT path (MCP server) ---
-      const authToken = (socket.handshake.auth as Record<string, unknown>)?.token
+      const authToken = (socket.handshake.auth as Record<string, unknown>)
+        ?.token
       if (authToken && typeof authToken === 'string') {
         try {
           const payload = await validateCollabToken(authToken)
@@ -652,12 +653,10 @@ function setupCollaborationEventHandlers(
       // WARNING-5 fix: override the client-supplied userId with the server-validated
       // socket.data.userId (the `userId` in scope here is set from socket.data.userId
       // by the connection handler before setupCollaborationEventHandlers is called).
-      broadcastToWhiteboard(
-        whiteboardId,
-        socket.id,
-        'table:move:bulk',
-        { ...parsed.data, userId },
-      )
+      broadcastToWhiteboard(whiteboardId, socket.id, 'table:move:bulk', {
+        ...parsed.data,
+        userId,
+      })
 
       await safeUpdateSessionActivity(socket.id)
     },
@@ -864,9 +863,17 @@ function setupCollaborationEventHandlers(
         return
       }
       if (
-        await denyIfInsufficientPermission(socket, whiteboardId, 'column:create')
+        await denyIfInsufficientPermission(
+          socket,
+          whiteboardId,
+          'column:create',
+        )
       ) {
-        cb?.({ ok: false, code: 'FORBIDDEN', message: 'Insufficient permission' })
+        cb?.({
+          ok: false,
+          code: 'FORBIDDEN',
+          message: 'Insufficient permission',
+        })
         return
       }
 
@@ -1133,9 +1140,17 @@ function setupCollaborationEventHandlers(
         return
       }
       if (
-        await denyIfInsufficientPermission(socket, whiteboardId, 'column:reorder')
+        await denyIfInsufficientPermission(
+          socket,
+          whiteboardId,
+          'column:reorder',
+        )
       ) {
-        cb?.({ ok: false, code: 'FORBIDDEN', message: 'Insufficient permission' })
+        cb?.({
+          ok: false,
+          code: 'FORBIDDEN',
+          message: 'Insufficient permission',
+        })
         return
       }
 
@@ -1241,20 +1256,27 @@ function setupCollaborationEventHandlers(
         })
 
         // FR-022: ack callback for MCP write tools
-        cb?.({ ok: true, entity: { tableId, orderedColumnIds: mergedOrderedIds } })
+        cb?.({
+          ok: true,
+          entity: { tableId, orderedColumnIds: mergedOrderedIds },
+        })
       } catch (error) {
         console.error('Failed to reorder columns:', error)
         socket.emit('error', {
           event: 'column:reorder',
           error: 'UPDATE_FAILED',
           message:
-            error instanceof Error ? error.message : 'Failed to reorder columns',
+            error instanceof Error
+              ? error.message
+              : 'Failed to reorder columns',
         })
         cb?.({
           ok: false,
           code: 'VALIDATION_ERROR',
           message:
-            error instanceof Error ? error.message : 'Failed to reorder columns',
+            error instanceof Error
+              ? error.message
+              : 'Failed to reorder columns',
         })
         return
       }

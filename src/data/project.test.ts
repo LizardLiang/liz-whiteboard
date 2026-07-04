@@ -245,9 +245,9 @@ describe('findProjectPageContent', () => {
     it('TC-09-08: throws "Folder not found" when folderId does not exist', async () => {
       const p = makeProject()
 
-      await expect(
-        findProjectPageContent(p.id, genId()),
-      ).rejects.toThrow('Folder not found')
+      await expect(findProjectPageContent(p.id, genId())).rejects.toThrow(
+        'Folder not found',
+      )
     })
   })
 })

@@ -60,19 +60,24 @@ async function main() {
   console.log('='.repeat(60))
 
   const liveTest = process.env.LIVE_TEST === 'true'
-  const baseUrl = process.argv[2] ?? process.env.OAUTH_BASE_URL ?? 'http://localhost:3000'
+  const baseUrl =
+    process.argv[2] ?? process.env.OAUTH_BASE_URL ?? 'http://localhost:3000'
   const sessionToken = process.env.SESSION_TOKEN ?? ''
 
   if (liveTest) {
     console.log(`\nMode: LIVE HTTP (base URL: ${baseUrl})`)
     if (!sessionToken) {
       console.error('ERROR: SESSION_TOKEN env var required for live test')
-      console.error('  Get it from browser DevTools → Application → Cookies → session_token')
+      console.error(
+        '  Get it from browser DevTools → Application → Cookies → session_token',
+      )
       process.exit(1)
     }
     await runLiveTests(baseUrl, sessionToken)
   } else {
-    console.log('\nMode: IN-PROCESS (direct module calls, no live server required)')
+    console.log(
+      '\nMode: IN-PROCESS (direct module calls, no live server required)',
+    )
     await runInProcessTests(baseUrl)
   }
 }
@@ -83,18 +88,24 @@ async function runInProcessTests(baseUrl: string) {
   // Import OAuth modules directly (bypasses HTTP server)
   const { getOAuthConfig } = await import('../src/lib/oauth/config')
   const { getJwks, getSigningKeyPair } = await import('../src/lib/oauth/keys')
-  const { issueAuthCode, consumeAuthCode } = await import('../src/lib/oauth/codes')
+  const { issueAuthCode, consumeAuthCode } = await import(
+    '../src/lib/oauth/codes'
+  )
   const { issueTokens } = await import('../src/lib/oauth/tokens')
-  const { deriveS256Challenge, verifyS256 } = await import('../src/lib/oauth/pkce')
+  const { deriveS256Challenge, verifyS256 } = await import(
+    '../src/lib/oauth/pkce'
+  )
   const { jwtVerify, createLocalJWKSet, importJWK } = await import('jose')
 
   const config = getOAuthConfig()
   console.log(`\nIssuer: ${config.issuer}`)
   console.log(`MCP Resource URI: ${config.mcpResourceUri}`)
-  console.log(`Clients: ${config.clients.map(c => c.clientId).join(', ')}`)
+  console.log(`Clients: ${config.clients.map((c) => c.clientId).join(', ')}`)
 
   // ── Step A: AS Metadata ────────────────────────────────────────────────────
-  console.log('\n── A: AS Metadata (RFC 8414) ──────────────────────────────────')
+  console.log(
+    '\n── A: AS Metadata (RFC 8414) ──────────────────────────────────',
+  )
   const metadata = {
     issuer: config.issuer,
     authorization_endpoint: `${config.issuer}/authorize`,
@@ -107,10 +118,15 @@ async function runInProcessTests(baseUrl: string) {
   }
   console.log('OK', JSON.stringify(metadata, null, 2))
   assert(metadata.issuer === config.issuer, 'issuer matches')
-  assert(metadata.code_challenge_methods_supported.includes('S256'), 'PKCE S256 supported')
+  assert(
+    metadata.code_challenge_methods_supported.includes('S256'),
+    'PKCE S256 supported',
+  )
 
   // ── Step B: JWKS ──────────────────────────────────────────────────────────
-  console.log('\n── B: JWKS endpoint ────────────────────────────────────────────')
+  console.log(
+    '\n── B: JWKS endpoint ────────────────────────────────────────────',
+  )
   const jwks = await getJwks()
   console.log('Keys:', JSON.stringify(jwks, null, 2))
   assert(Array.isArray(jwks.keys), 'keys is array')
@@ -122,15 +138,17 @@ async function runInProcessTests(baseUrl: string) {
   console.log(`PASS — RSA public key exposed, kid=${key?.kid}`)
 
   // ── Step C: /authorize (issue code) ────────────────────────────────────────
-  console.log('\n── C: /authorize — issue auth code ─────────────────────────────')
+  console.log(
+    '\n── C: /authorize — issue auth code ─────────────────────────────',
+  )
   const verifier = generateVerifier()
   const challenge = deriveChallenge(verifier)
   assert(verifyS256(verifier, challenge), 'PKCE S256 derive+verify roundtrip')
 
   // Simulate a logged-in user (use a fake userId for in-process test)
   const fakeUserId = 'test-user-' + randomBytes(4).toString('hex')
-  const client = config.clients[0]!
-  const redirectUri = client.redirectUris[0]!
+  const client = config.clients[0]
+  const redirectUri = client.redirectUris[0]
 
   const code = issueAuthCode(
     {
@@ -148,11 +166,16 @@ async function runInProcessTests(baseUrl: string) {
   console.log(`PASS — code issued (${code.substring(0, 16)}...)`)
 
   // ── Step D: /token — exchange code for JWT ─────────────────────────────────
-  console.log('\n── D: /token — authorization_code grant ────────────────────────')
+  console.log(
+    '\n── D: /token — authorization_code grant ────────────────────────',
+  )
   // Verify PKCE
   const authCode = consumeAuthCode(code)
   assert(authCode !== null, 'code consumed successfully')
-  assert(verifyS256(verifier, authCode!.codeChallenge), 'PKCE verification passes')
+  assert(
+    verifyS256(verifier, authCode!.codeChallenge),
+    'PKCE verification passes',
+  )
 
   const tokenResult = await issueTokens(
     {
@@ -165,12 +188,17 @@ async function runInProcessTests(baseUrl: string) {
   )
   assert(typeof tokenResult.accessToken === 'string', 'access token issued')
   assert(tokenResult.tokenType === 'Bearer', 'token type is Bearer')
-  assert(tokenResult.expiresIn === config.accessTokenTtl, `expiresIn=${config.accessTokenTtl}`)
+  assert(
+    tokenResult.expiresIn === config.accessTokenTtl,
+    `expiresIn=${config.accessTokenTtl}`,
+  )
   assert(typeof tokenResult.refreshToken === 'string', 'refresh token issued')
   console.log(`PASS — JWT access token + refresh token issued`)
 
   // ── Step E: Decode JWT claims ──────────────────────────────────────────────
-  console.log('\n── E: JWT claims ────────────────────────────────────────────────')
+  console.log(
+    '\n── E: JWT claims ────────────────────────────────────────────────',
+  )
   const header = decodeJwtHeader(tokenResult.accessToken)
   const payload = decodeJwtPayload(tokenResult.accessToken)
 
@@ -179,19 +207,31 @@ async function runInProcessTests(baseUrl: string) {
 
   assert(header.alg === 'RS256', `alg=RS256 (got ${header.alg})`)
   assert(header.kid === key?.kid, `kid matches JWKS kid`)
-  assert(payload.iss === config.issuer, `iss=${config.issuer} (got ${payload.iss})`)
-  assert(payload.aud === config.mcpResourceUri, `aud=${config.mcpResourceUri} (got ${payload.aud})`)
+  assert(
+    payload.iss === config.issuer,
+    `iss=${config.issuer} (got ${payload.iss})`,
+  )
+  assert(
+    payload.aud === config.mcpResourceUri,
+    `aud=${config.mcpResourceUri} (got ${payload.aud})`,
+  )
   assert(payload.sub === fakeUserId, `sub=${fakeUserId} (got ${payload.sub})`)
   assert(typeof payload.exp === 'number', 'exp is number')
   const expDate = new Date((payload.exp as number) * 1000)
   console.log(`  iss = ${payload.iss}`)
   console.log(`  aud = ${payload.aud}`)
-  console.log(`  sub = ${payload.sub}  ← this will be the real User.id in production`)
-  console.log(`  exp = ${expDate.toISOString()} (${config.accessTokenTtl}s from now)`)
+  console.log(
+    `  sub = ${payload.sub}  ← this will be the real User.id in production`,
+  )
+  console.log(
+    `  exp = ${expDate.toISOString()} (${config.accessTokenTtl}s from now)`,
+  )
   console.log(`  scope = ${payload.scope}`)
 
   // ── Step F: Cryptographic signature verification ──────────────────────────
-  console.log('\n── F: JWT signature verification (JWKS) ─────────────────────────')
+  console.log(
+    '\n── F: JWT signature verification (JWKS) ─────────────────────────',
+  )
   const keyPair = await getSigningKeyPair()
   const publicKey = await importJWK(keyPair.publicJwk, 'RS256')
   const jwkSet = createLocalJWKSet(jwks)
@@ -228,13 +268,19 @@ async function runInProcessTests(baseUrl: string) {
 
 async function runLiveTests(baseUrl: string, sessionToken: string) {
   console.log('\nStep A: GET /.well-known/oauth-authorization-server')
-  const metaRes = await fetch(`${baseUrl}/.well-known/oauth-authorization-server`)
+  const metaRes = await fetch(
+    `${baseUrl}/.well-known/oauth-authorization-server`,
+  )
   if (!metaRes.ok) {
     console.error(`FAIL: ${metaRes.status} ${metaRes.statusText}`)
-    console.error('  Note: /.well-known/* routes require the Nitro handlers config.')
-    console.error('  These endpoints are served at the Nitro level before TanStack Start.')
+    console.error(
+      '  Note: /.well-known/* routes require the Nitro handlers config.',
+    )
+    console.error(
+      '  These endpoints are served at the Nitro level before TanStack Start.',
+    )
   } else {
-    const meta = await metaRes.json() as Record<string, unknown>
+    const meta = (await metaRes.json()) as Record<string, unknown>
     console.log('OK:', JSON.stringify(meta, null, 2))
     assert(typeof meta.issuer === 'string', 'issuer present')
     assert(typeof meta.jwks_uri === 'string', 'jwks_uri present')
@@ -245,7 +291,7 @@ async function runLiveTests(baseUrl: string, sessionToken: string) {
   if (!jwksRes.ok) {
     console.error(`FAIL: ${jwksRes.status} ${jwksRes.statusText}`)
   } else {
-    const jwks = await jwksRes.json() as Record<string, unknown>
+    const jwks = (await jwksRes.json()) as Record<string, unknown>
     console.log('OK:', JSON.stringify(jwks, null, 2))
   }
 
@@ -255,7 +301,10 @@ async function runLiveTests(baseUrl: string, sessionToken: string) {
   const authorizeUrl = new URL('/authorize', baseUrl)
   authorizeUrl.searchParams.set('response_type', 'code')
   authorizeUrl.searchParams.set('client_id', 'mcp-claude')
-  authorizeUrl.searchParams.set('redirect_uri', 'http://localhost:3000/oauth/callback')
+  authorizeUrl.searchParams.set(
+    'redirect_uri',
+    'http://localhost:3000/oauth/callback',
+  )
   authorizeUrl.searchParams.set('scope', 'whiteboard')
   authorizeUrl.searchParams.set('code_challenge', challenge)
   authorizeUrl.searchParams.set('code_challenge_method', 'S256')
@@ -276,7 +325,9 @@ async function runLiveTests(baseUrl: string, sessionToken: string) {
 
   const location = authRes.headers.get('location') ?? ''
   console.log(`OK: Redirect to: ${location}`)
-  const callbackUrl = new URL(location.startsWith('http') ? location : `http://localhost${location}`)
+  const callbackUrl = new URL(
+    location.startsWith('http') ? location : `http://localhost${location}`,
+  )
   const code = callbackUrl.searchParams.get('code')
   if (!code) {
     console.error('FAIL: no code in redirect URL')
@@ -306,7 +357,7 @@ async function runLiveTests(baseUrl: string, sessionToken: string) {
     return
   }
 
-  const tokenData = await tokenRes.json() as Record<string, unknown>
+  const tokenData = (await tokenRes.json()) as Record<string, unknown>
   const jwt = tokenData.access_token as string
   const header = decodeJwtHeader(jwt)
   const payload = decodeJwtPayload(jwt)
@@ -316,7 +367,9 @@ async function runLiveTests(baseUrl: string, sessionToken: string) {
   console.log(`  iss = ${payload.iss}`)
   console.log(`  aud = ${payload.aud}`)
   console.log(`  sub = ${payload.sub}  ← liz-whiteboard User.id`)
-  console.log(`  exp = ${new Date((payload.exp as number) * 1000).toISOString()}`)
+  console.log(
+    `  exp = ${new Date((payload.exp as number) * 1000).toISOString()}`,
+  )
   console.log(`  scope = ${payload.scope}`)
 
   console.log('\n' + '='.repeat(60))

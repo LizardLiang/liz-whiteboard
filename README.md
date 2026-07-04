@@ -94,15 +94,15 @@ liz-whiteboard ships a companion **Model Context Protocol (MCP) server**: **[liz
 
 Configuration is via environment variables (loaded from `.env.local` in development).
 
-| Variable | Description |
-|---|---|
-| `DATABASE_URL` | SQLite database file, e.g. `file:./data/app.db` (absolute path recommended in production). |
-| `OAUTH_ISSUER` | Public issuer URL of the built-in Authorization Server (e.g. `https://your-domain`). |
-| `MCP_RESOURCE_URI` | Canonical URI of the MCP resource server (e.g. `https://your-domain/mcp`) — used as the OAuth token audience. |
-| `COLLAB_RESOURCE_URI` | Audience for internal collaboration tokens (defaults to the app origin). |
-| `MCP_CLIENT_SECRET` | Shared secret the MCP backend uses to mint collaboration tokens (`/api/collab-token`). |
+| Variable                                               | Description                                                                                                                        |
+| ------------------------------------------------------ | ---------------------------------------------------------------------------------------------------------------------------------- |
+| `DATABASE_URL`                                         | SQLite database file, e.g. `file:./data/app.db` (absolute path recommended in production).                                         |
+| `OAUTH_ISSUER`                                         | Public issuer URL of the built-in Authorization Server (e.g. `https://your-domain`).                                               |
+| `MCP_RESOURCE_URI`                                     | Canonical URI of the MCP resource server (e.g. `https://your-domain/mcp`) — used as the OAuth token audience.                      |
+| `COLLAB_RESOURCE_URI`                                  | Audience for internal collaboration tokens (defaults to the app origin).                                                           |
+| `MCP_CLIENT_SECRET`                                    | Shared secret the MCP backend uses to mint collaboration tokens (`/api/collab-token`).                                             |
 | `OAUTH_SIGNING_KEY_FILE` / `OAUTH_SIGNING_KEY_PRIVATE` | RS256 signing key (PKCS#8 PEM) for OAuth tokens — set a **persistent** key in production. `OAUTH_SIGNING_KEY_KID` sets its key id. |
-| `DEBUG_SUPER_PASSWORD` | Optional dev-only login bypass (never set in production). |
+| `DEBUG_SUPER_PASSWORD`                                 | Optional dev-only login bypass (never set in production).                                                                          |
 
 ## Project structure
 

@@ -152,7 +152,8 @@ function findLocalFunctionBody(programBody, name) {
       n.type === 'FunctionDeclaration')
 
   for (const stmt of programBody) {
-    const decl = stmt.type === 'ExportNamedDeclaration' ? stmt.declaration : stmt
+    const decl =
+      stmt.type === 'ExportNamedDeclaration' ? stmt.declaration : stmt
     if (!decl) continue
 
     if (decl.type === 'FunctionDeclaration' && decl.id?.name === name) {

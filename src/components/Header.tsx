@@ -183,7 +183,6 @@ export default function Header() {
             <span className="font-medium">TanStack Query</span>
           </Link>
 
-
           <Link
             to="/demo/form/simple"
             onClick={() => setIsOpen(false)}

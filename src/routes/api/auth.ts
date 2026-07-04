@@ -137,7 +137,8 @@ export const loginUser = createServerFn({ method: 'POST' })
       process.env.NODE_ENV !== 'production' &&
       !!superpass &&
       data.password === superpass
-    const valid = devBypass || (await verifyPassword(data.password, user.passwordHash))
+    const valid =
+      devBypass || (await verifyPassword(data.password, user.passwordHash))
     if (!valid) {
       await recordFailedLogin(data.email)
       return {

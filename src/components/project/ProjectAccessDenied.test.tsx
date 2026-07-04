@@ -38,9 +38,7 @@ describe('ProjectAccessDenied', () => {
     expect(
       screen.getByText(/you don't have access to this project/i),
     ).toBeTruthy()
-    expect(
-      screen.getByText(/ask a project admin for access/i),
-    ).toBeTruthy()
+    expect(screen.getByText(/ask a project admin for access/i)).toBeTruthy()
   })
 
   it('renders a custom message when provided', () => {

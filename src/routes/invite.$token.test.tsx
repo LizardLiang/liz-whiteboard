@@ -7,7 +7,7 @@
 // ProjectSharePanel.test.tsx mocks permissions.ts.
 
 import { beforeEach, describe, expect, it, vi } from 'vitest'
-import { fireEvent, render, screen, waitFor  } from '@testing-library/react'
+import { fireEvent, render, screen, waitFor } from '@testing-library/react'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import type * as ReactRouterExports from '@tanstack/react-router'
 

@@ -8,7 +8,7 @@
 
 import { afterEach, beforeAll, describe, expect, it, vi } from 'vitest'
 import { SignJWT } from 'jose'
-import { getSigningKeyPair, _resetKeyPairForTests } from './keys'
+import { _resetKeyPairForTests, getSigningKeyPair } from './keys'
 import { validateCollabToken } from './collab-verify'
 
 const TEST_ISSUER = 'http://localhost:3000'
@@ -34,12 +34,14 @@ afterEach(() => {
   vi.stubEnv('COLLAB_RESOURCE_URI', TEST_COLLAB_URI)
 })
 
-async function mintCollabJWT(overrides: {
-  iss?: string
-  aud?: string | string[]
-  sub?: string
-  exp?: number
-} = {}) {
+async function mintCollabJWT(
+  overrides: {
+    iss?: string
+    aud?: string | Array<string>
+    sub?: string
+    exp?: number
+  } = {},
+) {
   const now = Math.floor(Date.now() / 1000)
   let jwt = new SignJWT({ sub: overrides.sub ?? 'user-123' })
     .setProtectedHeader({ alg: 'RS256', kid })

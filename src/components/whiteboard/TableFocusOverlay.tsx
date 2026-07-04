@@ -8,6 +8,11 @@
 
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import { ReactFlowProvider } from '@xyflow/react'
+import { ReactFlowCanvas } from './ReactFlowCanvas'
+import type {
+  RelationshipEdgeType,
+  TableNodeType,
+} from '@/lib/react-flow/types'
 import {
   Dialog,
   DialogContent,
@@ -15,12 +20,10 @@ import {
   DialogHeader,
   DialogTitle,
 } from '@/components/ui/dialog'
-import { ReactFlowCanvas } from './ReactFlowCanvas'
 import {
   filterValidEdges,
   getDirectlyRelatedTableIds,
 } from '@/lib/react-flow/highlighting'
-import type { RelationshipEdgeType, TableNodeType } from '@/lib/react-flow/types'
 import { computeD3ForceLayout } from '@/lib/auto-layout/d3-force-layout'
 
 // Height estimation constants — mirror layout-adapter.ts::calculateTableHeight
@@ -56,9 +59,11 @@ export function TableFocusOverlay({
   const [activeFocusId, setActiveFocusId] = useState<string | null>(
     focusedTableId,
   )
-  const [focusHistory, setFocusHistory] = useState<string[]>([])
-  const [overlayPositions, setOverlayPositions] =
-    useState<Map<string, { x: number; y: number }> | null>(null)
+  const [focusHistory, setFocusHistory] = useState<Array<string>>([])
+  const [overlayPositions, setOverlayPositions] = useState<Map<
+    string,
+    { x: number; y: number }
+  > | null>(null)
 
   // Sync to the incoming prop whenever the overlay is opened or the prop changes
   // (covers re-opening on a different table via `f` or context menu).
@@ -170,10 +175,9 @@ export function TableFocusOverlay({
 
     const layoutNodes = focusNodes.map((n) => ({
       id: n.id,
-      width: n.measured?.width ?? (n.width as number | undefined) ?? 250,
+      width: n.measured?.width ?? (n.width) ?? 250,
       height:
-        n.measured?.height ??
-        estimateTableHeight(n.data.table.columns.length),
+        n.measured?.height ?? estimateTableHeight(n.data.table.columns.length),
     }))
     const layoutEdges = focusEdges.map((e) => ({
       id: e.id,

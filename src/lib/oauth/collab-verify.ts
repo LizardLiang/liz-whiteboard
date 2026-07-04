@@ -23,9 +23,12 @@ export interface CollabTokenPayload {
  * Throws on any validation failure (invalid signature, wrong aud, expired, etc.).
  * Returns the verified payload on success.
  */
-export async function validateCollabToken(token: string): Promise<CollabTokenPayload> {
+export async function validateCollabToken(
+  token: string,
+): Promise<CollabTokenPayload> {
   const issuer = process.env.OAUTH_ISSUER ?? 'http://localhost:3000'
-  const collabResourceUri = process.env.COLLAB_RESOURCE_URI ?? 'http://localhost:3010'
+  const collabResourceUri =
+    process.env.COLLAB_RESOURCE_URI ?? 'http://localhost:3010'
 
   const { publicKey } = await getSigningKeyPair()
 

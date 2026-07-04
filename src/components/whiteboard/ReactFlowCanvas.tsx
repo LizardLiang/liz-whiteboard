@@ -28,7 +28,10 @@ import type {
   TableNodeType,
 } from '@/lib/react-flow/types'
 import { recalculateEdgesForDraggedNodes } from '@/lib/react-flow/edge-routing'
-import { assignLayersBFS, computeEdgeBundleOffsets } from '@/lib/auto-layout/d3-force-layout'
+import {
+  assignLayersBFS,
+  computeEdgeBundleOffsets,
+} from '@/lib/auto-layout/d3-force-layout'
 import { edgeTypes, nodeTypes } from '@/lib/react-flow/node-types'
 import {
   calculateHighlighting,
@@ -225,8 +228,8 @@ export function ReactFlowCanvas({
     // after a page reload (they are not persisted; derive them from DB data).
     const layoutNodes = initialNodes.map((n) => ({
       id: n.id,
-      width: (n.measured?.width ?? (n.width as number)) ?? 250,
-      height: (n.measured?.height ?? (n.height as number)) ?? 150,
+      width: n.measured?.width ?? (n.width as number) ?? 250,
+      height: n.measured?.height ?? (n.height as number) ?? 150,
     }))
     const layoutEdges = recalculated.map((e) => ({
       id: e.id,
@@ -300,10 +303,13 @@ export function ReactFlowCanvas({
   ])
 
   // Handle node click (selection + optional external callback)
-  const onNodeClick = useCallback<NodeMouseHandler>((_event, node) => {
-    setActiveTableId(node.id)
-    onNodeClickProp?.(node.id)
-  }, [onNodeClickProp])
+  const onNodeClick = useCallback<NodeMouseHandler>(
+    (_event, node) => {
+      setActiveTableId(node.id)
+      onNodeClickProp?.(node.id)
+    },
+    [onNodeClickProp],
+  )
 
   // Handle pane click (clear selection)
   const onPaneClick = useCallback(() => {
@@ -312,13 +318,10 @@ export function ReactFlowCanvas({
   }, [onPaneClickProp])
 
   // Handle node mouse enter (hover) — skip during drag (ReactFlow fires this on drag end)
-  const onNodeMouseEnter = useCallback<NodeMouseHandler>(
-    (_event, node) => {
-      if (isDraggingRef.current) return
-      setHoveredTableId(node.id)
-    },
-    [],
-  )
+  const onNodeMouseEnter = useCallback<NodeMouseHandler>((_event, node) => {
+    if (isDraggingRef.current) return
+    setHoveredTableId(node.id)
+  }, [])
 
   // Handle node mouse leave (unhover) — skip during drag (ReactFlow fires this on drag start)
   const onNodeMouseLeave = useCallback<NodeMouseHandler>((_event, _node) => {

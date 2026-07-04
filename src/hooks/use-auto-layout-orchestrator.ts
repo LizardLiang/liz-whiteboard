@@ -19,7 +19,10 @@ import { useCallback, useEffect, useRef, useState } from 'react'
 import { useReactFlow } from '@xyflow/react'
 import { toast } from 'sonner'
 import type { Edge, Node } from '@xyflow/react'
-import type { LayoutOutputEdge, LayoutOutputPosition } from '@/lib/auto-layout/d3-force-layout'
+import type {
+  LayoutOutputEdge,
+  LayoutOutputPosition,
+} from '@/lib/auto-layout/d3-force-layout'
 import { applyBulkPositions } from '@/lib/auto-layout'
 import { recalculateEdgesForDraggedNodes } from '@/lib/react-flow/edge-routing'
 import { isUnauthorizedError } from '@/lib/auth/errors'
@@ -41,7 +44,10 @@ export interface UseAutoLayoutOrchestratorArgs {
   runD3ForceLayout: (
     nodes: Array<Node>,
     edges: Array<Edge>,
-  ) => Promise<{ positions: Array<LayoutOutputPosition>; edgeOffsets: Array<LayoutOutputEdge> } | null>
+  ) => Promise<{
+    positions: Array<LayoutOutputPosition>
+    edgeOffsets: Array<LayoutOutputEdge>
+  } | null>
   /** Emits table:move:bulk after successful persistence */
   emitBulkPositionUpdate: (
     positions: Array<{ tableId: string; positionX: number; positionY: number }>,
@@ -208,7 +214,8 @@ export function useAutoLayoutOrchestrator({
         // Apply bundle offsets to edge data first, then recalculate handle sides.
         const withOffsets = prev.map((e) => {
           const off = offsetById.get(e.id)
-          if (!off || (off.handleYOffset === 0 && off.centerXOffset === 0)) return e
+          if (!off || (off.handleYOffset === 0 && off.centerXOffset === 0))
+            return e
           return {
             ...e,
             data: {
@@ -218,7 +225,11 @@ export function useAutoLayoutOrchestrator({
             },
           }
         })
-        return recalculateEdgesForDraggedNodes(withOffsets, updatedNodes, allMovedIds)
+        return recalculateEdgesForDraggedNodes(
+          withOffsets,
+          updatedNodes,
+          allMovedIds,
+        )
       })
 
       // Step 3 — Stash payload BEFORE the await so Retry can re-submit

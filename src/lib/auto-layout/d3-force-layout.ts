@@ -248,10 +248,8 @@ export function computeLabelPillWidth(label: string): number {
   let textWidth: number
   try {
     const canvas =
-      // eslint-disable-next-line @typescript-eslint/no-unnecessary-condition
-      typeof document !== 'undefined'
-        ? document.createElement('canvas')
-        : null
+       
+      typeof document !== 'undefined' ? document.createElement('canvas') : null
     const ctx = canvas?.getContext('2d') ?? null
     if (ctx) {
       ctx.font = LABEL_FONT_SPEC
@@ -268,7 +266,9 @@ export function computeLabelPillWidth(label: string): number {
   } catch {
     textWidth = label.length * LABEL_CHAR_ADVANCE
   }
-  return Math.max(LABEL_MIN_PILL_WIDTH, textWidth) + PILL_H_PADDING + PILL_BORDER
+  return (
+    Math.max(LABEL_MIN_PILL_WIDTH, textWidth) + PILL_H_PADDING + PILL_BORDER
+  )
 }
 
 /**
@@ -277,7 +277,11 @@ export function computeLabelPillWidth(label: string): number {
  * padding='3px 10px', border=1px each side.
  */
 export function computeLabelPillHeight(): number {
-  return Math.ceil(LABEL_FONT_SIZE_PX * LABEL_LINE_HEIGHT) + PILL_V_PADDING + PILL_BORDER
+  return (
+    Math.ceil(LABEL_FONT_SIZE_PX * LABEL_LINE_HEIGHT) +
+    PILL_V_PADDING +
+    PILL_BORDER
+  )
 }
 
 // ---------------------------------------------------------------------------
@@ -307,7 +311,11 @@ const CARDINALITY_SYMBOL_RADIUS = 4
  * inter-node gap. Mirrors the indicatorExtent() function in RelationshipEdge.new.tsx.
  */
 function cardinalityIndicatorExtent(isMany: boolean): number {
-  return (isMany ? CROW_LENGTH_EXTENT : 0) + OPT_GAP_EXTENT + CARDINALITY_SYMBOL_RADIUS
+  return (
+    (isMany ? CROW_LENGTH_EXTENT : 0) +
+    OPT_GAP_EXTENT +
+    CARDINALITY_SYMBOL_RADIUS
+  )
 }
 
 /** Maximum indicator extent (crow's foot end). Used as a conservative default. */
@@ -318,25 +326,26 @@ const MAX_CARDINALITY_EXTENT = cardinalityIndicatorExtent(true) // 13 px
  * Mirrors CARDINALITY_FLAGS in RelationshipEdge.new.tsx (only the 'many' booleans needed).
  * Tuple: [srcMany, tgtMany]
  */
-const CARDINALITY_MANY: Readonly<Record<string, readonly [boolean, boolean]>> = {
-  ONE_TO_ONE:                   [false, false],
-  ONE_TO_MANY:                  [false, true],
-  MANY_TO_ONE:                  [true,  false],
-  MANY_TO_MANY:                 [true,  true],
-  ZERO_TO_ONE:                  [false, false],
-  ZERO_TO_MANY:                 [false, true],
-  SELF_REFERENCING:             [false, true],
-  MANY_TO_ZERO_OR_ONE:          [true,  false],
-  MANY_TO_ZERO_OR_MANY:         [true,  true],
-  ZERO_OR_ONE_TO_ONE:           [false, false],
-  ZERO_OR_ONE_TO_MANY:          [false, true],
-  ZERO_OR_ONE_TO_ZERO_OR_ONE:   [false, false],
-  ZERO_OR_ONE_TO_ZERO_OR_MANY:  [false, true],
-  ZERO_OR_MANY_TO_ONE:          [true,  false],
-  ZERO_OR_MANY_TO_MANY:         [true,  true],
-  ZERO_OR_MANY_TO_ZERO_OR_ONE:  [true,  false],
-  ZERO_OR_MANY_TO_ZERO_OR_MANY: [true,  true],
-}
+const CARDINALITY_MANY: Readonly<Record<string, readonly [boolean, boolean]>> =
+  {
+    ONE_TO_ONE: [false, false],
+    ONE_TO_MANY: [false, true],
+    MANY_TO_ONE: [true, false],
+    MANY_TO_MANY: [true, true],
+    ZERO_TO_ONE: [false, false],
+    ZERO_TO_MANY: [false, true],
+    SELF_REFERENCING: [false, true],
+    MANY_TO_ZERO_OR_ONE: [true, false],
+    MANY_TO_ZERO_OR_MANY: [true, true],
+    ZERO_OR_ONE_TO_ONE: [false, false],
+    ZERO_OR_ONE_TO_MANY: [false, true],
+    ZERO_OR_ONE_TO_ZERO_OR_ONE: [false, false],
+    ZERO_OR_ONE_TO_ZERO_OR_MANY: [false, true],
+    ZERO_OR_MANY_TO_ONE: [true, false],
+    ZERO_OR_MANY_TO_MANY: [true, true],
+    ZERO_OR_MANY_TO_ZERO_OR_ONE: [true, false],
+    ZERO_OR_MANY_TO_ZERO_OR_MANY: [true, true],
+  }
 
 // ---------------------------------------------------------------------------
 // Per-edge column gap computation
@@ -352,7 +361,8 @@ export function computeRequiredColGap(edges: Array<LayoutInputEdge>): number {
   let maxRequired = COL_GAP
   for (const edge of edges) {
     const pillWidth = computeLabelPillWidth(edge.label ?? '')
-    const flags = CARDINALITY_MANY[edge.cardinality ?? ''] ?? ([false, false] as const)
+    const flags =
+      CARDINALITY_MANY[edge.cardinality ?? ''] ?? ([false, false] as const)
     const srcExt = cardinalityIndicatorExtent(flags[0])
     const tgtExt = cardinalityIndicatorExtent(flags[1])
     const required =
@@ -395,7 +405,8 @@ export function enforceEdgeLabelGap(
 
       // Per-edge cardinality extents
       const leftIsSource = leftNode.id === edge.source
-      const flags = CARDINALITY_MANY[edge.cardinality ?? ''] ?? ([false, false] as const)
+      const flags =
+        CARDINALITY_MANY[edge.cardinality ?? ''] ?? ([false, false] as const)
       const leftIsMany = leftIsSource ? flags[0] : flags[1]
       const rightIsMany = leftIsSource ? flags[1] : flags[0]
       const leftExt = cardinalityIndicatorExtent(leftIsMany)
@@ -409,15 +420,22 @@ export function enforceEdgeLabelGap(
       // cardinality indicator extents (mirrors the getSmoothStepPath adjustment
       // in RelationshipEdge.new.tsx: adjSourceX + leftExt ... adjTargetX - rightExt)
       const midX =
-        (leftNode.x + leftNode.width / 2 + leftExt +
-          rightNode.x - rightNode.width / 2 - rightExt) /
+        (leftNode.x +
+          leftNode.width / 2 +
+          leftExt +
+          rightNode.x -
+          rightNode.width / 2 -
+          rightExt) /
         2
       const midY = (leftNode.y + rightNode.y) / 2
 
       // Use minimum label zone width even for unlabelled edges (cardinality markers alone
       // occupy leftExt + rightExt px of the gap; reserve that + margin on each side)
-      const zoneW = Math.max(pillWidth, leftExt + rightExt) + 2 * EDGE_LABEL_MARGIN
-      const zoneH = (pillWidth > 0 ? pillHeight : leftExt + rightExt) + 2 * EDGE_LABEL_MARGIN
+      const zoneW =
+        Math.max(pillWidth, leftExt + rightExt) + 2 * EDGE_LABEL_MARGIN
+      const zoneH =
+        (pillWidth > 0 ? pillHeight : leftExt + rightExt) +
+        2 * EDGE_LABEL_MARGIN
 
       const lx = midX - zoneW / 2
       const ly = midY - zoneH / 2

@@ -18,12 +18,13 @@
 //     OAUTH_SIGNING_KEY_KID="as-key-1"
 
 import {
-  generateKeyPair,
-  importPKCS8,
+  
   exportJWK,
+  generateKeyPair,
   importJWK,
-  type JWK,
+  importPKCS8
 } from 'jose'
+import type {JWK} from 'jose';
 
 export interface SigningKeyPair {
   kid: string
@@ -55,7 +56,9 @@ export async function getSigningKeyPair(): Promise<SigningKeyPair> {
     // Load from environment (PKCS#8 PEM).
     // extractable: true is required so the public components can be exported
     // to a JWK for the /.well-known/jwks.json endpoint.
-    const privateKey = (await importPKCS8(privatePem, 'RS256', { extractable: true })) as CryptoKey
+    const privateKey = (await importPKCS8(privatePem, 'RS256', {
+      extractable: true,
+    }))
 
     // Derive public key from private key via JWK round-trip
     const privateJwk = await exportJWK(privateKey)
@@ -68,12 +71,14 @@ export async function getSigningKeyPair(): Promise<SigningKeyPair> {
     const publicKey = (await importJWK(publicJwk, 'RS256')) as CryptoKey
 
     _keyPair = { kid, privateKey, publicKey, publicJwk }
-    console.log(`[oauth/keys] Loaded RS256 signing key from environment (kid=${kid})`)
+    console.log(
+      `[oauth/keys] Loaded RS256 signing key from environment (kid=${kid})`,
+    )
   } else {
     // Generate ephemeral keypair
     console.warn(
       '[oauth/keys] OAUTH_SIGNING_KEY_PRIVATE not set — generating EPHEMERAL RS256 keypair. ' +
-      'Tokens will be invalidated on server restart. Set OAUTH_SIGNING_KEY_PRIVATE for persistence.',
+        'Tokens will be invalidated on server restart. Set OAUTH_SIGNING_KEY_PRIVATE for persistence.',
     )
     const { privateKey, publicKey } = await generateKeyPair('RS256', {
       modulusLength: 2048,
@@ -86,8 +91,8 @@ export async function getSigningKeyPair(): Promise<SigningKeyPair> {
 
     _keyPair = {
       kid,
-      privateKey: privateKey as CryptoKey,
-      publicKey: publicKey as CryptoKey,
+      privateKey: privateKey,
+      publicKey: publicKey,
       publicJwk,
     }
     console.log(`[oauth/keys] Generated ephemeral RS256 keypair (kid=${kid})`)
@@ -99,7 +104,7 @@ export async function getSigningKeyPair(): Promise<SigningKeyPair> {
 /**
  * Return the JWKS document (public key set) for the /.well-known/jwks.json endpoint.
  */
-export async function getJwks(): Promise<{ keys: JWK[] }> {
+export async function getJwks(): Promise<{ keys: Array<JWK> }> {
   const pair = await getSigningKeyPair()
   return {
     keys: [pair.publicJwk],

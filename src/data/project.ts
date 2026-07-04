@@ -220,7 +220,9 @@ export async function findProjectPageContent(
   const mapWhiteboardRow = (r: Record<string, unknown>) => {
     const wbId = r.id as string
     const countRow = db
-      .prepare('SELECT COUNT(*) AS "count" FROM "DiagramTable" WHERE "whiteboardId" = ?')
+      .prepare(
+        'SELECT COUNT(*) AS "count" FROM "DiagramTable" WHERE "whiteboardId" = ?',
+      )
       .get(wbId)
     return {
       id: wbId,

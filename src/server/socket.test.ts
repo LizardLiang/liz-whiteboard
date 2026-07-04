@@ -598,10 +598,12 @@ async function jwtAwarHandshakeMiddleware(
   }
 }
 
-function buildJwtSocket(overrides: {
-  authToken?: string
-  cookieHeader?: string
-} = {}) {
+function buildJwtSocket(
+  overrides: {
+    authToken?: string
+    cookieHeader?: string
+  } = {},
+) {
   const nextSpy = vi.fn()
   const socket = {
     handshake: {
@@ -620,7 +622,9 @@ describe('TC-JWT-01: valid collab JWT in auth.token accepted', () => {
       sub: COLLAB_USER_ID,
       exp: COLLAB_EXP,
     })
-    const { socket, nextSpy } = buildJwtSocket({ authToken: 'valid.collab.jwt' })
+    const { socket, nextSpy } = buildJwtSocket({
+      authToken: 'valid.collab.jwt',
+    })
     await jwtAwarHandshakeMiddleware(socket, nextSpy)
 
     expect(nextSpy).toHaveBeenCalledWith() // no error = success
@@ -848,4 +852,3 @@ describe('NEW — sync:request re-checks role on every call (revoked mid-session
     expect(denied).toBe(false)
   })
 })
-

@@ -130,9 +130,9 @@ describe('reorderColumns', () => {
     const otherTableId = makeTableId()
     const foreign = makeColumn({ tableId: otherTableId, name: 'x', order: 0 })
 
-    await expect(
-      reorderColumns(tableId, [a.id, foreign.id]),
-    ).rejects.toThrow(/does not belong to table/)
+    await expect(reorderColumns(tableId, [a.id, foreign.id])).rejects.toThrow(
+      /does not belong to table/,
+    )
   })
 
   it('UT-10: re-sequences order to 0..N-1 in the given order', async () => {

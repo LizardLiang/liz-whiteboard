@@ -121,7 +121,13 @@ function attachRelationshipDetails(
       .prepare('SELECT * FROM "Column" WHERE "id" = ?')
       .get(relationship.targetColumnId),
   )!
-  return { ...relationship, sourceTable, targetTable, sourceColumn, targetColumn }
+  return {
+    ...relationship,
+    sourceTable,
+    targetTable,
+    sourceColumn,
+    targetColumn,
+  }
 }
 
 /**

@@ -48,10 +48,9 @@ export async function createProjectInvite(data: {
   // just inserted above by id so a caller can still create an
   // already-past-expiry invite (e.g. for testing EXPIRED redemption/preview
   // behavior) without it vanishing before it can be read back.
-  db.prepare('DELETE FROM "ProjectInvite" WHERE "expiresAt" < ? AND "id" != ?').run(
-    ts,
-    id,
-  )
+  db.prepare(
+    'DELETE FROM "ProjectInvite" WHERE "expiresAt" < ? AND "id" != ?',
+  ).run(ts, id)
 
   return mapProjectInvite(
     db.prepare('SELECT * FROM "ProjectInvite" WHERE "id" = ?').get(id),

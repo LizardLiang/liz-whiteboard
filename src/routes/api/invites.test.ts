@@ -24,10 +24,7 @@ import {
   revokeInviteHandler,
 } from '@/lib/invite/handlers'
 import { generateInviteToken, hashInviteToken } from '@/lib/auth/invite-token'
-import {
-  createProjectInvite,
-  findProjectInvites,
-} from '@/data/project-invite'
+import { createProjectInvite, findProjectInvites } from '@/data/project-invite'
 import { upsertProjectMember } from '@/data/permission'
 import { makeProject, makeUser, resetDb } from '@/test/db-helpers'
 
@@ -42,7 +39,10 @@ function ctxFor(userId: string): AuthContext {
       username: `user-${userId.slice(0, 6)}`,
       email: `${userId}@example.com`,
     },
-    session: { id: 'test-session', expiresAt: new Date(Date.now() + 3_600_000) },
+    session: {
+      id: 'test-session',
+      expiresAt: new Date(Date.now() + 3_600_000),
+    },
   }
 }
 
@@ -80,9 +80,21 @@ beforeEach(async () => {
 
   // Real ProjectMember rows (not a mocked role resolver) — findEffectiveRole
   // resolves these for real in every test below.
-  await upsertProjectMember({ projectId: PROJECT_ID, userId: ADMIN_ID, role: 'ADMIN' })
-  await upsertProjectMember({ projectId: PROJECT_ID, userId: EDITOR_ID, role: 'EDITOR' })
-  await upsertProjectMember({ projectId: PROJECT_ID, userId: VIEWER_ID, role: 'VIEWER' })
+  await upsertProjectMember({
+    projectId: PROJECT_ID,
+    userId: ADMIN_ID,
+    role: 'ADMIN',
+  })
+  await upsertProjectMember({
+    projectId: PROJECT_ID,
+    userId: EDITOR_ID,
+    role: 'EDITOR',
+  })
+  await upsertProjectMember({
+    projectId: PROJECT_ID,
+    userId: VIEWER_ID,
+    role: 'VIEWER',
+  })
 })
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -152,10 +164,7 @@ describe('listProjectInvitesHandler ADMIN+ gating', () => {
       expiresInHours: 24,
     })
 
-    const result = await listProjectInvitesHandler(
-      ctxFor(ADMIN_ID),
-      PROJECT_ID,
-    )
+    const result = await listProjectInvitesHandler(ctxFor(ADMIN_ID), PROJECT_ID)
 
     expect('invites' in result && result.invites).toHaveLength(1)
     expect((result as any).invites[0].createdByUsername).toBe('admin')

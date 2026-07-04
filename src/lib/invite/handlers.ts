@@ -265,9 +265,7 @@ export async function redeemInviteHandler(
         .prepare(
           'SELECT "role" FROM "ProjectMember" WHERE "projectId" = ? AND "userId" = ?',
         )
-        .get(row.projectId, user.id) as
-        | { role: ProjectRoleValue }
-        | undefined
+        .get(row.projectId, user.id) as { role: ProjectRoleValue } | undefined
       currentRole = member?.role ?? null
     }
 

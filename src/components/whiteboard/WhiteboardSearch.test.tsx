@@ -93,11 +93,12 @@ describe('WhiteboardSearch', () => {
   it('shows an empty state when nothing matches', async () => {
     const user = userEvent.setup()
     renderSearch()
-    await user.type(screen.getByPlaceholderText(/Search tables/i), 'zzzznomatch')
+    await user.type(
+      screen.getByPlaceholderText(/Search tables/i),
+      'zzzznomatch',
+    )
 
-    expect(
-      screen.getByText('No matching tables or columns.'),
-    ).toBeTruthy()
+    expect(screen.getByText('No matching tables or columns.')).toBeTruthy()
     expect(screen.queryAllByRole('option')).toHaveLength(0)
   })
 

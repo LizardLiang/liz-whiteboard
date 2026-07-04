@@ -62,10 +62,9 @@ export function makeProject(opts: { name?: string; ownerId?: string } = {}): {
   return { id }
 }
 
-export function makeWhiteboard(opts: {
-  projectId: string
-  name?: string
-}): { id: string } {
+export function makeWhiteboard(opts: { projectId: string; name?: string }): {
+  id: string
+} {
   const id = genId()
   const ts = nowMs()
   db.prepare(
@@ -74,15 +73,25 @@ export function makeWhiteboard(opts: {
   return { id }
 }
 
-export function makeTable(opts: {
-  whiteboardId: string
-  name?: string
-}): { id: string } {
+export function makeTable(opts: { whiteboardId: string; name?: string }): {
+  id: string
+} {
   const id = genId()
   const ts = nowMs()
   db.prepare(
     'INSERT INTO "DiagramTable" ("id","whiteboardId","name","description","positionX","positionY","width","height","createdAt","updatedAt") VALUES (?,?,?,?,?,?,?,?,?,?)',
-  ).run(id, opts.whiteboardId, opts.name ?? 'Test Table', null, 0, 0, null, null, ts, ts)
+  ).run(
+    id,
+    opts.whiteboardId,
+    opts.name ?? 'Test Table',
+    null,
+    0,
+    0,
+    null,
+    null,
+    ts,
+    ts,
+  )
   return { id }
 }
 
