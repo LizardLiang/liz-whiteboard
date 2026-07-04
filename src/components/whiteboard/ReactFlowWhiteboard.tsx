@@ -30,6 +30,7 @@ import { ReactFlowCanvas } from './ReactFlowCanvas'
 import { ConnectionStatusIndicator } from './ConnectionStatusIndicator'
 import { DeleteTableDialog } from './DeleteTableDialog'
 import { Toolbar } from './Toolbar'
+import { WhiteboardSearch } from './WhiteboardSearch'
 import { AutoLayoutConfirmDialog } from './AutoLayoutConfirmDialog'
 import { TableFocusOverlay } from './TableFocusOverlay'
 import { WhiteboardAccessDenied } from './WhiteboardAccessDenied'
@@ -283,6 +284,44 @@ function ReactFlowWhiteboardInner({
   const [relationsPreviewTableId, setRelationsPreviewTableId] = useState<
     string | null
   >(null)
+
+  // Cmd/Ctrl+K search palette state, plus the focus request threaded down to
+  // ReactFlowCanvas. The token increments on every navigation so the same
+  // table can be re-selected (the canvas effect keys on the token).
+  const [searchOpen, setSearchOpen] = useState(false)
+  const [focusRequestTableId, setFocusRequestTableId] = useState<string | null>(
+    null,
+  )
+  const [focusRequestToken, setFocusRequestToken] = useState(0)
+
+  // Navigate the canvas to a table (from the search palette). Bump the token
+  // first so re-selecting the currently-focused table still re-fires the jump.
+  const handleNavigateToTable = useCallback((tableId: string) => {
+    setFocusRequestTableId(tableId)
+    setFocusRequestToken((token) => token + 1)
+  }, [])
+
+  // Cmd/Ctrl+K opens the search palette from anywhere on the whiteboard.
+  // preventDefault suppresses the browser's own Ctrl+K (URL/search bar).
+  // Skipped while typing in a form field so the key still works normally
+  // inside inputs/editors (mirrors the `z` zen-mode guard).
+  useEffect(() => {
+    const handleKeyDown = (event: KeyboardEvent) => {
+      if (!(event.ctrlKey || event.metaKey)) return
+      if (event.key.toLowerCase() !== 'k') return
+
+      const target = event.target as HTMLElement | null
+      const tag = target?.tagName
+      if (tag === 'INPUT' || tag === 'TEXTAREA' || target?.isContentEditable) {
+        return
+      }
+
+      event.preventDefault()
+      setSearchOpen(true)
+    }
+    window.addEventListener('keydown', handleKeyDown)
+    return () => window.removeEventListener('keydown', handleKeyDown)
+  }, [])
 
   // Cardinality picker dialog state for drag-to-connect
   const [pendingConnection, setPendingConnection] =
@@ -1461,10 +1500,19 @@ function ReactFlowWhiteboardInner({
           showMode={showMode}
           onShowModeChange={setShowMode}
           onZenModeToggle={toggleZenMode}
+          onOpenSearch={() => setSearchOpen(true)}
           mcpEndpointUrl={mcpEndpointUrl ?? undefined}
           viewerRole={viewerRole}
         />
       )}
+
+      {/* Cmd/Ctrl+K search palette — jump the canvas to a table or column */}
+      <WhiteboardSearch
+        open={searchOpen}
+        onOpenChange={setSearchOpen}
+        nodes={nodes}
+        onNavigateToTable={handleNavigateToTable}
+      />
 
       {/* Auto Layout confirmation dialog (shown when tableCount > 50) */}
       <AutoLayoutConfirmDialog
@@ -1522,6 +1570,8 @@ function ReactFlowWhiteboardInner({
           }}
           relationsPreviewTableId={relationsPreviewTableId}
           onPaneClick={() => setRelationsPreviewTableId(null)}
+          focusRequestTableId={focusRequestTableId}
+          focusRequestToken={focusRequestToken}
         />
 
         {/* Focus View Overlay — read-only sub-canvas for the selected table + 1-hop neighbors */}

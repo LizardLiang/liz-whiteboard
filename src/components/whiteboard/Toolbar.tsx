@@ -2,7 +2,7 @@
 // Toolbar component for whiteboard actions (Add Table, Add Relationship, Auto Layout)
 
 import { useState } from 'react'
-import { HelpCircle, Link2, Loader2, Maximize2 } from 'lucide-react'
+import { HelpCircle, Link2, Loader2, Maximize2, Search } from 'lucide-react'
 import { toast } from 'sonner'
 import type { Column, DiagramTable } from '@/data/models'
 import type { Cardinality } from '@/data/schema'
@@ -75,6 +75,8 @@ export interface ToolbarProps {
   onShowModeChange?: (mode: ShowMode) => void
   /** Callback to enter zen mode (hides all chrome). When omitted, no zen button is rendered. */
   onZenModeToggle?: () => void
+  /** Callback to open the Cmd/Ctrl+K search palette. When omitted, no search button is rendered. */
+  onOpenSearch?: () => void
   /** MCP endpoint URL — when provided, a Copy-MCP-URL button is rendered */
   mcpEndpointUrl?: string
   /** Requesting user's effective role on the whiteboard's project. When
@@ -168,6 +170,7 @@ export function Toolbar({
   showMode = 'ALL_FIELDS',
   onShowModeChange,
   onZenModeToggle,
+  onOpenSearch,
   mcpEndpointUrl,
   viewerRole,
   className = '',
@@ -675,6 +678,16 @@ export function Toolbar({
 
       {/* Help button — keyboard shortcuts reference */}
       <div className="border-l pl-2 flex items-center gap-1">
+        {onOpenSearch && (
+          <Button
+            variant="outline"
+            size="icon"
+            title="Search tables and columns (Ctrl/Cmd+K)"
+            onClick={onOpenSearch}
+          >
+            <Search className="h-4 w-4" />
+          </Button>
+        )}
         <Dialog open={helpOpen} onOpenChange={setHelpOpen}>
           <DialogTrigger asChild>
             <Button variant="outline" size="icon" title="Keyboard shortcuts">
@@ -697,6 +710,18 @@ export function Toolbar({
                 </tr>
               </thead>
               <tbody className="divide-y">
+                <tr>
+                  <td className="py-2 pr-4">
+                    <kbd className="rounded border px-1.5 py-0.5 font-mono text-xs">
+                      Ctrl/Cmd
+                    </kbd>
+                    {' + '}
+                    <kbd className="rounded border px-1.5 py-0.5 font-mono text-xs">
+                      K
+                    </kbd>
+                  </td>
+                  <td className="py-2">Search tables and columns</td>
+                </tr>
                 <tr>
                   <td className="py-2 pr-4">
                     <kbd className="rounded border px-1.5 py-0.5 font-mono text-xs">

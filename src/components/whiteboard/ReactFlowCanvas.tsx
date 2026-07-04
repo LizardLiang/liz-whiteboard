@@ -7,6 +7,7 @@ import {
   useEdgesState,
   useNodesInitialized,
   useNodesState,
+  useReactFlow,
 } from '@xyflow/react'
 import type {
   FitViewOptions,
@@ -75,6 +76,15 @@ export interface ReactFlowCanvasProps {
   relationsPreviewTableId?: string | null
   /** Callback fired when the pane (empty canvas) is clicked */
   onPaneClick?: () => void
+  /**
+   * External "select this table" entry point for the Cmd/Ctrl+K search
+   * palette. When `focusRequestToken` changes to a positive value, the canvas
+   * pans/zooms to `focusRequestTableId` and marks it active-highlighted. The
+   * token (rather than the id alone) lets the same table be re-selected.
+   */
+  focusRequestTableId?: string | null
+  /** Monotonic token that triggers a focus request when it increments. */
+  focusRequestToken?: number
 }
 
 /**
@@ -109,6 +119,8 @@ export function ReactFlowCanvas({
   className = '',
   relationsPreviewTableId = null,
   onPaneClick: onPaneClickProp,
+  focusRequestTableId = null,
+  focusRequestToken = 0,
 }: ReactFlowCanvasProps) {
   const [nodes, setNodes, handleNodesChange] =
     useNodesState<TableNodeType>(initialNodes)
@@ -118,6 +130,10 @@ export function ReactFlowCanvas({
   // Selection and hover state for highlighting
   const [activeTableId, setActiveTableId] = useState<string | null>(null)
   const [hoveredTableId, setHoveredTableId] = useState<string | null>(null)
+
+  // React Flow instance — used by the search-palette focus request below to
+  // pan/zoom the viewport (shares the store with the container's instance).
+  const { fitView } = useReactFlow()
 
   // Track drag in progress — ReactFlow fires mouseLeave/mouseEnter when drag
   // starts/stops, which would trigger unnecessary highlighting recalculations.
@@ -144,6 +160,21 @@ export function ReactFlowCanvas({
   useEffect(() => {
     setNodes(initialNodes)
   }, [initialNodes, setNodes])
+
+  // Search palette focus request — when the container bumps focusRequestToken,
+  // pan/zoom to the requested table and mark it active-highlighted. Keyed on
+  // the token (not the id) so re-selecting the same table re-fires; token 0 is
+  // the initial value and never triggers a jump on mount.
+  useEffect(() => {
+    if (focusRequestToken <= 0 || !focusRequestTableId) return
+    void fitView({
+      nodes: [{ id: focusRequestTableId }],
+      duration: 300,
+      maxZoom: 1.2,
+    })
+    setActiveTableId(focusRequestTableId)
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- fire on token bump only
+  }, [focusRequestToken])
 
   // Update edges when initialEdges changes — immediately recalculate handles
   // based on the current node positions so edges start pointing the right way.
