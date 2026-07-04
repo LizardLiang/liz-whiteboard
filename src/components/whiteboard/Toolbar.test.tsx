@@ -112,7 +112,9 @@ describe('Toolbar write affordances gated by viewerRole', () => {
   it('Add Table and Add Relationship are enabled when viewerRole is omitted (backward compat)', () => {
     renderToolbar({})
     expect(
-      screen.getByRole('button', { name: /add table/i }).hasAttribute('disabled'),
+      screen
+        .getByRole('button', { name: /add table/i })
+        .hasAttribute('disabled'),
     ).toBe(false)
     expect(
       screen
@@ -124,7 +126,9 @@ describe('Toolbar write affordances gated by viewerRole', () => {
   it('Add Table and Add Relationship are enabled for EDITOR', () => {
     renderToolbar({ viewerRole: 'EDITOR' })
     expect(
-      screen.getByRole('button', { name: /add table/i }).hasAttribute('disabled'),
+      screen
+        .getByRole('button', { name: /add table/i })
+        .hasAttribute('disabled'),
     ).toBe(false)
     expect(
       screen
@@ -136,14 +140,18 @@ describe('Toolbar write affordances gated by viewerRole', () => {
   it('Add Table and Add Relationship are enabled for OWNER', () => {
     renderToolbar({ viewerRole: 'OWNER' })
     expect(
-      screen.getByRole('button', { name: /add table/i }).hasAttribute('disabled'),
+      screen
+        .getByRole('button', { name: /add table/i })
+        .hasAttribute('disabled'),
     ).toBe(false)
   })
 
   it('Add Table and Add Relationship are disabled for VIEWER', () => {
     renderToolbar({ viewerRole: 'VIEWER' })
     expect(
-      screen.getByRole('button', { name: /add table/i }).hasAttribute('disabled'),
+      screen
+        .getByRole('button', { name: /add table/i })
+        .hasAttribute('disabled'),
     ).toBe(true)
     expect(
       screen
@@ -155,7 +163,9 @@ describe('Toolbar write affordances gated by viewerRole', () => {
   it('Add Table and Add Relationship are disabled for null viewerRole (no access)', () => {
     renderToolbar({ viewerRole: null })
     expect(
-      screen.getByRole('button', { name: /add table/i }).hasAttribute('disabled'),
+      screen
+        .getByRole('button', { name: /add table/i })
+        .hasAttribute('disabled'),
     ).toBe(true)
   })
 })
@@ -200,7 +210,75 @@ describe('Toolbar dialog stays open on create failure', () => {
 
     // Dialog closed — Create Table button no longer in the document.
     await waitFor(() =>
-      expect(screen.queryByRole('button', { name: /create table/i })).toBeNull(),
+      expect(
+        screen.queryByRole('button', { name: /create table/i }),
+      ).toBeNull(),
+    )
+  })
+})
+
+// ---------------------------------------------------------------------------
+// image-export tactical plan (Issue #104): Toolbar Export button + dialog
+// ---------------------------------------------------------------------------
+
+describe('Toolbar Export button', () => {
+  it('is not rendered when onExport is omitted', () => {
+    renderToolbar({})
+    expect(
+      screen.queryByRole('button', { name: /export as image/i }),
+    ).toBeNull()
+  })
+
+  it('renders when onExport is provided', () => {
+    renderToolbar({ onExport: vi.fn(), canExport: true })
+    expect(
+      screen.getByRole('button', { name: /export as image/i }),
+    ).toBeTruthy()
+  })
+
+  it('is disabled when canExport is false', () => {
+    renderToolbar({ onExport: vi.fn(), canExport: false })
+    const btn = screen.getByRole('button', { name: /export as image/i })
+    expect(btn.hasAttribute('disabled')).toBe(true)
+  })
+
+  it('is enabled when canExport is true', () => {
+    renderToolbar({ onExport: vi.fn(), canExport: true })
+    const btn = screen.getByRole('button', { name: /export as image/i })
+    expect(btn.hasAttribute('disabled')).toBe(false)
+  })
+
+  it('opens the export dialog when clicked', () => {
+    renderToolbar({ onExport: vi.fn(), canExport: true })
+    fireEvent.click(screen.getByRole('button', { name: /export as image/i }))
+    expect(screen.getByText(/export as image/i)).toBeTruthy()
+    expect(screen.getByRole('button', { name: /^export$/i })).toBeTruthy()
+  })
+
+  it('calls onExport with the default format/background when confirmed', async () => {
+    const onExport = vi.fn().mockResolvedValue(undefined)
+    renderToolbar({ onExport, canExport: true })
+    fireEvent.click(screen.getByRole('button', { name: /export as image/i }))
+    fireEvent.click(screen.getByRole('button', { name: /^export$/i }))
+
+    await waitFor(() => expect(onExport).toHaveBeenCalledTimes(1))
+    expect(onExport).toHaveBeenCalledWith({
+      format: 'png',
+      background: 'solid',
+    })
+  })
+
+  it('shows an error toast and keeps working when onExport rejects', async () => {
+    const onExport = vi.fn().mockRejectedValue(new Error('boom'))
+    renderToolbar({ onExport, canExport: true })
+    fireEvent.click(screen.getByRole('button', { name: /export as image/i }))
+    fireEvent.click(screen.getByRole('button', { name: /^export$/i }))
+
+    await waitFor(() => expect(onExport).toHaveBeenCalledTimes(1))
+    // Dialog closes regardless of success/failure — the rejection is caught
+    // by Toolbar's onExport wrapper (toast), not re-thrown to the dialog.
+    await waitFor(() =>
+      expect(screen.queryByRole('button', { name: /^export$/i })).toBeNull(),
     )
   })
 })

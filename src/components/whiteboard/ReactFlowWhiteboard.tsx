@@ -54,6 +54,8 @@ import type { CreateColumnPayload } from './column/types'
 import type { TableRelationship } from './DeleteTableDialog'
 import type { RelationshipErrorEvent } from '@/hooks/use-relationship-mutations'
 import type { Dialect } from '@/lib/ddl-generator'
+import type { ExportImageDialogOptions } from './ExportImageDialog'
+import { exportDiagramImage } from '@/lib/export/export-image'
 import { hasMinimumRole } from '@/lib/auth/permissions'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
@@ -237,6 +239,12 @@ function ReactFlowWhiteboardInner({
   // Disable RF panOnDrag while a column is being dragged — prevents canvas
   // panning from stealing pointermove events and corrupting collision detection.
   const [isColumnDragging, setIsColumnDragging] = useState(false)
+
+  // Wraps the single main <ReactFlowCanvas> render site — scopes the image
+  // export's `.react-flow__viewport` DOM lookup so it can never match the
+  // read-only sub-canvas TableFocusOverlay renders in its own nested
+  // ReactFlowProvider (Issue #104).
+  const canvasWrapperRef = useRef<HTMLDivElement>(null)
 
   // Local React Flow state (will be updated by collaboration)
   const [nodes, setNodes] = useState<Array<TableNodeType>>(initialNodes)
@@ -1496,174 +1504,223 @@ function ReactFlowWhiteboardInner({
     [reactFlowInstance],
   )
 
+  // Export diagram as image (Issue #104) — captures the full diagram at its
+  // natural bounds via html-to-image, independent of the current pan/zoom.
+  // Scoped to canvasWrapperRef (not a bare document.querySelector) so the
+  // read-only sub-canvas rendered by TableFocusOverlay (its own nested
+  // ReactFlowProvider/.react-flow__viewport) can never be captured instead.
+  const handleExport = useCallback(
+    async ({ format, background }: ExportImageDialogOptions) => {
+      const viewportEl = canvasWrapperRef.current?.querySelector<HTMLElement>(
+        '.react-flow__viewport',
+      )
+      if (!viewportEl) {
+        throw new Error('Export target not found — canvas is not rendered')
+      }
+
+      // Read the theme background color from the live `.react-flow` element
+      // rather than hardcoding a hex value — always matches the current
+      // light/dark theme exactly (see src/styles/react-flow-theme.css).
+      const flowEl =
+        canvasWrapperRef.current?.querySelector<HTMLElement>('.react-flow')
+      const themeBg = flowEl
+        ? getComputedStyle(flowEl).backgroundColor
+        : '#ffffff'
+
+      // Whiteboard name lives in the outer ReactFlowWhiteboard component's
+      // query cache (['whiteboard', whiteboardId]) — read it directly from
+      // the shared queryClient rather than threading it down as a prop.
+      const cachedWhiteboard = queryClient.getQueryData([
+        'whiteboard',
+        whiteboardId,
+      ])
+      const whiteboardName =
+        cachedWhiteboard && !isUnauthorizedError(cachedWhiteboard)
+          ? (cachedWhiteboard as { name?: string }).name
+          : undefined
+
+      await exportDiagramImage({
+        nodes: getNodes(),
+        viewportEl,
+        format,
+        background,
+        themeBg,
+        filename: whiteboardName,
+      })
+    },
+    [queryClient, whiteboardId, getNodes],
+  )
+
   return (
     <WhiteboardPermissionsProvider value={{ canEdit }}>
-    <div
-      style={{
-        display: 'flex',
-        flexDirection: 'column',
-        width: '100%',
-        height: '100%',
-      }}
-    >
-      {/* Toolbar — owned by ReactFlowWhiteboardInner so auto-layout orchestrator can control it.
+      <div
+        style={{
+          display: 'flex',
+          flexDirection: 'column',
+          width: '100%',
+          height: '100%',
+        }}
+      >
+        {/* Toolbar — owned by ReactFlowWhiteboardInner so auto-layout orchestrator can control it.
           Hidden in zen mode. */}
-      {!isZenMode && (
-        <Toolbar
-          whiteboardId={whiteboardId}
-          tables={toolbarTables as any}
-          onCreateTable={onCreateTable}
-          onCreateRelationship={onCreateRelationship}
-          tableCount={nodes.length}
-          onAutoLayoutClick={() => handleAutoLayoutClick(nodes.length)}
-          isAutoLayoutRunning={isAutoLayoutRunning}
-          zoomControls={toolbarZoomControls}
-          currentZoom={viewport.zoom}
-          showMode={showMode}
-          onShowModeChange={setShowMode}
-          onZenModeToggle={toggleZenMode}
-          onOpenSearch={() => setSearchOpen(true)}
-          mcpEndpointUrl={mcpEndpointUrl ?? undefined}
-          viewerRole={viewerRole}
-        />
-      )}
-
-      {/* Cmd/Ctrl+K search palette — jump the canvas to a table or column */}
-      <WhiteboardSearch
-        open={searchOpen}
-        onOpenChange={setSearchOpen}
-        nodes={nodes}
-        onNavigateToTable={handleNavigateToTable}
-      />
-
-      {/* Auto Layout confirmation dialog (shown when tableCount > 50) */}
-      <AutoLayoutConfirmDialog
-        open={showAutoLayoutDialog}
-        tableCount={nodes.length}
-        onConfirm={handleAutoLayoutConfirm}
-        onCancel={handleAutoLayoutCancel}
-      />
-
-      <div style={{ position: 'relative', flex: 1 }}>
-        <ConnectionStatusIndicator connectionState={connectionState} />
-
-        {/* Floating exit button — the only chrome shown in zen mode */}
-        {isZenMode && (
-          <Button
-            variant="outline"
-            size="sm"
-            onClick={exitZenMode}
-            title="Exit Zen Mode (z)"
-            className="absolute bottom-4 right-4 z-10"
-          >
-            <Minimize2 className="mr-2 h-4 w-4" />
-            Exit Zen
-          </Button>
-        )}
-        {deletingTableId && deletingNode && (
-          <DeleteTableDialog
-            tableName={deletingNode.data.table.name}
-            columnCount={deletingNode.data.table.columns.length}
-            affectedRelationships={tableDeleteAffectedRelationships}
-            onConfirm={() => {
-              tableMutations.deleteTable(deletingTableId)
-              // W4-A: clean up per-table reorder state on local delete path.
-              // forgetTable is also called in onTableDeleted for the remote path —
-              // this call covers the case where the current user deletes a table.
-              columnReorderMutations.forgetTable(deletingTableId)
-              setDeletingTableId(null)
-            }}
-            onCancel={() => setDeletingTableId(null)}
+        {!isZenMode && (
+          <Toolbar
+            whiteboardId={whiteboardId}
+            tables={toolbarTables as any}
+            onCreateTable={onCreateTable}
+            onCreateRelationship={onCreateRelationship}
+            tableCount={nodes.length}
+            onAutoLayoutClick={() => handleAutoLayoutClick(nodes.length)}
+            isAutoLayoutRunning={isAutoLayoutRunning}
+            zoomControls={toolbarZoomControls}
+            currentZoom={viewport.zoom}
+            showMode={showMode}
+            onShowModeChange={setShowMode}
+            onZenModeToggle={toggleZenMode}
+            onOpenSearch={() => setSearchOpen(true)}
+            mcpEndpointUrl={mcpEndpointUrl ?? undefined}
+            onExport={handleExport}
+            canExport={nodes.length > 0}
+            viewerRole={viewerRole}
           />
         )}
-        <ReactFlowCanvas
-          initialNodes={nodes}
-          initialEdges={edges}
-          onConnect={handleConnect}
-          onNodeDragStop={handleNodeDragStop}
-          nodesDraggable={nodesDraggable}
-          panOnDrag={!isColumnDragging}
-          showMinimap={showMinimap}
-          minimapExpanded={minimapExpanded}
-          onMinimapCollapse={() => setMinimapExpanded(false)}
-          showControls={showControls}
-          showBackground={true}
-          fitViewOptions={{
-            padding: 0.2,
-            includeHiddenNodes: false,
-          }}
-          relationsPreviewTableId={relationsPreviewTableId}
-          onPaneClick={() => setRelationsPreviewTableId(null)}
-          focusRequestTableId={focusRequestTableId}
-          focusRequestToken={focusRequestToken}
-        />
 
-        {/* Focus View Overlay — read-only sub-canvas for the selected table + 1-hop neighbors */}
-        <TableFocusOverlay
-          open={focusedTableId !== null}
-          onOpenChange={(open) => {
-            if (!open) setFocusedTableId(null)
-          }}
-          focusedTableId={focusedTableId}
+        {/* Cmd/Ctrl+K search palette — jump the canvas to a table or column */}
+        <WhiteboardSearch
+          open={searchOpen}
+          onOpenChange={setSearchOpen}
           nodes={nodes}
-          edges={edges}
+          onNavigateToTable={handleNavigateToTable}
         />
 
-        {/* Cardinality Picker Dialog — shown after drag-to-connect */}
-        <Dialog
-          open={pendingConnection !== null}
-          onOpenChange={(open) => {
-            if (!open) handleCardinalityCancel()
-          }}
-        >
-          <DialogContent className="sm:max-w-sm">
-            <DialogHeader>
-              <DialogTitle>Set Relationship Cardinality</DialogTitle>
-            </DialogHeader>
+        {/* Auto Layout confirmation dialog (shown when tableCount > 50) */}
+        <AutoLayoutConfirmDialog
+          open={showAutoLayoutDialog}
+          tableCount={nodes.length}
+          onConfirm={handleAutoLayoutConfirm}
+          onCancel={handleAutoLayoutCancel}
+        />
 
-            <div className="py-4 space-y-4">
-              <div className="space-y-2">
-                <Label htmlFor="cardinality-select">Cardinality</Label>
-                <Select
-                  value={selectedCardinality}
-                  onValueChange={(value) =>
-                    setSelectedCardinality(value as Cardinality)
-                  }
-                >
-                  <SelectTrigger id="cardinality-select">
-                    <SelectValue placeholder="Select cardinality" />
-                  </SelectTrigger>
-                  <SelectContent>
-                    {CARDINALITY_OPTIONS.map((option) => (
-                      <SelectItem key={option.value} value={option.value}>
-                        {option.label}
-                      </SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
-              </div>
-              <div className="space-y-2">
-                <Label htmlFor="relationship-label">Label (optional)</Label>
-                <Input
-                  id="relationship-label"
-                  value={pendingLabel}
-                  onChange={(e) => setPendingLabel(e.target.value)}
-                  placeholder="e.g. has many, belongs to"
-                  maxLength={255}
-                />
-              </div>
-            </div>
+        <div ref={canvasWrapperRef} style={{ position: 'relative', flex: 1 }}>
+          <ConnectionStatusIndicator connectionState={connectionState} />
 
-            <DialogFooter>
-              <Button variant="outline" onClick={handleCardinalityCancel}>
-                Cancel
-              </Button>
-              <Button onClick={handleCardinalityConfirm}>Create</Button>
-            </DialogFooter>
-          </DialogContent>
-        </Dialog>
+          {/* Floating exit button — the only chrome shown in zen mode */}
+          {isZenMode && (
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={exitZenMode}
+              title="Exit Zen Mode (z)"
+              className="absolute bottom-4 right-4 z-10"
+            >
+              <Minimize2 className="mr-2 h-4 w-4" />
+              Exit Zen
+            </Button>
+          )}
+          {deletingTableId && deletingNode && (
+            <DeleteTableDialog
+              tableName={deletingNode.data.table.name}
+              columnCount={deletingNode.data.table.columns.length}
+              affectedRelationships={tableDeleteAffectedRelationships}
+              onConfirm={() => {
+                tableMutations.deleteTable(deletingTableId)
+                // W4-A: clean up per-table reorder state on local delete path.
+                // forgetTable is also called in onTableDeleted for the remote path —
+                // this call covers the case where the current user deletes a table.
+                columnReorderMutations.forgetTable(deletingTableId)
+                setDeletingTableId(null)
+              }}
+              onCancel={() => setDeletingTableId(null)}
+            />
+          )}
+          <ReactFlowCanvas
+            initialNodes={nodes}
+            initialEdges={edges}
+            onConnect={handleConnect}
+            onNodeDragStop={handleNodeDragStop}
+            nodesDraggable={nodesDraggable}
+            panOnDrag={!isColumnDragging}
+            showMinimap={showMinimap}
+            minimapExpanded={minimapExpanded}
+            onMinimapCollapse={() => setMinimapExpanded(false)}
+            showControls={showControls}
+            showBackground={true}
+            fitViewOptions={{
+              padding: 0.2,
+              includeHiddenNodes: false,
+            }}
+            relationsPreviewTableId={relationsPreviewTableId}
+            onPaneClick={() => setRelationsPreviewTableId(null)}
+            focusRequestTableId={focusRequestTableId}
+            focusRequestToken={focusRequestToken}
+          />
+
+          {/* Focus View Overlay — read-only sub-canvas for the selected table + 1-hop neighbors */}
+          <TableFocusOverlay
+            open={focusedTableId !== null}
+            onOpenChange={(open) => {
+              if (!open) setFocusedTableId(null)
+            }}
+            focusedTableId={focusedTableId}
+            nodes={nodes}
+            edges={edges}
+          />
+
+          {/* Cardinality Picker Dialog — shown after drag-to-connect */}
+          <Dialog
+            open={pendingConnection !== null}
+            onOpenChange={(open) => {
+              if (!open) handleCardinalityCancel()
+            }}
+          >
+            <DialogContent className="sm:max-w-sm">
+              <DialogHeader>
+                <DialogTitle>Set Relationship Cardinality</DialogTitle>
+              </DialogHeader>
+
+              <div className="py-4 space-y-4">
+                <div className="space-y-2">
+                  <Label htmlFor="cardinality-select">Cardinality</Label>
+                  <Select
+                    value={selectedCardinality}
+                    onValueChange={(value) =>
+                      setSelectedCardinality(value as Cardinality)
+                    }
+                  >
+                    <SelectTrigger id="cardinality-select">
+                      <SelectValue placeholder="Select cardinality" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      {CARDINALITY_OPTIONS.map((option) => (
+                        <SelectItem key={option.value} value={option.value}>
+                          {option.label}
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                </div>
+                <div className="space-y-2">
+                  <Label htmlFor="relationship-label">Label (optional)</Label>
+                  <Input
+                    id="relationship-label"
+                    value={pendingLabel}
+                    onChange={(e) => setPendingLabel(e.target.value)}
+                    placeholder="e.g. has many, belongs to"
+                    maxLength={255}
+                  />
+                </div>
+              </div>
+
+              <DialogFooter>
+                <Button variant="outline" onClick={handleCardinalityCancel}>
+                  Cancel
+                </Button>
+                <Button onClick={handleCardinalityConfirm}>Create</Button>
+              </DialogFooter>
+            </DialogContent>
+          </Dialog>
+        </div>
       </div>
-    </div>
     </WhiteboardPermissionsProvider>
   )
 }

@@ -2,11 +2,23 @@
 // Toolbar component for whiteboard actions (Add Table, Add Relationship, Auto Layout)
 
 import { useState } from 'react'
-import { HelpCircle, Link2, Loader2, Maximize2, Search } from 'lucide-react'
+import {
+  Download,
+  HelpCircle,
+  Link2,
+  Loader2,
+  Maximize2,
+  Search,
+} from 'lucide-react'
 import { toast } from 'sonner'
+import { ExportImageDialog } from './ExportImageDialog'
+import type { ExportImageDialogOptions } from './ExportImageDialog'
 import type { Column, DiagramTable } from '@/data/models'
-import type { Cardinality } from '@/data/schema'
-import type { CreateRelationship, CreateTable } from '@/data/schema'
+import type {
+  Cardinality,
+  CreateRelationship,
+  CreateTable,
+} from '@/data/schema'
 import type { ShowMode } from '@/lib/react-flow/types'
 import type { EffectiveRole } from '@/data/permission'
 import { hasMinimumRole } from '@/lib/auth/permissions'
@@ -79,6 +91,14 @@ export interface ToolbarProps {
   onOpenSearch?: () => void
   /** MCP endpoint URL — when provided, a Copy-MCP-URL button is rendered */
   mcpEndpointUrl?: string
+  /** Callback when the user confirms an export in the Export dialog. When
+   * omitted, no Export button is rendered. Rejection is caught here and
+   * surfaced as an error toast — the dialog itself only manages its own
+   * loading state. */
+  onExport?: (opts: ExportImageDialogOptions) => void | Promise<void>
+  /** Whether export is currently possible — false when the diagram has 0
+   * tables. Disables the Export button with an explanatory tooltip. */
+  canExport?: boolean
   /** Requesting user's effective role on the whiteboard's project. When
    * below EDITOR, write affordances (Add Table, Add Relationship) are
    * disabled — server-side enforcement already blocks the underlying
@@ -172,16 +192,22 @@ export function Toolbar({
   onZenModeToggle,
   onOpenSearch,
   mcpEndpointUrl,
+  onExport,
+  canExport = false,
   viewerRole,
   className = '',
 }: ToolbarProps) {
   // Write affordances (Add Table, Add Relationship) require EDITOR+.
   // viewerRole === undefined means the caller didn't opt into role gating —
   // treated as full access for backward compatibility with existing callers.
-  const canEdit = viewerRole === undefined || hasMinimumRole(viewerRole, 'EDITOR')
+  const canEdit =
+    viewerRole === undefined || hasMinimumRole(viewerRole, 'EDITOR')
 
   // Help dialog state
   const [helpOpen, setHelpOpen] = useState(false)
+
+  // Export dialog state
+  const [exportDialogOpen, setExportDialogOpen] = useState(false)
 
   // Table dialog state
   const [tableDialogOpen, setTableDialogOpen] = useState(false)
@@ -736,9 +762,7 @@ export function Toolbar({
                       f
                     </kbd>
                   </td>
-                  <td className="py-2">
-                    Open Focus Overlay on selected table
-                  </td>
+                  <td className="py-2">Open Focus Overlay on selected table</td>
                 </tr>
                 <tr>
                   <td className="py-2 pr-4">
@@ -810,7 +834,9 @@ export function Toolbar({
             onClick={() => {
               const setupCommand = `claude mcp add --transport http liz-whiteboard ${mcpEndpointUrl}`
               navigator.clipboard.writeText(setupCommand)
-              toast.success('MCP setup command copied — paste it in your terminal')
+              toast.success(
+                'MCP setup command copied — paste it in your terminal',
+              )
             }}
           >
             <Link2 className="h-4 w-4" />
@@ -830,8 +856,33 @@ export function Toolbar({
         </Button>
       )}
 
-      {/* Future: Add more toolbar actions */}
-      {/* - Export diagram */}
+      {/* Export diagram as image */}
+      {onExport && (
+        <>
+          <span title={canExport ? 'Export as image' : 'Add a table to export'}>
+            <Button
+              variant="outline"
+              size="icon"
+              disabled={!canExport}
+              onClick={() => setExportDialogOpen(true)}
+              aria-label="Export as image"
+            >
+              <Download className="h-4 w-4" />
+            </Button>
+          </span>
+          <ExportImageDialog
+            open={exportDialogOpen}
+            onOpenChange={setExportDialogOpen}
+            onExport={async (opts) => {
+              try {
+                await onExport(opts)
+              } catch {
+                toast.error('Export failed')
+              }
+            }}
+          />
+        </>
+      )}
     </div>
   )
 }
