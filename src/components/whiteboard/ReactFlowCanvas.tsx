@@ -1,3 +1,4 @@
+import type { MouseEvent as ReactMouseEvent } from 'react'
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import {
   Background,
@@ -133,7 +134,17 @@ export function ReactFlowCanvas({
 
   // React Flow instance — used by the search-palette focus request below to
   // pan/zoom the viewport (shares the store with the container's instance).
-  const { fitView } = useReactFlow()
+  const { fitView, setCenter, getZoom } = useReactFlow()
+
+  // Single-click on the minimap recenters the viewport on that point.
+  // `position` is already in flow coordinates; drag-to-pan is handled
+  // natively by the `pannable` prop below.
+  const onMinimapClick = useCallback(
+    (_event: ReactMouseEvent, position: { x: number; y: number }) => {
+      setCenter(position.x, position.y, { zoom: getZoom(), duration: 200 })
+    },
+    [setCenter, getZoom],
+  )
 
   // Track drag in progress — ReactFlow fires mouseLeave/mouseEnter when drag
   // starts/stops, which would trigger unnecessary highlighting recalculations.
@@ -441,6 +452,8 @@ export function ReactFlowCanvas({
               return 'var(--rf-table-bg)'
             }}
             maskColor="rgba(0, 0, 0, 0.1)"
+            pannable
+            onClick={onMinimapClick}
           />
         )}
       </ReactFlow>
