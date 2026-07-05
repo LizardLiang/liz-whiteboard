@@ -125,7 +125,7 @@ export function FolderItem({
             <Button
               variant="ghost"
               size="sm"
-              className="h-8 w-8 p-0"
+              className="h-8 w-6 p-0"
               disabled={!hasChildren}
             >
               {hasChildren ? (
@@ -140,7 +140,7 @@ export function FolderItem({
             </Button>
           </CollapsibleTrigger>
 
-          <div className="flex items-center gap-2 flex-1 px-2 py-2 rounded-md hover:bg-accent/50 transition-colors">
+          <div className="flex items-center gap-2 flex-1 pl-1 pr-2 py-2 rounded-md hover:bg-accent/50 transition-colors">
             {isOpen ? (
               <FolderOpen className="h-4 w-4 text-muted-foreground flex-shrink-0" />
             ) : (
@@ -217,7 +217,7 @@ export function FolderItem({
 
       {/* Collapsible Content */}
       <CollapsibleContent>
-        <div className="ml-8 mt-1 space-y-1">
+        <div className="ml-6 mt-1 space-y-1">
           {/* Render child folders recursively (if not at max depth) */}
           {canNestDeeper &&
             folder.childFolders?.map((childFolder) => (

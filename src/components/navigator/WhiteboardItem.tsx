@@ -68,12 +68,12 @@ export function WhiteboardItem({
       onContextMenu={handleContextMenu}
     >
       <div className="flex items-center gap-1">
-        <span className="h-8 w-8 shrink-0" aria-hidden="true" />
+        <span className="h-8 w-6 shrink-0" aria-hidden="true" />
 
         <Link
           to="/whiteboard/$whiteboardId"
           params={{ whiteboardId: id }}
-          className={`flex items-center gap-2 flex-1 rounded-md px-2 py-2 text-sm transition-colors ${
+          className={`flex items-center gap-2 flex-1 rounded-md pl-1 pr-2 py-2 text-sm transition-colors ${
             isActive
               ? 'bg-accent text-accent-foreground'
               : 'hover:bg-accent/50 text-muted-foreground hover:text-foreground'

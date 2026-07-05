@@ -467,7 +467,7 @@ export function ProjectTree() {
                         type="button"
                         variant="ghost"
                         size="sm"
-                        className="h-8 w-8 p-0"
+                        className="h-8 w-6 p-0"
                         onClick={(e) => {
                           e.stopPropagation()
                           toggleProject(project.id)
@@ -484,7 +484,7 @@ export function ProjectTree() {
                     <Link
                       to="/project/$projectId"
                       params={{ projectId: project.id }}
-                      className={`flex items-center gap-2 flex-1 px-2 py-2 rounded-md hover:bg-accent/50 transition-colors ${isActiveProject ? 'bg-accent' : ''}`}
+                      className={`flex items-center gap-2 flex-1 pl-1 pr-2 py-2 rounded-md hover:bg-accent/50 transition-colors ${isActiveProject ? 'bg-accent' : ''}`}
                     >
                       <FolderPlus className="h-4 w-4 text-primary flex-shrink-0" />
                       <span className="text-sm font-medium flex-1 truncate">
@@ -556,7 +556,7 @@ export function ProjectTree() {
 
                 {/* Collapsible content */}
                 <CollapsibleContent>
-                  <div className="ml-8 mt-1 space-y-1">
+                  <div className="ml-6 mt-1 space-y-1">
                     {/* Root folders */}
                     {rootFolders.map((folder) => (
                       <FolderItem
