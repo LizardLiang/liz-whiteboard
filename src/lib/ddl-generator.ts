@@ -148,6 +148,19 @@ export function getTypeMapKeys(dialect: Dialect): Array<string> {
 }
 
 /**
+ * Exposes the full forward type map (generic dataType -> native SQL type) for
+ * dialect. Used by sql-type-map.ts's reverse-mapping test to assert every
+ * value this module emits maps back to a sensible dataTypeSchema member —
+ * keeps the SQL DDL import path (src/lib/parser/sql-type-map.ts) in sync with
+ * this export path without duplicating the map data itself.
+ */
+export function getForwardTypeMap(
+  dialect: Dialect,
+): Readonly<Record<string, string>> {
+  return typeMaps[dialect]
+}
+
+/**
  * Resolves dataType to its native SQL type for dialect. Falls back to the
  * raw dataType string unchanged if absent from the map — mirrors
  * ddl.mapDataType's total (never-throws) fallback behavior.

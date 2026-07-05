@@ -22,6 +22,7 @@ import { WhiteboardAccessDenied } from '@/components/whiteboard/WhiteboardAccess
 import { Toolbar } from '@/components/whiteboard/Toolbar'
 import { Minimap } from '@/components/whiteboard/Minimap'
 import { useCollaboration } from '@/hooks/use-collaboration'
+import { useSqlImport } from '@/hooks/use-sql-import'
 import { useZenMode } from '@/hooks/use-zen-mode'
 import { useAuthContext } from '@/components/auth/AuthContext'
 import { getSessionUserId } from '@/lib/session-user-id'
@@ -125,6 +126,19 @@ function WhiteboardEditor() {
       }
     },
   })
+
+  // SQL DDL import orchestration (Issue #105) — shared by both the Konva
+  // Toolbar rendered directly below and, threaded through as a prop, the
+  // Toolbar ReactFlowWhiteboard renders internally for the React Flow path.
+  // Toolbar's onImportSql contract discards the resolved summary (void |
+  // Promise<void>) — ImportSqlDialog only needs to know success/failure.
+  const { importDiagram } = useSqlImport(whiteboardId)
+  const handleImportSql = useCallback(
+    async (ast: DiagramAST) => {
+      await importDiagram(ast)
+    },
+    [importDiagram],
+  )
 
   /**
    * Toggle zen mode with the `z` shortcut. Ignored when a modifier is held
@@ -685,6 +699,7 @@ function WhiteboardEditor() {
             tableCount={whiteboard.tables.length}
             onCreateTable={handleCreateTable}
             onCreateRelationship={handleCreateRelationship}
+            onImportSql={handleImportSql}
             zoomControls={canvasControls}
             currentZoom={canvasViewport.zoom}
             viewerRole={viewerRole}
@@ -704,6 +719,7 @@ function WhiteboardEditor() {
               viewerRole={viewerRole}
               onCreateTable={handleCreateTable}
               onCreateRelationship={handleCreateRelationship}
+              onImportSql={handleImportSql}
               onDisplayModeReady={handleDisplayModeReady}
               onZoomControlsReady={handleZoomControlsReady}
               onZoomChange={handleZoomChange}

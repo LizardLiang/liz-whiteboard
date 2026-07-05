@@ -12,6 +12,7 @@ import {
 } from 'lucide-react'
 import { toast } from 'sonner'
 import { ExportImageDialog } from './ExportImageDialog'
+import { ImportSqlDialog } from './ImportSqlDialog'
 import type { ExportImageDialogOptions } from './ExportImageDialog'
 import type { Column, DiagramTable } from '@/data/models'
 import type {
@@ -21,6 +22,7 @@ import type {
 } from '@/data/schema'
 import type { ShowMode } from '@/lib/react-flow/types'
 import type { EffectiveRole } from '@/data/permission'
+import type { DiagramAST } from '@/lib/parser/ast'
 import { hasMinimumRole } from '@/lib/auth/permissions'
 import { Button } from '@/components/ui/button'
 import { Label } from '@/components/ui/label'
@@ -99,6 +101,10 @@ export interface ToolbarProps {
   /** Whether export is currently possible — false when the diagram has 0
    * tables. Disables the Export button with an explanatory tooltip. */
   canExport?: boolean
+  /** Called with the parsed AST when the user confirms Import in the Import
+   * SQL dialog. When omitted, no Import SQL button is rendered. Rejection is
+   * caught by the dialog itself (keeps it open so the user can retry). */
+  onImportSql?: (ast: DiagramAST) => void | Promise<void>
   /** Requesting user's effective role on the whiteboard's project. When
    * below EDITOR, write affordances (Add Table, Add Relationship) are
    * disabled — server-side enforcement already blocks the underlying
@@ -194,10 +200,11 @@ export function Toolbar({
   mcpEndpointUrl,
   onExport,
   canExport = false,
+  onImportSql,
   viewerRole,
   className = '',
 }: ToolbarProps) {
-  // Write affordances (Add Table, Add Relationship) require EDITOR+.
+  // Write affordances (Add Table, Add Relationship, Import SQL) require EDITOR+.
   // viewerRole === undefined means the caller didn't opt into role gating —
   // treated as full access for backward compatibility with existing callers.
   const canEdit =
@@ -208,6 +215,9 @@ export function Toolbar({
 
   // Export dialog state
   const [exportDialogOpen, setExportDialogOpen] = useState(false)
+
+  // Import SQL dialog state
+  const [importSqlOpen, setImportSqlOpen] = useState(false)
 
   // Table dialog state
   const [tableDialogOpen, setTableDialogOpen] = useState(false)
@@ -526,6 +536,29 @@ export function Toolbar({
           </DialogFooter>
         </DialogContent>
       </Dialog>
+
+      {/* Import SQL — paste CREATE TABLE DDL to generate tables/columns/relationships */}
+      {onImportSql && (
+        <>
+          <Button
+            variant="outline"
+            disabled={!canEdit}
+            title={
+              canEdit
+                ? undefined
+                : 'You have view-only access to this whiteboard.'
+            }
+            onClick={() => setImportSqlOpen(true)}
+          >
+            Import SQL
+          </Button>
+          <ImportSqlDialog
+            open={importSqlOpen}
+            onOpenChange={setImportSqlOpen}
+            onImport={onImportSql}
+          />
+        </>
+      )}
 
       {/* Auto Layout Button */}
       {/* Wrap in a span so the tooltip works even when the button is disabled

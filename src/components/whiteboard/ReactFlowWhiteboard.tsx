@@ -52,6 +52,7 @@ import type {
 } from '@/data/schema'
 import type { WhiteboardWithDiagram } from '@/data/whiteboard'
 import type { RelationshipWithDetails } from '@/data/relationship'
+import type { DiagramAST } from '@/lib/parser/ast'
 import type { CreateColumnPayload } from './column/types'
 import type { TableRelationship } from './DeleteTableDialog'
 import type { RelationshipErrorEvent } from '@/hooks/use-relationship-mutations'
@@ -170,6 +171,9 @@ export interface ReactFlowWhiteboardProps {
   onCreateTable?: (data: CreateTable) => void | Promise<unknown>
   /** Callback when a new relationship is created via the toolbar */
   onCreateRelationship?: (data: CreateRelationship) => void | Promise<unknown>
+  /** Callback when the user confirms an Import SQL paste via the toolbar.
+   * When omitted, no Import SQL button is rendered (mirrors onExport). */
+  onImportSql?: (ast: DiagramAST) => void | Promise<void>
   /** Callback to expose display mode controls to parent */
   onDisplayModeReady?: (
     showMode: ShowMode,
@@ -214,6 +218,7 @@ function ReactFlowWhiteboardInner({
   collaborationEnabled = true,
   onCreateTable,
   onCreateRelationship,
+  onImportSql,
   onDisplayModeReady,
   onZoomControlsReady,
   onZoomChange,
@@ -231,6 +236,7 @@ function ReactFlowWhiteboardInner({
   collaborationEnabled?: boolean
   onCreateTable?: (data: CreateTable) => void | Promise<unknown>
   onCreateRelationship?: (data: CreateRelationship) => void | Promise<unknown>
+  onImportSql?: (ast: DiagramAST) => void | Promise<void>
   onDisplayModeReady?: (
     showMode: ShowMode,
     setShowMode: (mode: ShowMode) => void,
@@ -1603,6 +1609,7 @@ function ReactFlowWhiteboardInner({
             tables={toolbarTables as any}
             onCreateTable={onCreateTable}
             onCreateRelationship={onCreateRelationship}
+            onImportSql={onImportSql}
             tableCount={nodes.length}
             onAutoLayoutClick={() => handleAutoLayoutClick(nodes.length)}
             isAutoLayoutRunning={isAutoLayoutRunning}
@@ -1783,6 +1790,7 @@ export function ReactFlowWhiteboard({
   data,
   onCreateTable,
   onCreateRelationship,
+  onImportSql,
   onDisplayModeReady,
   onZoomControlsReady,
   onZoomChange,
@@ -1910,6 +1918,7 @@ export function ReactFlowWhiteboard({
         collaborationEnabled={!isPublic}
         onCreateTable={onCreateTable}
         onCreateRelationship={onCreateRelationship}
+        onImportSql={onImportSql}
         onDisplayModeReady={onDisplayModeReady}
         onZoomControlsReady={onZoomControlsReady}
         onZoomChange={onZoomChange}
