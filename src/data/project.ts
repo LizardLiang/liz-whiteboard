@@ -120,7 +120,9 @@ export async function findAllProjectsWithTreeForUser(userId: string): Promise<
         })
 
       const whiteboards = db
-        .prepare('SELECT "id", "name" FROM "Whiteboard" WHERE "projectId" = ?')
+        .prepare(
+          'SELECT "id", "name" FROM "Whiteboard" WHERE "projectId" = ? AND "folderId" IS NULL',
+        )
         .all(project.id)
         .map((w) => ({ id: w.id as string, name: w.name as string }))
 

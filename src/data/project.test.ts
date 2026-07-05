@@ -273,10 +273,8 @@ describe('findAllProjectsWithTreeForUser', () => {
     expect(proj.id).toBe(p.id)
     expect(proj.name).toBe('Tree Project')
 
-    // Project-level whiteboards include all whiteboards in the project.
-    expect(proj.whiteboards.map((w) => w.id).sort()).toEqual(
-      [rootWb.id, folderWb.id].sort(),
-    )
+    // Project-level whiteboards include ONLY root whiteboards (folderId IS NULL).
+    expect(proj.whiteboards.map((w) => w.id)).toEqual([rootWb.id])
 
     expect(proj.folders).toHaveLength(2)
     const f1 = proj.folders.find((f) => f.id === folder.id)!
