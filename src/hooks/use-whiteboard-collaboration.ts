@@ -320,5 +320,10 @@ export function useWhiteboardCollaboration(
     emitTableDelete,
     emitRelationshipDelete,
     emitRelationshipUpdate,
+    // Generic socket primitives — exposed so entity hooks (e.g. subject areas,
+    // GH #106) can add their own events without opening a second connection.
+    on,
+    off,
+    emit,
   }
 }

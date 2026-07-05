@@ -24,6 +24,14 @@ export interface TableNodeContextMenuProps {
   onExportDdl?: (dialect: Dialect) => void
   onPreviewRelations?: () => void
   disabled?: boolean
+  /** Subject areas on this whiteboard (GH #106) — for the membership submenu */
+  areas?: Array<{ id: string; name: string; memberTableIds: Array<string> }>
+  /** This table's id — used to compute + toggle area membership */
+  tableId?: string
+  /** Add this table to an area */
+  onAddToArea?: (tableId: string, areaId: string) => void
+  /** Remove this table from an area */
+  onRemoveFromArea?: (tableId: string, areaId: string) => void
 }
 
 export function TableNodeContextMenu({
@@ -33,6 +41,10 @@ export function TableNodeContextMenu({
   onExportDdl,
   onPreviewRelations,
   disabled,
+  areas,
+  tableId,
+  onAddToArea,
+  onRemoveFromArea,
 }: TableNodeContextMenuProps) {
   const { canEdit } = useWhiteboardPermissions()
   return (
@@ -86,6 +98,40 @@ export function TableNodeContextMenu({
             </ContextMenuItem>
           </ContextMenuSubContent>
         </ContextMenuSub>
+        {/* Add to area — membership submenu (GH #106); EDITOR+ only */}
+        {canEdit && tableId && (
+          <ContextMenuSub>
+            <ContextMenuSubTrigger disabled={disabled}>
+              Add to area
+            </ContextMenuSubTrigger>
+            <ContextMenuSubContent>
+              {!areas || areas.length === 0 ? (
+                <ContextMenuItem disabled>No areas yet</ContextMenuItem>
+              ) : (
+                areas.map((area) => {
+                  const isMember = area.memberTableIds.includes(tableId)
+                  return (
+                    <ContextMenuItem
+                      key={area.id}
+                      onSelect={() => {
+                        if (isMember) onRemoveFromArea?.(tableId, area.id)
+                        else onAddToArea?.(tableId, area.id)
+                      }}
+                    >
+                      <span
+                        className="mr-2 inline-block w-3 text-center"
+                        aria-hidden
+                      >
+                        {isMember ? '✓' : ''}
+                      </span>
+                      {area.name}
+                    </ContextMenuItem>
+                  )
+                })
+              )}
+            </ContextMenuSubContent>
+          </ContextMenuSub>
+        )}
         {/* Delete table — write action; hidden entirely for view-only viewers
             (not just disabled, matching the fail-closed header delete button). */}
         {canEdit && (

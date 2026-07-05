@@ -25,7 +25,7 @@ import {
   useUpdateNodeInternals,
   useViewport,
 } from '@xyflow/react'
-import { Minimize2 } from 'lucide-react'
+import { Minimize2, SquareDashed } from 'lucide-react'
 import { ReactFlowCanvas } from './ReactFlowCanvas'
 import { ConnectionStatusIndicator } from './ConnectionStatusIndicator'
 import { DeleteTableDialog } from './DeleteTableDialog'
@@ -38,6 +38,7 @@ import { WhiteboardPermissionsProvider } from './whiteboard-permissions-context'
 import type { Connection } from '@xyflow/react'
 import type { ZoomControls } from './Toolbar'
 import type {
+  AreaNodeType,
   RelationshipEdgeType,
   ShowMode,
   TableNodeType,
@@ -88,6 +89,8 @@ import {
   getWhiteboardRelationships,
   getWhiteboardWithDiagram,
 } from '@/lib/server-functions'
+import { useWhiteboardAreas } from '@/hooks/use-whiteboard-areas'
+import { DEFAULT_AREA_COLOR } from '@/lib/area-colors'
 import { useD3ForceLayout } from '@/hooks/use-d3-force-layout'
 import { useAutoLayoutOrchestrator } from '@/hooks/use-auto-layout-orchestrator'
 import { applyBulkPositions } from '@/lib/auto-layout'
@@ -599,6 +602,9 @@ function ReactFlowWhiteboardInner({
     emitTableDelete,
     emitRelationshipDelete,
     emitRelationshipUpdate,
+    on: onCollabEvent,
+    off: offCollabEvent,
+    emit: emitCollabEvent,
   } = useWhiteboardCollaboration(
     whiteboardId,
     userId,
@@ -1379,6 +1385,163 @@ function ReactFlowWhiteboardInner({
   const viewport = useViewport()
   const nodesInitialized = useNodesInitialized()
 
+  // ── Subject areas (GH #106) ────────────────────────────────────────────────
+  // Areas are background regions grouping tables. They live in a separate node
+  // array from tables (ReactFlowCanvas merges them behind the tables).
+  const {
+    areas,
+    createArea: createAreaMutation,
+    updateArea: updateAreaMutation,
+    deleteArea: deleteAreaMutation,
+  } = useWhiteboardAreas({
+    whiteboardId,
+    userId,
+    enabled: collaborationEnabled,
+    on: onCollabEvent,
+    off: offCollabEvent,
+    emit: emitCollabEvent,
+  })
+
+  const handleAreaResize = useCallback(
+    (
+      areaId: string,
+      bounds: {
+        positionX: number
+        positionY: number
+        width: number
+        height: number
+      },
+    ) => updateAreaMutation(areaId, bounds),
+    [updateAreaMutation],
+  )
+  const handleAreaRename = useCallback(
+    (areaId: string, name: string) => updateAreaMutation(areaId, { name }),
+    [updateAreaMutation],
+  )
+  const handleAreaRecolor = useCallback(
+    (areaId: string, color: string) =>
+      updateAreaMutation(areaId, { color: color }),
+    [updateAreaMutation],
+  )
+  const handleAreaDragStop = useCallback(
+    (areaId: string, positionX: number, positionY: number) =>
+      updateAreaMutation(areaId, { positionX, positionY }),
+    [updateAreaMutation],
+  )
+
+  // Build React Flow area nodes from the areas list.
+  const areaNodes = useMemo<Array<AreaNodeType>>(
+    () =>
+      areas.map((area) => ({
+        id: area.id,
+        type: 'area',
+        position: { x: area.positionX, y: area.positionY },
+        width: area.width,
+        height: area.height,
+        draggable: canEdit,
+        selectable: canEdit,
+        // Render behind table nodes (which default to zIndex >= 1).
+        zIndex: 0,
+        data: {
+          area,
+          canEdit,
+          onRename: handleAreaRename,
+          onRecolor: handleAreaRecolor,
+          onResize: handleAreaResize,
+          onDelete: deleteAreaMutation,
+        },
+      })),
+    [
+      areas,
+      canEdit,
+      handleAreaRename,
+      handleAreaRecolor,
+      handleAreaResize,
+      deleteAreaMutation,
+    ],
+  )
+
+  // ── Area membership (GH #106) ──────────────────────────────────────────────
+  // Lightweight projection of areas for the table "Add to area" submenu.
+  const areaMenuList = useMemo(
+    () =>
+      areas.map((a) => ({
+        id: a.id,
+        name: a.name,
+        memberTableIds: a.memberTableIds,
+      })),
+    [areas],
+  )
+  // Latest areas in a ref so the toggle handlers stay stable (they don't need
+  // to re-create — and re-run the inject effect — on every membership change).
+  const areasRef = useRef(areas)
+  useEffect(() => {
+    areasRef.current = areas
+  }, [areas])
+
+  const handleAddTableToArea = useCallback(
+    (tableId: string, areaId: string) => {
+      const area = areasRef.current.find((a) => a.id === areaId)
+      if (!area || area.memberTableIds.includes(tableId)) return
+      updateAreaMutation(areaId, {
+        memberTableIds: [...area.memberTableIds, tableId],
+      })
+    },
+    [updateAreaMutation],
+  )
+  const handleRemoveTableFromArea = useCallback(
+    (tableId: string, areaId: string) => {
+      const area = areasRef.current.find((a) => a.id === areaId)
+      if (!area || !area.memberTableIds.includes(tableId)) return
+      updateAreaMutation(areaId, {
+        memberTableIds: area.memberTableIds.filter((mid) => mid !== tableId),
+      })
+    },
+    [updateAreaMutation],
+  )
+
+  // Inject the current area list + membership handlers into every table node's
+  // data so the "Add to area" submenu is always fresh. Runs after the main
+  // node-data effect (declared earlier) both on area changes AND on initialNodes
+  // changes (table create/refetch), so a rebuilt node set never loses this data.
+  useEffect(() => {
+    setNodes((prev) =>
+      prev.map((n) => ({
+        ...n,
+        data: {
+          ...n.data,
+          areas: areaMenuList,
+          onAddToArea: handleAddTableToArea,
+          onRemoveFromArea: handleRemoveTableFromArea,
+        },
+      })),
+    )
+  }, [
+    areaMenuList,
+    initialNodes,
+    handleAddTableToArea,
+    handleRemoveTableFromArea,
+    setNodes,
+  ])
+
+  // Create a new area at the current viewport center.
+  const handleCreateArea = useCallback(() => {
+    const width = 360
+    const height = 240
+    const center = reactFlowInstance.screenToFlowPosition({
+      x: window.innerWidth / 2,
+      y: window.innerHeight / 2,
+    })
+    createAreaMutation({
+      name: 'New area',
+      color: DEFAULT_AREA_COLOR,
+      positionX: center.x - width / 2,
+      positionY: center.y - height / 2,
+      width,
+      height,
+    })
+  }, [reactFlowInstance, createAreaMutation])
+
   // ── Client-side position resolution ────────────────────────────────────────
   // Tables created by the MCP server without an explicit position arrive with
   // positionPending=true and are placed at {-99999, -99999} (off-canvas) so
@@ -1683,9 +1846,23 @@ function ReactFlowWhiteboardInner({
               onCancel={() => setDeletingTableId(null)}
             />
           )}
+          {canEdit && !isPublic && (
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={handleCreateArea}
+              title="Add subject area"
+              className="absolute left-4 top-4 z-10"
+            >
+              <SquareDashed className="mr-2 h-4 w-4" />
+              Add area
+            </Button>
+          )}
           <ReactFlowCanvas
             initialNodes={nodes}
             initialEdges={edges}
+            areaNodes={areaNodes}
+            onAreaDragStop={handleAreaDragStop}
             onConnect={handleConnect}
             onNodeDragStop={handleNodeDragStop}
             nodesDraggable={nodesDraggable}

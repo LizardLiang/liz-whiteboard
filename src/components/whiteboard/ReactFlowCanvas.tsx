@@ -24,6 +24,7 @@ import '@/styles/react-flow-theme.css'
 
 import { CardinalityMarkerDefs } from './CardinalityMarkerDefs'
 import type {
+  AreaNodeType,
   RelationshipEdgeType,
   TableNodeType,
 } from '@/lib/react-flow/types'
@@ -47,6 +48,15 @@ export interface ReactFlowCanvasProps {
   initialNodes?: Array<TableNodeType>
   /** Initial edges (relationships) */
   initialEdges?: Array<RelationshipEdgeType>
+  /**
+   * Subject-area nodes (GH #106), kept separate from table nodes. Rendered
+   * BEHIND tables; their move is persisted via onAreaDragStop and their resize
+   * via the node's own `data.onResize`. They never enter the table
+   * highlighting / edge-routing pipeline.
+   */
+  areaNodes?: Array<AreaNodeType>
+  /** Persist an area move (drag stop) — receives the area id and new position */
+  onAreaDragStop?: (areaId: string, positionX: number, positionY: number) => void
   /** Callback when nodes change (position, selection, etc.) */
   onNodesChange?: OnNodesChange<TableNodeType>
   /** Callback when edges change */
@@ -121,6 +131,8 @@ export interface ReactFlowCanvasProps {
 export function ReactFlowCanvas({
   initialNodes = [],
   initialEdges = [],
+  areaNodes = [],
+  onAreaDragStop,
   onNodesChange: onNodesChangeProp,
   onEdgesChange: onEdgesChangeProp,
   onConnect,
@@ -144,6 +156,23 @@ export function ReactFlowCanvas({
     useNodesState<TableNodeType>(initialNodes)
   const [edges, setEdges, handleEdgesChange] =
     useEdgesState<RelationshipEdgeType>(initialEdges)
+
+  // Area (subject-area) nodes live in their own state so they never touch the
+  // table highlighting / edge-routing pipeline. They are merged into the single
+  // <ReactFlow nodes> array (areas FIRST → rendered behind tables).
+  const [areaNodesState, setAreaNodesState, handleAreaNodesChange] =
+    useNodesState<AreaNodeType>(areaNodes)
+  useEffect(() => {
+    setAreaNodesState(areaNodes)
+  }, [areaNodes, setAreaNodesState])
+  const areaIdSet = useMemo(
+    () => new Set(areaNodesState.map((a) => a.id)),
+    [areaNodesState],
+  )
+  const mergedNodes = useMemo(
+    () => [...areaNodesState, ...nodes],
+    [areaNodesState, nodes],
+  )
 
   // Selection and hover state for highlighting
   const [activeTableId, setActiveTableId] = useState<string | null>(null)
@@ -360,6 +389,8 @@ export function ReactFlowCanvas({
   // calculation is always based on current coordinates.
   const onNodeDrag = useCallback<NodeDragHandler<TableNodeType>>(
     (_event, node, draggedNodes) => {
+      // Area nodes don't participate in edge routing — skip the recalculation.
+      if (areaIdSet.has(node.id)) return
       const draggedIds = new Set(draggedNodes.map((n) => n.id))
       draggedIds.add(node.id)
       const currentNodes = mergeCurrentPositions(node, draggedNodes)
@@ -367,13 +398,20 @@ export function ReactFlowCanvas({
         recalculateEdgesForDraggedNodes(prevEdges, currentNodes, draggedIds),
       )
     },
-    [mergeCurrentPositions, setEdges],
+    [areaIdSet, mergeCurrentPositions, setEdges],
   )
 
   // Handle node drag stop (position update)
   const onNodeDragStop = useCallback<NodeDragHandler<TableNodeType>>(
     (event, node, draggedNodes) => {
       isDraggingRef.current = false
+
+      // Area nodes: persist the new position, skip edge routing / hover.
+      if (areaIdSet.has(node.id)) {
+        onAreaDragStop?.(node.id, node.position.x, node.position.y)
+        return
+      }
+
       // Restore hover on the node we just dropped (ReactFlow fires mouseEnter after
       // dragStop which we suppressed, so manually set it here)
       setHoveredTableId(node.id)
@@ -388,16 +426,27 @@ export function ReactFlowCanvas({
       // Call the prop callback if provided
       onNodeDragStopProp?.(event, node)
     },
-    [onNodeDragStopProp, mergeCurrentPositions, setEdges],
+    [areaIdSet, onAreaDragStop, onNodeDragStopProp, mergeCurrentPositions, setEdges],
   )
 
-  // Handle nodes change with custom callback
+  // Handle nodes change with custom callback. React Flow fires a single
+  // onNodesChange for ALL nodes (tables + areas), so we partition by id: area
+  // changes go to the area state, table changes to the existing pipeline.
   const onNodesChange: OnNodesChange<TableNodeType> = useCallback(
     (changes) => {
-      handleNodesChange(changes)
-      onNodesChangeProp?.(changes)
+      const areaChanges: typeof changes = []
+      const tableChanges: typeof changes = []
+      for (const change of changes) {
+        if ('id' in change && areaIdSet.has(change.id)) areaChanges.push(change)
+        else tableChanges.push(change)
+      }
+      if (areaChanges.length > 0) {
+        handleAreaNodesChange(areaChanges as any)
+      }
+      handleNodesChange(tableChanges)
+      onNodesChangeProp?.(tableChanges)
     },
-    [handleNodesChange, onNodesChangeProp],
+    [areaIdSet, handleAreaNodesChange, handleNodesChange, onNodesChangeProp],
   )
 
   // Handle edges change with custom callback
@@ -429,7 +478,11 @@ export function ReactFlowCanvas({
       <CardinalityMarkerDefs />
 
       <ReactFlow
-        nodes={nodes}
+        // Area nodes are a different node type merged behind tables; React Flow
+        // resolves them at runtime via the `area` entry in nodeTypes. The cast
+        // keeps the strongly-typed table handlers (onNodesChange<TableNodeType>)
+        // without threading a union node type through the whole canvas.
+        nodes={mergedNodes as unknown as typeof nodes}
         edges={edges}
         onNodesChange={onNodesChange}
         onEdgesChange={onEdgesChange}

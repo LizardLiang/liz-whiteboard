@@ -148,3 +148,22 @@ export interface CollaborationSession {
   lastActivityAt: Date
   createdAt: Date
 }
+
+/**
+ * Subject area (GH #106) — a named, colored background region that groups
+ * tables. Membership is explicit (`memberTableIds`); areas do NOT own table
+ * positions. `color` stores a palette id (see src/lib/area-colors.ts).
+ */
+export interface Area {
+  id: string
+  whiteboardId: string
+  name: string
+  color: string
+  positionX: number
+  positionY: number
+  width: number
+  height: number
+  memberTableIds: Array<string>
+  createdAt: Date
+  updatedAt: Date
+}

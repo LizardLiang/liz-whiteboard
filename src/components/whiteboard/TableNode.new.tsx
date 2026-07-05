@@ -52,6 +52,9 @@ export const TableNode = memo(
       onFocusTable,
       onExportDdl,
       onPreviewRelations,
+      areas,
+      onAddToArea,
+      onRemoveFromArea,
       edges = [],
       relationsEdges = [],
       tableNameById = new Map(),
@@ -446,6 +449,10 @@ export const TableNode = memo(
         onFocusTable={() => onFocusTable?.(table.id)}
         onExportDdl={handleExportDdl}
         onPreviewRelations={() => onPreviewRelations?.(table.id)}
+        areas={areas}
+        tableId={table.id}
+        onAddToArea={onAddToArea}
+        onRemoveFromArea={onRemoveFromArea}
       >
         <div
           className={`react-flow__node-erTable ${selected ? 'selected' : ''} ${highlightClass}`}
@@ -666,6 +673,9 @@ export const TableNode = memo(
     if (prev.data.edges !== next.data.edges) return false
     if (prev.data.relationsEdges !== next.data.relationsEdges) return false
     if (prev.data.tableNameById !== next.data.tableNameById) return false
+    if (prev.data.areas !== next.data.areas) return false
+    if (prev.data.onAddToArea !== next.data.onAddToArea) return false
+    if (prev.data.onRemoveFromArea !== next.data.onRemoveFromArea) return false
     if (prev.data.onRequestTableDelete !== next.data.onRequestTableDelete)
       return false
     if (prev.data.onFocusTable !== next.data.onFocusTable) return false

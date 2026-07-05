@@ -8,6 +8,7 @@ import type { EdgeTypes, NodeTypes } from '@xyflow/react'
 // Import React Flow components (using .new suffix during migration)
 import { TableNode } from '@/components/whiteboard/TableNode.new'
 import { RelationshipEdge } from '@/components/whiteboard/RelationshipEdge.new'
+import { AreaNode } from '@/components/whiteboard/AreaNode'
 
 /**
  * React Flow node type registry
@@ -15,6 +16,7 @@ import { RelationshipEdge } from '@/components/whiteboard/RelationshipEdge.new'
  */
 export const nodeTypes: NodeTypes = {
   table: TableNode,
+  area: AreaNode,
 }
 
 /**

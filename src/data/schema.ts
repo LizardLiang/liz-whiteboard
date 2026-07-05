@@ -2,6 +2,7 @@
 // Zod validation schemas for all entities in the ER Diagram Whiteboard
 
 import { z } from 'zod'
+import { AREA_COLOR_IDS } from '@/lib/area-colors'
 
 // ============================================================================
 // JSON Sub-Schemas (for nested JSON fields)
@@ -258,6 +259,48 @@ export const updateRelationshipSchema = createRelationshipSchema
   .partial()
 
 // ============================================================================
+// Area Schemas (subject areas / table grouping, GH #106)
+// ============================================================================
+
+/**
+ * Area color — a fixed palette id (see src/lib/area-colors.ts), NOT an
+ * arbitrary hex. Matches the "small closed set of options" style used by
+ * dataTypeSchema/cardinalitySchema.
+ */
+export const areaColorSchema = z.enum(AREA_COLOR_IDS)
+
+/**
+ * Schema for creating a new subject area.
+ * memberTableIds defaults to [] so an area can be created empty. All IDs use
+ * .uuid() per project convention (never .cuid()).
+ */
+export const createAreaSchema = z.object({
+  whiteboardId: z.string().uuid(),
+  name: z.string().min(1).max(255),
+  color: areaColorSchema,
+  positionX: z.number().finite(),
+  positionY: z.number().finite(),
+  width: z.number().positive(),
+  height: z.number().positive(),
+  memberTableIds: z.array(z.string().uuid()).max(1000).default([]),
+})
+
+/**
+ * Schema for updating an existing area.
+ * Defined independently (not `.partial()` of create) so absent fields parse as
+ * `undefined` and only explicitly-provided columns are written.
+ */
+export const updateAreaSchema = z.object({
+  name: z.string().min(1).max(255).optional(),
+  color: areaColorSchema.optional(),
+  positionX: z.number().finite().optional(),
+  positionY: z.number().finite().optional(),
+  width: z.number().positive().optional(),
+  height: z.number().positive().optional(),
+  memberTableIds: z.array(z.string().uuid()).max(1000).optional(),
+})
+
+// ============================================================================
 // CollaborationSession Schemas
 // ============================================================================
 
@@ -309,6 +352,12 @@ export type UpdateRelationship = z.infer<typeof updateRelationshipSchema>
 
 export type CreateSession = z.infer<typeof createSessionSchema>
 export type UpdateSession = z.infer<typeof updateSessionSchema>
+
+export type AreaColorId = z.infer<typeof areaColorSchema>
+// Input type (not infer/output): memberTableIds has a `.default([])`, so it is
+// optional for callers of createArea — the parse fills it in.
+export type CreateArea = z.input<typeof createAreaSchema>
+export type UpdateArea = z.infer<typeof updateAreaSchema>
 
 // ============================================================================
 // Auth Schemas

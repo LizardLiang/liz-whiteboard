@@ -9,6 +9,7 @@ import type {
 } from '@/data/schema'
 import type { WhiteboardWithDiagram } from '@/data/whiteboard'
 import type { RelationshipWithDetails } from '@/data/relationship'
+import type { Area } from '@/data/models'
 import type { LayoutOptions, LayoutResult } from '@/lib/canvas/layout-engine'
 import type { EffectiveRole } from '@/data/permission'
 import {
@@ -25,6 +26,7 @@ import {
   createRelationship,
   findRelationshipsByWhiteboardIdWithDetails,
 } from '@/data/relationship'
+import { findAreasByWhiteboard } from '@/data/area'
 import { computeLayout } from '@/lib/canvas/layout-engine'
 import { nowMs, transaction, update } from '@/db'
 import { requireAuth } from '@/lib/auth/middleware'
@@ -102,6 +104,28 @@ export const getWhiteboardRelationships = createServerFn({
         }
       },
     ),
+  )
+
+/**
+ * Load all subject areas for a whiteboard (GH #106). Mirrors
+ * getWhiteboardRelationships — VIEWER may read.
+ * @requires viewer
+ */
+export const getWhiteboardAreas = createServerFn({
+  method: 'GET',
+})
+  .inputValidator((whiteboardId: string) => whiteboardId)
+  .handler(
+    requireAuth(async ({ user }, whiteboardId): Promise<Array<Area>> => {
+      const projectId = await getWhiteboardProjectId(whiteboardId)
+      await requireServerFnRole(user.id, projectId, 'VIEWER')
+      try {
+        return await findAreasByWhiteboard(whiteboardId)
+      } catch (error) {
+        console.error('Error fetching areas:', error)
+        throw error
+      }
+    }),
   )
 
 /**

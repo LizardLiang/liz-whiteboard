@@ -6,7 +6,7 @@
  */
 
 import type { Edge, Node } from '@xyflow/react'
-import type { Column, DiagramTable, Relationship } from '@/data/models'
+import type { Area, Column, DiagramTable, Relationship } from '@/data/models'
 import type { Cardinality, UpdateColumn } from '@/data/schema'
 import type { CreateColumnPayload } from '@/components/whiteboard/column/types'
 import type { Dialect } from '@/lib/ddl-generator'
@@ -80,6 +80,18 @@ export interface TableNodeData extends Record<string, unknown> {
 
   /** Callback to request table deletion — opens the confirmation dialog */
   onRequestTableDelete?: (tableId: string) => void
+
+  /**
+   * Subject areas available on this whiteboard (GH #106), for the "Add to area"
+   * membership submenu. Lightweight projection — id/name/members only.
+   */
+  areas?: Array<{ id: string; name: string; memberTableIds: Array<string> }>
+
+  /** Add this table to an area's membership */
+  onAddToArea?: (tableId: string, areaId: string) => void
+
+  /** Remove this table from an area's membership */
+  onRemoveFromArea?: (tableId: string, areaId: string) => void
 
   /** Callback to open the Focus view overlay for this table */
   onFocusTable?: (tableId: string) => void
@@ -180,6 +192,39 @@ export interface RelationshipEdgeData extends Record<string, unknown> {
  * Complete Relationship edge type for React Flow
  */
 export type RelationshipEdgeType = Edge<RelationshipEdgeData, 'relationship'>
+
+/**
+ * Data structure for subject-area nodes (GH #106). Area nodes are rendered as
+ * background regions BEHIND table nodes and are kept in a separate node array
+ * from tables — they never enter the table highlighting/edge/DDL pipeline.
+ */
+export interface AreaNodeData extends Record<string, unknown> {
+  /** The area entity */
+  area: Area
+  /** Whether the current user may edit (move/resize/rename/recolor/delete) */
+  canEdit: boolean
+  /** Rename the area (fires optimistic update + WebSocket emit) */
+  onRename?: (areaId: string, name: string) => void
+  /** Recolor the area to a palette id */
+  onRecolor?: (areaId: string, color: string) => void
+  /** Persist a resize (new size + top-left position) */
+  onResize?: (
+    areaId: string,
+    bounds: {
+      positionX: number
+      positionY: number
+      width: number
+      height: number
+    },
+  ) => void
+  /** Delete the area */
+  onDelete?: (areaId: string) => void
+}
+
+/**
+ * Complete subject-area node type for React Flow
+ */
+export type AreaNodeType = Node<AreaNodeData, 'area'>
 
 /**
  * Canvas viewport state (replaces Konva CanvasViewport)

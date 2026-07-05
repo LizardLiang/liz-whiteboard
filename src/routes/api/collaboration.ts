@@ -15,11 +15,13 @@ import {
   updateSessionActivity,
 } from '@/data/collaboration'
 import {
+  createAreaSchema,
   createColumnSchema,
   createRelationshipSchema,
   createTableSchema,
   reorderColumnsSchema,
   tableMoveBulkBroadcastSchema,
+  updateAreaSchema,
   updateColumnSchema,
   updateRelationshipSchema,
   updateTableSchema,
@@ -33,6 +35,13 @@ import {
   updateDiagramTablePosition,
 } from '@/data/diagram-table'
 import { findWhiteboardByIdWithDiagram } from '@/data/whiteboard'
+import {
+  createArea,
+  deleteArea,
+  findAreaById,
+  removeTableFromAreas,
+  updateArea,
+} from '@/data/area'
 import {
   createColumn,
   deleteColumn,
@@ -820,6 +829,17 @@ function setupCollaborationEventHandlers(
         // Delete table from database (cascade deletes columns and relationships)
         await deleteDiagramTable(tableId)
 
+        // GH #106: drop the deleted table from any subject area's membership so
+        // no area keeps a dangling member id, and tell peers about the change.
+        const affectedAreas = await removeTableFromAreas(whiteboardId, tableId)
+        for (const area of affectedAreas) {
+          socket.broadcast.emit('area:updated', {
+            areaId: area.id,
+            memberTableIds: area.memberTableIds,
+            updatedBy: userId,
+          })
+        }
+
         // Broadcast to other users
         socket.broadcast.emit('table:deleted', {
           tableId,
@@ -840,6 +860,187 @@ function setupCollaborationEventHandlers(
           error: 'DELETE_FAILED',
           message,
           tableId: data.tableId,
+        })
+        cb?.({ ok: false, code: 'INTERNAL_ERROR', message })
+        return
+      }
+      await safeUpdateSessionActivity(socket.id)
+    },
+  )
+
+  // ========================================================================
+  // Area (subject area) mutation events — GH #106
+  // ========================================================================
+
+  // Area creation
+  socket.on(
+    'area:create',
+    async (data: any, cb?: (res: AckResult) => void) => {
+      if (isSessionExpired(socket)) {
+        socket.emit('session_expired')
+        socket.disconnect(true)
+        cb?.({ ok: false, code: 'SESSION_EXPIRED', message: 'Session expired' })
+        return
+      }
+      if (
+        await denyIfInsufficientPermission(socket, whiteboardId, 'area:create')
+      ) {
+        cb?.({ ok: false, code: 'FORBIDDEN', message: 'Insufficient permission' })
+        return
+      }
+
+      try {
+        const validated = createAreaSchema.parse({ ...data, whiteboardId })
+        const area = await createArea(validated)
+        socket.broadcast.emit('area:created', { ...area, createdBy: userId })
+        cb?.({ ok: true, entity: area })
+      } catch (error) {
+        console.error('Failed to create area:', error)
+        const message =
+          error instanceof Error ? error.message : 'Failed to create area'
+        socket.emit('error', {
+          event: 'area:create',
+          error: 'VALIDATION_ERROR',
+          message,
+        })
+        cb?.({ ok: false, code: 'VALIDATION_ERROR', message })
+        return
+      }
+      await safeUpdateSessionActivity(socket.id)
+    },
+  )
+
+  // Area update (rename, recolor, resize/move, membership change)
+  socket.on(
+    'area:update',
+    async (
+      data: { areaId: string; [key: string]: any },
+      cb?: (res: AckResult) => void,
+    ) => {
+      if (isSessionExpired(socket)) {
+        socket.emit('session_expired')
+        socket.disconnect(true)
+        cb?.({ ok: false, code: 'SESSION_EXPIRED', message: 'Session expired' })
+        return
+      }
+      if (
+        await denyIfInsufficientPermission(socket, whiteboardId, 'area:update')
+      ) {
+        cb?.({ ok: false, code: 'FORBIDDEN', message: 'Insufficient permission' })
+        return
+      }
+
+      try {
+        const { areaId, ...updateData } = data
+
+        // Ownership check: verify area belongs to this whiteboard (IDOR guard)
+        const areaRecord = await findAreaById(areaId)
+        if (!areaRecord) {
+          socket.emit('error', {
+            event: 'area:update',
+            error: 'NOT_FOUND',
+            message: 'Area not found',
+            areaId,
+          })
+          cb?.({ ok: false, code: 'NOT_FOUND', message: 'Area not found' })
+          return
+        }
+        if (areaRecord.whiteboardId !== whiteboardId) {
+          socket.emit('error', {
+            event: 'area:update',
+            error: 'FORBIDDEN',
+            message: 'Area does not belong to this whiteboard',
+            areaId,
+          })
+          cb?.({
+            ok: false,
+            code: 'FORBIDDEN',
+            message: 'Area does not belong to this whiteboard',
+          })
+          return
+        }
+
+        const validated = updateAreaSchema.parse(updateData)
+        const updatedArea = await updateArea(areaId, validated)
+        socket.broadcast.emit('area:updated', {
+          areaId,
+          ...validated,
+          updatedBy: userId,
+        })
+        cb?.({ ok: true, entity: updatedArea })
+      } catch (error) {
+        console.error('Failed to update area:', error)
+        const message =
+          error instanceof Error ? error.message : 'Failed to update area'
+        socket.emit('error', {
+          event: 'area:update',
+          error: 'UPDATE_FAILED',
+          message,
+        })
+        cb?.({ ok: false, code: 'VALIDATION_ERROR', message })
+        return
+      }
+      await safeUpdateSessionActivity(socket.id)
+    },
+  )
+
+  // Area deletion — removes the grouping only; member tables are untouched
+  socket.on(
+    'area:delete',
+    async (data: { areaId: string }, cb?: (res: AckResult) => void) => {
+      if (isSessionExpired(socket)) {
+        socket.emit('session_expired')
+        socket.disconnect(true)
+        cb?.({ ok: false, code: 'SESSION_EXPIRED', message: 'Session expired' })
+        return
+      }
+      if (
+        await denyIfInsufficientPermission(socket, whiteboardId, 'area:delete')
+      ) {
+        cb?.({ ok: false, code: 'FORBIDDEN', message: 'Insufficient permission' })
+        return
+      }
+
+      try {
+        const { areaId } = z.object({ areaId: z.string().uuid() }).parse(data)
+
+        const area = await findAreaById(areaId)
+        if (!area) {
+          socket.emit('error', {
+            event: 'area:delete',
+            error: 'NOT_FOUND',
+            message: 'Area not found',
+            areaId,
+          })
+          cb?.({ ok: false, code: 'NOT_FOUND', message: 'Area not found' })
+          return
+        }
+        if (area.whiteboardId !== whiteboardId) {
+          socket.emit('error', {
+            event: 'area:delete',
+            error: 'FORBIDDEN',
+            message: 'Area does not belong to this whiteboard',
+            areaId,
+          })
+          cb?.({
+            ok: false,
+            code: 'FORBIDDEN',
+            message: 'Area does not belong to this whiteboard',
+          })
+          return
+        }
+
+        await deleteArea(areaId)
+        socket.broadcast.emit('area:deleted', { areaId, deletedBy: userId })
+        cb?.({ ok: true, entity: { id: areaId } })
+      } catch (error) {
+        console.error('Failed to delete area:', error)
+        const message = 'Failed to delete area'
+        socket.emit('error', {
+          event: 'area:delete',
+          error: 'DELETE_FAILED',
+          message,
+          areaId: data.areaId,
         })
         cb?.({ ok: false, code: 'INTERNAL_ERROR', message })
         return

@@ -218,4 +218,21 @@ CREATE TABLE IF NOT EXISTS "WhiteboardShareLink" (
 CREATE UNIQUE INDEX IF NOT EXISTS "WhiteboardShareLink_tokenHash_key" ON "WhiteboardShareLink"("tokenHash");
 CREATE INDEX IF NOT EXISTS "WhiteboardShareLink_whiteboardId_idx" ON "WhiteboardShareLink"("whiteboardId");
 CREATE INDEX IF NOT EXISTS "WhiteboardShareLink_expiresAt_idx" ON "WhiteboardShareLink"("expiresAt");
+
+CREATE TABLE IF NOT EXISTS "Area" (
+    "id" TEXT NOT NULL PRIMARY KEY,
+    "whiteboardId" TEXT NOT NULL,
+    "name" TEXT NOT NULL,
+    "color" TEXT NOT NULL,
+    "positionX" REAL NOT NULL,
+    "positionY" REAL NOT NULL,
+    "width" REAL NOT NULL,
+    "height" REAL NOT NULL,
+    "memberTableIds" JSONB,
+    "createdAt" DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    "updatedAt" DATETIME NOT NULL,
+    CONSTRAINT "Area_whiteboardId_fkey" FOREIGN KEY ("whiteboardId") REFERENCES "Whiteboard" ("id") ON DELETE CASCADE ON UPDATE CASCADE
+);
+
+CREATE INDEX IF NOT EXISTS "Area_whiteboardId_idx" ON "Area"("whiteboardId");
 `

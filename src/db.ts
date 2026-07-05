@@ -15,6 +15,7 @@ import { mkdirSync } from 'node:fs'
 import { dirname } from 'node:path'
 import { SCHEMA_SQL } from './data/schema-sql'
 import type {
+  Area,
   CollaborationSession,
   Column,
   DiagramTable,
@@ -410,6 +411,24 @@ export function mapRelationship(r: Row): Relationship | null {
     cardinality: r.cardinality as Cardinality,
     label: (r.label as string | null) ?? null,
     routingPoints: fromDbJson(r.routingPoints),
+    createdAt: fromDbDate(r.createdAt),
+    updatedAt: fromDbDate(r.updatedAt),
+  }
+}
+
+export function mapArea(r: Row): Area | null {
+  if (!r) return null
+  const members = fromDbJson(r.memberTableIds)
+  return {
+    id: r.id as string,
+    whiteboardId: r.whiteboardId as string,
+    name: r.name as string,
+    color: r.color as string,
+    positionX: Number(r.positionX),
+    positionY: Number(r.positionY),
+    width: Number(r.width),
+    height: Number(r.height),
+    memberTableIds: Array.isArray(members) ? (members as Array<string>) : [],
     createdAt: fromDbDate(r.createdAt),
     updatedAt: fromDbDate(r.updatedAt),
   }

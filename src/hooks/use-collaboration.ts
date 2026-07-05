@@ -29,7 +29,7 @@ export interface UseCollaborationReturn {
   sessionId: string | null
   activeUsers: Array<ActiveUser>
   isUnauthorized: boolean
-  emit: (event: string, data: any) => void
+  emit: (event: string, data: any, ack?: (res: any) => void) => void
   on: (event: string, handler: (...args: Array<any>) => void) => void
   off: (event: string, handler: (...args: Array<any>) => void) => void
   requestSync: () => void
@@ -285,14 +285,20 @@ export function useCollaboration(
     }
   }, [whiteboardId, userId, enabled])
 
-  // Emit event to server
-  const emit = useCallback((event: string, data: any) => {
-    if (socketRef.current && socketRef.current.connected) {
-      socketRef.current.emit(event, data)
-    } else {
-      console.warn(`Cannot emit ${event}: socket not connected`)
-    }
-  }, [])
+  // Emit event to server. An optional ack callback receives the server's
+  // acknowledgement (Socket.IO ack) — used by callers that need the persisted
+  // entity back (e.g. area:create returns the new area with its real id).
+  const emit = useCallback(
+    (event: string, data: any, ack?: (res: any) => void) => {
+      if (socketRef.current && socketRef.current.connected) {
+        if (ack) socketRef.current.emit(event, data, ack)
+        else socketRef.current.emit(event, data)
+      } else {
+        console.warn(`Cannot emit ${event}: socket not connected`)
+      }
+    },
+    [],
+  )
 
   // Listen for event from server
   const on = useCallback(
