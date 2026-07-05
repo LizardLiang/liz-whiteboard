@@ -120,12 +120,21 @@ export function FolderItem({
         onDragLeave={handleDragLeave}
         onDrop={handleDrop}
       >
-        <div className="flex items-center gap-1 pr-8">
+        <div className="flex items-center gap-1 pr-1">
+          <div className="flex items-center gap-2 flex-1 pl-2 pr-2 py-2 rounded-md hover:bg-accent/50 transition-colors">
+            {isOpen ? (
+              <FolderOpen className="h-4 w-4 text-muted-foreground flex-shrink-0" />
+            ) : (
+              <Folder className="h-4 w-4 text-muted-foreground flex-shrink-0" />
+            )}
+            <span className="text-sm flex-1 truncate">{folder.name}</span>
+          </div>
+
           <CollapsibleTrigger asChild>
             <Button
               variant="ghost"
               size="sm"
-              className="h-8 w-6 p-0"
+              className="h-8 w-6 p-0 flex-shrink-0"
               disabled={!hasChildren}
             >
               {hasChildren ? (
@@ -139,19 +148,10 @@ export function FolderItem({
               )}
             </Button>
           </CollapsibleTrigger>
-
-          <div className="flex items-center gap-2 flex-1 pl-1 pr-2 py-2 rounded-md hover:bg-accent/50 transition-colors">
-            {isOpen ? (
-              <FolderOpen className="h-4 w-4 text-muted-foreground flex-shrink-0" />
-            ) : (
-              <Folder className="h-4 w-4 text-muted-foreground flex-shrink-0" />
-            )}
-            <span className="text-sm flex-1 truncate">{folder.name}</span>
-          </div>
         </div>
 
         {/* Action Buttons */}
-        <div className="absolute right-1 top-1 flex gap-1 opacity-0 group-hover:opacity-100 transition-opacity bg-sidebar rounded-md px-0.5">
+        <div className="absolute right-8 top-1 flex gap-1 opacity-0 group-hover:opacity-100 transition-opacity bg-sidebar rounded-md px-0.5">
           {onCreateWhiteboard && (
             <Button
               variant="ghost"

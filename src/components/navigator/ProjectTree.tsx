@@ -461,13 +461,24 @@ export function ProjectTree() {
             return (
               <Collapsible key={project.id} open={isExpanded}>
                 <div className="group relative">
-                  <div className="flex items-center gap-1 pr-8">
+                  <div className="flex items-center gap-1 pr-1">
+                    <Link
+                      to="/project/$projectId"
+                      params={{ projectId: project.id }}
+                      className={`flex items-center gap-2 flex-1 pl-2 pr-2 py-2 rounded-md hover:bg-accent/50 transition-colors ${isActiveProject ? 'bg-accent' : ''}`}
+                    >
+                      <FolderPlus className="h-4 w-4 text-primary flex-shrink-0" />
+                      <span className="text-sm font-medium flex-1 truncate">
+                        {project.name}
+                      </span>
+                    </Link>
+
                     <CollapsibleTrigger asChild>
                       <Button
                         type="button"
                         variant="ghost"
                         size="sm"
-                        className="h-8 w-6 p-0"
+                        className="h-8 w-6 p-0 flex-shrink-0"
                         onClick={(e) => {
                           e.stopPropagation()
                           toggleProject(project.id)
@@ -480,21 +491,10 @@ export function ProjectTree() {
                         )}
                       </Button>
                     </CollapsibleTrigger>
-
-                    <Link
-                      to="/project/$projectId"
-                      params={{ projectId: project.id }}
-                      className={`flex items-center gap-2 flex-1 pl-1 pr-2 py-2 rounded-md hover:bg-accent/50 transition-colors ${isActiveProject ? 'bg-accent' : ''}`}
-                    >
-                      <FolderPlus className="h-4 w-4 text-primary flex-shrink-0" />
-                      <span className="text-sm font-medium flex-1 truncate">
-                        {project.name}
-                      </span>
-                    </Link>
                   </div>
 
                   {/* Project action buttons */}
-                  <div className="absolute right-1 top-1 flex gap-1 opacity-0 group-hover:opacity-100 transition-opacity bg-sidebar rounded-md px-0.5 pointer-events-none group-hover:pointer-events-auto">
+                  <div className="absolute right-8 top-1 flex gap-1 opacity-0 group-hover:opacity-100 transition-opacity bg-sidebar rounded-md px-0.5 pointer-events-none group-hover:pointer-events-auto">
                     <Button
                       variant="ghost"
                       size="sm"
