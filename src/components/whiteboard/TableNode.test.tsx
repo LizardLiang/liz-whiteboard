@@ -436,6 +436,48 @@ describe('TableNode canEdit gating (WhiteboardPermissionsContext)', () => {
     expect(screen.getByRole('button', { name: /add new column/i })).toBeTruthy()
   })
 
+  it('hides per-column write affordances (drag handle, duplicate, delete, constraint toggles) when canEdit is false', () => {
+    const data = makeTableData()
+    render(
+      <WhiteboardPermissionsProvider value={{ canEdit: false }}>
+        <TableNode id={TABLE_ID} data={data} />
+      </WhiteboardPermissionsProvider>,
+    )
+
+    expect(screen.queryByLabelText(/Reorder column/)).toBeNull()
+    expect(
+      screen.queryByRole('button', { name: /duplicate column/i }),
+    ).toBeNull()
+    expect(screen.queryByRole('button', { name: /delete column/i })).toBeNull()
+    expect(
+      screen.queryAllByRole('button', { name: /toggle primary key/i }),
+    ).toHaveLength(0)
+    // Read-only schema info remains visible
+    expect(screen.getByText('id')).toBeTruthy()
+    expect(screen.getByText('email')).toBeTruthy()
+    expect(screen.getAllByText('PK').length).toBeGreaterThan(0)
+  })
+
+  it('shows per-column write affordances when canEdit is true', () => {
+    const data = makeTableData()
+    render(
+      <WhiteboardPermissionsProvider value={{ canEdit: true }}>
+        <TableNode id={TABLE_ID} data={data} />
+      </WhiteboardPermissionsProvider>,
+    )
+
+    expect(screen.getAllByLabelText(/Reorder column/).length).toBeGreaterThan(0)
+    expect(
+      screen.getAllByRole('button', { name: /duplicate column/i }).length,
+    ).toBeGreaterThan(0)
+    expect(
+      screen.getAllByRole('button', { name: /delete column/i }).length,
+    ).toBeGreaterThan(0)
+    expect(
+      screen.getAllByRole('button', { name: /toggle primary key/i }).length,
+    ).toBeGreaterThan(0)
+  })
+
   it('hides write affordances when rendered outside any WhiteboardPermissionsProvider (fail-closed default)', () => {
     const data = makeTableData()
     render(<TableNode id={TABLE_ID} data={data} />)
@@ -608,10 +650,17 @@ describe('TableNode relations panel — stale-column edge filtering', () => {
 // ============================================================================
 
 describe('DragHandle component (Suite S6 — REQ-12)', () => {
+  // WhiteboardPermissionsContext defaults to canEdit: false (fail-closed);
+  // DragHandle is a write affordance (column reordering), so direct renders
+  // in this suite wrap with an explicit canEdit: true provider.
   it('AC-01a: DragHandle renders a button element', async () => {
     const { DragHandle } = await import('./column/DragHandle')
 
-    render(<DragHandle columnName="email" isDragging={false} show={true} />)
+    render(
+      <WhiteboardPermissionsProvider value={{ canEdit: true }}>
+        <DragHandle columnName="email" isDragging={false} show={true} />
+      </WhiteboardPermissionsProvider>,
+    )
 
     const btn = screen.getByRole('button', { name: /Reorder column email/i })
     expect(btn).toBeTruthy()
@@ -620,7 +669,11 @@ describe('DragHandle component (Suite S6 — REQ-12)', () => {
   it('AC-01c: DragHandle has nodrag and nowheel classes', async () => {
     const { DragHandle } = await import('./column/DragHandle')
 
-    render(<DragHandle columnName="id" isDragging={false} show={true} />)
+    render(
+      <WhiteboardPermissionsProvider value={{ canEdit: true }}>
+        <DragHandle columnName="id" isDragging={false} show={true} />
+      </WhiteboardPermissionsProvider>,
+    )
 
     const btn = screen.getByLabelText('Reorder column id')
     expect(btn.className).toContain('nodrag')
@@ -631,7 +684,9 @@ describe('DragHandle component (Suite S6 — REQ-12)', () => {
     const { DragHandle } = await import('./column/DragHandle')
 
     render(
-      <DragHandle columnName="created_at" isDragging={false} show={true} />,
+      <WhiteboardPermissionsProvider value={{ canEdit: true }}>
+        <DragHandle columnName="created_at" isDragging={false} show={true} />
+      </WhiteboardPermissionsProvider>,
     )
 
     expect(screen.getByLabelText('Reorder column created_at')).toBeTruthy()
@@ -641,7 +696,9 @@ describe('DragHandle component (Suite S6 — REQ-12)', () => {
     const { DragHandle } = await import('./column/DragHandle')
 
     const { container } = render(
-      <DragHandle columnName="email" isDragging={false} show={false} />,
+      <WhiteboardPermissionsProvider value={{ canEdit: true }}>
+        <DragHandle columnName="email" isDragging={false} show={false} />
+      </WhiteboardPermissionsProvider>,
     )
 
     expect(container.firstChild).toBeNull()
@@ -651,7 +708,11 @@ describe('DragHandle component (Suite S6 — REQ-12)', () => {
   it('AC-02a: isDragging=true changes cursor to grabbing', async () => {
     const { DragHandle } = await import('./column/DragHandle')
 
-    render(<DragHandle columnName="email" isDragging={true} show={true} />)
+    render(
+      <WhiteboardPermissionsProvider value={{ canEdit: true }}>
+        <DragHandle columnName="email" isDragging={true} show={true} />
+      </WhiteboardPermissionsProvider>,
+    )
 
     const btn = screen.getByLabelText('Reorder column email')
     expect(btn.style.cursor).toBe('grabbing')
@@ -660,10 +721,27 @@ describe('DragHandle component (Suite S6 — REQ-12)', () => {
   it('AC-02b: isDragging=false shows grab cursor', async () => {
     const { DragHandle } = await import('./column/DragHandle')
 
-    render(<DragHandle columnName="email" isDragging={false} show={true} />)
+    render(
+      <WhiteboardPermissionsProvider value={{ canEdit: true }}>
+        <DragHandle columnName="email" isDragging={false} show={true} />
+      </WhiteboardPermissionsProvider>,
+    )
 
     const btn = screen.getByLabelText('Reorder column email')
     expect(btn.style.cursor).toBe('grab')
+  })
+
+  it('AC-01g (canEdit gating): DragHandle returns null when canEdit is false even though show=true', async () => {
+    const { DragHandle } = await import('./column/DragHandle')
+
+    const { container } = render(
+      <WhiteboardPermissionsProvider value={{ canEdit: false }}>
+        <DragHandle columnName="email" isDragging={false} show={true} />
+      </WhiteboardPermissionsProvider>,
+    )
+
+    expect(container.firstChild).toBeNull()
+    expect(screen.queryByRole('button')).toBeNull()
   })
 })
 

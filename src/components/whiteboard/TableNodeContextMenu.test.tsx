@@ -5,6 +5,19 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { act, fireEvent, render, screen } from '@testing-library/react'
 import { TableNodeContextMenu } from './TableNodeContextMenu'
+import { WhiteboardPermissionsProvider } from './whiteboard-permissions-context'
+import type { ReactElement } from 'react'
+
+// WhiteboardPermissionsContext defaults to canEdit: false (fail-closed).
+// "Delete table" is a write action, so tests exercising it wrap with an
+// explicit canEdit: true provider.
+function renderEditable(ui: ReactElement) {
+  return render(
+    <WhiteboardPermissionsProvider value={{ canEdit: true }}>
+      {ui}
+    </WhiteboardPermissionsProvider>,
+  )
+}
 
 describe('TableNodeContextMenu', () => {
   beforeEach(() => {
@@ -25,8 +38,8 @@ describe('TableNodeContextMenu', () => {
     expect(screen.getByRole('menu')).toBeTruthy()
   })
 
-  it('TC-TD-02-02: context menu contains "Delete table" item', () => {
-    render(
+  it('TC-TD-02-02: context menu contains "Delete table" item when canEdit is true', () => {
+    renderEditable(
       <TableNodeContextMenu onDeleteTable={vi.fn()}>
         <div data-testid="node">Table</div>
       </TableNodeContextMenu>,
@@ -36,7 +49,7 @@ describe('TableNodeContextMenu', () => {
   })
 
   it('TC-TD-02-03: "Delete table" item has destructive visual styling', () => {
-    render(
+    renderEditable(
       <TableNodeContextMenu onDeleteTable={vi.fn()}>
         <div data-testid="node">Table</div>
       </TableNodeContextMenu>,
@@ -48,7 +61,7 @@ describe('TableNodeContextMenu', () => {
 
   it('TC-TD-02-04: clicking "Delete table" calls onDeleteTable', () => {
     const onDeleteTable = vi.fn()
-    render(
+    renderEditable(
       <TableNodeContextMenu onDeleteTable={onDeleteTable}>
         <div data-testid="node">Table</div>
       </TableNodeContextMenu>,
@@ -94,7 +107,7 @@ describe('TableNodeContextMenu', () => {
   })
 
   it('TC-TD-02-07: "Del" shortcut indicator is shown next to the menu item', () => {
-    render(
+    renderEditable(
       <TableNodeContextMenu onDeleteTable={vi.fn()}>
         <div data-testid="node">Table</div>
       </TableNodeContextMenu>,
@@ -121,5 +134,43 @@ describe('TableNodeContextMenu', () => {
 
     fireEvent.click(menuItem)
     expect(onPreviewRelations).toHaveBeenCalledOnce()
+  })
+})
+
+// ============================================================================
+// canEdit gating (WhiteboardPermissionsContext) — issue #109
+// "Delete table" is a table-level write action reachable via the right-click
+// context menu independent of the header delete button; it must not render
+// (nor be selectable) for view-only viewers.
+// ============================================================================
+
+describe('TableNodeContextMenu canEdit gating', () => {
+  it('hides the "Delete table" menu item when canEdit is false', () => {
+    render(
+      <WhiteboardPermissionsProvider value={{ canEdit: false }}>
+        <TableNodeContextMenu onDeleteTable={vi.fn()}>
+          <div data-testid="node">Table</div>
+        </TableNodeContextMenu>
+      </WhiteboardPermissionsProvider>,
+    )
+    fireEvent.contextMenu(screen.getByTestId('node'))
+
+    expect(screen.queryByRole('menuitem', { name: /delete table/i })).toBeNull()
+    // Read-only menu items remain available
+    expect(screen.getByRole('menuitem', { name: /focus view/i })).toBeTruthy()
+    expect(
+      screen.getByRole('menuitem', { name: /show relations/i }),
+    ).toBeTruthy()
+  })
+
+  it('hides the "Delete table" menu item when rendered outside any provider (fail-closed default)', () => {
+    render(
+      <TableNodeContextMenu onDeleteTable={vi.fn()}>
+        <div data-testid="node">Table</div>
+      </TableNodeContextMenu>,
+    )
+    fireEvent.contextMenu(screen.getByTestId('node'))
+
+    expect(screen.queryByRole('menuitem', { name: /delete table/i })).toBeNull()
   })
 })

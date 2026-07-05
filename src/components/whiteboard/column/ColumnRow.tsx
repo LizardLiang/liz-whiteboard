@@ -7,6 +7,7 @@
 
 import { memo, useCallback, useState } from 'react'
 import { Handle, Position } from '@xyflow/react'
+import { useWhiteboardPermissions } from '../whiteboard-permissions-context'
 import { InlineNameEditor } from './InlineNameEditor'
 import { DataTypeSelector } from './DataTypeSelector'
 import { ConstraintBadges } from './ConstraintBadges'
@@ -69,6 +70,7 @@ export const ColumnRow = memo(
     onDragHandlePointerDown,
     isDraggingActive = false,
   }: ColumnRowProps) => {
+    const { canEdit } = useWhiteboardPermissions()
     const isEditingName =
       editingField?.columnId === column.id && editingField.field === 'name'
     const isEditingDataType =
@@ -98,12 +100,12 @@ export const ColumnRow = memo(
           e.stopPropagation()
           onStartEdit(column.id, 'name')
         }
-        if (e.key === 'Delete' && !isEditing) {
+        if (e.key === 'Delete' && !isEditing && canEdit) {
           e.stopPropagation()
           onDelete(column)
         }
       },
-      [column, column.id, isEditing, onStartEdit, onDelete],
+      [column, column.id, isEditing, onStartEdit, onDelete, canEdit],
     )
 
     const handleDeleteClick = useCallback(
@@ -269,72 +271,78 @@ export const ColumnRow = memo(
             )}
           </div>
 
-          {/* Column note popover */}
-          <ColumnNotePopover
-            description={column.description}
-            onSave={(desc) => onDescriptionUpdate(column.id, desc)}
-          />
+          {/* Column note popover — editing a note is a write action; hidden for view-only viewers */}
+          {canEdit && (
+            <ColumnNotePopover
+              description={column.description}
+              onSave={(desc) => onDescriptionUpdate(column.id, desc)}
+            />
+          )}
 
-          {/* Duplicate button — hover visible */}
-          <Tooltip>
-            <TooltipTrigger asChild>
-              <button
-                type="button"
-                aria-label={`Duplicate column ${column.name}`}
-                onClick={handleDuplicateClick}
-                className="nodrag nowheel"
-                style={{
-                  opacity: 0,
-                  flexShrink: 0,
-                  background: 'none',
-                  border: 'none',
-                  cursor: 'pointer',
-                  padding: '2px',
-                  color: 'var(--rf-table-text)',
-                  transition: 'opacity 0.1s',
-                  fontSize: '11px',
-                  lineHeight: 1,
-                }}
-                onMouseEnter={(e) => {
-                  ;(e.currentTarget as HTMLButtonElement).style.opacity = '1'
-                }}
-                onMouseLeave={(e) => {
-                  ;(e.currentTarget as HTMLButtonElement).style.opacity = '0'
-                }}
-              >
-                ⧉
-              </button>
-            </TooltipTrigger>
-            <TooltipContent side="top">Duplicate field</TooltipContent>
-          </Tooltip>
+          {/* Duplicate button — hover visible. Write action, hidden when !canEdit. */}
+          {canEdit && (
+            <Tooltip>
+              <TooltipTrigger asChild>
+                <button
+                  type="button"
+                  aria-label={`Duplicate column ${column.name}`}
+                  onClick={handleDuplicateClick}
+                  className="nodrag nowheel"
+                  style={{
+                    opacity: 0,
+                    flexShrink: 0,
+                    background: 'none',
+                    border: 'none',
+                    cursor: 'pointer',
+                    padding: '2px',
+                    color: 'var(--rf-table-text)',
+                    transition: 'opacity 0.1s',
+                    fontSize: '11px',
+                    lineHeight: 1,
+                  }}
+                  onMouseEnter={(e) => {
+                    ;(e.currentTarget as HTMLButtonElement).style.opacity = '1'
+                  }}
+                  onMouseLeave={(e) => {
+                    ;(e.currentTarget as HTMLButtonElement).style.opacity = '0'
+                  }}
+                >
+                  ⧉
+                </button>
+              </TooltipTrigger>
+              <TooltipContent side="top">Duplicate field</TooltipContent>
+            </Tooltip>
+          )}
 
-          {/* Delete button — hover visible */}
-          <button
-            type="button"
-            aria-label={`Delete column ${column.name}`}
-            onClick={handleDeleteClick}
-            className="nodrag nowheel"
-            style={{
-              opacity: 0,
-              flexShrink: 0,
-              background: 'none',
-              border: 'none',
-              cursor: 'pointer',
-              padding: '2px',
-              color: 'var(--rf-table-text)',
-              transition: 'opacity 0.1s',
-              fontSize: '14px',
-              lineHeight: 1,
-            }}
-            onMouseEnter={(e) => {
-              ;(e.currentTarget as HTMLButtonElement).style.opacity = '1'
-            }}
-            onMouseLeave={(e) => {
-              ;(e.currentTarget as HTMLButtonElement).style.opacity = '0'
-            }}
-          >
-            ×
-          </button>
+          {/* Delete button — hover visible. Write action, hidden when !canEdit. */}
+          {canEdit && (
+            <button
+              type="button"
+              aria-label={`Delete column ${column.name}`}
+              onClick={handleDeleteClick}
+              className="nodrag nowheel"
+              style={{
+                opacity: 0,
+                flexShrink: 0,
+                background: 'none',
+                border: 'none',
+                cursor: 'pointer',
+                padding: '2px',
+                color: 'var(--rf-table-text)',
+                transition: 'opacity 0.1s',
+                fontSize: '14px',
+                lineHeight: 1,
+              }}
+              onMouseEnter={(e) => {
+                ;(e.currentTarget as HTMLButtonElement).style.opacity = '1'
+              }}
+              onMouseLeave={(e) => {
+                ;(e.currentTarget as HTMLButtonElement).style.opacity = '0'
+              }}
+            >
+              ×
+            </button>
+          )}
 
           {/* Right-side handles */}
           <Handle

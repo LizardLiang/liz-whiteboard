@@ -3,6 +3,7 @@
  * Uses Radix ContextMenu (via shadcn) for accessibility and portal-based positioning
  */
 
+import { useWhiteboardPermissions } from './whiteboard-permissions-context'
 import type { Dialect } from '@/lib/ddl-generator'
 import {
   ContextMenu,
@@ -33,6 +34,7 @@ export function TableNodeContextMenu({
   onPreviewRelations,
   disabled,
 }: TableNodeContextMenuProps) {
+  const { canEdit } = useWhiteboardPermissions()
   return (
     <ContextMenu>
       <ContextMenuTrigger asChild>{children}</ContextMenuTrigger>
@@ -84,17 +86,23 @@ export function TableNodeContextMenu({
             </ContextMenuItem>
           </ContextMenuSubContent>
         </ContextMenuSub>
-        <ContextMenuSeparator />
-        <ContextMenuItem
-          className="text-destructive focus:text-destructive"
-          onSelect={() => {
-            onDeleteTable()
-          }}
-          disabled={disabled}
-        >
-          Delete table
-          <ContextMenuShortcut>Del</ContextMenuShortcut>
-        </ContextMenuItem>
+        {/* Delete table — write action; hidden entirely for view-only viewers
+            (not just disabled, matching the fail-closed header delete button). */}
+        {canEdit && (
+          <>
+            <ContextMenuSeparator />
+            <ContextMenuItem
+              className="text-destructive focus:text-destructive"
+              onSelect={() => {
+                onDeleteTable()
+              }}
+              disabled={disabled}
+            >
+              Delete table
+              <ContextMenuShortcut>Del</ContextMenuShortcut>
+            </ContextMenuItem>
+          </>
+        )}
       </ContextMenuContent>
     </ContextMenu>
   )

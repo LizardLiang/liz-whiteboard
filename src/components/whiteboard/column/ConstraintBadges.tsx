@@ -7,6 +7,7 @@
  */
 
 import { memo, useCallback, useEffect, useRef, useState } from 'react'
+import { useWhiteboardPermissions } from '../whiteboard-permissions-context'
 
 export interface ConstraintBadgesProps {
   isPrimaryKey: boolean
@@ -29,6 +30,8 @@ export const ConstraintBadges = memo(
     isForeignKey,
     onToggle,
   }: ConstraintBadgesProps) => {
+    const { canEdit } = useWhiteboardPermissions()
+
     // Local optimistic state mirrors the props initially
     const [localPK, setLocalPK] = useState(isPrimaryKey)
     const [localN, setLocalN] = useState(isNullable)
@@ -132,14 +135,20 @@ export const ConstraintBadges = memo(
         style={{ display: 'flex', gap: '2px', flexShrink: 0, width: '72px' }}
         onClick={(e) => e.stopPropagation()}
       >
-        {/* PK Badge — always visible; active amber style when isPK, outline style when not */}
+        {/* PK Badge — always visible; active amber style when isPK, outline style when not.
+            Non-interactive static badge when !canEdit (schema info stays visible, toggle removed). */}
         <span
-          role="button"
-          aria-pressed={localPK}
-          aria-label={`Toggle primary key, currently ${localPK ? 'enabled' : 'disabled'}`}
-          onClick={handlePKClick}
+          role={canEdit ? 'button' : undefined}
+          aria-pressed={canEdit ? localPK : undefined}
+          aria-label={
+            canEdit
+              ? `Toggle primary key, currently ${localPK ? 'enabled' : 'disabled'}`
+              : `Primary key ${localPK ? 'enabled' : 'disabled'}`
+          }
+          onClick={canEdit ? handlePKClick : undefined}
           style={{
             ...badgeBase,
+            cursor: canEdit ? 'pointer' : 'default',
             background: localPK
               ? 'var(--rf-primary-key-color, #f59e0b)'
               : 'transparent',
@@ -167,14 +176,19 @@ export const ConstraintBadges = memo(
           </span>
         )}
 
-        {/* N (Nullable) Badge — always visible */}
+        {/* N (Nullable) Badge — always visible. Non-interactive when !canEdit. */}
         <span
-          role="button"
-          aria-pressed={localN}
-          aria-label={`Toggle nullable, currently ${localN ? 'enabled' : 'disabled'}`}
-          onClick={handleNClick}
+          role={canEdit ? 'button' : undefined}
+          aria-pressed={canEdit ? localN : undefined}
+          aria-label={
+            canEdit
+              ? `Toggle nullable, currently ${localN ? 'enabled' : 'disabled'}`
+              : `Nullable ${localN ? 'enabled' : 'disabled'}`
+          }
+          onClick={canEdit ? handleNClick : undefined}
           style={{
             ...badgeBase,
+            cursor: canEdit ? 'pointer' : 'default',
             background: localN
               ? 'var(--rf-nullable-color, #94a3b8)'
               : 'transparent',
@@ -186,14 +200,19 @@ export const ConstraintBadges = memo(
           N
         </span>
 
-        {/* U (Unique) Badge — always visible */}
+        {/* U (Unique) Badge — always visible. Non-interactive when !canEdit. */}
         <span
-          role="button"
-          aria-pressed={localU}
-          aria-label={`Toggle unique, currently ${localU ? 'enabled' : 'disabled'}`}
-          onClick={handleUClick}
+          role={canEdit ? 'button' : undefined}
+          aria-pressed={canEdit ? localU : undefined}
+          aria-label={
+            canEdit
+              ? `Toggle unique, currently ${localU ? 'enabled' : 'disabled'}`
+              : `Unique ${localU ? 'enabled' : 'disabled'}`
+          }
+          onClick={canEdit ? handleUClick : undefined}
           style={{
             ...badgeBase,
+            cursor: canEdit ? 'pointer' : 'default',
             background: localU
               ? 'var(--rf-unique-color, #10b981)'
               : 'transparent',

@@ -4,7 +4,9 @@
 
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { act, fireEvent, render, screen } from '@testing-library/react'
+import { WhiteboardPermissionsProvider } from '../whiteboard-permissions-context'
 import { ColumnRow } from './ColumnRow'
+import type { ReactElement } from 'react'
 import type { EditingField } from './types'
 import type { RelationshipEdgeType } from '@/lib/react-flow/types'
 import { mockColumn, mockFKColumn } from '@/test/fixtures'
@@ -61,6 +63,18 @@ const defaultProps = {
   edges: [] as Array<RelationshipEdgeType>,
 }
 
+// WhiteboardPermissionsContext defaults to canEdit: false (fail-closed).
+// This suite exercises delete/duplicate/note behavior that requires write
+// access, so every render is wrapped with an explicit canEdit: true provider
+// unless a test is specifically exercising the canEdit: false gating.
+function renderEditable(ui: ReactElement) {
+  return render(
+    <WhiteboardPermissionsProvider value={{ canEdit: true }}>
+      {ui}
+    </WhiteboardPermissionsProvider>,
+  )
+}
+
 describe('ColumnRow', () => {
   beforeEach(() => {
     vi.useFakeTimers()
@@ -72,7 +86,7 @@ describe('ColumnRow', () => {
   })
 
   it('TC-06-01: renders column name and data type as static text in default state', () => {
-    render(<ColumnRow {...defaultProps} />)
+    renderEditable(<ColumnRow {...defaultProps} />)
     expect(screen.getByText('email')).toBeTruthy()
     expect(screen.getByText('string')).toBeTruthy()
     // No text input (not in edit mode)
@@ -81,7 +95,7 @@ describe('ColumnRow', () => {
 
   it('TC-06-02: double-clicking name calls onStartEdit with name field', () => {
     const onStartEdit = vi.fn()
-    render(<ColumnRow {...defaultProps} onStartEdit={onStartEdit} />)
+    renderEditable(<ColumnRow {...defaultProps} onStartEdit={onStartEdit} />)
     const nameSpan = screen.getByText('email')
     fireEvent.dblClick(nameSpan)
     expect(onStartEdit).toHaveBeenCalledWith(mockColumn.id, 'name')
@@ -92,14 +106,14 @@ describe('ColumnRow', () => {
       columnId: mockColumn.id,
       field: 'name',
     }
-    render(<ColumnRow {...defaultProps} editingField={editingField} />)
+    renderEditable(<ColumnRow {...defaultProps} editingField={editingField} />)
     // InlineNameEditor renders an input
     expect(screen.getByRole('textbox')).toBeTruthy()
   })
 
   it('TC-06-04: double-clicking dataType calls onStartEdit with dataType field', () => {
     const onStartEdit = vi.fn()
-    render(<ColumnRow {...defaultProps} onStartEdit={onStartEdit} />)
+    renderEditable(<ColumnRow {...defaultProps} onStartEdit={onStartEdit} />)
     const typeSpan = screen.getByText('string')
     fireEvent.dblClick(typeSpan)
     expect(onStartEdit).toHaveBeenCalledWith(mockColumn.id, 'dataType')
@@ -110,19 +124,21 @@ describe('ColumnRow', () => {
       columnId: mockColumn.id,
       field: 'dataType',
     }
-    render(<ColumnRow {...defaultProps} editingField={editingField} />)
+    renderEditable(<ColumnRow {...defaultProps} editingField={editingField} />)
     expect(screen.getByTestId('data-type-selector')).toBeTruthy()
   })
 
   it('TC-06-06: delete button is initially hidden (opacity 0)', () => {
-    render(<ColumnRow {...defaultProps} />)
+    renderEditable(<ColumnRow {...defaultProps} />)
     const deleteBtn = screen.getByRole('button', { name: /delete column/i })
     expect(deleteBtn.style.opacity).toBe('0')
   })
 
   it('TC-06-07: clicking delete on column with no edges calls onDelete directly', () => {
     const onDelete = vi.fn()
-    render(<ColumnRow {...defaultProps} edges={[]} onDelete={onDelete} />)
+    renderEditable(
+      <ColumnRow {...defaultProps} edges={[]} onDelete={onDelete} />,
+    )
     const deleteBtn = screen.getByRole('button', { name: /delete column/i })
     fireEvent.click(deleteBtn)
     expect(onDelete).toHaveBeenCalledWith(mockColumn)
@@ -133,20 +149,20 @@ describe('ColumnRow', () => {
       columnId: mockColumn.id,
       field: 'name',
     }
-    render(<ColumnRow {...defaultProps} editingField={editingField} />)
+    renderEditable(<ColumnRow {...defaultProps} editingField={editingField} />)
     // Find the column-row container
     const rows = document.querySelectorAll('.column-row.editing')
     expect(rows.length).toBeGreaterThan(0)
   })
 
   it('TC-06-09b: row does NOT have editing class when not in edit mode', () => {
-    render(<ColumnRow {...defaultProps} editingField={null} />)
+    renderEditable(<ColumnRow {...defaultProps} editingField={null} />)
     const rows = document.querySelectorAll('.column-row.editing')
     expect(rows.length).toBe(0)
   })
 
   it('TC-06-10: name span has cursor:text style', () => {
-    render(<ColumnRow {...defaultProps} />)
+    renderEditable(<ColumnRow {...defaultProps} />)
     const nameSpan = screen.getByText('email')
     expect(nameSpan.style.cursor).toBe('text')
   })
@@ -154,7 +170,7 @@ describe('ColumnRow', () => {
   // TS-TD-06: Column deletion accessibility (P1) — TC-TD-06-01 through TC-TD-06-05
 
   it('TC-TD-06-01: delete button has aria-label including the column name', () => {
-    render(<ColumnRow {...defaultProps} column={mockColumn} />)
+    renderEditable(<ColumnRow {...defaultProps} column={mockColumn} />)
     // The delete button should have aria-label that includes the column name "email"
     const deleteBtn = screen.getByRole('button', {
       name: /delete column email/i,
@@ -166,7 +182,7 @@ describe('ColumnRow', () => {
     // This test verifies that in DeleteColumnDialog, the Cancel button is first.
     // For ColumnRow itself, the delete button aria-label is set correctly (AC-19 focus order).
     // We verify the aria-label contains the column name.
-    render(<ColumnRow {...defaultProps} column={mockColumn} />)
+    renderEditable(<ColumnRow {...defaultProps} column={mockColumn} />)
     const deleteBtn = screen.getByRole('button', { name: /delete column/i })
     // aria-label should contain column name
     expect(deleteBtn.getAttribute('aria-label')).toContain(mockColumn.name)
@@ -174,7 +190,7 @@ describe('ColumnRow', () => {
 
   it('TC-TD-06-04: Delete key on focused column row triggers onDelete for that column', () => {
     const onDelete = vi.fn()
-    render(<ColumnRow {...defaultProps} onDelete={onDelete} />)
+    renderEditable(<ColumnRow {...defaultProps} onDelete={onDelete} />)
 
     // Focus the column row element
     const columnRowEl = document.querySelector('.column-row') as HTMLElement
@@ -189,7 +205,7 @@ describe('ColumnRow', () => {
 
   it('TC-TD-06-05: Delete key on column row calls onDelete with the correct column object', () => {
     const onDelete = vi.fn()
-    render(
+    renderEditable(
       <ColumnRow {...defaultProps} column={mockColumn} onDelete={onDelete} />,
     )
 
@@ -201,5 +217,63 @@ describe('ColumnRow', () => {
     // onDelete should receive the exact column object regardless of relationship presence
     expect(onDelete).toHaveBeenCalledWith(mockColumn)
     expect(onDelete).toHaveBeenCalledOnce()
+  })
+})
+
+// ============================================================================
+// canEdit gating (WhiteboardPermissionsContext) — issue #109
+// Duplicate/Delete/Edit-note write affordances must not render (and the
+// Delete keyboard shortcut must not fire) for view-only viewers.
+// ============================================================================
+
+describe('ColumnRow canEdit gating', () => {
+  afterEach(() => {
+    vi.clearAllMocks()
+  })
+
+  it('hides Duplicate, Delete, and Edit column note controls when canEdit is false', () => {
+    render(
+      <WhiteboardPermissionsProvider value={{ canEdit: false }}>
+        <ColumnRow {...defaultProps} />
+      </WhiteboardPermissionsProvider>,
+    )
+
+    expect(
+      screen.queryByRole('button', { name: /duplicate column/i }),
+    ).toBeNull()
+    expect(screen.queryByRole('button', { name: /delete column/i })).toBeNull()
+    expect(
+      screen.queryByRole('button', { name: /edit column note/i }),
+    ).toBeNull()
+    // Read-only schema info remains visible
+    expect(screen.getByText('email')).toBeTruthy()
+    expect(screen.getByText('string')).toBeTruthy()
+  })
+
+  it('does not call onDelete on Delete keydown when canEdit is false', () => {
+    const onDelete = vi.fn()
+    render(
+      <WhiteboardPermissionsProvider value={{ canEdit: false }}>
+        <ColumnRow {...defaultProps} onDelete={onDelete} />
+      </WhiteboardPermissionsProvider>,
+    )
+
+    const columnRowEl = document.querySelector('.column-row') as HTMLElement
+    columnRowEl.focus()
+    fireEvent.keyDown(columnRowEl, { key: 'Delete' })
+
+    expect(onDelete).not.toHaveBeenCalled()
+  })
+
+  it('hides write controls when rendered outside any provider (fail-closed default)', () => {
+    render(<ColumnRow {...defaultProps} />)
+
+    expect(
+      screen.queryByRole('button', { name: /duplicate column/i }),
+    ).toBeNull()
+    expect(screen.queryByRole('button', { name: /delete column/i })).toBeNull()
+    expect(
+      screen.queryByRole('button', { name: /edit column note/i }),
+    ).toBeNull()
   })
 })

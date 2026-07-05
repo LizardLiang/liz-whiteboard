@@ -5,8 +5,21 @@
 //        aria-describedby links handle to tooltip.
 
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
-import { act, fireEvent, render, screen, waitFor } from '@testing-library/react'
+import { act, fireEvent, render, screen } from '@testing-library/react'
+import { WhiteboardPermissionsProvider } from '../whiteboard-permissions-context'
 import { DragHandle } from './DragHandle'
+import type { ReactElement } from 'react'
+
+// WhiteboardPermissionsContext defaults to canEdit: false (fail-closed).
+// Reordering is a write action, so tooltip/rendering tests that expect the
+// handle to be present wrap with an explicit canEdit: true provider.
+function renderEditable(ui: ReactElement) {
+  return render(
+    <WhiteboardPermissionsProvider value={{ canEdit: true }}>
+      {ui}
+    </WhiteboardPermissionsProvider>,
+  )
+}
 
 // ============================================================================
 // Tooltip tests for DragHandle (REQ-12)
@@ -25,12 +38,11 @@ describe('DragHandle tooltip (REQ-12)', () => {
 
   // AC-12a: tooltip "Drag to reorder" appears after 400ms hover on drag handle
   it('AC-12a: tooltip content "Drag to reorder" is present in component tree', () => {
-    render(
+    renderEditable(
       <DragHandle
         columnName="email"
         isDragging={false}
-        setActivatorNodeRef={vi.fn()}
-        listeners={{}}
+        onPointerDown={vi.fn()}
         show={true}
       />,
     )
@@ -49,12 +61,11 @@ describe('DragHandle tooltip (REQ-12)', () => {
     // Since Radix uses ARIA attributes for tooltip visibility, we check that
     // the tooltip trigger button exists and the tooltip content is accessible.
 
-    const { container } = render(
+    renderEditable(
       <DragHandle
         columnName="name"
         isDragging={false}
-        setActivatorNodeRef={vi.fn()}
-        listeners={{}}
+        onPointerDown={vi.fn()}
         show={true}
       />,
     )
@@ -86,12 +97,11 @@ describe('DragHandle tooltip (REQ-12)', () => {
 
   // AC-12e: aria-describedby links handle button to tooltip
   it('AC-12e: tooltip renders TooltipContent with accessible text', () => {
-    render(
+    renderEditable(
       <DragHandle
         columnName="created_at"
         isDragging={false}
-        setActivatorNodeRef={vi.fn()}
-        listeners={{}}
+        onPointerDown={vi.fn()}
         show={true}
       />,
     )
@@ -122,17 +132,53 @@ describe('DragHandle tooltip (REQ-12)', () => {
 
   // AC-12a: tooltip does NOT render when show=false (no drag handle, no tooltip)
   it('AC-12a: no tooltip rendered when show=false', () => {
-    const { container } = render(
+    const { container } = renderEditable(
       <DragHandle
         columnName="email"
         isDragging={false}
-        setActivatorNodeRef={vi.fn()}
-        listeners={{}}
+        onPointerDown={vi.fn()}
         show={false}
       />,
     )
 
     expect(container.firstChild).toBeNull()
     expect(screen.queryByRole('tooltip')).toBeNull()
+  })
+})
+
+// ============================================================================
+// canEdit gating (WhiteboardPermissionsContext) — issue #109
+// Reordering columns is a write action; the drag handle must not render for
+// view-only viewers even when show=true.
+// ============================================================================
+
+describe('DragHandle canEdit gating', () => {
+  it('renders nothing when show=true but canEdit is false', () => {
+    const { container } = render(
+      <WhiteboardPermissionsProvider value={{ canEdit: false }}>
+        <DragHandle
+          columnName="email"
+          isDragging={false}
+          onPointerDown={vi.fn()}
+          show={true}
+        />
+      </WhiteboardPermissionsProvider>,
+    )
+
+    expect(container.firstChild).toBeNull()
+    expect(screen.queryByLabelText(/Reorder column/)).toBeNull()
+  })
+
+  it('renders nothing when rendered outside any provider (fail-closed default)', () => {
+    const { container } = render(
+      <DragHandle
+        columnName="email"
+        isDragging={false}
+        onPointerDown={vi.fn()}
+        show={true}
+      />,
+    )
+
+    expect(container.firstChild).toBeNull()
   })
 })

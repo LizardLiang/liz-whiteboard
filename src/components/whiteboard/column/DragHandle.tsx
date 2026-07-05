@@ -1,5 +1,6 @@
 import { memo } from 'react'
 import { GripVertical } from 'lucide-react'
+import { useWhiteboardPermissions } from '../whiteboard-permissions-context'
 import {
   Tooltip,
   TooltipContent,
@@ -16,7 +17,9 @@ export interface DragHandleProps {
 
 export const DragHandle = memo(
   ({ columnName, isDragging, onPointerDown, show }: DragHandleProps) => {
-    if (!show) return null
+    const { canEdit } = useWhiteboardPermissions()
+    // Reordering is a write action — no drag handle for view-only viewers.
+    if (!show || !canEdit) return null
 
     return (
       <TooltipProvider>
