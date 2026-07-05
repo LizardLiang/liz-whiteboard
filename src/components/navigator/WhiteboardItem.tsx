@@ -61,24 +61,28 @@ export function WhiteboardItem({
 
   return (
     <div
-      className={`group relative ${isDragging ? 'opacity-50' : ''}`}
+      className={`group relative pr-8 ${isDragging ? 'opacity-50' : ''}`}
       draggable={draggable}
       onDragStart={handleDragStart}
       onDragEnd={handleDragEnd}
       onContextMenu={handleContextMenu}
     >
-      <Link
-        to="/whiteboard/$whiteboardId"
-        params={{ whiteboardId: id }}
-        className={`flex items-center gap-2 rounded-md px-3 py-2 text-sm transition-colors ${
-          isActive
-            ? 'bg-accent text-accent-foreground'
-            : 'hover:bg-accent/50 text-muted-foreground hover:text-foreground'
-        }`}
-      >
-        <FileText className="h-4 w-4 flex-shrink-0" />
-        <span className="flex-1 truncate">{name}</span>
-      </Link>
+      <div className="flex items-center gap-1">
+        <span className="h-8 w-8 shrink-0" aria-hidden="true" />
+
+        <Link
+          to="/whiteboard/$whiteboardId"
+          params={{ whiteboardId: id }}
+          className={`flex items-center gap-2 flex-1 rounded-md px-2 py-2 text-sm transition-colors ${
+            isActive
+              ? 'bg-accent text-accent-foreground'
+              : 'hover:bg-accent/50 text-muted-foreground hover:text-foreground'
+          }`}
+        >
+          <FileText className="h-4 w-4 flex-shrink-0" />
+          <span className="flex-1 truncate">{name}</span>
+        </Link>
+      </div>
 
       {/* Action Buttons */}
       {(onRename || onDelete) && (
