@@ -16,6 +16,7 @@ import { Route as LoginRouteImport } from './routes/login'
 import { Route as AuthorizeRouteImport } from './routes/authorize'
 import { Route as IndexRouteImport } from './routes/index'
 import { Route as WhiteboardWhiteboardIdRouteImport } from './routes/whiteboard/$whiteboardId'
+import { Route as ShareTokenRouteImport } from './routes/share.$token'
 import { Route as ProjectProjectIdRouteImport } from './routes/project.$projectId'
 import { Route as InviteTokenRouteImport } from './routes/invite.$token'
 import { Route as DemoTanstackQueryRouteImport } from './routes/demo/tanstack-query'
@@ -66,6 +67,11 @@ const IndexRoute = IndexRouteImport.update({
 const WhiteboardWhiteboardIdRoute = WhiteboardWhiteboardIdRouteImport.update({
   id: '/whiteboard/$whiteboardId',
   path: '/whiteboard/$whiteboardId',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const ShareTokenRoute = ShareTokenRouteImport.update({
+  id: '/share/$token',
+  path: '/share/$token',
   getParentRoute: () => rootRouteImport,
 } as any)
 const ProjectProjectIdRoute = ProjectProjectIdRouteImport.update({
@@ -162,6 +168,7 @@ export interface FileRoutesByFullPath {
   '/demo/tanstack-query': typeof DemoTanstackQueryRoute
   '/invite/$token': typeof InviteTokenRoute
   '/project/$projectId': typeof ProjectProjectIdRouteWithChildren
+  '/share/$token': typeof ShareTokenRoute
   '/whiteboard/$whiteboardId': typeof WhiteboardWhiteboardIdRouteWithChildren
   '/demo/api/names': typeof DemoApiNamesRoute
   '/demo/api/tq-todos': typeof DemoApiTqTodosRoute
@@ -187,6 +194,7 @@ export interface FileRoutesByTo {
   '/demo/tanstack-query': typeof DemoTanstackQueryRoute
   '/invite/$token': typeof InviteTokenRoute
   '/project/$projectId': typeof ProjectProjectIdRouteWithChildren
+  '/share/$token': typeof ShareTokenRoute
   '/whiteboard/$whiteboardId': typeof WhiteboardWhiteboardIdRouteWithChildren
   '/demo/api/names': typeof DemoApiNamesRoute
   '/demo/api/tq-todos': typeof DemoApiTqTodosRoute
@@ -213,6 +221,7 @@ export interface FileRoutesById {
   '/demo/tanstack-query': typeof DemoTanstackQueryRoute
   '/invite/$token': typeof InviteTokenRoute
   '/project/$projectId': typeof ProjectProjectIdRouteWithChildren
+  '/share/$token': typeof ShareTokenRoute
   '/whiteboard/$whiteboardId': typeof WhiteboardWhiteboardIdRouteWithChildren
   '/demo/api/names': typeof DemoApiNamesRoute
   '/demo/api/tq-todos': typeof DemoApiTqTodosRoute
@@ -240,6 +249,7 @@ export interface FileRouteTypes {
     | '/demo/tanstack-query'
     | '/invite/$token'
     | '/project/$projectId'
+    | '/share/$token'
     | '/whiteboard/$whiteboardId'
     | '/demo/api/names'
     | '/demo/api/tq-todos'
@@ -265,6 +275,7 @@ export interface FileRouteTypes {
     | '/demo/tanstack-query'
     | '/invite/$token'
     | '/project/$projectId'
+    | '/share/$token'
     | '/whiteboard/$whiteboardId'
     | '/demo/api/names'
     | '/demo/api/tq-todos'
@@ -290,6 +301,7 @@ export interface FileRouteTypes {
     | '/demo/tanstack-query'
     | '/invite/$token'
     | '/project/$projectId'
+    | '/share/$token'
     | '/whiteboard/$whiteboardId'
     | '/demo/api/names'
     | '/demo/api/tq-todos'
@@ -316,6 +328,7 @@ export interface RootRouteChildren {
   DemoTanstackQueryRoute: typeof DemoTanstackQueryRoute
   InviteTokenRoute: typeof InviteTokenRoute
   ProjectProjectIdRoute: typeof ProjectProjectIdRouteWithChildren
+  ShareTokenRoute: typeof ShareTokenRoute
   WhiteboardWhiteboardIdRoute: typeof WhiteboardWhiteboardIdRouteWithChildren
   DemoApiNamesRoute: typeof DemoApiNamesRoute
   DemoApiTqTodosRoute: typeof DemoApiTqTodosRoute
@@ -378,6 +391,13 @@ declare module '@tanstack/react-router' {
       path: '/whiteboard/$whiteboardId'
       fullPath: '/whiteboard/$whiteboardId'
       preLoaderRoute: typeof WhiteboardWhiteboardIdRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/share/$token': {
+      id: '/share/$token'
+      path: '/share/$token'
+      fullPath: '/share/$token'
+      preLoaderRoute: typeof ShareTokenRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/project/$projectId': {
@@ -531,6 +551,7 @@ const rootRouteChildren: RootRouteChildren = {
   DemoTanstackQueryRoute: DemoTanstackQueryRoute,
   InviteTokenRoute: InviteTokenRoute,
   ProjectProjectIdRoute: ProjectProjectIdRouteWithChildren,
+  ShareTokenRoute: ShareTokenRoute,
   WhiteboardWhiteboardIdRoute: WhiteboardWhiteboardIdRouteWithChildren,
   DemoApiNamesRoute: DemoApiNamesRoute,
   DemoApiTqTodosRoute: DemoApiTqTodosRoute,

@@ -35,7 +35,12 @@ interface MyRouterContext {
 // show sign-in/register CTAs or an "Accept invite" button. Actually
 // redeeming the invite still requires auth (enforced server-side by
 // redeemInvite's requireAuth wrapper).
-const PUBLIC_PATHS = ['/login', '/register', '/invite']
+// '/share' is public (GH #109) — read-only whiteboard share links are
+// designed to be opened by anyone holding the URL, with no session at all
+// (see src/routes/share.$token.tsx). Unlike '/invite', there is no
+// authenticated follow-up action on this route; it only ever reads via the
+// unauthenticated getSharedWhiteboard server fn.
+const PUBLIC_PATHS = ['/login', '/register', '/invite', '/share']
 
 export const Route = createRootRouteWithContext<MyRouterContext>()({
   head: () => ({

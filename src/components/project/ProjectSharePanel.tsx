@@ -1,7 +1,7 @@
 // src/components/project/ProjectSharePanel.tsx
 // Share panel for managing project-level permissions
 
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import type {
   InviteExpiryHours,
@@ -36,6 +36,12 @@ import {
   listProjectInvites,
   revokeInvite,
 } from '@/routes/api/invites'
+import {
+  createShareLink,
+  listShareLinks,
+  revokeShareLink,
+} from '@/routes/api/share'
+import { getWhiteboardsByProject } from '@/routes/api/whiteboards'
 
 const EXPIRY_OPTIONS: Array<{ value: InviteExpiryHours; label: string }> = [
   { value: 1, label: '1 hour' },
@@ -77,6 +83,22 @@ interface InviteListItem {
   createdByUsername: string | null
 }
 
+/** Whiteboard picker option, from getWhiteboardsByProject. */
+interface WhiteboardOption {
+  id: string
+  name: string
+}
+
+/** Client-safe share-link shape returned by listShareLinks (tokenHash omitted). */
+interface ShareLinkListItem {
+  id: string
+  whiteboardId: string
+  whiteboardName: string
+  expiresAt: string | Date
+  revokedAt: string | Date | null
+  createdAt: string | Date
+}
+
 interface ProjectSharePanelProps {
   projectId: string
   open: boolean
@@ -106,6 +128,14 @@ export function ProjectSharePanel({
   )
   const [copied, setCopied] = useState(false)
 
+  const [shareWhiteboardId, setShareWhiteboardId] = useState<string>('')
+  const [shareExpiresInHours, setShareExpiresInHours] =
+    useState<InviteExpiryHours>(24 * 7)
+  const [createdShareToken, setCreatedShareToken] = useState<string | null>(
+    null,
+  )
+  const [shareCopied, setShareCopied] = useState(false)
+
   const { data, isLoading } = useQuery({
     queryKey: ['project-permissions', projectId],
     queryFn: () => listProjectPermissions({ data: projectId }),
@@ -118,6 +148,18 @@ export function ProjectSharePanel({
     enabled: open,
   })
 
+  const { data: whiteboardsData, isLoading: isWhiteboardsLoading } = useQuery({
+    queryKey: ['project-whiteboards', projectId],
+    queryFn: () => getWhiteboardsByProject({ data: projectId }),
+    enabled: open,
+  })
+
+  const { data: shareLinksData, isLoading: isShareLinksLoading } = useQuery({
+    queryKey: ['project-share-links', projectId],
+    queryFn: () => listShareLinks({ data: projectId }),
+    enabled: open,
+  })
+
   const invalidate = () => {
     queryClient.invalidateQueries({
       queryKey: ['project-permissions', projectId],
@@ -127,6 +169,12 @@ export function ProjectSharePanel({
   const invalidateInvites = () => {
     queryClient.invalidateQueries({
       queryKey: ['project-invites', projectId],
+    })
+  }
+
+  const invalidateShareLinks = () => {
+    queryClient.invalidateQueries({
+      queryKey: ['project-share-links', projectId],
     })
   }
 
@@ -187,6 +235,40 @@ export function ProjectSharePanel({
     onSuccess: invalidateInvites,
   })
 
+  const createShareLinkMutation = useMutation({
+    mutationFn: () =>
+      createShareLink({
+        data: {
+          whiteboardId: shareWhiteboardId,
+          expiresInHours: shareExpiresInHours,
+        },
+      }),
+    onSuccess: (result) => {
+      if ('error' in result) return
+      // Only place the raw token is ever available — display it once, never
+      // persist it beyond this local state, never log it.
+      setCreatedShareToken(result.token)
+      setShareCopied(false)
+      invalidateShareLinks()
+    },
+  })
+
+  const revokeShareLinkMutation = useMutation({
+    mutationFn: (linkId: string) => revokeShareLink({ data: { linkId } }),
+    onSuccess: invalidateShareLinks,
+  })
+
+  // Default the whiteboard picker to the project's first whiteboard once
+  // loaded, so the Select isn't left empty when there's an obvious choice.
+  useEffect(() => {
+    if (shareWhiteboardId) return
+    const whiteboards =
+      whiteboardsData && !('error' in whiteboardsData) ? whiteboardsData : []
+    if (whiteboards.length > 0) {
+      setShareWhiteboardId(whiteboards[0].id)
+    }
+  }, [whiteboardsData, shareWhiteboardId])
+
   const handleAddUser = (e: React.FormEvent) => {
     e.preventDefault()
     setAddError(null)
@@ -201,11 +283,24 @@ export function ProjectSharePanel({
     setCopied(true)
   }
 
+  const handleCopyShareLink = async () => {
+    if (!createdShareToken) return
+    const url = `${window.location.origin}/share/${createdShareToken}`
+    await navigator.clipboard.writeText(url)
+    setShareCopied(true)
+  }
+
   const permissions =
     data && !('error' in data) ? data : { owner: null, members: [] }
 
   const invites: Array<InviteListItem> =
     invitesData && !('error' in invitesData) ? invitesData.invites : []
+
+  const whiteboards: Array<WhiteboardOption> =
+    whiteboardsData && !('error' in whiteboardsData) ? whiteboardsData : []
+
+  const shareLinks: Array<ShareLinkListItem> =
+    shareLinksData && !('error' in shareLinksData) ? shareLinksData.links : []
 
   return (
     <Sheet open={open} onOpenChange={onOpenChange}>
@@ -465,6 +560,161 @@ export function ProjectSharePanel({
                 })}
 
                 {invites.length === 0 && (
+                  <li className="text-sm text-muted-foreground py-2">
+                    No outstanding links.
+                  </li>
+                )}
+              </ul>
+            )}
+          </div>
+
+          {/* Share read-only links (GH #109) */}
+          <div className="space-y-3 border-t pt-6">
+            <Label className="text-sm font-medium">Share read-only links</Label>
+            <p className="text-xs text-muted-foreground">
+              Anyone with the link can view a whiteboard's diagram — no account
+              required. No editing, no live collaboration.
+            </p>
+            <div className="flex gap-2">
+              <Select
+                value={shareWhiteboardId}
+                onValueChange={setShareWhiteboardId}
+              >
+                <SelectTrigger
+                  className="flex-1"
+                  aria-label="Select whiteboard"
+                >
+                  <SelectValue placeholder="Select whiteboard" />
+                </SelectTrigger>
+                <SelectContent>
+                  {whiteboards.map((wb) => (
+                    <SelectItem key={wb.id} value={wb.id}>
+                      {wb.name}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+              <Select
+                value={String(shareExpiresInHours)}
+                onValueChange={(v) => setShareExpiresInHours(Number(v))}
+              >
+                <SelectTrigger
+                  className="flex-1"
+                  aria-label="Share link expiry"
+                >
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  {EXPIRY_OPTIONS.map((opt) => (
+                    <SelectItem key={opt.value} value={String(opt.value)}>
+                      {opt.label}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+            <Button
+              size="sm"
+              className="w-full"
+              aria-label="Create read-only share link"
+              disabled={
+                !shareWhiteboardId ||
+                isWhiteboardsLoading ||
+                createShareLinkMutation.isPending
+              }
+              onClick={() => createShareLinkMutation.mutate()}
+            >
+              {createShareLinkMutation.isPending
+                ? 'Creating link...'
+                : 'Create link'}
+            </Button>
+
+            {createdShareToken && (
+              <div className="space-y-1">
+                <div className="flex gap-2">
+                  <Input
+                    readOnly
+                    value={`${window.location.origin}/share/${createdShareToken}`}
+                    aria-label="Share link"
+                    className="flex-1 text-xs"
+                    onFocus={(e) => e.target.select()}
+                  />
+                  <Button
+                    type="button"
+                    size="sm"
+                    variant="outline"
+                    onClick={handleCopyShareLink}
+                  >
+                    {shareCopied ? 'Copied' : 'Copy'}
+                  </Button>
+                </div>
+                <p className="text-xs text-muted-foreground">
+                  This link won't be shown again — copy it now.
+                </p>
+              </div>
+            )}
+          </div>
+
+          {/* Outstanding read-only links */}
+          <div>
+            <Label className="text-sm font-medium">
+              Outstanding read-only links
+            </Label>
+            {isShareLinksLoading ? (
+              <p className="mt-2 text-sm text-muted-foreground">Loading...</p>
+            ) : (
+              <ul
+                className="mt-2 space-y-2"
+                aria-label="Outstanding read-only links"
+              >
+                {shareLinks.map((link) => {
+                  const isRevoked = link.revokedAt !== null
+                  const isExpired =
+                    new Date(link.expiresAt).getTime() < Date.now()
+                  const isInactive = isRevoked || isExpired
+                  return (
+                    <li
+                      key={link.id}
+                      className="flex items-center gap-2 rounded-md border px-3 py-2"
+                    >
+                      <div className="flex-1 min-w-0">
+                        <div className="flex items-center gap-2">
+                          <Badge variant="secondary">
+                            {link.whiteboardName}
+                          </Badge>
+                          {isRevoked && (
+                            <span className="text-xs text-destructive">
+                              Revoked
+                            </span>
+                          )}
+                          {!isRevoked && isExpired && (
+                            <span className="text-xs text-muted-foreground">
+                              Expired
+                            </span>
+                          )}
+                        </div>
+                        <p className="text-xs text-muted-foreground truncate">
+                          Expires{' '}
+                          {new Date(link.expiresAt).toLocaleDateString()}
+                        </p>
+                      </div>
+                      <Button
+                        variant="ghost"
+                        size="sm"
+                        className="h-7 px-2 text-xs text-muted-foreground hover:text-destructive"
+                        onClick={() => revokeShareLinkMutation.mutate(link.id)}
+                        aria-label={`Revoke ${link.whiteboardName} share link`}
+                        disabled={
+                          isInactive || revokeShareLinkMutation.isPending
+                        }
+                      >
+                        Revoke
+                      </Button>
+                    </li>
+                  )
+                })}
+
+                {shareLinks.length === 0 && (
                   <li className="text-sm text-muted-foreground py-2">
                     No outstanding links.
                   </li>

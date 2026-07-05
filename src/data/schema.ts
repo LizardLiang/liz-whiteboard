@@ -419,6 +419,35 @@ export const redeemInviteSchema = z.object({
   token: z.string().min(1),
 })
 
+// ============================================================================
+// Whiteboard Share Link Schemas (read-only public links, GH #109)
+// ============================================================================
+
+/**
+ * Schema for creating a whiteboard read-only share link.
+ * A3: expiry is REQUIRED — reuses the same closed set as
+ * inviteExpiryHoursSchema (1h/24h/7d/30d), defaulting to 7 days, matching
+ * createInviteSchema's expiresInHours exactly. No never-expires option.
+ * A2: multiple links per whiteboard are allowed — no `role`/`maxUses` fields
+ * (unlike ProjectInvite), since every link always grants read-only access.
+ */
+export const createShareLinkSchema = z.object({
+  whiteboardId: z.string().uuid(),
+  expiresInHours: inviteExpiryHoursSchema.default(24 * 7),
+})
+
+/**
+ * Schema for revoking a whiteboard read-only share link.
+ * A2: multiple links per whiteboard are independently revocable, so the
+ * target link is identified by its own id.
+ */
+export const revokeShareLinkSchema = z.object({
+  linkId: z.string().uuid(),
+})
+
+export type CreateShareLink = z.infer<typeof createShareLinkSchema>
+export type RevokeShareLink = z.infer<typeof revokeShareLinkSchema>
+
 // Auth type exports
 export type RegisterInput = z.infer<typeof registerInputSchema>
 export type LoginInput = z.infer<typeof loginInputSchema>

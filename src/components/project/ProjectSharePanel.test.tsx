@@ -20,6 +20,12 @@ import {
   listProjectInvites,
   revokeInvite,
 } from '@/routes/api/invites'
+import {
+  createShareLink,
+  listShareLinks,
+  revokeShareLink,
+} from '@/routes/api/share'
+import { getWhiteboardsByProject } from '@/routes/api/whiteboards'
 
 vi.mock('@/routes/api/permissions', () => ({
   listProjectPermissions: vi.fn(),
@@ -32,6 +38,16 @@ vi.mock('@/routes/api/invites', () => ({
   createProjectInvite: vi.fn(),
   listProjectInvites: vi.fn(),
   revokeInvite: vi.fn(),
+}))
+
+vi.mock('@/routes/api/share', () => ({
+  createShareLink: vi.fn(),
+  listShareLinks: vi.fn(),
+  revokeShareLink: vi.fn(),
+}))
+
+vi.mock('@/routes/api/whiteboards', () => ({
+  getWhiteboardsByProject: vi.fn(),
 }))
 
 function createTestQueryClient() {
@@ -56,6 +72,11 @@ describe('ProjectSharePanel', () => {
     // Default resolved value so pre-existing tests that don't care about the
     // invite-link section (which now always queries on open) don't hang.
     vi.mocked(listProjectInvites).mockResolvedValue({ invites: [] } as any)
+    // Default resolved values so pre-existing tests that don't care about the
+    // read-only share-link section (which now always queries on open) don't
+    // hang.
+    vi.mocked(getWhiteboardsByProject).mockResolvedValue([] as any)
+    vi.mocked(listShareLinks).mockResolvedValue({ links: [] } as any)
   })
 
   it('does not call listProjectPermissions while closed', () => {
@@ -326,5 +347,102 @@ describe('ProjectSharePanel', () => {
       /revoke viewer invite link/i,
     )
     expect((revokeButton as HTMLButtonElement).disabled).toBe(true)
+  })
+
+  // ─────────────────────────────────────────────────────────────────────────
+  // Share read-only links section (GH #109, v2 rework)
+  // ─────────────────────────────────────────────────────────────────────────
+
+  it('creates a read-only share link for the picked whiteboard and renders the token URL once', async () => {
+    vi.mocked(listProjectPermissions).mockResolvedValue({
+      owner: null,
+      members: [],
+    } as any)
+    vi.mocked(getWhiteboardsByProject).mockResolvedValue([
+      { id: 'whiteboard-1', name: 'ER Diagram' },
+    ] as any)
+    const rawToken = 'b'.repeat(64)
+    vi.mocked(createShareLink).mockResolvedValue({
+      success: true,
+      link: {
+        id: 'link-1',
+        whiteboardId: 'whiteboard-1',
+        expiresAt: new Date().toISOString(),
+        createdAt: new Date().toISOString(),
+      },
+      token: rawToken,
+    } as any)
+
+    render(
+      <Wrapper>
+        <ProjectSharePanel
+          projectId="proj-1"
+          open={true}
+          onOpenChange={() => {}}
+        />
+      </Wrapper>,
+    )
+
+    const createButton = await screen.findByLabelText(
+      /create read-only share link/i,
+    )
+    // The whiteboard picker defaults to the first loaded whiteboard
+    // asynchronously — wait for that before the button becomes clickable.
+    await waitFor(() => {
+      expect((createButton as HTMLButtonElement).disabled).toBe(false)
+    })
+    fireEvent.click(createButton)
+
+    await waitFor(() => {
+      expect(createShareLink).toHaveBeenCalledWith({
+        data: { whiteboardId: 'whiteboard-1', expiresInHours: 24 * 7 },
+      })
+    })
+
+    const linkInput = await screen.findByLabelText('Share link')
+    expect((linkInput as HTMLInputElement).value).toContain(
+      `/share/${rawToken}`,
+    )
+  })
+
+  it('revokes an outstanding read-only share link by id when the revoke button is clicked', async () => {
+    vi.mocked(listProjectPermissions).mockResolvedValue({
+      owner: null,
+      members: [],
+    } as any)
+    vi.mocked(listShareLinks).mockResolvedValue({
+      links: [
+        {
+          id: 'link-1',
+          whiteboardId: 'whiteboard-1',
+          whiteboardName: 'ER Diagram',
+          expiresAt: new Date(Date.now() + 86_400_000).toISOString(),
+          revokedAt: null,
+          createdAt: new Date().toISOString(),
+        },
+      ],
+    } as any)
+    vi.mocked(revokeShareLink).mockResolvedValue({ success: true } as any)
+
+    render(
+      <Wrapper>
+        <ProjectSharePanel
+          projectId="proj-1"
+          open={true}
+          onOpenChange={() => {}}
+        />
+      </Wrapper>,
+    )
+
+    const revokeButton = await screen.findByLabelText(
+      /revoke er diagram share link/i,
+    )
+    fireEvent.click(revokeButton)
+
+    await waitFor(() => {
+      expect(revokeShareLink).toHaveBeenCalledWith({
+        data: { linkId: 'link-1' },
+      })
+    })
   })
 })

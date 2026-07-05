@@ -49,12 +49,17 @@ export function useColumnReorderCollaboration(
   whiteboardId: string,
   userId: string,
   callbacks: UseColumnReorderCollaborationCallbacks,
+  // R1 (GH #109): the public read-only /share route passes false so no
+  // Socket.IO connection is ever opened on that path. Defaults to true for
+  // every existing authenticated caller.
+  enabled: boolean = true,
 ) {
   const { triggerSessionExpired } = useAuthContext()
   const { emit, on, off, connectionState } = useCollaboration(
     whiteboardId,
     userId,
     triggerSessionExpired,
+    enabled,
   )
 
   const isConnected = connectionState === 'connected'

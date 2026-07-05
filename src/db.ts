@@ -27,6 +27,7 @@ import type {
   Session,
   User,
   Whiteboard,
+  WhiteboardShareLink,
 } from './data/models'
 import type { Cardinality, ProjectRoleValue } from './data/schema'
 
@@ -319,6 +320,19 @@ export function mapProjectInvite(r: Row): ProjectInvite | null {
     maxUses: r.maxUses == null ? null : Number(r.maxUses),
     usedCount: Number(r.usedCount),
     expiresAt: fromDbDate(r.expiresAt),
+    revokedAt: r.revokedAt == null ? null : fromDbDate(r.revokedAt),
+    createdAt: fromDbDate(r.createdAt),
+  }
+}
+
+export function mapWhiteboardShareLink(r: Row): WhiteboardShareLink | null {
+  if (!r) return null
+  return {
+    id: r.id as string,
+    whiteboardId: r.whiteboardId as string,
+    tokenHash: r.tokenHash as string,
+    createdByUserId: r.createdByUserId as string,
+    expiresAt: r.expiresAt == null ? null : fromDbDate(r.expiresAt),
     revokedAt: r.revokedAt == null ? null : fromDbDate(r.revokedAt),
     createdAt: fromDbDate(r.createdAt),
   }

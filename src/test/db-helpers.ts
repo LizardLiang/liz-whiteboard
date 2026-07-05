@@ -13,6 +13,7 @@ const ALL_TABLES = [
   'Relationship',
   'Column',
   'DiagramTable',
+  'WhiteboardShareLink',
   'Whiteboard',
   'Folder',
   'ProjectInvite',

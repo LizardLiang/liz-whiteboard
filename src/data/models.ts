@@ -67,6 +67,16 @@ export interface ProjectInvite {
   createdAt: Date
 }
 
+export interface WhiteboardShareLink {
+  id: string
+  whiteboardId: string
+  tokenHash: string
+  createdByUserId: string
+  expiresAt: Date | null
+  revokedAt: Date | null
+  createdAt: Date
+}
+
 export interface Folder {
   id: string
   name: string

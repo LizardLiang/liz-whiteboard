@@ -70,6 +70,7 @@ export function useCollaboration(
   whiteboardId: string,
   userId: string,
   onSessionExpired: () => void,
+  enabled: boolean = true,
 ): UseCollaborationReturn {
   const socketRef = useRef<Socket | null>(null)
   const [connectionState, setConnectionState] =
@@ -83,7 +84,11 @@ export function useCollaboration(
   const maxReconnectionAttempts = 5
 
   useEffect(() => {
-    if (!whiteboardId) {
+    // R1 (GH #109): public read-only share links (/share/$token) must never
+    // open a Socket.IO connection — no read, no write, no presence. `enabled`
+    // defaults to true for every existing authenticated caller; the public
+    // whiteboard render path is the only caller that passes `false`.
+    if (!whiteboardId || !enabled) {
       return
     }
 
@@ -278,7 +283,7 @@ export function useCollaboration(
       socket.disconnect()
       socketRef.current = null
     }
-  }, [whiteboardId, userId])
+  }, [whiteboardId, userId, enabled])
 
   // Emit event to server
   const emit = useCallback((event: string, data: any) => {

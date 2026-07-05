@@ -202,4 +202,20 @@ CREATE TABLE IF NOT EXISTS "ProjectInvite" (
 CREATE UNIQUE INDEX IF NOT EXISTS "ProjectInvite_tokenHash_key" ON "ProjectInvite"("tokenHash");
 CREATE INDEX IF NOT EXISTS "ProjectInvite_projectId_idx" ON "ProjectInvite"("projectId");
 CREATE INDEX IF NOT EXISTS "ProjectInvite_expiresAt_idx" ON "ProjectInvite"("expiresAt");
+
+CREATE TABLE IF NOT EXISTS "WhiteboardShareLink" (
+    "id" TEXT NOT NULL PRIMARY KEY,
+    "whiteboardId" TEXT NOT NULL,
+    "tokenHash" TEXT NOT NULL,
+    "createdByUserId" TEXT NOT NULL,
+    "expiresAt" INTEGER,
+    "revokedAt" INTEGER,
+    "createdAt" INTEGER NOT NULL DEFAULT (unixepoch('now') * 1000),
+    CONSTRAINT "WhiteboardShareLink_whiteboardId_fkey" FOREIGN KEY ("whiteboardId") REFERENCES "Whiteboard" ("id") ON DELETE CASCADE ON UPDATE CASCADE,
+    CONSTRAINT "WhiteboardShareLink_createdByUserId_fkey" FOREIGN KEY ("createdByUserId") REFERENCES "User" ("id") ON DELETE CASCADE ON UPDATE CASCADE
+);
+
+CREATE UNIQUE INDEX IF NOT EXISTS "WhiteboardShareLink_tokenHash_key" ON "WhiteboardShareLink"("tokenHash");
+CREATE INDEX IF NOT EXISTS "WhiteboardShareLink_whiteboardId_idx" ON "WhiteboardShareLink"("whiteboardId");
+CREATE INDEX IF NOT EXISTS "WhiteboardShareLink_expiresAt_idx" ON "WhiteboardShareLink"("expiresAt");
 `

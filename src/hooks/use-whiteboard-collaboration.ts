@@ -74,6 +74,10 @@ export function useWhiteboardCollaboration(
   onBulkPositionUpdate?: (
     positions: Array<{ tableId: string; positionX: number; positionY: number }>,
   ) => void,
+  // R1 (GH #109): the public read-only /share route passes false so no
+  // Socket.IO connection is ever opened on that path. Defaults to true for
+  // every existing authenticated caller.
+  enabled: boolean = true,
 ) {
   // Use the base collaboration hook
   const { triggerSessionExpired } = useAuthContext()
@@ -81,6 +85,7 @@ export function useWhiteboardCollaboration(
     whiteboardId,
     userId,
     triggerSessionExpired,
+    enabled,
   )
   const router = useRouter()
   const redirectTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)

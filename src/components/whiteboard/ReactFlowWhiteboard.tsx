@@ -50,6 +50,8 @@ import type {
   CreateTable,
   UpdateColumn,
 } from '@/data/schema'
+import type { WhiteboardWithDiagram } from '@/data/whiteboard'
+import type { RelationshipWithDetails } from '@/data/relationship'
 import type { CreateColumnPayload } from './column/types'
 import type { TableRelationship } from './DeleteTableDialog'
 import type { RelationshipErrorEvent } from '@/hooks/use-relationship-mutations'
@@ -177,6 +179,23 @@ export interface ReactFlowWhiteboardProps {
   onZoomControlsReady?: (controls: ZoomControls) => void
   /** Callback to notify parent when viewport zoom changes */
   onZoomChange?: (zoom: number) => void
+  /**
+   * Renders a static, no-auth, read-only view (GH #109 public share links):
+   * skips the two authed data queries in favor of `data` below, forces
+   * nodesDraggable to false, hides the Toolbar and zen-mode chrome, opens NO
+   * Socket.IO collaboration connection, and shows a "Read-only" badge.
+   */
+  isPublic?: boolean
+  /**
+   * Pre-fetched diagram data for the `isPublic` render path — supplied by
+   * the public /share/$token route from its unauthenticated server fn
+   * response, instead of the authed getWhiteboardWithDiagram/
+   * getWhiteboardRelationships queries this component normally runs.
+   */
+  data?: {
+    tables: WhiteboardWithDiagram['tables']
+    relationships: Array<RelationshipWithDetails>
+  }
 }
 
 /**
@@ -191,6 +210,8 @@ function ReactFlowWhiteboardInner({
   showControls,
   nodesDraggable,
   viewerRole = null,
+  isPublic = false,
+  collaborationEnabled = true,
   onCreateTable,
   onCreateRelationship,
   onDisplayModeReady,
@@ -205,6 +226,9 @@ function ReactFlowWhiteboardInner({
   showControls: boolean
   nodesDraggable: boolean
   viewerRole?: EffectiveRole | null
+  isPublic?: boolean
+  /** R1 (GH #109): when false, no Socket.IO connection is opened. */
+  collaborationEnabled?: boolean
   onCreateTable?: (data: CreateTable) => void | Promise<unknown>
   onCreateRelationship?: (data: CreateRelationship) => void | Promise<unknown>
   onDisplayModeReady?: (
@@ -612,6 +636,8 @@ function ReactFlowWhiteboardInner({
       },
       [],
     ),
+    // R1 (GH #109): public read-only path opens no Socket.IO connection.
+    collaborationEnabled,
   )
 
   // Column collaboration callbacks (incoming events from other users)
@@ -812,7 +838,13 @@ function ReactFlowWhiteboardInner({
     emitColumnDuplicate,
     isConnected,
     connectionState: _columnConnectionState,
-  } = useColumnCollaboration(whiteboardId, userId, columnMutationsCallbacks)
+  } = useColumnCollaboration(
+    whiteboardId,
+    userId,
+    columnMutationsCallbacks,
+    // R1 (GH #109): public read-only path opens no Socket.IO connection.
+    collaborationEnabled,
+  )
 
   const columnMutations = useColumnMutations(
     setNodes,
@@ -901,6 +933,8 @@ function ReactFlowWhiteboardInner({
       bumpReorderTick,
       mutations: columnReorderMutations,
     },
+    // R1 (GH #109): public read-only path opens no Socket.IO connection.
+    collaborationEnabled,
   )
 
   // Stable ref for the deleteRelationship callback — prevents stale closures in edge data
@@ -1562,8 +1596,8 @@ function ReactFlowWhiteboardInner({
         }}
       >
         {/* Toolbar — owned by ReactFlowWhiteboardInner so auto-layout orchestrator can control it.
-          Hidden in zen mode. */}
-        {!isZenMode && (
+          Hidden in zen mode, and entirely on the public read-only path (GH #109). */}
+        {!isZenMode && !isPublic && (
           <Toolbar
             whiteboardId={whiteboardId}
             tables={toolbarTables as any}
@@ -1602,7 +1636,16 @@ function ReactFlowWhiteboardInner({
         />
 
         <div ref={canvasWrapperRef} style={{ position: 'relative', flex: 1 }}>
-          <ConnectionStatusIndicator connectionState={connectionState} />
+          {isPublic ? (
+            // Read-only shared-view indicator (GH #109) — replaces the
+            // collaboration connection indicator, which is meaningless here
+            // since no Socket.IO connection is ever opened on this path.
+            <div className="absolute left-4 top-4 z-10 rounded-md border bg-background/90 px-3 py-1.5 text-sm font-medium text-muted-foreground shadow-sm backdrop-blur-sm">
+              Read-only &middot; Shared view
+            </div>
+          ) : (
+            <ConnectionStatusIndicator connectionState={connectionState} />
+          )}
 
           {/* Floating exit button — the only chrome shown in zen mode */}
           {isZenMode && (
@@ -1736,13 +1779,20 @@ export function ReactFlowWhiteboard({
   showControls = true,
   nodesDraggable = true,
   viewerRole = null,
+  isPublic = false,
+  data,
   onCreateTable,
   onCreateRelationship,
   onDisplayModeReady,
   onZoomControlsReady,
   onZoomChange,
 }: ReactFlowWhiteboardProps) {
-  // Fetch whiteboard data with tables
+  // Fetch whiteboard data with tables — disabled on the public read-only
+  // path (GH #109): that path never has an authenticated session, and
+  // getWhiteboardWithDiagram/getWhiteboardRelationships are both
+  // requireAuth-gated, so calling them here would always fail. `data` is
+  // supplied instead by the public /share/$token route from its own
+  // unauthenticated server fn response.
   const {
     data: whiteboardData,
     isLoading: isLoadingWhiteboard,
@@ -1754,19 +1804,26 @@ export function ReactFlowWhiteboard({
       return await getWhiteboardWithDiagram({ data: whiteboardId })
     },
     staleTime: 1000 * 60 * 5, // 5 minutes
+    enabled: !isPublic,
   })
 
-  // Fetch relationships
+  // Fetch relationships — also disabled on the public path (see above).
   const { data: relationships, isLoading: isLoadingRelationships } = useQuery({
     queryKey: ['relationships', whiteboardId],
     queryFn: async () => {
       return await getWhiteboardRelationships({ data: whiteboardId })
     },
     staleTime: 1000 * 60 * 5, // 5 minutes
+    enabled: !isPublic,
   })
 
   // Convert tables to React Flow nodes with showMode
   const nodes = useMemo(() => {
+    if (isPublic) {
+      const tables = data?.tables ?? []
+      if (tables.length === 0) return []
+      return convertTablesToNodes(tables, 'ALL_FIELDS')
+    }
     // Guard against AuthErrorResponse
     if (!whiteboardData || isUnauthorizedError(whiteboardData)) return []
     // whiteboardData is WhiteboardWithDiagram which directly has .tables
@@ -1780,10 +1837,15 @@ export function ReactFlowWhiteboard({
     const convertedNodes = convertTablesToNodes(tables, 'ALL_FIELDS')
     console.log('ReactFlowWhiteboard: Converted nodes', convertedNodes)
     return convertedNodes
-  }, [whiteboardData])
+  }, [isPublic, data, whiteboardData])
 
   // Convert relationships to React Flow edges
   const edges = useMemo(() => {
+    if (isPublic) {
+      const rels = data?.relationships ?? []
+      if (rels.length === 0) return []
+      return convertRelationshipsToEdges(rels)
+    }
     if (!relationships || isUnauthorizedError(relationships)) {
       console.log('ReactFlowWhiteboard: No relationships data')
       return []
@@ -1795,9 +1857,10 @@ export function ReactFlowWhiteboard({
     const convertedEdges = convertRelationshipsToEdges(relationships)
     console.log('ReactFlowWhiteboard: Converted edges', convertedEdges)
     return convertedEdges
-  }, [relationships])
+  }, [isPublic, data, relationships])
 
-  // Loading state
+  // Loading state (never true on the public path — both queries are
+  // `enabled: false` there, so isLoading resolves to false immediately)
   if (isLoadingWhiteboard || isLoadingRelationships) {
     return (
       <div className="flex items-center justify-center h-full">
@@ -1811,8 +1874,10 @@ export function ReactFlowWhiteboard({
   // but a rejected query can just as easily be a network error, a 500, or a
   // genuine not-found. Only render the access-denied state when the error is
   // actually a ForbiddenError — everything else falls back to a generic
-  // failure message so it isn't mislabeled "you don't have access".
-  if (!whiteboardData) {
+  // failure message so it isn't mislabeled "you don't have access". Skipped
+  // entirely on the public path, where `whiteboardData` is never populated
+  // by design (the query is disabled) — `data` is checked there instead.
+  if (!isPublic && !whiteboardData) {
     if (
       isErrorWhiteboard &&
       classifyQueryFailure({ error: whiteboardError }) === 'forbidden'
@@ -1836,8 +1901,13 @@ export function ReactFlowWhiteboard({
         initialEdges={edges}
         showMinimap={showMinimap}
         showControls={showControls}
-        nodesDraggable={nodesDraggable}
+        // R1/A4 (GH #109): the public read-only path is never draggable and
+        // never opens a collaboration socket, regardless of the caller-
+        // supplied nodesDraggable prop.
+        nodesDraggable={isPublic ? false : nodesDraggable}
         viewerRole={viewerRole}
+        isPublic={isPublic}
+        collaborationEnabled={!isPublic}
         onCreateTable={onCreateTable}
         onCreateRelationship={onCreateRelationship}
         onDisplayModeReady={onDisplayModeReady}
