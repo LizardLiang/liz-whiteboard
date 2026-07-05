@@ -556,7 +556,7 @@ export function ProjectTree() {
 
                 {/* Collapsible content */}
                 <CollapsibleContent>
-                  <div className="ml-4 mt-1 space-y-1">
+                  <div className="ml-8 mt-1 space-y-1">
                     {/* Root folders */}
                     {rootFolders.map((folder) => (
                       <FolderItem

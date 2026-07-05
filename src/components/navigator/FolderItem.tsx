@@ -217,7 +217,7 @@ export function FolderItem({
 
       {/* Collapsible Content */}
       <CollapsibleContent>
-        <div className="ml-4 mt-1 space-y-1">
+        <div className="ml-8 mt-1 space-y-1">
           {/* Render child folders recursively (if not at max depth) */}
           {canNestDeeper &&
             folder.childFolders?.map((childFolder) => (
