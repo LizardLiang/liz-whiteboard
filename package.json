@@ -14,7 +14,6 @@
     "check": "prettier --write . && eslint --fix",
     "post-cta-init": "npx create-db@latest",
     "db:seed": "dotenv -e .env.local -- bun seed.ts",
-    "deploy": "bash deploy.sh",
     "docker:build": "docker build -t liz-whiteboard:test .",
     "docker:run": "docker run --rm -p 3000:3000 liz-whiteboard:test"
   },
