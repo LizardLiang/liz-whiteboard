@@ -13,11 +13,12 @@ import {
 import type {
   FitViewOptions,
   Node,
-  NodeDragHandler,
   NodeMouseHandler,
   OnConnect,
   OnEdgesChange,
+  OnNodeDrag,
   OnNodesChange,
+  OnNodesDelete,
 } from '@xyflow/react'
 import '@xyflow/react/dist/style.css'
 import '@/styles/react-flow-theme.css'
@@ -55,8 +56,25 @@ export interface ReactFlowCanvasProps {
    * highlighting / edge-routing pipeline.
    */
   areaNodes?: Array<AreaNodeType>
-  /** Persist an area move (drag stop) — receives the area id and new position */
-  onAreaDragStop?: (areaId: string, positionX: number, positionY: number) => void
+  /**
+   * Persist an area move (drag stop) — receives the area id, its new
+   * top-left position, and the member tables that were translated along
+   * with it (movable-container grouping, GH #106 bugfix). `movedMembers` is
+   * empty when the area has no members.
+   */
+  onAreaDragStop?: (
+    areaId: string,
+    positionX: number,
+    positionY: number,
+    movedMembers: Array<{ id: string; positionX: number; positionY: number }>,
+  ) => void
+  /**
+   * Delete an area (Delete/Backspace on a selected area node, or the ×
+   * button). Fired from `onNodesDelete` for deleted nodes of type 'area';
+   * table nodes are never included (they are marked `deletable: false` so
+   * the native delete flow never bypasses the table confirmation dialog).
+   */
+  onAreaDelete?: (areaId: string) => void
   /** Callback when nodes change (position, selection, etc.) */
   onNodesChange?: OnNodesChange<TableNodeType>
   /** Callback when edges change */
@@ -64,7 +82,7 @@ export interface ReactFlowCanvasProps {
   /** Callback when connection is created */
   onConnect?: OnConnect
   /** Callback when node drag stops (position update) */
-  onNodeDragStop?: NodeDragHandler<TableNodeType>
+  onNodeDragStop?: OnNodeDrag<TableNodeType>
   /** Whether nodes are draggable */
   nodesDraggable?: boolean
   /** Whether canvas panning on drag is enabled */
@@ -133,6 +151,7 @@ export function ReactFlowCanvas({
   initialEdges = [],
   areaNodes = [],
   onAreaDragStop,
+  onAreaDelete,
   onNodesChange: onNodesChangeProp,
   onEdgesChange: onEdgesChangeProp,
   onConnect,
@@ -169,8 +188,15 @@ export function ReactFlowCanvas({
     () => new Set(areaNodesState.map((a) => a.id)),
     [areaNodesState],
   )
+  // Table nodes are never natively deletable (GH #106 Bug 1 fix) — Delete/
+  // Backspace must always route through the table confirmation dialog
+  // (useTableDeletion), never React Flow's own removal. Area nodes carry
+  // their own `deletable` (== canEdit) from the areaNodes prop.
   const mergedNodes = useMemo(
-    () => [...areaNodesState, ...nodes],
+    () => [
+      ...areaNodesState,
+      ...nodes.map((n) => (n.deletable === false ? n : { ...n, deletable: false })),
+    ],
     [areaNodesState, nodes],
   )
 
@@ -195,6 +221,17 @@ export function ReactFlowCanvas({
   // Track drag in progress — ReactFlow fires mouseLeave/mouseEnter when drag
   // starts/stops, which would trigger unnecessary highlighting recalculations.
   const isDraggingRef = useRef(false)
+
+  // Movable-container grouping (GH #106 Bug 2 fix): while an area node is
+  // being dragged, its member tables must translate by the same delta. This
+  // ref snapshots the area's start position and each member's start position
+  // at drag-start, so onNodeDrag/onNodeDragStop can compute `delta` and apply
+  // it without compounding across frames.
+  const dragAreaMemberStartRef = useRef<{
+    areaId: string
+    areaStart: { x: number; y: number }
+    members: Map<string, { x: number; y: number }>
+  } | null>(null)
 
   // Track whether React Flow has measured all nodes; used for one-shot
   // post-measure edge re-routing inside the overlay (Enhancement 2).
@@ -379,18 +416,63 @@ export function ReactFlowCanvas({
     [nodes],
   )
 
-  // Mark drag as started — suppresses hover events that ReactFlow fires on drag begin
-  const onNodeDragStart = useCallback(() => {
-    isDraggingRef.current = true
-  }, [])
+  // Mark drag as started — suppresses hover events that ReactFlow fires on drag begin.
+  // When the dragged node is an area, also snapshot its start position and its
+  // members' start positions so onNodeDrag/onNodeDragStop can translate them
+  // by the live delta (movable-container grouping, GH #106 Bug 2 fix).
+  const onNodeDragStart = useCallback<OnNodeDrag<TableNodeType>>(
+    (_event, node) => {
+      isDraggingRef.current = true
+
+      if (!areaIdSet.has(node.id)) {
+        dragAreaMemberStartRef.current = null
+        return
+      }
+      const areaNode = areaNodesState.find((a) => a.id === node.id)
+      const memberIds = new Set(areaNode?.data.area.memberTableIds ?? [])
+      const members = new Map<string, { x: number; y: number }>()
+      nodes.forEach((n) => {
+        if (memberIds.has(n.id)) members.set(n.id, { x: n.position.x, y: n.position.y })
+      })
+      dragAreaMemberStartRef.current = {
+        areaId: node.id,
+        areaStart: { x: node.position.x, y: node.position.y },
+        members,
+      }
+    },
+    [areaIdSet, areaNodesState, nodes],
+  )
 
   // Recalculate edge handles whenever a node is dragged (live feedback).
   // We merge the dragged node's latest position into the nodes array so the
   // calculation is always based on current coordinates.
-  const onNodeDrag = useCallback<NodeDragHandler<TableNodeType>>(
+  const onNodeDrag = useCallback<OnNodeDrag<TableNodeType>>(
     (_event, node, draggedNodes) => {
-      // Area nodes don't participate in edge routing — skip the recalculation.
-      if (areaIdSet.has(node.id)) return
+      if (areaIdSet.has(node.id)) {
+        // Movable-container grouping: translate member tables live by the
+        // same delta the area has moved since drag-start.
+        const drag = dragAreaMemberStartRef.current
+        if (!drag || drag.areaId !== node.id || drag.members.size === 0) return
+        const deltaX = node.position.x - drag.areaStart.x
+        const deltaY = node.position.y - drag.areaStart.y
+        setNodes((prevNodes) =>
+          prevNodes.map((n) => {
+            const start = drag.members.get(n.id)
+            if (!start) return n
+            return { ...n, position: { x: start.x + deltaX, y: start.y + deltaY } }
+          }),
+        )
+        const movedIds = new Set(drag.members.keys())
+        const currentNodes = nodes.map((n) => {
+          const start = drag.members.get(n.id)
+          if (!start) return n
+          return { ...n, position: { x: start.x + deltaX, y: start.y + deltaY } }
+        })
+        setEdges((prevEdges) =>
+          recalculateEdgesForDraggedNodes(prevEdges, currentNodes, movedIds),
+        )
+        return
+      }
       const draggedIds = new Set(draggedNodes.map((n) => n.id))
       draggedIds.add(node.id)
       const currentNodes = mergeCurrentPositions(node, draggedNodes)
@@ -398,17 +480,36 @@ export function ReactFlowCanvas({
         recalculateEdgesForDraggedNodes(prevEdges, currentNodes, draggedIds),
       )
     },
-    [areaIdSet, mergeCurrentPositions, setEdges],
+    [areaIdSet, mergeCurrentPositions, nodes, setEdges, setNodes],
   )
 
   // Handle node drag stop (position update)
-  const onNodeDragStop = useCallback<NodeDragHandler<TableNodeType>>(
+  const onNodeDragStop = useCallback<OnNodeDrag<TableNodeType>>(
     (event, node, draggedNodes) => {
       isDraggingRef.current = false
 
-      // Area nodes: persist the new position, skip edge routing / hover.
+      // Area nodes: persist the new position (+ any moved members), skip
+      // edge routing / hover.
       if (areaIdSet.has(node.id)) {
-        onAreaDragStop?.(node.id, node.position.x, node.position.y)
+        const drag = dragAreaMemberStartRef.current
+        let movedMembers: Array<{
+          id: string
+          positionX: number
+          positionY: number
+        }> = []
+        if (drag && drag.areaId === node.id) {
+          const deltaX = node.position.x - drag.areaStart.x
+          const deltaY = node.position.y - drag.areaStart.y
+          movedMembers = Array.from(drag.members.entries()).map(
+            ([id, start]) => ({
+              id,
+              positionX: start.x + deltaX,
+              positionY: start.y + deltaY,
+            }),
+          )
+        }
+        dragAreaMemberStartRef.current = null
+        onAreaDragStop?.(node.id, node.position.x, node.position.y, movedMembers)
         return
       }
 
@@ -424,7 +525,7 @@ export function ReactFlowCanvas({
         recalculateEdgesForDraggedNodes(prevEdges, currentNodes, draggedIds),
       )
       // Call the prop callback if provided
-      onNodeDragStopProp?.(event, node)
+      onNodeDragStopProp?.(event, node, draggedNodes)
     },
     [areaIdSet, onAreaDragStop, onNodeDragStopProp, mergeCurrentPositions, setEdges],
   )
@@ -456,6 +557,24 @@ export function ReactFlowCanvas({
       onEdgesChangeProp?.(changes)
     },
     [handleEdgesChange, onEdgesChangeProp],
+  )
+
+  // Delete/Backspace on a selected area node (GH #106 Bug 1 fix). Table nodes
+  // are marked `deletable: false` above so they never appear here — table
+  // deletion always goes through useTableDeletion's confirmation dialog.
+  // React Flow's own useKeyPress(deleteKeyCode, { actInsideInputWithModifier:
+  // false }) already ignores Delete/Backspace while an input/textarea is
+  // focused, so the AreaNode rename field's Backspace keystrokes are safe
+  // without an extra guard here.
+  const onNodesDelete = useCallback<OnNodesDelete<Node>>(
+    (deletedNodes) => {
+      for (const deletedNode of deletedNodes) {
+        if (areaIdSet.has(deletedNode.id)) {
+          onAreaDelete?.(deletedNode.id)
+        }
+      }
+    },
+    [areaIdSet, onAreaDelete],
   )
 
   // Track whether a connection drag is in progress to reveal target handles
@@ -496,6 +615,8 @@ export function ReactFlowCanvas({
         onNodeDragStart={onNodeDragStart}
         onNodeDrag={onNodeDrag}
         onNodeDragStop={onNodeDragStop}
+        onNodesDelete={onNodesDelete}
+        deleteKeyCode={['Delete', 'Backspace']}
         nodeTypes={memoizedNodeTypes}
         edgeTypes={memoizedEdgeTypes}
         nodesDraggable={nodesDraggable}

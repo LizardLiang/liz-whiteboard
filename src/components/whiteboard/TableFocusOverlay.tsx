@@ -25,20 +25,7 @@ import {
   getDirectlyRelatedTableIds,
 } from '@/lib/react-flow/highlighting'
 import { computeD3ForceLayout } from '@/lib/auto-layout/d3-force-layout'
-
-// Height estimation constants — mirror layout-adapter.ts::calculateTableHeight
-// and TableNode.new.tsx::COLUMN_ROW_HEIGHT. Used when n.measured is unavailable.
-const OVERLAY_TABLE_HEADER_HEIGHT = 40
-const OVERLAY_TABLE_ROW_HEIGHT = 28
-const OVERLAY_TABLE_PADDING = 12
-
-function estimateTableHeight(columnCount: number): number {
-  return (
-    OVERLAY_TABLE_HEADER_HEIGHT +
-    columnCount * OVERLAY_TABLE_ROW_HEIGHT +
-    OVERLAY_TABLE_PADDING
-  )
-}
+import { calculateTableHeight } from '@/lib/react-flow/layout-adapter'
 
 export interface TableFocusOverlayProps {
   open: boolean
@@ -177,7 +164,7 @@ export function TableFocusOverlay({
       id: n.id,
       width: n.measured?.width ?? (n.width) ?? 250,
       height:
-        n.measured?.height ?? estimateTableHeight(n.data.table.columns.length),
+        n.measured?.height ?? calculateTableHeight(n.data.table.columns.length),
     }))
     const layoutEdges = focusEdges.map((e) => ({
       id: e.id,

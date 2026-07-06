@@ -322,6 +322,15 @@ export const LAYOUT_CONSTRAINTS = {
 } as const
 
 /**
+ * Minimum subject-area node dimensions (GH #106). Shared floor between
+ * AreaNode's NodeResizer (manual resize, empty areas only) and
+ * computeAreaBounds's auto-fit (area-bounds.ts) — kept here rather than in
+ * AreaNode.tsx so the lib layer doesn't depend on a React component.
+ */
+export const MIN_AREA_WIDTH = 160
+export const MIN_AREA_HEIGHT = 120
+
+/**
  * Z-Index layers
  */
 export const Z_INDEX = {

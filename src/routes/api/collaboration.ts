@@ -15,6 +15,7 @@ import {
   updateSessionActivity,
 } from '@/data/collaboration'
 import {
+  areaMoveBroadcastSchema,
   createAreaSchema,
   createColumnSchema,
   createRelationshipSchema,
@@ -30,6 +31,7 @@ import {
   createDiagramTable,
   deleteDiagramTable,
   findDiagramTableById,
+  findDiagramTablesByWhiteboardId,
   initDiagramTablePosition,
   updateDiagramTable,
   updateDiagramTablePosition,
@@ -39,6 +41,7 @@ import {
   createArea,
   deleteArea,
   findAreaById,
+  moveAreaAndMembers,
   removeTableFromAreas,
   updateArea,
 } from '@/data/area'
@@ -79,6 +82,25 @@ type AckResult =
       entity: unknown
       cascade?: { relationships?: number; columns?: number }
     }
+  | {
+      ok: false
+      code:
+        | 'VALIDATION_ERROR'
+        | 'NOT_FOUND'
+        | 'FORBIDDEN'
+        | 'SESSION_EXPIRED'
+        | 'INTERNAL_ERROR'
+      message: string
+    }
+
+/**
+ * Ack callback payload for the area:move atomic-drag handler
+ * (area-atomic-move fix). Unlike AckResult, the success case carries no
+ * `entity` — the client already applied the move optimistically during the
+ * drag and only needs pass/fail plus a failure reason to roll back on.
+ */
+type MoveAckResult =
+  | { ok: true }
   | {
       ok: false
       code:
@@ -978,6 +1000,129 @@ function setupCollaborationEventHandlers(
           message,
         })
         cb?.({ ok: false, code: 'VALIDATION_ERROR', message })
+        return
+      }
+      await safeUpdateSessionActivity(socket.id)
+    },
+  )
+
+  // Area atomic move (drag) — area-atomic-move fix for collaborator
+  // detachment. Persists the area's new position AND every member table's
+  // new position in a single transaction, then rebroadcasts one area:moved
+  // event, so peers apply the whole move in one render tick. Replaces the
+  // old drag path (area:update + updateTablePositionsBulk HTTP call +
+  // table:move:bulk broadcast), which had two separate peer-facing timings
+  // and a silent partial-persist-failure gap. area:update remains the event
+  // for rename/recolor/resize/membership changes — NOT for drag position.
+  socket.on(
+    'area:move',
+    async (
+      data: {
+        areaId: string
+        positionX: number
+        positionY: number
+        members: Array<{
+          tableId: string
+          positionX: number
+          positionY: number
+        }>
+      },
+      cb?: (res: MoveAckResult) => void,
+    ) => {
+      if (isSessionExpired(socket)) {
+        socket.emit('session_expired')
+        socket.disconnect(true)
+        cb?.({ ok: false, code: 'SESSION_EXPIRED', message: 'Session expired' })
+        return
+      }
+      if (await denyIfInsufficientPermission(socket, whiteboardId, 'area:move')) {
+        cb?.({ ok: false, code: 'FORBIDDEN', message: 'Insufficient permission' })
+        return
+      }
+
+      try {
+        // Full schema validation before persisting — rejects NaN/Infinity
+        // coordinates and non-UUID ids that would corrupt every
+        // collaborator's canvas (mirrors tableMoveBulkBroadcastSchema).
+        const parsed = areaMoveBroadcastSchema.safeParse(data)
+        if (!parsed.success) {
+          const message = 'Invalid area:move payload'
+          socket.emit('error', {
+            event: 'area:move',
+            error: 'VALIDATION_ERROR',
+            message,
+          })
+          cb?.({ ok: false, code: 'VALIDATION_ERROR', message })
+          return
+        }
+        const { areaId, positionX, positionY, members } = parsed.data
+
+        // IDOR guard: the area must belong to this whiteboard, and every
+        // member table id must also belong to this whiteboard — mirrors
+        // updateTablePositionsBulk's owned-set check (src/lib/server-functions.ts).
+        const [areaRecord, ownedTables] = await Promise.all([
+          findAreaById(areaId),
+          findDiagramTablesByWhiteboardId(whiteboardId),
+        ])
+        if (!areaRecord) {
+          const message = 'Area not found'
+          socket.emit('error', {
+            event: 'area:move',
+            error: 'NOT_FOUND',
+            message,
+            areaId,
+          })
+          cb?.({ ok: false, code: 'NOT_FOUND', message })
+          return
+        }
+        if (areaRecord.whiteboardId !== whiteboardId) {
+          const message = 'Area does not belong to this whiteboard'
+          socket.emit('error', {
+            event: 'area:move',
+            error: 'FORBIDDEN',
+            message,
+            areaId,
+          })
+          cb?.({ ok: false, code: 'FORBIDDEN', message })
+          return
+        }
+        const ownedIds = new Set(ownedTables.map((t) => t.id))
+        const hasForeignMember = members.some((m) => !ownedIds.has(m.tableId))
+        if (hasForeignMember) {
+          const message = 'Member table does not belong to this whiteboard'
+          socket.emit('error', {
+            event: 'area:move',
+            error: 'FORBIDDEN',
+            message,
+            areaId,
+          })
+          cb?.({ ok: false, code: 'FORBIDDEN', message })
+          return
+        }
+
+        // Persist area + all members atomically (one transaction).
+        await moveAreaAndMembers(areaId, { positionX, positionY }, members)
+
+        // Broadcast to peers only AFTER the write succeeds — one event,
+        // one render tick, no detachment window.
+        socket.broadcast.emit('area:moved', {
+          areaId,
+          positionX,
+          positionY,
+          members,
+          movedBy: userId,
+        })
+        cb?.({ ok: true })
+      } catch (error) {
+        console.error('Failed to move area:', error)
+        const message = 'Failed to move area'
+        socket.emit('error', {
+          event: 'area:move',
+          error: 'UPDATE_FAILED',
+          message,
+          areaId: data.areaId,
+        })
+        cb?.({ ok: false, code: 'INTERNAL_ERROR', message })
         return
       }
       await safeUpdateSessionActivity(socket.id)

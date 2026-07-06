@@ -563,3 +563,29 @@ export const tableMoveBulkBroadcastSchema = z.object({
 export type TableMoveBulkBroadcast = z.infer<
   typeof tableMoveBulkBroadcastSchema
 >
+
+/**
+ * Schema for the area:move socket event payload (atomic area + member drag,
+ * area-atomic-move fix for collaborator detachment).
+ * - areaId must be a UUID
+ * - positionX/positionY must be finite (rejects NaN / Infinity)
+ * - members MAY be empty (an area can have zero members) — each entry's
+ *   tableId is a UUID and positionX/positionY are finite
+ * - 500-entry cap on members matches tableMoveBulkBroadcastSchema's cap
+ */
+export const areaMoveBroadcastSchema = z.object({
+  areaId: z.string().uuid(),
+  positionX: z.number().finite(),
+  positionY: z.number().finite(),
+  members: z
+    .array(
+      z.object({
+        tableId: z.string().uuid(),
+        positionX: z.number().finite(),
+        positionY: z.number().finite(),
+      }),
+    )
+    .max(500),
+})
+
+export type AreaMoveBroadcast = z.infer<typeof areaMoveBroadcastSchema>

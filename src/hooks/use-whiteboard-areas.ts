@@ -21,11 +21,46 @@ interface AckResult {
   message?: string
 }
 
+/**
+ * Ack payload for the area:move atomic-drag event (area-atomic-move fix).
+ * Mirrors the server's MoveAckResult (src/routes/api/collaboration.ts) — the
+ * success case carries no `entity` since the move was already applied
+ * optimistically during the drag.
+ */
+export interface MoveAreaAckResult {
+  ok: boolean
+  code?: string
+  message?: string
+}
+
 export interface UseWhiteboardAreasReturn {
   areas: Array<Area>
   createArea: (input: Omit<CreateArea, 'whiteboardId'>) => void
   updateArea: (areaId: string, patch: UpdateArea) => void
   deleteArea: (areaId: string) => void
+  /**
+   * Atomically move an area + its member tables (area-atomic-move fix).
+   * Does NOT apply any local state itself — the caller has already applied
+   * the optimistic move (React Flow's own drag-preview state + the caller's
+   * own setNodes/applyRemoteAreaMove calls). This only emits the request and
+   * forwards the server ack to `onResult` so the caller can roll back on
+   * failure.
+   */
+  moveArea: (
+    areaId: string,
+    position: { positionX: number; positionY: number },
+    members: Array<{ tableId: string; positionX: number; positionY: number }>,
+    onResult?: (res: MoveAreaAckResult) => void,
+  ) => void
+  /**
+   * Merge a remote (or local-optimistic) area position into `areas` state.
+   * No emit — pure state update. Used both to apply an incoming peer
+   * `area:moved` broadcast and for the local optimistic apply during a drag.
+   */
+  applyRemoteAreaMove: (
+    areaId: string,
+    position: { positionX: number; positionY: number },
+  ) => void
 }
 
 export function useWhiteboardAreas(params: {
@@ -122,5 +157,50 @@ export function useWhiteboardAreas(params: {
     [emit],
   )
 
-  return { areas, createArea, updateArea, deleteArea }
+  // Merge a position into `areas` state only — no emit. Shared by the local
+  // optimistic apply (drag) and the remote area:moved listener (peer apply).
+  const applyRemoteAreaMove = useCallback(
+    (areaId: string, position: { positionX: number; positionY: number }) => {
+      setAreas((prev) =>
+        prev.map((a) => (a.id === areaId ? { ...a, ...position } : a)),
+      )
+    },
+    [],
+  )
+
+  // Atomic move (area-atomic-move fix) — area position + member positions
+  // persist server-side in one transaction and rebroadcast as one
+  // area:moved event. This function only emits + forwards the ack; the
+  // caller owns the optimistic apply and any failure rollback (it needs
+  // access to React Flow's setNodes, which this hook does not have).
+  const moveArea = useCallback(
+    (
+      areaId: string,
+      position: { positionX: number; positionY: number },
+      members: Array<{
+        tableId: string
+        positionX: number
+        positionY: number
+      }>,
+      onResult?: (res: MoveAreaAckResult) => void,
+    ) => {
+      emit(
+        'area:move',
+        { areaId, ...position, members },
+        (res: MoveAreaAckResult) => {
+          onResult?.(res)
+        },
+      )
+    },
+    [emit],
+  )
+
+  return {
+    areas,
+    createArea,
+    updateArea,
+    deleteArea,
+    moveArea,
+    applyRemoteAreaMove,
+  }
 }

@@ -38,8 +38,14 @@ export function useTableDeletion(
         return
       }
 
-      // Read currently selected nodes
-      const selectedNodes = getNodes().filter((n) => n.selected)
+      // Read currently selected nodes, excluding area nodes (GH #106 code
+      // review WARNING) — area deletion is owned solely by the ReactFlow
+      // native onNodesDelete → onAreaDelete path (areas are marked
+      // `deletable` for that purpose). This handler only ever requests the
+      // table-deletion confirmation dialog.
+      const selectedNodes = getNodes().filter(
+        (n) => n.selected && n.type !== 'area',
+      )
 
       // Only act on exactly one selected node
       if (selectedNodes.length !== 1) return

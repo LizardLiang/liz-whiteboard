@@ -179,6 +179,19 @@ describe('useTableDeletion', () => {
     document.body.removeChild(addColumnRow)
   })
 
+  it('TC-TD-04-11: Delete key does NOT fire when the only selected node is an area (GH #106)', () => {
+    mockGetNodes.mockReturnValue([
+      { id: 'area-001', selected: true, type: 'area' },
+    ])
+
+    renderHook(() => useTableDeletion(onRequestDelete))
+
+    document.body.focus()
+    fireKeydown('Delete')
+
+    expect(onRequestDelete).not.toHaveBeenCalled()
+  })
+
   it('TC-TD-04-10: event listener is cleaned up on unmount', () => {
     mockGetNodes.mockReturnValue([
       { id: 'tbl-001', selected: true, type: 'table' },

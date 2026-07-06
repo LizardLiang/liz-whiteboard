@@ -9,19 +9,24 @@ import { NodeResizer } from '@xyflow/react'
 import { X } from 'lucide-react'
 import type { NodeProps } from '@xyflow/react'
 import type { AreaNodeType } from '@/lib/react-flow/types'
+import { MIN_AREA_HEIGHT, MIN_AREA_WIDTH } from '@/lib/react-flow/types'
 import { AREA_COLORS, resolveAreaColor } from '@/lib/area-colors'
-
-const MIN_AREA_WIDTH = 160
-const MIN_AREA_HEIGHT = 120
 
 /**
  * React Flow custom node for a subject area. Sizing comes from the node's
  * width/height (set by the parent from Area.width/height); NodeResizer edits
  * that size and reports the committed bounds through `data.onResize`.
+ *
+ * Grouping (GH #106 bugfix): once an area has ≥1 member, its bounds are
+ * derived from its members (see `computeAreaBounds` in
+ * `@/lib/react-flow/area-bounds`, applied by `refitArea` in
+ * ReactFlowWhiteboard) — manual resize is disabled so the two sizing
+ * mechanisms can't fight each other. Empty areas keep manual resize.
  */
 export function AreaNode({ id, data, width, height, selected }: NodeProps<AreaNodeType>) {
   const { area, canEdit, onRename, onRecolor, onResize, onDelete } = data
   const color = resolveAreaColor(area.color)
+  const hasMembers = area.memberTableIds.length > 0
 
   const [editingName, setEditingName] = useState(false)
   const [nameDraft, setNameDraft] = useState(area.name)
@@ -45,7 +50,7 @@ export function AreaNode({ id, data, width, height, selected }: NodeProps<AreaNo
 
   return (
     <>
-      {canEdit && (
+      {canEdit && !hasMembers && (
         <NodeResizer
           color={color.solid}
           isVisible={selected}

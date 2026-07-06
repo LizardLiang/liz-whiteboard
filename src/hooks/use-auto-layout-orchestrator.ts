@@ -52,6 +52,19 @@ export interface UseAutoLayoutOrchestratorArgs {
   emitBulkPositionUpdate: (
     positions: Array<{ tableId: string; positionX: number; positionY: number }>,
   ) => void
+  /**
+   * Called once after a layout run's optimistic apply + persist has
+   * succeeded (GH #106 Bug 2 fix) — used by ReactFlowWhiteboard to re-fit
+   * every subject area around its members now that the (area-excluded)
+   * table layout has settled. Not called on layout error, persist failure,
+   * or auth error.
+   *
+   * Receives the applied positions (area-autolayout-persistence-fix) so the
+   * caller can also patch the React Query cache (the source of truth that
+   * `ReactFlowCanvas` re-syncs `initialNodes` from) and refit areas from the
+   * fresh positions instead of stale `getNodes()` state.
+   */
+  onAfterLayout?: (positions: Array<{ id: string; x: number; y: number }>) => void
 }
 
 export interface UseAutoLayoutOrchestratorResult {
@@ -79,6 +92,7 @@ export function useAutoLayoutOrchestrator({
   whiteboardId,
   runD3ForceLayout,
   emitBulkPositionUpdate,
+  onAfterLayout,
 }: UseAutoLayoutOrchestratorArgs): UseAutoLayoutOrchestratorResult {
   const { setNodes, setEdges, getNodes, getEdges, fitView } = useReactFlow()
   const { triggerSessionExpired } = useAuthContext()
@@ -170,6 +184,13 @@ export function useAutoLayoutOrchestrator({
         )
         // eslint-disable-next-line @typescript-eslint/no-unnecessary-condition
         if (isMountedRef.current) setPersistError(null)
+        onAfterLayout?.(
+          lastPayloadRef.current.positions.map((p) => ({
+            id: p.id,
+            x: p.positionX,
+            y: p.positionY,
+          })),
+        )
       }
     } catch (err) {
       // eslint-disable-next-line @typescript-eslint/no-unnecessary-condition
@@ -177,7 +198,7 @@ export function useAutoLayoutOrchestrator({
       setPersistError(err)
       toast.error('Auto Layout could not be saved on retry. Please try again.')
     }
-  }, [emitBulkPositionUpdate, handlePersistResult])
+  }, [emitBulkPositionUpdate, handlePersistResult, onAfterLayout])
 
   // ---------------------------------------------------------------------------
   // runLayout — the core flow
@@ -187,8 +208,14 @@ export function useAutoLayoutOrchestrator({
     if (isMountedRef.current) setPersistError(null)
 
     try {
-      // Step 1 — Compute layout (may return null on error)
-      const layoutResult = await runD3ForceLayout(getNodes(), getEdges())
+      // Step 1 — Compute layout (may return null on error). Subject-area
+      // nodes (GH #106) are excluded from the layout input: d3-force would
+      // otherwise treat an area like a table, scattering it away from its
+      // members (Bug 2). `positions` therefore never contains an area id, so
+      // the bulk-apply/persist below leaves areas untouched and never
+      // targets a non-existent DiagramTable row.
+      const tableNodesOnly = getNodes().filter((n) => n.type !== 'area')
+      const layoutResult = await runD3ForceLayout(tableNodesOnly, getEdges())
 
       if (!isMountedRef.current) return
       if (!layoutResult) {
@@ -286,6 +313,12 @@ export function useAutoLayoutOrchestrator({
             positionY: p.y,
           })),
         )
+        // Step 7 — Re-fit subject areas around their (now-relaid-out) members
+        // now that apply + persist has fully succeeded (GH #106 Bug 2 fix).
+        // Pass the applied positions (area-autolayout-persistence-fix) so the
+        // caller can also patch the query cache and refit from fresh data
+        // instead of stale getNodes() state.
+        onAfterLayout?.(positions)
       }
     } finally {
       if (isMountedRef.current) setIsRunning(false)
@@ -300,6 +333,7 @@ export function useAutoLayoutOrchestrator({
     handlePersistResult,
     emitBulkPositionUpdate,
     handleRetry,
+    onAfterLayout,
   ])
 
   // ---------------------------------------------------------------------------

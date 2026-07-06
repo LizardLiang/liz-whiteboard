@@ -3,16 +3,18 @@
 // real in-memory SQLite database (DATABASE_URL=:memory:). Covers create, find,
 // update, delete, whiteboard scoping, membership cleanup, and FK cascade.
 
-import { beforeEach, describe, expect, it } from 'vitest'
+import { beforeEach, describe, expect, it, vi } from 'vitest'
 
 import {
   createArea,
   deleteArea,
   findAreaById,
   findAreasByWhiteboard,
+  moveAreaAndMembers,
   removeTableFromAreas,
   updateArea,
 } from './area'
+import type * as DbModule from '@/db'
 import { db } from '@/db'
 import {
   makeProject,
@@ -20,6 +22,26 @@ import {
   makeWhiteboard,
   resetDb,
 } from '@/test/db-helpers'
+
+// moveAreaAndMembers rollback test needs a way to force a write failure
+// mid-transaction (the generic `update()` helper never throws on its own —
+// an UPDATE against a nonexistent id just affects 0 rows). Mock `update` to
+// throw for a sentinel id while delegating to the real implementation
+// otherwise, so every other test in this file is unaffected.
+vi.mock('@/db', async (importOriginal) => {
+  const actual = await importOriginal<typeof DbModule>()
+  return {
+    ...actual,
+    update: vi.fn(
+      (table: string, id: string, values: Record<string, unknown>) => {
+        if (id === 'FORCE_WRITE_FAILURE') {
+          throw new Error('Simulated write failure')
+        }
+        return actual.update(table, id, values)
+      },
+    ),
+  }
+})
 
 /** Build the FK chain an Area requires: Project → Whiteboard. */
 function makeWhiteboardId(): string {
@@ -113,6 +135,87 @@ describe('updateArea', () => {
 
     const updated = await updateArea(area.id, { memberTableIds: [t2.id] })
     expect(updated.memberTableIds).toEqual([t2.id])
+  })
+})
+
+describe('moveAreaAndMembers', () => {
+  it('updates both the area and all member rows in a single call', async () => {
+    const wbId = makeWhiteboardId()
+    const t1 = makeTable({ whiteboardId: wbId, name: 't1' })
+    const t2 = makeTable({ whiteboardId: wbId, name: 't2' })
+    const area = await createArea(
+      baseArea(wbId, { memberTableIds: [t1.id, t2.id] }),
+    )
+
+    const updated = await moveAreaAndMembers(
+      area.id,
+      { positionX: 500, positionY: 600 },
+      [
+        { tableId: t1.id, positionX: 50, positionY: 60 },
+        { tableId: t2.id, positionX: 70, positionY: 80 },
+      ],
+    )
+
+    expect(updated.positionX).toBe(500)
+    expect(updated.positionY).toBe(600)
+
+    const row1 = db
+      .prepare('SELECT "positionX", "positionY" FROM "DiagramTable" WHERE "id" = ?')
+      .get(t1.id) as { positionX: number; positionY: number }
+    const row2 = db
+      .prepare('SELECT "positionX", "positionY" FROM "DiagramTable" WHERE "id" = ?')
+      .get(t2.id) as { positionX: number; positionY: number }
+    expect(row1).toEqual({ positionX: 50, positionY: 60 })
+    expect(row2).toEqual({ positionX: 70, positionY: 80 })
+  })
+
+  it('supports a member-less area (empty members array)', async () => {
+    const wbId = makeWhiteboardId()
+    const area = await createArea(baseArea(wbId))
+
+    const updated = await moveAreaAndMembers(
+      area.id,
+      { positionX: 33, positionY: 44 },
+      [],
+    )
+    expect(updated.positionX).toBe(33)
+    expect(updated.positionY).toBe(44)
+  })
+
+  it('rolls back the whole batch (area + members) when one row fails (all-or-nothing)', async () => {
+    const wbId = makeWhiteboardId()
+    const t1 = makeTable({ whiteboardId: wbId, name: 't1' })
+    const area = await createArea(
+      baseArea(wbId, {
+        positionX: 10,
+        positionY: 20,
+        memberTableIds: [t1.id],
+      }),
+    )
+
+    await expect(
+      moveAreaAndMembers(
+        area.id,
+        { positionX: 999, positionY: 999 },
+        [
+          { tableId: t1.id, positionX: 111, positionY: 222 },
+          { tableId: 'FORCE_WRITE_FAILURE', positionX: 0, positionY: 0 },
+        ],
+      ),
+    ).rejects.toThrow()
+
+    // Area position rolled back — the area update happens first in the
+    // transaction, before the failing member update.
+    const reloadedArea = await findAreaById(area.id)
+    expect(reloadedArea?.positionX).toBe(10)
+    expect(reloadedArea?.positionY).toBe(20)
+
+    // Member position rolled back too — proves all-or-nothing, not
+    // partial-commit.
+    const row1 = db
+      .prepare('SELECT "positionX", "positionY" FROM "DiagramTable" WHERE "id" = ?')
+      .get(t1.id) as { positionX: number; positionY: number }
+    expect(row1).toEqual({ positionX: 0, positionY: 0 })
   })
 })
 

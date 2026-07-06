@@ -26,6 +26,7 @@ import {
   useViewport,
 } from '@xyflow/react'
 import { Minimize2, SquareDashed } from 'lucide-react'
+import { toast } from 'sonner'
 import { ReactFlowCanvas } from './ReactFlowCanvas'
 import { ConnectionStatusIndicator } from './ConnectionStatusIndicator'
 import { DeleteTableDialog } from './DeleteTableDialog'
@@ -91,6 +92,12 @@ import {
 } from '@/lib/server-functions'
 import { useWhiteboardAreas } from '@/hooks/use-whiteboard-areas'
 import { DEFAULT_AREA_COLOR } from '@/lib/area-colors'
+import {
+  computeAreaBounds,
+  reconcileAreaMembership,
+} from '@/lib/react-flow/area-bounds'
+import { calculateTableHeight } from '@/lib/react-flow/layout-adapter'
+import { LAYOUT_CONSTRAINTS } from '@/lib/react-flow/types'
 import { useD3ForceLayout } from '@/hooks/use-d3-force-layout'
 import { useAutoLayoutOrchestrator } from '@/hooks/use-auto-layout-orchestrator'
 import { applyBulkPositions } from '@/lib/auto-layout'
@@ -113,6 +120,7 @@ import { useColumnReorderMutations } from '@/hooks/use-column-reorder-mutations'
 import { useColumnReorderCollaboration } from '@/hooks/use-column-reorder-collaboration'
 import { getSessionUserId } from '@/lib/session-user-id'
 import { classifyQueryFailure, isUnauthorizedError } from '@/lib/auth/errors'
+import { useAuthContext } from '@/components/auth/AuthContext'
 import { useZenMode } from '@/hooks/use-zen-mode'
 
 /** Pending connection data waiting for cardinality selection */
@@ -304,6 +312,23 @@ function ReactFlowWhiteboardInner({
   useEffect(() => {
     edgesRef.current = edges
   }, [edges])
+
+  // Keep a stable ref to nodes (parallel to edgesRef) so callbacks can read
+  // pre-drag positions without a stale closure. Used by handleAreaDragStop's
+  // rollback (GH #106 code-review BLOCKER) — this outer `nodes` state is only
+  // ever touched by explicit setNodes calls (never by ReactFlowCanvas's own
+  // live drag-preview state), so it still holds each member's pre-drag
+  // position right up until the optimistic apply below.
+  const nodesRef = useRef(nodes)
+  useEffect(() => {
+    nodesRef.current = nodes
+  }, [nodes])
+
+  // Session/auth context — triggerSessionExpired mirrors how
+  // useAutoLayoutOrchestrator handles an isUnauthorizedError result from
+  // updateTablePositionsBulk, and how handleAreaDragStop's moveArea ack
+  // failure (SESSION_EXPIRED code) handles the atomic area move.
+  const { triggerSessionExpired } = useAuthContext()
 
   // Pre-filtered edges (stale/deleted-column-safe, via filterValidEdges)
   // for the relations panel only — kept in a ref (parallel to edgesRef) so
@@ -751,6 +776,17 @@ function ReactFlowWhiteboardInner({
   // Ref for onRemoteColumnDuplicated — avoids circular dep with columnMutations
   const onRemoteColumnDuplicatedRef = useRef<(data: any) => void>(() => {})
 
+  // Ref for refitAreasContainingTable (area-fit-member-content) — the same
+  // forward-reference pattern as the refs above: handleColumnCreate/
+  // handleColumnDelete are declared before refitAreasContainingTable (which
+  // depends on refitArea/reactFlowInstance, declared later), so they call
+  // through this ref instead of referencing the not-yet-declared function
+  // directly (which would violate the temporal dead zone in useCallback's
+  // deps array).
+  const refitAreasContainingTableRef = useRef<
+    (tableId: string, columnCountOverride?: number) => void
+  >(() => {})
+
   // On WebSocket reconnect, re-fetch whiteboard data to replace any stale
   // optimistic state that was never confirmed before the disconnect.
   // MEDIUM-01: flag set to true on reconnect so the initialNodes effect knows
@@ -1038,6 +1074,19 @@ function ReactFlowWhiteboardInner({
     (tableId: string, data: CreateColumnPayload) => {
       try {
         columnMutations.createColumn(tableId, data)
+        // area-fit-member-content: re-fit any area containing this table now
+        // that its column count is about to grow by one. Compute the new
+        // count from the pre-mutation node list (nodesRef.current) + 1 — the
+        // optimistic setNodes inside createColumn hasn't committed/
+        // re-rendered yet, so reading it back here would still see the OLD
+        // count (see refitArea's columnCountOverrides comment).
+        const table = nodesRef.current.find((n) => n.id === tableId)
+        if (table) {
+          refitAreasContainingTableRef.current(
+            tableId,
+            table.data.table.columns.length + 1,
+          )
+        }
       } catch (error) {
         console.error('Failed to create column:', error)
         throw error
@@ -1056,6 +1105,17 @@ function ReactFlowWhiteboardInner({
   const handleColumnDelete = useCallback(
     (columnId: string, tableId: string) => {
       columnMutations.deleteColumn(columnId, tableId)
+      // area-fit-member-content: re-fit any area containing this table now
+      // that its column count is about to shrink by one (see handleColumnCreate
+      // above for why the count is computed from the pre-mutation node list
+      // rather than read back after the optimistic setNodes).
+      const table = nodesRef.current.find((n) => n.id === tableId)
+      if (table) {
+        refitAreasContainingTableRef.current(
+          tableId,
+          Math.max(0, table.data.table.columns.length - 1),
+        )
+      }
     },
     [columnMutations],
   )
@@ -1330,23 +1390,28 @@ function ReactFlowWhiteboardInner({
     },
     onSuccess: (updatedTable) => {
       if (isUnauthorizedError(updatedTable)) return
-      // Update cache without full refetch for better performance
+      // Update cache without full refetch for better performance.
+      // area-autolayout-persistence-fix: the query result is FLAT —
+      // getWhiteboardWithDiagram returns `{ ...whiteboard, tables, viewerRole }`
+      // (findWhiteboardByIdWithDiagram returns `{ ...whiteboard, tables }`) —
+      // there is no nested `.whiteboard` wrapper. The previous `old?.whiteboard
+      // ?.tables` guard here always failed (the property never existed), so
+      // this patch was a silent no-op; fixed to match the real `old.tables`
+      // shape (confirmed against src/data/whiteboard.ts and the `nodes` memo
+      // below, which reads `whiteboardData?.tables` directly).
       queryClient.setQueryData(['whiteboard', whiteboardId], (old: any) => {
-        if (!old?.whiteboard?.tables) return old
+        if (!old?.tables) return old
         return {
           ...old,
-          whiteboard: {
-            ...old.whiteboard,
-            tables: old.whiteboard.tables.map((t: any) =>
-              t.id === updatedTable.id
-                ? {
-                    ...t,
-                    positionX: updatedTable.positionX,
-                    positionY: updatedTable.positionY,
-                  }
-                : t,
-            ),
-          },
+          tables: old.tables.map((t: any) =>
+            t.id === updatedTable.id
+              ? {
+                  ...t,
+                  positionX: updatedTable.positionX,
+                  positionY: updatedTable.positionY,
+                }
+              : t,
+          ),
         }
       })
     },
@@ -1355,22 +1420,50 @@ function ReactFlowWhiteboardInner({
     },
   })
 
+  // Shared cache patcher (area-autolayout-persistence-fix) — generalizes the
+  // single-table `updatePositionMutation` cache updater above to N tables.
+  // The ['whiteboard', whiteboardId] query result is the source of truth
+  // that the `nodes` memo / `initialNodes` prop is built from; ReactFlowCanvas
+  // re-syncs its internal node store from `initialNodes` whenever that prop's
+  // reference changes (ReactFlowCanvas.tsx), so ANY path that moves table
+  // nodes only via `setNodes`/React Flow's own drag state — without also
+  // patching this cache — leaves a stale entry that a later, unrelated
+  // `initialNodes` reference change (e.g. another mutation's cache patch)
+  // will revert to. Used by Auto Layout (handleAfterAutoLayout) and the area
+  // atomic-move path (handleAreaDragStop / the area:moved peer-receive
+  // listener), both of which move member tables without going through
+  // `updatePositionMutation`.
+  //
+  // Shape: the query result is FLAT (`{ ...whiteboard, tables, viewerRole }`
+  // — see getWhiteboardWithDiagram/findWhiteboardByIdWithDiagram in
+  // src/data/whiteboard.ts and the `nodes` memo below, which reads
+  // `whiteboardData?.tables` directly). There is no nested `.whiteboard`
+  // wrapper.
+  const patchWhiteboardTablePositions = useCallback(
+    (positions: Array<{ id: string; x: number; y: number }>) => {
+      if (positions.length === 0) return
+      const positionById = new Map(positions.map((p) => [p.id, p]))
+      queryClient.setQueryData(['whiteboard', whiteboardId], (old: any) => {
+        if (!old?.tables) return old
+        return {
+          ...old,
+          tables: old.tables.map((t: any) => {
+            const p = positionById.get(t.id)
+            if (!p) return t
+            return { ...t, positionX: p.x, positionY: p.y }
+          }),
+        }
+      })
+    },
+    [queryClient, whiteboardId],
+  )
+
   // d3-force layout hook (wraps the pure computeD3ForceLayout engine)
   const { runLayout: runD3ForceLayout } = useD3ForceLayout()
 
-  // Auto Layout orchestrator — owns the full flow:
-  // button click → optional dialog → layout → optimistic setNodes → persist → broadcast → fitView
-  const {
-    isRunning: isAutoLayoutRunning,
-    showConfirmDialog: showAutoLayoutDialog,
-    handleAutoLayoutClick,
-    handleConfirm: handleAutoLayoutConfirm,
-    handleCancel: handleAutoLayoutCancel,
-  } = useAutoLayoutOrchestrator({
-    whiteboardId,
-    runD3ForceLayout,
-    emitBulkPositionUpdate,
-  })
+  // NOTE: the Auto Layout orchestrator is initialized further down (after
+  // refitAllAreas is defined, GH #106 Bug 2 fix — Auto Layout excludes areas
+  // and refits them afterward via onAfterLayout).
 
   // Expose display mode controls to parent component (only once on mount)
   useEffect(() => {
@@ -1393,6 +1486,8 @@ function ReactFlowWhiteboardInner({
     createArea: createAreaMutation,
     updateArea: updateAreaMutation,
     deleteArea: deleteAreaMutation,
+    moveArea,
+    applyRemoteAreaMove,
   } = useWhiteboardAreas({
     whiteboardId,
     userId,
@@ -1423,12 +1518,6 @@ function ReactFlowWhiteboardInner({
       updateAreaMutation(areaId, { color: color }),
     [updateAreaMutation],
   )
-  const handleAreaDragStop = useCallback(
-    (areaId: string, positionX: number, positionY: number) =>
-      updateAreaMutation(areaId, { positionX, positionY }),
-    [updateAreaMutation],
-  )
-
   // Build React Flow area nodes from the areas list.
   const areaNodes = useMemo<Array<AreaNodeType>>(
     () =>
@@ -1440,6 +1529,11 @@ function ReactFlowWhiteboardInner({
         height: area.height,
         draggable: canEdit,
         selectable: canEdit,
+        // GH #106 Bug 1 fix: area deletion routes through Delete/Backspace ->
+        // onNodesDelete in ReactFlowCanvas, which requires the node to be
+        // marked deletable. Table nodes are the opposite (deletable: false)
+        // so their removal always goes through the confirmation dialog.
+        deletable: canEdit,
         // Render behind table nodes (which default to zIndex >= 1).
         zIndex: 0,
         data: {
@@ -1479,25 +1573,372 @@ function ReactFlowWhiteboardInner({
     areasRef.current = areas
   }, [areas])
 
+  // Auto-fit an area's bounds around its current members (GH #106 Bug 2 fix).
+  // Reads live member geometry from the React Flow instance (measured
+  // width/height), computes the new bounding box, and persists only when the
+  // bounds actually changed — this is the feedback-loop guard: refitArea is
+  // never wired as a reaction to `area:updated` (useWhiteboardAreas already
+  // ignores echoes of the current user's own updates via `updatedBy`), it is
+  // only invoked from explicit triggers (member drag-stop, membership
+  // add/remove, post auto-layout).
+  // `memberTableIdsOverride` lets membership-change callers (add/remove to
+  // area) pass the just-computed member list directly, instead of reading
+  // `areasRef` — which still holds the pre-update value until the next
+  // render's effect runs (setAreas → areasRef sync is one tick behind).
+  //
+  // `positionOverrides` (area-autolayout-persistence-fix) lets Auto Layout
+  // pass the just-applied positions directly, instead of reading
+  // `reactFlowInstance.getNodes()` — which is stale for one tick right after
+  // `onAfterLayout` fires (the RF store update from the layout hasn't been
+  // committed/re-rendered yet), so refit was fitting the area to the
+  // members' OLD positions. Size (measured width/height) still comes from
+  // `getNodes()` — only the position is overridden.
+  //
+  // `columnCountOverrides` (area-fit-member-content) is the same fix for the
+  // same class of bug, applied to column COUNT instead of position: a local
+  // column create/delete applies its optimistic `setNodes` update, but that
+  // update hasn't committed/re-rendered yet either, so `getNodes()` would
+  // still report the member's OLD column count for one tick. Height is
+  // ALWAYS computed from `columnCount` (via `computeAreaBounds` →
+  // `calculateTableHeight`), never from measured/display-mode-dependent
+  // height, so every refit path (membership, drag, auto-layout, and the new
+  // column-count trigger) is full-content and client-independent.
+  const refitArea = useCallback(
+    (
+      areaId: string,
+      memberTableIdsOverride?: Array<string>,
+      positionOverrides?: Map<string, { x: number; y: number }>,
+      columnCountOverrides?: Map<string, number>,
+    ) => {
+      const area = areasRef.current.find((a) => a.id === areaId)
+      if (!area) return
+      const memberTableIds = memberTableIdsOverride ?? area.memberTableIds
+      if (memberTableIds.length === 0) return
+
+      const rfNodes = reactFlowInstance.getNodes()
+      const memberNodes = memberTableIds
+        .map((id) => {
+          const node = rfNodes.find((n) => n.id === id) as
+            | TableNodeType
+            | undefined
+          if (!node) return undefined
+          const positionOverride = positionOverrides?.get(id)
+          const position = positionOverride
+            ? { x: positionOverride.x, y: positionOverride.y }
+            : node.position
+          const columnCount =
+            columnCountOverrides?.get(id) ?? node.data.table.columns.length
+          return { ...node, position, columnCount }
+        })
+        .filter((n): n is NonNullable<typeof n> => n !== undefined)
+      if (memberNodes.length === 0) return
+
+      const bounds = computeAreaBounds(memberNodes)
+      if (!bounds) return
+
+      const unchanged =
+        Math.abs(bounds.positionX - area.positionX) < 0.5 &&
+        Math.abs(bounds.positionY - area.positionY) < 0.5 &&
+        Math.abs(bounds.width - area.width) < 0.5 &&
+        Math.abs(bounds.height - area.height) < 0.5
+      if (unchanged) return
+
+      updateAreaMutation(areaId, bounds)
+    },
+    [reactFlowInstance, updateAreaMutation],
+  )
+
+  // Re-fit every area containing `tableId` — used after a LOCAL column
+  // create/delete (area-fit-member-content). `columnCountOverride`, when
+  // given, is the just-applied column count for `tableId` (computed by the
+  // caller from the pre-mutation node list + 1/-1) so the refit doesn't read
+  // the one-tick-stale `getNodes()` count (see `refitArea`'s
+  // `columnCountOverrides` comment above). Deliberately NOT wired to remote
+  // column events (`onColumnCreated`/`onColumnDeleted`) or the display-mode
+  // toggle — peers grow their area via the existing `area:updated`
+  // broadcast, and full-content bounds are deterministic from shared column
+  // data, so a remote-triggered refit here would only produce a redundant
+  // `area:update` emit.
+  const refitAreasContainingTable = useCallback(
+    (tableId: string, columnCountOverride?: number) => {
+      const columnCountOverrides =
+        columnCountOverride !== undefined
+          ? new Map([[tableId, columnCountOverride]])
+          : undefined
+      areasRef.current
+        .filter((area) => area.memberTableIds.includes(tableId))
+        .forEach((area) =>
+          refitArea(area.id, undefined, undefined, columnCountOverrides),
+        )
+    },
+    [refitArea],
+  )
+
+  // Wire refitAreasContainingTable ref now that it's available (see the ref's
+  // declaration comment above for why this indirection is needed).
+  useEffect(() => {
+    refitAreasContainingTableRef.current = refitAreasContainingTable
+  }, [refitAreasContainingTable])
+
+  // Re-fit every area with ≥1 member — called after Auto Layout re-lays-out
+  // the tables (areas themselves are excluded from that layout, see
+  // useAutoLayoutOrchestrator's onAfterLayout wiring below).
+  //
+  // `positions` (area-autolayout-persistence-fix), when provided, are the
+  // just-applied Auto Layout positions — forwarded to `refitArea` as
+  // position overrides so refit computes bounds from the fresh layout
+  // instead of the one-tick-stale `reactFlowInstance.getNodes()`.
+  const refitAllAreas = useCallback(
+    (positions?: Array<{ id: string; x: number; y: number }>) => {
+      const positionOverrides = positions
+        ? new Map(positions.map((p) => [p.id, { x: p.x, y: p.y }]))
+        : undefined
+      areasRef.current.forEach((area) =>
+        refitArea(area.id, undefined, positionOverrides),
+      )
+    },
+    [refitArea],
+  )
+
+  // Area drag → moves members (movable-container grouping, GH #106 Bug 2 fix,
+  // made atomic by area-atomic-move). ReactFlowCanvas already translated the
+  // member table nodes live during the drag and computed their final
+  // positions; here we persist both the area's own position and the
+  // members' new positions in ONE server transaction via moveArea (area:move
+  // socket event), which also rebroadcasts a single area:moved event to
+  // peers — replacing the old 3-call path (area:update + HTTP
+  // updateTablePositionsBulk + table:move:bulk) that let peers briefly see
+  // the area jump ahead of its members. The area's own position is broadcast
+  // ONLY via area:moved now — area:update must NOT also fire for this drag,
+  // or peers get a duplicate jump.
+  // The dragged area's own bounds are unchanged (every member moved by the
+  // same delta), but a member table can belong to OTHER areas too (no
+  // cross-area exclusivity — see memberTableIds in schema.ts), so every
+  // OTHER area containing any moved member is still re-fit below via
+  // area:update (bounds-only — not a detachment case, since that area itself
+  // didn't move as a container).
+  const handleAreaDragStop = useCallback(
+    (
+      areaId: string,
+      positionX: number,
+      positionY: number,
+      movedMembers: Array<{ id: string; positionX: number; positionY: number }>,
+    ) => {
+      // Snapshot pre-drag positions (area + members) BEFORE any optimistic
+      // apply, so an ack-failure rollback below can restore exactly what the
+      // DB still has for BOTH the area and its members (GH #106 code-review
+      // BLOCKER precedent: a persist failure must never leave local state
+      // silently out of sync with the DB).
+      const previousArea = areasRef.current.find((a) => a.id === areaId)
+      const previousAreaPosition = previousArea
+        ? { positionX: previousArea.positionX, positionY: previousArea.positionY }
+        : null
+      const previousMemberPositions = movedMembers
+        .map((m) => nodesRef.current.find((n) => n.id === m.id))
+        .filter((n): n is NonNullable<typeof n> => n !== undefined)
+        .map((n) => ({ id: n.id, x: n.position.x, y: n.position.y }))
+
+      // Optimistic local apply — the area's own React Flow node already
+      // reflects the drag visually (RF drags its own node state live); this
+      // keeps the `areas` state (used to rebuild areaNodes) in sync too.
+      // No emit here — moveArea below is the ONLY emit for this drag.
+      applyRemoteAreaMove(areaId, { positionX, positionY })
+
+      if (movedMembers.length > 0) {
+        // Optimistic local apply — the members already moved visually inside
+        // ReactFlowCanvas's own node state during the drag; this keeps the
+        // outer node list (used by DDL export, search, etc.) in sync too.
+        setNodes((prev) =>
+          applyBulkPositions(
+            prev,
+            movedMembers.map((m) => ({
+              id: m.id,
+              x: m.positionX,
+              y: m.positionY,
+            })),
+          ),
+        )
+        // area-autolayout-persistence-fix: also patch the query cache (the
+        // source of truth `initialNodes` is rebuilt from) so the canvas's own
+        // RF node store doesn't revert these members' positions the next
+        // time `initialNodes` gets a new reference for an unrelated reason
+        // (same latent bug Auto Layout had — this path moves members via
+        // setNodes/native RF drag state only, never the cache, until now).
+        patchWhiteboardTablePositions(
+          movedMembers.map((m) => ({ id: m.id, x: m.positionX, y: m.positionY })),
+        )
+      }
+
+      // GH #106 code-review WARNING: refit every OTHER area that contains ANY
+      // moved member — fired immediately, matching handleNodeDragStop's
+      // refit timing (not gated on persistence success below). The dragged
+      // area itself is excluded: its position is owned by the atomic
+      // moveArea call, not by a bounds refit.
+      const movedMemberIds = new Set(movedMembers.map((m) => m.id))
+      const areaIdsToRefit = new Set<string>()
+      areasRef.current.forEach((area) => {
+        if (
+          area.id !== areaId &&
+          area.memberTableIds.some((id) => movedMemberIds.has(id))
+        ) {
+          areaIdsToRefit.add(area.id)
+        }
+      })
+      areaIdsToRefit.forEach((id) => refitArea(id))
+
+      moveArea(
+        areaId,
+        { positionX, positionY },
+        movedMembers.map((m) => ({
+          tableId: m.id,
+          positionX: m.positionX,
+          positionY: m.positionY,
+        })),
+        (res) => {
+          if (res.ok) return
+
+          console.error('Failed to persist area move:', res.message)
+          toast.error(
+            res.code === 'SESSION_EXPIRED'
+              ? 'Your session expired before the area move could be saved. Please sign in to retry.'
+              : 'The area move could not be saved — your changes have been reverted.',
+          )
+          if (res.code === 'SESSION_EXPIRED') {
+            triggerSessionExpired()
+          }
+
+          // Roll back BOTH the area and its members — the atomic move
+          // failed as a whole (one transaction that never committed), so
+          // local state must be restored to match the DB entirely.
+          if (previousAreaPosition) {
+            applyRemoteAreaMove(areaId, previousAreaPosition)
+          }
+          if (previousMemberPositions.length > 0) {
+            setNodes((prev) =>
+              applyBulkPositions(prev, previousMemberPositions),
+            )
+            // Roll the cache patch back too, or the members would appear
+            // moved again the next time initialNodes re-syncs even though
+            // the DB transaction never committed.
+            patchWhiteboardTablePositions(previousMemberPositions)
+          }
+        },
+      )
+    },
+    [
+      applyRemoteAreaMove,
+      moveArea,
+      setNodes,
+      refitArea,
+      triggerSessionExpired,
+      patchWhiteboardTablePositions,
+    ],
+  )
+
+  // Peer receive for the atomic area move (area-atomic-move fix). Applies
+  // the area's new position AND its members' new positions in ONE callback —
+  // React 19 auto-batches both setState calls (applyRemoteAreaMove's setAreas
+  // + setNodes) into a single render tick, so collaborators never see a
+  // frame where the area has moved but its members lag (or vice versa).
+  // Ignores the event when it originated from this same client (already
+  // applied optimistically in handleAreaDragStop above).
+  useEffect(() => {
+    if (!collaborationEnabled) return
+
+    const handleAreaMoved = (data: {
+      areaId: string
+      positionX: number
+      positionY: number
+      members: Array<{ tableId: string; positionX: number; positionY: number }>
+      movedBy: string
+    }) => {
+      if (data.movedBy === userId) return
+
+      applyRemoteAreaMove(data.areaId, {
+        positionX: data.positionX,
+        positionY: data.positionY,
+      })
+      if (data.members.length > 0) {
+        const positions = data.members.map((m) => ({
+          id: m.tableId,
+          x: m.positionX,
+          y: m.positionY,
+        }))
+        setNodes((prev) => applyBulkPositions(prev, positions))
+        // area-autolayout-persistence-fix: keep the peer's cache consistent
+        // too, mirroring the local-drag patch above.
+        patchWhiteboardTablePositions(positions)
+      }
+    }
+
+    onCollabEvent('area:moved', handleAreaMoved)
+    return () => offCollabEvent('area:moved', handleAreaMoved)
+  }, [
+    collaborationEnabled,
+    onCollabEvent,
+    offCollabEvent,
+    userId,
+    applyRemoteAreaMove,
+    setNodes,
+    patchWhiteboardTablePositions,
+  ])
+
+  // Auto Layout onAfterLayout callback (area-autolayout-persistence-fix).
+  // Auto Layout previously only wrote the applied positions to the React
+  // Flow store (via setNodes inside the orchestrator) and never patched the
+  // React Query cache — the source of truth `whiteboardData` → `nodes` memo
+  // → `initialNodes` that ReactFlowCanvas re-syncs `setNodes` from on every
+  // re-render (ReactFlowCanvas.tsx). That stale cache is why tables visibly
+  // reverted to their pre-layout positions and areas detached from their
+  // members after a re-render. This mirrors `updatePositionMutation`'s
+  // onSuccess cache patch above, generalized to N tables, then refits areas
+  // from the SAME fresh positions (not the one-tick-stale getNodes()).
+  const handleAfterAutoLayout = useCallback(
+    (positions: Array<{ id: string; x: number; y: number }>) => {
+      patchWhiteboardTablePositions(positions)
+      refitAllAreas(positions)
+    },
+    [patchWhiteboardTablePositions, refitAllAreas],
+  )
+
+  // Auto Layout orchestrator — owns the full flow:
+  // button click → optional dialog → layout → optimistic setNodes → persist → broadcast → fitView
+  // GH #106 Bug 2 fix: onAfterLayout re-fits every area once the (area-
+  // excluded) table layout has applied + persisted.
+  const {
+    isRunning: isAutoLayoutRunning,
+    showConfirmDialog: showAutoLayoutDialog,
+    handleAutoLayoutClick,
+    handleConfirm: handleAutoLayoutConfirm,
+    handleCancel: handleAutoLayoutCancel,
+  } = useAutoLayoutOrchestrator({
+    whiteboardId,
+    runD3ForceLayout,
+    emitBulkPositionUpdate,
+    onAfterLayout: handleAfterAutoLayout,
+  })
+
   const handleAddTableToArea = useCallback(
     (tableId: string, areaId: string) => {
       const area = areasRef.current.find((a) => a.id === areaId)
       if (!area || area.memberTableIds.includes(tableId)) return
-      updateAreaMutation(areaId, {
-        memberTableIds: [...area.memberTableIds, tableId],
-      })
+      const nextMemberTableIds = [...area.memberTableIds, tableId]
+      updateAreaMutation(areaId, { memberTableIds: nextMemberTableIds })
+      refitArea(areaId, nextMemberTableIds)
     },
-    [updateAreaMutation],
+    [updateAreaMutation, refitArea],
   )
   const handleRemoveTableFromArea = useCallback(
     (tableId: string, areaId: string) => {
       const area = areasRef.current.find((a) => a.id === areaId)
       if (!area || !area.memberTableIds.includes(tableId)) return
-      updateAreaMutation(areaId, {
-        memberTableIds: area.memberTableIds.filter((mid) => mid !== tableId),
-      })
+      const nextMemberTableIds = area.memberTableIds.filter(
+        (mid) => mid !== tableId,
+      )
+      updateAreaMutation(areaId, { memberTableIds: nextMemberTableIds })
+      refitArea(areaId, nextMemberTableIds)
     },
-    [updateAreaMutation],
+    [updateAreaMutation, refitArea],
   )
 
   // Inject the current area list + membership handlers into every table node's
@@ -1653,8 +2094,42 @@ function ReactFlowWhiteboardInner({
 
       // Emit to other users via WebSocket
       emitPositionUpdate(node.id, x, y)
+
+      // GH #106 item 3: reconcile area membership from the table's dropped
+      // center point (drag-in join / drag-out leave), then re-fit any area
+      // whose membership is unchanged. Computed from one `areasRef.current`
+      // snapshot via the pure `reconcileAreaMembership` (area-bounds.ts,
+      // Hermes coverage-gap fix) — the returned sets are mutually exclusive
+      // (join ⇒ not previously a member; leave ⇒ center outside; refit ⇒
+      // member & inside), so the one-tick-stale `areasRef` is safe here.
+      const rfNode = reactFlowInstance.getNode(node.id)
+      const w =
+        rfNode?.measured?.width ?? LAYOUT_CONSTRAINTS.DEFAULT_NODE_WIDTH
+      const h =
+        rfNode?.measured?.height ??
+        calculateTableHeight(node.data.table.columns.length)
+      const center = { x: node.position.x + w / 2, y: node.position.y + h / 2 }
+
+      const { join, leave, refit } = reconcileAreaMembership(
+        areasRef.current,
+        node.id,
+        center,
+      )
+
+      if (join) {
+        handleAddTableToArea(node.id, join)
+      }
+      leave.forEach((areaId) => handleRemoveTableFromArea(node.id, areaId))
+      refit.forEach((areaId) => refitArea(areaId))
     },
-    [updatePositionMutation, emitPositionUpdate],
+    [
+      updatePositionMutation,
+      emitPositionUpdate,
+      refitArea,
+      reactFlowInstance,
+      handleAddTableToArea,
+      handleRemoveTableFromArea,
+    ],
   )
 
   // Compute dialog data for the deleting table
@@ -1863,6 +2338,7 @@ function ReactFlowWhiteboardInner({
             initialEdges={edges}
             areaNodes={areaNodes}
             onAreaDragStop={handleAreaDragStop}
+            onAreaDelete={deleteAreaMutation}
             onConnect={handleConnect}
             onNodeDragStop={handleNodeDragStop}
             nodesDraggable={nodesDraggable}

@@ -3,6 +3,7 @@
 
 import { describe, expect, it } from 'vitest'
 import {
+  areaMoveBroadcastSchema,
   cardinalitySchema,
   createRelationshipSchema,
   loginInputSchema,
@@ -419,6 +420,96 @@ describe('tableMoveBulkBroadcastSchema (B1 socket payload validation)', () => {
     const result = tableMoveBulkBroadcastSchema.safeParse({
       userId: validUserId,
       positions: manyPositions,
+    })
+    expect(result.success).toBe(false)
+  })
+})
+
+// ============================================================================
+// areaMoveBroadcastSchema — area-atomic-move validation tests
+// ============================================================================
+
+describe('areaMoveBroadcastSchema (area:move socket payload validation)', () => {
+  const validAreaId = 'a1c2e3d4-58cc-4372-a567-0e02b2c3d479'
+  const validTableId = '550e8400-e29b-41d4-a716-446655440000'
+
+  const validPayload = {
+    areaId: validAreaId,
+    positionX: 100,
+    positionY: 200,
+    members: [{ tableId: validTableId, positionX: 10, positionY: 20 }],
+  }
+
+  it('accepts a valid payload with members', () => {
+    const result = areaMoveBroadcastSchema.safeParse(validPayload)
+    expect(result.success).toBe(true)
+  })
+
+  it('accepts a valid payload with an empty members array', () => {
+    const result = areaMoveBroadcastSchema.safeParse({
+      ...validPayload,
+      members: [],
+    })
+    expect(result.success).toBe(true)
+  })
+
+  it('rejects NaN positionX on the area', () => {
+    const result = areaMoveBroadcastSchema.safeParse({
+      ...validPayload,
+      positionX: NaN,
+    })
+    expect(result.success).toBe(false)
+  })
+
+  it('rejects Infinity positionY on the area', () => {
+    const result = areaMoveBroadcastSchema.safeParse({
+      ...validPayload,
+      positionY: Infinity,
+    })
+    expect(result.success).toBe(false)
+  })
+
+  it('rejects NaN coordinates in a member entry', () => {
+    const result = areaMoveBroadcastSchema.safeParse({
+      ...validPayload,
+      members: [{ tableId: validTableId, positionX: NaN, positionY: 20 }],
+    })
+    expect(result.success).toBe(false)
+  })
+
+  it('rejects Infinity coordinates in a member entry', () => {
+    const result = areaMoveBroadcastSchema.safeParse({
+      ...validPayload,
+      members: [{ tableId: validTableId, positionX: Infinity, positionY: 20 }],
+    })
+    expect(result.success).toBe(false)
+  })
+
+  it('rejects a non-UUID areaId', () => {
+    const result = areaMoveBroadcastSchema.safeParse({
+      ...validPayload,
+      areaId: 'not-a-uuid',
+    })
+    expect(result.success).toBe(false)
+  })
+
+  it('rejects a non-UUID tableId in a member entry', () => {
+    const result = areaMoveBroadcastSchema.safeParse({
+      ...validPayload,
+      members: [{ tableId: 'not-a-uuid', positionX: 10, positionY: 20 }],
+    })
+    expect(result.success).toBe(false)
+  })
+
+  it('rejects a members array exceeding 500 entries', () => {
+    const manyMembers = Array.from({ length: 501 }, () => ({
+      tableId: validTableId,
+      positionX: 0,
+      positionY: 0,
+    }))
+    const result = areaMoveBroadcastSchema.safeParse({
+      ...validPayload,
+      members: manyMembers,
     })
     expect(result.success).toBe(false)
   })

@@ -4,7 +4,16 @@
 import { createAreaSchema, updateAreaSchema } from './schema'
 import type { CreateArea, UpdateArea } from './schema'
 import type { Area } from './models'
-import { db, genId, insert, mapArea, nowMs, toDbJson, update } from '@/db'
+import {
+  db,
+  genId,
+  insert,
+  mapArea,
+  nowMs,
+  toDbJson,
+  transaction,
+  update,
+} from '@/db'
 
 /**
  * Create a new subject area.
@@ -101,6 +110,52 @@ export async function updateArea(id: string, data: UpdateArea): Promise<Area> {
   } catch (error) {
     throw new Error(
       `Failed to update area: ${error instanceof Error ? error.message : 'Unknown error'}`,
+    )
+  }
+}
+
+/**
+ * Atomically move an area AND its member tables in a single transaction
+ * (area-atomic-move fix, GH #106 follow-up). Persists the area's new
+ * position plus every member's new position as one all-or-nothing write —
+ * a failure on any row rolls back the entire batch, so peers never see the
+ * area detach from its members.
+ *
+ * Pure write — IDOR/authorization is the caller's job (matches the
+ * updateTablePositionsBulk split in src/lib/server-functions.ts).
+ *
+ * @param areaId - Area UUID to move
+ * @param position - The area's new positionX/positionY
+ * @param members - Member tables to move alongside the area (may be empty)
+ * @returns The updated area (post-move)
+ */
+export async function moveAreaAndMembers(
+  areaId: string,
+  position: { positionX: number; positionY: number },
+  members: Array<{ tableId: string; positionX: number; positionY: number }>,
+): Promise<Area> {
+  try {
+    transaction(() => {
+      const ts = nowMs()
+      update('Area', areaId, {
+        positionX: position.positionX,
+        positionY: position.positionY,
+        updatedAt: ts,
+      })
+      for (const member of members) {
+        update('DiagramTable', member.tableId, {
+          positionX: member.positionX,
+          positionY: member.positionY,
+          updatedAt: ts,
+        })
+      }
+    })
+    return mapArea(
+      db.prepare('SELECT * FROM "Area" WHERE "id" = ?').get(areaId),
+    )!
+  } catch (error) {
+    throw new Error(
+      `Failed to move area and members: ${error instanceof Error ? error.message : 'Unknown error'}`,
     )
   }
 }

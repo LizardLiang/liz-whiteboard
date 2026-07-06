@@ -92,9 +92,16 @@ export function prepareLayoutInput(
 }
 
 /**
- * Calculate table height based on number of columns
+ * Calculate table height based on number of columns.
+ *
+ * Canonical, display-mode-independent height estimator — used by the D3
+ * force layout AND by `computeAreaBounds` (area-bounds.ts) so a subject
+ * area's auto-fit always reflects a member's FULL content (all fields),
+ * not whatever showMode (Compact/Keys/All) the viewing client has selected
+ * (area-fit-member-content). Also mirrored by
+ * `TableFocusOverlay`'s focus-overlay layout via this same export.
  */
-function calculateTableHeight(columnCount: number): number {
+export function calculateTableHeight(columnCount: number): number {
   const headerHeight = 40
   const rowHeight = 28
   const padding = 12
