@@ -5,6 +5,7 @@ import { useState } from 'react'
 import {
   Download,
   HelpCircle,
+  History,
   Link2,
   Loader2,
   Maximize2,
@@ -91,6 +92,10 @@ export interface ToolbarProps {
   onZenModeToggle?: () => void
   /** Callback to open the Cmd/Ctrl+K search palette. When omitted, no search button is rendered. */
   onOpenSearch?: () => void
+  /** Callback to open the version history panel (GH #107). When omitted, no
+   * History button is rendered. Visible to VIEWER+ — the panel itself gates
+   * Save/Restore to EDITOR+ internally. */
+  onOpenHistory?: () => void
   /** MCP endpoint URL — when provided, a Copy-MCP-URL button is rendered */
   mcpEndpointUrl?: string
   /** Callback when the user confirms an export in the Export dialog. When
@@ -197,6 +202,7 @@ export function Toolbar({
   onShowModeChange,
   onZenModeToggle,
   onOpenSearch,
+  onOpenHistory,
   mcpEndpointUrl,
   onExport,
   canExport = false,
@@ -873,6 +879,23 @@ export function Toolbar({
             }}
           >
             <Link2 className="h-4 w-4" />
+          </Button>
+        )}
+
+        {/* Version history (GH #107) — visible to VIEWER+; Save/Restore
+            inside the panel are gated to EDITOR+. The panel itself is
+            rendered by the caller (not here) to avoid a circular import:
+            the panel's preview reuses ReactFlowWhiteboard, which is this
+            Toolbar's own parent. */}
+        {onOpenHistory && (
+          <Button
+            variant="outline"
+            size="icon"
+            title="Version history"
+            aria-label="Version history"
+            onClick={onOpenHistory}
+          >
+            <History className="h-4 w-4" />
           </Button>
         )}
       </div>

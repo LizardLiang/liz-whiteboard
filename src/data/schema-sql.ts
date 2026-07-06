@@ -235,4 +235,18 @@ CREATE TABLE IF NOT EXISTS "Area" (
 );
 
 CREATE INDEX IF NOT EXISTS "Area_whiteboardId_idx" ON "Area"("whiteboardId");
+
+CREATE TABLE IF NOT EXISTS "WhiteboardSnapshot" (
+    "id" TEXT NOT NULL PRIMARY KEY,
+    "whiteboardId" TEXT NOT NULL,
+    "label" TEXT,
+    "payload" JSONB NOT NULL,
+    "createdByUserId" TEXT,
+    "isAuto" INTEGER NOT NULL DEFAULT 0,
+    "createdAt" INTEGER NOT NULL DEFAULT (unixepoch('now') * 1000),
+    CONSTRAINT "WhiteboardSnapshot_whiteboardId_fkey" FOREIGN KEY ("whiteboardId") REFERENCES "Whiteboard" ("id") ON DELETE CASCADE ON UPDATE CASCADE,
+    CONSTRAINT "WhiteboardSnapshot_createdByUserId_fkey" FOREIGN KEY ("createdByUserId") REFERENCES "User" ("id") ON DELETE SET NULL ON UPDATE CASCADE
+);
+CREATE INDEX IF NOT EXISTS "WhiteboardSnapshot_whiteboardId_idx" ON "WhiteboardSnapshot"("whiteboardId");
+CREATE INDEX IF NOT EXISTS "WhiteboardSnapshot_whiteboardId_createdAt_idx" ON "WhiteboardSnapshot"("whiteboardId", "createdAt");
 `

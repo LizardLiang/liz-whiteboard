@@ -195,6 +195,14 @@ export interface ReactFlowWhiteboardProps {
   /** Callback to notify parent when viewport zoom changes */
   onZoomChange?: (zoom: number) => void
   /**
+   * Callback to open the version history panel (GH #107). Forwarded
+   * straight through to the internal Toolbar. Deliberately owned by the
+   * CALLER (not this component) — the panel itself
+   * (WhiteboardHistoryPanel) reuses ReactFlowWhiteboard for its preview, so
+   * rendering the panel here would create a circular import.
+   */
+  onOpenHistory?: () => void
+  /**
    * Renders a static, no-auth, read-only view (GH #109 public share links):
    * skips the two authed data queries in favor of `data` below, forces
    * nodesDraggable to false, hides the Toolbar and zen-mode chrome, opens NO
@@ -233,6 +241,7 @@ function ReactFlowWhiteboardInner({
   onDisplayModeReady,
   onZoomControlsReady,
   onZoomChange,
+  onOpenHistory,
 }: {
   whiteboardId: string
   userId: string
@@ -254,6 +263,7 @@ function ReactFlowWhiteboardInner({
   ) => void
   onZoomControlsReady?: (controls: ZoomControls) => void
   onZoomChange?: (zoom: number) => void
+  onOpenHistory?: () => void
 }) {
   const queryClient = useQueryClient()
 
@@ -2257,6 +2267,7 @@ function ReactFlowWhiteboardInner({
             onShowModeChange={setShowMode}
             onZenModeToggle={toggleZenMode}
             onOpenSearch={() => setSearchOpen(true)}
+            onOpenHistory={onOpenHistory}
             mcpEndpointUrl={mcpEndpointUrl ?? undefined}
             onExport={handleExport}
             canExport={nodes.length > 0}
@@ -2447,6 +2458,7 @@ export function ReactFlowWhiteboard({
   onDisplayModeReady,
   onZoomControlsReady,
   onZoomChange,
+  onOpenHistory,
 }: ReactFlowWhiteboardProps) {
   // Fetch whiteboard data with tables — disabled on the public read-only
   // path (GH #109): that path never has an authenticated session, and
@@ -2575,6 +2587,7 @@ export function ReactFlowWhiteboard({
         onDisplayModeReady={onDisplayModeReady}
         onZoomControlsReady={onZoomControlsReady}
         onZoomChange={onZoomChange}
+        onOpenHistory={onOpenHistory}
       />
     </ReactFlowProvider>
   )

@@ -497,6 +497,50 @@ export const revokeShareLinkSchema = z.object({
 export type CreateShareLink = z.infer<typeof createShareLinkSchema>
 export type RevokeShareLink = z.infer<typeof revokeShareLinkSchema>
 
+// ============================================================================
+// Whiteboard Version History / Snapshot Schemas (GH #107)
+// ============================================================================
+
+/**
+ * Schema for manually saving a version snapshot of a whiteboard's current
+ * diagram state. `label` is optional — the UI falls back to a
+ * timestamp-derived default name when omitted (AC2).
+ */
+export const saveSnapshotSchema = z.object({
+  whiteboardId: z.string().uuid(),
+  label: z.string().max(120).optional(),
+})
+
+/**
+ * Schema for restoring a whiteboard to a previously-saved snapshot.
+ * `snapshotId` is the only input — the target whiteboard is always resolved
+ * from the snapshot row itself, never from a client-supplied whiteboardId
+ * (AC7 / IDOR guard).
+ */
+export const restoreSnapshotSchema = z.object({
+  snapshotId: z.string().uuid(),
+})
+
+/**
+ * Schema for listing every snapshot belonging to a whiteboard.
+ */
+export const listSnapshotsSchema = z.object({
+  whiteboardId: z.string().uuid(),
+})
+
+/**
+ * Schema for fetching a single snapshot (read-only preview). Only
+ * `snapshotId` is accepted — same IDOR rationale as restoreSnapshotSchema.
+ */
+export const getSnapshotSchema = z.object({
+  snapshotId: z.string().uuid(),
+})
+
+export type SaveSnapshot = z.infer<typeof saveSnapshotSchema>
+export type RestoreSnapshot = z.infer<typeof restoreSnapshotSchema>
+export type ListSnapshots = z.infer<typeof listSnapshotsSchema>
+export type GetSnapshot = z.infer<typeof getSnapshotSchema>
+
 // Auth type exports
 export type RegisterInput = z.infer<typeof registerInputSchema>
 export type LoginInput = z.infer<typeof loginInputSchema>

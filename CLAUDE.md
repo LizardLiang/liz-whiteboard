@@ -98,7 +98,20 @@ bunx shadcn@latest add <component-name>
 2. **Follow task list**: Reference `specs/001-collaborative-er-whiteboard/tasks.md`
 3. **Use server functions**: TanStack Start server functions (not REST API)
 4. **Validate with Zod**: All inputs must use Zod schemas from `src/data/schema.ts`
-5. **Mark tasks complete**: Update `tasks.md` with [X] when done
+5. **Ship an e2e test** (REQUIRED): Every completed feature MUST leave a Playwright end-to-end script — see "E2E Test Requirement" below. A feature is not "done" without it.
+6. **Mark tasks complete**: Update `tasks.md` with [X] when done
+
+## E2E Test Requirement (MANDATORY per feature)
+
+**Every feature accomplished in this project MUST leave a Playwright e2e test script.** This is a completion gate, not optional — do not report a feature done until its e2e exists and passes.
+
+- **Framework**: Playwright (`@playwright/test`). Run with `bun run test:e2e`.
+- **Location**: put specs under `e2e/` — one `e2e/<feature>.spec.ts` per feature.
+- **Pattern to mirror** (reference implementation): `e2e/version-history.spec.ts`, with shared setup in `e2e/global-setup.ts` (seeds via Bun, logs in → `storageState`), fixed test data in `e2e/seed.ts` + `e2e/fixtures.ts`, and config in `playwright.config.ts`.
+- **Auth**: reuse the storageState session from `global-setup` (real login form); don't hand-inject cookies.
+- **Seeding**: Playwright's runner is Node (no `bun:sqlite`) — seed by shelling out to `bun run e2e/seed.ts`; enable `PRAGMA foreign_keys = ON` on any raw seed connection.
+- **Assert real behavior**: drive the actual UI flow end-to-end (not just the happy path). If a behavior only works in the single-process prod build (e.g. Socket.IO broadcasts — `io` is null in the dev Vite process), assert the persisted result via reload and note the prod/dev split in a comment.
+- **Viewport**: use ≥1600px wide; some toolbar actions sit in the right overflow and are off-screen at narrower widths.
 
 ## Important Notes
 

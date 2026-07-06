@@ -20,6 +20,7 @@ import { RelationshipEdge } from '@/components/whiteboard/RelationshipEdge'
 import { ReactFlowWhiteboard } from '@/components/whiteboard/ReactFlowWhiteboard'
 import { WhiteboardAccessDenied } from '@/components/whiteboard/WhiteboardAccessDenied'
 import { Toolbar } from '@/components/whiteboard/Toolbar'
+import { WhiteboardHistoryPanel } from '@/components/whiteboard/WhiteboardHistoryPanel'
 import { Minimap } from '@/components/whiteboard/Minimap'
 import { useCollaboration } from '@/hooks/use-collaboration'
 import { useSqlImport } from '@/hooks/use-sql-import'
@@ -82,6 +83,11 @@ function WhiteboardEditor() {
     offsetY: 0,
   })
   const [activeTab, setActiveTab] = useState<'visual' | 'text'>('visual')
+  // Version history panel (GH #107) — owned here (not inside Toolbar/
+  // ReactFlowWhiteboard) because WhiteboardHistoryPanel's preview reuses
+  // ReactFlowWhiteboard, and rendering the panel from within
+  // ReactFlowWhiteboard/Toolbar would create a circular import.
+  const [historyOpen, setHistoryOpen] = useState(false)
   const [textSource, setTextSource] = useState<string>('')
   const [isTextSyncEnabled, setIsTextSyncEnabled] = useState(true)
   // React Flow display mode controls (set via callback)
@@ -571,16 +577,33 @@ function WhiteboardEditor() {
       queryClient.invalidateQueries({ queryKey: ['whiteboard', whiteboardId] })
     }
 
+    // GH #107: another editor restored a previous version — refresh every
+    // query that feeds this canvas so the acting client and every other
+    // connected collaborator converge on the restored state (AC5). Reuses
+    // the exact invalidation set the other handlers in this effect use.
+    const handleWhiteboardRestored = (data: { whiteboardId: string }) => {
+      if (data.whiteboardId !== whiteboardId) return
+      queryClient.invalidateQueries({
+        queryKey: ['whiteboard-page', whiteboardId],
+      })
+      queryClient.invalidateQueries({ queryKey: ['whiteboard', whiteboardId] })
+      queryClient.invalidateQueries({
+        queryKey: ['relationships', whiteboardId],
+      })
+    }
+
     on('table:created', handleTableCreated)
     on('table:moved', handleTableMoved)
     on('relationship:created', handleRelationshipCreated)
     on('text:updated', handleTextUpdated)
+    on('whiteboard:restored', handleWhiteboardRestored)
 
     return () => {
       off('table:created', handleTableCreated)
       off('table:moved', handleTableMoved)
       off('relationship:created', handleRelationshipCreated)
       off('text:updated', handleTextUpdated)
+      off('whiteboard:restored', handleWhiteboardRestored)
     }
   }, [on, off, queryClient, whiteboardId, userId])
 
@@ -703,6 +726,7 @@ function WhiteboardEditor() {
             zoomControls={canvasControls}
             currentZoom={canvasViewport.zoom}
             viewerRole={viewerRole}
+            onOpenHistory={() => setHistoryOpen(true)}
           />
         )}
 
@@ -723,6 +747,7 @@ function WhiteboardEditor() {
               onDisplayModeReady={handleDisplayModeReady}
               onZoomControlsReady={handleZoomControlsReady}
               onZoomChange={handleZoomChange}
+              onOpenHistory={() => setHistoryOpen(true)}
             />
           ) : (
             /* Konva Canvas (legacy) */
@@ -787,6 +812,17 @@ function WhiteboardEditor() {
           )}
         </div>
       </div>
+
+      {/* Version history panel (GH #107) — trigger lives in the Toolbar
+          (both the legacy and React Flow paths above wire onOpenHistory to
+          this state); rendered here to avoid a circular import (the panel's
+          preview reuses ReactFlowWhiteboard). */}
+      <WhiteboardHistoryPanel
+        whiteboardId={whiteboardId}
+        viewerRole={viewerRole}
+        open={historyOpen}
+        onOpenChange={setHistoryOpen}
+      />
     </div>
   )
 }
