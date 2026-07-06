@@ -42,6 +42,15 @@ import {
 import { VIEWPORT_CONSTRAINTS } from '@/lib/react-flow/viewport'
 
 /**
+ * Stable empty default for the `areaNodes` prop. Using `[]` directly as a
+ * default parameter value creates a new array identity on every render when
+ * the prop is omitted, which defeats the `areaNodes` dependency in the resync
+ * effect below and causes an infinite render loop (GH #112). This module-level
+ * constant keeps the identity stable across renders.
+ */
+const EMPTY_AREA_NODES: Array<AreaNodeType> = []
+
+/**
  * ReactFlowCanvas Props
  */
 export interface ReactFlowCanvasProps {
@@ -149,7 +158,7 @@ export interface ReactFlowCanvasProps {
 export function ReactFlowCanvas({
   initialNodes = [],
   initialEdges = [],
-  areaNodes = [],
+  areaNodes = EMPTY_AREA_NODES,
   onAreaDragStop,
   onAreaDelete,
   onNodesChange: onNodesChangeProp,
