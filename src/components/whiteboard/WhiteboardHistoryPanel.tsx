@@ -132,10 +132,21 @@ export function WhiteboardHistoryPanel({
       setPreviewSnapshotId(null)
       invalidateSnapshots()
       toast.success('Version restored')
-      // AC5: the whiteboard:restored socket broadcast (emitted server-side
-      // in restoreSnapshotHandler) refreshes the live canvas for every
-      // connected client, including this one — no local invalidation of
-      // ['whiteboard', ...] is needed here.
+      // AC5: other connected clients refresh via the whiteboard:restored
+      // socket broadcast (emitted server-side in restoreSnapshotHandler).
+      // Belt-and-suspenders — also invalidate the acting client's own
+      // whiteboard queries locally so its canvas refreshes regardless of
+      // socket delivery: the broadcast no-ops in the dev two-process split
+      // (io is null in the Vite server-fn process) and could be missed in
+      // prod if the socket is momentarily disconnected. Mirrors the query
+      // keys used by the SQL-import flow (use-sql-import.ts).
+      queryClient.invalidateQueries({ queryKey: ['whiteboard', whiteboardId] })
+      queryClient.invalidateQueries({
+        queryKey: ['whiteboard-page', whiteboardId],
+      })
+      queryClient.invalidateQueries({
+        queryKey: ['relationships', whiteboardId],
+      })
     },
     onError: () => toast.error('Failed to restore version'),
   })
