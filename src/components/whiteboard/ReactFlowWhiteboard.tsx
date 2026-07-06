@@ -60,6 +60,7 @@ import type { TableRelationship } from './DeleteTableDialog'
 import type { RelationshipErrorEvent } from '@/hooks/use-relationship-mutations'
 import type { Dialect } from '@/lib/ddl-generator'
 import type { ExportImageDialogOptions } from './ExportImageDialog'
+import type { DraggedTableInput } from '@/lib/react-flow/multi-drag-commit'
 import { exportDiagramImage } from '@/lib/export/export-image'
 import { hasMinimumRole } from '@/lib/auth/permissions'
 import { Button } from '@/components/ui/button'
@@ -89,6 +90,7 @@ import {
   getMcpEndpointUrl,
   getWhiteboardRelationships,
   getWhiteboardWithDiagram,
+  updateTablePositionsBulk,
 } from '@/lib/server-functions'
 import { useWhiteboardAreas } from '@/hooks/use-whiteboard-areas'
 import { DEFAULT_AREA_COLOR } from '@/lib/area-colors'
@@ -96,6 +98,7 @@ import {
   computeAreaBounds,
   reconcileAreaMembership,
 } from '@/lib/react-flow/area-bounds'
+import { planMultiDragCommit } from '@/lib/react-flow/multi-drag-commit'
 import { calculateTableHeight } from '@/lib/react-flow/layout-adapter'
 import { LAYOUT_CONSTRAINTS } from '@/lib/react-flow/types'
 import { useD3ForceLayout } from '@/hooks/use-d3-force-layout'
@@ -2080,47 +2083,180 @@ function ReactFlowWhiteboardInner({
     }
   }, [viewport.zoom, onZoomChange])
 
-  // Handle node drag stop - update position in database and emit to other users
+  // Handle node drag stop - update position in database and emit to other
+  // users. GH #111: React Flow's `draggedNodes` arg (forwarded by
+  // ReactFlowCanvas's onNodeDragStopProp?.(event, node, draggedNodes))
+  // typically already includes the drag leader, so dedupe by id first — a
+  // single-table drag (the common case, including a drag where React Flow's
+  // selection happens to contain only the leader) still resolves to exactly
+  // one table and falls through to the ORIGINAL single-table body below,
+  // byte-for-byte unchanged (R4 — zero behavior change for the single case).
   const handleNodeDragStop = useCallback(
-    (_event: React.MouseEvent, node: TableNodeType) => {
-      const { x, y } = node.position
+    (
+      _event: React.MouseEvent,
+      node: TableNodeType,
+      draggedNodes?: Array<TableNodeType | AreaNodeType>,
+    ) => {
+      const draggedById = new Map<string, TableNodeType | AreaNodeType>()
+      draggedById.set(node.id, node)
+      for (const n of draggedNodes ?? []) draggedById.set(n.id, n)
+      // GH #111 code-review BLOCKER 1: `draggedNodes` is typed as
+      // `Array<TableNodeType>` by the caller but can carry a co-selected AREA
+      // node at runtime — ReactFlowCanvas only reroutes to onAreaDragStop
+      // when the drag LEADER is an area (`areaIdSet.has(node.id)` in
+      // ReactFlowCanvas.tsx's onNodeDragStop); a co-dragged area rides along
+      // in `draggedNodes` and reaches this handler instead. Filter it out
+      // before building table-only inputs, mirroring the Auto Layout
+      // precedent (`getNodes().filter((n) => n.type !== 'area')`,
+      // use-auto-layout-orchestrator.ts:217) — an area node has no
+      // `data.table`, so `n.data.table.columns.length` below would throw.
+      const dragged = [...draggedById.values()].filter(
+        (n): n is TableNodeType => n.type !== 'area',
+      )
+      // Nothing left to persist once areas are filtered out (e.g. the
+      // selection was an area plus zero tables — shouldn't normally reach
+      // here, but guard anyway).
+      if (dragged.length === 0) return
 
-      // Update database
-      updatePositionMutation.mutate({
-        id: node.id,
-        positionX: x,
-        positionY: y,
+      if (dragged.length === 1) {
+        const { x, y } = node.position
+
+        // Update database
+        updatePositionMutation.mutate({
+          id: node.id,
+          positionX: x,
+          positionY: y,
+        })
+
+        // Emit to other users via WebSocket
+        emitPositionUpdate(node.id, x, y)
+
+        // GH #106 item 3: reconcile area membership from the table's dropped
+        // center point (drag-in join / drag-out leave), then re-fit any area
+        // whose membership is unchanged. Computed from one `areasRef.current`
+        // snapshot via the pure `reconcileAreaMembership` (area-bounds.ts,
+        // Hermes coverage-gap fix) — the returned sets are mutually exclusive
+        // (join ⇒ not previously a member; leave ⇒ center outside; refit ⇒
+        // member & inside), so the one-tick-stale `areasRef` is safe here.
+        const rfNode = reactFlowInstance.getNode(node.id)
+        const w =
+          rfNode?.measured?.width ?? LAYOUT_CONSTRAINTS.DEFAULT_NODE_WIDTH
+        const h =
+          rfNode?.measured?.height ??
+          calculateTableHeight(node.data.table.columns.length)
+        const center = {
+          x: node.position.x + w / 2,
+          y: node.position.y + h / 2,
+        }
+
+        const { join, leave, refit } = reconcileAreaMembership(
+          areasRef.current,
+          node.id,
+          center,
+        )
+
+        if (join) {
+          handleAddTableToArea(node.id, join)
+        }
+        leave.forEach((areaId) => handleRemoveTableFromArea(node.id, areaId))
+        refit.forEach((areaId) => refitArea(areaId))
+        return
+      }
+
+      // GH #111 — multi-select drag: persist + reconcile area membership for
+      // EVERY dragged table, not just the leader. Reuses the same bulk
+      // building blocks Auto Layout / the area atomic-move path already rely
+      // on (optimistic bulk cache patch + bulk emit + bulk persist), plus the
+      // pure `planMultiDragCommit` (multi-drag-commit.ts) to compute each
+      // table's join/leave and the deduped refit-area union (D2) from ONE
+      // `areasRef.current` snapshot — same one-tick-stale guarantee the
+      // single-table path above already relies on.
+      const inputs: Array<DraggedTableInput> = dragged.map((n) => {
+        const rfNode = reactFlowInstance.getNode(n.id)
+        const w =
+          rfNode?.measured?.width ?? LAYOUT_CONSTRAINTS.DEFAULT_NODE_WIDTH
+        const h =
+          rfNode?.measured?.height ??
+          calculateTableHeight(n.data.table.columns.length)
+        return {
+          id: n.id,
+          center: { x: n.position.x + w / 2, y: n.position.y + h / 2 },
+          position: { x: n.position.x, y: n.position.y },
+        }
       })
 
-      // Emit to other users via WebSocket
-      emitPositionUpdate(node.id, x, y)
+      const commit = planMultiDragCommit(inputs, areasRef.current)
 
-      // GH #106 item 3: reconcile area membership from the table's dropped
-      // center point (drag-in join / drag-out leave), then re-fit any area
-      // whose membership is unchanged. Computed from one `areasRef.current`
-      // snapshot via the pure `reconcileAreaMembership` (area-bounds.ts,
-      // Hermes coverage-gap fix) — the returned sets are mutually exclusive
-      // (join ⇒ not previously a member; leave ⇒ center outside; refit ⇒
-      // member & inside), so the one-tick-stale `areasRef` is safe here.
-      const rfNode = reactFlowInstance.getNode(node.id)
-      const w =
-        rfNode?.measured?.width ?? LAYOUT_CONSTRAINTS.DEFAULT_NODE_WIDTH
-      const h =
-        rfNode?.measured?.height ??
-        calculateTableHeight(node.data.table.columns.length)
-      const center = { x: node.position.x + w / 2, y: node.position.y + h / 2 }
-
-      const { join, leave, refit } = reconcileAreaMembership(
-        areasRef.current,
-        node.id,
-        center,
+      // Optimistic cache (R1) — mirrors Auto Layout / area atomic-move.
+      patchWhiteboardTablePositions(
+        commit.positions.map((p) => ({
+          id: p.id,
+          x: p.positionX,
+          y: p.positionY,
+        })),
       )
 
-      if (join) {
-        handleAddTableToArea(node.id, join)
-      }
-      leave.forEach((areaId) => handleRemoveTableFromArea(node.id, areaId))
-      refit.forEach((areaId) => refitArea(areaId))
+      // GH #111 code-review BLOCKER 2 fix — collapsed per-area membership
+      // deltas (multi-drag-commit.ts `areaMemberUpdates`), NOT a per-table
+      // loop over handleAddTableToArea/handleRemoveTableFromArea. Each of
+      // those handlers reads the same one-tick-stale `areasRef.current`
+      // snapshot and computes a full replacement `memberTableIds` array —
+      // called once per table in a synchronous loop, every call sees the
+      // SAME stale snapshot, so the last write wins and earlier tables'
+      // membership changes are silently dropped (the headline #111 lost-
+      // update race: box-select t1+t2, drag both into one empty area →
+      // only t2 persisted). `areaMemberUpdates` already collapsed every
+      // join/leave for a given area against ONE snapshot read, so this
+      // fires exactly one `updateAreaMutation` + one `refitArea` per
+      // affected area, with the NEW member list.
+      commit.areaMemberUpdates.forEach(({ areaId, memberTableIds }) => {
+        updateAreaMutation(areaId, { memberTableIds })
+        refitArea(areaId, memberTableIds)
+      })
+      // Areas that only need a content/position refit (membership
+      // unchanged) — excludes any area already refit above via a membership
+      // change, so an area never gets double-refit (once with its stale
+      // member list, once with its new one).
+      const areaMemberUpdateIds = new Set(
+        commit.areaMemberUpdates.map((u) => u.areaId),
+      )
+      commit.refitAreaIds
+        .filter((areaId) => !areaMemberUpdateIds.has(areaId))
+        .forEach((areaId) => refitArea(areaId))
+
+      // GH #111 code-review BLOCKER 3 fix — persist BEFORE broadcasting.
+      // Previously `emitBulkPositionUpdate` fired immediately (before the
+      // persist round-trip even started), so peers could see a position
+      // that later reverts if the persist fails. Auto Layout deliberately
+      // emits only AFTER `updateTablePositionsBulk` succeeds
+      // (use-auto-layout-orchestrator.ts:274-315, "resolves Apollo
+      // Finding 3") — mirror that ordering here. The optimistic cache patch
+      // and area-membership reconciliation above still apply immediately
+      // for local responsiveness; only the peer broadcast is gated on
+      // persist success.
+      void (async () => {
+        try {
+          const res = await updateTablePositionsBulk({
+            data: { whiteboardId, positions: commit.positions },
+          })
+          if (isUnauthorizedError(res)) {
+            triggerSessionExpired()
+            return
+          }
+          emitBulkPositionUpdate(
+            commit.positions.map((p) => ({
+              tableId: p.id,
+              positionX: p.positionX,
+              positionY: p.positionY,
+            })),
+          )
+        } catch (e) {
+          console.error('Failed to persist multi-drag positions:', e)
+          toast.error(
+            'The move could not be saved — your changes are visible locally but not persisted.',
+          )
+        }
+      })()
     },
     [
       updatePositionMutation,
@@ -2129,6 +2265,11 @@ function ReactFlowWhiteboardInner({
       reactFlowInstance,
       handleAddTableToArea,
       handleRemoveTableFromArea,
+      updateAreaMutation,
+      whiteboardId,
+      patchWhiteboardTablePositions,
+      emitBulkPositionUpdate,
+      triggerSessionExpired,
     ],
   )
 
