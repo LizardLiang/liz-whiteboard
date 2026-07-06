@@ -21,6 +21,7 @@ import type {
   DiagramTable,
   Folder,
   JsonValue,
+  PersistedSnapshotPayload,
   Project,
   ProjectInvite,
   ProjectMember,
@@ -29,6 +30,7 @@ import type {
   User,
   Whiteboard,
   WhiteboardShareLink,
+  WhiteboardSnapshot,
 } from './data/models'
 import type { Cardinality, ProjectRoleValue } from './data/schema'
 
@@ -431,6 +433,19 @@ export function mapArea(r: Row): Area | null {
     memberTableIds: Array.isArray(members) ? (members as Array<string>) : [],
     createdAt: fromDbDate(r.createdAt),
     updatedAt: fromDbDate(r.updatedAt),
+  }
+}
+
+export function mapWhiteboardSnapshot(r: Row): WhiteboardSnapshot | null {
+  if (!r) return null
+  return {
+    id: r.id as string,
+    whiteboardId: r.whiteboardId as string,
+    label: (r.label as string | null) ?? null,
+    payload: fromDbJson(r.payload) as unknown as PersistedSnapshotPayload,
+    createdByUserId: (r.createdByUserId as string | null) ?? null,
+    isAuto: fromDbBool(r.isAuto),
+    createdAt: fromDbDate(r.createdAt),
   }
 }
 

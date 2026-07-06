@@ -10,6 +10,7 @@ import { db, genId, nowMs, toDbBool } from '@/db'
 
 const ALL_TABLES = [
   'CollaborationSession',
+  'WhiteboardSnapshot',
   'Area',
   'Relationship',
   'Column',

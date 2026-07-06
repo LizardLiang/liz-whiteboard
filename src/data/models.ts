@@ -77,6 +77,87 @@ export interface WhiteboardShareLink {
   createdAt: Date
 }
 
+/**
+ * Full-state capture of a whiteboard's diagram (GH #107 version history), as
+ * returned FRESH by `captureWhiteboardState` — nested `createdAt`/`updatedAt`
+ * are real `Date` objects straight from the data layer, never round-tripped
+ * through JSON. D1: stored as a single self-contained JSON blob so it is
+ * immune to future live-schema drift — everything needed to restore lives in
+ * this object, including original entity UUIDs (reused verbatim on restore,
+ * D3).
+ *
+ * See `PersistedSnapshotPayload` for the shape this becomes once it has been
+ * written to and reloaded from the DB — the two are NOT interchangeable.
+ */
+export interface SnapshotPayload {
+  whiteboard: {
+    name: string
+    canvasState: JsonValue | null
+    textSource: string | null
+  }
+  tables: Array<DiagramTable & { columns: Array<Column> }>
+  relationships: Array<Relationship>
+  areas: Array<Area>
+}
+
+/**
+ * Replaces `createdAt`/`updatedAt` with `string` — mirrors exactly what
+ * `JSON.stringify`/`JSON.parse` do to a `Date` field during the
+ * `toDbJson`/`fromDbJson` round-trip (`JSON.stringify` serializes a `Date` to
+ * an ISO string; `JSON.parse` never revives it back to a `Date`). Keeps the
+ * Date-vs-string mismatch statically visible in the type system instead of
+ * relying solely on a code comment — a future `Date`-typed field added to
+ * DiagramTable/Column/Relationship/Area will fail to compile here until this
+ * mapped type (or its usage) is updated, rather than silently reaching
+ * `restoreWhiteboardFromSnapshot` as an un-coerced `Date`.
+ */
+type WithPersistedDates<T extends { createdAt: Date; updatedAt: Date }> = Omit<
+  T,
+  'createdAt' | 'updatedAt'
+> & {
+  createdAt: string
+  updatedAt: string
+}
+
+/**
+ * The as-stored-and-reloaded shape of a SnapshotPayload — what
+ * `WhiteboardSnapshot.payload` actually is once `mapWhiteboardSnapshot` has
+ * parsed it back out of the `payload` JSON column (see `fromDbJson`). Every
+ * nested `createdAt`/`updatedAt` is a `string`, matching what
+ * `coerceStoredDate` in `whiteboard-snapshot.ts` is defending against at
+ * runtime.
+ */
+export interface PersistedSnapshotPayload {
+  whiteboard: {
+    name: string
+    canvasState: JsonValue | null
+    textSource: string | null
+  }
+  tables: Array<
+    WithPersistedDates<DiagramTable> & {
+      columns: Array<WithPersistedDates<Column>>
+    }
+  >
+  relationships: Array<WithPersistedDates<Relationship>>
+  areas: Array<WithPersistedDates<Area>>
+}
+
+/**
+ * WhiteboardSnapshot row (GH #107) — an immutable, point-in-time capture of
+ * a whiteboard's full diagram state. `isAuto` distinguishes user-initiated
+ * saves from the automatic "before restore" safety snapshot (D2). `payload`
+ * is always the DB-reloaded (persisted) shape — see `PersistedSnapshotPayload`.
+ */
+export interface WhiteboardSnapshot {
+  id: string
+  whiteboardId: string
+  label: string | null
+  payload: PersistedSnapshotPayload
+  createdByUserId: string | null
+  isAuto: boolean
+  createdAt: Date
+}
+
 export interface Folder {
   id: string
   name: string
