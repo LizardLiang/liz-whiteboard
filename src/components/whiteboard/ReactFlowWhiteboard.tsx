@@ -669,6 +669,28 @@ function ReactFlowWhiteboardInner({
   // Ref for onTableError — breaks circular dependency between useWhiteboardCollaboration and useTableMutations
   const onTableErrorRef = useRef<(data: any) => void>(() => {})
 
+  // Latest-ref for patchWhiteboardTablePositions (its useCallback is defined
+  // far below). The position-receive callbacks passed to
+  // useWhiteboardCollaboration below are declared ABOVE that definition, so
+  // they cannot reference it directly (temporal dead zone). Without also
+  // patching the query cache, a peer's received move only hits setNodes and
+  // silently reverts the next time `initialNodes` re-syncs from the cache
+  // (e.g. after any unrelated local cache patch) — the same latent bug the
+  // `area:moved` receiver already fixes for area member moves. Populated in an
+  // effect once the callback exists.
+  const patchPositionsRef = useRef<
+    (positions: Array<{ id: string; x: number; y: number }>) => void
+  >(() => {})
+
+  // Concurrent-drag rollback guards (GH #111 review). Each drag-stop that
+  // persists asynchronously bumps its sequence; a stale in-flight persist
+  // whose sequence is no longer current skips its rollback, so a late failure
+  // cannot clobber a newer drag's already-applied positions. Table and area
+  // drags use independent counters — a table move and an area move are
+  // unrelated, so one must never suppress the other's rollback.
+  const tableDragSeqRef = useRef(0)
+  const areaDragSeqRef = useRef(0)
+
   // Ref for onTableUpdateError (table-comment W1 fix) — same circular-dependency
   // break as onTableErrorRef above, but for table:update rejections specifically.
   const onTableUpdateErrorRef = useRef<(data: any) => void>(() => {})
@@ -745,6 +767,9 @@ function ReactFlowWhiteboardInner({
             : node,
         ),
       )
+      // Keep the query cache (source of truth for initialNodes) in sync too,
+      // or this peer's applied move reverts on the next initialNodes re-sync.
+      patchPositionsRef.current([{ id: tableId, x: positionX, y: positionY }])
     }, []),
     onTableDeleted,
     useCallback((data: any) => {
@@ -773,6 +798,10 @@ function ReactFlowWhiteboardInner({
           y: p.positionY,
         }))
         setNodes((nds) => applyBulkPositions(nds, normalised))
+        // Patch the query cache too — without this a peer's received bulk move
+        // (Auto Layout OR a multi-select drag, GH #111) reverts on the next
+        // initialNodes re-sync, mirroring the area:moved receiver's fix.
+        patchPositionsRef.current(normalised)
       },
       [],
     ),
@@ -1592,6 +1621,12 @@ function ReactFlowWhiteboardInner({
     [queryClient, whiteboardId],
   )
 
+  // Populate the latest-ref the position-receive callbacks above use to patch
+  // the cache (they are declared before patchWhiteboardTablePositions exists).
+  useEffect(() => {
+    patchPositionsRef.current = patchWhiteboardTablePositions
+  }, [patchWhiteboardTablePositions])
+
   // d3-force layout hook (wraps the pure computeD3ForceLayout engine)
   const { runLayout: runD3ForceLayout } = useD3ForceLayout()
 
@@ -2059,6 +2094,9 @@ function ReactFlowWhiteboardInner({
       positionY: number,
       movedMembers: Array<{ id: string; positionX: number; positionY: number }>,
     ) => {
+      // Sequence this move so a stale ack-failure can't roll back over a
+      // newer area drag (concurrent-drag guard, GH #111 review).
+      const mySeq = ++areaDragSeqRef.current
       // Snapshot pre-drag positions (area + members) BEFORE any optimistic
       // apply, so an ack-failure rollback below can restore exactly what the
       // DB still has for BOTH the area and its members (GH #106 code-review
@@ -2138,6 +2176,9 @@ function ReactFlowWhiteboardInner({
         })),
         (res) => {
           if (res.ok) return
+          // Superseded by a newer area drag — its optimistic state is now
+          // authoritative; skip this stale rollback so it can't clobber it.
+          if (areaDragSeqRef.current !== mySeq) return
 
           console.error('Failed to persist area move:', res.message)
           toast.error(
@@ -2498,6 +2539,9 @@ function ReactFlowWhiteboardInner({
         // Emit to other users via WebSocket
         emitPositionUpdate(only.id, x, y)
       } else {
+        // Sequence this persist so a stale failure can't roll back over a
+        // newer drag (concurrent-drag guard, GH #111 review).
+        const mySeq = ++tableDragSeqRef.current
         // Multi-drag: pre-drag snapshot for rollback — nodesRef.current
         // still holds the OLD positions during a native RF drag (only
         // explicit setNodes touches it), exactly the source
@@ -2547,6 +2591,11 @@ function ReactFlowWhiteboardInner({
               throw new Error('unauthorized')
             }
           } catch (err) {
+            // Superseded by a newer drag — that drag's optimistic state is
+            // now authoritative; rolling back to this stale snapshot would
+            // clobber it, so drop this failure silently (the newer drag owns
+            // the outcome + any toast).
+            if (tableDragSeqRef.current !== mySeq) return
             console.error('Failed to persist multi-drag positions:', err)
             toast.error(
               'The move could not be saved — your changes have been reverted.',
