@@ -18,11 +18,16 @@
 import { test, expect, type Page, type Locator } from '@playwright/test'
 import { IDS } from './fixtures'
 
-const WB_URL = `/whiteboard/${IDS.whiteboard}`
+// This suite mutates positions + area membership and does NOT restore them,
+// so it runs against its OWN dedicated board (IDS.mdWhiteboard, seeded in
+// e2e/seed.ts) — isolated from the shared board every other spec uses. That
+// keeps test 1's "pristine geometry" assumption reliable regardless of run
+// order, and prevents this suite from polluting later specs' shared board.
+const WB_URL = `/whiteboard/${IDS.mdWhiteboard}`
 
 async function openWhiteboard(page: Page) {
   await page.goto(WB_URL)
-  await expect(page.getByRole('heading', { name: 'E2E ERD' })).toBeVisible()
+  await expect(page.getByRole('heading', { name: 'E2E Multi-Drag' })).toBeVisible()
   await expect(
     page.locator('.react-flow').getByText('users', { exact: true }).first(),
   ).toBeVisible()
@@ -95,8 +100,8 @@ async function multiSelectAndDrag(
   page: Page,
   delta: { dx: number; dy: number },
 ) {
-  const usersHeader = tableHeaderText(page, IDS.usersTable, 'users')
-  const ordersHeader = tableHeaderText(page, IDS.ordersTable, 'orders')
+  const usersHeader = tableHeaderText(page, IDS.mdUsersTable, 'users')
+  const ordersHeader = tableHeaderText(page, IDS.mdOrdersTable, 'orders')
 
   await usersHeader.click()
   await ordersHeader.click({ modifiers: ['Control'] })
@@ -116,25 +121,25 @@ async function multiSelectAndDrag(
 }
 
 test.describe('Multi-select table drag persist + area reconcile (GH #111)', () => {
-  // Runs FIRST and against pristine seed positions deliberately — the
-  // computed drag delta below relies on the seed's known geometry (`users`
-  // starts as the "Identity" area's only member, centered inside it;
-  // `orders` starts well outside it). Later tests read positions live and
-  // don't depend on absolute state, so ordering only matters for this one.
+  // Relies on the dedicated board's pristine seed geometry (`users` starts as
+  // the "Identity" area's only member, centered inside it; `orders` starts
+  // well outside it) to compute the drag delta below. Because this suite owns
+  // its board (no other spec touches it), that geometry holds regardless of
+  // run order — so this test is not order-dependent.
   test('multi-drag reconciles each dragged table\'s area membership independently (FR-2, NFR-1)', async ({
     page,
   }) => {
     await openWhiteboard(page)
 
     const scale = await getViewportScale(page)
-    const areaPos = await getNodePosition(page, IDS.area)
-    const areaSize = await getNodeFlowSize(page, IDS.area, scale)
+    const areaPos = await getNodePosition(page, IDS.mdArea)
+    const areaSize = await getNodeFlowSize(page, IDS.mdArea, scale)
     const areaCenter = {
       x: areaPos.x + areaSize.width / 2,
       y: areaPos.y + areaSize.height / 2,
     }
 
-    const ordersCenterBefore = await getNodeCenter(page, IDS.ordersTable, scale)
+    const ordersCenterBefore = await getNodeCenter(page, IDS.mdOrdersTable, scale)
 
     // Drag the shared selection so `orders`' new center lands exactly at the
     // (stationary) area's center — guaranteed inside. Because both dragged
@@ -155,14 +160,14 @@ test.describe('Multi-select table drag persist + area reconcile (GH #111)', () =
     await page.waitForTimeout(500)
 
     await page.reload()
-    await expect(page.getByRole('heading', { name: 'E2E ERD' })).toBeVisible()
+    await expect(page.getByRole('heading', { name: 'E2E Multi-Drag' })).toBeVisible()
     await expect(
       page.locator('.react-flow').getByText('orders', { exact: true }).first(),
     ).toBeVisible()
 
     const scaleAfter = await getViewportScale(page)
-    const areaPosAfter = await getNodePosition(page, IDS.area)
-    const areaSizeAfter = await getNodeFlowSize(page, IDS.area, scaleAfter)
+    const areaPosAfter = await getNodePosition(page, IDS.mdArea)
+    const areaSizeAfter = await getNodeFlowSize(page, IDS.mdArea, scaleAfter)
     const areaRectAfter = {
       left: areaPosAfter.x,
       top: areaPosAfter.y,
@@ -171,8 +176,8 @@ test.describe('Multi-select table drag persist + area reconcile (GH #111)', () =
     }
 
     const [usersCenterAfter, ordersCenterAfter] = await Promise.all([
-      getNodeCenter(page, IDS.usersTable, scaleAfter),
-      getNodeCenter(page, IDS.ordersTable, scaleAfter),
+      getNodeCenter(page, IDS.mdUsersTable, scaleAfter),
+      getNodeCenter(page, IDS.mdOrdersTable, scaleAfter),
     ])
 
     // `orders` (the co-dragged, non-leader table) joined — its new center
@@ -198,14 +203,14 @@ test.describe('Multi-select table drag persist + area reconcile (GH #111)', () =
   }) => {
     await openWhiteboard(page)
 
-    const usersBefore = await getNodePosition(page, IDS.usersTable)
-    const ordersBefore = await getNodePosition(page, IDS.ordersTable)
+    const usersBefore = await getNodePosition(page, IDS.mdUsersTable)
+    const ordersBefore = await getNodePosition(page, IDS.mdOrdersTable)
 
     await multiSelectAndDrag(page, { dx: 150, dy: 90 })
     await page.waitForTimeout(500)
 
-    const usersAfterDrag = await getNodePosition(page, IDS.usersTable)
-    const ordersAfterDrag = await getNodePosition(page, IDS.ordersTable)
+    const usersAfterDrag = await getNodePosition(page, IDS.mdUsersTable)
+    const ordersAfterDrag = await getNodePosition(page, IDS.mdOrdersTable)
 
     // Both dragged tables actually moved — not just the drag leader.
     expect(
@@ -236,13 +241,13 @@ test.describe('Multi-select table drag persist + area reconcile (GH #111)', () =
     // GH #111 core assertion: reload and confirm BOTH tables' new positions
     // persisted server-side (not just the drag leader's).
     await page.reload()
-    await expect(page.getByRole('heading', { name: 'E2E ERD' })).toBeVisible()
+    await expect(page.getByRole('heading', { name: 'E2E Multi-Drag' })).toBeVisible()
     await expect(
       page.locator('.react-flow').getByText('users', { exact: true }).first(),
     ).toBeVisible()
 
-    const usersAfterReload = await getNodePosition(page, IDS.usersTable)
-    const ordersAfterReload = await getNodePosition(page, IDS.ordersTable)
+    const usersAfterReload = await getNodePosition(page, IDS.mdUsersTable)
+    const ordersAfterReload = await getNodePosition(page, IDS.mdOrdersTable)
 
     expect(Math.abs(usersAfterReload.x - usersAfterDrag.x)).toBeLessThan(1)
     expect(Math.abs(usersAfterReload.y - usersAfterDrag.y)).toBeLessThan(1)
@@ -255,11 +260,11 @@ test.describe('Multi-select table drag persist + area reconcile (GH #111)', () =
   }) => {
     await openWhiteboard(page)
 
-    const ordersHeader = tableHeaderText(page, IDS.ordersTable, 'orders')
+    const ordersHeader = tableHeaderText(page, IDS.mdOrdersTable, 'orders')
     const box = await ordersHeader.boundingBox()
     if (!box) throw new Error('no bounding box for orders header')
 
-    const before = await getNodePosition(page, IDS.ordersTable)
+    const before = await getNodePosition(page, IDS.mdOrdersTable)
 
     // Single-node drag — no multi-select, exercises the untouched
     // `dragged.length <= 1` branch.
@@ -273,18 +278,18 @@ test.describe('Multi-select table drag persist + area reconcile (GH #111)', () =
     await page.mouse.up()
     await page.waitForTimeout(300)
 
-    const afterDrag = await getNodePosition(page, IDS.ordersTable)
+    const afterDrag = await getNodePosition(page, IDS.mdOrdersTable)
     expect(
       Math.hypot(afterDrag.x - before.x, afterDrag.y - before.y),
     ).toBeGreaterThan(20)
 
     await page.reload()
-    await expect(page.getByRole('heading', { name: 'E2E ERD' })).toBeVisible()
+    await expect(page.getByRole('heading', { name: 'E2E Multi-Drag' })).toBeVisible()
     await expect(
       page.locator('.react-flow').getByText('orders', { exact: true }).first(),
     ).toBeVisible()
 
-    const afterReload = await getNodePosition(page, IDS.ordersTable)
+    const afterReload = await getNodePosition(page, IDS.mdOrdersTable)
     expect(Math.abs(afterReload.x - afterDrag.x)).toBeLessThan(1)
     expect(Math.abs(afterReload.y - afterDrag.y)).toBeLessThan(1)
   })

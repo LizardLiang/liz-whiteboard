@@ -24,6 +24,19 @@ export const IDS = {
   ordersUserId: '99999999-9999-4999-8999-999999999999',
   relationship: 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa',
   area: 'bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb',
+
+  // Dedicated board for the multi-select-drag suite (GH #111). That suite
+  // MUTATES table positions + area membership and never restores them, so it
+  // gets its OWN whiteboard to stay isolation-safe: no earlier spec can
+  // perturb its geometry (test 1 depends on pristine positions) and it can
+  // pollute no later spec's shared board. Geometry mirrors the primary board.
+  mdWhiteboard: 'cccccccc-cccc-4ccc-8ccc-cccccccccccc',
+  mdUsersTable: 'dddddddd-dddd-4ddd-8ddd-dddddddddddd',
+  mdOrdersTable: 'eeeeeeee-eeee-4eee-8eee-eeeeeeeeeeee',
+  mdUsersId: '10000000-0000-4000-8000-000000000001',
+  mdUsersEmail: '10000000-0000-4000-8000-000000000002',
+  mdOrdersId: '10000000-0000-4000-8000-000000000003',
+  mdArea: 'ffffffff-ffff-4fff-8fff-ffffffffffff',
 }
 
 export const STORAGE_STATE = 'e2e/.auth/state.json'

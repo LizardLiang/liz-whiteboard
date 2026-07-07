@@ -159,4 +159,37 @@ db.query('DELETE FROM "WhiteboardSnapshot" WHERE whiteboardId = ?').run(
 // re-inserts the SAME whiteboard id without going through that cascade.
 db.query('DELETE FROM "Comment" WHERE whiteboardId = ?').run(IDS.whiteboard)
 
+// ── Dedicated board for the multi-select-drag suite (GH #111) ───────────────
+// Isolated from the shared board above: that suite mutates positions + area
+// membership, so it owns this board to avoid cross-spec pollution in either
+// direction. Geometry mirrors the primary board exactly (users centered in
+// the Identity area, orders well outside) so the suite's drag math holds.
+db.query(
+  'INSERT INTO "Whiteboard" (id, name, projectId, folderId, canvasState, textSource, createdAt, updatedAt) VALUES (?,?,?,?,?,?,?,?)',
+).run(IDS.mdWhiteboard, 'E2E Multi-Drag', IDS.project, null, null, null, now, now)
+db.query(
+  'INSERT INTO "DiagramTable" (id, whiteboardId, name, description, positionX, positionY, width, height, createdAt, updatedAt) VALUES (?,?,?,?,?,?,?,?,?,?)',
+).run(IDS.mdUsersTable, IDS.mdWhiteboard, 'users', 'app users', 120, 120, 240, 160, now, now)
+db.query(
+  'INSERT INTO "DiagramTable" (id, whiteboardId, name, description, positionX, positionY, width, height, createdAt, updatedAt) VALUES (?,?,?,?,?,?,?,?,?,?)',
+).run(IDS.mdOrdersTable, IDS.mdWhiteboard, 'orders', 'customer orders', 520, 320, 240, 160, now, now)
+col(IDS.mdUsersId, IDS.mdUsersTable, 'id', 'UUID', 1, 0, 0)
+col(IDS.mdUsersEmail, IDS.mdUsersTable, 'email', 'VARCHAR', 0, 0, 1)
+col(IDS.mdOrdersId, IDS.mdOrdersTable, 'id', 'UUID', 1, 0, 0)
+db.query(
+  'INSERT INTO "Area" (id, whiteboardId, name, color, positionX, positionY, width, height, memberTableIds, createdAt, updatedAt) VALUES (?,?,?,?,?,?,?,?,?,?,?)',
+).run(
+  IDS.mdArea,
+  IDS.mdWhiteboard,
+  'Identity',
+  '#8b5cf6',
+  80,
+  80,
+  320,
+  240,
+  JSON.stringify([IDS.mdUsersTable]),
+  now,
+  now,
+)
+
 console.log(`[e2e seed] ok — whiteboard ${IDS.whiteboard}`)
