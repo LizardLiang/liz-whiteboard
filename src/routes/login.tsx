@@ -1,7 +1,7 @@
 // src/routes/login.tsx
 // Login page — public route (no auth required)
 
-import { Link, createFileRoute, useRouter } from '@tanstack/react-router'
+import { Link, createFileRoute } from '@tanstack/react-router'
 import { useState } from 'react'
 import { z } from 'zod'
 import { loginUser } from './api/auth'
@@ -9,6 +9,7 @@ import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { Switch } from '@/components/ui/switch'
+import { sanitizeRedirect } from '@/lib/safe-redirect'
 
 const searchSchema = z.object({
   redirect: z.string().optional().default('/'),
@@ -20,8 +21,12 @@ export const Route = createFileRoute('/login')({
 })
 
 function LoginPage() {
-  const router = useRouter()
-  const { redirect } = Route.useSearch()
+  const { redirect: rawRedirect } = Route.useSearch()
+  // S1: reject any redirect that isn't same-origin-relative (blocks
+  // "//evil.com" and "/\evil.com" open-redirect payloads) before it's ever
+  // handed to window.location.assign, which — unlike router.navigate — honors
+  // absolute and protocol-relative URLs (GH #115 blocker).
+  const redirect = sanitizeRedirect(rawRedirect)
 
   const [email, setEmail] = useState('')
   const [password, setPassword] = useState('')
@@ -38,17 +43,14 @@ function LoginPage() {
       const result = await loginUser({ data: { email, password, rememberMe } })
 
       if (result.success) {
-        // `/authorize` is a server-only route (its GET handler issues the OAuth
-        // code and 302s to the client's redirect_uri). A client-side
-        // router.navigate would NOT invoke that handler, so the OAuth flow would
-        // stall and never reach the caller's loopback callback. Use a full
-        // browser navigation so the server handler runs.
+        // A full browser navigation re-runs the root beforeLoad auth guard
+        // server-side with the freshly-set session_token cookie, so the
+        // destination route evaluates as authenticated. A client-side
+        // router.navigate does NOT re-run the (already-matched) root guard, so
+        // its cached unauthenticated context bounces back to /login (GH #115).
+        // /authorize additionally needs this so its server-only GET handler runs.
         const target = redirect || '/'
-        if (target.startsWith('/authorize')) {
-          window.location.assign(target)
-        } else {
-          router.navigate({ to: target })
-        }
+        window.location.assign(target)
       } else {
         setError(result.message || 'Invalid email or password')
       }
