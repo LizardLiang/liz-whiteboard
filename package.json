@@ -21,7 +21,7 @@
     "prepare": "bunx simple-git-hooks"
   },
   "simple-git-hooks": {
-    "pre-push": "bunx tsc --noEmit"
+    "pre-push": "bun run typecheck"
   },
   "dependencies": {
     "@dnd-kit/core": "^6.3.1",
