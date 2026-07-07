@@ -643,4 +643,63 @@ describe('useAutoLayoutOrchestrator', () => {
     // { id, positionX, positionY }).
     expect(mockOnAfterLayout).toHaveBeenCalledWith(POSITIONS)
   })
+
+  // TC-AL-O-18 — Comment-pin nodes filtered out of the layout input AND the
+  // bulk-persist payload (GH #110 regression — the n.type === 'table' filter
+  // must exclude 'comment' nodes just like it excludes 'area' nodes).
+  it('TC-AL-O-18: comment-pin nodes are excluded from layout input and bulk persist payload', async () => {
+    ;(
+      updateTablePositionsBulk as unknown as ReturnType<typeof vi.fn>
+    ).mockReset()
+
+    const tableNode = { id: 'table-1', type: 'table', position: { x: 0, y: 0 } }
+    const areaNode = { id: 'area-1', type: 'area', position: { x: 0, y: 0 } }
+    const commentNode = {
+      id: 'comment-1',
+      type: 'comment',
+      position: { x: 0, y: 0 },
+    }
+    mockGetNodes.mockReturnValueOnce([
+      tableNode,
+      areaNode,
+      commentNode,
+    ] as any)
+
+    // Layout result only contains the table node's position — mirrors what
+    // the real d3-force layout would produce once comment/area nodes are
+    // excluded from its input.
+    const tableOnlyLayoutResult = {
+      positions: [{ id: 'table-1', x: 10, y: 20 }],
+      edgeOffsets: [],
+    }
+    mockRunD3ForceLayout.mockResolvedValueOnce(tableOnlyLayoutResult)
+    ;(
+      updateTablePositionsBulk as unknown as ReturnType<typeof vi.fn>
+    ).mockResolvedValueOnce({
+      success: true,
+      count: 1,
+    })
+
+    const { result } = renderHook(() =>
+      useAutoLayoutOrchestrator(makeHookArgs()),
+    )
+
+    await act(async () => {
+      await result.current.handleAutoLayoutClick(3)
+    })
+
+    // Layout input excludes both the area node and the comment-pin node.
+    expect(mockRunD3ForceLayout).toHaveBeenCalledTimes(1)
+    const [nodesArg] = mockRunD3ForceLayout.mock.calls[0]
+    expect(nodesArg).toEqual([tableNode])
+
+    // Bulk persist payload contains only the table's position — no
+    // area-1 or comment-1 entry ever reaches updateTablePositionsBulk.
+    expect(updateTablePositionsBulk).toHaveBeenCalledWith({
+      data: {
+        whiteboardId: WB_ID,
+        positions: [{ id: 'table-1', positionX: 10, positionY: 20 }],
+      },
+    })
+  })
 })
