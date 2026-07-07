@@ -327,12 +327,18 @@ function ReactFlowWhiteboardInner({
   // node-level write affordances like Add Column.
   const canEdit = hasMinimumRole(viewerRole, 'EDITOR')
 
-  // Fetch MCP endpoint URL once — env var does not change at runtime
+  // Fetch MCP endpoint URL once — env var does not change at runtime.
+  // Disabled on the public read-only share path (GH #109): getMcpEndpointUrl
+  // is requireAuth-gated, so an anonymous /share/$token visitor would get a
+  // 401 that the global QueryCache handler turns into a spurious
+  // "session expired" modal over the diagram. The MCP endpoint UI is editor
+  // chrome that isPublic already hides, so gating the fetch is safe.
   const { data: mcpEndpointUrl } = useQuery({
     queryKey: ['mcp-endpoint-url'],
     queryFn: () => getMcpEndpointUrl(),
     staleTime: Infinity,
     gcTime: Infinity,
+    enabled: !isPublic,
   })
 
   // Zen mode — hides the toolbar; a floating button restores the chrome
