@@ -130,20 +130,6 @@ export interface ToolbarProps {
 }
 
 /**
- * Data types available for columns
- */
-const DATA_TYPES = [
-  'int',
-  'string',
-  'float',
-  'boolean',
-  'date',
-  'text',
-  'uuid',
-  'json',
-] as const
-
-/**
  * Cardinality options for relationships
  */
 export const CARDINALITIES: Array<{ value: Cardinality; label: string }> = [

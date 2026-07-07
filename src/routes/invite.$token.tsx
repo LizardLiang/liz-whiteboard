@@ -9,6 +9,7 @@ import { getInvitePreview, redeemInvite } from '@/routes/api/invites'
 import { getCurrentUser } from '@/routes/api/auth'
 import { InviteInvalid } from '@/components/project/InviteInvalid'
 import { Button } from '@/components/ui/button'
+import { isUnauthorizedError } from '@/lib/auth/errors'
 
 export const Route = createFileRoute('/invite/$token')({
   component: InvitePage,
@@ -52,6 +53,13 @@ export function InvitePage() {
   const redeemMutation = useMutation({
     mutationFn: () => redeemInvite({ data: { token } }),
     onSuccess: (result) => {
+      // Session expired between render (when the "Accept invite" button
+      // requires currentUser) and this mutation resolving — root-provider's
+      // global handler already surfaces the session-expired modal.
+      if (isUnauthorizedError(result)) {
+        toast.error('Your session expired. Please sign in again.')
+        return
+      }
       if (result.success) {
         router.navigate({ to: `/project/${result.projectId}` })
         return

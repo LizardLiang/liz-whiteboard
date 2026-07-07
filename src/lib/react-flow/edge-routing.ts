@@ -10,9 +10,8 @@
 import type { Node } from '@xyflow/react'
 import type { RelationshipEdgeType, TableNodeData } from './types'
 
-// Default node dimensions used when measured dimensions are unavailable
+// Default node width used when measured width is unavailable
 const DEFAULT_NODE_WIDTH = 250
-const DEFAULT_NODE_HEIGHT = 150
 
 export type HandleSide = 'left' | 'right'
 
@@ -54,18 +53,6 @@ export function parseColumnHandleId(handleId: string): {
   if (type !== 'source' && type !== 'target') return null
 
   return { tableId, columnId, side, type }
-}
-
-/**
- * Get the center coordinates of a node.
- */
-function getNodeCenter(node: Node): { cx: number; cy: number } {
-  const width = node.measured?.width ?? node.width ?? DEFAULT_NODE_WIDTH
-  const height = node.measured?.height ?? node.height ?? DEFAULT_NODE_HEIGHT
-  return {
-    cx: node.position.x + width / 2,
-    cy: node.position.y + height / 2,
-  }
 }
 
 // Minimum clear horizontal gap (px) required before we treat nodes as

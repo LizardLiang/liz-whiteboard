@@ -9,8 +9,9 @@
  * Usage: bun run server.prod.ts
  */
 import { createServer } from 'node:http'
-import { extname, join } from 'node:path'
+import { dirname, extname, join } from 'node:path'
 import { readFile, stat } from 'node:fs/promises'
+import { fileURLToPath } from 'node:url'
 // @ts-expect-error — Nitro build output has no type declarations
 import { middleware } from './.output/server/index.mjs'
 import { initializeSocketIO } from './src/routes/api/collaboration'
@@ -18,7 +19,12 @@ import type { IncomingMessage, ServerResponse } from 'node:http'
 
 const port = Number(process.env.PORT) || 3000
 const host = process.env.HOST || '0.0.0.0'
-const publicDir = join(import.meta.dir, '.output', 'public')
+// import.meta.dir is a Bun-only ImportMeta extension (no ambient types
+// installed for it — see e2e/bun-sqlite.d.ts for why bun-types isn't
+// pulled in globally). import.meta.url + fileURLToPath is the portable,
+// standard-ESM equivalent Bun also supports.
+const scriptDir = dirname(fileURLToPath(import.meta.url))
+const publicDir = join(scriptDir, '.output', 'public')
 
 const MIME_TYPES: Record<string, string> = {
   '.css': 'text/css',

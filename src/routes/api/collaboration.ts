@@ -393,7 +393,7 @@ function setupCollaborationEventHandlers(
   })
 
   // Activity heartbeat
-  socket.on('activity:heartbeat', async (data: { action: string }) => {
+  socket.on('activity:heartbeat', async (_data: { action: string }) => {
     try {
       await updateSessionActivity(socket.id)
     } catch (error) {

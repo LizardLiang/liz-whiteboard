@@ -255,8 +255,8 @@ function computeClusterLayout(
     const { width, height } = calculateTableDimensions(table)
     return {
       id: table.id,
-      x: table.positionX,
-      y: table.positionY,
+      x: table.positionX ?? 0,
+      y: table.positionY ?? 0,
       width,
       height,
       table,

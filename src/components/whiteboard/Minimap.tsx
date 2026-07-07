@@ -206,7 +206,7 @@ export function Minimap({
   /**
    * Handle click on minimap to navigate
    */
-  const handleClick = (e: React.MouseEvent<HTMLCanvasElement>) => {
+  const handleClick = (e: React.MouseEvent<HTMLDivElement>) => {
     if (!onNavigate) return
 
     const canvas = canvasRef.current

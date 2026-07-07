@@ -2,7 +2,7 @@ import { memo, useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { EdgeLabelRenderer, Position, getSmoothStepPath } from '@xyflow/react'
 import { X } from 'lucide-react'
 import type { EdgeProps } from '@xyflow/react'
-import type { RelationshipEdgeData } from '@/lib/react-flow/types'
+import type { RelationshipEdgeType } from '@/lib/react-flow/types'
 import { Z_INDEX } from '@/lib/react-flow/types'
 import {
   clampSameSideLabelX,
@@ -283,7 +283,7 @@ export const RelationshipEdge = memo(
     targetPosition,
     data,
     selected,
-  }: EdgeProps<RelationshipEdgeData>) => {
+  }: EdgeProps<RelationshipEdgeType>) => {
     const {
       cardinality,
       label,

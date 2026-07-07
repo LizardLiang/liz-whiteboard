@@ -1,10 +1,16 @@
+// NOTE: as of this pass, nothing in the app imports this module — it predates
+// convert-to-nodes.ts / convert-to-edges.ts / layout-adapter.ts, which are the
+// converters ReactFlowWhiteboard actually uses. Left in place (not deleted)
+// since removing unreferenced files was outside this pass's approved scope;
+// flagged as cleanup debt in implementation-notes.md. Types below are aligned
+// to the current `./types`/models/schema shapes so it still compiles.
 import type { Column, DiagramTable, Relationship } from '@/data/models'
+import type { CanvasState } from '@/data/schema'
 import type {
-  CanvasViewport,
   CardinalityType,
   ReactFlowViewport,
-  RelationshipEdge,
-  TableNode,
+  RelationshipEdgeType,
+  TableNodeType,
 } from './types'
 
 // ============================================================================
@@ -16,17 +22,24 @@ import type {
  */
 export function convertToReactFlowNodes(
   tables: Array<DiagramTable & { columns: Array<Column> }>,
-): Array<TableNode> {
+): Array<TableNodeType> {
   return tables.map((table) => ({
     id: table.id,
-    type: 'erTable' as const,
+    type: 'table' as const,
     position: {
-      x: table.positionX,
-      y: table.positionY,
+      x: table.positionX ?? 0,
+      y: table.positionY ?? 0,
     },
     data: {
-      table,
-      columns: table.columns.sort((a, b) => a.orderIndex - b.orderIndex),
+      table: {
+        ...table,
+        columns: [...table.columns].sort((a, b) => a.order - b.order),
+      },
+      isActiveHighlighted: false,
+      isHighlighted: false,
+      isHovered: false,
+      isRelationsPreviewOpen: false,
+      showMode: 'ALL_FIELDS',
     },
   }))
 }
@@ -35,7 +48,7 @@ export function convertToReactFlowNodes(
  * Extract position updates from a React Flow node for database persistence
  */
 export function extractPositionUpdates(
-  node: TableNode,
+  node: TableNodeType,
 ): Pick<DiagramTable, 'positionX' | 'positionY'> {
   return {
     positionX: node.position.x,
@@ -51,11 +64,13 @@ export function extractPositionUpdates(
  * Convert Prisma Relationship entities to React Flow edges
  */
 export function convertToReactFlowEdges(
-  relationships: Array<Relationship>,
-): Array<RelationshipEdge> {
+  relationships: Array<
+    Relationship & { sourceColumn: Column; targetColumn: Column }
+  >,
+): Array<RelationshipEdgeType> {
   return relationships.map((rel) => ({
     id: rel.id,
-    type: 'erRelationship' as const,
+    type: 'relationship' as const,
     source: rel.sourceTableId,
     target: rel.targetTableId,
     sourceHandle: rel.sourceColumnId
@@ -66,7 +81,8 @@ export function convertToReactFlowEdges(
       : undefined,
     data: {
       relationship: rel,
-      cardinality: rel.relationshipType as CardinalityType,
+      cardinality: rel.cardinality as CardinalityType,
+      isHighlighted: false,
       label: rel.label || undefined,
     },
   }))
@@ -77,10 +93,10 @@ export function convertToReactFlowEdges(
 // ============================================================================
 
 /**
- * Convert legacy CanvasViewport to React Flow viewport format
+ * Convert legacy CanvasState to React Flow viewport format
  */
 export function convertToReactFlowViewport(
-  cv: CanvasViewport,
+  cv: CanvasState,
 ): ReactFlowViewport {
   return {
     x: cv.offsetX,
@@ -90,11 +106,9 @@ export function convertToReactFlowViewport(
 }
 
 /**
- * Convert React Flow viewport to legacy CanvasViewport format
+ * Convert React Flow viewport to legacy CanvasState format
  */
-export function convertToCanvasViewport(
-  rfv: ReactFlowViewport,
-): CanvasViewport {
+export function convertToCanvasViewport(rfv: ReactFlowViewport): CanvasState {
   return {
     zoom: rfv.zoom,
     offsetX: rfv.x,

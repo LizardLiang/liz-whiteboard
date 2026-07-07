@@ -50,7 +50,7 @@ export interface CanvasProps {
   /** Optional CSS class name */
   className?: string
   /** Optional stage ref to access Konva stage externally */
-  stageRef?: React.RefObject<Konva.Stage>
+  stageRef?: React.RefObject<Konva.Stage | null>
 }
 
 /**
@@ -338,7 +338,7 @@ export function Canvas({
  * @returns Viewport control functions
  */
 export function useCanvasControls(
-  stageRef: React.RefObject<Konva.Stage>,
+  stageRef: React.RefObject<Konva.Stage | null>,
   onViewportChange?: (viewport: CanvasViewport) => void,
 ) {
   /**

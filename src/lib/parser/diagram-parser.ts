@@ -8,16 +8,11 @@ import type {
   Cardinality,
   ColumnNode,
   DiagramAST,
-  ParseError,
   ParseResult,
   RelationshipNode,
   TableNode,
 } from './ast'
-import type {
-  CreateColumn,
-  CreateRelationship,
-  CreateTable,
-} from '@/data/schema'
+import type { CreateColumn, CreateTable } from '@/data/schema'
 
 // ============================================================================
 // Lexer Tokens
@@ -689,7 +684,7 @@ function mapCardinality(cardinality: Cardinality): PrismaCardinality {
  */
 export function astToEntities(
   ast: DiagramAST,
-  whiteboardId: string,
+  _whiteboardId: string,
 ): {
   tables: Array<{
     table: Omit<CreateTable, 'whiteboardId'>

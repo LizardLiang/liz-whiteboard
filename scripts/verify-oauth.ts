@@ -84,18 +84,16 @@ async function main() {
 
 // ─── In-process tests (no live server) ──────────────────────────────────────
 
-async function runInProcessTests(baseUrl: string) {
+async function runInProcessTests(_baseUrl: string) {
   // Import OAuth modules directly (bypasses HTTP server)
   const { getOAuthConfig } = await import('../src/lib/oauth/config')
-  const { getJwks, getSigningKeyPair } = await import('../src/lib/oauth/keys')
+  const { getJwks } = await import('../src/lib/oauth/keys')
   const { issueAuthCode, consumeAuthCode } = await import(
     '../src/lib/oauth/codes'
   )
   const { issueTokens } = await import('../src/lib/oauth/tokens')
-  const { deriveS256Challenge, verifyS256 } = await import(
-    '../src/lib/oauth/pkce'
-  )
-  const { jwtVerify, createLocalJWKSet, importJWK } = await import('jose')
+  const { verifyS256 } = await import('../src/lib/oauth/pkce')
+  const { jwtVerify, createLocalJWKSet } = await import('jose')
 
   const config = getOAuthConfig()
   console.log(`\nIssuer: ${config.issuer}`)
@@ -232,8 +230,6 @@ async function runInProcessTests(baseUrl: string) {
   console.log(
     '\n── F: JWT signature verification (JWKS) ─────────────────────────',
   )
-  const keyPair = await getSigningKeyPair()
-  const publicKey = await importJWK(keyPair.publicJwk, 'RS256')
   const jwkSet = createLocalJWKSet(jwks)
 
   const verified = await jwtVerify(tokenResult.accessToken, jwkSet, {

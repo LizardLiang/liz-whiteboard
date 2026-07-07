@@ -573,9 +573,7 @@ function ReactFlowWhiteboardInner({
         // the DB snapshot won't include the column yet and would silently erase it
         // from local state, causing the user to re-type the same name and hit a
         // unique-constraint error on the second attempt.
-        const incomingColumns = (
-          node.data.table as { columns: Array<{ id: string }> }
-        ).columns
+        const incomingColumns = node.data.table.columns
         const prevColumns = prev.data.table.columns
         // If the incoming cache snapshot has no columns but local state does,
         // the cache is stale (e.g. position-only update landed before a full
@@ -1337,14 +1335,7 @@ function ReactFlowWhiteboardInner({
 
   // Relationship creation mutation (for drag-to-connect)
   const createRelationshipMutation = useMutation({
-    mutationFn: async (data: {
-      whiteboardId: string
-      sourceTableId: string
-      targetTableId: string
-      sourceColumnId: string
-      targetColumnId: string
-      cardinality: Cardinality
-    }) => {
+    mutationFn: async (data: CreateRelationship) => {
       return await createRelationshipFn({ data })
     },
     onSuccess: () => {
@@ -2827,7 +2818,11 @@ function ReactFlowWhiteboardInner({
             onOpenHistory={onOpenHistory}
             onOpenComments={onOpenComments}
             commentUnreadCount={commentUnreadCount}
-            mcpEndpointUrl={mcpEndpointUrl ?? undefined}
+            mcpEndpointUrl={
+              mcpEndpointUrl && !isUnauthorizedError(mcpEndpointUrl)
+                ? mcpEndpointUrl
+                : undefined
+            }
             onExport={handleExport}
             canExport={nodes.length > 0}
             viewerRole={viewerRole}

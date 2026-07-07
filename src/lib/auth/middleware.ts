@@ -4,6 +4,7 @@
 // Client code should import type guards from '@/lib/auth/errors' instead.
 
 import type { AuthSession, AuthUser } from './session'
+import type { AuthErrorResponse } from './errors'
 
 // Re-export error types/guards for server-side consumers
 export type { AuthErrorResponse, ForbiddenResponse } from './errors'

@@ -68,6 +68,25 @@ function formatSnapshotName(
 }
 
 /**
+ * getSnapshot's preview payload is the DB-reloaded (persisted) shape —
+ * every `createdAt`/`updatedAt` is a `string` (see `PersistedSnapshotPayload`
+ * / `WithPersistedDates` in data/models.ts, and `buildPreviewData` in
+ * lib/history/handlers.ts, which deliberately leaves date coercion to the
+ * client). Revive them back to `Date` before handing the payload to
+ * ReactFlowWhiteboard, which expects real DiagramTable/Column/Relationship
+ * shapes.
+ */
+function reviveDates<T extends { createdAt: string; updatedAt: string }>(
+  obj: T,
+): Omit<T, 'createdAt' | 'updatedAt'> & { createdAt: Date; updatedAt: Date } {
+  return {
+    ...obj,
+    createdAt: new Date(obj.createdAt),
+    updatedAt: new Date(obj.updatedAt),
+  }
+}
+
+/**
  * WhiteboardHistoryPanel renders a slide-out sheet listing every saved
  * version of a whiteboard (AC2), with a read-only preview + non-destructive
  * restore flow (AC3/AC4). Visible to VIEWER+; Save/Restore require EDITOR+.
@@ -278,8 +297,27 @@ export function WhiteboardHistoryPanel({
                 userId={HISTORY_PREVIEW_USER_ID}
                 isPublic
                 data={{
-                  tables: previewData.tables,
-                  relationships: previewData.relationships,
+                  tables: previewData.tables.map((table) => ({
+                    ...reviveDates(table),
+                    columns: table.columns.map(reviveDates),
+                    outgoingRelationships:
+                      table.outgoingRelationships.map(reviveDates),
+                    incomingRelationships:
+                      table.incomingRelationships.map(reviveDates),
+                  })),
+                  relationships: previewData.relationships.map((rel) => ({
+                    ...reviveDates(rel),
+                    sourceTable: {
+                      ...reviveDates(rel.sourceTable),
+                      columns: rel.sourceTable.columns.map(reviveDates),
+                    },
+                    targetTable: {
+                      ...reviveDates(rel.targetTable),
+                      columns: rel.targetTable.columns.map(reviveDates),
+                    },
+                    sourceColumn: reviveDates(rel.sourceColumn),
+                    targetColumn: reviveDates(rel.targetColumn),
+                  })),
                 }}
                 showMinimap={previewData.tables.length > 0}
                 showControls={true}

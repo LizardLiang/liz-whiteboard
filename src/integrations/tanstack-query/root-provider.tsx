@@ -19,9 +19,13 @@ import { isUnauthorizedError } from '@/lib/auth/errors'
 
 function isErrorWith401Status(error: unknown): boolean {
   if (error instanceof Error) {
-    // TanStack Start server functions may throw errors with statusCode
-    if (typeof (error as Record<string, unknown>).statusCode === 'number') {
-      return (error as Record<string, unknown>).statusCode === 401
+    // TanStack Start server functions may throw errors with statusCode —
+    // an extra property beyond Error's nominal shape, hence the through-
+    // unknown cast (Error and Record<string, unknown> don't structurally
+    // overlap enough for TS to allow a direct cast).
+    const withStatusCode = error as unknown as Record<string, unknown>
+    if (typeof withStatusCode.statusCode === 'number') {
+      return withStatusCode.statusCode === 401
     }
     const msg = error.message.toLowerCase()
     if (msg.includes('unauthorized') || msg.includes('401')) {

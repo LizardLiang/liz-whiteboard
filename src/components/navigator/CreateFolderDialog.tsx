@@ -6,7 +6,7 @@ import { useState } from 'react'
 import { useMutation, useQueryClient } from '@tanstack/react-query'
 import { toast } from 'sonner'
 import type { CreateFolder } from '@/data/schema'
-import { isUnauthorizedError } from '@/lib/auth/errors'
+import { isForbiddenError, isUnauthorizedError } from '@/lib/auth/errors'
 import { Button } from '@/components/ui/button'
 import {
   Dialog,
@@ -41,6 +41,12 @@ export function CreateFolderDialog({
     onSuccess: (folder) => {
       if (isUnauthorizedError(folder)) {
         toast.error('Session expired', { description: 'Please log in again.' })
+        return
+      }
+      if (isForbiddenError(folder)) {
+        toast.error('Failed to create folder', {
+          description: folder.message,
+        })
         return
       }
       queryClient.invalidateQueries({ queryKey: ['projects'] })
