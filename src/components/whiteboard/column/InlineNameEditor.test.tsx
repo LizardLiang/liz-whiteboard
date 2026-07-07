@@ -27,7 +27,7 @@ describe('InlineNameEditor', () => {
         onCancel={vi.fn()}
       />,
     )
-    const input = screen.getByRole('textbox')
+    const input = screen.getByRole('textbox') as HTMLInputElement
     expect(input.value).toBe('my_column')
   })
 

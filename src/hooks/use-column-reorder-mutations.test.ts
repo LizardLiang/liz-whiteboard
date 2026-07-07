@@ -154,33 +154,6 @@ const makeColumn = (id: string, order: number) => ({
   updatedAt: new Date(),
 })
 
-const makeNodes = (columnIds: Array<string>) => [
-  {
-    id: 'tbl-001',
-    type: 'table' as const,
-    position: { x: 0, y: 0 },
-    data: {
-      table: {
-        id: 'tbl-001',
-        name: 'users',
-        columns: columnIds.map((id, i) => makeColumn(id, i)),
-        whiteboardId: 'wb-001',
-        positionX: 0,
-        positionY: 0,
-        description: null,
-        width: null,
-        height: null,
-        createdAt: new Date(),
-        updatedAt: new Date(),
-      },
-      isActiveHighlighted: false,
-      isHighlighted: false,
-      isHovered: false,
-      showMode: 'ALL_FIELDS' as const,
-    },
-  },
-]
-
 const COLS = ['col-A', 'col-B', 'col-C', 'col-D', 'col-E']
 
 describe('useColumnReorderMutations (Suite S4)', () => {

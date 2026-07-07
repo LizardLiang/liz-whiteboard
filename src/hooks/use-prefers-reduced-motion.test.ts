@@ -3,7 +3,7 @@
 // Tests: usePrefersReducedMotion returns correct value based on matchMedia,
 //        falls back to false in SSR/test environments without matchMedia.
 
-import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
+import { afterEach, describe, expect, it, vi } from 'vitest'
 import { renderHook } from '@testing-library/react'
 import {
   usePrefersReducedMotion,

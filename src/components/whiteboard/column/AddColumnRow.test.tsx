@@ -3,7 +3,7 @@
 // TS-04: AddColumnRow unit tests
 
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
-import { act, fireEvent, render, screen } from '@testing-library/react'
+import { fireEvent, render, screen } from '@testing-library/react'
 import { AddColumnRow } from './AddColumnRow'
 import type { Column } from '@/data/models'
 import { mockColumn, mockPKColumn } from '@/test/fixtures'

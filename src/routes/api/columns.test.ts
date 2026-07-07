@@ -99,8 +99,6 @@ function makeColumnInput(tableId: string, i: number = 0): ColumnInput {
   return { tableId, name: `col_${i}`, dataType: 'string' }
 }
 
-type ColumnInputArray = Array<ColumnInput>
-
 // ─────────────────────────────────────────────────────────────────────────────
 // Suite 7 — SEC-BATCH-04
 // ─────────────────────────────────────────────────────────────────────────────

@@ -272,7 +272,7 @@ describe('TC-P5-02: handshake — valid session accepted', () => {
 
 describe('TC-P5-03: session expiry on active connection', () => {
   it('emits session_expired when sessionExpiresAt is in the past', () => {
-    const { socket, emitSpy, disconnectSpy } = buildMockSocket({
+    const { socket, emitSpy } = buildMockSocket({
       userId: USER_UUID,
       sessionExpiresAt: Date.now() - 1000, // 1 second ago
     })
@@ -607,8 +607,12 @@ function buildJwtSocket(
   const nextSpy = vi.fn()
   const socket = {
     handshake: {
-      auth: overrides.authToken ? { token: overrides.authToken } : {},
-      headers: overrides.cookieHeader ? { cookie: overrides.cookieHeader } : {},
+      auth: (overrides.authToken
+        ? { token: overrides.authToken }
+        : {}) as Record<string, unknown>,
+      headers: (overrides.cookieHeader
+        ? { cookie: overrides.cookieHeader }
+        : {}) as Record<string, string>,
     },
     data: {} as Record<string, any>,
   }

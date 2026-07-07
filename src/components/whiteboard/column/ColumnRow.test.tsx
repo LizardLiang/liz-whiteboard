@@ -3,13 +3,13 @@
 // TS-06: ColumnRow unit tests
 
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
-import { act, fireEvent, render, screen } from '@testing-library/react'
+import { fireEvent, render, screen } from '@testing-library/react'
 import { WhiteboardPermissionsProvider } from '../whiteboard-permissions-context'
 import { ColumnRow } from './ColumnRow'
 import type { ReactElement } from 'react'
 import type { EditingField } from './types'
 import type { RelationshipEdgeType } from '@/lib/react-flow/types'
-import { mockColumn, mockFKColumn } from '@/test/fixtures'
+import { mockColumn } from '@/test/fixtures'
 
 // Mock React Flow Handle (not needed in unit tests)
 vi.mock('@xyflow/react', () => ({
@@ -60,6 +60,7 @@ const defaultProps = {
   onCancelEdit: vi.fn(),
   onToggleConstraint: vi.fn(),
   onDelete: vi.fn(),
+  onDescriptionUpdate: vi.fn(),
   edges: [] as Array<RelationshipEdgeType>,
 }
 

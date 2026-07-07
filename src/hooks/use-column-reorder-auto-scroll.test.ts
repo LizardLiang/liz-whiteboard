@@ -3,7 +3,7 @@
 // Tests: auto-scroll activates when pointer within 20% of table edge,
 //        velocity 600px/s normal / 300px/s reduced-motion, does not trigger outside table.
 
-import { describe, expect, it, vi } from 'vitest'
+import { describe, expect, it } from 'vitest'
 
 // ============================================================================
 // Auto-scroll logic — pure functions testable without browser

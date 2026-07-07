@@ -114,16 +114,6 @@ describe('DragHandle tooltip (REQ-12)', () => {
       vi.advanceTimersByTime(400)
     })
 
-    // After tooltip appears (if Radix portal renders in jsdom),
-    // check that the tooltip text exists
-    const allElements = document.body.querySelectorAll('*')
-    let foundTooltipText = false
-    allElements.forEach((el) => {
-      if (el.textContent === 'Drag to reorder') {
-        foundTooltipText = true
-      }
-    })
-
     // The text "Drag to reorder" should be in the TooltipContent
     // It may or may not be visible depending on Radix portal rendering in jsdom
     // but we assert that the DragHandle component structure is correct

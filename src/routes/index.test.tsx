@@ -3,7 +3,6 @@
 // TS-11: Home page project card links integration tests (Infrastructure)
 
 import { beforeEach, describe, expect, it, vi } from 'vitest'
-import { render, screen } from '@testing-library/react'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import {
   RouterContextProvider,
@@ -14,7 +13,6 @@ import type { ReactNode } from 'react'
 import { routeTree } from '@/routeTree.gen'
 
 import { getProjectsWithTree } from '@/routes/api/projects'
-import { getRecentWhiteboards } from '@/routes/api/whiteboards'
 
 // Mock server functions used by the home page
 vi.mock('@/routes/api/projects', () => ({

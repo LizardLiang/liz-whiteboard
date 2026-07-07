@@ -3,7 +3,7 @@
 // TS-03 (R3): Folder drill-down navigation integration tests (AC-11..15)
 
 import { beforeEach, describe, expect, it, vi } from 'vitest'
-import { fireEvent, render, screen, waitFor } from '@testing-library/react'
+import { render, screen } from '@testing-library/react'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import {
   RouterContextProvider,
@@ -202,11 +202,9 @@ describe('Folder Page (AC-11..15)', () => {
         currentFolder: { id: 'folder-001', name: 'Alpha' },
       })
 
-      const cachedData = queryClient.getQueryData([
-        'project-page',
-        'proj-001',
-        'folder-001',
-      ])
+      const cachedData = queryClient.getQueryData<{
+        currentFolder: { id: string; name: string } | null
+      }>(['project-page', 'proj-001', 'folder-001'])
       // Verify the cache contains the folderId information
       expect(cachedData?.currentFolder?.id).toBe('folder-001')
     })

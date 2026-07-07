@@ -90,23 +90,6 @@ describe('relationship:delete handler', () => {
   beforeEach(async () => {
     vi.clearAllMocks()
     ;({ socket, handlers, emitSpy, broadcastEmitSpy } = buildSocketMock())
-
-    // Import and invoke setupCollaborationEventHandlers — since it's internal, we
-    // trigger it via dynamic import trick by calling the module's exported helper.
-    // Actually, we invoke it by dynamically importing the module.
-    const { default: _unused, ...collabModule } = await import(
-      './collaboration'
-    )
-
-    // setupCollaborationEventHandlers is not exported — but we can call via any
-    // exported function that triggers it indirectly, or we can test via the handler
-    // registration.
-    // Instead, we'll access the internal function by re-exporting it for test purposes.
-    // Since it's not exported, we use a workaround: call the internal function
-    // directly by importing the module and using its internal exported function.
-    // The module exports setupCollaborationEventHandlers indirectly — let's check.
-    // Since it's not exported, we test via a thin wrapper approach:
-    // Import the module and manually register using the same logic.
   })
 
   // Helper: register handlers on mock socket using the real implementation
