@@ -14,6 +14,7 @@ import { InsertionLine } from './column/InsertionLine'
 import { TableNodeContextMenu } from './TableNodeContextMenu'
 import { TableRelationsPanel } from './TableRelationsPanel'
 import { CommentThreadPopover } from './CommentThreadPopover'
+import { TableNotePopover } from './TableNotePopover'
 import { useWhiteboardPermissions } from './whiteboard-permissions-context'
 import type { Column } from '@/data/models'
 import type {
@@ -73,6 +74,7 @@ export const TableNode = memo(
       onEditComment,
       onDeleteComment,
       onResolveComment,
+      onTableNoteSave,
     } = data
 
     const columns = table.columns
@@ -246,6 +248,12 @@ export const TableNode = memo(
     const handleRequestTableDelete = useCallback(() => {
       onRequestTableDelete?.(table.id)
     }, [onRequestTableDelete, table.id])
+
+    // --- Table note handler (table-level twin of column notes) ---
+    const handleTableNoteSave = useCallback(
+      (description: string) => onTableNoteSave?.(table.id, description),
+      [table.id, onTableNoteSave],
+    )
 
     // --- Export DDL handler ---
     const handleExportDdl = useCallback(
@@ -627,6 +635,17 @@ export const TableNode = memo(
                 />
               )}
 
+              {/* Table note trigger — table-level twin of the column note
+                  popover. Distinct StickyNote icon (not the MessageCircle
+                  thread button above). Gated by canEdit like the delete
+                  button; view-only viewers get no editable affordance. */}
+              {canEdit && (
+                <TableNotePopover
+                  description={table.description ?? null}
+                  onSave={handleTableNoteSave}
+                />
+              )}
+
               {/* Delete button — visible on header hover. View-only viewers
                   don't get this affordance at all (server also blocks it). */}
               {canEdit && (
@@ -776,6 +795,7 @@ export const TableNode = memo(
     if (prev.data.onEditComment !== next.data.onEditComment) return false
     if (prev.data.onDeleteComment !== next.data.onDeleteComment) return false
     if (prev.data.onResolveComment !== next.data.onResolveComment) return false
+    if (prev.data.onTableNoteSave !== next.data.onTableNoteSave) return false
     return true
   },
 )

@@ -19,7 +19,7 @@ type SetEdges = React.Dispatch<
 >
 
 interface PendingTableMutation {
-  type: 'delete'
+  type: 'delete' | 'update'
   rollback: () => void
 }
 
@@ -30,11 +30,23 @@ export interface TableErrorEvent {
   tableId?: string
 }
 
+/** Fields a table:update emit may carry. Currently only `description`
+ * (table-comment), but kept as a partial bag so future fields (e.g. `name`)
+ * don't require a signature change. */
+export type UpdateTableFields = Partial<{ description: string }>
+
+type EmitTableUpdate = (
+  tableId: string,
+  data: UpdateTableFields,
+  ack?: (ok: boolean) => void,
+) => void
+
 export function useTableMutations(
   setNodes: SetNodes,
   setEdges: SetEdges,
   emitTableDelete: ((tableId: string) => void) | null,
   isConnected: boolean,
+  emitTableUpdate: EmitTableUpdate | null = null,
 ) {
   /**
    * Track optimistic mutations for rollback on server error.
@@ -120,8 +132,112 @@ export function useTableMutations(
     }
   }, [])
 
+  /**
+   * Update a table's fields (currently just `description` — table-comment)
+   * optimistically then emit via WebSocket. Mirrors useColumnMutations.updateColumn:
+   * captures the previous value(s) for rollback, applies an immutable merge into
+   * data.table (preserving columns/relationships/other fields), and clears the
+   * pending entry once the server ack confirms success.
+   */
+  const updateTable = useCallback(
+    (
+      tableId: string,
+      data: UpdateTableFields,
+      prevValues?: UpdateTableFields,
+    ) => {
+      if (!isConnected) {
+        toast.error('Not connected. Please wait for reconnection.')
+        return
+      }
+
+      let previousValues = prevValues
+
+      setNodes((prev) =>
+        prev.map((node) => {
+          if (node.id !== tableId) return node
+          if (!previousValues) {
+            const current = node.data.table as unknown as UpdateTableFields
+            previousValues = Object.fromEntries(
+              Object.keys(data).map((key) => [
+                key,
+                current[key as keyof UpdateTableFields],
+              ]),
+            ) as UpdateTableFields
+          }
+          return {
+            ...node,
+            data: {
+              ...node.data,
+              table: {
+                ...node.data.table,
+                ...data,
+              },
+            },
+          }
+        }),
+      )
+
+      // Store rollback
+      pendingMutations.current.set(tableId, {
+        type: 'update',
+        rollback: () => {
+          const toRestore = previousValues
+          if (!toRestore) return
+          setNodes((prev) =>
+            prev.map((node) =>
+              node.id === tableId
+                ? {
+                    ...node,
+                    data: {
+                      ...node.data,
+                      table: {
+                        ...node.data.table,
+                        ...toRestore,
+                      },
+                    },
+                  }
+                : node,
+            ),
+          )
+        },
+      })
+
+      // Emit via WebSocket. On ack success, clear the pending entry so a
+      // later (unrelated) error event can't roll back a change the server
+      // already accepted.
+      if (emitTableUpdate) {
+        emitTableUpdate(tableId, data, (ok) => {
+          if (ok) {
+            pendingMutations.current.delete(tableId)
+          }
+        })
+      }
+    },
+    [isConnected, setNodes, emitTableUpdate],
+  )
+
+  /**
+   * Called by useWhiteboardCollaboration when server sends an error event for
+   * table:update (FORBIDDEN / NOT_FOUND / VALIDATION_ERROR, etc.).
+   * Finds the pending mutation and invokes its rollback.
+   */
+  const onTableUpdateError = useCallback((data: TableErrorEvent) => {
+    toast.error('Failed to save table changes. Please try again.')
+
+    if (data.tableId) {
+      const pending = pendingMutations.current.get(data.tableId)
+      if (pending) {
+        pending.rollback()
+        pendingMutations.current.delete(data.tableId)
+      }
+    }
+  }, [])
+
   return {
     deleteTable,
     onTableError,
+    updateTable,
+    onTableUpdateError,
+    pendingMutations,
   }
 }

@@ -30,6 +30,18 @@ export interface PositionUpdateEvent {
  * @param onPositionUpdate - Callback to update React Flow nodes when other users move tables
  * @returns Collaboration state and emit function
  *
+ * NOTE ON SIGNATURE (S3, Hermes review, table-comment): this hook now takes 12
+ * positional parameters (up from 9 pre-GH#109/table-comment). An options-object
+ * refactor was considered and deliberately deferred rather than done here: the
+ * hook has ~20+ existing positional call sites across
+ * `ReactFlowWhiteboard.tsx`, `use-whiteboard-collaboration.test.ts`, and
+ * `use-whiteboard-collaboration-auth.test.ts` (many of which rely on trailing
+ * defaults / call with only the first 3 args), so converting is not a
+ * contained change — it would touch every test invocation in two large TC-*
+ * suites for a refactor that is orthogonal to the five findings this pass
+ * fixes. If another callback is added to this hook, prefer migrating to a
+ * single options object at that point rather than a 13th positional param.
+ *
  * @example
  * ```tsx
  * const { connectionState, emitPositionUpdate } = useWhiteboardCollaboration(
@@ -78,6 +90,18 @@ export function useWhiteboardCollaboration(
   // Socket.IO connection is ever opened on that path. Defaults to true for
   // every existing authenticated caller.
   enabled: boolean = true,
+  // Table comment/note (table-comment): applies inbound table:updated events
+  // from other users (currently only `description` is threaded through, but
+  // the payload carries whatever fields the sender changed via table:update).
+  onTableUpdated?: (data: { tableId: string; description?: string }) => void,
+  // Table comment/note (table-comment, W1 fix): server-side rejections of a
+  // LOCAL table:update emit (FORBIDDEN / NOT_FOUND / VALIDATION_ERROR) arrive
+  // on the shared `error` event. A sibling listener (separate from the
+  // table:delete-only onTableError above) routes them here so useTableMutations
+  // can roll back the optimistic edit and toast — mirrors onRelationshipError's
+  // job for relationship:update, kept as its own callback rather than folded
+  // into onTableError since the two have different toast copy.
+  onTableUpdateError?: (data: TableErrorEvent) => void,
 ) {
   // Use the base collaboration hook
   const { triggerSessionExpired } = useAuthContext()
@@ -146,6 +170,26 @@ export function useWhiteboardCollaboration(
     }
   }, [on, off, onTableError])
 
+  // Listen for table:update error events (table-comment W1 fix). Previously
+  // these were silently dropped: the effect above filters strictly to
+  // `table:delete`, so a rejected table:update save (FORBIDDEN / NOT_FOUND /
+  // VALIDATION_ERROR) never reached useTableMutations for rollback+toast. A
+  // sibling listener keeps table:delete's handling untouched while routing
+  // table:update failures to their own callback.
+  useEffect(() => {
+    if (!onTableUpdateError) return
+
+    const handleError = (data: TableErrorEvent) => {
+      if (data.event !== 'table:update') return
+      onTableUpdateError(data)
+    }
+
+    on('error', handleError)
+    return () => {
+      off('error', handleError)
+    }
+  }, [on, off, onTableUpdateError])
+
   // Listen for relationship deletion events from other users
   useEffect(() => {
     if (!onRelationshipDeleted) return
@@ -200,6 +244,28 @@ export function useWhiteboardCollaboration(
       off('relationship:updated', handleRelationshipUpdated)
     }
   }, [on, off, userId, onRelationshipUpdated])
+
+  // Listen for table update events from other users (table-comment: currently
+  // only the `description` field is emitted, but the payload is generic per
+  // the server's table:update contract). Mirrors the table:moved pattern.
+  useEffect(() => {
+    if (!onTableUpdated) return
+
+    const handleTableUpdated = (data: {
+      tableId: string
+      description?: string
+      updatedBy: string
+    }) => {
+      // Ignore updates from current user (already applied optimistically)
+      if (data.updatedBy === userId) return
+      onTableUpdated(data)
+    }
+
+    on('table:updated', handleTableUpdated)
+    return () => {
+      off('table:updated', handleTableUpdated)
+    }
+  }, [on, off, userId, onTableUpdated])
 
   // Handle permission_revoked event: show toast + redirect to project list
   useEffect(() => {
@@ -296,6 +362,34 @@ export function useWhiteboardCollaboration(
     [emit],
   )
 
+  // Emit table update to server (table-comment: first client-side emitter for
+  // table:update — server persists via updateTableSchema + updateDiagramTable
+  // and broadcasts table:updated to other clients). The optional `ack`
+  // callback (added for W1) reports the server's immediate ok/fail result back
+  // to the caller (useTableMutations.updateTable) so it can clear its pending
+  // rollback entry on success; failures are still logged here, and are also
+  // surfaced via the broadcast `error` event (routed to onTableUpdateError
+  // above) for rollback + toast.
+  const emitTableUpdate = useCallback(
+    (
+      tableId: string,
+      data: { description?: string },
+      ack?: (ok: boolean) => void,
+    ) => {
+      emit(
+        'table:update',
+        { tableId, ...data },
+        (res: { ok: boolean; message?: string }) => {
+          if (!res?.ok) {
+            console.error('Failed to update table:', res?.message)
+          }
+          ack?.(Boolean(res?.ok))
+        },
+      )
+    },
+    [emit],
+  )
+
   // Emit relationship delete to server
   const emitRelationshipDelete = useCallback(
     (relationshipId: string) => {
@@ -318,6 +412,7 @@ export function useWhiteboardCollaboration(
     emitPositionUpdate,
     emitBulkPositionUpdate,
     emitTableDelete,
+    emitTableUpdate,
     emitRelationshipDelete,
     emitRelationshipUpdate,
     // Generic socket primitives — exposed so entity hooks (e.g. subject areas,

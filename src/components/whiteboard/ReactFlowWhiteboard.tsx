@@ -552,6 +552,7 @@ function ReactFlowWhiteboardInner({
               onColumnDelete: handleColumnDeleteRef.current,
               onColumnDuplicate: handleColumnDuplicateRef.current,
               onRequestTableDelete: handleRequestTableDeleteRef.current,
+              onTableNoteSave: handleTableNoteSaveRef.current,
               onFocusTable: (tableId: string) =>
                 handleFocusTableRef.current(tableId),
               onExportDdl: (tableId: string, dialect: Dialect) =>
@@ -599,6 +600,7 @@ function ReactFlowWhiteboardInner({
             onColumnDelete: prev.data.onColumnDelete,
             onColumnDuplicate: prev.data.onColumnDuplicate,
             onRequestTableDelete: prev.data.onRequestTableDelete,
+            onTableNoteSave: prev.data.onTableNoteSave,
             onFocusTable: prev.data.onFocusTable,
             onExportDdl: prev.data.onExportDdl,
             onPreviewRelations: prev.data.onPreviewRelations,
@@ -666,6 +668,10 @@ function ReactFlowWhiteboardInner({
   // Ref for onTableError — breaks circular dependency between useWhiteboardCollaboration and useTableMutations
   const onTableErrorRef = useRef<(data: any) => void>(() => {})
 
+  // Ref for onTableUpdateError (table-comment W1 fix) — same circular-dependency
+  // break as onTableErrorRef above, but for table:update rejections specifically.
+  const onTableUpdateErrorRef = useRef<(data: any) => void>(() => {})
+
   // Callback for when a remote user deletes a relationship
   const onRelationshipDeleted = useCallback((relationshipId: string) => {
     setEdges((prev) => prev.filter((e) => e.id !== relationshipId))
@@ -685,6 +691,30 @@ function ReactFlowWhiteboardInner({
     [],
   )
 
+  // Callback for when a remote user updates a table's comment/note
+  // (table-comment). The hook already filters out self-originated events
+  // (updatedBy === userId); this applies the inbound description to the
+  // matching table node's data so the popover reflects it when reopened.
+  const onTableUpdated = useCallback(
+    (data: { tableId: string; description?: string }) => {
+      if (data.description === undefined) return
+      setNodes((prev) =>
+        prev.map((n) =>
+          n.id === data.tableId
+            ? {
+                ...n,
+                data: {
+                  ...n.data,
+                  table: { ...n.data.table, description: data.description! },
+                },
+              }
+            : n,
+        ),
+      )
+    },
+    [],
+  )
+
   // Ref for onRelationshipError — breaks circular dependency between useWhiteboardCollaboration and useRelationshipMutations
   const onRelationshipErrorRef = useRef<(data: RelationshipErrorEvent) => void>(
     () => {},
@@ -696,6 +726,7 @@ function ReactFlowWhiteboardInner({
     emitPositionUpdate,
     emitBulkPositionUpdate,
     emitTableDelete,
+    emitTableUpdate,
     emitRelationshipDelete,
     emitRelationshipUpdate,
     on: onCollabEvent,
@@ -746,6 +777,10 @@ function ReactFlowWhiteboardInner({
     ),
     // R1 (GH #109): public read-only path opens no Socket.IO connection.
     collaborationEnabled,
+    onTableUpdated,
+    useCallback((data: any) => {
+      onTableUpdateErrorRef.current(data)
+    }, []),
   )
 
   // Column collaboration callbacks (incoming events from other users)
@@ -991,18 +1026,26 @@ function ReactFlowWhiteboardInner({
       columnMutations.onRemoteColumnDuplicated
   }, [columnMutations.onRemoteColumnDuplicated])
 
-  // Table mutations hook (optimistic delete + rollback)
+  // Table mutations hook (optimistic delete + rollback; table-comment W1:
+  // optimistic update + rollback for table:update saves)
   const tableMutations = useTableMutations(
     setNodes,
     setEdges,
     emitTableDelete,
     isConnected,
+    emitTableUpdate,
   )
 
   // Wire onTableError ref now that tableMutations is available
   useEffect(() => {
     onTableErrorRef.current = tableMutations.onTableError
   }, [tableMutations.onTableError])
+
+  // Wire onTableUpdateError ref now that tableMutations is available
+  // (table-comment W1 fix)
+  useEffect(() => {
+    onTableUpdateErrorRef.current = tableMutations.onTableUpdateError
+  }, [tableMutations.onTableUpdateError])
 
   // Relationship mutations hook (optimistic delete + label update with rollback)
   const relationshipMutations = useRelationshipMutations(
@@ -1203,6 +1246,19 @@ function ReactFlowWhiteboardInner({
     setDeletingTableId(tableId)
   }, [])
 
+  // Callback to save a table's comment/note (table-comment). Routes through
+  // tableMutations.updateTable (table-comment W1 fix) so a rejected save
+  // (FORBIDDEN / NOT_FOUND / VALIDATION_ERROR) rolls back the optimistic
+  // description and shows a toast — previously this bypassed rollback
+  // entirely via a bespoke inline setNodes + raw emitTableUpdate call, and
+  // the server error was silently dropped (onTableUpdateError wiring above).
+  const handleTableNoteSave = useCallback(
+    (tableId: string, description: string) => {
+      tableMutations.updateTable(tableId, { description })
+    },
+    [tableMutations],
+  )
+
   // Callback to open the Focus view overlay for a table
   const handleFocusTable = useCallback(
     (tableId: string) => setFocusedTableId(tableId),
@@ -1330,6 +1386,7 @@ function ReactFlowWhiteboardInner({
   const handleColumnDeleteRef = useRef(handleColumnDelete)
   const handleColumnDuplicateRef = useRef(handleColumnDuplicate)
   const handleRequestTableDeleteRef = useRef(handleRequestTableDelete)
+  const handleTableNoteSaveRef = useRef(handleTableNoteSave)
   const handleFocusTableRef = useRef(handleFocusTable)
   const handleTogglePreviewTableRef = useRef(handleTogglePreviewTable)
   const handleExportDdlRef = useRef(handleExportDdl)
@@ -1351,6 +1408,9 @@ function ReactFlowWhiteboardInner({
   useEffect(() => {
     handleRequestTableDeleteRef.current = handleRequestTableDelete
   }, [handleRequestTableDelete])
+  useEffect(() => {
+    handleTableNoteSaveRef.current = handleTableNoteSave
+  }, [handleTableNoteSave])
   useEffect(() => {
     handleFocusTableRef.current = handleFocusTable
   }, [handleFocusTable])
@@ -1382,6 +1442,7 @@ function ReactFlowWhiteboardInner({
           onColumnDelete: handleColumnDeleteRef.current,
           onColumnDuplicate: handleColumnDuplicateRef.current,
           onRequestTableDelete: handleRequestTableDeleteRef.current,
+          onTableNoteSave: handleTableNoteSaveRef.current,
           onFocusTable: (tableId: string) =>
             handleFocusTableRef.current(tableId),
           onExportDdl: (tableId: string, dialect: Dialect) =>
@@ -1421,6 +1482,7 @@ function ReactFlowWhiteboardInner({
           onColumnDelete: handleColumnDeleteRef.current,
           onColumnDuplicate: handleColumnDuplicateRef.current,
           onRequestTableDelete: handleRequestTableDeleteRef.current,
+          onTableNoteSave: handleTableNoteSaveRef.current,
           onFocusTable: (tableId: string) =>
             handleFocusTableRef.current(tableId),
           onExportDdl: (tableId: string, dialect: Dialect) =>

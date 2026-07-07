@@ -184,6 +184,11 @@ export interface TableNodeData extends Record<string, unknown> {
 
   /** Resolve/reopen a root comment thread. */
   onResolveComment?: (commentId: string, resolved: boolean) => void
+
+  /** Callback to save the table's note — fires table:update WebSocket emit.
+   * Named onTableNoteSave (not onTableCommentSave) to disambiguate from the
+   * GH #110 threaded-comment callbacks (onCreateTableComment etc.) below. */
+  onTableNoteSave?: (tableId: string, description: string) => void
 }
 
 /**

@@ -259,6 +259,17 @@
 }
 
 /* ----------------------------------------------------------------------------
+ * Table Header Note Trigger Hover (table-level twin of the column note above)
+ * ---------------------------------------------------------------------------- */
+.table-header:hover .table-note-btn {
+  opacity: 0.5 !important;
+}
+
+.table-header:hover .table-note-btn:hover {
+  opacity: 1 !important;
+}
+
+/* ----------------------------------------------------------------------------
  * Connection Line Styles
  * ---------------------------------------------------------------------------- */
 .react-flow__connection-line {

@@ -362,4 +362,262 @@ describe('useTableMutations', () => {
     // but we verify toast.error is invoked (toast differentiation is UA-m4)
     expect(toast.error).toHaveBeenCalled()
   })
+
+  // -------------------------------------------------------------------------
+  // updateTable — table-comment W1 (Hermes review): rejected table:update
+  // saves must roll back the optimistic edit and surface a toast, mirroring
+  // useColumnMutations.updateColumn.
+  // -------------------------------------------------------------------------
+  describe('updateTable', () => {
+    let emitTableUpdate: ReturnType<typeof vi.fn>
+
+    beforeEach(() => {
+      emitTableUpdate = vi.fn()
+    })
+
+    it('TC-TU-01: optimistically merges the new description into the matching table node', () => {
+      const { result } = renderHook(() =>
+        useTableMutations(
+          setNodes,
+          setEdges,
+          emitTableDelete,
+          true,
+          emitTableUpdate,
+        ),
+      )
+
+      act(() => {
+        result.current.updateTable('tbl-001', { description: 'new note' })
+      })
+
+      const node = nodes.find((n) => n.id === 'tbl-001')
+      expect(node?.data.table.description).toBe('new note')
+    })
+
+    it('TC-TU-02: preserves columns/relationships and other table fields on update', () => {
+      nodes = [
+        {
+          ...makeTableNode('tbl-001'),
+          data: {
+            ...makeTableNode('tbl-001').data,
+            table: {
+              ...makeTableNode('tbl-001').data.table,
+              columns: [{ id: 'col-1', name: 'id' } as any],
+            },
+          },
+        },
+      ]
+      setNodes = vi.fn((updater: any) => {
+        if (typeof updater === 'function') {
+          nodes = updater(nodes)
+        } else {
+          nodes = updater
+        }
+      })
+
+      const { result } = renderHook(() =>
+        useTableMutations(
+          setNodes,
+          setEdges,
+          emitTableDelete,
+          true,
+          emitTableUpdate,
+        ),
+      )
+
+      act(() => {
+        result.current.updateTable('tbl-001', { description: 'new note' })
+      })
+
+      const node = nodes.find((n) => n.id === 'tbl-001')
+      expect(node?.data.table.columns).toEqual([{ id: 'col-1', name: 'id' }])
+      expect(node?.data.table.name).toBe('orders')
+    })
+
+    it('TC-TU-03: emits table:update via emitTableUpdate with the given data', () => {
+      const { result } = renderHook(() =>
+        useTableMutations(
+          setNodes,
+          setEdges,
+          emitTableDelete,
+          true,
+          emitTableUpdate,
+        ),
+      )
+
+      act(() => {
+        result.current.updateTable('tbl-001', { description: 'new note' })
+      })
+
+      expect(emitTableUpdate).toHaveBeenCalledWith(
+        'tbl-001',
+        { description: 'new note' },
+        expect.any(Function),
+      )
+    })
+
+    it('TC-TU-04: disconnected guard — does not emit or mutate, shows toast', () => {
+      const { result } = renderHook(() =>
+        useTableMutations(
+          setNodes,
+          setEdges,
+          emitTableDelete,
+          false,
+          emitTableUpdate,
+        ),
+      )
+
+      act(() => {
+        result.current.updateTable('tbl-001', { description: 'new note' })
+      })
+
+      const node = nodes.find((n) => n.id === 'tbl-001')
+      expect(node?.data.table.description).toBeUndefined()
+      expect(emitTableUpdate).not.toHaveBeenCalled()
+      expect(toast.error).toHaveBeenCalledWith(
+        expect.stringContaining('Not connected'),
+      )
+    })
+
+    it('TC-TU-05: onTableUpdateError rolls back the description to its previous value', () => {
+      const { result } = renderHook(() =>
+        useTableMutations(
+          setNodes,
+          setEdges,
+          emitTableDelete,
+          true,
+          emitTableUpdate,
+        ),
+      )
+
+      act(() => {
+        result.current.updateTable('tbl-001', { description: 'new note' })
+      })
+
+      expect(nodes.find((n) => n.id === 'tbl-001')?.data.table.description).toBe(
+        'new note',
+      )
+
+      act(() => {
+        result.current.onTableUpdateError({
+          event: 'table:update',
+          tableId: 'tbl-001',
+          error: 'FORBIDDEN',
+        })
+      })
+
+      expect(
+        nodes.find((n) => n.id === 'tbl-001')?.data.table.description,
+      ).toBeUndefined()
+    })
+
+    it('TC-TU-06: onTableUpdateError shows a toast error', () => {
+      const { result } = renderHook(() =>
+        useTableMutations(
+          setNodes,
+          setEdges,
+          emitTableDelete,
+          true,
+          emitTableUpdate,
+        ),
+      )
+
+      act(() => {
+        result.current.updateTable('tbl-001', { description: 'new note' })
+      })
+
+      act(() => {
+        result.current.onTableUpdateError({
+          event: 'table:update',
+          tableId: 'tbl-001',
+          error: 'FORBIDDEN',
+        })
+      })
+
+      expect(toast.error).toHaveBeenCalled()
+    })
+
+    it('TC-TU-07: onTableUpdateError clears the pending entry so a second error is a no-op rollback', () => {
+      const { result } = renderHook(() =>
+        useTableMutations(
+          setNodes,
+          setEdges,
+          emitTableDelete,
+          true,
+          emitTableUpdate,
+        ),
+      )
+
+      act(() => {
+        result.current.updateTable('tbl-001', { description: 'new note' })
+      })
+
+      act(() => {
+        result.current.onTableUpdateError({
+          event: 'table:update',
+          tableId: 'tbl-001',
+          error: 'FORBIDDEN',
+        })
+      })
+
+      // Simulate the description having been changed again by something else
+      // after rollback — a second, stale error event must not clobber it.
+      nodes = nodes.map((n) =>
+        n.id === 'tbl-001'
+          ? {
+              ...n,
+              data: {
+                ...n.data,
+                table: { ...n.data.table, description: 'unrelated later edit' },
+              },
+            }
+          : n,
+      )
+
+      act(() => {
+        result.current.onTableUpdateError({
+          event: 'table:update',
+          tableId: 'tbl-001',
+          error: 'FORBIDDEN',
+        })
+      })
+
+      expect(
+        nodes.find((n) => n.id === 'tbl-001')?.data.table.description,
+      ).toBe('unrelated later edit')
+    })
+
+    it('TC-TU-08: ack success clears the pending entry so a later error is a no-op', () => {
+      const { result } = renderHook(() =>
+        useTableMutations(
+          setNodes,
+          setEdges,
+          emitTableDelete,
+          true,
+          emitTableUpdate,
+        ),
+      )
+
+      act(() => {
+        result.current.updateTable('tbl-001', { description: 'new note' })
+      })
+
+      expect(result.current.pendingMutations.current.has('tbl-001')).toBe(
+        true,
+      )
+
+      // Simulate the server ack succeeding — emitTableUpdate is called with
+      // (tableId, data, ack); invoke the captured ack callback with ok=true.
+      const ackCallback = emitTableUpdate.mock.calls[0][2] as (
+        ok: boolean,
+      ) => void
+      act(() => {
+        ackCallback(true)
+      })
+
+      expect(result.current.pendingMutations.current.has('tbl-001')).toBe(
+        false,
+      )
+    })
+  })
 })
