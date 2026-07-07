@@ -475,7 +475,7 @@ describe('useTableMutations', () => {
       })
 
       const node = nodes.find((n) => n.id === 'tbl-001')
-      expect(node?.data.table.description).toBeUndefined()
+      expect(node?.data.table.description).toBeNull()
       expect(emitTableUpdate).not.toHaveBeenCalled()
       expect(toast.error).toHaveBeenCalledWith(
         expect.stringContaining('Not connected'),
@@ -511,7 +511,7 @@ describe('useTableMutations', () => {
 
       expect(
         nodes.find((n) => n.id === 'tbl-001')?.data.table.description,
-      ).toBeUndefined()
+      ).toBeNull()
     })
 
     it('TC-TU-06: onTableUpdateError shows a toast error', () => {
