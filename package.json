@@ -12,11 +12,16 @@
     "test:e2e": "playwright test",
     "lint": "eslint",
     "format": "prettier",
-    "check": "prettier --write . && eslint --fix",
+    "typecheck": "tsc --noEmit",
+    "check": "prettier --write . && eslint --fix && bun run typecheck",
     "post-cta-init": "npx create-db@latest",
     "db:seed": "dotenv -e .env.local -- bun seed.ts",
     "docker:build": "docker build -t liz-whiteboard:test .",
-    "docker:run": "docker run --rm -p 3000:3000 liz-whiteboard:test"
+    "docker:run": "docker run --rm -p 3000:3000 liz-whiteboard:test",
+    "prepare": "bunx simple-git-hooks"
+  },
+  "simple-git-hooks": {
+    "pre-push": "bunx tsc --noEmit"
   },
   "dependencies": {
     "@dnd-kit/core": "^6.3.1",
@@ -88,6 +93,7 @@
     "jsdom": "^27.0.0",
     "prettier": "^3.5.3",
     "shadcn": "^3.5.0",
+    "simple-git-hooks": "^2.13.1",
     "ts-node": "^10.9.2",
     "typescript": "^5.7.2",
     "vite": "^7.1.7",
