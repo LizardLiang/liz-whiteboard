@@ -9,6 +9,7 @@ import type { EdgeTypes, NodeTypes } from '@xyflow/react'
 import { TableNode } from '@/components/whiteboard/TableNode.new'
 import { RelationshipEdge } from '@/components/whiteboard/RelationshipEdge.new'
 import { AreaNode } from '@/components/whiteboard/AreaNode'
+import { CommentNode } from '@/components/whiteboard/CommentNode'
 
 /**
  * React Flow node type registry
@@ -17,6 +18,7 @@ import { AreaNode } from '@/components/whiteboard/AreaNode'
 export const nodeTypes: NodeTypes = {
   table: TableNode,
   area: AreaNode,
+  comment: CommentNode,
 }
 
 /**

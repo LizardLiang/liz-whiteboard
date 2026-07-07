@@ -18,6 +18,7 @@ import type {
   Area,
   CollaborationSession,
   Column,
+  Comment,
   DiagramTable,
   Folder,
   JsonValue,
@@ -88,9 +89,7 @@ db.exec('PRAGMA journal_mode = WAL;')
 //
 // Existing rows are copied unchanged (their current float values are preserved).
 {
-  const colInfo = db
-    .prepare(`PRAGMA table_info("DiagramTable")`)
-    .all()
+  const colInfo = db.prepare(`PRAGMA table_info("DiagramTable")`).all()
   const posXCol = colInfo.find((c) => c['name'] === 'positionX')
   if (posXCol && posXCol['notnull'] === 1) {
     // Columns are still NOT NULL — run the rebuild migration.
@@ -446,6 +445,26 @@ export function mapWhiteboardSnapshot(r: Row): WhiteboardSnapshot | null {
     createdByUserId: (r.createdByUserId as string | null) ?? null,
     isAuto: fromDbBool(r.isAuto),
     createdAt: fromDbDate(r.createdAt),
+  }
+}
+
+export function mapComment(r: Row): Comment | null {
+  if (!r) return null
+  return {
+    id: r.id as string,
+    whiteboardId: r.whiteboardId as string,
+    parentId: (r.parentId as string | null) ?? null,
+    targetType: r.targetType as string,
+    targetTableId: (r.targetTableId as string | null) ?? null,
+    positionX: r.positionX == null ? null : Number(r.positionX),
+    positionY: r.positionY == null ? null : Number(r.positionY),
+    authorId: r.authorId as string,
+    body: r.body as string,
+    resolved: fromDbBool(r.resolved),
+    resolvedBy: (r.resolvedBy as string | null) ?? null,
+    resolvedAt: r.resolvedAt == null ? null : fromDbDate(r.resolvedAt),
+    createdAt: fromDbDate(r.createdAt),
+    updatedAt: fromDbDate(r.updatedAt),
   }
 }
 

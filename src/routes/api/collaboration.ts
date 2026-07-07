@@ -18,12 +18,15 @@ import {
   areaMoveBroadcastSchema,
   createAreaSchema,
   createColumnSchema,
+  createCommentSchema,
   createRelationshipSchema,
   createTableSchema,
   reorderColumnsSchema,
+  resolveCommentSchema,
   tableMoveBulkBroadcastSchema,
   updateAreaSchema,
   updateColumnSchema,
+  updateCommentSchema,
   updateRelationshipSchema,
   updateTableSchema,
 } from '@/data/schema'
@@ -55,6 +58,14 @@ import {
   updateColumn,
 } from '@/data/column'
 import {
+  createComment,
+  deleteComment,
+  findCommentById,
+  findCommentIdsByTableId,
+  resolveComment,
+  updateComment,
+} from '@/data/comment'
+import {
   assertRelationshipEndpointsValid,
   createRelationship,
   deleteRelationship,
@@ -65,6 +76,9 @@ import { parseSessionCookie } from '@/lib/auth/cookies'
 import { validateSessionToken } from '@/lib/auth/session'
 import { validateCollabToken } from '@/lib/oauth/collab-verify'
 import { requireRole } from '@/lib/auth/require-role'
+import { findEffectiveRole } from '@/data/permission'
+import { hasMinimumRole } from '@/lib/auth/permissions'
+import { getWhiteboardProjectId } from '@/data/resolve-project'
 import { db } from '@/db'
 
 // ---------------------------------------------------------------------------
@@ -848,6 +862,14 @@ function setupCollaborationEventHandlers(
           ).c,
         )
 
+        // GH #110: the Comment table's targetTableId FK is ON DELETE CASCADE
+        // (schema-sql.ts), so deleting this table silently removes any
+        // comment threads anchored to it. Capture the affected root ids
+        // BEFORE the delete so peers can be told to drop the pins/badge
+        // counts — otherwise they (and the deleter) keep counting threads
+        // on a table that no longer exists until their next full refetch.
+        const affectedCommentIds = await findCommentIdsByTableId(tableId)
+
         // Delete table from database (cascade deletes columns and relationships)
         await deleteDiagramTable(tableId)
 
@@ -867,6 +889,22 @@ function setupCollaborationEventHandlers(
           tableId,
           deletedBy: userId,
         })
+
+        // GH #110: tell every client (including the deleter) that these
+        // cascade-deleted comment threads are gone. Unlike a direct
+        // comment:delete, the deleter's own client never optimistically
+        // removed this comment state — deleteTable() only touches table/edge
+        // nodes — so this must reach the deleter too, not just peers.
+        // emitToWhiteboard hits the whole namespace (sender included);
+        // `cascade: true` lets the client's self-skip guard (which exists
+        // for the direct-delete optimistic-update case) be bypassed here.
+        for (const commentId of affectedCommentIds) {
+          emitToWhiteboard(whiteboardId, 'comment:deleted', {
+            commentId,
+            deletedBy: userId,
+            cascade: true,
+          })
+        }
 
         // FR-022: ack to sender with cascade counts
         cb?.({
@@ -895,42 +933,39 @@ function setupCollaborationEventHandlers(
   // ========================================================================
 
   // Area creation
-  socket.on(
-    'area:create',
-    async (data: any, cb?: (res: AckResult) => void) => {
-      if (isSessionExpired(socket)) {
-        socket.emit('session_expired')
-        socket.disconnect(true)
-        cb?.({ ok: false, code: 'SESSION_EXPIRED', message: 'Session expired' })
-        return
-      }
-      if (
-        await denyIfInsufficientPermission(socket, whiteboardId, 'area:create')
-      ) {
-        cb?.({ ok: false, code: 'FORBIDDEN', message: 'Insufficient permission' })
-        return
-      }
+  socket.on('area:create', async (data: any, cb?: (res: AckResult) => void) => {
+    if (isSessionExpired(socket)) {
+      socket.emit('session_expired')
+      socket.disconnect(true)
+      cb?.({ ok: false, code: 'SESSION_EXPIRED', message: 'Session expired' })
+      return
+    }
+    if (
+      await denyIfInsufficientPermission(socket, whiteboardId, 'area:create')
+    ) {
+      cb?.({ ok: false, code: 'FORBIDDEN', message: 'Insufficient permission' })
+      return
+    }
 
-      try {
-        const validated = createAreaSchema.parse({ ...data, whiteboardId })
-        const area = await createArea(validated)
-        socket.broadcast.emit('area:created', { ...area, createdBy: userId })
-        cb?.({ ok: true, entity: area })
-      } catch (error) {
-        console.error('Failed to create area:', error)
-        const message =
-          error instanceof Error ? error.message : 'Failed to create area'
-        socket.emit('error', {
-          event: 'area:create',
-          error: 'VALIDATION_ERROR',
-          message,
-        })
-        cb?.({ ok: false, code: 'VALIDATION_ERROR', message })
-        return
-      }
-      await safeUpdateSessionActivity(socket.id)
-    },
-  )
+    try {
+      const validated = createAreaSchema.parse({ ...data, whiteboardId })
+      const area = await createArea(validated)
+      socket.broadcast.emit('area:created', { ...area, createdBy: userId })
+      cb?.({ ok: true, entity: area })
+    } catch (error) {
+      console.error('Failed to create area:', error)
+      const message =
+        error instanceof Error ? error.message : 'Failed to create area'
+      socket.emit('error', {
+        event: 'area:create',
+        error: 'VALIDATION_ERROR',
+        message,
+      })
+      cb?.({ ok: false, code: 'VALIDATION_ERROR', message })
+      return
+    }
+    await safeUpdateSessionActivity(socket.id)
+  })
 
   // Area update (rename, recolor, resize/move, membership change)
   socket.on(
@@ -948,7 +983,11 @@ function setupCollaborationEventHandlers(
       if (
         await denyIfInsufficientPermission(socket, whiteboardId, 'area:update')
       ) {
-        cb?.({ ok: false, code: 'FORBIDDEN', message: 'Insufficient permission' })
+        cb?.({
+          ok: false,
+          code: 'FORBIDDEN',
+          message: 'Insufficient permission',
+        })
         return
       }
 
@@ -1035,8 +1074,14 @@ function setupCollaborationEventHandlers(
         cb?.({ ok: false, code: 'SESSION_EXPIRED', message: 'Session expired' })
         return
       }
-      if (await denyIfInsufficientPermission(socket, whiteboardId, 'area:move')) {
-        cb?.({ ok: false, code: 'FORBIDDEN', message: 'Insufficient permission' })
+      if (
+        await denyIfInsufficientPermission(socket, whiteboardId, 'area:move')
+      ) {
+        cb?.({
+          ok: false,
+          code: 'FORBIDDEN',
+          message: 'Insufficient permission',
+        })
         return
       }
 
@@ -1142,7 +1187,11 @@ function setupCollaborationEventHandlers(
       if (
         await denyIfInsufficientPermission(socket, whiteboardId, 'area:delete')
       ) {
-        cb?.({ ok: false, code: 'FORBIDDEN', message: 'Insufficient permission' })
+        cb?.({
+          ok: false,
+          code: 'FORBIDDEN',
+          message: 'Insufficient permission',
+        })
         return
       }
 
@@ -2006,6 +2055,369 @@ function setupCollaborationEventHandlers(
           error: 'DELETE_FAILED',
           message,
           relationshipId: relationshipId ?? data.relationshipId,
+        })
+        cb?.({ ok: false, code: 'INTERNAL_ERROR', message })
+        return
+      }
+      await safeUpdateSessionActivity(socket.id)
+    },
+  )
+
+  // ========================================================================
+  // Comment mutation events (canvas comments/annotations, GH #110)
+  // ========================================================================
+  // Default RBAC on denyIfInsufficientPermission is EDITOR — every comment
+  // handler below passes 'VIEWER' explicitly so viewers can participate in
+  // discussion without write access to the diagram itself.
+
+  // Comment creation (root thread anchor, or a reply when parentId is set)
+  socket.on(
+    'comment:create',
+    async (data: any, cb?: (res: AckResult) => void) => {
+      if (isSessionExpired(socket)) {
+        socket.emit('session_expired')
+        socket.disconnect(true)
+        cb?.({ ok: false, code: 'SESSION_EXPIRED', message: 'Session expired' })
+        return
+      }
+      if (
+        await denyIfInsufficientPermission(
+          socket,
+          whiteboardId,
+          'comment:create',
+          'VIEWER',
+        )
+      ) {
+        cb?.({
+          ok: false,
+          code: 'FORBIDDEN',
+          message: 'Insufficient permission',
+        })
+        return
+      }
+
+      try {
+        // IDOR guard: a reply's parent must belong to this whiteboard.
+        if (data?.parentId) {
+          const parent = await findCommentById(data.parentId)
+          if (!parent || parent.whiteboardId !== whiteboardId) {
+            const message = 'Parent comment not found on this whiteboard'
+            socket.emit('error', {
+              event: 'comment:create',
+              error: 'NOT_FOUND',
+              message,
+            })
+            cb?.({ ok: false, code: 'NOT_FOUND', message })
+            return
+          }
+        }
+        // IDOR guard: a table-anchored root must target a table on this
+        // whiteboard (createComment's own schema parse validates shape only).
+        if (!data?.parentId && data?.targetType === 'table') {
+          const table = await findDiagramTableById(data.targetTableId)
+          if (!table || table.whiteboardId !== whiteboardId) {
+            const message = 'Target table not found on this whiteboard'
+            socket.emit('error', {
+              event: 'comment:create',
+              error: 'NOT_FOUND',
+              message,
+            })
+            cb?.({ ok: false, code: 'NOT_FOUND', message })
+            return
+          }
+        }
+
+        const validated = createCommentSchema.parse({ ...data, whiteboardId })
+        const comment = await createComment(validated, userId)
+        socket.broadcast.emit('comment:created', {
+          ...comment,
+          createdBy: userId,
+        })
+        cb?.({ ok: true, entity: comment })
+      } catch (error) {
+        console.error('Failed to create comment:', error)
+        const message =
+          error instanceof Error ? error.message : 'Failed to create comment'
+        socket.emit('error', {
+          event: 'comment:create',
+          error: 'VALIDATION_ERROR',
+          message,
+        })
+        cb?.({ ok: false, code: 'VALIDATION_ERROR', message })
+        return
+      }
+      await safeUpdateSessionActivity(socket.id)
+    },
+  )
+
+  // Comment edit (body only) — author-only
+  socket.on(
+    'comment:update',
+    async (
+      data: { commentId: string; body: string },
+      cb?: (res: AckResult) => void,
+    ) => {
+      if (isSessionExpired(socket)) {
+        socket.emit('session_expired')
+        socket.disconnect(true)
+        cb?.({ ok: false, code: 'SESSION_EXPIRED', message: 'Session expired' })
+        return
+      }
+      if (
+        await denyIfInsufficientPermission(
+          socket,
+          whiteboardId,
+          'comment:update',
+          'VIEWER',
+        )
+      ) {
+        cb?.({
+          ok: false,
+          code: 'FORBIDDEN',
+          message: 'Insufficient permission',
+        })
+        return
+      }
+
+      try {
+        const { commentId } = data
+        const record = await findCommentById(commentId)
+        if (!record) {
+          socket.emit('error', {
+            event: 'comment:update',
+            error: 'NOT_FOUND',
+            message: 'Comment not found',
+            commentId,
+          })
+          cb?.({ ok: false, code: 'NOT_FOUND', message: 'Comment not found' })
+          return
+        }
+        if (record.whiteboardId !== whiteboardId) {
+          socket.emit('error', {
+            event: 'comment:update',
+            error: 'FORBIDDEN',
+            message: 'Comment does not belong to this whiteboard',
+            commentId,
+          })
+          cb?.({
+            ok: false,
+            code: 'FORBIDDEN',
+            message: 'Comment does not belong to this whiteboard',
+          })
+          return
+        }
+        if (record.authorId !== userId) {
+          socket.emit('error', {
+            event: 'comment:update',
+            error: 'FORBIDDEN',
+            message: 'Only the author may edit this comment',
+            commentId,
+          })
+          cb?.({
+            ok: false,
+            code: 'FORBIDDEN',
+            message: 'Only the author may edit this comment',
+          })
+          return
+        }
+
+        const validated = updateCommentSchema.parse({ body: data.body })
+        const updated = await updateComment(commentId, validated)
+        socket.broadcast.emit('comment:updated', {
+          commentId,
+          body: updated.body,
+          updatedBy: userId,
+        })
+        cb?.({ ok: true, entity: updated })
+      } catch (error) {
+        console.error('Failed to update comment:', error)
+        const message =
+          error instanceof Error ? error.message : 'Failed to update comment'
+        socket.emit('error', {
+          event: 'comment:update',
+          error: 'VALIDATION_ERROR',
+          message,
+        })
+        cb?.({ ok: false, code: 'VALIDATION_ERROR', message })
+        return
+      }
+      await safeUpdateSessionActivity(socket.id)
+    },
+  )
+
+  // Resolve / reopen a root comment thread — VIEWER+
+  socket.on(
+    'comment:resolve',
+    async (
+      data: { commentId: string; resolved: boolean },
+      cb?: (res: AckResult) => void,
+    ) => {
+      if (isSessionExpired(socket)) {
+        socket.emit('session_expired')
+        socket.disconnect(true)
+        cb?.({ ok: false, code: 'SESSION_EXPIRED', message: 'Session expired' })
+        return
+      }
+      if (
+        await denyIfInsufficientPermission(
+          socket,
+          whiteboardId,
+          'comment:resolve',
+          'VIEWER',
+        )
+      ) {
+        cb?.({
+          ok: false,
+          code: 'FORBIDDEN',
+          message: 'Insufficient permission',
+        })
+        return
+      }
+
+      try {
+        const { commentId, resolved } = resolveCommentSchema.parse(data)
+        const record = await findCommentById(commentId)
+        if (!record) {
+          socket.emit('error', {
+            event: 'comment:resolve',
+            error: 'NOT_FOUND',
+            message: 'Comment not found',
+            commentId,
+          })
+          cb?.({ ok: false, code: 'NOT_FOUND', message: 'Comment not found' })
+          return
+        }
+        if (record.whiteboardId !== whiteboardId) {
+          socket.emit('error', {
+            event: 'comment:resolve',
+            error: 'FORBIDDEN',
+            message: 'Comment does not belong to this whiteboard',
+            commentId,
+          })
+          cb?.({
+            ok: false,
+            code: 'FORBIDDEN',
+            message: 'Comment does not belong to this whiteboard',
+          })
+          return
+        }
+
+        const updated = await resolveComment(commentId, resolved, userId)
+        socket.broadcast.emit('comment:resolved', {
+          commentId,
+          resolved,
+          resolvedBy: updated.resolvedBy,
+          resolvedAt: updated.resolvedAt,
+          updatedBy: userId,
+        })
+        cb?.({ ok: true, entity: updated })
+      } catch (error) {
+        console.error('Failed to resolve comment:', error)
+        const message =
+          error instanceof Error ? error.message : 'Failed to resolve comment'
+        socket.emit('error', {
+          event: 'comment:resolve',
+          error: 'VALIDATION_ERROR',
+          message,
+        })
+        cb?.({ ok: false, code: 'VALIDATION_ERROR', message })
+        return
+      }
+      await safeUpdateSessionActivity(socket.id)
+    },
+  )
+
+  // Comment deletion — author OR project ADMIN+ (moderation)
+  socket.on(
+    'comment:delete',
+    async (data: { commentId: string }, cb?: (res: AckResult) => void) => {
+      if (isSessionExpired(socket)) {
+        socket.emit('session_expired')
+        socket.disconnect(true)
+        cb?.({ ok: false, code: 'SESSION_EXPIRED', message: 'Session expired' })
+        return
+      }
+      if (
+        await denyIfInsufficientPermission(
+          socket,
+          whiteboardId,
+          'comment:delete',
+          'VIEWER',
+        )
+      ) {
+        cb?.({
+          ok: false,
+          code: 'FORBIDDEN',
+          message: 'Insufficient permission',
+        })
+        return
+      }
+
+      try {
+        const { commentId } = z
+          .object({ commentId: z.string().uuid() })
+          .parse(data)
+
+        const record = await findCommentById(commentId)
+        if (!record) {
+          socket.emit('error', {
+            event: 'comment:delete',
+            error: 'NOT_FOUND',
+            message: 'Comment not found',
+            commentId,
+          })
+          cb?.({ ok: false, code: 'NOT_FOUND', message: 'Comment not found' })
+          return
+        }
+        if (record.whiteboardId !== whiteboardId) {
+          socket.emit('error', {
+            event: 'comment:delete',
+            error: 'FORBIDDEN',
+            message: 'Comment does not belong to this whiteboard',
+            commentId,
+          })
+          cb?.({
+            ok: false,
+            code: 'FORBIDDEN',
+            message: 'Comment does not belong to this whiteboard',
+          })
+          return
+        }
+
+        // Author OR project ADMIN+ may delete (moderation).
+        if (record.authorId !== userId) {
+          const projectId = await getWhiteboardProjectId(whiteboardId)
+          const role = projectId
+            ? await findEffectiveRole(userId, projectId)
+            : null
+          if (!hasMinimumRole(role, 'ADMIN')) {
+            const message =
+              'Only the author or an admin may delete this comment'
+            socket.emit('error', {
+              event: 'comment:delete',
+              error: 'FORBIDDEN',
+              message,
+              commentId,
+            })
+            cb?.({ ok: false, code: 'FORBIDDEN', message })
+            return
+          }
+        }
+
+        await deleteComment(commentId)
+        socket.broadcast.emit('comment:deleted', {
+          commentId,
+          deletedBy: userId,
+        })
+        cb?.({ ok: true, entity: { id: commentId } })
+      } catch (error) {
+        console.error('Failed to delete comment:', error)
+        const message = 'Failed to delete comment'
+        socket.emit('error', {
+          event: 'comment:delete',
+          error: 'DELETE_FAILED',
+          message,
+          commentId: data.commentId,
         })
         cb?.({ ok: false, code: 'INTERNAL_ERROR', message })
         return

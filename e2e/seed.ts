@@ -7,14 +7,13 @@
 // Password hashing is replicated inline from src/lib/auth/password.ts
 // (SHA-256 pre-hash → bcrypt cost 12) rather than imported, to keep this
 // script free of app path-alias resolution.
-import { Database } from 'bun:sqlite'
 import { createHash } from 'node:crypto'
+import { Database } from 'bun:sqlite'
 import bcrypt from 'bcryptjs'
 import { E2E_USER, IDS } from './fixtures'
 
 const DB_PATH =
-  process.env.E2E_DB_PATH ??
-  new URL('../data/app.db', import.meta.url).pathname
+  process.env.E2E_DB_PATH ?? new URL('../data/app.db', import.meta.url).pathname
 
 async function hashPassword(password: string): Promise<string> {
   const sha256 = createHash('sha256').update(password).digest('hex')
@@ -70,10 +69,32 @@ db.query(
 
 db.query(
   'INSERT INTO "DiagramTable" (id, whiteboardId, name, description, positionX, positionY, width, height, createdAt, updatedAt) VALUES (?,?,?,?,?,?,?,?,?,?)',
-).run(IDS.usersTable, IDS.whiteboard, 'users', 'app users', 120, 120, 240, 160, now, now)
+).run(
+  IDS.usersTable,
+  IDS.whiteboard,
+  'users',
+  'app users',
+  120,
+  120,
+  240,
+  160,
+  now,
+  now,
+)
 db.query(
   'INSERT INTO "DiagramTable" (id, whiteboardId, name, description, positionX, positionY, width, height, createdAt, updatedAt) VALUES (?,?,?,?,?,?,?,?,?,?)',
-).run(IDS.ordersTable, IDS.whiteboard, 'orders', 'customer orders', 520, 320, 240, 160, now, now)
+).run(
+  IDS.ordersTable,
+  IDS.whiteboard,
+  'orders',
+  'customer orders',
+  520,
+  320,
+  240,
+  160,
+  now,
+  now,
+)
 
 const col = (
   cid: string,
@@ -130,5 +151,12 @@ db.query(
 db.query('DELETE FROM "WhiteboardSnapshot" WHERE whiteboardId = ?').run(
   IDS.whiteboard,
 )
+
+// Remove any comments from a prior run (canvas-comments e2e, GH #110) so
+// every run starts with an empty thread list. Defensive — the Project
+// cascade-delete above already removes these via Comment's FK to
+// Whiteboard, but the "leftover rows on the fixed ids" clause further up
+// re-inserts the SAME whiteboard id without going through that cascade.
+db.query('DELETE FROM "Comment" WHERE whiteboardId = ?').run(IDS.whiteboard)
 
 console.log(`[e2e seed] ok — whiteboard ${IDS.whiteboard}`)

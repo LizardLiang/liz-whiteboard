@@ -5,7 +5,7 @@
  */
 
 import { memo, useCallback, useEffect, useMemo, useRef, useState } from 'react'
-import { Link2 } from 'lucide-react'
+import { Link2, MessageCircle } from 'lucide-react'
 import { toast } from 'sonner'
 import { ColumnRow } from './column/ColumnRow'
 import { AddColumnRow } from './column/AddColumnRow'
@@ -13,6 +13,7 @@ import { DeleteColumnDialog } from './column/DeleteColumnDialog'
 import { InsertionLine } from './column/InsertionLine'
 import { TableNodeContextMenu } from './TableNodeContextMenu'
 import { TableRelationsPanel } from './TableRelationsPanel'
+import { CommentThreadPopover } from './CommentThreadPopover'
 import { useWhiteboardPermissions } from './whiteboard-permissions-context'
 import type { Column } from '@/data/models'
 import type {
@@ -63,6 +64,15 @@ export const TableNode = memo(
       isQueueFullForTable,
       setLocalDragging,
       bumpReorderTick,
+      commentThreads = [],
+      canComment = false,
+      currentUserId = '',
+      canModerateComments = false,
+      onCreateTableComment,
+      onReplyComment,
+      onEditComment,
+      onDeleteComment,
+      onResolveComment,
     } = data
 
     const columns = table.columns
@@ -124,6 +134,13 @@ export const TableNode = memo(
     const relatedEdges = useMemo(
       () => getDirectlyRelatedTableIds(table.id, relationsEdges).relatedEdges,
       [table.id, relationsEdges],
+    )
+
+    // Comment badge (GH #110) — count of UNRESOLVED threads anchored to this
+    // table, shown on the header comment button.
+    const unresolvedCommentCount = useMemo(
+      () => commentThreads.filter((t) => !t.root.resolved).length,
+      [commentThreads],
     )
 
     // --- Edit handlers ---
@@ -549,6 +566,67 @@ export const TableNode = memo(
                 <Link2 size={14} />
               </button>
 
+              {/* Comment badge (GH #110) — always visible when there are
+                  unresolved threads (or on header hover otherwise), like the
+                  relations trigger. Read-only viewers may still open it to
+                  read/reply/resolve — comments are VIEWER+, not EDITOR+. */}
+              {canComment && (
+                <CommentThreadPopover
+                  trigger={
+                    <button
+                      type="button"
+                      aria-label={
+                        unresolvedCommentCount > 0
+                          ? `${unresolvedCommentCount} unresolved comment${unresolvedCommentCount === 1 ? '' : 's'} on ${table.name}`
+                          : `Comment on ${table.name}`
+                      }
+                      data-testid="table-comment-trigger"
+                      className="nodrag nowheel relative flex items-center"
+                      style={{
+                        opacity:
+                          unresolvedCommentCount > 0 || isHeaderHovered ? 1 : 0,
+                        flexShrink: 0,
+                        background: 'none',
+                        border: 'none',
+                        cursor: 'pointer',
+                        padding: '2px',
+                        color:
+                          unresolvedCommentCount > 0
+                            ? 'var(--rf-edge-stroke-selected)'
+                            : 'var(--rf-table-header-text)',
+                        transition: 'opacity 0.1s',
+                      }}
+                    >
+                      <MessageCircle size={14} />
+                      {unresolvedCommentCount > 0 && (
+                        <span
+                          className="absolute -right-1.5 -top-1.5 flex h-3.5 min-w-3.5 items-center justify-center rounded-full px-0.5 text-[9px] font-semibold text-white"
+                          style={{
+                            background:
+                              'var(--rf-edge-stroke-selected, #6366f1)',
+                          }}
+                        >
+                          {unresolvedCommentCount}
+                        </span>
+                      )}
+                    </button>
+                  }
+                  threads={commentThreads}
+                  canComment={canComment}
+                  currentUserId={currentUserId}
+                  canModerateComments={canModerateComments}
+                  onCreateThread={(body) =>
+                    onCreateTableComment?.(table.id, body)
+                  }
+                  onReply={(parentId, body) => onReplyComment?.(parentId, body)}
+                  onEdit={(commentId, body) => onEditComment?.(commentId, body)}
+                  onDelete={(commentId) => onDeleteComment?.(commentId)}
+                  onResolve={(commentId, resolved) =>
+                    onResolveComment?.(commentId, resolved)
+                  }
+                />
+              )}
+
               {/* Delete button — visible on header hover. View-only viewers
                   don't get this affordance at all (server also blocks it). */}
               {canEdit && (
@@ -687,6 +765,17 @@ export const TableNode = memo(
       return false
     if (prev.data.setLocalDragging !== next.data.setLocalDragging) return false
     if (prev.data.bumpReorderTick !== next.data.bumpReorderTick) return false
+    if (prev.data.commentThreads !== next.data.commentThreads) return false
+    if (prev.data.canComment !== next.data.canComment) return false
+    if (prev.data.currentUserId !== next.data.currentUserId) return false
+    if (prev.data.canModerateComments !== next.data.canModerateComments)
+      return false
+    if (prev.data.onCreateTableComment !== next.data.onCreateTableComment)
+      return false
+    if (prev.data.onReplyComment !== next.data.onReplyComment) return false
+    if (prev.data.onEditComment !== next.data.onEditComment) return false
+    if (prev.data.onDeleteComment !== next.data.onDeleteComment) return false
+    if (prev.data.onResolveComment !== next.data.onResolveComment) return false
     return true
   },
 )

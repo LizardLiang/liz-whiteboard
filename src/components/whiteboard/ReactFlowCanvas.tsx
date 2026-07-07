@@ -26,6 +26,7 @@ import '@/styles/react-flow-theme.css'
 import { CardinalityMarkerDefs } from './CardinalityMarkerDefs'
 import type {
   AreaNodeType,
+  CommentNodeType,
   RelationshipEdgeType,
   TableNodeType,
 } from '@/lib/react-flow/types'
@@ -49,6 +50,12 @@ import { VIEWPORT_CONSTRAINTS } from '@/lib/react-flow/viewport'
  * constant keeps the identity stable across renders.
  */
 const EMPTY_AREA_NODES: Array<AreaNodeType> = []
+
+/**
+ * Stable empty default for the `commentNodes` prop (GH #110) — same rationale
+ * as EMPTY_AREA_NODES above.
+ */
+const EMPTY_COMMENT_NODES: Array<CommentNodeType> = []
 
 /**
  * ReactFlowCanvas Props
@@ -84,6 +91,13 @@ export interface ReactFlowCanvasProps {
    * the native delete flow never bypasses the table confirmation dialog).
    */
   onAreaDelete?: (areaId: string) => void
+  /**
+   * Free-canvas-point comment pin nodes (GH #110), kept separate from table
+   * nodes like areaNodes. Rendered ON TOP of tables (small markers, always
+   * clickable); non-draggable/non-deletable — see the node-level flags set
+   * where these are built in ReactFlowWhiteboard.
+   */
+  commentNodes?: Array<CommentNodeType>
   /** Callback when nodes change (position, selection, etc.) */
   onNodesChange?: OnNodesChange<TableNodeType>
   /** Callback when edges change */
@@ -115,8 +129,13 @@ export interface ReactFlowCanvasProps {
    * node/edge, regardless of neighbor hover/selection state).
    */
   relationsPreviewTableId?: string | null
-  /** Callback fired when the pane (empty canvas) is clicked */
-  onPaneClick?: () => void
+  /**
+   * Callback fired when the pane (empty canvas) is clicked. Receives the
+   * native mouse event so callers can derive a flow position (e.g.
+   * `screenToFlowPosition`) — used by the free-point comment placement tool
+   * (GH #110).
+   */
+  onPaneClick?: (event: ReactMouseEvent) => void
   /**
    * External "select this table" entry point for the Cmd/Ctrl+K search
    * palette. When `focusRequestToken` changes to a positive value, the canvas
@@ -161,6 +180,7 @@ export function ReactFlowCanvas({
   areaNodes = EMPTY_AREA_NODES,
   onAreaDragStop,
   onAreaDelete,
+  commentNodes = EMPTY_COMMENT_NODES,
   onNodesChange: onNodesChangeProp,
   onEdgesChange: onEdgesChangeProp,
   onConnect,
@@ -197,16 +217,35 @@ export function ReactFlowCanvas({
     () => new Set(areaNodesState.map((a) => a.id)),
     [areaNodesState],
   )
+
+  // Comment pin nodes (GH #110) — same separate-state pattern as areas, but
+  // rendered ON TOP of tables (merged last) since they are small clickable
+  // markers, not background regions.
+  const [commentNodesState, setCommentNodesState, handleCommentNodesChange] =
+    useNodesState<CommentNodeType>(commentNodes)
+  useEffect(() => {
+    setCommentNodesState(commentNodes)
+  }, [commentNodes, setCommentNodesState])
+  const commentIdSet = useMemo(
+    () => new Set(commentNodesState.map((c) => c.id)),
+    [commentNodesState],
+  )
+
   // Table nodes are never natively deletable (GH #106 Bug 1 fix) — Delete/
   // Backspace must always route through the table confirmation dialog
   // (useTableDeletion), never React Flow's own removal. Area nodes carry
-  // their own `deletable` (== canEdit) from the areaNodes prop.
+  // their own `deletable` (== canEdit) from the areaNodes prop. Comment pins
+  // are always non-deletable (deletion goes through the popover's own
+  // delete action) — see the node-level flags set in ReactFlowWhiteboard.
   const mergedNodes = useMemo(
     () => [
       ...areaNodesState,
-      ...nodes.map((n) => (n.deletable === false ? n : { ...n, deletable: false })),
+      ...nodes.map((n) =>
+        n.deletable === false ? n : { ...n, deletable: false },
+      ),
+      ...commentNodesState,
     ],
-    [areaNodesState, nodes],
+    [areaNodesState, nodes, commentNodesState],
   )
 
   // Selection and hover state for highlighting
@@ -377,20 +416,29 @@ export function ReactFlowCanvas({
     setEdges,
   ])
 
-  // Handle node click (selection + optional external callback)
+  // Handle node click (selection + optional external callback). Comment pins
+  // (GH #110) manage their own Popover open state internally and stop
+  // propagation on their trigger, so this should rarely fire for them — the
+  // commentIdSet guard is defense-in-depth against treating a comment's id
+  // as a table selection (which would spuriously clear real highlighting).
   const onNodeClick = useCallback<NodeMouseHandler>(
     (_event, node) => {
+      if (commentIdSet.has(node.id)) return
       setActiveTableId(node.id)
       onNodeClickProp?.(node.id)
     },
-    [onNodeClickProp],
+    [commentIdSet, onNodeClickProp],
   )
 
-  // Handle pane click (clear selection)
-  const onPaneClick = useCallback(() => {
-    setActiveTableId(null)
-    onPaneClickProp?.()
-  }, [onPaneClickProp])
+  // Handle pane click (clear selection). Forwards the native event so
+  // callers can derive a flow position (comment placement tool, GH #110).
+  const onPaneClick = useCallback(
+    (event: ReactMouseEvent) => {
+      setActiveTableId(null)
+      onPaneClickProp?.(event)
+    },
+    [onPaneClickProp],
+  )
 
   // Handle node mouse enter (hover) — skip during drag (ReactFlow fires this on drag end)
   const onNodeMouseEnter = useCallback<NodeMouseHandler>((_event, node) => {
@@ -441,7 +489,8 @@ export function ReactFlowCanvas({
       const memberIds = new Set(areaNode?.data.area.memberTableIds ?? [])
       const members = new Map<string, { x: number; y: number }>()
       nodes.forEach((n) => {
-        if (memberIds.has(n.id)) members.set(n.id, { x: n.position.x, y: n.position.y })
+        if (memberIds.has(n.id))
+          members.set(n.id, { x: n.position.x, y: n.position.y })
       })
       dragAreaMemberStartRef.current = {
         areaId: node.id,
@@ -468,14 +517,20 @@ export function ReactFlowCanvas({
           prevNodes.map((n) => {
             const start = drag.members.get(n.id)
             if (!start) return n
-            return { ...n, position: { x: start.x + deltaX, y: start.y + deltaY } }
+            return {
+              ...n,
+              position: { x: start.x + deltaX, y: start.y + deltaY },
+            }
           }),
         )
         const movedIds = new Set(drag.members.keys())
         const currentNodes = nodes.map((n) => {
           const start = drag.members.get(n.id)
           if (!start) return n
-          return { ...n, position: { x: start.x + deltaX, y: start.y + deltaY } }
+          return {
+            ...n,
+            position: { x: start.x + deltaX, y: start.y + deltaY },
+          }
         })
         setEdges((prevEdges) =>
           recalculateEdgesForDraggedNodes(prevEdges, currentNodes, movedIds),
@@ -518,7 +573,12 @@ export function ReactFlowCanvas({
           )
         }
         dragAreaMemberStartRef.current = null
-        onAreaDragStop?.(node.id, node.position.x, node.position.y, movedMembers)
+        onAreaDragStop?.(
+          node.id,
+          node.position.x,
+          node.position.y,
+          movedMembers,
+        )
         return
       }
 
@@ -536,27 +596,47 @@ export function ReactFlowCanvas({
       // Call the prop callback if provided
       onNodeDragStopProp?.(event, node, draggedNodes)
     },
-    [areaIdSet, onAreaDragStop, onNodeDragStopProp, mergeCurrentPositions, setEdges],
+    [
+      areaIdSet,
+      onAreaDragStop,
+      onNodeDragStopProp,
+      mergeCurrentPositions,
+      setEdges,
+    ],
   )
 
   // Handle nodes change with custom callback. React Flow fires a single
-  // onNodesChange for ALL nodes (tables + areas), so we partition by id: area
-  // changes go to the area state, table changes to the existing pipeline.
+  // onNodesChange for ALL nodes (tables + areas + comment pins), so we
+  // partition by id: area changes go to the area state, comment changes to
+  // the comment state, table changes to the existing pipeline.
   const onNodesChange: OnNodesChange<TableNodeType> = useCallback(
     (changes) => {
       const areaChanges: typeof changes = []
+      const commentChanges: typeof changes = []
       const tableChanges: typeof changes = []
       for (const change of changes) {
         if ('id' in change && areaIdSet.has(change.id)) areaChanges.push(change)
+        else if ('id' in change && commentIdSet.has(change.id))
+          commentChanges.push(change)
         else tableChanges.push(change)
       }
       if (areaChanges.length > 0) {
         handleAreaNodesChange(areaChanges as any)
       }
+      if (commentChanges.length > 0) {
+        handleCommentNodesChange(commentChanges as any)
+      }
       handleNodesChange(tableChanges)
       onNodesChangeProp?.(tableChanges)
     },
-    [areaIdSet, handleAreaNodesChange, handleNodesChange, onNodesChangeProp],
+    [
+      areaIdSet,
+      commentIdSet,
+      handleAreaNodesChange,
+      handleCommentNodesChange,
+      handleNodesChange,
+      onNodesChangeProp,
+    ],
   )
 
   // Handle edges change with custom callback

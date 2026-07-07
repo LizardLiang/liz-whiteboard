@@ -14,6 +14,8 @@ import type {
 } from '@/data/schema'
 import type { DiagramAST } from '@/lib/parser/ast'
 import type { ZoomControls } from '@/components/whiteboard/Toolbar'
+import type { CommentActions } from '@/components/whiteboard/ReactFlowWhiteboard'
+import type { CommentWithAuthor } from '@/data/models'
 import { Canvas, useCanvasControls } from '@/components/whiteboard/Canvas'
 import { TableNode } from '@/components/whiteboard/TableNode'
 import { RelationshipEdge } from '@/components/whiteboard/RelationshipEdge'
@@ -21,6 +23,7 @@ import { ReactFlowWhiteboard } from '@/components/whiteboard/ReactFlowWhiteboard
 import { WhiteboardAccessDenied } from '@/components/whiteboard/WhiteboardAccessDenied'
 import { Toolbar } from '@/components/whiteboard/Toolbar'
 import { WhiteboardHistoryPanel } from '@/components/whiteboard/WhiteboardHistoryPanel'
+import { WhiteboardCommentsPanel } from '@/components/whiteboard/WhiteboardCommentsPanel'
 import { Minimap } from '@/components/whiteboard/Minimap'
 import { useCollaboration } from '@/hooks/use-collaboration'
 import { useSqlImport } from '@/hooks/use-sql-import'
@@ -88,6 +91,19 @@ function WhiteboardEditor() {
   // ReactFlowWhiteboard, and rendering the panel from within
   // ReactFlowWhiteboard/Toolbar would create a circular import.
   const [historyOpen, setHistoryOpen] = useState(false)
+  // Canvas comments (GH #110) — panel + header badge state owned here for
+  // the same circular-import reason as historyOpen above. `comments`/
+  // `commentActions` are fed from ReactFlowWhiteboard's onCommentsChange/
+  // onCommentActionsReady ready-callbacks (the live socket-connected hook
+  // lives inside the canvas component, not here).
+  const [commentsOpen, setCommentsOpen] = useState(false)
+  const [comments, setComments] = useState<Array<CommentWithAuthor>>([])
+  const [commentActions, setCommentActions] = useState<CommentActions | null>(
+    null,
+  )
+  const commentUnreadCount = comments.filter(
+    (c) => c.parentId === null && !c.resolved,
+  ).length
   const [textSource, setTextSource] = useState<string>('')
   const [isTextSyncEnabled, setIsTextSyncEnabled] = useState(true)
   // React Flow display mode controls (set via callback)
@@ -692,6 +708,14 @@ function WhiteboardEditor() {
         <div className="flex items-center justify-between px-4 py-2 border-b">
           <h1 className="text-xl font-semibold">{whiteboard.name}</h1>
           <div className="flex items-center gap-2">
+            {USE_REACT_FLOW && commentUnreadCount > 0 && (
+              <span
+                className="rounded-full bg-destructive px-2 py-0.5 text-xs font-medium text-destructive-foreground"
+                title={`${commentUnreadCount} unresolved comment thread${commentUnreadCount === 1 ? '' : 's'}`}
+              >
+                {commentUnreadCount} unresolved
+              </span>
+            )}
             <span
               className={`text-sm ${
                 connectionState === 'connected'
@@ -748,6 +772,9 @@ function WhiteboardEditor() {
               onZoomControlsReady={handleZoomControlsReady}
               onZoomChange={handleZoomChange}
               onOpenHistory={() => setHistoryOpen(true)}
+              onOpenComments={() => setCommentsOpen(true)}
+              onCommentsChange={setComments}
+              onCommentActionsReady={setCommentActions}
             />
           ) : (
             /* Konva Canvas (legacy) */
@@ -823,6 +850,18 @@ function WhiteboardEditor() {
         open={historyOpen}
         onOpenChange={setHistoryOpen}
       />
+
+      {/* Canvas comments panel (GH #110) — React Flow path only; the legacy
+          Konva canvas has no comment pins to navigate to. */}
+      {USE_REACT_FLOW && (
+        <WhiteboardCommentsPanel
+          viewerRole={viewerRole}
+          comments={comments}
+          actions={commentActions}
+          open={commentsOpen}
+          onOpenChange={setCommentsOpen}
+        />
+      )}
     </div>
   )
 }

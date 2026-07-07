@@ -9,7 +9,7 @@ import type {
 } from '@/data/schema'
 import type { WhiteboardWithDiagram } from '@/data/whiteboard'
 import type { RelationshipWithDetails } from '@/data/relationship'
-import type { Area } from '@/data/models'
+import type { Area, CommentWithAuthor } from '@/data/models'
 import type { LayoutOptions, LayoutResult } from '@/lib/canvas/layout-engine'
 import type { EffectiveRole } from '@/data/permission'
 import {
@@ -27,6 +27,7 @@ import {
   findRelationshipsByWhiteboardIdWithDetails,
 } from '@/data/relationship'
 import { findAreasByWhiteboard } from '@/data/area'
+import { findCommentsByWhiteboardId } from '@/data/comment'
 import { computeLayout } from '@/lib/canvas/layout-engine'
 import { nowMs, transaction, update } from '@/db'
 import { requireAuth } from '@/lib/auth/middleware'
@@ -126,6 +127,30 @@ export const getWhiteboardAreas = createServerFn({
         throw error
       }
     }),
+  )
+
+/**
+ * Load all canvas comments (roots + replies) for a whiteboard (GH #110).
+ * Mirrors getWhiteboardAreas — VIEWER may read.
+ * @requires viewer
+ */
+export const getWhiteboardComments = createServerFn({
+  method: 'GET',
+})
+  .inputValidator((whiteboardId: string) => whiteboardId)
+  .handler(
+    requireAuth(
+      async ({ user }, whiteboardId): Promise<Array<CommentWithAuthor>> => {
+        const projectId = await getWhiteboardProjectId(whiteboardId)
+        await requireServerFnRole(user.id, projectId, 'VIEWER')
+        try {
+          return await findCommentsByWhiteboardId(whiteboardId)
+        } catch (error) {
+          console.error('Error fetching comments:', error)
+          throw error
+        }
+      },
+    ),
   )
 
 /**

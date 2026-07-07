@@ -249,4 +249,27 @@ CREATE TABLE IF NOT EXISTS "WhiteboardSnapshot" (
 );
 CREATE INDEX IF NOT EXISTS "WhiteboardSnapshot_whiteboardId_idx" ON "WhiteboardSnapshot"("whiteboardId");
 CREATE INDEX IF NOT EXISTS "WhiteboardSnapshot_whiteboardId_createdAt_idx" ON "WhiteboardSnapshot"("whiteboardId", "createdAt");
+
+CREATE TABLE IF NOT EXISTS "Comment" (
+    "id" TEXT NOT NULL PRIMARY KEY,
+    "whiteboardId" TEXT NOT NULL,
+    "parentId" TEXT,                 -- NULL = root/thread anchor; set = reply
+    "targetType" TEXT NOT NULL,      -- 'table' | 'point' (root only; replies copy 'thread')
+    "targetTableId" TEXT,            -- set when targetType='table'
+    "positionX" REAL,                -- flow coords; set when targetType='point'
+    "positionY" REAL,
+    "authorId" TEXT NOT NULL,
+    "body" TEXT NOT NULL,
+    "resolved" INTEGER NOT NULL DEFAULT 0,   -- root only
+    "resolvedBy" TEXT,
+    "resolvedAt" INTEGER,
+    "createdAt" INTEGER NOT NULL DEFAULT (unixepoch('now') * 1000),
+    "updatedAt" INTEGER NOT NULL,
+    CONSTRAINT "Comment_whiteboardId_fkey" FOREIGN KEY ("whiteboardId") REFERENCES "Whiteboard"("id") ON DELETE CASCADE ON UPDATE CASCADE,
+    CONSTRAINT "Comment_parentId_fkey"     FOREIGN KEY ("parentId")     REFERENCES "Comment"("id")    ON DELETE CASCADE ON UPDATE CASCADE,
+    CONSTRAINT "Comment_targetTableId_fkey" FOREIGN KEY ("targetTableId") REFERENCES "DiagramTable"("id") ON DELETE CASCADE ON UPDATE CASCADE
+);
+CREATE INDEX IF NOT EXISTS "Comment_whiteboardId_idx"  ON "Comment"("whiteboardId");
+CREATE INDEX IF NOT EXISTS "Comment_parentId_idx"      ON "Comment"("parentId");
+CREATE INDEX IF NOT EXISTS "Comment_targetTableId_idx" ON "Comment"("targetTableId");
 `

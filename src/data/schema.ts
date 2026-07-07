@@ -301,6 +301,92 @@ export const updateAreaSchema = z.object({
 })
 
 // ============================================================================
+// Comment Schemas (canvas comments / annotations, GH #110)
+// ============================================================================
+
+/**
+ * Target kind for a root comment. Replies (parentId set) do not carry a
+ * client-supplied targetType — the DAL stores the literal 'thread' for them
+ * (see src/data/comment.ts) so the DB column stays NOT NULL without asking
+ * reply payloads to fabricate a meaningless table/point target.
+ */
+export const commentTargetTypeSchema = z.enum(['table', 'point'])
+
+/**
+ * Schema for creating a comment (root or reply). `whiteboardId` is always
+ * injected server-side (socket handler merges it in before parsing) — never
+ * trusted from the client body directly for the IDOR-sensitive fields.
+ *
+ * Root (parentId absent): targetType is required, and must be consistent
+ * with the matching target field (table ⇒ targetTableId, point ⇒
+ * positionX + positionY).
+ * Reply (parentId present): target/position fields are ignored — no
+ * consistency requirement — the DAL discards them for reply rows.
+ */
+export const createCommentSchema = z
+  .object({
+    whiteboardId: z.string().uuid(),
+    parentId: z.string().uuid().nullish(),
+    targetType: commentTargetTypeSchema.optional(),
+    targetTableId: z.string().uuid().optional(),
+    positionX: z.number().finite().optional(),
+    positionY: z.number().finite().optional(),
+    body: z.string().min(1).max(2000),
+  })
+  .superRefine((data, ctx) => {
+    const isReply = data.parentId != null
+    if (isReply) return
+    if (!data.targetType) {
+      ctx.addIssue({
+        code: 'custom',
+        path: ['targetType'],
+        message: 'targetType is required for a new thread',
+      })
+      return
+    }
+    if (data.targetType === 'table' && !data.targetTableId) {
+      ctx.addIssue({
+        code: 'custom',
+        path: ['targetTableId'],
+        message: 'targetTableId is required when targetType is "table"',
+      })
+    }
+    if (
+      data.targetType === 'point' &&
+      (data.positionX == null || data.positionY == null)
+    ) {
+      ctx.addIssue({
+        code: 'custom',
+        path: ['positionX'],
+        message:
+          'positionX and positionY are required when targetType is "point"',
+      })
+    }
+  })
+
+/**
+ * Schema for editing a comment's body (author-only, enforced by the caller).
+ */
+export const updateCommentSchema = z.object({
+  body: z.string().min(1).max(2000),
+})
+
+/**
+ * Schema for resolving/reopening a root comment thread.
+ */
+export const resolveCommentSchema = z.object({
+  commentId: z.string().uuid(),
+  resolved: z.boolean(),
+})
+
+export type CommentTargetType = z.infer<typeof commentTargetTypeSchema>
+// Input type (not infer/output): targetType/parentId are optional at the
+// call site for replies — the parse+superRefine enforce the actual shape.
+export type CreateComment = z.input<typeof createCommentSchema>
+export type UpdateComment = z.infer<typeof updateCommentSchema>
+export type ResolveComment = z.infer<typeof resolveCommentSchema>
+
+// ============================================================================
 // CollaborationSession Schemas
 // ============================================================================
 

@@ -84,3 +84,21 @@ export async function getRelationshipProjectId(
     .get(relationshipId)
   return (row?.projectId as string | undefined) ?? null
 }
+
+/**
+ * Resolve projectId for a comment by comment ID (via its whiteboard, GH #110).
+ * Returns null if the comment does not exist.
+ */
+export async function getCommentProjectId(
+  commentId: string,
+): Promise<string | null> {
+  const row = db
+    .prepare(
+      `SELECT w."projectId" AS "projectId"
+       FROM "Comment" c
+       INNER JOIN "Whiteboard" w ON w."id" = c."whiteboardId"
+       WHERE c."id" = ?`,
+    )
+    .get(commentId)
+  return (row?.projectId as string | undefined) ?? null
+}

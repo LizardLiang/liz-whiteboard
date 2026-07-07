@@ -25,7 +25,7 @@ import {
   useUpdateNodeInternals,
   useViewport,
 } from '@xyflow/react'
-import { Minimize2, SquareDashed } from 'lucide-react'
+import { MessageCircle, Minimize2, SquareDashed } from 'lucide-react'
 import { toast } from 'sonner'
 import { ReactFlowCanvas } from './ReactFlowCanvas'
 import { ConnectionStatusIndicator } from './ConnectionStatusIndicator'
@@ -40,11 +40,13 @@ import type { Connection } from '@xyflow/react'
 import type { ZoomControls } from './Toolbar'
 import type {
   AreaNodeType,
+  CommentNodeType,
+  CommentThreadVM,
   RelationshipEdgeType,
   ShowMode,
   TableNodeType,
 } from '@/lib/react-flow/types'
-import type { Column } from '@/data/models'
+import type { Column, CommentWithAuthor } from '@/data/models'
 import type { EffectiveRole } from '@/data/permission'
 import type {
   Cardinality,
@@ -65,6 +67,7 @@ import { hasMinimumRole } from '@/lib/auth/permissions'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
+import { Textarea } from '@/components/ui/textarea'
 import {
   Dialog,
   DialogContent,
@@ -91,6 +94,7 @@ import {
   getWhiteboardWithDiagram,
 } from '@/lib/server-functions'
 import { useWhiteboardAreas } from '@/hooks/use-whiteboard-areas'
+import { useWhiteboardComments } from '@/hooks/use-whiteboard-comments'
 import { DEFAULT_AREA_COLOR } from '@/lib/area-colors'
 import {
   computeAreaBounds,
@@ -131,6 +135,26 @@ interface PendingConnection {
   targetColumnId: string
 }
 
+/**
+ * Live comment mutation entry points (GH #110), exposed upward once via
+ * `onCommentActionsReady` — mirrors the `onZoomControlsReady`/
+ * `onDisplayModeReady` "ready callback" convention already used by this
+ * component. Lets the route-level WhiteboardCommentsPanel (which cannot see
+ * the socket hook directly — it's rendered outside this component to avoid
+ * a circular import, same reason as WhiteboardHistoryPanel) drive
+ * reply/edit/delete/resolve/create through the SAME socket-connected hook
+ * instance, and pan the live canvas to a given comment's anchor.
+ */
+export interface CommentActions {
+  createComment: ReturnType<typeof useWhiteboardComments>['createComment']
+  addReply: ReturnType<typeof useWhiteboardComments>['addReply']
+  editComment: ReturnType<typeof useWhiteboardComments>['editComment']
+  deleteComment: ReturnType<typeof useWhiteboardComments>['deleteComment']
+  resolveComment: ReturnType<typeof useWhiteboardComments>['resolveComment']
+  /** Pan/fit the live canvas to a comment's anchor (table or point). */
+  panToComment: (comment: CommentWithAuthor) => void
+}
+
 /** Cardinality options for the picker dialog */
 const CARDINALITY_OPTIONS: Array<{ value: Cardinality; label: string }> = [
   { value: 'ONE_TO_ONE', label: 'One to One (1:1)' },
@@ -160,6 +184,14 @@ const CARDINALITY_OPTIONS: Array<{ value: Cardinality; label: string }> = [
     label: 'Zero or Many to Zero or Many',
   },
 ]
+
+/**
+ * Stable empty default for a table node's `commentThreads` data field
+ * (GH #110) — avoids a fresh `[]` identity on every injection-effect run
+ * for tables with no comments, mirroring EMPTY_AREA_NODES's rationale in
+ * ReactFlowCanvas.tsx.
+ */
+const EMPTY_COMMENT_THREADS: Array<CommentThreadVM> = []
 
 /**
  * ReactFlowWhiteboard Props
@@ -203,6 +235,23 @@ export interface ReactFlowWhiteboardProps {
    */
   onOpenHistory?: () => void
   /**
+   * Callback to open the canvas comments panel (GH #110). Forwarded to the
+   * Toolbar, mirroring onOpenHistory — the panel itself is rendered by the
+   * caller (route) to avoid a circular import.
+   */
+  onOpenComments?: () => void
+  /**
+   * Fires whenever the live comment list changes (initial load + every
+   * socket event) so the caller can derive the header unread badge without
+   * a second, disconnected query (GH #110).
+   */
+  onCommentsChange?: (comments: Array<CommentWithAuthor>) => void
+  /**
+   * Fires once with the live comment mutation entry points (GH #110) — see
+   * the `CommentActions` doc comment above.
+   */
+  onCommentActionsReady?: (actions: CommentActions) => void
+  /**
    * Renders a static, no-auth, read-only view (GH #109 public share links):
    * skips the two authed data queries in favor of `data` below, forces
    * nodesDraggable to false, hides the Toolbar and zen-mode chrome, opens NO
@@ -242,6 +291,9 @@ function ReactFlowWhiteboardInner({
   onZoomControlsReady,
   onZoomChange,
   onOpenHistory,
+  onOpenComments,
+  onCommentsChange,
+  onCommentActionsReady,
 }: {
   whiteboardId: string
   userId: string
@@ -264,6 +316,9 @@ function ReactFlowWhiteboardInner({
   onZoomControlsReady?: (controls: ZoomControls) => void
   onZoomChange?: (zoom: number) => void
   onOpenHistory?: () => void
+  onOpenComments?: () => void
+  onCommentsChange?: (comments: Array<CommentWithAuthor>) => void
+  onCommentActionsReady?: (actions: CommentActions) => void
 }) {
   const queryClient = useQueryClient()
 
@@ -1507,6 +1562,207 @@ function ReactFlowWhiteboardInner({
     emit: emitCollabEvent,
   })
 
+  // ── Canvas comments (GH #110) ──────────────────────────────────────────────
+  // Threaded comments anchored to a table or a free canvas point. VIEWER+ may
+  // participate — independent of `canEdit` (EDITOR+), which only gates the
+  // diagram-mutating affordances above.
+  const canComment = hasMinimumRole(viewerRole, 'VIEWER')
+  const canModerateComments = hasMinimumRole(viewerRole, 'ADMIN')
+  const {
+    comments,
+    createComment: createCommentMutation,
+    addReply: addReplyMutation,
+    editComment: editCommentMutation,
+    deleteComment: deleteCommentMutation,
+    resolveComment: resolveCommentMutation,
+  } = useWhiteboardComments({
+    whiteboardId,
+    userId,
+    enabled: collaborationEnabled,
+    on: onCollabEvent,
+    off: offCollabEvent,
+    emit: emitCollabEvent,
+  })
+
+  // Expose the live comment list to the caller (route-level unread badge +
+  // side panel) — see the CommentActions doc comment for why this is a
+  // ready-callback rather than a second query.
+  useEffect(() => {
+    onCommentsChange?.(comments)
+  }, [comments, onCommentsChange])
+
+  const handleReplyComment = useCallback(
+    (parentId: string, body: string) => addReplyMutation(parentId, body),
+    [addReplyMutation],
+  )
+  const handleEditComment = useCallback(
+    (commentId: string, body: string) => editCommentMutation(commentId, body),
+    [editCommentMutation],
+  )
+  const handleDeleteComment = useCallback(
+    (commentId: string) => deleteCommentMutation(commentId),
+    [deleteCommentMutation],
+  )
+  const handleResolveComment = useCallback(
+    (commentId: string, resolved: boolean) =>
+      resolveCommentMutation(commentId, resolved),
+    [resolveCommentMutation],
+  )
+  const handleCreateTableComment = useCallback(
+    (tableId: string, body: string) =>
+      createCommentMutation({
+        targetType: 'table',
+        targetTableId: tableId,
+        body,
+      }),
+    [createCommentMutation],
+  )
+
+  // Group the flat comment list into per-anchor threads (root + replies).
+  // Count of unresolved root threads — drives the Toolbar's Comments badge
+  // (this component's own toolbar; the route-level header badge derives the
+  // same count from onCommentsChange).
+  const commentUnreadCount = useMemo(
+    () => comments.filter((c) => c.parentId === null && !c.resolved).length,
+    [comments],
+  )
+
+  const commentThreadsByTable = useMemo(() => {
+    const roots = comments.filter(
+      (c) => c.parentId === null && c.targetType === 'table',
+    )
+    const repliesByParent = new Map<string, Array<CommentWithAuthor>>()
+    for (const c of comments) {
+      if (c.parentId === null) continue
+      if (!repliesByParent.has(c.parentId)) repliesByParent.set(c.parentId, [])
+      repliesByParent.get(c.parentId)!.push(c)
+    }
+    const byTable = new Map<string, Array<CommentThreadVM>>()
+    for (const root of roots) {
+      if (!root.targetTableId) continue
+      const thread: CommentThreadVM = {
+        root,
+        replies: repliesByParent.get(root.id) ?? [],
+      }
+      if (!byTable.has(root.targetTableId)) byTable.set(root.targetTableId, [])
+      byTable.get(root.targetTableId)!.push(thread)
+    }
+    return byTable
+  }, [comments])
+
+  const pointThreads = useMemo<Array<CommentThreadVM>>(() => {
+    const roots = comments.filter(
+      (c) => c.parentId === null && c.targetType === 'point',
+    )
+    const repliesByParent = new Map<string, Array<CommentWithAuthor>>()
+    for (const c of comments) {
+      if (c.parentId === null) continue
+      if (!repliesByParent.has(c.parentId)) repliesByParent.set(c.parentId, [])
+      repliesByParent.get(c.parentId)!.push(c)
+    }
+    return roots.map((root) => ({
+      root,
+      replies: repliesByParent.get(root.id) ?? [],
+    }))
+  }, [comments])
+
+  // Build the free-point comment pin nodes — merged into the canvas ON TOP
+  // of tables via ReactFlowCanvas's `commentNodes` prop.
+  const commentNodes = useMemo<Array<CommentNodeType>>(
+    () =>
+      pointThreads
+        .filter((t) => t.root.positionX != null && t.root.positionY != null)
+        .map((thread) => ({
+          id: `comment:${thread.root.id}`,
+          type: 'comment',
+          position: { x: thread.root.positionX!, y: thread.root.positionY! },
+          draggable: false,
+          selectable: true,
+          deletable: false,
+          zIndex: 1500,
+          data: {
+            thread,
+            canComment,
+            currentUserId: userId,
+            canModerateComments,
+            onReply: handleReplyComment,
+            onEdit: handleEditComment,
+            onDelete: handleDeleteComment,
+            onResolve: handleResolveComment,
+          },
+        })),
+    [
+      pointThreads,
+      canComment,
+      canModerateComments,
+      userId,
+      handleReplyComment,
+      handleEditComment,
+      handleDeleteComment,
+      handleResolveComment,
+    ],
+  )
+
+  // Pan/fit the live canvas to a comment's anchor — used by the side panel's
+  // "jump to pin" action (exposed via onCommentActionsReady below).
+  const handlePanToComment = useCallback(
+    (comment: CommentWithAuthor) => {
+      if (comment.targetType === 'table' && comment.targetTableId) {
+        void reactFlowInstance.fitView({
+          nodes: [{ id: comment.targetTableId }],
+          duration: 300,
+          maxZoom: 1.2,
+        })
+        return
+      }
+      if (
+        comment.targetType === 'point' &&
+        comment.positionX != null &&
+        comment.positionY != null
+      ) {
+        reactFlowInstance.setCenter(comment.positionX, comment.positionY, {
+          zoom: 1,
+          duration: 300,
+        })
+      }
+    },
+    [reactFlowInstance],
+  )
+
+  // Expose the live comment mutation entry points once — mirrors
+  // onZoomControlsReady/onDisplayModeReady (see CommentActions doc comment).
+  useEffect(() => {
+    onCommentActionsReady?.({
+      createComment: createCommentMutation,
+      addReply: addReplyMutation,
+      editComment: editCommentMutation,
+      deleteComment: deleteCommentMutation,
+      resolveComment: resolveCommentMutation,
+      panToComment: handlePanToComment,
+    })
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- ready-callback fires once per identity change, mirrors onZoomControlsReady
+  }, [
+    onCommentActionsReady,
+    createCommentMutation,
+    addReplyMutation,
+    editCommentMutation,
+    deleteCommentMutation,
+    resolveCommentMutation,
+    handlePanToComment,
+  ])
+
+  // Free-point comment placement tool (GH #110) — toggled from the floating
+  // toolbar button; while active, the next pane click captures a flow
+  // position and opens the "new comment" dialog (shadcn Dialog, not a native
+  // prompt — keeps the UI shadcn-only while still supporting click-to-place,
+  // since the comment body cannot be empty per createCommentSchema).
+  const [commentToolActive, setCommentToolActive] = useState(false)
+  const [pendingCommentPosition, setPendingCommentPosition] = useState<{
+    x: number
+    y: number
+  } | null>(null)
+  const [pendingCommentBody, setPendingCommentBody] = useState('')
+
   const handleAreaResize = useCallback(
     (
       areaId: string,
@@ -1741,7 +1997,10 @@ function ReactFlowWhiteboardInner({
       // silently out of sync with the DB).
       const previousArea = areasRef.current.find((a) => a.id === areaId)
       const previousAreaPosition = previousArea
-        ? { positionX: previousArea.positionX, positionY: previousArea.positionY }
+        ? {
+            positionX: previousArea.positionX,
+            positionY: previousArea.positionY,
+          }
         : null
       const previousMemberPositions = movedMembers
         .map((m) => nodesRef.current.find((n) => n.id === m.id))
@@ -1775,7 +2034,11 @@ function ReactFlowWhiteboardInner({
         // (same latent bug Auto Layout had — this path moves members via
         // setNodes/native RF drag state only, never the cache, until now).
         patchWhiteboardTablePositions(
-          movedMembers.map((m) => ({ id: m.id, x: m.positionX, y: m.positionY })),
+          movedMembers.map((m) => ({
+            id: m.id,
+            x: m.positionX,
+            y: m.positionY,
+          })),
         )
       }
 
@@ -1975,6 +2238,42 @@ function ReactFlowWhiteboardInner({
     setNodes,
   ])
 
+  // Inject comment threads + handlers into every table node's data (GH #110)
+  // — same "always fresh on data OR node-set change" rationale as the area
+  // injection effect above.
+  useEffect(() => {
+    setNodes((prev) =>
+      prev.map((n) => ({
+        ...n,
+        data: {
+          ...n.data,
+          commentThreads:
+            commentThreadsByTable.get(n.id) ?? EMPTY_COMMENT_THREADS,
+          canComment,
+          currentUserId: userId,
+          canModerateComments,
+          onCreateTableComment: handleCreateTableComment,
+          onReplyComment: handleReplyComment,
+          onEditComment: handleEditComment,
+          onDeleteComment: handleDeleteComment,
+          onResolveComment: handleResolveComment,
+        },
+      })),
+    )
+  }, [
+    commentThreadsByTable,
+    canComment,
+    canModerateComments,
+    userId,
+    handleCreateTableComment,
+    handleReplyComment,
+    handleEditComment,
+    handleDeleteComment,
+    handleResolveComment,
+    initialNodes,
+    setNodes,
+  ])
+
   // Create a new area at the current viewport center.
   const handleCreateArea = useCallback(() => {
     const width = 360
@@ -2113,8 +2412,7 @@ function ReactFlowWhiteboardInner({
       // (join ⇒ not previously a member; leave ⇒ center outside; refit ⇒
       // member & inside), so the one-tick-stale `areasRef` is safe here.
       const rfNode = reactFlowInstance.getNode(node.id)
-      const w =
-        rfNode?.measured?.width ?? LAYOUT_CONSTRAINTS.DEFAULT_NODE_WIDTH
+      const w = rfNode?.measured?.width ?? LAYOUT_CONSTRAINTS.DEFAULT_NODE_WIDTH
       const h =
         rfNode?.measured?.height ??
         calculateTableHeight(node.data.table.columns.length)
@@ -2268,6 +2566,8 @@ function ReactFlowWhiteboardInner({
             onZenModeToggle={toggleZenMode}
             onOpenSearch={() => setSearchOpen(true)}
             onOpenHistory={onOpenHistory}
+            onOpenComments={onOpenComments}
+            commentUnreadCount={commentUnreadCount}
             mcpEndpointUrl={mcpEndpointUrl ?? undefined}
             onExport={handleExport}
             canExport={nodes.length > 0}
@@ -2344,10 +2644,28 @@ function ReactFlowWhiteboardInner({
               Add area
             </Button>
           )}
+          {canComment && !isPublic && (
+            <Button
+              variant={commentToolActive ? 'default' : 'outline'}
+              size="sm"
+              onClick={() => setCommentToolActive((prev) => !prev)}
+              title={
+                commentToolActive
+                  ? 'Click the canvas to place a comment'
+                  : 'Add a comment pin'
+              }
+              aria-pressed={commentToolActive}
+              className="absolute left-4 top-14 z-10"
+            >
+              <MessageCircle className="mr-2 h-4 w-4" />
+              {commentToolActive ? 'Click canvas...' : 'Add comment'}
+            </Button>
+          )}
           <ReactFlowCanvas
             initialNodes={nodes}
             initialEdges={edges}
             areaNodes={areaNodes}
+            commentNodes={commentNodes}
             onAreaDragStop={handleAreaDragStop}
             onAreaDelete={deleteAreaMutation}
             onConnect={handleConnect}
@@ -2364,10 +2682,74 @@ function ReactFlowWhiteboardInner({
               includeHiddenNodes: false,
             }}
             relationsPreviewTableId={relationsPreviewTableId}
-            onPaneClick={() => setRelationsPreviewTableId(null)}
+            onPaneClick={(event) => {
+              setRelationsPreviewTableId(null)
+              if (!commentToolActive) return
+              const pos = reactFlowInstance.screenToFlowPosition({
+                x: event.clientX,
+                y: event.clientY,
+              })
+              setPendingCommentPosition(pos)
+              setCommentToolActive(false)
+            }}
             focusRequestTableId={focusRequestTableId}
             focusRequestToken={focusRequestToken}
           />
+
+          {/* New free-point comment dialog (GH #110) — opened after a
+              placement click; body cannot be empty per createCommentSchema,
+              so the pin is only created once the user confirms text here. */}
+          <Dialog
+            open={pendingCommentPosition !== null}
+            onOpenChange={(open) => {
+              if (!open) {
+                setPendingCommentPosition(null)
+                setPendingCommentBody('')
+              }
+            }}
+          >
+            <DialogContent className="sm:max-w-sm">
+              <DialogHeader>
+                <DialogTitle>New comment</DialogTitle>
+              </DialogHeader>
+              <Textarea
+                autoFocus
+                value={pendingCommentBody}
+                onChange={(e) =>
+                  setPendingCommentBody(e.target.value.slice(0, 2000))
+                }
+                placeholder="Add a comment..."
+                className="min-h-24"
+              />
+              <DialogFooter>
+                <Button
+                  variant="outline"
+                  onClick={() => {
+                    setPendingCommentPosition(null)
+                    setPendingCommentBody('')
+                  }}
+                >
+                  Cancel
+                </Button>
+                <Button
+                  disabled={pendingCommentBody.trim().length === 0}
+                  onClick={() => {
+                    if (!pendingCommentPosition) return
+                    createCommentMutation({
+                      targetType: 'point',
+                      positionX: pendingCommentPosition.x,
+                      positionY: pendingCommentPosition.y,
+                      body: pendingCommentBody.trim(),
+                    })
+                    setPendingCommentPosition(null)
+                    setPendingCommentBody('')
+                  }}
+                >
+                  Comment
+                </Button>
+              </DialogFooter>
+            </DialogContent>
+          </Dialog>
 
           {/* Focus View Overlay — read-only sub-canvas for the selected table + 1-hop neighbors */}
           <TableFocusOverlay
@@ -2459,6 +2841,9 @@ export function ReactFlowWhiteboard({
   onZoomControlsReady,
   onZoomChange,
   onOpenHistory,
+  onOpenComments,
+  onCommentsChange,
+  onCommentActionsReady,
 }: ReactFlowWhiteboardProps) {
   // Fetch whiteboard data with tables — disabled on the public read-only
   // path (GH #109): that path never has an authenticated session, and
@@ -2588,6 +2973,9 @@ export function ReactFlowWhiteboard({
         onZoomControlsReady={onZoomControlsReady}
         onZoomChange={onZoomChange}
         onOpenHistory={onOpenHistory}
+        onOpenComments={onOpenComments}
+        onCommentsChange={onCommentsChange}
+        onCommentActionsReady={onCommentActionsReady}
       />
     </ReactFlowProvider>
   )

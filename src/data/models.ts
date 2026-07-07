@@ -248,3 +248,39 @@ export interface Area {
   createdAt: Date
   updatedAt: Date
 }
+
+/**
+ * Canvas comment / annotation (GH #110). A root comment (`parentId === null`)
+ * anchors a thread either to a table (`targetType === 'table'`,
+ * `targetTableId` set) or to a free canvas point (`targetType === 'point'`,
+ * `positionX`/`positionY` set). A reply (`parentId` set) always stores
+ * `targetType === 'thread'` and null target/position fields — target
+ * consistency only applies to the root. `resolved`/`resolvedBy`/`resolvedAt`
+ * are meaningful only on the root; replies leave them at their defaults.
+ */
+export interface Comment {
+  id: string
+  whiteboardId: string
+  parentId: string | null
+  targetType: string
+  targetTableId: string | null
+  positionX: number | null
+  positionY: number | null
+  authorId: string
+  body: string
+  resolved: boolean
+  resolvedBy: string | null
+  resolvedAt: Date | null
+  createdAt: Date
+  updatedAt: Date
+}
+
+/**
+ * Comment row joined with its author's display fields (read/broadcast
+ * payload shape) — commenters may be offline, so this is resolved from the
+ * `User` table directly, never from the live `activeUsers` collaboration set.
+ */
+export interface CommentWithAuthor extends Comment {
+  authorName: string
+  authorEmail: string
+}

@@ -6,10 +6,25 @@
  */
 
 import type { Edge, Node } from '@xyflow/react'
-import type { Area, Column, DiagramTable, Relationship } from '@/data/models'
+import type {
+  Area,
+  Column,
+  CommentWithAuthor,
+  DiagramTable,
+  Relationship,
+} from '@/data/models'
 import type { Cardinality, UpdateColumn } from '@/data/schema'
 import type { CreateColumnPayload } from '@/components/whiteboard/column/types'
 import type { Dialect } from '@/lib/ddl-generator'
+
+/**
+ * A root comment (GH #110) plus its flat replies — the view-model shape
+ * consumed by CommentThreadPopover, the table comment badge, and CommentNode.
+ */
+export interface CommentThreadVM {
+  root: CommentWithAuthor
+  replies: Array<CommentWithAuthor>
+}
 
 /**
  * Display mode for table nodes
@@ -138,6 +153,37 @@ export interface TableNodeData extends Record<string, unknown> {
 
   /** Column reorder: bump the reorder tick to trigger updateNodeInternals */
   bumpReorderTick?: (tableId: string) => void
+
+  /**
+   * Comment threads anchored to this table (GH #110) — each a root comment
+   * plus its flat replies. Drives the header comment badge's unresolved
+   * count and the popover's thread list.
+   */
+  commentThreads?: Array<CommentThreadVM>
+
+  /** Whether the current viewer may comment (VIEWER+, independent of canEdit). */
+  canComment?: boolean
+
+  /** Current authenticated user id — for author-only edit/delete gating. */
+  currentUserId?: string
+
+  /** Whether the current viewer may delete ANY comment (project ADMIN+). */
+  canModerateComments?: boolean
+
+  /** Start a new comment thread anchored to this table. */
+  onCreateTableComment?: (tableId: string, body: string) => void
+
+  /** Reply to an existing comment thread. */
+  onReplyComment?: (parentId: string, body: string) => void
+
+  /** Edit a comment's body (author-only). */
+  onEditComment?: (commentId: string, body: string) => void
+
+  /** Delete a comment (author or moderator). */
+  onDeleteComment?: (commentId: string) => void
+
+  /** Resolve/reopen a root comment thread. */
+  onResolveComment?: (commentId: string, resolved: boolean) => void
 }
 
 /**
@@ -225,6 +271,29 @@ export interface AreaNodeData extends Record<string, unknown> {
  * Complete subject-area node type for React Flow
  */
 export type AreaNodeType = Node<AreaNodeData, 'area'>
+
+/**
+ * Data structure for a free-canvas-point comment pin (GH #110). Each node
+ * represents exactly one thread (root + replies) anchored at a flow-space
+ * point — unlike table pins, which can hold multiple threads per table.
+ * Rendered non-draggable/non-deletable so it never steals drag/select from
+ * table nodes; deletion goes through the popover's delete action instead.
+ */
+export interface CommentNodeData extends Record<string, unknown> {
+  thread: CommentThreadVM
+  canComment: boolean
+  currentUserId: string
+  canModerateComments: boolean
+  onReply: (parentId: string, body: string) => void
+  onEdit: (commentId: string, body: string) => void
+  onDelete: (commentId: string) => void
+  onResolve: (commentId: string, resolved: boolean) => void
+}
+
+/**
+ * Complete free-point comment node type for React Flow
+ */
+export type CommentNodeType = Node<CommentNodeData, 'comment'>
 
 /**
  * Canvas viewport state (replaces Konva CanvasViewport)

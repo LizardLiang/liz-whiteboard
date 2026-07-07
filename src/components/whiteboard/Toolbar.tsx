@@ -9,6 +9,7 @@ import {
   Link2,
   Loader2,
   Maximize2,
+  MessageCircle,
   Search,
 } from 'lucide-react'
 import { toast } from 'sonner'
@@ -24,6 +25,7 @@ import type {
 import type { ShowMode } from '@/lib/react-flow/types'
 import type { EffectiveRole } from '@/data/permission'
 import type { DiagramAST } from '@/lib/parser/ast'
+import { Badge } from '@/components/ui/badge'
 import { hasMinimumRole } from '@/lib/auth/permissions'
 import { Button } from '@/components/ui/button'
 import { Label } from '@/components/ui/label'
@@ -96,6 +98,13 @@ export interface ToolbarProps {
    * History button is rendered. Visible to VIEWER+ — the panel itself gates
    * Save/Restore to EDITOR+ internally. */
   onOpenHistory?: () => void
+  /** Callback to open the canvas comments panel (GH #110). When omitted, no
+   * Comments button is rendered. Visible to VIEWER+ (comments are a
+   * VIEWER+ affordance, independent of the write-gated buttons above). */
+  onOpenComments?: () => void
+  /** Count of unresolved comment threads (GH #110) — shown as a badge on
+   * the Comments button when > 0. */
+  commentUnreadCount?: number
   /** MCP endpoint URL — when provided, a Copy-MCP-URL button is rendered */
   mcpEndpointUrl?: string
   /** Callback when the user confirms an export in the Export dialog. When
@@ -203,6 +212,8 @@ export function Toolbar({
   onZenModeToggle,
   onOpenSearch,
   onOpenHistory,
+  onOpenComments,
+  commentUnreadCount = 0,
   mcpEndpointUrl,
   onExport,
   canExport = false,
@@ -896,6 +907,30 @@ export function Toolbar({
             onClick={onOpenHistory}
           >
             <History className="h-4 w-4" />
+          </Button>
+        )}
+
+        {/* Canvas comments (GH #110) — visible to VIEWER+; the panel itself
+            is rendered by the caller (route) to avoid a circular import,
+            same rationale as the history panel above. */}
+        {onOpenComments && (
+          <Button
+            variant="outline"
+            size="icon"
+            title="Comments"
+            aria-label="Comments"
+            className="relative"
+            onClick={onOpenComments}
+          >
+            <MessageCircle className="h-4 w-4" />
+            {commentUnreadCount > 0 && (
+              <Badge
+                variant="destructive"
+                className="absolute -right-1.5 -top-1.5 h-4 min-w-4 justify-center rounded-full px-1 text-[10px]"
+              >
+                {commentUnreadCount}
+              </Badge>
+            )}
           </Button>
         )}
       </div>
