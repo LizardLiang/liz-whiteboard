@@ -45,7 +45,7 @@ export class SqlImportSessionExpiredError extends Error {
   }
 }
 
-/** Same auto-layout options $whiteboardId.new.tsx's Auto Layout button uses. */
+/** Same auto-layout options the toolbar's Auto Layout button uses. */
 function defaultLayoutOptions() {
   return {
     width: window.innerWidth,
@@ -155,7 +155,7 @@ export function useSqlImport(whiteboardId: string) {
 
       // Trigger the existing (server-computed) auto-layout pass so imported
       // tables don't overlap the existing diagram — reuses computeAutoLayout,
-      // the same primitive $whiteboardId.new.tsx's Auto Layout button calls.
+      // the same primitive the toolbar's Auto Layout button calls.
       // Server-side layout avoids racing this hook's own query invalidation
       // against whichever surface's client-side node state hasn't refetched
       // yet, since it recomputes positions directly from the freshly
