@@ -6,17 +6,16 @@
  */
 
 import { memo, useCallback, useState } from 'react'
-import { Handle, Position } from '@xyflow/react'
 import { useWhiteboardPermissions } from '../whiteboard-permissions-context'
 import { InlineNameEditor } from './InlineNameEditor'
 import { DataTypeSelector } from './DataTypeSelector'
 import { ConstraintBadges } from './ConstraintBadges'
 import { ColumnNotePopover } from './ColumnNotePopover'
 import { DragHandle } from './DragHandle'
+import { ColumnHandles } from './ColumnHandles'
 import type { Column } from '@/data/models'
 import type { RelationshipEdgeType, ShowMode } from '@/lib/react-flow/types'
 import type { EditingField } from './types'
-import { createColumnHandleId } from '@/lib/react-flow/edge-routing'
 import {
   Tooltip,
   TooltipContent,
@@ -188,21 +187,8 @@ export const ColumnRow = memo(
           onPointerDown={onDragHandlePointerDown}
           show={showMode === 'ALL_FIELDS'}
         />
-        {/* Left-side handles */}
-        <Handle
-          type="source"
-          position={Position.Left}
-          id={createColumnHandleId(tableId, column.id, 'left', 'source')}
-          className="nodrag"
-          style={{ left: '-14px' }}
-        />
-        <Handle
-          type="target"
-          position={Position.Left}
-          id={createColumnHandleId(tableId, column.id, 'left', 'target')}
-          className="nodrag"
-          style={{ left: '-14px' }}
-        />
+        {/* Column-level connection handles (left + right, source + target) */}
+        <ColumnHandles tableId={tableId} columnId={column.id} />
 
         {/* Constraint Badges */}
         <ConstraintBadges
@@ -367,21 +353,6 @@ export const ColumnRow = memo(
           </button>
         )}
 
-        {/* Right-side handles */}
-        <Handle
-          type="source"
-          position={Position.Right}
-          id={createColumnHandleId(tableId, column.id, 'right', 'source')}
-          className="nodrag"
-          style={{ right: '-14px' }}
-        />
-        <Handle
-          type="target"
-          position={Position.Right}
-          id={createColumnHandleId(tableId, column.id, 'right', 'target')}
-          className="nodrag"
-          style={{ right: '-14px' }}
-        />
       </div>
     )
   },

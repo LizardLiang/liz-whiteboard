@@ -5,10 +5,11 @@
  */
 
 import { memo, useCallback, useEffect, useMemo, useRef, useState } from 'react'
-import { Handle, Position, useStore } from '@xyflow/react'
+import { useStore } from '@xyflow/react'
 import { Link2, MessageCircle } from 'lucide-react'
 import { toast } from 'sonner'
 import { ColumnRow } from './column/ColumnRow'
+import { ColumnHandles } from './column/ColumnHandles'
 import { AddColumnRow } from './column/AddColumnRow'
 import { DeleteColumnDialog } from './column/DeleteColumnDialog'
 import { InsertionLine } from './column/InsertionLine'
@@ -31,7 +32,6 @@ import {
   LOD_ZOOM_THRESHOLD,
   useForceFullDetail,
 } from '@/lib/react-flow/level-of-detail'
-import { createColumnHandleId } from '@/lib/react-flow/edge-routing'
 
 // Row height constant for InsertionLine positioning (matches minHeight in ColumnRow)
 const COLUMN_ROW_HEIGHT = 28
@@ -68,34 +68,7 @@ function LodColumnRow({
         borderBottom: isLast ? 'none' : '1px solid var(--rf-table-border)',
       }}
     >
-      <Handle
-        type="source"
-        position={Position.Left}
-        id={createColumnHandleId(tableId, column.id, 'left', 'source')}
-        className="nodrag"
-        style={{ left: '-14px' }}
-      />
-      <Handle
-        type="target"
-        position={Position.Left}
-        id={createColumnHandleId(tableId, column.id, 'left', 'target')}
-        className="nodrag"
-        style={{ left: '-14px' }}
-      />
-      <Handle
-        type="source"
-        position={Position.Right}
-        id={createColumnHandleId(tableId, column.id, 'right', 'source')}
-        className="nodrag"
-        style={{ right: '-14px' }}
-      />
-      <Handle
-        type="target"
-        position={Position.Right}
-        id={createColumnHandleId(tableId, column.id, 'right', 'target')}
-        className="nodrag"
-        style={{ right: '-14px' }}
-      />
+      <ColumnHandles tableId={tableId} columnId={column.id} />
     </div>
   )
 }
