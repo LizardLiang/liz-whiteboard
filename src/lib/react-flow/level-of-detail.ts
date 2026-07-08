@@ -1,10 +1,10 @@
 /**
  * Level-of-detail (LOD) support for the React Flow canvas (GH #121 perf).
  *
- * Below LOD_ZOOM_THRESHOLD, TableNode renders a name-only collapsed form
- * (skips mapping ColumnRow) instead of the full column list — cuts DOM
- * weight dramatically when zoomed out on a dense board. Tunable; set during
- * profiling.
+ * Below LOD_ZOOM_THRESHOLD, TableNode renders a handles-only row per column
+ * instead of the full interactive ColumnRow (columns are still mapped so
+ * edge anchors survive) — cuts DOM weight dramatically when zoomed out on a
+ * dense board. Tunable; set during profiling.
  *
  * Image export (export-image.ts) rasterizes the LIVE `.react-flow__viewport`
  * DOM rather than doing a fresh render, so if the user is zoomed out below

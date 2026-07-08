@@ -180,8 +180,10 @@ export const TableNode = memo(
           : ''
 
     // Level-of-detail (GH #121 perf, opt #3): below LOD_ZOOM_THRESHOLD,
-    // render a name-only collapsed table (skip mapping ColumnRow) — cuts DOM
-    // weight dramatically on a dense, zoomed-out board. `useStore` selects a
+    // render each column as a minimal handles-only LodColumnRow instead of
+    // the full interactive ColumnRow (columns are still mapped — see the
+    // .map call below — so edge anchors survive) — cuts DOM weight
+    // dramatically on a dense, zoomed-out board. `useStore` selects a
     // derived boolean (not the raw zoom number) so this only re-renders when
     // the board crosses the threshold, not on every pan/zoom tick.
     // forceFullDetail (from ForceFullDetailContext) overrides this during
@@ -251,6 +253,36 @@ export const TableNode = memo(
     const handleCancelEdit = useCallback(() => {
       setEditingField(null)
     }, [])
+
+    // GH #121 data-loss fix: LOD-collapsing the row a user is mid-edit on
+    // would unmount ColumnRow (and its InlineNameEditor/DataTypeSelector)
+    // without ever firing blur/focusout (WHATWG ancestor-unmount quirk),
+    // silently dropping typed-but-uncommitted text and leaving `editingField`
+    // dangling (so zooming back in re-opens an editor the user never closed).
+    // A plain `useEffect` keyed on `isLodCollapsed` can't fix this on its own
+    // — the render that flips `isLodCollapsed` true is the SAME commit that
+    // unmounts the row, so by the time any effect runs the live input is
+    // already gone. The per-column carve-out below (see the columns .map)
+    // keeps the row currently being edited mounted as a full ColumnRow
+    // through the collapse; this effect then forces that still-live row to
+    // resolve through its OWN existing, already-correct handlers — a real
+    // `.blur()` call for a name edit (InlineNameEditor's blur commits, and
+    // already guards empty input by canceling instead — see
+    // InlineNameEditor.tsx), or a direct cancel for a dataType edit
+    // (DataTypeSelector's own close-without-selection path also cancels —
+    // see DataTypeSelector.tsx — and there's no persisted value to lose for
+    // an unmade combobox selection). Only after this resolves (editingField
+    // clears) is the row free to actually collapse to LodColumnRow.
+    useEffect(() => {
+      if (!isLodCollapsed || !editingField) return
+      if (editingField.field === 'name') {
+        columnRowsRef.current
+          ?.querySelector<HTMLInputElement>('input[type="text"]')
+          ?.blur()
+      } else {
+        handleCancelEdit()
+      }
+    }, [isLodCollapsed, editingField, handleCancelEdit])
 
     const handleToggleConstraint = useCallback(
       (
@@ -780,8 +812,14 @@ export const TableNode = memo(
                   prefersReducedMotion={prefersReducedMotion}
                 />
               )}
-              {visibleColumns.map((column: Column, index: number) =>
-                isLodCollapsed ? (
+              {visibleColumns.map((column: Column, index: number) => {
+                // GH #121 data-loss fix: never LOD-collapse the row currently
+                // mid-edit — see the resolveOpenEditOnLodCollapse effect
+                // above for why this carve-out is required (a plain effect
+                // alone runs too late to save the live, uncommitted input).
+                const isEditingThisColumn =
+                  editingField?.columnId === column.id
+                return isLodCollapsed && !isEditingThisColumn ? (
                   <LodColumnRow
                     key={column.id}
                     column={column}
@@ -809,8 +847,8 @@ export const TableNode = memo(
                       handleDragHandlePointerDown(e, column.id)
                     }
                   />
-                ),
-              )}
+                )
+              })}
 
               {/* Add Column Row — hidden for view-only viewers (server also
                   blocks the underlying createColumnsFn mutation) and while
