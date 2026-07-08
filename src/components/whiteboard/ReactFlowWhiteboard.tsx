@@ -46,7 +46,7 @@ import type {
   ShowMode,
   TableNodeType,
 } from '@/lib/react-flow/types'
-import type { Column, CommentWithAuthor } from '@/data/models'
+import type { Column, CommentWithAuthor, DiagramTable } from '@/data/models'
 import type { EffectiveRole } from '@/data/permission'
 import type {
   Cardinality,
@@ -85,6 +85,7 @@ import {
 import { parseColumnHandleId } from '@/lib/react-flow/edge-routing'
 import { filterValidEdges } from '@/lib/react-flow/highlighting'
 import { convertTablesToNodes } from '@/lib/react-flow/convert-to-nodes'
+import { applyTableCreated } from '@/lib/react-flow/apply-table-created'
 import { resolvePendingPositions } from '@/lib/react-flow/resolve-pending-positions'
 import { convertRelationshipsToEdges } from '@/lib/react-flow/convert-to-edges'
 import {
@@ -664,6 +665,21 @@ function ReactFlowWhiteboardInner({
     [columnReorderMutations],
   )
 
+  // Callback for when a remote user creates a table (GH #125). Patches the
+  // canvas's source-of-truth query cache (['whiteboard', whiteboardId], FLAT
+  // shape) via the pure applyTableCreated reducer — the existing
+  // initialNodes-sync effect above then builds a fully-wired node for the new
+  // table id automatically (same mechanism patchWhiteboardTablePositions
+  // already relies on for peer position updates). No manual setNodes needed.
+  const handleTableCreated = useCallback(
+    (table: DiagramTable & { createdBy: string }) => {
+      queryClient.setQueryData(['whiteboard', whiteboardId], (old: any) =>
+        applyTableCreated(old, table),
+      )
+    },
+    [queryClient, whiteboardId],
+  )
+
   // Ref for onTableError — breaks circular dependency between useWhiteboardCollaboration and useTableMutations
   const onTableErrorRef = useRef<(data: any) => void>(() => {})
 
@@ -809,6 +825,8 @@ function ReactFlowWhiteboardInner({
     useCallback((data: any) => {
       onTableUpdateErrorRef.current(data)
     }, []),
+    // GH #125: live table-creation sync — the 14th positional param.
+    handleTableCreated,
   )
 
   // Column collaboration callbacks (incoming events from other users)

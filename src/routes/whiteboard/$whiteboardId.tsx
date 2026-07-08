@@ -315,15 +315,18 @@ function WhiteboardEditor() {
   }, [activeTab, whiteboardData, isTextSyncEnabled, textSource])
 
   // WebSocket event listeners for real-time updates
+  //
+  // GH #125: this effect used to also register a `table:created` listener
+  // here, but it never fired live (a dead/non-effective subscription — see
+  // use-whiteboard-collaboration.ts for the working socket path). Live
+  // table-creation sync is now handled entirely by
+  // useWhiteboardCollaboration's table:created effect + ReactFlowWhiteboard's
+  // handleTableCreated, which patch the canvas's own query cache. Removed
+  // rather than reinstated here. The sibling handlers below
+  // (relationship:created, text:updated, whiteboard:restored) share the same
+  // family of non-firing-subscription risk but are explicitly out of scope
+  // for #125 — flagged as a follow-up, not touched in this change.
   useEffect(() => {
-    const handleTableCreated = (table: any) => {
-      console.log('Table created by another user:', table)
-      queryClient.invalidateQueries({
-        queryKey: ['whiteboard-page', whiteboardId],
-      })
-      queryClient.invalidateQueries({ queryKey: ['whiteboard', whiteboardId] })
-    }
-
     const handleTableMoved = (data: {
       tableId: string
       positionX: number
@@ -396,14 +399,12 @@ function WhiteboardEditor() {
       })
     }
 
-    on('table:created', handleTableCreated)
     on('table:moved', handleTableMoved)
     on('relationship:created', handleRelationshipCreated)
     on('text:updated', handleTextUpdated)
     on('whiteboard:restored', handleWhiteboardRestored)
 
     return () => {
-      off('table:created', handleTableCreated)
       off('table:moved', handleTableMoved)
       off('relationship:created', handleRelationshipCreated)
       off('text:updated', handleTextUpdated)
