@@ -123,7 +123,7 @@ export interface TableNodeData extends Record<string, unknown> {
   /**
    * Edges pre-filtered via filterValidEdges (stale/deleted-column-safe) —
    * used exclusively by the relations panel's relatedEdges computation in
-   * TableNode.new.tsx. Unlike `edges` above (raw, unfiltered, shared with
+   * TableNode.tsx. Unlike `edges` above (raw, unfiltered, shared with
    * delete-confirmation lookups), a relationship whose sourceColumn/
    * targetColumn snapshot references a column deleted elsewhere must never
    * reach the panel, or it would render a connection line naming a column
@@ -225,7 +225,7 @@ export interface RelationshipEdgeData extends Record<string, unknown> {
   /**
    * Per-edge Y offset (px) for source/target handle positions, computed by
    * computeEdgeBundleOffsets() to fan parallel edges in same-table-pair bundles.
-   * Applied by RelationshipEdge.new.tsx to getSmoothStepPath sourceY/targetY
+   * Applied by RelationshipEdge.tsx to getSmoothStepPath sourceY/targetY
    * and to CardinalityIndicator y position. 0 when edge is not in a bundle.
    */
   bundleHandleYOffset?: number
@@ -233,7 +233,7 @@ export interface RelationshipEdgeData extends Record<string, unknown> {
   /**
    * Per-edge X offset (px) relative to the corridor center, computed by
    * computeEdgeBundleOffsets() to fan parallel edges' vertical step segments.
-   * Applied by RelationshipEdge.new.tsx to getSmoothStepPath centerX. 0 when
+   * Applied by RelationshipEdge.tsx to getSmoothStepPath centerX. 0 when
    * edge is not in a bundle.
    */
   bundleCenterXOffset?: number

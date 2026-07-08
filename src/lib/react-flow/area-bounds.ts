@@ -64,7 +64,7 @@ const DEFAULT_TOP_INSET = 32
 
 /**
  * Height (px) of the always-rendered "+" add-column affordance row at the
- * bottom of an editable table node (mirrors TableNode.new.tsx COLUMN_ROW_HEIGHT).
+ * bottom of an editable table node (mirrors TableNode.tsx COLUMN_ROW_HEIGHT).
  * `calculateTableHeight` counts header + data rows only, so without this an area
  * ends up ~one row short and the member's add-row edge pokes past the bottom
  * border (area-fit-member-content runtime finding: ~4px overflow).

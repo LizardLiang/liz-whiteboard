@@ -2,14 +2,14 @@
  * TableRelationsPanel — canvas-space "drawer" attached to the side of a
  * table node, shown when the `r` keyboard shortcut or the "Show relations"
  * context-menu item is used on that table. Rendered as an
- * absolutely-positioned child of TableNode.new.tsx's own DOM element, so it
+ * absolutely-positioned child of TableNode.tsx's own DOM element, so it
  * pans and zooms (including content scaling with zoom) exactly like the
  * rest of the table node — no manual position/anchor tracking required.
  *
  * Anchors to the right of the node by default, and flips to the left when
  * it would overflow the right edge of the viewport (measured post-render
  * via getBoundingClientRect, matching the pattern used for column-row rect
- * snapshots in TableNode.new.tsx).
+ * snapshots in TableNode.tsx).
  *
  * Lists every directly-related (1-hop) table with a field-to-field
  * connection line (e.g. `Orders.customer_id → Customers.id`) derived from

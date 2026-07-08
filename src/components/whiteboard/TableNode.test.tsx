@@ -9,7 +9,7 @@ import { fireEvent, render, screen } from '@testing-library/react'
 import React from 'react'
 
 import { toast } from 'sonner'
-import { TableNode } from './TableNode.new'
+import { TableNode } from './TableNode'
 import { WhiteboardPermissionsProvider } from './whiteboard-permissions-context'
 import type { Column } from '@/data/models'
 import type {
@@ -285,7 +285,7 @@ describe('TableNode drag behavior (Suite S6)', () => {
   // INT-19: queue-full at drag-start — toast shown, drag not activated (AC-08d, SA-M3)
   // Root cause of previous failure: the queue-full guard lives in handleDragHandlePointerDown
   // (a pointer event on the DragHandle button), NOT in a DndContext onDragStart callback.
-  // TableNode.new.tsx uses custom pointer-event drag, not @dnd-kit drag primitives.
+  // TableNode.tsx uses custom pointer-event drag, not @dnd-kit drag primitives.
   it('INT-19: queue-full at drag-start — toast.warning shown, drag not activated', () => {
     const isQueueFullForTable = vi.fn().mockReturnValue(true)
     const setLocalDragging = vi.fn()
@@ -337,7 +337,7 @@ describe('TableNode drag behavior (Suite S6)', () => {
   // INT-04: pointerdown on drag handle activates drag state (AC-02a)
   //
   // Root cause of original failure: the old test mocked useSortable.isDragging and expected
-  // opacity '0.5', but TableNode.new.tsx and ColumnRow.tsx do NOT use @dnd-kit/sortable at all.
+  // opacity '0.5', but TableNode.tsx and ColumnRow.tsx do NOT use @dnd-kit/sortable at all.
   // Drag state is managed via custom pointer events in handleDragHandlePointerDown.
   //
   // What this test verifies: pressing the drag handle triggers the drag activation path —
@@ -559,7 +559,7 @@ describe('TableNode relations trigger button', () => {
 
 // ============================================================================
 // Relations panel — stale-column edge filtering (Hermes review BLOCKER 1)
-// TableNode.new.tsx must derive the panel's relatedEdges from
+// TableNode.tsx must derive the panel's relatedEdges from
 // data.relationsEdges (pre-filtered via filterValidEdges upstream in
 // ReactFlowWhiteboard.tsx), never from the raw data.edges array — a
 // relationship whose sourceColumn/targetColumn snapshot still names a

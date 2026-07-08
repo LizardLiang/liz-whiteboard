@@ -6,8 +6,8 @@
 
 import type { EdgeTypes, NodeTypes } from '@xyflow/react'
 // Import React Flow components (using .new suffix during migration)
-import { TableNode } from '@/components/whiteboard/TableNode.new'
-import { RelationshipEdge } from '@/components/whiteboard/RelationshipEdge.new'
+import { TableNode } from '@/components/whiteboard/TableNode'
+import { RelationshipEdge } from '@/components/whiteboard/RelationshipEdge'
 import { AreaNode } from '@/components/whiteboard/AreaNode'
 import { CommentNode } from '@/components/whiteboard/CommentNode'
 

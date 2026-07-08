@@ -61,7 +61,7 @@ export interface LayoutOutputPosition {
 
 /**
  * Per-edge bundle offset data returned alongside node positions.
- * Applied by RelationshipEdge.new.tsx to separate parallel/coincident edges.
+ * Applied by RelationshipEdge.tsx to separate parallel/coincident edges.
  */
 export interface LayoutOutputEdge {
   /** Edge ID matching LayoutInputEdge.id */
@@ -195,21 +195,21 @@ export function enforceGapPostPass(nodes: Array<SimNode>): void {
 }
 
 // ---------------------------------------------------------------------------
-// Edge-label pill sizing — derived from RelationshipEdge.new.tsx styles
+// Edge-label pill sizing — derived from RelationshipEdge.tsx styles
 // ---------------------------------------------------------------------------
 
 /**
- * Font spec for edge labels (mirrors RelationshipEdge.new.tsx).
+ * Font spec for edge labels (mirrors RelationshipEdge.tsx).
  * Used for canvas.measureText() to get accurate text width.
  */
 const LABEL_FONT_SPEC = '500 11px sans-serif'
 
-/** Font size for edge labels (px). Matches RelationshipEdge.new.tsx. */
+/** Font size for edge labels (px). Matches RelationshipEdge.tsx. */
 const LABEL_FONT_SIZE_PX = 11
 
 /**
  * Per-character advance estimate (px/char) — fallback when canvas is unavailable.
- * Derived from RelationshipEdge.new.tsx input width formula:
+ * Derived from RelationshipEdge.tsx input width formula:
  *   width: Math.max(60, editValue.length * 7 + 16)px
  * which implies 7 px/char for this font/size combination.
  */
@@ -240,7 +240,7 @@ export const EDGE_LABEL_MARGIN = 16
  * Falls back to charCount × LABEL_CHAR_ADVANCE (predictable in jsdom test env
  * where canvas.getContext returns null without the 'canvas' npm package).
  *
- * Pill horizontal structure (from RelationshipEdge.new.tsx):
+ * Pill horizontal structure (from RelationshipEdge.tsx):
  *   border(1) + padding(10) + text + padding(10) + border(1) = textWidth + 22px
  */
 export function computeLabelPillWidth(label: string): number {
@@ -273,7 +273,7 @@ export function computeLabelPillWidth(label: string): number {
 
 /**
  * Compute the rendered height of an edge label pill.
- * Derived from RelationshipEdge.new.tsx: fontSize=11, line-height≈1.4,
+ * Derived from RelationshipEdge.tsx: fontSize=11, line-height≈1.4,
  * padding='3px 10px', border=1px each side.
  */
 export function computeLabelPillHeight(): number {
@@ -285,30 +285,30 @@ export function computeLabelPillHeight(): number {
 }
 
 // ---------------------------------------------------------------------------
-// Cardinality indicator extent — mirrors RelationshipEdge.new.tsx constants
+// Cardinality indicator extent — mirrors RelationshipEdge.tsx constants
 // ---------------------------------------------------------------------------
 
 /**
  * Crow's foot convergence-point distance outward from the handle (px).
- * Mirrors CROW_LENGTH in RelationshipEdge.new.tsx.
+ * Mirrors CROW_LENGTH in RelationshipEdge.tsx.
  */
 const CROW_LENGTH_EXTENT = 2
 
 /**
  * Distance from multiplicity outer edge to optionality symbol center (px).
- * Mirrors OPT_GAP in RelationshipEdge.new.tsx.
+ * Mirrors OPT_GAP in RelationshipEdge.tsx.
  */
 const OPT_GAP_EXTENT = 7
 
 /**
  * Open circle radius for the optional symbol (px).
- * Mirrors CIRCLE_R in RelationshipEdge.new.tsx.
+ * Mirrors CIRCLE_R in RelationshipEdge.tsx.
  */
 const CARDINALITY_SYMBOL_RADIUS = 4
 
 /**
  * How far a cardinality indicator extends outward from the handle into the
- * inter-node gap. Mirrors the indicatorExtent() function in RelationshipEdge.new.tsx.
+ * inter-node gap. Mirrors the indicatorExtent() function in RelationshipEdge.tsx.
  */
 function cardinalityIndicatorExtent(isMany: boolean): number {
   return (
@@ -323,7 +323,7 @@ const MAX_CARDINALITY_EXTENT = cardinalityIndicatorExtent(true) // 13 px
 
 /**
  * srcMany / tgtMany flags per cardinality type.
- * Mirrors CARDINALITY_FLAGS in RelationshipEdge.new.tsx (only the 'many' booleans needed).
+ * Mirrors CARDINALITY_FLAGS in RelationshipEdge.tsx (only the 'many' booleans needed).
  * Tuple: [srcMany, tgtMany]
  */
 const CARDINALITY_MANY: Readonly<Record<string, readonly [boolean, boolean]>> =
@@ -418,7 +418,7 @@ export function enforceEdgeLabelGap(
 
       // Estimated label midpoint — between inner-facing edges, accounting for
       // cardinality indicator extents (mirrors the getSmoothStepPath adjustment
-      // in RelationshipEdge.new.tsx: adjSourceX + leftExt ... adjTargetX - rightExt)
+      // in RelationshipEdge.tsx: adjSourceX + leftExt ... adjTargetX - rightExt)
       const midX =
         (leftNode.x +
           leftNode.width / 2 +
@@ -475,7 +475,7 @@ export function enforceEdgeLabelGap(
 }
 
 // ---------------------------------------------------------------------------
-// Same-side label X clamping — render-time helper used by RelationshipEdge.new.tsx
+// Same-side label X clamping — render-time helper used by RelationshipEdge.tsx
 // ---------------------------------------------------------------------------
 
 /**
@@ -652,7 +652,7 @@ const ROW_GAP = 80 // vertical gap between nodes within a column
 
 /**
  * Inactive stroke width (px) of the main edge path.
- * Source of truth: RelationshipEdge.new.tsx — strokeWidth={isActive ? 2.5 : 1.5}
+ * Source of truth: RelationshipEdge.tsx — strokeWidth={isActive ? 2.5 : 1.5}
  * The inactive (default) width is used because bundles pile up during normal
  * (non-selected) rendering.
  */
