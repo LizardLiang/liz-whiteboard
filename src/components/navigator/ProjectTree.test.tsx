@@ -159,14 +159,10 @@ describe('ProjectTree sidebar navigation behavior', () => {
       const closedState = document.querySelector('[data-state="closed"]')
       expect(closedState).toBeTruthy()
 
-      // Find the chevron button: it is the button with h-8 w-8 p-0 class
-      const allButtons = screen.getAllByRole('button')
-      const chevronButton = allButtons.find(
-        (btn) =>
-          btn.className.includes('h-8') &&
-          btn.className.includes('w-8') &&
-          !btn.getAttribute('title'),
-      )
+      // Find the chevron button by its stable accessible name (aria-label)
+      const chevronButton = screen.getByRole('button', {
+        name: /toggle .* tree/i,
+      })
       expect(chevronButton).toBeTruthy()
 
       act(() => {
@@ -185,13 +181,9 @@ describe('ProjectTree sidebar navigation behavior', () => {
 
       await screen.findByText('Test Project')
 
-      const allButtons = screen.getAllByRole('button')
-      const chevronButton = allButtons.find(
-        (btn) =>
-          btn.className.includes('h-8') &&
-          btn.className.includes('w-8') &&
-          !btn.getAttribute('title'),
-      )
+      const chevronButton = screen.getByRole('button', {
+        name: /toggle .* tree/i,
+      })
       expect(chevronButton).toBeTruthy()
       // Must be a button, not inside an anchor
       expect(chevronButton!.tagName.toLowerCase()).toBe('button')
@@ -203,13 +195,9 @@ describe('ProjectTree sidebar navigation behavior', () => {
 
       await screen.findByText('Test Project')
 
-      const allButtons = screen.getAllByRole('button')
-      const chevronButton = allButtons.find(
-        (btn) =>
-          btn.className.includes('h-8') &&
-          btn.className.includes('w-8') &&
-          !btn.getAttribute('title'),
-      )
+      const chevronButton = screen.getByRole('button', {
+        name: /toggle .* tree/i,
+      })
 
       act(() => {
         fireEvent.click(chevronButton!)
