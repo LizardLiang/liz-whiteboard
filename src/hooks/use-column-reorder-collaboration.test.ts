@@ -44,6 +44,7 @@ describe('useColumnReorderCollaboration (Suite S7)', () => {
   const makeCallbacks = () => {
     const mutations = {
       isLocalDragging: vi.fn().mockReturnValue(false),
+      isAnyColumnDragging: vi.fn().mockReturnValue(false),
       bufferRemoteReorder: vi.fn(),
       onColumnReorderedFromOther: vi.fn(),
       onColumnReorderAck: vi.fn(),
@@ -53,6 +54,7 @@ describe('useColumnReorderCollaboration (Suite S7)', () => {
       reconcileAfterDrop: vi.fn(),
       seedConfirmedOrderFromServer: vi.fn(),
       onSyncReconcile: vi.fn(),
+      forgetTable: vi.fn(),
     }
     const setNodes = vi.fn()
     const bumpReorderTick = vi.fn()

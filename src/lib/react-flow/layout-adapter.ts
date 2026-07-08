@@ -3,7 +3,7 @@
  * Adapts d3-force layout algorithm to work with React Flow node format
  */
 
-import type { TableNode } from './types'
+import type { TableNodeType } from './types'
 import type { Column, DiagramTable, Relationship } from '@/data/models'
 
 /**
@@ -40,9 +40,9 @@ export interface LayoutResult {
  * @returns Updated nodes with new positions
  */
 export function applyLayoutToNodes(
-  nodes: Array<TableNode>,
+  nodes: Array<TableNodeType>,
   layoutResult: LayoutResult,
-): Array<TableNode> {
+): Array<TableNodeType> {
   return nodes.map((node) => ({
     ...node,
     position: layoutResult.positions[node.id] || node.position,
@@ -77,7 +77,7 @@ export function prepareLayoutInput(
       target: rel.targetTableId,
       sourceColumn: rel.sourceColumnId,
       targetColumn: rel.targetColumnId,
-      type: rel.relationshipType,
+      type: rel.cardinality,
     })),
     canvasWidth: options.width,
     canvasHeight: options.height,
@@ -145,7 +145,7 @@ export function calculateRelationshipStrength(
   }
 
   // Increase strength for ONE_TO_MANY relationships
-  if (relationship.relationshipType === 'ONE_TO_MANY') {
+  if (relationship.cardinality === 'ONE_TO_MANY') {
     strength += 0.1
   }
 

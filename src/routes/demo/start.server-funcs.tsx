@@ -17,7 +17,12 @@ const loggedServerFunction = createServerFn({ method: "GET" }).middleware([
 
 const TODOS_FILE = 'todos.json'
 
-async function readTodos() {
+interface Todo {
+  id: number
+  name: string
+}
+
+async function readTodos(): Promise<Array<Todo>> {
   return JSON.parse(
     await fs.promises.readFile(TODOS_FILE, 'utf-8').catch(() =>
       JSON.stringify(

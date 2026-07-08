@@ -4,7 +4,7 @@
  */
 
 import ELK from 'elkjs/lib/elk.bundled.js'
-import type { ELKNode } from 'elkjs'
+import type { ElkNode } from 'elkjs'
 
 // Initialize ELK instance
 const elk = new ELK()
@@ -15,7 +15,7 @@ const elk = new ELK()
 interface ELKLayoutMessage {
   id: string
   layoutOptions: Record<string, string>
-  children: Array<ELKNode>
+  children: Array<ElkNode>
   edges: Array<{
     id: string
     sources: Array<string>

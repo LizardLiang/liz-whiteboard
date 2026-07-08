@@ -27,9 +27,11 @@ const makeTableNode = (id = 'tbl-001'): TableNodeType => ({
       id,
       name: 'orders',
       whiteboardId: 'wb-001',
+      description: null,
       positionX: 100,
       positionY: 200,
-      showMode: 'ALL_FIELDS',
+      width: null,
+      height: null,
       createdAt: new Date(),
       updatedAt: new Date(),
       columns: [],
@@ -38,6 +40,7 @@ const makeTableNode = (id = 'tbl-001'): TableNodeType => ({
     isActiveHighlighted: false,
     isHighlighted: false,
     isHovered: false,
+    isRelationsPreviewOpen: false,
     showMode: 'ALL_FIELDS',
   },
 })
@@ -472,7 +475,7 @@ describe('useTableMutations', () => {
       })
 
       const node = nodes.find((n) => n.id === 'tbl-001')
-      expect(node?.data.table.description).toBeUndefined()
+      expect(node?.data.table.description).toBeNull()
       expect(emitTableUpdate).not.toHaveBeenCalled()
       expect(toast.error).toHaveBeenCalledWith(
         expect.stringContaining('Not connected'),
@@ -508,7 +511,7 @@ describe('useTableMutations', () => {
 
       expect(
         nodes.find((n) => n.id === 'tbl-001')?.data.table.description,
-      ).toBeUndefined()
+      ).toBeNull()
     })
 
     it('TC-TU-06: onTableUpdateError shows a toast error', () => {

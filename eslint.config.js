@@ -46,6 +46,10 @@ export default [
       'coverage',
       // TanStack Start internals
       '.tanstack',
+      // Deliberately-malformed fixtures for require-server-fn-authz.test.js
+      // (read as text, not meant to parse) — excluded from tsconfig.json's
+      // typed-linting project too; keep both in sync.
+      'tools/eslint-rules/__fixtures__/**',
     ],
   },
   // SEC-RBAC-04: AST guard — all createServerFn exports must carry @requires JSDoc

@@ -202,8 +202,8 @@ export function TableNode({
 
     const currentX = group.x()
     const currentY = group.y()
-    const targetX = table.positionX
-    const targetY = table.positionY
+    const targetX = table.positionX ?? 0
+    const targetY = table.positionY ?? 0
 
     // Check if position actually changed
     if (currentX === targetX && currentY === targetY) return
@@ -238,8 +238,8 @@ export function TableNode({
   return (
     <Group
       ref={groupRef}
-      x={table.positionX}
-      y={table.positionY}
+      x={table.positionX ?? 0}
+      y={table.positionY ?? 0}
       draggable
       onClick={handleClick}
       onTap={handleClick}
@@ -370,8 +370,8 @@ export function getColumnPosition(
   const { width } = calculateTableDimensions(table, columnTexts)
 
   return {
-    x: table.positionX + width, // Right edge of table
-    y: table.positionY + yOffset,
+    x: (table.positionX ?? 0) + width, // Right edge of table
+    y: (table.positionY ?? 0) + yOffset,
   }
 }
 
@@ -393,7 +393,7 @@ export function getColumnPositionLeft(
     TABLE_STYLE.padding / 2
 
   return {
-    x: table.positionX, // Left edge of table
-    y: table.positionY + yOffset,
+    x: table.positionX ?? 0, // Left edge of table
+    y: (table.positionY ?? 0) + yOffset,
   }
 }

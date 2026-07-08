@@ -94,7 +94,7 @@ interface ShareLinkListItem {
   id: string
   whiteboardId: string
   whiteboardName: string
-  expiresAt: string | Date
+  expiresAt: string | Date | null
   revokedAt: string | Date | null
   createdAt: string | Date
 }
@@ -670,6 +670,7 @@ export function ProjectSharePanel({
                 {shareLinks.map((link) => {
                   const isRevoked = link.revokedAt !== null
                   const isExpired =
+                    link.expiresAt !== null &&
                     new Date(link.expiresAt).getTime() < Date.now()
                   const isInactive = isRevoked || isExpired
                   return (
@@ -694,8 +695,9 @@ export function ProjectSharePanel({
                           )}
                         </div>
                         <p className="text-xs text-muted-foreground truncate">
-                          Expires{' '}
-                          {new Date(link.expiresAt).toLocaleDateString()}
+                          {link.expiresAt === null
+                            ? 'Never expires'
+                            : `Expires ${new Date(link.expiresAt).toLocaleDateString()}`}
                         </p>
                       </div>
                       <Button

@@ -2,7 +2,7 @@
 // Data access layer for Column entity
 
 import { createColumnSchema, updateColumnSchema } from './schema'
-import type { CreateColumn, UpdateColumn } from './schema'
+import type { CreateColumn, CreateColumnInput, UpdateColumn } from './schema'
 import type { Column } from './models'
 import {
   db,
@@ -38,7 +38,7 @@ function insertColumn(validated: CreateColumn): Column {
 /**
  * Create a new column
  */
-export async function createColumn(data: CreateColumn): Promise<Column> {
+export async function createColumn(data: CreateColumnInput): Promise<Column> {
   const validated = createColumnSchema.parse(data)
   try {
     return insertColumn(validated)
@@ -53,7 +53,7 @@ export async function createColumn(data: CreateColumn): Promise<Column> {
  * Create multiple columns in a single transaction
  */
 export async function createColumns(
-  columns: Array<CreateColumn>,
+  columns: Array<CreateColumnInput>,
 ): Promise<Array<Column>> {
   const validated = columns.map((col) => createColumnSchema.parse(col))
   try {

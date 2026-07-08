@@ -21,7 +21,6 @@ import { Route as ProjectProjectIdRouteImport } from './routes/project.$projectI
 import { Route as InviteTokenRouteImport } from './routes/invite.$token'
 import { Route as DemoTanstackQueryRouteImport } from './routes/demo/tanstack-query'
 import { Route as ApiCollabTokenRouteImport } from './routes/api/collab-token'
-import { Route as WhiteboardWhiteboardIdNewRouteImport } from './routes/whiteboard/$whiteboardId.new'
 import { Route as DemoStartServerFuncsRouteImport } from './routes/demo/start.server-funcs'
 import { Route as DemoStartApiRequestRouteImport } from './routes/demo/start.api-request'
 import { Route as DemoFormSimpleRouteImport } from './routes/demo/form.simple'
@@ -94,12 +93,6 @@ const ApiCollabTokenRoute = ApiCollabTokenRouteImport.update({
   path: '/api/collab-token',
   getParentRoute: () => rootRouteImport,
 } as any)
-const WhiteboardWhiteboardIdNewRoute =
-  WhiteboardWhiteboardIdNewRouteImport.update({
-    id: '/new',
-    path: '/new',
-    getParentRoute: () => WhiteboardWhiteboardIdRoute,
-  } as any)
 const DemoStartServerFuncsRoute = DemoStartServerFuncsRouteImport.update({
   id: '/demo/start/server-funcs',
   path: '/demo/start/server-funcs',
@@ -169,14 +162,13 @@ export interface FileRoutesByFullPath {
   '/invite/$token': typeof InviteTokenRoute
   '/project/$projectId': typeof ProjectProjectIdRouteWithChildren
   '/share/$token': typeof ShareTokenRoute
-  '/whiteboard/$whiteboardId': typeof WhiteboardWhiteboardIdRouteWithChildren
+  '/whiteboard/$whiteboardId': typeof WhiteboardWhiteboardIdRoute
   '/demo/api/names': typeof DemoApiNamesRoute
   '/demo/api/tq-todos': typeof DemoApiTqTodosRoute
   '/demo/form/address': typeof DemoFormAddressRoute
   '/demo/form/simple': typeof DemoFormSimpleRoute
   '/demo/start/api-request': typeof DemoStartApiRequestRoute
   '/demo/start/server-funcs': typeof DemoStartServerFuncsRoute
-  '/whiteboard/$whiteboardId/new': typeof WhiteboardWhiteboardIdNewRoute
   '/demo/start/ssr/data-only': typeof DemoStartSsrDataOnlyRoute
   '/demo/start/ssr/full-ssr': typeof DemoStartSsrFullSsrRoute
   '/demo/start/ssr/spa-mode': typeof DemoStartSsrSpaModeRoute
@@ -195,14 +187,13 @@ export interface FileRoutesByTo {
   '/invite/$token': typeof InviteTokenRoute
   '/project/$projectId': typeof ProjectProjectIdRouteWithChildren
   '/share/$token': typeof ShareTokenRoute
-  '/whiteboard/$whiteboardId': typeof WhiteboardWhiteboardIdRouteWithChildren
+  '/whiteboard/$whiteboardId': typeof WhiteboardWhiteboardIdRoute
   '/demo/api/names': typeof DemoApiNamesRoute
   '/demo/api/tq-todos': typeof DemoApiTqTodosRoute
   '/demo/form/address': typeof DemoFormAddressRoute
   '/demo/form/simple': typeof DemoFormSimpleRoute
   '/demo/start/api-request': typeof DemoStartApiRequestRoute
   '/demo/start/server-funcs': typeof DemoStartServerFuncsRoute
-  '/whiteboard/$whiteboardId/new': typeof WhiteboardWhiteboardIdNewRoute
   '/demo/start/ssr/data-only': typeof DemoStartSsrDataOnlyRoute
   '/demo/start/ssr/full-ssr': typeof DemoStartSsrFullSsrRoute
   '/demo/start/ssr/spa-mode': typeof DemoStartSsrSpaModeRoute
@@ -222,14 +213,13 @@ export interface FileRoutesById {
   '/invite/$token': typeof InviteTokenRoute
   '/project/$projectId': typeof ProjectProjectIdRouteWithChildren
   '/share/$token': typeof ShareTokenRoute
-  '/whiteboard/$whiteboardId': typeof WhiteboardWhiteboardIdRouteWithChildren
+  '/whiteboard/$whiteboardId': typeof WhiteboardWhiteboardIdRoute
   '/demo/api/names': typeof DemoApiNamesRoute
   '/demo/api/tq-todos': typeof DemoApiTqTodosRoute
   '/demo/form/address': typeof DemoFormAddressRoute
   '/demo/form/simple': typeof DemoFormSimpleRoute
   '/demo/start/api-request': typeof DemoStartApiRequestRoute
   '/demo/start/server-funcs': typeof DemoStartServerFuncsRoute
-  '/whiteboard/$whiteboardId/new': typeof WhiteboardWhiteboardIdNewRoute
   '/demo/start/ssr/data-only': typeof DemoStartSsrDataOnlyRoute
   '/demo/start/ssr/full-ssr': typeof DemoStartSsrFullSsrRoute
   '/demo/start/ssr/spa-mode': typeof DemoStartSsrSpaModeRoute
@@ -257,7 +247,6 @@ export interface FileRouteTypes {
     | '/demo/form/simple'
     | '/demo/start/api-request'
     | '/demo/start/server-funcs'
-    | '/whiteboard/$whiteboardId/new'
     | '/demo/start/ssr/data-only'
     | '/demo/start/ssr/full-ssr'
     | '/demo/start/ssr/spa-mode'
@@ -283,7 +272,6 @@ export interface FileRouteTypes {
     | '/demo/form/simple'
     | '/demo/start/api-request'
     | '/demo/start/server-funcs'
-    | '/whiteboard/$whiteboardId/new'
     | '/demo/start/ssr/data-only'
     | '/demo/start/ssr/full-ssr'
     | '/demo/start/ssr/spa-mode'
@@ -309,7 +297,6 @@ export interface FileRouteTypes {
     | '/demo/form/simple'
     | '/demo/start/api-request'
     | '/demo/start/server-funcs'
-    | '/whiteboard/$whiteboardId/new'
     | '/demo/start/ssr/data-only'
     | '/demo/start/ssr/full-ssr'
     | '/demo/start/ssr/spa-mode'
@@ -329,7 +316,7 @@ export interface RootRouteChildren {
   InviteTokenRoute: typeof InviteTokenRoute
   ProjectProjectIdRoute: typeof ProjectProjectIdRouteWithChildren
   ShareTokenRoute: typeof ShareTokenRoute
-  WhiteboardWhiteboardIdRoute: typeof WhiteboardWhiteboardIdRouteWithChildren
+  WhiteboardWhiteboardIdRoute: typeof WhiteboardWhiteboardIdRoute
   DemoApiNamesRoute: typeof DemoApiNamesRoute
   DemoApiTqTodosRoute: typeof DemoApiTqTodosRoute
   DemoFormAddressRoute: typeof DemoFormAddressRoute
@@ -428,13 +415,6 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof ApiCollabTokenRouteImport
       parentRoute: typeof rootRouteImport
     }
-    '/whiteboard/$whiteboardId/new': {
-      id: '/whiteboard/$whiteboardId/new'
-      path: '/new'
-      fullPath: '/whiteboard/$whiteboardId/new'
-      preLoaderRoute: typeof WhiteboardWhiteboardIdNewRouteImport
-      parentRoute: typeof WhiteboardWhiteboardIdRoute
-    }
     '/demo/start/server-funcs': {
       id: '/demo/start/server-funcs'
       path: '/demo/start/server-funcs'
@@ -526,20 +506,6 @@ const ProjectProjectIdRouteChildren: ProjectProjectIdRouteChildren = {
 const ProjectProjectIdRouteWithChildren =
   ProjectProjectIdRoute._addFileChildren(ProjectProjectIdRouteChildren)
 
-interface WhiteboardWhiteboardIdRouteChildren {
-  WhiteboardWhiteboardIdNewRoute: typeof WhiteboardWhiteboardIdNewRoute
-}
-
-const WhiteboardWhiteboardIdRouteChildren: WhiteboardWhiteboardIdRouteChildren =
-  {
-    WhiteboardWhiteboardIdNewRoute: WhiteboardWhiteboardIdNewRoute,
-  }
-
-const WhiteboardWhiteboardIdRouteWithChildren =
-  WhiteboardWhiteboardIdRoute._addFileChildren(
-    WhiteboardWhiteboardIdRouteChildren,
-  )
-
 const rootRouteChildren: RootRouteChildren = {
   IndexRoute: IndexRoute,
   AuthorizeRoute: AuthorizeRoute,
@@ -552,7 +518,7 @@ const rootRouteChildren: RootRouteChildren = {
   InviteTokenRoute: InviteTokenRoute,
   ProjectProjectIdRoute: ProjectProjectIdRouteWithChildren,
   ShareTokenRoute: ShareTokenRoute,
-  WhiteboardWhiteboardIdRoute: WhiteboardWhiteboardIdRouteWithChildren,
+  WhiteboardWhiteboardIdRoute: WhiteboardWhiteboardIdRoute,
   DemoApiNamesRoute: DemoApiNamesRoute,
   DemoApiTqTodosRoute: DemoApiTqTodosRoute,
   DemoFormAddressRoute: DemoFormAddressRoute,

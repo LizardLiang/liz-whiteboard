@@ -10,6 +10,7 @@ import { toast } from 'sonner'
 import type { Area } from '@/data/models'
 import type { CreateArea, UpdateArea } from '@/data/schema'
 import { getWhiteboardAreas } from '@/lib/server-functions'
+import { isUnauthorizedError } from '@/lib/auth/errors'
 
 type Emit = (event: string, data: any, ack?: (res: any) => void) => void
 type On = (event: string, handler: (...args: Array<any>) => void) => void
@@ -84,7 +85,9 @@ export function useWhiteboardAreas(params: {
   })
 
   useEffect(() => {
-    if (data) setAreas(data)
+    // Session expired — root-provider's global handler surfaces the
+    // session-expired modal; nothing to reconcile locally.
+    if (data && !isUnauthorizedError(data)) setAreas(data)
   }, [data])
 
   // Live sync from other collaborators.

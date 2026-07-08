@@ -51,6 +51,7 @@ function makeEdgeProps(
       targetColumnId: 'col-002',
       cardinality: cardinality as any,
       label: label ?? null,
+      routingPoints: null,
       createdAt: new Date(),
       updatedAt: new Date(),
       sourceColumn: {} as any,

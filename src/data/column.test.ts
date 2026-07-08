@@ -15,7 +15,6 @@ import {
   reorderColumns,
   updateColumn,
 } from './column'
-import { db } from '@/db'
 import {
   makeColumn,
   makeProject,
@@ -72,7 +71,7 @@ describe('createColumn', () => {
       tableId,
       name: 'plain',
       dataType: 'string',
-    } as never)
+    })
 
     expect(col.isPrimaryKey).toBe(false)
     expect(col.isForeignKey).toBe(false)
@@ -106,7 +105,7 @@ describe('createColumns', () => {
       createColumns([
         { tableId, name: 'valid', dataType: 'string', order: 0 },
         // empty name fails Zod validation
-        { tableId, name: '', dataType: 'string', order: 1 } as never,
+        { tableId, name: '', dataType: 'string', order: 1 },
       ]),
     ).rejects.toThrow()
 

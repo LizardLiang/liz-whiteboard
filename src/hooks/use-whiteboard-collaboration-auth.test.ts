@@ -71,7 +71,7 @@ describe('TC-P5-06: permission_revoked event handler', () => {
   it('registers a permission_revoked event listener on mount', () => {
     renderHook(() => useWhiteboardCollaboration(whiteboardId, userId, vi.fn()))
 
-    const registeredEvents = mockOn.mock.calls.map(([event]: [string]) => event)
+    const registeredEvents = mockOn.mock.calls.map(([event]) => event)
     expect(registeredEvents).toContain('permission_revoked')
   })
 
@@ -79,7 +79,7 @@ describe('TC-P5-06: permission_revoked event handler', () => {
     renderHook(() => useWhiteboardCollaboration(whiteboardId, userId, vi.fn()))
 
     const permissionRevokedCall = mockOn.mock.calls.find(
-      ([event]: [string]) => event === 'permission_revoked',
+      ([event]) => event === 'permission_revoked',
     )
     const handler = permissionRevokedCall?.[1]
     expect(handler).toBeDefined()
@@ -98,7 +98,7 @@ describe('TC-P5-06: permission_revoked event handler', () => {
     renderHook(() => useWhiteboardCollaboration(whiteboardId, userId, vi.fn()))
 
     const permissionRevokedCall = mockOn.mock.calls.find(
-      ([event]: [string]) => event === 'permission_revoked',
+      ([event]) => event === 'permission_revoked',
     )
     const handler = permissionRevokedCall?.[1]
 
@@ -123,7 +123,7 @@ describe('TC-P5-06: permission_revoked event handler', () => {
     )
 
     const permissionRevokedCall = mockOn.mock.calls.find(
-      ([event]: [string]) => event === 'permission_revoked',
+      ([event]) => event === 'permission_revoked',
     )
     const handler = permissionRevokedCall?.[1]
 
@@ -144,7 +144,7 @@ describe('TC-P5-06: permission_revoked event handler', () => {
     expect(mockNavigate).not.toHaveBeenCalled()
 
     // off should have been called to remove the listener
-    const offCalls = mockOff.mock.calls.map(([event]: [string]) => event)
+    const offCalls = mockOff.mock.calls.map(([event]) => event)
     expect(offCalls).toContain('permission_revoked')
   })
 })
@@ -174,7 +174,7 @@ describe('SEC-MODAL-04: session_expired socket event triggers triggerSessionExpi
     // We test that the hook correctly passes triggerSessionExpired through.
     // Since useCollaboration is mocked (no actual socket), we test via the on() call:
     const sessionExpiredCall = mockOn.mock.calls.find(
-      ([event]: [string]) => event === 'session_expired',
+      ([event]) => event === 'session_expired',
     )
 
     if (sessionExpiredCall) {
@@ -203,7 +203,7 @@ describe('SEC-MODAL-04: session_expired socket event triggers triggerSessionExpi
     )
 
     const sessionExpiredRegistrations = mockOn.mock.calls.filter(
-      ([event]: [string]) => event === 'session_expired',
+      ([event]) => event === 'session_expired',
     )
 
     // At most 1 registration for session_expired in the hook

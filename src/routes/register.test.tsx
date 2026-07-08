@@ -270,7 +270,9 @@ describe('TC-P3-14: RegisterPage loading state', () => {
     fireEvent.click(btn)
 
     await waitFor(() => {
-      expect(screen.getByTestId('submit-btn').disabled).toBe(true)
+      expect(
+        (screen.getByTestId('submit-btn') as HTMLButtonElement).disabled,
+      ).toBe(true)
     })
 
     resolveFn({ success: true, newUser: true, redirect: '/' })

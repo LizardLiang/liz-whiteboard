@@ -110,9 +110,9 @@ vi.mock('@dnd-kit/core', () => ({
     onDragCancel,
   }: {
     children: React.ReactNode
-    onDragStart?: Function
-    onDragEnd?: Function
-    onDragCancel?: Function
+    onDragStart?: (...args: Array<any>) => any
+    onDragEnd?: (...args: Array<any>) => any
+    onDragCancel?: (...args: Array<any>) => any
   }) => {
     // Expose handlers via test spies for triggering in tests
     if (onDragStart) mockDragStartHandler.mockImplementation(onDragStart)
@@ -140,7 +140,7 @@ vi.mock('@dnd-kit/sortable', () => ({
     result.splice(to, 0, removed)
     return result
   }),
-  useSortable: vi.fn((opts: { id: string }) => ({
+  useSortable: vi.fn((_opts: { id: string }) => ({
     attributes: { 'aria-roledescription': 'sortable' },
     setNodeRef: vi.fn(),
     transform: null,

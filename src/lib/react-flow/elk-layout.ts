@@ -3,8 +3,7 @@
  * Provides hierarchical auto-layout using Eclipse Layout Kernel (ELK)
  */
 
-import type { Edge, Node } from '@xyflow/react'
-import type { ELKNode } from 'elkjs'
+import type { ElkNode } from 'elkjs'
 import type { RelationshipEdgeType, TableNodeType } from './types'
 
 /**
@@ -13,7 +12,7 @@ import type { RelationshipEdgeType, TableNodeType } from './types'
 export interface ELKGraph {
   id: string
   layoutOptions: Record<string, string>
-  children: Array<ELKNode>
+  children: Array<ElkNode>
   edges: Array<{
     id: string
     sources: Array<string>
@@ -76,7 +75,7 @@ export function convertNodesToELKGraph(
  */
 export function applyELKLayout(
   nodes: Array<TableNodeType>,
-  elkNodes: Array<ELKNode>,
+  elkNodes: Array<ElkNode>,
 ): Array<TableNodeType> {
   // Create lookup map for O(1) position lookup
   const layoutMap = new Map(

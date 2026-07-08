@@ -11,6 +11,7 @@ import { toast } from 'sonner'
 import type { CommentWithAuthor } from '@/data/models'
 import type { CreateComment } from '@/data/schema'
 import { getWhiteboardComments } from '@/lib/server-functions'
+import { isUnauthorizedError } from '@/lib/auth/errors'
 
 type Emit = (event: string, data: any, ack?: (res: any) => void) => void
 type On = (event: string, handler: (...args: Array<any>) => void) => void
@@ -72,7 +73,9 @@ export function useWhiteboardComments(params: {
   })
 
   useEffect(() => {
-    if (data) setComments(data)
+    // Session expired — root-provider's global handler surfaces the
+    // session-expired modal; nothing to reconcile locally.
+    if (data && !isUnauthorizedError(data)) setComments(data)
   }, [data])
 
   // Live sync from other collaborators.

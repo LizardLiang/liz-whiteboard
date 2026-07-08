@@ -17,6 +17,8 @@ function makeTable(id: string) {
     description: null,
     positionX: 0,
     positionY: 0,
+    width: null,
+    height: null,
     createdAt: new Date(),
     updatedAt: new Date(),
     columns: [],
@@ -30,7 +32,7 @@ function renderToolbar(
     whiteboardId: 'wb-1',
     tables: [makeTable('1'), makeTable('2')],
     tableCount: 2,
-  } as const
+  }
 
   return render(<Toolbar {...defaults} {...props} />)
 }

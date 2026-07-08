@@ -18,11 +18,14 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { useReactFlow } from '@xyflow/react'
 import { toast } from 'sonner'
-import type { Edge, Node } from '@xyflow/react'
 import type {
   LayoutOutputEdge,
   LayoutOutputPosition,
 } from '@/lib/auto-layout/d3-force-layout'
+import type {
+  RelationshipEdgeType,
+  TableNodeType,
+} from '@/lib/react-flow/types'
 import { applyBulkPositions } from '@/lib/auto-layout'
 import { recalculateEdgesForDraggedNodes } from '@/lib/react-flow/edge-routing'
 import { isUnauthorizedError } from '@/lib/auth/errors'
@@ -42,8 +45,8 @@ export interface UseAutoLayoutOrchestratorArgs {
   whiteboardId: string
   /** The d3-force layout function from useD3ForceLayout */
   runD3ForceLayout: (
-    nodes: Array<Node>,
-    edges: Array<Edge>,
+    nodes: Array<TableNodeType>,
+    edges: Array<RelationshipEdgeType>,
   ) => Promise<{
     positions: Array<LayoutOutputPosition>
     edgeOffsets: Array<LayoutOutputEdge>
@@ -209,13 +212,23 @@ export function useAutoLayoutOrchestrator({
 
     try {
       // Step 1 — Compute layout (may return null on error). Subject-area
-      // nodes (GH #106) are excluded from the layout input: d3-force would
-      // otherwise treat an area like a table, scattering it away from its
-      // members (Bug 2). `positions` therefore never contains an area id, so
-      // the bulk-apply/persist below leaves areas untouched and never
-      // targets a non-existent DiagramTable row.
-      const tableNodesOnly = getNodes().filter((n) => n.type !== 'area')
-      const layoutResult = await runD3ForceLayout(tableNodesOnly, getEdges())
+      // (GH #106) and comment-pin (GH #110) nodes are excluded from the
+      // layout input: d3-force would otherwise treat them like a table,
+      // scattering them away from their members/anchors (Bug 2) — they have
+      // no `data.table` for computeD3ForceLayout to size against. `positions`
+      // therefore never contains an area/comment id, so the bulk-apply/
+      // persist below leaves them untouched and never targets a
+      // non-existent DiagramTable row.
+      const tableNodesOnly = getNodes().filter(
+        (n): n is TableNodeType => n.type === 'table',
+      )
+      const relationshipEdgesOnly = getEdges().filter(
+        (e): e is RelationshipEdgeType => e.type === 'relationship',
+      )
+      const layoutResult = await runD3ForceLayout(
+        tableNodesOnly,
+        relationshipEdgesOnly,
+      )
 
       if (!isMountedRef.current) return
       if (!layoutResult) {
@@ -232,29 +245,48 @@ export function useAutoLayoutOrchestrator({
       // setNodes and edge-handle recalculation.
       const updatedNodes = applyBulkPositions(getNodes(), positions)
       setNodes(updatedNodes)
+      // Edges only ever connect table nodes (never area/comment pins) —
+      // narrow for recalculateEdgesForDraggedNodes below, which reads
+      // data.table off each node.
+      const updatedTableNodes = updatedNodes.filter(
+        (n): n is TableNodeType => n.type === 'table',
+      )
 
       // Build a lookup for fast per-edge offset access
       const offsetById = new Map(edgeOffsets.map((o) => [o.id, o]))
       const allMovedIds = new Set(positions.map((p) => p.id))
 
       setEdges((prev) => {
+        // Every edge in this app is a 'relationship' edge (the sole
+        // registered edge type — see node-types.ts) — filter narrows the
+        // type accordingly for recalculateEdgesForDraggedNodes below.
+        const relationshipEdges = prev.filter(
+          (e): e is RelationshipEdgeType => e.type === 'relationship',
+        )
         // Apply bundle offsets to edge data first, then recalculate handle sides.
-        const withOffsets = prev.map((e) => {
-          const off = offsetById.get(e.id)
-          if (!off || (off.handleYOffset === 0 && off.centerXOffset === 0))
-            return e
-          return {
-            ...e,
-            data: {
-              ...e.data,
-              bundleHandleYOffset: off.handleYOffset,
-              bundleCenterXOffset: off.centerXOffset,
-            },
-          }
-        })
+        const withOffsets: Array<RelationshipEdgeType> = relationshipEdges.map(
+          (e): RelationshipEdgeType => {
+            const off = offsetById.get(e.id)
+            if (
+              !off ||
+              (off.handleYOffset === 0 && off.centerXOffset === 0) ||
+              !e.data
+            ) {
+              return e
+            }
+            return {
+              ...e,
+              data: {
+                ...e.data,
+                bundleHandleYOffset: off.handleYOffset,
+                bundleCenterXOffset: off.centerXOffset,
+              },
+            }
+          },
+        )
         return recalculateEdgesForDraggedNodes(
           withOffsets,
-          updatedNodes,
+          updatedTableNodes,
           allMovedIds,
         )
       })

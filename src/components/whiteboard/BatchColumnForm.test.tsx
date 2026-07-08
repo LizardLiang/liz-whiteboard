@@ -3,8 +3,7 @@
 // Suite 9 — Component: Batch UX Contract (SEC-BATCH-UX-05)
 // TC-BUX-01..05
 
-import React from 'react'
-import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
+import { describe, expect, it, vi } from 'vitest'
 import { act, fireEvent, render, screen } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 
@@ -34,9 +33,10 @@ function renderForm(overrides: Partial<BatchColumnFormProps> = {}) {
   return { ...result, props: defaultProps }
 }
 
-function fillRowName(index: number, value: string) {
-  const inputs = screen.getAllByRole('textbox')
-  fireEvent.change(inputs[index], { target: { value } })
+// Testing Library's getAllByRole types matches as HTMLElement — these are
+// always <input> textboxes in this form, so narrow once for `.value` reads.
+function getTextboxes(): Array<HTMLInputElement> {
+  return screen.getAllByRole('textbox') as Array<HTMLInputElement>
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -58,7 +58,7 @@ describe('TC-BUX-01: Batch form retains input after BATCH_DENIED', () => {
     })
 
     // Verify all 3 inputs are pre-filled
-    const inputs = screen.getAllByRole('textbox')
+    const inputs = getTextboxes()
     expect(inputs).toHaveLength(3)
     expect(inputs[0].value).toBe('col_a')
     expect(inputs[1].value).toBe('col_b')
@@ -75,7 +75,7 @@ describe('TC-BUX-01: Batch form retains input after BATCH_DENIED', () => {
     await act(async () => {})
 
     // Input values must be preserved — no clear/reset
-    const inputsAfter = screen.getAllByRole('textbox')
+    const inputsAfter = getTextboxes()
     expect(inputsAfter).toHaveLength(3)
     expect(inputsAfter[0].value).toBe('col_a')
     expect(inputsAfter[1].value).toBe('col_b')
@@ -231,7 +231,7 @@ describe('TC-BUX-05: Banner has role="alert" for accessibility', () => {
 describe('BatchColumnForm: row management', () => {
   it('renders one empty row by default', () => {
     renderForm()
-    const inputs = screen.getAllByRole('textbox')
+    const inputs = getTextboxes()
     expect(inputs).toHaveLength(1)
     expect(inputs[0].value).toBe('')
   })
@@ -240,7 +240,7 @@ describe('BatchColumnForm: row management', () => {
     renderForm()
     const addBtn = screen.getByRole('button', { name: /add column row/i })
     fireEvent.click(addBtn)
-    const inputs = screen.getAllByRole('textbox')
+    const inputs = getTextboxes()
     expect(inputs).toHaveLength(2)
   })
 
@@ -255,7 +255,7 @@ describe('BatchColumnForm: row management', () => {
       name: /remove column/i,
     })
     fireEvent.click(removeButtons[0])
-    const inputs = screen.getAllByRole('textbox')
+    const inputs = getTextboxes()
     expect(inputs).toHaveLength(1)
     expect(inputs[0].value).toBe('col_2')
   })

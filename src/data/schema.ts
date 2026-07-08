@@ -430,6 +430,15 @@ export type CreateTable = z.infer<typeof createTableSchema>
 export type UpdateTable = z.infer<typeof updateTableSchema>
 
 export type CreateColumn = z.infer<typeof createColumnSchema>
+/**
+ * Pre-parse input shape for createColumnSchema — the `.default()`-backed
+ * fields (isPrimaryKey/isForeignKey/isUnique/isNullable/order) are optional
+ * here since Zod fills them in during `.parse()`. Callers that construct a
+ * column payload by hand (seed script, data-layer callers) should accept
+ * this type rather than `CreateColumn`, which describes the post-parse
+ * output where those fields are always present.
+ */
+export type CreateColumnInput = z.input<typeof createColumnSchema>
 export type UpdateColumn = z.infer<typeof updateColumnSchema>
 export type ReorderColumns = z.infer<typeof reorderColumnsSchema>
 

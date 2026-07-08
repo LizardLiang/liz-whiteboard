@@ -7,7 +7,7 @@
 import { createColumnHandleId } from './edge-routing'
 import type { Column, Relationship } from '@/data/models'
 import type { Cardinality } from '@/data/schema'
-import type { RelationshipEdgeData, RelationshipEdgeType } from './types'
+import type { RelationshipEdgeType } from './types'
 
 /**
  * Create unique handle ID for column connection point

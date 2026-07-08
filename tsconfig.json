@@ -6,6 +6,7 @@
     "prettier.config.js",
     "vite.config.js"
   ],
+  "exclude": ["tools/eslint-rules/__fixtures__/**"],
 
   "compilerOptions": {
     "target": "ES2022",

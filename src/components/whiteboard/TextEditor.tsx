@@ -152,20 +152,6 @@ export function TextEditor({
     return new Set(parseErrors.map((err) => err.line))
   }, [parseErrors])
 
-  // Generate syntax-highlighted content (simple approach)
-  const highlightedLines = useMemo(() => {
-    return localValue.split('\n').map((line, index) => {
-      const lineNumber = index + 1
-      const hasError = errorLines.has(lineNumber)
-
-      return {
-        text: line,
-        lineNumber,
-        hasError,
-      }
-    })
-  }, [localValue, errorLines])
-
   return (
     <div className="flex flex-col h-full bg-background">
       {/* Error Display */}

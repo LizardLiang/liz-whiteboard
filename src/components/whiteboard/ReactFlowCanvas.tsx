@@ -731,7 +731,7 @@ export function ReactFlowCanvas({
         )}
         {showMinimap && (
           <MiniMap
-            nodeColor={(node) => {
+            nodeColor={() => {
               return 'var(--rf-table-bg)'
             }}
             maskColor="rgba(0, 0, 0, 0.1)"

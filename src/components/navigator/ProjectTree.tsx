@@ -57,7 +57,7 @@ import {
   deleteWhiteboardFn,
   updateWhiteboardFn,
 } from '@/routes/api/whiteboards'
-import { isUnauthorizedError } from '@/lib/auth/errors'
+import { isForbiddenError, isUnauthorizedError } from '@/lib/auth/errors'
 
 /**
  * Dialog state types
@@ -162,6 +162,10 @@ export function ProjectTree() {
         toast.error('Session expired', { description: 'Please log in again.' })
         return
       }
+      if (isForbiddenError(data)) {
+        toast.error('Failed to update project', { description: data.message })
+        return
+      }
       queryClient.invalidateQueries({ queryKey: ['projects'] })
       setDialogState({ type: 'none' })
       resetForm()
@@ -198,6 +202,10 @@ export function ProjectTree() {
     onSuccess: (data) => {
       if (isUnauthorizedError(data)) {
         toast.error('Session expired', { description: 'Please log in again.' })
+        return
+      }
+      if (isForbiddenError(data)) {
+        toast.error('Failed to update folder', { description: data.message })
         return
       }
       queryClient.invalidateQueries({ queryKey: ['projects'] })

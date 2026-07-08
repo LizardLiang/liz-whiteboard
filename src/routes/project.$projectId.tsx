@@ -16,7 +16,7 @@ import { CreateFolderDialog } from '@/components/navigator/CreateFolderDialog'
 import { ProjectSharePanel } from '@/components/project/ProjectSharePanel'
 import { getProjectPageContent } from '@/routes/api/projects'
 import { hasMinimumRole } from '@/lib/auth/permissions'
-import { isForbiddenError } from '@/lib/auth/errors'
+import { isForbiddenError, isUnauthorizedError } from '@/lib/auth/errors'
 
 export const Route = createFileRoute('/project/$projectId')({
   component: ProjectPage,
@@ -67,6 +67,17 @@ export function ProjectPage() {
     return (
       <div className="container mx-auto px-4 py-8">
         <ProjectAccessDenied message={content.message} />
+      </div>
+    )
+  }
+
+  // Session expired between page load and this fetch — root-provider's
+  // global onSuccess handler already surfaces the session-expired modal;
+  // this is just the render-side guard so we don't touch content.folders.
+  if (isUnauthorizedError(content)) {
+    return (
+      <div className="container mx-auto px-4 py-8">
+        <ProjectPageSkeleton />
       </div>
     )
   }

@@ -3,19 +3,16 @@
 
 import { Link, createFileRoute } from '@tanstack/react-router'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import { useCallback, useEffect, useRef, useState } from 'react'
 import { toast } from 'sonner'
 import type Konva from 'konva'
 import type { CanvasViewport } from '@/components/whiteboard/Canvas'
-import type {
-  CreateColumn,
-  CreateRelationship,
-  CreateTable,
-} from '@/data/schema'
+import type { CreateRelationship, CreateTable } from '@/data/schema'
 import type { DiagramAST } from '@/lib/parser/ast'
 import type { ZoomControls } from '@/components/whiteboard/Toolbar'
 import type { CommentActions } from '@/components/whiteboard/ReactFlowWhiteboard'
 import type { CommentWithAuthor } from '@/data/models'
+import type { ShowMode } from '@/lib/react-flow/types'
 import { Canvas, useCanvasControls } from '@/components/whiteboard/Canvas'
 import { TableNode } from '@/components/whiteboard/TableNode'
 import { RelationshipEdge } from '@/components/whiteboard/RelationshipEdge'
@@ -37,14 +34,13 @@ import {
   getWhiteboardWithDiagram,
   saveCanvasState,
   updateTablePosition as updateTablePositionFn,
-  updateWhiteboardTextSourceFn,
 } from '@/lib/server-functions'
+import { entitiesToText } from '@/lib/parser/diagram-parser'
 import {
-  astToEntities,
-  entitiesToText,
-  parseDiagram,
-} from '@/lib/parser/diagram-parser'
-import { classifyQueryFailure, isThrownForbiddenError } from '@/lib/auth/errors'
+  classifyQueryFailure,
+  isThrownForbiddenError,
+  isUnauthorizedError,
+} from '@/lib/auth/errors'
 import { hasMinimumRole } from '@/lib/auth/permissions'
 
 /**
@@ -85,7 +81,7 @@ function WhiteboardEditor() {
     offsetX: 0,
     offsetY: 0,
   })
-  const [activeTab, setActiveTab] = useState<'visual' | 'text'>('visual')
+  const [activeTab] = useState<'visual' | 'text'>('visual')
   // Version history panel (GH #107) — owned here (not inside Toolbar/
   // ReactFlowWhiteboard) because WhiteboardHistoryPanel's preview reuses
   // ReactFlowWhiteboard, and rendering the panel from within
@@ -105,16 +101,14 @@ function WhiteboardEditor() {
     (c) => c.parentId === null && !c.resolved,
   ).length
   const [textSource, setTextSource] = useState<string>('')
-  const [isTextSyncEnabled, setIsTextSyncEnabled] = useState(true)
+  const [isTextSyncEnabled] = useState(true)
   // React Flow display mode controls (set via callback)
-  const [reactFlowShowMode, setReactFlowShowMode] =
-    useState<string>('ALL_FIELDS')
-  const reactFlowShowModeRef = useRef<((mode: string) => void) | null>(null)
+  const [, setReactFlowShowMode] = useState<ShowMode>('ALL_FIELDS')
+  const reactFlowShowModeRef = useRef<((mode: ShowMode) => void) | null>(null)
 
   // React Flow zoom controls (set via callback from ReactFlowWhiteboard)
-  const [reactFlowZoomControls, setReactFlowZoomControls] =
-    useState<ZoomControls | null>(null)
-  const [reactFlowCurrentZoom, setReactFlowCurrentZoom] = useState<number>(1)
+  const [, setReactFlowZoomControls] = useState<ZoomControls | null>(null)
+  const [, setReactFlowCurrentZoom] = useState<number>(1)
 
   // Canvas stage ref for programmatic zoom controls
   const stageRef = useRef<Konva.Stage>(null)
@@ -138,9 +132,18 @@ function WhiteboardEditor() {
     queryFn: async () => {
       // Fetch whiteboard with tables and relationships
       const whiteboard = await getWhiteboardWithDiagram({ data: whiteboardId })
+      // Session expired between page load and this fetch — return the auth
+      // error itself as the query's resolved data (rather than nesting it
+      // inside { whiteboard, relationships }) so the QueryClient's global
+      // onSuccess handler (root-provider.tsx) can detect it via
+      // isUnauthorizedError() and surface the session-expired modal, exactly
+      // like every other requireAuth-wrapped call in this app.
+      if (isUnauthorizedError(whiteboard)) return whiteboard
+
       const relationships = await getWhiteboardRelationships({
         data: whiteboardId,
       })
+      if (isUnauthorizedError(relationships)) return relationships
 
       return {
         whiteboard,
@@ -186,12 +189,20 @@ function WhiteboardEditor() {
     return () => window.removeEventListener('keydown', handleKeyDown)
   }, [toggleZenMode])
 
+  // Auth-error-narrowed view of the loaded whiteboard's canvasState, used
+  // only as this effect's dependency/read so isUnauthorizedError narrowing
+  // doesn't have to happen inside a dependency-array expression.
+  const loadedCanvasState =
+    whiteboardData && !isUnauthorizedError(whiteboardData)
+      ? whiteboardData.whiteboard?.canvasState
+      : undefined
+
   /**
    * Restore canvas state when whiteboard loads
    */
   useEffect(() => {
-    if (whiteboardData?.whiteboard?.canvasState) {
-      const savedState = whiteboardData.whiteboard.canvasState as {
+    if (loadedCanvasState) {
+      const savedState = loadedCanvasState as {
         zoom: number
         offsetX: number
         offsetY: number
@@ -211,7 +222,7 @@ function WhiteboardEditor() {
         console.log('Canvas state restored:', savedState)
       }
     }
-  }, [whiteboardData?.whiteboard?.canvasState])
+  }, [loadedCanvasState])
 
   // WebSocket collaboration - MUST be called before any early returns
   const { emit, on, off, connectionState, isUnauthorized } = useCollaboration(
@@ -305,7 +316,7 @@ function WhiteboardEditor() {
       })
       queryClient.invalidateQueries({ queryKey: ['whiteboard', whiteboardId] })
     },
-    onError: (err, newTable, context) => {
+    onError: (err, _newTable, context) => {
       // Rollback on error
       if (context?.previousData) {
         queryClient.setQueryData(
@@ -331,6 +342,11 @@ function WhiteboardEditor() {
       return await updateTablePositionFn({ data })
     },
     onSuccess: (updatedTable, variables) => {
+      // Session expired mid-drag — root-provider's global onSuccess handler
+      // already surfaces the session-expired modal for this resolved-value
+      // 401; skip the optimistic cache patch below (nothing to reconcile).
+      if (isUnauthorizedError(updatedTable)) return
+
       // Emit WebSocket event for other users
       emit('table:move', {
         tableId: variables.id,
@@ -381,24 +397,6 @@ function WhiteboardEditor() {
           ? 'You do not have permission to add relationships to this whiteboard.'
           : 'Failed to create relationship. Please try again.',
       )
-    },
-  })
-
-  const updateTextSourceMutation = useMutation({
-    mutationFn: async (newTextSource: string) => {
-      return await updateWhiteboardTextSourceFn({
-        data: { whiteboardId, textSource: newTextSource },
-      })
-    },
-    onSuccess: (updatedWhiteboard) => {
-      // Emit WebSocket event for other users
-      emit('text:update', {
-        textSource: updatedWhiteboard.textSource,
-        cursorPosition: 0,
-      })
-    },
-    onError: (err) => {
-      console.error('Failed to update text source:', err)
     },
   })
 
@@ -459,27 +457,11 @@ function WhiteboardEditor() {
     }
   }, [])
 
-  // Text editor handlers
-  const handleTextChange = useCallback(
-    (newText: string) => {
-      setTextSource(newText)
-      updateTextSourceMutation.mutate(newText)
-    },
-    [updateTextSourceMutation],
-  )
-
-  const handleParsedDiagram = useCallback((ast: DiagramAST) => {
-    // TODO: Implement validation to prevent destructive changes (T046)
-    // For now, we don't automatically apply text changes to canvas
-    // User needs to explicitly trigger sync or we apply on tab switch
-    console.log('Diagram parsed successfully:', ast)
-  }, [])
-
   /**
    * Callback for React Flow to register its display mode controls
    */
   const handleDisplayModeReady = useCallback(
-    (showMode: string, setShowMode: (mode: string) => void) => {
+    (showMode: ShowMode, setShowMode: (mode: ShowMode) => void) => {
       setReactFlowShowMode(showMode)
       reactFlowShowModeRef.current = setShowMode
     },
@@ -500,19 +482,10 @@ function WhiteboardEditor() {
     setReactFlowCurrentZoom(zoom)
   }, [])
 
-  /**
-   * Handle display mode change from Toolbar
-   */
-  const handleShowModeChange = useCallback((mode: string) => {
-    if (USE_REACT_FLOW && reactFlowShowModeRef.current) {
-      reactFlowShowModeRef.current(mode)
-      setReactFlowShowMode(mode)
-    }
-  }, [])
-
   // Initialize textSource from database or sync from canvas when switching to text mode
   useEffect(() => {
-    if (activeTab === 'text' && whiteboardData?.whiteboard) {
+    if (!whiteboardData || isUnauthorizedError(whiteboardData)) return
+    if (activeTab === 'text' && whiteboardData.whiteboard) {
       // If whiteboard has stored textSource, use it; otherwise generate from canvas
       if (whiteboardData.whiteboard.textSource && textSource === '') {
         setTextSource(whiteboardData.whiteboard.textSource)
@@ -676,6 +649,21 @@ function WhiteboardEditor() {
     return (
       <div className="flex items-center justify-center h-screen">
         <p className="text-lg text-muted-foreground">Loading whiteboard...</p>
+      </div>
+    )
+  }
+
+  // Session expired mid-visit (queryFn returns the auth error itself in this
+  // case — see above). The QueryClient's global onSuccess handler already
+  // dispatched HTTP_UNAUTHORIZED, which opens the session-expired modal via
+  // AuthContext; this is just the render-side guard so we don't try to read
+  // .tables/.relationships off an { error, status } payload.
+  if (isUnauthorizedError(whiteboardData)) {
+    return (
+      <div className="flex items-center justify-center h-screen">
+        <p className="text-lg text-muted-foreground">
+          Your session expired. Please sign in again.
+        </p>
       </div>
     )
   }

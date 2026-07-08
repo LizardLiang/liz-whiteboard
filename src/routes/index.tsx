@@ -28,6 +28,7 @@ import { Label } from '@/components/ui/label'
 import { Textarea } from '@/components/ui/textarea'
 import { createProjectFn, getProjectsWithTree } from '@/routes/api/projects'
 import { getRecentWhiteboards } from '@/routes/api/whiteboards'
+import { isUnauthorizedError } from '@/lib/auth/errors'
 
 export const Route = createFileRoute('/')({
   component: HomePage,
@@ -59,6 +60,10 @@ function HomePage() {
   const createProjectMutation = useMutation({
     mutationFn: (data: CreateProject) => createProjectFn({ data }),
     onSuccess: (data) => {
+      // Session expired — root-provider's global handler surfaces the
+      // session-expired modal; skip the success toast/cache dance.
+      if (isUnauthorizedError(data)) return
+
       queryClient.invalidateQueries({ queryKey: ['projects'] })
       queryClient.invalidateQueries({ queryKey: ['projects', 'tree'] })
       setShowCreateProject(false)
