@@ -51,10 +51,21 @@ export async function createTableHandler(
   await requireServerFnRole(user.id, projectId, 'EDITOR')
   try {
     const table = await createDiagramTable(data)
-    emitToWhiteboard(data.whiteboardId, 'table:created', {
-      ...table,
-      createdBy: user.id,
-    })
+    // Best-effort live broadcast: the table is already persisted, so a
+    // broadcast failure must never surface as a create failure (which would
+    // roll back the client's optimistic insert and then collide with the
+    // UNIQUE (whiteboardId, name) constraint on retry). Isolate it.
+    try {
+      emitToWhiteboard(data.whiteboardId, 'table:created', {
+        ...table,
+        createdBy: user.id,
+      })
+    } catch (broadcastError) {
+      console.error(
+        'table:created broadcast failed (table was created):',
+        broadcastError,
+      )
+    }
     return table
   } catch (error) {
     throw new Error(
