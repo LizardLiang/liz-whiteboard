@@ -12,9 +12,9 @@ import { createHash } from 'node:crypto'
 import { Database } from 'bun:sqlite'
 import bcrypt from 'bcryptjs'
 import {
-  COLLAB_ID as ID,
   COLLAB_PASSWORD,
   COLLAB_USERS,
+  COLLAB_ID as ID,
 } from './seed-collab-constants'
 
 const DB_PATH =

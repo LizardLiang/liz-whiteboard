@@ -203,10 +203,18 @@ function WhiteboardEditor() {
 
       return { previousData }
     },
-    onSuccess: (createdTable) => {
-      // Emit WebSocket event for other users
-      emit('table:create', createdTable)
-
+    // GH #125: no longer re-emits 'table:create' here. That re-submitted the
+    // already-persisted row (DB nulls) back through the socket's
+    // `table:create` handler for re-validation + re-insert — it always threw
+    // a ZodError (createTableSchema is .optional(), not .nullable()) before
+    // the handler's own socket.broadcast.emit('table:created', ...) could
+    // run, so peers never received the broadcast; even a schema fix would
+    // then hit the whiteboardId+name UNIQUE constraint on the duplicate
+    // insert attempt. The server now broadcasts `table:created` itself, from
+    // createTableFn's handler (src/lib/diagram-table/handlers.ts), right
+    // after persisting — this callback only needs to keep the local caches
+    // fresh for the creating client.
+    onSuccess: () => {
       // Invalidate and refetch
       queryClient.invalidateQueries({
         queryKey: ['whiteboard-page', whiteboardId],

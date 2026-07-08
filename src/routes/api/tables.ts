@@ -1,10 +1,16 @@
 // src/routes/api/tables.ts
 // TanStack Start server functions for DiagramTable CRUD operations
+//
+// createTableFn's handler is deliberately NOT inline here (GH #125) — see
+// src/lib/diagram-table/handlers.ts's header comment: it calls
+// emitToWhiteboard (src/routes/api/collaboration.ts, which top-level-imports
+// the Node-only `socket.io` package), and this file IS imported by client
+// components, so that import must live in a separate, never-client-imported
+// module for Rollup to tree-shake it out of the browser bundle.
 
 import { createServerFn } from '@tanstack/react-start'
 import { z } from 'zod'
 import {
-  createDiagramTable,
   deleteDiagramTable,
   findDiagramTableById,
   findDiagramTableByIdWithRelations,
@@ -22,6 +28,7 @@ import {
   getWhiteboardProjectId,
 } from '@/data/resolve-project'
 import { requireServerFnRole } from '@/lib/auth/require-role'
+import { createTableHandler } from '@/lib/diagram-table/handlers'
 
 /**
  * Get all tables in a whiteboard
@@ -184,20 +191,7 @@ export const getTableWithRelations = createServerFn({ method: 'GET' })
  */
 export const createTableFn = createServerFn({ method: 'POST' })
   .inputValidator((data: unknown) => createTableSchema.parse(data))
-  .handler(
-    requireAuth(async ({ user }, data) => {
-      const projectId = await getWhiteboardProjectId(data.whiteboardId)
-      await requireServerFnRole(user.id, projectId, 'EDITOR')
-      try {
-        const table = await createDiagramTable(data)
-        return table
-      } catch (error) {
-        throw new Error(
-          `Failed to create table: ${error instanceof Error ? error.message : 'Unknown error'}`,
-        )
-      }
-    }),
-  )
+  .handler(requireAuth(createTableHandler))
 
 /**
  * Update an existing table
