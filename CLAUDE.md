@@ -28,7 +28,7 @@
 - **Database**: PostgreSQL via Prisma 6.16
 - **Validation**: Zod 4.1
 - **UI**: shadcn/ui + TailwindCSS 4.0
-- **Canvas**: Konva + react-konva
+- **Canvas**: React Flow (@xyflow/react)
 - **Real-time**: Socket.IO
 - **Parser**: Chevrotain
 - **Layout**: d3-force
@@ -39,7 +39,7 @@
 src/
 ├── components/       # React components
 │   ├── ui/          # shadcn/ui components
-│   ├── whiteboard/  # Canvas components (Konva-based)
+│   ├── whiteboard/  # Canvas components (React Flow-based)
 │   ├── navigator/   # Project/folder navigation
 │   └── layout/      # App layout
 ├── routes/          # TanStack Router routes

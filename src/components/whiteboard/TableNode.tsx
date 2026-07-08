@@ -1,399 +1,803 @@
-// src/components/whiteboard/TableNode.tsx
-// Konva component for rendering a database table with columns
-
-import { useEffect, useRef } from 'react'
-import { Group, Line, Rect, Text } from 'react-konva'
-import type Konva from 'konva'
-import type { KonvaEventObject } from 'konva/lib/Node'
-import type { Column, DiagramTable } from '@/data/models'
-
 /**
- * TableNode component props
+ * TableNode — interactive React Flow node for ER diagram tables
+ * Supports inline column editing, creation, deletion, notes, and real-time sync
+ * column-reorder: raw pointer-event drag (document-level listeners, rAF throttled)
  */
-export interface TableNodeProps {
-  /** Table data from database */
-  table: DiagramTable & { columns: Array<Column> }
-  /** Whether this table is selected */
-  isSelected?: boolean
-  /** Callback when table is clicked */
-  onClick?: (tableId: string) => void
-  /** Callback when table is dragged */
-  onDragMove?: (tableId: string, x: number, y: number) => void
-  /** Callback when table drag ends */
-  onDragEnd?: (tableId: string, x: number, y: number) => void
+
+import { memo, useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import { Link2, MessageCircle } from 'lucide-react'
+import { toast } from 'sonner'
+import { ColumnRow } from './column/ColumnRow'
+import { AddColumnRow } from './column/AddColumnRow'
+import { DeleteColumnDialog } from './column/DeleteColumnDialog'
+import { InsertionLine } from './column/InsertionLine'
+import { TableNodeContextMenu } from './TableNodeContextMenu'
+import { TableRelationsPanel } from './TableRelationsPanel'
+import { CommentThreadPopover } from './CommentThreadPopover'
+import { TableNotePopover } from './TableNotePopover'
+import { useWhiteboardPermissions } from './whiteboard-permissions-context'
+import type { Column } from '@/data/models'
+import type {
+  RelationshipEdgeType,
+  TableNodeData,
+} from '@/lib/react-flow/types'
+import type { ColumnRelationship, EditingField } from './column/types'
+import type { DataType } from '@/data/schema'
+import type { Dialect } from '@/lib/ddl-generator'
+import { getDirectlyRelatedTableIds } from '@/lib/react-flow/highlighting'
+import { usePrefersReducedMotion } from '@/hooks/use-prefers-reduced-motion'
+
+// Row height constant for InsertionLine positioning (matches minHeight in ColumnRow)
+const COLUMN_ROW_HEIGHT = 28
+
+interface TableNodeProps {
+  id: string
+  data: TableNodeData
+  selected?: boolean
 }
 
-/**
- * Get CSS variable value from document root
- * @param varName - CSS variable name (e.g., '--table-fill')
- * @param fallback - Fallback value if variable not found
- * @returns Color value
- */
-function getCSSVariable(varName: string, fallback: string): string {
-  if (typeof window === 'undefined') return fallback
-  try {
-    const root = document.documentElement
-    const value = getComputedStyle(root).getPropertyValue(varName).trim()
-    return value || fallback
-  } catch (error) {
-    console.error(`Failed to read CSS variable ${varName}:`, error)
-    return fallback
-  }
-}
+export const TableNode = memo(
+  ({ data, selected }: TableNodeProps) => {
+    const { canEdit } = useWhiteboardPermissions()
+    const {
+      table,
+      showMode,
+      isActiveHighlighted,
+      isHighlighted,
+      isHovered,
+      isRelationsPreviewOpen,
+      onColumnCreate,
+      onColumnUpdate,
+      onColumnDelete,
+      onColumnDuplicate,
+      onRequestTableDelete,
+      onFocusTable,
+      onExportDdl,
+      onPreviewRelations,
+      areas,
+      onAddToArea,
+      onRemoveFromArea,
+      edges = [],
+      relationsEdges = [],
+      tableNameById = new Map(),
+      onColumnReorder,
+      emitColumnReorder,
+      isQueueFullForTable,
+      setLocalDragging,
+      bumpReorderTick,
+      commentThreads = [],
+      canComment = false,
+      currentUserId = '',
+      canModerateComments = false,
+      onCreateTableComment,
+      onReplyComment,
+      onEditComment,
+      onDeleteComment,
+      onResolveComment,
+      onTableNoteSave,
+    } = data
 
-/**
- * Visual constants for table rendering
- */
-const TABLE_STYLE = {
-  minWidth: 200,
-  padding: 12,
-  headerHeight: 40,
-  rowHeight: 28,
-  fontSize: 14,
-  headerFontSize: 16,
-  cornerRadius: 8,
-  borderWidth: 2,
-}
+    const columns = table.columns
 
-/**
- * Calculate column display text with type indicators
- * @param column - Column data
- * @returns Formatted column string with PK/FK indicators
- */
-function formatColumnText(column: Column): string {
-  let prefix = ''
+    // --- Local editing state ---
+    const [editingField, setEditingField] = useState<EditingField | null>(null)
 
-  // Add primary key indicator
-  if (column.isPrimaryKey) {
-    prefix += '🔑 '
-  }
-  // Add foreign key indicator
-  else if (column.isForeignKey) {
-    prefix += '🔗 '
-  }
+    // Which column has a pending delete confirmation dialog
+    const [deletingColumn, setDeletingColumn] = useState<Column | null>(null)
 
-  // Format: name: dataType (nullable/not null)
-  const nullability = column.isNullable ? '' : ' NOT NULL'
-  return `${prefix}${column.name}: ${column.dataType}${nullability}`
-}
+    // Header hover state — controls X delete button visibility
+    const [isHeaderHovered, setIsHeaderHovered] = useState(false)
 
-/**
- * Calculate table dimensions based on content
- * @param table - Table data with columns
- * @param columnTexts - Formatted column texts
- * @returns Width and height for table
- */
-function calculateTableDimensions(
-  table: DiagramTable & { columns: Array<Column> },
-  columnTexts: Array<string>,
-): { width: number; height: number } {
-  // Calculate width based on longest text
-  // Approximate: 7px per character (rough estimate for typical fonts)
-  const headerWidth = table.name.length * 8 + TABLE_STYLE.padding * 2
-  const columnWidths = columnTexts.map(
-    (text) => text.length * 7 + TABLE_STYLE.padding * 2,
-  )
-  const maxColumnWidth = Math.max(...columnWidths, 0)
-  const width = Math.max(
-    TABLE_STYLE.minWidth,
-    headerWidth,
-    maxColumnWidth,
-    table.width ?? 0,
-  )
+    // --- Drag-and-drop reorder state (raw pointer events) ---
+    const [activeId, setActiveId] = useState<string | null>(null)
+    const [overIndex, setOverIndex] = useState<number | null>(null)
+    const preDragOrderRef = useRef<Array<string>>([])
+    const preDragColumnsRef = useRef<Array<Column>>([])
+    const prefersReducedMotion = usePrefersReducedMotion()
+    // Snapshot of column row rects captured at drag start (viewport coords)
+    const columnRectsRef = useRef<
+      Array<{ id: string; top: number; bottom: number; mid: number }>
+    >([])
+    const columnRowsRef = useRef<HTMLDivElement | null>(null)
 
-  // Calculate height based on number of rows
-  const height =
-    TABLE_STYLE.headerHeight +
-    table.columns.length * TABLE_STYLE.rowHeight +
-    TABLE_STYLE.padding
+    // Determine visual state classes
+    const highlightClass = isActiveHighlighted
+      ? 'active-highlighted'
+      : isHighlighted
+        ? 'highlighted'
+        : isHovered
+          ? 'hovered'
+          : ''
 
-  return { width, height }
-}
+    // Pre-compute a map from columnId to affected edges for fast delete checks
+    const columnEdgeMap = useMemo(() => {
+      const map = new Map<string, Array<RelationshipEdgeType>>()
+      edges.forEach((edge: RelationshipEdgeType) => {
+        const srcId = edge.data?.relationship.sourceColumnId
+        const tgtId = edge.data?.relationship.targetColumnId
+        if (srcId) {
+          if (!map.has(srcId)) map.set(srcId, [])
+          map.get(srcId)!.push(edge)
+        }
+        if (tgtId && tgtId !== srcId) {
+          if (!map.has(tgtId)) map.set(tgtId, [])
+          map.get(tgtId)!.push(edge)
+        }
+      })
+      return map
+    }, [edges])
 
-/**
- * TableNode component - renders a database table with draggable support
- *
- * Features:
- * - Header with table name
- * - Columns with data types
- * - Primary key (🔑) and foreign key (🔗) indicators
- * - Drag-and-drop support
- * - Theme-aware colors
- * - Selection highlighting
- *
- * @example
- * ```tsx
- * <TableNode
- *   table={table}
- *   isSelected={selectedTableId === table.id}
- *   onClick={(id) => setSelectedTableId(id)}
- *   onDragEnd={(id, x, y) => updateTablePosition(id, x, y)}
- *   theme="dark"
- * />
- * ```
- */
-export function TableNode({
-  table,
-  isSelected = false,
-  onClick,
-  onDragMove,
-  onDragEnd,
-}: TableNodeProps) {
-  const groupRef = useRef<Konva.Group>(null)
-  const isDraggingRef = useRef(false)
-
-  // Read theme-aware colors from CSS variables
-  const tableFill = getCSSVariable('--table-fill', '#262626')
-  const tableStroke = getCSSVariable('--table-stroke', '#404040')
-  const tableHeaderBg = getCSSVariable('--table-header-bg', '#1a1a1a')
-  const tableHeaderText = getCSSVariable('--table-header-text', '#9ca3af')
-  const tableBodyText = getCSSVariable('--table-body-text', '#d1d5db')
-  const tableSelectedBorder = getCSSVariable(
-    '--table-selected-border',
-    '#22c55e',
-  )
-  const tableShadow = getCSSVariable('--table-shadow', 'rgba(0, 0, 0, 0.6)')
-
-  // Format column texts
-  const columnTexts = table.columns.map(formatColumnText)
-
-  // Calculate dimensions
-  const { width, height } = calculateTableDimensions(table, columnTexts)
-
-  /**
-   * Handle table click
-   */
-  const handleClick = () => {
-    onClick?.(table.id)
-  }
-
-  /**
-   * Handle drag start
-   */
-  const handleDragStart = () => {
-    isDraggingRef.current = true
-  }
-
-  /**
-   * Handle drag move
-   */
-  const handleDragMove = (e: KonvaEventObject<DragEvent>) => {
-    const node = e.target as Konva.Group
-    onDragMove?.(table.id, node.x(), node.y())
-  }
-
-  /**
-   * Handle drag end
-   */
-  const handleDragEnd = (e: KonvaEventObject<DragEvent>) => {
-    const node = e.target as Konva.Group
-    isDraggingRef.current = false
-    onDragEnd?.(table.id, node.x(), node.y())
-  }
-
-  /**
-   * Update group position when table position changes
-   * Uses smooth animation (Konva Tween) if position change is significant
-   * Only update if not currently dragging to avoid conflicts
-   */
-  useEffect(() => {
-    const group = groupRef.current
-    if (isDraggingRef.current || !group) return
-
-    const currentX = group.x()
-    const currentY = group.y()
-    const targetX = table.positionX ?? 0
-    const targetY = table.positionY ?? 0
-
-    // Check if position actually changed
-    if (currentX === targetX && currentY === targetY) return
-
-    // Calculate distance moved
-    const distance = Math.sqrt(
-      Math.pow(targetX - currentX, 2) + Math.pow(targetY - currentY, 2),
+    // Related edges for the attached relations panel (1-hop neighbors).
+    // Sourced from relationsEdges (pre-filtered via filterValidEdges), NOT
+    // the raw `edges` above — a relationship whose sourceColumn/targetColumn
+    // snapshot references a column deleted elsewhere must never reach the
+    // panel, or it would render a connection line naming a column that no
+    // longer exists.
+    const relatedEdges = useMemo(
+      () => getDirectlyRelatedTableIds(table.id, relationsEdges).relatedEdges,
+      [table.id, relationsEdges],
     )
 
-    // Use animation for significant moves (likely from auto-layout)
-    // Use instant update for small moves (likely from manual drag)
-    if (distance > 50) {
-      // Animate to new position
-      const tween = new (window as any).Konva.Tween({
-        node: group,
-        duration: 0.5, // 500ms
-        x: targetX,
-        y: targetY,
-        easing: (window as any).Konva.Easings.EaseInOut,
-        onFinish: () => {
-          group.getLayer()?.batchDraw()
-        },
-      })
-      tween.play()
-    } else {
-      // Instant update for small moves
-      group.position({ x: targetX, y: targetY })
-      group.getLayer()?.batchDraw()
-    }
-  }, [table.positionX, table.positionY])
+    // Comment badge (GH #110) — count of UNRESOLVED threads anchored to this
+    // table, shown on the header comment button.
+    const unresolvedCommentCount = useMemo(
+      () => commentThreads.filter((t) => !t.root.resolved).length,
+      [commentThreads],
+    )
 
-  return (
-    <Group
-      ref={groupRef}
-      x={table.positionX ?? 0}
-      y={table.positionY ?? 0}
-      draggable
-      onClick={handleClick}
-      onTap={handleClick}
-      onDragStart={handleDragStart}
-      onDragMove={handleDragMove}
-      onDragEnd={handleDragEnd}
-      // Add shadow for depth
-      shadowColor={tableShadow}
-      shadowBlur={isSelected ? 20 : 10}
-      shadowOpacity={isSelected ? 0.5 : 0.3}
-      shadowOffsetX={0}
-      shadowOffsetY={4}
-    >
-      {/* Table border/background */}
-      <Rect
-        x={0}
-        y={0}
-        width={width}
-        height={height}
-        fill={tableFill}
-        stroke={isSelected ? tableSelectedBorder : tableStroke}
-        strokeWidth={
-          isSelected ? TABLE_STYLE.borderWidth + 1 : TABLE_STYLE.borderWidth
+    // --- Edit handlers ---
+    const handleStartEdit = useCallback(
+      (columnId: string, field: 'name' | 'dataType') => {
+        setEditingField({ columnId, field })
+      },
+      [],
+    )
+
+    const handleCommitEdit = useCallback(
+      (columnId: string, field: 'name' | 'dataType', value: string) => {
+        setEditingField(null)
+        if (!onColumnUpdate) return
+        onColumnUpdate(columnId, table.id, {
+          [field]: value as unknown as Partial<DataType>,
+        })
+      },
+      [table.id, onColumnUpdate],
+    )
+
+    const handleCancelEdit = useCallback(() => {
+      setEditingField(null)
+    }, [])
+
+    const handleToggleConstraint = useCallback(
+      (
+        columnId: string,
+        constraint: 'isPrimaryKey' | 'isNullable' | 'isUnique',
+        value: boolean,
+      ) => {
+        if (!onColumnUpdate) return
+        // PK ON: auto-set isNullable=false + isUnique=true
+        if (constraint === 'isPrimaryKey' && value === true) {
+          onColumnUpdate(columnId, table.id, {
+            isPrimaryKey: true,
+            isNullable: false,
+            isUnique: true,
+          })
+        } else {
+          onColumnUpdate(columnId, table.id, { [constraint]: value })
         }
-        cornerRadius={TABLE_STYLE.cornerRadius}
-      />
+      },
+      [table.id, onColumnUpdate],
+    )
 
-      {/* Header background */}
-      <Rect
-        x={0}
-        y={0}
-        width={width}
-        height={TABLE_STYLE.headerHeight}
-        fill={tableHeaderBg}
-        cornerRadius={[
-          TABLE_STYLE.cornerRadius,
-          TABLE_STYLE.cornerRadius,
-          0,
-          0,
-        ]}
-      />
+    // --- Delete handlers ---
+    const handleDeleteColumn = useCallback(
+      (column: Column) => {
+        const affectedEdges = columnEdgeMap.get(column.id) ?? []
+        if (affectedEdges.length > 0) {
+          // Show confirmation dialog
+          setDeletingColumn(column)
+        } else {
+          // Immediate optimistic delete — no dialog
+          if (editingField?.columnId === column.id) {
+            setEditingField(null)
+          }
+          if (onColumnDelete) {
+            onColumnDelete(column.id, table.id)
+          }
+        }
+      },
+      [columnEdgeMap, editingField, table.id, onColumnDelete],
+    )
 
-      {/* Table name */}
-      <Text
-        x={TABLE_STYLE.padding}
-        y={TABLE_STYLE.headerHeight / 2 - TABLE_STYLE.headerFontSize / 2}
-        width={width - TABLE_STYLE.padding * 2}
-        text={table.name}
-        fontSize={TABLE_STYLE.headerFontSize}
-        fontStyle={'bold'}
-        fill={tableHeaderText}
-        align="left"
-        verticalAlign="middle"
-        ellipsis={true}
-      />
+    const handleConfirmDelete = useCallback(() => {
+      if (!deletingColumn) return
+      // FM-06: exit edit mode if deleting the column being edited
+      if (editingField?.columnId === deletingColumn.id) {
+        setEditingField(null)
+      }
+      if (onColumnDelete) {
+        onColumnDelete(deletingColumn.id, table.id)
+      }
+      setDeletingColumn(null)
+    }, [deletingColumn, editingField, table.id, onColumnDelete])
 
-      {/* Separator line between header and body */}
-      <Line
-        points={[0, TABLE_STYLE.headerHeight, width, TABLE_STYLE.headerHeight]}
-        stroke={tableStroke}
-        strokeWidth={1}
-      />
+    const handleCancelDelete = useCallback(() => {
+      setDeletingColumn(null)
+    }, [])
 
-      {/* Render columns */}
-      {table.columns.map((column, index) => {
-        const yPos =
-          TABLE_STYLE.headerHeight +
-          index * TABLE_STYLE.rowHeight +
-          TABLE_STYLE.padding / 2
+    // Build relationship data for the delete dialog
+    const affectedRelationships = useMemo((): Array<ColumnRelationship> => {
+      if (!deletingColumn) return []
+      const affectedEdges = columnEdgeMap.get(deletingColumn.id) ?? []
+      return affectedEdges.map((edge) => {
+        const rel = edge.data!.relationship
+        return {
+          id: edge.id,
+          sourceTableName:
+            tableNameById.get(rel.sourceTableId) ?? rel.sourceTableId,
+          sourceColumnName: rel.sourceColumn.name,
+          targetTableName:
+            tableNameById.get(rel.targetTableId) ?? rel.targetTableId,
+          targetColumnName: rel.targetColumn.name,
+          cardinality: edge.data!.cardinality,
+        }
+      })
+    }, [deletingColumn, columnEdgeMap, tableNameById])
 
-        return (
-          <Text
-            key={column.id}
-            x={TABLE_STYLE.padding}
-            y={yPos}
-            width={width - TABLE_STYLE.padding * 2}
-            text={columnTexts[index]}
-            fontSize={TABLE_STYLE.fontSize}
-            fill={tableBodyText}
-            align="left"
-            verticalAlign="top"
-            ellipsis={true}
-            // Slightly bolder for primary keys
-            fontStyle={column.isPrimaryKey ? 'bold' : 'normal'}
-          />
+    // --- Table delete handler ---
+    const handleRequestTableDelete = useCallback(() => {
+      onRequestTableDelete?.(table.id)
+    }, [onRequestTableDelete, table.id])
+
+    // --- Table note handler (table-level twin of column notes) ---
+    const handleTableNoteSave = useCallback(
+      (description: string) => onTableNoteSave?.(table.id, description),
+      [table.id, onTableNoteSave],
+    )
+
+    // --- Export DDL handler ---
+    const handleExportDdl = useCallback(
+      (dialect: Dialect) => {
+        onExportDdl?.(table.id, dialect)
+      },
+      [onExportDdl, table.id],
+    )
+
+    // --- Duplicate handler ---
+    const handleDuplicateColumn = useCallback(
+      (column: Column) => {
+        if (onColumnDuplicate) {
+          onColumnDuplicate(column)
+        }
+      },
+      [onColumnDuplicate],
+    )
+
+    // --- Create handler ---
+    const handleCreate = useCallback(
+      async (data: { name: string; dataType: DataType; order: number }) => {
+        if (onColumnCreate) {
+          try {
+            await onColumnCreate(table.id, data)
+          } catch (error) {
+            console.error('Failed to create column:', error)
+            throw error
+          }
+        }
+      },
+      [table.id, onColumnCreate],
+    )
+
+    // --- Column description (note) handler ---
+    const handleDescriptionUpdate = useCallback(
+      (columnId: string, description: string) => {
+        if (!onColumnUpdate) return
+        onColumnUpdate(columnId, table.id, { description })
+      },
+      [table.id, onColumnUpdate],
+    )
+
+    // Filter columns based on display mode (declared early — used in drag handler below)
+    const visibleColumns = useMemo(() => {
+      if (showMode === 'KEY_ONLY') {
+        return columns.filter((c: Column) => c.isPrimaryKey || c.isForeignKey)
+      }
+      return columns
+    }, [columns, showMode])
+
+    // Keep a ref to visibleColumns so the pointermove handler can re-read rects
+    // without capturing a stale closure value when columns change during drag
+    const visibleColumnsRef = useRef(visibleColumns)
+    useEffect(() => {
+      visibleColumnsRef.current = visibleColumns
+    }, [visibleColumns])
+
+    // --- Raw pointer drag reorder ---
+    // Compute which index the pointer is over given a clientY and column rects snapshot
+    const computeTargetIndex = (clientY: number): number => {
+      const rects = columnRectsRef.current
+      if (rects.length === 0) return 0
+      for (let i = 0; i < rects.length; i++) {
+        if (clientY < rects[i].mid) return i
+      }
+      return rects.length - 1
+    }
+
+    const handleDragHandlePointerDown = useCallback(
+      (e: React.PointerEvent, columnId: string) => {
+        // Queue-full check BEFORE preventDefault so click behaves normally when rejected
+        if (isQueueFullForTable?.(table.id)) {
+          toast.warning('Slow down — previous reorders still saving')
+          return
+        }
+
+        e.preventDefault()
+        e.stopPropagation()
+
+        // Snapshot column row rects from the DOM right now (fresh viewport coords)
+        const rowEls =
+          columnRowsRef.current?.querySelectorAll<HTMLElement>('.column-row')
+        if (rowEls) {
+          columnRectsRef.current = Array.from(rowEls).map((el, i) => {
+            const r = el.getBoundingClientRect()
+            return {
+              id: visibleColumns[i]?.id ?? '',
+              top: r.top,
+              bottom: r.bottom,
+              mid: r.top + r.height / 2,
+            }
+          })
+        }
+
+        const dragIndex = visibleColumns.findIndex(
+          (c: Column) => c.id === columnId,
         )
-      })}
 
-      {/* Show description on hover (future enhancement) */}
-      {table.description && (
-        <Text
-          x={TABLE_STYLE.padding}
-          y={height - TABLE_STYLE.padding - 10}
-          width={width - TABLE_STYLE.padding * 2}
-          text={table.description}
-          fontSize={10}
-          fill={tableBodyText}
-          opacity={0.6}
-          align="left"
-          visible={false} // Hidden by default, show on hover
-        />
-      )}
-    </Group>
-  )
-}
+        preDragOrderRef.current = columns.map((c: Column) => c.id)
+        preDragColumnsRef.current = [...columns]
+        setActiveId(columnId)
+        setOverIndex(dragIndex)
+        setLocalDragging?.(table.id, true)
+        document.body.style.cursor = 'grabbing'
+      },
+      [
+        table.id,
+        columns,
+        visibleColumns,
+        isQueueFullForTable,
+        setLocalDragging,
+      ],
+    )
 
-/**
- * Get the position of a specific column within a table node
- * Used for precise relationship arrow targeting
- *
- * @param table - Table data with position
- * @param columnIndex - Index of the column
- * @returns { x, y } position of the column center point
- */
-export function getColumnPosition(
-  table: DiagramTable & { columns: Array<Column> },
-  columnIndex: number,
-): { x: number; y: number } {
-  // Calculate column Y position (center of the column row)
-  const yOffset =
-    TABLE_STYLE.headerHeight +
-    columnIndex * TABLE_STYLE.rowHeight +
-    TABLE_STYLE.rowHeight / 2 +
-    TABLE_STYLE.padding / 2
+    // Document-level pointermove/pointerup while a column drag is active
+    useEffect(() => {
+      if (!activeId) return
 
-  // Format texts to calculate width
-  const columnTexts = table.columns.map(formatColumnText)
-  const { width } = calculateTableDimensions(table, columnTexts)
+      // rAF handle is declared inside the effect so each effect instance has its own
+      let frame: number | null = null
 
-  return {
-    x: (table.positionX ?? 0) + width, // Right edge of table
-    y: (table.positionY ?? 0) + yOffset,
-  }
-}
+      const onMove = (e: PointerEvent) => {
+        if (frame !== null) return
+        frame = requestAnimationFrame(() => {
+          frame = null
+          // Re-read rects fresh in case canvas scrolled/zoomed since drag started
+          const rowEls =
+            columnRowsRef.current?.querySelectorAll<HTMLElement>('.column-row')
+          if (rowEls && rowEls.length > 0) {
+            columnRectsRef.current = Array.from(rowEls).map((el, i) => {
+              const r = el.getBoundingClientRect()
+              return {
+                id: visibleColumnsRef.current[i]?.id ?? '',
+                top: r.top,
+                bottom: r.bottom,
+                mid: r.top + r.height / 2,
+              }
+            })
+          }
+          const idx = computeTargetIndex(e.clientY)
+          setOverIndex(idx)
+        })
+      }
 
-/**
- * Get the left edge position of a table for incoming relationships
- *
- * @param table - Table data with position
- * @param columnIndex - Index of the column
- * @returns { x, y } position of the column on the left edge
- */
-export function getColumnPositionLeft(
-  table: DiagramTable & { columns: Array<Column> },
-  columnIndex: number,
-): { x: number; y: number } {
-  const yOffset =
-    TABLE_STYLE.headerHeight +
-    columnIndex * TABLE_STYLE.rowHeight +
-    TABLE_STYLE.rowHeight / 2 +
-    TABLE_STYLE.padding / 2
+      const onUp = (e: PointerEvent) => {
+        document.body.style.cursor = ''
+        const newOverIndex = computeTargetIndex(e.clientY)
+        const oldIndex = preDragOrderRef.current.indexOf(activeId)
+        setActiveId(null)
+        setOverIndex(null)
+        setLocalDragging?.(table.id, false)
 
-  return {
-    x: table.positionX ?? 0, // Left edge of table
-    y: (table.positionY ?? 0) + yOffset,
-  }
-}
+        if (!onColumnReorder || !emitColumnReorder || !bumpReorderTick) return
+
+        let newOrder: Array<string> | null = null
+        if (newOverIndex !== oldIndex && oldIndex >= 0) {
+          const arr = [...preDragOrderRef.current]
+          arr.splice(oldIndex, 1)
+          arr.splice(newOverIndex, 0, preDragOrderRef.current[oldIndex])
+          newOrder = arr
+        }
+
+        onColumnReorder({
+          tableId: table.id,
+          preDragOrder: preDragOrderRef.current,
+          newOrder,
+          preState: preDragColumnsRef.current,
+          emitColumnReorder,
+          setNodes: (() => {}) as any,
+          bumpReorderTick,
+        })
+      }
+
+      const onCancel = () => {
+        document.body.style.cursor = ''
+        setActiveId(null)
+        setOverIndex(null)
+        setLocalDragging?.(table.id, false)
+        if (onColumnReorder && emitColumnReorder && bumpReorderTick) {
+          onColumnReorder({
+            tableId: table.id,
+            preDragOrder: preDragOrderRef.current,
+            newOrder: null,
+            preState: preDragColumnsRef.current,
+            emitColumnReorder,
+            setNodes: (() => {}) as any,
+            bumpReorderTick,
+          })
+        }
+      }
+
+      document.addEventListener('pointermove', onMove)
+      document.addEventListener('pointerup', onUp)
+      document.addEventListener('pointercancel', onCancel)
+      return () => {
+        if (frame !== null) cancelAnimationFrame(frame)
+        document.removeEventListener('pointermove', onMove)
+        document.removeEventListener('pointerup', onUp)
+        document.removeEventListener('pointercancel', onCancel)
+        // If we unmount while drag is active (table deleted, route change, etc.), restore state
+        if (activeId) {
+          document.body.style.cursor = ''
+          setLocalDragging?.(table.id, false)
+        }
+      }
+      // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [activeId])
+
+    // Use CSS max-content so the browser measures actual rendered text width.
+    // Character-count estimates are unreliable; max-content lets each column row
+    // expand to its natural size. minWidth respects the user's manually-saved width.
+    const minWidth = Math.max(220, table.width ?? 0)
+
+    return (
+      <TableNodeContextMenu
+        onDeleteTable={handleRequestTableDelete}
+        onFocusTable={() => onFocusTable?.(table.id)}
+        onExportDdl={handleExportDdl}
+        onPreviewRelations={() => onPreviewRelations?.(table.id)}
+        areas={areas}
+        tableId={table.id}
+        onAddToArea={onAddToArea}
+        onRemoveFromArea={onRemoveFromArea}
+      >
+        <div
+          className={`react-flow__node-erTable ${selected ? 'selected' : ''} ${highlightClass}`}
+          style={{
+            position: 'relative',
+            width: 'max-content',
+            minWidth: `${minWidth}px`,
+            maxWidth: '500px',
+            opacity:
+              isActiveHighlighted || isHighlighted || isHovered || selected
+                ? 1
+                : 0.7,
+            transition: 'opacity 0.2s, box-shadow 0.2s',
+            boxShadow:
+              isActiveHighlighted || selected
+                ? '0 0 0 2px var(--rf-edge-stroke-selected)'
+                : isHighlighted
+                  ? '0 0 0 1px var(--rf-edge-stroke-selected)'
+                  : undefined,
+          }}
+        >
+          {/* Table Header */}
+          <div
+            className="table-header"
+            style={{
+              padding: '12px 16px',
+              background: 'var(--rf-table-header-bg)',
+              borderBottom: '1px solid var(--rf-table-border)',
+              fontWeight: 600,
+              fontSize: '14px',
+              color: 'var(--rf-table-header-text)',
+              position: 'relative',
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'space-between',
+            }}
+            onMouseEnter={() => {
+              setIsHeaderHovered(true)
+            }}
+            onMouseLeave={() => {
+              setIsHeaderHovered(false)
+            }}
+          >
+            <span
+              style={{
+                overflow: 'hidden',
+                textOverflow: 'ellipsis',
+                whiteSpace: 'nowrap',
+                flex: 1,
+              }}
+            >
+              {table.name}
+            </span>
+
+            {/* Header buttons container */}
+            <div style={{ display: 'flex', alignItems: 'center', gap: '4px' }}>
+              {/* Relations preview trigger — always visible, not gated by
+                  canEdit (relations viewing is a read-only action, matches
+                  the un-gated "Show relations" context-menu item). */}
+              <button
+                type="button"
+                aria-label={
+                  isRelationsPreviewOpen
+                    ? `Hide relations for ${table.name}`
+                    : `Show relations for ${table.name}`
+                }
+                aria-pressed={isRelationsPreviewOpen}
+                data-testid="table-relations-trigger"
+                title={
+                  isRelationsPreviewOpen
+                    ? 'Hide relations (r)'
+                    : 'Show relations (r)'
+                }
+                onClick={(e) => {
+                  e.stopPropagation()
+                  onPreviewRelations?.(table.id)
+                }}
+                className="nodrag nowheel"
+                style={{
+                  opacity: 1,
+                  flexShrink: 0,
+                  background: 'none',
+                  border: 'none',
+                  cursor: 'pointer',
+                  padding: '2px',
+                  display: 'flex',
+                  alignItems: 'center',
+                  color: isRelationsPreviewOpen
+                    ? 'var(--rf-edge-stroke-selected)'
+                    : 'var(--rf-table-header-text)',
+                  transition: 'color 0.1s',
+                }}
+              >
+                <Link2 size={14} />
+              </button>
+
+              {/* Comment badge (GH #110) — always visible when there are
+                  unresolved threads (or on header hover otherwise), like the
+                  relations trigger. Read-only viewers may still open it to
+                  read/reply/resolve — comments are VIEWER+, not EDITOR+. */}
+              {canComment && (
+                <CommentThreadPopover
+                  trigger={
+                    <button
+                      type="button"
+                      aria-label={
+                        unresolvedCommentCount > 0
+                          ? `${unresolvedCommentCount} unresolved comment${unresolvedCommentCount === 1 ? '' : 's'} on ${table.name}`
+                          : `Comment on ${table.name}`
+                      }
+                      data-testid="table-comment-trigger"
+                      className="nodrag nowheel relative flex items-center"
+                      style={{
+                        opacity:
+                          unresolvedCommentCount > 0 || isHeaderHovered ? 1 : 0,
+                        flexShrink: 0,
+                        background: 'none',
+                        border: 'none',
+                        cursor: 'pointer',
+                        padding: '2px',
+                        color:
+                          unresolvedCommentCount > 0
+                            ? 'var(--rf-edge-stroke-selected)'
+                            : 'var(--rf-table-header-text)',
+                        transition: 'opacity 0.1s',
+                      }}
+                    >
+                      <MessageCircle size={14} />
+                      {unresolvedCommentCount > 0 && (
+                        <span
+                          className="absolute -right-1.5 -top-1.5 flex h-3.5 min-w-3.5 items-center justify-center rounded-full px-0.5 text-[9px] font-semibold text-white"
+                          style={{
+                            background:
+                              'var(--rf-edge-stroke-selected, #6366f1)',
+                          }}
+                        >
+                          {unresolvedCommentCount}
+                        </span>
+                      )}
+                    </button>
+                  }
+                  threads={commentThreads}
+                  canComment={canComment}
+                  currentUserId={currentUserId}
+                  canModerateComments={canModerateComments}
+                  onCreateThread={(body) =>
+                    onCreateTableComment?.(table.id, body)
+                  }
+                  onReply={(parentId, body) => onReplyComment?.(parentId, body)}
+                  onEdit={(commentId, body) => onEditComment?.(commentId, body)}
+                  onDelete={(commentId) => onDeleteComment?.(commentId)}
+                  onResolve={(commentId, resolved) =>
+                    onResolveComment?.(commentId, resolved)
+                  }
+                />
+              )}
+
+              {/* Table note trigger — table-level twin of the column note
+                  popover. Distinct StickyNote icon (not the MessageCircle
+                  thread button above). Gated by canEdit like the delete
+                  button; view-only viewers get no editable affordance. */}
+              {canEdit && (
+                <TableNotePopover
+                  description={table.description ?? null}
+                  onSave={handleTableNoteSave}
+                />
+              )}
+
+              {/* Delete button — visible on header hover. View-only viewers
+                  don't get this affordance at all (server also blocks it). */}
+              {canEdit && (
+                <button
+                  type="button"
+                  aria-label={`Delete table ${table.name}`}
+                  onClick={(e) => {
+                    e.stopPropagation()
+                    handleRequestTableDelete()
+                  }}
+                  className="nodrag nowheel"
+                  style={{
+                    opacity: isHeaderHovered ? 1 : 0,
+                    flexShrink: 0,
+                    background: 'none',
+                    border: 'none',
+                    cursor: 'pointer',
+                    padding: '2px',
+                    color: 'var(--rf-table-header-text)',
+                    transition: 'opacity 0.1s',
+                    fontSize: '16px',
+                    lineHeight: 1,
+                  }}
+                >
+                  ×
+                </button>
+              )}
+            </div>
+          </div>
+
+          {/* Columns List */}
+          {showMode !== 'TABLE_NAME' && (
+            <div
+              ref={columnRowsRef}
+              className="table-columns"
+              style={{ position: 'relative' }}
+            >
+              {/* InsertionLine — shows drop position during drag */}
+              <InsertionLine
+                visible={activeId !== null && overIndex !== null}
+                targetIndex={overIndex ?? 0}
+                rowHeight={COLUMN_ROW_HEIGHT}
+                prefersReducedMotion={prefersReducedMotion}
+              />
+              {visibleColumns.map((column: Column, index: number) => (
+                <ColumnRow
+                  key={column.id}
+                  column={column}
+                  tableId={table.id}
+                  isLast={index === visibleColumns.length - 1}
+                  editingField={editingField}
+                  onStartEdit={handleStartEdit}
+                  onCommitEdit={handleCommitEdit}
+                  onCancelEdit={handleCancelEdit}
+                  onToggleConstraint={handleToggleConstraint}
+                  onDelete={handleDeleteColumn}
+                  onDuplicate={handleDuplicateColumn}
+                  onDescriptionUpdate={handleDescriptionUpdate}
+                  edges={edges}
+                  showMode={showMode}
+                  isDraggingActive={activeId === column.id}
+                  onDragHandlePointerDown={(e) =>
+                    handleDragHandlePointerDown(e, column.id)
+                  }
+                />
+              ))}
+
+              {/* Add Column Row — hidden for view-only viewers (server also
+                  blocks the underlying createColumnsFn mutation). */}
+              {canEdit && (
+                <AddColumnRow
+                  tableId={table.id}
+                  existingColumns={columns}
+                  onCreate={handleCreate}
+                />
+              )}
+            </div>
+          )}
+
+          {/* Relations Panel — attached "drawer" shown via `r` shortcut / context menu.
+              Renders regardless of showMode since related-table connections are
+              independent of which columns are currently visible. */}
+          {isRelationsPreviewOpen && (
+            <TableRelationsPanel
+              table={table}
+              relatedEdges={relatedEdges}
+              tableNameById={tableNameById}
+            />
+          )}
+
+          {/* Delete Confirmation Dialog */}
+          {deletingColumn && (
+            <DeleteColumnDialog
+              column={deletingColumn}
+              affectedRelationships={affectedRelationships}
+              onConfirm={handleConfirmDelete}
+              onCancel={handleCancelDelete}
+            />
+          )}
+        </div>
+      </TableNodeContextMenu>
+    )
+  },
+  (prev: TableNodeProps, next: TableNodeProps) => {
+    // Custom memo comparator: allow re-renders when columns change, skip position-only changes
+    if (prev.data.table !== next.data.table) return false
+    if (prev.data.showMode !== next.data.showMode) return false
+    if (prev.data.isActiveHighlighted !== next.data.isActiveHighlighted)
+      return false
+    if (prev.data.isHighlighted !== next.data.isHighlighted) return false
+    if (prev.data.isHovered !== next.data.isHovered) return false
+    if (prev.data.isRelationsPreviewOpen !== next.data.isRelationsPreviewOpen)
+      return false
+    if (prev.data.onPreviewRelations !== next.data.onPreviewRelations)
+      return false
+    if (prev.selected !== next.selected) return false
+    if (prev.data.onColumnCreate !== next.data.onColumnCreate) return false
+    if (prev.data.onColumnUpdate !== next.data.onColumnUpdate) return false
+    if (prev.data.onColumnDelete !== next.data.onColumnDelete) return false
+    if (prev.data.onColumnDuplicate !== next.data.onColumnDuplicate)
+      return false
+    if (prev.data.edges !== next.data.edges) return false
+    if (prev.data.relationsEdges !== next.data.relationsEdges) return false
+    if (prev.data.tableNameById !== next.data.tableNameById) return false
+    if (prev.data.areas !== next.data.areas) return false
+    if (prev.data.onAddToArea !== next.data.onAddToArea) return false
+    if (prev.data.onRemoveFromArea !== next.data.onRemoveFromArea) return false
+    if (prev.data.onRequestTableDelete !== next.data.onRequestTableDelete)
+      return false
+    if (prev.data.onFocusTable !== next.data.onFocusTable) return false
+    if (prev.data.onExportDdl !== next.data.onExportDdl) return false
+    if (prev.data.onColumnReorder !== next.data.onColumnReorder) return false
+    if (prev.data.emitColumnReorder !== next.data.emitColumnReorder)
+      return false
+    if (prev.data.isQueueFullForTable !== next.data.isQueueFullForTable)
+      return false
+    if (prev.data.setLocalDragging !== next.data.setLocalDragging) return false
+    if (prev.data.bumpReorderTick !== next.data.bumpReorderTick) return false
+    if (prev.data.commentThreads !== next.data.commentThreads) return false
+    if (prev.data.canComment !== next.data.canComment) return false
+    if (prev.data.currentUserId !== next.data.currentUserId) return false
+    if (prev.data.canModerateComments !== next.data.canModerateComments)
+      return false
+    if (prev.data.onCreateTableComment !== next.data.onCreateTableComment)
+      return false
+    if (prev.data.onReplyComment !== next.data.onReplyComment) return false
+    if (prev.data.onEditComment !== next.data.onEditComment) return false
+    if (prev.data.onDeleteComment !== next.data.onDeleteComment) return false
+    if (prev.data.onResolveComment !== next.data.onResolveComment) return false
+    if (prev.data.onTableNoteSave !== next.data.onTableNoteSave) return false
+    return true
+  },
+)
+
+TableNode.displayName = 'TableNode'

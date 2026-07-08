@@ -1,374 +1,685 @@
-// src/components/whiteboard/RelationshipEdge.tsx
-// Konva component for rendering relationships between tables with cardinality notation
+import { memo, useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import { EdgeLabelRenderer, Position, getSmoothStepPath } from '@xyflow/react'
+import { X } from 'lucide-react'
+import type { EdgeProps } from '@xyflow/react'
+import type { RelationshipEdgeType } from '@/lib/react-flow/types'
+import { Z_INDEX } from '@/lib/react-flow/types'
+import {
+  clampSameSideLabelX,
+  computeLabelPillWidth,
+} from '@/lib/auto-layout/d3-force-layout'
 
-import { Arrow, Circle, Group, Line, Text } from 'react-konva'
-import { getColumnPosition, getColumnPositionLeft } from './TableNode'
-import type { Column, DiagramTable, Relationship } from '@/data/models'
-import type { Cardinality } from '@/data/schema'
+// ── Layout constants ──
+// How far past the handle to push the crow's foot prong tips toward the table
+const TABLE_INSET = 10
+// Crow's foot convergence point distance outward from handle
+const CROW_LENGTH = 2
+// Crow's foot half-spread (perpendicular distance of outer prongs)
+const CROW_SPREAD = 6
+// Curvature of outer prongs (quadratic bezier bow)
+const CROW_CURVE = 3
+// Multiplicity bar inset toward table from handle
+const MULT_BAR_INSET = 2
+// Bar half-height (perpendicular extent of a bar symbol)
+const BAR_HALF = 6
+// Open circle radius (for zero/optional symbol)
+const CIRCLE_R = 4
+// Gap between the multiplicity symbol outer edge and the optionality symbol center
+const OPT_GAP = 7
 
-/**
- * RelationshipEdge component props
- */
-export interface RelationshipEdgeProps {
-  /** Relationship data */
-  relationship: Relationship
-  /** Source table with columns */
-  sourceTable: DiagramTable & { columns: Array<Column> }
-  /** Target table with columns */
-  targetTable: DiagramTable & { columns: Array<Column> }
-  /** Whether this relationship is selected */
-  isSelected?: boolean
-  /** Callback when relationship is clicked */
-  onClick?: (relationshipId: string) => void
+const CARDINALITY_COLORS: Record<string, string> = {
+  ONE_TO_ONE: '#60a5fa', // blue
+  ONE_TO_MANY: '#34d399', // green
+  MANY_TO_ONE: '#a78bfa', // purple
+  MANY_TO_MANY: '#f97316', // orange
+  ZERO_TO_ONE: '#22d3ee', // cyan
+  ZERO_TO_MANY: '#facc15', // yellow
+  SELF_REFERENCING: '#f87171', // red
+  MANY_TO_ZERO_OR_ONE: '#fb7185', // rose
+  MANY_TO_ZERO_OR_MANY: '#e879f9', // fuchsia
+  ZERO_OR_ONE_TO_ONE: '#4ade80', // lime green
+  ZERO_OR_ONE_TO_MANY: '#86efac', // light green
+  ZERO_OR_ONE_TO_ZERO_OR_ONE: '#67e8f9', // light cyan
+  ZERO_OR_ONE_TO_ZERO_OR_MANY: '#a5f3fc', // lighter cyan
+  ZERO_OR_MANY_TO_ONE: '#c084fc', // light purple
+  ZERO_OR_MANY_TO_MANY: '#d8b4fe', // lighter purple
+  ZERO_OR_MANY_TO_ZERO_OR_ONE: '#fda4af', // light rose
+  ZERO_OR_MANY_TO_ZERO_OR_MANY: '#fbbf24', // amber
 }
 
-/**
- * Get CSS variable value from document root
- * @param varName - CSS variable name (e.g., '--relationship-stroke')
- * @param fallback - Fallback value if variable not found
- * @returns Color value
- */
-function getCSSVariable(varName: string, fallback: string): string {
-  if (typeof window === 'undefined') return fallback
-  try {
-    const root = document.documentElement
-    const value = getComputedStyle(root).getPropertyValue(varName).trim()
-    return value || fallback
-  } catch (error) {
-    console.error(`Failed to read CSS variable ${varName}:`, error)
-    return fallback
+const CARDINALITY_FLAGS: Record<
+  string,
+  { srcMany: boolean; srcOpt: boolean; tgtMany: boolean; tgtOpt: boolean }
+> = {
+  ONE_TO_ONE: { srcMany: false, srcOpt: false, tgtMany: false, tgtOpt: false },
+  ONE_TO_MANY: { srcMany: false, srcOpt: false, tgtMany: true, tgtOpt: false },
+  MANY_TO_ONE: { srcMany: true, srcOpt: false, tgtMany: false, tgtOpt: false },
+  MANY_TO_MANY: { srcMany: true, srcOpt: false, tgtMany: true, tgtOpt: false },
+  ZERO_TO_ONE: { srcMany: false, srcOpt: false, tgtMany: false, tgtOpt: true },
+  ZERO_TO_MANY: { srcMany: false, srcOpt: false, tgtMany: true, tgtOpt: true },
+  SELF_REFERENCING: {
+    srcMany: false,
+    srcOpt: false,
+    tgtMany: true,
+    tgtOpt: true,
+  },
+  MANY_TO_ZERO_OR_ONE: {
+    srcMany: true,
+    srcOpt: false,
+    tgtMany: false,
+    tgtOpt: true,
+  },
+  MANY_TO_ZERO_OR_MANY: {
+    srcMany: true,
+    srcOpt: false,
+    tgtMany: true,
+    tgtOpt: true,
+  },
+  ZERO_OR_ONE_TO_ONE: {
+    srcMany: false,
+    srcOpt: true,
+    tgtMany: false,
+    tgtOpt: false,
+  },
+  ZERO_OR_ONE_TO_MANY: {
+    srcMany: false,
+    srcOpt: true,
+    tgtMany: true,
+    tgtOpt: false,
+  },
+  ZERO_OR_ONE_TO_ZERO_OR_ONE: {
+    srcMany: false,
+    srcOpt: true,
+    tgtMany: false,
+    tgtOpt: true,
+  },
+  ZERO_OR_ONE_TO_ZERO_OR_MANY: {
+    srcMany: false,
+    srcOpt: true,
+    tgtMany: true,
+    tgtOpt: true,
+  },
+  ZERO_OR_MANY_TO_ONE: {
+    srcMany: true,
+    srcOpt: true,
+    tgtMany: false,
+    tgtOpt: false,
+  },
+  ZERO_OR_MANY_TO_MANY: {
+    srcMany: true,
+    srcOpt: true,
+    tgtMany: true,
+    tgtOpt: false,
+  },
+  ZERO_OR_MANY_TO_ZERO_OR_ONE: {
+    srcMany: true,
+    srcOpt: true,
+    tgtMany: false,
+    tgtOpt: true,
+  },
+  ZERO_OR_MANY_TO_ZERO_OR_MANY: {
+    srcMany: true,
+    srcOpt: true,
+    tgtMany: true,
+    tgtOpt: true,
+  },
+}
+
+function getCardinalityColor(cardinality: string | undefined): string {
+  return CARDINALITY_COLORS[cardinality ?? ''] ?? '#94a3b8'
+}
+
+function outwardAngle(position: Position): number {
+  switch (position) {
+    case Position.Right:
+      return 0
+    case Position.Left:
+      return Math.PI
+    case Position.Top:
+      return -Math.PI / 2
+    case Position.Bottom:
+      return Math.PI / 2
   }
 }
 
 /**
- * Visual constants for relationship rendering
- */
-const RELATIONSHIP_STYLE = {
-  strokeWidth: 2,
-  selectedStrokeWidth: 3,
-  arrowSize: 12,
-  fontSize: 12,
-  labelOffsetY: -10,
-  cardinalityOffsetX: 20,
-  cardinalityOffsetY: -15,
-  crowFootSize: 12,
-}
-
-/**
- * Calculate the angle between two points (in radians)
- * @param x1 - Start X
- * @param y1 - Start Y
- * @param x2 - End X
- * @param y2 - End Y
- * @returns Angle in radians
- */
-function calculateAngle(
-  x1: number,
-  y1: number,
-  x2: number,
-  y2: number,
-): number {
-  return Math.atan2(y2 - y1, x2 - x1)
-}
-
-/**
- * Calculate crow's foot notation points for many side
- * @param x - Position X
- * @param y - Position Y
- * @param angle - Arrow angle in radians
- * @param size - Size of the crow's foot
- * @returns Array of points for crow's foot lines
- */
-function calculateCrowFootPoints(
-  x: number,
-  y: number,
-  angle: number,
-  size: number,
-): Array<Array<number>> {
-  const perpAngle1 = angle + Math.PI / 6 // 30 degrees
-  const perpAngle2 = angle - Math.PI / 6
-
-  // Three prongs of crow's foot
-  const prong1 = [
-    x,
-    y,
-    x - size * Math.cos(perpAngle1),
-    y - size * Math.sin(perpAngle1),
-  ]
-  const prong2 = [x, y, x - size * Math.cos(angle), y - size * Math.sin(angle)]
-  const prong3 = [
-    x,
-    y,
-    x - size * Math.cos(perpAngle2),
-    y - size * Math.sin(perpAngle2),
-  ]
-
-  return [prong1, prong2, prong3]
-}
-
-/**
- * Get cardinality display text
- * @param cardinality - Cardinality enum value
- * @returns Display text for cardinality
- */
-export function getCardinalityText(cardinality: Cardinality): {
-  source: string
-  target: string
-} {
-  switch (cardinality) {
-    case 'ONE_TO_ONE':
-      return { source: '1', target: '1' }
-    case 'ONE_TO_MANY':
-      return { source: '1', target: 'N' }
-    case 'MANY_TO_ONE':
-      return { source: 'N', target: '1' }
-    case 'MANY_TO_MANY':
-      return { source: 'N', target: 'N' }
-    case 'ZERO_TO_ONE':
-      return { source: '0', target: '1' }
-    case 'ZERO_TO_MANY':
-      return { source: '0', target: 'N' }
-    case 'SELF_REFERENCING':
-      return { source: '1', target: 'N' }
-    default:
-      return { source: '', target: '' }
-  }
-}
-
-/**
- * RelationshipEdge component - renders a relationship arrow with cardinality notation
+ * Render proper two-symbol crow's foot notation for one end of an edge.
  *
- * Features:
- * - Arrow from source to target table column
- * - Cardinality notation (1, N) near endpoints
- * - Crow's foot notation for "many" relationships
- * - Optional label text
- * - Theme-aware colors
- * - Selection highlighting
+ * Standard crow's foot layout (reading outward from handle toward the edge line):
+ *   [table] ← handle ← [multiplicity: crow/bar] ··· [optionality: circle/bar] ← edge line
  *
- * Cardinality rendering:
- * - ONE_TO_ONE: 1——1
- * - ONE_TO_MANY: 1——<N (crow's foot at target)
- * - MANY_TO_ONE: N>——1 (crow's foot at source)
- * - MANY_TO_MANY: N>——<N (crow's foot at both ends)
+ * Multiplicity symbol (closest to table, at handle):
+ *   - Crow's foot (⋈) = many
+ *   - Single perpendicular bar (|) = one
  *
- * @example
- * ```tsx
- * <RelationshipEdge
- *   relationship={relationship}
- *   sourceTable={sourceTable}
- *   targetTable={targetTable}
- *   isSelected={selectedRelId === relationship.id}
- *   onClick={(id) => setSelectedRelId(id)}
- *   theme="dark"
- * />
- * ```
+ * Optionality symbol (further out, OPT_GAP from multiplicity):
+ *   - Open circle (○) = zero / optional
+ *   - Single perpendicular bar (|) = mandatory / one
+ *
+ * Combined meanings:
+ *   bar  + bar    = exactly one  (||)
+ *   crow + bar    = one or many  (|⋈)
+ *   bar  + circle = zero or one  (○|)
+ *   crow + circle = zero or many (○⋈)
  */
-export function RelationshipEdge({
-  relationship,
-  sourceTable,
-  targetTable,
-  isSelected = false,
-  onClick,
-}: RelationshipEdgeProps) {
-  // Read theme-aware colors from CSS variables
-  const relationshipStroke = getCSSVariable('--relationship-stroke', '#525252')
-  const relationshipSelectedStroke = getCSSVariable(
-    '--relationship-selected-stroke',
-    '#22c55e',
+function CardinalityIndicator(props: {
+  x: number
+  y: number
+  angle: number
+  isMany: boolean
+  isOptional: boolean
+  color: string
+  sw: number
+}) {
+  const { x, y, angle, isMany, isOptional, color, sw } = props
+  const cos = Math.cos(angle)
+  const sin = Math.sin(angle)
+  // Perpendicular unit vector (rotated 90°)
+  const px = Math.sin(angle)
+  const py = -Math.cos(angle)
+
+  // ── Multiplicity symbol (at handle, touching the table) ──
+  const multSymbol = isMany ? (
+    (() => {
+      // Crow's foot: prong tips at handle - TABLE_INSET, convergence at handle + CROW_LENGTH
+      const baseX = x - cos * TABLE_INSET
+      const baseY = y - sin * TABLE_INSET
+      const tipX = x + cos * CROW_LENGTH
+      const tipY = y + sin * CROW_LENGTH
+      const midX = (tipX + baseX) / 2
+      const midY = (tipY + baseY) / 2
+      return (
+        <g>
+          <path
+            d={`M ${tipX} ${tipY} Q ${midX - px * (CROW_SPREAD * 0.5 + CROW_CURVE)} ${midY - py * (CROW_SPREAD * 0.5 + CROW_CURVE)} ${baseX - px * CROW_SPREAD} ${baseY - py * CROW_SPREAD}`}
+            fill="none"
+            stroke={color}
+            strokeWidth={sw}
+            strokeLinecap="round"
+          />
+          <line
+            x1={tipX}
+            y1={tipY}
+            x2={baseX}
+            y2={baseY}
+            stroke={color}
+            strokeWidth={sw}
+            strokeLinecap="round"
+          />
+          <path
+            d={`M ${tipX} ${tipY} Q ${midX + px * (CROW_SPREAD * 0.5 + CROW_CURVE)} ${midY + py * (CROW_SPREAD * 0.5 + CROW_CURVE)} ${baseX + px * CROW_SPREAD} ${baseY + py * CROW_SPREAD}`}
+            fill="none"
+            stroke={color}
+            strokeWidth={sw}
+            strokeLinecap="round"
+          />
+        </g>
+      )
+    })()
+  ) : (
+    // Single perpendicular bar, slightly inset toward table
+    <line
+      x1={x - cos * MULT_BAR_INSET - px * BAR_HALF}
+      y1={y - sin * MULT_BAR_INSET - py * BAR_HALF}
+      x2={x - cos * MULT_BAR_INSET + px * BAR_HALF}
+      y2={y - sin * MULT_BAR_INSET + py * BAR_HALF}
+      stroke={color}
+      strokeWidth={sw}
+      strokeLinecap="round"
+    />
   )
-  const relationshipText = getCSSVariable('--relationship-text', '#a3a3a3')
-  const relationshipSelectedText = getCSSVariable(
-    '--relationship-selected-text',
-    '#22c55e',
+
+  // ── Optionality symbol (outward from multiplicity) ──
+  // Position: past multiplicity outer edge + OPT_GAP
+  const multExt = isMany ? CROW_LENGTH : 0
+  const optX = x + cos * (multExt + OPT_GAP)
+  const optY = y + sin * (multExt + OPT_GAP)
+
+  const optSymbol = isOptional ? (
+    // Open circle = zero / optional
+    <circle
+      cx={optX}
+      cy={optY}
+      r={CIRCLE_R}
+      fill="var(--rf-background)"
+      stroke={color}
+      strokeWidth={sw}
+    />
+  ) : (
+    // Single perpendicular bar = mandatory / one
+    <line
+      x1={optX - px * BAR_HALF}
+      y1={optY - py * BAR_HALF}
+      x2={optX + px * BAR_HALF}
+      y2={optY + py * BAR_HALF}
+      stroke={color}
+      strokeWidth={sw}
+      strokeLinecap="round"
+    />
   )
-  const relationshipCircleBg = getCSSVariable(
-    '--relationship-circle-bg',
-    '#1a1a1a',
-  )
-
-  // Find column indices in their respective tables
-  const sourceColumnIndex = sourceTable.columns.findIndex(
-    (col) => col.id === relationship.sourceColumnId,
-  )
-  const targetColumnIndex = targetTable.columns.findIndex(
-    (col) => col.id === relationship.targetColumnId,
-  )
-
-  if (sourceColumnIndex === -1 || targetColumnIndex === -1) {
-    console.error(
-      'Column not found in table for relationship:',
-      relationship.id,
-    )
-    return null
-  }
-
-  // Get precise column positions
-  const sourcePos = getColumnPosition(sourceTable, sourceColumnIndex)
-  const targetPos = getColumnPositionLeft(targetTable, targetColumnIndex)
-
-  // Calculate arrow angle
-  const angle = calculateAngle(
-    sourcePos.x,
-    sourcePos.y,
-    targetPos.x,
-    targetPos.y,
-  )
-
-  // Calculate midpoint for label
-  const midX = (sourcePos.x + targetPos.x) / 2
-  const midY = (sourcePos.y + targetPos.y) / 2
-
-  // Get cardinality text
-  const cardinalityText = getCardinalityText(relationship.cardinality)
-
-  // Determine if we need crow's foot at source or target
-  const showSourceCrowFoot =
-    relationship.cardinality === 'MANY_TO_ONE' ||
-    relationship.cardinality === 'MANY_TO_MANY'
-  const showTargetCrowFoot =
-    relationship.cardinality === 'ONE_TO_MANY' ||
-    relationship.cardinality === 'MANY_TO_MANY'
-
-  /**
-   * Handle relationship click
-   */
-  const handleClick = () => {
-    onClick?.(relationship.id)
-  }
 
   return (
-    <Group onClick={handleClick} onTap={handleClick}>
-      {/* Main arrow line */}
-      <Arrow
-        points={[sourcePos.x, sourcePos.y, targetPos.x, targetPos.y]}
-        stroke={isSelected ? relationshipSelectedStroke : relationshipStroke}
-        strokeWidth={
-          isSelected
-            ? RELATIONSHIP_STYLE.selectedStrokeWidth
-            : RELATIONSHIP_STYLE.strokeWidth
-        }
-        fill={isSelected ? relationshipSelectedStroke : relationshipStroke}
-        pointerLength={showTargetCrowFoot ? 0 : RELATIONSHIP_STYLE.arrowSize}
-        pointerWidth={showTargetCrowFoot ? 0 : RELATIONSHIP_STYLE.arrowSize}
-        // Make it easier to click
-        hitStrokeWidth={20}
-      />
-
-      {/* Crow's foot at source (for MANY_TO_ONE, MANY_TO_MANY) */}
-      {showSourceCrowFoot &&
-        calculateCrowFootPoints(
-          sourcePos.x,
-          sourcePos.y,
-          angle + Math.PI, // Reverse angle for source end
-          RELATIONSHIP_STYLE.crowFootSize,
-        ).map((points, index) => (
-          <Line
-            key={`source-crow-${index}`}
-            points={points}
-            stroke={
-              isSelected ? relationshipSelectedStroke : relationshipStroke
-            }
-            strokeWidth={RELATIONSHIP_STYLE.strokeWidth}
-          />
-        ))}
-
-      {/* Crow's foot at target (for ONE_TO_MANY, MANY_TO_MANY) */}
-      {showTargetCrowFoot &&
-        calculateCrowFootPoints(
-          targetPos.x,
-          targetPos.y,
-          angle,
-          RELATIONSHIP_STYLE.crowFootSize,
-        ).map((points, index) => (
-          <Line
-            key={`target-crow-${index}`}
-            points={points}
-            stroke={
-              isSelected ? relationshipSelectedStroke : relationshipStroke
-            }
-            strokeWidth={RELATIONSHIP_STYLE.strokeWidth}
-          />
-        ))}
-
-      {/* Cardinality text at source */}
-      {cardinalityText.source && (
-        <Group>
-          <Circle
-            x={sourcePos.x + RELATIONSHIP_STYLE.cardinalityOffsetX}
-            y={sourcePos.y + RELATIONSHIP_STYLE.cardinalityOffsetY}
-            radius={10}
-            fill={relationshipCircleBg}
-            stroke={
-              isSelected ? relationshipSelectedStroke : relationshipStroke
-            }
-            strokeWidth={1}
-          />
-          <Text
-            x={sourcePos.x + RELATIONSHIP_STYLE.cardinalityOffsetX - 5}
-            y={sourcePos.y + RELATIONSHIP_STYLE.cardinalityOffsetY - 6}
-            text={cardinalityText.source}
-            fontSize={RELATIONSHIP_STYLE.fontSize}
-            fill={isSelected ? relationshipSelectedText : relationshipText}
-            fontStyle="bold"
-          />
-        </Group>
-      )}
-
-      {/* Cardinality text at target */}
-      {cardinalityText.target && (
-        <Group>
-          <Circle
-            x={targetPos.x - RELATIONSHIP_STYLE.cardinalityOffsetX}
-            y={targetPos.y + RELATIONSHIP_STYLE.cardinalityOffsetY}
-            radius={10}
-            fill={relationshipCircleBg}
-            stroke={
-              isSelected ? relationshipSelectedStroke : relationshipStroke
-            }
-            strokeWidth={1}
-          />
-          <Text
-            x={targetPos.x - RELATIONSHIP_STYLE.cardinalityOffsetX - 5}
-            y={targetPos.y + RELATIONSHIP_STYLE.cardinalityOffsetY - 6}
-            text={cardinalityText.target}
-            fontSize={RELATIONSHIP_STYLE.fontSize}
-            fill={isSelected ? relationshipSelectedText : relationshipText}
-            fontStyle="bold"
-          />
-        </Group>
-      )}
-
-      {/* Relationship label (if provided) */}
-      {relationship.label && (
-        <Group>
-          <Circle
-            x={midX}
-            y={midY + RELATIONSHIP_STYLE.labelOffsetY}
-            radius={6}
-            fill={relationshipCircleBg}
-            stroke={
-              isSelected ? relationshipSelectedStroke : relationshipStroke
-            }
-            strokeWidth={1}
-          />
-          <Text
-            x={
-              midX -
-              (relationship.label.length * RELATIONSHIP_STYLE.fontSize) / 3
-            }
-            y={midY + RELATIONSHIP_STYLE.labelOffsetY - 20}
-            text={relationship.label}
-            fontSize={RELATIONSHIP_STYLE.fontSize}
-            fill={isSelected ? relationshipSelectedText : relationshipText}
-            padding={4}
-            // Background for readability
-            shadowColor={relationshipCircleBg}
-            shadowBlur={8}
-            shadowOpacity={0.8}
-          />
-        </Group>
-      )}
-    </Group>
+    <g>
+      {multSymbol}
+      {optSymbol}
+    </g>
   )
 }
+
+/** Total extent (outward from handle) that the indicator occupies — used to shorten the edge path */
+function indicatorExtent(isMany: boolean): number {
+  const multExt = isMany ? CROW_LENGTH : 0
+  return multExt + OPT_GAP + CIRCLE_R
+}
+
+export const RelationshipEdge = memo(
+  ({
+    id,
+    sourceX,
+    sourceY,
+    targetX,
+    targetY,
+    sourcePosition,
+    targetPosition,
+    data,
+    selected,
+  }: EdgeProps<RelationshipEdgeType>) => {
+    const {
+      cardinality,
+      label,
+      isHighlighted,
+      bundleHandleYOffset,
+      bundleCenterXOffset,
+    } = data || {}
+    const isActive = selected || isHighlighted
+
+    // Bundle offsets — 0 when edge is not in a multi-edge bundle
+    const bundleYOff = bundleHandleYOffset ?? 0
+    const bundleXOff = bundleCenterXOffset ?? 0
+
+    // Delete button visibility state
+    const [isHovered, setIsHovered] = useState(false)
+    const [isFocused, setIsFocused] = useState(false)
+    const isVisible = isHovered || selected || isFocused
+
+    // Label editing state
+    const [isEditing, setIsEditing] = useState(false)
+    const [editValue, setEditValue] = useState(label ?? '')
+    const inputRef = useRef<HTMLInputElement>(null)
+
+    // Sync editValue when label updates from collaboration
+    useEffect(() => {
+      if (!isEditing) setEditValue(label ?? '')
+    }, [label, isEditing])
+
+    const commitLabel = useCallback(() => {
+      setIsEditing(false)
+      const trimmed = editValue.trim()
+      if (trimmed !== (label ?? '')) {
+        data?.onLabelUpdate?.(id, trimmed)
+      }
+    }, [editValue, label, data, id])
+
+    const cancelEdit = useCallback(() => {
+      setIsEditing(false)
+      setEditValue(label ?? '')
+    }, [label])
+
+    const srcAngle = useMemo(
+      () => outwardAngle(sourcePosition),
+      [sourcePosition],
+    )
+    const tgtAngle = useMemo(
+      () => outwardAngle(targetPosition),
+      [targetPosition],
+    )
+
+    // Derive multiplicity and optionality from lookup table
+    const flags = CARDINALITY_FLAGS[cardinality ?? ''] ?? {
+      srcMany: false,
+      srcOpt: false,
+      tgtMany: false,
+      tgtOpt: false,
+    }
+    const sourceIsMany = flags.srcMany
+    const sourceIsOptional = flags.srcOpt
+    const targetIsMany = flags.tgtMany
+    const targetIsOptional = flags.tgtOpt
+
+    // Shorten the path so it stops before the cardinality icons.
+    // Move source/target inward by the icon extent.
+    const srcExt = indicatorExtent(sourceIsMany)
+    const tgtExt = indicatorExtent(targetIsMany)
+    const adjSourceX = sourceX + Math.cos(srcAngle) * srcExt
+    const adjSourceY = sourceY + Math.sin(srcAngle) * srcExt
+    const adjTargetX = targetX + Math.cos(tgtAngle) * tgtExt
+    const adjTargetY = targetY + Math.sin(tgtAngle) * tgtExt
+
+    // Bundle Y offset — stacks on top of the cardinality-indicator shortening.
+    // Separates horizontal entry/exit segments for same-table-pair multi-edges.
+    const bundledSourceY = adjSourceY + bundleYOff
+    const bundledTargetY = adjTargetY + bundleYOff
+
+    // Bundle X offset — fans vertical step segments within the column corridor.
+    const defaultCenterX = (adjSourceX + adjTargetX) / 2
+    const bundledCenterX = defaultCenterX + bundleXOff
+
+    const [edgePath, labelX, labelY] = getSmoothStepPath({
+      sourceX: adjSourceX,
+      sourceY: bundledSourceY,
+      sourcePosition,
+      targetX: adjTargetX,
+      targetY: bundledTargetY,
+      targetPosition,
+      borderRadius: 16,
+      centerX: bundledCenterX,
+    })
+
+    // Clamp the label's X position so the pill doesn't overlap either endpoint
+    // table body. getSmoothStepPath returns the geometric path midpoint; for
+    // same-side (right→right or left→left) C-curves with long labels the pill
+    // can extend back over the source table. The clamp ensures:
+    //   right→right: pill left edge ≥ max(sourceX, targetX) + margin
+    //   left→left:   pill right edge ≤ min(sourceX, targetX) − margin
+    const labelPillWidth = computeLabelPillWidth(label ?? '')
+    const displayLabelX = clampSameSideLabelX(
+      labelX,
+      labelPillWidth,
+      sourceX,
+      sourcePosition,
+      targetX,
+      targetPosition,
+    )
+
+    const gradientId = `edge-gradient-${id}`
+    const glowFilterId = `edge-glow-${id}`
+
+    const cardinalityColor = getCardinalityColor(cardinality)
+    const color = isActive ? 'var(--rf-edge-stroke-selected)' : cardinalityColor
+    const sw = isActive ? 1.6 : 1.2
+
+    return (
+      <>
+        <defs>
+          <linearGradient
+            id={gradientId}
+            x1={sourceX}
+            y1={sourceY}
+            x2={targetX}
+            y2={targetY}
+            gradientUnits="userSpaceOnUse"
+          >
+            <stop
+              offset="0%"
+              stopColor={
+                isActive
+                  ? 'var(--rf-edge-gradient-start-active)'
+                  : cardinalityColor
+              }
+              stopOpacity={isActive ? 1 : 0.7}
+            />
+            <stop
+              offset="100%"
+              stopColor={
+                isActive
+                  ? 'var(--rf-edge-gradient-end-active)'
+                  : cardinalityColor
+              }
+            />
+          </linearGradient>
+          {isActive && (
+            <filter
+              id={glowFilterId}
+              x="-20%"
+              y="-20%"
+              width="140%"
+              height="140%"
+            >
+              <feGaussianBlur
+                in="SourceGraphic"
+                stdDeviation="3"
+                result="blur"
+              />
+              <feMerge>
+                <feMergeNode in="blur" />
+                <feMergeNode in="SourceGraphic" />
+              </feMerge>
+            </filter>
+          )}
+        </defs>
+
+        {/* Invisible wide hit-area for hover detection — must come before visible path */}
+        <path
+          d={edgePath}
+          fill="none"
+          stroke="transparent"
+          strokeWidth={20}
+          style={{ cursor: 'pointer', pointerEvents: 'visibleStroke' }}
+          onMouseEnter={() => setIsHovered(true)}
+          onMouseLeave={() => setIsHovered(false)}
+        />
+
+        {/* Glow underlay */}
+        {isActive && (
+          <path
+            d={edgePath}
+            fill="none"
+            stroke="var(--rf-edge-glow)"
+            strokeWidth={8}
+            strokeLinecap="round"
+            style={{ filter: `url(#${glowFilterId})`, opacity: 0.4 }}
+          />
+        )}
+
+        {/* Main edge path — shortened to stop before icons */}
+        <path
+          id={id}
+          className="react-flow__edge-path"
+          d={edgePath}
+          fill="none"
+          stroke={`url(#${gradientId})`}
+          strokeWidth={isActive ? 2.5 : 1.5}
+          strokeLinecap="round"
+          style={{ transition: 'stroke-width 0.2s ease' }}
+        />
+
+        {/* Source cardinality — shifted by bundle Y offset so indicator tip meets fanned path */}
+        <CardinalityIndicator
+          x={sourceX}
+          y={sourceY + bundleYOff}
+          angle={srcAngle}
+          isMany={sourceIsMany}
+          isOptional={sourceIsOptional}
+          color={color}
+          sw={sw}
+        />
+
+        {/* Target cardinality — shifted by bundle Y offset so indicator tip meets fanned path */}
+        <CardinalityIndicator
+          x={targetX}
+          y={targetY + bundleYOff}
+          angle={tgtAngle}
+          isMany={targetIsMany}
+          isOptional={targetIsOptional}
+          color={color}
+          sw={sw}
+        />
+
+        {/* Animated dots */}
+        {isHighlighted && (
+          <g>
+            <circle r="2.5" fill="var(--rf-edge-stroke-selected)" opacity="0.7">
+              <animateMotion
+                dur="3s"
+                repeatCount="indefinite"
+                path={edgePath}
+              />
+            </circle>
+            <circle r="2.5" fill="var(--rf-edge-stroke-selected)" opacity="0.7">
+              <animateMotion
+                dur="3s"
+                repeatCount="indefinite"
+                path={edgePath}
+                begin="1.5s"
+              />
+            </circle>
+          </g>
+        )}
+
+        {/* Label + delete button — flex row, no overlap */}
+        <EdgeLabelRenderer>
+          <div
+            className="nodrag nopan"
+            style={{
+              position: 'absolute',
+              transform: `translate(-50%, -50%) translate(${displayLabelX}px,${labelY}px)`,
+              pointerEvents: 'all',
+              zIndex: Z_INDEX.EDGE_LABEL,
+              display: 'inline-flex',
+              alignItems: 'center',
+              gap: '4px',
+            }}
+            onMouseEnter={() => setIsHovered(true)}
+            onMouseLeave={() => setIsHovered(false)}
+          >
+            {/* Label pill — visible when label exists, editing, or edge is active/hovered */}
+            {(isVisible || !!label || isEditing) && (
+              <div
+                style={{
+                  display: 'inline-flex',
+                  alignItems: 'center',
+                  background: 'var(--rf-edge-label-bg)',
+                  backdropFilter: 'blur(8px)',
+                  WebkitBackdropFilter: 'blur(8px)',
+                  borderRadius: '20px',
+                  border: isEditing
+                    ? '1px solid var(--rf-edge-stroke-selected)'
+                    : label
+                      ? `1px solid ${isActive ? 'var(--rf-edge-stroke-selected)' : 'var(--rf-edge-label-border)'}`
+                      : '1px dashed var(--rf-edge-label-border)',
+                  padding: '3px 10px',
+                  boxShadow: isEditing
+                    ? '0 0 12px var(--rf-edge-glow)'
+                    : isActive
+                      ? '0 0 8px var(--rf-edge-glow)'
+                      : '0 1px 4px rgba(0,0,0,0.06)',
+                  fontSize: '11px',
+                  fontWeight: 500,
+                  letterSpacing: '0.02em',
+                  color:
+                    isActive || isEditing
+                      ? 'var(--rf-edge-stroke-selected)'
+                      : 'var(--rf-table-text)',
+                  transition: 'border-color 0.2s, box-shadow 0.2s, color 0.2s',
+                }}
+              >
+                {isEditing ? (
+                  <input
+                    ref={inputRef}
+                    value={editValue}
+                    onChange={(e) => setEditValue(e.target.value.slice(0, 255))}
+                    onBlur={commitLabel}
+                    onKeyDown={(e) => {
+                      if (e.key === 'Enter') {
+                        e.preventDefault()
+                        commitLabel()
+                      }
+                      if (e.key === 'Escape') {
+                        e.preventDefault()
+                        cancelEdit()
+                      }
+                      e.stopPropagation()
+                    }}
+                    maxLength={255}
+                    autoFocus
+                    className="nodrag nopan"
+                    style={{
+                      background: 'transparent',
+                      border: 'none',
+                      outline: 'none',
+                      fontSize: '11px',
+                      fontWeight: 500,
+                      letterSpacing: '0.02em',
+                      color: 'var(--rf-edge-stroke-selected)',
+                      minWidth: '60px',
+                      width: `${Math.max(60, editValue.length * 7 + 16)}px`,
+                      padding: 0,
+                    }}
+                  />
+                ) : label ? (
+                  <span
+                    onDoubleClick={() => setIsEditing(true)}
+                    title="Double-click to edit"
+                    style={{ cursor: 'default', userSelect: 'none' }}
+                  >
+                    {label}
+                  </span>
+                ) : (
+                  <span
+                    onClick={() => setIsEditing(true)}
+                    style={{
+                      fontStyle: 'italic',
+                      opacity: 0.55,
+                      cursor: 'pointer',
+                      userSelect: 'none',
+                    }}
+                  >
+                    + Add label
+                  </span>
+                )}
+              </div>
+            )}
+
+            {/* Delete button wrapper — always in DOM; opacity/pointerEvents control visibility */}
+            <div
+              style={{
+                opacity: isVisible ? 1 : 0,
+                pointerEvents: isVisible ? 'all' : 'none',
+                transition: 'opacity 150ms ease, background-color 0.15s',
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'center',
+              }}
+            >
+              <button
+                type="button"
+                aria-label="Delete relationship"
+                className="nodrag nopan"
+                onFocus={() => setIsFocused(true)}
+                onBlur={() => setIsFocused(false)}
+                onClick={(e) => {
+                  e.stopPropagation()
+                  data?.onDelete?.(id)
+                }}
+                style={{
+                  width: '20px',
+                  height: '20px',
+                  minWidth: '24px',
+                  minHeight: '24px',
+                  borderRadius: '50%',
+                  border: 'none',
+                  cursor: 'pointer',
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                  backgroundColor: cardinalityColor,
+                  color: '#ffffff',
+                  boxShadow:
+                    '0 1px 6px rgba(0,0,0,0.3), 0 0 0 2px rgba(0,0,0,0.08)',
+                  backdropFilter: 'blur(4px)',
+                  WebkitBackdropFilter: 'blur(4px)',
+                  padding: 0,
+                  outline: 'none',
+                }}
+              >
+                <X size={12} strokeWidth={2.5} aria-hidden="true" />
+              </button>
+            </div>
+          </div>
+        </EdgeLabelRenderer>
+      </>
+    )
+  },
+)
+
+RelationshipEdge.displayName = 'RelationshipEdge'

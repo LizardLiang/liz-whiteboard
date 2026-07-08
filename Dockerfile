@@ -12,10 +12,6 @@ RUN bun install
 COPY . .
 
 # ── Layer: Vite / Nitro build ────────────────────────────────────────────────
-# VITE_ variables are baked into the bundle at build time (Vite inlines them).
-# VITE_USE_REACT_FLOW enables the React Flow renderer (used in whiteboard route).
-# This must be set before `vite build` runs.
-ENV VITE_USE_REACT_FLOW=true
 RUN bun run build
 # Result: .output/ (Nitro middleware bundle + public assets)
 

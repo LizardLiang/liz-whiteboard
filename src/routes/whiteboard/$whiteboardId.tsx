@@ -5,23 +5,16 @@ import { Link, createFileRoute } from '@tanstack/react-router'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { toast } from 'sonner'
-import type Konva from 'konva'
-import type { CanvasViewport } from '@/components/whiteboard/Canvas'
 import type { CreateRelationship, CreateTable } from '@/data/schema'
 import type { DiagramAST } from '@/lib/parser/ast'
 import type { ZoomControls } from '@/components/whiteboard/Toolbar'
 import type { CommentActions } from '@/components/whiteboard/ReactFlowWhiteboard'
 import type { CommentWithAuthor } from '@/data/models'
 import type { ShowMode } from '@/lib/react-flow/types'
-import { Canvas, useCanvasControls } from '@/components/whiteboard/Canvas'
-import { TableNode } from '@/components/whiteboard/TableNode'
-import { RelationshipEdge } from '@/components/whiteboard/RelationshipEdge'
 import { ReactFlowWhiteboard } from '@/components/whiteboard/ReactFlowWhiteboard'
 import { WhiteboardAccessDenied } from '@/components/whiteboard/WhiteboardAccessDenied'
-import { Toolbar } from '@/components/whiteboard/Toolbar'
 import { WhiteboardHistoryPanel } from '@/components/whiteboard/WhiteboardHistoryPanel'
 import { WhiteboardCommentsPanel } from '@/components/whiteboard/WhiteboardCommentsPanel'
-import { Minimap } from '@/components/whiteboard/Minimap'
 import { useCollaboration } from '@/hooks/use-collaboration'
 import { useSqlImport } from '@/hooks/use-sql-import'
 import { useZenMode } from '@/hooks/use-zen-mode'
@@ -32,8 +25,6 @@ import {
   createTable as createTableFn,
   getWhiteboardRelationships,
   getWhiteboardWithDiagram,
-  saveCanvasState,
-  updateTablePosition as updateTablePositionFn,
 } from '@/lib/server-functions'
 import { entitiesToText } from '@/lib/parser/diagram-parser'
 import {
@@ -52,11 +43,6 @@ export const Route = createFileRoute('/whiteboard/$whiteboardId')({
 })
 
 /**
- * Feature flag: Toggle between Konva (legacy) and React Flow (new)
- */
-const USE_REACT_FLOW = import.meta.env.VITE_USE_REACT_FLOW === 'true'
-
-/**
  * Whiteboard Editor component
  */
 function WhiteboardEditor() {
@@ -72,15 +58,6 @@ function WhiteboardEditor() {
   const { triggerSessionExpired } = useAuthContext()
 
   // State
-  const [selectedTableId, setSelectedTableId] = useState<string | null>(null)
-  const [selectedRelationshipId, setSelectedRelationshipId] = useState<
-    string | null
-  >(null)
-  const [canvasViewport, setCanvasViewport] = useState<CanvasViewport>({
-    zoom: 1,
-    offsetX: 0,
-    offsetY: 0,
-  })
   const [activeTab] = useState<'visual' | 'text'>('visual')
   // Version history panel (GH #107) — owned here (not inside Toolbar/
   // ReactFlowWhiteboard) because WhiteboardHistoryPanel's preview reuses
@@ -110,14 +87,8 @@ function WhiteboardEditor() {
   const [, setReactFlowZoomControls] = useState<ZoomControls | null>(null)
   const [, setReactFlowCurrentZoom] = useState<number>(1)
 
-  // Canvas stage ref for programmatic zoom controls
-  const stageRef = useRef<Konva.Stage>(null)
-
   // Zen mode — hides all UI chrome so only the canvas is visible
   const { isZenMode, toggleZenMode } = useZenMode()
-
-  // Debounce timer for canvas state persistence
-  const saveCanvasStateTimerRef = useRef<NodeJS.Timeout | null>(null)
 
   // Fetch whiteboard data with TanStack Query
   // NOTE: Uses 'whiteboard-page' key to avoid collision with ReactFlowWhiteboard's
@@ -152,11 +123,10 @@ function WhiteboardEditor() {
     },
   })
 
-  // SQL DDL import orchestration (Issue #105) — shared by both the Konva
-  // Toolbar rendered directly below and, threaded through as a prop, the
-  // Toolbar ReactFlowWhiteboard renders internally for the React Flow path.
-  // Toolbar's onImportSql contract discards the resolved summary (void |
-  // Promise<void>) — ImportSqlDialog only needs to know success/failure.
+  // SQL DDL import orchestration (Issue #105) — threaded through as a prop to
+  // the Toolbar ReactFlowWhiteboard renders internally. Toolbar's onImportSql
+  // contract discards the resolved summary (void | Promise<void>) —
+  // ImportSqlDialog only needs to know success/failure.
   const { importDiagram } = useSqlImport(whiteboardId)
   const handleImportSql = useCallback(
     async (ast: DiagramAST) => {
@@ -189,85 +159,12 @@ function WhiteboardEditor() {
     return () => window.removeEventListener('keydown', handleKeyDown)
   }, [toggleZenMode])
 
-  // Auth-error-narrowed view of the loaded whiteboard's canvasState, used
-  // only as this effect's dependency/read so isUnauthorizedError narrowing
-  // doesn't have to happen inside a dependency-array expression.
-  const loadedCanvasState =
-    whiteboardData && !isUnauthorizedError(whiteboardData)
-      ? whiteboardData.whiteboard?.canvasState
-      : undefined
-
-  /**
-   * Restore canvas state when whiteboard loads
-   */
-  useEffect(() => {
-    if (loadedCanvasState) {
-      const savedState = loadedCanvasState as {
-        zoom: number
-        offsetX: number
-        offsetY: number
-      }
-
-      // Validate saved state
-      if (
-        typeof savedState.zoom === 'number' &&
-        typeof savedState.offsetX === 'number' &&
-        typeof savedState.offsetY === 'number'
-      ) {
-        setCanvasViewport({
-          zoom: savedState.zoom,
-          offsetX: savedState.offsetX,
-          offsetY: savedState.offsetY,
-        })
-        console.log('Canvas state restored:', savedState)
-      }
-    }
-  }, [loadedCanvasState])
-
   // WebSocket collaboration - MUST be called before any early returns
   const { emit, on, off, connectionState, isUnauthorized } = useCollaboration(
     whiteboardId,
     userId,
     triggerSessionExpired,
   )
-
-  /**
-   * Handle canvas viewport changes with debounced persistence
-   * Saves to database after 1 second of inactivity
-   */
-  const handleCanvasViewportChange = useCallback(
-    (viewport: CanvasViewport) => {
-      setCanvasViewport(viewport)
-
-      // Clear existing timer
-      if (saveCanvasStateTimerRef.current) {
-        clearTimeout(saveCanvasStateTimerRef.current)
-      }
-
-      // Debounce save for 1 second
-      saveCanvasStateTimerRef.current = setTimeout(async () => {
-        try {
-          await saveCanvasState({
-            data: {
-              whiteboardId,
-              canvasState: {
-                zoom: viewport.zoom,
-                offsetX: viewport.offsetX,
-                offsetY: viewport.offsetY,
-              },
-            },
-          })
-          console.log('Canvas state saved:', viewport)
-        } catch (error) {
-          console.error('Failed to save canvas state:', error)
-        }
-      }, 1000)
-    },
-    [whiteboardId],
-  )
-
-  // Canvas zoom controls
-  const canvasControls = useCanvasControls(stageRef, handleCanvasViewportChange)
 
   // Mutations
   const createTableMutation = useMutation({
@@ -333,49 +230,6 @@ function WhiteboardEditor() {
     },
   })
 
-  const updateTablePositionMutation = useMutation({
-    mutationFn: async (data: {
-      id: string
-      positionX: number
-      positionY: number
-    }) => {
-      return await updateTablePositionFn({ data })
-    },
-    onSuccess: (updatedTable, variables) => {
-      // Session expired mid-drag — root-provider's global onSuccess handler
-      // already surfaces the session-expired modal for this resolved-value
-      // 401; skip the optimistic cache patch below (nothing to reconcile).
-      if (isUnauthorizedError(updatedTable)) return
-
-      // Emit WebSocket event for other users
-      emit('table:move', {
-        tableId: variables.id,
-        positionX: variables.positionX,
-        positionY: variables.positionY,
-      })
-
-      // Update cache without full refetch
-      queryClient.setQueryData(['whiteboard', whiteboardId], (old: any) => {
-        if (!old) return old
-        return {
-          ...old,
-          tables: (old.tables ?? []).map((t: any) =>
-            t.id === updatedTable.id
-              ? {
-                  ...t,
-                  positionX: updatedTable.positionX,
-                  positionY: updatedTable.positionY,
-                }
-              : t,
-          ),
-        }
-      })
-    },
-    onError: (err) => {
-      console.error('Failed to update table position:', err)
-    },
-  })
-
   const createRelationshipMutation = useMutation({
     mutationFn: async (data: CreateRelationship) => {
       return await createRelationshipFn({ data })
@@ -417,45 +271,6 @@ function WhiteboardEditor() {
     },
     [createRelationshipMutation],
   )
-
-  const handleTableDragEnd = useCallback(
-    (tableId: string, x: number, y: number) => {
-      updateTablePositionMutation.mutate({
-        id: tableId,
-        positionX: x,
-        positionY: y,
-      })
-    },
-    [updateTablePositionMutation],
-  )
-
-  /**
-   * Handle minimap navigation
-   * Updates canvas position when user clicks on minimap
-   */
-  const handleMinimapNavigate = useCallback(
-    (offsetX: number, offsetY: number) => {
-      const newViewport = {
-        zoom: canvasViewport.zoom,
-        offsetX,
-        offsetY,
-      }
-      setCanvasViewport(newViewport)
-      handleCanvasViewportChange(newViewport)
-    },
-    [canvasViewport.zoom, handleCanvasViewportChange],
-  )
-
-  /**
-   * Cleanup debounce timer on unmount
-   */
-  useEffect(() => {
-    return () => {
-      if (saveCanvasStateTimerRef.current) {
-        clearTimeout(saveCanvasStateTimerRef.current)
-      }
-    }
-  }, [])
 
   /**
    * Callback for React Flow to register its display mode controls
@@ -668,7 +483,7 @@ function WhiteboardEditor() {
     )
   }
 
-  const { whiteboard, relationships } = whiteboardData
+  const { whiteboard } = whiteboardData
   const viewerRole = whiteboard?.viewerRole ?? null
   const canEdit = hasMinimumRole(viewerRole, 'EDITOR')
 
@@ -696,7 +511,7 @@ function WhiteboardEditor() {
         <div className="flex items-center justify-between px-4 py-2 border-b">
           <h1 className="text-xl font-semibold">{whiteboard.name}</h1>
           <div className="flex items-center gap-2">
-            {USE_REACT_FLOW && commentUnreadCount > 0 && (
+            {commentUnreadCount > 0 && (
               <span
                 className="rounded-full bg-destructive px-2 py-0.5 text-xs font-medium text-destructive-foreground"
                 title={`${commentUnreadCount} unresolved comment thread${commentUnreadCount === 1 ? '' : 's'}`}
@@ -725,113 +540,32 @@ function WhiteboardEditor() {
 
       {/* Whiteboard canvas */}
       <div className="flex-1 flex flex-col overflow-hidden">
-        {/* Toolbar — rendered by ReactFlowWhiteboardInner when USE_REACT_FLOW is true.
-               For the Konva (legacy) path, we render a separate toolbar here. */}
-        {!USE_REACT_FLOW && !isZenMode && (
-          <Toolbar
+        {/* Canvas — React Flow renders its own Toolbar internally. */}
+        <div className="flex-1 overflow-hidden relative">
+          <ReactFlowWhiteboard
             whiteboardId={whiteboardId}
-            tables={whiteboard.tables}
-            tableCount={whiteboard.tables.length}
+            userId={userId}
+            showMinimap={whiteboard.tables.length > 0}
+            showControls={true}
+            nodesDraggable={canEdit}
+            viewerRole={viewerRole}
             onCreateTable={handleCreateTable}
             onCreateRelationship={handleCreateRelationship}
             onImportSql={handleImportSql}
-            zoomControls={canvasControls}
-            currentZoom={canvasViewport.zoom}
-            viewerRole={viewerRole}
+            onDisplayModeReady={handleDisplayModeReady}
+            onZoomControlsReady={handleZoomControlsReady}
+            onZoomChange={handleZoomChange}
             onOpenHistory={() => setHistoryOpen(true)}
+            onOpenComments={() => setCommentsOpen(true)}
+            onCommentsChange={setComments}
+            onCommentActionsReady={setCommentActions}
           />
-        )}
-
-        {/* Canvas - Toggle between Konva and React Flow */}
-        <div className="flex-1 overflow-hidden relative">
-          {USE_REACT_FLOW ? (
-            /* React Flow Canvas (new) — includes its own Toolbar */
-            <ReactFlowWhiteboard
-              whiteboardId={whiteboardId}
-              userId={userId}
-              showMinimap={whiteboard.tables.length > 0}
-              showControls={true}
-              nodesDraggable={canEdit}
-              viewerRole={viewerRole}
-              onCreateTable={handleCreateTable}
-              onCreateRelationship={handleCreateRelationship}
-              onImportSql={handleImportSql}
-              onDisplayModeReady={handleDisplayModeReady}
-              onZoomControlsReady={handleZoomControlsReady}
-              onZoomChange={handleZoomChange}
-              onOpenHistory={() => setHistoryOpen(true)}
-              onOpenComments={() => setCommentsOpen(true)}
-              onCommentsChange={setComments}
-              onCommentActionsReady={setCommentActions}
-            />
-          ) : (
-            /* Konva Canvas (legacy) */
-            <Canvas
-              width={window.innerWidth}
-              height={window.innerHeight - 160} // Subtract header, tabs, and toolbar height
-              initialViewport={canvasViewport}
-              onViewportChange={handleCanvasViewportChange}
-              stageRef={stageRef}
-            >
-              {/* Render all tables */}
-              {whiteboard.tables.map((table) => (
-                <TableNode
-                  key={table.id}
-                  table={table}
-                  isSelected={selectedTableId === table.id}
-                  onClick={setSelectedTableId}
-                  onDragEnd={handleTableDragEnd}
-                />
-              ))}
-
-              {/* Render all relationships */}
-              {relationships.map((relationship) => {
-                const sourceTable = whiteboard.tables.find(
-                  (t) => t.id === relationship.sourceTableId,
-                )
-                const targetTable = whiteboard.tables.find(
-                  (t) => t.id === relationship.targetTableId,
-                )
-
-                if (!sourceTable || !targetTable) {
-                  console.warn(
-                    'Missing table for relationship:',
-                    relationship.id,
-                  )
-                  return null
-                }
-
-                return (
-                  <RelationshipEdge
-                    key={relationship.id}
-                    relationship={relationship}
-                    sourceTable={sourceTable}
-                    targetTable={targetTable}
-                    isSelected={selectedRelationshipId === relationship.id}
-                    onClick={setSelectedRelationshipId}
-                  />
-                )
-              })}
-            </Canvas>
-          )}
-
-          {/* Minimap - only show when there are tables and using Konva */}
-          {!USE_REACT_FLOW && whiteboard.tables.length > 0 && (
-            <Minimap
-              tables={whiteboard.tables}
-              viewport={canvasViewport}
-              canvasWidth={window.innerWidth}
-              canvasHeight={window.innerHeight - 160}
-              onNavigate={handleMinimapNavigate}
-            />
-          )}
         </div>
       </div>
 
       {/* Version history panel (GH #107) — trigger lives in the Toolbar
-          (both the legacy and React Flow paths above wire onOpenHistory to
-          this state); rendered here to avoid a circular import (the panel's
-          preview reuses ReactFlowWhiteboard). */}
+          (wired via onOpenHistory above); rendered here to avoid a circular
+          import (the panel's preview reuses ReactFlowWhiteboard). */}
       <WhiteboardHistoryPanel
         whiteboardId={whiteboardId}
         viewerRole={viewerRole}
@@ -839,17 +573,14 @@ function WhiteboardEditor() {
         onOpenChange={setHistoryOpen}
       />
 
-      {/* Canvas comments panel (GH #110) — React Flow path only; the legacy
-          Konva canvas has no comment pins to navigate to. */}
-      {USE_REACT_FLOW && (
-        <WhiteboardCommentsPanel
-          viewerRole={viewerRole}
-          comments={comments}
-          actions={commentActions}
-          open={commentsOpen}
-          onOpenChange={setCommentsOpen}
-        />
-      )}
+      {/* Canvas comments panel (GH #110) */}
+      <WhiteboardCommentsPanel
+        viewerRole={viewerRole}
+        comments={comments}
+        actions={commentActions}
+        open={commentsOpen}
+        onOpenChange={setCommentsOpen}
+      />
     </div>
   )
 }
