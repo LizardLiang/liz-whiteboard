@@ -48,7 +48,6 @@ export function convertTableToNode(
       table,
       isActiveHighlighted: false,
       isHighlighted: false,
-      isHovered: false,
       isRelationsPreviewOpen: false,
       showMode: 'ALL_FIELDS',
       positionPending: table.positionX === null || table.positionY === null,

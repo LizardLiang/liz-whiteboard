@@ -41,7 +41,6 @@ const makeTableNode = (columns: Array<Column>): TableNodeType => ({
     edges: [],
     isActiveHighlighted: false,
     isHighlighted: false,
-    isHovered: false,
     isRelationsPreviewOpen: false,
     showMode: 'ALL_FIELDS',
   },

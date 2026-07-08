@@ -231,7 +231,6 @@ function makeTableData(overrides?: Partial<TableNodeData>): TableNodeData {
     showMode: 'ALL_FIELDS',
     isActiveHighlighted: false,
     isHighlighted: false,
-    isHovered: false,
     isRelationsPreviewOpen: false,
     edges: [],
     relationsEdges: [],

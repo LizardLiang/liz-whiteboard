@@ -81,7 +81,6 @@ export const TableNode = memo(
       showMode,
       isActiveHighlighted,
       isHighlighted,
-      isHovered,
       isRelationsPreviewOpen,
       onColumnCreate,
       onColumnUpdate,
@@ -137,20 +136,15 @@ export const TableNode = memo(
     >([])
     const columnRowsRef = useRef<HTMLDivElement | null>(null)
 
-    // Determine visual state classes. Note: `isHovered` is never set true
-    // anymore (GH #121 perf) — hover highlight is now driven imperatively by
-    // ReactFlowCanvas.tsx's DOM-class effect (`.rf-hover-highlighted` in
+    // Determine visual state classes. Hover highlight is driven imperatively
+    // by ReactFlowCanvas.tsx's DOM-class effect (`.rf-hover-highlighted` in
     // react-flow-theme.css) instead of a setNodes-driven prop, so a hover no
-    // longer rebuilds/re-renders the full node array. The field stays in
-    // TableNodeData for backward compatibility; this branch is now dead but
-    // harmless.
+    // longer rebuilds/re-renders the full node array.
     const highlightClass = isActiveHighlighted
       ? 'active-highlighted'
       : isHighlighted
         ? 'highlighted'
-        : isHovered
-          ? 'hovered'
-          : ''
+        : ''
 
     // Level-of-detail (GH #121 perf, opt #3): below LOD_ZOOM_THRESHOLD,
     // render each column as a minimal handles-only LodColumnRow instead of
@@ -576,9 +570,7 @@ export const TableNode = memo(
             minWidth: `${minWidth}px`,
             maxWidth: '500px',
             opacity:
-              isActiveHighlighted || isHighlighted || isHovered || selected
-                ? 1
-                : 0.7,
+              isActiveHighlighted || isHighlighted || selected ? 1 : 0.7,
             transition: 'opacity 0.2s, box-shadow 0.2s',
             boxShadow:
               isActiveHighlighted || selected
@@ -867,7 +859,6 @@ export const TableNode = memo(
     if (prev.data.isActiveHighlighted !== next.data.isActiveHighlighted)
       return false
     if (prev.data.isHighlighted !== next.data.isHighlighted) return false
-    if (prev.data.isHovered !== next.data.isHovered) return false
     if (prev.data.isRelationsPreviewOpen !== next.data.isRelationsPreviewOpen)
       return false
     if (prev.data.onPreviewRelations !== next.data.onPreviewRelations)

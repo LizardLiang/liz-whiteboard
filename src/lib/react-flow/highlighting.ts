@@ -169,7 +169,6 @@ export function calculateHighlighting(
     const isActiveHighlighted = node.id === activeTableId
     const isHighlighted =
       relatedTableIds.has(node.id) && node.id !== activeTableId
-    const isHovered = node.id === hoveredTableId
     const isRelationsPreviewOpen = node.id === relationsPreviewTableId
     const newZIndex = isRelationsPreviewOpen
       ? Z_INDEX.NODE_RELATIONS_PREVIEW
@@ -180,7 +179,6 @@ export function calculateHighlighting(
     if (
       node.data.isActiveHighlighted === isActiveHighlighted &&
       node.data.isHighlighted === isHighlighted &&
-      node.data.isHovered === isHovered &&
       node.data.isRelationsPreviewOpen === isRelationsPreviewOpen &&
       node.zIndex === newZIndex
     ) {
@@ -193,7 +191,6 @@ export function calculateHighlighting(
         ...node.data,
         isActiveHighlighted,
         isHighlighted,
-        isHovered,
         isRelationsPreviewOpen,
       },
       zIndex: newZIndex,
