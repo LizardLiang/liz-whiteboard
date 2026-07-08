@@ -75,6 +75,50 @@ export function buildEdgeMap(edges: Array<RelationshipEdgeType>): EdgeMap {
 }
 
 /**
+ * Calculate edge highlighting in isolation (GH #121 perf) — extracted from
+ * calculateHighlighting's edge loop so ReactFlowCanvas's hover path can
+ * recompute JUST the (far fewer) edges via setEdges without also rebuilding
+ * the full node array via setNodes on every hover. calculateHighlighting
+ * still exists unchanged (delegates to this internally) for callers that
+ * want the combined node+edge result in one pass.
+ *
+ * @param edges - All relationship edges
+ * @param activeTableId - ID of actively selected table (clicked)
+ * @param hoveredTableId - ID of currently hovered table
+ * @returns Edges with updated `isHighlighted`/`zIndex`; unaffected edges keep
+ *   their original object reference so React.memo can skip their re-render
+ */
+export function calculateEdgeHighlighting(
+  edges: Array<RelationshipEdgeType>,
+  activeTableId: string | null,
+  hoveredTableId: string | null,
+): Array<RelationshipEdgeType> {
+  return edges.map((edge) => {
+    const isConnectedToActive =
+      edge.source === activeTableId || edge.target === activeTableId
+    const isConnectedToHovered =
+      edge.source === hoveredTableId || edge.target === hoveredTableId
+    const isHighlighted = isConnectedToActive || isConnectedToHovered
+    const newZIndex = isHighlighted
+      ? Z_INDEX.EDGE_HIGHLIGHTED
+      : Z_INDEX.EDGE_DEFAULT
+
+    if (
+      edge.data?.isHighlighted === isHighlighted &&
+      edge.zIndex === newZIndex
+    ) {
+      return edge
+    }
+
+    return {
+      ...edge,
+      data: { ...edge.data, isHighlighted },
+      zIndex: newZIndex,
+    } as RelationshipEdgeType
+  })
+}
+
+/**
  * Calculate highlighting state for nodes and edges
  *
  * Determines which tables and relationships should be highlighted
@@ -158,29 +202,11 @@ export function calculateHighlighting(
 
   // Update edge highlighting — only create a new object when isHighlighted changes
   // so React.memo can skip re-renders for unaffected edges
-  const highlightedEdges = edges.map((edge) => {
-    const isConnectedToActive =
-      edge.source === activeTableId || edge.target === activeTableId
-    const isConnectedToHovered =
-      edge.source === hoveredTableId || edge.target === hoveredTableId
-    const isHighlighted = isConnectedToActive || isConnectedToHovered
-    const newZIndex = isHighlighted
-      ? Z_INDEX.EDGE_HIGHLIGHTED
-      : Z_INDEX.EDGE_DEFAULT
-
-    if (
-      edge.data?.isHighlighted === isHighlighted &&
-      edge.zIndex === newZIndex
-    ) {
-      return edge
-    }
-
-    return {
-      ...edge,
-      data: { ...edge.data, isHighlighted },
-      zIndex: newZIndex,
-    } as RelationshipEdgeType
-  })
+  const highlightedEdges = calculateEdgeHighlighting(
+    edges,
+    activeTableId,
+    hoveredTableId,
+  )
 
   return {
     nodes: highlightedNodes,

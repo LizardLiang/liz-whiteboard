@@ -59,6 +59,15 @@ export function convertTableToNode(
     // measure the rendered DOM via ResizeObserver instead. The autoWidth useMemo
     // in TableNode already uses table.width as a floor so saved widths are respected.
     height: table.height ?? undefined,
+    // Table nodes are never natively deletable (GH #106 Bug 1) — Delete/
+    // Backspace always routes through the confirmation dialog, never React
+    // Flow's own removal (see ReactFlowCanvas.tsx). Set at the source (not
+    // just defensively re-applied in ReactFlowCanvas's mergedNodes map) so
+    // that map's cheap `n.deletable === false` check is actually true from
+    // the start — otherwise every table node gets wrapped in a brand-new
+    // object on every mergedNodes recompute, an unstable-reference cost that
+    // defeats TableNode's memoization (GH #121 perf, stable-reference audit).
+    deletable: false,
   }
 }
 

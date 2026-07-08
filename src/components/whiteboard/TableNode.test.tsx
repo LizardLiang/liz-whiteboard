@@ -41,10 +41,15 @@ vi.mock('sonner', () => ({
   },
 }))
 
-// Mock @xyflow/react — TableNode uses Handle, Position
+// Mock @xyflow/react — TableNode uses Handle, Position, and (GH #121 LOD)
+// useStore to read the current zoom. transform[2] = 1 (zoom) keeps every
+// test below LOD_ZOOM_THRESHOLD's "collapsed" branch, i.e. full ColumnRow
+// rendering — matching every existing test's assumptions.
 vi.mock('@xyflow/react', () => ({
   Handle: () => null,
   Position: { Left: 'left', Right: 'right' },
+  useStore: (selector: (state: { transform: [number, number, number] }) => unknown) =>
+    selector({ transform: [0, 0, 1] }),
 }))
 
 // Mock edge-routing utility (Handle IDs)

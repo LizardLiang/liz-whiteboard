@@ -37,6 +37,12 @@ export const IDS = {
   mdUsersEmail: '10000000-0000-4000-8000-000000000002',
   mdOrdersId: '10000000-0000-4000-8000-000000000003',
   mdArea: 'ffffffff-ffff-4fff-8fff-ffffffffffff',
+
+  // Dedicated board for the React Flow perf stress fixture (GH #121). Owns a
+  // fixed id (distinct from the boards above) so `e2e/seed-stress.ts` can be
+  // re-run independently (manual profiling or the perf e2e's own setup)
+  // without touching the version-history / multi-select-drag boards.
+  stressWhiteboard: '20000000-0000-4000-8000-000000000001',
 }
 
 export const STORAGE_STATE = 'e2e/.auth/state.json'
