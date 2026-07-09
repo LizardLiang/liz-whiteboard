@@ -57,10 +57,12 @@ export function AddColumnRow({
         return
       }
       // Click was inside a Radix portal (SelectContent dropdown)
+      // eslint-disable-next-line @typescript-eslint/no-unnecessary-condition -- `target` is `e.target as Element`; the runtime event target can be a non-Element node (e.g. Document/Text) despite the cast, so `.closest` may genuinely be absent.
       if (target.closest?.('[data-radix-popper-content-wrapper]')) {
         return
       }
       // Click was inside a Radix ContextMenu trigger wrapper
+      // eslint-disable-next-line @typescript-eslint/no-unnecessary-condition -- see above: cast doesn't guarantee runtime shape.
       if (target.closest?.('[data-radix-context-menu-trigger]')) {
         const contextMenuTrigger = target.closest(
           '[data-radix-context-menu-trigger]',

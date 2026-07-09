@@ -183,7 +183,7 @@ describe('Project Page Route (AC-01..04)', () => {
         'project-page',
         'proj-001',
       ]) as typeof mockContent
-      expect(cachedData?.project?.name).toBe('My Project')
+      expect(cachedData.project.name).toBe('My Project')
     })
   })
 
@@ -205,7 +205,7 @@ describe('Project Page Route (AC-01..04)', () => {
         'project-page',
         'proj-001',
       ]) as typeof mockContent
-      expect(result?.project?.name).toBe('My Project')
+      expect(result.project.name).toBe('My Project')
     })
   })
 

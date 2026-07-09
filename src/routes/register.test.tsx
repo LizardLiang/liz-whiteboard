@@ -67,14 +67,14 @@ function RegisterPage({
     setIsSubmitting(true)
     try {
       const response = await onRegister({ username, email, password })
-      if (response?.newUser) {
+      if (response.newUser) {
         // Genuine new user: prefer the caller-provided redirect (e.g. an
         // invite link) over the server's default.
         const target = redirect !== '/' ? redirect : response.redirect || '/'
         onNavigate(target)
       } else {
         setSuccessMessage(
-          response?.message || 'Registration successful. Please log in.',
+          response.message || 'Registration successful. Please log in.',
         )
         // Duplicate-email anti-enumeration branch: forward redirect into the
         // /login navigation so the chain survives the "please log in" detour.

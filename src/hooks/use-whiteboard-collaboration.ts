@@ -379,12 +379,14 @@ export function useWhiteboardCollaboration(
       emit(
         'table:update',
         { tableId, ...data },
+        /* eslint-disable @typescript-eslint/no-unnecessary-condition -- `res` is a server ack callback payload over socket.io; `ok` is declared required but a real ack can be invoked with no args or a malformed payload. */
         (res: { ok: boolean; message?: string }) => {
           if (!res?.ok) {
             console.error('Failed to update table:', res?.message)
           }
           ack?.(Boolean(res?.ok))
         },
+        /* eslint-enable @typescript-eslint/no-unnecessary-condition */
       )
     },
     [emit],

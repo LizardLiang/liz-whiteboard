@@ -315,7 +315,7 @@ export function ReactFlowCanvas({
       maxZoom: 1.2,
     })
     setActiveTableId(focusRequestTableId)
-    // eslint-disable-next-line react-hooks/exhaustive-deps -- fire on token bump only
+    // Intentionally keyed on focusRequestToken only — fire on token bump only.
   }, [focusRequestToken])
 
   // Update edges when initialEdges changes — immediately recalculate handles
@@ -342,7 +342,9 @@ export function ReactFlowCanvas({
     // after a page reload (they are not persisted; derive them from DB data).
     const layoutNodes = initialNodes.map((n) => ({
       id: n.id,
+      // eslint-disable-next-line @typescript-eslint/no-unnecessary-condition -- React Flow's `measured` dimensions are only populated after the node has actually been measured in the DOM; on initial mount (this effect) they are genuinely undefined despite the non-optional type.
       width: n.measured?.width ?? (n.width as number) ?? 250,
+      // eslint-disable-next-line @typescript-eslint/no-unnecessary-condition -- see above: `measured` is undefined pre-measurement at runtime.
       height: n.measured?.height ?? (n.height as number) ?? 150,
     }))
     const layoutEdges = recalculated.map((e) => ({

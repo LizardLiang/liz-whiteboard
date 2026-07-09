@@ -52,7 +52,7 @@ function LoginPage() {
         const target = redirect || '/'
         window.location.assign(target)
       } else {
-        setError(result.message || 'Invalid email or password')
+        setError(result.message)
       }
     } catch {
       setError('Something went wrong. Please try again.')

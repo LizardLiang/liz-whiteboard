@@ -522,13 +522,16 @@ export function useColumnMutations(
       name?: string
     }) => {
       // Detect duplicate name error
+      /* eslint-disable @typescript-eslint/no-unnecessary-condition -- `data` is a server-sent socket event payload; `error`/`message` are declared required but a real server event can still omit them (version skew, malformed emit). */
       const isDuplicateName =
         data.message?.toLowerCase().includes('unique constraint') ||
         data.error?.toLowerCase().includes('p2002') ||
         data.message?.toLowerCase().includes('already exists')
+      /* eslint-enable @typescript-eslint/no-unnecessary-condition */
 
       if (isDuplicateName && data.name) {
         toast.error(`Column name '${data.name}' already exists in this table.`)
+        // eslint-disable-next-line @typescript-eslint/no-unnecessary-condition -- see above: server event payload, `message` can genuinely be absent at runtime.
       } else if (data.message?.toLowerCase().includes('not found')) {
         // "Not found" means different things depending on which operation failed.
         // For deletes it's safe to tell the user the column was already gone.

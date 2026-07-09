@@ -32,7 +32,9 @@ export function isUnauthorizedError(
   return (
     typeof value === 'object' &&
     value !== null &&
+    // eslint-disable-next-line @typescript-eslint/no-unnecessary-condition -- `value` is genuinely `unknown` at runtime; the `as` cast only narrows the static type for property access, it does not guarantee the shape. This IS the runtime check the type guard exists to perform.
     (value as AuthErrorResponse).error === 'UNAUTHORIZED' &&
+    // eslint-disable-next-line @typescript-eslint/no-unnecessary-condition -- see above: real runtime check on an unknown value, not a tautology.
     (value as AuthErrorResponse).status === 401
   )
 }
@@ -41,7 +43,9 @@ export function isForbiddenError(value: unknown): value is ForbiddenResponse {
   return (
     typeof value === 'object' &&
     value !== null &&
+    // eslint-disable-next-line @typescript-eslint/no-unnecessary-condition -- `value` is genuinely `unknown` at runtime; the `as` cast only narrows the static type for property access, it does not guarantee the shape. This IS the runtime check the type guard exists to perform.
     (value as ForbiddenResponse).error === 'FORBIDDEN' &&
+    // eslint-disable-next-line @typescript-eslint/no-unnecessary-condition -- see above: real runtime check on an unknown value, not a tautology.
     (value as ForbiddenResponse).status === 403
   )
 }

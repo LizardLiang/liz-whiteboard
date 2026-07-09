@@ -141,7 +141,7 @@ describe('CreateWhiteboardDialog', () => {
         const callArgs = vi.mocked(createWhiteboardFn).mock.calls[0]?.[0] as {
           data: { folderId?: string }
         }
-        expect(callArgs?.data.folderId).toBeUndefined()
+        expect(callArgs.data.folderId).toBeUndefined()
       })
     })
   })

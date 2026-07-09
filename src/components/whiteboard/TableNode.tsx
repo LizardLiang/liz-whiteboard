@@ -460,7 +460,6 @@ export const TableNode = memo(
           setLocalDragging?.(table.id, false)
         }
       }
-      // eslint-disable-next-line react-hooks/exhaustive-deps
     }, [activeId])
 
     // Use CSS max-content so the browser measures actual rendered text width.

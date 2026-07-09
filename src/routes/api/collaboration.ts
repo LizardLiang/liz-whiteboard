@@ -206,8 +206,8 @@ function setupWhiteboardNamespace(ioServer: SocketIOServer): void {
   whiteboardNsp.use(async (socket, next) => {
     try {
       // --- JWT path (MCP server) ---
-      const authToken = (socket.handshake.auth as Record<string, unknown>)
-        ?.token
+      // eslint-disable-next-line @typescript-eslint/no-unnecessary-condition -- socket.handshake.auth is cast for property access, but a real socket.io client can connect without sending `auth` at all; it is genuinely undefined at runtime for browser (cookie-path) clients.
+      const authToken = (socket.handshake.auth as Record<string, unknown>)?.token
       if (authToken && typeof authToken === 'string') {
         try {
           const payload = await validateCollabToken(authToken)
