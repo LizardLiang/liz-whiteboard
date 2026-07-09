@@ -6,10 +6,11 @@
 // TC-ESLINT-07/08 use a Vitest meta-test (rg-style count) for SEC-MODAL-02
 // since cross-file Program:exit state is awkward in RuleTester.
 
-import { describe, expect, it } from 'vitest'
-import { RuleTester } from 'eslint'
-import { readFileSync } from 'node:fs'
+import { execSync } from 'node:child_process'
+import { readFileSync, readdirSync, statSync } from 'node:fs'
 import { resolve } from 'node:path'
+import { RuleTester } from 'eslint'
+import { describe, expect, it } from 'vitest'
 import rule from './require-server-fn-authz.cjs'
 
 const FIXTURES_DIR = resolve(__dirname, '__fixtures__')
@@ -463,9 +464,6 @@ describe('TC-ESLINT-12: requireAuth(namedHandlerFn) resolves across a real file 
 // Implemented as Vitest meta-test counting session_expired registrations in src/
 // (acceptable alternative per test-plan constraint: "RuleTester cross-file state awkward")
 // ─────────────────────────────────────────────────────────────────────────────
-
-import { execSync } from 'node:child_process'
-import { readdirSync, statSync } from 'node:fs'
 
 function countSessionExpiredInSrc() {
   const srcDir = resolve(__dirname, '../../src')

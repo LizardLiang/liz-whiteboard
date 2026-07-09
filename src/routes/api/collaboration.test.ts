@@ -56,13 +56,13 @@ vi.mock('@/data/whiteboard', () => ({
  * socket.on calls are captured so we can extract handlers by event name.
  */
 function buildSocketMock() {
-  const handlers: Record<string, Function> = {}
+  const handlers: Record<string, (...args: Array<any>) => any> = {}
   const emitSpy = vi.fn()
   const broadcastEmitSpy = vi.fn()
 
   const socket = {
     id: 'socket-test-123',
-    on: vi.fn((event: string, handler: Function) => {
+    on: vi.fn((event: string, handler: (...args: Array<any>) => any) => {
       handlers[event] = handler
     }),
     emit: emitSpy,
