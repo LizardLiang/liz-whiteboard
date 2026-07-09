@@ -14,8 +14,9 @@
 // renders in ReactFlowWhiteboard's `isPublic` mode, which passes
 // collaborationEnabled=false so the collaboration hook never opens a socket
 // (src/hooks/use-collaboration.ts) and the edit toolbar is never mounted.
-import { test, expect, type Page, type Browser } from '@playwright/test'
+import {   expect, test } from '@playwright/test'
 import { IDS } from './fixtures'
+import type {Browser, Page} from '@playwright/test';
 
 const PROJECT_URL = `/project/${IDS.project}`
 

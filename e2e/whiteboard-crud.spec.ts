@@ -16,8 +16,9 @@
 // for the rest of the run. That is harmless — the only later spec
 // (whiteboard-search) is read-only and queries the seeded users/orders names,
 // and global-setup re-seeds the whole board from scratch on every suite run.
-import { expect, test, type Page } from '@playwright/test'
+import {  expect, test } from '@playwright/test'
 import { IDS } from './fixtures'
+import type {Page} from '@playwright/test';
 
 const WB_URL = `/whiteboard/${IDS.whiteboard}`
 

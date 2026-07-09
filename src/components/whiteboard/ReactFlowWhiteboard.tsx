@@ -60,6 +60,7 @@ import type { DiagramAST } from '@/lib/parser/ast'
 import type { CreateColumnPayload } from './column/types'
 import type { TableRelationship } from './DeleteTableDialog'
 import type { RelationshipErrorEvent } from '@/hooks/use-relationship-mutations'
+import type { ReconcileAfterDropParams } from '@/hooks/use-column-reorder-mutations'
 import type { Dialect } from '@/lib/ddl-generator'
 import type { ExportImageDialogOptions } from './ExportImageDialog'
 import { exportDiagramImage } from '@/lib/export/export-image'
@@ -1321,7 +1322,7 @@ function ReactFlowWhiteboardInner({
   // Column reorder callback — wraps reconcileAfterDrop with real setNodes
   const handleColumnReorder = useCallback(
     (
-      params: import('@/hooks/use-column-reorder-mutations').ReconcileAfterDropParams,
+      params: ReconcileAfterDropParams,
     ) => {
       columnReorderMutations.reconcileAfterDrop({
         ...params,
@@ -1471,7 +1472,7 @@ function ReactFlowWhiteboardInner({
           onPreviewRelations: (tableId: string) =>
             handleTogglePreviewTableRef.current(tableId),
           onColumnReorder: (
-            params: import('@/hooks/use-column-reorder-mutations').ReconcileAfterDropParams,
+            params: ReconcileAfterDropParams,
           ) => handleColumnReorderRef.current(params),
           emitColumnReorder: (tableId: string, ids: Array<string>) =>
             emitColumnReorderRef.current(tableId, ids),
@@ -1511,7 +1512,7 @@ function ReactFlowWhiteboardInner({
           onPreviewRelations: (tableId: string) =>
             handleTogglePreviewTableRef.current(tableId),
           onColumnReorder: (
-            params: import('@/hooks/use-column-reorder-mutations').ReconcileAfterDropParams,
+            params: ReconcileAfterDropParams,
           ) => handleColumnReorderRef.current(params),
           emitColumnReorder: (tableId: string, ids: Array<string>) =>
             emitColumnReorderRef.current(tableId, ids),

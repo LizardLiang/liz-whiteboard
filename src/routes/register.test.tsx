@@ -271,6 +271,7 @@ describe('TC-P3-14: RegisterPage loading state', () => {
 
     await waitFor(() => {
       expect(
+        // eslint-disable-next-line @typescript-eslint/no-unnecessary-type-assertion -- eslint's type-aware pass disagrees with tsc here: removing this cast breaks `bun run typecheck` (getByTestId returns HTMLElement, .disabled needs HTMLButtonElement).
         (screen.getByTestId('submit-btn') as HTMLButtonElement).disabled,
       ).toBe(true)
     })

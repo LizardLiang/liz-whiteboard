@@ -9,9 +9,9 @@ import {
   reconcileAreaMembership,
   smallestAreaContainingPoint,
 } from './area-bounds'
-import type { AreaRect, ReconcileArea } from './area-bounds'
 import { calculateTableHeight } from './layout-adapter'
 import { MIN_AREA_WIDTH } from './types'
+import type { AreaRect, ReconcileArea } from './area-bounds'
 
 // Mirrors computeAreaBounds' ADD_COLUMN_ROW_HEIGHT — the "+" add-column
 // affordance row that calculateTableHeight excludes but an area must enclose.

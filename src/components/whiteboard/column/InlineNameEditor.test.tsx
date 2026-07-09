@@ -27,6 +27,7 @@ describe('InlineNameEditor', () => {
         onCancel={vi.fn()}
       />,
     )
+    // eslint-disable-next-line @typescript-eslint/no-unnecessary-type-assertion -- eslint's type-aware pass disagrees with tsc here: removing this cast breaks `bun run typecheck` (getByRole returns HTMLElement, .value needs HTMLInputElement).
     const input = screen.getByRole('textbox') as HTMLInputElement
     expect(input.value).toBe('my_column')
   })

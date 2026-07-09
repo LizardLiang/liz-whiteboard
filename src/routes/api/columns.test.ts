@@ -15,9 +15,9 @@ vi.mock('@/data/resolve-project', () => ({
 
 vi.mock('@/lib/auth/require-role', async (importOriginal) => {
   const actual = await importOriginal<{
-    BatchDeniedError: typeof import('@/lib/auth/require-role').BatchDeniedError
-    ForbiddenError: typeof import('@/lib/auth/require-role').ForbiddenError
-    requireServerFnRole: typeof import('@/lib/auth/require-role').requireServerFnRole
+    BatchDeniedError: typeof BatchDeniedError
+    ForbiddenError: typeof ForbiddenError
+    requireServerFnRole: typeof requireServerFnRole
   }>()
   return {
     ...actual,

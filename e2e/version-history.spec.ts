@@ -6,8 +6,9 @@
 // Restore's LIVE cross-client refresh (AC5) is intentionally NOT asserted here:
 // it depends on the single-process prod server (see playwright.config.ts note).
 // We assert restore CORRECTNESS by reloading and checking the diagram content.
-import { test, expect, type Page } from '@playwright/test'
+import {  expect, test } from '@playwright/test'
 import { IDS } from './fixtures'
+import type {Page} from '@playwright/test';
 
 const WB_URL = `/whiteboard/${IDS.whiteboard}`
 

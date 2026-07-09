@@ -9,8 +9,9 @@
 // The imported tables use e2e_-prefixed names so they never collide with the
 // seeded users/orders board, and they are cleaned up at the end so the shared
 // board is left as it was found (global-setup also re-seeds every run).
-import { expect, test, type Page } from '@playwright/test'
+import {  expect, test } from '@playwright/test'
 import { IDS } from './fixtures'
+import type {Page} from '@playwright/test';
 
 const WB_URL = `/whiteboard/${IDS.whiteboard}`
 

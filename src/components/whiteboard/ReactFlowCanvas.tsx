@@ -1,4 +1,3 @@
-import type { MouseEvent as ReactMouseEvent } from 'react'
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import {
   Background,
@@ -10,6 +9,11 @@ import {
   useNodesState,
   useReactFlow,
 } from '@xyflow/react'
+import '@xyflow/react/dist/style.css'
+import '@/styles/react-flow-theme.css'
+
+import { CardinalityMarkerDefs } from './CardinalityMarkerDefs'
+import type { MouseEvent as ReactMouseEvent } from 'react'
 import type {
   FitViewOptions,
   Node,
@@ -20,10 +24,6 @@ import type {
   OnNodesChange,
   OnNodesDelete,
 } from '@xyflow/react'
-import '@xyflow/react/dist/style.css'
-import '@/styles/react-flow-theme.css'
-
-import { CardinalityMarkerDefs } from './CardinalityMarkerDefs'
 import type {
   AreaNodeType,
   CommentNodeType,
