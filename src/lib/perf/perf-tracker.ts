@@ -101,13 +101,26 @@ export interface PerfSnapshot {
   currentGesture: Gesture
   renders: number
   setNodesCalls: number
+  /**
+   * Edge-ablation toggle (GH #142). When true, the main canvas renders NO
+   * relationship edges — a lever for attributing pan/zoom cost to the SVG
+   * edge layer (record edges-on vs edges-off and compare). NOT a hot-path
+   * flag: it flips only on an explicit user click, so `setHideEdges` may
+   * `emit()` (unlike the gesture/counter writers). Independent of recording.
+   */
+  hideEdges: boolean
 }
+
+// Edge-ablation flag (GH #142). Read by ReactFlowCanvas (main instance only,
+// gated by its `enableEdgeAblation` prop) and the PerfTrackerPanel toggle.
+let hideEdges = false
 
 let snapshot: PerfSnapshot = {
   isRecording: false,
   currentGesture: 'idle',
   renders: 0,
   setNodesCalls: 0,
+  hideEdges: false,
 }
 
 const listeners = new Set<() => void>()
@@ -118,6 +131,7 @@ function emit(): void {
     currentGesture,
     renders: counters.renders,
     setNodesCalls: counters.setNodesCalls,
+    hideEdges,
   }
   listeners.forEach((l) => l())
 }
@@ -145,7 +159,20 @@ function getLive(): PerfSnapshot {
     currentGesture,
     renders: counters.renders,
     setNodesCalls: counters.setNodesCalls,
+    hideEdges,
   }
+}
+
+/**
+ * Flip the edge-ablation toggle (GH #142). Explicit user action, NOT the
+ * gesture hot path — so it emits to re-render the HUD toggle and the canvas
+ * (which drops/restores the edge layer). No `isRecording` guard: ablation is
+ * independent of recording.
+ */
+function setHideEdges(value: boolean): void {
+  if (hideEdges === value) return
+  hideEdges = value
+  emit()
 }
 
 // ---------------------------------------------------------------------------
@@ -469,6 +496,10 @@ export const perfTracker = {
   get currentGesture(): Gesture {
     return currentGesture
   },
+  get hideEdges(): boolean {
+    return hideEdges
+  },
+  setHideEdges,
   setGesture,
   clearGesture,
   noteMove,

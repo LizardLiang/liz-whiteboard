@@ -1,4 +1,11 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import {
+  useCallback,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+  useSyncExternalStore,
+} from 'react'
 import {
   Background,
   Controls,
@@ -53,6 +60,12 @@ import { VIEWPORT_CONSTRAINTS } from '@/lib/react-flow/viewport'
  * constant keeps the identity stable across renders.
  */
 const EMPTY_AREA_NODES: Array<AreaNodeType> = []
+
+/**
+ * Stable empty edge array for the perf edge-ablation path (GH #142) — a fresh
+ * `[]` per render would give `<ReactFlow edges>` a new identity every frame.
+ */
+const EMPTY_EDGES: Array<RelationshipEdgeType> = []
 
 /**
  * Stable empty default for the `commentNodes` prop (GH #110) — same rationale
@@ -152,6 +165,14 @@ export interface ReactFlowCanvasProps {
   fitViewOptions?: FitViewOptions
   /** Additional className */
   className?: string
+  /**
+   * Opt into the perf edge-ablation toggle (GH #142). When true, this canvas
+   * drops ALL relationship edges while the tracker's `hideEdges` flag is on,
+   * so pan/zoom cost can be attributed to the SVG edge layer. Only the main
+   * whiteboard canvas passes this; TableFocusOverlay's nested canvas leaves it
+   * false so ablating the main board never blanks the overlay's edges.
+   */
+  enableEdgeAblation?: boolean
   /** Callback when a node is clicked — receives the node id */
   onNodeClick?: (nodeId: string) => void
   /**
@@ -225,6 +246,7 @@ export function ReactFlowCanvas({
   showBackground = true,
   fitViewOptions,
   className = '',
+  enableEdgeAblation = false,
   relationsPreviewTableId = null,
   onPaneClick: onPaneClickProp,
   focusRequestTableId = null,
@@ -958,6 +980,19 @@ export function ReactFlowCanvas({
   const onlyRenderVisibleElements =
     mergedNodes.length > VIEWPORT_CULLING_NODE_THRESHOLD
 
+  // Edge-ablation (GH #142). Subscribe to the tracker's `hideEdges` flag — it
+  // flips only on an explicit HUD click (never the gesture hot path), so this
+  // re-renders the canvas only on toggle. Honored solely when the caller opted
+  // in via `enableEdgeAblation` (the main whiteboard canvas), so ablating the
+  // main board leaves TableFocusOverlay's nested canvas untouched.
+  const hideEdges = useSyncExternalStore(
+    perfTracker.subscribe,
+    () => perfTracker.getSnapshot().hideEdges,
+    () => false,
+  )
+  const effectiveEdges =
+    enableEdgeAblation && hideEdges ? EMPTY_EDGES : edges
+
   return (
     <div
       ref={wrapperRef}
@@ -973,7 +1008,7 @@ export function ReactFlowCanvas({
         // keeps the strongly-typed table handlers (onNodesChange<TableNodeType>)
         // without threading a union node type through the whole canvas.
         nodes={mergedNodes as unknown as typeof nodes}
-        edges={edges}
+        edges={effectiveEdges}
         onNodesChange={onNodesChange}
         onEdgesChange={onEdgesChange}
         onConnect={onConnect}

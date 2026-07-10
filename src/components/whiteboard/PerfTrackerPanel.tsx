@@ -37,6 +37,7 @@ const SERVER_SNAPSHOT: PerfSnapshot = {
   currentGesture: 'idle',
   renders: 0,
   setNodesCalls: 0,
+  hideEdges: false,
 }
 
 export function PerfTrackerPanel() {
@@ -57,6 +58,14 @@ export function PerfTrackerPanel() {
     perfTracker.subscribe,
     () => perfTracker.getSnapshot().isRecording,
     () => SERVER_SNAPSHOT.isRecording,
+  )
+
+  // Edge-ablation toggle (GH #142) — flips only on click, so sourcing it from
+  // the same store is cheap and keeps the button in sync with the canvas.
+  const hideEdges = useSyncExternalStore(
+    perfTracker.subscribe,
+    () => perfTracker.getSnapshot().hideEdges,
+    () => SERVER_SNAPSHOT.hideEdges,
   )
 
   useEffect(() => {
@@ -135,6 +144,24 @@ export function PerfTrackerPanel() {
           {isRecording ? '■' : '●'}
         </span>
         {isRecording ? 'Stop' : 'Record'}
+      </button>
+
+      {/* Edge-ablation toggle (GH #142): drop the SVG edge layer so a
+          record-with-edges vs record-without-edges pair attributes pan/zoom
+          cost to the edges. Only the main canvas honors it (its
+          `enableEdgeAblation` prop); the focus overlay ignores it. */}
+      <button
+        type="button"
+        data-testid="perf-tracker-hide-edges"
+        aria-pressed={hideEdges}
+        onClick={() => perfTracker.setHideEdges(!hideEdges)}
+        className={`nodrag nowheel pointer-events-auto flex cursor-pointer items-center gap-1 rounded border border-[var(--rf-table-border,#404040)] bg-[var(--rf-table-header-bg,#1a1a1a)] px-1.5 py-0.5 font-semibold ${
+          hideEdges
+            ? 'text-[#eab308]'
+            : 'text-[var(--rf-table-header-text,#9ca3af)]'
+        }`}
+      >
+        {hideEdges ? 'Edges: off' : 'Edges: on'}
       </button>
 
       <div className="nodrag nowheel pointer-events-auto min-w-32 rounded border border-[var(--rf-table-border,#404040)] bg-[var(--rf-table-header-bg,#1a1a1a)] px-2 py-1 text-right">

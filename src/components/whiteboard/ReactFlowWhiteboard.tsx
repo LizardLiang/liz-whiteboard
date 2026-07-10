@@ -3076,6 +3076,9 @@ function ReactFlowWhiteboardInner({
               initialEdges={edges}
               areaNodes={areaNodes}
               commentNodes={commentNodes}
+              // Only the main board honors the perf edge-ablation toggle
+              // (GH #142); the focus overlay's nested canvas leaves it off.
+              enableEdgeAblation={true}
               onAreaDragStop={handleAreaDragStop}
               onAreaDelete={deleteAreaMutation}
               onConnect={handleConnect}
