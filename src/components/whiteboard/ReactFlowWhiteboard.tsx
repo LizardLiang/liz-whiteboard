@@ -96,6 +96,7 @@ import {
   getMcpEndpointUrl,
   getWhiteboardRelationships,
   getWhiteboardWithDiagram,
+  updateTablePosition,
   updateTablePositionsBulk,
 } from '@/lib/server-functions'
 import { useWhiteboardAreas } from '@/hooks/use-whiteboard-areas'
@@ -110,7 +111,6 @@ import { LAYOUT_CONSTRAINTS } from '@/lib/react-flow/types'
 import { useD3ForceLayout } from '@/hooks/use-d3-force-layout'
 import { useAutoLayoutOrchestrator } from '@/hooks/use-auto-layout-orchestrator'
 import { applyBulkPositions } from '@/lib/auto-layout'
-import { updateTablePositionFn } from '@/routes/api/tables'
 import { useWhiteboardCollaboration } from '@/hooks/use-whiteboard-collaboration'
 import { useColumnCollaboration } from '@/hooks/use-column-collaboration'
 import { useColumnMutations } from '@/hooks/use-column-mutations'
@@ -1627,7 +1627,7 @@ function ReactFlowWhiteboardInner({
       positionX: number
       positionY: number
     }) => {
-      return await updateTablePositionFn({ data: params })
+      return await updateTablePosition({ data: params })
     },
     onSuccess: (updatedTable) => {
       if (isUnauthorizedError(updatedTable)) return
