@@ -288,6 +288,16 @@ export function ReactFlowCanvas({
   // wrapper elements, bypassing setNodes/React re-render entirely on hover.
   const wrapperRef = useRef<HTMLDivElement>(null)
 
+  // GH #138 — pending `jump-pulse` timer, covering both phases: the initial
+  // delay before the deferred DOM lookup/class-add (waiting for `fitView` to
+  // settle and the target to mount) and, once added, the later removal. A
+  // rapid re-jump (same or different table, before the previous pulse
+  // finished either phase) clears the prior timeout instead of letting it
+  // fire late/early against whichever node or phase is stale by then.
+  const jumpPulseTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(
+    null,
+  )
+
   // React Flow instance — used by the search-palette focus request below to
   // pan/zoom the viewport (shares the store with the container's instance).
   const { fitView, setCenter, getZoom } = useReactFlow()
@@ -391,6 +401,48 @@ export function ReactFlowCanvas({
       maxZoom: 1.2,
     })
     setActiveTableId(focusRequestTableId)
+
+    // GH #138 — brief one-shot landing-cue pulse on the target node's DOM
+    // wrapper, layered on top of the persistent active-highlight above.
+    // Mirrors the GH #121 hover-highlight DOM-class pattern (direct
+    // classList toggle on React Flow's own `.react-flow__node[data-id]`
+    // wrapper, no setNodes/React re-render). Clears any prior pending
+    // timer first so rapid re-jumps (even to the same table, where
+    // isActiveHighlighted wouldn't otherwise re-toggle) still replay the
+    // pulse instead of leaving a stale timer to strip it early/late.
+    //
+    // The querySelector is deferred (not run synchronously here) because on
+    // large boards `onlyRenderVisibleElements` culls off-screen nodes from
+    // the DOM — the target node (the common case when jumping to a related
+    // table) may not exist yet. We wait ~320ms (the 300ms `fitView`
+    // animation duration plus a small margin) so the pan/zoom has settled
+    // and the target has been mounted before looking it up. The target id
+    // is captured in this closure so a later-firing timer always resolves
+    // the table it was scheduled for, not whatever `focusRequestTableId` is
+    // by the time it fires.
+    if (jumpPulseTimeoutRef.current !== null) {
+      clearTimeout(jumpPulseTimeoutRef.current)
+      jumpPulseTimeoutRef.current = null
+    }
+    const pulseTargetId = focusRequestTableId
+    jumpPulseTimeoutRef.current = setTimeout(() => {
+      const targetEl = wrapperRef.current?.querySelector(
+        `.react-flow__node[data-id="${pulseTargetId}"]`,
+      )
+      if (targetEl) {
+        targetEl.classList.remove('jump-pulse')
+        // Force reflow so re-adding the class restarts the CSS animation
+        // even when it's already present (rapid re-jump to the same table).
+        void (targetEl as HTMLElement).offsetWidth
+        targetEl.classList.add('jump-pulse')
+        jumpPulseTimeoutRef.current = setTimeout(() => {
+          targetEl.classList.remove('jump-pulse')
+          jumpPulseTimeoutRef.current = null
+        }, 1000)
+      } else {
+        jumpPulseTimeoutRef.current = null
+      }
+    }, 320)
     // Intentionally keyed on focusRequestToken only — fire on token bump only.
     // `fitView` (stable via useReactFlow) and `focusRequestTableId` are read
     // fresh each time the token bumps; including focusRequestTableId would
@@ -399,6 +451,15 @@ export function ReactFlowCanvas({
     // must still jump to it).
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [focusRequestToken])
+
+  // Clear any pending jump-pulse removal timer on unmount.
+  useEffect(() => {
+    return () => {
+      if (jumpPulseTimeoutRef.current !== null) {
+        clearTimeout(jumpPulseTimeoutRef.current)
+      }
+    }
+  }, [])
 
   // Update edges when initialEdges changes — immediately recalculate handles
   // based on the current node positions so edges start pointing the right way.

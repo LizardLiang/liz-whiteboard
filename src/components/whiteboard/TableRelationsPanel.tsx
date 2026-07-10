@@ -26,12 +26,21 @@ export interface TableRelationsPanelProps {
   table: DiagramTable & { columns: Array<Column> }
   relatedEdges: Array<RelationshipEdgeType>
   tableNameById: Map<string, string>
+  /**
+   * GH #138 — jump the live canvas to a related table (pan + normalized
+   * zoom + active-highlight + brief pulse) and re-anchor this panel to it.
+   * When omitted, rows render as plain, non-interactive divs (defensive —
+   * keeps the panel usable in contexts that don't wire up the jump
+   * pipeline, e.g. isolated tests/stories).
+   */
+  onJumpToTable?: (tableId: string) => void
 }
 
 export function TableRelationsPanel({
   table,
   relatedEdges,
   tableNameById,
+  onJumpToTable,
 }: TableRelationsPanelProps) {
   const panelRef = useRef<HTMLDivElement>(null)
   const [side, setSide] = useState<'left' | 'right'>('right')
@@ -121,14 +130,34 @@ export function TableRelationsPanel({
             const relationshipText =
               edge.data?.label || edge.data?.cardinality || ''
 
+            const jumpProps = onJumpToTable
+              ? {
+                  role: 'button' as const,
+                  tabIndex: 0,
+                  'aria-label': `Jump to ${relatedTableName}`,
+                  onClick: () => onJumpToTable(relatedTableId),
+                  onKeyDown: (e: React.KeyboardEvent) => {
+                    if (e.key === 'Enter' || e.key === ' ') {
+                      e.preventDefault()
+                      onJumpToTable(relatedTableId)
+                    }
+                  },
+                }
+              : {}
+
             return (
               <div
                 key={edge.id}
                 data-testid="relations-panel-row"
+                className={
+                  onJumpToTable ? 'relations-panel-row-btn' : undefined
+                }
                 style={{
                   borderTop: '1px solid var(--rf-table-border)',
                   paddingTop: '6px',
+                  cursor: onJumpToTable ? 'pointer' : undefined,
                 }}
+                {...jumpProps}
               >
                 <div style={{ fontWeight: 600 }}>{relatedTableName}</div>
                 <div
