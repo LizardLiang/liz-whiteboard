@@ -48,7 +48,6 @@ function makeNode(
       },
       isActiveHighlighted: false,
       isHighlighted: false,
-      isHovered: false,
       showMode: 'ALL_FIELDS',
     },
   } as unknown as TableNodeType

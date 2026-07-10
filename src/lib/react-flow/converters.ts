@@ -7,7 +7,6 @@
 import type { Column, DiagramTable, Relationship } from '@/data/models'
 import type { CanvasState } from '@/data/schema'
 import type {
-  CardinalityType,
   ReactFlowViewport,
   RelationshipEdgeType,
   TableNodeType,
@@ -37,7 +36,6 @@ export function convertToReactFlowNodes(
       },
       isActiveHighlighted: false,
       isHighlighted: false,
-      isHovered: false,
       isRelationsPreviewOpen: false,
       showMode: 'ALL_FIELDS',
     },
@@ -81,7 +79,7 @@ export function convertToReactFlowEdges(
       : undefined,
     data: {
       relationship: rel,
-      cardinality: rel.cardinality as CardinalityType,
+      cardinality: rel.cardinality,
       isHighlighted: false,
       label: rel.label || undefined,
     },

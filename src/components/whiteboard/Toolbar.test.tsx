@@ -67,7 +67,7 @@ describe('Toolbar Auto Layout button', () => {
   it('TC-AL-T-04: shows loading state and is disabled when isAutoLayoutRunning is true', () => {
     renderToolbar({ tableCount: 5, isAutoLayoutRunning: true })
     const btns = screen.getAllByRole('button')
-    const autoLayoutBtn = btns.find((b) => /running/i.test(b.textContent ?? ''))
+    const autoLayoutBtn = btns.find((b) => /running/i.test(b.textContent))
     expect(autoLayoutBtn).toBeDefined()
     expect(autoLayoutBtn!.hasAttribute('disabled')).toBe(true)
   })

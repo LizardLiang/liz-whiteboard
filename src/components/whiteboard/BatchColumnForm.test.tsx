@@ -36,7 +36,7 @@ function renderForm(overrides: Partial<BatchColumnFormProps> = {}) {
 // Testing Library's getAllByRole types matches as HTMLElement — these are
 // always <input> textboxes in this form, so narrow once for `.value` reads.
 function getTextboxes(): Array<HTMLInputElement> {
-  return screen.getAllByRole('textbox') as Array<HTMLInputElement>
+  return screen.getAllByRole('textbox')
 }
 
 // ─────────────────────────────────────────────────────────────────────────────

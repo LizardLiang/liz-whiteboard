@@ -11,6 +11,7 @@
 
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 
+import type * as PermissionModule from '@/data/permission'
 import {
   deleteProjectMember,
   findEffectiveRole,
@@ -24,7 +25,7 @@ import { makeProject, makeUser, resetDb } from '@/test/db-helpers'
 
 // Keep the real ProjectMember CRUD; mock only the (stubbed) role resolver.
 vi.mock('@/data/permission', async (importOriginal) => {
-  const actual = await importOriginal<typeof import('@/data/permission')>()
+  const actual = await importOriginal<typeof PermissionModule>()
   return {
     ...actual,
     findEffectiveRole: vi.fn(),

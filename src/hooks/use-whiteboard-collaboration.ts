@@ -7,7 +7,17 @@ import { toast } from 'sonner'
 import { useCollaboration } from './use-collaboration'
 import type { TableErrorEvent } from './use-table-mutations'
 import type { RelationshipErrorEvent } from './use-relationship-mutations'
+import type { DiagramTable } from '@/data/models'
 import { useAuthContext } from '@/components/auth/AuthContext'
+
+/**
+ * table:created event payload from WebSocket (GH #125). The server
+ * broadcasts the freshly-persisted table row plus the creator's userId
+ * (collaboration.ts: socket.broadcast.emit('table:created', {...table, createdBy})).
+ * A brand-new table has no columns yet — the consumer is expected to default
+ * `columns: []` when applying it (mirrors the createDiagramTable return shape).
+ */
+export type TableCreatedEvent = DiagramTable & { createdBy: string }
 
 /**
  * Position update event data from WebSocket
@@ -102,6 +112,10 @@ export function useWhiteboardCollaboration(
   // job for relationship:update, kept as its own callback rather than folded
   // into onTableError since the two have different toast copy.
   onTableUpdateError?: (data: TableErrorEvent) => void,
+  // Live table-creation sync (GH #125): a 14th positional param, per the note
+  // above this signature — the hook has too many existing positional call
+  // sites to justify an options-object refactor just for this one addition.
+  onTableCreated?: (table: TableCreatedEvent) => void,
 ) {
   // Use the base collaboration hook
   const { triggerSessionExpired } = useAuthContext()
@@ -153,6 +167,27 @@ export function useWhiteboardCollaboration(
       off('table:deleted', handleTableDeleted)
     }
   }, [on, off, userId, onTableDeleted])
+
+  // Listen for table creation events from other users (GH #125). This is the
+  // WORKING collaboration socket (delete/move already propagate live through
+  // it) — the previous table:created listener lived in the route's own,
+  // non-firing subscription set ($whiteboardId.tsx) and has been retired.
+  // Mirrors the table:deleted effect above: ignore our own echoed create
+  // (already applied optimistically) and delegate to the consumer callback.
+  useEffect(() => {
+    if (!onTableCreated) return
+
+    const handleTableCreated = (data: TableCreatedEvent) => {
+      // Ignore if we created it (already applied optimistically)
+      if (data.createdBy === userId) return
+      onTableCreated(data)
+    }
+
+    on('table:created', handleTableCreated)
+    return () => {
+      off('table:created', handleTableCreated)
+    }
+  }, [on, off, userId, onTableCreated])
 
   // Listen for table:delete error events
   useEffect(() => {
@@ -379,12 +414,14 @@ export function useWhiteboardCollaboration(
       emit(
         'table:update',
         { tableId, ...data },
+        /* eslint-disable @typescript-eslint/no-unnecessary-condition -- `res` is a server ack callback payload over socket.io; `ok` is declared required but a real ack can be invoked with no args or a malformed payload. */
         (res: { ok: boolean; message?: string }) => {
           if (!res?.ok) {
             console.error('Failed to update table:', res?.message)
           }
           ack?.(Boolean(res?.ok))
         },
+        /* eslint-enable @typescript-eslint/no-unnecessary-condition */
       )
     },
     [emit],

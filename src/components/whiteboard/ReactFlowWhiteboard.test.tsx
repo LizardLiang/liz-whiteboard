@@ -291,7 +291,6 @@ describe('ReactFlowWhiteboard edge re-anchor (Suite S8)', () => {
           const serverOrder = node.data.table.columns.map((c) => c.id)
           seedConfirmedOrderFromServer(tableId, serverOrder)
         })
-        // eslint-disable-next-line react-hooks/exhaustive-deps
       }, [nodes])
     }
 

@@ -9,9 +9,9 @@
 // resolution project-wide.
 declare module 'bun:sqlite' {
   interface SqliteStatement {
-    get(...params: Array<unknown>): unknown
-    all(...params: Array<unknown>): Array<unknown>
-    run(...params: Array<unknown>): unknown
+    get: (...params: Array<unknown>) => unknown
+    all: (...params: Array<unknown>) => Array<unknown>
+    run: (...params: Array<unknown>) => unknown
   }
 
   export class Database {

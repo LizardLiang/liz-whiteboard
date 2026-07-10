@@ -132,6 +132,28 @@ type MoveAckResult =
  */
 let io: SocketIOServer | null = null
 
+// GH #125/#107 (Phase 6 — systemic module-singleton fix): server.prod.ts
+// imports `middleware` from the Vite/Nitro-BUILT `.output` bundle but
+// `initializeSocketIO` directly from THIS raw source file — two separate
+// module instantiations of this file at runtime, each with its own `io`
+// module-local variable above. Nothing in the built bundle's own reachable
+// code ever calls `initializeSocketIO` (only server.prod.ts does, from the
+// OTHER instantiation), so Rollup's tree-shaking can prove `io` never
+// becomes non-null WITHIN that bundle and dead-code-eliminates the entire
+// namespace/broadcast setup down to a 9-line stub — silently breaking every
+// `emitToWhiteboard`/`broadcastToWhiteboard` call made from a server
+// function (this file's `table:created` broadcast for GH #125, and
+// `whiteboard:restored` in src/lib/history/handlers.ts for GH #107).
+//
+// `globalThis` is shared across BOTH module instantiations at runtime (same
+// OS process, same V8 isolate) and is opaque to Rollup's static analysis —
+// stashing `io` there lets the built copy observe a live, non-null instance
+// instead of one that's provably-always-null, so its `getIO()` reads survive
+// tree-shaking intact.
+declare global {
+  var __lizSocketIO: SocketIOServer | undefined
+}
+
 /**
  * Initialize Socket.IO server with HTTP server
  * @param httpServer - Node.js HTTP server instance
@@ -150,6 +172,10 @@ export function initializeSocketIO(httpServer: HTTPServer): SocketIOServer {
     },
     transports: ['websocket', 'polling'],
   })
+  // Bridge for callers running in a different module instantiation (see the
+  // Phase 6 comment above) — e.g. server functions bundled into the built
+  // .output chunk.
+  globalThis.__lizSocketIO = io
 
   // Setup namespace pattern for whiteboards (auth middleware applied inside)
   setupWhiteboardNamespace(io)
@@ -174,11 +200,26 @@ export function initializeSocketIO(httpServer: HTTPServer): SocketIOServer {
 }
 
 /**
+ * Resolves the live Socket.IO instance for exported, server-function-
+ * callable helpers (emitToWhiteboard, broadcastToWhiteboard, getSocketIO)
+ * that may run in a DIFFERENT module instantiation than the one
+ * initializeSocketIO ran in — see the Phase 6 comment above `io`'s
+ * declaration. Falls back to the module-local `io` so the raw/initializing
+ * copy (and unit tests, which never touch globalThis) keep working
+ * unchanged. Socket-handler code inside setupWhiteboardNamespace does NOT
+ * need this — it only ever runs in the initialized raw copy and can keep
+ * using the local `io`/`ioServer` closures directly.
+ */
+function getIO(): SocketIOServer | null {
+  return globalThis.__lizSocketIO ?? io
+}
+
+/**
  * Get Socket.IO server instance
  * @returns Socket.IO server instance or null if not initialized
  */
 export function getSocketIO(): SocketIOServer | null {
-  return io
+  return getIO()
 }
 
 /**
@@ -206,8 +247,8 @@ function setupWhiteboardNamespace(ioServer: SocketIOServer): void {
   whiteboardNsp.use(async (socket, next) => {
     try {
       // --- JWT path (MCP server) ---
-      const authToken = (socket.handshake.auth as Record<string, unknown>)
-        ?.token
+      // eslint-disable-next-line @typescript-eslint/no-unnecessary-condition -- socket.handshake.auth is cast for property access, but a real socket.io client can connect without sending `auth` at all; it is genuinely undefined at runtime for browser (cookie-path) clients.
+      const authToken = (socket.handshake.auth as Record<string, unknown>)?.token
       if (authToken && typeof authToken === 'string') {
         try {
           const payload = await validateCollabToken(authToken)
@@ -2438,12 +2479,13 @@ export function emitToWhiteboard(
   event: string,
   data: any,
 ): void {
-  if (!io) {
+  const ioInstance = getIO()
+  if (!ioInstance) {
     console.error('Socket.IO server not initialized')
     return
   }
 
-  const namespace = io.of(`/whiteboard/${whiteboardId}`)
+  const namespace = ioInstance.of(`/whiteboard/${whiteboardId}`)
   namespace.emit(event, data)
 }
 
@@ -2460,12 +2502,13 @@ export function broadcastToWhiteboard(
   event: string,
   data: any,
 ): void {
-  if (!io) {
+  const ioInstance = getIO()
+  if (!ioInstance) {
     console.error('Socket.IO server not initialized')
     return
   }
 
-  const namespace = io.of(`/whiteboard/${whiteboardId}`)
+  const namespace = ioInstance.of(`/whiteboard/${whiteboardId}`)
   namespace.sockets.forEach((socket) => {
     if (socket.id !== socketId) {
       socket.emit(event, data)

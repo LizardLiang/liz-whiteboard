@@ -60,7 +60,7 @@ export const getProjectsWithTree = createServerFn({
 /**
  * Get a single project by ID
  * @param projectId - Project UUID
- * @requires authenticated, VIEWER+
+ * @requires viewer
  */
 export const getProject = createServerFn({ method: 'GET' })
   .inputValidator((projectId: string) => {
@@ -154,7 +154,7 @@ export const updateProjectFn = createServerFn({ method: 'POST' })
 /**
  * Get project page content (folders + whiteboards at a given level)
  * @param params - Object with projectId and optional folderId
- * @requires authenticated, VIEWER+
+ * @requires viewer
  */
 export const getProjectPageContent = createServerFn({ method: 'GET' })
   .inputValidator((params: unknown) => {

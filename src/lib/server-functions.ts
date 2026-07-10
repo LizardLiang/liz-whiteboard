@@ -18,7 +18,6 @@ import {
   updateWhiteboardTextSource,
 } from '@/data/whiteboard'
 import {
-  createDiagramTable,
   findDiagramTablesByWhiteboardId,
   updateDiagramTablePosition,
 } from '@/data/diagram-table'
@@ -39,6 +38,7 @@ import {
 import { bulkUpdatePositionsSchema } from '@/data/schema'
 import { requireServerFnRole } from '@/lib/auth/require-role'
 import { findEffectiveRole } from '@/data/permission'
+import { createTableHandler } from '@/lib/diagram-table/handlers'
 
 /**
  * WhiteboardWithDiagram plus the requesting user's effective role on the
@@ -154,25 +154,30 @@ export const getWhiteboardComments = createServerFn({
   )
 
 /**
+ * GH #125: this is the `createTable` server function the whiteboard route
+ * (`$whiteboardId.tsx`) actually imports and calls (as `createTableFn`) —
+ * NOT `routes/api/tables.ts`'s function of the same shape (that one is
+ * unused by the UI; see .claude/.Arena/debt.md for the duplicate-function
+ * writeup). Delegates to the shared `createTableHandler`
+ * (`@/lib/diagram-table/handlers`) so table creation broadcasts
+ * `table:created` to the whiteboard's namespace after persisting — the
+ * import is only referenced inside this `.handler(...)` closure, which
+ * TanStack Start's client-bundle transform strips, so `createTableHandler`'s
+ * Socket.IO-touching import chain is tree-shaken out of the browser bundle
+ * (same proven pattern as `routes/api/tables.ts`'s `createTableFn`).
+ *
+ * Safe: `createTableHandler` performs the identical
+ * `getWhiteboardProjectId` + `requireServerFnRole(user.id, projectId,
+ * 'EDITOR')` check this function used to do inline before creating —
+ * no permission regression.
+ *
  * @requires editor
  */
 export const createTable = createServerFn({
   method: 'POST',
 })
   .inputValidator((data: CreateTable) => data)
-  .handler(
-    requireAuth(async ({ user }, data) => {
-      const projectId = await getWhiteboardProjectId(data.whiteboardId)
-      await requireServerFnRole(user.id, projectId, 'EDITOR')
-      try {
-        const table = await createDiagramTable(data)
-        return table
-      } catch (error) {
-        console.error('Error creating table:', error)
-        throw error
-      }
-    }),
-  )
+  .handler(requireAuth(createTableHandler))
 
 /**
  * @requires editor
@@ -368,7 +373,7 @@ export const computeAutoLayout = createServerFn({
 /**
  * Returns the MCP endpoint URL for the user to connect an AI client.
  * The value comes from MCP_RESOURCE_URI env var via getOAuthConfig().
- * @requires viewer (auth enforced for consistency; the URL is not sensitive)
+ * @requires authenticated (any logged-in user; not scoped to a project/role — the URL is not sensitive)
  */
 export const getMcpEndpointUrl = createServerFn({ method: 'GET' }).handler(
   requireAuth(async (): Promise<string> => {

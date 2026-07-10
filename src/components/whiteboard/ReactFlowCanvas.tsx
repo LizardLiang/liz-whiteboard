@@ -1,4 +1,3 @@
-import type { MouseEvent as ReactMouseEvent } from 'react'
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import {
   Background,
@@ -10,6 +9,11 @@ import {
   useNodesState,
   useReactFlow,
 } from '@xyflow/react'
+import '@xyflow/react/dist/style.css'
+import '@/styles/react-flow-theme.css'
+
+import { CardinalityMarkerDefs } from './CardinalityMarkerDefs'
+import type { MouseEvent as ReactMouseEvent } from 'react'
 import type {
   FitViewOptions,
   Node,
@@ -20,10 +24,6 @@ import type {
   OnNodesChange,
   OnNodesDelete,
 } from '@xyflow/react'
-import '@xyflow/react/dist/style.css'
-import '@/styles/react-flow-theme.css'
-
-import { CardinalityMarkerDefs } from './CardinalityMarkerDefs'
 import type {
   AreaNodeType,
   CommentNodeType,
@@ -37,8 +37,10 @@ import {
 } from '@/lib/auto-layout/d3-force-layout'
 import { edgeTypes, nodeTypes } from '@/lib/react-flow/node-types'
 import {
+  calculateEdgeHighlighting,
   calculateHighlighting,
   filterValidEdges,
+  getDirectlyRelatedTableIds,
 } from '@/lib/react-flow/highlighting'
 import { VIEWPORT_CONSTRAINTS } from '@/lib/react-flow/viewport'
 
@@ -56,6 +58,35 @@ const EMPTY_AREA_NODES: Array<AreaNodeType> = []
  * as EMPTY_AREA_NODES above.
  */
 const EMPTY_COMMENT_NODES: Array<CommentNodeType> = []
+
+/**
+ * Stable reference for `<ReactFlow defaultEdgeOptions>` (GH #121 perf,
+ * stable-reference audit). An inline object literal here would be a new
+ * identity every render, one of several unstable props that can defeat
+ * React Flow's own internal memoization independent of node count — part of
+ * why interaction already stutters well under 30 tables.
+ */
+const DEFAULT_EDGE_OPTIONS = {
+  type: 'relationship' as const,
+  animated: false,
+}
+
+/**
+ * Stable reference for `<ReactFlow deleteKeyCode>` (same rationale as
+ * DEFAULT_EDGE_OPTIONS above) — an inline array literal is a new identity
+ * every render.
+ */
+const DELETE_KEY_CODES = ['Delete', 'Backspace']
+
+/**
+ * Node-count threshold above which `onlyRenderVisibleElements` (viewport
+ * culling) turns on (GH #121 perf, opt #2). Off below this so small/typical
+ * boards (including TableFocusOverlay's own nested canvas, which never has
+ * more than a handful of nodes) never pay the culling tradeoff — edges whose
+ * both endpoints are off-screen are culled with it on. Tunable; set during
+ * profiling.
+ */
+const VIEWPORT_CULLING_NODE_THRESHOLD = 150
 
 /**
  * ReactFlowCanvas Props
@@ -252,6 +283,11 @@ export function ReactFlowCanvas({
   const [activeTableId, setActiveTableId] = useState<string | null>(null)
   const [hoveredTableId, setHoveredTableId] = useState<string | null>(null)
 
+  // Root wrapper DOM ref (GH #121 perf) — lets the hover-highlight effect
+  // below toggle CSS classes directly on React Flow's own `.react-flow__node`
+  // wrapper elements, bypassing setNodes/React re-render entirely on hover.
+  const wrapperRef = useRef<HTMLDivElement>(null)
+
   // React Flow instance — used by the search-palette focus request below to
   // pan/zoom the viewport (shares the store with the container's instance).
   const { fitView, setCenter, getZoom } = useReactFlow()
@@ -315,7 +351,7 @@ export function ReactFlowCanvas({
       maxZoom: 1.2,
     })
     setActiveTableId(focusRequestTableId)
-    // eslint-disable-next-line react-hooks/exhaustive-deps -- fire on token bump only
+    // Intentionally keyed on focusRequestToken only — fire on token bump only.
   }, [focusRequestToken])
 
   // Update edges when initialEdges changes — immediately recalculate handles
@@ -342,7 +378,9 @@ export function ReactFlowCanvas({
     // after a page reload (they are not persisted; derive them from DB data).
     const layoutNodes = initialNodes.map((n) => ({
       id: n.id,
+      // eslint-disable-next-line @typescript-eslint/no-unnecessary-condition -- React Flow's `measured` dimensions are only populated after the node has actually been measured in the DOM; on initial mount (this effect) they are genuinely undefined despite the non-optional type.
       width: n.measured?.width ?? (n.width as number) ?? 250,
+      // eslint-disable-next-line @typescript-eslint/no-unnecessary-condition -- see above: `measured` is undefined pre-measurement at runtime.
       height: n.measured?.height ?? (n.height as number) ?? 150,
     }))
     const layoutEdges = recalculated.map((e) => ({
@@ -389,7 +427,17 @@ export function ReactFlowCanvas({
     })
   }, [nodesInitialized, nodes, setEdges])
 
-  // Apply highlighting when selection changes.
+  // Apply NODE highlighting when selection/relations-preview changes (GH
+  // #121 perf, opt #1). Deliberately keyed on [activeTableId,
+  // relationsPreviewTableId] only — NOT hoveredTableId — since these are
+  // rare, user-initiated events (a click, opening the relations panel), so
+  // rebuilding + re-setting the full node array here is cheap relative to
+  // how often it fires. hoveredTableId is handled by two SEPARATE,
+  // cheaper mechanisms below: a setEdges-only effect (edges are far fewer
+  // than nodes) and a DOM-class effect that never touches React state at
+  // all — hovering a table on a large board no longer re-renders every
+  // other table node.
+  //
   // Uses the functional updater form of setNodes so we always operate on the
   // current node list rather than a stale closure snapshot. edgesRef.current
   // provides the latest edges without adding edges to the dependency array
@@ -400,21 +448,66 @@ export function ReactFlowCanvas({
         currentNodes,
         edgesRef.current,
         activeTableId,
-        hoveredTableId,
+        null,
         relationsPreviewTableId,
       )
-      if (highlighted.edges !== edgesRef.current) {
-        setEdges(highlighted.edges)
-      }
       return highlighted.nodes
     })
-  }, [
-    activeTableId,
-    hoveredTableId,
-    relationsPreviewTableId,
-    setNodes,
-    setEdges,
-  ])
+  }, [activeTableId, relationsPreviewTableId, setNodes])
+
+  // Apply EDGE highlighting on hover OR active-selection changes (GH #121
+  // perf). Edges stay on the setEdges path unconditionally (edges are far
+  // fewer than the DOM cost of a full table node, so this doesn't have the
+  // same re-render blast radius the node array did) — only the NODE array
+  // rebuild moved off the hot hover path above.
+  useEffect(() => {
+    setEdges((currentEdges) =>
+      calculateEdgeHighlighting(currentEdges, activeTableId, hoveredTableId),
+    )
+  }, [activeTableId, hoveredTableId, setEdges])
+
+  // Hover highlight — DOM-only, no setNodes (GH #121 perf, opt #1's primary
+  // win). Hovering a table on a 100-200 table board used to call
+  // setNodes(currentNodes => …) on EVERY hover, rebuilding + re-setting the
+  // entire node array (an O(N) allocation plus a new `nodes` identity handed
+  // to React Flow) just to restyle the hovered table + its 1-hop neighbors.
+  // Toggling a CSS class directly on React Flow's own per-node wrapper
+  // elements achieves the identical visual (see the `.rf-hover-highlighted`
+  // rules in react-flow-theme.css) without any React re-render at all.
+  //
+  // Skips the node currently holding the relations-preview top z-index tier
+  // (NODE_RELATIONS_PREVIEW, set by the node-array effect above) so a hover
+  // never downgrades it — `.rf-hover-highlighted`'s `!important` z-index
+  // would otherwise clobber that higher tier. relationsPreviewTableId IS in
+  // the dependency array (unlike a ref-read) so that toggling the relations
+  // panel open/closed on the table currently being hovered (the panel's
+  // trigger button lives inside the hovered table's own header — clicking it
+  // does not fire mouseleave/mouseenter) re-evaluates this effect and either
+  // removes the stale class from that table or re-adds it, instead of
+  // leaving a `!important` z-index:1000 in place that would silently
+  // override the just-assigned z-index:2000 relations-preview tier.
+  useEffect(() => {
+    const container = wrapperRef.current
+    if (!container || !hoveredTableId) return
+
+    const { relatedTableIds } = getDirectlyRelatedTableIds(
+      hoveredTableId,
+      edgesRef.current,
+    )
+    const touched: Array<Element> = []
+    relatedTableIds.forEach((id) => {
+      if (id === relationsPreviewTableId) return
+      const el = container.querySelector(`.react-flow__node[data-id="${id}"]`)
+      if (el) {
+        el.classList.add('rf-hover-highlighted')
+        touched.push(el)
+      }
+    })
+
+    return () => {
+      touched.forEach((el) => el.classList.remove('rf-hover-highlighted'))
+    }
+  }, [hoveredTableId, relationsPreviewTableId])
 
   // Handle node click (selection + optional external callback). Comment pins
   // (GH #110) manage their own Popover open state internally and stop
@@ -473,6 +566,54 @@ export function ReactFlowCanvas({
     [nodes],
   )
 
+  // rAF-throttle drag-frame edge recalculation (GH #121 perf, opt #5).
+  // onNodeDrag can fire more than once per animation frame (e.g. a high
+  // poll-rate pointer device), and each firing previously ran a full
+  // recalculateEdgesForDraggedNodes + setEdges pass synchronously. Coalescing
+  // to at most one pass per frame — NOT a delay-debounce, which would
+  // visibly lag the dragged node's edges — cuts redundant work during drag
+  // while keeping edges visually attached every frame. Only the continuous
+  // onNodeDrag path is throttled; onNodeDragStop's final recalculation stays
+  // synchronous so the drop settles immediately and correctly.
+  const dragEdgeRecalcRafRef = useRef<number | null>(null)
+  const pendingDragEdgeRecalcRef = useRef<{
+    currentNodes: Array<TableNodeType>
+    draggedIds: Set<string>
+  } | null>(null)
+
+  const cancelPendingDragEdgeRecalc = useCallback(() => {
+    if (dragEdgeRecalcRafRef.current !== null) {
+      cancelAnimationFrame(dragEdgeRecalcRafRef.current)
+      dragEdgeRecalcRafRef.current = null
+    }
+    pendingDragEdgeRecalcRef.current = null
+  }, [])
+
+  const scheduleDragEdgeRecalc = useCallback(
+    (currentNodes: Array<TableNodeType>, draggedIds: Set<string>) => {
+      pendingDragEdgeRecalcRef.current = { currentNodes, draggedIds }
+      if (dragEdgeRecalcRafRef.current !== null) return
+      dragEdgeRecalcRafRef.current = requestAnimationFrame(() => {
+        dragEdgeRecalcRafRef.current = null
+        const pending = pendingDragEdgeRecalcRef.current
+        pendingDragEdgeRecalcRef.current = null
+        if (!pending) return
+        setEdges((prevEdges) =>
+          recalculateEdgesForDraggedNodes(
+            prevEdges,
+            pending.currentNodes,
+            pending.draggedIds,
+          ),
+        )
+      })
+    },
+    [setEdges],
+  )
+
+  // Cancel any in-flight rAF on unmount so it never calls setEdges after the
+  // component is gone.
+  useEffect(() => cancelPendingDragEdgeRecalc, [cancelPendingDragEdgeRecalc])
+
   // Mark drag as started — suppresses hover events that ReactFlow fires on drag begin.
   // When the dragged node is an area, also snapshot its start position and its
   // members' start positions so onNodeDrag/onNodeDragStop can translate them
@@ -480,6 +621,9 @@ export function ReactFlowCanvas({
   const onNodeDragStart = useCallback<OnNodeDrag<TableNodeType>>(
     (_event, node) => {
       isDraggingRef.current = true
+      // Defensive reset — a new drag should never inherit a stale scheduled
+      // recalculation from a previous one.
+      cancelPendingDragEdgeRecalc()
 
       if (!areaIdSet.has(node.id)) {
         dragAreaMemberStartRef.current = null
@@ -498,7 +642,7 @@ export function ReactFlowCanvas({
         members,
       }
     },
-    [areaIdSet, areaNodesState, nodes],
+    [areaIdSet, areaNodesState, cancelPendingDragEdgeRecalc, nodes],
   )
 
   // Recalculate edge handles whenever a node is dragged (live feedback).
@@ -532,19 +676,15 @@ export function ReactFlowCanvas({
             position: { x: start.x + deltaX, y: start.y + deltaY },
           }
         })
-        setEdges((prevEdges) =>
-          recalculateEdgesForDraggedNodes(prevEdges, currentNodes, movedIds),
-        )
+        scheduleDragEdgeRecalc(currentNodes, movedIds)
         return
       }
       const draggedIds = new Set(draggedNodes.map((n) => n.id))
       draggedIds.add(node.id)
       const currentNodes = mergeCurrentPositions(node, draggedNodes)
-      setEdges((prevEdges) =>
-        recalculateEdgesForDraggedNodes(prevEdges, currentNodes, draggedIds),
-      )
+      scheduleDragEdgeRecalc(currentNodes, draggedIds)
     },
-    [areaIdSet, mergeCurrentPositions, nodes, setEdges, setNodes],
+    [areaIdSet, mergeCurrentPositions, nodes, scheduleDragEdgeRecalc, setNodes],
   )
 
   // Handle node drag stop (position update)
@@ -586,7 +726,12 @@ export function ReactFlowCanvas({
       // dragStop which we suppressed, so manually set it here)
       setHoveredTableId(node.id)
 
-      // Final recalculation with latest positions
+      // Final recalculation with latest positions — synchronous (not
+      // rAF-throttled) so the drop settles immediately. Cancel any pending
+      // scheduled recalc from the last onNodeDrag frame first, so it can't
+      // fire a frame later and clobber this authoritative final result with
+      // slightly-stale positions.
+      cancelPendingDragEdgeRecalc()
       const draggedIds = new Set(draggedNodes.map((n) => n.id))
       draggedIds.add(node.id)
       const currentNodes = mergeCurrentPositions(node, draggedNodes)
@@ -598,6 +743,7 @@ export function ReactFlowCanvas({
     },
     [
       areaIdSet,
+      cancelPendingDragEdgeRecalc,
       onAreaDragStop,
       onNodeDragStopProp,
       mergeCurrentPositions,
@@ -677,8 +823,22 @@ export function ReactFlowCanvas({
     setIsConnecting(false)
   }, [])
 
+  // Stable callback for MiniMap's nodeColor (GH #121 stable-reference audit)
+  // — an inline arrow function literal here is a new identity every render.
+  const minimapNodeColor = useCallback(() => 'var(--rf-table-bg)', [])
+
+  // Viewport culling (GH #121 perf, opt #2) — only turn on
+  // onlyRenderVisibleElements once the board is large enough that skipping
+  // off-screen node/edge rendering is worth React Flow's tradeoff (edges
+  // whose both endpoints are off-screen get culled too). Off for small/
+  // typical boards and for TableFocusOverlay's own nested canvas instance,
+  // which never has more than a handful of nodes.
+  const onlyRenderVisibleElements =
+    mergedNodes.length > VIEWPORT_CULLING_NODE_THRESHOLD
+
   return (
     <div
+      ref={wrapperRef}
       className={`react-flow-wrapper ${isConnecting ? 'is-connecting' : ''} ${className}`}
       style={{ width: '100%', height: '100%' }}
     >
@@ -705,22 +865,20 @@ export function ReactFlowCanvas({
         onNodeDrag={onNodeDrag}
         onNodeDragStop={onNodeDragStop}
         onNodesDelete={onNodesDelete}
-        deleteKeyCode={['Delete', 'Backspace']}
+        deleteKeyCode={DELETE_KEY_CODES}
         nodeTypes={memoizedNodeTypes}
         edgeTypes={memoizedEdgeTypes}
         nodesDraggable={nodesDraggable}
         panOnDrag={panOnDrag}
         nodesConnectable={true}
         elementsSelectable={true}
+        onlyRenderVisibleElements={onlyRenderVisibleElements}
         fitView
         fitViewOptions={fitViewOptions}
         minZoom={VIEWPORT_CONSTRAINTS.minZoom}
         maxZoom={VIEWPORT_CONSTRAINTS.maxZoom}
         panOnScroll={true}
-        defaultEdgeOptions={{
-          type: 'relationship',
-          animated: false,
-        }}
+        defaultEdgeOptions={DEFAULT_EDGE_OPTIONS}
       >
         {showControls && <Controls />}
         {showBackground && (
@@ -731,9 +889,7 @@ export function ReactFlowCanvas({
         )}
         {showMinimap && (
           <MiniMap
-            nodeColor={() => {
-              return 'var(--rf-table-bg)'
-            }}
+            nodeColor={minimapNodeColor}
             maskColor="rgba(0, 0, 0, 0.1)"
             pannable
             onClick={onMinimapClick}

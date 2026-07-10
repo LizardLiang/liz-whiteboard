@@ -24,11 +24,11 @@ export type {
  * @returns New nodes array with positions applied; unmatched nodes are unchanged
  */
 export function applyBulkPositions<
-  N extends { id: string; position: { x: number; y: number } },
+  TNode extends { id: string; position: { x: number; y: number } },
 >(
-  nodes: ReadonlyArray<N>,
+  nodes: ReadonlyArray<TNode>,
   positions: ReadonlyArray<{ id: string; x: number; y: number }>,
-): Array<N> {
+): Array<TNode> {
   const byId = new Map(positions.map((p) => [p.id, p]))
   return nodes.map((n) => {
     const p = byId.get(n.id)

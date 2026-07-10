@@ -459,8 +459,8 @@ export function ProjectTree() {
         <div className="space-y-1">
           {projects.map((project) => {
             const isExpanded = expandedProjects.has(project.id)
-            const rootFolders = buildFolderTree(project.folders || [])
-            const rootWhiteboards = project.whiteboards || []
+            const rootFolders = buildFolderTree(project.folders)
+            const rootWhiteboards = project.whiteboards
             // Active when URL is /project/:id or /project/:id/folder/:folderId
             const isActiveProject = currentPathname.startsWith(
               `/project/${project.id}`,
@@ -487,6 +487,7 @@ export function ProjectTree() {
                         variant="ghost"
                         size="sm"
                         className="h-8 w-6 p-0 flex-shrink-0"
+                        aria-label={`Toggle ${project.name} tree`}
                         onClick={(e) => {
                           e.stopPropagation()
                           toggleProject(project.id)

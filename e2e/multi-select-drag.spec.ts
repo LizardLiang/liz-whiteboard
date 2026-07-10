@@ -15,8 +15,9 @@
 // round trip, not an HTTP server-function reaching for `io`), but we still
 // reload to prove the DB write itself succeeded, independent of any socket
 // path — the same pattern version-history.spec.ts uses for restore.
-import { test, expect, type Page, type Locator } from '@playwright/test'
+import {   expect, test } from '@playwright/test'
 import { IDS } from './fixtures'
+import type {Locator, Page} from '@playwright/test';
 
 // This suite mutates positions + area membership and does NOT restore them,
 // so it runs against its OWN dedicated board (IDS.mdWhiteboard, seeded in
@@ -34,6 +35,31 @@ async function openWhiteboard(page: Page) {
   await expect(
     page.locator('.react-flow').getByText('orders', { exact: true }).first(),
   ).toBeVisible()
+}
+
+/** Poll the `.react-flow__viewport` pane's `translate(...) scale(z)` inline
+ * transform until it reports the same value on two consecutive reads (100ms
+ * apart) — proof a pan/zoom (e.g. the Toolbar's animated "Zoom Out", see
+ * `ensureDragFitsOnScreen`) has finished and it is safe to read
+ * `getViewportScale`/node sizes derived from it. */
+async function waitForViewportSettled(
+  page: Page,
+  timeout = 5000,
+): Promise<void> {
+  let lastTransform: string | null = null
+  await expect
+    .poll(
+      async () => {
+        const current = await page
+          .locator('.react-flow__viewport')
+          .evaluate((el) => (el as HTMLElement).style.transform)
+        const settled = current !== '' && current === lastTransform
+        lastTransform = current
+        return settled
+      },
+      { timeout, intervals: [100] },
+    )
+    .toBe(true)
 }
 
 function nodeLocator(page: Page, id: string): Locator {
@@ -91,6 +117,170 @@ async function getNodeCenter(page: Page, id: string, scale: number) {
   return { x: pos.x + size.width / 2, y: pos.y + size.height / 2 }
 }
 
+/** Poll a node's inline `translate(x,y)` transform AND its rendered
+ * bounding-box size until both report the same value on two consecutive
+ * reads (100ms apart) — proof the drag/reload has finished writing the
+ * node's on-screen position *and* size (an auto-fit area's box can resize
+ * asynchronously as React Flow measures it, independent of its own
+ * position) and it is safe to read for an assertion. Reading immediately
+ * after a drag or reload can race that final layout write (observed flake:
+ * position/size read mid-settle), so callers that assert on a node's
+ * post-drag/post-reload rect or center should await this first instead of a
+ * fixed sleep. */
+async function waitForNodeSettled(
+  page: Page,
+  id: string,
+  timeout = 5000,
+): Promise<void> {
+  let lastSignature: string | null = null
+  await expect
+    .poll(
+      async () => {
+        const locator = nodeLocator(page, id)
+        const [transform, box] = await Promise.all([
+          locator.evaluate((el) => (el as HTMLElement).style.transform),
+          locator.boundingBox(),
+        ])
+        const signature = `${transform}|${box?.width ?? ''}|${box?.height ?? ''}`
+        const settled = transform !== '' && signature === lastSignature
+        lastSignature = signature
+        return settled
+      },
+      { timeout, intervals: [100] },
+    )
+    .toBe(true)
+}
+
+type SettledAreaAndTables = {
+  areaRect: { left: number; top: number; right: number; bottom: number }
+  usersCenter: { x: number; y: number }
+  ordersCenter: { x: number; y: number }
+}
+
+/** Reload the page and read back the area's rect + both dragged tables'
+ * settled centers (waiting on `waitForNodeSettled` for each — see above). */
+async function reloadAndReadAreaAndTables(
+  page: Page,
+): Promise<SettledAreaAndTables> {
+  await page.reload()
+  await expect(page.getByRole('heading', { name: 'E2E Multi-Drag' })).toBeVisible()
+  await expect(
+    page.locator('.react-flow').getByText('orders', { exact: true }).first(),
+  ).toBeVisible()
+
+  await Promise.all([
+    waitForNodeSettled(page, IDS.mdArea),
+    waitForNodeSettled(page, IDS.mdUsersTable),
+    waitForNodeSettled(page, IDS.mdOrdersTable),
+  ])
+
+  const scale = await getViewportScale(page)
+  const areaPos = await getNodePosition(page, IDS.mdArea)
+  const areaSize = await getNodeFlowSize(page, IDS.mdArea, scale)
+  const areaRect = {
+    left: areaPos.x,
+    top: areaPos.y,
+    right: areaPos.x + areaSize.width,
+    bottom: areaPos.y + areaSize.height,
+  }
+  const [usersCenter, ordersCenter] = await Promise.all([
+    getNodeCenter(page, IDS.mdUsersTable, scale),
+    getNodeCenter(page, IDS.mdOrdersTable, scale),
+  ])
+  return { areaRect, usersCenter, ordersCenter }
+}
+
+function isCenterInsideRect(
+  rect: { left: number; top: number; right: number; bottom: number },
+  center: { x: number; y: number },
+): boolean {
+  return (
+    center.x > rect.left &&
+    center.x < rect.right &&
+    center.y > rect.top &&
+    center.y < rect.bottom
+  )
+}
+
+/** The area's membership/bounds change after a multi-drag persists via a
+ * fire-and-forget Socket.IO `area:update` emit (see
+ * `src/hooks/use-whiteboard-areas.ts`'s `updateArea` — it emits with no ack
+ * callback), so there is no client-observable signal of when the server has
+ * actually committed the new membership/refit bounds. A single reload can
+ * therefore race that server-side write and read back stale (pre-drag) area
+ * data even after the dragged tables' own DOM positions have settled
+ * (`waitForNodeSettled` alone does not cover this — it was still observed to
+ * flake). Poll by reloading repeatedly (bounded by `timeoutMs`) until the
+ * read-back state matches the expected join/leave outcome, or give up and
+ * return the last read so the caller's own `expect(...)` calls fail with the
+ * real, final, settled values (not a guessed intermediate one). */
+async function reloadUntilAreaReconciled(
+  page: Page,
+  timeoutMs = 8000,
+): Promise<SettledAreaAndTables> {
+  const deadline = Date.now() + timeoutMs
+  let last: SettledAreaAndTables
+  for (;;) {
+    last = await reloadAndReadAreaAndTables(page)
+    const ordersJoined = isCenterInsideRect(last.areaRect, last.ordersCenter)
+    const usersLeft = !isCenterInsideRect(last.areaRect, last.usersCenter)
+    if (ordersJoined && usersLeft) return last
+    if (Date.now() > deadline) return last
+    await page.waitForTimeout(300)
+  }
+}
+
+/** `multiSelectAndDrag` converts a FLOW-space delta to on-screen pixels using
+ * the live zoom scale. For a large delta (e.g. test 1's boundary-hugging
+ * area-membership drag, which must travel ~400+ flow units) that pixel
+ * distance can push the drag's END point — or even its start — past the edge
+ * of the viewport. Dragging a real mouse pointer to/through an off-screen
+ * coordinate is not reliably handled by the browser: this was the actual
+ * root cause of the observed flake (a landing position that varied between
+ * otherwise byte-identical runs — same start/end coordinates computed every
+ * time, since the pre-drag measurements are deterministic, but the ACTUAL
+ * drop position differed once the drag path left the visible viewport).
+ * Zoom out (via the Toolbar's "Zoom Out" control the app already exposes)
+ * until both the start and computed end point stay safely on screen, so the
+ * drag path never has to leave visible viewport space. */
+async function ensureDragFitsOnScreen(
+  page: Page,
+  startLocator: Locator,
+  delta: { dx: number; dy: number },
+  margin = 60,
+): Promise<void> {
+  const viewport = page.viewportSize()
+  if (!viewport) return
+  const within = (x: number, y: number) =>
+    x > margin &&
+    x < viewport.width - margin &&
+    y > margin &&
+    y < viewport.height - margin
+
+  for (let attempt = 0; attempt < 10; attempt++) {
+    const scale = await getViewportScale(page)
+    const box = await startLocator.boundingBox()
+    if (!box) throw new Error('no bounding box while checking drag fit')
+    const startX = box.x + box.width / 2
+    const startY = box.y + box.height / 2
+    const endX = startX + delta.dx * scale
+    const endY = startY + delta.dy * scale
+    if (within(startX, startY) && within(endX, endY)) return
+
+    // Both the Toolbar and React Flow's own <Controls/> render a "Zoom Out"
+    // button — scope to the Controls one (stable `rf__controls` testid) to
+    // avoid an ambiguous multi-match.
+    await page
+      .getByTestId('rf__controls')
+      .getByRole('button', { name: 'Zoom Out' })
+      .click()
+    await waitForViewportSettled(page) // zoomOut animates over 200ms
+  }
+  throw new Error(
+    'Could not zoom out far enough to keep the multi-drag on screen',
+  )
+}
+
 /** Multi-select the `users` + `orders` table nodes via ctrl-click (React
  * Flow's default `multiSelectionKeyCode` on non-macOS — the ReactFlowCanvas
  * instance in this app does not override it), then perform a native mouse
@@ -106,6 +296,8 @@ async function multiSelectAndDrag(
   await usersHeader.click()
   await ordersHeader.click({ modifiers: ['Control'] })
 
+  await ensureDragFitsOnScreen(page, usersHeader, delta)
+
   const scale = await getViewportScale(page)
   const startBox = await usersHeader.boundingBox()
   if (!startBox) throw new Error('no bounding box for users header')
@@ -117,7 +309,42 @@ async function multiSelectAndDrag(
   await page.mouse.move(startX + delta.dx * scale, startY + delta.dy * scale, {
     steps: 12,
   })
+
+  // `handleNodeDragStop`'s multi-drag branch persists via a fire-and-forget
+  // `updateTablePositionsBulk` server-fn call (not awaited by the app) —
+  // register the response listener BEFORE mouse.up() fires it, so callers
+  // that reload right after this helper returns are guaranteed the DB write
+  // actually landed first, instead of racing it (this is the root cause of
+  // the observed flake: a reload firing before the persist POST resolved
+  // reads back the pre-drag position).
+  const persisted = page.waitForResponse(
+    (res) => res.request().method() === 'POST' && isBulkPositionPersistUrl(res.url()),
+    { timeout: 10_000 },
+  )
   await page.mouse.up()
+  await persisted
+}
+
+/** TanStack Start server-fn URLs are `/_serverFn/<base64url(JSON)>`, where the
+ * JSON identifies the source file + export (e.g.
+ * `{"file":"...server-functions.ts...","export":"updateTablePositionsBulk_..."}`).
+ * Decode that segment so `waitForResponse` targets the EXACT bulk-position
+ * persist call rather than any POST — other server-fn calls (e.g. session
+ * checks) can legitimately fire around the same time as the drag, especially
+ * on a cold-started dev server, and matching any POST risks resolving on one
+ * of those instead of the real persist (observed: a near-miss flake after a
+ * looser match). */
+function isBulkPositionPersistUrl(url: string): boolean {
+  const marker = '/_serverFn/'
+  const idx = url.indexOf(marker)
+  if (idx === -1) return false
+  const encoded = url.slice(idx + marker.length).split(/[?#]/)[0]
+  try {
+    const decoded = Buffer.from(encoded, 'base64url').toString('utf-8')
+    return decoded.includes('updateTablePositionsBulk')
+  } catch {
+    return false
+  }
 }
 
 test.describe('Multi-select table drag persist + area reconcile (GH #111)', () => {
@@ -155,30 +382,13 @@ test.describe('Multi-select table drag persist + area reconcile (GH #111)', () =
     }
 
     await multiSelectAndDrag(page, delta)
-    // Let the optimistic area:update / area membership emits settle before
-    // reloading.
-    await page.waitForTimeout(500)
 
-    await page.reload()
-    await expect(page.getByRole('heading', { name: 'E2E Multi-Drag' })).toBeVisible()
-    await expect(
-      page.locator('.react-flow').getByText('orders', { exact: true }).first(),
-    ).toBeVisible()
-
-    const scaleAfter = await getViewportScale(page)
-    const areaPosAfter = await getNodePosition(page, IDS.mdArea)
-    const areaSizeAfter = await getNodeFlowSize(page, IDS.mdArea, scaleAfter)
-    const areaRectAfter = {
-      left: areaPosAfter.x,
-      top: areaPosAfter.y,
-      right: areaPosAfter.x + areaSizeAfter.width,
-      bottom: areaPosAfter.y + areaSizeAfter.height,
-    }
-
-    const [usersCenterAfter, ordersCenterAfter] = await Promise.all([
-      getNodeCenter(page, IDS.mdUsersTable, scaleAfter),
-      getNodeCenter(page, IDS.mdOrdersTable, scaleAfter),
-    ])
+    // Reload and read back the area + both dragged tables' settled state,
+    // retrying (bounded) if the area's membership/bounds haven't reconciled
+    // yet — see `reloadUntilAreaReconciled` for why a single reload can race
+    // the fire-and-forget `area:update` persist.
+    const { areaRect: areaRectAfter, usersCenter: usersCenterAfter, ordersCenter: ordersCenterAfter } =
+      await reloadUntilAreaReconciled(page)
 
     // `orders` (the co-dragged, non-leader table) joined — its new center
     // persisted inside the refit area rect. This is the behavior that did

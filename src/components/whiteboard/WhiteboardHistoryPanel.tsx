@@ -129,7 +129,7 @@ export function WhiteboardHistoryPanel({
         data: { whiteboardId, label: newLabel.trim() || undefined },
       }),
     onSuccess: (result) => {
-      if (result && 'error' in result) {
+      if ('error' in result) {
         toast.error('Failed to save version')
         return
       }
@@ -144,7 +144,7 @@ export function WhiteboardHistoryPanel({
     mutationFn: (snapshotId: string) =>
       restoreSnapshot({ data: { snapshotId } }),
     onSuccess: (result) => {
-      if (result && 'error' in result) {
+      if ('error' in result) {
         toast.error('Failed to restore version')
         return
       }

@@ -77,22 +77,21 @@ function RegisterPage() {
       if (response.newUser) {
         // Genuine new user: auto-logged in, redirect to the caller-provided
         // target (e.g. an invite link) if present, else the server's default.
-        const target = redirect !== '/' ? redirect : response.redirect || '/'
+        const target = redirect !== '/' ? redirect : response.redirect
         router.navigate({ to: target })
       } else if (response.error === AUTH_ERROR_CODES.VALIDATION_ERROR) {
         // Server-side field validation error (e.g. username already taken)
-        if (response.fields && Object.keys(response.fields).length > 0) {
+        if (Object.keys(response.fields).length > 0) {
           setErrors({ ...response.fields } as Record<string, string>)
         } else {
           setErrors({
             form: 'Validation failed. Please check your input and try again.',
           })
         }
+        // eslint-disable-next-line @typescript-eslint/no-unnecessary-condition -- exhaustive per today's registerUser union, but kept as a deliberate defensive fallback: if the response shape ever diverges from this assumption (e.g. a future branch added server-side), we must not silently fall into "success" (see the final else's "do not show false success").
       } else if (response.success === true) {
         // Duplicate email (anti-enumeration): show success message, redirect to login
-        setSuccessMessage(
-          response.message || 'Registration successful. Please log in.',
-        )
+        setSuccessMessage(response.message)
         setTimeout(() => {
           router.navigate({ to: '/login', search: { redirect } })
         }, 2000)

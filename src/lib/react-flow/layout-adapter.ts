@@ -45,6 +45,7 @@ export function applyLayoutToNodes(
 ): Array<TableNodeType> {
   return nodes.map((node) => ({
     ...node,
+    // eslint-disable-next-line @typescript-eslint/no-unnecessary-condition -- Record<string, Position> indexing is unchecked (no noUncheckedIndexedAccess); the layout result can genuinely omit a node id that wasn't part of the computed layout.
     position: layoutResult.positions[node.id] || node.position,
   }))
 }
@@ -231,6 +232,7 @@ export function positionClusters(
     let maxX = -Infinity
     clusters[index - 1].forEach((nodeId) => {
       const pos = updatedPositions[nodeId]
+      // eslint-disable-next-line @typescript-eslint/no-unnecessary-condition -- Record<string, Position> indexing is unchecked (no noUncheckedIndexedAccess); a nodeId from `clusters` can genuinely be missing from `updatedPositions`.
       if (pos) {
         maxX = Math.max(maxX, pos.x)
       }
@@ -242,6 +244,7 @@ export function positionClusters(
     // Apply offset to all nodes in current cluster
     cluster.forEach((nodeId) => {
       const pos = updatedPositions[nodeId]
+      // eslint-disable-next-line @typescript-eslint/no-unnecessary-condition -- Record<string, Position> indexing is unchecked (no noUncheckedIndexedAccess); a nodeId from `clusters` can genuinely be missing from `updatedPositions`.
       if (pos) {
         updatedPositions[nodeId] = {
           x: pos.x + offsetX,

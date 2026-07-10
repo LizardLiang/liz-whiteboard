@@ -6,6 +6,7 @@ import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { act, fireEvent, render, screen } from '@testing-library/react'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { ProjectTree } from './ProjectTree'
+import type * as ReactRouterModule from '@tanstack/react-router'
 import type { ReactNode } from 'react'
 
 import { getProjectsWithTree } from '@/routes/api/projects'
@@ -44,7 +45,7 @@ const mockNavigate = vi.fn()
 let mockPathname = '/'
 
 vi.mock('@tanstack/react-router', async (importOriginal) => {
-  const actual = await importOriginal<typeof import('@tanstack/react-router')>()
+  const actual = await importOriginal<typeof ReactRouterModule>()
   return {
     ...actual,
     useNavigate: () => mockNavigate,
@@ -159,18 +160,14 @@ describe('ProjectTree sidebar navigation behavior', () => {
       const closedState = document.querySelector('[data-state="closed"]')
       expect(closedState).toBeTruthy()
 
-      // Find the chevron button: it is the button with h-8 w-8 p-0 class
-      const allButtons = screen.getAllByRole('button')
-      const chevronButton = allButtons.find(
-        (btn) =>
-          btn.className.includes('h-8') &&
-          btn.className.includes('w-8') &&
-          !btn.getAttribute('title'),
-      )
+      // Find the chevron button by its stable accessible name (aria-label)
+      const chevronButton = screen.getByRole('button', {
+        name: /toggle .* tree/i,
+      })
       expect(chevronButton).toBeTruthy()
 
       act(() => {
-        fireEvent.click(chevronButton!)
+        fireEvent.click(chevronButton)
       })
 
       // After clicking chevron, collapsible should be open
@@ -185,17 +182,13 @@ describe('ProjectTree sidebar navigation behavior', () => {
 
       await screen.findByText('Test Project')
 
-      const allButtons = screen.getAllByRole('button')
-      const chevronButton = allButtons.find(
-        (btn) =>
-          btn.className.includes('h-8') &&
-          btn.className.includes('w-8') &&
-          !btn.getAttribute('title'),
-      )
+      const chevronButton = screen.getByRole('button', {
+        name: /toggle .* tree/i,
+      })
       expect(chevronButton).toBeTruthy()
       // Must be a button, not inside an anchor
-      expect(chevronButton!.tagName.toLowerCase()).toBe('button')
-      expect(chevronButton!.closest('a')).toBeNull()
+      expect(chevronButton.tagName.toLowerCase()).toBe('button')
+      expect(chevronButton.closest('a')).toBeNull()
     })
 
     it('clicking chevron does not call navigate', async () => {
@@ -203,16 +196,12 @@ describe('ProjectTree sidebar navigation behavior', () => {
 
       await screen.findByText('Test Project')
 
-      const allButtons = screen.getAllByRole('button')
-      const chevronButton = allButtons.find(
-        (btn) =>
-          btn.className.includes('h-8') &&
-          btn.className.includes('w-8') &&
-          !btn.getAttribute('title'),
-      )
+      const chevronButton = screen.getByRole('button', {
+        name: /toggle .* tree/i,
+      })
 
       act(() => {
-        fireEvent.click(chevronButton!)
+        fireEvent.click(chevronButton)
       })
 
       expect(mockNavigate).not.toHaveBeenCalled()

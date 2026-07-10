@@ -67,14 +67,14 @@ function RegisterPage({
     setIsSubmitting(true)
     try {
       const response = await onRegister({ username, email, password })
-      if (response?.newUser) {
+      if (response.newUser) {
         // Genuine new user: prefer the caller-provided redirect (e.g. an
         // invite link) over the server's default.
         const target = redirect !== '/' ? redirect : response.redirect || '/'
         onNavigate(target)
       } else {
         setSuccessMessage(
-          response?.message || 'Registration successful. Please log in.',
+          response.message || 'Registration successful. Please log in.',
         )
         // Duplicate-email anti-enumeration branch: forward redirect into the
         // /login navigation so the chain survives the "please log in" detour.
@@ -271,6 +271,7 @@ describe('TC-P3-14: RegisterPage loading state', () => {
 
     await waitFor(() => {
       expect(
+        // eslint-disable-next-line @typescript-eslint/no-unnecessary-type-assertion -- eslint's type-aware pass disagrees with tsc here: removing this cast breaks `bun run typecheck` (getByTestId returns HTMLElement, .disabled needs HTMLButtonElement).
         (screen.getByTestId('submit-btn') as HTMLButtonElement).disabled,
       ).toBe(true)
     })

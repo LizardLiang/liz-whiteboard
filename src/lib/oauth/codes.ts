@@ -45,7 +45,7 @@ function startSweep(): void {
     }
   }, SWEEP_INTERVAL_MS)
   // Don't keep Node.js alive just for cleanup
-  if (sweepTimer.unref) sweepTimer.unref()
+  sweepTimer.unref()
 }
 
 /**

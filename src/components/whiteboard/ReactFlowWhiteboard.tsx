@@ -28,6 +28,7 @@ import {
 import { MessageCircle, Minimize2, SquareDashed } from 'lucide-react'
 import { toast } from 'sonner'
 import { ReactFlowCanvas } from './ReactFlowCanvas'
+import { DevFpsOverlay } from './DevFpsOverlay'
 import { ConnectionStatusIndicator } from './ConnectionStatusIndicator'
 import { DeleteTableDialog } from './DeleteTableDialog'
 import { Toolbar } from './Toolbar'
@@ -46,7 +47,7 @@ import type {
   ShowMode,
   TableNodeType,
 } from '@/lib/react-flow/types'
-import type { Column, CommentWithAuthor } from '@/data/models'
+import type { Column, CommentWithAuthor, DiagramTable } from '@/data/models'
 import type { EffectiveRole } from '@/data/permission'
 import type {
   Cardinality,
@@ -60,9 +61,11 @@ import type { DiagramAST } from '@/lib/parser/ast'
 import type { CreateColumnPayload } from './column/types'
 import type { TableRelationship } from './DeleteTableDialog'
 import type { RelationshipErrorEvent } from '@/hooks/use-relationship-mutations'
+import type { ReconcileAfterDropParams } from '@/hooks/use-column-reorder-mutations'
 import type { Dialect } from '@/lib/ddl-generator'
 import type { ExportImageDialogOptions } from './ExportImageDialog'
 import { exportDiagramImage } from '@/lib/export/export-image'
+import { ForceFullDetailContext } from '@/lib/react-flow/level-of-detail'
 import { hasMinimumRole } from '@/lib/auth/permissions'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
@@ -85,6 +88,7 @@ import {
 import { parseColumnHandleId } from '@/lib/react-flow/edge-routing'
 import { filterValidEdges } from '@/lib/react-flow/highlighting'
 import { convertTablesToNodes } from '@/lib/react-flow/convert-to-nodes'
+import { applyTableCreated } from '@/lib/react-flow/apply-table-created'
 import { resolvePendingPositions } from '@/lib/react-flow/resolve-pending-positions'
 import { convertRelationshipsToEdges } from '@/lib/react-flow/convert-to-edges'
 import {
@@ -359,6 +363,12 @@ function ReactFlowWhiteboardInner({
   // ReactFlowProvider (Issue #104).
   const canvasWrapperRef = useRef<HTMLDivElement>(null)
 
+  // Forces every TableNode to full detail (bypassing level-of-detail
+  // collapse) while an image export is capturing the canvas (GH #121) — see
+  // handleExport below and src/lib/react-flow/level-of-detail.ts.
+  const [forceFullDetailForExport, setForceFullDetailForExport] =
+    useState(false)
+
   // Local React Flow state (will be updated by collaboration)
   const [nodes, setNodes] = useState<Array<TableNodeType>>(initialNodes)
   const [edges, setEdges] = useState<Array<RelationshipEdgeType>>(initialEdges)
@@ -477,6 +487,7 @@ function ReactFlowWhiteboardInner({
   const [showMode, setShowMode] = useState<ShowMode>(() => {
     // Restore from localStorage on mount
     const saved = localStorage.getItem('whiteboard-display-mode')
+    // eslint-disable-next-line @typescript-eslint/no-unnecessary-condition -- localStorage.getItem genuinely returns null at runtime when the key is unset, regardless of the `as ShowMode` cast.
     return (saved as ShowMode) || 'ALL_FIELDS'
   })
 
@@ -529,7 +540,6 @@ function ReactFlowWhiteboardInner({
         )
       }
     })
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [initialNodes])
 
   // Update local state when initial data changes (and attach callbacks)
@@ -608,7 +618,6 @@ function ReactFlowWhiteboardInner({
         }
       })
     })
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [initialNodes, tableNameById])
 
   // Update local edge state when initial data changes — preserve onDelete and onLabelUpdate callbacks
@@ -642,7 +651,6 @@ function ReactFlowWhiteboardInner({
         },
       })),
     )
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [edges])
 
   // Callback for when a remote user deletes a table
@@ -662,6 +670,21 @@ function ReactFlowWhiteboardInner({
       columnReorderMutations.forgetTable(tableId)
     },
     [columnReorderMutations],
+  )
+
+  // Callback for when a remote user creates a table (GH #125). Patches the
+  // canvas's source-of-truth query cache (['whiteboard', whiteboardId], FLAT
+  // shape) via the pure applyTableCreated reducer — the existing
+  // initialNodes-sync effect above then builds a fully-wired node for the new
+  // table id automatically (same mechanism patchWhiteboardTablePositions
+  // already relies on for peer position updates). No manual setNodes needed.
+  const handleTableCreated = useCallback(
+    (table: DiagramTable & { createdBy: string }) => {
+      queryClient.setQueryData(['whiteboard', whiteboardId], (old: any) =>
+        applyTableCreated(old, table),
+      )
+    },
+    [queryClient, whiteboardId],
   )
 
   // Ref for onTableError — breaks circular dependency between useWhiteboardCollaboration and useTableMutations
@@ -809,6 +832,8 @@ function ReactFlowWhiteboardInner({
     useCallback((data: any) => {
       onTableUpdateErrorRef.current(data)
     }, []),
+    // GH #125: live table-creation sync — the 14th positional param.
+    handleTableCreated,
   )
 
   // Column collaboration callbacks (incoming events from other users)
@@ -1157,7 +1182,6 @@ function ReactFlowWhiteboardInner({
         },
       })),
     )
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [isConnected])
 
   // Also inject onDelete and onLabelUpdate callbacks into edges once on mount
@@ -1172,7 +1196,6 @@ function ReactFlowWhiteboardInner({
         },
       })),
     )
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
 
   // Keyboard shortcut for table deletion (Delete/Backspace on selected node)
@@ -1321,7 +1344,7 @@ function ReactFlowWhiteboardInner({
   // Column reorder callback — wraps reconcileAfterDrop with real setNodes
   const handleColumnReorder = useCallback(
     (
-      params: import('@/hooks/use-column-reorder-mutations').ReconcileAfterDropParams,
+      params: ReconcileAfterDropParams,
     ) => {
       columnReorderMutations.reconcileAfterDrop({
         ...params,
@@ -1471,7 +1494,7 @@ function ReactFlowWhiteboardInner({
           onPreviewRelations: (tableId: string) =>
             handleTogglePreviewTableRef.current(tableId),
           onColumnReorder: (
-            params: import('@/hooks/use-column-reorder-mutations').ReconcileAfterDropParams,
+            params: ReconcileAfterDropParams,
           ) => handleColumnReorderRef.current(params),
           emitColumnReorder: (tableId: string, ids: Array<string>) =>
             emitColumnReorderRef.current(tableId, ids),
@@ -1488,7 +1511,6 @@ function ReactFlowWhiteboardInner({
         },
       })),
     )
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [isConnected, tableNameById])
 
   // Also inject callbacks into nodes once on mount (initialNodes may not have them)
@@ -1511,7 +1533,7 @@ function ReactFlowWhiteboardInner({
           onPreviewRelations: (tableId: string) =>
             handleTogglePreviewTableRef.current(tableId),
           onColumnReorder: (
-            params: import('@/hooks/use-column-reorder-mutations').ReconcileAfterDropParams,
+            params: ReconcileAfterDropParams,
           ) => handleColumnReorderRef.current(params),
           emitColumnReorder: (tableId: string, ids: Array<string>) =>
             emitColumnReorderRef.current(tableId, ids),
@@ -1530,7 +1552,6 @@ function ReactFlowWhiteboardInner({
         },
       })),
     )
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
 
   // Mutation for updating table position
@@ -1630,7 +1651,6 @@ function ReactFlowWhiteboardInner({
     if (onDisplayModeReady) {
       onDisplayModeReady(showMode, setShowMode)
     }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []) // Only run once on mount
 
   // React Flow zoom API (requires ReactFlowProvider context)
@@ -1835,7 +1855,7 @@ function ReactFlowWhiteboardInner({
       resolveComment: resolveCommentMutation,
       panToComment: handlePanToComment,
     })
-    // eslint-disable-next-line react-hooks/exhaustive-deps -- ready-callback fires once per identity change, mirrors onZoomControlsReady
+    // ready-callback fires once per identity change, mirrors onZoomControlsReady
   }, [
     onCommentActionsReady,
     createCommentMutation,
@@ -2461,7 +2481,6 @@ function ReactFlowWhiteboardInner({
       resolvedPendingIdsRef.current.add(id)
       emitPositionUpdate(id, x, y, true)
     })
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [nodes, nodesInitialized, emitPositionUpdate])
 
   // Build zoom controls and expose to parent once on mount
@@ -2480,7 +2499,6 @@ function ReactFlowWhiteboardInner({
       }
       onZoomControlsReady(controls)
     }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []) // Only run once on mount — reactFlowInstance is stable
 
   // Notify parent when viewport zoom changes
@@ -2775,14 +2793,28 @@ function ReactFlowWhiteboardInner({
           ? (cachedWhiteboard as { name?: string }).name
           : undefined
 
-      await exportDiagramImage({
-        nodes: getNodes(),
-        viewportEl,
-        format,
-        background,
-        themeBg,
-        filename: whiteboardName,
+      // Level-of-detail (GH #121) renders collapsed name-only tables below a
+      // zoom threshold — since this captures the LIVE DOM (not a fresh
+      // render at a synthetic zoom), force every TableNode to full detail
+      // and wait two animation frames for the re-render + paint to land
+      // before rasterizing, then restore normal LOD behavior afterward.
+      setForceFullDetailForExport(true)
+      await new Promise<void>((resolve) => {
+        requestAnimationFrame(() => requestAnimationFrame(() => resolve()))
       })
+
+      try {
+        await exportDiagramImage({
+          nodes: getNodes(),
+          viewportEl,
+          format,
+          background,
+          themeBg,
+          filename: whiteboardName,
+        })
+      } finally {
+        setForceFullDetailForExport(false)
+      }
     },
     [queryClient, whiteboardId, getNodes],
   )
@@ -2915,40 +2947,45 @@ function ReactFlowWhiteboardInner({
               {commentToolActive ? 'Click canvas...' : 'Add comment'}
             </Button>
           )}
-          <ReactFlowCanvas
-            initialNodes={nodes}
-            initialEdges={edges}
-            areaNodes={areaNodes}
-            commentNodes={commentNodes}
-            onAreaDragStop={handleAreaDragStop}
-            onAreaDelete={deleteAreaMutation}
-            onConnect={handleConnect}
-            onNodeDragStop={handleNodeDragStop}
-            nodesDraggable={nodesDraggable}
-            panOnDrag={!isColumnDragging}
-            showMinimap={showMinimap}
-            minimapExpanded={minimapExpanded}
-            onMinimapCollapse={() => setMinimapExpanded(false)}
-            showControls={showControls}
-            showBackground={true}
-            fitViewOptions={{
-              padding: 0.2,
-              includeHiddenNodes: false,
-            }}
-            relationsPreviewTableId={relationsPreviewTableId}
-            onPaneClick={(event) => {
-              setRelationsPreviewTableId(null)
-              if (!commentToolActive) return
-              const pos = reactFlowInstance.screenToFlowPosition({
-                x: event.clientX,
-                y: event.clientY,
-              })
-              setPendingCommentPosition(pos)
-              setCommentToolActive(false)
-            }}
-            focusRequestTableId={focusRequestTableId}
-            focusRequestToken={focusRequestToken}
-          />
+          <ForceFullDetailContext.Provider value={forceFullDetailForExport}>
+            <ReactFlowCanvas
+              initialNodes={nodes}
+              initialEdges={edges}
+              areaNodes={areaNodes}
+              commentNodes={commentNodes}
+              onAreaDragStop={handleAreaDragStop}
+              onAreaDelete={deleteAreaMutation}
+              onConnect={handleConnect}
+              onNodeDragStop={handleNodeDragStop}
+              nodesDraggable={nodesDraggable}
+              panOnDrag={!isColumnDragging}
+              showMinimap={showMinimap}
+              minimapExpanded={minimapExpanded}
+              onMinimapCollapse={() => setMinimapExpanded(false)}
+              showControls={showControls}
+              showBackground={true}
+              fitViewOptions={{
+                padding: 0.2,
+                includeHiddenNodes: false,
+              }}
+              relationsPreviewTableId={relationsPreviewTableId}
+              onPaneClick={(event) => {
+                setRelationsPreviewTableId(null)
+                if (!commentToolActive) return
+                const pos = reactFlowInstance.screenToFlowPosition({
+                  x: event.clientX,
+                  y: event.clientY,
+                })
+                setPendingCommentPosition(pos)
+                setCommentToolActive(false)
+              }}
+              focusRequestTableId={focusRequestTableId}
+              focusRequestToken={focusRequestToken}
+            />
+          </ForceFullDetailContext.Provider>
+          {/* Dev-only FPS/frame-time HUD (GH #121 perf) — tree-shaken out of
+              production builds, never rendered outside a dev server. */}
+          {import.meta.env.DEV && <DevFpsOverlay />}
 
           {/* New free-point comment dialog (GH #110) — opened after a
               placement click; body cannot be empty per createCommentSchema,
@@ -3139,9 +3176,9 @@ export function ReactFlowWhiteboard({
     // Guard against AuthErrorResponse
     if (!whiteboardData || isUnauthorizedError(whiteboardData)) return []
     // whiteboardData is WhiteboardWithDiagram which directly has .tables
-    const tables = whiteboardData?.tables
+    const tables = whiteboardData.tables
 
-    if (!tables || tables.length === 0) {
+    if (tables.length === 0) {
       console.log('ReactFlowWhiteboard: No tables data or empty array')
       return []
     }
