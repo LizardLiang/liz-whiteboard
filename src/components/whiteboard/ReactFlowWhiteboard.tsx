@@ -645,6 +645,13 @@ function ReactFlowWhiteboardInner({
             onFocusTable: prev.data.onFocusTable,
             onExportDdl: prev.data.onExportDdl,
             onPreviewRelations: prev.data.onPreviewRelations,
+            // #135: preserve canonical edge data across an initialNodes re-sync
+            // so the open relations panel's neighbor list does not empty. The
+            // incoming `...node.data` spread lacks these (they are injected only
+            // by later effects); re-inject from the canonical refs, mirroring the
+            // new-node branch above (L598-599).
+            edges: edgesRef.current,
+            relationsEdges: validEdgesForPanelRef.current,
             tableNameById,
           },
         }
@@ -680,6 +687,12 @@ function ReactFlowWhiteboardInner({
         data: {
           ...node.data,
           edges,
+          // #135: also refresh relationsEdges here so a newly created relation
+          // (drag-to-connect) appears in an already-open relations panel without
+          // waiting for an unrelated initialNodes re-sync. validEdgesForPanelRef
+          // is updated by an effect declared earlier (L449-452) that shares the
+          // `edges` dependency, so it is current by the time this effect runs.
+          relationsEdges: validEdgesForPanelRef.current,
         },
       })),
     )
