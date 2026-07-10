@@ -32,9 +32,19 @@ import {
   LOD_ZOOM_THRESHOLD,
   useForceFullDetail,
 } from '@/lib/react-flow/level-of-detail'
+import { useCanvasMode } from '@/lib/react-flow/canvas-mode'
+import {
+  HEADER_H,
+  ROW_H,
+  computeTableHeight,
+  getVisibleColumnsForShowMode,
+} from '@/lib/react-flow/canvas-node-geometry'
+import { getCachedTableWidth } from '@/lib/react-flow/canvas-node-metrics'
 
-// Row height constant for InsertionLine positioning (matches minHeight in ColumnRow)
-const COLUMN_ROW_HEIGHT = 28
+// Row height constant for InsertionLine positioning (matches minHeight in
+// ColumnRow) — sourced from canvas-node-geometry.ts's ROW_H so the DOM path
+// and the canvas draw (CanvasNodeLayer.tsx) can never drift apart.
+const COLUMN_ROW_HEIGHT = ROW_H
 
 interface TableNodeProps {
   id: string
@@ -43,13 +53,22 @@ interface TableNodeProps {
 }
 
 /**
- * Minimal column row rendered when LOD-collapsed (GH #121 perf, opt #3) —
- * keeps ONLY the 4 column-level handles, at the same row height as the full
+ * Minimal column row rendered when LOD-collapsed (GH #121 perf, opt #3) or
+ * under canvas mode's chrome-light strip (tactical plan Phase 1) — keeps
+ * ONLY the 4 column-level handles, at the same row height as the full
  * ColumnRow, so edge routing/drag-to-connect never lose their anchor point
  * while zoomed out (column-level handles are fragile and required — see
  * ColumnRow.tsx / project conventions). Skips every other bit of per-column
  * DOM: drag handle, constraint badges, name/type text, tooltips, note/
  * duplicate/delete buttons — the actual DOM-weight win.
+ *
+ * Carries the same `column-row` class ColumnRow.tsx's full row uses —
+ * required so the theme's `.column-row:hover > .react-flow__handle.source`
+ * hover-reveal rule (react-flow-theme.css) still fires here; source handles
+ * are `pointer-events: none` by default (project override of RF's
+ * `connectionindicator`) and only become interactive on `.column-row`
+ * hover, so without this class a source handle in this row could never
+ * start a drag-to-connect.
  */
 function LodColumnRow({
   column,
@@ -62,6 +81,7 @@ function LodColumnRow({
 }) {
   return (
     <div
+      className="column-row"
       style={{
         position: 'relative',
         minHeight: `${COLUMN_ROW_HEIGHT}px`,
@@ -181,6 +201,24 @@ export const TableNode = memo(
       (s) => s.transform[2] < LOD_ZOOM_THRESHOLD,
     )
     const isLodCollapsed = isZoomedBelowLodThreshold && !forceFullDetail
+
+    // Canvas mode (tactical plan Phase 1, "DOM strip to handles-only
+    // anchors"): CanvasNodeLayer paints this table's visuals on <canvas>,
+    // so TableNode renders only a sized wrapper + per-column handles (no
+    // header text/buttons/badges, no ColumnRow bodies, no AddColumnRow).
+    // Gated purely by canvasMode — Phase 1 has no edit overlay yet, so
+    // there is no "active-edit table" carve-out to check here (that's
+    // Phase 3). See the early `if (canvasMode)` return below.
+    const canvasMode = useCanvasMode()
+    const chromeLightRowColumns = useMemo(
+      () => getVisibleColumnsForShowMode(columns, showMode),
+      [columns, showMode],
+    )
+    const chromeLightWidth = useMemo(
+      () => getCachedTableWidth(table.id, table.name, columns, table.width),
+      [table.id, table.name, columns, table.width],
+    )
+    const chromeLightHeight = computeTableHeight(chromeLightRowColumns.length)
 
     // Pre-compute a map from columnId to affected edges for fast delete checks
     const columnEdgeMap = useMemo(() => {
@@ -576,6 +614,86 @@ export const TableNode = memo(
     // Character-count estimates are unreliable; max-content lets each column row
     // expand to its natural size. minWidth respects the user's manually-saved width.
     const minWidth = Math.max(220, table.width ?? 0)
+
+    // --- Canvas mode: chrome-light DOM (tactical plan Phase 1) ---
+    // CanvasNodeLayer already paints this table's header/columns/types/PK-FK
+    // markers on <canvas>; this DOM node exists ONLY to carry the per-column
+    // connection handles React Flow/edges require (createColumnHandleId is
+    // the fragile, must-not-break anchor — see ColumnHandles.tsx). Width and
+    // per-row heights come from the SAME sources CanvasNodeLayer draws from
+    // (canvas-node-metrics.ts / canvas-node-geometry.ts) so a handle's
+    // screen position always lands inside the row canvas actually painted.
+    // The TableNodeContextMenu wrapper is kept (cheap, and right-click table
+    // actions stay available); everything else — header text/buttons/
+    // badges, ColumnRow bodies, AddColumnRow — is stripped.
+    if (canvasMode) {
+      return (
+        <TableNodeContextMenu
+          onDeleteTable={handleRequestTableDelete}
+          onFocusTable={() => onFocusTable?.(table.id)}
+          onExportDdl={handleExportDdl}
+          onPreviewRelations={() => onPreviewRelations?.(table.id)}
+          areas={areas}
+          tableId={table.id}
+          onAddToArea={onAddToArea}
+          onRemoveFromArea={onRemoveFromArea}
+        >
+          <div
+            // `chrome-light` has no matching CSS rule yet — deliberate
+            // future styling seam (e.g. a distinct look for the DOM-only
+            // handle shell vs. the canvas-painted body) kept as a stable
+            // hook so a later Phase 4 pass doesn't need to touch this
+            // render path just to add one.
+            className={`react-flow__node-erTable chrome-light ${selected ? 'selected' : ''} ${highlightClass}`}
+            data-testid="table-node-chrome-light"
+            style={{
+              position: 'relative',
+              width: `${chromeLightWidth}px`,
+              height: `${chromeLightHeight}px`,
+            }}
+          >
+            {showMode === 'TABLE_NAME' ? (
+              // TABLE_NAME: canvas draws the header only (no column rows),
+              // so every column's handles collapse into that single
+              // header-height row instead of each getting its own row —
+              // existing edges keep an anchor even though no column row is
+              // individually drawn. See "Show-mode parity in canvas
+              // render" (spec-delta). `column-row` class required for the
+              // same hover-reveal reason as LodColumnRow above.
+              <div
+                className="column-row"
+                style={{ position: 'relative', height: `${HEADER_H}px` }}
+              >
+                {columns.map((column: Column) => (
+                  <ColumnHandles
+                    key={column.id}
+                    tableId={table.id}
+                    columnId={column.id}
+                  />
+                ))}
+              </div>
+            ) : (
+              <>
+                {/* Header spacer — no handles, just reserves HEADER_H so the
+                    first column row starts at the same y CanvasNodeLayer
+                    draws it at. */}
+                <div style={{ height: `${HEADER_H}px` }} />
+                {chromeLightRowColumns.map(
+                  (column: Column, index: number) => (
+                    <LodColumnRow
+                      key={column.id}
+                      column={column}
+                      tableId={table.id}
+                      isLast={index === chromeLightRowColumns.length - 1}
+                    />
+                  ),
+                )}
+              </>
+            )}
+          </div>
+        </TableNodeContextMenu>
+      )
+    }
 
     return (
       <TableNodeContextMenu

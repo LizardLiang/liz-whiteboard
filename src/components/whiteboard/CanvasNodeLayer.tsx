@@ -15,12 +15,13 @@
 import { useEffect, useRef } from 'react'
 import { useStore } from '@xyflow/react'
 import type { TableNodeData } from '@/lib/react-flow/types'
-
-// Geometry — mirrors TableNode's DOM so canvas tables land on the same pixels.
-const HEADER_H = 34
-const ROW_H = 28 // === TableNode COLUMN_ROW_HEIGHT
-const DEFAULT_W = 220
-const PAD_X = 12
+import {
+  HEADER_H,
+  PAD_X,
+  ROW_H,
+  getVisibleColumnsForShowMode,
+} from '@/lib/react-flow/canvas-node-geometry'
+import { getCachedTableWidth } from '@/lib/react-flow/canvas-node-metrics'
 
 interface ThemeColors {
   bg: string
@@ -72,6 +73,12 @@ interface DrawNode {
   data: TableNodeData
 }
 
+// Stable shared reference returned by the `drawNodes` selector when canvas
+// mode is off, so a disabled board triggers neither a nodeLookup iteration
+// nor a new-array re-render on every store tick (pan/drag/selection all
+// bump the store) — see canvas-node-rendering-migration Phase 1 fix #1.
+const EMPTY_DRAW_NODES: Array<DrawNode> = []
+
 export function CanvasNodeLayer({ enabled }: { enabled: boolean }) {
   const canvasRef = useRef<HTMLCanvasElement>(null)
 
@@ -83,15 +90,36 @@ export function CanvasNodeLayer({ enabled }: { enabled: boolean }) {
   // Pull table nodes straight from the store's nodeLookup so this doesn't
   // depend on the parent threading node state down. Only `type === 'table'`
   // nodes are drawn here (areas/comments keep their own render paths).
+  //
+  // Gated on `enabled` FIRST, before touching nodeLookup at all: this
+  // selector runs on EVERY store tick regardless of whether the canvas is
+  // even mounted-visible (previously it iterated every table and called
+  // getCachedTableWidth per table on every pan/drag/selection tick even
+  // with canvas mode off — exactly the DOM-node-count hot path #142 exists
+  // to speed up). Returning the same empty-array reference when disabled
+  // means: no iteration, no width lookups, and no new object identity to
+  // trigger a redraw-effect re-run either.
   const drawNodes = useStore((s) => {
+    if (!enabled) return EMPTY_DRAW_NODES
     const out: Array<DrawNode> = []
     for (const [, n] of s.nodeLookup) {
       if (n.type !== 'table' || n.hidden) continue
       const data = n.data as unknown as TableNodeData
+      // Width comes from the SAME cache TableNode's chrome-light wrapper
+      // reads (canvas-node-metrics.ts) — not `n.measured?.width` — so
+      // canvas draw and DOM handle positions can never drift apart (the
+      // measured DOM width becomes meaningless once TableNode stops
+      // rendering full column rows under canvas mode).
+      const w = getCachedTableWidth(
+        n.id,
+        data.table.name,
+        data.table.columns,
+        data.table.width,
+      )
       out.push({
         x: n.position.x,
         y: n.position.y,
-        w: n.measured?.width ?? (data.table?.width || DEFAULT_W),
+        w,
         data,
       })
     }
@@ -134,7 +162,14 @@ export function CanvasNodeLayer({ enabled }: { enabled: boolean }) {
     ctx.textBaseline = 'middle'
 
     for (const node of drawNodes) {
-      const columns = node.data.table?.columns ?? []
+      // showMode parity: draw only the columns the DOM mounts a handle for
+      // (ALL_FIELDS = all, KEY_ONLY = PK/FK only, TABLE_NAME = none — header
+      // only), so canvas rows and DOM handles always agree. See the
+      // "Show-mode parity in canvas render" spec-delta requirement.
+      const columns = getVisibleColumnsForShowMode(
+        node.data.table.columns,
+        node.data.showMode,
+      )
       const h = HEADER_H + columns.length * ROW_H
       const { x, y, w } = node
 

@@ -39,6 +39,7 @@ import type {
   TableNodeType,
 } from '@/lib/react-flow/types'
 import { recalculateEdgesForDraggedNodes } from '@/lib/react-flow/edge-routing'
+import { CanvasModeContext } from '@/lib/react-flow/canvas-mode'
 import { perfTracker } from '@/lib/perf/perf-tracker'
 import {
   assignLayersBFS,
@@ -1003,73 +1004,81 @@ export function ReactFlowCanvas({
     new URLSearchParams(window.location.search).get('canvas') === '1'
 
   return (
-    <div
-      ref={wrapperRef}
-      className={`react-flow-wrapper ${isConnecting ? 'is-connecting' : ''} ${className}`}
-      style={{ width: '100%', height: '100%' }}
-    >
-      {/* Global SVG marker definitions for cardinality indicators */}
-      <CardinalityMarkerDefs />
-
-      <ReactFlow
-        // Area nodes are a different node type merged behind tables; React Flow
-        // resolves them at runtime via the `area` entry in nodeTypes. The cast
-        // keeps the strongly-typed table handlers (onNodesChange<TableNodeType>)
-        // without threading a union node type through the whole canvas.
-        nodes={mergedNodes as unknown as typeof nodes}
-        edges={effectiveEdges}
-        onNodesChange={onNodesChange}
-        onEdgesChange={onEdgesChange}
-        onConnect={onConnect}
-        onConnectStart={onConnectStart}
-        onConnectEnd={onConnectEnd}
-        onNodeClick={onNodeClick}
-        onPaneClick={onPaneClick}
-        onNodeMouseEnter={onNodeMouseEnter}
-        onNodeMouseLeave={onNodeMouseLeave}
-        onNodeDragStart={onNodeDragStart}
-        onNodeDrag={onNodeDrag}
-        onNodeDragStop={onNodeDragStop}
-        // Perf tracker (GH #121 follow-up): pan/zoom gesture tagging. React
-        // Flow has no pan/zoom callbacks wired otherwise — these read-only
-        // handlers exist solely to tag the current gesture (noteMove disambiguates
-        // pan vs zoom by scale change). All writes no-op unless recording.
-        onMove={(_event, viewport) => perfTracker.noteMove(viewport.zoom)}
-        onMoveEnd={() => perfTracker.clearGesture()}
-        onNodesDelete={onNodesDelete}
-        deleteKeyCode={DELETE_KEY_CODES}
-        nodeTypes={memoizedNodeTypes}
-        edgeTypes={memoizedEdgeTypes}
-        nodesDraggable={nodesDraggable}
-        panOnDrag={panOnDrag}
-        nodesConnectable={true}
-        elementsSelectable={true}
-        onlyRenderVisibleElements={onlyRenderVisibleElements}
-        fitView
-        fitViewOptions={fitViewOptions}
-        minZoom={VIEWPORT_CONSTRAINTS.minZoom}
-        maxZoom={VIEWPORT_CONSTRAINTS.maxZoom}
-        panOnScroll={true}
-        defaultEdgeOptions={DEFAULT_EDGE_OPTIONS}
+    // CanvasModeContext wraps the whole nodes subtree (not just
+    // <CanvasNodeLayer>) so TableNode — rendered deep inside <ReactFlow> via
+    // nodeTypes, not passed props directly — can read `canvasMode` without
+    // it being threaded through node `data` (which would force a re-key of
+    // TableNode's custom memo comparator). Mirrors ForceFullDetailContext's
+    // usage elsewhere in this tree.
+    <CanvasModeContext.Provider value={canvasMode}>
+      <div
+        ref={wrapperRef}
+        className={`react-flow-wrapper ${isConnecting ? 'is-connecting' : ''} ${className}`}
+        style={{ width: '100%', height: '100%' }}
       >
-        <CanvasNodeLayer enabled={canvasMode} />
-        {showControls && <Controls />}
-        {showBackground && (
-          <Background color="var(--rf-background-pattern)" gap={16} />
-        )}
-        {showMinimap && minimapExpanded && (
-          <div className="minimap-backdrop" onClick={onMinimapCollapse} />
-        )}
-        {showMinimap && (
-          <MiniMap
-            nodeColor={minimapNodeColor}
-            maskColor="rgba(0, 0, 0, 0.1)"
-            pannable
-            onClick={onMinimapClick}
-            className={minimapExpanded ? 'minimap-focused' : undefined}
-          />
-        )}
-      </ReactFlow>
-    </div>
+        {/* Global SVG marker definitions for cardinality indicators */}
+        <CardinalityMarkerDefs />
+
+        <ReactFlow
+          // Area nodes are a different node type merged behind tables; React Flow
+          // resolves them at runtime via the `area` entry in nodeTypes. The cast
+          // keeps the strongly-typed table handlers (onNodesChange<TableNodeType>)
+          // without threading a union node type through the whole canvas.
+          nodes={mergedNodes as unknown as typeof nodes}
+          edges={effectiveEdges}
+          onNodesChange={onNodesChange}
+          onEdgesChange={onEdgesChange}
+          onConnect={onConnect}
+          onConnectStart={onConnectStart}
+          onConnectEnd={onConnectEnd}
+          onNodeClick={onNodeClick}
+          onPaneClick={onPaneClick}
+          onNodeMouseEnter={onNodeMouseEnter}
+          onNodeMouseLeave={onNodeMouseLeave}
+          onNodeDragStart={onNodeDragStart}
+          onNodeDrag={onNodeDrag}
+          onNodeDragStop={onNodeDragStop}
+          // Perf tracker (GH #121 follow-up): pan/zoom gesture tagging. React
+          // Flow has no pan/zoom callbacks wired otherwise — these read-only
+          // handlers exist solely to tag the current gesture (noteMove disambiguates
+          // pan vs zoom by scale change). All writes no-op unless recording.
+          onMove={(_event, viewport) => perfTracker.noteMove(viewport.zoom)}
+          onMoveEnd={() => perfTracker.clearGesture()}
+          onNodesDelete={onNodesDelete}
+          deleteKeyCode={DELETE_KEY_CODES}
+          nodeTypes={memoizedNodeTypes}
+          edgeTypes={memoizedEdgeTypes}
+          nodesDraggable={nodesDraggable}
+          panOnDrag={panOnDrag}
+          nodesConnectable={true}
+          elementsSelectable={true}
+          onlyRenderVisibleElements={onlyRenderVisibleElements}
+          fitView
+          fitViewOptions={fitViewOptions}
+          minZoom={VIEWPORT_CONSTRAINTS.minZoom}
+          maxZoom={VIEWPORT_CONSTRAINTS.maxZoom}
+          panOnScroll={true}
+          defaultEdgeOptions={DEFAULT_EDGE_OPTIONS}
+        >
+          <CanvasNodeLayer enabled={canvasMode} />
+          {showControls && <Controls />}
+          {showBackground && (
+            <Background color="var(--rf-background-pattern)" gap={16} />
+          )}
+          {showMinimap && minimapExpanded && (
+            <div className="minimap-backdrop" onClick={onMinimapCollapse} />
+          )}
+          {showMinimap && (
+            <MiniMap
+              nodeColor={minimapNodeColor}
+              maskColor="rgba(0, 0, 0, 0.1)"
+              pannable
+              onClick={onMinimapClick}
+              className={minimapExpanded ? 'minimap-focused' : undefined}
+            />
+          )}
+        </ReactFlow>
+      </div>
+    </CanvasModeContext.Provider>
   )
 }
