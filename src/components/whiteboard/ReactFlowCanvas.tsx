@@ -352,6 +352,12 @@ export function ReactFlowCanvas({
     })
     setActiveTableId(focusRequestTableId)
     // Intentionally keyed on focusRequestToken only — fire on token bump only.
+    // `fitView` (stable via useReactFlow) and `focusRequestTableId` are read
+    // fresh each time the token bumps; including focusRequestTableId would
+    // also refire this effect whenever the id changes without a token bump,
+    // defeating the "bump-to-refire" contract (re-selecting the same table
+    // must still jump to it).
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [focusRequestToken])
 
   // Update edges when initialEdges changes — immediately recalculate handles

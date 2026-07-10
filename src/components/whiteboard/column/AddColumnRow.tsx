@@ -10,7 +10,6 @@ import type { Column } from '@/data/models'
 import type { DataType } from '@/data/schema'
 
 export interface AddColumnRowProps {
-  tableId: string
   existingColumns: Array<Column>
   onCreate: (data: {
     name: string
@@ -20,7 +19,6 @@ export interface AddColumnRowProps {
 }
 
 export function AddColumnRow({
-  tableId,
   existingColumns,
   onCreate,
 }: AddColumnRowProps) {
@@ -87,7 +85,7 @@ export function AddColumnRow({
     setDataType('string')
     setIsExpanded(false)
     cancelledRef.current = false
-  }, [name, dataType, isExpanded])
+  }, [])
 
   const handleCreate = useCallback(
     async (closeAfterSave = false) => {
@@ -124,7 +122,7 @@ export function AddColumnRow({
         }
       }
     },
-    [name, dataType, existingColumns, onCreate, reset, tableId],
+    [name, dataType, existingColumns, onCreate, reset],
   )
 
   const handleKeyDown = useCallback(

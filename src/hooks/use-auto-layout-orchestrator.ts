@@ -107,6 +107,15 @@ export function useAutoLayoutOrchestrator({
   // Stash the last payload so handleRetry can re-submit without recomputing.
   const lastPayloadRef = useRef<BulkPayload | null>(null)
 
+  // handlePersistResult (below) and handleRetry are mutually recursive:
+  // handlePersistResult's toast action invokes handleRetry, and handleRetry
+  // calls handlePersistResult. Declaring either as a direct dependency of the
+  // other is a temporal-dead-zone crash (both are `const` in the same
+  // function scope). Route the forward reference through a ref, kept in
+  // sync on every render, so handlePersistResult never needs handleRetry in
+  // its own dependency array.
+  const handleRetryRef = useRef<() => Promise<void>>(async () => {})
+
   // Mount tracking — Retry and all state setters must no-op after unmount
   // (resolves Apollo Finding 4 — isMountedRef stale Retry guard).
   const isMountedRef = useRef(true)
@@ -137,7 +146,7 @@ export function useAutoLayoutOrchestrator({
                 onClick: () => {
                   if (!isMountedRef.current) return
                   if (!lastPayloadRef.current) return
-                  void handleRetry()
+                  void handleRetryRef.current()
                 },
               },
             },
@@ -202,6 +211,11 @@ export function useAutoLayoutOrchestrator({
       toast.error('Auto Layout could not be saved on retry. Please try again.')
     }
   }, [emitBulkPositionUpdate, handlePersistResult, onAfterLayout])
+
+  // Keep the ref pointed at the latest handleRetry so handlePersistResult's
+  // toast action always invokes the current closure (see handleRetryRef
+  // comment above).
+  handleRetryRef.current = handleRetry
 
   // ---------------------------------------------------------------------------
   // runLayout — the core flow

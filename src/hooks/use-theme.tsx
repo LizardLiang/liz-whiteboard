@@ -129,9 +129,7 @@ export function ThemeProvider({ children }: { children: ReactNode }) {
    */
   useEffect(() => {
     const stored = getStoredTheme()
-    if (stored !== theme) {
-      setThemeState(stored)
-    }
+    setThemeState((prev) => (stored !== prev ? stored : prev))
   }, [])
 
   /**

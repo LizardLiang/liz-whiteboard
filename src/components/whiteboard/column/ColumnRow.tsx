@@ -139,7 +139,7 @@ export const ColumnRow = memo(
           onDelete(column)
         }
       },
-      [column, column.id, isEditing, onStartEdit, onDelete, canEdit],
+      [column, isEditing, onStartEdit, onDelete, canEdit],
     )
 
     const handleDeleteClick = useCallback(

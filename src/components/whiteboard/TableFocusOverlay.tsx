@@ -191,6 +191,13 @@ export function TableFocusOverlay({
     return () => {
       cancelled = true
     }
+    // focusNodes/focusEdges are deliberately excluded: they're derived from
+    // the `nodes`/`edges` props (which change continuously during dragging
+    // and live collaboration), but this layout must only recompute when the
+    // user switches the focal table, per the comment above — including them
+    // would re-run the compact D3 layout on every canvas update and cause
+    // visible jank in the overlay.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [activeFocusId])
 
   // Merge compact overlay positions into focusNodes.

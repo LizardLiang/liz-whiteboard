@@ -2,6 +2,7 @@
 
 import { tanstackConfig } from '@tanstack/eslint-config'
 import tseslint from 'typescript-eslint'
+import reactHooks from 'eslint-plugin-react-hooks'
 import { createRequire } from 'node:module'
 import { fileURLToPath } from 'node:url'
 import { dirname, resolve } from 'node:path'
@@ -79,6 +80,19 @@ export default [
     },
     rules: {
       'sec-authz/require-server-fn-authz': 'error',
+    },
+  },
+  // Issue #130: enforce React hook correctness. Explicit rule block (not the
+  // `recommended`/`recommended-latest` preset) so both severities are
+  // guaranteed `error` regardless of plugin defaults.
+  {
+    files: ['src/**/*.{ts,tsx}'],
+    plugins: {
+      'react-hooks': reactHooks,
+    },
+    rules: {
+      'react-hooks/rules-of-hooks': 'error',
+      'react-hooks/exhaustive-deps': 'error',
     },
   },
 ]
