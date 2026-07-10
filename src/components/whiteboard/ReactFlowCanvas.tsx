@@ -20,6 +20,7 @@ import '@xyflow/react/dist/style.css'
 import '@/styles/react-flow-theme.css'
 
 import { CardinalityMarkerDefs } from './CardinalityMarkerDefs'
+import { CanvasNodeLayer } from './CanvasNodeLayer'
 import type { MouseEvent as ReactMouseEvent } from 'react'
 import type {
   FitViewOptions,
@@ -993,6 +994,14 @@ export function ReactFlowCanvas({
   const effectiveEdges =
     enableEdgeAblation && hideEdges ? EMPTY_EDGES : edges
 
+  // Hybrid canvas rendering (GH #142 → canvas migration), gated by `?canvas=1`.
+  // Only the main board opts in (same rationale as edge-ablation) — the focus
+  // overlay keeps its DOM render path.
+  const canvasMode =
+    enableEdgeAblation &&
+    typeof window !== 'undefined' &&
+    new URLSearchParams(window.location.search).get('canvas') === '1'
+
   return (
     <div
       ref={wrapperRef}
@@ -1043,6 +1052,7 @@ export function ReactFlowCanvas({
         panOnScroll={true}
         defaultEdgeOptions={DEFAULT_EDGE_OPTIONS}
       >
+        <CanvasNodeLayer enabled={canvasMode} />
         {showControls && <Controls />}
         {showBackground && (
           <Background color="var(--rf-background-pattern)" gap={16} />
