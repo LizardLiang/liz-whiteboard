@@ -28,7 +28,7 @@ import {
 import { MessageCircle, Minimize2, SquareDashed } from 'lucide-react'
 import { toast } from 'sonner'
 import { ReactFlowCanvas } from './ReactFlowCanvas'
-import { DevFpsOverlay } from './DevFpsOverlay'
+import { PerfTrackerPanel } from './PerfTrackerPanel'
 import { ConnectionStatusIndicator } from './ConnectionStatusIndicator'
 import { DeleteTableDialog } from './DeleteTableDialog'
 import { Toolbar } from './Toolbar'
@@ -64,6 +64,7 @@ import type { RelationshipErrorEvent } from '@/hooks/use-relationship-mutations'
 import type { ReconcileAfterDropParams } from '@/hooks/use-column-reorder-mutations'
 import type { Dialect } from '@/lib/ddl-generator'
 import type { ExportImageDialogOptions } from './ExportImageDialog'
+import { usePerfTrackerEnabled } from '@/hooks/use-perf-tracker-enabled'
 import { exportDiagramImage } from '@/lib/export/export-image'
 import { ForceFullDetailContext } from '@/lib/react-flow/level-of-detail'
 import { hasMinimumRole } from '@/lib/auth/permissions'
@@ -326,6 +327,11 @@ function ReactFlowWhiteboardInner({
   onCommentActionsReady?: (actions: CommentActions) => void
 }) {
   const queryClient = useQueryClient()
+
+  // In-app performance tracker (GH #121 follow-up). Mounts on `?perf=1` or the
+  // Ctrl+Shift+P hotkey — available in production too, unlike the old dev-only
+  // FPS overlay.
+  const perfEnabled = usePerfTrackerEnabled()
 
   // Requesting user's effective write permission — gates the toolbar's Add
   // Table/Relationship buttons and (via WhiteboardPermissionsProvider below)
@@ -3100,9 +3106,11 @@ function ReactFlowWhiteboardInner({
               focusRequestToken={focusRequestToken}
             />
           </ForceFullDetailContext.Provider>
-          {/* Dev-only FPS/frame-time HUD (GH #121 perf) — tree-shaken out of
-              production builds, never rendered outside a dev server. */}
-          {import.meta.env.DEV && <DevFpsOverlay />}
+          {/* In-app performance tracker (GH #121 follow-up) — Record/Stop ->
+              JSON report. Gated by `?perf=1` or Ctrl+Shift+P (usePerfTrackerEnabled),
+              and intentionally ships in production so real-hardware numbers can
+              be captured on the prod bundle. */}
+          {perfEnabled && <PerfTrackerPanel />}
 
           {/* New free-point comment dialog (GH #110) — opened after a
               placement click; body cannot be empty per createCommentSchema,

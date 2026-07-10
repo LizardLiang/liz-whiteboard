@@ -7,9 +7,11 @@
 //
 // FPS itself is NOT measured here — headless Chromium's frame timing is not
 // representative of real hardware/GPU compositing, so before/after FPS
-// numbers are captured manually via the dev FPS overlay
-// (DevFpsOverlay.tsx) per the project's prod/dev-split convention (see
-// playwright.config.ts's note on the same tradeoff for Socket.IO).
+// numbers are captured via the in-app performance tracker
+// (PerfTrackerPanel.tsx / perf-tracker.ts, `?perf=1`) per the project's
+// prod/dev-split convention (see playwright.config.ts's note on the same
+// tradeoff for Socket.IO). See e2e/perf-tracker.spec.ts for the record→report
+// exercise of that tracker.
 //
 // Seeds its OWN dedicated stress board in this file's own setup (NOT
 // global-setup.ts, which already seeds the version-history/multi-select
