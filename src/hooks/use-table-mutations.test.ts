@@ -39,7 +39,6 @@ const makeTableNode = (id = 'tbl-001'): TableNodeType => ({
     edges: [],
     isActiveHighlighted: false,
     isHighlighted: false,
-    isHovered: false,
     isRelationsPreviewOpen: false,
     showMode: 'ALL_FIELDS',
   },

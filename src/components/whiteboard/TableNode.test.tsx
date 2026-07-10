@@ -4,7 +4,7 @@
 // Covers: AC-01a-g (drag handle), AC-02a-f (visual feedback), AC-10a-c (cancel),
 //         AC-08d (queue-full at drag-start)
 
-import { beforeEach, describe, expect, it, vi } from 'vitest'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { fireEvent, render, screen } from '@testing-library/react'
 import React from 'react'
 
@@ -41,10 +41,21 @@ vi.mock('sonner', () => ({
   },
 }))
 
-// Mock @xyflow/react — TableNode uses Handle, Position
+// Mock @xyflow/react — TableNode uses Handle, Position, and (GH #121 LOD)
+// useStore to read the current zoom. transform[2] = 1 (zoom) is ABOVE
+// LOD_ZOOM_THRESHOLD (0.35), i.e. the non-collapsed branch, so every existing
+// test gets full ColumnRow rendering by default — matching every existing
+// test's assumptions. mockTransform is mutable so LOD-specific tests below
+// can drop the zoom below the threshold mid-test.
+const { mockTransform } = vi.hoisted(() => ({
+  mockTransform: { value: [0, 0, 1] as [number, number, number] },
+}))
+
 vi.mock('@xyflow/react', () => ({
   Handle: () => null,
   Position: { Left: 'left', Right: 'right' },
+  useStore: (selector: (state: { transform: [number, number, number] }) => unknown) =>
+    selector({ transform: mockTransform.value }),
 }))
 
 // Mock edge-routing utility (Handle IDs)
@@ -220,7 +231,6 @@ function makeTableData(overrides?: Partial<TableNodeData>): TableNodeData {
     showMode: 'ALL_FIELDS',
     isActiveHighlighted: false,
     isHighlighted: false,
-    isHovered: false,
     isRelationsPreviewOpen: false,
     edges: [],
     relationsEdges: [],
@@ -830,5 +840,90 @@ describe('InsertionLine component (Suite S6 — REQ-02)', () => {
 
     const line = container.firstChild as HTMLElement
     expect(line.style.transition).toContain('ease')
+  })
+})
+
+// ============================================================================
+// LOD collapse during an active column edit — data-loss fix (GH #121)
+//
+// Root cause: dropping below LOD_ZOOM_THRESHOLD mid-edit used to unmount
+// ColumnRow (and its InlineNameEditor/DataTypeSelector) without ever firing
+// blur/focusout (WHATWG ancestor-unmount quirk), silently dropping
+// typed-but-uncommitted text and leaving `editingField` dangling. The fix
+// keeps the actively-edited row mounted through the collapse and forces it
+// to resolve via its own existing commit/cancel handlers.
+// ============================================================================
+
+describe('TableNode LOD collapse during active edit (GH #121 data-loss fix)', () => {
+  beforeEach(() => {
+    vi.clearAllMocks()
+    mockTransform.value = [0, 0, 1]
+  })
+
+  afterEach(() => {
+    mockTransform.value = [0, 0, 1]
+  })
+
+  it('commits an in-flight name edit (via the real blur path) instead of losing it when zoom crosses LOD_ZOOM_THRESHOLD mid-edit', () => {
+    const onColumnUpdate = vi.fn()
+    const data = makeTableData({ onColumnUpdate })
+    const { rerender } = renderTableNode({ id: TABLE_ID, data })
+
+    // Start editing col1's name (double-click opens InlineNameEditor)
+    fireEvent.doubleClick(screen.getByText('id'))
+    const input = screen.getByDisplayValue('id') as HTMLInputElement
+    fireEvent.change(input, { target: { value: 'user_id' } })
+
+    // Zoom out below LOD_ZOOM_THRESHOLD (0.35) mid-edit
+    mockTransform.value = [0, 0, 0.2]
+    rerender(
+      <WhiteboardPermissionsProvider value={{ canEdit: true }}>
+        <TableNode id={TABLE_ID} data={data} />
+      </WhiteboardPermissionsProvider>,
+    )
+
+    // Typed value committed through InlineNameEditor's own blur-commits path
+    // — not silently dropped.
+    expect(onColumnUpdate).toHaveBeenCalledWith(col1.id, TABLE_ID, {
+      name: 'user_id',
+    })
+    // editingField no longer dangles — the row is now free to actually
+    // collapse (editor unmounted).
+    expect(screen.queryByDisplayValue('user_id')).toBeNull()
+  })
+
+  it('cancels an in-flight dataType edit (no persisted value to lose) when zoom crosses LOD_ZOOM_THRESHOLD mid-edit, and does not dangle editingField', () => {
+    const onColumnUpdate = vi.fn()
+    const data = makeTableData({ onColumnUpdate })
+    const { rerender } = renderTableNode({ id: TABLE_ID, data })
+
+    // Start editing col1's dataType (first "string" span belongs to col1)
+    fireEvent.doubleClick(screen.getAllByText('string')[0])
+    expect(screen.getByTestId('data-type-selector')).toBeTruthy()
+
+    // Zoom out below LOD_ZOOM_THRESHOLD (0.35) mid-edit
+    mockTransform.value = [0, 0, 0.2]
+    rerender(
+      <WhiteboardPermissionsProvider value={{ canEdit: true }}>
+        <TableNode id={TABLE_ID} data={data} />
+      </WhiteboardPermissionsProvider>,
+    )
+
+    // Cancelled, not committed — no data to lose for an unmade selection —
+    // and editingField no longer dangles (selector unmounted).
+    expect(onColumnUpdate).not.toHaveBeenCalled()
+    expect(screen.queryByTestId('data-type-selector')).toBeNull()
+
+    // Zoom back in — without the fix, editingField stays stuck on this
+    // column/field (dangling state) and the selector would unexpectedly
+    // reopen on its own; with the fix it was properly cleared, so it stays
+    // closed until the user double-clicks again.
+    mockTransform.value = [0, 0, 1]
+    rerender(
+      <WhiteboardPermissionsProvider value={{ canEdit: true }}>
+        <TableNode id={TABLE_ID} data={data} />
+      </WhiteboardPermissionsProvider>,
+    )
+    expect(screen.queryByTestId('data-type-selector')).toBeNull()
   })
 })
