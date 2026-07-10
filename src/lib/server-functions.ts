@@ -2,6 +2,7 @@
 // Server functions for whiteboard operations using TanStack Start
 
 import { createServerFn } from '@tanstack/react-start'
+import { z } from 'zod'
 import type {
   BulkUpdatePositions,
   CreateRelationship,
@@ -155,16 +156,13 @@ export const getWhiteboardComments = createServerFn({
 
 /**
  * GH #125: this is the `createTable` server function the whiteboard route
- * (`$whiteboardId.tsx`) actually imports and calls (as `createTableFn`) —
- * NOT `routes/api/tables.ts`'s function of the same shape (that one is
- * unused by the UI; see .claude/.Arena/debt.md for the duplicate-function
- * writeup). Delegates to the shared `createTableHandler`
+ * (`$whiteboardId.tsx`) actually imports and calls (as `createTableFn`).
+ * Delegates to the shared `createTableHandler`
  * (`@/lib/diagram-table/handlers`) so table creation broadcasts
  * `table:created` to the whiteboard's namespace after persisting — the
  * import is only referenced inside this `.handler(...)` closure, which
  * TanStack Start's client-bundle transform strips, so `createTableHandler`'s
- * Socket.IO-touching import chain is tree-shaken out of the browser bundle
- * (same proven pattern as `routes/api/tables.ts`'s `createTableFn`).
+ * Socket.IO-touching import chain is tree-shaken out of the browser bundle.
  *
  * Safe: `createTableHandler` performs the identical
  * `getWhiteboardProjectId` + `requireServerFnRole(user.id, projectId,
@@ -180,14 +178,25 @@ export const createTable = createServerFn({
   .handler(requireAuth(createTableHandler))
 
 /**
+ * GH #131: this is the live single-table position-update endpoint since
+ * `ReactFlowWhiteboard.tsx`'s drag mutation was repointed here from the
+ * deleted `src/routes/api/tables.ts`'s `updateTablePositionFn` — restoring
+ * that function's `.uuid()`/`.finite()` runtime validation (dropped for a
+ * time when this endpoint was unused dead code) since this is a real,
+ * network-reachable `createServerFn` boundary, not just a TS-typed call site.
  * @requires editor
  */
 export const updateTablePosition = createServerFn({
   method: 'POST',
 })
-  .inputValidator(
-    (data: { id: string; positionX: number; positionY: number }) => data,
-  )
+  .inputValidator((data: unknown) => {
+    const schema = z.object({
+      id: z.string().uuid(),
+      positionX: z.number().finite(),
+      positionY: z.number().finite(),
+    })
+    return schema.parse(data)
+  })
   .handler(
     requireAuth(async ({ user }, data) => {
       const projectId = await getTableProjectId(data.id)

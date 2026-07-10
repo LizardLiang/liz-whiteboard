@@ -112,10 +112,7 @@ vi.mock('@/lib/server-functions', () => ({
   createRelationshipFn: vi.fn(),
   getWhiteboardRelationships: vi.fn(),
   getWhiteboardWithDiagram: vi.fn(),
-}))
-
-vi.mock('@/routes/api/tables', () => ({
-  updateTablePositionFn: vi.fn(),
+  updateTablePosition: vi.fn(),
 }))
 
 vi.mock('@/lib/session-user-id', () => ({

@@ -1,15 +1,14 @@
 // src/lib/diagram-table/handlers.ts
-// createTableFn's handler logic (GH #125), split out of
-// src/routes/api/tables.ts for the same reason src/lib/history/handlers.ts /
-// src/lib/invite/handlers.ts / src/lib/share/handlers.ts are split out of
-// their THIN route-fn wrappers: src/routes/api/tables.ts is imported
-// directly by client components (src/routes/whiteboard/$whiteboardId.tsx et
-// al.) via its createServerFn-wrapped consts, and TanStack Start's
-// client-bundle transform only strips the INLINE closure passed to
-// `.handler(...)` — it cannot strip a plain top-level function that file
-// merely references. emitToWhiteboard's home module
-// (src/routes/api/collaboration.ts) top-level-imports `socket.io` (Node-
-// only); keeping this handler body in a separate, never-client-imported
+// createTableFn's handler logic (GH #125), split out for the same reason
+// src/lib/history/handlers.ts / src/lib/invite/handlers.ts /
+// src/lib/share/handlers.ts are split out of their THIN route-fn wrappers:
+// src/lib/server-functions.ts is imported directly by client components
+// (src/routes/whiteboard/$whiteboardId.tsx et al.) via its createServerFn-
+// wrapped consts, and TanStack Start's client-bundle transform only strips
+// the INLINE closure passed to `.handler(...)` — it cannot strip a plain
+// top-level function that file merely references. emitToWhiteboard's home
+// module (src/routes/api/collaboration.ts) top-level-imports `socket.io`
+// (Node-only); keeping this handler body in a separate, never-client-imported
 // module is what lets Rollup tree-shake that import out of the browser
 // bundle instead of pulling `socket.io` into it (see history.ts/invites.ts's
 // header comments for the real `bun run build` failure this pattern avoids).
