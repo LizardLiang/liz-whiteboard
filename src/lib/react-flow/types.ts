@@ -109,6 +109,15 @@ export interface TableNodeData extends Record<string, unknown> {
   /** Callback to open the Focus view overlay for this table */
   onFocusTable?: (tableId: string) => void
 
+  /**
+   * GH #138 — Callback to jump the live canvas to a related table (pan +
+   * normalized zoom + active-highlight + brief pulse) and re-anchor the
+   * relations panel to it, fired from a relations-panel row's click/Enter
+   * activation. Distinct from onFocusTable, which opens the read-only Focus
+   * modal instead.
+   */
+  onJumpToTable?: (tableId: string) => void
+
   /** Callback to export this table's CREATE TABLE DDL in the given dialect */
   onExportDdl?: (tableId: string, dialect: Dialect) => void
 

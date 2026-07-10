@@ -1,8 +1,8 @@
 // src/components/whiteboard/TableRelationsPanel.test.tsx
 // RTL render tests for TableRelationsPanel (table-hover-preview-trigger-and-connection-revamp)
 
-import { afterEach, describe, expect, it } from 'vitest'
-import { cleanup, render, screen } from '@testing-library/react'
+import { afterEach, describe, expect, it, vi } from 'vitest'
+import { cleanup, fireEvent, render, screen } from '@testing-library/react'
 import { TableRelationsPanel } from './TableRelationsPanel'
 import type { Column, DiagramTable } from '@/data/models'
 import type { RelationshipEdgeType } from '@/lib/react-flow/types'
@@ -297,5 +297,83 @@ describe('TableRelationsPanel', () => {
     const connection = screen.getByTestId('relations-panel-connection')
     expect(connection.textContent).toContain('Employees.id')
     expect(connection.textContent).toContain('Employees.manager_id')
+  })
+
+  describe('onJumpToTable (GH #138)', () => {
+    function renderPanel(onJumpToTable?: (tableId: string) => void) {
+      const tableA = makeTable('table-a', 'Users', [
+        { id: 'a-col-1', name: 'id', isPrimaryKey: true },
+      ])
+      const edge = makeEdge({
+        id: 'edge-1',
+        source: 'table-a',
+        target: 'table-b',
+        sourceColumn: { id: 'a-col-1', name: 'id' },
+        targetColumn: { id: 'b-col-fk', name: 'user_id' },
+        label: 'has many',
+      })
+
+      render(
+        <TableRelationsPanel
+          table={tableA}
+          relatedEdges={[edge]}
+          tableNameById={
+            new Map([
+              ['table-a', 'Users'],
+              ['table-b', 'Orders'],
+            ])
+          }
+          onJumpToTable={onJumpToTable}
+        />,
+      )
+    }
+
+    it('calls onJumpToTable with the related table id when the row is clicked', () => {
+      const onJumpToTable = vi.fn()
+      renderPanel(onJumpToTable)
+
+      fireEvent.click(screen.getByTestId('relations-panel-row'))
+
+      expect(onJumpToTable).toHaveBeenCalledWith('table-b')
+    })
+
+    it('calls onJumpToTable with the related table id on Enter keydown', () => {
+      const onJumpToTable = vi.fn()
+      renderPanel(onJumpToTable)
+
+      fireEvent.keyDown(screen.getByTestId('relations-panel-row'), {
+        key: 'Enter',
+      })
+
+      expect(onJumpToTable).toHaveBeenCalledWith('table-b')
+    })
+
+    it('calls onJumpToTable with the related table id on Space keydown', () => {
+      const onJumpToTable = vi.fn()
+      renderPanel(onJumpToTable)
+
+      fireEvent.keyDown(screen.getByTestId('relations-panel-row'), {
+        key: ' ',
+      })
+
+      expect(onJumpToTable).toHaveBeenCalledWith('table-b')
+    })
+
+    it('sets role="button", tabIndex=0, and an aria-label naming the related table', () => {
+      renderPanel(vi.fn())
+
+      const row = screen.getByTestId('relations-panel-row')
+      expect(row.getAttribute('role')).toBe('button')
+      expect(row.getAttribute('tabindex')).toBe('0')
+      expect(row.getAttribute('aria-label')).toBe('Jump to Orders')
+    })
+
+    it('renders a plain, non-interactive row when onJumpToTable is not provided', () => {
+      renderPanel(undefined)
+
+      const row = screen.getByTestId('relations-panel-row')
+      expect(row.getAttribute('role')).toBeNull()
+      expect(row.getAttribute('tabindex')).toBeNull()
+    })
   })
 })

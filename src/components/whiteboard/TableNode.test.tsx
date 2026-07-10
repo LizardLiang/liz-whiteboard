@@ -656,6 +656,100 @@ describe('TableNode relations panel — stale-column edge filtering', () => {
 })
 
 // ============================================================================
+// GH #138 — relations panel row jump-to-table forwarding. jsdom can't verify
+// the actual viewport pan/zoom (that's e2e/relations-jump.spec.ts's job);
+// this only proves TableNode wires TableRelationsPanel's onJumpToTable
+// through to the click/Enter row activation with the related table id.
+// ============================================================================
+describe('TableNode relations panel — onJumpToTable forwarding (GH #138)', () => {
+  const RELATED_TABLE_ID = 'c47ac10b-58cc-4372-a567-0e02b2c3d481'
+
+  function makeJumpRelationEdge(): RelationshipEdgeType {
+    return {
+      id: 'edge-jump',
+      type: 'relationship',
+      source: TABLE_ID,
+      target: RELATED_TABLE_ID,
+      data: {
+        relationship: {
+          id: 'edge-jump',
+          whiteboardId: 'wb-1',
+          sourceTableId: TABLE_ID,
+          targetTableId: RELATED_TABLE_ID,
+          sourceColumnId: col1.id,
+          targetColumnId: 'order-col-1',
+          cardinality: 'ONE_TO_MANY',
+          label: null,
+          routingPoints: null,
+          createdAt: new Date('2026-01-01'),
+          updatedAt: new Date('2026-01-01'),
+          sourceColumn: col1,
+          targetColumn: {
+            id: 'order-col-1',
+            tableId: RELATED_TABLE_ID,
+            name: 'order_id',
+            dataType: 'string',
+            isPrimaryKey: false,
+            isForeignKey: true,
+            isUnique: false,
+            isNullable: true,
+            description: null,
+            order: 0,
+            createdAt: new Date('2026-01-01'),
+            updatedAt: new Date('2026-01-01'),
+          },
+        },
+        cardinality: 'ONE_TO_MANY',
+        isHighlighted: false,
+      },
+    } as unknown as RelationshipEdgeType
+  }
+
+  function renderWithJumpRow(onJumpToTable = vi.fn()) {
+    const data = makeTableData({
+      isRelationsPreviewOpen: true,
+      edges: [makeJumpRelationEdge()],
+      relationsEdges: [makeJumpRelationEdge()],
+      tableNameById: new Map([[RELATED_TABLE_ID, 'Orders']]),
+      onJumpToTable,
+    })
+    render(<TableNode id={TABLE_ID} data={data} />)
+    return { onJumpToTable }
+  }
+
+  it('calls onJumpToTable with the related table id when the row is clicked', () => {
+    const { onJumpToTable } = renderWithJumpRow()
+
+    fireEvent.click(screen.getByTestId('relations-panel-row'))
+
+    expect(onJumpToTable).toHaveBeenCalledWith(RELATED_TABLE_ID)
+  })
+
+  it('calls onJumpToTable with the related table id on Enter keydown', () => {
+    const { onJumpToTable } = renderWithJumpRow()
+
+    fireEvent.keyDown(screen.getByTestId('relations-panel-row'), {
+      key: 'Enter',
+    })
+
+    expect(onJumpToTable).toHaveBeenCalledWith(RELATED_TABLE_ID)
+  })
+
+  it('does not make the row interactive when onJumpToTable is not provided', () => {
+    const data = makeTableData({
+      isRelationsPreviewOpen: true,
+      edges: [makeJumpRelationEdge()],
+      relationsEdges: [makeJumpRelationEdge()],
+      tableNameById: new Map([[RELATED_TABLE_ID, 'Orders']]),
+    })
+    render(<TableNode id={TABLE_ID} data={data} />)
+
+    const row = screen.getByTestId('relations-panel-row')
+    expect(row.getAttribute('role')).toBeNull()
+  })
+})
+
+// ============================================================================
 // Suite S6 — DragHandle component tests (direct rendering)
 // ============================================================================
 

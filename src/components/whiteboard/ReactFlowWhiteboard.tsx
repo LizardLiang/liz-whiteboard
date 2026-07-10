@@ -482,6 +482,21 @@ function ReactFlowWhiteboardInner({
     setFocusRequestToken((token) => token + 1)
   }, [])
 
+  // GH #138 — jump to a related table from the relations-preview panel: pan
+  // + normalized zoom + active-highlight (reusing the search-palette focus
+  // pipeline above) AND re-anchor the panel itself to the target table.
+  // Re-anchor is atomic: relationsPreviewTableId is a single value, so
+  // setting it to tableId closes the source panel and opens the target's in
+  // one state write — no conflict with the focusedTableId cleanup effect
+  // below (that one guards the Focus *modal*, a different piece of state).
+  const handleJumpToRelatedTable = useCallback(
+    (tableId: string) => {
+      handleNavigateToTable(tableId)
+      setRelationsPreviewTableId(tableId)
+    },
+    [handleNavigateToTable],
+  )
+
   // Cmd/Ctrl+K opens the search palette from anywhere on the whiteboard.
   // preventDefault suppresses the browser's own Ctrl+K (URL/search bar).
   // Skipped while typing in a form field so the key still works normally
@@ -591,6 +606,8 @@ function ReactFlowWhiteboardInner({
               onTableNoteSave: handleTableNoteSaveRef.current,
               onFocusTable: (tableId: string) =>
                 handleFocusTableRef.current(tableId),
+              onJumpToTable: (tableId: string) =>
+                handleJumpToRelatedTableRef.current(tableId),
               onExportDdl: (tableId: string, dialect: Dialect) =>
                 handleExportDdlRef.current(tableId, dialect),
               onPreviewRelations: (tableId: string) =>
@@ -643,6 +660,7 @@ function ReactFlowWhiteboardInner({
             onRequestTableDelete: prev.data.onRequestTableDelete,
             onTableNoteSave: prev.data.onTableNoteSave,
             onFocusTable: prev.data.onFocusTable,
+            onJumpToTable: prev.data.onJumpToTable,
             onExportDdl: prev.data.onExportDdl,
             onPreviewRelations: prev.data.onPreviewRelations,
             // #135: preserve canonical edge data across an initialNodes re-sync
@@ -1498,6 +1516,7 @@ function ReactFlowWhiteboardInner({
   const handleRequestTableDeleteRef = useRef(handleRequestTableDelete)
   const handleTableNoteSaveRef = useRef(handleTableNoteSave)
   const handleFocusTableRef = useRef(handleFocusTable)
+  const handleJumpToRelatedTableRef = useRef(handleJumpToRelatedTable)
   const handleTogglePreviewTableRef = useRef(handleTogglePreviewTable)
   const handleExportDdlRef = useRef(handleExportDdl)
   const handleColumnReorderRef = useRef(handleColumnReorder)
@@ -1524,6 +1543,9 @@ function ReactFlowWhiteboardInner({
   useEffect(() => {
     handleFocusTableRef.current = handleFocusTable
   }, [handleFocusTable])
+  useEffect(() => {
+    handleJumpToRelatedTableRef.current = handleJumpToRelatedTable
+  }, [handleJumpToRelatedTable])
   useEffect(() => {
     handleTogglePreviewTableRef.current = handleTogglePreviewTable
   }, [handleTogglePreviewTable])
@@ -1555,6 +1577,8 @@ function ReactFlowWhiteboardInner({
           onTableNoteSave: handleTableNoteSaveRef.current,
           onFocusTable: (tableId: string) =>
             handleFocusTableRef.current(tableId),
+          onJumpToTable: (tableId: string) =>
+            handleJumpToRelatedTableRef.current(tableId),
           onExportDdl: (tableId: string, dialect: Dialect) =>
             handleExportDdlRef.current(tableId, dialect),
           onPreviewRelations: (tableId: string) =>
@@ -1600,6 +1624,8 @@ function ReactFlowWhiteboardInner({
           onTableNoteSave: handleTableNoteSaveRef.current,
           onFocusTable: (tableId: string) =>
             handleFocusTableRef.current(tableId),
+          onJumpToTable: (tableId: string) =>
+            handleJumpToRelatedTableRef.current(tableId),
           onExportDdl: (tableId: string, dialect: Dialect) =>
             handleExportDdlRef.current(tableId, dialect),
           onPreviewRelations: (tableId: string) =>

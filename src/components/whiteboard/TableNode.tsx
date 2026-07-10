@@ -88,6 +88,7 @@ export const TableNode = memo(
       onColumnDuplicate,
       onRequestTableDelete,
       onFocusTable,
+      onJumpToTable,
       onExportDdl,
       onPreviewRelations,
       areas,
@@ -860,6 +861,11 @@ export const TableNode = memo(
               table={table}
               relatedEdges={relatedEdges}
               tableNameById={tableNameById}
+              onJumpToTable={
+                onJumpToTable
+                  ? (id: string) => onJumpToTable(id)
+                  : undefined
+              }
             />
           )}
 
@@ -902,6 +908,7 @@ export const TableNode = memo(
     if (prev.data.onRequestTableDelete !== next.data.onRequestTableDelete)
       return false
     if (prev.data.onFocusTable !== next.data.onFocusTable) return false
+    if (prev.data.onJumpToTable !== next.data.onJumpToTable) return false
     if (prev.data.onExportDdl !== next.data.onExportDdl) return false
     if (prev.data.onColumnReorder !== next.data.onColumnReorder) return false
     if (prev.data.emitColumnReorder !== next.data.emitColumnReorder)

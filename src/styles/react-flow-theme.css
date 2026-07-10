@@ -160,6 +160,71 @@
 }
 
 /* ----------------------------------------------------------------------------
+ * Jump-to-related-table pulse (GH #138) — one-shot ~1s landing cue applied
+ * imperatively (mirrors the GH #121 `.rf-hover-highlighted` DOM-class
+ * pattern above) to the target's `.react-flow__node[data-id]` wrapper right
+ * after `fitView` completes a jump-triggered navigation. Composes with the
+ * persistent `isActiveHighlighted`/`selected` inline `box-shadow` already
+ * applied to the same `.react-flow__node-erTable` element (the "select" half
+ * of the landing cue) by animating `outline` instead of `box-shadow`: an
+ * animation running on a property overrides every other declaration for
+ * that property (including inline styles) for its full duration when it has
+ * no fill-mode, so reusing `box-shadow` here would hide the persistent
+ * selection ring for the whole pulse instead of layering on top of it.
+ * `outline` paints as an independent layer outside the box-shadow ring, so
+ * both stay visible together. Respects prefers-reduced-motion.
+ * ---------------------------------------------------------------------------- */
+@keyframes jumpPulse {
+  0% {
+    outline-color: var(--rf-edge-glow);
+    outline-offset: 0px;
+  }
+  70% {
+    outline-color: rgba(0, 0, 0, 0);
+    outline-offset: 12px;
+  }
+  100% {
+    outline-color: rgba(0, 0, 0, 0);
+    outline-offset: 12px;
+  }
+}
+
+.react-flow__node.jump-pulse .react-flow__node-erTable {
+  outline-style: solid;
+  outline-width: 2px;
+  animation: jumpPulse 1s ease-out;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .react-flow__node.jump-pulse .react-flow__node-erTable {
+    /* outline-style/outline-width above are static (non-animated) base
+     * declarations, so disabling the animation alone would leave a static
+     * outline with the browser-default color visible for the pulse's
+     * duration. Clear outline entirely instead — the persistent
+     * active-highlight/selected box-shadow ring still communicates the
+     * landing cue without motion. */
+    animation: none;
+    outline: none;
+  }
+}
+
+/* ----------------------------------------------------------------------------
+ * Relations panel row interactivity (GH #138) — hover/focus-visible affordance
+ * for the "Related tables" panel rows when jump-to-table is wired up
+ * (onJumpToTable provided). The panel itself uses inline styles (see
+ * TableRelationsPanel.tsx), but hover/focus pseudo-states can't be expressed
+ * inline, hence this dedicated class.
+ * ---------------------------------------------------------------------------- */
+.relations-panel-row-btn:hover {
+  background: var(--rf-table-hover-bg);
+}
+
+.relations-panel-row-btn:focus-visible {
+  outline: 2px solid var(--rf-edge-stroke-selected);
+  outline-offset: 2px;
+}
+
+/* ----------------------------------------------------------------------------
  * Relationship Edge Styles
  * ---------------------------------------------------------------------------- */
 
