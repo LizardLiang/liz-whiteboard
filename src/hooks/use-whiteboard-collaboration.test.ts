@@ -392,3 +392,112 @@ describe('useWhiteboardCollaboration — relationship events', () => {
     expect(removedEvents).toContain('relationship:deleted')
   })
 })
+
+describe('useWhiteboardCollaboration — table creation sync (GH #125)', () => {
+  const whiteboardId = 'wb-001'
+  const userId = 'user-current'
+
+  let onPositionUpdate: ReturnType<typeof vi.fn>
+  let onTableCreated: ReturnType<typeof vi.fn>
+
+  // onTableCreated is the 13th positional param — pad the unused slots with
+  // undefined to reach it, matching this file's existing convention (see the
+  // relationship-events describe block above).
+  const renderWithOnTableCreated = () =>
+    renderHook(() =>
+      useWhiteboardCollaboration(
+        whiteboardId,
+        userId,
+        onPositionUpdate,
+        undefined, // onTableDeleted
+        undefined, // onTableError
+        undefined, // onRelationshipDeleted
+        undefined, // onRelationshipError
+        undefined, // onRelationshipUpdated
+        undefined, // onBulkPositionUpdate
+        true, // enabled
+        undefined, // onTableUpdated
+        undefined, // onTableUpdateError
+        onTableCreated,
+      ),
+    )
+
+  beforeEach(() => {
+    onPositionUpdate = vi.fn()
+    onTableCreated = vi.fn()
+    vi.clearAllMocks()
+  })
+
+  it('TC-TC-125-01: registers table:created listener on mount', () => {
+    renderWithOnTableCreated()
+
+    const registeredEvents = mockOn.mock.calls.map(([event]) => event)
+    expect(registeredEvents).toContain('table:created')
+  })
+
+  it('TC-TC-125-02: table:created from another user triggers onTableCreated with the full payload', () => {
+    renderWithOnTableCreated()
+
+    const createdCall = mockOn.mock.calls.find(
+      ([event]) => event === 'table:created',
+    )
+    const handler = createdCall?.[1]
+    expect(handler).toBeDefined()
+
+    const payload = {
+      id: 'tbl-new',
+      whiteboardId,
+      name: 'widgets',
+      description: null,
+      positionX: 100,
+      positionY: 200,
+      width: 240,
+      height: 160,
+      createdAt: new Date(),
+      updatedAt: new Date(),
+      createdBy: 'user-other',
+    }
+
+    act(() => {
+      handler(payload)
+    })
+
+    expect(onTableCreated).toHaveBeenCalledWith(payload)
+  })
+
+  it('TC-TC-125-03: table:created from current user is ignored (no double-apply)', () => {
+    renderWithOnTableCreated()
+
+    const createdCall = mockOn.mock.calls.find(
+      ([event]) => event === 'table:created',
+    )
+    const handler = createdCall?.[1]
+
+    act(() => {
+      handler({
+        id: 'tbl-new',
+        whiteboardId,
+        name: 'widgets',
+        description: null,
+        positionX: 100,
+        positionY: 200,
+        width: 240,
+        height: 160,
+        createdAt: new Date(),
+        updatedAt: new Date(),
+        createdBy: userId, // same user — already applied optimistically
+      })
+    })
+
+    expect(onTableCreated).not.toHaveBeenCalled()
+  })
+
+  it('TC-TC-125-04: removes the table:created listener on unmount', () => {
+    const { unmount } = renderWithOnTableCreated()
+
+    unmount()
+
+    const removedEvents = mockOff.mock.calls.map(([event]) => event)
+    expect(removedEvents).toContain('table:created')
+  })
+})

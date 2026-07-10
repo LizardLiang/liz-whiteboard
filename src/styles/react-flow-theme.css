@@ -141,6 +141,25 @@
 }
 
 /* ----------------------------------------------------------------------------
+ * Hover Highlight (GH #121 perf) — toggled imperatively on React Flow's own
+ * `.react-flow__node[data-id]` wrapper element by ReactFlowCanvas.tsx's hover
+ * effect, NOT by setNodes/React re-render, so hovering a table on a large
+ * board doesn't rebuild the full node array. Mirrors the `.highlighted`
+ * node-array-driven look (thin selected-color ring + full opacity + raised
+ * z-index). `!important` intentionally wins over the inline styles React
+ * Flow/TableNode set, so removing the class cleanly reverts to whatever the
+ * node-array-driven (click/relations-preview) state left in place.
+ * ---------------------------------------------------------------------------- */
+.react-flow__node.rf-hover-highlighted {
+  z-index: 1000 !important;
+}
+
+.react-flow__node.rf-hover-highlighted .react-flow__node-erTable {
+  opacity: 1 !important;
+  box-shadow: 0 0 0 1px var(--rf-edge-stroke-selected) !important;
+}
+
+/* ----------------------------------------------------------------------------
  * Relationship Edge Styles
  * ---------------------------------------------------------------------------- */
 

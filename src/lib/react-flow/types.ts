@@ -62,9 +62,6 @@ export interface TableNodeData extends Record<string, unknown> {
   /** Whether this table is highlighted due to relationship with active table */
   isHighlighted: boolean
 
-  /** Whether this table is currently hovered */
-  isHovered: boolean
-
   /**
    * Whether this table's relations panel is currently expanded, driven by
    * the `r` shortcut / context menu — computed centrally in

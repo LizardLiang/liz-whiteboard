@@ -28,6 +28,7 @@ import {
 import { MessageCircle, Minimize2, SquareDashed } from 'lucide-react'
 import { toast } from 'sonner'
 import { ReactFlowCanvas } from './ReactFlowCanvas'
+import { DevFpsOverlay } from './DevFpsOverlay'
 import { ConnectionStatusIndicator } from './ConnectionStatusIndicator'
 import { DeleteTableDialog } from './DeleteTableDialog'
 import { Toolbar } from './Toolbar'
@@ -46,7 +47,7 @@ import type {
   ShowMode,
   TableNodeType,
 } from '@/lib/react-flow/types'
-import type { Column, CommentWithAuthor } from '@/data/models'
+import type { Column, CommentWithAuthor, DiagramTable } from '@/data/models'
 import type { EffectiveRole } from '@/data/permission'
 import type {
   Cardinality,
@@ -64,6 +65,7 @@ import type { ReconcileAfterDropParams } from '@/hooks/use-column-reorder-mutati
 import type { Dialect } from '@/lib/ddl-generator'
 import type { ExportImageDialogOptions } from './ExportImageDialog'
 import { exportDiagramImage } from '@/lib/export/export-image'
+import { ForceFullDetailContext } from '@/lib/react-flow/level-of-detail'
 import { hasMinimumRole } from '@/lib/auth/permissions'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
@@ -86,6 +88,7 @@ import {
 import { parseColumnHandleId } from '@/lib/react-flow/edge-routing'
 import { filterValidEdges } from '@/lib/react-flow/highlighting'
 import { convertTablesToNodes } from '@/lib/react-flow/convert-to-nodes'
+import { applyTableCreated } from '@/lib/react-flow/apply-table-created'
 import { resolvePendingPositions } from '@/lib/react-flow/resolve-pending-positions'
 import { convertRelationshipsToEdges } from '@/lib/react-flow/convert-to-edges'
 import {
@@ -359,6 +362,12 @@ function ReactFlowWhiteboardInner({
   // read-only sub-canvas TableFocusOverlay renders in its own nested
   // ReactFlowProvider (Issue #104).
   const canvasWrapperRef = useRef<HTMLDivElement>(null)
+
+  // Forces every TableNode to full detail (bypassing level-of-detail
+  // collapse) while an image export is capturing the canvas (GH #121) — see
+  // handleExport below and src/lib/react-flow/level-of-detail.ts.
+  const [forceFullDetailForExport, setForceFullDetailForExport] =
+    useState(false)
 
   // Local React Flow state (will be updated by collaboration)
   const [nodes, setNodes] = useState<Array<TableNodeType>>(initialNodes)
@@ -663,6 +672,21 @@ function ReactFlowWhiteboardInner({
     [columnReorderMutations],
   )
 
+  // Callback for when a remote user creates a table (GH #125). Patches the
+  // canvas's source-of-truth query cache (['whiteboard', whiteboardId], FLAT
+  // shape) via the pure applyTableCreated reducer — the existing
+  // initialNodes-sync effect above then builds a fully-wired node for the new
+  // table id automatically (same mechanism patchWhiteboardTablePositions
+  // already relies on for peer position updates). No manual setNodes needed.
+  const handleTableCreated = useCallback(
+    (table: DiagramTable & { createdBy: string }) => {
+      queryClient.setQueryData(['whiteboard', whiteboardId], (old: any) =>
+        applyTableCreated(old, table),
+      )
+    },
+    [queryClient, whiteboardId],
+  )
+
   // Ref for onTableError — breaks circular dependency between useWhiteboardCollaboration and useTableMutations
   const onTableErrorRef = useRef<(data: any) => void>(() => {})
 
@@ -808,6 +832,8 @@ function ReactFlowWhiteboardInner({
     useCallback((data: any) => {
       onTableUpdateErrorRef.current(data)
     }, []),
+    // GH #125: live table-creation sync — the 14th positional param.
+    handleTableCreated,
   )
 
   // Column collaboration callbacks (incoming events from other users)
@@ -2767,14 +2793,28 @@ function ReactFlowWhiteboardInner({
           ? (cachedWhiteboard as { name?: string }).name
           : undefined
 
-      await exportDiagramImage({
-        nodes: getNodes(),
-        viewportEl,
-        format,
-        background,
-        themeBg,
-        filename: whiteboardName,
+      // Level-of-detail (GH #121) renders collapsed name-only tables below a
+      // zoom threshold — since this captures the LIVE DOM (not a fresh
+      // render at a synthetic zoom), force every TableNode to full detail
+      // and wait two animation frames for the re-render + paint to land
+      // before rasterizing, then restore normal LOD behavior afterward.
+      setForceFullDetailForExport(true)
+      await new Promise<void>((resolve) => {
+        requestAnimationFrame(() => requestAnimationFrame(() => resolve()))
       })
+
+      try {
+        await exportDiagramImage({
+          nodes: getNodes(),
+          viewportEl,
+          format,
+          background,
+          themeBg,
+          filename: whiteboardName,
+        })
+      } finally {
+        setForceFullDetailForExport(false)
+      }
     },
     [queryClient, whiteboardId, getNodes],
   )
@@ -2907,40 +2947,45 @@ function ReactFlowWhiteboardInner({
               {commentToolActive ? 'Click canvas...' : 'Add comment'}
             </Button>
           )}
-          <ReactFlowCanvas
-            initialNodes={nodes}
-            initialEdges={edges}
-            areaNodes={areaNodes}
-            commentNodes={commentNodes}
-            onAreaDragStop={handleAreaDragStop}
-            onAreaDelete={deleteAreaMutation}
-            onConnect={handleConnect}
-            onNodeDragStop={handleNodeDragStop}
-            nodesDraggable={nodesDraggable}
-            panOnDrag={!isColumnDragging}
-            showMinimap={showMinimap}
-            minimapExpanded={minimapExpanded}
-            onMinimapCollapse={() => setMinimapExpanded(false)}
-            showControls={showControls}
-            showBackground={true}
-            fitViewOptions={{
-              padding: 0.2,
-              includeHiddenNodes: false,
-            }}
-            relationsPreviewTableId={relationsPreviewTableId}
-            onPaneClick={(event) => {
-              setRelationsPreviewTableId(null)
-              if (!commentToolActive) return
-              const pos = reactFlowInstance.screenToFlowPosition({
-                x: event.clientX,
-                y: event.clientY,
-              })
-              setPendingCommentPosition(pos)
-              setCommentToolActive(false)
-            }}
-            focusRequestTableId={focusRequestTableId}
-            focusRequestToken={focusRequestToken}
-          />
+          <ForceFullDetailContext.Provider value={forceFullDetailForExport}>
+            <ReactFlowCanvas
+              initialNodes={nodes}
+              initialEdges={edges}
+              areaNodes={areaNodes}
+              commentNodes={commentNodes}
+              onAreaDragStop={handleAreaDragStop}
+              onAreaDelete={deleteAreaMutation}
+              onConnect={handleConnect}
+              onNodeDragStop={handleNodeDragStop}
+              nodesDraggable={nodesDraggable}
+              panOnDrag={!isColumnDragging}
+              showMinimap={showMinimap}
+              minimapExpanded={minimapExpanded}
+              onMinimapCollapse={() => setMinimapExpanded(false)}
+              showControls={showControls}
+              showBackground={true}
+              fitViewOptions={{
+                padding: 0.2,
+                includeHiddenNodes: false,
+              }}
+              relationsPreviewTableId={relationsPreviewTableId}
+              onPaneClick={(event) => {
+                setRelationsPreviewTableId(null)
+                if (!commentToolActive) return
+                const pos = reactFlowInstance.screenToFlowPosition({
+                  x: event.clientX,
+                  y: event.clientY,
+                })
+                setPendingCommentPosition(pos)
+                setCommentToolActive(false)
+              }}
+              focusRequestTableId={focusRequestTableId}
+              focusRequestToken={focusRequestToken}
+            />
+          </ForceFullDetailContext.Provider>
+          {/* Dev-only FPS/frame-time HUD (GH #121 perf) — tree-shaken out of
+              production builds, never rendered outside a dev server. */}
+          {import.meta.env.DEV && <DevFpsOverlay />}
 
           {/* New free-point comment dialog (GH #110) — opened after a
               placement click; body cannot be empty per createCommentSchema,

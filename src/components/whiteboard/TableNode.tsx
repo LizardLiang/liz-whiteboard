@@ -5,9 +5,11 @@
  */
 
 import { memo, useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import { useStore } from '@xyflow/react'
 import { Link2, MessageCircle } from 'lucide-react'
 import { toast } from 'sonner'
 import { ColumnRow } from './column/ColumnRow'
+import { ColumnHandles } from './column/ColumnHandles'
 import { AddColumnRow } from './column/AddColumnRow'
 import { DeleteColumnDialog } from './column/DeleteColumnDialog'
 import { InsertionLine } from './column/InsertionLine'
@@ -26,6 +28,10 @@ import type { DataType } from '@/data/schema'
 import type { Dialect } from '@/lib/ddl-generator'
 import { getDirectlyRelatedTableIds } from '@/lib/react-flow/highlighting'
 import { usePrefersReducedMotion } from '@/hooks/use-prefers-reduced-motion'
+import {
+  LOD_ZOOM_THRESHOLD,
+  useForceFullDetail,
+} from '@/lib/react-flow/level-of-detail'
 
 // Row height constant for InsertionLine positioning (matches minHeight in ColumnRow)
 const COLUMN_ROW_HEIGHT = 28
@@ -36,6 +42,37 @@ interface TableNodeProps {
   selected?: boolean
 }
 
+/**
+ * Minimal column row rendered when LOD-collapsed (GH #121 perf, opt #3) —
+ * keeps ONLY the 4 column-level handles, at the same row height as the full
+ * ColumnRow, so edge routing/drag-to-connect never lose their anchor point
+ * while zoomed out (column-level handles are fragile and required — see
+ * ColumnRow.tsx / project conventions). Skips every other bit of per-column
+ * DOM: drag handle, constraint badges, name/type text, tooltips, note/
+ * duplicate/delete buttons — the actual DOM-weight win.
+ */
+function LodColumnRow({
+  column,
+  tableId,
+  isLast,
+}: {
+  column: Column
+  tableId: string
+  isLast: boolean
+}) {
+  return (
+    <div
+      style={{
+        position: 'relative',
+        minHeight: `${COLUMN_ROW_HEIGHT}px`,
+        borderBottom: isLast ? 'none' : '1px solid var(--rf-table-border)',
+      }}
+    >
+      <ColumnHandles tableId={tableId} columnId={column.id} />
+    </div>
+  )
+}
+
 export const TableNode = memo(
   ({ data, selected }: TableNodeProps) => {
     const { canEdit } = useWhiteboardPermissions()
@@ -44,7 +81,6 @@ export const TableNode = memo(
       showMode,
       isActiveHighlighted,
       isHighlighted,
-      isHovered,
       isRelationsPreviewOpen,
       onColumnCreate,
       onColumnUpdate,
@@ -100,14 +136,31 @@ export const TableNode = memo(
     >([])
     const columnRowsRef = useRef<HTMLDivElement | null>(null)
 
-    // Determine visual state classes
+    // Determine visual state classes. Hover highlight is driven imperatively
+    // by ReactFlowCanvas.tsx's DOM-class effect (`.rf-hover-highlighted` in
+    // react-flow-theme.css) instead of a setNodes-driven prop, so a hover no
+    // longer rebuilds/re-renders the full node array.
     const highlightClass = isActiveHighlighted
       ? 'active-highlighted'
       : isHighlighted
         ? 'highlighted'
-        : isHovered
-          ? 'hovered'
-          : ''
+        : ''
+
+    // Level-of-detail (GH #121 perf, opt #3): below LOD_ZOOM_THRESHOLD,
+    // render each column as a minimal handles-only LodColumnRow instead of
+    // the full interactive ColumnRow (columns are still mapped — see the
+    // .map call below — so edge anchors survive) — cuts DOM weight
+    // dramatically on a dense, zoomed-out board. `useStore` selects a
+    // derived boolean (not the raw zoom number) so this only re-renders when
+    // the board crosses the threshold, not on every pan/zoom tick.
+    // forceFullDetail (from ForceFullDetailContext) overrides this during
+    // image export, which rasterizes the live DOM and must always capture
+    // full detail regardless of the current on-screen zoom.
+    const forceFullDetail = useForceFullDetail()
+    const isZoomedBelowLodThreshold = useStore(
+      (s) => s.transform[2] < LOD_ZOOM_THRESHOLD,
+    )
+    const isLodCollapsed = isZoomedBelowLodThreshold && !forceFullDetail
 
     // Pre-compute a map from columnId to affected edges for fast delete checks
     const columnEdgeMap = useMemo(() => {
@@ -167,6 +220,36 @@ export const TableNode = memo(
     const handleCancelEdit = useCallback(() => {
       setEditingField(null)
     }, [])
+
+    // GH #121 data-loss fix: LOD-collapsing the row a user is mid-edit on
+    // would unmount ColumnRow (and its InlineNameEditor/DataTypeSelector)
+    // without ever firing blur/focusout (WHATWG ancestor-unmount quirk),
+    // silently dropping typed-but-uncommitted text and leaving `editingField`
+    // dangling (so zooming back in re-opens an editor the user never closed).
+    // A plain `useEffect` keyed on `isLodCollapsed` can't fix this on its own
+    // — the render that flips `isLodCollapsed` true is the SAME commit that
+    // unmounts the row, so by the time any effect runs the live input is
+    // already gone. The per-column carve-out below (see the columns .map)
+    // keeps the row currently being edited mounted as a full ColumnRow
+    // through the collapse; this effect then forces that still-live row to
+    // resolve through its OWN existing, already-correct handlers — a real
+    // `.blur()` call for a name edit (InlineNameEditor's blur commits, and
+    // already guards empty input by canceling instead — see
+    // InlineNameEditor.tsx), or a direct cancel for a dataType edit
+    // (DataTypeSelector's own close-without-selection path also cancels —
+    // see DataTypeSelector.tsx — and there's no persisted value to lose for
+    // an unmade combobox selection). Only after this resolves (editingField
+    // clears) is the row free to actually collapse to LodColumnRow.
+    useEffect(() => {
+      if (!isLodCollapsed || !editingField) return
+      if (editingField.field === 'name') {
+        columnRowsRef.current
+          ?.querySelector<HTMLInputElement>('input[type="text"]')
+          ?.blur()
+      } else {
+        handleCancelEdit()
+      }
+    }, [isLodCollapsed, editingField, handleCancelEdit])
 
     const handleToggleConstraint = useCallback(
       (
@@ -486,9 +569,7 @@ export const TableNode = memo(
             minWidth: `${minWidth}px`,
             maxWidth: '500px',
             opacity:
-              isActiveHighlighted || isHighlighted || isHovered || selected
-                ? 1
-                : 0.7,
+              isActiveHighlighted || isHighlighted || selected ? 1 : 0.7,
             transition: 'opacity 0.2s, box-shadow 0.2s',
             boxShadow:
               isActiveHighlighted || selected
@@ -675,46 +756,68 @@ export const TableNode = memo(
             </div>
           </div>
 
-          {/* Columns List */}
+          {/* Columns List — LOD-collapsed (GH #121) below LOD_ZOOM_THRESHOLD:
+              still maps every column (handles must stay so edge routing/
+              drag-to-connect keep working while zoomed out) but renders the
+              minimal LodColumnRow instead of the full interactive ColumnRow. */}
           {showMode !== 'TABLE_NAME' && (
             <div
               ref={columnRowsRef}
               className="table-columns"
               style={{ position: 'relative' }}
             >
-              {/* InsertionLine — shows drop position during drag */}
-              <InsertionLine
-                visible={activeId !== null && overIndex !== null}
-                targetIndex={overIndex ?? 0}
-                rowHeight={COLUMN_ROW_HEIGHT}
-                prefersReducedMotion={prefersReducedMotion}
-              />
-              {visibleColumns.map((column: Column, index: number) => (
-                <ColumnRow
-                  key={column.id}
-                  column={column}
-                  tableId={table.id}
-                  isLast={index === visibleColumns.length - 1}
-                  editingField={editingField}
-                  onStartEdit={handleStartEdit}
-                  onCommitEdit={handleCommitEdit}
-                  onCancelEdit={handleCancelEdit}
-                  onToggleConstraint={handleToggleConstraint}
-                  onDelete={handleDeleteColumn}
-                  onDuplicate={handleDuplicateColumn}
-                  onDescriptionUpdate={handleDescriptionUpdate}
-                  edges={edges}
-                  showMode={showMode}
-                  isDraggingActive={activeId === column.id}
-                  onDragHandlePointerDown={(e) =>
-                    handleDragHandlePointerDown(e, column.id)
-                  }
+              {/* InsertionLine — shows drop position during drag (reorder
+                  drag can't start while collapsed — no DragHandle rendered). */}
+              {!isLodCollapsed && (
+                <InsertionLine
+                  visible={activeId !== null && overIndex !== null}
+                  targetIndex={overIndex ?? 0}
+                  rowHeight={COLUMN_ROW_HEIGHT}
+                  prefersReducedMotion={prefersReducedMotion}
                 />
-              ))}
+              )}
+              {visibleColumns.map((column: Column, index: number) => {
+                // GH #121 data-loss fix: never LOD-collapse the row currently
+                // mid-edit — see the resolveOpenEditOnLodCollapse effect
+                // above for why this carve-out is required (a plain effect
+                // alone runs too late to save the live, uncommitted input).
+                const isEditingThisColumn =
+                  editingField?.columnId === column.id
+                return isLodCollapsed && !isEditingThisColumn ? (
+                  <LodColumnRow
+                    key={column.id}
+                    column={column}
+                    tableId={table.id}
+                    isLast={index === visibleColumns.length - 1}
+                  />
+                ) : (
+                  <ColumnRow
+                    key={column.id}
+                    column={column}
+                    tableId={table.id}
+                    isLast={index === visibleColumns.length - 1}
+                    editingField={editingField}
+                    onStartEdit={handleStartEdit}
+                    onCommitEdit={handleCommitEdit}
+                    onCancelEdit={handleCancelEdit}
+                    onToggleConstraint={handleToggleConstraint}
+                    onDelete={handleDeleteColumn}
+                    onDuplicate={handleDuplicateColumn}
+                    onDescriptionUpdate={handleDescriptionUpdate}
+                    edges={edges}
+                    showMode={showMode}
+                    isDraggingActive={activeId === column.id}
+                    onDragHandlePointerDown={(e) =>
+                      handleDragHandlePointerDown(e, column.id)
+                    }
+                  />
+                )
+              })}
 
               {/* Add Column Row — hidden for view-only viewers (server also
-                  blocks the underlying createColumnsFn mutation). */}
-              {canEdit && (
+                  blocks the underlying createColumnsFn mutation) and while
+                  LOD-collapsed (zoom in to add columns). */}
+              {canEdit && !isLodCollapsed && (
                 <AddColumnRow
                   tableId={table.id}
                   existingColumns={columns}
@@ -755,7 +858,6 @@ export const TableNode = memo(
     if (prev.data.isActiveHighlighted !== next.data.isActiveHighlighted)
       return false
     if (prev.data.isHighlighted !== next.data.isHighlighted) return false
-    if (prev.data.isHovered !== next.data.isHovered) return false
     if (prev.data.isRelationsPreviewOpen !== next.data.isRelationsPreviewOpen)
       return false
     if (prev.data.onPreviewRelations !== next.data.onPreviewRelations)

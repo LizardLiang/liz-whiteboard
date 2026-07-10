@@ -36,7 +36,6 @@ export function convertToReactFlowNodes(
       },
       isActiveHighlighted: false,
       isHighlighted: false,
-      isHovered: false,
       isRelationsPreviewOpen: false,
       showMode: 'ALL_FIELDS',
     },

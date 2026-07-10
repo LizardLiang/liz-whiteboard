@@ -203,10 +203,18 @@ function WhiteboardEditor() {
 
       return { previousData }
     },
-    onSuccess: (createdTable) => {
-      // Emit WebSocket event for other users
-      emit('table:create', createdTable)
-
+    // GH #125: no longer re-emits 'table:create' here. That re-submitted the
+    // already-persisted row (DB nulls) back through the socket's
+    // `table:create` handler for re-validation + re-insert — it always threw
+    // a ZodError (createTableSchema is .optional(), not .nullable()) before
+    // the handler's own socket.broadcast.emit('table:created', ...) could
+    // run, so peers never received the broadcast; even a schema fix would
+    // then hit the whiteboardId+name UNIQUE constraint on the duplicate
+    // insert attempt. The server now broadcasts `table:created` itself, from
+    // createTableFn's handler (src/lib/diagram-table/handlers.ts), right
+    // after persisting — this callback only needs to keep the local caches
+    // fresh for the creating client.
+    onSuccess: () => {
       // Invalidate and refetch
       queryClient.invalidateQueries({
         queryKey: ['whiteboard-page', whiteboardId],
@@ -315,15 +323,18 @@ function WhiteboardEditor() {
   }, [activeTab, whiteboardData, isTextSyncEnabled, textSource])
 
   // WebSocket event listeners for real-time updates
+  //
+  // GH #125: this effect used to also register a `table:created` listener
+  // here, but it never fired live (a dead/non-effective subscription — see
+  // use-whiteboard-collaboration.ts for the working socket path). Live
+  // table-creation sync is now handled entirely by
+  // useWhiteboardCollaboration's table:created effect + ReactFlowWhiteboard's
+  // handleTableCreated, which patch the canvas's own query cache. Removed
+  // rather than reinstated here. The sibling handlers below
+  // (relationship:created, text:updated, whiteboard:restored) share the same
+  // family of non-firing-subscription risk but are explicitly out of scope
+  // for #125 — flagged as a follow-up, not touched in this change.
   useEffect(() => {
-    const handleTableCreated = (table: any) => {
-      console.log('Table created by another user:', table)
-      queryClient.invalidateQueries({
-        queryKey: ['whiteboard-page', whiteboardId],
-      })
-      queryClient.invalidateQueries({ queryKey: ['whiteboard', whiteboardId] })
-    }
-
     const handleTableMoved = (data: {
       tableId: string
       positionX: number
@@ -396,14 +407,12 @@ function WhiteboardEditor() {
       })
     }
 
-    on('table:created', handleTableCreated)
     on('table:moved', handleTableMoved)
     on('relationship:created', handleRelationshipCreated)
     on('text:updated', handleTextUpdated)
     on('whiteboard:restored', handleWhiteboardRestored)
 
     return () => {
-      off('table:created', handleTableCreated)
       off('table:moved', handleTableMoved)
       off('relationship:created', handleRelationshipCreated)
       off('text:updated', handleTextUpdated)

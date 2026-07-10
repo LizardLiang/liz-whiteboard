@@ -6,24 +6,53 @@
  */
 
 import { memo, useCallback, useState } from 'react'
-import { Handle, Position } from '@xyflow/react'
 import { useWhiteboardPermissions } from '../whiteboard-permissions-context'
 import { InlineNameEditor } from './InlineNameEditor'
 import { DataTypeSelector } from './DataTypeSelector'
 import { ConstraintBadges } from './ConstraintBadges'
 import { ColumnNotePopover } from './ColumnNotePopover'
 import { DragHandle } from './DragHandle'
+import { ColumnHandles } from './ColumnHandles'
 import type { Column } from '@/data/models'
 import type { RelationshipEdgeType, ShowMode } from '@/lib/react-flow/types'
 import type { DataType } from '@/data/schema'
 import type { EditingField } from './types'
-import { createColumnHandleId } from '@/lib/react-flow/edge-routing'
 import {
   Tooltip,
   TooltipContent,
   TooltipProvider,
   TooltipTrigger,
 } from '@/components/ui/tooltip'
+
+/**
+ * Lazily mounts the Tooltip machinery (GH #121 perf, opt #4) — when
+ * `active` is false, renders ONLY the trigger element with none of Radix's
+ * Provider/Root/Trigger/Portal overhead. Only once the row is hovered
+ * (`active` flips true) does the real Tooltip get mounted, at which point a
+ * subsequent pointer move onto the trigger reveals the tooltip as normal.
+ * Column-level connection Handles are NEVER part of this — they stay
+ * unconditionally rendered in ColumnRow below (fragile, required by edge
+ * routing/drag-to-connect).
+ */
+function LazyTooltip({
+  active,
+  content,
+  children,
+}: {
+  active: boolean
+  content: React.ReactNode
+  children: React.ReactElement
+}) {
+  if (!active) return children
+  return (
+    <TooltipProvider>
+      <Tooltip>
+        <TooltipTrigger asChild>{children}</TooltipTrigger>
+        <TooltipContent side="top">{content}</TooltipContent>
+      </Tooltip>
+    </TooltipProvider>
+  )
+}
 
 export interface ColumnRowProps {
   column: Column
@@ -78,6 +107,10 @@ export const ColumnRow = memo(
       editingField?.columnId === column.id && editingField.field === 'dataType'
     const isEditing = isEditingName || isEditingDataType
     const [isHoveringDataType, setIsHoveringDataType] = useState(false)
+    // Row hover (GH #121 perf, opt #4) — gates LazyTooltip below so the
+    // Tooltip machinery only mounts for the row currently under the pointer,
+    // not all of them all the time.
+    const [isRowHovered, setIsRowHovered] = useState(false)
 
     const handleNameDoubleClick = useCallback(
       (e: React.MouseEvent) => {
@@ -126,201 +159,146 @@ export const ColumnRow = memo(
     )
 
     return (
-      <TooltipProvider>
+      <div
+        className={`column-row group${isEditing ? ' editing' : ''}`}
+        onKeyDown={handleKeyDown}
+        onMouseEnter={() => setIsRowHovered(true)}
+        onMouseLeave={() => setIsRowHovered(false)}
+        style={{
+          padding: '4px 16px 4px 8px',
+          borderBottom: isLast ? 'none' : '1px solid var(--rf-table-border)',
+          fontSize: '13px',
+          color: 'var(--rf-table-text)',
+          position: 'relative',
+          display: 'flex',
+          alignItems: 'center',
+          gap: '8px',
+          minHeight: '28px',
+          background: isEditing
+            ? 'var(--rf-column-edit-bg, rgba(99,102,241,0.08))'
+            : 'transparent',
+          outline: 'none',
+          opacity: isDraggingActive ? 0.4 : 1,
+        }}
+      >
+        {/* Drag handle — visible in ALL_FIELDS mode only */}
+        <DragHandle
+          columnName={column.name}
+          isDragging={isDraggingActive}
+          onPointerDown={onDragHandlePointerDown}
+          show={showMode === 'ALL_FIELDS'}
+        />
+        {/* Column-level connection handles (left + right, source + target) */}
+        <ColumnHandles tableId={tableId} columnId={column.id} />
+
+        {/* Constraint Badges */}
+        <ConstraintBadges
+          isPrimaryKey={column.isPrimaryKey}
+          isNullable={column.isNullable}
+          isUnique={column.isUnique}
+          isForeignKey={column.isForeignKey}
+          onToggle={(constraint, value) =>
+            onToggleConstraint(column.id, constraint, value)
+          }
+        />
+
+        {/* Column name */}
         <div
-          className={`column-row group${isEditing ? ' editing' : ''}`}
-          onKeyDown={handleKeyDown}
           style={{
-            padding: '4px 16px 4px 8px',
-            borderBottom: isLast ? 'none' : '1px solid var(--rf-table-border)',
-            fontSize: '13px',
-            color: 'var(--rf-table-text)',
-            position: 'relative',
+            flex: 1,
             display: 'flex',
             alignItems: 'center',
-            gap: '8px',
-            minHeight: '28px',
-            background: isEditing
-              ? 'var(--rf-column-edit-bg, rgba(99,102,241,0.08))'
-              : 'transparent',
-            outline: 'none',
-            opacity: isDraggingActive ? 0.4 : 1,
+            justifyContent: 'space-between',
+            gap: '4px',
+            minWidth: 0,
           }}
         >
-          {/* Drag handle — visible in ALL_FIELDS mode only */}
-          <DragHandle
-            columnName={column.name}
-            isDragging={isDraggingActive}
-            onPointerDown={onDragHandlePointerDown}
-            show={showMode === 'ALL_FIELDS'}
-          />
-          {/* Left-side handles */}
-          <Handle
-            type="source"
-            position={Position.Left}
-            id={createColumnHandleId(tableId, column.id, 'left', 'source')}
-            className="nodrag"
-            style={{ left: '-14px' }}
-          />
-          <Handle
-            type="target"
-            position={Position.Left}
-            id={createColumnHandleId(tableId, column.id, 'left', 'target')}
-            className="nodrag"
-            style={{ left: '-14px' }}
-          />
-
-          {/* Constraint Badges */}
-          <ConstraintBadges
-            isPrimaryKey={column.isPrimaryKey}
-            isNullable={column.isNullable}
-            isUnique={column.isUnique}
-            isForeignKey={column.isForeignKey}
-            onToggle={(constraint, value) =>
-              onToggleConstraint(column.id, constraint, value)
-            }
-          />
-
-          {/* Column name */}
-          <div
-            style={{
-              flex: 1,
-              display: 'flex',
-              alignItems: 'center',
-              justifyContent: 'space-between',
-              gap: '4px',
-              minWidth: 0,
-            }}
-          >
-            {isEditingName ? (
-              <InlineNameEditor
-                value={column.name}
-                onCommit={(newValue) =>
-                  onCommitEdit(column.id, 'name', newValue)
-                }
-                onCancel={onCancelEdit}
-              />
-            ) : (
-              <Tooltip>
-                <TooltipTrigger asChild>
-                  <span
-                    style={{
-                      fontWeight: column.isPrimaryKey ? 600 : 400,
-                      cursor: 'text',
-                      flexShrink: 1,
-                      overflow: 'hidden',
-                      textOverflow: 'ellipsis',
-                      whiteSpace: 'nowrap',
-                    }}
-                    onDoubleClick={handleNameDoubleClick}
-                  >
-                    {column.name}
-                  </span>
-                </TooltipTrigger>
-                <TooltipContent side="top">Double-click to edit</TooltipContent>
-              </Tooltip>
-            )}
-
-            {/* Data type */}
-            {isEditingDataType ? (
-              <DataTypeSelector
-                value={column.dataType as DataType}
-                onSelect={(dt) => onCommitEdit(column.id, 'dataType', dt)}
-                onCancel={onCancelEdit}
-                autoOpen
-              />
-            ) : (
-              <Tooltip>
-                <TooltipTrigger asChild>
-                  <span
-                    style={{
-                      color: isHoveringDataType
-                        ? 'var(--rf-edge-stroke-selected, #6366f1)'
-                        : 'var(--rf-table-text)',
-                      opacity: isHoveringDataType ? 1 : 0.6,
-                      fontSize: '11px',
-                      cursor: 'pointer',
-                      flexShrink: 0,
-                      width: '72px',
-                      textAlign: 'right',
-                      borderRadius: '3px',
-                      padding: '1px 3px',
-                      background: isHoveringDataType
-                        ? 'var(--rf-column-edit-bg, rgba(99,102,241,0.12))'
-                        : 'transparent',
-                      transition: 'background 0.1s, color 0.1s, opacity 0.1s',
-                      textDecorationLine: isHoveringDataType
-                        ? 'underline'
-                        : 'none',
-                      textDecorationStyle: 'dotted',
-                    }}
-                    onDoubleClick={handleDataTypeDoubleClick}
-                    onMouseEnter={() => {
-                      setIsHoveringDataType(true)
-                    }}
-                    onMouseLeave={() => {
-                      setIsHoveringDataType(false)
-                    }}
-                  >
-                    {column.dataType}
-                  </span>
-                </TooltipTrigger>
-                <TooltipContent side="top">
-                  Double-click to edit type
-                </TooltipContent>
-              </Tooltip>
-            )}
-          </div>
-
-          {/* Column note popover — editing a note is a write action; hidden for view-only viewers */}
-          {canEdit && (
-            <ColumnNotePopover
-              description={column.description}
-              onSave={(desc) => onDescriptionUpdate(column.id, desc)}
+          {isEditingName ? (
+            <InlineNameEditor
+              value={column.name}
+              onCommit={(newValue) => onCommitEdit(column.id, 'name', newValue)}
+              onCancel={onCancelEdit}
             />
+          ) : (
+            <LazyTooltip active={isRowHovered} content="Double-click to edit">
+              <span
+                style={{
+                  fontWeight: column.isPrimaryKey ? 600 : 400,
+                  cursor: 'text',
+                  flexShrink: 1,
+                  overflow: 'hidden',
+                  textOverflow: 'ellipsis',
+                  whiteSpace: 'nowrap',
+                }}
+                onDoubleClick={handleNameDoubleClick}
+              >
+                {column.name}
+              </span>
+            </LazyTooltip>
           )}
 
-          {/* Duplicate button — hover visible. Write action, hidden when !canEdit. */}
-          {canEdit && (
-            <Tooltip>
-              <TooltipTrigger asChild>
-                <button
-                  type="button"
-                  aria-label={`Duplicate column ${column.name}`}
-                  onClick={handleDuplicateClick}
-                  className="nodrag nowheel"
-                  style={{
-                    opacity: 0,
-                    flexShrink: 0,
-                    background: 'none',
-                    border: 'none',
-                    cursor: 'pointer',
-                    padding: '2px',
-                    color: 'var(--rf-table-text)',
-                    transition: 'opacity 0.1s',
-                    fontSize: '11px',
-                    lineHeight: 1,
-                  }}
-                  onMouseEnter={(e) => {
-                    ;(e.currentTarget as HTMLButtonElement).style.opacity = '1'
-                  }}
-                  onMouseLeave={(e) => {
-                    ;(e.currentTarget as HTMLButtonElement).style.opacity = '0'
-                  }}
-                >
-                  ⧉
-                </button>
-              </TooltipTrigger>
-              <TooltipContent side="top">Duplicate field</TooltipContent>
-            </Tooltip>
+          {/* Data type */}
+          {isEditingDataType ? (
+            <DataTypeSelector
+              value={column.dataType as DataType}
+              onSelect={(dt) => onCommitEdit(column.id, 'dataType', dt)}
+              onCancel={onCancelEdit}
+              autoOpen
+            />
+          ) : (
+            <LazyTooltip
+              active={isRowHovered}
+              content="Double-click to edit type"
+            >
+              <span
+                style={{
+                  color: isHoveringDataType
+                    ? 'var(--rf-edge-stroke-selected, #6366f1)'
+                    : 'var(--rf-table-text)',
+                  opacity: isHoveringDataType ? 1 : 0.6,
+                  fontSize: '11px',
+                  cursor: 'pointer',
+                  flexShrink: 0,
+                  width: '72px',
+                  textAlign: 'right',
+                  borderRadius: '3px',
+                  padding: '1px 3px',
+                  background: isHoveringDataType
+                    ? 'var(--rf-column-edit-bg, rgba(99,102,241,0.12))'
+                    : 'transparent',
+                  transition: 'background 0.1s, color 0.1s, opacity 0.1s',
+                  textDecorationLine: isHoveringDataType ? 'underline' : 'none',
+                  textDecorationStyle: 'dotted',
+                }}
+                onDoubleClick={handleDataTypeDoubleClick}
+                onMouseEnter={() => {
+                  setIsHoveringDataType(true)
+                }}
+                onMouseLeave={() => {
+                  setIsHoveringDataType(false)
+                }}
+              >
+                {column.dataType}
+              </span>
+            </LazyTooltip>
           )}
+        </div>
 
-          {/* Delete button — hover visible. Write action, hidden when !canEdit. */}
-          {canEdit && (
+        {/* Column note popover — editing a note is a write action; hidden for view-only viewers */}
+        {canEdit && (
+          <ColumnNotePopover
+            description={column.description}
+            onSave={(desc) => onDescriptionUpdate(column.id, desc)}
+          />
+        )}
+
+        {/* Duplicate button — hover visible. Write action, hidden when !canEdit. */}
+        {canEdit && (
+          <LazyTooltip active={isRowHovered} content="Duplicate field">
             <button
               type="button"
-              aria-label={`Delete column ${column.name}`}
-              onClick={handleDeleteClick}
+              aria-label={`Duplicate column ${column.name}`}
+              onClick={handleDuplicateClick}
               className="nodrag nowheel"
               style={{
                 opacity: 0,
@@ -331,7 +309,7 @@ export const ColumnRow = memo(
                 padding: '2px',
                 color: 'var(--rf-table-text)',
                 transition: 'opacity 0.1s',
-                fontSize: '14px',
+                fontSize: '11px',
                 lineHeight: 1,
               }}
               onMouseEnter={(e) => {
@@ -341,27 +319,42 @@ export const ColumnRow = memo(
                 ;(e.currentTarget as HTMLButtonElement).style.opacity = '0'
               }}
             >
-              ×
+              ⧉
             </button>
-          )}
+          </LazyTooltip>
+        )}
 
-          {/* Right-side handles */}
-          <Handle
-            type="source"
-            position={Position.Right}
-            id={createColumnHandleId(tableId, column.id, 'right', 'source')}
-            className="nodrag"
-            style={{ right: '-14px' }}
-          />
-          <Handle
-            type="target"
-            position={Position.Right}
-            id={createColumnHandleId(tableId, column.id, 'right', 'target')}
-            className="nodrag"
-            style={{ right: '-14px' }}
-          />
-        </div>
-      </TooltipProvider>
+        {/* Delete button — hover visible. Write action, hidden when !canEdit. */}
+        {canEdit && (
+          <button
+            type="button"
+            aria-label={`Delete column ${column.name}`}
+            onClick={handleDeleteClick}
+            className="nodrag nowheel"
+            style={{
+              opacity: 0,
+              flexShrink: 0,
+              background: 'none',
+              border: 'none',
+              cursor: 'pointer',
+              padding: '2px',
+              color: 'var(--rf-table-text)',
+              transition: 'opacity 0.1s',
+              fontSize: '14px',
+              lineHeight: 1,
+            }}
+            onMouseEnter={(e) => {
+              ;(e.currentTarget as HTMLButtonElement).style.opacity = '1'
+            }}
+            onMouseLeave={(e) => {
+              ;(e.currentTarget as HTMLButtonElement).style.opacity = '0'
+            }}
+          >
+            ×
+          </button>
+        )}
+
+      </div>
     )
   },
   (prev, next) => {

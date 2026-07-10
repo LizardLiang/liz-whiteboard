@@ -16,6 +16,12 @@ import { BASE_URL, STORAGE_STATE } from './e2e/fixtures'
 
 export default defineConfig({
   testDir: './e2e',
+  // GH #125: coedit-table-create.spec.ts requires the PROD build (dev's
+  // Socket.IO `io` is null there) and runs under its own dedicated config
+  // (playwright.coedit.config.ts / `bunx playwright test
+  // --config=playwright.coedit.config.ts`) — excluded here so the default
+  // dev-server suite doesn't try to run it against the wrong server.
+  testIgnore: '**/coedit-table-create.spec.ts',
   globalSetup: './e2e/global-setup.ts',
   timeout: 60_000,
   expect: { timeout: 10_000 },
