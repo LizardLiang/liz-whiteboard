@@ -96,20 +96,18 @@ test.describe('Relations preview panel (GH #134)', () => {
     await page.mouse.up()
 
     // The panel and the trigger's pressed state must survive the re-sync.
-    // NOTE: we intentionally do not assert the panel's related-table list
-    // content here (e.g. "orders") — a drag also round-trips a position
-    // mutation through ReactFlowWhiteboard's own query cache, and that
-    // component's separate initialNodes-sync effect (L573+) does not
-    // preserve `relationsEdges` the way it preserves callbacks, which empties
-    // the panel's content list. That is a distinct, pre-existing bug in
-    // ReactFlowWhiteboard.tsx, out of scope for GH #134 (whose fix is
-    // confined to ReactFlowCanvas.tsx's isRelationsPreviewOpen clobber) —
-    // tracked separately, not asserted by this regression guard.
+    // NOTE: GH #135 fixed content preservation across this same re-sync — the
+    // preserve branch of ReactFlowWhiteboard's initialNodes-sync effect
+    // (L573+) now re-injects `edges`/`relationsEdges` from the canonical
+    // refs, so the panel's related-table list no longer empties.
     await expect(relationsTrigger(page)).toHaveAttribute(
       'aria-pressed',
       'true',
     )
     await expect(relationsPanel(page)).toBeVisible()
+    // #135: panel content (1-hop neighbor list) must survive the re-sync too,
+    // not just the open flag — the preserve branch now carries relationsEdges.
+    await expect(relationsPanel(page)).toContainText('orders')
   })
 
   test('drag survives an immediate table-select click (BLOCKER regression, review of #134)', async ({
