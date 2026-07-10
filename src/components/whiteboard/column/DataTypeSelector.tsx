@@ -46,7 +46,7 @@ export function DataTypeSelector({
     if (!autoOpen) return
     const timer = setTimeout(() => setOpen(true), 0)
     return () => clearTimeout(timer)
-  }, [])
+  }, [autoOpen])
 
   const handleSelect = useCallback(
     (selectedValue: string) => {

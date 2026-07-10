@@ -44,7 +44,6 @@ describe('AddColumnRow', () => {
   it('TC-04-01: renders a "+" button in collapsed state', () => {
     render(
       <AddColumnRow
-        tableId="tbl-001"
         existingColumns={defaultExistingColumns}
         onCreate={vi.fn()}
       />,
@@ -56,7 +55,6 @@ describe('AddColumnRow', () => {
   it('TC-04-02: clicking "+" expands the creation form with name input', () => {
     render(
       <AddColumnRow
-        tableId="tbl-001"
         existingColumns={defaultExistingColumns}
         onCreate={vi.fn()}
       />,
@@ -70,7 +68,6 @@ describe('AddColumnRow', () => {
   it('TC-04-03: name input auto-focuses when form expands', () => {
     render(
       <AddColumnRow
-        tableId="tbl-001"
         existingColumns={defaultExistingColumns}
         onCreate={vi.fn()}
       />,
@@ -83,7 +80,6 @@ describe('AddColumnRow', () => {
   it('TC-04-04: data type defaults to "string"', () => {
     render(
       <AddColumnRow
-        tableId="tbl-001"
         existingColumns={defaultExistingColumns}
         onCreate={vi.fn()}
       />,
@@ -98,7 +94,6 @@ describe('AddColumnRow', () => {
     const onCreate = vi.fn().mockResolvedValue(undefined)
     render(
       <AddColumnRow
-        tableId="tbl-001"
         existingColumns={defaultExistingColumns}
         onCreate={onCreate}
       />,
@@ -120,7 +115,6 @@ describe('AddColumnRow', () => {
     // Columns at orders 0 (id) and 1 (email) → new order = 2
     render(
       <AddColumnRow
-        tableId="tbl-001"
         existingColumns={[mockPKColumn, mockColumn]}
         onCreate={onCreate}
       />,
@@ -137,7 +131,6 @@ describe('AddColumnRow', () => {
     const onCreate = vi.fn()
     render(
       <AddColumnRow
-        tableId="tbl-001"
         existingColumns={defaultExistingColumns}
         onCreate={onCreate}
       />,
@@ -155,7 +148,6 @@ describe('AddColumnRow', () => {
     const onCreate = vi.fn()
     render(
       <AddColumnRow
-        tableId="tbl-001"
         existingColumns={defaultExistingColumns}
         onCreate={onCreate}
       />,

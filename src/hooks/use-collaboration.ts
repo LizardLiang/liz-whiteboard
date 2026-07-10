@@ -83,6 +83,16 @@ export function useCollaboration(
   const reconnectionAttempts = useRef(0)
   const maxReconnectionAttempts = 5
 
+  // Socket lifecycle effect below intentionally keys off only
+  // [whiteboardId, userId, enabled] — adding `onSessionExpired` directly
+  // would tear down and reopen the socket connection whenever the caller
+  // passes a new function reference (HIGH loop risk on every parent
+  // re-render). Route the forward reference through a ref, kept current on
+  // every render, so the effect's `session_expired` handler always calls the
+  // latest callback without re-running the connect/disconnect lifecycle.
+  const onSessionExpiredRef = useRef(onSessionExpired)
+  onSessionExpiredRef.current = onSessionExpired
+
   useEffect(() => {
     // R1 (GH #109): public read-only share links (/share/$token) must never
     // open a Socket.IO connection — no read, no write, no presence. `enabled`
@@ -215,7 +225,7 @@ export function useCollaboration(
       console.warn('Session expired — WebSocket connection closed')
       setConnectionState('disconnected')
       try {
-        onSessionExpired()
+        onSessionExpiredRef.current()
       } catch {
         // TC-MODAL-04: if triggerSessionExpired throws, fall back to hard navigation
         // so the UI is never stuck in a broken state.

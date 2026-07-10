@@ -352,10 +352,38 @@ function ReactFlowWhiteboardInner({
   // Column reorder mutations — must be initialized early since seedConfirmedOrderFromServer
   // is called from the initialNodes effect below
   const columnReorderMutations = useColumnReorderMutations()
+  // useColumnReorderMutations returns a fresh object literal every render,
+  // but each individual method is a useCallback with an empty dependency
+  // array (stable for the component's lifetime). Destructure the specific
+  // methods referenced from effect bodies below so exhaustive-deps can
+  // depend on the stable function identities instead of the churning
+  // wrapper object (which would otherwise force those effects to re-run on
+  // every render).
+  const {
+    onSyncReconcile: stableOnSyncReconcile,
+    seedConfirmedOrderFromServer: stableSeedConfirmedOrderFromServer,
+    isQueueFullForTable: stableIsQueueFullForTable,
+    setLocalDragging: stableSetLocalDragging,
+    isAnyColumnDragging: stableIsAnyColumnDragging,
+  } = columnReorderMutations
 
   // Disable RF panOnDrag while a column is being dragged — prevents canvas
   // panning from stealing pointermove events and corrupting collision detection.
   const [isColumnDragging, setIsColumnDragging] = useState(false)
+
+  // Forward-declared refs for `isConnected` (from useColumnCollaboration) and
+  // `columnMutations.pendingMutations` (from useColumnMutations) — both hooks
+  // are called further down this function, but the "update local state when
+  // initial data changes" effect below needs their latest values. Reading
+  // either identifier directly in that effect's dependency array would throw
+  // a temporal-dead-zone ReferenceError (the array is evaluated at this
+  // earlier call site, before the `const` declarations below have run).
+  // Populated once the real values exist; read via `.current` so the effect
+  // never needs them in its own dependency array.
+  const isConnectedRef = useRef(false)
+  const hasPendingMutationRef = useRef<(columnId: string) => boolean>(
+    () => false,
+  )
 
   // Wraps the single main <ReactFlowCanvas> render site — scopes the image
   // export's `.react-flow__viewport` DOM lookup so it can never match the
@@ -531,16 +559,13 @@ function ReactFlowWhiteboardInner({
         // then check if our optimistic order diverged (AC-08e/f).
         // seedConfirmedOrderFromServer is idempotent (no-op if already seeded on first load),
         // so we call onSyncReconcile directly and let the ack handler manage lastConfirmed.
-        columnReorderMutations.onSyncReconcile(tableId, serverOrder)
+        stableOnSyncReconcile(tableId, serverOrder)
       } else {
         // Initial load: seed the baseline (idempotent)
-        columnReorderMutations.seedConfirmedOrderFromServer(
-          tableId,
-          serverOrder,
-        )
+        stableSeedConfirmedOrderFromServer(tableId, serverOrder)
       }
     })
-  }, [initialNodes])
+  }, [initialNodes, stableOnSyncReconcile, stableSeedConfirmedOrderFromServer])
 
   // Update local state when initial data changes (and attach callbacks)
   // Preserve existing callbacks from prev nodes so that a TanStack Query refetch
@@ -573,7 +598,16 @@ function ReactFlowWhiteboardInner({
               edges: edgesRef.current,
               relationsEdges: validEdgesForPanelRef.current,
               tableNameById,
-              isConnected,
+              // Declaration-order note: isConnectedRef is READ here but not
+              // WRITTEN until the `isConnectedRef.current = isConnected`
+              // effect further down this file (search for that assignment).
+              // On a freshly-created node this can read a stale/initial
+              // value in the same commit; the isConnected-keyed effect
+              // (search "Inject column callbacks + isConnected into node
+              // data whenever isConnected changes") re-stamps every node
+              // right after, self-healing any staleness. Keep all three in
+              // sync if refactoring this ref wiring.
+              isConnected: isConnectedRef.current,
             },
           }
         }
@@ -592,9 +626,7 @@ function ReactFlowWhiteboardInner({
           incomingColumns.length > 0 ? incomingColumns : prevColumns
         const dbColumnIds = new Set(baseColumns.map((c) => c.id))
         const optimisticColumns = prevColumns.filter(
-          (c) =>
-            !dbColumnIds.has(c.id) &&
-            columnMutations.pendingMutations.current.has(c.id),
+          (c) => !dbColumnIds.has(c.id) && hasPendingMutationRef.current(c.id),
         )
         return {
           ...node,
@@ -1063,6 +1095,27 @@ function ReactFlowWhiteboardInner({
     emitColumnDuplicate,
   )
 
+  // Wire isConnectedRef / hasPendingMutationRef now that isConnected and
+  // columnMutations are available (see declaration comment above, near
+  // isColumnDragging) — consumed by the earlier "update local state when
+  // initial data changes" effect via .current.
+  // Declaration-order note: this WRITE runs later (in source order) than the
+  // "update local state when initial data changes" effect's READ of
+  // isConnectedRef.current (search "isConnected: isConnectedRef.current").
+  // A node created in that earlier effect can therefore carry a stale
+  // isConnected stamp within the same commit; the isConnected-keyed effect
+  // below (search "Inject column callbacks + isConnected into node data
+  // whenever isConnected changes") self-heals it by re-stamping every node
+  // immediately after. Keep all three in sync if refactoring this ref wiring.
+  useEffect(() => {
+    isConnectedRef.current = isConnected
+  }, [isConnected])
+
+  useEffect(() => {
+    hasPendingMutationRef.current = (columnId: string) =>
+      columnMutations.pendingMutations.current.has(columnId)
+  }, [columnMutations.pendingMutations])
+
   // Wire onColumnError ref now that columnMutations is available
   useEffect(() => {
     onColumnErrorRef.current = columnMutations.onColumnError
@@ -1499,10 +1552,10 @@ function ReactFlowWhiteboardInner({
           emitColumnReorder: (tableId: string, ids: Array<string>) =>
             emitColumnReorderRef.current(tableId, ids),
           isQueueFullForTable: (tableId: string) =>
-            columnReorderMutations.isQueueFullForTable(tableId),
+            stableIsQueueFullForTable(tableId),
           setLocalDragging: (tableId: string, dragging: boolean) => {
-            columnReorderMutations.setLocalDragging(tableId, dragging)
-            setIsColumnDragging(columnReorderMutations.isAnyColumnDragging())
+            stableSetLocalDragging(tableId, dragging)
+            setIsColumnDragging(stableIsAnyColumnDragging())
           },
           bumpReorderTick: (tableId: string) =>
             bumpReorderTickRef.current(tableId),
@@ -1511,7 +1564,13 @@ function ReactFlowWhiteboardInner({
         },
       })),
     )
-  }, [isConnected, tableNameById])
+  }, [
+    isConnected,
+    tableNameById,
+    stableIsQueueFullForTable,
+    stableSetLocalDragging,
+    stableIsAnyColumnDragging,
+  ])
 
   // Also inject callbacks into nodes once on mount (initialNodes may not have them)
   useEffect(() => {
@@ -1538,10 +1597,10 @@ function ReactFlowWhiteboardInner({
           emitColumnReorder: (tableId: string, ids: Array<string>) =>
             emitColumnReorderRef.current(tableId, ids),
           isQueueFullForTable: (tableId: string) =>
-            columnReorderMutations.isQueueFullForTable(tableId),
+            stableIsQueueFullForTable(tableId),
           setLocalDragging: (tableId: string, dragging: boolean) => {
-            columnReorderMutations.setLocalDragging(tableId, dragging)
-            setIsColumnDragging(columnReorderMutations.isAnyColumnDragging())
+            stableSetLocalDragging(tableId, dragging)
+            setIsColumnDragging(stableIsAnyColumnDragging())
           },
           bumpReorderTick: (tableId: string) =>
             bumpReorderTickRef.current(tableId),
@@ -1552,6 +1611,13 @@ function ReactFlowWhiteboardInner({
         },
       })),
     )
+    // Deliberately mount-only: seeds callbacks onto whatever nodes exist at
+    // first render (initialNodes may not have them yet). The effect above
+    // already reacts to isConnected/tableNameById changes for all nodes
+    // going forward — re-running this one on those changes (or on the
+    // now-stable stableIsQueueFullForTable/stableSetLocalDragging/
+    // stableIsAnyColumnDragging identities) would just duplicate that work.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
 
   // Mutation for updating table position
@@ -1651,6 +1717,12 @@ function ReactFlowWhiteboardInner({
     if (onDisplayModeReady) {
       onDisplayModeReady(showMode, setShowMode)
     }
+    // Deliberately once-on-mount (ready-callback convention used throughout
+    // this file — see onZoomControlsReady/onCommentActionsReady below):
+    // setShowMode is the stable setter, so the parent only needs one handoff;
+    // re-running on every showMode change would re-invoke the parent's ready
+    // callback on every toggle instead of just handing it the setter once.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []) // Only run once on mount
 
   // React Flow zoom API (requires ReactFlowProvider context)
@@ -2481,7 +2553,7 @@ function ReactFlowWhiteboardInner({
       resolvedPendingIdsRef.current.add(id)
       emitPositionUpdate(id, x, y, true)
     })
-  }, [nodes, nodesInitialized, emitPositionUpdate])
+  }, [nodes, nodesInitialized, emitPositionUpdate, reactFlowInstance])
 
   // Build zoom controls and expose to parent once on mount
   useEffect(() => {
@@ -2499,6 +2571,12 @@ function ReactFlowWhiteboardInner({
       }
       onZoomControlsReady(controls)
     }
+    // Deliberately once-on-mount (ready-callback convention, see
+    // onDisplayModeReady above): the parent only needs one handoff of the
+    // controls object; re-running on every onZoomControlsReady/
+    // reactFlowInstance identity would re-invoke the parent's ready callback
+    // repeatedly instead of handing it the controls once.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []) // Only run once on mount — reactFlowInstance is stable
 
   // Notify parent when viewport zoom changes

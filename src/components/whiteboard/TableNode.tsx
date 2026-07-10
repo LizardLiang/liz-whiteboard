@@ -136,6 +136,25 @@ export const TableNode = memo(
     >([])
     const columnRowsRef = useRef<HTMLDivElement | null>(null)
 
+    // The document-level drag effect below (`[activeId]`) reads these
+    // callback props only from inside pointer-event handlers fired while a
+    // drag is in progress. Its cleanup unconditionally calls
+    // `setLocalDragging(table.id, false)` when `activeId` is still truthy
+    // (treating that case as "unmounted mid-drag, restore state") — so if
+    // any of these callback identities changed and the effect were re-keyed
+    // on them, a re-render mid-drag would refire the cleanup and falsely
+    // signal "drag ended" to the parent/siblings. Route them through refs,
+    // kept current every render, so the effect keeps depending only on
+    // `activeId` while every handler still calls the latest callback.
+    const onColumnReorderRef = useRef(onColumnReorder)
+    onColumnReorderRef.current = onColumnReorder
+    const emitColumnReorderRef = useRef(emitColumnReorder)
+    emitColumnReorderRef.current = emitColumnReorder
+    const bumpReorderTickRef = useRef(bumpReorderTick)
+    bumpReorderTickRef.current = bumpReorderTick
+    const setLocalDraggingRef = useRef(setLocalDragging)
+    setLocalDraggingRef.current = setLocalDragging
+
     // Determine visual state classes. Hover highlight is driven imperatively
     // by ReactFlowCanvas.tsx's DOM-class effect (`.rf-hover-highlighted` in
     // react-flow-theme.css) instead of a setNodes-driven prop, so a hover no
@@ -488,9 +507,13 @@ export const TableNode = memo(
         const oldIndex = preDragOrderRef.current.indexOf(activeId)
         setActiveId(null)
         setOverIndex(null)
-        setLocalDragging?.(table.id, false)
+        setLocalDraggingRef.current?.(table.id, false)
 
-        if (!onColumnReorder || !emitColumnReorder || !bumpReorderTick) return
+        const onColumnReorderNow = onColumnReorderRef.current
+        const emitColumnReorderNow = emitColumnReorderRef.current
+        const bumpReorderTickNow = bumpReorderTickRef.current
+        if (!onColumnReorderNow || !emitColumnReorderNow || !bumpReorderTickNow)
+          return
 
         let newOrder: Array<string> | null = null
         if (newOverIndex !== oldIndex && oldIndex >= 0) {
@@ -500,14 +523,14 @@ export const TableNode = memo(
           newOrder = arr
         }
 
-        onColumnReorder({
+        onColumnReorderNow({
           tableId: table.id,
           preDragOrder: preDragOrderRef.current,
           newOrder,
           preState: preDragColumnsRef.current,
-          emitColumnReorder,
+          emitColumnReorder: emitColumnReorderNow,
           setNodes: (() => {}) as any,
-          bumpReorderTick,
+          bumpReorderTick: bumpReorderTickNow,
         })
       }
 
@@ -515,16 +538,19 @@ export const TableNode = memo(
         document.body.style.cursor = ''
         setActiveId(null)
         setOverIndex(null)
-        setLocalDragging?.(table.id, false)
-        if (onColumnReorder && emitColumnReorder && bumpReorderTick) {
-          onColumnReorder({
+        setLocalDraggingRef.current?.(table.id, false)
+        const onColumnReorderNow = onColumnReorderRef.current
+        const emitColumnReorderNow = emitColumnReorderRef.current
+        const bumpReorderTickNow = bumpReorderTickRef.current
+        if (onColumnReorderNow && emitColumnReorderNow && bumpReorderTickNow) {
+          onColumnReorderNow({
             tableId: table.id,
             preDragOrder: preDragOrderRef.current,
             newOrder: null,
             preState: preDragColumnsRef.current,
-            emitColumnReorder,
+            emitColumnReorder: emitColumnReorderNow,
             setNodes: (() => {}) as any,
-            bumpReorderTick,
+            bumpReorderTick: bumpReorderTickNow,
           })
         }
       }
@@ -540,10 +566,10 @@ export const TableNode = memo(
         // If we unmount while drag is active (table deleted, route change, etc.), restore state
         if (activeId) {
           document.body.style.cursor = ''
-          setLocalDragging?.(table.id, false)
+          setLocalDraggingRef.current?.(table.id, false)
         }
       }
-    }, [activeId])
+    }, [activeId, table.id])
 
     // Use CSS max-content so the browser measures actual rendered text width.
     // Character-count estimates are unreliable; max-content lets each column row
@@ -819,7 +845,6 @@ export const TableNode = memo(
                   LOD-collapsed (zoom in to add columns). */}
               {canEdit && !isLodCollapsed && (
                 <AddColumnRow
-                  tableId={table.id}
                   existingColumns={columns}
                   onCreate={handleCreate}
                 />
