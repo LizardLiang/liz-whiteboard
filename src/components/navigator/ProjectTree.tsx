@@ -487,6 +487,7 @@ export function ProjectTree() {
                         variant="ghost"
                         size="sm"
                         className="h-8 w-6 p-0 flex-shrink-0"
+                        aria-label={`Toggle ${project.name} tree`}
                         onClick={(e) => {
                           e.stopPropagation()
                           toggleProject(project.id)
