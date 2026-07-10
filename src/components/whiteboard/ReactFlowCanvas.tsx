@@ -330,13 +330,53 @@ export function ReactFlowCanvas({
     edgesRef.current = edges
   })
 
+  // Keep refs to the latest selection/relations-preview state so the
+  // initialNodes-sync effect below can read current values without adding
+  // them to its dependency array (see that effect's comment for why: adding
+  // them would re-fire the sync on every click/toggle and rebuild the node
+  // store from the possibly-stale `initialNodes` prop).
+  const activeTableIdRef = useRef(activeTableId)
+  useEffect(() => {
+    activeTableIdRef.current = activeTableId
+  })
+  const relationsPreviewTableIdRef = useRef(relationsPreviewTableId)
+  useEffect(() => {
+    relationsPreviewTableIdRef.current = relationsPreviewTableId
+  })
+
   // Memoize node and edge types for performance
   const memoizedNodeTypes = useMemo(() => nodeTypes, [])
   const memoizedEdgeTypes = useMemo(() => edgeTypes, [])
 
-  // Update nodes when initialNodes changes
+  // Update nodes when initialNodes changes. Re-apply highlighting on every
+  // sync so an unrelated parent re-push (refetch, peer/position update,
+  // isConnected toggle, callback re-injection) does NOT clobber
+  // isRelationsPreviewOpen / isActiveHighlighted back to false — the parent's
+  // source nodes never carry those flags (GH #134; regression exposed by the
+  // #121 hover-highlight split that removed the hover-driven re-apply).
+  //
+  // Deliberately keyed on [initialNodes, setNodes] ONLY — activeTableId and
+  // relationsPreviewTableId are read via ref, NOT as deps. Single-table drag
+  // (ReactFlowWhiteboard.tsx) is non-optimistic: it only patches local state
+  // once the mutation's onSuccess round-trips, and `initialNodes` is not kept
+  // in sync via onNodesChange in the meantime. If this effect depended on
+  // activeTableId/relationsPreviewTableId, clicking a different table mid-drag
+  // (before the save lands) would re-fire it and rebuild every node from that
+  // stale `initialNodes` prop — snapping the just-dragged table back to its
+  // pre-drag position (GH #134 review BLOCKER). Reading selection/preview via
+  // ref makes this effect fire ONLY on a genuine initialNodes re-push, leaving
+  // the L464-475 effect below as the sole owner of click/toggle
+  // re-highlighting.
   useEffect(() => {
-    setNodes(initialNodes)
+    setNodes(
+      calculateHighlighting(
+        initialNodes,
+        edgesRef.current,
+        activeTableIdRef.current,
+        null,
+        relationsPreviewTableIdRef.current,
+      ).nodes,
+    )
   }, [initialNodes, setNodes])
 
   // Search palette focus request — when the container bumps focusRequestToken,
