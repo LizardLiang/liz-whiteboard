@@ -129,6 +129,20 @@
   overflow: visible;
   box-shadow: 0 1px 3px 0 rgb(0 0 0 / 0.1);
   min-width: 200px;
+
+  /* GH #121 perf experiment — pan is paint/raster-bound, not JS-bound: a perf
+   * trace of a 39-table board showed RasterTask ~4.8s + Layerize ~1.75s
+   * dominating a ~13s pan (12,887 DOM nodes, ~330/table). content-visibility
+   * lets the browser SKIP rendering/painting each table's whole subtree while
+   * it is scrolled out of view, collapsing the per-frame raster cost during
+   * pan/zoom on large boards — without React unmount churn (unlike
+   * onlyRenderVisibleElements). `contain-intrinsic-size: auto <len>` makes a
+   * skipped table report its LAST rendered size, so React Flow's node-size
+   * ResizeObserver sees no size change when a node toggles skipped → no edge
+   * re-anchor churn. The 240x340 fallback only applies to a table that has
+   * never yet been on-screen. */
+  content-visibility: auto;
+  contain-intrinsic-size: auto 240px auto 340px;
 }
 
 /* Clip the header's top corners to respect border-radius */
