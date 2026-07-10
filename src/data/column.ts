@@ -253,6 +253,7 @@ export async function duplicateColumn(columnId: string): Promise<Column> {
   const baseName = `${source.name}_copy`
   let candidateName = baseName
   let suffix = 2
+  // eslint-disable-next-line @typescript-eslint/no-unnecessary-condition -- intentional infinite loop with an internal break once a unique name is found.
   while (true) {
     const conflict = db
       .prepare('SELECT "id" FROM "Column" WHERE "tableId" = ? AND "name" = ?')

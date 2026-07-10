@@ -4,8 +4,9 @@
 // into Tables/Columns, shows an empty state for no match, and closes on select.
 // Read-only — it never mutates the board, so it is safe to run after the
 // mutating suites. Auth + seed data come from global-setup (storageState).
-import { expect, test, type Page } from '@playwright/test'
+import {  expect, test } from '@playwright/test'
 import { IDS } from './fixtures'
+import type {Page} from '@playwright/test';
 
 const WB_URL = `/whiteboard/${IDS.whiteboard}`
 

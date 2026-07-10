@@ -6,6 +6,7 @@ import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { act, fireEvent, render, screen } from '@testing-library/react'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { ProjectTree } from './ProjectTree'
+import type * as ReactRouterModule from '@tanstack/react-router'
 import type { ReactNode } from 'react'
 
 import { getProjectsWithTree } from '@/routes/api/projects'
@@ -44,7 +45,7 @@ const mockNavigate = vi.fn()
 let mockPathname = '/'
 
 vi.mock('@tanstack/react-router', async (importOriginal) => {
-  const actual = await importOriginal<typeof import('@tanstack/react-router')>()
+  const actual = await importOriginal<typeof ReactRouterModule>()
   return {
     ...actual,
     useNavigate: () => mockNavigate,
@@ -166,7 +167,7 @@ describe('ProjectTree sidebar navigation behavior', () => {
       expect(chevronButton).toBeTruthy()
 
       act(() => {
-        fireEvent.click(chevronButton!)
+        fireEvent.click(chevronButton)
       })
 
       // After clicking chevron, collapsible should be open
@@ -186,8 +187,8 @@ describe('ProjectTree sidebar navigation behavior', () => {
       })
       expect(chevronButton).toBeTruthy()
       // Must be a button, not inside an anchor
-      expect(chevronButton!.tagName.toLowerCase()).toBe('button')
-      expect(chevronButton!.closest('a')).toBeNull()
+      expect(chevronButton.tagName.toLowerCase()).toBe('button')
+      expect(chevronButton.closest('a')).toBeNull()
     })
 
     it('clicking chevron does not call navigate', async () => {
@@ -200,7 +201,7 @@ describe('ProjectTree sidebar navigation behavior', () => {
       })
 
       act(() => {
-        fireEvent.click(chevronButton!)
+        fireEvent.click(chevronButton)
       })
 
       expect(mockNavigate).not.toHaveBeenCalled()

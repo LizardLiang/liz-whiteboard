@@ -15,8 +15,9 @@
 // round trip, not an HTTP server-function reaching for `io`), but we still
 // reload to prove the DB write itself succeeded, independent of any socket
 // path — the same pattern version-history.spec.ts uses for restore.
-import { test, expect, type Page, type Locator } from '@playwright/test'
+import {   expect, test } from '@playwright/test'
 import { IDS } from './fixtures'
+import type {Locator, Page} from '@playwright/test';
 
 // This suite mutates positions + area membership and does NOT restore them,
 // so it runs against its OWN dedicated board (IDS.mdWhiteboard, seeded in

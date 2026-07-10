@@ -61,6 +61,7 @@ async function main() {
 
   const liveTest = process.env.LIVE_TEST === 'true'
   const baseUrl =
+    // eslint-disable-next-line @typescript-eslint/no-unnecessary-condition -- array indexing is unchecked (no noUncheckedIndexedAccess); argv[2] is genuinely absent at runtime when no CLI arg is passed.
     process.argv[2] ?? process.env.OAUTH_BASE_URL ?? 'http://localhost:3000'
   const sessionToken = process.env.SESSION_TOKEN ?? ''
 
@@ -129,11 +130,12 @@ async function runInProcessTests(_baseUrl: string) {
   console.log('Keys:', JSON.stringify(jwks, null, 2))
   assert(Array.isArray(jwks.keys), 'keys is array')
   assert(jwks.keys.length > 0, 'at least one key')
+  // Non-empty asserted above (process.exit(1) on failure), so key is defined from here on.
   const key = jwks.keys[0]
-  assert(key?.kty === 'RSA', `key type is RSA (got ${key?.kty})`)
-  assert(key?.alg === 'RS256', `key alg is RS256 (got ${key?.alg})`)
-  assert(typeof key?.kid === 'string', 'key has kid')
-  console.log(`PASS — RSA public key exposed, kid=${key?.kid}`)
+  assert(key.kty === 'RSA', `key type is RSA (got ${key.kty})`)
+  assert(key.alg === 'RS256', `key alg is RS256 (got ${key.alg})`)
+  assert(typeof key.kid === 'string', 'key has kid')
+  console.log(`PASS — RSA public key exposed, kid=${key.kid}`)
 
   // ── Step C: /authorize (issue code) ────────────────────────────────────────
   console.log(
@@ -185,6 +187,7 @@ async function runInProcessTests(_baseUrl: string) {
     config,
   )
   assert(typeof tokenResult.accessToken === 'string', 'access token issued')
+  // eslint-disable-next-line @typescript-eslint/no-unnecessary-condition -- tautological under today's return type, but this is a regression smoke-check: it must keep failing loudly if issueTokens ever stops returning literal 'Bearer'.
   assert(tokenResult.tokenType === 'Bearer', 'token type is Bearer')
   assert(
     tokenResult.expiresIn === config.accessTokenTtl,
@@ -204,7 +207,7 @@ async function runInProcessTests(_baseUrl: string) {
   console.log('Payload:', JSON.stringify(payload, null, 2))
 
   assert(header.alg === 'RS256', `alg=RS256 (got ${header.alg})`)
-  assert(header.kid === key?.kid, `kid matches JWKS kid`)
+  assert(header.kid === key.kid, `kid matches JWKS kid`)
   assert(
     payload.iss === config.issuer,
     `iss=${config.issuer} (got ${payload.iss})`,

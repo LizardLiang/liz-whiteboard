@@ -373,7 +373,7 @@ export const computeAutoLayout = createServerFn({
 /**
  * Returns the MCP endpoint URL for the user to connect an AI client.
  * The value comes from MCP_RESOURCE_URI env var via getOAuthConfig().
- * @requires viewer (auth enforced for consistency; the URL is not sensitive)
+ * @requires authenticated (any logged-in user; not scoped to a project/role — the URL is not sensitive)
  */
 export const getMcpEndpointUrl = createServerFn({ method: 'GET' }).handler(
   requireAuth(async (): Promise<string> => {

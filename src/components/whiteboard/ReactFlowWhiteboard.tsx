@@ -61,6 +61,7 @@ import type { DiagramAST } from '@/lib/parser/ast'
 import type { CreateColumnPayload } from './column/types'
 import type { TableRelationship } from './DeleteTableDialog'
 import type { RelationshipErrorEvent } from '@/hooks/use-relationship-mutations'
+import type { ReconcileAfterDropParams } from '@/hooks/use-column-reorder-mutations'
 import type { Dialect } from '@/lib/ddl-generator'
 import type { ExportImageDialogOptions } from './ExportImageDialog'
 import { exportDiagramImage } from '@/lib/export/export-image'
@@ -486,6 +487,7 @@ function ReactFlowWhiteboardInner({
   const [showMode, setShowMode] = useState<ShowMode>(() => {
     // Restore from localStorage on mount
     const saved = localStorage.getItem('whiteboard-display-mode')
+    // eslint-disable-next-line @typescript-eslint/no-unnecessary-condition -- localStorage.getItem genuinely returns null at runtime when the key is unset, regardless of the `as ShowMode` cast.
     return (saved as ShowMode) || 'ALL_FIELDS'
   })
 
@@ -538,7 +540,6 @@ function ReactFlowWhiteboardInner({
         )
       }
     })
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [initialNodes])
 
   // Update local state when initial data changes (and attach callbacks)
@@ -617,7 +618,6 @@ function ReactFlowWhiteboardInner({
         }
       })
     })
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [initialNodes, tableNameById])
 
   // Update local edge state when initial data changes — preserve onDelete and onLabelUpdate callbacks
@@ -651,7 +651,6 @@ function ReactFlowWhiteboardInner({
         },
       })),
     )
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [edges])
 
   // Callback for when a remote user deletes a table
@@ -1183,7 +1182,6 @@ function ReactFlowWhiteboardInner({
         },
       })),
     )
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [isConnected])
 
   // Also inject onDelete and onLabelUpdate callbacks into edges once on mount
@@ -1198,7 +1196,6 @@ function ReactFlowWhiteboardInner({
         },
       })),
     )
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
 
   // Keyboard shortcut for table deletion (Delete/Backspace on selected node)
@@ -1347,7 +1344,7 @@ function ReactFlowWhiteboardInner({
   // Column reorder callback — wraps reconcileAfterDrop with real setNodes
   const handleColumnReorder = useCallback(
     (
-      params: import('@/hooks/use-column-reorder-mutations').ReconcileAfterDropParams,
+      params: ReconcileAfterDropParams,
     ) => {
       columnReorderMutations.reconcileAfterDrop({
         ...params,
@@ -1497,7 +1494,7 @@ function ReactFlowWhiteboardInner({
           onPreviewRelations: (tableId: string) =>
             handleTogglePreviewTableRef.current(tableId),
           onColumnReorder: (
-            params: import('@/hooks/use-column-reorder-mutations').ReconcileAfterDropParams,
+            params: ReconcileAfterDropParams,
           ) => handleColumnReorderRef.current(params),
           emitColumnReorder: (tableId: string, ids: Array<string>) =>
             emitColumnReorderRef.current(tableId, ids),
@@ -1514,7 +1511,6 @@ function ReactFlowWhiteboardInner({
         },
       })),
     )
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [isConnected, tableNameById])
 
   // Also inject callbacks into nodes once on mount (initialNodes may not have them)
@@ -1537,7 +1533,7 @@ function ReactFlowWhiteboardInner({
           onPreviewRelations: (tableId: string) =>
             handleTogglePreviewTableRef.current(tableId),
           onColumnReorder: (
-            params: import('@/hooks/use-column-reorder-mutations').ReconcileAfterDropParams,
+            params: ReconcileAfterDropParams,
           ) => handleColumnReorderRef.current(params),
           emitColumnReorder: (tableId: string, ids: Array<string>) =>
             emitColumnReorderRef.current(tableId, ids),
@@ -1556,7 +1552,6 @@ function ReactFlowWhiteboardInner({
         },
       })),
     )
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
 
   // Mutation for updating table position
@@ -1656,7 +1651,6 @@ function ReactFlowWhiteboardInner({
     if (onDisplayModeReady) {
       onDisplayModeReady(showMode, setShowMode)
     }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []) // Only run once on mount
 
   // React Flow zoom API (requires ReactFlowProvider context)
@@ -1861,7 +1855,7 @@ function ReactFlowWhiteboardInner({
       resolveComment: resolveCommentMutation,
       panToComment: handlePanToComment,
     })
-    // eslint-disable-next-line react-hooks/exhaustive-deps -- ready-callback fires once per identity change, mirrors onZoomControlsReady
+    // ready-callback fires once per identity change, mirrors onZoomControlsReady
   }, [
     onCommentActionsReady,
     createCommentMutation,
@@ -2487,7 +2481,6 @@ function ReactFlowWhiteboardInner({
       resolvedPendingIdsRef.current.add(id)
       emitPositionUpdate(id, x, y, true)
     })
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [nodes, nodesInitialized, emitPositionUpdate])
 
   // Build zoom controls and expose to parent once on mount
@@ -2506,7 +2499,6 @@ function ReactFlowWhiteboardInner({
       }
       onZoomControlsReady(controls)
     }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []) // Only run once on mount — reactFlowInstance is stable
 
   // Notify parent when viewport zoom changes
@@ -3184,9 +3176,9 @@ export function ReactFlowWhiteboard({
     // Guard against AuthErrorResponse
     if (!whiteboardData || isUnauthorizedError(whiteboardData)) return []
     // whiteboardData is WhiteboardWithDiagram which directly has .tables
-    const tables = whiteboardData?.tables
+    const tables = whiteboardData.tables
 
-    if (!tables || tables.length === 0) {
+    if (tables.length === 0) {
       console.log('ReactFlowWhiteboard: No tables data or empty array')
       return []
     }

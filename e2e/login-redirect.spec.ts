@@ -15,8 +15,9 @@
 // — so it overrides the shared storageState saved by global-setup (which
 // logs in a different, already-authenticated context for the rest of the
 // suite).
-import { test, expect, type Page } from '@playwright/test'
+import {  expect, test } from '@playwright/test'
 import { E2E_USER, IDS } from './fixtures'
+import type {Page} from '@playwright/test';
 
 test.use({ storageState: { cookies: [], origins: [] } })
 

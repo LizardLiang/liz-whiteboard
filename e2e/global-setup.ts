@@ -10,10 +10,11 @@
 // /login (a known, pre-existing bug unrelated to version history); we don't
 // depend on the redirect — we wait for the `session_token` cookie to be set,
 // which happens regardless, then save state.
-import { chromium, expect, type FullConfig } from '@playwright/test'
 import { execFileSync } from 'node:child_process'
 import { mkdirSync } from 'node:fs'
+import { chromium, expect } from '@playwright/test'
 import { BASE_URL, E2E_USER, STORAGE_STATE } from './fixtures'
+import type { BrowserContext, FullConfig } from '@playwright/test'
 
 export default async function globalSetup(_config: FullConfig) {
   // 1. Seed via Bun.
@@ -49,9 +50,7 @@ export default async function globalSetup(_config: FullConfig) {
   await browser.close()
 }
 
-async function expectSessionCookie(
-  context: import('@playwright/test').BrowserContext,
-) {
+async function expectSessionCookie(context: BrowserContext) {
   const deadline = Date.now() + 15_000
   while (Date.now() < deadline) {
     const cookies = await context.cookies()

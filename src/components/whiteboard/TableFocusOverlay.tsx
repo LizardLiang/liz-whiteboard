@@ -191,7 +191,6 @@ export function TableFocusOverlay({
     return () => {
       cancelled = true
     }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [activeFocusId])
 
   // Merge compact overlay positions into focusNodes.

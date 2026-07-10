@@ -188,8 +188,7 @@ function HomePage() {
                 <h2 className="text-2xl font-semibold">All Projects</h2>
               </div>
               <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-                {projects &&
-                  Array.isArray(projects) &&
+                {Array.isArray(projects) &&
                   projects.map((project) => (
                     <Link
                       key={project.id}
@@ -211,12 +210,12 @@ function HomePage() {
                         <CardContent>
                           <div className="text-sm text-muted-foreground space-y-1">
                             <div>
-                              {project.folders?.length || 0} folder
-                              {project.folders?.length !== 1 ? 's' : ''}
+                              {project.folders.length} folder
+                              {project.folders.length !== 1 ? 's' : ''}
                             </div>
                             <div>
-                              {project.whiteboards?.length || 0} whiteboard
-                              {project.whiteboards?.length !== 1 ? 's' : ''}
+                              {project.whiteboards.length} whiteboard
+                              {project.whiteboards.length !== 1 ? 's' : ''}
                             </div>
                           </div>
                         </CardContent>

@@ -6,11 +6,12 @@ import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { cleanup, fireEvent, render, screen } from '@testing-library/react'
 import { Position, ReactFlowProvider } from '@xyflow/react'
 import { RelationshipEdge } from './RelationshipEdge'
+import type * as ReactFlowModule from '@xyflow/react'
 import type { RelationshipEdgeData } from '@/lib/react-flow/types'
 
 // Mock getSmoothStepPath to return deterministic values
 vi.mock('@xyflow/react', async (importOriginal) => {
-  const actual = await importOriginal<typeof import('@xyflow/react')>()
+  const actual = await importOriginal<typeof ReactFlowModule>()
   return {
     ...actual,
     getSmoothStepPath: vi.fn(() => ['M 0 0 L 100 100', 50, 50]),

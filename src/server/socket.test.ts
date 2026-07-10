@@ -72,6 +72,7 @@ async function handshakeMiddleware(
   next: (err?: Error) => void,
 ) {
   try {
+    // eslint-disable-next-line @typescript-eslint/no-unnecessary-condition -- Record<string, string> indexing is unchecked (no noUncheckedIndexedAccess); a real handshake headers object can genuinely lack a 'cookie' key at runtime.
     const cookieHeader = socket.handshake.headers.cookie ?? ''
     const token = (parseSessionCookie as any)(cookieHeader)
     if (!token) {
@@ -568,7 +569,7 @@ async function jwtAwarHandshakeMiddleware(
 ) {
   try {
     // JWT path (MCP server)
-    const authToken = socket.handshake.auth?.token
+    const authToken = socket.handshake.auth.token
     if (authToken && typeof authToken === 'string') {
       try {
         const payload = await (validateCollabToken as any)(authToken)
@@ -582,6 +583,7 @@ async function jwtAwarHandshakeMiddleware(
     }
 
     // Cookie path (existing browser auth)
+    // eslint-disable-next-line @typescript-eslint/no-unnecessary-condition -- Record<string, string> indexing is unchecked (no noUncheckedIndexedAccess); a real handshake headers object can genuinely lack a 'cookie' key at runtime.
     const cookieHeader = socket.handshake.headers.cookie ?? ''
     const token = (parseSessionCookie as any)(cookieHeader)
     if (!token) return next(new Error('UNAUTHORIZED'))

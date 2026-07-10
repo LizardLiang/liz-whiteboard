@@ -7,6 +7,7 @@ import { render, screen, waitFor } from '@testing-library/react'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import type { ReactNode } from 'react'
 
+import type * as ReactRouterModule from '@tanstack/react-router'
 import { getProjectPageContent } from '@/routes/api/projects'
 
 // Instead of rendering the full route, we test the component logic
@@ -38,7 +39,7 @@ vi.mock('@/components/project/ProjectSharePanel', () => ({
 
 // Mock router hooks since this component is route-level and uses Route.useParams
 vi.mock('@tanstack/react-router', async (importOriginal) => {
-  const actual = await importOriginal<typeof import('@tanstack/react-router')>()
+  const actual = await importOriginal<typeof ReactRouterModule>()
   return {
     ...actual,
     createFileRoute: () => () => ({
@@ -182,7 +183,7 @@ describe('Project Page Route (AC-01..04)', () => {
         'project-page',
         'proj-001',
       ]) as typeof mockContent
-      expect(cachedData?.project?.name).toBe('My Project')
+      expect(cachedData.project.name).toBe('My Project')
     })
   })
 
@@ -204,7 +205,7 @@ describe('Project Page Route (AC-01..04)', () => {
         'project-page',
         'proj-001',
       ]) as typeof mockContent
-      expect(result?.project?.name).toBe('My Project')
+      expect(result.project.name).toBe('My Project')
     })
   })
 

@@ -111,9 +111,7 @@ describe('ProjectContentGrid', () => {
       })
 
       const allLinks = document.querySelectorAll('a')
-      const linkTexts = Array.from(allLinks).map(
-        (a) => a.textContent?.trim() ?? '',
-      )
+      const linkTexts = Array.from(allLinks).map((a) => a.textContent.trim())
       const folderIndices = linkTexts
         .map((t, i) => (t.includes('Folder') ? i : -1))
         .filter((i) => i !== -1)

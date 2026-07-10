@@ -15,6 +15,7 @@ import { DragHandle } from './DragHandle'
 import { ColumnHandles } from './ColumnHandles'
 import type { Column } from '@/data/models'
 import type { RelationshipEdgeType, ShowMode } from '@/lib/react-flow/types'
+import type { DataType } from '@/data/schema'
 import type { EditingField } from './types'
 import {
   Tooltip,
@@ -239,7 +240,7 @@ export const ColumnRow = memo(
           {/* Data type */}
           {isEditingDataType ? (
             <DataTypeSelector
-              value={column.dataType as import('@/data/schema').DataType}
+              value={column.dataType as DataType}
               onSelect={(dt) => onCommitEdit(column.id, 'dataType', dt)}
               onCancel={onCancelEdit}
               autoOpen

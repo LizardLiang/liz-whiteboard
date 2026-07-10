@@ -184,7 +184,7 @@ export function ProjectSharePanel({
         data: { projectId, email: vars.email, role: vars.role },
       }),
     onSuccess: (result) => {
-      if (result && 'error' in result) {
+      if ('error' in result) {
         setAddError((result as any).message || 'Failed to add user')
         return
       }

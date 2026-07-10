@@ -1,6 +1,7 @@
 //  @ts-check
 
 import { tanstackConfig } from '@tanstack/eslint-config'
+import tseslint from 'typescript-eslint'
 import { createRequire } from 'node:module'
 import { fileURLToPath } from 'node:url'
 import { dirname, resolve } from 'node:path'
@@ -51,6 +52,16 @@ export default [
       // typed-linting project too; keep both in sync.
       'tools/eslint-rules/__fixtures__/**',
     ],
+  },
+  // The eslint-rule sources themselves are plain, untyped CommonJS/Node
+  // scripts (not part of tsconfig.json's app project — see AD-2 above), so
+  // they can't use type-aware linting. typescript-eslint's official
+  // disableTypeChecked config unsets parserOptions.project/projectService
+  // AND turns off type-checked rules for just this directory, rather than
+  // weakening either globally.
+  {
+    files: ['tools/eslint-rules/**/*.js'],
+    ...tseslint.configs.disableTypeChecked,
   },
   // SEC-RBAC-04: AST guard — all createServerFn exports must carry @requires JSDoc
   // and call requireServerFnRole (unless using authenticated/unauthenticated escape hatch).

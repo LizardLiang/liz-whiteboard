@@ -459,8 +459,8 @@ export function ProjectTree() {
         <div className="space-y-1">
           {projects.map((project) => {
             const isExpanded = expandedProjects.has(project.id)
-            const rootFolders = buildFolderTree(project.folders || [])
-            const rootWhiteboards = project.whiteboards || []
+            const rootFolders = buildFolderTree(project.folders)
+            const rootWhiteboards = project.whiteboards
             // Active when URL is /project/:id or /project/:id/folder/:folderId
             const isActiveProject = currentPathname.startsWith(
               `/project/${project.id}`,

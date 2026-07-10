@@ -871,7 +871,7 @@ describe('TableNode LOD collapse during active edit (GH #121 data-loss fix)', ()
 
     // Start editing col1's name (double-click opens InlineNameEditor)
     fireEvent.doubleClick(screen.getByText('id'))
-    const input = screen.getByDisplayValue('id') as HTMLInputElement
+    const input = screen.getByDisplayValue('id')
     fireEvent.change(input, { target: { value: 'user_id' } })
 
     // Zoom out below LOD_ZOOM_THRESHOLD (0.35) mid-edit

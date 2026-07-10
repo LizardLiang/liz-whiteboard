@@ -16,6 +16,7 @@ import type {
 import type { Cardinality, UpdateColumn } from '@/data/schema'
 import type { CreateColumnPayload } from '@/components/whiteboard/column/types'
 import type { Dialect } from '@/lib/ddl-generator'
+import type { ReconcileAfterDropParams } from '@/hooks/use-column-reorder-mutations'
 
 /**
  * A root comment (GH #110) plus its flat replies — the view-model shape
@@ -135,9 +136,7 @@ export interface TableNodeData extends Record<string, unknown> {
   isConnected?: boolean
 
   /** Column reorder: reconcile after a drag drop (SA-H4 single entry-point) */
-  onColumnReorder?: (
-    params: import('@/hooks/use-column-reorder-mutations').ReconcileAfterDropParams,
-  ) => void
+  onColumnReorder?: (params: ReconcileAfterDropParams) => void
 
   /** Column reorder: emit column:reorder to server */
   emitColumnReorder?: (tableId: string, orderedColumnIds: Array<string>) => void
