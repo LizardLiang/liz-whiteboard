@@ -31,6 +31,7 @@ import type {
   TableNodeType,
 } from '@/lib/react-flow/types'
 import { recalculateEdgesForDraggedNodes } from '@/lib/react-flow/edge-routing'
+import { perfTracker } from '@/lib/perf/perf-tracker'
 import {
   assignLayersBFS,
   computeEdgeBundleOffsets,
@@ -231,6 +232,11 @@ export function ReactFlowCanvas({
   minimapExpanded = false,
   onMinimapCollapse,
 }: ReactFlowCanvasProps) {
+  // Perf tracker (GH #121 follow-up): count canvas re-renders during a
+  // recording session. First-line `if (!isRecording) return` inside makes this
+  // a no-op when the tracker is off (PT-7).
+  perfTracker.incRender()
+
   const [nodes, setNodes, handleNodesChange] =
     useNodesState<TableNodeType>(initialNodes)
   const [edges, setEdges, handleEdgesChange] =
@@ -643,12 +649,14 @@ export function ReactFlowCanvas({
   // Handle node mouse enter (hover) — skip during drag (ReactFlow fires this on drag end)
   const onNodeMouseEnter = useCallback<NodeMouseHandler>((_event, node) => {
     if (isDraggingRef.current) return
+    perfTracker.setGesture('hover') // no-op unless recording
     setHoveredTableId(node.id)
   }, [])
 
   // Handle node mouse leave (unhover) — skip during drag (ReactFlow fires this on drag start)
   const onNodeMouseLeave = useCallback<NodeMouseHandler>((_event, _node) => {
     if (isDraggingRef.current) return
+    perfTracker.clearGesture('hover') // no-op unless recording
     setHoveredTableId(null)
   }, [])
 
@@ -728,6 +736,7 @@ export function ReactFlowCanvas({
   const onNodeDragStart = useCallback<OnNodeDrag<TableNodeType>>(
     (_event, node) => {
       isDraggingRef.current = true
+      perfTracker.setGesture('drag') // no-op unless recording
       // Defensive reset — a new drag should never inherit a stale scheduled
       // recalculation from a previous one.
       cancelPendingDragEdgeRecalc()
@@ -764,6 +773,11 @@ export function ReactFlowCanvas({
         if (!drag || drag.areaId !== node.id || drag.members.size === 0) return
         const deltaX = node.position.x - drag.areaStart.x
         const deltaY = node.position.y - drag.areaStart.y
+        // Counts app-initiated interaction setNodes only (this area-member-drag
+        // path). Regular single-node drags flow through React Flow's internal
+        // applyNodeChanges and are NOT counted here — so this counter reads ~0
+        // in the common single-node drag case; don't misread it as "no updates".
+        perfTracker.incSetNodes() // no-op unless recording; interaction path only
         setNodes((prevNodes) =>
           prevNodes.map((n) => {
             const start = drag.members.get(n.id)
@@ -798,6 +812,7 @@ export function ReactFlowCanvas({
   const onNodeDragStop = useCallback<OnNodeDrag<TableNodeType>>(
     (event, node, draggedNodes) => {
       isDraggingRef.current = false
+      perfTracker.clearGesture('drag') // no-op unless recording
 
       // Area nodes: persist the new position (+ any moved members), skip
       // edge routing / hover.
@@ -971,6 +986,12 @@ export function ReactFlowCanvas({
         onNodeDragStart={onNodeDragStart}
         onNodeDrag={onNodeDrag}
         onNodeDragStop={onNodeDragStop}
+        // Perf tracker (GH #121 follow-up): pan/zoom gesture tagging. React
+        // Flow has no pan/zoom callbacks wired otherwise — these read-only
+        // handlers exist solely to tag the current gesture (noteMove disambiguates
+        // pan vs zoom by scale change). All writes no-op unless recording.
+        onMove={(_event, viewport) => perfTracker.noteMove(viewport.zoom)}
+        onMoveEnd={() => perfTracker.clearGesture()}
         onNodesDelete={onNodesDelete}
         deleteKeyCode={DELETE_KEY_CODES}
         nodeTypes={memoizedNodeTypes}
