@@ -22,7 +22,9 @@ import type { Locator, Page } from '@playwright/test'
 
 const STRESS_TABLE_COUNT = 24
 
-const WB_URL = `/whiteboard/${IDS.stressWhiteboard}?perf=1`
+// canvas=0 forces full-DOM rendering: canvas is now the default (migration
+// Phase 5), and this spec asserts DOM table content.
+const WB_URL = `/whiteboard/${IDS.stressWhiteboard}?perf=1&canvas=0`
 
 test.use({ viewport: { width: 1600, height: 1000 } })
 

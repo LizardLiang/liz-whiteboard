@@ -11,7 +11,9 @@ import { expect, test } from '@playwright/test'
 import { IDS } from './fixtures'
 import type { Locator, Page } from '@playwright/test'
 
-const WB_URL = `/whiteboard/${IDS.whiteboard}`
+// ?canvas=0 forces full-DOM table rendering: canvas is now the default
+// (migration Phase 5), and this spec asserts DOM table content.
+const WB_URL = `/whiteboard/${IDS.whiteboard}?canvas=0`
 
 async function openWhiteboard(page: Page) {
   await page.goto(WB_URL)

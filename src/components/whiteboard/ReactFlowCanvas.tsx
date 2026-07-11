@@ -1083,13 +1083,16 @@ export function ReactFlowCanvas({
   const effectiveEdges =
     enableEdgeAblation && hideEdges ? EMPTY_EDGES : edges
 
-  // Hybrid canvas rendering (GH #142 → canvas migration), gated by `?canvas=1`.
-  // Only the main board opts in (same rationale as edge-ablation) — the focus
-  // overlay keeps its DOM render path.
+  // Hybrid canvas rendering (GH #142 → canvas migration) is now the DEFAULT on
+  // the main board (migration Phase 5 flip). Opt OUT per-session with
+  // `?canvas=0` to fall back to full-DOM rendering (rollback lever if a
+  // canvas-specific issue is hit). Only the main board is affected (same
+  // rationale as edge-ablation) — the focus overlay keeps its DOM render path
+  // because it doesn't set `enableEdgeAblation`.
   const canvasMode =
     enableEdgeAblation &&
     typeof window !== 'undefined' &&
-    new URLSearchParams(window.location.search).get('canvas') === '1'
+    new URLSearchParams(window.location.search).get('canvas') !== '0'
 
   return (
     // CanvasModeContext wraps the whole nodes subtree (not just
