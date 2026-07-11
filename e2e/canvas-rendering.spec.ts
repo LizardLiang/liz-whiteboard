@@ -25,6 +25,12 @@
 // DOM-strip + handle-preservation behavior is correct, not that it's fast.
 import { execFileSync } from 'node:child_process'
 import { expect, test } from '@playwright/test'
+import {
+  LOD_ZOOM_THRESHOLD,
+  getViewportScale,
+  zoomAboveLodThreshold,
+  zoomBelowLodThreshold,
+} from './canvas-helpers'
 import { IDS } from './fixtures'
 import type { Locator, Page } from '@playwright/test'
 
@@ -104,6 +110,86 @@ async function nodeTransform(locator: Locator): Promise<string> {
   return locator.evaluate(
     (el) => (el.closest('.react-flow__node') as HTMLElement).style.transform,
   )
+}
+
+/** Capture the base64 payload of every `<a download>` click's `href`
+ * (export's `downloadDataUrl` — see export-image.ts) without relying on a
+ * real browser download completing. Headless Chromium download events are
+ * documented as flaky elsewhere in this suite (see perf-tracker.spec.ts's
+ * dev-global fallback comment) — patching `HTMLAnchorElement.prototype.click`
+ * to record the anchor's `href` before calling through sidesteps that
+ * entirely: the data URL is captured synchronously in-page, independent of
+ * whether the OS/browser download machinery ever fires a `download` event in
+ * this headless environment. Must run BEFORE the export is triggered. */
+async function captureNextDownloadDataUrl(page: Page) {
+  await page.evaluate(() => {
+    const w = window as unknown as { __capturedDataUrls: Array<string> }
+    w.__capturedDataUrls = []
+    const proto = HTMLAnchorElement.prototype
+    const originalClick = proto.click
+    proto.click = function (this: HTMLAnchorElement) {
+      if (this.download) {
+        w.__capturedDataUrls.push(this.href)
+      }
+      originalClick.call(this)
+    }
+  })
+}
+
+/** Decode the captured PNG data URL entirely in-page (native `<img>` +
+ * `<canvas>` — no Node PNG-decoding dependency needed) and report its pixel
+ * dimensions, the data URL's byte length, and how many distinct RGBA colors
+ * a full sparse sample finds.
+ *
+ * Distinct-color count alone is NOT a reliable discriminator here: even the
+ * pre-fix "empty chrome-light box" export bug (isChromeLightTarget not
+ * checking forceFullDetail) still paints ~24 tables' worth of
+ * `.react-flow__handle` dots — measured empirically at 276 distinct sampled
+ * colors and a 654KB data URL on this suite's 24-table stress board, vs. 657
+ * colors / 1.83MB once real table chrome (borders, header fills, text) is
+ * captured. Both thresholds below sit with comfortable margin between those
+ * two measured states — data URL byte length is the primary signal (PNG
+ * compression size scales with real visual detail — text edges, borders,
+ * per-row content — far more than a field of same-colored dots does). */
+async function decodeCapturedPng(page: Page): Promise<{
+  width: number
+  height: number
+  dataUrlByteLength: number
+  distinctColors: number
+}> {
+  const result = await page.evaluate(async () => {
+    const w = window as unknown as { __capturedDataUrls: Array<string> }
+    const dataUrl = w.__capturedDataUrls[0]
+    if (!dataUrl) throw new Error('no export data URL was captured')
+    const img = new Image()
+    const loaded = new Promise<void>((resolve, reject) => {
+      img.onload = () => resolve()
+      img.onerror = () => reject(new Error('exported image failed to decode'))
+    })
+    img.src = dataUrl
+    await loaded
+    const canvas = document.createElement('canvas')
+    canvas.width = img.naturalWidth
+    canvas.height = img.naturalHeight
+    const ctx = canvas.getContext('2d')
+    if (!ctx) throw new Error('no 2d context')
+    ctx.drawImage(img, 0, 0)
+    const { data } = ctx.getImageData(0, 0, canvas.width, canvas.height)
+    const colors = new Set<string>()
+    // Prime-ish stride so the sample isn't aliased against any repeating
+    // table-row pattern.
+    const stride = 149 * 4
+    for (let i = 0; i < data.length; i += stride) {
+      colors.add(`${data[i]},${data[i + 1]},${data[i + 2]},${data[i + 3]}`)
+    }
+    return {
+      dataUrlByteLength: dataUrl.length,
+      width: canvas.width,
+      height: canvas.height,
+      distinctColors: colors.size,
+    }
+  })
+  return result
 }
 
 test.describe('Canvas node rendering — Phase 1 (DOM strip + perf gate)', () => {
@@ -224,5 +310,132 @@ test.describe('Canvas node rendering — Phase 1 (DOM strip + perf gate)', () =>
     // selection, not just the node the drag was initiated from.
     expect(afterA).not.toBe(beforeA)
     expect(afterB).not.toBe(beforeB)
+  })
+})
+
+test.describe('Canvas node rendering — Phase 4 (parity sweep)', () => {
+  test('image export under canvas mode captures the full diagram, not the canvas layer or empty chrome-light boxes', async ({
+    page,
+  }) => {
+    await openStressWhiteboardCanvasMode(page)
+
+    // Every table starts chrome-light (canvas mode active) — the exact
+    // condition the export-time strip-bypass (`isChromeLightTarget` gate,
+    // TableNode.tsx) and canvas-hide (`forceFullDetail` gate,
+    // CanvasNodeLayer.tsx) both exist to handle. Without either fix, this
+    // capture would show either blank chrome-light boxes (strip not
+    // bypassed) or the viewport-sized canvas mis-framed into the
+    // natural-bounds capture (canvas not hidden) — either way, NOT a real
+    // rendering of the diagram.
+    await expect(chromeLightNodes(page)).toHaveCount(STRESS_TABLE_COUNT)
+
+    await captureNextDownloadDataUrl(page)
+
+    await page.getByRole('button', { name: 'Export as image' }).click()
+    await expect(
+      page.getByRole('heading', { name: 'Export as Image' }),
+    ).toBeVisible()
+    await page.getByRole('button', { name: 'Export', exact: true }).click()
+    // Dialog closes once the export promise resolves — confirms
+    // exportDiagramImage() didn't throw (e.g. the "Diagram not ready to
+    // export" guard in export-image.ts).
+    await expect(
+      page.getByRole('heading', { name: 'Export as Image' }),
+    ).not.toBeVisible()
+
+    const decoded = await decodeCapturedPng(page)
+    expect(decoded.width).toBeGreaterThan(0)
+    expect(decoded.height).toBeGreaterThan(0)
+    // Thresholds set with comfortable margin between the two states measured
+    // empirically on this suite's 24-table stress board (see
+    // `decodeCapturedPng`'s comment): pre-fix "empty chrome-light box"
+    // export ~654KB / 276 distinct colors (just `.react-flow__handle` dots,
+    // no real table chrome) vs. fixed ~1.83MB / 657 colors (real borders,
+    // header fills, PK/FK dots, text). Byte length is the primary signal —
+    // PNG compression size tracks real visual detail (text/border edges)
+    // far more than a field of same-colored dots does.
+    expect(decoded.dataUrlByteLength).toBeGreaterThan(1_000_000)
+    expect(decoded.distinctColors).toBeGreaterThan(400)
+
+    // Canvas mode itself is untouched after export completes (export is a
+    // one-shot capture, not a mode switch).
+    await expect(chromeLightNodes(page)).toHaveCount(STRESS_TABLE_COUNT)
+  })
+
+  test('tables collapse to header-only on BOTH canvas and DOM below LOD_ZOOM_THRESHOLD, edges stay attached, and drag-to-connect still works there', async ({
+    page,
+  }) => {
+    await openStressWhiteboardCanvasMode(page)
+
+    const edgeCountBefore = await page.locator('.react-flow__edge').count()
+
+    await zoomBelowLodThreshold(page)
+    expect(await getViewportScale(page)).toBeLessThan(LOD_ZOOM_THRESHOLD)
+
+    // DOM parity (TableNode.tsx's chrome-light path, via
+    // `getEffectiveShowMode`): below threshold every chrome-light node
+    // collapses to exactly ONE header-height `.column-row` (all column
+    // handles stacked on it), not one row per column — same collapse
+    // CanvasNodeLayer's draw loop applies on the canvas (untestable via DOM,
+    // but geometrically forced to agree since both paths consult the same
+    // `getEffectiveShowMode` helper — see canvas-node-geometry.ts).
+    // Indices 4/5 (not 0/1) — the Phase 1 drag-to-connect test above already
+    // wired table0.col1 -> table1.col1; reusing those same two tables/column
+    // here would attempt a duplicate relationship instead of proving a NEW
+    // one connects.
+    const nodeA = chromeLightNodes(page).nth(4)
+    const nodeB = chromeLightNodes(page).nth(5)
+    await expect(nodeA.locator('.column-row')).toHaveCount(1)
+    await expect(nodeB.locator('.column-row')).toHaveCount(1)
+
+    // Existing relationships survive the collapse — the top migration risk
+    // (handle preservation) applies just as much to the LOD collapse as it
+    // does to the base chrome-light strip.
+    await expect(page.locator('.react-flow__edge')).toHaveCount(
+      edgeCountBefore,
+    )
+
+    // A NEW connection can still be dragged between two columns' handles
+    // while collapsed — proof the handles collapsing onto the header row
+    // visually didn't stop them from being real, individually anchored
+    // connection points. Same technique as the Phase 1 drag-to-connect
+    // test, but hovering the single collapsed header row (index 0) instead
+    // of a per-column row (there is no per-column row below threshold).
+    const headerRowA = nodeA.locator('.column-row').nth(0)
+    const source = columnHandle(nodeA, 1, 'right-source')
+    const target = columnHandle(nodeB, 1, 'left-target')
+
+    const rowBox = await headerRowA.boundingBox()
+    if (!rowBox) throw new Error('no bounding box for collapsed header row')
+    await page.mouse.move(
+      rowBox.x + rowBox.width / 2,
+      rowBox.y + rowBox.height / 2,
+    )
+
+    const from = await centerOf(source)
+    const to = await centerOf(target)
+    await source.dispatchEvent('mousedown', {
+      bubbles: true,
+      cancelable: true,
+      button: 0,
+      clientX: from.x,
+      clientY: from.y,
+    })
+    await page.mouse.move(to.x, to.y, { steps: 12 })
+    await page.mouse.up()
+    await page.getByRole('button', { name: 'Create', exact: true }).click()
+    await expect(page.locator('.react-flow__edge')).toHaveCount(
+      edgeCountBefore + 1,
+    )
+
+    // Zooming back in reverses the collapse cleanly (not a stuck state) —
+    // the same nodes are back to one `.column-row` per rendered column.
+    await zoomAboveLodThreshold(page)
+    expect(await getViewportScale(page)).toBeGreaterThanOrEqual(
+      LOD_ZOOM_THRESHOLD,
+    )
+    await expect(
+      chromeLightNodes(page).nth(0).locator('.column-row'),
+    ).not.toHaveCount(1)
   })
 })

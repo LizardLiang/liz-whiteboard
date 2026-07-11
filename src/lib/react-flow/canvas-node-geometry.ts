@@ -52,3 +52,33 @@ export function getVisibleColumnsForShowMode(
 export function computeTableHeight(rowColumnCount: number): number {
   return HEADER_H + rowColumnCount * ROW_H
 }
+
+/**
+ * Effective showMode after applying the LOD (level-of-detail) sub-threshold
+ * collapse — the ONE place the "zoomed out below LOD_ZOOM_THRESHOLD collapses
+ * to header-only" rule lives (tactical plan Phase 4, "parity sweep"). Both
+ * CanvasNodeLayer's draw loop and TableNode's chrome-light DOM path must
+ * consult this instead of the raw `showMode` prop, so canvas draw and DOM
+ * handle rows can never drift apart at low zoom (same invariant
+ * getVisibleColumnsForShowMode already protects for showMode itself).
+ *
+ * Takes the already-computed `isBelowLodThreshold` boolean rather than a raw
+ * zoom number (Hermes review WARNING 1, hardening the shared contract):
+ * TableNode already selects a derived `isZoomedBelowLodThreshold` boolean
+ * (so it only re-renders on threshold CROSSING, not on every pan/zoom tick)
+ * and CanvasNodeLayer computes `zoom < LOD_ZOOM_THRESHOLD` at its own call
+ * site (see level-of-detail.ts for the canonical threshold constant) — both
+ * call sites now share one obvious typed contract instead of TableNode
+ * reverse-engineering a synthetic zoom sentinel to fake the comparison.
+ *
+ * `forceFullDetail` (image export, `ForceFullDetailContext`) always wins —
+ * export must capture full detail regardless of the on-screen zoom.
+ */
+export function getEffectiveShowMode(
+  showMode: ShowMode,
+  isBelowLodThreshold: boolean,
+  forceFullDetail: boolean,
+): ShowMode {
+  if (isBelowLodThreshold && !forceFullDetail) return 'TABLE_NAME'
+  return showMode
+}

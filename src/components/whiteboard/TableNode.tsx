@@ -32,11 +32,12 @@ import {
   LOD_ZOOM_THRESHOLD,
   useForceFullDetail,
 } from '@/lib/react-flow/level-of-detail'
-import { useCanvasMode } from '@/lib/react-flow/canvas-mode'
+import { useCanvasEdit, useCanvasMode } from '@/lib/react-flow/canvas-mode'
 import {
   HEADER_H,
   ROW_H,
   computeTableHeight,
+  getEffectiveShowMode,
   getVisibleColumnsForShowMode,
 } from '@/lib/react-flow/canvas-node-geometry'
 import { getCachedTableWidth } from '@/lib/react-flow/canvas-node-metrics'
@@ -74,10 +75,20 @@ function LodColumnRow({
   column,
   tableId,
   isLast,
+  onDoubleClick,
 }: {
   column: Column
   tableId: string
   isLast: boolean
+  /**
+   * Canvas mode's chrome-light double-click-to-edit entry (tactical plan
+   * Phase 3) — only wired at the canvas-mode call site (and only when
+   * `canEdit`); the plain LOD-zoom-collapse call site below leaves this
+   * unset, so zoomed-out full-DOM boards gain no new double-click
+   * behavior. Stops propagation so the column double-click doesn't also
+   * fire the table wrapper's own header double-click handler.
+   */
+  onDoubleClick?: () => void
 }) {
   return (
     <div
@@ -87,6 +98,14 @@ function LodColumnRow({
         minHeight: `${COLUMN_ROW_HEIGHT}px`,
         borderBottom: isLast ? 'none' : '1px solid var(--rf-table-border)',
       }}
+      onDoubleClick={
+        onDoubleClick
+          ? (e) => {
+              e.stopPropagation()
+              onDoubleClick()
+            }
+          : undefined
+      }
     >
       <ColumnHandles tableId={tableId} columnId={column.id} />
     </div>
@@ -186,6 +205,18 @@ export const TableNode = memo(
         ? 'highlighted'
         : ''
 
+    // Canvas mode (tactical plan Phase 1, "DOM strip to handles-only
+    // anchors"): CanvasNodeLayer paints this table's visuals on <canvas>,
+    // so TableNode renders only a sized wrapper + per-column handles (no
+    // header text/buttons/badges, no ColumnRow bodies, no AddColumnRow) —
+    // UNLESS this table is the active edit overlay (tactical plan Phase 3,
+    // "In-place DOM edit overlay"), in which case it falls through to the
+    // full-DOM render below instead. See `isChromeLightTarget` and the
+    // early `if` return further down.
+    const canvasMode = useCanvasMode()
+    const { editingTableId, initialEditingField, requestEdit } =
+      useCanvasEdit()
+
     // Level-of-detail (GH #121 perf, opt #3): below LOD_ZOOM_THRESHOLD,
     // render each column as a minimal handles-only LodColumnRow instead of
     // the full interactive ColumnRow (columns are still mapped — see the
@@ -195,24 +226,69 @@ export const TableNode = memo(
     // the board crosses the threshold, not on every pan/zoom tick.
     // forceFullDetail (from ForceFullDetailContext) overrides this during
     // image export, which rasterizes the live DOM and must always capture
-    // full detail regardless of the current on-screen zoom.
+    // full detail regardless of the current on-screen zoom. Bug fix
+    // (dogfooding, tactical plan Phase 3): a dense canvas-mode board's
+    // working zoom is typically BELOW LOD_ZOOM_THRESHOLD — exactly where
+    // canvas mode gets used — so without the `editingTableId !== table.id`
+    // carve-out, the edit overlay's own full-DOM render would still collapse
+    // every column to handles-only LodColumnRow, leaving nothing to edit
+    // (0 inputs, empty column text) and silently swallowing the seeded
+    // editingField above. The overlay table is therefore ALWAYS exempt from
+    // LOD collapse — it renders full ColumnRows regardless of zoom, the same
+    // way `forceFullDetail` exempts image export.
     const forceFullDetail = useForceFullDetail()
     const isZoomedBelowLodThreshold = useStore(
       (s) => s.transform[2] < LOD_ZOOM_THRESHOLD,
     )
-    const isLodCollapsed = isZoomedBelowLodThreshold && !forceFullDetail
+    const isLodCollapsed =
+      isZoomedBelowLodThreshold &&
+      !forceFullDetail &&
+      editingTableId !== table.id
 
-    // Canvas mode (tactical plan Phase 1, "DOM strip to handles-only
-    // anchors"): CanvasNodeLayer paints this table's visuals on <canvas>,
-    // so TableNode renders only a sized wrapper + per-column handles (no
-    // header text/buttons/badges, no ColumnRow bodies, no AddColumnRow).
-    // Gated purely by canvasMode — Phase 1 has no edit overlay yet, so
-    // there is no "active-edit table" carve-out to check here (that's
-    // Phase 3). See the early `if (canvasMode)` return below.
-    const canvasMode = useCanvasMode()
+    // Seed editingField from initialEditingField the first render this
+    // table becomes the active overlay, so a double-clicked column's editor
+    // opens immediately (tactical plan Phase 3, step 3). Guarded by a
+    // per-instance ref comparing object identity (not by clearing the
+    // shared context value) — fires exactly once per requestEdit() call
+    // even though this effect's other deps (canvasMode) can change
+    // independently, and keeps CanvasEditContext's value free of a
+    // TableNode-owned "consumed" flag.
+    const consumedInitialEditRef = useRef<typeof initialEditingField>(null)
+    useEffect(() => {
+      if (!canvasMode || editingTableId !== table.id) return
+      if (!initialEditingField || initialEditingField.tableId !== table.id)
+        return
+      if (consumedInitialEditRef.current === initialEditingField) return
+      consumedInitialEditRef.current = initialEditingField
+      if (initialEditingField.columnId && initialEditingField.field) {
+        setEditingField({
+          columnId: initialEditingField.columnId,
+          field: initialEditingField.field,
+        })
+      }
+    }, [canvasMode, editingTableId, table.id, initialEditingField])
+
+    // LOD parity (tactical plan Phase 4, item 4): below LOD_ZOOM_THRESHOLD,
+    // the chrome-light DOM must collapse to header-only the SAME way
+    // CanvasNodeLayer's draw loop does — getEffectiveShowMode is the single
+    // source of truth both paths consult so canvas rows and DOM handle rows
+    // can never disagree (edge anchors depend on handle y === canvas row
+    // y). `isZoomedBelowLodThreshold` is already selected as a derived
+    // boolean (not the raw zoom number) to avoid re-rendering on every
+    // pan/zoom tick — passed straight through (getEffectiveShowMode takes
+    // the boolean directly, not a zoom number, so both call sites share one
+    // typed contract instead of TableNode reverse-engineering a synthetic
+    // zoom sentinel — Hermes review WARNING 1). `forceFullDetail` keeps the
+    // same export exemption LOD collapse already has elsewhere in this
+    // component.
+    const effectiveShowMode = getEffectiveShowMode(
+      showMode,
+      isZoomedBelowLodThreshold,
+      forceFullDetail,
+    )
     const chromeLightRowColumns = useMemo(
-      () => getVisibleColumnsForShowMode(columns, showMode),
-      [columns, showMode],
+      () => getVisibleColumnsForShowMode(columns, effectiveShowMode),
+      [columns, effectiveShowMode],
     )
     const chromeLightWidth = useMemo(
       () => getCachedTableWidth(table.id, table.name, columns, table.width),
@@ -298,8 +374,22 @@ export const TableNode = memo(
     // see DataTypeSelector.tsx — and there's no persisted value to lose for
     // an unmade combobox selection). Only after this resolves (editingField
     // clears) is the row free to actually collapse to LodColumnRow.
+    //
+    // Tactical plan Phase 3 ("In-place DOM edit overlay") reuses this EXACT
+    // effect for its own commit-on-exit requirement rather than inventing a
+    // new one. `isNotOverlayTarget` is true whenever, under canvas mode,
+    // this table is NOT the active edit overlay — true for the other ~38
+    // tables that were never being edited (a no-op below, since editingField
+    // is null for them), AND true the render the overlay moves OFF this
+    // table (pane click / Escape / double-click-another) while it still had
+    // an open edit — same one-commit-same-unmount race as the LOD case
+    // above, same fix (the `isChromeLightTarget` carve-out further down
+    // keeps this table on the full-DOM path while editingField is still
+    // open, mirroring the LOD per-column carve-out), same resolution path
+    // (blur / cancel).
+    const isNotOverlayTarget = canvasMode && editingTableId !== table.id
     useEffect(() => {
-      if (!isLodCollapsed || !editingField) return
+      if (!(isLodCollapsed || isNotOverlayTarget) || !editingField) return
       if (editingField.field === 'name') {
         columnRowsRef.current
           ?.querySelector<HTMLInputElement>('input[type="text"]')
@@ -307,7 +397,7 @@ export const TableNode = memo(
       } else {
         handleCancelEdit()
       }
-    }, [isLodCollapsed, editingField, handleCancelEdit])
+    }, [isLodCollapsed, isNotOverlayTarget, editingField, handleCancelEdit])
 
     const handleToggleConstraint = useCallback(
       (
@@ -626,7 +716,28 @@ export const TableNode = memo(
     // The TableNodeContextMenu wrapper is kept (cheap, and right-click table
     // actions stay available); everything else — header text/buttons/
     // badges, ColumnRow bodies, AddColumnRow — is stripped.
-    if (canvasMode) {
+    //
+    // Tactical plan Phase 3 ("In-place DOM edit overlay") carves out one
+    // exception: when this table IS the active edit overlay
+    // (`editingTableId === table.id`), skip this branch entirely and fall
+    // through to the full-DOM render below instead — it mounts at the same
+    // React Flow node position, so the overlay appears exactly in place.
+    // `!editingField` additionally keeps a table that just LOST the overlay
+    // (switch/exit) on the full-DOM path for one more render, mirroring the
+    // LOD per-column carve-out: the commit-on-exit effect above needs the
+    // still-live ColumnRow/InlineNameEditor mounted to resolve an open edit
+    // before this table is allowed to actually collapse to chrome-light.
+    // Image export (tactical plan Phase 4, "export forces full DOM"):
+    // forceFullDetail must bypass the chrome-light strip entirely, not just
+    // the LOD collapse above — during export every table renders the
+    // full-DOM path below (which ForceFullDetailContext already forces to
+    // full detail), so the capture never shows an empty chrome-light box
+    // (CanvasNodeLayer.tsx skips drawing during export too, for the same
+    // reason — see that file's `forceFullDetail` early return).
+    const isChromeLightTarget =
+      isNotOverlayTarget && !editingField && !forceFullDetail
+
+    if (isChromeLightTarget) {
       return (
         <TableNodeContextMenu
           onDeleteTable={handleRequestTableDelete}
@@ -651,15 +762,27 @@ export const TableNode = memo(
               width: `${chromeLightWidth}px`,
               height: `${chromeLightHeight}px`,
             }}
+            // Header/body double-click → open the edit overlay on this
+            // table with no field pre-selected (locked decision #1). Gated
+            // on `canEdit` — viewers get no handler at all, so they never
+            // get the overlay (locked decision #5). A column row's own
+            // onDoubleClick below stops propagation so a column
+            // double-click never ALSO fires this one.
+            onDoubleClick={
+              canEdit ? () => requestEdit(table.id) : undefined
+            }
           >
-            {showMode === 'TABLE_NAME' ? (
-              // TABLE_NAME: canvas draws the header only (no column rows),
-              // so every column's handles collapse into that single
-              // header-height row instead of each getting its own row —
-              // existing edges keep an anchor even though no column row is
-              // individually drawn. See "Show-mode parity in canvas
+            {effectiveShowMode === 'TABLE_NAME' ? (
+              // TABLE_NAME (or LOD-collapsed below LOD_ZOOM_THRESHOLD — see
+              // `effectiveShowMode` above): canvas draws the header only (no
+              // column rows), so every column's handles collapse into that
+              // single header-height row instead of each getting its own
+              // row — existing edges keep an anchor even though no column
+              // row is individually drawn. See "Show-mode parity in canvas
               // render" (spec-delta). `column-row` class required for the
-              // same hover-reveal reason as LodColumnRow above.
+              // same hover-reveal reason as LodColumnRow above. No column
+              // rows exist in this mode, so entry is header-only — the
+              // wrapper's onDoubleClick above already covers it.
               <div
                 className="column-row"
                 style={{ position: 'relative', height: `${HEADER_H}px` }}
@@ -685,6 +808,11 @@ export const TableNode = memo(
                       column={column}
                       tableId={table.id}
                       isLast={index === chromeLightRowColumns.length - 1}
+                      onDoubleClick={
+                        canEdit
+                          ? () => requestEdit(table.id, column.id, 'name')
+                          : undefined
+                      }
                     />
                   ),
                 )}

@@ -38,8 +38,9 @@ import type {
   RelationshipEdgeType,
   TableNodeType,
 } from '@/lib/react-flow/types'
+import type { InitialEditingField } from '@/lib/react-flow/canvas-mode'
+import { CanvasEditContext, CanvasModeContext } from '@/lib/react-flow/canvas-mode'
 import { recalculateEdgesForDraggedNodes } from '@/lib/react-flow/edge-routing'
-import { CanvasModeContext } from '@/lib/react-flow/canvas-mode'
 import { perfTracker } from '@/lib/perf/perf-tracker'
 import {
   assignLayersBFS,
@@ -312,6 +313,91 @@ export function ReactFlowCanvas({
   // Selection and hover state for highlighting
   const [activeTableId, setActiveTableId] = useState<string | null>(null)
   const [hoveredTableId, setHoveredTableId] = useState<string | null>(null)
+
+  // Canvas edit overlay (tactical plan Phase 3, "In-place DOM edit
+  // overlay") — editingTableId is the one table (if any) whose full-DOM
+  // TableNode is mounted in place over the chrome-light canvas render;
+  // initialEditingField carries which column/field to open the moment that
+  // overlay mounts (double-click-a-column direct-edit), consumed once by
+  // the target TableNode instance. Exposed via CanvasEditContext below so
+  // TableNode (rendered through nodeTypes, not passed props) can read/act
+  // on it — same rationale as CanvasModeContext.
+  const [editingTableId, setEditingTableId] = useState<string | null>(null)
+  const [initialEditingField, setInitialEditingField] =
+    useState<InitialEditingField | null>(null)
+
+  // requestEdit replaces whatever table was previously overlaid (at most
+  // one overlay at a time — locked decision #3) — a double-click on table B
+  // while table A is overlaid just calls this again with B, which is the
+  // entire "switch" behavior (locked decision #2); TableNode's own
+  // commit-on-exit effect (mirroring the LOD blur-commit pattern) notices
+  // editingTableId moved away from A and resolves any open edit there
+  // before it collapses back to chrome-light.
+  const requestEdit = useCallback(
+    (tableId: string, columnId?: string, field?: 'name' | 'dataType') => {
+      setEditingTableId(tableId)
+      setInitialEditingField(
+        columnId && field ? { tableId, columnId, field } : { tableId },
+      )
+    },
+    [],
+  )
+
+  const exitEdit = useCallback(() => {
+    setEditingTableId(null)
+    setInitialEditingField(null)
+  }, [])
+
+  // Escape closes the overlay (locked decision #2) — listener only active
+  // while an overlay is actually open, so it never intercepts Escape
+  // elsewhere on the board (e.g. closing an unrelated popover).
+  //
+  // Guarded on `!e.defaultPrevented` (code review defect 1, BLOCKER): Radix's
+  // DismissableLayer (backing DataTypeSelector, DeleteColumnDialog, note/
+  // comment popovers) registers a capture-phase Escape handler that calls
+  // `preventDefault()` — but NOT `stopPropagation()` — when it dismisses a
+  // nested layer. Without this guard, dismissing a nested dropdown/dialog/
+  // popover with Escape ALSO bubbles to this document listener (bubble
+  // phase runs after capture) and tears down the whole edit overlay in the
+  // same keystroke. The guard lets a single Escape close only the topmost
+  // nested layer; a second, unconsumed Escape then closes the overlay
+  // itself. Any other Escape-cancel handler in the overlaid subtree (e.g.
+  // InlineNameEditor, AreaNode's rename input) must likewise call
+  // `preventDefault()` on its own cancel to avoid double-closing.
+  useEffect(() => {
+    if (!editingTableId) return
+    const onKeyDown = (e: KeyboardEvent) => {
+      if (e.key === 'Escape' && !e.defaultPrevented) {
+        exitEdit()
+      }
+    }
+    document.addEventListener('keydown', onKeyDown)
+    return () => document.removeEventListener('keydown', onKeyDown)
+  }, [editingTableId, exitEdit])
+
+  // Clear the overlay if its target table no longer exists (code review
+  // defect 2, WARNING). Table deletion never routes through requestEdit/
+  // exitEdit — local delete (ReactFlowWhiteboard.tsx) and remote delete
+  // (onTableDeleted) both just filter the node out of `initialNodes`, and
+  // table nodes are `deletable: false` so onNodesDelete (below) never sees
+  // them either. Without this, deleting the overlaid table (reachable via
+  // its full-DOM context menu while the overlay is open) leaves
+  // `editingTableId` pointing at a dead id: the Escape listener above stays
+  // mounted and CanvasNodeLayer's draw-skip filter permanently excludes a
+  // nonexistent id until an unrelated pane-click/Escape/double-click
+  // happens to null it. Keyed on `nodes` (not `initialNodes`) so it reacts
+  // to the same synced node list the rest of the canvas renders from,
+  // covering both the local and remote delete paths.
+  useEffect(() => {
+    if (!editingTableId) return
+    if (nodes.some((n) => n.id === editingTableId)) return
+    exitEdit()
+  }, [editingTableId, nodes, exitEdit])
+
+  const canvasEditContextValue = useMemo(
+    () => ({ editingTableId, initialEditingField, requestEdit, exitEdit }),
+    [editingTableId, initialEditingField, requestEdit, exitEdit],
+  )
 
   // Root wrapper DOM ref (GH #121 perf) — lets the hover-highlight effect
   // below toggle CSS classes directly on React Flow's own `.react-flow__node`
@@ -665,9 +751,11 @@ export function ReactFlowCanvas({
   const onPaneClick = useCallback(
     (event: ReactMouseEvent) => {
       setActiveTableId(null)
+      // Empty-pane click closes the edit overlay (locked decision #2).
+      exitEdit()
       onPaneClickProp?.(event)
     },
-    [onPaneClickProp],
+    [onPaneClickProp, exitEdit],
   )
 
   // Handle node mouse enter (hover) — skip during drag (ReactFlow fires this on drag end)
@@ -1011,74 +1099,76 @@ export function ReactFlowCanvas({
     // TableNode's custom memo comparator). Mirrors ForceFullDetailContext's
     // usage elsewhere in this tree.
     <CanvasModeContext.Provider value={canvasMode}>
-      <div
-        ref={wrapperRef}
-        className={`react-flow-wrapper ${isConnecting ? 'is-connecting' : ''} ${className}`}
-        style={{ width: '100%', height: '100%' }}
-      >
-        {/* Global SVG marker definitions for cardinality indicators */}
-        <CardinalityMarkerDefs />
-
-        <ReactFlow
-          // Area nodes are a different node type merged behind tables; React Flow
-          // resolves them at runtime via the `area` entry in nodeTypes. The cast
-          // keeps the strongly-typed table handlers (onNodesChange<TableNodeType>)
-          // without threading a union node type through the whole canvas.
-          nodes={mergedNodes as unknown as typeof nodes}
-          edges={effectiveEdges}
-          onNodesChange={onNodesChange}
-          onEdgesChange={onEdgesChange}
-          onConnect={onConnect}
-          onConnectStart={onConnectStart}
-          onConnectEnd={onConnectEnd}
-          onNodeClick={onNodeClick}
-          onPaneClick={onPaneClick}
-          onNodeMouseEnter={onNodeMouseEnter}
-          onNodeMouseLeave={onNodeMouseLeave}
-          onNodeDragStart={onNodeDragStart}
-          onNodeDrag={onNodeDrag}
-          onNodeDragStop={onNodeDragStop}
-          // Perf tracker (GH #121 follow-up): pan/zoom gesture tagging. React
-          // Flow has no pan/zoom callbacks wired otherwise — these read-only
-          // handlers exist solely to tag the current gesture (noteMove disambiguates
-          // pan vs zoom by scale change). All writes no-op unless recording.
-          onMove={(_event, viewport) => perfTracker.noteMove(viewport.zoom)}
-          onMoveEnd={() => perfTracker.clearGesture()}
-          onNodesDelete={onNodesDelete}
-          deleteKeyCode={DELETE_KEY_CODES}
-          nodeTypes={memoizedNodeTypes}
-          edgeTypes={memoizedEdgeTypes}
-          nodesDraggable={nodesDraggable}
-          panOnDrag={panOnDrag}
-          nodesConnectable={true}
-          elementsSelectable={true}
-          onlyRenderVisibleElements={onlyRenderVisibleElements}
-          fitView
-          fitViewOptions={fitViewOptions}
-          minZoom={VIEWPORT_CONSTRAINTS.minZoom}
-          maxZoom={VIEWPORT_CONSTRAINTS.maxZoom}
-          panOnScroll={true}
-          defaultEdgeOptions={DEFAULT_EDGE_OPTIONS}
+      <CanvasEditContext.Provider value={canvasEditContextValue}>
+        <div
+          ref={wrapperRef}
+          className={`react-flow-wrapper ${isConnecting ? 'is-connecting' : ''} ${className}`}
+          style={{ width: '100%', height: '100%' }}
         >
-          <CanvasNodeLayer enabled={canvasMode} />
-          {showControls && <Controls />}
-          {showBackground && (
-            <Background color="var(--rf-background-pattern)" gap={16} />
-          )}
-          {showMinimap && minimapExpanded && (
-            <div className="minimap-backdrop" onClick={onMinimapCollapse} />
-          )}
-          {showMinimap && (
-            <MiniMap
-              nodeColor={minimapNodeColor}
-              maskColor="rgba(0, 0, 0, 0.1)"
-              pannable
-              onClick={onMinimapClick}
-              className={minimapExpanded ? 'minimap-focused' : undefined}
-            />
-          )}
-        </ReactFlow>
-      </div>
+          {/* Global SVG marker definitions for cardinality indicators */}
+          <CardinalityMarkerDefs />
+
+          <ReactFlow
+            // Area nodes are a different node type merged behind tables; React Flow
+            // resolves them at runtime via the `area` entry in nodeTypes. The cast
+            // keeps the strongly-typed table handlers (onNodesChange<TableNodeType>)
+            // without threading a union node type through the whole canvas.
+            nodes={mergedNodes as unknown as typeof nodes}
+            edges={effectiveEdges}
+            onNodesChange={onNodesChange}
+            onEdgesChange={onEdgesChange}
+            onConnect={onConnect}
+            onConnectStart={onConnectStart}
+            onConnectEnd={onConnectEnd}
+            onNodeClick={onNodeClick}
+            onPaneClick={onPaneClick}
+            onNodeMouseEnter={onNodeMouseEnter}
+            onNodeMouseLeave={onNodeMouseLeave}
+            onNodeDragStart={onNodeDragStart}
+            onNodeDrag={onNodeDrag}
+            onNodeDragStop={onNodeDragStop}
+            // Perf tracker (GH #121 follow-up): pan/zoom gesture tagging. React
+            // Flow has no pan/zoom callbacks wired otherwise — these read-only
+            // handlers exist solely to tag the current gesture (noteMove disambiguates
+            // pan vs zoom by scale change). All writes no-op unless recording.
+            onMove={(_event, viewport) => perfTracker.noteMove(viewport.zoom)}
+            onMoveEnd={() => perfTracker.clearGesture()}
+            onNodesDelete={onNodesDelete}
+            deleteKeyCode={DELETE_KEY_CODES}
+            nodeTypes={memoizedNodeTypes}
+            edgeTypes={memoizedEdgeTypes}
+            nodesDraggable={nodesDraggable}
+            panOnDrag={panOnDrag}
+            nodesConnectable={true}
+            elementsSelectable={true}
+            onlyRenderVisibleElements={onlyRenderVisibleElements}
+            fitView
+            fitViewOptions={fitViewOptions}
+            minZoom={VIEWPORT_CONSTRAINTS.minZoom}
+            maxZoom={VIEWPORT_CONSTRAINTS.maxZoom}
+            panOnScroll={true}
+            defaultEdgeOptions={DEFAULT_EDGE_OPTIONS}
+          >
+            <CanvasNodeLayer enabled={canvasMode} editingTableId={editingTableId} />
+            {showControls && <Controls />}
+            {showBackground && (
+              <Background color="var(--rf-background-pattern)" gap={16} />
+            )}
+            {showMinimap && minimapExpanded && (
+              <div className="minimap-backdrop" onClick={onMinimapCollapse} />
+            )}
+            {showMinimap && (
+              <MiniMap
+                nodeColor={minimapNodeColor}
+                maskColor="rgba(0, 0, 0, 0.1)"
+                pannable
+                onClick={onMinimapClick}
+                className={minimapExpanded ? 'minimap-focused' : undefined}
+              />
+            )}
+          </ReactFlow>
+        </div>
+      </CanvasEditContext.Provider>
     </CanvasModeContext.Provider>
   )
 }
