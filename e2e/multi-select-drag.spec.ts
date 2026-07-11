@@ -24,7 +24,9 @@ import type {Locator, Page} from '@playwright/test';
 // e2e/seed.ts) — isolated from the shared board every other spec uses. That
 // keeps test 1's "pristine geometry" assumption reliable regardless of run
 // order, and prevents this suite from polluting later specs' shared board.
-const WB_URL = `/whiteboard/${IDS.mdWhiteboard}`
+// ?canvas=0 forces full-DOM table rendering: canvas is now the default
+// (migration Phase 5), and this spec asserts DOM table content + drag.
+const WB_URL = `/whiteboard/${IDS.mdWhiteboard}?canvas=0`
 
 async function openWhiteboard(page: Page) {
   await page.goto(WB_URL)
