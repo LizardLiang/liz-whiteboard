@@ -94,6 +94,12 @@ export function AreaNode({ id, data, width, height, selected }: NodeProps<AreaNo
               onKeyDown={(e) => {
                 if (e.key === 'Enter') commitName()
                 if (e.key === 'Escape') {
+                  // Consume the Escape (code review defect 1 follow-up) —
+                  // without this, canceling an area rename while a canvas
+                  // table edit-overlay is open would also bubble to
+                  // ReactFlowCanvas's document-level Escape listener and
+                  // incorrectly close that overlay too.
+                  e.preventDefault()
                   setNameDraft(area.name)
                   setEditingName(false)
                 }

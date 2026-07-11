@@ -12,6 +12,7 @@ import type {
   RelationshipEdgeType,
   TableNodeType,
 } from '@/lib/react-flow/types'
+import { evictTableWidth } from '@/lib/react-flow/canvas-node-metrics'
 
 type SetNodes = React.Dispatch<React.SetStateAction<Array<TableNodeType>>>
 type SetEdges = React.Dispatch<
@@ -90,6 +91,11 @@ export function useTableMutations(
 
       // Optimistic remove node
       setNodes((prev) => prev.filter((n) => n.id !== tableId))
+
+      // canvas-node-metrics.ts's widthCache is a module-level Map keyed by
+      // tableId with no other eviction path — evict here so a session that
+      // deletes many tables over time doesn't leak cache entries forever.
+      evictTableWidth(tableId)
 
       // Store rollback
       pendingMutations.current.set(tableId, {
