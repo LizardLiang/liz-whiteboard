@@ -292,7 +292,7 @@ export function CanvasNodeLayer({
       ctx.fillStyle = colors.headerText
       ctx.font = '600 13px Inter, system-ui, sans-serif'
       ctx.fillText(
-        truncateToWidth(ctx, node.data.table?.name ?? '', w - PAD_X * 2),
+        truncateToWidth(ctx, node.data.table.name, w - PAD_X * 2),
         x + PAD_X,
         y + HEADER_H / 2,
       )
