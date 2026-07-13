@@ -18,6 +18,8 @@ import {
   computeD3ForceLayout,
   computeEdgeBundleOffsets,
 } from '@/lib/auto-layout/d3-force-layout'
+import { getCachedTableWidth } from '@/lib/react-flow/canvas-node-metrics'
+import { calculateTableHeight } from '@/lib/react-flow/layout-adapter'
 
 export interface LayoutResult {
   /** Node positions to apply via applyBulkPositions */
@@ -85,15 +87,46 @@ export function useD3ForceLayout(
           )
         }
 
-        // Convert React Flow nodes to layout input, reading measured dimensions
-        const layoutNodes = nodes.map((n) => ({
-          id: n.id,
-          // Verbatim copy of elk-layout.ts:58-59 dimension fallback strategy
-          // eslint-disable-next-line @typescript-eslint/no-unnecessary-condition
-          width: n.measured?.width ?? (n.width as number) ?? 250,
-          // eslint-disable-next-line @typescript-eslint/no-unnecessary-condition
-          height: n.measured?.height ?? (n.height as number) ?? 150,
-        }))
+        // Convert React Flow nodes to layout input.
+        //
+        // Table nodes: size from table DATA (full column list + saved width),
+        // never from `node.measured` — the measured DOM box is LOD-trimmed
+        // (header-only) when zoomed below LOD_ZOOM_THRESHOLD, which packed
+        // positions for the trimmed size and caused overlap once zoomed back
+        // in (GH #151 Bug 1). getCachedTableWidth is the same zoom-independent
+        // width source TableNode's chrome-light wrapper and CanvasNodeLayer's
+        // draw already use. Height uses calculateTableHeight (the established
+        // full-content estimator: 40 + rows*28 + 12, per area-bounds.ts /
+        // TableFocusOverlay), which slightly over-estimates vs the render
+        // path's computeTableHeight (34 + rows*28) — safe, since over-
+        // allocating vertical space only widens the gap, never overlaps.
+        //
+        // Non-table nodes (areas): keep the existing measured/width fallback
+        // — they have no `data.table` to size against.
+        const layoutNodes = nodes.map((n) => {
+          const table = n.data.table
+          // eslint-disable-next-line @typescript-eslint/no-unnecessary-condition -- `table` is non-nullable per TableNodeData, but this guards against a non-table node reaching this path at runtime (e.g. a future caller passing area nodes cast as TableNodeType).
+          if (table) {
+            return {
+              id: n.id,
+              width: getCachedTableWidth(
+                table.id,
+                table.name,
+                table.columns,
+                table.width,
+              ),
+              height: calculateTableHeight(table.columns.length),
+            }
+          }
+          return {
+            id: n.id,
+            // Verbatim copy of elk-layout.ts:58-59 dimension fallback strategy
+            // eslint-disable-next-line @typescript-eslint/no-unnecessary-condition
+            width: n.measured?.width ?? (n.width as number) ?? 250,
+            // eslint-disable-next-line @typescript-eslint/no-unnecessary-condition
+            height: n.measured?.height ?? (n.height as number) ?? 150,
+          }
+        })
 
         // Convert React Flow edges to layout input.
         // Pass id so computeEdgeBundleOffsets can emit per-edge offsets keyed by id.

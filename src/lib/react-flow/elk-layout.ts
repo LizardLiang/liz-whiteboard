@@ -3,6 +3,8 @@
  * Provides hierarchical auto-layout using Eclipse Layout Kernel (ELK)
  */
 
+import { getCachedTableWidth } from './canvas-node-metrics'
+import { calculateTableHeight } from './layout-adapter'
 import type { ElkNode } from 'elkjs'
 import type { RelationshipEdgeType, TableNodeType } from './types'
 
@@ -51,12 +53,34 @@ export function convertNodesToELKGraph(
   return {
     id: 'root',
     layoutOptions,
-    children: nodes.map((node) => ({
-      id: node.id,
-      // Use measured dimensions if available, otherwise use defaults
-      width: node.measured?.width ?? node.width ?? 250,
-      height: node.measured?.height ?? node.height ?? 150,
-    })),
+    // Table nodes: size from table DATA (full column list + saved width),
+    // never from `node.measured` — the measured DOM box is LOD-trimmed
+    // (header-only) below LOD_ZOOM_THRESHOLD, which would pack ELK's input
+    // with the trimmed size and cause overlap once zoomed back to full
+    // detail (GH #151 Bug 1, mirrored here from use-d3-force-layout.ts's
+    // live-path fix). Non-table nodes keep the existing measured fallback.
+    children: nodes.map((node) => {
+      const table = node.data.table
+      // eslint-disable-next-line @typescript-eslint/no-unnecessary-condition -- `table` is non-nullable per TableNodeData, but this guards against a non-table node reaching this path at runtime (e.g. a future caller passing area nodes cast as TableNodeType).
+      if (table) {
+        return {
+          id: node.id,
+          width: getCachedTableWidth(
+            table.id,
+            table.name,
+            table.columns,
+            table.width,
+          ),
+          height: calculateTableHeight(table.columns.length),
+        }
+      }
+      return {
+        id: node.id,
+        // Use measured dimensions if available, otherwise use defaults
+        width: node.measured?.width ?? node.width ?? 250,
+        height: node.measured?.height ?? node.height ?? 150,
+      }
+    }),
     edges: edges.map((edge) => ({
       id: edge.id,
       sources: [edge.source],
