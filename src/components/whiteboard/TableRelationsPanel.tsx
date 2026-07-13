@@ -17,8 +17,9 @@
  * PK/FK badge lists.
  */
 
-import { useLayoutEffect, useRef, useState } from 'react'
-import type { CSSProperties } from 'react'
+import { useCallback, useEffect, useLayoutEffect, useRef, useState } from 'react'
+import { createPortal } from 'react-dom'
+import { useStore } from '@xyflow/react'
 import type { Column, DiagramTable } from '@/data/models'
 import type { RelationshipEdgeType } from '@/lib/react-flow/types'
 
@@ -42,54 +43,108 @@ export function TableRelationsPanel({
   tableNameById,
   onJumpToTable,
 }: TableRelationsPanelProps) {
+  // A 0-size marker rendered inside the table node's DOM; we measure its
+  // parent `.react-flow__node` to anchor the (portaled) panel in screen space.
+  const anchorRef = useRef<HTMLSpanElement>(null)
   const panelRef = useRef<HTMLDivElement>(null)
   const [side, setSide] = useState<'left' | 'right'>('right')
+  // Start off-screen so the portal always renders (so panelRef can be
+  // measured) but nothing flashes before useLayoutEffect positions it.
+  const [pos, setPos] = useState<{ top: number; left: number }>({
+    top: -9999,
+    left: -9999,
+  })
 
-  // Post-render measurement: getBoundingClientRect gives real screen pixels
-  // (the panel is transformed by React Flow's pan/zoom), so "room on the
-  // right" can only be known after the panel has actually rendered on the
-  // right. useLayoutEffect (not useEffect) resolves this before paint so no
-  // flicker is visible when the side flips.
-  // Note: getBoundingClientRect() always returns an all-zero rect in jsdom
-  // (no real layout engine), so this flip cannot be meaningfully exercised
-  // by Vitest/RTL — it will always resolve `overflowsRight = false` there.
-  // Manual/browser verification is required to confirm the flip.
+  // Under canvas mode the table node lives in React Flow's transformed
+  // viewport, which is a stacking layer the `.react-flow__pane` sits ABOVE for
+  // hit-testing — an in-node absolutely-positioned drawer that overflows the
+  // node box is therefore visually present but NOT clickable (the pane wins
+  // `elementFromPoint`, so "jump to related table" rows can't be clicked; z-index
+  // can't escape the viewport's stacking context). So we PORTAL the panel to
+  // <body> and position it `fixed` at the node's live screen rect, re-tracked on
+  // every pan/zoom via the store transform. Subscribing to `transform` re-runs
+  // this layout effect each viewport change.
+  const transform = useStore((s) => s.transform)
+
+  const reposition = useCallback(() => {
+    const nodeEl = anchorRef.current?.closest(
+      '.react-flow__node',
+    ) as HTMLElement | null
+    if (!nodeEl) return
+    const nrect = nodeEl.getBoundingClientRect()
+    const panelW = panelRef.current?.offsetWidth || 280
+    const gap = 10
+    const rightLeft = nrect.right + gap
+    const overflowsRight = rightLeft + panelW > window.innerWidth - 8
+    const nextSide = overflowsRight ? 'left' : 'right'
+    setSide(nextSide)
+    setPos({
+      top: nrect.top,
+      left: nextSide === 'right' ? rightLeft : nrect.left - panelW - gap,
+    })
+  }, [])
+
+  // Reposition on pan/zoom (store transform) + when the panel's content (hence
+  // its measured width, hence the side-flip) changes. useLayoutEffect resolves
+  // before paint so the panel never flashes at a stale spot.
   useLayoutEffect(() => {
-    const el = panelRef.current
-    if (!el) return
-    const rect = el.getBoundingClientRect()
-    const overflowsRight = rect.right > window.innerWidth - 8
-    setSide(overflowsRight ? 'left' : 'right')
-  }, [relatedEdges, table.id])
+    reposition()
+  }, [reposition, transform, relatedEdges, table.id])
 
-  const sideStyle: CSSProperties =
-    side === 'right'
-      ? { left: '100%', marginLeft: '10px' }
-      : { right: '100%', marginRight: '10px' }
+  // Also reposition on window resize AND pane-container resize (e.g. a side
+  // panel opening/closing) — neither necessarily changes the RF transform, so
+  // without this the `position: fixed` panel drifts off its table. Mirrors
+  // CanvasNodeLayer's ResizeObserver on the pane.
+  useEffect(() => {
+    window.addEventListener('resize', reposition)
+    const rfEl = anchorRef.current?.closest('.react-flow') as HTMLElement | null
+    let ro: ResizeObserver | undefined
+    if (rfEl && typeof ResizeObserver !== 'undefined') {
+      ro = new ResizeObserver(() => reposition())
+      ro.observe(rfEl)
+    }
+    return () => {
+      window.removeEventListener('resize', reposition)
+      ro?.disconnect()
+    }
+  }, [reposition])
 
   return (
-    <div
-      ref={panelRef}
-      data-testid="table-relations-panel"
-      data-side={side}
-      className="nodrag nowheel"
-      style={{
-        position: 'absolute',
-        top: 0,
-        ...sideStyle,
-        width: 'max-content',
-        maxWidth: '360px',
-        maxHeight: '50vh',
-        overflowY: 'auto',
-        background: 'var(--rf-table-bg)',
-        border: '1px solid var(--rf-table-border)',
-        borderRadius: '8px',
-        boxShadow: '0 4px 12px rgba(0, 0, 0, 0.15)',
-        padding: '10px 12px',
-        fontSize: '12px',
-        color: 'var(--rf-table-text)',
-      }}
-    >
+    <>
+      <span
+        ref={anchorRef}
+        style={{ position: 'absolute', top: 0, left: 0, width: 0, height: 0 }}
+      />
+      {createPortal(
+        <div
+          ref={panelRef}
+          data-testid="table-relations-panel"
+          data-side={side}
+          className="nodrag nowheel"
+          style={{
+            position: 'fixed',
+            top: pos.top,
+            left: pos.left,
+            // As a <body> portal (position: fixed), this already stacks above
+            // the whole react-flow app root — including the CanvasNodeLayer
+            // (z-[1000], scoped inside RF's stacking context) — so its jump
+            // rows are clickable. Kept BELOW shadcn overlays (Dialog/Popover/
+            // ContextMenu = z-50) so a modal opened over the panel still wins
+            // pointer events. See Hermes review 2026-07-13.
+            zIndex: 40,
+            width: 'max-content',
+            maxWidth: '360px',
+            maxHeight: '50vh',
+            overflowY: 'auto',
+            background: 'var(--rf-table-bg)',
+            border: '1px solid var(--rf-table-border)',
+            borderRadius: '8px',
+            boxShadow: '0 4px 12px rgba(0, 0, 0, 0.15)',
+            padding: '10px 12px',
+            fontSize: '12px',
+            color: 'var(--rf-table-text)',
+          }}
+        >
       <div
         style={{
           fontWeight: 700,
@@ -197,6 +252,9 @@ export function TableRelationsPanel({
           })}
         </div>
       )}
-    </div>
+        </div>,
+        document.body,
+      )}
+    </>
   )
 }

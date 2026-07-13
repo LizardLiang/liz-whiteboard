@@ -164,6 +164,17 @@ export const TableNode = memo(
     // Header hover state — controls X delete button visibility
     const [isHeaderHovered, setIsHeaderHovered] = useState(false)
 
+    // Which popover (if any) the chrome-light branch's right-click context
+    // menu opened (tactical plan: canvas-table-affordances) — Note/Comment
+    // opened this way NEVER call requestEdit; the table stays canvas-drawn
+    // while the popover floats above it (portaled to body by Radix). Declared
+    // unconditionally here (not inside the `isChromeLightTarget` branch
+    // below) since hooks must run every render regardless of which branch
+    // this component takes.
+    const [chromeLightPopover, setChromeLightPopover] = useState<
+      'note' | 'comment' | null
+    >(null)
+
     // --- Drag-and-drop reorder state (raw pointer events) ---
     const [activeId, setActiveId] = useState<string | null>(null)
     const [overIndex, setOverIndex] = useState<number | null>(null)
@@ -387,7 +398,17 @@ export const TableNode = memo(
     // keeps this table on the full-DOM path while editingField is still
     // open, mirroring the LOD per-column carve-out), same resolution path
     // (blur / cancel).
-    const isNotOverlayTarget = canvasMode && editingTableId !== table.id
+    //
+    // canvas-unconditional-default: also exempt a table whose relations
+    // panel is open. `TableRelationsPanel` only exists in the full-DOM
+    // render below (chrome-light has no space/DOM to draw the attached
+    // drawer into, unlike Note/Comment's portal-based popovers) — without
+    // this carve-out, toggling "Show relations" on a chrome-light table
+    // flips `isRelationsPreviewOpen` with nothing ever rendering it. Same
+    // pattern as the edit-overlay exemption directly above: bounded to at
+    // most one full-DOM table at a time.
+    const isNotOverlayTarget =
+      canvasMode && editingTableId !== table.id && !isRelationsPreviewOpen
     useEffect(() => {
       if (!(isLodCollapsed || isNotOverlayTarget) || !editingField) return
       if (editingField.field === 'name') {
@@ -748,6 +769,19 @@ export const TableNode = memo(
           tableId={table.id}
           onAddToArea={onAddToArea}
           onRemoveFromArea={onRemoveFromArea}
+          // Note/Comment (tactical plan: canvas-table-affordances) — restore
+          // the header note/comment affordances CanvasNodeLayer's glyphs
+          // indicate but can't act on (canvas paints are inert to clicks).
+          // Gated by the SAME permission each mirrors on the full-DOM header
+          // (canEdit for note, canComment for comment) via prop presence —
+          // TableNodeContextMenu only renders an item when its handler is
+          // provided. Neither ever calls requestEdit: the table stays
+          // canvas-drawn while the popover (rendered below, controlled by
+          // `chromeLightPopover`) floats above it.
+          onOpenNote={canEdit ? () => setChromeLightPopover('note') : undefined}
+          onOpenComment={
+            canComment ? () => setChromeLightPopover('comment') : undefined
+          }
         >
           <div
             // `chrome-light` has no matching CSS rule yet — deliberate
@@ -757,6 +791,7 @@ export const TableNode = memo(
             // render path just to add one.
             className={`react-flow__node-erTable chrome-light ${selected ? 'selected' : ''} ${highlightClass}`}
             data-testid="table-node-chrome-light"
+            data-table-name={table.name}
             style={{
               position: 'relative',
               width: `${chromeLightWidth}px`,
@@ -818,6 +853,51 @@ export const TableNode = memo(
                 )}
               </>
             )}
+
+            {/* Note/Comment popovers (tactical plan: canvas-table-affordances)
+                — controlled by chromeLightPopover, opened via the context
+                menu items above (never by clicking these anchors directly:
+                both render a zero-size PopoverAnchor here, since the chrome-
+                light branch has no visible header DOM for a trigger button —
+                CanvasNodeLayer paints over it). Radix portals PopoverContent
+                to `body`, so it renders above the z-[1000] canvas layer,
+                positioned over this table. Reuses the exact same popovers/
+                handlers the full-DOM header uses (handleTableNoteSave /
+                onCreateTableComment etc.) — critically, neither path calls
+                requestEdit, so the table never leaves its canvas-drawn,
+                chrome-light form while the popover is open. */}
+            {canEdit && (
+              <TableNotePopover
+                description={table.description ?? null}
+                onSave={handleTableNoteSave}
+                open={chromeLightPopover === 'note'}
+                onOpenChange={(open) => {
+                  if (!open) setChromeLightPopover(null)
+                }}
+                anchorOnly
+              />
+            )}
+            {canComment && (
+              <CommentThreadPopover
+                threads={commentThreads}
+                canComment={canComment}
+                currentUserId={currentUserId}
+                canModerateComments={canModerateComments}
+                onCreateThread={(body) =>
+                  onCreateTableComment?.(table.id, body)
+                }
+                onReply={(parentId, body) => onReplyComment?.(parentId, body)}
+                onEdit={(commentId, body) => onEditComment?.(commentId, body)}
+                onDelete={(commentId) => onDeleteComment?.(commentId)}
+                onResolve={(commentId, resolved) =>
+                  onResolveComment?.(commentId, resolved)
+                }
+                open={chromeLightPopover === 'comment'}
+                onOpenChange={(open) => {
+                  if (!open) setChromeLightPopover(null)
+                }}
+              />
+            )}
           </div>
         </TableNodeContextMenu>
       )
@@ -836,6 +916,7 @@ export const TableNode = memo(
       >
         <div
           className={`react-flow__node-erTable ${selected ? 'selected' : ''} ${highlightClass}`}
+          data-table-name={table.name}
           style={{
             position: 'relative',
             width: 'max-content',

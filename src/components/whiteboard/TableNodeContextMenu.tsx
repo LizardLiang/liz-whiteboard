@@ -3,6 +3,7 @@
  * Uses Radix ContextMenu (via shadcn) for accessibility and portal-based positioning
  */
 
+import { MessageCircle, StickyNote } from 'lucide-react'
 import { useWhiteboardPermissions } from './whiteboard-permissions-context'
 import type { Dialect } from '@/lib/ddl-generator'
 import {
@@ -32,6 +33,20 @@ export interface TableNodeContextMenuProps {
   onAddToArea?: (tableId: string, areaId: string) => void
   /** Remove this table from an area */
   onRemoveFromArea?: (tableId: string, areaId: string) => void
+  /**
+   * Open the table note popover (tactical plan: canvas-table-affordances).
+   * Rendered only when provided — the caller (TableNode) only passes this
+   * when `canEdit` is true (editor+ parity with the full-DOM header's
+   * TableNotePopover), so omitting it is the gate, not a prop here.
+   */
+  onOpenNote?: () => void
+  /**
+   * Open the table comment thread popover (tactical plan:
+   * canvas-table-affordances). Rendered only when provided — the caller
+   * only passes this when `canComment` is true (viewer+ parity with the
+   * full-DOM header's CommentThreadPopover).
+   */
+  onOpenComment?: () => void
 }
 
 export function TableNodeContextMenu({
@@ -45,6 +60,8 @@ export function TableNodeContextMenu({
   tableId,
   onAddToArea,
   onRemoveFromArea,
+  onOpenNote,
+  onOpenComment,
 }: TableNodeContextMenuProps) {
   const { canEdit } = useWhiteboardPermissions()
   return (
@@ -69,6 +86,34 @@ export function TableNodeContextMenu({
           Show relations
           <ContextMenuShortcut>R</ContextMenuShortcut>
         </ContextMenuItem>
+        {/* Comment — viewer+ (canComment), opens the same CommentThreadPopover
+            the full-DOM header's badge uses. Rendered only when the caller
+            passed a handler (tactical plan: canvas-table-affordances). */}
+        {onOpenComment && (
+          <ContextMenuItem
+            onSelect={() => {
+              onOpenComment()
+            }}
+            disabled={disabled}
+          >
+            <MessageCircle className="mr-2 h-4 w-4" />
+            Comment
+          </ContextMenuItem>
+        )}
+        {/* Note — editor-only (canEdit), opens the same TableNotePopover the
+            full-DOM header's StickyNote trigger uses. Rendered only when the
+            caller passed a handler (tactical plan: canvas-table-affordances). */}
+        {onOpenNote && (
+          <ContextMenuItem
+            onSelect={() => {
+              onOpenNote()
+            }}
+            disabled={disabled}
+          >
+            <StickyNote className="mr-2 h-4 w-4" />
+            Note
+          </ContextMenuItem>
+        )}
         <ContextMenuSub>
           <ContextMenuSubTrigger disabled={disabled}>
             Export DDL

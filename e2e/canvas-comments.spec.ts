@@ -13,26 +13,30 @@
 // split, since it only depends on the initial `getWhiteboardComments` load.
 import { expect, test } from '@playwright/test'
 import { IDS } from './fixtures'
+import { tableNode } from './canvas-helpers'
 import type { Page } from '@playwright/test'
 
+// Canvas is unconditional (canvas-unconditional-default) — no `?canvas` opt
+// out. A chrome-light table has no header DOM comment-badge trigger
+// (CanvasNodeLayer paints over it), so the table-anchored thread test opens
+// the popover via right-click → Comment (TableNodeContextMenu, tactical
+// plan: canvas-table-affordances) — same pattern as
+// e2e/canvas-affordances.spec.ts. The free-canvas-point pin test is
+// unaffected by chrome-light stripping (it's driven entirely via the
+// Toolbar's "Add comment" tool + a pane click, not per-table DOM).
 const WB_URL = `/whiteboard/${IDS.whiteboard}`
 
 async function openWhiteboard(page: Page) {
   await page.goto(WB_URL)
   await expect(page.getByRole('heading', { name: 'E2E ERD' })).toBeVisible()
-  await expect(
-    page.locator('.react-flow').getByText('users', { exact: true }).first(),
-  ).toBeVisible()
+  await expect(tableNode(page, 'users').first()).toBeVisible()
 }
 
-/** Opens the "users" table's comment popover via its header badge trigger. */
+/** Opens the "users" table's comment popover via right-click → Comment. */
 async function openUsersTableCommentPopover(page: Page) {
-  await page
-    .locator('.react-flow__node')
-    .filter({ hasText: 'users' })
-    .first()
-    .getByTestId('table-comment-trigger')
-    .click()
+  const node = tableNode(page, 'users').first()
+  await node.dispatchEvent('contextmenu', { bubbles: true, cancelable: true })
+  await page.getByRole('menuitem', { name: 'Comment', exact: true }).click()
 }
 
 test.describe('Canvas comments / annotations (GH #110)', () => {

@@ -5,7 +5,24 @@
 // file, so the two specs can never silently drift on the threshold value the
 // same way canvas-node-geometry.ts's `getEffectiveShowMode` exists to keep
 // the canvas draw and chrome-light DOM from drifting in the app code itself.
-import type { Page } from '@playwright/test'
+//
+// `tableNode` (canvas-unconditional-default) — the addressability hook every
+// e2e spec rewritten off `?canvas=0` uses to find a table by name once canvas
+// mode strips its DOM text: `data-table-name` is set on both the chrome-light
+// AND full-DOM node roots (TableNode.tsx), so this one selector works
+// regardless of which branch is currently rendering that table (e.g. the
+// active edit overlay, or a table with its relations panel open).
+import type { Locator, Page } from '@playwright/test'
+
+/** Find a table node by name — works whether it's currently chrome-light
+ * (canvas-drawn) or full-DOM (edit overlay / relations panel open), since
+ * `data-table-name` is set on both node roots. Prefer this over
+ * `.react-flow__node.filter({ hasText: name })`, which only matches
+ * chrome-light tables by accident when some OTHER text node happens to
+ * contain the name — chrome-light itself carries no text content at all. */
+export function tableNode(page: Page, name: string): Locator {
+  return page.locator(`[data-table-name="${name}"]`)
+}
 
 /** Zoom level below which TableNode/CanvasNodeLayer collapse to header-only
  * (tactical plan Phase 4, "parity sweep" item 4 — `getEffectiveShowMode` in

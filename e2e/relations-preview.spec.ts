@@ -16,24 +16,43 @@
 // asserts it survives.
 import { expect, test } from '@playwright/test'
 import { IDS } from './fixtures'
+import { tableNode } from './canvas-helpers'
 import type { Page } from '@playwright/test'
 
+// Canvas is unconditional (canvas-unconditional-default) — no `?canvas` opt
+// out. A chrome-light table has no DOM relations trigger button (canvas
+// paints the header), so the panel is opened via right-click → "Show
+// relations" (TableNodeContextMenu) instead. Opening it forces that ONE
+// table to its full-DOM render (TableNode.tsx's `isNotOverlayTarget` now
+// also exempts a table with its relations panel open, mirroring the existing
+// edit-overlay exemption — see implementation-notes.md deviation), which is
+// what mounts `table-relations-trigger`/`table-relations-panel` — same
+// testids/component the pre-canvas-unconditional spec asserted on.
 const WB_URL = `/whiteboard/${IDS.whiteboard}`
 
 async function openWhiteboard(page: Page) {
   await page.goto(WB_URL)
   await expect(page.getByRole('heading', { name: 'E2E ERD' })).toBeVisible()
-  // Canvas ready: the react-flow pane has rendered the seeded tables.
-  await expect(
-    page.locator('.react-flow').getByText('users', { exact: true }).first(),
-  ).toBeVisible()
+  // Canvas ready: the seeded "users" table's chrome-light DOM node exists.
+  await expect(tableNode(page, 'users').first()).toBeVisible()
 }
 
 function usersNode(page: Page) {
-  return page
-    .locator('.react-flow__node')
-    .filter({ hasText: 'users' })
-    .first()
+  return tableNode(page, 'users').first()
+}
+
+function ordersNode(page: Page) {
+  return tableNode(page, 'orders').first()
+}
+
+/** Open a table's relations panel via right-click → "Show relations" — the
+ * canvas-native entry point (a chrome-light table has no DOM trigger button
+ * to click directly). */
+async function openRelationsViaContextMenu(node: ReturnType<typeof usersNode>) {
+  await node.dispatchEvent('contextmenu', { bubbles: true, cancelable: true })
+  // NOT exact: the menuitem's accessible name includes its "R" keyboard
+  // shortcut ("Show relationsR"), so an exact 'Show relations' matches nothing.
+  await node.page().getByRole('menuitem', { name: 'Show relations' }).click()
 }
 
 function relationsTrigger(page: Page) {
@@ -44,20 +63,13 @@ function relationsPanel(page: Page) {
   return page.getByTestId('table-relations-panel')
 }
 
-function ordersNode(page: Page) {
-  return page
-    .locator('.react-flow__node')
-    .filter({ hasText: 'orders' })
-    .first()
-}
-
 test.describe('Relations preview panel (GH #134)', () => {
   test('opens on click and lists the related table (RP-1)', async ({
     page,
   }) => {
     await openWhiteboard(page)
 
-    await relationsTrigger(page).click()
+    await openRelationsViaContextMenu(usersNode(page))
 
     await expect(relationsTrigger(page)).toHaveAttribute(
       'aria-pressed',
@@ -72,7 +84,7 @@ test.describe('Relations preview panel (GH #134)', () => {
   }) => {
     await openWhiteboard(page)
 
-    await relationsTrigger(page).click()
+    await openRelationsViaContextMenu(usersNode(page))
     await expect(relationsTrigger(page)).toHaveAttribute(
       'aria-pressed',
       'true',
@@ -164,19 +176,21 @@ test.describe('Relations preview panel (GH #134)', () => {
   test('toggles off on second click', async ({ page }) => {
     await openWhiteboard(page)
 
-    await relationsTrigger(page).click()
+    await openRelationsViaContextMenu(usersNode(page))
     await expect(relationsTrigger(page)).toHaveAttribute(
       'aria-pressed',
       'true',
     )
     await expect(relationsPanel(page)).toBeVisible()
 
+    // Closing reverts the table to chrome-light (isNotOverlayTarget's
+    // relations-open exemption no longer applies), which unmounts the
+    // trigger/panel entirely rather than just hiding them — so the
+    // post-close assertion is absence, not an aria-pressed="false" read on
+    // an element that no longer exists.
     await relationsTrigger(page).click()
 
-    await expect(relationsTrigger(page)).toHaveAttribute(
-      'aria-pressed',
-      'false',
-    )
     await expect(relationsPanel(page)).toBeHidden()
+    await expect(relationsTrigger(page)).toHaveCount(0)
   })
 })

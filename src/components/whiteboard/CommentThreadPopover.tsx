@@ -19,6 +19,7 @@ import type { CommentThreadVM } from '@/lib/react-flow/types'
 import type { CommentWithAuthor } from '@/data/models'
 import {
   Popover,
+  PopoverAnchor,
   PopoverContent,
   PopoverTrigger,
 } from '@/components/ui/popover'
@@ -230,11 +231,29 @@ export function CommentThreadCard({
 }
 
 export interface CommentThreadPopoverProps extends CommentActionHandlers {
-  trigger: ReactNode
+  /**
+   * Trigger element (full-DOM header's MessageCircle button). Optional
+   * (tactical plan: canvas-table-affordances) — when omitted, a zero-size
+   * `PopoverAnchor` is rendered instead, for TableNode's chrome-light
+   * branch, which has no visible header DOM to attach a button to
+   * (CanvasNodeLayer paints over it). Pair with `open`/`onOpenChange` in
+   * that case — the popover is then opened via the right-click context menu
+   * instead of a click on this element.
+   */
+  trigger?: ReactNode
   threads: Array<CommentThreadVM>
   onCreateThread: (body: string) => void
   side?: 'top' | 'right' | 'bottom' | 'left'
   align?: 'start' | 'center' | 'end'
+  /**
+   * Controlled open state — optional. When provided (together with
+   * `onOpenChange`), drives the popover externally instead of Radix's own
+   * uncontrolled internal state. Omitting both keeps the existing
+   * trigger-button usage (full-DOM header) byte-identical to before this
+   * change.
+   */
+  open?: boolean
+  onOpenChange?: (open: boolean) => void
 }
 
 /** Table-anchored popover: lists every thread on the table plus a "start a
@@ -245,19 +264,35 @@ export function CommentThreadPopover({
   onCreateThread,
   side = 'right',
   align = 'start',
+  open,
+  onOpenChange,
   ...handlers
 }: CommentThreadPopoverProps) {
   const [newThreadDraft, setNewThreadDraft] = useState('')
+  // Spread only when controlled (openProp !== undefined) so the uncontrolled
+  // full-DOM usage (no open/onOpenChange passed) is completely unaffected —
+  // Radix's own internal state manages `<Popover>` exactly as before.
+  const controlledProps =
+    open !== undefined ? { open, onOpenChange } : undefined
 
   return (
-    <Popover>
-      <PopoverTrigger
-        asChild
-        onClick={(e) => e.stopPropagation()}
-        onPointerDown={(e) => e.stopPropagation()}
-      >
-        {trigger}
-      </PopoverTrigger>
+    <Popover {...controlledProps}>
+      {trigger ? (
+        <PopoverTrigger
+          asChild
+          onClick={(e) => e.stopPropagation()}
+          onPointerDown={(e) => e.stopPropagation()}
+        >
+          {trigger}
+        </PopoverTrigger>
+      ) : (
+        <PopoverAnchor asChild>
+          <span
+            aria-hidden
+            style={{ position: 'absolute', top: 0, right: 18, width: 0, height: 0 }}
+          />
+        </PopoverAnchor>
+      )}
       <PopoverContent
         side={side}
         align={align}

@@ -5,15 +5,17 @@
 // with one bitmap. This is the Figma model: canvas paints the diagram, DOM is
 // reserved for the table the user is actively editing (added in a later step).
 //
-// STEP 1 (this file): non-destructive foundation. Gated by `?canvas=1`, it
-// renders as an overlay so the drawing + transform-sync can be verified against
-// the live DOM before the DOM node bodies are swapped off. No interaction yet —
-// React Flow still owns pan/zoom/drag/selection/edges underneath.
+// STEP 1 (this file): non-destructive foundation. Unconditional on the main
+// board (canvas-unconditional-default), it renders as an overlay so the
+// drawing + transform-sync can be verified against the live DOM before the
+// DOM node bodies are swapped off. No interaction yet — React Flow still owns
+// pan/zoom/drag/selection/edges underneath.
 //
 // It lives INSIDE <ReactFlow> (a pane-fixed child, like <Background>), so it can
 // read the viewport transform from the store and draw in screen space itself.
-import { useEffect, useRef, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import { useStore } from '@xyflow/react'
+import { useWhiteboardPermissions } from './whiteboard-permissions-context'
 import type { TableNodeData } from '@/lib/react-flow/types'
 import {
   HEADER_H,
@@ -37,6 +39,11 @@ interface ThemeColors {
   text: string
   pk: string
   fk: string
+  /** Comment badge accent (tactical plan: canvas-table-affordances) — same
+   * `--rf-edge-stroke-selected` var the DOM unresolved-comment badge uses
+   * (TableNode.tsx), so the canvas glyph and the DOM badge never disagree
+   * on color. */
+  accent: string
 }
 
 function readColors(el: HTMLElement): ThemeColors {
@@ -51,8 +58,96 @@ function readColors(el: HTMLElement): ThemeColors {
     text: v('--rf-table-text', '#374151'),
     pk: v('--rf-primary-key-color', '#3b82f6'),
     fk: v('--rf-foreign-key-color', '#10b981'),
+    accent: v('--rf-edge-stroke-selected', '#6366f1'),
   }
 }
+
+/**
+ * Canvas table affordance glyphs (tactical plan: canvas-table-affordances).
+ * Cheap paths/arcs/text drawn in the header's right-aligned glyph strip —
+ * mirrors the existing PK/FK dot + type-text drawing style, no image
+ * assets. Visibility only (locked decision #2 — left-click is inert on
+ * these); acting is via the table's right-click context menu
+ * (TableNodeContextMenu's new Note/Comment items).
+ */
+function drawCommentGlyph(
+  ctx: CanvasRenderingContext2D,
+  cx: number,
+  cy: number,
+  count: number,
+  accent: string,
+) {
+  const r = 5.5
+  ctx.beginPath()
+  ctx.arc(cx, cy, r, 0, Math.PI * 2)
+  ctx.fillStyle = accent
+  ctx.fill()
+  ctx.save()
+  ctx.fillStyle = '#ffffff'
+  ctx.font = '700 8px Inter, system-ui, sans-serif'
+  ctx.textAlign = 'center'
+  ctx.fillText(count > 9 ? '9+' : String(count), cx, cy + 0.5)
+  ctx.restore()
+}
+
+function drawNoteGlyph(
+  ctx: CanvasRenderingContext2D,
+  cx: number,
+  cy: number,
+  color: string,
+) {
+  // Sticky-note icon: a square with a folded top-right corner.
+  const sz = 9
+  const x0 = cx - sz / 2
+  const y0 = cy - sz / 2
+  ctx.save()
+  ctx.fillStyle = color
+  ctx.beginPath()
+  ctx.moveTo(x0, y0)
+  ctx.lineTo(x0 + sz - 3, y0)
+  ctx.lineTo(x0 + sz, y0 + 3)
+  ctx.lineTo(x0 + sz, y0 + sz)
+  ctx.lineTo(x0, y0 + sz)
+  ctx.closePath()
+  ctx.fill()
+  ctx.fillStyle = 'rgba(255, 255, 255, 0.55)'
+  ctx.beginPath()
+  ctx.moveTo(x0 + sz - 3, y0)
+  ctx.lineTo(x0 + sz, y0 + 3)
+  ctx.lineTo(x0 + sz - 3, y0 + 3)
+  ctx.closePath()
+  ctx.fill()
+  ctx.restore()
+}
+
+function drawRelationsGlyph(
+  ctx: CanvasRenderingContext2D,
+  cx: number,
+  cy: number,
+  color: string,
+) {
+  // Link2-style glyph: two small linked circles.
+  ctx.save()
+  ctx.strokeStyle = color
+  ctx.lineWidth = 1.3
+  ctx.beginPath()
+  ctx.arc(cx - 3, cy, 2.6, 0, Math.PI * 2)
+  ctx.stroke()
+  ctx.beginPath()
+  ctx.arc(cx + 3, cy, 2.6, 0, Math.PI * 2)
+  ctx.stroke()
+  ctx.beginPath()
+  ctx.moveTo(cx - 1, cy)
+  ctx.lineTo(cx + 1, cy)
+  ctx.stroke()
+  ctx.restore()
+}
+
+/** Fixed per-glyph footprint (px, at zoom=1) in the header's right-aligned
+ * glyph strip — used both to draw each glyph and to reserve space out of
+ * the header name's `truncateToWidth` max width so the name never overlaps
+ * the strip. */
+const GLYPH_BOX = 14
 
 /**
  * Truncate `text` with a trailing ellipsis so it fits within `maxWidth`,
@@ -103,6 +198,7 @@ function roundRect(
 }
 
 interface DrawNode {
+  id: string
   x: number
   y: number
   w: number
@@ -172,6 +268,27 @@ export function CanvasNodeLayer({
   // instead of re-laying-out 12k DOM nodes.
   const transform = useStore((s) => s.transform)
 
+  // Note-glyph permission gate (tactical plan: canvas-table-affordances) —
+  // mirrors the full-DOM header's `canEdit &&` gate on TableNotePopover
+  // (TableNode.tsx). CanvasNodeLayer renders inside the same
+  // WhiteboardPermissionsProvider subtree as TableNode (ReactFlowWhiteboard),
+  // so this hook is always available here.
+  const { canEdit } = useWhiteboardPermissions()
+
+  // Relations glyph data source (tactical plan: canvas-table-affordances) —
+  // a table gets the relations glyph when it appears as either endpoint of
+  // any edge. Read once per edges-array-identity change (not per node) and
+  // reduced to a Set for O(1) membership tests in the draw loop below.
+  const edges = useStore((s) => s.edges)
+  const relatedTableIds = useMemo(() => {
+    const set = new Set<string>()
+    for (const e of edges) {
+      set.add(e.source)
+      set.add(e.target)
+    }
+    return set
+  }, [edges])
+
   // Pull table nodes straight from the store's nodeLookup so this doesn't
   // depend on the parent threading node state down. Only `type === 'table'`
   // nodes are drawn here (areas/comments keep their own render paths).
@@ -194,6 +311,12 @@ export function CanvasNodeLayer({
       // too would double-paint the same table.
       if (n.id === editingTableId) continue
       const data = n.data as unknown as TableNodeData
+      // A table with its relations panel open renders full-DOM in place (see
+      // TableNode's `isNotOverlayTarget` carve-out) so the DOM panel + its
+      // "jump to" rows are clickable. Skip painting it here — the z-[1000]
+      // canvas would otherwise occlude the panel (Playwright/pointer can't
+      // reach it) and double-paint the table under the DOM node.
+      if (data.isRelationsPreviewOpen) continue
       // Width comes from the SAME cache TableNode's chrome-light wrapper
       // reads (canvas-node-metrics.ts) — not `n.measured?.width` — so
       // canvas draw and DOM handle positions can never drift apart (the
@@ -206,6 +329,7 @@ export function CanvasNodeLayer({
         data.table.width,
       )
       out.push({
+        id: n.id,
         x: n.position.x,
         y: n.position.y,
         w,
@@ -262,9 +386,10 @@ export function CanvasNodeLayer({
       // `forceFullDetail` early-return below), so the export exemption is
       // moot for this call site. See the "Show-mode parity in canvas
       // render" spec-delta requirement.
+      const isBelowLodThreshold = zoom < LOD_ZOOM_THRESHOLD
       const effectiveShowMode = getEffectiveShowMode(
         node.data.showMode,
-        zoom < LOD_ZOOM_THRESHOLD,
+        isBelowLodThreshold,
         false,
       )
       const columns = getVisibleColumnsForShowMode(
@@ -289,13 +414,62 @@ export function CanvasNodeLayer({
       ctx.fillStyle = colors.headerBg
       ctx.fillRect(x, y, w, HEADER_H)
       ctx.restore()
+
+      // Affordance glyph strip (tactical plan: canvas-table-affordances) —
+      // right-aligned indicators for comment/note/relations, drawn only
+      // when the corresponding data exists (locked decision #3) and never
+      // below the LOD zoom threshold (locked decision #5, same gate the
+      // effective-show-mode collapse above already applies). Left-click is
+      // inert on these (locked decision #2) — acting is via the table's
+      // right-click context menu (TableNodeContextMenu's Note/Comment
+      // items, wired in TableNode.tsx's chrome-light branch).
+      const unresolvedCount = (node.data.commentThreads ?? []).filter(
+        (t) => !t.root.resolved,
+      ).length
+      const showCommentGlyph =
+        !isBelowLodThreshold &&
+        Boolean(node.data.canComment) &&
+        unresolvedCount > 0
+      const showNoteGlyph =
+        !isBelowLodThreshold &&
+        canEdit &&
+        Boolean(node.data.table.description?.trim())
+      const showRelationsGlyph =
+        !isBelowLodThreshold && relatedTableIds.has(node.id)
+      const glyphs: Array<'relations' | 'comment' | 'note'> = []
+      if (showRelationsGlyph) glyphs.push('relations')
+      if (showCommentGlyph) glyphs.push('comment')
+      if (showNoteGlyph) glyphs.push('note')
+      const reservedGlyphWidth =
+        glyphs.length > 0 ? glyphs.length * GLYPH_BOX + 4 : 0
+
       ctx.fillStyle = colors.headerText
       ctx.font = '600 13px Inter, system-ui, sans-serif'
       ctx.fillText(
-        truncateToWidth(ctx, node.data.table.name, w - PAD_X * 2),
+        truncateToWidth(
+          ctx,
+          node.data.table.name,
+          w - PAD_X * 2 - reservedGlyphWidth,
+        ),
         x + PAD_X,
         y + HEADER_H / 2,
       )
+
+      if (glyphs.length > 0) {
+        const cy = y + HEADER_H / 2
+        let glyphX = x + w - PAD_X - GLYPH_BOX / 2
+        for (let i = glyphs.length - 1; i >= 0; i--) {
+          const g = glyphs[i]
+          if (g === 'relations') {
+            drawRelationsGlyph(ctx, glyphX, cy, colors.headerText)
+          } else if (g === 'comment') {
+            drawCommentGlyph(ctx, glyphX, cy, unresolvedCount, colors.accent)
+          } else {
+            drawNoteGlyph(ctx, glyphX, cy, colors.headerText)
+          }
+          glyphX -= GLYPH_BOX
+        }
+      }
 
       // Column rows.
       ctx.font = '12px Inter, system-ui, sans-serif'
@@ -335,7 +509,22 @@ export function CanvasNodeLayer({
     // BLOCKER). The `!canvas` guard above already no-ops the true
     // transition (canvas is unmounted then), so this only matters for the
     // false transition repaint.
-  }, [enabled, transform, drawNodes, resolvedTheme, resizeTick, forceFullDetail])
+    //
+    // `canEdit`/`relatedTableIds` (tactical plan: canvas-table-affordances):
+    // the glyph strip reads both but neither is captured by `drawNodes`
+    // (nodeLookup-only) or `transform` — without these deps, toggling
+    // permissions or adding/removing a relationship wouldn't repaint the
+    // glyphs until an incidental pan/zoom.
+  }, [
+    enabled,
+    transform,
+    drawNodes,
+    resolvedTheme,
+    resizeTick,
+    forceFullDetail,
+    canEdit,
+    relatedTableIds,
+  ])
 
   if (!enabled || forceFullDetail) return null
 

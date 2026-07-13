@@ -16,6 +16,7 @@
 // (src/hooks/use-collaboration.ts) and the edit toolbar is never mounted.
 import {   expect, test } from '@playwright/test'
 import { IDS } from './fixtures'
+import { tableNode } from './canvas-helpers'
 import type {Browser, Page} from '@playwright/test';
 
 const PROJECT_URL = `/project/${IDS.project}`
@@ -71,15 +72,16 @@ test.describe('Read-only public share links (GH #109)', () => {
     await visitor.goto(shareUrl)
 
     // The whiteboard name renders and both seeded tables are on the canvas.
+    // Canvas is unconditional (canvas-unconditional-default) — no `?canvas`
+    // opt out — and the anonymous share view has always rendered via
+    // ReactFlowWhiteboard's canvas-mode path (enableEdgeAblation is
+    // unconditional there too), so table presence is asserted via
+    // `tableNode()` (data-table-name), not DOM text.
     await expect(
       visitor.getByRole('heading', { name: 'E2E ERD' }),
     ).toBeVisible()
-    await expect(
-      visitor.locator('.react-flow').getByText('users', { exact: true }).first(),
-    ).toBeVisible()
-    await expect(
-      visitor.locator('.react-flow').getByText('orders', { exact: true }).first(),
-    ).toBeVisible()
+    await expect(tableNode(visitor, 'users').first()).toBeVisible()
+    await expect(tableNode(visitor, 'orders').first()).toBeVisible()
 
     // AC — view-only: none of the edit chrome exists on the public path.
     // The whole edit Toolbar (with "Version history") is unmounted in isPublic
@@ -90,15 +92,24 @@ test.describe('Read-only public share links (GH #109)', () => {
     await expect(visitor.getByRole('button', { name: 'Share' })).toHaveCount(0)
 
     // AC — no per-node edit affordance: hovering a table reveals no delete
-    // button (which the authenticated canvas would show).
-    const ordersNode = visitor
-      .locator('.react-flow__node')
-      .filter({ hasText: 'orders' })
-      .first()
+    // button (which the authenticated canvas would show), and right-clicking
+    // it offers no "Delete table" menu item either (canEdit=false for an
+    // anonymous viewer — TableNodeContextMenu hides the item entirely).
+    const ordersNode = tableNode(visitor, 'orders').first()
     await ordersNode.hover()
     await expect(
       visitor.getByRole('button', { name: 'Delete table orders' }),
     ).toHaveCount(0)
+    await ordersNode.dispatchEvent('contextmenu', {
+      bubbles: true,
+      cancelable: true,
+    })
+    await expect(
+      // NOT exact: the accessible name includes the "Del" shortcut
+      // ("Delete tableDel"); exact would match nothing and pass vacuously.
+      visitor.getByRole('menuitem', { name: 'Delete table' }),
+    ).toHaveCount(0)
+    await visitor.keyboard.press('Escape')
 
     // AC — revoke from the panel kills the link. The outstanding-links list now
     // shows the E2E ERD link; revoke it.
