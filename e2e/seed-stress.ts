@@ -13,7 +13,7 @@
 import { createHash } from 'node:crypto'
 import { Database } from 'bun:sqlite'
 import bcrypt from 'bcryptjs'
-import { E2E_USER, IDS } from './fixtures'
+import { E2E_USER, E2E_VIEWER_USER, IDS } from './fixtures'
 
 const DB_PATH =
   process.env.E2E_DB_PATH ?? new URL('../data/app.db', import.meta.url).pathname
@@ -90,6 +90,89 @@ async function main() {
       'INSERT INTO "ProjectMember" (id, projectId, userId, role, createdAt, updatedAt) VALUES (?,?,?,?,?,?)',
     ).run(crypto.randomUUID(), IDS.project, IDS.user, 'ADMIN', now, now)
   }
+
+  // Second, VIEWER-role project member (tactical plan: canvas-table-
+  // affordances) — a real authenticated session distinct from the public
+  // share-link path (viewerRole=null there gates BOTH canEdit AND
+  // canComment to false, so it can't discriminate the "Comment=viewer+,
+  // Note=editor+" permission split). canvas-affordances.spec.ts logs in as
+  // this user via the real /login form to test that split for real.
+  const existingViewerUser = db
+    .query('SELECT id FROM "User" WHERE id = ?')
+    .get(IDS.viewerUser) as { id: string } | null
+  if (!existingViewerUser) {
+    db.query(
+      'INSERT INTO "User" (id, username, email, passwordHash, createdAt, updatedAt) VALUES (?,?,?,?,?,?)',
+    ).run(
+      IDS.viewerUser,
+      E2E_VIEWER_USER.username,
+      E2E_VIEWER_USER.email,
+      await hashPassword(E2E_VIEWER_USER.password),
+      now,
+      now,
+    )
+  }
+
+  // Dedicated project/whiteboard for the viewer permission test — NOT
+  // IDS.project (see IDS.viewerProject's fixtures.ts comment for why: a
+  // second ProjectMember row on the SHARED "E2E Project" pushed
+  // canvas-edit-overlay.spec.ts's own Share panel viewer test's "Revoke"
+  // button out of the dialog's viewport, a real cross-spec regression).
+  // Wiped + recreated every run (cascades ProjectMember/Whiteboard/
+  // DiagramTable/Column via their FKs) so it's always in a known state.
+  db.query('DELETE FROM "Project" WHERE id = ?').run(IDS.viewerProject)
+  db.query(
+    'INSERT INTO "Project" (id, name, description, createdAt, updatedAt, ownerId) VALUES (?,?,?,?,?,?)',
+  ).run(
+    IDS.viewerProject,
+    'E2E Viewer Project',
+    'canvas-table-affordances viewer-permission-gate e2e',
+    now,
+    now,
+    IDS.user,
+  )
+  db.query(
+    'INSERT INTO "ProjectMember" (id, projectId, userId, role, createdAt, updatedAt) VALUES (?,?,?,?,?,?)',
+  ).run(crypto.randomUUID(), IDS.viewerProject, IDS.user, 'ADMIN', now, now)
+  db.query(
+    'INSERT INTO "ProjectMember" (id, projectId, userId, role, createdAt, updatedAt) VALUES (?,?,?,?,?,?)',
+  ).run(
+    crypto.randomUUID(),
+    IDS.viewerProject,
+    IDS.viewerUser,
+    'VIEWER',
+    now,
+    now,
+  )
+  db.query(
+    'INSERT INTO "Whiteboard" (id, name, projectId, folderId, canvasState, textSource, createdAt, updatedAt) VALUES (?,?,?,?,?,?,?,?)',
+  ).run(
+    IDS.viewerWhiteboard,
+    'E2E Viewer Whiteboard',
+    IDS.viewerProject,
+    null,
+    null,
+    null,
+    now,
+    now,
+  )
+  db.query(
+    'INSERT INTO "DiagramTable" (id, whiteboardId, name, description, positionX, positionY, width, height, createdAt, updatedAt) VALUES (?,?,?,?,?,?,?,?,?,?)',
+  ).run(
+    IDS.viewerTable,
+    IDS.viewerWhiteboard,
+    'viewer_test_table',
+    'Viewer permission gate test table note.',
+    0,
+    0,
+    240,
+    160,
+    now,
+    now,
+  )
+  db.query(
+    'INSERT INTO "Column" (id, tableId, name, dataType, isPrimaryKey, isForeignKey, isUnique, isNullable, "order", createdAt, updatedAt) VALUES (?,?,?,?,?,?,?,?,?,?,?)',
+  ).run(crypto.randomUUID(), IDS.viewerTable, 'id', 'UUID', 1, 0, 1, 0, 0, now, now)
 
   // Wipe any prior stress board — cascades to its DiagramTable/Column/
   // Relationship/Area rows via the schema's ON DELETE CASCADE FKs.

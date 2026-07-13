@@ -18,13 +18,16 @@ import { execFileSync } from 'node:child_process'
 import { readFileSync } from 'node:fs'
 import { expect, test } from '@playwright/test'
 import { IDS } from './fixtures'
+import { tableNode } from './canvas-helpers'
 import type { Locator, Page } from '@playwright/test'
 
 const STRESS_TABLE_COUNT = 24
 
-// canvas=0 forces full-DOM rendering: canvas is now the default (migration
-// Phase 5), and this spec asserts DOM table content.
-const WB_URL = `/whiteboard/${IDS.stressWhiteboard}?perf=1&canvas=0`
+// Canvas is unconditional (canvas-unconditional-default) — no `?canvas` opt
+// out. Table text is painted on <canvas>, not DOM — this spec (still
+// measuring the `?perf=1` recorder, now against canvas rendering) asserts
+// table presence/position via `tableNode()` (data-table-name).
+const WB_URL = `/whiteboard/${IDS.stressWhiteboard}?perf=1`
 
 test.use({ viewport: { width: 1600, height: 1000 } })
 
@@ -40,17 +43,26 @@ async function openStressWhiteboard(page: Page) {
   await expect(
     page.getByRole('heading', { name: `E2E Stress (${STRESS_TABLE_COUNT})` }),
   ).toBeVisible()
-  await expect(
-    page.locator('.react-flow').getByText('stress_table_0', { exact: true }),
-  ).toBeVisible()
+  await expect(tableNode(page, 'stress_table_0')).toBeVisible()
 }
 
-/** Node whose `.table-header` text EXACTLY matches `name` (avoids
- *  `stress_table_1` matching `stress_table_10` via substring). */
+/** `data-table-name` (both chrome-light and full-DOM roots) already matches
+ * `name` exactly via the attribute selector — no substring risk between
+ * `stress_table_1`/`stress_table_10` the way a `hasText` filter would have. */
 function nodeByTableName(page: Page, name: string): Locator {
-  return page
-    .locator('.react-flow__node')
-    .filter({ has: page.locator('.table-header').getByText(name, { exact: true }) })
+  return tableNode(page, name)
+}
+
+/** The chrome-light/full-DOM node div `nodeByTableName` resolves to is
+ * nested INSIDE React Flow's own per-node wrapper (the element `.rf-hover-
+ * highlighted` is toggled on, and the one carrying `data-id` — see
+ * ReactFlowCanvas.tsx's DOM-class hover effect). Both our own root div and
+ * RF's wrapper coincidentally share the literal class
+ * `react-flow__node-erTable` (RF auto-derives it from the node `type`), so a
+ * class-based ancestor search would be ambiguous — `data-id` is unique to
+ * RF's wrapper. */
+function rfNodeWrapper(node: Locator): Locator {
+  return node.locator('xpath=ancestor::*[@data-id][1]')
 }
 
 test.describe('Perf tracker record -> report (GH #121 follow-up)', () => {
@@ -83,20 +95,26 @@ test.describe('Perf tracker record -> report (GH #121 follow-up)', () => {
     await zoomOutButton.click()
     await page.waitForTimeout(250)
 
-    // --- Hover: highlight a table header ---
+    // --- Hover: highlight a table (chrome-light has no `.table-header` —
+    // React Flow's onNodeMouseEnter fires on the whole node, so hovering
+    // anywhere on it is equivalent). The highlighted class lands on RF's own
+    // wrapper, not the chrome-light div itself — see `rfNodeWrapper`. ---
     const table1Node = nodeByTableName(page, 'stress_table_1')
-    await table1Node.locator('.table-header').hover()
-    await expect(table1Node).toHaveClass(/rf-hover-highlighted/)
+    await table1Node.hover()
+    await expect(rfNodeWrapper(table1Node)).toHaveClass(/rf-hover-highlighted/)
     await page.waitForTimeout(250)
     await page.mouse.move(10, 10)
 
     // --- Drag: hold the button across several animation frames so the rAF
-    // loop pushes frames tagged 'drag' (the key assertion below). ---
+    // loop pushes frames tagged 'drag' (the key assertion below). Anchor
+    // near the chrome-light node's own top-left (HEADER_H=34px tall, per
+    // canvas-node-geometry.ts) rather than a `.table-header` text node's
+    // center, avoiding a column-row handle. ---
     const table2Node = nodeByTableName(page, 'stress_table_2')
-    const box = await table2Node.locator('.table-header').boundingBox()
-    if (!box) throw new Error('no bounding box for stress_table_2 header')
-    const startX = box.x + box.width / 2
-    const startY = box.y + box.height / 2
+    const box = await table2Node.boundingBox()
+    if (!box) throw new Error('no bounding box for stress_table_2')
+    const startX = box.x + 20
+    const startY = box.y + 10
     await page.mouse.move(startX, startY)
     await page.mouse.down()
     await page.waitForTimeout(120)

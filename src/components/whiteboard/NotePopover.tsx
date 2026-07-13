@@ -17,6 +17,7 @@ import { useDebouncedCallback } from 'use-debounce'
 import { StickyNote } from 'lucide-react'
 import {
   Popover,
+  PopoverAnchor,
   PopoverContent,
   PopoverTrigger,
 } from '@/components/ui/popover'
@@ -41,6 +42,21 @@ export interface NotePopoverProps {
   idleColor?: string
   /** Optional title/tooltip attribute on the trigger (table note uses "Table note"; column note has none) */
   title?: string
+  /**
+   * Controlled open state (tactical plan: canvas-table-affordances) —
+   * optional. When provided (together with `onOpenChange`), the popover's
+   * open/closed state is driven externally instead of the internal
+   * `useState` below, and `anchorOnly` swaps the visible StickyNote trigger
+   * button for a zero-size `PopoverAnchor` (used by TableNode's chrome-light
+   * branch, which has no visible header DOM to anchor a button to — the
+   * canvas paints over it). Omitting both keeps the existing trigger-button
+   * usage (full-DOM header) byte-identical to before this change.
+   */
+  open?: boolean
+  onOpenChange?: (open: boolean) => void
+  /** Render a zero-size `PopoverAnchor` instead of the StickyNote trigger
+   * button — paired with `open`/`onOpenChange` above. */
+  anchorOnly?: boolean
 }
 
 export function NotePopover({
@@ -53,9 +69,15 @@ export function NotePopover({
   className,
   idleColor = 'var(--rf-table-text)',
   title,
+  open: openProp,
+  onOpenChange: onOpenChangeProp,
+  anchorOnly = false,
 }: NotePopoverProps) {
   const [localValue, setLocalValue] = useState(description ?? '')
-  const [open, setOpen] = useState(false)
+  const [internalOpen, setInternalOpen] = useState(false)
+  const isControlled = openProp !== undefined
+  const open = isControlled ? openProp : internalOpen
+  const setOpen = isControlled ? (onOpenChangeProp ?? (() => {})) : setInternalOpen
 
   // Sync external changes (e.g., real-time updates from other users)
   useEffect(() => {
@@ -81,34 +103,48 @@ export function NotePopover({
 
   return (
     <Popover open={open} onOpenChange={setOpen}>
-      <PopoverTrigger asChild>
-        <button
-          type="button"
-          aria-label={label}
-          title={title}
-          data-testid={testId}
-          className={`nodrag nowheel ${className ?? ''}`.trim()}
-          onClick={(e) => e.stopPropagation()}
-          style={{
-            opacity: hasNotes || open ? 0.8 : 0,
-            flexShrink: 0,
-            background: 'none',
-            border: 'none',
-            cursor: 'pointer',
-            padding: '2px',
-            color: hasNotes
-              ? 'var(--rf-edge-stroke-selected, #6366f1)'
-              : idleColor,
-            transition: 'opacity 0.1s',
-            fontSize: '13px',
-            lineHeight: 1,
-            display: 'flex',
-            alignItems: 'center',
-          }}
-        >
-          <StickyNote size={iconSize} />
-        </button>
-      </PopoverTrigger>
+      {anchorOnly ? (
+        // Zero-size anchor (tactical plan: canvas-table-affordances) — the
+        // chrome-light branch has no visible header DOM to attach a button
+        // to (CanvasNodeLayer paints over it); the popover's open state is
+        // driven entirely by the caller's `open`/`onOpenChange` (opened via
+        // the right-click context menu instead of a click on this element).
+        <PopoverAnchor asChild>
+          <span
+            aria-hidden
+            style={{ position: 'absolute', top: 0, right: 0, width: 0, height: 0 }}
+          />
+        </PopoverAnchor>
+      ) : (
+        <PopoverTrigger asChild>
+          <button
+            type="button"
+            aria-label={label}
+            title={title}
+            data-testid={testId}
+            className={`nodrag nowheel ${className ?? ''}`.trim()}
+            onClick={(e) => e.stopPropagation()}
+            style={{
+              opacity: hasNotes || open ? 0.8 : 0,
+              flexShrink: 0,
+              background: 'none',
+              border: 'none',
+              cursor: 'pointer',
+              padding: '2px',
+              color: hasNotes
+                ? 'var(--rf-edge-stroke-selected, #6366f1)'
+                : idleColor,
+              transition: 'opacity 0.1s',
+              fontSize: '13px',
+              lineHeight: 1,
+              display: 'flex',
+              alignItems: 'center',
+            }}
+          >
+            <StickyNote size={iconSize} />
+          </button>
+        </PopoverTrigger>
+      )}
       <PopoverContent
         side="right"
         align="start"

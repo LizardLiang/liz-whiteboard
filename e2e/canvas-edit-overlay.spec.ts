@@ -33,7 +33,9 @@ import type { Browser, Locator, Page } from '@playwright/test'
 
 const STRESS_TABLE_COUNT = 12
 
-const WB_URL = `/whiteboard/${IDS.stressWhiteboard}?canvas=1`
+// Canvas is unconditional (canvas-unconditional-default) — no `?canvas` URL
+// param needed or honored anymore.
+const WB_URL = `/whiteboard/${IDS.stressWhiteboard}`
 const PROJECT_URL = `/project/${IDS.project}`
 
 test.use({ viewport: { width: 1600, height: 1000 } })
@@ -411,11 +413,12 @@ test.describe('Canvas edit overlay — viewer permission gate', () => {
     const shareUrl = await createShareLink(page)
 
     // The public share path renders with viewerRole=null → canEdit=false
-    // (ReactFlowWhiteboard.tsx), but still opts into canvas mode via
-    // `?canvas=1` (enableEdgeAblation is unconditional there) — exactly the
-    // "viewer under canvas mode" case locked decision #5 gates.
+    // (ReactFlowWhiteboard.tsx), and canvas is unconditional everywhere now
+    // (canvas-unconditional-default: enableEdgeAblation is unconditional on
+    // this path too, no `?canvas` param needed) — exactly the "viewer under
+    // canvas mode" case locked decision #5 gates.
     const visitor = await anonPage(browser)
-    await visitor.goto(`${shareUrl}?canvas=1`)
+    await visitor.goto(shareUrl)
     await expect(visitor.getByTestId('canvas-node-layer')).toBeVisible()
 
     const node = visitor.locator('[data-testid="table-node-chrome-light"]')

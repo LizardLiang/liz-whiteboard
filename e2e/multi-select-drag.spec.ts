@@ -17,6 +17,7 @@
 // path — the same pattern version-history.spec.ts uses for restore.
 import {   expect, test } from '@playwright/test'
 import { IDS } from './fixtures'
+import { tableNode } from './canvas-helpers'
 import type {Locator, Page} from '@playwright/test';
 
 // This suite mutates positions + area membership and does NOT restore them,
@@ -24,19 +25,18 @@ import type {Locator, Page} from '@playwright/test';
 // e2e/seed.ts) — isolated from the shared board every other spec uses. That
 // keeps test 1's "pristine geometry" assumption reliable regardless of run
 // order, and prevents this suite from polluting later specs' shared board.
-// ?canvas=0 forces full-DOM table rendering: canvas is now the default
-// (migration Phase 5), and this spec asserts DOM table content + drag.
-const WB_URL = `/whiteboard/${IDS.mdWhiteboard}?canvas=0`
+// Canvas is unconditional (canvas-unconditional-default) — no `?canvas` opt
+// out. Table text is painted on <canvas>, not DOM, so this spec asserts
+// table presence via `tableNode()` (data-table-name), and multi-select/drag
+// anchors on a fixed offset within the chrome-light node's own header area
+// (there is no `.table-header` text node to click/drag from anymore).
+const WB_URL = `/whiteboard/${IDS.mdWhiteboard}`
 
 async function openWhiteboard(page: Page) {
   await page.goto(WB_URL)
   await expect(page.getByRole('heading', { name: 'E2E Multi-Drag' })).toBeVisible()
-  await expect(
-    page.locator('.react-flow').getByText('users', { exact: true }).first(),
-  ).toBeVisible()
-  await expect(
-    page.locator('.react-flow').getByText('orders', { exact: true }).first(),
-  ).toBeVisible()
+  await expect(tableNode(page, 'users').first()).toBeVisible()
+  await expect(tableNode(page, 'orders').first()).toBeVisible()
 }
 
 /** Poll the `.react-flow__viewport` pane's `translate(...) scale(z)` inline
@@ -68,10 +68,20 @@ function nodeLocator(page: Page, id: string): Locator {
   return page.locator(`.react-flow__node[data-id="${id}"]`)
 }
 
-function tableHeaderText(page: Page, id: string, name: string): Locator {
-  return nodeLocator(page, id)
-    .locator('.table-header')
-    .getByText(name, { exact: true })
+/** A safe click/drag anchor point within a table's header area — offset from
+ * the chrome-light node's own top-left corner rather than a `.table-header`
+ * text node's center (chrome-light carries no header text at all; canvas
+ * paints it). y=10 sits inside HEADER_H (34px, canvas-node-geometry.ts) and
+ * above the first column row, avoiding a column-row handle; x=20 sits clear
+ * of the left-edge column handles. Mirrors the header-offset technique
+ * relations-preview.spec.ts's drag tests already use. */
+async function headerAnchor(
+  page: Page,
+  name: string,
+): Promise<{ x: number; y: number }> {
+  const box = await tableNode(page, name).first().boundingBox()
+  if (!box) throw new Error(`no bounding box for table "${name}"`)
+  return { x: box.x + 20, y: box.y + 10 }
 }
 
 /** React Flow's viewport pane carries `translate(...) scale(z)` — read `z`
@@ -166,9 +176,7 @@ async function reloadAndReadAreaAndTables(
 ): Promise<SettledAreaAndTables> {
   await page.reload()
   await expect(page.getByRole('heading', { name: 'E2E Multi-Drag' })).toBeVisible()
-  await expect(
-    page.locator('.react-flow').getByText('orders', { exact: true }).first(),
-  ).toBeVisible()
+  await expect(tableNode(page, 'orders').first()).toBeVisible()
 
   await Promise.all([
     waitForNodeSettled(page, IDS.mdArea),
@@ -247,7 +255,7 @@ async function reloadUntilAreaReconciled(
  * drag path never has to leave visible viewport space. */
 async function ensureDragFitsOnScreen(
   page: Page,
-  startLocator: Locator,
+  getAnchor: () => Promise<{ x: number; y: number }>,
   delta: { dx: number; dy: number },
   margin = 60,
 ): Promise<void> {
@@ -261,10 +269,7 @@ async function ensureDragFitsOnScreen(
 
   for (let attempt = 0; attempt < 10; attempt++) {
     const scale = await getViewportScale(page)
-    const box = await startLocator.boundingBox()
-    if (!box) throw new Error('no bounding box while checking drag fit')
-    const startX = box.x + box.width / 2
-    const startY = box.y + box.height / 2
+    const { x: startX, y: startY } = await getAnchor()
     const endX = startX + delta.dx * scale
     const endY = startY + delta.dy * scale
     if (within(startX, startY) && within(endX, endY)) return
@@ -292,19 +297,17 @@ async function multiSelectAndDrag(
   page: Page,
   delta: { dx: number; dy: number },
 ) {
-  const usersHeader = tableHeaderText(page, IDS.mdUsersTable, 'users')
-  const ordersHeader = tableHeaderText(page, IDS.mdOrdersTable, 'orders')
+  const usersHeader = tableNode(page, 'users').first()
+  const ordersHeader = tableNode(page, 'orders').first()
 
-  await usersHeader.click()
-  await ordersHeader.click({ modifiers: ['Control'] })
+  await usersHeader.click({ position: { x: 20, y: 10 } })
+  await ordersHeader.click({ position: { x: 20, y: 10 }, modifiers: ['Control'] })
 
-  await ensureDragFitsOnScreen(page, usersHeader, delta)
+  const getAnchor = () => headerAnchor(page, 'users')
+  await ensureDragFitsOnScreen(page, getAnchor, delta)
 
   const scale = await getViewportScale(page)
-  const startBox = await usersHeader.boundingBox()
-  if (!startBox) throw new Error('no bounding box for users header')
-  const startX = startBox.x + startBox.width / 2
-  const startY = startBox.y + startBox.height / 2
+  const { x: startX, y: startY } = await getAnchor()
 
   await page.mouse.move(startX, startY)
   await page.mouse.down()
@@ -454,9 +457,7 @@ test.describe('Multi-select table drag persist + area reconcile (GH #111)', () =
     // persisted server-side (not just the drag leader's).
     await page.reload()
     await expect(page.getByRole('heading', { name: 'E2E Multi-Drag' })).toBeVisible()
-    await expect(
-      page.locator('.react-flow').getByText('users', { exact: true }).first(),
-    ).toBeVisible()
+    await expect(tableNode(page, 'users').first()).toBeVisible()
 
     const usersAfterReload = await getNodePosition(page, IDS.mdUsersTable)
     const ordersAfterReload = await getNodePosition(page, IDS.mdOrdersTable)
@@ -472,21 +473,15 @@ test.describe('Multi-select table drag persist + area reconcile (GH #111)', () =
   }) => {
     await openWhiteboard(page)
 
-    const ordersHeader = tableHeaderText(page, IDS.mdOrdersTable, 'orders')
-    const box = await ordersHeader.boundingBox()
-    if (!box) throw new Error('no bounding box for orders header')
+    const { x: startX, y: startY } = await headerAnchor(page, 'orders')
 
     const before = await getNodePosition(page, IDS.mdOrdersTable)
 
     // Single-node drag — no multi-select, exercises the untouched
     // `dragged.length <= 1` branch.
-    await page.mouse.move(box.x + box.width / 2, box.y + box.height / 2)
+    await page.mouse.move(startX, startY)
     await page.mouse.down()
-    await page.mouse.move(
-      box.x + box.width / 2 + 120,
-      box.y + box.height / 2 + 70,
-      { steps: 8 },
-    )
+    await page.mouse.move(startX + 120, startY + 70, { steps: 8 })
     await page.mouse.up()
     await page.waitForTimeout(300)
 
@@ -497,9 +492,7 @@ test.describe('Multi-select table drag persist + area reconcile (GH #111)', () =
 
     await page.reload()
     await expect(page.getByRole('heading', { name: 'E2E Multi-Drag' })).toBeVisible()
-    await expect(
-      page.locator('.react-flow').getByText('orders', { exact: true }).first(),
-    ).toBeVisible()
+    await expect(tableNode(page, 'orders').first()).toBeVisible()
 
     const afterReload = await getNodePosition(page, IDS.mdOrdersTable)
     expect(Math.abs(afterReload.x - afterDrag.x)).toBeLessThan(1)

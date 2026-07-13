@@ -8,17 +8,21 @@
 // We assert restore CORRECTNESS by reloading and checking the diagram content.
 import {  expect, test } from '@playwright/test'
 import { IDS } from './fixtures'
+import { tableNode } from './canvas-helpers'
 import type {Page} from '@playwright/test';
 
+// Canvas is unconditional (canvas-unconditional-default) — no `?canvas` opt
+// out. That applies window-wide, so the read-only preview dialog's own
+// nested ReactFlowWhiteboard instance (WhiteboardHistoryPanel.tsx) is also
+// canvas-mode now — this spec asserts restored/previewed content via
+// `tableNode()` (data-table-name), not DOM text.
 const WB_URL = `/whiteboard/${IDS.whiteboard}`
 
 async function openWhiteboard(page: Page) {
   await page.goto(WB_URL)
   await expect(page.getByRole('heading', { name: 'E2E ERD' })).toBeVisible()
-  // Canvas ready: the react-flow pane has rendered the seeded tables.
-  await expect(
-    page.locator('.react-flow').getByText('users', { exact: true }).first(),
-  ).toBeVisible()
+  // Canvas ready: the seeded "users" table's chrome-light DOM node exists.
+  await expect(tableNode(page, 'users').first()).toBeVisible()
 }
 
 async function openHistoryPanel(page: Page) {
@@ -53,8 +57,12 @@ test.describe('Whiteboard version history (GH #107)', () => {
     await item.click()
     const dialog = page.getByRole('dialog').filter({ hasText: 'Read-only preview' })
     await expect(dialog).toBeVisible()
-    await expect(dialog.getByText('users', { exact: true }).first()).toBeVisible()
-    await expect(dialog.getByText('orders', { exact: true }).first()).toBeVisible()
+    await expect(
+      dialog.locator('[data-table-name="users"]').first(),
+    ).toBeVisible()
+    await expect(
+      dialog.locator('[data-table-name="orders"]').first(),
+    ).toBeVisible()
     await expect(
       dialog.getByRole('button', { name: 'Restore this version' }),
     ).toBeVisible()
@@ -76,21 +84,21 @@ test.describe('Whiteboard version history (GH #107)', () => {
     await page.getByRole('button', { name: 'Save version' }).click()
     await expect(page.getByText('Version saved')).toBeVisible()
 
-    // Close the panel and delete the "orders" table (a live change).
+    // Close the panel and delete the "orders" table (a live change). Chrome-
+    // light strips the hover-revealed header delete button — the canvas path
+    // is right-click → "Delete table" (TableNodeContextMenu).
     await page.keyboard.press('Escape')
-    const ordersNode = page
-      .locator('.react-flow__node')
-      .filter({ hasText: 'orders' })
-      .first()
-    await ordersNode.hover()
-    await page
-      .getByRole('button', { name: 'Delete table orders' })
-      .click({ force: true })
+    const ordersNode = tableNode(page, 'orders').first()
+    await ordersNode.dispatchEvent('contextmenu', {
+      bubbles: true,
+      cancelable: true,
+    })
+    // NOT exact: the menuitem's accessible name includes its "Del" shortcut
+    // ("Delete tableDel"), so an exact 'Delete table' matches nothing.
+    await page.getByRole('menuitem', { name: 'Delete table' }).click()
     await page.getByRole('button', { name: 'Delete table', exact: true }).click()
     // orders is gone from the live canvas.
-    await expect(
-      page.locator('.react-flow').getByText('orders', { exact: true }),
-    ).toHaveCount(0)
+    await expect(tableNode(page, 'orders')).toHaveCount(0)
 
     // Restore the saved version via the preview dialog.
     await openHistoryPanel(page)
@@ -106,12 +114,8 @@ test.describe('Whiteboard version history (GH #107)', () => {
     // (Reload rather than relying on the dev-only live broadcast — see config.)
     await page.reload()
     await expect(page.getByRole('heading', { name: 'E2E ERD' })).toBeVisible()
-    await expect(
-      page.locator('.react-flow').getByText('orders', { exact: true }).first(),
-    ).toBeVisible()
-    await expect(
-      page.locator('.react-flow').getByText('users', { exact: true }).first(),
-    ).toBeVisible()
+    await expect(tableNode(page, 'orders').first()).toBeVisible()
+    await expect(tableNode(page, 'users').first()).toBeVisible()
 
     // AC4a — a non-destructive "Auto-saved before restore" snapshot now exists.
     await openHistoryPanel(page)

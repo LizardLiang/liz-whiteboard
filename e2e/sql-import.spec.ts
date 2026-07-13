@@ -11,33 +11,37 @@
 // board is left as it was found (global-setup also re-seeds every run).
 import {  expect, test } from '@playwright/test'
 import { IDS } from './fixtures'
+import { tableNode } from './canvas-helpers'
 import type {Page} from '@playwright/test';
 
+// Canvas is unconditional (canvas-unconditional-default) — no `?canvas` opt
+// out. Table text is painted on <canvas>, not DOM, so this spec asserts
+// imported tables via `tableNode()` (data-table-name).
 const WB_URL = `/whiteboard/${IDS.whiteboard}`
 
 async function openWhiteboard(page: Page) {
   await page.goto(WB_URL)
   await expect(page.getByRole('heading', { name: 'E2E ERD' })).toBeVisible()
-  await expect(
-    page.locator('.react-flow').getByText('users', { exact: true }).first(),
-  ).toBeVisible()
+  await expect(tableNode(page, 'users').first()).toBeVisible()
 }
 
 function nodeByName(page: Page, name: string) {
-  return page.locator('.react-flow__node').filter({ hasText: name }).first()
+  return tableNode(page, name).first()
 }
 
+// Chrome-light strips the hover-revealed header delete button — the canvas
+// path is right-click → "Delete table" (TableNodeContextMenu), which mirrors
+// the same `onRequestTableDelete` handler + confirmation dialog the full-DOM
+// header button used.
 async function deleteTable(page: Page, name: string) {
   const node = nodeByName(page, name)
   if ((await node.count()) === 0) return
-  await node.hover()
-  await page
-    .getByRole('button', { name: `Delete table ${name}` })
-    .click({ force: true })
+  await node.dispatchEvent('contextmenu', { bubbles: true, cancelable: true })
+  // NOT exact: the menuitem's accessible name includes its "Del" shortcut
+  // ("Delete tableDel"), so an exact 'Delete table' matches nothing.
+  await page.getByRole('menuitem', { name: 'Delete table' }).click()
   await page.getByRole('button', { name: 'Delete table', exact: true }).click()
-  await expect(
-    page.locator('.react-flow').getByText(name, { exact: true }),
-  ).toHaveCount(0)
+  await expect(tableNode(page, name)).toHaveCount(0)
 }
 
 // Two related tables so the parser also produces a relationship (FK) — this

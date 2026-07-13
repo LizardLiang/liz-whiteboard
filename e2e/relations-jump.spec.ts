@@ -9,37 +9,44 @@
 // e2e/relations-preview.spec.ts (GH #134/#135).
 import { expect, test } from '@playwright/test'
 import { IDS } from './fixtures'
+import { tableNode } from './canvas-helpers'
 import type { Locator, Page } from '@playwright/test'
 
-// ?canvas=0 forces full-DOM table rendering: canvas is now the default
-// (migration Phase 5), and this spec asserts DOM table content.
-const WB_URL = `/whiteboard/${IDS.whiteboard}?canvas=0`
+// Canvas is unconditional (canvas-unconditional-default) — no `?canvas` opt
+// out. A chrome-light table has no DOM relations trigger button, so the
+// panel is opened via right-click → "Show relations" (TableNodeContextMenu).
+// Opening it forces that ONE table to its full-DOM render (TableNode.tsx's
+// `isNotOverlayTarget` now also exempts a table with its relations panel
+// open — see implementation-notes.md deviation), which is what mounts
+// `table-relations-trigger`/`table-relations-panel`. The jump target
+// (`relationsPreviewTableId` reassigns atomically — ReactFlowWhiteboard's
+// `handleJumpToRelatedTable`) gets the SAME exemption once the jump lands,
+// so its own panel/trigger mount too.
+const WB_URL = `/whiteboard/${IDS.whiteboard}`
 
 async function openWhiteboard(page: Page) {
   await page.goto(WB_URL)
   await expect(page.getByRole('heading', { name: 'E2E ERD' })).toBeVisible()
-  // Canvas ready: the react-flow pane has rendered the seeded tables.
-  await expect(
-    page.locator('.react-flow').getByText('users', { exact: true }).first(),
-  ).toBeVisible()
+  // Canvas ready: the seeded "users" table's chrome-light DOM node exists.
+  await expect(tableNode(page, 'users').first()).toBeVisible()
 }
 
 function usersNode(page: Page) {
-  return page
-    .locator('.react-flow__node')
-    .filter({ hasText: 'users' })
-    .first()
+  return tableNode(page, 'users').first()
 }
 
 function ordersNode(page: Page) {
-  return page
-    .locator('.react-flow__node')
-    .filter({ hasText: 'orders' })
-    .first()
+  return tableNode(page, 'orders').first()
 }
 
-function relationsTrigger(node: Locator) {
-  return node.getByTestId('table-relations-trigger')
+/** Open a table's relations panel via right-click → "Show relations" — the
+ * canvas-native entry point (mirrors relations-preview.spec.ts's identical
+ * helper). */
+async function openRelationsViaContextMenu(node: Locator) {
+  await node.dispatchEvent('contextmenu', { bubbles: true, cancelable: true })
+  // NOT exact: the menuitem's accessible name includes its "R" keyboard
+  // shortcut ("Show relationsR"), so an exact 'Show relations' matches nothing.
+  await node.page().getByRole('menuitem', { name: 'Show relations' }).click()
 }
 
 function relationsPanel(page: Page) {
@@ -68,7 +75,7 @@ test.describe('Jump to related table from the relations panel (GH #138)', () => 
     await openWhiteboard(page)
 
     // Open the relations panel on `users` and confirm it lists `orders`.
-    await relationsTrigger(usersNode(page)).click()
+    await openRelationsViaContextMenu(usersNode(page))
     await expect(relationsPanel(page)).toBeVisible()
     await expect(relationsPanel(page)).toContainText('orders')
 
@@ -87,18 +94,18 @@ test.describe('Jump to related table from the relations panel (GH #138)', () => 
     // rendered inside the orders node (not the users node) and lists
     // `users` as its related row.
     await expect(
-      ordersNode(page).getByTestId('table-relations-panel'),
+      relationsPanel(page),
     ).toBeVisible()
     await expect(
-      ordersNode(page).getByTestId('table-relations-panel'),
+      relationsPanel(page),
     ).toContainText('users')
 
     // Target indicated: orders node carries the persistent active-highlight
-    // (applied to the inner .react-flow__node-erTable element, driven by
-    // isActiveHighlighted via the reused search-palette focus pipeline).
-    await expect(
-      ordersNode(page).locator('.active-highlighted'),
-    ).toHaveCount(1)
+    // class directly (driven by isActiveHighlighted via the reused
+    // search-palette focus pipeline) — `tableNode()` resolves straight to
+    // that element (both chrome-light and full-DOM roots carry
+    // `data-table-name`), so assert the class on it, not a descendant.
+    await expect(ordersNode(page)).toHaveClass(/active-highlighted/)
   })
 
   test('keyboard activation (Enter) on a related-table row performs the same jump (RJ-2)', async ({
@@ -106,7 +113,7 @@ test.describe('Jump to related table from the relations panel (GH #138)', () => 
   }) => {
     await openWhiteboard(page)
 
-    await relationsTrigger(usersNode(page)).click()
+    await openRelationsViaContextMenu(usersNode(page))
     await expect(relationsPanel(page)).toBeVisible()
     await expect(relationsPanel(page)).toContainText('orders')
 
@@ -121,13 +128,11 @@ test.describe('Jump to related table from the relations panel (GH #138)', () => 
     await expectViewportTransformChanged(page, before)
 
     await expect(
-      ordersNode(page).getByTestId('table-relations-panel'),
+      relationsPanel(page),
     ).toBeVisible()
     await expect(
-      ordersNode(page).getByTestId('table-relations-panel'),
+      relationsPanel(page),
     ).toContainText('users')
-    await expect(
-      ordersNode(page).locator('.active-highlighted'),
-    ).toHaveCount(1)
+    await expect(ordersNode(page)).toHaveClass(/active-highlighted/)
   })
 })

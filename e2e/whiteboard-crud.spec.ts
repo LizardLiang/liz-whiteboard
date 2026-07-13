@@ -18,21 +18,19 @@
 // and global-setup re-seeds the whole board from scratch on every suite run.
 import {  expect, test } from '@playwright/test'
 import { IDS } from './fixtures'
+import { tableNode } from './canvas-helpers'
 import type {Page} from '@playwright/test';
 
+// Canvas is unconditional (canvas-unconditional-default) — no `?canvas` opt
+// out. Table text is painted on <canvas>, not DOM, so this spec asserts table
+// presence via `tableNode()` (data-table-name), not DOM text content.
 const WB_URL = `/whiteboard/${IDS.whiteboard}`
 
 async function openWhiteboard(page: Page) {
   await page.goto(WB_URL)
   await expect(page.getByRole('heading', { name: 'E2E ERD' })).toBeVisible()
-  // Canvas ready: the react-flow pane has rendered the seeded tables.
-  await expect(
-    page.locator('.react-flow').getByText('users', { exact: true }).first(),
-  ).toBeVisible()
-}
-
-function nodeByName(page: Page, name: string) {
-  return page.locator('.react-flow__node').filter({ hasText: name }).first()
+  // Canvas ready: the seeded "users" table's chrome-light DOM node exists.
+  await expect(tableNode(page, 'users').first()).toBeVisible()
 }
 
 test.describe('Whiteboard core CRUD (tables + relationships)', () => {
@@ -51,13 +49,13 @@ test.describe('Whiteboard core CRUD (tables + relationships)', () => {
     await page.getByRole('button', { name: 'Create Table' }).click()
 
     // The new node appears on the canvas.
-    await expect(nodeByName(page, tableName)).toBeVisible()
+    await expect(tableNode(page, tableName)).toBeVisible()
 
     // Persistence: reload and confirm it survived (server-side write, not just
     // optimistic local state).
     await page.reload()
     await expect(page.getByRole('heading', { name: 'E2E ERD' })).toBeVisible()
-    await expect(nodeByName(page, tableName)).toBeVisible()
+    await expect(tableNode(page, tableName)).toBeVisible()
   })
 
   test('create a relationship between two tables → a new edge appears and persists', async ({
