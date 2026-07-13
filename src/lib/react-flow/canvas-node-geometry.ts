@@ -24,6 +24,22 @@ export const DEFAULT_W = 220
 export const PAD_X = 12
 
 /**
+ * Fixed-width zone (px) reserved at the LEFT of every column row for the
+ * constraint badge cluster (PK / FK / N / U), mirroring the DOM ColumnRow's
+ * `ConstraintBadges` fixed `width: 72px`. Column names start after this zone
+ * so they align across rows regardless of how many badges each column shows.
+ */
+export const BADGE_ZONE = 82
+
+/**
+ * Width (px) reserved at the RIGHT of a column row for the field-note
+ * indicator (drawn only when the column has a note, but reserved always so
+ * the type text position doesn't jump). Mirrors the DOM ColumnRow's note
+ * popover trigger footprint.
+ */
+export const NOTE_RESERVE = 24
+
+/**
  * Which columns get their OWN row (canvas-drawn row + DOM handle row) for a
  * given showMode. Single source of truth for both CanvasNodeLayer's draw
  * loop and TableNode's chrome-light handle layout, so "columns drawn on

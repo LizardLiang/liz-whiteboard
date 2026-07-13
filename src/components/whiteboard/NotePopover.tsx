@@ -57,6 +57,15 @@ export interface NotePopoverProps {
   /** Render a zero-size `PopoverAnchor` instead of the StickyNote trigger
    * button — paired with `open`/`onOpenChange` above. */
   anchorOnly?: boolean
+  /**
+   * Override the anchor's inline style (tactical plan:
+   * canvas-field-note-popover) — only meaningful with `anchorOnly`. Defaults
+   * to the existing zero-size top-right anchor (TableNotePopover's
+   * byte-for-byte prior behavior) when omitted; the field-note caller passes
+   * a row-offset style so the popover opens beside the clicked column row
+   * instead of the table's top-right corner.
+   */
+  anchorStyle?: React.CSSProperties
 }
 
 export function NotePopover({
@@ -72,6 +81,7 @@ export function NotePopover({
   open: openProp,
   onOpenChange: onOpenChangeProp,
   anchorOnly = false,
+  anchorStyle,
 }: NotePopoverProps) {
   const [localValue, setLocalValue] = useState(description ?? '')
   const [internalOpen, setInternalOpen] = useState(false)
@@ -112,7 +122,15 @@ export function NotePopover({
         <PopoverAnchor asChild>
           <span
             aria-hidden
-            style={{ position: 'absolute', top: 0, right: 0, width: 0, height: 0 }}
+            style={
+              anchorStyle ?? {
+                position: 'absolute',
+                top: 0,
+                right: 0,
+                width: 0,
+                height: 0,
+              }
+            }
           />
         </PopoverAnchor>
       ) : (

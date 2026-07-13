@@ -40,9 +40,28 @@ export interface InitialEditingField {
   field?: 'name' | 'dataType'
 }
 
+/**
+ * A request to OPEN an affordance on a canvas table WITHOUT entering the edit
+ * overlay — fired when the user clicks one of the canvas-drawn header icons
+ * (note / comment / relations) OR a canvas-drawn field-note glyph on a
+ * column row (`fieldnote`, tactical plan: canvas-field-note-popover). The
+ * target `TableNode` consumes it (via a per-instance ref guard, like
+ * `initialEditingField`) to open the matching in-place popover / relations
+ * panel. A fresh object is minted on every call so clicking the same icon
+ * twice re-fires. `columnId` is only set for `fieldnote` — it identifies
+ * which column's note popover to open, anchored beside that column's row.
+ */
+export interface AffordanceRequest {
+  tableId: string
+  kind: 'note' | 'comment' | 'relations' | 'fieldnote'
+  columnId?: string
+}
+
 export interface CanvasEditContextValue {
   editingTableId: string | null
   initialEditingField: InitialEditingField | null
+  /** Latest header-icon affordance request (see `AffordanceRequest`). */
+  affordanceRequest: AffordanceRequest | null
   /**
    * Request the overlay for `tableId`. Omit `columnId`/`field` for a plain
    * header/body double-click (mounts the overlay, opens no field). Replaces
@@ -52,6 +71,16 @@ export interface CanvasEditContextValue {
     tableId: string,
     columnId?: string,
     field?: 'name' | 'dataType',
+  ) => void
+  /**
+   * Open a canvas header icon's popover/panel in place (no edit overlay).
+   * Pass `columnId` when `kind === 'fieldnote'` so the target TableNode
+   * knows which column's note to open.
+   */
+  requestAffordance: (
+    tableId: string,
+    kind: AffordanceRequest['kind'],
+    columnId?: string,
   ) => void
   /** Close the overlay entirely (pane click, Escape). */
   exitEdit: () => void
@@ -65,7 +94,9 @@ const noop = () => {}
 export const CanvasEditContext = createContext<CanvasEditContextValue>({
   editingTableId: null,
   initialEditingField: null,
+  affordanceRequest: null,
   requestEdit: noop,
+  requestAffordance: noop,
   exitEdit: noop,
 })
 

@@ -10,6 +10,7 @@ import { Link2, MessageCircle } from 'lucide-react'
 import { toast } from 'sonner'
 import { ColumnRow } from './column/ColumnRow'
 import { ColumnHandles } from './column/ColumnHandles'
+import { ColumnNotePopover } from './column/ColumnNotePopover'
 import { AddColumnRow } from './column/AddColumnRow'
 import { DeleteColumnDialog } from './column/DeleteColumnDialog'
 import { InsertionLine } from './column/InsertionLine'
@@ -175,6 +176,16 @@ export const TableNode = memo(
       'note' | 'comment' | null
     >(null)
 
+    // Which column's field-note popover (if any) the canvas-native
+    // `fieldnote` affordance opened (tactical plan:
+    // canvas-field-note-popover) — holds the columnId, not a boolean, since
+    // the popover must anchor at that specific column's row. Declared
+    // unconditionally alongside `chromeLightPopover` for the same
+    // hooks-must-run-every-render reason.
+    const [chromeLightFieldNote, setChromeLightFieldNote] = useState<
+      string | null
+    >(null)
+
     // --- Drag-and-drop reorder state (raw pointer events) ---
     const [activeId, setActiveId] = useState<string | null>(null)
     const [overIndex, setOverIndex] = useState<number | null>(null)
@@ -225,7 +236,7 @@ export const TableNode = memo(
     // full-DOM render below instead. See `isChromeLightTarget` and the
     // early `if` return further down.
     const canvasMode = useCanvasMode()
-    const { editingTableId, initialEditingField, requestEdit } =
+    const { editingTableId, initialEditingField, affordanceRequest, requestEdit } =
       useCanvasEdit()
 
     // Level-of-detail (GH #121 perf, opt #3): below LOD_ZOOM_THRESHOLD,
@@ -279,6 +290,32 @@ export const TableNode = memo(
       }
     }, [canvasMode, editingTableId, table.id, initialEditingField])
 
+    // Consume a header-icon affordance click (note / comment / relations) for
+    // THIS table — clicking a canvas-drawn header icon opens the matching
+    // in-place popover (note/comment) or the relations panel, WITHOUT entering
+    // the edit overlay. Same per-instance object-identity ref guard as
+    // `initialEditingField` so it fires exactly once per click.
+    const consumedAffordanceRef = useRef<typeof affordanceRequest>(null)
+    useEffect(() => {
+      if (!canvasMode || !affordanceRequest) return
+      if (affordanceRequest.tableId !== table.id) return
+      if (consumedAffordanceRef.current === affordanceRequest) return
+      consumedAffordanceRef.current = affordanceRequest
+      // Mutually exclusive open state (tactical plan:
+      // canvas-field-note-popover) — opening one popover/panel always
+      // closes any other so two note popovers can never both be open.
+      if (affordanceRequest.kind === 'relations') {
+        setChromeLightFieldNote(null)
+        onPreviewRelations?.(table.id)
+      } else if (affordanceRequest.kind === 'fieldnote') {
+        setChromeLightPopover(null)
+        setChromeLightFieldNote(affordanceRequest.columnId ?? null)
+      } else {
+        setChromeLightFieldNote(null)
+        setChromeLightPopover(affordanceRequest.kind)
+      }
+    }, [canvasMode, affordanceRequest, table.id, onPreviewRelations])
+
     // LOD parity (tactical plan Phase 4, item 4): below LOD_ZOOM_THRESHOLD,
     // the chrome-light DOM must collapse to header-only the SAME way
     // CanvasNodeLayer's draw loop does — getEffectiveShowMode is the single
@@ -300,6 +337,22 @@ export const TableNode = memo(
     const chromeLightRowColumns = useMemo(
       () => getVisibleColumnsForShowMode(columns, effectiveShowMode),
       [columns, effectiveShowMode],
+    )
+
+    // Row index of the open field note within the currently visible
+    // (chrome-light) column set — used to anchor ColumnNotePopover beside
+    // the exact row the canvas glyph was drawn over (tactical plan:
+    // canvas-field-note-popover, locked decision #2). `chromeLightRowColumns`
+    // above is the same visible/effective-show-mode set the canvas draw
+    // loop iterates, so this index can never disagree with the painted row.
+    const fieldNoteIndex = useMemo(
+      () =>
+        chromeLightFieldNote
+          ? chromeLightRowColumns.findIndex(
+              (c) => c.id === chromeLightFieldNote,
+            )
+          : -1,
+      [chromeLightFieldNote, chromeLightRowColumns],
     )
     const chromeLightWidth = useMemo(
       () => getCachedTableWidth(table.id, table.name, columns, table.width),
@@ -399,16 +452,12 @@ export const TableNode = memo(
     // open, mirroring the LOD per-column carve-out), same resolution path
     // (blur / cancel).
     //
-    // canvas-unconditional-default: also exempt a table whose relations
-    // panel is open. `TableRelationsPanel` only exists in the full-DOM
-    // render below (chrome-light has no space/DOM to draw the attached
-    // drawer into, unlike Note/Comment's portal-based popovers) — without
-    // this carve-out, toggling "Show relations" on a chrome-light table
-    // flips `isRelationsPreviewOpen` with nothing ever rendering it. Same
-    // pattern as the edit-overlay exemption directly above: bounded to at
-    // most one full-DOM table at a time.
-    const isNotOverlayTarget =
-      canvasMode && editingTableId !== table.id && !isRelationsPreviewOpen
+    // NOTE: relations preview does NOT force full-DOM under canvas anymore —
+    // the relations list is drawn on the canvas itself (CanvasNodeLayer) and
+    // the related tables highlight in place, so a relations-open table stays
+    // chrome-light (no DOM swap). The DOM `TableRelationsPanel` below only
+    // renders in true DOM mode (canvasMode false — e.g. the focus overlay).
+    const isNotOverlayTarget = canvasMode && editingTableId !== table.id
     useEffect(() => {
       if (!(isLodCollapsed || isNotOverlayTarget) || !editingField) return
       if (editingField.field === 'name') {
@@ -778,9 +827,26 @@ export const TableNode = memo(
           // provided. Neither ever calls requestEdit: the table stays
           // canvas-drawn while the popover (rendered below, controlled by
           // `chromeLightPopover`) floats above it.
-          onOpenNote={canEdit ? () => setChromeLightPopover('note') : undefined}
+          // Clear any open field-note popover first (canvas-field-note-popover
+          // exclusivity invariant) — the affordance effect resets across the
+          // effect-driven path, but these context-menu setters bypass it, so
+          // without this a canvas field-note + a menu-opened table note could
+          // render open at once.
+          onOpenNote={
+            canEdit
+              ? () => {
+                  setChromeLightFieldNote(null)
+                  setChromeLightPopover('note')
+                }
+              : undefined
+          }
           onOpenComment={
-            canComment ? () => setChromeLightPopover('comment') : undefined
+            canComment
+              ? () => {
+                  setChromeLightFieldNote(null)
+                  setChromeLightPopover('comment')
+                }
+              : undefined
           }
         >
           <div
@@ -895,6 +961,39 @@ export const TableNode = memo(
                 open={chromeLightPopover === 'comment'}
                 onOpenChange={(open) => {
                   if (!open) setChromeLightPopover(null)
+                }}
+              />
+            )}
+            {/* Field-note popover (tactical plan:
+                canvas-field-note-popover) — opened by clicking the
+                canvas-drawn field-note glyph (CanvasNodeLayer's capture-
+                phase click handler → requestAffordance(tableId,
+                'fieldnote', columnId)), NEVER by requestEdit — same
+                canvas-native invariant TableNotePopover/CommentThreadPopover
+                above rely on. Anchored beside the exact row the glyph was
+                drawn over (HEADER_H + rowIndex*ROW_H + ROW_H/2), matching
+                the editor-only gate the canvas glyph itself already applies
+                (only an editor can ever fire this affordance). */}
+            {canEdit && chromeLightFieldNote && fieldNoteIndex >= 0 && (
+              <ColumnNotePopover
+                description={
+                  columns.find((c) => c.id === chromeLightFieldNote)
+                    ?.description ?? null
+                }
+                onSave={(desc) =>
+                  handleDescriptionUpdate(chromeLightFieldNote, desc)
+                }
+                open
+                onOpenChange={(o) => {
+                  if (!o) setChromeLightFieldNote(null)
+                }}
+                anchorOnly
+                anchorStyle={{
+                  position: 'absolute',
+                  top: HEADER_H + fieldNoteIndex * ROW_H + ROW_H / 2,
+                  right: 0,
+                  width: 0,
+                  height: 0,
                 }}
               />
             )}

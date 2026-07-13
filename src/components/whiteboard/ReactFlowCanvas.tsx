@@ -38,7 +38,10 @@ import type {
   RelationshipEdgeType,
   TableNodeType,
 } from '@/lib/react-flow/types'
-import type { InitialEditingField } from '@/lib/react-flow/canvas-mode'
+import type {
+  AffordanceRequest,
+  InitialEditingField,
+} from '@/lib/react-flow/canvas-mode'
 import { CanvasEditContext, CanvasModeContext } from '@/lib/react-flow/canvas-mode'
 import { recalculateEdgesForDraggedNodes } from '@/lib/react-flow/edge-routing'
 import { perfTracker } from '@/lib/perf/perf-tracker'
@@ -348,6 +351,18 @@ export function ReactFlowCanvas({
     setInitialEditingField(null)
   }, [])
 
+  // Header-icon affordance click (note / comment / relations) → open the
+  // in-place popover/panel without the edit overlay. A fresh object each call
+  // so clicking the same icon twice re-fires (TableNode consumes by identity).
+  const [affordanceRequest, setAffordanceRequest] =
+    useState<AffordanceRequest | null>(null)
+  const requestAffordance = useCallback(
+    (tableId: string, kind: AffordanceRequest['kind'], columnId?: string) => {
+      setAffordanceRequest({ tableId, kind, columnId })
+    },
+    [],
+  )
+
   // Escape closes the overlay (locked decision #2) — listener only active
   // while an overlay is actually open, so it never intercepts Escape
   // elsewhere on the board (e.g. closing an unrelated popover).
@@ -395,8 +410,22 @@ export function ReactFlowCanvas({
   }, [editingTableId, nodes, exitEdit])
 
   const canvasEditContextValue = useMemo(
-    () => ({ editingTableId, initialEditingField, requestEdit, exitEdit }),
-    [editingTableId, initialEditingField, requestEdit, exitEdit],
+    () => ({
+      editingTableId,
+      initialEditingField,
+      affordanceRequest,
+      requestEdit,
+      requestAffordance,
+      exitEdit,
+    }),
+    [
+      editingTableId,
+      initialEditingField,
+      affordanceRequest,
+      requestEdit,
+      requestAffordance,
+      exitEdit,
+    ],
   )
 
   // Root wrapper DOM ref (GH #121 perf) — lets the hover-highlight effect

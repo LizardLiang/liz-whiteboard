@@ -291,6 +291,17 @@ async function main() {
     relationshipCount++
   }
 
+  // Field-note fixture (tactical plan: canvas-field-note-popover) — no
+  // seeded column otherwise carries a `description` (only tables do, via
+  // insertTable above), so a field-note glyph would never render. Set one
+  // on stress_table_0's PK column (`id`, order 0 — the earliest/first row)
+  // so canvas-field-note.spec.ts has a stable, guaranteed rowIndex=0
+  // coordinate to click regardless of table iteration order elsewhere.
+  db.query('UPDATE "Column" SET description = ? WHERE id = ?').run(
+    'Stress fixture field note for stress_table_0.id.',
+    pkColumnIdByTable[0],
+  )
+
   console.log(
     `[e2e seed-stress] ok — whiteboard ${IDS.stressWhiteboard} (${TABLE_COUNT} tables, ${relationshipCount} relationships)`,
   )
