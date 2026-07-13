@@ -357,8 +357,8 @@ export function ReactFlowCanvas({
   const [affordanceRequest, setAffordanceRequest] =
     useState<AffordanceRequest | null>(null)
   const requestAffordance = useCallback(
-    (tableId: string, kind: AffordanceRequest['kind']) => {
-      setAffordanceRequest({ tableId, kind })
+    (tableId: string, kind: AffordanceRequest['kind'], columnId?: string) => {
+      setAffordanceRequest({ tableId, kind, columnId })
     },
     [],
   )

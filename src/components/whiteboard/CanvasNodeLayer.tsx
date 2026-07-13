@@ -414,7 +414,7 @@ export function CanvasNodeLayer({
     Array<{ key: string; wx: number; wy: number; hw: number; hh: number }>
   >([])
   const [hoveredKey, setHoveredKey] = useState<string | null>(null)
-  const { requestAffordance, requestEdit } = useCanvasEdit()
+  const { requestAffordance } = useCanvasEdit()
   const rf = useReactFlow()
 
   useEffect(() => {
@@ -456,9 +456,12 @@ export function CanvasNodeLayer({
       e.stopPropagation()
       const parts = key.split('|')
       if (parts[1] === 'fieldnote') {
-        // No standalone column-note popover on canvas — open the edit overlay
-        // for the table, where the field's note is editable.
-        requestEdit(parts[0])
+        // Canvas-native column-note popover (tactical plan:
+        // canvas-field-note-popover) — opens ColumnNotePopover in place,
+        // anchored beside this column's row; never mounts the edit overlay
+        // (parts[0]=tableId, parts[2]=columnId — key format is
+        // `${node.id}|fieldnote|${col.id}`, see the draw loop below).
+        requestAffordance(parts[0], 'fieldnote', parts[2])
       } else if (parts[1] === 'jumprow') {
         // Canvas relations list → jump to the related table: re-anchor the
         // relations preview to it AND pan the viewport so it's centered.
@@ -483,7 +486,7 @@ export function CanvasNodeLayer({
       parent.removeEventListener('click', onClick, true)
       parent.style.cursor = ''
     }
-  }, [enabled, requestAffordance, requestEdit, rf])
+  }, [enabled, requestAffordance, rf])
 
   // Note-glyph permission gate (tactical plan: canvas-table-affordances) —
   // mirrors the full-DOM header's `canEdit &&` gate on TableNotePopover
@@ -799,8 +802,12 @@ export function CanvasNodeLayer({
 
         // Field-note indicator — the "notes for the fields" the DOM shows via
         // ColumnNotePopover. Hollow b/w note icon, filled on hover, drawn only
-        // when the column has a note.
-        if (hasNote) {
+        // when the column has a note AND the viewer can edit (tactical plan:
+        // canvas-field-note-popover, locked decision #1 — editor-only glyph,
+        // matches the DOM ColumnRow's `canEdit &&` gate and this file's own
+        // table-note glyph gate above). No hitbox is registered for viewers,
+        // so their clicks at this position are inert.
+        if (hasNote && canEdit) {
           const noteCx = x + w - PAD_X - 6
           const key = `${node.id}|fieldnote|${col.id}`
           // Hover shows ONLY a background chip; the note icon stays hollow.

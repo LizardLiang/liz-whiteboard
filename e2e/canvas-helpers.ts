@@ -58,6 +58,19 @@ export async function zoomBelowLodThreshold(page: Page) {
   )
 }
 
+/**
+ * Table geometry constants (tactical plan: canvas-field-note-popover) —
+ * duplicated from src/lib/react-flow/canvas-node-geometry.ts (HEADER_H,
+ * ROW_H, PAD_X). Same rationale as `LOD_ZOOM_THRESHOLD` above: e2e specs
+ * run under Playwright's own TS transform, not the app's Vite/tsconfig-path
+ * resolution, so importing `@/lib/...` from here is unproven territory —
+ * these are single-sourced HERE instead and must be kept in sync with
+ * canvas-node-geometry.ts by hand if either changes.
+ */
+export const HEADER_H = 34
+export const ROW_H = 28
+export const PAD_X = 12
+
 /** Zoom in via the Controls "zoom in" button until the board is AT OR ABOVE
  * LOD_ZOOM_THRESHOLD — proves the collapse reverses cleanly (not a stuck
  * state) once zoomed back in, and reproduces the zoom a per-column
