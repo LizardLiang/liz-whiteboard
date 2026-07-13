@@ -25,17 +25,17 @@
 // reference compare, never a full rebuild-and-compare of table content.
 // Still respects the existing `Math.max(DEFAULT_W, table.width ?? 0)` floor
 // (the user's manually-saved width always wins as a minimum).
-import { DEFAULT_W } from './canvas-node-geometry'
+import { BADGE_ZONE, DEFAULT_W, NOTE_RESERVE } from './canvas-node-geometry'
 import type { Column } from '@/data/models'
 
 const HEADER_FONT = '600 13px Inter, system-ui, sans-serif'
 const ROW_FONT = '12px Inter, system-ui, sans-serif'
 
 // Layout constants mirrored from CanvasNodeLayer's draw loop: PAD_X on both
-// sides, a PK/FK dot + 6px gutter before the column name, and a gap between
-// the name and the right-aligned data type.
+// sides, the fixed constraint-badge zone (PK/FK/N/U) before the column name,
+// a gap between the name and the right-aligned data type, and the field-note
+// indicator reserve at the far right.
 const PAD_X = 12
-const DOT_GUTTER = 10 // matches "PAD_X + 6" dot offset used for the name start
 const NAME_TYPE_GAP = 16
 
 let sharedCtx: CanvasRenderingContext2D | null = null
@@ -62,7 +62,13 @@ function measureNaturalWidth(
     const nameWidth = ctx.measureText(col.name).width
     const typeWidth = ctx.measureText(col.dataType).width
     const rowWidth =
-      PAD_X + DOT_GUTTER + nameWidth + NAME_TYPE_GAP + typeWidth + PAD_X
+      PAD_X +
+      BADGE_ZONE +
+      nameWidth +
+      NAME_TYPE_GAP +
+      typeWidth +
+      NOTE_RESERVE +
+      PAD_X
     if (rowWidth > maxWidth) maxWidth = rowWidth
   }
 

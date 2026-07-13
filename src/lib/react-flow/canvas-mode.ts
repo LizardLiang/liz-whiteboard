@@ -40,9 +40,24 @@ export interface InitialEditingField {
   field?: 'name' | 'dataType'
 }
 
+/**
+ * A request to OPEN an affordance on a canvas table WITHOUT entering the edit
+ * overlay — fired when the user clicks one of the canvas-drawn header icons
+ * (note / comment / relations). The target `TableNode` consumes it (via a
+ * per-instance ref guard, like `initialEditingField`) to open the matching
+ * in-place popover / relations panel. A fresh object is minted on every call so
+ * clicking the same icon twice re-fires.
+ */
+export interface AffordanceRequest {
+  tableId: string
+  kind: 'note' | 'comment' | 'relations'
+}
+
 export interface CanvasEditContextValue {
   editingTableId: string | null
   initialEditingField: InitialEditingField | null
+  /** Latest header-icon affordance request (see `AffordanceRequest`). */
+  affordanceRequest: AffordanceRequest | null
   /**
    * Request the overlay for `tableId`. Omit `columnId`/`field` for a plain
    * header/body double-click (mounts the overlay, opens no field). Replaces
@@ -53,6 +68,8 @@ export interface CanvasEditContextValue {
     columnId?: string,
     field?: 'name' | 'dataType',
   ) => void
+  /** Open a canvas header icon's popover/panel in place (no edit overlay). */
+  requestAffordance: (tableId: string, kind: AffordanceRequest['kind']) => void
   /** Close the overlay entirely (pane click, Escape). */
   exitEdit: () => void
 }
@@ -65,7 +82,9 @@ const noop = () => {}
 export const CanvasEditContext = createContext<CanvasEditContextValue>({
   editingTableId: null,
   initialEditingField: null,
+  affordanceRequest: null,
   requestEdit: noop,
+  requestAffordance: noop,
   exitEdit: noop,
 })
 

@@ -225,7 +225,7 @@ export const TableNode = memo(
     // full-DOM render below instead. See `isChromeLightTarget` and the
     // early `if` return further down.
     const canvasMode = useCanvasMode()
-    const { editingTableId, initialEditingField, requestEdit } =
+    const { editingTableId, initialEditingField, affordanceRequest, requestEdit } =
       useCanvasEdit()
 
     // Level-of-detail (GH #121 perf, opt #3): below LOD_ZOOM_THRESHOLD,
@@ -278,6 +278,24 @@ export const TableNode = memo(
         })
       }
     }, [canvasMode, editingTableId, table.id, initialEditingField])
+
+    // Consume a header-icon affordance click (note / comment / relations) for
+    // THIS table — clicking a canvas-drawn header icon opens the matching
+    // in-place popover (note/comment) or the relations panel, WITHOUT entering
+    // the edit overlay. Same per-instance object-identity ref guard as
+    // `initialEditingField` so it fires exactly once per click.
+    const consumedAffordanceRef = useRef<typeof affordanceRequest>(null)
+    useEffect(() => {
+      if (!canvasMode || !affordanceRequest) return
+      if (affordanceRequest.tableId !== table.id) return
+      if (consumedAffordanceRef.current === affordanceRequest) return
+      consumedAffordanceRef.current = affordanceRequest
+      if (affordanceRequest.kind === 'relations') {
+        onPreviewRelations?.(table.id)
+      } else {
+        setChromeLightPopover(affordanceRequest.kind)
+      }
+    }, [canvasMode, affordanceRequest, table.id, onPreviewRelations])
 
     // LOD parity (tactical plan Phase 4, item 4): below LOD_ZOOM_THRESHOLD,
     // the chrome-light DOM must collapse to header-only the SAME way
@@ -399,16 +417,12 @@ export const TableNode = memo(
     // open, mirroring the LOD per-column carve-out), same resolution path
     // (blur / cancel).
     //
-    // canvas-unconditional-default: also exempt a table whose relations
-    // panel is open. `TableRelationsPanel` only exists in the full-DOM
-    // render below (chrome-light has no space/DOM to draw the attached
-    // drawer into, unlike Note/Comment's portal-based popovers) — without
-    // this carve-out, toggling "Show relations" on a chrome-light table
-    // flips `isRelationsPreviewOpen` with nothing ever rendering it. Same
-    // pattern as the edit-overlay exemption directly above: bounded to at
-    // most one full-DOM table at a time.
-    const isNotOverlayTarget =
-      canvasMode && editingTableId !== table.id && !isRelationsPreviewOpen
+    // NOTE: relations preview does NOT force full-DOM under canvas anymore —
+    // the relations list is drawn on the canvas itself (CanvasNodeLayer) and
+    // the related tables highlight in place, so a relations-open table stays
+    // chrome-light (no DOM swap). The DOM `TableRelationsPanel` below only
+    // renders in true DOM mode (canvasMode false — e.g. the focus overlay).
+    const isNotOverlayTarget = canvasMode && editingTableId !== table.id
     useEffect(() => {
       if (!(isLodCollapsed || isNotOverlayTarget) || !editingField) return
       if (editingField.field === 'name') {
