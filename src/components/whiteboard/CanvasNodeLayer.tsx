@@ -856,6 +856,7 @@ export function CanvasNodeLayer({
           // used. Skip the line if either snapshot is missing (stale edge).
           const rel = (e.data as RelationshipEdgeData | undefined)?.relationship
           let conn = ''
+          // eslint-disable-next-line @typescript-eslint/no-unnecessary-condition -- sourceColumn/targetColumn are typed non-nullable, but an edge's snapshot can be stale/missing at runtime; this guard skips such edges (see comment above).
           if (rel?.sourceColumn && rel?.targetColumn) {
             const thisIsSource = rel.sourceTableId === node.id
             const thisCol = thisIsSource ? rel.sourceColumn : rel.targetColumn
