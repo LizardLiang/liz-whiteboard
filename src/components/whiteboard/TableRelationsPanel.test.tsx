@@ -2,10 +2,24 @@
 // RTL render tests for TableRelationsPanel (table-hover-preview-trigger-and-connection-revamp)
 
 import { afterEach, describe, expect, it, vi } from 'vitest'
-import { cleanup, fireEvent, render, screen } from '@testing-library/react'
+import {
+  cleanup,
+  fireEvent,
+  render as rtlRender,
+  screen,
+} from '@testing-library/react'
+import { ReactFlowProvider } from '@xyflow/react'
 import { TableRelationsPanel } from './TableRelationsPanel'
+import type { RenderOptions } from '@testing-library/react'
+import type { ReactElement } from 'react'
 import type { Column, DiagramTable } from '@/data/models'
 import type { RelationshipEdgeType } from '@/lib/react-flow/types'
+
+// TableRelationsPanel reads the React Flow store (useStore transform), so every
+// render needs a zustand provider ancestor. Wrap RTL's render in a
+// ReactFlowProvider so the existing call sites work unchanged.
+const render = (ui: ReactElement, options?: Omit<RenderOptions, 'wrapper'>) =>
+  rtlRender(ui, { wrapper: ReactFlowProvider, ...options })
 
 afterEach(() => {
   cleanup()
