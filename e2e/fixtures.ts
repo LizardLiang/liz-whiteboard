@@ -78,6 +78,20 @@ export const IDS = {
   viewerProject: '30000000-0000-4000-8000-000000000002',
   viewerWhiteboard: '30000000-0000-4000-8000-000000000003',
   viewerTable: '30000000-0000-4000-8000-000000000004',
+
+  // Dedicated board for the Auto-Layout LOD sizing + minimap z-index e2e
+  // (GH #151). Deliberately NOT `stressWhiteboard`: seed-stress.ts hardcodes
+  // `DiagramTable.height = 160` for every table, which React Flow applies as
+  // an explicit inline CSS height on the node wrapper — pinning
+  // `node.measured.height` to a constant regardless of LOD collapse/expand,
+  // which masks Bug 1 entirely (verified empirically — the wrapper's
+  // rendered height never changed across the LOD threshold on that board).
+  // Real user-created tables never persist a height (`diagram-table.ts`
+  // defaults to `null`; `convert-to-nodes.ts` then leaves `node.height`
+  // `undefined`), so the wrapper auto-sizes to content and DOES shrink/grow
+  // with LOD — e2e/seed-autolayout.ts reproduces that by seeding NULL
+  // heights.
+  autoLayoutWhiteboard: '40000000-0000-4000-8000-000000000001',
 }
 
 export const STORAGE_STATE = 'e2e/.auth/state.json'

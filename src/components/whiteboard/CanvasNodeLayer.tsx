@@ -424,7 +424,10 @@ export function CanvasNodeLayer({
     // Map a screen-space pointer to the affordance-icon key under it (or null),
     // via the current viewport transform + the world-space hitboxes recorded by
     // the draw loop.
-    const hitTest = (e: { clientX: number; clientY: number }): string | null => {
+    const hitTest = (e: {
+      clientX: number
+      clientY: number
+    }): string | null => {
       const rect = parent.getBoundingClientRect()
       const [tx, ty, zoom] = transformRef.current
       const wx = (e.clientX - rect.left - tx) / zoom
@@ -474,7 +477,10 @@ export function CanvasNodeLayer({
           rf.setCenter(cx, cy, { zoom: transformRef.current[2], duration: 300 })
         }
       } else {
-        requestAffordance(parts[0], parts[1] as 'note' | 'comment' | 'relations')
+        requestAffordance(
+          parts[0],
+          parts[1] as 'note' | 'comment' | 'relations',
+        )
       }
     }
     parent.addEventListener('pointermove', onMove)
@@ -815,7 +821,13 @@ export function CanvasNodeLayer({
             drawIconHoverChip(ctx, noteCx, cy, colors.text, 18)
           }
           drawNoteGlyph(ctx, noteCx, cy, colors.text, false)
-          iconHitboxesRef.current.push({ key, wx: noteCx, wy: cy, hw: 9, hh: 9 })
+          iconHitboxesRef.current.push({
+            key,
+            wx: noteCx,
+            wy: cy,
+            hw: 9,
+            hh: 9,
+          })
         }
       })
 
@@ -844,6 +856,7 @@ export function CanvasNodeLayer({
           // used. Skip the line if either snapshot is missing (stale edge).
           const rel = (e.data as RelationshipEdgeData | undefined)?.relationship
           let conn = ''
+          // eslint-disable-next-line @typescript-eslint/no-unnecessary-condition -- sourceColumn/targetColumn are typed non-nullable, but an edge's snapshot can be stale/missing at runtime; this guard skips such edges (see comment above).
           if (rel?.sourceColumn && rel?.targetColumn) {
             const thisIsSource = rel.sourceTableId === node.id
             const thisCol = thisIsSource ? rel.sourceColumn : rel.targetColumn
@@ -983,7 +996,7 @@ export function CanvasNodeLayer({
     <canvas
       ref={canvasRef}
       data-testid="canvas-node-layer"
-      className="pointer-events-none absolute inset-0 z-[1000]"
+      className="pointer-events-none absolute inset-0 z-[4]"
     />
   )
 }

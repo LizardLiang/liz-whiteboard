@@ -148,15 +148,30 @@ describe('useD3ForceLayout', () => {
     expect(result.current.error).toBeNull()
   })
 
-  it('uses measured dimensions when available', async () => {
+  // GH #151 Bug 1 — table nodes must size from table DATA (full column
+  // list + saved width), never from `node.measured`. The measured DOM box
+  // is LOD-trimmed (header-only) when zoomed below LOD_ZOOM_THRESHOLD;
+  // sizing from it packed positions for the trimmed box and caused overlap
+  // once zoomed back to full detail. A large `measured` value here (e.g.
+  // from a stale full-detail render) must be IGNORED in favor of the
+  // data-derived size so layout stays correct regardless of current zoom.
+  it('GH #151: sizes table nodes from table data, ignoring measured dimensions', async () => {
     mockComputeLayout.mockResolvedValueOnce(POSITIONS)
 
     const nodes = [
       {
         id: 'T1',
         position: { x: 0, y: 0 },
-        measured: { width: 320, height: 180 },
-        data: { table: { id: 'T1', name: 'T1', columns: [] } },
+        // Deliberately a LOD-trimmed (small) measured box — must be ignored.
+        measured: { width: 90, height: 40 },
+        data: {
+          table: {
+            id: 'T1',
+            name: 'T1',
+            columns: [{ name: 'a' }, { name: 'b' }, { name: 'c' }],
+            width: 300, // saved width — acts as a floor
+          },
+        },
         type: 'tableNode',
       } as any,
     ]
@@ -167,23 +182,51 @@ describe('useD3ForceLayout', () => {
       await result.current.runLayout(nodes, [])
     })
 
+    // width: no canvas 2D context in jsdom → getCachedTableWidth falls back
+    // to the saved-width floor (300, since it's above DEFAULT_W).
+    // height: calculateTableHeight(3) = 40 + 3*28 + 12 = 136.
     expect(mockComputeLayout).toHaveBeenCalledWith(
       expect.arrayContaining([
-        expect.objectContaining({ id: 'T1', width: 320, height: 180 }),
+        expect.objectContaining({ id: 'T1', width: 300, height: 136 }),
       ]),
       expect.any(Array),
     )
   })
 
-  it('falls back to 250×150 when measured dimensions are unavailable', async () => {
+  it('falls back to measured/width when node has no table data (area nodes)', async () => {
+    mockComputeLayout.mockResolvedValueOnce(POSITIONS)
+
+    const noTableNode = {
+      id: 'A1',
+      position: { x: 0, y: 0 },
+      measured: { width: 320, height: 180 },
+      data: {},
+      type: 'area',
+    } as any
+
+    const { result } = renderHook(() => useD3ForceLayout())
+
+    await act(async () => {
+      await result.current.runLayout([noTableNode], [])
+    })
+
+    expect(mockComputeLayout).toHaveBeenCalledWith(
+      expect.arrayContaining([
+        expect.objectContaining({ id: 'A1', width: 320, height: 180 }),
+      ]),
+      expect.any(Array),
+    )
+  })
+
+  it('falls back to 250×150 when a non-table node has no measured dimensions', async () => {
     mockComputeLayout.mockResolvedValueOnce(POSITIONS)
 
     const noMeasureNode = {
-      id: 'T1',
+      id: 'A1',
       position: { x: 0, y: 0 },
       // no measured field
-      data: { table: { id: 'T1', name: 'T1', columns: [] } },
-      type: 'tableNode',
+      data: {},
+      type: 'area',
     } as any
 
     const { result } = renderHook(() => useD3ForceLayout())
@@ -194,7 +237,7 @@ describe('useD3ForceLayout', () => {
 
     expect(mockComputeLayout).toHaveBeenCalledWith(
       expect.arrayContaining([
-        expect.objectContaining({ id: 'T1', width: 250, height: 150 }),
+        expect.objectContaining({ id: 'A1', width: 250, height: 150 }),
       ]),
       expect.any(Array),
     )
