@@ -102,6 +102,8 @@ Configuration is via environment variables (loaded from `.env.local` in developm
 | `COLLAB_RESOURCE_URI`                                  | Audience for internal collaboration tokens (defaults to the app origin).                                                           |
 | `MCP_CLIENT_SECRET`                                    | Shared secret the MCP backend uses to mint collaboration tokens (`/api/collab-token`).                                             |
 | `OAUTH_SIGNING_KEY_FILE` / `OAUTH_SIGNING_KEY_PRIVATE` | RS256 signing key (PKCS#8 PEM) for OAuth tokens — set a **persistent** key in production. `OAUTH_SIGNING_KEY_KID` sets its key id. |
+| `OAUTH_ALLOW_DCR`                                      | Set to `true` to enable the open Dynamic Client Registration endpoint (`/oauth/register`). **Off by default** — it is not advertised in AS metadata and DCR-registered clients are always untrusted, so leave this unset unless you've added a consent screen. |
+| `CIMD_ALLOWED_ORIGINS`                                 | JSON array of https origins trusted for Client ID Metadata Document (CIMD) resolution. Defaults to `["https://claude.ai", "https://claude.com"]`. |
 | `DEBUG_SUPER_PASSWORD`                                 | Optional dev-only login bypass (never set in production).                                                                          |
 
 ## Project structure

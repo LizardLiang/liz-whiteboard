@@ -1,19 +1,32 @@
 // src/routes/authorize.ts
 // OAuth 2.1 /authorize endpoint — auth-code + PKCE flow
 //
-// CONSENT POLICY (first increment):
-//   For first-party clients (firstParty: true in the allowlist) this endpoint
-//   auto-approves without a consent UI. For third-party clients a simple
-//   plaintext consent step is shown (TODO: real consent page in a later slice).
+// CONSENT POLICY (security review BLOCKER fix, 2026-07-18):
+//   There is NO consent UI in this endpoint (the earlier header comment
+//   claiming a "plaintext consent step" was inaccurate — the handler goes
+//   session-check -> issue code -> redirect, with no consent branch at all).
+//   Because of that, only VERIFIED clients — the static first-party
+//   allowlist entry and origin-verified CIMD clients (both resolved with
+//   `trusted: true`/`firstParty: true`) — may reach code issuance. Any other
+//   client (including any DCR-registered row, which is always persisted
+//   `trusted: false`, see src/lib/oauth/clients.ts) is refused outright with
+//   an OAuth error response — never silently downgraded to a narrower scope
+//   and issued a code anyway, which is what previously allowed a
+//   confused-deputy attack: an attacker could register an arbitrary client
+//   via the open /register endpoint and phish an authorization code for a
+//   logged-in user to an attacker-controlled redirect_uri. Re-introducing
+//   trust for a new client class requires shipping a real consent screen
+//   first.
 //
 // FLOW:
 //   1. Parse and validate request params.
-//   2. Check the session_token cookie → resolve current User.
-//   3. If not logged in: redirect to /login?redirect=<original authorize URL>.
-//   4. Validate client_id (allowlist), redirect_uri (exact match).
-//   5. Require code_challenge + code_challenge_method=S256.
-//   6. Issue a short-lived authorization code bound to all grant params.
-//   7. Redirect to redirect_uri?code=<code>&state=<state>.
+//   2. Resolve client_id and validate redirect_uri (exact/loopback match).
+//   3. Refuse the request outright if the client is not verified/trusted.
+//   4. Check the session_token cookie → resolve current User.
+//   5. If not logged in: redirect to /login?redirect=<original authorize URL>.
+//   6. Require code_challenge + code_challenge_method=S256.
+//   7. Issue a short-lived authorization code bound to all grant params.
+//   8. Redirect to redirect_uri?code=<code>&state=<state>.
 
 import { createFileRoute } from '@tanstack/react-router'
 
@@ -29,7 +42,9 @@ export const Route = createFileRoute('/authorize')({
         const clientId = params.get('client_id') ?? ''
         const redirectUri = params.get('redirect_uri') ?? ''
         const responseType = params.get('response_type') ?? ''
-        const scope = params.get('scope') ?? ''
+        // Note: the client's requested `scope` param is intentionally not read
+        // here — only trusted clients reach code issuance (see the trust gate
+        // below) and always receive the full supported scope set.
         const state = params.get('state') ?? ''
         const codeChallenge = params.get('code_challenge') ?? ''
         const codeChallengeMethod = params.get('code_challenge_method') ?? ''
@@ -51,13 +66,14 @@ export const Route = createFileRoute('/authorize')({
           )
         }
 
-        // --- Load config and validate client ---
-        const { getOAuthConfig, findClient } = await import(
-          '@/lib/oauth/config'
-        )
+        // --- Load config and resolve client ---
+        // resolveClient() tries, in order: CIMD (https URL client_id) → static
+        // allowlist → OauthClient DB row (DCR). See src/lib/oauth/resolve-client.ts.
+        const { getOAuthConfig } = await import('@/lib/oauth/config')
+        const { resolveClient } = await import('@/lib/oauth/resolve-client')
         const config = getOAuthConfig()
 
-        const client = findClient(clientId, config)
+        const client = await resolveClient(clientId)
         if (!client) {
           return new Response(
             JSON.stringify({
@@ -68,8 +84,9 @@ export const Route = createFileRoute('/authorize')({
           )
         }
 
-        // Exact redirect_uri match (RFC 6749 §4.1.2.1)
-        if (!client.redirectUris.includes(redirectUri)) {
+        // RFC 8252 §7.3 any-port loopback matching + exact match otherwise.
+        const { redirectUriAllowed } = await import('@/lib/oauth/config')
+        if (!redirectUriAllowed(client.redirectUris, redirectUri)) {
           return new Response(
             JSON.stringify({
               error: 'invalid_request',
@@ -79,42 +96,40 @@ export const Route = createFileRoute('/authorize')({
           )
         }
 
-        // Validate scope
-        // RFC 6749 §3.3: the AS may grant a narrower set of scopes than requested.
-        //
-        // First-party clients (firstParty: true) are fully trusted — always grant
-        // the full supported scope regardless of what was requested. This tolerates
-        // OAuth client bugs that truncate or mangle scope strings (e.g. Claude Code
-        // sends "whiteboa" instead of "whiteboard" due to an off-by-two parsing bug
-        // in the go-sdk WWW-Authenticate scope extractor).
-        //
-        // Third-party clients: grant the intersection of requested ∩ supported.
-        // Return invalid_scope only when the client requests specific scopes but
-        // NONE of them are supported (e.g. scope=openid with no whiteboard at all).
-        const requestedScopes = scope.split(' ').filter(Boolean)
-        const grantedScopes = requestedScopes.filter((s) =>
-          config.scopes.includes(s),
-        )
-        if (
-          !client.firstParty &&
-          requestedScopes.length > 0 &&
-          grantedScopes.length === 0
-        ) {
-          // Third-party client requested scopes but none are supported by this AS.
-          const redirectError = new URL(redirectUri)
-          redirectError.searchParams.set('error', 'invalid_scope')
-          if (state) redirectError.searchParams.set('state', state)
-          return Response.redirect(redirectError.toString(), 302)
+        // --- Trust gate (BLOCKER fix: confused-deputy takeover) ---
+        // No consent UI exists (see header comment). Until one ships, a
+        // client that isn't verified — static first-party or
+        // origin-verified CIMD — is refused outright rather than silently
+        // issued a code with a narrower scope. This is the key invariant:
+        // it makes the earlier open-DCR takeover impossible even if a
+        // future bug or config change ever resolved an untrusted client_id
+        // successfully, because no untrusted client can get past this
+        // check to receive a code. Returned as a JSON OAuth error (NOT a
+        // redirect) — an untrusted client must not receive anything that
+        // looks like a successful step in the flow, including an
+        // error-carrying redirect to its (unverified) redirect_uri.
+        const isTrustedClient = client.firstParty || client.trusted === true
+        if (!isTrustedClient) {
+          console.warn(
+            `[oauth/authorize] Refused untrusted client=${clientId} (no consent UI; only verified clients may authorize)`,
+          )
+          return new Response(
+            JSON.stringify({
+              error: 'unauthorized_client',
+              error_description:
+                'This client is not verified for this authorization server.',
+            }),
+            { status: 403, headers: { 'Content-Type': 'application/json' } },
+          )
         }
 
-        // First-party clients always get the full supported scope set, bypassing
-        // any scope truncation bugs in the client's OAuth implementation.
-        // Third-party clients get the intersection, falling back to full scope if empty.
-        const effectiveScope = client.firstParty
-          ? config.scopes.join(' ')
-          : grantedScopes.length > 0
-            ? grantedScopes.join(' ')
-            : config.scopes.join(' ')
+        // Scope: every client reaching this point is trusted (see gate
+        // above) — always grant the full supported scope regardless of what
+        // was requested. This tolerates OAuth client bugs that truncate or
+        // mangle scope strings (e.g. Claude Code sends "whiteboa" instead of
+        // "whiteboard" due to an off-by-two parsing bug in the go-sdk
+        // WWW-Authenticate scope extractor).
+        const effectiveScope = config.scopes.join(' ')
 
         // Validate resource (RFC 8707) — optional for first increment; warn if absent
         const effectiveResource = resource || config.mcpResourceUri
@@ -160,6 +175,12 @@ export const Route = createFileRoute('/authorize')({
         console.log(
           `[oauth/authorize] Issued code for user=${user.id} client=${clientId}`,
         )
+
+        // Mark the DCR client row (if any) as authorized — drives orphan GC in
+        // sweepOrphanClients(). No-op (0 rows updated) for CIMD/static clients,
+        // which never have an OauthClient row.
+        const { markAuthorized } = await import('@/lib/oauth/clients')
+        markAuthorized(clientId)
 
         // --- Redirect back to client with code ---
         const callbackUrl = new URL(redirectUri)
