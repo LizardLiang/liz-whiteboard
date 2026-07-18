@@ -16,38 +16,30 @@
 // Instead it obtains a separate credential whose audience is the collab server.
 
 import { createFileRoute } from '@tanstack/react-router'
+import { createFixedWindowRateLimiter, extractClientIp } from '@/lib/rate-limit'
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Per-IP fixed-window rate limiter (in-process; resets on restart).
-// 15 attempts per 60-second window per IP.
+// 15 attempts per 60-second window per IP. Shared implementation with
+// src/routes/oauth/register.ts (W5 fix); see src/lib/rate-limit.ts for the
+// trusted-proxy IP extraction rationale (W2).
 // ─────────────────────────────────────────────────────────────────────────────
-interface RateLimitEntry {
-  count: number
-  windowStart: number
-}
-
-const _ipRateLimitMap = new Map<string, RateLimitEntry>()
-const RATE_LIMIT_MAX = 15
-const RATE_LIMIT_WINDOW_MS = 60_000
+const _rateLimiter = createFixedWindowRateLimiter({
+  max: 15,
+  windowMs: 60_000,
+})
 
 /**
  * Returns true if the request is within the rate limit, false if it exceeds it.
  * Exported for unit testing; do not call from outside this module in production.
  */
 export function checkIpRateLimit(ip: string): boolean {
-  const now = Date.now()
-  const entry = _ipRateLimitMap.get(ip)
-  if (!entry || now - entry.windowStart >= RATE_LIMIT_WINDOW_MS) {
-    _ipRateLimitMap.set(ip, { count: 1, windowStart: now })
-    return true
-  }
-  entry.count += 1
-  return entry.count <= RATE_LIMIT_MAX
+  return _rateLimiter.check(ip)
 }
 
 /** Clears the in-process rate-limit map. For tests only. */
 export function _resetIpRateLimitForTests(): void {
-  _ipRateLimitMap.clear()
+  _rateLimiter.reset()
 }
 
 export const Route = createFileRoute('/api/collab-token')({
@@ -57,10 +49,7 @@ export const Route = createFileRoute('/api/collab-token')({
         // ── Rate limiting (per-IP, fixed window) ──────────────────────────────
         // Applied before body parsing to avoid resource exhaustion on the body
         // decode path.
-        const clientIp =
-          request.headers.get('x-forwarded-for')?.split(',')[0]?.trim() ??
-          request.headers.get('x-real-ip') ??
-          'unknown'
+        const clientIp = extractClientIp(request)
         if (!checkIpRateLimit(clientIp)) {
           return new Response(
             JSON.stringify({

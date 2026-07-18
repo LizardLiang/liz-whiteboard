@@ -184,6 +184,22 @@ CREATE INDEX IF NOT EXISTS "OauthRefreshToken_familyId_idx"  ON "OauthRefreshTok
 CREATE INDEX IF NOT EXISTS "OauthRefreshToken_userId_idx"    ON "OauthRefreshToken"("userId");
 CREATE INDEX IF NOT EXISTS "OauthRefreshToken_expiresAt_idx" ON "OauthRefreshToken"("expiresAt");
 
+CREATE TABLE IF NOT EXISTS "OauthClient" (
+    "clientId"                 TEXT    NOT NULL PRIMARY KEY,
+    "redirectUris"             TEXT    NOT NULL,           -- JSON array
+    "clientName"               TEXT,
+    "grantTypes"               TEXT    NOT NULL,           -- JSON array
+    "responseTypes"            TEXT    NOT NULL,           -- JSON array
+    "scope"                    TEXT,
+    "tokenEndpointAuthMethod"  TEXT    NOT NULL DEFAULT 'none',
+    "softwareId"               TEXT,
+    "trusted"                  INTEGER NOT NULL DEFAULT 0,     -- DCR rows are always untrusted; see clients.ts registerClient
+    "lastAuthorizedAt"         INTEGER,                    -- null until first /authorize (orphan GC)
+    "createdAt"                INTEGER NOT NULL DEFAULT (unixepoch('now') * 1000)
+);
+CREATE INDEX IF NOT EXISTS "OauthClient_createdAt_idx"        ON "OauthClient"("createdAt");
+CREATE INDEX IF NOT EXISTS "OauthClient_lastAuthorizedAt_idx" ON "OauthClient"("lastAuthorizedAt");
+
 CREATE TABLE IF NOT EXISTS "ProjectInvite" (
     "id" TEXT NOT NULL PRIMARY KEY,
     "projectId" TEXT NOT NULL,

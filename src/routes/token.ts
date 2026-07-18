@@ -88,10 +88,11 @@ async function handleAuthCodeGrant(body: URLSearchParams): Promise<Response> {
   if (!codeVerifier)
     return tokenError('invalid_request', 'code_verifier is required')
 
-  // Validate client exists
-  const { getOAuthConfig, findClient } = await import('@/lib/oauth/config')
+  // Resolve client — same resolver used at /authorize (CIMD → static → DCR DB).
+  const { getOAuthConfig } = await import('@/lib/oauth/config')
+  const { resolveClient } = await import('@/lib/oauth/resolve-client')
   const config = getOAuthConfig()
-  const client = findClient(clientId, config)
+  const client = await resolveClient(clientId)
   if (!client) {
     return tokenError('invalid_client', 'Unknown client_id', 401)
   }
@@ -111,7 +112,11 @@ async function handleAuthCodeGrant(body: URLSearchParams): Promise<Response> {
     return tokenError('invalid_grant', 'client_id mismatch')
   }
 
-  // Verify redirect_uri matches (RFC 6749 §4.1.3)
+  // Verify redirect_uri matches the value bound to the code at /authorize
+  // (RFC 6749 §4.1.3 anti-injection check). This is an exact match against the
+  // SAME request's own value stored in the auth code — not against the
+  // client's registered redirectUris list — so redirectUriAllowed()'s any-port
+  // loopback tolerance doesn't apply here (both sides come from one flow).
   if (authCode.redirectUri !== redirectUri) {
     return tokenError('invalid_grant', 'redirect_uri mismatch')
   }
@@ -169,10 +174,15 @@ async function handleRefreshTokenGrant(
     return tokenError('invalid_request', 'refresh_token is required')
   if (!clientId) return tokenError('invalid_request', 'client_id is required')
 
-  const { getOAuthConfig, findClient } = await import('@/lib/oauth/config')
+  const { getOAuthConfig } = await import('@/lib/oauth/config')
+  const { resolveClient } = await import('@/lib/oauth/resolve-client')
   const config = getOAuthConfig()
 
-  const client = findClient(clientId, config)
+  // forRefresh: true (W4 fix) — a transient CIMD-origin outage (e.g. claude.ai
+  // blip) must not reject an otherwise-valid refresh token; falls back to the
+  // last-known-good resolved client. Never set for /authorize or the
+  // authorization_code grant (see handleAuthCodeGrant above).
+  const client = await resolveClient(clientId, { forRefresh: true })
   if (!client) {
     return tokenError('invalid_client', 'Unknown client_id', 401)
   }
