@@ -41,37 +41,324 @@
 //   7. Redirect to redirect_uri?code=<code>&state=<state>.
 
 import { createFileRoute } from '@tanstack/react-router'
+import type { AuthUser } from '@/lib/auth/session'
+import type { OAuthClient, OAuthConfig } from '@/lib/oauth/config'
+
+// ─────────────────────────────────────────────────────────────────────────────
+// W6/W7 fix: the GET handler below was one ~220-line function; it's now an
+// orchestrator over the helpers in this section. All server-only imports
+// stay dynamic (inside these functions, not at module top level) — server-
+// only modules must not be bundled into the client. See src/routes/api/auth.ts
+// for the same pattern. Type-only imports above are erased at build time and
+// carry no such risk.
+// ─────────────────────────────────────────────────────────────────────────────
+
+interface AuthorizeParams {
+  clientId: string
+  redirectUri: string
+  responseType: string
+  /** Read only by the untrusted-client branch — trusted clients ignore it. */
+  requestedScopeParam: string
+  state: string
+  codeChallenge: string
+  codeChallengeMethod: string
+  resource: string
+}
+
+function parseAuthorizeParams(url: URL): AuthorizeParams {
+  const params = url.searchParams
+  return {
+    clientId: params.get('client_id') ?? '',
+    redirectUri: params.get('redirect_uri') ?? '',
+    responseType: params.get('response_type') ?? '',
+    requestedScopeParam: params.get('scope') ?? '',
+    state: params.get('state') ?? '',
+    codeChallenge: params.get('code_challenge') ?? '',
+    codeChallengeMethod: params.get('code_challenge_method') ?? '',
+    resource: params.get('resource') ?? '',
+  }
+}
+
+/** RFC 6749 §4.1.1 + PKCE required-param validation. Empty array = valid. */
+function validateRequiredParams(p: AuthorizeParams): Array<string> {
+  const errors: Array<string> = []
+  if (p.responseType !== 'code') errors.push('response_type must be "code"')
+  if (!p.clientId) errors.push('client_id is required')
+  if (!p.redirectUri) errors.push('redirect_uri is required')
+  if (!p.codeChallenge) errors.push('code_challenge is required (PKCE)')
+  if (p.codeChallengeMethod !== 'S256')
+    errors.push('code_challenge_method must be "S256"')
+  return errors
+}
+
+/**
+ * Resolve client_id and validate redirect_uri (RFC 8252 §7.3 any-port
+ * loopback matching + exact match otherwise). Returns the resolved client on
+ * success, or the exact error Response to return on failure.
+ */
+async function resolveClientForAuthorize(
+  clientId: string,
+  redirectUri: string,
+): Promise<{ client: OAuthClient } | { errorResponse: Response }> {
+  // resolveClient() tries, in order: CIMD (https URL client_id) → static
+  // allowlist → OauthClient DB row (DCR). See src/lib/oauth/resolve-client.ts.
+  const { resolveClient } = await import('@/lib/oauth/resolve-client')
+  const client = await resolveClient(clientId)
+  if (!client) {
+    return {
+      errorResponse: new Response(
+        JSON.stringify({
+          error: 'unauthorized_client',
+          description: 'Unknown client_id',
+        }),
+        { status: 400, headers: { 'Content-Type': 'application/json' } },
+      ),
+    }
+  }
+
+  const { redirectUriAllowed } = await import('@/lib/oauth/config')
+  if (!redirectUriAllowed(client.redirectUris, redirectUri)) {
+    return {
+      errorResponse: new Response(
+        JSON.stringify({
+          error: 'invalid_request',
+          description: 'redirect_uri mismatch',
+        }),
+        { status: 400, headers: { 'Content-Type': 'application/json' } },
+      ),
+    }
+  }
+
+  return { client }
+}
+
+/**
+ * Validate the session_token cookie. Moved before the trust gate (consent,
+ * like a login redirect, must never be shown to a logged-out user): an
+ * anonymous request for ANY client (trusted or not) is bounced to /login
+ * first, then re-enters this same handler with a valid session on the way
+ * back. Returns the authenticated user, or the redirect-to-/login Response.
+ */
+async function requireSessionUser(
+  request: Request,
+  url: URL,
+): Promise<{ user: AuthUser } | { redirectResponse: Response }> {
+  const { parseSessionCookie } = await import('@/lib/auth/cookies')
+  const { validateSessionToken } = await import('@/lib/auth/session')
+
+  const toLoginRedirect = (): Response => {
+    const loginUrl = new URL('/login', url.origin)
+    loginUrl.searchParams.set('redirect', url.pathname + url.search)
+    return Response.redirect(loginUrl.toString(), 302)
+  }
+
+  const cookieHeader = request.headers.get('cookie')
+  const sessionToken = parseSessionCookie(cookieHeader)
+  if (!sessionToken) {
+    return { redirectResponse: toLoginRedirect() }
+  }
+
+  const authResult = await validateSessionToken(sessionToken)
+  if (!authResult) {
+    return { redirectResponse: toLoginRedirect() }
+  }
+
+  return { user: authResult.user }
+}
+
+interface IssueCodeParams {
+  clientId: string
+  redirectUri: string
+  userId: string
+  codeChallenge: string
+  resource: string
+  scope: string
+  state: string
+  config: OAuthConfig
+  /** e.g. '' for the trusted path, ' (existing grant)' for the grant-skip path — the only line these two call sites ever differed on. */
+  logSuffix: string
+}
+
+/**
+ * W7 fix: shared by the trusted-client path and the untrusted-existing-grant
+ * path — both issue an authorization code, mark the DCR client authorized,
+ * and redirect with `code`(+`state`) attached; they only ever differed in
+ * which scope value to issue and one word in the log line, both now params.
+ */
+async function issueCodeAndRedirect(p: IssueCodeParams): Promise<Response> {
+  const { issueAuthCode } = await import('@/lib/oauth/codes')
+  const code = issueAuthCode(
+    {
+      clientId: p.clientId,
+      redirectUri: p.redirectUri,
+      userId: p.userId,
+      codeChallenge: p.codeChallenge,
+      codeChallengeMethod: 'S256',
+      resource: p.resource,
+      scope: p.scope,
+    },
+    p.config,
+  )
+
+  console.log(
+    `[oauth/authorize] Issued code${p.logSuffix} for user=${p.userId} client=${p.clientId}`,
+  )
+
+  // Mark the DCR client row (if any) as authorized — drives orphan GC in
+  // sweepOrphanClients(). No-op (0 rows updated) for CIMD/static clients,
+  // which never have an OauthClient row.
+  const { markAuthorized } = await import('@/lib/oauth/clients')
+  markAuthorized(p.clientId)
+
+  const callbackUrl = new URL(p.redirectUri)
+  callbackUrl.searchParams.set('code', code)
+  if (p.state) callbackUrl.searchParams.set('state', p.state)
+  return Response.redirect(callbackUrl.toString(), 302)
+}
+
+interface TrustedClientParams {
+  clientId: string
+  redirectUri: string
+  userId: string
+  codeChallenge: string
+  resource: string
+  state: string
+  config: OAuthConfig
+}
+
+/**
+ * Trusted (first-party or origin-verified CIMD) branch. BYTE-FOR-BYTE
+ * identical observable behavior to the prior inline version — see
+ * src/routes/authorize.test.ts, which pins this Response shape and must
+ * keep passing unmodified. Git history shows two prior shipped fixes that
+ * broke a live client by touching scope handling here (2413aa3, 0be340f) —
+ * do not touch the scope line below.
+ */
+async function handleTrustedClient(p: TrustedClientParams): Promise<Response> {
+  // Scope: every client reaching this branch is trusted — always grant the
+  // full supported scope regardless of what was requested. This tolerates
+  // OAuth client bugs that truncate or mangle scope strings (e.g. Claude
+  // Code sends "whiteboa" instead of "whiteboard" due to an off-by-two
+  // parsing bug in the go-sdk WWW-Authenticate scope extractor).
+  const effectiveScope = p.config.scopes.join(' ')
+
+  return issueCodeAndRedirect({
+    clientId: p.clientId,
+    redirectUri: p.redirectUri,
+    userId: p.userId,
+    codeChallenge: p.codeChallenge,
+    resource: p.resource,
+    scope: effectiveScope,
+    state: p.state,
+    config: p.config,
+    logSuffix: '',
+  })
+}
+
+interface UntrustedClientParams {
+  clientId: string
+  clientName: string
+  redirectUri: string
+  userId: string
+  codeChallenge: string
+  resource: string
+  state: string
+  requestedScopeParam: string
+  config: OAuthConfig
+  origin: string
+}
+
+/**
+ * Untrusted (DCR-registered) branch: requested ∩ config.scopes; invalid_scope
+ * if empty; an existing covering OauthGrant skips the prompt; otherwise
+ * stores a pending request and redirects to /oauth/consent.
+ */
+async function handleUntrustedClient(
+  p: UntrustedClientParams,
+): Promise<Response> {
+  const requestedScopes = p.requestedScopeParam
+    ? p.requestedScopeParam.split(' ').filter(Boolean)
+    : p.config.scopes // no scope requested -> ask for everything supported
+  const intersectionScopes = requestedScopes.filter((s) =>
+    p.config.scopes.includes(s),
+  )
+
+  if (intersectionScopes.length === 0) {
+    // Post-redirect_uri-validation error: safe to deliver via redirect to
+    // the client's own (already-verified) redirect_uri per RFC 6749
+    // §4.1.2.1, unlike the pre-validation errors in the caller.
+    const errorUrl = new URL(p.redirectUri)
+    errorUrl.searchParams.set('error', 'invalid_scope')
+    errorUrl.searchParams.set(
+      'error_description',
+      'No requested scope is supported by this authorization server.',
+    )
+    if (p.state) errorUrl.searchParams.set('state', p.state)
+    return Response.redirect(errorUrl.toString(), 302)
+  }
+
+  const intersectionScopeStr = intersectionScopes.join(' ')
+
+  const { getGrant, scopeCovers } = await import('@/lib/oauth/grants')
+  const existingGrant = getGrant(p.userId, p.clientId)
+
+  if (existingGrant && scopeCovers(existingGrant.scope, intersectionScopes)) {
+    // Already consented to at least this much — skip the prompt and issue a
+    // code. S1 fix: issue the requested intersection (what was actually
+    // asked for this time), not the full previously-granted scope, which
+    // may be broader — latent only while config.scopes is a single
+    // hardcoded value ['whiteboard'], since intersectionScopeStr and
+    // existingGrant.scope necessarily coincide in that case.
+    return issueCodeAndRedirect({
+      clientId: p.clientId,
+      redirectUri: p.redirectUri,
+      userId: p.userId,
+      codeChallenge: p.codeChallenge,
+      resource: p.resource,
+      scope: intersectionScopeStr,
+      state: p.state,
+      config: p.config,
+      logSuffix: ' (existing grant)',
+    })
+  }
+
+  // No covering grant — show the consent screen. The browser only ever
+  // carries the opaque request_id; every grant param (redirect_uri, PKCE,
+  // resource, state) is held server-side, so nothing about the flow can be
+  // tampered with between here and the approve/deny POST.
+  const { createPendingConsent } = await import('@/lib/oauth/pending-consent')
+  const requestId = createPendingConsent({
+    clientId: p.clientId,
+    clientName: p.clientName,
+    redirectUri: p.redirectUri,
+    scope: intersectionScopeStr,
+    codeChallenge: p.codeChallenge,
+    codeChallengeMethod: 'S256',
+    resource: p.resource,
+    state: p.state,
+    userId: p.userId,
+  })
+
+  // S3 fix: request_id is a flow-control secret (single-use bearer token for
+  // the pending consent record) — log only a short, non-actionable prefix,
+  // not the full value.
+  console.log(
+    `[oauth/authorize] Untrusted client=${p.clientId} user=${p.userId} -> consent (request_id=${requestId.slice(0, 8)}…)`,
+  )
+
+  const consentUrl = new URL('/oauth/consent', p.origin)
+  consentUrl.searchParams.set('request_id', requestId)
+  return Response.redirect(consentUrl.toString(), 302)
+}
 
 export const Route = createFileRoute('/authorize')({
   server: {
     handlers: {
       GET: async ({ request }) => {
-        // All imports are dynamic: server-only modules must not be bundled
-        // into the client. See src/routes/api/auth.ts for the same pattern.
         const url = new URL(request.url)
-        const params = url.searchParams
+        const parsed = parseAuthorizeParams(url)
 
-        const clientId = params.get('client_id') ?? ''
-        const redirectUri = params.get('redirect_uri') ?? ''
-        const responseType = params.get('response_type') ?? ''
-        // Read for the untrusted-client scope-intersection path (see the
-        // trust gate below). Trusted clients still ignore this entirely and
-        // always receive the full supported scope set — see that branch.
-        const requestedScopeParam = params.get('scope') ?? ''
-        const state = params.get('state') ?? ''
-        const codeChallenge = params.get('code_challenge') ?? ''
-        const codeChallengeMethod = params.get('code_challenge_method') ?? ''
-        const resource = params.get('resource') ?? ''
-
-        // --- Validate required params ---
-        const errors: Array<string> = []
-        if (responseType !== 'code') errors.push('response_type must be "code"')
-        if (!clientId) errors.push('client_id is required')
-        if (!redirectUri) errors.push('redirect_uri is required')
-        if (!codeChallenge) errors.push('code_challenge is required (PKCE)')
-        if (codeChallengeMethod !== 'S256')
-          errors.push('code_challenge_method must be "S256"')
-
+        const errors = validateRequiredParams(parsed)
         if (errors.length > 0) {
           return new Response(
             JSON.stringify({ error: 'invalid_request', details: errors }),
@@ -79,189 +366,50 @@ export const Route = createFileRoute('/authorize')({
           )
         }
 
-        // --- Load config and resolve client ---
-        // resolveClient() tries, in order: CIMD (https URL client_id) → static
-        // allowlist → OauthClient DB row (DCR). See src/lib/oauth/resolve-client.ts.
         const { getOAuthConfig } = await import('@/lib/oauth/config')
-        const { resolveClient } = await import('@/lib/oauth/resolve-client')
         const config = getOAuthConfig()
 
-        const client = await resolveClient(clientId)
-        if (!client) {
-          return new Response(
-            JSON.stringify({
-              error: 'unauthorized_client',
-              description: 'Unknown client_id',
-            }),
-            { status: 400, headers: { 'Content-Type': 'application/json' } },
-          )
-        }
+        const resolved = await resolveClientForAuthorize(
+          parsed.clientId,
+          parsed.redirectUri,
+        )
+        if ('errorResponse' in resolved) return resolved.errorResponse
+        const { client } = resolved
 
-        // RFC 8252 §7.3 any-port loopback matching + exact match otherwise.
-        const { redirectUriAllowed } = await import('@/lib/oauth/config')
-        if (!redirectUriAllowed(client.redirectUris, redirectUri)) {
-          return new Response(
-            JSON.stringify({
-              error: 'invalid_request',
-              description: 'redirect_uri mismatch',
-            }),
-            { status: 400, headers: { 'Content-Type': 'application/json' } },
-          )
-        }
+        // Validate resource (RFC 8707) — optional for first increment.
+        const effectiveResource = parsed.resource || config.mcpResourceUri
 
-        // Validate resource (RFC 8707) — optional for first increment; warn if absent
-        const effectiveResource = resource || config.mcpResourceUri
-
-        // --- Validate session (moved before the trust gate: consent, like a
-        // login redirect, must never be shown to a logged-out user) ---
-        const { parseSessionCookie } = await import('@/lib/auth/cookies')
-        const { validateSessionToken } = await import('@/lib/auth/session')
-
-        const cookieHeader = request.headers.get('cookie')
-        const sessionToken = parseSessionCookie(cookieHeader)
-
-        if (!sessionToken) {
-          // Not logged in → redirect to /login, then back here after login
-          const loginUrl = new URL('/login', url.origin)
-          loginUrl.searchParams.set('redirect', url.pathname + url.search)
-          return Response.redirect(loginUrl.toString(), 302)
-        }
-
-        const authResult = await validateSessionToken(sessionToken)
-        if (!authResult) {
-          const loginUrl = new URL('/login', url.origin)
-          loginUrl.searchParams.set('redirect', url.pathname + url.search)
-          return Response.redirect(loginUrl.toString(), 302)
-        }
-
-        const { user } = authResult
+        const session = await requireSessionUser(request, url)
+        if ('redirectResponse' in session) return session.redirectResponse
+        const { user } = session
 
         // --- Trust gate (three-way; mcp-oauth-dcr-consent) ---
         const isTrustedClient = client.firstParty || client.trusted === true
 
         if (isTrustedClient) {
-          // Scope: every client reaching this branch is trusted — always
-          // grant the full supported scope regardless of what was requested.
-          // This tolerates OAuth client bugs that truncate or mangle scope
-          // strings (e.g. Claude Code sends "whiteboa" instead of
-          // "whiteboard" due to an off-by-two parsing bug in the go-sdk
-          // WWW-Authenticate scope extractor). BYTE-FOR-BYTE unchanged from
-          // the prior BLOCKER-fix version — do not touch (see header comment).
-          const effectiveScope = config.scopes.join(' ')
-
-          const { issueAuthCode } = await import('@/lib/oauth/codes')
-          const code = issueAuthCode(
-            {
-              clientId,
-              redirectUri,
-              userId: user.id,
-              codeChallenge,
-              codeChallengeMethod: 'S256',
-              resource: effectiveResource,
-              scope: effectiveScope,
-            },
+          return handleTrustedClient({
+            clientId: parsed.clientId,
+            redirectUri: parsed.redirectUri,
+            userId: user.id,
+            codeChallenge: parsed.codeChallenge,
+            resource: effectiveResource,
+            state: parsed.state,
             config,
-          )
-
-          console.log(
-            `[oauth/authorize] Issued code for user=${user.id} client=${clientId}`,
-          )
-
-          // Mark the DCR client row (if any) as authorized — drives orphan GC
-          // in sweepOrphanClients(). No-op (0 rows updated) for CIMD/static
-          // clients, which never have an OauthClient row.
-          const { markAuthorized } = await import('@/lib/oauth/clients')
-          markAuthorized(clientId)
-
-          const callbackUrl = new URL(redirectUri)
-          callbackUrl.searchParams.set('code', code)
-          if (state) callbackUrl.searchParams.set('state', state)
-          return Response.redirect(callbackUrl.toString(), 302)
+          })
         }
 
-        // --- Untrusted client: intersection scope + grant/consent branch ---
-        const requestedScopes = requestedScopeParam
-          ? requestedScopeParam.split(' ').filter(Boolean)
-          : config.scopes // no scope requested -> ask for everything supported
-        const intersectionScopes = requestedScopes.filter((s) =>
-          config.scopes.includes(s),
-        )
-
-        if (intersectionScopes.length === 0) {
-          // Post-redirect_uri-validation error: safe to deliver via redirect
-          // to the client's own (already-verified) redirect_uri per RFC 6749
-          // §4.1.2.1, unlike the pre-validation errors above.
-          const errorUrl = new URL(redirectUri)
-          errorUrl.searchParams.set('error', 'invalid_scope')
-          errorUrl.searchParams.set(
-            'error_description',
-            'No requested scope is supported by this authorization server.',
-          )
-          if (state) errorUrl.searchParams.set('state', state)
-          return Response.redirect(errorUrl.toString(), 302)
-        }
-
-        const intersectionScopeStr = intersectionScopes.join(' ')
-
-        const { getGrant, scopeCovers } = await import('@/lib/oauth/grants')
-        const existingGrant = getGrant(user.id, clientId)
-
-        if (existingGrant && scopeCovers(existingGrant.scope, intersectionScopes)) {
-          // Already consented to at least this much — skip the prompt and
-          // issue a code with the full previously-granted scope.
-          const { issueAuthCode } = await import('@/lib/oauth/codes')
-          const code = issueAuthCode(
-            {
-              clientId,
-              redirectUri,
-              userId: user.id,
-              codeChallenge,
-              codeChallengeMethod: 'S256',
-              resource: effectiveResource,
-              scope: existingGrant.scope,
-            },
-            config,
-          )
-
-          console.log(
-            `[oauth/authorize] Issued code (existing grant) for user=${user.id} client=${clientId}`,
-          )
-
-          const { markAuthorized } = await import('@/lib/oauth/clients')
-          markAuthorized(clientId)
-
-          const callbackUrl = new URL(redirectUri)
-          callbackUrl.searchParams.set('code', code)
-          if (state) callbackUrl.searchParams.set('state', state)
-          return Response.redirect(callbackUrl.toString(), 302)
-        }
-
-        // No covering grant — show the consent screen. The browser only ever
-        // carries the opaque request_id; every grant param (redirect_uri,
-        // PKCE, resource, state) is held server-side, so nothing about the
-        // flow can be tampered with between here and the approve/deny POST.
-        const { createPendingConsent } = await import(
-          '@/lib/oauth/pending-consent'
-        )
-        const requestId = createPendingConsent({
-          clientId,
+        return handleUntrustedClient({
+          clientId: parsed.clientId,
           clientName: client.name,
-          redirectUri,
-          scope: intersectionScopeStr,
-          codeChallenge,
-          codeChallengeMethod: 'S256',
-          resource: effectiveResource,
-          state,
+          redirectUri: parsed.redirectUri,
           userId: user.id,
+          codeChallenge: parsed.codeChallenge,
+          resource: effectiveResource,
+          state: parsed.state,
+          requestedScopeParam: parsed.requestedScopeParam,
+          config,
+          origin: url.origin,
         })
-
-        console.log(
-          `[oauth/authorize] Untrusted client=${clientId} user=${user.id} -> consent (request_id=${requestId})`,
-        )
-
-        const consentUrl = new URL('/oauth/consent', url.origin)
-        consentUrl.searchParams.set('request_id', requestId)
-        return Response.redirect(consentUrl.toString(), 302)
       },
     },
   },

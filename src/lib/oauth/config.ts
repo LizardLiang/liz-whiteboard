@@ -21,11 +21,14 @@ export interface OAuthClient {
   /** If true, auto-approve without showing consent UI (first-party clients) */
   firstParty: boolean
   /**
-   * If true, this client was resolved via a trusted mechanism (CIMD
-   * self-asserted https document, or a DB-registered DCR client) — auto-approve
-   * and grant full scope the same way firstParty clients do. Set by
-   * resolveClient()'s CIMD/DCR paths; absent (undefined/false) for the static
-   * allowlist unless explicitly marked.
+   * If true, this client was resolved via origin-verified CIMD (a
+   * self-asserted https document fetched from the client's own origin) —
+   * auto-approve and grant full scope the same way firstParty clients do.
+   * Set only by resolveClient()'s CIMD path (src/lib/oauth/cimd.ts).
+   * DB-registered DCR clients (src/lib/oauth/clients.ts) are ALWAYS
+   * persisted with `trusted: false` and must clear the consent screen
+   * (src/routes/oauth/consent.tsx) instead — auto-approving DCR rows was
+   * the confused-deputy design removed by the 2026-07-18 BLOCKER fix.
    */
   trusted?: boolean
 }

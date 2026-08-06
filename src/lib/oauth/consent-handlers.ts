@@ -71,10 +71,25 @@ export async function approveConsentHandler(
   { user }: AuthContext,
   data: ConsentRequestId,
 ): Promise<ConsentActionResult> {
-  const { consumePendingConsent } = await import('./pending-consent')
-  const pending = consumePendingConsent(data.requestId)
+  // S2 fix: peek + verify userId BEFORE consuming. Consuming first would let
+  // a second logged-in user who merely learns another user's request_id
+  // destroy that pending request (denial of service) without ever passing
+  // the userId check — since consume deletes unconditionally on lookup.
+  const { peekPendingConsent, consumePendingConsent } = await import(
+    './pending-consent'
+  )
+  const peeked = peekPendingConsent(data.requestId)
 
-  if (!pending || pending.userId !== user.id) {
+  if (!peeked || peeked.userId !== user.id) {
+    return {
+      success: false,
+      message:
+        'This consent request has expired or is invalid. Please try connecting again from your client.',
+    }
+  }
+
+  const pending = consumePendingConsent(data.requestId)
+  if (!pending) {
     return {
       success: false,
       message:
@@ -125,10 +140,22 @@ export async function denyConsentHandler(
   { user }: AuthContext,
   data: ConsentRequestId,
 ): Promise<ConsentActionResult> {
-  const { consumePendingConsent } = await import('./pending-consent')
-  const pending = consumePendingConsent(data.requestId)
+  // S2 fix: peek + verify userId BEFORE consuming — see approveConsentHandler.
+  const { peekPendingConsent, consumePendingConsent } = await import(
+    './pending-consent'
+  )
+  const peeked = peekPendingConsent(data.requestId)
 
-  if (!pending || pending.userId !== user.id) {
+  if (!peeked || peeked.userId !== user.id) {
+    return {
+      success: false,
+      message:
+        'This consent request has expired or is invalid. Please try connecting again from your client.',
+    }
+  }
+
+  const pending = consumePendingConsent(data.requestId)
+  if (!pending) {
     return {
       success: false,
       message:

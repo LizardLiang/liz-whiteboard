@@ -30,20 +30,63 @@
 //
 // NOTE: this lives at /oauth/register, not /register — /register is already
 // the user-facing signup page (src/routes/register.tsx). RFC 7591 doesn't fix
-// a path name; when enabled, clients would discover this URL via
-// registration_endpoint in AS metadata — which is currently NOT advertised
-// (src/lib/oauth/handlers/as-metadata.ts).
+// a path name; clients discover this URL via registration_endpoint in AS
+// metadata, advertised whenever isDcrEnabled() is true (kept in lockstep —
+// see src/lib/oauth/handlers/as-metadata.ts).
 
 import { createFileRoute } from '@tanstack/react-router'
+import { z } from 'zod'
 import { createFixedWindowRateLimiter, extractClientIp } from '@/lib/rate-limit'
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Request body validation (W3 fix). DCR is unauthenticated (see header
+// comment), so the body schema is the only thing standing between an
+// attacker and unbounded strings/arrays being persisted to OauthClient
+// (src/lib/oauth/clients.ts) and later rendered on the consent screen
+// (src/routes/oauth/consent.tsx) and /settings/connections. `.max(255)`
+// matches this project's Zod convention for user-facing string fields (see
+// src/data/schema.ts:114,131,151); redirect_uris entries get the same cap
+// plus a bound on the array length itself so a single request can't persist
+// an arbitrarily large row.
+// ─────────────────────────────────────────────────────────────────────────────
+const MAX_REDIRECT_URIS = 10
+
+const dcrRegisterBodySchema = z.object({
+  redirect_uris: z.array(z.string().max(255)).min(1).max(MAX_REDIRECT_URIS),
+  client_name: z.string().max(255).optional(),
+  grant_types: z.array(z.string().max(255)).optional(),
+  response_types: z.array(z.string().max(255)).optional(),
+  scope: z.string().max(255).optional(),
+  software_id: z.string().max(255).optional(),
+})
+
+/**
+ * Body-size guard (W3 fix), checked before `request.json()` buffers the
+ * body into memory. Mirrors the 32KB cap CIMD document fetches enforce
+ * (src/lib/oauth/cimd.ts:30) — DCR registration bodies are far smaller than
+ * that in every legitimate case (a handful of short strings), so the same
+ * cap comfortably covers real clients while bounding an attacker's payload.
+ * `Content-Length` is attacker-controlled but browsers/fetch clients always
+ * set it accurately for a JSON.stringify'd body; a request that lies about
+ * it either fails at the transport layer or still hits the schema's
+ * `.max(255)` per-field caps above.
+ */
+const MAX_REGISTER_BODY_BYTES = 32 * 1024 // 32KB
+
+function isBodyTooLarge(request: Request): boolean {
+  const contentLength = request.headers.get('content-length')
+  if (contentLength === null) return false
+  const bytes = Number(contentLength)
+  return Number.isFinite(bytes) && bytes > MAX_REGISTER_BODY_BYTES
+}
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Per-IP fixed-window rate limiter (in-process; resets on restart).
 // Shared implementation with src/routes/api/collab-token.ts (W5 fix); see
 // src/lib/rate-limit.ts for the trusted-proxy IP extraction rationale (W2).
 // Registration is unauthenticated, so this is the main abuse control besides
-// orphan GC — moot while OAUTH_ALLOW_DCR is unset, but kept in place for
-// when it's re-enabled.
+// orphan GC — DCR defaults to enabled, so this limiter is live in the
+// default configuration, not just kept in reserve.
 // ─────────────────────────────────────────────────────────────────────────────
 const _rateLimiter = createFixedWindowRateLimiter({
   max: 10,
@@ -111,10 +154,10 @@ export const Route = createFileRoute('/oauth/register')({
   server: {
     handlers: {
       POST: async ({ request }) => {
-        // ── DCR kill switch (BLOCKER fix) ───────────────────────────────────
-        // Off by default; see the header comment for rationale. Checked
-        // before rate limiting / body parsing so a disabled endpoint does
-        // the minimum possible work.
+        // ── DCR kill switch ──────────────────────────────────────────────
+        // On by default; see the header comment for rationale. Set
+        // OAUTH_ALLOW_DCR=false to disable. Checked before rate limiting /
+        // body parsing so a disabled endpoint does the minimum possible work.
         if (!isDcrEnabled()) {
           return new Response(
             JSON.stringify({
@@ -151,6 +194,17 @@ export const Route = createFileRoute('/oauth/register')({
           )
         }
 
+        // ── Body-size guard (W3 fix) ────────────────────────────────────
+        // Checked before request.json() buffers the body — see the
+        // isBodyTooLarge doc comment for rationale.
+        if (isBodyTooLarge(request)) {
+          return registerError(
+            'invalid_client_metadata',
+            `Request body exceeds ${MAX_REGISTER_BODY_BYTES} bytes`,
+            413,
+          )
+        }
+
         // ── Parse body ──────────────────────────────────────────────────
         let rawBody: unknown
         try {
@@ -169,7 +223,17 @@ export const Route = createFileRoute('/oauth/register')({
           )
         }
 
-        const body = rawBody as Record<string, unknown>
+        // ── Schema validation (W3 fix) ──────────────────────────────────
+        // Length-caps and array-size caps on every client-supplied field —
+        // see the dcrRegisterBodySchema doc comment for rationale.
+        const parsed = dcrRegisterBodySchema.safeParse(rawBody)
+        if (!parsed.success) {
+          return registerError(
+            'invalid_client_metadata',
+            parsed.error.issues[0]?.message ?? 'Invalid request body',
+          )
+        }
+        const body = parsed.data
 
         const redirectUris = await validateRedirectUris(body.redirect_uris)
         if (!redirectUris) {
@@ -179,11 +243,9 @@ export const Route = createFileRoute('/oauth/register')({
           )
         }
 
-        const clientName =
-          typeof body.client_name === 'string' ? body.client_name : undefined
-        const scope = typeof body.scope === 'string' ? body.scope : undefined
-        const softwareId =
-          typeof body.software_id === 'string' ? body.software_id : undefined
+        const clientName = body.client_name
+        const scope = body.scope
+        const softwareId = body.software_id
 
         // grant_types / response_types: accept the client's request only if it
         // matches what this AS actually supports; otherwise fall back to
@@ -192,21 +254,18 @@ export const Route = createFileRoute('/oauth/register')({
         const SUPPORTED_GRANT_TYPES = ['authorization_code', 'refresh_token']
         const SUPPORTED_RESPONSE_TYPES = ['code']
         const grantTypes =
-          Array.isArray(body.grant_types) &&
-          body.grant_types.every(
-            (g) => typeof g === 'string' && SUPPORTED_GRANT_TYPES.includes(g),
-          ) &&
+          body.grant_types &&
+          body.grant_types.every((g) => SUPPORTED_GRANT_TYPES.includes(g)) &&
           body.grant_types.length > 0
-            ? (body.grant_types as Array<string>)
+            ? body.grant_types
             : SUPPORTED_GRANT_TYPES
         const responseTypes =
-          Array.isArray(body.response_types) &&
-          body.response_types.every(
-            (r) =>
-              typeof r === 'string' && SUPPORTED_RESPONSE_TYPES.includes(r),
+          body.response_types &&
+          body.response_types.every((r) =>
+            SUPPORTED_RESPONSE_TYPES.includes(r),
           ) &&
           body.response_types.length > 0
-            ? (body.response_types as Array<string>)
+            ? body.response_types
             : SUPPORTED_RESPONSE_TYPES
 
         // token_endpoint_auth_method is ALWAYS forced to "none" — public

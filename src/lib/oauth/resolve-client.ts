@@ -10,9 +10,10 @@
 //   4. none of the above                   -> null (unauthorized_client / invalid_client)
 //
 // CIMD resolution returns `trusted: true`; DCR rows are always persisted
-// `trusted: false` (see src/lib/oauth/clients.ts) — /authorize refuses any
-// client where `firstParty || trusted` is false rather than downgrading it
-// (BLOCKER fix, 2026-07-18).
+// `trusted: false` (see src/lib/oauth/clients.ts) — /authorize never
+// auto-approves a client where `firstParty || trusted` is false; it routes
+// it through the consent screen instead (src/routes/oauth/consent.tsx,
+// mcp-oauth-dcr-consent, 2026-08-06).
 
 import { findClient, getOAuthConfig } from './config'
 import type { OAuthClient } from './config'

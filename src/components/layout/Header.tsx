@@ -2,7 +2,7 @@
 // Application header with branding, theme toggle, and logout
 
 import { Link, useRouter } from '@tanstack/react-router'
-import { LogOut, Moon, Sun } from 'lucide-react'
+import { LogOut, Moon, Settings, Sun } from 'lucide-react'
 import { useEffect, useState } from 'react'
 import { useQueryClient } from '@tanstack/react-query'
 import { useTheme } from '../../hooks/use-theme'
@@ -96,6 +96,14 @@ export function Header() {
           )}
           <Moon className="h-4 w-4 text-muted-foreground" aria-hidden="true" />
         </div>
+
+        {/* Connected applications (OAuth revocation) */}
+        <Button variant="ghost" size="sm" className="gap-2" asChild>
+          <Link to="/settings/connections" aria-label="Connected applications">
+            <Settings className="h-4 w-4" aria-hidden="true" />
+            <span className="hidden sm:inline">Connections</span>
+          </Link>
+        </Button>
 
         {/* Logout button */}
         <Button

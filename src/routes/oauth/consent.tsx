@@ -16,6 +16,7 @@
 
 import { createFileRoute } from '@tanstack/react-router'
 import { useMutation, useQuery } from '@tanstack/react-query'
+import { toast } from 'sonner'
 import { z } from 'zod'
 import type { AuthErrorResponse } from '@/lib/auth/errors'
 import type { ConsentActionResult } from '@/lib/oauth/consent-handlers'
@@ -52,11 +53,13 @@ function ConsentPage() {
   const approveMutation = useMutation({
     mutationFn: () => approveConsent({ data: { requestId } }),
     onSuccess: (result) => navigateOnResult(result),
+    onError: () => toast.error('Something went wrong approving this request.'),
   })
 
   const denyMutation = useMutation({
     mutationFn: () => denyConsent({ data: { requestId } }),
     onSuccess: (result) => navigateOnResult(result),
+    onError: () => toast.error('Something went wrong denying this request.'),
   })
 
   function navigateOnResult(result: ConsentActionResult | AuthErrorResponse) {
@@ -67,7 +70,15 @@ function ConsentPage() {
       // rather than use the client-side router (mirrors login.tsx's
       // window.location.assign for the same reason).
       window.location.assign(result.redirectUrl)
+      return
     }
+    // W5 fix: `{ success: false, message }` (expired/consumed/user-mismatched
+    // request — see consent-handlers.ts) was previously discarded here, so
+    // the button just silently stopped spinning with no feedback. Surface it.
+    toast.error(
+      result.message ??
+        'This consent request has expired or is invalid. Please try connecting again from your client.',
+    )
   }
 
   const isPending = approveMutation.isPending || denyMutation.isPending

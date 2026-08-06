@@ -13,17 +13,20 @@
 // registered a client via the open /register endpoint could get an
 // authorization code silently issued and redirected to an attacker
 // redirect_uri for any logged-in user (confused-deputy account takeover).
-// /authorize now refuses any client where `firstParty || trusted` is false
-// (src/routes/authorize.ts) rather than auto-approving it — so an untrusted
-// DCR row can reach /authorize but never receives a code. Only the static
-// first-party allowlist and origin-verified CIMD clients are trusted.
+// /authorize (src/routes/authorize.ts) never auto-approves a client where
+// `firstParty || trusted` is false — instead of refusing it outright, an
+// untrusted DCR row is routed through a real consent screen
+// (src/routes/oauth/consent.tsx) and only receives a code after the user
+// explicitly approves it, recorded as a persisted OauthGrant
+// (src/lib/oauth/grants.ts). Only the static first-party allowlist and
+// origin-verified CIMD clients skip consent entirely.
 // Orphan rows (registered but never actually used to complete an /authorize
 // flow) are garbage-collected by sweepOrphanClients(), which also sweeps
 // long-stale authorized rows (W6 fix) to bound table growth.
 
 import { randomBytes } from 'node:crypto'
 import type { OAuthClient } from './config'
-import { db, nowMs } from '@/db'
+import { db, nowMs, transaction } from '@/db'
 
 /** Registered-but-never-authorized rows older than this are swept. */
 const ORPHAN_TTL_MS = 24 * 60 * 60 * 1000 // 24 hours
@@ -32,8 +35,8 @@ const ORPHAN_TTL_MS = 24 * 60 * 60 * 1000 // 24 hours
  * Authorized DCR rows whose last /authorize completion is older than this
  * are swept too (W6 fix) — the original GC only ever deleted rows that were
  * NEVER authorized, so a client used once and then abandoned would live
- * forever. Lower priority now that DCR defaults to disabled, but kept as
- * defense in depth for whenever it's re-enabled.
+ * forever. DCR now defaults to enabled (src/routes/oauth/register.ts), so
+ * this bound matters in the common case, not just as defense in depth.
  */
 const AUTHORIZED_STALE_TTL_MS = 90 * 24 * 60 * 60 * 1000 // 90 days
 
@@ -162,17 +165,30 @@ export function markAuthorized(clientId: string): void {
  *      AUTHORIZED_STALE_TTL_MS — the original version of this function only
  *      swept category 1, so a client that was used once and then abandoned
  *      would occupy a row forever, letting the table grow unbounded.
- * Lazy-invoked on every register() call (mirrors the opportunistic sweep
- * pattern in tokens.ts).
+ * Also deletes any now-orphaned OauthGrant rows (S4 fix): nothing else ever
+ * deletes a grant except revokeGrant() (user-initiated), so reaping a client
+ * row here without also reaping its grant left /settings/connections listing
+ * dead clients by raw hex clientId forever (src/lib/oauth/connections-handlers.ts
+ * falls back to the raw clientId when resolveClient() can't find the row).
+ * Safe unconditionally: trusted/first-party and CIMD clients never get an
+ * OauthGrant row (see grants.ts), so any grant whose clientId has no
+ * matching OauthClient row is orphaned DCR state, never a live trusted/CIMD
+ * grant. Lazy-invoked on every register() call (mirrors the opportunistic
+ * sweep pattern in tokens.ts).
  */
 export function sweepOrphanClients(): void {
   const now = nowMs()
-  db.prepare(
-    `DELETE FROM "OauthClient" WHERE lastAuthorizedAt IS NULL AND createdAt < ?`,
-  ).run(now - ORPHAN_TTL_MS)
-  db.prepare(
-    `DELETE FROM "OauthClient" WHERE lastAuthorizedAt IS NOT NULL AND lastAuthorizedAt < ?`,
-  ).run(now - AUTHORIZED_STALE_TTL_MS)
+  transaction(() => {
+    db.prepare(
+      `DELETE FROM "OauthClient" WHERE lastAuthorizedAt IS NULL AND createdAt < ?`,
+    ).run(now - ORPHAN_TTL_MS)
+    db.prepare(
+      `DELETE FROM "OauthClient" WHERE lastAuthorizedAt IS NOT NULL AND lastAuthorizedAt < ?`,
+    ).run(now - AUTHORIZED_STALE_TTL_MS)
+    db.prepare(
+      `DELETE FROM "OauthGrant" WHERE clientId NOT IN (SELECT clientId FROM "OauthClient")`,
+    ).run()
+  })
 }
 
 /** Reset the DCR client store. For tests only. */

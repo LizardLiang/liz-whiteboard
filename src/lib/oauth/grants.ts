@@ -21,7 +21,7 @@
 // unconditional auto-approve branch in authorize.ts and never reach the
 // consent/grant path.
 
-import { db, nowMs } from '@/db'
+import { db, nowMs, transaction } from '@/db'
 
 export interface OauthGrant {
   userId: string
@@ -100,12 +100,14 @@ export function listGrants(userId: string): Array<OauthGrant> {
  * revoking a non-existent grant is a no-op success.
  */
 export function revokeGrant(userId: string, clientId: string): void {
-  db.prepare(
-    `DELETE FROM "OauthGrant" WHERE userId = ? AND clientId = ?`,
-  ).run(userId, clientId)
-  db.prepare(
-    `DELETE FROM "OauthRefreshToken" WHERE userId = ? AND clientId = ?`,
-  ).run(userId, clientId)
+  transaction(() => {
+    db.prepare(
+      `DELETE FROM "OauthRefreshToken" WHERE userId = ? AND clientId = ?`,
+    ).run(userId, clientId)
+    db.prepare(
+      `DELETE FROM "OauthGrant" WHERE userId = ? AND clientId = ?`,
+    ).run(userId, clientId)
+  })
 }
 
 /**
