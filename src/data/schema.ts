@@ -727,4 +727,30 @@ export const areaMoveBroadcastSchema = z.object({
     .max(500),
 })
 
+// ============================================================================
+// OAuth Consent / Connected-Apps Schemas (MCP DCR + consent screen)
+// ============================================================================
+
+/**
+ * request_id is an opaque `randomBytes(32).toString('hex')` token minted by
+ * src/lib/oauth/pending-consent.ts — not a UUID (OAuth client_id/DCR ids
+ * aren't UUIDs either), so this deliberately does NOT use `.uuid()`.
+ */
+export const consentRequestIdSchema = z.object({
+  requestId: z.string().min(1),
+})
+
+/**
+ * clientId here is always an OauthClient DCR row id
+ * (`randomBytes(16).toString('hex')`, see src/lib/oauth/clients.ts) — grants
+ * only ever exist for untrusted (DCR) clients, never CIMD/first-party ones —
+ * so this is intentionally not `.uuid()` either.
+ */
+export const revokeGrantSchema = z.object({
+  clientId: z.string().min(1),
+})
+
+export type ConsentRequestId = z.infer<typeof consentRequestIdSchema>
+export type RevokeGrant = z.infer<typeof revokeGrantSchema>
+
 export type AreaMoveBroadcast = z.infer<typeof areaMoveBroadcastSchema>

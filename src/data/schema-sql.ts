@@ -200,6 +200,23 @@ CREATE TABLE IF NOT EXISTS "OauthClient" (
 CREATE INDEX IF NOT EXISTS "OauthClient_createdAt_idx"        ON "OauthClient"("createdAt");
 CREATE INDEX IF NOT EXISTS "OauthClient_lastAuthorizedAt_idx" ON "OauthClient"("lastAuthorizedAt");
 
+-- Persisted per-user consent grants for untrusted (DCR-registered) OAuth
+-- clients (mcp-oauth-dcr-consent). A row here means the user approved this
+-- client for the given scope on the consent screen (src/routes/oauth/consent.tsx)
+-- — /authorize skips re-prompting while the requested scope is covered by
+-- "scope" below (src/lib/oauth/grants.ts). Revoking (src/routes/settings/connections.tsx)
+-- deletes this row AND the matching OauthRefreshToken rows so access stops at
+-- the next refresh. Trusted/first-party and CIMD clients never get a row here
+-- — they auto-approve and never reach the consent branch.
+CREATE TABLE IF NOT EXISTS "OauthGrant" (
+    "userId"     TEXT    NOT NULL,
+    "clientId"   TEXT    NOT NULL,
+    "scope"      TEXT    NOT NULL,
+    "grantedAt"  INTEGER NOT NULL DEFAULT (unixepoch('now') * 1000),
+    PRIMARY KEY ("userId", "clientId")
+);
+CREATE INDEX IF NOT EXISTS "OauthGrant_userId_idx" ON "OauthGrant"("userId");
+
 CREATE TABLE IF NOT EXISTS "ProjectInvite" (
     "id" TEXT NOT NULL PRIMARY KEY,
     "projectId" TEXT NOT NULL,

@@ -10,30 +10,37 @@
 import { defineEventHandler, setHeader } from 'h3'
 import { getOAuthConfig } from '../config'
 
-export default defineEventHandler((event) => {
+/**
+ * Builds the AS metadata body. Extracted from the h3 handler below (pure,
+ * no H3Event dependency) so src/lib/oauth/handlers/as-metadata.test.ts can
+ * exercise the registration_endpoint pairing directly without faking an h3
+ * request/response.
+ */
+export async function buildAsMetadata(): Promise<Record<string, unknown>> {
   const config = getOAuthConfig()
   const issuer = config.issuer
 
-  setHeader(event, 'Content-Type', 'application/json')
-  setHeader(event, 'Cache-Control', 'public, max-age=3600')
+  // registration_endpoint (mcp-oauth-dcr-consent, 2026-08-06 — supersedes the
+  // 2026-07-18 BLOCKER-fix "deliberately NOT advertised" policy): now
+  // advertised whenever DCR itself is enabled (src/routes/oauth/register.ts's
+  // isDcrEnabled(), on by default) — the two are kept in lockstep so the kill
+  // switch (OAUTH_ALLOW_DCR=false) removes both the endpoint and its
+  // discovery together. Safe to advertise now that DCR-registered clients
+  // must clear a real consent screen (src/routes/oauth/consent.tsx) and a
+  // persisted per-user grant (src/lib/oauth/grants.ts) before ever receiving
+  // a code — see the header comment in src/routes/authorize.ts.
+  const { isDcrEnabled } = await import('@/routes/oauth/register')
+  const dcrEnabled = isDcrEnabled()
 
-  const metadata = {
+  return {
     issuer,
     authorization_endpoint: `${issuer}/authorize`,
     token_endpoint: `${issuer}/token`,
     jwks_uri: `${issuer}/.well-known/jwks.json`,
     revocation_endpoint: `${issuer}/revoke`,
-    // registration_endpoint is deliberately NOT advertised (security review
-    // BLOCKER fix, 2026-07-18): open, unauthenticated DCR combined with no
-    // consent UI at /authorize allowed a confused-deputy attack — any
-    // attacker-registered client could get an auth code phished from a
-    // logged-in user via an attacker-controlled redirect_uri. The DCR
-    // endpoint (src/routes/oauth/register.ts) still exists and is dormant
-    // behind OAUTH_ALLOW_DCR, and DCR-registered clients are always
-    // untrusted (see src/lib/oauth/clients.ts) and refused at /authorize
-    // (see src/routes/authorize.ts) — but we also stop advertising it so
-    // clients don't discover and depend on a path we intend to keep closed.
-    // Re-enabling requires shipping a real consent screen first.
+    ...(dcrEnabled
+      ? { registration_endpoint: `${issuer}/oauth/register` }
+      : {}),
     scopes_supported: config.scopes,
     response_types_supported: ['code'],
     grant_types_supported: ['authorization_code', 'refresh_token'],
@@ -46,6 +53,10 @@ export default defineEventHandler((event) => {
     // See src/lib/oauth/cimd.ts.
     client_id_metadata_document_supported: true,
   }
+}
 
-  return metadata
+export default defineEventHandler(async (event) => {
+  setHeader(event, 'Content-Type', 'application/json')
+  setHeader(event, 'Cache-Control', 'public, max-age=3600')
+  return buildAsMetadata()
 })

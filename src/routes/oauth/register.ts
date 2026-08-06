@@ -11,21 +11,22 @@
 // §3, DCR is unauthenticated by spec (no initial access token requirement
 // here), so this endpoint cannot itself be gated by auth. Registering a
 // client_id grants NO elevated trust: DCR rows are always persisted with
-// trusted=0 (see src/lib/oauth/clients.ts), and /authorize refuses any
-// untrusted client outright (no consent UI exists yet — see
-// src/routes/authorize.ts) rather than issuing it a code. Public clients
-// only — token_endpoint_auth_method is forced to "none", no client_secret is
-// ever issued or accepted.
+// trusted=0 (see src/lib/oauth/clients.ts), and /authorize now shows a real
+// consent screen (src/routes/oauth/consent.tsx) before ever issuing an
+// untrusted client a code — see the mcp-oauth-dcr-consent header comment in
+// src/routes/authorize.ts. Public clients only — token_endpoint_auth_method
+// is forced to "none", no client_secret is ever issued or accepted.
 //
-// DISABLED BY DEFAULT (security review BLOCKER fix, 2026-07-18): an open,
-// unauthenticated /register endpoint combined with the (now-fixed) trust bug
-// enabled a confused-deputy account takeover. Even with the trust fix, an
-// open registration endpoint is unnecessary attack surface while CIMD covers
-// the only client we currently need to support (Claude Code/claude.ai). This
-// endpoint is gated behind OAUTH_ALLOW_DCR=true (off by default) and returns
-// 404 otherwise. The DCR store/table/route are kept dormant rather than
-// deleted so a future consent-gated re-enable (e.g. if live testing shows a
-// client that only speaks DCR, not CIMD) is cheap.
+// ENABLED BY DEFAULT (mcp-oauth-dcr-consent, 2026-08-06 — supersedes the
+// 2026-07-18 BLOCKER-fix default-off policy): the original DISABLED BY
+// DEFAULT posture existed because open, unauthenticated DCR combined with NO
+// consent UI at /authorize enabled a confused-deputy account takeover. That
+// gap is now closed — every untrusted client (including every DCR
+// registration) must clear a consent screen and a persisted per-user grant
+// before it can receive a code, so leaving this endpoint open no longer
+// reproduces the takeover. `OAUTH_ALLOW_DCR=false` remains the kill switch
+// (checked as `!== 'false'`, so unset/anything-else defaults to enabled) for
+// operators who want to fall back to CIMD-only onboarding.
 //
 // NOTE: this lives at /oauth/register, not /register — /register is already
 // the user-facing signup page (src/routes/register.tsx). RFC 7591 doesn't fix
@@ -63,12 +64,12 @@ export function _resetIpRateLimitForTests(): void {
 }
 
 /**
- * Whether the open DCR endpoint is enabled. Off by default — see the
- * DISABLED BY DEFAULT header comment above for the security rationale.
- * Exported for unit testing.
+ * Whether the open DCR endpoint is enabled. On by default — see the
+ * ENABLED BY DEFAULT header comment above for the security rationale.
+ * Set OAUTH_ALLOW_DCR=false to disable. Exported for unit testing.
  */
 export function isDcrEnabled(): boolean {
-  return process.env.OAUTH_ALLOW_DCR === 'true'
+  return process.env.OAUTH_ALLOW_DCR !== 'false'
 }
 
 function registerError(

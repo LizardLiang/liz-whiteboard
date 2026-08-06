@@ -107,21 +107,23 @@ describe('registerClient -> getClient round trip via the DCR store (AC4)', () =>
   })
 })
 
-describe('isDcrEnabled: DCR kill switch (BLOCKER fix, off by default)', () => {
-  it('is disabled when OAUTH_ALLOW_DCR is unset', () => {
+describe('isDcrEnabled: DCR kill switch (mcp-oauth-dcr-consent, on by default)', () => {
+  it('is enabled when OAUTH_ALLOW_DCR is unset', () => {
     vi.stubEnv('OAUTH_ALLOW_DCR', '')
-    expect(isDcrEnabled()).toBe(false)
+    expect(isDcrEnabled()).toBe(true)
   })
 
-  it('is disabled for any value other than the exact string "true"', () => {
+  it('is enabled for any value other than the exact string "false"', () => {
     vi.stubEnv('OAUTH_ALLOW_DCR', '1')
-    expect(isDcrEnabled()).toBe(false)
+    expect(isDcrEnabled()).toBe(true)
     vi.stubEnv('OAUTH_ALLOW_DCR', 'yes')
-    expect(isDcrEnabled()).toBe(false)
-  })
-
-  it('is enabled only when OAUTH_ALLOW_DCR is exactly "true"', () => {
+    expect(isDcrEnabled()).toBe(true)
     vi.stubEnv('OAUTH_ALLOW_DCR', 'true')
     expect(isDcrEnabled()).toBe(true)
+  })
+
+  it('is disabled only when OAUTH_ALLOW_DCR is exactly "false"', () => {
+    vi.stubEnv('OAUTH_ALLOW_DCR', 'false')
+    expect(isDcrEnabled()).toBe(false)
   })
 })

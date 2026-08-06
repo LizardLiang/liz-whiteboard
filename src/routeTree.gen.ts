@@ -17,8 +17,10 @@ import { Route as AuthorizeRouteImport } from './routes/authorize'
 import { Route as IndexRouteImport } from './routes/index'
 import { Route as WhiteboardWhiteboardIdRouteImport } from './routes/whiteboard/$whiteboardId'
 import { Route as ShareTokenRouteImport } from './routes/share.$token'
+import { Route as SettingsConnectionsRouteImport } from './routes/settings/connections'
 import { Route as ProjectProjectIdRouteImport } from './routes/project.$projectId'
 import { Route as OauthRegisterRouteImport } from './routes/oauth/register'
+import { Route as OauthConsentRouteImport } from './routes/oauth/consent'
 import { Route as InviteTokenRouteImport } from './routes/invite.$token'
 import { Route as DemoTanstackQueryRouteImport } from './routes/demo/tanstack-query'
 import { Route as ApiCollabTokenRouteImport } from './routes/api/collab-token'
@@ -74,6 +76,11 @@ const ShareTokenRoute = ShareTokenRouteImport.update({
   path: '/share/$token',
   getParentRoute: () => rootRouteImport,
 } as any)
+const SettingsConnectionsRoute = SettingsConnectionsRouteImport.update({
+  id: '/settings/connections',
+  path: '/settings/connections',
+  getParentRoute: () => rootRouteImport,
+} as any)
 const ProjectProjectIdRoute = ProjectProjectIdRouteImport.update({
   id: '/project/$projectId',
   path: '/project/$projectId',
@@ -82,6 +89,11 @@ const ProjectProjectIdRoute = ProjectProjectIdRouteImport.update({
 const OauthRegisterRoute = OauthRegisterRouteImport.update({
   id: '/oauth/register',
   path: '/oauth/register',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const OauthConsentRoute = OauthConsentRouteImport.update({
+  id: '/oauth/consent',
+  path: '/oauth/consent',
   getParentRoute: () => rootRouteImport,
 } as any)
 const InviteTokenRoute = InviteTokenRouteImport.update({
@@ -166,8 +178,10 @@ export interface FileRoutesByFullPath {
   '/api/collab-token': typeof ApiCollabTokenRoute
   '/demo/tanstack-query': typeof DemoTanstackQueryRoute
   '/invite/$token': typeof InviteTokenRoute
+  '/oauth/consent': typeof OauthConsentRoute
   '/oauth/register': typeof OauthRegisterRoute
   '/project/$projectId': typeof ProjectProjectIdRouteWithChildren
+  '/settings/connections': typeof SettingsConnectionsRoute
   '/share/$token': typeof ShareTokenRoute
   '/whiteboard/$whiteboardId': typeof WhiteboardWhiteboardIdRoute
   '/demo/api/names': typeof DemoApiNamesRoute
@@ -192,8 +206,10 @@ export interface FileRoutesByTo {
   '/api/collab-token': typeof ApiCollabTokenRoute
   '/demo/tanstack-query': typeof DemoTanstackQueryRoute
   '/invite/$token': typeof InviteTokenRoute
+  '/oauth/consent': typeof OauthConsentRoute
   '/oauth/register': typeof OauthRegisterRoute
   '/project/$projectId': typeof ProjectProjectIdRouteWithChildren
+  '/settings/connections': typeof SettingsConnectionsRoute
   '/share/$token': typeof ShareTokenRoute
   '/whiteboard/$whiteboardId': typeof WhiteboardWhiteboardIdRoute
   '/demo/api/names': typeof DemoApiNamesRoute
@@ -219,8 +235,10 @@ export interface FileRoutesById {
   '/api/collab-token': typeof ApiCollabTokenRoute
   '/demo/tanstack-query': typeof DemoTanstackQueryRoute
   '/invite/$token': typeof InviteTokenRoute
+  '/oauth/consent': typeof OauthConsentRoute
   '/oauth/register': typeof OauthRegisterRoute
   '/project/$projectId': typeof ProjectProjectIdRouteWithChildren
+  '/settings/connections': typeof SettingsConnectionsRoute
   '/share/$token': typeof ShareTokenRoute
   '/whiteboard/$whiteboardId': typeof WhiteboardWhiteboardIdRoute
   '/demo/api/names': typeof DemoApiNamesRoute
@@ -247,8 +265,10 @@ export interface FileRouteTypes {
     | '/api/collab-token'
     | '/demo/tanstack-query'
     | '/invite/$token'
+    | '/oauth/consent'
     | '/oauth/register'
     | '/project/$projectId'
+    | '/settings/connections'
     | '/share/$token'
     | '/whiteboard/$whiteboardId'
     | '/demo/api/names'
@@ -273,8 +293,10 @@ export interface FileRouteTypes {
     | '/api/collab-token'
     | '/demo/tanstack-query'
     | '/invite/$token'
+    | '/oauth/consent'
     | '/oauth/register'
     | '/project/$projectId'
+    | '/settings/connections'
     | '/share/$token'
     | '/whiteboard/$whiteboardId'
     | '/demo/api/names'
@@ -299,8 +321,10 @@ export interface FileRouteTypes {
     | '/api/collab-token'
     | '/demo/tanstack-query'
     | '/invite/$token'
+    | '/oauth/consent'
     | '/oauth/register'
     | '/project/$projectId'
+    | '/settings/connections'
     | '/share/$token'
     | '/whiteboard/$whiteboardId'
     | '/demo/api/names'
@@ -326,8 +350,10 @@ export interface RootRouteChildren {
   ApiCollabTokenRoute: typeof ApiCollabTokenRoute
   DemoTanstackQueryRoute: typeof DemoTanstackQueryRoute
   InviteTokenRoute: typeof InviteTokenRoute
+  OauthConsentRoute: typeof OauthConsentRoute
   OauthRegisterRoute: typeof OauthRegisterRoute
   ProjectProjectIdRoute: typeof ProjectProjectIdRouteWithChildren
+  SettingsConnectionsRoute: typeof SettingsConnectionsRoute
   ShareTokenRoute: typeof ShareTokenRoute
   WhiteboardWhiteboardIdRoute: typeof WhiteboardWhiteboardIdRoute
   DemoApiNamesRoute: typeof DemoApiNamesRoute
@@ -400,6 +426,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof ShareTokenRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/settings/connections': {
+      id: '/settings/connections'
+      path: '/settings/connections'
+      fullPath: '/settings/connections'
+      preLoaderRoute: typeof SettingsConnectionsRouteImport
+      parentRoute: typeof rootRouteImport
+    }
     '/project/$projectId': {
       id: '/project/$projectId'
       path: '/project/$projectId'
@@ -412,6 +445,13 @@ declare module '@tanstack/react-router' {
       path: '/oauth/register'
       fullPath: '/oauth/register'
       preLoaderRoute: typeof OauthRegisterRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/oauth/consent': {
+      id: '/oauth/consent'
+      path: '/oauth/consent'
+      fullPath: '/oauth/consent'
+      preLoaderRoute: typeof OauthConsentRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/invite/$token': {
@@ -536,8 +576,10 @@ const rootRouteChildren: RootRouteChildren = {
   ApiCollabTokenRoute: ApiCollabTokenRoute,
   DemoTanstackQueryRoute: DemoTanstackQueryRoute,
   InviteTokenRoute: InviteTokenRoute,
+  OauthConsentRoute: OauthConsentRoute,
   OauthRegisterRoute: OauthRegisterRoute,
   ProjectProjectIdRoute: ProjectProjectIdRouteWithChildren,
+  SettingsConnectionsRoute: SettingsConnectionsRoute,
   ShareTokenRoute: ShareTokenRoute,
   WhiteboardWhiteboardIdRoute: WhiteboardWhiteboardIdRoute,
   DemoApiNamesRoute: DemoApiNamesRoute,

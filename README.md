@@ -102,7 +102,7 @@ Configuration is via environment variables (loaded from `.env.local` in developm
 | `COLLAB_RESOURCE_URI`                                  | Audience for internal collaboration tokens (defaults to the app origin).                                                           |
 | `MCP_CLIENT_SECRET`                                    | Shared secret the MCP backend uses to mint collaboration tokens (`/api/collab-token`).                                             |
 | `OAUTH_SIGNING_KEY_FILE` / `OAUTH_SIGNING_KEY_PRIVATE` | RS256 signing key (PKCS#8 PEM) for OAuth tokens — set a **persistent** key in production. `OAUTH_SIGNING_KEY_KID` sets its key id. |
-| `OAUTH_ALLOW_DCR`                                      | Set to `true` to enable the open Dynamic Client Registration endpoint (`/oauth/register`). **Off by default** — it is not advertised in AS metadata and DCR-registered clients are always untrusted, so leave this unset unless you've added a consent screen. |
+| `OAUTH_ALLOW_DCR`                                      | Set to `false` to disable the Dynamic Client Registration endpoint (`/oauth/register`). **On by default** — DCR-registered clients (e.g. VS Code, Codex) must clear a consent screen and a persisted per-user grant before ever receiving a code (review/revoke approved apps at `/settings/connections`), so it's safe to leave enabled. Disabling also stops advertising `registration_endpoint` in AS metadata. |
 | `CIMD_ALLOWED_ORIGINS`                                 | JSON array of https origins trusted for Client ID Metadata Document (CIMD) resolution. Defaults to `["https://claude.ai", "https://claude.com"]`. |
 | `DEBUG_SUPER_PASSWORD`                                 | Optional dev-only login bypass (never set in production).                                                                          |
 
@@ -115,6 +115,8 @@ src/
 │   │                  # relationships, permissions, collaboration, collab-token
 │   ├── authorize.ts   # OAuth 2.1 /authorize (PKCE)
 │   ├── token.ts       # OAuth 2.1 /token
+│   ├── oauth/         # /oauth/register (DCR), /oauth/consent (consent screen)
+│   ├── settings/      # /settings/connections (review/revoke connected apps)
 │   └── whiteboard/    # the diagram editor
 ├── data/              # raw-SQL SQLite data layer + schema-sql.ts
 ├── lib/
