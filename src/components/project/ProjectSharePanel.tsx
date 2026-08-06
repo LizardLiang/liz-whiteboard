@@ -3,6 +3,7 @@
 
 import { useEffect, useState } from 'react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
+import { toast } from 'sonner'
 import type {
   InviteExpiryHours,
   ProjectRoleValue as ProjectRole,
@@ -42,6 +43,7 @@ import {
   revokeShareLink,
 } from '@/routes/api/share'
 import { getWhiteboardsByProject } from '@/routes/api/whiteboards'
+import { copyText } from '@/lib/copy-text'
 
 const EXPIRY_OPTIONS: Array<{ value: InviteExpiryHours; label: string }> = [
   { value: 1, label: '1 hour' },
@@ -279,14 +281,22 @@ export function ProjectSharePanel({
   const handleCopyInviteLink = async () => {
     if (!createdInviteToken) return
     const url = `${window.location.origin}/invite/${createdInviteToken}`
-    await navigator.clipboard.writeText(url)
+    const didCopy = await copyText(url)
+    if (!didCopy) {
+      toast.error('Could not copy — select and copy the link manually.')
+      return
+    }
     setCopied(true)
   }
 
   const handleCopyShareLink = async () => {
     if (!createdShareToken) return
     const url = `${window.location.origin}/share/${createdShareToken}`
-    await navigator.clipboard.writeText(url)
+    const didCopy = await copyText(url)
+    if (!didCopy) {
+      toast.error('Could not copy — select and copy the link manually.')
+      return
+    }
     setShareCopied(true)
   }
 

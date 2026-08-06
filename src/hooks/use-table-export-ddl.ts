@@ -23,6 +23,7 @@ import type {
   TableNodeType,
 } from '@/lib/react-flow/types'
 import { generateTableDDL } from '@/lib/ddl-generator'
+import { copyText } from '@/lib/copy-text'
 
 const DEFAULT_SHORTCUT_DIALECT: Dialect = 'mssql'
 
@@ -81,7 +82,11 @@ export async function exportTableDdl(
   try {
     const ddl = generateTableDDL(tables, tableId, dialect)
     const tableName = tables.find((t) => t.id === tableId)?.name ?? tableId
-    await navigator.clipboard.writeText(ddl)
+    const copied = await copyText(ddl)
+    if (!copied) {
+      toast.error('Could not copy DDL — select and copy the text manually.')
+      return
+    }
     toast.success(`${tableName} DDL copied (${dialect})`)
   } catch (error) {
     toast.error(

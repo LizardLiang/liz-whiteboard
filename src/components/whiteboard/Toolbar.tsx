@@ -47,6 +47,12 @@ import {
   SelectTrigger,
   SelectValue,
 } from '@/components/ui/select'
+import {
+  Popover,
+  PopoverContent,
+  PopoverTrigger,
+} from '@/components/ui/popover'
+import { McpConnectPanel } from '@/components/mcp/McpConnectPanel'
 
 /**
  * Canvas zoom controls
@@ -861,22 +867,27 @@ export function Toolbar({
           </DialogContent>
         </Dialog>
 
-        {/* MCP setup command copy button */}
+        {/* MCP client connect popover — one McpConnectPanel mount, the other
+            is on /settings/connections (tactical plan:
+            2026-08-06-mcp-client-install-commands). Guard + public-share
+            exclusion carried over unchanged from the single-platform button
+            this replaces. */}
         {mcpEndpointUrl && (
-          <Button
-            variant="outline"
-            size="icon"
-            title={`Copy MCP setup command:\nclaude mcp add --transport http liz-whiteboard ${mcpEndpointUrl}`}
-            onClick={() => {
-              const setupCommand = `claude mcp add --transport http liz-whiteboard ${mcpEndpointUrl}`
-              navigator.clipboard.writeText(setupCommand)
-              toast.success(
-                'MCP setup command copied — paste it in your terminal',
-              )
-            }}
-          >
-            <Link2 className="h-4 w-4" />
-          </Button>
+          <Popover>
+            <PopoverTrigger asChild>
+              <Button
+                variant="outline"
+                size="icon"
+                title="Connect an MCP client"
+                aria-label="Connect an MCP client"
+              >
+                <Link2 className="h-4 w-4" />
+              </Button>
+            </PopoverTrigger>
+            <PopoverContent align="end" className="w-[420px] max-w-[90vw]">
+              <McpConnectPanel endpointUrl={mcpEndpointUrl} />
+            </PopoverContent>
+          </Popover>
         )}
 
         {/* Version history (GH #107) — visible to VIEWER+; Save/Restore

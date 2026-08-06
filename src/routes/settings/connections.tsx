@@ -24,6 +24,8 @@ import {
 } from '@/components/ui/card'
 import { Badge } from '@/components/ui/badge'
 import { isUnauthorizedError } from '@/lib/auth/errors'
+import { getMcpEndpointUrl } from '@/lib/server-functions'
+import { McpConnectPanel } from '@/components/mcp/McpConnectPanel'
 
 export const Route = createFileRoute('/settings/connections')({
   component: ConnectionsPage,
@@ -45,6 +47,16 @@ function ConnectionsPage() {
     queryFn: () => listConnectedApps(),
   })
 
+  // Same query key/options as the toolbar's mount (ReactFlowWhiteboard.tsx)
+  // so both share the one cached fetch — reuses the existing auth-gated
+  // getMcpEndpointUrl() server fn rather than adding a second one.
+  const { data: mcpEndpointUrl } = useQuery({
+    queryKey: ['mcp-endpoint-url'],
+    queryFn: () => getMcpEndpointUrl(),
+    staleTime: Infinity,
+    gcTime: Infinity,
+  })
+
   const revokeMutation = useMutation({
     mutationFn: (clientId: string) =>
       revokeConnectedApp({ data: { clientId } }),
@@ -62,6 +74,14 @@ function ConnectionsPage() {
   const apps: Array<ConnectedApp> =
     data && !isUnauthorizedError(data) ? data.apps : []
 
+  // Same AuthErrorResponse-narrowing pattern as ReactFlowWhiteboard.tsx's own
+  // mcpEndpointUrl usage — getMcpEndpointUrl() resolves to a session-expired
+  // shape rather than throwing on an expired session.
+  const resolvedMcpEndpointUrl =
+    mcpEndpointUrl && !isUnauthorizedError(mcpEndpointUrl)
+      ? mcpEndpointUrl
+      : undefined
+
   return (
     <div className="mx-auto max-w-2xl px-4 py-8">
       <h1 className="text-2xl font-bold">Connected applications</h1>
@@ -70,6 +90,18 @@ function ConnectionsPage() {
         OAuth. Revoking access here stops a client's next token refresh — an
         already-issued access token remains valid for up to 1 hour.
       </p>
+
+      {resolvedMcpEndpointUrl && (
+        <div className="mt-6 rounded-lg border p-4">
+          <h2 className="text-sm font-semibold">Connect an MCP client</h2>
+          <p className="mt-1 text-xs text-muted-foreground">
+            Let an AI coding assistant read and edit this diagram.
+          </p>
+          <div className="mt-3">
+            <McpConnectPanel endpointUrl={resolvedMcpEndpointUrl} />
+          </div>
+        </div>
+      )}
 
       <div className="mt-6 space-y-3">
         {isLoading ? (

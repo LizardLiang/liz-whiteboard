@@ -90,6 +90,8 @@ The image bundles the web app, the OAuth Authorization Server, and the real-time
 
 liz-whiteboard ships a companion **Model Context Protocol (MCP) server**: **[liz-whiteboard-mcp](https://github.com/LizardLiang/liz-whiteboard-mcp)**. It exposes 23 tools that let AI agents list projects and whiteboards, read the full schema and per-table DDL, create/update/delete tables, columns, and relationships (individually or in a single batch), and create/manage subject areas (colored grouping regions) — all authenticated through this app's OAuth 2.1 server. Point Claude Desktop, Claude Code, Cursor, or any MCP client at it to design databases conversationally.
 
+**Connect a client:** click the plug icon in the whiteboard toolbar, or open `/settings/connections`, for a copy-paste install command or config snippet per client (Claude Code, Codex, VS Code, Cursor, Claude Desktop, or a generic `mcp.json` block) plus a short register → sign in → approve walkthrough.
+
 ## Configuration
 
 Configuration is via environment variables (loaded from `.env.local` in development).
@@ -138,7 +140,6 @@ bun run check          # prettier + eslint
 
 - Role-based access control for shared projects (membership model exists; enforcement is being finalised)
 - SQL / DBML export and import
-- Dynamic client registration (DCR) and a consent screen for third-party MCP clients
 
 ## Contributing
 
