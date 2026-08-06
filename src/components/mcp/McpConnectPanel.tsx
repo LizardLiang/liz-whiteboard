@@ -6,8 +6,9 @@
 // presentational — the endpoint URL is a prop so this stays testable without
 // the auth-gated getMcpEndpointUrl() server fn (tactical plan:
 // 2026-08-06-mcp-client-install-commands).
-import { useState } from 'react'
+import { useMemo, useState } from 'react'
 import { Check, Copy } from 'lucide-react'
+import { Link } from '@tanstack/react-router'
 import { toast } from 'sonner'
 import { MCP_PLATFORMS } from './mcp-platforms'
 import { Button } from '@/components/ui/button'
@@ -31,6 +32,20 @@ export function McpConnectPanel({
   className,
 }: McpConnectPanelProps) {
   const [copiedId, setCopiedId] = useState<string | null>(null)
+
+  // buildText() only depends on endpointUrl (stable across re-renders caused
+  // by copiedId toggling on copy) — memoize per platform instead of calling
+  // every platform's buildText() on every render.
+  const platformTexts = useMemo<Record<string, string>>(
+    () =>
+      Object.fromEntries(
+        MCP_PLATFORMS.map((platform) => [
+          platform.id,
+          platform.buildText(endpointUrl),
+        ]),
+      ),
+    [endpointUrl],
+  )
 
   const handleCopy = async (platformId: string, text: string) => {
     const ok = await copyText(text)
@@ -61,7 +76,7 @@ export function McpConnectPanel({
         </TabsList>
 
         {MCP_PLATFORMS.map((platform) => {
-          const text = platform.buildText(endpointUrl)
+          const text = platformTexts[platform.id]
           const isCopied = copiedId === platform.id
           return (
             <TabsContent
@@ -117,6 +132,13 @@ export function McpConnectPanel({
           )
         })}
       </Tabs>
+
+      <Link
+        to="/settings/connections"
+        className="mt-3 inline-block text-xs text-muted-foreground underline underline-offset-2 hover:text-foreground"
+      >
+        Manage connected applications
+      </Link>
     </div>
   )
 }

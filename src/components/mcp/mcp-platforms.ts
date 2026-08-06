@@ -34,6 +34,13 @@ export interface McpPlatform {
   steps: Array<string>
 }
 
+// Shared by the four platforms below that register via Dynamic Client
+// Registration and show the same one-time consent screen after sign-in
+// (Claude Code's CIMD note and the generic "Other" note genuinely differ
+// and are not deduplicated here).
+const DCR_CONSENT_NOTE =
+  'Registers via Dynamic Client Registration — approve the one-time consent screen after signing in.'
+
 export const MCP_PLATFORMS: Array<McpPlatform> = [
   {
     // Pre-confirmed by the existing single-platform button this feature
@@ -42,7 +49,7 @@ export const MCP_PLATFORMS: Array<McpPlatform> = [
     label: 'Claude Code',
     kind: 'cli',
     buildText: (url) =>
-      `claude mcp add --transport http liz-whiteboard ${url}`,
+      `claude mcp add --transport http liz-whiteboard '${url}'`,
     consentNote:
       'Uses CIMD client identity — no separate consent screen after sign-in.',
     steps: [
@@ -59,9 +66,8 @@ export const MCP_PLATFORMS: Array<McpPlatform> = [
     id: 'codex',
     label: 'Codex',
     kind: 'cli',
-    buildText: (url) => `codex mcp add liz-whiteboard --url ${url}`,
-    consentNote:
-      'Registers via Dynamic Client Registration — approve the one-time consent screen after signing in.',
+    buildText: (url) => `codex mcp add liz-whiteboard --url '${url}'`,
+    consentNote: DCR_CONSENT_NOTE,
     steps: [
       'Run the command above in your terminal.',
       'A browser window opens — sign in with your ER Whiteboard account, then approve access.',
@@ -85,8 +91,7 @@ export const MCP_PLATFORMS: Array<McpPlatform> = [
         null,
         2,
       ),
-    consentNote:
-      'Registers via Dynamic Client Registration — approve the one-time consent screen after signing in.',
+    consentNote: DCR_CONSENT_NOTE,
     steps: [
       'Add the block above to the file shown, or run "MCP: Add Server" from the Command Palette and choose HTTP.',
       'VS Code opens a browser window — sign in with your ER Whiteboard account, then approve access.',
@@ -103,8 +108,7 @@ export const MCP_PLATFORMS: Array<McpPlatform> = [
     configPath: '~/.cursor/mcp.json',
     buildText: (url) =>
       JSON.stringify({ mcpServers: { 'liz-whiteboard': { url } } }, null, 2),
-    consentNote:
-      'Registers via Dynamic Client Registration — approve the one-time consent screen after signing in.',
+    consentNote: DCR_CONSENT_NOTE,
     steps: [
       'Add the block above to the file shown.',
       'Cursor opens a browser window — sign in with your ER Whiteboard account, then approve access.',
@@ -120,8 +124,7 @@ export const MCP_PLATFORMS: Array<McpPlatform> = [
     label: 'Claude Desktop',
     kind: 'manual',
     buildText: (url) => url,
-    consentNote:
-      'Registers via Dynamic Client Registration — approve the one-time consent screen after signing in.',
+    consentNote: DCR_CONSENT_NOTE,
     steps: [
       'In the Claude Desktop app, open Settings (menu icon → File → Settings, or Ctrl+,), then click "Connectors".',
       'Click "Add" (top-right), then "Add custom connector".',

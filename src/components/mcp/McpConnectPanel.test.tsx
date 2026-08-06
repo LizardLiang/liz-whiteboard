@@ -7,8 +7,38 @@
 
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { fireEvent, render, screen } from '@testing-library/react'
+import {
+  RouterContextProvider,
+  createMemoryHistory,
+  createRouter,
+} from '@tanstack/react-router'
+import { QueryClient } from '@tanstack/react-query'
 import { McpConnectPanel } from './McpConnectPanel'
 import { MCP_PLATFORMS } from './mcp-platforms'
+import type { ReactNode } from 'react'
+import { routeTree } from '@/routeTree.gen'
+
+// McpConnectPanel renders a <Link to="/settings/connections">, so every
+// render needs a router context — same wrapper pattern as
+// src/components/project/Breadcrumb.test.tsx.
+function RouterWrapper({ children }: { children: ReactNode }) {
+  const history = createMemoryHistory({ initialEntries: ['/'] })
+  const queryClient = new QueryClient({
+    defaultOptions: { queries: { retry: false } },
+  })
+  const router = createRouter({ routeTree, history, context: { queryClient } })
+  return (
+    <RouterContextProvider router={router}>{children}</RouterContextProvider>
+  )
+}
+
+function renderPanel(endpointUrl: string) {
+  return render(
+    <RouterWrapper>
+      <McpConnectPanel endpointUrl={endpointUrl} />
+    </RouterWrapper>,
+  )
+}
 
 const copyTextMock = vi.fn()
 
@@ -35,7 +65,7 @@ beforeEach(() => {
 
 describe('McpConnectPanel', () => {
   it('renders a tab for every verified platform', () => {
-    render(<McpConnectPanel endpointUrl={ENDPOINT_URL} />)
+    renderPanel(ENDPOINT_URL)
     for (const platform of MCP_PLATFORMS) {
       expect(
         screen.getByRole('tab', { name: platform.label }),
@@ -44,13 +74,13 @@ describe('McpConnectPanel', () => {
   })
 
   it('shows the Claude Code command by default, containing the endpoint URL', () => {
-    render(<McpConnectPanel endpointUrl={ENDPOINT_URL} />)
+    renderPanel(ENDPOINT_URL)
     expect(screen.getByText(new RegExp(ENDPOINT_URL))).toBeTruthy()
     expect(screen.getByText(/claude mcp add/)).toBeTruthy()
   })
 
   it('switching platforms changes the visible command text', () => {
-    render(<McpConnectPanel endpointUrl={ENDPOINT_URL} />)
+    renderPanel(ENDPOINT_URL)
 
     // Radix Tabs activates on mousedown (not click) — see
     // @radix-ui/react-tabs's Trigger implementation.
@@ -61,7 +91,7 @@ describe('McpConnectPanel', () => {
   })
 
   it('every platform tab shows text unique to that platform and the endpoint URL', () => {
-    render(<McpConnectPanel endpointUrl={ENDPOINT_URL} />)
+    renderPanel(ENDPOINT_URL)
 
     for (const platform of MCP_PLATFORMS) {
       fireEvent.mouseDown(screen.getByRole('tab', { name: platform.label }))
@@ -83,7 +113,7 @@ describe('McpConnectPanel', () => {
 
   it('copies the visible command and shows a success confirmation', async () => {
     copyTextMock.mockResolvedValueOnce(true)
-    render(<McpConnectPanel endpointUrl={ENDPOINT_URL} />)
+    renderPanel(ENDPOINT_URL)
 
     const copyButton = screen.getByRole('button', {
       name: /copy claude code command/i,
@@ -100,7 +130,7 @@ describe('McpConnectPanel', () => {
     copyTextMock.mockResolvedValueOnce(false)
     toastSuccess.mockClear()
     toastError.mockClear()
-    render(<McpConnectPanel endpointUrl={ENDPOINT_URL} />)
+    renderPanel(ENDPOINT_URL)
 
     fireEvent.click(
       screen.getByRole('button', { name: /copy claude code command/i }),
@@ -111,7 +141,7 @@ describe('McpConnectPanel', () => {
   })
 
   it('shows the config file path for config-kind platforms', () => {
-    render(<McpConnectPanel endpointUrl={ENDPOINT_URL} />)
+    renderPanel(ENDPOINT_URL)
     fireEvent.mouseDown(screen.getByRole('tab', { name: 'Cursor' }))
     expect(screen.getByText('~/.cursor/mcp.json')).toBeTruthy()
   })
