@@ -35,6 +35,10 @@
 //   2. Resolve client_id and validate redirect_uri (exact/loopback match).
 //   3. Check the session_token cookie → resolve current User; redirect to
 //      /login if absent, regardless of trust.
+//      (mcp-oauth-open-cimd: steps 2 and 3 SWAP for an untrusted CIMD
+//      client_id — resolving one means fetching a caller-chosen URL, which
+//      must never happen for an anonymous request. See the comment at the
+//      call site.)
 //   4. Three-way trust gate (see above).
 //   5. Require code_challenge + code_challenge_method=S256.
 //   6. Issue a short-lived authorization code bound to all grant params.
@@ -326,10 +330,23 @@ async function handleUntrustedClient(
   // carries the opaque request_id; every grant param (redirect_uri, PKCE,
   // resource, state) is held server-side, so nothing about the flow can be
   // tampered with between here and the approve/deny POST.
+  // Provenance for the consent screen: a CIMD client_id means the identity
+  // came from a document we fetched from that origin; anything else is a
+  // self-registered DCR client (mcp-oauth-open-cimd).
+  //
+  // Uses the shared isCimdUrl() rather than an inline https check so this
+  // agrees with resolve-client.ts and grants.ts about what counts as CIMD —
+  // an inline check here silently misreported a named CIMD_TEST_ORIGINS
+  // client as self-registered.
+  const { isCimdUrl } = await import('@/lib/oauth/cimd-origins')
+  const cimdOrigin = isCimdUrl(p.clientId) ? new URL(p.clientId).origin : null
+
   const { createPendingConsent } = await import('@/lib/oauth/pending-consent')
   const requestId = createPendingConsent({
     clientId: p.clientId,
     clientName: p.clientName,
+    provenance: cimdOrigin ? 'cimd' : 'dcr',
+    cimdOrigin,
     redirectUri: p.redirectUri,
     scope: intersectionScopeStr,
     codeChallenge: p.codeChallenge,
@@ -369,19 +386,48 @@ export const Route = createFileRoute('/authorize')({
         const { getOAuthConfig } = await import('@/lib/oauth/config')
         const config = getOAuthConfig()
 
-        const resolved = await resolveClientForAuthorize(
-          parsed.clientId,
-          parsed.redirectUri,
+        // ── Resolution ordering (mcp-oauth-open-cimd, 2026-08-19) ──
+        // Resolving an UNTRUSTED CIMD client_id means fetching a URL the
+        // caller chose. Doing that before the session check would let an
+        // ANONYMOUS request drive outbound HTTPS to any host it names. So for
+        // that one case the session is validated first; every other client
+        // (static allowlist, DCR row, trusted CIMD origin) resolves in its
+        // original position, which is what keeps the pre-existing error
+        // Response shapes — pinned by src/routes/authorize.test.ts — identical.
+        const { isUntrustedCimdCandidate } = await import(
+          '@/lib/oauth/resolve-client'
         )
-        if ('errorResponse' in resolved) return resolved.errorResponse
-        const { client } = resolved
+        const deferResolution = isUntrustedCimdCandidate(parsed.clientId)
+
+        let client: OAuthClient
+        let user: AuthUser
+
+        if (deferResolution) {
+          const session = await requireSessionUser(request, url)
+          if ('redirectResponse' in session) return session.redirectResponse
+          user = session.user
+
+          const resolved = await resolveClientForAuthorize(
+            parsed.clientId,
+            parsed.redirectUri,
+          )
+          if ('errorResponse' in resolved) return resolved.errorResponse
+          client = resolved.client
+        } else {
+          const resolved = await resolveClientForAuthorize(
+            parsed.clientId,
+            parsed.redirectUri,
+          )
+          if ('errorResponse' in resolved) return resolved.errorResponse
+          client = resolved.client
+
+          const session = await requireSessionUser(request, url)
+          if ('redirectResponse' in session) return session.redirectResponse
+          user = session.user
+        }
 
         // Validate resource (RFC 8707) — optional for first increment.
         const effectiveResource = parsed.resource || config.mcpResourceUri
-
-        const session = await requireSessionUser(request, url)
-        if ('redirectResponse' in session) return session.redirectResponse
-        const { user } = session
 
         // --- Trust gate (three-way; mcp-oauth-dcr-consent) ---
         const isTrustedClient = client.firstParty || client.trusted === true

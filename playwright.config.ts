@@ -21,7 +21,12 @@ export default defineConfig({
   // (playwright.coedit.config.ts / `bunx playwright test
   // --config=playwright.coedit.config.ts`) — excluded here so the default
   // dev-server suite doesn't try to run it against the wrong server.
-  testIgnore: '**/coedit-table-create.spec.ts',
+  // mcp-cimd-open.spec.ts needs the app process started with
+  // CIMD_TEST_ORIGINS so the AS will fetch its local metadata server; this
+  // config reuses whatever dev server is already running, which would not
+  // have it. It runs under playwright.cimd.config.ts
+  // (`bun run test:e2e:cimd`) instead.
+  testIgnore: ['**/coedit-table-create.spec.ts', '**/mcp-cimd-open.spec.ts'],
   globalSetup: './e2e/global-setup.ts',
   timeout: 60_000,
   expect: { timeout: 10_000 },
@@ -38,7 +43,10 @@ export default defineConfig({
   projects: [
     {
       name: 'chromium',
-      use: { ...devices['Desktop Chrome'], viewport: { width: 1600, height: 1000 } },
+      use: {
+        ...devices['Desktop Chrome'],
+        viewport: { width: 1600, height: 1000 },
+      },
     },
   ],
   // Reuse the dev server if it's already up on BASE_URL; otherwise start it.

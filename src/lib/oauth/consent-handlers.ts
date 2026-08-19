@@ -20,6 +20,49 @@ export interface ConsentRequestView {
   clientName: string
   redirectUri: string
   scopes: Array<string>
+  /**
+   * How the client asserted its identity (mcp-oauth-open-cimd). The screen
+   * must say which: a CIMD document was served by a real origin we fetched it
+   * from, whereas a DCR client typed its own name into a public endpoint.
+   */
+  provenance: 'cimd' | 'dcr'
+  /** Origin the CIMD document came from; null for DCR clients. */
+  cimdOrigin: string | null
+  /**
+   * Hostname of the redirect target, precomputed here so the screen can show
+   * it as the prominent element. MCP spec 2026-07-28 requires prominent
+   * redirect-URI-hostname display.
+   */
+  redirectHost: string
+  /**
+   * Whether the redirect target is on the user's own machine. The spec calls
+   * out loopback-redirect impersonation as the attack CIMD alone cannot
+   * prevent — only the human at the consent screen can.
+   */
+  redirectIsLoopback: boolean
+}
+
+/** Loopback per RFC 8252 §7.3, plus the .localhost reserved TLD. */
+function isLoopbackRedirect(redirectUri: string): boolean {
+  let host: string
+  try {
+    host = new URL(redirectUri).hostname.toLowerCase()
+  } catch {
+    return false
+  }
+  // URL() keeps IPv6 literals bracketed in .hostname on some runtimes.
+  const bare = host.replace(/^\[|\]$/g, '')
+  if (bare === 'localhost' || bare.endsWith('.localhost')) return true
+  if (bare === '::1') return true
+  return /^127\.\d{1,3}\.\d{1,3}\.\d{1,3}$/.test(bare)
+}
+
+function redirectHostOf(redirectUri: string): string {
+  try {
+    return new URL(redirectUri).host
+  } catch {
+    return redirectUri
+  }
 }
 
 export interface ConsentRequestInvalid {
@@ -52,6 +95,10 @@ export async function getConsentRequestHandler(
     clientName: pending.clientName,
     redirectUri: pending.redirectUri,
     scopes: pending.scope.split(' ').filter(Boolean),
+    provenance: pending.provenance,
+    cimdOrigin: pending.cimdOrigin,
+    redirectHost: redirectHostOf(pending.redirectUri),
+    redirectIsLoopback: isLoopbackRedirect(pending.redirectUri),
   }
 }
 
@@ -97,8 +144,11 @@ export async function approveConsentHandler(
     }
   }
 
+  // Grant key is origin-scoped for CIMD clients (see grants.ts grantKeyFor);
+  // clientName is captured here so /settings/connections never has to resolve
+  // the client over the network.
   const { upsertGrant } = await import('./grants')
-  upsertGrant(user.id, pending.clientId, pending.scope)
+  upsertGrant(user.id, pending.clientId, pending.scope, pending.clientName)
 
   const { getOAuthConfig } = await import('./config')
   const { issueAuthCode } = await import('./codes')

@@ -4,7 +4,17 @@
 // Mocks global fetch; no real network calls.
 
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
-import { _resetCimdCacheForTests, resolveCimdClient } from './cimd'
+
+// The SSRF guard does real DNS; stub it so unit tests never touch the network.
+// Its own coverage lives in src/lib/oauth/ssrf-guard.test.ts.
+const checkPublicHostMock = vi.fn()
+vi.mock('./ssrf-guard', () => ({
+  checkPublicHost: (...args: Array<unknown>) => checkPublicHostMock(...args),
+  blockedAddressReason: () => null,
+}))
+
+const { _cimdCacheSizesForTests, _resetCimdCacheForTests, resolveCimdClient } =
+  await import('./cimd')
 
 function jsonResponse(
   body: unknown,
@@ -20,6 +30,8 @@ function jsonResponse(
 beforeEach(() => {
   _resetCimdCacheForTests()
   vi.unstubAllEnvs()
+  checkPublicHostMock.mockReset()
+  checkPublicHostMock.mockResolvedValue({ allowed: true, reason: null })
 })
 
 afterEach(() => {
@@ -27,12 +39,87 @@ afterEach(() => {
   vi.unstubAllEnvs()
 })
 
-describe('resolveCimdClient: origin allowlist (AC2)', () => {
-  it('rejects a URL whose origin is not in the allowlist, without fetching', async () => {
+describe('resolveCimdClient: open resolution + trust split (mcp-oauth-open-cimd)', () => {
+  // Behaviour change: an untrusted origin used to return null without
+  // fetching. It now resolves to a real, usable client marked trusted:false,
+  // which src/routes/authorize.ts routes through the consent screen.
+  it('resolves an untrusted origin as trusted:false instead of rejecting it', async () => {
+    const url = 'https://vscode.example/client-metadata.json'
+    vi.stubGlobal(
+      'fetch',
+      vi.fn().mockResolvedValue(
+        jsonResponse({
+          client_id: url,
+          redirect_uris: ['http://127.0.0.1:33418/'],
+          client_name: 'Some Editor',
+        }),
+      ),
+    )
+
+    const result = await resolveCimdClient(url)
+    expect(result).not.toBeNull()
+    expect(result?.clientId).toBe(url)
+    expect(result?.name).toBe('Some Editor')
+    expect(result?.trusted).toBe(false)
+    expect(result?.firstParty).toBe(false)
+  })
+
+  it('marks chatgpt.com (Codex) trusted by default, per-origin not per-path', async () => {
+    const url = 'https://chatgpt.com/oauth/codex/abc123/client.json'
+    vi.stubGlobal(
+      'fetch',
+      vi
+        .fn()
+        .mockResolvedValue(
+          jsonResponse({
+            client_id: url,
+            redirect_uris: ['http://127.0.0.1:1455/callback'],
+          }),
+        ),
+    )
+
+    const result = await resolveCimdClient(url)
+    expect(result?.trusted).toBe(true)
+  })
+
+  it('rejects an untrusted origin when OAUTH_ALLOW_OPEN_CIMD=false, without fetching', async () => {
+    vi.stubEnv('OAUTH_ALLOW_OPEN_CIMD', 'false')
     const fetchSpy = vi.fn()
     vi.stubGlobal('fetch', fetchSpy)
 
     const result = await resolveCimdClient('https://evil.example/client')
+    expect(result).toBeNull()
+    expect(fetchSpy).not.toHaveBeenCalled()
+  })
+
+  it('still resolves a TRUSTED origin when the kill switch is off', async () => {
+    vi.stubEnv('OAUTH_ALLOW_OPEN_CIMD', 'false')
+    const url = 'https://claude.ai/oauth/claude-code-client-metadata'
+    vi.stubGlobal(
+      'fetch',
+      vi
+        .fn()
+        .mockResolvedValue(
+          jsonResponse({
+            client_id: url,
+            redirect_uris: ['http://127.0.0.1:0/callback'],
+          }),
+        ),
+    )
+
+    const result = await resolveCimdClient(url)
+    expect(result?.trusted).toBe(true)
+  })
+
+  it('refuses to fetch when the SSRF guard blocks the host', async () => {
+    checkPublicHostMock.mockResolvedValue({
+      allowed: false,
+      reason: 'resolves to loopback address',
+    })
+    const fetchSpy = vi.fn()
+    vi.stubGlobal('fetch', fetchSpy)
+
+    const result = await resolveCimdClient('https://internal.example/client')
     expect(result).toBeNull()
     expect(fetchSpy).not.toHaveBeenCalled()
   })
@@ -64,24 +151,66 @@ describe('resolveCimdClient: origin allowlist (AC2)', () => {
     expect(result?.trusted).toBe(true)
   })
 
-  it('respects CIMD_ALLOWED_ORIGINS env override', async () => {
-    vi.stubEnv('CIMD_ALLOWED_ORIGINS', JSON.stringify(['https://example.com']))
+  it('respects CIMD_TRUSTED_ORIGINS', async () => {
+    vi.stubEnv('CIMD_TRUSTED_ORIGINS', JSON.stringify(['https://example.com']))
     const url = 'https://example.com/client'
+    const claudeUrl = 'https://claude.ai/oauth/claude-code-client-metadata'
     vi.stubGlobal(
       'fetch',
-      vi.fn().mockResolvedValue(
-        jsonResponse({ client_id: url, redirect_uris: ['https://example.com/cb'] }),
+      vi.fn((requested: string) =>
+        Promise.resolve(
+          jsonResponse({
+            client_id: requested,
+            redirect_uris: ['https://example.com/cb'],
+          }),
+        ),
       ),
     )
 
-    const result = await resolveCimdClient(url)
-    expect(result?.clientId).toBe(url)
+    expect((await resolveCimdClient(url))?.trusted).toBe(true)
+    // The override REPLACES the defaults, so claude.ai is no longer trusted —
+    // but it still resolves, now as an unverified client needing consent.
+    expect((await resolveCimdClient(claudeUrl))?.trusted).toBe(false)
+  })
 
-    // claude.ai should now NOT be allowed since the override replaced the default list.
-    const rejected = await resolveCimdClient(
-      'https://claude.ai/oauth/claude-code-client-metadata',
+  it('honours CIMD_ALLOWED_ORIGINS as a deprecated alias', async () => {
+    vi.stubEnv(
+      'CIMD_ALLOWED_ORIGINS',
+      JSON.stringify(['https://legacy.example']),
     )
-    expect(rejected).toBeNull()
+    const url = 'https://legacy.example/client'
+    vi.stubGlobal(
+      'fetch',
+      vi
+        .fn()
+        .mockResolvedValue(
+          jsonResponse({
+            client_id: url,
+            redirect_uris: ['https://legacy.example/cb'],
+          }),
+        ),
+    )
+
+    expect((await resolveCimdClient(url))?.trusted).toBe(true)
+  })
+
+  it('prefers CIMD_TRUSTED_ORIGINS when both names are set', async () => {
+    vi.stubEnv('CIMD_TRUSTED_ORIGINS', JSON.stringify(['https://new.example']))
+    vi.stubEnv('CIMD_ALLOWED_ORIGINS', JSON.stringify(['https://old.example']))
+    const url = 'https://old.example/client'
+    vi.stubGlobal(
+      'fetch',
+      vi
+        .fn()
+        .mockResolvedValue(
+          jsonResponse({
+            client_id: url,
+            redirect_uris: ['https://old.example/cb'],
+          }),
+        ),
+    )
+
+    expect((await resolveCimdClient(url))?.trusted).toBe(false)
   })
 })
 
@@ -305,5 +434,60 @@ describe('resolveCimdClient: caching', () => {
     expect(first).not.toBeNull()
     expect(second).not.toBeNull()
     expect(fetchSpy).toHaveBeenCalledTimes(1)
+  })
+})
+
+describe('resolveCimdClient: bounded caches (mcp-oauth-open-cimd)', () => {
+  // Before open resolution the key space was limited to claude.ai URLs. Now
+  // any caller can mint keys, so an unbounded Map would be a memory-
+  // exhaustion vector.
+  it('evicts least-recently-used entries beyond the 500-entry cap', async () => {
+    vi.stubGlobal(
+      'fetch',
+      vi.fn((requested: string) =>
+        Promise.resolve(
+          jsonResponse({
+            client_id: requested,
+            redirect_uris: ['http://127.0.0.1:0/callback'],
+          }),
+        ),
+      ),
+    )
+
+    for (let i = 0; i < 520; i++) {
+      await resolveCimdClient(`https://attacker.example/doc-${i}.json`)
+    }
+
+    const sizes = _cimdCacheSizesForTests()
+    expect(sizes.resolved).toBeLessThanOrEqual(500)
+    expect(sizes.lastKnownGood).toBeLessThanOrEqual(500)
+  })
+
+  it('expires last-known-good entries so they cannot be trusted forever', async () => {
+    const url = 'https://claude.ai/oauth/claude-code-client-metadata'
+    vi.stubGlobal(
+      'fetch',
+      vi
+        .fn()
+        .mockResolvedValue(
+          jsonResponse({
+            client_id: url,
+            redirect_uris: ['http://127.0.0.1:0/callback'],
+          }),
+        ),
+    )
+    expect(await resolveCimdClient(url)).not.toBeNull()
+
+    vi.useFakeTimers()
+    try {
+      // Past the 30-day last-known-good TTL, not just the 10-minute one.
+      vi.advanceTimersByTime(31 * 24 * 60 * 60 * 1000)
+      vi.stubGlobal('fetch', vi.fn().mockRejectedValue(new Error('down')))
+
+      const result = await resolveCimdClient(url, { allowStaleOnFailure: true })
+      expect(result).toBeNull()
+    } finally {
+      vi.useRealTimers()
+    }
   })
 })

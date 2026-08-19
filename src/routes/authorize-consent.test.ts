@@ -13,7 +13,12 @@ import { _resetClientStoreForTests, registerClient } from '@/lib/oauth/clients'
 import { _resetCimdCacheForTests } from '@/lib/oauth/cimd'
 import { _resetCodesForTests, consumeAuthCode } from '@/lib/oauth/codes'
 import { getOAuthConfig, redirectUriAllowed } from '@/lib/oauth/config'
-import { _resetGrantStoreForTests, getGrant, scopeCovers, upsertGrant } from '@/lib/oauth/grants'
+import {
+  _resetGrantStoreForTests,
+  getGrant,
+  scopeCovers,
+  upsertGrant,
+} from '@/lib/oauth/grants'
 import {
   _resetPendingConsentForTests,
   createPendingConsent,
@@ -83,9 +88,17 @@ async function handleUntrustedAuthorize(params: {
     return Response.redirect(callbackUrl.toString(), 302)
   }
 
+  // Provenance mirrors the real handler.
+  const { isCimdUrl } = await import('@/lib/oauth/cimd-origins')
+  const cimdOrigin = isCimdUrl(params.clientId)
+    ? new URL(params.clientId).origin
+    : null
+
   const requestId = createPendingConsent({
     clientId: params.clientId,
     clientName: client.name,
+    provenance: cimdOrigin ? 'cimd' : 'dcr',
+    cimdOrigin,
     redirectUri: params.redirectUri,
     scope: intersectionScopeStr,
     codeChallenge: 'test-challenge',

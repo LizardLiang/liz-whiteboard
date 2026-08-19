@@ -210,9 +210,16 @@ CREATE INDEX IF NOT EXISTS "OauthClient_lastAuthorizedAt_idx" ON "OauthClient"("
 -- — they auto-approve and never reach the consent branch.
 CREATE TABLE IF NOT EXISTS "OauthGrant" (
     "userId"     TEXT    NOT NULL,
+    -- Grant key: a CIMD document ORIGIN, or a static/DCR client id verbatim.
+    -- See src/lib/oauth/grants.ts (grantKeyFor).
     "clientId"   TEXT    NOT NULL,
     "scope"      TEXT    NOT NULL,
     "grantedAt"  INTEGER NOT NULL DEFAULT (unixepoch('now') * 1000),
+    -- Display name captured at consent time so /settings/connections renders
+    -- without any outbound request. Nullable: rows written before
+    -- mcp-oauth-open-cimd have none. Existing databases get this column via
+    -- the additive migration in src/db.ts.
+    "clientName" TEXT,
     PRIMARY KEY ("userId", "clientId")
 );
 CREATE INDEX IF NOT EXISTS "OauthGrant_userId_idx" ON "OauthGrant"("userId");

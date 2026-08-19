@@ -153,6 +153,20 @@ db.exec('PRAGMA journal_mode = WAL;')
 
 db.exec(SCHEMA_SQL)
 
+// Additive column migration (mcp-oauth-open-cimd, 2026-08-19): OauthGrant
+// gained `clientName` so /settings/connections can render without resolving
+// each client over the network. CREATE TABLE IF NOT EXISTS above is a no-op
+// on an existing database, so a deployed DB needs the explicit ADD COLUMN.
+// Idempotent: guarded on table_info, and a nullable column needs no backfill.
+{
+  const columns = db.prepare(`PRAGMA table_info("OauthGrant")`).all() as Array<{
+    name: string
+  }>
+  if (columns.length > 0 && !columns.some((c) => c.name === 'clientName')) {
+    db.exec(`ALTER TABLE "OauthGrant" ADD COLUMN "clientName" TEXT`)
+  }
+}
+
 // Backfill ownerless projects to a pre-designated account (by email), if it
 // already exists. Runs once per process at DB-init time, before any HTTP
 // request (and therefore before any registration, including

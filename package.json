@@ -10,6 +10,7 @@
     "serve": "vite preview",
     "test": "vitest run",
     "test:e2e": "playwright test",
+    "test:e2e:cimd": "E2E_BASE_URL=http://localhost:3099 playwright test --config=playwright.cimd.config.ts",
     "lint": "eslint",
     "format": "prettier",
     "typecheck": "tsc --noEmit",

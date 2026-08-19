@@ -161,3 +161,120 @@ describe('scopeCovers', () => {
     expect(scopeCovers('whiteboard', [])).toBe(true)
   })
 })
+
+describe('origin-scoped CIMD grants (mcp-oauth-open-cimd)', () => {
+  const CODEX_A = 'https://chatgpt.com/oauth/codex/aaaaaaaa/client.json'
+  const CODEX_B = 'https://chatgpt.com/oauth/codex/bbbbbbbb/client.json'
+
+  function seedRefreshToken(userId: string, clientId: string, hash: string) {
+    db.prepare(
+      `
+      INSERT INTO "OauthRefreshToken"
+        (tokenHash, familyId, userId, clientId, scope, resource, rotated, expiresAt, createdAt)
+      VALUES (?, ?, ?, ?, ?, ?, 0, ?, ?)
+    `,
+    ).run(
+      hash,
+      `family-${hash}`,
+      userId,
+      clientId,
+      'whiteboard',
+      'https://example.test/mcp',
+      nowMs() + 60_000,
+      nowMs(),
+    )
+  }
+
+  function refreshCount(userId: string): number {
+    const row = db
+      .prepare(`SELECT COUNT(*) AS n FROM "OauthRefreshToken" WHERE userId = ?`)
+      .get(userId) as { n: number }
+    return row.n
+  }
+
+  it('stores a CIMD grant under its origin, not its full document URL', () => {
+    const { id: userId } = makeUser()
+    const grant = upsertGrant(userId, CODEX_A, 'whiteboard', 'Codex')
+    expect(grant.clientId).toBe('https://chatgpt.com')
+    expect(grant.clientName).toBe('Codex')
+  })
+
+  // The whole point of origin keying: Codex's document path carries a
+  // per-login callback id, so per-URL keying would re-prompt every login.
+  it('matches a grant across different document URLs on the same origin', () => {
+    const { id: userId } = makeUser()
+    upsertGrant(userId, CODEX_A, 'whiteboard', 'Codex')
+    expect(getGrant(userId, CODEX_B)).not.toBeNull()
+  })
+
+  it('does NOT match a lookalike origin', () => {
+    const { id: userId } = makeUser()
+    upsertGrant(userId, CODEX_A, 'whiteboard', 'Codex')
+    expect(
+      getGrant(userId, 'https://chatgpt.com.evil.example/client.json'),
+    ).toBeNull()
+  })
+
+  it('lists one row per origin rather than one per login', () => {
+    const { id: userId } = makeUser()
+    upsertGrant(userId, CODEX_A, 'whiteboard', 'Codex')
+    upsertGrant(userId, CODEX_B, 'whiteboard', 'Codex')
+    const grants = listGrants(userId)
+    expect(grants).toHaveLength(1)
+    expect(grants[0].clientId).toBe('https://chatgpt.com')
+  })
+
+  it('keeps non-URL client ids (static/DCR) keyed verbatim', () => {
+    const { id: userId } = makeUser()
+    const grant = upsertGrant(
+      userId,
+      'dcr-generated-id',
+      'whiteboard',
+      'Some App',
+    )
+    expect(grant.clientId).toBe('dcr-generated-id')
+    expect(getGrant(userId, 'dcr-generated-id')).not.toBeNull()
+  })
+
+  // F6d: refresh tokens carry the FULL client_id (token.ts), while the grant
+  // key is the origin. An exact-key delete would leave every refresh token
+  // alive after revocation — the client would keep minting access tokens for
+  // the rest of the 7-day refresh TTL. This is the regression this asserts.
+  it('revoking an origin grant deletes refresh tokens for EVERY document URL on that origin', () => {
+    const { id: userId } = makeUser()
+    upsertGrant(userId, CODEX_A, 'whiteboard', 'Codex')
+    seedRefreshToken(userId, CODEX_A, 'hash-a')
+    seedRefreshToken(userId, CODEX_B, 'hash-b')
+    expect(refreshCount(userId)).toBe(2)
+
+    revokeGrant(userId, CODEX_A)
+
+    expect(getGrant(userId, CODEX_A)).toBeNull()
+    expect(refreshCount(userId)).toBe(0)
+  })
+
+  it('revoking an origin does NOT delete refresh tokens of a lookalike origin', () => {
+    const { id: userId } = makeUser()
+    upsertGrant(userId, CODEX_A, 'whiteboard', 'Codex')
+    seedRefreshToken(userId, CODEX_A, 'hash-a')
+    seedRefreshToken(
+      userId,
+      'https://chatgpt.com.evil.example/client.json',
+      'hash-evil',
+    )
+
+    revokeGrant(userId, CODEX_A)
+
+    expect(refreshCount(userId)).toBe(1)
+  })
+
+  it('revoking a non-URL client id still deletes its refresh tokens', () => {
+    const { id: userId } = makeUser()
+    upsertGrant(userId, 'dcr-generated-id', 'whiteboard', 'Some App')
+    seedRefreshToken(userId, 'dcr-generated-id', 'hash-dcr')
+
+    revokeGrant(userId, 'dcr-generated-id')
+
+    expect(refreshCount(userId)).toBe(0)
+  })
+})

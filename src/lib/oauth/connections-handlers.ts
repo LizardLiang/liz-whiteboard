@@ -14,30 +14,33 @@ export interface ConnectedApp {
 }
 
 /**
- * List the current user's approved (untrusted, DCR-registered) OAuth
- * clients. Resolves each grant's clientId to its current display name via
- * resolveClient() (falls back to the raw clientId if the client row was
- * since swept/removed — a revoke button should still work even then).
+ * List the current user's approved (unverified) OAuth clients — DCR-registered
+ * ones and CIMD clients from origins outside CIMD_TRUSTED_ORIGINS.
+ *
+ * NO NETWORK (mcp-oauth-open-cimd, 2026-08-19): this used to call
+ * resolveClient() per grant to get a display name. Two reasons that had to go.
+ * First, grants are now keyed by CIMD ORIGIN (grants.ts grantKeyFor), and an
+ * origin is itself an absolute https URL — so resolveClient() would try to
+ * fetch a CIMD document from it, fail, and fall back to the raw string
+ * anyway. Second, with open resolution those origins are caller-supplied, so
+ * rendering this page would fire one outbound request per grant at whatever
+ * hosts an attacker had talked the user into approving. The name is captured
+ * at consent time instead (OauthGrant.clientName).
  */
 export async function listConnectedAppsHandler(
   { user }: AuthContext,
   _data: undefined,
 ): Promise<{ apps: Array<ConnectedApp> }> {
   const { listGrants } = await import('./grants')
-  const { resolveClient } = await import('./resolve-client')
 
-  const grants = listGrants(user.id)
-  const apps = await Promise.all(
-    grants.map(async (grant) => {
-      const client = await resolveClient(grant.clientId)
-      return {
-        clientId: grant.clientId,
-        clientName: client?.name ?? grant.clientId,
-        scopes: grant.scope.split(' ').filter(Boolean),
-        grantedAt: grant.grantedAt,
-      }
-    }),
-  )
+  const apps = listGrants(user.id).map((grant) => ({
+    clientId: grant.clientId,
+    // Pre-mcp-oauth-open-cimd rows have no captured name; the grant key is
+    // the honest fallback and revoke still works from it.
+    clientName: grant.clientName ?? grant.clientId,
+    scopes: grant.scope.split(' ').filter(Boolean),
+    grantedAt: grant.grantedAt,
+  }))
 
   return { apps }
 }

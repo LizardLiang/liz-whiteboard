@@ -35,6 +35,15 @@ export interface PendingConsentRequest {
   state: string
   /** The user who was authenticated at /authorize when this was created. */
   userId: string
+  /**
+   * How the client asserted its identity (mcp-oauth-open-cimd). 'cimd' = the
+   * AS fetched a metadata document from `cimdOrigin`; 'dcr' = the client
+   * self-registered at /oauth/register. The consent screen says which, because
+   * they carry very different weight.
+   */
+  provenance: 'cimd' | 'dcr'
+  /** Origin the CIMD document was fetched from; null for DCR clients. */
+  cimdOrigin: string | null
   expiresAt: number // unix ms
 }
 

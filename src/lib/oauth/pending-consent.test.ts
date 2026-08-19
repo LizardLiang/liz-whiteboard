@@ -23,6 +23,8 @@ const baseParams = {
   resource: 'http://localhost:8080/mcp',
   state: 'xyz',
   userId: 'user-1',
+  provenance: 'dcr' as const,
+  cimdOrigin: null,
 }
 
 beforeEach(() => {

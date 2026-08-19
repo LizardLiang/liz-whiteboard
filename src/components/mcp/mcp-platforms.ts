@@ -26,20 +26,26 @@ export interface McpPlatform {
   /** Renders the copyable command/config text for a given MCP endpoint URL. */
   buildText: (endpointUrl: string) => string
   /** Whether the user sees an OAuth consent/approval screen after signing
-   * in. Claude Code pins its identity via CIMD and skips it (CIMD-verified
-   * in this project — see .claude/.Arena/insights/vscode-codex-mcp-oauth-
-   * 2026-08-06.md); every other client here falls back to Dynamic Client
-   * Registration, which does not skip it. */
+   * in. Claude Code and Codex pin their identity via CIMD from origins this
+   * server trusts by default, so they skip it entirely. Every other client
+   * here is unverified — either a CIMD document from an untrusted origin or a
+   * DCR registration — and is approved ONCE (grants are origin-scoped since
+   * mcp-oauth-open-cimd, so a client whose metadata URL changes per login
+   * still only prompts the first time). See
+   * .claude/.Arena/insights/cimd-mcp-client-adoption-2026-08-19.md. */
   consentNote: string
   steps: Array<string>
 }
 
-// Shared by the four platforms below that register via Dynamic Client
-// Registration and show the same one-time consent screen after sign-in
-// (Claude Code's CIMD note and the generic "Other" note genuinely differ
-// and are not deduplicated here).
-const DCR_CONSENT_NOTE =
-  'Registers via Dynamic Client Registration — approve the one-time consent screen after signing in.'
+// Shared by the platforms below that are not on the default trusted-origin
+// list. Whether they identify themselves via a CIMD document (VS Code) or via
+// Dynamic Client Registration (Cursor, Claude Desktop), the user-visible
+// outcome is identical: one approval, remembered until revoked at
+// /settings/connections. The note deliberately does not name the mechanism —
+// which one a client picks is its own implementation detail and has changed
+// under us before.
+const UNVERIFIED_CONSENT_NOTE =
+  'Approve the one-time consent screen after signing in — remembered until you revoke it.'
 
 export const MCP_PLATFORMS: Array<McpPlatform> = [
   {
@@ -59,18 +65,27 @@ export const MCP_PLATFORMS: Array<McpPlatform> = [
     ],
   },
   {
-    // Source: .claude/.Arena/insights/vscode-codex-mcp-oauth-2026-08-06.md,
-    // citing codex-rs/cli/src/mcp_cmd.rs (`--url` flag) and
-    // https://learn.chatgpt.com/docs/extend/mcp?surface=cli. Codex does not
-    // wire up CIMD in its production OAuth path, so it registers via DCR.
+    // Source: .claude/.Arena/insights/cimd-mcp-client-adoption-2026-08-19.md,
+    // citing codex-rs/cli/src/mcp_cmd.rs (`--url` flag),
+    // https://learn.chatgpt.com/docs/extend/mcp?surface=cli, and
+    // codex-rs/rmcp-client/src/oauth_client_registration.rs.
+    //
+    // CORRECTION (2026-08-19): the 2026-08-06 insight recorded CIMD as
+    // test-harness-only for Codex. A direct source read of current `main`
+    // shows it live in the production path — Codex presents a CIMD client_id
+    // under https://chatgpt.com, which this server trusts by default
+    // (src/lib/oauth/cimd-origins.ts), so there is no consent screen.
+    // The install command is unchanged: Codex's --oauth-client-registration
+    // defaults to Auto, which prefers CIMD when the AS advertises support.
     id: 'codex',
     label: 'Codex',
     kind: 'cli',
     buildText: (url) => `codex mcp add liz-whiteboard --url '${url}'`,
-    consentNote: DCR_CONSENT_NOTE,
+    consentNote:
+      'Uses CIMD client identity — no separate consent screen after sign-in.',
     steps: [
       'Run the command above in your terminal.',
-      'A browser window opens — sign in with your ER Whiteboard account, then approve access.',
+      'A browser window opens — sign in with your ER Whiteboard account.',
       "You're connected. Ask Codex about your diagram.",
     ],
   },
@@ -91,7 +106,14 @@ export const MCP_PLATFORMS: Array<McpPlatform> = [
         null,
         2,
       ),
-    consentNote: DCR_CONSENT_NOTE,
+    // VS Code implements CIMD, but its client-metadata URL ships only in
+    // Microsoft's proprietary product.json and is absent from the OSS repo,
+    // so its origin cannot be put on the trusted list ahead of time — it is
+    // approved once like any unverified client. An operator who wants it
+    // silent can read the origin from the server log on first connect (see
+    // logUntrustedCimdOrigin in src/lib/oauth/cimd.ts) and add it to
+    // CIMD_TRUSTED_ORIGINS.
+    consentNote: UNVERIFIED_CONSENT_NOTE,
     steps: [
       'Add the block above to the file shown, or run "MCP: Add Server" from the Command Palette and choose HTTP.',
       'VS Code opens a browser window — sign in with your ER Whiteboard account, then approve access.',
@@ -108,7 +130,7 @@ export const MCP_PLATFORMS: Array<McpPlatform> = [
     configPath: '~/.cursor/mcp.json',
     buildText: (url) =>
       JSON.stringify({ mcpServers: { 'liz-whiteboard': { url } } }, null, 2),
-    consentNote: DCR_CONSENT_NOTE,
+    consentNote: UNVERIFIED_CONSENT_NOTE,
     steps: [
       'Add the block above to the file shown.',
       'Cursor opens a browser window — sign in with your ER Whiteboard account, then approve access.',
@@ -124,7 +146,7 @@ export const MCP_PLATFORMS: Array<McpPlatform> = [
     label: 'Claude Desktop',
     kind: 'manual',
     buildText: (url) => url,
-    consentNote: DCR_CONSENT_NOTE,
+    consentNote: UNVERIFIED_CONSENT_NOTE,
     steps: [
       'In the Claude Desktop app, open Settings (menu icon → File → Settings, or Ctrl+,), then click "Connectors".',
       'Click "Add" (top-right), then "Add custom connector".',

@@ -1,6 +1,15 @@
 // src/routes/oauth/consent.tsx
-// OAuth consent screen — shown when an untrusted (DCR-registered) client
-// reaches /authorize without a covering grant (src/routes/authorize.ts).
+// OAuth consent screen — shown when an unverified client reaches /authorize
+// without a covering grant (src/routes/authorize.ts). "Unverified" means
+// DCR-registered, OR (since mcp-oauth-open-cimd, 2026-08-19) resolved from a
+// CIMD document served by an origin outside CIMD_TRUSTED_ORIGINS.
+//
+// This screen carries more weight than it did when it shipped: open CIMD
+// resolution means an arbitrary https origin can now reach it, so it states
+// HOW the client asserted its identity, shows the redirect HOSTNAME as the
+// prominent element (MCP spec 2026-07-28), and warns explicitly when the
+// redirect target is loopback — the impersonation case CIMD cannot prevent
+// on its own.
 // Public route in the sense that it's reachable without being logged in
 // (not in __root.tsx's PUBLIC_PATHS), which means the root beforeLoad auth
 // guard applies normally: an unauthenticated visitor is bounced to /login
@@ -20,7 +29,11 @@ import { toast } from 'sonner'
 import { z } from 'zod'
 import type { AuthErrorResponse } from '@/lib/auth/errors'
 import type { ConsentActionResult } from '@/lib/oauth/consent-handlers'
-import { approveConsent, denyConsent, getConsentRequest } from '@/routes/api/oauth-consent'
+import {
+  approveConsent,
+  denyConsent,
+  getConsentRequest,
+} from '@/routes/api/oauth-consent'
 import { Button } from '@/components/ui/button'
 import {
   Card,
@@ -126,8 +139,33 @@ function ConsentPage() {
                 role="alert"
                 className="rounded-md border border-destructive/30 bg-destructive/10 px-3 py-2 text-xs text-destructive"
               >
-                This application is not verified by ER Whiteboard. Only
-                approve it if you trust the client that sent you here.
+                This application is not verified by ER Whiteboard. Only approve
+                it if you trust the client that sent you here.
+              </div>
+
+              {/* Provenance (mcp-oauth-open-cimd): "not verified" alone
+                  flattens two different situations. A CIMD document was
+                  served by a real origin we fetched it from; a DCR client
+                  typed its own name into a public endpoint. cimdOrigin is
+                  derived from the client_id URL server-side, not supplied by
+                  the client, so it is the one trustworthy string here. */}
+              <div className="rounded-md bg-muted px-3 py-2 text-xs text-muted-foreground">
+                {view.provenance === 'cimd' && view.cimdOrigin ? (
+                  <>
+                    Identity document fetched from{' '}
+                    <span className="font-medium break-all text-foreground">
+                      {view.cimdOrigin}
+                    </span>
+                  </>
+                ) : (
+                  <>
+                    This client{' '}
+                    <span className="font-medium text-foreground">
+                      registered itself
+                    </span>
+                    . Its name and identity are self-asserted.
+                  </>
+                )}
               </div>
 
               <div>
@@ -143,13 +181,33 @@ function ConsentPage() {
 
               <div>
                 <p className="text-xs font-medium text-muted-foreground">
-                  Redirect URI
+                  Sends you back to
                 </p>
-                {/* redirect_uri is also attacker-controlled — plain text node. */}
-                <p className="mt-1 break-all text-sm text-foreground">
+                {/* Hostname is the prominent element, full URI secondary —
+                    MCP spec 2026-07-28 requires prominent redirect-URI-
+                    hostname display. Both are attacker-controlled; both are
+                    plain text nodes. */}
+                <p className="mt-1 font-mono text-base font-semibold break-all text-foreground">
+                  {view.redirectHost}
+                </p>
+                <p className="mt-0.5 font-mono text-xs break-all text-muted-foreground">
                   {view.redirectUri}
                 </p>
               </div>
+
+              {/* The attack CIMD alone cannot prevent: a hostile client
+                  claiming a loopback redirect to impersonate a local app.
+                  Only the person reading this screen can catch it. */}
+              {view.redirectIsLoopback ? (
+                <div
+                  role="alert"
+                  className="rounded-md border border-amber-500/40 bg-amber-500/10 px-3 py-2 text-xs text-amber-700 dark:text-amber-400"
+                >
+                  This will hand access to an application running on{' '}
+                  <span className="font-semibold">your own computer</span>. Only
+                  approve if you just started this client yourself.
+                </div>
+              ) : null}
             </CardContent>
             <CardFooter className="flex gap-2">
               <Button

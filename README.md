@@ -104,9 +104,29 @@ Configuration is via environment variables (loaded from `.env.local` in developm
 | `COLLAB_RESOURCE_URI`                                  | Audience for internal collaboration tokens (defaults to the app origin).                                                           |
 | `MCP_CLIENT_SECRET`                                    | Shared secret the MCP backend uses to mint collaboration tokens (`/api/collab-token`).                                             |
 | `OAUTH_SIGNING_KEY_FILE` / `OAUTH_SIGNING_KEY_PRIVATE` | RS256 signing key (PKCS#8 PEM) for OAuth tokens — set a **persistent** key in production. `OAUTH_SIGNING_KEY_KID` sets its key id. |
-| `OAUTH_ALLOW_DCR`                                      | Set to `false` to disable the Dynamic Client Registration endpoint (`/oauth/register`). **On by default** — DCR-registered clients (e.g. VS Code, Codex) must clear a consent screen and a persisted per-user grant before ever receiving a code (review/revoke approved apps at `/settings/connections`), so it's safe to leave enabled. Disabling also stops advertising `registration_endpoint` in AS metadata. |
-| `CIMD_ALLOWED_ORIGINS`                                 | JSON array of https origins trusted for Client ID Metadata Document (CIMD) resolution. Defaults to `["https://claude.ai", "https://claude.com"]`. |
+| `OAUTH_ALLOW_DCR`                                      | Set to `false` to disable the Dynamic Client Registration endpoint (`/oauth/register`). **On by default** — DCR-registered clients must clear a consent screen and a persisted per-user grant before ever receiving a code (review/revoke approved apps at `/settings/connections`), so it's safe to leave enabled. Disabling also stops advertising `registration_endpoint` in AS metadata. MCP spec 2026-07-28 deprecates DCR in favour of CIMD; it stays enabled for backward compatibility. |
+| `CIMD_TRUSTED_ORIGINS`                                 | JSON array of https origins whose Client ID Metadata Documents are **trusted** — clients from these origins skip the consent screen. Defaults to `["https://claude.ai", "https://claude.com", "https://chatgpt.com", "https://zed.dev"]` (Claude Code, Codex, Zed). Any *other* https `client_id` still resolves, but as an unverified client that must be approved once. `CIMD_ALLOWED_ORIGINS` is honoured as a deprecated alias. |
+| `OAUTH_ALLOW_OPEN_CIMD`                                | Set to `false` to disable open CIMD resolution, so only `CIMD_TRUSTED_ORIGINS` resolve and every other https `client_id` is rejected. **On by default.** |
+| `CIMD_TEST_ORIGINS`                                    | JSON array of origins exempt from the SSRF private-address check, for the e2e suite. **Ignored entirely when `NODE_ENV=production`.** |
 | `DEBUG_SUPER_PASSWORD`                                 | Optional dev-only login bypass (never set in production).                                                                          |
+
+### Trusting a new MCP client
+
+Clients that publish a Client ID Metadata Document (CIMD) are approved once and
+then remembered. To let a specific client skip that approval entirely:
+
+1. Connect the client once and complete the consent screen.
+2. Find the origin in the server log:
+   `[oauth/cimd] Resolved UNVERIFIED client from origin=https://… name="…"`
+3. Add that origin to `CIMD_TRUSTED_ORIGINS` and restart.
+
+This is the supported path for VS Code, whose CIMD URL ships only in
+Microsoft's proprietary `product.json` and so cannot be trusted out of the box.
+
+Grants are scoped to the **origin**, not the document URL — a client that
+publishes a fresh metadata URL on every login (Codex does) still only prompts
+once. Revoking it at `/settings/connections` revokes every document from that
+origin, including its refresh tokens.
 
 ## Project structure
 

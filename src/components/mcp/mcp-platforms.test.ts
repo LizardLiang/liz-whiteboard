@@ -51,11 +51,19 @@ describe('MCP_PLATFORMS', () => {
     }
   })
 
-  it('claude-code is the only platform without a consent screen', () => {
-    const claudeCode = MCP_PLATFORMS.find((p) => p.id === 'claude-code')
-    expect(claudeCode?.consentNote).toMatch(/no separate consent screen/i)
+  // mcp-oauth-open-cimd: Codex joined Claude Code here. It presents a CIMD
+  // client_id under https://chatgpt.com, which is on the default
+  // trusted-origin list (src/lib/oauth/cimd-origins.ts), so it auto-approves.
+  // Every other listed client is unverified and takes the one-time consent.
+  it('only the trusted-origin CIMD clients skip the consent screen', () => {
+    const skipConsent = ['claude-code', 'codex']
 
-    const others = MCP_PLATFORMS.filter((p) => p.id !== 'claude-code')
+    for (const id of skipConsent) {
+      const platform = MCP_PLATFORMS.find((p) => p.id === id)
+      expect(platform?.consentNote).toMatch(/no separate consent screen/i)
+    }
+
+    const others = MCP_PLATFORMS.filter((p) => !skipConsent.includes(p.id))
     for (const platform of others) {
       expect(platform.consentNote).not.toMatch(/no separate consent screen/i)
     }
