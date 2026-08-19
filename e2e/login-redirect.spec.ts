@@ -29,9 +29,9 @@ async function loginWithRedirect(page: Page, redirectParam: string) {
   const password = page.getByRole('textbox', { name: 'Password' })
   const signIn = page.getByRole('button', { name: 'Sign in' })
 
-  // Type (not just fill) so React's controlled onChange fires post-hydration,
-  // and wait for the submit button to actually enable before clicking —
-  // mirrors global-setup's login flow.
+  // Type (not just fill) so React's controlled onChange fires post-hydration —
+  // mirrors global-setup's login flow. The enablement wait is now ordering
+  // only: the button stopped gating on emptiness (see auth-autofill.spec.ts).
   await email.click()
   await email.pressSequentially(E2E_USER.email)
   await password.click()

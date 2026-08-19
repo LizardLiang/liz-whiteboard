@@ -12,6 +12,18 @@ export const E2E_USER = {
 }
 
 /**
+ * Account created by the /register half of auth-autofill.spec.ts. It must NOT
+ * be seeded — the spec proves registration works when the browser autofills
+ * the form, so the account has to be absent at start. e2e/seed-autofill.ts
+ * deletes it before each run.
+ */
+export const E2E_AUTOFILL_USER = {
+  username: 'e2e_autofill',
+  email: 'e2e_autofill@example.com',
+  password: 'E2eAutofill123!',
+}
+
+/**
  * Second, VIEWER-role project member (tactical plan: canvas-table-
  * affordances) — distinct from the public/anonymous share-link path
  * (`viewerRole={null}` in share.$token.tsx, which gates BOTH canEdit and

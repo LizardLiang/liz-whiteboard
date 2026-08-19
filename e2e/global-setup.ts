@@ -33,9 +33,12 @@ export default async function globalSetup(_config: FullConfig) {
   const password = page.getByRole('textbox', { name: 'Password' })
   const signIn = page.getByRole('button', { name: 'Sign in' })
 
-  // The submit button is disabled until the controlled email/password state is
-  // populated. Type (not just set value) so React's onChange fires post-hydration,
-  // and wait for the button to actually enable before clicking.
+  // Type character by character so React's controlled onChange fires, then
+  // wait for the button before clicking. The submit button no longer gates on
+  // emptiness (see auth-autofill.spec.ts — that gate left autofilled forms
+  // permanently unsubmittable), so this wait is now just ordering, not a
+  // workaround. Left as pressSequentially deliberately: every spec depends on
+  // this setup and swapping it for fill() is unrelated risk.
   await email.click()
   await email.pressSequentially(E2E_USER.email)
   await password.click()

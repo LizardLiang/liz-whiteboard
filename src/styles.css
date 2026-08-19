@@ -177,4 +177,20 @@ code {
   body {
     @apply bg-background text-foreground;
   }
+
+  /* Autofill detection hook — see src/hooks/use-autofill-sync.ts.
+     Chromium fires `animationstart` when it applies an autofill, which is the
+     only reliable notification that the browser wrote an input's value without
+     an event React observes. The keyframe changes nothing visually; it exists
+     purely so the event fires. */
+  @keyframes autofill-start {
+    from {
+    }
+    to {
+    }
+  }
+  input:-webkit-autofill {
+    animation-name: autofill-start;
+    animation-duration: 1ms;
+  }
 }

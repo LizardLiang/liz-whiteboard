@@ -2,13 +2,14 @@
 // Registration page — public route (no auth required)
 
 import { Link, createFileRoute, useRouter } from '@tanstack/react-router'
-import { useState } from 'react'
+import { useRef, useState } from 'react'
 import { z } from 'zod'
 import { registerUser } from './api/auth'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { registerInputSchema } from '@/data/schema'
+import { readAutofilledValue, useAutofillSync } from '@/hooks/use-autofill-sync'
 import { AUTH_ERROR_CODES } from '@/lib/auth/errors'
 import { sanitizeRedirect } from '@/lib/safe-redirect'
 
@@ -29,12 +30,32 @@ function RegisterPage() {
   // handed to router.navigate/Link.
   const redirect = sanitizeRedirect(rawRedirect)
 
-  const [username, setUsername] = useState('')
-  const [email, setEmail] = useState('')
-  const [password, setPassword] = useState('')
+  // Seeded from the DOM, not from ''. A browser autofill that lands before
+  // hydration is only readable during the render phase — React overwrites the
+  // input during the hydration commit. See src/hooks/use-autofill-sync.ts.
+  const [username, setUsername] = useState(() =>
+    readAutofilledValue('username'),
+  )
+  const [email, setEmail] = useState(() => readAutofilledValue('email'))
+  const [password, setPassword] = useState(() =>
+    readAutofilledValue('password'),
+  )
   const [errors, setErrors] = useState<Record<string, string>>({})
   const [isSubmitting, setIsSubmitting] = useState(false)
   const [successMessage, setSuccessMessage] = useState<string | null>(null)
+
+  const usernameRef = useRef<HTMLInputElement>(null)
+  const emailRef = useRef<HTMLInputElement>(null)
+  const passwordRef = useRef<HTMLInputElement>(null)
+
+  // Browser autofill writes the DOM value without an event React observes, and
+  // usually lands before hydration. Without this the fields show credentials
+  // while state stays empty. See src/hooks/use-autofill-sync.ts.
+  const { onAnimationStart } = useAutofillSync({
+    username: { ref: usernameRef, value: username, setValue: setUsername },
+    email: { ref: emailRef, value: email, setValue: setEmail },
+    password: { ref: passwordRef, value: password, setValue: setPassword },
+  })
 
   const validateField = (field: string, value: string): string | null => {
     const partial: Record<string, string> = { username, email, password }
@@ -49,13 +70,29 @@ function RegisterPage() {
     return null
   }
 
-  const handleSubmit = async (e: React.FormEvent) => {
+  const handleSubmit = async (e: React.FormEvent<HTMLFormElement>) => {
     e.preventDefault()
     setErrors({})
     setSuccessMessage(null)
 
-    // Client-side validation
-    const result = registerInputSchema.safeParse({ username, email, password })
+    // Read the form itself rather than trusting state. If autofill raced past
+    // both sync points, state can still be empty while the fields are visibly
+    // filled — validating '' would reject a form the user sees as complete.
+    const formData = new FormData(e.currentTarget)
+    const submitted = {
+      username: (formData.get('username') as string | null) ?? username,
+      email: (formData.get('email') as string | null) ?? email,
+      password: (formData.get('password') as string | null) ?? password,
+    }
+
+    // Keep the controlled inputs in step with what we actually validate.
+    if (submitted.username !== username) setUsername(submitted.username)
+    if (submitted.email !== email) setEmail(submitted.email)
+    if (submitted.password !== password) setPassword(submitted.password)
+
+    // Client-side validation — the submit button no longer gates on emptiness,
+    // so a blank submit lands here and surfaces through the same field errors.
+    const result = registerInputSchema.safeParse(submitted)
     if (!result.success) {
       const fieldErrors: Record<string, string> = {}
       result.error.issues.forEach((issue) => {
@@ -71,7 +108,7 @@ function RegisterPage() {
 
     try {
       const response = await registerUser({
-        data: { username, email, password },
+        data: submitted,
       })
 
       if (response.newUser) {
@@ -147,6 +184,8 @@ function RegisterPage() {
             <Label htmlFor="username">Username</Label>
             <Input
               id="username"
+              name="username"
+              ref={usernameRef}
               type="text"
               autoComplete="username"
               value={username}
@@ -155,6 +194,7 @@ function RegisterPage() {
                 const err = validateField('username', e.target.value)
                 setErrors((prev) => ({ ...prev, username: err ?? '' }))
               }}
+              onAnimationStart={onAnimationStart}
               required
               disabled={isSubmitting}
               className="mt-1"
@@ -179,6 +219,8 @@ function RegisterPage() {
             <Label htmlFor="email">Email</Label>
             <Input
               id="email"
+              name="email"
+              ref={emailRef}
               type="email"
               autoComplete="email"
               value={email}
@@ -187,6 +229,7 @@ function RegisterPage() {
                 const err = validateField('email', e.target.value)
                 setErrors((prev) => ({ ...prev, email: err ?? '' }))
               }}
+              onAnimationStart={onAnimationStart}
               required
               disabled={isSubmitting}
               className="mt-1"
@@ -211,6 +254,8 @@ function RegisterPage() {
             <Label htmlFor="password">Password</Label>
             <Input
               id="password"
+              name="password"
+              ref={passwordRef}
               type="password"
               autoComplete="new-password"
               value={password}
@@ -219,6 +264,7 @@ function RegisterPage() {
                 const err = validateField('password', e.target.value)
                 setErrors((prev) => ({ ...prev, password: err ?? '' }))
               }}
+              onAnimationStart={onAnimationStart}
               required
               disabled={isSubmitting}
               className="mt-1"
@@ -239,11 +285,11 @@ function RegisterPage() {
           </div>
 
           {/* Submit */}
-          <Button
-            type="submit"
-            className="w-full"
-            disabled={isSubmitting || !username || !email || !password}
-          >
+          {/* Never gate on emptiness: browser autofill can leave state empty
+              while the fields are visibly filled, which used to disable this
+              button permanently and kill the Enter key with it. handleSubmit
+              reads the form and surfaces field errors for an empty submit. */}
+          <Button type="submit" className="w-full" disabled={isSubmitting}>
             {isSubmitting ? 'Creating account...' : 'Create account'}
           </Button>
         </form>
