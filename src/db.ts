@@ -167,6 +167,25 @@ db.exec(SCHEMA_SQL)
   }
 }
 
+// Additive column migration (oauth-refresh-rotation-race, 2026-08-20):
+// OauthRefreshToken gained `rotatedAt` so rotateRefreshToken() can tell how
+// long ago a token was rotated and decide whether a replay of it falls
+// inside the idempotent-replay grace window (see src/lib/oauth/tokens.ts)
+// instead of being treated as theft. CREATE TABLE IF NOT EXISTS above is a
+// no-op on an existing database, so a deployed DB needs the explicit ADD
+// COLUMN. Idempotent: guarded on table_info, and a nullable column needs no
+// backfill (existing rotated=1 rows simply have rotatedAt=NULL, which is
+// treated as "outside the grace window" by the fix — safe, matches
+// pre-fix behavior for anything rotated before this migration ran).
+{
+  const columns = db
+    .prepare(`PRAGMA table_info("OauthRefreshToken")`)
+    .all() as Array<{ name: string }>
+  if (columns.length > 0 && !columns.some((c) => c.name === 'rotatedAt')) {
+    db.exec(`ALTER TABLE "OauthRefreshToken" ADD COLUMN "rotatedAt" INTEGER`)
+  }
+}
+
 // Backfill ownerless projects to a pre-designated account (by email), if it
 // already exists. Runs once per process at DB-init time, before any HTTP
 // request (and therefore before any registration, including

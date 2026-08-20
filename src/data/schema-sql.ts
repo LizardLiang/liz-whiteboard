@@ -176,6 +176,10 @@ CREATE TABLE IF NOT EXISTS "OauthRefreshToken" (
     "scope"      TEXT    NOT NULL,
     "resource"   TEXT    NOT NULL,
     "rotated"    INTEGER NOT NULL DEFAULT 0,
+    -- Set the moment the rotated flag flips to 1. Nullable: live (rotated=0)
+    -- rows never have this set. Drives the idempotent-replay grace window in
+    -- rotateRefreshToken() (oauth-refresh-rotation-race) - see src/lib/oauth/tokens.ts.
+    "rotatedAt"  INTEGER,
     "expiresAt"  INTEGER NOT NULL,
     "createdAt"  INTEGER NOT NULL DEFAULT (unixepoch('now') * 1000)
 );

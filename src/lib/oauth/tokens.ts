@@ -14,7 +14,19 @@
 //   Rotation uses a "mark rotated" approach rather than deletion:
 //     rotated=0  → live token
 //     rotated=1  → already rotated (stale)
-//   Replaying a stale token signals theft → entire grant family is revoked.
+//   Replaying a stale token OUTSIDE the grace window (or with no replay-cache
+//   hit) signals theft → entire grant family is revoked.
+//
+//   IDEMPOTENT-REPLAY GRACE WINDOW (oauth-refresh-rotation-race):
+//   Legitimate clients can replay an already-rotated token by benign
+//   accident — e.g. the Codex CLI's cross-process file lock does not cover
+//   its OS-keyring backend (openai/codex#33540), so a losing concurrent
+//   process can re-send a stale credential moments after a winner already
+//   rotated it. Within ROTATION_GRACE_MS of the rotation, if the in-memory
+//   replayCache still holds the successor token minted for that rotation,
+//   we re-serve the SAME token pair instead of revoking the family. Outside
+//   the window, or on a cache miss (process restart, TTL elapsed, etc.),
+//   behavior is unchanged: REUSE DETECTED, family revoked.
 
 import { createHash, randomBytes, randomUUID } from 'node:crypto'
 import { SignJWT } from 'jose'
@@ -39,7 +51,80 @@ interface RefreshTokenRow {
   scope: string
   resource: string
   rotated: number
+  rotatedAt: number | null
   expiresAt: number
+}
+
+// ---------------------------------------------------------------------------
+// Idempotent-replay grace window (oauth-refresh-rotation-race)
+// ---------------------------------------------------------------------------
+
+/**
+ * How long after a rotation a replay of the just-rotated (now-stale) token
+ * is treated as a benign concurrency race rather than theft. Deliberately
+ * short — long enough to absorb a losing concurrent request from the same
+ * legitimate client, far too short to help an attacker who captured the
+ * token separately.
+ */
+export const ROTATION_GRACE_MS = 10_000
+
+/**
+ * Max hops the replay-cache chain walk (see the `row.rotated === 1` branch
+ * of rotateRefreshToken) will follow when a stale token's successor was
+ * itself rotated forward inside the same grace window (A→B, B→C, ...).
+ * Bounds the walk so a corrupted or cyclic cache entry cannot loop; a
+ * legitimate chain should never need more than one or two hops.
+ */
+export const MAX_REPLAY_CHAIN_DEPTH = 5
+
+interface ReplayCacheEntry {
+  /** Raw (unhashed) successor refresh token — re-served verbatim on replay.
+   *  Only kept here: the DB stores just the hash, so this cache is the only
+   *  place the raw successor token can be recovered from after rotation. */
+  successorRawToken: string
+  successorHash: string
+  expiresAt: number
+}
+
+// In-memory only: old (now-stale) token's hash -> its successor. Populated
+// on every successful rotation, consulted only when a stale token is
+// replayed. Bounded by evictExpiredReplayEntries(), called on every
+// rotateRefreshToken() invocation, so it cannot grow without limit even if
+// entries are never replayed (mirrors the opportunistic expired-row sweeps
+// already done elsewhere in this file — no background timer).
+//
+// SINGLE-PROCESS ASSUMPTION: this cache lives in the process's own memory,
+// so it is only ever consulted by the process that performed the rotation.
+// A cache miss (process restart, TTL elapsed, entry never populated) is
+// treated as benign — it just falls through to reuse detection. Today that
+// is safe because prod runs as a single `exec bun server.prod.ts` process
+// (no cluster, no fork). If the app is ever horizontally scaled (multiple
+// instances behind a load balancer), a rotation handled by instance X would
+// be invisible to instance Y, so a benign replay routed to a different
+// instance would silently fall through to REUSE DETECTED and revoke the
+// family — reintroducing the exact bug this grace window fixes, with no
+// runtime signal that it happened. A shared cache (e.g. Redis) would be
+// required before scaling horizontally.
+const replayCache = new Map<string, ReplayCacheEntry>()
+
+function evictExpiredReplayEntries(): void {
+  const now = nowMs()
+  for (const [hash, entry] of replayCache) {
+    if (entry.expiresAt <= now) replayCache.delete(hash)
+  }
+}
+
+/** Clears the replay cache (for testing only — simulates a cache miss,
+ * e.g. a process restart, without waiting out the grace window). */
+export function _resetReplayCacheForTests(): void {
+  replayCache.clear()
+}
+
+/** Deletes a single replay-cache entry keyed by the given raw token's hash
+ * (for testing only — simulates a mid-chain cache miss, e.g. one entry
+ * evicted or never populated, without clearing the whole cache). */
+export function _resetReplayCacheEntryForTests(tokenHash: string): void {
+  replayCache.delete(tokenHash)
 }
 
 // ---------------------------------------------------------------------------
@@ -48,6 +133,28 @@ interface RefreshTokenRow {
 
 function hashToken(token: string): string {
   return createHash('sha256').update(token).digest('hex')
+}
+
+/** Sign a fresh RS256 access token bound to the given grant attributes. */
+async function signAccessToken(
+  params: { userId: string; scope: string; resource: string },
+  config: OAuthConfig,
+): Promise<string> {
+  const { kid, privateKey } = await getSigningKeyPair()
+  const now = Math.floor(Date.now() / 1000)
+  const exp = now + config.accessTokenTtl
+
+  return new SignJWT({
+    sub: params.userId,
+    scope: params.scope,
+  })
+    .setProtectedHeader({ alg: 'RS256', kid })
+    .setIssuer(config.issuer)
+    .setAudience(params.resource)
+    .setIssuedAt(now)
+    .setNotBefore(now)
+    .setExpirationTime(exp)
+    .sign(privateKey)
 }
 
 // ---------------------------------------------------------------------------
@@ -71,21 +178,10 @@ export async function issueTokens(
   config: OAuthConfig,
   familyId?: string,
 ): Promise<AccessTokenResult> {
-  const { kid, privateKey } = await getSigningKeyPair()
-  const now = Math.floor(Date.now() / 1000)
-  const exp = now + config.accessTokenTtl
-
-  const accessToken = await new SignJWT({
-    sub: params.userId,
-    scope: params.scope,
-  })
-    .setProtectedHeader({ alg: 'RS256', kid })
-    .setIssuer(config.issuer)
-    .setAudience(params.resource)
-    .setIssuedAt(now)
-    .setNotBefore(now)
-    .setExpirationTime(exp)
-    .sign(privateKey)
+  const accessToken = await signAccessToken(
+    { userId: params.userId, scope: params.scope, resource: params.resource },
+    config,
+  )
 
   // Issue refresh token — opaque, stored by hash.
   const rawToken = randomBytes(32).toString('base64url')
@@ -142,10 +238,15 @@ export async function rotateRefreshToken(
 ): Promise<AccessTokenResult | null> {
   const tokenHash = hashToken(refreshToken)
 
+  // Opportunistic sweep — bounds replayCache regardless of whether this call
+  // hits the replay path (mirrors the DB's own opportunistic expired-row
+  // sweeps elsewhere in this file; no background timer).
+  evictExpiredReplayEntries()
+
   const row = db
     .prepare(
       `
-    SELECT tokenHash, familyId, userId, clientId, scope, resource, rotated, expiresAt
+    SELECT tokenHash, familyId, userId, clientId, scope, resource, rotated, rotatedAt, expiresAt
     FROM "OauthRefreshToken"
     WHERE tokenHash = ?
   `,
@@ -158,9 +259,86 @@ export async function rotateRefreshToken(
   }
 
   if (row.rotated === 1) {
-    // REUSE DETECTED: stale token was replayed → compromise signal.
-    // Revoke the entire grant family so neither the attacker nor the legitimate
-    // client can use any token in this lineage.
+    // Stale token replayed. Before treating this as theft, check whether it
+    // falls inside the idempotent-replay grace window: a legitimate client
+    // can benignly replay a token WE just rotated (e.g. Codex CLI's
+    // cross-process lock race — openai/codex#33540). If so, re-serve the
+    // same pair the winner of that race already got.
+    const withinGrace =
+      row.rotatedAt !== null && nowMs() - row.rotatedAt <= ROTATION_GRACE_MS
+    const cached = withinGrace ? replayCache.get(tokenHash) : undefined
+
+    // client_id binding (RFC 6749 §10.4) applies identically here as it does
+    // to the live-token path below — the idempotent-replay grace window must
+    // not become a way to bypass it. `client_id` at /token is unauthenticated
+    // (public-client model, no secret/PKCE on refresh), so this check is the
+    // ONLY thing standing between a stolen/mismatched refresh token and a
+    // valid pair. Checked against the ORIGINAL stale row's clientId, which is
+    // identical to every descendant's clientId (rotation never changes it).
+    if (cached && row.clientId === clientId) {
+      // Follow the rotation chain forward to the current LIVE descendant.
+      // The cached successor may itself have been rotated forward inside the
+      // same grace window (A→B, then B→C) — re-serving a dead (rotated=1)
+      // token as if it were live would strand the straggler on next use, so
+      // walk replayCache until we land on a rotated=0 row, or give up.
+      let currentHash = cached.successorHash
+      let currentRawToken = cached.successorRawToken
+      let liveRow:
+        | Pick<RefreshTokenRow, 'userId' | 'scope' | 'resource'>
+        | undefined
+      const seenHashes = new Set<string>()
+
+      for (let depth = 0; depth < MAX_REPLAY_CHAIN_DEPTH; depth++) {
+        if (seenHashes.has(currentHash)) break // cycle guard
+        seenHashes.add(currentHash)
+
+        const successorRow = db
+          .prepare(
+            `SELECT userId, scope, resource, rotated FROM "OauthRefreshToken" WHERE tokenHash = ?`,
+          )
+          .get(currentHash) as
+          | Pick<RefreshTokenRow, 'userId' | 'scope' | 'resource' | 'rotated'>
+          | undefined
+
+        if (!successorRow) break // row vanished — fall through
+
+        if (successorRow.rotated === 0) {
+          liveRow = successorRow
+          break
+        }
+
+        // Successor was itself rotated forward — follow the chain.
+        const nextEntry = replayCache.get(currentHash)
+        if (!nextEntry) break // cache miss mid-chain — fall through
+        currentHash = nextEntry.successorHash
+        currentRawToken = nextEntry.successorRawToken
+      }
+
+      if (liveRow) {
+        const accessToken = await signAccessToken(
+          {
+            userId: liveRow.userId,
+            scope: liveRow.scope,
+            resource: liveRow.resource,
+          },
+          config,
+        )
+        return {
+          accessToken,
+          tokenType: 'Bearer',
+          expiresIn: config.accessTokenTtl,
+          refreshToken: currentRawToken,
+          scope: liveRow.scope,
+        }
+      }
+      // Chain walk exhausted depth, hit a cache miss, or the row vanished —
+      // fall through to reuse-detection below; nothing live left to re-serve.
+    }
+
+    // REUSE DETECTED: stale token was replayed outside the grace window (or
+    // with no replay-cache hit) → compromise signal. Revoke the entire grant
+    // family so neither the attacker nor the legitimate client can use any
+    // token in this lineage.
     console.warn(
       `[oauth] REUSE DETECTED family=${row.familyId} userId=${row.userId} clientId=${clientId}`,
     )
@@ -187,14 +365,14 @@ export async function rotateRefreshToken(
   const newRawToken = randomBytes(32).toString('base64url')
   const newHash = hashToken(newRawToken)
   const newExpiresAt = nowMs() + config.refreshTokenTtl * 1000
-  const newCreatedAt = nowMs()
+  const rotationTime = nowMs()
 
   // Atomically mark old token as rotated AND insert new token.
   // JWT signing happens after the transaction (it's async; the DB ops are sync).
   transaction(() => {
     db.prepare(
-      `UPDATE "OauthRefreshToken" SET rotated = 1 WHERE tokenHash = ?`,
-    ).run(tokenHash)
+      `UPDATE "OauthRefreshToken" SET rotated = 1, rotatedAt = ? WHERE tokenHash = ?`,
+    ).run(rotationTime, tokenHash)
     db.prepare(
       `
       INSERT INTO "OauthRefreshToken"
@@ -209,7 +387,7 @@ export async function rotateRefreshToken(
       row.scope,
       row.resource,
       newExpiresAt,
-      newCreatedAt,
+      rotationTime,
     )
     // Sweep expired rows opportunistically.
     db.prepare(`DELETE FROM "OauthRefreshToken" WHERE expiresAt < ?`).run(
@@ -217,22 +395,20 @@ export async function rotateRefreshToken(
     )
   })
 
-  // Sign the new JWT (async — outside the synchronous DB transaction).
-  const { kid, privateKey } = await getSigningKeyPair()
-  const now = Math.floor(Date.now() / 1000)
-  const exp = now + config.accessTokenTtl
-
-  const accessToken = await new SignJWT({
-    sub: row.userId,
-    scope: row.scope,
+  // Remember the successor so a benign replay of the just-rotated (now
+  // stale) token within the grace window can be re-served the same pair
+  // instead of revoking the family (see the `row.rotated === 1` branch
+  // above).
+  replayCache.set(tokenHash, {
+    successorRawToken: newRawToken,
+    successorHash: newHash,
+    expiresAt: rotationTime + ROTATION_GRACE_MS,
   })
-    .setProtectedHeader({ alg: 'RS256', kid })
-    .setIssuer(config.issuer)
-    .setAudience(row.resource)
-    .setIssuedAt(now)
-    .setNotBefore(now)
-    .setExpirationTime(exp)
-    .sign(privateKey)
+
+  const accessToken = await signAccessToken(
+    { userId: row.userId, scope: row.scope, resource: row.resource },
+    config,
+  )
 
   return {
     accessToken,
@@ -273,4 +449,5 @@ export function revokeRefreshToken(token: string, clientId: string): boolean {
 /** Reset refresh token store (for testing only). */
 export function _resetTokenStoresForTests(): void {
   db.prepare(`DELETE FROM "OauthRefreshToken"`).run()
+  replayCache.clear()
 }
