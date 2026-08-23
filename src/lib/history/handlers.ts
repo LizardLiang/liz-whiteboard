@@ -164,6 +164,12 @@ export async function getSnapshotHandler(
     createdAt: snapshot.createdAt,
     tables: preview.tables,
     relationships: preview.relationships,
+    // FR-035a: covers "no shapes key" and "key present but empty" identically
+    // — both mean the restore removes every shape on the board. Required in
+    // BOTH branches of the confirmation copy (WhiteboardHistoryPanel.tsx),
+    // not just the zero-shape branch — it is the only compensating control
+    // for the preview dialog above not rendering shapes (tech-spec §6).
+    snapshotShapeCount: snapshot.payload.shapes?.length ?? 0,
   }
 }
 
