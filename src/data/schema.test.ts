@@ -3,14 +3,19 @@
 
 import { describe, expect, it } from 'vitest'
 import {
+  MAX_BOARD_COORD,
   areaMoveBroadcastSchema,
   cardinalitySchema,
+  createConnectorSchema,
   createRelationshipSchema,
+  createShapeSchema,
   loginInputSchema,
   projectRoleSchema,
   registerInputSchema,
   reorderColumnsSchema,
+  shapePropsSchema,
   tableMoveBulkBroadcastSchema,
+  updateShapeSchema,
 } from './schema'
 
 describe('cardinalitySchema', () => {
@@ -512,5 +517,203 @@ describe('areaMoveBroadcastSchema (area:move socket payload validation)', () => 
       members: manyMembers,
     })
     expect(result.success).toBe(false)
+  })
+})
+
+describe('shape/connector schemas (UNIT-02)', () => {
+  const whiteboardId = '11111111-1111-4111-8111-111111111111'
+  const shapeId1 = '22222222-2222-4222-8222-222222222222'
+  const shapeId2 = '33333333-3333-4333-8333-333333333333'
+
+  function baseShape(over: Record<string, unknown> = {}) {
+    return {
+      whiteboardId,
+      kind: 'rectangle' as const,
+      positionX: 0,
+      positionY: 0,
+      width: 100,
+      height: 100,
+      props: { kind: 'rectangle' },
+      ...over,
+    }
+  }
+
+  describe('createShapeSchema — coordinate boundaries (M7)', () => {
+    it('accepts positionX/positionY at exactly ±MAX_BOARD_COORD', () => {
+      expect(
+        createShapeSchema.safeParse(baseShape({ positionX: MAX_BOARD_COORD }))
+          .success,
+      ).toBe(true)
+      expect(
+        createShapeSchema.safeParse(
+          baseShape({ positionX: -MAX_BOARD_COORD }),
+        ).success,
+      ).toBe(true)
+    })
+
+    it('rejects positionX one unit past MAX_BOARD_COORD', () => {
+      expect(
+        createShapeSchema.safeParse(
+          baseShape({ positionX: MAX_BOARD_COORD + 1 }),
+        ).success,
+      ).toBe(false)
+    })
+
+    it('rejects positionX = 1e300 (finite but absurd)', () => {
+      expect(
+        createShapeSchema.safeParse(baseShape({ positionX: 1e300 })).success,
+      ).toBe(false)
+    })
+
+    it('rejects NaN and Infinity on any coordinate field', () => {
+      expect(
+        createShapeSchema.safeParse(baseShape({ positionX: NaN })).success,
+      ).toBe(false)
+      expect(
+        createShapeSchema.safeParse(baseShape({ positionY: Infinity }))
+          .success,
+      ).toBe(false)
+      expect(
+        createShapeSchema.safeParse(baseShape({ positionY: -Infinity }))
+          .success,
+      ).toBe(false)
+    })
+  })
+
+  describe('createShapeSchema — width/height', () => {
+    it('accepts width/height at exactly 100_000', () => {
+      expect(
+        createShapeSchema.safeParse(baseShape({ width: 100_000 })).success,
+      ).toBe(true)
+    })
+
+    it('rejects width/height at 100_001', () => {
+      expect(
+        createShapeSchema.safeParse(baseShape({ width: 100_001 })).success,
+      ).toBe(false)
+    })
+
+    it('rejects non-positive width/height', () => {
+      expect(
+        createShapeSchema.safeParse(baseShape({ width: 0 })).success,
+      ).toBe(false)
+      expect(
+        createShapeSchema.safeParse(baseShape({ width: -10 })).success,
+      ).toBe(false)
+    })
+  })
+
+  describe('shapePropsSchema — line fractions (FR-031a)', () => {
+    function lineProps(over: Record<string, unknown> = {}) {
+      return {
+        kind: 'line' as const,
+        x1: 0,
+        y1: 0.5,
+        x2: 1,
+        y2: 0.5,
+        arrowStart: false,
+        arrowEnd: true,
+        ...over,
+      }
+    }
+
+    it('accepts fractions at exactly 0 and 1', () => {
+      expect(shapePropsSchema.safeParse(lineProps()).success).toBe(true)
+      expect(
+        shapePropsSchema.safeParse(lineProps({ x1: 1, y1: 1, y2: 0 }))
+          .success,
+      ).toBe(true)
+    })
+
+    it('rejects fractions below 0 or above 1', () => {
+      expect(
+        shapePropsSchema.safeParse(lineProps({ x1: -0.0001 })).success,
+      ).toBe(false)
+      expect(
+        shapePropsSchema.safeParse(lineProps({ x2: 1.0001 })).success,
+      ).toBe(false)
+    })
+
+    it("rejects a line's x1/y1/x2/y2 on a rectangle's props", () => {
+      const result = shapePropsSchema.safeParse({
+        kind: 'rectangle',
+        x1: 0,
+        y1: 0,
+        x2: 1,
+        y2: 1,
+      })
+      expect(result.success).toBe(false)
+    })
+
+    it('validates each of the five kind discriminator arms independently', () => {
+      for (const kind of ['rectangle', 'ellipse', 'diamond', 'text']) {
+        expect(shapePropsSchema.safeParse({ kind }).success).toBe(true)
+      }
+      expect(shapePropsSchema.safeParse(lineProps()).success).toBe(true)
+    })
+  })
+
+  describe('createShapeSchema — text length cap', () => {
+    it('accepts text at exactly 500 chars', () => {
+      expect(
+        createShapeSchema.safeParse(baseShape({ text: 'a'.repeat(500) }))
+          .success,
+      ).toBe(true)
+    })
+
+    it('rejects text at 501 chars', () => {
+      expect(
+        createShapeSchema.safeParse(baseShape({ text: 'a'.repeat(501) }))
+          .success,
+      ).toBe(false)
+    })
+  })
+
+  describe('createShapeSchema — strict blob schemas', () => {
+    it('rejects an unknown key in style', () => {
+      const result = createShapeSchema.safeParse(
+        baseShape({ style: { fill: 'none', bogus: 1 } }),
+      )
+      expect(result.success).toBe(false)
+    })
+
+    it('rejects an unknown key in props', () => {
+      const result = createShapeSchema.safeParse(
+        baseShape({ props: { kind: 'rectangle', bogus: 1 } }),
+      )
+      expect(result.success).toBe(false)
+    })
+  })
+
+  describe('updateShapeSchema', () => {
+    it('parses absent fields as undefined (not present in the object at all)', () => {
+      const result = updateShapeSchema.parse({ positionX: 10 })
+      expect(result.positionX).toBe(10)
+      expect('width' in result).toBe(false)
+    })
+  })
+
+  describe('createConnectorSchema', () => {
+    function baseConnector(over: Record<string, unknown> = {}) {
+      return {
+        whiteboardId,
+        sourceShapeId: shapeId1,
+        targetShapeId: shapeId2,
+        ...over,
+      }
+    }
+
+    it('accepts a valid connector payload', () => {
+      expect(createConnectorSchema.safeParse(baseConnector()).success).toBe(
+        true,
+      )
+    })
+
+    it('rejects sourceShapeId === targetShapeId (self-connector)', () => {
+      const result = createConnectorSchema.safeParse(
+        baseConnector({ targetShapeId: shapeId1 }),
+      )
+      expect(result.success).toBe(false)
+    })
   })
 })

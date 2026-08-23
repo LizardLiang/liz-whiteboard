@@ -754,3 +754,144 @@ export type ConsentRequestId = z.infer<typeof consentRequestIdSchema>
 export type RevokeGrant = z.infer<typeof revokeGrantSchema>
 
 export type AreaMoveBroadcast = z.infer<typeof areaMoveBroadcastSchema>
+
+// ============================================================================
+// Shape / Connector Schemas (Phase 1 — shapes and connectors)
+// ============================================================================
+
+/**
+ * Hard magnitude bound on any persisted flow coordinate (tech-spec §3, M7).
+ * `.finite()` alone accepts values like `1e300`; with `fitView` enabled
+ * (ReactFlowCanvas.tsx), a single shape persisted at an extreme coordinate
+ * forces every collaborator's viewport to zoom out until the board is
+ * unusable — a board-wide DoS reachable from one ordinary payload. 1e7 flow
+ * units is ~10,000 screens wide at 1:1 — far past any real board.
+ *
+ * This is a deliberate tightening for the NEW shape/connector entities, not
+ * an existing repo convention — every pre-existing coordinate schema in this
+ * file uses bare `.finite()`. Retrofitting those is out of Phase 1 scope.
+ */
+export const MAX_BOARD_COORD = 10_000_000
+
+/** FR-038's text cap for a shape's label, enforced here and as `<textarea maxLength>`. */
+export const SHAPE_LABEL_MAX_LENGTH = 500
+
+const boardCoordSchema = z
+  .number()
+  .finite()
+  .min(-MAX_BOARD_COORD)
+  .max(MAX_BOARD_COORD)
+
+/** A 1|2|4 stroke width — a fixed set, not a free number, per tech-spec §3. */
+const strokeWidthSchema = z.union([z.literal(1), z.literal(2), z.literal(4)])
+
+export const shapeKindSchema = z.enum([
+  'rectangle',
+  'ellipse',
+  'diamond',
+  'line',
+  'text',
+])
+
+/**
+ * Shared visual-styling vocabulary for every shape kind (tech-spec §3).
+ * `fill` additionally allows `'none'` (unfilled) on top of the Area palette;
+ * `textColor` additionally allows `'auto'` (theme foreground token).
+ */
+export const shapeStyleSchema = z.strictObject({
+  fill: z.enum([...AREA_COLOR_IDS, 'none']).default('none'),
+  stroke: areaColorSchema.default('slate'),
+  strokeWidth: strokeWidthSchema.default(2),
+  strokeStyle: z.enum(['solid', 'dashed']).default('solid'),
+  fontSize: z.union([z.literal(12), z.literal(16), z.literal(24)]).default(16),
+  textColor: z.enum([...AREA_COLOR_IDS, 'auto']).default('auto'),
+})
+
+/** Connector visual styling — a narrower vocabulary plus arrowhead flags. */
+export const connectorStyleSchema = z.strictObject({
+  stroke: areaColorSchema.default('slate'),
+  strokeWidth: strokeWidthSchema.default(2),
+  strokeStyle: z.enum(['solid', 'dashed']).default('solid'),
+  arrowStart: z.boolean().default(false),
+  arrowEnd: z.boolean().default(true),
+})
+
+/** A `line` shape's endpoint fractions are 0..1 of the node's own bounds (FR-031a). */
+const lineFractionSchema = z.number().finite().min(0).max(1)
+
+/**
+ * Kind-specific payload, a Zod discriminated union on `kind`. Four kinds
+ * carry an empty object — deliberate (tech-spec §3): this is the validation
+ * dispatch point that lets future kinds (`ink`, `image`) be added with no
+ * schema change (FR-032). Do NOT "clean up" the empty-object arms.
+ */
+export const shapePropsSchema = z.discriminatedUnion('kind', [
+  z.strictObject({ kind: z.literal('rectangle') }),
+  z.strictObject({ kind: z.literal('ellipse') }),
+  z.strictObject({ kind: z.literal('diamond') }),
+  z.strictObject({ kind: z.literal('text') }),
+  z.strictObject({
+    kind: z.literal('line'),
+    x1: lineFractionSchema,
+    y1: lineFractionSchema,
+    x2: lineFractionSchema,
+    y2: lineFractionSchema,
+    arrowStart: z.boolean(),
+    arrowEnd: z.boolean(),
+  }),
+])
+
+/**
+ * Schema for creating a shape. Mirrors `createAreaSchema`'s convention:
+ * `update` is defined independently below, not `.partial()` of this.
+ */
+export const createShapeSchema = z.object({
+  whiteboardId: z.string().uuid(),
+  kind: shapeKindSchema,
+  positionX: boardCoordSchema,
+  positionY: boardCoordSchema,
+  width: z.number().positive().max(100_000),
+  height: z.number().positive().max(100_000),
+  text: z.string().max(SHAPE_LABEL_MAX_LENGTH).nullable().default(null),
+  style: shapeStyleSchema.default({}),
+  props: shapePropsSchema,
+})
+
+/**
+ * Schema for updating an existing shape. Defined independently (not
+ * `.partial()` of create) so absent fields parse as `undefined` and only
+ * explicitly-provided columns are written — matches `updateAreaSchema`.
+ */
+export const updateShapeSchema = z.object({
+  positionX: boardCoordSchema.optional(),
+  positionY: boardCoordSchema.optional(),
+  width: z.number().positive().max(100_000).optional(),
+  height: z.number().positive().max(100_000).optional(),
+  text: z.string().max(SHAPE_LABEL_MAX_LENGTH).nullable().optional(),
+  style: shapeStyleSchema.optional(),
+  props: shapePropsSchema.optional(),
+})
+
+/**
+ * Schema for creating a connector. `sourceShapeId === targetShapeId` (a
+ * self-connector) is rejected here — FR-016/tech-spec §4 — since a
+ * self-referencing arrow has no defined direction. The line/table/cross-
+ * whiteboard endpoint rules are enforced server-side against the loaded
+ * rows (schema validation alone cannot see `kind` or `whiteboardId`).
+ */
+export const createConnectorSchema = z
+  .object({
+    whiteboardId: z.string().uuid(),
+    sourceShapeId: z.string().uuid(),
+    targetShapeId: z.string().uuid(),
+    style: connectorStyleSchema.default({}),
+  })
+  .refine((data) => data.sourceShapeId !== data.targetShapeId, {
+    message: 'A shape cannot be connected to itself',
+    path: ['targetShapeId'],
+  })
+
+export type ShapeKind = z.infer<typeof shapeKindSchema>
+export type CreateShape = z.input<typeof createShapeSchema>
+export type UpdateShape = z.infer<typeof updateShapeSchema>
+export type CreateConnector = z.input<typeof createConnectorSchema>
