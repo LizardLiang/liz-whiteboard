@@ -20,14 +20,18 @@ import '@xyflow/react/dist/style.css'
 import '@/styles/react-flow-theme.css'
 
 import { CardinalityMarkerDefs } from './CardinalityMarkerDefs'
+import { ConnectorMarkerDefs } from './ConnectorMarkerDefs'
+import { ShapeDrawOverlay } from './ShapeDrawOverlay'
 import { CanvasNodeLayer } from './CanvasNodeLayer'
 import type { MouseEvent as ReactMouseEvent } from 'react'
 import type {
   FitViewOptions,
+  IsValidConnection,
   Node,
   NodeMouseHandler,
   OnConnect,
   OnEdgesChange,
+  OnEdgesDelete,
   OnNodeDrag,
   OnNodesChange,
   OnNodesDelete,
@@ -35,15 +39,22 @@ import type {
 import type {
   AreaNodeType,
   CommentNodeType,
+  ConnectorEdgeType,
   RelationshipEdgeType,
+  ShapeNodeType,
   TableNodeType,
 } from '@/lib/react-flow/types'
+import { isDrawTool } from '@/lib/react-flow/tool-mode'
+import type { DrawTool, ToolMode } from '@/lib/react-flow/tool-mode'
 import type {
   AffordanceRequest,
   InitialEditingField,
 } from '@/lib/react-flow/canvas-mode'
 import { CanvasEditContext, CanvasModeContext } from '@/lib/react-flow/canvas-mode'
-import { recalculateEdgesForDraggedNodes } from '@/lib/react-flow/edge-routing'
+import {
+  parseColumnHandleId,
+  recalculateEdgesForDraggedNodes,
+} from '@/lib/react-flow/edge-routing'
 import { perfTracker } from '@/lib/perf/perf-tracker'
 import {
   assignLayersBFS,
@@ -78,6 +89,13 @@ const EMPTY_EDGES: Array<RelationshipEdgeType> = []
  * as EMPTY_AREA_NODES above.
  */
 const EMPTY_COMMENT_NODES: Array<CommentNodeType> = []
+
+/**
+ * Stable empty defaults for the `shapeNodes`/`connectorEdges` props (Phase 1:
+ * shapes-and-connectors) — same rationale as EMPTY_AREA_NODES above.
+ */
+const EMPTY_SHAPE_NODES: Array<ShapeNodeType> = []
+const EMPTY_CONNECTOR_EDGES: Array<ConnectorEdgeType> = []
 
 /**
  * Stable reference for `<ReactFlow defaultEdgeOptions>` (GH #121 perf,
@@ -149,6 +167,51 @@ export interface ReactFlowCanvasProps {
    * where these are built in ReactFlowWhiteboard.
    */
   commentNodes?: Array<CommentNodeType>
+  /**
+   * Shape nodes (Phase 1: shapes-and-connectors), kept separate from table
+   * nodes like areaNodes. Rendered behind tables, above areas (tech-spec §5).
+   */
+  shapeNodes?: Array<ShapeNodeType>
+  /**
+   * Connector edges (Phase 1) — merged with the relationship `edges` prop.
+   * Geometry is derived at render time, never stored (FR-031a).
+   */
+  connectorEdges?: Array<ConnectorEdgeType>
+  /**
+   * Persist a shape (or multi-selected shapes) drag-stop — one entry per
+   * dragged shape, so the caller can emit exactly N `shape:update`s at
+   * drag-stop, never per-frame (tech-spec §10).
+   */
+  onShapeDragStop?: (
+    shapes: Array<{ id: string; positionX: number; positionY: number }>,
+  ) => void
+  /**
+   * Delete a shape (Delete/Backspace on a selected shape node). Fired from
+   * `onNodesDelete` for deleted nodes of type 'shape' — cascades to attached
+   * connectors server-side (FR-018).
+   */
+  onShapeDelete?: (shapeId: string) => void
+  /**
+   * Delete a connector (M1) — Delete/Backspace on a selected connector edge.
+   * Fired from `onEdgesDelete`, filtered on `edge.type === 'connector'` so
+   * relationship-edge behaviour is untouched.
+   */
+  onConnectorDelete?: (connectorId: string) => void
+  /**
+   * The canvas-wide tool mode (D-1). When a draw tool is armed
+   * (`isDrawTool(activeTool)`), mounts `<ShapeDrawOverlay>` inside the
+   * wrapper (H1: the overlay is pointer-events:none and runs its gesture
+   * from capture-phase listeners on the wrapper — see that component).
+   */
+  activeTool?: ToolMode
+  /** Fires once per completed draw gesture (tech-spec §8). */
+  onDrawCommit?: (
+    kind: DrawTool,
+    rect: { x: number; y: number; width: number; height: number },
+    drag: { startX: number; startY: number; endX: number; endY: number },
+  ) => void
+  /** Fires on every abnormal/idle-armed draw termination that disarms to `select`. */
+  onDrawDisarm?: () => void
   /** Callback when nodes change (position, selection, etc.) */
   onNodesChange?: OnNodesChange<TableNodeType>
   /** Callback when edges change */
@@ -240,6 +303,14 @@ export function ReactFlowCanvas({
   onAreaDragStop,
   onAreaDelete,
   commentNodes = EMPTY_COMMENT_NODES,
+  shapeNodes = EMPTY_SHAPE_NODES,
+  connectorEdges = EMPTY_CONNECTOR_EDGES,
+  onShapeDragStop,
+  onShapeDelete,
+  onConnectorDelete,
+  activeTool = 'select',
+  onDrawCommit,
+  onDrawDisarm,
   onNodesChange: onNodesChangeProp,
   onEdgesChange: onEdgesChangeProp,
   onConnect,
@@ -296,6 +367,30 @@ export function ReactFlowCanvas({
     [commentNodesState],
   )
 
+  // Shape nodes (Phase 1: shapes-and-connectors) — same separate-state
+  // pattern as areas. Rendered BEHIND tables, ABOVE areas (tech-spec §5).
+  const [shapeNodesState, setShapeNodesState, handleShapeNodesChange] =
+    useNodesState<ShapeNodeType>(shapeNodes)
+  useEffect(() => {
+    setShapeNodesState(shapeNodes)
+  }, [shapeNodes, setShapeNodesState])
+  const shapeIdSet = useMemo(
+    () => new Set(shapeNodesState.map((s) => s.id)),
+    [shapeNodesState],
+  )
+
+  // Connector edges (Phase 1) — same separate-state pattern as relationship
+  // edges, merged into the single <ReactFlow edges> array below.
+  const [connectorEdgesState, setConnectorEdgesState, handleConnectorEdgesChange] =
+    useEdgesState<ConnectorEdgeType>(connectorEdges)
+  useEffect(() => {
+    setConnectorEdgesState(connectorEdges)
+  }, [connectorEdges, setConnectorEdgesState])
+  const connectorIdSet = useMemo(
+    () => new Set(connectorEdgesState.map((c) => c.id)),
+    [connectorEdgesState],
+  )
+
   // Table nodes are never natively deletable (GH #106 Bug 1 fix) — Delete/
   // Backspace must always route through the table confirmation dialog
   // (useTableDeletion), never React Flow's own removal. Area nodes carry
@@ -305,12 +400,19 @@ export function ReactFlowCanvas({
   const mergedNodes = useMemo(
     () => [
       ...areaNodesState,
+      // KEEP THIS ORDER (L2): shapes go BEFORE the table `deletable: false`
+      // map, never flattened into a bare spread with tables — the map below
+      // force-marks table nodes deletable: false (GH #106 Bug 1) so
+      // Delete/Backspace always routes through useTableDeletion's
+      // confirmation dialog. Shape nodes carry their own `deletable: canEdit`
+      // from the shapeNodes prop, so they are not touched by that map.
+      ...shapeNodesState,
       ...nodes.map((n) =>
         n.deletable === false ? n : { ...n, deletable: false },
       ),
       ...commentNodesState,
     ],
-    [areaNodesState, nodes, commentNodesState],
+    [areaNodesState, shapeNodesState, nodes, commentNodesState],
   )
 
   // Selection and hover state for highlighting
@@ -907,6 +1009,11 @@ export function ReactFlowCanvas({
   // calculation is always based on current coordinates.
   const onNodeDrag = useCallback<OnNodeDrag<TableNodeType>>(
     (_event, node, draggedNodes) => {
+      // Shapes need no relationship-edge recalculation at all (FR-015):
+      // ConnectorEdge subscribes to each endpoint's live position directly
+      // via useInternalNode(id), so it re-renders every drag frame with
+      // zero extra plumbing here.
+      if (shapeIdSet.has(node.id)) return
       if (areaIdSet.has(node.id)) {
         // Movable-container grouping: translate member tables live by the
         // same delta the area has moved since drag-start.
@@ -946,7 +1053,14 @@ export function ReactFlowCanvas({
       const currentNodes = mergeCurrentPositions(node, draggedNodes)
       scheduleDragEdgeRecalc(currentNodes, draggedIds)
     },
-    [areaIdSet, mergeCurrentPositions, nodes, scheduleDragEdgeRecalc, setNodes],
+    [
+      areaIdSet,
+      shapeIdSet,
+      mergeCurrentPositions,
+      nodes,
+      scheduleDragEdgeRecalc,
+      setNodes,
+    ],
   )
 
   // Handle node drag stop (position update)
@@ -985,6 +1099,30 @@ export function ReactFlowCanvas({
         return
       }
 
+      // Shape nodes: persist the new position(s), skip edge routing/hover
+      // entirely (tech-spec §10). React Flow reports the WHOLE multi-drag
+      // selection to this callback once, so a multi-select drag of N shapes
+      // emits exactly N entries here, never per-frame.
+      if (shapeIdSet.has(node.id)) {
+        const draggedShapeIds = new Set(
+          draggedNodes.filter((n) => shapeIdSet.has(n.id)).map((n) => n.id),
+        )
+        draggedShapeIds.add(node.id)
+        const finalPositions = [node, ...draggedNodes]
+          .filter((n) => draggedShapeIds.has(n.id))
+          // De-duplicate — `node` may also appear in `draggedNodes`.
+          .filter(
+            (n, i, arr) => arr.findIndex((o) => o.id === n.id) === i,
+          )
+          .map((n) => ({
+            id: n.id,
+            positionX: n.position.x,
+            positionY: n.position.y,
+          }))
+        onShapeDragStop?.(finalPositions)
+        return
+      }
+
       // Restore hover on the node we just dropped (ReactFlow fires mouseEnter after
       // dragStop which we suppressed, so manually set it here)
       setHoveredTableId(node.id)
@@ -1006,8 +1144,10 @@ export function ReactFlowCanvas({
     },
     [
       areaIdSet,
+      shapeIdSet,
       cancelPendingDragEdgeRecalc,
       onAreaDragStop,
+      onShapeDragStop,
       onNodeDragStopProp,
       mergeCurrentPositions,
       setEdges,
@@ -1021,16 +1161,22 @@ export function ReactFlowCanvas({
   const onNodesChange: OnNodesChange<TableNodeType> = useCallback(
     (changes) => {
       const areaChanges: typeof changes = []
+      const shapeChanges: typeof changes = []
       const commentChanges: typeof changes = []
       const tableChanges: typeof changes = []
       for (const change of changes) {
         if ('id' in change && areaIdSet.has(change.id)) areaChanges.push(change)
+        else if ('id' in change && shapeIdSet.has(change.id))
+          shapeChanges.push(change)
         else if ('id' in change && commentIdSet.has(change.id))
           commentChanges.push(change)
         else tableChanges.push(change)
       }
       if (areaChanges.length > 0) {
         handleAreaNodesChange(areaChanges as any)
+      }
+      if (shapeChanges.length > 0) {
+        handleShapeNodesChange(shapeChanges as any)
       }
       if (commentChanges.length > 0) {
         handleCommentNodesChange(commentChanges as any)
@@ -1040,21 +1186,56 @@ export function ReactFlowCanvas({
     },
     [
       areaIdSet,
+      shapeIdSet,
       commentIdSet,
       handleAreaNodesChange,
+      handleShapeNodesChange,
       handleCommentNodesChange,
       handleNodesChange,
       onNodesChangeProp,
     ],
   )
 
-  // Handle edges change with custom callback
+  // Handle edges change with custom callback. Partitions connector changes
+  // (selection, removal-from-local-state) into their own state, mirroring
+  // the node partitioning above.
   const onEdgesChange: OnEdgesChange<RelationshipEdgeType> = useCallback(
     (changes) => {
-      handleEdgesChange(changes)
-      onEdgesChangeProp?.(changes)
+      const connectorChanges: typeof changes = []
+      const relationshipChanges: typeof changes = []
+      for (const change of changes) {
+        if ('id' in change && connectorIdSet.has(change.id)) {
+          connectorChanges.push(change)
+        } else {
+          relationshipChanges.push(change)
+        }
+      }
+      if (connectorChanges.length > 0) {
+        handleConnectorEdgesChange(connectorChanges as any)
+      }
+      handleEdgesChange(relationshipChanges)
+      onEdgesChangeProp?.(relationshipChanges)
     },
-    [handleEdgesChange, onEdgesChangeProp],
+    [
+      connectorIdSet,
+      handleConnectorEdgesChange,
+      handleEdgesChange,
+      onEdgesChangeProp,
+    ],
+  )
+
+  // Connector deletion trigger (M1) — React Flow has onNodesDelete but no
+  // onEdgesDelete wired anywhere yet. Only connector edges reach the
+  // callback with an action attached; relationship edges pass through
+  // untouched (deliberately — fixing that pre-existing bug class is a
+  // product decision outside Phase 1 scope, see tech-spec §7).
+  const onEdgesDelete = useCallback<OnEdgesDelete>(
+    (deletedEdges) => {
+      for (const edge of deletedEdges) {
+        if (edge.type === 'connector') onConnectorDelete?.(edge.id)
+      }
+    },
+    [onConnectorDelete],
   )
 
   // Delete/Backspace on a selected area node (GH #106 Bug 1 fix). Table nodes
@@ -1069,10 +1250,12 @@ export function ReactFlowCanvas({
       for (const deletedNode of deletedNodes) {
         if (areaIdSet.has(deletedNode.id)) {
           onAreaDelete?.(deletedNode.id)
+        } else if (shapeIdSet.has(deletedNode.id)) {
+          onShapeDelete?.(deletedNode.id)
         }
       }
     },
-    [areaIdSet, onAreaDelete],
+    [areaIdSet, shapeIdSet, onAreaDelete, onShapeDelete],
   )
 
   // Track whether a connection drag is in progress to reveal target handles
@@ -1109,8 +1292,42 @@ export function ReactFlowCanvas({
     () => perfTracker.getSnapshot().hideEdges,
     () => false,
   )
+  // Merge relationship edges with connector edges (Phase 1) into the single
+  // <ReactFlow edges> array. Connectors are additive — the ablation branch
+  // is unchanged.
+  const mergedEdges = useMemo(
+    () => [...edges, ...connectorEdgesState],
+    [edges, connectorEdgesState],
+  )
   const effectiveEdges =
-    enableEdgeAblation && hideEdges ? EMPTY_EDGES : edges
+    enableEdgeAblation && hideEdges ? EMPTY_EDGES : mergedEdges
+
+  // The one predicate that owns BOTH rule sets (tech-spec §4): today's
+  // column-handle table-to-table rule, unchanged, and the new shape-to-shape
+  // rule (no self-connectors, no line-kind endpoint, no mixed table/shape
+  // pair in either direction). connectionMode stays at its default (strict).
+  const isValidConnection = useCallback<IsValidConnection>(
+    (connection) => {
+      const sourceNode = mergedNodes.find((n) => n.id === connection.source)
+      const targetNode = mergedNodes.find((n) => n.id === connection.target)
+      if (!sourceNode || !targetNode) return false
+
+      if (sourceNode.type === 'table' && targetNode.type === 'table') {
+        return (
+          parseColumnHandleId(connection.sourceHandle ?? '') !== null &&
+          parseColumnHandleId(connection.targetHandle ?? '') !== null
+        )
+      }
+      if (sourceNode.type === 'shape' && targetNode.type === 'shape') {
+        if (sourceNode.id === targetNode.id) return false
+        const sourceShape = (sourceNode as unknown as ShapeNodeType).data.shape
+        const targetShape = (targetNode as unknown as ShapeNodeType).data.shape
+        return sourceShape.kind !== 'line' && targetShape.kind !== 'line'
+      }
+      return false // every mixed pair, both directions
+    },
+    [mergedNodes],
+  )
 
   // Hybrid canvas rendering (GH #142 → canvas migration) is UNCONDITIONAL on
   // the main board (canvas-unconditional-default: the `?canvas=0` rollback
@@ -1136,19 +1353,23 @@ export function ReactFlowCanvas({
         >
           {/* Global SVG marker definitions for cardinality indicators */}
           <CardinalityMarkerDefs />
+          {/* Static arrowhead marker defs for connectors and line/arrow shapes (D-9) */}
+          <ConnectorMarkerDefs />
 
           <ReactFlow
-            // Area nodes are a different node type merged behind tables; React Flow
-            // resolves them at runtime via the `area` entry in nodeTypes. The cast
-            // keeps the strongly-typed table handlers (onNodesChange<TableNodeType>)
-            // without threading a union node type through the whole canvas.
+            // Area/shape nodes are different node types merged behind/around
+            // tables; React Flow resolves them at runtime via the `area`/
+            // `shape` entries in nodeTypes. The cast keeps the strongly-typed
+            // table handlers (onNodesChange<TableNodeType>) without
+            // threading a union node type through the whole canvas.
             nodes={mergedNodes as unknown as typeof nodes}
-            edges={effectiveEdges}
+            edges={effectiveEdges as unknown as typeof edges}
             onNodesChange={onNodesChange}
             onEdgesChange={onEdgesChange}
             onConnect={onConnect}
             onConnectStart={onConnectStart}
             onConnectEnd={onConnectEnd}
+            isValidConnection={isValidConnection}
             onNodeClick={onNodeClick}
             onPaneClick={onPaneClick}
             onNodeMouseEnter={onNodeMouseEnter}
@@ -1163,6 +1384,7 @@ export function ReactFlowCanvas({
             onMove={(_event, viewport) => perfTracker.noteMove(viewport.zoom)}
             onMoveEnd={() => perfTracker.clearGesture()}
             onNodesDelete={onNodesDelete}
+            onEdgesDelete={onEdgesDelete}
             deleteKeyCode={DELETE_KEY_CODES}
             nodeTypes={memoizedNodeTypes}
             edgeTypes={memoizedEdgeTypes}
@@ -1196,6 +1418,16 @@ export function ReactFlowCanvas({
               />
             )}
           </ReactFlow>
+          {/* H1: mounts ONLY while a draw tool is armed. pointer-events:none
+              — see ShapeDrawOverlay's own module comment for the full
+              wheel/zoom-survival mechanism. */}
+          {isDrawTool(activeTool) && (
+            <ShapeDrawOverlay
+              activeTool={activeTool}
+              onCommit={(kind, rect, drag) => onDrawCommit?.(kind, rect, drag)}
+              onDisarm={() => onDrawDisarm?.()}
+            />
+          )}
         </div>
       </CanvasEditContext.Provider>
     </CanvasModeContext.Provider>
