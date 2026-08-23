@@ -32,6 +32,13 @@ export interface ShapeToolPaletteProps {
   /** No palette at all on the public share-link path (§6a). */
   isPublic: boolean
   onCreateArea: () => void
+  /**
+   * Keyboard creation (FR-019): Enter/Space on an ALREADY-armed tool button
+   * creates a default-sized shape instead of re-toggling it off.
+   * Discriminated by `event.detail === 0` (keyboard-synthesised click), so
+   * a mouse double-click on the tool never creates a shape.
+   */
+  onKeyboardCreate?: (tool: 'rectangle' | 'ellipse' | 'diamond' | 'arrow' | 'text') => void
 }
 
 export function ShapeToolPalette({
@@ -41,6 +48,7 @@ export function ShapeToolPalette({
   canComment,
   isPublic,
   onCreateArea,
+  onKeyboardCreate,
 }: ShapeToolPaletteProps) {
   if (isPublic) return null
   if (!canEdit && !canComment) return null
@@ -74,9 +82,13 @@ export function ShapeToolPalette({
             aria-label={label}
             aria-pressed={activeTool === tool}
             data-testid={`shape-tool-${tool}`}
-            onClick={() =>
+            onClick={(event) => {
+              if (activeTool === tool && event.detail === 0) {
+                onKeyboardCreate?.(tool)
+                return
+              }
               onSelectTool(activeTool === tool ? 'select' : tool)
-            }
+            }}
           >
             <Icon className="h-4 w-4" />
           </Button>
