@@ -419,4 +419,95 @@ describe('getSharedWhiteboardHandler', () => {
       expect(tableNames).not.toContain('whiteboard_b_table')
     })
   })
+
+  // ───────────────────────────────────────────────────────────────────────
+  // §6a (Phase 1: shapes-and-connectors) / INT-05
+  // ───────────────────────────────────────────────────────────────────────
+
+  describe('§6a shapes/connectors (INT-05)', () => {
+    it('returns shapes and connectors for the token whiteboard only', async () => {
+      const { createShape } = await import('@/data/shape')
+      const { createConnector } = await import('@/data/connector')
+      const a = await createShape({
+        whiteboardId: WHITEBOARD_ID,
+        kind: 'rectangle',
+        positionX: 0,
+        positionY: 0,
+        width: 100,
+        height: 100,
+        props: { kind: 'rectangle' },
+      })
+      const b = await createShape({
+        whiteboardId: WHITEBOARD_ID,
+        kind: 'ellipse',
+        positionX: 200,
+        positionY: 0,
+        width: 100,
+        height: 100,
+        props: { kind: 'ellipse' },
+      })
+      const connector = await createConnector({
+        whiteboardId: WHITEBOARD_ID,
+        sourceShapeId: a.id,
+        targetShapeId: b.id,
+      })
+
+      const created = await createShareLinkHandler(ctxFor(ADMIN_ID), {
+        whiteboardId: WHITEBOARD_ID,
+        expiresInHours: SEVEN_DAYS_HOURS,
+      })
+      const token = (created as any).token as string
+
+      const result = await getSharedWhiteboardHandler(token)
+
+      expect((result as any).shapes.map((s: any) => s.id).sort()).toEqual(
+        [a.id, b.id].sort(),
+      )
+      expect((result as any).connectors.map((c: any) => c.id)).toEqual([
+        connector.id,
+      ])
+    })
+
+    it('never returns a sibling whiteboard shapes/connectors (IDOR)', async () => {
+      const { createShape } = await import('@/data/shape')
+      const otherProjectId = makeProject({
+        name: 'Other Project 2',
+        ownerId: OWNER_ID,
+      }).id
+      const otherWhiteboardId = makeWhiteboard({
+        projectId: otherProjectId,
+        name: 'Other Whiteboard 2',
+      }).id
+      const ownShape = await createShape({
+        whiteboardId: WHITEBOARD_ID,
+        kind: 'rectangle',
+        positionX: 0,
+        positionY: 0,
+        width: 100,
+        height: 100,
+        props: { kind: 'rectangle' },
+      })
+      await createShape({
+        whiteboardId: otherWhiteboardId,
+        kind: 'rectangle',
+        positionX: 0,
+        positionY: 0,
+        width: 100,
+        height: 100,
+        props: { kind: 'rectangle' },
+      })
+
+      const created = await createShareLinkHandler(ctxFor(ADMIN_ID), {
+        whiteboardId: WHITEBOARD_ID,
+        expiresInHours: SEVEN_DAYS_HOURS,
+      })
+      const token = (created as any).token as string
+
+      const result = await getSharedWhiteboardHandler(token)
+
+      expect((result as any).shapes.map((s: any) => s.id)).toEqual([
+        ownShape.id,
+      ])
+    })
+  })
 })
