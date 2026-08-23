@@ -10,7 +10,7 @@ import type {
 } from '@/data/schema'
 import type { WhiteboardWithDiagram } from '@/data/whiteboard'
 import type { RelationshipWithDetails } from '@/data/relationship'
-import type { Area, CommentWithAuthor } from '@/data/models'
+import type { Area, CommentWithAuthor, Connector, Shape } from '@/data/models'
 import type { LayoutOptions, LayoutResult } from '@/lib/canvas/layout-engine'
 import type { EffectiveRole } from '@/data/permission'
 import {
@@ -27,6 +27,8 @@ import {
   findRelationshipsByWhiteboardIdWithDetails,
 } from '@/data/relationship'
 import { findAreasByWhiteboard } from '@/data/area'
+import { findShapesByWhiteboard } from '@/data/shape'
+import { findConnectorsByWhiteboard } from '@/data/connector'
 import { findCommentsByWhiteboardId } from '@/data/comment'
 import { computeLayout } from '@/lib/canvas/layout-engine'
 import { nowMs, transaction, update } from '@/db'
@@ -128,6 +130,39 @@ export const getWhiteboardAreas = createServerFn({
         throw error
       }
     }),
+  )
+
+/**
+ * Load all shapes and connectors for a whiteboard (Phase 1:
+ * shapes-and-connectors). Mirrors getWhiteboardAreas — VIEWER may read. One
+ * call returns both collections so the client never renders a connector
+ * before its endpoint shapes exist.
+ * @requires viewer
+ */
+export const getWhiteboardShapes = createServerFn({
+  method: 'GET',
+})
+  .inputValidator((whiteboardId: string) => whiteboardId)
+  .handler(
+    requireAuth(
+      async (
+        { user },
+        whiteboardId,
+      ): Promise<{ shapes: Array<Shape>; connectors: Array<Connector> }> => {
+        const projectId = await getWhiteboardProjectId(whiteboardId)
+        await requireServerFnRole(user.id, projectId, 'VIEWER')
+        try {
+          const [shapes, connectors] = await Promise.all([
+            findShapesByWhiteboard(whiteboardId),
+            findConnectorsByWhiteboard(whiteboardId),
+          ])
+          return { shapes, connectors }
+        } catch (error) {
+          console.error('Error fetching shapes:', error)
+          throw error
+        }
+      },
+    ),
   )
 
 /**
