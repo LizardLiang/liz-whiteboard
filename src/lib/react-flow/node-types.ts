@@ -10,6 +10,8 @@ import { TableNode } from '@/components/whiteboard/TableNode'
 import { RelationshipEdge } from '@/components/whiteboard/RelationshipEdge'
 import { AreaNode } from '@/components/whiteboard/AreaNode'
 import { CommentNode } from '@/components/whiteboard/CommentNode'
+import { ShapeNode } from '@/components/whiteboard/ShapeNode'
+import { ConnectorEdge } from '@/components/whiteboard/ConnectorEdge'
 
 /**
  * React Flow node type registry
@@ -19,6 +21,7 @@ export const nodeTypes: NodeTypes = {
   table: TableNode,
   area: AreaNode,
   comment: CommentNode,
+  shape: ShapeNode,
 }
 
 /**
@@ -27,4 +30,5 @@ export const nodeTypes: NodeTypes = {
  */
 export const edgeTypes: EdgeTypes = {
   relationship: RelationshipEdge,
+  connector: ConnectorEdge,
 }
