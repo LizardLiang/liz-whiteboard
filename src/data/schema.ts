@@ -853,7 +853,7 @@ export const createShapeSchema = z.object({
   width: z.number().positive().max(100_000),
   height: z.number().positive().max(100_000),
   text: z.string().max(SHAPE_LABEL_MAX_LENGTH).nullable().default(null),
-  style: shapeStyleSchema.default({}),
+  style: shapeStyleSchema.optional(),
   props: shapePropsSchema,
 })
 
@@ -884,7 +884,7 @@ export const createConnectorSchema = z
     whiteboardId: z.string().uuid(),
     sourceShapeId: z.string().uuid(),
     targetShapeId: z.string().uuid(),
-    style: connectorStyleSchema.default({}),
+    style: connectorStyleSchema.optional(),
   })
   .refine((data) => data.sourceShapeId !== data.targetShapeId, {
     message: 'A shape cannot be connected to itself',
@@ -892,6 +892,9 @@ export const createConnectorSchema = z
   })
 
 export type ShapeKind = z.infer<typeof shapeKindSchema>
+export type ShapeStyle = z.infer<typeof shapeStyleSchema>
+export type ShapeProps = z.infer<typeof shapePropsSchema>
+export type ConnectorStyle = z.infer<typeof connectorStyleSchema>
 export type CreateShape = z.input<typeof createShapeSchema>
 export type UpdateShape = z.infer<typeof updateShapeSchema>
 export type CreateConnector = z.input<typeof createConnectorSchema>

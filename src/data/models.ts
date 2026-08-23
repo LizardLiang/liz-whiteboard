@@ -6,7 +6,14 @@
 // row-mapping (see src/db.ts): datetimes as `Date`, integer booleans as
 // `boolean`, and JSONB text columns parsed into values.
 
-import type { Cardinality, ProjectRoleValue } from './schema'
+import type {
+  Cardinality,
+  ConnectorStyle,
+  ProjectRoleValue,
+  ShapeKind,
+  ShapeProps,
+  ShapeStyle,
+} from './schema'
 
 /** Permissive JSON value (mirrors the old Prisma `JsonValue`). */
 export type JsonValue =
@@ -88,6 +95,14 @@ export interface WhiteboardShareLink {
  *
  * See `PersistedSnapshotPayload` for the shape this becomes once it has been
  * written to and reloaded from the DB — the two are NOT interchangeable.
+ *
+ * `shapes`/`connectors` are REQUIRED here (tech-spec.md §6/FR-035a) — this is
+ * a fresh capture, and `captureWhiteboardState` has an explicit
+ * `Promise<SnapshotPayload>` return annotation, so omitting either key at the
+ * capture site fails to compile. Contrast with `PersistedSnapshotPayload`
+ * below, where both are OPTIONAL because every snapshot captured before this
+ * feature existed has neither key. Do not make these optional here — that
+ * would silently defeat the compile-time guard.
  */
 export interface SnapshotPayload {
   whiteboard: {
@@ -98,6 +113,8 @@ export interface SnapshotPayload {
   tables: Array<DiagramTable & { columns: Array<Column> }>
   relationships: Array<Relationship>
   areas: Array<Area>
+  shapes: Array<Shape>
+  connectors: Array<Connector>
 }
 
 /**
@@ -126,6 +143,16 @@ type WithPersistedDates<T extends { createdAt: Date; updatedAt: Date }> = Omit<
  * nested `createdAt`/`updatedAt` is a `string`, matching what
  * `coerceStoredDate` in `whiteboard-snapshot.ts` is defending against at
  * runtime.
+ *
+ * `shapes`/`connectors` are OPTIONAL here — FR-035a. Every snapshot captured
+ * before this feature existed has neither key, and that payload is a frozen
+ * blob that is never migrated. `restoreWhiteboardFromSnapshot`'s parameter is
+ * `SnapshotPayload | PersistedSnapshotPayload`, so `payload.shapes` narrows to
+ * `Array<...> | undefined` and TypeScript refuses to compile a bare
+ * `for (const shape of payload.shapes)` — the `?? []` at the restore call
+ * site is the only thing that type-checks, not defensive style. Do NOT make
+ * these required "for symmetry" — that turns every historical version
+ * permanently un-restorable.
  */
 export interface PersistedSnapshotPayload {
   whiteboard: {
@@ -140,6 +167,8 @@ export interface PersistedSnapshotPayload {
   >
   relationships: Array<WithPersistedDates<Relationship>>
   areas: Array<WithPersistedDates<Area>>
+  shapes?: Array<WithPersistedDates<Shape>>
+  connectors?: Array<WithPersistedDates<Connector>>
 }
 
 /**
@@ -245,6 +274,45 @@ export interface Area {
   width: number
   height: number
   memberTableIds: Array<string>
+  createdAt: Date
+  updatedAt: Date
+}
+
+/**
+ * A polymorphic drawn shape (Phase 1: shapes-and-connectors). Five kinds
+ * (rectangle, ellipse, diamond, line, text) share the same row shape:
+ * generic geometry in real columns, kind-specific data in `props`, visual
+ * styling in `style`. See tech-spec.md §3 for the full rationale.
+ */
+export interface Shape {
+  id: string
+  whiteboardId: string
+  kind: ShapeKind
+  positionX: number
+  positionY: number
+  width: number
+  height: number
+  rotation: number
+  zIndex: number
+  text: string | null
+  style: ShapeStyle
+  props: ShapeProps
+  createdAt: Date
+  updatedAt: Date
+}
+
+/**
+ * A shape-to-shape connector (Phase 1: shapes-and-connectors). Endpoints are
+ * dedicated indexed columns (FR-031), never inside a JSON blob. No stored
+ * path — geometry is derived at render time from both endpoints' bounds
+ * (FR-031a).
+ */
+export interface Connector {
+  id: string
+  whiteboardId: string
+  sourceShapeId: string
+  targetShapeId: string
+  style: ConnectorStyle
   createdAt: Date
   updatedAt: Date
 }
