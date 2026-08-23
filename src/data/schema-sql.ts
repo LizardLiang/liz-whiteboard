@@ -280,6 +280,60 @@ CREATE TABLE IF NOT EXISTS "Area" (
 
 CREATE INDEX IF NOT EXISTS "Area_whiteboardId_idx" ON "Area"("whiteboardId");
 
+-- Shapes and Connectors (Phase 1: shapes-and-connectors feature). Five shape
+-- kinds are stored as one polymorphic row: generic geometry in real columns,
+-- kind-specific data in a validated JSON "props" blob, styling in "style".
+-- Future kinds (ink, image) are new "kind" values, never new columns.
+CREATE TABLE IF NOT EXISTS "Shape" (
+    "id"           TEXT NOT NULL PRIMARY KEY,
+    "whiteboardId" TEXT NOT NULL,
+    "kind"         TEXT NOT NULL,
+    "positionX"    REAL NOT NULL,
+    "positionY"    REAL NOT NULL,
+    "width"        REAL NOT NULL,
+    "height"       REAL NOT NULL,
+    "rotation"     REAL NOT NULL DEFAULT 0,
+    "zIndex"       INTEGER NOT NULL DEFAULT 0,
+    "text"         TEXT,
+    "style"        JSONB,
+    "props"        JSONB,
+    "createdAt"    DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    "updatedAt"    DATETIME NOT NULL,
+    CONSTRAINT "Shape_whiteboardId_fkey" FOREIGN KEY ("whiteboardId")
+        REFERENCES "Whiteboard" ("id") ON DELETE CASCADE ON UPDATE CASCADE
+);
+
+CREATE INDEX IF NOT EXISTS "Shape_whiteboardId_idx" ON "Shape"("whiteboardId");
+
+-- Connectors are their own table with dedicated indexed endpoint COLUMNS
+-- (FR-031) — never inside a JSON blob. No stored path: geometry is derived
+-- at render time from both endpoints' bounds (FR-031a).
+CREATE TABLE IF NOT EXISTS "Connector" (
+    "id"            TEXT NOT NULL PRIMARY KEY,
+    "whiteboardId"  TEXT NOT NULL,
+    "sourceShapeId" TEXT NOT NULL,
+    "targetShapeId" TEXT NOT NULL,
+    "style"         JSONB,
+    "createdAt"     DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    "updatedAt"     DATETIME NOT NULL,
+    CONSTRAINT "Connector_whiteboardId_fkey" FOREIGN KEY ("whiteboardId")
+        REFERENCES "Whiteboard" ("id") ON DELETE CASCADE ON UPDATE CASCADE,
+    CONSTRAINT "Connector_sourceShapeId_fkey" FOREIGN KEY ("sourceShapeId")
+        REFERENCES "Shape" ("id") ON DELETE CASCADE ON UPDATE CASCADE,
+    CONSTRAINT "Connector_targetShapeId_fkey" FOREIGN KEY ("targetShapeId")
+        REFERENCES "Shape" ("id") ON DELETE CASCADE ON UPDATE CASCADE
+);
+
+CREATE INDEX IF NOT EXISTS "Connector_whiteboardId_idx"  ON "Connector"("whiteboardId");
+CREATE INDEX IF NOT EXISTS "Connector_sourceShapeId_idx" ON "Connector"("sourceShapeId");
+CREATE INDEX IF NOT EXISTS "Connector_targetShapeId_idx" ON "Connector"("targetShapeId");
+-- A second A->B connector would render exactly on top of the first
+-- (invisible, unselectable); B->A remains allowed (a different, meaningful
+-- arrow). Documented assumption, not a locked user decision — dropping this
+-- index later is a one-line change with no data impact.
+CREATE UNIQUE INDEX IF NOT EXISTS "Connector_source_target_key"
+    ON "Connector"("sourceShapeId", "targetShapeId");
+
 CREATE TABLE IF NOT EXISTS "WhiteboardSnapshot" (
     "id" TEXT NOT NULL PRIMARY KEY,
     "whiteboardId" TEXT NOT NULL,
