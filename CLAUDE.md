@@ -25,7 +25,11 @@
 - **Framework**: TanStack Start 1.132 (full-stack React framework)
 - **Router**: TanStack React Router 1.132
 - **State Management**: TanStack Query 5.66
-- **Database**: PostgreSQL via Prisma 6.16
+- **Database**: SQLite, raw SQL — no ORM, no migration runner. `bun:sqlite` under Bun in
+  production, `node:sqlite` under Node in dev/tooling. The schema is a hand-written SQL string
+  (`src/data/schema-sql.ts`) applied idempotently with `CREATE TABLE IF NOT EXISTS` at boot
+  (`src/db.ts`) — a new table needs no migration, and re-running the schema on an existing
+  database file is always safe.
 - **Validation**: Zod 4.1
 - **UI**: shadcn/ui + TailwindCSS 4.0
 - **Canvas**: React Flow (@xyflow/react)
@@ -45,11 +49,8 @@ src/
 ├── routes/          # TanStack Router routes
 ├── lib/             # Utilities and business logic
 ├── hooks/           # React hooks
-├── data/            # Data access layer (Prisma)
+├── data/            # Data access layer (raw SQL over bun:sqlite/node:sqlite, no ORM)
 └── styles.css       # Global styles
-
-prisma/
-└── schema.prisma    # Database schema
 
 specs/001-collaborative-er-whiteboard/
 ├── spec.md          # Feature specification
@@ -70,11 +71,10 @@ bun install
 bun run dev
 
 # Database operations
-bun run db:push      # Push schema changes
-bun run db:generate  # Generate Prisma client
-bun run db:migrate   # Create migration
-bun run db:studio    # Open Prisma Studio
-bun run db:seed      # Seed database
+# There is no db:push/db:generate/db:migrate/db:studio — no ORM, no migration runner.
+# The schema (src/data/schema-sql.ts) applies itself via CREATE TABLE IF NOT EXISTS at
+# boot (src/db.ts). To reset a dev database, delete the SQLite file and restart the server.
+bun run db:seed      # Seed database (scripted inserts, not an ORM seed)
 
 # Code quality
 bun run lint         # Run ESLint
@@ -116,7 +116,9 @@ bunx shadcn@latest add <component-name>
 ## Important Notes
 
 - Environment variables are in `.env.local` (NOT `.env`)
-- Database schema is in `prisma/schema.prisma`
+- Database schema is a hand-written SQL string in `src/data/schema-sql.ts`, applied at boot by
+  `src/db.ts` via `CREATE TABLE IF NOT EXISTS` — there is no ORM and no migration runner. Add a
+  new entity as a new `CREATE TABLE IF NOT EXISTS` block; it needs no migration.
 - Server functions use `createServerFn` from `@tanstack/react-start`
 - WebSocket events follow patterns in `specs/001-collaborative-er-whiteboard/contracts/websocket-events.md`
 - All UI must be accessible and responsive
@@ -138,13 +140,13 @@ This is a git repository. Use standard git commands for version control:
 | Install dev package    | `bun add -d <package>`               |
 | Add shadcn component   | `bunx shadcn@latest add <component>` |
 | Run dev server         | `bun run dev`                        |
-| Push database schema   | `bun run db:push`                    |
-| Generate Prisma client | `bun run db:generate`                |
+| Add/modify a table     | Edit `src/data/schema-sql.ts`, restart the server |
 
 ## Troubleshooting
 
-- If Prisma client is missing: `bun run db:generate`
-- If database is out of sync: `bun run db:push`
+- If a schema change didn't take effect: restart the server — `CREATE TABLE IF NOT EXISTS` in
+  `src/data/schema-sql.ts` only adds new tables/indexes on boot; it does not alter existing
+  columns. There is no `db:generate`/`db:push` step because there is no ORM.
 - If shadcn component import fails: `bunx shadcn@latest add <component-name>`
 - If TypeScript errors: Check `tsconfig.json` paths are correct
 
@@ -164,8 +166,8 @@ Use fd -e py to find all Python files"
 ## Active Technologies
 
 - TypeScript 5.7, React 19.2 (002-react-flow-migration)
-- PostgreSQL via Prisma (existing schema for tables, columns, relationships, positions) (002-react-flow-migration)
-- PostgreSQL via Prisma (existing schema preserved) (003-react-flow-migration)
+- SQLite via raw SQL, no ORM (existing schema for tables, columns, relationships, positions) (002-react-flow-migration)
+- SQLite via raw SQL, no ORM (existing schema preserved) (003-react-flow-migration)
 
 ## Recent Changes
 
