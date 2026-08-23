@@ -145,6 +145,19 @@ export async function findConnectorsByShapeId(
   }
 }
 
+/** Find a connector by ID. @returns Connector or null if not found. */
+export async function findConnectorById(id: string): Promise<Connector | null> {
+  try {
+    return mapConnector(
+      db.prepare('SELECT * FROM "Connector" WHERE "id" = ?').get(id),
+    )
+  } catch (error) {
+    throw new Error(
+      `Failed to fetch connector: ${error instanceof Error ? error.message : 'Unknown error'}`,
+    )
+  }
+}
+
 /**
  * Delete a single connector (not a cascade — used for the standalone
  * `connector:delete` event, e.g. removing a mis-drawn arrow).
