@@ -454,3 +454,115 @@
   z-index: 5;
   background: rgb(0 0 0 / 0.25);
 }
+
+/* ----------------------------------------------------------------------------
+ * Shapes and Connectors (Phase 1) — pointer-events strategy (tech-spec §5)
+ *
+ * The transparent-fill pitfall: without this, a shape with `fill: none`
+ * would swallow every click across its whole bounding box, breaking
+ * box-select and pane-click for the entire rectangle, not just its visible
+ * outline. `.react-flow__node-shape` alone TIES with React Flow's own
+ * `.react-flow__node` on specificity, so which one wins depends on
+ * stylesheet order — the `.react-flow ` prefix is the same workaround this
+ * file already uses for handles above. Do not drop it.
+ * ---------------------------------------------------------------------------- */
+.react-flow .react-flow__node-shape {
+  pointer-events: none;
+}
+
+/* The COMPLETE list of descendants that re-enable pointer events. Anything
+ * not listed here is inert — that is the point of the rule, and it is also
+ * how resizing silently breaks if a future descendant is added without
+ * being added here too (M4). */
+.react-flow .react-flow__node-shape .shape-hit-stroke {
+  pointer-events: stroke;
+}
+.react-flow .react-flow__node-shape .shape-painted {
+  pointer-events: visiblePainted;
+}
+.react-flow .react-flow__node-shape .shape-painted--unfilled {
+  pointer-events: stroke;
+}
+.react-flow .react-flow__node-shape .shape-label {
+  pointer-events: auto;
+}
+.react-flow .react-flow__node-shape .react-flow__resize-control {
+  pointer-events: all;
+}
+/* Handles are the fifth and last re-enabling descendant, but their rules
+ * are state-dependent (selected / hovered / .is-connecting) — see the
+ * dedicated "Shape node handles" block below. Nothing else re-enables. */
+
+/* Selection / focus / placeholder styling (D-8) — there is no generic
+ * .react-flow__node.selected rule to inherit; tables have a bespoke ring,
+ * areas have none. */
+.react-flow__node-shape.selected {
+  box-shadow: 0 0 0 2px var(--rf-edge-stroke-selected);
+}
+
+/* Keyboard-focused (FR-019a) — visibly thicker, offset double ring, NEVER
+ * dashed, so it can never be confused with the dashed empty-text-box
+ * outline below when a shape is both focused and selected. */
+.react-flow__node-shape.kbd-focused {
+  box-shadow:
+    0 0 0 2px var(--rf-background),
+    0 0 0 4px var(--rf-edge-stroke-selected);
+}
+
+/* ---- Shape node handles ------------------------------------------------- */
+/* The order of this block is load-bearing (N5): several rules here tie on
+ * specificity with the rules they must beat and win only on SOURCE ORDER
+ * (this block must come after the generic handle block above). */
+
+/* The node-covering TARGET handle. Overrides the global 28x28 round handle. */
+.react-flow .react-flow__node-shape .react-flow__handle.shape-tgt {
+  top: 0;
+  left: 0;
+  width: 100%;
+  height: 100%;
+  transform: none; /* the global block centres handles; this one fills */
+  border-radius: inherit; /* never a circle */
+  background: transparent;
+  pointer-events: none; /* inert until a connection starts */
+}
+
+/* Never paint the global connect-drag dot on the covering handle — it would
+ * sit in the centre of every shape during ANY connect drag, ER drags
+ * included. */
+.is-connecting .react-flow .react-flow__node-shape .react-flow__handle.shape-tgt::before,
+.react-flow .react-flow__node-shape .react-flow__handle.shape-tgt::before {
+  content: none;
+}
+
+/* Drop-anywhere: pointer-active only while a connection is in progress.
+ * Mirrors the existing `.is-connecting … .target.connectionindicator` rule
+ * above rather than inventing a second mechanism. */
+.is-connecting .react-flow .react-flow__node-shape .react-flow__handle.shape-tgt {
+  pointer-events: all;
+}
+
+/* The four SOURCE handles: small, visible on selected/focused/hovered, and
+ * forced inert during a connect drag (M5 — no invalid dead-spots on every
+ * other shape's edge midpoints while dragging a connection). 28x28 size is
+ * kept deliberately — the existing app-wide touch/zoom target size. */
+.react-flow .react-flow__node-shape .react-flow__handle.shape-src {
+  pointer-events: none;
+}
+.react-flow .react-flow__node-shape.selected .react-flow__handle.shape-src,
+.react-flow .react-flow__node-shape:hover .react-flow__handle.shape-src,
+.react-flow .react-flow__node-shape:focus-within .react-flow__handle.shape-src {
+  pointer-events: all;
+}
+.is-connecting .react-flow .react-flow__node-shape .react-flow__handle.shape-src {
+  pointer-events: none;
+}
+
+/* ---- Connector edges ----------------------------------------------------- */
+.react-flow__edge.connector path.react-flow__edge-path {
+  transition:
+    stroke-width 0.2s ease,
+    opacity 0.2s ease;
+}
+.react-flow__edge.connector:hover path.react-flow__edge-path {
+  stroke-width: 2.5;
+}
