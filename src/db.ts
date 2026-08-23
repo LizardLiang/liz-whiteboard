@@ -19,6 +19,7 @@ import type {
   CollaborationSession,
   Column,
   Comment,
+  Connector,
   DiagramTable,
   Folder,
   JsonValue,
@@ -28,11 +29,13 @@ import type {
   ProjectMember,
   Relationship,
   Session,
+  Shape,
   User,
   Whiteboard,
   WhiteboardShareLink,
   WhiteboardSnapshot,
 } from './data/models'
+import type { ShapeKind, ShapeProps, ShapeStyle, ConnectorStyle } from './data/schema'
 import type { Cardinality, ProjectRoleValue } from './data/schema'
 
 const require = createRequire(import.meta.url)
@@ -463,6 +466,88 @@ export function mapArea(r: Row): Area | null {
     width: Number(r.width),
     height: Number(r.height),
     memberTableIds: Array.isArray(members) ? (members as Array<string>) : [],
+    createdAt: fromDbDate(r.createdAt),
+    updatedAt: fromDbDate(r.updatedAt),
+  }
+}
+
+/** Fallback style/props applied when a Shape/Connector row's JSON blob is
+ * null or malformed — a row must never be un-renderable because of a bad
+ * blob (tech-spec.md §3). */
+const DEFAULT_SHAPE_STYLE: ShapeStyle = {
+  fill: 'none',
+  stroke: 'slate',
+  strokeWidth: 2,
+  strokeStyle: 'solid',
+  fontSize: 16,
+  textColor: 'auto',
+}
+
+const DEFAULT_CONNECTOR_STYLE: ConnectorStyle = {
+  stroke: 'slate',
+  strokeWidth: 2,
+  strokeStyle: 'solid',
+  arrowStart: false,
+  arrowEnd: true,
+}
+
+function defaultShapeProps(kind: ShapeKind): ShapeProps {
+  if (kind === 'line') {
+    return {
+      kind: 'line',
+      x1: 0,
+      y1: 0.5,
+      x2: 1,
+      y2: 0.5,
+      arrowStart: false,
+      arrowEnd: true,
+    }
+  }
+  return { kind } as ShapeProps
+}
+
+function isPlainObject(v: unknown): v is Record<string, unknown> {
+  return typeof v === 'object' && v !== null && !Array.isArray(v)
+}
+
+export function mapShape(r: Row): Shape | null {
+  if (!r) return null
+  const kind = r.kind as ShapeKind
+  const style = fromDbJson(r.style)
+  const props = fromDbJson(r.props)
+  return {
+    id: r.id as string,
+    whiteboardId: r.whiteboardId as string,
+    kind,
+    positionX: Number(r.positionX),
+    positionY: Number(r.positionY),
+    width: Number(r.width),
+    height: Number(r.height),
+    rotation: Number(r.rotation),
+    zIndex: Number(r.zIndex),
+    text: (r.text as string | null) ?? null,
+    style: isPlainObject(style)
+      ? ({ ...DEFAULT_SHAPE_STYLE, ...style } as ShapeStyle)
+      : DEFAULT_SHAPE_STYLE,
+    props: isPlainObject(props)
+      ? (props as unknown as ShapeProps)
+      : defaultShapeProps(kind),
+    createdAt: fromDbDate(r.createdAt),
+    updatedAt: fromDbDate(r.updatedAt),
+  }
+}
+
+export function mapConnector(r: Row): Connector | null {
+  if (!r) return null
+  const style = fromDbJson(r.style)
+  return {
+    id: r.id as string,
+    whiteboardId: r.whiteboardId as string,
+    sourceShapeId: r.sourceShapeId as string,
+    targetShapeId: r.targetShapeId as string,
+    style: isPlainObject(style)
+      ? ({ ...DEFAULT_CONNECTOR_STYLE, ...style } as ConnectorStyle)
+      : DEFAULT_CONNECTOR_STYLE,
     createdAt: fromDbDate(r.createdAt),
     updatedAt: fromDbDate(r.updatedAt),
   }
