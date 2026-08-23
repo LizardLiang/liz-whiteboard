@@ -10,10 +10,12 @@ import type {
   Area,
   Column,
   CommentWithAuthor,
+  Connector,
   DiagramTable,
   Relationship,
+  Shape,
 } from '@/data/models'
-import type { Cardinality, UpdateColumn } from '@/data/schema'
+import type { Cardinality, ShapeStyle, UpdateColumn } from '@/data/schema'
 import type { CreateColumnPayload } from '@/components/whiteboard/column/types'
 import type { Dialect } from '@/lib/ddl-generator'
 import type { ReconcileAfterDropParams } from '@/hooks/use-column-reorder-mutations'
@@ -306,6 +308,68 @@ export interface CommentNodeData extends Record<string, unknown> {
 export type CommentNodeType = Node<CommentNodeData, 'comment'>
 
 /**
+ * Data structure for a drawn shape node (Phase 1: shapes-and-connectors).
+ * Standalone interface, NOT a discriminated union with TableNodeData/
+ * AreaNodeData/CommentNodeData (D-7) — there is no existing union to join;
+ * each node type is registered by string key and merged via a cast.
+ *
+ * `canEdit` gates move/resize/connect/label affordances in one field —
+ * callers pass `hasMinimumRole(viewerRole, 'EDITOR')`, which is already
+ * `false` on the public share-link path (viewerRole is null there) AND for
+ * an authenticated VIEWER-role member (Apollo N1) — so this one field is
+ * what keeps a read-only viewer from selecting, dragging, resizing, or
+ * starting a connection from a shape.
+ */
+export interface ShapeNodeData extends Record<string, unknown> {
+  shape: Shape
+  canEdit: boolean
+  /** Keyboard-focus ring (FR-019a) — distinct from React Flow's own `selected`. */
+  isKeyboardFocused?: boolean
+  /** Persist a resize (NodeResizer onResizeEnd only, mirrors AreaNode/D-10). */
+  onResizeEnd?: (
+    shapeId: string,
+    bounds: {
+      positionX: number
+      positionY: number
+      width: number
+      height: number
+    },
+  ) => void
+  /** Persist a style-panel change (fill/stroke/width/dash). */
+  onStyleChange?: (shapeId: string, style: Partial<ShapeStyle>) => void
+  /** Commit the label editor's text. Empty text on an existing `text` shape
+   * deletes it (with connector cascade) through the same path as Delete. */
+  onLabelCommit?: (shapeId: string, text: string) => void
+  /** Delete this shape (with its connector cascade, FR-018). */
+  onDelete?: (shapeId: string) => void
+  /** Nudge/resize-by-keyboard (FR-019) — one shape:update per gesture. */
+  onNudge?: (
+    shapeId: string,
+    delta: { dx: number; dy: number },
+  ) => void
+  onKeyboardResize?: (
+    shapeId: string,
+    delta: { dw: number; dh: number },
+  ) => void
+}
+
+/** Complete shape node type for React Flow. */
+export type ShapeNodeType = Node<ShapeNodeData, 'shape'>
+
+/**
+ * Data structure for a shape-to-shape connector edge (Phase 1:
+ * shapes-and-connectors). Standalone interface (D-7). Geometry is NEVER
+ * stored here or anywhere — it is derived at render time from both
+ * endpoints' current bounds (FR-031a).
+ */
+export interface ConnectorEdgeData extends Record<string, unknown> {
+  connector: Connector
+}
+
+/** Complete connector edge type for React Flow. */
+export type ConnectorEdgeType = Edge<ConnectorEdgeData, 'connector'>
+
+/**
  * Canvas viewport state (replaces Konva CanvasViewport)
  */
 export interface ReactFlowViewport {
@@ -399,6 +463,31 @@ export const LAYOUT_CONSTRAINTS = {
   DEFAULT_NODE_WIDTH: 250,
   DEFAULT_NODE_HEIGHT: 150,
 } as const
+
+// ── Shapes and Connectors constants (Phase 1, tech-spec §8) ─────────────────
+
+/** Screen (not flow) pixels — a flow-unit threshold would change meaning
+ * with zoom. Below it, a draw gesture is a mis-click: nothing is created. */
+export const DRAW_DRAG_THRESHOLD_PX = 4
+
+/** FR-008's floor — enforced by NodeResizer AND clamped at draw-commit. */
+export const MIN_SHAPE_WIDTH = 24
+export const MIN_SHAPE_HEIGHT = 24
+
+/** Default sizes per kind, applied at draw-commit clamping and keyboard creation. */
+export const DEFAULT_SHAPE_SIZE = { width: 160, height: 100 }
+export const DEFAULT_TEXT_SIZE = { width: 200, height: 40 }
+export const DEFAULT_LINE_SIZE = { width: 160, height: 48 }
+
+/** FR-019's cascade offset for keyboard-created shapes: (n mod 8) * step, both axes. */
+export const KEYBOARD_CASCADE_STEP = 24
+
+/** Arrow-key nudge / Shift+arrow nudge, in flow units per keydown. */
+export const NUDGE_STEP = 8
+export const NUDGE_STEP_LARGE = 40
+
+/** The invisible hit-stroke width that makes a 1px unfilled outline grabbable. */
+export const CONNECT_HIT_STROKE_WIDTH = 12
 
 /**
  * Minimum subject-area node dimensions (GH #106). Shared floor between
