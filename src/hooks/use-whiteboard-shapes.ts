@@ -11,7 +11,7 @@
 // ReactFlowWhiteboard.tsx.
 
 import { useCallback, useEffect, useState } from 'react'
-import { useQuery } from '@tanstack/react-query'
+import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { toast } from 'sonner'
 import type { Connector, Shape } from '@/data/models'
 import type { ConnectorStyle, CreateShape, UpdateShape } from '@/data/schema'
@@ -97,6 +97,21 @@ export function useWhiteboardShapes(params: {
       setConnectors(data.connectors)
     }
   }, [data, isPublic])
+
+  // Keep the `['shapes', whiteboardId]` query CACHE in sync with every
+  // local mutation (create/update/delete, both own and collaborator), not
+  // just the initial fetch above. Every mutation in this hook only ever
+  // calls the local `setShapes`/`setConnectors` state setters — without
+  // this, `queryClient.getQueryData(['shapes', whiteboardId])` (read
+  // elsewhere, e.g. WhiteboardHistoryPanel's FR-035a live-count copy)
+  // would stay frozen at whatever the board looked like on first load,
+  // silently going stale the moment the user draws, edits, or deletes a
+  // shape — found while verifying FR-035a's restore-confirmation counts.
+  const queryClient = useQueryClient()
+  useEffect(() => {
+    if (isPublic) return
+    queryClient.setQueryData(['shapes', whiteboardId], { shapes, connectors })
+  }, [shapes, connectors, whiteboardId, isPublic, queryClient])
 
   // Live sync from other collaborators.
   useEffect(() => {

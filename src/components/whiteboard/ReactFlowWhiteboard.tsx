@@ -22,6 +22,7 @@ import {
   ReactFlowProvider,
   useNodesInitialized,
   useReactFlow,
+  useStoreApi,
   useUpdateNodeInternals,
   useViewport,
 } from '@xyflow/react'
@@ -1784,6 +1785,13 @@ function ReactFlowWhiteboardInner({
 
   // React Flow zoom API (requires ReactFlowProvider context)
   const reactFlowInstance = useReactFlow()
+  // FR-019a: `addSelectedNodes`/`unselectNodesAndEdges` are store-level
+  // methods, not exposed on `ReactFlowInstance` itself (unlike
+  // `screenToFlowPosition`/`setCenter`/etc above) — accessed via the store
+  // API instead. Routes through the exact same internal store the mouse
+  // click-to-select path already updates, so a keyboard-driven select is
+  // indistinguishable from a mouse one to every other consumer.
+  const reactFlowStoreApi = useStoreApi()
   const viewport = useViewport()
   const nodesInitialized = useNodesInitialized()
 
@@ -2962,13 +2970,61 @@ function ReactFlowWhiteboardInner({
     [connectors, canEdit],
   )
 
-  // Keyboard parity for shapes (FR-019): nudge/resize/connect/label-edit on
-  // the current React Flow selection. Mirrors the existing bare-key
-  // shortcut convention (see useMinimapFocusShortcut) for the input-target
-  // guard. Reads live selection via `reactFlowInstance.getNodes()` rather
-  // than a separately-tracked selection array, since React Flow's own
-  // controlled-node selection state is the single source of truth shapes
-  // already participate in (click-to-select).
+  // FR-019a: keyboard-focused shape (creation-order traversal), distinct
+  // from React Flow's own `selected` state. Deliberately NOT part of the
+  // `shapeNodes` memo above (see ReactFlowCanvas's `keyboardFocusedShapeId`
+  // prop comment) — it is rendered via a direct DOM class toggle instead, so
+  // moving focus can never itself clear a live selection.
+  const [focusedShapeId, setFocusedShapeId] = useState<string | null>(null)
+
+  // Order of shapes added to the selection via the KEYBOARD additive path
+  // (Ctrl/Cmd+Enter/Space) — gives FR-019's "first-selected to
+  // second-selected" a defined meaning under keyboard selection. Mouse
+  // shift-click selection has no such contract and is untouched; the
+  // Connect action below falls back to node-array order whenever this ref
+  // doesn't cover the current selection exactly, so mouse-only flows behave
+  // exactly as before.
+  const keyboardSelectionOrderRef = useRef<Array<string>>([])
+
+  // FR-019a: scroll the keyboard-focused shape into view when it is off the
+  // current viewport. Uses `screenToFlowPosition` on the window's own
+  // corners (the same viewport-centre convention `handleCreateArea`/
+  // `handleKeyboardCreateShape` already use) rather than a DOM query, so it
+  // needs no extra container ref.
+  useEffect(() => {
+    if (!focusedShapeId) return
+    const shape = shapes.find((s) => s.id === focusedShapeId)
+    if (!shape) return
+    const topLeft = reactFlowInstance.screenToFlowPosition({ x: 0, y: 0 })
+    const bottomRight = reactFlowInstance.screenToFlowPosition({
+      x: window.innerWidth,
+      y: window.innerHeight,
+    })
+    const isVisible =
+      shape.positionX >= topLeft.x &&
+      shape.positionX + shape.width <= bottomRight.x &&
+      shape.positionY >= topLeft.y &&
+      shape.positionY + shape.height <= bottomRight.y
+    if (!isVisible) {
+      reactFlowInstance.setCenter(
+        shape.positionX + shape.width / 2,
+        shape.positionY + shape.height / 2,
+        { zoom: reactFlowInstance.getZoom(), duration: 200 },
+      )
+    }
+  }, [focusedShapeId, shapes, reactFlowInstance])
+
+  // Keyboard parity for shapes (FR-019/FR-019a): traversal, additive
+  // selection, and nudge/resize/connect/label-edit on the current React Flow
+  // selection. Mirrors the existing bare-key shortcut convention (see
+  // useMinimapFocusShortcut) for the input-target guard. Reads live
+  // selection via `reactFlowInstance.getNodes()` rather than a separately-
+  // tracked selection array, since React Flow's own controlled-node
+  // selection state is the single source of truth shapes already
+  // participate in (click-to-select) — `addSelectedNodes`/
+  // `unselectNodesAndEdges` route through that exact same store, so a
+  // keyboard-driven select and a mouse-driven one are indistinguishable to
+  // every other consumer (NodeResizer visibility, ShapeStyleControls, etc).
   useEffect(() => {
     if (!canEdit || isPublic) return
 
@@ -2993,7 +3049,95 @@ function ReactFlowWhiteboardInner({
         return
       }
 
+      // Traverse shapes (FR-019a): bare 'n'/Shift+N, matching the existing
+      // z/m/f/r/d bare-key convention. Works with zero shapes selected —
+      // traversal is how a keyboard user REACHES a shape to select in the
+      // first place. Creation order (`shapes` is already `createdAt ASC`,
+      // src/data/shape.ts), wrapping at either end.
+      if (
+        (event.key === 'n' || event.key === 'N') &&
+        !event.ctrlKey &&
+        !event.metaKey &&
+        !event.altKey
+      ) {
+        if (shapes.length === 0) return
+        event.preventDefault()
+        const currentIndex = focusedShapeId
+          ? shapes.findIndex((s) => s.id === focusedShapeId)
+          : -1
+        const nextIndex = event.shiftKey
+          ? currentIndex <= 0
+            ? shapes.length - 1
+            : currentIndex - 1
+          : currentIndex === -1
+            ? 0
+            : (currentIndex + 1) % shapes.length
+        setFocusedShapeId(shapes[nextIndex].id)
+        return
+      }
+
       const selected = selectedShapeNodes()
+      const isBareEnterOrSpace =
+        (event.key === 'Enter' || event.key === ' ') &&
+        !event.ctrlKey &&
+        !event.metaKey
+
+      // Select the focused shape, replacing the previous selection
+      // (FR-019a) — UNLESS this Enter is actually FR-011's "open the label
+      // editor for the already-sole-selected shape" gesture (the focused
+      // shape already IS the one-and-only selection, so there is nothing
+      // left to "reach"). A second bare Enter on the same shape therefore
+      // opens the editor, exactly as before traversal existed.
+      if (
+        isBareEnterOrSpace &&
+        focusedShapeId &&
+        !(
+          event.key === 'Enter' &&
+          selected.length === 1 &&
+          selected[0].id === focusedShapeId
+        )
+      ) {
+        event.preventDefault()
+        reactFlowStoreApi.getState().unselectNodesAndEdges()
+        reactFlowStoreApi.getState().addSelectedNodes([focusedShapeId])
+        keyboardSelectionOrderRef.current = [focusedShapeId]
+        return
+      }
+
+      // Add the focused shape to the selection, order preserved (FR-019a).
+      if (
+        (event.key === 'Enter' || event.key === ' ') &&
+        (event.ctrlKey || event.metaKey) &&
+        focusedShapeId
+      ) {
+        event.preventDefault()
+        const alreadySelected = selected.some((n) => n.id === focusedShapeId)
+        if (!alreadySelected) {
+          if (keyboardSelectionOrderRef.current.length === 0) {
+            keyboardSelectionOrderRef.current = selected.map((n) => n.id)
+          }
+          keyboardSelectionOrderRef.current.push(focusedShapeId)
+          reactFlowStoreApi.getState().addSelectedNodes([
+            ...selected.map((n) => n.id),
+            focusedShapeId,
+          ])
+        }
+        return
+      }
+
+      // Clear the selection; focus remains on the canvas region (FR-019a).
+      // Tab is never intercepted anywhere in this handler, so a keyboard
+      // user can always leave the canvas region — no separate binding
+      // needed for that half of the requirement.
+      if (event.key === 'Escape' && !event.ctrlKey && !event.metaKey) {
+        if (selected.length > 0) {
+          event.preventDefault()
+          reactFlowStoreApi.getState().unselectNodesAndEdges()
+          keyboardSelectionOrderRef.current = []
+        }
+        return
+      }
+
       if (selected.length === 0) return
 
       // Enter / F2 with exactly one shape selected: open its label editor.
@@ -3008,13 +3152,20 @@ function ReactFlowWhiteboardInner({
         return
       }
 
-      // 'c' with exactly two shapes selected: connect them, in selection order.
+      // 'c' with exactly two shapes selected: connect them, in selection
+      // order. Prefers the keyboard-tracked order (FR-019a) when it covers
+      // exactly the current selection; falls back to node-array order
+      // otherwise (unchanged mouse-selection behavior).
       if (event.key === 'c' && selected.length === 2) {
         event.preventDefault()
-        createConnectorMutation({
-          sourceShapeId: selected[0].id,
-          targetShapeId: selected[1].id,
-        })
+        const keyboardOrder = keyboardSelectionOrderRef.current.filter((id) =>
+          selected.some((n) => n.id === id),
+        )
+        const [sourceShapeId, targetShapeId] =
+          keyboardOrder.length === 2
+            ? keyboardOrder
+            : [selected[0].id, selected[1].id]
+        createConnectorMutation({ sourceShapeId, targetShapeId })
         return
       }
 
@@ -3067,9 +3218,12 @@ function ReactFlowWhiteboardInner({
     canEdit,
     isPublic,
     reactFlowInstance,
+    reactFlowStoreApi,
     requestLabelEdit,
     createConnectorMutation,
     updateShapeMutation,
+    shapes,
+    focusedShapeId,
   ])
 
   // ── Client-side position resolution ────────────────────────────────────────
@@ -3646,6 +3800,7 @@ function ReactFlowWhiteboardInner({
               }}
               focusRequestTableId={focusRequestTableId}
               focusRequestToken={focusRequestToken}
+              keyboardFocusedShapeId={focusedShapeId}
             />
           </ForceFullDetailContext.Provider>
           {/* In-app performance tracker (GH #121 follow-up) — Record/Stop ->

@@ -341,6 +341,35 @@
   border-color: var(--rf-handle-hover-border);
 }
 
+/* FR-016: when a connection drag originates from a SHAPE's own handle, the
+ * blanket "every target column handle highlights" rule above must NOT apply
+ * to table columns — a shape-to-table pair is always invalid, and FR-016
+ * requires the target to visibly NOT look connectable. Scoped to
+ * `.is-connecting-from-shape` (set only for a shape-originated drag, see
+ * ReactFlowCanvas's onConnectStart) so the pre-existing table-to-table flow
+ * (FR-017) — where every column IS a legal target — keeps its blanket
+ * pre-highlight exactly as before. Declared after the blanket rule so it
+ * wins on source order for the handles it targets. Deliberately does NOT
+ * touch `pointer-events` (left at the inherited `all`): the actual
+ * connect/reject decision is `isValidConnection`, not CSS hit-testing, and
+ * keeping the handle hoverable is what lets the `:connectingto:not(.valid)`
+ * not-allowed-cursor rule below resolve on it at all. */
+.is-connecting-from-shape
+  .react-flow__handle.target.connectionindicator::before {
+  background: transparent !important;
+  border-color: transparent !important;
+}
+
+/* FR-016: "the pointer shows a not-allowed affordance" while hovering an
+ * invalid target, symmetric in both directions (shape→table and
+ * table→shape) — React Flow itself adds `connectingto` to whichever handle
+ * is currently under the pointer during a connection drag, and `valid` only
+ * when `isValidConnection` allows a drop there, so one rule covers both
+ * cases with no extra state. */
+.react-flow__handle.connectingto:not(.valid) {
+  cursor: not-allowed;
+}
+
 /* ----------------------------------------------------------------------------
  * Column Row Hover Highlight
  * ---------------------------------------------------------------------------- */

@@ -30,6 +30,7 @@ import type {
   Node,
   NodeMouseHandler,
   OnConnect,
+  OnConnectStart,
   OnEdgesChange,
   OnEdgesDelete,
   OnNodeDrag,
@@ -282,6 +283,18 @@ export interface ReactFlowCanvasProps {
    * backdrop. Keyboard collapse (`m`/`Escape`) is handled by the parent's hook.
    */
   onMinimapCollapse?: () => void
+  /**
+   * The shape currently holding keyboard-traversal focus (FR-019a), or
+   * `null`. Applied as a direct DOM class toggle on the target's own
+   * `.react-flow__node-shape` wrapper — same bypass-React-render pattern as
+   * the GH #121 hover-highlight and GH #138 jump-pulse mechanisms above,
+   * deliberately NOT threaded through `shapeNodes[].data` (that prop is
+   * fully resynced into React Flow's controlled node state on every
+   * `shapes`/`canEdit`/etc. change, which would silently clear the live
+   * mouse/keyboard SELECTION every time focus moves — see
+   * ReactFlowWhiteboard's traversal effect comment for the full reasoning).
+   */
+  keyboardFocusedShapeId?: string | null
 }
 
 /**
@@ -333,6 +346,7 @@ export function ReactFlowCanvas({
   focusRequestToken = 0,
   minimapExpanded = false,
   onMinimapCollapse,
+  keyboardFocusedShapeId = null,
 }: ReactFlowCanvasProps) {
   // Perf tracker (GH #121 follow-up): count canvas re-renders during a
   // recording session. First-line `if (!isRecording) return` inside makes this
@@ -375,7 +389,27 @@ export function ReactFlowCanvas({
   const [shapeNodesState, setShapeNodesState, handleShapeNodesChange] =
     useNodesState<ShapeNodeType>(shapeNodes)
   useEffect(() => {
-    setShapeNodesState(shapeNodes)
+    // Preserve the live `selected` flag across a resync (bug found while
+    // verifying FR-009): `shapeNodes` recomputes on every `shapes` data
+    // change, INCLUDING the optimistic update from the shape's own style
+    // edit — resyncing wholesale from that new prop would silently
+    // deselect the very shape the user just restyled (its `selected` here
+    // is only ever `true` for `justCreatedShapeId`, unrelated to a live
+    // mouse/keyboard selection), hiding the `ShapeStyleControls` toolbar
+    // after exactly one click and making a second style edit impossible
+    // without reselecting. Selection changes triggered by user gestures
+    // (click, Escape, pane click) go through `handleShapeNodesChange`
+    // directly, never through this effect, so carrying the previous
+    // `selected` forward here only ever prevents an unintended reset — it
+    // can never resurrect a selection the user genuinely cleared.
+    setShapeNodesState((prev) => {
+      const prevSelected = new Map(prev.map((n) => [n.id, n.selected]))
+      return shapeNodes.map((n) =>
+        n.selected || !prevSelected.get(n.id)
+          ? n
+          : { ...n, selected: true },
+      )
+    })
   }, [shapeNodes, setShapeNodesState])
   const shapeIdSet = useMemo(
     () => new Set(shapeNodesState.map((s) => s.id)),
@@ -711,6 +745,32 @@ export function ReactFlowCanvas({
       }
     }
   }, [])
+
+  // Keyboard traversal focus ring (FR-019a) — direct DOM class toggle on the
+  // target shape's own `.react-flow__node-shape` wrapper, mirroring the
+  // hover-highlight/jump-pulse pattern above (bypasses setNodes/React
+  // re-render entirely, see the prop comment for why that matters here).
+  // Deferred one animation frame: `onlyRenderVisibleElements` can cull an
+  // off-screen shape from the DOM until the traversal effect's own
+  // `setCenter` pan has had a chance to mount it.
+  const kbdFocusedElRef = useRef<HTMLElement | null>(null)
+  useEffect(() => {
+    if (kbdFocusedElRef.current) {
+      kbdFocusedElRef.current.classList.remove('kbd-focused')
+      kbdFocusedElRef.current = null
+    }
+    if (!keyboardFocusedShapeId) return
+    const raf = requestAnimationFrame(() => {
+      const el = wrapperRef.current?.querySelector<HTMLElement>(
+        `.react-flow__node[data-id="${keyboardFocusedShapeId}"] .react-flow__node-shape`,
+      )
+      if (el) {
+        el.classList.add('kbd-focused')
+        kbdFocusedElRef.current = el
+      }
+    })
+    return () => cancelAnimationFrame(raf)
+  }, [keyboardFocusedShapeId])
 
   // Update edges when initialEdges changes — immediately recalculate handles
   // based on the current node positions so edges start pointing the right way.
@@ -1262,13 +1322,26 @@ export function ReactFlowCanvas({
 
   // Track whether a connection drag is in progress to reveal target handles
   const [isConnecting, setIsConnecting] = useState(false)
+  // FR-016: whether the IN-PROGRESS drag started from a shape's own handle —
+  // narrower than `isConnecting`, and used ONLY to suppress the pre-existing
+  // table-column blanket highlight for a shape-originated drag (see the
+  // `.is-connecting-from-shape` CSS rule). Never toggled for a table-
+  // originated drag, so FR-017's "existing table-to-table flow unaffected"
+  // stays exactly as it was — this rule only ever narrows, never widens, the
+  // existing highlight.
+  const [isConnectingFromShape, setIsConnectingFromShape] = useState(false)
 
-  const onConnectStart = useCallback(() => {
-    setIsConnecting(true)
-  }, [])
+  const onConnectStart = useCallback<OnConnectStart>(
+    (_event, params) => {
+      setIsConnecting(true)
+      setIsConnectingFromShape(!!params.nodeId && shapeIdSet.has(params.nodeId))
+    },
+    [shapeIdSet],
+  )
 
   const onConnectEnd = useCallback(() => {
     setIsConnecting(false)
+    setIsConnectingFromShape(false)
   }, [])
 
   // Stable callback for MiniMap's nodeColor (GH #121 stable-reference audit)
@@ -1350,7 +1423,7 @@ export function ReactFlowCanvas({
       <CanvasEditContext.Provider value={canvasEditContextValue}>
         <div
           ref={wrapperRef}
-          className={`react-flow-wrapper ${isConnecting ? 'is-connecting' : ''} ${className}`}
+          className={`react-flow-wrapper ${isConnecting ? 'is-connecting' : ''} ${isConnectingFromShape ? 'is-connecting-from-shape' : ''} ${className}`}
           style={{ width: '100%', height: '100%' }}
         >
           {/* Global SVG marker definitions for cardinality indicators */}
