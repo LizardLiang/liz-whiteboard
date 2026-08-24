@@ -162,6 +162,52 @@ insertShape({
   },
 })
 
+// A regular table-to-table pair + relationship (FR-017's regression bar,
+// E2E-12/E2E-14) — placed BELOW the shape cluster (y:460-600, within the
+// shapes' own x:120-880 span) rather than far off to the right. A wide
+// placement was tried first and rejected empirically: it roughly doubled
+// the board's overall bounding box, which pushed `Fit to Screen`'s
+// computed zoom down enough that the ORIGINAL shape cluster started
+// rendering underneath the fixed top-left tool palette overlay — silently
+// breaking resize-handle/style-toolbar clicks in unrelated tests. Stacking
+// vertically instead keeps the total bounds close to their original shape,
+// so the existing "empty canvas" regions used by other tests (e.g.
+// E2E-01's draw targets) stay valid.
+db.query(
+  'INSERT INTO "DiagramTable" (id, whiteboardId, name, description, positionX, positionY, width, height, createdAt, updatedAt) VALUES (?,?,?,?,?,?,?,?,?,?)',
+).run(IDS.shapesTableA, IDS.shapesWhiteboard, 'shapes_a', null, 120, 460, 220, 140, now, now)
+db.query(
+  'INSERT INTO "DiagramTable" (id, whiteboardId, name, description, positionX, positionY, width, height, createdAt, updatedAt) VALUES (?,?,?,?,?,?,?,?,?,?)',
+).run(IDS.shapesTableB, IDS.shapesWhiteboard, 'shapes_b', null, 460, 460, 220, 140, now, now)
+db.query(
+  'INSERT INTO "Column" (id, tableId, name, dataType, isPrimaryKey, isForeignKey, isUnique, isNullable, "order", createdAt, updatedAt) VALUES (?,?,?,?,?,?,?,?,?,?,?)',
+).run(IDS.shapesTableAId, IDS.shapesTableA, 'id', 'UUID', 1, 0, 0, 0, 0, now, now)
+db.query(
+  'INSERT INTO "Column" (id, tableId, name, dataType, isPrimaryKey, isForeignKey, isUnique, isNullable, "order", createdAt, updatedAt) VALUES (?,?,?,?,?,?,?,?,?,?,?)',
+).run(IDS.shapesTableBFk, IDS.shapesTableB, 'a_id', 'UUID', 0, 1, 0, 0, 0, now, now)
+// A second, unconnected column pair (E2E-14) — see the fixtures.ts comment.
+db.query(
+  'INSERT INTO "Column" (id, tableId, name, dataType, isPrimaryKey, isForeignKey, isUnique, isNullable, "order", createdAt, updatedAt) VALUES (?,?,?,?,?,?,?,?,?,?,?)',
+).run(IDS.shapesTableAName, IDS.shapesTableA, 'name', 'VARCHAR', 0, 0, 0, 0, 1, now, now)
+db.query(
+  'INSERT INTO "Column" (id, tableId, name, dataType, isPrimaryKey, isForeignKey, isUnique, isNullable, "order", createdAt, updatedAt) VALUES (?,?,?,?,?,?,?,?,?,?,?)',
+).run(IDS.shapesTableBNote, IDS.shapesTableB, 'note', 'VARCHAR', 0, 0, 0, 0, 1, now, now)
+db.query(
+  'INSERT INTO "Relationship" (id, whiteboardId, sourceTableId, targetTableId, sourceColumnId, targetColumnId, cardinality, label, routingPoints, createdAt, updatedAt) VALUES (?,?,?,?,?,?,?,?,?,?,?)',
+).run(
+  IDS.shapesTableRelationship,
+  IDS.shapesWhiteboard,
+  IDS.shapesTableB,
+  IDS.shapesTableA,
+  IDS.shapesTableBFk,
+  IDS.shapesTableAId,
+  'MANY_TO_ONE',
+  'belongs to',
+  null,
+  now,
+  now,
+)
+
 db.query(
   'INSERT INTO "Connector" (id, whiteboardId, sourceShapeId, targetShapeId, style, createdAt, updatedAt) VALUES (?,?,?,?,?,?,?)',
 ).run(

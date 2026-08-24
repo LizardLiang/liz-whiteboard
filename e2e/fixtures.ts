@@ -125,6 +125,24 @@ export const IDS = {
   lineShape: '50000000-0000-4000-8000-000000000007',
   shapeConnector: '50000000-0000-4000-8000-000000000008',
   legacySnapshot: '50000000-0000-4000-8000-000000000009',
+  // A regular ER table pair + relationship on shapesWhiteboard, positioned
+  // well clear of the shape cluster (x:900-1300) — FR-016's in-drag
+  // refusal (E2E-12) and FR-017's "existing table-to-table flow unaffected"
+  // regression check (E2E-14) both need a real table-to-table connection
+  // living alongside shapes on the SAME board, under the shared
+  // `isValidConnection` predicate.
+  shapesTableA: '50000000-0000-4000-8000-00000000000a',
+  shapesTableB: '50000000-0000-4000-8000-00000000000b',
+  shapesTableAId: '50000000-0000-4000-8000-00000000000c',
+  shapesTableBFk: '50000000-0000-4000-8000-00000000000d',
+  shapesTableRelationship: '50000000-0000-4000-8000-00000000000e',
+  // A second, currently-UNCONNECTED column pair on the same two tables
+  // (E2E-14) — the seeded relationship above already binds the first
+  // column pair, so dragging a NEW connection needs a pair with no
+  // pre-existing edge between them (mirrors seed-stress.ts's own
+  // index-1-is-always-unconnected convention).
+  shapesTableAName: '50000000-0000-4000-8000-00000000000f',
+  shapesTableBNote: '50000000-0000-4000-8000-000000000010',
 }
 
 export const STORAGE_STATE = 'e2e/.auth/state.json'
