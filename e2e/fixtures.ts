@@ -3,7 +3,14 @@
 // random) so the seed script and the specs agree without passing state
 // between the Node (Playwright) and Bun (seed) runtimes.
 
-export const BASE_URL = process.env.E2E_BASE_URL ?? 'http://localhost:3001'
+// Default matches `bun run dev`, which serves Vite on 3000 (server.prod.ts also
+// defaults to 3000; server.dev.ts is the separate Socket.IO process on 3010).
+// Nothing in this repo serves 3001 — the previous default meant the plain
+// `bun run test:e2e` invocation could never satisfy playwright.config.ts's
+// webServer health check and died after a 120s timeout that looked like a
+// broken suite. The coedit and cimd suites are unaffected: they carry their own
+// base URLs (COEDIT_PORT in fixtures-collab.ts, 3099 in playwright.cimd.config.ts).
+export const BASE_URL = process.env.E2E_BASE_URL ?? 'http://localhost:3000'
 
 export const E2E_USER = {
   username: 'e2e_dogfood',
