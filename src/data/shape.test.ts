@@ -21,10 +21,7 @@ function makeWhiteboardId(): string {
   return wb.id
 }
 
-function baseShape(
-  whiteboardId: string,
-  over: Record<string, unknown> = {},
-) {
+function baseShape(whiteboardId: string, over: Record<string, unknown> = {}) {
   return {
     whiteboardId,
     kind: 'rectangle' as const,

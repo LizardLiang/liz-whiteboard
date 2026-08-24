@@ -12,6 +12,9 @@
 
 import { useEffect, useRef, useState } from 'react'
 import { Handle, NodeResizer, Position } from '@xyflow/react'
+import { connectorArrowMarkerId } from './ConnectorMarkerDefs'
+import { ShapeLabelEditor } from './ShapeLabelEditor'
+import { ShapeStyleControls } from './ShapeStyleControls'
 import type { NodeProps } from '@xyflow/react'
 import type { ShapeNodeType } from '@/lib/react-flow/types'
 import {
@@ -20,9 +23,6 @@ import {
   MIN_SHAPE_WIDTH,
 } from '@/lib/react-flow/types'
 import { resolveAreaColor } from '@/lib/area-colors'
-import { connectorArrowMarkerId } from './ConnectorMarkerDefs'
-import { ShapeLabelEditor } from './ShapeLabelEditor'
-import { ShapeStyleControls } from './ShapeStyleControls'
 
 /** Per-kind SVG geometry — rectangle/text share the same rect painter. */
 function ShapeGeometry({
@@ -209,7 +209,9 @@ export function ShapeNode({
 
   const strokeColor = resolveAreaColor(shape.style.stroke).solid
   const isUnfilled = shape.style.fill === 'none'
-  const fillColor = isUnfilled ? 'none' : resolveAreaColor(shape.style.fill).solid
+  const fillColor = isUnfilled
+    ? 'none'
+    : resolveAreaColor(shape.style.fill).solid
   const dash = shape.style.strokeStyle === 'dashed' ? '6 4' : undefined
   const markerId = connectorArrowMarkerId(shape.style.stroke, !!selected)
 
@@ -242,6 +244,15 @@ export function ShapeNode({
     'react-flow__node-shape',
     selected ? 'selected' : '',
     isKeyboardFocused ? 'kbd-focused' : '',
+    // N1 (Apollo): fully suppresses handle interactivity — hover-reveal
+    // included, not just the connection-start gate — for a read-only
+    // viewer (public share link OR an authenticated VIEWER). Handles stay
+    // MOUNTED regardless (read-only.css only zeroes pointer-events): React
+    // Flow's own edge-position resolver needs at least one registered
+    // handle bound per side to render a connector at all — unmounting them
+    // entirely would silently blank every connector for every read-only
+    // viewer, which contradicts §6a.
+    canEdit ? '' : 'read-only',
   ]
     .filter(Boolean)
     .join(' ')
@@ -352,37 +363,59 @@ export function ShapeNode({
           )}
         </div>
 
-        {canEdit && !isDraft && shape.kind !== 'line' && (
+        {/*
+          Always mounted for non-draft, non-line shapes — REGARDLESS of
+          canEdit. React Flow's own edge-position resolver
+          (getEdgePosition/getHandle in @xyflow/system) needs at least one
+          REGISTERED handle bound per side to compute a connector's
+          position at all; if zero handles are rendered, it returns null
+          and BaseEdge never mounts — every connector would silently vanish
+          for every read-only viewer, contradicting §6a's "shapes and
+          connectors DO render, read-only" requirement.
+
+          `isConnectable={canEdit}` is the actual N1 gate: React Flow's own
+          handle mousedown/touchstart listener checks isConnectableStart
+          before starting a drag, so a read-only viewer cannot start a
+          connection from a mounted-but-inert handle. The `.read-only`
+          wrapper class (above) additionally zeroes pointer-events on every
+          handle via CSS, so there is no hover affordance either.
+        */}
+        {!isDraft && shape.kind !== 'line' && (
           <>
             <Handle
               type="source"
               position={Position.Top}
               id="shape-src-top"
               className="shape-src"
+              isConnectable={canEdit}
             />
             <Handle
               type="source"
               position={Position.Right}
               id="shape-src-right"
               className="shape-src"
+              isConnectable={canEdit}
             />
             <Handle
               type="source"
               position={Position.Bottom}
               id="shape-src-bottom"
               className="shape-src"
+              isConnectable={canEdit}
             />
             <Handle
               type="source"
               position={Position.Left}
               id="shape-src-left"
               className="shape-src"
+              isConnectable={canEdit}
             />
             <Handle
               type="target"
               position={Position.Top}
               id="shape-tgt"
               className="shape-tgt"
+              isConnectable={canEdit}
             />
           </>
         )}

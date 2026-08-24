@@ -35,8 +35,14 @@ import type {
   WhiteboardShareLink,
   WhiteboardSnapshot,
 } from './data/models'
-import type { ShapeKind, ShapeProps, ShapeStyle, ConnectorStyle } from './data/schema'
-import type { Cardinality, ProjectRoleValue } from './data/schema'
+import type {
+  Cardinality,
+  ConnectorStyle,
+  ProjectRoleValue,
+  ShapeKind,
+  ShapeProps,
+  ShapeStyle,
+} from './data/schema'
 
 const require = createRequire(import.meta.url)
 const isBun = typeof (globalThis as { Bun?: unknown }).Bun !== 'undefined'

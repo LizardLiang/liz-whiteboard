@@ -545,9 +545,8 @@ describe('shape/connector schemas (UNIT-02)', () => {
           .success,
       ).toBe(true)
       expect(
-        createShapeSchema.safeParse(
-          baseShape({ positionX: -MAX_BOARD_COORD }),
-        ).success,
+        createShapeSchema.safeParse(baseShape({ positionX: -MAX_BOARD_COORD }))
+          .success,
       ).toBe(true)
     })
 
@@ -570,8 +569,7 @@ describe('shape/connector schemas (UNIT-02)', () => {
         createShapeSchema.safeParse(baseShape({ positionX: NaN })).success,
       ).toBe(false)
       expect(
-        createShapeSchema.safeParse(baseShape({ positionY: Infinity }))
-          .success,
+        createShapeSchema.safeParse(baseShape({ positionY: Infinity })).success,
       ).toBe(false)
       expect(
         createShapeSchema.safeParse(baseShape({ positionY: -Infinity }))
@@ -594,9 +592,9 @@ describe('shape/connector schemas (UNIT-02)', () => {
     })
 
     it('rejects non-positive width/height', () => {
-      expect(
-        createShapeSchema.safeParse(baseShape({ width: 0 })).success,
-      ).toBe(false)
+      expect(createShapeSchema.safeParse(baseShape({ width: 0 })).success).toBe(
+        false,
+      )
       expect(
         createShapeSchema.safeParse(baseShape({ width: -10 })).success,
       ).toBe(false)
@@ -620,8 +618,7 @@ describe('shape/connector schemas (UNIT-02)', () => {
     it('accepts fractions at exactly 0 and 1', () => {
       expect(shapePropsSchema.safeParse(lineProps()).success).toBe(true)
       expect(
-        shapePropsSchema.safeParse(lineProps({ x1: 1, y1: 1, y2: 0 }))
-          .success,
+        shapePropsSchema.safeParse(lineProps({ x1: 1, y1: 1, y2: 0 })).success,
       ).toBe(true)
     })
 

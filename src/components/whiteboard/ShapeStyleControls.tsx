@@ -7,8 +7,8 @@
 // ShapeToolPalette at left-4 top-4 — it follows the shape, not the viewport.
 
 import { NodeToolbar, Position } from '@xyflow/react'
-import { AREA_COLORS } from '@/lib/area-colors'
 import type { ShapeStyle } from '@/data/schema'
+import { AREA_COLORS } from '@/lib/area-colors'
 
 export interface ShapeStyleControlsProps {
   style: ShapeStyle

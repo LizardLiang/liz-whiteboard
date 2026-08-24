@@ -37,7 +37,10 @@ export interface CreateConnectorInput {
 export interface UseWhiteboardShapesReturn {
   shapes: Array<Shape>
   connectors: Array<Connector>
-  createShape: (input: Omit<CreateShape, 'whiteboardId'>) => void
+  createShape: (
+    input: Omit<CreateShape, 'whiteboardId'>,
+    onCreated?: (shape: Shape) => void,
+  ) => void
   updateShape: (shapeId: string, patch: UpdateShape) => void
   deleteShape: (shapeId: string) => void
   createConnector: (input: CreateConnectorInput) => void
@@ -124,7 +127,9 @@ export function useWhiteboardShapes(params: {
         prev.filter((c) => !payload.connectorIds.includes(c.id)),
       )
     }
-    const onConnectorCreated = (connector: Connector & { createdBy: string }) => {
+    const onConnectorCreated = (
+      connector: Connector & { createdBy: string },
+    ) => {
       if (connector.createdBy === userId) return
       setConnectors((prev) =>
         prev.some((c) => c.id === connector.id) ? prev : [...prev, connector],
@@ -153,18 +158,29 @@ export function useWhiteboardShapes(params: {
   }, [enabled, isPublic, on, off, userId])
 
   // Create — waits for the server ack so we get the real id, then appends.
+  // `onCreated` (optional) fires with the full server row on success — the
+  // caller's only way to learn the real (server-generated) id, e.g. to
+  // select the just-drawn shape (FR-005).
   const createShape = useCallback(
-    (input: Omit<CreateShape, 'whiteboardId'>) => {
-      emit('shape:create', { ...input, whiteboardId }, (res: AckResult<Shape>) => {
-        if (res.ok && res.entity) {
-          const created = res.entity
-          setShapes((prev) =>
-            prev.some((s) => s.id === created.id) ? prev : [...prev, created],
-          )
-        } else {
-          toast.error(res.message ?? 'Failed to create shape')
-        }
-      })
+    (
+      input: Omit<CreateShape, 'whiteboardId'>,
+      onCreated?: (shape: Shape) => void,
+    ) => {
+      emit(
+        'shape:create',
+        { ...input, whiteboardId },
+        (res: AckResult<Shape>) => {
+          if (res.ok && res.entity) {
+            const created = res.entity
+            setShapes((prev) =>
+              prev.some((s) => s.id === created.id) ? prev : [...prev, created],
+            )
+            onCreated?.(created)
+          } else {
+            toast.error(res.message ?? 'Failed to create shape')
+          }
+        },
+      )
     },
     [emit, whiteboardId],
   )
@@ -191,9 +207,7 @@ export function useWhiteboardShapes(params: {
           toast.error(res.message ?? 'Failed to update shape')
         } else if (res.entity) {
           const updated = res.entity
-          setShapes((prev) =>
-            prev.map((s) => (s.id === shapeId ? updated : s)),
-          )
+          setShapes((prev) => prev.map((s) => (s.id === shapeId ? updated : s)))
         }
       })
     },
@@ -238,9 +252,7 @@ export function useWhiteboardShapes(params: {
           if (res.ok && res.entity) {
             const created = res.entity
             setConnectors((prev) =>
-              prev.some((c) => c.id === created.id)
-                ? prev
-                : [...prev, created],
+              prev.some((c) => c.id === created.id) ? prev : [...prev, created],
             )
           } else {
             toast.error(res.message ?? 'Failed to create connector')

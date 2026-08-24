@@ -134,13 +134,13 @@ This is a git repository. Use standard git commands for version control:
 
 ## Quick Reference
 
-| Task                   | Command                              |
-| ---------------------- | ------------------------------------ |
-| Install package        | `bun add <package>`                  |
-| Install dev package    | `bun add -d <package>`               |
-| Add shadcn component   | `bunx shadcn@latest add <component>` |
-| Run dev server         | `bun run dev`                        |
-| Add/modify a table     | Edit `src/data/schema-sql.ts`, restart the server |
+| Task                 | Command                                           |
+| -------------------- | ------------------------------------------------- |
+| Install package      | `bun add <package>`                               |
+| Install dev package  | `bun add -d <package>`                            |
+| Add shadcn component | `bunx shadcn@latest add <component>`              |
+| Run dev server       | `bun run dev`                                     |
+| Add/modify a table   | Edit `src/data/schema-sql.ts`, restart the server |
 
 ## Troubleshooting
 

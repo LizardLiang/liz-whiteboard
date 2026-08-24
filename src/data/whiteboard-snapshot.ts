@@ -203,9 +203,7 @@ export async function restoreWhiteboardFromSnapshot(
     db.prepare('DELETE FROM "Connector" WHERE "whiteboardId" = ?').run(
       whiteboardId,
     )
-    db.prepare('DELETE FROM "Shape" WHERE "whiteboardId" = ?').run(
-      whiteboardId,
-    )
+    db.prepare('DELETE FROM "Shape" WHERE "whiteboardId" = ?').run(whiteboardId)
     db.prepare('DELETE FROM "Area" WHERE "whiteboardId" = ?').run(whiteboardId)
     db.prepare('DELETE FROM "DiagramTable" WHERE "whiteboardId" = ?').run(
       whiteboardId,

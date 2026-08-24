@@ -12,15 +12,15 @@
 
 import { memo, useMemo } from 'react'
 import { BaseEdge, getStraightPath, useInternalNode } from '@xyflow/react'
+import { connectorArrowMarkerId } from './ConnectorMarkerDefs'
 import type { EdgeProps } from '@xyflow/react'
 import type { ConnectorEdgeType, ShapeNodeType } from '@/lib/react-flow/types'
+import type { ShapeBounds } from '@/lib/react-flow/shape-geometry'
 import {
   connectorEndpoints,
   resolveMeasuredSize,
 } from '@/lib/react-flow/shape-geometry'
-import type { ShapeBounds } from '@/lib/react-flow/shape-geometry'
 import { resolveAreaColor } from '@/lib/area-colors'
-import { connectorArrowMarkerId } from './ConnectorMarkerDefs'
 
 function boundsOf(
   node: ReturnType<typeof useInternalNode<ShapeNodeType>>,

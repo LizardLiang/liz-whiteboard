@@ -8,6 +8,26 @@ import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { deleteRelationship, findRelationshipById } from '@/data/relationship'
 import { updateSessionActivity } from '@/data/collaboration'
 
+// -----------------------------------------------------------------------------
+// Shape / Connector mutation handlers (Phase 1: shapes-and-connectors)
+// INT-01 (permission/ownership/validation), INT-02 (zero connector writes on
+// shape update), INT-03 (adversarial cross-whiteboard IDOR)
+//
+// Mirrors this file's own relationship:delete convention: since
+// setupCollaborationEventHandlers is not exported, the handler bodies are
+// reimplemented here to match src/routes/api/collaboration.ts's shape:*/
+// connector:* block line-for-line -- see that file for the source of truth.
+// -----------------------------------------------------------------------------
+
+import {
+  createConnector,
+  deleteConnector,
+  deleteShapeWithConnectors,
+  findConnectorById,
+} from '@/data/connector'
+import { createShape, findShapeById, updateShape } from '@/data/shape'
+import { requireRole } from '@/lib/auth/require-role'
+
 // Mock all data layer modules
 vi.mock('@/data/relationship', () => ({
   createRelationship: vi.fn(),
@@ -340,26 +360,6 @@ describe('relationship:delete handler', () => {
   })
 })
 
-// -----------------------------------------------------------------------------
-// Shape / Connector mutation handlers (Phase 1: shapes-and-connectors)
-// INT-01 (permission/ownership/validation), INT-02 (zero connector writes on
-// shape update), INT-03 (adversarial cross-whiteboard IDOR)
-//
-// Mirrors this file's own relationship:delete convention: since
-// setupCollaborationEventHandlers is not exported, the handler bodies are
-// reimplemented here to match src/routes/api/collaboration.ts's shape:*/
-// connector:* block line-for-line -- see that file for the source of truth.
-// -----------------------------------------------------------------------------
-
-import {
-  createConnector,
-  deleteConnector,
-  deleteShapeWithConnectors,
-  findConnectorById,
-} from '@/data/connector'
-import { createShape, findShapeById, updateShape } from '@/data/shape'
-import { requireRole } from '@/lib/auth/require-role'
-
 describe('shape/connector mutation handlers', () => {
   const whiteboardId = 'd1b2c3d4-e5f6-4890-8bcd-ef1234567800'
   const userId = 'user-test-001'
@@ -399,7 +399,11 @@ describe('shape/connector mutation handlers', () => {
         return
       }
       if (await denyIfInsufficientPermission('shape:create')) {
-        cb?.({ ok: false, code: 'FORBIDDEN', message: 'Insufficient permission' })
+        cb?.({
+          ok: false,
+          code: 'FORBIDDEN',
+          message: 'Insufficient permission',
+        })
         return
       }
       try {
@@ -425,13 +429,24 @@ describe('shape/connector mutation handlers', () => {
     const { updateShapeSchema } = await import('@/data/schema')
     socket.on(
       'shape:update',
-      async (data: { shapeId: string; [k: string]: any }, cb?: (r: any) => void) => {
+      async (
+        data: { shapeId: string; [k: string]: any },
+        cb?: (r: any) => void,
+      ) => {
         if (isSessionExpired()) {
-          cb?.({ ok: false, code: 'SESSION_EXPIRED', message: 'Session expired' })
+          cb?.({
+            ok: false,
+            code: 'SESSION_EXPIRED',
+            message: 'Session expired',
+          })
           return
         }
         if (await denyIfInsufficientPermission('shape:update')) {
-          cb?.({ ok: false, code: 'FORBIDDEN', message: 'Insufficient permission' })
+          cb?.({
+            ok: false,
+            code: 'FORBIDDEN',
+            message: 'Insufficient permission',
+          })
           return
         }
         try {
@@ -474,11 +489,19 @@ describe('shape/connector mutation handlers', () => {
       'shape:delete',
       async (data: { shapeId: string }, cb?: (r: any) => void) => {
         if (isSessionExpired()) {
-          cb?.({ ok: false, code: 'SESSION_EXPIRED', message: 'Session expired' })
+          cb?.({
+            ok: false,
+            code: 'SESSION_EXPIRED',
+            message: 'Session expired',
+          })
           return
         }
         if (await denyIfInsufficientPermission('shape:delete')) {
-          cb?.({ ok: false, code: 'FORBIDDEN', message: 'Insufficient permission' })
+          cb?.({
+            ok: false,
+            code: 'FORBIDDEN',
+            message: 'Insufficient permission',
+          })
           return
         }
         const parsed = z.object({ shapeId: z.string().uuid() }).safeParse(data)
@@ -540,49 +563,50 @@ describe('shape/connector mutation handlers', () => {
   /** Mirrors collaboration.ts's connector:create handler. */
   async function registerConnectorCreate() {
     const { createConnectorSchema } = await import('@/data/schema')
-    socket.on(
-      'connector:create',
-      async (data: any, cb?: (r: any) => void) => {
-        if (isSessionExpired()) {
-          cb?.({ ok: false, code: 'SESSION_EXPIRED', message: 'Session expired' })
-          return
-        }
-        if (await denyIfInsufficientPermission('connector:create')) {
-          cb?.({ ok: false, code: 'FORBIDDEN', message: 'Insufficient permission' })
-          return
-        }
-        try {
-          const validated = createConnectorSchema.parse({ ...data, whiteboardId })
-          const [source, target] = await Promise.all([
-            findShapeById(validated.sourceShapeId),
-            findShapeById(validated.targetShapeId),
-          ])
-          if (
-            !source ||
-            (source as any).whiteboardId !== whiteboardId ||
-            !target ||
-            (target as any).whiteboardId !== whiteboardId
-          ) {
-            cb?.({
-              ok: false,
-              code: 'FORBIDDEN',
-              message: 'Shape does not belong to this whiteboard',
-            })
-            return
-          }
-          const connector = await createConnector(validated)
-          socket.broadcast.emit('connector:created', {
-            ...connector,
-            createdBy: userId,
+    socket.on('connector:create', async (data: any, cb?: (r: any) => void) => {
+      if (isSessionExpired()) {
+        cb?.({ ok: false, code: 'SESSION_EXPIRED', message: 'Session expired' })
+        return
+      }
+      if (await denyIfInsufficientPermission('connector:create')) {
+        cb?.({
+          ok: false,
+          code: 'FORBIDDEN',
+          message: 'Insufficient permission',
+        })
+        return
+      }
+      try {
+        const validated = createConnectorSchema.parse({ ...data, whiteboardId })
+        const [source, target] = await Promise.all([
+          findShapeById(validated.sourceShapeId),
+          findShapeById(validated.targetShapeId),
+        ])
+        if (
+          !source ||
+          (source as any).whiteboardId !== whiteboardId ||
+          !target ||
+          (target as any).whiteboardId !== whiteboardId
+        ) {
+          cb?.({
+            ok: false,
+            code: 'FORBIDDEN',
+            message: 'Shape does not belong to this whiteboard',
           })
-          cb?.({ ok: true, entity: connector })
-        } catch (error) {
-          const message =
-            error instanceof Error ? error.message : 'Failed to create connector'
-          cb?.({ ok: false, code: 'VALIDATION_ERROR', message })
+          return
         }
-      },
-    )
+        const connector = await createConnector(validated)
+        socket.broadcast.emit('connector:created', {
+          ...connector,
+          createdBy: userId,
+        })
+        cb?.({ ok: true, entity: connector })
+      } catch (error) {
+        const message =
+          error instanceof Error ? error.message : 'Failed to create connector'
+        cb?.({ ok: false, code: 'VALIDATION_ERROR', message })
+      }
+    })
   }
 
   /** Mirrors collaboration.ts's connector:delete handler. */
@@ -592,11 +616,19 @@ describe('shape/connector mutation handlers', () => {
       'connector:delete',
       async (data: { connectorId: string }, cb?: (r: any) => void) => {
         if (isSessionExpired()) {
-          cb?.({ ok: false, code: 'SESSION_EXPIRED', message: 'Session expired' })
+          cb?.({
+            ok: false,
+            code: 'SESSION_EXPIRED',
+            message: 'Session expired',
+          })
           return
         }
         if (await denyIfInsufficientPermission('connector:delete')) {
-          cb?.({ ok: false, code: 'FORBIDDEN', message: 'Insufficient permission' })
+          cb?.({
+            ok: false,
+            code: 'FORBIDDEN',
+            message: 'Insufficient permission',
+          })
           return
         }
         const parsed = z
@@ -614,7 +646,11 @@ describe('shape/connector mutation handlers', () => {
         try {
           const record = await findConnectorById(id)
           if (!record) {
-            cb?.({ ok: false, code: 'NOT_FOUND', message: 'Connector not found' })
+            cb?.({
+              ok: false,
+              code: 'NOT_FOUND',
+              message: 'Connector not found',
+            })
             return
           }
           if ((record as any).whiteboardId !== whiteboardId) {
@@ -787,15 +823,17 @@ describe('shape/connector mutation handlers', () => {
     it('INT-02: moving a shape writes zero rows to Connector and broadcasts no connector:* event', async () => {
       await registerShapeUpdate()
       vi.mocked(findShapeById).mockResolvedValue(makeShapeRow() as any)
-      vi.mocked(updateShape).mockResolvedValue(makeShapeRow({ positionX: 42 }) as any)
+      vi.mocked(updateShape).mockResolvedValue(
+        makeShapeRow({ positionX: 42 }) as any,
+      )
       const cb = vi.fn()
       await handlers['shape:update']({ shapeId, positionX: 42 }, cb)
 
       expect(createConnector).not.toHaveBeenCalled()
       expect(deleteConnector).not.toHaveBeenCalled()
       expect(deleteShapeWithConnectors).not.toHaveBeenCalled()
-      const connectorBroadcasts = broadcastEmitSpy.mock.calls.filter(([event]) =>
-        String(event).startsWith('connector:'),
+      const connectorBroadcasts = broadcastEmitSpy.mock.calls.filter(
+        ([event]) => String(event).startsWith('connector:'),
       )
       expect(connectorBroadcasts).toHaveLength(0)
     })
@@ -848,10 +886,11 @@ describe('shape/connector mutation handlers', () => {
   describe('connector:create (INT-01, INT-03)', () => {
     it('rejects a line-kind endpoint before any write (server enforcement point 3 of 3)', async () => {
       await registerConnectorCreate()
-      vi.mocked(findShapeById).mockImplementation(async (id: string) =>
-        (id === shapeId
-          ? makeShapeRow({ kind: 'line' })
-          : makeShapeRow({ id: otherShapeId })) as any,
+      vi.mocked(findShapeById).mockImplementation(
+        async (id: string) =>
+          (id === shapeId
+            ? makeShapeRow({ kind: 'line' })
+            : makeShapeRow({ id: otherShapeId })) as any,
       )
       vi.mocked(createConnector).mockRejectedValue(
         new Error('Line shapes cannot be connected'),
@@ -868,10 +907,14 @@ describe('shape/connector mutation handlers', () => {
 
     it('INT-03: FORBIDDEN when either endpoint belongs to a different whiteboard', async () => {
       await registerConnectorCreate()
-      vi.mocked(findShapeById).mockImplementation(async (id: string) =>
-        (id === shapeId
-          ? makeShapeRow()
-          : makeShapeRow({ id: otherShapeId, whiteboardId: 'wb-OTHER-BOARD' })) as any,
+      vi.mocked(findShapeById).mockImplementation(
+        async (id: string) =>
+          (id === shapeId
+            ? makeShapeRow()
+            : makeShapeRow({
+                id: otherShapeId,
+                whiteboardId: 'wb-OTHER-BOARD',
+              })) as any,
       )
       const cb = vi.fn()
       await handlers['connector:create'](
@@ -886,10 +929,11 @@ describe('shape/connector mutation handlers', () => {
 
     it('success ack contains updatedAt', async () => {
       await registerConnectorCreate()
-      vi.mocked(findShapeById).mockImplementation(async (id: string) =>
-        (id === shapeId
-          ? makeShapeRow()
-          : makeShapeRow({ id: otherShapeId })) as any,
+      vi.mocked(findShapeById).mockImplementation(
+        async (id: string) =>
+          (id === shapeId
+            ? makeShapeRow()
+            : makeShapeRow({ id: otherShapeId })) as any,
       )
       const connectorRow = {
         id: connectorId,
@@ -909,7 +953,9 @@ describe('shape/connector mutation handlers', () => {
       expect(cb).toHaveBeenCalledWith(
         expect.objectContaining({
           ok: true,
-          entity: expect.objectContaining({ updatedAt: connectorRow.updatedAt }),
+          entity: expect.objectContaining({
+            updatedAt: connectorRow.updatedAt,
+          }),
         }),
       )
     })

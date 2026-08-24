@@ -20,7 +20,7 @@
 // Guarded by `gestureRef`, cleared synchronously by the pointerup handler
 // before capture is actually released.
 
-import { useEffect, useRef, useState } from 'react'
+import { useLayoutEffect, useRef, useState } from 'react'
 import { useReactFlow } from '@xyflow/react'
 import type { DrawTool } from '@/lib/react-flow/tool-mode'
 import { DRAW_DRAG_THRESHOLD_PX } from '@/lib/react-flow/types'
@@ -80,7 +80,13 @@ export function ShapeDrawOverlay({
   const onDisarmRef = useRef(onDisarm)
   onDisarmRef.current = onDisarm
 
-  useEffect(() => {
+  // useLayoutEffect (not useEffect): attaches the native listeners
+  // synchronously after DOM mutation, before the browser paints — a plain
+  // useEffect runs after paint, which is a real (if narrow) race: a pointer
+  // gesture that starts between paint and effect-commit would be missed
+  // entirely (observed empirically in e2e: the overlay was "visible" per
+  // Playwright before its listeners were attached).
+  useLayoutEffect(() => {
     const wrapper = overlayRef.current?.closest<HTMLElement>(
       '.react-flow-wrapper',
     )
@@ -243,7 +249,6 @@ export function ShapeDrawOverlay({
     // change (never, in practice) — activeTool/onCommit/onDisarm are read
     // through refs so an in-flight gesture's listeners are never torn down
     // mid-drag.
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [reactFlowInstance])
 
   return (

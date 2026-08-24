@@ -325,6 +325,21 @@ export interface ShapeNodeData extends Record<string, unknown> {
   canEdit: boolean
   /** Keyboard-focus ring (FR-019a) — distinct from React Flow's own `selected`. */
   isKeyboardFocused?: boolean
+  /**
+   * True for an uncommitted text-box draft (FR-012): drawn but not yet
+   * `shape:create`d. Renders the dashed placeholder + an immediately
+   * focused editor; not draggable/resizable/connectable since it has no
+   * server id yet. Commit-with-text creates the row for the first time;
+   * commit-empty just removes the draft node — zero rows, zero broadcast.
+   */
+  isDraft?: boolean
+  /**
+   * Bumped by the parent to request the label editor open for this node —
+   * an edge-triggered token, not a boolean, so the same shape can be
+   * re-opened for editing without a round-trip through `false`. Consumed
+   * once by ShapeNode via a ref comparison.
+   */
+  editRequestToken?: number
   /** Persist a resize (NodeResizer onResizeEnd only, mirrors AreaNode/D-10). */
   onResizeEnd?: (
     shapeId: string,
@@ -340,13 +355,16 @@ export interface ShapeNodeData extends Record<string, unknown> {
   /** Commit the label editor's text. Empty text on an existing `text` shape
    * deletes it (with connector cascade) through the same path as Delete. */
   onLabelCommit?: (shapeId: string, text: string) => void
+  /** Draft-only (isDraft): commit-with-text creates the row for the first
+   * time (FR-012). Never called for an already-persisted shape. */
+  onDraftCommit?: (draft: Shape, text: string) => void
+  /** Draft-only (isDraft): commit-empty removes the draft — zero rows,
+   * zero broadcast (FR-012). */
+  onDraftCancel?: (draftId: string) => void
   /** Delete this shape (with its connector cascade, FR-018). */
   onDelete?: (shapeId: string) => void
   /** Nudge/resize-by-keyboard (FR-019) — one shape:update per gesture. */
-  onNudge?: (
-    shapeId: string,
-    delta: { dx: number; dy: number },
-  ) => void
+  onNudge?: (shapeId: string, delta: { dx: number; dy: number }) => void
   onKeyboardResize?: (
     shapeId: string,
     delta: { dw: number; dh: number },

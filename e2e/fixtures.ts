@@ -104,6 +104,27 @@ export const IDS = {
   // with LOD — e2e/seed-autolayout.ts reproduces that by seeding NULL
   // heights.
   autoLayoutWhiteboard: '40000000-0000-4000-8000-000000000001',
+
+  // Dedicated project/board for the shapes-and-connectors suite (Phase 1).
+  // Isolated on purpose (Artemis's recommendation): this suite draws,
+  // moves, resizes, deletes, and — in the legacy-snapshot-restore case
+  // (E2E-20) — WIPES EVERY SHAPE on the board via a version restore.
+  // Running any of that against the shared `IDS.whiteboard` risks leftover
+  // nodes leaking into another spec's DOM assertions, or a wholesale wipe
+  // interacting badly with a spec that assumes a stable shape count.
+  // A dedicated project (not just a dedicated whiteboard) avoids reproducing
+  // the Share-panel member-list layout regression documented on
+  // `viewerProject` above — this suite adds its own ADMIN+VIEWER membership
+  // pair without touching any other project's member list.
+  shapesProject: '50000000-0000-4000-8000-000000000001',
+  shapesWhiteboard: '50000000-0000-4000-8000-000000000002',
+  rectShape: '50000000-0000-4000-8000-000000000003',
+  ellipseShape: '50000000-0000-4000-8000-000000000004',
+  diamondShape: '50000000-0000-4000-8000-000000000005',
+  textShape: '50000000-0000-4000-8000-000000000006',
+  lineShape: '50000000-0000-4000-8000-000000000007',
+  shapeConnector: '50000000-0000-4000-8000-000000000008',
+  legacySnapshot: '50000000-0000-4000-8000-000000000009',
 }
 
 export const STORAGE_STATE = 'e2e/.auth/state.json'

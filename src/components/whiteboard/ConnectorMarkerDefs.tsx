@@ -41,7 +41,13 @@ function ArrowMarker({
       orient="auto-start-reverse"
       markerUnits="userSpaceOnUse"
     >
-      <path d="M 0 0 L 10 5 L 0 10 z" fill={color} stroke={color} strokeWidth={sw} strokeLinejoin="round" />
+      <path
+        d="M 0 0 L 10 5 L 0 10 z"
+        fill={color}
+        stroke={color}
+        strokeWidth={sw}
+        strokeLinejoin="round"
+      />
     </marker>
   )
 }
@@ -57,7 +63,12 @@ export function ConnectorMarkerDefs() {
         overflow: 'hidden',
       }}
     >
-      <svg width="0" height="0" role="img" aria-label="Connector arrowhead markers">
+      <svg
+        width="0"
+        height="0"
+        role="img"
+        aria-label="Connector arrowhead markers"
+      >
         <defs>
           {AREA_COLORS.map((c) => (
             <ArrowMarker

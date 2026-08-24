@@ -56,7 +56,10 @@ describe('boundaryPoint — degenerate guards', () => {
   it('guard 1: coincident centres substitute (0,-1) and return top-centre, not NaN', () => {
     for (const kind of ['rectangle', 'ellipse', 'diamond', 'text'] as const) {
       const bounds: ShapeBounds = { kind, ...CENTERED }
-      const centre = { x: bounds.x + bounds.width / 2, y: bounds.y + bounds.height / 2 }
+      const centre = {
+        x: bounds.x + bounds.width / 2,
+        y: bounds.y + bounds.height / 2,
+      }
       const p = boundaryPoint(bounds, centre)
       assertFiniteBoundaryPoint(p)
       // Top-centre direction: x stays at the shape's horizontal centre.
@@ -81,8 +84,20 @@ describe('boundaryPoint — degenerate guards', () => {
 
 describe('connectorEndpoints', () => {
   it('aims each endpoint toward the other shape’s centre, both finite', () => {
-    const source: ShapeBounds = { kind: 'rectangle', x: 0, y: 0, width: 100, height: 100 }
-    const target: ShapeBounds = { kind: 'ellipse', x: 300, y: 0, width: 100, height: 100 }
+    const source: ShapeBounds = {
+      kind: 'rectangle',
+      x: 0,
+      y: 0,
+      width: 100,
+      height: 100,
+    }
+    const target: ShapeBounds = {
+      kind: 'ellipse',
+      x: 300,
+      y: 0,
+      width: 100,
+      height: 100,
+    }
 
     const { sx, sy, tx, ty } = connectorEndpoints(source, target)
     expect(Number.isFinite(sx)).toBe(true)
@@ -97,8 +112,20 @@ describe('connectorEndpoints', () => {
   })
 
   it('handles two shapes at the exact same position without NaN (guard 1 composed)', () => {
-    const a: ShapeBounds = { kind: 'diamond', x: 5, y: 5, width: 40, height: 40 }
-    const b: ShapeBounds = { kind: 'diamond', x: 5, y: 5, width: 40, height: 40 }
+    const a: ShapeBounds = {
+      kind: 'diamond',
+      x: 5,
+      y: 5,
+      width: 40,
+      height: 40,
+    }
+    const b: ShapeBounds = {
+      kind: 'diamond',
+      x: 5,
+      y: 5,
+      width: 40,
+      height: 40,
+    }
     const result = connectorEndpoints(a, b)
     for (const v of Object.values(result)) {
       expect(Number.isFinite(v)).toBe(true)
@@ -109,15 +136,20 @@ describe('connectorEndpoints', () => {
 describe('resolveMeasuredSize (guard 3: unmeasured node fallback)', () => {
   it('uses measured dimensions when present', () => {
     expect(
-      resolveMeasuredSize({ width: 120, height: 80 }, { width: 999, height: 999 }),
+      resolveMeasuredSize(
+        { width: 120, height: 80 },
+        { width: 999, height: 999 },
+      ),
     ).toEqual({ width: 120, height: 80 })
   })
 
   it('falls back to persisted width/height when measured is undefined', () => {
-    expect(resolveMeasuredSize(undefined, { width: 160, height: 100 })).toEqual({
-      width: 160,
-      height: 100,
-    })
+    expect(resolveMeasuredSize(undefined, { width: 160, height: 100 })).toEqual(
+      {
+        width: 160,
+        height: 100,
+      },
+    )
   })
 
   it('falls back per-field when measured is partially populated', () => {

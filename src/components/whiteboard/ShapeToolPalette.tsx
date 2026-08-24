@@ -5,9 +5,17 @@
 // Toolbar.tsx (which owns table/relationship/export/import/auto-layout/
 // search/history).
 
-import { ArrowRight, Circle, Diamond, MessageCircle, Square, SquareDashed, Type } from 'lucide-react'
-import { Button } from '@/components/ui/button'
+import {
+  ArrowRight,
+  Circle,
+  Diamond,
+  MessageCircle,
+  Square,
+  SquareDashed,
+  Type,
+} from 'lucide-react'
 import type { ToolMode } from '@/lib/react-flow/tool-mode'
+import { Button } from '@/components/ui/button'
 
 interface ShapeToolDescriptor {
   tool: 'rectangle' | 'ellipse' | 'diamond' | 'arrow' | 'text'
@@ -38,7 +46,9 @@ export interface ShapeToolPaletteProps {
    * Discriminated by `event.detail === 0` (keyboard-synthesised click), so
    * a mouse double-click on the tool never creates a shape.
    */
-  onKeyboardCreate?: (tool: 'rectangle' | 'ellipse' | 'diamond' | 'arrow' | 'text') => void
+  onKeyboardCreate?: (
+    tool: 'rectangle' | 'ellipse' | 'diamond' | 'arrow' | 'text',
+  ) => void
 }
 
 export function ShapeToolPalette({

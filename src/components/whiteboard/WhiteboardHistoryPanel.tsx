@@ -399,7 +399,9 @@ export function WhiteboardHistoryPanel({
         <AlertDialogContent>
           <AlertDialogHeader>
             <AlertDialogTitle>Restore this version?</AlertDialogTitle>
-            <AlertDialogDescription>{restoreConfirmCopy}</AlertDialogDescription>
+            <AlertDialogDescription>
+              {restoreConfirmCopy}
+            </AlertDialogDescription>
           </AlertDialogHeader>
           <AlertDialogFooter>
             <AlertDialogCancel>Cancel</AlertDialogCancel>

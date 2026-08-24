@@ -104,7 +104,11 @@ type AckResult =
   | {
       ok: true
       entity: unknown
-      cascade?: { relationships?: number; columns?: number; connectors?: number }
+      cascade?: {
+        relationships?: number
+        columns?: number
+        connectors?: number
+      }
     }
   | {
       ok: false
@@ -257,8 +261,7 @@ function setupWhiteboardNamespace(ioServer: SocketIOServer): void {
   whiteboardNsp.use(async (socket, next) => {
     try {
       // --- JWT path (MCP server) ---
-      // eslint-disable-next-line @typescript-eslint/no-unnecessary-condition -- socket.handshake.auth is cast for property access, but a real socket.io client can connect without sending `auth` at all; it is genuinely undefined at runtime for browser (cookie-path) clients.
-      const authToken = (socket.handshake.auth as Record<string, unknown>)?.token
+      const authToken = (socket.handshake.auth as Record<string, unknown>).token
       if (authToken && typeof authToken === 'string') {
         try {
           const payload = await validateCollabToken(authToken)
@@ -1309,39 +1312,46 @@ function setupCollaborationEventHandlers(
   // ========================================================================
 
   // Shape creation
-  socket.on('shape:create', async (data: any, cb?: (res: AckResult) => void) => {
-    if (isSessionExpired(socket)) {
-      socket.emit('session_expired')
-      socket.disconnect(true)
-      cb?.({ ok: false, code: 'SESSION_EXPIRED', message: 'Session expired' })
-      return
-    }
-    if (
-      await denyIfInsufficientPermission(socket, whiteboardId, 'shape:create')
-    ) {
-      cb?.({ ok: false, code: 'FORBIDDEN', message: 'Insufficient permission' })
-      return
-    }
+  socket.on(
+    'shape:create',
+    async (data: any, cb?: (res: AckResult) => void) => {
+      if (isSessionExpired(socket)) {
+        socket.emit('session_expired')
+        socket.disconnect(true)
+        cb?.({ ok: false, code: 'SESSION_EXPIRED', message: 'Session expired' })
+        return
+      }
+      if (
+        await denyIfInsufficientPermission(socket, whiteboardId, 'shape:create')
+      ) {
+        cb?.({
+          ok: false,
+          code: 'FORBIDDEN',
+          message: 'Insufficient permission',
+        })
+        return
+      }
 
-    try {
-      const validated = createShapeSchema.parse({ ...data, whiteboardId })
-      const shape = await createShape(validated)
-      socket.broadcast.emit('shape:created', { ...shape, createdBy: userId })
-      cb?.({ ok: true, entity: shape })
-    } catch (error) {
-      console.error('Failed to create shape:', error)
-      const message =
-        error instanceof Error ? error.message : 'Failed to create shape'
-      socket.emit('error', {
-        event: 'shape:create',
-        error: 'VALIDATION_ERROR',
-        message,
-      })
-      cb?.({ ok: false, code: 'VALIDATION_ERROR', message })
-      return
-    }
-    await safeUpdateSessionActivity(socket.id)
-  })
+      try {
+        const validated = createShapeSchema.parse({ ...data, whiteboardId })
+        const shape = await createShape(validated)
+        socket.broadcast.emit('shape:created', { ...shape, createdBy: userId })
+        cb?.({ ok: true, entity: shape })
+      } catch (error) {
+        console.error('Failed to create shape:', error)
+        const message =
+          error instanceof Error ? error.message : 'Failed to create shape'
+        socket.emit('error', {
+          event: 'shape:create',
+          error: 'VALIDATION_ERROR',
+          message,
+        })
+        cb?.({ ok: false, code: 'VALIDATION_ERROR', message })
+        return
+      }
+      await safeUpdateSessionActivity(socket.id)
+    },
+  )
 
   // Shape update (position/size/style/label)
   socket.on(

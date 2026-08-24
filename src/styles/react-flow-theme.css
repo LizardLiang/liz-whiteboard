@@ -509,6 +509,17 @@
     0 0 0 4px var(--rf-edge-stroke-selected);
 }
 
+/* N1 (Apollo): a read-only viewer (public share link OR an authenticated
+ * VIEWER, canEdit=false) gets NO hover-revealed handle affordance at all —
+ * the handles stay mounted (React Flow's edge-position resolver needs them
+ * to render connectors at all, §6a) but every handle on this node is
+ * unconditionally inert. `!important` is deliberate: it must win over the
+ * :hover/:focus-within/.selected/.is-connecting reveal rules below
+ * regardless of source order or specificity. */
+.react-flow .react-flow__node-shape.read-only .react-flow__handle {
+  pointer-events: none !important;
+}
+
 /* ---- Shape node handles ------------------------------------------------- */
 /* The order of this block is load-bearing (N5): several rules here tie on
  * specificity with the rules they must beat and win only on SOURCE ORDER
@@ -529,7 +540,10 @@
 /* Never paint the global connect-drag dot on the covering handle — it would
  * sit in the centre of every shape during ANY connect drag, ER drags
  * included. */
-.is-connecting .react-flow .react-flow__node-shape .react-flow__handle.shape-tgt::before,
+.is-connecting
+  .react-flow
+  .react-flow__node-shape
+  .react-flow__handle.shape-tgt::before,
 .react-flow .react-flow__node-shape .react-flow__handle.shape-tgt::before {
   content: none;
 }
@@ -537,7 +551,10 @@
 /* Drop-anywhere: pointer-active only while a connection is in progress.
  * Mirrors the existing `.is-connecting … .target.connectionindicator` rule
  * above rather than inventing a second mechanism. */
-.is-connecting .react-flow .react-flow__node-shape .react-flow__handle.shape-tgt {
+.is-connecting
+  .react-flow
+  .react-flow__node-shape
+  .react-flow__handle.shape-tgt {
   pointer-events: all;
 }
 
@@ -553,16 +570,19 @@
 .react-flow .react-flow__node-shape:focus-within .react-flow__handle.shape-src {
   pointer-events: all;
 }
-.is-connecting .react-flow .react-flow__node-shape .react-flow__handle.shape-src {
+.is-connecting
+  .react-flow
+  .react-flow__node-shape
+  .react-flow__handle.shape-src {
   pointer-events: none;
 }
 
 /* ---- Connector edges ----------------------------------------------------- */
-.react-flow__edge.connector path.react-flow__edge-path {
+.react-flow__edge-connector path.react-flow__edge-path {
   transition:
     stroke-width 0.2s ease,
     opacity 0.2s ease;
 }
-.react-flow__edge.connector:hover path.react-flow__edge-path {
+.react-flow__edge-connector:hover path.react-flow__edge-path {
   stroke-width: 2.5;
 }

@@ -44,13 +44,16 @@ import type {
   ShapeNodeType,
   TableNodeType,
 } from '@/lib/react-flow/types'
-import { isDrawTool } from '@/lib/react-flow/tool-mode'
 import type { DrawTool, ToolMode } from '@/lib/react-flow/tool-mode'
 import type {
   AffordanceRequest,
   InitialEditingField,
 } from '@/lib/react-flow/canvas-mode'
-import { CanvasEditContext, CanvasModeContext } from '@/lib/react-flow/canvas-mode'
+import { isDrawTool } from '@/lib/react-flow/tool-mode'
+import {
+  CanvasEditContext,
+  CanvasModeContext,
+} from '@/lib/react-flow/canvas-mode'
 import {
   parseColumnHandleId,
   recalculateEdgesForDraggedNodes,
@@ -381,8 +384,11 @@ export function ReactFlowCanvas({
 
   // Connector edges (Phase 1) — same separate-state pattern as relationship
   // edges, merged into the single <ReactFlow edges> array below.
-  const [connectorEdgesState, setConnectorEdgesState, handleConnectorEdgesChange] =
-    useEdgesState<ConnectorEdgeType>(connectorEdges)
+  const [
+    connectorEdgesState,
+    setConnectorEdgesState,
+    handleConnectorEdgesChange,
+  ] = useEdgesState<ConnectorEdgeType>(connectorEdges)
   useEffect(() => {
     setConnectorEdgesState(connectorEdges)
   }, [connectorEdges, setConnectorEdgesState])
@@ -541,9 +547,7 @@ export function ReactFlowCanvas({
   // rapid re-jump (same or different table, before the previous pulse
   // finished either phase) clears the prior timeout instead of letting it
   // fire late/early against whichever node or phase is stale by then.
-  const jumpPulseTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(
-    null,
-  )
+  const jumpPulseTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null)
 
   // React Flow instance — used by the search-palette focus request below to
   // pan/zoom the viewport (shares the store with the container's instance).
@@ -1111,9 +1115,7 @@ export function ReactFlowCanvas({
         const finalPositions = [node, ...draggedNodes]
           .filter((n) => draggedShapeIds.has(n.id))
           // De-duplicate — `node` may also appear in `draggedNodes`.
-          .filter(
-            (n, i, arr) => arr.findIndex((o) => o.id === n.id) === i,
-          )
+          .filter((n, i, arr) => arr.findIndex((o) => o.id === n.id) === i)
           .map((n) => ({
             id: n.id,
             positionX: n.position.x,
@@ -1400,7 +1402,10 @@ export function ReactFlowCanvas({
             panOnScroll={true}
             defaultEdgeOptions={DEFAULT_EDGE_OPTIONS}
           >
-            <CanvasNodeLayer enabled={canvasMode} editingTableId={editingTableId} />
+            <CanvasNodeLayer
+              enabled={canvasMode}
+              editingTableId={editingTableId}
+            />
             {showControls && <Controls />}
             {showBackground && (
               <Background color="var(--rf-background-pattern)" gap={16} />

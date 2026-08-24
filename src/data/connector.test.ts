@@ -173,9 +173,7 @@ describe('findConnectorsByShapeId', () => {
     })
 
     const touchingB = await findConnectorsByShapeId(b.id)
-    expect(touchingB.map((c) => c.id).sort()).toEqual(
-      [ab.id, cb.id].sort(),
-    )
+    expect(touchingB.map((c) => c.id).sort()).toEqual([ab.id, cb.id].sort())
 
     const touchingA = await findConnectorsByShapeId(a.id)
     expect(touchingA.map((c) => c.id)).toEqual([ab.id])

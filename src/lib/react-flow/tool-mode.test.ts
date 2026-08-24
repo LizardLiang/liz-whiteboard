@@ -4,11 +4,7 @@
 // "is a draw tool" during the D-1 migration.
 
 import { describe, expect, it } from 'vitest'
-import {
-  DRAW_TOOLS,
-  TOOL_TO_SHAPE_KIND,
-  isDrawTool,
-} from './tool-mode'
+import { DRAW_TOOLS, TOOL_TO_SHAPE_KIND, isDrawTool } from './tool-mode'
 import type { ToolMode } from './tool-mode'
 
 describe('isDrawTool', () => {

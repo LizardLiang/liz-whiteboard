@@ -189,7 +189,14 @@ describe('captureWhiteboardState', () => {
     await seedDiagram(whiteboardId)
     const payload = await captureWhiteboardState(whiteboardId)
     expect(Object.keys(payload).sort()).toEqual(
-      ['areas', 'connectors', 'relationships', 'shapes', 'tables', 'whiteboard'].sort(),
+      [
+        'areas',
+        'connectors',
+        'relationships',
+        'shapes',
+        'tables',
+        'whiteboard',
+      ].sort(),
     )
   })
 })
@@ -277,9 +284,7 @@ describe('restoreWhiteboardFromSnapshot', () => {
     expect(areas).toHaveLength(1)
 
     const shapes = await findShapesByWhiteboard(whiteboardId)
-    expect(shapes.map((s) => s.id).sort()).toEqual(
-      [shape.id, shape2.id].sort(),
-    )
+    expect(shapes.map((s) => s.id).sort()).toEqual([shape.id, shape2.id].sort())
     const connectors = await findConnectorsByWhiteboard(whiteboardId)
     expect(connectors.map((c) => c.id)).toEqual([connector.id])
   })

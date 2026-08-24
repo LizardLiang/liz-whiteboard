@@ -37,8 +37,23 @@ import { AutoLayoutConfirmDialog } from './AutoLayoutConfirmDialog'
 import { TableFocusOverlay } from './TableFocusOverlay'
 import { WhiteboardAccessDenied } from './WhiteboardAccessDenied'
 import { WhiteboardPermissionsProvider } from './whiteboard-permissions-context'
-import type { Connection } from '@xyflow/react'
-import type { ZoomControls } from './Toolbar'
+import { ShapeToolPalette } from './ShapeToolPalette'
+import type { DrawTool, ToolMode } from '@/lib/react-flow/tool-mode'
+import type {
+  Cardinality,
+  CreateRelationship,
+  CreateTable,
+  ShapeStyle,
+  UpdateColumn,
+} from '@/data/schema'
+import type { EffectiveRole } from '@/data/permission'
+import type {
+  Column,
+  CommentWithAuthor,
+  Connector,
+  DiagramTable,
+  Shape,
+} from '@/data/models'
 import type {
   AreaNodeType,
   CommentNodeType,
@@ -49,29 +64,8 @@ import type {
   ShowMode,
   TableNodeType,
 } from '@/lib/react-flow/types'
-import {
-  DEFAULT_LINE_SIZE,
-  DEFAULT_SHAPE_SIZE,
-  DEFAULT_TEXT_SIZE,
-  KEYBOARD_CASCADE_STEP,
-  MIN_SHAPE_HEIGHT,
-  MIN_SHAPE_WIDTH,
-  NUDGE_STEP,
-  NUDGE_STEP_LARGE,
-} from '@/lib/react-flow/types'
-import type { Column, CommentWithAuthor, Connector, DiagramTable, Shape } from '@/data/models'
-import type { EffectiveRole } from '@/data/permission'
-import type {
-  Cardinality,
-  CreateRelationship,
-  CreateTable,
-  ShapeStyle,
-  UpdateColumn,
-} from '@/data/schema'
-import { TOOL_TO_SHAPE_KIND, isDrawTool } from '@/lib/react-flow/tool-mode'
-import type { DrawTool, ToolMode } from '@/lib/react-flow/tool-mode'
-import { useWhiteboardShapes } from '@/hooks/use-whiteboard-shapes'
-import { ShapeToolPalette } from './ShapeToolPalette'
+import type { ZoomControls } from './Toolbar'
+import type { Connection } from '@xyflow/react'
 import type { WhiteboardWithDiagram } from '@/data/whiteboard'
 import type { RelationshipWithDetails } from '@/data/relationship'
 import type { DiagramAST } from '@/lib/parser/ast'
@@ -81,6 +75,19 @@ import type { RelationshipErrorEvent } from '@/hooks/use-relationship-mutations'
 import type { ReconcileAfterDropParams } from '@/hooks/use-column-reorder-mutations'
 import type { Dialect } from '@/lib/ddl-generator'
 import type { ExportImageDialogOptions } from './ExportImageDialog'
+import { useWhiteboardShapes } from '@/hooks/use-whiteboard-shapes'
+import { TOOL_TO_SHAPE_KIND, isDrawTool } from '@/lib/react-flow/tool-mode'
+import {
+  DEFAULT_LINE_SIZE,
+  DEFAULT_SHAPE_SIZE,
+  DEFAULT_TEXT_SIZE,
+  KEYBOARD_CASCADE_STEP,
+  LAYOUT_CONSTRAINTS,
+  MIN_SHAPE_HEIGHT,
+  MIN_SHAPE_WIDTH,
+  NUDGE_STEP,
+  NUDGE_STEP_LARGE,
+} from '@/lib/react-flow/types'
 import { usePerfTrackerEnabled } from '@/hooks/use-perf-tracker-enabled'
 import { exportDiagramImage } from '@/lib/export/export-image'
 import { ForceFullDetailContext } from '@/lib/react-flow/level-of-detail'
@@ -125,7 +132,6 @@ import {
   reconcileAreaMembership,
 } from '@/lib/react-flow/area-bounds'
 import { calculateTableHeight } from '@/lib/react-flow/layout-adapter'
-import { LAYOUT_CONSTRAINTS } from '@/lib/react-flow/types'
 import { useD3ForceLayout } from '@/hooks/use-d3-force-layout'
 import { useAutoLayoutOrchestrator } from '@/hooks/use-auto-layout-orchestrator'
 import { applyBulkPositions } from '@/lib/auto-layout'
@@ -1461,9 +1467,7 @@ function ReactFlowWhiteboardInner({
 
   // Column reorder callback — wraps reconcileAfterDrop with real setNodes
   const handleColumnReorder = useCallback(
-    (
-      params: ReconcileAfterDropParams,
-    ) => {
+    (params: ReconcileAfterDropParams) => {
       columnReorderMutations.reconcileAfterDrop({
         ...params,
         setNodes,
@@ -1599,9 +1603,8 @@ function ReactFlowWhiteboardInner({
             handleExportDdlRef.current(tableId, dialect),
           onPreviewRelations: (tableId: string) =>
             handleTogglePreviewTableRef.current(tableId),
-          onColumnReorder: (
-            params: ReconcileAfterDropParams,
-          ) => handleColumnReorderRef.current(params),
+          onColumnReorder: (params: ReconcileAfterDropParams) =>
+            handleColumnReorderRef.current(params),
           emitColumnReorder: (tableId: string, ids: Array<string>) =>
             emitColumnReorderRef.current(tableId, ids),
           isQueueFullForTable: (tableId: string) =>
@@ -1646,9 +1649,8 @@ function ReactFlowWhiteboardInner({
             handleExportDdlRef.current(tableId, dialect),
           onPreviewRelations: (tableId: string) =>
             handleTogglePreviewTableRef.current(tableId),
-          onColumnReorder: (
-            params: ReconcileAfterDropParams,
-          ) => handleColumnReorderRef.current(params),
+          onColumnReorder: (params: ReconcileAfterDropParams) =>
+            handleColumnReorderRef.current(params),
           emitColumnReorder: (tableId: string, ids: Array<string>) =>
             emitColumnReorderRef.current(tableId, ids),
           isQueueFullForTable: (tableId: string) =>
@@ -2618,17 +2620,14 @@ function ReactFlowWhiteboardInner({
   // dashed placeholder + immediately focused editor need no separate UI path.
   const [draftShape, setDraftShape] = useState<Shape | null>(null)
 
-  // Transient "just created" id so a freshly drawn shape renders selected
-  // for one tick (FR-005) without permanently pinning selection through
-  // later, unrelated re-renders.
+  // A freshly created shape is selected (FR-005) and STAYS selected — like
+  // any normal click-selection — until the user deselects it (a pane click
+  // clears it explicitly, below) or selects something else via a normal
+  // click (React Flow's own onNodesChange updates the live selection state
+  // directly and does not depend on this id at all once set).
   const [justCreatedShapeId, setJustCreatedShapeId] = useState<string | null>(
     null,
   )
-  useEffect(() => {
-    if (!justCreatedShapeId) return
-    const t = setTimeout(() => setJustCreatedShapeId(null), 0)
-    return () => clearTimeout(t)
-  }, [justCreatedShapeId])
 
   // Bumped to request the label editor open for a specific shape — the
   // keyboard Enter/F2 entry gesture (FR-011) reuses this same mechanism.
@@ -2661,7 +2660,9 @@ function ReactFlowWhiteboardInner({
       // complete merged style or an un-patched field (e.g. stroke) would
       // reset every other field to its schema default.
       const current = shapes.find((s) => s.id === shapeId)?.style
-      updateShapeMutation(shapeId, { style: { ...current, ...patch } as ShapeStyle })
+      updateShapeMutation(shapeId, {
+        style: { ...current, ...patch } as ShapeStyle,
+      })
     },
     [shapes, updateShapeMutation],
   )
@@ -2679,15 +2680,18 @@ function ReactFlowWhiteboardInner({
   const handleDraftCommit = useCallback(
     (draft: Shape, text: string) => {
       setDraftShape(null)
-      createShapeMutation({
-        kind: 'text',
-        positionX: draft.positionX,
-        positionY: draft.positionY,
-        width: draft.width,
-        height: draft.height,
-        props: { kind: 'text' },
-        text,
-      })
+      createShapeMutation(
+        {
+          kind: 'text',
+          positionX: draft.positionX,
+          positionY: draft.positionY,
+          width: draft.width,
+          height: draft.height,
+          props: { kind: 'text' },
+          text,
+        },
+        (created) => setJustCreatedShapeId(created.id),
+      )
     },
     [createShapeMutation],
   )
@@ -2698,9 +2702,7 @@ function ReactFlowWhiteboardInner({
   // Persist a shape drag-stop — one shape:update per dragged shape (N of
   // them for a multi-select drag, never per-frame, tech-spec §10).
   const handleShapeDragStop = useCallback(
-    (
-      dragged: Array<{ id: string; positionX: number; positionY: number }>,
-    ) => {
+    (dragged: Array<{ id: string; positionX: number; positionY: number }>) => {
       for (const entry of dragged) {
         updateShapeMutation(entry.id, {
           positionX: entry.positionX,
@@ -2763,23 +2765,24 @@ function ReactFlowWhiteboardInner({
                   height === 0 ? 0.5 : (drag.startY - rect.y) / height,
                 ),
                 x2: clamp01(width === 0 ? 1 : (drag.endX - rect.x) / width),
-                y2: clamp01(
-                  height === 0 ? 0.5 : (drag.endY - rect.y) / height,
-                ),
+                y2: clamp01(height === 0 ? 0.5 : (drag.endY - rect.y) / height),
                 arrowStart: false,
                 arrowEnd: true,
               }
             })()
           : ({ kind: shapeKind } as const)
 
-      createShapeMutation({
-        kind: shapeKind,
-        positionX: rect.x,
-        positionY: rect.y,
-        width,
-        height,
-        props: props as never,
-      })
+      createShapeMutation(
+        {
+          kind: shapeKind,
+          positionX: rect.x,
+          positionY: rect.y,
+          width,
+          height,
+          props: props as never,
+        },
+        (created) => setJustCreatedShapeId(created.id),
+      )
       setActiveTool('select')
     },
     [whiteboardId, createShapeMutation],
@@ -2853,14 +2856,17 @@ function ReactFlowWhiteboardInner({
             }
           : ({ kind: shapeKind } as const)
 
-      createShapeMutation({
-        kind: shapeKind,
-        positionX,
-        positionY,
-        width: size.width,
-        height: size.height,
-        props: props as never,
-      })
+      createShapeMutation(
+        {
+          kind: shapeKind,
+          positionX,
+          positionY,
+          width: size.width,
+          height: size.height,
+          props: props as never,
+        },
+        (created) => setJustCreatedShapeId(created.id),
+      )
       setActiveTool('select')
     },
     [reactFlowInstance, whiteboardId, createShapeMutation],
@@ -2939,6 +2945,16 @@ function ReactFlowWhiteboardInner({
         type: 'connector',
         source: connector.sourceShapeId,
         target: connector.targetShapeId,
+        // A shape node has FOUR source handles (shape-src-top/right/bottom/
+        // left) and one target handle (shape-tgt). React Flow's own
+        // sourceX/Y-resolution needs a concrete handle id whenever a node
+        // has more than one handle of that type, or it silently declines to
+        // render the edge at all — even though ConnectorEdge ignores
+        // React Flow's sourceX/Y entirely and derives geometry itself via
+        // useInternalNode (FR-031a). The specific side is irrelevant; any
+        // valid handle id satisfies the resolver.
+        sourceHandle: 'shape-src-top',
+        targetHandle: 'shape-tgt',
         deletable: canEdit,
         selectable: canEdit,
         data: { connector },
@@ -3013,7 +3029,11 @@ function ReactFlowWhiteboardInner({
 
       const step = event.shiftKey ? NUDGE_STEP_LARGE : NUDGE_STEP
       const dx =
-        event.key === 'ArrowLeft' ? -step : event.key === 'ArrowRight' ? step : 0
+        event.key === 'ArrowLeft'
+          ? -step
+          : event.key === 'ArrowRight'
+            ? step
+            : 0
       const dy =
         event.key === 'ArrowUp' ? -step : event.key === 'ArrowDown' ? step : 0
 
@@ -3289,7 +3309,8 @@ function ReactFlowWhiteboardInner({
       const boundsOnlyRefit = new Set<string>()
       for (const d of dragged) {
         const rfNode = reactFlowInstance.getNode(d.id)
-        const w = rfNode?.measured?.width ?? LAYOUT_CONSTRAINTS.DEFAULT_NODE_WIDTH
+        const w =
+          rfNode?.measured?.width ?? LAYOUT_CONSTRAINTS.DEFAULT_NODE_WIDTH
         const h =
           rfNode?.measured?.height ??
           calculateTableHeight(d.data.table.columns.length)
@@ -3610,6 +3631,11 @@ function ReactFlowWhiteboardInner({
               relationsPreviewTableId={relationsPreviewTableId}
               onPaneClick={(event) => {
                 setRelationsPreviewTableId(null)
+                // A pane click deselects everything (React Flow's own
+                // resetSelectedElements) — release the "just created"
+                // forced-selection override too, or the next unrelated
+                // shape mutation would re-force it back on.
+                setJustCreatedShapeId(null)
                 if (!commentToolActive) return
                 const pos = reactFlowInstance.screenToFlowPosition({
                   x: event.clientX,
