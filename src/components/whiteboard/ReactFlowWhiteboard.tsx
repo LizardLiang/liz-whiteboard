@@ -44,6 +44,7 @@ import type {
   Cardinality,
   CreateRelationship,
   CreateTable,
+  ShapeKind,
   ShapeStyle,
   UpdateColumn,
 } from '@/data/schema'
@@ -83,11 +84,13 @@ import {
   DEFAULT_SHAPE_SIZE,
   DEFAULT_TEXT_SIZE,
   KEYBOARD_CASCADE_STEP,
+  KEYBOARD_CASCADE_WRAP,
   LAYOUT_CONSTRAINTS,
   MIN_SHAPE_HEIGHT,
   MIN_SHAPE_WIDTH,
   NUDGE_STEP,
   NUDGE_STEP_LARGE,
+  SHAPE_HANDLE_IDS,
 } from '@/lib/react-flow/types'
 import { usePerfTrackerEnabled } from '@/hooks/use-perf-tracker-enabled'
 import { exportDiagramImage } from '@/lib/export/export-image'
@@ -306,6 +309,72 @@ export interface ReactFlowWhiteboardProps {
     shapes?: Array<Shape>
     connectors?: Array<Connector>
   }
+}
+
+/**
+ * A fresh, uncommitted text-box draft (FR-012) — shared by the drag-to-draw
+ * commit path and the keyboard-create path (W4, Hermes code review: these
+ * two ~70-line functions were >80% duplicated). Not yet a real row; the
+ * caller stores it in `draftShape` state and only `createShape`s it once
+ * the user actually types something (ShapeDrawOverlay / ShapeNode's
+ * draft-commit handlers).
+ */
+function buildDefaultTextDraft(params: {
+  whiteboardId: string
+  positionX: number
+  positionY: number
+  width: number
+  height: number
+}): Shape {
+  return {
+    id: `draft-${crypto.randomUUID()}`,
+    whiteboardId: params.whiteboardId,
+    kind: 'text',
+    positionX: params.positionX,
+    positionY: params.positionY,
+    width: params.width,
+    height: params.height,
+    rotation: 0,
+    zIndex: 0,
+    text: null,
+    style: {
+      fill: 'none',
+      stroke: 'slate',
+      strokeWidth: 2,
+      strokeStyle: 'solid',
+      fontSize: 16,
+      textColor: 'auto',
+    },
+    props: { kind: 'text' },
+    createdAt: new Date(),
+    updatedAt: new Date(),
+  }
+}
+
+/**
+ * `props` for a non-text shape create payload (W4, Hermes code review —
+ * same duplication as `buildDefaultTextDraft` above). `lineFractions` is
+ * omitted by the keyboard-create path (no drag direction to derive from —
+ * defaults to a horizontal line) and supplied by the drag-commit path,
+ * computed from the actual press/release points.
+ */
+function buildShapeCreateProps(
+  shapeKind: Exclude<ShapeKind, 'text'>,
+  lineFractions?: { x1: number; y1: number; x2: number; y2: number },
+) {
+  if (shapeKind === 'line') {
+    const f = lineFractions ?? { x1: 0, y1: 0.5, x2: 1, y2: 0.5 }
+    return {
+      kind: 'line' as const,
+      x1: f.x1,
+      y1: f.y1,
+      x2: f.x2,
+      y2: f.y2,
+      arrowStart: false,
+      arrowEnd: true,
+    }
+  }
+  return { kind: shapeKind } as const
 }
 
 /**
@@ -2735,50 +2804,31 @@ function ReactFlowWhiteboardInner({
       const height = Math.max(rect.height, MIN_SHAPE_HEIGHT)
 
       if (shapeKind === 'text') {
-        setDraftShape({
-          id: `draft-${crypto.randomUUID()}`,
-          whiteboardId,
-          kind: 'text',
-          positionX: rect.x,
-          positionY: rect.y,
-          width: Math.max(width, DEFAULT_TEXT_SIZE.width / 2),
-          height: Math.max(height, DEFAULT_TEXT_SIZE.height),
-          rotation: 0,
-          zIndex: 0,
-          text: null,
-          style: {
-            fill: 'none',
-            stroke: 'slate',
-            strokeWidth: 2,
-            strokeStyle: 'solid',
-            fontSize: 16,
-            textColor: 'auto',
-          },
-          props: { kind: 'text' },
-          createdAt: new Date(),
-          updatedAt: new Date(),
-        })
+        setDraftShape(
+          buildDefaultTextDraft({
+            whiteboardId,
+            positionX: rect.x,
+            positionY: rect.y,
+            width: Math.max(width, DEFAULT_TEXT_SIZE.width / 2),
+            height: Math.max(height, DEFAULT_TEXT_SIZE.height),
+          }),
+        )
         setActiveTool('select')
         return
       }
 
-      const props =
+      const clamp01 = (v: number) => Math.min(1, Math.max(0, v))
+      const props = buildShapeCreateProps(
+        shapeKind,
         shapeKind === 'line'
-          ? (() => {
-              const clamp01 = (v: number) => Math.min(1, Math.max(0, v))
-              return {
-                kind: 'line' as const,
-                x1: clamp01(width === 0 ? 0 : (drag.startX - rect.x) / width),
-                y1: clamp01(
-                  height === 0 ? 0.5 : (drag.startY - rect.y) / height,
-                ),
-                x2: clamp01(width === 0 ? 1 : (drag.endX - rect.x) / width),
-                y2: clamp01(height === 0 ? 0.5 : (drag.endY - rect.y) / height),
-                arrowStart: false,
-                arrowEnd: true,
-              }
-            })()
-          : ({ kind: shapeKind } as const)
+          ? {
+              x1: clamp01(width === 0 ? 0 : (drag.startX - rect.x) / width),
+              y1: clamp01(height === 0 ? 0.5 : (drag.startY - rect.y) / height),
+              x2: clamp01(width === 0 ? 1 : (drag.endX - rect.x) / width),
+              y2: clamp01(height === 0 ? 0.5 : (drag.endY - rect.y) / height),
+            }
+          : undefined,
+      )
 
       createShapeMutation(
         {
@@ -2818,51 +2868,27 @@ function ReactFlowWhiteboardInner({
         y: window.innerHeight / 2,
       })
       const offset =
-        (keyboardCascadeCountRef.current % 8) * KEYBOARD_CASCADE_STEP
+        (keyboardCascadeCountRef.current % KEYBOARD_CASCADE_WRAP) *
+        KEYBOARD_CASCADE_STEP
       keyboardCascadeCountRef.current += 1
       const positionX = center.x - size.width / 2 + offset
       const positionY = center.y - size.height / 2 + offset
 
       if (shapeKind === 'text') {
-        setDraftShape({
-          id: `draft-${crypto.randomUUID()}`,
-          whiteboardId,
-          kind: 'text',
-          positionX,
-          positionY,
-          width: size.width,
-          height: size.height,
-          rotation: 0,
-          zIndex: 0,
-          text: null,
-          style: {
-            fill: 'none',
-            stroke: 'slate',
-            strokeWidth: 2,
-            strokeStyle: 'solid',
-            fontSize: 16,
-            textColor: 'auto',
-          },
-          props: { kind: 'text' },
-          createdAt: new Date(),
-          updatedAt: new Date(),
-        })
+        setDraftShape(
+          buildDefaultTextDraft({
+            whiteboardId,
+            positionX,
+            positionY,
+            width: size.width,
+            height: size.height,
+          }),
+        )
         setActiveTool('select')
         return
       }
 
-      const props =
-        shapeKind === 'line'
-          ? {
-              kind: 'line' as const,
-              x1: 0,
-              y1: 0.5,
-              x2: 1,
-              y2: 0.5,
-              arrowStart: false,
-              arrowEnd: true,
-            }
-          : ({ kind: shapeKind } as const)
+      const props = buildShapeCreateProps(shapeKind)
 
       createShapeMutation(
         {
@@ -2895,7 +2921,21 @@ function ReactFlowWhiteboardInner({
       draggable: canEdit,
       selectable: canEdit,
       deletable: canEdit,
-      selected: shape.id === justCreatedShapeId,
+      // `selected` is deliberately NOT computed here (B2, Hermes code
+      // review). This memo recomputes on every `shapes` change, so a
+      // derived `selected` value is re-asserted on every recompute — the
+      // resync effect in ReactFlowCanvas can then only ever ADD selection
+      // back in, never durably clear it, because the incoming memo value
+      // wins whenever it's already `true`. A shape that was selected once
+      // (e.g. just after creation) would silently re-select itself on
+      // every future data change (a remote edit, a style change, anything
+      // that gives `shapes` a new array identity) and ride along into
+      // Delete with whatever is genuinely selected at the time. Selection
+      // is live interaction state owned by React Flow's store, not derived
+      // data — see the one-shot `addSelectedNodes` effect below for how
+      // "select the thing I just created" is applied instead, and
+      // ReactFlowCanvas's resync effect for how `selected` is now
+      // preserved unconditionally from live state across a resync.
       zIndex: 0,
       data: {
         shape,
@@ -2934,7 +2974,6 @@ function ReactFlowWhiteboardInner({
   }, [
     shapes,
     canEdit,
-    justCreatedShapeId,
     labelEditRequest,
     handleShapeResizeEnd,
     handleShapeStyleChange,
@@ -2944,6 +2983,43 @@ function ReactFlowWhiteboardInner({
     handleDraftCommit,
     handleDraftCancel,
   ])
+
+  // One-shot selection for a just-created shape (FR-005, B2 fix) — applied
+  // IMPERATIVELY through the store API exactly once, instead of as a
+  // standing `selected` predicate in the shapeNodes memo above (see that
+  // memo's comment for the full B2 history: a derived, re-asserted
+  // `selected` combined with an OR-only resync merge meant a
+  // once-selected shape could silently re-select itself on any later,
+  // unrelated data change and ride into a Delete the user never intended
+  // for it). Waits for `shapes` to actually contain the new id — the
+  // creation mutation's ack callback can fire in the same tick it sets
+  // this state, before the `shapes` array (and therefore this render's
+  // node set) has caught up. The one-frame defer mirrors the same
+  // wait-for-adoption pattern ReactFlowCanvas's keyboard-focus effect
+  // already uses for the identical reason (a fresh node isn't necessarily
+  // in React Flow's own internal node lookup yet on the same tick its data
+  // arrives).
+  //
+  // `justCreatedShapeId` is consumed (reset to `null`) INSIDE the rAF
+  // callback, AFTER the selection is applied — not synchronously in the
+  // same effect tick that schedules the rAF. Resetting it synchronously
+  // here would trigger this same effect's own cleanup
+  // (`cancelAnimationFrame`) on the very next render, before the browser
+  // ever reaches the next animation frame — cancelling the selection
+  // before it happens, every time. (Observed empirically: an earlier
+  // version of this effect consumed the id synchronously and no
+  // just-created shape was ever actually selected.)
+  useEffect(() => {
+    if (!justCreatedShapeId) return
+    if (!shapes.some((s) => s.id === justCreatedShapeId)) return
+    const idToSelect = justCreatedShapeId
+    const raf = requestAnimationFrame(() => {
+      reactFlowStoreApi.getState().unselectNodesAndEdges()
+      reactFlowStoreApi.getState().addSelectedNodes([idToSelect])
+      setJustCreatedShapeId(null)
+    })
+    return () => cancelAnimationFrame(raf)
+  }, [justCreatedShapeId, shapes, reactFlowStoreApi])
 
   // Build React Flow connector edges from the connectors list.
   const connectorEdges = useMemo<Array<ConnectorEdgeType>>(
@@ -2961,8 +3037,8 @@ function ReactFlowWhiteboardInner({
         // React Flow's sourceX/Y entirely and derives geometry itself via
         // useInternalNode (FR-031a). The specific side is irrelevant; any
         // valid handle id satisfies the resolver.
-        sourceHandle: 'shape-src-top',
-        targetHandle: 'shape-tgt',
+        sourceHandle: SHAPE_HANDLE_IDS.sourceTop,
+        targetHandle: SHAPE_HANDLE_IDS.target,
         deletable: canEdit,
         selectable: canEdit,
         data: { connector },

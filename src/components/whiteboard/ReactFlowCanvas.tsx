@@ -389,26 +389,32 @@ export function ReactFlowCanvas({
   const [shapeNodesState, setShapeNodesState, handleShapeNodesChange] =
     useNodesState<ShapeNodeType>(shapeNodes)
   useEffect(() => {
-    // Preserve the live `selected` flag across a resync (bug found while
-    // verifying FR-009): `shapeNodes` recomputes on every `shapes` data
-    // change, INCLUDING the optimistic update from the shape's own style
-    // edit — resyncing wholesale from that new prop would silently
-    // deselect the very shape the user just restyled (its `selected` here
-    // is only ever `true` for `justCreatedShapeId`, unrelated to a live
-    // mouse/keyboard selection), hiding the `ShapeStyleControls` toolbar
-    // after exactly one click and making a second style edit impossible
-    // without reselecting. Selection changes triggered by user gestures
-    // (click, Escape, pane click) go through `handleShapeNodesChange`
-    // directly, never through this effect, so carrying the previous
-    // `selected` forward here only ever prevents an unintended reset — it
-    // can never resurrect a selection the user genuinely cleared.
+    // Preserve the live `selected` flag across a resync, UNCONDITIONALLY
+    // (B2, Hermes code review — this is the fixed version of a merge that
+    // was itself the mechanism of that bug). `shapeNodes` recomputes on
+    // every `shapes` data change — a remote edit, a style change, a
+    // create/delete elsewhere on the board — and resyncing wholesale from
+    // that prop would blow away whatever is actually selected right now.
+    // The previous version of this effect tried to have it both ways with
+    // `n.selected || !prevSelected.get(n.id) ? n : {...n, selected: true}`
+    // — an OR that only ever ADDS selection back in. Since ReactFlowWhite-
+    // board's `shapeNodes` memo no longer computes `selected` at all
+    // (selection is applied imperatively, once, through the store API —
+    // see that memo's comment and the one-shot effect below it), there is
+    // now exactly one source of truth for this flag: whatever this
+    // effect's own PREVIOUS state said. Every user-driven selection
+    // change (click, Escape, pane click, keyboard select) goes through
+    // `handleShapeNodesChange` directly and updates `shapeNodesState`
+    // before this effect ever runs again, so carrying `prev.selected`
+    // forward here can only ever preserve the live truth — it cannot
+    // resurrect a cleared selection, and it cannot re-assert a stale one,
+    // because there is no second opinion left to disagree with it.
     setShapeNodesState((prev) => {
       const prevSelected = new Map(prev.map((n) => [n.id, n.selected]))
-      return shapeNodes.map((n) =>
-        n.selected || !prevSelected.get(n.id)
-          ? n
-          : { ...n, selected: true },
-      )
+      return shapeNodes.map((n) => ({
+        ...n,
+        selected: prevSelected.get(n.id) ?? false,
+      }))
     })
   }, [shapeNodes, setShapeNodesState])
   const shapeIdSet = useMemo(
@@ -1424,7 +1430,18 @@ export function ReactFlowCanvas({
         <div
           ref={wrapperRef}
           className={`react-flow-wrapper ${isConnecting ? 'is-connecting' : ''} ${isConnectingFromShape ? 'is-connecting-from-shape' : ''} ${className}`}
-          style={{ width: '100%', height: '100%' }}
+          // W1 (Hermes code review): `position: relative` makes this div
+          // the containing block for ShapeDrawOverlay's `position:
+          // absolute; inset: 0` child, so that child's box shares this
+          // element's own top-left corner in viewport space — which is
+          // exactly what lets the overlay convert raw pointer clientX/Y
+          // into wrapper-relative CSS coordinates (see ShapeDrawOverlay's
+          // gestureRef comment). Without this, the containing block fell
+          // through to a `position: relative` ancestor further up
+          // (ReactFlowWhiteboard's own wrapper div), whose top-left sits
+          // below the route header and Toolbar — so the rubber-band draw
+          // preview rendered that many pixels away from the actual cursor.
+          style={{ width: '100%', height: '100%', position: 'relative' }}
         >
           {/* Global SVG marker definitions for cardinality indicators */}
           <CardinalityMarkerDefs />
