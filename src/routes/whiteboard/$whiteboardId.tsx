@@ -405,6 +405,12 @@ function WhiteboardEditor() {
       queryClient.invalidateQueries({
         queryKey: ['relationships', whiteboardId],
       })
+      // B1 (Hermes code review): shapes/connectors feed this canvas via
+      // useWhiteboardShapes, which reads only ['shapes', whiteboardId] —
+      // omitted here, so a remote collaborator's restore left this
+      // client's own stale shape state un-refreshed even though the
+      // comment above claims every feeding query is refreshed.
+      queryClient.invalidateQueries({ queryKey: ['shapes', whiteboardId] })
     }
 
     on('table:moved', handleTableMoved)
@@ -552,6 +558,19 @@ function WhiteboardEditor() {
         {/* Canvas — React Flow renders its own Toolbar internally. */}
         <div className="flex-1 overflow-hidden relative">
           <ReactFlowWhiteboard
+            // S3 (Hermes code review): `key` forces a full remount on
+            // board switch (client-side navigation reuses this route
+            // component across different `whiteboardId`s) rather than
+            // letting `useWhiteboardShapes`'s local state carry the
+            // PREVIOUS board's shapes/connectors across the switch — the
+            // cache-sync effect added for FR-035a would otherwise write
+            // that stale data into the NEW board's `['shapes', newId]`
+            // query cache for one render cycle before its own fetch
+            // resolves. Self-healing either way (confirmed by Hermes),
+            // but eliminating the possibility outright is cheap and
+            // correct: a different `whiteboardId` is a materially
+            // different canvas, not a prop update to an existing one.
+            key={whiteboardId}
             whiteboardId={whiteboardId}
             userId={userId}
             showMinimap={whiteboard.tables.length > 0}

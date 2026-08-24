@@ -179,6 +179,13 @@ export function WhiteboardHistoryPanel({
       queryClient.invalidateQueries({
         queryKey: ['relationships', whiteboardId],
       })
+      // B1 (Hermes code review): this set omitted ['shapes', whiteboardId] —
+      // the only key useWhiteboardShapes reads. Without it the canvas's
+      // useState copy of shapes/connectors survives a restore untouched; a
+      // shape that the restore re-inserts under its original id (D3) then
+      // renders at its stale pre-restore position, and dragging it writes
+      // that stale position back — a silent partial undo of the restore.
+      queryClient.invalidateQueries({ queryKey: ['shapes', whiteboardId] })
     },
     onError: () => toast.error('Failed to restore version'),
   })
