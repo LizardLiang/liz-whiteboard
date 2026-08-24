@@ -19,8 +19,11 @@ import type { NodeProps } from '@xyflow/react'
 import type { ShapeNodeType } from '@/lib/react-flow/types'
 import {
   CONNECT_HIT_STROKE_WIDTH,
+  DASHED_STROKE_PATTERN,
+  DRAW_PLACEHOLDER_BORDER,
   MIN_SHAPE_HEIGHT,
   MIN_SHAPE_WIDTH,
+  SHAPE_HANDLE_IDS,
 } from '@/lib/react-flow/types'
 import { resolveAreaColor } from '@/lib/area-colors'
 
@@ -212,7 +215,8 @@ export function ShapeNode({
   const fillColor = isUnfilled
     ? 'none'
     : resolveAreaColor(shape.style.fill).solid
-  const dash = shape.style.strokeStyle === 'dashed' ? '6 4' : undefined
+  const dash =
+    shape.style.strokeStyle === 'dashed' ? DASHED_STROKE_PATTERN : undefined
   const markerId = connectorArrowMarkerId(shape.style.stroke, !!selected)
 
   function commitLabel(text: string) {
@@ -318,7 +322,7 @@ export function ShapeNode({
             style={{
               position: 'absolute',
               inset: 0,
-              border: '1.5px dashed var(--rf-edge-stroke-selected)',
+              border: DRAW_PLACEHOLDER_BORDER,
               pointerEvents: 'none',
             }}
           />
@@ -385,35 +389,35 @@ export function ShapeNode({
             <Handle
               type="source"
               position={Position.Top}
-              id="shape-src-top"
+              id={SHAPE_HANDLE_IDS.sourceTop}
               className="shape-src"
               isConnectable={canEdit}
             />
             <Handle
               type="source"
               position={Position.Right}
-              id="shape-src-right"
+              id={SHAPE_HANDLE_IDS.sourceRight}
               className="shape-src"
               isConnectable={canEdit}
             />
             <Handle
               type="source"
               position={Position.Bottom}
-              id="shape-src-bottom"
+              id={SHAPE_HANDLE_IDS.sourceBottom}
               className="shape-src"
               isConnectable={canEdit}
             />
             <Handle
               type="source"
               position={Position.Left}
-              id="shape-src-left"
+              id={SHAPE_HANDLE_IDS.sourceLeft}
               className="shape-src"
               isConnectable={canEdit}
             />
             <Handle
               type="target"
               position={Position.Top}
-              id="shape-tgt"
+              id={SHAPE_HANDLE_IDS.target}
               className="shape-tgt"
               isConnectable={canEdit}
             />

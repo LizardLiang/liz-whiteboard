@@ -782,8 +782,20 @@ const boardCoordSchema = z
   .min(-MAX_BOARD_COORD)
   .max(MAX_BOARD_COORD)
 
-/** A 1|2|4 stroke width — a fixed set, not a free number, per tech-spec §3. */
-const strokeWidthSchema = z.union([z.literal(1), z.literal(2), z.literal(4)])
+/**
+ * A 1|2|4 stroke width — a fixed set, not a free number, per tech-spec §3.
+ * Exported (W9, Hermes code review) so `ShapeStyleControls.tsx`'s stroke-
+ * width picker derives its options from this schema instead of restating
+ * the same three literals independently.
+ */
+export const SHAPE_STROKE_WIDTHS = [1, 2, 4] as const
+const strokeWidthSchema = z.union(
+  SHAPE_STROKE_WIDTHS.map((w) => z.literal(w)) as [
+    z.ZodLiteral<1>,
+    z.ZodLiteral<2>,
+    z.ZodLiteral<4>,
+  ],
+)
 
 export const shapeKindSchema = z.enum([
   'rectangle',

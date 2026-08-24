@@ -31,7 +31,7 @@ const SHAPE_TOOLS: Array<ShapeToolDescriptor> = [
   { tool: 'text', label: 'Text', Icon: Type },
 ]
 
-export interface ShapeToolPaletteProps {
+interface ShapeToolPaletteProps {
   activeTool: ToolMode
   onSelectTool: (tool: ToolMode) => void
   /** Identical expression the Add Area button already used (FR-039). */

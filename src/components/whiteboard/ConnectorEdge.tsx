@@ -16,6 +16,7 @@ import { connectorArrowMarkerId } from './ConnectorMarkerDefs'
 import type { EdgeProps } from '@xyflow/react'
 import type { ConnectorEdgeType, ShapeNodeType } from '@/lib/react-flow/types'
 import type { ShapeBounds } from '@/lib/react-flow/shape-geometry'
+import { DASHED_STROKE_PATTERN } from '@/lib/react-flow/types'
 import {
   connectorEndpoints,
   resolveMeasuredSize,
@@ -89,7 +90,8 @@ export const ConnectorEdge = memo(
         style={{
           stroke: strokeColor,
           strokeWidth: style.strokeWidth,
-          strokeDasharray: style.strokeStyle === 'dashed' ? '6 4' : undefined,
+          strokeDasharray:
+            style.strokeStyle === 'dashed' ? DASHED_STROKE_PATTERN : undefined,
         }}
       />
     )

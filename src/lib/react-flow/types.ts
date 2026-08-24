@@ -497,8 +497,10 @@ export const DEFAULT_SHAPE_SIZE = { width: 160, height: 100 }
 export const DEFAULT_TEXT_SIZE = { width: 200, height: 40 }
 export const DEFAULT_LINE_SIZE = { width: 160, height: 48 }
 
-/** FR-019's cascade offset for keyboard-created shapes: (n mod 8) * step, both axes. */
+/** FR-019's cascade offset for keyboard-created shapes: (n mod wrap) * step, both axes. */
 export const KEYBOARD_CASCADE_STEP = 24
+/** S5 (Hermes code review): was an inline `% 8` literal beside this constant's sibling. */
+export const KEYBOARD_CASCADE_WRAP = 8
 
 /** Arrow-key nudge / Shift+arrow nudge, in flow units per keydown. */
 export const NUDGE_STEP = 8
@@ -506,6 +508,37 @@ export const NUDGE_STEP_LARGE = 40
 
 /** The invisible hit-stroke width that makes a 1px unfilled outline grabbable. */
 export const CONNECT_HIT_STROKE_WIDTH = 12
+
+/**
+ * A shape node's connect handle ids (W7, Hermes code review). Previously
+ * typed as bare string literals in both ShapeNode.tsx (which renders the
+ * `<Handle>` elements) and ReactFlowWhiteboard.tsx (which builds the
+ * keyboard-connect edge referencing them by id) — renaming one without the
+ * other would silently stop connectors rendering, with no compiler error.
+ */
+export const SHAPE_HANDLE_IDS = {
+  sourceTop: 'shape-src-top',
+  sourceRight: 'shape-src-right',
+  sourceBottom: 'shape-src-bottom',
+  sourceLeft: 'shape-src-left',
+  target: 'shape-tgt',
+} as const
+
+/**
+ * SVG `stroke-dasharray` for a shape/connector's `strokeStyle: 'dashed'`
+ * (W8, Hermes code review) — was written independently in ShapeNode.tsx
+ * and ConnectorEdge.tsx.
+ */
+export const DASHED_STROKE_PATTERN = '6 4'
+
+/**
+ * The draw-preview / draft-shape placeholder border (W8, Hermes code
+ * review) — was written independently in ShapeDrawOverlay.tsx (both the
+ * rectangle/text and ellipse preview branches) and ShapeNode.tsx (the
+ * draft-text-box placeholder).
+ */
+export const DRAW_PLACEHOLDER_BORDER =
+  '1.5px dashed var(--rf-edge-stroke-selected)'
 
 /**
  * Minimum subject-area node dimensions (GH #106). Shared floor between

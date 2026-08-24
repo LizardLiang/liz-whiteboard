@@ -8,15 +8,14 @@
 
 import { NodeToolbar, Position } from '@xyflow/react'
 import type { ShapeStyle } from '@/data/schema'
+import { SHAPE_STROKE_WIDTHS } from '@/data/schema'
 import { AREA_COLORS } from '@/lib/area-colors'
 
-export interface ShapeStyleControlsProps {
+interface ShapeStyleControlsProps {
   style: ShapeStyle
   visible: boolean
   onChange: (patch: Partial<ShapeStyle>) => void
 }
-
-const STROKE_WIDTHS = [1, 2, 4] as const
 
 function Swatch({
   active,
@@ -101,7 +100,7 @@ export function ShapeStyleControls({
           role="group"
           aria-label="Stroke width"
         >
-          {STROKE_WIDTHS.map((w) => (
+          {SHAPE_STROKE_WIDTHS.map((w) => (
             <button
               key={w}
               type="button"
