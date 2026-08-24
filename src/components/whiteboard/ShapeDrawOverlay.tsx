@@ -23,9 +23,13 @@
 import { useLayoutEffect, useRef, useState } from 'react'
 import { useReactFlow } from '@xyflow/react'
 import type { DrawTool } from '@/lib/react-flow/tool-mode'
-import { DRAW_DRAG_THRESHOLD_PX } from '@/lib/react-flow/types'
+import {
+  DASHED_STROKE_PATTERN,
+  DRAW_DRAG_THRESHOLD_PX,
+  DRAW_PLACEHOLDER_BORDER,
+} from '@/lib/react-flow/types'
 
-export interface ShapeDrawOverlayProps {
+interface ShapeDrawOverlayProps {
   activeTool: DrawTool
   /**
    * Fires once per completed (>= threshold) drag. `rect` is the normalised
@@ -66,7 +70,22 @@ export function ShapeDrawOverlay({
     pointerId: number
     startX: number
     startY: number
+    // W1 (Hermes code review): the wrapper's own viewport offset at
+    // gesture start, captured once and reused for the duration of the
+    // drag — see the `rect` state comment below for why the preview needs
+    // it but `screenToFlowPosition` below does not.
+    wrapperLeft: number
+    wrapperTop: number
   } | null>(null)
+  // `rect` (the CSS preview box, ScreenRect) is WRAPPER-RELATIVE —
+  // `.react-flow-wrapper` has `position: relative` (react-flow-theme.css)
+  // specifically so this overlay's `inset: 0` box shares its top-left
+  // corner, and `left`/`top` below are computed by subtracting the
+  // wrapper's own offset from the raw pointer event. `gestureRef`'s
+  // `startX`/`startY` stay VIEWPORT-absolute (raw `clientX`/`clientY`)
+  // because `onPointerUpCapture` feeds them straight into
+  // `screenToFlowPosition`, which already accounts for the pane's real
+  // rect on its own — converting them here too would double-subtract.
   const [rect, setRect] = useState<ScreenRect | null>(null)
 
   // Refs so the effect below never needs activeTool/onCommit/onDisarm in
@@ -93,8 +112,28 @@ export function ShapeDrawOverlay({
     if (!wrapper) return
 
     function endGesture() {
+      const pointerId = gestureRef.current?.pointerId
+      // Clear BEFORE releasing capture, not after (W3, Hermes code
+      // review): `releasePointerCapture` itself dispatches
+      // `lostpointercapture`, and clearing `gestureRef` first is what
+      // keeps that dispatch a no-op in `onLostPointerCaptureCapture`
+      // below rather than a second, redundant disarm.
       gestureRef.current = null
       setRect(null)
+      // Every abnormal-termination path (Escape, pointercancel, blur) used
+      // to leave capture on `wrapper` un-released — the browser's implicit
+      // release only happens on the pointer's own physical pointerup,
+      // which never comes for Escape or blur. During that window pan and
+      // click were silently inert for that pointer until the user
+      // physically released the mouse button. The normal (mis-click /
+      // committed-draw) pointerup path releases capture itself already;
+      // this is a harmless no-op there (`hasPointerCapture` guards it).
+      if (
+        pointerId !== undefined &&
+        wrapper!.hasPointerCapture(pointerId)
+      ) {
+        wrapper!.releasePointerCapture(pointerId)
+      }
     }
 
     function onPointerDownCapture(e: PointerEvent) {
@@ -112,20 +151,28 @@ export function ShapeDrawOverlay({
       e.stopPropagation() // the pane never sees this pointerdown at all
       e.preventDefault() // also suppresses compat mousedown/mousemove/mouseup
       wrapper!.setPointerCapture(e.pointerId)
+      const wrapperRect = wrapper!.getBoundingClientRect()
       gestureRef.current = {
         pointerId: e.pointerId,
         startX: e.clientX,
         startY: e.clientY,
+        wrapperLeft: wrapperRect.left,
+        wrapperTop: wrapperRect.top,
       }
-      setRect({ left: e.clientX, top: e.clientY, width: 0, height: 0 })
+      setRect({
+        left: e.clientX - wrapperRect.left,
+        top: e.clientY - wrapperRect.top,
+        width: 0,
+        height: 0,
+      })
     }
 
     function onPointerMoveCapture(e: PointerEvent) {
       const g = gestureRef.current
       if (!g || e.pointerId !== g.pointerId) return
       setRect({
-        left: Math.min(g.startX, e.clientX),
-        top: Math.min(g.startY, e.clientY),
+        left: Math.min(g.startX, e.clientX) - g.wrapperLeft,
+        top: Math.min(g.startY, e.clientY) - g.wrapperTop,
         width: Math.abs(e.clientX - g.startX),
         height: Math.abs(e.clientY - g.startY),
       })
@@ -281,7 +328,7 @@ function DrawPreview({ kind, rect }: { kind: DrawTool; rect: ScreenRect }) {
       <div
         style={{
           ...style,
-          border: '1.5px dashed var(--rf-edge-stroke-selected)',
+          border: DRAW_PLACEHOLDER_BORDER,
         }}
       />
     )
@@ -291,7 +338,7 @@ function DrawPreview({ kind, rect }: { kind: DrawTool; rect: ScreenRect }) {
       <div
         style={{
           ...style,
-          border: '1.5px dashed var(--rf-edge-stroke-selected)',
+          border: DRAW_PLACEHOLDER_BORDER,
           borderRadius: '50%',
         }}
       />
@@ -306,7 +353,7 @@ function DrawPreview({ kind, rect }: { kind: DrawTool; rect: ScreenRect }) {
           fill="none"
           stroke="var(--rf-edge-stroke-selected)"
           strokeWidth={1.5}
-          strokeDasharray="6 4"
+          strokeDasharray={DASHED_STROKE_PATTERN}
         />
       </svg>
     )
