@@ -261,6 +261,18 @@ function setupWhiteboardNamespace(ioServer: SocketIOServer): void {
   whiteboardNsp.use(async (socket, next) => {
     try {
       // --- JWT path (MCP server) ---
+      // No `?.` on `.auth` itself (process note, Hermes code review round
+      // on the shapes-and-connectors feature: this line's prior `?.` was
+      // removed in that same commit without a documented reason, which is
+      // the actual issue being fixed here — the removal itself was already
+      // correct). `socket.handshake.auth` is provably always an object,
+      // never null/undefined: socket.io-client's `connect(name, auth = {})`
+      // (socket.io/dist/client.js) defaults it whenever a client omits the
+      // `auth` option, which is exactly the cookie-path (browser) case this
+      // comment used to claim was unsafe; and socket.io-parser's
+      // `isPayloadValid` rejects a `null` CONNECT payload before it ever
+      // reaches this handler. `.token` on that object is always a safe
+      // property read.
       const authToken = (socket.handshake.auth as Record<string, unknown>).token
       if (authToken && typeof authToken === 'string') {
         try {
