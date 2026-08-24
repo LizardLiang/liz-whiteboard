@@ -107,6 +107,17 @@ export async function updateShape(
     )
     if (!prior) throw new Error('Shape not found')
 
+    // W2 (Hermes code review): `updateShapeSchema` has no `kind` field — a
+    // shape's kind never changes, so update payloads never carry one — but
+    // `props` is still its own independently-validated discriminated
+    // union, with no visibility into the ROW's actual `kind`. Cross-check
+    // here, against the prior row this function already reads, so a
+    // payload like `props: { kind: 'text' }` sent against a 'line' shape
+    // is rejected rather than persisted mismatched.
+    if (validated.props !== undefined && validated.props.kind !== prior.kind) {
+      throw new Error('props.kind must match the shape\'s existing kind')
+    }
+
     const values: Record<string, unknown> = { updatedAt: nowMs() }
     if (validated.positionX !== undefined)
       values.positionX = validated.positionX

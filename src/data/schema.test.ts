@@ -601,6 +601,52 @@ describe('shape/connector schemas (UNIT-02)', () => {
     })
   })
 
+  describe('createShapeSchema — kind/props.kind cross-validation (W2, Hermes code review)', () => {
+    it('rejects a mismatched kind and props.kind', () => {
+      const result = createShapeSchema.safeParse(
+        baseShape({ kind: 'line', props: { kind: 'text' } }),
+      )
+      expect(result.success).toBe(false)
+    })
+
+    it('rejects the reverse mismatch too', () => {
+      const result = createShapeSchema.safeParse(
+        baseShape({ kind: 'text', props: { kind: 'rectangle' } }),
+      )
+      expect(result.success).toBe(false)
+    })
+
+    it('accepts every kind when props.kind matches', () => {
+      for (const kind of [
+        'rectangle',
+        'ellipse',
+        'diamond',
+        'text',
+      ] as const) {
+        expect(
+          createShapeSchema.safeParse(baseShape({ kind, props: { kind } }))
+            .success,
+        ).toBe(true)
+      }
+      expect(
+        createShapeSchema.safeParse(
+          baseShape({
+            kind: 'line',
+            props: {
+              kind: 'line',
+              x1: 0,
+              y1: 0.5,
+              x2: 1,
+              y2: 0.5,
+              arrowStart: false,
+              arrowEnd: true,
+            },
+          }),
+        ).success,
+      ).toBe(true)
+    })
+  })
+
   describe('shapePropsSchema — line fractions (FR-031a)', () => {
     function lineProps(over: Record<string, unknown> = {}) {
       return {

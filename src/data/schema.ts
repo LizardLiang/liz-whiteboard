@@ -857,17 +857,29 @@ export const shapePropsSchema = z.discriminatedUnion('kind', [
  * Schema for creating a shape. Mirrors `createAreaSchema`'s convention:
  * `update` is defined independently below, not `.partial()` of this.
  */
-export const createShapeSchema = z.object({
-  whiteboardId: z.string().uuid(),
-  kind: shapeKindSchema,
-  positionX: boardCoordSchema,
-  positionY: boardCoordSchema,
-  width: z.number().positive().max(100_000),
-  height: z.number().positive().max(100_000),
-  text: z.string().max(SHAPE_LABEL_MAX_LENGTH).nullable().default(null),
-  style: shapeStyleSchema.optional(),
-  props: shapePropsSchema,
-})
+export const createShapeSchema = z
+  .object({
+    whiteboardId: z.string().uuid(),
+    kind: shapeKindSchema,
+    positionX: boardCoordSchema,
+    positionY: boardCoordSchema,
+    width: z.number().positive().max(100_000),
+    height: z.number().positive().max(100_000),
+    text: z.string().max(SHAPE_LABEL_MAX_LENGTH).nullable().default(null),
+    style: shapeStyleSchema.optional(),
+    props: shapePropsSchema,
+  })
+  // W2 (Hermes code review): `kind` and `props.kind` are validated
+  // independently above — `shapePropsSchema` is its own discriminated
+  // union with no visibility into the top-level `kind` field. Without
+  // this check, `{ kind: 'line', props: { kind: 'text' } }` parses and
+  // persists cleanly (ShapeNode.tsx switches on `shape.kind`, not
+  // `props.kind`, so a mismatched row renders as its `kind`, but with the
+  // WRONG props shape — e.g. a 'line' with no x1/y1/x2/y2 to draw with).
+  .refine((data) => data.kind === data.props.kind, {
+    message: 'props.kind must match kind',
+    path: ['props', 'kind'],
+  })
 
 /**
  * Schema for updating an existing shape. Defined independently (not

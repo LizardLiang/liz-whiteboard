@@ -174,4 +174,23 @@ describe('updateShape', () => {
     expect(updateIdx).toBeGreaterThan(-1)
     expect(order.slice(0, updateIdx)).toContain('select')
   })
+
+  it('rejects a props.kind that does not match the shape row\'s existing kind (W2, Hermes code review)', async () => {
+    const wbId = makeWhiteboardId()
+    const shape = await createShape(baseShape(wbId, { kind: 'rectangle' }))
+
+    await expect(
+      updateShape(shape.id, { props: { kind: 'text' } as never }),
+    ).rejects.toThrow(/kind/)
+  })
+
+  it('accepts a props update whose kind matches the existing row', async () => {
+    const wbId = makeWhiteboardId()
+    const shape = await createShape(baseShape(wbId, { kind: 'rectangle' }))
+
+    const updated = await updateShape(shape.id, {
+      props: { kind: 'rectangle' },
+    })
+    expect(updated.props).toEqual({ kind: 'rectangle' })
+  })
 })
