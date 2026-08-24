@@ -50,6 +50,39 @@ function connectorEdge(page: Page, connectorId: string) {
 }
 
 /**
+ * A shape's on-screen box, expressed relative to the `.react-flow` wrapper
+ * rather than the raw viewport. Investigating a false-positive 61px "regression"
+ * in E2E-19 (see its comment) found that clicking any shape permanently
+ * collapses ~61px of toolbar chrome ABOVE the canvas, on this test's very
+ * first shape click — moving the wrapper's own on-page position without
+ * moving anything WITHIN it. Every shape/table's position relative to the
+ * wrapper was byte-identical before and after that collapse; only raw
+ * viewport coordinates disagreed. Tests that compare a shape's position
+ * across an interaction spanning that first click must use this helper, not
+ * `.boundingBox()` directly, or they inherit that false failure.
+ */
+async function shapeBoxRelativeToCanvas(page: Page, locator: Locator) {
+  const [box, wrapperBox] = await Promise.all([
+    locator.boundingBox(),
+    page.evaluate(() => {
+      const el = document.querySelector('.react-flow')
+      if (!el) return null
+      const r = el.getBoundingClientRect()
+      return { x: r.x, y: r.y }
+    }),
+  ])
+  if (!box || !wrapperBox) {
+    throw new Error('shapeBoxRelativeToCanvas: shape or wrapper not found')
+  }
+  return {
+    x: box.x - wrapperBox.x,
+    y: box.y - wrapperBox.y,
+    width: box.width,
+    height: box.height,
+  }
+}
+
+/**
  * Force a fresh, fully-informed `fitView` via the toolbar's "Fit to Screen"
  * control, clicked TWICE. React Flow's own `fitView` calculation uses each
  * node's internally MEASURED dimensions (set by its own ResizeObserver
@@ -113,6 +146,56 @@ async function armTool(
 ) {
   await page.getByRole('button', { name: tool, exact: true }).click()
   await expect(page.locator('[data-testid="shape-draw-overlay"]')).toBeVisible()
+}
+
+/**
+ * Arms a listener that records the `pointerId` of the NEXT `pointerdown`
+ * on `.react-flow-wrapper`, for W3 (Hermes code review) tests that need to
+ * check `hasPointerCapture` after the fact — react-flow's own pan gesture
+ * needs its OWN observed `pointerdown` to start tracking a drag at all, so
+ * "does the pane pan mid-gesture after capture release" is not actually a
+ * valid test of `releasePointerCapture` having been called (it never pans
+ * regardless, since the overlay's `stopPropagation` meant the pane never
+ * saw the original pointerdown either). Checking `hasPointerCapture`
+ * directly is the precise, code-level assertion.
+ */
+async function captureNextWrapperPointerId(page: Page): Promise<void> {
+  await page.evaluate(() => {
+    ;(window as unknown as { __e2ePointerId: number | null }).__e2ePointerId =
+      null
+    document.querySelector('.react-flow-wrapper')!.addEventListener(
+      'pointerdown',
+      (e) => {
+        ;(
+          window as unknown as { __e2ePointerId: number | null }
+        ).__e2ePointerId = (e as PointerEvent).pointerId
+      },
+      { capture: true, once: true },
+    )
+  })
+}
+
+async function readCapturedWrapperPointerId(page: Page): Promise<number> {
+  const pid = await page.evaluate(
+    () =>
+      (window as unknown as { __e2ePointerId: number | null })
+        .__e2ePointerId,
+  )
+  expect(pid).not.toBeNull()
+  return pid!
+}
+
+async function wrapperHasPointerCapture(
+  page: Page,
+  pointerId: number,
+): Promise<boolean> {
+  return page.evaluate(
+    (pid) =>
+      document
+        .querySelector('.react-flow-wrapper')!
+        .hasPointerCapture(pid),
+    pointerId,
+  )
 }
 
 /** Drag-draw a shape from (x1,y1) to (x2,y2) in viewport (screen) coords. */
@@ -759,25 +842,50 @@ test.describe('Shapes and Connectors — Phase 1 (Epic A + C)', () => {
   })
 
 
-  test('E2E-03: Escape mid-draw cancels the shape and reverts the tool to select (FR-006)', async ({
+  test('E2E-03: Escape mid-draw cancels the shape, reverts the tool, and releases pointer capture so the canvas responds WITHOUT lifting the button (FR-006, W3)', async ({
     page,
   }) => {
     await openWhiteboard(page)
     const before = await page.locator('.react-flow__node').count()
     await armTool(page, 'Rectangle')
+    await captureNextWrapperPointerId(page)
     await page.mouse.move(950, 850)
     await page.mouse.down()
     await page.mouse.move(1050, 900, { steps: 5 })
+    const pointerId = await readCapturedWrapperPointerId(page)
+    await expect(wrapperHasPointerCapture(page, pointerId)).resolves.toBe(
+      true,
+    )
     await page.keyboard.press('Escape')
-    await page.mouse.up()
 
     await expect(
       page.getByRole('button', { name: 'Rectangle', exact: true }),
     ).toHaveAttribute('aria-pressed', 'false')
-    await expect(page.locator('.react-flow__node')).toHaveCount(before)
     await expect(
       page.locator('[data-testid="shape-draw-overlay"]'),
     ).toHaveCount(0)
+
+    // W3 (Hermes code review), the load-bearing assertion: before this
+    // fix, Escape mid-drag disarmed the tool but never released
+    // `.react-flow-wrapper`'s pointer capture — the browser's implicit
+    // release only happens on the pointer's own physical pointerup, which
+    // Escape does not perform, so a captured pointer left pan/click
+    // silently inert until the user physically released the mouse button.
+    // Checked directly via `hasPointerCapture`, WITHOUT calling
+    // `mouse.up()` first — `mouse.up()` performs a real capture release of
+    // its own regardless of whether this fix is present, masking the
+    // defect this case exists to catch. (A pane-pan-resumes check was
+    // tried and rejected: react-flow's own pan gesture needs ITS OWN
+    // observed `pointerdown` to start tracking a drag, which never
+    // happened here — the overlay's `stopPropagation` on the original
+    // pointerdown means the pane never saw it, capture or no capture — so
+    // that would never have been a valid test of this fix regardless.)
+    await expect(wrapperHasPointerCapture(page, pointerId)).resolves.toBe(
+      false,
+    )
+
+    await page.mouse.up()
+    await expect(page.locator('.react-flow__node')).toHaveCount(before)
   })
 
   test('E2E-04: with the select tool idle, dragging the empty pane still pans the canvas (FR-004)', async ({
@@ -837,6 +945,12 @@ test.describe('Shapes and Connectors — Phase 1 (Epic A + C)', () => {
     await editor.press('Control+A')
     await editor.press('Backspace')
     await editor.press('Escape')
+
+    // Assert BEFORE the reload (e2e-teardown-masking rule proposal) — the
+    // cascade delete must already be visible on the live canvas, not only
+    // after a refetch.
+    await expect(shapeNode(page, IDS.textShape)).toHaveCount(0)
+    await expect(page.locator('.react-flow__edge-connector')).toHaveCount(1)
 
     await page.reload()
     await expect(
@@ -1124,6 +1238,86 @@ test.describe('Shapes and Connectors — Phase 1 (Epic A + C)', () => {
     await expect(shapeInner(IDS.lineShape)).not.toHaveClass(/selected/)
   })
 
+  test('E2E-26: a previously-created shape does not silently re-join the selection and get deleted with it (B2, Hermes code review)', async ({
+    page,
+  }) => {
+    await openWhiteboard(page)
+    // Exact repro from code-review.md: draw shape A (selected on create),
+    // click a DIFFERENT existing shape B (a normal node click — React Flow
+    // deselects A, selects B, but a bug in an earlier version of this fix
+    // left A's `justCreatedShapeId`-derived `selected: true` re-asserted on
+    // every future `shapes` data change instead of being consumed once).
+    // Then MUTATE B (any change that gives the `shapes` array a fresh
+    // identity — a drag counts, same as the bug report's "drag, restyle,
+    // or nudge B, or a remote collaborator's update"), and Delete. Only B
+    // (and its connector) should be gone; A must survive untouched.
+    const before = await page.locator('.react-flow__node').count()
+    await armTool(page, 'Rectangle')
+    await dragDraw(page, 950, 850, 1050, 920)
+    await expect(page.locator('.react-flow__node')).toHaveCount(before + 1)
+    const idsAfterDraw = await page
+      .locator('.react-flow__node')
+      .evaluateAll((els) => els.map((el) => el.getAttribute('data-id')))
+    const shapeA = idsAfterDraw.find(
+      (id) =>
+        ![
+          IDS.rectShape,
+          IDS.ellipseShape,
+          IDS.diamondShape,
+          IDS.textShape,
+          IDS.lineShape,
+          IDS.shapesTableA,
+          IDS.shapesTableB,
+        ].includes(id!),
+    )!
+    expect(shapeA).toBeTruthy()
+
+    // Click B (diamondShape — an unrelated, pre-existing shape). Its own
+    // boundary, not centre — diamondShape is unfilled (see
+    // `diamondBorderPoint`'s own doc comment).
+    const diamond = shapeNode(page, IDS.diamondShape)
+    const grab = await diamondBorderPoint(diamond)
+    await page.mouse.click(grab.x, grab.y)
+    await expect(diamond.locator('.react-flow__node-shape')).toHaveClass(
+      /selected/,
+    )
+    // A must already be deselected by this normal node click, live.
+    await expect(
+      page.locator(`.react-flow__node[data-id="${shapeA}"] .react-flow__node-shape`),
+    ).not.toHaveClass(/selected/)
+
+    // Mutate B — a drag, same as the bug report's own repro step 3. This
+    // is what gives `shapes` a fresh array identity and re-triggers the
+    // memo the bug lived in.
+    const diamondBox = (await diamond.boundingBox())!
+    const diamondGrab = await diamondBorderPoint(diamond)
+    await page.mouse.move(diamondGrab.x, diamondGrab.y)
+    await page.mouse.down()
+    await page.mouse.move(diamondGrab.x + 40, diamondGrab.y + 30, {
+      steps: 5,
+    })
+    await page.mouse.up()
+    await expect(async () => {
+      const movedBox = (await diamond.boundingBox())!
+      expect(movedBox.x).not.toBeCloseTo(diamondBox.x, 0)
+    }).toPass({ timeout: 5_000 })
+
+    // A must STILL be deselected after B's mutation resyncs the node set —
+    // this is the exact assertion the bug fails (a sticky incoming
+    // `selected: true` for A would flip this back to selected here).
+    await expect(
+      page.locator(`.react-flow__node[data-id="${shapeA}"] .react-flow__node-shape`),
+    ).not.toHaveClass(/selected/)
+
+    await page.keyboard.press('Delete')
+
+    // B is gone; A survived. Asserted by id, not just count, so this
+    // fails loudly (wrong shape gone) rather than passing by coincidence.
+    await expect(shapeNode(page, IDS.diamondShape)).toHaveCount(0)
+    await expect(page.locator(`.react-flow__node[data-id="${shapeA}"]`)).toHaveCount(1)
+    await expect(page.locator('.react-flow__node')).toHaveCount(before)
+  })
+
   test('E2E-18: exported PNG and SVG images include shape geometry and text (FR-040)', async ({
     page,
   }) => {
@@ -1214,11 +1408,18 @@ test.describe('Shapes and Connectors — Phase 1 (Epic A + C)', () => {
     expect(svgText).toContain('react-flow__edge-connector')
   })
 
-  test('E2E-19: version restore brings back a deleted shape and its connector via the UI (FR-035)', async ({
+  test('E2E-19: version restore refreshes the canvas immediately, without a reload — a deleted shape reappears and a SURVIVING shape snaps back off its stale post-snapshot position (B1, FR-035)', async ({
     page,
   }) => {
     await openWhiteboard(page)
-    const originalBox = (await shapeNode(page, IDS.rectShape).boundingBox())!
+    const originalRectBox = await shapeBoxRelativeToCanvas(
+      page,
+      shapeNode(page, IDS.rectShape),
+    )
+    const originalEllipseBox = await shapeBoxRelativeToCanvas(
+      page,
+      shapeNode(page, IDS.ellipseShape),
+    )
 
     await page.getByRole('button', { name: 'Version history' }).click()
     await expect(
@@ -1231,12 +1432,36 @@ test.describe('Shapes and Connectors — Phase 1 (Epic A + C)', () => {
     await expect(page.getByText('Version saved')).toBeVisible()
     await page.keyboard.press('Escape')
 
-    // Mutate: delete rectShape — cascades its connector too (FR-018).
+    // Mutate #1: delete rectShape — cascades its connector too (FR-018).
     const rect = shapeNode(page, IDS.rectShape)
     await rect.click()
     await page.keyboard.press('Delete')
     await expect(shapeNode(page, IDS.rectShape)).toHaveCount(0)
     await expect(page.locator('.react-flow__edge-connector')).toHaveCount(0)
+
+    // Mutate #2 (B1's actually-dangerous case, per Hermes code review):
+    // MOVE a shape that will SURVIVE the restore (same id before and
+    // after, per D3). If the client's local shape state is never
+    // refreshed post-restore, this shape keeps rendering at this stale
+    // moved-to position — and since the row genuinely exists (no
+    // NOT_FOUND), a subsequent drag on it would silently write this
+    // stale position back to the database, a silent partial undo of the
+    // restore the user just performed.
+    const ellipse = shapeNode(page, IDS.ellipseShape)
+    const ellipseGrab = {
+      x: originalEllipseBox.x + 1,
+      y: originalEllipseBox.y + originalEllipseBox.height / 2,
+    }
+    await page.mouse.move(ellipseGrab.x, ellipseGrab.y)
+    await page.mouse.down()
+    await page.mouse.move(ellipseGrab.x + 120, ellipseGrab.y + 90, {
+      steps: 5,
+    })
+    await page.mouse.up()
+    await expect(async () => {
+      const movedBox = await shapeBoxRelativeToCanvas(page, ellipse)
+      expect(movedBox.x).not.toBeCloseTo(originalEllipseBox.x, 0)
+    }).toPass({ timeout: 5_000 })
 
     // Restore the pre-mutate version.
     await page.getByRole('button', { name: 'Version history' }).click()
@@ -1253,7 +1478,65 @@ test.describe('Shapes and Connectors — Phase 1 (Epic A + C)', () => {
     await expect(confirm).toBeVisible()
     await confirm.getByRole('button', { name: 'Restore', exact: true }).click()
     await expect(page.getByText('Version restored')).toBeVisible()
+    // Close the Version History sheet via its own visible "Close" control —
+    // NOT Escape. This sheet is modal (Radix default): its full-screen
+    // overlay (`bg-black/50`, `z-50`) blocks pointer events on the canvas
+    // underneath while open, including the toolbar's "Fit to Screen" button
+    // used just below. An earlier version of this test pressed Escape and
+    // asserted the *heading* was hidden, which passed on a transient
+    // re-render even though the sheet (and its blocking overlay) was still
+    // genuinely open moments later — asserting on the sheet's own `dialog`
+    // role (the element that actually owns the overlay) is the accurate
+    // check. Diagnostic run confirmed the sheet's open/closed state does
+    // NOT itself move any shape's on-screen box — this close is about
+    // unblocking the toolbar, not about canvas position.
+    const historySheet = page.getByRole('dialog', { name: 'Version History' })
+    await historySheet.getByRole('button', { name: 'Close' }).click()
+    await expect(historySheet).toBeHidden()
 
+    // ── B1 regression assertions — BEFORE any reload ──────────────────
+    // A reload would refetch from the server regardless of whether the
+    // fix landed, discarding the exact stale-`useState` bug this test
+    // exists to catch (Hermes code review: "every restore case reloads
+    // immediately after the toast... which is exactly why two real
+    // defects passed 28 green cases").
+    await expect(async () => {
+      await expect(shapeNode(page, IDS.rectShape)).toBeVisible()
+    }).toPass({ timeout: 5_000 })
+    await expect(page.locator('[data-table-name="shapes_a"]')).toBeVisible()
+    await expect(page.locator('[data-table-name="shapes_b"]')).toBeVisible()
+    // Measured RELATIVE to the `.react-flow` wrapper, not the raw viewport
+    // — investigation found that clicking a shape (the delete step above)
+    // permanently shrinks the toolbar chrome above the canvas by ~61px
+    // (a one-time UI collapse unrelated to restore correctness: confirmed
+    // via a throwaway diagnostic that the same 61px gap appears/disappears
+    // purely based on "has any shape ever been clicked", independent of
+    // current selection state, dialogs, or the restore itself — every
+    // node, including the untouched tables, shifted by the exact same
+    // 61px, and each node's position RELATIVE to the wrapper was identical
+    // before and after). Comparing raw viewport boxes captured before vs.
+    // after that one-time chrome collapse produces a false 61px failure on
+    // every run; comparing wrapper-relative boxes is what this test
+    // actually means to assert.
+    //
+    // Also re-fit (same async-load race `openWhiteboard`'s own comment
+    // documents): restoring re-triggers the shapes/tables/relationships
+    // queries, and whichever finishes first can leave the viewport's
+    // zoom/pan transient. Force a fresh, fully-informed fit before
+    // measuring, same as `openWhiteboard` does for the initial load.
+    await refitToScreen(page)
+    const rectBoxNoReload = await shapeBoxRelativeToCanvas(page, rect)
+    expect(rectBoxNoReload.x).toBeCloseTo(originalRectBox.x, 0)
+    expect(rectBoxNoReload.y).toBeCloseTo(originalRectBox.y, 0)
+    // The survivor: back at its ORIGINAL (snapshotted) position, not the
+    // stale post-move one — the exact assertion the ghost-state bug fails.
+    const ellipseBoxNoReload = await shapeBoxRelativeToCanvas(page, ellipse)
+    expect(ellipseBoxNoReload.x).toBeCloseTo(originalEllipseBox.x, 0)
+    expect(ellipseBoxNoReload.y).toBeCloseTo(originalEllipseBox.y, 0)
+    await expect(page.locator('.react-flow__edge-connector')).toHaveCount(1)
+
+    // ── Persistence across reload (legitimate, additional — not the only
+    // assertion) ──────────────────────────────────────────────────────
     await page.reload()
     await expect(
       page.getByRole('heading', { name: 'E2E Shapes' }),
@@ -1262,11 +1545,21 @@ test.describe('Shapes and Connectors — Phase 1 (Epic A + C)', () => {
     await expect(page.locator('[data-table-name="shapes_a"]')).toBeVisible()
     await expect(page.locator('[data-table-name="shapes_b"]')).toBeVisible()
     // Re-fit after reload (see `refitToScreen`'s comment) so this frame
-    // matches the one `originalBox` was captured under.
+    // matches the one `originalRectBox` was captured under. Wrapper-
+    // relative for the same reason as the no-reload assertions above.
     await refitToScreen(page)
-    const restoredBox = (await shapeNode(page, IDS.rectShape).boundingBox())!
-    expect(restoredBox.x).toBeCloseTo(originalBox.x, 0)
-    expect(restoredBox.y).toBeCloseTo(originalBox.y, 0)
+    const restoredBox = await shapeBoxRelativeToCanvas(
+      page,
+      shapeNode(page, IDS.rectShape),
+    )
+    expect(restoredBox.x).toBeCloseTo(originalRectBox.x, 0)
+    expect(restoredBox.y).toBeCloseTo(originalRectBox.y, 0)
+    const restoredEllipseBox = await shapeBoxRelativeToCanvas(
+      page,
+      shapeNode(page, IDS.ellipseShape),
+    )
+    expect(restoredEllipseBox.x).toBeCloseTo(originalEllipseBox.x, 0)
+    expect(restoredEllipseBox.y).toBeCloseTo(originalEllipseBox.y, 0)
     // `.toBeVisible()` on the outer `<g class="react-flow__edge">` was
     // observed to report "hidden" even when the connector visibly renders
     // on screen (screenshot-confirmed) — an SVG `<g>` bounding-box
@@ -1317,33 +1610,45 @@ test.describe('Shapes and Connectors — Phase 1 (Epic A + C)', () => {
     )
   })
 
-  test('E2E-23a: window blur mid-draw cancels the shape and disarms the tool (M6)', async ({
+  test('E2E-23a: window blur mid-draw cancels the shape, disarms the tool, and releases pointer capture (M6, W3)', async ({
     page,
   }) => {
     await openWhiteboard(page)
     const before = await page.locator('.react-flow__node').count()
     await armTool(page, 'Rectangle')
+    await captureNextWrapperPointerId(page)
     await page.mouse.move(950, 850)
     await page.mouse.down()
     await page.mouse.move(1050, 900, { steps: 5 })
+    const pointerId = await readCapturedWrapperPointerId(page)
     await page.evaluate(() => window.dispatchEvent(new Event('blur')))
-    await page.mouse.up()
 
     await expect(
       page.getByRole('button', { name: 'Rectangle', exact: true }),
     ).toHaveAttribute('aria-pressed', 'false')
+
+    // W3 (Hermes code review) — load-bearing, see E2E-03's comment for the
+    // full reasoning (a pane-pan-resumes check was tried and rejected as
+    // not a valid test of this fix).
+    await expect(wrapperHasPointerCapture(page, pointerId)).resolves.toBe(
+      false,
+    )
+
+    await page.mouse.up()
     await expect(page.locator('.react-flow__node')).toHaveCount(before)
   })
 
-  test('E2E-23b: a synthetic pointercancel mid-draw cancels the shape and disarms the tool (M6)', async ({
+  test('E2E-23b: a synthetic pointercancel mid-draw cancels the shape, disarms the tool, and releases pointer capture (M6, W3)', async ({
     page,
   }) => {
     await openWhiteboard(page)
     const before = await page.locator('.react-flow__node').count()
     await armTool(page, 'Rectangle')
+    await captureNextWrapperPointerId(page)
     await page.mouse.move(950, 850)
     await page.mouse.down()
     await page.mouse.move(1050, 900, { steps: 5 })
+    const pointerId = await readCapturedWrapperPointerId(page)
     await page.evaluate(() => {
       document
         .querySelector('.react-flow-wrapper')!
@@ -1351,23 +1656,31 @@ test.describe('Shapes and Connectors — Phase 1 (Epic A + C)', () => {
           new Event('pointercancel', { bubbles: true, cancelable: true }),
         )
     })
-    await page.mouse.up()
 
     await expect(
       page.getByRole('button', { name: 'Rectangle', exact: true }),
     ).toHaveAttribute('aria-pressed', 'false')
+
+    // W3 (Hermes code review) — load-bearing, see E2E-03's comment.
+    await expect(wrapperHasPointerCapture(page, pointerId)).resolves.toBe(
+      false,
+    )
+
+    await page.mouse.up()
     await expect(page.locator('.react-flow__node')).toHaveCount(before)
   })
 
-  test('E2E-23c: a mid-drag lostpointercapture cancels the shape and disarms the tool, and a later NORMAL draw still works (M6)', async ({
+  test('E2E-23c: a mid-drag lostpointercapture cancels the shape, disarms the tool, releases pointer capture, and a later NORMAL draw still works (M6, W3)', async ({
     page,
   }) => {
     await openWhiteboard(page)
     const before = await page.locator('.react-flow__node').count()
     await armTool(page, 'Rectangle')
+    await captureNextWrapperPointerId(page)
     await page.mouse.move(950, 850)
     await page.mouse.down()
     await page.mouse.move(1050, 900, { steps: 5 })
+    const pointerId = await readCapturedWrapperPointerId(page)
     await page.evaluate(() => {
       document
         .querySelector('.react-flow-wrapper')!
@@ -1375,11 +1688,21 @@ test.describe('Shapes and Connectors — Phase 1 (Epic A + C)', () => {
           new Event('lostpointercapture', { bubbles: true, cancelable: true }),
         )
     })
-    await page.mouse.up()
 
     await expect(
       page.getByRole('button', { name: 'Rectangle', exact: true }),
     ).toHaveAttribute('aria-pressed', 'false')
+
+    // W3 (Hermes code review) — load-bearing, see E2E-03's comment. This
+    // case's own SYNTHETIC lostpointercapture dispatch (unlike a real
+    // browser-driven one) does NOT itself release capture — only
+    // `endGesture()`'s own explicit `releasePointerCapture` call does, so
+    // this is a genuine test of the fix, not a tautology.
+    await expect(wrapperHasPointerCapture(page, pointerId)).resolves.toBe(
+      false,
+    )
+
+    await page.mouse.up()
     await expect(page.locator('.react-flow__node')).toHaveCount(before)
 
     // The guard's own trap (ShapeDrawOverlay.tsx): lostpointercapture fires
@@ -1428,12 +1751,17 @@ test.describe('Shapes and Connectors — Phase 1 (Epic A + C)', () => {
 
     await expect(page.getByText('Version restored')).toBeVisible()
 
+    // B1 (Hermes code review): assert BEFORE the reload below — a reload
+    // refetches from the server regardless of whether ['shapes',
+    // whiteboardId] is invalidated, which is exactly what would mask a
+    // regression of the fix. Every shape is gone — the legacy payload had
+    // no `shapes` key, which reads as an empty collection.
+    await expect(page.locator('.react-flow__node-shape')).toHaveCount(0)
+
     await page.reload()
     await expect(
       page.getByRole('heading', { name: 'E2E Shapes' }),
     ).toBeVisible()
-    // Every shape is gone — the legacy payload had no `shapes` key, which
-    // reads as an empty collection.
     await expect(page.locator('.react-flow__node-shape')).toHaveCount(0)
 
     // The auto-saved pre-restore snapshot restores the shapes back.
@@ -1453,6 +1781,10 @@ test.describe('Shapes and Connectors — Phase 1 (Epic A + C)', () => {
     const confirm2 = page.getByRole('alertdialog')
     await confirm2.getByRole('button', { name: 'Restore', exact: true }).click()
     await expect(page.getByText('Version restored')).toBeVisible()
+
+    // B1 (Hermes code review): assert BEFORE the reload, same reasoning
+    // as above — the shapes must already be back on the live canvas.
+    await expect(page.locator('.react-flow__node-shape')).not.toHaveCount(0)
 
     await page.reload()
     await expect(
