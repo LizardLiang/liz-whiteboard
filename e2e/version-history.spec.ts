@@ -108,6 +108,16 @@ test.describe('Whiteboard version history (GH #107)', () => {
       .click()
     const dialog = page.getByRole('dialog').filter({ hasText: 'Read-only preview' })
     await dialog.getByRole('button', { name: 'Restore this version' }).click()
+
+    // Phase 1 (shapes-and-connectors, FR-035a) inserts a confirmation
+    // AlertDialog between "Restore this version" and the actual restore, on
+    // every restore (not only the shape-loss case) — see tech-spec.md's "The
+    // confirmation dialog (FR-035a, decomposition task 1.23)". Confirm it.
+    const confirmDialog = page.getByRole('alertdialog', {
+      name: 'Restore this version?',
+    })
+    await expect(confirmDialog).toBeVisible()
+    await confirmDialog.getByRole('button', { name: 'Restore', exact: true }).click()
     await expect(page.getByText('Version restored')).toBeVisible()
 
     // AC4 — after a reload the restored diagram is intact (orders is back).
