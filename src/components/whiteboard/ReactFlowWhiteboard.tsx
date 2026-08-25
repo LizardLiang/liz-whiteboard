@@ -39,6 +39,7 @@ import { TableFocusOverlay } from './TableFocusOverlay'
 import { WhiteboardAccessDenied } from './WhiteboardAccessDenied'
 import { WhiteboardPermissionsProvider } from './whiteboard-permissions-context'
 import { ShapeToolPalette } from './ShapeToolPalette'
+import { QUICK_CREATE_GHOST_ID } from './QuickCreateGhostNode'
 import type { DrawTool, ToolMode } from '@/lib/react-flow/tool-mode'
 import type {
   Cardinality,
@@ -61,6 +62,7 @@ import type {
   CommentNodeType,
   CommentThreadVM,
   ConnectorEdgeType,
+  QuickCreateDirection,
   RelationshipEdgeType,
   ShapeNodeType,
   ShowMode,
@@ -92,6 +94,10 @@ import {
   NUDGE_STEP_LARGE,
   SHAPE_HANDLE_IDS,
 } from '@/lib/react-flow/types'
+import {
+  quickCreatePlacement,
+  resolveMeasuredSize,
+} from '@/lib/react-flow/shape-geometry'
 import { usePerfTrackerEnabled } from '@/hooks/use-perf-tracker-enabled'
 import { exportDiagramImage } from '@/lib/export/export-image'
 import { ForceFullDetailContext } from '@/lib/react-flow/level-of-detail'
@@ -2713,6 +2719,18 @@ function ReactFlowWhiteboardInner({
     token: number
   } | null>(null)
   const nextEditTokenRef = useRef(0)
+  /**
+   * Quick-create only: the id whose label editor should open once the shape
+   * actually exists in `shapes` AND React Flow has adopted its node.
+   *
+   * Calling `requestLabelEdit` directly from the create ack does NOT work:
+   * ShapeNode seeds `lastTokenRef` from the `editRequestToken` it receives
+   * AT MOUNT, so a token set before the node mounts is already equal to the
+   * ref on the first effect run — no change is detected and the editor
+   * never opens. Deferring to the same rAF that applies selection is the
+   * wait-for-adoption pattern documented on that effect below.
+   */
+  const pendingLabelEditIdRef = useRef<string | null>(null)
   const requestLabelEdit = useCallback((shapeId: string) => {
     nextEditTokenRef.current += 1
     setLabelEditRequest({ shapeId, token: nextEditTokenRef.current })
@@ -2906,6 +2924,134 @@ function ReactFlowWhiteboardInner({
     [reactFlowInstance, whiteboardId, createShapeMutation],
   )
 
+  // Quick-create (approved plan): a connect marker was CLICKED, so make a
+  // same-kind, same-size, same-style shape on that side, connect the two,
+  // select the new one and open its label editor — the FigJam
+  // click-type-click-type flow. `Alt+Arrow` routes here too (keydown
+  // handler below), which is this gesture's pointerless path.
+  // ONE resolver for both the ghost preview and the real create — if these
+  // were computed separately the preview could show a slot the create then
+  // rejects, which is exactly the lie a preview must never tell.
+  const resolveQuickCreateTarget = useCallback(
+    (shapeId: string, direction: QuickCreateDirection) => {
+      const source = shapes.find((shape) => shape.id === shapeId)
+      // A line has no meaningful "same shape in a direction" and renders no
+      // markers, so it can only arrive here via the keyboard path.
+      if (!source || source.kind === 'line') return null
+
+      // Every node type counts as an obstacle, not just shapes — a table or
+      // an area sitting in the slot must push the new shape further out too.
+      const occupied = reactFlowInstance.getNodes().map((node) => {
+        const measured = resolveMeasuredSize(node.measured ?? undefined, {
+          width: node.width ?? 0,
+          height: node.height ?? 0,
+        })
+        return {
+          x: node.position.x,
+          y: node.position.y,
+          width: measured.width,
+          height: measured.height,
+        }
+      })
+
+      const { positionX, positionY } = quickCreatePlacement(
+        {
+          kind: source.kind,
+          x: source.positionX,
+          y: source.positionY,
+          width: source.width,
+          height: source.height,
+        },
+        direction,
+        { width: source.width, height: source.height },
+        occupied,
+      )
+      return { source, positionX, positionY }
+    },
+    [shapes, reactFlowInstance],
+  )
+
+  // The ghost outline shown while an arrow is hovered (FigJam preview).
+  const [quickCreateGhost, setQuickCreateGhost] = useState<{
+    positionX: number
+    positionY: number
+    width: number
+    height: number
+  } | null>(null)
+
+  const handleQuickCreateHover = useCallback(
+    (shapeId: string, direction: QuickCreateDirection | null) => {
+      if (!canEdit || isPublic || direction === null) {
+        setQuickCreateGhost(null)
+        return
+      }
+      const target = resolveQuickCreateTarget(shapeId, direction)
+      if (!target) {
+        setQuickCreateGhost(null)
+        return
+      }
+      setQuickCreateGhost({
+        positionX: target.positionX,
+        positionY: target.positionY,
+        width: target.source.width,
+        height: target.source.height,
+      })
+    },
+    [canEdit, isPublic, resolveQuickCreateTarget],
+  )
+
+  const handleQuickCreate = useCallback(
+    (shapeId: string, direction: QuickCreateDirection) => {
+      if (!canEdit || isPublic) return
+      const target = resolveQuickCreateTarget(shapeId, direction)
+      if (!target) return
+      const { source, positionX, positionY } = target
+      setQuickCreateGhost(null)
+
+      createShapeMutation(
+        {
+          kind: source.kind,
+          positionX,
+          positionY,
+          width: source.width,
+          height: source.height,
+          style: source.style,
+          // A `text` source creates a text shape directly rather than
+          // through the uncommitted-draft path, so the connector has a real
+          // target id to point at. Committing its label empty then deletes
+          // it through the existing path and cascades the connector
+          // (FR-018). `buildShapeCreateProps` excludes 'text' by design.
+          props: (source.kind === 'text'
+            ? { kind: 'text' as const }
+            : buildShapeCreateProps(source.kind)) as never,
+          text: null,
+        },
+        (created) => {
+          pendingLabelEditIdRef.current = created.id
+          setJustCreatedShapeId(created.id)
+          createConnectorMutation({
+            sourceShapeId: shapeId,
+            targetShapeId: created.id,
+            style: {
+              stroke: source.style.stroke,
+              strokeWidth: source.style.strokeWidth,
+              strokeStyle: source.style.strokeStyle,
+              arrowStart: false,
+              arrowEnd: true,
+            },
+          })
+        },
+      )
+    },
+    [
+      canEdit,
+      isPublic,
+      resolveQuickCreateTarget,
+      createShapeMutation,
+      createConnectorMutation,
+    ],
+  )
+
   // Build React Flow shape nodes from the shapes list (+ the uncommitted
   // draft, if any). N1 fix: `selectable`/`draggable`/`deletable` all derive
   // from `canEdit` (already false on the public path AND for an
@@ -2948,8 +3094,33 @@ function ReactFlowWhiteboardInner({
         onStyleChange: handleShapeStyleChange,
         onLabelCommit: handleShapeLabelCommit,
         onDelete: deleteShapeMutation,
+        onQuickCreate: handleQuickCreate,
+        onQuickCreateHover: handleQuickCreateHover,
       },
     }))
+    // The hover ghost, appended last so it paints above the shapes it
+    // previews against. Inert: unselectable, undraggable, undeletable.
+    if (quickCreateGhost) {
+      built.push({
+        id: QUICK_CREATE_GHOST_ID,
+        type: 'quickCreateGhost',
+        position: {
+          x: quickCreateGhost.positionX,
+          y: quickCreateGhost.positionY,
+        },
+        width: quickCreateGhost.width,
+        height: quickCreateGhost.height,
+        draggable: false,
+        selectable: false,
+        deletable: false,
+        focusable: false,
+        zIndex: 0,
+        data: {
+          width: quickCreateGhost.width,
+          height: quickCreateGhost.height,
+        },
+      } as unknown as ShapeNodeType)
+    }
     if (draftShape) {
       built.push({
         id: draftShape.id,
@@ -2979,6 +3150,9 @@ function ReactFlowWhiteboardInner({
     handleShapeStyleChange,
     handleShapeLabelCommit,
     deleteShapeMutation,
+    handleQuickCreate,
+    handleQuickCreateHover,
+    quickCreateGhost,
     draftShape,
     handleDraftCommit,
     handleDraftCancel,
@@ -3016,10 +3190,19 @@ function ReactFlowWhiteboardInner({
     const raf = requestAnimationFrame(() => {
       reactFlowStoreApi.getState().unselectNodesAndEdges()
       reactFlowStoreApi.getState().addSelectedNodes([idToSelect])
+      // Quick-create asks for the label editor too. Requested HERE rather
+      // than in the create ack for the reason documented on
+      // `pendingLabelEditIdRef`: a token that arrives before the node
+      // mounts is invisible to ShapeNode's edge-triggered effect. Left
+      // null by every other creation path, so draw-create is unchanged.
+      if (pendingLabelEditIdRef.current === idToSelect) {
+        pendingLabelEditIdRef.current = null
+        requestLabelEdit(idToSelect)
+      }
       setJustCreatedShapeId(null)
     })
     return () => cancelAnimationFrame(raf)
-  }, [justCreatedShapeId, shapes, reactFlowStoreApi])
+  }, [justCreatedShapeId, shapes, reactFlowStoreApi, requestLabelEdit])
 
   // Build React Flow connector edges from the connectors list.
   const connectorEdges = useMemo<Array<ConnectorEdgeType>>(
@@ -3252,6 +3435,25 @@ function ReactFlowWhiteboardInner({
         'ArrowRight',
       ].includes(event.key)
       if (!isArrow) return
+
+      // Alt+Arrow: quick-create — the pointerless equivalent of clicking a
+      // connect marker. Checked BEFORE the nudge/resize branch below and
+      // returning immediately, so the same keystroke can never also move
+      // the source shape. Plain / Shift / Ctrl arrows are untouched.
+      if (event.altKey && selected.length === 1) {
+        event.preventDefault()
+        const direction: QuickCreateDirection =
+          event.key === 'ArrowUp'
+            ? 'top'
+            : event.key === 'ArrowDown'
+              ? 'bottom'
+              : event.key === 'ArrowLeft'
+                ? 'left'
+                : 'right'
+        handleQuickCreate(selected[0].id, direction)
+        return
+      }
+
       event.preventDefault()
 
       const step = event.shiftKey ? NUDGE_STEP_LARGE : NUDGE_STEP
@@ -3297,6 +3499,7 @@ function ReactFlowWhiteboardInner({
     reactFlowStoreApi,
     requestLabelEdit,
     createConnectorMutation,
+    handleQuickCreate,
     updateShapeMutation,
     shapes,
     focusedShapeId,

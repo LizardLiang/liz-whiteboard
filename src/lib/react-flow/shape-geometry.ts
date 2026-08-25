@@ -7,7 +7,13 @@
 // shaped (createColumnHandleId/parseColumnHandleId, calculateBestSides).
 // Do not import from it or extend it for shapes.
 
+import type { QuickCreateDirection } from '@/lib/react-flow/types'
 import type { ShapeKind } from '@/data/schema'
+import { MAX_BOARD_COORD } from '@/data/schema'
+import {
+  QUICK_CREATE_GAP,
+  QUICK_CREATE_MAX_SLIDE_STEPS,
+} from '@/lib/react-flow/types'
 
 export interface ShapeBounds {
   kind: ShapeKind
@@ -124,4 +130,120 @@ export function connectorEndpoints(
   const s = boundaryPoint(source, targetCentre)
   const t = boundaryPoint(target, sourceCentre)
   return { sx: s.x, sy: s.y, tx: t.x, ty: t.y }
+}
+
+/** An axis-aligned box in flow coordinates — any node type's footprint. */
+export interface OccupiedRect {
+  x: number
+  y: number
+  width: number
+  height: number
+}
+
+function overlaps(a: OccupiedRect, b: OccupiedRect): boolean {
+  return (
+    a.x < b.x + b.width &&
+    a.x + a.width > b.x &&
+    a.y < b.y + b.height &&
+    a.y + a.height > b.y
+  )
+}
+
+/**
+ * Where a quick-created shape goes when a connect marker is clicked
+ * (approved plan, decision D1).
+ *
+ * Starts one QUICK_CREATE_GAP beyond the source's edge on the clicked side,
+ * centred on the source across the other axis, then slides one gap further
+ * out for as long as the candidate rect overlaps anything in `occupied` —
+ * so clicking "right" four times on a dense board yields a clean row rather
+ * than a stack. `QUICK_CREATE_MAX_SLIDE_STEPS` bounds the walk; a board
+ * pathological enough to exhaust it gets the last candidate rather than a
+ * hang.
+ *
+ * Pure, and works entirely in FLOW units — it never touches
+ * screenToFlowPosition. That is deliberate: W1/W3 were both draw-preview
+ * bugs caused by mixing screen and flow space.
+ *
+ * `occupied` may include the source shape itself; a rect identical to the
+ * source's own bounds is ignored, so callers can pass the whole node list
+ * unfiltered.
+ */
+export function quickCreatePlacement(
+  source: ShapeBounds,
+  direction: QuickCreateDirection,
+  size: { width: number; height: number },
+  occupied: Array<OccupiedRect>,
+): { positionX: number; positionY: number } {
+  const sourceRect: OccupiedRect = {
+    x: source.x,
+    y: source.y,
+    width: source.width,
+    height: source.height,
+  }
+  const obstacles = occupied.filter(
+    (rect) =>
+      !(
+        rect.x === sourceRect.x &&
+        rect.y === sourceRect.y &&
+        rect.width === sourceRect.width &&
+        rect.height === sourceRect.height
+      ),
+  )
+
+  // Centred on the source across the axis we are NOT moving along.
+  const centredX = source.x + source.width / 2 - size.width / 2
+  const centredY = source.y + source.height / 2 - size.height / 2
+
+  function candidateAt(distance: number): { x: number; y: number } {
+    switch (direction) {
+      case 'right':
+        return { x: source.x + source.width + distance, y: centredY }
+      case 'left':
+        return { x: source.x - size.width - distance, y: centredY }
+      case 'bottom':
+        return { x: centredX, y: source.y + source.height + distance }
+      case 'top':
+        return { x: centredX, y: source.y - size.height - distance }
+    }
+  }
+
+  // Slide by JUMPING past the blocking rects rather than by one gap at a
+  // time: shapes are routinely wider than the gap, so a fixed-step walk
+  // both takes several passes and lands at an arbitrary offset instead of a
+  // clean gap beyond the obstacle. Each pass clears every rect the current
+  // candidate hits, so this converges in one or two passes in practice; the
+  // step budget only bounds pathological input.
+  /** How far from the source's edge the far side of every hit rect sits. */
+  function clearingDistance(hits: Array<OccupiedRect>): number {
+    switch (direction) {
+      case 'right':
+        return Math.max(
+          ...hits.map((r) => r.x + r.width - (source.x + source.width)),
+        )
+      case 'left':
+        return Math.max(...hits.map((r) => source.x - r.x))
+      case 'bottom':
+        return Math.max(
+          ...hits.map((r) => r.y + r.height - (source.y + source.height)),
+        )
+      case 'top':
+        return Math.max(...hits.map((r) => source.y - r.y))
+    }
+  }
+
+  let distance = QUICK_CREATE_GAP
+  let placed = candidateAt(distance)
+  for (let step = 0; step < QUICK_CREATE_MAX_SLIDE_STEPS; step += 1) {
+    placed = candidateAt(distance)
+    const candidate: OccupiedRect = { ...placed, ...size }
+    const hits = obstacles.filter((rect) => overlaps(candidate, rect))
+    if (hits.length === 0) break
+    distance = clearingDistance(hits) + QUICK_CREATE_GAP
+  }
+
+  const clamp = (v: number) =>
+    Math.min(MAX_BOARD_COORD, Math.max(-MAX_BOARD_COORD, v))
+
+  return { positionX: clamp(placed.x), positionY: clamp(placed.y) }
 }

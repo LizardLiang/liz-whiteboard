@@ -365,6 +365,23 @@ export interface ShapeNodeData extends Record<string, unknown> {
   onDelete?: (shapeId: string) => void
   /** Nudge/resize-by-keyboard (FR-019) — one shape:update per gesture. */
   onNudge?: (shapeId: string, delta: { dx: number; dy: number }) => void
+  /**
+   * Quick-create: a connect marker was CLICKED rather than dragged, so the
+   * caller should create a same-kind shape on that side and connect the two.
+   * A drag past DRAW_DRAG_THRESHOLD_PX is React Flow's own connection
+   * gesture instead and never reaches this callback.
+   */
+  onQuickCreate?: (shapeId: string, direction: QuickCreateDirection) => void
+  /**
+   * Hovering / leaving a quick-create arrow. The parent answers by
+   * rendering the ghost outline of the shape a click would create — at the
+   * position `quickCreatePlacement` actually resolves, so a collision
+   * slide is visible BEFORE committing. `null` clears it.
+   */
+  onQuickCreateHover?: (
+    shapeId: string,
+    direction: QuickCreateDirection | null,
+  ) => void
   onKeyboardResize?: (
     shapeId: string,
     delta: { dw: number; dh: number },
@@ -523,6 +540,46 @@ export const SHAPE_HANDLE_IDS = {
   sourceLeft: 'shape-src-left',
   target: 'shape-tgt',
 } as const
+
+/**
+ * The four sides a quick-create marker can sit on. Same anti-drift motive as
+ * SHAPE_HANDLE_IDS above (W7): the marker click handler resolves a direction
+ * from the handle it was fired on, and a rename that missed the map below
+ * would silently place every new shape on the wrong side, with no compiler
+ * error.
+ */
+export type QuickCreateDirection = 'top' | 'right' | 'bottom' | 'left'
+
+/**
+ * A shape node's connect-handle id -> the direction it sits on (quick-create).
+ */
+export const SHAPE_HANDLE_DIRECTIONS = {
+  [SHAPE_HANDLE_IDS.sourceTop]: 'top',
+  [SHAPE_HANDLE_IDS.sourceRight]: 'right',
+  [SHAPE_HANDLE_IDS.sourceBottom]: 'bottom',
+  [SHAPE_HANDLE_IDS.sourceLeft]: 'left',
+} as const satisfies Record<string, QuickCreateDirection>
+
+/**
+ * Quick-create (click a connect marker -> new connected shape) placement,
+ * in FLOW units. `QUICK_CREATE_GAP` is both the source-edge-to-new-shape-edge
+ * distance and the step size used to slide past an occupied slot;
+ * `QUICK_CREATE_MAX_SLIDE_STEPS` bounds that slide so a pathological board
+ * can never spin the solver.
+ */
+export const QUICK_CREATE_GAP = 48
+export const QUICK_CREATE_MAX_SLIDE_STEPS = 40
+
+/**
+ * How far a FigJam-style quick-create arrow sits OUTSIDE the shape's edge,
+ * in flow units. FigJam floats these clear of the body so they never read
+ * as part of the shape, and so a shape's own border stays grabbable for
+ * resize. The React Flow <Handle> is positioned by this offset.
+ */
+export const QUICK_CREATE_ARROW_OFFSET = 18
+
+/** FigJam-style corner rounding for rectangle/text bodies (was a bare 4). */
+export const FIGJAM_CORNER_RADIUS = 8
 
 /**
  * SVG `stroke-dasharray` for a shape/connector's `strokeStyle: 'dashed'`

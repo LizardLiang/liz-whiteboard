@@ -42,6 +42,13 @@
   --rf-handle-hover-bg: #3b82f6;
   --rf-handle-hover-border: #2563eb;
 
+  /* FigJam quick-create arrows + ghost preview */
+  --rf-quick-arrow-bg: rgba(59, 130, 246, 0.16);
+  --rf-quick-arrow-hover-bg: #3b82f6;
+  --rf-quick-arrow-fg: #2563eb;
+  --rf-ghost-border: 2px dashed #93c5fd;
+  --rf-ghost-bg: rgba(59, 130, 246, 0.07);
+
   /* Background */
   --rf-background: #ffffff;
   --rf-background-pattern: #f3f4f6;
@@ -92,6 +99,13 @@
   --rf-handle-border: #6b7280;
   --rf-handle-hover-bg: #60a5fa;
   --rf-handle-hover-border: #3b82f6;
+
+  /* FigJam quick-create arrows + ghost preview */
+  --rf-quick-arrow-bg: rgba(96, 165, 250, 0.22);
+  --rf-quick-arrow-hover-bg: #60a5fa;
+  --rf-quick-arrow-fg: #bfdbfe;
+  --rf-ghost-border: 2px dashed #3b82f6;
+  --rf-ghost-bg: rgba(96, 165, 250, 0.1);
 
   /* Background */
   --rf-background: #111827;
@@ -508,6 +522,11 @@
 }
 .react-flow .react-flow__node-shape .shape-painted {
   pointer-events: visiblePainted;
+  /* FigJam's soft lift. `filter` on the painted element rather than a CSS
+   * box-shadow on the wrapper, because the wrapper is a plain box and the
+   * shape may be an ellipse, a diamond or a line — drop-shadow follows the
+   * actual painted geometry, box-shadow would draw a rectangle round it. */
+  filter: drop-shadow(0 1px 2px rgba(15, 23, 42, 0.12));
 }
 .react-flow .react-flow__node-shape .shape-painted--unfilled {
   pointer-events: stroke;
@@ -604,6 +623,216 @@
   .react-flow__node-shape
   .react-flow__handle.shape-src {
   pointer-events: none;
+}
+
+/* ── FigJam-style quick-create arrows ────────────────────────────────────
+ * The four source handles ARE the arrows. Before this they were live 28x28
+ * hit targets that nothing ever drew: the shared `.react-flow__handle::before`
+ * dot is transparent by default and coloured only for `.column-row:hover`
+ * sources and `.is-connecting` targets, neither of which matches a shape.
+ *
+ * Each arrow is drawn on ::before as a filled triangle (clip-path) inside a
+ * round chip, floated clear of the shape body via a per-side translate, and
+ * revealed on hover/selection/focus — the same selector set that grants
+ * pointer-events below, so a visible arrow is always a live one and vice
+ * versa. `:not(.read-only)` keeps the N1 gate visual as well as
+ * interactive.
+ * -------------------------------------------------------------------- */
+
+/* The chip: hidden by default, no layout cost. */
+.react-flow .react-flow__node-shape .react-flow__handle.shape-src::before {
+  content: '';
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  width: 20px;
+  height: 20px;
+  border-radius: 9999px;
+  background: var(--rf-quick-arrow-bg);
+  border: none;
+  opacity: 0;
+  transform: translate(-50%, -50%) scale(0.6);
+  transition:
+    opacity 0.12s ease,
+    transform 0.12s ease,
+    background 0.12s ease;
+  pointer-events: none;
+}
+
+/* The arrowhead itself, clipped out of a second pseudo-element so the chip
+ * keeps its own round background. */
+.react-flow .react-flow__node-shape .react-flow__handle.shape-src::after {
+  content: '';
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  width: 8px;
+  height: 8px;
+  background: var(--rf-quick-arrow-fg);
+  opacity: 0;
+  transition:
+    opacity 0.12s ease,
+    transform 0.12s ease;
+  pointer-events: none;
+}
+
+/* Per-side: push the chip clear of the body and point the arrow outward. */
+.react-flow
+  .react-flow__node-shape
+  .react-flow__handle.shape-src[data-handleid='shape-src-top']::before {
+  transform: translate(-50%, calc(-50% - 18px)) scale(0.6);
+}
+.react-flow
+  .react-flow__node-shape
+  .react-flow__handle.shape-src[data-handleid='shape-src-bottom']::before {
+  transform: translate(-50%, calc(-50% + 18px)) scale(0.6);
+}
+.react-flow
+  .react-flow__node-shape
+  .react-flow__handle.shape-src[data-handleid='shape-src-left']::before {
+  transform: translate(calc(-50% - 18px), -50%) scale(0.6);
+}
+.react-flow
+  .react-flow__node-shape
+  .react-flow__handle.shape-src[data-handleid='shape-src-right']::before {
+  transform: translate(calc(-50% + 18px), -50%) scale(0.6);
+}
+
+.react-flow
+  .react-flow__node-shape
+  .react-flow__handle.shape-src[data-handleid='shape-src-top']::after {
+  clip-path: polygon(50% 0%, 100% 100%, 0% 100%);
+  transform: translate(-50%, calc(-50% - 18px));
+}
+.react-flow
+  .react-flow__node-shape
+  .react-flow__handle.shape-src[data-handleid='shape-src-bottom']::after {
+  clip-path: polygon(50% 100%, 0% 0%, 100% 0%);
+  transform: translate(-50%, calc(-50% + 18px));
+}
+.react-flow
+  .react-flow__node-shape
+  .react-flow__handle.shape-src[data-handleid='shape-src-left']::after {
+  clip-path: polygon(0% 50%, 100% 0%, 100% 100%);
+  transform: translate(calc(-50% - 18px), -50%);
+}
+.react-flow
+  .react-flow__node-shape
+  .react-flow__handle.shape-src[data-handleid='shape-src-right']::after {
+  clip-path: polygon(100% 50%, 0% 0%, 0% 100%);
+  transform: translate(calc(-50% + 18px), -50%);
+}
+
+/* Reveal — mirrors the pointer-events rule above exactly. */
+.react-flow
+  .react-flow__node-shape.selected:not(.read-only)
+  .react-flow__handle.shape-src::before,
+.react-flow
+  .react-flow__node-shape:not(.read-only):hover
+  .react-flow__handle.shape-src::before,
+.react-flow
+  .react-flow__node-shape:not(.read-only):focus-within
+  .react-flow__handle.shape-src::before,
+.react-flow
+  .react-flow__node-shape.selected:not(.read-only)
+  .react-flow__handle.shape-src::after,
+.react-flow
+  .react-flow__node-shape:not(.read-only):hover
+  .react-flow__handle.shape-src::after,
+.react-flow
+  .react-flow__node-shape:not(.read-only):focus-within
+  .react-flow__handle.shape-src::after {
+  opacity: 1;
+}
+
+/* Revealed chips sit at full size; the 0.6 scale is the hidden state. */
+.react-flow
+  .react-flow__node-shape.selected:not(.read-only)
+  .react-flow__handle.shape-src[data-handleid='shape-src-top']::before,
+.react-flow
+  .react-flow__node-shape:not(.read-only):hover
+  .react-flow__handle.shape-src[data-handleid='shape-src-top']::before {
+  transform: translate(-50%, calc(-50% - 18px)) scale(1);
+}
+.react-flow
+  .react-flow__node-shape.selected:not(.read-only)
+  .react-flow__handle.shape-src[data-handleid='shape-src-bottom']::before,
+.react-flow
+  .react-flow__node-shape:not(.read-only):hover
+  .react-flow__handle.shape-src[data-handleid='shape-src-bottom']::before {
+  transform: translate(-50%, calc(-50% + 18px)) scale(1);
+}
+.react-flow
+  .react-flow__node-shape.selected:not(.read-only)
+  .react-flow__handle.shape-src[data-handleid='shape-src-left']::before,
+.react-flow
+  .react-flow__node-shape:not(.read-only):hover
+  .react-flow__handle.shape-src[data-handleid='shape-src-left']::before {
+  transform: translate(calc(-50% - 18px), -50%) scale(1);
+}
+.react-flow
+  .react-flow__node-shape.selected:not(.read-only)
+  .react-flow__handle.shape-src[data-handleid='shape-src-right']::before,
+.react-flow
+  .react-flow__node-shape:not(.read-only):hover
+  .react-flow__handle.shape-src[data-handleid='shape-src-right']::before {
+  transform: translate(calc(-50% + 18px), -50%) scale(1);
+}
+
+/* Hovering the arrow itself: FigJam's grow-and-brighten click affordance. */
+.react-flow
+  .react-flow__node-shape:not(.read-only)
+  .react-flow__handle.shape-src:hover::before {
+  background: var(--rf-quick-arrow-hover-bg);
+}
+
+/* Never show an arrow mid-connect-drag: it is inert then (rule above), and
+ * a live-looking but dead arrow on every shape edge is exactly the M5
+ * dead-spot confusion that rule exists to prevent. */
+.is-connecting
+  .react-flow
+  .react-flow__node-shape
+  .react-flow__handle.shape-src::before,
+.is-connecting
+  .react-flow
+  .react-flow__node-shape
+  .react-flow__handle.shape-src::after {
+  opacity: 0;
+}
+
+/* N1, the VISUAL half of the read-only gate.
+ *
+ * The reveal rules above are written `.react-flow__node-shape:not(.read-only)`
+ * — but that guard does not hold. `react-flow__node-shape` is on TWO
+ * elements per shape: React Flow's own node element (from its
+ * `react-flow__node-{type}` convention) and ShapeNode's inner wrapper div.
+ * Only the inner one ever gets `read-only`, so the outer element satisfies
+ * `:not(.read-only)` on its own and the descendant handle is revealed
+ * anyway. A VIEWER saw the quick-create arrows fade in on hover (caught by
+ * e2e QC-09 at opacity 0.16).
+ *
+ * Closed the same way the pointer-events half is closed: scoped to the
+ * read-only wrapper itself and marked !important, so it beats every reveal
+ * rule regardless of source order or specificity.
+ */
+.react-flow
+  .react-flow__node-shape.read-only
+  .react-flow__handle.shape-src::before,
+.react-flow
+  .react-flow__node-shape.read-only
+  .react-flow__handle.shape-src::after {
+  opacity: 0 !important;
+}
+
+/* The ghost preview of the shape a click would create (Phase 1). Rendered
+ * by ShapeNode as a sibling overlay node, not inside the shape subtree. */
+.react-flow .figjam-ghost {
+  position: absolute;
+  border: var(--rf-ghost-border);
+  border-radius: 8px;
+  background: var(--rf-ghost-bg);
+  pointer-events: none;
+  z-index: 0;
 }
 
 /* ---- Connector edges ----------------------------------------------------- */

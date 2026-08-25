@@ -16,10 +16,14 @@ import { connectorArrowMarkerId } from './ConnectorMarkerDefs'
 import { ShapeLabelEditor } from './ShapeLabelEditor'
 import { ShapeStyleControls } from './ShapeStyleControls'
 import type { NodeProps } from '@xyflow/react'
-import type { ShapeNodeType } from '@/lib/react-flow/types'
+import type {
+  QuickCreateDirection,
+  ShapeNodeType,
+} from '@/lib/react-flow/types'
 import {
   CONNECT_HIT_STROKE_WIDTH,
   DASHED_STROKE_PATTERN,
+  DRAW_DRAG_THRESHOLD_PX,
   DRAW_PLACEHOLDER_BORDER,
   MIN_SHAPE_HEIGHT,
   MIN_SHAPE_WIDTH,
@@ -192,6 +196,7 @@ export function ShapeNode({
     onDraftCommit,
     onDraftCancel,
     onDelete,
+    onQuickCreate,
   } = data
 
   const w = width ?? shape.width
@@ -199,6 +204,35 @@ export function ShapeNode({
 
   const [editing, setEditing] = useState(isDraft === true)
   const lastTokenRef = useRef(editRequestToken)
+
+  // Quick-create (click a marker) vs connect (drag a marker). React Flow
+  // starts its connection on pointerdown, so this NEVER calls
+  // preventDefault/stopPropagation — swallowing that event would break the
+  // shipped drag-to-connect path. It only measures how far the pointer
+  // travelled and, under the same threshold a draw gesture uses, treats the
+  // release as a click. A click-release over nothing ends React Flow's
+  // connection with no connector, which is its existing behaviour.
+  const markerPressRef = useRef<{ x: number; y: number } | null>(null)
+
+  function handleMarkerPointerDown(event: React.PointerEvent) {
+    if (!canEdit || isDraft) return
+    markerPressRef.current = { x: event.clientX, y: event.clientY }
+  }
+
+  function handleMarkerPointerUp(
+    event: React.PointerEvent,
+    direction: QuickCreateDirection,
+  ) {
+    const press = markerPressRef.current
+    markerPressRef.current = null
+    if (!press || !canEdit || isDraft) return
+    const travelled = Math.hypot(
+      event.clientX - press.x,
+      event.clientY - press.y,
+    )
+    if (travelled > DRAW_DRAG_THRESHOLD_PX) return
+    onQuickCreate?.(id, direction)
+  }
 
   useEffect(() => {
     if (
@@ -392,6 +426,8 @@ export function ShapeNode({
               id={SHAPE_HANDLE_IDS.sourceTop}
               className="shape-src"
               isConnectable={canEdit}
+              onPointerDown={handleMarkerPointerDown}
+              onPointerUp={(event) => handleMarkerPointerUp(event, 'top')}
             />
             <Handle
               type="source"
@@ -399,6 +435,8 @@ export function ShapeNode({
               id={SHAPE_HANDLE_IDS.sourceRight}
               className="shape-src"
               isConnectable={canEdit}
+              onPointerDown={handleMarkerPointerDown}
+              onPointerUp={(event) => handleMarkerPointerUp(event, 'right')}
             />
             <Handle
               type="source"
@@ -406,6 +444,8 @@ export function ShapeNode({
               id={SHAPE_HANDLE_IDS.sourceBottom}
               className="shape-src"
               isConnectable={canEdit}
+              onPointerDown={handleMarkerPointerDown}
+              onPointerUp={(event) => handleMarkerPointerUp(event, 'bottom')}
             />
             <Handle
               type="source"
@@ -413,6 +453,8 @@ export function ShapeNode({
               id={SHAPE_HANDLE_IDS.sourceLeft}
               className="shape-src"
               isConnectable={canEdit}
+              onPointerDown={handleMarkerPointerDown}
+              onPointerUp={(event) => handleMarkerPointerUp(event, 'left')}
             />
             <Handle
               type="target"

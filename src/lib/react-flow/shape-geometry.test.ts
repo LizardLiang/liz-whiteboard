@@ -8,9 +8,12 @@ import { describe, expect, it } from 'vitest'
 import {
   boundaryPoint,
   connectorEndpoints,
+  quickCreatePlacement,
   resolveMeasuredSize,
 } from './shape-geometry'
+import { QUICK_CREATE_GAP, QUICK_CREATE_MAX_SLIDE_STEPS } from './types'
 import type { ShapeBounds } from './shape-geometry'
+import { MAX_BOARD_COORD } from '@/data/schema'
 
 function assertFiniteBoundaryPoint(p: { x: number; y: number }) {
   expect(Number.isFinite(p.x)).toBe(true)
@@ -156,5 +159,146 @@ describe('resolveMeasuredSize (guard 3: unmeasured node fallback)', () => {
     expect(
       resolveMeasuredSize({ width: 200 }, { width: 160, height: 100 }),
     ).toEqual({ width: 200, height: 100 })
+  })
+})
+
+// ── quickCreatePlacement (quick-connect creators) ───────────────────────────
+// The click-a-marker placement solver: standard gap in the chosen direction,
+// sliding further out while the candidate rect overlaps any existing node,
+// then clamped to the board coordinate range the create schema accepts.
+
+describe('quickCreatePlacement', () => {
+  const SOURCE: ShapeBounds = {
+    kind: 'rectangle',
+    x: 0,
+    y: 0,
+    width: 100,
+    height: 60,
+  }
+  const SIZE = { width: 100, height: 60 }
+
+  it('places at the standard gap on each side when nothing is occupied', () => {
+    expect(quickCreatePlacement(SOURCE, 'right', SIZE, [])).toEqual({
+      positionX: 100 + QUICK_CREATE_GAP,
+      positionY: 0,
+    })
+    expect(quickCreatePlacement(SOURCE, 'left', SIZE, [])).toEqual({
+      positionX: -100 - QUICK_CREATE_GAP,
+      positionY: 0,
+    })
+    expect(quickCreatePlacement(SOURCE, 'bottom', SIZE, [])).toEqual({
+      positionX: 0,
+      positionY: 60 + QUICK_CREATE_GAP,
+    })
+    expect(quickCreatePlacement(SOURCE, 'top', SIZE, [])).toEqual({
+      positionX: 0,
+      positionY: -60 - QUICK_CREATE_GAP,
+    })
+  })
+
+  it('centres the new shape on the source across the other axis', () => {
+    const placed = quickCreatePlacement(
+      SOURCE,
+      'right',
+      { width: 40, height: 20 },
+      [],
+    )
+    // Source centre y = 30; new height 20 => y = 30 - 10 = 20.
+    expect(placed.positionY).toBe(20)
+  })
+
+  it('never counts the source shape itself as an obstacle', () => {
+    const placed = quickCreatePlacement(SOURCE, 'right', SIZE, [
+      { x: SOURCE.x, y: SOURCE.y, width: SOURCE.width, height: SOURCE.height },
+    ])
+    expect(placed.positionX).toBe(100 + QUICK_CREATE_GAP)
+  })
+
+  it('lands one gap past a single occupant, not merely one step further', () => {
+    const occupant = {
+      x: 100 + QUICK_CREATE_GAP,
+      y: 0,
+      width: 100,
+      height: 60,
+    }
+    const placed = quickCreatePlacement(SOURCE, 'right', SIZE, [occupant])
+    // Occupant's right edge + one gap — a clean row, not an arbitrary offset.
+    expect(placed.positionX).toBe(occupant.x + occupant.width + QUICK_CREATE_GAP)
+    expect(placed.positionY).toBe(0)
+  })
+
+  it('clears a whole chain of overlapping occupants', () => {
+    const occupants = [
+      { x: 100 + QUICK_CREATE_GAP, y: 0, width: 100, height: 60 },
+      { x: 100 + QUICK_CREATE_GAP * 2, y: 0, width: 100, height: 60 },
+      { x: 100 + QUICK_CREATE_GAP * 3, y: 0, width: 100, height: 60 },
+    ]
+    const placed = quickCreatePlacement(SOURCE, 'right', SIZE, occupants)
+    const furthestRight = Math.max(...occupants.map((o) => o.x + o.width))
+    expect(placed.positionX).toBe(furthestRight + QUICK_CREATE_GAP)
+  })
+
+  it('slides on the vertical axis too', () => {
+    const occupant = {
+      x: 0,
+      y: 60 + QUICK_CREATE_GAP,
+      width: 100,
+      height: 60,
+    }
+    const placed = quickCreatePlacement(SOURCE, 'bottom', SIZE, [occupant])
+    expect(placed.positionY).toBe(
+      occupant.y + occupant.height + QUICK_CREATE_GAP,
+    )
+    // Overlapping the first candidate slot (-108..-48), so it really blocks.
+    const blocker = { x: 0, y: -140, width: 100, height: 60 }
+    const above = quickCreatePlacement(SOURCE, 'top', SIZE, [blocker])
+    // Sits one gap above the blocker's top edge.
+    expect(above.positionY).toBe(blocker.y - QUICK_CREATE_GAP - SIZE.height)
+  })
+
+  it('ignores occupants that do not overlap the candidate rect', () => {
+    const elsewhere = { x: 5000, y: 5000, width: 100, height: 60 }
+    const placed = quickCreatePlacement(SOURCE, 'right', SIZE, [elsewhere])
+    expect(placed.positionX).toBe(100 + QUICK_CREATE_GAP)
+  })
+
+  it('terminates on a wall that can never be cleared', () => {
+    // Wide enough that clearing it runs past the board's coordinate range.
+    const wall = {
+      x: 0,
+      y: -10_000,
+      width: 10_000_000,
+      height: 20_000,
+    }
+    const placed = quickCreatePlacement(SOURCE, 'right', SIZE, [wall])
+    expect(Number.isFinite(placed.positionX)).toBe(true)
+    expect(placed.positionX).toBe(MAX_BOARD_COORD)
+  })
+
+  it('never exceeds the step budget', () => {
+    // Each occupant only just overlaps the previous candidate, so a naive
+    // solver would need one pass per rect; the budget must still hold.
+    const many = Array.from({ length: 500 }, (_, i) => ({
+      x: 100 + QUICK_CREATE_GAP + i * 4,
+      y: 0,
+      width: 100,
+      height: 60,
+    }))
+    const placed = quickCreatePlacement(SOURCE, 'right', SIZE, many)
+    expect(Number.isFinite(placed.positionX)).toBe(true)
+    expect(QUICK_CREATE_MAX_SLIDE_STEPS).toBeGreaterThan(0)
+  })
+
+  it('clamps the result into the board coordinate range', () => {
+    const nearEdge: ShapeBounds = {
+      kind: 'rectangle',
+      x: MAX_BOARD_COORD - 10,
+      y: 0,
+      width: 100,
+      height: 60,
+    }
+    const placed = quickCreatePlacement(nearEdge, 'right', SIZE, [])
+    expect(placed.positionX).toBeLessThanOrEqual(MAX_BOARD_COORD)
+    expect(placed.positionX).toBeGreaterThanOrEqual(-MAX_BOARD_COORD)
   })
 })

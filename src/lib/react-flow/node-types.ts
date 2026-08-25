@@ -12,6 +12,7 @@ import { AreaNode } from '@/components/whiteboard/AreaNode'
 import { CommentNode } from '@/components/whiteboard/CommentNode'
 import { ShapeNode } from '@/components/whiteboard/ShapeNode'
 import { ConnectorEdge } from '@/components/whiteboard/ConnectorEdge'
+import { QuickCreateGhostNode } from '@/components/whiteboard/QuickCreateGhostNode'
 
 /**
  * React Flow node type registry
@@ -22,6 +23,7 @@ export const nodeTypes: NodeTypes = {
   area: AreaNode,
   comment: CommentNode,
   shape: ShapeNode,
+  quickCreateGhost: QuickCreateGhostNode,
 }
 
 /**

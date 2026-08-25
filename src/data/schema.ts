@@ -834,7 +834,12 @@ export const shapeKindSchema = z.enum([
  * `textColor` additionally allows `'auto'` (theme foreground token).
  */
 export const shapeStyleSchema = z.strictObject({
-  fill: z.enum([...AREA_COLOR_IDS, 'none']).default('none'),
+  // FigJam default: a soft filled body, not an outline. This is a DEFAULT,
+  // so it applies to rows whose stored style is `{}` — i.e. shapes nobody
+  // ever styled. Once any style control is touched the full object is
+  // written (`{...current, ...patch}`), pinning that shape's own choices,
+  // including an explicit `'none'`.
+  fill: z.enum([...AREA_COLOR_IDS, 'none']).default('blue'),
   stroke: areaColorSchema.default('slate'),
   strokeWidth: strokeWidthSchema.default(2),
   strokeStyle: z.enum(['solid', 'dashed']).default('solid'),
