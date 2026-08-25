@@ -23,6 +23,7 @@ import { Route as OauthRegisterRouteImport } from './routes/oauth/register'
 import { Route as OauthConsentRouteImport } from './routes/oauth/consent'
 import { Route as InviteTokenRouteImport } from './routes/invite.$token'
 import { Route as DemoTanstackQueryRouteImport } from './routes/demo/tanstack-query'
+import { Route as CanvasBoardIdRouteImport } from './routes/canvas/$boardId'
 import { Route as ApiCollabTokenRouteImport } from './routes/api/collab-token'
 import { Route as DemoStartServerFuncsRouteImport } from './routes/demo/start.server-funcs'
 import { Route as DemoStartApiRequestRouteImport } from './routes/demo/start.api-request'
@@ -106,6 +107,11 @@ const DemoTanstackQueryRoute = DemoTanstackQueryRouteImport.update({
   path: '/demo/tanstack-query',
   getParentRoute: () => rootRouteImport,
 } as any)
+const CanvasBoardIdRoute = CanvasBoardIdRouteImport.update({
+  id: '/canvas/$boardId',
+  path: '/canvas/$boardId',
+  getParentRoute: () => rootRouteImport,
+} as any)
 const ApiCollabTokenRoute = ApiCollabTokenRouteImport.update({
   id: '/api/collab-token',
   path: '/api/collab-token',
@@ -176,6 +182,7 @@ export interface FileRoutesByFullPath {
   '/revoke': typeof RevokeRoute
   '/token': typeof TokenRoute
   '/api/collab-token': typeof ApiCollabTokenRoute
+  '/canvas/$boardId': typeof CanvasBoardIdRoute
   '/demo/tanstack-query': typeof DemoTanstackQueryRoute
   '/invite/$token': typeof InviteTokenRoute
   '/oauth/consent': typeof OauthConsentRoute
@@ -204,6 +211,7 @@ export interface FileRoutesByTo {
   '/revoke': typeof RevokeRoute
   '/token': typeof TokenRoute
   '/api/collab-token': typeof ApiCollabTokenRoute
+  '/canvas/$boardId': typeof CanvasBoardIdRoute
   '/demo/tanstack-query': typeof DemoTanstackQueryRoute
   '/invite/$token': typeof InviteTokenRoute
   '/oauth/consent': typeof OauthConsentRoute
@@ -233,6 +241,7 @@ export interface FileRoutesById {
   '/revoke': typeof RevokeRoute
   '/token': typeof TokenRoute
   '/api/collab-token': typeof ApiCollabTokenRoute
+  '/canvas/$boardId': typeof CanvasBoardIdRoute
   '/demo/tanstack-query': typeof DemoTanstackQueryRoute
   '/invite/$token': typeof InviteTokenRoute
   '/oauth/consent': typeof OauthConsentRoute
@@ -263,6 +272,7 @@ export interface FileRouteTypes {
     | '/revoke'
     | '/token'
     | '/api/collab-token'
+    | '/canvas/$boardId'
     | '/demo/tanstack-query'
     | '/invite/$token'
     | '/oauth/consent'
@@ -291,6 +301,7 @@ export interface FileRouteTypes {
     | '/revoke'
     | '/token'
     | '/api/collab-token'
+    | '/canvas/$boardId'
     | '/demo/tanstack-query'
     | '/invite/$token'
     | '/oauth/consent'
@@ -319,6 +330,7 @@ export interface FileRouteTypes {
     | '/revoke'
     | '/token'
     | '/api/collab-token'
+    | '/canvas/$boardId'
     | '/demo/tanstack-query'
     | '/invite/$token'
     | '/oauth/consent'
@@ -348,6 +360,7 @@ export interface RootRouteChildren {
   RevokeRoute: typeof RevokeRoute
   TokenRoute: typeof TokenRoute
   ApiCollabTokenRoute: typeof ApiCollabTokenRoute
+  CanvasBoardIdRoute: typeof CanvasBoardIdRoute
   DemoTanstackQueryRoute: typeof DemoTanstackQueryRoute
   InviteTokenRoute: typeof InviteTokenRoute
   OauthConsentRoute: typeof OauthConsentRoute
@@ -468,6 +481,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof DemoTanstackQueryRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/canvas/$boardId': {
+      id: '/canvas/$boardId'
+      path: '/canvas/$boardId'
+      fullPath: '/canvas/$boardId'
+      preLoaderRoute: typeof CanvasBoardIdRouteImport
+      parentRoute: typeof rootRouteImport
+    }
     '/api/collab-token': {
       id: '/api/collab-token'
       path: '/api/collab-token'
@@ -574,6 +594,7 @@ const rootRouteChildren: RootRouteChildren = {
   RevokeRoute: RevokeRoute,
   TokenRoute: TokenRoute,
   ApiCollabTokenRoute: ApiCollabTokenRoute,
+  CanvasBoardIdRoute: CanvasBoardIdRoute,
   DemoTanstackQueryRoute: DemoTanstackQueryRoute,
   InviteTokenRoute: InviteTokenRoute,
   OauthConsentRoute: OauthConsentRoute,

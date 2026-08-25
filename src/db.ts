@@ -14,8 +14,11 @@ import { randomUUID } from 'node:crypto'
 import { mkdirSync } from 'node:fs'
 import { dirname } from 'node:path'
 import { SCHEMA_SQL } from './data/schema-sql'
+import { DEFAULT_ELEMENT_STYLE } from './lib/canvas-engine/scene'
 import type {
   Area,
+  CanvasBoard,
+  CanvasElementRecord,
   CollaborationSession,
   Column,
   Comment,
@@ -36,6 +39,9 @@ import type {
   WhiteboardSnapshot,
 } from './data/models'
 import type {
+  CanvasElementKind,
+  CanvasElementProps,
+  CanvasElementStyle,
   Cardinality,
   ConnectorStyle,
   ProjectRoleValue,
@@ -602,5 +608,54 @@ export function mapCollaborationSession(r: Row): CollaborationSession | null {
     cursor: fromDbJson(r.cursor),
     lastActivityAt: fromDbDate(r.lastActivityAt),
     createdAt: fromDbDate(r.createdAt),
+  }
+}
+
+// ── Canvas engine mappers ────────────────────────────────────────────────────
+// The storage/engine boundary. Rows use positionX/positionY like every other
+// table; the engine's own `CanvasElement` uses x/y. These mappers produce the
+// RECORD (still positionX/positionY) — the rename to engine space happens once
+// more, in src/lib/canvas-element-adapter.ts, and nowhere else.
+
+export function mapCanvasBoard(r: Row): CanvasBoard | null {
+  if (!r) return null
+  return {
+    id: r.id as string,
+    name: r.name as string,
+    projectId: r.projectId as string,
+    folderId: (r.folderId as string | null) ?? null,
+    createdAt: fromDbDate(r.createdAt),
+    updatedAt: fromDbDate(r.updatedAt),
+  }
+}
+
+export function mapCanvasElement(r: Row): CanvasElementRecord | null {
+  if (!r) return null
+  const kind = r.kind as CanvasElementKind
+  const style = fromDbJson(r.style)
+  const props = fromDbJson(r.props)
+  return {
+    id: r.id as string,
+    boardId: r.boardId as string,
+    kind,
+    positionX: Number(r.positionX),
+    positionY: Number(r.positionY),
+    width: Number(r.width),
+    height: Number(r.height),
+    rotation: Number(r.rotation),
+    zIndex: Number(r.zIndex),
+    text: (r.text as string | null) ?? null,
+    // Merged over the engine's defaults rather than replaced, exactly as
+    // mapShape does: a row written before a style field existed must still
+    // render, and it renders with the default rather than `undefined`
+    // reaching ctx.fillStyle.
+    style: isPlainObject(style)
+      ? ({ ...DEFAULT_ELEMENT_STYLE, ...style } as CanvasElementStyle)
+      : DEFAULT_ELEMENT_STYLE,
+    props: isPlainObject(props)
+      ? (props as unknown as CanvasElementProps)
+      : ({ kind } as CanvasElementProps),
+    createdAt: fromDbDate(r.createdAt),
+    updatedAt: fromDbDate(r.updatedAt),
   }
 }

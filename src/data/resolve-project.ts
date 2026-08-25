@@ -102,3 +102,22 @@ export async function getCommentProjectId(
     .get(commentId)
   return (row?.projectId as string | undefined) ?? null
 }
+
+/**
+ * Resolve projectId for a canvas board by ID (FigJam-style canvas engine,
+ * milestone 1). Returns null if the board does not exist.
+ *
+ * A canvas board is a separate board kind from `Whiteboard` and carries its
+ * own `projectId`, so this is a direct lookup rather than a join — but it
+ * feeds the SAME `requireServerFnRole` guard, which is the point: canvas
+ * boards inherit project permissions unchanged rather than inventing a
+ * second authorisation model.
+ */
+export async function getCanvasBoardProjectId(
+  boardId: string,
+): Promise<string | null> {
+  const row = db
+    .prepare('SELECT "projectId" FROM "CanvasBoard" WHERE "id" = ?')
+    .get(boardId)
+  return (row?.projectId as string | undefined) ?? null
+}

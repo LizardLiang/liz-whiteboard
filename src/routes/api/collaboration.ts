@@ -82,13 +82,15 @@ import {
   findRelationshipById,
   updateRelationship,
 } from '@/data/relationship'
-import { parseSessionCookie } from '@/lib/auth/cookies'
-import { validateSessionToken } from '@/lib/auth/session'
-import { validateCollabToken } from '@/lib/oauth/collab-verify'
+import {
+  authenticateSocketHandshake,
+  isSocketSessionExpired,
+} from '@/lib/auth/socket-handshake'
 import { requireRole } from '@/lib/auth/require-role'
 import { findEffectiveRole } from '@/data/permission'
 import { hasMinimumRole } from '@/lib/auth/permissions'
 import { getWhiteboardProjectId } from '@/data/resolve-project'
+import { setupCanvasNamespace } from '@/lib/canvas-board/handlers'
 import { db } from '@/db'
 
 // ---------------------------------------------------------------------------
@@ -194,6 +196,13 @@ export function initializeSocketIO(httpServer: HTTPServer): SocketIOServer {
   // Setup namespace pattern for whiteboards (auth middleware applied inside)
   setupWhiteboardNamespace(io)
 
+  // Canvas boards are a SEPARATE board kind and get their own namespace.
+  // They cannot share `/whiteboard/:id`: that namespace resolves the project
+  // through getWhiteboardProjectId, which returns null for a canvas board id
+  // and would deny every canvas event as not-found. Registered here so both
+  // server.dev.ts and server.prod.ts pick it up from one call site.
+  setupCanvasNamespace(io)
+
   // Cleanup stale sessions every 5 minutes
   setInterval(
     async () => {
@@ -245,72 +254,10 @@ function setupWhiteboardNamespace(ioServer: SocketIOServer): void {
   const whiteboardNsp = ioServer.of(/^\/whiteboard\/[\w-]+$/)
 
   // Auth middleware: runs on EVERY connection attempt to this namespace.
-  //
-  // Two auth paths (in priority order):
-  //
-  // 1. JWT path (MCP server): the MCP backend sends a short-lived collab-audience
-  //    JWT in socket.handshake.auth.token (set via socket.io SetAuth on the Go
-  //    socket.io-client-go). The JWT was issued by /api/collab-token and has:
-  //      iss=AS issuer, aud=COLLAB_RESOURCE_URI, sub=User.id, exp=now+120s.
-  //    On success: socket.data.userId=sub, socket.data.sessionExpiresAt=exp*1000.
-  //
-  // 2. Cookie path (browser app, existing): reads session_token cookie from
-  //    handshake headers and validates via validateSessionToken. Unchanged.
-  //
-  // The two paths are mutually exclusive per connection; JWT path is tried first.
-  whiteboardNsp.use(async (socket, next) => {
-    try {
-      // --- JWT path (MCP server) ---
-      // No `?.` on `.auth` itself (process note, Hermes code review round
-      // on the shapes-and-connectors feature: this line's prior `?.` was
-      // removed in that same commit without a documented reason, which is
-      // the actual issue being fixed here — the removal itself was already
-      // correct). `socket.handshake.auth` is provably always an object,
-      // never null/undefined: socket.io-client's `connect(name, auth = {})`
-      // (socket.io/dist/client.js) defaults it whenever a client omits the
-      // `auth` option, which is exactly the cookie-path (browser) case this
-      // comment used to claim was unsafe; and socket.io-parser's
-      // `isPayloadValid` rejects a `null` CONNECT payload before it ever
-      // reaches this handler. `.token` on that object is always a safe
-      // property read.
-      const authToken = (socket.handshake.auth as Record<string, unknown>).token
-      if (authToken && typeof authToken === 'string') {
-        try {
-          const payload = await validateCollabToken(authToken)
-          socket.data.userId = payload.sub
-          socket.data.sessionId = '' // no DB session for JWT auth path
-          socket.data.sessionExpiresAt = payload.exp * 1000
-          return next()
-        } catch (jwtErr) {
-          // JWT present but invalid — reject immediately rather than falling
-          // through to cookie path. A caller that sends auth.token but has an
-          // invalid JWT should not silently succeed via cookie.
-          console.warn('[collab] JWT auth failed:', jwtErr)
-          return next(new Error('UNAUTHORIZED'))
-        }
-      }
-
-      // --- Cookie path (browser app) ---
-      const cookieHeader = socket.handshake.headers.cookie ?? ''
-      const token = parseSessionCookie(cookieHeader)
-      if (!token) {
-        return next(new Error('UNAUTHORIZED'))
-      }
-
-      const authResult = await validateSessionToken(token)
-      if (!authResult) {
-        return next(new Error('UNAUTHORIZED'))
-      }
-
-      // Attach auth data to socket for use in event handlers
-      socket.data.userId = authResult.user.id
-      socket.data.sessionId = authResult.session.id
-      socket.data.sessionExpiresAt = authResult.session.expiresAt.getTime()
-      next()
-    } catch (error) {
-      next(new Error('UNAUTHORIZED'))
-    }
-  })
+  // Shared with the canvas namespace — see src/lib/auth/socket-handshake.ts
+  // for the two auth paths (MCP JWT, then browser session cookie) and why
+  // there is exactly one copy of them.
+  whiteboardNsp.use(authenticateSocketHandshake)
 
   whiteboardNsp.on('connection', async (socket) => {
     // Extract whiteboard ID from namespace
@@ -410,9 +357,13 @@ async function safeUpdateSessionActivity(socketId: string): Promise<void> {
 /**
  * Check if the session is still valid (in-memory comparison, no DB round-trip).
  * Returns true if expired.
+ *
+ * Delegates to the shared primitive so the whiteboard and canvas namespaces
+ * cannot drift apart on what "expired" means — this used to be a verbatim
+ * copy, and the copy failed OPEN on a missing expiry.
  */
 function isSessionExpired(socket: any): boolean {
-  return Date.now() > (socket.data.sessionExpiresAt as number)
+  return isSocketSessionExpired(socket)
 }
 
 /**

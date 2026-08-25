@@ -6,7 +6,10 @@ import type { EffectiveRole } from '@/data/permission'
 import { findEffectiveRole } from '@/data/permission'
 import { hasMinimumRole } from '@/lib/auth/permissions'
 import { logSampledError } from '@/lib/auth/log-sample'
-import { getWhiteboardProjectId } from '@/data/resolve-project'
+import {
+  getCanvasBoardProjectId,
+  getWhiteboardProjectId,
+} from '@/data/resolve-project'
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Error classes
@@ -140,10 +143,71 @@ export async function requireRole(
   eventName: string,
   minRole: EffectiveRole = 'EDITOR',
 ): Promise<boolean> {
+  return denyUnlessRole(
+    socket,
+    () => getWhiteboardProjectId(whiteboardId),
+    'whiteboard',
+    whiteboardId,
+    eventName,
+    minRole,
+  )
+}
+
+/**
+ * The canvas-board counterpart of `requireRole` (FigJam canvas engine,
+ * Wave 4).
+ *
+ * A canvas board is a SEPARATE board kind with its own table, so
+ * `getWhiteboardProjectId(canvasBoardId)` returns null and `requireRole`
+ * would deny every canvas mutation as "not found". This resolves the project
+ * through `getCanvasBoardProjectId` instead and then applies the IDENTICAL
+ * checks — same fail-closed lookup, same denial counter, same SEC-ERR-02
+ * payload, same default of EDITOR. It is a different resolver, not a second
+ * authorisation model.
+ */
+export async function requireCanvasBoardRole(
+  socket: {
+    data: { userId: string }
+    emit: (e: string, p: WSAuthErrorPayload) => void
+  },
+  boardId: string,
+  eventName: string,
+  minRole: EffectiveRole = 'EDITOR',
+): Promise<boolean> {
+  return denyUnlessRole(
+    socket,
+    () => getCanvasBoardProjectId(boardId),
+    'canvasBoard',
+    boardId,
+    eventName,
+    minRole,
+  )
+}
+
+/**
+ * The single RBAC decision both guards above share.
+ *
+ * Extracted rather than copied: two implementations of "deny unless the user
+ * has this role" is exactly how one path ends up missing a check the other
+ * has. `resourceLabel` exists only so the warning line keeps saying
+ * `whiteboard=` on the whiteboard path — the log format is asserted by
+ * TC-RR-14 and is not worth changing to save a parameter.
+ */
+async function denyUnlessRole(
+  socket: {
+    data: { userId: string }
+    emit: (e: string, p: WSAuthErrorPayload) => void
+  },
+  resolveProjectId: () => Promise<string | null>,
+  resourceLabel: 'whiteboard' | 'canvasBoard',
+  resourceId: string,
+  eventName: string,
+  minRole: EffectiveRole,
+): Promise<boolean> {
   const userId = socket.data.userId
   let role: EffectiveRole | null = null
   try {
-    const projectId = await getWhiteboardProjectId(whiteboardId)
+    const projectId = await resolveProjectId()
     if (!projectId) {
       // SEC-ERR-03: not-found is indistinguishable from unauthorized
       emitAuthDenied(socket, eventName, 'FORBIDDEN')
@@ -167,7 +231,7 @@ export async function requireRole(
     emitAuthDenied(socket, eventName, 'FORBIDDEN')
     incrementDenialCounter(userId, eventName)
     console.warn(
-      `[auth] RBAC denied: user=${userId} event=${eventName} whiteboard=${whiteboardId} role=${role ?? 'none'} required=${minRole}`,
+      `[auth] RBAC denied: user=${userId} event=${eventName} ${resourceLabel}=${resourceId} role=${role ?? 'none'} required=${minRole}`,
     )
     return true
   }

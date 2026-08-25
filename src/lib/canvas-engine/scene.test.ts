@@ -1,0 +1,247 @@
+// src/lib/canvas-engine/scene.test.ts
+// Scene model and hit-testing. These two are tested together because the
+// property that matters — "clicking a stack selects what you can see" —
+// spans both: the scene decides paint order, the hit-test consumes it.
+
+import { describe, expect, it } from 'vitest'
+import {
+  DEFAULT_ELEMENT_STYLE,
+  EMPTY_SCENE,
+  addElement,
+  boundsOfMany,
+  bringToFront,
+  getElement,
+  nextZIndex,
+  removeElement,
+  removeElements,
+  sceneFrom,
+  updateElement,
+} from './scene'
+import {
+  elementContainsPoint,
+  hitTest,
+  hitTestRect,
+  normaliseRect,
+  rectFromPoints,
+  rectsIntersect,
+} from './hit-test'
+import type { CanvasElement } from './scene'
+
+function el(
+  id: string,
+  patch: Partial<CanvasElement> = {},
+): CanvasElement {
+  return {
+    id,
+    kind: 'rectangle',
+    x: 0,
+    y: 0,
+    width: 100,
+    height: 100,
+    rotation: 0,
+    zIndex: 0,
+    text: null,
+    style: DEFAULT_ELEMENT_STYLE,
+    ...patch,
+  }
+}
+
+describe('sceneFrom', () => {
+  it('orders elements by ascending z-index', () => {
+    const scene = sceneFrom([
+      el('c', { zIndex: 5 }),
+      el('a', { zIndex: 1 }),
+      el('b', { zIndex: 3 }),
+    ])
+    expect(scene.elements.map((e) => e.id)).toEqual(['a', 'b', 'c'])
+  })
+
+  it('breaks z-index ties by id so ordering is stable', () => {
+    const one = sceneFrom([el('b', { zIndex: 0 }), el('a', { zIndex: 0 })])
+    const two = sceneFrom([el('a', { zIndex: 0 }), el('b', { zIndex: 0 })])
+    expect(one.elements.map((e) => e.id)).toEqual(two.elements.map((e) => e.id))
+  })
+
+  it('indexes by id', () => {
+    const scene = sceneFrom([el('a'), el('b')])
+    expect(getElement(scene, 'b')?.id).toBe('b')
+    expect(getElement(scene, 'nope')).toBeNull()
+  })
+
+  it('does not mutate the array it was given', () => {
+    const input = [el('c', { zIndex: 9 }), el('a', { zIndex: 1 })]
+    sceneFrom(input)
+    expect(input.map((e) => e.id)).toEqual(['c', 'a'])
+  })
+})
+
+describe('scene mutations', () => {
+  it('adds an element', () => {
+    const scene = addElement(EMPTY_SCENE, el('a'))
+    expect(scene.elements).toHaveLength(1)
+    expect(EMPTY_SCENE.elements).toHaveLength(0)
+  })
+
+  it('patches an element without touching its siblings', () => {
+    const scene = sceneFrom([el('a'), el('b', { zIndex: 1 })])
+    const next = updateElement(scene, 'a', { x: 500 })
+    expect(getElement(next, 'a')?.x).toBe(500)
+    expect(getElement(next, 'b')).toEqual(getElement(scene, 'b'))
+    // Original untouched.
+    expect(getElement(scene, 'a')?.x).toBe(0)
+  })
+
+  it('returns the SAME scene for a no-op update, so callers can skip renders', () => {
+    const scene = sceneFrom([el('a')])
+    expect(updateElement(scene, 'missing', { x: 1 })).toBe(scene)
+    expect(removeElement(scene, 'missing')).toBe(scene)
+    expect(removeElements(scene, ['missing', 'also-missing'])).toBe(scene)
+  })
+
+  it('removes elements', () => {
+    const scene = sceneFrom([el('a'), el('b', { zIndex: 1 }), el('c', { zIndex: 2 })])
+    expect(removeElement(scene, 'b').elements.map((e) => e.id)).toEqual(['a', 'c'])
+    expect(removeElements(scene, ['a', 'c']).elements.map((e) => e.id)).toEqual(['b'])
+  })
+
+  it('brings an element to the front of the paint order', () => {
+    const scene = sceneFrom([
+      el('a', { zIndex: 0 }),
+      el('b', { zIndex: 1 }),
+      el('c', { zIndex: 2 }),
+    ])
+    const next = bringToFront(scene, 'a')
+    expect(next.elements[next.elements.length - 1].id).toBe('a')
+  })
+
+  it('nextZIndex puts a new element on top', () => {
+    expect(nextZIndex(EMPTY_SCENE)).toBe(0)
+    const scene = sceneFrom([el('a', { zIndex: 4 })])
+    expect(nextZIndex(scene)).toBeGreaterThan(4)
+  })
+})
+
+describe('boundsOfMany', () => {
+  it('unions the bounds', () => {
+    expect(
+      boundsOfMany([
+        el('a', { x: 0, y: 0, width: 100, height: 50 }),
+        el('b', { x: 200, y: 100, width: 100, height: 50 }),
+      ]),
+    ).toEqual({ x: 0, y: 0, width: 300, height: 150 })
+  })
+
+  it('returns null for an empty selection rather than a rect at the origin', () => {
+    // A degenerate 0x0 rect at (0,0) would render a selection box around
+    // nothing, which reads as a bug to the user.
+    expect(boundsOfMany([])).toBeNull()
+  })
+})
+
+describe('hitTest', () => {
+  it('returns null on an empty scene and on a miss', () => {
+    expect(hitTest(EMPTY_SCENE, { x: 0, y: 0 })).toBeNull()
+    const scene = sceneFrom([el('a', { x: 0, y: 0, width: 10, height: 10 })])
+    expect(hitTest(scene, { x: 999, y: 999 })).toBeNull()
+  })
+
+  it('returns the TOPMOST element in a stack', () => {
+    // The regression guard for the classic reversed-scan bug, where
+    // clicking a stack always selects the bottom item.
+    const scene = sceneFrom([
+      el('bottom', { zIndex: 0 }),
+      el('middle', { zIndex: 1 }),
+      el('top', { zIndex: 2 }),
+    ])
+    expect(hitTest(scene, { x: 50, y: 50 })?.id).toBe('top')
+  })
+
+  it('falls through to a lower element outside the top one', () => {
+    const scene = sceneFrom([
+      el('big', { zIndex: 0, x: 0, y: 0, width: 200, height: 200 }),
+      el('small', { zIndex: 1, x: 0, y: 0, width: 20, height: 20 }),
+    ])
+    expect(hitTest(scene, { x: 10, y: 10 })?.id).toBe('small')
+    expect(hitTest(scene, { x: 100, y: 100 })?.id).toBe('big')
+  })
+
+  it('counts the boundary as inside', () => {
+    const element = el('a', { x: 0, y: 0, width: 10, height: 10 })
+    expect(elementContainsPoint(element, { x: 0, y: 0 })).toBe(true)
+    expect(elementContainsPoint(element, { x: 10, y: 10 })).toBe(true)
+    expect(elementContainsPoint(element, { x: 10.01, y: 5 })).toBe(false)
+  })
+
+  it('hits text elements the same way as rectangles', () => {
+    const scene = sceneFrom([
+      el('t', { kind: 'text', x: 0, y: 0, width: 200, height: 40 }),
+    ])
+    expect(hitTest(scene, { x: 100, y: 20 })?.id).toBe('t')
+    expect(hitTest(scene, { x: 100, y: 60 })).toBeNull()
+  })
+})
+
+describe('hitTestRect (marquee)', () => {
+  const scene = sceneFrom([
+    el('a', { zIndex: 0, x: 0, y: 0, width: 100, height: 100 }),
+    el('b', { zIndex: 1, x: 300, y: 0, width: 100, height: 100 }),
+    el('c', { zIndex: 2, x: 600, y: 600, width: 100, height: 100 }),
+  ])
+
+  it('selects everything the marquee touches', () => {
+    expect(
+      hitTestRect(scene, { x: -10, y: -10, width: 420, height: 200 }).map(
+        (e) => e.id,
+      ),
+    ).toEqual(['a', 'b'])
+  })
+
+  it('selects on partial overlap, not just full containment', () => {
+    // Clipping a corner is enough — requiring containment makes large
+    // elements nearly impossible to marquee-select.
+    expect(
+      hitTestRect(scene, { x: 90, y: 90, width: 20, height: 20 }).map((e) => e.id),
+    ).toEqual(['a'])
+  })
+
+  it('handles a marquee dragged up-and-left (negative extents)', () => {
+    // Negative width/height silently match nothing if not normalised.
+    const dragged = { x: 110, y: 110, width: -120, height: -120 }
+    expect(hitTestRect(scene, dragged).map((e) => e.id)).toEqual(['a'])
+  })
+
+  it('returns results in ascending z-order', () => {
+    const all = hitTestRect(scene, { x: -1000, y: -1000, width: 5000, height: 5000 })
+    expect(all.map((e) => e.id)).toEqual(['a', 'b', 'c'])
+  })
+
+  it('returns nothing for an empty marquee', () => {
+    expect(hitTestRect(scene, { x: 200, y: 200, width: 0, height: 0 })).toEqual([])
+  })
+})
+
+describe('rect helpers', () => {
+  it('normalises negative extents', () => {
+    expect(normaliseRect({ x: 10, y: 10, width: -10, height: -4 })).toEqual({
+      x: 0,
+      y: 6,
+      width: 10,
+      height: 4,
+    })
+  })
+
+  it('builds a positive rect from two points in any order', () => {
+    const a = rectFromPoints({ x: 100, y: 100 }, { x: 0, y: 0 })
+    const b = rectFromPoints({ x: 0, y: 0 }, { x: 100, y: 100 })
+    expect(a).toEqual(b)
+  })
+
+  it('treats touching edges as not intersecting', () => {
+    expect(
+      rectsIntersect(
+        { x: 0, y: 0, width: 10, height: 10 },
+        { x: 10, y: 0, width: 10, height: 10 },
+      ),
+    ).toBe(false)
+  })
+})

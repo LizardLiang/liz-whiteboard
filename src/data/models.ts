@@ -7,6 +7,9 @@
 // `boolean`, and JSONB text columns parsed into values.
 
 import type {
+  CanvasElementKind,
+  CanvasElementProps,
+  CanvasElementStyle,
   Cardinality,
   ConnectorStyle,
   ProjectRoleValue,
@@ -351,4 +354,56 @@ export interface Comment {
 export interface CommentWithAuthor extends Comment {
   authorName: string
   authorEmail: string
+}
+
+/**
+ * A canvas board (FigJam-style canvas engine, milestone 1).
+ *
+ * A deliberately separate board kind from `Whiteboard`: the canvas engine
+ * renders every pixel itself and owns its own elements, so the two share no
+ * rows. `folderId` mirrors `Whiteboard` so both kinds can sit side by side
+ * in the navigator later.
+ */
+export interface CanvasBoard {
+  id: string
+  name: string
+  projectId: string
+  folderId: string | null
+  createdAt: Date
+  updatedAt: Date
+}
+
+/**
+ * A stored canvas element — the ROW, not the engine value.
+ *
+ * The name is not incidental. `src/lib/canvas-engine/scene.ts` exports a
+ * `CanvasElement` too, and the two are deliberately different types:
+ *
+ *   - this record uses `positionX`/`positionY`, matching every other table
+ *     in the schema, and carries `createdAt`/`updatedAt`;
+ *   - the engine's element uses `x`/`y` in world space and knows nothing
+ *     about storage.
+ *
+ * `mapCanvasElement` in src/db.ts and `toEngineElement` in
+ * src/lib/canvas-element-adapter.ts are the only places the two vocabularies
+ * meet. Keeping them apart is the same discipline `camera.ts` enforces for
+ * screen-versus-world coordinates, and for the same reason: the two bugs
+ * this repo has already paid for (W1, W3) were both a coordinate space used
+ * where another was meant.
+ */
+export interface CanvasElementRecord {
+  id: string
+  boardId: string
+  kind: CanvasElementKind
+  positionX: number
+  positionY: number
+  width: number
+  height: number
+  rotation: number
+  zIndex: number
+  text: string | null
+  style: CanvasElementStyle
+  props: CanvasElementProps
+  createdAt: Date
+  updatedAt: Date
 }

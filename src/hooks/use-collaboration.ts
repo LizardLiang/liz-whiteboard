@@ -71,6 +71,15 @@ export function useCollaboration(
   userId: string,
   onSessionExpired: () => void,
   enabled: boolean = true,
+  /**
+   * Namespace family to connect to. Defaults to `whiteboard` so every
+   * existing caller is unchanged; canvas boards pass `canvas` because they
+   * are a separate board kind whose project is resolved from a different
+   * table (see src/lib/canvas-board/handlers.ts). The connection lifecycle,
+   * reconnection policy and session-expiry handling are identical, which is
+   * why this is a parameter rather than a second copy of this hook.
+   */
+  namespacePrefix: 'whiteboard' | 'canvas' = 'whiteboard',
 ): UseCollaborationReturn {
   const socketRef = useRef<Socket | null>(null)
   const [connectionState, setConnectionState] =
@@ -112,7 +121,7 @@ export function useCollaboration(
     // access-denied state from the previous whiteboard.
     setIsUnauthorized(false)
 
-    const socket = io(`/whiteboard/${whiteboardId}`, {
+    const socket = io(`/${namespacePrefix}/${whiteboardId}`, {
       auth: userId ? { userId } : undefined,
       withCredentials: true,
       reconnection: true,
@@ -293,7 +302,7 @@ export function useCollaboration(
       socket.disconnect()
       socketRef.current = null
     }
-  }, [whiteboardId, userId, enabled])
+  }, [whiteboardId, userId, enabled, namespacePrefix])
 
   // Emit event to server. An optional ack callback receives the server's
   // acknowledgement (Socket.IO ack) — used by callers that need the persisted
@@ -303,9 +312,22 @@ export function useCollaboration(
       if (socketRef.current && socketRef.current.connected) {
         if (ack) socketRef.current.emit(event, data, ack)
         else socketRef.current.emit(event, data)
-      } else {
-        console.warn(`Cannot emit ${event}: socket not connected`)
+        return
       }
+      console.warn(`Cannot emit ${event}: socket not connected`)
+      // Every optimistic-mutation hook in this app keeps its rollback inside
+      // the ack callback, so returning here without calling it is precisely
+      // the fire-and-forget behaviour those hooks exist to avoid: the change
+      // stays on screen, never reaches the server, and disappears on the next
+      // reload with nothing shown to the user. Every existing ack-passing
+      // caller (shapes, areas, comments, area:move) already branches on
+      // `!res.ok` by rolling back and toasting, so a failure result is the
+      // shape they are all written to handle.
+      ack?.({
+        ok: false,
+        code: 'DISCONNECTED',
+        message: 'Not connected. Your change was not saved.',
+      })
     },
     [],
   )

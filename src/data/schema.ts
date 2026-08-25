@@ -3,6 +3,7 @@
 
 import { z } from 'zod'
 import { AREA_COLOR_IDS } from '@/lib/area-colors'
+import { DEFAULT_ELEMENT_STYLE } from '@/lib/canvas-engine/scene'
 
 // ============================================================================
 // JSON Sub-Schemas (for nested JSON fields)
@@ -922,3 +923,152 @@ export type ConnectorStyle = z.infer<typeof connectorStyleSchema>
 export type CreateShape = z.input<typeof createShapeSchema>
 export type UpdateShape = z.infer<typeof updateShapeSchema>
 export type CreateConnector = z.input<typeof createConnectorSchema>
+
+// ============================================================================
+// Canvas Engine Schemas (FigJam-style canvas boards, milestone 1)
+// ============================================================================
+// A canvas board is a separate board kind from the ER whiteboard: its own
+// table, its own route, its own elements. These schemas validate what the
+// client is allowed to persist into "CanvasBoard" / "CanvasElement".
+
+/**
+ * A canvas text element is a paragraph the user types into, not a shape
+ * label, so `SHAPE_LABEL_MAX_LENGTH` (500) would be far too tight. This cap
+ * exists to bound a single row, not to express a product rule — it is a
+ * documented assumption, not a locked decision.
+ */
+export const CANVAS_TEXT_MAX_LENGTH = 10_000
+
+/**
+ * A CSS colour, as a bounded opaque string.
+ *
+ * These values reach `ctx.fillStyle` / `ctx.strokeStyle`, never innerHTML —
+ * a canvas has no markup, so an unparseable colour is silently ignored by
+ * the browser rather than injected. What DOES need bounding is length, so a
+ * hostile client cannot store a megabyte per element. Deliberately not a
+ * strict colour grammar: the engine's palette is still being designed, and
+ * rejecting valid CSS colours would be a worse failure than storing an
+ * ineffective one.
+ */
+const cssColorSchema = z.string().min(1).max(64)
+
+/**
+ * Element appearance. Defaults are taken from the ENGINE's own
+ * `DEFAULT_ELEMENT_STYLE` rather than restated here, so the value the
+ * renderer falls back to and the value the validator fills in can never
+ * drift apart.
+ */
+export const canvasElementStyleSchema = z.strictObject({
+  fill: cssColorSchema.default(DEFAULT_ELEMENT_STYLE.fill),
+  stroke: cssColorSchema.default(DEFAULT_ELEMENT_STYLE.stroke),
+  strokeWidth: z
+    .number()
+    .finite()
+    .min(0)
+    .max(64)
+    .default(DEFAULT_ELEMENT_STYLE.strokeWidth),
+  fontSize: z
+    .number()
+    .finite()
+    .min(1)
+    .max(512)
+    .default(DEFAULT_ELEMENT_STYLE.fontSize),
+  color: cssColorSchema.default(DEFAULT_ELEMENT_STYLE.color),
+})
+
+/** The element kinds milestone 1 renders (see canvas-engine/scene.ts). */
+export const canvasElementKindSchema = z.enum(['rectangle', 'text'])
+
+/**
+ * Kind-specific payload, a discriminated union on `kind`. Both milestone-1
+ * arms are empty objects, and that is deliberate — exactly as
+ * `shapePropsSchema` documents. This union is the dispatch point that lets
+ * `ellipse`, `ink` or `image` be added as one arm with no table change. Do
+ * NOT "clean up" the empty arms into a plain enum.
+ */
+export const canvasElementPropsSchema = z.discriminatedUnion('kind', [
+  z.strictObject({ kind: z.literal('rectangle') }),
+  z.strictObject({ kind: z.literal('text') }),
+])
+
+/**
+ * Paint order. Bounded because it is written straight into an INTEGER
+ * column and compared on every render; an unbounded client value could
+ * make every subsequent `nextZIndex` overflow into Infinity.
+ */
+const canvasZIndexSchema = z.number().int().min(-1_000_000).max(1_000_000)
+
+/**
+ * Schema for creating a canvas element. Follows `createShapeSchema`'s
+ * convention exactly, including the cross-validation below; `update` is
+ * defined independently rather than as `.partial()` of this.
+ *
+ * `rotation` is absent on purpose: the column exists so rotation needs no
+ * schema change later, but milestone 1 does not let anyone set it, so the
+ * data layer writes 0 — the same thing `createShape` does.
+ */
+export const createCanvasElementSchema = z
+  .object({
+    boardId: z.string().uuid(),
+    kind: canvasElementKindSchema,
+    positionX: boardCoordSchema,
+    positionY: boardCoordSchema,
+    width: z.number().positive().max(100_000),
+    height: z.number().positive().max(100_000),
+    zIndex: canvasZIndexSchema.default(0),
+    text: z.string().max(CANVAS_TEXT_MAX_LENGTH).nullable().default(null),
+    style: canvasElementStyleSchema.optional(),
+    props: canvasElementPropsSchema,
+  })
+  // The W2 fix, carried over verbatim in intent: `kind` and `props.kind` are
+  // validated independently above, and a discriminated union has no
+  // visibility into a sibling top-level field. Without this,
+  // `{ kind: 'text', props: { kind: 'rectangle' } }` persists cleanly and
+  // then renders as text with rectangle props — a mismatch no reader of the
+  // row can detect.
+  .refine((data) => data.kind === data.props.kind, {
+    message: 'props.kind must match kind',
+    path: ['props', 'kind'],
+  })
+
+/**
+ * Schema for updating a canvas element. Defined independently (not
+ * `.partial()` of create) so absent fields parse as `undefined` and only
+ * explicitly-provided columns are written. `kind` is absent: an element's
+ * kind never changes.
+ */
+export const updateCanvasElementSchema = z.object({
+  positionX: boardCoordSchema.optional(),
+  positionY: boardCoordSchema.optional(),
+  width: z.number().positive().max(100_000).optional(),
+  height: z.number().positive().max(100_000).optional(),
+  zIndex: canvasZIndexSchema.optional(),
+  text: z.string().max(CANVAS_TEXT_MAX_LENGTH).nullable().optional(),
+  style: canvasElementStyleSchema.optional(),
+  props: canvasElementPropsSchema.optional(),
+})
+
+/**
+ * Schema for creating a canvas board. Mirrors `createWhiteboardSchema` —
+ * same name bounds, same optional `folderId` — because the two board kinds
+ * are meant to sit side by side in the navigator.
+ */
+export const createCanvasBoardSchema = z.object({
+  name: z.string().min(1).max(255),
+  projectId: z.string().uuid(),
+  folderId: z.string().uuid().nullable().optional(),
+})
+
+/** Schema for renaming / re-filing a canvas board. */
+export const updateCanvasBoardSchema = z.object({
+  name: z.string().min(1).max(255).optional(),
+  folderId: z.string().uuid().nullable().optional(),
+})
+
+export type CanvasElementKind = z.infer<typeof canvasElementKindSchema>
+export type CanvasElementStyle = z.infer<typeof canvasElementStyleSchema>
+export type CanvasElementProps = z.infer<typeof canvasElementPropsSchema>
+export type CreateCanvasElement = z.input<typeof createCanvasElementSchema>
+export type UpdateCanvasElement = z.infer<typeof updateCanvasElementSchema>
+export type CreateCanvasBoard = z.input<typeof createCanvasBoardSchema>
+export type UpdateCanvasBoard = z.infer<typeof updateCanvasBoardSchema>

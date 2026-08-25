@@ -370,4 +370,61 @@ CREATE TABLE IF NOT EXISTS "Comment" (
 CREATE INDEX IF NOT EXISTS "Comment_whiteboardId_idx"  ON "Comment"("whiteboardId");
 CREATE INDEX IF NOT EXISTS "Comment_parentId_idx"      ON "Comment"("parentId");
 CREATE INDEX IF NOT EXISTS "Comment_targetTableId_idx" ON "Comment"("targetTableId");
+
+-- ── Canvas engine (FigJam-style, milestone 1) ───────────────────────────────
+-- A canvas board is a DELIBERATELY separate board kind from "Whiteboard".
+-- The canvas engine (src/lib/canvas-engine/) draws every pixel itself and
+-- stores its own generic elements, so it shares no rows with the ER diagram
+-- and touches neither "Shape" nor "Connector". "folderId" mirrors
+-- "Whiteboard" so the existing navigator can list and create canvas boards
+-- later without a schema change.
+CREATE TABLE IF NOT EXISTS "CanvasBoard" (
+    "id"        TEXT NOT NULL PRIMARY KEY,
+    "name"      TEXT NOT NULL,
+    "projectId" TEXT NOT NULL,
+    "folderId"  TEXT,
+    "createdAt" DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    "updatedAt" DATETIME NOT NULL,
+    CONSTRAINT "CanvasBoard_projectId_fkey" FOREIGN KEY ("projectId")
+        REFERENCES "Project" ("id") ON DELETE CASCADE ON UPDATE CASCADE,
+    CONSTRAINT "CanvasBoard_folderId_fkey" FOREIGN KEY ("folderId")
+        REFERENCES "Folder" ("id") ON DELETE CASCADE ON UPDATE CASCADE
+);
+
+CREATE INDEX IF NOT EXISTS "CanvasBoard_projectId_idx" ON "CanvasBoard"("projectId");
+CREATE INDEX IF NOT EXISTS "CanvasBoard_folderId_idx"  ON "CanvasBoard"("folderId");
+CREATE INDEX IF NOT EXISTS "CanvasBoard_updatedAt_idx" ON "CanvasBoard"("updatedAt");
+
+-- One generic element row for every canvas element kind: geometry in real
+-- columns, kind-specific data in a validated JSON "props" blob, appearance in
+-- "style". Same polymorphic storage decision as "Shape" — a new kind
+-- (ellipse, ink, image) is a new "kind" value plus one Zod union arm, never
+-- a new column and never a migration.
+--
+-- Coordinates are named positionX/positionY to match every other table in
+-- this schema. The engine's own element type calls them x/y; the row-mapper
+-- in src/db.ts is the ONE place those two vocabularies meet.
+CREATE TABLE IF NOT EXISTS "CanvasElement" (
+    "id"        TEXT NOT NULL PRIMARY KEY,
+    "boardId"   TEXT NOT NULL,
+    "kind"      TEXT NOT NULL,
+    "positionX" REAL NOT NULL,
+    "positionY" REAL NOT NULL,
+    "width"     REAL NOT NULL,
+    "height"    REAL NOT NULL,
+    "rotation"  REAL NOT NULL DEFAULT 0,
+    "zIndex"    INTEGER NOT NULL DEFAULT 0,
+    "text"      TEXT,
+    "style"     JSONB,
+    "props"     JSONB,
+    "createdAt" DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    "updatedAt" DATETIME NOT NULL,
+    CONSTRAINT "CanvasElement_boardId_fkey" FOREIGN KEY ("boardId")
+        REFERENCES "CanvasBoard" ("id") ON DELETE CASCADE ON UPDATE CASCADE
+);
+
+CREATE INDEX IF NOT EXISTS "CanvasElement_boardId_idx" ON "CanvasElement"("boardId");
+-- Elements are always read back in paint order, so the board+z pair is the
+-- index the list query actually uses.
+CREATE INDEX IF NOT EXISTS "CanvasElement_boardId_zIndex_idx" ON "CanvasElement"("boardId", "zIndex");
 `

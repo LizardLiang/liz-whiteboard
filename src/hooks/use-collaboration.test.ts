@@ -302,3 +302,75 @@ describe('TC-MODAL-02: onSessionExpired is called synchronously (enabling focus 
     expect(onSessionExpired).toHaveBeenCalledTimes(1)
   })
 })
+
+// ─────────────────────────────────────────────────────────────────────────────
+// W3 (Hermes review): emit() must invoke the ack when the socket is down.
+//
+// Every optimistic-mutation hook in this app puts its rollback inside the ack
+// callback. A disconnected emit that only logs a warning is therefore the
+// exact fire-and-forget case those hooks were written to avoid: the change
+// stays on screen, is never persisted, and vanishes on the next reload with
+// no error shown.
+// ─────────────────────────────────────────────────────────────────────────────
+
+describe('W3: emit invokes the ack callback when the socket is disconnected', () => {
+  beforeEach(() => {
+    registeredHandlers.clear()
+    vi.clearAllMocks()
+    mockSocket.connected = true
+  })
+
+  afterEach(() => {
+    mockSocket.connected = true
+  })
+
+  it('calls the ack with a failure result instead of silently dropping it', () => {
+    const { result } = renderHook(() =>
+      useCollaboration('wb-test', 'user-test', vi.fn()),
+    )
+    mockSocket.connected = false
+
+    const ack = vi.fn()
+    act(() => {
+      result.current.emit('shape:update', { shapeId: 's1' }, ack)
+    })
+
+    expect(mockSocket.emit).not.toHaveBeenCalled()
+    expect(ack).toHaveBeenCalledTimes(1)
+    const res = ack.mock.calls[0][0]
+    expect(res.ok).toBe(false)
+    expect(res.code).toBe('DISCONNECTED')
+    expect(typeof res.message).toBe('string')
+  })
+
+  it('does not throw when a disconnected emit has no ack callback', () => {
+    const { result } = renderHook(() =>
+      useCollaboration('wb-test', 'user-test', vi.fn()),
+    )
+    mockSocket.connected = false
+
+    expect(() => {
+      act(() => {
+        result.current.emit('cursor:update', { x: 1, y: 2 })
+      })
+    }).not.toThrow()
+  })
+
+  it('still forwards the ack to the socket when connected', () => {
+    const { result } = renderHook(() =>
+      useCollaboration('wb-test', 'user-test', vi.fn()),
+    )
+
+    const ack = vi.fn()
+    act(() => {
+      result.current.emit('shape:update', { shapeId: 's1' }, ack)
+    })
+
+    expect(mockSocket.emit).toHaveBeenCalledWith(
+      'shape:update',
+      { shapeId: 's1' },
+      ack,
+    )
+    expect(ack).not.toHaveBeenCalled()
+  })
+})

@@ -148,6 +148,22 @@ export const IDS = {
   // column pair, so dragging a NEW connection needs a pair with no
   // pre-existing edge between them (mirrors seed-stress.ts's own
   // index-1-is-always-unconnected convention).
+  // Dedicated project/boards for the FigJam canvas-engine suite (Wave 5).
+  // Isolated for the same reason the shapes suite is: canvas-board.spec.ts
+  // draws, moves, resizes and DELETES elements, and re-seeds before every
+  // test. A dedicated project (not just a dedicated board) also keeps its
+  // ADMIN+VIEWER membership pair out of every other project's member list —
+  // see `viewerProject` above for the Share-panel layout regression that
+  // adding a member to a shared project caused.
+  canvasProject: '60000000-0000-4000-8000-000000000001',
+  canvasBoard: '60000000-0000-4000-8000-000000000002',
+  canvasRect: '60000000-0000-4000-8000-000000000003',
+  canvasText: '60000000-0000-4000-8000-000000000004',
+  // Second board, VIEWER-visible only, for the read-only gate. Separate from
+  // `canvasBoard` so the read-only assertions never race the mutating tests
+  // that share a board.
+  canvasViewerBoard: '60000000-0000-4000-8000-000000000005',
+  canvasViewerRect: '60000000-0000-4000-8000-000000000006',
   shapesTableAName: '50000000-0000-4000-8000-00000000000f',
   shapesTableBNote: '50000000-0000-4000-8000-000000000010',
 }
