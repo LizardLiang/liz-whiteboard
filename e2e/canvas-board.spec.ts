@@ -42,10 +42,10 @@
 //     path itself; the capture-loss reset is unit-tested in
 //     src/components/canvas/use-canvas-input.test.ts.
 //   * Rotation — stored but not editable in milestone 1, by design.
-//   * Public share links for canvas boards — step 12 of the plan is UNMET.
-//     `WhiteboardShareLink` foreign-keys `Whiteboard`, so canvas boards have
-//     no share path to test. This is a known gap awaiting a product decision,
-//     not an oversight in this suite.
+//
+// Public share links WERE the outstanding gap in this list. Step 12 is now
+// complete: `CanvasBoardShareLink` is its own table and `/canvas-share/$token`
+// its own public route, both covered by the last describe block below.
 import { execFileSync } from 'node:child_process'
 import { expect, test } from '@playwright/test'
 import { BASE_URL, E2E_VIEWER_USER, IDS, STORAGE_STATE } from './fixtures'
@@ -691,6 +691,160 @@ test.describe('touch input', () => {
         .toBeCloseTo(500, 0)
     } finally {
       await context.close()
+    }
+  })
+})
+
+// ── public share links (plan step 12) ───────────────────────────────────────
+//
+// The whole point of this surface is that it works with NO account, so every
+// visitor context below is created with an explicitly empty storage state.
+// `browser.newContext()` inherits the config's ADMIN `use.storageState`, and
+// a share test that quietly runs as the owner proves nothing at all — it is
+// the same trap `loginAsViewer` documents, and it is worse here, because the
+// owner can read the board with or without a valid link.
+
+/** A context with genuinely no session — the state a real visitor arrives in. */
+async function anonymousPage(browser: Browser): Promise<Page> {
+  const context = await browser.newContext({
+    baseURL: BASE_URL,
+    storageState: { cookies: [], origins: [] },
+  })
+  return context.newPage()
+}
+
+/** Create a share link through the real UI and return its URL. */
+async function createShareLinkViaUI(page: Page): Promise<string> {
+  await page.getByRole('button', { name: 'Share' }).click()
+  await page.getByRole('button', { name: 'Create link' }).click()
+  const field = page.locator('#canvas-share-url')
+  await expect(field).toBeVisible({ timeout: 10_000 })
+  const url = await field.inputValue()
+  expect(url).toContain('/canvas-share/')
+  return url
+}
+
+test.describe('public share links', () => {
+  test('an anonymous visitor with a link sees the board, read-only', async ({
+    page,
+    browser,
+  }) => {
+    await openBoard(page)
+    const url = await createShareLinkViaUI(page)
+
+    const visitor = await anonymousPage(browser)
+    try {
+      await visitor.goto(url)
+      await visitor.waitForSelector('canvas')
+      await visitor.waitForFunction(
+        () => window.__canvasEngine !== undefined,
+        null,
+        { timeout: 15_000 },
+      )
+
+      // No session at all — this is what makes the rest of the assertion mean
+      // something.
+      expect(await visitor.context().cookies()).toHaveLength(0)
+
+      const state = await engine(visitor)
+      expect(state.readOnly).toBe(true)
+      expect(byId(state, IDS.canvasRect)).toBeTruthy()
+
+      // Rendered, not merely mounted: REG-1's probe applied to the public path.
+      const stats = await canvasStats(visitor)
+      expect(stats).not.toBeNull()
+      expect(stats!.width).toBeGreaterThan(300)
+      expect(stats!.painted).toBeGreaterThan(0)
+
+      // No tools, and no connection badge — the badge would sit permanently on
+      // "Disconnected" here and read as a fault rather than as the design.
+      await expect(
+        visitor.getByRole('toolbar', { name: 'Canvas tools' }),
+      ).toHaveCount(0)
+      await expect(visitor.getByRole('status')).toHaveCount(0)
+    } finally {
+      await visitor.context().close()
+    }
+  })
+
+  test('the public path opens no Socket.IO connection', async ({
+    page,
+    browser,
+  }) => {
+    // A public visitor cannot authenticate the canvas namespace handshake, so
+    // connecting would retry and fail in a loop forever. Vite's own HMR socket
+    // is expected and filtered out; a socket.io URL here is the regression.
+    await openBoard(page)
+    const url = await createShareLinkViaUI(page)
+
+    const visitor = await anonymousPage(browser)
+    const sockets: Array<string> = []
+    visitor.on('websocket', (ws) => sockets.push(ws.url()))
+    try {
+      await visitor.goto(url)
+      await visitor.waitForSelector('canvas')
+      await visitor.waitForTimeout(2_500)
+      expect(sockets.filter((u) => u.includes('socket.io'))).toEqual([])
+    } finally {
+      await visitor.context().close()
+    }
+  })
+
+  test('revoking a link takes effect for a visitor who already has it', async ({
+    page,
+    browser,
+  }) => {
+    await openBoard(page)
+    const url = await createShareLinkViaUI(page)
+
+    const visitor = await anonymousPage(browser)
+    try {
+      await visitor.goto(url)
+      await visitor.waitForSelector('canvas')
+
+      await page.getByRole('button', { name: 'Revoke' }).first().click()
+      await expect(page.getByRole('button', { name: 'Revoke' }).first())
+        .toBeDisabled({ timeout: 10_000 })
+
+      // The already-issued URL must stop working — a revoke that only hid the
+      // link from the list would leave every copy of it live.
+      await visitor.goto(url)
+      await expect(visitor.getByText(/revoked/i)).toBeVisible({
+        timeout: 10_000,
+      })
+      await expect(visitor.locator('canvas')).toHaveCount(0)
+    } finally {
+      await visitor.context().close()
+    }
+  })
+
+  test('a garbage token shows the invalid state rather than a blank page', async ({
+    browser,
+  }) => {
+    const visitor = await anonymousPage(browser)
+    try {
+      await visitor.goto('/canvas-share/not-a-real-token')
+      await expect(
+        visitor.getByText(/unavailable|invalid|no longer/i).first(),
+      ).toBeVisible({ timeout: 10_000 })
+      await expect(visitor.locator('canvas')).toHaveCount(0)
+    } finally {
+      await visitor.context().close()
+    }
+  })
+
+  test('a VIEWER is not offered the Share control', async ({ browser }) => {
+    // Creating a link is ADMIN+. Hiding the button is an affordance only —
+    // the handler re-checks the role server side, which is covered in
+    // src/routes/api/canvas-share.test.ts.
+    const viewerPage = await loginAsViewer(browser)
+    try {
+      await openBoard(viewerPage, VIEWER_BOARD_URL)
+      await expect(
+        viewerPage.getByRole('button', { name: 'Share' }),
+      ).toHaveCount(0)
+    } finally {
+      await viewerPage.context().close()
     }
   })
 })
