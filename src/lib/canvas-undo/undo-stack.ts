@@ -10,33 +10,24 @@
 // talk to the server, the scene, or React state — that is
 // use-canvas-undo.ts, out of scope for this phase (Wave 3).
 
-import type {
-  CanvasElementKind,
-  CanvasElementProps,
-  CanvasElementStyle,
-} from '@/data/schema'
+import type { CanvasElementSnapshot } from '@/lib/canvas-element-adapter'
+import type { CanvasElementKind } from '@/data/schema'
 
 /**
- * Everything needed to write this element back exactly as it was, without a
- * second read of the database. Row vocabulary (positionX/positionY, not the
- * engine's x/y) because this is what the create/update write payloads speak
- * — see canvas-element.ts's file header on why that rename happens in
- * exactly one place.
+ * Row-shaped snapshot of one element (positionX/positionY, not the engine's
+ * x/y) — everything needed to write it back exactly as it was, without a
+ * second database read.
+ *
+ * Defined in canvas-element-adapter.ts, not here: that file is "the one
+ * place the stored row and the engine's scene value meet" (its own header),
+ * and this snapshot shape is one more form of that same rename. Re-exported
+ * from this module (imported above for local use, re-exported below) so
+ * every existing importer of `CanvasElementSnapshot` from `undo-stack.ts`
+ * (inverse.ts, use-canvas-undo.ts, and their tests) needs no import-path
+ * change (Hermes review, finding 3 — this type and its to/from conversions
+ * used to be duplicated here and in use-canvas-undo.ts).
  */
-export interface CanvasElementSnapshot {
-  id: string
-  boardId: string
-  kind: CanvasElementKind
-  positionX: number
-  positionY: number
-  width: number
-  height: number
-  rotation: number
-  zIndex: number
-  text: string | null
-  style: CanvasElementStyle
-  props: CanvasElementProps
-}
+export type { CanvasElementSnapshot } from '@/lib/canvas-element-adapter'
 
 /**
  * One element's role within an undo entry.

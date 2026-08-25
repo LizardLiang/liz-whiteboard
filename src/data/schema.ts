@@ -1019,11 +1019,25 @@ export const canvasElementPropsSchema = z.discriminatedUnion('kind', [
 ])
 
 /**
+ * Paint order bounds. Exported so `nextCanvasZIndex` (canvas-element.ts) can
+ * clamp its own computed `MAX(zIndex) + 1` to the same ceiling this schema
+ * enforces — without it, one element already sitting at the max would make
+ * every subsequent `element:create` on that board fail schema validation
+ * with no way to recover (Hermes review, suggestion).
+ */
+export const CANVAS_ZINDEX_MIN = -1_000_000
+export const CANVAS_ZINDEX_MAX = 1_000_000
+
+/**
  * Paint order. Bounded because it is written straight into an INTEGER
  * column and compared on every render; an unbounded client value could
  * make every subsequent `nextZIndex` overflow into Infinity.
  */
-const canvasZIndexSchema = z.number().int().min(-1_000_000).max(1_000_000)
+const canvasZIndexSchema = z
+  .number()
+  .int()
+  .min(CANVAS_ZINDEX_MIN)
+  .max(CANVAS_ZINDEX_MAX)
 
 /**
  * Schema for creating a canvas element. Follows `createShapeSchema`'s

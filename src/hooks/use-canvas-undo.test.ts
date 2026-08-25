@@ -500,6 +500,96 @@ describe('redo of a delete is a conditional write (Hermes review, W-A)', () => {
   })
 })
 
+describe('partial multi-element inverse application (Hermes review, finding 1)', () => {
+  it('compensates a partially-succeeded undo instead of leaving the board half-reverted', async () => {
+    const h = setup()
+    // Both elements already exist at revision 1.
+    h.revisions.set(RECT_ID, 1)
+    h.revisions.set(RECT_B_ID, 1)
+    const a = makeRect({ id: RECT_ID })
+    const b = makeRect({ id: RECT_B_ID, x: 200 })
+    const beforeA = { ...a }
+    const beforeB = { ...b }
+    const afterA = { ...a, x: 999 }
+    const afterB = { ...b, x: 888 }
+
+    act(() => {
+      h.api.callbacks.onUpdate?.([afterA, afterB], [beforeA, beforeB])
+    })
+    // Call #1: the recording batch — both accepted, both bumped to revision 2.
+    await waitFor(() => expect(h.updateElements).toHaveBeenCalledTimes(1))
+
+    // From here on, `updateElements` is called once per element (see the
+    // "records ONE entry..." test above for why). Call #2 is undo's inverse
+    // write for A (accepted); call #3 is undo's inverse write for B — made
+    // to lose a race against a collaborator's own concurrent write, exactly
+    // the scenario `buildInverse`'s CLIENT-side all-or-nothing check cannot
+    // see coming (it already passed when `undo()` started).
+    // Reassigning `mockImplementation` resets what THIS closure counts from
+    // zero — the recording call above already happened under the ORIGINAL
+    // implementation, so call 1 here is A's undo-inverse write and call 2 is
+    // B's, not 2 and 3.
+    let call = 0
+    h.updateElements.mockImplementation(((
+      elements: Array<CanvasElement>,
+    ): Promise<Array<CanvasMutationResult>> => {
+      call += 1
+      if (call === 2) {
+        return Promise.resolve(elements.map((e) => ({ id: e.id, ok: false })))
+      }
+      return Promise.resolve(
+        elements.map((e) => {
+          const next = (h.revisions.get(e.id) ?? 0) + 1
+          h.revisions.set(e.id, next)
+          return { id: e.id, ok: true, revision: next }
+        }),
+      )
+      // The original mock's `vi.fn` narrows to a stricter inferred type
+      // (`revision: number` required even on failure) than the real
+      // `updateElements` signature actually promises — this override
+      // matches the real, optional-`revision` contract instead.
+    }) as typeof h.updateElements)
+
+    await act(async () => {
+      h.api.undo()
+      // `undo()`'s internal `.then` is now `async` (it awaits compensation
+      // before resolving) — flush it fully within this `act`.
+      await Promise.resolve()
+      await Promise.resolve()
+      await Promise.resolve()
+    })
+
+    // Call #4 is the compensation this fix adds: A's inverse write (call #2)
+    // succeeded, so — the whole entry having been refused — its reverted
+    // "before" content is written FORWARD again, back to what the user's
+    // gesture actually produced. Without this, A would stay parked at its
+    // reverted (`x: 10`) position with no redo entry and no way back
+    // (`inverse.ts`'s own documented "applied not at all, never partially").
+    await waitFor(() => expect(h.updateElements).toHaveBeenCalledTimes(4))
+    const [compensated, compensatedOptions] = h.updateElements.mock.calls[3]
+    expect(compensated[0]).toMatchObject({ id: RECT_ID, x: 999 })
+    expect(compensatedOptions).toMatchObject({
+      ephemeral: true,
+      // Guarded, not a blind clobber: A's own just-acked revision (3, from
+      // call #2) is what the compensating write's conditional check reads.
+      expectedRevisions: new Map([[RECT_ID, 3]]),
+    })
+
+    // The user is told the undo did not go through — refusal, not silence.
+    expect(toast.warning).toHaveBeenCalledTimes(1)
+
+    // The entry is fully discarded either way (matching the existing
+    // contested-refusal behaviour): not on the undo stack (a second undo
+    // call has nothing of THIS entry left to reverse) and not on redo.
+    act(() => {
+      h.api.redo()
+    })
+    expect(toast.info).toHaveBeenCalledWith(
+      expect.stringMatching(/nothing left to redo/i),
+    )
+  })
+})
+
 describe('read-only gate', () => {
   it('never calls a mutation function from a callback while read-only', async () => {
     const h = setup({ readOnly: true })

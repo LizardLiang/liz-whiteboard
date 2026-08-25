@@ -17,10 +17,10 @@
 //      that inverse through the SAME ordinary mutation functions (no
 //      privileged write path exists for undo, board-undo tactical plan,
 //      Wave 1, step 4);
-//   3. on `redo()`, reapplies the entry's forward content (kept in a
-//      WeakMap side-table keyed by entry identity — see "Redo content"
-//      below — never re-derives it from `buildInverse`, which only ever
-//      produces the UNDO direction).
+//   3. on `redo()`, reapplies the entry's forward content (carried as an
+//      `after` field on the operation itself, NOT an identity-keyed
+//      side-table — see "Redo content" below for why — never re-derives it
+//      from `buildInverse`, which only ever produces the UNDO direction).
 //
 // Every write undo/redo issues is marked `ephemeral: true` and is NEVER
 // itself passed back through the recording callbacks above — it is issued
@@ -69,6 +69,10 @@ import type {
   UndoStack,
 } from '@/lib/canvas-undo/undo-stack'
 import type { InverseWrite } from '@/lib/canvas-undo/inverse'
+import {
+  fromElementSnapshot as snapshotToEngineElement,
+  toElementSnapshot as toSnapshot,
+} from '@/lib/canvas-element-adapter'
 import {
   EMPTY_UNDO_STACK,
   elementKindForOperation,
@@ -122,39 +126,24 @@ export interface UseCanvasUndoParams {
   onAffectedElement?: (elementId: string, rect?: WorldRect | null) => void
 }
 
+// No `canUndo`/`canRedo` here (Hermes review, finding 7): this hook used to
+// compute and return them, but nothing ever consumed either — this board's
+// toolbar has no undo/redo button, and no test asserted on them. Dropped
+// rather than wired to a consumer that was not asked for; add them back the
+// day a toolbar button needs to grey itself out.
 export interface UseCanvasUndoReturn {
   /** Wire straight into `useCanvasInput({ callbacks })` — this IS the recording surface. */
   callbacks: CanvasEditCallbacks
   undo: () => void
   redo: () => void
-  canUndo: boolean
-  canRedo: boolean
 }
 
-/** Engine element -> the row-vocabulary snapshot the pure modules speak. */
-function toSnapshot(
-  boardId: string,
-  element: CanvasElement,
-): CanvasElementSnapshot {
-  return {
-    id: element.id,
-    boardId,
-    kind: element.kind,
-    positionX: element.x,
-    positionY: element.y,
-    width: element.width,
-    height: element.height,
-    rotation: element.rotation,
-    zIndex: element.zIndex,
-    text: element.text,
-    style: element.style,
-    // Both milestone-1 kinds carry an empty props object (see
-    // canvas-element-adapter.ts's `toCreateInput`) — `props` exists on the
-    // stored row purely as the kind-dispatch point documented in schema.ts,
-    // not as editable content, so it is always fully derivable from `kind`.
-    props: { kind: element.kind },
-  }
-}
+// `toSnapshot`/`snapshotToEngineElement` (imported above, aliased from
+// canvas-element-adapter.ts's `toElementSnapshot`/`fromElementSnapshot`) are
+// the row<->engine rename this hook needs. They used to be defined here as a
+// second, independent copy of that rename — canvas-element-adapter.ts's own
+// header says the rename "lives here — and ONLY here" (Hermes review,
+// finding 3); this hook now imports it instead of re-deriving it.
 
 /**
  * Snapshot -> the world rect `focusOnRect`/`isRectVisible` speak
@@ -169,22 +158,6 @@ function snapshotToWorldRect(snapshot: CanvasElementSnapshot): WorldRect {
     y: snapshot.positionY,
     width: snapshot.width,
     height: snapshot.height,
-  }
-}
-
-/** Snapshot -> engine element, for a `create` inverse write (delete's undo) or a create redo. */
-function snapshotToEngineElement(snapshot: CanvasElementSnapshot): CanvasElement {
-  return {
-    id: snapshot.id,
-    kind: snapshot.kind,
-    x: snapshot.positionX,
-    y: snapshot.positionY,
-    width: snapshot.width,
-    height: snapshot.height,
-    rotation: snapshot.rotation,
-    zIndex: snapshot.zIndex,
-    text: snapshot.text,
-    style: snapshot.style,
   }
 }
 
@@ -380,13 +353,13 @@ export function useCanvasUndo({
             return { ok: false, elementId: write.elementId }
           }
           // Built from the recorded `before` SNAPSHOT (full geometry/kind/
-          // rotation) rather than `write.patch` (which deliberately omits
-          // id/kind/rotation — see inverse.ts's `CanvasElementInversePatch`
-          // comment): the snapshot is a strict superset carrying everything
-          // `updateElements` needs to construct a valid engine element in one
-          // step. `write.expectedRevision` (below) is still the value that
-          // actually came from `buildInverse` — only the WHAT-to-write side
-          // takes the shortcut, not the contested-target guard.
+          // rotation) — `inverse.ts`'s `InverseWrite` carries no payload for
+          // `update` (Hermes review, finding 8: it used to, as an unread
+          // `patch` field, a second copy of `before`'s content that nothing
+          // in production ever consulted). The snapshot is what
+          // `updateElements` needs to construct a valid engine element in
+          // one step; `write.expectedRevision` (below) is still the value
+          // that actually came from `buildInverse`.
           const element = snapshotToEngineElement(op.before)
           const results = await updateElements([element], {
             ...EPHEMERAL,
@@ -425,6 +398,107 @@ export function useCanvasUndo({
       }
     },
     [createElement, deleteElements, updateElements],
+  )
+
+  /**
+   * Reapply one entry OPERATION's FORWARD content — the gesture's own
+   * result, `op.after` for create/update, an unconditional-on-id delete for
+   * `delete` (which needs no content, only the id). This is `redo()`'s
+   * entire per-operation write logic, extracted (Hermes review, finding 6:
+   * `applyInverseWrite` above and redo's own inline `switch` used to be two
+   * near-identical blocks with the same options wiring, free to drift — one
+   * forgetting a guard is exactly how a bug enters here).
+   *
+   * Also `undo()`'s COMPENSATION path (Hermes review, finding 1): when a
+   * multi-element inverse partially succeeds — some member writes accepted,
+   * one refused — the member(s) that DID write now hold the "before"
+   * content, violating `inverse.ts`'s own "applied not at all, never
+   * partially" contract. Reapplying THIS function against exactly those
+   * members' original operations is the correct compensating action: for a
+   * `create` operation (whose inverse write was a `delete` that just
+   * succeeded), it re-creates the element; for `update`, it writes `after`
+   * back; for `delete`, it re-deletes the element the inverse `create` just
+   * restored. Each call reads `getRevision(op.elementId)` for its own
+   * conditional-write guard, which by the time undo's compensation runs
+   * already reflects the inverse write's own just-acked revision — so the
+   * compensating write is itself a correctly-guarded conditional write, not
+   * a blind clobber.
+   */
+  const applyForwardWrite = useCallback(
+    async (op: CanvasUndoOperation): Promise<InverseWriteResult> => {
+      switch (op.kind) {
+        case 'create': {
+          // `op.after` — see undo-stack.ts's `CanvasUndoOperation` doc
+          // comment (BUG-1 fix): carried as DATA on the operation itself
+          // so it survives `refreshRevision`'s spread-based rewrite,
+          // unlike the identity-keyed side-table this used to read from.
+          if (!op.after) return { ok: false, elementId: op.elementId }
+          const content = snapshotToEngineElement(op.after)
+          // Symmetric to `applyInverseWrite`'s own 'create' case (Hermes
+          // review, W-C): this reapplies a create that undo's own delete
+          // just removed, so the SAME pre-delete-revision side-table
+          // applies here too — seeded by `applyInverseWrite`'s 'delete'
+          // case when THIS entry (or, for a compensation, this SAME write)
+          // was undone.
+          const minRevision = lastRevisionBeforeDeleteRef.current.get(op)
+          const res = await createElement(content, {
+            ...EPHEMERAL,
+            restoreOriginalId: true,
+            minRevision,
+          })
+          return { ok: res.ok, elementId: op.elementId, revision: res.revision }
+        }
+        case 'update': {
+          if (!op.after) return { ok: false, elementId: op.elementId }
+          const content = snapshotToEngineElement(op.after)
+          const currentRevision = getRevision(op.elementId)
+          const results = await updateElements([content], {
+            ...EPHEMERAL,
+            ...(currentRevision !== undefined
+              ? {
+                  expectedRevisions: new Map([[op.elementId, currentRevision]]),
+                }
+              : {}),
+          })
+          const result = results[0]
+          return {
+            ok: result.ok,
+            elementId: op.elementId,
+            revision: result.revision,
+          }
+        }
+        case 'delete': {
+          // Guarded exactly like the 'update' case immediately above
+          // (Hermes review, W-A): an unconditional write here would
+          // silently destroy a collaborator's edit made since. `getRevision`
+          // reads WHATEVER this hook currently believes the row's revision
+          // is — its own acks and every collaborator broadcast keep it
+          // fresh — so a write that lands after a concurrent edit is
+          // refused server-side (REVISION_MISMATCH) instead of clobbering
+          // it.
+          const currentRevision = getRevision(op.elementId)
+          const results = await deleteElements([op.elementId], {
+            ...EPHEMERAL,
+            ...(currentRevision !== undefined
+              ? {
+                  expectedRevisions: new Map([[op.elementId, currentRevision]]),
+                }
+              : {}),
+          })
+          const result = results[0]
+          // Keep the pre-delete-revision side-table current across repeated
+          // undo/redo cycles (or an undo/compensation pair) on the SAME
+          // operation (Hermes review, W-C): a FUTURE restore of this same
+          // operation must seed above THIS delete's revision, not a stale
+          // one captured earlier.
+          if (result.ok && result.revision !== undefined) {
+            lastRevisionBeforeDeleteRef.current.set(op, result.revision)
+          }
+          return { ok: result.ok, elementId: op.elementId }
+        }
+      }
+    },
+    [createElement, deleteElements, getRevision, updateElements],
   )
 
   const undo = useCallback(() => {
@@ -474,8 +548,20 @@ export function useCanvasUndo({
     )
     void Promise.all(
       inverse.writes.map((write) => applyInverseWrite(write, opsById)),
-    ).then((results) => {
+    ).then(async (results) => {
       const allOk = results.length > 0 && results.every((r) => r.ok)
+      // Every write's revision, refreshed at the end regardless of outcome
+      // — see the loop below. Compensation (added below, for a partial
+      // failure) can OVERWRITE an entry here with a later, truer revision
+      // for the same element, which is why this is a Map keyed by
+      // elementId rather than a flat array concatenation.
+      const revisionUpdates = new Map<string, number>()
+      for (const result of results) {
+        if (result.ok && result.revision !== undefined) {
+          revisionUpdates.set(result.elementId, result.revision)
+        }
+      }
+
       if (allOk) {
         stackRef.current = pushRedoEntry(stackRef.current, popped.entry)
         toast.success(describeUndoSuccess(popped.entry.label))
@@ -495,6 +581,64 @@ export function useCanvasUndo({
           primary.kind === 'create' ? null : snapshotToWorldRect(primary.before)
         onAffectedElement?.(primary.elementId, restoredRect)
       } else {
+        // Partial-application guard (Hermes review, finding 1): a
+        // multi-element inverse is checked all-or-nothing client-side
+        // (`buildInverse`, above) but applied as N independent, individually
+        // conditional server writes — the client-side check can pass and one
+        // member STILL lose a race against a collaborator's own concurrent
+        // write. Left as-is, any member whose write DID land would stay
+        // reverted to `before` while the rest of the entry (and the entry
+        // itself, discarded either way below) was not — a half-reverted
+        // board with no way back, contradicting `inverse.ts`'s own
+        // documented "applied not at all, never partially" and the
+        // spec-delta's "one reversal" for a multi-element gesture.
+        //
+        // Compensated here by reapplying the FORWARD content — via the SAME
+        // shared per-operation write function `redo()` uses
+        // (`applyForwardWrite`) — for exactly the member(s) whose inverse
+        // write succeeded. Net effect: either every member reverted (the
+        // `allOk` branch above) or NONE remain reverted, restoring the
+        // "never partially" contract's OUTCOME even though the underlying
+        // writes are still N independent round-trips (the N+1-round-trips
+        // debt itself is out of scope — see use-canvas-elements.ts's own
+        // "acceptable at milestone-1 selection sizes" note).
+        const succeededOps = results
+          .filter((r) => r.ok)
+          .map((r) => opsById.get(r.elementId))
+          .filter((op): op is CanvasUndoOperation => Boolean(op))
+
+        if (succeededOps.length > 0) {
+          const compensationResults = await Promise.all(
+            succeededOps.map(applyForwardWrite),
+          )
+          for (const result of compensationResults) {
+            if (result.ok && result.revision !== undefined) {
+              // The compensating write is the FINAL, authoritative state for
+              // this element — overwrites whatever the (now-reverted, then
+              // re-forward-written) inverse write recorded above.
+              revisionUpdates.set(result.elementId, result.revision)
+            }
+          }
+          const compensationFailed = compensationResults.find((r) => !r.ok)
+          if (compensationFailed) {
+            // The rare double-failure: a THIRD write (the compensation
+            // itself) also lost a race — e.g. a second collaborator edit
+            // landing in the brief window between the inverse write and the
+            // compensating one. Nothing left this hook can safely retry
+            // automatically without risking clobbering whatever THAT edit
+            // did; logged for diagnosis rather than silently swallowed. The
+            // refusal toast below is still shown either way — the user
+            // learns their undo did not go through, which remains true.
+            console.error(
+              'Canvas undo: partial-failure compensation could not fully ' +
+                'restore element',
+              compensationFailed.elementId,
+              '— it may be left in an inconsistent state; a collaborator' +
+                ' likely edited it again during the retry window.',
+            )
+          }
+        }
+
         // A write that fails after passing this hook's own (client-side, and
         // therefore possibly stale) contest check is a race lost against the
         // server's OWN conditional check — the entry is simply dropped, same
@@ -522,18 +666,12 @@ export function useCanvasUndo({
       // against the STALE revision it was originally recorded with. Without
       // this, the user's own undo makes their NEXT undo of the same element
       // look contested.
-      for (const result of results) {
-        if (result.ok && result.revision !== undefined) {
-          stackRef.current = refreshRevision(
-            stackRef.current,
-            result.elementId,
-            result.revision,
-          )
-        }
+      for (const [elementId, revision] of revisionUpdates) {
+        stackRef.current = refreshRevision(stackRef.current, elementId, revision)
       }
       bumpVersion()
     })
-  }, [applyInverseWrite, getRevision, onAffectedElement, readOnly])
+  }, [applyForwardWrite, applyInverseWrite, getRevision, onAffectedElement, readOnly])
 
   // ── applying (redo) ──────────────────────────────────────────────────────
 
@@ -555,143 +693,67 @@ export function useCanvasUndo({
     stackRef.current = popped.stack
     bumpVersion()
 
-    void Promise.all(
-      popped.entry.operations.map(async (op): Promise<InverseWriteResult> => {
-        switch (op.kind) {
-          case 'create': {
-            // `op.after` — see undo-stack.ts's `CanvasUndoOperation` doc
-            // comment (BUG-1 fix): carried as DATA on the operation itself
-            // so it survives `refreshRevision`'s spread-based rewrite,
-            // unlike the identity-keyed side-table this used to read from.
-            if (!op.after) return { ok: false, elementId: op.elementId }
-            const content = snapshotToEngineElement(op.after)
-            // Symmetric to `applyInverseWrite`'s own 'create' case (Hermes
-            // review, W-C): this reapplies a create that undo's own delete
-            // just removed, so the SAME pre-delete-revision side-table
-            // applies here too — seeded by `applyInverseWrite`'s 'delete'
-            // case when THIS entry was undone.
-            const minRevision = lastRevisionBeforeDeleteRef.current.get(op)
-            const res = await createElement(content, {
-              ...EPHEMERAL,
-              restoreOriginalId: true,
-              minRevision,
-            })
-            return { ok: res.ok, elementId: op.elementId, revision: res.revision }
-          }
-          case 'update': {
-            if (!op.after) return { ok: false, elementId: op.elementId }
-            const content = snapshotToEngineElement(op.after)
-            const currentRevision = getRevision(op.elementId)
-            const results = await updateElements([content], {
-              ...EPHEMERAL,
-              ...(currentRevision !== undefined
-                ? {
-                    expectedRevisions: new Map([[op.elementId, currentRevision]]),
-                  }
-                : {}),
-            })
-            const result = results[0]
-            return {
-              ok: result.ok,
-              elementId: op.elementId,
-              revision: result.revision,
-            }
-          }
-          case 'delete': {
-            // Guarded exactly like the 'update' case immediately above
-            // (Hermes review, W-A): an unconditional redo of a delete would
-            // silently destroy a collaborator's edit made between the undo
-            // and this redo, with no refusal. `getRevision` here reads
-            // WHATEVER this hook currently believes the row's revision is —
-            // its own acks and every collaborator broadcast keep it fresh —
-            // so a write that lands after a concurrent edit is refused
-            // server-side (REVISION_MISMATCH) instead of clobbering it.
-            const currentRevision = getRevision(op.elementId)
-            const results = await deleteElements([op.elementId], {
-              ...EPHEMERAL,
-              ...(currentRevision !== undefined
-                ? {
-                    expectedRevisions: new Map([[op.elementId, currentRevision]]),
-                  }
-                : {}),
-            })
-            const result = results[0]
-            // Keep the pre-delete-revision side-table current across
-            // repeated undo/redo cycles on the SAME 'delete' entry (Hermes
-            // review, W-C): if this element was edited again between an
-            // earlier restore and this re-delete, a FUTURE undo restoring it
-            // once more must seed above THIS delete's revision, not the
-            // stale one captured the first time this entry was ever undone.
-            if (result.ok && result.revision !== undefined) {
-              lastRevisionBeforeDeleteRef.current.set(op, result.revision)
-            }
-            return { ok: result.ok, elementId: op.elementId }
+    // `applyForwardWrite` (defined above `undo`) is this loop's entire body
+    // — shared with `undo()`'s partial-failure compensation path (Hermes
+    // review, findings 1 and 6).
+    void Promise.all(popped.entry.operations.map(applyForwardWrite)).then(
+      (results) => {
+        const allOk = results.length > 0 && results.every((r) => r.ok)
+        if (allOk) {
+          toast.success(describeRedoSuccess(popped.entry.label))
+          // Symmetric to `undo()`'s own fix above (headed-browser BUG-2):
+          // the rect passed is the REAPPLIED (post-redo) position, read
+          // from the operation's own `after` snapshot — the write's own
+          // known content, not a caller re-read of a not-yet-re-rendered
+          // scene. A 'delete' operation's redo re-deletes the element
+          // (nothing to focus).
+          const primary = popped.entry.operations[0]
+          const reappliedRect: WorldRect | null =
+            primary.kind === 'delete' || !primary.after
+              ? null
+              : snapshotToWorldRect(primary.after)
+          onAffectedElement?.(primary.elementId, reappliedRect)
+        } else {
+          // Same reasoning as `undo()`'s own failure branch: a write
+          // refused after passing this hook's client-side check is
+          // reported the same way undo reports a contest — named, not
+          // attributed — and `use-canvas-elements.ts` suppresses its
+          // generic error toast for this (`ephemeral`) write, so this is
+          // the only report shown.
+          const failed = results.find((r) => !r.ok)
+          if (failed) {
+            toast.warning(
+              describeRedoRefusal(
+                elementKindForOperation(popped.entry, failed.elementId),
+                'changed',
+              ),
+            )
+            onAffectedElement?.(failed.elementId)
           }
         }
-      }),
-    ).then((results) => {
-      const allOk = results.length > 0 && results.every((r) => r.ok)
-      if (allOk) {
-        toast.success(describeRedoSuccess(popped.entry.label))
-        // Symmetric to `undo()`'s own fix above (headed-browser BUG-2): the
-        // rect passed is the REAPPLIED (post-redo) position, read from the
-        // operation's own `after` snapshot — the write's own known content,
-        // not a caller re-read of a not-yet-re-rendered scene. A 'delete'
-        // operation's redo re-deletes the element (nothing to focus).
-        const primary = popped.entry.operations[0]
-        const reappliedRect: WorldRect | null =
-          primary.kind === 'delete' || !primary.after
-            ? null
-            : snapshotToWorldRect(primary.after)
-        onAffectedElement?.(primary.elementId, reappliedRect)
-      } else {
-        // Same reasoning as `undo()`'s own failure branch: a write refused
-        // after passing this hook's client-side check is reported the same
-        // way undo reports a contest — named, not attributed — and
-        // `use-canvas-elements.ts` suppresses its generic error toast for
-        // this (`ephemeral`) write, so this is the only report shown.
-        const failed = results.find((r) => !r.ok)
-        if (failed) {
-          toast.warning(
-            describeRedoRefusal(
-              elementKindForOperation(popped.entry, failed.elementId),
-              'changed',
-            ),
-          )
-          onAffectedElement?.(failed.elementId)
+        // Same staleness fix as `undo()` above (Hermes review, BLOCKER B1):
+        // this reapplied entry sits BACK on the undo stack the moment it
+        // was popped from redo (see `popRedoEntry`'s own contract), so
+        // refreshing its own `afterRevision` — and any OTHER surviving
+        // entry for the same element — is what keeps the NEXT undo from
+        // reading a write this redo() itself just made as a contest.
+        for (const result of results) {
+          if (result.ok && result.revision !== undefined) {
+            stackRef.current = refreshRevision(
+              stackRef.current,
+              result.elementId,
+              result.revision,
+            )
+          }
         }
-      }
-      // Same staleness fix as `undo()` above (Hermes review, BLOCKER B1):
-      // this reapplied entry sits BACK on the undo stack the moment it was
-      // popped from redo (see `popRedoEntry`'s own contract), so refreshing
-      // its own `afterRevision` — and any OTHER surviving entry for the same
-      // element — is what keeps the NEXT undo from reading a write this
-      // redo() itself just made as a contest.
-      for (const result of results) {
-        if (result.ok && result.revision !== undefined) {
-          stackRef.current = refreshRevision(
-            stackRef.current,
-            result.elementId,
-            result.revision,
-          )
-        }
-      }
-      bumpVersion()
-    })
-  }, [
-    createElement,
-    deleteElements,
-    getRevision,
-    onAffectedElement,
-    readOnly,
-    updateElements,
-  ])
+        bumpVersion()
+      },
+    )
+  }, [applyForwardWrite, onAffectedElement, readOnly])
 
   return {
     callbacks,
     undo,
     redo,
-    canUndo: stackRef.current.entries.length > 0,
-    canRedo: stackRef.current.redo.length > 0,
   }
 }

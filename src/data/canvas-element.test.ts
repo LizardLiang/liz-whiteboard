@@ -263,6 +263,33 @@ describe('createCanvasElement', () => {
       createCanvasElement(baseElement(boardId, { id: explicitId })),
     ).rejects.toThrow()
   })
+
+  it('does not leak the raw SQLite constraint text on an id collision (Hermes review, finding 2)', async () => {
+    // A second board's editor guessing another board's element id would
+    // otherwise learn "it exists" from the raw `UNIQUE constraint failed:
+    // CanvasElement.id` text alone — the exact existence oracle
+    // `ELEMENT_REFUSED` (handlers.ts) already closes for update/delete. The
+    // collision case above only asserts SOME rejection; this one pins the
+    // message so a regression here fails loudly.
+    const boardId = await makeBoard()
+    const otherBoardId = await makeBoard()
+    const explicitId = '66666666-6666-4666-8666-666666666666'
+    await createCanvasElement(baseElement(boardId, { id: explicitId }))
+
+    let caught: unknown
+    try {
+      await createCanvasElement(baseElement(otherBoardId, { id: explicitId }))
+    } catch (error) {
+      caught = error
+    }
+
+    expect(caught).toBeInstanceOf(Error)
+    const message = (caught as Error).message
+    expect(message).toBe('Failed to create canvas element')
+    expect(message).not.toMatch(/UNIQUE/i)
+    expect(message).not.toMatch(/CanvasElement/)
+    expect(message).not.toMatch(/constraint/i)
+  })
 })
 
 describe('findCanvasElementsByBoard', () => {
@@ -484,5 +511,17 @@ describe('nextCanvasZIndex', () => {
     await createCanvasElement(baseElement(a, { zIndex: 40 }))
 
     expect(await nextCanvasZIndex(b)).toBe(0)
+  })
+
+  it('clamps at the schema max instead of returning a value the schema will then reject (Hermes review, suggestion)', async () => {
+    // One element already sitting at the schema's own ceiling would
+    // otherwise make `MAX(zIndex) + 1` return 1_000_001 — a value
+    // `canvasZIndexSchema` (schema.ts) rejects, bricking `element:create` on
+    // this board with no way to recover (reachable in one message via
+    // create-with-id, per the mission brief).
+    const boardId = await makeBoard()
+    await createCanvasElement(baseElement(boardId, { zIndex: 1_000_000 }))
+
+    expect(await nextCanvasZIndex(boardId)).toBe(1_000_000)
   })
 })

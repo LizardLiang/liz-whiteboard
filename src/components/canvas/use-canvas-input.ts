@@ -421,6 +421,14 @@ export function useCanvasInput({
         // Nothing existed before a brand-new element — there is no "before"
         // to capture. For an existing element, clone it now: this IS its
         // pre-edit state, since no text mutation has happened yet.
+        //
+        // `{ ...element }` is a SHALLOW clone — safe here only because
+        // `canvas-engine/scene.ts`'s own mutators (`updateElement` et al.)
+        // never mutate an element in place; every edit REPLACES the element
+        // object (and any nested fields, e.g. `style`) with a new one
+        // (`{ ...element, ...patch }`). A later edit therefore cannot reach
+        // back through this clone's references and corrupt what it captured
+        // (Hermes review, suggestion).
         before: isNew ? null : { ...element },
       })
       setSelectedIds(new Set([element.id]))
@@ -505,6 +513,8 @@ export function useCanvasInput({
                 width: only.width,
                 height: only.height,
               },
+              // Shallow clone — same safety rationale as `beginEditing`'s
+              // and the move gesture's own `{ ...element }` clones above.
               beforeElement: { ...only },
             })
             return
@@ -542,6 +552,11 @@ export function useCanvasInput({
         startScreen: screen,
         ids: [...nextSelection],
         moved: false,
+        // Shallow clones — safe for the same reason `beginEditing`'s own
+        // `{ ...element }` clone is (see its comment): `canvas-engine`
+        // never mutates an element in place, only replaces it, so the drag
+        // that follows cannot reach back and corrupt this pre-move snapshot
+        // (Hermes review, suggestion).
         before: [...nextSelection]
           .map((id) => latest.current.scene.byId.get(id))
           .filter((element): element is CanvasElement => Boolean(element))

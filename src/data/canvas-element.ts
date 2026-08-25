@@ -12,7 +12,11 @@
 // Convention carried over from the shape layer: every mutating function reads
 // the full prior row before writing.
 
-import { createCanvasElementSchema, updateCanvasElementSchema } from './schema'
+import {
+  CANVAS_ZINDEX_MAX,
+  createCanvasElementSchema,
+  updateCanvasElementSchema,
+} from './schema'
 import type { CreateCanvasElement, UpdateCanvasElement } from './schema'
 import type { CanvasElementRecord } from './models'
 import {
@@ -110,9 +114,22 @@ export async function createCanvasElement(
       db.prepare('SELECT * FROM "CanvasElement" WHERE "id" = ?').get(id),
     )!
   } catch (error) {
-    throw new Error(
-      `Failed to create canvas element: ${error instanceof Error ? error.message : 'Unknown error'}`,
-    )
+    const message = error instanceof Error ? error.message : 'Unknown error'
+    // Map the SQLite unique-index violation on the explicit-`id` restore
+    // path (undo's create-with-id) to a fixed message. The raw SQLite text
+    // embeds the literal id and "CanvasElement.id" — returned verbatim, it
+    // would let any editor on any board probe an arbitrary UUID and learn
+    // whether it exists on ANOTHER board from the ack/error alone. This is
+    // the exact existence oracle `ELEMENT_REFUSED` (handlers.ts) already
+    // closes for `element:update`/`element:delete`; this closes it for
+    // `element:create` too (Hermes review, finding 2). Full detail stays in
+    // the server log, matching `connector.ts`'s identical precedent for its
+    // own unique-index violation.
+    if (message.includes('UNIQUE constraint failed')) {
+      console.error('Canvas element id collision on create-with-id:', error)
+      throw new Error('Failed to create canvas element')
+    }
+    throw new Error(`Failed to create canvas element: ${message}`)
   }
 }
 
@@ -297,7 +314,14 @@ export async function nextCanvasZIndex(boardId: string): Promise<number> {
       )
       .get(boardId)
     const top = row?.top
-    return top == null ? 0 : Number(top) + 1
+    if (top == null) return 0
+    // Clamped at the schema's own ceiling (Hermes review, suggestion): an
+    // element already sitting at `CANVAS_ZINDEX_MAX` would otherwise make
+    // this return MAX + 1, a value `canvasZIndexSchema` (schema.ts) rejects
+    // — bricking `element:create` on this board with no way to recover.
+    // Reusing that top slot on the rare board that reaches it is a better
+    // outcome than a hard failure with no remediation.
+    return Math.min(Number(top) + 1, CANVAS_ZINDEX_MAX)
   } catch (error) {
     throw new Error(
       `Failed to compute next z-index: ${error instanceof Error ? error.message : 'Unknown error'}`,

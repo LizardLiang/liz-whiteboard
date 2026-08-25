@@ -87,6 +87,10 @@ describe('buildInverse — update -> update-to-prior', () => {
     }
     const result = buildInverse(entry, revisions({ 'el-1': 2 }))
 
+    // No `patch` payload (Hermes review, finding 8): this module reports
+    // only WHAT to guard for an `update` write; the caller already owns the
+    // operation's `before` snapshot (the strict superset actually needed to
+    // write it back, id/kind/rotation included) via the entry it popped.
     expect(result).toEqual({
       status: 'ok',
       writes: [
@@ -94,16 +98,6 @@ describe('buildInverse — update -> update-to-prior', () => {
           kind: 'update',
           elementId: 'el-1',
           expectedRevision: 2,
-          patch: {
-            positionX: 5,
-            positionY: 5,
-            width: before.width,
-            height: before.height,
-            zIndex: before.zIndex,
-            text: before.text,
-            style: before.style,
-            props: before.props,
-          },
         },
       ],
     })

@@ -303,7 +303,7 @@ export function registerCanvasElementHandlers(
         cb?.({ ok: true, entity: updated })
       } catch (error) {
         if (error instanceof RevisionMismatchError) {
-          cb?.({ ok: false, code: 'REVISION_MISMATCH', message: error.message })
+          cb?.({ ok: false, code: error.code, message: error.message })
           return
         }
         const message =
@@ -373,7 +373,7 @@ export function registerCanvasElementHandlers(
       })
     } catch (error) {
       if (error instanceof RevisionMismatchError) {
-        cb?.({ ok: false, code: 'REVISION_MISMATCH', message: error.message })
+        cb?.({ ok: false, code: error.code, message: error.message })
         return
       }
       console.error('Failed to delete canvas element:', error)

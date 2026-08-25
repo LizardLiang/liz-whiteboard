@@ -19,6 +19,8 @@ import type {
 } from './canvas-engine/scene'
 import type { CanvasElementRecord } from '@/data/models'
 import type {
+  CanvasElementProps,
+  CanvasElementStyle,
   CreateCanvasElement,
   CanvasElementKind as StoredKind,
   UpdateCanvasElement,
@@ -103,5 +105,79 @@ export function toUpdatePatch(element: CanvasElement): UpdateCanvasElement {
     zIndex: element.zIndex,
     text: element.text,
     style: element.style,
+  }
+}
+
+/**
+ * A full, row-shaped snapshot of one element — everything canvas-undo needs
+ * to write it back exactly as it was, without a second database read.
+ * Row vocabulary (positionX/positionY, not the engine's x/y) because this is
+ * what the create/update write payloads speak.
+ *
+ * Lives here, not in src/lib/canvas-undo/, because it is still the SAME
+ * positionX/positionY <-> x/y rename this file's header says lives in
+ * exactly one place — canvas-undo previously kept a second, independent copy
+ * of this conversion (`toSnapshot`/`snapshotToEngineElement` in
+ * use-canvas-undo.ts), which is exactly the drift risk the single-transform-
+ * pair rule (camera.ts) exists to prevent for coordinates (Hermes review,
+ * finding 3). `boardId` is the one field beyond `CanvasElement`'s own that a
+ * snapshot needs — the engine element carries no board reference — which is
+ * why this is a distinct type from `CanvasElement` rather than a reuse of it.
+ */
+export interface CanvasElementSnapshot {
+  id: string
+  boardId: string
+  kind: EngineKind
+  positionX: number
+  positionY: number
+  width: number
+  height: number
+  rotation: number
+  zIndex: number
+  text: string | null
+  style: CanvasElementStyle
+  props: CanvasElementProps
+}
+
+/** Engine element -> the row-shaped snapshot canvas-undo persists (undo's record/restore path). */
+export function toElementSnapshot(
+  boardId: string,
+  element: CanvasElement,
+): CanvasElementSnapshot {
+  return {
+    id: element.id,
+    boardId,
+    kind: element.kind,
+    positionX: element.x,
+    positionY: element.y,
+    width: element.width,
+    height: element.height,
+    rotation: element.rotation,
+    zIndex: element.zIndex,
+    text: element.text,
+    style: element.style,
+    // Both milestone-1 kinds carry an empty props object (see
+    // `toCreateInput` above) — `props` exists on the stored row purely as
+    // the kind-dispatch point documented in schema.ts, not as editable
+    // content, so it is always fully derivable from `kind`.
+    props: { kind: element.kind },
+  }
+}
+
+/** The inverse of `toElementSnapshot` — reapplies a captured snapshot (undo's create-with-id write, or a redo reapplication) as an engine element. */
+export function fromElementSnapshot(
+  snapshot: CanvasElementSnapshot,
+): CanvasElement {
+  return {
+    id: snapshot.id,
+    kind: snapshot.kind,
+    x: snapshot.positionX,
+    y: snapshot.positionY,
+    width: snapshot.width,
+    height: snapshot.height,
+    rotation: snapshot.rotation,
+    zIndex: snapshot.zIndex,
+    text: snapshot.text,
+    style: snapshot.style,
   }
 }

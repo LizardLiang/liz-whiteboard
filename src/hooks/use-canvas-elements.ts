@@ -141,7 +141,27 @@ export interface UseCanvasElementsParams {
 
 /** Per-call options shared by all three mutation functions (Wave 3, step 8). */
 export interface CanvasMutationOptions {
-  /** See the file header's "Wave 3 additions" note on what this documents. */
+  /**
+   * Marks a write as issued BY undo/redo's own inverse machinery rather
+   * than a fresh user gesture. Two real, if narrow, effects (Hermes review,
+   * finding 4 — this used to read as pure documentation with no runtime
+   * check):
+   *
+   *   1. Suppresses this hook's generic `toast.error(...)` on a failed
+   *      create/update/delete (see the three `!options?.ephemeral` guards
+   *      below) — `use-canvas-undo.ts` owns a named, non-attributing report
+   *      for that outcome instead, and showing both would either duplicate
+   *      it or surface an error nobody asked about.
+   *   2. Documents, but does NOT itself enforce, "not undoable": the one
+   *      caller that writes without a fresh gesture (the deferred
+   *      create-then-delete race, `emitDeleteRef.current(...)` below) is
+   *      issued from INSIDE this hook, never through `use-canvas-input`'s
+   *      onCreate/onUpdate/onDelete callbacks — the sole recording surface
+   *      `use-canvas-undo.ts` wires up — so it is excluded from recording
+   *      STRUCTURALLY, not because this flag branches on anything for that
+   *      purpose. See the file header's "Wave 3 additions" note for the
+   *      full history.
+   */
   ephemeral?: boolean
   /**
    * Per-element conditional-write guard, keyed by element id — undo's

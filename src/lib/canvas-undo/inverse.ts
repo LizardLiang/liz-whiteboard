@@ -11,27 +11,26 @@
 
 import type { CanvasElementSnapshot, CanvasUndoEntry } from './undo-stack'
 
-/** The patch fields an inverse `update` write needs — the `before` snapshot minus id/boardId/kind, which never change on update. */
-export interface CanvasElementInversePatch {
-  positionX: number
-  positionY: number
-  width: number
-  height: number
-  zIndex: number
-  text: string | null
-  style: CanvasElementSnapshot['style']
-  props: CanvasElementSnapshot['props']
-}
-
-/** One write the caller must issue to reverse one element of an entry. */
+/**
+ * One write the caller must issue to reverse one element of an entry.
+ *
+ * The `update` variant carries no patch payload (Hermes review, finding 8):
+ * it used to (`CanvasElementInversePatch`, built from `operation.before`
+ * below), but the sole caller (`use-canvas-undo.ts`'s `applyInverseWrite`)
+ * never read it — it reconstructs the write from the operation's own
+ * `before` snapshot instead, since that snapshot is the strict superset the
+ * write actually needs (id/kind/rotation included, which `before` alone
+ * carries and a patch-of-just-the-mutable-fields cannot). A field built and
+ * asserted in tests but never read in production is exactly the kind of
+ * silent drift risk this module's "pure, single source of truth" design is
+ * meant to avoid — the caller already has `before` (via the `CanvasUndoEntry`
+ * it owns), so this module reports only WHAT to guard (`expectedRevision`),
+ * not WHAT to write, for the `update` case, matching `delete`'s existing
+ * shape (which never carried a payload either — a delete needs only an id).
+ */
 export type InverseWrite =
   | { kind: 'create'; elementId: string; snapshot: CanvasElementSnapshot }
-  | {
-      kind: 'update'
-      elementId: string
-      expectedRevision: number
-      patch: CanvasElementInversePatch
-    }
+  | { kind: 'update'; elementId: string; expectedRevision: number }
   | { kind: 'delete'; elementId: string; expectedRevision: number }
 
 export interface ContestedMember {
@@ -106,16 +105,6 @@ export function buildInverse(
           kind: 'update',
           elementId: operation.elementId,
           expectedRevision: operation.afterRevision,
-          patch: {
-            positionX: operation.before.positionX,
-            positionY: operation.before.positionY,
-            width: operation.before.width,
-            height: operation.before.height,
-            zIndex: operation.before.zIndex,
-            text: operation.before.text,
-            style: operation.before.style,
-            props: operation.before.props,
-          },
         })
         break
       }
