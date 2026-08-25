@@ -13,6 +13,7 @@ import {
   updateCanvasBoard,
 } from './canvas-board'
 import {
+  RevisionMismatchError,
   createCanvasElement,
   deleteCanvasElement,
   findCanvasElementById,
@@ -181,9 +182,85 @@ describe('createCanvasElement', () => {
     // The FK is what keeps orphan elements out; without it they would be
     // invisible forever and still counted by every board query.
     await expect(
-      createCanvasElement(
-        baseElement('11111111-1111-4111-8111-111111111111'),
-      ),
+      createCanvasElement(baseElement('11111111-1111-4111-8111-111111111111')),
+    ).rejects.toThrow()
+  })
+
+  it('starts every new row at revision 1', async () => {
+    // A wall-clock timestamp cannot tell two same-millisecond writes apart;
+    // `revision` is the token undo compares instead.
+    const boardId = await makeBoard()
+    const element = await createCanvasElement(baseElement(boardId))
+    expect(element.revision).toBe(1)
+  })
+
+  it('seeds a restored row above minRevision instead of resetting to 1 (Hermes review, W-C, ABA)', async () => {
+    // Without this, every restore starts back at revision 1 — a stale
+    // undo/redo entry recorded against the ORIGINAL row (which may have been
+    // updated several times before being deleted) can then match a RESTORED
+    // row's revision by coincidence and apply against content it never
+    // actually saw.
+    const boardId = await makeBoard()
+    const element = await createCanvasElement(
+      baseElement(boardId, { id: '55555555-5555-4555-8555-555555555555', minRevision: 4 }),
+    )
+    expect(element.revision).toBe(5)
+  })
+
+  it('still starts at revision 1 when minRevision is absent (ordinary create, restore-only field)', async () => {
+    const boardId = await makeBoard()
+    const element = await createCanvasElement(baseElement(boardId))
+    expect(element.revision).toBe(1)
+  })
+
+  it('accepts minRevision 0 — a row created and never subsequently updated legitimately holds revision 0', async () => {
+    // A real, reachable bug (not a theoretical boundary): this project's own
+    // e2e seed scripts (e2e/seed-canvas.ts) write CanvasElement rows via raw
+    // SQL with no `revision` column, so the schema's own `DEFAULT 0` applies
+    // — the seeded row's revision is genuinely 0. Deleting that row and
+    // undoing the delete sends its actual pre-delete revision, 0, straight
+    // through as `minRevision`. The schema field used to be `.positive()`
+    // (>0), which rejected 0 with a VALIDATION_ERROR that the undo hook's
+    // generic-refusal fallback then reported as a false "changed since your
+    // edit" — found by canvas-undo.spec.ts's own "undo a delete" e2e case
+    // (board-undo tactical plan, Wave 5), not by inspection.
+    const boardId = await makeBoard()
+    const element = await createCanvasElement(
+      baseElement(boardId, {
+        id: '66666666-6666-4666-8666-666666666666',
+        minRevision: 0,
+      }),
+    )
+    expect(element.revision).toBe(1)
+  })
+
+  it('accepts an explicit, validated id and creates the row under it', async () => {
+    // The only caller of this is undo restoring a deleted element under the
+    // identifier every other client still has cached.
+    const boardId = await makeBoard()
+    const explicitId = '44444444-4444-4444-8444-444444444444'
+    const element = await createCanvasElement(
+      baseElement(boardId, { id: explicitId }),
+    )
+    expect(element.id).toBe(explicitId)
+    expect(await findCanvasElementById(explicitId)).not.toBeNull()
+  })
+
+  it('rejects a non-uuid explicit id rather than silently generating one', async () => {
+    // `id` is validated exactly like every other field — not a second,
+    // laxer write path.
+    const boardId = await makeBoard()
+    await expect(
+      createCanvasElement(baseElement(boardId, { id: 'not-a-uuid' })),
+    ).rejects.toThrow()
+  })
+
+  it('fails rather than overwrite when the explicit id already exists', async () => {
+    const boardId = await makeBoard()
+    const explicitId = '55555555-5555-4555-8555-555555555555'
+    await createCanvasElement(baseElement(boardId, { id: explicitId }))
+    await expect(
+      createCanvasElement(baseElement(boardId, { id: explicitId })),
     ).rejects.toThrow()
   })
 })
@@ -249,12 +326,16 @@ describe('updateCanvasElement', () => {
     expect((await updateCanvasElement(created.id, { width: 200 })).text).toBe(
       'draft',
     )
-    expect((await updateCanvasElement(created.id, { text: null })).text).toBeNull()
+    expect(
+      (await updateCanvasElement(created.id, { text: null })).text,
+    ).toBeNull()
   })
 
   it('restacks via zIndex', async () => {
     const boardId = await makeBoard()
-    const bottom = await createCanvasElement(baseElement(boardId, { zIndex: 0 }))
+    const bottom = await createCanvasElement(
+      baseElement(boardId, { zIndex: 0 }),
+    )
     await createCanvasElement(baseElement(boardId, { zIndex: 1 }))
 
     await updateCanvasElement(bottom.id, { zIndex: 9 })
@@ -262,7 +343,7 @@ describe('updateCanvasElement', () => {
     expect(elements[elements.length - 1].id).toBe(bottom.id)
   })
 
-  it("rejects a props payload for a different kind than the stored row", async () => {
+  it('rejects a props payload for a different kind than the stored row', async () => {
     // `updateCanvasElementSchema` has no `kind`, so the union cannot see what
     // the row actually is — the cross-check has to happen against the prior
     // row the update already reads.
@@ -275,9 +356,9 @@ describe('updateCanvasElement', () => {
   })
 
   it('throws for an element that does not exist', async () => {
-    await expect(
-      updateCanvasElement('nope', { positionX: 1 }),
-    ).rejects.toThrow(/not found/i)
+    await expect(updateCanvasElement('nope', { positionX: 1 })).rejects.toThrow(
+      /not found/i,
+    )
   })
 
   it('bumps updatedAt', async () => {
@@ -293,6 +374,47 @@ describe('updateCanvasElement', () => {
       created.updatedAt.getTime() - 10_000,
     )
   })
+
+  it('increments revision by exactly one per write, reusing the prior-row read', async () => {
+    const boardId = await makeBoard()
+    const created = await createCanvasElement(baseElement(boardId))
+    expect(created.revision).toBe(1)
+
+    const first = await updateCanvasElement(created.id, { width: 200 })
+    expect(first.revision).toBe(2)
+
+    const second = await updateCanvasElement(created.id, { width: 300 })
+    expect(second.revision).toBe(3)
+  })
+
+  it('applies the write when expectedRevision matches the current row', async () => {
+    const boardId = await makeBoard()
+    const created = await createCanvasElement(baseElement(boardId))
+
+    const updated = await updateCanvasElement(
+      created.id,
+      { width: 250 },
+      created.revision,
+    )
+    expect(updated.width).toBe(250)
+    expect(updated.revision).toBe(2)
+  })
+
+  it('refuses with a typed RevisionMismatchError and writes nothing on a stale expectedRevision', async () => {
+    const boardId = await makeBoard()
+    const created = await createCanvasElement(baseElement(boardId))
+    // Someone else writes first, advancing the row to revision 2.
+    await updateCanvasElement(created.id, { width: 999 })
+
+    await expect(
+      updateCanvasElement(created.id, { width: 111 }, created.revision),
+    ).rejects.toBeInstanceOf(RevisionMismatchError)
+
+    // The contested write must not have landed.
+    const unchanged = await findCanvasElementById(created.id)
+    expect(unchanged?.width).toBe(999)
+    expect(unchanged?.revision).toBe(2)
+  })
 })
 
 describe('deleteCanvasElement', () => {
@@ -307,6 +429,29 @@ describe('deleteCanvasElement', () => {
 
   it('throws for an element that does not exist', async () => {
     await expect(deleteCanvasElement('nope')).rejects.toThrow(/not found/i)
+  })
+
+  it('deletes when expectedRevision matches the current row', async () => {
+    const boardId = await makeBoard()
+    const created = await createCanvasElement(baseElement(boardId))
+
+    const deleted = await deleteCanvasElement(created.id, created.revision)
+    expect(deleted.id).toBe(created.id)
+    expect(await findCanvasElementById(created.id)).toBeNull()
+  })
+
+  it('refuses with a typed RevisionMismatchError and deletes nothing on a stale expectedRevision', async () => {
+    const boardId = await makeBoard()
+    const created = await createCanvasElement(baseElement(boardId))
+    // Someone else writes first, advancing the row to revision 2.
+    await updateCanvasElement(created.id, { width: 999 })
+
+    await expect(
+      deleteCanvasElement(created.id, created.revision),
+    ).rejects.toBeInstanceOf(RevisionMismatchError)
+
+    // The contested delete must not have landed.
+    expect(await findCanvasElementById(created.id)).not.toBeNull()
   })
 })
 

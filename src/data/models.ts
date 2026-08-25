@@ -422,6 +422,8 @@ export interface CanvasElementRecord {
   text: string | null
   style: CanvasElementStyle
   props: CanvasElementProps
+  /** Monotonic write counter — see schema-sql.ts's "revision" column comment. */
+  revision: number
   createdAt: Date
   updatedAt: Date
 }

@@ -192,6 +192,7 @@ describe('text commit is idempotent within one synchronous handler', () => {
     })
 
     expect(h.callbacks.onUpdate).toHaveBeenCalledTimes(1)
+    expect(h.callbacks.onUpdate.mock.calls[0][2]).toBe('text-edit')
   })
 
   it('persists an edited text element ONCE via the Tab path', () => {
@@ -234,7 +235,44 @@ describe('text commit is idempotent within one synchronous handler', () => {
     })
 
     expect(h.callbacks.onDelete).toHaveBeenCalledTimes(1)
-    expect(h.callbacks.onDelete).toHaveBeenCalledWith([TEXT_ID])
+    // Wave 3: onDelete now carries the full element (undo's inverse needs
+    // every persisted property to restore it faithfully), not just the id.
+    expect(h.callbacks.onDelete).toHaveBeenCalledWith([
+      expect.objectContaining({ id: TEXT_ID }),
+    ])
+  })
+
+  it('records the ORIGINAL text on an emptied EXISTING element, not the erased text (Hermes review, BLOCKER B2)', () => {
+    // The emptying was never persisted — the row `onDelete` deletes
+    // server-side still holds 'hi'. Recording the current (emptied) scene
+    // value would restore an invisible, un-findable box on undo.
+    const h = setup([makeText({ text: 'hi' })])
+
+    act(() => {
+      h.api.setSelectedIds(new Set([TEXT_ID]))
+    })
+    h.sync()
+    act(() => {
+      h.api.boardHandlers.onKeyDown(keyEvent('Enter'))
+    })
+    h.sync()
+
+    act(() => {
+      h.api.textInput.onEditingKeyDown(keyEvent('Backspace'))
+    })
+    h.sync()
+    act(() => {
+      h.api.textInput.onEditingKeyDown(keyEvent('Backspace'))
+    })
+    h.sync()
+
+    act(() => {
+      h.api.textInput.commitEditing()
+    })
+
+    expect(h.callbacks.onDelete).toHaveBeenCalledTimes(1)
+    const [[deleted]] = h.callbacks.onDelete.mock.calls[0]
+    expect(deleted.text).toBe('hi')
   })
 
   it('still commits a SECOND, genuinely new edit after the first finished', () => {
@@ -380,6 +418,175 @@ describe('lost pointer capture ends the gesture (W5)', () => {
     })
 
     expect(h.scene.byId.get(TEXT_ID)!.x).toBe(draggedX)
+  })
+})
+
+describe('pre-state capture for undo (board-undo tactical plan, Wave 3)', () => {
+  it('passes the pre-drag position as `before` on a single-element move', () => {
+    const rect: CanvasElement = {
+      ...makeText(),
+      kind: 'rectangle',
+      x: 10,
+      y: 10,
+      width: 100,
+      height: 100,
+    }
+    const h = setup([rect])
+
+    act(() => {
+      h.api.canvasHandlers.onPointerDown(pointerEvent({ clientX: 15, clientY: 15 }))
+    })
+    h.sync()
+    act(() => {
+      h.api.canvasHandlers.onPointerMove(pointerEvent({ clientX: 65, clientY: 15 }))
+    })
+    h.sync()
+    act(() => {
+      h.api.canvasHandlers.onPointerUp(pointerEvent({ clientX: 65, clientY: 15 }))
+    })
+
+    expect(h.callbacks.onUpdate).toHaveBeenCalledTimes(1)
+    const [after, before, gesture] = h.callbacks.onUpdate.mock.calls[0]
+    expect(after).toHaveLength(1)
+    expect(before).toHaveLength(1)
+    expect(before[0].x).toBe(10)
+    expect(before[0].y).toBe(10)
+    expect(after[0].x).toBeGreaterThan(10)
+    // Wave 4: the gesture kind lets the undo toast say "moved", not a
+    // generic "updated" that also covers resize and text edits.
+    expect(gesture).toBe('move')
+  })
+
+  it('records ONE onUpdate call carrying every element for a multi-select move', () => {
+    const a: CanvasElement = {
+      ...makeText(),
+      id: 'aaaaaaaa-1111-4111-8111-111111111111',
+      kind: 'rectangle',
+      x: 0,
+      y: 0,
+      width: 50,
+      height: 50,
+    }
+    const b: CanvasElement = {
+      ...makeText(),
+      id: 'bbbbbbbb-2222-4222-8222-222222222222',
+      kind: 'rectangle',
+      x: 200,
+      y: 200,
+      width: 50,
+      height: 50,
+    }
+    const h = setup([a, b])
+
+    // Marquee-select both, then drag from inside one of them.
+    act(() => {
+      h.api.setSelectedIds(new Set([a.id, b.id]))
+    })
+    h.sync()
+    act(() => {
+      h.api.canvasHandlers.onPointerDown(pointerEvent({ clientX: 10, clientY: 10 }))
+    })
+    h.sync()
+    act(() => {
+      h.api.canvasHandlers.onPointerMove(pointerEvent({ clientX: 60, clientY: 10 }))
+    })
+    h.sync()
+    act(() => {
+      h.api.canvasHandlers.onPointerUp(pointerEvent({ clientX: 60, clientY: 10 }))
+    })
+
+    // ONE call, not one per element — one-gesture-one-entry is structural.
+    expect(h.callbacks.onUpdate).toHaveBeenCalledTimes(1)
+    const [after, before] = h.callbacks.onUpdate.mock.calls[0]
+    expect(after.map((e: CanvasElement) => e.id).sort()).toEqual(
+      [a.id, b.id].sort(),
+    )
+    expect(before.map((e: CanvasElement) => e.id).sort()).toEqual(
+      [a.id, b.id].sort(),
+    )
+    const beforeA = before.find((e: CanvasElement) => e.id === a.id)
+    expect(beforeA.x).toBe(0)
+    expect(beforeA.y).toBe(0)
+    expect(h.callbacks.onUpdate.mock.calls[0][2]).toBe('move')
+  })
+
+  it('passes the pre-resize bounds as `before` on a resize', () => {
+    const rect: CanvasElement = {
+      ...makeText(),
+      kind: 'rectangle',
+      x: 0,
+      y: 0,
+      width: 100,
+      height: 100,
+    }
+    const h = setup([rect])
+    act(() => {
+      h.api.setSelectedIds(new Set([rect.id]))
+    })
+    h.sync()
+
+    act(() => {
+      // Grab the south-east handle (bottom-right corner of the element).
+      h.api.canvasHandlers.onPointerDown(pointerEvent({ clientX: 100, clientY: 100 }))
+    })
+    h.sync()
+    act(() => {
+      h.api.canvasHandlers.onPointerMove(pointerEvent({ clientX: 150, clientY: 150 }))
+    })
+    h.sync()
+    act(() => {
+      h.api.canvasHandlers.onPointerUp(pointerEvent({ clientX: 150, clientY: 150 }))
+    })
+
+    expect(h.callbacks.onUpdate).toHaveBeenCalledTimes(1)
+    const [after, before, gesture] = h.callbacks.onUpdate.mock.calls[0]
+    expect(before[0].width).toBe(100)
+    expect(before[0].height).toBe(100)
+    expect(after[0].width).toBeGreaterThan(100)
+    expect(gesture).toBe('resize')
+  })
+
+  it('passes null `before` for a brand-new element (nothing existed to capture)', () => {
+    const withTextTool = setupWithTool('text')
+    act(() => {
+      withTextTool.api.canvasHandlers.onPointerDown(pointerEvent())
+    })
+    withTextTool.sync()
+    act(() => {
+      withTextTool.api.textInput.insertText('hello')
+    })
+    withTextTool.sync()
+    act(() => {
+      withTextTool.api.textInput.commitEditing()
+    })
+
+    expect(withTextTool.callbacks.onCreate).toHaveBeenCalledTimes(1)
+    // onCreate has no `before` parameter at all — create has nothing to undo
+    // TO except non-existence, which delete already models.
+    expect(withTextTool.callbacks.onCreate.mock.calls[0]).toHaveLength(1)
+  })
+
+  it('passes the full pre-delete element(s), not just ids, to onDelete', () => {
+    const rect: CanvasElement = {
+      ...makeText(),
+      kind: 'rectangle',
+      x: 5,
+      y: 6,
+      width: 20,
+      height: 30,
+    }
+    const h = setup([rect])
+    act(() => {
+      h.api.setSelectedIds(new Set([rect.id]))
+    })
+    h.sync()
+    act(() => {
+      h.api.boardHandlers.onKeyDown(keyEvent('Delete'))
+    })
+
+    expect(h.callbacks.onDelete).toHaveBeenCalledTimes(1)
+    const [deleted] = h.callbacks.onDelete.mock.calls[0]
+    expect(deleted).toEqual([rect])
   })
 })
 

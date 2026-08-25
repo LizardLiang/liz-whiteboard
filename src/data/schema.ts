@@ -1036,6 +1036,12 @@ const canvasZIndexSchema = z.number().int().min(-1_000_000).max(1_000_000)
  */
 export const createCanvasElementSchema = z
   .object({
+    // Optional and validated like any other field — NOT a second, laxer
+    // write path. Absent for an ordinary draw (the data layer generates one);
+    // supplied only when undo restores a deleted element, so the restored
+    // row keeps the identifier every other client still has cached (board-
+    // undo tactical plan, Wave 1, step 3).
+    id: z.string().uuid().optional(),
     boardId: z.string().uuid(),
     kind: canvasElementKindSchema,
     positionX: boardCoordSchema,
@@ -1043,6 +1049,29 @@ export const createCanvasElementSchema = z
     width: z.number().positive().max(100_000),
     height: z.number().positive().max(100_000),
     zIndex: canvasZIndexSchema.default(0),
+    // Optional, validated, and honoured server-side ONLY alongside an
+    // explicit `id` (see handlers.ts) — same restore-only gating as `id`
+    // itself. Undo's restore-a-deleted-element path uses this to seed the
+    // new row's revision ABOVE whatever the deleted row last held, closing
+    // an ABA hole: without it, every restore starts back at revision 1, so
+    // a stale undo/redo entry recorded against the ORIGINAL row can match a
+    // RESTORED row's revision by coincidence and apply against content it
+    // never actually saw (Hermes review, W-C).
+    //
+    // `.nonnegative()`, not `.positive()`: a row that was created and never
+    // subsequently updated legitimately holds revision 0 (the schema's own
+    // `DEFAULT 0`, and `createCanvasElement`'s own "every fresh row starts
+    // at 1" note only describes an ORDINARY create — a row inserted by any
+    // OTHER path, such as this project's own e2e seed scripts writing
+    // straight SQL with no `revision` column, keeps the column default).
+    // Deleting that row and undoing the delete sends its actual pre-delete
+    // revision, 0, straight through as `minRevision` — `.positive()` (>0)
+    // rejected exactly that value with a VALIDATION_ERROR, which this
+    // hook's own generic-refusal fallback then reported as a false
+    // "changed since your edit" — a real, reachable bug (not merely a
+    // theoretical one), found by canvas-undo.spec.ts's own "undo a delete"
+    // e2e case (board-undo tactical plan, Wave 5).
+    minRevision: z.number().int().nonnegative().optional(),
     text: z.string().max(CANVAS_TEXT_MAX_LENGTH).nullable().default(null),
     style: canvasElementStyleSchema.optional(),
     props: canvasElementPropsSchema,

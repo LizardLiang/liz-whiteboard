@@ -419,6 +419,12 @@ CREATE TABLE IF NOT EXISTS "CanvasElement" (
     "props"     JSONB,
     "createdAt" DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
     "updatedAt" DATETIME NOT NULL,
+    -- Monotonic write counter (board-undo tactical plan, Wave 1). A wall-clock
+    -- timestamp cannot tell two writes in the same millisecond apart, which
+    -- would make a contested undo read as uncontested — see
+    -- .claude/feature/2026-08-25-board-undo/spec-delta/canvas-undo.md,
+    -- "Canvas Element Writes Carry A Monotonic Revision".
+    "revision"  INTEGER NOT NULL DEFAULT 0,
     CONSTRAINT "CanvasElement_boardId_fkey" FOREIGN KEY ("boardId")
         REFERENCES "CanvasBoard" ("id") ON DELETE CASCADE ON UPDATE CASCADE
 );

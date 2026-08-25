@@ -28,6 +28,7 @@ import {
   updateCanvasElementSchema,
 } from '@/data/schema'
 import {
+  RevisionMismatchError,
   createCanvasElement,
   deleteCanvasElement,
   findCanvasElementById,
@@ -55,6 +56,11 @@ export type CanvasAckResult =
         | 'FORBIDDEN'
         | 'SESSION_EXPIRED'
         | 'INTERNAL_ERROR'
+        // The target was written or deleted since the caller's
+        // `expectedRevision` was read — undo's contested-target refusal
+        // (board-undo tactical plan, Wave 1, step 4). Distinct from
+        // VALIDATION_ERROR: the payload was well-formed, the row just moved.
+        | 'REVISION_MISMATCH'
       message: string
     }
 
@@ -161,19 +167,59 @@ export function registerCanvasElementHandlers(
     if (await denyMutation(socket, boardId, 'element:create', cb)) return
 
     try {
-      // `boardId` and `zIndex` come from the SERVER and are spread last, so a
-      // payload naming a different board cannot redirect the write and a
-      // client cannot choose its own paint order. The role check authorised
-      // this board and only this board.
+      // `boardId` comes from the SERVER and is spread last, so a payload
+      // naming a different board cannot redirect the write. The role check
+      // authorised this board and only this board.
       //
-      // The client computes a z-index from its local scene, which is stale the
-      // moment a collaborator adds anything — two clients drawing at once
-      // would both claim the same top slot. `MAX(zIndex) + 1` in SQL is
-      // correct regardless of what either client has seen.
+      // `zIndex` is USUALLY server-computed too — the client's own z-index is
+      // stale the moment a collaborator adds anything, so two clients drawing
+      // at once would both claim the same top slot if the client's value were
+      // trusted. `MAX(zIndex) + 1` in SQL is correct regardless of what either
+      // client has seen.
+      //
+      // The one exception is undo's restore path for a deleted element:
+      // `data.id`, when present, flows straight through
+      // `createCanvasElementSchema` (which validates it like any other field)
+      // and through the SAME `denyMutation` gate above — no privileged,
+      // undo-only write path exists here or anywhere else. A restore MUST
+      // also honour the ORIGINAL `zIndex` it carries, or "Canvas Undo Restores
+      // Deleted Elements Faithfully" (which names stacking order explicitly)
+      // is violated: the element would resurrect on top of the board instead
+      // of back where it was.
+      //
+      // Gating the exception on `id` being present (rather than a separate
+      // "isRestore" flag) grants no new capability to an ordinary create: any
+      // editor can already set an element's zIndex to anything within
+      // `canvasZIndexSchema`'s bounds via `element:update` immediately after
+      // creating it, so trusting a client-supplied zIndex ONLY on the
+      // create-with-id path does not open a second, wider channel to the
+      // same value — it only lets a restore land in the right place in one
+      // write instead of two.
+      const payload = data as Record<string, unknown>
+      const hasExplicitId = typeof payload.id === 'string'
+      const hasNumericZIndex = typeof payload.zIndex === 'number'
+      const zIndex =
+        hasExplicitId && hasNumericZIndex
+          ? (payload.zIndex as number)
+          : await nextCanvasZIndex(boardId)
+      // Same restore-only gating as `zIndex` immediately above, for the same
+      // reason: `minRevision` seeds the restored row's revision ABOVE the
+      // deleted row's last one, closing an ABA hole where a stale undo/redo
+      // entry could otherwise match a freshly-restored row's revision by
+      // coincidence (Hermes review, W-C). Gated on `id` being present, not a
+      // separate flag — an ordinary create spreads `payload` first and this
+      // key overrides whatever it sent, so a client cannot set it without
+      // ALSO supplying the id undo already knows.
+      const hasNumericMinRevision = typeof payload.minRevision === 'number'
+      const minRevision =
+        hasExplicitId && hasNumericMinRevision
+          ? (payload.minRevision as number)
+          : undefined
       const validated = createCanvasElementSchema.parse({
-        ...(data as Record<string, unknown>),
+        ...payload,
         boardId,
-        zIndex: await nextCanvasZIndex(boardId),
+        zIndex,
+        minRevision,
       })
       const element = await createCanvasElement(validated)
       socket.broadcast.emit('element:created', {
@@ -201,7 +247,15 @@ export function registerCanvasElementHandlers(
     async (data: { elementId?: string; [key: string]: unknown }, cb: Ack) => {
       if (await denyMutation(socket, boardId, 'element:update', cb)) return
 
-      const parsedId = z.object({ elementId: z.string().uuid() }).safeParse(data)
+      const parsedId = z
+        .object({
+          elementId: z.string().uuid(),
+          // Undo's conditional-write guard (board-undo tactical plan, Wave
+          // 1, step 4). Absent for an ordinary forward edit, which keeps
+          // last-write-wins.
+          expectedRevision: z.number().int().nonnegative().optional(),
+        })
+        .safeParse(data)
       if (!parsedId.success) {
         const message = 'Invalid element:update payload'
         socket.emit('error', {
@@ -212,7 +266,7 @@ export function registerCanvasElementHandlers(
         cb?.({ ok: false, code: 'VALIDATION_ERROR', message })
         return
       }
-      const { elementId } = parsedId.data
+      const { elementId, expectedRevision } = parsedId.data
 
       try {
         const existing = await loadOwnedElement(
@@ -224,19 +278,34 @@ export function registerCanvasElementHandlers(
         )
         if (!existing) return
 
-        const { elementId: _ignoredId, ...updateData } = data
+        const {
+          elementId: _ignoredId,
+          expectedRevision: _ignoredExpectedRevision,
+          ...updateData
+        } = data
         const validated = updateCanvasElementSchema.parse(updateData)
-        const updated = await updateCanvasElement(elementId, validated)
-        // Carries `updatedAt` for the same reason the shape broadcast does:
-        // every peer holds a fresh token for the row it just re-rendered.
+        const updated = await updateCanvasElement(
+          elementId,
+          validated,
+          expectedRevision,
+        )
+        // Carries `updatedAt`/`revision` for the same reason the shape
+        // broadcast carries `updatedAt`: every peer holds a fresh token for
+        // the row it just re-rendered, and `revision` is the token undo
+        // compares.
         socket.broadcast.emit('element:updated', {
           elementId,
           ...validated,
           updatedAt: updated.updatedAt,
+          revision: updated.revision,
           updatedBy: userId,
         })
         cb?.({ ok: true, entity: updated })
       } catch (error) {
+        if (error instanceof RevisionMismatchError) {
+          cb?.({ ok: false, code: 'REVISION_MISMATCH', message: error.message })
+          return
+        }
         const message =
           error instanceof Error
             ? error.message
@@ -255,7 +324,14 @@ export function registerCanvasElementHandlers(
   socket.on('element:delete', async (data: unknown, cb: Ack) => {
     if (await denyMutation(socket, boardId, 'element:delete', cb)) return
 
-    const parsed = z.object({ elementId: z.string().uuid() }).safeParse(data)
+    const parsed = z
+      .object({
+        elementId: z.string().uuid(),
+        // Undo's conditional-delete guard (board-undo tactical plan, Wave 1,
+        // step 4). Absent for an ordinary forward delete.
+        expectedRevision: z.number().int().nonnegative().optional(),
+      })
+      .safeParse(data)
     if (!parsed.success) {
       const message = 'Invalid element:delete payload'
       socket.emit('error', {
@@ -266,7 +342,7 @@ export function registerCanvasElementHandlers(
       cb?.({ ok: false, code: 'VALIDATION_ERROR', message })
       return
     }
-    const { elementId } = parsed.data
+    const { elementId, expectedRevision } = parsed.data
 
     try {
       const existing = await loadOwnedElement(
@@ -278,14 +354,28 @@ export function registerCanvasElementHandlers(
       )
       if (!existing) return
 
-      await deleteCanvasElement(elementId)
-      socket.broadcast.emit('element:deleted', { elementId, deletedBy: userId })
+      await deleteCanvasElement(elementId, expectedRevision)
+      socket.broadcast.emit('element:deleted', {
+        elementId,
+        // Pre-delete revision — there is no row left to read one from.
+        revision: existing.revision,
+        deletedBy: userId,
+      })
       cb?.({
         ok: true,
-        // Pre-delete `updatedAt` — there is no row left to read one from.
-        entity: { elementId, updatedAt: existing.updatedAt },
+        // Pre-delete `updatedAt`/`revision` — there is no row left to read
+        // either from.
+        entity: {
+          elementId,
+          updatedAt: existing.updatedAt,
+          revision: existing.revision,
+        },
       })
     } catch (error) {
+      if (error instanceof RevisionMismatchError) {
+        cb?.({ ok: false, code: 'REVISION_MISMATCH', message: error.message })
+        return
+      }
       console.error('Failed to delete canvas element:', error)
       const message = 'Failed to delete canvas element'
       socket.emit('error', {

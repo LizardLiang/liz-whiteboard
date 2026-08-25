@@ -1,5 +1,6 @@
 // src/hooks/use-canvas-elements.ts
-// Canvas element mutations and live sync (tactical plan Wave 4, step 13).
+// Canvas element mutations and live sync (tactical plan Wave 4, step 13;
+// revision/ephemeral/conditional-write additions, Wave 3, step 8).
 //
 // Mirrors use-whiteboard-shapes.ts's D-4 pattern: every mutation is ACKED and
 // rolled back on failure, never fire-and-forget. The `area:update` /
@@ -20,6 +21,59 @@
 // point they happen: incoming broadcasts are not filtered by `userId`, and
 // rollback restores the last SERVER-CONFIRMED element rather than a snapshot
 // taken at emit time.
+//
+// Wave 3 additions for canvas undo:
+//   - each mutation function now RETURNS a Promise so a caller (the undo
+//     hook) can await the acknowledged revision instead of only reacting to
+//     scene/toast side effects.
+//   - `getRevision(id)` exposes this hook's own revision index, built from
+//     the initial load, every ack this hook settles, and every collaborator
+//     broadcast — undo needs the CURRENT revision of a target to detect
+//     contention, and the engine's own `CanvasElement` (canvas-engine/scene.ts)
+//     carries no revision field.
+//   - `options.expectedRevisions` threads a per-element conditional-write
+//     guard through to `element:update` / `element:delete`'s existing
+//     `expectedRevision` field (board-undo tactical plan, Wave 1, step 4).
+//     Absent for an ordinary forward edit, which keeps last-write-wins.
+//   - `options.ephemeral` documents (it does not itself enforce) that a call
+//     was issued by reconciliation or by undo's own inverse machinery rather
+//     than a fresh user gesture. Enforcement of "not undoable" is structural,
+//     not a runtime branch here: the one existing programmatic write (the
+//     deferred delete below, when a delete races an in-flight create) is
+//     issued from INSIDE this hook, never through `use-canvas-input`'s
+//     onCreate/onUpdate/onDelete callbacks — the sole recording surface a
+//     caller like use-canvas-undo.ts wires up — so it is already excluded
+//     from recording by construction. The flag exists so that fact is
+//     documented at the call site instead of merely true by accident.
+//   - `createElement` accepts `options.restoreOriginalId` for undo's
+//     restore-a-deleted-element path: when set, the element's OWN `id` (the
+//     original server id undo already knows) is sent as `data.id` on
+//     `element:create`, through the exact same wire path and server-side
+//     `denyMutation` gate as an ordinary create (board-undo tactical plan,
+//     Wave 1, step 4's "no privileged undo path" guarantee). Absent, an
+//     ordinary draw never sends an id and the server always mints one.
+//
+// Hermes fix pass (2026-08-25):
+//   - W-B: `emitDelete` reads `confirmedRef` fresh in its own ack callback
+//     instead of a `restore` snapshot captured at emit time; `onUpdated`
+//     merges against `confirmedRef` unconditionally (not gated on the scene
+//     still holding the element) so a broadcast landing while a delete is
+//     in flight is never silently dropped.
+//   - W-C: `emitDelete`'s success resolves the row's pre-delete `revision`
+//     (the server's ack already carries it); `createElement` accepts
+//     `options.minRevision` alongside `restoreOriginalId`, seeding the
+//     restored row's revision above the deleted row's last one server-side
+//     — closing an ABA hole where a restore resetting to revision 1 could
+//     match a stale undo/redo entry by coincidence.
+//
+// Wave 4 (reporting):
+//   - the generic `toast.error(...)` on a failed create/update/delete is now
+//     suppressed when `options.ephemeral` is set. An ephemeral write is
+//     always issued BY use-canvas-undo.ts (an inverse, or a redo's
+//     reapplication), which owns its own named, non-attributing report for
+//     that outcome — showing this hook's generic message too would either
+//     duplicate it or, for a plain reconciliation write nobody asked about,
+//     surface an error with nothing for the user to act on.
 
 import { useCallback, useEffect, useRef } from 'react'
 import { toast } from 'sonner'
@@ -85,10 +139,45 @@ export interface UseCanvasElementsParams {
   onElementIdReconciled?: (temporaryId: string, persistedId: string) => void
 }
 
+/** Per-call options shared by all three mutation functions (Wave 3, step 8). */
+export interface CanvasMutationOptions {
+  /** See the file header's "Wave 3 additions" note on what this documents. */
+  ephemeral?: boolean
+  /**
+   * Per-element conditional-write guard, keyed by element id — undo's
+   * contested-target refusal. Absent (or an id missing from the map) keeps
+   * an ordinary, unconditional last-write-wins write.
+   */
+  expectedRevisions?: ReadonlyMap<string, number>
+}
+
+/** Result of a single element's create/update attempt. */
+export interface CanvasMutationResult {
+  id: string
+  ok: boolean
+  /** The acknowledged revision, present only when `ok` and the server returned the row. */
+  revision?: number
+}
+
 export interface UseCanvasElementsReturn {
-  createElement: (element: CanvasElement) => void
-  updateElements: (elements: Array<CanvasElement>) => void
-  deleteElements: (ids: Array<string>) => void
+  createElement: (
+    element: CanvasElement,
+    options?: CanvasMutationOptions & {
+      restoreOriginalId?: boolean
+      /** Seeds the restored row's revision ABOVE the deleted row's last one (Hermes review, W-C). */
+      minRevision?: number
+    },
+  ) => Promise<CanvasMutationResult>
+  updateElements: (
+    elements: Array<CanvasElement>,
+    options?: CanvasMutationOptions,
+  ) => Promise<Array<CanvasMutationResult>>
+  deleteElements: (
+    ids: Array<string>,
+    options?: CanvasMutationOptions,
+  ) => Promise<Array<CanvasMutationResult>>
+  /** This hook's own revision index — see the file header. */
+  getRevision: (id: string) => number | undefined
 }
 
 export function useCanvasElements({
@@ -114,17 +203,31 @@ export function useCanvasElements({
    * because React Flow holds the drag state separately from its `shapes`.
    */
   const confirmedRef = useRef<Map<string, CanvasElement>>(new Map())
+  /**
+   * This hook's own revision index (Wave 3, step 8) — see the file header.
+   * Deliberately separate from `confirmedRef` rather than folding a revision
+   * field onto the engine's `CanvasElement`: the engine type is intentionally
+   * revision-free (canvas-engine/ has no server concept at all), and undo is
+   * the only consumer of this index.
+   */
+  const revisionsRef = useRef<Map<string, number>>(new Map())
   const seededRef = useRef(false)
   if (!seededRef.current) {
     seededRef.current = true
     for (const record of initialElements) {
       confirmedRef.current.set(record.id, toEngineElement(record))
+      revisionsRef.current.set(record.id, record.revision)
     }
   }
 
   const confirm = useCallback((element: CanvasElement) => {
     confirmedRef.current.set(element.id, element)
   }, [])
+
+  const getRevision = useCallback(
+    (id: string) => revisionsRef.current.get(id),
+    [],
+  )
 
   /**
    * Wrap an ack handler so it runs exactly once — on the server reply, or on
@@ -181,6 +284,7 @@ export function useCanvasElements({
       // guard that is actually needed, and it is the one applied.
       const element = toEngineElement(record)
       confirm(element)
+      revisionsRef.current.set(element.id, record.revision)
       setScene((prev) =>
         prev.byId.has(element.id) ? prev : addElement(prev, element),
       )
@@ -190,35 +294,51 @@ export function useCanvasElements({
       payload: Partial<CanvasElementRecord> & {
         elementId: string
         updatedBy: string
+        /** Carried on every broadcast since Wave 1 — see handlers.ts. */
+        revision?: number
       },
     ) => {
-      setScene((prev) => {
-        const existing = prev.byId.get(payload.elementId)
-        if (!existing) return prev
-        // The broadcast speaks the STORAGE vocabulary (positionX/positionY).
-        // Spreading it onto an engine element would leave x/y untouched while
-        // silently adding two fields the renderer never reads — the element
-        // would simply not move. Everything goes through the adapter.
-        const merged = toEngineElement({
-          id: existing.id,
-          boardId,
-          kind: existing.kind,
-          positionX: payload.positionX ?? existing.x,
-          positionY: payload.positionY ?? existing.y,
-          width: payload.width ?? existing.width,
-          height: payload.height ?? existing.height,
-          rotation: existing.rotation,
-          zIndex: payload.zIndex ?? existing.zIndex,
-          text: payload.text !== undefined ? payload.text : existing.text,
-          style: payload.style ?? existing.style,
-        } as CanvasElementRecord)
-        confirm(merged)
-        return updateElement(prev, merged.id, merged)
-      })
+      // Merge defaults come from `confirmedRef`, NOT from the rendered scene
+      // (Hermes review, W-B). An in-flight optimistic delete already removed
+      // this element from the scene before any ack or broadcast about it can
+      // arrive, so gating the merge on `prev.byId.get(...)` would silently
+      // drop every broadcast that lands during that window — this hook's own
+      // `confirmedRef` would then never learn of it, and a rollback later
+      // reading `confirmedRef` would restore the STALE pre-broadcast value,
+      // permanently diverging from the server. `confirmedRef` is not cleared
+      // until the delete is actually acked (see `emitDelete`), so it remains
+      // a valid merge base throughout that window.
+      const base = confirmedRef.current.get(payload.elementId)
+      if (!base) return
+      // The broadcast speaks the STORAGE vocabulary (positionX/positionY).
+      // Spreading it onto an engine element would leave x/y untouched while
+      // silently adding two fields the renderer never reads — the element
+      // would simply not move. Everything goes through the adapter.
+      const merged = toEngineElement({
+        id: base.id,
+        boardId,
+        kind: base.kind,
+        positionX: payload.positionX ?? base.x,
+        positionY: payload.positionY ?? base.y,
+        width: payload.width ?? base.width,
+        height: payload.height ?? base.height,
+        rotation: base.rotation,
+        zIndex: payload.zIndex ?? base.zIndex,
+        text: payload.text !== undefined ? payload.text : base.text,
+        style: payload.style ?? base.style,
+      } as CanvasElementRecord)
+      confirm(merged)
+      if (payload.revision !== undefined) {
+        revisionsRef.current.set(merged.id, payload.revision)
+      }
+      setScene((prev) =>
+        prev.byId.has(merged.id) ? updateElement(prev, merged.id, merged) : prev,
+      )
     }
 
     const onDeleted = (payload: { elementId: string; deletedBy: string }) => {
       confirmedRef.current.delete(payload.elementId)
+      revisionsRef.current.delete(payload.elementId)
       setScene((prev) => removeElement(prev, payload.elementId))
     }
 
@@ -240,54 +360,104 @@ export function useCanvasElements({
   // (remove it). Sending the client id instead would mean trusting a
   // client-controlled primary key, which nothing else in this schema does.
   const createElement = useCallback(
-    (element: CanvasElement) => {
+    (
+      element: CanvasElement,
+      options?: CanvasMutationOptions & {
+        restoreOriginalId?: boolean
+        /**
+         * Seeds the restored row's revision ABOVE the deleted row's last one
+         * (Hermes review, W-C) — only meaningful, and only honoured
+         * server-side, alongside `restoreOriginalId`.
+         */
+        minRevision?: number
+      },
+    ): Promise<CanvasMutationResult> => {
       const temporaryId = element.id
       pendingCreatesRef.current.add(temporaryId)
-      emit(
-        'element:create',
-        toCreateInput(boardId, element),
-        settleOnce<CanvasElementRecord>((res) => {
-          pendingCreatesRef.current.delete(temporaryId)
-          const deletedWhileInFlight =
-            pendingDeletesRef.current.delete(temporaryId)
-
-          if (!res.ok || !res.entity) {
-            setScene((prev) => removeElement(prev, temporaryId))
-            // A create that failed and was then deleted needs no error: the
-            // element is gone, which is what the user asked for.
-            if (!deletedWhileInFlight) {
-              toast.error(res.message ?? 'Failed to create element')
-            }
-            return
+      // `restoreOriginalId` is undo's restore-a-deleted-element path (Wave 1,
+      // step 4): the element's own `id` — already the ORIGINAL server id undo
+      // is restoring — is sent through unchanged. An ordinary draw never sets
+      // this, so `toCreateInput` never emits an `id` for one, and the server
+      // always mints a fresh one (see toCreateInput's own header).
+      const payload = options?.restoreOriginalId
+        ? {
+            ...toCreateInput(boardId, element),
+            id: element.id,
+            ...(options.minRevision !== undefined
+              ? { minRevision: options.minRevision }
+              : {}),
           }
+        : toCreateInput(boardId, element)
+      return new Promise<CanvasMutationResult>((resolve) => {
+        emit(
+          'element:create',
+          payload,
+          settleOnce<CanvasElementRecord>((res) => {
+            pendingCreatesRef.current.delete(temporaryId)
+            const deletedWhileInFlight =
+              pendingDeletesRef.current.delete(temporaryId)
 
-          const persisted = toEngineElement(res.entity)
+            if (!res.ok || !res.entity) {
+              setScene((prev) => removeElement(prev, temporaryId))
+              // A create that failed and was then deleted needs no error: the
+              // element is gone, which is what the user asked for. Nor does
+              // an EPHEMERAL create (undo's restore-a-deleted-element path) —
+              // use-canvas-undo.ts owns that reporting with a named,
+              // non-attributing message (board-undo tactical plan, Wave 4,
+              // step 11); this generic one would either duplicate it or, for
+              // a plain reconciliation write, surface an error the user never
+              // asked about and cannot act on.
+              if (!deletedWhileInFlight && !options?.ephemeral) {
+                toast.error(res.message ?? 'Failed to create element')
+              }
+              resolve({ id: temporaryId, ok: false })
+              return
+            }
 
-          if (deletedWhileInFlight) {
-            // The user deleted this before the server named it. Now that it
-            // has an id, delete it for real — and never put it back on
-            // screen, which the reconciliation below would otherwise do.
+            const persisted = toEngineElement(res.entity)
+            revisionsRef.current.set(persisted.id, res.entity.revision)
+
+            if (deletedWhileInFlight) {
+              // The user deleted this before the server named it. Now that it
+              // has an id, delete it for real — and never put it back on
+              // screen, which the reconciliation below would otherwise do.
+              // This delete is issued ephemerally: no user gesture initiated
+              // IT specifically, it is a continuation of the delete that
+              // already ran (or will run) through the recording surface, so
+              // it must not become a SECOND undo entry. Resolving `ok: false`
+              // here means the ORIGINAL create is not recorded as undoable
+              // either — nothing about this element ever stably existed for
+              // another observer to have seen (Remote And Derived Canvas
+              // Writes Are Not Undoable's "reconciling optimistic state"
+              // scenario).
+              confirm(persisted)
+              setScene((prev) => removeElements(prev, [temporaryId, persisted.id]))
+              emitDeleteRef.current(persisted.id, { ephemeral: true })
+              resolve({ id: temporaryId, ok: false })
+              return
+            }
+
             confirm(persisted)
-            setScene((prev) => removeElements(prev, [temporaryId, persisted.id]))
-            emitDeleteRef.current(persisted.id, persisted)
-            return
-          }
-
-          confirm(persisted)
-          setScene((prev) => {
-            if (prev.byId.has(persisted.id)) {
-              return removeElement(prev, temporaryId)
+            setScene((prev) => {
+              if (prev.byId.has(persisted.id)) {
+                return removeElement(prev, temporaryId)
+              }
+              if (!prev.byId.has(temporaryId)) {
+                return addElement(prev, persisted)
+              }
+              return addElement(removeElement(prev, temporaryId), persisted)
+            })
+            if (persisted.id !== temporaryId) {
+              onElementIdReconciled?.(temporaryId, persisted.id)
             }
-            if (!prev.byId.has(temporaryId)) {
-              return addElement(prev, persisted)
-            }
-            return addElement(removeElement(prev, temporaryId), persisted)
-          })
-          if (persisted.id !== temporaryId) {
-            onElementIdReconciled?.(temporaryId, persisted.id)
-          }
-        }),
-      )
+            resolve({
+              id: persisted.id,
+              ok: true,
+              revision: res.entity.revision,
+            })
+          }),
+        )
+      })
     },
     [boardId, confirm, emit, onElementIdReconciled, setScene, settleOnce],
   )
@@ -300,41 +470,70 @@ export function useCanvasElements({
   // would need its own handler, its own partial-failure semantics and its own
   // rollback shape.
   const updateElements = useCallback(
-    (elements: Array<CanvasElement>) => {
-      for (const element of elements) {
-        emit(
-          'element:update',
-          { elementId: element.id, ...toUpdatePatch(element) },
-          settleOnce<CanvasElementRecord>((res) => {
-            if (!res.ok) {
-              // Read the confirmed state HERE, not at emit time. A
-              // collaborator broadcast landing in the round-trip window
-              // advances `confirmedRef`; a target captured at emit time would
-              // roll back past that server-confirmed change, and nothing
-              // resyncs it afterwards.
-              const confirmed = confirmedRef.current.get(element.id)
-              if (confirmed) {
-                setScene((prev) =>
-                  prev.byId.has(element.id)
-                    ? updateElement(prev, element.id, confirmed)
-                    : prev,
-                )
-              }
-              toast.error(res.message ?? 'Failed to update element')
-              return
-            }
-            if (res.entity) {
-              const persisted = toEngineElement(res.entity)
-              confirm(persisted)
-              setScene((prev) =>
-                prev.byId.has(persisted.id)
-                  ? updateElement(prev, persisted.id, persisted)
-                  : prev,
-              )
-            }
+    (
+      elements: Array<CanvasElement>,
+      options?: CanvasMutationOptions,
+    ): Promise<Array<CanvasMutationResult>> => {
+      const results = elements.map(
+        (element) =>
+          new Promise<CanvasMutationResult>((resolve) => {
+            const expectedRevision = options?.expectedRevisions?.get(
+              element.id,
+            )
+            emit(
+              'element:update',
+              {
+                elementId: element.id,
+                ...(expectedRevision !== undefined ? { expectedRevision } : {}),
+                ...toUpdatePatch(element),
+              },
+              settleOnce<CanvasElementRecord>((res) => {
+                if (!res.ok) {
+                  // Read the confirmed state HERE, not at emit time. A
+                  // collaborator broadcast landing in the round-trip window
+                  // advances `confirmedRef`; a target captured at emit time
+                  // would roll back past that server-confirmed change, and
+                  // nothing resyncs it afterwards.
+                  const confirmed = confirmedRef.current.get(element.id)
+                  if (confirmed) {
+                    setScene((prev) =>
+                      prev.byId.has(element.id)
+                        ? updateElement(prev, element.id, confirmed)
+                        : prev,
+                    )
+                  }
+                  // Suppressed for an ephemeral write (undo/redo's own
+                  // inverse) — see the matching comment in `createElement`'s
+                  // failure branch above; use-canvas-undo.ts owns that
+                  // report instead.
+                  if (!options?.ephemeral) {
+                    toast.error(res.message ?? 'Failed to update element')
+                  }
+                  resolve({ id: element.id, ok: false })
+                  return
+                }
+                if (res.entity) {
+                  const persisted = toEngineElement(res.entity)
+                  confirm(persisted)
+                  revisionsRef.current.set(persisted.id, res.entity.revision)
+                  setScene((prev) =>
+                    prev.byId.has(persisted.id)
+                      ? updateElement(prev, persisted.id, persisted)
+                      : prev,
+                  )
+                  resolve({
+                    id: element.id,
+                    ok: true,
+                    revision: res.entity.revision,
+                  })
+                  return
+                }
+                resolve({ id: element.id, ok: true })
+              }),
+            )
           }),
-        )
-      }
+      )
+      return Promise.all(results)
     },
     [confirm, emit, setScene, settleOnce],
   )
@@ -349,21 +548,55 @@ export function useCanvasElements({
    * merely because it took the second route.
    */
   const emitDelete = useCallback(
-    (id: string, restore: CanvasElement) => {
-      emit(
-        'element:delete',
-        { elementId: id },
-        settleOnce<unknown>((res) => {
-          if (res.ok) {
-            confirmedRef.current.delete(id)
-            return
-          }
-          setScene((prev) =>
-            prev.byId.has(id) ? prev : addElement(prev, restore),
-          )
-          toast.error(res.message ?? 'Failed to delete element')
-        }),
-      )
+    (
+      id: string,
+      options?: CanvasMutationOptions,
+    ): Promise<CanvasMutationResult> => {
+      const expectedRevision = options?.expectedRevisions?.get(id)
+      return new Promise((resolve) => {
+        emit(
+          'element:delete',
+          {
+            elementId: id,
+            ...(expectedRevision !== undefined ? { expectedRevision } : {}),
+          },
+          settleOnce<{ revision?: number }>((res) => {
+            if (res.ok) {
+              confirmedRef.current.delete(id)
+              revisionsRef.current.delete(id)
+              // The ack's `entity.revision` is the row's LAST (pre-delete)
+              // revision — the server has no row left to read a fresh one
+              // from. Undo's restore path (createElement's `minRevision`)
+              // uses this to seed the restored row's revision ABOVE it,
+              // closing the ABA hole where a restore resetting to 1 lets a
+              // stale entry match a fresh row's revision by coincidence
+              // (Hermes review, W-C).
+              resolve({ id, ok: true, revision: res.entity?.revision })
+              return
+            }
+            // Read the confirmed state HERE, not at emit time (Hermes
+            // review, W-B) — the identical fix `updateElements` already
+            // carries above. A collaborator broadcast landing in the
+            // round-trip window advances `confirmedRef` (see `onUpdated`,
+            // fixed alongside this to stay reachable even while the element
+            // is optimistically removed from the scene); a restore target
+            // captured at emit time would revert PAST that change and
+            // nothing resyncs it afterwards. Undo makes this the EXPECTED
+            // path (`REVISION_MISMATCH`), not a rare edge case.
+            const confirmed = confirmedRef.current.get(id)
+            setScene((prev) => {
+              if (prev.byId.has(id)) return prev
+              return confirmed ? addElement(prev, confirmed) : prev
+            })
+            // Suppressed for an ephemeral write — see the matching comment
+            // in `createElement`'s failure branch above.
+            if (!options?.ephemeral) {
+              toast.error(res.message ?? 'Failed to delete element')
+            }
+            resolve({ id, ok: false })
+          }),
+        )
+      })
     },
     [emit, setScene, settleOnce],
   )
@@ -373,30 +606,40 @@ export function useCanvasElements({
   })
 
   const deleteElements = useCallback(
-    (ids: Array<string>) => {
-      for (const id of ids) {
-        const confirmed = confirmedRef.current.get(id)
-        if (confirmed) {
-          emitDelete(id, confirmed)
-          continue
+    (
+      ids: Array<string>,
+      options?: CanvasMutationOptions,
+    ): Promise<Array<CanvasMutationResult>> => {
+      const results = ids.map((id) => {
+        // Only decides WHETHER to emit at all (a known, confirmed element)
+        // — the value itself is no longer threaded through to the rollback;
+        // `emitDelete` re-reads `confirmedRef` fresh in its own ack handler.
+        if (confirmedRef.current.has(id)) {
+          return emitDelete(id, options)
         }
         if (pendingCreatesRef.current.has(id)) {
           // The create is still in flight. Defer rather than drop: the
           // reconciliation in the create ack re-issues this delete against
-          // the id the server chose.
+          // the id the server chose. Nothing about this element has stably
+          // existed for another observer yet, so THIS leg resolves `ok:
+          // false` — it is not itself undoable (see createElement's
+          // `deletedWhileInFlight` branch, which issues the real delete
+          // ephemerally once the id is known).
           pendingDeletesRef.current.add(id)
-          continue
+          return Promise.resolve({ id, ok: false })
         }
         // Neither confirmed nor in flight — the server has never heard of
         // this id, so emitting would only produce a NOT_FOUND the user would
         // see as a spurious error toast.
-      }
+        return Promise.resolve({ id, ok: false })
+      })
       // The caller already removed these from the scene optimistically; this
-      // makes the hook own view agree whether or not it did.
+      // makes the hook's own view agree whether or not it did.
       setScene((prev) => removeElements(prev, ids))
+      return Promise.all(results)
     },
     [emitDelete, setScene],
   )
 
-  return { createElement, updateElements, deleteElements }
+  return { createElement, updateElements, deleteElements, getRevision }
 }

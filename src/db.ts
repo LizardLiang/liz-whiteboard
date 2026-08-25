@@ -202,6 +202,35 @@ db.exec(SCHEMA_SQL)
   }
 }
 
+// Additive column migration (Hermes review, BLOCKER B3, board-undo tactical
+// plan, 2026-08-25): `CanvasElement` gained `revision` in `schema-sql.ts`,
+// but `CREATE TABLE IF NOT EXISTS` above is a no-op on an existing database
+// — any `data/app.db` that predates this feature gets no `revision` column,
+// and every canvas element write then throws `no such column: revision`
+// (and `mapCanvasElement` reads it back as NaN). Mirrors the OauthGrant/
+// OauthRefreshToken precedent immediately above: guarded on `table_info`,
+// and `NOT NULL DEFAULT 0` needs no backfill — a pre-existing row simply
+// starts at the schema's own default, exactly as a brand-new `CREATE TABLE`
+// would have given it.
+//
+// Exported (unlike its two precedents) so a test can drive it directly
+// against a rigged pre-migration table: every fresh `:memory:` test database
+// already gets the column from `SCHEMA_SQL` above, so this guard's ALTER
+// branch would otherwise never run under the test suite.
+export function ensureCanvasElementRevisionColumn(
+  database: SqliteDatabase,
+): void {
+  const columns = database
+    .prepare(`PRAGMA table_info("CanvasElement")`)
+    .all() as Array<{ name: string }>
+  if (columns.length > 0 && !columns.some((c) => c.name === 'revision')) {
+    database.exec(
+      `ALTER TABLE "CanvasElement" ADD COLUMN "revision" INTEGER NOT NULL DEFAULT 0`,
+    )
+  }
+}
+ensureCanvasElementRevisionColumn(db)
+
 // Backfill ownerless projects to a pre-designated account (by email), if it
 // already exists. Runs once per process at DB-init time, before any HTTP
 // request (and therefore before any registration, including
@@ -669,6 +698,7 @@ export function mapCanvasElement(r: Row): CanvasElementRecord | null {
     props: isPlainObject(props)
       ? (props as unknown as CanvasElementProps)
       : ({ kind } as CanvasElementProps),
+    revision: Number(r.revision),
     createdAt: fromDbDate(r.createdAt),
     updatedAt: fromDbDate(r.updatedAt),
   }

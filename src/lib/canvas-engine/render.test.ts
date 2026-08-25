@@ -24,6 +24,8 @@
 import { describe, expect, it } from 'vitest'
 import {
   HANDLE_SIZE,
+  HIGHLIGHT_COLOR,
+  HIGHLIGHT_INSET,
   RESIZE_HANDLES,
   TEXT_PADDING,
   drawScene,
@@ -585,5 +587,82 @@ describe('textFrame', () => {
     // would be a different, undefined case.
     const frame = textFrame(makeElement({ width: 4 }))
     expect(frame.maxWidth).toBe(0)
+  })
+})
+
+describe('drawScene — undo/redo highlight (board-undo tactical plan, Wave 4)', () => {
+  function highlightOps(rec: Recorder) {
+    return rec
+      .opsOfType('strokeRect')
+      .filter((entry) => entry.args[4] === HIGHLIGHT_COLOR)
+  }
+
+  it('draws a ring around the highlighted element, in screen space, after the camera transform is popped', () => {
+    const element = makeElement({ id: 'a' })
+    const rec = createRecorder()
+    drawScene(
+      rec.ctx,
+      sceneFrom([element]),
+      { x: 0, y: 0, zoom: 2 },
+      viewport(),
+      { ids: new Set<string>(), highlight: { elementId: 'a', intensity: 1 } },
+    )
+    const rings = highlightOps(rec)
+    expect(rings).toHaveLength(1)
+
+    const r = worldRectToScreen({ x: 0, y: 0, zoom: 2 }, element)
+    expect(rings[0].args.slice(0, 4)).toEqual([
+      r.x - HIGHLIGHT_INSET,
+      r.y - HIGHLIGHT_INSET,
+      r.width + HIGHLIGHT_INSET * 2,
+      r.height + HIGHLIGHT_INSET * 2,
+    ])
+
+    const restoreAt = rec.indexOf('restore')
+    const ringAt = rec.ops.findIndex(
+      (entry) => entry.op === 'strokeRect' && entry.args[4] === HIGHLIGHT_COLOR,
+    )
+    expect(ringAt).toBeGreaterThan(restoreAt)
+  })
+
+  it('draws nothing when there is no highlight', () => {
+    const element = makeElement({ id: 'a' })
+    const rec = createRecorder()
+    drawScene(
+      rec.ctx,
+      sceneFrom([element]),
+      { x: 0, y: 0, zoom: 1 },
+      viewport(),
+      NO_SELECTION,
+    )
+    expect(highlightOps(rec)).toHaveLength(0)
+  })
+
+  it('draws nothing when the highlighted element no longer exists (a refused undo whose target was deleted)', () => {
+    const rec = createRecorder()
+    drawScene(
+      rec.ctx,
+      sceneFrom([]),
+      { x: 0, y: 0, zoom: 1 },
+      viewport(),
+      {
+        ids: new Set<string>(),
+        highlight: { elementId: 'gone', intensity: 1 },
+      },
+    )
+    expect(highlightOps(rec)).toHaveLength(0)
+  })
+
+  it('draws nothing once intensity has fully decayed', () => {
+    const element = makeElement({ id: 'a' })
+    const rec = createRecorder()
+    drawScene(
+      rec.ctx,
+      sceneFrom([element]),
+      { x: 0, y: 0, zoom: 1 },
+      viewport(),
+      { ids: new Set<string>(), highlight: { elementId: 'a', intensity: 0 } },
+    )
+    expect(highlightOps(rec)).toHaveLength(0)
   })
 })

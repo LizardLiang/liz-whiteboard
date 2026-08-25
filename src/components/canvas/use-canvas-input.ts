@@ -96,15 +96,46 @@ const WHEEL_PIXELS_PER_PAGE = 400
 const WHEEL_ZOOM_DIVISOR = 500
 
 /**
+ * Which gesture produced an `onUpdate` call (board-undo tactical plan, Wave
+ * 4, step 11's carry-over: `CanvasUndoEntry.label`, downstream in
+ * use-canvas-undo.ts, needs to name the SPECIFIC gesture reversed — "moved"
+ * and "resized" and "edited the text of" are different toasts, and nothing
+ * about the elements' before/after geometry alone can tell them apart
+ * reliably (a corner-handle resize also moves x/y).
+ */
+export type CanvasUpdateGesture = 'move' | 'resize' | 'text-edit'
+
+/**
  * Persistence seam. Every callback fires at gesture END with the element(s)
- * as the client now believes them to be. Wave 4 points these at the
- * optimistic mutation hook; Wave 3 leaves them undefined, so edits are local
- * only and nothing is written.
+ * as the client now believes them to be.
+ *
+ * `onUpdate` and `onDelete` also carry PRE-gesture state (board-undo tactical
+ * plan, Wave 3, step 7): `onUpdate`'s second argument is each element as it
+ * stood immediately BEFORE the gesture began (drag origin / pre-resize
+ * bounds / pre-edit text), and `onDelete` receives the full elements being
+ * removed rather than just their ids, since undo's inverse (a create-with-id)
+ * needs every persisted property to restore them faithfully. Both arrays are
+ * index-aligned by id, not by position — a caller should match on `.id`.
+ * `onUpdate`'s third argument is which gesture produced the call (Wave 4).
+ *
+ * These three callbacks are the ENTIRE recording surface for canvas undo:
+ * they already fire once per gesture at commit, never per `pointermove`, so
+ * one-gesture-one-entry is structural here, not something the caller has to
+ * re-implement.
  */
 export interface CanvasEditCallbacks {
   onCreate?: (element: CanvasElement) => void
-  onUpdate?: (elements: Array<CanvasElement>) => void
-  onDelete?: (ids: Array<string>) => void
+  onUpdate?: (
+    elements: Array<CanvasElement>,
+    before: Array<CanvasElement>,
+    // Optional at the TYPE level even though every real call site in this
+    // file always supplies it: a consumer testing recording/undo mechanics
+    // in isolation (use-canvas-undo.test.ts) should not have to pick a
+    // gesture kind irrelevant to what it asserts. use-canvas-undo.ts's own
+    // `recordUpdate` defaults a missing one to 'move'.
+    gesture?: CanvasUpdateGesture,
+  ) => void
+  onDelete?: (elements: Array<CanvasElement>) => void
 }
 
 export interface EditingState {
@@ -118,6 +149,13 @@ export interface EditingState {
   composition: string
   /** True while the element has never been persisted (created by this edit). */
   isNew: boolean
+  /**
+   * The element exactly as it stood when this edit began, for `onUpdate`'s
+   * pre-state (board-undo tactical plan, Wave 3, step 7). Null when `isNew`
+   * — nothing existed before a brand-new element, so there is no "before" to
+   * capture.
+   */
+  before: CanvasElement | null
 }
 
 interface UseCanvasInputArgs {
@@ -154,6 +192,13 @@ type Gesture =
       startScreen: Point
       ids: ReadonlyArray<string>
       moved: boolean
+      /**
+       * Every dragged element exactly as it stood at pointerdown, for
+       * `onUpdate`'s pre-state (board-undo tactical plan, Wave 3, step 7).
+       * Captured once, at gesture start — never recomputed per frame, for the
+       * same drift reason `resize`'s `startBounds` is captured once.
+       */
+      before: ReadonlyArray<CanvasElement>
     }
   | {
       kind: 'resize'
@@ -166,6 +211,8 @@ type Gesture =
        * become the next frame's starting point.
        */
       startBounds: WorldRect
+      /** The element exactly as it stood at pointerdown, for `onUpdate`'s pre-state. */
+      beforeElement: CanvasElement
     }
 
 function screenRectContains(rect: ScreenRect, point: Point): boolean {
@@ -346,16 +393,36 @@ export function useCanvasInput({
     if (isEmpty && element.kind === 'text') {
       setScene((prev) => removeElement(prev, element.id))
       setSelectedIds(new Set<string>())
-      if (!current.isNew) callbacks?.onDelete?.([element.id])
+      // `element` here is the EMPTIED local element — the emptying was never
+      // persisted, so the row this delete removes server-side still holds
+      // the ORIGINAL text. Recording `element` would snapshot the empty
+      // string, and undo's create-with-id would then restore an invisible,
+      // un-findable box with the user's text gone for good (Hermes review,
+      // BLOCKER B2). `current.before` is the pre-edit-session snapshot
+      // captured in `beginEditing`, before any keystroke touched it — it is
+      // guaranteed non-null here because it is null only when `isNew`, which
+      // this branch already excludes.
+      if (!current.isNew && current.before) {
+        callbacks?.onDelete?.([current.before])
+      }
       return
     }
     if (current.isNew) callbacks?.onCreate?.(element)
-    else callbacks?.onUpdate?.([element])
+    else callbacks?.onUpdate?.([element], [current.before ?? element], 'text-edit')
   }, [callbacks, setScene])
 
   const beginEditing = useCallback(
     (element: CanvasElement, caret: number, isNew: boolean) => {
-      setEditing({ elementId: element.id, caret, composition: '', isNew })
+      setEditing({
+        elementId: element.id,
+        caret,
+        composition: '',
+        isNew,
+        // Nothing existed before a brand-new element — there is no "before"
+        // to capture. For an existing element, clone it now: this IS its
+        // pre-edit state, since no text mutation has happened yet.
+        before: isNew ? null : { ...element },
+      })
       setSelectedIds(new Set([element.id]))
       setCaretVisible(true)
     },
@@ -438,6 +505,7 @@ export function useCanvasInput({
                 width: only.width,
                 height: only.height,
               },
+              beforeElement: { ...only },
             })
             return
           }
@@ -474,6 +542,10 @@ export function useCanvasInput({
         startScreen: screen,
         ids: [...nextSelection],
         moved: false,
+        before: [...nextSelection]
+          .map((id) => latest.current.scene.byId.get(id))
+          .filter((element): element is CanvasElement => Boolean(element))
+          .map((element) => ({ ...element })),
       })
     },
     [
@@ -602,12 +674,26 @@ export function useCanvasInput({
           const moved = finished.ids
             .map((id) => latest.current.scene.byId.get(id))
             .filter((element): element is CanvasElement => Boolean(element))
-          if (moved.length > 0) callbacks?.onUpdate?.(moved)
+          if (moved.length > 0) {
+            // Pre-state is index-aligned to `moved` by id, not by position: an
+            // element present in `finished.before` but removed mid-drag (rare,
+            // but not impossible with a collaborator's concurrent delete) must
+            // not shift every later entry by one.
+            const beforeById = new Map(
+              finished.before.map((element) => [element.id, element]),
+            )
+            const before = moved
+              .map((element) => beforeById.get(element.id))
+              .filter((element): element is CanvasElement => Boolean(element))
+            callbacks?.onUpdate?.(moved, before, 'move')
+          }
           break
         }
         case 'resize': {
           const element = latest.current.scene.byId.get(finished.elementId)
-          if (element) callbacks?.onUpdate?.([element])
+          if (element) {
+            callbacks?.onUpdate?.([element], [finished.beforeElement], 'resize')
+          }
           break
         }
         default:
@@ -678,9 +764,15 @@ export function useCanvasInput({
   const deleteSelection = useCallback(() => {
     const ids = [...latest.current.selectedIds]
     if (ids.length === 0) return
+    // Captured BEFORE the scene update below: undo's inverse (a
+    // create-with-id) needs every persisted property to restore these
+    // elements faithfully, not just their ids.
+    const elements = ids
+      .map((id) => latest.current.scene.byId.get(id))
+      .filter((element): element is CanvasElement => Boolean(element))
     setScene((prev) => removeElements(prev, ids))
     setSelectedIds(new Set<string>())
-    callbacks?.onDelete?.(ids)
+    callbacks?.onDelete?.(elements)
   }, [callbacks, setScene])
 
   const onBoardKeyDown = useCallback(

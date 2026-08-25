@@ -46,6 +46,7 @@ function makeRecord(
     text: null,
     style: { ...DEFAULT_ELEMENT_STYLE },
     props: { kind: 'rectangle' },
+    revision: 1,
     createdAt: new Date('2026-08-24T10:00:00Z'),
     updatedAt: new Date('2026-08-24T11:00:00Z'),
     ...overrides,
@@ -155,7 +156,9 @@ beforeEach(() => {
 describe('createElement', () => {
   it('emits element:create with the storage vocabulary', () => {
     const h = setup()
-    act(() => h.view.result.current.createElement(makeElement()))
+    act(() => {
+      h.view.result.current.createElement(makeElement())
+    })
 
     expect(h.socket.sent).toHaveLength(1)
     expect(h.socket.sent[0].event).toBe('element:create')
@@ -176,7 +179,7 @@ describe('createElement', () => {
       byId: new Map(scene.byId).set(drawn.id, drawn),
     }))
 
-    act(() => h.view.result.current.createElement(drawn))
+    act(() => { h.view.result.current.createElement(drawn) })
     act(() =>
       h.socket.ackLast({
         ok: true,
@@ -199,7 +202,7 @@ describe('createElement', () => {
     }))
     expect(h.scene.byId.has(TEMP_ID)).toBe(true)
 
-    act(() => h.view.result.current.createElement(drawn))
+    act(() => { h.view.result.current.createElement(drawn) })
     act(() =>
       h.socket.ackLast({ ok: false, message: 'Insufficient permission' }),
     )
@@ -222,7 +225,7 @@ describe('updateElements — acked rollback', () => {
     ))
     expect(h.scene.byId.get(EXISTING_ID)?.x).toBe(999)
 
-    act(() => h.view.result.current.updateElements([dragged]))
+    act(() => { h.view.result.current.updateElements([dragged]) })
     act(() => h.socket.ackLast({ ok: false, message: 'nope' }))
 
     expect(h.scene.byId.get(EXISTING_ID)?.x).toBe(10)
@@ -234,7 +237,7 @@ describe('updateElements — acked rollback', () => {
     const h = setup([makeRecord({ positionX: 10, positionY: 20 })])
     const dragged = { ...h.scene.byId.get(EXISTING_ID)!, x: 55, y: 66 }
 
-    act(() => h.view.result.current.updateElements([dragged]))
+    act(() => { h.view.result.current.updateElements([dragged]) })
     act(() =>
       h.socket.ackLast({
         ok: true,
@@ -251,7 +254,7 @@ describe('updateElements — acked rollback', () => {
         scene.elements.map((e) => (e.id === EXISTING_ID ? draggedAgain : e)),
       ),
     )
-    act(() => h.view.result.current.updateElements([draggedAgain]))
+    act(() => { h.view.result.current.updateElements([draggedAgain]) })
     act(() => h.socket.ackLast({ ok: false }))
 
     expect(h.scene.byId.get(EXISTING_ID)?.x).toBe(55)
@@ -261,12 +264,12 @@ describe('updateElements — acked rollback', () => {
     const second = makeRecord({ id: SERVER_ID })
     const h = setup([makeRecord(), second])
 
-    act(() =>
+    act(() => {
       h.view.result.current.updateElements([
         h.scene.byId.get(EXISTING_ID)!,
         h.scene.byId.get(SERVER_ID)!,
-      ]),
-    )
+      ])
+    })
 
     expect(h.socket.sent.map((s) => s.event)).toEqual([
       'element:update',
@@ -287,7 +290,7 @@ describe('updateElements — acked rollback', () => {
     const b = { ...h.scene.byId.get(SERVER_ID)!, x: 222 }
     h.applyLocally(() => sceneFrom([a, b]))
 
-    act(() => h.view.result.current.updateElements([a, b]))
+    act(() => { h.view.result.current.updateElements([a, b]) })
     act(() => h.socket.sent[0].ack?.({ ok: false }))
     act(() =>
       h.socket.sent[1].ack?.({
@@ -309,7 +312,7 @@ describe('deleteElements — acked rollback', () => {
       sceneFrom(scene.elements.filter((e) => e.id !== EXISTING_ID)),
     )
 
-    act(() => h.view.result.current.deleteElements([EXISTING_ID]))
+    act(() => { h.view.result.current.deleteElements([EXISTING_ID]) })
     expect(h.scene.byId.has(EXISTING_ID)).toBe(false)
 
     act(() => h.socket.ackLast({ ok: false, message: 'denied' }))
@@ -321,7 +324,7 @@ describe('deleteElements — acked rollback', () => {
 
   it('keeps the element gone when the server accepts', () => {
     const h = setup()
-    act(() => h.view.result.current.deleteElements([EXISTING_ID]))
+    act(() => { h.view.result.current.deleteElements([EXISTING_ID]) })
     act(() => h.socket.ackLast({ ok: true, entity: {} }))
     expect(h.scene.byId.has(EXISTING_ID)).toBe(false)
   })
@@ -331,7 +334,7 @@ describe('deleteElements — acked rollback', () => {
     // server to delete, and emitting would only produce a NOT_FOUND the user
     // would see as a spurious error toast.
     const h = setup()
-    act(() => h.view.result.current.deleteElements(['never-seen-at-all']))
+    act(() => { h.view.result.current.deleteElements(['never-seen-at-all']) })
     expect(h.socket.sent).toHaveLength(0)
   })
 
@@ -346,8 +349,8 @@ describe('deleteElements — acked rollback', () => {
       byId: new Map(scene.byId).set(drawn.id, drawn),
     }))
 
-    act(() => h.view.result.current.createElement(drawn))
-    act(() => h.view.result.current.deleteElements([TEMP_ID]))
+    act(() => { h.view.result.current.createElement(drawn) })
+    act(() => { h.view.result.current.deleteElements([TEMP_ID]) })
     // Nothing to delete yet — the server has not named the row.
     expect(h.socket.sent.map((entry) => entry.event)).toEqual([
       'element:create',
@@ -370,11 +373,37 @@ describe('deleteElements — acked rollback', () => {
     expect(h.scene.byId.has(TEMP_ID)).toBe(false)
   })
 
+  it('restores a collaborator update that arrived DURING the delete emit-to-ack window, not the pre-delete snapshot (Hermes review, W-B)', () => {
+    // Undo makes REVISION_MISMATCH the EXPECTED refusal path here, not a rare
+    // edge case. If the rollback target were captured at emit time (or if
+    // the broadcast never updated `confirmedRef` because the element was
+    // already optimistically removed from the scene), the restore would
+    // revert PAST the collaborator's write and the client would permanently
+    // disagree with the server about this element's content.
+    const h = setup([makeRecord({ positionX: 10 })])
+    h.applyLocally((scene) =>
+      sceneFrom(scene.elements.filter((e) => e.id !== EXISTING_ID)),
+    )
+
+    act(() => { h.view.result.current.deleteElements([EXISTING_ID]) })
+
+    act(() =>
+      h.socket.receive('element:updated', {
+        elementId: EXISTING_ID,
+        positionX: 400,
+        updatedBy: 'someone-else',
+      }),
+    )
+    act(() => h.socket.ackLast({ ok: false, message: 'denied' }))
+
+    expect(h.scene.byId.get(EXISTING_ID)?.x).toBe(400)
+  })
+
   it('does not emit a deferred delete when the create itself failed', () => {
     const h = setup([])
     const drawn = makeElement()
-    act(() => h.view.result.current.createElement(drawn))
-    act(() => h.view.result.current.deleteElements([TEMP_ID]))
+    act(() => { h.view.result.current.createElement(drawn) })
+    act(() => { h.view.result.current.deleteElements([TEMP_ID]) })
     act(() => h.socket.sent[0].ack?.({ ok: false, message: 'refused' }))
 
     expect(h.socket.sent.map((entry) => entry.event)).toEqual([
@@ -473,7 +502,7 @@ describe('live sync from collaborators', () => {
 
     const dragged = { ...h.scene.byId.get(EXISTING_ID)!, x: 999 }
     h.applyLocally(() => sceneFrom([dragged]))
-    act(() => h.view.result.current.updateElements([dragged]))
+    act(() => { h.view.result.current.updateElements([dragged]) })
     act(() => h.socket.ackLast({ ok: false }))
 
     expect(h.scene.byId.get(EXISTING_ID)?.x).toBe(400)
@@ -488,7 +517,7 @@ describe('live sync from collaborators', () => {
 
     const dragged = { ...h.scene.byId.get(EXISTING_ID)!, x: 999 }
     h.applyLocally(() => sceneFrom([dragged]))
-    act(() => h.view.result.current.updateElements([dragged]))
+    act(() => { h.view.result.current.updateElements([dragged]) })
 
     act(() =>
       h.socket.receive('element:updated', {
@@ -531,7 +560,7 @@ describe('ack timeout (W3)', () => {
       const dragged = { ...h.scene.byId.get(EXISTING_ID)!, x: 999 }
       h.applyLocally(() => sceneFrom([dragged]))
 
-      act(() => h.view.result.current.updateElements([dragged]))
+      act(() => { h.view.result.current.updateElements([dragged]) })
       expect(h.scene.byId.get(EXISTING_ID)?.x).toBe(999)
 
       act(() => {
@@ -554,7 +583,7 @@ describe('ack timeout (W3)', () => {
       const dragged = { ...h.scene.byId.get(EXISTING_ID)!, x: 999 }
       h.applyLocally(() => sceneFrom([dragged]))
 
-      act(() => h.view.result.current.updateElements([dragged]))
+      act(() => { h.view.result.current.updateElements([dragged]) })
       act(() => {
         vi.advanceTimersByTime(10_000)
       })
@@ -580,7 +609,7 @@ describe('ack timeout (W3)', () => {
       const dragged = { ...h.scene.byId.get(EXISTING_ID)!, x: 999 }
       h.applyLocally(() => sceneFrom([dragged]))
 
-      act(() => h.view.result.current.updateElements([dragged]))
+      act(() => { h.view.result.current.updateElements([dragged]) })
       act(() =>
         h.socket.ackLast({
           ok: true,
@@ -596,5 +625,209 @@ describe('ack timeout (W3)', () => {
     } finally {
       vi.useRealTimers()
     }
+  })
+})
+
+describe('revision tracking and conditional writes (board-undo tactical plan, Wave 3)', () => {
+  it('seeds getRevision from the initial load', () => {
+    const h = setup([makeRecord({ revision: 5 })])
+    expect(h.view.result.current.getRevision(EXISTING_ID)).toBe(5)
+  })
+
+  it('resolves createElement with the acknowledged id and revision', async () => {
+    const h = setup([])
+    const drawn = makeElement()
+
+    const pending = h.view.result.current.createElement(drawn)
+    act(() => {
+      h.socket.ackLast({
+        ok: true,
+        entity: makeRecord({ id: SERVER_ID, revision: 3 }),
+      })
+    })
+    const resolved = await pending
+    expect(resolved).toEqual({ id: SERVER_ID, ok: true, revision: 3 })
+    expect(h.view.result.current.getRevision(SERVER_ID)).toBe(3)
+  })
+
+  it('resolves updateElements with a per-element revision, keyed by the ORIGINAL element id', async () => {
+    const h = setup([makeRecord({ revision: 1 })])
+    const dragged = { ...h.scene.byId.get(EXISTING_ID)!, x: 50 }
+
+    const pending = h.view.result.current.updateElements([dragged])
+    act(() => {
+      h.socket.ackLast({
+        ok: true,
+        entity: makeRecord({ positionX: 50, revision: 2 }),
+      })
+    })
+    const [result] = await pending
+    expect(result).toEqual({ id: EXISTING_ID, ok: true, revision: 2 })
+    expect(h.view.result.current.getRevision(EXISTING_ID)).toBe(2)
+  })
+
+  it('resolves deleteElements ok:false for an id the hook has never seen', async () => {
+    const h = setup([])
+    const results = await h.view.result.current.deleteElements([
+      'never-seen-at-all',
+    ])
+    expect(results).toEqual([{ id: 'never-seen-at-all', ok: false }])
+  })
+
+  it('forwards expectedRevisions as element:update.expectedRevision', () => {
+    const h = setup([makeRecord()])
+    const dragged = { ...h.scene.byId.get(EXISTING_ID)!, x: 50 }
+
+    act(() => {
+      h.view.result.current.updateElements([dragged], {
+        expectedRevisions: new Map([[EXISTING_ID, 4]]),
+      })
+    })
+
+    expect(h.socket.sent[0].data).toMatchObject({
+      elementId: EXISTING_ID,
+      expectedRevision: 4,
+    })
+  })
+
+  it('omits expectedRevision on an ordinary forward update (last-write-wins)', () => {
+    const h = setup([makeRecord()])
+    const dragged = { ...h.scene.byId.get(EXISTING_ID)!, x: 50 }
+
+    act(() => {
+      h.view.result.current.updateElements([dragged])
+    })
+
+    expect(h.socket.sent[0].data).not.toHaveProperty('expectedRevision')
+  })
+
+  it('forwards expectedRevisions as element:delete.expectedRevision', () => {
+    const h = setup([makeRecord()])
+
+    act(() => {
+      h.view.result.current.deleteElements([EXISTING_ID], {
+        expectedRevisions: new Map([[EXISTING_ID, 4]]),
+      })
+    })
+
+    expect(h.socket.sent[0].data).toMatchObject({
+      elementId: EXISTING_ID,
+      expectedRevision: 4,
+    })
+  })
+
+  it('sends the element id on element:create when restoreOriginalId is set (undo restore)', () => {
+    const h = setup([])
+    const restored = makeElement({ id: EXISTING_ID })
+
+    act(() => {
+      h.view.result.current.createElement(restored, { restoreOriginalId: true })
+    })
+
+    expect(h.socket.sent[0].data).toMatchObject({ id: EXISTING_ID })
+  })
+
+  it('sends minRevision alongside restoreOriginalId (Hermes review, W-C)', () => {
+    const h = setup([])
+    const restored = makeElement({ id: EXISTING_ID })
+
+    act(() => {
+      h.view.result.current.createElement(restored, {
+        restoreOriginalId: true,
+        minRevision: 4,
+      })
+    })
+
+    expect(h.socket.sent[0].data).toMatchObject({
+      id: EXISTING_ID,
+      minRevision: 4,
+    })
+  })
+
+  it('never sends an id on an ordinary create', () => {
+    const h = setup([])
+    act(() => {
+      h.view.result.current.createElement(makeElement())
+    })
+    expect(h.socket.sent[0].data).not.toHaveProperty('id')
+  })
+
+  it('deletes getRevision entry when the element is deleted', () => {
+    const h = setup([makeRecord({ revision: 1 })])
+    act(() => {
+      h.view.result.current.deleteElements([EXISTING_ID])
+    })
+    act(() => h.socket.ackLast({ ok: true, entity: {} }))
+    expect(h.view.result.current.getRevision(EXISTING_ID)).toBeUndefined()
+  })
+
+  it('resolves deleteElements with the pre-delete revision (Hermes review, W-C)', async () => {
+    const h = setup([makeRecord({ revision: 3 })])
+    const pending = h.view.result.current.deleteElements([EXISTING_ID])
+    act(() => {
+      h.socket.ackLast({ ok: true, entity: { elementId: EXISTING_ID, revision: 3 } })
+    })
+    const [result] = await pending
+    expect(result).toEqual({ id: EXISTING_ID, ok: true, revision: 3 })
+  })
+
+  it('updates getRevision from a collaborator broadcast', () => {
+    const h = setup([makeRecord({ revision: 1 })])
+    act(() =>
+      h.socket.receive('element:updated', {
+        elementId: EXISTING_ID,
+        positionX: 700,
+        revision: 9,
+        updatedBy: 'someone-else',
+      }),
+    )
+    expect(h.view.result.current.getRevision(EXISTING_ID)).toBe(9)
+  })
+})
+
+describe('ephemeral writes suppress the generic error toast (board-undo tactical plan, Wave 4)', () => {
+  // An ephemeral write is always issued BY use-canvas-undo.ts (an inverse or
+  // a redo reapplication), which owns its own named, non-attributing report
+  // for a refusal. This hook's generic `toast.error(res.message)` would
+  // either duplicate that report or, for a plain reconciliation write nobody
+  // asked about, show an error with nothing for the user to act on.
+
+  it('does not toast on a failed ephemeral create', () => {
+    const h = setup([])
+    const drawn = makeElement()
+    act(() => {
+      h.view.result.current.createElement(drawn, { ephemeral: true })
+    })
+    act(() => h.socket.ackLast({ ok: false, message: 'contested' }))
+    expect(toast.error).not.toHaveBeenCalled()
+  })
+
+  it('still toasts on a failed ORDINARY (non-ephemeral) create', () => {
+    const h = setup([])
+    const drawn = makeElement()
+    act(() => {
+      h.view.result.current.createElement(drawn)
+    })
+    act(() => h.socket.ackLast({ ok: false, message: 'contested' }))
+    expect(toast.error).toHaveBeenCalledWith('contested')
+  })
+
+  it('does not toast on a failed ephemeral update', () => {
+    const h = setup([makeRecord()])
+    const dragged = { ...h.scene.byId.get(EXISTING_ID)!, x: 999 }
+    act(() => {
+      h.view.result.current.updateElements([dragged], { ephemeral: true })
+    })
+    act(() => h.socket.ackLast({ ok: false, message: 'contested' }))
+    expect(toast.error).not.toHaveBeenCalled()
+  })
+
+  it('does not toast on a failed ephemeral delete', () => {
+    const h = setup([makeRecord()])
+    act(() => {
+      h.view.result.current.deleteElements([EXISTING_ID], { ephemeral: true })
+    })
+    act(() => h.socket.ackLast({ ok: false, message: 'contested' }))
+    expect(toast.error).not.toHaveBeenCalled()
   })
 })

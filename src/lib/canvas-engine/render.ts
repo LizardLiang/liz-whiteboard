@@ -83,6 +83,18 @@ export interface RenderSelection {
    * rectangle tool). Drawn like a real element but never in the scene.
    */
   draft?: CanvasElement | null
+  /**
+   * A transient highlight pulse after a canvas undo/redo (board-undo
+   * tactical plan, Wave 4, step 12 — "Canvas Undo Reports What It Did").
+   *
+   * `intensity` is 1 at the moment the pulse starts, decaying to 0. TIME
+   * lives entirely in the caller (`use-canvas-highlight.ts`, a React hook):
+   * this module has no timers and no `Date.now()` of its own — it only
+   * draws whatever intensity it is handed for the current frame, the same
+   * browser-free contract every other `RenderSelection`/`DrawOptions` field
+   * already follows.
+   */
+  highlight?: { elementId: string; intensity: number } | null
 }
 
 export interface DrawOptions {
@@ -423,6 +435,55 @@ function drawSelectionOverlay(
 }
 
 /**
+ * Amber rather than the selection accent (blue): a highlight reports "undo
+ * just touched this", a distinct event from "this is selected", and reusing
+ * the accent colour would make the two indistinguishable when both are true
+ * at once. Fixed rather than themed — it needs to read clearly against
+ * either background, the same reasoning `resolveTextColor` already uses for
+ * the engine's one themed exception.
+ */
+export const HIGHLIGHT_COLOR = '#f59e0b'
+
+/** Screen-space gap outside the element's own bounds, so the ring clears the resize grips instead of colliding with them. */
+export const HIGHLIGHT_INSET = 4
+
+/**
+ * Draw the post-undo/redo highlight ring, in SCREEN space, after the camera
+ * transform has been popped — same reasoning as `drawSelectionOverlay`: a
+ * ring drawn in world space would be the wrong screen size at every zoom
+ * except 1.
+ *
+ * Silently does nothing when the highlighted element no longer exists (a
+ * refused undo whose target was deleted) or the caller's `intensity` has
+ * already decayed to 0 — both are ordinary end states, not errors.
+ */
+function drawHighlight(
+  ctx: CanvasRenderingContext2D,
+  scene: Scene,
+  camera: Camera,
+  highlight: RenderSelection['highlight'],
+): void {
+  if (!highlight) return
+  const element = scene.byId.get(highlight.elementId)
+  if (!element) return
+  const intensity = Math.max(0, Math.min(1, highlight.intensity))
+  if (intensity === 0) return
+
+  const r = worldRectToScreen(camera, element)
+  ctx.save()
+  ctx.globalAlpha = intensity
+  ctx.lineWidth = 3
+  ctx.strokeStyle = HIGHLIGHT_COLOR
+  ctx.strokeRect(
+    r.x - HIGHLIGHT_INSET,
+    r.y - HIGHLIGHT_INSET,
+    r.width + HIGHLIGHT_INSET * 2,
+    r.height + HIGHLIGHT_INSET * 2,
+  )
+  ctx.restore()
+}
+
+/**
  * Draw the whole board: clear, apply the camera, paint every element in
  * z-order, then paint the selection affordances in screen space.
  *
@@ -481,4 +542,5 @@ export function drawScene(
   ctx.restore()
 
   drawSelectionOverlay(ctx, scene, camera, selection, theme)
+  drawHighlight(ctx, scene, camera, selection.highlight)
 }

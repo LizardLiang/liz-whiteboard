@@ -14,7 +14,9 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { registerCanvasElementHandlers } from './handlers'
 import type { CanvasAckResult, CanvasSocket } from './handlers'
+import type * as CanvasElementModule from '@/data/canvas-element'
 import {
+  RevisionMismatchError,
   createCanvasElement,
   deleteCanvasElement,
   findCanvasElementById,
@@ -24,14 +26,24 @@ import {
 import { requireCanvasBoardRole } from '@/lib/auth/require-role'
 import { DEFAULT_ELEMENT_STYLE } from '@/lib/canvas-engine/scene'
 
-vi.mock('@/data/canvas-element', () => ({
-  createCanvasElement: vi.fn(),
-  deleteCanvasElement: vi.fn(),
-  findCanvasElementById: vi.fn(),
-  updateCanvasElement: vi.fn(),
-  findCanvasElementsByBoard: vi.fn(),
-  nextCanvasZIndex: vi.fn(),
-}))
+vi.mock('@/data/canvas-element', async () => {
+  const actual = await vi.importActual<typeof CanvasElementModule>(
+    '@/data/canvas-element',
+  )
+  return {
+    // The real `RevisionMismatchError` class, so `instanceof` checks in the
+    // handler match what these tests throw — a mocked class here would make
+    // the handler's `error instanceof RevisionMismatchError` branch silently
+    // fall through to the generic error path.
+    RevisionMismatchError: actual.RevisionMismatchError,
+    createCanvasElement: vi.fn(),
+    deleteCanvasElement: vi.fn(),
+    findCanvasElementById: vi.fn(),
+    updateCanvasElement: vi.fn(),
+    findCanvasElementsByBoard: vi.fn(),
+    nextCanvasZIndex: vi.fn(),
+  }
+})
 
 vi.mock('@/lib/auth/require-role', () => ({
   requireCanvasBoardRole: vi.fn(),
@@ -97,6 +109,7 @@ function makeRecord(overrides: Record<string, unknown> = {}) {
     text: null,
     style: { ...DEFAULT_ELEMENT_STYLE },
     props: { kind: 'rectangle' as const },
+    revision: 1,
     createdAt: new Date('2026-08-24T10:00:00Z'),
     updatedAt: new Date('2026-08-24T11:00:00Z'),
     ...overrides,
@@ -197,10 +210,72 @@ describe('element:create', () => {
     vi.mocked(createCanvasElement).mockResolvedValue(makeRecord() as any)
     const h = makeHarness()
 
-    await h.handlers['element:create']({ ...VALID_CREATE, zIndex: 999 }, vi.fn())
+    await h.handlers['element:create'](
+      { ...VALID_CREATE, zIndex: 999 },
+      vi.fn(),
+    )
 
     expect(nextCanvasZIndex).toHaveBeenCalledWith(BOARD_ID)
     expect(vi.mocked(createCanvasElement).mock.calls[0][0].zIndex).toBe(7)
+  })
+
+  it('honours a caller-supplied zIndex when restoring with an explicit id (undo)', async () => {
+    // "Canvas Undo Restores Deleted Elements Faithfully" names stacking order
+    // explicitly. Restoring a deleted element must land it back at its
+    // original zIndex, not on top of the board.
+    vi.mocked(createCanvasElement).mockResolvedValue(makeRecord() as any)
+    const h = makeHarness()
+
+    await h.handlers['element:create'](
+      { ...VALID_CREATE, id: ELEMENT_ID, zIndex: 3 },
+      vi.fn(),
+    )
+
+    expect(nextCanvasZIndex).not.toHaveBeenCalled()
+    expect(vi.mocked(createCanvasElement).mock.calls[0][0].zIndex).toBe(3)
+    expect(vi.mocked(createCanvasElement).mock.calls[0][0].id).toBe(ELEMENT_ID)
+  })
+
+  it('still computes zIndex server-side for a restore that omits it', async () => {
+    // A well-formed restore always sends both id and zIndex, but a payload
+    // that sends only `id` must not fall through to trusting some OTHER
+    // stale value — it still gets a fresh top-of-stack slot.
+    vi.mocked(createCanvasElement).mockResolvedValue(makeRecord() as any)
+    const h = makeHarness()
+
+    await h.handlers['element:create'](
+      { ...VALID_CREATE, id: ELEMENT_ID },
+      vi.fn(),
+    )
+
+    expect(nextCanvasZIndex).toHaveBeenCalledWith(BOARD_ID)
+    expect(vi.mocked(createCanvasElement).mock.calls[0][0].zIndex).toBe(7)
+  })
+
+  it('honours a caller-supplied minRevision when restoring with an explicit id (Hermes review, W-C)', async () => {
+    vi.mocked(createCanvasElement).mockResolvedValue(makeRecord() as any)
+    const h = makeHarness()
+
+    await h.handlers['element:create'](
+      { ...VALID_CREATE, id: ELEMENT_ID, zIndex: 3, minRevision: 4 },
+      vi.fn(),
+    )
+
+    expect(vi.mocked(createCanvasElement).mock.calls[0][0].minRevision).toBe(4)
+  })
+
+  it('strips minRevision from a payload without an explicit id (no privileged path)', async () => {
+    vi.mocked(createCanvasElement).mockResolvedValue(makeRecord() as any)
+    const h = makeHarness()
+
+    await h.handlers['element:create'](
+      { ...VALID_CREATE, minRevision: 999 },
+      vi.fn(),
+    )
+
+    expect(
+      vi.mocked(createCanvasElement).mock.calls[0][0].minRevision,
+    ).toBeUndefined()
   })
 
   it('takes boardId from the namespace, never from the payload', async () => {
@@ -262,19 +337,83 @@ describe('element:update', () => {
     const h = makeHarness()
     const cb = vi.fn()
 
-    await h.handlers['element:update']({ elementId: ELEMENT_ID, positionX: 99 }, cb)
+    await h.handlers['element:update'](
+      { elementId: ELEMENT_ID, positionX: 99 },
+      cb,
+    )
 
-    expect(updateCanvasElement).toHaveBeenCalledWith(ELEMENT_ID, {
-      positionX: 99,
-    })
+    expect(updateCanvasElement).toHaveBeenCalledWith(
+      ELEMENT_ID,
+      { positionX: 99 },
+      undefined,
+    )
     expect(h.broadcast[0].event).toBe('element:updated')
     expect(h.broadcast[0].payload).toMatchObject({
       elementId: ELEMENT_ID,
       positionX: 99,
       updatedAt: updated.updatedAt,
+      revision: updated.revision,
       updatedBy: USER_ID,
     })
     expect(cb).toHaveBeenCalledWith({ ok: true, entity: updated })
+  })
+
+  it('forwards expectedRevision as a conditional-write guard', async () => {
+    vi.mocked(findCanvasElementById).mockResolvedValue(makeRecord() as any)
+    vi.mocked(updateCanvasElement).mockResolvedValue(
+      makeRecord({ revision: 2 }) as any,
+    )
+    const h = makeHarness()
+
+    await h.handlers['element:update'](
+      { elementId: ELEMENT_ID, positionX: 99, expectedRevision: 1 },
+      vi.fn(),
+    )
+
+    expect(updateCanvasElement).toHaveBeenCalledWith(
+      ELEMENT_ID,
+      { positionX: 99 },
+      1,
+    )
+  })
+
+  it('never forwards expectedRevision into the update patch', async () => {
+    vi.mocked(findCanvasElementById).mockResolvedValue(makeRecord() as any)
+    vi.mocked(updateCanvasElement).mockResolvedValue(makeRecord() as any)
+    const h = makeHarness()
+
+    await h.handlers['element:update'](
+      { elementId: ELEMENT_ID, width: 42, expectedRevision: 1 },
+      vi.fn(),
+    )
+
+    expect(vi.mocked(updateCanvasElement).mock.calls[0][1]).not.toHaveProperty(
+      'expectedRevision',
+    )
+  })
+
+  it('replies REVISION_MISMATCH without a generic error when the target is contested', async () => {
+    vi.mocked(findCanvasElementById).mockResolvedValue(makeRecord() as any)
+    vi.mocked(updateCanvasElement).mockRejectedValue(
+      new RevisionMismatchError(ELEMENT_ID, 2, 1),
+    )
+    const h = makeHarness()
+    const cb = vi.fn()
+
+    await h.handlers['element:update'](
+      { elementId: ELEMENT_ID, positionX: 99, expectedRevision: 1 },
+      cb,
+    )
+
+    expect(h.broadcast).toHaveLength(0)
+    expect(cb).toHaveBeenCalledWith({
+      ok: false,
+      code: 'REVISION_MISMATCH',
+      message: expect.stringContaining(ELEMENT_ID),
+    })
+    // Not funnelled through the generic UPDATE_FAILED path — contention is
+    // not a fault.
+    expect(h.emitted.some((e) => e.event === 'error')).toBe(false)
   })
 
   it('refuses an element belonging to another board (IDOR)', async () => {
@@ -284,7 +423,10 @@ describe('element:update', () => {
     const h = makeHarness()
     const cb = vi.fn()
 
-    await h.handlers['element:update']({ elementId: ELEMENT_ID, positionX: 99 }, cb)
+    await h.handlers['element:update'](
+      { elementId: ELEMENT_ID, positionX: 99 },
+      cb,
+    )
 
     expect(updateCanvasElement).not.toHaveBeenCalled()
     expect(h.broadcast).toHaveLength(0)
@@ -300,7 +442,10 @@ describe('element:update', () => {
     const h = makeHarness()
     const cb = vi.fn()
 
-    await h.handlers['element:update']({ elementId: ELEMENT_ID, positionX: 9 }, cb)
+    await h.handlers['element:update'](
+      { elementId: ELEMENT_ID, positionX: 9 },
+      cb,
+    )
 
     expect(updateCanvasElement).not.toHaveBeenCalled()
     expect(cb).toHaveBeenCalledWith({
@@ -381,17 +526,61 @@ describe('element:delete', () => {
 
     await h.handlers['element:delete']({ elementId: ELEMENT_ID }, cb)
 
-    expect(deleteCanvasElement).toHaveBeenCalledWith(ELEMENT_ID)
+    expect(deleteCanvasElement).toHaveBeenCalledWith(ELEMENT_ID, undefined)
     expect(h.broadcast).toEqual([
       {
         event: 'element:deleted',
-        payload: { elementId: ELEMENT_ID, deletedBy: USER_ID },
+        payload: {
+          elementId: ELEMENT_ID,
+          revision: existing.revision,
+          deletedBy: USER_ID,
+        },
       },
     ])
     expect(cb).toHaveBeenCalledWith({
       ok: true,
-      entity: { elementId: ELEMENT_ID, updatedAt: existing.updatedAt },
+      entity: {
+        elementId: ELEMENT_ID,
+        updatedAt: existing.updatedAt,
+        revision: existing.revision,
+      },
     })
+  })
+
+  it('forwards expectedRevision as a conditional-delete guard', async () => {
+    const existing = makeRecord()
+    vi.mocked(findCanvasElementById).mockResolvedValue(existing as any)
+    vi.mocked(deleteCanvasElement).mockResolvedValue(existing as any)
+    const h = makeHarness()
+
+    await h.handlers['element:delete'](
+      { elementId: ELEMENT_ID, expectedRevision: 1 },
+      vi.fn(),
+    )
+
+    expect(deleteCanvasElement).toHaveBeenCalledWith(ELEMENT_ID, 1)
+  })
+
+  it('replies REVISION_MISMATCH without a generic error when the target is contested', async () => {
+    vi.mocked(findCanvasElementById).mockResolvedValue(makeRecord() as any)
+    vi.mocked(deleteCanvasElement).mockRejectedValue(
+      new RevisionMismatchError(ELEMENT_ID, 2, 1),
+    )
+    const h = makeHarness()
+    const cb = vi.fn()
+
+    await h.handlers['element:delete'](
+      { elementId: ELEMENT_ID, expectedRevision: 1 },
+      cb,
+    )
+
+    expect(h.broadcast).toHaveLength(0)
+    expect(cb).toHaveBeenCalledWith({
+      ok: false,
+      code: 'REVISION_MISMATCH',
+      message: expect.stringContaining(ELEMENT_ID),
+    })
+    expect(h.emitted.some((e) => e.event === 'error')).toBe(false)
   })
 
   it('refuses an element belonging to another board (IDOR)', async () => {

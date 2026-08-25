@@ -18,18 +18,22 @@ import { Hand, MousePointer2, Square, Type } from 'lucide-react'
 import { TextInputProxy } from './TextInputProxy'
 import { useCanvasInput } from './use-canvas-input'
 import { useFrameLoop } from './use-frame-loop'
+import { useCanvasHighlight } from './use-canvas-highlight'
 import { useCanvasTestHook } from './canvas-test-hook'
-import type { PointerEvent as ReactPointerEvent } from 'react'
+import type { KeyboardEvent as ReactKeyboardEvent, PointerEvent as ReactPointerEvent } from 'react'
 import type { Camera } from '@/lib/canvas-engine/camera'
-import type { Scene } from '@/lib/canvas-engine/scene'
+import type { WorldRect } from '@/lib/canvas-engine/hit-test'
+import type { CanvasElement, Scene } from '@/lib/canvas-engine/scene'
 import type { CanvasElementRecord } from '@/data/models'
-import type { CanvasEditCallbacks, CanvasTool } from './use-canvas-input'
+import type { CanvasTool } from './use-canvas-input'
 import { toEngineScene } from '@/lib/canvas-element-adapter'
 import { drawScene, measurerFor } from '@/lib/canvas-engine/render'
 import { DEFAULT_CAMERA } from '@/lib/canvas-engine/camera'
+import { focusOnRect } from '@/lib/canvas-engine/camera-focus'
 import { useTheme } from '@/hooks/use-theme'
 import { useCollaboration } from '@/hooks/use-collaboration'
 import { useCanvasElements } from '@/hooks/use-canvas-elements'
+import { useCanvasUndo } from '@/hooks/use-canvas-undo'
 import { useAuthContext } from '@/components/auth/AuthContext'
 import { Button } from '@/components/ui/button'
 
@@ -60,6 +64,12 @@ interface CanvasBoardProps {
    * is exactly the distinction that would be lost by merging the two.
    */
   isPublic?: boolean
+}
+
+/** Engine element -> the world rect `focusOnRect` speaks, or `null` if absent (element already gone). */
+function toElementRect(element: CanvasElement | undefined): WorldRect | null {
+  if (!element) return null
+  return { x: element.x, y: element.y, width: element.width, height: element.height }
 }
 
 const TOOLS: Array<{
@@ -128,31 +138,77 @@ export function CanvasBoard({
     remapRef.current?.(from, to)
   }, [])
 
-  const { createElement, updateElements, deleteElements } = useCanvasElements({
+  const { createElement, updateElements, deleteElements, getRevision } =
+    useCanvasElements({
+      boardId,
+      enabled: true,
+      initialElements,
+      setScene,
+      on,
+      off,
+      emit,
+      onElementIdReconciled: handleIdReconciled,
+    })
+
+  // ── undo/redo reporting: focus + highlight (board-undo tactical plan,
+  // Wave 4, step 12) ──────────────────────────────────────────────────────
+  //
+  // `sceneRef` reads the CURRENT scene inside `focusOnElement` without
+  // making that callback (and everything downstream of it, including
+  // `useCanvasUndo`'s own dependency array) unstable on every scene change —
+  // the same ref-mirror pattern `use-canvas-input.ts`'s `latest` ref already
+  // uses for the same reason.
+  const sceneRef = useRef(scene)
+  useEffect(() => {
+    sceneRef.current = scene
+  })
+
+  const { highlight, trigger: triggerHighlight } = useCanvasHighlight()
+
+  const focusOnElement = useCallback(
+    (elementId: string, rect?: WorldRect | null) => {
+      // `rect` is supplied by `useCanvasUndo` on every SUCCESS (headed-
+      // browser BUG-2): it is the element's state AFTER the write this call
+      // reports on, known authoritatively and immediately by the hook that
+      // just issued that write. Reading `sceneRef` here instead — as this
+      // callback used to do unconditionally — raced the scene's own
+      // `setScene` call: `sceneRef` only catches up on the NEXT render's
+      // `useEffect`, so it still held the PRE-write position at the exact
+      // moment this callback ran, and the camera panned there instead.
+      // `rect === undefined` (a REFUSAL — nothing was written) is the one
+      // case with no authoritative post-write value to hand over; the live
+      // scene is the correct, and only available, source for it.
+      const target = rect === undefined
+        ? toElementRect(sceneRef.current.byId.get(elementId))
+        : rect
+      // Nothing to bring into view or highlight — either a refusal whose
+      // target was deleted, or a successful undo/redo that left no element
+      // behind (undoing a create; redoing a delete).
+      if (!target) return
+      setCamera((prev) => focusOnRect(prev, viewportSize, target))
+      triggerHighlight(elementId)
+    },
+    [triggerHighlight, viewportSize],
+  )
+
+  // Owns the undo/redo stack (board-undo tactical plan, Wave 3). Its
+  // `callbacks` IS the recording surface: it wraps createElement/
+  // updateElements/deleteElements, so wiring it in place of those three
+  // directly is what turns "gesture committed" into "gesture undoable".
+  const { callbacks: undoCallbacks, undo, redo } = useCanvasUndo({
     boardId,
-    enabled: true,
-    initialElements,
-    setScene,
-    on,
-    off,
-    emit,
-    onElementIdReconciled: handleIdReconciled,
+    readOnly: effectiveReadOnly,
+    createElement,
+    updateElements,
+    deleteElements,
+    getRevision,
+    onAffectedElement: focusOnElement,
   })
 
   // Persist on gesture END. `useCanvasInput` calls these on pointerup and on
   // text commit and nowhere else, which is what keeps a drag from writing
   // sixty times a second.
-  const callbacks = useMemo<CanvasEditCallbacks | undefined>(
-    () =>
-      effectiveReadOnly
-        ? undefined
-        : {
-            onCreate: createElement,
-            onUpdate: updateElements,
-            onDelete: deleteElements,
-          },
-    [createElement, deleteElements, effectiveReadOnly, updateElements],
-  )
+  const callbacks = effectiveReadOnly ? undefined : undoCallbacks
 
   const input = useCanvasInput({
     canvasRef,
@@ -221,8 +277,15 @@ export function CanvasBoard({
             caretVisible: input.caretVisible,
           }
         : null,
+      // Post-undo/redo highlight pulse (Wave 4, step 12). Folded into
+      // `selection` rather than passed to `drawScene` separately: this
+      // object already drives the dirty-flag `useEffect` below, so a new
+      // `intensity` value on every animation tick re-fires it and keeps the
+      // pulse redrawing — no direct call into `useFrameLoop` needed here.
+      highlight,
     }),
     [
+      highlight,
       input.caretVisible,
       input.displayCaret,
       input.draft,
@@ -287,6 +350,43 @@ export function CanvasBoard({
     [onPointerDown],
   )
 
+  // Ctrl/Cmd+Z undo, Ctrl/Cmd+Shift+Z or Ctrl+Y redo (board-undo tactical
+  // plan, Wave 3, step 10). Gated on `effectiveReadOnly` so a viewer or an
+  // anonymous share-link visitor gets nothing — matching every other
+  // mutation gate on this board.
+  //
+  // Gated on `input.editing === null` for the SAME reason the container's
+  // own `onBoardKeyDown` early-returns while editing (use-canvas-input.ts):
+  // the container is an ANCESTOR of the text proxy, so a keydown from the
+  // focused textarea bubbles into here. Text editing keeps its own NATIVE
+  // undo (the browser's own Ctrl+Z on a focused textarea) — checking
+  // `input.editing` before calling `preventDefault()`/`undo()`/`redo()`
+  // means that native behaviour is never suppressed, and a board-level undo
+  // entry is never consumed by a keystroke meant for the text being typed.
+  const handleBoardKeyDown = useCallback(
+    (event: ReactKeyboardEvent<HTMLDivElement>) => {
+      if (
+        !effectiveReadOnly &&
+        input.editing === null &&
+        (event.ctrlKey || event.metaKey)
+      ) {
+        const key = event.key.toLowerCase()
+        if (key === 'z' && !event.shiftKey) {
+          event.preventDefault()
+          undo()
+          return
+        }
+        if ((key === 'z' && event.shiftKey) || key === 'y') {
+          event.preventDefault()
+          redo()
+          return
+        }
+      }
+      input.boardHandlers.onKeyDown(event)
+    },
+    [effectiveReadOnly, input.boardHandlers, input.editing, redo, undo],
+  )
+
   return (
     <div
       ref={containerRef}
@@ -295,6 +395,7 @@ export function CanvasBoard({
       role="application"
       aria-label="Canvas board"
       {...input.boardHandlers}
+      onKeyDown={handleBoardKeyDown}
     >
       <canvas
         ref={canvasRef}
