@@ -88,6 +88,24 @@ export interface WhiteboardShareLink {
 }
 
 /**
+ * Public read-only share link for a CANVAS board.
+ *
+ * Structurally identical to `WhiteboardShareLink` but a distinct type over a
+ * distinct table: the two reference different board kinds, and a single type
+ * with a nullable id pair would make "which board does this link point at?"
+ * a runtime question at every call site instead of a compile-time one.
+ */
+export interface CanvasBoardShareLink {
+  id: string
+  canvasBoardId: string
+  tokenHash: string
+  createdByUserId: string
+  expiresAt: Date | null
+  revokedAt: Date | null
+  createdAt: Date
+}
+
+/**
  * Full-state capture of a whiteboard's diagram (GH #107 version history), as
  * returned FRESH by `captureWhiteboardState` — nested `createdAt`/`updatedAt`
  * are real `Date` objects straight from the data layer, never round-tripped

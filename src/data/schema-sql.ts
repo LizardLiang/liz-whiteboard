@@ -427,4 +427,35 @@ CREATE INDEX IF NOT EXISTS "CanvasElement_boardId_idx" ON "CanvasElement"("board
 -- Elements are always read back in paint order, so the board+z pair is the
 -- index the list query actually uses.
 CREATE INDEX IF NOT EXISTS "CanvasElement_boardId_zIndex_idx" ON "CanvasElement"("boardId", "zIndex");
+
+-- Public read-only share links for canvas boards.
+--
+-- A SEPARATE table from "WhiteboardShareLink" rather than a generalisation of
+-- it. That table's foreign key points at "Whiteboard"("id"), and a canvas
+-- board id is not a whiteboard id -- widening it would mean either dropping
+-- the foreign key (losing the cascade that stops links outliving their board)
+-- or a nullable-pair column design where exactly one of two ids must be set,
+-- which SQLite cannot express as a constraint worth trusting. The column
+-- shape is otherwise identical on purpose, so the two data layers read the
+-- same way side by side.
+--
+-- Only the SHA-256 hash of the token is ever stored; the raw token exists
+-- once, in the create response.
+CREATE TABLE IF NOT EXISTS "CanvasBoardShareLink" (
+    "id" TEXT NOT NULL PRIMARY KEY,
+    "canvasBoardId" TEXT NOT NULL,
+    "tokenHash" TEXT NOT NULL,
+    "createdByUserId" TEXT NOT NULL,
+    "expiresAt" INTEGER,
+    "revokedAt" INTEGER,
+    "createdAt" INTEGER NOT NULL DEFAULT (unixepoch('now') * 1000),
+    CONSTRAINT "CanvasBoardShareLink_canvasBoardId_fkey" FOREIGN KEY ("canvasBoardId")
+        REFERENCES "CanvasBoard" ("id") ON DELETE CASCADE ON UPDATE CASCADE,
+    CONSTRAINT "CanvasBoardShareLink_createdByUserId_fkey" FOREIGN KEY ("createdByUserId")
+        REFERENCES "User" ("id") ON DELETE CASCADE ON UPDATE CASCADE
+);
+
+CREATE UNIQUE INDEX IF NOT EXISTS "CanvasBoardShareLink_tokenHash_key" ON "CanvasBoardShareLink"("tokenHash");
+CREATE INDEX IF NOT EXISTS "CanvasBoardShareLink_canvasBoardId_idx" ON "CanvasBoardShareLink"("canvasBoardId");
+CREATE INDEX IF NOT EXISTS "CanvasBoardShareLink_expiresAt_idx" ON "CanvasBoardShareLink"("expiresAt");
 `

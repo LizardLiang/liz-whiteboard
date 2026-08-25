@@ -18,6 +18,7 @@ import { DEFAULT_ELEMENT_STYLE } from './lib/canvas-engine/scene'
 import type {
   Area,
   CanvasBoard,
+  CanvasBoardShareLink,
   CanvasElementRecord,
   CollaborationSession,
   Column,
@@ -380,6 +381,19 @@ export function mapWhiteboardShareLink(r: Row): WhiteboardShareLink | null {
   return {
     id: r.id as string,
     whiteboardId: r.whiteboardId as string,
+    tokenHash: r.tokenHash as string,
+    createdByUserId: r.createdByUserId as string,
+    expiresAt: r.expiresAt == null ? null : fromDbDate(r.expiresAt),
+    revokedAt: r.revokedAt == null ? null : fromDbDate(r.revokedAt),
+    createdAt: fromDbDate(r.createdAt),
+  }
+}
+
+export function mapCanvasBoardShareLink(r: Row): CanvasBoardShareLink | null {
+  if (!r) return null
+  return {
+    id: r.id as string,
+    canvasBoardId: r.canvasBoardId as string,
     tokenHash: r.tokenHash as string,
     createdByUserId: r.createdByUserId as string,
     expiresAt: r.expiresAt == null ? null : fromDbDate(r.expiresAt),

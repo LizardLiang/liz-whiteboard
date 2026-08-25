@@ -593,6 +593,28 @@ export const revokeShareLinkSchema = z.object({
 export type CreateShareLink = z.infer<typeof createShareLinkSchema>
 export type RevokeShareLink = z.infer<typeof revokeShareLinkSchema>
 
+/**
+ * Schema for creating a public read-only share link for a CANVAS board.
+ *
+ * Deliberately a separate schema from `createShareLinkSchema` rather than a
+ * union: the id names a different table, and the handler that receives it
+ * resolves the project through `getCanvasBoardProjectId`. Reuses
+ * `inviteExpiryHoursSchema` and the same one-week default, so the two link
+ * kinds cannot drift on expiry policy.
+ */
+export const createCanvasShareLinkSchema = z.object({
+  canvasBoardId: z.string().uuid(),
+  expiresInHours: inviteExpiryHoursSchema.default(24 * 7),
+})
+
+/** Schema for revoking a canvas board share link, identified by its own id. */
+export const revokeCanvasShareLinkSchema = z.object({
+  linkId: z.string().uuid(),
+})
+
+export type CreateCanvasShareLink = z.infer<typeof createCanvasShareLinkSchema>
+export type RevokeCanvasShareLink = z.infer<typeof revokeCanvasShareLinkSchema>
+
 // ============================================================================
 // Whiteboard Version History / Snapshot Schemas (GH #107)
 // ============================================================================

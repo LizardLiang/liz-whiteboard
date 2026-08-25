@@ -9,6 +9,7 @@
 import { db, genId, nowMs, toDbBool } from '@/db'
 
 const ALL_TABLES = [
+  'CanvasBoardShareLink',
   'CanvasElement',
   'CanvasBoard',
   'CollaborationSession',

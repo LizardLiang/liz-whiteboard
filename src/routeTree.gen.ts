@@ -24,6 +24,7 @@ import { Route as OauthConsentRouteImport } from './routes/oauth/consent'
 import { Route as InviteTokenRouteImport } from './routes/invite.$token'
 import { Route as DemoTanstackQueryRouteImport } from './routes/demo/tanstack-query'
 import { Route as CanvasBoardIdRouteImport } from './routes/canvas/$boardId'
+import { Route as CanvasShareTokenRouteImport } from './routes/canvas-share.$token'
 import { Route as ApiCollabTokenRouteImport } from './routes/api/collab-token'
 import { Route as DemoStartServerFuncsRouteImport } from './routes/demo/start.server-funcs'
 import { Route as DemoStartApiRequestRouteImport } from './routes/demo/start.api-request'
@@ -112,6 +113,11 @@ const CanvasBoardIdRoute = CanvasBoardIdRouteImport.update({
   path: '/canvas/$boardId',
   getParentRoute: () => rootRouteImport,
 } as any)
+const CanvasShareTokenRoute = CanvasShareTokenRouteImport.update({
+  id: '/canvas-share/$token',
+  path: '/canvas-share/$token',
+  getParentRoute: () => rootRouteImport,
+} as any)
 const ApiCollabTokenRoute = ApiCollabTokenRouteImport.update({
   id: '/api/collab-token',
   path: '/api/collab-token',
@@ -182,6 +188,7 @@ export interface FileRoutesByFullPath {
   '/revoke': typeof RevokeRoute
   '/token': typeof TokenRoute
   '/api/collab-token': typeof ApiCollabTokenRoute
+  '/canvas-share/$token': typeof CanvasShareTokenRoute
   '/canvas/$boardId': typeof CanvasBoardIdRoute
   '/demo/tanstack-query': typeof DemoTanstackQueryRoute
   '/invite/$token': typeof InviteTokenRoute
@@ -211,6 +218,7 @@ export interface FileRoutesByTo {
   '/revoke': typeof RevokeRoute
   '/token': typeof TokenRoute
   '/api/collab-token': typeof ApiCollabTokenRoute
+  '/canvas-share/$token': typeof CanvasShareTokenRoute
   '/canvas/$boardId': typeof CanvasBoardIdRoute
   '/demo/tanstack-query': typeof DemoTanstackQueryRoute
   '/invite/$token': typeof InviteTokenRoute
@@ -241,6 +249,7 @@ export interface FileRoutesById {
   '/revoke': typeof RevokeRoute
   '/token': typeof TokenRoute
   '/api/collab-token': typeof ApiCollabTokenRoute
+  '/canvas-share/$token': typeof CanvasShareTokenRoute
   '/canvas/$boardId': typeof CanvasBoardIdRoute
   '/demo/tanstack-query': typeof DemoTanstackQueryRoute
   '/invite/$token': typeof InviteTokenRoute
@@ -272,6 +281,7 @@ export interface FileRouteTypes {
     | '/revoke'
     | '/token'
     | '/api/collab-token'
+    | '/canvas-share/$token'
     | '/canvas/$boardId'
     | '/demo/tanstack-query'
     | '/invite/$token'
@@ -301,6 +311,7 @@ export interface FileRouteTypes {
     | '/revoke'
     | '/token'
     | '/api/collab-token'
+    | '/canvas-share/$token'
     | '/canvas/$boardId'
     | '/demo/tanstack-query'
     | '/invite/$token'
@@ -330,6 +341,7 @@ export interface FileRouteTypes {
     | '/revoke'
     | '/token'
     | '/api/collab-token'
+    | '/canvas-share/$token'
     | '/canvas/$boardId'
     | '/demo/tanstack-query'
     | '/invite/$token'
@@ -360,6 +372,7 @@ export interface RootRouteChildren {
   RevokeRoute: typeof RevokeRoute
   TokenRoute: typeof TokenRoute
   ApiCollabTokenRoute: typeof ApiCollabTokenRoute
+  CanvasShareTokenRoute: typeof CanvasShareTokenRoute
   CanvasBoardIdRoute: typeof CanvasBoardIdRoute
   DemoTanstackQueryRoute: typeof DemoTanstackQueryRoute
   InviteTokenRoute: typeof InviteTokenRoute
@@ -488,6 +501,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof CanvasBoardIdRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/canvas-share/$token': {
+      id: '/canvas-share/$token'
+      path: '/canvas-share/$token'
+      fullPath: '/canvas-share/$token'
+      preLoaderRoute: typeof CanvasShareTokenRouteImport
+      parentRoute: typeof rootRouteImport
+    }
     '/api/collab-token': {
       id: '/api/collab-token'
       path: '/api/collab-token'
@@ -594,6 +614,7 @@ const rootRouteChildren: RootRouteChildren = {
   RevokeRoute: RevokeRoute,
   TokenRoute: TokenRoute,
   ApiCollabTokenRoute: ApiCollabTokenRoute,
+  CanvasShareTokenRoute: CanvasShareTokenRoute,
   CanvasBoardIdRoute: CanvasBoardIdRoute,
   DemoTanstackQueryRoute: DemoTanstackQueryRoute,
   InviteTokenRoute: InviteTokenRoute,

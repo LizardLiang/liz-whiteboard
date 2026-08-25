@@ -48,6 +48,18 @@ interface CanvasBoardProps {
    * still sees collaborators' edits arrive live. Only the tools are withheld.
    */
   readOnly?: boolean
+  /**
+   * Public share-link render path: no account, no session, and — the point —
+   * NO Socket.IO connection is ever opened. The canvas namespace's handshake
+   * authenticates a real session, so a public visitor could not join it
+   * anyway; connecting would just retry and fail in a loop behind a
+   * permanently red badge.
+   *
+   * Implies `readOnly`. It is a separate prop rather than a mode of it
+   * because an authenticated VIEWER is read-only AND still live-syncs, which
+   * is exactly the distinction that would be lost by merging the two.
+   */
+  isPublic?: boolean
 }
 
 const TOOLS: Array<{
@@ -67,7 +79,12 @@ export function CanvasBoard({
   userId,
   initialElements,
   readOnly = false,
+  isPublic = false,
 }: CanvasBoardProps) {
+  // A public visitor is always read-only. Derived here rather than trusted
+  // from the caller so no future call site can pass `isPublic` and forget
+  // `readOnly` and hand an anonymous visitor a working toolbar.
+  const effectiveReadOnly = readOnly || isPublic
   const containerRef = useRef<HTMLDivElement | null>(null)
   const canvasRef = useRef<HTMLCanvasElement | null>(null)
   const ctxRef = useRef<CanvasRenderingContext2D | null>(null)
@@ -100,7 +117,7 @@ export function CanvasBoard({
     boardId,
     userId,
     triggerSessionExpired,
-    true,
+    !isPublic,
     'canvas',
   )
 
@@ -127,14 +144,14 @@ export function CanvasBoard({
   // sixty times a second.
   const callbacks = useMemo<CanvasEditCallbacks | undefined>(
     () =>
-      readOnly
+      effectiveReadOnly
         ? undefined
         : {
             onCreate: createElement,
             onUpdate: updateElements,
             onDelete: deleteElements,
           },
-    [createElement, deleteElements, readOnly, updateElements],
+    [createElement, deleteElements, effectiveReadOnly, updateElements],
   )
 
   const input = useCanvasInput({
@@ -145,7 +162,7 @@ export function CanvasBoard({
     setCamera,
     tool,
     setTool,
-    readOnly,
+    readOnly: effectiveReadOnly,
     getMeasurer,
     callbacks,
   })
@@ -252,7 +269,7 @@ export function CanvasBoard({
     selectedIds: input.selectedIds,
     editingElementId: input.editing?.elementId ?? null,
     tool,
-    readOnly,
+    readOnly: effectiveReadOnly,
   })
 
   // ── interaction plumbing ─────────────────────────────────────────────────
@@ -314,32 +331,38 @@ export function CanvasBoard({
         onBlur={input.textInput.commitEditing}
       />
 
-      {/* Live-sync state. Shown for viewers too: a read-only visitor still
-          receives collaborators' edits, so "am I connected?" is as relevant
-          to them as it is to an editor. */}
-      <div
-        className="absolute right-4 top-4 rounded-md border bg-background/90 px-2 py-1 text-xs font-medium shadow-sm backdrop-blur-sm"
-        role="status"
-        aria-live="polite"
-      >
-        <span
-          className={
-            connectionState === 'connected'
-              ? 'text-green-600 dark:text-green-400'
-              : connectionState === 'connecting'
-                ? 'text-yellow-600 dark:text-yellow-400'
-                : 'text-red-600 dark:text-red-400'
-          }
-        >
-          {connectionState === 'connected'
-            ? 'Connected'
-            : connectionState === 'connecting'
-              ? 'Connecting...'
-              : 'Disconnected'}
-        </span>
-      </div>
+      {/* Live-sync state. Shown for authenticated viewers too: a read-only
+          member still receives collaborators' edits, so "am I connected?" is
+          as relevant to them as it is to an editor.
 
-      {!readOnly && (
+          Hidden on the public share path, where no socket is opened at all —
+          the badge would sit permanently on "Disconnected" and read as a
+          fault rather than as the intended design. */}
+      {!isPublic && (
+        <div
+          className="absolute right-4 top-4 rounded-md border bg-background/90 px-2 py-1 text-xs font-medium shadow-sm backdrop-blur-sm"
+          role="status"
+          aria-live="polite"
+        >
+          <span
+            className={
+              connectionState === 'connected'
+                ? 'text-green-600 dark:text-green-400'
+                : connectionState === 'connecting'
+                  ? 'text-yellow-600 dark:text-yellow-400'
+                  : 'text-red-600 dark:text-red-400'
+            }
+          >
+            {connectionState === 'connected'
+              ? 'Connected'
+              : connectionState === 'connecting'
+                ? 'Connecting...'
+                : 'Disconnected'}
+          </span>
+        </div>
+      )}
+
+      {!effectiveReadOnly && (
         <div
           className="absolute left-4 top-4 flex gap-1 rounded-md border bg-background/90 p-1 shadow-sm backdrop-blur-sm"
           role="toolbar"

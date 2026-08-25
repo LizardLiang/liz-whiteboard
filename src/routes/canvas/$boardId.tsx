@@ -13,6 +13,7 @@
 import { Link, createFileRoute } from '@tanstack/react-router'
 import { useQuery } from '@tanstack/react-query'
 import { CanvasBoard } from '@/components/canvas/CanvasBoard'
+import { CanvasShareDialog } from '@/components/canvas/CanvasShareDialog'
 import { getCanvasBoardPage } from '@/lib/canvas-board/server-functions'
 import { hasMinimumRole } from '@/lib/auth/permissions'
 import { getSessionUserId } from '@/lib/session-user-id'
@@ -117,16 +118,23 @@ function CanvasBoardPage() {
   }
 
   const canEdit = hasMinimumRole(data.viewerRole, 'EDITOR')
+  // Creating and revoking share links is ADMIN+, matching the whiteboard
+  // share handlers. Hiding the control below that role is an affordance
+  // only — every one of those handlers re-checks the role server side.
+  const canShare = hasMinimumRole(data.viewerRole, 'ADMIN')
 
   return (
     <div className="flex h-screen flex-col bg-background">
       <div className="flex items-center justify-between border-b px-4 py-2">
         <h1 className="text-xl font-semibold">{data.board.name}</h1>
-        {!canEdit && (
-          <span className="rounded-full border px-2 py-0.5 text-xs font-medium text-muted-foreground">
-            Read-only
-          </span>
-        )}
+        <div className="flex items-center gap-2">
+          {!canEdit && (
+            <span className="rounded-full border px-2 py-0.5 text-xs font-medium text-muted-foreground">
+              Read-only
+            </span>
+          )}
+          {canShare && <CanvasShareDialog boardId={boardId} />}
+        </div>
       </div>
       <div className="relative flex-1 overflow-hidden">
         <CanvasBoard
