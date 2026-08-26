@@ -69,6 +69,27 @@ export const FILL_NONE = 'none'
 export const DEFAULT_STROKE_WIDTH = 2
 
 /**
+ * The stroke widths the toolbar offers.
+ *
+ * The SAME three the ER whiteboard offers (`SHAPE_STROKE_WIDTHS` in
+ * schema.ts), restated here rather than imported so this module keeps the
+ * no-imports property its header claims — importing the schema would pull Zod
+ * into a module the engine-adjacent code reads. `canvas-style-palette.test.ts`
+ * asserts the two lists are identical, the same drift guard the blue swatch
+ * gets against `DEFAULT_ELEMENT_STYLE`.
+ *
+ * A fixed set, not a free number, even though `canvasElementStyleSchema`
+ * accepts anything in 0..64: three named weights are a choice a user can make
+ * at a glance, and a stored width outside the set still renders correctly and
+ * simply shows no active button.
+ *
+ * ZERO IS NOT HERE. "No stroke" is the stroke row's own none button — one
+ * user-facing idea belongs to one control, and a second zero in this row
+ * would be two ways to express the same state sitting side by side.
+ */
+export const CANVAS_STROKE_WIDTHS: ReadonlyArray<number> = [1, 2, 4]
+
+/**
  * The swatch whose `fill` matches this stored value, or null.
  *
  * Exact string comparison, not colour parsing. The only values that ever

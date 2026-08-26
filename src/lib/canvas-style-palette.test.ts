@@ -12,6 +12,7 @@
 
 import { describe, expect, it } from 'vitest'
 import {
+  CANVAS_STROKE_WIDTHS,
   CANVAS_SWATCHES,
   DEFAULT_STROKE_WIDTH,
   FILL_NONE,
@@ -19,6 +20,7 @@ import {
   swatchForStroke,
 } from './canvas-style-palette'
 import { DEFAULT_ELEMENT_STYLE } from './canvas-engine/scene'
+import { SHAPE_STROKE_WIDTHS } from '@/data/schema'
 
 describe('the palette and the engine default agree', () => {
   it('has a blue swatch whose fill and stroke ARE the default element style', () => {
@@ -32,6 +34,28 @@ describe('the palette and the engine default agree', () => {
 
   it('restores the default width when a cleared stroke is re-enabled', () => {
     expect(DEFAULT_STROKE_WIDTH).toBe(DEFAULT_ELEMENT_STYLE.strokeWidth)
+  })
+
+  it('offers the SAME stroke weights as the ER whiteboard', () => {
+    // Restated rather than imported so this module keeps its no-imports
+    // property (the schema would pull Zod in). This is the guard that keeps
+    // the two boards from drifting into different weight vocabularies.
+    expect([...CANVAS_STROKE_WIDTHS]).toEqual([...SHAPE_STROKE_WIDTHS])
+  })
+
+  it('includes the default weight among the offered ones', () => {
+    // Otherwise a never-styled shape shows no active width button — the same
+    // papercut the blue-swatch assertion above exists to prevent.
+    expect(CANVAS_STROKE_WIDTHS).toContain(DEFAULT_STROKE_WIDTH)
+  })
+
+  it('never offers zero as a weight — that is the stroke none button', () => {
+    // Two controls expressing one state sitting side by side is a UI bug, not
+    // a redundancy.
+    expect(CANVAS_STROKE_WIDTHS).not.toContain(0)
+    for (const width of CANVAS_STROKE_WIDTHS) {
+      expect(width).toBeGreaterThan(0)
+    }
   })
 
   it('spells the unfilled sentinel the way the renderer tests for it', () => {

@@ -37,6 +37,7 @@ import type {
 import { worldToScreen } from '@/lib/canvas-engine/camera'
 import { boundsOfMany, isCanvasShapeKind } from '@/lib/canvas-engine/scene'
 import {
+  CANVAS_STROKE_WIDTHS,
   CANVAS_SWATCHES,
   DEFAULT_STROKE_WIDTH,
   FILL_NONE,
@@ -63,6 +64,12 @@ export const STYLE_TOOLBAR_OFFSET = 12
 export type CanvasStyleChange =
   | { target: 'fill'; value: string | null }
   | { target: 'stroke'; value: string | null }
+  /**
+   * A stroke WEIGHT, in world units. Never null: "no stroke" is the stroke
+   * row's own none choice, which this union already expresses as
+   * `{ target: 'stroke', value: null }`.
+   */
+  | { target: 'strokeWidth'; value: number }
 
 /**
  * The style an element should end up with after a change.
@@ -84,6 +91,15 @@ export function applyStyleChange(
 ): CanvasElementStyle {
   if (change.target === 'fill') {
     return { ...style, fill: change.value ?? FILL_NONE }
+  }
+  if (change.target === 'strokeWidth') {
+    // Deliberately unconditional: choosing a weight on a shape whose stroke
+    // is currently cleared turns the outline back ON at that weight, using
+    // the colour the clear preserved. That is the second, equally natural way
+    // back from "no stroke" — the first being to pick a colour — and blocking
+    // it would leave the row looking inert on exactly the shapes a user is
+    // most likely to be adjusting.
+    return { ...style, strokeWidth: change.value }
   }
   if (change.value === null) return { ...style, strokeWidth: 0 }
   return {
@@ -175,6 +191,12 @@ export function ShapeStyleToolbar({
   const activeStroke = shared(targets, (element) =>
     element.style.strokeWidth === 0 ? null : element.style.stroke,
   )
+  // A cleared stroke has no weight to show — the stroke row's none button is
+  // what is active then. A stored weight outside the offered set (an older
+  // row) also shows nothing active rather than snapping to the nearest.
+  const activeWidth = shared(targets, (element) =>
+    element.style.strokeWidth === 0 ? null : element.style.strokeWidth,
+  )
 
   const emit = (change: CanvasStyleChange) => {
     // Every target already in the requested state writes nothing. Without
@@ -217,6 +239,11 @@ export function ShapeStyleToolbar({
         readSwatch={(swatch) => swatch.stroke}
         onPick={(value) => emit({ target: 'stroke', value })}
       />
+      <WidthRow
+        activeWidth={activeWidth}
+        strokeColor={activeStroke}
+        onPick={(value) => emit({ target: 'strokeWidth', value })}
+      />
     </div>
   )
 }
@@ -229,6 +256,60 @@ function stylesEqual(a: CanvasElementStyle, b: CanvasElementStyle): boolean {
     a.strokeWidth === b.strokeWidth &&
     a.fontSize === b.fontSize &&
     a.color === b.color
+  )
+}
+
+interface WidthRowProps {
+  /** The weight every target shares, or null when they disagree or the stroke is cleared. */
+  activeWidth: number | null
+  /** The shared stroke colour, so each sample is drawn in the colour it would produce. */
+  strokeColor: string | null
+  onPick: (value: number) => void
+}
+
+/**
+ * The stroke-weight row: each button IS a line of the weight it sets.
+ *
+ * A sample rather than a number, for the same reason the swatches are colours
+ * rather than names — the control should look like its result. The sample is
+ * drawn in the selection's own stroke colour when they share one, so choosing
+ * a weight previews the actual outline rather than a generic grey rule.
+ */
+function WidthRow({ activeWidth, strokeColor, onPick }: WidthRowProps) {
+  return (
+    <div className="flex items-center gap-1" role="group" aria-label="Width">
+      <span className="w-10 select-none pl-1 text-[10px] font-medium uppercase tracking-wide text-muted-foreground">
+        Width
+      </span>
+      {CANVAS_STROKE_WIDTHS.map((width) => {
+        const active = width === activeWidth
+        return (
+          <button
+            key={width}
+            type="button"
+            className={`flex h-5 w-8 items-center justify-center rounded border transition-shadow ${
+              active
+                ? 'border-transparent ring-2 ring-ring ring-offset-1 ring-offset-background'
+                : 'border-border/60'
+            }`}
+            // Matches the ER whiteboard's own picker (`Stroke width 2`), so
+            // one vocabulary covers both boards for anyone reading either.
+            aria-label={`Stroke width ${width}`}
+            aria-pressed={active}
+            title={`${width}px stroke`}
+            onClick={() => onPick(width)}
+          >
+            <span
+              className="block w-5 rounded-full"
+              style={{
+                height: `${width}px`,
+                backgroundColor: strokeColor ?? 'currentColor',
+              }}
+            />
+          </button>
+        )
+      })}
+    </div>
   )
 }
 

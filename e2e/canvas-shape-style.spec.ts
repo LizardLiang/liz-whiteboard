@@ -62,6 +62,7 @@ const RED = { label: 'Red', fill: 'rgba(239, 68, 68, 0.10)', stroke: '#ef4444' }
 const TEAL = { label: 'Teal', fill: 'rgba(20, 184, 166, 0.10)', stroke: '#14b8a6' }
 /** `DEFAULT_ELEMENT_STYLE` — what an unstyled shape carries, i.e. the blue swatch. */
 const DEFAULT_FILL = 'rgba(59, 130, 246, 0.10)'
+const DEFAULT_STROKE = '#3b82f6'
 const DEFAULT_STROKE_WIDTH = 2
 
 // ── engine access ───────────────────────────────────────────────────────────
@@ -204,6 +205,60 @@ async function pick(page: Page, row: 'Fill' | 'Stroke', name: string) {
   await settle(page)
 }
 
+/** The weight row uses the ER board's own `Stroke width N` label, not `Row Name`. */
+async function pickWidth(page: Page, width: number) {
+  await styleBar(page)
+    .getByRole('button', { name: `Stroke width ${width}` })
+    .click()
+  await settle(page)
+}
+
+/**
+ * How many (near-)OPAQUE pixels fall inside a WORLD rect.
+ *
+ * This counts STROKE, and only stroke: the palette's fills are 10% alpha, so
+ * a shape's interior never approaches this threshold while an outline — a
+ * solid colour — always exceeds it.
+ *
+ * SCOPED TO A RECT, which is the whole point. Counting the full canvas
+ * instead makes the seeded board's own rectangle and text a constant of a few
+ * thousand opaque pixels, and a ratio between two stroke weights measured on
+ * top of that constant is meaningless — the first version of this assertion
+ * compared 3245 against 3724 and read a genuine 4x change as 1.15x.
+ */
+async function opaquePixelsIn(
+  page: Page,
+  world: { x: number; y: number; width: number; height: number },
+): Promise<number> {
+  const { camera } = await engine(page)
+  return page.evaluate(
+    ({ box, view }) => {
+      const c = document.querySelector('canvas')
+      if (!c) return 0
+      const ctx = c.getContext('2d')
+      if (!ctx) return 0
+      const rect = c.getBoundingClientRect()
+      const ratio = c.width / rect.width
+      const toDevice = (wx: number, wy: number) => ({
+        x: Math.round((wx - view.x) * view.zoom * ratio),
+        y: Math.round((wy - view.y) * view.zoom * ratio),
+      })
+      const a = toDevice(box.x, box.y)
+      const b = toDevice(box.x + box.width, box.y + box.height)
+      const x = Math.max(0, a.x)
+      const y = Math.max(0, a.y)
+      const w = Math.min(c.width, b.x) - x
+      const h = Math.min(c.height, b.y) - y
+      if (w <= 0 || h <= 0) return 0
+      const data = ctx.getImageData(x, y, w, h).data
+      let n = 0
+      for (let i = 3; i < data.length; i += 4) if (data[i] > 200) n += 1
+      return n
+    },
+    { box: world, view: camera },
+  )
+}
+
 /**
  * Draw one ellipse and return it, already selected.
  *
@@ -216,6 +271,17 @@ const SHAPE_RECT = { x: 600, y: 420, width: 240, height: 160 }
 const SHAPE_CENTRE = {
   x: SHAPE_RECT.x + SHAPE_RECT.width / 2,
   y: SHAPE_RECT.y + SHAPE_RECT.height / 2,
+}
+
+/**
+ * The shape's own box plus a margin, so a thick outline — which straddles the
+ * boundary — is counted whole rather than clipped in half.
+ */
+const SHAPE_PROBE_BOX = {
+  x: SHAPE_RECT.x - 8,
+  y: SHAPE_RECT.y - 8,
+  width: SHAPE_RECT.width + 16,
+  height: SHAPE_RECT.height + 16,
 }
 
 async function drawEllipse(page: Page, at = SHAPE_RECT) {
@@ -410,6 +476,89 @@ test.describe('changing fill and stroke', () => {
     const restored = ellipsesOf(await engine(page))[0]
     expect(restored.style.stroke).toBe(RED.stroke)
     expect(restored.style.strokeWidth).toBe(DEFAULT_STROKE_WIDTH)
+  })
+})
+
+test.describe('changing stroke width', () => {
+  test('applies a weight and persists it, without touching colour or fill', async ({
+    page,
+  }) => {
+    await openBoard(page)
+    await drawEllipse(page)
+    await pickWidth(page, 4)
+
+    const styled = ellipsesOf(await engine(page))[0]
+    expect(styled.style.strokeWidth).toBe(4)
+    // The weight row writes one field.
+    expect(styled.style.stroke).toBe(DEFAULT_STROKE)
+    expect(styled.style.fill).toBe(DEFAULT_FILL)
+
+    await page.reload()
+    await waitForBoard(page)
+    expect(ellipsesOf(await engine(page))[0].style.strokeWidth).toBe(4)
+  })
+
+  test('actually paints a thicker outline, not just a thicker number', async ({
+    page,
+  }) => {
+    // Measured as a RATIO between two weights on the same shape, so nothing
+    // here depends on guessing where an antialiased edge lands. The board is
+    // deselected before each count: selection chrome is opaque too, and
+    // leaving it up would add a constant that muddies the comparison.
+    await openBoard(page)
+    await drawEllipse(page)
+
+    await pickWidth(page, 1)
+    await focusBoard(page)
+    await expect
+      .poll(async () => (await engine(page)).selectedIds.length, { timeout: 5_000 })
+      .toBe(0)
+    const thin = await opaquePixelsIn(page, SHAPE_PROBE_BOX)
+    expect(thin).toBeGreaterThan(0)
+
+    const centre = await worldToPage(page, SHAPE_CENTRE)
+    await page.mouse.click(centre.x, centre.y)
+    await expect
+      .poll(async () => (await engine(page)).selectedIds.length, { timeout: 5_000 })
+      .toBe(1)
+    await pickWidth(page, 4)
+    await focusBoard(page)
+    await expect
+      .poll(async () => (await engine(page)).selectedIds.length, { timeout: 5_000 })
+      .toBe(0)
+    const thick = await opaquePixelsIn(page, SHAPE_PROBE_BOX)
+
+    // 4x the weight over the same perimeter. Asserting merely "more than
+    // double" leaves generous room for antialiasing at both ends while still
+    // being impossible to satisfy if the width never reached the renderer.
+    expect(thick).toBeGreaterThan(thin * 2)
+  })
+
+  test('choosing a weight turns a cleared stroke back on, colour intact', async ({
+    page,
+  }) => {
+    await openBoard(page)
+    await drawEllipse(page)
+    await pick(page, 'Stroke', TEAL.label)
+    await pick(page, 'Stroke', 'none')
+    expect(ellipsesOf(await engine(page))[0].style.strokeWidth).toBe(0)
+
+    await pickWidth(page, 4)
+    const restored = ellipsesOf(await engine(page))[0]
+    expect(restored.style.strokeWidth).toBe(4)
+    expect(restored.style.stroke).toBe(TEAL.stroke)
+    // The stroke row's none button releases as soon as there is a stroke again.
+    await expect(
+      styleBar(page).getByRole('button', { name: 'Stroke none' }),
+    ).toHaveAttribute('aria-pressed', 'false')
+  })
+
+  test('marks the default weight active on a fresh shape', async ({ page }) => {
+    await openBoard(page)
+    await drawEllipse(page)
+    await expect(
+      styleBar(page).getByRole('button', { name: `Stroke width ${DEFAULT_STROKE_WIDTH}` }),
+    ).toHaveAttribute('aria-pressed', 'true')
   })
 })
 

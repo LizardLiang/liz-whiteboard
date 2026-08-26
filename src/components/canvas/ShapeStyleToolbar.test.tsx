@@ -25,6 +25,7 @@ import {
   sceneFrom,
 } from '@/lib/canvas-engine/scene'
 import {
+  CANVAS_STROKE_WIDTHS,
   CANVAS_SWATCHES,
   DEFAULT_STROKE_WIDTH,
   FILL_NONE,
@@ -174,6 +175,24 @@ describe('applyStyleChange', () => {
     expect(next.strokeWidth).toBe(DEFAULT_STROKE_WIDTH)
   })
 
+  it('sets a stroke weight and touches nothing else', () => {
+    const next = applyStyleChange(style, { target: 'strokeWidth', value: 4 })
+    expect(next).toEqual({ ...style, strokeWidth: 4 })
+  })
+
+  it('turns a cleared stroke back ON when a weight is chosen', () => {
+    // The second natural way back from "no stroke", the first being to pick a
+    // colour. The preserved colour is what comes back with it.
+    const cleared: CanvasElementStyle = {
+      ...style,
+      strokeWidth: 0,
+      stroke: TEAL.stroke,
+    }
+    const next = applyStyleChange(cleared, { target: 'strokeWidth', value: 1 })
+    expect(next.strokeWidth).toBe(1)
+    expect(next.stroke).toBe(TEAL.stroke)
+  })
+
   it('preserves an existing non-default width when re-colouring', () => {
     // Re-colouring a 4px outline must not silently thin it to 2px.
     const bold: CanvasElementStyle = { ...style, strokeWidth: 4 }
@@ -245,6 +264,40 @@ describe('rendering', () => {
     }
   })
 
+  it('marks the current weight active', () => {
+    setup([shape('a', { style: { ...DEFAULT_ELEMENT_STYLE, strokeWidth: 4 } })], ['a'])
+    expect(
+      screen.getByRole('button', { name: 'Stroke width 4' }).getAttribute('aria-pressed'),
+    ).toBe('true')
+    expect(
+      screen.getByRole('button', { name: 'Stroke width 2' }).getAttribute('aria-pressed'),
+    ).toBe('false')
+  })
+
+  it('shows no active weight for a cleared stroke', () => {
+    // The stroke row's none button is what is active then — the weight row
+    // must not also claim a value.
+    setup([shape('a', { style: { ...DEFAULT_ELEMENT_STYLE, strokeWidth: 0 } })], ['a'])
+    for (const width of CANVAS_STROKE_WIDTHS) {
+      expect(
+        screen
+          .getByRole('button', { name: `Stroke width ${width}` })
+          .getAttribute('aria-pressed'),
+      ).toBe('false')
+    }
+  })
+
+  it('shows no active weight for a stored width outside the offered set', () => {
+    setup([shape('a', { style: { ...DEFAULT_ELEMENT_STYLE, strokeWidth: 3 } })], ['a'])
+    for (const width of CANVAS_STROKE_WIDTHS) {
+      expect(
+        screen
+          .getByRole('button', { name: `Stroke width ${width}` })
+          .getAttribute('aria-pressed'),
+      ).toBe('false')
+    }
+  })
+
   it('marks the none button active only when every target is cleared', () => {
     const unfilled = { ...DEFAULT_ELEMENT_STYLE, fill: FILL_NONE }
     setup([shape('a', { style: unfilled }), shape('b', { style: unfilled })], [
@@ -302,6 +355,28 @@ describe('emitting', () => {
       target: 'stroke',
       value: null,
     })
+  })
+
+  it('emits the chosen weight, and writes nothing for the current one', () => {
+    const { onStyleChange } = setup([shape('a')], ['a'])
+    // The default is 2 — re-picking it must not push a self-reversing undo entry.
+    fireEvent.click(screen.getByRole('button', { name: 'Stroke width 2' }))
+    expect(onStyleChange).not.toHaveBeenCalled()
+
+    fireEvent.click(screen.getByRole('button', { name: 'Stroke width 4' }))
+    expect(onStyleChange.mock.calls[0][1]).toEqual({
+      target: 'strokeWidth',
+      value: 4,
+    })
+  })
+
+  it('offers every weight the palette declares', () => {
+    setup([shape('a')], ['a'])
+    for (const width of CANVAS_STROKE_WIDTHS) {
+      expect(
+        screen.getByRole('button', { name: `Stroke width ${width}` }),
+      ).toBeTruthy()
+    }
   })
 
   it('offers every palette swatch in both rows', () => {
