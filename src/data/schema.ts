@@ -1003,8 +1003,24 @@ export const canvasElementStyleSchema = z.strictObject({
   color: cssColorSchema.default(DEFAULT_ELEMENT_STYLE.color),
 })
 
-/** The element kinds the engine renders (see canvas-engine/scene.ts). */
-export const canvasElementKindSchema = z.enum(['rectangle', 'text', 'connector'])
+/**
+ * The element kinds the engine renders (see canvas-engine/scene.ts).
+ *
+ * `rectangle`, `ellipse`, `diamond` and `triangle` are the SHAPE kinds — one
+ * world rect drawn four ways. They are deliberately four enum members rather
+ * than one `shape` kind with a discriminating prop: `kind` is a real column
+ * that every query, broadcast and undo snapshot already carries, and an
+ * element's kind never changes, so a shape's identity belongs there and not
+ * behind a second lookup into `props`.
+ */
+export const canvasElementKindSchema = z.enum([
+  'rectangle',
+  'ellipse',
+  'diamond',
+  'triangle',
+  'text',
+  'connector',
+])
 
 /**
  * How a connector is drawn between its two endpoints — FigJam's three line
@@ -1059,11 +1075,12 @@ export const canvasConnectorAnchorSchema = z.enum([
 ])
 
 /**
- * Kind-specific payload, a discriminated union on `kind`. The `rectangle` and
- * `text` arms are empty objects, and that is deliberate — exactly as
- * `shapePropsSchema` documents. This union is the dispatch point that lets
- * `ellipse`, `ink` or `image` be added as one arm with no table change. Do
- * NOT "clean up" the empty arms into a plain enum.
+ * Kind-specific payload, a discriminated union on `kind`. Every shape arm and
+ * the `text` arm are empty objects, and that is deliberate — exactly as
+ * `shapePropsSchema` documents. This union is the dispatch point that let
+ * `ellipse`, `diamond` and `triangle` be added with no table change, and that
+ * will do the same for `ink` or `image`. Do NOT "clean up" the empty arms
+ * into a plain enum.
  *
  * The `connector` arm is the first one carrying real content, and it is why
  * routing lives HERE and not in `canvasElementStyleSchema`: that schema is a
@@ -1072,6 +1089,9 @@ export const canvasConnectorAnchorSchema = z.enum([
  */
 export const canvasElementPropsSchema = z.discriminatedUnion('kind', [
   z.strictObject({ kind: z.literal('rectangle') }),
+  z.strictObject({ kind: z.literal('ellipse') }),
+  z.strictObject({ kind: z.literal('diamond') }),
+  z.strictObject({ kind: z.literal('triangle') }),
   z.strictObject({ kind: z.literal('text') }),
   z
     .strictObject({

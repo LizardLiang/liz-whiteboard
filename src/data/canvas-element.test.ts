@@ -152,9 +152,12 @@ describe('createCanvasElement', () => {
 
   it('rejects an unknown kind, a zero size, and an out-of-bounds coordinate', async () => {
     const boardId = await makeBoard()
+    // `hexagon` is deliberately a kind the engine does NOT have. This case
+    // used to use `ellipse`, which stopped proving anything the moment
+    // ellipses became real — pick a fresh non-kind if hexagons are ever added.
     await expect(
       createCanvasElement(
-        baseElement(boardId, { kind: 'ellipse', props: { kind: 'ellipse' } }),
+        baseElement(boardId, { kind: 'hexagon', props: { kind: 'hexagon' } }),
       ),
     ).rejects.toThrow()
     await expect(

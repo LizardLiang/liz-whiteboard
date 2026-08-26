@@ -183,6 +183,77 @@ describe('hitTest', () => {
   })
 })
 
+describe('non-rectangular shape containment', () => {
+  // The whole point of these three kinds: the CORNER of the bounding box is
+  // outside the shape. If any of them fell back to a rect test, a click in
+  // that corner would select the shape instead of falling through to whatever
+  // is behind it, and overlapping shapes would be impossible to pick apart.
+  const box = { x: 0, y: 0, width: 100, height: 100 }
+
+  it('excludes the corners of an ellipse and includes its centre and axis ends', () => {
+    const element = el('e', { kind: 'ellipse', ...box })
+    expect(elementContainsPoint(element, { x: 50, y: 50 })).toBe(true)
+    expect(elementContainsPoint(element, { x: 0, y: 50 })).toBe(true)
+    expect(elementContainsPoint(element, { x: 50, y: 100 })).toBe(true)
+    expect(elementContainsPoint(element, { x: 0, y: 0 })).toBe(false)
+    expect(elementContainsPoint(element, { x: 100, y: 100 })).toBe(false)
+  })
+
+  it('scales an ellipse independently on each axis', () => {
+    // A wide, flat ellipse. A circle-with-uniform-radius implementation gets
+    // this wrong in both directions at once, so both are asserted.
+    const element = el('e', { kind: 'ellipse', x: 0, y: 0, width: 200, height: 20 })
+    expect(elementContainsPoint(element, { x: 190, y: 10 })).toBe(true)
+    expect(elementContainsPoint(element, { x: 100, y: 19 })).toBe(true)
+    expect(elementContainsPoint(element, { x: 190, y: 2 })).toBe(false)
+  })
+
+  it('excludes the corners of a diamond and includes its edge midpoints', () => {
+    const element = el('d', { kind: 'diamond', ...box })
+    expect(elementContainsPoint(element, { x: 50, y: 50 })).toBe(true)
+    expect(elementContainsPoint(element, { x: 50, y: 0 })).toBe(true)
+    expect(elementContainsPoint(element, { x: 100, y: 50 })).toBe(true)
+    expect(elementContainsPoint(element, { x: 0, y: 0 })).toBe(false)
+    expect(elementContainsPoint(element, { x: 99, y: 99 })).toBe(false)
+    // Just inside and just outside the same edge, to pin the boundary rather
+    // than only the obviously-far points.
+    expect(elementContainsPoint(element, { x: 26, y: 26 })).toBe(true)
+    expect(elementContainsPoint(element, { x: 24, y: 24 })).toBe(false)
+  })
+
+  it('gives a triangle its apex at the top and its base along the bottom', () => {
+    const element = el('t', { kind: 'triangle', ...box })
+    expect(elementContainsPoint(element, { x: 50, y: 0 })).toBe(true)
+    expect(elementContainsPoint(element, { x: 0, y: 100 })).toBe(true)
+    expect(elementContainsPoint(element, { x: 100, y: 100 })).toBe(true)
+    expect(elementContainsPoint(element, { x: 50, y: 90 })).toBe(true)
+    // The TOP corners are outside — this is what distinguishes an apex-up
+    // triangle from an apex-down one, which a bounding-box test cannot see.
+    expect(elementContainsPoint(element, { x: 0, y: 0 })).toBe(false)
+    expect(elementContainsPoint(element, { x: 100, y: 10 })).toBe(false)
+    expect(elementContainsPoint(element, { x: 50, y: 101 })).toBe(false)
+  })
+
+  it('reports nothing inside a degenerate shape rather than dividing by zero', () => {
+    for (const kind of ['ellipse', 'diamond', 'triangle'] as const) {
+      const element = el('z', { kind, x: 0, y: 0, width: 0, height: 0 })
+      expect(elementContainsPoint(element, { x: 0, y: 0 })).toBe(false)
+    }
+  })
+
+  it('lets a click in the corner of an ellipse reach the rectangle behind it', () => {
+    // The behavioural statement of all of the above: the reverse-z scan keeps
+    // walking when the topmost element's own outline does not contain the
+    // point.
+    const scene = sceneFrom([
+      el('behind', { zIndex: 0, ...box }),
+      el('front', { kind: 'ellipse', zIndex: 1, ...box }),
+    ])
+    expect(hitTest(scene, { x: 50, y: 50 })?.id).toBe('front')
+    expect(hitTest(scene, { x: 2, y: 2 })?.id).toBe('behind')
+  })
+})
+
 describe('hitTestRect (marquee)', () => {
   const scene = sceneFrom([
     el('a', { zIndex: 0, x: 0, y: 0, width: 100, height: 100 }),

@@ -124,6 +124,7 @@ function createRecorder(): Recorder {
     arc(...args: Array<unknown>) {
       ops.push({ op: 'arc', args: [...args, this.fillStyle] })
     },
+    ellipse: record('ellipse'),
     fill(...args: Array<unknown>) {
       ops.push({ op: 'fill', args: [...args, this.fillStyle] })
     },
@@ -671,5 +672,115 @@ describe('drawScene — undo/redo highlight (board-undo tactical plan, Wave 4)',
       { ids: new Set<string>(), highlight: { elementId: 'a', intensity: 0 } },
     )
     expect(highlightOps(rec)).toHaveLength(0)
+  })
+})
+
+describe('drawScene: shape kinds', () => {
+  // These assert the PATH, not the pixels — a stub context cannot say whether
+  // a diamond looks like a diamond. What it can prove is that each kind traces
+  // the geometry `hit-test.ts` tests against, because a renderer and a
+  // hit-test that disagree produce a shape you can see and cannot click.
+  function draw(element: CanvasElement) {
+    const rec = createRecorder()
+    drawScene(
+      rec.ctx,
+      sceneFrom([element]),
+      { x: 0, y: 0, zoom: 1 },
+      viewport(),
+      NO_SELECTION,
+    )
+    return rec
+  }
+
+  it('draws a rectangle with fillRect and strokeRect, not a path', () => {
+    // Unchanged behaviour, asserted so the path-based kinds below cannot
+    // quietly take the rectangle with them.
+    const rec = draw(makeElement({ kind: 'rectangle' }))
+    expect(rec.opsOfType('fillRect')[0].args.slice(0, 4)).toEqual([
+      100, 50, 200, 120,
+    ])
+    expect(rec.opsOfType('strokeRect')).toHaveLength(1)
+    expect(rec.opsOfType('ellipse')).toHaveLength(0)
+  })
+
+  it('draws an ellipse at the centre of its box with HALF-extent radii', () => {
+    // The classic defect this pins: passing width/height instead of the radii
+    // draws a shape twice the size of its own resize box.
+    const rec = draw(makeElement({ kind: 'ellipse' }))
+    expect(rec.opsOfType('ellipse')[0].args.slice(0, 5)).toEqual([
+      200, 110, 100, 60, 0,
+    ])
+    expect(rec.opsOfType('fillRect')).toHaveLength(0)
+    expect(rec.opsOfType('strokeRect')).toHaveLength(0)
+    expect(rec.opsOfType('fill')).toHaveLength(1)
+    expect(rec.opsOfType('stroke')).toHaveLength(1)
+  })
+
+  it('draws a diamond through the four edge midpoints', () => {
+    const rec = draw(makeElement({ kind: 'diamond' }))
+    expect(rec.opsOfType('moveTo')[0].args).toEqual([200, 50])
+    expect(rec.opsOfType('lineTo').map((entry) => entry.args)).toEqual([
+      [300, 110],
+      [200, 170],
+      [100, 110],
+    ])
+    expect(rec.opsOfType('closePath')).toHaveLength(1)
+  })
+
+  it('draws a triangle apex-up, matching what the hit-test accepts', () => {
+    const rec = draw(makeElement({ kind: 'triangle' }))
+    expect(rec.opsOfType('moveTo')[0].args).toEqual([200, 50])
+    expect(rec.opsOfType('lineTo').map((entry) => entry.args)).toEqual([
+      [300, 170],
+      [100, 170],
+    ])
+    expect(rec.opsOfType('closePath')).toHaveLength(1)
+  })
+
+  it('honours fill:none and strokeWidth:0 independently', () => {
+    const outlined = draw(
+      makeElement({
+        kind: 'ellipse',
+        style: { ...DEFAULT_ELEMENT_STYLE, fill: 'none' },
+      }),
+    )
+    expect(outlined.opsOfType('fill')).toHaveLength(0)
+    expect(outlined.opsOfType('stroke')).toHaveLength(1)
+
+    const filled = draw(
+      makeElement({
+        kind: 'diamond',
+        style: { ...DEFAULT_ELEMENT_STYLE, strokeWidth: 0 },
+      }),
+    )
+    expect(filled.opsOfType('fill')).toHaveLength(1)
+    expect(filled.opsOfType('stroke')).toHaveLength(0)
+  })
+
+  it('draws nothing at all for a shape that is neither filled nor stroked', () => {
+    const rec = draw(
+      makeElement({
+        kind: 'triangle',
+        style: { ...DEFAULT_ELEMENT_STYLE, fill: 'none', strokeWidth: 0 },
+      }),
+    )
+    expect(rec.opsOfType('moveTo')).toHaveLength(0)
+    expect(rec.opsOfType('fill')).toHaveLength(0)
+    expect(rec.opsOfType('stroke')).toHaveLength(0)
+  })
+
+  it('lays a label out in the same frame for every shape kind', () => {
+    // The text frame is the element RECT for all four kinds — a shape's label
+    // must not shift when its outline changes.
+    const texts = (['rectangle', 'ellipse', 'diamond', 'triangle'] as const).map(
+      (kind) => draw(makeElement({ kind, text: 'hi' })).opsOfType('fillText')[0],
+    )
+    for (const entry of texts) {
+      expect(entry.args.slice(0, 3)).toEqual([
+        'hi',
+        100 + TEXT_PADDING,
+        50 + TEXT_PADDING,
+      ])
+    }
   })
 })

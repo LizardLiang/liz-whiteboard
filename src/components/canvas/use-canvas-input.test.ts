@@ -630,9 +630,107 @@ function setupWithTool(startTool: CanvasTool) {
     get scene() {
       return scene
     },
+    get tool() {
+      return tool
+    },
     get api() {
       return view.result.current
     },
     sync: () => view.rerender(),
   }
 }
+
+describe('shape tools', () => {
+  const SHORTCUTS = [
+    ['r', 'rectangle'],
+    ['o', 'ellipse'],
+    ['d', 'diamond'],
+    ['g', 'triangle'],
+  ] as const
+
+  it.each(SHORTCUTS)('selects the %s tool from its shortcut', (key, expected) => {
+    const h = setup([])
+    act(() => {
+      h.api.boardHandlers.onKeyDown(keyEvent(key))
+    })
+    expect(h.tool).toBe(expected)
+  })
+
+  it.each(SHORTCUTS)('drags out a %s of the drawn kind', (_key, kind) => {
+    const h = setupWithTool(kind)
+    act(() => {
+      h.api.canvasHandlers.onPointerDown(
+        pointerEvent({ clientX: 20, clientY: 30 }),
+      )
+    })
+    h.sync()
+    act(() => {
+      h.api.canvasHandlers.onPointerMove(
+        pointerEvent({ clientX: 140, clientY: 110 }),
+      )
+    })
+    h.sync()
+    // The in-flight preview is the same kind as the element the release will
+    // commit — a draft that always drew a rectangle would show the wrong
+    // shape for the whole drag.
+    expect(h.api.draft?.kind).toBe(kind)
+    act(() => {
+      h.api.canvasHandlers.onPointerUp(
+        pointerEvent({ clientX: 140, clientY: 110 }),
+      )
+    })
+    h.sync()
+
+    const created = h.scene.elements[0]
+    expect(created.kind).toBe(kind)
+    expect(created.width).toBe(120)
+    expect(created.height).toBe(80)
+    expect(h.callbacks.onCreate).toHaveBeenCalledTimes(1)
+    // Every shape tool is one-shot, exactly as the rectangle tool has always
+    // been: the board returns to select so the new shape can be moved.
+    expect(h.tool).toBe('select')
+  })
+
+  it('creates a default-sized shape from a click rather than a drag', () => {
+    const h = setupWithTool('ellipse')
+    act(() => {
+      h.api.canvasHandlers.onPointerDown(pointerEvent({ clientX: 20, clientY: 30 }))
+    })
+    h.sync()
+    act(() => {
+      h.api.canvasHandlers.onPointerUp(pointerEvent({ clientX: 21, clientY: 31 }))
+    })
+    h.sync()
+
+    const created = h.scene.elements[0]
+    expect(created.kind).toBe('ellipse')
+    expect(created.width).toBe(160)
+    expect(created.height).toBe(100)
+  })
+
+  it('finishes a drag as the shape it STARTED as, not the live tool', () => {
+    // A shortcut still fires while the pointer is down. Reading the tool at
+    // release would silently turn a half-drawn ellipse into a diamond.
+    const h = setupWithTool('ellipse')
+    act(() => {
+      h.api.canvasHandlers.onPointerDown(pointerEvent({ clientX: 0, clientY: 0 }))
+    })
+    h.sync()
+    act(() => {
+      h.api.boardHandlers.onKeyDown(keyEvent('d'))
+    })
+    h.sync()
+    act(() => {
+      h.api.canvasHandlers.onPointerUp(
+        pointerEvent({ clientX: 100, clientY: 100 }),
+      )
+    })
+    h.sync()
+
+    expect(h.scene.elements[0].kind).toBe('ellipse')
+  })
+
+  it.each(SHORTCUTS)('shows a crosshair for the %s tool', (_key, kind) => {
+    expect(setupWithTool(kind).api.cursor).toBe('crosshair')
+  })
+})

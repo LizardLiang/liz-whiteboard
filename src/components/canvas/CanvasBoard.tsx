@@ -14,10 +14,18 @@
 // globals because they all arrive here and are passed down as arguments.
 
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
-import { Hand, MousePointer2, Square, Type } from 'lucide-react'
+import {
+  Circle,
+  Diamond,
+  Hand,
+  MousePointer2,
+  Square,
+  Triangle,
+  Type,
+} from 'lucide-react'
 import { TextInputProxy } from './TextInputProxy'
 import { ConnectorToolbar } from './ConnectorToolbar'
-import { useCanvasInput } from './use-canvas-input'
+import { SHAPE_TOOL_SHORTCUTS, useCanvasInput } from './use-canvas-input'
 import { useFrameLoop } from './use-frame-loop'
 import { useCanvasHighlight } from './use-canvas-highlight'
 import { useCanvasTestHook } from './canvas-test-hook'
@@ -27,13 +35,14 @@ import type { WorldRect } from '@/lib/canvas-engine/hit-test'
 import type {
   CanvasConnectorRouting,
   CanvasElement,
+  CanvasShapeKind,
   Scene,
 } from '@/lib/canvas-engine/scene'
 import type { CanvasElementRecord } from '@/data/models'
 import type { CanvasTool } from './use-canvas-input'
 import { toEngineScene } from '@/lib/canvas-element-adapter'
 import { drawScene, measurerFor } from '@/lib/canvas-engine/render'
-import { updateElement } from '@/lib/canvas-engine/scene'
+import { CANVAS_SHAPE_KINDS, updateElement } from '@/lib/canvas-engine/scene'
 import { DEFAULT_CAMERA } from '@/lib/canvas-engine/camera'
 import { focusOnRect } from '@/lib/canvas-engine/camera-focus'
 import { useTheme } from '@/hooks/use-theme'
@@ -78,15 +87,47 @@ function toElementRect(element: CanvasElement | undefined): WorldRect | null {
   return { x: element.x, y: element.y, width: element.width, height: element.height }
 }
 
-const TOOLS: Array<{
+interface ToolButton {
   id: CanvasTool
   label: string
   shortcut: string
   Icon: typeof MousePointer2
-}> = [
+}
+
+/**
+ * The icon and the human name for each shape kind. The SHORTCUT is not here:
+ * it comes from `SHAPE_TOOL_SHORTCUTS`, which is also what the keydown
+ * handler binds, so a button can never advertise a key the board ignores.
+ */
+const SHAPE_TOOL_META: Readonly<
+  Record<CanvasShapeKind, { label: string; Icon: typeof MousePointer2 }>
+> = {
+  rectangle: { label: 'Rectangle', Icon: Square },
+  ellipse: { label: 'Ellipse', Icon: Circle },
+  diamond: { label: 'Diamond', Icon: Diamond },
+  triangle: { label: 'Triangle', Icon: Triangle },
+}
+
+/**
+ * The palette, in order: the two navigation tools, then every shape kind the
+ * engine knows about, then text.
+ *
+ * Derived from `CANVAS_SHAPE_KINDS` rather than listed by hand — the engine's
+ * kind list is the one place a shape is declared, and a palette that had to
+ * be edited separately is exactly how a kind ends up renderable but
+ * unreachable.
+ */
+const TOOLS: ReadonlyArray<ToolButton> = [
   { id: 'select', label: 'Select', shortcut: 'V', Icon: MousePointer2 },
   { id: 'pan', label: 'Pan', shortcut: 'H', Icon: Hand },
-  { id: 'rectangle', label: 'Rectangle', shortcut: 'R', Icon: Square },
+  ...CANVAS_SHAPE_KINDS.map(
+    (kind): ToolButton => ({
+      id: kind,
+      label: SHAPE_TOOL_META[kind].label,
+      shortcut: SHAPE_TOOL_SHORTCUTS[kind].toUpperCase(),
+      Icon: SHAPE_TOOL_META[kind].Icon,
+    }),
+  ),
   { id: 'text', label: 'Text', shortcut: 'T', Icon: Type },
 ]
 

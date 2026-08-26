@@ -20,7 +20,7 @@
 //     when zoomed out and clumsy when zoomed in.
 
 import { worldToScreen } from './camera'
-import { DEFAULT_ELEMENT_STYLE } from './scene'
+import { DEFAULT_ELEMENT_STYLE, isCanvasShapeKind } from './scene'
 import { arrowHead, attachPoint } from './connector-geometry'
 import { connectorPathOf } from './hit-test'
 import { QUICK_CREATE_DIRECTIONS } from './quick-create'
@@ -498,6 +498,92 @@ export function layoutElementText(
 }
 
 /**
+ * Trace one shape kind's outline into the current path, in WORLD space.
+ *
+ * The counterpart of `hit-test.ts`'s per-kind containment, and the two must
+ * describe the SAME region: a triangle traced apex-up here and hit-tested
+ * apex-down there would look right and be unclickable. Each shape is
+ * INSCRIBED in the element's rect — the rect is the resize box and the text
+ * frame for every kind, and only the outline inside it differs.
+ *
+ * `rectangle` is absent on purpose: it is drawn with `fillRect`/`strokeRect`
+ * in `drawShape` below rather than as a path, because those are the calls the
+ * renderer has always made for it and the recording-stub tests assert on them
+ * by name.
+ */
+function traceShapePath(
+  ctx: CanvasRenderingContext2D,
+  element: CanvasElement,
+): void {
+  const { x, y, width, height } = element
+  const cx = x + width / 2
+  const cy = y + height / 2
+  ctx.beginPath()
+  switch (element.kind) {
+    case 'ellipse':
+      // Radii, not diameters — `ctx.ellipse` takes half-extents, and passing
+      // the full width here draws a shape twice the size of its own box.
+      ctx.ellipse(cx, cy, width / 2, height / 2, 0, 0, Math.PI * 2)
+      break
+    case 'diamond':
+      ctx.moveTo(cx, y)
+      ctx.lineTo(x + width, cy)
+      ctx.lineTo(cx, y + height)
+      ctx.lineTo(x, cy)
+      break
+    case 'triangle':
+      ctx.moveTo(cx, y)
+      ctx.lineTo(x + width, y + height)
+      ctx.lineTo(x, y + height)
+      break
+    default:
+      break
+  }
+  // Closed for every kind: an unclosed diamond or triangle strokes three of
+  // its edges and leaves the fourth open, and fills a shape whose final edge
+  // the browser has to guess at.
+  ctx.closePath()
+}
+
+/**
+ * Fill and stroke one shape element, honouring its style.
+ *
+ * `fill: 'none'` and `strokeWidth: 0` are both real, reachable styles — an
+ * outline-only shape and a fill-only shape — so each half is guarded
+ * independently rather than assumed.
+ */
+function drawShape(
+  ctx: CanvasRenderingContext2D,
+  element: CanvasElement,
+): void {
+  const filled = element.style.fill !== 'none'
+  const stroked = element.style.strokeWidth > 0
+  if (element.kind === 'rectangle') {
+    if (filled) {
+      ctx.fillStyle = element.style.fill
+      ctx.fillRect(element.x, element.y, element.width, element.height)
+    }
+    if (stroked) {
+      ctx.strokeStyle = element.style.stroke
+      ctx.lineWidth = element.style.strokeWidth
+      ctx.strokeRect(element.x, element.y, element.width, element.height)
+    }
+    return
+  }
+  if (!filled && !stroked) return
+  traceShapePath(ctx, element)
+  if (filled) {
+    ctx.fillStyle = element.style.fill
+    ctx.fill()
+  }
+  if (stroked) {
+    ctx.strokeStyle = element.style.stroke
+    ctx.lineWidth = element.style.strokeWidth
+    ctx.stroke()
+  }
+}
+
+/**
  * Draw one element in WORLD space. The caller has already applied the camera
  * transform, so this function uses raw world coordinates throughout.
  */
@@ -506,16 +592,8 @@ function drawElement(
   element: CanvasElement,
   theme: CanvasTheme,
 ): TextLayout | null {
-  if (element.kind === 'rectangle') {
-    if (element.style.fill !== 'none') {
-      ctx.fillStyle = element.style.fill
-      ctx.fillRect(element.x, element.y, element.width, element.height)
-    }
-    if (element.style.strokeWidth > 0) {
-      ctx.strokeStyle = element.style.stroke
-      ctx.lineWidth = element.style.strokeWidth
-      ctx.strokeRect(element.x, element.y, element.width, element.height)
-    }
+  if (isCanvasShapeKind(element.kind)) {
+    drawShape(ctx, element)
   }
 
   const text = element.text ?? ''

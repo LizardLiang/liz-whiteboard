@@ -27,6 +27,7 @@ import type { Camera, Point } from '@/lib/canvas-engine/camera'
 import type { WorldRect } from '@/lib/canvas-engine/hit-test'
 import type {
   CanvasElement,
+  CanvasShapeKind,
   ConnectorAnchor,
   ConnectorAttach,
   Scene,
@@ -52,6 +53,7 @@ import {
   rectFromPoints,
 } from '@/lib/canvas-engine/hit-test'
 import {
+  CANVAS_SHAPE_KINDS,
   DEFAULT_CONNECTOR_ROUTING,
   DEFAULT_ELEMENT_STYLE,
   addElement,
@@ -95,11 +97,58 @@ import {
 } from '@/lib/canvas-engine/text-layout'
 import { uuid } from '@/lib/uuid'
 
-/** The milestone-1 toolset (plan D1). */
-export type CanvasTool = 'select' | 'pan' | 'rectangle' | 'text'
+/**
+ * The toolset. One tool per shape kind, plus the two non-shape tools and the
+ * two navigation tools.
+ *
+ * A shape tool's id IS its `CanvasShapeKind`, deliberately: that is what lets
+ * the draw gesture carry the kind it will create without a lookup table, and
+ * it means adding a shape kind to the engine adds its tool for free.
+ */
+export type CanvasTool = 'select' | 'pan' | CanvasShapeKind | 'text'
 
-/** Default size of an element created by a click rather than a drag. */
-const DEFAULT_RECTANGLE_SIZE = { width: 160, height: 100 }
+/** Is this tool one that draws a shape — and if so, which kind does it draw? */
+export function shapeKindForTool(tool: CanvasTool): CanvasShapeKind | null {
+  return (CANVAS_SHAPE_KINDS as ReadonlyArray<string>).includes(tool)
+    ? (tool as CanvasShapeKind)
+    : null
+}
+
+/**
+ * The keyboard shortcut for each shape tool, and the single source of that
+ * mapping — `CanvasBoard.tsx`'s palette labels the buttons from the same
+ * table, so a hint can never advertise a key the board does not bind.
+ *
+ * `t` is text and `v`/`h` are select/pan, so the shapes take the remaining
+ * mnemonic letters: `r`ectangle, `o` for ellipse (the Excalidraw/Figma
+ * convention), `d`iamond, and `g` for triangle — `t` being unavailable.
+ */
+export const SHAPE_TOOL_SHORTCUTS: Readonly<Record<CanvasShapeKind, string>> = {
+  rectangle: 'r',
+  ellipse: 'o',
+  diamond: 'd',
+  triangle: 'g',
+}
+
+/**
+ * Reverse of `SHAPE_TOOL_SHORTCUTS`, built once for the keydown handler.
+ *
+ * The value type is explicitly `| undefined`: this is looked up with an
+ * ARBITRARY `event.key`, and a plain `Record<string, ...>` would tell
+ * TypeScript every key hits — which is both untrue and enough to make the
+ * `if` guarding it read as dead code.
+ */
+const SHAPE_TOOL_BY_KEY: Readonly<Record<string, CanvasShapeKind | undefined>> =
+  Object.fromEntries(
+    CANVAS_SHAPE_KINDS.map((kind) => [SHAPE_TOOL_SHORTCUTS[kind], kind]),
+  )
+
+/**
+ * Default size of an element created by a click rather than a drag. Shared by
+ * every shape kind: they are one rect drawn four ways, so a click-created
+ * ellipse should occupy exactly the box a click-created rectangle would.
+ */
+const DEFAULT_SHAPE_SIZE = { width: 160, height: 100 }
 const DEFAULT_TEXT_SIZE = { width: 240, height: 48 }
 
 /** Below this many SCREEN pixels a drag counts as a click. */
@@ -248,7 +297,18 @@ type Gesture =
       currentWorld: Point
       baseIds: ReadonlySet<string>
     }
-  | { kind: 'draw'; originWorld: Point; currentWorld: Point }
+  | {
+      kind: 'draw'
+      /**
+       * WHICH shape this drag will create, captured at pointerdown rather
+       * than read from the live tool at release. The tool can change
+       * mid-drag (a keyboard shortcut still fires while the pointer is
+       * down), and a drag that started as an ellipse must finish as one.
+       */
+      shape: CanvasShapeKind
+      originWorld: Point
+      currentWorld: Point
+    }
   | {
       kind: 'move'
       lastWorld: Point
@@ -858,8 +918,14 @@ export function useCanvasInput({
 
       if (editing) commitEditing()
 
-      if (latest.current.tool === 'rectangle') {
-        setGesture({ kind: 'draw', originWorld: world, currentWorld: world })
+      const drawnShape = shapeKindForTool(latest.current.tool)
+      if (drawnShape) {
+        setGesture({
+          kind: 'draw',
+          shape: drawnShape,
+          originWorld: world,
+          currentWorld: world,
+        })
         return
       }
 
@@ -1208,10 +1274,10 @@ export function useCanvasInput({
           // the tool usable without a precise drag.
           const rect =
             dragged.width < MIN_ELEMENT_SIZE || dragged.height < MIN_ELEMENT_SIZE
-              ? { ...finished.originWorld, ...DEFAULT_RECTANGLE_SIZE }
+              ? { ...finished.originWorld, ...DEFAULT_SHAPE_SIZE }
               : dragged
           const element = makeElement(
-            'rectangle',
+            finished.shape,
             rect,
             nextZIndex(latest.current.scene),
           )
@@ -1489,15 +1555,21 @@ export function useCanvasInput({
       }
       if (event.ctrlKey || event.metaKey || event.altKey) return
 
+      // Every shape tool's shortcut, from the one table that also labels the
+      // palette buttons — checked before the switch so adding a shape kind
+      // needs no new case here.
+      const shapeTool = SHAPE_TOOL_BY_KEY[event.key]
+      if (shapeTool) {
+        setTool(shapeTool)
+        return
+      }
+
       switch (event.key) {
         case 'v':
           setTool('select')
           break
         case 'h':
           setTool('pan')
-          break
-        case 'r':
-          setTool('rectangle')
           break
         case 't':
           setTool('text')
@@ -1708,7 +1780,7 @@ export function useCanvasInput({
     if (gesture.kind !== 'draw') return null
     const rect = rectFromPoints(gesture.originWorld, gesture.currentWorld)
     if (rect.width < 1 || rect.height < 1) return null
-    return makeElement('rectangle', rect, nextZIndex(scene))
+    return makeElement(gesture.shape, rect, nextZIndex(scene))
   }, [gesture, scene])
 
   /**
@@ -1807,7 +1879,7 @@ export function useCanvasInput({
         : 'grab'
       : tool === 'text'
         ? 'text'
-        : tool === 'rectangle'
+        : shapeKindForTool(tool)
           ? 'crosshair'
           : 'default'
 

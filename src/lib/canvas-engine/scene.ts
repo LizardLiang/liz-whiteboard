@@ -22,7 +22,48 @@
 import type { Point } from './camera'
 
 /** The element kinds the engine renders. New kinds are added here first. */
-export type CanvasElementKind = 'rectangle' | 'text' | 'connector'
+export type CanvasElementKind =
+  | 'rectangle'
+  | 'ellipse'
+  | 'diamond'
+  | 'triangle'
+  | 'text'
+  | 'connector'
+
+/**
+ * The SHAPE kinds: four ways of drawing one world rect.
+ *
+ * They are identical in every respect the rest of the engine cares about —
+ * same bounds, same resize grips, same text frame, same connector attachment
+ * rules, same quick-create behaviour — and differ in exactly two places:
+ * `render.ts` traces a different outline inside the rect, and `hit-test.ts`
+ * asks a different containment question about it. Nothing else may branch on
+ * which shape kind an element is.
+ *
+ * This union exists so that "a shape, as opposed to text or a connector" is
+ * one name rather than a `||` chain that grows every time a kind is added and
+ * that some call site inevitably forgets to extend.
+ */
+export type CanvasShapeKind = 'rectangle' | 'ellipse' | 'diamond' | 'triangle'
+
+/**
+ * Every shape kind, in the order the toolbar offers them. Exported as data,
+ * not just a type, because the tool palette and the shape-tool mapping in
+ * `use-canvas-input.ts` both need to enumerate them at runtime.
+ */
+export const CANVAS_SHAPE_KINDS: ReadonlyArray<CanvasShapeKind> = [
+  'rectangle',
+  'ellipse',
+  'diamond',
+  'triangle',
+]
+
+/** Is this kind one of the shapes — i.e. not text and not a connector? */
+export function isCanvasShapeKind(
+  kind: CanvasElementKind,
+): kind is CanvasShapeKind {
+  return (CANVAS_SHAPE_KINDS as ReadonlyArray<string>).includes(kind)
+}
 
 /**
  * How a connector is drawn between its endpoints — FigJam's three line types.

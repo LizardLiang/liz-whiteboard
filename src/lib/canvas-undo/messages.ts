@@ -10,14 +10,26 @@
 import type { CanvasElementKind } from '@/data/schema'
 import type { CanvasUndoLabel } from './undo-stack'
 
+/**
+ * The noun for each kind. A `Record` keyed by the schema's own kind union, so
+ * adding a kind to `canvasElementKindSchema` without naming it here stops
+ * compiling — better than a toast that silently degrades to "element" for
+ * every shape the user just drew.
+ */
+const ELEMENT_KIND_NOUNS: Readonly<Record<CanvasElementKind, string>> = {
+  rectangle: 'rectangle',
+  ellipse: 'ellipse',
+  diamond: 'diamond',
+  triangle: 'triangle',
+  text: 'text element',
+  connector: 'connector',
+}
+
 function describeElementKind(kind: CanvasElementKind | undefined): string {
-  if (kind === 'text') return 'text element'
-  if (kind === 'rectangle') return 'rectangle'
-  if (kind === 'connector') return 'connector'
   // No kind could be resolved (an id absent from the entry, which should not
   // happen in practice) — still a truthful, generic noun rather than a crash
   // or an empty string in the toast.
-  return 'element'
+  return kind ? ELEMENT_KIND_NOUNS[kind] : 'element'
 }
 
 /** The clause naming WHAT happened, shared by the undo and redo phrasing below. */

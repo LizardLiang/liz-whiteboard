@@ -52,10 +52,80 @@ export function rectsIntersect(a: WorldRect, b: WorldRect): boolean {
 }
 
 /**
- * Per-kind containment. Both milestone-1 kinds are rectangular, so this is
- * one branch today — but it exists as the dispatch point so an ellipse or a
- * diamond can be added without touching the scan below, mirroring how
- * `shape-geometry.ts` dispatches on kind.
+ * Does a world point fall inside the ellipse INSCRIBED in a rect?
+ *
+ * The normalised-radius form: a point is inside when the sum of its squared
+ * offsets from the centre, each measured in units of that axis's own radius,
+ * is at most 1. Written this way rather than as a circle test with a scale
+ * factor because it reads as the equation it is, and it handles a wide, flat
+ * ellipse identically to a tall one.
+ *
+ * A zero-width or zero-height rect has no interior and reports false rather
+ * than dividing by zero — the same "there is nothing there" answer the
+ * renderer gives a degenerate element.
+ */
+export function ellipseContainsPoint(rect: WorldRect, point: Point): boolean {
+  const rx = rect.width / 2
+  const ry = rect.height / 2
+  if (rx <= 0 || ry <= 0) return false
+  const dx = (point.x - (rect.x + rx)) / rx
+  const dy = (point.y - (rect.y + ry)) / ry
+  return dx * dx + dy * dy <= 1
+}
+
+/**
+ * Does a world point fall inside the diamond INSCRIBED in a rect — the rhombus
+ * through the four edge midpoints?
+ *
+ * The L1 (taxicab) counterpart of the ellipse test above: same normalised
+ * offsets, summed as absolute values instead of squares. That is not a
+ * coincidence — a diamond is the unit ball of the L1 norm exactly as an
+ * ellipse is the unit ball of the L2 norm — and stating it this way is why
+ * this needs no per-edge line-side arithmetic.
+ */
+export function diamondContainsPoint(rect: WorldRect, point: Point): boolean {
+  const rx = rect.width / 2
+  const ry = rect.height / 2
+  if (rx <= 0 || ry <= 0) return false
+  const dx = Math.abs(point.x - (rect.x + rx)) / rx
+  const dy = Math.abs(point.y - (rect.y + ry)) / ry
+  return dx + dy <= 1
+}
+
+/**
+ * Does a world point fall inside the triangle INSCRIBED in a rect — apex at
+ * the top edge's midpoint, base along the whole bottom edge?
+ *
+ * That orientation is fixed here and in `render.ts`'s tracing of the same
+ * shape, and the two must agree or a click near the apex selects nothing
+ * while the pixels plainly show a shape there.
+ *
+ * Solved as a linear interpolation rather than three half-plane tests: at
+ * height `t` down from the apex the triangle spans `t` of the full width,
+ * centred — so the test is "is this point within that span?". Points on an
+ * edge count as inside, matching `rectContainsPoint`'s inclusive bounds.
+ */
+export function triangleContainsPoint(rect: WorldRect, point: Point): boolean {
+  if (rect.width <= 0 || rect.height <= 0) return false
+  const t = (point.y - rect.y) / rect.height
+  if (t < 0 || t > 1) return false
+  const halfSpan = (rect.width / 2) * t
+  const centreX = rect.x + rect.width / 2
+  return Math.abs(point.x - centreX) <= halfSpan
+}
+
+/**
+ * Per-kind containment — the dispatch point the scan below never has to know
+ * about.
+ *
+ * A shape's hit region is its DRAWN outline, not its bounding box: clicking
+ * the empty corner outside an ellipse has to fall through to whatever is
+ * behind it, or a circle behaves like the square it was drawn inside and
+ * overlapping shapes become impossible to pick apart. Each case here is the
+ * exact counterpart of the path `render.ts` traces for that kind.
+ *
+ * TEXT stays rectangular deliberately: its hit region is the block it lays
+ * out in, which is a box regardless of the glyph shapes inside it.
  */
 export function elementContainsPoint(
   element: CanvasElement,
@@ -65,6 +135,12 @@ export function elementContainsPoint(
     case 'rectangle':
     case 'text':
       return rectContainsPoint(bounds(element), point)
+    case 'ellipse':
+      return ellipseContainsPoint(bounds(element), point)
+    case 'diamond':
+      return diamondContainsPoint(bounds(element), point)
+    case 'triangle':
+      return triangleContainsPoint(bounds(element), point)
     case 'connector':
       // A connector's stored bounds are a 1x1 placeholder that means nothing
       // (see createCanvasElementSchema) and its real shape needs its two
