@@ -174,6 +174,21 @@ export interface CanvasElementStyle {
   strokeWidth: number
   fontSize: number
   color: string
+  /**
+   * Corner rounding in WORLD units. Only `rectangle` draws it — every other
+   * kind traces its own path and has no corners to round — but it lives here
+   * rather than in `canvasElementPropsSchema` because that schema is a
+   * discriminated union per kind and this one is a `strictObject` shared by
+   * all of them: a per-kind field would mean a second style object to merge,
+   * snapshot and diff for one number.
+   *
+   * Stored in WORLD units, like `strokeWidth`, so a rounded rectangle keeps
+   * its proportions through a zoom. It is clamped to half the shorter side at
+   * DRAW time rather than on write (`effectiveCornerRadius`), so resizing a
+   * rounded shape small and large again gives back the radius the user chose
+   * instead of the one that happened to fit at its smallest.
+   */
+  cornerRadius: number
 }
 
 export const DEFAULT_ELEMENT_STYLE: CanvasElementStyle = {
@@ -182,6 +197,26 @@ export const DEFAULT_ELEMENT_STYLE: CanvasElementStyle = {
   strokeWidth: 2,
   fontSize: 16,
   color: '#0f172a',
+  cornerRadius: 0,
+}
+
+/**
+ * The corner radius a rectangle is actually drawn and hit-tested with.
+ *
+ * Clamped to half the shorter side: beyond that the two arcs on an edge
+ * overlap, and `ctx.roundRect` and a containment test would each resolve the
+ * overlap their own way — the exact divergence between "what was drawn" and
+ * "what is clickable" that `traceShapePath` and `elementContainsPoint` exist
+ * to keep impossible.
+ *
+ * Non-rectangles get 0 whatever they store, so a rectangle restyled and then
+ * replaced by an ellipse cannot leave a radius quietly affecting anything.
+ */
+export function effectiveCornerRadius(element: CanvasElement): number {
+  if (element.kind !== 'rectangle') return 0
+  const radius = element.style.cornerRadius
+  if (!Number.isFinite(radius) || radius <= 0) return 0
+  return Math.min(radius, Math.abs(element.width) / 2, Math.abs(element.height) / 2)
 }
 
 /**

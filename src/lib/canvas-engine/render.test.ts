@@ -121,6 +121,7 @@ function createRecorder(): Recorder {
     moveTo: record('moveTo'),
     lineTo: record('lineTo'),
     closePath: record('closePath'),
+    arcTo: record('arcTo'),
     arc(...args: Array<unknown>) {
       ops.push({ op: 'arc', args: [...args, this.fillStyle] })
     },
@@ -738,6 +739,55 @@ describe('drawScene: shape kinds', () => {
     )
     return rec
   }
+
+  it('draws a ROUNDED rectangle as a path, with an arc at each corner', () => {
+    const element = makeElement({
+      style: { ...DEFAULT_ELEMENT_STYLE, cornerRadius: 20 },
+    })
+    const rec = createRecorder()
+    drawScene(rec.ctx, sceneFrom([element]), { x: 0, y: 0, zoom: 1 }, viewport(), NO_SELECTION)
+
+    // No rect calls for the shape itself: a rounded rectangle has no
+    // `fillRoundRect` equivalent, so it has to become a path.
+    const shapeRects = rec
+      .opsOfType('fillRect')
+      .filter((entry) => entry.args[2] === element.width)
+    expect(shapeRects).toHaveLength(0)
+
+    const arcs = rec.opsOfType('arcTo')
+    expect(arcs).toHaveLength(4)
+    for (const arc of arcs) expect(arc.args[4]).toBe(20)
+    expect(rec.opsOfType('fill').length).toBeGreaterThan(0)
+    expect(rec.opsOfType('stroke').length).toBeGreaterThan(0)
+  })
+
+  it('clamps the drawn radius to half the shorter side', () => {
+    // Past that the two arcs on an edge overlap, and the renderer and
+    // `elementContainsPoint` would each resolve the overlap their own way.
+    const element = makeElement({
+      width: 200,
+      height: 60,
+      style: { ...DEFAULT_ELEMENT_STYLE, cornerRadius: 500 },
+    })
+    const rec = createRecorder()
+    drawScene(rec.ctx, sceneFrom([element]), { x: 0, y: 0, zoom: 1 }, viewport(), NO_SELECTION)
+    const arcs = rec.opsOfType('arcTo')
+    expect(arcs).toHaveLength(4)
+    for (const arc of arcs) expect(arc.args[4]).toBe(30)
+  })
+
+  it('rounds nothing on a kind that traces its own path', () => {
+    // An ellipse has no corners; a stored radius on one must not reach the
+    // path it traces for itself.
+    const element = makeElement({
+      kind: 'ellipse',
+      style: { ...DEFAULT_ELEMENT_STYLE, cornerRadius: 20 },
+    })
+    const rec = createRecorder()
+    drawScene(rec.ctx, sceneFrom([element]), { x: 0, y: 0, zoom: 1 }, viewport(), NO_SELECTION)
+    expect(rec.opsOfType('arcTo')).toHaveLength(0)
+    expect(rec.opsOfType('ellipse')).toHaveLength(1)
+  })
 
   it('draws a rectangle with fillRect and strokeRect, not a path', () => {
     // Unchanged behaviour, asserted so the path-based kinds below cannot

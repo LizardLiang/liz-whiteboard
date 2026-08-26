@@ -25,6 +25,7 @@ import {
   sceneFrom,
 } from '@/lib/canvas-engine/scene'
 import {
+  CANVAS_CORNER_RADII,
   CANVAS_STROKE_WIDTHS,
   CANVAS_SWATCHES,
   DEFAULT_STROKE_WIDTH,
@@ -487,5 +488,90 @@ describe('the duplicate control', () => {
     expect(
       screen.getByRole('button', { name: 'Duplicate' }).getAttribute('title'),
     ).toContain('Ctrl+D')
+  })
+})
+
+describe('the corner radius row', () => {
+  it('rounds a rectangle', () => {
+    const { onStyleChange } = setup([shape('a')], ['a'])
+    fireEvent.click(screen.getByRole('button', { name: 'Corner radius 20' }))
+    expect(onStyleChange).toHaveBeenCalledTimes(1)
+    const [changed, change] = onStyleChange.mock.calls[0]
+    expect(changed.map((e: CanvasElement) => e.id)).toEqual(['a'])
+    expect(change).toEqual({ target: 'cornerRadius', value: 20 })
+  })
+
+  it('offers every radius in the palette, zero included', () => {
+    // Zero belongs IN the row rather than in a none button beside it: unlike
+    // "no stroke", no rounding is the same field at one end of its range.
+    setup([shape('a', { style: { ...DEFAULT_ELEMENT_STYLE, cornerRadius: 8 } })], ['a'])
+    for (const radius of CANVAS_CORNER_RADII) {
+      expect(
+        screen.getByRole('button', { name: `Corner radius ${radius}` }),
+      ).toBeTruthy()
+    }
+    expect(CANVAS_CORNER_RADII).toContain(0)
+  })
+
+  it('marks the stored radius active', () => {
+    setup(
+      [shape('a', { style: { ...DEFAULT_ELEMENT_STYLE, cornerRadius: 8 } })],
+      ['a'],
+    )
+    expect(
+      screen.getByRole('button', { name: 'Corner radius 8' }).getAttribute('aria-pressed'),
+    ).toBe('true')
+  })
+
+  it('marks nothing active when the rectangles disagree', () => {
+    setup(
+      [
+        shape('a', { style: { ...DEFAULT_ELEMENT_STYLE, cornerRadius: 8 } }),
+        shape('b', { style: { ...DEFAULT_ELEMENT_STYLE, cornerRadius: 20 } }),
+      ],
+      ['a', 'b'],
+    )
+    for (const radius of CANVAS_CORNER_RADII) {
+      expect(
+        screen
+          .getByRole('button', { name: `Corner radius ${radius}` })
+          .getAttribute('aria-pressed'),
+      ).toBe('false')
+    }
+  })
+
+  it('is absent when nothing selected has corners', () => {
+    setup([shape('e', { kind: 'ellipse' })], ['e'])
+    expect(screen.queryByRole('group', { name: 'Corner' })).toBeNull()
+    // ...but the rows that DO apply to an ellipse are still there, so this is
+    // one row hiding rather than the toolbar failing to render.
+    expect(screen.getByRole('group', { name: 'Width' })).toBeTruthy()
+  })
+
+  it('rounds only the rectangles in a mixed selection', () => {
+    // An ellipse has no corners to round. Writing a radius to it would store
+    // a value that changes nothing and push it into the undo entry, so
+    // Ctrl+Z would report restyling more shapes than visibly changed.
+    const { onStyleChange } = setup(
+      [shape('r'), shape('e', { kind: 'ellipse' })],
+      ['r', 'e'],
+    )
+    fireEvent.click(screen.getByRole('button', { name: 'Corner radius 20' }))
+    const [changed] = onStyleChange.mock.calls[0]
+    expect(changed.map((e: CanvasElement) => e.id)).toEqual(['r'])
+  })
+
+  it('writes nothing when the rectangle already has that radius', () => {
+    const { onStyleChange } = setup(
+      [shape('a', { style: { ...DEFAULT_ELEMENT_STYLE, cornerRadius: 20 } })],
+      ['a'],
+    )
+    fireEvent.click(screen.getByRole('button', { name: 'Corner radius 20' }))
+    expect(onStyleChange).not.toHaveBeenCalled()
+  })
+
+  it('is absent on a read-only board', () => {
+    setup([shape('a')], ['a'], true)
+    expect(screen.queryByRole('button', { name: 'Corner radius 20' })).toBeNull()
   })
 })

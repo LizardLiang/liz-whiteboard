@@ -90,6 +90,21 @@ export const DEFAULT_STROKE_WIDTH = 2
 export const CANVAS_STROKE_WIDTHS: ReadonlyArray<number> = [1, 2, 4]
 
 /**
+ * The corner radii the toolbar offers, in WORLD units.
+ *
+ * A fixed set for the same reason `CANVAS_STROKE_WIDTHS` is one: three named
+ * shapes are a choice a user makes at a glance, where a slider is a value
+ * they have to fiddle with. A stored radius outside the set still draws
+ * correctly and simply shows no active button.
+ *
+ * ZERO IS HERE, unlike in the stroke row. "No rounding" is not a separate
+ * idea with its own mechanism — it is a radius of zero, the same field at one
+ * end of its range — so it belongs in the row rather than in a none button
+ * beside it.
+ */
+export const CANVAS_CORNER_RADII: ReadonlyArray<number> = [0, 8, 20]
+
+/**
  * The swatch whose `fill` matches this stored value, or null.
  *
  * Exact string comparison, not colour parsing. The only values that ever

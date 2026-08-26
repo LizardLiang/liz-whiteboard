@@ -43,6 +43,7 @@ import { worldToScreen } from '@/lib/canvas-engine/camera'
 import { boundsOfMany, isCanvasShapeKind } from '@/lib/canvas-engine/scene'
 import { zOrderTargets } from '@/lib/canvas-engine/z-order'
 import {
+  CANVAS_CORNER_RADII,
   CANVAS_STROKE_WIDTHS,
   CANVAS_SWATCHES,
   DEFAULT_STROKE_WIDTH,
@@ -76,6 +77,17 @@ export type CanvasStyleChange =
    * `{ target: 'stroke', value: null }`.
    */
   | { target: 'strokeWidth'; value: number }
+  /**
+   * A corner RADIUS, in world units. Rectangles only — the row is not
+   * rendered when the selection holds none, and the change is emitted against
+   * the rectangles in it rather than everything selected, so a marquee over a
+   * rectangle and an ellipse rounds the one that has corners and writes
+   * nothing to the one that does not.
+   *
+   * Never null: zero rounding is a radius of 0, the same field at one end of
+   * its range, not a second mechanism the way "no stroke" is.
+   */
+  | { target: 'cornerRadius'; value: number }
 
 /**
  * The style an element should end up with after a change.
@@ -97,6 +109,9 @@ export function applyStyleChange(
 ): CanvasElementStyle {
   if (change.target === 'fill') {
     return { ...style, fill: change.value ?? FILL_NONE }
+  }
+  if (change.target === 'cornerRadius') {
+    return { ...style, cornerRadius: change.value }
   }
   if (change.target === 'strokeWidth') {
     // Deliberately unconditional: choosing a weight on a shape whose stroke
@@ -240,12 +255,18 @@ export function SelectionToolbar({
     element.style.strokeWidth === 0 ? null : element.style.strokeWidth,
   )
 
-  const emit = (change: CanvasStyleChange) => {
+  // Rectangles are the only kind with corners to round. Taken from `targets`
+  // rather than from `selectedIds` so the row obeys the same "may this be
+  // restyled at all" rules — read-only, mid-edit — as every row above it.
+  const roundable = targets.filter((element) => element.kind === 'rectangle')
+  const activeRadius = shared(roundable, (element) => element.style.cornerRadius)
+
+  const emit = (change: CanvasStyleChange, list = targets) => {
     // Every target already in the requested state writes nothing. Without
     // this, a stray click on the active swatch pushes an undo entry that
     // reverses to itself, and the user's Ctrl+Z appears to do nothing several
     // times in a row — the same guard the routing picker states for itself.
-    const changed = targets.filter(
+    const changed = list.filter(
       (element) =>
         !stylesEqual(element.style, applyStyleChange(element.style, change)),
     )
@@ -288,6 +309,12 @@ export function SelectionToolbar({
         strokeColor={activeStroke}
         onPick={(value) => emit({ target: 'strokeWidth', value })}
       />
+      {roundable.length > 0 && (
+        <RadiusRow
+          activeRadius={activeRadius}
+          onPick={(value) => emit({ target: 'cornerRadius', value }, roundable)}
+        />
+      )}
         </>
       )}
       <ArrangeRow onArrange={(command) => onArrange(sets.arrange, command)} />
@@ -334,15 +361,23 @@ function ActionsRow({ onDuplicate }: { onDuplicate: () => void }) {
   )
 }
 
-/** Do two styles paint identically? Field-wise, because `CanvasElementStyle` is a flat value. */
+/**
+ * Do two styles paint identically?
+ *
+ * Compared over the KEYS rather than field by field, and that is the whole
+ * point: this listed its five fields by hand until `cornerRadius` was added
+ * to `CanvasElementStyle`, at which point it reported a rounded shape and a
+ * square one as identical — so `emit` filtered every radius click away as
+ * "already in that state" and the new row did nothing at all, silently.
+ * `CanvasElementStyle` is a flat value with no nested members, so it has no
+ * reason to be compared by an enumeration that can fall behind it.
+ *
+ * Both sides are spread so a key missing from one still gets compared, rather
+ * than an absent field passing by never being looked at.
+ */
 function stylesEqual(a: CanvasElementStyle, b: CanvasElementStyle): boolean {
-  return (
-    a.fill === b.fill &&
-    a.stroke === b.stroke &&
-    a.strokeWidth === b.strokeWidth &&
-    a.fontSize === b.fontSize &&
-    a.color === b.color
-  )
+  const keys = Object.keys({ ...a, ...b }) as Array<keyof CanvasElementStyle>
+  return keys.every((key) => a[key] === b[key])
 }
 
 /**
@@ -440,6 +475,58 @@ function WidthRow({ activeWidth, strokeColor, onPick }: WidthRowProps) {
                 height: `${width}px`,
                 backgroundColor: strokeColor ?? 'currentColor',
               }}
+            />
+          </button>
+        )
+      })}
+    </div>
+  )
+}
+
+interface RadiusRowProps {
+  /** The shared radius across the rectangles, or null when they disagree. */
+  activeRadius: number | null
+  onPick: (value: number) => void
+}
+
+/**
+ * Corner rounding for rectangles.
+ *
+ * Each button previews its own radius rather than naming a number, the same
+ * choice the width row makes: the swatch IS the answer to "what will this
+ * look like", and a user picking a corner shape is matching a picture, not a
+ * measurement. The preview is a fixed-size square scaled to the row, so the
+ * three read as a progression even though the stored values are world units
+ * that mean different things on a small shape and a large one.
+ */
+function RadiusRow({ activeRadius, onPick }: RadiusRowProps) {
+  return (
+    <div className="flex items-center gap-1" role="group" aria-label="Corner">
+      <span className="w-10 select-none pl-1 text-[10px] font-medium uppercase tracking-wide text-muted-foreground">
+        Corner
+      </span>
+      {CANVAS_CORNER_RADII.map((radius) => {
+        const active = radius === activeRadius
+        return (
+          <button
+            key={radius}
+            type="button"
+            className={`flex h-5 w-8 items-center justify-center rounded border transition-shadow ${
+              active
+                ? 'border-transparent ring-2 ring-ring ring-offset-1 ring-offset-background'
+                : 'border-border/60'
+            }`}
+            aria-label={`Corner radius ${radius}`}
+            aria-pressed={active}
+            title={radius === 0 ? 'Square corners' : `${radius}px corners`}
+            onClick={() => onPick(radius)}
+          >
+            <span
+              className="block h-3 w-3 border border-current"
+              // Scaled DOWN from the world value: the preview square is 12px
+              // and the shapes this rounds are hundreds, so painting the raw
+              // radius would make every option past the first look identical.
+              style={{ borderRadius: `${radius / 2}px` }}
             />
           </button>
         )

@@ -14,7 +14,7 @@
 //
 // Pure module: no React, no DOM, no database.
 
-import { bounds } from './scene'
+import { bounds, effectiveCornerRadius } from './scene'
 import { connectorBounds, connectorPath } from './connector-geometry'
 import type { EndpointGeometry } from './connector-geometry'
 import type {
@@ -115,6 +115,35 @@ export function triangleContainsPoint(rect: WorldRect, point: Point): boolean {
 }
 
 /**
+ * Containment for a rounded rectangle: inside the box, and — when the point
+ * falls in a corner's quadrant — inside that corner's arc.
+ *
+ * The counterpart of the `rectangle` arm of `render.ts`'s `traceShapePath`,
+ * and the reason a radius could not simply be drawn and left at that: a
+ * rounded shape whose hit region stayed square would swallow clicks in the
+ * four corners it no longer covers, so a shape tucked behind another one's
+ * corner would be unselectable with nothing on screen to explain it.
+ *
+ * The centre of each arc sits one radius in from both of its edges, which
+ * makes the whole test "is the point further than `radius` from the nearest
+ * corner centre?" — no per-corner special-casing, and the straight edges fall
+ * out of it because a point beside a corner centre is inside by construction.
+ */
+export function roundedRectContainsPoint(
+  rect: WorldRect,
+  radius: number,
+  point: Point,
+): boolean {
+  if (!rectContainsPoint(rect, point)) return false
+  if (radius <= 0) return true
+  // How far the point lies INTO the corner region on each axis: zero anywhere
+  // along the straight part of an edge, which is what makes those inside.
+  const dx = Math.max(rect.x + radius - point.x, point.x - (rect.x + rect.width - radius), 0)
+  const dy = Math.max(rect.y + radius - point.y, point.y - (rect.y + rect.height - radius), 0)
+  return dx * dx + dy * dy <= radius * radius
+}
+
+/**
  * Per-kind containment — the dispatch point the scan below never has to know
  * about.
  *
@@ -133,6 +162,11 @@ export function elementContainsPoint(
 ): boolean {
   switch (element.kind) {
     case 'rectangle':
+      return roundedRectContainsPoint(
+        bounds(element),
+        effectiveCornerRadius(element),
+        point,
+      )
     case 'text':
       return rectContainsPoint(bounds(element), point)
     case 'ellipse':

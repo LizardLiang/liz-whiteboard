@@ -1001,6 +1001,24 @@ export const canvasElementStyleSchema = z.strictObject({
     .max(512)
     .default(DEFAULT_ELEMENT_STYLE.fontSize),
   color: cssColorSchema.default(DEFAULT_ELEMENT_STYLE.color),
+  /**
+   * Corner rounding in world units — see `CanvasElementStyle.cornerRadius`.
+   *
+   * `.default()` rather than `.optional()`, which is what lets every row
+   * written before rounded corners existed keep validating unchanged: the key
+   * is simply absent and parses to 0. That is the whole migration; there is
+   * no ALTER to run because the style is one JSON column.
+   *
+   * Capped well above anything the toolbar offers, because the value is
+   * clamped to the shape at draw time anyway and a stored radius larger than
+   * the box is a legitimate way to say "as round as this can get".
+   */
+  cornerRadius: z
+    .number()
+    .finite()
+    .min(0)
+    .max(512)
+    .default(DEFAULT_ELEMENT_STYLE.cornerRadius),
 })
 
 /**

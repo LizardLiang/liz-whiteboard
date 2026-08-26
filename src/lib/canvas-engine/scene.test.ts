@@ -11,6 +11,7 @@ import {
   addElement,
   boundsOfMany,
   bringToFront,
+  effectiveCornerRadius,
   getElement,
   nextZIndex,
   remapConnectorEndpoints,
@@ -180,6 +181,98 @@ describe('hitTest', () => {
     ])
     expect(hitTest(scene, { x: 100, y: 20 })?.id).toBe('t')
     expect(hitTest(scene, { x: 100, y: 60 })).toBeNull()
+  })
+})
+
+describe('rounded rectangle containment', () => {
+  // A radius that is drawn but not hit-tested would swallow clicks in the
+  // four corners the shape no longer covers, and a shape tucked behind
+  // another one's corner would be unselectable with nothing on screen to
+  // explain it — the same reason the three non-rect kinds below have their
+  // own containment.
+  const rounded = el('r', {
+    x: 0,
+    y: 0,
+    width: 100,
+    height: 100,
+    style: { ...DEFAULT_ELEMENT_STYLE, cornerRadius: 20 },
+  })
+
+  it('excludes the bounding box corners a radius cuts away', () => {
+    expect(elementContainsPoint(rounded, { x: 0, y: 0 })).toBe(false)
+    expect(elementContainsPoint(rounded, { x: 100, y: 0 })).toBe(false)
+    expect(elementContainsPoint(rounded, { x: 100, y: 100 })).toBe(false)
+    expect(elementContainsPoint(rounded, { x: 0, y: 100 })).toBe(false)
+  })
+
+  it('keeps the straight parts of every edge inside', () => {
+    expect(elementContainsPoint(rounded, { x: 50, y: 0 })).toBe(true)
+    expect(elementContainsPoint(rounded, { x: 100, y: 50 })).toBe(true)
+    expect(elementContainsPoint(rounded, { x: 50, y: 100 })).toBe(true)
+    expect(elementContainsPoint(rounded, { x: 0, y: 50 })).toBe(true)
+    expect(elementContainsPoint(rounded, { x: 50, y: 50 })).toBe(true)
+  })
+
+  it('follows the arc, not the corner box', () => {
+    // The arc's centre is one radius in from both edges. A point just inside
+    // that centre is in the shape; the same offset outward is not.
+    expect(elementContainsPoint(rounded, { x: 21, y: 21 })).toBe(true)
+    expect(elementContainsPoint(rounded, { x: 3, y: 3 })).toBe(false)
+  })
+
+  it('leaves a square rectangle exactly as it was', () => {
+    const square = el('s', { x: 0, y: 0, width: 100, height: 100 })
+    expect(elementContainsPoint(square, { x: 0, y: 0 })).toBe(true)
+    expect(elementContainsPoint(square, { x: 100, y: 100 })).toBe(true)
+  })
+
+  it('falls through a rounded corner to the element behind it', () => {
+    const scene = sceneFrom([
+      el('behind', { zIndex: 0, x: 0, y: 0, width: 100, height: 100 }),
+      el('front', {
+        zIndex: 1,
+        x: 0,
+        y: 0,
+        width: 100,
+        height: 100,
+        style: { ...DEFAULT_ELEMENT_STYLE, cornerRadius: 20 },
+      }),
+    ])
+    expect(hitTest(scene, { x: 50, y: 50 })?.id).toBe('front')
+    expect(hitTest(scene, { x: 2, y: 2 })?.id).toBe('behind')
+  })
+})
+
+describe('effectiveCornerRadius', () => {
+  it('clamps to half the shorter side', () => {
+    const wide = el('a', { width: 200, height: 60, style: { ...DEFAULT_ELEMENT_STYLE, cornerRadius: 500 } })
+    expect(effectiveCornerRadius(wide)).toBe(30)
+  })
+
+  it('passes a radius that already fits through untouched', () => {
+    const fits = el('a', { width: 200, height: 60, style: { ...DEFAULT_ELEMENT_STYLE, cornerRadius: 8 } })
+    expect(effectiveCornerRadius(fits)).toBe(8)
+  })
+
+  it('is zero for every kind but rectangle', () => {
+    // Clamping at DRAW time rather than on write is what lets a shape be
+    // resized small and large again without losing the radius the user chose
+    // — so a stored radius outlives geometry that cannot show it, and must
+    // not leak into a kind that has no corners.
+    for (const kind of ['ellipse', 'diamond', 'triangle', 'text'] as const) {
+      const element = el('a', {
+        kind,
+        style: { ...DEFAULT_ELEMENT_STYLE, cornerRadius: 20 },
+      })
+      expect(effectiveCornerRadius(element)).toBe(0)
+    }
+  })
+
+  it('is zero for a radius that is absent, zero or nonsense', () => {
+    for (const cornerRadius of [0, -5, Number.NaN, Number.POSITIVE_INFINITY]) {
+      const element = el('a', { style: { ...DEFAULT_ELEMENT_STYLE, cornerRadius } })
+      expect(effectiveCornerRadius(element)).toBe(0)
+    }
   })
 })
 

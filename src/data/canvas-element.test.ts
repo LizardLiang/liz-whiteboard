@@ -21,6 +21,7 @@ import {
   nextCanvasZIndex,
   updateCanvasElement,
 } from './canvas-element'
+import { canvasElementStyleSchema } from '@/data/schema'
 import { db } from '@/db'
 import { DEFAULT_ELEMENT_STYLE } from '@/lib/canvas-engine/scene'
 import { makeProject, resetDb } from '@/test/db-helpers'
@@ -120,6 +121,23 @@ describe('createCanvasElement', () => {
     expect(element.style).toEqual(DEFAULT_ELEMENT_STYLE)
     expect(element.props).toEqual({ kind: 'rectangle' })
     expect(element.createdAt).toBeInstanceOf(Date)
+  })
+
+  it('reads a row written before corner radius existed as a square one', () => {
+    // The migration claim in `canvasElementStyleSchema`, asserted rather than
+    // trusted: `cornerRadius` is a `.default()`, so every style JSON already
+    // in the column parses with the key simply absent. There is no ALTER to
+    // run because the whole style is one JSON value.
+    const legacy = {
+      fill: 'rgba(59, 130, 246, 0.10)',
+      stroke: '#3b82f6',
+      strokeWidth: 2,
+      fontSize: 16,
+      color: '#0f172a',
+    }
+    const parsed = canvasElementStyleSchema.parse(legacy)
+    expect(parsed.cornerRadius).toBe(0)
+    expect(parsed).toEqual(DEFAULT_ELEMENT_STYLE)
   })
 
   it('persists a text element with its text and an explicit style', async () => {

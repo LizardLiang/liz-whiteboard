@@ -74,6 +74,7 @@ interface EngineStyle {
   strokeWidth: number
   fontSize: number
   color: string
+  cornerRadius: number
 }
 
 interface EngineElement {
@@ -532,12 +533,17 @@ test.describe('changing stroke width', () => {
     await expect
       .poll(async () => (await engine(page)).selectedIds.length, { timeout: 5_000 })
       .toBe(0)
-    const thick = await opaquePixelsIn(page, SHAPE_PROBE_BOX)
-
+    // POLLED, not sampled once: `selectedIds` changes before the canvas
+    // repaints, so a single sample taken here can still read the frame that
+    // was on screen at the old weight. This suite has failed exactly that way
+    // under load, reporting a genuine 4x change as a shrink.
+    //
     // 4x the weight over the same perimeter. Asserting merely "more than
     // double" leaves generous room for antialiasing at both ends while still
     // being impossible to satisfy if the width never reached the renderer.
-    expect(thick).toBeGreaterThan(thin * 2)
+    await expect
+      .poll(async () => opaquePixelsIn(page, SHAPE_PROBE_BOX), { timeout: 5_000 })
+      .toBeGreaterThan(thin * 2)
   })
 
   test('choosing a weight turns a cleared stroke back on, colour intact', async ({
@@ -813,5 +819,143 @@ test.describe('z-order', () => {
     await expect(
       styleBar(page).getByRole('button', { name: 'Fill Red' }),
     ).toBeHidden()
+  })
+})
+
+/**
+ * Pick a corner radius from the toolbar's Corner row.
+ *
+ * The row only exists when the selection holds a rectangle — every other kind
+ * traces its own path and has no corners — so a call that finds no button is
+ * a real failure and not a timing one.
+ */
+async function pickRadius(page: Page, radius: number) {
+  await styleBar(page)
+    .getByRole('button', { name: `Corner radius ${radius}` })
+    .click()
+  await settle(page)
+}
+
+/** The seeded rectangle, which is the only shape this board rounds. */
+const SEEDED_RECT = { x: 300, y: 300, width: 200, height: 140 }
+
+async function selectSeededRect(page: Page) {
+  const centre = await worldToPage(page, {
+    x: SEEDED_RECT.x + SEEDED_RECT.width / 2,
+    y: SEEDED_RECT.y + SEEDED_RECT.height / 2,
+  })
+  await page.mouse.click(centre.x, centre.y)
+  await expect
+    .poll(async () => (await engine(page)).selectedIds, { timeout: 5_000 })
+    .toEqual([IDS.canvasRect])
+}
+
+test.describe('corner radius', () => {
+  test('rounds a rectangle, and the corner pixels go with it', async ({
+    page,
+  }) => {
+    await openBoard(page)
+
+    // A point just inside the bounding-box corner: painted while the shape is
+    // square, bare once the corner is rounded away. Two world units in, so
+    // the sample is clear of the 2px stroke straddling the boundary itself.
+    //
+    // Probed with NOTHING SELECTED, both times. A resize grip is centred on
+    // that exact corner and is 8 screen px across, so a probe taken while the
+    // shape is selected samples the grip and reports the corner as painted
+    // whatever the radius is.
+    const corner = { x: SEEDED_RECT.x + 2, y: SEEDED_RECT.y + 2 }
+    const square = await pixelAtWorld(page, corner)
+    expect(square).not.toBeNull()
+    expect(square![3]).toBeGreaterThan(0)
+
+    await selectSeededRect(page)
+    await pickRadius(page, 20)
+    await expect
+      .poll(async () =>
+        (await engine(page)).elements.find((e) => e.id === IDS.canvasRect)
+          ?.style.cornerRadius,
+      )
+      .toBe(20)
+
+    await focusBoard(page)
+    await expect
+      .poll(async () => (await engine(page)).selectedIds.length, { timeout: 5_000 })
+      .toBe(0)
+    await settle(page)
+
+    const rounded = await pixelAtWorld(page, corner)
+    expect(rounded![3]).toBe(0)
+
+    // The centre is untouched — this rounded the corners, it did not clear
+    // the shape.
+    const centre = await pixelAtWorld(page, {
+      x: SEEDED_RECT.x + SEEDED_RECT.width / 2,
+      y: SEEDED_RECT.y + SEEDED_RECT.height / 2,
+    })
+    expect(centre![3]).toBeGreaterThan(0)
+  })
+
+  test('a rounded corner stops swallowing clicks', async ({ page }) => {
+    // The reason the radius had to reach hit-testing too: a shape whose hit
+    // region stayed square would still take a click in a corner it no longer
+    // covers, with nothing on screen to explain why.
+    await openBoard(page)
+    await selectSeededRect(page)
+    await pickRadius(page, 20)
+    await settle(page)
+
+    await focusBoard(page)
+    await expect
+      .poll(async () => (await engine(page)).selectedIds.length, { timeout: 5_000 })
+      .toBe(0)
+
+    const corner = await worldToPage(page, {
+      x: SEEDED_RECT.x + 2,
+      y: SEEDED_RECT.y + 2,
+    })
+    await page.mouse.click(corner.x, corner.y)
+    await expect
+      .poll(async () => (await engine(page)).selectedIds.length, { timeout: 5_000 })
+      .toBe(0)
+
+    // ...while the middle of the same shape still selects it, so the above is
+    // the corner falling through and not the shape becoming unclickable.
+    await selectSeededRect(page)
+  })
+
+  test('the radius survives a reload', async ({ page }) => {
+    await openBoard(page)
+    await selectSeededRect(page)
+    await pickRadius(page, 8)
+    await settle(page)
+
+    await page.reload()
+    await waitForBoard(page)
+    await expect
+      .poll(async () =>
+        (await engine(page)).elements.find((e) => e.id === IDS.canvasRect)
+          ?.style.cornerRadius,
+      )
+      .toBe(8)
+  })
+
+  test('the Corner row is offered for a rectangle and withheld from an ellipse', async ({
+    page,
+  }) => {
+    await openBoard(page)
+    await selectSeededRect(page)
+    await expect(
+      styleBar(page).getByRole('button', { name: 'Corner radius 20' }),
+    ).toBeVisible()
+
+    await drawEllipse(page)
+    await expect
+      .poll(async () => (await engine(page)).selectedIds.length, { timeout: 5_000 })
+      .toBe(1)
+    await expect(styleBar(page).getByRole('group', { name: 'Corner' })).toBeHidden()
+    // The rows that DO apply to an ellipse are still there, so this is one
+    // row withheld rather than the toolbar failing to render.
+    await expect(styleBar(page).getByRole('group', { name: 'Width' })).toBeVisible()
   })
 })

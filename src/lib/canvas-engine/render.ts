@@ -20,7 +20,11 @@
 //     when zoomed out and clumsy when zoomed in.
 
 import { worldToScreen } from './camera'
-import { DEFAULT_ELEMENT_STYLE, isCanvasShapeKind } from './scene'
+import {
+  DEFAULT_ELEMENT_STYLE,
+  effectiveCornerRadius,
+  isCanvasShapeKind,
+} from './scene'
 import { arrowHead, attachPoint } from './connector-geometry'
 import { connectorPathOf } from './hit-test'
 import { QUICK_CREATE_DIRECTIONS } from './quick-create'
@@ -506,10 +510,11 @@ export function layoutElementText(
  * INSCRIBED in the element's rect — the rect is the resize box and the text
  * frame for every kind, and only the outline inside it differs.
  *
- * `rectangle` is absent on purpose: it is drawn with `fillRect`/`strokeRect`
- * in `drawShape` below rather than as a path, because those are the calls the
- * renderer has always made for it and the recording-stub tests assert on them
- * by name.
+ * `rectangle` appears here ONLY when it has a corner radius. A square one is
+ * drawn with `fillRect`/`strokeRect` in `drawShape` below, because those are
+ * the calls the renderer has always made for it and the recording-stub tests
+ * assert on them by name; a rounded one has no rect-call equivalent and has
+ * to be traced.
  */
 function traceShapePath(
   ctx: CanvasRenderingContext2D,
@@ -536,6 +541,27 @@ function traceShapePath(
       ctx.lineTo(x + width, y + height)
       ctx.lineTo(x, y + height)
       break
+    case 'rectangle':
+      // Only ever reached with a NON-ZERO radius — `drawShape` sends a square
+      // rectangle down the `fillRect`/`strokeRect` path instead. Traced by
+      // hand rather than through `ctx.roundRect`, which the recording-stub
+      // context used by the tests does not implement and which would put the
+      // corner arithmetic somewhere `elementContainsPoint` cannot mirror it.
+      {
+        const r = effectiveCornerRadius(element)
+        const right = x + width
+        const bottom = y + height
+        ctx.moveTo(x + r, y)
+        ctx.lineTo(right - r, y)
+        ctx.arcTo(right, y, right, y + r, r)
+        ctx.lineTo(right, bottom - r)
+        ctx.arcTo(right, bottom, right - r, bottom, r)
+        ctx.lineTo(x + r, bottom)
+        ctx.arcTo(x, bottom, x, bottom - r, r)
+        ctx.lineTo(x, y + r)
+        ctx.arcTo(x, y, x + r, y, r)
+      }
+      break
     default:
       break
   }
@@ -558,7 +584,12 @@ function drawShape(
 ): void {
   const filled = element.style.fill !== 'none'
   const stroked = element.style.strokeWidth > 0
-  if (element.kind === 'rectangle') {
+  // A SQUARE rectangle keeps `fillRect`/`strokeRect`: those are the calls the
+  // renderer has always made for it, `traceShapePath` documents their absence
+  // from itself, and the recording-stub tests assert on them by name. A
+  // ROUNDED one has to become a path — there is no `fillRoundRect` — so the
+  // radius decides which of the two ways this kind is drawn.
+  if (element.kind === 'rectangle' && effectiveCornerRadius(element) === 0) {
     if (filled) {
       ctx.fillStyle = element.style.fill
       ctx.fillRect(element.x, element.y, element.width, element.height)

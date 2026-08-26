@@ -493,12 +493,19 @@ test.describe('selection and transform', () => {
       .poll(async () => (await engine(page)).selectedIds.length)
       .toBe(2)
 
-    const selected = await pixelsAround(page, corner)
-    expect(selected).toHaveLength(unselected.length)
+    expect(await pixelsAround(page, corner)).toHaveLength(unselected.length)
+    // POLLED, not sampled once: the canvas repaints on a frame, so a probe
+    // taken the instant `selectedIds` changes can still read the previous
+    // one. Under a full-suite load that was the difference between passing
+    // and failing, and it has nothing to do with what this asserts.
+    //
     // An 8px grip inside a 20px box: hundreds of channels move. The bound
     // is deliberately far below that and far above camera jitter, so it fails
     // on "nothing was drawn" rather than on a one-pixel difference.
-    expect(channelsDiffering(unselected, selected)).toBeGreaterThan(100)
+    const cornerDelta = async () =>
+      channelsDiffering(unselected, await pixelsAround(page, corner))
+    await expect.poll(cornerDelta, { timeout: 5_000 }).toBeGreaterThan(100)
+    const selectedDelta = await cornerDelta()
 
     // ...and clearing the selection puts the corner back, so the delta above
     // was the grip and not some unrelated repaint that happened to land in
@@ -514,10 +521,9 @@ test.describe('selection and transform', () => {
     // an identical camera is not bit-identical every time (one run differed
     // by a handful of channels), and an exact-equality assertion here would
     // be flaky for a reason that has nothing to do with what it is proving.
-    const cleared = await pixelsAround(page, corner)
-    expect(channelsDiffering(unselected, cleared)).toBeLessThan(
-      channelsDiffering(unselected, selected) / 4,
-    )
+    await expect
+      .poll(cornerDelta, { timeout: 5_000 })
+      .toBeLessThan(selectedDelta / 4)
   })
 
   test('moves a multi-selection together and persists both', async ({
