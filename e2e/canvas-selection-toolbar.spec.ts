@@ -865,6 +865,20 @@ test.describe('corner radius', () => {
     // shape is selected samples the grip and reports the corner as painted
     // whatever the radius is.
     const corner = { x: SEEDED_RECT.x + 2, y: SEEDED_RECT.y + 2 }
+
+    // Squared off FIRST, explicitly. Rectangles are rounded by default now, so
+    // "before" would otherwise already be rounded and this would compare two
+    // rounded states — the baseline sample would still be opaque (it would
+    // catch the outline arc passing through it) and the test would pass for a
+    // reason it is not about.
+    await selectSeededRect(page)
+    await pickRadius(page, 0)
+    await focusBoard(page)
+    await expect
+      .poll(async () => (await engine(page)).selectedIds.length, { timeout: 5_000 })
+      .toBe(0)
+    await settle(page)
+
     const square = await pixelAtWorld(page, corner)
     expect(square).not.toBeNull()
     expect(square![3]).toBeGreaterThan(0)

@@ -173,7 +173,13 @@ function makeElement(overrides: Partial<CanvasElement> = {}): CanvasElement {
     rotation: 0,
     zIndex: 0,
     text: null,
-    style: { ...DEFAULT_ELEMENT_STYLE },
+    // Pinned SQUARE, deliberately. `DEFAULT_ELEMENT_STYLE.cornerRadius` is 8,
+    // and a rounded rectangle is traced as a path instead of calling
+    // `fillRect`/`strokeRect` — which most tests here use as "a rectangle was
+    // painted". Pinning it keeps each of those testing its own subject
+    // (z-order, paint order, grips) rather than incidentally depending on the
+    // product's corner style. Tests that are ABOUT rounding set it explicitly.
+    style: { ...DEFAULT_ELEMENT_STYLE, cornerRadius: 0 },
     ...overrides,
   }
 }

@@ -210,7 +210,17 @@ describe('hitTest with connectors', () => {
   it('is never hit through its 1x1 placeholder bounds', () => {
     // The placeholder sits at the origin, inside 'a'. A hit there must
     // resolve to 'a' — never to the connector.
-    expect(hitTest(LINEAR, { x: 0, y: 0 })?.id).toBe('a')
+    //
+    // Probed one default corner radius in from the origin rather than exactly
+    // on it: rectangles are rounded by default now, so the bounding-box corner
+    // is outside the shape and a probe there would resolve to nothing for a
+    // reason that has nothing to do with what this test is about.
+    expect(
+      hitTest(LINEAR, {
+        x: DEFAULT_ELEMENT_STYLE.cornerRadius,
+        y: DEFAULT_ELEMENT_STYLE.cornerRadius,
+      })?.id,
+    ).toBe('a')
   })
 
   it('does not grab a connector through an element painted over it', () => {

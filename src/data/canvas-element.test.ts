@@ -123,11 +123,15 @@ describe('createCanvasElement', () => {
     expect(element.createdAt).toBeInstanceOf(Date)
   })
 
-  it('reads a row written before corner radius existed as a square one', () => {
+  it('reads a row written before corner radius existed at the current default', () => {
     // The migration claim in `canvasElementStyleSchema`, asserted rather than
     // trusted: `cornerRadius` is a `.default()`, so every style JSON already
     // in the column parses with the key simply absent. There is no ALTER to
     // run because the whole style is one JSON value.
+    //
+    // It adopts the DEFAULT, which is rounded — not zero. Such a row never
+    // expressed a corner preference, and leaving it square would put two
+    // different "unstyled" appearances on the same board.
     const legacy = {
       fill: 'rgba(59, 130, 246, 0.10)',
       stroke: '#3b82f6',
@@ -136,8 +140,22 @@ describe('createCanvasElement', () => {
       color: '#0f172a',
     }
     const parsed = canvasElementStyleSchema.parse(legacy)
-    expect(parsed.cornerRadius).toBe(0)
+    expect(parsed.cornerRadius).toBe(DEFAULT_ELEMENT_STYLE.cornerRadius)
     expect(parsed).toEqual(DEFAULT_ELEMENT_STYLE)
+  })
+
+  it('keeps a row that chose square corners square', () => {
+    // The other half of the rule above: an explicit 0 IS a preference, and
+    // changing the default must not overwrite it.
+    const chosen = {
+      fill: 'rgba(59, 130, 246, 0.10)',
+      stroke: '#3b82f6',
+      strokeWidth: 2,
+      fontSize: 16,
+      color: '#0f172a',
+      cornerRadius: 0,
+    }
+    expect(canvasElementStyleSchema.parse(chosen).cornerRadius).toBe(0)
   })
 
   it('persists a text element with its text and an explicit style', async () => {

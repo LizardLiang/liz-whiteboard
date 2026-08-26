@@ -91,6 +91,9 @@ function createRecorder() {
     translate: record('translate'),
     beginPath: record('beginPath'),
     closePath: record('closePath'),
+    // Rectangles are rounded by default now, so every scene with one in it
+    // traces a path through here rather than calling `fillRect`.
+    arcTo: record('arcTo'),
     setLineDash: record('setLineDash'),
     moveTo(...args: Array<unknown>) {
       ops.push({ op: 'moveTo', args: [...args, this.strokeStyle] })
@@ -140,7 +143,13 @@ function el(id: string, patch: Partial<CanvasElement> = {}): CanvasElement {
     rotation: 0,
     zIndex: 0,
     text: null,
-    style: { ...DEFAULT_ELEMENT_STYLE },
+    // Pinned SQUARE, deliberately. `DEFAULT_ELEMENT_STYLE.cornerRadius` is 8,
+    // and a rounded rectangle is traced as a path instead of calling
+    // `fillRect`/`strokeRect` — which most tests here use as "a rectangle was
+    // painted". Pinning it keeps each of those testing its own subject
+    // (z-order, paint order, grips) rather than incidentally depending on the
+    // product's corner style. Tests that are ABOUT rounding set it explicitly.
+    style: { ...DEFAULT_ELEMENT_STYLE, cornerRadius: 0 },
     ...patch,
   }
 }
@@ -221,8 +230,20 @@ describe('two-pass paint order', () => {
   it('still paints rectangles among themselves in z-order', () => {
     const rec = createRecorder()
     const stacked = sceneFrom([
-      el('under', { x: 0, y: 0, zIndex: 0, style: { ...DEFAULT_ELEMENT_STYLE, fill: '#111111' } }),
-      el('over', { x: 0, y: 0, zIndex: 5, style: { ...DEFAULT_ELEMENT_STYLE, fill: '#222222' } }),
+      // `cornerRadius: 0` because this asserts on `fillRect`, and overriding
+      // `style` wholesale here bypasses the square pin in `el()` above.
+      el('under', {
+        x: 0,
+        y: 0,
+        zIndex: 0,
+        style: { ...DEFAULT_ELEMENT_STYLE, cornerRadius: 0, fill: '#111111' },
+      }),
+      el('over', {
+        x: 0,
+        y: 0,
+        zIndex: 5,
+        style: { ...DEFAULT_ELEMENT_STYLE, cornerRadius: 0, fill: '#222222' },
+      }),
     ])
     drawScene(rec.ctx, stacked, CAMERA, VIEWPORT, NONE)
     const fills = rec.opsOfType('fillRect').map((entry) => entry.args[4])

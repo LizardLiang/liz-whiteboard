@@ -12,6 +12,7 @@
 
 import { describe, expect, it } from 'vitest'
 import {
+  CANVAS_CORNER_RADII,
   CANVAS_STROKE_WIDTHS,
   CANVAS_SWATCHES,
   DEFAULT_STROKE_WIDTH,
@@ -34,6 +35,22 @@ describe('the palette and the engine default agree', () => {
 
   it('restores the default width when a cleared stroke is re-enabled', () => {
     expect(DEFAULT_STROKE_WIDTH).toBe(DEFAULT_ELEMENT_STYLE.strokeWidth)
+  })
+
+  it('includes the default corner radius among the offered ones', () => {
+    // Same rule as the blue swatch and the default weight: a never-styled
+    // rectangle must show an ACTIVE button in the Corner row, or the row looks
+    // broken on the most common shape on the board.
+    expect([...CANVAS_CORNER_RADII]).toContain(
+      DEFAULT_ELEMENT_STYLE.cornerRadius,
+    )
+  })
+
+  it('defaults rectangles to ROUNDED corners, not square', () => {
+    // The product decision, pinned: a rectangle is drawn rounded before anyone
+    // styles it. This is also the schema default, so a stored row with no
+    // corner preference adopts it.
+    expect(DEFAULT_ELEMENT_STYLE.cornerRadius).toBeGreaterThan(0)
   })
 
   it('offers the SAME stroke weights as the ER whiteboard', () => {

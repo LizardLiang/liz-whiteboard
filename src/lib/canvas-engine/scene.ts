@@ -197,7 +197,28 @@ export const DEFAULT_ELEMENT_STYLE: CanvasElementStyle = {
   strokeWidth: 2,
   fontSize: 16,
   color: '#0f172a',
-  cornerRadius: 0,
+  // Rounded by default. A square-cornered rectangle is the odd one out on a
+  // board whose other kinds are an ellipse, a diamond and a triangle, and this
+  // is the value a shape is drawn with before anyone has styled it.
+  //
+  // 8 rather than a larger radius because it has to read as a rectangle at
+  // every zoom: the clamp in `effectiveCornerRadius` takes over once the shape
+  // is smaller than twice this, so a small shape degrades to a stadium rather
+  // than to something ambiguous.
+  //
+  // It must stay one of `CANVAS_CORNER_RADII`, or a never-styled rectangle
+  // shows no active button in the toolbar's Corner row —
+  // `canvas-style-palette.test.ts` pins that, the same drift guard the blue
+  // swatch has against `fill`/`stroke`.
+  //
+  // This is ALSO the schema default (`canvasElementStyleSchema`), so a stored
+  // row that predates corner radius — one whose style JSON has no
+  // `cornerRadius` key, or no style at all — parses as rounded rather than
+  // square. That is deliberate: those rows never expressed a preference, and
+  // leaving them square would mean two different "unstyled" appearances on the
+  // same board. A row that stored `cornerRadius: 0` explicitly stays square,
+  // because that one did express a preference.
+  cornerRadius: 8,
 }
 
 /**
