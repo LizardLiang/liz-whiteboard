@@ -74,6 +74,7 @@ function setup(
 ) {
   const onStyleChange = vi.fn()
   const onArrange = vi.fn()
+  const onDuplicate = vi.fn()
   const scene = sceneFrom(elements)
   render(
     <SelectionToolbar
@@ -84,9 +85,10 @@ function setup(
       editingElementId={editingElementId}
       onStyleChange={onStyleChange}
       onArrange={onArrange}
+      onDuplicate={onDuplicate}
     />,
   )
-  return { onStyleChange, onArrange, scene }
+  return { onStyleChange, onArrange, onDuplicate, scene }
 }
 
 // ───────────────────────────────────────────────────────────────────────────
@@ -443,5 +445,47 @@ describe('emitting', () => {
         screen.getByRole('button', { name: `Stroke ${swatch.label}` }),
       ).toBeTruthy()
     }
+  })
+})
+
+describe('the duplicate control', () => {
+  it('is offered for a shape selection', () => {
+    setup([shape('a')], ['a'])
+    expect(screen.getByRole('group', { name: 'Actions' })).toBeTruthy()
+    expect(screen.getByRole('button', { name: 'Duplicate' })).toBeTruthy()
+  })
+
+  it('is offered for TEXT too, which has no paint rows', () => {
+    // Text can be copied like anything else; it simply cannot be restyled
+    // from here.
+    setup([shape('t', { kind: 'text' })], ['t'])
+    expect(screen.getByRole('button', { name: 'Duplicate' })).toBeTruthy()
+    expect(screen.queryByRole('group', { name: 'Fill' })).toBeNull()
+  })
+
+  it('calls back when clicked, with no target list of its own', () => {
+    // Duplicate reads the LIVE selection from the input hook. A target list
+    // computed here would be a second answer to "what is selected".
+    const { onDuplicate } = setup([shape('a')], ['a'])
+    fireEvent.click(screen.getByRole('button', { name: 'Duplicate' }))
+    expect(onDuplicate).toHaveBeenCalledTimes(1)
+    expect(onDuplicate).toHaveBeenCalledWith()
+  })
+
+  it('is absent on a read-only board', () => {
+    setup([shape('a')], ['a'], true)
+    expect(screen.queryByRole('button', { name: 'Duplicate' })).toBeNull()
+  })
+
+  it('is absent while an element is being typed into', () => {
+    setup([shape('a')], ['a'], false, 'a')
+    expect(screen.queryByRole('button', { name: 'Duplicate' })).toBeNull()
+  })
+
+  it('names its shortcut, so the keyboard path is discoverable', () => {
+    setup([shape('a')], ['a'])
+    expect(
+      screen.getByRole('button', { name: 'Duplicate' }).getAttribute('title'),
+    ).toContain('Ctrl+D')
   })
 })

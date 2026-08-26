@@ -31,7 +31,7 @@
 // reconciliation was observed to cost the edit its text — see
 // canvas-quick-create.spec.ts's "opens the new element for typing".
 
-import { Ban, BringToFront, SendToBack } from 'lucide-react'
+import { Ban, BringToFront, CopyPlus, SendToBack } from 'lucide-react'
 import type { Camera } from '@/lib/canvas-engine/camera'
 import type {
   CanvasElement,
@@ -196,6 +196,14 @@ export interface SelectionToolbarProps {
    * this component asks it before emitting.
    */
   onArrange: (targets: Array<CanvasElement>, command: ZOrderCommand) => void
+  /**
+   * Copy the current selection in place. Takes no targets, unlike the two
+   * above: duplicate reads the LIVE selection from the input hook, which is
+   * the same source the Ctrl+D shortcut uses. Handing it a target list here
+   * would be a second answer to "what is selected" that could disagree with
+   * the first.
+   */
+  onDuplicate: () => void
 }
 
 export function SelectionToolbar({
@@ -206,6 +214,7 @@ export function SelectionToolbar({
   editingElementId,
   onStyleChange,
   onArrange,
+  onDuplicate,
 }: SelectionToolbarProps) {
   const sets = selectionToolbarTargets(scene, selectedIds, readOnly, editingElementId)
   const box = boundsOfMany(sets?.arrange ?? [])
@@ -282,6 +291,45 @@ export function SelectionToolbar({
         </>
       )}
       <ArrangeRow onArrange={(command) => onArrange(sets.arrange, command)} />
+      <ActionsRow onDuplicate={onDuplicate} />
+    </div>
+  )
+}
+
+/**
+ * Duplicate.
+ *
+ * The one member of the copy family with a button. Paste has no selection to
+ * hang a control off — it works with nothing selected, which is exactly when
+ * this bar is hidden — and copy and cut are the half of the idiom every user
+ * already reaches for on the keyboard. Duplicate is the one people do not
+ * know is there, so it is the one that gets shown.
+ *
+ * Always enabled, for the same reason the arrange buttons are: the bar only
+ * renders for a non-empty editable selection, so there is always something to
+ * copy.
+ */
+function ActionsRow({ onDuplicate }: { onDuplicate: () => void }) {
+  return (
+    <div className="flex items-center gap-1" role="group" aria-label="Actions">
+      <span className="w-10 select-none pl-1 text-[10px] font-medium uppercase tracking-wide text-muted-foreground">
+        Copy
+      </span>
+      <Button
+        type="button"
+        size="icon"
+        variant="ghost"
+        className="h-5 w-8"
+        aria-label="Duplicate"
+        title="Duplicate (Ctrl+D)"
+        // Wrapped rather than passed straight through: React would otherwise
+        // hand the click event to a callback declared as taking nothing, and
+        // the next person to give `onDuplicate` a parameter would find a
+        // MouseEvent already sitting in it.
+        onClick={() => onDuplicate()}
+      >
+        <CopyPlus className="h-3.5 w-3.5" />
+      </Button>
     </div>
   )
 }

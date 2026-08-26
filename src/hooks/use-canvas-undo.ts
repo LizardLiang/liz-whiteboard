@@ -54,7 +54,10 @@ import type {
   CanvasEditCallbacks,
   CanvasUpdateGesture,
 } from '@/components/canvas/use-canvas-input'
-import type { CanvasElement } from '@/lib/canvas-engine/scene'
+import type {
+  CanvasElement,
+  ConnectorEndpoint,
+} from '@/lib/canvas-engine/scene'
 import type { WorldRect } from '@/lib/canvas-engine/hit-test'
 import type {
   CanvasMutationOptions,
@@ -144,6 +147,29 @@ export interface UseCanvasUndoReturn {
 // second, independent copy of that rename — canvas-element-adapter.ts's own
 // header says the rename "lives here — and ONLY here" (Hermes review,
 // finding 3); this hook now imports it instead of re-deriving it.
+
+/**
+ * One copied connector endpoint, repointed at the id the SERVER gave the
+ * element the copy names — or null when that element never landed.
+ *
+ * Null rather than "leave it as it was": the id it currently holds is the
+ * client-side one `planClone` minted, and persisting that would name a row
+ * that never existed. The caller skips the whole connector instead, which is
+ * the only honest outcome when one of the two things it joins is missing.
+ *
+ * A free endpoint cannot appear here — `planClone` drops any connector that
+ * has one, since a free end has no copy to be repointed at — but it is
+ * handled rather than asserted away, so a future planner that does hand one
+ * over carries it through untouched instead of crashing.
+ */
+function repointEnd(
+  endpoint: ConnectorEndpoint,
+  serverIds: ReadonlyMap<string, string>,
+): ConnectorEndpoint | null {
+  if (endpoint.kind !== 'element') return endpoint
+  const persisted = serverIds.get(endpoint.elementId)
+  return persisted ? { ...endpoint, elementId: persisted } : null
+}
 
 /**
  * Snapshot -> the world rect `focusOnRect`/`isRectVisible` speak
@@ -359,7 +385,11 @@ export function useCanvasUndo({
   )
 
   const recordDelete = useCallback(
-    (elements: Array<CanvasElement>) => {
+    (
+      elements: Array<CanvasElement>,
+      // Defaults to 'delete': every call site but the cut gesture omits it.
+      gesture: 'delete' | 'cut' = 'delete',
+    ) => {
       if (readOnly) return
       const ids = elements.map((element) => element.id)
       void deleteElements(ids).then((results) => {
@@ -384,7 +414,7 @@ export function useCanvasUndo({
         }
         if (operations.length === 0) return
         push({
-          label: { gesture: 'delete', count: operations.length },
+          label: { gesture, count: operations.length },
           operations,
         })
       })
@@ -392,14 +422,109 @@ export function useCanvasUndo({
     [boardId, deleteElements, push, readOnly],
   )
 
+  /**
+   * One copy gesture — a paste or a duplicate — as ONE undo entry (canvas
+   * copy-paste-duplicate tactical plan, step 3).
+   *
+   * TWO PHASES, for the reason `recordQuickCreate` spells out at length: a
+   * connector's endpoints name elements whose SERVER ids do not exist until
+   * their own creates have been acknowledged, so a connector written in the
+   * same breath as the elements it joins would be persisted against
+   * client-side ids and name rows that never existed. The elements go first,
+   * their acks build the id map, and only then are the connectors written.
+   *
+   * The elements' creates are issued CONCURRENTLY, unlike quick-create's
+   * single sequential pair. They do not depend on one another — only the
+   * connectors depend on them — so a twelve-element paste costs one
+   * round-trip's latency rather than twelve.
+   *
+   * Records only what actually persisted: an element whose create failed is
+   * not in the entry, and if nothing persisted at all no entry is pushed.
+   * Same rule as `recordQuickCreate` — an entry claiming rows that are not
+   * there would undo into an error.
+   */
+  const recordClone = useCallback(
+    (elements: Array<CanvasElement>, source: 'paste' | 'duplicate') => {
+      if (readOnly) return
+      // `planClone` guarantees this split by ORDER, but filtering rather than
+      // slicing keeps the two independent: a future planner that interleaved
+      // them would break a slice silently and this not at all.
+      const plain = elements.filter((element) => !element.connector)
+      const connectors = elements.filter((element) => element.connector)
+
+      void (async () => {
+        const operations: Array<CanvasUndoOperation> = []
+        // Client-side id → the id the server gave it. Also what the
+        // connectors' endpoints are rewritten through below.
+        const serverIds = new Map<string, string>()
+
+        const results = await Promise.all(
+          plain.map(async (element) => ({
+            element,
+            result: await createElement(element),
+          })),
+        )
+        for (const { element, result } of results) {
+          if (!result.ok || result.revision === undefined) continue
+          serverIds.set(element.id, result.id)
+          operations.push({
+            kind: 'create',
+            elementId: result.id,
+            afterRevision: result.revision,
+            after: toSnapshot(boardId, { ...element, id: result.id }),
+          })
+        }
+
+        for (const connector of connectors) {
+          const ends = connector.connector
+          if (!ends) continue
+          // Both ends were in the copied selection — `planClone` drops any
+          // connector where that is not true — so both must have landed for
+          // this connector to be worth writing. If either element's create
+          // failed, the connector has nothing to join and is skipped rather
+          // than persisted with a dangling end.
+          const fromEnd = repointEnd(ends.source, serverIds)
+          const toEnd = repointEnd(ends.target, serverIds)
+          if (!fromEnd || !toEnd) continue
+          const linked: CanvasElement = {
+            ...connector,
+            connector: { ...ends, source: fromEnd, target: toEnd },
+          }
+          const result = await createElement(linked)
+          if (!result.ok || result.revision === undefined) continue
+          operations.push({
+            kind: 'create',
+            elementId: result.id,
+            afterRevision: result.revision,
+            after: toSnapshot(boardId, { ...linked, id: result.id }),
+          })
+        }
+
+        if (operations.length === 0) return
+        push({
+          label: { gesture: source, count: operations.length },
+          operations,
+        })
+      })()
+    },
+    [boardId, createElement, push, readOnly],
+  )
+
   const callbacks = useMemo<CanvasEditCallbacks>(
     () => ({
       onCreate: recordCreate,
       onQuickCreate: recordQuickCreate,
+      onClone: recordClone,
       onUpdate: recordUpdate,
       onDelete: recordDelete,
     }),
-    [recordCreate, recordDelete, recordQuickCreate, recordUpdate],
+    [
+      recordClone,
+      recordCreate,
+      recordDelete,
+      recordQuickCreate,
+      recordUpdate,
+    ],
   )
 
   // ── applying (undo) ──────────────────────────────────────────────────────

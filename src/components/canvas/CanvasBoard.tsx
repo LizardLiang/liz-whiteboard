@@ -633,6 +633,7 @@ export function CanvasBoard({
         editingElementId={input.editing?.elementId ?? null}
         onStyleChange={handleStyleChange}
         onArrange={handleArrange}
+        onDuplicate={input.duplicateSelection}
       />
 
       <TextInputProxy

@@ -264,3 +264,65 @@ describe('moving a connector end reads differently from rerouting one', () => {
     )
   })
 })
+
+describe('the copy family', () => {
+  it('names a paste, singular and plural', () => {
+    expect(describeUndoSuccess({ gesture: 'paste', count: 1 })).toBe(
+      'Undid pasting an element',
+    )
+    expect(describeUndoSuccess({ gesture: 'paste', count: 4 })).toBe(
+      'Undid pasting 4 elements',
+    )
+    expect(describeRedoSuccess({ gesture: 'paste', count: 4 })).toBe(
+      'Redid pasting 4 elements',
+    )
+  })
+
+  it('names a duplicate', () => {
+    expect(describeUndoSuccess({ gesture: 'duplicate', count: 1 })).toBe(
+      'Undid duplicating an element',
+    )
+    expect(describeUndoSuccess({ gesture: 'duplicate', count: 3 })).toBe(
+      'Undid duplicating 3 elements',
+    )
+  })
+
+  it('names a cut', () => {
+    expect(describeUndoSuccess({ gesture: 'cut', count: 1 })).toBe(
+      'Undid cutting an element',
+    )
+    expect(describeUndoSuccess({ gesture: 'cut', count: 2 })).toBe(
+      'Undid cutting 2 elements',
+    )
+  })
+
+  it('distinguishes a paste from a duplicate', () => {
+    // They create identical rows by the same code path, so only the wording
+    // can tell the user which gesture is coming back.
+    expect(describeUndoSuccess({ gesture: 'paste', count: 2 })).not.toBe(
+      describeUndoSuccess({ gesture: 'duplicate', count: 2 }),
+    )
+  })
+
+  it('distinguishes a cut from a plain delete', () => {
+    // Same inverse, but only one of them also filled the clipboard.
+    expect(describeUndoSuccess({ gesture: 'cut', count: 2 })).not.toBe(
+      describeUndoSuccess({ gesture: 'delete', count: 2 }),
+    )
+  })
+
+  it('distinguishes all three from creating and quick-creating', () => {
+    const wordings = new Set([
+      describeUndoSuccess({ gesture: 'paste', count: 1 }),
+      describeUndoSuccess({ gesture: 'duplicate', count: 1 }),
+      describeUndoSuccess({ gesture: 'cut', count: 1 }),
+      describeUndoSuccess({ gesture: 'create', elementKind: 'rectangle' }),
+      describeUndoSuccess({
+        gesture: 'quick-create',
+        elementKind: 'rectangle',
+        connected: true,
+      }),
+    ])
+    expect(wordings.size).toBe(5)
+  })
+})

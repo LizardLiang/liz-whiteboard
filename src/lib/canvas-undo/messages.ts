@@ -85,6 +85,25 @@ function describeGesture(label: CanvasUndoLabel): string {
       return label.count > 1
         ? `deleting ${label.count} elements`
         : 'deleting an element'
+    case 'paste':
+      return label.count > 1
+        ? `pasting ${label.count} elements`
+        : 'pasting an element'
+    case 'duplicate':
+      // Names the KEY the user pressed, not the rows that appeared. A paste
+      // and a duplicate create identical rows by the same code path, so
+      // nothing about the result distinguishes them — only the gesture does,
+      // and that is what the user is looking for when Ctrl+Z asks them what
+      // is about to come back.
+      return label.count > 1
+        ? `duplicating ${label.count} elements`
+        : 'duplicating an element'
+    case 'cut':
+      // Not "deleting": a cut also filled the clipboard, and a user who cut
+      // intending to paste needs to see that the cut is what was reversed.
+      return label.count > 1
+        ? `cutting ${label.count} elements`
+        : 'cutting an element'
     case 'quick-create':
       // Names BOTH halves of the gesture when both happened, because both
       // are about to reappear or disappear together and a toast saying only

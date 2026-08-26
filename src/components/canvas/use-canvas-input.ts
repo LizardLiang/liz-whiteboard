@@ -80,6 +80,7 @@ import {
   textFrame,
 } from '@/lib/canvas-engine/render'
 import { quickCreatePlacement } from '@/lib/canvas-engine/quick-create'
+import { cloneTargets, planClone } from '@/lib/canvas-engine/clone'
 import {
   ANCHOR_ATTACH,
   anchorPoint,
@@ -249,6 +250,27 @@ export interface CanvasEditCallbacks {
    * temporary id names a row that never existed.
    */
   onQuickCreate?: (elements: Array<CanvasElement>) => void
+  /**
+   * One copy gesture — a paste or a duplicate — carrying everything it
+   * created (canvas copy-paste-duplicate tactical plan, step 2).
+   *
+   * Separate from `onQuickCreate` rather than a second use of it, even though
+   * both hand over "several elements created by one press". That callback's
+   * consumer knows it is looking at exactly one element and one connector and
+   * labels the entry `quick-create`; this one may carry any number of either,
+   * and must be labelled with the key the user actually pressed.
+   *
+   * ORDERING IS PART OF THE CONTRACT, and it is `planClone`'s: every
+   * non-connector comes first, connectors last. The consumer must create them
+   * in that order and rewrite each connector's endpoints from the ids the
+   * server answers with, for exactly the reason `onQuickCreate` documents — a
+   * connector persisted against a client-side id names a row that never
+   * existed.
+   */
+  onClone?: (
+    elements: Array<CanvasElement>,
+    source: 'paste' | 'duplicate',
+  ) => void
   onUpdate?: (
     elements: Array<CanvasElement>,
     before: Array<CanvasElement>,
@@ -259,7 +281,19 @@ export interface CanvasEditCallbacks {
     // `recordUpdate` defaults a missing one to 'move'.
     gesture?: CanvasUpdateGesture,
   ) => void
-  onDelete?: (elements: Array<CanvasElement>) => void
+  /**
+   * `gesture` names WHY the elements are going away (canvas
+   * copy-paste-duplicate tactical plan, step 2), mirroring how `onUpdate`
+   * carries its `CanvasUpdateGesture`. A cut removes exactly what a delete
+   * removes, so nothing about the elements themselves can tell the two apart
+   * — but only one of them also filled the clipboard, and the undo toast has
+   * to say which happened. Optional, defaulting to `'delete'`, so every
+   * existing call site is unchanged.
+   */
+  onDelete?: (
+    elements: Array<CanvasElement>,
+    gesture?: 'delete' | 'cut',
+  ) => void
 }
 
 export interface EditingState {
@@ -1026,6 +1060,7 @@ export function useCanvasInput({
         // selected nothing and silently began resizing the connector instead.
         // Export-what-you-draw runs in BOTH directions: input must not test
         // what the renderer declined to draw.
+
         if (only && !only.connector) {
           const grips = handleRects(latest.current.camera, only)
           const grabbed = RESIZE_HANDLES.find((handle) =>
@@ -1503,7 +1538,7 @@ export function useCanvasInput({
 
   // ── board-level keyboard (NOT editing) ───────────────────────────────────
 
-  const deleteSelection = useCallback(() => {
+  const deleteSelection = useCallback((gesture: 'delete' | 'cut' = 'delete') => {
     const selected = [...latest.current.selectedIds]
     if (selected.length === 0) return
     // Expanded to include every connector attached to anything doomed (step
@@ -1523,8 +1558,134 @@ export function useCanvasInput({
       .filter((element): element is CanvasElement => Boolean(element))
     setScene((prev) => removeElements(prev, ids))
     setSelectedIds(new Set<string>())
-    callbacks?.onDelete?.(elements)
+    callbacks?.onDelete?.(elements, gesture)
   }, [callbacks, setScene])
+
+  // ── copy, cut, paste, duplicate ──────────────────────────────────────────
+
+  /**
+   * The copy buffer (canvas copy-paste-duplicate tactical plan, step 2).
+   *
+   * A ref, not state: nothing renders from it, and a re-render on copy would
+   * be pure waste. Board-local and component-lifetime by design — the
+   * tactical plan's chosen mechanism — so a reload clears it and there is no
+   * cross-board or cross-tab paste. Nothing untrusted is ever parsed as a
+   * result, which is what keeps the paste path free of a validation layer.
+   *
+   * `pasteCount` is how many times THIS buffer has been pasted, and it is
+   * what makes a repeated Ctrl+V fan out instead of stacking every copy on
+   * one spot. A fresh copy resets it.
+   */
+  const clipboardRef = useRef<{
+    elements: Array<CanvasElement>
+    pasteCount: number
+  } | null>(null)
+
+  /** Snapshot the selection into the buffer. Returns what it captured. */
+  const captureSelection = useCallback((): Array<CanvasElement> => {
+    const targets = cloneTargets(
+      latest.current.scene,
+      latest.current.selectedIds,
+    )
+    if (targets.length === 0) return []
+    clipboardRef.current = { elements: targets, pasteCount: 0 }
+    return targets
+  }, [])
+
+  /**
+   * Create copies of `targets` and hand them to the recording surface.
+   *
+   * Shared by paste and duplicate because they differ in exactly two things —
+   * where the source elements come from, and what the undo entry is called —
+   * and in nothing about what lands on the board.
+   *
+   * The copies become the selection. That is not a nicety: without it a
+   * second Ctrl+D would duplicate the ORIGINAL again and stack a second copy
+   * at the same offset, and the cascade the offset exists for would never
+   * happen.
+   */
+  const cloneInto = useCallback(
+    (
+      targets: ReadonlyArray<CanvasElement>,
+      source: 'paste' | 'duplicate',
+      offsetIndex: number,
+    ) => {
+      if (targets.length === 0) return
+      const plan = planClone(targets, {
+        offsetIndex,
+        topZIndex: nextZIndex(latest.current.scene) - 1,
+        nextId: uuid,
+      })
+      if (plan.elements.length === 0) return
+
+      setScene((prev) =>
+        plan.elements.reduce((scene, element) => addElement(scene, element), prev),
+      )
+      setSelectedIds(new Set(plan.elements.map((element) => element.id)))
+      callbacks?.onClone?.(plan.elements, source)
+    },
+    [callbacks, setScene],
+  )
+
+  const copySelection = useCallback(() => {
+    if (latest.current.readOnly) return
+    captureSelection()
+  }, [captureSelection])
+
+  /**
+   * Fill the buffer, then remove what was copied.
+   *
+   * Reuses `deleteSelection` wholesale rather than removing the rows itself,
+   * so the connector cascade, the pre-state snapshot and the recording all
+   * behave exactly as a Delete does. Only the gesture NAME differs.
+   */
+  const cutSelection = useCallback(() => {
+    if (latest.current.readOnly) return
+    if (captureSelection().length === 0) return
+    deleteSelection('cut')
+  }, [captureSelection, deleteSelection])
+
+  const pasteClipboard = useCallback(() => {
+    if (latest.current.readOnly) return
+    const buffer = clipboardRef.current
+    if (!buffer) return
+    cloneInto(buffer.elements, 'paste', buffer.pasteCount)
+    buffer.pasteCount += 1
+  }, [cloneInto])
+
+  /**
+   * Copy the LIVE selection in place, without touching the buffer.
+   *
+   * Reading the clipboard here would make Ctrl+D paste whatever was last
+   * copied rather than duplicate what is selected; writing it would silently
+   * discard a copy the user was still holding on to.
+   */
+  const duplicateSelection = useCallback(() => {
+    if (latest.current.readOnly) return
+    cloneInto(
+      cloneTargets(latest.current.scene, latest.current.selectedIds),
+      'duplicate',
+      0,
+    )
+  }, [cloneInto])
+
+  /**
+   * The four clipboard shortcuts, by key.
+   *
+   * Consulted from `onBoardKeyDown` ABOVE its modifier guard: that guard
+   * returns on any ctrl/meta press before the key switch is reached, so a
+   * case added down there would never run.
+   */
+  const CLIPBOARD_ACTIONS: Readonly<Record<string, (() => void) | undefined>> =
+    useMemo(
+      () => ({
+        c: copySelection,
+        x: cutSelection,
+        v: pasteClipboard,
+        d: duplicateSelection,
+      }),
+      [copySelection, cutSelection, duplicateSelection, pasteClipboard],
+    )
 
   const onBoardKeyDown = useCallback(
     (event: ReactKeyboardEvent<HTMLElement>) => {
@@ -1564,6 +1725,22 @@ export function useCanvasInput({
         event.preventDefault()
         quickCreateInDirection(source, direction)
         return
+      }
+      // Copy, cut, paste and duplicate (canvas copy-paste-duplicate tactical
+      // plan, step 2). Checked BEFORE the modifier guard below, which returns
+      // on any ctrl/meta press — the same reason the quick-create arrows sit
+      // above it.
+      //
+      // `event.repeat` is ignored deliberately: a held Ctrl+V would otherwise
+      // issue a paste per key-repeat tick, each one a fresh round-trip of
+      // creates, and the board would fill with copies nobody asked for.
+      if ((event.ctrlKey || event.metaKey) && !event.altKey && !event.repeat) {
+        const action = CLIPBOARD_ACTIONS[event.key.toLowerCase()]
+        if (action) {
+          event.preventDefault()
+          action()
+          return
+        }
       }
       if (event.ctrlKey || event.metaKey || event.altKey) return
 
@@ -1610,7 +1787,13 @@ export function useCanvasInput({
           break
       }
     },
-    [beginEditing, deleteSelection, quickCreateInDirection, setTool],
+    [
+      CLIPBOARD_ACTIONS,
+      beginEditing,
+      deleteSelection,
+      quickCreateInDirection,
+      setTool,
+    ],
   )
 
   const onBoardKeyUp = useCallback(
@@ -1899,6 +2082,11 @@ export function useCanvasInput({
     selectedIds,
     setSelectedIds,
     remapElementId,
+    // Exposed so the selection toolbar's Duplicate button reaches the SAME
+    // gesture the keyboard does. A second implementation on the button would
+    // be a second chance to get the offset, the selection hand-off or the
+    // undo label wrong.
+    duplicateSelection,
     editing,
     marquee,
     draft,

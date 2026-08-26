@@ -132,6 +132,24 @@ export type CanvasUndoLabel =
   | { gesture: 'z-order'; count: number }
   | { gesture: 'delete'; count: number }
   /**
+   * The copy family (canvas copy-paste-duplicate tactical plan, step 4) —
+   * every one of them multi-element, hence the `count`.
+   *
+   * Three arms rather than one with a mode field, because the toast has to
+   * name the gesture the user actually made: `paste` and `duplicate` create
+   * the same rows by the same code path, but the user pressed different keys
+   * and is looking for different words when Ctrl+Z asks them what is coming
+   * back.
+   *
+   * `cut` is deliberately NOT folded into `delete` even though its inverse is
+   * identical. The two remove the same rows, but only one of them also filled
+   * the clipboard, and a user who cut expecting to paste needs to see that
+   * the cut is what was reversed.
+   */
+  | { gesture: 'paste'; count: number }
+  | { gesture: 'duplicate'; count: number }
+  | { gesture: 'cut'; count: number }
+  /**
    * A creation-handle gesture (canvas quick-create-handles tactical plan,
    * Wave 4, step 11) — up to TWO elements created by one press-and-release.
    *
