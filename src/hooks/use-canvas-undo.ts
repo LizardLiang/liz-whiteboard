@@ -343,12 +343,14 @@ export function useCanvasUndo({
           })
         }
         if (operations.length === 0) return
-        // `resize` and `text-edit` are always single-element gestures — only
-        // `move` can span several (a multi-select drag), hence the count
-        // living on that variant alone (see CanvasUndoLabel's own header).
+        // `resize`, `text-edit`, `routing` and `reconnect` are always
+        // single-element gestures. `move` (a multi-select drag) and `style`
+        // (one click restyling the whole selection) can span several, which
+        // is why the count lives on exactly those two variants — see
+        // CanvasUndoLabel's own header.
         const label: CanvasUndoLabel =
-          gesture === 'move'
-            ? { gesture: 'move', count: operations.length }
+          gesture === 'move' || gesture === 'style'
+            ? { gesture, count: operations.length }
             : { gesture }
         push({ label, operations })
       })

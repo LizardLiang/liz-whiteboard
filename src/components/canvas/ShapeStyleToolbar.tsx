@@ -1,0 +1,315 @@
+// src/components/canvas/ShapeStyleToolbar.tsx
+// Fill and stroke controls for the selected shapes.
+//
+// A floating bar anchored above the selection, matching `ConnectorToolbar`'s
+// placement rule and for the same reason: a board holds many shapes and the
+// control has to say WHICH ones it is about. Anchoring it to the selection is
+// the only placement that answers that without a label.
+//
+// Every coordinate comes from `camera.ts`'s `worldToScreen` and the world rect
+// comes from `scene.ts`'s `boundsOfMany`. Nothing here computes a transform of
+// its own — the structural answer to W1/W3, both of which were a second,
+// divergent transform written at a call site. Reading the LIVE camera on every
+// render is also what makes the bar re-anchor on pan and zoom for free.
+//
+// SHAPES ONLY. A text element has a style but `drawElement` paints no fill or
+// outline for one, and a connector's stroke belongs with its routing picker,
+// which owns that selection already. Offering controls that visibly do
+// nothing is worse than offering none — the same rule `connectorToolbarTarget`
+// applies to a read-only viewer.
+//
+// AND NOT WHILE AN ELEMENT IS BEING EDITED. `render.ts`'s
+// `drawSelectionOverlay` already withholds the resize grips for the duration
+// of a text edit (`!selection.editing`); this bar follows the same rule, so
+// every piece of selection chrome appears and disappears together. Beyond the
+// consistency, a quick-created element is opened for typing while its own
+// create is still in flight, and a live toolbar mounted across that id
+// reconciliation was observed to cost the edit its text — see
+// canvas-quick-create.spec.ts's "opens the new element for typing".
+
+import { Ban } from 'lucide-react'
+import type { Camera } from '@/lib/canvas-engine/camera'
+import type {
+  CanvasElement,
+  CanvasElementStyle,
+  Scene,
+} from '@/lib/canvas-engine/scene'
+import { worldToScreen } from '@/lib/canvas-engine/camera'
+import { boundsOfMany, isCanvasShapeKind } from '@/lib/canvas-engine/scene'
+import {
+  CANVAS_SWATCHES,
+  DEFAULT_STROKE_WIDTH,
+  FILL_NONE,
+} from '@/lib/canvas-style-palette'
+import { Button } from '@/components/ui/button'
+
+/**
+ * How far ABOVE the selection's bounding box the bar sits, in screen pixels.
+ *
+ * Above rather than over: the bar is describing the paint of the shapes
+ * underneath it, and a bar covering them would hide the only feedback the
+ * user has that a swatch did anything.
+ */
+export const STYLE_TOOLBAR_OFFSET = 12
+
+/**
+ * One requested change, named by which half of the paint it touches.
+ *
+ * `value: null` is the "no paint" choice. It is one idea to the user and two
+ * mechanisms in the data — see `FILL_NONE`'s note in the palette module —
+ * which is exactly why the intent travels as a union and the translation
+ * happens in `applyStyleChange` rather than at each button.
+ */
+export type CanvasStyleChange =
+  | { target: 'fill'; value: string | null }
+  | { target: 'stroke'; value: string | null }
+
+/**
+ * The style an element should end up with after a change.
+ *
+ * Pure and exported because the stroke rules are not obvious and deserve to
+ * be tested directly rather than through a rendered toolbar:
+ *
+ *  - Clearing a stroke sets `strokeWidth: 0` and LEAVES the colour alone, so
+ *    re-enabling the stroke brings the shape's own colour back rather than
+ *    resetting it to a default the user never chose.
+ *  - Setting a stroke colour on a shape whose stroke is currently cleared has
+ *    to restore a width too, or the click would appear to do nothing at all.
+ *    An existing non-zero width is preserved, so re-colouring a 4px outline
+ *    does not silently thin it to 2px.
+ */
+export function applyStyleChange(
+  style: CanvasElementStyle,
+  change: CanvasStyleChange,
+): CanvasElementStyle {
+  if (change.target === 'fill') {
+    return { ...style, fill: change.value ?? FILL_NONE }
+  }
+  if (change.value === null) return { ...style, strokeWidth: 0 }
+  return {
+    ...style,
+    stroke: change.value,
+    strokeWidth: style.strokeWidth > 0 ? style.strokeWidth : DEFAULT_STROKE_WIDTH,
+  }
+}
+
+/**
+ * The shapes this toolbar would restyle, in scene order.
+ *
+ * Exported and pure for the same reason `connectorToolbarTarget` is: the
+ * conditions under which the bar appears are a rule, not an incidental
+ * arrangement of JSX.
+ *
+ * A MIXED selection (shapes plus a connector, say) yields just the shapes
+ * rather than nothing. Refusing to work on a mixed selection would mean a
+ * marquee that happened to catch one connector silently disabled the whole
+ * toolbar, with no visible reason.
+ */
+export function shapeStyleTargets(
+  scene: Scene,
+  selectedIds: ReadonlySet<string>,
+  readOnly: boolean,
+  /** The element currently open for typing, if any — see the file header. */
+  editingElementId: string | null = null,
+): Array<CanvasElement> {
+  if (readOnly || editingElementId !== null || selectedIds.size === 0) return []
+  return scene.elements.filter(
+    (element) => selectedIds.has(element.id) && isCanvasShapeKind(element.kind),
+  )
+}
+
+/**
+ * The value every target shares, or null when they disagree.
+ *
+ * A mixed selection showing NO active swatch is the honest answer and the
+ * conventional one — showing the first element's colour would claim the
+ * others match it.
+ */
+function shared<T>(
+  targets: ReadonlyArray<CanvasElement>,
+  read: (element: CanvasElement) => T,
+): T | null {
+  if (targets.length === 0) return null
+  const first = read(targets[0])
+  return targets.every((element) => read(element) === first) ? first : null
+}
+
+export interface ShapeStyleToolbarProps {
+  scene: Scene
+  selectedIds: ReadonlySet<string>
+  camera: Camera
+  readOnly: boolean
+  /** The element currently open for typing, if any. The bar hides while one is. */
+  editingElementId: string | null
+  /**
+   * Called with the shapes to restyle and the change to apply. Never called
+   * when the change would leave every target exactly as it is.
+   */
+  onStyleChange: (
+    targets: Array<CanvasElement>,
+    change: CanvasStyleChange,
+  ) => void
+}
+
+export function ShapeStyleToolbar({
+  scene,
+  selectedIds,
+  camera,
+  readOnly,
+  editingElementId,
+  onStyleChange,
+}: ShapeStyleToolbarProps) {
+  const targets = shapeStyleTargets(scene, selectedIds, readOnly, editingElementId)
+  const box = boundsOfMany(targets)
+  if (!box) return null
+
+  const anchor = worldToScreen(camera, { x: box.x + box.width / 2, y: box.y })
+
+  // `null` in either position means "the targets disagree", which renders as
+  // no active swatch — see `shared`.
+  const activeFill = shared(targets, (element) =>
+    element.style.fill === FILL_NONE ? null : element.style.fill,
+  )
+  const fillCleared = shared(targets, (element) => element.style.fill === FILL_NONE)
+  const strokeCleared = shared(targets, (element) => element.style.strokeWidth === 0)
+  const activeStroke = shared(targets, (element) =>
+    element.style.strokeWidth === 0 ? null : element.style.stroke,
+  )
+
+  const emit = (change: CanvasStyleChange) => {
+    // Every target already in the requested state writes nothing. Without
+    // this, a stray click on the active swatch pushes an undo entry that
+    // reverses to itself, and the user's Ctrl+Z appears to do nothing several
+    // times in a row — the same guard the routing picker states for itself.
+    const changed = targets.filter(
+      (element) =>
+        !stylesEqual(element.style, applyStyleChange(element.style, change)),
+    )
+    if (changed.length === 0) return
+    onStyleChange(changed, change)
+  }
+
+  return (
+    <div
+      className="absolute z-10 flex flex-col gap-1 rounded-md border bg-background/90 p-1.5 shadow-sm backdrop-blur-sm"
+      style={{
+        left: anchor.x,
+        top: anchor.y - STYLE_TOOLBAR_OFFSET,
+        // Centred on the selection and sitting entirely above it. A transform
+        // rather than a measured width, which would need a layout pass and
+        // would be wrong on the first frame of every selection.
+        transform: 'translate(-50%, -100%)',
+      }}
+      role="toolbar"
+      aria-label="Shape style"
+    >
+      <SwatchRow
+        rowLabel="Fill"
+        activeSwatchValue={activeFill}
+        noneActive={fillCleared === true}
+        readSwatch={(swatch) => swatch.fill}
+        onPick={(value) => emit({ target: 'fill', value })}
+      />
+      <SwatchRow
+        rowLabel="Stroke"
+        activeSwatchValue={activeStroke}
+        noneActive={strokeCleared === true}
+        readSwatch={(swatch) => swatch.stroke}
+        onPick={(value) => emit({ target: 'stroke', value })}
+      />
+    </div>
+  )
+}
+
+/** Do two styles paint identically? Field-wise, because `CanvasElementStyle` is a flat value. */
+function stylesEqual(a: CanvasElementStyle, b: CanvasElementStyle): boolean {
+  return (
+    a.fill === b.fill &&
+    a.stroke === b.stroke &&
+    a.strokeWidth === b.strokeWidth &&
+    a.fontSize === b.fontSize &&
+    a.color === b.color
+  )
+}
+
+interface SwatchRowProps {
+  rowLabel: string
+  /** The shared value across the targets, or null when they disagree or it is cleared. */
+  activeSwatchValue: string | null
+  /** Whether every target has this half of the paint turned off. */
+  noneActive: boolean
+  readSwatch: (swatch: (typeof CANVAS_SWATCHES)[number]) => string
+  onPick: (value: string | null) => void
+}
+
+/**
+ * How one swatch is drawn: a miniature of what picking it produces.
+ *
+ * The FILL row would otherwise be unusable. A fill is 10% alpha, so eight
+ * fill swatches rendered as flat circles are eight near-identical near-white
+ * dots — red, orange and amber are indistinguishable at that opacity. Giving
+ * the fill swatch the hue's SOLID colour as its border makes it legible while
+ * still showing the translucency it will actually paint, which is exactly
+ * what the shape on the board looks like.
+ *
+ * The stroke row needs none of that: it is already a solid colour.
+ */
+function swatchStyle(
+  row: string,
+  swatch: (typeof CANVAS_SWATCHES)[number],
+  value: string,
+): { backgroundColor: string; borderColor: string } {
+  return row === 'Fill'
+    ? { backgroundColor: value, borderColor: swatch.stroke }
+    : { backgroundColor: value, borderColor: value }
+}
+
+function SwatchRow({
+  rowLabel,
+  activeSwatchValue,
+  noneActive,
+  readSwatch,
+  onPick,
+}: SwatchRowProps) {
+  return (
+    <div className="flex items-center gap-1" role="group" aria-label={rowLabel}>
+      <span className="w-10 select-none pl-1 text-[10px] font-medium uppercase tracking-wide text-muted-foreground">
+        {rowLabel}
+      </span>
+      {CANVAS_SWATCHES.map((swatch) => {
+        const value = readSwatch(swatch)
+        const active = value === activeSwatchValue
+        return (
+          <button
+            key={swatch.id}
+            type="button"
+            // A plain button, not the shadcn `Button`: this control IS its
+            // colour, so any variant background would sit on top of the one
+            // thing it needs to show. The ring carries the selected state
+            // instead.
+            className={`h-5 w-5 rounded-full border-2 transition-shadow ${
+              active ? 'ring-2 ring-ring ring-offset-1 ring-offset-background' : ''
+            }`}
+            style={swatchStyle(rowLabel, swatch, value)}
+            aria-label={`${rowLabel} ${swatch.label}`}
+            aria-pressed={active}
+            title={`${rowLabel} ${swatch.label}`}
+            onClick={() => onPick(value)}
+          />
+        )
+      })}
+      <Button
+        type="button"
+        size="icon"
+        variant={noneActive ? 'default' : 'ghost'}
+        className="h-5 w-5"
+        aria-label={`${rowLabel} none`}
+        aria-pressed={noneActive}
+        title={`No ${rowLabel.toLowerCase()}`}
+        onClick={() => onPick(null)}
+      >
+        <Ban className="h-3 w-3" />
+      </Button>
+    </div>
+  )
+}

@@ -49,6 +49,13 @@ function describeGesture(label: CanvasUndoLabel): string {
       // Names the END moving, not the connector generally — the routing arm
       // below is also "a connector changed" and the two must not read alike.
       return 'moving a connector end'
+    case 'style':
+      // Names the PAINT, not "updating a shape": nothing moved and nothing
+      // resized, so a vaguer word would leave the user guessing which of
+      // several recent edits is about to come back.
+      return label.count > 1
+        ? `restyling ${label.count} shapes`
+        : 'restyling a shape'
     case 'routing':
       // Names the SHAPE change, not "updating a connector": the endpoints did
       // not move and nothing else about the row changed, so a vaguer word

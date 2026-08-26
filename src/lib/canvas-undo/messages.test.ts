@@ -70,6 +70,21 @@ describe('describeRedoSuccess — same gesture vocabulary, reapplied', () => {
 })
 
 describe('describeUndoRefusal — names the element, never who changed it', () => {
+  it('names restyling, singular and plural, and never calls it a move', () => {
+    // One click can restyle the whole selection, so the count matters: a
+    // toast saying "an element" after eight shapes changed colour understates
+    // what Ctrl+Z is about to reverse.
+    expect(describeUndoSuccess({ gesture: 'style', count: 1 })).toBe(
+      'Undid restyling a shape',
+    )
+    expect(describeUndoSuccess({ gesture: 'style', count: 8 })).toBe(
+      'Undid restyling 8 shapes',
+    )
+    expect(describeRedoSuccess({ gesture: 'style', count: 3 })).toBe(
+      'Redid restyling 3 shapes',
+    )
+  })
+
   it('names a changed rectangle without attributing it', () => {
     const message = describeUndoRefusal('rectangle', 'changed')
     expect(message).toBe(

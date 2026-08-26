@@ -118,6 +118,13 @@ export type CanvasUndoLabel =
    * describe two visibly different edits.
    */
   | { gesture: 'reconnect' }
+  /**
+   * Fill or stroke changed from the floating style toolbar. Carries a
+   * `count` — like `move` and unlike `routing` — because one click restyles
+   * every selected shape, and a toast saying "an element" after eight of
+   * them changed colour would understate what Ctrl+Z is about to reverse.
+   */
+  | { gesture: 'style'; count: number }
   | { gesture: 'delete'; count: number }
   /**
    * A creation-handle gesture (canvas quick-create-handles tactical plan,

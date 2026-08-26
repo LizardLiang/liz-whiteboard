@@ -25,6 +25,7 @@ import {
 } from 'lucide-react'
 import { TextInputProxy } from './TextInputProxy'
 import { ConnectorToolbar } from './ConnectorToolbar'
+import { ShapeStyleToolbar, applyStyleChange } from './ShapeStyleToolbar'
 import { SHAPE_TOOL_SHORTCUTS, useCanvasInput } from './use-canvas-input'
 import { useFrameLoop } from './use-frame-loop'
 import { useCanvasHighlight } from './use-canvas-highlight'
@@ -40,6 +41,7 @@ import type {
 } from '@/lib/canvas-engine/scene'
 import type { CanvasElementRecord } from '@/data/models'
 import type { CanvasTool } from './use-canvas-input'
+import type { CanvasStyleChange } from './ShapeStyleToolbar'
 import { toEngineScene } from '@/lib/canvas-element-adapter'
 import { drawScene, measurerFor } from '@/lib/canvas-engine/render'
 import { CANVAS_SHAPE_KINDS, updateElement } from '@/lib/canvas-engine/scene'
@@ -309,6 +311,42 @@ export function CanvasBoard({
     [callbacks],
   )
 
+  /**
+   * Change the fill or stroke of every selected shape.
+   *
+   * Structurally identical to `handleRoutingChange` above, and for the same
+   * reasons: the LOCAL scene is written first so the shapes repaint on the
+   * next frame (`updateElements` applies nothing optimistically — it only
+   * reconciles on ack), and the write goes through `callbacks.onUpdate` so
+   * the edit lands on the undo stack like every other one.
+   *
+   * The one difference is arity. A routing change is always one connector; a
+   * restyle is however many shapes are selected, so both the optimistic
+   * writes and the `onUpdate` call are batched — ONE call, therefore one undo
+   * entry, per the one-gesture-one-entry rule.
+   */
+  const handleStyleChange = useCallback(
+    (targets: Array<CanvasElement>, change: CanvasStyleChange) => {
+      const updated = targets.map((element) => ({
+        ...element,
+        style: applyStyleChange(element.style, change),
+      }))
+      setScene((prev) => {
+        let next = prev
+        for (const element of updated) {
+          if (!next.byId.has(element.id)) continue
+          next = updateElement(next, element.id, { style: element.style })
+        }
+        return next
+      })
+      // `targets` is the pre-state, captured before the change — undo's
+      // inverse writes it back. Same rule every gesture in
+      // use-canvas-input.ts follows.
+      callbacks?.onUpdate?.(updated, targets, 'style')
+    },
+    [callbacks],
+  )
+
   // ── context ──────────────────────────────────────────────────────────────
   useEffect(() => {
     ctxRef.current = canvasRef.current?.getContext('2d') ?? null
@@ -532,6 +570,22 @@ export function CanvasBoard({
         camera={camera}
         readOnly={effectiveReadOnly}
         onRoutingChange={handleRoutingChange}
+      />
+
+      {/* Fill and stroke for the selected shapes. Rendered unconditionally
+          for the same reason the routing picker is — it decides for itself
+          whether there are shapes to be about, so the condition lives in one
+          testable place (`shapeStyleTargets`) rather than as a chain of `&&`
+          here. The two bars cannot collide: this one needs at least one
+          selected SHAPE, and the routing picker needs a selection of exactly
+          one CONNECTOR. */}
+      <ShapeStyleToolbar
+        scene={input.displayScene}
+        selectedIds={input.selectedIds}
+        camera={camera}
+        readOnly={effectiveReadOnly}
+        editingElementId={input.editing?.elementId ?? null}
+        onStyleChange={handleStyleChange}
       />
 
       <TextInputProxy
