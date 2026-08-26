@@ -23,12 +23,14 @@ import {
   CREATION_HANDLE_DIRECTIONS,
   CREATION_HANDLE_HIT,
   CREATION_HANDLE_OFFSET,
+  CREATION_HANDLE_REACH,
   RESIZE_HANDLES,
   connectorEndpointRects,
   creationHandleRects,
   creationHandleTarget,
   drawScene,
   handleRects,
+  withinCreationHandleReach,
 } from './render'
 import { connectorPathOf } from './hit-test'
 import { DEFAULT_ELEMENT_STYLE, sceneFrom } from './scene'
@@ -393,6 +395,98 @@ describe('creationHandleRects', () => {
     const origin = creationHandleRects(CAMERA, rect)
     expect(panned.right.x).toBe(origin.right.x - 10)
     expect(panned.right.y).toBe(origin.right.y - 20)
+  })
+})
+
+describe('withinCreationHandleReach', () => {
+  // The region that KEEPS handles showing, as opposed to the rectangles that
+  // GRAB one. They were the same test until a hover-shown handle turned out
+  // to be unreachable: the grab rects span the full reach OUT from an edge but
+  // only half the hit size ALONG it, so the pointer leaving a hovered element
+  // crossed a ring nothing owned, down a corridor aimed at one edge midpoint.
+  const rect = { x: 0, y: 0, width: 100, height: 100 }
+
+  it('covers the element itself', () => {
+    expect(withinCreationHandleReach(CAMERA, rect, { x: 50, y: 50 })).toBe(true)
+  })
+
+  it('covers the dead ring the grab rects left to nobody', () => {
+    // Just outside the edge, and closer in than the nearest grab rect. This
+    // exact point used to drop the hover.
+    const gap = CREATION_HANDLE_OFFSET - CREATION_HANDLE_HIT / 2
+    expect(gap).toBeGreaterThan(0)
+    const justOutside = { x: 100 + gap / 2, y: 50 }
+    expect(creationHandleRects(CAMERA, rect).right).toBeDefined()
+    const grab = creationHandleRects(CAMERA, rect).right
+    expect(justOutside.x).toBeLessThan(grab.x)
+    expect(withinCreationHandleReach(CAMERA, rect, justOutside)).toBe(true)
+  })
+
+  it('covers an approach that is nowhere near an edge midpoint', () => {
+    // The lateral dead zone: past half the hit size along an edge, no grab
+    // rect contains the point at all, so this failed for EVERY diagonal or
+    // corner approach rather than intermittently.
+    const offCentre = { x: 100 + 10, y: 4 }
+    const grabs = creationHandleRects(CAMERA, rect)
+    for (const direction of CREATION_HANDLE_DIRECTIONS) {
+      const g = grabs[direction]
+      const inside =
+        offCentre.x >= g.x &&
+        offCentre.x <= g.x + g.width &&
+        offCentre.y >= g.y &&
+        offCentre.y <= g.y + g.height
+      expect(inside).toBe(false)
+    }
+    expect(withinCreationHandleReach(CAMERA, rect, offCentre)).toBe(true)
+  })
+
+  it('reaches exactly as far as the furthest grab rect, and no further', () => {
+    // The drift guard: if the region stopped short of a handle, that handle
+    // would vanish as the pointer entered it. If it reached well past, a
+    // shape would hold its handles while the pointer was visibly clear of it.
+    const grab = creationHandleRects(CAMERA, rect).right
+    const outerEdge = grab.x + grab.width
+    expect(outerEdge).toBe(100 + CREATION_HANDLE_REACH)
+    expect(withinCreationHandleReach(CAMERA, rect, { x: outerEdge, y: 50 })).toBe(true)
+    expect(
+      withinCreationHandleReach(CAMERA, rect, { x: outerEdge + 1, y: 50 }),
+    ).toBe(false)
+  })
+
+  it('drops beyond the region on every side', () => {
+    const out = CREATION_HANDLE_REACH + 2
+    expect(withinCreationHandleReach(CAMERA, rect, { x: -out, y: 50 })).toBe(false)
+    expect(withinCreationHandleReach(CAMERA, rect, { x: 50, y: -out })).toBe(false)
+    expect(withinCreationHandleReach(CAMERA, rect, { x: 100 + out, y: 50 })).toBe(false)
+    expect(withinCreationHandleReach(CAMERA, rect, { x: 50, y: 100 + out })).toBe(false)
+  })
+
+  it('keeps a constant SCREEN size while the element scales', () => {
+    // Same rule the handles themselves follow: they are a fixed on-screen
+    // size at every zoom, so the region covering them has to be too. A
+    // world-space margin would be huge zoomed in and useless zoomed out.
+    for (const zoom of [0.25, 1, 3]) {
+      const camera: Camera = { x: 0, y: 0, zoom }
+      const right = 100 * zoom
+      expect(
+        withinCreationHandleReach(camera, rect, {
+          x: right + CREATION_HANDLE_REACH,
+          y: 50 * zoom,
+        }),
+      ).toBe(true)
+      expect(
+        withinCreationHandleReach(camera, rect, {
+          x: right + CREATION_HANDLE_REACH + 2,
+          y: 50 * zoom,
+        }),
+      ).toBe(false)
+    }
+  })
+
+  it('follows the camera', () => {
+    const panned: Camera = { x: 10, y: 20, zoom: 1 }
+    expect(withinCreationHandleReach(panned, rect, { x: 50, y: 50 })).toBe(true)
+    expect(withinCreationHandleReach(panned, rect, { x: -10, y: -20 })).toBe(true)
   })
 })
 

@@ -49,7 +49,16 @@ export interface CanvasEngineTestHook {
   selectedIds: Array<string>
   /** Id of the element currently being typed into, or null. */
   editingElementId: string | null
-  /** The element the pointer is over, or null (canvas quick-create-handles, Wave 6, step 18). */
+  /**
+   * The element that OWNS the hover, or null (canvas quick-create-handles,
+   * Wave 6, step 18).
+   *
+   * Not "the element the pointer is over", which is what this used to say:
+   * hover survives while the pointer travels within the creation handles'
+   * reach of the element, so a handle shown on hover can actually be pressed
+   * (`withinCreationHandleReach`). The pointer is frequently outside the
+   * element whose id this reports.
+   */
   hoveredId: string | null
   /**
    * The element currently showing creation handles, or null.

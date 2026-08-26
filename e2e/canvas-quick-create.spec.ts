@@ -254,6 +254,106 @@ async function loginAsViewer(browser: Browser): Promise<Page> {
   throw new Error('viewer login failed: session_token cookie was never set')
 }
 
+/**
+ * Walk the pointer from a point to a point in small steps, asserting the
+ * handles survive the whole way.
+ *
+ * The rest of this suite reaches a handle with ONE `mouse.move` to its centre,
+ * which is what let a real defect sit here green: that single sample lands
+ * inside the handle's grab rect, so the keep-alive fires and nothing between
+ * the element and the handle is ever sampled. A hand emits samples the whole
+ * way across. `steps` is what makes this a test of the traverse rather than of
+ * the destination.
+ */
+async function traverse(
+  page: Page,
+  from: { x: number; y: number },
+  to: { x: number; y: number },
+  expectedTarget: string,
+) {
+  await page.mouse.move(from.x, from.y)
+  await expect
+    .poll(async () => (await engine(page)).creationHandleTargetId)
+    .toBe(expectedTarget)
+
+  const steps = 20
+  for (let i = 1; i <= steps; i += 1) {
+    const t = i / steps
+    await page.mouse.move(from.x + (to.x - from.x) * t, from.y + (to.y - from.y) * t)
+    const state = await engine(page)
+    expect(
+      state.creationHandleTargetId,
+      `handles vanished at step ${i}/${steps}`,
+    ).toBe(expectedTarget)
+  }
+}
+
+// ── handles stay reachable ──────────────────────────────────────────────────
+
+test.describe('a hover-shown handle can actually be reached', () => {
+  test('the handles survive a stepped traverse and the press lands', async ({
+    page,
+  }) => {
+    const state = await openBoard(page)
+    const rect = byId(state, IDS.canvasRect)!
+    const centre = await worldToPage(page, {
+      x: rect.x + rect.width / 2,
+      y: rect.y + rect.height / 2,
+    })
+
+    await hoverElement(page, IDS.canvasRect)
+    const handle = await handlePoint(page, 'top')
+    await traverse(page, centre, handle, IDS.canvasRect)
+
+    // ...and the gesture the whole thing exists for still works from here.
+    const before = (await engine(page)).elements.length
+    await page.mouse.down()
+    await page.mouse.up()
+    await expect
+      .poll(async () => (await engine(page)).elements.length, { timeout: 10_000 })
+      .toBeGreaterThan(before)
+  })
+
+  test('the handles survive an approach that leaves near a corner', async ({
+    page,
+  }) => {
+    // The lateral dead zone: a grab rect reaches far OUT from an edge but
+    // barely along it, so an approach leaving the element near a corner used
+    // to miss every rect and drop the hover every single time.
+    const state = await openBoard(page)
+    const rect = byId(state, IDS.canvasRect)!
+    await hoverElement(page, IDS.canvasRect)
+
+    const nearCorner = await worldToPage(page, {
+      x: rect.x + rect.width - 6,
+      y: rect.y + 6,
+    })
+    const justOutside = await worldToPage(page, {
+      x: rect.x + rect.width + 6,
+      y: rect.y - 6,
+    })
+    await traverse(page, nearCorner, justOutside, IDS.canvasRect)
+  })
+
+  test('leaving the neighbourhood entirely does drop them', async ({ page }) => {
+    // The counterpart: the region is generous, not permanent.
+    const state = await openBoard(page)
+    const rect = byId(state, IDS.canvasRect)!
+    await hoverElement(page, IDS.canvasRect)
+
+    const far = await worldToPage(page, {
+      x: rect.x + rect.width + 400,
+      y: rect.y + rect.height + 400,
+    })
+    await page.mouse.move(far.x, far.y)
+    await expect
+      .poll(async () => (await engine(page)).creationHandleTargetId, {
+        timeout: 5_000,
+      })
+      .toBeNull()
+  })
+})
+
 // ── handles appear ──────────────────────────────────────────────────────────
 
 test.describe('the handles appear', () => {

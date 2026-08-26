@@ -78,6 +78,7 @@ import {
   handleRects,
   layoutElementText,
   textFrame,
+  withinCreationHandleReach,
 } from '@/lib/canvas-engine/render'
 import { quickCreatePlacement } from '@/lib/canvas-engine/quick-create'
 import { cloneTargets, planClone } from '@/lib/canvas-engine/clone'
@@ -1167,22 +1168,42 @@ export function useCanvasInput({
           setHoveredId(null)
           return
         }
-        const hit = hitTest(latest.current.scene, world)
-        if (hit) {
-          setHoveredId(hit.id)
-          return
-        }
-        // Nothing under the pointer — but the handles sit OUTSIDE their
-        // element, so moving from the element towards one of them leaves its
-        // bounds. Dropping hover here would make a hover-shown handle
-        // impossible to grab: it vanishes exactly as you reach for it.
         const previous = hoveredIdRef.current
           ? latest.current.scene.byId.get(hoveredIdRef.current)
           : undefined
+
+        const hit = hitTest(latest.current.scene, world)
+        // A connector under the pointer does NOT take the hover while another
+        // element holds it. Hover exists only to decide where creation
+        // handles go, and a connector never gets them (`creationHandleTarget`
+        // returns null for one), so moving the hover onto a connector can
+        // only ever CLEAR handles. That matters here specifically: a
+        // connector attached to a shape leaves its edge exactly where that
+        // edge's handle sits, so the pointer crosses one on the way to the
+        // handle it is reaching for. `hitTest` already prefers non-connectors,
+        // so a connector only wins when no shape is under the point — which
+        // is what makes ignoring it safe rather than sticky.
+        if (hit && !(hit.connector && previous && !previous.connector)) {
+          setHoveredId(hit.id)
+          return
+        }
+
+        // Nothing under the pointer that takes the hover — but the handles sit
+        // OUTSIDE their element, so moving from the element towards one of
+        // them leaves its bounds. Hover therefore survives anywhere within the
+        // handles' own reach of it. Testing the handle RECTANGLES here instead
+        // (which is what this did) left the gap between element and handle
+        // owned by nobody, and a hover-shown handle unreachable by any
+        // approach that was not perpendicular to an edge midpoint — see
+        // `withinCreationHandleReach`.
         if (
           previous &&
           !previous.connector &&
-          creationHandleAt(previous, screen)
+          withinCreationHandleReach(
+            latest.current.camera,
+            bounds(previous),
+            screen,
+          )
         ) {
           return
         }
@@ -1283,7 +1304,6 @@ export function useCanvasInput({
       }
     },
     [
-      creationHandleAt,
       gesture,
       screenFromEvent,
       setCamera,

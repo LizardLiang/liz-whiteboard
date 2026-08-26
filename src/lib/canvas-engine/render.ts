@@ -187,6 +187,51 @@ export const CREATION_HANDLE_SIZE = 10
  */
 export const CREATION_HANDLE_HIT = 28
 
+/**
+ * How far a creation handle REACHES from its element's edge, in screen px —
+ * the outer edge of the furthest grab rectangle.
+ *
+ * Derived, never restated, because a second copy of this number is how the
+ * region below and the rectangles above start describing different places.
+ */
+export const CREATION_HANDLE_REACH =
+  CREATION_HANDLE_OFFSET + CREATION_HANDLE_HIT / 2
+
+/**
+ * Is a screen point close enough to this element to KEEP its creation handles
+ * showing?
+ *
+ * The distinction that matters: `creationHandleRects` is what GRABS a handle,
+ * this is what keeps the handles up long enough to reach one. They were the
+ * same test until now, and that was the bug — a handle's grab rect spans
+ * `CREATION_HANDLE_REACH` out from an edge but only `CREATION_HANDLE_HIT / 2`
+ * ALONG it, so the pointer leaving a hovered element had to cross a dead ring
+ * (nothing owns the first `CREATION_HANDLE_OFFSET - CREATION_HANDLE_HIT / 2`
+ * pixels) down a corridor aimed at one edge midpoint. Every other approach —
+ * diagonal, near a corner, anywhere off-centre along an edge — dropped the
+ * hover deterministically, and once dropped it could not come back without
+ * re-entering the element. A hover-shown handle was effectively unclickable.
+ *
+ * The region is the element's bounds inflated by the handles' own reach, so
+ * it covers every handle and every gap between them with one predicate and no
+ * corridor to aim down. In SCREEN space, like the constants it is built from:
+ * the handles are a fixed on-screen size at every zoom, so the region that
+ * keeps them up has to be too.
+ */
+export function withinCreationHandleReach(
+  camera: Camera,
+  rect: WorldRect,
+  screen: Point,
+): boolean {
+  const r = worldRectToScreen(camera, rect)
+  return (
+    screen.x >= r.x - CREATION_HANDLE_REACH &&
+    screen.x <= r.x + r.width + CREATION_HANDLE_REACH &&
+    screen.y >= r.y - CREATION_HANDLE_REACH &&
+    screen.y <= r.y + r.height + CREATION_HANDLE_REACH
+  )
+}
+
 /** Which END of a connector a grip belongs to. */
 export type ConnectorEnd = 'source' | 'target'
 

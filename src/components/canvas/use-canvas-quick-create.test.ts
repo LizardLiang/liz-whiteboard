@@ -278,6 +278,139 @@ describe('idle hover decides where handles are drawn', () => {
     expect(h.api.hoveredId).toBeNull()
   })
 
+  it('SURVIVES a stepped traverse from the element to a handle', () => {
+    // The test that would have caught the real defect, and the reason it went
+    // unnoticed: every other case here JUMPS the pointer from inside the
+    // element straight to the handle centre, so the single sample that lands
+    // inside the grab rect keeps the hover. A hand emits samples the whole way
+    // across, and the gap between the element's edge and the grab rect used to
+    // belong to nobody — one sample there dropped the hover permanently, since
+    // the keep-alive read the id it had just cleared.
+    const h = setup()
+    const source = makeRect()
+    const target = handleCentre(source, 'right')
+    act(() => {
+      h.api.canvasHandlers.onPointerMove(
+        pointerEvent({ clientX: 50, clientY: 50 }),
+      )
+    })
+    h.sync()
+
+    const steps = 24
+    for (let i = 1; i <= steps; i += 1) {
+      const t = i / steps
+      act(() => {
+        h.api.canvasHandlers.onPointerMove(
+          pointerEvent({
+            clientX: 50 + (target.clientX - 50) * t,
+            clientY: 50 + (target.clientY - 50) * t,
+          }),
+        )
+      })
+      h.sync()
+      expect(
+        h.api.hoveredId,
+        `hover dropped at step ${i}/${steps}`,
+      ).toBe(SOURCE_ID)
+    }
+  })
+
+  it('SURVIVES a corner approach, nowhere near an edge midpoint', () => {
+    // The lateral dead zone. A grab rect spans the full reach out from an edge
+    // but only half the hit size along it, so leaving the element near a
+    // corner missed every rect — this direction failed every single time
+    // rather than intermittently.
+    const h = setup()
+    act(() => {
+      h.api.canvasHandlers.onPointerMove(
+        pointerEvent({ clientX: 50, clientY: 50 }),
+      )
+    })
+    h.sync()
+    // Diagonally out past the top-right corner, well clear of both the top
+    // and right handles.
+    for (const point of [
+      { clientX: 95, clientY: 5 },
+      { clientX: 105, clientY: -5 },
+      { clientX: 115, clientY: -15 },
+    ]) {
+      act(() => {
+        h.api.canvasHandlers.onPointerMove(pointerEvent(point))
+      })
+      h.sync()
+      expect(
+        h.api.hoveredId,
+        `hover dropped at (${point.clientX}, ${point.clientY})`,
+      ).toBe(SOURCE_ID)
+    }
+  })
+
+  it('KEEPS hover when the pointer crosses a connector attached to the shape', () => {
+    // A connector leaves a shape's edge exactly where that edge's handle sits,
+    // so the pointer reaching for the handle crosses one by construction.
+    // Moving the hover onto a connector can only ever CLEAR handles —
+    // `creationHandleTarget` gives a connector none — so a connector never
+    // takes the hover from an element that has it.
+    const h = setup([
+      makeRect(),
+      {
+        ...makeRect(),
+        id: CONNECTOR_ID,
+        kind: 'connector',
+        zIndex: 1,
+        width: 1,
+        height: 1,
+        connector: {
+          source: { kind: 'point', point: { x: 100, y: 50 } },
+          target: { kind: 'point', point: { x: 300, y: 50 } },
+          routing: 'straight',
+        },
+      },
+    ])
+    act(() => {
+      h.api.canvasHandlers.onPointerMove(
+        pointerEvent({ clientX: 50, clientY: 50 }),
+      )
+    })
+    h.sync()
+    expect(h.api.hoveredId).toBe(SOURCE_ID)
+
+    // Directly on the connector's line, between the shape and its right handle.
+    act(() => {
+      h.api.canvasHandlers.onPointerMove(
+        pointerEvent({ clientX: 110, clientY: 50 }),
+      )
+    })
+    h.sync()
+    expect(h.api.hoveredId).toBe(SOURCE_ID)
+  })
+
+  it('hands the hover to a real element that takes the pointer', () => {
+    // The region is not sticky against an actual hit: whatever the pointer is
+    // genuinely over wins, which is what keeps two neighbouring shapes'
+    // regions from fighting over an overlap.
+    const h = setup([
+      makeRect(),
+      makeRect({ id: OTHER_ID, x: 120, y: 0, zIndex: 1 }),
+    ])
+    act(() => {
+      h.api.canvasHandlers.onPointerMove(
+        pointerEvent({ clientX: 50, clientY: 50 }),
+      )
+    })
+    h.sync()
+    expect(h.api.hoveredId).toBe(SOURCE_ID)
+
+    // 130 is inside the second rectangle AND inside the first one's region.
+    act(() => {
+      h.api.canvasHandlers.onPointerMove(
+        pointerEvent({ clientX: 130, clientY: 50 }),
+      )
+    })
+    h.sync()
+    expect(h.api.hoveredId).toBe(OTHER_ID)
+  })
+
   it('never hovers on a read-only board', () => {
     // A read-only board sends every press to pan, so handles there would be
     // decoration that does nothing.
