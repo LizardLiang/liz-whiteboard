@@ -1060,7 +1060,14 @@ export function useCanvasInput({
         // selected nothing and silently began resizing the connector instead.
         // Export-what-you-draw runs in BOTH directions: input must not test
         // what the renderer declined to draw.
-
+        //
+        // The converse is NOT symmetric, and deliberately so: the renderer
+        // grips every element of a MULTI-selection too, and this block never
+        // sees those because it is gated on a selection of exactly one. There
+        // they report "selected" and nothing more — resizing a group is not a
+        // gesture this milestone has — so a press on one falls through to the
+        // element beneath and starts a move, which is what a press inside a
+        // multi-selection should do anyway.
         if (only && !only.connector) {
           const grips = handleRects(latest.current.camera, only)
           const grabbed = RESIZE_HANDLES.find((handle) =>

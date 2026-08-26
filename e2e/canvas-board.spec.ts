@@ -146,6 +146,51 @@ async function worldToPage(page: Page, world: { x: number; y: number }) {
   }
 }
 
+/**
+ * The pixels in a small SCREEN-space box centred on a world point.
+ *
+ * The one thing `window.__canvasEngine` cannot tell you: whether selecting
+ * something CHANGED anything on screen. The engine reported the marquee's
+ * elements as selected while the canvas looked untouched, because the only
+ * mark a multi-selection drew was a 1px outline on each element's own bounds
+ * in `chrome.accent` — which IS `DEFAULT_ELEMENT_STYLE.stroke`, so a
+ * default-styled rectangle had its border repainted the colour it already
+ * was. Comparing the same box before and after is what makes that visible to
+ * a test; a colour assertion would only re-encode today's palette.
+ */
+async function pixelsAround(
+  page: Page,
+  world: { x: number; y: number },
+  radius = 10,
+): Promise<Array<number>> {
+  const { camera } = await engine(page)
+  const pixels = await page.evaluate(
+    ({ target, view, r }) => {
+      const c = document.querySelector('canvas')
+      const ctx = c?.getContext('2d')
+      if (!c || !ctx) return null
+      const ratio = c.width / c.getBoundingClientRect().width
+      const cx = Math.round((target.x - view.x) * view.zoom * ratio)
+      const cy = Math.round((target.y - view.y) * view.zoom * ratio)
+      const size = Math.round(r * 2 * ratio)
+      const x = Math.max(0, cx - size / 2)
+      const y = Math.max(0, cy - size / 2)
+      if (x + size > c.width || y + size > c.height) return null
+      return [...ctx.getImageData(x, y, size, size).data]
+    },
+    { target: world, view: camera, r: radius },
+  )
+  if (!pixels) throw new Error('the probe box falls outside the canvas')
+  return pixels
+}
+
+/** How many of two equal-length pixel buffers differ, per channel. */
+function channelsDiffering(a: Array<number>, b: Array<number>): number {
+  let n = 0
+  for (let i = 0; i < a.length; i += 1) if (a[i] !== b[i]) n += 1
+  return n
+}
+
 async function selectTool(page: Page, label: string) {
   await page.click(`[aria-label="${label}"]`)
 }
@@ -424,6 +469,54 @@ test.describe('selection and transform', () => {
     const state = await engine(page)
     expect([...state.selectedIds].sort()).toEqual(
       [IDS.canvasRect, IDS.canvasText].sort(),
+    )
+  })
+
+  test('a marquee selection is VISIBLE, not just true in engine state', async ({
+    page,
+  }) => {
+    // The regression: `selectedIds` was correct and the board looked
+    // unchanged, so a marquee read as "nothing happened". Grips were drawn
+    // for a selection of exactly one, and a marquee's selection got nothing
+    // but an outline it was already wearing.
+    await openBoard(page)
+    // The seeded rectangle's NW corner, where a grip sits.
+    const corner = { x: 300, y: 300 }
+    const unselected = await pixelsAround(page, corner)
+
+    await dragMouse(
+      page,
+      await worldToPage(page, { x: 250, y: 250 }),
+      await worldToPage(page, { x: 620, y: 620 }),
+    )
+    await expect
+      .poll(async () => (await engine(page)).selectedIds.length)
+      .toBe(2)
+
+    const selected = await pixelsAround(page, corner)
+    expect(selected).toHaveLength(unselected.length)
+    // An 8px grip inside a 20px box: hundreds of channels move. The bound
+    // is deliberately far below that and far above camera jitter, so it fails
+    // on "nothing was drawn" rather than on a one-pixel difference.
+    expect(channelsDiffering(unselected, selected)).toBeGreaterThan(100)
+
+    // ...and clearing the selection puts the corner back, so the delta above
+    // was the grip and not some unrelated repaint that happened to land in
+    // the same box.
+    // Empty board, well inside the viewport — a click outside the canvas
+    // never reaches the board and would leave the selection standing.
+    const empty = await worldToPage(page, { x: 900, y: 200 })
+    await page.mouse.click(empty.x, empty.y)
+    await expect
+      .poll(async () => (await engine(page)).selectedIds.length)
+      .toBe(0)
+    // Compared against the SELECTED delta rather than to zero: a repaint at
+    // an identical camera is not bit-identical every time (one run differed
+    // by a handful of channels), and an exact-equality assertion here would
+    // be flaky for a reason that has nothing to do with what it is proving.
+    const cleared = await pixelsAround(page, corner)
+    expect(channelsDiffering(unselected, cleared)).toBeLessThan(
+      channelsDiffering(unselected, selected) / 4,
     )
   })
 

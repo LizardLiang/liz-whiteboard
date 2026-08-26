@@ -933,22 +933,29 @@ function drawSelectionOverlay(
     )
   }
 
-  // Grips for a single selection only. A multi-selection gets an outline and
-  // can be moved; resizing several elements at once needs a group transform
-  // that milestone 1 does not have, and drawing grips that do nothing would
-  // be worse than drawing none.
+  // Grips on EVERY selected element — one selected element or ten, the mark
+  // is the same one a click puts on a shape. They only resize on a selection
+  // of exactly one, which is what `use-canvas-input` hit-tests; on a
+  // multi-selection they report "selected" and a press on one falls through
+  // to the move gesture. Grips used to be drawn for a single selection only,
+  // which left a marquee looking like it had selected nothing: the outline
+  // above is stroked in `chrome.accent`, and that IS
+  // `DEFAULT_ELEMENT_STYLE.stroke`, so a default-styled rectangle had its own
+  // border repainted the colour it already was.
   //
-  // Never for a connector: it has no independent bounds to resize, so
-  // `handleRects` would place eight grips around its placeholder and every
-  // one of them would drag something meaningless.
-  if (selected.length === 1 && !selected[0].connector && !selection.editing) {
-    const grips = handleRects(camera, selected[0])
-    for (const handle of RESIZE_HANDLES) {
-      const g = grips[handle]
-      ctx.fillStyle = chrome.handleFill
-      ctx.fillRect(g.x, g.y, g.width, g.height)
-      ctx.strokeStyle = chrome.accent
-      ctx.strokeRect(g.x + 0.5, g.y + 0.5, g.width - 1, g.height - 1)
+  // Never for a connector: it has no independent bounds, so `handleRects`
+  // would pile all eight onto its 1x1 placeholder.
+  if (!selection.editing) {
+    for (const element of selected) {
+      if (element.connector) continue
+      const grips = handleRects(camera, element)
+      for (const handle of RESIZE_HANDLES) {
+        const g = grips[handle]
+        ctx.fillStyle = chrome.handleFill
+        ctx.fillRect(g.x, g.y, g.width, g.height)
+        ctx.strokeStyle = chrome.accent
+        ctx.strokeRect(g.x + 0.5, g.y + 0.5, g.width - 1, g.height - 1)
+      }
     }
   }
 

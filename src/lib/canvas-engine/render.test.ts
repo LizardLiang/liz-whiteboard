@@ -335,7 +335,13 @@ describe('drawScene — selection affordances are screen space', () => {
     expect(firstGripAt).toBeGreaterThan(restoreAt)
   })
 
-  it('omits grips for a multi-selection but still outlines every element', () => {
+  it('grips every element of a multi-selection, exactly as a click does', () => {
+    // The regression this guards: grips used to be drawn for a selection of
+    // exactly one, so a marquee over several shapes drew nothing but a 1px
+    // outline on each element's own bounds in `chrome.accent` — which is
+    // `DEFAULT_ELEMENT_STYLE.stroke`. A default-styled rectangle had its
+    // border repainted the colour it already was, and the selection was
+    // invisible.
     const a = makeElement({ id: 'a', zIndex: 0 })
     const b = makeElement({ id: 'b', zIndex: 1, x: 400 })
     const rec = createRecorder()
@@ -349,12 +355,53 @@ describe('drawScene — selection affordances are screen space', () => {
     const grips = rec
       .opsOfType('fillRect')
       .filter((entry) => entry.args[2] === HANDLE_SIZE)
-    expect(grips).toHaveLength(0)
+    expect(grips).toHaveLength(RESIZE_HANDLES.length * 2)
+
+    const expected = new Set(
+      [a, b].flatMap((element) => {
+        const r = handleRects({ x: 0, y: 0, zoom: 1 }, element)
+        return RESIZE_HANDLES.map((handle) => `${r[handle].x},${r[handle].y}`)
+      }),
+    )
+    for (const grip of grips) {
+      expect(expected.has(`${grip.args[0]},${grip.args[1]}`)).toBe(true)
+    }
+
     // Two outlines: element bounds minus the 1px stroke inset.
     const outlines = rec
       .opsOfType('strokeRect')
       .filter((entry) => entry.args[2] === 199)
     expect(outlines).toHaveLength(2)
+  })
+
+  it('never grips a connector, whose bounds are a 1x1 placeholder', () => {
+    // All eight would pile onto the same point, and the mark would read as a
+    // stray dot at the connector's origin.
+    const shape = makeElement({ id: 'a' })
+    const line = makeElement({
+      id: 'c',
+      kind: 'connector',
+      zIndex: 1,
+      width: 1,
+      height: 1,
+      connector: {
+        source: { kind: 'point', point: { x: 0, y: 0 } },
+        target: { kind: 'point', point: { x: 50, y: 50 } },
+        routing: 'straight',
+      },
+    })
+    const rec = createRecorder()
+    drawScene(
+      rec.ctx,
+      sceneFrom([shape, line]),
+      { x: 0, y: 0, zoom: 1 },
+      viewport(),
+      { ids: new Set(['a', 'c']) },
+    )
+    const grips = rec
+      .opsOfType('fillRect')
+      .filter((entry) => entry.args[2] === HANDLE_SIZE)
+    expect(grips).toHaveLength(RESIZE_HANDLES.length)
   })
 
   it('omits grips while text is being edited', () => {
