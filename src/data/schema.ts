@@ -1003,19 +1003,139 @@ export const canvasElementStyleSchema = z.strictObject({
   color: cssColorSchema.default(DEFAULT_ELEMENT_STYLE.color),
 })
 
-/** The element kinds milestone 1 renders (see canvas-engine/scene.ts). */
-export const canvasElementKindSchema = z.enum(['rectangle', 'text'])
+/** The element kinds the engine renders (see canvas-engine/scene.ts). */
+export const canvasElementKindSchema = z.enum(['rectangle', 'text', 'connector'])
 
 /**
- * Kind-specific payload, a discriminated union on `kind`. Both milestone-1
- * arms are empty objects, and that is deliberate — exactly as
+ * How a connector is drawn between its two endpoints — FigJam's three line
+ * types, chosen per connector by the user (canvas quick-create-handles
+ * tactical plan, decision F3).
+ *
+ * All three are DERIVED shapes: none of them stores a path. They differ only
+ * in how `canvas-engine/connector-geometry.ts` turns the two endpoints' live
+ * bounds into points, so switching routing is a props write and nothing else.
+ */
+export const canvasConnectorRoutingSchema = z.enum([
+  'straight',
+  'elbow',
+  'curved',
+])
+
+/**
+ * Which SIDE of an element a connector end is tied to — the four sides the
+ * creation handles sit on. Mirrors `ConnectorAnchor` in
+ * src/lib/canvas-engine/scene.ts, which the engine declares independently
+ * because it cannot import Zod.
+ */
+/**
+ * A normalised position on an element's border: 0..1 across its own box, with
+ * at least one component pinned to an edge. Not a world coordinate — that
+ * would slide off the shape the moment it was resized.
+ */
+export const canvasConnectorAttachSchema = z.strictObject({
+  x: z.number().finite().min(0).max(1),
+  y: z.number().finite().min(0).max(1),
+})
+
+/** A free connector end's own coordinate, held to the board's range. */
+export const canvasConnectorPointSchema = z.strictObject({
+  x: boardCoordSchema,
+  y: boardCoordSchema,
+})
+
+/** Exactly one of "attached to an element" / "a free point" must be set. */
+function hasExactlyOneEnd(
+  elementId: string | null,
+  point: { x: number; y: number } | undefined,
+): boolean {
+  return (elementId !== null) !== (point !== undefined)
+}
+
+export const canvasConnectorAnchorSchema = z.enum([
+  'top',
+  'right',
+  'bottom',
+  'left',
+])
+
+/**
+ * Kind-specific payload, a discriminated union on `kind`. The `rectangle` and
+ * `text` arms are empty objects, and that is deliberate — exactly as
  * `shapePropsSchema` documents. This union is the dispatch point that lets
  * `ellipse`, `ink` or `image` be added as one arm with no table change. Do
  * NOT "clean up" the empty arms into a plain enum.
+ *
+ * The `connector` arm is the first one carrying real content, and it is why
+ * routing lives HERE and not in `canvasElementStyleSchema`: that schema is a
+ * `z.strictObject` shared by every kind, so a `routing` field added there
+ * would fail validation for every rectangle and text row already stored.
  */
 export const canvasElementPropsSchema = z.discriminatedUnion('kind', [
   z.strictObject({ kind: z.literal('rectangle') }),
   z.strictObject({ kind: z.literal('text') }),
+  z
+    .strictObject({
+      kind: z.literal('connector'),
+      // NULLABLE since connector ends became draggable: an end dropped on
+      // empty board detaches and stores its own point instead. The pairing is
+      // enforced by the two `.refine`s below — exactly one of id / point per
+      // end. Stored FLAT rather than as a nested union so every row written
+      // before free ends existed still validates unchanged; the engine's own
+      // `ConnectorEndpoint` IS a union, and `canvas-element-adapter.ts` is the
+      // one place the two shapes meet.
+      sourceElementId: z.string().uuid().nullable(),
+      targetElementId: z.string().uuid().nullable(),
+      sourcePoint: canvasConnectorPointSchema.optional(),
+      targetPoint: canvasConnectorPointSchema.optional(),
+      routing: canvasConnectorRoutingSchema,
+      // OPTIONAL, and it has to stay that way: connectors written before
+      // anchoring existed carry neither, and a required field here would make
+      // every one of those rows fail validation on its next update — the row
+      // would become uneditable rather than merely un-anchored. The geometry
+      // falls back to centre-derived border points per end when absent.
+      // WHERE on the border each end is tied, as a fraction of the element's
+      // box — continuous, so an end can sit anywhere along an edge rather than
+      // only at one of four midpoints.
+      sourceAttach: canvasConnectorAttachSchema.optional(),
+      targetAttach: canvasConnectorAttachSchema.optional(),
+      // LEGACY, read-only: rows written when an end could only be one of four
+      // sides. `canvas-element-adapter.ts` reads these as that side's midpoint
+      // and writes `*Attach` from then on. Kept in the schema so an old row
+      // still validates on its next update instead of becoming uneditable.
+      sourceAnchor: canvasConnectorAnchorSchema.optional(),
+      targetAnchor: canvasConnectorAnchorSchema.optional(),
+    })
+    // Each end is EITHER attached to an element OR a free point — never
+    // both, never neither. The engine models this as a discriminated union;
+    // this is the same invariant stated where the flat storage shape can be
+    // checked.
+    .refine((props) => hasExactlyOneEnd(props.sourceElementId, props.sourcePoint), {
+      message: 'A connector end must be either attached to an element or a free point',
+      path: ['sourceElementId'],
+    })
+    .refine((props) => hasExactlyOneEnd(props.targetElementId, props.targetPoint), {
+      message: 'A connector end must be either attached to an element or a free point',
+      path: ['targetElementId'],
+    })
+    // A self-connector has no drawable path — its two endpoint rects are the
+    // same rect, so `connectorPath` returns null and the row would persist as
+    // permanently invisible and unselectable. Rejected at the schema so no
+    // write path can produce one, rather than left for each renderer to
+    // tolerate.
+    //
+    // Guarded on both ids being PRESENT: two free ends are both `null`, and a
+    // plain `!==` would read that as "joined to itself" and reject a perfectly
+    // ordinary floating line.
+    .refine(
+      (props) =>
+        props.sourceElementId === null ||
+        props.targetElementId === null ||
+        props.sourceElementId !== props.targetElementId,
+      {
+        message: 'A connector cannot join an element to itself',
+        path: ['targetElementId'],
+      },
+    ),
 ])
 
 /**
@@ -1060,6 +1180,13 @@ export const createCanvasElementSchema = z
     kind: canvasElementKindSchema,
     positionX: boardCoordSchema,
     positionY: boardCoordSchema,
+    // A CONNECTOR has no geometry of its own: its path is derived from its two
+    // endpoints' live bounds on every frame (canvas-engine/connector-
+    // geometry.ts), so anything stored here would go stale the moment a
+    // collaborator moved either end. These four columns are NOT NULL and
+    // `.positive()`, so a connector writes a degenerate 1x1 placeholder at its
+    // source's centre and NOTHING ever reads it back. Do not "fix" a
+    // connector's stored bounds — deriving them is the point.
     width: z.number().positive().max(100_000),
     height: z.number().positive().max(100_000),
     zIndex: canvasZIndexSchema.default(0),
@@ -1138,6 +1265,9 @@ export const updateCanvasBoardSchema = z.object({
 export type CanvasElementKind = z.infer<typeof canvasElementKindSchema>
 export type CanvasElementStyle = z.infer<typeof canvasElementStyleSchema>
 export type CanvasElementProps = z.infer<typeof canvasElementPropsSchema>
+export type CanvasConnectorRouting = z.infer<
+  typeof canvasConnectorRoutingSchema
+>
 export type CreateCanvasElement = z.input<typeof createCanvasElementSchema>
 export type UpdateCanvasElement = z.infer<typeof updateCanvasElementSchema>
 export type CreateCanvasBoard = z.input<typeof createCanvasBoardSchema>

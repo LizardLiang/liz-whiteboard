@@ -5,6 +5,7 @@
 
 import { describe, expect, it } from 'vitest'
 import {
+  DEFAULT_CONNECTOR_ROUTING,
   DEFAULT_ELEMENT_STYLE,
   EMPTY_SCENE,
   addElement,
@@ -12,6 +13,7 @@ import {
   bringToFront,
   getElement,
   nextZIndex,
+  remapConnectorEndpoints,
   removeElement,
   removeElements,
   sceneFrom,
@@ -243,5 +245,86 @@ describe('rect helpers', () => {
         { x: 10, y: 0, width: 10, height: 10 },
       ),
     ).toBe(false)
+  })
+})
+
+describe('remapConnectorEndpoints', () => {
+  const A = 'a'
+  const B = 'b'
+  const SERVER = 'server-id'
+
+  function connector(sourceId: string, targetId: string): CanvasElement {
+    return {
+      id: 'c1',
+      kind: 'connector',
+      x: 0,
+      y: 0,
+      width: 1,
+      height: 1,
+      rotation: 0,
+      zIndex: 0,
+      text: null,
+      style: { ...DEFAULT_ELEMENT_STYLE },
+      connector: {
+        source: { kind: 'element', elementId: sourceId },
+        target: { kind: 'element', elementId: targetId },
+        routing: DEFAULT_CONNECTOR_ROUTING,
+      },
+    }
+  }
+
+  it('repoints a target endpoint', () => {
+    // An element created optimistically carries a client uuid the server
+    // replaces. Without this the connector names a row that never existed:
+    // it stops being drawable AND stops being found by the delete cascade.
+    const next = remapConnectorEndpoints(sceneFrom([connector(A, B)]), B, SERVER)
+    expect(next.byId.get('c1')?.connector).toEqual({
+        source: { kind: 'element', elementId: A },
+        target: { kind: 'element', elementId: SERVER },
+        routing: DEFAULT_CONNECTOR_ROUTING,
+      })
+  })
+
+  it('repoints a source endpoint', () => {
+    const next = remapConnectorEndpoints(sceneFrom([connector(A, B)]), A, SERVER)
+    expect(next.byId.get('c1')?.connector?.source).toEqual({
+      kind: 'element',
+      elementId: SERVER,
+    })
+  })
+
+  it('repoints BOTH ends of a connector that somehow names the id twice', () => {
+    const next = remapConnectorEndpoints(sceneFrom([connector(A, A)]), A, SERVER)
+    expect(next.byId.get('c1')?.connector).toEqual({
+        source: { kind: 'element', elementId: SERVER },
+        target: { kind: 'element', elementId: SERVER },
+        routing: DEFAULT_CONNECTOR_ROUTING,
+      })
+  })
+
+  it('returns the SAME scene when nothing referenced the id', () => {
+    // Identity is the contract `updateElement` already keeps, and it is what
+    // lets React skip a render on every unrelated reconciliation.
+    const scene = sceneFrom([connector(A, B)])
+    expect(remapConnectorEndpoints(scene, 'unrelated', SERVER)).toBe(scene)
+  })
+
+  it('leaves non-connector elements untouched', () => {
+    const rect: CanvasElement = {
+      id: A,
+      kind: 'rectangle',
+      x: 0,
+      y: 0,
+      width: 10,
+      height: 10,
+      rotation: 0,
+      zIndex: 0,
+      text: null,
+      style: { ...DEFAULT_ELEMENT_STYLE },
+    }
+    const next = remapConnectorEndpoints(sceneFrom([rect, connector(A, B)]), A, SERVER)
+    // The ELEMENT's own id is renamed by useCanvasElements, not here — this
+    // function only ever rewrites references TO it.
+    expect(next.byId.get(A)?.id).toBe(A)
   })
 })

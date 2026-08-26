@@ -164,6 +164,20 @@ export const IDS = {
   // that share a board.
   canvasViewerBoard: '60000000-0000-4000-8000-000000000005',
   canvasViewerRect: '60000000-0000-4000-8000-000000000006',
+  // Third board, for the quick-create-handles suite's cases that need a
+  // connector to ALREADY exist (the routing picker, and "the line follows a
+  // dragged endpoint"). Separate from `canvasBoard` so those tests cannot
+  // perturb the element counts the create/delete tests on that board assert
+  // against, and so a connector never appears in a scene an older canvas spec
+  // was written before connectors existed.
+  canvasConnectorBoard: '60000000-0000-4000-8000-000000000007',
+  canvasConnSource: '60000000-0000-4000-8000-000000000008',
+  canvasConnTarget: '60000000-0000-4000-8000-000000000009',
+  canvasConnector: '60000000-0000-4000-8000-00000000000a',
+  // A connector on the VIEWER board too, so the read-only gate can assert the
+  // absence of BOTH affordances (handles and routing bar) on one board.
+  canvasViewerConnTarget: '60000000-0000-4000-8000-00000000000b',
+  canvasViewerConnector: '60000000-0000-4000-8000-00000000000c',
   shapesTableAName: '50000000-0000-4000-8000-00000000000f',
   shapesTableBNote: '50000000-0000-4000-8000-000000000010',
 }

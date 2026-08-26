@@ -291,6 +291,36 @@ export function useCanvasElements({
    */
   const pendingDeletesRef = useRef<Set<string>>(new Set())
 
+  /**
+   * Elements the user EDITED while their create was still in flight, keyed by
+   * the temporary id, holding the content to write once the row has a real one.
+   *
+   * The exact counterpart of `pendingDeletesRef` above, and it exists for the
+   * same reason: an `element:update` naming a temporary id addresses a row the
+   * server has never heard of, so it comes back NOT_FOUND and the user's edit
+   * is silently lost behind an error toast they can do nothing about.
+   *
+   * Only reachable since quick-create began opening the text editor on an
+   * element whose create is still in flight (canvas quick-create-handles,
+   * Wave 4): every older path either persists at commit (the text tool) or
+   * opens no editor at all (the rectangle tool), so no update could ever
+   * precede its own create. Found end-to-end — quick-create, type, click away
+   * fast, and the text never reached the database.
+   */
+  const pendingUpdatesRef = useRef(new Map<string, CanvasElement>())
+
+  /**
+   * Forward reference to `updateElements`, which is declared below
+   * `createElement` but has to be callable from inside its ack. Mirrors
+   * `emitDeleteRef`, which exists for exactly the same ordering reason.
+   */
+  const updateElementsRef = useRef<
+    (
+      elements: Array<CanvasElement>,
+      options?: CanvasMutationOptions,
+    ) => Promise<Array<CanvasMutationResult>>
+  >(() => Promise.resolve([]))
+
   // ── live sync from collaborators ─────────────────────────────────────────
   useEffect(() => {
     if (!enabled) return
@@ -465,10 +495,45 @@ export function useCanvasElements({
               if (!prev.byId.has(temporaryId)) {
                 return addElement(prev, persisted)
               }
-              return addElement(removeElement(prev, temporaryId), persisted)
+              // Anything TYPED between the emit above and this ack is a user
+              // edit the server could not have known about, and swapping the
+              // server's row straight in would silently discard it.
+              //
+              // Only reachable since quick-create began opening the text
+              // editor on an element whose create is still in flight (canvas
+              // quick-create-handles, Wave 4): every older path either
+              // persists at commit (the text tool) or opens no editor at all
+              // (the rectangle tool), so nothing could diverge mid-round-trip.
+              // Caught end-to-end — the first characters of a fast typist
+              // vanished, with the rest saving normally.
+              //
+              // Safe to prefer the local value: `createCanvasElement` writes
+              // back exactly the `text` it was given, so a difference here is
+              // never the server having decided something, only the user
+              // having typed since. `commitEditing` persists it moments later.
+              const local = prev.byId.get(temporaryId)
+              const reconciled =
+                local && local.text !== persisted.text
+                  ? { ...persisted, text: local.text }
+                  : persisted
+              return addElement(removeElement(prev, temporaryId), reconciled)
             })
             if (persisted.id !== temporaryId) {
               onElementIdReconciled?.(temporaryId, persisted.id)
+            }
+            // Re-issue whatever was edited while this create was in flight,
+            // now that the row has an id the server recognises (see
+            // `pendingUpdatesRef`). Issued EPHEMERALLY: no new gesture
+            // happened, this is the continuation of one already recorded, so
+            // it must not become a second undo entry — the same reasoning the
+            // deferred delete immediately above follows.
+            const deferred = pendingUpdatesRef.current.get(temporaryId)
+            if (deferred) {
+              pendingUpdatesRef.current.delete(temporaryId)
+              void updateElementsRef.current(
+                [{ ...deferred, id: persisted.id }],
+                { ephemeral: true },
+              )
             }
             resolve({
               id: persisted.id,
@@ -497,6 +562,21 @@ export function useCanvasElements({
       const results = elements.map(
         (element) =>
           new Promise<CanvasMutationResult>((resolve) => {
+            if (pendingCreatesRef.current.has(element.id)) {
+              // The create is still in flight, so this id names nothing the
+              // server can update. Deferred rather than dropped — the create
+              // ack re-issues it against the id the server chose, exactly as
+              // `deleteElements` already does for the same race.
+              //
+              // Resolves `ok: false` for the same reason that path does:
+              // nothing about this element has stably existed for another
+              // observer yet, so this leg is not separately undoable. The
+              // create's own undo entry already covers the element and
+              // everything typed into it — one Ctrl+Z removes both.
+              pendingUpdatesRef.current.set(element.id, element)
+              resolve({ id: element.id, ok: false })
+              return
+            }
             const expectedRevision = options?.expectedRevisions?.get(
               element.id,
             )
@@ -623,6 +703,13 @@ export function useCanvasElements({
   const emitDeleteRef = useRef(emitDelete)
   useEffect(() => {
     emitDeleteRef.current = emitDelete
+  })
+
+  // Same forward-reference trick, for the same reason: `createElement` is
+  // defined ABOVE `updateElements` but has to re-issue a deferred update from
+  // inside its own ack (see `pendingUpdatesRef`).
+  useEffect(() => {
+    updateElementsRef.current = updateElements
   })
 
   const deleteElements = useCallback(

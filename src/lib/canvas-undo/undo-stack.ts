@@ -101,7 +101,45 @@ export type CanvasUndoLabel =
   | { gesture: 'move'; count: number }
   | { gesture: 'resize' }
   | { gesture: 'text-edit' }
+  /**
+   * A connector's routing changed from the floating picker (canvas
+   * quick-create-handles tactical plan, Wave 5). Always exactly one element —
+   * the picker appears only for a single selected connector — so it carries
+   * no `count`, like `resize` and `text-edit`.
+   */
+  | { gesture: 'routing' }
+  /**
+   * One END of a connector was dragged somewhere else — re-anchored to a
+   * different side, moved onto a different element, or detached to float
+   * free. Always exactly one element (the connector), so no `count`.
+   *
+   * Distinct from `routing`, which changes the line's SHAPE and leaves both
+   * ends where they were. Folding the two together would make one toast
+   * describe two visibly different edits.
+   */
+  | { gesture: 'reconnect' }
   | { gesture: 'delete'; count: number }
+  /**
+   * A creation-handle gesture (canvas quick-create-handles tactical plan,
+   * Wave 4, step 11) — up to TWO elements created by one press-and-release.
+   *
+   * Deliberately not folded into `create`: that arm is documented as always
+   * single-element (`recordCreate` records one at a time, and
+   * `elementKindForOperation` used to lean on that), and a quick-create's two
+   * creates have DIFFERENT kinds — the new element and the connector joining
+   * it to the source.
+   *
+   * `elementKind` is null when no element was created, which is the
+   * drag-onto-an-existing-element case: the gesture produced only the
+   * connector. `connected` is false when the element was created but its
+   * connector's write did not land, so the toast never claims a link that
+   * does not exist.
+   */
+  | {
+      gesture: 'quick-create'
+      elementKind: CanvasElementKind | null
+      connected: boolean
+    }
 
 /**
  * One undo-able gesture. `operations` holds more than one member only for a
@@ -140,6 +178,14 @@ export function elementKindForOperation(
   const operation = entry.operations.find((op) => op.elementId === elementId)
   if (!operation) return undefined
   if (operation.kind === 'create') {
+    // `after` — the row the create produced (the BUG-1 fix above) — is the
+    // authoritative answer whenever it is present, and it is the ONLY correct
+    // answer for an entry holding several creates of different kinds: a
+    // quick-create's element and its connector are both `create` operations
+    // inside one entry, so the entry's single `elementKind` cannot name both.
+    if (operation.after) return operation.after.kind
+    // Fallback for the single-create case, where the kind lives on the label
+    // instead (and for fixtures predating `after`).
     return entry.label.gesture === 'create'
       ? entry.label.elementKind
       : undefined

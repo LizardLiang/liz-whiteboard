@@ -16,7 +16,13 @@ import { afterEach, describe, expect, it } from 'vitest'
 import { renderHook } from '@testing-library/react'
 import { useCanvasTestHook } from './canvas-test-hook'
 import type { CanvasElement } from '@/lib/canvas-engine/scene'
-import { DEFAULT_ELEMENT_STYLE, sceneFrom } from '@/lib/canvas-engine/scene'
+import type { RenderSelection } from '@/lib/canvas-engine/render'
+import {
+  DEFAULT_ELEMENT_STYLE,
+  bounds,
+  sceneFrom,
+} from '@/lib/canvas-engine/scene'
+import { creationHandleRects } from '@/lib/canvas-engine/render'
 
 const ELEMENT_ID = '11111111-1111-4111-8111-111111111111'
 
@@ -36,14 +42,20 @@ function makeElement(overrides: Partial<CanvasElement> = {}): CanvasElement {
   }
 }
 
+/** A `RenderSelection` with only the fields a given test cares about. */
+function selectionOf(
+  overrides: Partial<RenderSelection> = {},
+): RenderSelection {
+  return { ids: new Set([ELEMENT_ID]), ...overrides }
+}
+
 function render(overrides: Partial<Parameters<typeof useCanvasTestHook>[0]> = {}) {
   return renderHook(() =>
     useCanvasTestHook({
       boardId: 'board-1',
       scene: sceneFrom([makeElement()]),
       camera: { x: 1, y: 2, zoom: 3 },
-      selectedIds: new Set([ELEMENT_ID]),
-      editingElementId: null,
+      selection: selectionOf(),
       tool: 'select',
       readOnly: false,
       ...overrides,
@@ -80,8 +92,7 @@ describe('useCanvasTestHook', () => {
         boardId: 'board-1',
         scene,
         camera: { x: 0, y: 0, zoom: 1 },
-        selectedIds: new Set<string>(),
-        editingElementId: null,
+        selection: { ids: new Set<string>() },
         tool: 'select',
         readOnly: false,
       }),
@@ -94,7 +105,13 @@ describe('useCanvasTestHook', () => {
   })
 
   it('reports the element being edited and the read-only flag', () => {
-    render({ editingElementId: ELEMENT_ID, readOnly: true, tool: 'text' })
+    render({
+      selection: selectionOf({
+        editing: { elementId: ELEMENT_ID, caret: 0, caretVisible: true },
+      }),
+      readOnly: true,
+      tool: 'text',
+    })
     expect(window.__canvasEngine!.editingElementId).toBe(ELEMENT_ID)
     expect(window.__canvasEngine!.readOnly).toBe(true)
     expect(window.__canvasEngine!.tool).toBe('text')
@@ -108,5 +125,91 @@ describe('useCanvasTestHook', () => {
     expect(window.__canvasEngine).toBeDefined()
     unmount()
     expect(window.__canvasEngine).toBeUndefined()
+  })
+})
+
+describe('creation-handle publication (Wave 6, step 18)', () => {
+  it('publishes the hovered id and the handles it produces', () => {
+    // Handles on hover with NOTHING selected — the case a spec cannot infer
+    // from `selectedIds`, and the one that makes the whole affordance
+    // discoverable.
+    render({
+      selection: { ids: new Set<string>(), hoveredId: ELEMENT_ID },
+    })
+    const published = window.__canvasEngine!
+    expect(published.hoveredId).toBe(ELEMENT_ID)
+    expect(published.creationHandleTargetId).toBe(ELEMENT_ID)
+    expect(Object.keys(published.creationHandles ?? {}).sort()).toEqual([
+      'bottom',
+      'left',
+      'right',
+      'top',
+    ])
+  })
+
+  it('publishes the rectangles the renderer would draw, not a second derivation', () => {
+    // Anchored to `creationHandleRects` itself so a spec clicks exactly what
+    // was painted. Computing the expected value any other way here would be
+    // the same drift this contract exists to prevent.
+    const camera = { x: 1, y: 2, zoom: 3 }
+    render({ camera })
+    expect(window.__canvasEngine!.creationHandles).toEqual(
+      creationHandleRects(camera, bounds(makeElement())),
+    )
+  })
+
+  it('publishes handles for a single selection', () => {
+    render()
+    expect(window.__canvasEngine!.creationHandleTargetId).toBe(ELEMENT_ID)
+  })
+
+  it('publishes no handles while text is being edited', () => {
+    // One of `creationHandleTarget`'s suppression rules — resolved by that
+    // function, not re-derived here, which is the point of handing the hook
+    // the renderer's own selection object.
+    render({
+      selection: selectionOf({
+        editing: { elementId: ELEMENT_ID, caret: 0, caretVisible: true },
+      }),
+    })
+    expect(window.__canvasEngine!.creationHandleTargetId).toBeNull()
+    expect(window.__canvasEngine!.creationHandles).toBeNull()
+  })
+
+  it('publishes no handles mid-quick-create-drag', () => {
+    render({
+      selection: selectionOf({
+        quickCreate: { fromId: ELEMENT_ID, toWorld: { x: 400, y: 400 } },
+      }),
+    })
+    expect(window.__canvasEngine!.creationHandles).toBeNull()
+  })
+
+  it('publishes nulls when nothing is hovered or selected', () => {
+    render({ selection: { ids: new Set<string>() } })
+    const published = window.__canvasEngine!
+    expect(published.hoveredId).toBeNull()
+    expect(published.creationHandleTargetId).toBeNull()
+    expect(published.creationHandles).toBeNull()
+  })
+
+  it('publishes a connector\'s endpoints and routing on the element itself', () => {
+    // A spec reads these straight off `elements` — no second collection to
+    // keep in sync.
+    const connector: CanvasElement = {
+      ...makeElement({ id: 'c1', kind: 'connector', width: 1, height: 1 }),
+      connector: {
+        source: { kind: 'element', elementId: 'a' },
+        target: { kind: 'element', elementId: 'b' },
+        routing: 'elbow' ,
+      },
+    }
+    render({ scene: sceneFrom([makeElement(), connector]) })
+    const published = window.__canvasEngine!
+    expect(published.elements.find((e) => e.id === 'c1')?.connector).toEqual({
+        source: { kind: 'element', elementId: 'a' },
+        target: { kind: 'element', elementId: 'b' },
+        routing: 'elbow',
+      })
   })
 })

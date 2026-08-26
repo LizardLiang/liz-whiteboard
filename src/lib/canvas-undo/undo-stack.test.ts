@@ -280,3 +280,60 @@ describe('elementKindForOperation (Wave 4, step 11)', () => {
     expect(elementKindForOperation(entry, 'el-2')).toBeUndefined()
   })
 })
+
+describe('a create operation names its kind from its own snapshot', () => {
+  const SNAPSHOT = {
+    id: 'el-1',
+    boardId: 'board-1',
+    kind: 'connector' as const,
+    positionX: 0,
+    positionY: 0,
+    width: 1,
+    height: 1,
+    rotation: 0,
+    zIndex: 0,
+    text: null,
+    style: DEFAULT_ELEMENT_STYLE,
+    props: {
+      kind: 'connector' as const,
+      sourceElementId: 'el-a',
+      targetElementId: 'el-b',
+      routing: 'straight' as const,
+    },
+  }
+
+  it('prefers `after` over the entry label', () => {
+    // A quick-create entry holds TWO creates of DIFFERENT kinds, so the
+    // entry's single `elementKind` cannot name both. `after` is the row the
+    // create actually produced, and is the only per-operation answer.
+    const entry: CanvasUndoEntry = {
+      label: { gesture: 'quick-create', elementKind: 'rectangle', connected: true },
+      operations: [
+        { kind: 'create', elementId: 'el-0', afterRevision: 1 },
+        {
+          kind: 'create',
+          elementId: 'el-1',
+          afterRevision: 1,
+          after: SNAPSHOT,
+        },
+      ],
+    }
+    expect(elementKindForOperation(entry, 'el-1')).toBe('connector')
+  })
+
+  it('still falls back to the label when no snapshot was recorded', () => {
+    const entry: CanvasUndoEntry = {
+      label: CREATE_RECT,
+      operations: [{ kind: 'create', elementId: 'el-1', afterRevision: 1 }],
+    }
+    expect(elementKindForOperation(entry, 'el-1')).toBe('rectangle')
+  })
+
+  it('returns undefined for a create with neither snapshot nor create label', () => {
+    const entry: CanvasUndoEntry = {
+      label: { gesture: 'quick-create', elementKind: null, connected: true },
+      operations: [{ kind: 'create', elementId: 'el-1', afterRevision: 1 }],
+    }
+    expect(elementKindForOperation(entry, 'el-1')).toBeUndefined()
+  })
+})

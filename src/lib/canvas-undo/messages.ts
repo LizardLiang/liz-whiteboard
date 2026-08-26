@@ -13,6 +13,7 @@ import type { CanvasUndoLabel } from './undo-stack'
 function describeElementKind(kind: CanvasElementKind | undefined): string {
   if (kind === 'text') return 'text element'
   if (kind === 'rectangle') return 'rectangle'
+  if (kind === 'connector') return 'connector'
   // No kind could be resolved (an id absent from the entry, which should not
   // happen in practice) — still a truthful, generic noun rather than a crash
   // or an empty string in the toast.
@@ -32,10 +33,30 @@ function describeGesture(label: CanvasUndoLabel): string {
       return 'resizing an element'
     case 'text-edit':
       return 'editing text'
+    case 'reconnect':
+      // Names the END moving, not the connector generally — the routing arm
+      // below is also "a connector changed" and the two must not read alike.
+      return 'moving a connector end'
+    case 'routing':
+      // Names the SHAPE change, not "updating a connector": the endpoints did
+      // not move and nothing else about the row changed, so a vaguer word
+      // would leave the user guessing what is about to come back.
+      return 'rerouting a connector'
     case 'delete':
       return label.count > 1
         ? `deleting ${label.count} elements`
         : 'deleting an element'
+    case 'quick-create':
+      // Names BOTH halves of the gesture when both happened, because both
+      // are about to reappear or disappear together and a toast saying only
+      // "creating a rectangle" would leave the connector's return
+      // unexplained. Each half is dropped from the wording when it did not
+      // happen, rather than asserted generically — see the label's own
+      // doc comment for when each case arises.
+      if (!label.elementKind) return 'creating a connector'
+      return label.connected
+        ? `creating a ${describeElementKind(label.elementKind)} and a connector`
+        : `creating a ${describeElementKind(label.elementKind)}`
   }
 }
 

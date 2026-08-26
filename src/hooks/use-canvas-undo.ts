@@ -224,6 +224,94 @@ export function useCanvasUndo({
     [boardId, createElement, push, readOnly],
   )
 
+  /**
+   * One creation-handle gesture — up to two elements — as ONE undo entry
+   * (canvas quick-create-handles tactical plan, Wave 4, step 11).
+   *
+   * The two creates are SEQUENTIAL, not concurrent, and that is the whole
+   * reason this cannot be two `recordCreate` calls. `createElement` mints the
+   * row's id server-side, so the connector's `sourceId`/`targetId` are not
+   * knowable until the element's ack arrives: issued in parallel, the
+   * connector would be persisted against the client's temporary uuid and name
+   * a row that never existed. The endpoints are rewritten from the ack here,
+   * once, before the connector is written at all.
+   *
+   * If the element's create fails there is nothing to connect to and no entry
+   * is pushed. If the CONNECTOR's create fails the element is still recorded,
+   * alone, with `connected: false` — the element genuinely exists and must
+   * stay undoable, and the toast must not claim a link that is not there.
+   */
+  const recordQuickCreate = useCallback(
+    (elements: Array<CanvasElement>) => {
+      if (readOnly) return
+      const connector = elements.find((element) => element.connector)
+      const created = elements.find((element) => !element.connector)
+      const endpoints = connector?.connector
+      // Bound to a local rather than re-read inside the async body below: a
+      // narrowing on `connector.connector` does not survive the closure, and
+      // a non-null assertion there would be the kind of claim this file
+      // otherwise never makes.
+      if (!connector || !endpoints) return
+
+      void (async () => {
+        const operations: Array<CanvasUndoOperation> = []
+        // The END the connector must point at. Starts as whatever the gesture
+        // supplied (an EXISTING element, in the drag-onto-an-element case,
+        // whose id is already the server's) and is replaced by the ack below
+        // whenever this gesture created the target itself. A quick-create
+        // always attaches, so this is never a free end — but it is rebuilt
+        // from the union rather than assuming, so a future gesture that does
+        // hand over a free end cannot have an id written onto it.
+        let targetEnd = endpoints.target
+
+        if (created) {
+          const result = await createElement(created)
+          if (!result.ok || result.revision === undefined) return
+          targetEnd =
+            endpoints.target.kind === 'element'
+              ? { ...endpoints.target, elementId: result.id }
+              : endpoints.target
+          operations.push({
+            kind: 'create',
+            elementId: result.id,
+            afterRevision: result.revision,
+            after: toSnapshot(boardId, { ...created, id: result.id }),
+          })
+        }
+
+        const linked: CanvasElement = {
+          ...connector,
+          connector: { ...endpoints, target: targetEnd },
+        }
+        const connectorResult = await createElement(linked)
+        const connected =
+          connectorResult.ok && connectorResult.revision !== undefined
+        if (connected) {
+          operations.push({
+            kind: 'create',
+            elementId: connectorResult.id,
+            afterRevision: connectorResult.revision as number,
+            after: toSnapshot(boardId, {
+              ...linked,
+              id: connectorResult.id,
+            }),
+          })
+        }
+
+        if (operations.length === 0) return
+        push({
+          label: {
+            gesture: 'quick-create',
+            elementKind: created?.kind ?? null,
+            connected,
+          },
+          operations,
+        })
+      })()
+    },
+    [boardId, createElement, push, readOnly],
+  )
+
   const recordUpdate = useCallback(
     (
       elements: Array<CanvasElement>,
@@ -305,10 +393,11 @@ export function useCanvasUndo({
   const callbacks = useMemo<CanvasEditCallbacks>(
     () => ({
       onCreate: recordCreate,
+      onQuickCreate: recordQuickCreate,
       onUpdate: recordUpdate,
       onDelete: recordDelete,
     }),
-    [recordCreate, recordDelete, recordUpdate],
+    [recordCreate, recordDelete, recordQuickCreate, recordUpdate],
   )
 
   // ── applying (undo) ──────────────────────────────────────────────────────

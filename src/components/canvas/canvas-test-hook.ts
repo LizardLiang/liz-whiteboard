@@ -19,17 +19,70 @@
 import { useEffect } from 'react'
 import type { Camera } from '@/lib/canvas-engine/camera'
 import type { CanvasElement, Scene } from '@/lib/canvas-engine/scene'
+import type {
+  ConnectorEnd,
+  CreationHandleDirection,
+  RenderSelection,
+  ScreenRect,
+} from '@/lib/canvas-engine/render'
 import type { CanvasTool } from './use-canvas-input'
+import {
+  connectorEndpointRects,
+  creationHandleRects,
+  creationHandleTarget,
+} from '@/lib/canvas-engine/render'
+import { connectorPathOf } from '@/lib/canvas-engine/hit-test'
+import { bounds } from '@/lib/canvas-engine/scene'
 
 /** The shape a spec sees at `window.__canvasEngine`. */
 export interface CanvasEngineTestHook {
   boardId: string
-  /** Elements in ascending z-order — the same order the renderer paints in. */
+  /**
+   * Elements in ascending z-order — the same order the renderer paints in.
+   *
+   * A connector carries its `connector` field like any other property, so a
+   * spec reads its endpoints and routing straight off the element rather than
+   * needing a second published collection.
+   */
   elements: Array<CanvasElement>
   camera: Camera
   selectedIds: Array<string>
   /** Id of the element currently being typed into, or null. */
   editingElementId: string | null
+  /** The element the pointer is over, or null (canvas quick-create-handles, Wave 6, step 18). */
+  hoveredId: string | null
+  /**
+   * The element currently showing creation handles, or null.
+   *
+   * Published SEPARATELY from `hoveredId` and `selectedIds` because it is
+   * neither: the handles appear on a single selection OR on hover, and are
+   * suppressed outright mid-edit, mid-marquee, mid-draw and mid-drag. A spec
+   * that recomputed that rule from the other two fields would be asserting
+   * its own copy of it rather than the renderer's.
+   */
+  creationHandleTargetId: string | null
+  /**
+   * The four creation-handle HIT rectangles, in canvas-relative screen pixels,
+   * or null when no element is showing handles.
+   *
+   * Published so a spec clicks exactly what the renderer drew — the same
+   * export-what-you-draw contract `creationHandleRects` exists for. A spec
+   * that instead added its own offset to an element's edge would drift the
+   * day a constant changed, and would fail as "the click did nothing" with no
+   * hint as to why.
+   */
+  creationHandles: Record<CreationHandleDirection, ScreenRect> | null
+  /**
+   * The two endpoint grips of the single selected connector, in canvas-relative
+   * screen pixels, or null when no connector is selected.
+   *
+   * Published for the same reason `creationHandles` is: a spec must press the
+   * rectangles the renderer drew. Deriving an endpoint's screen position in the
+   * spec would mean re-deriving the whole path — anchored ends sit on edge
+   * midpoints, unanchored ones wherever the centre ray crosses, free ones at
+   * their own point — which is three chances to drift from what was painted.
+   */
+  connectorEndpoints: Record<ConnectorEnd, ScreenRect> | null
   tool: CanvasTool
   readOnly: boolean
 }
@@ -44,8 +97,17 @@ interface UseCanvasTestHookArgs {
   boardId: string
   scene: Scene
   camera: Camera
-  selectedIds: ReadonlySet<string>
-  editingElementId: string | null
+  /**
+   * The SAME object handed to `drawScene`, not a reassembled copy.
+   *
+   * `selectedIds` and `editingElementId` used to be separate arguments and are
+   * now derived from this instead: they were a second copy of two fields this
+   * object already carries, free to disagree with what the renderer actually
+   * used. Taking the renderer's own input is also what lets the hook resolve
+   * the creation-handle target through `creationHandleTarget` rather than
+   * reimplementing its suppression rules.
+   */
+  selection: RenderSelection
   tool: CanvasTool
   readOnly: boolean
 }
@@ -54,8 +116,7 @@ export function useCanvasTestHook({
   boardId,
   scene,
   camera,
-  selectedIds,
-  editingElementId,
+  selection,
   tool,
   readOnly,
 }: UseCanvasTestHookArgs): void {
@@ -67,14 +128,34 @@ export function useCanvasTestHook({
     // on the replacement.
     if (!import.meta.env.DEV && import.meta.env.VITE_E2E_HOOKS !== '1') return
 
+    // Resolved with the renderer's OWN functions, inside the DEV gate, so a
+    // production build pays nothing for it — and so what a spec clicks is by
+    // construction what was drawn.
+    const handleTarget = creationHandleTarget(scene, selection)
+    // Only for a SINGLE selected connector — which is exactly when the
+    // renderer draws them, and exactly when input will accept a press on one.
+    const selectedOnly =
+      selection.ids.size === 1
+        ? (scene.byId.get([...selection.ids][0]) ?? null)
+        : null
+    const connectorGrips = selectedOnly?.connector
+      ? connectorEndpointRects(camera, connectorPathOf(scene, selectedOnly))
+      : null
+
     const published: CanvasEngineTestHook = {
       boardId,
       // A plain array copy, not the live scene: a spec that mutated it must
       // not be able to corrupt the board it is asserting on.
       elements: scene.elements.map((element) => ({ ...element })),
       camera: { ...camera },
-      selectedIds: [...selectedIds],
-      editingElementId,
+      selectedIds: [...selection.ids],
+      editingElementId: selection.editing?.elementId ?? null,
+      hoveredId: selection.hoveredId ?? null,
+      creationHandleTargetId: handleTarget?.id ?? null,
+      creationHandles: handleTarget
+        ? creationHandleRects(camera, bounds(handleTarget))
+        : null,
+      connectorEndpoints: connectorGrips,
       tool,
       readOnly,
     }
@@ -86,13 +167,5 @@ export function useCanvasTestHook({
       // different one and look like a data bug.
       if (window.__canvasEngine === published) delete window.__canvasEngine
     }
-  }, [
-    boardId,
-    camera,
-    editingElementId,
-    readOnly,
-    scene,
-    selectedIds,
-    tool,
-  ])
+  }, [boardId, camera, readOnly, scene, selection, tool])
 }

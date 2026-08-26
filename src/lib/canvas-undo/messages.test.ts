@@ -128,3 +128,90 @@ describe('exhaustion messages', () => {
     expect(REDO_EXHAUSTED_MESSAGE).toBe('Nothing left to redo.')
   })
 })
+
+describe('quick-create names both halves of the gesture', () => {
+  it('names the element AND the connector when both were created', () => {
+    // Both are about to disappear or reappear together, so a message naming
+    // only the element leaves the connector's return unexplained.
+    const label: CanvasUndoLabel = {
+      gesture: 'quick-create',
+      elementKind: 'rectangle',
+      connected: true,
+    }
+    expect(describeUndoSuccess(label)).toBe(
+      'Undid creating a rectangle and a connector',
+    )
+    expect(describeRedoSuccess(label)).toBe(
+      'Redid creating a rectangle and a connector',
+    )
+  })
+
+  it('names only the connector when nothing else was created', () => {
+    // The drag-onto-an-existing-element case.
+    const label: CanvasUndoLabel = {
+      gesture: 'quick-create',
+      elementKind: null,
+      connected: true,
+    }
+    expect(describeUndoSuccess(label)).toBe('Undid creating a connector')
+  })
+
+  it('drops the connector from the wording when its write did not land', () => {
+    // Never claim a link that does not exist.
+    const label: CanvasUndoLabel = {
+      gesture: 'quick-create',
+      elementKind: 'text',
+      connected: false,
+    }
+    expect(describeUndoSuccess(label)).toBe('Undid creating a text element')
+  })
+})
+
+describe('a connector is named as a connector, not as a generic element', () => {
+  it('uses the noun in a refusal', () => {
+    const message = describeUndoRefusal('connector', 'changed')
+    expect(message).toContain('connector')
+    for (const word of NON_ATTRIBUTION_WORDS) {
+      expect(message).not.toContain(word)
+    }
+  })
+})
+
+describe('a routing change names the shape, not a generic update', () => {
+  it('names rerouting in both directions', () => {
+    // "Undid updating an element" would leave the user guessing what is
+    // about to come back — the endpoints did not move and nothing else about
+    // the row changed.
+    const label: CanvasUndoLabel = { gesture: 'routing' }
+    expect(describeUndoSuccess(label)).toBe('Undid rerouting a connector')
+    expect(describeRedoSuccess(label)).toBe('Redid rerouting a connector')
+  })
+
+  it('is distinct from the move wording it would otherwise default to', () => {
+    // `recordUpdate` defaults a missing gesture to 'move'. Without this arm
+    // the picker's own writes would report "Undid moving an element" for a
+    // gesture that moved nothing.
+    expect(describeUndoSuccess({ gesture: 'routing' })).not.toBe(
+      describeUndoSuccess({ gesture: 'move', count: 1 }),
+    )
+  })
+})
+
+describe('moving a connector end reads differently from rerouting one', () => {
+  it('names the end moving', () => {
+    expect(describeUndoSuccess({ gesture: 'reconnect' })).toBe(
+      'Undid moving a connector end',
+    )
+    expect(describeRedoSuccess({ gesture: 'reconnect' })).toBe(
+      'Redid moving a connector end',
+    )
+  })
+
+  it('is distinct from a routing change', () => {
+    // Both are "a connector changed", but one moves an endpoint and the other
+    // only reshapes the line between two ends that stayed put.
+    expect(describeUndoSuccess({ gesture: 'reconnect' })).not.toBe(
+      describeUndoSuccess({ gesture: 'routing' }),
+    )
+  })
+})

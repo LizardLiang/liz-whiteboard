@@ -120,6 +120,13 @@ function createRecorder(): Recorder {
     beginPath: record('beginPath'),
     moveTo: record('moveTo'),
     lineTo: record('lineTo'),
+    closePath: record('closePath'),
+    arc(...args: Array<unknown>) {
+      ops.push({ op: 'arc', args: [...args, this.fillStyle] })
+    },
+    fill(...args: Array<unknown>) {
+      ops.push({ op: 'fill', args: [...args, this.fillStyle] })
+    },
     stroke(...args: Array<unknown>) {
       // lineWidth is captured here, not on moveTo, because it is what is in
       // effect at the moment the path is painted.

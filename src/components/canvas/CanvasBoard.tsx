@@ -16,6 +16,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { Hand, MousePointer2, Square, Type } from 'lucide-react'
 import { TextInputProxy } from './TextInputProxy'
+import { ConnectorToolbar } from './ConnectorToolbar'
 import { useCanvasInput } from './use-canvas-input'
 import { useFrameLoop } from './use-frame-loop'
 import { useCanvasHighlight } from './use-canvas-highlight'
@@ -23,11 +24,16 @@ import { useCanvasTestHook } from './canvas-test-hook'
 import type { KeyboardEvent as ReactKeyboardEvent, PointerEvent as ReactPointerEvent } from 'react'
 import type { Camera } from '@/lib/canvas-engine/camera'
 import type { WorldRect } from '@/lib/canvas-engine/hit-test'
-import type { CanvasElement, Scene } from '@/lib/canvas-engine/scene'
+import type {
+  CanvasConnectorRouting,
+  CanvasElement,
+  Scene,
+} from '@/lib/canvas-engine/scene'
 import type { CanvasElementRecord } from '@/data/models'
 import type { CanvasTool } from './use-canvas-input'
 import { toEngineScene } from '@/lib/canvas-element-adapter'
 import { drawScene, measurerFor } from '@/lib/canvas-engine/render'
+import { updateElement } from '@/lib/canvas-engine/scene'
 import { DEFAULT_CAMERA } from '@/lib/canvas-engine/camera'
 import { focusOnRect } from '@/lib/canvas-engine/camera-focus'
 import { useTheme } from '@/hooks/use-theme'
@@ -225,6 +231,43 @@ export function CanvasBoard({
 
   remapRef.current = input.remapElementId
 
+  /**
+   * Change a connector's routing (tactical plan, Wave 5, step 15).
+   *
+   * Two writes, in the order every other gesture uses: the LOCAL scene first
+   * so the line re-routes on the next frame, then the recording surface.
+   * `updateElements` (in `useCanvasElements`) deliberately applies nothing
+   * optimistically — it only reconciles on ack and rolls back on refusal —
+   * so without the `setScene` here the picker would appear to do nothing for
+   * a whole round trip.
+   *
+   * It goes through `callbacks.onUpdate`, NOT `updateElements` directly. Both
+   * end at the same emit, but only the recording surface pushes an undo
+   * entry, and a routing change that `Ctrl+Z` could not reverse would be the
+   * one board edit that behaves differently from the rest. No new undo
+   * machinery is needed for it — it is an ordinary single-element `update`.
+   */
+  const handleRoutingChange = useCallback(
+    (element: CanvasElement, routing: CanvasConnectorRouting) => {
+      if (!element.connector) return
+      const updated: CanvasElement = {
+        ...element,
+        connector: { ...element.connector, routing },
+      }
+      setScene((prev) =>
+        prev.byId.has(element.id)
+          ? updateElement(prev, element.id, { connector: updated.connector })
+          : prev,
+      )
+      // `before` is the element as it stood BEFORE the change — undo's
+      // inverse writes it back, and capturing it here (rather than re-reading
+      // the scene after `setScene`) is the same pre-state rule every gesture
+      // in use-canvas-input.ts follows.
+      callbacks?.onUpdate?.([updated], [element], 'routing')
+    },
+    [callbacks],
+  )
+
   // ── context ──────────────────────────────────────────────────────────────
   useEffect(() => {
     ctxRef.current = canvasRef.current?.getContext('2d') ?? null
@@ -270,6 +313,16 @@ export function CanvasBoard({
       ids: input.selectedIds,
       marquee: input.marquee,
       draft: input.draft,
+      // Creation-handle affordances (canvas quick-create-handles tactical
+      // plan, Wave 4). `hoveredId` is what puts handles on an element nobody
+      // has selected; `quickCreate` is the in-flight rubber band. Both are
+      // pure render inputs — `use-canvas-input` owns the gesture, this only
+      // hands the renderer what it already decided.
+      hoveredId: input.hoveredId,
+      quickCreate: input.quickCreate,
+      // What a dragged connector end would attach to, so the renderer can
+      // answer "will this connect, and where?" during the drag.
+      connectorAttach: input.connectorAttach,
       editing: input.editing
         ? {
             elementId: input.editing.elementId,
@@ -290,7 +343,10 @@ export function CanvasBoard({
       input.displayCaret,
       input.draft,
       input.editing,
+      input.connectorAttach,
+      input.hoveredId,
       input.marquee,
+      input.quickCreate,
       input.selectedIds,
     ],
   )
@@ -329,8 +385,10 @@ export function CanvasBoard({
     boardId,
     scene: input.displayScene,
     camera,
-    selectedIds: input.selectedIds,
-    editingElementId: input.editing?.elementId ?? null,
+    // The SAME object `drawScene` was just handed, so the hook can resolve
+    // the creation-handle target with the renderer's own rules rather than a
+    // second copy of them.
+    selection,
     tool,
     readOnly: effectiveReadOnly,
   })
@@ -421,6 +479,18 @@ export function CanvasBoard({
         onMouseDown={(event) => event.preventDefault()}
         onPointerDown={handleCanvasPointerDown}
         {...restCanvasHandlers}
+      />
+
+      {/* The routing picker (tactical plan, Wave 5). Rendered
+          unconditionally — it decides for itself whether there is a single
+          selected, drawable connector to be about, so the condition lives in
+          one testable place rather than as a chain of `&&` here. */}
+      <ConnectorToolbar
+        scene={input.displayScene}
+        selectedIds={input.selectedIds}
+        camera={camera}
+        readOnly={effectiveReadOnly}
+        onRoutingChange={handleRoutingChange}
       />
 
       <TextInputProxy

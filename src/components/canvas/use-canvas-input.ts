@@ -25,8 +25,18 @@ import type {
 } from 'react'
 import type { Camera, Point } from '@/lib/canvas-engine/camera'
 import type { WorldRect } from '@/lib/canvas-engine/hit-test'
-import type { CanvasElement, Scene } from '@/lib/canvas-engine/scene'
-import type { ResizeHandle, ScreenRect } from '@/lib/canvas-engine/render'
+import type {
+  CanvasElement,
+  ConnectorAnchor,
+  ConnectorAttach,
+  Scene,
+} from '@/lib/canvas-engine/scene'
+import type {
+  ConnectorEnd,
+  CreationHandleDirection,
+  ResizeHandle,
+  ScreenRect,
+} from '@/lib/canvas-engine/render'
 import type { TextMeasurer } from '@/lib/canvas-engine/text-layout'
 import {
   panByScreenDelta,
@@ -35,25 +45,45 @@ import {
   zoomAt,
 } from '@/lib/canvas-engine/camera'
 import {
+  connectorPathOf,
   hitTest,
   hitTestRect,
   normaliseRect,
   rectFromPoints,
 } from '@/lib/canvas-engine/hit-test'
 import {
+  DEFAULT_CONNECTOR_ROUTING,
   DEFAULT_ELEMENT_STYLE,
   addElement,
+  attachedEndpoint,
+  bounds,
+  connectorsTouching,
+  endpointElementId,
+  freeEndpoint,
   nextZIndex,
-  removeElement,
+  remapConnectorEndpoints,
   removeElements,
   updateElement,
+  withAttachedConnectors,
 } from '@/lib/canvas-engine/scene'
 import {
+  CONNECTOR_ENDS,
+  CREATION_HANDLE_DIRECTIONS,
   RESIZE_HANDLES,
+  connectorEndpointRects,
+  creationHandleRects,
+  creationHandleTarget,
   handleRects,
   layoutElementText,
   textFrame,
 } from '@/lib/canvas-engine/render'
+import { quickCreatePlacement } from '@/lib/canvas-engine/quick-create'
+import {
+  ANCHOR_ATTACH,
+  anchorPoint,
+  nearestAnchor,
+  nearestAttach,
+} from '@/lib/canvas-engine/connector-geometry'
 import {
   caretFromPoint,
   clampCaret,
@@ -102,8 +132,22 @@ const WHEEL_ZOOM_DIVISOR = 500
  * and "resized" and "edited the text of" are different toasts, and nothing
  * about the elements' before/after geometry alone can tell them apart
  * reliably (a corner-handle resize also moves x/y).
+ *
+ * `routing` is the odd one out: it is the only arm NOT produced by this file.
+ * A connector's routing is changed from `ConnectorToolbar` (canvas
+ * quick-create-handles tactical plan, Wave 5), which reaches the same
+ * `onUpdate` recording surface rather than writing through
+ * `useCanvasElements` directly — going around it would make the change the
+ * one board edit `Ctrl+Z` could not reverse. The arm exists so the toast
+ * names what actually happened; without it the call would default to `move`
+ * and report "Undid moving an element" for a gesture that moved nothing.
  */
-export type CanvasUpdateGesture = 'move' | 'resize' | 'text-edit'
+export type CanvasUpdateGesture =
+  | 'move'
+  | 'resize'
+  | 'text-edit'
+  | 'routing'
+  | 'reconnect'
 
 /**
  * Persistence seam. Every callback fires at gesture END with the element(s)
@@ -125,6 +169,25 @@ export type CanvasUpdateGesture = 'move' | 'resize' | 'text-edit'
  */
 export interface CanvasEditCallbacks {
   onCreate?: (element: CanvasElement) => void
+  /**
+   * One creation-handle gesture, carrying everything it created (canvas
+   * quick-create-handles tactical plan, Wave 4, step 11): `[newElement,
+   * connector]`, or `[connector]` alone when the drag ended on an element
+   * that already existed.
+   *
+   * Deliberately NOT two `onCreate` calls. `onCreate`'s consumer
+   * (`use-canvas-undo.ts`'s `recordCreate`) pushes one undo entry per call
+   * and labels it `{ gesture: 'create' }`, which is documented as
+   * single-element — two calls would make one press take two `Ctrl+Z`s to
+   * reverse, leaving a connector dangling from an element that no longer
+   * exists in between.
+   *
+   * The elements carry CLIENT-side ids. The consumer must create the
+   * non-connector element FIRST and rewrite the connector's endpoints with
+   * the id the server answers with, because a connector persisted against a
+   * temporary id names a row that never existed.
+   */
+  onQuickCreate?: (elements: Array<CanvasElement>) => void
   onUpdate?: (
     elements: Array<CanvasElement>,
     before: Array<CanvasElement>,
@@ -214,6 +277,46 @@ type Gesture =
       /** The element exactly as it stood at pointerdown, for `onUpdate`'s pre-state. */
       beforeElement: CanvasElement
     }
+  | {
+      /**
+       * A press on one of a selected connector's two endpoint grips. The end
+       * follows the pointer as a FREE point for the whole drag — the scene is
+       * mutated live, exactly as `move` and `resize` do — and the release
+       * decides whether it stays free or re-attaches.
+       */
+      kind: 'connector-endpoint'
+      connectorId: string
+      end: ConnectorEnd
+      /** The connector as it stood at pointerdown, for `onUpdate`'s pre-state. */
+      beforeElement: CanvasElement
+      currentWorld: Point
+      /**
+       * What the end would attach to if released right now, or null over empty
+       * board. Computed on every move so the renderer can SHOW the answer
+       * during the drag instead of leaving it to the release.
+       */
+      candidate: { elementId: string; attach: ConnectorAttach } | null
+    }
+  | {
+      /**
+       * A press on one of the four creation handles (canvas
+       * quick-create-handles tactical plan, Wave 4, step 10). Nothing is
+       * created until release: which of the three outcomes happens depends
+       * entirely on where the pointer ends up.
+       */
+      kind: 'quick-create'
+      sourceId: string
+      direction: CreationHandleDirection
+      startScreen: Point
+      currentWorld: Point
+      /**
+       * True once the pointer has travelled past `CLICK_SLOP`. Tracked the
+       * same way the move gesture tracks it, and for the same reason: the
+       * release handler also runs from `lostpointercapture`, whose event
+       * coordinates cannot be trusted to describe where the user let go.
+       */
+      moved: boolean
+    }
 
 function screenRectContains(rect: ScreenRect, point: Point): boolean {
   return (
@@ -242,6 +345,125 @@ function makeElement(
     text: kind === 'text' ? '' : null,
     style: { ...DEFAULT_ELEMENT_STYLE },
   }
+}
+
+/**
+ * A connector joining two elements, ready to go into the scene.
+ *
+ * Its stored geometry is a DEGENERATE 1x1 placeholder at the source's centre
+ * and is never read: a connector's shape is derived from its two endpoints'
+ * live bounds every frame (`connectorPath`), so there is nothing meaningful
+ * to store. The placeholder exists only because `createCanvasElementSchema`
+ * requires a positive width and height of every element — see its own note.
+ *
+ * Style is inherited from the source element so the line reads as belonging
+ * to it, which is also what makes a chain of quick-creates look deliberate
+ * rather than assembled from defaults.
+ */
+function makeConnector(
+  source: CanvasElement,
+  target: CanvasElement,
+  zIndex: number,
+  sourceAnchor: ConnectorAnchor,
+): CanvasElement {
+  // The line leaves the side the user actually grabbed, and joins the target
+  // on the face nearest that departure point — so it reads as running between
+  // the two shapes rather than aiming at their centres and being clipped
+  // wherever that happens to cross the border.
+  const from = anchorPoint(bounds(source), sourceAnchor)
+  const targetAnchor = nearestAnchor(bounds(target), from)
+  return {
+    id: uuid(),
+    kind: 'connector',
+    x: from.x,
+    y: from.y,
+    width: 1,
+    height: 1,
+    rotation: 0,
+    zIndex,
+    text: null,
+    style: { ...source.style },
+    connector: {
+      // A creation handle IS one of the four sides, so a quick-create still
+      // lands on that side's midpoint. Dragging the end afterwards is what
+      // moves it anywhere else along the border.
+      source: attachedEndpoint(source.id, ANCHOR_ATTACH[sourceAnchor]),
+      target: attachedEndpoint(target.id, ANCHOR_ATTACH[targetAnchor]),
+      routing: DEFAULT_CONNECTOR_ROUTING,
+    },
+  }
+}
+
+/**
+ * A quick-created sibling of `source`: same kind, same size, same style,
+ * empty text, at `position` (world, top-left).
+ *
+ * Inheriting rather than defaulting is the whole point of creating from a
+ * handle instead of from the toolbar — the user is extending something that
+ * already exists, and a new element in a different size or colour would have
+ * to be re-styled every single time.
+ */
+function makeSibling(
+  source: CanvasElement,
+  position: Point,
+  zIndex: number,
+): CanvasElement {
+  return {
+    id: uuid(),
+    kind: source.kind,
+    x: position.x,
+    y: position.y,
+    width: source.width,
+    height: source.height,
+    rotation: 0,
+    zIndex,
+    text: source.kind === 'text' ? '' : null,
+    style: { ...source.style },
+  }
+}
+
+/**
+ * What a connector end being dragged would attach to if released at `world`,
+ * or null over empty board.
+ *
+ * ONE function, consulted by both the live preview and the release, so the
+ * highlight a user sees during the drag and the attachment they actually get
+ * cannot disagree. Two copies of this rule is the export-what-you-draw defect
+ * in a new costume: the marker says one thing and the commit does another.
+ */
+function attachCandidateAt(
+  gesture: {
+    connectorId: string
+    end: ConnectorEnd
+    beforeElement: CanvasElement
+  },
+  world: Point,
+  scene: Scene,
+): { elementId: string; attach: ConnectorAttach } | null {
+  const link = scene.byId.get(gesture.connectorId)?.connector
+  if (!link) return null
+  const other = gesture.end === 'source' ? link.target : link.source
+  const otherElementId = endpointElementId(other)
+
+  const dropped = hitTest(scene, world)
+  // A connector is never an attach target, and neither is the element the
+  // OTHER end already holds — that would be a self-connector, which the schema
+  // rejects outright.
+  if (!dropped || dropped.connector || dropped.id === otherElementId) return null
+  return {
+    elementId: dropped.id,
+    attach: nearestAttach(bounds(dropped), world),
+  }
+}
+
+/** Which side an arrow key means, for the pointerless quick-create path. */
+const ARROW_DIRECTIONS: Readonly<
+  Partial<Record<string, CreationHandleDirection>>
+> = {
+  ArrowUp: 'top',
+  ArrowRight: 'right',
+  ArrowDown: 'bottom',
+  ArrowLeft: 'left',
 }
 
 /**
@@ -311,6 +533,24 @@ export function useCanvasInput({
    */
   const gestureRef = useRef<Gesture>({ kind: 'none' })
   const editingRef = useRef<EditingState | null>(null)
+
+  /**
+   * The element the pointer is over, which is what decides where creation
+   * handles are drawn when nothing is selected.
+   *
+   * Mirrored in a ref for the same reason `gesture` is: `onPointerDown` reads
+   * it to resolve which element's handles it should test, and on a fast
+   * pointer the move that set it and the press that reads it can land in the
+   * same tick with no render in between.
+   */
+  const [hoveredId, setHoveredIdState] = useState<string | null>(null)
+  const hoveredIdRef = useRef<string | null>(null)
+
+  const setHoveredId = useCallback((next: string | null) => {
+    if (hoveredIdRef.current === next) return
+    hoveredIdRef.current = next
+    setHoveredIdState(next)
+  }, [])
 
   const setGesture = useCallback((next: Gesture) => {
     gestureRef.current = next
@@ -391,7 +631,21 @@ export function useCanvasInput({
 
     const isEmpty = (element.text ?? '').length === 0
     if (isEmpty && element.kind === 'text') {
-      setScene((prev) => removeElement(prev, element.id))
+      // The SECOND delete site, and the easily-missed one (step 12). A text
+      // element quick-created from a handle and then left empty is destroyed
+      // right here, and without the cascade its brand-new connector would
+      // outlive it as an undrawable, unselectable row.
+      //
+      // Captured from the CURRENT scene BEFORE `removeElement` below, for the
+      // same reason `element` itself is: afterwards there is nothing left for
+      // `connectorsTouching` to find (the B2 lesson — pre-state, never post).
+      const attached = connectorsTouching(latest.current.scene, element.id)
+      setScene((prev) =>
+        removeElements(prev, [
+          element.id,
+          ...attached.map((connector) => connector.id),
+        ]),
+      )
       setSelectedIds(new Set<string>())
       // `element` here is the EMPTIED local element — the emptying was never
       // persisted, so the row this delete removes server-side still holds
@@ -403,7 +657,16 @@ export function useCanvasInput({
       // guaranteed non-null here because it is null only when `isNew`, which
       // this branch already excludes.
       if (!current.isNew && current.before) {
-        callbacks?.onDelete?.([current.before])
+        callbacks?.onDelete?.([current.before, ...attached])
+      } else if (attached.length > 0) {
+        // `isNew` means nothing was ever persisted for the ELEMENT, so it
+        // needs no delete — but a connector attached to it was persisted by
+        // whatever created it, and removing it from the scene above without
+        // saying so would leave the row behind on the server. Not reachable
+        // today (a quick-created element uses `isNew: false` precisely so
+        // this branch stays about the element, not the connectors), and
+        // written anyway because the alternative failure is silent.
+        callbacks?.onDelete?.(attached)
       }
       return
     }
@@ -451,6 +714,127 @@ export function useCanvasInput({
     [layoutFor],
   )
 
+  // ── quick create (creation handles) ──────────────────────────────────────
+
+  /**
+   * The element currently showing creation handles, resolved EXACTLY the way
+   * the renderer resolves it.
+   *
+   * `creationHandleTarget` is imported from render.ts rather than
+   * reimplemented here for the same reason `creationHandleRects` is: handles
+   * drawn on one element and hit-tested against another is a marker that does
+   * not respond where it looks, which is the W1/W3 class of bug.
+   */
+  const handleTargetNow = useCallback((): CanvasElement | null => {
+    const edit = editingRef.current
+    return creationHandleTarget(latest.current.scene, {
+      ids: latest.current.selectedIds,
+      hoveredId: hoveredIdRef.current,
+      // Only its presence is read (it is one of the suppression rules), but
+      // the real caret is passed anyway rather than a placeholder — a fake
+      // value here would become wrong the day the function reads one.
+      editing: edit
+        ? { elementId: edit.elementId, caret: edit.caret, caretVisible: true }
+        : null,
+      // `marquee` and `draft` need no entry: both are derived from `gesture`,
+      // and every caller below reaches this only while `gesture` is 'none'.
+    })
+  }, [])
+
+  /** Which creation handle, if any, a screen point is inside. */
+  const creationHandleAt = useCallback(
+    (
+      element: CanvasElement,
+      screen: Point,
+    ): CreationHandleDirection | undefined => {
+      const rects = creationHandleRects(latest.current.camera, bounds(element))
+      return CREATION_HANDLE_DIRECTIONS.find((direction) =>
+        screenRectContains(rects[direction], screen),
+      )
+    },
+    [],
+  )
+
+  /**
+   * Commit one creation-handle gesture: add whatever it created to the scene
+   * and hand ALL of it to `onQuickCreate` in a single call.
+   *
+   * `target` is an element that already exists (the drag-onto-an-element
+   * case) or a brand-new sibling. Either way exactly one connector is made,
+   * and both writes leave through one callback so one `Ctrl+Z` reverses the
+   * whole gesture (step 11).
+   */
+  const commitQuickCreate = useCallback(
+    (
+      source: CanvasElement,
+      target: CanvasElement,
+      targetIsNew: boolean,
+      sourceAnchor: ConnectorAnchor,
+    ) => {
+      const base = nextZIndex(latest.current.scene)
+      const connector = makeConnector(
+        source,
+        target,
+        targetIsNew ? base + 1 : base,
+        sourceAnchor,
+      )
+      setScene((prev) =>
+        addElement(targetIsNew ? addElement(prev, target) : prev, connector),
+      )
+      setSelectedIds(new Set([target.id]))
+      callbacks?.onQuickCreate?.(
+        targetIsNew ? [target, connector] : [connector],
+      )
+      if (targetIsNew) {
+        // Straight into typing, as FigJam does — the point of the gesture is
+        // "another one of these, with something written in it".
+        //
+        // `isNew: false` even though the element IS new. In this file `isNew`
+        // means "this edit session is responsible for PERSISTING the
+        // element", and it is not: `onQuickCreate` above already did. Passing
+        // true would make `commitEditing` call `onCreate` as well, writing
+        // the element a second time. The consequence of `false` is the
+        // correct one: an empty text element is destroyed on commit (with its
+        // connector, see `commitEditing`), and typed text is recorded as its
+        // own separate `text-edit` entry, which is what the user's own second
+        // gesture deserves.
+        beginEditing(target, 0, false)
+      }
+    },
+    [beginEditing, callbacks, setScene],
+  )
+
+  /**
+   * The click (and `Alt+Arrow`) case: a new sibling one gap away in
+   * `direction`, plus the connector joining them.
+   *
+   * Connectors are excluded from `occupied` because their stored bounds are
+   * the 1x1 placeholder — treating that as an obstacle would push new
+   * elements away from a point near the source's own centre for no visible
+   * reason.
+   */
+  const quickCreateInDirection = useCallback(
+    (source: CanvasElement, direction: CreationHandleDirection) => {
+      const current = latest.current.scene
+      const occupied = current.elements
+        .filter((element) => !element.connector && element.id !== source.id)
+        .map(bounds)
+      const position = quickCreatePlacement(
+        bounds(source),
+        direction,
+        { width: source.width, height: source.height },
+        occupied,
+      )
+      commitQuickCreate(
+        source,
+        makeSibling(source, position, nextZIndex(current)),
+        true,
+        direction,
+      )
+    },
+    [commitQuickCreate],
+  )
+
   // ── pointer ──────────────────────────────────────────────────────────────
 
   const onPointerDown = useCallback(
@@ -493,11 +877,78 @@ export function useCanvasInput({
 
       // ── select tool ──
       const currentSelection = latest.current.selectedIds
+
+      // Creation handles are tested BEFORE the resize grips (step 10). They
+      // are the OUTER ring — `CREATION_HANDLE_OFFSET` is chosen so the two
+      // hit rectangles cannot overlap at any zoom — so today the order is not
+      // load-bearing. It is written this way regardless, because if either
+      // constant ever changes the outer, larger, touch-sized affordance is
+      // the one the user was aiming at.
+      // A selected CONNECTOR's endpoint grips, before anything else. They are
+      // the only affordance a connector has — `creationHandleTarget` excludes
+      // connectors and the resize-grip block below skips them — so nothing
+      // else competes for this press.
+      if (currentSelection.size === 1) {
+        const only = latest.current.scene.byId.get([...currentSelection][0])
+        if (only?.connector) {
+          const grips = connectorEndpointRects(
+            latest.current.camera,
+            connectorPathOf(latest.current.scene, only),
+          )
+          const grabbed =
+            grips &&
+            CONNECTOR_ENDS.find((end) =>
+              screenRectContains(grips[end], screen),
+            )
+          if (grabbed) {
+            setGesture({
+              kind: 'connector-endpoint',
+              connectorId: only.id,
+              end: grabbed,
+              // Shallow clone — same safety rationale as every other
+              // pre-gesture snapshot in this file: the engine replaces
+              // elements rather than mutating them, so the drag cannot reach
+              // back and corrupt what this captured.
+              beforeElement: { ...only },
+              currentWorld: world,
+              candidate: null,
+            })
+            return
+          }
+        }
+      }
+
+      const handleSource = handleTargetNow()
+      if (handleSource) {
+        const direction = creationHandleAt(handleSource, screen)
+        if (direction) {
+          setGesture({
+            kind: 'quick-create',
+            sourceId: handleSource.id,
+            direction,
+            startScreen: screen,
+            currentWorld: world,
+            moved: false,
+          })
+          return
+        }
+      }
+
       if (currentSelection.size === 1) {
         const only = latest.current.scene.byId.get(
           [...currentSelection][0],
         )
-        if (only) {
+        // `!only.connector` mirrors the renderer EXACTLY: `drawScene` gates
+        // its own grip block on the same condition, because a connector's
+        // stored bounds are a degenerate 1x1 placeholder and grips drawn from
+        // them would all pile up on one point. Testing them here anyway was a
+        // real, e2e-caught defect — the grips are invisible but their 8px hit
+        // rects still swallowed every click landing on that point, so with a
+        // connector selected, clicking the element under its placeholder
+        // selected nothing and silently began resizing the connector instead.
+        // Export-what-you-draw runs in BOTH directions: input must not test
+        // what the renderer declined to draw.
+        if (only && !only.connector) {
           const grips = handleRects(latest.current.camera, only)
           const grabbed = RESIZE_HANDLES.find((handle) =>
             screenRectContains(grips[handle], screen),
@@ -567,7 +1018,9 @@ export function useCanvasInput({
       beginEditing,
       canvasRef,
       commitEditing,
+      creationHandleAt,
       editing,
+      handleTargetNow,
       screenFromEvent,
       setGesture,
       setScene,
@@ -578,10 +1031,44 @@ export function useCanvasInput({
 
   const onPointerMove = useCallback(
     (event: ReactPointerEvent<HTMLCanvasElement>) => {
-      if (gesture.kind === 'none') return
       const screen = screenFromEvent(event)
       if (!screen) return
       const world = screenToWorld(latest.current.camera, screen)
+
+      // Idle hover (step 9): what the pointer is over decides where creation
+      // handles are drawn when nothing is selected. This branch reuses the
+      // SAME `hitTest` scan every other gesture uses — a second traversal per
+      // pointermove is a per-frame cost on the one event that fires most.
+      if (gesture.kind === 'none') {
+        if (latest.current.readOnly || latest.current.tool !== 'select') {
+          // A read-only board sends every press to pan and a drawing tool
+          // owns the next press, so handles there would be decoration that
+          // does nothing.
+          setHoveredId(null)
+          return
+        }
+        const hit = hitTest(latest.current.scene, world)
+        if (hit) {
+          setHoveredId(hit.id)
+          return
+        }
+        // Nothing under the pointer — but the handles sit OUTSIDE their
+        // element, so moving from the element towards one of them leaves its
+        // bounds. Dropping hover here would make a hover-shown handle
+        // impossible to grab: it vanishes exactly as you reach for it.
+        const previous = hoveredIdRef.current
+          ? latest.current.scene.byId.get(hoveredIdRef.current)
+          : undefined
+        if (
+          previous &&
+          !previous.connector &&
+          creationHandleAt(previous, screen)
+        ) {
+          return
+        }
+        setHoveredId(null)
+        return
+      }
 
       switch (gesture.kind) {
         case 'pan': {
@@ -632,18 +1119,68 @@ export function useCanvasInput({
           break
         }
         case 'resize': {
-          const bounds = resizedBounds(
+          const next = resizedBounds(
             gesture.handle,
             gesture.startBounds,
             world,
           )
-          setScene((prev) => updateElement(prev, gesture.elementId, bounds))
+          setScene((prev) => updateElement(prev, gesture.elementId, next))
+          break
+        }
+        case 'connector-endpoint': {
+          // The end becomes a FREE point for the duration of the drag, so the
+          // line follows the pointer with no extra renderer state — the same
+          // "mutate the scene live, persist at gesture end" rule `move` and
+          // `resize` already follow. The release decides what it finally is.
+          setScene((prev) => {
+            const element = prev.byId.get(gesture.connectorId)
+            if (!element?.connector) return prev
+            return updateElement(prev, gesture.connectorId, {
+              connector: {
+                ...element.connector,
+                [gesture.end]: freeEndpoint(world),
+              },
+            })
+          })
+          setGesture({
+            ...gesture,
+            currentWorld: world,
+            candidate: attachCandidateAt(gesture, world, latest.current.scene),
+          })
+          break
+        }
+        case 'quick-create': {
+          const travelled =
+            Math.abs(screen.x - gesture.startScreen.x) +
+            Math.abs(screen.y - gesture.startScreen.y)
+          setGesture({
+            ...gesture,
+            currentWorld: world,
+            moved: gesture.moved || travelled > CLICK_SLOP,
+          })
           break
         }
       }
     },
-    [gesture, screenFromEvent, setCamera, setGesture, setScene],
+    [
+      creationHandleAt,
+      gesture,
+      screenFromEvent,
+      setCamera,
+      setGesture,
+      setHoveredId,
+      setScene,
+    ],
   )
+
+  /**
+   * The pointer left the canvas entirely — no element can be under it, and a
+   * hover left behind would keep drawing handles around whatever was last
+   * touched, including after the board scrolled out from under them.
+   */
+  const onPointerLeave = useCallback(() => {
+    setHoveredId(null)
+  }, [setHoveredId])
 
   const endGesture = useCallback(
     (event: ReactPointerEvent<HTMLCanvasElement>) => {
@@ -711,11 +1248,123 @@ export function useCanvasInput({
           }
           break
         }
+        case 'connector-endpoint': {
+          const element = latest.current.scene.byId.get(finished.connectorId)
+          const link = element?.connector
+          if (!element || !link) break
+
+          // Where the OTHER end is attached, if it is — used to refuse a drop
+          // that would join an element to itself, which the schema rejects
+          // outright and which has no drawable path anyway.
+          const otherElementId = endpointElementId(
+            finished.end === 'source' ? link.target : link.source,
+          )
+
+          // The SAME rule the live preview used — see `attachCandidateAt`. The
+          // highlight the user was looking at when they let go is by
+          // construction the attachment they get.
+          const candidate = attachCandidateAt(
+            finished,
+            finished.currentWorld,
+            latest.current.scene,
+          )
+          const dropped = hitTest(latest.current.scene, finished.currentWorld)
+
+          let resolved
+          if (candidate) {
+            // Attached at the point on the border NEAREST where it was let
+            // go — anywhere along an edge, not one of four midpoints. This
+            // covers "onto a different element" and "somewhere else on the
+            // element it was already on" with no branch of its own, because
+            // the attachment is recomputed from the drop either way.
+            resolved = attachedEndpoint(candidate.elementId, candidate.attach)
+          } else if (dropped && dropped.id === otherElementId) {
+            // Dropped on the element the OTHER end holds. Revert rather than
+            // detach: the user aimed at something specific, and silently
+            // leaving the end floating where they released would look like the
+            // drop was ignored AND move the line.
+            setScene((prev) =>
+              updateElement(prev, element.id, {
+                connector: finished.beforeElement.connector,
+              }),
+            )
+            break
+          } else {
+            // Empty board — the end stays where it was dropped, attached to
+            // nothing.
+            resolved = freeEndpoint(finished.currentWorld)
+          }
+
+          const updated: CanvasElement = {
+            ...element,
+            connector: { ...link, [finished.end]: resolved },
+          }
+          setScene((prev) =>
+            updateElement(prev, element.id, { connector: updated.connector }),
+          )
+          callbacks?.onUpdate?.([updated], [finished.beforeElement], 'reconnect')
+          break
+        }
+        case 'quick-create': {
+          const source = latest.current.scene.byId.get(finished.sourceId)
+          // Gone mid-gesture (a collaborator's delete) — there is nothing
+          // left to connect to, and a connector with one endpoint can never
+          // be drawn.
+          if (!source) break
+
+          if (!finished.moved) {
+            // A click: the direction is the whole instruction, and
+            // `quickCreatePlacement` decides where that lands.
+            quickCreateInDirection(source, finished.direction)
+            break
+          }
+
+          const dropped = hitTest(latest.current.scene, finished.currentWorld)
+          if (dropped && dropped.id === source.id) {
+            // Dragged out and back onto the source. Self-connectors are
+            // rejected by the schema, and creating a sibling under the
+            // pointer would bury it — doing nothing is what the gesture
+            // looks like it did.
+            break
+          }
+          if (dropped && !dropped.connector) {
+            // Dropped on something that already exists: join the two, and
+            // create nothing else. This is the case the whole drag variant
+            // exists for.
+            commitQuickCreate(source, dropped, false, finished.direction)
+            break
+          }
+          // Empty board (or a connector, which cannot be an endpoint):
+          // a new sibling CENTRED on the release point, because that is
+          // where the rubber band has been pointing the whole drag.
+          commitQuickCreate(
+            source,
+            makeSibling(
+              source,
+              {
+                x: finished.currentWorld.x - source.width / 2,
+                y: finished.currentWorld.y - source.height / 2,
+              },
+              nextZIndex(latest.current.scene),
+            ),
+            true,
+            finished.direction,
+          )
+          break
+        }
         default:
           break
       }
     },
-    [callbacks, canvasRef, setGesture, setScene, setTool],
+    [
+      callbacks,
+      canvasRef,
+      commitQuickCreate,
+      quickCreateInDirection,
+      setGesture,
+      setScene,
+      setTool,
+    ],
   )
 
   const onDoubleClick = useCallback(
@@ -777,11 +1426,20 @@ export function useCanvasInput({
   // ── board-level keyboard (NOT editing) ───────────────────────────────────
 
   const deleteSelection = useCallback(() => {
-    const ids = [...latest.current.selectedIds]
-    if (ids.length === 0) return
-    // Captured BEFORE the scene update below: undo's inverse (a
-    // create-with-id) needs every persisted property to restore these
-    // elements faithfully, not just their ids.
+    const selected = [...latest.current.selectedIds]
+    if (selected.length === 0) return
+    // Expanded to include every connector attached to anything doomed (step
+    // 12): a connector whose endpoint is gone can never be drawn or clicked
+    // again, so leaving it behind means an invisible row nothing can ever
+    // remove. `withAttachedConnectors` deduplicates, which matters when BOTH
+    // ends of one connector are in the selection.
+    //
+    // Both this expansion and the snapshot below read the scene BEFORE
+    // `removeElements` — afterwards the connectors are gone and there is
+    // nothing left to find (the B2 lesson: capture pre-state, never post).
+    // Undo's inverse is a create-with-id, so it needs every persisted
+    // property of every row, not just the ids.
+    const ids = withAttachedConnectors(latest.current.scene, selected)
     const elements = ids
       .map((id) => latest.current.scene.byId.get(id))
       .filter((element): element is CanvasElement => Boolean(element))
@@ -810,6 +1468,25 @@ export function useCanvasInput({
         return
       }
       if (latest.current.readOnly) return
+
+      // The pointerless quick-create (step 13). Checked BEFORE the modifier
+      // guard below, which used to swallow every `altKey` press.
+      //
+      // Plain arrows are untouched: they fall through to this switch's
+      // `default` exactly as before, because the board has never bound them.
+      if (event.altKey && !event.ctrlKey && !event.metaKey) {
+        const direction = ARROW_DIRECTIONS[event.key]
+        if (!direction) return
+        const ids = [...latest.current.selectedIds]
+        if (ids.length !== 1) return
+        const source = latest.current.scene.byId.get(ids[0])
+        // A connector has no "same shape one gap to the right" — the same
+        // exclusion `creationHandleTarget` applies to the pointer path.
+        if (!source || source.connector) return
+        event.preventDefault()
+        quickCreateInDirection(source, direction)
+        return
+      }
       if (event.ctrlKey || event.metaKey || event.altKey) return
 
       switch (event.key) {
@@ -849,7 +1526,7 @@ export function useCanvasInput({
           break
       }
     },
-    [beginEditing, deleteSelection, setTool],
+    [beginEditing, deleteSelection, quickCreateInDirection, setTool],
   )
 
   const onBoardKeyUp = useCallback(
@@ -1007,6 +1684,26 @@ export function useCanvasInput({
     )
   }, [gesture])
 
+  /**
+   * The in-flight rubber band from a creation handle. Never in the scene —
+   * the same contract `draft` has, and for the same reason: nothing exists
+   * until the pointer is released.
+   */
+  const quickCreate = useMemo<{ fromId: string; toWorld: Point } | null>(() => {
+    if (gesture.kind !== 'quick-create') return null
+    return { fromId: gesture.sourceId, toWorld: gesture.currentWorld }
+  }, [gesture])
+
+  /**
+   * What a dragged connector end would attach to right now — the renderer
+   * highlights it, and its absence is how "releasing here detaches" is shown.
+   */
+  const connectorAttach = useMemo<
+    { elementId: string; attach: ConnectorAttach } | null
+  >(() => (gesture.kind === 'connector-endpoint' ? gesture.candidate : null), [
+    gesture,
+  ])
+
   const draft = useMemo<CanvasElement | null>(() => {
     if (gesture.kind !== 'draw') return null
     const rect = rectFromPoints(gesture.originWorld, gesture.currentWorld)
@@ -1066,20 +1763,39 @@ export function useCanvasInput({
    * typing into stops receiving keystrokes because `editing.elementId` names
    * a row that no longer exists.
    */
-  const remapElementId = useCallback((from: string, to: string) => {
-    setSelectedIds((current) => {
-      if (!current.has(from)) return current
-      const next = new Set(current)
-      next.delete(from)
-      next.add(to)
-      return next
-    })
-    setEditing((current) =>
-      current && current.elementId === from
-        ? { ...current, elementId: to }
-        : current,
-    )
-  }, [setEditing])
+  const remapElementId = useCallback(
+    (from: string, to: string) => {
+      setSelectedIds((current) => {
+        if (!current.has(from)) return current
+        const next = new Set(current)
+        next.delete(from)
+        next.add(to)
+        return next
+      })
+      setEditing((current) =>
+        current && current.elementId === from
+          ? {
+              ...current,
+              elementId: to,
+              // `before` carries the element's own id, and `recordUpdate`
+              // matches pre-state to post-state BY ID — a `before` still
+              // holding the temporary id silently produces no operation, and
+              // the text the user just typed becomes un-undoable. Only
+              // reachable since quick-create began opening the editor on an
+              // element whose create is still in flight (`isNew: false`).
+              before: current.before ? { ...current.before, id: to } : null,
+            }
+          : current,
+      )
+      // Connector endpoints are local references too, and the ONLY ones that
+      // outlive the render they were made in — a quick-created connector is
+      // drawn against the new element's temporary id, and would stop
+      // resolving (invisible line, no delete cascade) the moment the server
+      // renamed it.
+      setScene((prev) => remapConnectorEndpoints(prev, from, to))
+    },
+    [setEditing, setScene],
+  )
 
   const cursor = readOnly
     ? gesture.kind === 'pan'
@@ -1102,6 +1818,9 @@ export function useCanvasInput({
     editing,
     marquee,
     draft,
+    hoveredId,
+    quickCreate,
+    connectorAttach,
     displayScene,
     displayCaret,
     caretVisible,
@@ -1122,6 +1841,7 @@ export function useCanvasInput({
       // fires after every pointerup too). Mirrors ShapeDrawOverlay.tsx's
       // `onLostPointerCaptureCapture` guard.
       onLostPointerCapture: endGesture,
+      onPointerLeave,
       onDoubleClick,
     },
     boardHandlers: {

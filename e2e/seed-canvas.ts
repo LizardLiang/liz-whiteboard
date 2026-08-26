@@ -84,13 +84,25 @@ function board(id: string, name: string) {
 function element(opts: {
   id: string
   boardId: string
-  kind: 'rectangle' | 'text'
+  kind: 'rectangle' | 'text' | 'connector'
   x: number
   y: number
   w: number
   h: number
   text: string | null
   zIndex: number
+  /**
+   * Endpoints for a `connector`, which are its ONLY real content — a
+   * connector's stored geometry is a degenerate 1x1 placeholder and its shape
+   * is derived from these two elements' live bounds every frame.
+   */
+  connector?: {
+    sourceElementId: string
+    targetElementId: string
+    routing: string
+    sourceAnchor?: string
+    targetAnchor?: string
+  }
 }) {
   db.query(
     'INSERT INTO "CanvasElement" (id, boardId, kind, positionX, positionY, width, height, rotation, "zIndex", text, style, props, createdAt, updatedAt) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?)',
@@ -112,7 +124,11 @@ function element(opts: {
       fontSize: 16,
       color: '#0f172a',
     }),
-    JSON.stringify({ kind: opts.kind }),
+    JSON.stringify(
+      opts.connector
+        ? { kind: 'connector', ...opts.connector }
+        : { kind: opts.kind },
+    ),
     now,
     now,
   )
@@ -120,6 +136,7 @@ function element(opts: {
 
 board(IDS.canvasBoard, 'E2E Canvas')
 board(IDS.canvasViewerBoard, 'E2E Canvas Viewer')
+board(IDS.canvasConnectorBoard, 'E2E Canvas Connectors')
 
 // One seeded rectangle, well clear of the top-left toolbar (which sits at
 // roughly x<200, y<80 in screen space at the default camera) so a pointer
@@ -159,6 +176,89 @@ element({
   h: 140,
   text: null,
   zIndex: 0,
+})
+
+// A second element and a connector on the VIEWER board, so the read-only gate
+// can assert the absence of BOTH quick-create affordances — the four creation
+// handles and the routing picker — without needing a second board or a
+// share-link round trip.
+element({
+  id: IDS.canvasViewerConnTarget,
+  boardId: IDS.canvasViewerBoard,
+  kind: 'rectangle',
+  x: 700,
+  y: 520,
+  w: 200,
+  h: 140,
+  text: null,
+  zIndex: 1,
+})
+element({
+  id: IDS.canvasViewerConnector,
+  boardId: IDS.canvasViewerBoard,
+  kind: 'connector',
+  x: 400,
+  y: 370,
+  w: 1,
+  h: 1,
+  text: null,
+  zIndex: 2,
+  connector: {
+    sourceElementId: IDS.canvasViewerRect,
+    targetElementId: IDS.canvasViewerConnTarget,
+    routing: 'straight',
+  },
+})
+
+// ── connector board (canvas quick-create-handles, Wave 6) ───────────────────
+//
+// Two rectangles offset on BOTH axes, joined by one connector. The vertical
+// offset is deliberate: between two horizontally-aligned elements an elbow
+// degenerates into the same straight horizontal line, so a routing-picker
+// test on that layout could not tell the three modes apart at all.
+element({
+  id: IDS.canvasConnSource,
+  boardId: IDS.canvasConnectorBoard,
+  kind: 'rectangle',
+  x: 300,
+  y: 260,
+  w: 160,
+  h: 120,
+  text: null,
+  zIndex: 0,
+})
+element({
+  id: IDS.canvasConnTarget,
+  boardId: IDS.canvasConnectorBoard,
+  kind: 'rectangle',
+  x: 700,
+  y: 480,
+  w: 160,
+  h: 120,
+  text: null,
+  zIndex: 1,
+})
+element({
+  id: IDS.canvasConnector,
+  boardId: IDS.canvasConnectorBoard,
+  kind: 'connector',
+  // The degenerate placeholder the schema's `.positive()` width/height
+  // requires and that nothing ever reads — see createCanvasElementSchema.
+  x: 380,
+  y: 320,
+  w: 1,
+  h: 1,
+  text: null,
+  zIndex: 2,
+  connector: {
+    sourceElementId: IDS.canvasConnSource,
+    targetElementId: IDS.canvasConnTarget,
+    routing: 'straight',
+    // Anchored to the sides a user would have dragged between, so the seeded
+    // connector exercises the same path a created one does.
+    sourceAnchor: 'right',
+    targetAnchor: 'left',
+  },
 })
 
 console.log(`[e2e seed-canvas] ok — board ${IDS.canvasBoard}`)
