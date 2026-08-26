@@ -349,7 +349,7 @@ export function useCanvasUndo({
         // is why the count lives on exactly those two variants — see
         // CanvasUndoLabel's own header.
         const label: CanvasUndoLabel =
-          gesture === 'move' || gesture === 'style'
+          gesture === 'move' || gesture === 'style' || gesture === 'z-order'
             ? { gesture, count: operations.length }
             : { gesture }
         push({ label, operations })

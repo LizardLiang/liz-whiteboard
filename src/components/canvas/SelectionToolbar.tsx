@@ -1,5 +1,6 @@
-// src/components/canvas/ShapeStyleToolbar.tsx
-// Fill and stroke controls for the selected shapes.
+// src/components/canvas/SelectionToolbar.tsx
+// The controls for whatever is selected: paint (fill, stroke, weight) and
+// paint ORDER (bring to front, send to back).
 //
 // A floating bar anchored above the selection, matching `ConnectorToolbar`'s
 // placement rule and for the same reason: a board holds many shapes and the
@@ -12,11 +13,14 @@
 // divergent transform written at a call site. Reading the LIVE camera on every
 // render is also what makes the bar re-anchor on pan and zoom for free.
 //
-// SHAPES ONLY. A text element has a style but `drawElement` paints no fill or
-// outline for one, and a connector's stroke belongs with its routing picker,
-// which owns that selection already. Offering controls that visibly do
-// nothing is worse than offering none — the same rule `connectorToolbarTarget`
-// applies to a read-only viewer.
+// TWO TARGET SETS, deliberately, which is why this is a selection toolbar and
+// no longer a shape-style one. Paint applies to SHAPES only: a text element
+// has a style but `drawElement` paints no fill or outline for one, and a
+// connector's stroke belongs with its routing picker, which owns that
+// selection already. Paint ORDER applies to every paintable element, text
+// included — text overlaps shapes and needs to be able to come forward.
+// Offering controls that visibly do nothing is worse than offering none, and
+// so is withholding ones that would work.
 //
 // AND NOT WHILE AN ELEMENT IS BEING EDITED. `render.ts`'s
 // `drawSelectionOverlay` already withholds the resize grips for the duration
@@ -27,15 +31,17 @@
 // reconciliation was observed to cost the edit its text — see
 // canvas-quick-create.spec.ts's "opens the new element for typing".
 
-import { Ban } from 'lucide-react'
+import { Ban, BringToFront, SendToBack } from 'lucide-react'
 import type { Camera } from '@/lib/canvas-engine/camera'
 import type {
   CanvasElement,
   CanvasElementStyle,
   Scene,
 } from '@/lib/canvas-engine/scene'
+import type { ZOrderCommand } from '@/lib/canvas-engine/z-order'
 import { worldToScreen } from '@/lib/canvas-engine/camera'
 import { boundsOfMany, isCanvasShapeKind } from '@/lib/canvas-engine/scene'
+import { zOrderTargets } from '@/lib/canvas-engine/z-order'
 import {
   CANVAS_STROKE_WIDTHS,
   CANVAS_SWATCHES,
@@ -150,7 +156,26 @@ function shared<T>(
   return targets.every((element) => read(element) === first) ? first : null
 }
 
-export interface ShapeStyleToolbarProps {
+/**
+ * Everything the toolbar is about, or null when there is nothing to show.
+ *
+ * One place decides both the bar's visibility and its two target sets, so a
+ * future control cannot accidentally appear for a selection the bar itself is
+ * hidden for.
+ */
+export function selectionToolbarTargets(
+  scene: Scene,
+  selectedIds: ReadonlySet<string>,
+  readOnly: boolean,
+  editingElementId: string | null = null,
+): { arrange: Array<CanvasElement>; paint: Array<CanvasElement> } | null {
+  if (readOnly || editingElementId !== null || selectedIds.size === 0) return null
+  const arrange = zOrderTargets(scene, selectedIds)
+  if (arrange.length === 0) return null
+  return { arrange, paint: arrange.filter((e) => isCanvasShapeKind(e.kind)) }
+}
+
+export interface SelectionToolbarProps {
   scene: Scene
   selectedIds: ReadonlySet<string>
   camera: Camera
@@ -165,19 +190,27 @@ export interface ShapeStyleToolbarProps {
     targets: Array<CanvasElement>,
     change: CanvasStyleChange,
   ) => void
+  /**
+   * Called with the elements to re-order and which end to move them to. Never
+   * called when they are already at that end — `planZOrder` decides that, and
+   * this component asks it before emitting.
+   */
+  onArrange: (targets: Array<CanvasElement>, command: ZOrderCommand) => void
 }
 
-export function ShapeStyleToolbar({
+export function SelectionToolbar({
   scene,
   selectedIds,
   camera,
   readOnly,
   editingElementId,
   onStyleChange,
-}: ShapeStyleToolbarProps) {
-  const targets = shapeStyleTargets(scene, selectedIds, readOnly, editingElementId)
-  const box = boundsOfMany(targets)
-  if (!box) return null
+  onArrange,
+}: SelectionToolbarProps) {
+  const sets = selectionToolbarTargets(scene, selectedIds, readOnly, editingElementId)
+  const box = boundsOfMany(sets?.arrange ?? [])
+  if (!sets || !box) return null
+  const targets = sets.paint
 
   const anchor = worldToScreen(camera, { x: box.x + box.width / 2, y: box.y })
 
@@ -223,8 +256,10 @@ export function ShapeStyleToolbar({
         transform: 'translate(-50%, -100%)',
       }}
       role="toolbar"
-      aria-label="Shape style"
+      aria-label="Selection"
     >
+      {targets.length > 0 && (
+        <>
       <SwatchRow
         rowLabel="Fill"
         activeSwatchValue={activeFill}
@@ -244,6 +279,9 @@ export function ShapeStyleToolbar({
         strokeColor={activeStroke}
         onPick={(value) => emit({ target: 'strokeWidth', value })}
       />
+        </>
+      )}
+      <ArrangeRow onArrange={(command) => onArrange(sets.arrange, command)} />
     </div>
   )
 }
@@ -256,6 +294,55 @@ function stylesEqual(a: CanvasElementStyle, b: CanvasElementStyle): boolean {
     a.strokeWidth === b.strokeWidth &&
     a.fontSize === b.fontSize &&
     a.color === b.color
+  )
+}
+
+/**
+ * Bring to front / send to back.
+ *
+ * Two buttons, not four: one-step forward and backward need a well-defined
+ * neighbour to swap with, and a canvas element's `zIndex` is NOT unique — the
+ * column defaults to 0 and raw seed scripts write it, so several rows commonly
+ * tie and "the element directly above" is decided by an id tie-break rather
+ * than by a value there is room to swap. Making one-step reliable means
+ * renumbering the whole stack on every click, which rewrites every row on the
+ * board for a one-shape edit. That is a real design decision, not an
+ * oversight, and it is deliberately not being taken here.
+ *
+ * Always enabled. Whether a command would change anything depends on the
+ * selection's position in the stack, and `planZOrder` already answers that and
+ * returns an empty plan — a disabled-looking button that is merely a no-op
+ * this frame reads as broken.
+ */
+function ArrangeRow({ onArrange }: { onArrange: (command: ZOrderCommand) => void }) {
+  return (
+    <div className="flex items-center gap-1" role="group" aria-label="Arrange">
+      <span className="w-10 select-none pl-1 text-[10px] font-medium uppercase tracking-wide text-muted-foreground">
+        Order
+      </span>
+      <Button
+        type="button"
+        size="icon"
+        variant="ghost"
+        className="h-5 w-8"
+        aria-label="Bring to front"
+        title="Bring to front"
+        onClick={() => onArrange('front')}
+      >
+        <BringToFront className="h-3.5 w-3.5" />
+      </Button>
+      <Button
+        type="button"
+        size="icon"
+        variant="ghost"
+        className="h-5 w-8"
+        aria-label="Send to back"
+        title="Send to back"
+        onClick={() => onArrange('back')}
+      >
+        <SendToBack className="h-3.5 w-3.5" />
+      </Button>
+    </div>
   )
 }
 

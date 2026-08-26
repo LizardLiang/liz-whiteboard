@@ -198,13 +198,17 @@ export type CanvasUpdateGesture =
   | 'routing'
   | 'reconnect'
   // Like `routing`, NOT produced by this file: fill and stroke are changed
-  // from `ShapeStyleToolbar`, which reaches the same `onUpdate` recording
+  // from `SelectionToolbar`, which reaches the same `onUpdate` recording
   // surface rather than writing through `useCanvasElements` directly — going
   // around it would make restyling the one board edit `Ctrl+Z` could not
   // reverse. Unlike `routing`, it can span SEVERAL elements: one click
   // restyles the whole selection, which is still one gesture and therefore
   // one undo entry.
   | 'style'
+  // Paint ORDER, from the same toolbar. Distinct from `style` because nothing
+  // about the element's appearance changed — a toast saying "restyling" after
+  // a shape merely moved behind another would describe the wrong edit.
+  | 'z-order'
 
 /**
  * Persistence seam. Every callback fires at gesture END with the element(s)

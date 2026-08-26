@@ -25,6 +25,20 @@ const ELEMENT_KIND_NOUNS: Readonly<Record<CanvasElementKind, string>> = {
   connector: 'connector',
 }
 
+/**
+ * The noun with its indefinite article — "a rectangle", "an ellipse".
+ *
+ * Chosen on the leading VOWEL, which is enough for this closed vocabulary and
+ * is the whole reason this exists: the article used to be hardcoded as "a",
+ * so the board said "creating a ellipse" the moment ellipses shipped, and
+ * "creating a element" for the generic fallback before that. Every noun here
+ * is one of `ELEMENT_KIND_NOUNS` plus "element", so no exception (an "hour",
+ * a "unicorn") is reachable — revisit if a kind is ever named one.
+ */
+function withArticle(noun: string): string {
+  return `${'aeiou'.includes(noun[0]) ? 'an' : 'a'} ${noun}`
+}
+
 function describeElementKind(kind: CanvasElementKind | undefined): string {
   // No kind could be resolved (an id absent from the entry, which should not
   // happen in practice) — still a truthful, generic noun rather than a crash
@@ -36,7 +50,7 @@ function describeElementKind(kind: CanvasElementKind | undefined): string {
 function describeGesture(label: CanvasUndoLabel): string {
   switch (label.gesture) {
     case 'create':
-      return `creating a ${describeElementKind(label.elementKind)}`
+      return `creating ${withArticle(describeElementKind(label.elementKind))}`
     case 'move':
       return label.count > 1
         ? `moving ${label.count} elements`
@@ -56,6 +70,12 @@ function describeGesture(label: CanvasUndoLabel): string {
       return label.count > 1
         ? `restyling ${label.count} shapes`
         : 'restyling a shape'
+    case 'z-order':
+      // Names the PAINT ORDER, not the appearance: `style` above is also "a
+      // shape changed" and the two toasts must not read alike.
+      return label.count > 1
+        ? `reordering ${label.count} elements`
+        : 'reordering an element'
     case 'routing':
       // Names the SHAPE change, not "updating a connector": the endpoints did
       // not move and nothing else about the row changed, so a vaguer word
@@ -74,8 +94,8 @@ function describeGesture(label: CanvasUndoLabel): string {
       // doc comment for when each case arises.
       if (!label.elementKind) return 'creating a connector'
       return label.connected
-        ? `creating a ${describeElementKind(label.elementKind)} and a connector`
-        : `creating a ${describeElementKind(label.elementKind)}`
+        ? `creating ${withArticle(describeElementKind(label.elementKind))} and a connector`
+        : `creating ${withArticle(describeElementKind(label.elementKind))}`
   }
 }
 

@@ -125,6 +125,11 @@ export type CanvasUndoLabel =
    * them changed colour would understate what Ctrl+Z is about to reverse.
    */
   | { gesture: 'style'; count: number }
+  /**
+   * Paint order changed from the toolbar's arrange row. Carries a `count` for
+   * the same reason `style` does — one click re-orders the whole selection.
+   */
+  | { gesture: 'z-order'; count: number }
   | { gesture: 'delete'; count: number }
   /**
    * A creation-handle gesture (canvas quick-create-handles tactical plan,

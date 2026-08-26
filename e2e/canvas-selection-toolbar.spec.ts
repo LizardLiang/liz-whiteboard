@@ -1,5 +1,6 @@
-// e2e/canvas-shape-style.spec.ts
-// End-to-end coverage for the canvas fill/stroke toolbar — the mandatory
+// e2e/canvas-selection-toolbar.spec.ts
+// End-to-end coverage for the canvas selection toolbar — paint (fill, stroke,
+// weight) and paint ORDER (bring to front, send to back). The mandatory
 // Playwright completion gate per CLAUDE.md.
 //
 // WHAT THIS SUITE IS ACTUALLY FOR
@@ -198,7 +199,7 @@ async function loginAsViewer(browser: Browser): Promise<Page> {
 }
 
 const styleBar = (page: Page) =>
-  page.getByRole('toolbar', { name: 'Shape style' })
+  page.getByRole('toolbar', { name: 'Selection' })
 
 async function pick(page: Page, row: 'Fill' | 'Stroke', name: string) {
   await styleBar(page).getByRole('button', { name: `${row} ${name}` }).click()
@@ -206,6 +207,11 @@ async function pick(page: Page, row: 'Fill' | 'Stroke', name: string) {
 }
 
 /** The weight row uses the ER board's own `Stroke width N` label, not `Row Name`. */
+async function arrange(page: Page, label: 'Bring to front' | 'Send to back') {
+  await styleBar(page).getByRole('button', { name: label }).click()
+  await settle(page)
+}
+
 async function pickWidth(page: Page, width: number) {
   await styleBar(page)
     .getByRole('button', { name: `Stroke width ${width}` })
@@ -636,5 +642,176 @@ test.describe('restyling several shapes at once', () => {
     await page.reload()
     await waitForBoard(page)
     expect(ellipsesOf(await engine(page))[0].style.fill).toBe(RED.fill)
+  })
+})
+
+// ── paint order ─────────────────────────────────────────────────────────────
+
+test.describe('z-order', () => {
+  // Overlapping is the whole point: paint order is only observable where two
+  // elements cover the same pixel, and colour is how the test tells which of
+  // them won it.
+  const BACK_RECT = { x: 600, y: 420, width: 240, height: 160 }
+  const FRONT_RECT = { x: 700, y: 470, width: 240, height: 160 }
+  const OVERLAP = { x: 760, y: 500 }
+
+  async function drawTwoOverlapping(page: Page) {
+    await drawEllipse(page, BACK_RECT)
+    await pick(page, 'Fill', TEAL.label)
+    const first = ellipsesOf(await engine(page))[0].id
+
+    await drawEllipse(page, FRONT_RECT)
+    const second = ellipsesOf(await engine(page)).find((e) => e.id !== first)!.id
+    await pick(page, 'Fill', RED.label)
+    return { first, second }
+  }
+
+  /** Is the overlap pixel reading red (the newer shape) rather than teal? */
+  async function overlapIsRed(page: Page): Promise<boolean | null> {
+    const px = await pixelAtWorld(page, OVERLAP)
+    // Both fills are 10% over the board, so compare CHANNELS rather than
+    // matching an exact colour: red dominates one, green the other.
+    return px ? px[0] > px[1] : null
+  }
+
+  async function selectFrontShape(page: Page) {
+    const centre = await worldToPage(page, {
+      x: FRONT_RECT.x + FRONT_RECT.width / 2,
+      y: FRONT_RECT.y + FRONT_RECT.height / 2,
+    })
+    await page.mouse.click(centre.x, centre.y)
+  }
+
+  test('send to back puts the newer shape behind, and it persists', async ({
+    page,
+  }) => {
+    await openBoard(page)
+    const { first, second } = await drawTwoOverlapping(page)
+
+    const before = await engine(page)
+    expect(before.elements.find((e) => e.id === second)!.zIndex).toBeGreaterThan(
+      before.elements.find((e) => e.id === first)!.zIndex,
+    )
+    await focusBoard(page)
+    await expect.poll(() => overlapIsRed(page), { timeout: 5_000 }).toBe(true)
+
+    await selectFrontShape(page)
+    await expect
+      .poll(async () => (await engine(page)).selectedIds, { timeout: 5_000 })
+      .toEqual([second])
+    await arrange(page, 'Send to back')
+
+    const after = await engine(page)
+    expect(after.elements.find((e) => e.id === second)!.zIndex).toBeLessThan(
+      after.elements.find((e) => e.id === first)!.zIndex,
+    )
+    // The pixels agree — the teal shape now owns the overlap.
+    await focusBoard(page)
+    await expect.poll(() => overlapIsRed(page), { timeout: 5_000 }).toBe(false)
+
+    // And it is the ROW that changed, not only the scene.
+    await page.reload()
+    await waitForBoard(page)
+    const reloaded = await engine(page)
+    expect(reloaded.elements.find((e) => e.id === second)!.zIndex).toBeLessThan(
+      reloaded.elements.find((e) => e.id === first)!.zIndex,
+    )
+  })
+
+  test('bring to front lifts a buried shape back over the others', async ({
+    page,
+  }) => {
+    await openBoard(page)
+    const { first, second } = await drawTwoOverlapping(page)
+
+    await selectFrontShape(page)
+    await arrange(page, 'Send to back')
+
+    await selectFrontShape(page)
+    await expect
+      .poll(async () => (await engine(page)).selectedIds, { timeout: 5_000 })
+      .toEqual([second])
+    await arrange(page, 'Bring to front')
+
+    const state = await engine(page)
+    expect(state.elements.find((e) => e.id === second)!.zIndex).toBeGreaterThan(
+      state.elements.find((e) => e.id === first)!.zIndex,
+    )
+    await focusBoard(page)
+    await expect.poll(() => overlapIsRed(page), { timeout: 5_000 }).toBe(true)
+  })
+
+  test('one Ctrl+Z reverses a re-order and names it as a reorder', async ({
+    page,
+  }) => {
+    await openBoard(page)
+    const { second } = await drawTwoOverlapping(page)
+    const originalZ = (await engine(page)).elements.find((e) => e.id === second)!
+      .zIndex
+
+    await selectFrontShape(page)
+    await arrange(page, 'Send to back')
+
+    await focusBoard(page)
+    await page.keyboard.press('Control+z')
+    // Names the ORDER change, not a restyle — the two share a toolbar and must
+    // not read alike, or the user cannot tell which edit is coming back.
+    await expect(page.getByText('Undid reordering an element')).toBeVisible({
+      timeout: 5_000,
+    })
+    await expect
+      .poll(
+        async () =>
+          (await engine(page)).elements.find((e) => e.id === second)!.zIndex,
+        { timeout: 10_000 },
+      )
+      .toBe(originalZ)
+  })
+
+  test('a selection already at that end writes nothing at all', async ({
+    page,
+  }) => {
+    // A repeated click must not push an undo entry that reverses to itself:
+    // Ctrl+Z afterwards should reach the CREATE, not a no-op reorder.
+    await openBoard(page)
+    await drawEllipse(page)
+    const drawn = ellipsesOf(await engine(page))[0]
+
+    const centre = await worldToPage(page, SHAPE_CENTRE)
+    await page.mouse.click(centre.x, centre.y)
+    await arrange(page, 'Bring to front')
+    // Freshly drawn, so it was already on top — the z must be untouched.
+    expect(ellipsesOf(await engine(page))[0].zIndex).toBe(drawn.zIndex)
+
+    await focusBoard(page)
+    await page.keyboard.press('Control+z')
+    await expect(page.getByText('Undid creating an ellipse')).toBeVisible({
+      timeout: 5_000,
+    })
+  })
+
+  test('the order row is offered for TEXT, which has no paint rows', async ({
+    page,
+  }) => {
+    await openBoard(page)
+    const seededText = (await engine(page)).elements.find(
+      (e) => e.kind === 'text',
+    )!
+    const centre = await worldToPage(page, {
+      x: seededText.x + seededText.width / 2,
+      y: seededText.y + seededText.height / 2,
+    })
+    await page.mouse.click(centre.x, centre.y)
+    await expect
+      .poll(async () => (await engine(page)).selectedIds, { timeout: 5_000 })
+      .toEqual([seededText.id])
+
+    await expect(styleBar(page)).toBeVisible()
+    await expect(
+      styleBar(page).getByRole('button', { name: 'Bring to front' }),
+    ).toBeVisible()
+    await expect(
+      styleBar(page).getByRole('button', { name: 'Fill Red' }),
+    ).toBeHidden()
   })
 })

@@ -1,4 +1,4 @@
-// src/components/canvas/ShapeStyleToolbar.test.tsx
+// src/components/canvas/SelectionToolbar.test.tsx
 // The fill/stroke picker: which selections it appears for, what it shows for
 // a mixed one, and what it emits.
 //
@@ -13,10 +13,10 @@ import { describe, expect, it, vi } from 'vitest'
 import { fireEvent, render, screen } from '@testing-library/react'
 import {
   STYLE_TOOLBAR_OFFSET,
-  ShapeStyleToolbar,
+  SelectionToolbar,
   applyStyleChange,
   shapeStyleTargets,
-} from './ShapeStyleToolbar'
+} from './SelectionToolbar'
 import type { CanvasElement, CanvasElementStyle } from '@/lib/canvas-engine/scene'
 import { DEFAULT_CAMERA, worldToScreen } from '@/lib/canvas-engine/camera'
 import {
@@ -73,18 +73,20 @@ function setup(
   editingElementId: string | null = null,
 ) {
   const onStyleChange = vi.fn()
+  const onArrange = vi.fn()
   const scene = sceneFrom(elements)
   render(
-    <ShapeStyleToolbar
+    <SelectionToolbar
       scene={scene}
       selectedIds={new Set(selected)}
       camera={DEFAULT_CAMERA}
       readOnly={readOnly}
       editingElementId={editingElementId}
       onStyleChange={onStyleChange}
+      onArrange={onArrange}
     />,
   )
-  return { onStyleChange, scene }
+  return { onStyleChange, onArrange, scene }
 }
 
 // ───────────────────────────────────────────────────────────────────────────
@@ -203,19 +205,37 @@ describe('applyStyleChange', () => {
 })
 
 describe('rendering', () => {
-  it('does not render for a selection with no shapes in it', () => {
+  it('does not render for a connector-only selection', () => {
     setup([connectorElement('con')], ['con'])
-    expect(screen.queryByRole('toolbar', { name: 'Shape style' })).toBeNull()
+    expect(screen.queryByRole('toolbar', { name: 'Selection' })).toBeNull()
+  })
+
+  it('renders for a TEXT-only selection, with order but no paint rows', () => {
+    // Text is painted in z-order and must be able to come forward, but it has
+    // no fill or outline to change — showing colour rows that visibly do
+    // nothing would be worse than showing none.
+    setup([shape('t', { kind: 'text' })], ['t'])
+    expect(screen.getByRole('toolbar', { name: 'Selection' })).toBeTruthy()
+    expect(screen.getByRole('button', { name: 'Bring to front' })).toBeTruthy()
+    expect(screen.queryByRole('group', { name: 'Fill' })).toBeNull()
+    expect(screen.queryByRole('group', { name: 'Stroke' })).toBeNull()
+    expect(screen.queryByRole('group', { name: 'Width' })).toBeNull()
+  })
+
+  it('shows the paint rows when a shape is in the selection', () => {
+    setup([shape('s'), shape('t', { kind: 'text' })], ['s', 't'])
+    expect(screen.getByRole('group', { name: 'Fill' })).toBeTruthy()
+    expect(screen.getByRole('group', { name: 'Arrange' })).toBeTruthy()
   })
 
   it('does not render for a read-only board', () => {
     setup([shape('a')], ['a'], true)
-    expect(screen.queryByRole('toolbar', { name: 'Shape style' })).toBeNull()
+    expect(screen.queryByRole('toolbar', { name: 'Selection' })).toBeNull()
   })
 
   it('does not render while an element is open for typing', () => {
     setup([shape('a')], ['a'], false, 'a')
-    expect(screen.queryByRole('toolbar', { name: 'Shape style' })).toBeNull()
+    expect(screen.queryByRole('toolbar', { name: 'Selection' })).toBeNull()
   })
 
   it('anchors above the selection bounding box, centred', () => {
@@ -230,7 +250,7 @@ describe('rendering', () => {
       y: box.y,
     })
 
-    const bar = screen.getByRole('toolbar', { name: 'Shape style' })
+    const bar = screen.getByRole('toolbar', { name: 'Selection' })
     expect(bar.style.left).toBe(`${expected.x}px`)
     expect(bar.style.top).toBe(`${expected.y - STYLE_TOOLBAR_OFFSET}px`)
   })
@@ -310,6 +330,40 @@ describe('rendering', () => {
     expect(
       screen.getByRole('button', { name: 'Stroke none' }).getAttribute('aria-pressed'),
     ).toBe('false')
+  })
+})
+
+describe('arranging', () => {
+  it('reports the elements to re-order and which end', () => {
+    const { onArrange } = setup([shape('a', { zIndex: 0 }), shape('b', { zIndex: 1 })], ['a'])
+    fireEvent.click(screen.getByRole('button', { name: 'Bring to front' }))
+    expect(onArrange).toHaveBeenCalledTimes(1)
+    const [targets, command] = onArrange.mock.calls[0]
+    expect(targets.map((e: CanvasElement) => e.id)).toEqual(['a'])
+    expect(command).toBe('front')
+
+    fireEvent.click(screen.getByRole('button', { name: 'Send to back' }))
+    expect(onArrange.mock.calls[1][1]).toBe('back')
+  })
+
+  it('includes text in the elements to re-order but excludes connectors', () => {
+    const { onArrange } = setup(
+      [shape('s'), shape('t', { kind: 'text' }), connectorElement('con')],
+      ['s', 't', 'con'],
+    )
+    fireEvent.click(screen.getByRole('button', { name: 'Bring to front' }))
+    expect(
+      onArrange.mock.calls[0][0].map((e: CanvasElement) => e.id),
+    ).toEqual(['s', 't'])
+  })
+
+  it('emits even for a selection already at that end', () => {
+    // The button is never disabled: `planZOrder` is what decides a command
+    // changes nothing, and a button that looks dead because of this frame's
+    // stack position reads as broken.
+    const { onArrange } = setup([shape('a', { zIndex: 0 }), shape('b', { zIndex: 1 })], ['b'])
+    fireEvent.click(screen.getByRole('button', { name: 'Bring to front' }))
+    expect(onArrange).toHaveBeenCalledTimes(1)
   })
 })
 

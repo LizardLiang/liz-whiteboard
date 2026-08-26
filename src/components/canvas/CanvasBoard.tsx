@@ -25,7 +25,7 @@ import {
 } from 'lucide-react'
 import { TextInputProxy } from './TextInputProxy'
 import { ConnectorToolbar } from './ConnectorToolbar'
-import { ShapeStyleToolbar, applyStyleChange } from './ShapeStyleToolbar'
+import { SelectionToolbar, applyStyleChange } from './SelectionToolbar'
 import { SHAPE_TOOL_SHORTCUTS, useCanvasInput } from './use-canvas-input'
 import { useFrameLoop } from './use-frame-loop'
 import { useCanvasHighlight } from './use-canvas-highlight'
@@ -41,10 +41,12 @@ import type {
 } from '@/lib/canvas-engine/scene'
 import type { CanvasElementRecord } from '@/data/models'
 import type { CanvasTool } from './use-canvas-input'
-import type { CanvasStyleChange } from './ShapeStyleToolbar'
+import type { CanvasStyleChange } from './SelectionToolbar'
+import type { ZOrderCommand } from '@/lib/canvas-engine/z-order'
 import { toEngineScene } from '@/lib/canvas-element-adapter'
 import { drawScene, measurerFor } from '@/lib/canvas-engine/render'
 import { CANVAS_SHAPE_KINDS, updateElement } from '@/lib/canvas-engine/scene'
+import { planZOrder } from '@/lib/canvas-engine/z-order'
 import { DEFAULT_CAMERA } from '@/lib/canvas-engine/camera'
 import { focusOnRect } from '@/lib/canvas-engine/camera-focus'
 import { useTheme } from '@/hooks/use-theme'
@@ -347,6 +349,50 @@ export function CanvasBoard({
     [callbacks],
   )
 
+  /**
+   * Move the selection to the front or the back of the paint order.
+   *
+   * Same two writes in the same order as `handleStyleChange` and
+   * `handleRoutingChange`: the local scene first so the stack re-paints on the
+   * next frame, then the recording surface so `Ctrl+Z` can reverse it.
+   *
+   * `planZOrder` decides WHICH rows change and to what — one plan, used for
+   * the optimistic write, the persisted write and the undo pre-state, so the
+   * three cannot disagree. An empty plan (the selection is already at that
+   * end) writes nothing at all rather than pushing an undo entry that reverses
+   * to itself.
+   */
+  const handleArrange = useCallback(
+    (targets: Array<CanvasElement>, command: ZOrderCommand) => {
+      const plan = planZOrder(
+        sceneRef.current,
+        new Set(targets.map((element) => element.id)),
+        command,
+      )
+      if (plan.length === 0) return
+      const byId = new Map(targets.map((element) => [element.id, element]))
+      const before: Array<CanvasElement> = []
+      const updated: Array<CanvasElement> = []
+      for (const change of plan) {
+        const element = byId.get(change.id)
+        if (!element) continue
+        before.push(element)
+        updated.push({ ...element, zIndex: change.zIndex })
+      }
+      if (updated.length === 0) return
+      setScene((prev) => {
+        let next = prev
+        for (const element of updated) {
+          if (!next.byId.has(element.id)) continue
+          next = updateElement(next, element.id, { zIndex: element.zIndex })
+        }
+        return next
+      })
+      callbacks?.onUpdate?.(updated, before, 'z-order')
+    },
+    [callbacks, setScene],
+  )
+
   // ── context ──────────────────────────────────────────────────────────────
   useEffect(() => {
     ctxRef.current = canvasRef.current?.getContext('2d') ?? null
@@ -579,13 +625,14 @@ export function CanvasBoard({
           here. The two bars cannot collide: this one needs at least one
           selected SHAPE, and the routing picker needs a selection of exactly
           one CONNECTOR. */}
-      <ShapeStyleToolbar
+      <SelectionToolbar
         scene={input.displayScene}
         selectedIds={input.selectedIds}
         camera={camera}
         readOnly={effectiveReadOnly}
         editingElementId={input.editing?.elementId ?? null}
         onStyleChange={handleStyleChange}
+        onArrange={handleArrange}
       />
 
       <TextInputProxy

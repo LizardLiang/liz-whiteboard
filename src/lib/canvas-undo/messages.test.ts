@@ -26,6 +26,22 @@ describe('describeUndoSuccess — names the gesture that was reversed', () => {
     expect(describeUndoSuccess(label)).toBe('Undid creating a rectangle')
   })
 
+  it('says "an" before a vowel, for every kind that starts with one', () => {
+    // "creating a ellipse" is what the board said before this existed.
+    expect(describeUndoSuccess({ gesture: 'create', elementKind: 'ellipse' })).toBe(
+      'Undid creating an ellipse',
+    )
+    expect(describeUndoSuccess({ gesture: 'create', elementKind: 'diamond' })).toBe(
+      'Undid creating a diamond',
+    )
+    expect(describeUndoSuccess({ gesture: 'create', elementKind: 'triangle' })).toBe(
+      'Undid creating a triangle',
+    )
+    // The generic "element" fallback carried the same defect. It is not
+    // asserted here because `create` requires a kind at the type level, so no
+    // reachable call produces it — the article helper handles it regardless.
+  })
+
   it('names creating a text element', () => {
     const label: CanvasUndoLabel = { gesture: 'create', elementKind: 'text' }
     expect(describeUndoSuccess(label)).toBe('Undid creating a text element')
@@ -82,6 +98,24 @@ describe('describeUndoRefusal — names the element, never who changed it', () =
     )
     expect(describeRedoSuccess({ gesture: 'style', count: 3 })).toBe(
       'Redid restyling 3 shapes',
+    )
+  })
+
+  it('names reordering, and never confuses it with restyling', () => {
+    // The two share a toolbar and a gesture shape; the toasts must not read
+    // alike, or the user cannot tell which of two recent edits Ctrl+Z is
+    // about to reverse.
+    expect(describeUndoSuccess({ gesture: 'z-order', count: 1 })).toBe(
+      'Undid reordering an element',
+    )
+    expect(describeUndoSuccess({ gesture: 'z-order', count: 4 })).toBe(
+      'Undid reordering 4 elements',
+    )
+    expect(describeRedoSuccess({ gesture: 'z-order', count: 2 })).toBe(
+      'Redid reordering 2 elements',
+    )
+    expect(describeUndoSuccess({ gesture: 'z-order', count: 2 })).not.toBe(
+      describeUndoSuccess({ gesture: 'style', count: 2 }),
     )
   })
 
