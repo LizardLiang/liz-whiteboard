@@ -265,12 +265,51 @@ describe('arrowHead', () => {
       ],
       10,
     )!
-    // Tip at the path's end, both back corners behind it on the x axis.
+    // Tip at the path's end, both barb ends behind it on the x axis. At the
+    // 45° half-angle a size-10 barb reaches 10·cos45 back and 10·sin45 out,
+    // which is 7.071 in both directions.
     expect(head[0]).toEqual({ x: 100, y: 0 })
-    expect(head[1].x).toBeCloseTo(90)
-    expect(head[2].x).toBeCloseTo(90)
-    expect(head[1].y).toBeCloseTo(4.5)
-    expect(head[2].y).toBeCloseTo(-4.5)
+    expect(head[1].x).toBeCloseTo(92.929)
+    expect(head[2].x).toBeCloseTo(92.929)
+    expect(head[1].y).toBeCloseTo(7.071)
+    expect(head[2].y).toBeCloseTo(-7.071)
+  })
+
+  it('splays the barbs wide enough to read as a doodle, not a vector arrow', () => {
+    // The head's shape is the whole point of the constant, so assert the
+    // angle itself rather than the coordinates it happens to produce: each
+    // barb sits 45° off the shaft, giving a 90° included angle.
+    const head = arrowHead(
+      [
+        { x: 0, y: 0 },
+        { x: 100, y: 0 },
+      ],
+      10,
+    )!
+    for (const barb of [head[1], head[2]]) {
+      // Barb vector runs tip -> barb end; the shaft runs back along -x. The
+      // dot product gives the angle between them without an atan2 branch per
+      // side, so both barbs assert against the same expected value.
+      const bx = barb.x - head[0].x
+      const by = barb.y - head[0].y
+      const cos = -bx / Math.hypot(bx, by)
+      expect(Math.acos(cos)).toBeCloseTo(Math.PI / 4)
+    }
+  })
+
+  it('sizes by BARB LENGTH, so widening the angle does not grow the head', () => {
+    // `size` is the barb, not the reach back along the shaft: both barbs are
+    // exactly `size` long whatever ARROW_HALF_ANGLE is retuned to.
+    const head = arrowHead(
+      [
+        { x: 0, y: 0 },
+        { x: 60, y: 80 },
+      ],
+      10,
+    )!
+    for (const barb of [head[1], head[2]]) {
+      expect(Math.hypot(barb.x - head[0].x, barb.y - head[0].y)).toBeCloseTo(10)
+    }
   })
 
   it('orients off the last NON-degenerate segment', () => {
@@ -288,7 +327,7 @@ describe('arrowHead', () => {
       expect(Number.isNaN(point.x)).toBe(false)
       expect(Number.isNaN(point.y)).toBe(false)
     }
-    expect(head[1].x).toBeCloseTo(90)
+    expect(head[1].x).toBeCloseTo(92.929)
   })
 
   it('returns null rather than NaN for a fully degenerate path', () => {

@@ -264,13 +264,14 @@ describe('drawing a connector', () => {
     expect(moves[0].args.slice(0, 2)).toEqual([100, 50])
   })
 
-  it('fills a target-end arrowhead', () => {
+  it('strokes an OPEN target-end arrowhead, never a filled triangle', () => {
     const rec = createRecorder()
     drawScene(rec.ctx, LINEAR, CAMERA, VIEWPORT, NONE)
-    // closePath + fill is the arrowhead triangle; nothing else in a plain
-    // scene closes a path.
-    expect(rec.opsOfType('closePath').length).toBe(1)
-    expect(rec.opsOfType('fill').length).toBe(1)
+    // The head is a chevron: two legs stroked through the tip. closePath +
+    // fill was the old solid triangle, and nothing else in a plain scene
+    // closes a path -- so both counts must now be zero.
+    expect(rec.opsOfType('closePath').length).toBe(0)
+    expect(rec.opsOfType('fill').length).toBe(0)
   })
 
   it('draws the arrowhead in the stroke colour, not the fill colour', () => {
@@ -278,7 +279,22 @@ describe('drawing a connector', () => {
     // behind text; an arrowhead painted in it would be invisible.
     const rec = createRecorder()
     drawScene(rec.ctx, LINEAR, CAMERA, VIEWPORT, NONE)
-    expect(rec.opsOfType('fill')[0].args[0]).toBe(DEFAULT_ELEMENT_STYLE.stroke)
+    // `drawScene` draws every connector before any element body, and the
+    // recorder stamps the live strokeStyle onto each moveTo. moveTo[0] opens
+    // the line, moveTo[1] opens the arrowhead.
+    const moves = rec.opsOfType('moveTo')
+    expect(moves[1].args[2]).toBe(DEFAULT_ELEMENT_STYLE.stroke)
+  })
+
+  it('restores lineJoin and lineCap after the arrowhead', () => {
+    // The head rounds its vertex; leaving that set would silently round the
+    // corners of every element drawn later in the same frame.
+    const rec = createRecorder()
+    rec.ctx.lineJoin = 'miter'
+    rec.ctx.lineCap = 'butt'
+    drawScene(rec.ctx, LINEAR, CAMERA, VIEWPORT, NONE)
+    expect(rec.ctx.lineJoin).toBe('miter')
+    expect(rec.ctx.lineCap).toBe('butt')
   })
 
   it('draws nothing at all when an endpoint is missing', () => {

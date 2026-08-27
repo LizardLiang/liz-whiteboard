@@ -735,7 +735,12 @@ function drawElement(
   return layout
 }
 
-/** Arrowhead length at a connector's target end, in WORLD units. */
+/**
+ * Length of ONE arrowhead barb at a connector's target end, in WORLD units.
+ *
+ * The barb, not the head's reach back along the shaft: `arrowHead` splays the
+ * barbs by `ARROW_HALF_ANGLE`, so the head reaches back less than this.
+ */
 export const CONNECTOR_ARROW_SIZE = 14
 
 /**
@@ -772,16 +777,30 @@ function drawConnector(
 
   const head = arrowHead(path, CONNECTOR_ARROW_SIZE)
   if (head) {
-    // Filled, and in the STROKE colour: an arrowhead painted in the element's
-    // fill would be invisible, because the engine's default fill is a
-    // near-transparent tint meant to sit behind text.
-    ctx.fillStyle = element.style.stroke
+    // An OPEN line arrowhead: the two barbs stroked THROUGH the tip, with no
+    // closePath and no fill. `arrowHead` returns [tip, barbA, barbB], so the
+    // chevron is drawn barbA -> tip -> barbB.
+    //
+    // It reuses the strokeStyle and lineWidth already set for the line above,
+    // which keeps the head welded to its connector at every zoom and in every
+    // colour. A FILLED head would additionally have to be painted in the
+    // stroke colour rather than the element's own fill, because the engine's
+    // default fill is a near-transparent tint meant to sit behind text -- not
+    // a concern once the head is stroked.
+    //
+    // lineJoin/lineCap are restored: this ctx is shared with every element
+    // drawn later in the same frame.
+    const priorJoin = ctx.lineJoin
+    const priorCap = ctx.lineCap
+    ctx.lineJoin = 'round'
+    ctx.lineCap = 'round'
     ctx.beginPath()
-    ctx.moveTo(head[0].x, head[0].y)
-    ctx.lineTo(head[1].x, head[1].y)
+    ctx.moveTo(head[1].x, head[1].y)
+    ctx.lineTo(head[0].x, head[0].y)
     ctx.lineTo(head[2].x, head[2].y)
-    ctx.closePath()
-    ctx.fill()
+    ctx.stroke()
+    ctx.lineJoin = priorJoin
+    ctx.lineCap = priorCap
   }
   return true
 }

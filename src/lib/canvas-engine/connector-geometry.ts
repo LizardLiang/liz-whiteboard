@@ -144,8 +144,21 @@ export const CURVATURE_LIMIT = 2
  */
 const MIDPOINT_PER_CONTROL_OFFSET = 0.75
 
-/** Arrowhead half-width as a fraction of its length. */
-const ARROW_SPREAD = 0.45
+/**
+ * Angle between one arrowhead barb and the shaft it sweeps back from, in
+ * radians — so the head's full included angle is twice this.
+ *
+ * 45° (90° included) is a hand-drawn angle, not a printer's one. A narrow
+ * head reads as a machine-drawn vector arrow; splaying the barbs out to a
+ * near-right angle is what makes the open chevron read as a marker doodle,
+ * which is the register the rest of this board is drawn in.
+ *
+ * Stored as an angle rather than as the old half-width-over-length ratio
+ * because `arrowHead` now holds the BARB LENGTH fixed and rotates the barbs.
+ * Widening a ratio would have lengthened the barbs at the same time, so the
+ * head would have grown as it opened instead of just opening.
+ */
+const ARROW_HALF_ANGLE = Math.PI / 4
 
 /**
  * How far an elbow or curve pushes straight out of an anchored edge before it
@@ -754,14 +767,21 @@ export function connectorPath(
 }
 
 /**
- * The filled triangle at the TARGET end, oriented along the path's final
- * segment.
+ * The three points of the open chevron at the TARGET end, oriented along the
+ * path's final segment: `[tip, barbA, barbB]`, to be stroked barbA → tip →
+ * barbB.
+ *
+ * `size` is the length of ONE BARB, not the head's reach back along the
+ * shaft — the barbs sit at `ARROW_HALF_ANGLE` either side of it, so the head
+ * only reaches `size * cos(ARROW_HALF_ANGLE)` backwards. Sizing by the barb
+ * is what lets the angle be retuned without also resizing the head, since
+ * the barb is the stroke a reader actually sees.
  *
  * Walks backwards from the tip for the first segment with a non-zero length
  * rather than blindly using the last pair of points: a sampled curve can end
  * with two coincident points at low tension, and normalising a zero-length
  * vector yields NaN — an arrowhead that silently vanishes and takes the whole
- * `ctx.fill()` path with it.
+ * stroked path with it.
  */
 export function arrowHead(
   points: ReadonlyArray<Point>,
@@ -781,12 +801,16 @@ export function arrowHead(
 
   const ux = dx / length
   const uy = dy / length
-  // Perpendicular, for the two back corners.
+  // Perpendicular, for the two barb ends.
   const px = -uy
   const py = ux
-  const backX = tip.x - ux * size
-  const backY = tip.y - uy * size
-  const spread = size * ARROW_SPREAD
+  // Decomposing the rotation into "back along the shaft" + "out to the side"
+  // rather than rotating (ux, uy) twice: both barbs share the back offset, so
+  // this is the same two trig calls for the pair instead of four.
+  const reach = size * Math.cos(ARROW_HALF_ANGLE)
+  const spread = size * Math.sin(ARROW_HALF_ANGLE)
+  const backX = tip.x - ux * reach
+  const backY = tip.y - uy * reach
   return [
     tip,
     { x: backX + px * spread, y: backY + py * spread },
