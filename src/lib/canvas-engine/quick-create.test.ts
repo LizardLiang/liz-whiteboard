@@ -6,6 +6,7 @@ import {
   QUICK_CREATE_MAX_SLIDE_STEPS,
   quickCreatePlacement,
 } from './quick-create'
+import { GRID_SIZE } from './grid'
 import type { WorldRect } from './hit-test'
 import { MAX_BOARD_COORD as SCHEMA_MAX_BOARD_COORD } from '@/data/schema'
 
@@ -56,15 +57,18 @@ describe('quickCreatePlacement — a free slot', () => {
     })
   })
 
-  it('centres a differently-sized new element on the source', () => {
-    // A chain of mixed sizes should read as a row, not a staircase.
+  it('centres a differently-sized new element on the source, then snaps', () => {
+    // A chain of mixed sizes should read as a row, not a staircase — but the
+    // centred offset here is half the 60-unit size difference, i.e. 30, which
+    // is between two dots. The grid wins: the element moves to 40 rather than
+    // sitting half a cell off it. See `grid.ts`.
     const small = { width: 40, height: 40 }
     expect(quickCreatePlacement(SOURCE, 'right', small)).toEqual({
       x: 100 + QUICK_CREATE_GAP,
-      y: 30,
+      y: 40,
     })
     expect(quickCreatePlacement(SOURCE, 'bottom', small)).toEqual({
-      x: 30,
+      x: 40,
       y: 100 + QUICK_CREATE_GAP,
     })
   })
@@ -72,6 +76,23 @@ describe('quickCreatePlacement — a free slot', () => {
   it('leaves exactly QUICK_CREATE_GAP between the two edges', () => {
     const placed = quickCreatePlacement(SOURCE, 'right', SIZE)
     expect(placed.x - (SOURCE.x + SOURCE.width)).toBe(QUICK_CREATE_GAP)
+  })
+
+  it('lands on the dot grid from every direction and every source', () => {
+    // The promise a user reads off the board: a shape they created has its
+    // borders on the dots. It has to hold for a sibling created from a handle
+    // too, including when the SOURCE is off-grid — a board made before the
+    // grid existed, or an element dragged by hand.
+    const offGrid: WorldRect = { x: 13, y: -7, width: 90, height: 55 }
+    for (const source of [SOURCE, offGrid]) {
+      for (const direction of QUICK_CREATE_DIRECTIONS) {
+        const placed = quickCreatePlacement(source, direction, SIZE)
+        // `Math.abs` because `-140 % 20` is negative zero, and `toBe` uses
+        // `Object.is` — the remainder is the subject here, not its sign.
+        expect(Math.abs(placed.x % GRID_SIZE)).toBe(0)
+        expect(Math.abs(placed.y % GRID_SIZE)).toBe(0)
+      }
+    }
   })
 })
 
@@ -131,7 +152,9 @@ describe('quickCreatePlacement — collisions', () => {
     // but does not overlap; the new element should not slide.
     const free = quickCreatePlacement(SOURCE, 'right', SIZE)
     const touching = rectAt({ x: free.x + SIZE.width, y: free.y })
-    expect(quickCreatePlacement(SOURCE, 'right', SIZE, [touching])).toEqual(free)
+    expect(quickCreatePlacement(SOURCE, 'right', SIZE, [touching])).toEqual(
+      free,
+    )
   })
 
   it('gives up after the step budget instead of looping forever', () => {
@@ -141,7 +164,9 @@ describe('quickCreatePlacement — collisions', () => {
       rectAt({ x: free.x + QUICK_CREATE_GAP * i, y: free.y }),
     )
     const placed = quickCreatePlacement(SOURCE, 'right', SIZE, wall)
-    expect(placed.x).toBe(free.x + QUICK_CREATE_GAP * QUICK_CREATE_MAX_SLIDE_STEPS)
+    expect(placed.x).toBe(
+      free.x + QUICK_CREATE_GAP * QUICK_CREATE_MAX_SLIDE_STEPS,
+    )
   })
 })
 

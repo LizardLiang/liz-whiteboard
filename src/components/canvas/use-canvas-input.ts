@@ -52,6 +52,7 @@ import {
   normaliseRect,
   rectFromPoints,
 } from '@/lib/canvas-engine/hit-test'
+import { snapPoint, snapRect } from '@/lib/canvas-engine/grid'
 import {
   CANVAS_SHAPE_KINDS,
   DEFAULT_CONNECTOR_ROUTING,
@@ -149,9 +150,16 @@ const SHAPE_TOOL_BY_KEY: Readonly<Record<string, CanvasShapeKind | undefined>> =
  * Default size of an element created by a click rather than a drag. Shared by
  * every shape kind: they are one rect drawn four ways, so a click-created
  * ellipse should occupy exactly the box a click-created rectangle would.
+ *
+ * Both sizes are whole multiples of `GRID_SIZE`. That is a requirement, not a
+ * coincidence: a click snaps the ORIGIN to a dot, so a size that is not a
+ * whole number of cells would leave the right and bottom borders hanging
+ * between dots. Text is 40 rather than 48 high for exactly this reason — one
+ * line of 16px text at 1.4 line height plus `TEXT_PADDING` top and bottom is
+ * 38.4, so 40 still holds a line without clipping.
  */
 const DEFAULT_SHAPE_SIZE = { width: 160, height: 100 }
-const DEFAULT_TEXT_SIZE = { width: 240, height: 48 }
+const DEFAULT_TEXT_SIZE = { width: 240, height: 40 }
 
 /** Below this many SCREEN pixels a drag counts as a click. */
 const CLICK_SLOP = 4
@@ -434,6 +442,27 @@ function screenRectContains(rect: ScreenRect, point: Point): boolean {
   )
 }
 
+/**
+ * The rectangle a draw gesture produces, with every border on a dot.
+ *
+ * ONE function, consulted by both the live draft preview and the release, for
+ * the same reason `attachCandidateAt` is one function: a preview that shows
+ * the unsnapped drag and a release that commits the snapped rect would
+ * disagree by up to half a cell on every edge, and the user would watch the
+ * shape jump at the moment they let go.
+ *
+ * A drag shorter than `MIN_ELEMENT_SIZE` on either axis is a click, and a
+ * click creates the default size at the nearest dot — the size constants are
+ * whole cells, so all four of its borders land on dots too.
+ */
+function drawnRect(origin: Point, current: Point): WorldRect {
+  const dragged = rectFromPoints(origin, current)
+  if (dragged.width < MIN_ELEMENT_SIZE || dragged.height < MIN_ELEMENT_SIZE) {
+    return { ...snapPoint(origin), ...DEFAULT_SHAPE_SIZE }
+  }
+  return snapRect(dragged)
+}
+
 /** A newly drawn element, ready to go into the scene. */
 function makeElement(
   kind: CanvasElement['kind'],
@@ -556,7 +585,8 @@ function attachCandidateAt(
   // A connector is never an attach target, and neither is the element the
   // OTHER end already holds — that would be a self-connector, which the schema
   // rejects outright.
-  if (!dropped || dropped.connector || dropped.id === otherElementId) return null
+  if (!dropped || dropped.connector || dropped.id === otherElementId)
+    return null
   return {
     elementId: dropped.id,
     attach: nearestAttach(bounds(dropped), world),
@@ -665,7 +695,12 @@ export function useCanvasInput({
   }, [])
 
   const setEditing = useCallback(
-    (next: EditingState | null | ((current: EditingState | null) => EditingState | null)) => {
+    (
+      next:
+        | EditingState
+        | null
+        | ((current: EditingState | null) => EditingState | null),
+    ) => {
       const resolved =
         typeof next === 'function' ? next(editingRef.current) : next
       editingRef.current = resolved
@@ -778,7 +813,8 @@ export function useCanvasInput({
       return
     }
     if (current.isNew) callbacks?.onCreate?.(element)
-    else callbacks?.onUpdate?.([element], [current.before ?? element], 'text-edit')
+    else
+      callbacks?.onUpdate?.([element], [current.before ?? element], 'text-edit')
   }, [callbacks, setScene])
 
   const beginEditing = useCallback(
@@ -979,7 +1015,7 @@ export function useCanvasInput({
       if (latest.current.tool === 'text') {
         const element = makeElement(
           'text',
-          { x: world.x, y: world.y, ...DEFAULT_TEXT_SIZE },
+          { ...snapPoint(world), ...DEFAULT_TEXT_SIZE },
           nextZIndex(latest.current.scene),
         )
         setScene((prev) => addElement(prev, element))
@@ -1010,9 +1046,7 @@ export function useCanvasInput({
           )
           const grabbed =
             grips &&
-            CONNECTOR_ENDS.find((end) =>
-              screenRectContains(grips[end], screen),
-            )
+            CONNECTOR_ENDS.find((end) => screenRectContains(grips[end], screen))
           if (grabbed) {
             setGesture({
               kind: 'connector-endpoint',
@@ -1048,9 +1082,7 @@ export function useCanvasInput({
       }
 
       if (currentSelection.size === 1) {
-        const only = latest.current.scene.byId.get(
-          [...currentSelection][0],
-        )
+        const only = latest.current.scene.byId.get([...currentSelection][0])
         // `!only.connector` mirrors the renderer EXACTLY: `drawScene` gates
         // its own grip block on the same condition, because a connector's
         // stored bounds are a degenerate 1x1 placeholder and grips drawn from
@@ -1260,11 +1292,7 @@ export function useCanvasInput({
           break
         }
         case 'resize': {
-          const next = resizedBounds(
-            gesture.handle,
-            gesture.startBounds,
-            world,
-          )
+          const next = resizedBounds(gesture.handle, gesture.startBounds, world)
           setScene((prev) => updateElement(prev, gesture.elementId, next))
           break
         }
@@ -1303,14 +1331,7 @@ export function useCanvasInput({
         }
       }
     },
-    [
-      gesture,
-      screenFromEvent,
-      setCamera,
-      setGesture,
-      setHoveredId,
-      setScene,
-    ],
+    [gesture, screenFromEvent, setCamera, setGesture, setHoveredId, setScene],
   )
 
   /**
@@ -1339,17 +1360,12 @@ export function useCanvasInput({
 
       switch (finished.kind) {
         case 'draw': {
-          const dragged = rectFromPoints(
-            finished.originWorld,
-            finished.currentWorld,
-          )
-          // A click (rather than a drag) creates a default-sized element at
-          // the click point, which is what every editor does and what makes
-          // the tool usable without a precise drag.
-          const rect =
-            dragged.width < MIN_ELEMENT_SIZE || dragged.height < MIN_ELEMENT_SIZE
-              ? { ...finished.originWorld, ...DEFAULT_SHAPE_SIZE }
-              : dragged
+          // Snapped to the dot grid, and by the same function the draft
+          // preview used — see `drawnRect`. A click (rather than a drag)
+          // creates a default-sized element at the click point, which is what
+          // every editor does and what makes the tool usable without a
+          // precise drag.
+          const rect = drawnRect(finished.originWorld, finished.currentWorld)
           const element = makeElement(
             finished.shape,
             rect,
@@ -1442,7 +1458,11 @@ export function useCanvasInput({
           setScene((prev) =>
             updateElement(prev, element.id, { connector: updated.connector }),
           )
-          callbacks?.onUpdate?.([updated], [finished.beforeElement], 'reconnect')
+          callbacks?.onUpdate?.(
+            [updated],
+            [finished.beforeElement],
+            'reconnect',
+          )
           break
         }
         case 'quick-create': {
@@ -1542,9 +1562,7 @@ export function useCanvasInput({
           : event.deltaMode === 2
             ? WHEEL_PIXELS_PER_PAGE
             : 1
-      const factor = Math.exp(
-        (-event.deltaY * scale) / WHEEL_ZOOM_DIVISOR,
-      )
+      const factor = Math.exp((-event.deltaY * scale) / WHEEL_ZOOM_DIVISOR)
       setCamera((prev) => zoomAt(prev, anchor, factor))
     }
 
@@ -1565,28 +1583,31 @@ export function useCanvasInput({
 
   // ── board-level keyboard (NOT editing) ───────────────────────────────────
 
-  const deleteSelection = useCallback((gesture: 'delete' | 'cut' = 'delete') => {
-    const selected = [...latest.current.selectedIds]
-    if (selected.length === 0) return
-    // Expanded to include every connector attached to anything doomed (step
-    // 12): a connector whose endpoint is gone can never be drawn or clicked
-    // again, so leaving it behind means an invisible row nothing can ever
-    // remove. `withAttachedConnectors` deduplicates, which matters when BOTH
-    // ends of one connector are in the selection.
-    //
-    // Both this expansion and the snapshot below read the scene BEFORE
-    // `removeElements` — afterwards the connectors are gone and there is
-    // nothing left to find (the B2 lesson: capture pre-state, never post).
-    // Undo's inverse is a create-with-id, so it needs every persisted
-    // property of every row, not just the ids.
-    const ids = withAttachedConnectors(latest.current.scene, selected)
-    const elements = ids
-      .map((id) => latest.current.scene.byId.get(id))
-      .filter((element): element is CanvasElement => Boolean(element))
-    setScene((prev) => removeElements(prev, ids))
-    setSelectedIds(new Set<string>())
-    callbacks?.onDelete?.(elements, gesture)
-  }, [callbacks, setScene])
+  const deleteSelection = useCallback(
+    (gesture: 'delete' | 'cut' = 'delete') => {
+      const selected = [...latest.current.selectedIds]
+      if (selected.length === 0) return
+      // Expanded to include every connector attached to anything doomed (step
+      // 12): a connector whose endpoint is gone can never be drawn or clicked
+      // again, so leaving it behind means an invisible row nothing can ever
+      // remove. `withAttachedConnectors` deduplicates, which matters when BOTH
+      // ends of one connector are in the selection.
+      //
+      // Both this expansion and the snapshot below read the scene BEFORE
+      // `removeElements` — afterwards the connectors are gone and there is
+      // nothing left to find (the B2 lesson: capture pre-state, never post).
+      // Undo's inverse is a create-with-id, so it needs every persisted
+      // property of every row, not just the ids.
+      const ids = withAttachedConnectors(latest.current.scene, selected)
+      const elements = ids
+        .map((id) => latest.current.scene.byId.get(id))
+        .filter((element): element is CanvasElement => Boolean(element))
+      setScene((prev) => removeElements(prev, ids))
+      setSelectedIds(new Set<string>())
+      callbacks?.onDelete?.(elements, gesture)
+    },
+    [callbacks, setScene],
+  )
 
   // ── copy, cut, paste, duplicate ──────────────────────────────────────────
 
@@ -1646,7 +1667,10 @@ export function useCanvasInput({
       if (plan.elements.length === 0) return
 
       setScene((prev) =>
-        plan.elements.reduce((scene, element) => addElement(scene, element), prev),
+        plan.elements.reduce(
+          (scene, element) => addElement(scene, element),
+          prev,
+        ),
       )
       setSelectedIds(new Set(plan.elements.map((element) => element.id)))
       callbacks?.onClone?.(plan.elements, source)
@@ -1823,12 +1847,9 @@ export function useCanvasInput({
     ],
   )
 
-  const onBoardKeyUp = useCallback(
-    (event: ReactKeyboardEvent<HTMLElement>) => {
-      if (event.key === ' ') setSpaceHeld(false)
-    },
-    [],
-  )
+  const onBoardKeyUp = useCallback((event: ReactKeyboardEvent<HTMLElement>) => {
+    if (event.key === ' ') setSpaceHeld(false)
+  }, [])
 
   // Space released while the board did not have focus (alt-tab, a dialog)
   // would otherwise leave the board stuck in pan mode forever.
@@ -1841,7 +1862,9 @@ export function useCanvasInput({
   // ── text-editing input (from TextInputProxy) ─────────────────────────────
 
   const applyTextEdit = useCallback(
-    (produce: (text: string, caret: number) => { text: string; caret: number }) => {
+    (
+      produce: (text: string, caret: number) => { text: string; caret: number },
+    ) => {
       const current = latest.current.editing
       if (!current) return
       const element = latest.current.scene.byId.get(current.elementId)
@@ -1866,10 +1889,13 @@ export function useCanvasInput({
   )
 
   /** Live IME composition preview — not yet part of the element's text. */
-  const setComposition = useCallback((composition: string) => {
-    setEditing((current) => (current ? { ...current, composition } : current))
-    setCaretVisible(true)
-  }, [setEditing])
+  const setComposition = useCallback(
+    (composition: string) => {
+      setEditing((current) => (current ? { ...current, composition } : current))
+      setCaretVisible(true)
+    },
+    [setEditing],
+  )
 
   /**
    * Move the caret vertically, which needs the laid-out lines — arrow up on
@@ -1992,17 +2018,24 @@ export function useCanvasInput({
    * What a dragged connector end would attach to right now — the renderer
    * highlights it, and its absence is how "releasing here detaches" is shown.
    */
-  const connectorAttach = useMemo<
-    { elementId: string; attach: ConnectorAttach } | null
-  >(() => (gesture.kind === 'connector-endpoint' ? gesture.candidate : null), [
-    gesture,
-  ])
+  const connectorAttach = useMemo<{
+    elementId: string
+    attach: ConnectorAttach
+  } | null>(
+    () => (gesture.kind === 'connector-endpoint' ? gesture.candidate : null),
+    [gesture],
+  )
 
   const draft = useMemo<CanvasElement | null>(() => {
     if (gesture.kind !== 'draw') return null
-    const rect = rectFromPoints(gesture.originWorld, gesture.currentWorld)
-    if (rect.width < 1 || rect.height < 1) return null
-    return makeElement(gesture.shape, rect, nextZIndex(scene))
+    // `drawnRect`, not the raw drag: the ghost has to show the snapped
+    // rectangle the release will actually commit, including the default-sized
+    // one a press-without-drag would produce.
+    return makeElement(
+      gesture.shape,
+      drawnRect(gesture.originWorld, gesture.currentWorld),
+      nextZIndex(scene),
+    )
   }, [gesture, scene])
 
   /**

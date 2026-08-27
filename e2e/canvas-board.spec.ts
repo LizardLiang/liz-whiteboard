@@ -734,7 +734,11 @@ test.describe('collaboration', () => {
       )!
       expect(observed.kind).toBe('rectangle')
       expect(observed.x).toBeCloseTo(800, 0)
-      expect(observed.width).toBeCloseTo(150, 0)
+      // 160, not the 150 the drag spans: every new element's borders are
+      // snapped to the dot grid (`grid.ts`), so the right edge at 950 moves to
+      // 960. What matters to THIS test is that the collaborator sees the same
+      // rectangle the author committed, snapping included.
+      expect(observed.width).toBeCloseTo(160, 0)
     } finally {
       await observer.close()
     }

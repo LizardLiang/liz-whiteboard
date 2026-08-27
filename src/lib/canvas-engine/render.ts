@@ -458,10 +458,7 @@ export function syncBackingStore(
 }
 
 /** A world rect's position and size on screen, via the canonical transform. */
-export function worldRectToScreen(
-  camera: Camera,
-  rect: WorldRect,
-): ScreenRect {
+export function worldRectToScreen(camera: Camera, rect: WorldRect): ScreenRect {
   const topLeft = worldToScreen(camera, { x: rect.x, y: rect.y })
   return {
     x: topLeft.x,
@@ -684,11 +681,7 @@ function drawElement(
   ctx.textBaseline = 'top'
   ctx.textAlign = 'left'
   for (let i = 0; i < layout.lines.length; i += 1) {
-    ctx.fillText(
-      layout.lines[i].text,
-      frame.x,
-      frame.y + i * layout.lineHeight,
-    )
+    ctx.fillText(layout.lines[i].text, frame.x, frame.y + i * layout.lineHeight)
   }
   // Returned so `drawScene` can hand it to `drawCaret` instead of paying for
   // a second layout of the same string on the same frame.
@@ -1047,7 +1040,13 @@ function drawSelectionOverlay(
   }
 
   if (selection.quickCreate) {
-    drawQuickCreatePreview(ctx, scene, camera, selection.quickCreate, chrome.accent)
+    drawQuickCreatePreview(
+      ctx,
+      scene,
+      camera,
+      selection.quickCreate,
+      chrome.accent,
+    )
   }
 
   if (selection.connectorAttach) {
@@ -1132,9 +1131,10 @@ function drawHighlight(
  * always draws everything it is asked to.
  *
  * The canvas is cleared to TRANSPARENT rather than filled with a board
- * colour: the surface colour is a themed CSS background on the `<canvas>`
- * element itself, which is how the board follows light/dark mode without the
- * renderer knowing anything about design tokens.
+ * colour: the surface colour and the dot grid are themed CSS backgrounds on
+ * the elements BEHIND the canvas (`CanvasBoard.tsx`), which is how the board
+ * follows light/dark mode without the renderer knowing anything about design
+ * tokens, and how the grid costs nothing per frame. See `grid.ts`.
  */
 export function drawScene(
   ctx: CanvasRenderingContext2D,

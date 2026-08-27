@@ -13,6 +13,7 @@
 // Pure module: no React, no DOM, no database.
 
 import { rectsIntersect } from './hit-test'
+import { snapPoint } from './grid'
 import type { WorldRect } from './hit-test'
 
 /** The four sides a creation handle can sit on. */
@@ -28,8 +29,15 @@ export const QUICK_CREATE_DIRECTIONS: ReadonlyArray<QuickCreateDirection> = [
 /**
  * Distance from the source's edge to the new element's edge, in world units,
  * and the step size the collision search advances by.
+ *
+ * A whole multiple of `GRID_SIZE`, and that is a requirement rather than a
+ * round number for its own sake: a quick-created element has to land on the
+ * dot grid like every other new element, and a gap of, say, 48 would knock a
+ * grid-aligned source's sibling half a cell off it on the search axis. At two
+ * cells the snapping below is a no-op along that axis, so "exactly one gap
+ * between the two edges" still holds for any source already on the grid.
  */
-export const QUICK_CREATE_GAP = 48
+export const QUICK_CREATE_GAP = 40
 
 /**
  * Runaway guard on the collision search.
@@ -120,14 +128,34 @@ export function quickCreatePlacement(
   occupied: ReadonlyArray<WorldRect> = [],
 ): { x: number; y: number } {
   const step = stepFor(direction)
-  const candidate = firstCandidate(source, direction, size)
+  const raw = firstCandidate(source, direction, size)
+  // Snapped BEFORE the overlap test, not after it. Snapping the answer on the
+  // way out would move it by up to half a cell into an element the search had
+  // just proved it clear of; snapping each candidate first means the rect
+  // that was tested is the rect that is returned. The CROSS axis is what
+  // makes this necessary — centring halves a size difference, which produces
+  // half-cell offsets even when both elements are themselves on the grid.
+  const candidate = snapPoint(raw)
 
   for (let i = 0; i < QUICK_CREATE_MAX_SLIDE_STEPS; i += 1) {
-    const rect: WorldRect = { ...candidate, width: size.width, height: size.height }
+    const rect: WorldRect = {
+      ...candidate,
+      width: size.width,
+      height: size.height,
+    }
     const blocked = occupied.some((other) => rectsIntersect(rect, other))
     if (!blocked) break
-    candidate.x += step.x * QUICK_CREATE_GAP
-    candidate.y += step.y * QUICK_CREATE_GAP
+    // Advance by the gap, then re-snap. The gap is a whole number of cells,
+    // so for a grid-aligned candidate the re-snap changes nothing and the
+    // step is exactly `QUICK_CREATE_GAP`; for one inherited from an off-grid
+    // source it is at most half a cell either side of it. Strictly outward
+    // either way, so the search terminates exactly as it did before.
+    const next = snapPoint({
+      x: candidate.x + step.x * QUICK_CREATE_GAP,
+      y: candidate.y + step.y * QUICK_CREATE_GAP,
+    })
+    candidate.x = next.x
+    candidate.y = next.y
   }
 
   return { x: clampCoord(candidate.x), y: clampCoord(candidate.y) }

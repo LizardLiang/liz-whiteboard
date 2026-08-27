@@ -30,7 +30,10 @@ import { SHAPE_TOOL_SHORTCUTS, useCanvasInput } from './use-canvas-input'
 import { useFrameLoop } from './use-frame-loop'
 import { useCanvasHighlight } from './use-canvas-highlight'
 import { useCanvasTestHook } from './canvas-test-hook'
-import type { KeyboardEvent as ReactKeyboardEvent, PointerEvent as ReactPointerEvent } from 'react'
+import type {
+  KeyboardEvent as ReactKeyboardEvent,
+  PointerEvent as ReactPointerEvent,
+} from 'react'
 import type { Camera } from '@/lib/canvas-engine/camera'
 import type { WorldRect } from '@/lib/canvas-engine/hit-test'
 import type {
@@ -45,6 +48,7 @@ import type { CanvasStyleChange } from './SelectionToolbar'
 import type { ZOrderCommand } from '@/lib/canvas-engine/z-order'
 import { toEngineScene } from '@/lib/canvas-element-adapter'
 import { drawScene, measurerFor } from '@/lib/canvas-engine/render'
+import { dotGridBackground } from '@/lib/canvas-engine/grid'
 import { CANVAS_SHAPE_KINDS, updateElement } from '@/lib/canvas-engine/scene'
 import { planZOrder } from '@/lib/canvas-engine/z-order'
 import { DEFAULT_CAMERA } from '@/lib/canvas-engine/camera'
@@ -88,7 +92,12 @@ interface CanvasBoardProps {
 /** Engine element -> the world rect `focusOnRect` speaks, or `null` if absent (element already gone). */
 function toElementRect(element: CanvasElement | undefined): WorldRect | null {
   if (!element) return null
-  return { x: element.x, y: element.y, width: element.width, height: element.height }
+  return {
+    x: element.x,
+    y: element.y,
+    width: element.width,
+    height: element.height,
+  }
 }
 
 interface ToolButton {
@@ -155,7 +164,9 @@ export function CanvasBoard({
   // Seeded once. The route remounts this component on board change (`key`),
   // so there is no stale-board case to resync from; every subsequent change
   // arrives through useCanvasElements — locally, by ack, or by broadcast.
-  const [scene, setScene] = useState<Scene>(() => toEngineScene(initialElements))
+  const [scene, setScene] = useState<Scene>(() =>
+    toEngineScene(initialElements),
+  )
   const [camera, setCamera] = useState<Camera>(DEFAULT_CAMERA)
   const [tool, setTool] = useState<CanvasTool>('select')
   const [viewportSize, setViewportSize] = useState({ width: 0, height: 0 })
@@ -229,9 +240,10 @@ export function CanvasBoard({
       // `rect === undefined` (a REFUSAL — nothing was written) is the one
       // case with no authoritative post-write value to hand over; the live
       // scene is the correct, and only available, source for it.
-      const target = rect === undefined
-        ? toElementRect(sceneRef.current.byId.get(elementId))
-        : rect
+      const target =
+        rect === undefined
+          ? toElementRect(sceneRef.current.byId.get(elementId))
+          : rect
       // Nothing to bring into view or highlight — either a refusal whose
       // target was deleted, or a successful undo/redo that left no element
       // behind (undoing a create; redoing a delete).
@@ -246,7 +258,11 @@ export function CanvasBoard({
   // `callbacks` IS the recording surface: it wraps createElement/
   // updateElements/deleteElements, so wiring it in place of those three
   // directly is what turns "gesture committed" into "gesture undoable".
-  const { callbacks: undoCallbacks, undo, redo } = useCanvasUndo({
+  const {
+    callbacks: undoCallbacks,
+    undo,
+    redo,
+  } = useCanvasUndo({
     boardId,
     readOnly: effectiveReadOnly,
     createElement,
@@ -476,6 +492,22 @@ export function CanvasBoard({
     ],
   )
 
+  /**
+   * The dot grid, as a CSS layer UNDER the canvas rather than as draw calls
+   * inside it.
+   *
+   * The canvas clears to transparent every frame (see `drawScene`), so a
+   * background painted on the element behind it shows through untouched. That
+   * buys three things: the browser composites the repeating tile once instead
+   * of the renderer emitting a fill per dot on every full redraw, the grid
+   * follows light/dark through the same `resolvedTheme` the renderer uses,
+   * and exported images carry no grid — which is what FigJam does too.
+   */
+  const gridStyle = useMemo(
+    () => dotGridBackground(camera, resolvedTheme),
+    [camera, resolvedTheme],
+  )
+
   const draw = useCallback(() => {
     const ctx = ctxRef.current
     if (!ctx || viewport.width === 0 || viewport.height === 0) return
@@ -573,16 +605,28 @@ export function CanvasBoard({
   return (
     <div
       ref={containerRef}
-      className="relative h-full w-full overflow-hidden outline-none"
+      className="relative h-full w-full overflow-hidden bg-background outline-none"
       tabIndex={0}
       role="application"
       aria-label="Canvas board"
       {...input.boardHandlers}
       onKeyDown={handleBoardKeyDown}
     >
+      {/* The dot grid. Behind the canvas in DOM order, which is what puts it
+          behind it on screen — both are `absolute inset-0`, and the canvas
+          clears to transparent, so the dots show through the board. It is
+          decorative and never a pointer target: every gesture belongs to the
+          canvas above it. */}
+      <div
+        aria-hidden="true"
+        data-testid="canvas-dot-grid"
+        className="pointer-events-none absolute inset-0"
+        style={gridStyle}
+      />
+
       <canvas
         ref={canvasRef}
-        className="absolute inset-0 h-full w-full bg-background"
+        className="absolute inset-0 h-full w-full"
         // `touch-action: none` is what makes pointer capture work on touch
         // and pen: without it the browser claims the gesture for scrolling
         // and the board never sees a pointermove.
