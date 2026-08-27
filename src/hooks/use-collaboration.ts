@@ -7,6 +7,23 @@ import type { Socket } from 'socket.io-client'
 import type { CursorPosition } from '@/data/schema'
 
 /**
+ * How long a write made before the socket finished connecting waits for that
+ * connection before it is refused, in milliseconds.
+ *
+ * Deliberately well inside the 10s ack timeout the mutation hooks wrap every
+ * emit in (`ACK_TIMEOUT_MS` in use-canvas-elements.ts). The two must not race:
+ * if this were the longer of the pair, a caller would report "The server did
+ * not respond" for a write that was still sitting in the queue, and would then
+ * get a second ack when this one finally fired. Failing first keeps one
+ * outcome per write, and keeps the accurate message.
+ *
+ * Long enough to cover an ordinary handshake many times over — a local
+ * connection completes in tens of milliseconds — and short enough that a user
+ * on a dead connection is told promptly rather than watching a change hang.
+ */
+const PENDING_EMIT_TIMEOUT_MS = 5_000
+
+/**
  * Active collaborator data
  */
 export interface ActiveUser {
@@ -102,6 +119,56 @@ export function useCollaboration(
   const onSessionExpiredRef = useRef(onSessionExpired)
   onSessionExpiredRef.current = onSessionExpired
 
+  /**
+   * Edits made while the socket is still HANDSHAKING, waiting for the
+   * connection that is already on its way.
+   *
+   * The board is interactive well before the socket finishes connecting: the
+   * canvas paints from the server-rendered scene, selection works, and every
+   * toolbar is live. `emit` used to answer any write in that window with
+   * `DISCONNECTED`, so the optimistic change rolled straight back out and the
+   * user got "Not connected. Your change was not saved." for a connection that
+   * arrived a few hundred milliseconds later. Clicking a routing button
+   * immediately after opening a board reproduced it every time.
+   *
+   * Queued rather than dropped, and queued HERE rather than left to
+   * socket.io's own send buffer. Its buffer also flushes after a long outage,
+   * which is exactly the stale replay the fail-fast rule was written to
+   * prevent; this one is bounded by `PENDING_EMIT_TIMEOUT_MS` and only ever
+   * holds writes made while the socket has never yet connected or is actively
+   * reconnecting.
+   */
+  const pendingEmitsRef = useRef<
+    Array<{
+      event: string
+      data: unknown
+      ack?: (res: unknown) => void
+      timer: ReturnType<typeof setTimeout>
+    }>
+  >([])
+
+  /**
+   * Fail every queued write with the same result `emit` would have returned
+   * immediately, and forget it.
+   *
+   * Called on unmount and when a queued write outlives its own wait. Leaving
+   * an ack uncalled is not an option: every optimistic-mutation hook in this
+   * app keeps its rollback INSIDE the ack, so a swallowed ack freezes a change
+   * on screen that never reached the server.
+   */
+  const failPendingEmits = useCallback(() => {
+    const queued = pendingEmitsRef.current
+    pendingEmitsRef.current = []
+    for (const entry of queued) {
+      clearTimeout(entry.timer)
+      entry.ack?.({
+        ok: false,
+        code: 'DISCONNECTED',
+        message: 'Not connected. Your change was not saved.',
+      })
+    }
+  }, [])
+
   useEffect(() => {
     // R1 (GH #109): public read-only share links (/share/$token) must never
     // open a Socket.IO connection — no read, no write, no presence. `enabled`
@@ -138,6 +205,18 @@ export function useCollaboration(
       console.log('Connected to whiteboard collaboration')
       setConnectionState('connected')
       reconnectionAttempts.current = 0
+
+      // Flush anything written while this connection was still being made, in
+      // the order it was written — see `pendingEmitsRef`. Drained into a local
+      // first so an ack that emits again (none does today) cannot append to
+      // the array being walked.
+      const queued = pendingEmitsRef.current
+      pendingEmitsRef.current = []
+      for (const entry of queued) {
+        clearTimeout(entry.timer)
+        if (entry.ack) socket.emit(entry.event, entry.data, entry.ack)
+        else socket.emit(entry.event, entry.data)
+      }
     })
 
     socket.on(
@@ -298,11 +377,15 @@ export function useCollaboration(
     return () => {
       clearInterval(heartbeatInterval)
       console.log('Cleaning up collaboration connection')
+      // Before the socket goes, so anything still waiting for a connection
+      // that will now never arrive gets its ack and rolls back, rather than
+      // leaving an optimistic change frozen on a board being torn down.
+      failPendingEmits()
       socket.removeAllListeners()
       socket.disconnect()
       socketRef.current = null
     }
-  }, [whiteboardId, userId, enabled, namespacePrefix])
+  }, [whiteboardId, userId, enabled, namespacePrefix, failPendingEmits])
 
   // Emit event to server. An optional ack callback receives the server's
   // acknowledgement (Socket.IO ack) — used by callers that need the persisted
@@ -314,6 +397,35 @@ export function useCollaboration(
         else socketRef.current.emit(event, data)
         return
       }
+
+      // Still on its way: `active` is socket.io's own answer to "is this
+      // socket connected or trying to be", so it covers both the first
+      // handshake and an in-flight reconnection, and goes false the moment the
+      // client gives up. Hold the write for the connection rather than
+      // refusing it — see `pendingEmitsRef` for why this is not socket.io's
+      // send buffer.
+      if (socketRef.current?.active) {
+        const entry = {
+          event,
+          data,
+          ack,
+          timer: setTimeout(() => {
+            const queued = pendingEmitsRef.current
+            const index = queued.indexOf(entry)
+            if (index === -1) return
+            queued.splice(index, 1)
+            console.warn(`Cannot emit ${event}: socket never connected`)
+            ack?.({
+              ok: false,
+              code: 'DISCONNECTED',
+              message: 'Not connected. Your change was not saved.',
+            })
+          }, PENDING_EMIT_TIMEOUT_MS),
+        }
+        pendingEmitsRef.current.push(entry)
+        return
+      }
+
       console.warn(`Cannot emit ${event}: socket not connected`)
       // Every optimistic-mutation hook in this app keeps its rollback inside
       // the ack callback, so returning here without calling it is precisely
