@@ -186,6 +186,15 @@ describe('text commit is idempotent within one synchronous handler', () => {
     })
     h.sync()
 
+    // Type something. An edit session that changed NOTHING is deliberately
+    // not persisted (see `commitEditing`), so a session with no keystroke in
+    // it would assert zero here and stop testing the re-entry guard this is
+    // actually about.
+    act(() => {
+      h.api.textInput.insertText('!')
+    })
+    h.sync()
+
     act(() => {
       h.api.textInput.onEditingKeyDown(keyEvent('Escape'))
       h.api.textInput.commitEditing()
@@ -204,6 +213,15 @@ describe('text commit is idempotent within one synchronous handler', () => {
     h.sync()
     act(() => {
       h.api.boardHandlers.onKeyDown(keyEvent('Enter'))
+    })
+    h.sync()
+
+    // Type something. An edit session that changed NOTHING is deliberately
+    // not persisted (see `commitEditing`), so a session with no keystroke in
+    // it would assert zero here and stop testing the re-entry guard this is
+    // actually about.
+    act(() => {
+      h.api.textInput.insertText('!')
     })
     h.sync()
 
@@ -275,6 +293,64 @@ describe('text commit is idempotent within one synchronous handler', () => {
     expect(deleted.text).toBe('hi')
   })
 
+  it('reports NOTHING for an edit session that changed no text', () => {
+    // Opening a text box, reading it and clicking away is not an edit. It used
+    // to be reported as one, and the cost landed on the NEXT Ctrl+Z: the no-op
+    // entry sat on top of the undo stack and was consumed silently, so the
+    // gesture the user meant to reverse needed a second press with nothing to
+    // show for the first.
+    //
+    // The quick-create-by-click path walks straight into it — it opens the new
+    // element for typing — which is how "one Ctrl+Z reverses a quick-create"
+    // started needing two.
+    const h = setup([makeText()])
+
+    act(() => {
+      h.api.setSelectedIds(new Set([TEXT_ID]))
+    })
+    h.sync()
+    act(() => {
+      h.api.boardHandlers.onKeyDown(keyEvent('Enter'))
+    })
+    h.sync()
+    act(() => {
+      h.api.textInput.commitEditing()
+    })
+
+    expect(h.callbacks.onUpdate).not.toHaveBeenCalled()
+    expect(h.callbacks.onCreate).not.toHaveBeenCalled()
+    expect(h.callbacks.onDelete).not.toHaveBeenCalled()
+  })
+
+  it('reports an edit that types and then deletes back to the original', () => {
+    // The comparison is against the PRE-SESSION text, not against "were there
+    // keystrokes" — a session that ends where it started has changed nothing,
+    // whatever happened in between.
+    const h = setup([makeText()])
+
+    act(() => {
+      h.api.setSelectedIds(new Set([TEXT_ID]))
+    })
+    h.sync()
+    act(() => {
+      h.api.boardHandlers.onKeyDown(keyEvent('Enter'))
+    })
+    h.sync()
+    act(() => {
+      h.api.textInput.insertText('!')
+    })
+    h.sync()
+    act(() => {
+      h.api.textInput.onEditingKeyDown(keyEvent('Backspace'))
+    })
+    h.sync()
+    act(() => {
+      h.api.textInput.commitEditing()
+    })
+
+    expect(h.callbacks.onUpdate).not.toHaveBeenCalled()
+  })
+
   it('still commits a SECOND, genuinely new edit after the first finished', () => {
     // The re-entry guard must not latch: opening a new edit has to persist.
     const h = setup([makeText()])
@@ -285,6 +361,13 @@ describe('text commit is idempotent within one synchronous handler', () => {
     h.sync()
     act(() => {
       h.api.boardHandlers.onKeyDown(keyEvent('Enter'))
+    })
+    h.sync()
+    // Both sessions type, for the reason the Escape/Tab tests above document:
+    // a no-op session is not persisted, so an untyped first session would
+    // make this pass for the wrong reason.
+    act(() => {
+      h.api.textInput.insertText('?')
     })
     h.sync()
     act(() => {

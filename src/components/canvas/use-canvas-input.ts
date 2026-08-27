@@ -911,9 +911,26 @@ export function useCanvasInput({
       }
       return
     }
-    if (current.isNew) callbacks?.onCreate?.(element)
-    else
-      callbacks?.onUpdate?.([element], [current.before ?? element], 'text-edit')
+    if (current.isNew) {
+      callbacks?.onCreate?.(element)
+      return
+    }
+    // An edit session that changed NOTHING is not an edit. Reporting one
+    // anyway cost the user their next Ctrl+Z: the no-op entry sat on top of
+    // the undo stack and was consumed silently, so the gesture they actually
+    // meant to reverse needed a second press with nothing to show for the
+    // first. It also wrote a pointless revision to the server per aborted
+    // edit.
+    //
+    // The quick-create-by-click path walks straight into this: it opens the
+    // new element for typing, and a user who clicks away without typing then
+    // has to press Ctrl+Z twice to undo the thing they just created.
+    //
+    // Text is the whole comparison because text is all an edit session can
+    // touch — `applyTextEdit` patches `text` and nothing else.
+    const before = current.before ?? element
+    if ((before.text ?? '') === (element.text ?? '')) return
+    callbacks?.onUpdate?.([element], [before], 'text-edit')
   }, [callbacks, setScene])
 
   const beginEditing = useCallback(
