@@ -14,6 +14,7 @@
 import { sceneFrom } from './canvas-engine/scene'
 import { ANCHOR_ATTACH } from './canvas-engine/connector-geometry'
 import type {
+  CanvasConnector,
   CanvasElement,
   ConnectorAnchor,
   ConnectorAttach,
@@ -50,6 +51,27 @@ void _kindsAgree
 /** The same drift guard for the connector routing vocabulary. */
 const _routingsAgree: Mutual<EngineRouting, StoredRouting> = true
 void _routingsAgree
+
+/** The stored side of a connector's payload, for the guard below. */
+type StoredConnectorProps = Extract<CanvasElementProps, { kind: 'connector' }>
+
+/**
+ * The same drift guard, aimed at the ONE property of `curvature` that matters:
+ * that it is still OPTIONAL on both sides.
+ *
+ * Not a vocabulary check like the two above — there is no union here, only a
+ * number. It is a backward-compatibility check. Make the Zod field required
+ * and the stored type narrows to `number` while the engine's stays `number |
+ * undefined`, this line stops compiling, and the change is caught here instead
+ * of in production as "every connector created before today fails validation
+ * the moment it is touched" — which is precisely the failure both field
+ * comments describe and neither could prevent on its own.
+ */
+const _curvaturesAgree: Mutual<
+  CanvasConnector['curvature'],
+  StoredConnectorProps['curvature']
+> = true
+void _curvaturesAgree
 
 /**
  * The engine's `connector` field for a stored row, or `undefined`.
@@ -93,7 +115,20 @@ function toEngineConnector(
   // and lands it in the same draws-nothing state an unresolvable endpoint
   // already has.
   if (!source || !target) return undefined
-  return { source, target, routing: props.routing }
+  // Spread-guarded, exactly like `attach` in `toEngineEndpoint` below: a row
+  // with no curvature must leave the KEY absent rather than set it to
+  // undefined. `toStrictEqual` in the round-trip tests distinguishes the two,
+  // and so does the engine's own "absent means no hand-applied bow" reading.
+  //
+  // `!== undefined` and NOT a truthiness check: a stored 0 is a real,
+  // deliberate value — a connector the user bent and then straightened again
+  // — and `curvature ? ... : {}` would silently drop it on every read.
+  return {
+    source,
+    target,
+    routing: props.routing,
+    ...(props.curvature !== undefined ? { curvature: props.curvature } : {}),
+  }
 }
 
 /**
@@ -140,7 +175,7 @@ function toStoredProps(element: CanvasElement): CanvasElementProps {
       `Connector element ${element.id} has no connector endpoints`,
     )
   }
-  const { source, target, routing } = element.connector
+  const { source, target, routing, curvature } = element.connector
   // Written out explicitly rather than through a keyed helper: computed keys
   // erase the union's own field types, and this object has to satisfy the
   // schema's exactly-one-of invariant by CONSTRUCTION — an attached end never
@@ -162,6 +197,11 @@ function toStoredProps(element: CanvasElement): CanvasElementProps {
       ? { targetPoint: { x: target.point.x, y: target.point.y } }
       : {}),
     routing,
+    // Spread-guarded and `!== undefined`-tested, mirroring the read side
+    // above for the same two reasons: an un-bowed connector writes NO
+    // `curvature` key (a row that never had one must not gain a null on its
+    // next save), and a deliberate 0 is a value, not an absence.
+    ...(curvature !== undefined ? { curvature } : {}),
   }
 }
 

@@ -1142,19 +1142,49 @@ export const canvasElementPropsSchema = z.discriminatedUnion('kind', [
       // still validates on its next update instead of becoming uneditable.
       sourceAnchor: canvasConnectorAnchorSchema.optional(),
       targetAnchor: canvasConnectorAnchorSchema.optional(),
+      // HOW FAR the line is bowed by hand, as a signed fraction of the
+      // straight chord between its two ends — the perpendicular distance the
+      // middle of the curve sits off that chord, divided by the chord's
+      // length. Positive is the LEFT-hand side of the source -> target
+      // direction as seen on screen; see `CanvasConnector.curvature`, which
+      // owns the full definition.
+      //
+      // OPTIONAL for exactly the reason `sourceAttach` above is: every
+      // connector row already in the database was written before bending
+      // existed and carries none, and a required field here would make each
+      // of those rows fail validation on its NEXT update — the row would
+      // become uneditable rather than merely un-bowed. Absent and 0 both mean
+      // "no hand-applied bow", and both redraw the pre-curvature path
+      // unchanged.
+      //
+      // NOT range-checked here, deliberately, even though the geometry holds
+      // it to `CURVATURE_LIMIT`. A row carrying an out-of-range value — hand
+      // edited, seeded, imported — is drawable (the clamp is in
+      // `connector-geometry.ts`, which every render and hit-test goes
+      // through) and so must stay editable; rejecting it at the schema would
+      // strand the one row a user most needs to be able to grab and fix.
+      curvature: z.number().optional(),
     })
     // Each end is EITHER attached to an element OR a free point — never
     // both, never neither. The engine models this as a discriminated union;
     // this is the same invariant stated where the flat storage shape can be
     // checked.
-    .refine((props) => hasExactlyOneEnd(props.sourceElementId, props.sourcePoint), {
-      message: 'A connector end must be either attached to an element or a free point',
-      path: ['sourceElementId'],
-    })
-    .refine((props) => hasExactlyOneEnd(props.targetElementId, props.targetPoint), {
-      message: 'A connector end must be either attached to an element or a free point',
-      path: ['targetElementId'],
-    })
+    .refine(
+      (props) => hasExactlyOneEnd(props.sourceElementId, props.sourcePoint),
+      {
+        message:
+          'A connector end must be either attached to an element or a free point',
+        path: ['sourceElementId'],
+      },
+    )
+    .refine(
+      (props) => hasExactlyOneEnd(props.targetElementId, props.targetPoint),
+      {
+        message:
+          'A connector end must be either attached to an element or a free point',
+        path: ['targetElementId'],
+      },
+    )
     // A self-connector has no drawable path — its two endpoint rects are the
     // same rect, so `connectorPath` returns null and the row would persist as
     // permanently invisible and unselectable. Rejected at the schema so no

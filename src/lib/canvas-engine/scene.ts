@@ -128,6 +128,44 @@ export interface CanvasConnector {
   source: ConnectorEndpoint
   target: ConnectorEndpoint
   routing: CanvasConnectorRouting
+  /**
+   * HOW FAR the line is bowed by hand: the signed perpendicular offset of the
+   * curve's midpoint from the straight chord between its two ends, as a
+   * FRACTION of that chord's length. `0.25` on a 400-unit chord puts the
+   * middle of the line 100 units off to one side.
+   *
+   * A fraction and not a world distance, and that is what the whole field is
+   * built around. It is what makes the drag map 1:1 — a pointer moved one
+   * world unit off the line moves the curve's middle by exactly one world
+   * unit — while staying zoom-invariant, because nothing here is measured in
+   * screen pixels. It is also what keeps the bow PROPORTIONAL when the two
+   * shapes are pulled apart: a stored world offset would flatten into a
+   * near-straight line as the gap grew, which is not what the user drew.
+   *
+   * SIGN: positive is the LEFT-hand side of the source -> target direction as
+   * seen on screen, so a connector running left to right bows UP at positive
+   * curvature. Pinned in `chordNormal` (connector-geometry.ts) and read from
+   * nowhere else.
+   *
+   * MEASURED ON TOP of whatever bow the routing already produces, not from
+   * the chord absolutely. An anchored curve's midpoint is already off the
+   * chord by `(3/8)·tension·(n0 + n1)` before anyone touches it, so an
+   * absolute measure could not also satisfy the rule below. Relative, both
+   * hold at once.
+   *
+   * OPTIONAL, and it has to stay that way for the reason `attach` above does:
+   * every connector written before bending existed carries none. Absent and 0
+   * are the same thing and both reproduce the pre-curvature path exactly —
+   * `curvedPath` skips the arithmetic entirely at 0 rather than adding a zero
+   * offset, so "exactly" means the same floating-point values, not merely the
+   * same to within an epsilon.
+   *
+   * `curved` ONLY. `straight` and `elbow` ignore it — a straight line with a
+   * bend is not straight and a bent elbow is not orthogonal — and the value
+   * survives a round trip through those routings rather than being cleared,
+   * so flipping a bowed connector to elbow and back returns the bow.
+   */
+  curvature?: number
 }
 
 /**
@@ -237,7 +275,11 @@ export function effectiveCornerRadius(element: CanvasElement): number {
   if (element.kind !== 'rectangle') return 0
   const radius = element.style.cornerRadius
   if (!Number.isFinite(radius) || radius <= 0) return 0
-  return Math.min(radius, Math.abs(element.width) / 2, Math.abs(element.height) / 2)
+  return Math.min(
+    radius,
+    Math.abs(element.width) / 2,
+    Math.abs(element.height) / 2,
+  )
 }
 
 /**
@@ -427,7 +469,8 @@ function remapEndpoint(
   from: string,
   to: string,
 ): ConnectorEndpoint {
-  if (endpoint.kind !== 'element' || endpoint.elementId !== from) return endpoint
+  if (endpoint.kind !== 'element' || endpoint.elementId !== from)
+    return endpoint
   return { ...endpoint, elementId: to }
 }
 

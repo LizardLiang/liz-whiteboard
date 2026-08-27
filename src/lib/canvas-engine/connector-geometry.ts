@@ -99,7 +99,10 @@ function departureNormal(
  * per-end, so the legacy path — including its overlap-inversion null — is
  * preserved exactly for the connectors that predate all of this.
  */
-function isLegacyPair(source: EndpointGeometry, target: EndpointGeometry): boolean {
+function isLegacyPair(
+  source: EndpointGeometry,
+  target: EndpointGeometry,
+): boolean {
   return !isFree(source) && !isFree(target) && !source.attach && !target.attach
 }
 
@@ -116,6 +119,30 @@ const CURVE_SAMPLES = 24
 const CURVE_TENSION = 0.4
 const CURVE_TENSION_MIN = 24
 const CURVE_TENSION_MAX = 240
+
+/**
+ * The widest bow a stored `curvature` is allowed to describe: the curve's
+ * middle may sit at most this many CHORD LENGTHS off the straight line.
+ *
+ * 2 is deliberately generous — a drag cannot realistically exceed it, because
+ * the pointer has to physically be that far off the line — so this is not a
+ * limit a user meets. It exists for the values a drag never produced: a row
+ * hand-edited in SQL, a seed script, a future importer. Without it such a row
+ * renders as a loop leaving the viewport in every direction, and the only way
+ * back is to find a grip that is itself off-screen.
+ */
+export const CURVATURE_LIMIT = 2
+
+/**
+ * How far the sampled MIDPOINT of a cubic moves when BOTH of its control
+ * points are pushed the same distance in the same direction.
+ *
+ * Not a tuning knob — it is the cubic itself. At t = 0.5 the Bernstein weights
+ * are 1/8, 3/8, 3/8, 1/8, so shifting both middle terms by `d` shifts the
+ * point by (3/8 + 3/8)·d. Written down because the alternative is a magic
+ * 1.333 at the one call site and a later reader with no way to check it.
+ */
+const MIDPOINT_PER_CONTROL_OFFSET = 0.75
 
 /** Arrowhead half-width as a fraction of its length. */
 const ARROW_SPREAD = 0.45
@@ -189,10 +216,7 @@ export const ANCHOR_ATTACH: Readonly<Record<ConnectorAnchor, ConnectorAttach>> =
  * rect is pushed out to whichever edge it is closest to, which is what a user
  * dropping in the middle of a shape means.
  */
-export function nearestAttach(
-  rect: WorldRect,
-  toward: Point,
-): ConnectorAttach {
+export function nearestAttach(rect: WorldRect, toward: Point): ConnectorAttach {
   // Guard a degenerate box before dividing — a connector's own 1x1 placeholder
   // is never an attach target, but a zero-size element would divide by zero.
   const width = rect.width || 1
@@ -280,8 +304,10 @@ export function borderPoint(rect: WorldRect, d: Point): Point {
   const centre = rectCentre(rect)
   const halfWidth = rect.width / 2
   const halfHeight = rect.height / 2
-  const scaleX = d.x === 0 ? Number.POSITIVE_INFINITY : halfWidth / Math.abs(d.x)
-  const scaleY = d.y === 0 ? Number.POSITIVE_INFINITY : halfHeight / Math.abs(d.y)
+  const scaleX =
+    d.x === 0 ? Number.POSITIVE_INFINITY : halfWidth / Math.abs(d.x)
+  const scaleY =
+    d.y === 0 ? Number.POSITIVE_INFINITY : halfHeight / Math.abs(d.y)
   const scale = Math.min(scaleX, scaleY)
   // Both infinite means `d` is the zero vector — the caller has already
   // rejected that case (see `endpoints`), but returning the centre is the
@@ -320,8 +346,14 @@ export function endpoints(
     const dy = b.y - a.y
     if (dx === 0 && dy === 0) return null
 
-    const from = borderPoint((source as { rect: WorldRect }).rect, { x: dx, y: dy })
-    const to = borderPoint((target as { rect: WorldRect }).rect, { x: -dx, y: -dy })
+    const from = borderPoint((source as { rect: WorldRect }).rect, {
+      x: dx,
+      y: dy,
+    })
+    const to = borderPoint((target as { rect: WorldRect }).rect, {
+      x: -dx,
+      y: -dy,
+    })
     const forward = (to.x - from.x) * dx + (to.y - from.y) * dy
     if (forward <= 0) return null
     return { from, to }
@@ -406,6 +438,43 @@ function elbowPath(
   return [from, { x: from.x, y: midY }, { x: to.x, y: midY }, to]
 }
 
+/**
+ * The unit vector a curvature is measured along: the LEFT-hand side of the
+ * source -> target direction AS SEEN ON SCREEN.
+ *
+ * `(dy, -dx)` and not `(-dy, dx)` because the canvas y axis points DOWN. For a
+ * connector running left to right this yields `(0, -1)` — up the screen, which
+ * is the side a person walking that direction would call their left. Getting
+ * this backwards is invisible in a unit test that only checks magnitude and
+ * shows up as every stored bow flipping the day someone "fixes" the sign, so
+ * the whole convention is pinned here and read from nowhere else.
+ *
+ * Null for a zero-length chord: there is no side of a line that has no
+ * direction. `endpoints` already rejects that case, so no caller reaches it
+ * today, but returning null is the only non-NaN answer if one ever does.
+ */
+function chordNormal(from: Point, to: Point): Point | null {
+  const dx = to.x - from.x
+  const dy = to.y - from.y
+  const length = Math.hypot(dx, dy)
+  if (length === 0) return null
+  return { x: dy / length, y: -dx / length }
+}
+
+/**
+ * A stored curvature, held to `CURVATURE_LIMIT` and to being a number at all.
+ *
+ * NaN maps to 0 rather than to a clamp bound: every arithmetic path into a
+ * curvature divides by a chord length, and a chord of zero yields NaN, which
+ * would otherwise propagate into both control points and delete the entire
+ * `ctx.stroke()` — the connector would vanish rather than merely go flat. Zero
+ * is the honest fallback, because zero is exactly "no hand-applied bow".
+ */
+export function clampCurvature(curvature: number): number {
+  if (!Number.isFinite(curvature)) return 0
+  return Math.min(CURVATURE_LIMIT, Math.max(-CURVATURE_LIMIT, curvature))
+}
+
 /** One cubic bezier point at parameter `t`. */
 function bezierAt(
   p0: Point,
@@ -426,6 +495,55 @@ function bezierAt(
 }
 
 /**
+ * `control` with its component ALONG the chord held inside the chord itself,
+ * and its perpendicular component left exactly as it was.
+ *
+ * This is what stops a bowed curve drawing a CUSP — the line shooting
+ * backwards past its own endpoint, curling round it and coming back, which is
+ * what a `curved` connector with a free or unanchored end did at every
+ * non-zero curvature. `departureNormal` points such an end AWAY from the other
+ * end, so its control point starts up to `CURVE_TENSION_MAX` BEHIND the
+ * endpoint along the chord. On its own that only reads as a short departure
+ * stub; add the perpendicular bow on top and the cubic reverses direction into
+ * a visible loop.
+ *
+ * Holding both control points inside `[0, chord]` is not a heuristic that
+ * happens to look better — it is exactly the condition that makes the cubic's
+ * along-chord derivative non-negative for the whole curve. That derivative is
+ * the quadratic bezier through `(a0, a1 - a0, chord - a1)`, which is AFFINE in
+ * `a0` and `a1`, so its minimum over the square `[0, chord]^2` sits at one of
+ * the four corners, and all four evaluate to a non-negative multiple of
+ * `chord`. No reversal is therefore possible at any curvature, for any
+ * endpoint pair.
+ *
+ * Both ends are measured from `from` along the same axis, which is the same
+ * condition as "`c1` is within `chord` of `to`, measured backwards" — one
+ * projection instead of two, and one fewer sign to get wrong.
+ *
+ * The PERPENDICULAR component is deliberately untouched: it is the component a
+ * curvature is defined as, so holding it back would bow the line by less than
+ * the drag asked for and the bend grip would slide out from under the pointer.
+ */
+function holdAlongChord(
+  control: Point,
+  from: Point,
+  axis: Point,
+  chord: number,
+): Point {
+  const along = (control.x - from.x) * axis.x + (control.y - from.y) * axis.y
+  const held = Math.min(chord, Math.max(0, along))
+  // Returned unchanged — and byte-identical, not merely equal to within an
+  // epsilon — whenever the control point was already inside the chord, which
+  // is every connector whose ends both depart towards each other. Only the
+  // ends that depart backwards pay anything here.
+  if (held === along) return control
+  return {
+    x: control.x + axis.x * (held - along),
+    y: control.y + axis.y * (held - along),
+  }
+}
+
+/**
  * A cubic curve between the same points a straight connector uses.
  *
  * With any anchored or free end, each control point is pushed along that end's
@@ -437,10 +555,20 @@ function bezierAt(
  * The legacy pair keeps the dominant-axis push, which is what makes two
  * side-by-side elements curve horizontally and two stacked ones curve
  * vertically rather than producing a merely bowed straight line.
+ *
+ * `curvature` is the user's own bow, applied ON TOP of whichever of those two
+ * rules produced the control points — see `CanvasConnector.curvature`. It is
+ * applied by pushing BOTH control points along the chord normal, which leaves
+ * the two departure directions untouched: the line still leaves and arrives
+ * square-on to the sides it is tied to no matter how far it is bent. Bending
+ * by moving ONE control point would have bowed the curve and swung its
+ * departure at the same time, so an anchored end would visibly peel off its
+ * own edge as the user dragged.
  */
 function curvedPath(
   source: EndpointGeometry,
   target: EndpointGeometry,
+  curvature = 0,
 ): Array<Point> | null {
   const ends = endpoints(source, target)
   if (!ends) return null
@@ -474,11 +602,116 @@ function curvedPath(
     }
   }
 
+  // Guarded on `!== 0` rather than added unconditionally, so an un-bowed
+  // connector's control points are the SAME floating-point values they were
+  // before curvature existed — not "the same to within an epsilon". Every
+  // connector already stored carries no curvature, and the guarantee those
+  // rows need is that they redraw pixel-identically, which an unconditional
+  // `+ 0 * n.x` weakens for no gain.
+  const bend = clampCurvature(curvature)
+  const normal = bend === 0 ? null : chordNormal(ends.from, ends.to)
+  if (normal) {
+    const chord = Math.hypot(ends.to.x - ends.from.x, ends.to.y - ends.from.y)
+    // Divide, don't guess: `bend * chord` is where the user wants the MIDPOINT,
+    // and a control-point offset only moves the midpoint by
+    // `MIDPOINT_PER_CONTROL_OFFSET` of itself. Offsetting the controls by the
+    // midpoint distance directly would bow the line to only three quarters of
+    // the drag, which reads as the grip sliding out from under the pointer.
+    const offset = (bend * chord) / MIDPOINT_PER_CONTROL_OFFSET
+    c0 = { x: c0.x + normal.x * offset, y: c0.y + normal.y * offset }
+    c1 = { x: c1.x + normal.x * offset, y: c1.y + normal.y * offset }
+
+    // ...and only then hold each control point inside the chord, which is what
+    // keeps the bow from folding the curve into a cusp around an endpoint —
+    // see `holdAlongChord`. Applied INSIDE this guard on purpose: an un-bowed
+    // curve with a backwards-departing end does step backwards out of that
+    // end, and that stub is what every already-stored connector draws today.
+    // Holding it back unconditionally would look tidier and would change the
+    // picture for rows nobody edited, so the stub stays and only a bow — which
+    // is always a deliberate, current edit — is held.
+    //
+    // The chord direction is rotated back out of the normal rather than
+    // derived a second time: `chordNormal` is `(dy, -dx) / L`, so `(-n.y, n.x)`
+    // is `(dx, dy) / L`. Two derivations of the same axis is how W1 and W3 both
+    // started.
+    const axis = { x: -normal.y, y: normal.x }
+    c0 = holdAlongChord(c0, ends.from, axis, chord)
+    c1 = holdAlongChord(c1, ends.from, axis, chord)
+  }
+
   const points: Array<Point> = []
   for (let i = 0; i <= CURVE_SAMPLES; i += 1) {
     points.push(bezierAt(ends.from, c0, c1, ends.to, i / CURVE_SAMPLES))
   }
   return points
+}
+
+/**
+ * The point on a path that the BEND GRIP sits on, or null when there is none.
+ *
+ * The sample at t = 0.5 — deliberately NOT `pathMidpoint`, which measures by
+ * arc length. The two coincide on a symmetric curve and drift apart on an
+ * asymmetric one, and this one has to be the t = 0.5 point because that is
+ * what `curvature` is defined against: anything else would make the grip lag
+ * behind the pointer during a drag, by a distance that changes with the bow.
+ *
+ * `curvedPath` samples uniformly in `t` over `CURVE_SAMPLES + 1` points, so
+ * for a curve the middle index IS t = 0.5. The even-length branch exists
+ * because nothing in the type stops a caller handing this a four-point elbow;
+ * interpolating is a truthful answer rather than an off-by-one silently
+ * favouring one half.
+ */
+export function bendMidpoint(
+  points: ReadonlyArray<Point> | null | undefined,
+): Point | null {
+  if (!points || points.length < 2) return null
+  const middle = (points.length - 1) / 2
+  const lower = Math.floor(middle)
+  const upper = Math.ceil(middle)
+  if (lower === upper) return points[lower]
+  return {
+    x: (points[lower].x + points[upper].x) / 2,
+    y: (points[lower].y + points[upper].y) / 2,
+  }
+}
+
+/**
+ * The curvature that puts a `curved` connector's bend point exactly under
+ * `toward`, or null when the pair has no curve to bend.
+ *
+ * The INVERSE of what `curvedPath` does with a curvature, and it exists so the
+ * drag has one: `use-canvas-input` must not carry its own copy of the
+ * perpendicular-distance-over-chord-length arithmetic, for the same
+ * export-what-you-draw reason `connectorEndpointRects` is exported rather than
+ * re-derived at the press site.
+ *
+ * Measured against the UN-BOWED path's own bend point rather than against the
+ * chord, which is what makes the answer round-trip: feeding the result back
+ * into `connectorPath` lands the bend point on `toward` to floating-point
+ * precision. Measuring from the chord instead would be off by whatever bow the
+ * routing already had, and an anchored connector would jump the instant it was
+ * grabbed.
+ *
+ * Stateless — recomputed from the CURRENT pointer every frame, never
+ * accumulated from the last one. Same rationale as `resize`'s `startBounds`:
+ * a per-frame delta would compound its own clamp.
+ */
+export function curvatureForPoint(
+  source: EndpointGeometry | null | undefined,
+  target: EndpointGeometry | null | undefined,
+  toward: Point,
+): number | null {
+  if (!source || !target) return null
+  const ends = endpoints(source, target)
+  if (!ends) return null
+  const normal = chordNormal(ends.from, ends.to)
+  if (!normal) return null
+  const chord = Math.hypot(ends.to.x - ends.from.x, ends.to.y - ends.from.y)
+  const base = bendMidpoint(curvedPath(source, target))
+  if (!base) return null
+  const along = (point: Point): number =>
+    (point.x - ends.from.x) * normal.x + (point.y - ends.from.y) * normal.y
+  return clampCurvature((along(toward) - along(base)) / chord)
 }
 
 /**
@@ -491,11 +724,21 @@ function curvedPath(
  * two heavily overlapping elements are all ordinary board states, not faults.
  * The renderer skips, the hit-test misses, and the connector comes back on the
  * next move.
+ *
+ * `curvature` is accepted for EVERY routing and consumed by exactly one, and
+ * that asymmetry is deliberate. `straight` and `elbow` have no bow to scale —
+ * a straight line with a bend in it is not straight, and an elbow with one is
+ * no longer orthogonal — so they IGNORE the value rather than reinterpreting
+ * it, and a connector flipped to one of them and back keeps the bow it had.
+ * Callers therefore pass a connector's stored curvature through
+ * unconditionally instead of branching on routing at every call site, which is
+ * one fewer place to forget.
  */
 export function connectorPath(
   source: EndpointGeometry | null | undefined,
   target: EndpointGeometry | null | undefined,
   routing: CanvasConnectorRouting,
+  curvature?: number,
 ): Array<Point> | null {
   if (!source || !target) return null
   switch (routing) {
@@ -506,7 +749,7 @@ export function connectorPath(
     case 'elbow':
       return elbowPath(source, target)
     case 'curved':
-      return curvedPath(source, target)
+      return curvedPath(source, target, curvature)
   }
 }
 
@@ -590,7 +833,10 @@ export function pathMidpoint(points: ReadonlyArray<Point>): Point | null {
 
   let total = 0
   for (let i = 1; i < points.length; i += 1) {
-    total += Math.hypot(points[i].x - points[i - 1].x, points[i].y - points[i - 1].y)
+    total += Math.hypot(
+      points[i].x - points[i - 1].x,
+      points[i].y - points[i - 1].y,
+    )
   }
   if (total === 0) return points[0]
 

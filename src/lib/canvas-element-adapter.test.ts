@@ -43,7 +43,9 @@ function record(
 describe('toEngineElement', () => {
   it('maps positionX/positionY onto x/y, not onto each other', () => {
     // Asymmetric values on purpose: with x === y a transposed mapping passes.
-    const element = toEngineElement(record('a', { positionX: 7, positionY: 99 }))
+    const element = toEngineElement(
+      record('a', { positionX: 7, positionY: 99 }),
+    )
     expect(element.x).toBe(7)
     expect(element.y).toBe(99)
   })
@@ -121,7 +123,10 @@ describe('round trip', () => {
   it('derives props.kind from the element kind, so the two can never disagree', () => {
     // The create schema rejects a mismatch; building props here rather than
     // asking the caller for it means the mismatch is unrepresentable.
-    const input = toCreateInput('board-2', toEngineElement(record('t', { kind: 'text' })))
+    const input = toCreateInput(
+      'board-2',
+      toEngineElement(record('t', { kind: 'text' })),
+    )
     expect(input.kind).toBe('text')
     expect(input.props).toEqual({ kind: 'text' })
   })
@@ -231,7 +236,10 @@ describe('connector conversions', () => {
     expect(() => toEngineElement(noProps)).not.toThrow()
     expect(toEngineElement(noProps)).not.toHaveProperty('connector')
 
-    const nullProps = { ...record('a'), props: null } as unknown as CanvasElementRecord
+    const nullProps = {
+      ...record('a'),
+      props: null,
+    } as unknown as CanvasElementRecord
     expect(toEngineElement(nullProps)).not.toHaveProperty('connector')
   })
 
@@ -239,8 +247,13 @@ describe('connector conversions', () => {
     // A programming error, not user input. Writing a rectangle's empty props
     // under a connector's kind would persist a row that fails the schema's own
     // kind/props cross-validation on the way back in — better to fail here.
-    const broken = { ...toEngineElement(connectorRecord()), connector: undefined }
-    expect(() => toCreateInput('board-2', broken)).toThrow(/no connector endpoints/)
+    const broken = {
+      ...toEngineElement(connectorRecord()),
+      connector: undefined,
+    }
+    expect(() => toCreateInput('board-2', broken)).toThrow(
+      /no connector endpoints/,
+    )
     expect(() => toElementSnapshot('board-1', broken)).toThrow(
       /no connector endpoints/,
     )
@@ -314,5 +327,80 @@ describe('free connector ends round-trip through storage', () => {
       props: { ...FREE_PROPS, targetPoint: undefined },
     } as unknown as Parameters<typeof toEngineElement>[0]
     expect(toEngineElement(malformed).connector).toBeUndefined()
+  })
+})
+
+describe('connector curvature round-trips, and its absence is preserved', () => {
+  const CURVED_PROPS = {
+    ...CONNECTOR_PROPS,
+    routing: 'curved' as const,
+    curvature: -0.375,
+  }
+
+  function curvedRecord(): CanvasElementRecord {
+    return record('c2', {
+      kind: 'connector',
+      props: CURVED_PROPS,
+      positionX: 0,
+      positionY: 0,
+      width: 1,
+      height: 1,
+    })
+  }
+
+  it('reads a stored curvature onto the engine connector', () => {
+    expect(toEngineElement(curvedRecord()).connector).toEqual({
+      source: { kind: 'element', elementId: CONNECTOR_PROPS.sourceElementId },
+      target: { kind: 'element', elementId: CONNECTOR_PROPS.targetElementId },
+      routing: 'curved',
+      curvature: -0.375,
+    })
+  })
+
+  it('leaves the KEY absent for a legacy row that carries none', () => {
+    // Not `curvature: undefined`. `toStrictEqual` distinguishes the two, and
+    // so does the engine's "absent means no hand-applied bow" reading — the
+    // same contract `attach` already has for connectors written before
+    // attachment existed.
+    const element = toEngineElement(connectorRecord())
+    expect(element.connector).not.toHaveProperty('curvature')
+  })
+
+  it('writes it back into create props and an update patch', () => {
+    // The update patch is the whole persistence story for this feature: the
+    // adapter serialises a connector's props WHOLESALE, so curvature reaches
+    // storage on the existing write path with no new server work.
+    const element = toEngineElement(curvedRecord())
+    expect(toCreateInput('board-2', element).props).toEqual(CURVED_PROPS)
+    expect(toUpdatePatch(element).props).toEqual(CURVED_PROPS)
+  })
+
+  it('adds no curvature key to a connector that never had one', () => {
+    // A row written before bending existed must not gain the field merely by
+    // being saved again — that is what keeps the "absent and 0 are the same"
+    // promise honest across an ordinary move or reroute.
+    const patch = toUpdatePatch(toEngineElement(connectorRecord()))
+    expect(patch.props).not.toHaveProperty('curvature')
+    expect(patch.props).toEqual(CONNECTOR_PROPS)
+  })
+
+  it('carries a deliberate ZERO rather than dropping it', () => {
+    // 0 is a value — a connector the user bowed and then straightened again —
+    // and a truthiness-guarded spread would silently discard it, resurrecting
+    // whatever bow the row held before.
+    const element = toEngineElement(curvedRecord())
+    const straightened = {
+      ...element,
+      connector: { ...element.connector!, curvature: 0 },
+    }
+    expect(toUpdatePatch(straightened).props).toHaveProperty('curvature', 0)
+  })
+
+  it('survives the undo snapshot round trip intact', () => {
+    // The half that is easy to forget: without it, undoing a delete would
+    // restore the connector flat and silently discard the bow.
+    const element = toEngineElement(curvedRecord())
+    const restored = fromElementSnapshot(toElementSnapshot('board-1', element))
+    expect(restored).toStrictEqual(element)
   })
 })

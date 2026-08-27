@@ -369,11 +369,17 @@ export function useCanvasUndo({
           })
         }
         if (operations.length === 0) return
-        // `resize`, `text-edit`, `routing` and `reconnect` are always
+        // `resize`, `text-edit`, `routing`, `reconnect` and `bend` are always
         // single-element gestures. `move` (a multi-select drag) and `style`
         // (one click restyling the whole selection) can span several, which
         // is why the count lives on exactly those two variants — see
         // CanvasUndoLabel's own header.
+        //
+        // `bend` belongs with the single-element group and not with `move`
+        // for a structural reason, not a stylistic one: its grip is only
+        // drawn and only pressable when EXACTLY ONE connector is selected
+        // (`use-canvas-input`'s `currentSelection.size === 1` gate), so a
+        // multi-element bend is unreachable rather than merely unusual.
         const label: CanvasUndoLabel =
           gesture === 'move' || gesture === 'style' || gesture === 'z-order'
             ? { gesture, count: operations.length }
@@ -518,13 +524,7 @@ export function useCanvasUndo({
       onUpdate: recordUpdate,
       onDelete: recordDelete,
     }),
-    [
-      recordClone,
-      recordCreate,
-      recordDelete,
-      recordQuickCreate,
-      recordUpdate,
-    ],
+    [recordClone, recordCreate, recordDelete, recordQuickCreate, recordUpdate],
   )
 
   // ── applying (undo) ──────────────────────────────────────────────────────
@@ -561,7 +561,11 @@ export function useCanvasUndo({
             restoreOriginalId: true,
             minRevision,
           })
-          return { ok: res.ok, elementId: write.elementId, revision: res.revision }
+          return {
+            ok: res.ok,
+            elementId: write.elementId,
+            revision: res.revision,
+          }
         }
         case 'update': {
           const op = opsById.get(write.elementId)
@@ -579,7 +583,9 @@ export function useCanvasUndo({
           const element = snapshotToEngineElement(op.before)
           const results = await updateElements([element], {
             ...EPHEMERAL,
-            expectedRevisions: new Map([[write.elementId, write.expectedRevision]]),
+            expectedRevisions: new Map([
+              [write.elementId, write.expectedRevision],
+            ]),
           })
           const result = results[0]
           return {
@@ -591,7 +597,9 @@ export function useCanvasUndo({
         case 'delete': {
           const results = await deleteElements([write.elementId], {
             ...EPHEMERAL,
-            expectedRevisions: new Map([[write.elementId, write.expectedRevision]]),
+            expectedRevisions: new Map([
+              [write.elementId, write.expectedRevision],
+            ]),
           })
           const ok = results[0]?.ok ?? false
           // A successful conditional delete confirms the row's LAST revision
@@ -606,7 +614,10 @@ export function useCanvasUndo({
           if (ok) {
             const op = opsById.get(write.elementId)
             if (op) {
-              lastRevisionBeforeDeleteRef.current.set(op, write.expectedRevision)
+              lastRevisionBeforeDeleteRef.current.set(
+                op,
+                write.expectedRevision,
+              )
             }
           }
           return { ok, elementId: write.elementId }
@@ -736,7 +747,10 @@ export function useCanvasUndo({
     bumpVersion()
 
     const revisions = new Map(
-      popped.entry.operations.map((op) => [op.elementId, getRevision(op.elementId)]),
+      popped.entry.operations.map((op) => [
+        op.elementId,
+        getRevision(op.elementId),
+      ]),
     )
     const inverse = buildInverse(popped.entry, revisions)
     if (inverse.status === 'contested') {
@@ -883,11 +897,21 @@ export function useCanvasUndo({
       // this, the user's own undo makes their NEXT undo of the same element
       // look contested.
       for (const [elementId, revision] of revisionUpdates) {
-        stackRef.current = refreshRevision(stackRef.current, elementId, revision)
+        stackRef.current = refreshRevision(
+          stackRef.current,
+          elementId,
+          revision,
+        )
       }
       bumpVersion()
     })
-  }, [applyForwardWrite, applyInverseWrite, getRevision, onAffectedElement, readOnly])
+  }, [
+    applyForwardWrite,
+    applyInverseWrite,
+    getRevision,
+    onAffectedElement,
+    readOnly,
+  ])
 
   // ── applying (redo) ──────────────────────────────────────────────────────
 

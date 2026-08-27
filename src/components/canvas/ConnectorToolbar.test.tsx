@@ -17,9 +17,13 @@ import {
   ROUTING_OPTIONS,
   connectorToolbarTarget,
 } from './ConnectorToolbar'
-import type { CanvasConnectorRouting, CanvasElement } from '@/lib/canvas-engine/scene'
+import type {
+  CanvasConnectorRouting,
+  CanvasElement,
+} from '@/lib/canvas-engine/scene'
 import type { Camera } from '@/lib/canvas-engine/camera'
 import { DEFAULT_CAMERA, worldToScreen } from '@/lib/canvas-engine/camera'
+import { CONNECTOR_BEND_HIT } from '@/lib/canvas-engine/render'
 import {
   DEFAULT_CONNECTOR_ROUTING,
   DEFAULT_ELEMENT_STYLE,
@@ -162,9 +166,9 @@ describe('rendering', () => {
   it('renders one button per routing, no more and no fewer', () => {
     setup()
     const toolbar = screen.getByRole('toolbar', { name: 'Connector routing' })
-    expect(
-      screen.getAllByRole('button', { hidden: false }).length,
-    ).toBe(ROUTING_OPTIONS.length)
+    expect(screen.getAllByRole('button', { hidden: false }).length).toBe(
+      ROUTING_OPTIONS.length,
+    )
     expect(toolbar).toBeTruthy()
   })
 
@@ -195,13 +199,19 @@ describe('rendering', () => {
   it('marks exactly the active routing as pressed', () => {
     setup({ scene: board('elbow') })
     expect(
-      screen.getByRole('button', { name: 'Elbow connector' }).getAttribute('aria-pressed'),
+      screen
+        .getByRole('button', { name: 'Elbow connector' })
+        .getAttribute('aria-pressed'),
     ).toBe('true')
     expect(
-      screen.getByRole('button', { name: 'Straight connector' }).getAttribute('aria-pressed'),
+      screen
+        .getByRole('button', { name: 'Straight connector' })
+        .getAttribute('aria-pressed'),
     ).toBe('false')
     expect(
-      screen.getByRole('button', { name: 'Curved connector' }).getAttribute('aria-pressed'),
+      screen
+        .getByRole('button', { name: 'Curved connector' })
+        .getAttribute('aria-pressed'),
     ).toBe('false')
   })
 
@@ -316,5 +326,21 @@ describe('what it emits', () => {
     fireEvent.click(screen.getByRole('button', { name: 'Curved connector' }))
     const [element] = onRoutingChange.mock.calls[0]
     expect((element as CanvasElement).connector?.routing).toBe('elbow')
+  })
+})
+
+describe('the bar keeps clear of the bend grip', () => {
+  it('sits far enough above the midpoint that the grip stays pressable', () => {
+    // Both affordances are pinned to the connector's own midpoint, and they
+    // live in different layers — this bar is DOM, the grip is painted on the
+    // canvas underneath. An overlap would therefore look completely correct
+    // and simply swallow every press aimed at the grip, which is the same
+    // silent class of defect the creation-handle/resize-grip separation is
+    // asserted against in render-connectors.test.ts.
+    //
+    // The grip is `CONNECTOR_BEND_HIT` across and centred on the midpoint, so
+    // its top edge is half that above it; this bar's bottom edge is
+    // `CONNECTOR_TOOLBAR_OFFSET` above it.
+    expect(CONNECTOR_TOOLBAR_OFFSET).toBeGreaterThan(CONNECTOR_BEND_HIT / 2)
   })
 })

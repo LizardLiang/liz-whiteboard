@@ -63,6 +63,12 @@ function describeGesture(label: CanvasUndoLabel): string {
       // Names the END moving, not the connector generally — the routing arm
       // below is also "a connector changed" and the two must not read alike.
       return 'moving a connector end'
+    case 'bend':
+      // Names the CURVE, and says nothing about ends or routing: this is the
+      // third "a connector changed" arm, and all three have to be
+      // distinguishable in a single line of toast. "Adjusting a connector"
+      // would collapse them back together.
+      return 'bending a connector curve'
     case 'style':
       // Names the PAINT, not "updating a shape": nothing moved and nothing
       // resized, so a vaguer word would leave the user guessing which of

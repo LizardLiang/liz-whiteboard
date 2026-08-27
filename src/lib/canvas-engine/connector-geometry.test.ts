@@ -1,14 +1,18 @@
 import { describe, expect, it } from 'vitest'
 import {
   ANCHOR_ATTACH,
+  CURVATURE_LIMIT,
   anchorNormal,
   anchorPoint,
   arrowHead,
   attachPoint,
   attachSide,
+  bendMidpoint,
   borderPoint,
+  clampCurvature,
   connectorBounds,
   connectorPath,
+  curvatureForPoint,
   endpoints,
   nearestAnchor,
   nearestAttach,
@@ -16,6 +20,7 @@ import {
   rectCentre,
 } from './connector-geometry'
 import type { WorldRect } from './hit-test'
+import type { Point } from './camera'
 import type { EndpointGeometry } from './connector-geometry'
 
 import type { ConnectorAnchor } from './scene'
@@ -24,7 +29,6 @@ import type { ConnectorAnchor } from './scene'
 const LEFT: WorldRect = { x: 0, y: 0, width: 100, height: 100 }
 const RIGHT: WorldRect = { x: 300, y: 0, width: 100, height: 100 }
 const BELOW: WorldRect = { x: 0, y: 300, width: 100, height: 100 }
-
 
 /**
  * A rect end, optionally anchored — the shape `connectorPath`/`endpoints` now
@@ -82,7 +86,12 @@ describe('endpoints', () => {
   it('returns null for concentric rects', () => {
     expect(endpoints(rectEnd(LEFT), rectEnd({ ...LEFT }))).toBeNull()
     // Different sizes, same centre — still nothing to draw.
-    expect(endpoints(rectEnd(LEFT), rectEnd({ x: 25, y: 25, width: 50, height: 50 }))).toBeNull()
+    expect(
+      endpoints(
+        rectEnd(LEFT),
+        rectEnd({ x: 25, y: 25, width: 50, height: 50 }),
+      ),
+    ).toBeNull()
   })
 
   it('returns null when the rects overlap enough to invert the segment', () => {
@@ -161,7 +170,9 @@ describe('connectorPath — elbow', () => {
   })
 
   it('is null for concentric rects', () => {
-    expect(connectorPath(rectEnd(LEFT), rectEnd({ ...LEFT }), 'elbow')).toBeNull()
+    expect(
+      connectorPath(rectEnd(LEFT), rectEnd({ ...LEFT }), 'elbow'),
+    ).toBeNull()
   })
 
   it('never emits a zero-length final segment', () => {
@@ -184,7 +195,11 @@ describe('connectorPath — curved', () => {
   })
 
   it('produces only finite coordinates', () => {
-    const path = connectorPath(rectEnd(LEFT), rectEnd({ x: 300, y: 240, width: 100, height: 100 }), 'curved')!
+    const path = connectorPath(
+      rectEnd(LEFT),
+      rectEnd({ x: 300, y: 240, width: 100, height: 100 }),
+      'curved',
+    )!
     for (const point of path) {
       expect(Number.isFinite(point.x)).toBe(true)
       expect(Number.isFinite(point.y)).toBe(true)
@@ -204,15 +219,17 @@ describe('connectorPath — curved', () => {
     const aby = b.y - a.y
     const length = Math.hypot(abx, aby)
     const deviation = Math.max(
-      ...curved.map((p) =>
-        Math.abs((p.x - a.x) * aby - (p.y - a.y) * abx) / length,
+      ...curved.map(
+        (p) => Math.abs((p.x - a.x) * aby - (p.y - a.y) * abx) / length,
       ),
     )
     expect(deviation).toBeGreaterThan(10)
   })
 
   it('is null for concentric rects', () => {
-    expect(connectorPath(rectEnd(LEFT), rectEnd({ ...LEFT }), 'curved')).toBeNull()
+    expect(
+      connectorPath(rectEnd(LEFT), rectEnd({ ...LEFT }), 'curved'),
+    ).toBeNull()
   })
 })
 
@@ -396,7 +413,9 @@ describe('anchored endpoints (the line starts and ends where the user pointed)',
   })
 
   it('is unchanged from the old behaviour when neither end is anchored', () => {
-    expect(endpoints(rectEnd(A), rectEnd(B))).toEqual(endpoints(rectEnd(A), rectEnd(B)))
+    expect(endpoints(rectEnd(A), rectEnd(B))).toEqual(
+      endpoints(rectEnd(A), rectEnd(B)),
+    )
   })
 
   it('aims an unanchored end at the anchored point, not at the other centre', () => {
@@ -443,7 +462,11 @@ describe('anchored routing leaves and arrives perpendicular', () => {
   const B: WorldRect = { x: 400, y: 300, width: 100, height: 100 }
 
   it('elbow departs along the source normal and arrives along the target normal', () => {
-    const path = connectorPath(rectEnd(A, 'bottom'), rectEnd(B, 'left'), 'elbow')!
+    const path = connectorPath(
+      rectEnd(A, 'bottom'),
+      rectEnd(B, 'left'),
+      'elbow',
+    )!
     // First segment straight DOWN out of the bottom edge...
     expect(path[0]).toEqual({ x: 50, y: 100 })
     expect(path[1].x).toBe(50)
@@ -468,18 +491,26 @@ describe('anchored routing leaves and arrives perpendicular', () => {
   it('curve leaves the anchored edge rather than the dominant axis', () => {
     // Dominant-axis control points would push this curve sideways out of a
     // TOP anchor, which is not a direction the line is attached along.
-    const path = connectorPath(rectEnd(A, 'bottom'), rectEnd(B, 'left'), 'curved')!
+    const path = connectorPath(
+      rectEnd(A, 'bottom'),
+      rectEnd(B, 'left'),
+      'curved',
+    )!
     expect(path[0]).toEqual({ x: 50, y: 100 })
     // The first sample continues downward out of the bottom edge.
     expect(path[1].y).toBeGreaterThan(path[0].y)
-    expect(path.every((p) => Number.isFinite(p.x) && Number.isFinite(p.y))).toBe(
-      true,
-    )
+    expect(
+      path.every((p) => Number.isFinite(p.x) && Number.isFinite(p.y)),
+    ).toBe(true)
   })
 
   it('every routing keeps both anchored ends exactly on their edges', () => {
     for (const routing of ['straight', 'elbow', 'curved'] as const) {
-      const path = connectorPath(rectEnd(A, 'right'), rectEnd(B, 'bottom'), routing)!
+      const path = connectorPath(
+        rectEnd(A, 'right'),
+        rectEnd(B, 'bottom'),
+        routing,
+      )!
       expect(path[0]).toEqual({ x: 100, y: 50 })
       expect(path[path.length - 1]).toEqual({ x: 450, y: 400 })
     }
@@ -506,7 +537,10 @@ describe('free ends (a connector end detached from any element)', () => {
   })
 
   it('supports BOTH ends free — a line attached to nothing', () => {
-    const ends = endpoints({ point: { x: 10, y: 20 } }, { point: { x: 90, y: 60 } })!
+    const ends = endpoints(
+      { point: { x: 10, y: 20 } },
+      { point: { x: 90, y: 60 } },
+    )!
     expect(ends).toEqual({ from: { x: 10, y: 20 }, to: { x: 90, y: 60 } })
   })
 
@@ -518,7 +552,9 @@ describe('free ends (a connector end detached from any element)', () => {
     for (const routing of ['straight', 'elbow', 'curved'] as const) {
       const path = connectorPath(rectEnd(A, 'right'), FREE, routing)!
       expect(path.length).toBeGreaterThanOrEqual(2)
-      expect(path.every((p) => Number.isFinite(p.x) && Number.isFinite(p.y))).toBe(true)
+      expect(
+        path.every((p) => Number.isFinite(p.x) && Number.isFinite(p.y)),
+      ).toBe(true)
       expect(path[0]).toEqual({ x: 100, y: 50 })
       expect(path[path.length - 1]).toEqual({ x: 400, y: 300 })
     }
@@ -610,5 +646,302 @@ describe('continuous attachment — anywhere along an edge', () => {
     // Quick-create still lands on a side's midpoint; dragging is what moves it.
     expect(ANCHOR_ATTACH.right).toEqual({ x: 1, y: 0.5 })
     expect(attachPoint(R, ANCHOR_ATTACH.right)).toEqual({ x: 300, y: 150 })
+  })
+})
+
+describe('curvature — the hand-dragged bow on a `curved` connector', () => {
+  /** The sample at t = 0.5 — the point `curvature` is defined against. */
+  function midSample(path: Array<Point>): Point {
+    return bendMidpoint(path)!
+  }
+
+  it('reproduces the un-curved path EXACTLY at 0 and when absent', () => {
+    const before = connectorPath(rectEnd(LEFT), rectEnd(RIGHT), 'curved')!
+    expect(connectorPath(rectEnd(LEFT), rectEnd(RIGHT), 'curved', 0)).toEqual(
+      before,
+    )
+    expect(
+      connectorPath(rectEnd(LEFT), rectEnd(RIGHT), 'curved', undefined),
+    ).toEqual(before)
+  })
+
+  it('moves the curve midpoint by curvature x chord length, perpendicular', () => {
+    const flat = connectorPath(rectEnd(LEFT), rectEnd(RIGHT), 'curved')!
+    const bowed = connectorPath(rectEnd(LEFT), rectEnd(RIGHT), 'curved', 0.25)!
+    const chord = Math.hypot(
+      flat[flat.length - 1].x - flat[0].x,
+      flat[flat.length - 1].y - flat[0].y,
+    )
+    const a = midSample(flat)
+    const b = midSample(bowed)
+    expect(b.x).toBeCloseTo(a.x, 6)
+    expect(a.y - b.y).toBeCloseTo(0.25 * chord, 6)
+  })
+
+  it('flips the side with the sign', () => {
+    const up = midSample(
+      connectorPath(rectEnd(LEFT), rectEnd(RIGHT), 'curved', 0.3)!,
+    )
+    const down = midSample(
+      connectorPath(rectEnd(LEFT), rectEnd(RIGHT), 'curved', -0.3)!,
+    )
+    const flat = midSample(
+      connectorPath(rectEnd(LEFT), rectEnd(RIGHT), 'curved')!,
+    )
+    expect(up.y).toBeLessThan(flat.y)
+    expect(down.y).toBeGreaterThan(flat.y)
+    expect(flat.y - up.y).toBeCloseTo(down.y - flat.y, 6)
+  })
+
+  it('leaves straight and elbow untouched', () => {
+    expect(
+      connectorPath(rectEnd(LEFT), rectEnd(RIGHT), 'straight', 0.5),
+    ).toEqual(connectorPath(rectEnd(LEFT), rectEnd(RIGHT), 'straight'))
+    expect(connectorPath(rectEnd(LEFT), rectEnd(RIGHT), 'elbow', 0.5)).toEqual(
+      connectorPath(rectEnd(LEFT), rectEnd(RIGHT), 'elbow'),
+    )
+  })
+
+  it('recovers the curvature that puts the bend point under a world point', () => {
+    const source = rectEnd(LEFT)
+    const target = rectEnd(RIGHT)
+    const flat = connectorPath(source, target, 'curved')!
+    const base = midSample(flat)
+    const chord = Math.hypot(
+      flat[flat.length - 1].x - flat[0].x,
+      flat[flat.length - 1].y - flat[0].y,
+    )
+    const wanted = { x: base.x, y: base.y - 60 }
+    const curvature = curvatureForPoint(source, target, wanted)!
+    expect(curvature).toBeCloseTo(60 / chord, 6)
+    // ...and feeding it back puts the bend point exactly there — the 1:1 the
+    // drag depends on.
+    const bowed = connectorPath(source, target, 'curved', curvature)!
+    expect(midSample(bowed).y).toBeCloseTo(wanted.y, 6)
+    expect(midSample(bowed).x).toBeCloseTo(wanted.x, 6)
+  })
+
+  it('clamps a wild value rather than drawing a curve off the board', () => {
+    expect(clampCurvature(99)).toBe(CURVATURE_LIMIT)
+    expect(clampCurvature(-99)).toBe(-CURVATURE_LIMIT)
+    expect(clampCurvature(Number.NaN)).toBe(0)
+  })
+
+  it('bows an ANCHORED pair on top of its own departure bow', () => {
+    const source = rectEnd(LEFT, 'right')
+    const target = rectEnd(RIGHT, 'left')
+    const flat = midSample(connectorPath(source, target, 'curved')!)
+    const bowed = midSample(connectorPath(source, target, 'curved', 0.2)!)
+    expect(flat.y - bowed.y).toBeCloseTo(0.2 * 200, 6)
+  })
+})
+
+describe('bowed curves never double back (the cusp a free end drew round itself)', () => {
+  /**
+   * Every step the sampled path takes ALONG the chord, source end to target
+   * end.
+   *
+   * A CUSP is exactly a negative entry here: the line leaving an endpoint
+   * travelling BACKWARDS, curling round it and coming back. Expressed as a
+   * walk over the polyline because "it draws a loop" is not something a test
+   * can assert, and the failure arrived as a screenshot.
+   */
+  function alongChordSteps(path: Array<Point>): Array<number> {
+    const from = path[0]
+    const to = path[path.length - 1]
+    const chord = Math.hypot(to.x - from.x, to.y - from.y)
+    const ux = (to.x - from.x) / chord
+    const uy = (to.y - from.y) / chord
+    const steps: Array<number> = []
+    for (let i = 1; i < path.length; i += 1) {
+      steps.push(
+        (path[i].x - path[i - 1].x) * ux + (path[i].y - path[i - 1].y) * uy,
+      )
+    }
+    return steps
+  }
+
+  /** The smallest along-chord step, in world units. Negative means a cusp. */
+  function worstStep(path: Array<Point>): number {
+    return Math.min(...alongChordSteps(path))
+  }
+
+  /** The unit vector a curvature is measured along — see `chordNormal`. */
+  function normalOf(path: Array<Point>): Point {
+    const from = path[0]
+    const to = path[path.length - 1]
+    const length = Math.hypot(to.x - from.x, to.y - from.y)
+    return { x: (to.y - from.y) / length, y: -(to.x - from.x) / length }
+  }
+
+  function chordOf(path: Array<Point>): number {
+    return Math.hypot(
+      path[path.length - 1].x - path[0].x,
+      path[path.length - 1].y - path[0].y,
+    )
+  }
+
+  /**
+   * The reported failure, reproduced: a free SOURCE end dragged left and down
+   * away from an attached target, ~700 apart, bowed to the curvature the
+   * screenshot was taken at.
+   *
+   * `departureNormal` snaps a free end AWAY from the other end, so this
+   * source's control point starts a full `CURVE_TENSION_MAX` behind it along
+   * the chord. The bow then pushed it ~260 further sideways, and that
+   * combination — far behind AND far to the side — is what turned a short
+   * backwards stub into a loop drawn around the endpoint.
+   */
+  const DRAGGED_SOURCE: EndpointGeometry = { point: { x: 0, y: 550 } }
+  const ATTACHED_TARGET: EndpointGeometry = {
+    rect: { x: 500, y: 0, width: 100, height: 100 },
+    attach: ANCHOR_ATTACH.left,
+  }
+  const REPORTED_CURVATURE = 0.276
+
+  it('does not loop at the reported failure — free source, attached target, 0.276', () => {
+    const path = connectorPath(
+      DRAGGED_SOURCE,
+      ATTACHED_TARGET,
+      'curved',
+      REPORTED_CURVATURE,
+    )!
+    // Pinned so a later reader can see this is the configuration that was
+    // screenshotted, not a nearby one that happens to pass.
+    expect(chordOf(path)).toBeCloseTo(707.1, 1)
+    expect(worstStep(path)).toBeGreaterThan(-1e-9)
+  })
+
+  /**
+   * One end of every kind the geometry can produce, in both a sensible and a
+   * deliberately awkward position. The awkward ones are the point: an
+   * attachment on the FAR side and a free point placed BEHIND the other end
+   * both depart in a direction pointing away from the chord, which is where
+   * the cusp lived.
+   */
+  const SOURCES: Array<[string, EndpointGeometry]> = [
+    ['unanchored rect', { rect: LEFT }],
+    ['attached facing', { rect: LEFT, attach: ANCHOR_ATTACH.right }],
+    ['attached away', { rect: LEFT, attach: ANCHOR_ATTACH.left }],
+    ['attached mid-edge', { rect: LEFT, attach: { x: 0.8, y: 0 } }],
+    ['free just ahead', { point: { x: 120, y: 60 } }],
+    ['free behind', { point: { x: -400, y: 500 } }],
+  ]
+  const TARGETS: Array<[string, EndpointGeometry]> = [
+    ['unanchored rect', { rect: RIGHT }],
+    ['attached facing', { rect: RIGHT, attach: ANCHOR_ATTACH.left }],
+    ['attached away', { rect: RIGHT, attach: ANCHOR_ATTACH.right }],
+    ['attached mid-edge', { rect: RIGHT, attach: { x: 0.2, y: 1 } }],
+    ['free just ahead', { point: { x: 280, y: 40 } }],
+    ['free behind', { point: { x: 900, y: -400 } }],
+  ]
+
+  /**
+   * The whole stored range, MINUS zero.
+   *
+   * Zero is excluded deliberately and it is not a gap in the coverage: an
+   * un-bowed curve with a free end genuinely does step backwards out of its
+   * endpoint — that is the mild departure stub this fix is explicitly not
+   * allowed to touch, because every connector already stored carries no
+   * curvature and has to redraw byte-identically. The test below pins that
+   * stub in place rather than letting it quietly disappear.
+   */
+  const CURVATURES = [
+    -CURVATURE_LIMIT,
+    -1.3,
+    -0.7,
+    -REPORTED_CURVATURE,
+    -0.05,
+    0.05,
+    REPORTED_CURVATURE,
+    0.7,
+    1.3,
+    CURVATURE_LIMIT,
+  ]
+
+  it('never doubles back, at any curvature, for any endpoint pair', () => {
+    for (const [sourceName, source] of SOURCES) {
+      for (const [targetName, target] of TARGETS) {
+        for (const curvature of CURVATURES) {
+          const path = connectorPath(source, target, 'curved', curvature)
+          if (!path) continue
+          const worst = worstStep(path)
+          expect(
+            worst,
+            sourceName + ' -> ' + targetName + ' at ' + curvature,
+          ).toBeGreaterThan(-1e-9)
+        }
+      }
+    }
+  })
+
+  it('leaves the UN-bowed path alone, backwards departure stub and all', () => {
+    // The sharpest available proof that the hold is bow-only: this path DOES
+    // double back, and must go on doing so. Applying the hold unconditionally
+    // would fix the stub too — and would change what every already-stored
+    // connector draws, which is the one thing this fix may not do.
+    const flat = connectorPath(DRAGGED_SOURCE, ATTACHED_TARGET, 'curved')!
+    expect(worstStep(flat)).toBeLessThan(0)
+
+    for (const [, source] of SOURCES) {
+      for (const [, target] of TARGETS) {
+        const absent = connectorPath(source, target, 'curved')
+        expect(connectorPath(source, target, 'curved', 0)).toEqual(absent)
+        expect(connectorPath(source, target, 'curved', undefined)).toEqual(
+          absent,
+        )
+      }
+    }
+  })
+
+  it('still lands the bend point exactly under the pointer once held back', () => {
+    // The hold moves control points ALONG the chord only, which is why that
+    // formulation was chosen: the PERPENDICULAR offset is what a curvature is
+    // measured by, so leaving it untouched keeps the grip tracking the pointer
+    // 1:1 on exactly the connectors this fix is for.
+    const flat = connectorPath(DRAGGED_SOURCE, ATTACHED_TARGET, 'curved')!
+    const base = bendMidpoint(flat)!
+    const normal = normalOf(flat)
+    const wanted = { x: base.x + normal.x * 90, y: base.y + normal.y * 90 }
+
+    const curvature = curvatureForPoint(
+      DRAGGED_SOURCE,
+      ATTACHED_TARGET,
+      wanted,
+    )!
+    const bowed = connectorPath(
+      DRAGGED_SOURCE,
+      ATTACHED_TARGET,
+      'curved',
+      curvature,
+    )!
+    const landed = bendMidpoint(bowed)!
+
+    // Measured PERPENDICULAR only. The hold is free to slide the grip along
+    // the chord and does, which is the visible cost of removing the loop —
+    // asserting the full 2D distance here would be asserting that cost away.
+    const off =
+      (landed.x - wanted.x) * normal.x + (landed.y - wanted.y) * normal.y
+    expect(off).toBeCloseTo(0, 6)
+    expect(worstStep(bowed)).toBeGreaterThan(-1e-9)
+  })
+
+  it('bows by exactly curvature x chord even where the hold bites', () => {
+    // The same "the midpoint moves by curvature x chord" contract the ordinary
+    // pairs already have, asserted on the pathological one: the hold must cost
+    // the bow nothing.
+    const flat = connectorPath(DRAGGED_SOURCE, ATTACHED_TARGET, 'curved')!
+    const bowed = connectorPath(
+      DRAGGED_SOURCE,
+      ATTACHED_TARGET,
+      'curved',
+      REPORTED_CURVATURE,
+    )!
+    const normal = normalOf(flat)
+    const along = (point: Point): number =>
+      (point.x - flat[0].x) * normal.x + (point.y - flat[0].y) * normal.y
+    expect(
+      along(bendMidpoint(bowed)!) - along(bendMidpoint(flat)!),
+    ).toBeCloseTo(REPORTED_CURVATURE * chordOf(flat), 6)
   })
 })

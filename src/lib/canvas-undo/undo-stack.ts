@@ -119,6 +119,19 @@ export type CanvasUndoLabel =
    */
   | { gesture: 'reconnect' }
   /**
+   * A `curved` connector's BOW was dragged by its midpoint grip. Always
+   * exactly one element, so no `count`.
+   *
+   * A third connector arm rather than a reuse of either neighbour, because it
+   * is the third visibly different edit: `routing` swaps the line for a
+   * different kind of line, `reconnect` moves an end, and this changes only
+   * how far the line bulges between two ends that never moved. A user who
+   * bent a curve and then pressed Ctrl+Z needs the toast to say so — "Undid
+   * rerouting a connector" would describe an edit they did not make and would
+   * leave them unsure whether the right thing came back.
+   */
+  | { gesture: 'bend' }
+  /**
    * Fill or stroke changed from the floating style toolbar. Carries a
    * `count` — like `move` and unlike `routing` — because one click restyles
    * every selected shape, and a toast saying "an element" after eight of

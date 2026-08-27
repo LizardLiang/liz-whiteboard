@@ -17,7 +17,7 @@
 // string `__canvasEngine` appears nowhere in the client bundle.
 
 import { useEffect } from 'react'
-import type { Camera } from '@/lib/canvas-engine/camera'
+import type { Camera, Point } from '@/lib/canvas-engine/camera'
 import type { CanvasElement, Scene } from '@/lib/canvas-engine/scene'
 import type {
   ConnectorEnd,
@@ -27,6 +27,7 @@ import type {
 } from '@/lib/canvas-engine/render'
 import type { CanvasTool } from './use-canvas-input'
 import {
+  connectorBendRect,
   connectorEndpointRects,
   creationHandleRects,
   creationHandleTarget,
@@ -92,6 +93,39 @@ export interface CanvasEngineTestHook {
    * their own point — which is three chances to drift from what was painted.
    */
   connectorEndpoints: Record<ConnectorEnd, ScreenRect> | null
+  /**
+   * The BEND grip of the single selected connector, in canvas-relative screen
+   * pixels, or null when no `curved` connector is selected.
+   *
+   * Published for the same reason `connectorEndpoints` is, and it is even less
+   * optional here: a curve's midpoint is not a point a spec can derive at all
+   * without reimplementing the routing, the tension clamp and the curvature
+   * arithmetic together — three chances to drift from what was painted, in a
+   * place where drifting fails as "the drag did nothing".
+   *
+   * Null for `straight` and `elbow` even when one IS selected, matching the
+   * renderer: those routings have no bow, so there is no grip to click and a
+   * spec asserting otherwise would be asserting a bug.
+   */
+  connectorBend: ScreenRect | null
+  /**
+   * The WORLD-SPACE polyline the renderer drew for the single selected
+   * connector, or null when none is selected.
+   *
+   * World, not screen, unlike every other geometry field here: the grips are
+   * published so a spec can press them, and a press needs page pixels, but
+   * this is published so a spec can measure the LINE'S SHAPE, and a shape
+   * assertion has no business being scaled by the camera.
+   *
+   * It exists because a whole class of connector faults is invisible to the
+   * grips. A curve that folded into a cusp — shooting backwards past its own
+   * endpoint and curling round it — moved neither end and moved the bend grip
+   * barely at all, so an endpoint-and-bend spec passed while the board drew a
+   * loop. Re-deriving the path in the spec instead would break the
+   * export-what-you-draw rule the other fields exist for, and here the whole
+   * point is to assert on what the renderer actually painted.
+   */
+  connectorPath: Array<Point> | null
   tool: CanvasTool
   readOnly: boolean
 }
@@ -147,9 +181,20 @@ export function useCanvasTestHook({
       selection.ids.size === 1
         ? (scene.byId.get([...selection.ids][0]) ?? null)
         : null
-    const connectorGrips = selectedOnly?.connector
-      ? connectorEndpointRects(camera, connectorPathOf(scene, selectedOnly))
+    const connectorPath = selectedOnly?.connector
+      ? connectorPathOf(scene, selectedOnly)
       : null
+    const connectorGrips = selectedOnly?.connector
+      ? connectorEndpointRects(camera, connectorPath)
+      : null
+    // Gated on `curved` HERE rather than left to the spec, so the published
+    // state answers the same question the renderer and the press handler both
+    // answer — a spec that saw a rect for a straight connector would be
+    // clicking an affordance that was never drawn.
+    const connectorBend =
+      selectedOnly?.connector?.routing === 'curved'
+        ? connectorBendRect(camera, connectorPath)
+        : null
 
     const published: CanvasEngineTestHook = {
       boardId,
@@ -165,6 +210,12 @@ export function useCanvasTestHook({
         ? creationHandleRects(camera, bounds(handleTarget))
         : null,
       connectorEndpoints: connectorGrips,
+      connectorBend,
+      // Already a fresh array of fresh points — `connectorPathOf` recomputes
+      // it from the current bounds every call and shares nothing with the
+      // scene — so unlike `elements` it needs no defensive copy to satisfy
+      // "a spec cannot corrupt the board it is measuring".
+      connectorPath,
       tool,
       readOnly,
     }

@@ -47,6 +47,7 @@ import {
 } from '@/lib/canvas-engine/camera'
 import {
   connectorPathOf,
+  endpointGeometry,
   hitTest,
   hitTestRect,
   normaliseRect,
@@ -73,6 +74,7 @@ import {
   CONNECTOR_ENDS,
   CREATION_HANDLE_DIRECTIONS,
   RESIZE_HANDLES,
+  connectorBendRect,
   connectorEndpointRects,
   creationHandleRects,
   creationHandleTarget,
@@ -86,6 +88,7 @@ import { cloneTargets, planClone } from '@/lib/canvas-engine/clone'
 import {
   ANCHOR_ATTACH,
   anchorPoint,
+  curvatureForPoint,
   nearestAnchor,
   nearestAttach,
 } from '@/lib/canvas-engine/connector-geometry'
@@ -207,6 +210,18 @@ export type CanvasUpdateGesture =
   | 'text-edit'
   | 'routing'
   | 'reconnect'
+  /**
+   * A `curved` connector's BOW was dragged by its midpoint grip. Produced
+   * here, unlike `routing`, because it is a real pointer gesture on the
+   * canvas rather than a toolbar click.
+   *
+   * Distinct from BOTH connector arms it sits between, and it has to be:
+   * `routing` swaps the line for a different kind of line, `reconnect` moves
+   * an end somewhere else, and this moves neither — the ends stay exactly
+   * where they were and the routing stays `curved`. One toast covering all
+   * three would name the wrong edit two times out of three.
+   */
+  | 'bend'
   // Like `routing`, NOT produced by this file: fill and stroke are changed
   // from `SelectionToolbar`, which reaches the same `onUpdate` recording
   // surface rather than writing through `useCanvasElements` directly — going
@@ -411,6 +426,25 @@ type Gesture =
        * during the drag instead of leaving it to the release.
        */
       candidate: { elementId: string; attach: ConnectorAttach } | null
+    }
+  | {
+      /**
+       * A press on a selected `curved` connector's midpoint grip. The bow
+       * follows the pointer for the whole drag — the scene is mutated live,
+       * exactly as `move`, `resize` and `connector-endpoint` do — and the
+       * release persists whatever it ended at.
+       *
+       * Carries NO start reference, unlike `resize`'s `startBounds`, and that
+       * is deliberate rather than an omission: the curvature is recomputed
+       * from the CURRENT pointer against the CURRENT chord on every frame
+       * (`curvatureForPoint`), so there is nothing to accumulate and nothing
+       * to drift. `beforeElement` is for undo's pre-state only, never read by
+       * the drag itself.
+       */
+      kind: 'connector-bend'
+      connectorId: string
+      /** The connector as it stood at pointerdown, for `onUpdate`'s pre-state. */
+      beforeElement: CanvasElement
     }
   | {
       /**
@@ -1033,17 +1067,15 @@ export function useCanvasInput({
       // load-bearing. It is written this way regardless, because if either
       // constant ever changes the outer, larger, touch-sized affordance is
       // the one the user was aiming at.
-      // A selected CONNECTOR's endpoint grips, before anything else. They are
-      // the only affordance a connector has — `creationHandleTarget` excludes
+      // A selected CONNECTOR's own grips, before anything else. They are the
+      // only affordances a connector has — `creationHandleTarget` excludes
       // connectors and the resize-grip block below skips them — so nothing
       // else competes for this press.
       if (currentSelection.size === 1) {
         const only = latest.current.scene.byId.get([...currentSelection][0])
         if (only?.connector) {
-          const grips = connectorEndpointRects(
-            latest.current.camera,
-            connectorPathOf(latest.current.scene, only),
-          )
+          const path = connectorPathOf(latest.current.scene, only)
+          const grips = connectorEndpointRects(latest.current.camera, path)
           const grabbed =
             grips &&
             CONNECTOR_ENDS.find((end) => screenRectContains(grips[end], screen))
@@ -1061,6 +1093,35 @@ export function useCanvasInput({
               candidate: null,
             })
             return
+          }
+
+          // The bend grip, tested AFTER both ends. On a short connector the
+          // three grips crowd together, and the ends are the more precise
+          // target: a mis-grabbed end lands the line on the wrong element,
+          // a mis-grabbed bend merely bows a curve the user can drag back.
+          // `CONNECTOR_BEND_HIT` being the smaller rectangle is the other
+          // half of the same decision.
+          //
+          // Gated on `curved`, mirroring the renderer EXACTLY — `drawScene`
+          // draws no diamond for a straight or elbow connector, and testing
+          // an undrawn affordance is the defect the resize-grip block below
+          // documents at length: an invisible 20px rectangle sitting on the
+          // middle of every straight connector would swallow the presses that
+          // should have selected whatever lies under it.
+          if (only.connector.routing === 'curved') {
+            const bend = connectorBendRect(latest.current.camera, path)
+            if (bend && screenRectContains(bend, screen)) {
+              setGesture({
+                kind: 'connector-bend',
+                connectorId: only.id,
+                // Shallow clone — same safety rationale as every other
+                // pre-gesture snapshot in this file: the engine replaces
+                // elements rather than mutating them, so the drag cannot
+                // reach back and corrupt what this captured.
+                beforeElement: { ...only },
+              })
+              return
+            }
           }
         }
       }
@@ -1318,6 +1379,37 @@ export function useCanvasInput({
           })
           break
         }
+        case 'connector-bend': {
+          // Same "mutate the scene live, persist at gesture end" rule as
+          // `move`, `resize` and `connector-endpoint` — the curve re-bows on
+          // the next frame with no extra renderer state, and the release
+          // simply persists whatever the last frame left.
+          //
+          // The curvature is DERIVED FROM THE POINTER, not accumulated from
+          // the previous frame: `curvatureForPoint` answers "what bow puts the
+          // bend point exactly here" against the current chord, so a drag that
+          // is clamped at the limit and dragged back does not come back
+          // offset by however long it spent pinned there.
+          setScene((prev) => {
+            const element = prev.byId.get(gesture.connectorId)
+            const link = element?.connector
+            if (!link) return prev
+            const curvature = curvatureForPoint(
+              endpointGeometry(prev, link.source),
+              endpointGeometry(prev, link.target),
+              world,
+            )
+            // Null means the pair has no drawable line right now — an endpoint
+            // element deleted by a collaborator mid-drag, or two ends landing
+            // on the same point. Leaving the bow alone is the honest answer;
+            // the connector is not being drawn either way.
+            if (curvature === null) return prev
+            return updateElement(prev, gesture.connectorId, {
+              connector: { ...link, curvature },
+            })
+          })
+          break
+        }
         case 'quick-create': {
           const travelled =
             Math.abs(screen.x - gesture.startScreen.x) +
@@ -1463,6 +1555,28 @@ export function useCanvasInput({
             [finished.beforeElement],
             'reconnect',
           )
+          break
+        }
+        case 'connector-bend': {
+          const element = latest.current.scene.byId.get(finished.connectorId)
+          // Gone mid-gesture (a collaborator's delete, or its own endpoint
+          // element removed and the cascade taking it) — there is nothing left
+          // to persist, and writing the pre-gesture snapshot back would
+          // resurrect a row the board has already agreed is deleted.
+          if (!element) break
+          // A press that never moved leaves the curvature exactly as it was,
+          // and persisting that would push an undo entry whose undo is a
+          // no-op — "Undid bending a connector" for a connector nobody bent.
+          // Compared on the VALUE rather than on a `moved` flag (which is what
+          // `move` uses) because a drag out and back to the same spot is also
+          // a non-edit, and the value is the thing that actually decides.
+          if (
+            element.connector?.curvature ===
+            finished.beforeElement.connector?.curvature
+          ) {
+            break
+          }
+          callbacks?.onUpdate?.([element], [finished.beforeElement], 'bend')
           break
         }
         case 'quick-create': {

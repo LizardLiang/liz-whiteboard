@@ -9,6 +9,7 @@ import {
   createConnectorSchema,
   createRelationshipSchema,
   createShapeSchema,
+  canvasElementPropsSchema,
   loginInputSchema,
   projectRoleSchema,
   registerInputSchema,
@@ -617,12 +618,7 @@ describe('shape/connector schemas (UNIT-02)', () => {
     })
 
     it('accepts every kind when props.kind matches', () => {
-      for (const kind of [
-        'rectangle',
-        'ellipse',
-        'diamond',
-        'text',
-      ] as const) {
+      for (const kind of ['rectangle', 'ellipse', 'diamond', 'text'] as const) {
         expect(
           createShapeSchema.safeParse(baseShape({ kind, props: { kind } }))
             .success,
@@ -758,5 +754,54 @@ describe('shape/connector schemas (UNIT-02)', () => {
       )
       expect(result.success).toBe(false)
     })
+  })
+})
+
+describe('canvasElementPropsSchema — the connector arm carries an optional curvature', () => {
+  const SOURCE = '11111111-1111-4111-8111-111111111111'
+  const TARGET = '22222222-2222-4222-8222-222222222222'
+
+  const legacy = {
+    kind: 'connector' as const,
+    sourceElementId: SOURCE,
+    targetElementId: TARGET,
+    routing: 'curved' as const,
+  }
+
+  it('accepts a legacy row that carries no curvature at all', () => {
+    // The whole reason the field is optional. Every connector row already in
+    // the database was written before bending existed; a required field would
+    // make each of them fail validation on its NEXT update, which turns an
+    // un-bowed connector into an uneditable one.
+    const parsed = canvasElementPropsSchema.parse(legacy)
+    expect(parsed).not.toHaveProperty('curvature')
+  })
+
+  it('accepts a bowed connector, including a deliberate zero and a negative', () => {
+    // Negative is not an error state — the sign is which SIDE of the chord the
+    // bow falls on. Zero is a connector the user bowed and straightened again.
+    for (const curvature of [0, 0.5, -0.5]) {
+      expect(
+        canvasElementPropsSchema.parse({ ...legacy, curvature }).kind,
+      ).toBe('connector')
+    }
+  })
+
+  it('does NOT range-check it, so an out-of-range row stays editable', () => {
+    // The clamp lives in connector-geometry.ts, which every render and
+    // hit-test goes through, so a wild value is drawable. Rejecting it here
+    // would strand the one row a user most needs to be able to grab and fix.
+    expect(() =>
+      canvasElementPropsSchema.parse({ ...legacy, curvature: 999 }),
+    ).not.toThrow()
+  })
+
+  it('still rejects a non-number, so a bad write cannot reach storage', () => {
+    expect(() =>
+      canvasElementPropsSchema.parse({ ...legacy, curvature: '0.5' }),
+    ).toThrow()
+    expect(() =>
+      canvasElementPropsSchema.parse({ ...legacy, curvature: Number.NaN }),
+    ).toThrow()
   })
 })

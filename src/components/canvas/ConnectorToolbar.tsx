@@ -20,7 +20,11 @@
 import { CornerDownRight, Minus, Spline } from 'lucide-react'
 import type { LucideIcon } from 'lucide-react'
 import type { Camera } from '@/lib/canvas-engine/camera'
-import type { CanvasConnectorRouting, CanvasElement, Scene } from '@/lib/canvas-engine/scene'
+import type {
+  CanvasConnectorRouting,
+  CanvasElement,
+  Scene,
+} from '@/lib/canvas-engine/scene'
 import { worldToScreen } from '@/lib/canvas-engine/camera'
 import { pathMidpoint } from '@/lib/canvas-engine/connector-geometry'
 import { connectorPathOf } from '@/lib/canvas-engine/hit-test'
@@ -32,6 +36,13 @@ import { Button } from '@/components/ui/button'
  * Above rather than on: a bar centred on the line would cover the very thing
  * it is describing, and the three routings differ precisely in the shape of
  * the line under it.
+ *
+ * It must also stay clear of the BEND grip, which a `curved` connector draws
+ * centred on this same midpoint at `CONNECTOR_BEND_HIT` (20px) across — so the
+ * grip's top edge is 10px above the anchor and this bar's bottom edge is 16px
+ * above it. Shrinking this number below `CONNECTOR_BEND_HIT / 2` would park
+ * the bar on top of the grip, and the symptom would be a grip that looks
+ * perfectly normal and cannot be pressed.
  */
 export const CONNECTOR_TOOLBAR_OFFSET = 16
 
@@ -83,7 +94,10 @@ export interface ConnectorToolbarProps {
   camera: Camera
   readOnly: boolean
   /** Called with the newly chosen routing. Never called for the routing already in effect. */
-  onRoutingChange: (element: CanvasElement, routing: CanvasConnectorRouting) => void
+  onRoutingChange: (
+    element: CanvasElement,
+    routing: CanvasConnectorRouting,
+  ) => void
 }
 
 export function ConnectorToolbar({

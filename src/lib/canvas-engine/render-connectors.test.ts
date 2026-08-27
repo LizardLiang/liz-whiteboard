@@ -19,12 +19,15 @@
 
 import { describe, expect, it } from 'vitest'
 import {
+  CONNECTOR_BEND_HIT,
+  CONNECTOR_ENDPOINT_HIT,
   CONNECTOR_ENDS,
   CREATION_HANDLE_DIRECTIONS,
   CREATION_HANDLE_HIT,
   CREATION_HANDLE_OFFSET,
   CREATION_HANDLE_REACH,
   RESIZE_HANDLES,
+  connectorBendRect,
   connectorEndpointRects,
   creationHandleRects,
   creationHandleTarget,
@@ -280,7 +283,10 @@ describe('drawing a connector', () => {
 
   it('draws nothing at all when an endpoint is missing', () => {
     const rec = createRecorder()
-    const orphaned = sceneFrom([el('a', { x: 0, y: 0 }), conn('ab', 'a', 'ghost')])
+    const orphaned = sceneFrom([
+      el('a', { x: 0, y: 0 }),
+      conn('ab', 'a', 'ghost'),
+    ])
     drawScene(rec.ctx, orphaned, CAMERA, VIEWPORT, NONE)
     expect(rec.opsOfType('moveTo')).toEqual([])
     expect(rec.opsOfType('fill')).toEqual([])
@@ -380,9 +386,15 @@ describe('creationHandleRects', () => {
       y: r.y + r.height / 2,
     })
     expect(centre(rects.top)).toEqual({ x: 50, y: -CREATION_HANDLE_OFFSET })
-    expect(centre(rects.bottom)).toEqual({ x: 50, y: 100 + CREATION_HANDLE_OFFSET })
+    expect(centre(rects.bottom)).toEqual({
+      x: 50,
+      y: 100 + CREATION_HANDLE_OFFSET,
+    })
     expect(centre(rects.left)).toEqual({ x: -CREATION_HANDLE_OFFSET, y: 50 })
-    expect(centre(rects.right)).toEqual({ x: 100 + CREATION_HANDLE_OFFSET, y: 50 })
+    expect(centre(rects.right)).toEqual({
+      x: 100 + CREATION_HANDLE_OFFSET,
+      y: 50,
+    })
   })
 
   it('never overlaps a resize grip, at any zoom', () => {
@@ -468,7 +480,9 @@ describe('withinCreationHandleReach', () => {
     const grab = creationHandleRects(CAMERA, rect).right
     const outerEdge = grab.x + grab.width
     expect(outerEdge).toBe(100 + CREATION_HANDLE_REACH)
-    expect(withinCreationHandleReach(CAMERA, rect, { x: outerEdge, y: 50 })).toBe(true)
+    expect(
+      withinCreationHandleReach(CAMERA, rect, { x: outerEdge, y: 50 }),
+    ).toBe(true)
     expect(
       withinCreationHandleReach(CAMERA, rect, { x: outerEdge + 1, y: 50 }),
     ).toBe(false)
@@ -476,10 +490,18 @@ describe('withinCreationHandleReach', () => {
 
   it('drops beyond the region on every side', () => {
     const out = CREATION_HANDLE_REACH + 2
-    expect(withinCreationHandleReach(CAMERA, rect, { x: -out, y: 50 })).toBe(false)
-    expect(withinCreationHandleReach(CAMERA, rect, { x: 50, y: -out })).toBe(false)
-    expect(withinCreationHandleReach(CAMERA, rect, { x: 100 + out, y: 50 })).toBe(false)
-    expect(withinCreationHandleReach(CAMERA, rect, { x: 50, y: 100 + out })).toBe(false)
+    expect(withinCreationHandleReach(CAMERA, rect, { x: -out, y: 50 })).toBe(
+      false,
+    )
+    expect(withinCreationHandleReach(CAMERA, rect, { x: 50, y: -out })).toBe(
+      false,
+    )
+    expect(
+      withinCreationHandleReach(CAMERA, rect, { x: 100 + out, y: 50 }),
+    ).toBe(false)
+    expect(
+      withinCreationHandleReach(CAMERA, rect, { x: 50, y: 100 + out }),
+    ).toBe(false)
   })
 
   it('keeps a constant SCREEN size while the element scales', () => {
@@ -507,15 +529,15 @@ describe('withinCreationHandleReach', () => {
   it('follows the camera', () => {
     const panned: Camera = { x: 10, y: 20, zoom: 1 }
     expect(withinCreationHandleReach(panned, rect, { x: 50, y: 50 })).toBe(true)
-    expect(withinCreationHandleReach(panned, rect, { x: -10, y: -20 })).toBe(true)
+    expect(withinCreationHandleReach(panned, rect, { x: -10, y: -20 })).toBe(
+      true,
+    )
   })
 })
 
 describe('creationHandleTarget', () => {
   it('is the single selected element', () => {
-    expect(
-      creationHandleTarget(LINEAR, { ids: new Set(['a']) })?.id,
-    ).toBe('a')
+    expect(creationHandleTarget(LINEAR, { ids: new Set(['a']) })?.id).toBe('a')
   })
 
   it('is the hovered element when nothing is selected', () => {
@@ -571,7 +593,10 @@ describe('creationHandleTarget', () => {
 
   it('is null for an id that is no longer in the scene', () => {
     expect(
-      creationHandleTarget(LINEAR, { ids: new Set<string>(), hoveredId: 'gone' }),
+      creationHandleTarget(LINEAR, {
+        ids: new Set<string>(),
+        hoveredId: 'gone',
+      }),
     ).toBeNull()
   })
 })
@@ -605,9 +630,7 @@ describe('drawing creation handles', () => {
     // rectangles input hit-tests.
     const path = connectorPathOf(LINEAR, LINEAR.byId.get('ab')!)!
     const grips = connectorEndpointRects(CAMERA, path)!
-    const centres = arcs
-      .map((op) => `${op.args[0]},${op.args[1]}`)
-      .sort()
+    const centres = arcs.map((op) => `${op.args[0]},${op.args[1]}`).sort()
     expect(centres).toEqual(
       CONNECTOR_ENDS.map((end) => {
         const rect = grips[end]
@@ -643,9 +666,23 @@ describe('drawing creation handles', () => {
     // purpose: the two affordances sit close together and must be
     // distinguishable at a glance.
     const light = createRecorder()
-    drawScene(light.ctx, LINEAR, CAMERA, VIEWPORT, { ids: new Set(['a']) }, { theme: 'light' })
+    drawScene(
+      light.ctx,
+      LINEAR,
+      CAMERA,
+      VIEWPORT,
+      { ids: new Set(['a']) },
+      { theme: 'light' },
+    )
     const dark = createRecorder()
-    drawScene(dark.ctx, LINEAR, CAMERA, VIEWPORT, { ids: new Set(['a']) }, { theme: 'dark' })
+    drawScene(
+      dark.ctx,
+      LINEAR,
+      CAMERA,
+      VIEWPORT,
+      { ids: new Set(['a']) },
+      { theme: 'dark' },
+    )
     expect(light.opsOfType('arc')[0].args[5]).not.toBe(
       dark.opsOfType('arc')[0].args[5],
     )
@@ -662,7 +699,13 @@ describe('the quick-create rubber band', () => {
     const rec = createRecorder()
     drawScene(rec.ctx, LINEAR, CAMERA, VIEWPORT, dragging)
     const dashes = rec.opsOfType('setLineDash')
-    expect(dashes.some((entry) => Array.isArray(entry.args[0]) && (entry.args[0] as Array<number>).length > 0)).toBe(true)
+    expect(
+      dashes.some(
+        (entry) =>
+          Array.isArray(entry.args[0]) &&
+          (entry.args[0] as Array<number>).length > 0,
+      ),
+    ).toBe(true)
     // Source centre (50, 50) at camera origin, straight to (500, 500).
     const moves = rec.opsOfType('moveTo').map((entry) => entry.args.slice(0, 2))
     expect(moves).toContainEqual([50, 50])
@@ -682,5 +725,114 @@ describe('the quick-create rubber band', () => {
     })
     const moves = rec.opsOfType('moveTo').map((entry) => entry.args.slice(0, 2))
     expect(moves).not.toContainEqual([50, 50])
+  })
+})
+
+describe('the bend grip', () => {
+  /** The same two rectangles as LINEAR, joined by a CURVED connector. */
+  const CURVED = sceneFrom([
+    el('a', { x: 0, y: 0, zIndex: 0 }),
+    el('b', { x: 300, y: 0, zIndex: 1 }),
+    conn('ab', 'a', 'b', 'curved', { zIndex: 2 }),
+  ])
+  const ELBOW = sceneFrom([
+    el('a', { x: 0, y: 0, zIndex: 0 }),
+    el('b', { x: 300, y: 0, zIndex: 1 }),
+    conn('ab', 'a', 'b', 'elbow', { zIndex: 2 }),
+  ])
+  const selected: RenderSelection = { ids: new Set(['ab']) }
+
+  /**
+   * Diamonds are the only four-`lineTo` closed path in a connector-selected
+   * scene — the selection stroke is one `moveTo` plus 24 `lineTo`s, and every
+   * other affordance here is an `arc`. Counting `closePath` is the cheapest
+   * detector that does not depend on the diamond's exact coordinates.
+   */
+  function diamonds(rec: ReturnType<typeof createRecorder>): number {
+    return rec.opsOfType('closePath').length
+  }
+
+  it('sits on the path at the hit size, in screen space', () => {
+    const path = connectorPathOf(CURVED, CURVED.byId.get('ab')!)!
+    const rect = connectorBendRect(CAMERA, path)!
+    expect(rect.width).toBe(CONNECTOR_BEND_HIT)
+    expect(rect.height).toBe(CONNECTOR_BEND_HIT)
+    // Centred on the sample the curvature is defined against, which for this
+    // symmetric pair is the middle of the line.
+    expect(rect.x + rect.width / 2).toBeCloseTo(200, 6)
+    expect(rect.y + rect.height / 2).toBeCloseTo(50, 6)
+  })
+
+  it('is a SMALLER target than an endpoint grip', () => {
+    // Load-bearing, not cosmetic: on a short connector the three grips crowd
+    // together and the ends are the more precise target. Input tests the ends
+    // first for the same reason.
+    expect(CONNECTOR_BEND_HIT).toBeLessThan(CONNECTOR_ENDPOINT_HIT)
+  })
+
+  it('reports null when there is no path to grab', () => {
+    expect(connectorBendRect(CAMERA, null)).toBeNull()
+    expect(connectorBendRect(CAMERA, [])).toBeNull()
+    expect(connectorBendRect(CAMERA, [{ x: 0, y: 0 }])).toBeNull()
+  })
+
+  it('is drawn for a selected CURVED connector', () => {
+    const baseline = createRecorder()
+    drawScene(baseline.ctx, CURVED, CAMERA, VIEWPORT, NONE)
+    const rec = createRecorder()
+    drawScene(rec.ctx, CURVED, CAMERA, VIEWPORT, selected)
+    expect(diamonds(rec)).toBe(diamonds(baseline) + 1)
+  })
+
+  it('is NOT drawn for a selected straight or elbow connector', () => {
+    // The renderer and the press handler are gated on the same condition, so
+    // an affordance drawn here would be one the user could grab — and a bow
+    // on a straight line is not a thing that exists.
+    for (const scene of [LINEAR, ELBOW]) {
+      const baseline = createRecorder()
+      drawScene(baseline.ctx, scene, CAMERA, VIEWPORT, NONE)
+      const rec = createRecorder()
+      drawScene(rec.ctx, scene, CAMERA, VIEWPORT, selected)
+      expect(diamonds(rec)).toBe(diamonds(baseline))
+    }
+  })
+
+  it('stays the same size at every zoom', () => {
+    // Screen space, like every other affordance.
+    const near = connectorBendRect(
+      { x: 0, y: 0, zoom: 0.25 },
+      connectorPathOf(CURVED, CURVED.byId.get('ab')!),
+    )!
+    const far = connectorBendRect(
+      { x: 0, y: 0, zoom: 4 },
+      connectorPathOf(CURVED, CURVED.byId.get('ab')!),
+    )!
+    expect(near.width).toBe(far.width)
+  })
+
+  it('follows the bow, so the grip stays on the line it bends', () => {
+    // The whole affordance depends on this: a grip that stayed at the chord
+    // midpoint while the curve moved away from it would be unreachable at any
+    // real curvature.
+    const bowed = sceneFrom([
+      el('a', { x: 0, y: 0, zIndex: 0 }),
+      el('b', { x: 300, y: 0, zIndex: 1 }),
+      conn('ab', 'a', 'b', 'curved', {
+        zIndex: 2,
+        connector: {
+          source: { kind: 'element', elementId: 'a' },
+          target: { kind: 'element', elementId: 'b' },
+          routing: 'curved',
+          curvature: 0.5,
+        },
+      }),
+    ])
+    const rect = connectorBendRect(
+      CAMERA,
+      connectorPathOf(bowed, bowed.byId.get('ab')!),
+    )!
+    // The chord runs 100 -> 300 along y=50, so a curvature of 0.5 lifts the
+    // middle 100 units UP the screen (positive = left-hand normal).
+    expect(rect.y + rect.height / 2).toBeCloseTo(-50, 6)
   })
 })

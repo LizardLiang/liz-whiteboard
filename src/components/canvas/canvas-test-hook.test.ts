@@ -22,7 +22,11 @@ import {
   bounds,
   sceneFrom,
 } from '@/lib/canvas-engine/scene'
-import { creationHandleRects } from '@/lib/canvas-engine/render'
+import {
+  connectorBendRect,
+  creationHandleRects,
+} from '@/lib/canvas-engine/render'
+import { connectorPathOf } from '@/lib/canvas-engine/hit-test'
 
 const ELEMENT_ID = '11111111-1111-4111-8111-111111111111'
 
@@ -49,7 +53,9 @@ function selectionOf(
   return { ids: new Set([ELEMENT_ID]), ...overrides }
 }
 
-function render(overrides: Partial<Parameters<typeof useCanvasTestHook>[0]> = {}) {
+function render(
+  overrides: Partial<Parameters<typeof useCanvasTestHook>[0]> = {},
+) {
   return renderHook(() =>
     useCanvasTestHook({
       boardId: 'board-1',
@@ -193,7 +199,7 @@ describe('creation-handle publication (Wave 6, step 18)', () => {
     expect(published.creationHandles).toBeNull()
   })
 
-  it('publishes a connector\'s endpoints and routing on the element itself', () => {
+  it("publishes a connector's endpoints and routing on the element itself", () => {
     // A spec reads these straight off `elements` — no second collection to
     // keep in sync.
     const connector: CanvasElement = {
@@ -201,15 +207,156 @@ describe('creation-handle publication (Wave 6, step 18)', () => {
       connector: {
         source: { kind: 'element', elementId: 'a' },
         target: { kind: 'element', elementId: 'b' },
-        routing: 'elbow' ,
+        routing: 'elbow',
       },
     }
     render({ scene: sceneFrom([makeElement(), connector]) })
     const published = window.__canvasEngine!
     expect(published.elements.find((e) => e.id === 'c1')?.connector).toEqual({
-        source: { kind: 'element', elementId: 'a' },
-        target: { kind: 'element', elementId: 'b' },
-        routing: 'elbow',
+      source: { kind: 'element', elementId: 'a' },
+      target: { kind: 'element', elementId: 'b' },
+      routing: 'elbow',
+    })
+  })
+})
+
+describe('bend-grip publication', () => {
+  const SOURCE = 'a'
+  const TARGET = 'b'
+  const LINK = 'c1'
+
+  function boardWith(
+    routing: 'curved' | 'straight' | 'elbow',
+    curvature?: number,
+  ) {
+    return sceneFrom([
+      makeElement({ id: SOURCE, x: 0, y: 0, width: 100, height: 100 }),
+      makeElement({ id: TARGET, x: 300, y: 0, width: 100, height: 100 }),
+      {
+        ...makeElement({ id: LINK, kind: 'connector', width: 1, height: 1 }),
+        x: 0,
+        y: 0,
+        connector: {
+          source: { kind: 'element', elementId: SOURCE },
+          target: { kind: 'element', elementId: TARGET },
+          routing,
+          ...(curvature !== undefined ? { curvature } : {}),
+        },
+      },
+    ])
+  }
+
+  const camera = { x: 0, y: 0, zoom: 1 }
+
+  it('publishes the rectangle the renderer drew, not a second derivation', () => {
+    // The same export-what-you-draw contract `creationHandles` has, and a
+    // stronger need for it: a curve's midpoint depends on the routing, the
+    // tension clamp and the curvature at once, so a spec deriving it locally
+    // would drift and fail as "the drag did nothing".
+    const scene = boardWith('curved', 0.4)
+    render({ scene, camera, selection: { ids: new Set([LINK]) } })
+    expect(window.__canvasEngine!.connectorBend).toEqual(
+      connectorBendRect(camera, connectorPathOf(scene, scene.byId.get(LINK)!)),
+    )
+  })
+
+  it('publishes null for a straight or elbow connector, matching the renderer', () => {
+    for (const routing of ['straight', 'elbow'] as const) {
+      render({
+        scene: boardWith(routing),
+        camera,
+        selection: { ids: new Set([LINK]) },
       })
+      expect(window.__canvasEngine!.connectorBend).toBeNull()
+    }
+  })
+
+  it('publishes null when the connector is not the single selection', () => {
+    // Exactly when the renderer draws it and exactly when input will accept a
+    // press on it — the same gate `connectorEndpoints` already obeys.
+    render({
+      scene: boardWith('curved'),
+      camera,
+      selection: { ids: new Set([SOURCE]) },
+    })
+    expect(window.__canvasEngine!.connectorBend).toBeNull()
+
+    render({
+      scene: boardWith('curved'),
+      camera,
+      selection: { ids: new Set([LINK, SOURCE]) },
+    })
+    expect(window.__canvasEngine!.connectorBend).toBeNull()
+  })
+})
+
+describe('connector-path publication', () => {
+  const SOURCE = 'a'
+  const TARGET = 'b'
+  const LINK = 'c1'
+  const camera = { x: 0, y: 0, zoom: 1 }
+
+  function boardWith(curvature?: number) {
+    return sceneFrom([
+      makeElement({ id: SOURCE, x: 0, y: 0, width: 100, height: 100 }),
+      makeElement({ id: TARGET, x: 300, y: 0, width: 100, height: 100 }),
+      {
+        ...makeElement({ id: LINK, kind: 'connector', width: 1, height: 1 }),
+        x: 0,
+        y: 0,
+        connector: {
+          source: { kind: 'element', elementId: SOURCE },
+          target: { kind: 'element', elementId: TARGET },
+          routing: 'curved' as const,
+          ...(curvature !== undefined ? { curvature } : {}),
+        },
+      },
+    ])
+  }
+
+  it('publishes the line the renderer drew, in WORLD space', () => {
+    // World, not screen: a spec reads this to measure the line's SHAPE, and a
+    // cusp is a cusp at any zoom. The grips stay in screen pixels because a
+    // spec presses those.
+    const scene = boardWith(0.4)
+    render({ scene, camera, selection: { ids: new Set([LINK]) } })
+    expect(window.__canvasEngine!.connectorPath).toEqual(
+      connectorPathOf(scene, scene.byId.get(LINK)!),
+    )
+  })
+
+  it('publishes it for EVERY routing, unlike the bend grip', () => {
+    // The bend grip is `curved`-only because that is the only routing with a
+    // bow to drag. The path has no such gate — a straight or elbow connector
+    // is still a line a spec may need to measure.
+    for (const routing of ['straight', 'elbow'] as const) {
+      const scene = boardWith()
+      const link = scene.byId.get(LINK)!
+      const straightened = sceneFrom(
+        scene.elements.map((element) =>
+          element.id === LINK
+            ? { ...link, connector: { ...link.connector!, routing } }
+            : element,
+        ),
+      )
+      render({
+        scene: straightened,
+        camera,
+        selection: { ids: new Set([LINK]) },
+      })
+      expect(window.__canvasEngine!.connectorBend).toBeNull()
+      expect(window.__canvasEngine!.connectorPath).toEqual(
+        connectorPathOf(straightened, straightened.byId.get(LINK)!),
+      )
+    }
+  })
+
+  it('publishes null when the connector is not the single selection', () => {
+    render({
+      scene: boardWith(),
+      camera,
+      selection: { ids: new Set([SOURCE]) },
+    })
+    expect(window.__canvasEngine!.connectorPath).toBeNull()
   })
 })

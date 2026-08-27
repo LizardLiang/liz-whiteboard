@@ -25,7 +25,7 @@ import {
   effectiveCornerRadius,
   isCanvasShapeKind,
 } from './scene'
-import { arrowHead, attachPoint } from './connector-geometry'
+import { arrowHead, attachPoint, bendMidpoint } from './connector-geometry'
 import { connectorPathOf } from './hit-test'
 import { QUICK_CREATE_DIRECTIONS } from './quick-create'
 import { DEFAULT_TEXT_STYLE, layoutText, pointFromCaret } from './text-layout'
@@ -282,6 +282,53 @@ export function connectorEndpointRects(
     }
   }
   return { source: rectAt(path[0]), target: rectAt(path[path.length - 1]) }
+}
+
+/** Drawn width of the diamond-shaped bend grip, corner to corner, in SCREEN px. */
+export const CONNECTOR_BEND_SIZE = 11
+
+/**
+ * Grabbable edge length of the bend grip, in SCREEN pixels.
+ *
+ * SMALLER than `CONNECTOR_ENDPOINT_HIT`, and that is the whole reason it is a
+ * separate constant. On a short connector the bend grip and the two endpoint
+ * grips crowd together, and the ends are the more precise target — a
+ * mis-grabbed end is a visibly wrong attachment, a mis-grabbed bend is merely
+ * a curve the user did not ask for. Input tests the ends FIRST for the same
+ * reason; the smaller rect is the belt to that braces.
+ */
+export const CONNECTOR_BEND_HIT = 20
+
+/**
+ * The bend hit rectangle for a connector's drawn path, in SCREEN space, or
+ * null when there is no path to grab.
+ *
+ * Mirrors `connectorEndpointRects` in every respect that matters: it takes the
+ * PATH that was actually stroked, it is exported so `use-canvas-input` tests
+ * the rectangle this function produced rather than a second derivation of
+ * "where the middle of the line is", and it is the only place the bend grip's
+ * screen geometry exists. A curve's middle is not a point either side can
+ * compute independently — it depends on the routing, the tension clamp and the
+ * curvature all at once — so two derivations here would drift immediately.
+ *
+ * Note this says nothing about ROUTING. The caller decides whether a bend grip
+ * belongs on screen at all (only `curved` has a bow to drag); this function
+ * only answers where it would go.
+ */
+export function connectorBendRect(
+  camera: Camera,
+  path: ReadonlyArray<Point> | null | undefined,
+): ScreenRect | null {
+  const world = bendMidpoint(path)
+  if (!world) return null
+  const screen = worldToScreen(camera, world)
+  const half = CONNECTOR_BEND_HIT / 2
+  return {
+    x: screen.x - half,
+    y: screen.y - half,
+    width: CONNECTOR_BEND_HIT,
+    height: CONNECTOR_BEND_HIT,
+  }
 }
 
 /**
@@ -791,6 +838,13 @@ function drawConnectorSelection(
   scene: Scene,
   camera: Camera,
   accent: string,
+  /**
+   * The theme's page-coloured chrome fill (`CHROME[theme].handleFill`), used
+   * for the bend diamond's rim. Passed in rather than read from a module-level
+   * palette here for the same reason `accent` is: this function is handed
+   * resolved colours and never learns which theme is active.
+   */
+  rim: string,
 ): void {
   const link = element.connector
   if (!link) return
@@ -839,6 +893,43 @@ function drawConnectorSelection(
       ctx.setLineDash(attached ? [] : [3, 3])
       ctx.stroke()
       ctx.setLineDash([])
+    }
+  }
+
+  // The grip that BENDS the line. A DIAMOND — a fourth silhouette, because by
+  // now four affordances can share a screen and the endpoint note above only
+  // accounted for three: the resize grip's axis-aligned square, the creation
+  // handle's filled `+` circle, the endpoint's hollow-or-solid ring, and this.
+  // A fifth circle would have been indistinguishable from an endpoint grip at
+  // a glance, and a second square from a resize grip, so the one silhouette
+  // left that survives being 11px wide is a square turned 45 degrees.
+  //
+  // `curved` ONLY, matching `connectorPath`: a straight line and an elbow have
+  // no bow to drag, so a grip on them would be an affordance that does
+  // nothing. Input gates the press on the same condition — export-what-you-
+  // draw in both directions, the same rule the resize-grip block obeys for a
+  // connector's placeholder bounds.
+  if (link.routing === 'curved') {
+    const bend = connectorBendRect(camera, path)
+    if (bend) {
+      const cx = bend.x + bend.width / 2
+      const cy = bend.y + bend.height / 2
+      const reach = CONNECTOR_BEND_SIZE / 2
+      ctx.beginPath()
+      ctx.moveTo(cx, cy - reach)
+      ctx.lineTo(cx + reach, cy)
+      ctx.lineTo(cx, cy + reach)
+      ctx.lineTo(cx - reach, cy)
+      ctx.closePath()
+      // Filled accent with a light rim, the same figure/ground inversion the
+      // creation handle uses against the resize grip — the rim is what keeps
+      // it visible where the diamond sits on top of the accent-coloured
+      // selection stroke it is centred on.
+      ctx.fillStyle = accent
+      ctx.fill()
+      ctx.lineWidth = 2
+      ctx.strokeStyle = rim
+      ctx.stroke()
     }
   }
   ctx.restore()
@@ -990,7 +1081,14 @@ function drawSelectionOverlay(
       // A connector has no rectangle to outline — its stored bounds are a 1x1
       // placeholder that would draw a dot at the origin. It is highlighted by
       // re-stroking its own path instead, thickened and in the accent colour.
-      drawConnectorSelection(ctx, element, scene, camera, chrome.accent)
+      drawConnectorSelection(
+        ctx,
+        element,
+        scene,
+        camera,
+        chrome.accent,
+        chrome.handleFill,
+      )
       continue
     }
     const r = worldRectToScreen(camera, element)

@@ -395,7 +395,9 @@ describe('lost pointer capture ends the gesture (W5)', () => {
     const h = setup([element])
 
     act(() => {
-      h.api.canvasHandlers.onPointerDown(pointerEvent({ clientX: 10, clientY: 10 }))
+      h.api.canvasHandlers.onPointerDown(
+        pointerEvent({ clientX: 10, clientY: 10 }),
+      )
     })
     h.sync()
     act(() => {
@@ -434,15 +436,21 @@ describe('pre-state capture for undo (board-undo tactical plan, Wave 3)', () => 
     const h = setup([rect])
 
     act(() => {
-      h.api.canvasHandlers.onPointerDown(pointerEvent({ clientX: 15, clientY: 15 }))
+      h.api.canvasHandlers.onPointerDown(
+        pointerEvent({ clientX: 15, clientY: 15 }),
+      )
     })
     h.sync()
     act(() => {
-      h.api.canvasHandlers.onPointerMove(pointerEvent({ clientX: 65, clientY: 15 }))
+      h.api.canvasHandlers.onPointerMove(
+        pointerEvent({ clientX: 65, clientY: 15 }),
+      )
     })
     h.sync()
     act(() => {
-      h.api.canvasHandlers.onPointerUp(pointerEvent({ clientX: 65, clientY: 15 }))
+      h.api.canvasHandlers.onPointerUp(
+        pointerEvent({ clientX: 65, clientY: 15 }),
+      )
     })
 
     expect(h.callbacks.onUpdate).toHaveBeenCalledTimes(1)
@@ -484,15 +492,21 @@ describe('pre-state capture for undo (board-undo tactical plan, Wave 3)', () => 
     })
     h.sync()
     act(() => {
-      h.api.canvasHandlers.onPointerDown(pointerEvent({ clientX: 10, clientY: 10 }))
+      h.api.canvasHandlers.onPointerDown(
+        pointerEvent({ clientX: 10, clientY: 10 }),
+      )
     })
     h.sync()
     act(() => {
-      h.api.canvasHandlers.onPointerMove(pointerEvent({ clientX: 60, clientY: 10 }))
+      h.api.canvasHandlers.onPointerMove(
+        pointerEvent({ clientX: 60, clientY: 10 }),
+      )
     })
     h.sync()
     act(() => {
-      h.api.canvasHandlers.onPointerUp(pointerEvent({ clientX: 60, clientY: 10 }))
+      h.api.canvasHandlers.onPointerUp(
+        pointerEvent({ clientX: 60, clientY: 10 }),
+      )
     })
 
     // ONE call, not one per element — one-gesture-one-entry is structural.
@@ -527,15 +541,21 @@ describe('pre-state capture for undo (board-undo tactical plan, Wave 3)', () => 
 
     act(() => {
       // Grab the south-east handle (bottom-right corner of the element).
-      h.api.canvasHandlers.onPointerDown(pointerEvent({ clientX: 100, clientY: 100 }))
+      h.api.canvasHandlers.onPointerDown(
+        pointerEvent({ clientX: 100, clientY: 100 }),
+      )
     })
     h.sync()
     act(() => {
-      h.api.canvasHandlers.onPointerMove(pointerEvent({ clientX: 150, clientY: 150 }))
+      h.api.canvasHandlers.onPointerMove(
+        pointerEvent({ clientX: 150, clientY: 150 }),
+      )
     })
     h.sync()
     act(() => {
-      h.api.canvasHandlers.onPointerUp(pointerEvent({ clientX: 150, clientY: 150 }))
+      h.api.canvasHandlers.onPointerUp(
+        pointerEvent({ clientX: 150, clientY: 150 }),
+      )
     })
 
     expect(h.callbacks.onUpdate).toHaveBeenCalledTimes(1)
@@ -648,13 +668,16 @@ describe('shape tools', () => {
     ['g', 'triangle'],
   ] as const
 
-  it.each(SHORTCUTS)('selects the %s tool from its shortcut', (key, expected) => {
-    const h = setup([])
-    act(() => {
-      h.api.boardHandlers.onKeyDown(keyEvent(key))
-    })
-    expect(h.tool).toBe(expected)
-  })
+  it.each(SHORTCUTS)(
+    'selects the %s tool from its shortcut',
+    (key, expected) => {
+      const h = setup([])
+      act(() => {
+        h.api.boardHandlers.onKeyDown(keyEvent(key))
+      })
+      expect(h.tool).toBe(expected)
+    },
+  )
 
   it.each(SHORTCUTS)('drags out a %s of the drawn kind', (_key, kind) => {
     const h = setupWithTool(kind)
@@ -694,11 +717,15 @@ describe('shape tools', () => {
   it('creates a default-sized shape from a click rather than a drag', () => {
     const h = setupWithTool('ellipse')
     act(() => {
-      h.api.canvasHandlers.onPointerDown(pointerEvent({ clientX: 20, clientY: 30 }))
+      h.api.canvasHandlers.onPointerDown(
+        pointerEvent({ clientX: 20, clientY: 30 }),
+      )
     })
     h.sync()
     act(() => {
-      h.api.canvasHandlers.onPointerUp(pointerEvent({ clientX: 21, clientY: 31 }))
+      h.api.canvasHandlers.onPointerUp(
+        pointerEvent({ clientX: 21, clientY: 31 }),
+      )
     })
     h.sync()
 
@@ -713,7 +740,9 @@ describe('shape tools', () => {
     // release would silently turn a half-drawn ellipse into a diamond.
     const h = setupWithTool('ellipse')
     act(() => {
-      h.api.canvasHandlers.onPointerDown(pointerEvent({ clientX: 0, clientY: 0 }))
+      h.api.canvasHandlers.onPointerDown(
+        pointerEvent({ clientX: 0, clientY: 0 }),
+      )
     })
     h.sync()
     act(() => {
@@ -732,5 +761,206 @@ describe('shape tools', () => {
 
   it.each(SHORTCUTS)('shows a crosshair for the %s tool', (_key, kind) => {
     expect(setupWithTool(kind).api.cursor).toBe('crosshair')
+  })
+})
+
+describe('dragging a curved connector by its bend grip', () => {
+  const A = '33333333-3333-4333-8333-333333333333'
+  const B = '44444444-4444-4444-8444-444444444444'
+  const LINK = '55555555-5555-4555-8555-555555555555'
+
+  function box(id: string, x: number): CanvasElement {
+    return {
+      ...makeText(),
+      id,
+      kind: 'rectangle',
+      x,
+      y: 0,
+      width: 100,
+      height: 100,
+      text: null,
+    }
+  }
+
+  /**
+   * Two boxes 200 apart with a connector between them, so the line runs from
+   * (100,50) to (300,50) and its bend grip sits at (200,50) — the same point
+   * in world and screen space at the default camera, which is what lets these
+   * tests name one pair of numbers instead of two.
+   */
+  function board(routing: 'curved' | 'straight'): Array<CanvasElement> {
+    return [
+      box(A, 0),
+      box(B, 300),
+      {
+        ...makeText(),
+        id: LINK,
+        kind: 'connector',
+        // The degenerate placeholder a connector actually stores.
+        x: 0,
+        y: 0,
+        width: 1,
+        height: 1,
+        text: null,
+        zIndex: 2,
+        connector: {
+          source: { kind: 'element', elementId: A },
+          target: { kind: 'element', elementId: B },
+          routing,
+        },
+      },
+    ]
+  }
+
+  function grabBend(h: ReturnType<typeof setup>) {
+    act(() => {
+      h.api.setSelectedIds(new Set([LINK]))
+    })
+    h.sync()
+    act(() => {
+      h.api.canvasHandlers.onPointerDown(
+        pointerEvent({ clientX: 200, clientY: 50 }),
+      )
+    })
+    h.sync()
+  }
+
+  it('bows the line live during the drag, before anything is persisted', () => {
+    // The "mutate the scene live, persist at gesture end" rule every other
+    // gesture in this file follows — without it the curve would not move
+    // until the server acked, a whole round trip later.
+    const h = setup(board('curved'))
+    grabBend(h)
+    act(() => {
+      h.api.canvasHandlers.onPointerMove(
+        pointerEvent({ clientX: 200, clientY: 10 }),
+      )
+    })
+    h.sync()
+
+    // 40 world units up a 200-unit chord.
+    expect(h.scene.byId.get(LINK)!.connector!.curvature).toBeCloseTo(0.2, 6)
+    expect(h.callbacks.onUpdate).not.toHaveBeenCalled()
+  })
+
+  it('persists the bow on release, with the pre-gesture connector as `before`', () => {
+    const h = setup(board('curved'))
+    grabBend(h)
+    act(() => {
+      h.api.canvasHandlers.onPointerMove(
+        pointerEvent({ clientX: 200, clientY: 10 }),
+      )
+    })
+    h.sync()
+    act(() => {
+      h.api.canvasHandlers.onPointerUp(
+        pointerEvent({ clientX: 200, clientY: 10 }),
+      )
+    })
+
+    expect(h.callbacks.onUpdate).toHaveBeenCalledTimes(1)
+    const [after, before, gesture] = h.callbacks.onUpdate.mock.calls[0]
+    expect(gesture).toBe('bend')
+    expect(after[0].connector.curvature).toBeCloseTo(0.2, 6)
+    // The pre-state is what Ctrl+Z restores. A legacy connector had NO
+    // curvature at all, and the snapshot has to say so rather than reporting
+    // a zero it never held.
+    expect(before[0].connector).not.toHaveProperty('curvature')
+  })
+
+  it('bows the other way for a drag to the other side', () => {
+    // Positive is the LEFT-hand normal of source -> target; this line runs
+    // left to right, so downward on screen is negative.
+    const h = setup(board('curved'))
+    grabBend(h)
+    act(() => {
+      h.api.canvasHandlers.onPointerMove(
+        pointerEvent({ clientX: 200, clientY: 110 }),
+      )
+    })
+    h.sync()
+    expect(h.scene.byId.get(LINK)!.connector!.curvature).toBeCloseTo(-0.3, 6)
+  })
+
+  it('does not start a bend on a STRAIGHT connector', () => {
+    // Input must not test an affordance the renderer declined to draw — a
+    // 20px rectangle sitting invisibly on the middle of every straight
+    // connector would swallow presses meant for whatever lies under it.
+    const h = setup(board('straight'))
+    grabBend(h)
+    act(() => {
+      h.api.canvasHandlers.onPointerMove(
+        pointerEvent({ clientX: 200, clientY: 10 }),
+      )
+    })
+    h.sync()
+    expect(h.scene.byId.get(LINK)!.connector).not.toHaveProperty('curvature')
+
+    act(() => {
+      h.api.canvasHandlers.onPointerUp(
+        pointerEvent({ clientX: 200, clientY: 10 }),
+      )
+    })
+    for (const call of h.callbacks.onUpdate.mock.calls) {
+      expect(call[2]).not.toBe('bend')
+    }
+  })
+
+  it('writes nothing for a press that never bent anything', () => {
+    // Otherwise a stray click on the grip pushes an undo entry whose undo is
+    // a no-op — "Undid bending a connector" for a connector nobody bent.
+    const h = setup(board('curved'))
+    grabBend(h)
+    act(() => {
+      h.api.canvasHandlers.onPointerUp(
+        pointerEvent({ clientX: 200, clientY: 50 }),
+      )
+    })
+    expect(h.callbacks.onUpdate).not.toHaveBeenCalled()
+  })
+
+  it('recomputes from the pointer each frame rather than accumulating', () => {
+    // A drag out and back must land exactly where it started. Frame-by-frame
+    // deltas would not — each frame's clamp would become the next one's
+    // starting point, the same drift `resize`'s `startBounds` exists to stop.
+    const h = setup(board('curved'))
+    grabBend(h)
+    for (const y of [10, -400, 250, 50]) {
+      act(() => {
+        h.api.canvasHandlers.onPointerMove(
+          pointerEvent({ clientX: 200, clientY: y }),
+        )
+      })
+      h.sync()
+    }
+    expect(h.scene.byId.get(LINK)!.connector!.curvature).toBeCloseTo(0, 6)
+  })
+
+  it('still grabs an ENDPOINT grip in preference to the bend grip', () => {
+    // Tested first on purpose: on a short connector the three grips crowd
+    // together, and a mis-grabbed end lands the line on the wrong element
+    // while a mis-grabbed bend is merely a curve the user can drag back.
+    const h = setup(board('curved'))
+    act(() => {
+      h.api.setSelectedIds(new Set([LINK]))
+    })
+    h.sync()
+    act(() => {
+      // The source end of the drawn line.
+      h.api.canvasHandlers.onPointerDown(
+        pointerEvent({ clientX: 100, clientY: 50 }),
+      )
+    })
+    h.sync()
+    act(() => {
+      h.api.canvasHandlers.onPointerMove(
+        pointerEvent({ clientX: 60, clientY: 90 }),
+      )
+    })
+    h.sync()
+
+    const link = h.scene.byId.get(LINK)!.connector!
+    expect(link.source.kind).toBe('point')
+    expect(link).not.toHaveProperty('curvature')
   })
 })

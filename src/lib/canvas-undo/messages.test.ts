@@ -22,21 +22,24 @@ const NON_ATTRIBUTION_WORDS = ['another user', 'someone else', 'collaborator']
 
 describe('describeUndoSuccess — names the gesture that was reversed', () => {
   it('names creating a rectangle', () => {
-    const label: CanvasUndoLabel = { gesture: 'create', elementKind: 'rectangle' }
+    const label: CanvasUndoLabel = {
+      gesture: 'create',
+      elementKind: 'rectangle',
+    }
     expect(describeUndoSuccess(label)).toBe('Undid creating a rectangle')
   })
 
   it('says "an" before a vowel, for every kind that starts with one', () => {
     // "creating a ellipse" is what the board said before this existed.
-    expect(describeUndoSuccess({ gesture: 'create', elementKind: 'ellipse' })).toBe(
-      'Undid creating an ellipse',
-    )
-    expect(describeUndoSuccess({ gesture: 'create', elementKind: 'diamond' })).toBe(
-      'Undid creating a diamond',
-    )
-    expect(describeUndoSuccess({ gesture: 'create', elementKind: 'triangle' })).toBe(
-      'Undid creating a triangle',
-    )
+    expect(
+      describeUndoSuccess({ gesture: 'create', elementKind: 'ellipse' }),
+    ).toBe('Undid creating an ellipse')
+    expect(
+      describeUndoSuccess({ gesture: 'create', elementKind: 'diamond' }),
+    ).toBe('Undid creating a diamond')
+    expect(
+      describeUndoSuccess({ gesture: 'create', elementKind: 'triangle' }),
+    ).toBe('Undid creating a triangle')
     // The generic "element" fallback carried the same defect. It is not
     // asserted here because `create` requires a kind at the type level, so no
     // reachable call produces it — the article helper handles it regardless.
@@ -262,6 +265,26 @@ describe('moving a connector end reads differently from rerouting one', () => {
     expect(describeUndoSuccess({ gesture: 'reconnect' })).not.toBe(
       describeUndoSuccess({ gesture: 'routing' }),
     )
+  })
+})
+
+describe('bending a connector reads differently from both other connector edits', () => {
+  it('names the curve', () => {
+    expect(describeUndoSuccess({ gesture: 'bend' })).toBe(
+      'Undid bending a connector curve',
+    )
+    expect(describeRedoSuccess({ gesture: 'bend' })).toBe(
+      'Redid bending a connector curve',
+    )
+  })
+
+  it('is distinct from BOTH a routing change and an endpoint move', () => {
+    // Three arms now say "a connector changed", and a user who pressed
+    // Ctrl+Z has one line of toast to work out which of their last few edits
+    // is coming back. Any two of these reading alike defeats that.
+    const bend = describeUndoSuccess({ gesture: 'bend' })
+    expect(bend).not.toBe(describeUndoSuccess({ gesture: 'routing' }))
+    expect(bend).not.toBe(describeUndoSuccess({ gesture: 'reconnect' }))
   })
 })
 

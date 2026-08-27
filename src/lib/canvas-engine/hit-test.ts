@@ -17,11 +17,7 @@
 import { bounds, effectiveCornerRadius } from './scene'
 import { connectorBounds, connectorPath } from './connector-geometry'
 import type { EndpointGeometry } from './connector-geometry'
-import type {
-  CanvasElement,
-  ConnectorEndpoint,
-  Scene,
-} from './scene'
+import type { CanvasElement, ConnectorEndpoint, Scene } from './scene'
 import type { Point } from './camera'
 
 export interface WorldRect {
@@ -138,8 +134,16 @@ export function roundedRectContainsPoint(
   if (radius <= 0) return true
   // How far the point lies INTO the corner region on each axis: zero anywhere
   // along the straight part of an edge, which is what makes those inside.
-  const dx = Math.max(rect.x + radius - point.x, point.x - (rect.x + rect.width - radius), 0)
-  const dy = Math.max(rect.y + radius - point.y, point.y - (rect.y + rect.height - radius), 0)
+  const dx = Math.max(
+    rect.x + radius - point.x,
+    point.x - (rect.x + rect.width - radius),
+    0,
+  )
+  const dy = Math.max(
+    rect.y + radius - point.y,
+    point.y - (rect.y + rect.height - radius),
+    0,
+  )
   return dx * dx + dy * dy <= radius * radius
 }
 
@@ -287,6 +291,12 @@ export function connectorPathOf(
     endpointGeometry(scene, link.source),
     endpointGeometry(scene, link.target),
     link.routing,
+    // Passed unconditionally, not gated on `routing === 'curved'`. This is the
+    // single place a stored connector becomes a path, so gating here would be
+    // gating everywhere — and `connectorPath` already ignores the value for
+    // the two routings that have no bow. One caller, one rule, no branch to
+    // forget when a fourth routing arrives.
+    link.curvature,
   )
 }
 
@@ -353,7 +363,10 @@ export const DEFAULT_CONNECTOR_TOLERANCE = 8
  * marquee grabs exactly the sub-graph it visibly encloses, which is what
  * makes "select these three boxes and their arrows and move them" work.
  */
-export function hitTestRect(scene: Scene, rect: WorldRect): Array<CanvasElement> {
+export function hitTestRect(
+  scene: Scene,
+  rect: WorldRect,
+): Array<CanvasElement> {
   const normalised = normaliseRect(rect)
   const selected = scene.elements.filter(
     (element) =>
