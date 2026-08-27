@@ -1,11 +1,24 @@
 // src/components/canvas/SelectionToolbar.tsx
-// The controls for whatever is selected: paint (fill, stroke, weight) and
-// paint ORDER (bring to front, send to back).
+// The controls for whatever is selected: paint (fill, stroke, weight, corner)
+// and paint ORDER (bring to front, send to back).
 //
 // A floating bar anchored above the selection, matching `ConnectorToolbar`'s
 // placement rule and for the same reason: a board holds many shapes and the
 // control has to say WHICH ones it is about. Anchoring it to the selection is
 // the only placement that answers that without a label.
+//
+// ONE ROW OF POPOVERS, not a stack of open rows. Every setting used to be
+// laid out at once, so the bar grew a row per setting — four of them, plus
+// order and copy — and a bar that tall sitting over a small shape covers the
+// very thing the user is restyling. Each SETTING now collapses to a single
+// trigger that PREVIEWS its current value and opens its options on click,
+// which keeps the bar one row high however many settings the selection
+// supports.
+//
+// The two ACTION groups stay as plain buttons. Order and duplicate are
+// commands, not values — there is nothing to preview on a closed trigger and
+// nothing to keep open across picks, so a popover would buy no height back
+// and cost a click on every use.
 //
 // Every coordinate comes from `camera.ts`'s `worldToScreen` and the world rect
 // comes from `scene.ts`'s `boundsOfMany`. Nothing here computes a transform of
@@ -32,6 +45,7 @@
 // canvas-quick-create.spec.ts's "opens the new element for typing".
 
 import { Ban, BringToFront, CopyPlus, SendToBack } from 'lucide-react'
+import type { ReactNode } from 'react'
 import type { Camera } from '@/lib/canvas-engine/camera'
 import type {
   CanvasElement,
@@ -48,8 +62,15 @@ import {
   CANVAS_SWATCHES,
   DEFAULT_STROKE_WIDTH,
   FILL_NONE,
+  swatchForFill,
+  swatchForStroke,
 } from '@/lib/canvas-style-palette'
 import { Button } from '@/components/ui/button'
+import {
+  Popover,
+  PopoverContent,
+  PopoverTrigger,
+} from '@/components/ui/popover'
 
 /**
  * How far ABOVE the selection's bounding box the bar sits, in screen pixels.
@@ -73,13 +94,13 @@ export type CanvasStyleChange =
   | { target: 'stroke'; value: string | null }
   /**
    * A stroke WEIGHT, in world units. Never null: "no stroke" is the stroke
-   * row's own none choice, which this union already expresses as
+   * setting's own none choice, which this union already expresses as
    * `{ target: 'stroke', value: null }`.
    */
   | { target: 'strokeWidth'; value: number }
   /**
-   * A corner RADIUS, in world units. Rectangles only — the row is not
-   * rendered when the selection holds none, and the change is emitted against
+   * A corner RADIUS, in world units. Rectangles only — the setting is not
+   * offered when the selection holds none, and the change is emitted against
    * the rectangles in it rather than everything selected, so a marquee over a
    * rectangle and an ellipse rounds the one that has corners and writes
    * nothing to the one that does not.
@@ -118,15 +139,16 @@ export function applyStyleChange(
     // is currently cleared turns the outline back ON at that weight, using
     // the colour the clear preserved. That is the second, equally natural way
     // back from "no stroke" — the first being to pick a colour — and blocking
-    // it would leave the row looking inert on exactly the shapes a user is
-    // most likely to be adjusting.
+    // it would leave the setting looking inert on exactly the shapes a user
+    // is most likely to be adjusting.
     return { ...style, strokeWidth: change.value }
   }
   if (change.value === null) return { ...style, strokeWidth: 0 }
   return {
     ...style,
     stroke: change.value,
-    strokeWidth: style.strokeWidth > 0 ? style.strokeWidth : DEFAULT_STROKE_WIDTH,
+    strokeWidth:
+      style.strokeWidth > 0 ? style.strokeWidth : DEFAULT_STROKE_WIDTH,
   }
 }
 
@@ -184,7 +206,8 @@ export function selectionToolbarTargets(
   readOnly: boolean,
   editingElementId: string | null = null,
 ): { arrange: Array<CanvasElement>; paint: Array<CanvasElement> } | null {
-  if (readOnly || editingElementId !== null || selectedIds.size === 0) return null
+  if (readOnly || editingElementId !== null || selectedIds.size === 0)
+    return null
   const arrange = zOrderTargets(scene, selectedIds)
   if (arrange.length === 0) return null
   return { arrange, paint: arrange.filter((e) => isCanvasShapeKind(e.kind)) }
@@ -231,7 +254,12 @@ export function SelectionToolbar({
   onArrange,
   onDuplicate,
 }: SelectionToolbarProps) {
-  const sets = selectionToolbarTargets(scene, selectedIds, readOnly, editingElementId)
+  const sets = selectionToolbarTargets(
+    scene,
+    selectedIds,
+    readOnly,
+    editingElementId,
+  )
   const box = boundsOfMany(sets?.arrange ?? [])
   if (!sets || !box) return null
   const targets = sets.paint
@@ -243,23 +271,32 @@ export function SelectionToolbar({
   const activeFill = shared(targets, (element) =>
     element.style.fill === FILL_NONE ? null : element.style.fill,
   )
-  const fillCleared = shared(targets, (element) => element.style.fill === FILL_NONE)
-  const strokeCleared = shared(targets, (element) => element.style.strokeWidth === 0)
+  const fillCleared = shared(
+    targets,
+    (element) => element.style.fill === FILL_NONE,
+  )
+  const strokeCleared = shared(
+    targets,
+    (element) => element.style.strokeWidth === 0,
+  )
   const activeStroke = shared(targets, (element) =>
     element.style.strokeWidth === 0 ? null : element.style.stroke,
   )
-  // A cleared stroke has no weight to show — the stroke row's none button is
-  // what is active then. A stored weight outside the offered set (an older
+  // A cleared stroke has no weight to show — the stroke setting's none button
+  // is what is active then. A stored weight outside the offered set (an older
   // row) also shows nothing active rather than snapping to the nearest.
   const activeWidth = shared(targets, (element) =>
     element.style.strokeWidth === 0 ? null : element.style.strokeWidth,
   )
 
   // Rectangles are the only kind with corners to round. Taken from `targets`
-  // rather than from `selectedIds` so the row obeys the same "may this be
-  // restyled at all" rules — read-only, mid-edit — as every row above it.
+  // rather than from `selectedIds` so the setting obeys the same "may this be
+  // restyled at all" rules — read-only, mid-edit — as every other one.
   const roundable = targets.filter((element) => element.kind === 'rectangle')
-  const activeRadius = shared(roundable, (element) => element.style.cornerRadius)
+  const activeRadius = shared(
+    roundable,
+    (element) => element.style.cornerRadius,
+  )
 
   const emit = (change: CanvasStyleChange, list = targets) => {
     // Every target already in the requested state writes nothing. Without
@@ -276,7 +313,7 @@ export function SelectionToolbar({
 
   return (
     <div
-      className="absolute z-10 flex flex-col gap-1 rounded-md border bg-background/90 p-1.5 shadow-sm backdrop-blur-sm"
+      className="absolute z-10 flex items-center gap-1 rounded-md border bg-background/90 p-1 shadow-sm backdrop-blur-sm"
       style={{
         left: anchor.x,
         top: anchor.y - STYLE_TOOLBAR_OFFSET,
@@ -290,37 +327,279 @@ export function SelectionToolbar({
     >
       {targets.length > 0 && (
         <>
-      <SwatchRow
-        rowLabel="Fill"
-        activeSwatchValue={activeFill}
-        noneActive={fillCleared === true}
-        readSwatch={(swatch) => swatch.fill}
-        onPick={(value) => emit({ target: 'fill', value })}
-      />
-      <SwatchRow
-        rowLabel="Stroke"
-        activeSwatchValue={activeStroke}
-        noneActive={strokeCleared === true}
-        readSwatch={(swatch) => swatch.stroke}
-        onPick={(value) => emit({ target: 'stroke', value })}
-      />
-      <WidthRow
-        activeWidth={activeWidth}
-        strokeColor={activeStroke}
-        onPick={(value) => emit({ target: 'strokeWidth', value })}
-      />
-      {roundable.length > 0 && (
-        <RadiusRow
-          activeRadius={activeRadius}
-          onPick={(value) => emit({ target: 'cornerRadius', value }, roundable)}
-        />
-      )}
+          <SettingPopover
+            label="Fill"
+            summary={colorSummary(
+              activeFill,
+              fillCleared === true,
+              swatchForFill,
+            )}
+            preview={
+              <ColorPreview
+                row="Fill"
+                value={activeFill}
+                cleared={fillCleared === true}
+              />
+            }
+          >
+            <SwatchRow
+              rowLabel="Fill"
+              activeSwatchValue={activeFill}
+              noneActive={fillCleared === true}
+              readSwatch={(swatch) => swatch.fill}
+              onPick={(value) => emit({ target: 'fill', value })}
+            />
+          </SettingPopover>
+          <SettingPopover
+            label="Stroke"
+            summary={colorSummary(
+              activeStroke,
+              strokeCleared === true,
+              swatchForStroke,
+            )}
+            preview={
+              <ColorPreview
+                row="Stroke"
+                value={activeStroke}
+                cleared={strokeCleared === true}
+              />
+            }
+          >
+            <SwatchRow
+              rowLabel="Stroke"
+              activeSwatchValue={activeStroke}
+              noneActive={strokeCleared === true}
+              readSwatch={(swatch) => swatch.stroke}
+              onPick={(value) => emit({ target: 'stroke', value })}
+            />
+          </SettingPopover>
+          <SettingPopover
+            label="Width"
+            summary={widthSummary(activeWidth, strokeCleared === true)}
+            preview={
+              <WidthPreview width={activeWidth} strokeColor={activeStroke} />
+            }
+          >
+            <WidthRow
+              activeWidth={activeWidth}
+              strokeColor={activeStroke}
+              onPick={(value) => emit({ target: 'strokeWidth', value })}
+            />
+          </SettingPopover>
+          {roundable.length > 0 && (
+            <SettingPopover
+              label="Corner"
+              summary={radiusSummary(activeRadius)}
+              preview={<RadiusPreview radius={activeRadius} />}
+            >
+              <RadiusRow
+                activeRadius={activeRadius}
+                onPick={(value) =>
+                  emit({ target: 'cornerRadius', value }, roundable)
+                }
+              />
+            </SettingPopover>
+          )}
+          <Divider />
         </>
       )}
       <ArrangeRow onArrange={(command) => onArrange(sets.arrange, command)} />
+      <Divider />
       <ActionsRow onDuplicate={onDuplicate} />
     </div>
   )
+}
+
+/**
+ * The hairline between the settings, the order buttons and the actions.
+ *
+ * `aria-hidden` rather than `role="separator"`: it carries no meaning a screen
+ * reader needs, because each group it divides already announces itself through
+ * its own label.
+ */
+function Divider() {
+  return (
+    <div aria-hidden="true" className="mx-0.5 h-5 w-px shrink-0 bg-border" />
+  )
+}
+
+interface SettingPopoverProps {
+  /** The setting's name — the trigger's accessible name and its visible caption. */
+  label: string
+  /** The current value in words, for the trigger's tooltip. */
+  summary: string
+  /** A miniature of the current value, so the CLOSED trigger still answers "what is it now?". */
+  preview: ReactNode
+  children: ReactNode
+}
+
+/**
+ * One setting: a trigger that previews its value, and the options behind it.
+ *
+ * UNCONTROLLED, so the popover stays open across picks. Choosing paint is a
+ * comparison — three weights tried in a row, two greens held against each
+ * other — and a popover that dismissed itself on the first click would make
+ * every pick after the first cost two clicks. Radix closes it on the next
+ * pointer-down outside, which on this board is the click that moves on to
+ * something else.
+ *
+ * It opens on `side="top"`, above a bar that is itself above the selection, so
+ * the options never cover the shapes they are restyling. Radix flips it below
+ * on its own when the selection sits near the top of the viewport.
+ *
+ * The content is PORTALLED (`PopoverContent` wraps `Popover.Portal`), which
+ * keeps it clear of the canvas ELEMENT and its pointer handlers — but not of
+ * the board CONTAINER, and that distinction cost a round of red e2e runs. A
+ * React portal bubbles events through the React TREE, not the DOM tree, so a
+ * keydown inside the popover still reached `CanvasBoard`'s container
+ * `onKeyDown` (the same trap `handleBoardKeyDown` documents for the text
+ * proxy) and Escape closed the popover AND cleared the selection under it.
+ * `stopPropagation` below is what ends that: Radix listens for Escape on the
+ * document in the CAPTURE phase, so it still closes, while nothing from
+ * inside the popover reaches the board's tool shortcuts.
+ */
+function SettingPopover({
+  label,
+  summary,
+  preview,
+  children,
+}: SettingPopoverProps) {
+  return (
+    <Popover>
+      <PopoverTrigger asChild>
+        <Button
+          type="button"
+          variant="ghost"
+          className="h-6 gap-1 px-1.5"
+          aria-label={label}
+          title={`${label}: ${summary}`}
+        >
+          {preview}
+          <span className="select-none text-[10px] font-medium uppercase tracking-wide text-muted-foreground">
+            {label}
+          </span>
+        </Button>
+      </PopoverTrigger>
+      <PopoverContent
+        side="top"
+        sideOffset={6}
+        className="w-auto p-2"
+        // See the note above: the React tree, not the DOM tree, decides where
+        // a portalled event goes next, and next is the board container.
+        onKeyDown={(event) => event.stopPropagation()}
+      >
+        <div className="mb-1.5 select-none px-0.5 text-[10px] font-medium uppercase tracking-wide text-muted-foreground">
+          {label}
+        </div>
+        {children}
+      </PopoverContent>
+    </Popover>
+  )
+}
+
+/**
+ * The current colour as a dot, or the reason there is not one.
+ *
+ * Three states, and they are genuinely different answers: a colour, "cleared"
+ * (the `Ban` glyph the none button uses, so the trigger and the option it is
+ * reflecting look alike), and "the targets disagree" — a dashed empty ring,
+ * which claims no colour rather than picking one of the selection's.
+ */
+function ColorPreview({
+  row,
+  value,
+  cleared,
+}: {
+  row: 'Fill' | 'Stroke'
+  value: string | null
+  cleared: boolean
+}) {
+  if (cleared) return <Ban className="size-3.5 text-muted-foreground" />
+  if (value === null) {
+    return (
+      <span className="block size-3.5 rounded-full border-2 border-dashed border-muted-foreground/60" />
+    )
+  }
+  // A fill is 10% alpha, so a flat fill dot is a near-white smudge. The hue's
+  // solid stroke as the border is what makes it legible — the same trick
+  // `swatchStyle` plays on the fill swatches themselves.
+  const border =
+    row === 'Fill' ? (swatchForFill(value)?.stroke ?? value) : value
+  return (
+    <span
+      className="block size-3.5 rounded-full border-2"
+      style={{ backgroundColor: value, borderColor: border }}
+    />
+  )
+}
+
+/** The current weight, drawn at that weight in the selection's own stroke colour. */
+function WidthPreview({
+  width,
+  strokeColor,
+}: {
+  width: number | null
+  strokeColor: string | null
+}) {
+  if (width === null) {
+    return (
+      <span className="block h-0 w-4 border-t-2 border-dashed border-muted-foreground/60" />
+    )
+  }
+  return (
+    <span
+      className="block w-4 rounded-full"
+      style={{
+        height: `${width}px`,
+        backgroundColor: strokeColor ?? 'currentColor',
+      }}
+    />
+  )
+}
+
+/** The current rounding, drawn on a 14px square — see `RadiusRow` on the scaling. */
+function RadiusPreview({ radius }: { radius: number | null }) {
+  if (radius === null) {
+    return (
+      <span className="block size-3.5 border border-dashed border-muted-foreground/60" />
+    )
+  }
+  return (
+    <span
+      className="block size-3.5 border border-current"
+      style={{ borderRadius: `${radius / 2}px` }}
+    />
+  )
+}
+
+/**
+ * The current colour in words, for a trigger's tooltip.
+ *
+ * "Custom" covers a stored value this palette never wrote — an older row, a
+ * hand-edited one. It is the same honesty the swatches themselves show by
+ * marking none of them active rather than snapping to the nearest hue.
+ */
+function colorSummary(
+  value: string | null,
+  cleared: boolean,
+  lookup: (value: string) => { label: string } | null,
+): string {
+  if (cleared) return 'None'
+  if (value === null) return 'Mixed'
+  return lookup(value)?.label ?? 'Custom'
+}
+
+/** The current weight in words. A cleared stroke has no weight, and says so. */
+function widthSummary(width: number | null, cleared: boolean): string {
+  if (cleared) return 'None'
+  if (width === null) return 'Mixed'
+  return `${width}px`
+}
+
+/** The current rounding in words. Zero is "Square", not "0px" — it is a shape, not a measurement. */
+function radiusSummary(radius: number | null): string {
+  if (radius === null) return 'Mixed'
+  return radius === 0 ? 'Square' : `${radius}px`
 }
 
 /**
@@ -339,14 +618,11 @@ export function SelectionToolbar({
 function ActionsRow({ onDuplicate }: { onDuplicate: () => void }) {
   return (
     <div className="flex items-center gap-1" role="group" aria-label="Actions">
-      <span className="w-10 select-none pl-1 text-[10px] font-medium uppercase tracking-wide text-muted-foreground">
-        Copy
-      </span>
       <Button
         type="button"
         size="icon"
         variant="ghost"
-        className="h-5 w-8"
+        className="h-6 w-7"
         aria-label="Duplicate"
         title="Duplicate (Ctrl+D)"
         // Wrapped rather than passed straight through: React would otherwise
@@ -368,7 +644,7 @@ function ActionsRow({ onDuplicate }: { onDuplicate: () => void }) {
  * point: this listed its five fields by hand until `cornerRadius` was added
  * to `CanvasElementStyle`, at which point it reported a rounded shape and a
  * square one as identical — so `emit` filtered every radius click away as
- * "already in that state" and the new row did nothing at all, silently.
+ * "already in that state" and the new control did nothing at all, silently.
  * `CanvasElementStyle` is a flat value with no nested members, so it has no
  * reason to be compared by an enumeration that can fall behind it.
  *
@@ -382,6 +658,11 @@ function stylesEqual(a: CanvasElementStyle, b: CanvasElementStyle): boolean {
 
 /**
  * Bring to front / send to back.
+ *
+ * NOT behind a popover, unlike the four settings: these are commands, not
+ * values. There is no current state to preview on a closed trigger and
+ * nothing to keep open across picks, so collapsing them would buy no height
+ * back and cost a click on every use.
  *
  * Two buttons, not four: one-step forward and backward need a well-defined
  * neighbour to swap with, and a canvas element's `zIndex` is NOT unique — the
@@ -397,17 +678,18 @@ function stylesEqual(a: CanvasElementStyle, b: CanvasElementStyle): boolean {
  * returns an empty plan — a disabled-looking button that is merely a no-op
  * this frame reads as broken.
  */
-function ArrangeRow({ onArrange }: { onArrange: (command: ZOrderCommand) => void }) {
+function ArrangeRow({
+  onArrange,
+}: {
+  onArrange: (command: ZOrderCommand) => void
+}) {
   return (
     <div className="flex items-center gap-1" role="group" aria-label="Arrange">
-      <span className="w-10 select-none pl-1 text-[10px] font-medium uppercase tracking-wide text-muted-foreground">
-        Order
-      </span>
       <Button
         type="button"
         size="icon"
         variant="ghost"
-        className="h-5 w-8"
+        className="h-6 w-7"
         aria-label="Bring to front"
         title="Bring to front"
         onClick={() => onArrange('front')}
@@ -418,7 +700,7 @@ function ArrangeRow({ onArrange }: { onArrange: (command: ZOrderCommand) => void
         type="button"
         size="icon"
         variant="ghost"
-        className="h-5 w-8"
+        className="h-6 w-7"
         aria-label="Send to back"
         title="Send to back"
         onClick={() => onArrange('back')}
@@ -438,7 +720,7 @@ interface WidthRowProps {
 }
 
 /**
- * The stroke-weight row: each button IS a line of the weight it sets.
+ * The stroke-weight options: each button IS a line of the weight it sets.
  *
  * A sample rather than a number, for the same reason the swatches are colours
  * rather than names — the control should look like its result. The sample is
@@ -447,30 +729,25 @@ interface WidthRowProps {
  */
 function WidthRow({ activeWidth, strokeColor, onPick }: WidthRowProps) {
   return (
-    <div className="flex items-center gap-1" role="group" aria-label="Width">
-      <span className="w-10 select-none pl-1 text-[10px] font-medium uppercase tracking-wide text-muted-foreground">
-        Width
-      </span>
+    <div className="flex items-center gap-1.5" role="group" aria-label="Width">
       {CANVAS_STROKE_WIDTHS.map((width) => {
         const active = width === activeWidth
         return (
           <button
             key={width}
             type="button"
-            className={`flex h-5 w-8 items-center justify-center rounded border transition-shadow ${
+            className={`flex h-7 w-12 items-center justify-center rounded border transition-shadow ${
               active
                 ? 'border-transparent ring-2 ring-ring ring-offset-1 ring-offset-background'
                 : 'border-border/60'
             }`}
-            // Matches the ER whiteboard's own picker (`Stroke width 2`), so
-            // one vocabulary covers both boards for anyone reading either.
             aria-label={`Stroke width ${width}`}
             aria-pressed={active}
             title={`${width}px stroke`}
             onClick={() => onPick(width)}
           >
             <span
-              className="block w-5 rounded-full"
+              className="block w-7 rounded-full"
               style={{
                 height: `${width}px`,
                 backgroundColor: strokeColor ?? 'currentColor',
@@ -493,25 +770,22 @@ interface RadiusRowProps {
  * Corner rounding for rectangles.
  *
  * Each button previews its own radius rather than naming a number, the same
- * choice the width row makes: the swatch IS the answer to "what will this
+ * choice the width options make: the swatch IS the answer to "what will this
  * look like", and a user picking a corner shape is matching a picture, not a
- * measurement. The preview is a fixed-size square scaled to the row, so the
- * three read as a progression even though the stored values are world units
- * that mean different things on a small shape and a large one.
+ * measurement. The preview is a fixed-size square scaled down, so the three
+ * read as a progression even though the stored values are world units that
+ * mean different things on a small shape and a large one.
  */
 function RadiusRow({ activeRadius, onPick }: RadiusRowProps) {
   return (
-    <div className="flex items-center gap-1" role="group" aria-label="Corner">
-      <span className="w-10 select-none pl-1 text-[10px] font-medium uppercase tracking-wide text-muted-foreground">
-        Corner
-      </span>
+    <div className="flex items-center gap-1.5" role="group" aria-label="Corner">
       {CANVAS_CORNER_RADII.map((radius) => {
         const active = radius === activeRadius
         return (
           <button
             key={radius}
             type="button"
-            className={`flex h-5 w-8 items-center justify-center rounded border transition-shadow ${
+            className={`flex h-7 w-12 items-center justify-center rounded border transition-shadow ${
               active
                 ? 'border-transparent ring-2 ring-ring ring-offset-1 ring-offset-background'
                 : 'border-border/60'
@@ -522,10 +796,7 @@ function RadiusRow({ activeRadius, onPick }: RadiusRowProps) {
             onClick={() => onPick(radius)}
           >
             <span
-              className="block h-3 w-3 border border-current"
-              // Scaled DOWN from the world value: the preview square is 12px
-              // and the shapes this rounds are hundreds, so painting the raw
-              // radius would make every option past the first look identical.
+              className="block h-4 w-4 border border-current"
               style={{ borderRadius: `${radius / 2}px` }}
             />
           </button>
@@ -567,6 +838,14 @@ function swatchStyle(
     : { backgroundColor: value, borderColor: value }
 }
 
+/**
+ * The eight swatches plus the none button, five to a line.
+ *
+ * A grid rather than the single strip this used to be: inside a popover there
+ * is no bar width to stay within, and two short lines are quicker to scan
+ * than one nine-wide row. The buttons are bigger here for the same reason —
+ * nothing is competing for the space any more.
+ */
 function SwatchRow({
   rowLabel,
   activeSwatchValue,
@@ -575,10 +854,11 @@ function SwatchRow({
   onPick,
 }: SwatchRowProps) {
   return (
-    <div className="flex items-center gap-1" role="group" aria-label={rowLabel}>
-      <span className="w-10 select-none pl-1 text-[10px] font-medium uppercase tracking-wide text-muted-foreground">
-        {rowLabel}
-      </span>
+    <div
+      className="grid grid-cols-5 gap-1.5"
+      role="group"
+      aria-label={rowLabel}
+    >
       {CANVAS_SWATCHES.map((swatch) => {
         const value = readSwatch(swatch)
         const active = value === activeSwatchValue
@@ -590,8 +870,10 @@ function SwatchRow({
             // colour, so any variant background would sit on top of the one
             // thing it needs to show. The ring carries the selected state
             // instead.
-            className={`h-5 w-5 rounded-full border-2 transition-shadow ${
-              active ? 'ring-2 ring-ring ring-offset-1 ring-offset-background' : ''
+            className={`h-6 w-6 rounded-full border-2 transition-shadow ${
+              active
+                ? 'ring-2 ring-ring ring-offset-1 ring-offset-background'
+                : ''
             }`}
             style={swatchStyle(rowLabel, swatch, value)}
             aria-label={`${rowLabel} ${swatch.label}`}
@@ -605,13 +887,13 @@ function SwatchRow({
         type="button"
         size="icon"
         variant={noneActive ? 'default' : 'ghost'}
-        className="h-5 w-5"
+        className="h-6 w-6 border-2 border-transparent"
         aria-label={`${rowLabel} none`}
         aria-pressed={noneActive}
         title={`No ${rowLabel.toLowerCase()}`}
         onClick={() => onPick(null)}
       >
-        <Ban className="h-3 w-3" />
+        <Ban className="size-3.5" />
       </Button>
     </div>
   )

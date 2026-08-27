@@ -32,7 +32,7 @@
 import { execFileSync } from 'node:child_process'
 import { expect, test } from '@playwright/test'
 import { BASE_URL, E2E_VIEWER_USER, IDS } from './fixtures'
-import type { Browser, Page } from '@playwright/test'
+import type { Browser, Locator, Page } from '@playwright/test'
 
 const BOARD_URL = `/canvas/${IDS.canvasBoard}`
 
@@ -60,7 +60,11 @@ test.beforeEach(() => {
  * stores.
  */
 const RED = { label: 'Red', fill: 'rgba(239, 68, 68, 0.10)', stroke: '#ef4444' }
-const TEAL = { label: 'Teal', fill: 'rgba(20, 184, 166, 0.10)', stroke: '#14b8a6' }
+const TEAL = {
+  label: 'Teal',
+  fill: 'rgba(20, 184, 166, 0.10)',
+  stroke: '#14b8a6',
+}
 /** `DEFAULT_ELEMENT_STYLE` — what an unstyled shape carries, i.e. the blue swatch. */
 const DEFAULT_FILL = 'rgba(59, 130, 246, 0.10)'
 const DEFAULT_STROKE = '#3b82f6'
@@ -202,22 +206,60 @@ async function loginAsViewer(browser: Browser): Promise<Page> {
 const styleBar = (page: Page) =>
   page.getByRole('toolbar', { name: 'Selection' })
 
-async function pick(page: Page, row: 'Fill' | 'Stroke', name: string) {
-  await styleBar(page).getByRole('button', { name: `${row} ${name}` }).click()
-  await settle(page)
+/** The four settings, each behind its own popover trigger on the bar. */
+type SettingLabel = 'Fill' | 'Stroke' | 'Width' | 'Corner'
+
+/**
+ * Open one setting and return its options.
+ *
+ * The popover content is PORTALLED to the end of <body>, so the options are
+ * NOT inside `styleBar` — scoping an option query to the toolbar finds
+ * nothing at all. The `role="group"` inside the popover carries the setting's
+ * name and is the handle every option query below goes through.
+ *
+ * `exact` on the trigger matters: "Fill" must not also match the "Fill Red"
+ * option that appears once the popover is open.
+ */
+async function openSetting(page: Page, label: SettingLabel): Promise<Locator> {
+  await styleBar(page).getByRole('button', { name: label, exact: true }).click()
+  const options = page.getByRole('group', { name: label, exact: true })
+  await expect(options).toBeVisible()
+  return options
 }
 
-/** The weight row uses the ER board's own `Stroke width N` label, not `Row Name`. */
+/**
+ * Dismiss whichever setting is open.
+ *
+ * Escape rather than a click elsewhere: a click would land on the canvas and
+ * change the selection out from under the test. The popover is portalled
+ * outside the board container, so this keydown never reaches the board's tool
+ * shortcuts — only Radix sees it.
+ */
+async function closeSetting(page: Page) {
+  await page.keyboard.press('Escape')
+}
+
+async function pick(page: Page, row: 'Fill' | 'Stroke', name: string) {
+  const options = await openSetting(page, row)
+  await options.getByRole('button', { name: `${row} ${name}` }).click()
+  await settle(page)
+  // Left open, the popover would sit over the board and swallow the next
+  // click meant for a shape.
+  await closeSetting(page)
+}
+
+/** Arrange is a plain button on the bar, not a setting — no popover to open. */
 async function arrange(page: Page, label: 'Bring to front' | 'Send to back') {
   await styleBar(page).getByRole('button', { name: label }).click()
   await settle(page)
 }
 
+/** The weight options use the ER board's own `Stroke width N` label. */
 async function pickWidth(page: Page, width: number) {
-  await styleBar(page)
-    .getByRole('button', { name: `Stroke width ${width}` })
-    .click()
+  const options = await openSetting(page, 'Width')
+  await options.getByRole('button', { name: `Stroke width ${width}` }).click()
   await settle(page)
+  await closeSetting(page)
 }
 
 /**
@@ -300,9 +342,14 @@ async function drawEllipse(page: Page, at = SHAPE_RECT) {
   })
   await dragMouse(page, from, to)
   await expect
-    .poll(async () => (await engine(page)).elements.filter((e) => e.kind === 'ellipse').length, {
-      timeout: 10_000,
-    })
+    .poll(
+      async () =>
+        (await engine(page)).elements.filter((e) => e.kind === 'ellipse')
+          .length,
+      {
+        timeout: 10_000,
+      },
+    )
     .toBeGreaterThan(0)
   await settle(page)
 }
@@ -342,14 +389,58 @@ test.describe('the style toolbar', () => {
     await drawEllipse(page)
     // The draw leaves the new shape selected, so the bar should already be up.
     await expect(styleBar(page)).toBeVisible()
-    // A never-styled shape is the blue swatch in BOTH rows — the palette and
-    // the engine default agreeing, seen from the UI.
+    // A never-styled shape is the blue swatch in BOTH settings — the palette
+    // and the engine default agreeing, seen from the UI. One popover at a
+    // time, which is what a user gets too.
+    const fill = await openSetting(page, 'Fill')
     await expect(
-      styleBar(page).getByRole('button', { name: 'Fill Blue' }),
+      fill.getByRole('button', { name: 'Fill Blue' }),
     ).toHaveAttribute('aria-pressed', 'true')
+    await closeSetting(page)
+
+    const stroke = await openSetting(page, 'Stroke')
     await expect(
-      styleBar(page).getByRole('button', { name: 'Stroke Blue' }),
+      stroke.getByRole('button', { name: 'Stroke Blue' }),
     ).toHaveAttribute('aria-pressed', 'true')
+    await closeSetting(page)
+  })
+
+  test('keeps each setting behind its trigger until it is opened', async ({
+    page,
+  }) => {
+    await openBoard(page)
+    await drawEllipse(page)
+    await expect(styleBar(page)).toBeVisible()
+    // The bar is one row of triggers. No swatch is on screen yet.
+    await expect(page.getByRole('button', { name: 'Fill Red' })).toBeHidden()
+
+    const fill = await openSetting(page, 'Fill')
+    await expect(fill.getByRole('button', { name: 'Fill Red' })).toBeVisible()
+
+    await closeSetting(page)
+    await expect(page.getByRole('button', { name: 'Fill Red' })).toBeHidden()
+  })
+
+  test('Escape closes the open setting and LEAVES the selection alone', async ({
+    page,
+  }) => {
+    // The popover is portalled, but a React portal bubbles through the React
+    // TREE rather than the DOM one — so its Escape reached the board
+    // container's key handler and cleared the selection, taking the toolbar
+    // down with it. `SettingPopover` stops that; this is the pin.
+    await openBoard(page)
+    await drawEllipse(page)
+    const selected = (await engine(page)).selectedIds
+    expect(selected).toHaveLength(1)
+
+    await openSetting(page, 'Fill')
+    await closeSetting(page)
+
+    await expect(
+      page.getByRole('group', { name: 'Fill', exact: true }),
+    ).toBeHidden()
+    await expect(styleBar(page)).toBeVisible()
+    expect((await engine(page)).selectedIds).toEqual(selected)
   })
 
   test('disappears when the selection is cleared', async ({ page }) => {
@@ -371,9 +462,14 @@ test.describe('the style toolbar', () => {
     // as the admin is an ordinary editable board.
     const viewerPage = await loginAsViewer(browser)
     try {
-      const state = await openBoard(viewerPage, `/canvas/${IDS.canvasViewerBoard}`)
+      const state = await openBoard(
+        viewerPage,
+        `/canvas/${IDS.canvasViewerBoard}`,
+      )
       expect(state.readOnly).toBe(true)
-      const first = state.elements.find((element) => element.kind !== 'connector')
+      const first = state.elements.find(
+        (element) => element.kind !== 'connector',
+      )
       expect(first).toBeDefined()
       const centre = await worldToPage(viewerPage, {
         x: first!.x + first!.width / 2,
@@ -407,10 +503,13 @@ test.describe('changing fill and stroke', () => {
     // The pixels, not just the state. A red fill at 10% over the board means
     // the red channel dominates; the default blue would invert that.
     await expect
-      .poll(async () => {
-        const px = await pixelAtWorld(page, SHAPE_CENTRE)
-        return px ? px[0] > px[2] : null
-      }, { timeout: 5_000 })
+      .poll(
+        async () => {
+          const px = await pixelAtWorld(page, SHAPE_CENTRE)
+          return px ? px[0] > px[2] : null
+        },
+        { timeout: 5_000 },
+      )
       .toBe(true)
 
     await page.reload()
@@ -418,7 +517,9 @@ test.describe('changing fill and stroke', () => {
     expect(ellipsesOf(await engine(page))[0].style.fill).toBe(RED.fill)
   })
 
-  test('applies a stroke colour without touching the fill', async ({ page }) => {
+  test('applies a stroke colour without touching the fill', async ({
+    page,
+  }) => {
     await openBoard(page)
     await drawEllipse(page)
     await pick(page, 'Stroke', TEAL.label)
@@ -465,9 +566,11 @@ test.describe('changing fill and stroke', () => {
     // shape its own outline back rather than a default nobody chose.
     expect(cleared.style.stroke).toBe(TEAL.stroke)
 
+    const stroke = await openSetting(page, 'Stroke')
     await expect(
-      styleBar(page).getByRole('button', { name: 'Stroke none' }),
+      stroke.getByRole('button', { name: 'Stroke none' }),
     ).toHaveAttribute('aria-pressed', 'true')
+    await closeSetting(page)
   })
 
   test('restores a width when colouring a stroke that was cleared', async ({
@@ -518,7 +621,9 @@ test.describe('changing stroke width', () => {
     await pickWidth(page, 1)
     await focusBoard(page)
     await expect
-      .poll(async () => (await engine(page)).selectedIds.length, { timeout: 5_000 })
+      .poll(async () => (await engine(page)).selectedIds.length, {
+        timeout: 5_000,
+      })
       .toBe(0)
     const thin = await opaquePixelsIn(page, SHAPE_PROBE_BOX)
     expect(thin).toBeGreaterThan(0)
@@ -526,12 +631,16 @@ test.describe('changing stroke width', () => {
     const centre = await worldToPage(page, SHAPE_CENTRE)
     await page.mouse.click(centre.x, centre.y)
     await expect
-      .poll(async () => (await engine(page)).selectedIds.length, { timeout: 5_000 })
+      .poll(async () => (await engine(page)).selectedIds.length, {
+        timeout: 5_000,
+      })
       .toBe(1)
     await pickWidth(page, 4)
     await focusBoard(page)
     await expect
-      .poll(async () => (await engine(page)).selectedIds.length, { timeout: 5_000 })
+      .poll(async () => (await engine(page)).selectedIds.length, {
+        timeout: 5_000,
+      })
       .toBe(0)
     // POLLED, not sampled once: `selectedIds` changes before the canvas
     // repaints, so a single sample taken here can still read the frame that
@@ -542,7 +651,9 @@ test.describe('changing stroke width', () => {
     // double" leaves generous room for antialiasing at both ends while still
     // being impossible to satisfy if the width never reached the renderer.
     await expect
-      .poll(async () => opaquePixelsIn(page, SHAPE_PROBE_BOX), { timeout: 5_000 })
+      .poll(async () => opaquePixelsIn(page, SHAPE_PROBE_BOX), {
+        timeout: 5_000,
+      })
       .toBeGreaterThan(thin * 2)
   })
 
@@ -559,18 +670,30 @@ test.describe('changing stroke width', () => {
     const restored = ellipsesOf(await engine(page))[0]
     expect(restored.style.strokeWidth).toBe(4)
     expect(restored.style.stroke).toBe(TEAL.stroke)
-    // The stroke row's none button releases as soon as there is a stroke again.
+    // The stroke setting's none button releases as soon as there is a stroke
+    // again.
+    const stroke = await openSetting(page, 'Stroke')
     await expect(
-      styleBar(page).getByRole('button', { name: 'Stroke none' }),
+      stroke.getByRole('button', { name: 'Stroke none' }),
     ).toHaveAttribute('aria-pressed', 'false')
+    await closeSetting(page)
   })
 
   test('marks the default weight active on a fresh shape', async ({ page }) => {
     await openBoard(page)
     await drawEllipse(page)
+    // The closed trigger says it too, without opening anything.
     await expect(
-      styleBar(page).getByRole('button', { name: `Stroke width ${DEFAULT_STROKE_WIDTH}` }),
+      styleBar(page).getByRole('button', { name: 'Width', exact: true }),
+    ).toHaveAttribute('title', `Width: ${DEFAULT_STROKE_WIDTH}px`)
+
+    const width = await openSetting(page, 'Width')
+    await expect(
+      width.getByRole('button', {
+        name: `Stroke width ${DEFAULT_STROKE_WIDTH}`,
+      }),
     ).toHaveAttribute('aria-pressed', 'true')
+    await closeSetting(page)
   })
 })
 
@@ -601,13 +724,16 @@ test.describe('restyling several shapes at once', () => {
     })
     await dragMouse(page, from, to)
     await expect
-      .poll(async () => (await engine(page)).selectedIds.length, { timeout: 5_000 })
+      .poll(async () => (await engine(page)).selectedIds.length, {
+        timeout: 5_000,
+      })
       .toBe(2)
 
     await pick(page, 'Fill', RED.label)
-    expect(
-      ellipsesOf(await engine(page)).map((e) => e.style.fill),
-    ).toEqual([RED.fill, RED.fill])
+    expect(ellipsesOf(await engine(page)).map((e) => e.style.fill)).toEqual([
+      RED.fill,
+      RED.fill,
+    ])
 
     // ONE undo entry for one gesture, and a toast that says how many shapes
     // are coming back — not "an element".
@@ -617,9 +743,12 @@ test.describe('restyling several shapes at once', () => {
       timeout: 5_000,
     })
     await expect
-      .poll(async () => ellipsesOf(await engine(page)).map((e) => e.style.fill), {
-        timeout: 10_000,
-      })
+      .poll(
+        async () => ellipsesOf(await engine(page)).map((e) => e.style.fill),
+        {
+          timeout: 10_000,
+        },
+      )
       .toEqual([DEFAULT_FILL, DEFAULT_FILL])
   })
 
@@ -667,7 +796,9 @@ test.describe('z-order', () => {
     const first = ellipsesOf(await engine(page))[0].id
 
     await drawEllipse(page, FRONT_RECT)
-    const second = ellipsesOf(await engine(page)).find((e) => e.id !== first)!.id
+    const second = ellipsesOf(await engine(page)).find(
+      (e) => e.id !== first,
+    )!.id
     await pick(page, 'Fill', RED.label)
     return { first, second }
   }
@@ -695,9 +826,9 @@ test.describe('z-order', () => {
     const { first, second } = await drawTwoOverlapping(page)
 
     const before = await engine(page)
-    expect(before.elements.find((e) => e.id === second)!.zIndex).toBeGreaterThan(
-      before.elements.find((e) => e.id === first)!.zIndex,
-    )
+    expect(
+      before.elements.find((e) => e.id === second)!.zIndex,
+    ).toBeGreaterThan(before.elements.find((e) => e.id === first)!.zIndex)
     await focusBoard(page)
     await expect.poll(() => overlapIsRed(page), { timeout: 5_000 }).toBe(true)
 
@@ -752,8 +883,9 @@ test.describe('z-order', () => {
   }) => {
     await openBoard(page)
     const { second } = await drawTwoOverlapping(page)
-    const originalZ = (await engine(page)).elements.find((e) => e.id === second)!
-      .zIndex
+    const originalZ = (await engine(page)).elements.find(
+      (e) => e.id === second,
+    )!.zIndex
 
     await selectFrontShape(page)
     await arrange(page, 'Send to back')
@@ -816,24 +948,25 @@ test.describe('z-order', () => {
     await expect(
       styleBar(page).getByRole('button', { name: 'Bring to front' }),
     ).toBeVisible()
+    // The paint TRIGGERS are withheld, not merely their popovers unopened.
     await expect(
-      styleBar(page).getByRole('button', { name: 'Fill Red' }),
+      styleBar(page).getByRole('button', { name: 'Fill', exact: true }),
     ).toBeHidden()
   })
 })
 
 /**
- * Pick a corner radius from the toolbar's Corner row.
+ * Pick a corner radius from the toolbar's Corner setting.
  *
- * The row only exists when the selection holds a rectangle — every other kind
- * traces its own path and has no corners — so a call that finds no button is
- * a real failure and not a timing one.
+ * The setting only exists when the selection holds a rectangle — every other
+ * kind traces its own path and has no corners — so a call that finds no
+ * trigger is a real failure and not a timing one.
  */
 async function pickRadius(page: Page, radius: number) {
-  await styleBar(page)
-    .getByRole('button', { name: `Corner radius ${radius}` })
-    .click()
+  const options = await openSetting(page, 'Corner')
+  await options.getByRole('button', { name: `Corner radius ${radius}` }).click()
   await settle(page)
+  await closeSetting(page)
 }
 
 /** The seeded rectangle, which is the only shape this board rounds. */
@@ -875,7 +1008,9 @@ test.describe('corner radius', () => {
     await pickRadius(page, 0)
     await focusBoard(page)
     await expect
-      .poll(async () => (await engine(page)).selectedIds.length, { timeout: 5_000 })
+      .poll(async () => (await engine(page)).selectedIds.length, {
+        timeout: 5_000,
+      })
       .toBe(0)
     await settle(page)
 
@@ -886,15 +1021,18 @@ test.describe('corner radius', () => {
     await selectSeededRect(page)
     await pickRadius(page, 20)
     await expect
-      .poll(async () =>
-        (await engine(page)).elements.find((e) => e.id === IDS.canvasRect)
-          ?.style.cornerRadius,
+      .poll(
+        async () =>
+          (await engine(page)).elements.find((e) => e.id === IDS.canvasRect)
+            ?.style.cornerRadius,
       )
       .toBe(20)
 
     await focusBoard(page)
     await expect
-      .poll(async () => (await engine(page)).selectedIds.length, { timeout: 5_000 })
+      .poll(async () => (await engine(page)).selectedIds.length, {
+        timeout: 5_000,
+      })
       .toBe(0)
     await settle(page)
 
@@ -921,7 +1059,9 @@ test.describe('corner radius', () => {
 
     await focusBoard(page)
     await expect
-      .poll(async () => (await engine(page)).selectedIds.length, { timeout: 5_000 })
+      .poll(async () => (await engine(page)).selectedIds.length, {
+        timeout: 5_000,
+      })
       .toBe(0)
 
     const corner = await worldToPage(page, {
@@ -930,7 +1070,9 @@ test.describe('corner radius', () => {
     })
     await page.mouse.click(corner.x, corner.y)
     await expect
-      .poll(async () => (await engine(page)).selectedIds.length, { timeout: 5_000 })
+      .poll(async () => (await engine(page)).selectedIds.length, {
+        timeout: 5_000,
+      })
       .toBe(0)
 
     // ...while the middle of the same shape still selects it, so the above is
@@ -947,9 +1089,10 @@ test.describe('corner radius', () => {
     await page.reload()
     await waitForBoard(page)
     await expect
-      .poll(async () =>
-        (await engine(page)).elements.find((e) => e.id === IDS.canvasRect)
-          ?.style.cornerRadius,
+      .poll(
+        async () =>
+          (await engine(page)).elements.find((e) => e.id === IDS.canvasRect)
+            ?.style.cornerRadius,
       )
       .toBe(8)
   })
@@ -960,16 +1103,27 @@ test.describe('corner radius', () => {
     await openBoard(page)
     await selectSeededRect(page)
     await expect(
-      styleBar(page).getByRole('button', { name: 'Corner radius 20' }),
+      styleBar(page).getByRole('button', { name: 'Corner', exact: true }),
     ).toBeVisible()
+    const corner = await openSetting(page, 'Corner')
+    await expect(
+      corner.getByRole('button', { name: 'Corner radius 20' }),
+    ).toBeVisible()
+    await closeSetting(page)
 
     await drawEllipse(page)
     await expect
-      .poll(async () => (await engine(page)).selectedIds.length, { timeout: 5_000 })
+      .poll(async () => (await engine(page)).selectedIds.length, {
+        timeout: 5_000,
+      })
       .toBe(1)
-    await expect(styleBar(page).getByRole('group', { name: 'Corner' })).toBeHidden()
-    // The rows that DO apply to an ellipse are still there, so this is one
-    // row withheld rather than the toolbar failing to render.
-    await expect(styleBar(page).getByRole('group', { name: 'Width' })).toBeVisible()
+    await expect(
+      styleBar(page).getByRole('button', { name: 'Corner', exact: true }),
+    ).toBeHidden()
+    // The settings that DO apply to an ellipse are still there, so this is
+    // one trigger withheld rather than the toolbar failing to render.
+    await expect(
+      styleBar(page).getByRole('button', { name: 'Width', exact: true }),
+    ).toBeVisible()
   })
 })
