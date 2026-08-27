@@ -20,7 +20,7 @@ import {
   connectorCurve,
   connectorPath,
 } from './connector-geometry'
-import type { ConnectorCurve, EndpointGeometry  } from './connector-geometry'
+import type { ConnectorCurve, EndpointGeometry } from './connector-geometry'
 import type { CanvasElement, ConnectorEndpoint, Scene } from './scene'
 import type { Point } from './camera'
 
@@ -151,6 +151,28 @@ export function roundedRectContainsPoint(
   return dx * dx + dy * dy <= radius * radius
 }
 
+/** `rect` grown by `pad` on every side. A zero pad returns it unchanged. */
+function inflateRect(rect: WorldRect, pad: number): WorldRect {
+  if (pad === 0) return rect
+  return {
+    x: rect.x - pad,
+    y: rect.y - pad,
+    width: rect.width + pad * 2,
+    height: rect.height + pad * 2,
+  }
+}
+
+/**
+ * A corner radius that still fits inside `rect` — half of the shorter side.
+ *
+ * Only ever needed because `elementContainsPoint` adds its pad to the stored
+ * radius: a 12px radius on a 20px-tall box, grown by 10, would put the two
+ * corner centres past each other and report points outside the box as inside.
+ */
+function cornerRadiusWithin(rect: WorldRect, radius: number): number {
+  return Math.max(0, Math.min(radius, rect.width / 2, rect.height / 2))
+}
+
 /**
  * Per-kind containment — the dispatch point the scan below never has to know
  * about.
@@ -163,26 +185,32 @@ export function roundedRectContainsPoint(
  *
  * TEXT stays rectangular deliberately: its hit region is the block it lays
  * out in, which is a box regardless of the glyph shapes inside it.
+ *
+ * `pad` grows the region outward by that many WORLD units, for callers that
+ * need forgiveness rather than precision — see `hitTestAttachTarget`. It
+ * defaults to zero, so selection keeps the exact outline it has always had.
  */
 export function elementContainsPoint(
   element: CanvasElement,
   point: Point,
+  pad = 0,
 ): boolean {
+  const rect = inflateRect(bounds(element), pad)
   switch (element.kind) {
     case 'rectangle':
       return roundedRectContainsPoint(
-        bounds(element),
-        effectiveCornerRadius(element),
+        rect,
+        cornerRadiusWithin(rect, effectiveCornerRadius(element) + pad),
         point,
       )
     case 'text':
-      return rectContainsPoint(bounds(element), point)
+      return rectContainsPoint(rect, point)
     case 'ellipse':
-      return ellipseContainsPoint(bounds(element), point)
+      return ellipseContainsPoint(rect, point)
     case 'diamond':
-      return diamondContainsPoint(bounds(element), point)
+      return diamondContainsPoint(rect, point)
     case 'triangle':
-      return triangleContainsPoint(bounds(element), point)
+      return triangleContainsPoint(rect, point)
     case 'connector':
       // A connector's stored bounds are a 1x1 placeholder that means nothing
       // (see createCanvasElementSchema) and its real shape needs its two
@@ -372,6 +400,61 @@ export function hitTest(
  * the same forgiveness a 16px-tall click target gives.
  */
 export const DEFAULT_CONNECTOR_TOLERANCE = 8
+
+/**
+ * How far OUTSIDE a shape's drawn outline a connector drop still lands ON it,
+ * in SCREEN pixels.
+ *
+ * Exact containment is the right rule for SELECTION — clicking the empty
+ * corner beside an ellipse has to fall through to whatever is behind it, or
+ * overlapping shapes become impossible to pick apart. It is the wrong rule for
+ * AIMING a connector: there the user is steering a line towards one shape, not
+ * picking one out of a stack, and a release a few pixels short of a diamond's
+ * slanted edge plainly means "this one". The gap between a shape's bounding
+ * box and its drawn outline is where that goes wrong most — for a diamond it
+ * is half the box.
+ *
+ * The miss is expensive as well as invisible: releasing off-target does not
+ * merely fail to attach, it CREATES a new element under the pointer, so a
+ * near-miss costs an undo rather than a second try.
+ *
+ * Screen pixels, not world units — callers divide by `camera.zoom`, so the
+ * forgiveness stays the same distance under the cursor at every zoom.
+ */
+export const ATTACH_FORGIVENESS = 10
+
+/**
+ * The element a connector end dropped at `point` should attach to, or null.
+ *
+ * Two passes, exact before forgiving, so the margin can never steal a drop
+ * from a shape the pointer is genuinely inside: an exact hit anywhere in the
+ * scene beats every near-miss, and only when nothing is hit at all does the
+ * `forgiveness` margin get consulted. Both passes walk in reverse z-order for
+ * the reason `hitTest` documents.
+ *
+ * Connectors are skipped outright — a connector cannot be an endpoint.
+ *
+ * `forgiveness` is in WORLD units; callers pass `ATTACH_FORGIVENESS /
+ * camera.zoom`. Zero reduces this to exact containment.
+ */
+export function hitTestAttachTarget(
+  scene: Scene,
+  point: Point,
+  forgiveness = 0,
+): CanvasElement | null {
+  for (let i = scene.elements.length - 1; i >= 0; i -= 1) {
+    const element = scene.elements[i]
+    if (element.connector) continue
+    if (elementContainsPoint(element, point)) return element
+  }
+  if (forgiveness <= 0) return null
+  for (let i = scene.elements.length - 1; i >= 0; i -= 1) {
+    const element = scene.elements[i]
+    if (element.connector) continue
+    if (elementContainsPoint(element, point, forgiveness)) return element
+  }
+  return null
+}
 
 /**
  * Every element intersecting a world rect — a marquee selection.

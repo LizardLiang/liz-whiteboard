@@ -46,9 +46,11 @@ import {
   zoomAt,
 } from '@/lib/canvas-engine/camera'
 import {
+  ATTACH_FORGIVENESS,
   connectorPathOf,
   endpointGeometry,
   hitTest,
+  hitTestAttachTarget,
   hitTestRect,
   normaliseRect,
   rectFromPoints,
@@ -459,6 +461,12 @@ type Gesture =
       startScreen: Point
       currentWorld: Point
       /**
+       * What releasing right now would join to, or null when it would create
+       * a new element instead. Recomputed per `pointermove` and read by the
+       * renderer — see `quickCreateDropAt`.
+       */
+      candidate: { elementId: string; attach: ConnectorAttach } | null
+      /**
        * True once the pointer has travelled past `CLICK_SLOP`. Tracked the
        * same way the move gesture tracks it, and for the same reason: the
        * release handler also runs from `lostpointercapture`, whose event
@@ -609,21 +617,78 @@ function attachCandidateAt(
   },
   world: Point,
   scene: Scene,
+  pad: number,
 ): { elementId: string; attach: ConnectorAttach } | null {
   const link = scene.byId.get(gesture.connectorId)?.connector
   if (!link) return null
   const other = gesture.end === 'source' ? link.target : link.source
   const otherElementId = endpointElementId(other)
 
-  const dropped = hitTest(scene, world)
-  // A connector is never an attach target, and neither is the element the
-  // OTHER end already holds — that would be a self-connector, which the schema
-  // rejects outright.
-  if (!dropped || dropped.connector || dropped.id === otherElementId)
-    return null
+  const dropped = hitTestAttachTarget(scene, world, pad)
+  // The element the OTHER end already holds is not a target — that would be a
+  // self-connector, which the schema rejects outright. Connectors are already
+  // excluded by `hitTestAttachTarget`.
+  if (!dropped || dropped.id === otherElementId) return null
   return {
     elementId: dropped.id,
     attach: nearestAttach(bounds(dropped), world),
+  }
+}
+
+/**
+ * `ATTACH_FORGIVENESS` screen pixels, expressed in world units at the current
+ * zoom — so the slack under the cursor is the same physical distance whether
+ * the board is at 0.1x or 2x.
+ */
+function attachForgiveness(camera: Camera): number {
+  return ATTACH_FORGIVENESS / camera.zoom
+}
+
+/** The three things releasing a creation-handle drag can do. */
+type QuickCreateDrop =
+  | { outcome: 'attach'; element: CanvasElement; attach: ConnectorAttach }
+  | { outcome: 'create' }
+  | { outcome: 'none' }
+
+/**
+ * What releasing a creation-handle drag at `world` would do.
+ *
+ * ONE function, consulted by both the live highlight and the release, for the
+ * reason `attachCandidateAt` documents — and the stakes are higher here. A
+ * connector end that misses simply detaches, but a quick-create that misses
+ * CREATES an element under the pointer, so an unhighlighted near-miss costs an
+ * undo rather than a second try. The highlight is what makes the difference
+ * visible BEFORE the user commits to it.
+ *
+ * The attach point is `makeConnector`'s rule verbatim: the target's face
+ * nearest the DEPARTURE point, not the face nearest the pointer. A
+ * quick-create leaves the side whose handle was grabbed and lands on the
+ * facing side, and the marked spot has to be the border point the commit
+ * actually uses.
+ */
+function quickCreateDropAt(
+  gesture: { sourceId: string; direction: CreationHandleDirection },
+  world: Point,
+  scene: Scene,
+  pad: number,
+): QuickCreateDrop {
+  const source = scene.byId.get(gesture.sourceId)
+  // Gone mid-gesture (a collaborator's delete) — there is nothing left to
+  // connect to, and a connector with one endpoint can never be drawn.
+  if (!source) return { outcome: 'none' }
+
+  const dropped = hitTestAttachTarget(scene, world, pad)
+  if (!dropped) return { outcome: 'create' }
+  // Dragged out and back onto the source. Self-connectors are rejected by the
+  // schema, and creating a sibling under the pointer would bury it — doing
+  // nothing is what the gesture looks like it did.
+  if (dropped.id === source.id) return { outcome: 'none' }
+
+  const from = anchorPoint(bounds(source), gesture.direction)
+  return {
+    outcome: 'attach',
+    element: dropped,
+    attach: ANCHOR_ATTACH[nearestAnchor(bounds(dropped), from)],
   }
 }
 
@@ -1137,6 +1202,7 @@ export function useCanvasInput({
             startScreen: screen,
             currentWorld: world,
             moved: false,
+            candidate: null,
           })
           return
         }
@@ -1375,7 +1441,12 @@ export function useCanvasInput({
           setGesture({
             ...gesture,
             currentWorld: world,
-            candidate: attachCandidateAt(gesture, world, latest.current.scene),
+            candidate: attachCandidateAt(
+              gesture,
+              world,
+              latest.current.scene,
+              attachForgiveness(latest.current.camera),
+            ),
           })
           break
         }
@@ -1414,10 +1485,20 @@ export function useCanvasInput({
           const travelled =
             Math.abs(screen.x - gesture.startScreen.x) +
             Math.abs(screen.y - gesture.startScreen.y)
+          const drop = quickCreateDropAt(
+            gesture,
+            world,
+            latest.current.scene,
+            attachForgiveness(latest.current.camera),
+          )
           setGesture({
             ...gesture,
             currentWorld: world,
             moved: gesture.moved || travelled > CLICK_SLOP,
+            candidate:
+              drop.outcome === 'attach'
+                ? { elementId: drop.element.id, attach: drop.attach }
+                : null,
           })
           break
         }
@@ -1515,8 +1596,13 @@ export function useCanvasInput({
             finished,
             finished.currentWorld,
             latest.current.scene,
+            attachForgiveness(latest.current.camera),
           )
-          const dropped = hitTest(latest.current.scene, finished.currentWorld)
+          const dropped = hitTestAttachTarget(
+            latest.current.scene,
+            finished.currentWorld,
+            attachForgiveness(latest.current.camera),
+          )
 
           let resolved
           if (candidate) {
@@ -1593,24 +1679,24 @@ export function useCanvasInput({
             break
           }
 
-          const dropped = hitTest(latest.current.scene, finished.currentWorld)
-          if (dropped && dropped.id === source.id) {
-            // Dragged out and back onto the source. Self-connectors are
-            // rejected by the schema, and creating a sibling under the
-            // pointer would bury it — doing nothing is what the gesture
-            // looks like it did.
-            break
-          }
-          if (dropped && !dropped.connector) {
+          // The SAME rule the live highlight used — see `quickCreateDropAt`.
+          // A shape the user was shown as a target is the shape they get.
+          const drop = quickCreateDropAt(
+            finished,
+            finished.currentWorld,
+            latest.current.scene,
+            attachForgiveness(latest.current.camera),
+          )
+          if (drop.outcome === 'none') break
+          if (drop.outcome === 'attach') {
             // Dropped on something that already exists: join the two, and
             // create nothing else. This is the case the whole drag variant
             // exists for.
-            commitQuickCreate(source, dropped, false, finished.direction)
+            commitQuickCreate(source, drop.element, false, finished.direction)
             break
           }
-          // Empty board (or a connector, which cannot be an endpoint):
-          // a new sibling CENTRED on the release point, because that is
-          // where the rubber band has been pointing the whole drag.
+          // Empty board: a new sibling CENTRED on the release point, because
+          // that is where the rubber band has been pointing the whole drag.
           commitQuickCreate(
             source,
             makeSibling(
@@ -2129,14 +2215,22 @@ export function useCanvasInput({
   }, [gesture])
 
   /**
-   * What a dragged connector end would attach to right now — the renderer
-   * highlights it, and its absence is how "releasing here detaches" is shown.
+   * What the connector being dragged right now would attach to — the renderer
+   * highlights it, and its absence is meaningful too.
+   *
+   * Both drags that produce a connector feed this, and they read the absence
+   * differently: for a connector END, no highlight means releasing here
+   * DETACHES; for a creation-handle drag, it means releasing here CREATES a
+   * new element instead of joining an existing one.
    */
   const connectorAttach = useMemo<{
     elementId: string
     attach: ConnectorAttach
   } | null>(
-    () => (gesture.kind === 'connector-endpoint' ? gesture.candidate : null),
+    () =>
+      gesture.kind === 'connector-endpoint' || gesture.kind === 'quick-create'
+        ? gesture.candidate
+        : null,
     [gesture],
   )
 

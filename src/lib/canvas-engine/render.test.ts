@@ -23,6 +23,9 @@
 
 import { describe, expect, it } from 'vitest'
 import {
+  ATTACH_CANDIDATE_INSET,
+  ATTACH_CANDIDATE_WASH,
+  ATTACH_SPOT_SIZE,
   HANDLE_SIZE,
   HIGHLIGHT_COLOR,
   HIGHLIGHT_INSET,
@@ -290,13 +293,7 @@ describe('drawScene — camera transform', () => {
       makeElement({ id: 'top', zIndex: 5, x: 1 }),
       makeElement({ id: 'bottom', zIndex: 1, x: 2 }),
     ])
-    drawScene(
-      rec.ctx,
-      scene,
-      { x: 0, y: 0, zoom: 1 },
-      viewport(),
-      NO_SELECTION,
-    )
+    drawScene(rec.ctx, scene, { x: 0, y: 0, zoom: 1 }, viewport(), NO_SELECTION)
     const xs = rec.opsOfType('fillRect').map((entry) => entry.args[0])
     expect(xs).toEqual([2, 1])
   })
@@ -352,13 +349,9 @@ describe('drawScene — selection affordances are screen space', () => {
     const a = makeElement({ id: 'a', zIndex: 0 })
     const b = makeElement({ id: 'b', zIndex: 1, x: 400 })
     const rec = createRecorder()
-    drawScene(
-      rec.ctx,
-      sceneFrom([a, b]),
-      { x: 0, y: 0, zoom: 1 },
-      viewport(),
-      { ids: new Set(['a', 'b']) },
-    )
+    drawScene(rec.ctx, sceneFrom([a, b]), { x: 0, y: 0, zoom: 1 }, viewport(), {
+      ids: new Set(['a', 'b']),
+    })
     const grips = rec
       .opsOfType('fillRect')
       .filter((entry) => entry.args[2] === HANDLE_SIZE)
@@ -485,10 +478,16 @@ describe('drawScene — draft and caret', () => {
       style: { ...DEFAULT_ELEMENT_STYLE, fontSize: 20 },
     })
     const rec = createRecorder()
-    drawScene(rec.ctx, sceneFrom([element]), { x: 0, y: 0, zoom: 1 }, viewport(), {
-      ids: new Set(['a']),
-      editing: { elementId: 'a', caret: 2, caretVisible: true },
-    })
+    drawScene(
+      rec.ctx,
+      sceneFrom([element]),
+      { x: 0, y: 0, zoom: 1 },
+      viewport(),
+      {
+        ids: new Set(['a']),
+        editing: { elementId: 'a', caret: 2, caretVisible: true },
+      },
+    )
     // Two characters at 20px * 0.5 = 10 world units each, from the padded
     // text origin.
     const frame = textFrame(element)
@@ -652,6 +651,123 @@ describe('textFrame', () => {
   })
 })
 
+describe('drawScene — the connector attach candidate', () => {
+  // The answer to "will this connect, and where?" DURING the drag. A ring
+  // alone was easy to miss mid-gesture, when the eye is following the line
+  // rather than the shape, so the whole target is tinted as well.
+  const ACCENT = '#3b82f6' // CHROME.light.accent — the default theme.
+  const CAMERA: Camera = { x: 0, y: 0, zoom: 2 }
+
+  /**
+   * A candidate whose OWN stroke is not the accent — `DEFAULT_ELEMENT_STYLE`
+   * strokes shapes in the same blue, and the tests below identify the overlay
+   * by its colour.
+   */
+  function candidate(overrides: Partial<CanvasElement> = {}): CanvasElement {
+    return makeElement({
+      id: 'a',
+      ...overrides,
+      style: { ...DEFAULT_ELEMENT_STYLE, cornerRadius: 0, stroke: '#ff0000' },
+    })
+  }
+
+  function drawCandidate(element: CanvasElement) {
+    const rec = createRecorder()
+    drawScene(rec.ctx, sceneFrom([element]), CAMERA, viewport(), {
+      ids: new Set<string>(),
+      connectorAttach: { elementId: element.id, attach: { x: 1, y: 0.5 } },
+    })
+    return rec
+  }
+
+  /** The halo rect: the candidate's screen box, grown by the inset. */
+  function halo(element: CanvasElement) {
+    const r = worldRectToScreen(CAMERA, element)
+    return [
+      r.x - ATTACH_CANDIDATE_INSET,
+      r.y - ATTACH_CANDIDATE_INSET,
+      r.width + ATTACH_CANDIDATE_INSET * 2,
+      r.height + ATTACH_CANDIDATE_INSET * 2,
+    ]
+  }
+
+  it('tints AND rings a rectangle candidate, in screen space', () => {
+    const element = candidate()
+    const rec = drawCandidate(element)
+
+    const tint = rec
+      .opsOfType('fillRect')
+      .filter((entry) => entry.args[4] === ACCENT)
+    const ring = rec
+      .opsOfType('strokeRect')
+      .filter((entry) => entry.args[4] === ACCENT)
+    expect(tint).toHaveLength(1)
+    expect(ring).toHaveLength(1)
+    expect(tint[0].args.slice(0, 4)).toEqual(halo(element))
+    expect(ring[0].args.slice(0, 4)).toEqual(halo(element))
+
+    // Screen space, like every other affordance — an outline drawn in world
+    // units would be hairline at 0.1x zoom and heavy at 2x.
+    expect(rec.ops.indexOf(ring[0])).toBeGreaterThan(rec.indexOf('restore'))
+  })
+
+  it('rings an ELLIPSE on its drawn outline, not on its box', () => {
+    // A box around an ellipse would promise the four corners a release there
+    // does not accept — the same export-what-you-draw lie the hit-test avoids.
+    const element = candidate({ kind: 'ellipse' })
+    const rec = drawCandidate(element)
+
+    expect(
+      rec.opsOfType('strokeRect').filter((entry) => entry.args[4] === ACCENT),
+    ).toHaveLength(0)
+    // Two ellipses: the shape itself, then the halo traced around it.
+    const ellipses = rec.opsOfType('ellipse')
+    expect(ellipses).toHaveLength(2)
+    const r = worldRectToScreen(CAMERA, element)
+    expect(ellipses[1].args.slice(0, 5)).toEqual([
+      r.x + r.width / 2,
+      r.y + r.height / 2,
+      r.width / 2 + ATTACH_CANDIDATE_INSET,
+      r.height / 2 + ATTACH_CANDIDATE_INSET,
+      0,
+    ])
+  })
+
+  it('marks the exact border point the connector would land on', () => {
+    const element = candidate()
+    const rec = drawCandidate(element)
+    const spot = worldToScreen(CAMERA, {
+      x: element.x + element.width,
+      y: element.y + element.height / 2,
+    })
+    const dots = rec
+      .opsOfType('arc')
+      .filter((entry) => entry.args[5] === ACCENT)
+    expect(dots).toHaveLength(1)
+    expect(dots[0].args.slice(0, 3)).toEqual([
+      spot.x,
+      spot.y,
+      ATTACH_SPOT_SIZE / 2,
+    ])
+  })
+
+  it('keeps the tint translucent so the shape stays readable under it', () => {
+    // The candidate is still a shape with a fill and text of its own. A wash
+    // that hid either would trade one legibility problem for another.
+    expect(ATTACH_CANDIDATE_WASH).toBeGreaterThan(0)
+    expect(ATTACH_CANDIDATE_WASH).toBeLessThan(0.35)
+  })
+
+  it('draws nothing when no connector is being dragged', () => {
+    const element = candidate()
+    const rec = createRecorder()
+    drawScene(rec.ctx, sceneFrom([element]), CAMERA, viewport(), NO_SELECTION)
+    expect(
+      rec.opsOfType('strokeRect').filter((entry) => entry.args[4] === ACCENT),
+    ).toHaveLength(0)
+  })
+})
+
 describe('drawScene — undo/redo highlight (board-undo tactical plan, Wave 4)', () => {
   function highlightOps(rec: Recorder) {
     return rec
@@ -702,16 +818,10 @@ describe('drawScene — undo/redo highlight (board-undo tactical plan, Wave 4)',
 
   it('draws nothing when the highlighted element no longer exists (a refused undo whose target was deleted)', () => {
     const rec = createRecorder()
-    drawScene(
-      rec.ctx,
-      sceneFrom([]),
-      { x: 0, y: 0, zoom: 1 },
-      viewport(),
-      {
-        ids: new Set<string>(),
-        highlight: { elementId: 'gone', intensity: 1 },
-      },
-    )
+    drawScene(rec.ctx, sceneFrom([]), { x: 0, y: 0, zoom: 1 }, viewport(), {
+      ids: new Set<string>(),
+      highlight: { elementId: 'gone', intensity: 1 },
+    })
     expect(highlightOps(rec)).toHaveLength(0)
   })
 
@@ -751,7 +861,13 @@ describe('drawScene: shape kinds', () => {
       style: { ...DEFAULT_ELEMENT_STYLE, cornerRadius: 20 },
     })
     const rec = createRecorder()
-    drawScene(rec.ctx, sceneFrom([element]), { x: 0, y: 0, zoom: 1 }, viewport(), NO_SELECTION)
+    drawScene(
+      rec.ctx,
+      sceneFrom([element]),
+      { x: 0, y: 0, zoom: 1 },
+      viewport(),
+      NO_SELECTION,
+    )
 
     // No rect calls for the shape itself: a rounded rectangle has no
     // `fillRoundRect` equivalent, so it has to become a path.
@@ -776,7 +892,13 @@ describe('drawScene: shape kinds', () => {
       style: { ...DEFAULT_ELEMENT_STYLE, cornerRadius: 500 },
     })
     const rec = createRecorder()
-    drawScene(rec.ctx, sceneFrom([element]), { x: 0, y: 0, zoom: 1 }, viewport(), NO_SELECTION)
+    drawScene(
+      rec.ctx,
+      sceneFrom([element]),
+      { x: 0, y: 0, zoom: 1 },
+      viewport(),
+      NO_SELECTION,
+    )
     const arcs = rec.opsOfType('arcTo')
     expect(arcs).toHaveLength(4)
     for (const arc of arcs) expect(arc.args[4]).toBe(30)
@@ -790,7 +912,13 @@ describe('drawScene: shape kinds', () => {
       style: { ...DEFAULT_ELEMENT_STYLE, cornerRadius: 20 },
     })
     const rec = createRecorder()
-    drawScene(rec.ctx, sceneFrom([element]), { x: 0, y: 0, zoom: 1 }, viewport(), NO_SELECTION)
+    drawScene(
+      rec.ctx,
+      sceneFrom([element]),
+      { x: 0, y: 0, zoom: 1 },
+      viewport(),
+      NO_SELECTION,
+    )
     expect(rec.opsOfType('arcTo')).toHaveLength(0)
     expect(rec.opsOfType('ellipse')).toHaveLength(1)
   })
@@ -875,8 +1003,11 @@ describe('drawScene: shape kinds', () => {
   it('lays a label out in the same frame for every shape kind', () => {
     // The text frame is the element RECT for all four kinds — a shape's label
     // must not shift when its outline changes.
-    const texts = (['rectangle', 'ellipse', 'diamond', 'triangle'] as const).map(
-      (kind) => draw(makeElement({ kind, text: 'hi' })).opsOfType('fillText')[0],
+    const texts = (
+      ['rectangle', 'ellipse', 'diamond', 'triangle'] as const
+    ).map(
+      (kind) =>
+        draw(makeElement({ kind, text: 'hi' })).opsOfType('fillText')[0],
     )
     for (const entry of texts) {
       expect(entry.args.slice(0, 3)).toEqual([

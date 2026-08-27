@@ -21,8 +21,10 @@ import {
   updateElement,
 } from './scene'
 import {
+  ATTACH_FORGIVENESS,
   elementContainsPoint,
   hitTest,
+  hitTestAttachTarget,
   hitTestRect,
   normaliseRect,
   rectFromPoints,
@@ -30,10 +32,7 @@ import {
 } from './hit-test'
 import type { CanvasElement } from './scene'
 
-function el(
-  id: string,
-  patch: Partial<CanvasElement> = {},
-): CanvasElement {
+function el(id: string, patch: Partial<CanvasElement> = {}): CanvasElement {
   return {
     id,
     kind: 'rectangle',
@@ -108,9 +107,18 @@ describe('scene mutations', () => {
   })
 
   it('removes elements', () => {
-    const scene = sceneFrom([el('a'), el('b', { zIndex: 1 }), el('c', { zIndex: 2 })])
-    expect(removeElement(scene, 'b').elements.map((e) => e.id)).toEqual(['a', 'c'])
-    expect(removeElements(scene, ['a', 'c']).elements.map((e) => e.id)).toEqual(['b'])
+    const scene = sceneFrom([
+      el('a'),
+      el('b', { zIndex: 1 }),
+      el('c', { zIndex: 2 }),
+    ])
+    expect(removeElement(scene, 'b').elements.map((e) => e.id)).toEqual([
+      'a',
+      'c',
+    ])
+    expect(removeElements(scene, ['a', 'c']).elements.map((e) => e.id)).toEqual(
+      ['b'],
+    )
   })
 
   it('brings an element to the front of the paint order', () => {
@@ -190,6 +198,82 @@ describe('hitTest', () => {
   })
 })
 
+describe('hitTestAttachTarget', () => {
+  // Aiming a connector is not picking one shape out of a stack: the drop is
+  // steered towards a target, and a release a few pixels short of a slanted
+  // edge means that target. The margin exists so that near-miss attaches
+  // instead of silently creating a new element.
+
+  it('is exactly hitTest when no forgiveness is asked for', () => {
+    const scene = sceneFrom([el('a', { width: 100, height: 100 })])
+    expect(hitTestAttachTarget(scene, { x: 50, y: 50 })?.id).toBe('a')
+    expect(hitTestAttachTarget(scene, { x: 105, y: 50 })).toBeNull()
+  })
+
+  it('accepts a drop just OUTSIDE the outline within the margin', () => {
+    const scene = sceneFrom([el('a', { width: 100, height: 100 })])
+    expect(hitTestAttachTarget(scene, { x: 105, y: 50 }, 10)?.id).toBe('a')
+  })
+
+  it('still refuses a drop beyond the margin', () => {
+    const scene = sceneFrom([el('a', { width: 100, height: 100 })])
+    expect(hitTestAttachTarget(scene, { x: 120, y: 50 }, 10)).toBeNull()
+  })
+
+  it('forgives the corner a DIAMOND does not cover', () => {
+    // The gap between a diamond's box and its drawn outline is half the box,
+    // which is where aiming goes wrong most often.
+    const scene = sceneFrom([
+      el('d', { kind: 'diamond', width: 100, height: 100 }),
+    ])
+    // The top-left edge runs from (50,0) to (0,50) — the line x+y=50. This
+    // point sits 5 short of it, well inside the bounding box and plainly
+    // "on the diamond" to anyone aiming a line at it.
+    expect(hitTestAttachTarget(scene, { x: 20, y: 25 })).toBeNull()
+    expect(hitTestAttachTarget(scene, { x: 20, y: 25 }, 10)?.id).toBe('d')
+  })
+
+  it('lets an EXACT hit anywhere beat every near-miss', () => {
+    // Two passes, exact before forgiving. A single padded pass would let a
+    // neighbour's margin steal a drop from the shape the pointer is inside.
+    const scene = sceneFrom([
+      el('inside', { zIndex: 1, x: 0, y: 0, width: 100, height: 100 }),
+      el('neighbour', { zIndex: 2, x: 105, y: 0, width: 100, height: 100 }),
+    ])
+    expect(hitTestAttachTarget(scene, { x: 99, y: 50 }, 10)?.id).toBe('inside')
+  })
+
+  it('never returns a connector', () => {
+    const scene = sceneFrom([
+      el('a', { width: 100, height: 100 }),
+      el('c', {
+        zIndex: 5,
+        kind: 'connector',
+        connector: {
+          source: { kind: 'element', elementId: 'a', attach: { x: 1, y: 0.5 } },
+          target: { kind: 'point', point: { x: 300, y: 50 } },
+          routing: DEFAULT_CONNECTOR_ROUTING,
+        },
+      }),
+    ])
+    expect(hitTestAttachTarget(scene, { x: 50, y: 50 }, 10)?.id).toBe('a')
+  })
+
+  it('states the margin in SCREEN pixels, for callers to divide by zoom', () => {
+    // The constant is not a world distance: `use-canvas-input` passes
+    // ATTACH_FORGIVENESS / camera.zoom, so the slack under the cursor is the
+    // same however far the board is zoomed out.
+    const scene = sceneFrom([el('a', { width: 100, height: 100 })])
+    const zoomedOut = ATTACH_FORGIVENESS / 0.25
+    expect(hitTestAttachTarget(scene, { x: 130, y: 50 }, zoomedOut)?.id).toBe(
+      'a',
+    )
+    expect(
+      hitTestAttachTarget(scene, { x: 130, y: 50 }, ATTACH_FORGIVENESS),
+    ).toBeNull()
+  })
+})
+
 describe('rounded rectangle containment', () => {
   // A radius that is drawn but not hit-tested would swallow clicks in the
   // four corners the shape no longer covers, and a shape tucked behind
@@ -251,12 +335,20 @@ describe('rounded rectangle containment', () => {
 
 describe('effectiveCornerRadius', () => {
   it('clamps to half the shorter side', () => {
-    const wide = el('a', { width: 200, height: 60, style: { ...DEFAULT_ELEMENT_STYLE, cornerRadius: 500 } })
+    const wide = el('a', {
+      width: 200,
+      height: 60,
+      style: { ...DEFAULT_ELEMENT_STYLE, cornerRadius: 500 },
+    })
     expect(effectiveCornerRadius(wide)).toBe(30)
   })
 
   it('passes a radius that already fits through untouched', () => {
-    const fits = el('a', { width: 200, height: 60, style: { ...DEFAULT_ELEMENT_STYLE, cornerRadius: 8 } })
+    const fits = el('a', {
+      width: 200,
+      height: 60,
+      style: { ...DEFAULT_ELEMENT_STYLE, cornerRadius: 8 },
+    })
     expect(effectiveCornerRadius(fits)).toBe(8)
   })
 
@@ -276,7 +368,9 @@ describe('effectiveCornerRadius', () => {
 
   it('is zero for a radius that is absent, zero or nonsense', () => {
     for (const cornerRadius of [0, -5, Number.NaN, Number.POSITIVE_INFINITY]) {
-      const element = el('a', { style: { ...DEFAULT_ELEMENT_STYLE, cornerRadius } })
+      const element = el('a', {
+        style: { ...DEFAULT_ELEMENT_STYLE, cornerRadius },
+      })
       expect(effectiveCornerRadius(element)).toBe(0)
     }
   })
@@ -301,7 +395,13 @@ describe('non-rectangular shape containment', () => {
   it('scales an ellipse independently on each axis', () => {
     // A wide, flat ellipse. A circle-with-uniform-radius implementation gets
     // this wrong in both directions at once, so both are asserted.
-    const element = el('e', { kind: 'ellipse', x: 0, y: 0, width: 200, height: 20 })
+    const element = el('e', {
+      kind: 'ellipse',
+      x: 0,
+      y: 0,
+      width: 200,
+      height: 20,
+    })
     expect(elementContainsPoint(element, { x: 190, y: 10 })).toBe(true)
     expect(elementContainsPoint(element, { x: 100, y: 19 })).toBe(true)
     expect(elementContainsPoint(element, { x: 190, y: 2 })).toBe(false)
@@ -372,7 +472,9 @@ describe('hitTestRect (marquee)', () => {
     // Clipping a corner is enough — requiring containment makes large
     // elements nearly impossible to marquee-select.
     expect(
-      hitTestRect(scene, { x: 90, y: 90, width: 20, height: 20 }).map((e) => e.id),
+      hitTestRect(scene, { x: 90, y: 90, width: 20, height: 20 }).map(
+        (e) => e.id,
+      ),
     ).toEqual(['a'])
   })
 
@@ -383,12 +485,19 @@ describe('hitTestRect (marquee)', () => {
   })
 
   it('returns results in ascending z-order', () => {
-    const all = hitTestRect(scene, { x: -1000, y: -1000, width: 5000, height: 5000 })
+    const all = hitTestRect(scene, {
+      x: -1000,
+      y: -1000,
+      width: 5000,
+      height: 5000,
+    })
     expect(all.map((e) => e.id)).toEqual(['a', 'b', 'c'])
   })
 
   it('returns nothing for an empty marquee', () => {
-    expect(hitTestRect(scene, { x: 200, y: 200, width: 0, height: 0 })).toEqual([])
+    expect(hitTestRect(scene, { x: 200, y: 200, width: 0, height: 0 })).toEqual(
+      [],
+    )
   })
 })
 
@@ -447,16 +556,24 @@ describe('remapConnectorEndpoints', () => {
     // An element created optimistically carries a client uuid the server
     // replaces. Without this the connector names a row that never existed:
     // it stops being drawable AND stops being found by the delete cascade.
-    const next = remapConnectorEndpoints(sceneFrom([connector(A, B)]), B, SERVER)
+    const next = remapConnectorEndpoints(
+      sceneFrom([connector(A, B)]),
+      B,
+      SERVER,
+    )
     expect(next.byId.get('c1')?.connector).toEqual({
-        source: { kind: 'element', elementId: A },
-        target: { kind: 'element', elementId: SERVER },
-        routing: DEFAULT_CONNECTOR_ROUTING,
-      })
+      source: { kind: 'element', elementId: A },
+      target: { kind: 'element', elementId: SERVER },
+      routing: DEFAULT_CONNECTOR_ROUTING,
+    })
   })
 
   it('repoints a source endpoint', () => {
-    const next = remapConnectorEndpoints(sceneFrom([connector(A, B)]), A, SERVER)
+    const next = remapConnectorEndpoints(
+      sceneFrom([connector(A, B)]),
+      A,
+      SERVER,
+    )
     expect(next.byId.get('c1')?.connector?.source).toEqual({
       kind: 'element',
       elementId: SERVER,
@@ -464,12 +581,16 @@ describe('remapConnectorEndpoints', () => {
   })
 
   it('repoints BOTH ends of a connector that somehow names the id twice', () => {
-    const next = remapConnectorEndpoints(sceneFrom([connector(A, A)]), A, SERVER)
+    const next = remapConnectorEndpoints(
+      sceneFrom([connector(A, A)]),
+      A,
+      SERVER,
+    )
     expect(next.byId.get('c1')?.connector).toEqual({
-        source: { kind: 'element', elementId: SERVER },
-        target: { kind: 'element', elementId: SERVER },
-        routing: DEFAULT_CONNECTOR_ROUTING,
-      })
+      source: { kind: 'element', elementId: SERVER },
+      target: { kind: 'element', elementId: SERVER },
+      routing: DEFAULT_CONNECTOR_ROUTING,
+    })
   })
 
   it('returns the SAME scene when nothing referenced the id', () => {
@@ -492,7 +613,11 @@ describe('remapConnectorEndpoints', () => {
       text: null,
       style: { ...DEFAULT_ELEMENT_STYLE },
     }
-    const next = remapConnectorEndpoints(sceneFrom([rect, connector(A, B)]), A, SERVER)
+    const next = remapConnectorEndpoints(
+      sceneFrom([rect, connector(A, B)]),
+      A,
+      SERVER,
+    )
     // The ELEMENT's own id is renamed by useCanvasElements, not here — this
     // function only ever rewrites references TO it.
     expect(next.byId.get(A)?.id).toBe(A)

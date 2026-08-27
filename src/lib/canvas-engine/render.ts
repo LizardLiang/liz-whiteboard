@@ -255,10 +255,31 @@ export const CONNECTOR_ENDPOINT_SIZE = 10
 export const CONNECTOR_ENDPOINT_HIT = 24
 
 /** Outline weight on the element a dragged end would attach to, in SCREEN px. */
-const ATTACH_CANDIDATE_WIDTH = 2
+export const ATTACH_CANDIDATE_WIDTH = 3
+
+/**
+ * How far outside the candidate's own outline its highlight is drawn, in
+ * SCREEN px — enough that the ring sits clear of the shape's own stroke
+ * instead of being painted over it and read as a thicker border.
+ */
+export const ATTACH_CANDIDATE_INSET = 3
+
+/**
+ * Opacity of the tint filling the candidate.
+ *
+ * The ring alone is what this used to be, and a ring is easy to miss on a
+ * busy board mid-drag — the eye is following the line, not the shape. Tinting
+ * the whole target makes "this one" readable in peripheral vision, which is
+ * where it actually has to be read. Low enough that the shape's own fill and
+ * its text stay legible underneath.
+ */
+export const ATTACH_CANDIDATE_WASH = 0.18
 
 /** Diameter of the dot marking exactly where on the border it would land. */
-const ATTACH_SPOT_SIZE = 9
+export const ATTACH_SPOT_SIZE = 9
+
+/** Rim weight on that dot, so it stays visible against the ring behind it. */
+const ATTACH_SPOT_RIM_WIDTH = 2
 
 /**
  * The two endpoint hit rectangles for a connector's drawn path, in SCREEN
@@ -1016,12 +1037,19 @@ function drawConnectorSelection(
 }
 
 /**
- * Highlight the element a dragged connector end would attach to, and mark the
- * exact point on its border where it would land.
+ * Highlight the element the connector being dragged would attach to, and mark
+ * the exact point on its border where it would land.
  *
  * This is the answer to "will this connect, and where?" DURING the drag rather
- * than after it. Its ABSENCE is meaningful too: no highlight means the pointer
- * is over empty board, and releasing there detaches the end.
+ * than after it. Both drags that produce a connector feed it — a connector END
+ * and a creation-handle drag — and its ABSENCE means something different to
+ * each: releasing a connector end over empty board DETACHES it, while
+ * releasing a creation-handle drag there CREATES a new element.
+ *
+ * Tinted as well as ringed. A ring alone is easy to miss mid-gesture, when the
+ * eye is following the line rather than the shape, and the creation-handle
+ * drag made that expensive — a miss there does not fail quietly, it leaves a
+ * stray element behind that costs an undo.
  *
  * Screen space, like every other affordance — an outline drawn in world units
  * would be hairline at 0.1x zoom and heavy at 2x.
@@ -1032,18 +1060,51 @@ function drawAttachCandidate(
   element: CanvasElement,
   attach: ConnectorAttach,
   accent: string,
+  rim: string,
 ): void {
   const rect = worldRectToScreen(camera, element)
+  const halo = {
+    x: rect.x - ATTACH_CANDIDATE_INSET,
+    y: rect.y - ATTACH_CANDIDATE_INSET,
+    width: rect.width + ATTACH_CANDIDATE_INSET * 2,
+    height: rect.height + ATTACH_CANDIDATE_INSET * 2,
+  }
   ctx.save()
+
+  // A rectangle and a text block ARE their box, and keep the `fillRect` /
+  // `strokeRect` pair the renderer has always used for them. Every other kind
+  // is highlighted on its DRAWN outline, because that outline is what the drop
+  // is tested against: a box around an ellipse would promise the four corners
+  // that a release there does not accept, which is the same
+  // export-what-you-draw lie in a different costume.
+  const boxed = element.kind === 'rectangle' || element.kind === 'text'
+  ctx.fillStyle = accent
   ctx.strokeStyle = accent
   ctx.lineWidth = ATTACH_CANDIDATE_WIDTH
-  ctx.strokeRect(rect.x, rect.y, rect.width, rect.height)
+  if (boxed) {
+    ctx.globalAlpha = ATTACH_CANDIDATE_WASH
+    ctx.fillRect(halo.x, halo.y, halo.width, halo.height)
+    ctx.globalAlpha = 1
+    ctx.strokeRect(halo.x, halo.y, halo.width, halo.height)
+  } else {
+    // Traced in SCREEN space from a screen-sized copy of the element — the
+    // whole overlay is drawn with the camera transform already popped, and a
+    // world-space outline would be hairline at 0.1x zoom.
+    traceShapePath(ctx, { ...element, ...halo })
+    ctx.globalAlpha = ATTACH_CANDIDATE_WASH
+    ctx.fill()
+    ctx.globalAlpha = 1
+    ctx.stroke()
+  }
 
   const spot = worldToScreen(camera, attachPoint(element, attach))
   ctx.beginPath()
   ctx.arc(spot.x, spot.y, ATTACH_SPOT_SIZE / 2, 0, Math.PI * 2)
   ctx.fillStyle = accent
   ctx.fill()
+  ctx.lineWidth = ATTACH_SPOT_RIM_WIDTH
+  ctx.strokeStyle = rim
+  ctx.stroke()
   ctx.restore()
 }
 
@@ -1236,6 +1297,7 @@ function drawSelectionOverlay(
         candidate,
         selection.connectorAttach.attach,
         chrome.accent,
+        chrome.handleFill,
       )
     }
   }

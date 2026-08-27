@@ -96,6 +96,11 @@ interface EngineState {
   creationHandleTargetId: string | null
   creationHandles: Record<Direction, ScreenRect> | null
   connectorEndpoints: Record<'source' | 'target', ScreenRect> | null
+  /** What the in-flight connector drag would attach to, or null. */
+  connectorAttach: {
+    elementId: string
+    attach: { x: number; y: number }
+  } | null
   tool: string
   readOnly: boolean
 }
@@ -279,7 +284,10 @@ async function traverse(
   const steps = 20
   for (let i = 1; i <= steps; i += 1) {
     const t = i / steps
-    await page.mouse.move(from.x + (to.x - from.x) * t, from.y + (to.y - from.y) * t)
+    await page.mouse.move(
+      from.x + (to.x - from.x) * t,
+      from.y + (to.y - from.y) * t,
+    )
     const state = await engine(page)
     expect(
       state.creationHandleTargetId,
@@ -310,7 +318,9 @@ test.describe('a hover-shown handle can actually be reached', () => {
     await page.mouse.down()
     await page.mouse.up()
     await expect
-      .poll(async () => (await engine(page)).elements.length, { timeout: 10_000 })
+      .poll(async () => (await engine(page)).elements.length, {
+        timeout: 10_000,
+      })
       .toBeGreaterThan(before)
   })
 
@@ -335,7 +345,9 @@ test.describe('a hover-shown handle can actually be reached', () => {
     await traverse(page, nearCorner, justOutside, IDS.canvasRect)
   })
 
-  test('leaving the neighbourhood entirely does drop them', async ({ page }) => {
+  test('leaving the neighbourhood entirely does drop them', async ({
+    page,
+  }) => {
     // The counterpart: the region is generous, not permanent.
     const state = await openBoard(page)
     const rect = byId(state, IDS.canvasRect)!
@@ -577,6 +589,93 @@ test.describe('dragging from a creation handle', () => {
     })
   })
 
+  test('says which element it will join, BEFORE the release', async ({
+    page,
+  }) => {
+    // The gesture used to be silent: a rubber band and nothing else, so "will
+    // this join that shape or invent a new one?" could only be answered by
+    // letting go and looking. Asserted mid-drag, because that is the only
+    // moment the answer exists.
+    const before = await openBoard(page)
+    await hoverElement(page, IDS.canvasRect)
+    const from = await handlePoint(page, 'bottom')
+    const text = byId(before, IDS.canvasText)!
+    const to = await worldToPage(page, {
+      x: text.x + text.width / 2,
+      y: text.y + text.height / 2,
+    })
+
+    await page.mouse.move(from.x, from.y)
+    await page.mouse.down()
+    await page.mouse.move(to.x, to.y, { steps: 10 })
+    await expect
+      .poll(async () => (await engine(page)).connectorAttach?.elementId)
+      .toBe(IDS.canvasText)
+
+    // And it goes quiet again over empty board, which is how "releasing here
+    // CREATES one instead" is shown.
+    const empty = await worldToPage(page, { x: 950, y: 700 })
+    await page.mouse.move(empty.x, empty.y, { steps: 10 })
+    await expect
+      .poll(async () => (await engine(page)).connectorAttach)
+      .toBeNull()
+    await page.mouse.up()
+  })
+
+  test('joins a target the pointer stops just SHORT of', async ({ page }) => {
+    // Exact containment is right for selection and wrong for aiming: the line
+    // looked like it was on the shape, and the release created a stray
+    // element instead. Six page pixels outside the top edge — inside
+    // ATTACH_FORGIVENESS at any zoom, since the margin is stated in screen
+    // pixels and divided through by the camera.
+    const before = await openBoard(page)
+    await hoverElement(page, IDS.canvasRect)
+    const from = await handlePoint(page, 'bottom')
+    const text = byId(before, IDS.canvasText)!
+    const topEdge = await worldToPage(page, {
+      x: text.x + text.width / 2,
+      y: text.y,
+    })
+    const to = { x: topEdge.x, y: topEdge.y - 6 }
+
+    await page.mouse.move(from.x, from.y)
+    await page.mouse.down()
+    await page.mouse.move(to.x, to.y, { steps: 10 })
+    // The highlight is the promise; the release below is the promise kept.
+    await expect
+      .poll(async () => (await engine(page)).connectorAttach?.elementId)
+      .toBe(IDS.canvasText)
+    await page.mouse.up()
+
+    await expect
+      .poll(async () => (await engine(page)).elements.length)
+      .toBe(before.elements.length + 1)
+
+    const after = await engine(page)
+    // A connector, and NO stray third element — the near-miss used to cost an
+    // undo, not a retry.
+    expect(nonConnectorsOf(after)).toHaveLength(nonConnectorsOf(before).length)
+    expect(connectorsOf(after)[0].connector).toMatchObject({
+      source: { kind: 'element', elementId: IDS.canvasRect },
+      target: { kind: 'element', elementId: IDS.canvasText },
+    })
+
+    await settle(page)
+    await page.reload()
+    await page.waitForSelector('canvas')
+    await page.waitForFunction(
+      () => window.__canvasEngine !== undefined,
+      null,
+      {
+        timeout: 15_000,
+      },
+    )
+    const reloaded = await engine(page)
+    expect(connectorsOf(reloaded)[0].connector).toMatchObject({
+      target: { kind: 'element', elementId: IDS.canvasText },
+    })
+  })
+
   test('onto empty board creates the element there', async ({ page }) => {
     const before = await openBoard(page)
     await hoverElement(page, IDS.canvasRect)
@@ -594,8 +693,12 @@ test.describe('dragging from a creation handle', () => {
       (element) => !byId(before, element.id),
     )!
     // Centred on the release point, which is where the rubber band pointed.
-    expect(Math.abs(created.x + created.width / 2 - dropWorld.x)).toBeLessThan(4)
-    expect(Math.abs(created.y + created.height / 2 - dropWorld.y)).toBeLessThan(4)
+    expect(Math.abs(created.x + created.width / 2 - dropWorld.x)).toBeLessThan(
+      4,
+    )
+    expect(Math.abs(created.y + created.height / 2 - dropWorld.y)).toBeLessThan(
+      4,
+    )
   })
 })
 
@@ -622,9 +725,12 @@ test.describe('a connector follows its endpoints', () => {
     await dragMouse(page, from, to)
 
     await expect
-      .poll(async () => (await engine(page)).elements.find(
-        (element) => element.id === IDS.canvasConnSource,
-      )?.x)
+      .poll(
+        async () =>
+          (await engine(page)).elements.find(
+            (element) => element.id === IDS.canvasConnSource,
+          )?.x,
+      )
       .toBeGreaterThan(source.x)
 
     await settle(page)
@@ -682,9 +788,9 @@ test.describe('the routing picker', () => {
     await openBoard(page, CONNECTOR_BOARD_URL)
     await selectConnector(page)
 
-    expect(byId(await engine(page), IDS.canvasConnector)?.connector?.routing).toBe(
-      'straight',
-    )
+    expect(
+      byId(await engine(page), IDS.canvasConnector)?.connector?.routing,
+    ).toBe('straight')
     await page.click('[aria-label="Elbow connector"]')
 
     await expect
@@ -699,7 +805,9 @@ test.describe('the routing picker', () => {
 
     await settle(page)
     const reloaded = await openBoard(page, CONNECTOR_BOARD_URL)
-    expect(byId(reloaded, IDS.canvasConnector)?.connector?.routing).toBe('elbow')
+    expect(byId(reloaded, IDS.canvasConnector)?.connector?.routing).toBe(
+      'elbow',
+    )
   })
 
   test('the routing change is itself undoable', async ({ page }) => {
@@ -980,9 +1088,10 @@ test.describe('dragging a connector end', () => {
 
     const connector = connectorsOf(await engine(page))[0]
     await page.mouse.click(
-      ...(Object.values(
-        await worldToPage(page, { x: 0, y: 0 }),
-      ) as [number, number]),
+      ...(Object.values(await worldToPage(page, { x: 0, y: 0 })) as [
+        number,
+        number,
+      ]),
     )
     // Select the connector by its own line midpoint.
     const state = await engine(page)
@@ -1009,7 +1118,9 @@ test.describe('dragging a connector end', () => {
     await dragMouse(page, from, to)
 
     await expect
-      .poll(async () => byId(await engine(page), connector.id)?.connector?.target)
+      .poll(
+        async () => byId(await engine(page), connector.id)?.connector?.target,
+      )
       .toMatchObject({ kind: 'element', elementId: IDS.canvasText })
 
     await settle(page)

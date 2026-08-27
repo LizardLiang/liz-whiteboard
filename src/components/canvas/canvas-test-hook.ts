@@ -126,6 +126,24 @@ export interface CanvasEngineTestHook {
    * point is to assert on what the renderer actually painted.
    */
   connectorPath: Array<Point> | null
+  /**
+   * What the connector being dragged RIGHT NOW would attach to, and the
+   * normalised point on that element's border where it would land — or null
+   * when releasing here would not attach to anything.
+   *
+   * Published because the highlight is the whole answer to "will this
+   * connect?", and a spec can only assert it MID-GESTURE: by the time the
+   * pointer is up, the highlight is gone and only its consequence remains.
+   * Asserting the consequence alone passed happily while the drag itself was
+   * silent, which is the fault this field exists to catch.
+   *
+   * Fed by both drags that make a connector — a connector END and a
+   * creation-handle drag — because both answer the same question.
+   */
+  connectorAttach: {
+    elementId: string
+    attach: { x: number; y: number }
+  } | null
   tool: CanvasTool
   readOnly: boolean
 }
@@ -216,6 +234,7 @@ export function useCanvasTestHook({
       // scene — so unlike `elements` it needs no defensive copy to satisfy
       // "a spec cannot corrupt the board it is measuring".
       connectorPath,
+      connectorAttach: selection.connectorAttach ?? null,
       tool,
       readOnly,
     }

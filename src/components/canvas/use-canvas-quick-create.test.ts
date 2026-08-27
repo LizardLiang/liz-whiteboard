@@ -236,7 +236,7 @@ describe('idle hover decides where handles are drawn', () => {
     expect(h.api.hoveredId).toBeNull()
   })
 
-  it('KEEPS hover while the pointer is over one of that element\'s handles', () => {
+  it("KEEPS hover while the pointer is over one of that element's handles", () => {
     // The handles sit OUTSIDE the element. Reaching for one leaves the
     // element's bounds, so a naive hit-test drops hover and the handle
     // vanishes exactly as the user arrives at it — ungrabbable.
@@ -271,7 +271,10 @@ describe('idle hover decides where handles are drawn', () => {
     h.sync()
     act(() => {
       h.api.canvasHandlers.onPointerMove(
-        pointerEvent({ clientX: centre.clientX + 100, clientY: centre.clientY }),
+        pointerEvent({
+          clientX: centre.clientX + 100,
+          clientY: centre.clientY,
+        }),
       )
     })
     h.sync()
@@ -308,10 +311,9 @@ describe('idle hover decides where handles are drawn', () => {
         )
       })
       h.sync()
-      expect(
-        h.api.hoveredId,
-        `hover dropped at step ${i}/${steps}`,
-      ).toBe(SOURCE_ID)
+      expect(h.api.hoveredId, `hover dropped at step ${i}/${steps}`).toBe(
+        SOURCE_ID,
+      )
     }
   })
 
@@ -470,7 +472,11 @@ describe('a click on a creation handle', () => {
       // The line leaves the side that was actually grabbed, and joins the new
       // element on its facing side — not wherever a centre-to-centre ray
       // happens to cross the two borders.
-      source: { kind: 'element', elementId: SOURCE_ID, attach: { x: 1, y: 0.5 } },
+      source: {
+        kind: 'element',
+        elementId: SOURCE_ID,
+        attach: { x: 1, y: 0.5 },
+      },
       target: {
         kind: 'element',
         elementId: element.id,
@@ -480,8 +486,10 @@ describe('a click on a creation handle', () => {
     })
   })
 
-  it('inherits the source\'s kind, size and style', () => {
-    const h = setup([makeRect({ kind: 'text', text: 'hi', width: 60, height: 30 })])
+  it("inherits the source's kind, size and style", () => {
+    const h = setup([
+      makeRect({ kind: 'text', text: 'hi', width: 60, height: 30 }),
+    ])
     select(h, [SOURCE_ID])
     const created = quickCreate(
       h,
@@ -565,17 +573,60 @@ describe('a drag from a creation handle', () => {
 
     expect(created).toHaveLength(1)
     expect((created as Array<CanvasElement>)[0].connector).toEqual({
-      source: { kind: 'element', elementId: SOURCE_ID, attach: { x: 1, y: 0.5 } },
+      source: {
+        kind: 'element',
+        elementId: SOURCE_ID,
+        attach: { x: 1, y: 0.5 },
+      },
       // The target sits down AND to the right, almost diagonally: from the
       // departure point (100,50) its top face (495 units) is fractionally
       // nearer than its left (500). Asserted as the real answer rather than
       // the intuitive one — for a near-diagonal layout the two are genuinely
       // interchangeable, and pinning the wrong one would be pinning a guess.
-      target: { kind: 'element', elementId: OTHER_ID, attach: { x: 0.5, y: 0 } },
+      target: {
+        kind: 'element',
+        elementId: OTHER_ID,
+        attach: { x: 0.5, y: 0 },
+      },
       routing: DEFAULT_CONNECTOR_ROUTING,
     })
     // Two originals plus the connector — no third element was invented.
     expect(h.scene.elements).toHaveLength(3)
+  })
+
+  it('attaches on a NEAR-MISS just outside the target', () => {
+    // The complaint this exists for: the line looked like it was on the
+    // shape, the release created a stray element instead. Exact containment
+    // is right for selection and wrong for aiming.
+    const target = makeRect({ id: OTHER_ID, x: 400, y: 400 })
+    const h = setup([makeRect(), target])
+    select(h, [SOURCE_ID])
+    // 5px clear of the target's left edge — inside ATTACH_FORGIVENESS.
+    const created = quickCreate(h, makeRect(), 'right', {
+      clientX: 395,
+      clientY: 450,
+    }) as Array<CanvasElement>
+
+    expect(created).toHaveLength(1)
+    expect(created[0].connector?.target).toEqual({
+      kind: 'element',
+      elementId: OTHER_ID,
+      attach: { x: 0.5, y: 0 },
+    })
+    expect(h.scene.elements).toHaveLength(3)
+  })
+
+  it('still creates a sibling well clear of every shape', () => {
+    // The margin is slack, not a magnet — a release that is plainly nowhere
+    // near a shape must keep creating one.
+    const target = makeRect({ id: OTHER_ID, x: 400, y: 400 })
+    const h = setup([makeRect(), target])
+    select(h, [SOURCE_ID])
+    const created = quickCreate(h, makeRect(), 'right', {
+      clientX: 300,
+      clientY: 300,
+    }) as Array<CanvasElement>
+    expect(created).toHaveLength(2)
   })
 
   it('creates a sibling CENTRED on an empty release point', () => {
@@ -688,7 +739,8 @@ describe('deleting an endpoint deletes its connectors', () => {
     })
     h.sync()
 
-    const deleted = h.callbacks.onDelete.mock.calls[0][0] as Array<CanvasElement>
+    const deleted = h.callbacks.onDelete.mock
+      .calls[0][0] as Array<CanvasElement>
     expect(deleted.map((element) => element.id).sort()).toEqual(
       [SOURCE_ID, CONNECTOR_ID].sort(),
     )
@@ -709,7 +761,8 @@ describe('deleting an endpoint deletes its connectors', () => {
       h.api.boardHandlers.onKeyDown(keyEvent('Delete'))
     })
 
-    const deleted = h.callbacks.onDelete.mock.calls[0][0] as Array<CanvasElement>
+    const deleted = h.callbacks.onDelete.mock
+      .calls[0][0] as Array<CanvasElement>
     expect(deleted).toHaveLength(3)
     expect(
       deleted.filter((element) => element.id === CONNECTOR_ID),
@@ -729,7 +782,8 @@ describe('deleting an endpoint deletes its connectors', () => {
       h.api.boardHandlers.onKeyDown(keyEvent('Delete'))
     })
 
-    const deleted = h.callbacks.onDelete.mock.calls[0][0] as Array<CanvasElement>
+    const deleted = h.callbacks.onDelete.mock
+      .calls[0][0] as Array<CanvasElement>
     expect(deleted.map((element) => element.id)).toEqual([SOURCE_ID])
   })
 
@@ -762,7 +816,8 @@ describe('deleting an endpoint deletes its connectors', () => {
     })
     h.sync()
 
-    const deleted = h.callbacks.onDelete.mock.calls[0][0] as Array<CanvasElement>
+    const deleted = h.callbacks.onDelete.mock
+      .calls[0][0] as Array<CanvasElement>
     expect(deleted.map((element) => element.id).sort()).toEqual(
       [SOURCE_ID, CONNECTOR_ID].sort(),
     )
@@ -777,7 +832,9 @@ describe('Alt+Arrow quick-creates without a pointer', () => {
     const byKey = setup()
     select(byKey, [SOURCE_ID])
     act(() => {
-      byKey.api.boardHandlers.onKeyDown(keyEvent('ArrowRight', { altKey: true }))
+      byKey.api.boardHandlers.onKeyDown(
+        keyEvent('ArrowRight', { altKey: true }),
+      )
     })
     byKey.sync()
 
@@ -908,10 +965,10 @@ describe('remapElementId follows an element the server renamed', () => {
     })
     h.sync()
     expect(h.scene.byId.get(CONNECTOR_ID)?.connector).toEqual({
-        source: { kind: 'element', elementId: SOURCE_ID },
-        target: { kind: 'element', elementId: serverId },
-        routing: DEFAULT_CONNECTOR_ROUTING,
-      })
+      source: { kind: 'element', elementId: SOURCE_ID },
+      target: { kind: 'element', elementId: serverId },
+      routing: DEFAULT_CONNECTOR_ROUTING,
+    })
   })
 
   it('repoints the pre-edit snapshot too, so the edit stays undoable', () => {
@@ -1080,7 +1137,9 @@ describe('dragging a connector end', () => {
     const link = h.scene.byId.get(CONNECTOR_ID)!.connector!
     expect(link.source.kind).toBe('point')
     expect(link.target.kind).toBe('point')
-    expect(connectorPathOf(h.scene, h.scene.byId.get(CONNECTOR_ID)!)).not.toBeNull()
+    expect(
+      connectorPathOf(h.scene, h.scene.byId.get(CONNECTOR_ID)!),
+    ).not.toBeNull()
   })
 
   it('refuses a drop on the element the OTHER end holds', () => {
@@ -1128,7 +1187,9 @@ describe('dragging a connector end', () => {
           clientY: rects.target.y + rects.target.height / 2,
         }),
       )
-      h.api.canvasHandlers.onPointerUp(pointerEvent({ clientX: 400, clientY: 50 }))
+      h.api.canvasHandlers.onPointerUp(
+        pointerEvent({ clientX: 400, clientY: 50 }),
+      )
     })
     h.sync()
     expect(h.scene.byId.get(CONNECTOR_ID)!.connector!.target).toEqual({
@@ -1208,6 +1269,92 @@ describe('the drag says whether it will connect, before you let go', () => {
     h.sync()
 
     expect(h.scene.byId.get(CONNECTOR_ID)!.connector!.target).toEqual({
+      kind: 'element',
+      elementId: previewed!.elementId,
+      attach: previewed!.attach,
+    })
+  })
+})
+
+// ── the same promise, for a drag OUT of a creation handle ──────────────────
+
+/** Press a creation handle and drag to a screen point WITHOUT releasing. */
+function holdQuickCreate(
+  h: ReturnType<typeof setup>,
+  source: CanvasElement,
+  direction: CreationHandleDirection,
+  to: { clientX: number; clientY: number },
+) {
+  act(() => {
+    h.api.canvasHandlers.onPointerDown(
+      pointerEvent(handleCentre(source, direction)),
+    )
+  })
+  h.sync()
+  act(() => {
+    h.api.canvasHandlers.onPointerMove(pointerEvent(to))
+  })
+  h.sync()
+}
+
+describe('a creation-handle drag says what it will do, before you let go', () => {
+  // Without this the gesture was silent: a rubber band and nothing else, so
+  // "will this join that shape or invent a new one?" could only be answered
+  // by releasing and looking at the result. That made the near-miss expensive
+  // — a miss CREATES an element, so it costs an undo rather than a retry.
+
+  function board() {
+    const h = setup([makeRect(), makeRect({ id: OTHER_ID, x: 400, y: 400 })])
+    select(h, [SOURCE_ID])
+    return h
+  }
+
+  it('reports the element it would join, and where the line would land', () => {
+    const h = board()
+    holdQuickCreate(h, makeRect(), 'right', { clientX: 450, clientY: 450 })
+    expect(h.api.connectorAttach).toEqual({
+      elementId: OTHER_ID,
+      // `makeConnector`'s rule: the face nearest the DEPARTURE point, not the
+      // face nearest the pointer — which is the connector the release builds.
+      attach: { x: 0.5, y: 0 },
+    })
+  })
+
+  it('reports it on a near-miss too, so the slack is visible', () => {
+    const h = board()
+    holdQuickCreate(h, makeRect(), 'right', { clientX: 395, clientY: 450 })
+    expect(h.api.connectorAttach?.elementId).toBe(OTHER_ID)
+  })
+
+  it('reports NOTHING over empty board — which is how "this will CREATE" is shown', () => {
+    const h = board()
+    holdQuickCreate(h, makeRect(), 'right', { clientX: 300, clientY: 300 })
+    expect(h.api.connectorAttach).toBeNull()
+  })
+
+  it('reports nothing back over the source, where the release does nothing', () => {
+    const h = board()
+    holdQuickCreate(h, makeRect(), 'right', { clientX: 50, clientY: 50 })
+    expect(h.api.connectorAttach).toBeNull()
+  })
+
+  it('previews the SAME attachment the release actually commits', () => {
+    // One rule, consulted twice. A highlight the drop does not honour is
+    // worse than no highlight at all.
+    const h = board()
+    const drop = { clientX: 395, clientY: 450 }
+    holdQuickCreate(h, makeRect(), 'right', drop)
+    const previewed = h.api.connectorAttach
+
+    act(() => {
+      h.api.canvasHandlers.onPointerUp(pointerEvent(drop))
+    })
+    h.sync()
+
+    const created = h.callbacks.onQuickCreate.mock
+      .calls[0][0] as Array<CanvasElement>
+    expect(created).toHaveLength(1)
+    expect(created[0].connector?.target).toEqual({
       kind: 'element',
       elementId: previewed!.elementId,
       attach: previewed!.attach,
