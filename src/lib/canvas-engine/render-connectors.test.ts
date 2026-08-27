@@ -104,6 +104,12 @@ function createRecorder() {
     lineTo(...args: Array<unknown>) {
       ops.push({ op: 'lineTo', args: [...args, this.strokeStyle] })
     },
+    // A `curved` connector is stroked as its cubic rather than as its sampled
+    // polyline, so this is the call its LINE now arrives through — the sample
+    // is still what the hit-test, the bounds and the arrowhead read.
+    bezierCurveTo(...args: Array<unknown>) {
+      ops.push({ op: 'bezierCurveTo', args: [...args, this.strokeStyle] })
+    },
     arc(...args: Array<unknown>) {
       ops.push({ op: 'arc', args: [...args, this.fillStyle] })
     },
@@ -760,9 +766,10 @@ describe('the bend grip', () => {
 
   /**
    * Diamonds are the only four-`lineTo` closed path in a connector-selected
-   * scene — the selection stroke is one `moveTo` plus 24 `lineTo`s, and every
-   * other affordance here is an `arc`. Counting `closePath` is the cheapest
-   * detector that does not depend on the diamond's exact coordinates.
+   * scene — a curved selection stroke is one `moveTo` plus one
+   * `bezierCurveTo`, an elbow one is a short `lineTo` walk, and every other
+   * affordance here is an `arc`. Counting `closePath` is the cheapest detector
+   * that does not depend on the diamond's exact coordinates.
    */
   function diamonds(rec: ReturnType<typeof createRecorder>): number {
     return rec.opsOfType('closePath').length
@@ -850,5 +857,56 @@ describe('the bend grip', () => {
     // The chord runs 100 -> 300 along y=50, so a curvature of 0.5 lifts the
     // middle 100 units UP the screen (positive = left-hand normal).
     expect(rect.y + rect.height / 2).toBeCloseTo(-50, 6)
+  })
+})
+
+describe('a curved connector is stroked as a curve, not as a polygon', () => {
+  const CURVE_SCENE = sceneFrom([
+    el('a', { x: 0, y: 0, zIndex: 0 }),
+    el('b', { x: 300, y: 200, zIndex: 1 }),
+    conn('ab', 'a', 'b', 'curved', { zIndex: 2 }),
+  ])
+  const ELBOW_SCENE = sceneFrom([
+    el('a', { x: 0, y: 0, zIndex: 0 }),
+    el('b', { x: 300, y: 200, zIndex: 1 }),
+    conn('ab', 'a', 'b', 'elbow', { zIndex: 2 }),
+  ])
+
+  /**
+   * The reported defect: the line was walked as its 24-segment sample, and a
+   * 24-sided polygon is what it looked like. The sample count is fixed in
+   * WORLD space, so each of its chords lengthens on screen as the camera zooms
+   * in and the corners come out — no sample count fixes that, only handing the
+   * renderer the curve itself does.
+   */
+  it('draws the line with one bezier and no lineTo walk', () => {
+    const rec = createRecorder()
+    drawScene(rec.ctx, CURVE_SCENE, CAMERA, VIEWPORT, NONE)
+    expect(rec.opsOfType('bezierCurveTo').length).toBe(1)
+    // The only `lineTo`s left in the frame belong to the arrowhead's two
+    // barbs — the shaft itself has none.
+    expect(rec.opsOfType('lineTo').length).toBe(2)
+  })
+
+  it('leaves the polyline routings walking their own points', () => {
+    const rec = createRecorder()
+    drawScene(rec.ctx, ELBOW_SCENE, CAMERA, VIEWPORT, NONE)
+    expect(rec.opsOfType('bezierCurveTo').length).toBe(0)
+    expect(rec.opsOfType('lineTo').length).toBeGreaterThan(2)
+  })
+
+  /**
+   * The halo and the line have to be the SAME curve. `worldToScreen` is
+   * affine, so projecting the four control points and stroking the bezier
+   * through them is exact — flattening the halo separately would put a faceted
+   * accent under a smooth line, and the mismatch would widen with the zoom.
+   */
+  it('traces the selection halo as the same curve, in screen space', () => {
+    const rec = createRecorder()
+    drawScene(rec.ctx, CURVE_SCENE, CAMERA, VIEWPORT, {
+      ids: new Set(['ab']),
+    })
+    // One for the line in world space, one for the halo in screen space.
+    expect(rec.opsOfType('bezierCurveTo').length).toBe(2)
   })
 })

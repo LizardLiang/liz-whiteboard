@@ -14,11 +14,18 @@
 // same bug — a second, divergent transform written at a call site — and the
 // structural answer is that geometry modules do not know screens exist.
 //
-// All three routings return a POLYLINE, including `curved`, which is sampled
-// here rather than handed to the renderer as bezier control points. One
-// output shape means the arrowhead, the hit-test and the bounds have a single
-// implementation instead of three, and a sampled curve hit-tests correctly
-// where a control-point curve would need its own root-finding.
+// All three routings return a POLYLINE from `connectorPath`, including
+// `curved`, which is sampled here. One output shape means the arrowhead, the
+// hit-test and the bounds have a single implementation instead of three, and a
+// sampled curve hit-tests correctly where a control-point curve would need its
+// own root-finding.
+//
+// What gets DRAWN is not that sample. `connectorCurve` hands the renderer the
+// cubic's own control points, because the sample count is fixed in world space
+// and its chords therefore lengthen on screen as the camera zooms in — a
+// `curved` connector visibly turned into a 24-sided polygon under
+// magnification. Two answers to "where does this line run", but only one
+// derivation: the polyline is sampled FROM the curve, never derived beside it.
 //
 // Pure module: no React, no DOM, no database, no canvas context.
 
@@ -72,19 +79,38 @@ function resolveEnd(end: EndpointGeometry, other: Point): Point {
 }
 
 /**
- * The direction an elbow or curve should LEAVE an end travelling.
+ * The direction an elbow or curve should LEAVE an end travelling: straight OUT
+ * of the face it stands on, for EVERY end that stands on a face at all.
  *
- * An anchored end has a real edge to depart perpendicular to. A free end has
- * no edge at all, so its direction is derived from the other end — snapped to
- * the dominant axis, because an elbow must stay orthogonal and a diagonal stub
- * would break that.
+ * A rect end has an edge whether or not anyone attached it to one. An
+ * unattached end still lands somewhere on the border, and the side it landed
+ * on is recovered by projecting that landing point back onto the nearest edge.
+ *
+ * The dominant axis of the offset between the ends — which is what this used
+ * for an unattached rect — DISAGREES with the landing side as soon as the rect
+ * stops being square. `borderPoint` compares the rect's half-extents against
+ * the offset, not the offset against itself, so a 200x40 box with its partner
+ * 100 right and 60 down is exited through the BOTTOM face while the dominant
+ * axis is still x. The line then set off sideways out of a face it was
+ * standing on, and the head arrived grazing the far one — an arrowhead nearly
+ * parallel to the face it points at does not read as an arrow.
+ *
+ * A free end has no edge at all, so its direction is still derived from the
+ * other end — snapped to the dominant axis, because an elbow must stay
+ * orthogonal and a diagonal stub would break that.
  */
 function departureNormal(
   end: EndpointGeometry,
   self: Point,
   other: Point,
 ): Point {
-  if (!isFree(end) && end.attach) return anchorNormal(attachSide(end.attach))
+  if (!isFree(end)) {
+    // `self` IS the landing point, so `nearestAttach` here is a projection
+    // back onto the edge that point is already on, not a search. It is also
+    // the function a DROP uses to choose a side, which is what stops a dropped
+    // end and a derived one ever disagreeing about which face they mean.
+    return anchorNormal(attachSide(end.attach ?? nearestAttach(end.rect, self)))
+  }
   const dx = self.x - other.x
   const dy = self.y - other.y
   if (dx === 0 && dy === 0) return { x: 1, y: 0 }
@@ -119,6 +145,28 @@ const CURVE_SAMPLES = 24
 const CURVE_TENSION = 0.4
 const CURVE_TENSION_MIN = 24
 const CURVE_TENSION_MAX = 240
+
+/**
+ * The share of the CHORD a control handle may take, whatever the rules above
+ * work out to — the guard that stops a short connector tying itself in a knot.
+ *
+ * `CURVE_TENSION_MIN` is an absolute length, so on a chord shorter than twice
+ * it the two handles are each pushed further than the endpoints are apart and
+ * they cross straight over one another. Two facing shapes 39 apart got 24-unit
+ * handles: the source's reached past the target and the target's reached back
+ * past the source, and the cubic between them looped, doubled back and looped
+ * again — measured at 186 degrees of total turning where a connector that
+ * reads as one sweep turns through well under 90.
+ *
+ * At half the chord the handles meet at worst and never trade places, which is
+ * the exact condition for the curve to stay a single sweep.
+ *
+ * This binds ONLY below 48 world units of separation, since above that
+ * `CURVE_TENSION_MIN` has already stopped binding and `distance * 0.4` is
+ * under half by construction. Every connector longer than that draws the same
+ * curve it always did, to the last floating-point bit.
+ */
+const CURVE_TENSION_CHORD_SHARE = 0.5
 
 /**
  * The widest bow a stored `curvature` is allowed to describe: the curve's
@@ -557,32 +605,46 @@ function holdAlongChord(
 }
 
 /**
- * A cubic curve between the same points a straight connector uses.
+ * A `curved` connector as the CUBIC it is — the four points, not a sample of
+ * the line through them.
  *
- * With any anchored or free end, each control point is pushed along that end's
- * DEPARTURE direction, so the curve leaves and arrives square-on to the side
- * it is tied to. The legacy dominant-axis rule below cannot express that —
- * both ends there share one axis, so a curve between a top end and a left end
- * would depart in a direction the line is not attached along at all.
+ * Exported (via `connectorCurve`) so the renderer can hand these straight to
+ * `bezierCurveTo`. A connector used to be DRAWN by walking its 24-segment
+ * sample, and a 24-sided polygon is what it looked like: the sample count is
+ * fixed in WORLD space, so every chord in it grows on screen as the camera
+ * zooms in and the corners come out. Stroking the curve itself is exact at any
+ * magnification, and costs one path command instead of twenty-four.
  *
- * The legacy pair keeps the dominant-axis push, which is what makes two
- * side-by-side elements curve horizontally and two stacked ones curve
- * vertically rather than producing a merely bowed straight line.
+ * The arithmetic below is unchanged. Only the LEGACY dominant-axis branch is
+ * gone: it pushed both control points along whichever axis separated the two
+ * centres, which is not necessarily the axis either end is standing on — see
+ * `departureNormal`, which now answers that per end for an unattached rect as
+ * well as an attached one. On a square pair the two rules already agreed, so
+ * this changes nothing there; on a wide or tall one it is the difference
+ * between leaving the face and skimming it.
  *
- * `curvature` is the user's own bow, applied ON TOP of whichever of those two
- * rules produced the control points — see `CanvasConnector.curvature`. It is
- * applied by pushing BOTH control points along the chord normal, which leaves
- * the two departure directions untouched: the line still leaves and arrives
- * square-on to the sides it is tied to no matter how far it is bent. Bending
- * by moving ONE control point would have bowed the curve and swung its
- * departure at the same time, so an anchored end would visibly peel off its
- * own edge as the user dragged.
+ * `curvature` is the user's own bow, applied ON TOP of the departure push —
+ * see `CanvasConnector.curvature`. It pushes BOTH control points along the
+ * chord normal, which keeps the bow symmetric. Bending by moving ONE control
+ * point would swing that end's departure as it bent, so an anchored end would
+ * visibly peel off its own edge as the user dragged.
  */
-function curvedPath(
+export interface ConnectorCurve {
+  /** Where the line leaves the source, on its border. */
+  from: Point
+  /** Control point for the source end. */
+  c0: Point
+  /** Control point for the target end. */
+  c1: Point
+  /** Where the line meets the target, on its border. */
+  to: Point
+}
+
+function curveOf(
   source: EndpointGeometry,
   target: EndpointGeometry,
   curvature = 0,
-): Array<Point> | null {
+): ConnectorCurve | null {
   const ends = endpoints(source, target)
   if (!ends) return null
 
@@ -590,29 +652,18 @@ function curvedPath(
   const tension = Math.min(
     CURVE_TENSION_MAX,
     Math.max(CURVE_TENSION_MIN, distance * CURVE_TENSION),
+    distance * CURVE_TENSION_CHORD_SHARE,
   )
 
-  let c0: Point
-  let c1: Point
-  if (!isLegacyPair(source, target)) {
-    const n0 = departureNormal(source, ends.from, ends.to)
-    const n1 = departureNormal(target, ends.to, ends.from)
-    c0 = { x: ends.from.x + n0.x * tension, y: ends.from.y + n0.y * tension }
-    c1 = { x: ends.to.x + n1.x * tension, y: ends.to.y + n1.y * tension }
-  } else {
-    const a = rectCentre((source as { rect: WorldRect }).rect)
-    const b = rectCentre((target as { rect: WorldRect }).rect)
-    const dx = b.x - a.x
-    const dy = b.y - a.y
-    if (Math.abs(dx) >= Math.abs(dy)) {
-      const push = dx >= 0 ? tension : -tension
-      c0 = { x: ends.from.x + push, y: ends.from.y }
-      c1 = { x: ends.to.x - push, y: ends.to.y }
-    } else {
-      const push = dy >= 0 ? tension : -tension
-      c0 = { x: ends.from.x, y: ends.from.y + push }
-      c1 = { x: ends.to.x, y: ends.to.y - push }
-    }
+  const n0 = departureNormal(source, ends.from, ends.to)
+  const n1 = departureNormal(target, ends.to, ends.from)
+  let c0: Point = {
+    x: ends.from.x + n0.x * tension,
+    y: ends.from.y + n0.y * tension,
+  }
+  let c1: Point = {
+    x: ends.to.x + n1.x * tension,
+    y: ends.to.y + n1.y * tension,
   }
 
   // Guarded on `!== 0` rather than added unconditionally, so an un-bowed
@@ -652,9 +703,61 @@ function curvedPath(
     c1 = holdAlongChord(c1, ends.from, axis, chord)
   }
 
+  return { from: ends.from, c0, c1, to: ends.to }
+}
+
+/**
+ * The direction a curve is travelling as it ARRIVES at its target — the exact
+ * tangent, which is what the arrowhead is oriented along.
+ *
+ * `to - c1`, not the last sampled chord. On an un-bowed curve `c1` sits on the
+ * target face's outward normal, so this is that normal reversed to
+ * floating-point exactness and the head points straight INTO the face it lands
+ * on. The final sampled chord only approaches that as the sample count rises,
+ * and at 14px of barb the difference shows on a tight curve.
+ *
+ * Not normalised — `arrowHead` normalises whatever it is handed.
+ */
+export function curveEndDirection(curve: ConnectorCurve): Point {
+  return { x: curve.to.x - curve.c1.x, y: curve.to.y - curve.c1.y }
+}
+
+/**
+ * The curve a connector is STROKED along, or null when it has none — anything
+ * but `curved` routing, or a pair with no sensible line between them.
+ *
+ * The routing gate lives here rather than at the call site for the same reason
+ * `connectorPath` accepts a curvature for every routing: one function that
+ * answers "what does this connector look like" beats a branch repeated at
+ * every renderer.
+ */
+export function connectorCurve(
+  source: EndpointGeometry | null | undefined,
+  target: EndpointGeometry | null | undefined,
+  routing: CanvasConnectorRouting,
+  curvature?: number,
+): ConnectorCurve | null {
+  if (!source || !target || routing !== 'curved') return null
+  return curveOf(source, target, curvature)
+}
+
+/**
+ * The same curve, flattened — what hit-testing, bounds, the bend grip and the
+ * arrowhead read. No longer what gets drawn; see `curveOf`.
+ */
+function curvedPath(
+  source: EndpointGeometry,
+  target: EndpointGeometry,
+  curvature = 0,
+): Array<Point> | null {
+  const curve = curveOf(source, target, curvature)
+  if (!curve) return null
+
   const points: Array<Point> = []
   for (let i = 0; i <= CURVE_SAMPLES; i += 1) {
-    points.push(bezierAt(ends.from, c0, c1, ends.to, i / CURVE_SAMPLES))
+    points.push(
+      bezierAt(curve.from, curve.c0, curve.c1, curve.to, i / CURVE_SAMPLES),
+    )
   }
   return points
 }
@@ -782,19 +885,28 @@ export function connectorPath(
  * with two coincident points at low tension, and normalising a zero-length
  * vector yields NaN — an arrowhead that silently vanishes and takes the whole
  * stroked path with it.
+ *
+ * `direction` overrides that walk with the EXACT arrival tangent, which a
+ * `curved` connector has and a sampled polyline can only approach — see
+ * `curveEndDirection`. It is what sits the head square to the face it points
+ * at rather than square to the last 1/24th of the curve. Needs no
+ * normalising, and a zero vector falls back to the walk rather than to NaN.
  */
 export function arrowHead(
   points: ReadonlyArray<Point>,
   size: number,
+  direction?: Point | null,
 ): Array<Point> | null {
   if (points.length < 2 || size <= 0) return null
   const tip = points[points.length - 1]
-  let dx = 0
-  let dy = 0
-  for (let i = points.length - 2; i >= 0; i -= 1) {
-    dx = tip.x - points[i].x
-    dy = tip.y - points[i].y
-    if (dx !== 0 || dy !== 0) break
+  let dx = direction?.x ?? 0
+  let dy = direction?.y ?? 0
+  if (dx === 0 && dy === 0) {
+    for (let i = points.length - 2; i >= 0; i -= 1) {
+      dx = tip.x - points[i].x
+      dy = tip.y - points[i].y
+      if (dx !== 0 || dy !== 0) break
+    }
   }
   const length = Math.hypot(dx, dy)
   if (length === 0) return null

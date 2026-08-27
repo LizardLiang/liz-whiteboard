@@ -25,10 +25,16 @@ import {
   effectiveCornerRadius,
   isCanvasShapeKind,
 } from './scene'
-import { arrowHead, attachPoint, bendMidpoint } from './connector-geometry'
-import { connectorPathOf } from './hit-test'
+import {
+  arrowHead,
+  attachPoint,
+  bendMidpoint,
+  curveEndDirection,
+} from './connector-geometry'
+import { connectorCurveOf, connectorPathOf } from './hit-test'
 import { QUICK_CREATE_DIRECTIONS } from './quick-create'
 import { DEFAULT_TEXT_STYLE, layoutText, pointFromCaret } from './text-layout'
+import type { ConnectorCurve } from './connector-geometry'
 import type { Camera, Point } from './camera'
 import type { QuickCreateDirection } from './quick-create'
 import type { WorldRect } from './hit-test'
@@ -744,6 +750,32 @@ function drawElement(
 export const CONNECTOR_ARROW_SIZE = 14
 
 /**
+ * Lay a `ConnectorCurve` into the current path as the cubic it is.
+ *
+ * `project` is applied to the CONTROL POINTS, not to a flattened sample, and
+ * that is exact rather than close: `worldToScreen` is affine, and the image of
+ * a bezier under an affine map is the bezier through the images of its control
+ * points. So the screen-space selection halo traces the identical curve the
+ * world-space stroke does, at any zoom, with no second flattening to disagree
+ * about.
+ *
+ * Assumes `ctx.beginPath()` has already been called — same contract as the
+ * `moveTo`/`lineTo` walk it replaces.
+ */
+function traceCurve(
+  ctx: CanvasRenderingContext2D,
+  curve: ConnectorCurve,
+  project: (point: Point) => Point = (point) => point,
+): void {
+  const from = project(curve.from)
+  const c0 = project(curve.c0)
+  const c1 = project(curve.c1)
+  const to = project(curve.to)
+  ctx.moveTo(from.x, from.y)
+  ctx.bezierCurveTo(c0.x, c0.y, c1.x, c1.y, to.x, to.y)
+}
+
+/**
  * Draw one connector in WORLD space — the caller has already applied the
  * camera transform, exactly as for `drawElement`.
  *
@@ -766,16 +798,36 @@ function drawConnector(
   const path = connectorPathOf(scene, element)
   if (!path || path.length < 2) return false
 
+  // A `curved` connector is stroked as the cubic it IS, not as the 24-segment
+  // sample of it that everything else reads. The sample count is fixed in
+  // world space, so every chord in it grows on screen as the camera zooms in;
+  // walking it drew a visible polygon at any real magnification.
+  // `bezierCurveTo` is resolution-independent — the curve is exact at 800% for
+  // the same one path command it costs at 100%.
+  const curve = connectorCurveOf(scene, element)
+
   ctx.strokeStyle = element.style.stroke
   ctx.lineWidth = element.style.strokeWidth
   ctx.beginPath()
-  ctx.moveTo(path[0].x, path[0].y)
-  for (let i = 1; i < path.length; i += 1) {
-    ctx.lineTo(path[i].x, path[i].y)
+  if (curve) {
+    traceCurve(ctx, curve)
+  } else {
+    ctx.moveTo(path[0].x, path[0].y)
+    for (let i = 1; i < path.length; i += 1) {
+      ctx.lineTo(path[i].x, path[i].y)
+    }
   }
   ctx.stroke()
 
-  const head = arrowHead(path, CONNECTOR_ARROW_SIZE)
+  // Oriented off the curve's exact arrival tangent where there is one, which
+  // is the target face's own normal reversed — so the head lands square to the
+  // shape rather than square to the last sampled chord. See
+  // `curveEndDirection`.
+  const head = arrowHead(
+    path,
+    CONNECTOR_ARROW_SIZE,
+    curve ? curveEndDirection(curve) : null,
+  )
   if (head) {
     // An OPEN line arrowhead: the two barbs stroked THROUGH the tip, with no
     // closePath and no fill. `arrowHead` returns [tip, barbA, barbB], so the
@@ -870,15 +922,24 @@ function drawConnectorSelection(
   const path = connectorPathOf(scene, element)
   if (!path || path.length < 2) return
 
+  const curve = connectorCurveOf(scene, element)
+
   ctx.save()
   ctx.strokeStyle = accent
   ctx.lineWidth = CONNECTOR_SELECTION_WIDTH
   ctx.beginPath()
-  const first = worldToScreen(camera, path[0])
-  ctx.moveTo(first.x, first.y)
-  for (let i = 1; i < path.length; i += 1) {
-    const p = worldToScreen(camera, path[i])
-    ctx.lineTo(p.x, p.y)
+  if (curve) {
+    // The same two cubics `drawConnector` strokes, projected control point by
+    // control point — see `traceCurve`. Flattening here instead would put a
+    // faceted halo under a smooth line, and the mismatch widens with the zoom.
+    traceCurve(ctx, curve, (point) => worldToScreen(camera, point))
+  } else {
+    const first = worldToScreen(camera, path[0])
+    ctx.moveTo(first.x, first.y)
+    for (let i = 1; i < path.length; i += 1) {
+      const p = worldToScreen(camera, path[i])
+      ctx.lineTo(p.x, p.y)
+    }
   }
   ctx.stroke()
 

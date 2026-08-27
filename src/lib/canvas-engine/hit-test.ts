@@ -15,8 +15,12 @@
 // Pure module: no React, no DOM, no database.
 
 import { bounds, effectiveCornerRadius } from './scene'
-import { connectorBounds, connectorPath } from './connector-geometry'
-import type { EndpointGeometry } from './connector-geometry'
+import {
+  connectorBounds,
+  connectorCurve,
+  connectorPath,
+} from './connector-geometry'
+import type { ConnectorCurve, EndpointGeometry  } from './connector-geometry'
 import type { CanvasElement, ConnectorEndpoint, Scene } from './scene'
 import type { Point } from './camera'
 
@@ -296,6 +300,30 @@ export function connectorPathOf(
     // gating everywhere — and `connectorPath` already ignores the value for
     // the two routings that have no bow. One caller, one rule, no branch to
     // forget when a fourth routing arrives.
+    link.curvature,
+  )
+}
+
+/**
+ * The same connector as the CURVE it is stroked along, or null when it has
+ * none — `straight` and `elbow` are polylines and have no curve to give.
+ *
+ * The twin of `connectorPathOf`, and it exists for exactly one reason: what a
+ * `curved` connector is DRAWN as is a pair of cubics, while what it is
+ * hit-tested, bounded and arrow-headed by is the flattened sample. Both have
+ * to come from one resolution of the two endpoint elements, or the line and
+ * the thing you can click will drift apart on the frame an element moves.
+ */
+export function connectorCurveOf(
+  scene: Scene,
+  element: CanvasElement,
+): ConnectorCurve | null {
+  const link = element.connector
+  if (!link) return null
+  return connectorCurve(
+    endpointGeometry(scene, link.source),
+    endpointGeometry(scene, link.target),
+    link.routing,
     link.curvature,
   )
 }

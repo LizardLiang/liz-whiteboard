@@ -11,8 +11,10 @@ import {
   borderPoint,
   clampCurvature,
   connectorBounds,
+  connectorCurve,
   connectorPath,
   curvatureForPoint,
+  curveEndDirection,
   endpoints,
   nearestAnchor,
   nearestAttach,
@@ -982,5 +984,268 @@ describe('bowed curves never double back (the cusp a free end drew round itself)
     expect(
       along(bendMidpoint(bowed)!) - along(bendMidpoint(flat)!),
     ).toBeCloseTo(REPORTED_CURVATURE * chordOf(flat), 6)
+  })
+})
+
+describe('connectorCurve — the cubic a curved connector is STROKED along', () => {
+  /**
+   * The whole point of the export: the renderer stops walking a 24-segment
+   * sample and hands these four points to `bezierCurveTo`, so the line is
+   * exact at any zoom instead of a polygon that shows its corners when
+   * magnified.
+   */
+  it('is null for the routings that have no curve, and for a dead pair', () => {
+    expect(connectorCurve(rectEnd(LEFT), rectEnd(RIGHT), 'straight')).toBeNull()
+    expect(connectorCurve(rectEnd(LEFT), rectEnd(RIGHT), 'elbow')).toBeNull()
+    expect(connectorCurve(null, rectEnd(RIGHT), 'curved')).toBeNull()
+    expect(
+      connectorCurve(rectEnd(LEFT), rectEnd({ ...LEFT }), 'curved'),
+    ).toBeNull()
+  })
+
+  it('starts and ends on the same borders the sampled path does', () => {
+    const curve = connectorCurve(rectEnd(LEFT), rectEnd(RIGHT), 'curved')!
+    const path = connectorPath(rectEnd(LEFT), rectEnd(RIGHT), 'curved')!
+    expect(curve.from).toEqual(path[0])
+    expect(curve.to).toEqual(path[path.length - 1])
+  })
+
+  /**
+   * ONE derivation, two shapes. The drawn curve and the hit-tested polyline
+   * must not be able to drift apart, so the polyline is proved here to be a
+   * sample OF this curve rather than a second answer computed beside it — the
+   * same rule the module header states for camera transforms.
+   */
+  it('is the exact curve the sampled path is a sample of', () => {
+    const source = rectEnd(LEFT)
+    const target = rectEnd({ x: 300, y: 200, width: 100, height: 100 })
+    for (const curvature of [0, 0.4, -1.1]) {
+      const curve = connectorCurve(source, target, 'curved', curvature)!
+      const path = connectorPath(source, target, 'curved', curvature)!
+      const steps = path.length - 1
+      for (let i = 0; i <= steps; i += 1) {
+        const t = i / steps
+        const u = 1 - t
+        const x =
+          u * u * u * curve.from.x +
+          3 * u * u * t * curve.c0.x +
+          3 * u * t * t * curve.c1.x +
+          t * t * t * curve.to.x
+        const y =
+          u * u * u * curve.from.y +
+          3 * u * u * t * curve.c0.y +
+          3 * u * t * t * curve.c1.y +
+          t * t * t * curve.to.y
+        expect(path[i].x).toBeCloseTo(x, 9)
+        expect(path[i].y).toBeCloseTo(y, 9)
+      }
+    }
+  })
+
+  it('gives the arrowhead the exact arrival tangent, not the last chord', () => {
+    const rect: WorldRect = { x: 300, y: 200, width: 100, height: 100 }
+    const source = rectEnd(LEFT)
+    const target = rectEnd(rect)
+    const curve = connectorCurve(source, target, 'curved')!
+    const path = connectorPath(source, target, 'curved')!
+
+    // The head lands on the same tip either way — only its ORIENTATION moves.
+    const walked = arrowHead(path, 14)!
+    const exact = arrowHead(path, 14, curveEndDirection(curve))!
+    expect(exact[0]).toEqual(walked[0])
+
+    // ...and the exact one is square to the target's own face: `c1` sits on
+    // that face's outward normal, so arriving along `to - c1` is arriving
+    // along that normal reversed.
+    const arrive = curveEndDirection(curve)
+    const length = Math.hypot(arrive.x, arrive.y)
+    const normal = anchorNormal(attachSide(nearestAttach(rect, curve.to)))
+    expect(arrive.x / length).toBeCloseTo(-normal.x, 9)
+    expect(arrive.y / length).toBeCloseTo(-normal.y, 9)
+  })
+
+  it('falls back to the walked direction when handed a zero vector', () => {
+    const path = connectorPath(rectEnd(LEFT), rectEnd(RIGHT), 'curved')!
+    expect(arrowHead(path, 14, { x: 0, y: 0 })).toEqual(arrowHead(path, 14))
+    expect(arrowHead(path, 14, null)).toEqual(arrowHead(path, 14))
+  })
+})
+
+describe('a curve leaves and arrives PERPENDICULAR to the face it touches', () => {
+  /** The outward normal of whichever face of `rect` the point `on` lies on. */
+  function faceNormal(rect: WorldRect, on: Point): Point {
+    return anchorNormal(attachSide(nearestAttach(rect, on)))
+  }
+
+  function unit(vector: Point): Point {
+    const length = Math.hypot(vector.x, vector.y)
+    return { x: vector.x / length, y: vector.y / length }
+  }
+
+  /**
+   * The case the dominant-axis rule got wrong, and the reason this exists.
+   *
+   * `borderPoint` picks the exit face by comparing the rect's HALF-EXTENTS
+   * against the offset, so a wide flat box with its partner further right than
+   * down is still exited through the BOTTOM. The old rule read only the
+   * offset, called it x, and pushed the control point sideways — out of a face
+   * the line was standing on, arriving at the far one almost parallel to it.
+   */
+  const WIDE: WorldRect = { x: 0, y: 0, width: 200, height: 40 }
+  const WIDE_PARTNER: WorldRect = { x: 100, y: 200, width: 200, height: 40 }
+
+  it('leaves the face it actually lands on, not the dominant axis', () => {
+    const curve = connectorCurve(
+      rectEnd(WIDE),
+      rectEnd(WIDE_PARTNER),
+      'curved',
+    )!
+    // Pinned: this pair really does exit through a horizontal face while the
+    // horizontal offset is the larger one, which is what makes it the case.
+    expect(faceNormal(WIDE, curve.from)).toEqual({ x: 0, y: 1 })
+    expect(Math.abs(curve.to.x - curve.from.x)).toBeGreaterThan(0)
+
+    const departure = unit({
+      x: curve.c0.x - curve.from.x,
+      y: curve.c0.y - curve.from.y,
+    })
+    expect(departure.x).toBeCloseTo(0, 9)
+    expect(departure.y).toBeCloseTo(1, 9)
+  })
+
+  it('leaves and arrives square-on for every unattached pair, square or not', () => {
+    const pairs: Array<[string, WorldRect, WorldRect]> = [
+      ['square side by side', LEFT, RIGHT],
+      ['square diagonal', LEFT, { x: 260, y: 200, width: 100, height: 100 }],
+      ['wide flat', WIDE, WIDE_PARTNER],
+      [
+        'tall thin',
+        { x: 0, y: 0, width: 40, height: 200 },
+        { x: 200, y: 100, width: 40, height: 200 },
+      ],
+      ['mixed', WIDE, { x: 400, y: 300, width: 40, height: 200 }],
+    ]
+
+    for (const [name, a, b] of pairs) {
+      const curve = connectorCurve(rectEnd(a), rectEnd(b), 'curved')!
+      const departure = unit({
+        x: curve.c0.x - curve.from.x,
+        y: curve.c0.y - curve.from.y,
+      })
+      const arrival = unit(curveEndDirection(curve))
+      const outOfSource = faceNormal(a, curve.from)
+      const intoTarget = faceNormal(b, curve.to)
+
+      expect(departure.x, name + ' departure x').toBeCloseTo(outOfSource.x, 9)
+      expect(departure.y, name + ' departure y').toBeCloseTo(outOfSource.y, 9)
+      expect(arrival.x, name + ' arrival x').toBeCloseTo(-intoTarget.x, 9)
+      expect(arrival.y, name + ' arrival y').toBeCloseTo(-intoTarget.y, 9)
+    }
+  })
+
+  it('still does it for an explicitly attached end', () => {
+    const curve = connectorCurve(
+      rectEnd(LEFT, 'top'),
+      rectEnd(RIGHT, 'bottom'),
+      'curved',
+    )!
+    const departure = unit({
+      x: curve.c0.x - curve.from.x,
+      y: curve.c0.y - curve.from.y,
+    })
+    expect(departure).toEqual({ x: 0, y: -1 })
+    const arrival = unit(curveEndDirection(curve))
+    expect(arrival.x).toBeCloseTo(0, 9)
+    expect(arrival.y).toBeCloseTo(-1, 9)
+  })
+})
+
+describe('short connectors do not tie themselves in a knot', () => {
+  /**
+   * Total absolute turning along the sampled path, in degrees — how far the
+   * line swings its own direction between one end and the other.
+   *
+   * A connector that reads as one sweep turns through well under a right
+   * angle. A curve whose control points have crossed over each other turns
+   * through nearly half a circle: out, back, and out again.
+   */
+  function turning(path: Array<Point>): number {
+    let total = 0
+    for (let i = 2; i < path.length; i += 1) {
+      const ax = path[i - 1].x - path[i - 2].x
+      const ay = path[i - 1].y - path[i - 2].y
+      const bx = path[i].x - path[i - 1].x
+      const by = path[i].y - path[i - 1].y
+      total += Math.abs(Math.atan2(ax * by - ay * bx, ax * bx + ay * by))
+    }
+    return (total * 180) / Math.PI
+  }
+
+  /**
+   * The reported shape, reproduced. `CURVE_TENSION_MIN` is an absolute 24
+   * world units, so on a chord shorter than 48 both control points are pushed
+   * further than the endpoints are apart and trade places. This pair sits 20
+   * apart and measured 186 degrees of turning before the chord-share cap.
+   */
+  it('does not loop on a pair closer together than the tension floor', () => {
+    const path = connectorPath(
+      rectEnd({ x: 0, y: 0, width: 200, height: 40 }),
+      rectEnd({ x: 100, y: 60, width: 200, height: 40 }),
+      'curved',
+    )!
+    const chord = Math.hypot(
+      path[path.length - 1].x - path[0].x,
+      path[path.length - 1].y - path[0].y,
+    )
+    // Pinned so a later reader can see this is the short-chord band the cap is
+    // for, not a nearby pair that happens to pass.
+    expect(chord).toBeLessThan(48)
+    expect(turning(path)).toBeLessThan(175)
+  })
+
+  it('leaves every connector longer than the floor bit-identical', () => {
+    // The cap is `distance * 0.5` and the floor is 24, so above 48 the floor
+    // has already stopped binding and `distance * 0.4` is under half by
+    // construction. Nothing in this range may move at all.
+    const far: Array<[WorldRect, WorldRect]> = [
+      [LEFT, RIGHT],
+      [LEFT, { x: 300, y: 200, width: 100, height: 100 }],
+      [LEFT, BELOW],
+      [
+        { x: 0, y: 0, width: 200, height: 40 },
+        { x: 100, y: 300, width: 200, height: 40 },
+      ],
+    ]
+    for (const [a, b] of far) {
+      const curve = connectorCurve(rectEnd(a), rectEnd(b), 'curved')!
+      const chord = Math.hypot(
+        curve.to.x - curve.from.x,
+        curve.to.y - curve.from.y,
+      )
+      expect(chord).toBeGreaterThan(48)
+      // The handle is the untouched `max(24, chord * 0.4)`, capped at 240.
+      const handle = Math.hypot(
+        curve.c0.x - curve.from.x,
+        curve.c0.y - curve.from.y,
+      )
+      expect(handle).toBeCloseTo(Math.min(240, Math.max(24, chord * 0.4)), 9)
+    }
+  })
+
+  it('turns less the further apart the two shapes are', () => {
+    const measured = [40, 80, 150, 300, 600].map((gap) =>
+      turning(
+        connectorPath(
+          rectEnd({ x: 0, y: 0, width: 200, height: 40 }),
+          rectEnd({ x: 100, y: 40 + gap, width: 200, height: 40 }),
+          'curved',
+        )!,
+      ),
+    )
+    for (let i = 1; i < measured.length; i += 1) {
+      expect(measured[i]).toBeLessThan(measured[i - 1])
+    }
+    // At ordinary board spacing it reads as one sweep, not a detour.
+    expect(measured[measured.length - 1]).toBeLessThan(45)
   })
 })
