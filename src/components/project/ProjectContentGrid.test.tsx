@@ -253,4 +253,63 @@ describe('ProjectContentGrid', () => {
       expect(href).toContain('folder-xyz')
     })
   })
+
+  // navigator-create-canvas-board tactical plan, step 9 / spec-delta:
+  // "Project page grid lists canvas boards"
+  describe('canvas board cards', () => {
+    it('renders a canvas board card linking to /canvas/$boardId with its element count', () => {
+      renderGrid({
+        projectId: PROJECT_ID,
+        folders: [],
+        whiteboards: [],
+        canvasBoards: [
+          {
+            id: 'canvas-001',
+            name: 'My Canvas',
+            updatedAt: new Date(),
+            _count: { elements: 3 },
+          },
+        ],
+      })
+
+      const link = screen.getByText('My Canvas').closest('a')
+      expect(link).toBeTruthy()
+      expect(link!.getAttribute('href')).toContain('canvas-001')
+      expect(link!.getAttribute('href')).toContain('/canvas/')
+      expect(screen.getByText('3 elements')).toBeTruthy()
+    })
+
+    it('canvas board cards render after whiteboard cards', () => {
+      renderGrid({
+        projectId: PROJECT_ID,
+        folders: [],
+        whiteboards: makeWhiteboards(1),
+        canvasBoards: [
+          {
+            id: 'canvas-001',
+            name: 'A Canvas',
+            updatedAt: new Date(),
+            _count: { elements: 0 },
+          },
+        ],
+      })
+
+      const allLinks = document.querySelectorAll('a')
+      const linkTexts = Array.from(allLinks).map((a) => a.textContent.trim())
+      const wbIndex = linkTexts.findIndex((t) => t.includes('Whiteboard'))
+      const canvasIndex = linkTexts.findIndex((t) => t.includes('A Canvas'))
+      expect(wbIndex).toBeGreaterThanOrEqual(0)
+      expect(canvasIndex).toBeGreaterThanOrEqual(0)
+      expect(wbIndex).toBeLessThan(canvasIndex)
+    })
+
+    it('omitting canvasBoards renders exactly as before (backward compatible default)', () => {
+      const { container } = renderGrid({
+        projectId: PROJECT_ID,
+        folders: [],
+        whiteboards: [],
+      })
+      expect(container.querySelectorAll('a').length).toBe(0)
+    })
+  })
 })

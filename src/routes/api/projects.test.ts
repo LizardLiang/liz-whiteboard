@@ -101,6 +101,7 @@ describe('getProjectPageContent data layer delegation', () => {
       project: { id: 'proj-001', name: 'Test Project' },
       folders: [],
       whiteboards: [],
+      canvasBoards: [],
       breadcrumb: [],
     }
     vi.mocked(findProjectPageContent).mockResolvedValue(mockContent)
@@ -124,6 +125,7 @@ describe('getProjectPageContent data layer delegation', () => {
       project: { id: 'proj-001', name: 'Test Project' },
       folders: [],
       whiteboards: [],
+      canvasBoards: [],
       breadcrumb: [
         { id: 'proj-001', name: 'Test Project', type: 'project' as const },
       ],

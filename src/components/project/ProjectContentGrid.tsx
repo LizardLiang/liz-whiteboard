@@ -3,7 +3,7 @@
 // Used by both ProjectPage (root view) and FolderPage (folder view).
 
 import { Link } from '@tanstack/react-router'
-import { FileText, Folder } from 'lucide-react'
+import { FileText, Folder, Shapes } from 'lucide-react'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 
 interface ProjectContentGridProps {
@@ -15,12 +15,26 @@ interface ProjectContentGridProps {
     updatedAt: Date
     _count: { tables: number }
   }>
+  /**
+   * Canvas board cards, rendered after the whiteboard cards (grouped by
+   * kind, not interleaved by updatedAt — the interleaved ordering only
+   * applies to the sidebar tree, see findAllProjectsWithTreeForUser's doc
+   * comment). Optional so existing callers/tests that don't pass it keep
+   * rendering exactly as before.
+   */
+  canvasBoards?: Array<{
+    id: string
+    name: string
+    updatedAt: Date
+    _count: { elements: number }
+  }>
 }
 
 export function ProjectContentGrid({
   projectId,
   folders,
   whiteboards,
+  canvasBoards = [],
 }: ProjectContentGridProps) {
   return (
     <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4">
@@ -66,6 +80,35 @@ export function ProjectContentGrid({
                 <div>
                   {whiteboard._count.tables} table
                   {whiteboard._count.tables !== 1 ? 's' : ''}
+                </div>
+              </div>
+            </CardContent>
+          </Card>
+        </Link>
+      ))}
+
+      {/* Canvas board cards after whiteboard cards */}
+      {canvasBoards.map((board) => (
+        <Link
+          key={board.id}
+          to="/canvas/$boardId"
+          params={{ boardId: board.id }}
+        >
+          <Card className="hover:border-primary transition-colors cursor-pointer h-full">
+            <CardHeader>
+              <div className="flex items-center gap-3">
+                <Shapes className="h-8 w-8 text-primary flex-shrink-0" />
+                <CardTitle className="text-base truncate">
+                  {board.name}
+                </CardTitle>
+              </div>
+            </CardHeader>
+            <CardContent>
+              <div className="text-sm text-muted-foreground space-y-1">
+                <div>{new Date(board.updatedAt).toLocaleDateString()}</div>
+                <div>
+                  {board._count.elements} element
+                  {board._count.elements !== 1 ? 's' : ''}
                 </div>
               </div>
             </CardContent>

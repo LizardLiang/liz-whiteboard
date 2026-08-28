@@ -26,7 +26,7 @@ import {
   getFolderProjectId,
   getWhiteboardProjectId,
 } from '@/data/resolve-project'
-import { db, mapWhiteboard } from '@/db'
+import { db } from '@/db'
 import { requireServerFnRole } from '@/lib/auth/require-role'
 
 /**
@@ -319,10 +319,25 @@ export const deleteWhiteboardFn = createServerFn({ method: 'POST' })
   )
 
 /**
- * Get recent whiteboards (ordered by last updated)
- * Only returns whiteboards from projects the user has access to.
+ * A recent-list row — either board kind, tagged so the home page can route
+ * each entry to its own route (`/whiteboard/$whiteboardId` vs
+ * `/canvas/$boardId`). Deliberately NOT the full `Whiteboard` shape: a
+ * `CanvasBoard` has no `canvasState`/`textSource`, so the UNION below
+ * selects only the columns both kinds share.
+ */
+export interface RecentBoardRow {
+  id: string
+  name: string
+  updatedAt: Date
+  kind: 'whiteboard' | 'canvas'
+}
+
+/**
+ * Get recent boards — whiteboards AND canvas boards — ordered by last
+ * updated across both kinds.
+ * Only returns boards from projects the user has access to.
  * DB-level filter enforces user-scoped visibility — no additional per-resource RBAC needed.
- * @param limit - Maximum number of whiteboards to return (default: 10)
+ * @param limit - Maximum number of boards to return (default: 10)
  * @requires authenticated
  */
 export const getRecentWhiteboards = createServerFn({ method: 'GET' })
@@ -330,22 +345,39 @@ export const getRecentWhiteboards = createServerFn({ method: 'GET' })
   .handler(
     requireAuth(async ({ user }, limit) => {
       try {
-        // Filter to only whiteboards in projects the user has access to
-        const whiteboards = db
+        // UNION ALL over Whiteboard and CanvasBoard, each carrying a literal
+        // `kind` column and applying the SAME owner-or-member access filter,
+        // then a single ORDER BY + LIMIT across the combined rows.
+        const rows = db
           .prepare(
-            `SELECT w.* FROM "Whiteboard" w
+            `SELECT w."id" AS "id", w."name" AS "name", w."updatedAt" AS "updatedAt", 'whiteboard' AS "kind"
+             FROM "Whiteboard" w
              JOIN "Project" p ON p."id" = w."projectId"
              WHERE p."ownerId" = ?
                 OR EXISTS (
                   SELECT 1 FROM "ProjectMember" m
                   WHERE m."projectId" = p."id" AND m."userId" = ?
                 )
-             ORDER BY w."updatedAt" DESC
+             UNION ALL
+             SELECT c."id" AS "id", c."name" AS "name", c."updatedAt" AS "updatedAt", 'canvas' AS "kind"
+             FROM "CanvasBoard" c
+             JOIN "Project" p ON p."id" = c."projectId"
+             WHERE p."ownerId" = ?
+                OR EXISTS (
+                  SELECT 1 FROM "ProjectMember" m
+                  WHERE m."projectId" = p."id" AND m."userId" = ?
+                )
+             ORDER BY "updatedAt" DESC
              LIMIT ?`,
           )
-          .all(user.id, user.id, limit)
-          .map((r) => mapWhiteboard(r)!)
-        return whiteboards
+          .all(user.id, user.id, user.id, user.id, limit)
+        const boards: Array<RecentBoardRow> = rows.map((r) => ({
+          id: r.id as string,
+          name: r.name as string,
+          updatedAt: new Date(Number(r.updatedAt)),
+          kind: r.kind as 'whiteboard' | 'canvas',
+        }))
+        return boards
       } catch (error) {
         throw new Error(
           `Failed to fetch recent whiteboards: ${error instanceof Error ? error.message : 'Unknown error'}`,

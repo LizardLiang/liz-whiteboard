@@ -20,11 +20,16 @@ import { useState } from 'react'
 import { toast } from 'sonner'
 import { FolderItem } from './FolderItem'
 import { WhiteboardItem } from './WhiteboardItem'
+import { CanvasBoardItem } from './CanvasBoardItem'
 import { CreateWhiteboardDialog } from './CreateWhiteboardDialog'
+import { CreateCanvasBoardDialog } from './CreateCanvasBoardDialog'
 import { CreateFolderDialog } from './CreateFolderDialog'
+import { CreateBoardMenu } from './CreateBoardMenu'
+import { mergeBoardsByUpdatedAt } from './merge-boards'
 import type { FolderWithChildren } from './FolderItem'
 import type {
   CreateProject,
+  UpdateCanvasBoard,
   UpdateFolder,
   UpdateProject,
   UpdateWhiteboard,
@@ -57,6 +62,10 @@ import {
   deleteWhiteboardFn,
   updateWhiteboardFn,
 } from '@/routes/api/whiteboards'
+import {
+  deleteCanvasBoardFn,
+  updateCanvasBoardFn,
+} from '@/lib/canvas-board/server-functions'
 import { isForbiddenError, isUnauthorizedError } from '@/lib/auth/errors'
 
 /**
@@ -71,6 +80,8 @@ type DialogState =
   | { type: 'deleteFolder'; id: string; name: string }
   | { type: 'editWhiteboard'; id: string; name: string }
   | { type: 'deleteWhiteboard'; id: string; name: string }
+  | { type: 'editCanvasBoard'; id: string; name: string }
+  | { type: 'deleteCanvasBoard'; id: string; name: string }
 
 /**
  * State for the extracted create dialogs
@@ -82,6 +93,12 @@ type CreateFolderDialogState = {
 }
 
 type CreateWhiteboardDialogState = {
+  open: boolean
+  projectId: string
+  folderId?: string
+}
+
+type CreateCanvasBoardDialogState = {
   open: boolean
   projectId: string
   folderId?: string
@@ -105,6 +122,12 @@ export function ProjectTree() {
       projectId: '',
       folderId: undefined,
     })
+  const [createCanvasBoardDialog, setCreateCanvasBoardDialog] =
+    useState<CreateCanvasBoardDialogState>({
+      open: false,
+      projectId: '',
+      folderId: undefined,
+    })
   const [createFolderDialog, setCreateFolderDialog] =
     useState<CreateFolderDialogState>({
       open: false,
@@ -116,9 +139,10 @@ export function ProjectTree() {
   const [formName, setFormName] = useState('')
   const [formDescription, setFormDescription] = useState('')
 
-  // Get current whiteboard ID from URL params
+  // Get current whiteboard/canvas-board ID from URL params
   const activeWhiteboardId =
     'whiteboardId' in params ? params.whiteboardId : undefined
+  const activeCanvasBoardId = 'boardId' in params ? params.boardId : undefined
 
   // Get current pathname for route-based project highlighting
   const currentPathname = useRouterState({
@@ -282,6 +306,49 @@ export function ProjectTree() {
     },
   })
 
+  const updateCanvasBoardMutation = useMutation({
+    mutationFn: (data: { id: string; data: UpdateCanvasBoard }) =>
+      updateCanvasBoardFn({ data }),
+    onSuccess: (data) => {
+      if (isUnauthorizedError(data)) {
+        toast.error('Session expired', { description: 'Please log in again.' })
+        return
+      }
+      queryClient.invalidateQueries({ queryKey: ['projects'] })
+      setDialogState({ type: 'none' })
+      resetForm()
+      toast.success('Canvas board updated!', {
+        description: `${data.name} has been updated successfully.`,
+      })
+    },
+    onError: (error: Error) => {
+      toast.error('Failed to update canvas board', {
+        description: error.message || 'An unexpected error occurred.',
+      })
+    },
+  })
+
+  const deleteCanvasBoardMutation = useMutation({
+    mutationFn: (canvasBoardId: string) =>
+      deleteCanvasBoardFn({ data: canvasBoardId }),
+    onSuccess: (_, deletedId) => {
+      queryClient.invalidateQueries({ queryKey: ['projects'] })
+      setDialogState({ type: 'none' })
+      toast.success('Canvas board deleted', {
+        description: 'The canvas board has been deleted successfully.',
+      })
+      // Navigate home if we deleted the active canvas board
+      if (deletedId === activeCanvasBoardId) {
+        navigate({ to: '/' })
+      }
+    },
+    onError: (error: Error) => {
+      toast.error('Failed to delete canvas board', {
+        description: error.message || 'An unexpected error occurred.',
+      })
+    },
+  })
+
   // Helper functions
   const resetForm = () => {
     setFormName('')
@@ -343,13 +410,36 @@ export function ProjectTree() {
     setDialogState({ type: 'deleteWhiteboard', id, name })
   }
 
-  // Drag and drop handler
+  const handleCreateCanvasBoard = (projectId: string, folderId?: string) => {
+    setCreateCanvasBoardDialog({ open: true, projectId, folderId })
+  }
+
+  const handleEditCanvasBoard = (id: string, name: string) => {
+    setFormName(name)
+    setDialogState({ type: 'editCanvasBoard', id, name })
+  }
+
+  const handleDeleteCanvasBoard = (id: string, name: string) => {
+    setDialogState({ type: 'deleteCanvasBoard', id, name })
+  }
+
+  // Drag and drop handlers
   const handleWhiteboardDrop = async (
     whiteboardId: string,
     targetFolderId: string,
   ) => {
     await updateWhiteboardMutation.mutateAsync({
       id: whiteboardId,
+      data: { folderId: targetFolderId },
+    })
+  }
+
+  const handleCanvasBoardDrop = async (
+    canvasBoardId: string,
+    targetFolderId: string,
+  ) => {
+    await updateCanvasBoardMutation.mutateAsync({
+      id: canvasBoardId,
       data: { folderId: targetFolderId },
     })
   }
@@ -405,6 +495,20 @@ export function ProjectTree() {
     }
   }
 
+  const handleSubmitCanvasBoard = async (e: React.FormEvent) => {
+    e.preventDefault()
+    try {
+      if (dialogState.type === 'editCanvasBoard') {
+        await updateCanvasBoardMutation.mutateAsync({
+          id: dialogState.id,
+          data: { name: formName },
+        })
+      }
+    } catch (error) {
+      console.error('Canvas board submission error:', error)
+    }
+  }
+
   // Build folder tree structure
   const buildFolderTree = (
     folders: Array<{
@@ -413,6 +517,7 @@ export function ProjectTree() {
       parentFolderId: string | null
       childFolders?: Array<any>
       whiteboards?: Array<any>
+      canvasBoards?: Array<any>
     }>,
     parentId: string | null = null,
   ): Array<FolderWithChildren> => {
@@ -460,7 +565,13 @@ export function ProjectTree() {
           {projects.map((project) => {
             const isExpanded = expandedProjects.has(project.id)
             const rootFolders = buildFolderTree(project.folders)
-            const rootWhiteboards = project.whiteboards
+            // Merged whiteboard + canvas board rows, most recently updated
+            // first across both kinds (spec-delta: "Both kinds appear in one
+            // tree level").
+            const rootBoards = mergeBoardsByUpdatedAt(
+              project.whiteboards,
+              project.canvasBoards,
+            )
             // Active when URL is /project/:id or /project/:id/folder/:folderId
             const isActiveProject = currentPathname.startsWith(
               `/project/${project.id}`,
@@ -504,19 +615,21 @@ export function ProjectTree() {
 
                   {/* Project action buttons */}
                   <div className="absolute right-8 top-1 flex gap-1 opacity-0 group-hover:opacity-100 transition-opacity bg-sidebar rounded-md px-0.5 pointer-events-none group-hover:pointer-events-auto">
-                    <Button
-                      variant="ghost"
-                      size="sm"
-                      className="h-6 w-6 p-0"
-                      onClick={(e) => {
-                        e.stopPropagation()
-                        handleCreateWhiteboard(project.id)
-                      }}
-                      title="New Whiteboard"
+                    <CreateBoardMenu
+                      onCreateWhiteboard={() => handleCreateWhiteboard(project.id)}
+                      onCreateCanvasBoard={() => handleCreateCanvasBoard(project.id)}
                     >
-                      <Plus className="h-3 w-3" />
-                      <span className="sr-only">New Whiteboard</span>
-                    </Button>
+                      <Button
+                        variant="ghost"
+                        size="sm"
+                        className="h-6 w-6 p-0"
+                        onClick={(e) => e.stopPropagation()}
+                        title="New board"
+                      >
+                        <Plus className="h-3 w-3" />
+                        <span className="sr-only">New board</span>
+                      </Button>
+                    </CreateBoardMenu>
                     <Button
                       variant="ghost"
                       size="sm"
@@ -573,34 +686,53 @@ export function ProjectTree() {
                         folder={folder}
                         depth={0}
                         activeWhiteboardId={activeWhiteboardId}
+                        activeCanvasBoardId={activeCanvasBoardId}
                         onCreateFolder={(parentId) =>
                           handleCreateFolder(project.id, parentId)
                         }
                         onCreateWhiteboard={(folderId) =>
                           handleCreateWhiteboard(project.id, folderId)
                         }
+                        onCreateCanvasBoard={(folderId) =>
+                          handleCreateCanvasBoard(project.id, folderId)
+                        }
                         onRenameFolder={handleEditFolder}
                         onDeleteFolder={handleDeleteFolder}
                         onRenameWhiteboard={handleEditWhiteboard}
                         onDeleteWhiteboard={handleDeleteWhiteboard}
                         onWhiteboardDrop={handleWhiteboardDrop}
+                        onRenameCanvasBoard={handleEditCanvasBoard}
+                        onDeleteCanvasBoard={handleDeleteCanvasBoard}
+                        onCanvasBoardDrop={handleCanvasBoardDrop}
                       />
                     ))}
 
-                    {/* Root whiteboards (not in any folder) */}
-                    {rootWhiteboards.map((whiteboard) => (
-                      <WhiteboardItem
-                        key={whiteboard.id}
-                        id={whiteboard.id}
-                        name={whiteboard.name}
-                        isActive={whiteboard.id === activeWhiteboardId}
-                        onRename={handleEditWhiteboard}
-                        onDelete={handleDeleteWhiteboard}
-                        onDragStart={(e, id) => {
-                          e.dataTransfer.setData('whiteboardId', id)
-                        }}
-                      />
-                    ))}
+                    {/* Root boards (not in any folder), whiteboards and
+                        canvas boards interleaved by updatedAt */}
+                    {rootBoards.map((board) =>
+                      board.kind === 'canvas' ? (
+                        <CanvasBoardItem
+                          key={board.id}
+                          id={board.id}
+                          name={board.name}
+                          isActive={board.id === activeCanvasBoardId}
+                          onRename={handleEditCanvasBoard}
+                          onDelete={handleDeleteCanvasBoard}
+                        />
+                      ) : (
+                        <WhiteboardItem
+                          key={board.id}
+                          id={board.id}
+                          name={board.name}
+                          isActive={board.id === activeWhiteboardId}
+                          onRename={handleEditWhiteboard}
+                          onDelete={handleDeleteWhiteboard}
+                          onDragStart={(e, id) => {
+                            e.dataTransfer.setData('whiteboardId', id)
+                          }}
+                        />
+                      ),
+                    )}
                   </div>
                 </CollapsibleContent>
               </Collapsible>
@@ -907,6 +1039,107 @@ export function ProjectTree() {
               onClick={() => {
                 if (dialogState.type === 'deleteWhiteboard') {
                   deleteWhiteboardMutation.mutate(dialogState.id)
+                }
+              }}
+            >
+              Delete
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* Create Canvas Board Dialog (extracted component) */}
+      <CreateCanvasBoardDialog
+        open={createCanvasBoardDialog.open}
+        onOpenChange={(open) =>
+          setCreateCanvasBoardDialog((prev) => ({ ...prev, open }))
+        }
+        projectId={createCanvasBoardDialog.projectId}
+        folderId={createCanvasBoardDialog.folderId}
+      />
+
+      {/* Canvas Board Edit Dialog */}
+      <Dialog
+        open={dialogState.type === 'editCanvasBoard'}
+        onOpenChange={(open) => {
+          if (!open) {
+            setDialogState({ type: 'none' })
+            resetForm()
+          }
+        }}
+      >
+        <DialogContent>
+          <form onSubmit={handleSubmitCanvasBoard}>
+            <DialogHeader>
+              <DialogTitle>Rename Canvas Board</DialogTitle>
+              <DialogDescription>
+                Update the canvas board name.
+              </DialogDescription>
+            </DialogHeader>
+            <div className="space-y-4 py-4">
+              <div className="space-y-2">
+                <Label htmlFor="canvas-board-rename">Name</Label>
+                <Input
+                  id="canvas-board-rename"
+                  value={formName}
+                  onChange={(e) => setFormName(e.target.value)}
+                  placeholder="My Canvas Board"
+                  required
+                />
+              </div>
+            </div>
+            <DialogFooter>
+              <Button
+                type="button"
+                variant="outline"
+                onClick={() => {
+                  setDialogState({ type: 'none' })
+                  resetForm()
+                }}
+              >
+                Cancel
+              </Button>
+              <Button type="submit" disabled={!formName.trim()}>
+                Save
+              </Button>
+            </DialogFooter>
+          </form>
+        </DialogContent>
+      </Dialog>
+
+      {/* Canvas Board Delete Dialog */}
+      <Dialog
+        open={dialogState.type === 'deleteCanvasBoard'}
+        onOpenChange={(open) => {
+          if (!open) setDialogState({ type: 'none' })
+        }}
+      >
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Delete Canvas Board</DialogTitle>
+            <DialogDescription>
+              Are you sure you want to delete{' '}
+              <strong>
+                {dialogState.type === 'deleteCanvasBoard'
+                  ? dialogState.name
+                  : ''}
+              </strong>
+              ? This will permanently delete every element on this canvas
+              board.
+            </DialogDescription>
+          </DialogHeader>
+          <DialogFooter>
+            <Button
+              variant="outline"
+              onClick={() => setDialogState({ type: 'none' })}
+            >
+              Cancel
+            </Button>
+            <Button
+              variant="destructive"
+              onClick={() => {
+                if (dialogState.type === 'deleteCanvasBoard') {
+                  deleteCanvasBoardMutation.mutate(dialogState.id)
                 }
               }}
             >

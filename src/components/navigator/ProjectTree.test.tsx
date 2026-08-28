@@ -33,6 +33,13 @@ vi.mock('@/routes/api/whiteboards', () => ({
   getRecentWhiteboards: vi.fn(),
 }))
 
+vi.mock('@/lib/canvas-board/server-functions', () => ({
+  deleteCanvasBoardFn: vi.fn(),
+  updateCanvasBoardFn: vi.fn(),
+  createCanvasBoardFn: vi.fn(),
+  getCanvasBoardPage: vi.fn(),
+}))
+
 vi.mock('sonner', () => ({
   toast: {
     success: vi.fn(),
@@ -57,6 +64,7 @@ vi.mock('@tanstack/react-router', async (importOriginal) => {
       const href = to
         .replace('$projectId', params?.projectId ?? '')
         .replace('$whiteboardId', params?.whiteboardId ?? '')
+        .replace('$boardId', params?.boardId ?? '')
         .replace('/project/', '/project/')
       return (
         <a href={href} className={className} {...rest}>
@@ -76,6 +84,7 @@ const mockProjects = [
     updatedAt: new Date('2026-01-01'),
     folders: [],
     whiteboards: [],
+    canvasBoards: [],
   },
 ]
 
@@ -231,5 +240,82 @@ describe('ProjectTree sidebar navigation behavior', () => {
       const classes = anchor!.className.split(' ')
       expect(classes).not.toContain('bg-accent')
     })
+  })
+})
+
+// navigator-create-canvas-board tactical plan, step 11: extend ProjectTree
+// coverage for the new canvas board rows.
+describe('ProjectTree canvas board rows', () => {
+  const mixedKindProject = {
+    id: 'proj-002',
+    name: 'Mixed Project',
+    description: null,
+    createdAt: new Date('2026-01-01'),
+    updatedAt: new Date('2026-01-01'),
+    folders: [],
+    whiteboards: [
+      {
+        id: 'wb-old',
+        name: 'Old Whiteboard',
+        updatedAt: new Date('2026-01-01T00:00:00Z'),
+        kind: 'whiteboard' as const,
+      },
+    ],
+    canvasBoards: [
+      {
+        id: 'canvas-new',
+        name: 'New Canvas Board',
+        updatedAt: new Date('2026-02-01T00:00:00Z'),
+        kind: 'canvas' as const,
+      },
+    ],
+  }
+
+  async function renderExpanded() {
+    vi.mocked(getProjectsWithTree).mockResolvedValue([
+      mixedKindProject,
+    ] as any)
+    renderProjectTree()
+    await screen.findByText('Mixed Project')
+    const chevronButton = screen.getByRole('button', {
+      name: /toggle .* tree/i,
+    })
+    act(() => {
+      fireEvent.click(chevronButton)
+    })
+  }
+
+  it('renders a canvas board row linking to /canvas/$boardId', async () => {
+    await renderExpanded()
+
+    const boardLink = await screen.findByText('New Canvas Board')
+    const anchor = boardLink.closest('a')
+    expect(anchor).toBeTruthy()
+    expect(anchor!.getAttribute('href')).toContain('canvas-new')
+    expect(anchor!.getAttribute('href')).toContain('/canvas/')
+  })
+
+  it('still renders the whiteboard row linking to /whiteboard/$whiteboardId', async () => {
+    await renderExpanded()
+
+    const boardLink = await screen.findByText('Old Whiteboard')
+    const anchor = boardLink.closest('a')
+    expect(anchor).toBeTruthy()
+    expect(anchor!.getAttribute('href')).toContain('wb-old')
+    expect(anchor!.getAttribute('href')).toContain('/whiteboard/')
+  })
+
+  it('orders rows by updatedAt DESC across both kinds — the more recently updated canvas board comes before the older whiteboard', async () => {
+    await renderExpanded()
+
+    await screen.findByText('New Canvas Board')
+    const allLinkTexts = Array.from(document.querySelectorAll('a')).map(
+      (a) => a.textContent,
+    )
+    const canvasIndex = allLinkTexts.indexOf('New Canvas Board')
+    const whiteboardIndex = allLinkTexts.indexOf('Old Whiteboard')
+    expect(canvasIndex).toBeGreaterThanOrEqual(0)
+    expect(whiteboardIndex).toBeGreaterThanOrEqual(0)
+    expect(canvasIndex).toBeLessThan(whiteboardIndex)
   })
 })

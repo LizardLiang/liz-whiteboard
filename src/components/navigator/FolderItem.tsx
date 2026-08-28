@@ -12,6 +12,10 @@ import {
 } from 'lucide-react'
 import { useState } from 'react'
 import { WhiteboardItem } from './WhiteboardItem'
+import { CanvasBoardItem } from './CanvasBoardItem'
+import { CreateBoardMenu } from './CreateBoardMenu'
+import { mergeBoardsByUpdatedAt } from './merge-boards'
+import type { TreeBoardRow } from '@/data/project'
 import type { Folder as FolderType, Whiteboard } from '@/data/models'
 import { Button } from '@/components/ui/button'
 import {
@@ -31,6 +35,7 @@ const MAX_FOLDER_DEPTH = 10
 export type FolderWithChildren = FolderType & {
   childFolders?: Array<FolderWithChildren>
   whiteboards?: Array<Whiteboard>
+  canvasBoards?: Array<TreeBoardRow>
 }
 
 /**
@@ -43,10 +48,14 @@ export interface FolderItemProps {
   depth?: number
   /** ID of currently active whiteboard */
   activeWhiteboardId?: string
+  /** ID of currently active canvas board */
+  activeCanvasBoardId?: string
   /** Callback for creating a new subfolder */
   onCreateFolder?: (parentFolderId: string) => void
   /** Callback for creating a new whiteboard */
   onCreateWhiteboard?: (folderId: string) => void
+  /** Callback for creating a new canvas board */
+  onCreateCanvasBoard?: (folderId: string) => void
   /** Callback for renaming folder */
   onRenameFolder?: (id: string, currentName: string) => void
   /** Callback for deleting folder */
@@ -55,10 +64,16 @@ export interface FolderItemProps {
   onRenameWhiteboard?: (id: string, currentName: string) => void
   /** Callback for deleting whiteboard */
   onDeleteWhiteboard?: (id: string, name: string) => void
+  /** Callback for renaming canvas board */
+  onRenameCanvasBoard?: (id: string, currentName: string) => void
+  /** Callback for deleting canvas board */
+  onDeleteCanvasBoard?: (id: string, name: string) => void
   /** Callback when whiteboard drag starts */
   onWhiteboardDragStart?: (e: React.DragEvent, whiteboardId: string) => void
   /** Callback when whiteboard is dropped on this folder */
   onWhiteboardDrop?: (whiteboardId: string, targetFolderId: string) => void
+  /** Callback when canvas board is dropped on this folder */
+  onCanvasBoardDrop?: (canvasBoardId: string, targetFolderId: string) => void
 }
 
 /**
@@ -70,23 +85,42 @@ export function FolderItem({
   folder,
   depth = 0,
   activeWhiteboardId,
+  activeCanvasBoardId,
   onCreateFolder,
   onCreateWhiteboard,
+  onCreateCanvasBoard,
   onRenameFolder,
   onDeleteFolder,
   onRenameWhiteboard,
   onDeleteWhiteboard,
+  onRenameCanvasBoard,
+  onDeleteCanvasBoard,
   onWhiteboardDragStart,
   onWhiteboardDrop,
+  onCanvasBoardDrop,
 }: FolderItemProps) {
   const [isOpen, setIsOpen] = useState(false)
   const [isDragOver, setIsDragOver] = useState(false)
 
   const hasChildren =
     (folder.childFolders && folder.childFolders.length > 0) ||
-    (folder.whiteboards && folder.whiteboards.length > 0)
+    (folder.whiteboards && folder.whiteboards.length > 0) ||
+    (folder.canvasBoards && folder.canvasBoards.length > 0)
 
   const canNestDeeper = depth < MAX_FOLDER_DEPTH
+
+  // Whiteboard rows and canvas board rows interleaved by updatedAt, most
+  // recently updated first across both kinds — mirrors ProjectTree.tsx's
+  // root-level merge.
+  const boards = mergeBoardsByUpdatedAt(
+    (folder.whiteboards ?? []).map((w) => ({
+      id: w.id,
+      name: w.name,
+      updatedAt: w.updatedAt,
+      kind: 'whiteboard' as const,
+    })),
+    folder.canvasBoards ?? [],
+  )
 
   const handleDragOver = (e: React.DragEvent) => {
     e.preventDefault()
@@ -106,9 +140,17 @@ export function FolderItem({
     e.stopPropagation()
     setIsDragOver(false)
 
+    // Two distinct dataTransfer keys, one per board kind — never let a
+    // canvas board id reach `onWhiteboardDrop` (and its `updateWhiteboardFn`
+    // caller) or vice versa.
     const whiteboardId = e.dataTransfer.getData('whiteboardId')
     if (whiteboardId && onWhiteboardDrop) {
       onWhiteboardDrop(whiteboardId, folder.id)
+      return
+    }
+    const canvasBoardId = e.dataTransfer.getData('canvasBoardId')
+    if (canvasBoardId && onCanvasBoardDrop) {
+      onCanvasBoardDrop(canvasBoardId, folder.id)
     }
   }
 
@@ -152,20 +194,22 @@ export function FolderItem({
 
         {/* Action Buttons */}
         <div className="absolute right-8 top-1 flex gap-1 opacity-0 group-hover:opacity-100 transition-opacity bg-sidebar rounded-md px-0.5">
-          {onCreateWhiteboard && (
-            <Button
-              variant="ghost"
-              size="sm"
-              className="h-6 w-6 p-0"
-              onClick={(e) => {
-                e.stopPropagation()
-                onCreateWhiteboard(folder.id)
-              }}
-              title="New Whiteboard"
+          {onCreateWhiteboard && onCreateCanvasBoard && (
+            <CreateBoardMenu
+              onCreateWhiteboard={() => onCreateWhiteboard(folder.id)}
+              onCreateCanvasBoard={() => onCreateCanvasBoard(folder.id)}
             >
-              <Plus className="h-3 w-3" />
-              <span className="sr-only">New Whiteboard</span>
-            </Button>
+              <Button
+                variant="ghost"
+                size="sm"
+                className="h-6 w-6 p-0"
+                onClick={(e) => e.stopPropagation()}
+                title="New board"
+              >
+                <Plus className="h-3 w-3" />
+                <span className="sr-only">New board</span>
+              </Button>
+            </CreateBoardMenu>
           )}
           {onCreateFolder && canNestDeeper && (
             <Button
@@ -226,29 +270,46 @@ export function FolderItem({
                 folder={childFolder}
                 depth={depth + 1}
                 activeWhiteboardId={activeWhiteboardId}
+                activeCanvasBoardId={activeCanvasBoardId}
                 onCreateFolder={onCreateFolder}
                 onCreateWhiteboard={onCreateWhiteboard}
+                onCreateCanvasBoard={onCreateCanvasBoard}
                 onRenameFolder={onRenameFolder}
                 onDeleteFolder={onDeleteFolder}
                 onRenameWhiteboard={onRenameWhiteboard}
                 onDeleteWhiteboard={onDeleteWhiteboard}
+                onRenameCanvasBoard={onRenameCanvasBoard}
+                onDeleteCanvasBoard={onDeleteCanvasBoard}
                 onWhiteboardDragStart={onWhiteboardDragStart}
                 onWhiteboardDrop={onWhiteboardDrop}
+                onCanvasBoardDrop={onCanvasBoardDrop}
               />
             ))}
 
-          {/* Render whiteboards */}
-          {folder.whiteboards?.map((whiteboard) => (
-            <WhiteboardItem
-              key={whiteboard.id}
-              id={whiteboard.id}
-              name={whiteboard.name}
-              isActive={whiteboard.id === activeWhiteboardId}
-              onRename={onRenameWhiteboard}
-              onDelete={onDeleteWhiteboard}
-              onDragStart={onWhiteboardDragStart}
-            />
-          ))}
+          {/* Render boards: whiteboards and canvas boards interleaved by
+              updatedAt */}
+          {boards.map((board) =>
+            board.kind === 'canvas' ? (
+              <CanvasBoardItem
+                key={board.id}
+                id={board.id}
+                name={board.name}
+                isActive={board.id === activeCanvasBoardId}
+                onRename={onRenameCanvasBoard}
+                onDelete={onDeleteCanvasBoard}
+              />
+            ) : (
+              <WhiteboardItem
+                key={board.id}
+                id={board.id}
+                name={board.name}
+                isActive={board.id === activeWhiteboardId}
+                onRename={onRenameWhiteboard}
+                onDelete={onDeleteWhiteboard}
+                onDragStart={onWhiteboardDragStart}
+              />
+            ),
+          )}
 
           {/* Show warning if max depth reached */}
           {!canNestDeeper &&
