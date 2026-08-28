@@ -794,3 +794,149 @@ describe('the popover and the board keyboard', () => {
     expect(onKeyDown).not.toHaveBeenCalled()
   })
 })
+
+describe('text alignment', () => {
+  it('offers Align for a text element, which takes no paint at all', () => {
+    // The case that forced a second target set. A `text` element paints no
+    // fill, stroke or corner, so it shows none of those settings — but it is
+    // made of text, so alignment is the one setting that MUST reach it.
+    setup([shape('t', { kind: 'text' })], ['t'])
+    expect(screen.getByRole('button', { name: 'Align' })).toBeTruthy()
+    expect(screen.queryByRole('button', { name: 'Fill' })).toBeNull()
+  })
+
+  it('offers Align for a shape alongside the paint settings', () => {
+    setup([shape('a')], ['a'])
+    expect(screen.getByRole('button', { name: 'Align' })).toBeTruthy()
+    expect(screen.getByRole('button', { name: 'Fill' })).toBeTruthy()
+  })
+
+  it('withholds Align from a connector-only selection', () => {
+    // A connector carries no text, so the setting would visibly do nothing.
+    setup([connectorElement('c')], ['c'])
+    expect(screen.queryByRole('button', { name: 'Align' })).toBeNull()
+  })
+
+  it('withholds Align while an element is being edited', () => {
+    // Every piece of selection chrome appears and disappears together — the
+    // rule the file header states for the bar as a whole.
+    setup([shape('a')], ['a'], false, 'a')
+    expect(screen.queryByRole('button', { name: 'Align' })).toBeNull()
+  })
+
+  it('withholds Align on a read-only board', () => {
+    setup([shape('a')], ['a'], true)
+    expect(screen.queryByRole('button', { name: 'Align' })).toBeNull()
+  })
+
+  it('emits a textAlign change for every alignable target', () => {
+    const { onStyleChange } = setup(
+      [shape('a'), shape('b', { kind: 'text' })],
+      ['a', 'b'],
+    )
+    openSetting('Align')
+    fireEvent.click(screen.getByRole('button', { name: 'Align center' }))
+    expect(onStyleChange).toHaveBeenCalledTimes(1)
+    const [targets, change] = onStyleChange.mock.calls[0]
+    expect(targets.map((e: CanvasElement) => e.id)).toEqual(['a', 'b'])
+    expect(change).toEqual({ target: 'textAlign', value: 'center' })
+  })
+
+  it('emits a verticalAlign change from the second row', () => {
+    const { onStyleChange } = setup([shape('a')], ['a'])
+    openSetting('Align')
+    fireEvent.click(screen.getByRole('button', { name: 'Align bottom' }))
+    expect(onStyleChange).toHaveBeenCalledWith(expect.anything(), {
+      target: 'verticalAlign',
+      value: 'bottom',
+    })
+  })
+
+  it('marks the current alignment pressed on both axes', () => {
+    setup(
+      [
+        shape('a', {
+          style: {
+            ...DEFAULT_ELEMENT_STYLE,
+            textAlign: 'right',
+            verticalAlign: 'middle',
+          },
+        }),
+      ],
+      ['a'],
+    )
+    openSetting('Align')
+    expect(
+      screen
+        .getByRole('button', { name: 'Align right' })
+        .getAttribute('aria-pressed'),
+    ).toBe('true')
+    expect(
+      screen
+        .getByRole('button', { name: 'Align middle' })
+        .getAttribute('aria-pressed'),
+    ).toBe('true')
+    expect(
+      screen
+        .getByRole('button', { name: 'Align left' })
+        .getAttribute('aria-pressed'),
+    ).toBe('false')
+  })
+
+  it('marks nothing pressed when the selection disagrees', () => {
+    // The honest rendering of a mixed selection — the same convention the
+    // swatches follow rather than claiming one element's value for all.
+    setup(
+      [
+        shape('a', { style: { ...DEFAULT_ELEMENT_STYLE, textAlign: 'left' } }),
+        shape('b', { style: { ...DEFAULT_ELEMENT_STYLE, textAlign: 'right' } }),
+      ],
+      ['a', 'b'],
+    )
+    openSetting('Align')
+    for (const name of ['Align left', 'Align center', 'Align right']) {
+      expect(
+        screen.getByRole('button', { name }).getAttribute('aria-pressed'),
+      ).toBe('false')
+    }
+  })
+
+  it('writes nothing when every target is already aligned that way', () => {
+    // The same no-op guard every other setting states: a stray click on the
+    // active option must not push an undo entry that reverses to itself.
+    const { onStyleChange } = setup([shape('a')], ['a'])
+    openSetting('Align')
+    fireEvent.click(screen.getByRole('button', { name: 'Align left' }))
+    expect(onStyleChange).not.toHaveBeenCalled()
+  })
+})
+
+describe('applyStyleChange for alignment', () => {
+  const base: CanvasElementStyle = { ...DEFAULT_ELEMENT_STYLE }
+
+  it('writes textAlign and leaves the other axis alone', () => {
+    const next = applyStyleChange(base, { target: 'textAlign', value: 'right' })
+    expect(next.textAlign).toBe('right')
+    expect(next.verticalAlign).toBe(base.verticalAlign)
+  })
+
+  it('writes verticalAlign and leaves the other axis alone', () => {
+    const next = applyStyleChange(base, {
+      target: 'verticalAlign',
+      value: 'bottom',
+    })
+    expect(next.verticalAlign).toBe('bottom')
+    expect(next.textAlign).toBe(base.textAlign)
+  })
+
+  it('touches no paint field', () => {
+    const next = applyStyleChange(base, {
+      target: 'textAlign',
+      value: 'center',
+    })
+    expect(next.fill).toBe(base.fill)
+    expect(next.stroke).toBe(base.stroke)
+    expect(next.strokeWidth).toBe(base.strokeWidth)
+    expect(next.cornerRadius).toBe(base.cornerRadius)
+  })
+})

@@ -603,7 +603,7 @@ export function textFrame(element: CanvasElement): {
   }
 }
 
-/** Lay out an element's text with the element's own font size. */
+/** Lay out an element's text with the element's own font size and alignment. */
 export function layoutElementText(
   element: CanvasElement,
   measure: TextMeasurer,
@@ -611,10 +611,44 @@ export function layoutElementText(
   const frame = textFrame(element)
   return layoutText(
     element.text ?? '',
-    { ...DEFAULT_TEXT_STYLE, fontSize: element.style.fontSize },
+    {
+      ...DEFAULT_TEXT_STYLE,
+      fontSize: element.style.fontSize,
+      align: element.style.textAlign,
+    },
     frame.maxWidth,
     measure,
   )
+}
+
+/**
+ * Where an element's text block STARTS vertically, in WORLD units.
+ *
+ * The counterpart to `textFrame` for the one offset that cannot be computed
+ * alongside it: vertical alignment needs the laid-out height, and the layout
+ * needs `textFrame`'s `maxWidth` first. So the frame answers "where does the
+ * text begin and how wide may it run", and this answers "and how far down",
+ * once there is a layout to measure.
+ *
+ * The SAME rule `textFrame` states applies here and matters more, because
+ * there are four call sites rather than three: drawing, the caret, click-to-
+ * caret and the IME anchor must all use this. A renderer that centred and an
+ * input hook that did not would put the caret on a different line from the
+ * glyphs.
+ *
+ * Extra space is clamped at zero, so a block TALLER than its box always starts
+ * at the top whatever the alignment says — the same unclipped overflow the top
+ * of the box has always shown, rather than text creeping up out of the shape.
+ */
+export function textOriginY(
+  element: CanvasElement,
+  layout: TextLayout,
+): number {
+  const available = Math.max(0, element.height - TEXT_PADDING * 2)
+  const slack = Math.max(0, available - layout.height)
+  const align = element.style.verticalAlign
+  const offset = align === 'middle' ? slack / 2 : align === 'bottom' ? slack : 0
+  return element.y + TEXT_PADDING + offset
 }
 
 /**
@@ -749,13 +783,24 @@ function drawElement(
   const measure = measurerFor(ctx, element.style.fontSize)
   const layout = layoutElementText(element, measure)
   const frame = textFrame(element)
+  const originY = textOriginY(element, layout)
 
   ctx.fillStyle = resolveTextColor(element.style, theme)
   ctx.font = canvasFont(element.style.fontSize)
   ctx.textBaseline = 'top'
+  // Still 'left', under every alignment. The horizontal offset is already in
+  // each line's `carets[0]` — the layout owns it, so that the caret and the
+  // glyphs cannot disagree about where the line starts. Handing the alignment
+  // to `ctx.textAlign` instead would move the glyphs and leave the caret math
+  // behind.
   ctx.textAlign = 'left'
   for (let i = 0; i < layout.lines.length; i += 1) {
-    ctx.fillText(layout.lines[i].text, frame.x, frame.y + i * layout.lineHeight)
+    const line = layout.lines[i]
+    ctx.fillText(
+      line.text,
+      frame.x + line.carets[0],
+      originY + i * layout.lineHeight,
+    )
   }
   // Returned so `drawScene` can hand it to `drawCaret` instead of paying for
   // a second layout of the same string on the same frame.
@@ -905,12 +950,15 @@ function drawCaret(
     layoutElementText(element, measurerFor(ctx, element.style.fontSize))
   const local = pointFromCaret(layout, caret)
   const frame = textFrame(element)
+  // `local.x` is already alignment-shifted (it comes from the line's carets);
+  // only the vertical origin has to be resolved here.
+  const originY = textOriginY(element, layout)
 
   ctx.strokeStyle = CHROME[theme].text
   ctx.lineWidth = 1 / camera.zoom
   ctx.beginPath()
-  ctx.moveTo(frame.x + local.x, frame.y + local.y)
-  ctx.lineTo(frame.x + local.x, frame.y + local.y + local.height)
+  ctx.moveTo(frame.x + local.x, originY + local.y)
+  ctx.lineTo(frame.x + local.x, originY + local.y + local.height)
   ctx.stroke()
 }
 

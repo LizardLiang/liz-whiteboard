@@ -37,6 +37,7 @@ import {
   resolveTextColor,
   syncBackingStore,
   textFrame,
+  textOriginY,
   worldRectToScreen,
 } from './render'
 import { DEFAULT_ELEMENT_STYLE, sceneFrom } from './scene'
@@ -1016,5 +1017,169 @@ describe('drawScene: shape kinds', () => {
         50 + TEXT_PADDING,
       ])
     }
+  })
+})
+
+describe('text alignment', () => {
+  // makeElement is 200x120 at (100, 50), TEXT_PADDING is 8, and the stub
+  // measurer is fontSize * 0.5 per character. So for the default 16px font:
+  //   frame.x = 108, frame.y = 58, maxWidth = 184, available height = 104
+  //   'abc' = 24 units wide  -> horizontal slack 160
+  //   one line = 16 * 1.4 = 22.4 tall -> vertical slack 81.6
+  const measureStub = (text: string) =>
+    text.length * DEFAULT_ELEMENT_STYLE.fontSize * CHAR_WIDTH_RATIO
+
+  function drawn(element: CanvasElement) {
+    const rec = createRecorder()
+    drawScene(
+      rec.ctx,
+      sceneFrom([element]),
+      { x: 0, y: 0, zoom: 1 },
+      viewport(),
+      NO_SELECTION,
+    )
+    return rec.opsOfType('fillText')
+  }
+
+  it('draws left-aligned text at the frame origin, as it always has', () => {
+    const element = makeElement({ kind: 'text', text: 'abc' })
+    const frame = textFrame(element)
+    expect(drawn(element)[0].args.slice(0, 3)).toEqual([
+      'abc',
+      frame.x,
+      frame.y,
+    ])
+  })
+
+  it('offsets a centred line by half the horizontal slack', () => {
+    const element = makeElement({
+      kind: 'text',
+      text: 'abc',
+      style: { ...DEFAULT_ELEMENT_STYLE, textAlign: 'center' },
+    })
+    const frame = textFrame(element)
+    expect(drawn(element)[0].args[1]).toBe(frame.x + 80)
+  })
+
+  it('offsets a right-aligned line by the whole horizontal slack', () => {
+    const element = makeElement({
+      kind: 'text',
+      text: 'abc',
+      style: { ...DEFAULT_ELEMENT_STYLE, textAlign: 'right' },
+    })
+    const frame = textFrame(element)
+    expect(drawn(element)[0].args[1]).toBe(frame.x + 160)
+  })
+
+  it('keeps the horizontal offset out of ctx.textAlign', () => {
+    // The offset lives in the layout so the caret and the glyphs cannot
+    // disagree; handing it to the context instead would move one and not the
+    // other. `textAlign` therefore stays 'left' under every alignment.
+    const rec = createRecorder()
+    drawScene(
+      rec.ctx,
+      sceneFrom([
+        makeElement({
+          kind: 'text',
+          text: 'abc',
+          style: { ...DEFAULT_ELEMENT_STYLE, textAlign: 'right' },
+        }),
+      ]),
+      { x: 0, y: 0, zoom: 1 },
+      viewport(),
+      NO_SELECTION,
+    )
+    expect(rec.ctx.textAlign).toBe('left')
+  })
+
+  it('centres the block vertically for verticalAlign middle', () => {
+    const element = makeElement({
+      kind: 'text',
+      text: 'abc',
+      style: { ...DEFAULT_ELEMENT_STYLE, verticalAlign: 'middle' },
+    })
+    const frame = textFrame(element)
+    // 81.6 slack, halved.
+    expect(textOriginY(element, layoutElementText(element, measureStub))).toBe(
+      frame.y + 40.8,
+    )
+    expect(drawn(element)[0].args[2]).toBe(frame.y + 40.8)
+  })
+
+  it('drops the block to the bottom for verticalAlign bottom', () => {
+    const element = makeElement({
+      kind: 'text',
+      text: 'abc',
+      style: { ...DEFAULT_ELEMENT_STYLE, verticalAlign: 'bottom' },
+    })
+    const frame = textFrame(element)
+    expect(drawn(element)[0].args[2]).toBeCloseTo(frame.y + 81.6, 6)
+  })
+
+  it('starts overflowing text at the top under EVERY vertical alignment', () => {
+    // Taller than its box: there is no slack to distribute, and text creeping
+    // up out of the shape would be worse than the overflow already is. Same
+    // unclipped top the element has always shown.
+    for (const verticalAlign of ['top', 'middle', 'bottom'] as const) {
+      const element = makeElement({
+        kind: 'text',
+        // Wraps to many lines in a 24-unit-tall box.
+        text: 'aaaaaaaa bbbbbbbb cccccccc dddddddd eeeeeeee',
+        height: 24,
+        style: { ...DEFAULT_ELEMENT_STYLE, verticalAlign },
+      })
+      const frame = textFrame(element)
+      expect(
+        textOriginY(element, layoutElementText(element, measureStub)),
+      ).toBe(frame.y)
+    }
+  })
+
+  it('leaves the two axes independent', () => {
+    const element = makeElement({
+      kind: 'text',
+      text: 'abc',
+      style: {
+        ...DEFAULT_ELEMENT_STYLE,
+        textAlign: 'right',
+        verticalAlign: 'bottom',
+      },
+    })
+    const frame = textFrame(element)
+    const [op] = drawn(element)
+    expect(op.args[1]).toBe(frame.x + 160)
+    expect(op.args[2]).toBeCloseTo(frame.y + 81.6, 6)
+  })
+
+  it('draws the caret against the same origin as the glyphs', () => {
+    // The whole point of routing both through `textOriginY` and the layout's
+    // own caret offsets: a caret on a different line from the text it is
+    // measured against is the click-lands-early bug in visible form.
+    const element = makeElement({
+      id: 'edited',
+      kind: 'text',
+      text: 'abc',
+      style: {
+        ...DEFAULT_ELEMENT_STYLE,
+        textAlign: 'center',
+        verticalAlign: 'middle',
+      },
+    })
+    const rec = createRecorder()
+    drawScene(
+      rec.ctx,
+      sceneFrom([element]),
+      { x: 0, y: 0, zoom: 1 },
+      viewport(),
+      {
+        ids: new Set(['edited']),
+        editing: { elementId: 'edited', caret: 0, caretVisible: true },
+      },
+    )
+    const [text] = rec.opsOfType('fillText')
+    const caretMoves = rec.opsOfType('moveTo')
+    // The caret at index 0 sits exactly where the line's first glyph starts.
+    expect(caretMoves.at(-1)?.args[0]).toBe(text.args[1])
+    expect(caretMoves.at(-1)?.args[1]).toBe(text.args[2])
   })
 })

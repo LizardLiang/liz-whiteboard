@@ -83,6 +83,7 @@ import {
   handleRects,
   layoutElementText,
   textFrame,
+  textOriginY,
   withinCreationHandleReach,
 } from '@/lib/canvas-engine/render'
 import { quickCreatePlacement } from '@/lib/canvas-engine/quick-create'
@@ -965,9 +966,13 @@ export function useCanvasInput({
       const layout = layoutFor(element)
       if (!layout) return (element.text ?? '').length
       const frame = textFrame(element)
+      // `textOriginY`, not `frame.y`: the block may be pushed down its box by
+      // `verticalAlign`, and subtracting the frame's top instead would map the
+      // click onto the wrong line. The x side needs no such adjustment —
+      // horizontal alignment is already inside the layout's caret offsets.
       return caretFromPoint(layout, {
         x: world.x - frame.x,
-        y: world.y - frame.y,
+        y: world.y - textOriginY(element, layout),
       })
     },
     [layoutFor],
@@ -2300,9 +2305,10 @@ export function useCanvasInput({
     if (!layout) return null
     const local = pointFromCaret(layout, displayCaret)
     const frame = textFrame(element)
+    const originY = textOriginY(element, layout)
     return worldToScreen(camera, {
       x: frame.x + local.x,
-      y: frame.y + local.y + local.height,
+      y: originY + local.y + local.height,
     })
   }, [camera, displayCaret, displayScene, editing, layoutFor])
 

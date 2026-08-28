@@ -226,3 +226,103 @@ describe('stepCaret (Wave 3 — arrow-key caret movement)', () => {
     expect(stepCaret('a\nb', 1, 1)).toBe(2)
   })
 })
+
+describe('layoutText alignment', () => {
+  // Every case below uses maxWidth 100 = 10 characters at this measurer, so a
+  // 3-character line has 70 units of slack and the expected offsets are exact.
+
+  it('leaves carets at zero when align is omitted', () => {
+    // The pre-alignment geometry, restated as a regression guard: an omitted
+    // align must reproduce it exactly, not merely closely.
+    const layout = layoutText('abc', STYLE, 100, measure)
+    expect(layout.lines[0].carets).toEqual([0, 10, 20, 30])
+  })
+
+  it('leaves carets at zero for explicit left alignment', () => {
+    const layout = layoutText('abc', { ...STYLE, align: 'left' }, 100, measure)
+    expect(layout.lines[0].carets).toEqual([0, 10, 20, 30])
+  })
+
+  it('shifts every caret by half the slack when centred', () => {
+    const layout = layoutText(
+      'abc',
+      { ...STYLE, align: 'center' },
+      100,
+      measure,
+    )
+    // slack = 100 - 30 = 70, so the line starts at 35.
+    expect(layout.lines[0].carets).toEqual([35, 45, 55, 65])
+  })
+
+  it('shifts every caret by the whole slack when right-aligned', () => {
+    const layout = layoutText('abc', { ...STYLE, align: 'right' }, 100, measure)
+    expect(layout.lines[0].carets).toEqual([70, 80, 90, 100])
+  })
+
+  it('aligns each wrapped line INDEPENDENTLY, not the block', () => {
+    // The distinction the feature is actually about. "aa bbbb" wraps to lines
+    // of different widths; centring the BLOCK would give both the same offset
+    // and leave them ragged against each other.
+    const layout = layoutText(
+      'aa bbbb',
+      { ...STYLE, align: 'center' },
+      60,
+      measure,
+    )
+    expect(layout.lines.map((line) => line.text)).toEqual(['aa', 'bbbb'])
+    // slack 60-20 = 40 -> 20; slack 60-40 = 20 -> 10. Different offsets.
+    expect(layout.lines[0].carets[0]).toBe(20)
+    expect(layout.lines[1].carets[0]).toBe(10)
+  })
+
+  it('leaves an overflowing line at the left edge under every alignment', () => {
+    // A single unbreakable run wider than the frame has negative slack. It
+    // must overflow to the RIGHT as it always has, not be dragged off the
+    // left edge by a negative offset.
+    for (const align of ['left', 'center', 'right'] as const) {
+      const layout = layoutText('aaaa', { ...STYLE, align }, 0, measure)
+      expect(layout.lines[0].carets[0]).toBe(0)
+    }
+  })
+
+  it('reports the same line widths whatever the alignment', () => {
+    // Alignment moves where a line sits; it never changes how wide it is.
+    const left = layoutText('abc', { ...STYLE, align: 'left' }, 100, measure)
+    const right = layoutText('abc', { ...STYLE, align: 'right' }, 100, measure)
+    expect(left.lines[0].width).toBe(right.lines[0].width)
+    expect(left.height).toBe(right.height)
+  })
+})
+
+describe('caret geometry under alignment', () => {
+  const CENTRED = { ...STYLE, align: 'center' } as const
+
+  it('round-trips a caret through point and back when centred', () => {
+    // The property that actually matters: whatever offset alignment applied,
+    // asking for a caret's point and then asking which caret is at that point
+    // must return the caret you started with. A shift applied in one direction
+    // and not the other is exactly the "click lands a character early" bug.
+    const layout = layoutText('abc', CENTRED, 100, measure)
+    for (let caret = 0; caret <= 3; caret += 1) {
+      const point = pointFromCaret(layout, caret)
+      expect(caretFromPoint(layout, point)).toBe(caret)
+    }
+  })
+
+  it('places the caret at the shifted origin for index 0', () => {
+    const layout = layoutText('abc', CENTRED, 100, measure)
+    expect(pointFromCaret(layout, 0).x).toBe(35)
+  })
+
+  it('reads a click at the block origin as the line start when centred', () => {
+    // Clicking left of a centred line — in the empty gutter the alignment
+    // created — belongs to that line's first slot, not to nothing.
+    const layout = layoutText('abc', CENTRED, 100, measure)
+    expect(caretFromPoint(layout, { x: 0, y: 0 })).toBe(0)
+  })
+
+  it('reads a click past a centred line as its end', () => {
+    const layout = layoutText('abc', CENTRED, 100, measure)
+    expect(caretFromPoint(layout, { x: 1000, y: 0 })).toBe(3)
+  })
+})

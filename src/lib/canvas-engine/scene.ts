@@ -205,6 +205,18 @@ export function freeEndpoint(point: Point): ConnectorEndpoint {
   return { kind: 'point', point: { x: point.x, y: point.y } }
 }
 
+/**
+ * How an element's text sits across its box, line by line.
+ *
+ * Applied PER WRAPPED LINE, not to the block: three lines of different widths
+ * centred as a block would each keep their own ragged left edge, which is not
+ * what anyone means by "centre this text".
+ */
+export type CanvasTextAlign = 'left' | 'center' | 'right'
+
+/** How an element's text block sits down its box. */
+export type CanvasVerticalAlign = 'top' | 'middle' | 'bottom'
+
 /** Styling shared by every element kind. */
 export interface CanvasElementStyle {
   fill: string
@@ -227,6 +239,17 @@ export interface CanvasElementStyle {
    * instead of the one that happened to fit at its smallest.
    */
   cornerRadius: number
+  /**
+   * Where the text sits across the element's box, per wrapped line.
+   *
+   * Lives on the shared style rather than per kind for the same reason
+   * `cornerRadius` does — and it applies more widely than that one does, since
+   * every kind that can hold text (all four shapes AND `text`) draws it
+   * through the same branch of `drawElement`.
+   */
+  textAlign: CanvasTextAlign
+  /** Where the text block sits down the element's box. */
+  verticalAlign: CanvasVerticalAlign
 }
 
 export const DEFAULT_ELEMENT_STYLE: CanvasElementStyle = {
@@ -257,6 +280,21 @@ export const DEFAULT_ELEMENT_STYLE: CanvasElementStyle = {
   // same board. A row that stored `cornerRadius: 0` explicitly stays square,
   // because that one did express a preference.
   cornerRadius: 8,
+  // Top-left, which is EXACTLY what `render.ts` drew before this setting
+  // existed — it hardcoded `ctx.textAlign = 'left'` and `textBaseline = 'top'`
+  // and laid every line out from the frame's origin. That equality is the
+  // whole zero-visual-diff guarantee: these two are also the schema defaults
+  // (`canvasElementStyleSchema`), so every row written before alignment
+  // existed parses to the appearance it already had on screen.
+  //
+  // Note this is the OPPOSITE choice from `cornerRadius` above, and for the
+  // opposite reason. Rounding changed unstyled shapes deliberately, because
+  // leaving them square would have made two different "unstyled" looks. Here
+  // there is nothing to unify — every existing element is already top-left,
+  // and any other default would silently re-lay-out every board on this board
+  // kind the first time it was opened.
+  textAlign: 'left',
+  verticalAlign: 'top',
 }
 
 /**

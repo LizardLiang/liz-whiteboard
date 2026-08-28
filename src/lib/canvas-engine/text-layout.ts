@@ -21,9 +21,44 @@ export type TextMeasurer = (text: string) => number
 export interface TextStyle {
   fontSize: number
   lineHeight: number
+  /**
+   * Where each line sits across `maxWidth`. Optional, defaulting to `'left'`,
+   * which is the layout every caller got before alignment existed — so an
+   * omitted `align` reproduces the previous geometry exactly rather than
+   * merely closely.
+   */
+  align?: 'left' | 'center' | 'right'
 }
 
 export const DEFAULT_TEXT_STYLE: TextStyle = { fontSize: 16, lineHeight: 1.4 }
+
+/**
+ * How far into `maxWidth` a line of `width` starts, for each alignment.
+ *
+ * The shift is baked into every line's `carets` (below) rather than left for
+ * the renderer to add, and that is the decision that makes alignment safe
+ * here. `caretFromPoint` and `pointFromCaret` are the ONLY readers of caret
+ * geometry, both of them read `carets` and nothing else, and every consumer
+ * downstream of them — drawing, click-to-caret, arrow-key navigation, the IME
+ * candidate window — is therefore aligned by construction. The alternative,
+ * an offset applied at each call site, is the same shape as the bug
+ * `textFrame`'s own docstring warns about: one site insetting and another not,
+ * so every click lands a character early.
+ */
+function alignOffset(
+  width: number,
+  maxWidth: number,
+  align: TextStyle['align'],
+): number {
+  // A line WIDER than its frame (one unbreakable glyph, a zero/negative
+  // maxWidth) would otherwise get a negative offset and hang off the left
+  // edge under centre or right alignment. Overflow goes right, as it always
+  // has, whatever the alignment says.
+  const slack = Math.max(0, maxWidth - width)
+  if (align === 'center') return slack / 2
+  if (align === 'right') return slack
+  return 0
+}
 
 /** One laid-out line and where its characters sit. */
 export interface LaidOutLine {
@@ -38,7 +73,12 @@ export interface LaidOutLine {
   /**
    * `x` offset of each caret slot in this line: `carets[i]` is the offset
    * of the caret BEFORE the line's i-th character, so it has
-   * `text.length + 1` entries and `carets[0]` is always 0.
+   * `text.length + 1` entries.
+   *
+   * ALIGNMENT-ADJUSTED. `carets[0]` is the line's left edge within the text
+   * frame — 0 under left alignment, and the alignment offset otherwise — so
+   * these are block-local absolute offsets, not distances from the line's own
+   * start. Readers add the frame's origin and nothing else.
    */
   carets: Array<number>
 }
@@ -76,12 +116,17 @@ export function layoutText(
     const wrapped = wrapParagraph(paragraph, maxWidth, measure)
     for (const piece of wrapped) {
       const start = cursor + piece.offset
+      const width = measure(piece.text)
       lines.push({
         text: piece.text,
         start,
         end: start + piece.text.length,
-        width: measure(piece.text),
-        carets: caretOffsets(piece.text, measure),
+        width,
+        carets: caretOffsets(
+          piece.text,
+          measure,
+          alignOffset(width, maxWidth, style.align),
+        ),
       })
     }
     // +1 for the newline that split() consumed.
@@ -137,11 +182,20 @@ function wrapParagraph(
   return pieces
 }
 
-/** Caret x-offsets for every slot in a line, including before and after. */
-function caretOffsets(text: string, measure: TextMeasurer): Array<number> {
-  const offsets = [0]
+/**
+ * Caret x-offsets for every slot in a line, including before and after.
+ *
+ * `origin` is the line's alignment offset, added to every slot so the whole
+ * array is block-local rather than line-local — see `LaidOutLine.carets`.
+ */
+function caretOffsets(
+  text: string,
+  measure: TextMeasurer,
+  origin: number,
+): Array<number> {
+  const offsets = [origin]
   for (let i = 1; i <= text.length; i += 1) {
-    offsets.push(measure(text.slice(0, i)))
+    offsets.push(origin + measure(text.slice(0, i)))
   }
   return offsets
 }
@@ -202,10 +256,7 @@ export function pointFromCaret(
   }
 
   const line = layout.lines[lineIndex]
-  const slot = Math.min(
-    line.carets.length - 1,
-    Math.max(0, caret - line.start),
-  )
+  const slot = Math.min(line.carets.length - 1, Math.max(0, caret - line.start))
   return {
     x: line.carets[slot],
     y: lineIndex * lineHeight,
@@ -260,7 +311,10 @@ export function deleteForward(
   if (at >= text.length) return { text, caret: at }
   const after = text.slice(at)
   const removed = [...after][0] ?? ''
-  return { text: text.slice(0, at) + text.slice(at + removed.length), caret: at }
+  return {
+    text: text.slice(0, at) + text.slice(at + removed.length),
+    caret: at,
+  }
 }
 
 /**

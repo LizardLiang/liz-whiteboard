@@ -35,6 +35,13 @@
 // Offering controls that visibly do nothing is worse than offering none, and
 // so is withholding ones that would work.
 //
+// ALIGNMENT rides on the SECOND set, not the first, and that is the whole
+// reason the sets earn their keep. `drawElement` draws a text block for every
+// kind that has one, so alignment reaches a pure `text` element even though
+// no paint setting does — which is exactly the case a single shapes-only set
+// would have got wrong. Connectors are excluded from both sets and so from
+// this too; they carry no text.
+//
 // AND NOT WHILE AN ELEMENT IS BEING EDITED. `render.ts`'s
 // `drawSelectionOverlay` already withholds the resize grips for the duration
 // of a text edit (`!selection.editing`); this bar follows the same rule, so
@@ -44,12 +51,25 @@
 // reconciliation was observed to cost the edit its text — see
 // canvas-quick-create.spec.ts's "opens the new element for typing".
 
-import { Ban, BringToFront, CopyPlus, SendToBack } from 'lucide-react'
-import type { ReactNode } from 'react'
+import {
+  AlignCenter,
+  AlignLeft,
+  AlignRight,
+  AlignVerticalJustifyCenter,
+  AlignVerticalJustifyEnd,
+  AlignVerticalJustifyStart,
+  Ban,
+  BringToFront,
+  CopyPlus,
+  SendToBack,
+} from 'lucide-react'
+import type { ComponentType, ReactNode } from 'react'
 import type { Camera } from '@/lib/canvas-engine/camera'
 import type {
   CanvasElement,
   CanvasElementStyle,
+  CanvasTextAlign,
+  CanvasVerticalAlign,
   Scene,
 } from '@/lib/canvas-engine/scene'
 import type { ZOrderCommand } from '@/lib/canvas-engine/z-order'
@@ -109,6 +129,16 @@ export type CanvasStyleChange =
    * its range, not a second mechanism the way "no stroke" is.
    */
   | { target: 'cornerRadius'; value: number }
+  /**
+   * Text alignment. Applies to every element that can HOLD text — all four
+   * shapes and `text` — which is a wider set than the paint changes above,
+   * and the reason this bar computes two target sets rather than one.
+   *
+   * Never null in either axis: each is a closed set of three positions, and
+   * there is no "unaligned" state to express.
+   */
+  | { target: 'textAlign'; value: CanvasTextAlign }
+  | { target: 'verticalAlign'; value: CanvasVerticalAlign }
 
 /**
  * The style an element should end up with after a change.
@@ -133,6 +163,14 @@ export function applyStyleChange(
   }
   if (change.target === 'cornerRadius') {
     return { ...style, cornerRadius: change.value }
+  }
+  // Straight writes, both of them — no clear/restore pairing to honour the way
+  // stroke has, because neither axis has an "off".
+  if (change.target === 'textAlign') {
+    return { ...style, textAlign: change.value }
+  }
+  if (change.target === 'verticalAlign') {
+    return { ...style, verticalAlign: change.value }
   }
   if (change.target === 'strokeWidth') {
     // Deliberately unconditional: choosing a weight on a shape whose stroke
@@ -298,6 +336,21 @@ export function SelectionToolbar({
     (element) => element.style.cornerRadius,
   )
 
+  // Alignment applies to whatever can HOLD text, which is a WIDER set than
+  // paint: `drawElement` draws a text block for every kind that has one, so a
+  // pure `text` element takes alignment even though it takes no fill, stroke
+  // or corner. That set is exactly `arrange` — every paintable element, text
+  // included, connectors excluded — so it is reused rather than recomputed.
+  const alignable = sets.arrange
+  const activeTextAlign = shared(
+    alignable,
+    (element) => element.style.textAlign,
+  )
+  const activeVerticalAlign = shared(
+    alignable,
+    (element) => element.style.verticalAlign,
+  )
+
   const emit = (change: CanvasStyleChange, list = targets) => {
     // Every target already in the requested state writes nothing. Without
     // this, a stray click on the active swatch pushes an undo entry that
@@ -400,6 +453,38 @@ export function SelectionToolbar({
               />
             </SettingPopover>
           )}
+          <Divider />
+        </>
+      )}
+      {alignable.length > 0 && (
+        <>
+          <SettingPopover
+            label="Align"
+            summary={alignSummary(activeTextAlign, activeVerticalAlign)}
+            preview={
+              <AlignPreview
+                textAlign={activeTextAlign}
+                verticalAlign={activeVerticalAlign}
+              />
+            }
+          >
+            <AlignRow
+              rowLabel="Horizontal"
+              options={HORIZONTAL_ALIGNS}
+              active={activeTextAlign}
+              onPick={(value) =>
+                emit({ target: 'textAlign', value }, alignable)
+              }
+            />
+            <AlignRow
+              rowLabel="Vertical"
+              options={VERTICAL_ALIGNS}
+              active={activeVerticalAlign}
+              onPick={(value) =>
+                emit({ target: 'verticalAlign', value }, alignable)
+              }
+            />
+          </SettingPopover>
           <Divider />
         </>
       )}
@@ -758,6 +843,129 @@ function WidthRow({ activeWidth, strokeColor, onPick }: WidthRowProps) {
       })}
     </div>
   )
+}
+
+/**
+ * One alignment option: the value written, its icon, and its name.
+ *
+ * The two axes are separate tables rather than one nine-cell grid, because
+ * they are two independent fields — a user changing only the vertical
+ * position should not have to restate the horizontal one, which is exactly
+ * what a combined nine-position control forces.
+ */
+interface AlignOption<T> {
+  value: T
+  label: string
+  Icon: ComponentType<{ className?: string }>
+}
+
+const HORIZONTAL_ALIGNS: ReadonlyArray<AlignOption<CanvasTextAlign>> = [
+  { value: 'left', label: 'Left', Icon: AlignLeft },
+  { value: 'center', label: 'Center', Icon: AlignCenter },
+  { value: 'right', label: 'Right', Icon: AlignRight },
+]
+
+const VERTICAL_ALIGNS: ReadonlyArray<AlignOption<CanvasVerticalAlign>> = [
+  { value: 'top', label: 'Top', Icon: AlignVerticalJustifyStart },
+  { value: 'middle', label: 'Middle', Icon: AlignVerticalJustifyCenter },
+  { value: 'bottom', label: 'Bottom', Icon: AlignVerticalJustifyEnd },
+]
+
+interface AlignRowProps<T> {
+  /** Which axis this row is — its group label, and half of each button's name. */
+  rowLabel: 'Horizontal' | 'Vertical'
+  options: ReadonlyArray<AlignOption<T>>
+  /** The position every target shares, or null when they disagree. */
+  active: T | null
+  onPick: (value: T) => void
+}
+
+/**
+ * One axis of text alignment, as three icon buttons.
+ *
+ * Icons rather than words, matching every other setting in this popover: the
+ * control looks like its result. Each button's accessible name carries the
+ * AXIS as well as the position ("Align left", "Align top") because the two
+ * rows sit one above the other and "Left"/"Top" alone would not say which
+ * control a screen reader had landed on.
+ *
+ * A row with nothing active is the honest rendering of a mixed selection —
+ * the same convention `shared` documents for the swatches.
+ */
+function AlignRow<T extends string>({
+  rowLabel,
+  options,
+  active,
+  onPick,
+}: AlignRowProps<T>) {
+  return (
+    <div
+      className="flex items-center gap-1.5 [&+&]:mt-1.5"
+      role="group"
+      aria-label={rowLabel}
+    >
+      {options.map(({ value, label, Icon }) => {
+        const isActive = value === active
+        return (
+          <button
+            key={value}
+            type="button"
+            className={`flex h-7 w-12 items-center justify-center rounded border transition-shadow ${
+              isActive
+                ? 'border-transparent ring-2 ring-ring ring-offset-1 ring-offset-background'
+                : 'border-border/60'
+            }`}
+            aria-label={`Align ${label.toLowerCase()}`}
+            aria-pressed={isActive}
+            title={`Align ${label.toLowerCase()}`}
+            onClick={() => onPick(value)}
+          >
+            <Icon className="size-4" />
+          </button>
+        )
+      })}
+    </div>
+  )
+}
+
+/**
+ * The current alignment as a single icon: the horizontal position, which is
+ * the axis a glance at a shape actually reads.
+ *
+ * A dashed placeholder when the targets disagree, matching `ColorPreview`'s
+ * third state — a closed trigger must not claim one element's alignment for
+ * the whole selection.
+ */
+function AlignPreview({
+  textAlign,
+  verticalAlign,
+}: {
+  textAlign: CanvasTextAlign | null
+  verticalAlign: CanvasVerticalAlign | null
+}) {
+  if (textAlign === null && verticalAlign === null) {
+    return (
+      <span className="block size-3.5 rounded-sm border border-dashed border-muted-foreground/60" />
+    )
+  }
+  const Icon =
+    HORIZONTAL_ALIGNS.find((option) => option.value === textAlign)?.Icon ??
+    AlignLeft
+  return <Icon className="size-3.5" />
+}
+
+/** The current alignment in words, for the trigger's tooltip. */
+function alignSummary(
+  textAlign: CanvasTextAlign | null,
+  verticalAlign: CanvasVerticalAlign | null,
+): string {
+  const horizontal =
+    HORIZONTAL_ALIGNS.find((option) => option.value === textAlign)?.label ??
+    'Mixed'
+  const vertical =
+    VERTICAL_ALIGNS.find((option) => option.value === verticalAlign)?.label ??
+    'Mixed'
+  return `${horizontal} · ${vertical}`
 }
 
 interface RadiusRowProps {

@@ -1019,6 +1019,25 @@ export const canvasElementStyleSchema = z.strictObject({
     .min(0)
     .max(512)
     .default(DEFAULT_ELEMENT_STYLE.cornerRadius),
+  /**
+   * Text alignment — see `CanvasElementStyle.textAlign` / `.verticalAlign`.
+   *
+   * `.default()` rather than `.optional()`, the same migration-free move
+   * `cornerRadius` above documents: the key is simply absent on every row
+   * written before alignment existed and parses to the top-left the renderer
+   * already drew. There is no ALTER to run, because the style is one JSON
+   * column.
+   *
+   * The defaults are read from `DEFAULT_ELEMENT_STYLE` rather than restated,
+   * so the value the renderer falls back to and the value the validator fills
+   * in can never drift apart.
+   */
+  textAlign: z
+    .enum(['left', 'center', 'right'])
+    .default(DEFAULT_ELEMENT_STYLE.textAlign),
+  verticalAlign: z
+    .enum(['top', 'middle', 'bottom'])
+    .default(DEFAULT_ELEMENT_STYLE.verticalAlign),
 })
 
 /**
