@@ -180,6 +180,22 @@ export const IDS = {
   canvasViewerConnector: '60000000-0000-4000-8000-00000000000c',
   shapesTableAName: '50000000-0000-4000-8000-00000000000f',
   shapesTableBNote: '50000000-0000-4000-8000-000000000010',
+
+  // Dedicated board for the relationship-deletion regression suite. Own
+  // board for the same reason `mdWhiteboard` has one: that spec DRAGS a
+  // table (the resurrection trigger it exists to guard against) and never
+  // restores the position, so running it against the shared `IDS.whiteboard`
+  // would perturb every later spec that assumes pristine geometry there. It
+  // reuses `IDS.project` rather than creating one — it adds no new member, so
+  // the Share-panel member-list layout regression documented on
+  // `viewerProject` above cannot apply.
+  relDelWhiteboard: '70000000-0000-4000-8000-000000000001',
+  relDelUsersTable: '70000000-0000-4000-8000-000000000002',
+  relDelOrdersTable: '70000000-0000-4000-8000-000000000003',
+  relDelUsersId: '70000000-0000-4000-8000-000000000004',
+  relDelOrdersId: '70000000-0000-4000-8000-000000000005',
+  relDelOrdersUserId: '70000000-0000-4000-8000-000000000006',
+  relDelRelationship: '70000000-0000-4000-8000-000000000007',
 }
 
 export const STORAGE_STATE = 'e2e/.auth/state.json'

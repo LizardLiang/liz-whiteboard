@@ -1301,10 +1301,21 @@ function ReactFlowWhiteboardInner({
   }, [tableMutations.onTableUpdateError])
 
   // Relationship mutations hook (optimistic delete + label update with rollback)
+  //
+  // Gated on `connectionState`, NOT on `isConnected`. Both emits below come
+  // from useWhiteboardCollaboration, whose socket `connectionState` describes;
+  // `isConnected` belongs to useColumnCollaboration, a SEPARATE
+  // `useCollaboration` instance. The two connect independently and disagree
+  // for a window after load, so gating on the column socket refused
+  // relationship writes that the whiteboard socket was ready to send — the
+  // user-visible symptom being a Delete that appeared to do nothing and a line
+  // that came back on the next table move. Reproduced against the real server:
+  // forcing this gate open deleted the row while `isConnected` still read
+  // false.
   const relationshipMutations = useRelationshipMutations(
     setEdges,
     emitRelationshipDelete,
-    isConnected,
+    connectionState === 'connected',
     emitRelationshipUpdate,
   )
 
@@ -4042,6 +4053,13 @@ function ReactFlowWhiteboardInner({
               onShapeDragStop={handleShapeDragStop}
               onShapeDelete={deleteShapeMutation}
               onConnectorDelete={deleteConnectorMutation}
+              // Delete/Backspace on a selected relationship edge now takes
+              // the same path as RelationshipEdge's hover delete button
+              // (optimistic removal from THIS component's `edges` state +
+              // socket emit + rollback on error). Before this the key only
+              // touched React Flow's internal copy, so the row survived and
+              // the line reappeared on the next table drag.
+              onRelationshipDelete={relationshipMutations.deleteRelationship}
               activeTool={activeTool}
               onDrawCommit={handleDrawCommit}
               onDrawDisarm={handleDrawDisarm}

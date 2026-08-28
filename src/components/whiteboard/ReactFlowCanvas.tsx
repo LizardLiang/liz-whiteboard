@@ -25,10 +25,12 @@ import { ShapeDrawOverlay } from './ShapeDrawOverlay'
 import { CanvasNodeLayer } from './CanvasNodeLayer'
 import type { MouseEvent as ReactMouseEvent } from 'react'
 import type {
+  Edge,
   FitViewOptions,
   IsValidConnection,
   Node,
   NodeMouseHandler,
+  OnBeforeDelete,
   OnConnect,
   OnConnectStart,
   OnEdgesChange,
@@ -202,6 +204,17 @@ export interface ReactFlowCanvasProps {
    */
   onConnectorDelete?: (connectorId: string) => void
   /**
+   * Delete a relationship (GH: "deleted relation line comes back"). Fired
+   * from `onEdgesDelete` for edges that are NOT connectors, so pressing
+   * Delete/Backspace on a selected relationship edge takes the SAME path as
+   * RelationshipEdge's own hover delete button (useRelationshipMutations ->
+   * socket `relationship:delete`). Without this the key removed the edge
+   * from React Flow's local state only; the row survived in the database and
+   * the next `initialNodes` change (any table drag) resurrected the line via
+   * the initialEdges resync effect below.
+   */
+  onRelationshipDelete?: (relationshipId: string) => void
+  /**
    * The canvas-wide tool mode (D-1). When a draw tool is armed
    * (`isDrawTool(activeTool)`), mounts `<ShapeDrawOverlay>` inside the
    * wrapper (H1: the overlay is pointer-events:none and runs its gesture
@@ -324,6 +337,7 @@ export function ReactFlowCanvas({
   onShapeDragStop,
   onShapeDelete,
   onConnectorDelete,
+  onRelationshipDelete,
   activeTool = 'select',
   onDrawCommit,
   onDrawDisarm,
@@ -1292,18 +1306,61 @@ export function ReactFlowCanvas({
     ],
   )
 
-  // Connector deletion trigger (M1) — React Flow has onNodesDelete but no
-  // onEdgesDelete wired anywhere yet. Only connector edges reach the
-  // callback with an action attached; relationship edges pass through
-  // untouched (deliberately — fixing that pre-existing bug class is a
-  // product decision outside Phase 1 scope, see tech-spec §7).
+  // Edge deletion trigger. Connectors (M1) and relationships both persist
+  // from here. The relationship branch closes the Phase 1 gap noted in
+  // tech-spec §7: Delete/Backspace used to remove a relationship edge from
+  // React Flow's local state and stop there, leaving the row in the database
+  // — so the initialEdges resync effect above put the line straight back on
+  // the next `initialNodes` change (i.e. as soon as any table was dragged).
+  // Routing it to the same mutation as RelationshipEdge's hover delete
+  // button gives the key the optimistic parent-state removal, the socket
+  // emit, and the rollback-on-error that the button already had.
   const onEdgesDelete = useCallback<OnEdgesDelete>(
     (deletedEdges) => {
       for (const edge of deletedEdges) {
         if (edge.type === 'connector') onConnectorDelete?.(edge.id)
+        else onRelationshipDelete?.(edge.id)
       }
     },
-    [onConnectorDelete],
+    [onConnectorDelete, onRelationshipDelete],
+  )
+
+  // Veto a relationship delete on a canvas that has no delete handler wired.
+  // That is how TableFocusOverlay mounts us: a read-only preview whose Delete
+  // key must be inert, not phantom-remove a line from the dialog. React Flow
+  // applies deletions to its own store BEFORE `onEdgesDelete` runs, so
+  // without this veto that keypress would reproduce the very bug this fix
+  // removes. Returning a filtered set keeps other deletions in the batch
+  // working.
+  //
+  // Deliberately NOT also gated on socket connectivity. `useRelationship-
+  // Mutations` already owns that policy and reports a refusal with a toast;
+  // duplicating it here refused deletes SILENTLY, and refused them wrongly —
+  // the `isConnected` flag available at this level tracks the column-
+  // collaboration socket, which reads false while a relationship emit is
+  // already landing (reproduced against the real server: the row was deleted
+  // while that flag said disconnected). A genuinely refused delete leaves the
+  // line to return on the next resync, which is the honest outcome and is
+  // what the toast tells the user.
+  const canPersistRelationshipDelete = onRelationshipDelete !== undefined
+  // Typed against the canvas's own generics so it does not widen the node
+  // type React Flow infers for the sibling handlers. The connector check
+  // reads through `Edge` because RelationshipEdgeType's `type` is narrowed to
+  // 'relationship', while the live array is the merged relationship +
+  // connector set (same reason the `edges` prop below is cast).
+  const onBeforeDelete = useCallback<
+    OnBeforeDelete<TableNodeType, RelationshipEdgeType>
+  >(
+    async ({ nodes: deletedNodes, edges: deletedEdges }) => {
+      if (canPersistRelationshipDelete) return true
+      return {
+        nodes: deletedNodes,
+        edges: deletedEdges.filter(
+          (edge) => (edge as Edge).type === 'connector',
+        ),
+      }
+    },
+    [canPersistRelationshipDelete],
   )
 
   // Delete/Backspace on a selected area node (GH #106 Bug 1 fix). Table nodes
@@ -1477,6 +1534,7 @@ export function ReactFlowCanvas({
             onMoveEnd={() => perfTracker.clearGesture()}
             onNodesDelete={onNodesDelete}
             onEdgesDelete={onEdgesDelete}
+            onBeforeDelete={onBeforeDelete}
             deleteKeyCode={DELETE_KEY_CODES}
             nodeTypes={memoizedNodeTypes}
             edgeTypes={memoizedEdgeTypes}
