@@ -133,6 +133,50 @@ const DELETE_KEY_CODES = ['Delete', 'Backspace']
 const VIEWPORT_CULLING_NODE_THRESHOLD = 150
 
 /**
+ * Pure decision function behind `onBeforeDelete`'s relationship-delete veto
+ * (2026-08-31 tactical plan, Part A / D-12). `onBeforeDelete` below delegates
+ * to this function rather than reimplementing the same branches, so this is
+ * the exact logic that runs in the app — not a parallel copy that could
+ * silently drift from it.
+ *
+ * Exported for direct unit testing: Playwright has no clean seam to sever
+ * the whiteboard's live Socket.IO connection mid-test (see the gap noted on
+ * relationship-deletion.spec.ts's e2e test), so this predicate is the
+ * fallback coverage the tactical plan calls for instead of a live-disconnect
+ * e2e.
+ *
+ * - When `canPersistRelationshipDelete` is true, nothing is vetoed and no
+ *   refusal fires.
+ * - Otherwise, edges of type 'connector' pass through; every other edge
+ *   (relationship edges) is stripped from the batch.
+ * - A refusal should be surfaced ONLY when a delete handler was actually
+ *   wired (`hasRelationshipDeleteHandler`) AND the batch contained at least
+ *   one relationship edge — the no-handler case (TableFocusOverlay's nested
+ *   canvas) stays silent, as it does today.
+ */
+export function computeRelationshipDeleteVeto<T extends { type?: string }>(params: {
+  deletedEdges: Array<T>
+  canPersistRelationshipDelete: boolean
+  hasRelationshipDeleteHandler: boolean
+}): { edges: Array<T>; shouldNotifyRefusal: boolean } {
+  const {
+    deletedEdges,
+    canPersistRelationshipDelete,
+    hasRelationshipDeleteHandler,
+  } = params
+  if (canPersistRelationshipDelete) {
+    return { edges: deletedEdges, shouldNotifyRefusal: false }
+  }
+  const hadRelationshipEdge = deletedEdges.some(
+    (edge) => edge.type !== 'connector',
+  )
+  return {
+    edges: deletedEdges.filter((edge) => edge.type === 'connector'),
+    shouldNotifyRefusal: hadRelationshipEdge && hasRelationshipDeleteHandler,
+  }
+}
+
+/**
  * ReactFlowCanvas Props
  */
 export interface ReactFlowCanvasProps {
@@ -214,6 +258,24 @@ export interface ReactFlowCanvasProps {
    * the initialEdges resync effect below.
    */
   onRelationshipDelete?: (relationshipId: string) => void
+  /**
+   * Live connectivity signal for relationship deletes (symptom 1 fix,
+   * 2026-08-31 tactical plan). React Flow applies a Delete-key removal to
+   * its own store BEFORE `onEdgesDelete` runs, so a handler merely being
+   * wired is not enough to prove the removal can actually persist — the
+   * whiteboard socket also has to be connected right now. Defaults to
+   * `false` so a caller that never passes this prop fails safe instead of
+   * silently reproducing the resurrection bug.
+   */
+  canDeleteRelationships?: boolean
+  /**
+   * Fired once per vetoed batch (not once per edge) when `onBeforeDelete`
+   * refuses a relationship delete because `canDeleteRelationships` is
+   * false. NOT fired for the no-handler case (TableFocusOverlay's nested
+   * canvas, which passes no `onRelationshipDelete` at all) — that veto
+   * stays silent, as it does today.
+   */
+  onRelationshipDeleteRefused?: () => void
   /**
    * The canvas-wide tool mode (D-1). When a draw tool is armed
    * (`isDrawTool(activeTool)`), mounts `<ShapeDrawOverlay>` inside the
@@ -338,6 +400,8 @@ export function ReactFlowCanvas({
   onShapeDelete,
   onConnectorDelete,
   onRelationshipDelete,
+  canDeleteRelationships = false,
+  onRelationshipDeleteRefused,
   activeTool = 'select',
   onDrawCommit,
   onDrawDisarm,
@@ -1325,24 +1389,30 @@ export function ReactFlowCanvas({
     [onConnectorDelete, onRelationshipDelete],
   )
 
-  // Veto a relationship delete on a canvas that has no delete handler wired.
-  // That is how TableFocusOverlay mounts us: a read-only preview whose Delete
-  // key must be inert, not phantom-remove a line from the dialog. React Flow
-  // applies deletions to its own store BEFORE `onEdgesDelete` runs, so
-  // without this veto that keypress would reproduce the very bug this fix
-  // removes. Returning a filtered set keeps other deletions in the batch
-  // working.
+  // Veto a relationship delete when either no delete handler is wired (how
+  // TableFocusOverlay mounts us: a read-only preview whose Delete key must
+  // be inert, not phantom-remove a line from the dialog) OR the connection
+  // that write would need to travel over is not live right now. React Flow
+  // applies deletions to its own store BEFORE `onEdgesDelete` runs, so a
+  // handler merely being wired never proved the removal could persist — a
+  // reconnect blip, backgrounded tab, or sleep/wake between mount and this
+  // keypress left the edge vanished locally while the row survived in the
+  // database, and the next `initialNodes` change (any table drag)
+  // resurrected it via the initialEdges resync effect below. Returning a
+  // filtered set keeps other deletions in the batch working.
   //
-  // Deliberately NOT also gated on socket connectivity. `useRelationship-
-  // Mutations` already owns that policy and reports a refusal with a toast;
-  // duplicating it here refused deletes SILENTLY, and refused them wrongly —
-  // the `isConnected` flag available at this level tracks the column-
-  // collaboration socket, which reads false while a relationship emit is
-  // already landing (reproduced against the real server: the row was deleted
-  // while that flag said disconnected). A genuinely refused delete leaves the
-  // line to return on the next resync, which is the honest outcome and is
-  // what the toast tells the user.
-  const canPersistRelationshipDelete = onRelationshipDelete !== undefined
+  // `canDeleteRelationships` reads the WHITEBOARD socket's `connectionState`
+  // (threaded down from ReactFlowWhiteboard) — the exact same signal
+  // `useRelationshipMutations` gates its own writes on. It is deliberately
+  // NOT `isConnected`: that flag belongs to a separate
+  // `useColumnCollaboration` socket instance which disagrees with the
+  // whiteboard socket for a window after load (reproduced against the real
+  // server: the row was deleted while `isConnected` still read false — see
+  // the wiring comment in ReactFlowWhiteboard.tsx). Reading the same signal
+  // the mutation itself reads means the veto here and the mutation's own
+  // refusal can no longer disagree.
+  const canPersistRelationshipDelete =
+    onRelationshipDelete !== undefined && canDeleteRelationships
   // Typed against the canvas's own generics so it does not widen the node
   // type React Flow infers for the sibling handlers. The connector check
   // reads through `Edge` because RelationshipEdgeType's `type` is narrowed to
@@ -1352,15 +1422,32 @@ export function ReactFlowCanvas({
     OnBeforeDelete<TableNodeType, RelationshipEdgeType>
   >(
     async ({ nodes: deletedNodes, edges: deletedEdges }) => {
+      // Delegates to the exported pure predicate below — kept as the single
+      // source of truth for the veto decision so its unit test exercises
+      // the exact logic this callback runs (D-12: Playwright has no clean
+      // seam to sever the whiteboard Socket.IO connection, so this
+      // predicate is the fallback coverage for the disconnected-delete path
+      // — see the comment on relationship-deletion.spec.ts's e2e test for
+      // that gap).
+      const veto = computeRelationshipDeleteVeto({
+        deletedEdges: deletedEdges as Array<Edge>,
+        canPersistRelationshipDelete,
+        hasRelationshipDeleteHandler: onRelationshipDelete !== undefined,
+      })
+      if (veto.shouldNotifyRefusal) {
+        onRelationshipDeleteRefused?.()
+      }
       if (canPersistRelationshipDelete) return true
       return {
         nodes: deletedNodes,
-        edges: deletedEdges.filter(
-          (edge) => (edge as Edge).type === 'connector',
-        ),
+        edges: veto.edges as typeof deletedEdges,
       }
     },
-    [canPersistRelationshipDelete],
+    [
+      canPersistRelationshipDelete,
+      onRelationshipDelete,
+      onRelationshipDeleteRefused,
+    ],
   )
 
   // Delete/Backspace on a selected area node (GH #106 Bug 1 fix). Table nodes

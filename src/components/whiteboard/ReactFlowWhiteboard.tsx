@@ -86,6 +86,7 @@ import {
   LAYOUT_CONSTRAINTS,
   MIN_SHAPE_HEIGHT,
   MIN_SHAPE_WIDTH,
+  NOT_CONNECTED_TOAST_MESSAGE,
   NUDGE_STEP,
   NUDGE_STEP_LARGE,
   SHAPE_HANDLE_IDS,
@@ -804,7 +805,22 @@ function ReactFlowWhiteboardInner({
       const prevEdgeMap = new Map(prevEdges.map((e) => [e.id, e]))
       return initialEdges.map((edge) => {
         const prev = prevEdgeMap.get(edge.id)
-        if (!prev) return edge
+        if (!prev) {
+          // New edge (e.g. just-created relationship via drag-to-connect):
+          // inject current callbacks so its label can be edited/cleared and
+          // it can be deleted immediately, without waiting for an unrelated
+          // isConnected change or reconnect to re-fire the injection effect
+          // below (Part C, 2026-08-31 tactical plan — mirrors the node-side
+          // new-node branch above).
+          return {
+            ...edge,
+            data: {
+              ...edge.data!,
+              onDelete: handleRelationshipDeleteRef.current,
+              onLabelUpdate: handleRelationshipLabelUpdateRef.current,
+            },
+          }
+        }
         return {
           ...edge,
           data: {
@@ -4006,6 +4022,18 @@ function ReactFlowWhiteboardInner({
               // touched React Flow's internal copy, so the row survived and
               // the line reappeared on the next table drag.
               onRelationshipDelete={relationshipMutations.deleteRelationship}
+              // Part A (2026-08-31 tactical plan, symptom 1): the veto in
+              // ReactFlowCanvas's onBeforeDelete now also requires the
+              // WHITEBOARD socket to be live, not just a handler being
+              // wired — the same `connectionState === 'connected'` signal
+              // relationshipMutations itself gates writes on (see that
+              // hook's call site above). A refused Delete-key press shows
+              // the identical toast the button path already shows on a
+              // refused click.
+              canDeleteRelationships={connectionState === 'connected'}
+              onRelationshipDeleteRefused={() =>
+                toast.error(NOT_CONNECTED_TOAST_MESSAGE)
+              }
               activeTool={activeTool}
               onDrawCommit={handleDrawCommit}
               onDrawDisarm={handleDrawDisarm}

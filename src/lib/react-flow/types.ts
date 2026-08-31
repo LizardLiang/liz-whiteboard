@@ -607,6 +607,17 @@ export const MIN_AREA_WIDTH = 160
 export const MIN_AREA_HEIGHT = 120
 
 /**
+ * Shared "not connected" toast copy (2026-08-31 tactical plan, ERD
+ * relationship delete persistence). `useRelationshipMutations` already
+ * shows this on a refused write; the connectivity veto in ReactFlowCanvas's
+ * `onBeforeDelete` needs the identical copy for a refused Delete-key press.
+ * Defined once here — rather than duplicating the literal at the new call
+ * site — so the two refusal paths cannot drift apart.
+ */
+export const NOT_CONNECTED_TOAST_MESSAGE =
+  'Not connected. Please wait for reconnection.'
+
+/**
  * Z-Index layers
  */
 export const Z_INDEX = {

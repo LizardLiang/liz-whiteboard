@@ -250,4 +250,48 @@ test.describe('Relationship deletion', () => {
     ).toBeVisible()
     await expect(page.locator(EDGE)).toHaveCount(1)
   })
+
+  // 2026-08-31 tactical plan (#54): the edge's single delete button now
+  // reads Trash2, never X — clearing a LABEL happens by emptying its text,
+  // which is now the ONLY way to clear a label (#52's original X-clears-
+  // label control was cancelled). Nothing guarded this path before. The
+  // seed relationship carries the label 'belongs to' (seed-relationship.ts).
+  test('emptying the label text clears the label and leaves the line — the only remaining way to clear a label', async ({
+    page,
+  }) => {
+    await openWhiteboard(page)
+
+    const label = page.getByText('belongs to', { exact: true })
+    await expect(label).toBeVisible()
+
+    await label.dblclick()
+    // Locator-scoped `.press()` (not `page.keyboard.press()`) focuses the
+    // input itself before sending each key, closing the race where the
+    // React state update that mounts the edit `<input>` hasn't landed yet —
+    // same guard canvas-edit-overlay.spec.ts uses around its name editor.
+    const labelInput = page.locator('input.nodrag.nopan')
+    await expect(labelInput).toBeVisible()
+    await labelInput.press('Control+A')
+    await labelInput.press('Delete')
+    await labelInput.press('Enter')
+
+    // Label is gone; the line itself is untouched.
+    await expect(page.getByText('belongs to', { exact: true })).toHaveCount(0)
+    await expect(page.locator(EDGE)).toHaveCount(1)
+
+    // Survives a table drag (the same resurrection-style regression Part A
+    // guards deletion against — a stale/cached label must not come back).
+    await dragOrdersTable(page)
+    await expect(page.getByText('belongs to', { exact: true })).toHaveCount(0)
+    await expect(page.locator(EDGE)).toHaveCount(1)
+
+    // Survives a reload — proves the empty string was actually persisted to
+    // the database, not just removed from local state.
+    await page.reload()
+    await expect(
+      page.getByRole('heading', { name: 'E2E Relation Delete' }),
+    ).toBeVisible()
+    await expect(page.locator(EDGE)).toHaveCount(1)
+    await expect(page.getByText('belongs to', { exact: true })).toHaveCount(0)
+  })
 })

@@ -19,6 +19,7 @@ import type {
   TableNodeType,
 } from '@/lib/react-flow/types'
 import type { DataType, UpdateColumn } from '@/data/schema'
+import { NOT_CONNECTED_TOAST_MESSAGE } from '@/lib/react-flow/types'
 import { uuid } from '@/lib/uuid'
 
 type SetNodes = React.Dispatch<React.SetStateAction<Array<TableNodeType>>>
@@ -74,7 +75,7 @@ export function useColumnMutations(
       data: { name: string; dataType: DataType; order: number },
     ) => {
       if (!isConnected) {
-        toast.error('Not connected. Please wait for reconnection.')
+        toast.error(NOT_CONNECTED_TOAST_MESSAGE)
         return
       }
 
@@ -208,7 +209,7 @@ export function useColumnMutations(
   const updateColumn = useCallback(
     (columnId: string, tableId: string, data: Partial<UpdateColumn>) => {
       if (!isConnected) {
-        toast.error('Not connected. Please wait for reconnection.')
+        toast.error(NOT_CONNECTED_TOAST_MESSAGE)
         return
       }
 
@@ -292,7 +293,7 @@ export function useColumnMutations(
   const deleteColumn = useCallback(
     (columnId: string, tableId: string) => {
       if (!isConnected) {
-        toast.error('Not connected. Please wait for reconnection.')
+        toast.error(NOT_CONNECTED_TOAST_MESSAGE)
         return
       }
 
@@ -393,7 +394,7 @@ export function useColumnMutations(
   const duplicateColumn = useCallback(
     (sourceColumn: Column) => {
       if (!isConnected) {
-        toast.error('Not connected. Please wait for reconnection.')
+        toast.error(NOT_CONNECTED_TOAST_MESSAGE)
         return
       }
 

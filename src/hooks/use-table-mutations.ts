@@ -12,6 +12,7 @@ import type {
   RelationshipEdgeType,
   TableNodeType,
 } from '@/lib/react-flow/types'
+import { NOT_CONNECTED_TOAST_MESSAGE } from '@/lib/react-flow/types'
 import { evictTableWidth } from '@/lib/react-flow/canvas-node-metrics'
 
 type SetNodes = React.Dispatch<React.SetStateAction<Array<TableNodeType>>>
@@ -61,7 +62,7 @@ export function useTableMutations(
   const deleteTable = useCallback(
     (tableId: string) => {
       if (!isConnected) {
-        toast.error('Not connected. Please wait for reconnection.')
+        toast.error(NOT_CONNECTED_TOAST_MESSAGE)
         return
       }
 
@@ -152,7 +153,7 @@ export function useTableMutations(
       prevValues?: UpdateTableFields,
     ) => {
       if (!isConnected) {
-        toast.error('Not connected. Please wait for reconnection.')
+        toast.error(NOT_CONNECTED_TOAST_MESSAGE)
         return
       }
 

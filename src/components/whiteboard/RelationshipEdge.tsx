@@ -1,6 +1,6 @@
 import { memo, useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { EdgeLabelRenderer, Position, getSmoothStepPath } from '@xyflow/react'
-import { X } from 'lucide-react'
+import { Trash2 } from 'lucide-react'
 import type { EdgeProps } from '@xyflow/react'
 import type { RelationshipEdgeType } from '@/lib/react-flow/types'
 import { Z_INDEX } from '@/lib/react-flow/types'
@@ -608,7 +608,21 @@ export const RelationshipEdge = memo(
                   />
                 ) : label ? (
                   <span
-                    onDoubleClick={() => setIsEditing(true)}
+                    onDoubleClick={(e) => {
+                      // Measured empirically (2026-08-31, live browser, not
+                      // library source): without this stopPropagation, a
+                      // double-click here also reaches React Flow's
+                      // dblclick-to-zoom handler and zooms the canvas 2x
+                      // (151% -> 303% in the measured run). With it, the
+                      // zoom level is unchanged (151% -> 151%). The call is
+                      // load-bearing, now more consequential since emptying
+                      // this text is the only way to clear a label
+                      // (2026-08-31 tactical plan, #54). Mirrors the delete
+                      // button's own stopPropagation call below, for the
+                      // same reason.
+                      e.stopPropagation()
+                      setIsEditing(true)
+                    }}
                     title="Double-click to edit"
                     style={{ cursor: 'default', userSelect: 'none' }}
                   >
@@ -672,7 +686,7 @@ export const RelationshipEdge = memo(
                   outline: 'none',
                 }}
               >
-                <X size={12} strokeWidth={2.5} aria-hidden="true" />
+                <Trash2 size={12} strokeWidth={2.5} aria-hidden="true" />
               </button>
             </div>
           </div>

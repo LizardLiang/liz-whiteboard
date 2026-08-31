@@ -236,4 +236,36 @@ describe('RelationshipEdge delete button', () => {
     expect(button.classList.contains('nodrag')).toBe(true)
     expect(button.classList.contains('nopan')).toBe(true)
   })
+
+  // 2026-08-31 tactical plan (#52 revised Part B / #54): the button's icon
+  // changed X -> Trash2 so it no longer reads as "clear the label" when it
+  // sits beside a label pill. It stays the SAME control (same handler, same
+  // aria-label) on every edge regardless of label — no second control, no
+  // `!!label` gate.
+  it('TC-RD-02-13: delete button renders the Trash2 icon, not X', () => {
+    renderEdge(makeEdgeProps({ selected: true }))
+
+    const button = screen.getByRole('button', { name: 'Delete relationship' })
+    const svgIcon = button.querySelector('svg')
+    expect(svgIcon).toBeTruthy()
+    expect(svgIcon!.classList.contains('lucide-trash-2')).toBe(true)
+    expect(svgIcon!.classList.contains('lucide-x')).toBe(false)
+  })
+
+  it('TC-RD-02-14: delete button still renders (and still deletes the line, not the label) on an edge that HAS a label — #52 point 3', () => {
+    const onDelete = vi.fn()
+    renderEdge(
+      makeEdgeProps({ selected: true, label: 'belongs to', onDelete }),
+    )
+
+    // The label pill is present...
+    expect(screen.getByText('belongs to')).toBeDefined()
+
+    // ...and the delete button is still there, still wired to onDelete (the
+    // relationship-delete mutation), never to onLabelUpdate.
+    const button = screen.getByRole('button', { name: 'Delete relationship' })
+    fireEvent.click(button)
+    expect(onDelete).toHaveBeenCalledOnce()
+    expect(onDelete).toHaveBeenCalledWith(VALID_RELATIONSHIP_ID)
+  })
 })
