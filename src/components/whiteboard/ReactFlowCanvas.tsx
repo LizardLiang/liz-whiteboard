@@ -56,6 +56,7 @@ import { isDrawTool } from '@/lib/react-flow/tool-mode'
 import {
   CanvasEditContext,
   CanvasModeContext,
+  DOUBLE_PRESS_WINDOW_MS,
 } from '@/lib/react-flow/canvas-mode'
 import {
   parseColumnHandleId,
@@ -555,6 +556,13 @@ export function ReactFlowCanvas({
   const [initialEditingField, setInitialEditingField] =
     useState<InitialEditingField | null>(null)
 
+  // LizMeter #53 fix: retargeting-immune double-press tracker for
+  // `registerEditPress` (see CanvasEditContextValue's doc comment for the
+  // full mechanism). Lives on this stable ReactFlowCanvas instance, NOT
+  // inside TableNode — a TableNode remount (plausibly part of the churn this
+  // bug depends on) must not reset a half-completed double-press.
+  const pressTrackerRef = useRef<{ key: string; time: number } | null>(null)
+
   // requestEdit replaces whatever table was previously overlaid (at most
   // one overlay at a time — locked decision #3) — a double-click on table B
   // while table A is overlaid just calls this again with B, which is the
@@ -575,6 +583,39 @@ export function ReactFlowCanvas({
   const exitEdit = useCallback(() => {
     setEditingTableId(null)
     setInitialEditingField(null)
+  }, [])
+
+  // LizMeter #53 fix — see CanvasEditContextValue's `registerEditPress` doc
+  // comment for the full mechanism (mousedown-based double-press detector,
+  // immune to the click/dblclick retargeting a mid-click re-render can
+  // cause). Two mousedowns on the same tableId/columnId key within
+  // DOUBLE_PRESS_WINDOW_MS call requestEdit directly; anything else just
+  // records the press and waits.
+  const registerEditPress = useCallback(
+    (tableId: string, columnId?: string, field?: 'name' | 'dataType') => {
+      const key = columnId ? `${tableId}:${columnId}` : tableId
+      const now = Date.now()
+      const prev = pressTrackerRef.current
+      if (
+        prev &&
+        prev.key === key &&
+        now - prev.time <= DOUBLE_PRESS_WINDOW_MS
+      ) {
+        pressTrackerRef.current = null
+        requestEdit(tableId, columnId, field)
+      } else {
+        pressTrackerRef.current = { key, time: now }
+      }
+    },
+    [requestEdit],
+  )
+
+  // Drag guard (LizMeter #53 premortem finding): clear any in-flight
+  // double-press tracking wherever a real node drag or column-reorder drag
+  // actually starts, so a mousedown that begins a drag can never later
+  // combine with an unrelated double-click elsewhere within the window.
+  const cancelEditPress = useCallback(() => {
+    pressTrackerRef.current = null
   }, [])
 
   // Header-icon affordance click (note / comment / relations) → open the
@@ -643,6 +684,8 @@ export function ReactFlowCanvas({
       requestEdit,
       requestAffordance,
       exitEdit,
+      registerEditPress,
+      cancelEditPress,
     }),
     [
       editingTableId,
@@ -651,6 +694,8 @@ export function ReactFlowCanvas({
       requestEdit,
       requestAffordance,
       exitEdit,
+      registerEditPress,
+      cancelEditPress,
     ],
   )
 
@@ -1127,6 +1172,10 @@ export function ReactFlowCanvas({
   const onNodeDragStart = useCallback<OnNodeDrag<TableNodeType>>(
     (_event, node) => {
       isDraggingRef.current = true
+      // LizMeter #53 drag guard — a real node drag starting must never let
+      // its own mousedown later combine with an unrelated double-click
+      // elsewhere within DOUBLE_PRESS_WINDOW_MS.
+      cancelEditPress()
       perfTracker.setGesture('drag') // no-op unless recording
       // Defensive reset — a new drag should never inherit a stale scheduled
       // recalculation from a previous one.
@@ -1149,7 +1198,13 @@ export function ReactFlowCanvas({
         members,
       }
     },
-    [areaIdSet, areaNodesState, cancelPendingDragEdgeRecalc, nodes],
+    [
+      areaIdSet,
+      areaNodesState,
+      cancelEditPress,
+      cancelPendingDragEdgeRecalc,
+      nodes,
+    ],
   )
 
   // Recalculate edge handles whenever a node is dragged (live feedback).
@@ -1636,6 +1691,16 @@ export function ReactFlowCanvas({
             maxZoom={VIEWPORT_CONSTRAINTS.maxZoom}
             panOnScroll={true}
             defaultEdgeOptions={DEFAULT_EDGE_OPTIONS}
+            // LizMeter #53 fix: a dblclick retargeted to
+            // div.react-flow__nodes (see CanvasEditContextValue's
+            // registerEditPress doc comment) would otherwise still reach
+            // React Flow's own default zoomOnDoubleClick behavior, throwing
+            // the previously-overlaid table off-screen with an unwanted 2x
+            // zoom+pan ("two tables overlapping"). Disabling it here removes
+            // that side effect unconditionally, regardless of *why* a
+            // dblclick got retargeted. Trade-off: double-click-to-zoom-in on
+            // empty pane space is lost — the Controls zoom buttons remain.
+            zoomOnDoubleClick={false}
           >
             <CanvasNodeLayer
               enabled={canvasMode}

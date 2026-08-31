@@ -84,6 +84,32 @@ export interface CanvasEditContextValue {
   ) => void
   /** Close the overlay entirely (pane click, Escape). */
   exitEdit: () => void
+  /**
+   * LizMeter #53 fix — retargeting-immune double-press entry point for edit
+   * mode. Double-clicking table A then table B while A is still overlaid can
+   * have a React re-render between B's first-click mousedown and its own
+   * click event unmount the `.column-row`/wrapper the mousedown landed on;
+   * the browser then retargets the resulting click/dblclick to
+   * `div.react-flow__nodes`, so `onDoubleClick` never fires on B. Tracking
+   * two mousedowns manually is immune to that retargeting because the
+   * evidence shows `mousedown` always reaches the correct target — only
+   * `click`/`dblclick` get retargeted. Call once per `mousedown` on a
+   * double-click-to-edit surface (chrome-light wrapper / LodColumnRow);
+   * fires `requestEdit` itself once two presses on the same
+   * `tableId`/`columnId` land within `DOUBLE_PRESS_WINDOW_MS`.
+   */
+  registerEditPress: (
+    tableId: string,
+    columnId?: string,
+    field?: 'name' | 'dataType',
+  ) => void
+  /**
+   * Cancel any in-flight double-press tracking (LizMeter #53 drag guard).
+   * Called wherever a real node drag or column-reorder drag actually
+   * starts, so a mousedown that begins a drag can never later combine with
+   * an unrelated double-click elsewhere within the press window.
+   */
+  cancelEditPress: () => void
 }
 
 const noop = () => {}
@@ -98,8 +124,21 @@ export const CanvasEditContext = createContext<CanvasEditContextValue>({
   requestEdit: noop,
   requestAffordance: noop,
   exitEdit: noop,
+  registerEditPress: noop,
+  cancelEditPress: noop,
 })
 
 export function useCanvasEdit(): CanvasEditContextValue {
   return useContext(CanvasEditContext)
 }
+
+/**
+ * Double-click timing window for `registerEditPress` (LizMeter #53). OS
+ * defaults for a real double-click commonly sit 300-500ms; 400ms is the
+ * midpoint. Too short and a slightly slow deliberate double-click across two
+ * different targets falls back to the kept native `onDoubleClick` (no
+ * functional loss, just no retargeting-immunity for that click); too long
+ * and two separate single-clicks on the same target could theoretically
+ * combine — mitigated by requiring the same `tableId`/`columnId` key.
+ */
+export const DOUBLE_PRESS_WINDOW_MS = 400
