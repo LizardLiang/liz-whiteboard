@@ -92,6 +92,17 @@ export const db: SqliteDatabase = openDatabase()
 // already-populated database.
 db.exec('PRAGMA foreign_keys = ON;')
 db.exec('PRAGMA journal_mode = WAL;')
+// WAL allows one writer at a time, and this file is genuinely written by more
+// than one process: in dev the Vite process (node:sqlite) runs the server
+// functions while server.dev.ts (bun:sqlite) runs the Socket.IO handlers, and
+// the e2e seed scripts open their own connections on top. Without a busy
+// timeout SQLite does not wait its turn — it throws SQLITE_BUSY ("database is
+// locked") on the FIRST collision, which surfaces as a silently-reverted table
+// drag ("Failed to update table position: database is locked") whenever a
+// position save lands while the socket process happens to be writing.
+// Every seed script in e2e/ already sets this for the same reason; the app's
+// own connection was the one place still missing it.
+db.exec('PRAGMA busy_timeout = 5000;')
 
 // ── Migration: relax NOT NULL on DiagramTable.positionX/positionY ──────────
 // The original schema had `"positionX" REAL NOT NULL` and `"positionY" REAL
