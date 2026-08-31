@@ -159,6 +159,75 @@
   contain-intrinsic-size: auto 240px auto 340px;
 }
 
+/* Bug fix: canvas-handle-visibility. `content-visibility: auto` (GH #121
+   perf, above) implies paint containment UNCONDITIONALLY — it clips both
+   paint AND hit-testing for anything overflowing this table's own box,
+   `overflow: visible` on the very same rule notwithstanding. The drag-to-
+   connect handles sit 14px outside that box by design (ColumnHandles.tsx),
+   so neither a deliberate click at a handle dot's true (now-visible)
+   center nor React Flow's OWN `elementFromPoint`-based target-hover
+   tracking during a drag (`@xyflow/system`) can ever find it — `pointer-
+   events: all` is necessary but not sufficient; the browser cannot
+   hit-test an element it isn't painting. Two JS-toggled classes
+   (CanvasNodeLayer.tsx), given the SAME treatment below but kept SEPARATE
+   so their independent lifecycles never fight over removing a class a
+   table happens to need from both at once:
+     `.content-visibility-armed`   — the ONE table whose source handle is
+                                      currently armed by the safe corridor
+                                      (pre-drag).
+     `.content-visibility-connecting` — EVERY table, for as long as a
+                                      connection drag is in progress (so
+                                      every candidate target handle is
+                                      reachable, not just the one the
+                                      cursor happens to already be over).
+   Narrow/temporary enough (at most one table pre-drag; only for a drag's
+   duration otherwise) to leave the GH #121 pan/zoom perf win intact the
+   rest of the time. */
+.react-flow__node-erTable.content-visibility-armed,
+.react-flow__node-erTable.content-visibility-connecting {
+  content-visibility: visible;
+}
+
+/* Dot-ownership decision (bug fix: canvas-handle-visibility; user-reported
+   regression, "overlapped two tables"): the CANVAS is the ONLY layer that
+   paints a handle dot's visible pixels — never the real DOM `::before`.
+   Lifting `content-visibility` above makes a table's handles genuinely
+   hit-testable again, which ALSO makes their native `::before` reveal
+   paintable (the `.column-row:hover`/`.is-connecting` rules elsewhere in
+   this file, plus the mere act of the browser re-evaluating `:hover` once
+   containment lifts and the row reflows) — left alone, that is a SECOND,
+   slightly-offset dot for the same handle. `!important` + higher
+   specificity than every reveal rule in this file (none of which are
+   `!important` themselves) guarantees this wins regardless of hover/
+   connecting state or source order. The DOM handle keeps functioning as a
+   hit-testable/droppable target (`pointer-events`, unaffected by this) —
+   only its OWN paint is suppressed. */
+.react-flow__node-erTable.content-visibility-armed .react-flow__handle::before,
+.react-flow__node-erTable.content-visibility-connecting .react-flow__handle::before {
+  background: transparent !important;
+  border-color: transparent !important;
+}
+
+/* Lifting containment above ALSO un-clips whatever this table's own
+   decorations paint outside its border box — its hover-highlight ring, its
+   selection ring, and (via the ancestor rule further down) its raised
+   z-index — none of which are supposed to become visible just because a
+   handle needs to be hit-testable. Without these, a hovered/selected table
+   with a lifted table read as a second, offset table box (user-confirmed
+   regression: "i feels like you overlapped two table on each other").
+   Higher specificity than the rules they override (an extra class each),
+   so these win regardless of source order — see each rule's own
+   counterpart below. */
+.react-flow__node.rf-hover-highlighted .react-flow__node-erTable.content-visibility-armed,
+.react-flow__node.rf-hover-highlighted .react-flow__node-erTable.content-visibility-connecting {
+  box-shadow: none !important;
+}
+
+.react-flow__node.rf-hover-highlighted:has(.react-flow__node-erTable.content-visibility-armed),
+.react-flow__node.rf-hover-highlighted:has(.react-flow__node-erTable.content-visibility-connecting) {
+  z-index: 1 !important;
+}
+
 /* Clip the header's top corners to respect border-radius */
 .react-flow__node-erTable .table-header {
   border-radius: 8px 8px 0 0;
@@ -166,6 +235,13 @@
 
 .react-flow__node-erTable.selected {
   box-shadow: 0 0 0 2px var(--rf-edge-stroke-selected);
+}
+
+/* See the `.content-visibility-armed` comment above — same box-shadow leak,
+   for the plain `.selected` ring (not just the hover-highlight one). */
+.react-flow__node-erTable.selected.content-visibility-armed,
+.react-flow__node-erTable.selected.content-visibility-connecting {
+  box-shadow: none !important;
 }
 
 /* ----------------------------------------------------------------------------
@@ -359,6 +435,28 @@
 .column-row:hover > .react-flow__handle.source:hover::before {
   background: var(--rf-handle-hover-bg);
   border-color: var(--rf-handle-hover-border);
+}
+
+/* Bug fix: canvas-handle-visibility "safe corridor". JS-toggled twin of the
+   `.column-row:hover > .react-flow__handle.source...` rule above — arms ONE
+   specific handle (by adding `.handle-armed` directly to it, see
+   CanvasNodeLayer.tsx's pointermove corridor logic) while the cursor
+   transits from a hovered row out to that handle's canvas-painted dot,
+   which sits OUTSIDE the row's own box and so cannot stay under real
+   `:hover` for the whole trip. Declared as a plain sibling selector, not a
+   replacement — the existing `:hover` rule above is untouched, so a
+   full-DOM (non-canvas) board, which never gets this class, behaves exactly
+   as it did before.
+   FUNCTIONAL ONLY (`pointer-events`/`z-index`) — deliberately carries no
+   `::before` background/border-color of its own. Dot-ownership decision
+   (user-reported regression, "overlapped two tables"): the CANVAS paints
+   every handle dot's visible pixels; the real DOM handle exists solely as
+   a hit-testable target once `content-visibility-armed` (below) makes it
+   reachable. See that rule's neutralization of the native `::before`
+   reveal for why a plain visual rule here would double-paint. */
+.react-flow__handle.source.connectionindicator.handle-armed {
+  pointer-events: all;
+  z-index: 2;
 }
 
 /* FR-016: when a connection drag originates from a SHAPE's own handle, the

@@ -208,6 +208,19 @@ export const IDS = {
   relDelOrdersId: '70000000-0000-4000-8000-000000000005',
   relDelOrdersUserId: '70000000-0000-4000-8000-000000000006',
   relDelRelationship: '70000000-0000-4000-8000-000000000007',
+
+  // Dedicated board for canvas-handle-visibility.spec.ts (bug fix: the
+  // per-column drag-to-connect handle dots were invisible in canvas mode —
+  // CanvasNodeLayer painted an opaque table body above them). Two tables,
+  // well separated (same rationale as relDel* above) and NO seeded
+  // relationship — the spec creates one live via drag-to-connect, so a
+  // pre-existing edge here would let the cardinality dialog / edge-count
+  // assertions pass without the drag ever actually working.
+  handleVisWhiteboard: '90000000-0000-4000-8000-000000000001',
+  handleVisUsersTable: '90000000-0000-4000-8000-000000000002',
+  handleVisOrdersTable: '90000000-0000-4000-8000-000000000003',
+  handleVisUsersId: '90000000-0000-4000-8000-000000000004',
+  handleVisOrdersUserId: '90000000-0000-4000-8000-000000000005',
 }
 
 export const STORAGE_STATE = 'e2e/.auth/state.json'
