@@ -82,11 +82,7 @@ import type { ExportImageDialogOptions } from './ExportImageDialog'
 import { useWhiteboardShapes } from '@/hooks/use-whiteboard-shapes'
 import { TOOL_TO_SHAPE_KIND, isDrawTool } from '@/lib/react-flow/tool-mode'
 import {
-  DEFAULT_LINE_SIZE,
-  DEFAULT_SHAPE_SIZE,
   DEFAULT_TEXT_SIZE,
-  KEYBOARD_CASCADE_STEP,
-  KEYBOARD_CASCADE_WRAP,
   LAYOUT_CONSTRAINTS,
   MIN_SHAPE_HEIGHT,
   MIN_SHAPE_WIDTH,
@@ -231,6 +227,14 @@ const CARDINALITY_OPTIONS: Array<{ value: Cardinality; label: string }> = [
  * ReactFlowCanvas.tsx.
  */
 const EMPTY_COMMENT_THREADS: Array<CommentThreadVM> = []
+
+/**
+ * Stable empty default for `shapes`/`connectors` — module-level so the
+ * identity holds across renders, the same rationale as
+ * EMPTY_COMMENT_THREADS above.
+ */
+const EMPTY_ERD_SHAPES: Array<Shape> = []
+const EMPTY_ERD_CONNECTORS: Array<Connector> = []
 
 /**
  * ReactFlowWhiteboard Props
@@ -1904,8 +1908,6 @@ function ReactFlowWhiteboardInner({
   // §6a: on the public path, `collaborationEnabled` is false and shapes seed
   // from `publicShapesData` instead (no query, no socket).
   const {
-    shapes,
-    connectors,
     createShape: createShapeMutation,
     updateShape: updateShapeMutation,
     deleteShape: deleteShapeMutation,
@@ -1921,6 +1923,8 @@ function ReactFlowWhiteboardInner({
     isPublic,
     publicData: publicShapesData,
   })
+  const shapes = EMPTY_ERD_SHAPES
+  const connectors = EMPTY_ERD_CONNECTORS
 
   // Handle connection drag completion — parse handle IDs and open cardinality
   // picker. In strict mode (default), source/target are guaranteed correct:
@@ -2879,62 +2883,6 @@ function ReactFlowWhiteboardInner({
     setActiveTool('select')
   }, [])
 
-  // Keyboard creation (FR-019): Enter/Space on an already-armed tool button
-  // places a default-sized shape at the viewport centre, cascading by
-  // KEYBOARD_CASCADE_STEP on both axes per successive creation.
-  const keyboardCascadeCountRef = useRef(0)
-  const handleKeyboardCreateShape = useCallback(
-    (tool: DrawTool) => {
-      const shapeKind = TOOL_TO_SHAPE_KIND[tool]
-      const size =
-        shapeKind === 'text'
-          ? DEFAULT_TEXT_SIZE
-          : shapeKind === 'line'
-            ? DEFAULT_LINE_SIZE
-            : DEFAULT_SHAPE_SIZE
-      const center = reactFlowInstance.screenToFlowPosition({
-        x: window.innerWidth / 2,
-        y: window.innerHeight / 2,
-      })
-      const offset =
-        (keyboardCascadeCountRef.current % KEYBOARD_CASCADE_WRAP) *
-        KEYBOARD_CASCADE_STEP
-      keyboardCascadeCountRef.current += 1
-      const positionX = center.x - size.width / 2 + offset
-      const positionY = center.y - size.height / 2 + offset
-
-      if (shapeKind === 'text') {
-        setDraftShape(
-          buildDefaultTextDraft({
-            whiteboardId,
-            positionX,
-            positionY,
-            width: size.width,
-            height: size.height,
-          }),
-        )
-        setActiveTool('select')
-        return
-      }
-
-      const props = buildShapeCreateProps(shapeKind)
-
-      createShapeMutation(
-        {
-          kind: shapeKind,
-          positionX,
-          positionY,
-          width: size.width,
-          height: size.height,
-          props: props as never,
-        },
-        (created) => setJustCreatedShapeId(created.id),
-      )
-      setActiveTool('select')
-    },
-    [reactFlowInstance, whiteboardId, createShapeMutation],
-  )
-
   // Quick-create (approved plan): a connect marker was CLICKED, so make a
   // same-kind, same-size, same-style shape on that side, connect the two,
   // select the new one and open its label editor — the FigJam
@@ -3258,9 +3206,8 @@ function ReactFlowWhiteboardInner({
 
   // FR-019a: scroll the keyboard-focused shape into view when it is off the
   // current viewport. Uses `screenToFlowPosition` on the window's own
-  // corners (the same viewport-centre convention `handleCreateArea`/
-  // `handleKeyboardCreateShape` already use) rather than a DOM query, so it
-  // needs no extra container ref.
+  // corners (the same viewport-centre convention `handleCreateArea` already
+  // uses) rather than a DOM query, so it needs no extra container ref.
   useEffect(() => {
     if (!focusedShapeId) return
     const shape = shapes.find((s) => s.id === focusedShapeId)
@@ -4035,7 +3982,6 @@ function ReactFlowWhiteboardInner({
             canComment={canComment}
             isPublic={isPublic}
             onCreateArea={handleCreateArea}
-            onKeyboardCreate={handleKeyboardCreateShape}
           />
           <ForceFullDetailContext.Provider value={forceFullDetailForExport}>
             <ReactFlowCanvas

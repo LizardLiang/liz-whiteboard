@@ -5,31 +5,9 @@
 // Toolbar.tsx (which owns table/relationship/export/import/auto-layout/
 // search/history).
 
-import {
-  ArrowRight,
-  Circle,
-  Diamond,
-  MessageCircle,
-  Square,
-  SquareDashed,
-  Type,
-} from 'lucide-react'
+import { MessageCircle, SquareDashed } from 'lucide-react'
 import type { ToolMode } from '@/lib/react-flow/tool-mode'
 import { Button } from '@/components/ui/button'
-
-interface ShapeToolDescriptor {
-  tool: 'rectangle' | 'ellipse' | 'diamond' | 'arrow' | 'text'
-  label: string
-  Icon: typeof Square
-}
-
-const SHAPE_TOOLS: Array<ShapeToolDescriptor> = [
-  { tool: 'rectangle', label: 'Rectangle', Icon: Square },
-  { tool: 'ellipse', label: 'Ellipse', Icon: Circle },
-  { tool: 'diamond', label: 'Diamond', Icon: Diamond },
-  { tool: 'arrow', label: 'Arrow', Icon: ArrowRight },
-  { tool: 'text', label: 'Text', Icon: Type },
-]
 
 interface ShapeToolPaletteProps {
   activeTool: ToolMode
@@ -40,15 +18,6 @@ interface ShapeToolPaletteProps {
   /** No palette at all on the public share-link path (§6a). */
   isPublic: boolean
   onCreateArea: () => void
-  /**
-   * Keyboard creation (FR-019): Enter/Space on an ALREADY-armed tool button
-   * creates a default-sized shape instead of re-toggling it off.
-   * Discriminated by `event.detail === 0` (keyboard-synthesised click), so
-   * a mouse double-click on the tool never creates a shape.
-   */
-  onKeyboardCreate?: (
-    tool: 'rectangle' | 'ellipse' | 'diamond' | 'arrow' | 'text',
-  ) => void
 }
 
 export function ShapeToolPalette({
@@ -58,7 +27,6 @@ export function ShapeToolPalette({
   canComment,
   isPublic,
   onCreateArea,
-  onKeyboardCreate,
 }: ShapeToolPaletteProps) {
   if (isPublic) return null
   if (!canEdit && !canComment) return null
@@ -82,27 +50,6 @@ export function ShapeToolPalette({
           Add area
         </Button>
       )}
-      {canEdit &&
-        SHAPE_TOOLS.map(({ tool, label, Icon }) => (
-          <Button
-            key={tool}
-            variant={activeTool === tool ? 'default' : 'outline'}
-            size="icon"
-            title={label}
-            aria-label={label}
-            aria-pressed={activeTool === tool}
-            data-testid={`shape-tool-${tool}`}
-            onClick={(event) => {
-              if (activeTool === tool && event.detail === 0) {
-                onKeyboardCreate?.(tool)
-                return
-              }
-              onSelectTool(activeTool === tool ? 'select' : tool)
-            }}
-          >
-            <Icon className="h-4 w-4" />
-          </Button>
-        ))}
       {canComment && (
         <Button
           variant={activeTool === 'comment' ? 'default' : 'outline'}
