@@ -470,10 +470,16 @@ export function CanvasNodeLayer({
         // relations preview to it AND pan the viewport so it's centered.
         const targetId = parts[2]
         requestAffordance(targetId, 'relations')
-        const tn = rf.getNode(targetId)
+        const tn = rf.getInternalNode(targetId)
         if (tn) {
-          const cx = tn.position.x + (tn.measured?.width ?? 110) / 2
-          const cy = tn.position.y + (tn.measured?.height ?? 44) / 2
+          // Absolute for the same nesting reason as the draw loop above —
+          // centering on a grouped table's relative position would pan the
+          // viewport to the wrong place entirely.
+          const origin = tn.internals.positionAbsolute
+          // `getInternalNode` guarantees `measured` (unlike `getNode`), so no
+          // optional chain here — eslint rejects one as provably unnecessary.
+          const cx = origin.x + (tn.measured.width ?? 110) / 2
+          const cy = origin.y + (tn.measured.height ?? 44) / 2
           rf.setCenter(cx, cy, { zoom: transformRef.current[2], duration: 300 })
         }
       } else {
@@ -548,10 +554,18 @@ export function CanvasNodeLayer({
         data.table.columns,
         data.table.width,
       )
+      // ABSOLUTE, not `n.position` (area nesting, todo #55 follow-up): a table
+      // grouped into an area is a React Flow child, and a child's `position` is
+      // relative to its parent. Painting that as an absolute canvas coordinate
+      // drew every grouped table offset by minus the area's origin — the table
+      // text appeared OUTSIDE the area while its DOM chrome sat inside it.
+      // `nodeLookup` holds InternalNodes, so the composed absolute position is
+      // right here; un-nested tables have positionAbsolute === position.
+      const absolute = n.internals.positionAbsolute
       out.push({
         id: n.id,
-        x: n.position.x,
-        y: n.position.y,
+        x: absolute.x,
+        y: absolute.y,
         w,
         data,
       })

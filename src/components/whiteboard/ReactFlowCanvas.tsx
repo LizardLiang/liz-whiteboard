@@ -47,12 +47,18 @@ import type {
   ShapeNodeType,
   TableNodeType,
 } from '@/lib/react-flow/types'
-import type { DrawTool, ToolMode } from '@/lib/react-flow/tool-mode'
+import type { DrawGestureTool, ToolMode } from '@/lib/react-flow/tool-mode'
 import type {
   AffordanceRequest,
   InitialEditingField,
 } from '@/lib/react-flow/canvas-mode'
-import { isDrawTool } from '@/lib/react-flow/tool-mode'
+import { isDrawGestureTool } from '@/lib/react-flow/tool-mode'
+import {
+  buildParentIndex,
+  toAbsolute,
+  toAbsoluteNodes,
+  toRelative,
+} from '@/lib/react-flow/node-nesting'
 import {
   CanvasEditContext,
   CanvasModeContext,
@@ -278,15 +284,16 @@ export interface ReactFlowCanvasProps {
    */
   onRelationshipDeleteRefused?: () => void
   /**
-   * The canvas-wide tool mode (D-1). When a draw tool is armed
-   * (`isDrawTool(activeTool)`), mounts `<ShapeDrawOverlay>` inside the
-   * wrapper (H1: the overlay is pointer-events:none and runs its gesture
-   * from capture-phase listeners on the wrapper — see that component).
+   * The canvas-wide tool mode (D-1). When a draw gesture tool is armed
+   * (`isDrawGestureTool(activeTool)` — the five shape tools plus `'area'`),
+   * mounts `<ShapeDrawOverlay>` inside the wrapper (H1: the overlay is
+   * pointer-events:none and runs its gesture from capture-phase listeners on
+   * the wrapper — see that component).
    */
   activeTool?: ToolMode
   /** Fires once per completed draw gesture (tech-spec §8). */
   onDrawCommit?: (
-    kind: DrawTool,
+    kind: DrawGestureTool,
     rect: { x: number; y: number; width: number; height: number },
     drag: { startX: number; startY: number; endX: number; endY: number },
   ) => void
@@ -449,6 +456,36 @@ export function ReactFlowCanvas({
     () => new Set(areaNodesState.map((a) => a.id)),
     [areaNodesState],
   )
+
+  // Area nesting (todo #55 follow-up): tableId -> the area node that OWNS it.
+  // A member table is a real React Flow child of its area, so the area drags
+  // its members structurally instead of the app translating each one per frame.
+  //
+  // Built from the `areaNodes` PROP, deliberately NOT from `areaNodesState`.
+  // `areaNodesState` is React Flow's live drag state: it changes on every frame
+  // of an area drag, and re-deriving children from a moving parent mid-drag
+  // would re-anchor them every frame and pin them in place — the exact bug this
+  // nesting is meant to remove. The prop only changes when the parent commits a
+  // real area change (create, membership, a finished move), which is precisely
+  // when children DO need re-anchoring.
+  const parentIndex = useMemo(
+    () =>
+      buildParentIndex(
+        areaNodes.map((a) => ({
+          id: a.id,
+          positionX: a.data.area.positionX,
+          positionY: a.data.area.positionY,
+          memberTableIds: a.data.area.memberTableIds,
+        })),
+      ),
+    [areaNodes],
+  )
+  // Read inside drag callbacks that must not re-subscribe every time an area
+  // moves — see `onNodeDragStop`'s conversion back to absolute.
+  const parentIndexRef = useRef(parentIndex)
+  parentIndexRef.current = parentIndex
+
+
 
   // Comment pin nodes (GH #110) — same separate-state pattern as areas, but
   // rendered ON TOP of tables (merged last) since they are small clickable
@@ -730,17 +767,6 @@ export function ReactFlowCanvas({
   // starts/stops, which would trigger unnecessary highlighting recalculations.
   const isDraggingRef = useRef(false)
 
-  // Movable-container grouping (GH #106 Bug 2 fix): while an area node is
-  // being dragged, its member tables must translate by the same delta. This
-  // ref snapshots the area's start position and each member's start position
-  // at drag-start, so onNodeDrag/onNodeDragStop can compute `delta` and apply
-  // it without compounding across frames.
-  const dragAreaMemberStartRef = useRef<{
-    areaId: string
-    areaStart: { x: number; y: number }
-    members: Map<string, { x: number; y: number }>
-  } | null>(null)
-
   // Track whether React Flow has measured all nodes; used for one-shot
   // post-measure edge re-routing inside the overlay (Enhancement 2).
   const nodesInitialized = useNodesInitialized()
@@ -791,17 +817,47 @@ export function ReactFlowCanvas({
   // ref makes this effect fire ONLY on a genuine initialNodes re-push, leaving
   // the L464-475 effect below as the sole owner of click/toggle
   // re-highlighting.
+  //
+  // This is also the ONE inbound coordinate boundary for area nesting: the
+  // parent hands us ABSOLUTE positions, and a member table is stored here as a
+  // React Flow child, whose position must be RELATIVE to its area (see
+  // node-nesting.ts). `parentIndex` is a dep because a table joining or leaving
+  // an area, or its area committing a move, genuinely does change the anchor —
+  // and it is derived from the `areaNodes` prop, so it does NOT tick during a
+  // drag and cannot re-fire this effect mid-gesture (the GH #134 hazard above).
   useEffect(() => {
+    const parents = parentIndex
+    const highlighted = calculateHighlighting(
+      initialNodes,
+      edgesRef.current,
+      activeTableIdRef.current,
+      null,
+      relationsPreviewTableIdRef.current,
+    ).nodes
     setNodes(
-      calculateHighlighting(
-        initialNodes,
-        edgesRef.current,
-        activeTableIdRef.current,
-        null,
-        relationsPreviewTableIdRef.current,
-      ).nodes,
+      parents.size === 0
+        ? highlighted
+        : highlighted.map((n) => {
+            const parent = parents.get(n.id)
+            if (!parent) return n
+            return {
+              ...n,
+              parentId: parent.id,
+              position: toRelative(n.position, parent),
+            }
+          }),
     )
-  }, [initialNodes, setNodes])
+    // Keyed on the WHOLE `parentIndex`, positions included — not on membership
+    // alone. A child's stored position is relative to its parent's ORIGIN, so
+    // when an area moves its children must be re-anchored against the new
+    // origin or they travel with it. That is fine for a deliberate area drag
+    // (they should travel) but wrong for an auto-fit: `refitArea` repositions
+    // the area around its members, and without this dep every member that the
+    // user did NOT touch slid by the refit delta — dragging one table visibly
+    // dragged its neighbours. `areas` state does not change during a drag (React
+    // Flow owns the live drag position and only commits on drag stop), so this
+    // dep ticks on committed changes only, never per frame.
+  }, [initialNodes, parentIndex, setNodes])
 
   // Search palette focus request — when the container bumps focusRequestToken,
   // pan/zoom to the requested table and mark it active-highlighted. Keyed on
@@ -1109,12 +1165,18 @@ export function ReactFlowCanvas({
       updatedPositions.set(node.id, node.position)
       draggedNodes.forEach((n) => updatedPositions.set(n.id, n.position))
 
-      return nodes.map((n) => {
-        const updated = updatedPositions.get(n.id)
-        return updated ? { ...n, position: updated } : n
-      })
+      // Back to ABSOLUTE before this reaches edge routing: a member table's
+      // position — both in `nodes` state and in the drag event — is relative to
+      // its area, and handle geometry is computed in absolute flow space.
+      return toAbsoluteNodes(
+        nodes.map((n) => {
+          const updated = updatedPositions.get(n.id)
+          return updated ? { ...n, position: updated } : n
+        }),
+        parentIndex,
+      )
     },
-    [nodes],
+    [nodes, parentIndex],
   )
 
   // rAF-throttle drag-frame edge recalculation (GH #121 perf, opt #5).
@@ -1165,47 +1227,22 @@ export function ReactFlowCanvas({
   // component is gone.
   useEffect(() => cancelPendingDragEdgeRecalc, [cancelPendingDragEdgeRecalc])
 
-  // Mark drag as started — suppresses hover events that ReactFlow fires on drag begin.
-  // When the dragged node is an area, also snapshot its start position and its
-  // members' start positions so onNodeDrag/onNodeDragStop can translate them
-  // by the live delta (movable-container grouping, GH #106 Bug 2 fix).
-  const onNodeDragStart = useCallback<OnNodeDrag<TableNodeType>>(
-    (_event, node) => {
-      isDraggingRef.current = true
-      // LizMeter #53 drag guard — a real node drag starting must never let
-      // its own mousedown later combine with an unrelated double-click
-      // elsewhere within DOUBLE_PRESS_WINDOW_MS.
-      cancelEditPress()
-      perfTracker.setGesture('drag') // no-op unless recording
-      // Defensive reset — a new drag should never inherit a stale scheduled
-      // recalculation from a previous one.
-      cancelPendingDragEdgeRecalc()
-
-      if (!areaIdSet.has(node.id)) {
-        dragAreaMemberStartRef.current = null
-        return
-      }
-      const areaNode = areaNodesState.find((a) => a.id === node.id)
-      const memberIds = new Set(areaNode?.data.area.memberTableIds ?? [])
-      const members = new Map<string, { x: number; y: number }>()
-      nodes.forEach((n) => {
-        if (memberIds.has(n.id))
-          members.set(n.id, { x: n.position.x, y: n.position.y })
-      })
-      dragAreaMemberStartRef.current = {
-        areaId: node.id,
-        areaStart: { x: node.position.x, y: node.position.y },
-        members,
-      }
-    },
-    [
-      areaIdSet,
-      areaNodesState,
-      cancelEditPress,
-      cancelPendingDragEdgeRecalc,
-      nodes,
-    ],
-  )
+  // Mark drag as started — suppresses hover events that ReactFlow fires on drag
+  // begin. Area drags need NO member bookkeeping here any more: members are real
+  // React Flow children (todo #55 follow-up), so React Flow moves them with the
+  // parent itself. The old start-position snapshot + per-frame delta translation
+  // this used to keep is gone with it.
+  const onNodeDragStart = useCallback<OnNodeDrag<TableNodeType>>(() => {
+    isDraggingRef.current = true
+    // LizMeter #53 drag guard — a real node drag starting must never let
+    // its own mousedown later combine with an unrelated double-click
+    // elsewhere within DOUBLE_PRESS_WINDOW_MS.
+    cancelEditPress()
+    perfTracker.setGesture('drag') // no-op unless recording
+    // Defensive reset — a new drag should never inherit a stale scheduled
+    // recalculation from a previous one.
+    cancelPendingDragEdgeRecalc()
+  }, [cancelEditPress, cancelPendingDragEdgeRecalc])
 
   // Recalculate edge handles whenever a node is dragged (live feedback).
   // We merge the dragged node's latest position into the nodes array so the
@@ -1218,36 +1255,35 @@ export function ReactFlowCanvas({
       // zero extra plumbing here.
       if (shapeIdSet.has(node.id)) return
       if (areaIdSet.has(node.id)) {
-        // Movable-container grouping: translate member tables live by the
-        // same delta the area has moved since drag-start.
-        const drag = dragAreaMemberStartRef.current
-        if (!drag || drag.areaId !== node.id || drag.members.size === 0) return
-        const deltaX = node.position.x - drag.areaStart.x
-        const deltaY = node.position.y - drag.areaStart.y
-        // Counts app-initiated interaction setNodes only (this area-member-drag
-        // path). Regular single-node drags flow through React Flow's internal
-        // applyNodeChanges and are NOT counted here — so this counter reads ~0
-        // in the common single-node drag case; don't misread it as "no updates".
-        perfTracker.incSetNodes() // no-op unless recording; interaction path only
-        setNodes((prevNodes) =>
-          prevNodes.map((n) => {
-            const start = drag.members.get(n.id)
-            if (!start) return n
-            return {
-              ...n,
-              position: { x: start.x + deltaX, y: start.y + deltaY },
-            }
-          }),
-        )
-        const movedIds = new Set(drag.members.keys())
+        // Members are React Flow children now, so dragging the area already
+        // moved them on screen — there is no per-frame translation left to do
+        // (and doing one would double-apply the delta). What still has to
+        // happen is edge routing: React Flow fires no onNodeDrag for a child
+        // that moved because its parent did, so the handles on relationships
+        // touching a member would otherwise freeze until the drop.
+        //
+        // Each member's live ABSOLUTE position is the area's live position
+        // (node.position, mid-drag) plus the member's unchanged relative one.
+        const liveParent = {
+          id: node.id,
+          positionX: node.position.x,
+          positionY: node.position.y,
+        }
+        // ONE pass, so a member of the dragged area is converted against its
+        // LIVE parent and every other area's members against their static one.
+        // (Converting the whole list afterwards would double-apply the offset
+        // to exactly the members being dragged.)
+        const movedIds = new Set<string>()
         const currentNodes = nodes.map((n) => {
-          const start = drag.members.get(n.id)
-          if (!start) return n
-          return {
-            ...n,
-            position: { x: start.x + deltaX, y: start.y + deltaY },
+          const parent = parentIndex.get(n.id)
+          if (!parent) return n
+          if (parent.id !== node.id) {
+            return { ...n, position: toAbsolute(n.position, parent) }
           }
+          movedIds.add(n.id)
+          return { ...n, position: toAbsolute(n.position, liveParent) }
         })
+        if (movedIds.size === 0) return
         scheduleDragEdgeRecalc(currentNodes, movedIds)
         return
       }
@@ -1261,8 +1297,8 @@ export function ReactFlowCanvas({
       shapeIdSet,
       mergeCurrentPositions,
       nodes,
+      parentIndex,
       scheduleDragEdgeRecalc,
-      setNodes,
     ],
   )
 
@@ -1275,24 +1311,22 @@ export function ReactFlowCanvas({
       // Area nodes: persist the new position (+ any moved members), skip
       // edge routing / hover.
       if (areaIdSet.has(node.id)) {
-        const drag = dragAreaMemberStartRef.current
-        let movedMembers: Array<{
-          id: string
-          positionX: number
-          positionY: number
-        }> = []
-        if (drag && drag.areaId === node.id) {
-          const deltaX = node.position.x - drag.areaStart.x
-          const deltaY = node.position.y - drag.areaStart.y
-          movedMembers = Array.from(drag.members.entries()).map(
-            ([id, start]) => ({
-              id,
-              positionX: start.x + deltaX,
-              positionY: start.y + deltaY,
-            }),
-          )
+        // Members rode along as React Flow children, so their RELATIVE
+        // positions are untouched by the drag — each one's new ABSOLUTE
+        // position is simply the area's dropped position plus that relative
+        // offset. No drag-start snapshot and no delta arithmetic: the thing
+        // the old implementation had to reconstruct is now just structure.
+        const droppedParent = {
+          id: node.id,
+          positionX: node.position.x,
+          positionY: node.position.y,
         }
-        dragAreaMemberStartRef.current = null
+        const movedMembers = nodes
+          .filter((n) => parentIndex.get(n.id)?.id === node.id)
+          .map((n) => {
+            const absolute = toAbsolute(n.position, droppedParent)
+            return { id: n.id, positionX: absolute.x, positionY: absolute.y }
+          })
         onAreaDragStop?.(
           node.id,
           node.position.x,
@@ -1340,12 +1374,27 @@ export function ReactFlowCanvas({
       setEdges((prevEdges) =>
         recalculateEdgesForDraggedNodes(prevEdges, currentNodes, draggedIds),
       )
-      // Call the prop callback if provided
-      onNodeDragStopProp?.(event, node, draggedNodes)
+      // OUTBOUND coordinate boundary: React Flow reports a nested member's
+      // position relative to its area, but everything past this callback —
+      // persistence, area membership reconciliation, the query cache — is
+      // absolute. Convert before the event leaves the canvas so no consumer
+      // has to know nesting exists.
+      const parents = parentIndexRef.current
+      const toAbsoluteNode = (n: TableNodeType): TableNodeType => {
+        const parent = parents.get(n.id)
+        return parent ? { ...n, position: toAbsolute(n.position, parent) } : n
+      }
+      onNodeDragStopProp?.(
+        event,
+        toAbsoluteNode(node),
+        draggedNodes.map(toAbsoluteNode),
+      )
     },
     [
       areaIdSet,
       shapeIdSet,
+      nodes,
+      parentIndex,
       cancelPendingDragEdgeRecalc,
       onAreaDragStop,
       onShapeDragStop,
@@ -1655,6 +1704,15 @@ export function ReactFlowCanvas({
             // threading a union node type through the whole canvas.
             nodes={mergedNodes as unknown as typeof nodes}
             edges={effectiveEdges as unknown as typeof edges}
+            // MUST stay false now that member tables are children of their area
+            // (todo #55 follow-up). React Flow's default elevation raises an
+            // interacted node's z-index AND, for a nested subtree, its parent's
+            // — which put the AREA on top of its own members. The symptom was
+            // nasty: after dragging a grouped table once, pressing that table
+            // again grabbed the area instead, so the whole group moved and the
+            // table looked stuck. Areas carry an explicit zIndex 0 and tables
+            // sit above them; nothing may reorder that at runtime.
+            elevateNodesOnSelect={false}
             onNodesChange={onNodesChange}
             onEdgesChange={onEdgesChange}
             onConnect={onConnect}
@@ -1726,7 +1784,7 @@ export function ReactFlowCanvas({
           {/* H1: mounts ONLY while a draw tool is armed. pointer-events:none
               — see ShapeDrawOverlay's own module comment for the full
               wheel/zoom-survival mechanism. */}
-          {isDrawTool(activeTool) && (
+          {isDrawGestureTool(activeTool) && (
             <ShapeDrawOverlay
               activeTool={activeTool}
               onCommit={(kind, rect, drag) => onDrawCommit?.(kind, rect, drag)}

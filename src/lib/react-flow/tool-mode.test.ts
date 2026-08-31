@@ -4,7 +4,12 @@
 // "is a draw tool" during the D-1 migration.
 
 import { describe, expect, it } from 'vitest'
-import { DRAW_TOOLS, TOOL_TO_SHAPE_KIND, isDrawTool } from './tool-mode'
+import {
+  DRAW_TOOLS,
+  TOOL_TO_SHAPE_KIND,
+  isDrawGestureTool,
+  isDrawTool,
+} from './tool-mode'
 import type { ToolMode } from './tool-mode'
 
 describe('isDrawTool', () => {
@@ -16,6 +21,7 @@ describe('isDrawTool', () => {
     'arrow',
     'text',
     'comment',
+    'area',
   ]
 
   it.each(ALL_TOOL_MODES)('classifies %s correctly', (tool) => {
@@ -29,6 +35,11 @@ describe('isDrawTool', () => {
 
   it("'comment' is never a draw tool (D-1 migration guard)", () => {
     expect(isDrawTool('comment')).toBe(false)
+  })
+
+  it("'area' is never a shape draw tool — it creates an Area, not a Shape", () => {
+    expect(isDrawTool('area')).toBe(false)
+    expect((DRAW_TOOLS as ReadonlyArray<string>).includes('area')).toBe(false)
   })
 
   it('all five DRAW_TOOLS entries are draw tools', () => {
@@ -51,5 +62,22 @@ describe('TOOL_TO_SHAPE_KIND', () => {
     expect(Object.keys(TOOL_TO_SHAPE_KIND).sort()).toEqual(
       [...DRAW_TOOLS].sort(),
     )
+  })
+})
+
+describe('isDrawGestureTool', () => {
+  it('is true for every shape draw tool', () => {
+    for (const t of DRAW_TOOLS) {
+      expect(isDrawGestureTool(t)).toBe(true)
+    }
+  })
+
+  it("is true for 'area' (todo #55 — same rubber-band gesture)", () => {
+    expect(isDrawGestureTool('area')).toBe(true)
+  })
+
+  it("is false for 'select' and 'comment'", () => {
+    expect(isDrawGestureTool('select')).toBe(false)
+    expect(isDrawGestureTool('comment')).toBe(false)
   })
 })

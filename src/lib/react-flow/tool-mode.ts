@@ -20,6 +20,7 @@ export type ToolMode =
   | 'arrow'
   | 'text'
   | 'comment'
+  | 'area'
 
 /** The five drag-to-draw tools — everything in ToolMode except select/comment. */
 export const DRAW_TOOLS = [
@@ -35,6 +36,23 @@ export type DrawTool = (typeof DRAW_TOOLS)[number]
 /** True for exactly the five draw tools — false for 'select' and 'comment'. */
 export function isDrawTool(t: ToolMode): t is DrawTool {
   return (DRAW_TOOLS as ReadonlyArray<ToolMode>).includes(t)
+}
+
+/**
+ * Every tool driven by the same rubber-band drag gesture — the five shape
+ * draw tools PLUS `'area'` (todo #55 item 2: draw an area around existing
+ * tables). `'area'` is deliberately NOT a member of `DRAW_TOOLS`: that list
+ * is the domain of `TOOL_TO_SHAPE_KIND` and every consumer of it creates a
+ * `Shape`, while an area creates an `Area` row on a different table with its
+ * own membership semantics. They share only the pointer gesture, so the
+ * gesture — not the shape enum — is what widens.
+ */
+export type DrawGestureTool = DrawTool | 'area'
+
+/** True for the five shape draw tools and for `'area'` — i.e. every tool the
+ *  ShapeDrawOverlay's rubber-band gesture serves. */
+export function isDrawGestureTool(t: ToolMode): t is DrawGestureTool {
+  return t === 'area' || isDrawTool(t)
 }
 
 /**

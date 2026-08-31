@@ -178,7 +178,13 @@
  * Flow/TableNode set, so removing the class cleanly reverts to whatever the
  * node-array-driven (click/relations-preview) state left in place.
  * ---------------------------------------------------------------------------- */
-.react-flow__node.rf-hover-highlighted {
+/* NEVER applies to an area node. An area is a CONTAINER — its member tables
+ * are React Flow children of it (todo #55 follow-up) — so raising it to 1000
+ * puts it on top of the very tables it holds. The tables then stop receiving
+ * pointer events: pressing one grabbed the area instead, dragging the whole
+ * group and making the table itself feel stuck. Tables and shapes still get
+ * the raise, which is what this cue was written for. */
+.react-flow__node.rf-hover-highlighted:not(.react-flow__node-area) {
   z-index: 1000 !important;
 }
 

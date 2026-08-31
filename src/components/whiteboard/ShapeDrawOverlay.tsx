@@ -22,7 +22,7 @@
 
 import { useLayoutEffect, useRef, useState } from 'react'
 import { useReactFlow } from '@xyflow/react'
-import type { DrawTool } from '@/lib/react-flow/tool-mode'
+import type { DrawGestureTool } from '@/lib/react-flow/tool-mode'
 import {
   DASHED_STROKE_PATTERN,
   DRAW_DRAG_THRESHOLD_PX,
@@ -30,7 +30,11 @@ import {
 } from '@/lib/react-flow/types'
 
 interface ShapeDrawOverlayProps {
-  activeTool: DrawTool
+  /**
+   * Includes `'area'` (todo #55): drawing an area uses this exact gesture —
+   * only the commit target differs, which is entirely the caller's business.
+   */
+  activeTool: DrawGestureTool
   /**
    * Fires once per completed (>= threshold) drag. `rect` is the normalised
    * top-left bounding box in flow coordinates. `drag` carries the RAW
@@ -39,7 +43,7 @@ interface ShapeDrawOverlayProps {
    * the actual drag direction rather than always defaulting to horizontal.
    */
   onCommit: (
-    kind: DrawTool,
+    kind: DrawGestureTool,
     rect: { x: number; y: number; width: number; height: number },
     drag: { startX: number; startY: number; endX: number; endY: number },
   ) => void
@@ -128,10 +132,7 @@ export function ShapeDrawOverlay({
       // physically released the mouse button. The normal (mis-click /
       // committed-draw) pointerup path releases capture itself already;
       // this is a harmless no-op there (`hasPointerCapture` guards it).
-      if (
-        pointerId !== undefined &&
-        wrapper!.hasPointerCapture(pointerId)
-      ) {
+      if (pointerId !== undefined && wrapper!.hasPointerCapture(pointerId)) {
         wrapper!.releasePointerCapture(pointerId)
       }
     }
@@ -314,7 +315,13 @@ export function ShapeDrawOverlay({
   )
 }
 
-function DrawPreview({ kind, rect }: { kind: DrawTool; rect: ScreenRect }) {
+function DrawPreview({
+  kind,
+  rect,
+}: {
+  kind: DrawGestureTool
+  rect: ScreenRect
+}) {
   const style: React.CSSProperties = {
     position: 'absolute',
     left: rect.left,
@@ -323,7 +330,9 @@ function DrawPreview({ kind, rect }: { kind: DrawTool; rect: ScreenRect }) {
     height: rect.height,
   }
 
-  if (kind === 'rectangle' || kind === 'text') {
+  // 'area' previews as the same dashed rectangle — that is what a subject
+  // area looks like once created (AreaNode's dashed border).
+  if (kind === 'rectangle' || kind === 'text' || kind === 'area') {
     return (
       <div
         style={{

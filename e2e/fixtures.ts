@@ -74,6 +74,18 @@ export const IDS = {
   mdOrdersId: '10000000-0000-4000-8000-000000000003',
   mdArea: 'ffffffff-ffff-4fff-8fff-ffffffffffff',
 
+  // Dedicated board for the draw-an-area-around-tables suite (todo #55).
+  // Owns its own whiteboard because that suite CREATES areas and never
+  // restores them — it re-seeds itself before every test via
+  // e2e/seed-area-draw.ts, which resets only this board.
+  adWhiteboard: '80000000-0000-4000-8000-000000000001',
+  adAccountsTable: '80000000-0000-4000-8000-000000000002',
+  adInvoicesTable: '80000000-0000-4000-8000-000000000003',
+  adAuditTable: '80000000-0000-4000-8000-000000000004',
+  adAccountsId: '80000000-0000-4000-8000-000000000005',
+  adInvoicesId: '80000000-0000-4000-8000-000000000006',
+  adAuditId: '80000000-0000-4000-8000-000000000007',
+
   // Dedicated board for the React Flow perf stress fixture (GH #121). Owns a
   // fixed id (distinct from the boards above) so `e2e/seed-stress.ts` can be
   // re-run independently (manual profiling or the perf e2e's own setup)

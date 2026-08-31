@@ -17,7 +17,6 @@ interface ShapeToolPaletteProps {
   canComment: boolean
   /** No palette at all on the public share-link path (§6a). */
   isPublic: boolean
-  onCreateArea: () => void
 }
 
 export function ShapeToolPalette({
@@ -26,7 +25,6 @@ export function ShapeToolPalette({
   canEdit,
   canComment,
   isPublic,
-  onCreateArea,
 }: ShapeToolPaletteProps) {
   if (isPublic) return null
   if (!canEdit && !canComment) return null
@@ -41,13 +39,20 @@ export function ShapeToolPalette({
     >
       {canEdit && (
         <Button
-          variant="outline"
+          variant={activeTool === 'area' ? 'default' : 'outline'}
           size="sm"
-          onClick={onCreateArea}
-          title="Add subject area"
+          onClick={() =>
+            onSelectTool(activeTool === 'area' ? 'select' : 'area')
+          }
+          title={
+            activeTool === 'area'
+              ? 'Drag on the canvas to draw the area'
+              : 'Draw a subject area'
+          }
+          aria-pressed={activeTool === 'area'}
         >
           <SquareDashed className="mr-2 h-4 w-4" />
-          Add area
+          {activeTool === 'area' ? 'Drag to draw...' : 'Add area'}
         </Button>
       )}
       {canComment && (
