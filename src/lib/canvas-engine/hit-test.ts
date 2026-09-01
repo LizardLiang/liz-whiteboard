@@ -14,7 +14,7 @@
 //
 // Pure module: no React, no DOM, no database.
 
-import { bounds, effectiveCornerRadius, groupOwning } from './scene'
+import { bounds, effectiveCornerRadius, groupDescendants, groupOwning } from './scene'
 import {
   connectorBounds,
   connectorCurve,
@@ -503,6 +503,76 @@ export function resolveClickTarget(
 
   const isGroup = scene.byId.get(hitElementId)?.group !== undefined
   return { targetId: hitElementId, editable: !isGroup, enteredPath: chain }
+}
+
+/**
+ * The group `draggedElementId` should belong to after a drag ends, or null
+ * for top-level (canvas-element-grouping tactical plan, Wave 5) — the ONE
+ * genuinely new gesture this feature adds: dropping an element inside a
+ * group's frame joins it, dropping it outside removes it.
+ *
+ * Evaluated from the dragged element's CENTRE POINT (A11), never from
+ * partial bounds overlap — a partial-overlap rule makes an accidental join
+ * likely, exactly the failure commit-on-drop was chosen to avoid. Callers
+ * must call this ONLY at release (`onPointerUp`/`endGesture`), never during
+ * `onPointerMove` — membership must change once, from the final position,
+ * not preview while the pointer is still moving (FR-012).
+ *
+ * `excludedIds` must contain the dragged element's own id AND every id
+ * being moved together with it in the SAME gesture — a group being dragged
+ * cannot "join" itself, one of its own members also mid-drag, or a sibling
+ * also mid-drag alongside it.
+ *
+ * TIE-BREAK (A9/A10): among every group whose frame contains the centre
+ * point, the INNERMOST wins — a candidate that is a STRUCTURAL ANCESTOR of
+ * another candidate always loses to that other candidate, regardless of
+ * z-order (checked via `groupDescendants`, scene.ts). Among whatever
+ * remains — true siblings, unrelated to each other — the TOPMOST in
+ * z-order wins, the same rule `hitTest` above already applies to
+ * overlapping elements.
+ *
+ * Reuses `rectContainsPoint` against each group's own `x`/`y`/`width`/
+ * `height` (the frame) — no new geometry primitive needed, a group is a
+ * plain axis-aligned rect for this purpose regardless of what shapes its
+ * members are.
+ */
+export function resolveDropTarget(
+  scene: Scene,
+  draggedElementId: string,
+  excludedIds: ReadonlySet<string>,
+): string | null {
+  const dragged = scene.byId.get(draggedElementId)
+  if (!dragged) return null
+
+  const centre: Point = {
+    x: dragged.x + dragged.width / 2,
+    y: dragged.y + dragged.height / 2,
+  }
+
+  const candidates = scene.elements.filter(
+    (element) =>
+      element.group !== undefined &&
+      !excludedIds.has(element.id) &&
+      rectContainsPoint(bounds(element), centre),
+  )
+  if (candidates.length === 0) return null
+
+  // Innermost wins: a candidate that is an ancestor of another candidate is
+  // never the answer, however deep the overlap goes — drop it and keep
+  // walking. What remains is either one candidate or a set of true
+  // siblings (none an ancestor of another).
+  const innermost = candidates.filter(
+    (candidate) =>
+      !candidates.some(
+        (other) =>
+          other.id !== candidate.id &&
+          groupDescendants(scene, candidate.id).includes(other.id),
+      ),
+  )
+
+  return innermost.reduce((top, candidate) =>
+    candidate.zIndex > top.zIndex ? candidate : top,
+  ).id
 }
 
 /**

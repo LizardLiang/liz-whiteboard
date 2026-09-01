@@ -34,6 +34,7 @@ import {
   rectFromPoints,
   rectsIntersect,
   resolveClickTarget,
+  resolveDropTarget,
 } from './hit-test'
 import type { CanvasElement } from './scene'
 
@@ -839,5 +840,121 @@ describe('resolveClickTarget', () => {
       editable: true,
       enteredPath: [],
     })
+  })
+})
+
+describe('resolveDropTarget', () => {
+  it("resolves to the group whose frame contains the dragged element's centre point", () => {
+    const scene = sceneFrom([
+      el('g1', { kind: 'group', group: { childIds: [] }, x: 0, y: 0, width: 200, height: 200 }),
+      el('a', { x: 50, y: 50, width: 20, height: 20 }), // centre (60, 60)
+    ])
+    expect(resolveDropTarget(scene, 'a', new Set(['a']))).toBe('g1')
+  })
+
+  it("returns null when no group's frame contains the centre point", () => {
+    const scene = sceneFrom([
+      el('g1', { kind: 'group', group: { childIds: [] }, x: 0, y: 0, width: 50, height: 50 }),
+      el('a', { x: 500, y: 500, width: 20, height: 20 }),
+    ])
+    expect(resolveDropTarget(scene, 'a', new Set(['a']))).toBeNull()
+  })
+
+  it('returns null when the dragged element is not in the scene', () => {
+    const scene = sceneFrom([
+      el('g1', { kind: 'group', group: { childIds: [] }, x: 0, y: 0, width: 200, height: 200 }),
+    ])
+    expect(resolveDropTarget(scene, 'ghost', new Set(['ghost']))).toBeNull()
+  })
+
+  it('excludes a group in excludedIds even when its frame contains the point', () => {
+    // The group currently being dragged in the same gesture — it must not
+    // be able to "join" itself.
+    const scene = sceneFrom([
+      el('g1', { kind: 'group', group: { childIds: ['a'] }, x: 0, y: 0, width: 200, height: 200 }),
+      el('a', { x: 50, y: 50, width: 20, height: 20 }),
+    ])
+    expect(resolveDropTarget(scene, 'a', new Set(['a', 'g1']))).toBeNull()
+  })
+
+  it('picks the INNERMOST (structural descendant) over its ancestor, regardless of z-order (A9)', () => {
+    // `outer` has a HIGHER z than `mid` — proof that structural nesting,
+    // not z-order, decides between an ancestor and its own descendant.
+    const scene = sceneFrom([
+      el('outer', {
+        kind: 'group',
+        group: { childIds: ['mid'] },
+        x: 0,
+        y: 0,
+        width: 200,
+        height: 200,
+        zIndex: 5,
+      }),
+      el('mid', {
+        kind: 'group',
+        group: { childIds: [] },
+        x: 50,
+        y: 50,
+        width: 100,
+        height: 100,
+        zIndex: 1,
+      }),
+      el('a', { x: 90, y: 90, width: 20, height: 20 }), // centre (100, 100), inside both
+    ])
+    expect(resolveDropTarget(scene, 'a', new Set(['a']))).toBe('mid')
+  })
+
+  it('picks the TOPMOST z-order among true siblings (A10)', () => {
+    // `sib1` and `sib2` are unrelated groups (neither owns the other) that
+    // happen to overlap at the drop point — the same tie-break `hitTest`
+    // already uses for overlapping elements.
+    const scene = sceneFrom([
+      el('sib1', {
+        kind: 'group',
+        group: { childIds: [] },
+        x: 0,
+        y: 0,
+        width: 100,
+        height: 100,
+        zIndex: 1,
+      }),
+      el('sib2', {
+        kind: 'group',
+        group: { childIds: [] },
+        x: 0,
+        y: 0,
+        width: 100,
+        height: 100,
+        zIndex: 3,
+      }),
+      el('a', { x: 40, y: 40, width: 20, height: 20 }), // centre (50, 50), inside both
+    ])
+    expect(resolveDropTarget(scene, 'a', new Set(['a']))).toBe('sib2')
+  })
+
+  it('resolves against the dragged element itself, when it is a group, joining an enclosing frame', () => {
+    // A12: a group can be dragged into another group's frame under the
+    // same drop rule.
+    const scene = sceneFrom([
+      el('outer', {
+        kind: 'group',
+        group: { childIds: [] },
+        x: 0,
+        y: 0,
+        width: 300,
+        height: 300,
+      }),
+      el('inner', {
+        kind: 'group',
+        group: { childIds: ['a'] },
+        x: 100,
+        y: 100,
+        width: 20,
+        height: 20,
+      }),
+    ])
+    expect(resolveDropTarget(scene, 'inner', new Set(['inner', 'a']))).toBe(
+      'outer',
+    )
   })
 })

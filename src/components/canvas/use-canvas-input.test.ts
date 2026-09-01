@@ -1241,6 +1241,224 @@ describe('grouping: delete cascade and duplicate (Wave 4)', () => {
   })
 })
 
+describe('grouping: membership drag-in/out, commit-on-drop (Wave 5)', () => {
+  // `g1` is an EMPTY group frame covering (0,0)-(300,300). `a` starts as a
+  // loose (non-member) shape well outside it; `b` starts as an existing
+  // member, inside it.
+  const G1_ID = '11111111-1111-4111-8111-111111111111'
+  const A_ID = '22222222-2222-4222-8222-222222222222'
+  const B_ID = '33333333-3333-4333-8333-333333333333'
+
+  function makeFrameScene(): Array<CanvasElement> {
+    const g1: CanvasElement = {
+      ...makeText(),
+      id: G1_ID,
+      kind: 'group',
+      text: null,
+      x: 0,
+      y: 0,
+      width: 300,
+      height: 300,
+      group: { childIds: [B_ID] },
+    }
+    const a: CanvasElement = {
+      ...makeText(),
+      id: A_ID,
+      kind: 'rectangle',
+      x: 400,
+      y: 400,
+      width: 20,
+      height: 20,
+    }
+    const b: CanvasElement = {
+      ...makeText(),
+      id: B_ID,
+      kind: 'rectangle',
+      x: 50,
+      y: 50,
+      width: 20,
+      height: 20,
+    }
+    return [g1, a, b]
+  }
+
+  it("dropping a loose element inside a group's frame adds it to the group, in the SAME undo entry as the move", () => {
+    const h = setup(makeFrameScene())
+
+    // Drag `a` (400,400)-(420,420) to land its centre at (60,60), inside
+    // g1's frame (0,0)-(300,300).
+    act(() => {
+      h.api.canvasHandlers.onPointerDown(
+        pointerEvent({ clientX: 410, clientY: 410 }),
+      )
+    })
+    h.sync()
+    act(() => {
+      h.api.canvasHandlers.onPointerMove(
+        pointerEvent({ clientX: 60, clientY: 60 }),
+      )
+    })
+    h.sync()
+    act(() => {
+      h.api.canvasHandlers.onPointerUp(
+        pointerEvent({ clientX: 60, clientY: 60 }),
+      )
+    })
+
+    expect(h.callbacks.onUpdate).toHaveBeenCalledTimes(1)
+    const [after, before, gesture] = h.callbacks.onUpdate.mock.calls[0]
+    expect(gesture).toBe('move')
+    const afterElements = after as Array<CanvasElement>
+    const beforeElements = before as Array<CanvasElement>
+
+    // Position update for `a`.
+    const afterA = afterElements.find((e) => e.id === A_ID)!
+    expect(afterA.x).toBe(50)
+    expect(afterA.y).toBe(50)
+
+    // Membership update for `g1`, folded into the SAME call.
+    const afterG1 = afterElements.find((e) => e.id === G1_ID)!
+    const beforeG1 = beforeElements.find((e) => e.id === G1_ID)!
+    expect(beforeG1.group).toEqual({ childIds: [B_ID] })
+    expect(new Set(afterG1.group!.childIds)).toEqual(new Set([B_ID, A_ID]))
+
+    // The board reflects it.
+    expect(h.scene.byId.get(G1_ID)?.group?.childIds).toContain(A_ID)
+  })
+
+  it('dragging a member out past the frame edge removes it from the group and it becomes top-level', () => {
+    const h = setup(makeFrameScene())
+
+    // Drag `b` (50,50)-(70,70) far outside g1's frame. `detail: 2` — a
+    // PLAIN single click on a member resolves to the OUTERMOST group
+    // (FR-004, Wave 2), so dragging `b` INDIVIDUALLY requires the
+    // raw-hit-resolution path a rapid click sequence's second press takes
+    // (the same mechanism that lets a double-click-then-drag reach a
+    // member without lifting the pointer — see `onPointerDown`'s own
+    // comment on `event.detail`).
+    act(() => {
+      h.api.canvasHandlers.onPointerDown(
+        pointerEvent({ clientX: 60, clientY: 60, detail: 2 }),
+      )
+    })
+    h.sync()
+    expect(h.api.selectedIds).toEqual(new Set([B_ID]))
+    act(() => {
+      h.api.canvasHandlers.onPointerMove(
+        pointerEvent({ clientX: 900, clientY: 900 }),
+      )
+    })
+    h.sync()
+    act(() => {
+      h.api.canvasHandlers.onPointerUp(
+        pointerEvent({ clientX: 900, clientY: 900 }),
+      )
+    })
+
+    expect(h.callbacks.onUpdate).toHaveBeenCalledTimes(1)
+    const [after, before] = h.callbacks.onUpdate.mock.calls[0]
+    const afterElements = after as Array<CanvasElement>
+    const beforeElements = before as Array<CanvasElement>
+
+    const beforeG1 = beforeElements.find((e) => e.id === G1_ID)!
+    const afterG1 = afterElements.find((e) => e.id === G1_ID)!
+    expect(beforeG1.group).toEqual({ childIds: [B_ID] })
+    // A13: the group persists, even now at zero members — it does not
+    // auto-dissolve.
+    expect(afterG1.group).toEqual({ childIds: [] })
+
+    // `b` itself is never written to — membership lives on the group side
+    // only (Wave 1) — but its position update is still present.
+    const afterB = afterElements.find((e) => e.id === B_ID)!
+    expect(afterB.x).toBe(890)
+    expect(afterB.y).toBe(890)
+
+    expect(h.scene.byId.get(G1_ID)?.group?.childIds).toEqual([])
+  })
+
+  it('crossing a frame mid-drag previews nothing; only the FINAL release position is evaluated', () => {
+    const h = setup(makeFrameScene())
+
+    act(() => {
+      h.api.canvasHandlers.onPointerDown(
+        pointerEvent({ clientX: 410, clientY: 410 }),
+      )
+    })
+    h.sync()
+    // Pass THROUGH g1's frame without releasing there.
+    act(() => {
+      h.api.canvasHandlers.onPointerMove(
+        pointerEvent({ clientX: 60, clientY: 60 }),
+      )
+    })
+    h.sync()
+    // Mid-drag: no membership preview, no write of any kind yet.
+    expect(h.scene.byId.get(G1_ID)?.group?.childIds).toEqual([B_ID])
+    expect(h.callbacks.onUpdate).not.toHaveBeenCalled()
+
+    // Keep dragging, back OUT of the frame, and release there.
+    act(() => {
+      h.api.canvasHandlers.onPointerMove(
+        pointerEvent({ clientX: 900, clientY: 900 }),
+      )
+    })
+    h.sync()
+    act(() => {
+      h.api.canvasHandlers.onPointerUp(
+        pointerEvent({ clientX: 900, clientY: 900 }),
+      )
+    })
+
+    // The FINAL drop point is outside every frame — no membership change
+    // occurred at all, only the ordinary position update.
+    expect(h.callbacks.onUpdate).toHaveBeenCalledTimes(1)
+    const [after] = h.callbacks.onUpdate.mock.calls[0]
+    expect((after as Array<CanvasElement>).map((e) => e.id)).toEqual([A_ID])
+    expect(h.scene.byId.get(G1_ID)?.group?.childIds).toEqual([B_ID])
+  })
+
+  it('a group dragged together with its own members does not try to rejoin using a member position', () => {
+    // `g1` itself is dragged (its single member `b` comes along via
+    // `withGroupMembers`, Wave 3). The drop lands g1's OWN frame overlapping
+    // where it started — this must not attempt to resolve `b` as a
+    // candidate joining `g1` (or anything else) using `b`'s own dragged-
+    // along position; `b` is not a TOP-LEVEL dragged id.
+    const h = setup(makeFrameScene())
+    act(() => {
+      h.api.setSelectedIds(new Set([G1_ID]))
+    })
+    h.sync()
+
+    // Grab g1 somewhere inside its own frame but outside `b` (e.g. (250,250)).
+    act(() => {
+      h.api.canvasHandlers.onPointerDown(
+        pointerEvent({ clientX: 250, clientY: 250 }),
+      )
+    })
+    h.sync()
+    act(() => {
+      h.api.canvasHandlers.onPointerMove(
+        pointerEvent({ clientX: 260, clientY: 260 }),
+      )
+    })
+    h.sync()
+    act(() => {
+      h.api.canvasHandlers.onPointerUp(
+        pointerEvent({ clientX: 260, clientY: 260 }),
+      )
+    })
+
+    expect(h.callbacks.onUpdate).toHaveBeenCalledTimes(1)
+    const [after] = h.callbacks.onUpdate.mock.calls[0]
+    // Only position updates for g1 and b — no membership rewrite at all.
+    const afterG1 = (after as Array<CanvasElement>).find(
+      (e) => e.id === G1_ID,
+    )!
+    expect(afterG1.group).toEqual({ childIds: [B_ID] })
+    expect(h.scene.byId.get(G1_ID)?.group?.childIds).toEqual([B_ID])
+  })
+})
+
 /** A harness whose tool starts as something other than `select`. */
 function setupWithTool(startTool: CanvasTool) {
   let scene: Scene = sceneFrom([])

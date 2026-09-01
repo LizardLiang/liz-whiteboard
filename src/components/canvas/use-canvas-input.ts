@@ -55,6 +55,7 @@ import {
   normaliseRect,
   rectFromPoints,
   resolveClickTarget,
+  resolveDropTarget,
 } from '@/lib/canvas-engine/hit-test'
 import { snapPoint, snapRect } from '@/lib/canvas-engine/grid'
 import {
@@ -67,6 +68,8 @@ import {
   connectorsTouching,
   endpointElementId,
   freeEndpoint,
+  groupDescendants,
+  groupOwning,
   nextZIndex,
   outermostGroup,
   remapConnectorEndpoints,
@@ -739,6 +742,83 @@ function resizedBounds(
     height = Math.max(MIN_ELEMENT_SIZE, world.y - start.y)
   }
   return { x, y, width, height }
+}
+
+/** One group's membership patch, before and after — for folding into the SAME `onUpdate` call a move gesture already makes. */
+interface MembershipUpdate {
+  before: CanvasElement
+  after: CanvasElement
+}
+
+/**
+ * The group membership changes a completed move gesture produced, or an
+ * empty array if none (canvas-element-grouping tactical plan, Wave 5) — the
+ * one genuinely new gesture this feature adds.
+ *
+ * Evaluated ONCE, from the scene `onPointerMove` has already shifted to the
+ * FINAL dropped positions — never mid-drag (FR-012's commit-on-drop rule).
+ * Only TOP-LEVEL dragged ids are checked: an id that is itself a descendant
+ * (via `groupDescendants`) of ANOTHER id in `draggedIds` is moving WITH
+ * that other id, not independently, so it must not also try to "join" a
+ * frame using its own (dragged-along) position.
+ *
+ * A single group can be BOTH the old owner for one top-level id and the
+ * new owner for another within the same gesture — the running patch is
+ * accumulated per group id so both edits land in one final `childIds`.
+ */
+function resolveMembershipUpdates(
+  scene: Scene,
+  draggedIds: ReadonlyArray<string>,
+): Array<MembershipUpdate> {
+  const draggedSet = new Set(draggedIds)
+  const topLevelIds = draggedIds.filter(
+    (id) =>
+      !draggedIds.some(
+        (other) =>
+          other !== id && groupDescendants(scene, other).includes(id),
+      ),
+  )
+
+  const patched = new Map<string, CanvasElement>()
+  const originals = new Map<string, CanvasElement>()
+
+  for (const id of topLevelIds) {
+    const oldOwner = groupOwning(scene, id)
+    // `excludedIds` is the WHOLE gesture, not just `id` and its
+    // descendants: a group being dragged cannot join itself, one of its
+    // own members also mid-drag, or a SIBLING also mid-drag alongside it.
+    const newOwnerId = resolveDropTarget(scene, id, draggedSet)
+    if ((oldOwner?.id ?? null) === newOwnerId) continue // unchanged
+
+    if (oldOwner) {
+      if (!originals.has(oldOwner.id)) originals.set(oldOwner.id, oldOwner)
+      const current = patched.get(oldOwner.id) ?? oldOwner
+      patched.set(oldOwner.id, {
+        ...current,
+        group: {
+          childIds: (current.group?.childIds ?? []).filter(
+            (childId) => childId !== id,
+          ),
+        },
+      })
+    }
+    if (newOwnerId) {
+      const newOwner = scene.byId.get(newOwnerId)
+      if (newOwner) {
+        if (!originals.has(newOwnerId)) originals.set(newOwnerId, newOwner)
+        const current = patched.get(newOwnerId) ?? newOwner
+        patched.set(newOwnerId, {
+          ...current,
+          group: { childIds: [...(current.group?.childIds ?? []), id] },
+        })
+      }
+    }
+  }
+
+  return [...patched.entries()].map(([id, after]) => ({
+    before: originals.get(id) as CanvasElement,
+    after,
+  }))
 }
 
 export function useCanvasInput({
@@ -1640,22 +1720,68 @@ export function useCanvasInput({
         }
         case 'move': {
           if (!finished.moved) break
+          // Not `scene` — that name is already the hook's own `scene` prop
+          // one scope up, and shadowing it here would make every OTHER
+          // reference inside this block ambiguous to a reader.
+          const currentScene = latest.current.scene
           const moved = finished.ids
-            .map((id) => latest.current.scene.byId.get(id))
+            .map((id) => currentScene.byId.get(id))
             .filter((element): element is CanvasElement => Boolean(element))
-          if (moved.length > 0) {
-            // Pre-state is index-aligned to `moved` by id, not by position: an
-            // element present in `finished.before` but removed mid-drag (rare,
-            // but not impossible with a collaborator's concurrent delete) must
-            // not shift every later entry by one.
-            const beforeById = new Map(
-              finished.before.map((element) => [element.id, element]),
-            )
-            const before = moved
-              .map((element) => beforeById.get(element.id))
-              .filter((element): element is CanvasElement => Boolean(element))
-            callbacks?.onUpdate?.(moved, before, 'move')
+          if (moved.length === 0) break
+
+          // Pre-state is index-aligned to `moved` by id, not by position: an
+          // element present in `finished.before` but removed mid-drag (rare,
+          // but not impossible with a collaborator's concurrent delete) must
+          // not shift every later entry by one.
+          const beforeById = new Map(
+            finished.before.map((element) => [element.id, element]),
+          )
+          const before = moved
+            .map((element) => beforeById.get(element.id))
+            .filter((element): element is CanvasElement => Boolean(element))
+
+          // Membership editing on drop (canvas-element-grouping tactical
+          // plan, Wave 5): resolved HERE, once, from the final dropped
+          // positions `onPointerMove` already applied to the scene —
+          // never mid-drag (FR-012).
+          const membershipUpdates = resolveMembershipUpdates(
+            currentScene,
+            finished.ids,
+          )
+          if (membershipUpdates.length > 0) {
+            setScene((prev) => {
+              let next = prev
+              for (const { after } of membershipUpdates) {
+                next = updateElement(next, after.id, { group: after.group })
+              }
+              return next
+            })
           }
+
+          // Folded into the SAME `onUpdate` call the position update
+          // already makes, so position change + membership change stays
+          // ONE undo entry (FR-016) — not a new undo primitive, just a
+          // bigger element list handed to the existing one.
+          const movedIds = new Set(moved.map((element) => element.id))
+          const after = [...moved]
+          const beforeAll = [...before]
+          for (const update of membershipUpdates) {
+            if (movedIds.has(update.after.id)) {
+              // The affected group was ALSO dragged in this same gesture —
+              // patch its already-captured after-element's `group` field
+              // in place rather than adding a duplicate entry; its
+              // `before` entry is already the correct pre-drag snapshot.
+              const idx = after.findIndex(
+                (element) => element.id === update.after.id,
+              )
+              after[idx] = { ...after[idx], group: update.after.group }
+            } else {
+              after.push(update.after)
+              beforeAll.push(update.before)
+            }
+          }
+
+          callbacks?.onUpdate?.(after, beforeAll, 'move')
           break
         }
         case 'resize': {
