@@ -280,6 +280,60 @@ CREATE TABLE IF NOT EXISTS "Area" (
 
 CREATE INDEX IF NOT EXISTS "Area_whiteboardId_idx" ON "Area"("whiteboardId");
 
+-- Shapes and Connectors (Phase 1: shapes-and-connectors feature). Five shape
+-- kinds are stored as one polymorphic row: generic geometry in real columns,
+-- kind-specific data in a validated JSON "props" blob, styling in "style".
+-- Future kinds (ink, image) are new "kind" values, never new columns.
+CREATE TABLE IF NOT EXISTS "Shape" (
+    "id"           TEXT NOT NULL PRIMARY KEY,
+    "whiteboardId" TEXT NOT NULL,
+    "kind"         TEXT NOT NULL,
+    "positionX"    REAL NOT NULL,
+    "positionY"    REAL NOT NULL,
+    "width"        REAL NOT NULL,
+    "height"       REAL NOT NULL,
+    "rotation"     REAL NOT NULL DEFAULT 0,
+    "zIndex"       INTEGER NOT NULL DEFAULT 0,
+    "text"         TEXT,
+    "style"        JSONB,
+    "props"        JSONB,
+    "createdAt"    DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    "updatedAt"    DATETIME NOT NULL,
+    CONSTRAINT "Shape_whiteboardId_fkey" FOREIGN KEY ("whiteboardId")
+        REFERENCES "Whiteboard" ("id") ON DELETE CASCADE ON UPDATE CASCADE
+);
+
+CREATE INDEX IF NOT EXISTS "Shape_whiteboardId_idx" ON "Shape"("whiteboardId");
+
+-- Connectors are their own table with dedicated indexed endpoint COLUMNS
+-- (FR-031) — never inside a JSON blob. No stored path: geometry is derived
+-- at render time from both endpoints' bounds (FR-031a).
+CREATE TABLE IF NOT EXISTS "Connector" (
+    "id"            TEXT NOT NULL PRIMARY KEY,
+    "whiteboardId"  TEXT NOT NULL,
+    "sourceShapeId" TEXT NOT NULL,
+    "targetShapeId" TEXT NOT NULL,
+    "style"         JSONB,
+    "createdAt"     DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    "updatedAt"     DATETIME NOT NULL,
+    CONSTRAINT "Connector_whiteboardId_fkey" FOREIGN KEY ("whiteboardId")
+        REFERENCES "Whiteboard" ("id") ON DELETE CASCADE ON UPDATE CASCADE,
+    CONSTRAINT "Connector_sourceShapeId_fkey" FOREIGN KEY ("sourceShapeId")
+        REFERENCES "Shape" ("id") ON DELETE CASCADE ON UPDATE CASCADE,
+    CONSTRAINT "Connector_targetShapeId_fkey" FOREIGN KEY ("targetShapeId")
+        REFERENCES "Shape" ("id") ON DELETE CASCADE ON UPDATE CASCADE
+);
+
+CREATE INDEX IF NOT EXISTS "Connector_whiteboardId_idx"  ON "Connector"("whiteboardId");
+CREATE INDEX IF NOT EXISTS "Connector_sourceShapeId_idx" ON "Connector"("sourceShapeId");
+CREATE INDEX IF NOT EXISTS "Connector_targetShapeId_idx" ON "Connector"("targetShapeId");
+-- A second A->B connector would render exactly on top of the first
+-- (invisible, unselectable); B->A remains allowed (a different, meaningful
+-- arrow). Documented assumption, not a locked user decision — dropping this
+-- index later is a one-line change with no data impact.
+CREATE UNIQUE INDEX IF NOT EXISTS "Connector_source_target_key"
+    ON "Connector"("sourceShapeId", "targetShapeId");
+
 CREATE TABLE IF NOT EXISTS "WhiteboardSnapshot" (
     "id" TEXT NOT NULL PRIMARY KEY,
     "whiteboardId" TEXT NOT NULL,
@@ -316,4 +370,98 @@ CREATE TABLE IF NOT EXISTS "Comment" (
 CREATE INDEX IF NOT EXISTS "Comment_whiteboardId_idx"  ON "Comment"("whiteboardId");
 CREATE INDEX IF NOT EXISTS "Comment_parentId_idx"      ON "Comment"("parentId");
 CREATE INDEX IF NOT EXISTS "Comment_targetTableId_idx" ON "Comment"("targetTableId");
+
+-- ── Canvas engine (FigJam-style, milestone 1) ───────────────────────────────
+-- A canvas board is a DELIBERATELY separate board kind from "Whiteboard".
+-- The canvas engine (src/lib/canvas-engine/) draws every pixel itself and
+-- stores its own generic elements, so it shares no rows with the ER diagram
+-- and touches neither "Shape" nor "Connector". "folderId" mirrors
+-- "Whiteboard" so the existing navigator can list and create canvas boards
+-- later without a schema change.
+CREATE TABLE IF NOT EXISTS "CanvasBoard" (
+    "id"        TEXT NOT NULL PRIMARY KEY,
+    "name"      TEXT NOT NULL,
+    "projectId" TEXT NOT NULL,
+    "folderId"  TEXT,
+    "createdAt" DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    "updatedAt" DATETIME NOT NULL,
+    CONSTRAINT "CanvasBoard_projectId_fkey" FOREIGN KEY ("projectId")
+        REFERENCES "Project" ("id") ON DELETE CASCADE ON UPDATE CASCADE,
+    CONSTRAINT "CanvasBoard_folderId_fkey" FOREIGN KEY ("folderId")
+        REFERENCES "Folder" ("id") ON DELETE CASCADE ON UPDATE CASCADE
+);
+
+CREATE INDEX IF NOT EXISTS "CanvasBoard_projectId_idx" ON "CanvasBoard"("projectId");
+CREATE INDEX IF NOT EXISTS "CanvasBoard_folderId_idx"  ON "CanvasBoard"("folderId");
+CREATE INDEX IF NOT EXISTS "CanvasBoard_updatedAt_idx" ON "CanvasBoard"("updatedAt");
+
+-- One generic element row for every canvas element kind: geometry in real
+-- columns, kind-specific data in a validated JSON "props" blob, appearance in
+-- "style". Same polymorphic storage decision as "Shape" — a new kind
+-- (ellipse, ink, image) is a new "kind" value plus one Zod union arm, never
+-- a new column and never a migration.
+--
+-- Coordinates are named positionX/positionY to match every other table in
+-- this schema. The engine's own element type calls them x/y; the row-mapper
+-- in src/db.ts is the ONE place those two vocabularies meet.
+CREATE TABLE IF NOT EXISTS "CanvasElement" (
+    "id"        TEXT NOT NULL PRIMARY KEY,
+    "boardId"   TEXT NOT NULL,
+    "kind"      TEXT NOT NULL,
+    "positionX" REAL NOT NULL,
+    "positionY" REAL NOT NULL,
+    "width"     REAL NOT NULL,
+    "height"    REAL NOT NULL,
+    "rotation"  REAL NOT NULL DEFAULT 0,
+    "zIndex"    INTEGER NOT NULL DEFAULT 0,
+    "text"      TEXT,
+    "style"     JSONB,
+    "props"     JSONB,
+    "createdAt" DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    "updatedAt" DATETIME NOT NULL,
+    -- Monotonic write counter (board-undo tactical plan, Wave 1). A wall-clock
+    -- timestamp cannot tell two writes in the same millisecond apart, which
+    -- would make a contested undo read as uncontested — see
+    -- .claude/feature/2026-08-25-board-undo/spec-delta/canvas-undo.md,
+    -- "Canvas Element Writes Carry A Monotonic Revision".
+    "revision"  INTEGER NOT NULL DEFAULT 0,
+    CONSTRAINT "CanvasElement_boardId_fkey" FOREIGN KEY ("boardId")
+        REFERENCES "CanvasBoard" ("id") ON DELETE CASCADE ON UPDATE CASCADE
+);
+
+CREATE INDEX IF NOT EXISTS "CanvasElement_boardId_idx" ON "CanvasElement"("boardId");
+-- Elements are always read back in paint order, so the board+z pair is the
+-- index the list query actually uses.
+CREATE INDEX IF NOT EXISTS "CanvasElement_boardId_zIndex_idx" ON "CanvasElement"("boardId", "zIndex");
+
+-- Public read-only share links for canvas boards.
+--
+-- A SEPARATE table from "WhiteboardShareLink" rather than a generalisation of
+-- it. That table's foreign key points at "Whiteboard"("id"), and a canvas
+-- board id is not a whiteboard id -- widening it would mean either dropping
+-- the foreign key (losing the cascade that stops links outliving their board)
+-- or a nullable-pair column design where exactly one of two ids must be set,
+-- which SQLite cannot express as a constraint worth trusting. The column
+-- shape is otherwise identical on purpose, so the two data layers read the
+-- same way side by side.
+--
+-- Only the SHA-256 hash of the token is ever stored; the raw token exists
+-- once, in the create response.
+CREATE TABLE IF NOT EXISTS "CanvasBoardShareLink" (
+    "id" TEXT NOT NULL PRIMARY KEY,
+    "canvasBoardId" TEXT NOT NULL,
+    "tokenHash" TEXT NOT NULL,
+    "createdByUserId" TEXT NOT NULL,
+    "expiresAt" INTEGER,
+    "revokedAt" INTEGER,
+    "createdAt" INTEGER NOT NULL DEFAULT (unixepoch('now') * 1000),
+    CONSTRAINT "CanvasBoardShareLink_canvasBoardId_fkey" FOREIGN KEY ("canvasBoardId")
+        REFERENCES "CanvasBoard" ("id") ON DELETE CASCADE ON UPDATE CASCADE,
+    CONSTRAINT "CanvasBoardShareLink_createdByUserId_fkey" FOREIGN KEY ("createdByUserId")
+        REFERENCES "User" ("id") ON DELETE CASCADE ON UPDATE CASCADE
+);
+
+CREATE UNIQUE INDEX IF NOT EXISTS "CanvasBoardShareLink_tokenHash_key" ON "CanvasBoardShareLink"("tokenHash");
+CREATE INDEX IF NOT EXISTS "CanvasBoardShareLink_canvasBoardId_idx" ON "CanvasBoardShareLink"("canvasBoardId");
+CREATE INDEX IF NOT EXISTS "CanvasBoardShareLink_expiresAt_idx" ON "CanvasBoardShareLink"("expiresAt");
 `

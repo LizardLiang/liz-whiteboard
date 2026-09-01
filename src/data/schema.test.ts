@@ -3,14 +3,20 @@
 
 import { describe, expect, it } from 'vitest'
 import {
+  MAX_BOARD_COORD,
   areaMoveBroadcastSchema,
+  canvasElementPropsSchema,
   cardinalitySchema,
+  createConnectorSchema,
   createRelationshipSchema,
+  createShapeSchema,
   loginInputSchema,
   projectRoleSchema,
   registerInputSchema,
   reorderColumnsSchema,
+  shapePropsSchema,
   tableMoveBulkBroadcastSchema,
+  updateShapeSchema,
 } from './schema'
 
 describe('cardinalitySchema', () => {
@@ -512,5 +518,290 @@ describe('areaMoveBroadcastSchema (area:move socket payload validation)', () => 
       members: manyMembers,
     })
     expect(result.success).toBe(false)
+  })
+})
+
+describe('shape/connector schemas (UNIT-02)', () => {
+  const whiteboardId = '11111111-1111-4111-8111-111111111111'
+  const shapeId1 = '22222222-2222-4222-8222-222222222222'
+  const shapeId2 = '33333333-3333-4333-8333-333333333333'
+
+  function baseShape(over: Record<string, unknown> = {}) {
+    return {
+      whiteboardId,
+      kind: 'rectangle' as const,
+      positionX: 0,
+      positionY: 0,
+      width: 100,
+      height: 100,
+      props: { kind: 'rectangle' },
+      ...over,
+    }
+  }
+
+  describe('createShapeSchema — coordinate boundaries (M7)', () => {
+    it('accepts positionX/positionY at exactly ±MAX_BOARD_COORD', () => {
+      expect(
+        createShapeSchema.safeParse(baseShape({ positionX: MAX_BOARD_COORD }))
+          .success,
+      ).toBe(true)
+      expect(
+        createShapeSchema.safeParse(baseShape({ positionX: -MAX_BOARD_COORD }))
+          .success,
+      ).toBe(true)
+    })
+
+    it('rejects positionX one unit past MAX_BOARD_COORD', () => {
+      expect(
+        createShapeSchema.safeParse(
+          baseShape({ positionX: MAX_BOARD_COORD + 1 }),
+        ).success,
+      ).toBe(false)
+    })
+
+    it('rejects positionX = 1e300 (finite but absurd)', () => {
+      expect(
+        createShapeSchema.safeParse(baseShape({ positionX: 1e300 })).success,
+      ).toBe(false)
+    })
+
+    it('rejects NaN and Infinity on any coordinate field', () => {
+      expect(
+        createShapeSchema.safeParse(baseShape({ positionX: NaN })).success,
+      ).toBe(false)
+      expect(
+        createShapeSchema.safeParse(baseShape({ positionY: Infinity })).success,
+      ).toBe(false)
+      expect(
+        createShapeSchema.safeParse(baseShape({ positionY: -Infinity }))
+          .success,
+      ).toBe(false)
+    })
+  })
+
+  describe('createShapeSchema — width/height', () => {
+    it('accepts width/height at exactly 100_000', () => {
+      expect(
+        createShapeSchema.safeParse(baseShape({ width: 100_000 })).success,
+      ).toBe(true)
+    })
+
+    it('rejects width/height at 100_001', () => {
+      expect(
+        createShapeSchema.safeParse(baseShape({ width: 100_001 })).success,
+      ).toBe(false)
+    })
+
+    it('rejects non-positive width/height', () => {
+      expect(createShapeSchema.safeParse(baseShape({ width: 0 })).success).toBe(
+        false,
+      )
+      expect(
+        createShapeSchema.safeParse(baseShape({ width: -10 })).success,
+      ).toBe(false)
+    })
+  })
+
+  describe('createShapeSchema — kind/props.kind cross-validation (W2, Hermes code review)', () => {
+    it('rejects a mismatched kind and props.kind', () => {
+      const result = createShapeSchema.safeParse(
+        baseShape({ kind: 'line', props: { kind: 'text' } }),
+      )
+      expect(result.success).toBe(false)
+    })
+
+    it('rejects the reverse mismatch too', () => {
+      const result = createShapeSchema.safeParse(
+        baseShape({ kind: 'text', props: { kind: 'rectangle' } }),
+      )
+      expect(result.success).toBe(false)
+    })
+
+    it('accepts every kind when props.kind matches', () => {
+      for (const kind of ['rectangle', 'ellipse', 'diamond', 'text'] as const) {
+        expect(
+          createShapeSchema.safeParse(baseShape({ kind, props: { kind } }))
+            .success,
+        ).toBe(true)
+      }
+      expect(
+        createShapeSchema.safeParse(
+          baseShape({
+            kind: 'line',
+            props: {
+              kind: 'line',
+              x1: 0,
+              y1: 0.5,
+              x2: 1,
+              y2: 0.5,
+              arrowStart: false,
+              arrowEnd: true,
+            },
+          }),
+        ).success,
+      ).toBe(true)
+    })
+  })
+
+  describe('shapePropsSchema — line fractions (FR-031a)', () => {
+    function lineProps(over: Record<string, unknown> = {}) {
+      return {
+        kind: 'line' as const,
+        x1: 0,
+        y1: 0.5,
+        x2: 1,
+        y2: 0.5,
+        arrowStart: false,
+        arrowEnd: true,
+        ...over,
+      }
+    }
+
+    it('accepts fractions at exactly 0 and 1', () => {
+      expect(shapePropsSchema.safeParse(lineProps()).success).toBe(true)
+      expect(
+        shapePropsSchema.safeParse(lineProps({ x1: 1, y1: 1, y2: 0 })).success,
+      ).toBe(true)
+    })
+
+    it('rejects fractions below 0 or above 1', () => {
+      expect(
+        shapePropsSchema.safeParse(lineProps({ x1: -0.0001 })).success,
+      ).toBe(false)
+      expect(
+        shapePropsSchema.safeParse(lineProps({ x2: 1.0001 })).success,
+      ).toBe(false)
+    })
+
+    it("rejects a line's x1/y1/x2/y2 on a rectangle's props", () => {
+      const result = shapePropsSchema.safeParse({
+        kind: 'rectangle',
+        x1: 0,
+        y1: 0,
+        x2: 1,
+        y2: 1,
+      })
+      expect(result.success).toBe(false)
+    })
+
+    it('validates each of the five kind discriminator arms independently', () => {
+      for (const kind of ['rectangle', 'ellipse', 'diamond', 'text']) {
+        expect(shapePropsSchema.safeParse({ kind }).success).toBe(true)
+      }
+      expect(shapePropsSchema.safeParse(lineProps()).success).toBe(true)
+    })
+  })
+
+  describe('createShapeSchema — text length cap', () => {
+    it('accepts text at exactly 500 chars', () => {
+      expect(
+        createShapeSchema.safeParse(baseShape({ text: 'a'.repeat(500) }))
+          .success,
+      ).toBe(true)
+    })
+
+    it('rejects text at 501 chars', () => {
+      expect(
+        createShapeSchema.safeParse(baseShape({ text: 'a'.repeat(501) }))
+          .success,
+      ).toBe(false)
+    })
+  })
+
+  describe('createShapeSchema — strict blob schemas', () => {
+    it('rejects an unknown key in style', () => {
+      const result = createShapeSchema.safeParse(
+        baseShape({ style: { fill: 'none', bogus: 1 } }),
+      )
+      expect(result.success).toBe(false)
+    })
+
+    it('rejects an unknown key in props', () => {
+      const result = createShapeSchema.safeParse(
+        baseShape({ props: { kind: 'rectangle', bogus: 1 } }),
+      )
+      expect(result.success).toBe(false)
+    })
+  })
+
+  describe('updateShapeSchema', () => {
+    it('parses absent fields as undefined (not present in the object at all)', () => {
+      const result = updateShapeSchema.parse({ positionX: 10 })
+      expect(result.positionX).toBe(10)
+      expect('width' in result).toBe(false)
+    })
+  })
+
+  describe('createConnectorSchema', () => {
+    function baseConnector(over: Record<string, unknown> = {}) {
+      return {
+        whiteboardId,
+        sourceShapeId: shapeId1,
+        targetShapeId: shapeId2,
+        ...over,
+      }
+    }
+
+    it('accepts a valid connector payload', () => {
+      expect(createConnectorSchema.safeParse(baseConnector()).success).toBe(
+        true,
+      )
+    })
+
+    it('rejects sourceShapeId === targetShapeId (self-connector)', () => {
+      const result = createConnectorSchema.safeParse(
+        baseConnector({ targetShapeId: shapeId1 }),
+      )
+      expect(result.success).toBe(false)
+    })
+  })
+})
+
+describe('canvasElementPropsSchema — the connector arm carries an optional curvature', () => {
+  const SOURCE = '11111111-1111-4111-8111-111111111111'
+  const TARGET = '22222222-2222-4222-8222-222222222222'
+
+  const legacy = {
+    kind: 'connector' as const,
+    sourceElementId: SOURCE,
+    targetElementId: TARGET,
+    routing: 'curved' as const,
+  }
+
+  it('accepts a legacy row that carries no curvature at all', () => {
+    // The whole reason the field is optional. Every connector row already in
+    // the database was written before bending existed; a required field would
+    // make each of them fail validation on its NEXT update, which turns an
+    // un-bowed connector into an uneditable one.
+    const parsed = canvasElementPropsSchema.parse(legacy)
+    expect(parsed).not.toHaveProperty('curvature')
+  })
+
+  it('accepts a bowed connector, including a deliberate zero and a negative', () => {
+    // Negative is not an error state — the sign is which SIDE of the chord the
+    // bow falls on. Zero is a connector the user bowed and straightened again.
+    for (const curvature of [0, 0.5, -0.5]) {
+      expect(
+        canvasElementPropsSchema.parse({ ...legacy, curvature }).kind,
+      ).toBe('connector')
+    }
+  })
+
+  it('does NOT range-check it, so an out-of-range row stays editable', () => {
+    // The clamp lives in connector-geometry.ts, which every render and
+    // hit-test goes through, so a wild value is drawable. Rejecting it here
+    // would strand the one row a user most needs to be able to grab and fix.
+    expect(() =>
+      canvasElementPropsSchema.parse({ ...legacy, curvature: 999 }),
+    ).not.toThrow()
+  })
+
+  it('still rejects a non-number, so a bad write cannot reach storage', () => {
+    expect(() =>
+      canvasElementPropsSchema.parse({ ...legacy, curvature: '0.5' }),
+    ).toThrow()
+    expect(() =>
+      canvasElementPropsSchema.parse({ ...legacy, curvature: Number.NaN }),
+    ).toThrow()
   })
 })

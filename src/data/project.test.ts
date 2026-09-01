@@ -14,6 +14,7 @@ import {
 import { createProjectMember } from './permission'
 import { db, genId, nowMs } from '@/db'
 import {
+  makeCanvasBoard,
   makeProject,
   makeTable,
   makeUser,
@@ -103,6 +104,31 @@ describe('findProjectPageContent', () => {
 
       expect(result).not.toBeNull()
       expect(result!.whiteboards[0]._count.tables).toBe(3)
+    })
+
+    // Regression check for the batched-count refactor (N+1 fix): a board
+    // with zero children must still appear in the result with count 0, not
+    // be silently dropped — a naive GROUP BY join would omit it entirely.
+    it('a whiteboard with zero tables reports _count.tables = 0, and is not dropped', async () => {
+      const p = makeProject()
+      makeWhiteboard({ projectId: p.id, name: 'Empty Board' })
+
+      const result = await findProjectPageContent(p.id)
+
+      expect(result).not.toBeNull()
+      expect(result!.whiteboards).toHaveLength(1)
+      expect(result!.whiteboards[0]._count.tables).toBe(0)
+    })
+
+    it('a canvas board with zero elements reports _count.elements = 0, and is not dropped', async () => {
+      const p = makeProject()
+      makeCanvasBoard({ projectId: p.id, name: 'Empty Canvas' })
+
+      const result = await findProjectPageContent(p.id)
+
+      expect(result).not.toBeNull()
+      expect(result!.canvasBoards).toHaveLength(1)
+      expect(result!.canvasBoards[0]._count.elements).toBe(0)
     })
 
     it('TC-09-04: breadcrumb is empty for root view', async () => {
@@ -275,12 +301,16 @@ describe('findAllProjectsWithTreeForUser', () => {
 
     // Project-level whiteboards include ONLY root whiteboards (folderId IS NULL).
     expect(proj.whiteboards.map((w) => w.id)).toEqual([rootWb.id])
+    expect(proj.canvasBoards).toEqual([])
 
     expect(proj.folders).toHaveLength(2)
     const f1 = proj.folders.find((f) => f.id === folder.id)!
     expect(f1.parentFolderId).toBeNull()
     expect(f1.childFolders).toEqual([{ id: childFolder.id, name: 'F1-child' }])
-    expect(f1.whiteboards).toEqual([{ id: folderWb.id, name: 'Folder WB' }])
+    expect(f1.whiteboards).toEqual([
+      expect.objectContaining({ id: folderWb.id, name: 'Folder WB', kind: 'whiteboard' }),
+    ])
+    expect(f1.canvasBoards).toEqual([])
   })
 
   it('returns an empty array when there are no projects', async () => {

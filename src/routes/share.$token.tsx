@@ -77,7 +77,12 @@ export function SharedWhiteboardPage() {
           whiteboardId={result.whiteboardId}
           userId={PUBLIC_VIEWER_ID}
           isPublic
-          data={{ tables: result.tables, relationships: result.relationships }}
+          data={{
+            tables: result.tables,
+            relationships: result.relationships,
+            shapes: result.shapes,
+            connectors: result.connectors,
+          }}
           showMinimap={result.tables.length > 0}
           showControls={true}
           nodesDraggable={false}

@@ -77,6 +77,7 @@ function LodColumnRow({
   tableId,
   isLast,
   onDoubleClick,
+  onMouseDown,
 }: {
   column: Column
   tableId: string
@@ -90,6 +91,13 @@ function LodColumnRow({
    * fire the table wrapper's own header double-click handler.
    */
   onDoubleClick?: () => void
+  /**
+   * LizMeter #53 fix — sibling of `onDoubleClick` above, feeding
+   * `registerEditPress` (see CanvasEditContextValue's doc comment). Wired
+   * the same way and at the same call site as `onDoubleClick`: only under
+   * canvas mode, only when `canEdit`.
+   */
+  onMouseDown?: () => void
 }) {
   return (
     <div
@@ -104,6 +112,14 @@ function LodColumnRow({
           ? (e) => {
               e.stopPropagation()
               onDoubleClick()
+            }
+          : undefined
+      }
+      onMouseDown={
+        onMouseDown
+          ? (e) => {
+              e.stopPropagation()
+              onMouseDown()
             }
           : undefined
       }
@@ -236,8 +252,14 @@ export const TableNode = memo(
     // full-DOM render below instead. See `isChromeLightTarget` and the
     // early `if` return further down.
     const canvasMode = useCanvasMode()
-    const { editingTableId, initialEditingField, affordanceRequest, requestEdit } =
-      useCanvasEdit()
+    const {
+      editingTableId,
+      initialEditingField,
+      affordanceRequest,
+      requestEdit,
+      registerEditPress,
+      cancelEditPress,
+    } = useCanvasEdit()
 
     // Level-of-detail (GH #121 perf, opt #3): below LOD_ZOOM_THRESHOLD,
     // render each column as a minimal handles-only LodColumnRow instead of
@@ -408,11 +430,20 @@ export const TableNode = memo(
       (columnId: string, field: 'name' | 'dataType', value: string) => {
         setEditingField(null)
         if (!onColumnUpdate) return
+        // LizMeter #53 no-op-write fix: this is the single funnel both the
+        // 'name' (InlineNameEditor) and 'dataType' (DataTypeSelector)
+        // commits pass through, including the forced .blur() the commit-
+        // on-exit effect above fires when a table loses the overlay
+        // mid-edit with no typing. Without this dirty check, closing an
+        // editor with an unchanged value still writes to the DB and
+        // broadcasts to every collaborator over Socket.IO.
+        const current = columns.find((c) => c.id === columnId)
+        if (current && String(current[field]) === value) return
         onColumnUpdate(columnId, table.id, {
           [field]: value as unknown as Partial<DataType>,
         })
       },
-      [table.id, onColumnUpdate],
+      [table.id, onColumnUpdate, columns],
     )
 
     const handleCancelEdit = useCallback(() => {
@@ -659,6 +690,10 @@ export const TableNode = memo(
         setActiveId(columnId)
         setOverIndex(dragIndex)
         setLocalDragging?.(table.id, true)
+        // LizMeter #53 drag guard — a column-reorder drag starting must
+        // never let its own mousedown later combine with an unrelated
+        // double-click elsewhere within the double-press window.
+        cancelEditPress()
         document.body.style.cursor = 'grabbing'
       },
       [
@@ -667,6 +702,7 @@ export const TableNode = memo(
         visibleColumns,
         isQueueFullForTable,
         setLocalDragging,
+        cancelEditPress,
       ],
     )
 
@@ -869,8 +905,37 @@ export const TableNode = memo(
             // get the overlay (locked decision #5). A column row's own
             // onDoubleClick below stops propagation so a column
             // double-click never ALSO fires this one.
-            onDoubleClick={
-              canEdit ? () => requestEdit(table.id) : undefined
+            onDoubleClick={canEdit ? () => requestEdit(table.id) : undefined}
+            // LizMeter #53 fix — sibling mousedown feeding the retargeting-
+            // immune double-press detector (see CanvasEditContextValue's
+            // registerEditPress doc comment). Kept alongside the native
+            // onDoubleClick above (idempotent together — see registerEditPress),
+            // not a replacement for it.
+            //
+            // Guarded on `e.currentTarget.contains(e.target)` (Hermes-review-
+            // equivalent finding, caught by e2e/canvas-comments.spec.ts):
+            // TableNotePopover/CommentThreadPopover/ColumnNotePopover below
+            // are React CHILDREN of this wrapper but their `PopoverContent`
+            // portals to `document.body` (shadcn/ui's Popover always wraps in
+            // `PopoverPrimitive.Portal`). React's synthetic event system
+            // bubbles through the REACT tree, not the DOM tree, so a real
+            // click inside an open popover (e.g. its "Reply"/"Comment"
+            // button) still reaches this handler even though it is nowhere
+            // near this wrapper in the actual DOM. Without this guard, two
+            // such popover-internal clicks landing within
+            // DOUBLE_PRESS_WINDOW_MS of each other register as a false
+            // double-press on this table and call `requestEdit`, unmounting
+            // the chrome-light branch (and the popover with it) mid-flow.
+            // The `contains` check passes only for a mousedown whose real
+            // DOM target is an actual descendant of this wrapper.
+            onMouseDown={
+              canEdit
+                ? (e) => {
+                    if (e.currentTarget.contains(e.target as Node)) {
+                      registerEditPress(table.id)
+                    }
+                  }
+                : undefined
             }
           >
             {effectiveShowMode === 'TABLE_NAME' ? (
@@ -902,21 +967,24 @@ export const TableNode = memo(
                     first column row starts at the same y CanvasNodeLayer
                     draws it at. */}
                 <div style={{ height: `${HEADER_H}px` }} />
-                {chromeLightRowColumns.map(
-                  (column: Column, index: number) => (
-                    <LodColumnRow
-                      key={column.id}
-                      column={column}
-                      tableId={table.id}
-                      isLast={index === chromeLightRowColumns.length - 1}
-                      onDoubleClick={
-                        canEdit
-                          ? () => requestEdit(table.id, column.id, 'name')
-                          : undefined
-                      }
-                    />
-                  ),
-                )}
+                {chromeLightRowColumns.map((column: Column, index: number) => (
+                  <LodColumnRow
+                    key={column.id}
+                    column={column}
+                    tableId={table.id}
+                    isLast={index === chromeLightRowColumns.length - 1}
+                    onDoubleClick={
+                      canEdit
+                        ? () => requestEdit(table.id, column.id, 'name')
+                        : undefined
+                    }
+                    onMouseDown={
+                      canEdit
+                        ? () => registerEditPress(table.id, column.id, 'name')
+                        : undefined
+                    }
+                  />
+                ))}
               </>
             )}
 

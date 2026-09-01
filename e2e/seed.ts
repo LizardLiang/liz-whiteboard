@@ -25,6 +25,11 @@ const db = new Database(DB_PATH)
 // DELETEs below cascade to ProjectMember / Whiteboard / tables like the app's
 // own connection (src/db.ts) does.
 db.exec('PRAGMA foreign_keys = ON')
+// The live dev server holds its own WAL writer against this same file,
+// so a seed run concurrent with it hits SQLITE_BUSY immediately without
+// this. busy_timeout makes SQLite retry internally instead of throwing —
+// seed-shapes.ts already documents the identical failure.
+db.exec('PRAGMA busy_timeout = 5000')
 const now = Date.now()
 
 // Wipe any prior e2e user (cascades project → whiteboard → tables/…)

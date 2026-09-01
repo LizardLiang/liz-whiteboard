@@ -9,6 +9,9 @@
 import { db, genId, nowMs, toDbBool } from '@/db'
 
 const ALL_TABLES = [
+  'CanvasBoardShareLink',
+  'CanvasElement',
+  'CanvasBoard',
   'CollaborationSession',
   'WhiteboardSnapshot',
   'Area',
@@ -119,5 +122,20 @@ export function makeColumn(opts: {
     ts,
     ts,
   )
+  return { id }
+}
+
+/**
+ * A canvas board (FigJam-style canvas engine). Separate board kind from
+ * `makeWhiteboard` — canvas elements hang off this, never off a Whiteboard.
+ */
+export function makeCanvasBoard(opts: { projectId: string; name?: string }): {
+  id: string
+} {
+  const id = genId()
+  const ts = nowMs()
+  db.prepare(
+    'INSERT INTO "CanvasBoard" ("id","name","projectId","folderId","createdAt","updatedAt") VALUES (?,?,?,?,?,?)',
+  ).run(id, opts.name ?? 'Test Canvas', opts.projectId, null, ts, ts)
   return { id }
 }

@@ -3,7 +3,14 @@
 // random) so the seed script and the specs agree without passing state
 // between the Node (Playwright) and Bun (seed) runtimes.
 
-export const BASE_URL = process.env.E2E_BASE_URL ?? 'http://localhost:3001'
+// Default matches `bun run dev`, which serves Vite on 3000 (server.prod.ts also
+// defaults to 3000; server.dev.ts is the separate Socket.IO process on 3010).
+// Nothing in this repo serves 3001 — the previous default meant the plain
+// `bun run test:e2e` invocation could never satisfy playwright.config.ts's
+// webServer health check and died after a 120s timeout that looked like a
+// broken suite. The coedit and cimd suites are unaffected: they carry their own
+// base URLs (COEDIT_PORT in fixtures-collab.ts, 3099 in playwright.cimd.config.ts).
+export const BASE_URL = process.env.E2E_BASE_URL ?? 'http://localhost:3000'
 
 export const E2E_USER = {
   username: 'e2e_dogfood',
@@ -67,6 +74,18 @@ export const IDS = {
   mdOrdersId: '10000000-0000-4000-8000-000000000003',
   mdArea: 'ffffffff-ffff-4fff-8fff-ffffffffffff',
 
+  // Dedicated board for the draw-an-area-around-tables suite (todo #55).
+  // Owns its own whiteboard because that suite CREATES areas and never
+  // restores them — it re-seeds itself before every test via
+  // e2e/seed-area-draw.ts, which resets only this board.
+  adWhiteboard: '80000000-0000-4000-8000-000000000001',
+  adAccountsTable: '80000000-0000-4000-8000-000000000002',
+  adInvoicesTable: '80000000-0000-4000-8000-000000000003',
+  adAuditTable: '80000000-0000-4000-8000-000000000004',
+  adAccountsId: '80000000-0000-4000-8000-000000000005',
+  adInvoicesId: '80000000-0000-4000-8000-000000000006',
+  adAuditId: '80000000-0000-4000-8000-000000000007',
+
   // Dedicated board for the React Flow perf stress fixture (GH #121). Owns a
   // fixed id (distinct from the boards above) so `e2e/seed-stress.ts` can be
   // re-run independently (manual profiling or the perf e2e's own setup)
@@ -104,6 +123,104 @@ export const IDS = {
   // with LOD — e2e/seed-autolayout.ts reproduces that by seeding NULL
   // heights.
   autoLayoutWhiteboard: '40000000-0000-4000-8000-000000000001',
+
+  // Dedicated project/board for the shapes-and-connectors suite (Phase 1).
+  // Isolated on purpose (Artemis's recommendation): this suite draws,
+  // moves, resizes, deletes, and — in the legacy-snapshot-restore case
+  // (E2E-20) — WIPES EVERY SHAPE on the board via a version restore.
+  // Running any of that against the shared `IDS.whiteboard` risks leftover
+  // nodes leaking into another spec's DOM assertions, or a wholesale wipe
+  // interacting badly with a spec that assumes a stable shape count.
+  // A dedicated project (not just a dedicated whiteboard) avoids reproducing
+  // the Share-panel member-list layout regression documented on
+  // `viewerProject` above — this suite adds its own ADMIN+VIEWER membership
+  // pair without touching any other project's member list.
+  shapesProject: '50000000-0000-4000-8000-000000000001',
+  shapesWhiteboard: '50000000-0000-4000-8000-000000000002',
+  rectShape: '50000000-0000-4000-8000-000000000003',
+  ellipseShape: '50000000-0000-4000-8000-000000000004',
+  diamondShape: '50000000-0000-4000-8000-000000000005',
+  textShape: '50000000-0000-4000-8000-000000000006',
+  lineShape: '50000000-0000-4000-8000-000000000007',
+  shapeConnector: '50000000-0000-4000-8000-000000000008',
+  legacySnapshot: '50000000-0000-4000-8000-000000000009',
+  // A regular ER table pair + relationship on shapesWhiteboard, positioned
+  // well clear of the shape cluster (x:900-1300) — FR-016's in-drag
+  // refusal (E2E-12) and FR-017's "existing table-to-table flow unaffected"
+  // regression check (E2E-14) both need a real table-to-table connection
+  // living alongside shapes on the SAME board, under the shared
+  // `isValidConnection` predicate.
+  shapesTableA: '50000000-0000-4000-8000-00000000000a',
+  shapesTableB: '50000000-0000-4000-8000-00000000000b',
+  shapesTableAId: '50000000-0000-4000-8000-00000000000c',
+  shapesTableBFk: '50000000-0000-4000-8000-00000000000d',
+  shapesTableRelationship: '50000000-0000-4000-8000-00000000000e',
+  // A second, currently-UNCONNECTED column pair on the same two tables
+  // (E2E-14) — the seeded relationship above already binds the first
+  // column pair, so dragging a NEW connection needs a pair with no
+  // pre-existing edge between them (mirrors seed-stress.ts's own
+  // index-1-is-always-unconnected convention).
+  // Dedicated project/boards for the FigJam canvas-engine suite (Wave 5).
+  // Isolated for the same reason the shapes suite is: canvas-board.spec.ts
+  // draws, moves, resizes and DELETES elements, and re-seeds before every
+  // test. A dedicated project (not just a dedicated board) also keeps its
+  // ADMIN+VIEWER membership pair out of every other project's member list —
+  // see `viewerProject` above for the Share-panel layout regression that
+  // adding a member to a shared project caused.
+  canvasProject: '60000000-0000-4000-8000-000000000001',
+  canvasBoard: '60000000-0000-4000-8000-000000000002',
+  canvasRect: '60000000-0000-4000-8000-000000000003',
+  canvasText: '60000000-0000-4000-8000-000000000004',
+  // Second board, VIEWER-visible only, for the read-only gate. Separate from
+  // `canvasBoard` so the read-only assertions never race the mutating tests
+  // that share a board.
+  canvasViewerBoard: '60000000-0000-4000-8000-000000000005',
+  canvasViewerRect: '60000000-0000-4000-8000-000000000006',
+  // Third board, for the quick-create-handles suite's cases that need a
+  // connector to ALREADY exist (the routing picker, and "the line follows a
+  // dragged endpoint"). Separate from `canvasBoard` so those tests cannot
+  // perturb the element counts the create/delete tests on that board assert
+  // against, and so a connector never appears in a scene an older canvas spec
+  // was written before connectors existed.
+  canvasConnectorBoard: '60000000-0000-4000-8000-000000000007',
+  canvasConnSource: '60000000-0000-4000-8000-000000000008',
+  canvasConnTarget: '60000000-0000-4000-8000-000000000009',
+  canvasConnector: '60000000-0000-4000-8000-00000000000a',
+  // A connector on the VIEWER board too, so the read-only gate can assert the
+  // absence of BOTH affordances (handles and routing bar) on one board.
+  canvasViewerConnTarget: '60000000-0000-4000-8000-00000000000b',
+  canvasViewerConnector: '60000000-0000-4000-8000-00000000000c',
+  shapesTableAName: '50000000-0000-4000-8000-00000000000f',
+  shapesTableBNote: '50000000-0000-4000-8000-000000000010',
+
+  // Dedicated board for the relationship-deletion regression suite. Own
+  // board for the same reason `mdWhiteboard` has one: that spec DRAGS a
+  // table (the resurrection trigger it exists to guard against) and never
+  // restores the position, so running it against the shared `IDS.whiteboard`
+  // would perturb every later spec that assumes pristine geometry there. It
+  // reuses `IDS.project` rather than creating one — it adds no new member, so
+  // the Share-panel member-list layout regression documented on
+  // `viewerProject` above cannot apply.
+  relDelWhiteboard: '70000000-0000-4000-8000-000000000001',
+  relDelUsersTable: '70000000-0000-4000-8000-000000000002',
+  relDelOrdersTable: '70000000-0000-4000-8000-000000000003',
+  relDelUsersId: '70000000-0000-4000-8000-000000000004',
+  relDelOrdersId: '70000000-0000-4000-8000-000000000005',
+  relDelOrdersUserId: '70000000-0000-4000-8000-000000000006',
+  relDelRelationship: '70000000-0000-4000-8000-000000000007',
+
+  // Dedicated board for canvas-handle-visibility.spec.ts (bug fix: the
+  // per-column drag-to-connect handle dots were invisible in canvas mode —
+  // CanvasNodeLayer painted an opaque table body above them). Two tables,
+  // well separated (same rationale as relDel* above) and NO seeded
+  // relationship — the spec creates one live via drag-to-connect, so a
+  // pre-existing edge here would let the cardinality dialog / edge-count
+  // assertions pass without the drag ever actually working.
+  handleVisWhiteboard: '90000000-0000-4000-8000-000000000001',
+  handleVisUsersTable: '90000000-0000-4000-8000-000000000002',
+  handleVisOrdersTable: '90000000-0000-4000-8000-000000000003',
+  handleVisUsersId: '90000000-0000-4000-8000-000000000004',
+  handleVisOrdersUserId: '90000000-0000-4000-8000-000000000005',
 }
 
 export const STORAGE_STATE = 'e2e/.auth/state.json'

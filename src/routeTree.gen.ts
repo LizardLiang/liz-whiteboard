@@ -23,7 +23,10 @@ import { Route as OauthRegisterRouteImport } from './routes/oauth/register'
 import { Route as OauthConsentRouteImport } from './routes/oauth/consent'
 import { Route as InviteTokenRouteImport } from './routes/invite.$token'
 import { Route as DemoTanstackQueryRouteImport } from './routes/demo/tanstack-query'
+import { Route as CanvasBoardIdRouteImport } from './routes/canvas/$boardId'
+import { Route as CanvasShareTokenRouteImport } from './routes/canvas-share.$token'
 import { Route as ApiCollabTokenRouteImport } from './routes/api/collab-token'
+import { Route as ProjectProjectIdIndexRouteImport } from './routes/project.$projectId.index'
 import { Route as DemoStartServerFuncsRouteImport } from './routes/demo/start.server-funcs'
 import { Route as DemoStartApiRequestRouteImport } from './routes/demo/start.api-request'
 import { Route as DemoFormSimpleRouteImport } from './routes/demo/form.simple'
@@ -106,10 +109,25 @@ const DemoTanstackQueryRoute = DemoTanstackQueryRouteImport.update({
   path: '/demo/tanstack-query',
   getParentRoute: () => rootRouteImport,
 } as any)
+const CanvasBoardIdRoute = CanvasBoardIdRouteImport.update({
+  id: '/canvas/$boardId',
+  path: '/canvas/$boardId',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const CanvasShareTokenRoute = CanvasShareTokenRouteImport.update({
+  id: '/canvas-share/$token',
+  path: '/canvas-share/$token',
+  getParentRoute: () => rootRouteImport,
+} as any)
 const ApiCollabTokenRoute = ApiCollabTokenRouteImport.update({
   id: '/api/collab-token',
   path: '/api/collab-token',
   getParentRoute: () => rootRouteImport,
+} as any)
+const ProjectProjectIdIndexRoute = ProjectProjectIdIndexRouteImport.update({
+  id: '/',
+  path: '/',
+  getParentRoute: () => ProjectProjectIdRoute,
 } as any)
 const DemoStartServerFuncsRoute = DemoStartServerFuncsRouteImport.update({
   id: '/demo/start/server-funcs',
@@ -176,6 +194,8 @@ export interface FileRoutesByFullPath {
   '/revoke': typeof RevokeRoute
   '/token': typeof TokenRoute
   '/api/collab-token': typeof ApiCollabTokenRoute
+  '/canvas-share/$token': typeof CanvasShareTokenRoute
+  '/canvas/$boardId': typeof CanvasBoardIdRoute
   '/demo/tanstack-query': typeof DemoTanstackQueryRoute
   '/invite/$token': typeof InviteTokenRoute
   '/oauth/consent': typeof OauthConsentRoute
@@ -190,6 +210,7 @@ export interface FileRoutesByFullPath {
   '/demo/form/simple': typeof DemoFormSimpleRoute
   '/demo/start/api-request': typeof DemoStartApiRequestRoute
   '/demo/start/server-funcs': typeof DemoStartServerFuncsRoute
+  '/project/$projectId/': typeof ProjectProjectIdIndexRoute
   '/demo/start/ssr/data-only': typeof DemoStartSsrDataOnlyRoute
   '/demo/start/ssr/full-ssr': typeof DemoStartSsrFullSsrRoute
   '/demo/start/ssr/spa-mode': typeof DemoStartSsrSpaModeRoute
@@ -204,11 +225,12 @@ export interface FileRoutesByTo {
   '/revoke': typeof RevokeRoute
   '/token': typeof TokenRoute
   '/api/collab-token': typeof ApiCollabTokenRoute
+  '/canvas-share/$token': typeof CanvasShareTokenRoute
+  '/canvas/$boardId': typeof CanvasBoardIdRoute
   '/demo/tanstack-query': typeof DemoTanstackQueryRoute
   '/invite/$token': typeof InviteTokenRoute
   '/oauth/consent': typeof OauthConsentRoute
   '/oauth/register': typeof OauthRegisterRoute
-  '/project/$projectId': typeof ProjectProjectIdRouteWithChildren
   '/settings/connections': typeof SettingsConnectionsRoute
   '/share/$token': typeof ShareTokenRoute
   '/whiteboard/$whiteboardId': typeof WhiteboardWhiteboardIdRoute
@@ -218,6 +240,7 @@ export interface FileRoutesByTo {
   '/demo/form/simple': typeof DemoFormSimpleRoute
   '/demo/start/api-request': typeof DemoStartApiRequestRoute
   '/demo/start/server-funcs': typeof DemoStartServerFuncsRoute
+  '/project/$projectId': typeof ProjectProjectIdIndexRoute
   '/demo/start/ssr/data-only': typeof DemoStartSsrDataOnlyRoute
   '/demo/start/ssr/full-ssr': typeof DemoStartSsrFullSsrRoute
   '/demo/start/ssr/spa-mode': typeof DemoStartSsrSpaModeRoute
@@ -233,6 +256,8 @@ export interface FileRoutesById {
   '/revoke': typeof RevokeRoute
   '/token': typeof TokenRoute
   '/api/collab-token': typeof ApiCollabTokenRoute
+  '/canvas-share/$token': typeof CanvasShareTokenRoute
+  '/canvas/$boardId': typeof CanvasBoardIdRoute
   '/demo/tanstack-query': typeof DemoTanstackQueryRoute
   '/invite/$token': typeof InviteTokenRoute
   '/oauth/consent': typeof OauthConsentRoute
@@ -247,6 +272,7 @@ export interface FileRoutesById {
   '/demo/form/simple': typeof DemoFormSimpleRoute
   '/demo/start/api-request': typeof DemoStartApiRequestRoute
   '/demo/start/server-funcs': typeof DemoStartServerFuncsRoute
+  '/project/$projectId/': typeof ProjectProjectIdIndexRoute
   '/demo/start/ssr/data-only': typeof DemoStartSsrDataOnlyRoute
   '/demo/start/ssr/full-ssr': typeof DemoStartSsrFullSsrRoute
   '/demo/start/ssr/spa-mode': typeof DemoStartSsrSpaModeRoute
@@ -263,6 +289,8 @@ export interface FileRouteTypes {
     | '/revoke'
     | '/token'
     | '/api/collab-token'
+    | '/canvas-share/$token'
+    | '/canvas/$boardId'
     | '/demo/tanstack-query'
     | '/invite/$token'
     | '/oauth/consent'
@@ -277,6 +305,7 @@ export interface FileRouteTypes {
     | '/demo/form/simple'
     | '/demo/start/api-request'
     | '/demo/start/server-funcs'
+    | '/project/$projectId/'
     | '/demo/start/ssr/data-only'
     | '/demo/start/ssr/full-ssr'
     | '/demo/start/ssr/spa-mode'
@@ -291,11 +320,12 @@ export interface FileRouteTypes {
     | '/revoke'
     | '/token'
     | '/api/collab-token'
+    | '/canvas-share/$token'
+    | '/canvas/$boardId'
     | '/demo/tanstack-query'
     | '/invite/$token'
     | '/oauth/consent'
     | '/oauth/register'
-    | '/project/$projectId'
     | '/settings/connections'
     | '/share/$token'
     | '/whiteboard/$whiteboardId'
@@ -305,6 +335,7 @@ export interface FileRouteTypes {
     | '/demo/form/simple'
     | '/demo/start/api-request'
     | '/demo/start/server-funcs'
+    | '/project/$projectId'
     | '/demo/start/ssr/data-only'
     | '/demo/start/ssr/full-ssr'
     | '/demo/start/ssr/spa-mode'
@@ -319,6 +350,8 @@ export interface FileRouteTypes {
     | '/revoke'
     | '/token'
     | '/api/collab-token'
+    | '/canvas-share/$token'
+    | '/canvas/$boardId'
     | '/demo/tanstack-query'
     | '/invite/$token'
     | '/oauth/consent'
@@ -333,6 +366,7 @@ export interface FileRouteTypes {
     | '/demo/form/simple'
     | '/demo/start/api-request'
     | '/demo/start/server-funcs'
+    | '/project/$projectId/'
     | '/demo/start/ssr/data-only'
     | '/demo/start/ssr/full-ssr'
     | '/demo/start/ssr/spa-mode'
@@ -348,6 +382,8 @@ export interface RootRouteChildren {
   RevokeRoute: typeof RevokeRoute
   TokenRoute: typeof TokenRoute
   ApiCollabTokenRoute: typeof ApiCollabTokenRoute
+  CanvasShareTokenRoute: typeof CanvasShareTokenRoute
+  CanvasBoardIdRoute: typeof CanvasBoardIdRoute
   DemoTanstackQueryRoute: typeof DemoTanstackQueryRoute
   InviteTokenRoute: typeof InviteTokenRoute
   OauthConsentRoute: typeof OauthConsentRoute
@@ -468,12 +504,33 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof DemoTanstackQueryRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/canvas/$boardId': {
+      id: '/canvas/$boardId'
+      path: '/canvas/$boardId'
+      fullPath: '/canvas/$boardId'
+      preLoaderRoute: typeof CanvasBoardIdRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/canvas-share/$token': {
+      id: '/canvas-share/$token'
+      path: '/canvas-share/$token'
+      fullPath: '/canvas-share/$token'
+      preLoaderRoute: typeof CanvasShareTokenRouteImport
+      parentRoute: typeof rootRouteImport
+    }
     '/api/collab-token': {
       id: '/api/collab-token'
       path: '/api/collab-token'
       fullPath: '/api/collab-token'
       preLoaderRoute: typeof ApiCollabTokenRouteImport
       parentRoute: typeof rootRouteImport
+    }
+    '/project/$projectId/': {
+      id: '/project/$projectId/'
+      path: '/'
+      fullPath: '/project/$projectId/'
+      preLoaderRoute: typeof ProjectProjectIdIndexRouteImport
+      parentRoute: typeof ProjectProjectIdRoute
     }
     '/demo/start/server-funcs': {
       id: '/demo/start/server-funcs'
@@ -556,10 +613,12 @@ declare module '@tanstack/react-router' {
 }
 
 interface ProjectProjectIdRouteChildren {
+  ProjectProjectIdIndexRoute: typeof ProjectProjectIdIndexRoute
   ProjectProjectIdFolderFolderIdRoute: typeof ProjectProjectIdFolderFolderIdRoute
 }
 
 const ProjectProjectIdRouteChildren: ProjectProjectIdRouteChildren = {
+  ProjectProjectIdIndexRoute: ProjectProjectIdIndexRoute,
   ProjectProjectIdFolderFolderIdRoute: ProjectProjectIdFolderFolderIdRoute,
 }
 
@@ -574,6 +633,8 @@ const rootRouteChildren: RootRouteChildren = {
   RevokeRoute: RevokeRoute,
   TokenRoute: TokenRoute,
   ApiCollabTokenRoute: ApiCollabTokenRoute,
+  CanvasShareTokenRoute: CanvasShareTokenRoute,
+  CanvasBoardIdRoute: CanvasBoardIdRoute,
   DemoTanstackQueryRoute: DemoTanstackQueryRoute,
   InviteTokenRoute: InviteTokenRoute,
   OauthConsentRoute: OauthConsentRoute,

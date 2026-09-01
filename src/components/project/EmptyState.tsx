@@ -3,9 +3,16 @@
 
 import { FolderOpen } from 'lucide-react'
 import { Button } from '@/components/ui/button'
+import { CreateBoardMenu } from '@/components/navigator/CreateBoardMenu'
 
 interface EmptyStateProps {
   onCreateWhiteboard: () => void
+  /**
+   * Optional so the home page's own "No projects yet" empty state (which
+   * has no project/folder context to create a canvas board into) can keep
+   * using this component unchanged.
+   */
+  onCreateCanvasBoard?: () => void
   /**
    * 'first-user' — the user has no projects at all (first time)
    * 'no-permissions' — the user exists but has no project access
@@ -16,6 +23,7 @@ interface EmptyStateProps {
 
 export function EmptyState({
   onCreateWhiteboard,
+  onCreateCanvasBoard,
   variant = 'empty-project',
 }: EmptyStateProps) {
   const message =
@@ -35,11 +43,19 @@ export function EmptyState({
       <p className="text-muted-foreground mb-6 text-center max-w-md">
         {message}
       </p>
-      {variant !== 'no-permissions' && (
-        <Button size="lg" onClick={onCreateWhiteboard}>
-          Create your first whiteboard
-        </Button>
-      )}
+      {variant !== 'no-permissions' &&
+        (onCreateCanvasBoard ? (
+          <CreateBoardMenu
+            onCreateWhiteboard={onCreateWhiteboard}
+            onCreateCanvasBoard={onCreateCanvasBoard}
+          >
+            <Button size="lg">Create your first board</Button>
+          </CreateBoardMenu>
+        ) : (
+          <Button size="lg" onClick={onCreateWhiteboard}>
+            Create your first whiteboard
+          </Button>
+        ))}
     </div>
   )
 }

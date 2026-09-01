@@ -1,0 +1,598 @@
+// src/lib/canvas-engine/scene.ts
+// The canvas engine's scene model (tactical plan Wave 1, step 2).
+//
+// A flat, z-ordered list of elements plus an id index. Flat is a decision,
+// not an oversight: groups and frames are real FigJam features and will
+// need a tree, but a tree bought before it is needed makes every hit-test,
+// every transform and every persistence round-trip more complex for no
+// milestone-1 benefit. When grouping arrives, THIS module is the only one
+// that has to change — `hit-test.ts` and `render.ts` consume the ordered
+// list, not the storage shape.
+//
+// Every operation returns a NEW scene. Immutability is what lets the React
+// layer diff cheaply and what makes a future undo stack trivial (keep the
+// previous scene), and it keeps this module pure and trivially testable.
+//
+// Pure module: no React, no DOM, no database.
+
+// The ONE import in this module, and type-only: `camera.ts` is a leaf that
+// imports nothing itself, so this cannot create a cycle and costs the engine's
+// no-dependency property nothing at runtime. A free connector endpoint needs a
+// point, and re-declaring the shape locally would be a second `Point`.
+import type { Point } from './camera'
+
+/** The element kinds the engine renders. New kinds are added here first. */
+export type CanvasElementKind =
+  | 'rectangle'
+  | 'ellipse'
+  | 'diamond'
+  | 'triangle'
+  | 'text'
+  | 'connector'
+
+/**
+ * The SHAPE kinds: four ways of drawing one world rect.
+ *
+ * They are identical in every respect the rest of the engine cares about —
+ * same bounds, same resize grips, same text frame, same connector attachment
+ * rules, same quick-create behaviour — and differ in exactly two places:
+ * `render.ts` traces a different outline inside the rect, and `hit-test.ts`
+ * asks a different containment question about it. Nothing else may branch on
+ * which shape kind an element is.
+ *
+ * This union exists so that "a shape, as opposed to text or a connector" is
+ * one name rather than a `||` chain that grows every time a kind is added and
+ * that some call site inevitably forgets to extend.
+ */
+export type CanvasShapeKind = 'rectangle' | 'ellipse' | 'diamond' | 'triangle'
+
+/**
+ * Every shape kind, in the order the toolbar offers them. Exported as data,
+ * not just a type, because the tool palette and the shape-tool mapping in
+ * `use-canvas-input.ts` both need to enumerate them at runtime.
+ */
+export const CANVAS_SHAPE_KINDS: ReadonlyArray<CanvasShapeKind> = [
+  'rectangle',
+  'ellipse',
+  'diamond',
+  'triangle',
+]
+
+/** Is this kind one of the shapes — i.e. not text and not a connector? */
+export function isCanvasShapeKind(
+  kind: CanvasElementKind,
+): kind is CanvasShapeKind {
+  return (CANVAS_SHAPE_KINDS as ReadonlyArray<string>).includes(kind)
+}
+
+/**
+ * How a connector is drawn between its endpoints — FigJam's three line types.
+ *
+ * Declared here rather than imported from `src/data/schema.ts` because this
+ * directory imports nothing: that is what lets the engine be unit-tested with
+ * no browser and no database. `canvas-element-adapter.ts` carries the
+ * compile-time proof that this and the Zod enum have not drifted, exactly as
+ * it already does for `CanvasElementKind`.
+ */
+export type CanvasConnectorRouting = 'straight' | 'elbow' | 'curved'
+
+/**
+ * Which SIDE of an element a connector is tied to.
+ *
+ * The four sides the creation handles sit on, and the canonical declaration of
+ * that vocabulary: `quick-create.ts`'s `QuickCreateDirection` and `render.ts`'s
+ * `CreationHandleDirection` are both aliases of this. The handle you drag FROM
+ * becomes the connector's `sourceAnchor`, so one union covering both is not a
+ * coincidence — they are the same thing seen at two moments.
+ */
+export type ConnectorAnchor = 'top' | 'right' | 'bottom' | 'left'
+
+/**
+ * WHERE on an element's border a connector end is tied, as a fraction of the
+ * element's own box: `{ x: 0, y: 0 }` is its top-left corner, `{ x: 1, y: 0.5 }`
+ * the middle of its right edge, `{ x: 0.25, y: 1 }` a quarter along its bottom.
+ *
+ * NORMALISED, not a world offset, so the attachment survives a resize: an end
+ * tied a third of the way down a box stays a third of the way down when the box
+ * grows. A stored world point would slide off the shape entirely.
+ *
+ * At least one component is always 0 or 1 — the point lies ON the border, never
+ * inside — which is what lets `attachSide` recover which edge it is on for the
+ * elbow and curve normals.
+ */
+export interface ConnectorAttach {
+  x: number
+  y: number
+}
+
+/**
+ * A connector's endpoints and line type.
+ *
+ * Note what is NOT here: any point, path or bounding box. A connector's
+ * geometry is derived from its two endpoint elements' live bounds on every
+ * frame (`connector-geometry.ts`), so there is nothing to keep in sync and
+ * nothing that can go stale behind a collaborator's move. The element's own
+ * `x`/`y`/`width`/`height` are a placeholder the storage columns demand and
+ * that nothing reads — see `createCanvasElementSchema`'s note.
+ */
+export interface CanvasConnector {
+  /**
+   * The two ends. Each is EITHER tied to an element's edge OR a free point in
+   * space — see `ConnectorEndpoint`.
+   *
+   * An attached end carries no geometry of its own: the line is re-derived
+   * from that element's CURRENT bounds every frame, which is what makes a
+   * connector follow a move or a resize with no edit of its own. Only a FREE
+   * end stores a coordinate, because nothing else knows where it is.
+   */
+  source: ConnectorEndpoint
+  target: ConnectorEndpoint
+  routing: CanvasConnectorRouting
+  /**
+   * HOW FAR the line is bowed by hand: the signed perpendicular offset of the
+   * curve's midpoint from the straight chord between its two ends, as a
+   * FRACTION of that chord's length. `0.25` on a 400-unit chord puts the
+   * middle of the line 100 units off to one side.
+   *
+   * A fraction and not a world distance, and that is what the whole field is
+   * built around. It is what makes the drag map 1:1 — a pointer moved one
+   * world unit off the line moves the curve's middle by exactly one world
+   * unit — while staying zoom-invariant, because nothing here is measured in
+   * screen pixels. It is also what keeps the bow PROPORTIONAL when the two
+   * shapes are pulled apart: a stored world offset would flatten into a
+   * near-straight line as the gap grew, which is not what the user drew.
+   *
+   * SIGN: positive is the LEFT-hand side of the source -> target direction as
+   * seen on screen, so a connector running left to right bows UP at positive
+   * curvature. Pinned in `chordNormal` (connector-geometry.ts) and read from
+   * nowhere else.
+   *
+   * MEASURED ON TOP of whatever bow the routing already produces, not from
+   * the chord absolutely. An anchored curve's midpoint is already off the
+   * chord by `(3/8)·tension·(n0 + n1)` before anyone touches it, so an
+   * absolute measure could not also satisfy the rule below. Relative, both
+   * hold at once.
+   *
+   * OPTIONAL, and it has to stay that way for the reason `attach` above does:
+   * every connector written before bending existed carries none. Absent and 0
+   * are the same thing and both reproduce the pre-curvature path exactly —
+   * `curvedPath` skips the arithmetic entirely at 0 rather than adding a zero
+   * offset, so "exactly" means the same floating-point values, not merely the
+   * same to within an epsilon.
+   *
+   * `curved` ONLY. `straight` and `elbow` ignore it — a straight line with a
+   * bend is not straight and a bent elbow is not orthogonal — and the value
+   * survives a round trip through those routings rather than being cleared,
+   * so flipping a bowed connector to elbow and back returns the bow.
+   */
+  curvature?: number
+}
+
+/**
+ * One END of a connector: tied to an element's edge, or floating free.
+ *
+ * A DISCRIMINATED UNION rather than a nullable id beside an optional point,
+ * because "attached" and "free" are the whole vocabulary here and the two
+ * halves are mutually exclusive. Written as nullable fields, `{ elementId:
+ * null, point: undefined }` would be constructible and would sail through
+ * every call site as a lookup that quietly returns nothing — the silent-
+ * failure class this feature has already produced twice. As a union, every
+ * reader is forced by the compiler to say what it does with a free end.
+ *
+ * `attach` stays optional on the attached arm for the reason it always has:
+ * connectors written before attachment existed carry none, and the geometry
+ * falls back to a centre-derived border point per end.
+ */
+export type ConnectorEndpoint =
+  | { kind: 'element'; elementId: string; attach?: ConnectorAttach }
+  | { kind: 'point'; point: Point }
+
+/** The element an endpoint is tied to, or null when it floats free. */
+export function endpointElementId(endpoint: ConnectorEndpoint): string | null {
+  return endpoint.kind === 'element' ? endpoint.elementId : null
+}
+
+/** An attached endpoint for `elementId`, optionally at a specific spot on its border. */
+export function attachedEndpoint(
+  elementId: string,
+  attach?: ConnectorAttach,
+): ConnectorEndpoint {
+  return { kind: 'element', elementId, ...(attach ? { attach } : {}) }
+}
+
+/** A free endpoint at a fixed world point. */
+export function freeEndpoint(point: Point): ConnectorEndpoint {
+  return { kind: 'point', point: { x: point.x, y: point.y } }
+}
+
+/**
+ * How an element's text sits across its box, line by line.
+ *
+ * Applied PER WRAPPED LINE, not to the block: three lines of different widths
+ * centred as a block would each keep their own ragged left edge, which is not
+ * what anyone means by "centre this text".
+ */
+export type CanvasTextAlign = 'left' | 'center' | 'right'
+
+/** How an element's text block sits down its box. */
+export type CanvasVerticalAlign = 'top' | 'middle' | 'bottom'
+
+/** Styling shared by every element kind. */
+export interface CanvasElementStyle {
+  fill: string
+  stroke: string
+  strokeWidth: number
+  fontSize: number
+  color: string
+  /**
+   * Corner rounding in WORLD units. Only `rectangle` draws it — every other
+   * kind traces its own path and has no corners to round — but it lives here
+   * rather than in `canvasElementPropsSchema` because that schema is a
+   * discriminated union per kind and this one is a `strictObject` shared by
+   * all of them: a per-kind field would mean a second style object to merge,
+   * snapshot and diff for one number.
+   *
+   * Stored in WORLD units, like `strokeWidth`, so a rounded rectangle keeps
+   * its proportions through a zoom. It is clamped to half the shorter side at
+   * DRAW time rather than on write (`effectiveCornerRadius`), so resizing a
+   * rounded shape small and large again gives back the radius the user chose
+   * instead of the one that happened to fit at its smallest.
+   */
+  cornerRadius: number
+  /**
+   * Where the text sits across the element's box, per wrapped line.
+   *
+   * Lives on the shared style rather than per kind for the same reason
+   * `cornerRadius` does — and it applies more widely than that one does, since
+   * every kind that can hold text (all four shapes AND `text`) draws it
+   * through the same branch of `drawElement`.
+   */
+  textAlign: CanvasTextAlign
+  /** Where the text block sits down the element's box. */
+  verticalAlign: CanvasVerticalAlign
+}
+
+export const DEFAULT_ELEMENT_STYLE: CanvasElementStyle = {
+  fill: 'rgba(59, 130, 246, 0.10)',
+  stroke: '#3b82f6',
+  strokeWidth: 2,
+  fontSize: 16,
+  color: '#0f172a',
+  // Rounded by default. A square-cornered rectangle is the odd one out on a
+  // board whose other kinds are an ellipse, a diamond and a triangle, and this
+  // is the value a shape is drawn with before anyone has styled it.
+  //
+  // 8 rather than a larger radius because it has to read as a rectangle at
+  // every zoom: the clamp in `effectiveCornerRadius` takes over once the shape
+  // is smaller than twice this, so a small shape degrades to a stadium rather
+  // than to something ambiguous.
+  //
+  // It must stay one of `CANVAS_CORNER_RADII`, or a never-styled rectangle
+  // shows no active button in the toolbar's Corner row —
+  // `canvas-style-palette.test.ts` pins that, the same drift guard the blue
+  // swatch has against `fill`/`stroke`.
+  //
+  // This is ALSO the schema default (`canvasElementStyleSchema`), so a stored
+  // row that predates corner radius — one whose style JSON has no
+  // `cornerRadius` key, or no style at all — parses as rounded rather than
+  // square. That is deliberate: those rows never expressed a preference, and
+  // leaving them square would mean two different "unstyled" appearances on the
+  // same board. A row that stored `cornerRadius: 0` explicitly stays square,
+  // because that one did express a preference.
+  cornerRadius: 8,
+  // Top-left, which is EXACTLY what `render.ts` drew before this setting
+  // existed — it hardcoded `ctx.textAlign = 'left'` and `textBaseline = 'top'`
+  // and laid every line out from the frame's origin. That equality is the
+  // whole zero-visual-diff guarantee: these two are also the schema defaults
+  // (`canvasElementStyleSchema`), so every row written before alignment
+  // existed parses to the appearance it already had on screen.
+  //
+  // Note this is the OPPOSITE choice from `cornerRadius` above, and for the
+  // opposite reason. Rounding changed unstyled shapes deliberately, because
+  // leaving them square would have made two different "unstyled" looks. Here
+  // there is nothing to unify — every existing element is already top-left,
+  // and any other default would silently re-lay-out every board on this board
+  // kind the first time it was opened.
+  textAlign: 'left',
+  verticalAlign: 'top',
+}
+
+/**
+ * The corner radius a rectangle is actually drawn and hit-tested with.
+ *
+ * Clamped to half the shorter side: beyond that the two arcs on an edge
+ * overlap, and `ctx.roundRect` and a containment test would each resolve the
+ * overlap their own way — the exact divergence between "what was drawn" and
+ * "what is clickable" that `traceShapePath` and `elementContainsPoint` exist
+ * to keep impossible.
+ *
+ * Non-rectangles get 0 whatever they store, so a rectangle restyled and then
+ * replaced by an ellipse cannot leave a radius quietly affecting anything.
+ */
+export function effectiveCornerRadius(element: CanvasElement): number {
+  if (element.kind !== 'rectangle') return 0
+  const radius = element.style.cornerRadius
+  if (!Number.isFinite(radius) || radius <= 0) return 0
+  return Math.min(
+    radius,
+    Math.abs(element.width) / 2,
+    Math.abs(element.height) / 2,
+  )
+}
+
+/**
+ * Routing a newly created connector starts in.
+ *
+ * `straight` because it is the only routing that is unambiguous at every
+ * relative position of two elements — an elbow has to pick a corner and a
+ * curve has to pick a bulge direction, and both look deliberate when the user
+ * chose them and look like a bug when they did not. The routing picker
+ * (tactical plan, Wave 5) is how the other two are reached.
+ *
+ * Lives beside `DEFAULT_ELEMENT_STYLE` because it is the same kind of value:
+ * what an element looks like the instant it is created, before anyone has
+ * styled it.
+ */
+export const DEFAULT_CONNECTOR_ROUTING: CanvasConnectorRouting = 'straight'
+
+/**
+ * One element on the board, in WORLD coordinates.
+ *
+ * `rotation` is stored but not editable in milestone 1 — the field exists
+ * so adding rotation later needs no schema change, exactly as the plan's
+ * assumption records.
+ */
+export interface CanvasElement {
+  id: string
+  kind: CanvasElementKind
+  x: number
+  y: number
+  width: number
+  height: number
+  rotation: number
+  zIndex: number
+  text: string | null
+  style: CanvasElementStyle
+  /**
+   * Present exactly when `kind === 'connector'`, absent otherwise.
+   *
+   * Optional rather than a discriminated union on `kind` deliberately: every
+   * consumer in this engine — hit-test, render, the scene mutators — treats
+   * elements uniformly and reaches for the rare kind-specific field only in
+   * the one branch that needs it. Turning `CanvasElement` into a union would
+   * push a narrowing step into all of them for a single field.
+   */
+  connector?: CanvasConnector
+}
+
+/**
+ * The scene: elements in ASCENDING z-order (last one paints on top, and is
+ * therefore the first hit-test candidate), plus an id index so lookups do
+ * not scan.
+ */
+export interface Scene {
+  elements: Array<CanvasElement>
+  byId: Map<string, CanvasElement>
+}
+
+export const EMPTY_SCENE: Scene = { elements: [], byId: new Map() }
+
+function index(elements: Array<CanvasElement>): Scene {
+  return {
+    elements,
+    byId: new Map(elements.map((element) => [element.id, element])),
+  }
+}
+
+/** Sort into ascending z-order, breaking ties by id so ordering is stable. */
+function ordered(elements: Array<CanvasElement>): Array<CanvasElement> {
+  return [...elements].sort(
+    (a, b) => a.zIndex - b.zIndex || (a.id < b.id ? -1 : a.id > b.id ? 1 : 0),
+  )
+}
+
+/** Build a scene from unordered elements — the shape a database load produces. */
+export function sceneFrom(elements: Array<CanvasElement>): Scene {
+  return index(ordered(elements))
+}
+
+export function getElement(scene: Scene, id: string): CanvasElement | null {
+  return scene.byId.get(id) ?? null
+}
+
+/** The z-index a new element should take to land on top of everything. */
+export function nextZIndex(scene: Scene): number {
+  if (scene.elements.length === 0) return 0
+  return scene.elements[scene.elements.length - 1].zIndex + 1
+}
+
+export function addElement(scene: Scene, element: CanvasElement): Scene {
+  return sceneFrom([...scene.elements, element])
+}
+
+/**
+ * Patch one element. Returns the SAME scene object when the id is unknown,
+ * so a caller can use identity to detect a no-op (and React skips a render)
+ * rather than being handed a pointlessly new scene.
+ */
+export function updateElement(
+  scene: Scene,
+  id: string,
+  patch: Partial<Omit<CanvasElement, 'id'>>,
+): Scene {
+  const existing = scene.byId.get(id)
+  if (!existing) return scene
+  return sceneFrom(
+    scene.elements.map((element) =>
+      element.id === id ? { ...element, ...patch } : element,
+    ),
+  )
+}
+
+export function removeElement(scene: Scene, id: string): Scene {
+  if (!scene.byId.has(id)) return scene
+  return sceneFrom(scene.elements.filter((element) => element.id !== id))
+}
+
+export function removeElements(scene: Scene, ids: Array<string>): Scene {
+  const doomed = new Set(ids)
+  if (![...doomed].some((id) => scene.byId.has(id))) return scene
+  return sceneFrom(scene.elements.filter((element) => !doomed.has(element.id)))
+}
+
+/**
+ * Every connector with `elementId` at either end.
+ *
+ * This is what makes a delete cascade: a connector whose endpoint is gone can
+ * never be drawn again (`connectorPath` needs both rects), so it would sit in
+ * the board as an invisible, unselectable row forever. Callers must delete
+ * these in the SAME gesture as the element itself so one undo restores them
+ * all — see the tactical plan's "Deleting An Endpoint Deletes Its Connectors".
+ *
+ * Lives here because the scene module owns relationships between elements;
+ * putting it in the input hook would give the two delete sites
+ * (`deleteSelection` and `commitEditing`'s empty-text branch) two chances to
+ * disagree about what "attached" means.
+ *
+ * A linear scan, matching `hit-test.ts`'s: the same element-count ceiling
+ * applies, and an endpoint index belongs behind this signature if it is ever
+ * needed, with no caller changing.
+ */
+export function connectorsTouching(
+  scene: Scene,
+  elementId: string,
+): Array<CanvasElement> {
+  return scene.elements.filter(
+    (element) =>
+      element.connector !== undefined &&
+      // A FREE end is attached to nothing, so it can never make a connector
+      // "touch" an element — `endpointElementId` returns null for it, which
+      // never equals a real id.
+      (endpointElementId(element.connector.source) === elementId ||
+        endpointElementId(element.connector.target) === elementId),
+  )
+}
+
+/**
+ * The ids of `elementIds` plus every connector attached to any of them —
+ * the full set a delete has to remove.
+ *
+ * Deduplicated, because one connector between two elements that are BOTH
+ * being deleted is reached twice; deleting it twice would record two undo
+ * operations for one row, and the second's inverse would restore a row the
+ * first had already restored.
+ */
+export function withAttachedConnectors(
+  scene: Scene,
+  elementIds: ReadonlyArray<string>,
+): Array<string> {
+  const doomed = new Set(elementIds)
+  for (const id of elementIds) {
+    for (const connector of connectorsTouching(scene, id)) {
+      doomed.add(connector.id)
+    }
+  }
+  return [...doomed]
+}
+
+/**
+ * One endpoint, repointed if it names `from`. Returns the SAME object when it
+ * does not, so the caller can detect "nothing changed" by identity.
+ *
+ * A free endpoint is returned untouched: it names no element, so there is
+ * nothing for a rename to reach.
+ */
+function remapEndpoint(
+  endpoint: ConnectorEndpoint,
+  from: string,
+  to: string,
+): ConnectorEndpoint {
+  if (endpoint.kind !== 'element' || endpoint.elementId !== from)
+    return endpoint
+  return { ...endpoint, elementId: to }
+}
+
+/**
+ * Point every connector endpoint naming `from` at `to` instead.
+ *
+ * Needed because an element created optimistically carries a client-side
+ * uuid the server replaces with its own (`useCanvasElements`'s create
+ * reconciliation). A quick-create draws its connector against that temporary
+ * id, so without this the connector's `sourceId`/`targetId` names a row that
+ * no longer exists the moment the ack lands: `connectorPath` can resolve
+ * neither endpoint, the connector silently stops being drawn, and
+ * `connectorsTouching` stops finding it — so a later delete of the element
+ * would leave it behind instead of cascading.
+ *
+ * Returns the SAME scene object when nothing referenced `from`, matching
+ * `updateElement`'s identity contract so React can skip the render.
+ */
+export function remapConnectorEndpoints(
+  scene: Scene,
+  from: string,
+  to: string,
+): Scene {
+  const elements = scene.elements.map((element) => {
+    const connector = element.connector
+    if (!connector) return element
+    const source = remapEndpoint(connector.source, from, to)
+    const target = remapEndpoint(connector.target, from, to)
+    if (source === connector.source && target === connector.target) {
+      return element
+    }
+    return { ...element, connector: { ...connector, source, target } }
+  })
+  // Compared by identity rather than tracked with a flag set inside the
+  // callback: the callback above returns the SAME object for every element it
+  // did not rewrite, so a differing reference is exactly "this one changed".
+  const changed = elements.some((element, i) => element !== scene.elements[i])
+  return changed ? sceneFrom(elements) : scene
+}
+
+/** Move one element to the top of the paint order. */
+export function bringToFront(scene: Scene, id: string): Scene {
+  const existing = scene.byId.get(id)
+  if (!existing) return scene
+  return updateElement(scene, id, { zIndex: nextZIndex(scene) })
+}
+
+/** An element's axis-aligned world bounds. */
+export function bounds(element: CanvasElement): {
+  x: number
+  y: number
+  width: number
+  height: number
+} {
+  return {
+    x: element.x,
+    y: element.y,
+    width: element.width,
+    height: element.height,
+  }
+}
+
+/**
+ * The union of several elements' bounds — what a multi-selection's
+ * transform box is drawn around. Returns null for an empty input rather
+ * than a degenerate rect at the origin, which would silently render a
+ * selection box nobody selected.
+ */
+export function boundsOfMany(elements: Array<CanvasElement>): {
+  x: number
+  y: number
+  width: number
+  height: number
+} | null {
+  if (elements.length === 0) return null
+  let minX = Number.POSITIVE_INFINITY
+  let minY = Number.POSITIVE_INFINITY
+  let maxX = Number.NEGATIVE_INFINITY
+  let maxY = Number.NEGATIVE_INFINITY
+  for (const element of elements) {
+    minX = Math.min(minX, element.x)
+    minY = Math.min(minY, element.y)
+    maxX = Math.max(maxX, element.x + element.width)
+    maxY = Math.max(maxY, element.y + element.height)
+  }
+  return { x: minX, y: minY, width: maxX - minX, height: maxY - minY }
+}

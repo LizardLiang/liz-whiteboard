@@ -13,6 +13,7 @@ vi.mock('@/data/permission', () => ({
 
 vi.mock('@/data/resolve-project', () => ({
   getWhiteboardProjectId: vi.fn(),
+  getCanvasBoardProjectId: vi.fn(),
 }))
 
 vi.mock('@/lib/auth/log-sample', () => ({
@@ -22,7 +23,10 @@ vi.mock('@/lib/auth/log-sample', () => ({
 // eslint-disable-next-line import/first
 import { findEffectiveRole } from '@/data/permission'
 // eslint-disable-next-line import/first
-import { getWhiteboardProjectId } from '@/data/resolve-project'
+import {
+  getCanvasBoardProjectId,
+  getWhiteboardProjectId,
+} from '@/data/resolve-project'
 // eslint-disable-next-line import/first
 import { logSampledError } from '@/lib/auth/log-sample'
 // eslint-disable-next-line import/first, import/order
@@ -32,12 +36,14 @@ import {
   BatchDeniedError,
   ForbiddenError,
   getDenialCount,
+  requireCanvasBoardRole,
   requireRole,
   requireServerFnRole,
 } from './require-role'
 
 const mockFindEffectiveRole = vi.mocked(findEffectiveRole)
 const mockGetWhiteboardProjectId = vi.mocked(getWhiteboardProjectId)
+const mockGetCanvasBoardProjectId = vi.mocked(getCanvasBoardProjectId)
 const mockLogSampledError = vi.mocked(logSampledError)
 
 function makeMockSocket(userId = 'user-1') {
@@ -344,5 +350,136 @@ describe('BatchDeniedError', () => {
     expect(e.message).not.toMatch(/table[Ii][dD]|itemIndex|projectId/)
     // Confirm there is no number that looks like an index (e.g. "item 2 of 3")
     expect(e.message).not.toMatch(/item \d+ of \d+/)
+  })
+})
+
+// ─────────────────────────────────────────────────────────────────────────────
+// requireCanvasBoardRole (FigJam canvas engine, Wave 4)
+//
+// Both guards now delegate to one private implementation, so these tests exist
+// to prove the CANVAS entry point resolves through the canvas table and still
+// applies every check the whiteboard entry point does — a shared body helps
+// only if both doors actually reach it.
+// ─────────────────────────────────────────────────────────────────────────────
+
+describe('requireCanvasBoardRole', () => {
+  beforeEach(() => {
+    vi.clearAllMocks()
+    mockGetCanvasBoardProjectId.mockResolvedValue('project-1')
+  })
+
+  afterEach(() => {
+    vi.restoreAllMocks()
+  })
+
+  it('resolves the project through the CANVAS table, never the whiteboard one', async () => {
+    // A canvas board id passed to getWhiteboardProjectId returns null, which
+    // would deny every canvas mutation as not-found.
+    mockFindEffectiveRole.mockResolvedValue('EDITOR')
+    const socket = makeMockSocket()
+
+    const denied = await requireCanvasBoardRole(socket, 'board-1', 'element:create')
+
+    expect(denied).toBe(false)
+    expect(mockGetCanvasBoardProjectId).toHaveBeenCalledWith('board-1')
+    expect(mockGetWhiteboardProjectId).not.toHaveBeenCalled()
+  })
+
+  it('defaults to EDITOR, so a VIEWER is denied', async () => {
+    mockFindEffectiveRole.mockResolvedValue('VIEWER')
+    const socket = makeMockSocket()
+
+    const denied = await requireCanvasBoardRole(socket, 'board-1', 'element:update')
+
+    expect(denied).toBe(true)
+    expect(socket.emit).toHaveBeenCalledWith(
+      'error',
+      expect.objectContaining({ code: 'FORBIDDEN', event: 'element:update' }),
+    )
+  })
+
+  it('admits a VIEWER when VIEWER is what the caller asked for', async () => {
+    mockFindEffectiveRole.mockResolvedValue('VIEWER')
+    const socket = makeMockSocket()
+
+    const denied = await requireCanvasBoardRole(
+      socket,
+      'board-1',
+      'connection',
+      'VIEWER',
+    )
+
+    expect(denied).toBe(false)
+  })
+
+  it('denies a user with no role at all', async () => {
+    mockFindEffectiveRole.mockResolvedValue(null)
+    const socket = makeMockSocket()
+
+    expect(
+      await requireCanvasBoardRole(socket, 'board-1', 'element:delete'),
+    ).toBe(true)
+  })
+
+  it('denies when the board does not exist (not-found is indistinguishable)', async () => {
+    mockGetCanvasBoardProjectId.mockResolvedValue(null)
+    const socket = makeMockSocket()
+
+    expect(
+      await requireCanvasBoardRole(socket, 'no-such-board', 'element:create'),
+    ).toBe(true)
+    expect(mockFindEffectiveRole).not.toHaveBeenCalled()
+  })
+
+  it('fails CLOSED when the project resolver throws', async () => {
+    mockGetCanvasBoardProjectId.mockRejectedValue(new Error('db down'))
+    const socket = makeMockSocket()
+
+    expect(
+      await requireCanvasBoardRole(socket, 'board-1', 'element:create'),
+    ).toBe(true)
+    expect(mockLogSampledError).toHaveBeenCalledWith(
+      expect.objectContaining({ errorClass: 'RBAC_LOOKUP_FAILED' }),
+    )
+  })
+
+  it('fails CLOSED when the role lookup throws', async () => {
+    mockFindEffectiveRole.mockRejectedValue(new Error('db down'))
+    const socket = makeMockSocket()
+
+    expect(
+      await requireCanvasBoardRole(socket, 'board-1', 'element:create'),
+    ).toBe(true)
+    expect(mockLogSampledError).toHaveBeenCalledWith(
+      expect.objectContaining({ errorClass: 'RBAC_LOOKUP_FAILED' }),
+    )
+  })
+
+  it('counts denials on the same per-(user, event) counter as requireRole', async () => {
+    mockFindEffectiveRole.mockResolvedValue('VIEWER')
+    const socket = makeMockSocket('user-counter-canvas')
+    const before = getDenialCount('user-counter-canvas', 'element:create')
+
+    await requireCanvasBoardRole(socket, 'board-1', 'element:create')
+
+    expect(getDenialCount('user-counter-canvas', 'element:create')).toBe(
+      before + 1,
+    )
+  })
+})
+
+describe('requireRole still fails closed when its resolver throws', () => {
+  beforeEach(() => {
+    vi.clearAllMocks()
+  })
+
+  it('denies and logs when getWhiteboardProjectId rejects', async () => {
+    mockGetWhiteboardProjectId.mockRejectedValue(new Error('db down'))
+    const socket = makeMockSocket()
+
+    expect(await requireRole(socket, 'wb-1', 'shape:create')).toBe(true)
+    expect(mockLogSampledError).toHaveBeenCalledWith(
+      expect.objectContaining({ errorClass: 'RBAC_LOOKUP_FAILED' }),
+    )
   })
 })

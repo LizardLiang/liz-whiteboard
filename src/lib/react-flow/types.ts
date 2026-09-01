@@ -10,10 +10,12 @@ import type {
   Area,
   Column,
   CommentWithAuthor,
+  Connector,
   DiagramTable,
   Relationship,
+  Shape,
 } from '@/data/models'
-import type { Cardinality, UpdateColumn } from '@/data/schema'
+import type { Cardinality, ShapeStyle, UpdateColumn } from '@/data/schema'
 import type { CreateColumnPayload } from '@/components/whiteboard/column/types'
 import type { Dialect } from '@/lib/ddl-generator'
 import type { ReconcileAfterDropParams } from '@/hooks/use-column-reorder-mutations'
@@ -306,6 +308,103 @@ export interface CommentNodeData extends Record<string, unknown> {
 export type CommentNodeType = Node<CommentNodeData, 'comment'>
 
 /**
+ * Data structure for a drawn shape node (Phase 1: shapes-and-connectors).
+ * Standalone interface, NOT a discriminated union with TableNodeData/
+ * AreaNodeData/CommentNodeData (D-7) — there is no existing union to join;
+ * each node type is registered by string key and merged via a cast.
+ *
+ * `canEdit` gates move/resize/connect/label affordances in one field —
+ * callers pass `hasMinimumRole(viewerRole, 'EDITOR')`, which is already
+ * `false` on the public share-link path (viewerRole is null there) AND for
+ * an authenticated VIEWER-role member (Apollo N1) — so this one field is
+ * what keeps a read-only viewer from selecting, dragging, resizing, or
+ * starting a connection from a shape.
+ */
+export interface ShapeNodeData extends Record<string, unknown> {
+  shape: Shape
+  canEdit: boolean
+  /** Keyboard-focus ring (FR-019a) — distinct from React Flow's own `selected`. */
+  isKeyboardFocused?: boolean
+  /**
+   * True for an uncommitted text-box draft (FR-012): drawn but not yet
+   * `shape:create`d. Renders the dashed placeholder + an immediately
+   * focused editor; not draggable/resizable/connectable since it has no
+   * server id yet. Commit-with-text creates the row for the first time;
+   * commit-empty just removes the draft node — zero rows, zero broadcast.
+   */
+  isDraft?: boolean
+  /**
+   * Bumped by the parent to request the label editor open for this node —
+   * an edge-triggered token, not a boolean, so the same shape can be
+   * re-opened for editing without a round-trip through `false`. Consumed
+   * once by ShapeNode via a ref comparison.
+   */
+  editRequestToken?: number
+  /** Persist a resize (NodeResizer onResizeEnd only, mirrors AreaNode/D-10). */
+  onResizeEnd?: (
+    shapeId: string,
+    bounds: {
+      positionX: number
+      positionY: number
+      width: number
+      height: number
+    },
+  ) => void
+  /** Persist a style-panel change (fill/stroke/width/dash). */
+  onStyleChange?: (shapeId: string, style: Partial<ShapeStyle>) => void
+  /** Commit the label editor's text. Empty text on an existing `text` shape
+   * deletes it (with connector cascade) through the same path as Delete. */
+  onLabelCommit?: (shapeId: string, text: string) => void
+  /** Draft-only (isDraft): commit-with-text creates the row for the first
+   * time (FR-012). Never called for an already-persisted shape. */
+  onDraftCommit?: (draft: Shape, text: string) => void
+  /** Draft-only (isDraft): commit-empty removes the draft — zero rows,
+   * zero broadcast (FR-012). */
+  onDraftCancel?: (draftId: string) => void
+  /** Delete this shape (with its connector cascade, FR-018). */
+  onDelete?: (shapeId: string) => void
+  /** Nudge/resize-by-keyboard (FR-019) — one shape:update per gesture. */
+  onNudge?: (shapeId: string, delta: { dx: number; dy: number }) => void
+  /**
+   * Quick-create: a connect marker was CLICKED rather than dragged, so the
+   * caller should create a same-kind shape on that side and connect the two.
+   * A drag past DRAW_DRAG_THRESHOLD_PX is React Flow's own connection
+   * gesture instead and never reaches this callback.
+   */
+  onQuickCreate?: (shapeId: string, direction: QuickCreateDirection) => void
+  /**
+   * Hovering / leaving a quick-create arrow. The parent answers by
+   * rendering the ghost outline of the shape a click would create — at the
+   * position `quickCreatePlacement` actually resolves, so a collision
+   * slide is visible BEFORE committing. `null` clears it.
+   */
+  onQuickCreateHover?: (
+    shapeId: string,
+    direction: QuickCreateDirection | null,
+  ) => void
+  onKeyboardResize?: (
+    shapeId: string,
+    delta: { dw: number; dh: number },
+  ) => void
+}
+
+/** Complete shape node type for React Flow. */
+export type ShapeNodeType = Node<ShapeNodeData, 'shape'>
+
+/**
+ * Data structure for a shape-to-shape connector edge (Phase 1:
+ * shapes-and-connectors). Standalone interface (D-7). Geometry is NEVER
+ * stored here or anywhere — it is derived at render time from both
+ * endpoints' current bounds (FR-031a).
+ */
+export interface ConnectorEdgeData extends Record<string, unknown> {
+  connector: Connector
+}
+
+/** Complete connector edge type for React Flow. */
+export type ConnectorEdgeType = Edge<ConnectorEdgeData, 'connector'>
+
+/**
  * Canvas viewport state (replaces Konva CanvasViewport)
  */
 export interface ReactFlowViewport {
@@ -400,6 +499,104 @@ export const LAYOUT_CONSTRAINTS = {
   DEFAULT_NODE_HEIGHT: 150,
 } as const
 
+// ── Shapes and Connectors constants (Phase 1, tech-spec §8) ─────────────────
+
+/** Screen (not flow) pixels — a flow-unit threshold would change meaning
+ * with zoom. Below it, a draw gesture is a mis-click: nothing is created. */
+export const DRAW_DRAG_THRESHOLD_PX = 4
+
+/** FR-008's floor — enforced by NodeResizer AND clamped at draw-commit. */
+export const MIN_SHAPE_WIDTH = 24
+export const MIN_SHAPE_HEIGHT = 24
+
+/** Default sizes per kind, applied at draw-commit clamping and keyboard creation. */
+export const DEFAULT_SHAPE_SIZE = { width: 160, height: 100 }
+export const DEFAULT_TEXT_SIZE = { width: 200, height: 40 }
+export const DEFAULT_LINE_SIZE = { width: 160, height: 48 }
+
+/** FR-019's cascade offset for keyboard-created shapes: (n mod wrap) * step, both axes. */
+export const KEYBOARD_CASCADE_STEP = 24
+/** S5 (Hermes code review): was an inline `% 8` literal beside this constant's sibling. */
+export const KEYBOARD_CASCADE_WRAP = 8
+
+/** Arrow-key nudge / Shift+arrow nudge, in flow units per keydown. */
+export const NUDGE_STEP = 8
+export const NUDGE_STEP_LARGE = 40
+
+/** The invisible hit-stroke width that makes a 1px unfilled outline grabbable. */
+export const CONNECT_HIT_STROKE_WIDTH = 12
+
+/**
+ * A shape node's connect handle ids (W7, Hermes code review). Previously
+ * typed as bare string literals in both ShapeNode.tsx (which renders the
+ * `<Handle>` elements) and ReactFlowWhiteboard.tsx (which builds the
+ * keyboard-connect edge referencing them by id) — renaming one without the
+ * other would silently stop connectors rendering, with no compiler error.
+ */
+export const SHAPE_HANDLE_IDS = {
+  sourceTop: 'shape-src-top',
+  sourceRight: 'shape-src-right',
+  sourceBottom: 'shape-src-bottom',
+  sourceLeft: 'shape-src-left',
+  target: 'shape-tgt',
+} as const
+
+/**
+ * The four sides a quick-create marker can sit on. Same anti-drift motive as
+ * SHAPE_HANDLE_IDS above (W7): the marker click handler resolves a direction
+ * from the handle it was fired on, and a rename that missed the map below
+ * would silently place every new shape on the wrong side, with no compiler
+ * error.
+ */
+export type QuickCreateDirection = 'top' | 'right' | 'bottom' | 'left'
+
+/**
+ * A shape node's connect-handle id -> the direction it sits on (quick-create).
+ */
+export const SHAPE_HANDLE_DIRECTIONS = {
+  [SHAPE_HANDLE_IDS.sourceTop]: 'top',
+  [SHAPE_HANDLE_IDS.sourceRight]: 'right',
+  [SHAPE_HANDLE_IDS.sourceBottom]: 'bottom',
+  [SHAPE_HANDLE_IDS.sourceLeft]: 'left',
+} as const satisfies Record<string, QuickCreateDirection>
+
+/**
+ * Quick-create (click a connect marker -> new connected shape) placement,
+ * in FLOW units. `QUICK_CREATE_GAP` is both the source-edge-to-new-shape-edge
+ * distance and the step size used to slide past an occupied slot;
+ * `QUICK_CREATE_MAX_SLIDE_STEPS` bounds that slide so a pathological board
+ * can never spin the solver.
+ */
+export const QUICK_CREATE_GAP = 48
+export const QUICK_CREATE_MAX_SLIDE_STEPS = 40
+
+/**
+ * How far a FigJam-style quick-create arrow sits OUTSIDE the shape's edge,
+ * in flow units. FigJam floats these clear of the body so they never read
+ * as part of the shape, and so a shape's own border stays grabbable for
+ * resize. The React Flow <Handle> is positioned by this offset.
+ */
+export const QUICK_CREATE_ARROW_OFFSET = 18
+
+/** FigJam-style corner rounding for rectangle/text bodies (was a bare 4). */
+export const FIGJAM_CORNER_RADIUS = 8
+
+/**
+ * SVG `stroke-dasharray` for a shape/connector's `strokeStyle: 'dashed'`
+ * (W8, Hermes code review) — was written independently in ShapeNode.tsx
+ * and ConnectorEdge.tsx.
+ */
+export const DASHED_STROKE_PATTERN = '6 4'
+
+/**
+ * The draw-preview / draft-shape placeholder border (W8, Hermes code
+ * review) — was written independently in ShapeDrawOverlay.tsx (both the
+ * rectangle/text and ellipse preview branches) and ShapeNode.tsx (the
+ * draft-text-box placeholder).
+ */
+export const DRAW_PLACEHOLDER_BORDER =
+  '1.5px dashed var(--rf-edge-stroke-selected)'
+
 /**
  * Minimum subject-area node dimensions (GH #106). Shared floor between
  * AreaNode's NodeResizer (manual resize, empty areas only) and
@@ -408,6 +605,17 @@ export const LAYOUT_CONSTRAINTS = {
  */
 export const MIN_AREA_WIDTH = 160
 export const MIN_AREA_HEIGHT = 120
+
+/**
+ * Shared "not connected" toast copy (2026-08-31 tactical plan, ERD
+ * relationship delete persistence). `useRelationshipMutations` already
+ * shows this on a refused write; the connectivity veto in ReactFlowCanvas's
+ * `onBeforeDelete` needs the identical copy for a refused Delete-key press.
+ * Defined once here — rather than duplicating the literal at the new call
+ * site — so the two refusal paths cannot drift apart.
+ */
+export const NOT_CONNECTED_TOAST_MESSAGE =
+  'Not connected. Please wait for reconnection.'
 
 /**
  * Z-Index layers

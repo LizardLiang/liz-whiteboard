@@ -3,7 +3,7 @@
 
 import { Link, createFileRoute } from '@tanstack/react-router'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
-import { Clock, FileText, FolderOpen, PlusCircle } from 'lucide-react'
+import { Clock, FileText, FolderOpen, PlusCircle, Shapes } from 'lucide-react'
 import { useState } from 'react'
 import { toast } from 'sonner'
 import type { CreateProject } from '@/data/schema'
@@ -155,29 +155,49 @@ function HomePage() {
                     </h2>
                   </div>
                   <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
-                    {recentWhiteboards.map((whiteboard) => (
-                      <Link
-                        key={whiteboard.id}
-                        to="/whiteboard/$whiteboardId"
-                        params={{ whiteboardId: whiteboard.id }}
-                      >
-                        <Card className="hover:border-primary transition-colors cursor-pointer h-full">
-                          <CardHeader>
-                            <div className="flex items-start justify-between">
-                              <FileText className="h-6 w-6 text-primary" />
-                            </div>
-                            <CardTitle className="mt-2 text-base">
-                              {whiteboard.name}
-                            </CardTitle>
-                            <CardDescription className="text-xs">
-                              {new Date(
-                                whiteboard.updatedAt,
-                              ).toLocaleDateString()}
-                            </CardDescription>
-                          </CardHeader>
-                        </Card>
-                      </Link>
-                    ))}
+                    {recentWhiteboards.map((board) =>
+                      board.kind === 'canvas' ? (
+                        <Link
+                          key={board.id}
+                          to="/canvas/$boardId"
+                          params={{ boardId: board.id }}
+                        >
+                          <Card className="hover:border-primary transition-colors cursor-pointer h-full">
+                            <CardHeader>
+                              <div className="flex items-start justify-between">
+                                <Shapes className="h-6 w-6 text-primary" />
+                              </div>
+                              <CardTitle className="mt-2 text-base">
+                                {board.name}
+                              </CardTitle>
+                              <CardDescription className="text-xs">
+                                {new Date(board.updatedAt).toLocaleDateString()}
+                              </CardDescription>
+                            </CardHeader>
+                          </Card>
+                        </Link>
+                      ) : (
+                        <Link
+                          key={board.id}
+                          to="/whiteboard/$whiteboardId"
+                          params={{ whiteboardId: board.id }}
+                        >
+                          <Card className="hover:border-primary transition-colors cursor-pointer h-full">
+                            <CardHeader>
+                              <div className="flex items-start justify-between">
+                                <FileText className="h-6 w-6 text-primary" />
+                              </div>
+                              <CardTitle className="mt-2 text-base">
+                                {board.name}
+                              </CardTitle>
+                              <CardDescription className="text-xs">
+                                {new Date(board.updatedAt).toLocaleDateString()}
+                              </CardDescription>
+                            </CardHeader>
+                          </Card>
+                        </Link>
+                      ),
+                    )}
                   </div>
                 </div>
               )}

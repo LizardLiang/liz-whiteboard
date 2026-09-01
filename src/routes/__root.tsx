@@ -40,7 +40,18 @@ interface MyRouterContext {
 // (see src/routes/share.$token.tsx). Unlike '/invite', there is no
 // authenticated follow-up action on this route; it only ever reads via the
 // unauthenticated getSharedWhiteboard server fn.
-const PUBLIC_PATHS = ['/login', '/register', '/invite', '/share']
+// '/canvas-share' needs its own entry rather than riding on '/share': these
+// are matched with startsWith, and '/canvas-share/<token>' does not start
+// with '/share'. Without it a public canvas link bounces the visitor to
+// /login — which looks exactly like a broken link rather than a missing
+// allowlist entry.
+const PUBLIC_PATHS = [
+  '/login',
+  '/register',
+  '/invite',
+  '/share',
+  '/canvas-share',
+]
 
 export const Route = createRootRouteWithContext<MyRouterContext>()({
   head: () => ({

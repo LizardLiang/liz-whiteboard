@@ -29,6 +29,10 @@ vi.mock('@/components/navigator/CreateWhiteboardDialog', () => ({
   CreateWhiteboardDialog: () => null,
 }))
 
+vi.mock('@/components/navigator/CreateCanvasBoardDialog', () => ({
+  CreateCanvasBoardDialog: () => null,
+}))
+
 vi.mock('@/components/navigator/CreateFolderDialog', () => ({
   CreateFolderDialog: () => null,
 }))
@@ -66,6 +70,7 @@ const mockContent = {
   project: { id: 'proj-001', name: 'My Project' },
   folders: [],
   whiteboards: [],
+  canvasBoards: [],
   breadcrumb: [],
   viewerRole: null as string | null,
 }
@@ -82,8 +87,11 @@ function createTestQueryClient() {
 // Render the ProjectPage component directly (not via router)
 // We need to import after mocks are set up
 async function importProjectPage() {
-  // Dynamic import ensures mock is applied before module loads
-  const mod = await import('./project.$projectId')
+  // Dynamic import ensures mock is applied before module loads.
+  // ProjectPage now lives in the index route (exact child of the
+  // project.$projectId layout route) — see project.$projectId.tsx, which
+  // now only renders <Outlet />.
+  const mod = await import('./project.$projectId.index')
   return mod
 }
 

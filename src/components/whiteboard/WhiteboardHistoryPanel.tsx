@@ -23,6 +23,16 @@ import {
   DialogHeader,
   DialogTitle,
 } from '@/components/ui/dialog'
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from '@/components/ui/alert-dialog'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
@@ -104,6 +114,9 @@ export function WhiteboardHistoryPanel({
   const [previewSnapshotId, setPreviewSnapshotId] = useState<string | null>(
     null,
   )
+  // FR-035a: the restore confirmation gate — inserted between "Restore this
+  // version" and the actual mutate() call.
+  const [restoreConfirmOpen, setRestoreConfirmOpen] = useState(false)
 
   const invalidateSnapshots = () => {
     queryClient.invalidateQueries({ queryKey: ['snapshots', whiteboardId] })
@@ -166,6 +179,13 @@ export function WhiteboardHistoryPanel({
       queryClient.invalidateQueries({
         queryKey: ['relationships', whiteboardId],
       })
+      // B1 (Hermes code review): this set omitted ['shapes', whiteboardId] —
+      // the only key useWhiteboardShapes reads. Without it the canvas's
+      // useState copy of shapes/connectors survives a restore untouched; a
+      // shape that the restore re-inserts under its original id (D3) then
+      // renders at its stale pre-restore position, and dragging it writes
+      // that stale position back — a silent partial undo of the restore.
+      queryClient.invalidateQueries({ queryKey: ['shapes', whiteboardId] })
     },
     onError: () => toast.error('Failed to restore version'),
   })
@@ -177,6 +197,28 @@ export function WhiteboardHistoryPanel({
   })
 
   const previewValid = !!previewData && !('error' in previewData)
+
+  // FR-035a: the live shape count comes from the ['shapes', whiteboardId]
+  // TanStack Query cache, which useWhiteboardShapes (the live canvas, a
+  // sibling under the same route) already populates. Falls back to 0 if the
+  // canvas hasn't populated it yet (e.g. panel opened before the canvas
+  // finished its first load) — the confirmation still names a real number,
+  // never blank.
+  const liveShapesData = queryClient.getQueryData<{
+    shapes: Array<unknown>
+    connectors: Array<unknown>
+  }>(['shapes', whiteboardId])
+  const liveShapeCount = liveShapesData?.shapes.length ?? 0
+  const liveConnectorCount = liveShapesData?.connectors.length ?? 0
+  const snapshotShapeCount =
+    previewValid && 'snapshotShapeCount' in previewData
+      ? previewData.snapshotShapeCount
+      : 0
+
+  const restoreConfirmCopy =
+    snapshotShapeCount === 0 && liveShapeCount > 0
+      ? `This version was saved before there were shapes on this board, so restoring it will remove the ${liveShapeCount} shape(s) and ${liveConnectorCount} connector(s) currently here — but your current board, shapes included, is saved first as an automatic version called "Auto-saved before restore", which appears at the top of this list with an Auto badge and can be restored in one click.`
+      : `Restoring replaces the current board with this version, which contains ${snapshotShapeCount} shape(s); the board currently has ${liveShapeCount}. Your current board is saved first as an automatic version called "Auto-saved before restore", which appears at the top of this list and can be restored in one click.`
 
   return (
     <>
@@ -343,7 +385,7 @@ export function WhiteboardHistoryPanel({
             {canEdit && previewSnapshotId && (
               <Button
                 disabled={restoreMutation.isPending}
-                onClick={() => restoreMutation.mutate(previewSnapshotId)}
+                onClick={() => setRestoreConfirmOpen(true)}
               >
                 {restoreMutation.isPending
                   ? 'Restoring...'
@@ -353,6 +395,36 @@ export function WhiteboardHistoryPanel({
           </DialogFooter>
         </DialogContent>
       </Dialog>
+
+      {/* FR-035a: paired loss+recovery copy, required in BOTH branches (not
+          only the legacy zero-shape case) — the only compensating control
+          for the preview dialog above not rendering shapes. */}
+      <AlertDialog
+        open={restoreConfirmOpen}
+        onOpenChange={setRestoreConfirmOpen}
+      >
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Restore this version?</AlertDialogTitle>
+            <AlertDialogDescription>
+              {restoreConfirmCopy}
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel>Cancel</AlertDialogCancel>
+            <AlertDialogAction
+              disabled={restoreMutation.isPending}
+              onClick={() => {
+                if (!previewSnapshotId) return
+                restoreMutation.mutate(previewSnapshotId)
+                setRestoreConfirmOpen(false)
+              }}
+            >
+              {restoreMutation.isPending ? 'Restoring...' : 'Restore'}
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </>
   )
 }

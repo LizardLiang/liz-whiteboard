@@ -20,14 +20,21 @@ import '@xyflow/react/dist/style.css'
 import '@/styles/react-flow-theme.css'
 
 import { CardinalityMarkerDefs } from './CardinalityMarkerDefs'
+import { ConnectorMarkerDefs } from './ConnectorMarkerDefs'
+import { ShapeDrawOverlay } from './ShapeDrawOverlay'
 import { CanvasNodeLayer } from './CanvasNodeLayer'
 import type { MouseEvent as ReactMouseEvent } from 'react'
 import type {
+  Edge,
   FitViewOptions,
+  IsValidConnection,
   Node,
   NodeMouseHandler,
+  OnBeforeDelete,
   OnConnect,
+  OnConnectStart,
   OnEdgesChange,
+  OnEdgesDelete,
   OnNodeDrag,
   OnNodesChange,
   OnNodesDelete,
@@ -35,15 +42,32 @@ import type {
 import type {
   AreaNodeType,
   CommentNodeType,
+  ConnectorEdgeType,
   RelationshipEdgeType,
+  ShapeNodeType,
   TableNodeType,
 } from '@/lib/react-flow/types'
+import type { DrawGestureTool, ToolMode } from '@/lib/react-flow/tool-mode'
 import type {
   AffordanceRequest,
   InitialEditingField,
 } from '@/lib/react-flow/canvas-mode'
-import { CanvasEditContext, CanvasModeContext } from '@/lib/react-flow/canvas-mode'
-import { recalculateEdgesForDraggedNodes } from '@/lib/react-flow/edge-routing'
+import { isDrawGestureTool } from '@/lib/react-flow/tool-mode'
+import {
+  buildParentIndex,
+  toAbsolute,
+  toAbsoluteNodes,
+  toRelative,
+} from '@/lib/react-flow/node-nesting'
+import {
+  CanvasEditContext,
+  CanvasModeContext,
+  DOUBLE_PRESS_WINDOW_MS,
+} from '@/lib/react-flow/canvas-mode'
+import {
+  parseColumnHandleId,
+  recalculateEdgesForDraggedNodes,
+} from '@/lib/react-flow/edge-routing'
 import { perfTracker } from '@/lib/perf/perf-tracker'
 import {
   assignLayersBFS,
@@ -80,6 +104,13 @@ const EMPTY_EDGES: Array<RelationshipEdgeType> = []
 const EMPTY_COMMENT_NODES: Array<CommentNodeType> = []
 
 /**
+ * Stable empty defaults for the `shapeNodes`/`connectorEdges` props (Phase 1:
+ * shapes-and-connectors) — same rationale as EMPTY_AREA_NODES above.
+ */
+const EMPTY_SHAPE_NODES: Array<ShapeNodeType> = []
+const EMPTY_CONNECTOR_EDGES: Array<ConnectorEdgeType> = []
+
+/**
  * Stable reference for `<ReactFlow defaultEdgeOptions>` (GH #121 perf,
  * stable-reference audit). An inline object literal here would be a new
  * identity every render, one of several unstable props that can defeat
@@ -107,6 +138,50 @@ const DELETE_KEY_CODES = ['Delete', 'Backspace']
  * profiling.
  */
 const VIEWPORT_CULLING_NODE_THRESHOLD = 150
+
+/**
+ * Pure decision function behind `onBeforeDelete`'s relationship-delete veto
+ * (2026-08-31 tactical plan, Part A / D-12). `onBeforeDelete` below delegates
+ * to this function rather than reimplementing the same branches, so this is
+ * the exact logic that runs in the app — not a parallel copy that could
+ * silently drift from it.
+ *
+ * Exported for direct unit testing: Playwright has no clean seam to sever
+ * the whiteboard's live Socket.IO connection mid-test (see the gap noted on
+ * relationship-deletion.spec.ts's e2e test), so this predicate is the
+ * fallback coverage the tactical plan calls for instead of a live-disconnect
+ * e2e.
+ *
+ * - When `canPersistRelationshipDelete` is true, nothing is vetoed and no
+ *   refusal fires.
+ * - Otherwise, edges of type 'connector' pass through; every other edge
+ *   (relationship edges) is stripped from the batch.
+ * - A refusal should be surfaced ONLY when a delete handler was actually
+ *   wired (`hasRelationshipDeleteHandler`) AND the batch contained at least
+ *   one relationship edge — the no-handler case (TableFocusOverlay's nested
+ *   canvas) stays silent, as it does today.
+ */
+export function computeRelationshipDeleteVeto<T extends { type?: string }>(params: {
+  deletedEdges: Array<T>
+  canPersistRelationshipDelete: boolean
+  hasRelationshipDeleteHandler: boolean
+}): { edges: Array<T>; shouldNotifyRefusal: boolean } {
+  const {
+    deletedEdges,
+    canPersistRelationshipDelete,
+    hasRelationshipDeleteHandler,
+  } = params
+  if (canPersistRelationshipDelete) {
+    return { edges: deletedEdges, shouldNotifyRefusal: false }
+  }
+  const hadRelationshipEdge = deletedEdges.some(
+    (edge) => edge.type !== 'connector',
+  )
+  return {
+    edges: deletedEdges.filter((edge) => edge.type === 'connector'),
+    shouldNotifyRefusal: hadRelationshipEdge && hasRelationshipDeleteHandler,
+  }
+}
 
 /**
  * ReactFlowCanvas Props
@@ -149,6 +224,81 @@ export interface ReactFlowCanvasProps {
    * where these are built in ReactFlowWhiteboard.
    */
   commentNodes?: Array<CommentNodeType>
+  /**
+   * Shape nodes (Phase 1: shapes-and-connectors), kept separate from table
+   * nodes like areaNodes. Rendered behind tables, above areas (tech-spec §5).
+   */
+  shapeNodes?: Array<ShapeNodeType>
+  /**
+   * Connector edges (Phase 1) — merged with the relationship `edges` prop.
+   * Geometry is derived at render time, never stored (FR-031a).
+   */
+  connectorEdges?: Array<ConnectorEdgeType>
+  /**
+   * Persist a shape (or multi-selected shapes) drag-stop — one entry per
+   * dragged shape, so the caller can emit exactly N `shape:update`s at
+   * drag-stop, never per-frame (tech-spec §10).
+   */
+  onShapeDragStop?: (
+    shapes: Array<{ id: string; positionX: number; positionY: number }>,
+  ) => void
+  /**
+   * Delete a shape (Delete/Backspace on a selected shape node). Fired from
+   * `onNodesDelete` for deleted nodes of type 'shape' — cascades to attached
+   * connectors server-side (FR-018).
+   */
+  onShapeDelete?: (shapeId: string) => void
+  /**
+   * Delete a connector (M1) — Delete/Backspace on a selected connector edge.
+   * Fired from `onEdgesDelete`, filtered on `edge.type === 'connector'` so
+   * relationship-edge behaviour is untouched.
+   */
+  onConnectorDelete?: (connectorId: string) => void
+  /**
+   * Delete a relationship (GH: "deleted relation line comes back"). Fired
+   * from `onEdgesDelete` for edges that are NOT connectors, so pressing
+   * Delete/Backspace on a selected relationship edge takes the SAME path as
+   * RelationshipEdge's own hover delete button (useRelationshipMutations ->
+   * socket `relationship:delete`). Without this the key removed the edge
+   * from React Flow's local state only; the row survived in the database and
+   * the next `initialNodes` change (any table drag) resurrected the line via
+   * the initialEdges resync effect below.
+   */
+  onRelationshipDelete?: (relationshipId: string) => void
+  /**
+   * Live connectivity signal for relationship deletes (symptom 1 fix,
+   * 2026-08-31 tactical plan). React Flow applies a Delete-key removal to
+   * its own store BEFORE `onEdgesDelete` runs, so a handler merely being
+   * wired is not enough to prove the removal can actually persist — the
+   * whiteboard socket also has to be connected right now. Defaults to
+   * `false` so a caller that never passes this prop fails safe instead of
+   * silently reproducing the resurrection bug.
+   */
+  canDeleteRelationships?: boolean
+  /**
+   * Fired once per vetoed batch (not once per edge) when `onBeforeDelete`
+   * refuses a relationship delete because `canDeleteRelationships` is
+   * false. NOT fired for the no-handler case (TableFocusOverlay's nested
+   * canvas, which passes no `onRelationshipDelete` at all) — that veto
+   * stays silent, as it does today.
+   */
+  onRelationshipDeleteRefused?: () => void
+  /**
+   * The canvas-wide tool mode (D-1). When a draw gesture tool is armed
+   * (`isDrawGestureTool(activeTool)` — the five shape tools plus `'area'`),
+   * mounts `<ShapeDrawOverlay>` inside the wrapper (H1: the overlay is
+   * pointer-events:none and runs its gesture from capture-phase listeners on
+   * the wrapper — see that component).
+   */
+  activeTool?: ToolMode
+  /** Fires once per completed draw gesture (tech-spec §8). */
+  onDrawCommit?: (
+    kind: DrawGestureTool,
+    rect: { x: number; y: number; width: number; height: number },
+    drag: { startX: number; startY: number; endX: number; endY: number },
+  ) => void
+  /** Fires on every abnormal/idle-armed draw termination that disarms to `select`. */
+  onDrawDisarm?: () => void
   /** Callback when nodes change (position, selection, etc.) */
   onNodesChange?: OnNodesChange<TableNodeType>
   /** Callback when edges change */
@@ -216,6 +366,18 @@ export interface ReactFlowCanvasProps {
    * backdrop. Keyboard collapse (`m`/`Escape`) is handled by the parent's hook.
    */
   onMinimapCollapse?: () => void
+  /**
+   * The shape currently holding keyboard-traversal focus (FR-019a), or
+   * `null`. Applied as a direct DOM class toggle on the target's own
+   * `.react-flow__node-shape` wrapper — same bypass-React-render pattern as
+   * the GH #121 hover-highlight and GH #138 jump-pulse mechanisms above,
+   * deliberately NOT threaded through `shapeNodes[].data` (that prop is
+   * fully resynced into React Flow's controlled node state on every
+   * `shapes`/`canEdit`/etc. change, which would silently clear the live
+   * mouse/keyboard SELECTION every time focus moves — see
+   * ReactFlowWhiteboard's traversal effect comment for the full reasoning).
+   */
+  keyboardFocusedShapeId?: string | null
 }
 
 /**
@@ -240,6 +402,17 @@ export function ReactFlowCanvas({
   onAreaDragStop,
   onAreaDelete,
   commentNodes = EMPTY_COMMENT_NODES,
+  shapeNodes = EMPTY_SHAPE_NODES,
+  connectorEdges = EMPTY_CONNECTOR_EDGES,
+  onShapeDragStop,
+  onShapeDelete,
+  onConnectorDelete,
+  onRelationshipDelete,
+  canDeleteRelationships = false,
+  onRelationshipDeleteRefused,
+  activeTool = 'select',
+  onDrawCommit,
+  onDrawDisarm,
   onNodesChange: onNodesChangeProp,
   onEdgesChange: onEdgesChangeProp,
   onConnect,
@@ -259,6 +432,7 @@ export function ReactFlowCanvas({
   focusRequestToken = 0,
   minimapExpanded = false,
   onMinimapCollapse,
+  keyboardFocusedShapeId = null,
 }: ReactFlowCanvasProps) {
   // Perf tracker (GH #121 follow-up): count canvas re-renders during a
   // recording session. First-line `if (!isRecording) return` inside makes this
@@ -283,6 +457,36 @@ export function ReactFlowCanvas({
     [areaNodesState],
   )
 
+  // Area nesting (todo #55 follow-up): tableId -> the area node that OWNS it.
+  // A member table is a real React Flow child of its area, so the area drags
+  // its members structurally instead of the app translating each one per frame.
+  //
+  // Built from the `areaNodes` PROP, deliberately NOT from `areaNodesState`.
+  // `areaNodesState` is React Flow's live drag state: it changes on every frame
+  // of an area drag, and re-deriving children from a moving parent mid-drag
+  // would re-anchor them every frame and pin them in place — the exact bug this
+  // nesting is meant to remove. The prop only changes when the parent commits a
+  // real area change (create, membership, a finished move), which is precisely
+  // when children DO need re-anchoring.
+  const parentIndex = useMemo(
+    () =>
+      buildParentIndex(
+        areaNodes.map((a) => ({
+          id: a.id,
+          positionX: a.data.area.positionX,
+          positionY: a.data.area.positionY,
+          memberTableIds: a.data.area.memberTableIds,
+        })),
+      ),
+    [areaNodes],
+  )
+  // Read inside drag callbacks that must not re-subscribe every time an area
+  // moves — see `onNodeDragStop`'s conversion back to absolute.
+  const parentIndexRef = useRef(parentIndex)
+  parentIndexRef.current = parentIndex
+
+
+
   // Comment pin nodes (GH #110) — same separate-state pattern as areas, but
   // rendered ON TOP of tables (merged last) since they are small clickable
   // markers, not background regions.
@@ -296,6 +500,59 @@ export function ReactFlowCanvas({
     [commentNodesState],
   )
 
+  // Shape nodes (Phase 1: shapes-and-connectors) — same separate-state
+  // pattern as areas. Rendered BEHIND tables, ABOVE areas (tech-spec §5).
+  const [shapeNodesState, setShapeNodesState, handleShapeNodesChange] =
+    useNodesState<ShapeNodeType>(shapeNodes)
+  useEffect(() => {
+    // Preserve the live `selected` flag across a resync, UNCONDITIONALLY
+    // (B2, Hermes code review — this is the fixed version of a merge that
+    // was itself the mechanism of that bug). `shapeNodes` recomputes on
+    // every `shapes` data change — a remote edit, a style change, a
+    // create/delete elsewhere on the board — and resyncing wholesale from
+    // that prop would blow away whatever is actually selected right now.
+    // The previous version of this effect tried to have it both ways with
+    // `n.selected || !prevSelected.get(n.id) ? n : {...n, selected: true}`
+    // — an OR that only ever ADDS selection back in. Since ReactFlowWhite-
+    // board's `shapeNodes` memo no longer computes `selected` at all
+    // (selection is applied imperatively, once, through the store API —
+    // see that memo's comment and the one-shot effect below it), there is
+    // now exactly one source of truth for this flag: whatever this
+    // effect's own PREVIOUS state said. Every user-driven selection
+    // change (click, Escape, pane click, keyboard select) goes through
+    // `handleShapeNodesChange` directly and updates `shapeNodesState`
+    // before this effect ever runs again, so carrying `prev.selected`
+    // forward here can only ever preserve the live truth — it cannot
+    // resurrect a cleared selection, and it cannot re-assert a stale one,
+    // because there is no second opinion left to disagree with it.
+    setShapeNodesState((prev) => {
+      const prevSelected = new Map(prev.map((n) => [n.id, n.selected]))
+      return shapeNodes.map((n) => ({
+        ...n,
+        selected: prevSelected.get(n.id) ?? false,
+      }))
+    })
+  }, [shapeNodes, setShapeNodesState])
+  const shapeIdSet = useMemo(
+    () => new Set(shapeNodesState.map((s) => s.id)),
+    [shapeNodesState],
+  )
+
+  // Connector edges (Phase 1) — same separate-state pattern as relationship
+  // edges, merged into the single <ReactFlow edges> array below.
+  const [
+    connectorEdgesState,
+    setConnectorEdgesState,
+    handleConnectorEdgesChange,
+  ] = useEdgesState<ConnectorEdgeType>(connectorEdges)
+  useEffect(() => {
+    setConnectorEdgesState(connectorEdges)
+  }, [connectorEdges, setConnectorEdgesState])
+  const connectorIdSet = useMemo(
+    () => new Set(connectorEdgesState.map((c) => c.id)),
+    [connectorEdgesState],
+  )
+
   // Table nodes are never natively deletable (GH #106 Bug 1 fix) — Delete/
   // Backspace must always route through the table confirmation dialog
   // (useTableDeletion), never React Flow's own removal. Area nodes carry
@@ -305,12 +562,19 @@ export function ReactFlowCanvas({
   const mergedNodes = useMemo(
     () => [
       ...areaNodesState,
+      // KEEP THIS ORDER (L2): shapes go BEFORE the table `deletable: false`
+      // map, never flattened into a bare spread with tables — the map below
+      // force-marks table nodes deletable: false (GH #106 Bug 1) so
+      // Delete/Backspace always routes through useTableDeletion's
+      // confirmation dialog. Shape nodes carry their own `deletable: canEdit`
+      // from the shapeNodes prop, so they are not touched by that map.
+      ...shapeNodesState,
       ...nodes.map((n) =>
         n.deletable === false ? n : { ...n, deletable: false },
       ),
       ...commentNodesState,
     ],
-    [areaNodesState, nodes, commentNodesState],
+    [areaNodesState, shapeNodesState, nodes, commentNodesState],
   )
 
   // Selection and hover state for highlighting
@@ -328,6 +592,13 @@ export function ReactFlowCanvas({
   const [editingTableId, setEditingTableId] = useState<string | null>(null)
   const [initialEditingField, setInitialEditingField] =
     useState<InitialEditingField | null>(null)
+
+  // LizMeter #53 fix: retargeting-immune double-press tracker for
+  // `registerEditPress` (see CanvasEditContextValue's doc comment for the
+  // full mechanism). Lives on this stable ReactFlowCanvas instance, NOT
+  // inside TableNode — a TableNode remount (plausibly part of the churn this
+  // bug depends on) must not reset a half-completed double-press.
+  const pressTrackerRef = useRef<{ key: string; time: number } | null>(null)
 
   // requestEdit replaces whatever table was previously overlaid (at most
   // one overlay at a time — locked decision #3) — a double-click on table B
@@ -349,6 +620,39 @@ export function ReactFlowCanvas({
   const exitEdit = useCallback(() => {
     setEditingTableId(null)
     setInitialEditingField(null)
+  }, [])
+
+  // LizMeter #53 fix — see CanvasEditContextValue's `registerEditPress` doc
+  // comment for the full mechanism (mousedown-based double-press detector,
+  // immune to the click/dblclick retargeting a mid-click re-render can
+  // cause). Two mousedowns on the same tableId/columnId key within
+  // DOUBLE_PRESS_WINDOW_MS call requestEdit directly; anything else just
+  // records the press and waits.
+  const registerEditPress = useCallback(
+    (tableId: string, columnId?: string, field?: 'name' | 'dataType') => {
+      const key = columnId ? `${tableId}:${columnId}` : tableId
+      const now = Date.now()
+      const prev = pressTrackerRef.current
+      if (
+        prev &&
+        prev.key === key &&
+        now - prev.time <= DOUBLE_PRESS_WINDOW_MS
+      ) {
+        pressTrackerRef.current = null
+        requestEdit(tableId, columnId, field)
+      } else {
+        pressTrackerRef.current = { key, time: now }
+      }
+    },
+    [requestEdit],
+  )
+
+  // Drag guard (LizMeter #53 premortem finding): clear any in-flight
+  // double-press tracking wherever a real node drag or column-reorder drag
+  // actually starts, so a mousedown that begins a drag can never later
+  // combine with an unrelated double-click elsewhere within the window.
+  const cancelEditPress = useCallback(() => {
+    pressTrackerRef.current = null
   }, [])
 
   // Header-icon affordance click (note / comment / relations) → open the
@@ -417,6 +721,8 @@ export function ReactFlowCanvas({
       requestEdit,
       requestAffordance,
       exitEdit,
+      registerEditPress,
+      cancelEditPress,
     }),
     [
       editingTableId,
@@ -425,6 +731,8 @@ export function ReactFlowCanvas({
       requestEdit,
       requestAffordance,
       exitEdit,
+      registerEditPress,
+      cancelEditPress,
     ],
   )
 
@@ -439,9 +747,7 @@ export function ReactFlowCanvas({
   // rapid re-jump (same or different table, before the previous pulse
   // finished either phase) clears the prior timeout instead of letting it
   // fire late/early against whichever node or phase is stale by then.
-  const jumpPulseTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(
-    null,
-  )
+  const jumpPulseTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null)
 
   // React Flow instance — used by the search-palette focus request below to
   // pan/zoom the viewport (shares the store with the container's instance).
@@ -460,17 +766,6 @@ export function ReactFlowCanvas({
   // Track drag in progress — ReactFlow fires mouseLeave/mouseEnter when drag
   // starts/stops, which would trigger unnecessary highlighting recalculations.
   const isDraggingRef = useRef(false)
-
-  // Movable-container grouping (GH #106 Bug 2 fix): while an area node is
-  // being dragged, its member tables must translate by the same delta. This
-  // ref snapshots the area's start position and each member's start position
-  // at drag-start, so onNodeDrag/onNodeDragStop can compute `delta` and apply
-  // it without compounding across frames.
-  const dragAreaMemberStartRef = useRef<{
-    areaId: string
-    areaStart: { x: number; y: number }
-    members: Map<string, { x: number; y: number }>
-  } | null>(null)
 
   // Track whether React Flow has measured all nodes; used for one-shot
   // post-measure edge re-routing inside the overlay (Enhancement 2).
@@ -522,17 +817,47 @@ export function ReactFlowCanvas({
   // ref makes this effect fire ONLY on a genuine initialNodes re-push, leaving
   // the L464-475 effect below as the sole owner of click/toggle
   // re-highlighting.
+  //
+  // This is also the ONE inbound coordinate boundary for area nesting: the
+  // parent hands us ABSOLUTE positions, and a member table is stored here as a
+  // React Flow child, whose position must be RELATIVE to its area (see
+  // node-nesting.ts). `parentIndex` is a dep because a table joining or leaving
+  // an area, or its area committing a move, genuinely does change the anchor —
+  // and it is derived from the `areaNodes` prop, so it does NOT tick during a
+  // drag and cannot re-fire this effect mid-gesture (the GH #134 hazard above).
   useEffect(() => {
+    const parents = parentIndex
+    const highlighted = calculateHighlighting(
+      initialNodes,
+      edgesRef.current,
+      activeTableIdRef.current,
+      null,
+      relationsPreviewTableIdRef.current,
+    ).nodes
     setNodes(
-      calculateHighlighting(
-        initialNodes,
-        edgesRef.current,
-        activeTableIdRef.current,
-        null,
-        relationsPreviewTableIdRef.current,
-      ).nodes,
+      parents.size === 0
+        ? highlighted
+        : highlighted.map((n) => {
+            const parent = parents.get(n.id)
+            if (!parent) return n
+            return {
+              ...n,
+              parentId: parent.id,
+              position: toRelative(n.position, parent),
+            }
+          }),
     )
-  }, [initialNodes, setNodes])
+    // Keyed on the WHOLE `parentIndex`, positions included — not on membership
+    // alone. A child's stored position is relative to its parent's ORIGIN, so
+    // when an area moves its children must be re-anchored against the new
+    // origin or they travel with it. That is fine for a deliberate area drag
+    // (they should travel) but wrong for an auto-fit: `refitArea` repositions
+    // the area around its members, and without this dep every member that the
+    // user did NOT touch slid by the refit delta — dragging one table visibly
+    // dragged its neighbours. `areas` state does not change during a drag (React
+    // Flow owns the live drag position and only commits on drag stop), so this
+    // dep ticks on committed changes only, never per frame.
+  }, [initialNodes, parentIndex, setNodes])
 
   // Search palette focus request — when the container bumps focusRequestToken,
   // pan/zoom to the requested table and mark it active-highlighted. Keyed on
@@ -605,6 +930,32 @@ export function ReactFlowCanvas({
       }
     }
   }, [])
+
+  // Keyboard traversal focus ring (FR-019a) — direct DOM class toggle on the
+  // target shape's own `.react-flow__node-shape` wrapper, mirroring the
+  // hover-highlight/jump-pulse pattern above (bypasses setNodes/React
+  // re-render entirely, see the prop comment for why that matters here).
+  // Deferred one animation frame: `onlyRenderVisibleElements` can cull an
+  // off-screen shape from the DOM until the traversal effect's own
+  // `setCenter` pan has had a chance to mount it.
+  const kbdFocusedElRef = useRef<HTMLElement | null>(null)
+  useEffect(() => {
+    if (kbdFocusedElRef.current) {
+      kbdFocusedElRef.current.classList.remove('kbd-focused')
+      kbdFocusedElRef.current = null
+    }
+    if (!keyboardFocusedShapeId) return
+    const raf = requestAnimationFrame(() => {
+      const el = wrapperRef.current?.querySelector<HTMLElement>(
+        `.react-flow__node[data-id="${keyboardFocusedShapeId}"] .react-flow__node-shape`,
+      )
+      if (el) {
+        el.classList.add('kbd-focused')
+        kbdFocusedElRef.current = el
+      }
+    })
+    return () => cancelAnimationFrame(raf)
+  }, [keyboardFocusedShapeId])
 
   // Update edges when initialEdges changes — immediately recalculate handles
   // based on the current node positions so edges start pointing the right way.
@@ -814,12 +1165,18 @@ export function ReactFlowCanvas({
       updatedPositions.set(node.id, node.position)
       draggedNodes.forEach((n) => updatedPositions.set(n.id, n.position))
 
-      return nodes.map((n) => {
-        const updated = updatedPositions.get(n.id)
-        return updated ? { ...n, position: updated } : n
-      })
+      // Back to ABSOLUTE before this reaches edge routing: a member table's
+      // position — both in `nodes` state and in the drag event — is relative to
+      // its area, and handle geometry is computed in absolute flow space.
+      return toAbsoluteNodes(
+        nodes.map((n) => {
+          const updated = updatedPositions.get(n.id)
+          return updated ? { ...n, position: updated } : n
+        }),
+        parentIndex,
+      )
     },
-    [nodes],
+    [nodes, parentIndex],
   )
 
   // rAF-throttle drag-frame edge recalculation (GH #121 perf, opt #5).
@@ -870,74 +1227,63 @@ export function ReactFlowCanvas({
   // component is gone.
   useEffect(() => cancelPendingDragEdgeRecalc, [cancelPendingDragEdgeRecalc])
 
-  // Mark drag as started — suppresses hover events that ReactFlow fires on drag begin.
-  // When the dragged node is an area, also snapshot its start position and its
-  // members' start positions so onNodeDrag/onNodeDragStop can translate them
-  // by the live delta (movable-container grouping, GH #106 Bug 2 fix).
-  const onNodeDragStart = useCallback<OnNodeDrag<TableNodeType>>(
-    (_event, node) => {
-      isDraggingRef.current = true
-      perfTracker.setGesture('drag') // no-op unless recording
-      // Defensive reset — a new drag should never inherit a stale scheduled
-      // recalculation from a previous one.
-      cancelPendingDragEdgeRecalc()
-
-      if (!areaIdSet.has(node.id)) {
-        dragAreaMemberStartRef.current = null
-        return
-      }
-      const areaNode = areaNodesState.find((a) => a.id === node.id)
-      const memberIds = new Set(areaNode?.data.area.memberTableIds ?? [])
-      const members = new Map<string, { x: number; y: number }>()
-      nodes.forEach((n) => {
-        if (memberIds.has(n.id))
-          members.set(n.id, { x: n.position.x, y: n.position.y })
-      })
-      dragAreaMemberStartRef.current = {
-        areaId: node.id,
-        areaStart: { x: node.position.x, y: node.position.y },
-        members,
-      }
-    },
-    [areaIdSet, areaNodesState, cancelPendingDragEdgeRecalc, nodes],
-  )
+  // Mark drag as started — suppresses hover events that ReactFlow fires on drag
+  // begin. Area drags need NO member bookkeeping here any more: members are real
+  // React Flow children (todo #55 follow-up), so React Flow moves them with the
+  // parent itself. The old start-position snapshot + per-frame delta translation
+  // this used to keep is gone with it.
+  const onNodeDragStart = useCallback<OnNodeDrag<TableNodeType>>(() => {
+    isDraggingRef.current = true
+    // LizMeter #53 drag guard — a real node drag starting must never let
+    // its own mousedown later combine with an unrelated double-click
+    // elsewhere within DOUBLE_PRESS_WINDOW_MS.
+    cancelEditPress()
+    perfTracker.setGesture('drag') // no-op unless recording
+    // Defensive reset — a new drag should never inherit a stale scheduled
+    // recalculation from a previous one.
+    cancelPendingDragEdgeRecalc()
+  }, [cancelEditPress, cancelPendingDragEdgeRecalc])
 
   // Recalculate edge handles whenever a node is dragged (live feedback).
   // We merge the dragged node's latest position into the nodes array so the
   // calculation is always based on current coordinates.
   const onNodeDrag = useCallback<OnNodeDrag<TableNodeType>>(
     (_event, node, draggedNodes) => {
+      // Shapes need no relationship-edge recalculation at all (FR-015):
+      // ConnectorEdge subscribes to each endpoint's live position directly
+      // via useInternalNode(id), so it re-renders every drag frame with
+      // zero extra plumbing here.
+      if (shapeIdSet.has(node.id)) return
       if (areaIdSet.has(node.id)) {
-        // Movable-container grouping: translate member tables live by the
-        // same delta the area has moved since drag-start.
-        const drag = dragAreaMemberStartRef.current
-        if (!drag || drag.areaId !== node.id || drag.members.size === 0) return
-        const deltaX = node.position.x - drag.areaStart.x
-        const deltaY = node.position.y - drag.areaStart.y
-        // Counts app-initiated interaction setNodes only (this area-member-drag
-        // path). Regular single-node drags flow through React Flow's internal
-        // applyNodeChanges and are NOT counted here — so this counter reads ~0
-        // in the common single-node drag case; don't misread it as "no updates".
-        perfTracker.incSetNodes() // no-op unless recording; interaction path only
-        setNodes((prevNodes) =>
-          prevNodes.map((n) => {
-            const start = drag.members.get(n.id)
-            if (!start) return n
-            return {
-              ...n,
-              position: { x: start.x + deltaX, y: start.y + deltaY },
-            }
-          }),
-        )
-        const movedIds = new Set(drag.members.keys())
+        // Members are React Flow children now, so dragging the area already
+        // moved them on screen — there is no per-frame translation left to do
+        // (and doing one would double-apply the delta). What still has to
+        // happen is edge routing: React Flow fires no onNodeDrag for a child
+        // that moved because its parent did, so the handles on relationships
+        // touching a member would otherwise freeze until the drop.
+        //
+        // Each member's live ABSOLUTE position is the area's live position
+        // (node.position, mid-drag) plus the member's unchanged relative one.
+        const liveParent = {
+          id: node.id,
+          positionX: node.position.x,
+          positionY: node.position.y,
+        }
+        // ONE pass, so a member of the dragged area is converted against its
+        // LIVE parent and every other area's members against their static one.
+        // (Converting the whole list afterwards would double-apply the offset
+        // to exactly the members being dragged.)
+        const movedIds = new Set<string>()
         const currentNodes = nodes.map((n) => {
-          const start = drag.members.get(n.id)
-          if (!start) return n
-          return {
-            ...n,
-            position: { x: start.x + deltaX, y: start.y + deltaY },
+          const parent = parentIndex.get(n.id)
+          if (!parent) return n
+          if (parent.id !== node.id) {
+            return { ...n, position: toAbsolute(n.position, parent) }
           }
+          movedIds.add(n.id)
+          return { ...n, position: toAbsolute(n.position, liveParent) }
         })
+        if (movedIds.size === 0) return
         scheduleDragEdgeRecalc(currentNodes, movedIds)
         return
       }
@@ -946,7 +1292,14 @@ export function ReactFlowCanvas({
       const currentNodes = mergeCurrentPositions(node, draggedNodes)
       scheduleDragEdgeRecalc(currentNodes, draggedIds)
     },
-    [areaIdSet, mergeCurrentPositions, nodes, scheduleDragEdgeRecalc, setNodes],
+    [
+      areaIdSet,
+      shapeIdSet,
+      mergeCurrentPositions,
+      nodes,
+      parentIndex,
+      scheduleDragEdgeRecalc,
+    ],
   )
 
   // Handle node drag stop (position update)
@@ -958,30 +1311,50 @@ export function ReactFlowCanvas({
       // Area nodes: persist the new position (+ any moved members), skip
       // edge routing / hover.
       if (areaIdSet.has(node.id)) {
-        const drag = dragAreaMemberStartRef.current
-        let movedMembers: Array<{
-          id: string
-          positionX: number
-          positionY: number
-        }> = []
-        if (drag && drag.areaId === node.id) {
-          const deltaX = node.position.x - drag.areaStart.x
-          const deltaY = node.position.y - drag.areaStart.y
-          movedMembers = Array.from(drag.members.entries()).map(
-            ([id, start]) => ({
-              id,
-              positionX: start.x + deltaX,
-              positionY: start.y + deltaY,
-            }),
-          )
+        // Members rode along as React Flow children, so their RELATIVE
+        // positions are untouched by the drag — each one's new ABSOLUTE
+        // position is simply the area's dropped position plus that relative
+        // offset. No drag-start snapshot and no delta arithmetic: the thing
+        // the old implementation had to reconstruct is now just structure.
+        const droppedParent = {
+          id: node.id,
+          positionX: node.position.x,
+          positionY: node.position.y,
         }
-        dragAreaMemberStartRef.current = null
+        const movedMembers = nodes
+          .filter((n) => parentIndex.get(n.id)?.id === node.id)
+          .map((n) => {
+            const absolute = toAbsolute(n.position, droppedParent)
+            return { id: n.id, positionX: absolute.x, positionY: absolute.y }
+          })
         onAreaDragStop?.(
           node.id,
           node.position.x,
           node.position.y,
           movedMembers,
         )
+        return
+      }
+
+      // Shape nodes: persist the new position(s), skip edge routing/hover
+      // entirely (tech-spec §10). React Flow reports the WHOLE multi-drag
+      // selection to this callback once, so a multi-select drag of N shapes
+      // emits exactly N entries here, never per-frame.
+      if (shapeIdSet.has(node.id)) {
+        const draggedShapeIds = new Set(
+          draggedNodes.filter((n) => shapeIdSet.has(n.id)).map((n) => n.id),
+        )
+        draggedShapeIds.add(node.id)
+        const finalPositions = [node, ...draggedNodes]
+          .filter((n) => draggedShapeIds.has(n.id))
+          // De-duplicate — `node` may also appear in `draggedNodes`.
+          .filter((n, i, arr) => arr.findIndex((o) => o.id === n.id) === i)
+          .map((n) => ({
+            id: n.id,
+            positionX: n.position.x,
+            positionY: n.position.y,
+          }))
+        onShapeDragStop?.(finalPositions)
         return
       }
 
@@ -1001,13 +1374,30 @@ export function ReactFlowCanvas({
       setEdges((prevEdges) =>
         recalculateEdgesForDraggedNodes(prevEdges, currentNodes, draggedIds),
       )
-      // Call the prop callback if provided
-      onNodeDragStopProp?.(event, node, draggedNodes)
+      // OUTBOUND coordinate boundary: React Flow reports a nested member's
+      // position relative to its area, but everything past this callback —
+      // persistence, area membership reconciliation, the query cache — is
+      // absolute. Convert before the event leaves the canvas so no consumer
+      // has to know nesting exists.
+      const parents = parentIndexRef.current
+      const toAbsoluteNode = (n: TableNodeType): TableNodeType => {
+        const parent = parents.get(n.id)
+        return parent ? { ...n, position: toAbsolute(n.position, parent) } : n
+      }
+      onNodeDragStopProp?.(
+        event,
+        toAbsoluteNode(node),
+        draggedNodes.map(toAbsoluteNode),
+      )
     },
     [
       areaIdSet,
+      shapeIdSet,
+      nodes,
+      parentIndex,
       cancelPendingDragEdgeRecalc,
       onAreaDragStop,
+      onShapeDragStop,
       onNodeDragStopProp,
       mergeCurrentPositions,
       setEdges,
@@ -1021,16 +1411,22 @@ export function ReactFlowCanvas({
   const onNodesChange: OnNodesChange<TableNodeType> = useCallback(
     (changes) => {
       const areaChanges: typeof changes = []
+      const shapeChanges: typeof changes = []
       const commentChanges: typeof changes = []
       const tableChanges: typeof changes = []
       for (const change of changes) {
         if ('id' in change && areaIdSet.has(change.id)) areaChanges.push(change)
+        else if ('id' in change && shapeIdSet.has(change.id))
+          shapeChanges.push(change)
         else if ('id' in change && commentIdSet.has(change.id))
           commentChanges.push(change)
         else tableChanges.push(change)
       }
       if (areaChanges.length > 0) {
         handleAreaNodesChange(areaChanges as any)
+      }
+      if (shapeChanges.length > 0) {
+        handleShapeNodesChange(shapeChanges as any)
       }
       if (commentChanges.length > 0) {
         handleCommentNodesChange(commentChanges as any)
@@ -1040,21 +1436,122 @@ export function ReactFlowCanvas({
     },
     [
       areaIdSet,
+      shapeIdSet,
       commentIdSet,
       handleAreaNodesChange,
+      handleShapeNodesChange,
       handleCommentNodesChange,
       handleNodesChange,
       onNodesChangeProp,
     ],
   )
 
-  // Handle edges change with custom callback
+  // Handle edges change with custom callback. Partitions connector changes
+  // (selection, removal-from-local-state) into their own state, mirroring
+  // the node partitioning above.
   const onEdgesChange: OnEdgesChange<RelationshipEdgeType> = useCallback(
     (changes) => {
-      handleEdgesChange(changes)
-      onEdgesChangeProp?.(changes)
+      const connectorChanges: typeof changes = []
+      const relationshipChanges: typeof changes = []
+      for (const change of changes) {
+        if ('id' in change && connectorIdSet.has(change.id)) {
+          connectorChanges.push(change)
+        } else {
+          relationshipChanges.push(change)
+        }
+      }
+      if (connectorChanges.length > 0) {
+        handleConnectorEdgesChange(connectorChanges as any)
+      }
+      handleEdgesChange(relationshipChanges)
+      onEdgesChangeProp?.(relationshipChanges)
     },
-    [handleEdgesChange, onEdgesChangeProp],
+    [
+      connectorIdSet,
+      handleConnectorEdgesChange,
+      handleEdgesChange,
+      onEdgesChangeProp,
+    ],
+  )
+
+  // Edge deletion trigger. Connectors (M1) and relationships both persist
+  // from here. The relationship branch closes the Phase 1 gap noted in
+  // tech-spec §7: Delete/Backspace used to remove a relationship edge from
+  // React Flow's local state and stop there, leaving the row in the database
+  // — so the initialEdges resync effect above put the line straight back on
+  // the next `initialNodes` change (i.e. as soon as any table was dragged).
+  // Routing it to the same mutation as RelationshipEdge's hover delete
+  // button gives the key the optimistic parent-state removal, the socket
+  // emit, and the rollback-on-error that the button already had.
+  const onEdgesDelete = useCallback<OnEdgesDelete>(
+    (deletedEdges) => {
+      for (const edge of deletedEdges) {
+        if (edge.type === 'connector') onConnectorDelete?.(edge.id)
+        else onRelationshipDelete?.(edge.id)
+      }
+    },
+    [onConnectorDelete, onRelationshipDelete],
+  )
+
+  // Veto a relationship delete when either no delete handler is wired (how
+  // TableFocusOverlay mounts us: a read-only preview whose Delete key must
+  // be inert, not phantom-remove a line from the dialog) OR the connection
+  // that write would need to travel over is not live right now. React Flow
+  // applies deletions to its own store BEFORE `onEdgesDelete` runs, so a
+  // handler merely being wired never proved the removal could persist — a
+  // reconnect blip, backgrounded tab, or sleep/wake between mount and this
+  // keypress left the edge vanished locally while the row survived in the
+  // database, and the next `initialNodes` change (any table drag)
+  // resurrected it via the initialEdges resync effect below. Returning a
+  // filtered set keeps other deletions in the batch working.
+  //
+  // `canDeleteRelationships` reads the WHITEBOARD socket's `connectionState`
+  // (threaded down from ReactFlowWhiteboard) — the exact same signal
+  // `useRelationshipMutations` gates its own writes on. It is deliberately
+  // NOT `isConnected`: that flag belongs to a separate
+  // `useColumnCollaboration` socket instance which disagrees with the
+  // whiteboard socket for a window after load (reproduced against the real
+  // server: the row was deleted while `isConnected` still read false — see
+  // the wiring comment in ReactFlowWhiteboard.tsx). Reading the same signal
+  // the mutation itself reads means the veto here and the mutation's own
+  // refusal can no longer disagree.
+  const canPersistRelationshipDelete =
+    onRelationshipDelete !== undefined && canDeleteRelationships
+  // Typed against the canvas's own generics so it does not widen the node
+  // type React Flow infers for the sibling handlers. The connector check
+  // reads through `Edge` because RelationshipEdgeType's `type` is narrowed to
+  // 'relationship', while the live array is the merged relationship +
+  // connector set (same reason the `edges` prop below is cast).
+  const onBeforeDelete = useCallback<
+    OnBeforeDelete<TableNodeType, RelationshipEdgeType>
+  >(
+    async ({ nodes: deletedNodes, edges: deletedEdges }) => {
+      // Delegates to the exported pure predicate below — kept as the single
+      // source of truth for the veto decision so its unit test exercises
+      // the exact logic this callback runs (D-12: Playwright has no clean
+      // seam to sever the whiteboard Socket.IO connection, so this
+      // predicate is the fallback coverage for the disconnected-delete path
+      // — see the comment on relationship-deletion.spec.ts's e2e test for
+      // that gap).
+      const veto = computeRelationshipDeleteVeto({
+        deletedEdges: deletedEdges as Array<Edge>,
+        canPersistRelationshipDelete,
+        hasRelationshipDeleteHandler: onRelationshipDelete !== undefined,
+      })
+      if (veto.shouldNotifyRefusal) {
+        onRelationshipDeleteRefused?.()
+      }
+      if (canPersistRelationshipDelete) return true
+      return {
+        nodes: deletedNodes,
+        edges: veto.edges as typeof deletedEdges,
+      }
+    },
+    [
+      canPersistRelationshipDelete,
+      onRelationshipDelete,
+      onRelationshipDeleteRefused,
+    ],
   )
 
   // Delete/Backspace on a selected area node (GH #106 Bug 1 fix). Table nodes
@@ -1069,21 +1566,36 @@ export function ReactFlowCanvas({
       for (const deletedNode of deletedNodes) {
         if (areaIdSet.has(deletedNode.id)) {
           onAreaDelete?.(deletedNode.id)
+        } else if (shapeIdSet.has(deletedNode.id)) {
+          onShapeDelete?.(deletedNode.id)
         }
       }
     },
-    [areaIdSet, onAreaDelete],
+    [areaIdSet, shapeIdSet, onAreaDelete, onShapeDelete],
   )
 
   // Track whether a connection drag is in progress to reveal target handles
   const [isConnecting, setIsConnecting] = useState(false)
+  // FR-016: whether the IN-PROGRESS drag started from a shape's own handle —
+  // narrower than `isConnecting`, and used ONLY to suppress the pre-existing
+  // table-column blanket highlight for a shape-originated drag (see the
+  // `.is-connecting-from-shape` CSS rule). Never toggled for a table-
+  // originated drag, so FR-017's "existing table-to-table flow unaffected"
+  // stays exactly as it was — this rule only ever narrows, never widens, the
+  // existing highlight.
+  const [isConnectingFromShape, setIsConnectingFromShape] = useState(false)
 
-  const onConnectStart = useCallback(() => {
-    setIsConnecting(true)
-  }, [])
+  const onConnectStart = useCallback<OnConnectStart>(
+    (_event, params) => {
+      setIsConnecting(true)
+      setIsConnectingFromShape(!!params.nodeId && shapeIdSet.has(params.nodeId))
+    },
+    [shapeIdSet],
+  )
 
   const onConnectEnd = useCallback(() => {
     setIsConnecting(false)
+    setIsConnectingFromShape(false)
   }, [])
 
   // Stable callback for MiniMap's nodeColor (GH #121 stable-reference audit)
@@ -1109,8 +1621,42 @@ export function ReactFlowCanvas({
     () => perfTracker.getSnapshot().hideEdges,
     () => false,
   )
+  // Merge relationship edges with connector edges (Phase 1) into the single
+  // <ReactFlow edges> array. Connectors are additive — the ablation branch
+  // is unchanged.
+  const mergedEdges = useMemo(
+    () => [...edges, ...connectorEdgesState],
+    [edges, connectorEdgesState],
+  )
   const effectiveEdges =
-    enableEdgeAblation && hideEdges ? EMPTY_EDGES : edges
+    enableEdgeAblation && hideEdges ? EMPTY_EDGES : mergedEdges
+
+  // The one predicate that owns BOTH rule sets (tech-spec §4): today's
+  // column-handle table-to-table rule, unchanged, and the new shape-to-shape
+  // rule (no self-connectors, no line-kind endpoint, no mixed table/shape
+  // pair in either direction). connectionMode stays at its default (strict).
+  const isValidConnection = useCallback<IsValidConnection>(
+    (connection) => {
+      const sourceNode = mergedNodes.find((n) => n.id === connection.source)
+      const targetNode = mergedNodes.find((n) => n.id === connection.target)
+      if (!sourceNode || !targetNode) return false
+
+      if (sourceNode.type === 'table' && targetNode.type === 'table') {
+        return (
+          parseColumnHandleId(connection.sourceHandle ?? '') !== null &&
+          parseColumnHandleId(connection.targetHandle ?? '') !== null
+        )
+      }
+      if (sourceNode.type === 'shape' && targetNode.type === 'shape') {
+        if (sourceNode.id === targetNode.id) return false
+        const sourceShape = (sourceNode as unknown as ShapeNodeType).data.shape
+        const targetShape = (targetNode as unknown as ShapeNodeType).data.shape
+        return sourceShape.kind !== 'line' && targetShape.kind !== 'line'
+      }
+      return false // every mixed pair, both directions
+    },
+    [mergedNodes],
+  )
 
   // Hybrid canvas rendering (GH #142 → canvas migration) is UNCONDITIONAL on
   // the main board (canvas-unconditional-default: the `?canvas=0` rollback
@@ -1131,24 +1677,48 @@ export function ReactFlowCanvas({
       <CanvasEditContext.Provider value={canvasEditContextValue}>
         <div
           ref={wrapperRef}
-          className={`react-flow-wrapper ${isConnecting ? 'is-connecting' : ''} ${className}`}
-          style={{ width: '100%', height: '100%' }}
+          className={`react-flow-wrapper ${isConnecting ? 'is-connecting' : ''} ${isConnectingFromShape ? 'is-connecting-from-shape' : ''} ${className}`}
+          // W1 (Hermes code review): `position: relative` makes this div
+          // the containing block for ShapeDrawOverlay's `position:
+          // absolute; inset: 0` child, so that child's box shares this
+          // element's own top-left corner in viewport space — which is
+          // exactly what lets the overlay convert raw pointer clientX/Y
+          // into wrapper-relative CSS coordinates (see ShapeDrawOverlay's
+          // gestureRef comment). Without this, the containing block fell
+          // through to a `position: relative` ancestor further up
+          // (ReactFlowWhiteboard's own wrapper div), whose top-left sits
+          // below the route header and Toolbar — so the rubber-band draw
+          // preview rendered that many pixels away from the actual cursor.
+          style={{ width: '100%', height: '100%', position: 'relative' }}
         >
           {/* Global SVG marker definitions for cardinality indicators */}
           <CardinalityMarkerDefs />
+          {/* Static arrowhead marker defs for connectors and line/arrow shapes (D-9) */}
+          <ConnectorMarkerDefs />
 
           <ReactFlow
-            // Area nodes are a different node type merged behind tables; React Flow
-            // resolves them at runtime via the `area` entry in nodeTypes. The cast
-            // keeps the strongly-typed table handlers (onNodesChange<TableNodeType>)
-            // without threading a union node type through the whole canvas.
+            // Area/shape nodes are different node types merged behind/around
+            // tables; React Flow resolves them at runtime via the `area`/
+            // `shape` entries in nodeTypes. The cast keeps the strongly-typed
+            // table handlers (onNodesChange<TableNodeType>) without
+            // threading a union node type through the whole canvas.
             nodes={mergedNodes as unknown as typeof nodes}
-            edges={effectiveEdges}
+            edges={effectiveEdges as unknown as typeof edges}
+            // MUST stay false now that member tables are children of their area
+            // (todo #55 follow-up). React Flow's default elevation raises an
+            // interacted node's z-index AND, for a nested subtree, its parent's
+            // — which put the AREA on top of its own members. The symptom was
+            // nasty: after dragging a grouped table once, pressing that table
+            // again grabbed the area instead, so the whole group moved and the
+            // table looked stuck. Areas carry an explicit zIndex 0 and tables
+            // sit above them; nothing may reorder that at runtime.
+            elevateNodesOnSelect={false}
             onNodesChange={onNodesChange}
             onEdgesChange={onEdgesChange}
             onConnect={onConnect}
             onConnectStart={onConnectStart}
             onConnectEnd={onConnectEnd}
+            isValidConnection={isValidConnection}
             onNodeClick={onNodeClick}
             onPaneClick={onPaneClick}
             onNodeMouseEnter={onNodeMouseEnter}
@@ -1163,6 +1733,8 @@ export function ReactFlowCanvas({
             onMove={(_event, viewport) => perfTracker.noteMove(viewport.zoom)}
             onMoveEnd={() => perfTracker.clearGesture()}
             onNodesDelete={onNodesDelete}
+            onEdgesDelete={onEdgesDelete}
+            onBeforeDelete={onBeforeDelete}
             deleteKeyCode={DELETE_KEY_CODES}
             nodeTypes={memoizedNodeTypes}
             edgeTypes={memoizedEdgeTypes}
@@ -1177,8 +1749,21 @@ export function ReactFlowCanvas({
             maxZoom={VIEWPORT_CONSTRAINTS.maxZoom}
             panOnScroll={true}
             defaultEdgeOptions={DEFAULT_EDGE_OPTIONS}
+            // LizMeter #53 fix: a dblclick retargeted to
+            // div.react-flow__nodes (see CanvasEditContextValue's
+            // registerEditPress doc comment) would otherwise still reach
+            // React Flow's own default zoomOnDoubleClick behavior, throwing
+            // the previously-overlaid table off-screen with an unwanted 2x
+            // zoom+pan ("two tables overlapping"). Disabling it here removes
+            // that side effect unconditionally, regardless of *why* a
+            // dblclick got retargeted. Trade-off: double-click-to-zoom-in on
+            // empty pane space is lost — the Controls zoom buttons remain.
+            zoomOnDoubleClick={false}
           >
-            <CanvasNodeLayer enabled={canvasMode} editingTableId={editingTableId} />
+            <CanvasNodeLayer
+              enabled={canvasMode}
+              editingTableId={editingTableId}
+            />
             {showControls && <Controls />}
             {showBackground && (
               <Background color="var(--rf-background-pattern)" gap={16} />
@@ -1196,6 +1781,16 @@ export function ReactFlowCanvas({
               />
             )}
           </ReactFlow>
+          {/* H1: mounts ONLY while a draw tool is armed. pointer-events:none
+              — see ShapeDrawOverlay's own module comment for the full
+              wheel/zoom-survival mechanism. */}
+          {isDrawGestureTool(activeTool) && (
+            <ShapeDrawOverlay
+              activeTool={activeTool}
+              onCommit={(kind, rect, drag) => onDrawCommit?.(kind, rect, drag)}
+              onDisarm={() => onDrawDisarm?.()}
+            />
+          )}
         </div>
       </CanvasEditContext.Provider>
     </CanvasModeContext.Provider>

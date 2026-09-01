@@ -6,7 +6,17 @@
 // row-mapping (see src/db.ts): datetimes as `Date`, integer booleans as
 // `boolean`, and JSONB text columns parsed into values.
 
-import type { Cardinality, ProjectRoleValue } from './schema'
+import type {
+  CanvasElementKind,
+  CanvasElementProps,
+  CanvasElementStyle,
+  Cardinality,
+  ConnectorStyle,
+  ProjectRoleValue,
+  ShapeKind,
+  ShapeProps,
+  ShapeStyle,
+} from './schema'
 
 /** Permissive JSON value (mirrors the old Prisma `JsonValue`). */
 export type JsonValue =
@@ -78,6 +88,24 @@ export interface WhiteboardShareLink {
 }
 
 /**
+ * Public read-only share link for a CANVAS board.
+ *
+ * Structurally identical to `WhiteboardShareLink` but a distinct type over a
+ * distinct table: the two reference different board kinds, and a single type
+ * with a nullable id pair would make "which board does this link point at?"
+ * a runtime question at every call site instead of a compile-time one.
+ */
+export interface CanvasBoardShareLink {
+  id: string
+  canvasBoardId: string
+  tokenHash: string
+  createdByUserId: string
+  expiresAt: Date | null
+  revokedAt: Date | null
+  createdAt: Date
+}
+
+/**
  * Full-state capture of a whiteboard's diagram (GH #107 version history), as
  * returned FRESH by `captureWhiteboardState` — nested `createdAt`/`updatedAt`
  * are real `Date` objects straight from the data layer, never round-tripped
@@ -88,6 +116,14 @@ export interface WhiteboardShareLink {
  *
  * See `PersistedSnapshotPayload` for the shape this becomes once it has been
  * written to and reloaded from the DB — the two are NOT interchangeable.
+ *
+ * `shapes`/`connectors` are REQUIRED here (tech-spec.md §6/FR-035a) — this is
+ * a fresh capture, and `captureWhiteboardState` has an explicit
+ * `Promise<SnapshotPayload>` return annotation, so omitting either key at the
+ * capture site fails to compile. Contrast with `PersistedSnapshotPayload`
+ * below, where both are OPTIONAL because every snapshot captured before this
+ * feature existed has neither key. Do not make these optional here — that
+ * would silently defeat the compile-time guard.
  */
 export interface SnapshotPayload {
   whiteboard: {
@@ -98,6 +134,8 @@ export interface SnapshotPayload {
   tables: Array<DiagramTable & { columns: Array<Column> }>
   relationships: Array<Relationship>
   areas: Array<Area>
+  shapes: Array<Shape>
+  connectors: Array<Connector>
 }
 
 /**
@@ -126,6 +164,16 @@ type WithPersistedDates<T extends { createdAt: Date; updatedAt: Date }> = Omit<
  * nested `createdAt`/`updatedAt` is a `string`, matching what
  * `coerceStoredDate` in `whiteboard-snapshot.ts` is defending against at
  * runtime.
+ *
+ * `shapes`/`connectors` are OPTIONAL here — FR-035a. Every snapshot captured
+ * before this feature existed has neither key, and that payload is a frozen
+ * blob that is never migrated. `restoreWhiteboardFromSnapshot`'s parameter is
+ * `SnapshotPayload | PersistedSnapshotPayload`, so `payload.shapes` narrows to
+ * `Array<...> | undefined` and TypeScript refuses to compile a bare
+ * `for (const shape of payload.shapes)` — the `?? []` at the restore call
+ * site is the only thing that type-checks, not defensive style. Do NOT make
+ * these required "for symmetry" — that turns every historical version
+ * permanently un-restorable.
  */
 export interface PersistedSnapshotPayload {
   whiteboard: {
@@ -140,6 +188,8 @@ export interface PersistedSnapshotPayload {
   >
   relationships: Array<WithPersistedDates<Relationship>>
   areas: Array<WithPersistedDates<Area>>
+  shapes?: Array<WithPersistedDates<Shape>>
+  connectors?: Array<WithPersistedDates<Connector>>
 }
 
 /**
@@ -250,6 +300,45 @@ export interface Area {
 }
 
 /**
+ * A polymorphic drawn shape (Phase 1: shapes-and-connectors). Five kinds
+ * (rectangle, ellipse, diamond, line, text) share the same row shape:
+ * generic geometry in real columns, kind-specific data in `props`, visual
+ * styling in `style`. See tech-spec.md §3 for the full rationale.
+ */
+export interface Shape {
+  id: string
+  whiteboardId: string
+  kind: ShapeKind
+  positionX: number
+  positionY: number
+  width: number
+  height: number
+  rotation: number
+  zIndex: number
+  text: string | null
+  style: ShapeStyle
+  props: ShapeProps
+  createdAt: Date
+  updatedAt: Date
+}
+
+/**
+ * A shape-to-shape connector (Phase 1: shapes-and-connectors). Endpoints are
+ * dedicated indexed columns (FR-031), never inside a JSON blob. No stored
+ * path — geometry is derived at render time from both endpoints' bounds
+ * (FR-031a).
+ */
+export interface Connector {
+  id: string
+  whiteboardId: string
+  sourceShapeId: string
+  targetShapeId: string
+  style: ConnectorStyle
+  createdAt: Date
+  updatedAt: Date
+}
+
+/**
  * Canvas comment / annotation (GH #110). A root comment (`parentId === null`)
  * anchors a thread either to a table (`targetType === 'table'`,
  * `targetTableId` set) or to a free canvas point (`targetType === 'point'`,
@@ -283,4 +372,58 @@ export interface Comment {
 export interface CommentWithAuthor extends Comment {
   authorName: string
   authorEmail: string
+}
+
+/**
+ * A canvas board (FigJam-style canvas engine, milestone 1).
+ *
+ * A deliberately separate board kind from `Whiteboard`: the canvas engine
+ * renders every pixel itself and owns its own elements, so the two share no
+ * rows. `folderId` mirrors `Whiteboard` so both kinds can sit side by side
+ * in the navigator later.
+ */
+export interface CanvasBoard {
+  id: string
+  name: string
+  projectId: string
+  folderId: string | null
+  createdAt: Date
+  updatedAt: Date
+}
+
+/**
+ * A stored canvas element — the ROW, not the engine value.
+ *
+ * The name is not incidental. `src/lib/canvas-engine/scene.ts` exports a
+ * `CanvasElement` too, and the two are deliberately different types:
+ *
+ *   - this record uses `positionX`/`positionY`, matching every other table
+ *     in the schema, and carries `createdAt`/`updatedAt`;
+ *   - the engine's element uses `x`/`y` in world space and knows nothing
+ *     about storage.
+ *
+ * `mapCanvasElement` in src/db.ts and `toEngineElement` in
+ * src/lib/canvas-element-adapter.ts are the only places the two vocabularies
+ * meet. Keeping them apart is the same discipline `camera.ts` enforces for
+ * screen-versus-world coordinates, and for the same reason: the two bugs
+ * this repo has already paid for (W1, W3) were both a coordinate space used
+ * where another was meant.
+ */
+export interface CanvasElementRecord {
+  id: string
+  boardId: string
+  kind: CanvasElementKind
+  positionX: number
+  positionY: number
+  width: number
+  height: number
+  rotation: number
+  zIndex: number
+  text: string | null
+  style: CanvasElementStyle
+  props: CanvasElementProps
+  /** Monotonic write counter — see schema-sql.ts's "revision" column comment. */
+  revision: number
+  createdAt: Date
+  updatedAt: Date
 }

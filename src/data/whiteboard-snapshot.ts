@@ -13,6 +13,8 @@ import { findDiagramTablesByWhiteboardId } from './diagram-table'
 import { findColumnsByTableId } from './column'
 import { findRelationshipsByWhiteboardId } from './relationship'
 import { findAreasByWhiteboard } from './area'
+import { findShapesByWhiteboard } from './shape'
+import { findConnectorsByWhiteboard } from './connector'
 import { findWhiteboardById } from './whiteboard'
 import type {
   PersistedSnapshotPayload,
@@ -73,6 +75,8 @@ export async function captureWhiteboardState(
   )
   const relationships = await findRelationshipsByWhiteboardId(whiteboardId)
   const areas = await findAreasByWhiteboard(whiteboardId)
+  const shapes = await findShapesByWhiteboard(whiteboardId)
+  const connectors = await findConnectorsByWhiteboard(whiteboardId)
 
   return {
     whiteboard: {
@@ -83,6 +87,8 @@ export async function captureWhiteboardState(
     tables: tablesWithColumns,
     relationships,
     areas,
+    shapes,
+    connectors,
   }
 }
 
@@ -187,6 +193,17 @@ export async function restoreWhiteboardFromSnapshot(
   payload: SnapshotPayload | PersistedSnapshotPayload,
 ): Promise<void> {
   transaction(() => {
+    // FR-035/FR-035a: the snapshot system enumerates entities in three
+    // places (capture above, this wipe, and the re-insert below). A table
+    // missing from any one of them means every restore silently deletes
+    // every shape on the board — see tech-spec.md §6. Connector is deleted
+    // explicitly even though it cascades from Shape via FK — order-
+    // independent correctness is worth two lines, and it keeps this wipe
+    // readable as a complete enumeration.
+    db.prepare('DELETE FROM "Connector" WHERE "whiteboardId" = ?').run(
+      whiteboardId,
+    )
+    db.prepare('DELETE FROM "Shape" WHERE "whiteboardId" = ?').run(whiteboardId)
     db.prepare('DELETE FROM "Area" WHERE "whiteboardId" = ?').run(whiteboardId)
     db.prepare('DELETE FROM "DiagramTable" WHERE "whiteboardId" = ?').run(
       whiteboardId,
@@ -254,6 +271,48 @@ export async function restoreWhiteboardFromSnapshot(
         height: area.height,
         memberTableIds: toDbJson(area.memberTableIds),
         createdAt: coerceStoredDate(area.createdAt),
+        updatedAt: ts,
+      })
+    }
+
+    // FR-035a: `payload.shapes`/`payload.connectors` narrow to
+    // `Array<...> | undefined` because `PersistedSnapshotPayload` types them
+    // optional (every snapshot captured before this feature has neither
+    // key). The `?? []` is the ONLY thing that type-checks here under
+    // `strictNullChecks` — it is not defensive style. Do NOT "improve" it
+    // into logic that distinguishes `null` from `undefined`: `db.ts`'s
+    // `fromDbJson` can yield `null` at runtime, and `?? []` treats `null`
+    // and `undefined` identically, which is what keeps the compile-time
+    // guard and the runtime reality in agreement. See models.ts and
+    // tech-spec.md §6 for the full rationale.
+    for (const shape of payload.shapes ?? []) {
+      insert('Shape', {
+        id: shape.id,
+        whiteboardId,
+        kind: shape.kind,
+        positionX: shape.positionX,
+        positionY: shape.positionY,
+        width: shape.width,
+        height: shape.height,
+        rotation: shape.rotation,
+        zIndex: shape.zIndex,
+        text: shape.text,
+        style: toDbJson(shape.style),
+        props: toDbJson(shape.props),
+        createdAt: coerceStoredDate(shape.createdAt),
+        updatedAt: ts,
+      })
+    }
+    for (const connector of payload.connectors ?? []) {
+      // AFTER shapes — FK ordering (Connector.sourceShapeId/targetShapeId
+      // reference Shape.id).
+      insert('Connector', {
+        id: connector.id,
+        whiteboardId,
+        sourceShapeId: connector.sourceShapeId,
+        targetShapeId: connector.targetShapeId,
+        style: toDbJson(connector.style),
+        createdAt: coerceStoredDate(connector.createdAt),
         updatedAt: ts,
       })
     }

@@ -42,6 +42,13 @@
   --rf-handle-hover-bg: #3b82f6;
   --rf-handle-hover-border: #2563eb;
 
+  /* FigJam quick-create arrows + ghost preview */
+  --rf-quick-arrow-bg: rgba(59, 130, 246, 0.16);
+  --rf-quick-arrow-hover-bg: #3b82f6;
+  --rf-quick-arrow-fg: #2563eb;
+  --rf-ghost-border: 2px dashed #93c5fd;
+  --rf-ghost-bg: rgba(59, 130, 246, 0.07);
+
   /* Background */
   --rf-background: #ffffff;
   --rf-background-pattern: #f3f4f6;
@@ -92,6 +99,13 @@
   --rf-handle-border: #6b7280;
   --rf-handle-hover-bg: #60a5fa;
   --rf-handle-hover-border: #3b82f6;
+
+  /* FigJam quick-create arrows + ghost preview */
+  --rf-quick-arrow-bg: rgba(96, 165, 250, 0.22);
+  --rf-quick-arrow-hover-bg: #60a5fa;
+  --rf-quick-arrow-fg: #bfdbfe;
+  --rf-ghost-border: 2px dashed #3b82f6;
+  --rf-ghost-bg: rgba(96, 165, 250, 0.1);
 
   /* Background */
   --rf-background: #111827;
@@ -145,6 +159,75 @@
   contain-intrinsic-size: auto 240px auto 340px;
 }
 
+/* Bug fix: canvas-handle-visibility. `content-visibility: auto` (GH #121
+   perf, above) implies paint containment UNCONDITIONALLY — it clips both
+   paint AND hit-testing for anything overflowing this table's own box,
+   `overflow: visible` on the very same rule notwithstanding. The drag-to-
+   connect handles sit 14px outside that box by design (ColumnHandles.tsx),
+   so neither a deliberate click at a handle dot's true (now-visible)
+   center nor React Flow's OWN `elementFromPoint`-based target-hover
+   tracking during a drag (`@xyflow/system`) can ever find it — `pointer-
+   events: all` is necessary but not sufficient; the browser cannot
+   hit-test an element it isn't painting. Two JS-toggled classes
+   (CanvasNodeLayer.tsx), given the SAME treatment below but kept SEPARATE
+   so their independent lifecycles never fight over removing a class a
+   table happens to need from both at once:
+     `.content-visibility-armed`   — the ONE table whose source handle is
+                                      currently armed by the safe corridor
+                                      (pre-drag).
+     `.content-visibility-connecting` — EVERY table, for as long as a
+                                      connection drag is in progress (so
+                                      every candidate target handle is
+                                      reachable, not just the one the
+                                      cursor happens to already be over).
+   Narrow/temporary enough (at most one table pre-drag; only for a drag's
+   duration otherwise) to leave the GH #121 pan/zoom perf win intact the
+   rest of the time. */
+.react-flow__node-erTable.content-visibility-armed,
+.react-flow__node-erTable.content-visibility-connecting {
+  content-visibility: visible;
+}
+
+/* Dot-ownership decision (bug fix: canvas-handle-visibility; user-reported
+   regression, "overlapped two tables"): the CANVAS is the ONLY layer that
+   paints a handle dot's visible pixels — never the real DOM `::before`.
+   Lifting `content-visibility` above makes a table's handles genuinely
+   hit-testable again, which ALSO makes their native `::before` reveal
+   paintable (the `.column-row:hover`/`.is-connecting` rules elsewhere in
+   this file, plus the mere act of the browser re-evaluating `:hover` once
+   containment lifts and the row reflows) — left alone, that is a SECOND,
+   slightly-offset dot for the same handle. `!important` + higher
+   specificity than every reveal rule in this file (none of which are
+   `!important` themselves) guarantees this wins regardless of hover/
+   connecting state or source order. The DOM handle keeps functioning as a
+   hit-testable/droppable target (`pointer-events`, unaffected by this) —
+   only its OWN paint is suppressed. */
+.react-flow__node-erTable.content-visibility-armed .react-flow__handle::before,
+.react-flow__node-erTable.content-visibility-connecting .react-flow__handle::before {
+  background: transparent !important;
+  border-color: transparent !important;
+}
+
+/* Lifting containment above ALSO un-clips whatever this table's own
+   decorations paint outside its border box — its hover-highlight ring, its
+   selection ring, and (via the ancestor rule further down) its raised
+   z-index — none of which are supposed to become visible just because a
+   handle needs to be hit-testable. Without these, a hovered/selected table
+   with a lifted table read as a second, offset table box (user-confirmed
+   regression: "i feels like you overlapped two table on each other").
+   Higher specificity than the rules they override (an extra class each),
+   so these win regardless of source order — see each rule's own
+   counterpart below. */
+.react-flow__node.rf-hover-highlighted .react-flow__node-erTable.content-visibility-armed,
+.react-flow__node.rf-hover-highlighted .react-flow__node-erTable.content-visibility-connecting {
+  box-shadow: none !important;
+}
+
+.react-flow__node.rf-hover-highlighted:has(.react-flow__node-erTable.content-visibility-armed),
+.react-flow__node.rf-hover-highlighted:has(.react-flow__node-erTable.content-visibility-connecting) {
+  z-index: 1 !important;
+}
+
 /* Clip the header's top corners to respect border-radius */
 .react-flow__node-erTable .table-header {
   border-radius: 8px 8px 0 0;
@@ -152,6 +235,13 @@
 
 .react-flow__node-erTable.selected {
   box-shadow: 0 0 0 2px var(--rf-edge-stroke-selected);
+}
+
+/* See the `.content-visibility-armed` comment above — same box-shadow leak,
+   for the plain `.selected` ring (not just the hover-highlight one). */
+.react-flow__node-erTable.selected.content-visibility-armed,
+.react-flow__node-erTable.selected.content-visibility-connecting {
+  box-shadow: none !important;
 }
 
 /* ----------------------------------------------------------------------------
@@ -164,7 +254,13 @@
  * Flow/TableNode set, so removing the class cleanly reverts to whatever the
  * node-array-driven (click/relations-preview) state left in place.
  * ---------------------------------------------------------------------------- */
-.react-flow__node.rf-hover-highlighted {
+/* NEVER applies to an area node. An area is a CONTAINER — its member tables
+ * are React Flow children of it (todo #55 follow-up) — so raising it to 1000
+ * puts it on top of the very tables it holds. The tables then stop receiving
+ * pointer events: pressing one grabbed the area instead, dragging the whole
+ * group and making the table itself feel stuck. Tables and shapes still get
+ * the raise, which is what this cue was written for. */
+.react-flow__node.rf-hover-highlighted:not(.react-flow__node-area) {
   z-index: 1000 !important;
 }
 
@@ -341,6 +437,57 @@
   border-color: var(--rf-handle-hover-border);
 }
 
+/* Bug fix: canvas-handle-visibility "safe corridor". JS-toggled twin of the
+   `.column-row:hover > .react-flow__handle.source...` rule above — arms ONE
+   specific handle (by adding `.handle-armed` directly to it, see
+   CanvasNodeLayer.tsx's pointermove corridor logic) while the cursor
+   transits from a hovered row out to that handle's canvas-painted dot,
+   which sits OUTSIDE the row's own box and so cannot stay under real
+   `:hover` for the whole trip. Declared as a plain sibling selector, not a
+   replacement — the existing `:hover` rule above is untouched, so a
+   full-DOM (non-canvas) board, which never gets this class, behaves exactly
+   as it did before.
+   FUNCTIONAL ONLY (`pointer-events`/`z-index`) — deliberately carries no
+   `::before` background/border-color of its own. Dot-ownership decision
+   (user-reported regression, "overlapped two tables"): the CANVAS paints
+   every handle dot's visible pixels; the real DOM handle exists solely as
+   a hit-testable target once `content-visibility-armed` (below) makes it
+   reachable. See that rule's neutralization of the native `::before`
+   reveal for why a plain visual rule here would double-paint. */
+.react-flow__handle.source.connectionindicator.handle-armed {
+  pointer-events: all;
+  z-index: 2;
+}
+
+/* FR-016: when a connection drag originates from a SHAPE's own handle, the
+ * blanket "every target column handle highlights" rule above must NOT apply
+ * to table columns — a shape-to-table pair is always invalid, and FR-016
+ * requires the target to visibly NOT look connectable. Scoped to
+ * `.is-connecting-from-shape` (set only for a shape-originated drag, see
+ * ReactFlowCanvas's onConnectStart) so the pre-existing table-to-table flow
+ * (FR-017) — where every column IS a legal target — keeps its blanket
+ * pre-highlight exactly as before. Declared after the blanket rule so it
+ * wins on source order for the handles it targets. Deliberately does NOT
+ * touch `pointer-events` (left at the inherited `all`): the actual
+ * connect/reject decision is `isValidConnection`, not CSS hit-testing, and
+ * keeping the handle hoverable is what lets the `:connectingto:not(.valid)`
+ * not-allowed-cursor rule below resolve on it at all. */
+.is-connecting-from-shape
+  .react-flow__handle.target.connectionindicator::before {
+  background: transparent !important;
+  border-color: transparent !important;
+}
+
+/* FR-016: "the pointer shows a not-allowed affordance" while hovering an
+ * invalid target, symmetric in both directions (shape→table and
+ * table→shape) — React Flow itself adds `connectingto` to whichever handle
+ * is currently under the pointer during a connection drag, and `valid` only
+ * when `isValidConnection` allows a drop there, so one rule covers both
+ * cases with no extra state. */
+.react-flow__handle.connectingto:not(.valid) {
+  cursor: not-allowed;
+}
+
 /* ----------------------------------------------------------------------------
  * Column Row Hover Highlight
  * ---------------------------------------------------------------------------- */
@@ -453,4 +600,351 @@
   inset: 0;
   z-index: 5;
   background: rgb(0 0 0 / 0.25);
+}
+
+/* ----------------------------------------------------------------------------
+ * Shapes and Connectors (Phase 1) — pointer-events strategy (tech-spec §5)
+ *
+ * The transparent-fill pitfall: without this, a shape with `fill: none`
+ * would swallow every click across its whole bounding box, breaking
+ * box-select and pane-click for the entire rectangle, not just its visible
+ * outline. `.react-flow__node-shape` alone TIES with React Flow's own
+ * `.react-flow__node` on specificity, so which one wins depends on
+ * stylesheet order — the `.react-flow ` prefix is the same workaround this
+ * file already uses for handles above. Do not drop it.
+ * ---------------------------------------------------------------------------- */
+.react-flow .react-flow__node-shape {
+  pointer-events: none;
+}
+
+/* The COMPLETE list of descendants that re-enable pointer events. Anything
+ * not listed here is inert — that is the point of the rule, and it is also
+ * how resizing silently breaks if a future descendant is added without
+ * being added here too (M4). */
+.react-flow .react-flow__node-shape .shape-hit-stroke {
+  pointer-events: stroke;
+}
+.react-flow .react-flow__node-shape .shape-painted {
+  pointer-events: visiblePainted;
+  /* FigJam's soft lift. `filter` on the painted element rather than a CSS
+   * box-shadow on the wrapper, because the wrapper is a plain box and the
+   * shape may be an ellipse, a diamond or a line — drop-shadow follows the
+   * actual painted geometry, box-shadow would draw a rectangle round it. */
+  filter: drop-shadow(0 1px 2px rgba(15, 23, 42, 0.12));
+}
+.react-flow .react-flow__node-shape .shape-painted--unfilled {
+  pointer-events: stroke;
+}
+.react-flow .react-flow__node-shape .shape-label {
+  pointer-events: auto;
+}
+.react-flow .react-flow__node-shape .react-flow__resize-control {
+  pointer-events: all;
+}
+/* Handles are the fifth and last re-enabling descendant, but their rules
+ * are state-dependent (selected / hovered / .is-connecting) — see the
+ * dedicated "Shape node handles" block below. Nothing else re-enables. */
+
+/* Selection / focus / placeholder styling (D-8) — there is no generic
+ * .react-flow__node.selected rule to inherit; tables have a bespoke ring,
+ * areas have none. */
+.react-flow__node-shape.selected {
+  box-shadow: 0 0 0 2px var(--rf-edge-stroke-selected);
+}
+
+/* Keyboard-focused (FR-019a) — visibly thicker, offset double ring, NEVER
+ * dashed, so it can never be confused with the dashed empty-text-box
+ * outline below when a shape is both focused and selected. */
+.react-flow__node-shape.kbd-focused {
+  box-shadow:
+    0 0 0 2px var(--rf-background),
+    0 0 0 4px var(--rf-edge-stroke-selected);
+}
+
+/* N1 (Apollo): a read-only viewer (public share link OR an authenticated
+ * VIEWER, canEdit=false) gets NO hover-revealed handle affordance at all —
+ * the handles stay mounted (React Flow's edge-position resolver needs them
+ * to render connectors at all, §6a) but every handle on this node is
+ * unconditionally inert. `!important` is deliberate: it must win over the
+ * :hover/:focus-within/.selected/.is-connecting reveal rules below
+ * regardless of source order or specificity. */
+.react-flow .react-flow__node-shape.read-only .react-flow__handle {
+  pointer-events: none !important;
+}
+
+/* ---- Shape node handles ------------------------------------------------- */
+/* The order of this block is load-bearing (N5): several rules here tie on
+ * specificity with the rules they must beat and win only on SOURCE ORDER
+ * (this block must come after the generic handle block above). */
+
+/* The node-covering TARGET handle. Overrides the global 28x28 round handle. */
+.react-flow .react-flow__node-shape .react-flow__handle.shape-tgt {
+  top: 0;
+  left: 0;
+  width: 100%;
+  height: 100%;
+  transform: none; /* the global block centres handles; this one fills */
+  border-radius: inherit; /* never a circle */
+  background: transparent;
+  pointer-events: none; /* inert until a connection starts */
+}
+
+/* Never paint the global connect-drag dot on the covering handle — it would
+ * sit in the centre of every shape during ANY connect drag, ER drags
+ * included. */
+.is-connecting
+  .react-flow
+  .react-flow__node-shape
+  .react-flow__handle.shape-tgt::before,
+.react-flow .react-flow__node-shape .react-flow__handle.shape-tgt::before {
+  content: none;
+}
+
+/* Drop-anywhere: pointer-active only while a connection is in progress.
+ * Mirrors the existing `.is-connecting … .target.connectionindicator` rule
+ * above rather than inventing a second mechanism. */
+.is-connecting
+  .react-flow
+  .react-flow__node-shape
+  .react-flow__handle.shape-tgt {
+  pointer-events: all;
+}
+
+/* The four SOURCE handles: small, visible on selected/focused/hovered, and
+ * forced inert during a connect drag (M5 — no invalid dead-spots on every
+ * other shape's edge midpoints while dragging a connection). 28x28 size is
+ * kept deliberately — the existing app-wide touch/zoom target size. */
+.react-flow .react-flow__node-shape .react-flow__handle.shape-src {
+  pointer-events: none;
+}
+.react-flow .react-flow__node-shape.selected .react-flow__handle.shape-src,
+.react-flow .react-flow__node-shape:hover .react-flow__handle.shape-src,
+.react-flow .react-flow__node-shape:focus-within .react-flow__handle.shape-src {
+  pointer-events: all;
+}
+.is-connecting
+  .react-flow
+  .react-flow__node-shape
+  .react-flow__handle.shape-src {
+  pointer-events: none;
+}
+
+/* ── FigJam-style quick-create arrows ────────────────────────────────────
+ * The four source handles ARE the arrows. Before this they were live 28x28
+ * hit targets that nothing ever drew: the shared `.react-flow__handle::before`
+ * dot is transparent by default and coloured only for `.column-row:hover`
+ * sources and `.is-connecting` targets, neither of which matches a shape.
+ *
+ * Each arrow is drawn on ::before as a filled triangle (clip-path) inside a
+ * round chip, floated clear of the shape body via a per-side translate, and
+ * revealed on hover/selection/focus — the same selector set that grants
+ * pointer-events below, so a visible arrow is always a live one and vice
+ * versa. `:not(.read-only)` keeps the N1 gate visual as well as
+ * interactive.
+ * -------------------------------------------------------------------- */
+
+/* The chip: hidden by default, no layout cost. */
+.react-flow .react-flow__node-shape .react-flow__handle.shape-src::before {
+  content: '';
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  width: 20px;
+  height: 20px;
+  border-radius: 9999px;
+  background: var(--rf-quick-arrow-bg);
+  border: none;
+  opacity: 0;
+  transform: translate(-50%, -50%) scale(0.6);
+  transition:
+    opacity 0.12s ease,
+    transform 0.12s ease,
+    background 0.12s ease;
+  pointer-events: none;
+}
+
+/* The arrowhead itself, clipped out of a second pseudo-element so the chip
+ * keeps its own round background. */
+.react-flow .react-flow__node-shape .react-flow__handle.shape-src::after {
+  content: '';
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  width: 8px;
+  height: 8px;
+  background: var(--rf-quick-arrow-fg);
+  opacity: 0;
+  transition:
+    opacity 0.12s ease,
+    transform 0.12s ease;
+  pointer-events: none;
+}
+
+/* Per-side: push the chip clear of the body and point the arrow outward. */
+.react-flow
+  .react-flow__node-shape
+  .react-flow__handle.shape-src[data-handleid='shape-src-top']::before {
+  transform: translate(-50%, calc(-50% - 18px)) scale(0.6);
+}
+.react-flow
+  .react-flow__node-shape
+  .react-flow__handle.shape-src[data-handleid='shape-src-bottom']::before {
+  transform: translate(-50%, calc(-50% + 18px)) scale(0.6);
+}
+.react-flow
+  .react-flow__node-shape
+  .react-flow__handle.shape-src[data-handleid='shape-src-left']::before {
+  transform: translate(calc(-50% - 18px), -50%) scale(0.6);
+}
+.react-flow
+  .react-flow__node-shape
+  .react-flow__handle.shape-src[data-handleid='shape-src-right']::before {
+  transform: translate(calc(-50% + 18px), -50%) scale(0.6);
+}
+
+.react-flow
+  .react-flow__node-shape
+  .react-flow__handle.shape-src[data-handleid='shape-src-top']::after {
+  clip-path: polygon(50% 0%, 100% 100%, 0% 100%);
+  transform: translate(-50%, calc(-50% - 18px));
+}
+.react-flow
+  .react-flow__node-shape
+  .react-flow__handle.shape-src[data-handleid='shape-src-bottom']::after {
+  clip-path: polygon(50% 100%, 0% 0%, 100% 0%);
+  transform: translate(-50%, calc(-50% + 18px));
+}
+.react-flow
+  .react-flow__node-shape
+  .react-flow__handle.shape-src[data-handleid='shape-src-left']::after {
+  clip-path: polygon(0% 50%, 100% 0%, 100% 100%);
+  transform: translate(calc(-50% - 18px), -50%);
+}
+.react-flow
+  .react-flow__node-shape
+  .react-flow__handle.shape-src[data-handleid='shape-src-right']::after {
+  clip-path: polygon(100% 50%, 0% 0%, 0% 100%);
+  transform: translate(calc(-50% + 18px), -50%);
+}
+
+/* Reveal — mirrors the pointer-events rule above exactly. */
+.react-flow
+  .react-flow__node-shape.selected:not(.read-only)
+  .react-flow__handle.shape-src::before,
+.react-flow
+  .react-flow__node-shape:not(.read-only):hover
+  .react-flow__handle.shape-src::before,
+.react-flow
+  .react-flow__node-shape:not(.read-only):focus-within
+  .react-flow__handle.shape-src::before,
+.react-flow
+  .react-flow__node-shape.selected:not(.read-only)
+  .react-flow__handle.shape-src::after,
+.react-flow
+  .react-flow__node-shape:not(.read-only):hover
+  .react-flow__handle.shape-src::after,
+.react-flow
+  .react-flow__node-shape:not(.read-only):focus-within
+  .react-flow__handle.shape-src::after {
+  opacity: 1;
+}
+
+/* Revealed chips sit at full size; the 0.6 scale is the hidden state. */
+.react-flow
+  .react-flow__node-shape.selected:not(.read-only)
+  .react-flow__handle.shape-src[data-handleid='shape-src-top']::before,
+.react-flow
+  .react-flow__node-shape:not(.read-only):hover
+  .react-flow__handle.shape-src[data-handleid='shape-src-top']::before {
+  transform: translate(-50%, calc(-50% - 18px)) scale(1);
+}
+.react-flow
+  .react-flow__node-shape.selected:not(.read-only)
+  .react-flow__handle.shape-src[data-handleid='shape-src-bottom']::before,
+.react-flow
+  .react-flow__node-shape:not(.read-only):hover
+  .react-flow__handle.shape-src[data-handleid='shape-src-bottom']::before {
+  transform: translate(-50%, calc(-50% + 18px)) scale(1);
+}
+.react-flow
+  .react-flow__node-shape.selected:not(.read-only)
+  .react-flow__handle.shape-src[data-handleid='shape-src-left']::before,
+.react-flow
+  .react-flow__node-shape:not(.read-only):hover
+  .react-flow__handle.shape-src[data-handleid='shape-src-left']::before {
+  transform: translate(calc(-50% - 18px), -50%) scale(1);
+}
+.react-flow
+  .react-flow__node-shape.selected:not(.read-only)
+  .react-flow__handle.shape-src[data-handleid='shape-src-right']::before,
+.react-flow
+  .react-flow__node-shape:not(.read-only):hover
+  .react-flow__handle.shape-src[data-handleid='shape-src-right']::before {
+  transform: translate(calc(-50% + 18px), -50%) scale(1);
+}
+
+/* Hovering the arrow itself: FigJam's grow-and-brighten click affordance. */
+.react-flow
+  .react-flow__node-shape:not(.read-only)
+  .react-flow__handle.shape-src:hover::before {
+  background: var(--rf-quick-arrow-hover-bg);
+}
+
+/* Never show an arrow mid-connect-drag: it is inert then (rule above), and
+ * a live-looking but dead arrow on every shape edge is exactly the M5
+ * dead-spot confusion that rule exists to prevent. */
+.is-connecting
+  .react-flow
+  .react-flow__node-shape
+  .react-flow__handle.shape-src::before,
+.is-connecting
+  .react-flow
+  .react-flow__node-shape
+  .react-flow__handle.shape-src::after {
+  opacity: 0;
+}
+
+/* N1, the VISUAL half of the read-only gate.
+ *
+ * The reveal rules above are written `.react-flow__node-shape:not(.read-only)`
+ * — but that guard does not hold. `react-flow__node-shape` is on TWO
+ * elements per shape: React Flow's own node element (from its
+ * `react-flow__node-{type}` convention) and ShapeNode's inner wrapper div.
+ * Only the inner one ever gets `read-only`, so the outer element satisfies
+ * `:not(.read-only)` on its own and the descendant handle is revealed
+ * anyway. A VIEWER saw the quick-create arrows fade in on hover (caught by
+ * e2e QC-09 at opacity 0.16).
+ *
+ * Closed the same way the pointer-events half is closed: scoped to the
+ * read-only wrapper itself and marked !important, so it beats every reveal
+ * rule regardless of source order or specificity.
+ */
+.react-flow
+  .react-flow__node-shape.read-only
+  .react-flow__handle.shape-src::before,
+.react-flow
+  .react-flow__node-shape.read-only
+  .react-flow__handle.shape-src::after {
+  opacity: 0 !important;
+}
+
+/* The ghost preview of the shape a click would create (Phase 1). Rendered
+ * by ShapeNode as a sibling overlay node, not inside the shape subtree. */
+.react-flow .figjam-ghost {
+  position: absolute;
+  border: var(--rf-ghost-border);
+  border-radius: 8px;
+  background: var(--rf-ghost-bg);
+  pointer-events: none;
+  z-index: 0;
+}
+
+/* ---- Connector edges ----------------------------------------------------- */
+.react-flow__edge-connector path.react-flow__edge-path {
+  transition:
+    stroke-width 0.2s ease,
+    opacity 0.2s ease;
+}
+.react-flow__edge-connector:hover path.react-flow__edge-path {
+  stroke-width: 2.5;
 }

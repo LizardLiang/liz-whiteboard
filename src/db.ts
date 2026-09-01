@@ -14,11 +14,16 @@ import { randomUUID } from 'node:crypto'
 import { mkdirSync } from 'node:fs'
 import { dirname } from 'node:path'
 import { SCHEMA_SQL } from './data/schema-sql'
+import { DEFAULT_ELEMENT_STYLE } from './lib/canvas-engine/scene'
 import type {
   Area,
+  CanvasBoard,
+  CanvasBoardShareLink,
+  CanvasElementRecord,
   CollaborationSession,
   Column,
   Comment,
+  Connector,
   DiagramTable,
   Folder,
   JsonValue,
@@ -28,12 +33,23 @@ import type {
   ProjectMember,
   Relationship,
   Session,
+  Shape,
   User,
   Whiteboard,
   WhiteboardShareLink,
   WhiteboardSnapshot,
 } from './data/models'
-import type { Cardinality, ProjectRoleValue } from './data/schema'
+import type {
+  CanvasElementKind,
+  CanvasElementProps,
+  CanvasElementStyle,
+  Cardinality,
+  ConnectorStyle,
+  ProjectRoleValue,
+  ShapeKind,
+  ShapeProps,
+  ShapeStyle,
+} from './data/schema'
 
 const require = createRequire(import.meta.url)
 const isBun = typeof (globalThis as { Bun?: unknown }).Bun !== 'undefined'
@@ -76,6 +92,17 @@ export const db: SqliteDatabase = openDatabase()
 // already-populated database.
 db.exec('PRAGMA foreign_keys = ON;')
 db.exec('PRAGMA journal_mode = WAL;')
+// WAL allows one writer at a time, and this file is genuinely written by more
+// than one process: in dev the Vite process (node:sqlite) runs the server
+// functions while server.dev.ts (bun:sqlite) runs the Socket.IO handlers, and
+// the e2e seed scripts open their own connections on top. Without a busy
+// timeout SQLite does not wait its turn — it throws SQLITE_BUSY ("database is
+// locked") on the FIRST collision, which surfaces as a silently-reverted table
+// drag ("Failed to update table position: database is locked") whenever a
+// position save lands while the socket process happens to be writing.
+// Every seed script in e2e/ already sets this for the same reason; the app's
+// own connection was the one place still missing it.
+db.exec('PRAGMA busy_timeout = 5000;')
 
 // ── Migration: relax NOT NULL on DiagramTable.positionX/positionY ──────────
 // The original schema had `"positionX" REAL NOT NULL` and `"positionY" REAL
@@ -185,6 +212,35 @@ db.exec(SCHEMA_SQL)
     db.exec(`ALTER TABLE "OauthRefreshToken" ADD COLUMN "rotatedAt" INTEGER`)
   }
 }
+
+// Additive column migration (Hermes review, BLOCKER B3, board-undo tactical
+// plan, 2026-08-25): `CanvasElement` gained `revision` in `schema-sql.ts`,
+// but `CREATE TABLE IF NOT EXISTS` above is a no-op on an existing database
+// — any `data/app.db` that predates this feature gets no `revision` column,
+// and every canvas element write then throws `no such column: revision`
+// (and `mapCanvasElement` reads it back as NaN). Mirrors the OauthGrant/
+// OauthRefreshToken precedent immediately above: guarded on `table_info`,
+// and `NOT NULL DEFAULT 0` needs no backfill — a pre-existing row simply
+// starts at the schema's own default, exactly as a brand-new `CREATE TABLE`
+// would have given it.
+//
+// Exported (unlike its two precedents) so a test can drive it directly
+// against a rigged pre-migration table: every fresh `:memory:` test database
+// already gets the column from `SCHEMA_SQL` above, so this guard's ALTER
+// branch would otherwise never run under the test suite.
+export function ensureCanvasElementRevisionColumn(
+  database: SqliteDatabase,
+): void {
+  const columns = database
+    .prepare(`PRAGMA table_info("CanvasElement")`)
+    .all() as Array<{ name: string }>
+  if (columns.length > 0 && !columns.some((c) => c.name === 'revision')) {
+    database.exec(
+      `ALTER TABLE "CanvasElement" ADD COLUMN "revision" INTEGER NOT NULL DEFAULT 0`,
+    )
+  }
+}
+ensureCanvasElementRevisionColumn(db)
 
 // Backfill ownerless projects to a pre-designated account (by email), if it
 // already exists. Runs once per process at DB-init time, before any HTTP
@@ -373,6 +429,19 @@ export function mapWhiteboardShareLink(r: Row): WhiteboardShareLink | null {
   }
 }
 
+export function mapCanvasBoardShareLink(r: Row): CanvasBoardShareLink | null {
+  if (!r) return null
+  return {
+    id: r.id as string,
+    canvasBoardId: r.canvasBoardId as string,
+    tokenHash: r.tokenHash as string,
+    createdByUserId: r.createdByUserId as string,
+    expiresAt: r.expiresAt == null ? null : fromDbDate(r.expiresAt),
+    revokedAt: r.revokedAt == null ? null : fromDbDate(r.revokedAt),
+    createdAt: fromDbDate(r.createdAt),
+  }
+}
+
 export function mapFolder(r: Row): Folder | null {
   if (!r) return null
   return {
@@ -468,6 +537,88 @@ export function mapArea(r: Row): Area | null {
   }
 }
 
+/** Fallback style/props applied when a Shape/Connector row's JSON blob is
+ * null or malformed — a row must never be un-renderable because of a bad
+ * blob (tech-spec.md §3). */
+const DEFAULT_SHAPE_STYLE: ShapeStyle = {
+  fill: 'none',
+  stroke: 'slate',
+  strokeWidth: 2,
+  strokeStyle: 'solid',
+  fontSize: 16,
+  textColor: 'auto',
+}
+
+const DEFAULT_CONNECTOR_STYLE: ConnectorStyle = {
+  stroke: 'slate',
+  strokeWidth: 2,
+  strokeStyle: 'solid',
+  arrowStart: false,
+  arrowEnd: true,
+}
+
+function defaultShapeProps(kind: ShapeKind): ShapeProps {
+  if (kind === 'line') {
+    return {
+      kind: 'line',
+      x1: 0,
+      y1: 0.5,
+      x2: 1,
+      y2: 0.5,
+      arrowStart: false,
+      arrowEnd: true,
+    }
+  }
+  return { kind } as ShapeProps
+}
+
+function isPlainObject(v: unknown): v is Record<string, unknown> {
+  return typeof v === 'object' && v !== null && !Array.isArray(v)
+}
+
+export function mapShape(r: Row): Shape | null {
+  if (!r) return null
+  const kind = r.kind as ShapeKind
+  const style = fromDbJson(r.style)
+  const props = fromDbJson(r.props)
+  return {
+    id: r.id as string,
+    whiteboardId: r.whiteboardId as string,
+    kind,
+    positionX: Number(r.positionX),
+    positionY: Number(r.positionY),
+    width: Number(r.width),
+    height: Number(r.height),
+    rotation: Number(r.rotation),
+    zIndex: Number(r.zIndex),
+    text: (r.text as string | null) ?? null,
+    style: isPlainObject(style)
+      ? ({ ...DEFAULT_SHAPE_STYLE, ...style } as ShapeStyle)
+      : DEFAULT_SHAPE_STYLE,
+    props: isPlainObject(props)
+      ? (props as unknown as ShapeProps)
+      : defaultShapeProps(kind),
+    createdAt: fromDbDate(r.createdAt),
+    updatedAt: fromDbDate(r.updatedAt),
+  }
+}
+
+export function mapConnector(r: Row): Connector | null {
+  if (!r) return null
+  const style = fromDbJson(r.style)
+  return {
+    id: r.id as string,
+    whiteboardId: r.whiteboardId as string,
+    sourceShapeId: r.sourceShapeId as string,
+    targetShapeId: r.targetShapeId as string,
+    style: isPlainObject(style)
+      ? ({ ...DEFAULT_CONNECTOR_STYLE, ...style } as ConnectorStyle)
+      : DEFAULT_CONNECTOR_STYLE,
+    createdAt: fromDbDate(r.createdAt),
+    updatedAt: fromDbDate(r.updatedAt),
+  }
+}
+
 export function mapWhiteboardSnapshot(r: Row): WhiteboardSnapshot | null {
   if (!r) return null
   return {
@@ -511,5 +662,55 @@ export function mapCollaborationSession(r: Row): CollaborationSession | null {
     cursor: fromDbJson(r.cursor),
     lastActivityAt: fromDbDate(r.lastActivityAt),
     createdAt: fromDbDate(r.createdAt),
+  }
+}
+
+// ── Canvas engine mappers ────────────────────────────────────────────────────
+// The storage/engine boundary. Rows use positionX/positionY like every other
+// table; the engine's own `CanvasElement` uses x/y. These mappers produce the
+// RECORD (still positionX/positionY) — the rename to engine space happens once
+// more, in src/lib/canvas-element-adapter.ts, and nowhere else.
+
+export function mapCanvasBoard(r: Row): CanvasBoard | null {
+  if (!r) return null
+  return {
+    id: r.id as string,
+    name: r.name as string,
+    projectId: r.projectId as string,
+    folderId: (r.folderId as string | null) ?? null,
+    createdAt: fromDbDate(r.createdAt),
+    updatedAt: fromDbDate(r.updatedAt),
+  }
+}
+
+export function mapCanvasElement(r: Row): CanvasElementRecord | null {
+  if (!r) return null
+  const kind = r.kind as CanvasElementKind
+  const style = fromDbJson(r.style)
+  const props = fromDbJson(r.props)
+  return {
+    id: r.id as string,
+    boardId: r.boardId as string,
+    kind,
+    positionX: Number(r.positionX),
+    positionY: Number(r.positionY),
+    width: Number(r.width),
+    height: Number(r.height),
+    rotation: Number(r.rotation),
+    zIndex: Number(r.zIndex),
+    text: (r.text as string | null) ?? null,
+    // Merged over the engine's defaults rather than replaced, exactly as
+    // mapShape does: a row written before a style field existed must still
+    // render, and it renders with the default rather than `undefined`
+    // reaching ctx.fillStyle.
+    style: isPlainObject(style)
+      ? ({ ...DEFAULT_ELEMENT_STYLE, ...style } as CanvasElementStyle)
+      : DEFAULT_ELEMENT_STYLE,
+    props: isPlainObject(props)
+      ? (props as unknown as CanvasElementProps)
+      : ({ kind } as CanvasElementProps),
+    revision: Number(r.revision),
+    createdAt: fromDbDate(r.createdAt),
+    updatedAt: fromDbDate(r.updatedAt),
   }
 }

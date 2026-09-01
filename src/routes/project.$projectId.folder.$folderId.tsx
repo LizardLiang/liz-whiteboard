@@ -13,7 +13,9 @@ import { ProjectAccessDenied } from '@/components/project/ProjectAccessDenied'
 import { EmptyState } from '@/components/project/EmptyState'
 import { Breadcrumb } from '@/components/project/Breadcrumb'
 import { CreateWhiteboardDialog } from '@/components/navigator/CreateWhiteboardDialog'
+import { CreateCanvasBoardDialog } from '@/components/navigator/CreateCanvasBoardDialog'
 import { CreateFolderDialog } from '@/components/navigator/CreateFolderDialog'
+import { CreateBoardMenu } from '@/components/navigator/CreateBoardMenu'
 import { getProjectPageContent } from '@/routes/api/projects'
 import { isForbiddenError, isUnauthorizedError } from '@/lib/auth/errors'
 
@@ -24,6 +26,7 @@ export const Route = createFileRoute('/project/$projectId/folder/$folderId')({
 export function FolderPage() {
   const { projectId, folderId } = Route.useParams()
   const [whiteboardDialogOpen, setWhiteboardDialogOpen] = useState(false)
+  const [canvasBoardDialogOpen, setCanvasBoardDialogOpen] = useState(false)
   const [folderDialogOpen, setFolderDialogOpen] = useState(false)
 
   const {
@@ -83,7 +86,9 @@ export function FolderPage() {
 
   const folderName = content.currentFolder?.name ?? 'Folder'
   const isEmpty =
-    content.folders.length === 0 && content.whiteboards.length === 0
+    content.folders.length === 0 &&
+    content.whiteboards.length === 0 &&
+    content.canvasBoards.length === 0
 
   return (
     <div className="min-h-screen bg-background">
@@ -101,10 +106,15 @@ export function FolderPage() {
                 <FolderPlus className="mr-2 h-4 w-4" />
                 New Folder
               </Button>
-              <Button onClick={() => setWhiteboardDialogOpen(true)}>
-                <Plus className="mr-2 h-4 w-4" />
-                New Whiteboard
-              </Button>
+              <CreateBoardMenu
+                onCreateWhiteboard={() => setWhiteboardDialogOpen(true)}
+                onCreateCanvasBoard={() => setCanvasBoardDialogOpen(true)}
+              >
+                <Button>
+                  <Plus className="mr-2 h-4 w-4" />
+                  New board
+                </Button>
+              </CreateBoardMenu>
             </div>
           </div>
         </div>
@@ -115,12 +125,14 @@ export function FolderPage() {
         {isEmpty ? (
           <EmptyState
             onCreateWhiteboard={() => setWhiteboardDialogOpen(true)}
+            onCreateCanvasBoard={() => setCanvasBoardDialogOpen(true)}
           />
         ) : (
           <ProjectContentGrid
             projectId={projectId}
             folders={content.folders}
             whiteboards={content.whiteboards}
+            canvasBoards={content.canvasBoards}
           />
         )}
       </div>
@@ -129,6 +141,12 @@ export function FolderPage() {
       <CreateWhiteboardDialog
         open={whiteboardDialogOpen}
         onOpenChange={setWhiteboardDialogOpen}
+        projectId={projectId}
+        folderId={folderId}
+      />
+      <CreateCanvasBoardDialog
+        open={canvasBoardDialogOpen}
+        onOpenChange={setCanvasBoardDialogOpen}
         projectId={projectId}
         folderId={folderId}
       />

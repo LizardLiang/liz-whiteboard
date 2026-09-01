@@ -16,8 +16,10 @@ class ResizeObserverStub {
 // eslint-disable-next-line @typescript-eslint/no-unnecessary-condition -- lib.dom types ResizeObserver as always-present, but jsdom does not implement it at runtime.
 window.ResizeObserver = window.ResizeObserver ?? ResizeObserverStub
 // jsdom does not implement scrollIntoView; cmdk calls it when highlighting items
-// eslint-disable-next-line @typescript-eslint/no-unnecessary-condition -- lib.dom types scrollIntoView as always-present, but jsdom does not implement it at runtime.
-Element.prototype.scrollIntoView = Element.prototype.scrollIntoView ?? function () {}
+const scrollIntoViewMaybe = (
+  Element.prototype as { scrollIntoView?: () => void }
+).scrollIntoView
+Element.prototype.scrollIntoView = scrollIntoViewMaybe ?? function () {}
 
 describe('DataTypeSelector', () => {
   beforeEach(() => {

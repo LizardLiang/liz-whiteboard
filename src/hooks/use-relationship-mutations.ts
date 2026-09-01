@@ -9,6 +9,7 @@
 import { useCallback, useRef } from 'react'
 import { toast } from 'sonner'
 import type { RelationshipEdgeType } from '@/lib/react-flow/types'
+import { NOT_CONNECTED_TOAST_MESSAGE } from '@/lib/react-flow/types'
 
 type SetEdges = React.Dispatch<
   React.SetStateAction<Array<RelationshipEdgeType>>
@@ -48,7 +49,7 @@ export function useRelationshipMutations(
   const deleteRelationship = useCallback(
     (relationshipId: string) => {
       if (!isConnected) {
-        toast.error('Not connected. Please wait for reconnection.')
+        toast.error(NOT_CONNECTED_TOAST_MESSAGE)
         return
       }
 
@@ -88,7 +89,7 @@ export function useRelationshipMutations(
   const updateRelationshipLabel = useCallback(
     (relationshipId: string, label: string) => {
       if (!isConnected) {
-        toast.error('Not connected. Please wait for reconnection.')
+        toast.error(NOT_CONNECTED_TOAST_MESSAGE)
         return
       }
 

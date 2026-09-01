@@ -3,6 +3,7 @@
 
 import { z } from 'zod'
 import { AREA_COLOR_IDS } from '@/lib/area-colors'
+import { DEFAULT_ELEMENT_STYLE } from '@/lib/canvas-engine/scene'
 
 // ============================================================================
 // JSON Sub-Schemas (for nested JSON fields)
@@ -592,6 +593,28 @@ export const revokeShareLinkSchema = z.object({
 export type CreateShareLink = z.infer<typeof createShareLinkSchema>
 export type RevokeShareLink = z.infer<typeof revokeShareLinkSchema>
 
+/**
+ * Schema for creating a public read-only share link for a CANVAS board.
+ *
+ * Deliberately a separate schema from `createShareLinkSchema` rather than a
+ * union: the id names a different table, and the handler that receives it
+ * resolves the project through `getCanvasBoardProjectId`. Reuses
+ * `inviteExpiryHoursSchema` and the same one-week default, so the two link
+ * kinds cannot drift on expiry policy.
+ */
+export const createCanvasShareLinkSchema = z.object({
+  canvasBoardId: z.string().uuid(),
+  expiresInHours: inviteExpiryHoursSchema.default(24 * 7),
+})
+
+/** Schema for revoking a canvas board share link, identified by its own id. */
+export const revokeCanvasShareLinkSchema = z.object({
+  linkId: z.string().uuid(),
+})
+
+export type CreateCanvasShareLink = z.infer<typeof createCanvasShareLinkSchema>
+export type RevokeCanvasShareLink = z.infer<typeof revokeCanvasShareLinkSchema>
+
 // ============================================================================
 // Whiteboard Version History / Snapshot Schemas (GH #107)
 // ============================================================================
@@ -754,3 +777,585 @@ export type ConsentRequestId = z.infer<typeof consentRequestIdSchema>
 export type RevokeGrant = z.infer<typeof revokeGrantSchema>
 
 export type AreaMoveBroadcast = z.infer<typeof areaMoveBroadcastSchema>
+
+// ============================================================================
+// Shape / Connector Schemas (Phase 1 — shapes and connectors)
+// ============================================================================
+
+/**
+ * Hard magnitude bound on any persisted flow coordinate (tech-spec §3, M7).
+ * `.finite()` alone accepts values like `1e300`; with `fitView` enabled
+ * (ReactFlowCanvas.tsx), a single shape persisted at an extreme coordinate
+ * forces every collaborator's viewport to zoom out until the board is
+ * unusable — a board-wide DoS reachable from one ordinary payload. 1e7 flow
+ * units is ~10,000 screens wide at 1:1 — far past any real board.
+ *
+ * This is a deliberate tightening for the NEW shape/connector entities, not
+ * an existing repo convention — every pre-existing coordinate schema in this
+ * file uses bare `.finite()`. Retrofitting those is out of Phase 1 scope.
+ */
+export const MAX_BOARD_COORD = 10_000_000
+
+/** FR-038's text cap for a shape's label, enforced here and as `<textarea maxLength>`. */
+export const SHAPE_LABEL_MAX_LENGTH = 500
+
+const boardCoordSchema = z
+  .number()
+  .finite()
+  .min(-MAX_BOARD_COORD)
+  .max(MAX_BOARD_COORD)
+
+/**
+ * A 1|2|4 stroke width — a fixed set, not a free number, per tech-spec §3.
+ * Exported (W9, Hermes code review) so `ShapeStyleControls.tsx`'s stroke-
+ * width picker derives its options from this schema instead of restating
+ * the same three literals independently.
+ */
+export const SHAPE_STROKE_WIDTHS = [1, 2, 4] as const
+const strokeWidthSchema = z.union(
+  SHAPE_STROKE_WIDTHS.map((w) => z.literal(w)) as [
+    z.ZodLiteral<1>,
+    z.ZodLiteral<2>,
+    z.ZodLiteral<4>,
+  ],
+)
+
+export const shapeKindSchema = z.enum([
+  'rectangle',
+  'ellipse',
+  'diamond',
+  'line',
+  'text',
+])
+
+/**
+ * Shared visual-styling vocabulary for every shape kind (tech-spec §3).
+ * `fill` additionally allows `'none'` (unfilled) on top of the Area palette;
+ * `textColor` additionally allows `'auto'` (theme foreground token).
+ */
+export const shapeStyleSchema = z.strictObject({
+  // FigJam default: a soft filled body, not an outline. This is a DEFAULT,
+  // so it applies to rows whose stored style is `{}` — i.e. shapes nobody
+  // ever styled. Once any style control is touched the full object is
+  // written (`{...current, ...patch}`), pinning that shape's own choices,
+  // including an explicit `'none'`.
+  fill: z.enum([...AREA_COLOR_IDS, 'none']).default('blue'),
+  stroke: areaColorSchema.default('slate'),
+  strokeWidth: strokeWidthSchema.default(2),
+  strokeStyle: z.enum(['solid', 'dashed']).default('solid'),
+  fontSize: z.union([z.literal(12), z.literal(16), z.literal(24)]).default(16),
+  textColor: z.enum([...AREA_COLOR_IDS, 'auto']).default('auto'),
+})
+
+/** Connector visual styling — a narrower vocabulary plus arrowhead flags. */
+export const connectorStyleSchema = z.strictObject({
+  stroke: areaColorSchema.default('slate'),
+  strokeWidth: strokeWidthSchema.default(2),
+  strokeStyle: z.enum(['solid', 'dashed']).default('solid'),
+  arrowStart: z.boolean().default(false),
+  arrowEnd: z.boolean().default(true),
+})
+
+/** A `line` shape's endpoint fractions are 0..1 of the node's own bounds (FR-031a). */
+const lineFractionSchema = z.number().finite().min(0).max(1)
+
+/**
+ * Kind-specific payload, a Zod discriminated union on `kind`. Four kinds
+ * carry an empty object — deliberate (tech-spec §3): this is the validation
+ * dispatch point that lets future kinds (`ink`, `image`) be added with no
+ * schema change (FR-032). Do NOT "clean up" the empty-object arms.
+ */
+export const shapePropsSchema = z.discriminatedUnion('kind', [
+  z.strictObject({ kind: z.literal('rectangle') }),
+  z.strictObject({ kind: z.literal('ellipse') }),
+  z.strictObject({ kind: z.literal('diamond') }),
+  z.strictObject({ kind: z.literal('text') }),
+  z.strictObject({
+    kind: z.literal('line'),
+    x1: lineFractionSchema,
+    y1: lineFractionSchema,
+    x2: lineFractionSchema,
+    y2: lineFractionSchema,
+    arrowStart: z.boolean(),
+    arrowEnd: z.boolean(),
+  }),
+])
+
+/**
+ * Schema for creating a shape. Mirrors `createAreaSchema`'s convention:
+ * `update` is defined independently below, not `.partial()` of this.
+ */
+export const createShapeSchema = z
+  .object({
+    whiteboardId: z.string().uuid(),
+    kind: shapeKindSchema,
+    positionX: boardCoordSchema,
+    positionY: boardCoordSchema,
+    width: z.number().positive().max(100_000),
+    height: z.number().positive().max(100_000),
+    text: z.string().max(SHAPE_LABEL_MAX_LENGTH).nullable().default(null),
+    style: shapeStyleSchema.optional(),
+    props: shapePropsSchema,
+  })
+  // W2 (Hermes code review): `kind` and `props.kind` are validated
+  // independently above — `shapePropsSchema` is its own discriminated
+  // union with no visibility into the top-level `kind` field. Without
+  // this check, `{ kind: 'line', props: { kind: 'text' } }` parses and
+  // persists cleanly (ShapeNode.tsx switches on `shape.kind`, not
+  // `props.kind`, so a mismatched row renders as its `kind`, but with the
+  // WRONG props shape — e.g. a 'line' with no x1/y1/x2/y2 to draw with).
+  .refine((data) => data.kind === data.props.kind, {
+    message: 'props.kind must match kind',
+    path: ['props', 'kind'],
+  })
+
+/**
+ * Schema for updating an existing shape. Defined independently (not
+ * `.partial()` of create) so absent fields parse as `undefined` and only
+ * explicitly-provided columns are written — matches `updateAreaSchema`.
+ */
+export const updateShapeSchema = z.object({
+  positionX: boardCoordSchema.optional(),
+  positionY: boardCoordSchema.optional(),
+  width: z.number().positive().max(100_000).optional(),
+  height: z.number().positive().max(100_000).optional(),
+  text: z.string().max(SHAPE_LABEL_MAX_LENGTH).nullable().optional(),
+  style: shapeStyleSchema.optional(),
+  props: shapePropsSchema.optional(),
+})
+
+/**
+ * Schema for creating a connector. `sourceShapeId === targetShapeId` (a
+ * self-connector) is rejected here — FR-016/tech-spec §4 — since a
+ * self-referencing arrow has no defined direction. The line/table/cross-
+ * whiteboard endpoint rules are enforced server-side against the loaded
+ * rows (schema validation alone cannot see `kind` or `whiteboardId`).
+ */
+export const createConnectorSchema = z
+  .object({
+    whiteboardId: z.string().uuid(),
+    sourceShapeId: z.string().uuid(),
+    targetShapeId: z.string().uuid(),
+    style: connectorStyleSchema.optional(),
+  })
+  .refine((data) => data.sourceShapeId !== data.targetShapeId, {
+    message: 'A shape cannot be connected to itself',
+    path: ['targetShapeId'],
+  })
+
+export type ShapeKind = z.infer<typeof shapeKindSchema>
+export type ShapeStyle = z.infer<typeof shapeStyleSchema>
+export type ShapeProps = z.infer<typeof shapePropsSchema>
+export type ConnectorStyle = z.infer<typeof connectorStyleSchema>
+export type CreateShape = z.input<typeof createShapeSchema>
+export type UpdateShape = z.infer<typeof updateShapeSchema>
+export type CreateConnector = z.input<typeof createConnectorSchema>
+
+// ============================================================================
+// Canvas Engine Schemas (FigJam-style canvas boards, milestone 1)
+// ============================================================================
+// A canvas board is a separate board kind from the ER whiteboard: its own
+// table, its own route, its own elements. These schemas validate what the
+// client is allowed to persist into "CanvasBoard" / "CanvasElement".
+
+/**
+ * A canvas text element is a paragraph the user types into, not a shape
+ * label, so `SHAPE_LABEL_MAX_LENGTH` (500) would be far too tight. This cap
+ * exists to bound a single row, not to express a product rule — it is a
+ * documented assumption, not a locked decision.
+ */
+export const CANVAS_TEXT_MAX_LENGTH = 10_000
+
+/**
+ * A CSS colour, as a bounded opaque string.
+ *
+ * These values reach `ctx.fillStyle` / `ctx.strokeStyle`, never innerHTML —
+ * a canvas has no markup, so an unparseable colour is silently ignored by
+ * the browser rather than injected. What DOES need bounding is length, so a
+ * hostile client cannot store a megabyte per element. Deliberately not a
+ * strict colour grammar: the engine's palette is still being designed, and
+ * rejecting valid CSS colours would be a worse failure than storing an
+ * ineffective one.
+ */
+const cssColorSchema = z.string().min(1).max(64)
+
+/**
+ * Element appearance. Defaults are taken from the ENGINE's own
+ * `DEFAULT_ELEMENT_STYLE` rather than restated here, so the value the
+ * renderer falls back to and the value the validator fills in can never
+ * drift apart.
+ */
+export const canvasElementStyleSchema = z.strictObject({
+  fill: cssColorSchema.default(DEFAULT_ELEMENT_STYLE.fill),
+  stroke: cssColorSchema.default(DEFAULT_ELEMENT_STYLE.stroke),
+  strokeWidth: z
+    .number()
+    .finite()
+    .min(0)
+    .max(64)
+    .default(DEFAULT_ELEMENT_STYLE.strokeWidth),
+  fontSize: z
+    .number()
+    .finite()
+    .min(1)
+    .max(512)
+    .default(DEFAULT_ELEMENT_STYLE.fontSize),
+  color: cssColorSchema.default(DEFAULT_ELEMENT_STYLE.color),
+  /**
+   * Corner rounding in world units — see `CanvasElementStyle.cornerRadius`.
+   *
+   * `.default()` rather than `.optional()`, which is what lets every row
+   * written before rounded corners existed keep validating unchanged: the key
+   * is simply absent and parses to 0. That is the whole migration; there is
+   * no ALTER to run because the style is one JSON column.
+   *
+   * Capped well above anything the toolbar offers, because the value is
+   * clamped to the shape at draw time anyway and a stored radius larger than
+   * the box is a legitimate way to say "as round as this can get".
+   */
+  cornerRadius: z
+    .number()
+    .finite()
+    .min(0)
+    .max(512)
+    .default(DEFAULT_ELEMENT_STYLE.cornerRadius),
+  /**
+   * Text alignment — see `CanvasElementStyle.textAlign` / `.verticalAlign`.
+   *
+   * `.default()` rather than `.optional()`, the same migration-free move
+   * `cornerRadius` above documents: the key is simply absent on every row
+   * written before alignment existed and parses to the top-left the renderer
+   * already drew. There is no ALTER to run, because the style is one JSON
+   * column.
+   *
+   * The defaults are read from `DEFAULT_ELEMENT_STYLE` rather than restated,
+   * so the value the renderer falls back to and the value the validator fills
+   * in can never drift apart.
+   */
+  textAlign: z
+    .enum(['left', 'center', 'right'])
+    .default(DEFAULT_ELEMENT_STYLE.textAlign),
+  verticalAlign: z
+    .enum(['top', 'middle', 'bottom'])
+    .default(DEFAULT_ELEMENT_STYLE.verticalAlign),
+})
+
+/**
+ * The element kinds the engine renders (see canvas-engine/scene.ts).
+ *
+ * `rectangle`, `ellipse`, `diamond` and `triangle` are the SHAPE kinds — one
+ * world rect drawn four ways. They are deliberately four enum members rather
+ * than one `shape` kind with a discriminating prop: `kind` is a real column
+ * that every query, broadcast and undo snapshot already carries, and an
+ * element's kind never changes, so a shape's identity belongs there and not
+ * behind a second lookup into `props`.
+ */
+export const canvasElementKindSchema = z.enum([
+  'rectangle',
+  'ellipse',
+  'diamond',
+  'triangle',
+  'text',
+  'connector',
+])
+
+/**
+ * How a connector is drawn between its two endpoints — FigJam's three line
+ * types, chosen per connector by the user (canvas quick-create-handles
+ * tactical plan, decision F3).
+ *
+ * All three are DERIVED shapes: none of them stores a path. They differ only
+ * in how `canvas-engine/connector-geometry.ts` turns the two endpoints' live
+ * bounds into points, so switching routing is a props write and nothing else.
+ */
+export const canvasConnectorRoutingSchema = z.enum([
+  'straight',
+  'elbow',
+  'curved',
+])
+
+/**
+ * Which SIDE of an element a connector end is tied to — the four sides the
+ * creation handles sit on. Mirrors `ConnectorAnchor` in
+ * src/lib/canvas-engine/scene.ts, which the engine declares independently
+ * because it cannot import Zod.
+ */
+/**
+ * A normalised position on an element's border: 0..1 across its own box, with
+ * at least one component pinned to an edge. Not a world coordinate — that
+ * would slide off the shape the moment it was resized.
+ */
+export const canvasConnectorAttachSchema = z.strictObject({
+  x: z.number().finite().min(0).max(1),
+  y: z.number().finite().min(0).max(1),
+})
+
+/** A free connector end's own coordinate, held to the board's range. */
+export const canvasConnectorPointSchema = z.strictObject({
+  x: boardCoordSchema,
+  y: boardCoordSchema,
+})
+
+/** Exactly one of "attached to an element" / "a free point" must be set. */
+function hasExactlyOneEnd(
+  elementId: string | null,
+  point: { x: number; y: number } | undefined,
+): boolean {
+  return (elementId !== null) !== (point !== undefined)
+}
+
+export const canvasConnectorAnchorSchema = z.enum([
+  'top',
+  'right',
+  'bottom',
+  'left',
+])
+
+/**
+ * Kind-specific payload, a discriminated union on `kind`. Every shape arm and
+ * the `text` arm are empty objects, and that is deliberate — exactly as
+ * `shapePropsSchema` documents. This union is the dispatch point that let
+ * `ellipse`, `diamond` and `triangle` be added with no table change, and that
+ * will do the same for `ink` or `image`. Do NOT "clean up" the empty arms
+ * into a plain enum.
+ *
+ * The `connector` arm is the first one carrying real content, and it is why
+ * routing lives HERE and not in `canvasElementStyleSchema`: that schema is a
+ * `z.strictObject` shared by every kind, so a `routing` field added there
+ * would fail validation for every rectangle and text row already stored.
+ */
+export const canvasElementPropsSchema = z.discriminatedUnion('kind', [
+  z.strictObject({ kind: z.literal('rectangle') }),
+  z.strictObject({ kind: z.literal('ellipse') }),
+  z.strictObject({ kind: z.literal('diamond') }),
+  z.strictObject({ kind: z.literal('triangle') }),
+  z.strictObject({ kind: z.literal('text') }),
+  z
+    .strictObject({
+      kind: z.literal('connector'),
+      // NULLABLE since connector ends became draggable: an end dropped on
+      // empty board detaches and stores its own point instead. The pairing is
+      // enforced by the two `.refine`s below — exactly one of id / point per
+      // end. Stored FLAT rather than as a nested union so every row written
+      // before free ends existed still validates unchanged; the engine's own
+      // `ConnectorEndpoint` IS a union, and `canvas-element-adapter.ts` is the
+      // one place the two shapes meet.
+      sourceElementId: z.string().uuid().nullable(),
+      targetElementId: z.string().uuid().nullable(),
+      sourcePoint: canvasConnectorPointSchema.optional(),
+      targetPoint: canvasConnectorPointSchema.optional(),
+      routing: canvasConnectorRoutingSchema,
+      // OPTIONAL, and it has to stay that way: connectors written before
+      // anchoring existed carry neither, and a required field here would make
+      // every one of those rows fail validation on its next update — the row
+      // would become uneditable rather than merely un-anchored. The geometry
+      // falls back to centre-derived border points per end when absent.
+      // WHERE on the border each end is tied, as a fraction of the element's
+      // box — continuous, so an end can sit anywhere along an edge rather than
+      // only at one of four midpoints.
+      sourceAttach: canvasConnectorAttachSchema.optional(),
+      targetAttach: canvasConnectorAttachSchema.optional(),
+      // LEGACY, read-only: rows written when an end could only be one of four
+      // sides. `canvas-element-adapter.ts` reads these as that side's midpoint
+      // and writes `*Attach` from then on. Kept in the schema so an old row
+      // still validates on its next update instead of becoming uneditable.
+      sourceAnchor: canvasConnectorAnchorSchema.optional(),
+      targetAnchor: canvasConnectorAnchorSchema.optional(),
+      // HOW FAR the line is bowed by hand, as a signed fraction of the
+      // straight chord between its two ends — the perpendicular distance the
+      // middle of the curve sits off that chord, divided by the chord's
+      // length. Positive is the LEFT-hand side of the source -> target
+      // direction as seen on screen; see `CanvasConnector.curvature`, which
+      // owns the full definition.
+      //
+      // OPTIONAL for exactly the reason `sourceAttach` above is: every
+      // connector row already in the database was written before bending
+      // existed and carries none, and a required field here would make each
+      // of those rows fail validation on its NEXT update — the row would
+      // become uneditable rather than merely un-bowed. Absent and 0 both mean
+      // "no hand-applied bow", and both redraw the pre-curvature path
+      // unchanged.
+      //
+      // NOT range-checked here, deliberately, even though the geometry holds
+      // it to `CURVATURE_LIMIT`. A row carrying an out-of-range value — hand
+      // edited, seeded, imported — is drawable (the clamp is in
+      // `connector-geometry.ts`, which every render and hit-test goes
+      // through) and so must stay editable; rejecting it at the schema would
+      // strand the one row a user most needs to be able to grab and fix.
+      curvature: z.number().optional(),
+    })
+    // Each end is EITHER attached to an element OR a free point — never
+    // both, never neither. The engine models this as a discriminated union;
+    // this is the same invariant stated where the flat storage shape can be
+    // checked.
+    .refine(
+      (props) => hasExactlyOneEnd(props.sourceElementId, props.sourcePoint),
+      {
+        message:
+          'A connector end must be either attached to an element or a free point',
+        path: ['sourceElementId'],
+      },
+    )
+    .refine(
+      (props) => hasExactlyOneEnd(props.targetElementId, props.targetPoint),
+      {
+        message:
+          'A connector end must be either attached to an element or a free point',
+        path: ['targetElementId'],
+      },
+    )
+    // A self-connector has no drawable path — its two endpoint rects are the
+    // same rect, so `connectorPath` returns null and the row would persist as
+    // permanently invisible and unselectable. Rejected at the schema so no
+    // write path can produce one, rather than left for each renderer to
+    // tolerate.
+    //
+    // Guarded on both ids being PRESENT: two free ends are both `null`, and a
+    // plain `!==` would read that as "joined to itself" and reject a perfectly
+    // ordinary floating line.
+    .refine(
+      (props) =>
+        props.sourceElementId === null ||
+        props.targetElementId === null ||
+        props.sourceElementId !== props.targetElementId,
+      {
+        message: 'A connector cannot join an element to itself',
+        path: ['targetElementId'],
+      },
+    ),
+])
+
+/**
+ * Paint order bounds. Exported so `nextCanvasZIndex` (canvas-element.ts) can
+ * clamp its own computed `MAX(zIndex) + 1` to the same ceiling this schema
+ * enforces — without it, one element already sitting at the max would make
+ * every subsequent `element:create` on that board fail schema validation
+ * with no way to recover (Hermes review, suggestion).
+ */
+export const CANVAS_ZINDEX_MIN = -1_000_000
+export const CANVAS_ZINDEX_MAX = 1_000_000
+
+/**
+ * Paint order. Bounded because it is written straight into an INTEGER
+ * column and compared on every render; an unbounded client value could
+ * make every subsequent `nextZIndex` overflow into Infinity.
+ */
+const canvasZIndexSchema = z
+  .number()
+  .int()
+  .min(CANVAS_ZINDEX_MIN)
+  .max(CANVAS_ZINDEX_MAX)
+
+/**
+ * Schema for creating a canvas element. Follows `createShapeSchema`'s
+ * convention exactly, including the cross-validation below; `update` is
+ * defined independently rather than as `.partial()` of this.
+ *
+ * `rotation` is absent on purpose: the column exists so rotation needs no
+ * schema change later, but milestone 1 does not let anyone set it, so the
+ * data layer writes 0 — the same thing `createShape` does.
+ */
+export const createCanvasElementSchema = z
+  .object({
+    // Optional and validated like any other field — NOT a second, laxer
+    // write path. Absent for an ordinary draw (the data layer generates one);
+    // supplied only when undo restores a deleted element, so the restored
+    // row keeps the identifier every other client still has cached (board-
+    // undo tactical plan, Wave 1, step 3).
+    id: z.string().uuid().optional(),
+    boardId: z.string().uuid(),
+    kind: canvasElementKindSchema,
+    positionX: boardCoordSchema,
+    positionY: boardCoordSchema,
+    // A CONNECTOR has no geometry of its own: its path is derived from its two
+    // endpoints' live bounds on every frame (canvas-engine/connector-
+    // geometry.ts), so anything stored here would go stale the moment a
+    // collaborator moved either end. These four columns are NOT NULL and
+    // `.positive()`, so a connector writes a degenerate 1x1 placeholder at its
+    // source's centre and NOTHING ever reads it back. Do not "fix" a
+    // connector's stored bounds — deriving them is the point.
+    width: z.number().positive().max(100_000),
+    height: z.number().positive().max(100_000),
+    zIndex: canvasZIndexSchema.default(0),
+    // Optional, validated, and honoured server-side ONLY alongside an
+    // explicit `id` (see handlers.ts) — same restore-only gating as `id`
+    // itself. Undo's restore-a-deleted-element path uses this to seed the
+    // new row's revision ABOVE whatever the deleted row last held, closing
+    // an ABA hole: without it, every restore starts back at revision 1, so
+    // a stale undo/redo entry recorded against the ORIGINAL row can match a
+    // RESTORED row's revision by coincidence and apply against content it
+    // never actually saw (Hermes review, W-C).
+    //
+    // `.nonnegative()`, not `.positive()`: a row that was created and never
+    // subsequently updated legitimately holds revision 0 (the schema's own
+    // `DEFAULT 0`, and `createCanvasElement`'s own "every fresh row starts
+    // at 1" note only describes an ORDINARY create — a row inserted by any
+    // OTHER path, such as this project's own e2e seed scripts writing
+    // straight SQL with no `revision` column, keeps the column default).
+    // Deleting that row and undoing the delete sends its actual pre-delete
+    // revision, 0, straight through as `minRevision` — `.positive()` (>0)
+    // rejected exactly that value with a VALIDATION_ERROR, which this
+    // hook's own generic-refusal fallback then reported as a false
+    // "changed since your edit" — a real, reachable bug (not merely a
+    // theoretical one), found by canvas-undo.spec.ts's own "undo a delete"
+    // e2e case (board-undo tactical plan, Wave 5).
+    minRevision: z.number().int().nonnegative().optional(),
+    text: z.string().max(CANVAS_TEXT_MAX_LENGTH).nullable().default(null),
+    style: canvasElementStyleSchema.optional(),
+    props: canvasElementPropsSchema,
+  })
+  // The W2 fix, carried over verbatim in intent: `kind` and `props.kind` are
+  // validated independently above, and a discriminated union has no
+  // visibility into a sibling top-level field. Without this,
+  // `{ kind: 'text', props: { kind: 'rectangle' } }` persists cleanly and
+  // then renders as text with rectangle props — a mismatch no reader of the
+  // row can detect.
+  .refine((data) => data.kind === data.props.kind, {
+    message: 'props.kind must match kind',
+    path: ['props', 'kind'],
+  })
+
+/**
+ * Schema for updating a canvas element. Defined independently (not
+ * `.partial()` of create) so absent fields parse as `undefined` and only
+ * explicitly-provided columns are written. `kind` is absent: an element's
+ * kind never changes.
+ */
+export const updateCanvasElementSchema = z.object({
+  positionX: boardCoordSchema.optional(),
+  positionY: boardCoordSchema.optional(),
+  width: z.number().positive().max(100_000).optional(),
+  height: z.number().positive().max(100_000).optional(),
+  zIndex: canvasZIndexSchema.optional(),
+  text: z.string().max(CANVAS_TEXT_MAX_LENGTH).nullable().optional(),
+  style: canvasElementStyleSchema.optional(),
+  props: canvasElementPropsSchema.optional(),
+})
+
+/**
+ * Schema for creating a canvas board. Mirrors `createWhiteboardSchema` —
+ * same name bounds, same optional `folderId` — because the two board kinds
+ * are meant to sit side by side in the navigator.
+ */
+export const createCanvasBoardSchema = z.object({
+  name: z.string().min(1).max(255),
+  projectId: z.string().uuid(),
+  folderId: z.string().uuid().nullable().optional(),
+})
+
+/** Schema for renaming / re-filing a canvas board. */
+export const updateCanvasBoardSchema = z.object({
+  name: z.string().min(1).max(255).optional(),
+  folderId: z.string().uuid().nullable().optional(),
+})
+
+export type CanvasElementKind = z.infer<typeof canvasElementKindSchema>
+export type CanvasElementStyle = z.infer<typeof canvasElementStyleSchema>
+export type CanvasElementProps = z.infer<typeof canvasElementPropsSchema>
+export type CanvasConnectorRouting = z.infer<
+  typeof canvasConnectorRoutingSchema
+>
+export type CreateCanvasElement = z.input<typeof createCanvasElementSchema>
+export type UpdateCanvasElement = z.infer<typeof updateCanvasElementSchema>
+export type CreateCanvasBoard = z.input<typeof createCanvasBoardSchema>
+export type UpdateCanvasBoard = z.infer<typeof updateCanvasBoardSchema>

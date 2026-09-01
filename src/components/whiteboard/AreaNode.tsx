@@ -17,16 +17,18 @@ import { AREA_COLORS, resolveAreaColor } from '@/lib/area-colors'
  * width/height (set by the parent from Area.width/height); NodeResizer edits
  * that size and reports the committed bounds through `data.onResize`.
  *
- * Grouping (GH #106 bugfix): once an area has ≥1 member, its bounds are
- * derived from its members (see `computeAreaBounds` in
- * `@/lib/react-flow/area-bounds`, applied by `refitArea` in
- * ReactFlowWhiteboard) — manual resize is disabled so the two sizing
- * mechanisms can't fight each other. Empty areas keep manual resize.
+ * Resize is ALWAYS available to an editor, members or not. It used to be
+ * disabled for an area with members, because auto-fit derived those bounds from
+ * the members and the two sizing mechanisms would have fought each other.
+ * Auto-fit is gone: an area's size is the user's, so the handles are always
+ * live. Resizing from a top or left handle also moves the area's origin, which
+ * React Flow applies to member children automatically — members keep their
+ * on-screen position because ReactFlowCanvas re-anchors them against the new
+ * origin.
  */
 export function AreaNode({ id, data, width, height, selected }: NodeProps<AreaNodeType>) {
   const { area, canEdit, onRename, onRecolor, onResize, onDelete } = data
   const color = resolveAreaColor(area.color)
-  const hasMembers = area.memberTableIds.length > 0
 
   const [editingName, setEditingName] = useState(false)
   const [nameDraft, setNameDraft] = useState(area.name)
@@ -50,7 +52,7 @@ export function AreaNode({ id, data, width, height, selected }: NodeProps<AreaNo
 
   return (
     <>
-      {canEdit && !hasMembers && (
+      {canEdit && (
         <NodeResizer
           color={color.solid}
           isVisible={selected}

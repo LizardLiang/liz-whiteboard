@@ -22,10 +22,11 @@ import {
   ReactFlowProvider,
   useNodesInitialized,
   useReactFlow,
+  useStoreApi,
   useUpdateNodeInternals,
   useViewport,
 } from '@xyflow/react'
-import { MessageCircle, Minimize2, SquareDashed } from 'lucide-react'
+import { Minimize2 } from 'lucide-react'
 import { toast } from 'sonner'
 import { ReactFlowCanvas } from './ReactFlowCanvas'
 import { PerfTrackerPanel } from './PerfTrackerPanel'
@@ -37,24 +38,38 @@ import { AutoLayoutConfirmDialog } from './AutoLayoutConfirmDialog'
 import { TableFocusOverlay } from './TableFocusOverlay'
 import { WhiteboardAccessDenied } from './WhiteboardAccessDenied'
 import { WhiteboardPermissionsProvider } from './whiteboard-permissions-context'
-import type { Connection } from '@xyflow/react'
-import type { ZoomControls } from './Toolbar'
-import type {
-  AreaNodeType,
-  CommentNodeType,
-  CommentThreadVM,
-  RelationshipEdgeType,
-  ShowMode,
-  TableNodeType,
-} from '@/lib/react-flow/types'
-import type { Column, CommentWithAuthor, DiagramTable } from '@/data/models'
-import type { EffectiveRole } from '@/data/permission'
+import { ShapeToolPalette } from './ShapeToolPalette'
+import { QUICK_CREATE_GHOST_ID } from './QuickCreateGhostNode'
+import type { DrawGestureTool, ToolMode } from '@/lib/react-flow/tool-mode'
 import type {
   Cardinality,
   CreateRelationship,
   CreateTable,
+  ShapeKind,
+  ShapeStyle,
   UpdateColumn,
 } from '@/data/schema'
+import type { EffectiveRole } from '@/data/permission'
+import type {
+  Column,
+  CommentWithAuthor,
+  Connector,
+  DiagramTable,
+  Shape,
+} from '@/data/models'
+import type {
+  AreaNodeType,
+  CommentNodeType,
+  CommentThreadVM,
+  ConnectorEdgeType,
+  QuickCreateDirection,
+  RelationshipEdgeType,
+  ShapeNodeType,
+  ShowMode,
+  TableNodeType,
+} from '@/lib/react-flow/types'
+import type { ZoomControls } from './Toolbar'
+import type { Connection } from '@xyflow/react'
 import type { WhiteboardWithDiagram } from '@/data/whiteboard'
 import type { RelationshipWithDetails } from '@/data/relationship'
 import type { DiagramAST } from '@/lib/parser/ast'
@@ -64,6 +79,27 @@ import type { RelationshipErrorEvent } from '@/hooks/use-relationship-mutations'
 import type { ReconcileAfterDropParams } from '@/hooks/use-column-reorder-mutations'
 import type { Dialect } from '@/lib/ddl-generator'
 import type { ExportImageDialogOptions } from './ExportImageDialog'
+import { useWhiteboardShapes } from '@/hooks/use-whiteboard-shapes'
+import {
+  TOOL_TO_SHAPE_KIND,
+  isDrawGestureTool,
+} from '@/lib/react-flow/tool-mode'
+import {
+  DEFAULT_TEXT_SIZE,
+  LAYOUT_CONSTRAINTS,
+  MIN_AREA_HEIGHT,
+  MIN_AREA_WIDTH,
+  MIN_SHAPE_HEIGHT,
+  MIN_SHAPE_WIDTH,
+  NOT_CONNECTED_TOAST_MESSAGE,
+  NUDGE_STEP,
+  NUDGE_STEP_LARGE,
+  SHAPE_HANDLE_IDS,
+} from '@/lib/react-flow/types'
+import {
+  quickCreatePlacement,
+  resolveMeasuredSize,
+} from '@/lib/react-flow/shape-geometry'
 import { usePerfTrackerEnabled } from '@/hooks/use-perf-tracker-enabled'
 import { exportDiagramImage } from '@/lib/export/export-image'
 import { ForceFullDetailContext } from '@/lib/react-flow/level-of-detail'
@@ -104,11 +140,10 @@ import { useWhiteboardAreas } from '@/hooks/use-whiteboard-areas'
 import { useWhiteboardComments } from '@/hooks/use-whiteboard-comments'
 import { DEFAULT_AREA_COLOR } from '@/lib/area-colors'
 import {
-  computeAreaBounds,
   reconcileAreaMembership,
+  tableIdsEnclosedByRect,
 } from '@/lib/react-flow/area-bounds'
 import { calculateTableHeight } from '@/lib/react-flow/layout-adapter'
-import { LAYOUT_CONSTRAINTS } from '@/lib/react-flow/types'
 import { useD3ForceLayout } from '@/hooks/use-d3-force-layout'
 import { useAutoLayoutOrchestrator } from '@/hooks/use-auto-layout-orchestrator'
 import { applyBulkPositions } from '@/lib/auto-layout'
@@ -200,6 +235,14 @@ const CARDINALITY_OPTIONS: Array<{ value: Cardinality; label: string }> = [
 const EMPTY_COMMENT_THREADS: Array<CommentThreadVM> = []
 
 /**
+ * Stable empty default for `shapes`/`connectors` — module-level so the
+ * identity holds across renders, the same rationale as
+ * EMPTY_COMMENT_THREADS above.
+ */
+const EMPTY_ERD_SHAPES: Array<Shape> = []
+const EMPTY_ERD_CONNECTORS: Array<Connector> = []
+
+/**
  * ReactFlowWhiteboard Props
  */
 export interface ReactFlowWhiteboardProps {
@@ -273,7 +316,81 @@ export interface ReactFlowWhiteboardProps {
   data?: {
     tables: WhiteboardWithDiagram['tables']
     relationships: Array<RelationshipWithDetails>
+    /**
+     * §6a (user overruled the r1 exclusion): shapes and connectors DO
+     * render on public share-link boards, read-only. Optional so the
+     * read-only history-preview caller (which has no shapes) keeps
+     * compiling unchanged.
+     */
+    shapes?: Array<Shape>
+    connectors?: Array<Connector>
   }
+}
+
+/**
+ * A fresh, uncommitted text-box draft (FR-012) — shared by the drag-to-draw
+ * commit path and the keyboard-create path (W4, Hermes code review: these
+ * two ~70-line functions were >80% duplicated). Not yet a real row; the
+ * caller stores it in `draftShape` state and only `createShape`s it once
+ * the user actually types something (ShapeDrawOverlay / ShapeNode's
+ * draft-commit handlers).
+ */
+function buildDefaultTextDraft(params: {
+  whiteboardId: string
+  positionX: number
+  positionY: number
+  width: number
+  height: number
+}): Shape {
+  return {
+    id: `draft-${crypto.randomUUID()}`,
+    whiteboardId: params.whiteboardId,
+    kind: 'text',
+    positionX: params.positionX,
+    positionY: params.positionY,
+    width: params.width,
+    height: params.height,
+    rotation: 0,
+    zIndex: 0,
+    text: null,
+    style: {
+      fill: 'none',
+      stroke: 'slate',
+      strokeWidth: 2,
+      strokeStyle: 'solid',
+      fontSize: 16,
+      textColor: 'auto',
+    },
+    props: { kind: 'text' },
+    createdAt: new Date(),
+    updatedAt: new Date(),
+  }
+}
+
+/**
+ * `props` for a non-text shape create payload (W4, Hermes code review —
+ * same duplication as `buildDefaultTextDraft` above). `lineFractions` is
+ * omitted by the keyboard-create path (no drag direction to derive from —
+ * defaults to a horizontal line) and supplied by the drag-commit path,
+ * computed from the actual press/release points.
+ */
+function buildShapeCreateProps(
+  shapeKind: Exclude<ShapeKind, 'text'>,
+  lineFractions?: { x1: number; y1: number; x2: number; y2: number },
+) {
+  if (shapeKind === 'line') {
+    const f = lineFractions ?? { x1: 0, y1: 0.5, x2: 1, y2: 0.5 }
+    return {
+      kind: 'line' as const,
+      x1: f.x1,
+      y1: f.y1,
+      x2: f.x2,
+      y2: f.y2,
+      arrowStart: false,
+      arrowEnd: true,
+    }
+  }
+  return { kind: shapeKind } as const
 }
 
 /**
@@ -300,6 +417,7 @@ function ReactFlowWhiteboardInner({
   onOpenComments,
   onCommentsChange,
   onCommentActionsReady,
+  publicShapesData,
 }: {
   whiteboardId: string
   userId: string
@@ -325,6 +443,8 @@ function ReactFlowWhiteboardInner({
   onOpenComments?: () => void
   onCommentsChange?: (comments: Array<CommentWithAuthor>) => void
   onCommentActionsReady?: (actions: CommentActions) => void
+  /** §6a: pre-fetched shapes/connectors for the public share-link path. */
+  publicShapesData?: { shapes: Array<Shape>; connectors: Array<Connector> }
 }) {
   const queryClient = useQueryClient()
 
@@ -690,7 +810,22 @@ function ReactFlowWhiteboardInner({
       const prevEdgeMap = new Map(prevEdges.map((e) => [e.id, e]))
       return initialEdges.map((edge) => {
         const prev = prevEdgeMap.get(edge.id)
-        if (!prev) return edge
+        if (!prev) {
+          // New edge (e.g. just-created relationship via drag-to-connect):
+          // inject current callbacks so its label can be edited/cleared and
+          // it can be deleted immediately, without waiting for an unrelated
+          // isConnected change or reconnect to re-fire the injection effect
+          // below (Part C, 2026-08-31 tactical plan — mirrors the node-side
+          // new-node branch above).
+          return {
+            ...edge,
+            data: {
+              ...edge.data!,
+              onDelete: handleRelationshipDeleteRef.current,
+              onLabelUpdate: handleRelationshipLabelUpdateRef.current,
+            },
+          }
+        }
         return {
           ...edge,
           data: {
@@ -1004,17 +1139,6 @@ function ReactFlowWhiteboardInner({
   // Ref for onRemoteColumnDuplicated — avoids circular dep with columnMutations
   const onRemoteColumnDuplicatedRef = useRef<(data: any) => void>(() => {})
 
-  // Ref for refitAreasContainingTable (area-fit-member-content) — the same
-  // forward-reference pattern as the refs above: handleColumnCreate/
-  // handleColumnDelete are declared before refitAreasContainingTable (which
-  // depends on refitArea/reactFlowInstance, declared later), so they call
-  // through this ref instead of referencing the not-yet-declared function
-  // directly (which would violate the temporal dead zone in useCallback's
-  // deps array).
-  const refitAreasContainingTableRef = useRef<
-    (tableId: string, columnCountOverride?: number) => void
-  >(() => {})
-
   // On WebSocket reconnect, re-fetch whiteboard data to replace any stale
   // optimistic state that was never confirmed before the disconnect.
   // MEDIUM-01: flag set to true on reconnect so the initialNodes effect knows
@@ -1191,10 +1315,21 @@ function ReactFlowWhiteboardInner({
   }, [tableMutations.onTableUpdateError])
 
   // Relationship mutations hook (optimistic delete + label update with rollback)
+  //
+  // Gated on `connectionState`, NOT on `isConnected`. Both emits below come
+  // from useWhiteboardCollaboration, whose socket `connectionState` describes;
+  // `isConnected` belongs to useColumnCollaboration, a SEPARATE
+  // `useCollaboration` instance. The two connect independently and disagree
+  // for a window after load, so gating on the column socket refused
+  // relationship writes that the whiteboard socket was ready to send — the
+  // user-visible symptom being a Delete that appeared to do nothing and a line
+  // that came back on the next table move. Reproduced against the real server:
+  // forcing this gate open deleted the row while `isConnected` still read
+  // false.
   const relationshipMutations = useRelationshipMutations(
     setEdges,
     emitRelationshipDelete,
-    isConnected,
+    connectionState === 'connected',
     emitRelationshipUpdate,
   )
 
@@ -1329,19 +1464,6 @@ function ReactFlowWhiteboardInner({
     (tableId: string, data: CreateColumnPayload) => {
       try {
         columnMutations.createColumn(tableId, data)
-        // area-fit-member-content: re-fit any area containing this table now
-        // that its column count is about to grow by one. Compute the new
-        // count from the pre-mutation node list (nodesRef.current) + 1 — the
-        // optimistic setNodes inside createColumn hasn't committed/
-        // re-rendered yet, so reading it back here would still see the OLD
-        // count (see refitArea's columnCountOverrides comment).
-        const table = nodesRef.current.find((n) => n.id === tableId)
-        if (table) {
-          refitAreasContainingTableRef.current(
-            tableId,
-            table.data.table.columns.length + 1,
-          )
-        }
       } catch (error) {
         console.error('Failed to create column:', error)
         throw error
@@ -1360,17 +1482,6 @@ function ReactFlowWhiteboardInner({
   const handleColumnDelete = useCallback(
     (columnId: string, tableId: string) => {
       columnMutations.deleteColumn(columnId, tableId)
-      // area-fit-member-content: re-fit any area containing this table now
-      // that its column count is about to shrink by one (see handleColumnCreate
-      // above for why the count is computed from the pre-mutation node list
-      // rather than read back after the optimistic setNodes).
-      const table = nodesRef.current.find((n) => n.id === tableId)
-      if (table) {
-        refitAreasContainingTableRef.current(
-          tableId,
-          Math.max(0, table.data.table.columns.length - 1),
-        )
-      }
     },
     [columnMutations],
   )
@@ -1433,9 +1544,7 @@ function ReactFlowWhiteboardInner({
 
   // Column reorder callback — wraps reconcileAfterDrop with real setNodes
   const handleColumnReorder = useCallback(
-    (
-      params: ReconcileAfterDropParams,
-    ) => {
+    (params: ReconcileAfterDropParams) => {
       columnReorderMutations.reconcileAfterDrop({
         ...params,
         setNodes,
@@ -1462,27 +1571,9 @@ function ReactFlowWhiteboardInner({
     },
   })
 
-  // Handle connection drag completion — parse handle IDs and open cardinality picker.
-  // In strict mode (default), source/target are guaranteed correct:
-  // source = node with the source handle (drag start), target = node with the target handle (drop).
-  const handleConnect = useCallback((connection: Connection) => {
-    const { source, target, sourceHandle, targetHandle } = connection
-    if (!source || !target || !sourceHandle || !targetHandle) return
-
-    const parsedSource = parseColumnHandleId(sourceHandle)
-    const parsedTarget = parseColumnHandleId(targetHandle)
-    if (!parsedSource || !parsedTarget) return
-
-    // Use connection.source/target (React Flow node IDs = table IDs) for table direction,
-    // and parsed handle IDs only for column IDs.
-    setPendingConnection({
-      sourceTableId: source,
-      sourceColumnId: parsedSource.columnId,
-      targetTableId: target,
-      targetColumnId: parsedTarget.columnId,
-    })
-    setSelectedCardinality('ONE_TO_MANY')
-  }, [])
+  // handleConnect is defined further below, after reactFlowInstance and the
+  // shape/connector hook are both in scope (it branches on shape-to-shape
+  // connections before falling through to this cardinality-picker path).
 
   // Confirm cardinality selection and create relationship
   const handleCardinalityConfirm = useCallback(() => {
@@ -1589,9 +1680,8 @@ function ReactFlowWhiteboardInner({
             handleExportDdlRef.current(tableId, dialect),
           onPreviewRelations: (tableId: string) =>
             handleTogglePreviewTableRef.current(tableId),
-          onColumnReorder: (
-            params: ReconcileAfterDropParams,
-          ) => handleColumnReorderRef.current(params),
+          onColumnReorder: (params: ReconcileAfterDropParams) =>
+            handleColumnReorderRef.current(params),
           emitColumnReorder: (tableId: string, ids: Array<string>) =>
             emitColumnReorderRef.current(tableId, ids),
           isQueueFullForTable: (tableId: string) =>
@@ -1636,9 +1726,8 @@ function ReactFlowWhiteboardInner({
             handleExportDdlRef.current(tableId, dialect),
           onPreviewRelations: (tableId: string) =>
             handleTogglePreviewTableRef.current(tableId),
-          onColumnReorder: (
-            params: ReconcileAfterDropParams,
-          ) => handleColumnReorderRef.current(params),
+          onColumnReorder: (params: ReconcileAfterDropParams) =>
+            handleColumnReorderRef.current(params),
           emitColumnReorder: (tableId: string, ids: Array<string>) =>
             emitColumnReorderRef.current(tableId, ids),
           isQueueFullForTable: (tableId: string) =>
@@ -1753,9 +1842,9 @@ function ReactFlowWhiteboardInner({
   // d3-force layout hook (wraps the pure computeD3ForceLayout engine)
   const { runLayout: runD3ForceLayout } = useD3ForceLayout()
 
-  // NOTE: the Auto Layout orchestrator is initialized further down (after
-  // refitAllAreas is defined, GH #106 Bug 2 fix — Auto Layout excludes areas
-  // and refits them afterward via onAfterLayout).
+  // NOTE: the Auto Layout orchestrator is initialized further down. Areas are
+  // excluded from the layout and are NOT resized afterwards — an area's bounds
+  // belong to the user (see `handleCreateDrawnArea`).
 
   // Expose display mode controls to parent component (only once on mount)
   useEffect(() => {
@@ -1772,6 +1861,13 @@ function ReactFlowWhiteboardInner({
 
   // React Flow zoom API (requires ReactFlowProvider context)
   const reactFlowInstance = useReactFlow()
+  // FR-019a: `addSelectedNodes`/`unselectNodesAndEdges` are store-level
+  // methods, not exposed on `ReactFlowInstance` itself (unlike
+  // `screenToFlowPosition`/`setCenter`/etc above) — accessed via the store
+  // API instead. Routes through the exact same internal store the mouse
+  // click-to-select path already updates, so a keyboard-driven select is
+  // indistinguishable from a mouse one to every other consumer.
+  const reactFlowStoreApi = useStoreApi()
   const viewport = useViewport()
   const nodesInitialized = useNodesInitialized()
 
@@ -1793,6 +1889,69 @@ function ReactFlowWhiteboardInner({
     off: offCollabEvent,
     emit: emitCollabEvent,
   })
+
+  // ── Shapes and Connectors (Phase 1) ────────────────────────────────────────
+  // §6a: on the public path, `collaborationEnabled` is false and shapes seed
+  // from `publicShapesData` instead (no query, no socket).
+  const {
+    createShape: createShapeMutation,
+    updateShape: updateShapeMutation,
+    deleteShape: deleteShapeMutation,
+    createConnector: createConnectorMutation,
+    deleteConnector: deleteConnectorMutation,
+  } = useWhiteboardShapes({
+    whiteboardId,
+    userId,
+    enabled: collaborationEnabled,
+    on: onCollabEvent,
+    off: offCollabEvent,
+    emit: emitCollabEvent,
+    isPublic,
+    publicData: publicShapesData,
+  })
+  const shapes = EMPTY_ERD_SHAPES
+  const connectors = EMPTY_ERD_CONNECTORS
+
+  // Handle connection drag completion — parse handle IDs and open cardinality
+  // picker. In strict mode (default), source/target are guaranteed correct:
+  // source = node with the source handle (drag start), target = node with
+  // the target handle (drop).
+  const handleConnect = useCallback(
+    (connection: Connection) => {
+      const { source, target, sourceHandle, targetHandle } = connection
+      if (!source || !target) return
+
+      // Shape-to-shape branch (tech-spec §4), checked BEFORE the column-
+      // handle early-return: if both endpoints are shape nodes, create a
+      // connector and return — otherwise fall through to the existing,
+      // completely untouched cardinality-picker path (FR-017).
+      const sourceNode = reactFlowInstance.getNode(source)
+      const targetNode = reactFlowInstance.getNode(target)
+      if (sourceNode?.type === 'shape' && targetNode?.type === 'shape') {
+        createConnectorMutation({
+          sourceShapeId: source,
+          targetShapeId: target,
+        })
+        return
+      }
+
+      if (!sourceHandle || !targetHandle) return
+      const parsedSource = parseColumnHandleId(sourceHandle)
+      const parsedTarget = parseColumnHandleId(targetHandle)
+      if (!parsedSource || !parsedTarget) return
+
+      // Use connection.source/target (React Flow node IDs = table IDs) for table direction,
+      // and parsed handle IDs only for column IDs.
+      setPendingConnection({
+        sourceTableId: source,
+        sourceColumnId: parsedSource.columnId,
+        targetTableId: target,
+        targetColumnId: parsedTarget.columnId,
+      })
+      setSelectedCardinality('ONE_TO_MANY')
+    },
+    [reactFlowInstance, createConnectorMutation],
+  )
 
   // ── Canvas comments (GH #110) ──────────────────────────────────────────────
   // Threaded comments anchored to a table or a free canvas point. VIEWER+ may
@@ -1983,12 +2142,20 @@ function ReactFlowWhiteboardInner({
     handlePanToComment,
   ])
 
-  // Free-point comment placement tool (GH #110) — toggled from the floating
-  // toolbar button; while active, the next pane click captures a flow
+  // Canvas-wide tool mode (D-1, Phase 1: shapes-and-connectors). Replaces
+  // the old standalone `commentToolActive` boolean — two parallel mode
+  // mechanisms could both be "active" at once with nothing defining what
+  // that meant. The comment tool's observable behaviour is unchanged: it is
+  // still a click-to-place tool (activeTool === 'comment'), never suppresses
+  // panOnDrag, and mounts no draw overlay.
+  const [activeTool, setActiveTool] = useState<ToolMode>('select')
+  const commentToolActive = activeTool === 'comment'
+
+  // Free-point comment placement tool (GH #110) — toggled from the shape
+  // tool palette; while active, the next pane click captures a flow
   // position and opens the "new comment" dialog (shadcn Dialog, not a native
   // prompt — keeps the UI shadcn-only while still supporting click-to-place,
   // since the comment body cannot be empty per createCommentSchema).
-  const [commentToolActive, setCommentToolActive] = useState(false)
   const [pendingCommentPosition, setPendingCommentPosition] = useState<{
     x: number
     y: number
@@ -2071,131 +2238,23 @@ function ReactFlowWhiteboardInner({
     areasRef.current = areas
   }, [areas])
 
-  // Auto-fit an area's bounds around its current members (GH #106 Bug 2 fix).
-  // Reads live member geometry from the React Flow instance (measured
-  // width/height), computes the new bounding box, and persists only when the
-  // bounds actually changed — this is the feedback-loop guard: refitArea is
-  // never wired as a reaction to `area:updated` (useWhiteboardAreas already
-  // ignores echoes of the current user's own updates via `updatedBy`), it is
-  // only invoked from explicit triggers (member drag-stop, membership
-  // add/remove, post auto-layout).
-  // `memberTableIdsOverride` lets membership-change callers (add/remove to
-  // area) pass the just-computed member list directly, instead of reading
-  // `areasRef` — which still holds the pre-update value until the next
-  // render's effect runs (setAreas → areasRef sync is one tick behind).
-  //
-  // `positionOverrides` (area-autolayout-persistence-fix) lets Auto Layout
-  // pass the just-applied positions directly, instead of reading
-  // `reactFlowInstance.getNodes()` — which is stale for one tick right after
-  // `onAfterLayout` fires (the RF store update from the layout hasn't been
-  // committed/re-rendered yet), so refit was fitting the area to the
-  // members' OLD positions. Size (measured width/height) still comes from
-  // `getNodes()` — only the position is overridden.
-  //
-  // `columnCountOverrides` (area-fit-member-content) is the same fix for the
-  // same class of bug, applied to column COUNT instead of position: a local
-  // column create/delete applies its optimistic `setNodes` update, but that
-  // update hasn't committed/re-rendered yet either, so `getNodes()` would
-  // still report the member's OLD column count for one tick. Height is
-  // ALWAYS computed from `columnCount` (via `computeAreaBounds` →
-  // `calculateTableHeight`), never from measured/display-mode-dependent
-  // height, so every refit path (membership, drag, auto-layout, and the new
-  // column-count trigger) is full-content and client-independent.
-  const refitArea = useCallback(
-    (
-      areaId: string,
-      memberTableIdsOverride?: Array<string>,
-      positionOverrides?: Map<string, { x: number; y: number }>,
-      columnCountOverrides?: Map<string, number>,
-    ) => {
-      const area = areasRef.current.find((a) => a.id === areaId)
-      if (!area) return
-      const memberTableIds = memberTableIdsOverride ?? area.memberTableIds
-      if (memberTableIds.length === 0) return
-
-      const rfNodes = reactFlowInstance.getNodes()
-      const memberNodes = memberTableIds
-        .map((id) => {
-          const node = rfNodes.find((n) => n.id === id) as
-            | TableNodeType
-            | undefined
-          if (!node) return undefined
-          const positionOverride = positionOverrides?.get(id)
-          const position = positionOverride
-            ? { x: positionOverride.x, y: positionOverride.y }
-            : node.position
-          const columnCount =
-            columnCountOverrides?.get(id) ?? node.data.table.columns.length
-          return { ...node, position, columnCount }
-        })
-        .filter((n): n is NonNullable<typeof n> => n !== undefined)
-      if (memberNodes.length === 0) return
-
-      const bounds = computeAreaBounds(memberNodes)
-      if (!bounds) return
-
-      const unchanged =
-        Math.abs(bounds.positionX - area.positionX) < 0.5 &&
-        Math.abs(bounds.positionY - area.positionY) < 0.5 &&
-        Math.abs(bounds.width - area.width) < 0.5 &&
-        Math.abs(bounds.height - area.height) < 0.5
-      if (unchanged) return
-
-      updateAreaMutation(areaId, bounds)
+  // React Flow reports a nested member table's position RELATIVE to its area
+  // (todo #55 follow-up — see node-nesting.ts). Everything in this component
+  // reasons in ABSOLUTE flow coordinates, so every read of live geometry via
+  // `reactFlowInstance.getNodes()` has to undo the nesting first. Nodes with no
+  // `parentId` pass through untouched, which is every table on a board with no
+  // areas.
+  const absolutePositionOf = useCallback(
+    (node: { parentId?: string; position: { x: number; y: number } }) => {
+      if (!node.parentId) return node.position
+      const parent = areasRef.current.find((a) => a.id === node.parentId)
+      if (!parent) return node.position
+      return {
+        x: node.position.x + parent.positionX,
+        y: node.position.y + parent.positionY,
+      }
     },
-    [reactFlowInstance, updateAreaMutation],
-  )
-
-  // Re-fit every area containing `tableId` — used after a LOCAL column
-  // create/delete (area-fit-member-content). `columnCountOverride`, when
-  // given, is the just-applied column count for `tableId` (computed by the
-  // caller from the pre-mutation node list + 1/-1) so the refit doesn't read
-  // the one-tick-stale `getNodes()` count (see `refitArea`'s
-  // `columnCountOverrides` comment above). Deliberately NOT wired to remote
-  // column events (`onColumnCreated`/`onColumnDeleted`) or the display-mode
-  // toggle — peers grow their area via the existing `area:updated`
-  // broadcast, and full-content bounds are deterministic from shared column
-  // data, so a remote-triggered refit here would only produce a redundant
-  // `area:update` emit.
-  const refitAreasContainingTable = useCallback(
-    (tableId: string, columnCountOverride?: number) => {
-      const columnCountOverrides =
-        columnCountOverride !== undefined
-          ? new Map([[tableId, columnCountOverride]])
-          : undefined
-      areasRef.current
-        .filter((area) => area.memberTableIds.includes(tableId))
-        .forEach((area) =>
-          refitArea(area.id, undefined, undefined, columnCountOverrides),
-        )
-    },
-    [refitArea],
-  )
-
-  // Wire refitAreasContainingTable ref now that it's available (see the ref's
-  // declaration comment above for why this indirection is needed).
-  useEffect(() => {
-    refitAreasContainingTableRef.current = refitAreasContainingTable
-  }, [refitAreasContainingTable])
-
-  // Re-fit every area with ≥1 member — called after Auto Layout re-lays-out
-  // the tables (areas themselves are excluded from that layout, see
-  // useAutoLayoutOrchestrator's onAfterLayout wiring below).
-  //
-  // `positions` (area-autolayout-persistence-fix), when provided, are the
-  // just-applied Auto Layout positions — forwarded to `refitArea` as
-  // position overrides so refit computes bounds from the fresh layout
-  // instead of the one-tick-stale `reactFlowInstance.getNodes()`.
-  const refitAllAreas = useCallback(
-    (positions?: Array<{ id: string; x: number; y: number }>) => {
-      const positionOverrides = positions
-        ? new Map(positions.map((p) => [p.id, { x: p.x, y: p.y }]))
-        : undefined
-      areasRef.current.forEach((area) =>
-        refitArea(area.id, undefined, positionOverrides),
-      )
-    },
-    [refitArea],
+    [],
   )
 
   // Area drag → moves members (movable-container grouping, GH #106 Bug 2 fix,
@@ -2277,23 +2336,6 @@ function ReactFlowWhiteboardInner({
         )
       }
 
-      // GH #106 code-review WARNING: refit every OTHER area that contains ANY
-      // moved member — fired immediately, matching handleNodeDragStop's
-      // refit timing (not gated on persistence success below). The dragged
-      // area itself is excluded: its position is owned by the atomic
-      // moveArea call, not by a bounds refit.
-      const movedMemberIds = new Set(movedMembers.map((m) => m.id))
-      const areaIdsToRefit = new Set<string>()
-      areasRef.current.forEach((area) => {
-        if (
-          area.id !== areaId &&
-          area.memberTableIds.some((id) => movedMemberIds.has(id))
-        ) {
-          areaIdsToRefit.add(area.id)
-        }
-      })
-      areaIdsToRefit.forEach((id) => refitArea(id))
-
       moveArea(
         areaId,
         { positionX, positionY },
@@ -2340,7 +2382,6 @@ function ReactFlowWhiteboardInner({
       applyRemoteAreaMove,
       moveArea,
       setNodes,
-      refitArea,
       triggerSessionExpired,
       patchWhiteboardTablePositions,
     ],
@@ -2402,14 +2443,14 @@ function ReactFlowWhiteboardInner({
   // re-render (ReactFlowCanvas.tsx). That stale cache is why tables visibly
   // reverted to their pre-layout positions and areas detached from their
   // members after a re-render. This mirrors `updatePositionMutation`'s
-  // onSuccess cache patch above, generalized to N tables, then refits areas
-  // from the SAME fresh positions (not the one-tick-stale getNodes()).
+  // onSuccess cache patch above, generalized to N tables. Areas are NOT
+  // resized to follow: an area's bounds are the user's to set (see the
+  // no-auto-fit note on `handleCreateDrawnArea`).
   const handleAfterAutoLayout = useCallback(
     (positions: Array<{ id: string; x: number; y: number }>) => {
       patchWhiteboardTablePositions(positions)
-      refitAllAreas(positions)
     },
-    [patchWhiteboardTablePositions, refitAllAreas],
+    [patchWhiteboardTablePositions],
   )
 
   // Auto Layout orchestrator — owns the full flow:
@@ -2435,9 +2476,8 @@ function ReactFlowWhiteboardInner({
       if (!area || area.memberTableIds.includes(tableId)) return
       const nextMemberTableIds = [...area.memberTableIds, tableId]
       updateAreaMutation(areaId, { memberTableIds: nextMemberTableIds })
-      refitArea(areaId, nextMemberTableIds)
     },
-    [updateAreaMutation, refitArea],
+    [updateAreaMutation],
   )
   const handleRemoveTableFromArea = useCallback(
     (tableId: string, areaId: string) => {
@@ -2447,9 +2487,8 @@ function ReactFlowWhiteboardInner({
         (mid) => mid !== tableId,
       )
       updateAreaMutation(areaId, { memberTableIds: nextMemberTableIds })
-      refitArea(areaId, nextMemberTableIds)
     },
-    [updateAreaMutation, refitArea],
+    [updateAreaMutation],
   )
 
   // Inject the current area list + membership handlers into every table node's
@@ -2512,23 +2551,828 @@ function ReactFlowWhiteboardInner({
     setNodes,
   ])
 
-  // Create a new area at the current viewport center.
-  const handleCreateArea = useCallback(() => {
-    const width = 360
-    const height = 240
-    const center = reactFlowInstance.screenToFlowPosition({
-      x: window.innerWidth / 2,
-      y: window.innerHeight / 2,
+  // Create an area from a drawn rectangle, grouping every table the user drew
+  // around (todo #55 item 2). The area tool is a drag-to-draw tool like the
+  // shape tools — `handleDrawCommit` routes the `'area'` kind here.
+  //
+  // Membership is decided by the table's CENTRE point (`tableIdsEnclosedByRect`
+  // — the same rule `handleNodeDragStop` uses for drag-in/drag-out), so a table
+  // the user visibly circled joins even if a corner pokes out, and it does not
+  // immediately drop back out on the next nudge.
+  //
+  // NO AUTO-FIT, anywhere: the rectangle the user drew IS the area's size, and
+  // nothing recomputes it afterwards — not a member moving, not a table joining
+  // or leaving, not Auto Layout. An area is resized only by the user, by
+  // dragging AreaNode's NodeResizer handles. Auto-fit used to exist and was
+  // removed deliberately: it fought the resize handles (any member move snapped
+  // the box back), and because members are now React Flow children, an auto-fit
+  // that repositioned the area dragged every OTHER member along with it.
+  // Only the MIN_AREA_* floors (matching the NodeResizer minimums) are applied,
+  // so even a tiny drag yields a usable, resizable area.
+  const handleCreateDrawnArea = useCallback(
+    (rect: { x: number; y: number; width: number; height: number }) => {
+      const width = Math.max(rect.width, MIN_AREA_WIDTH)
+      const height = Math.max(rect.height, MIN_AREA_HEIGHT)
+      const areaRect = {
+        positionX: rect.x,
+        positionY: rect.y,
+        width,
+        height,
+      }
+
+      const candidates = reactFlowInstance
+        .getNodes()
+        .filter((n) => n.type === 'table')
+        .map((n) => {
+          const w = n.measured?.width ?? LAYOUT_CONSTRAINTS.DEFAULT_NODE_WIDTH
+          const h =
+            n.measured?.height ??
+            calculateTableHeight(
+              (n.data as TableNodeType['data']).table.columns.length,
+            )
+          // A table already nested in ANOTHER area reports a relative position
+          // — un-nest it before hit-testing against the drawn rectangle.
+          const position = absolutePositionOf(n)
+          return {
+            id: n.id,
+            center: { x: position.x + w / 2, y: position.y + h / 2 },
+          }
+        })
+
+      createAreaMutation({
+        name: 'New area',
+        color: DEFAULT_AREA_COLOR,
+        positionX: areaRect.positionX,
+        positionY: areaRect.positionY,
+        width,
+        height,
+        memberTableIds: tableIdsEnclosedByRect(candidates, areaRect),
+      })
+    },
+    [absolutePositionOf, reactFlowInstance, createAreaMutation],
+  )
+
+  // ── Shapes and Connectors (Phase 1) ────────────────────────────────────────
+
+  // An uncommitted text-box draft (FR-012): drawn but not yet `shape:create`d.
+  // Rendered through the SAME ShapeNode component (isDraft: true) so the
+  // dashed placeholder + immediately focused editor need no separate UI path.
+  const [draftShape, setDraftShape] = useState<Shape | null>(null)
+
+  // A freshly created shape is selected (FR-005) and STAYS selected — like
+  // any normal click-selection — until the user deselects it (a pane click
+  // clears it explicitly, below) or selects something else via a normal
+  // click (React Flow's own onNodesChange updates the live selection state
+  // directly and does not depend on this id at all once set).
+  const [justCreatedShapeId, setJustCreatedShapeId] = useState<string | null>(
+    null,
+  )
+
+  // Bumped to request the label editor open for a specific shape — the
+  // keyboard Enter/F2 entry gesture (FR-011) reuses this same mechanism.
+  const [labelEditRequest, setLabelEditRequest] = useState<{
+    shapeId: string
+    token: number
+  } | null>(null)
+  const nextEditTokenRef = useRef(0)
+  /**
+   * Quick-create only: the id whose label editor should open once the shape
+   * actually exists in `shapes` AND React Flow has adopted its node.
+   *
+   * Calling `requestLabelEdit` directly from the create ack does NOT work:
+   * ShapeNode seeds `lastTokenRef` from the `editRequestToken` it receives
+   * AT MOUNT, so a token set before the node mounts is already equal to the
+   * ref on the first effect run — no change is detected and the editor
+   * never opens. Deferring to the same rAF that applies selection is the
+   * wait-for-adoption pattern documented on that effect below.
+   */
+  const pendingLabelEditIdRef = useRef<string | null>(null)
+  const requestLabelEdit = useCallback((shapeId: string) => {
+    nextEditTokenRef.current += 1
+    setLabelEditRequest({ shapeId, token: nextEditTokenRef.current })
+  }, [])
+
+  const handleShapeResizeEnd = useCallback(
+    (
+      shapeId: string,
+      bounds: {
+        positionX: number
+        positionY: number
+        width: number
+        height: number
+      },
+    ) => updateShapeMutation(shapeId, bounds),
+    [updateShapeMutation],
+  )
+
+  const handleShapeStyleChange = useCallback(
+    (shapeId: string, patch: Partial<ShapeStyle>) => {
+      // The server treats `style` as a full REPLACE, not a merge — send the
+      // complete merged style or an un-patched field (e.g. stroke) would
+      // reset every other field to its schema default.
+      const current = shapes.find((s) => s.id === shapeId)?.style
+      updateShapeMutation(shapeId, {
+        style: { ...current, ...patch } as ShapeStyle,
+      })
+    },
+    [shapes, updateShapeMutation],
+  )
+
+  const handleShapeLabelCommit = useCallback(
+    (shapeId: string, text: string) => {
+      updateShapeMutation(shapeId, { text: text.length > 0 ? text : null })
+    },
+    [updateShapeMutation],
+  )
+
+  // Draft (text-box) commit: creates the row for the FIRST time — the
+  // deferred-create is what makes "commit empty creates nothing" true by
+  // construction rather than by a compensating delete (FR-012).
+  const handleDraftCommit = useCallback(
+    (draft: Shape, text: string) => {
+      setDraftShape(null)
+      createShapeMutation(
+        {
+          kind: 'text',
+          positionX: draft.positionX,
+          positionY: draft.positionY,
+          width: draft.width,
+          height: draft.height,
+          props: { kind: 'text' },
+          text,
+        },
+        (created) => setJustCreatedShapeId(created.id),
+      )
+    },
+    [createShapeMutation],
+  )
+  const handleDraftCancel = useCallback(() => {
+    setDraftShape(null)
+  }, [])
+
+  // Persist a shape drag-stop — one shape:update per dragged shape (N of
+  // them for a multi-select drag, never per-frame, tech-spec §10).
+  const handleShapeDragStop = useCallback(
+    (dragged: Array<{ id: string; positionX: number; positionY: number }>) => {
+      for (const entry of dragged) {
+        updateShapeMutation(entry.id, {
+          positionX: entry.positionX,
+          positionY: entry.positionY,
+        })
+      }
+    },
+    [updateShapeMutation],
+  )
+
+  // The draw gesture's commit (D-2, FR-002/FR-005): normalise the drawn
+  // rect, clamp to the minimum floor, and either create the shape
+  // immediately (four kinds) or open an uncommitted draft (text, FR-012).
+  const handleDrawCommit = useCallback(
+    (
+      kind: DrawGestureTool,
+      rect: { x: number; y: number; width: number; height: number },
+      drag: { startX: number; startY: number; endX: number; endY: number },
+    ) => {
+      // 'area' shares the gesture but not the target — it creates an Area row
+      // (with membership), not a Shape, so it branches before TOOL_TO_SHAPE_KIND
+      // (which has no 'area' entry, by design).
+      if (kind === 'area') {
+        handleCreateDrawnArea(rect)
+        setActiveTool('select')
+        return
+      }
+
+      const shapeKind = TOOL_TO_SHAPE_KIND[kind]
+      const width = Math.max(rect.width, MIN_SHAPE_WIDTH)
+      const height = Math.max(rect.height, MIN_SHAPE_HEIGHT)
+
+      if (shapeKind === 'text') {
+        setDraftShape(
+          buildDefaultTextDraft({
+            whiteboardId,
+            positionX: rect.x,
+            positionY: rect.y,
+            width: Math.max(width, DEFAULT_TEXT_SIZE.width / 2),
+            height: Math.max(height, DEFAULT_TEXT_SIZE.height),
+          }),
+        )
+        setActiveTool('select')
+        return
+      }
+
+      const clamp01 = (v: number) => Math.min(1, Math.max(0, v))
+      const props = buildShapeCreateProps(
+        shapeKind,
+        shapeKind === 'line'
+          ? {
+              x1: clamp01(width === 0 ? 0 : (drag.startX - rect.x) / width),
+              y1: clamp01(height === 0 ? 0.5 : (drag.startY - rect.y) / height),
+              x2: clamp01(width === 0 ? 1 : (drag.endX - rect.x) / width),
+              y2: clamp01(height === 0 ? 0.5 : (drag.endY - rect.y) / height),
+            }
+          : undefined,
+      )
+
+      createShapeMutation(
+        {
+          kind: shapeKind,
+          positionX: rect.x,
+          positionY: rect.y,
+          width,
+          height,
+          props: props as never,
+        },
+        (created) => setJustCreatedShapeId(created.id),
+      )
+      setActiveTool('select')
+    },
+    [whiteboardId, createShapeMutation, handleCreateDrawnArea],
+  )
+
+  const handleDrawDisarm = useCallback(() => {
+    setActiveTool('select')
+  }, [])
+
+  // Quick-create (approved plan): a connect marker was CLICKED, so make a
+  // same-kind, same-size, same-style shape on that side, connect the two,
+  // select the new one and open its label editor — the FigJam
+  // click-type-click-type flow. `Alt+Arrow` routes here too (keydown
+  // handler below), which is this gesture's pointerless path.
+  // ONE resolver for both the ghost preview and the real create — if these
+  // were computed separately the preview could show a slot the create then
+  // rejects, which is exactly the lie a preview must never tell.
+  const resolveQuickCreateTarget = useCallback(
+    (shapeId: string, direction: QuickCreateDirection) => {
+      const source = shapes.find((shape) => shape.id === shapeId)
+      // A line has no meaningful "same shape in a direction" and renders no
+      // markers, so it can only arrive here via the keyboard path.
+      if (!source || source.kind === 'line') return null
+
+      // Every node type counts as an obstacle, not just shapes — a table or
+      // an area sitting in the slot must push the new shape further out too.
+      const occupied = reactFlowInstance.getNodes().map((node) => {
+        const measured = resolveMeasuredSize(node.measured ?? undefined, {
+          width: node.width ?? 0,
+          height: node.height ?? 0,
+        })
+        return {
+          x: node.position.x,
+          y: node.position.y,
+          width: measured.width,
+          height: measured.height,
+        }
+      })
+
+      const { positionX, positionY } = quickCreatePlacement(
+        {
+          kind: source.kind,
+          x: source.positionX,
+          y: source.positionY,
+          width: source.width,
+          height: source.height,
+        },
+        direction,
+        { width: source.width, height: source.height },
+        occupied,
+      )
+      return { source, positionX, positionY }
+    },
+    [shapes, reactFlowInstance],
+  )
+
+  // The ghost outline shown while an arrow is hovered (FigJam preview).
+  const [quickCreateGhost, setQuickCreateGhost] = useState<{
+    positionX: number
+    positionY: number
+    width: number
+    height: number
+  } | null>(null)
+
+  const handleQuickCreateHover = useCallback(
+    (shapeId: string, direction: QuickCreateDirection | null) => {
+      if (!canEdit || isPublic || direction === null) {
+        setQuickCreateGhost(null)
+        return
+      }
+      const target = resolveQuickCreateTarget(shapeId, direction)
+      if (!target) {
+        setQuickCreateGhost(null)
+        return
+      }
+      setQuickCreateGhost({
+        positionX: target.positionX,
+        positionY: target.positionY,
+        width: target.source.width,
+        height: target.source.height,
+      })
+    },
+    [canEdit, isPublic, resolveQuickCreateTarget],
+  )
+
+  const handleQuickCreate = useCallback(
+    (shapeId: string, direction: QuickCreateDirection) => {
+      if (!canEdit || isPublic) return
+      const target = resolveQuickCreateTarget(shapeId, direction)
+      if (!target) return
+      const { source, positionX, positionY } = target
+      setQuickCreateGhost(null)
+
+      createShapeMutation(
+        {
+          kind: source.kind,
+          positionX,
+          positionY,
+          width: source.width,
+          height: source.height,
+          style: source.style,
+          // A `text` source creates a text shape directly rather than
+          // through the uncommitted-draft path, so the connector has a real
+          // target id to point at. Committing its label empty then deletes
+          // it through the existing path and cascades the connector
+          // (FR-018). `buildShapeCreateProps` excludes 'text' by design.
+          props: (source.kind === 'text'
+            ? { kind: 'text' as const }
+            : buildShapeCreateProps(source.kind)) as never,
+          text: null,
+        },
+        (created) => {
+          pendingLabelEditIdRef.current = created.id
+          setJustCreatedShapeId(created.id)
+          createConnectorMutation({
+            sourceShapeId: shapeId,
+            targetShapeId: created.id,
+            style: {
+              stroke: source.style.stroke,
+              strokeWidth: source.style.strokeWidth,
+              strokeStyle: source.style.strokeStyle,
+              arrowStart: false,
+              arrowEnd: true,
+            },
+          })
+        },
+      )
+    },
+    [
+      canEdit,
+      isPublic,
+      resolveQuickCreateTarget,
+      createShapeMutation,
+      createConnectorMutation,
+    ],
+  )
+
+  // Build React Flow shape nodes from the shapes list (+ the uncommitted
+  // draft, if any). N1 fix: `selectable`/`draggable`/`deletable` all derive
+  // from `canEdit` (already false on the public path AND for an
+  // authenticated VIEWER, since both pass a viewerRole hasMinimumRole
+  // resolves to false for) — the identical pattern area nodes already use.
+  const shapeNodes = useMemo<Array<ShapeNodeType>>(() => {
+    const built: Array<ShapeNodeType> = shapes.map((shape) => ({
+      id: shape.id,
+      type: 'shape',
+      position: { x: shape.positionX, y: shape.positionY },
+      width: shape.width,
+      height: shape.height,
+      draggable: canEdit,
+      selectable: canEdit,
+      deletable: canEdit,
+      // `selected` is deliberately NOT computed here (B2, Hermes code
+      // review). This memo recomputes on every `shapes` change, so a
+      // derived `selected` value is re-asserted on every recompute — the
+      // resync effect in ReactFlowCanvas can then only ever ADD selection
+      // back in, never durably clear it, because the incoming memo value
+      // wins whenever it's already `true`. A shape that was selected once
+      // (e.g. just after creation) would silently re-select itself on
+      // every future data change (a remote edit, a style change, anything
+      // that gives `shapes` a new array identity) and ride along into
+      // Delete with whatever is genuinely selected at the time. Selection
+      // is live interaction state owned by React Flow's store, not derived
+      // data — see the one-shot `addSelectedNodes` effect below for how
+      // "select the thing I just created" is applied instead, and
+      // ReactFlowCanvas's resync effect for how `selected` is now
+      // preserved unconditionally from live state across a resync.
+      zIndex: 0,
+      data: {
+        shape,
+        canEdit,
+        editRequestToken:
+          labelEditRequest?.shapeId === shape.id
+            ? labelEditRequest.token
+            : undefined,
+        onResizeEnd: handleShapeResizeEnd,
+        onStyleChange: handleShapeStyleChange,
+        onLabelCommit: handleShapeLabelCommit,
+        onDelete: deleteShapeMutation,
+        onQuickCreate: handleQuickCreate,
+        onQuickCreateHover: handleQuickCreateHover,
+      },
+    }))
+    // The hover ghost, appended last so it paints above the shapes it
+    // previews against. Inert: unselectable, undraggable, undeletable.
+    if (quickCreateGhost) {
+      built.push({
+        id: QUICK_CREATE_GHOST_ID,
+        type: 'quickCreateGhost',
+        position: {
+          x: quickCreateGhost.positionX,
+          y: quickCreateGhost.positionY,
+        },
+        width: quickCreateGhost.width,
+        height: quickCreateGhost.height,
+        draggable: false,
+        selectable: false,
+        deletable: false,
+        focusable: false,
+        zIndex: 0,
+        data: {
+          width: quickCreateGhost.width,
+          height: quickCreateGhost.height,
+        },
+      } as unknown as ShapeNodeType)
+    }
+    if (draftShape) {
+      built.push({
+        id: draftShape.id,
+        type: 'shape',
+        position: { x: draftShape.positionX, y: draftShape.positionY },
+        width: draftShape.width,
+        height: draftShape.height,
+        draggable: false,
+        selectable: false,
+        deletable: false,
+        zIndex: 0,
+        data: {
+          shape: draftShape,
+          canEdit,
+          isDraft: true,
+          onDraftCommit: handleDraftCommit,
+          onDraftCancel: handleDraftCancel,
+        },
+      })
+    }
+    return built
+  }, [
+    shapes,
+    canEdit,
+    labelEditRequest,
+    handleShapeResizeEnd,
+    handleShapeStyleChange,
+    handleShapeLabelCommit,
+    deleteShapeMutation,
+    handleQuickCreate,
+    handleQuickCreateHover,
+    quickCreateGhost,
+    draftShape,
+    handleDraftCommit,
+    handleDraftCancel,
+  ])
+
+  // One-shot selection for a just-created shape (FR-005, B2 fix) — applied
+  // IMPERATIVELY through the store API exactly once, instead of as a
+  // standing `selected` predicate in the shapeNodes memo above (see that
+  // memo's comment for the full B2 history: a derived, re-asserted
+  // `selected` combined with an OR-only resync merge meant a
+  // once-selected shape could silently re-select itself on any later,
+  // unrelated data change and ride into a Delete the user never intended
+  // for it). Waits for `shapes` to actually contain the new id — the
+  // creation mutation's ack callback can fire in the same tick it sets
+  // this state, before the `shapes` array (and therefore this render's
+  // node set) has caught up. The one-frame defer mirrors the same
+  // wait-for-adoption pattern ReactFlowCanvas's keyboard-focus effect
+  // already uses for the identical reason (a fresh node isn't necessarily
+  // in React Flow's own internal node lookup yet on the same tick its data
+  // arrives).
+  //
+  // `justCreatedShapeId` is consumed (reset to `null`) INSIDE the rAF
+  // callback, AFTER the selection is applied — not synchronously in the
+  // same effect tick that schedules the rAF. Resetting it synchronously
+  // here would trigger this same effect's own cleanup
+  // (`cancelAnimationFrame`) on the very next render, before the browser
+  // ever reaches the next animation frame — cancelling the selection
+  // before it happens, every time. (Observed empirically: an earlier
+  // version of this effect consumed the id synchronously and no
+  // just-created shape was ever actually selected.)
+  useEffect(() => {
+    if (!justCreatedShapeId) return
+    if (!shapes.some((s) => s.id === justCreatedShapeId)) return
+    const idToSelect = justCreatedShapeId
+    const raf = requestAnimationFrame(() => {
+      reactFlowStoreApi.getState().unselectNodesAndEdges()
+      reactFlowStoreApi.getState().addSelectedNodes([idToSelect])
+      // Quick-create asks for the label editor too. Requested HERE rather
+      // than in the create ack for the reason documented on
+      // `pendingLabelEditIdRef`: a token that arrives before the node
+      // mounts is invisible to ShapeNode's edge-triggered effect. Left
+      // null by every other creation path, so draw-create is unchanged.
+      if (pendingLabelEditIdRef.current === idToSelect) {
+        pendingLabelEditIdRef.current = null
+        requestLabelEdit(idToSelect)
+      }
+      setJustCreatedShapeId(null)
     })
-    createAreaMutation({
-      name: 'New area',
-      color: DEFAULT_AREA_COLOR,
-      positionX: center.x - width / 2,
-      positionY: center.y - height / 2,
-      width,
-      height,
+    return () => cancelAnimationFrame(raf)
+  }, [justCreatedShapeId, shapes, reactFlowStoreApi, requestLabelEdit])
+
+  // Build React Flow connector edges from the connectors list.
+  const connectorEdges = useMemo<Array<ConnectorEdgeType>>(
+    () =>
+      connectors.map((connector) => ({
+        id: connector.id,
+        type: 'connector',
+        source: connector.sourceShapeId,
+        target: connector.targetShapeId,
+        // A shape node has FOUR source handles (shape-src-top/right/bottom/
+        // left) and one target handle (shape-tgt). React Flow's own
+        // sourceX/Y-resolution needs a concrete handle id whenever a node
+        // has more than one handle of that type, or it silently declines to
+        // render the edge at all — even though ConnectorEdge ignores
+        // React Flow's sourceX/Y entirely and derives geometry itself via
+        // useInternalNode (FR-031a). The specific side is irrelevant; any
+        // valid handle id satisfies the resolver.
+        sourceHandle: SHAPE_HANDLE_IDS.sourceTop,
+        targetHandle: SHAPE_HANDLE_IDS.target,
+        deletable: canEdit,
+        selectable: canEdit,
+        data: { connector },
+      })),
+    [connectors, canEdit],
+  )
+
+  // FR-019a: keyboard-focused shape (creation-order traversal), distinct
+  // from React Flow's own `selected` state. Deliberately NOT part of the
+  // `shapeNodes` memo above (see ReactFlowCanvas's `keyboardFocusedShapeId`
+  // prop comment) — it is rendered via a direct DOM class toggle instead, so
+  // moving focus can never itself clear a live selection.
+  const [focusedShapeId, setFocusedShapeId] = useState<string | null>(null)
+
+  // Order of shapes added to the selection via the KEYBOARD additive path
+  // (Ctrl/Cmd+Enter/Space) — gives FR-019's "first-selected to
+  // second-selected" a defined meaning under keyboard selection. Mouse
+  // shift-click selection has no such contract and is untouched; the
+  // Connect action below falls back to node-array order whenever this ref
+  // doesn't cover the current selection exactly, so mouse-only flows behave
+  // exactly as before.
+  const keyboardSelectionOrderRef = useRef<Array<string>>([])
+
+  // FR-019a: scroll the keyboard-focused shape into view when it is off the
+  // current viewport. Uses `screenToFlowPosition` on the window's own
+  // corners (`screenToFlowPosition` on window coordinates, the same
+  // convention the draw/create handlers use) rather than a DOM query, so it
+  // needs no extra container ref.
+  useEffect(() => {
+    if (!focusedShapeId) return
+    const shape = shapes.find((s) => s.id === focusedShapeId)
+    if (!shape) return
+    const topLeft = reactFlowInstance.screenToFlowPosition({ x: 0, y: 0 })
+    const bottomRight = reactFlowInstance.screenToFlowPosition({
+      x: window.innerWidth,
+      y: window.innerHeight,
     })
-  }, [reactFlowInstance, createAreaMutation])
+    const isVisible =
+      shape.positionX >= topLeft.x &&
+      shape.positionX + shape.width <= bottomRight.x &&
+      shape.positionY >= topLeft.y &&
+      shape.positionY + shape.height <= bottomRight.y
+    if (!isVisible) {
+      reactFlowInstance.setCenter(
+        shape.positionX + shape.width / 2,
+        shape.positionY + shape.height / 2,
+        { zoom: reactFlowInstance.getZoom(), duration: 200 },
+      )
+    }
+  }, [focusedShapeId, shapes, reactFlowInstance])
+
+  // Keyboard parity for shapes (FR-019/FR-019a): traversal, additive
+  // selection, and nudge/resize/connect/label-edit on the current React Flow
+  // selection. Mirrors the existing bare-key shortcut convention (see
+  // useMinimapFocusShortcut) for the input-target guard. Reads live
+  // selection via `reactFlowInstance.getNodes()` rather than a separately-
+  // tracked selection array, since React Flow's own controlled-node
+  // selection state is the single source of truth shapes already
+  // participate in (click-to-select) — `addSelectedNodes`/
+  // `unselectNodesAndEdges` route through that exact same store, so a
+  // keyboard-driven select and a mouse-driven one are indistinguishable to
+  // every other consumer (NodeResizer visibility, ShapeStyleControls, etc).
+  useEffect(() => {
+    if (!canEdit || isPublic) return
+
+    function selectedShapeNodes() {
+      return reactFlowInstance
+        .getNodes()
+        .filter(
+          (n): n is ShapeNodeType =>
+            n.type === 'shape' && !!n.selected && !n.data.isDraft,
+        )
+    }
+
+    function handleKeyDown(event: KeyboardEvent) {
+      const el = event.target instanceof HTMLElement ? event.target : null
+      const tag = el?.tagName
+      if (
+        tag === 'INPUT' ||
+        tag === 'TEXTAREA' ||
+        tag === 'BUTTON' ||
+        el?.isContentEditable
+      ) {
+        return
+      }
+
+      // Traverse shapes (FR-019a): bare 'n'/Shift+N, matching the existing
+      // z/m/f/r/d bare-key convention. Works with zero shapes selected —
+      // traversal is how a keyboard user REACHES a shape to select in the
+      // first place. Creation order (`shapes` is already `createdAt ASC`,
+      // src/data/shape.ts), wrapping at either end.
+      if (
+        (event.key === 'n' || event.key === 'N') &&
+        !event.ctrlKey &&
+        !event.metaKey &&
+        !event.altKey
+      ) {
+        if (shapes.length === 0) return
+        event.preventDefault()
+        const currentIndex = focusedShapeId
+          ? shapes.findIndex((s) => s.id === focusedShapeId)
+          : -1
+        const nextIndex = event.shiftKey
+          ? currentIndex <= 0
+            ? shapes.length - 1
+            : currentIndex - 1
+          : currentIndex === -1
+            ? 0
+            : (currentIndex + 1) % shapes.length
+        setFocusedShapeId(shapes[nextIndex].id)
+        return
+      }
+
+      const selected = selectedShapeNodes()
+      const isBareEnterOrSpace =
+        (event.key === 'Enter' || event.key === ' ') &&
+        !event.ctrlKey &&
+        !event.metaKey
+
+      // Select the focused shape, replacing the previous selection
+      // (FR-019a) — UNLESS this Enter is actually FR-011's "open the label
+      // editor for the already-sole-selected shape" gesture (the focused
+      // shape already IS the one-and-only selection, so there is nothing
+      // left to "reach"). A second bare Enter on the same shape therefore
+      // opens the editor, exactly as before traversal existed.
+      if (
+        isBareEnterOrSpace &&
+        focusedShapeId &&
+        !(
+          event.key === 'Enter' &&
+          selected.length === 1 &&
+          selected[0].id === focusedShapeId
+        )
+      ) {
+        event.preventDefault()
+        reactFlowStoreApi.getState().unselectNodesAndEdges()
+        reactFlowStoreApi.getState().addSelectedNodes([focusedShapeId])
+        keyboardSelectionOrderRef.current = [focusedShapeId]
+        return
+      }
+
+      // Add the focused shape to the selection, order preserved (FR-019a).
+      if (
+        (event.key === 'Enter' || event.key === ' ') &&
+        (event.ctrlKey || event.metaKey) &&
+        focusedShapeId
+      ) {
+        event.preventDefault()
+        const alreadySelected = selected.some((n) => n.id === focusedShapeId)
+        if (!alreadySelected) {
+          if (keyboardSelectionOrderRef.current.length === 0) {
+            keyboardSelectionOrderRef.current = selected.map((n) => n.id)
+          }
+          keyboardSelectionOrderRef.current.push(focusedShapeId)
+          reactFlowStoreApi.getState().addSelectedNodes([
+            ...selected.map((n) => n.id),
+            focusedShapeId,
+          ])
+        }
+        return
+      }
+
+      // Clear the selection; focus remains on the canvas region (FR-019a).
+      // Tab is never intercepted anywhere in this handler, so a keyboard
+      // user can always leave the canvas region — no separate binding
+      // needed for that half of the requirement.
+      if (event.key === 'Escape' && !event.ctrlKey && !event.metaKey) {
+        if (selected.length > 0) {
+          event.preventDefault()
+          reactFlowStoreApi.getState().unselectNodesAndEdges()
+          keyboardSelectionOrderRef.current = []
+        }
+        return
+      }
+
+      if (selected.length === 0) return
+
+      // Enter / F2 with exactly one shape selected: open its label editor.
+      if (
+        (event.key === 'Enter' || event.key === 'F2') &&
+        selected.length === 1 &&
+        !event.ctrlKey &&
+        !event.metaKey
+      ) {
+        event.preventDefault()
+        requestLabelEdit(selected[0].id)
+        return
+      }
+
+      // 'c' with exactly two shapes selected: connect them, in selection
+      // order. Prefers the keyboard-tracked order (FR-019a) when it covers
+      // exactly the current selection; falls back to node-array order
+      // otherwise (unchanged mouse-selection behavior).
+      if (event.key === 'c' && selected.length === 2) {
+        event.preventDefault()
+        const keyboardOrder = keyboardSelectionOrderRef.current.filter((id) =>
+          selected.some((n) => n.id === id),
+        )
+        const [sourceShapeId, targetShapeId] =
+          keyboardOrder.length === 2
+            ? keyboardOrder
+            : [selected[0].id, selected[1].id]
+        createConnectorMutation({ sourceShapeId, targetShapeId })
+        return
+      }
+
+      const isArrow = [
+        'ArrowUp',
+        'ArrowDown',
+        'ArrowLeft',
+        'ArrowRight',
+      ].includes(event.key)
+      if (!isArrow) return
+
+      // Alt+Arrow: quick-create — the pointerless equivalent of clicking a
+      // connect marker. Checked BEFORE the nudge/resize branch below and
+      // returning immediately, so the same keystroke can never also move
+      // the source shape. Plain / Shift / Ctrl arrows are untouched.
+      if (event.altKey && selected.length === 1) {
+        event.preventDefault()
+        const direction: QuickCreateDirection =
+          event.key === 'ArrowUp'
+            ? 'top'
+            : event.key === 'ArrowDown'
+              ? 'bottom'
+              : event.key === 'ArrowLeft'
+                ? 'left'
+                : 'right'
+        handleQuickCreate(selected[0].id, direction)
+        return
+      }
+
+      event.preventDefault()
+
+      const step = event.shiftKey ? NUDGE_STEP_LARGE : NUDGE_STEP
+      const dx =
+        event.key === 'ArrowLeft'
+          ? -step
+          : event.key === 'ArrowRight'
+            ? step
+            : 0
+      const dy =
+        event.key === 'ArrowUp' ? -step : event.key === 'ArrowDown' ? step : 0
+
+      const isResize = event.ctrlKey || event.metaKey
+      for (const node of selected) {
+        if (isResize) {
+          const nextWidth = Math.max(
+            MIN_SHAPE_WIDTH,
+            node.data.shape.width + dx,
+          )
+          const nextHeight = Math.max(
+            MIN_SHAPE_HEIGHT,
+            node.data.shape.height + dy,
+          )
+          updateShapeMutation(node.id, {
+            width: nextWidth,
+            height: nextHeight,
+          })
+        } else {
+          updateShapeMutation(node.id, {
+            positionX: node.data.shape.positionX + dx,
+            positionY: node.data.shape.positionY + dy,
+          })
+        }
+      }
+    }
+
+    window.addEventListener('keydown', handleKeyDown)
+    return () => window.removeEventListener('keydown', handleKeyDown)
+  }, [
+    canEdit,
+    isPublic,
+    reactFlowInstance,
+    reactFlowStoreApi,
+    requestLabelEdit,
+    createConnectorMutation,
+    handleQuickCreate,
+    updateShapeMutation,
+    shapes,
+    focusedShapeId,
+  ])
 
   // ── Client-side position resolution ────────────────────────────────────────
   // Tables created by the MCP server without an explicit position arrive with
@@ -2764,16 +3608,18 @@ function ReactFlowWhiteboardInner({
       // Aggregating first and writing once per area avoids that race.
       const joinsByArea = new Map<string, Set<string>>()
       const leavesByArea = new Map<string, Set<string>>()
-      const boundsOnlyRefit = new Set<string>()
       for (const d of dragged) {
         const rfNode = reactFlowInstance.getNode(d.id)
-        const w = rfNode?.measured?.width ?? LAYOUT_CONSTRAINTS.DEFAULT_NODE_WIDTH
+        const w =
+          rfNode?.measured?.width ?? LAYOUT_CONSTRAINTS.DEFAULT_NODE_WIDTH
         const h =
           rfNode?.measured?.height ??
           calculateTableHeight(d.data.table.columns.length)
         const center = { x: d.position.x + w / 2, y: d.position.y + h / 2 }
 
-        const { join, leave, refit } = reconcileAreaMembership(
+        // `refit` is intentionally ignored: an area's bounds are the user's
+        // to set, never recomputed from its members (see `handleCreateDrawnArea`).
+        const { join, leave } = reconcileAreaMembership(
           areasRef.current,
           d.id,
           center,
@@ -2787,7 +3633,6 @@ function ReactFlowWhiteboardInner({
           if (!leavesByArea.has(areaId)) leavesByArea.set(areaId, new Set())
           leavesByArea.get(areaId)?.add(d.id)
         })
-        refit.forEach((areaId) => boundsOnlyRefit.add(areaId))
       }
 
       const membershipChangedAreaIds = new Set([
@@ -2808,19 +3653,11 @@ function ReactFlowWhiteboardInner({
             : []),
         ]
         updateAreaMutation(areaId, { memberTableIds: nextMemberTableIds })
-        refitArea(areaId, nextMemberTableIds)
-      })
-      // `boundsOnlyRefit` dedupes so an area containing multiple dragged
-      // tables (with unchanged membership) is only refit once (NFR-1); skip
-      // any area already handled above via a membership-driven refit.
-      boundsOnlyRefit.forEach((areaId) => {
-        if (!membershipChangedAreaIds.has(areaId)) refitArea(areaId)
       })
     },
     [
       updatePositionMutation,
       emitPositionUpdate,
-      refitArea,
       reactFlowInstance,
       updateAreaMutation,
       whiteboardId,
@@ -3041,50 +3878,58 @@ function ReactFlowWhiteboardInner({
               onCancel={() => setDeletingTableId(null)}
             />
           )}
-          {canEdit && !isPublic && (
-            <Button
-              variant="outline"
-              size="sm"
-              onClick={handleCreateArea}
-              title="Add subject area"
-              className="absolute left-4 top-4 z-10"
-            >
-              <SquareDashed className="mr-2 h-4 w-4" />
-              Add area
-            </Button>
-          )}
-          {canComment && !isPublic && (
-            <Button
-              variant={commentToolActive ? 'default' : 'outline'}
-              size="sm"
-              onClick={() => setCommentToolActive((prev) => !prev)}
-              title={
-                commentToolActive
-                  ? 'Click the canvas to place a comment'
-                  : 'Add a comment pin'
-              }
-              aria-pressed={commentToolActive}
-              className="absolute left-4 top-14 z-10"
-            >
-              <MessageCircle className="mr-2 h-4 w-4" />
-              {commentToolActive ? 'Click canvas...' : 'Add comment'}
-            </Button>
-          )}
+          <ShapeToolPalette
+            activeTool={activeTool}
+            onSelectTool={setActiveTool}
+            canEdit={canEdit}
+            canComment={canComment}
+            isPublic={isPublic}
+          />
           <ForceFullDetailContext.Provider value={forceFullDetailForExport}>
             <ReactFlowCanvas
               initialNodes={nodes}
               initialEdges={edges}
               areaNodes={areaNodes}
               commentNodes={commentNodes}
+              shapeNodes={shapeNodes}
+              connectorEdges={connectorEdges}
               // Only the main board honors the perf edge-ablation toggle
               // (GH #142); the focus overlay's nested canvas leaves it off.
               enableEdgeAblation={true}
               onAreaDragStop={handleAreaDragStop}
               onAreaDelete={deleteAreaMutation}
+              onShapeDragStop={handleShapeDragStop}
+              onShapeDelete={deleteShapeMutation}
+              onConnectorDelete={deleteConnectorMutation}
+              // Delete/Backspace on a selected relationship edge now takes
+              // the same path as RelationshipEdge's hover delete button
+              // (optimistic removal from THIS component's `edges` state +
+              // socket emit + rollback on error). Before this the key only
+              // touched React Flow's internal copy, so the row survived and
+              // the line reappeared on the next table drag.
+              onRelationshipDelete={relationshipMutations.deleteRelationship}
+              // Part A (2026-08-31 tactical plan, symptom 1): the veto in
+              // ReactFlowCanvas's onBeforeDelete now also requires the
+              // WHITEBOARD socket to be live, not just a handler being
+              // wired — the same `connectionState === 'connected'` signal
+              // relationshipMutations itself gates writes on (see that
+              // hook's call site above). A refused Delete-key press shows
+              // the identical toast the button path already shows on a
+              // refused click.
+              canDeleteRelationships={connectionState === 'connected'}
+              onRelationshipDeleteRefused={() =>
+                toast.error(NOT_CONNECTED_TOAST_MESSAGE)
+              }
+              activeTool={activeTool}
+              onDrawCommit={handleDrawCommit}
+              onDrawDisarm={handleDrawDisarm}
               onConnect={handleConnect}
               onNodeDragStop={handleNodeDragStop}
               nodesDraggable={nodesDraggable}
-              panOnDrag={!isColumnDragging}
+              // D-2: panOnDrag is a single derived expression composing the
+              // pre-existing isColumnDragging flag with the new draw-armed
+              // state — never two separate writers (tech-spec §8).
+              panOnDrag={!isColumnDragging && !isDrawGestureTool(activeTool)}
               showMinimap={showMinimap}
               minimapExpanded={minimapExpanded}
               onMinimapCollapse={() => setMinimapExpanded(false)}
@@ -3097,16 +3942,22 @@ function ReactFlowWhiteboardInner({
               relationsPreviewTableId={relationsPreviewTableId}
               onPaneClick={(event) => {
                 setRelationsPreviewTableId(null)
+                // A pane click deselects everything (React Flow's own
+                // resetSelectedElements) — release the "just created"
+                // forced-selection override too, or the next unrelated
+                // shape mutation would re-force it back on.
+                setJustCreatedShapeId(null)
                 if (!commentToolActive) return
                 const pos = reactFlowInstance.screenToFlowPosition({
                   x: event.clientX,
                   y: event.clientY,
                 })
                 setPendingCommentPosition(pos)
-                setCommentToolActive(false)
+                setActiveTool('select')
               }}
               focusRequestTableId={focusRequestTableId}
               focusRequestToken={focusRequestToken}
+              keyboardFocusedShapeId={focusedShapeId}
             />
           </ForceFullDetailContext.Provider>
           {/* In-app performance tracker (GH #121 follow-up) — Record/Stop ->
@@ -3395,6 +4246,11 @@ export function ReactFlowWhiteboard({
         onOpenComments={onOpenComments}
         onCommentsChange={onCommentsChange}
         onCommentActionsReady={onCommentActionsReady}
+        publicShapesData={
+          isPublic
+            ? { shapes: data?.shapes ?? [], connectors: data?.connectors ?? [] }
+            : undefined
+        }
       />
     </ReactFlowProvider>
   )

@@ -32,6 +32,8 @@ import { findEffectiveRole } from '@/data/permission'
 import { getWhiteboardProjectId } from '@/data/resolve-project'
 import { findWhiteboardByIdWithDiagram } from '@/data/whiteboard'
 import { findRelationshipsByWhiteboardIdWithDetails } from '@/data/relationship'
+import { findShapesByWhiteboard } from '@/data/shape'
+import { findConnectorsByWhiteboard } from '@/data/connector'
 import {
   createWhiteboardShareLink,
   findShareLinkById,
@@ -234,6 +236,13 @@ export async function getSharedWhiteboardHandler(token: string) {
   const relationships = await findRelationshipsByWhiteboardIdWithDetails(
     link.whiteboardId,
   )
+  // §6a — user overruled the r1 exclusion: shapes and connectors DO render
+  // on public share-link boards, read-only. `whiteboardId` still comes
+  // EXCLUSIVELY from `link` (never client input), so the handler's existing
+  // IDOR property is unchanged — these two reads take the same id as every
+  // other read above.
+  const shapes = await findShapesByWhiteboard(link.whiteboardId)
+  const connectors = await findConnectorsByWhiteboard(link.whiteboardId)
 
   return {
     valid: true as const,
@@ -242,5 +251,7 @@ export async function getSharedWhiteboardHandler(token: string) {
     canvasState: whiteboard.canvasState,
     tables: whiteboard.tables,
     relationships,
+    shapes,
+    connectors,
   }
 }

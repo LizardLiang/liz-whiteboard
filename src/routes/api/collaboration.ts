@@ -19,7 +19,9 @@ import {
   createAreaSchema,
   createColumnSchema,
   createCommentSchema,
+  createConnectorSchema,
   createRelationshipSchema,
+  createShapeSchema,
   createTableSchema,
   reorderColumnsSchema,
   resolveCommentSchema,
@@ -28,6 +30,7 @@ import {
   updateColumnSchema,
   updateCommentSchema,
   updateRelationshipSchema,
+  updateShapeSchema,
   updateTableSchema,
 } from '@/data/schema'
 import {
@@ -48,6 +51,13 @@ import {
   removeTableFromAreas,
   updateArea,
 } from '@/data/area'
+import { createShape, findShapeById, updateShape } from '@/data/shape'
+import {
+  createConnector,
+  deleteConnector,
+  deleteShapeWithConnectors,
+  findConnectorById,
+} from '@/data/connector'
 import {
   createColumn,
   deleteColumn,
@@ -72,13 +82,15 @@ import {
   findRelationshipById,
   updateRelationship,
 } from '@/data/relationship'
-import { parseSessionCookie } from '@/lib/auth/cookies'
-import { validateSessionToken } from '@/lib/auth/session'
-import { validateCollabToken } from '@/lib/oauth/collab-verify'
+import {
+  authenticateSocketHandshake,
+  isSocketSessionExpired,
+} from '@/lib/auth/socket-handshake'
 import { requireRole } from '@/lib/auth/require-role'
 import { findEffectiveRole } from '@/data/permission'
 import { hasMinimumRole } from '@/lib/auth/permissions'
 import { getWhiteboardProjectId } from '@/data/resolve-project'
+import { setupCanvasNamespace } from '@/lib/canvas-board/handlers'
 import { db } from '@/db'
 
 // ---------------------------------------------------------------------------
@@ -94,7 +106,11 @@ type AckResult =
   | {
       ok: true
       entity: unknown
-      cascade?: { relationships?: number; columns?: number }
+      cascade?: {
+        relationships?: number
+        columns?: number
+        connectors?: number
+      }
     }
   | {
       ok: false
@@ -180,6 +196,13 @@ export function initializeSocketIO(httpServer: HTTPServer): SocketIOServer {
   // Setup namespace pattern for whiteboards (auth middleware applied inside)
   setupWhiteboardNamespace(io)
 
+  // Canvas boards are a SEPARATE board kind and get their own namespace.
+  // They cannot share `/whiteboard/:id`: that namespace resolves the project
+  // through getWhiteboardProjectId, which returns null for a canvas board id
+  // and would deny every canvas event as not-found. Registered here so both
+  // server.dev.ts and server.prod.ts pick it up from one call site.
+  setupCanvasNamespace(io)
+
   // Cleanup stale sessions every 5 minutes
   setInterval(
     async () => {
@@ -231,61 +254,10 @@ function setupWhiteboardNamespace(ioServer: SocketIOServer): void {
   const whiteboardNsp = ioServer.of(/^\/whiteboard\/[\w-]+$/)
 
   // Auth middleware: runs on EVERY connection attempt to this namespace.
-  //
-  // Two auth paths (in priority order):
-  //
-  // 1. JWT path (MCP server): the MCP backend sends a short-lived collab-audience
-  //    JWT in socket.handshake.auth.token (set via socket.io SetAuth on the Go
-  //    socket.io-client-go). The JWT was issued by /api/collab-token and has:
-  //      iss=AS issuer, aud=COLLAB_RESOURCE_URI, sub=User.id, exp=now+120s.
-  //    On success: socket.data.userId=sub, socket.data.sessionExpiresAt=exp*1000.
-  //
-  // 2. Cookie path (browser app, existing): reads session_token cookie from
-  //    handshake headers and validates via validateSessionToken. Unchanged.
-  //
-  // The two paths are mutually exclusive per connection; JWT path is tried first.
-  whiteboardNsp.use(async (socket, next) => {
-    try {
-      // --- JWT path (MCP server) ---
-      // eslint-disable-next-line @typescript-eslint/no-unnecessary-condition -- socket.handshake.auth is cast for property access, but a real socket.io client can connect without sending `auth` at all; it is genuinely undefined at runtime for browser (cookie-path) clients.
-      const authToken = (socket.handshake.auth as Record<string, unknown>)?.token
-      if (authToken && typeof authToken === 'string') {
-        try {
-          const payload = await validateCollabToken(authToken)
-          socket.data.userId = payload.sub
-          socket.data.sessionId = '' // no DB session for JWT auth path
-          socket.data.sessionExpiresAt = payload.exp * 1000
-          return next()
-        } catch (jwtErr) {
-          // JWT present but invalid — reject immediately rather than falling
-          // through to cookie path. A caller that sends auth.token but has an
-          // invalid JWT should not silently succeed via cookie.
-          console.warn('[collab] JWT auth failed:', jwtErr)
-          return next(new Error('UNAUTHORIZED'))
-        }
-      }
-
-      // --- Cookie path (browser app) ---
-      const cookieHeader = socket.handshake.headers.cookie ?? ''
-      const token = parseSessionCookie(cookieHeader)
-      if (!token) {
-        return next(new Error('UNAUTHORIZED'))
-      }
-
-      const authResult = await validateSessionToken(token)
-      if (!authResult) {
-        return next(new Error('UNAUTHORIZED'))
-      }
-
-      // Attach auth data to socket for use in event handlers
-      socket.data.userId = authResult.user.id
-      socket.data.sessionId = authResult.session.id
-      socket.data.sessionExpiresAt = authResult.session.expiresAt.getTime()
-      next()
-    } catch (error) {
-      next(new Error('UNAUTHORIZED'))
-    }
-  })
+  // Shared with the canvas namespace — see src/lib/auth/socket-handshake.ts
+  // for the two auth paths (MCP JWT, then browser session cookie) and why
+  // there is exactly one copy of them.
+  whiteboardNsp.use(authenticateSocketHandshake)
 
   whiteboardNsp.on('connection', async (socket) => {
     // Extract whiteboard ID from namespace
@@ -385,9 +357,13 @@ async function safeUpdateSessionActivity(socketId: string): Promise<void> {
 /**
  * Check if the session is still valid (in-memory comparison, no DB round-trip).
  * Returns true if expired.
+ *
+ * Delegates to the shared primitive so the whiteboard and canvas namespaces
+ * cannot drift apart on what "expired" means — this used to be a verbatim
+ * copy, and the copy failed OPEN on a missing expiry.
  */
 function isSessionExpired(socket: any): boolean {
-  return Date.now() > (socket.data.sessionExpiresAt as number)
+  return isSocketSessionExpired(socket)
 }
 
 /**
@@ -1276,6 +1252,419 @@ function setupCollaborationEventHandlers(
           error: 'DELETE_FAILED',
           message,
           areaId: data.areaId,
+        })
+        cb?.({ ok: false, code: 'INTERNAL_ERROR', message })
+        return
+      }
+      await safeUpdateSessionActivity(socket.id)
+    },
+  )
+
+  // ========================================================================
+  // Shape / Connector mutation events — Phase 1 (shapes-and-connectors)
+  //
+  // Mirrors the area:* block above structure-for-structure: session-expiry
+  // check -> denyIfInsufficientPermission -> ownership lookup -> Zod parse
+  // -> data-layer call -> socket.broadcast.emit -> cb?.().
+  //
+  // Phase-2 pre-compliance (decomposition.md, binding, exactly two
+  // conventions and nothing more): every mutator reads the full prior row
+  // before writing (src/data/shape.ts, src/data/connector.ts), and every
+  // success ack below carries `updatedAt` — for shape:delete/connector:delete
+  // this is the PRE-delete row's `updatedAt`, since there is no row left.
+  // ========================================================================
+
+  // Shape creation
+  socket.on(
+    'shape:create',
+    async (data: any, cb?: (res: AckResult) => void) => {
+      if (isSessionExpired(socket)) {
+        socket.emit('session_expired')
+        socket.disconnect(true)
+        cb?.({ ok: false, code: 'SESSION_EXPIRED', message: 'Session expired' })
+        return
+      }
+      if (
+        await denyIfInsufficientPermission(socket, whiteboardId, 'shape:create')
+      ) {
+        cb?.({
+          ok: false,
+          code: 'FORBIDDEN',
+          message: 'Insufficient permission',
+        })
+        return
+      }
+
+      try {
+        const validated = createShapeSchema.parse({ ...data, whiteboardId })
+        const shape = await createShape(validated)
+        socket.broadcast.emit('shape:created', { ...shape, createdBy: userId })
+        cb?.({ ok: true, entity: shape })
+      } catch (error) {
+        console.error('Failed to create shape:', error)
+        const message =
+          error instanceof Error ? error.message : 'Failed to create shape'
+        socket.emit('error', {
+          event: 'shape:create',
+          error: 'VALIDATION_ERROR',
+          message,
+        })
+        cb?.({ ok: false, code: 'VALIDATION_ERROR', message })
+        return
+      }
+      await safeUpdateSessionActivity(socket.id)
+    },
+  )
+
+  // Shape update (position/size/style/label)
+  socket.on(
+    'shape:update',
+    async (
+      data: { shapeId: string; [key: string]: any },
+      cb?: (res: AckResult) => void,
+    ) => {
+      if (isSessionExpired(socket)) {
+        socket.emit('session_expired')
+        socket.disconnect(true)
+        cb?.({ ok: false, code: 'SESSION_EXPIRED', message: 'Session expired' })
+        return
+      }
+      if (
+        await denyIfInsufficientPermission(socket, whiteboardId, 'shape:update')
+      ) {
+        cb?.({
+          ok: false,
+          code: 'FORBIDDEN',
+          message: 'Insufficient permission',
+        })
+        return
+      }
+
+      try {
+        const { shapeId, ...updateData } = data
+
+        // Ownership check: verify shape belongs to this whiteboard (IDOR guard, FR-037)
+        const shapeRecord = await findShapeById(shapeId)
+        if (!shapeRecord) {
+          socket.emit('error', {
+            event: 'shape:update',
+            error: 'NOT_FOUND',
+            message: 'Shape not found',
+            shapeId,
+          })
+          cb?.({ ok: false, code: 'NOT_FOUND', message: 'Shape not found' })
+          return
+        }
+        if (shapeRecord.whiteboardId !== whiteboardId) {
+          socket.emit('error', {
+            event: 'shape:update',
+            error: 'FORBIDDEN',
+            message: 'Shape does not belong to this whiteboard',
+            shapeId,
+          })
+          cb?.({
+            ok: false,
+            code: 'FORBIDDEN',
+            message: 'Shape does not belong to this whiteboard',
+          })
+          return
+        }
+
+        const validated = updateShapeSchema.parse(updateData)
+        const updatedShape = await updateShape(shapeId, validated)
+        // L6: the broadcast carries updatedAt (not just the bare patch) so
+        // every peer holds a fresh token for the row it just re-rendered —
+        // Phase 2's version-token channel needs no second pass over this
+        // handler later.
+        socket.broadcast.emit('shape:updated', {
+          shapeId,
+          ...validated,
+          updatedAt: updatedShape.updatedAt,
+          updatedBy: userId,
+        })
+        cb?.({ ok: true, entity: updatedShape })
+      } catch (error) {
+        console.error('Failed to update shape:', error)
+        const message =
+          error instanceof Error ? error.message : 'Failed to update shape'
+        socket.emit('error', {
+          event: 'shape:update',
+          error: 'UPDATE_FAILED',
+          message,
+        })
+        cb?.({ ok: false, code: 'VALIDATION_ERROR', message })
+        return
+      }
+      await safeUpdateSessionActivity(socket.id)
+    },
+  )
+
+  // Shape deletion — atomic cascade over every attached connector (FR-018)
+  socket.on(
+    'shape:delete',
+    async (data: { shapeId: string }, cb?: (res: AckResult) => void) => {
+      if (isSessionExpired(socket)) {
+        socket.emit('session_expired')
+        socket.disconnect(true)
+        cb?.({ ok: false, code: 'SESSION_EXPIRED', message: 'Session expired' })
+        return
+      }
+      if (
+        await denyIfInsufficientPermission(socket, whiteboardId, 'shape:delete')
+      ) {
+        cb?.({
+          ok: false,
+          code: 'FORBIDDEN',
+          message: 'Insufficient permission',
+        })
+        return
+      }
+
+      const parsed = z.object({ shapeId: z.string().uuid() }).safeParse(data)
+      if (!parsed.success) {
+        const message = 'Invalid shape:delete payload'
+        socket.emit('error', {
+          event: 'shape:delete',
+          error: 'VALIDATION_ERROR',
+          message,
+        })
+        cb?.({ ok: false, code: 'VALIDATION_ERROR', message })
+        return
+      }
+      const { shapeId } = parsed.data
+
+      try {
+        const shapeRecord = await findShapeById(shapeId)
+        if (!shapeRecord) {
+          socket.emit('error', {
+            event: 'shape:delete',
+            error: 'NOT_FOUND',
+            message: 'Shape not found',
+            shapeId,
+          })
+          cb?.({ ok: false, code: 'NOT_FOUND', message: 'Shape not found' })
+          return
+        }
+        if (shapeRecord.whiteboardId !== whiteboardId) {
+          socket.emit('error', {
+            event: 'shape:delete',
+            error: 'FORBIDDEN',
+            message: 'Shape does not belong to this whiteboard',
+            shapeId,
+          })
+          cb?.({
+            ok: false,
+            code: 'FORBIDDEN',
+            message: 'Shape does not belong to this whiteboard',
+          })
+          return
+        }
+
+        const result = await deleteShapeWithConnectors(shapeId)
+        if (!result) {
+          // L5: a concurrent delete raced in between the lookup above and
+          // this call — NOT_FOUND, never a thrown INTERNAL_ERROR.
+          cb?.({ ok: false, code: 'NOT_FOUND', message: 'Shape not found' })
+          return
+        }
+        const connectorIds = result.connectors.map((c) => c.id)
+        // One broadcast carrying BOTH ids — never two events — so no peer
+        // ever transiently renders a connector with a missing endpoint.
+        socket.broadcast.emit('shape:deleted', {
+          shapeId,
+          connectorIds,
+          deletedBy: userId,
+        })
+        cb?.({
+          ok: true,
+          entity: {
+            shapeId,
+            connectorIds,
+            // Pre-delete updatedAt (pre-compliance) — there is no row left.
+            updatedAt: result.shape.updatedAt,
+          },
+          cascade: { connectors: connectorIds.length },
+        })
+      } catch (error) {
+        console.error('Failed to delete shape:', error)
+        const message = 'Failed to delete shape'
+        socket.emit('error', {
+          event: 'shape:delete',
+          error: 'DELETE_FAILED',
+          message,
+          shapeId,
+        })
+        cb?.({ ok: false, code: 'INTERNAL_ERROR', message })
+        return
+      }
+      await safeUpdateSessionActivity(socket.id)
+    },
+  )
+
+  // Connector creation — shape-to-shape only, strict connectionMode
+  socket.on(
+    'connector:create',
+    async (data: any, cb?: (res: AckResult) => void) => {
+      if (isSessionExpired(socket)) {
+        socket.emit('session_expired')
+        socket.disconnect(true)
+        cb?.({ ok: false, code: 'SESSION_EXPIRED', message: 'Session expired' })
+        return
+      }
+      if (
+        await denyIfInsufficientPermission(
+          socket,
+          whiteboardId,
+          'connector:create',
+        )
+      ) {
+        cb?.({
+          ok: false,
+          code: 'FORBIDDEN',
+          message: 'Insufficient permission',
+        })
+        return
+      }
+
+      try {
+        const validated = createConnectorSchema.parse({
+          ...data,
+          whiteboardId,
+        })
+
+        // Ownership/IDOR (FR-037): verify BOTH endpoint shapes belong to
+        // this whiteboard before attempting the write. The data layer's
+        // assertConnectorEndpointsValid re-checks this too (defense in
+        // depth), but checking here lets a cross-board attempt ack
+        // FORBIDDEN instead of a generic VALIDATION_ERROR.
+        const [sourceShape, targetShape] = await Promise.all([
+          findShapeById(validated.sourceShapeId),
+          findShapeById(validated.targetShapeId),
+        ])
+        if (
+          !sourceShape ||
+          sourceShape.whiteboardId !== whiteboardId ||
+          !targetShape ||
+          targetShape.whiteboardId !== whiteboardId
+        ) {
+          const message = 'Shape does not belong to this whiteboard'
+          socket.emit('error', {
+            event: 'connector:create',
+            error: 'FORBIDDEN',
+            message,
+          })
+          cb?.({ ok: false, code: 'FORBIDDEN', message })
+          return
+        }
+
+        const connector = await createConnector(validated)
+        socket.broadcast.emit('connector:created', {
+          ...connector,
+          createdBy: userId,
+        })
+        cb?.({ ok: true, entity: connector })
+      } catch (error) {
+        console.error('Failed to create connector:', error)
+        const message =
+          error instanceof Error ? error.message : 'Failed to create connector'
+        socket.emit('error', {
+          event: 'connector:create',
+          error: 'VALIDATION_ERROR',
+          message,
+        })
+        cb?.({ ok: false, code: 'VALIDATION_ERROR', message })
+        return
+      }
+      await safeUpdateSessionActivity(socket.id)
+    },
+  )
+
+  // Connector deletion (M1 — a client trigger exists: onEdgesDelete in
+  // ReactFlowCanvas). No connector:update in Phase 1.
+  socket.on(
+    'connector:delete',
+    async (data: { connectorId: string }, cb?: (res: AckResult) => void) => {
+      if (isSessionExpired(socket)) {
+        socket.emit('session_expired')
+        socket.disconnect(true)
+        cb?.({ ok: false, code: 'SESSION_EXPIRED', message: 'Session expired' })
+        return
+      }
+      if (
+        await denyIfInsufficientPermission(
+          socket,
+          whiteboardId,
+          'connector:delete',
+        )
+      ) {
+        cb?.({
+          ok: false,
+          code: 'FORBIDDEN',
+          message: 'Insufficient permission',
+        })
+        return
+      }
+
+      const parsed = z
+        .object({ connectorId: z.string().uuid() })
+        .safeParse(data)
+      if (!parsed.success) {
+        const message = 'Invalid connector:delete payload'
+        socket.emit('error', {
+          event: 'connector:delete',
+          error: 'VALIDATION_ERROR',
+          message,
+        })
+        cb?.({ ok: false, code: 'VALIDATION_ERROR', message })
+        return
+      }
+      const { connectorId } = parsed.data
+
+      try {
+        const connectorRecord = await findConnectorById(connectorId)
+        if (!connectorRecord) {
+          socket.emit('error', {
+            event: 'connector:delete',
+            error: 'NOT_FOUND',
+            message: 'Connector not found',
+            connectorId,
+          })
+          cb?.({ ok: false, code: 'NOT_FOUND', message: 'Connector not found' })
+          return
+        }
+        if (connectorRecord.whiteboardId !== whiteboardId) {
+          socket.emit('error', {
+            event: 'connector:delete',
+            error: 'FORBIDDEN',
+            message: 'Connector does not belong to this whiteboard',
+            connectorId,
+          })
+          cb?.({
+            ok: false,
+            code: 'FORBIDDEN',
+            message: 'Connector does not belong to this whiteboard',
+          })
+          return
+        }
+
+        const deleted = await deleteConnector(connectorId)
+        socket.broadcast.emit('connector:deleted', {
+          connectorId,
+          deletedBy: userId,
+        })
+        cb?.({
+          ok: true,
+          // Pre-delete updatedAt (pre-compliance) — there is no row left.
+          entity: { connectorId, updatedAt: deleted.updatedAt },
+        })
+      } catch (error) {
+        console.error('Failed to delete connector:', error)
+        const message = 'Failed to delete connector'
+        socket.emit('error', {
+          event: 'connector:delete',
+          error: 'DELETE_FAILED',
+          message,
+          connectorId,
         })
         cb?.({ ok: false, code: 'INTERNAL_ERROR', message })
         return
