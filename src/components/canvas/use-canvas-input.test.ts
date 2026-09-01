@@ -947,6 +947,178 @@ describe('grouping: selection resolution and entered-group depth (Wave 2)', () =
   })
 })
 
+describe('grouping: move and resize (Wave 3)', () => {
+  // outer > mid > {a, b}: two nested group levels, two leaves. Geometry is
+  // chosen so a click at OUTER_ONLY_POINT hits `outer`'s own frame directly
+  // (outside mid's frame and outside both leaves) — membership is data
+  // (`childIds`), not geometry, so nothing here needs the frames to
+  // physically contain their members' positions (FR-003).
+  const A_ID = '11111111-1111-4111-8111-111111111111'
+  const B_ID = '44444444-4444-4444-8444-444444444444'
+  const MID_ID = '22222222-2222-4222-8222-222222222222'
+  const OUTER_ID = '33333333-3333-4333-8333-333333333333'
+
+  function makeNestedGroupScene(): Array<CanvasElement> {
+    const a: CanvasElement = {
+      ...makeText(),
+      id: A_ID,
+      kind: 'rectangle',
+      x: 0,
+      y: 0,
+      width: 30,
+      height: 30,
+      zIndex: 3,
+    }
+    const b: CanvasElement = {
+      ...makeText(),
+      id: B_ID,
+      kind: 'rectangle',
+      x: 100,
+      y: 100,
+      width: 30,
+      height: 30,
+      zIndex: 2,
+    }
+    const mid: CanvasElement = {
+      ...makeText(),
+      id: MID_ID,
+      kind: 'group',
+      x: -10,
+      y: -10,
+      width: 200,
+      height: 200,
+      zIndex: 1,
+      text: null,
+      group: { childIds: [A_ID, B_ID] },
+    }
+    const outer: CanvasElement = {
+      ...makeText(),
+      id: OUTER_ID,
+      kind: 'group',
+      x: -20,
+      y: -20,
+      width: 220,
+      height: 220,
+      zIndex: 0,
+      text: null,
+      group: { childIds: [MID_ID] },
+    }
+    return [a, b, mid, outer]
+  }
+
+  // Inside outer's frame (-20..200), outside mid's frame (-10..190), outside
+  // both leaves — the raw hit-test can only resolve to `outer` itself.
+  const OUTER_ONLY_POINT = { clientX: 195, clientY: 195 }
+
+  it('dragging a group moves every member at every nesting depth by the same offset', () => {
+    const h = setup(makeNestedGroupScene())
+
+    act(() => {
+      h.api.canvasHandlers.onPointerDown(pointerEvent(OUTER_ONLY_POINT))
+    })
+    h.sync()
+    expect(h.api.selectedIds).toEqual(new Set([OUTER_ID]))
+
+    const DX = 50
+    const DY = 30
+    act(() => {
+      h.api.canvasHandlers.onPointerMove(
+        pointerEvent({
+          clientX: OUTER_ONLY_POINT.clientX + DX,
+          clientY: OUTER_ONLY_POINT.clientY + DY,
+        }),
+      )
+    })
+    h.sync()
+    act(() => {
+      h.api.canvasHandlers.onPointerUp(
+        pointerEvent({
+          clientX: OUTER_ONLY_POINT.clientX + DX,
+          clientY: OUTER_ONLY_POINT.clientY + DY,
+        }),
+      )
+    })
+
+    // ONE call carrying the WHOLE subtree — outer, mid, and both leaves —
+    // not just the group row that was actually clicked (FR-006, FR-016).
+    expect(h.callbacks.onUpdate).toHaveBeenCalledTimes(1)
+    const [after, before, gesture] = h.callbacks.onUpdate.mock.calls[0]
+    expect(after.map((e: CanvasElement) => e.id).sort()).toEqual(
+      [A_ID, B_ID, MID_ID, OUTER_ID].sort(),
+    )
+    expect(gesture).toBe('move')
+
+    for (const element of after as Array<CanvasElement>) {
+      const pre = (before as Array<CanvasElement>).find(
+        (e) => e.id === element.id,
+      )!
+      expect(element.x).toBe(pre.x + DX)
+      expect(element.y).toBe(pre.y + DY)
+      // Rigid body: sizes never change on a move.
+      expect(element.width).toBe(pre.width)
+      expect(element.height).toBe(pre.height)
+    }
+  })
+
+  it('resizing a selected group changes only its own frame — verifies no hidden kind-allowlist blocks it (FR-007)', () => {
+    // The plan's own "verify, not build" item: the single-element resize
+    // path is gated on `!only.connector`, not a kind allowlist, so a group
+    // should already qualify with zero code change. This test is the proof.
+    const h = setup(makeNestedGroupScene())
+    act(() => {
+      h.api.setSelectedIds(new Set([OUTER_ID]))
+    })
+    h.sync()
+
+    const before = h.scene.byId.get(OUTER_ID)!
+    const midBefore = { ...h.scene.byId.get(MID_ID)! }
+    const aBefore = { ...h.scene.byId.get(A_ID)! }
+    const bBefore = { ...h.scene.byId.get(B_ID)! }
+
+    // Grab the SE handle — outer's own bottom-right corner.
+    act(() => {
+      h.api.canvasHandlers.onPointerDown(
+        pointerEvent({
+          clientX: before.x + before.width,
+          clientY: before.y + before.height,
+        }),
+      )
+    })
+    h.sync()
+    act(() => {
+      h.api.canvasHandlers.onPointerMove(
+        pointerEvent({
+          clientX: before.x + before.width + 40,
+          clientY: before.y + before.height + 40,
+        }),
+      )
+    })
+    h.sync()
+    act(() => {
+      h.api.canvasHandlers.onPointerUp(
+        pointerEvent({
+          clientX: before.x + before.width + 40,
+          clientY: before.y + before.height + 40,
+        }),
+      )
+    })
+
+    expect(h.callbacks.onUpdate).toHaveBeenCalledTimes(1)
+    const [after, , gesture] = h.callbacks.onUpdate.mock.calls[0]
+    expect(gesture).toBe('resize')
+    expect(after).toHaveLength(1)
+    expect(after[0].id).toBe(OUTER_ID)
+    expect(after[0].width).toBeGreaterThan(before.width)
+    expect(after[0].height).toBeGreaterThan(before.height)
+
+    // Frame-only: every member's own geometry is untouched (FR-007) —
+    // resize never reaches into `gesture.ids` the way move does.
+    expect(h.scene.byId.get(MID_ID)).toEqual(midBefore)
+    expect(h.scene.byId.get(A_ID)).toEqual(aBefore)
+    expect(h.scene.byId.get(B_ID)).toEqual(bBefore)
+  })
+})
+
 /** A harness whose tool starts as something other than `select`. */
 function setupWithTool(startTool: CanvasTool) {
   let scene: Scene = sceneFrom([])

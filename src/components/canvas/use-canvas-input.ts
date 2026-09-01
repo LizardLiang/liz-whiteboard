@@ -73,6 +73,7 @@ import {
   removeElements,
   updateElement,
   withAttachedConnectors,
+  withGroupMembers,
 } from '@/lib/canvas-engine/scene'
 import {
   CONNECTOR_ENDS,
@@ -1352,18 +1353,29 @@ export function useCanvasInput({
         nextSelection = new Set([target.id])
       }
       setSelectedIds(nextSelection)
+      // Expanded through `withGroupMembers` (canvas-element-grouping
+      // tactical plan, Wave 3) so a group in the selection drags every
+      // descendant at every nesting depth along with it — the rigid-body
+      // move FR-006 requires. `nextSelection` itself (what gets
+      // HIGHLIGHTED/selected) stays just the group id; only the GESTURE's
+      // own `ids`/`before` — what actually gets shifted by `dx`/`dy` in
+      // `onPointerMove`'s `'move'` case below — is expanded. Nothing else
+      // about the move gesture changes: the existing per-element shift loop
+      // and the existing multi-op `recordUpdate` already handle however
+      // many ids land in `gesture.ids`.
+      const moveIds = withGroupMembers(latest.current.scene, [...nextSelection])
       setGesture({
         kind: 'move',
         lastWorld: world,
         startScreen: screen,
-        ids: [...nextSelection],
+        ids: moveIds,
         moved: false,
         // Shallow clones — safe for the same reason `beginEditing`'s own
         // `{ ...element }` clone is (see its comment): `canvas-engine`
         // never mutates an element in place, only replaces it, so the drag
         // that follows cannot reach back and corrupt this pre-move snapshot
         // (Hermes review, suggestion).
-        before: [...nextSelection]
+        before: moveIds
           .map((id) => latest.current.scene.byId.get(id))
           .filter((element): element is CanvasElement => Boolean(element))
           .map((element) => ({ ...element })),
