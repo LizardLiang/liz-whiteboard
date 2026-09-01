@@ -67,6 +67,13 @@ function pointerEvent(overrides: Record<string, unknown> = {}) {
     clientX: 10,
     clientY: 10,
     shiftKey: false,
+    // A real browser's pointerdown always carries a click count of 1 for an
+    // isolated click (PointerEvent.detail, inherited from MouseEvent) — this
+    // default matches that. Group-click-resolution (canvas-element-grouping
+    // tactical plan, Wave 2) reads it to tell an isolated click from the
+    // second-or-later click of a rapid double/triple-click sequence; tests
+    // exercising that pass `detail: 2` explicitly.
+    detail: 1,
     preventDefault: vi.fn(),
     ...overrides,
   } as any
@@ -690,6 +697,253 @@ describe('pre-state capture for undo (board-undo tactical plan, Wave 3)', () => 
     expect(h.callbacks.onDelete).toHaveBeenCalledTimes(1)
     const [deleted] = h.callbacks.onDelete.mock.calls[0]
     expect(deleted).toEqual([rect])
+  })
+})
+
+describe('grouping: selection resolution and entered-group depth (Wave 2)', () => {
+  // outer > mid > a, two nested groups plus one leaf. `a` sits geometrically
+  // inside both frames and has the highest zIndex, so a raw hit-test at any
+  // point inside it always resolves to `a` itself, REGARDLESS of how deep
+  // the caller has already entered — exactly the property `resolveClickTarget`
+  // exists to handle (which of `a`, `mid`, `outer` a click actually SELECTS
+  // depends on `enteredPath`, not on which element the raw hit-test finds).
+  const A_ID = '11111111-1111-4111-8111-111111111111'
+  const MID_ID = '22222222-2222-4222-8222-222222222222'
+  const OUTER_ID = '33333333-3333-4333-8333-333333333333'
+
+  function makeGroupScene(): Array<CanvasElement> {
+    const a: CanvasElement = {
+      ...makeText(),
+      id: A_ID,
+      kind: 'rectangle',
+      x: 0,
+      y: 0,
+      width: 50,
+      height: 50,
+      zIndex: 2,
+    }
+    const mid: CanvasElement = {
+      ...makeText(),
+      id: MID_ID,
+      kind: 'group',
+      x: -10,
+      y: -10,
+      width: 70,
+      height: 70,
+      zIndex: 1,
+      text: null,
+      group: { childIds: [A_ID] },
+    }
+    const outer: CanvasElement = {
+      ...makeText(),
+      id: OUTER_ID,
+      kind: 'group',
+      x: -20,
+      y: -20,
+      width: 90,
+      height: 90,
+      zIndex: 0,
+      text: null,
+      group: { childIds: [MID_ID] },
+    }
+    return [a, mid, outer]
+  }
+
+  // The point every click/double-click below lands on: inside `a` (and
+  // therefore inside `mid` and `outer` too), which is the whole point —
+  // it is always the raw topmost hit, at every depth.
+  const HIT = { clientX: 25, clientY: 25 }
+
+  it('a single click on a nested member selects the outermost group', () => {
+    const h = setup(makeGroupScene())
+    act(() => {
+      h.api.canvasHandlers.onPointerDown(pointerEvent(HIT))
+    })
+    h.sync()
+    expect(h.api.selectedIds).toEqual(new Set([OUTER_ID]))
+    expect(h.api.enteredPath).toEqual([])
+  })
+
+  it('one double-click descends one level and selects the immediate child', () => {
+    const h = setup(makeGroupScene())
+    // click 1 of the double-click: an isolated-looking press, detail 1.
+    act(() => {
+      h.api.canvasHandlers.onPointerDown(pointerEvent({ ...HIT, detail: 1 }))
+    })
+    h.sync()
+    // click 2: the browser's own click-count keeps incrementing for a rapid
+    // second press at (about) the same point.
+    act(() => {
+      h.api.canvasHandlers.onPointerDown(pointerEvent({ ...HIT, detail: 2 }))
+    })
+    h.sync()
+    act(() => {
+      h.api.canvasHandlers.onDoubleClick(pointerEvent(HIT))
+    })
+    h.sync()
+
+    expect(h.api.selectedIds).toEqual(new Set([MID_ID]))
+    expect(h.api.enteredPath).toEqual([OUTER_ID])
+    // `mid` is a group — never directly editable.
+    expect(h.api.editing).toBeNull()
+  })
+
+  it('a further double-click on the newly selected group reaches the leaf and begins editing', () => {
+    const h = setup(makeGroupScene())
+    act(() => {
+      h.api.canvasHandlers.onPointerDown(pointerEvent({ ...HIT, detail: 1 }))
+    })
+    h.sync()
+    act(() => {
+      h.api.canvasHandlers.onPointerDown(pointerEvent({ ...HIT, detail: 2 }))
+    })
+    h.sync()
+    act(() => {
+      h.api.canvasHandlers.onDoubleClick(pointerEvent(HIT))
+    })
+    h.sync()
+    expect(h.api.selectedIds).toEqual(new Set([MID_ID]))
+
+    // A SECOND double-click, continuing the same rapid click train (detail
+    // keeps counting up) rather than a fresh, isolated one — the browser
+    // click-count mechanism that lets `enteredPath` survive between the two
+    // double-clicks. See `onPointerDown`'s own comment for why this is what
+    // makes FR-005's progressive descent reachable at all.
+    act(() => {
+      h.api.canvasHandlers.onPointerDown(pointerEvent({ ...HIT, detail: 3 }))
+    })
+    h.sync()
+    act(() => {
+      h.api.canvasHandlers.onPointerDown(pointerEvent({ ...HIT, detail: 4 }))
+    })
+    h.sync()
+    act(() => {
+      h.api.canvasHandlers.onDoubleClick(pointerEvent(HIT))
+    })
+    h.sync()
+
+    expect(h.api.editing?.elementId).toBe(A_ID)
+    expect(h.api.selectedIds).toEqual(new Set([A_ID]))
+  })
+
+  it('an isolated single click always resets to the outermost group, even mid-descent', () => {
+    // FR-004 is unconditional: it does not carve out an exception for "the
+    // user was already several levels deep". A fresh, isolated click (not
+    // part of a rapid multi-click train) exits whatever was entered.
+    const h = setup(makeGroupScene())
+    act(() => {
+      h.api.canvasHandlers.onPointerDown(pointerEvent({ ...HIT, detail: 1 }))
+    })
+    h.sync()
+    act(() => {
+      h.api.canvasHandlers.onPointerDown(pointerEvent({ ...HIT, detail: 2 }))
+    })
+    h.sync()
+    act(() => {
+      h.api.canvasHandlers.onDoubleClick(pointerEvent(HIT))
+    })
+    h.sync()
+    expect(h.api.selectedIds).toEqual(new Set([MID_ID]))
+    expect(h.api.enteredPath).toEqual([OUTER_ID])
+
+    // A fresh click, detail resets to 1 (as it does once the browser's own
+    // click-train window lapses).
+    act(() => {
+      h.api.canvasHandlers.onPointerDown(pointerEvent({ ...HIT, detail: 1 }))
+    })
+    h.sync()
+
+    expect(h.api.selectedIds).toEqual(new Set([OUTER_ID]))
+    expect(h.api.enteredPath).toEqual([])
+  })
+
+  it('Escape resets entered depth, so the next double-click only descends one level again', () => {
+    const h = setup(makeGroupScene())
+    act(() => {
+      h.api.canvasHandlers.onPointerDown(pointerEvent({ ...HIT, detail: 1 }))
+    })
+    h.sync()
+    act(() => {
+      h.api.canvasHandlers.onPointerDown(pointerEvent({ ...HIT, detail: 2 }))
+    })
+    h.sync()
+    act(() => {
+      h.api.canvasHandlers.onDoubleClick(pointerEvent(HIT))
+    })
+    h.sync()
+    expect(h.api.enteredPath).toEqual([OUTER_ID])
+
+    act(() => {
+      h.api.boardHandlers.onKeyDown(keyEvent('Escape'))
+    })
+    h.sync()
+    expect(h.api.enteredPath).toEqual([])
+    expect(h.api.selectedIds).toEqual(new Set())
+
+    // A brand-new double-click (detail resets to 1, then 2) lands back at
+    // depth 1 (`mid`), not depth 2 (`a`) — proof the reset actually took.
+    act(() => {
+      h.api.canvasHandlers.onPointerDown(pointerEvent({ ...HIT, detail: 1 }))
+    })
+    h.sync()
+    act(() => {
+      h.api.canvasHandlers.onPointerDown(pointerEvent({ ...HIT, detail: 2 }))
+    })
+    h.sync()
+    act(() => {
+      h.api.canvasHandlers.onDoubleClick(pointerEvent(HIT))
+    })
+    h.sync()
+    expect(h.api.selectedIds).toEqual(new Set([MID_ID]))
+  })
+
+  it('clicking empty canvas resets entered depth', () => {
+    const h = setup(makeGroupScene())
+    act(() => {
+      h.api.canvasHandlers.onPointerDown(pointerEvent({ ...HIT, detail: 1 }))
+    })
+    h.sync()
+    act(() => {
+      h.api.canvasHandlers.onPointerDown(pointerEvent({ ...HIT, detail: 2 }))
+    })
+    h.sync()
+    act(() => {
+      h.api.canvasHandlers.onDoubleClick(pointerEvent(HIT))
+    })
+    h.sync()
+    expect(h.api.enteredPath).toEqual([OUTER_ID])
+
+    act(() => {
+      // Far outside every element's bounds.
+      h.api.canvasHandlers.onPointerDown(
+        pointerEvent({ clientX: 900, clientY: 900, detail: 1 }),
+      )
+    })
+    h.sync()
+    expect(h.api.enteredPath).toEqual([])
+  })
+
+  it('deleting the selection resets entered depth', () => {
+    const h = setup(makeGroupScene())
+    act(() => {
+      h.api.canvasHandlers.onPointerDown(pointerEvent({ ...HIT, detail: 1 }))
+    })
+    h.sync()
+    act(() => {
+      h.api.canvasHandlers.onPointerDown(pointerEvent({ ...HIT, detail: 2 }))
+    })
+    h.sync()
+    act(() => {
+      h.api.canvasHandlers.onDoubleClick(pointerEvent(HIT))
+    })
+    h.sync()
+    expect(h.api.enteredPath).toEqual([OUTER_ID])
+
+    act(() => {
+      h.api.boardHandlers.onKeyDown(keyEvent('Delete'))
+    })
+    h.sync()
+    expect(h.api.enteredPath).toEqual([])
   })
 })
 

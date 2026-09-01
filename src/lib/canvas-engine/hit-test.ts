@@ -14,7 +14,7 @@
 //
 // Pure module: no React, no DOM, no database.
 
-import { bounds, effectiveCornerRadius } from './scene'
+import { bounds, effectiveCornerRadius, groupOwning } from './scene'
 import {
   connectorBounds,
   connectorCurve,
@@ -401,6 +401,108 @@ export function hitTest(
     }
   }
   return null
+}
+
+/** What a click should actually select, and whether it may enter text edit. */
+export interface ClickTargetResolution {
+  targetId: string
+  editable: boolean
+  /**
+   * The `enteredPath` the caller should adopt for its NEXT double-click,
+   * given this resolution — `targetId`'s own ancestor chain, outermost
+   * first (e.g. `['outer']` when `targetId` is `mid` in `outer > mid`).
+   *
+   * Computed FRESH from `targetId`'s actual ancestry, never by appending
+   * onto the CALLER's old `enteredPath`. That is what makes this
+   * self-correcting: appending would duplicate an entry (or drift wrong)
+   * the moment the raw hit resolves directly to a group whose own ancestry
+   * is shorter than the caller's already-entered depth — e.g. double-
+   * clicking a nested group's own empty frame area while already several
+   * levels deep. Recomputing from `targetId` itself is immune to that,
+   * and to a stale `enteredPath` generally.
+   */
+  enteredPath: Array<string>
+}
+
+/**
+ * Resolve a raw hit-test id — a group member, or a group hit directly on its
+ * own frame — to the element a click should actually select, given how deep
+ * the caller has already "entered" the structure (canvas-element-grouping
+ * tactical plan, Wave 2).
+ *
+ * `enteredPath` is the ordered list of group ids already entered, OUTERMOST
+ * FIRST — the `enteredPath` a PREVIOUS call's result carried (see
+ * `use-canvas-input.ts`'s `onDoubleClick`). This function never mutates it;
+ * it only reads how deep the caller already is.
+ *
+ * ALGORITHM: walk `hitElementId` up through `groupOwning` to build its own
+ * ancestor chain, outermost first (e.g. `[outer, mid, leaf]` for a member
+ * nested three groups deep). The OUTERMOST ancestor is always "free" — it is
+ * what a plain single click on any member already selects (FR-004) — so
+ * `enteredPath = []` still means "the caller is already looking at the
+ * outermost group" and the returned target is ONE LEVEL DEEPER than that,
+ * not the outermost itself. Concretely: find the length of the longest
+ * PREFIX the chain and `enteredPath` agree on (position by position); the
+ * target is the chain entry ONE PAST that agreeing prefix. A stale
+ * `enteredPath` — left over from double-clicking a different part of the
+ * board — degrades gracefully this way: the agreement stops at the first
+ * disagreeing position (possibly position 0), and the returned target is
+ * still one step into THIS hit's own chain, never an id from the wrong
+ * structure.
+ *
+ * If the chain runs out — the caller has already entered every group
+ * ancestor `hitElementId` has — the target is `hitElementId` itself.
+ * `editable` is true only then, and only when `hitElementId` is not itself a
+ * group: a group is never editable by construction, since it has no text
+ * (this covers double-clicking a group's own empty frame area directly,
+ * which selects it without attempting to edit it). Every other case returns
+ * a real ancestor group, always with `editable: false`.
+ */
+export function resolveClickTarget(
+  scene: Scene,
+  hitElementId: string,
+  enteredPath: ReadonlyArray<string>,
+): ClickTargetResolution {
+  // Outermost first. Bounded by element count, matching `outermostGroup`'s
+  // own cycle guard (scene.ts) — a malformed `childIds` loop terminates
+  // instead of hanging the tab.
+  const chain: Array<string> = []
+  let cursor = hitElementId
+  for (let hops = 0; hops <= scene.elements.length; hops++) {
+    const owner = groupOwning(scene, cursor)
+    if (!owner) break
+    chain.unshift(owner.id)
+    cursor = owner.id
+  }
+
+  let matched = 0
+  while (
+    matched < enteredPath.length &&
+    matched < chain.length &&
+    enteredPath[matched] === chain[matched]
+  ) {
+    matched += 1
+  }
+
+  // `.at()`, not `chain[matched + 1]`: this project's tsconfig does not set
+  // `noUncheckedIndexedAccess`, so bracket indexing types as plain `string`
+  // and an out-of-bounds `undefined` check reads as dead code to the linter
+  // even though it is very much reachable at runtime. `.at()`'s return type
+  // is `string | undefined` regardless, which is what the check below is
+  // actually guarding against.
+  const target = chain.at(matched + 1)
+  if (target !== undefined) {
+    return {
+      targetId: target,
+      editable: false,
+      // Everything up to AND INCLUDING the newly resolved target's own
+      // position in the chain — that target's real ancestor chain.
+      enteredPath: chain.slice(0, matched + 1),
+    }
+  }
+
+  const isGroup = scene.byId.get(hitElementId)?.group !== undefined
+  return { targetId: hitElementId, editable: !isGroup, enteredPath: chain }
 }
 
 /**

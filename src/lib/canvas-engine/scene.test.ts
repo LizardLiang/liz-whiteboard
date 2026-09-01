@@ -33,6 +33,7 @@ import {
   normaliseRect,
   rectFromPoints,
   rectsIntersect,
+  resolveClickTarget,
 } from './hit-test'
 import type { CanvasElement } from './scene'
 
@@ -737,5 +738,106 @@ describe('withGroupMembers', () => {
       expect.arrayContaining(['g1', 'a']),
     )
     expect(withGroupMembers(scene, ['g1', 'a'])).toHaveLength(2)
+  })
+})
+
+describe('resolveClickTarget', () => {
+  // Three levels deep: outer > mid > leaf > a. A double click at 'a' should
+  // descend exactly one level of the outer>mid>leaf chain per call, keyed
+  // off `enteredPath`'s LENGTH matched against the chain — never off which
+  // element is topmost at the pixel, which never changes.
+  const threeLevels = sceneFrom([
+    el('a'),
+    group('leaf', ['a']),
+    group('mid', ['leaf']),
+    group('outer', ['mid']),
+  ])
+
+  it('descends one level below the outermost when nothing is entered', () => {
+    // The outermost is always "free" — a plain single click already gives
+    // it (FR-004) — so an empty enteredPath still means "one level in",
+    // not "the outermost itself". A wrong answer of 'outer' here would also
+    // break the caller: appending outer's OWN parent (null) to enteredPath
+    // is not constructible.
+    expect(resolveClickTarget(threeLevels, 'a', [])).toEqual({
+      targetId: 'mid',
+      editable: false,
+      enteredPath: ['outer'],
+    })
+  })
+
+  it('descends one further level once the caller has entered one', () => {
+    expect(resolveClickTarget(threeLevels, 'a', ['outer'])).toEqual({
+      targetId: 'leaf',
+      editable: false,
+      enteredPath: ['outer', 'mid'],
+    })
+  })
+
+  it('reaches the hit element itself once every ancestor is entered', () => {
+    expect(resolveClickTarget(threeLevels, 'a', ['outer', 'mid'])).toEqual({
+      targetId: 'a',
+      editable: true,
+      enteredPath: ['outer', 'mid', 'leaf'],
+    })
+  })
+
+  it('is editable for a non-group element directly, single level', () => {
+    // A single-level group (outer2 directly contains b, no nesting): one
+    // double click reaches the leaf immediately, matching FR-005's plain
+    // (non-nested) case.
+    const oneLevel = sceneFrom([el('b'), group('outer2', ['b'])])
+    expect(resolveClickTarget(oneLevel, 'b', [])).toEqual({
+      targetId: 'b',
+      editable: true,
+      enteredPath: ['outer2'],
+    })
+  })
+
+  it('is never editable when the resolved target is itself a group', () => {
+    // Hitting a nested group's own empty frame directly (FR-034) rather
+    // than one of its members — the chain runs out at that group, and a
+    // group has no text to edit. `enteredPath` recomputes from `mid`'s OWN
+    // ancestry (['outer']) rather than trusting the caller's stale
+    // `['outer']` by coincidence matching here — see the next test for a
+    // case where trusting it would have been wrong.
+    expect(resolveClickTarget(threeLevels, 'mid', ['outer'])).toEqual({
+      targetId: 'mid',
+      editable: false,
+      enteredPath: ['outer'],
+    })
+  })
+
+  it('recomputes enteredPath fresh rather than duplicating a stale entry', () => {
+    // Same hit as above, but the caller's `enteredPath` claims TWO levels
+    // already entered (['outer', 'mid']) even though the raw hit ('mid')
+    // is only ONE level deep. Appending mid's parent onto the OLD
+    // enteredPath would give ['outer', 'mid', 'mid'] — a duplicate. The
+    // correct, self-correcting answer is mid's own real ancestry, ['outer'].
+    expect(resolveClickTarget(threeLevels, 'mid', ['outer', 'mid'])).toEqual({
+      targetId: 'mid',
+      editable: false,
+      enteredPath: ['outer'],
+    })
+  })
+
+  it('degrades gracefully when enteredPath is stale (a different structure)', () => {
+    // Left over from double-clicking elsewhere on the board. The mismatch
+    // is caught at the first disagreeing position, and the result is still
+    // one step into THIS hit's own chain — never an id from the wrong tree.
+    expect(resolveClickTarget(threeLevels, 'a', ['someOtherGroup'])).toEqual({
+      targetId: 'mid',
+      editable: false,
+      enteredPath: ['outer'],
+    })
+  })
+
+  it('is editable for an element that is not a member of anything', () => {
+    const scene = sceneFrom([el('lonely')])
+    expect(resolveClickTarget(scene, 'lonely', [])).toEqual({
+      targetId: 'lonely',
+      editable: true,
+      enteredPath: [],
+    })
   })
 })

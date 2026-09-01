@@ -54,6 +54,7 @@ import {
   hitTestRect,
   normaliseRect,
   rectFromPoints,
+  resolveClickTarget,
 } from '@/lib/canvas-engine/hit-test'
 import { snapPoint, snapRect } from '@/lib/canvas-engine/grid'
 import {
@@ -67,6 +68,7 @@ import {
   endpointElementId,
   freeEndpoint,
   nextZIndex,
+  outermostGroup,
   remapConnectorEndpoints,
   removeElements,
   updateElement,
@@ -789,6 +791,24 @@ export function useCanvasInput({
     setHoveredIdState(next)
   }, [])
 
+  /**
+   * Group ids the user has double-clicked INTO, outermost first (canvas-
+   * element-grouping tactical plan, Wave 2). Read by `resolveClickTarget`
+   * (hit-test.ts) to know how deep the caller already is. Mirrored in a ref
+   * for the same reason `hoveredIdRef` is: `onDoubleClick` fires as its own,
+   * later browser event, with no React render guaranteed in between it and
+   * whatever `onPointerDown` just did in the same click sequence — reading
+   * `enteredPathRef.current` always sees the latest value, a plain
+   * `enteredPath` closure variable might not.
+   */
+  const [enteredPath, setEnteredPathState] = useState<Array<string>>([])
+  const enteredPathRef = useRef<Array<string>>([])
+
+  const setEnteredPath = useCallback((next: Array<string>) => {
+    enteredPathRef.current = next
+    setEnteredPathState(next)
+  }, [])
+
   const setGesture = useCallback((next: Gesture) => {
     gestureRef.current = next
     setGestureState(next)
@@ -1277,6 +1297,9 @@ export function useCanvasInput({
 
       const hit = hitTest(latest.current.scene, world)
       if (!hit) {
+        // Leaving the structure entirely — same "exit whatever depth was
+        // entered" rule Escape and deleteSelection apply below.
+        setEnteredPath([])
         const baseIds = event.shiftKey ? currentSelection : new Set<string>()
         if (!event.shiftKey) setSelectedIds(new Set<string>())
         setGesture({
@@ -1288,15 +1311,45 @@ export function useCanvasInput({
         return
       }
 
+      // Group-aware target resolution (canvas-element-grouping tactical
+      // plan, Wave 2). `resolveClickTarget` is NOT needed here — a single
+      // click never consults `enteredPath`, it always resolves to the
+      // outermost group (FR-004's wording is unconditional) and exits
+      // whatever depth was previously entered.
+      //
+      // Gated on `event.detail <= 1` — the click COUNT the browser tracks
+      // for a rapid sequence at (about) the same point, not this app's own
+      // state. `event.detail` is 1 for an isolated click and keeps counting
+      // up (2, 3, ...) for as long as the user keeps clicking fast enough to
+      // stay inside the browser's own double/triple-click window; it resets
+      // to 1 once that window lapses. The FIRST click of every sequence
+      // still unconditionally resolves to the outermost group and clears
+      // `enteredPath`, which is what satisfies FR-004 for an isolated single
+      // click. Skipping the reset on click 2+ is what makes FR-005's
+      // "further double-click descends one more level" reachable at all:
+      // `onDoubleClick` fires AFTER this same handler already ran for its
+      // own second click, so if every click reset `enteredPath`
+      // unconditionally, `onDoubleClick` would only ever see it freshly
+      // zeroed and could never build on a previous descent — a rapid second
+      // double-click at the same point would keep landing on the same first
+      // level forever. This is the plan's own documented "which events
+      // reset enteredPath" assumption (Wave 2), resolved this way and
+      // recorded in implementation-notes.md.
+      const target =
+        event.detail <= 1
+          ? (outermostGroup(latest.current.scene, hit.id) ?? hit)
+          : hit
+      if (event.detail <= 1) setEnteredPath([])
+
       let nextSelection: Set<string>
       if (event.shiftKey) {
         nextSelection = new Set(currentSelection)
-        if (nextSelection.has(hit.id)) nextSelection.delete(hit.id)
-        else nextSelection.add(hit.id)
-      } else if (currentSelection.has(hit.id)) {
+        if (nextSelection.has(target.id)) nextSelection.delete(target.id)
+        else nextSelection.add(target.id)
+      } else if (currentSelection.has(target.id)) {
         nextSelection = new Set(currentSelection)
       } else {
-        nextSelection = new Set([hit.id])
+        nextSelection = new Set([target.id])
       }
       setSelectedIds(nextSelection)
       setGesture({
@@ -1324,6 +1377,7 @@ export function useCanvasInput({
       editing,
       handleTargetNow,
       screenFromEvent,
+      setEnteredPath,
       setGesture,
       setScene,
       setTool,
@@ -1757,9 +1811,30 @@ export function useCanvasInput({
       const world = screenToWorld(latest.current.camera, screen)
       const hit = hitTest(latest.current.scene, world)
       if (!hit) return
-      beginEditing(hit, caretAtWorldPoint(hit, world), false)
+
+      // Group-aware descent (canvas-element-grouping tactical plan, Wave 2).
+      // `enteredPathRef` (not the `enteredPath` closure variable) because
+      // this handler fires as its own, later browser event — the
+      // `onPointerDown` that just ran for this same click's second press
+      // may have updated it moments ago, with no React render guaranteed in
+      // between (see `enteredPathRef`'s own comment).
+      const resolution = resolveClickTarget(
+        latest.current.scene,
+        hit.id,
+        enteredPathRef.current,
+      )
+      if (resolution.editable) {
+        // A group is never `editable` by construction (it has no text), so
+        // this is unchanged from today: `hit` here is always a genuine leaf.
+        beginEditing(hit, caretAtWorldPoint(hit, world), false)
+        return
+      }
+      const target = latest.current.scene.byId.get(resolution.targetId)
+      if (!target) return
+      setEnteredPath(resolution.enteredPath)
+      setSelectedIds(new Set([target.id]))
     },
-    [beginEditing, caretAtWorldPoint, screenFromEvent],
+    [beginEditing, caretAtWorldPoint, screenFromEvent, setEnteredPath],
   )
 
   // ── wheel ────────────────────────────────────────────────────────────────
@@ -1826,9 +1901,12 @@ export function useCanvasInput({
         .filter((element): element is CanvasElement => Boolean(element))
       setScene((prev) => removeElements(prev, ids))
       setSelectedIds(new Set<string>())
+      // Leaving the structure, the same "exit whatever depth was entered"
+      // rule the pointerdown `!hit` branch and Escape apply.
+      setEnteredPath([])
       callbacks?.onDelete?.(elements, gesture)
     },
-    [callbacks, setScene],
+    [callbacks, setEnteredPath, setScene],
   )
 
   // ── copy, cut, paste, duplicate ──────────────────────────────────────────
@@ -2023,18 +2101,24 @@ export function useCanvasInput({
       const shapeTool = SHAPE_TOOL_BY_KEY[event.key]
       if (shapeTool) {
         setTool(shapeTool)
+        // Switching tools abandons whatever group depth was entered — the
+        // same "leaving the structure" rule Escape/delete/click-empty apply.
+        setEnteredPath([])
         return
       }
 
       switch (event.key) {
         case 'v':
           setTool('select')
+          setEnteredPath([])
           break
         case 'h':
           setTool('pan')
+          setEnteredPath([])
           break
         case 't':
           setTool('text')
+          setEnteredPath([])
           break
         case 'Delete':
         case 'Backspace':
@@ -2043,6 +2127,7 @@ export function useCanvasInput({
           break
         case 'Escape':
           setSelectedIds(new Set<string>())
+          setEnteredPath([])
           break
         case 'Enter': {
           // The keyboard path into text editing — the living spec's
@@ -2065,6 +2150,7 @@ export function useCanvasInput({
       beginEditing,
       deleteSelection,
       quickCreateInDirection,
+      setEnteredPath,
       setTool,
     ],
   )
@@ -2382,6 +2468,10 @@ export function useCanvasInput({
     marquee,
     draft,
     hoveredId,
+    // Exposed for the future entered-group breadcrumb (Wave 6) and for
+    // tests to observe descent depth directly, matching how `hoveredId`
+    // above is exposed for the same reason.
+    enteredPath,
     quickCreate,
     connectorAttach,
     displayScene,
