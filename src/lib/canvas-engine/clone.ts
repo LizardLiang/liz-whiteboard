@@ -20,7 +20,8 @@
 // is INJECTED rather than importing `@/lib/uuid`, which keeps this directory's
 // no-imports rule intact and makes every test here deterministic.
 
-import type { CanvasElement, ConnectorEndpoint, Scene } from './scene'
+import { withGroupMembers } from './scene'
+import type { CanvasElement, CanvasGroup, ConnectorEndpoint, Scene } from './scene'
 
 /**
  * How far each copy sits from what it was copied from, in world units, and
@@ -80,12 +81,20 @@ export interface ClonePlan {
  * excludes them because re-ordering one changes nothing visible. Copying one
  * is different: the connector is filtered later, by whether both its ends
  * came along, not by what kind it is.
+ *
+ * EXPANDED THROUGH `withGroupMembers` FIRST (canvas-element-grouping
+ * tactical plan, Wave 4): duplicating a selected group needs every
+ * descendant at every nesting depth in the copy set too, exactly as
+ * `deleteSelection`'s own `withGroupMembers` expansion does for delete —
+ * otherwise a duplicated group would end up pointing at the ORIGINAL
+ * members instead of copies of its own.
  */
 export function cloneTargets(
   scene: Scene,
   selectedIds: ReadonlySet<string>,
 ): Array<CanvasElement> {
-  return scene.elements.filter((element) => selectedIds.has(element.id))
+  const expanded = new Set(withGroupMembers(scene, [...selectedIds]))
+  return scene.elements.filter((element) => expanded.has(element.id))
 }
 
 /** The id an endpoint names, or null when it floats free. */
@@ -101,6 +110,37 @@ function cloneEndpoint(
   if (endpoint.kind !== 'element') return endpoint
   const copy = idMap.get(endpoint.elementId)
   return copy ? { ...endpoint, elementId: copy } : endpoint
+}
+
+/**
+ * A group's `childIds`, remapped to the copies of whatever they named — the
+ * SAME remap pattern `cloneEndpoint` above applies to a connector's
+ * `source`/`target`, just for a different field (canvas-element-grouping
+ * tactical plan, Wave 4).
+ *
+ * A child id with no copy is DROPPED rather than left pointing at the
+ * ORIGINAL, uncloned element: a copy's group referencing a row it did not
+ * create is exactly the dangling-reference state FR-018 forbids, and
+ * `withGroupMembers` already guarantees every descendant is normally
+ * present in `targets` — a missing copy here only happens when this
+ * function is called directly with a partial target list, and dropping is
+ * the same "unresolvable id, repaired rather than fatal" rule the adapter
+ * and scene-load path already apply.
+ *
+ * Ordering is unconstrained, unlike connectors: `idMap` is fully populated
+ * for every element before any `childIds` are rewritten, so a group can be
+ * cloned in any relative order and stay in `plain` alongside shapes and
+ * text — no ordering split like `plain`/`connectors` is needed for groups.
+ */
+function cloneGroupChildIds(
+  group: CanvasGroup,
+  idMap: ReadonlyMap<string, string>,
+): CanvasGroup {
+  return {
+    childIds: group.childIds
+      .map((id) => idMap.get(id))
+      .filter((id): id is string => id !== undefined),
+  }
 }
 
 /**
@@ -181,6 +221,16 @@ export function planClone(
         source: cloneEndpoint(element.connector.source, idMap),
         target: cloneEndpoint(element.connector.target, idMap),
       }
+    }
+    // `idMap` is FULLY populated by this point — every element in `ordered`
+    // already has a minted id from the loop above — so a group's `childIds`
+    // can be remapped regardless of where the group sits in `ordered`
+    // relative to its members (canvas-element-grouping tactical plan, Wave
+    // 4). This is why groups need no `plain`/`connectors`-style ordering
+    // split: unlike a connector, a group's own copy does not have to be
+    // built AFTER its members' copies to remap correctly.
+    if (element.group) {
+      copy.group = cloneGroupChildIds(element.group, idMap)
     }
     return copy
   })

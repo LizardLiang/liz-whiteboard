@@ -1902,12 +1902,22 @@ export function useCanvasInput({
       // remove. `withAttachedConnectors` deduplicates, which matters when BOTH
       // ends of one connector are in the selection.
       //
+      // GROUP-EXPANDED FIRST (canvas-element-grouping tactical plan, Wave 4):
+      // deleting a group must remove every descendant at every nesting depth
+      // (FR-013), and the order matters — expanding groups before connectors
+      // is what sweeps a MEMBER's own attached connectors too, not just the
+      // group's. Doing it the other way round would only catch connectors
+      // touching the group's own frame.
+      //
       // Both this expansion and the snapshot below read the scene BEFORE
       // `removeElements` — afterwards the connectors are gone and there is
       // nothing left to find (the B2 lesson: capture pre-state, never post).
       // Undo's inverse is a create-with-id, so it needs every persisted
       // property of every row, not just the ids.
-      const ids = withAttachedConnectors(latest.current.scene, selected)
+      const ids = withAttachedConnectors(
+        latest.current.scene,
+        withGroupMembers(latest.current.scene, selected),
+      )
       const elements = ids
         .map((id) => latest.current.scene.byId.get(id))
         .filter((element): element is CanvasElement => Boolean(element))

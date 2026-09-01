@@ -51,6 +51,14 @@ function connector(
   })
 }
 
+function group(
+  id: string,
+  childIds: Array<string>,
+  patch: Partial<CanvasElement> = {},
+): CanvasElement {
+  return el(id, { kind: 'group', group: { childIds }, ...patch })
+}
+
 const attached = (elementId: string): ConnectorEndpoint => ({
   kind: 'element',
   elementId,
@@ -103,6 +111,26 @@ describe('cloneTargets', () => {
       new Set(['a', 'con']),
     )
     expect(targets.map((e) => e.id)).toEqual(['a', 'con'])
+  })
+
+  it('expands a selected group to its whole subtree', () => {
+    // outer > mid > {a, b}: selecting only the outer group's id must still
+    // pull mid and both leaves into the copy set, or a duplicated group
+    // would end up referencing the ORIGINAL members instead of copies.
+    const targets = cloneTargets(
+      sceneFrom([
+        el('a'),
+        el('x'), // not a member — must stay excluded
+        el('b'),
+        group('mid', ['a', 'b']),
+        group('outer', ['mid']),
+      ]),
+      new Set(['outer']),
+    )
+    expect(new Set(targets.map((e) => e.id))).toEqual(
+      new Set(['outer', 'mid', 'a', 'b']),
+    )
+    expect(targets.map((e) => e.id)).not.toContain('x')
   })
 })
 
@@ -256,6 +284,68 @@ describe('connectors', () => {
       kind: 'element',
       elementId: result.idMap.get('a'),
     })
+  })
+})
+
+describe('groups', () => {
+  it("remaps a cloned group's childIds to the copies of its members", () => {
+    const result = plan([el('a'), el('b'), group('g', ['a', 'b'])])
+    const copy = result.elements.find((e) => e.kind === 'group')
+    expect(copy?.group).toEqual({
+      childIds: [result.idMap.get('a'), result.idMap.get('b')],
+    })
+  })
+
+  it('deep-clones nested groups with fresh, independent ids at every level', () => {
+    // outer > mid > {a, b} — the whole subtree, three levels.
+    const result = plan([
+      el('a'),
+      el('b'),
+      group('mid', ['a', 'b']),
+      group('outer', ['mid']),
+    ])
+
+    // Every original id got a DIFFERENT copy id — no id shared with the
+    // original (FR-014).
+    for (const [originalId, copyId] of result.idMap) {
+      expect(copyId).not.toBe(originalId)
+    }
+    expect(new Set(result.idMap.values()).size).toBe(result.idMap.size)
+
+    // The copy is internally consistent: copied `outer`'s childIds point at
+    // copied `mid`, and copied `mid`'s childIds point at copied `a`/`b` —
+    // never at an original.
+    const copiedOuter = result.elements.find((e) => e.id === result.idMap.get('outer'))
+    const copiedMid = result.elements.find((e) => e.id === result.idMap.get('mid'))
+    expect(copiedOuter?.group).toEqual({ childIds: [result.idMap.get('mid')] })
+    expect(copiedMid?.group).toEqual({
+      childIds: [result.idMap.get('a'), result.idMap.get('b')],
+    })
+  })
+
+  it('drops a childId with no copy rather than leaving it pointing at the original', () => {
+    // Only `a` and the group are in `targets` — `b` was never selected, so
+    // it has no copy. FR-018's "unresolvable id is dropped, not fatal" rule
+    // applies to a duplicate's own childIds the same way it applies to a
+    // stored row's on load.
+    const result = plan([el('a'), group('g', ['a', 'b'])])
+    const copy = result.elements.find((e) => e.kind === 'group')
+    expect(copy?.group).toEqual({ childIds: [result.idMap.get('a')] })
+  })
+
+  it('gives an empty group an empty copy rather than throwing', () => {
+    const result = plan([group('g', [])])
+    const copy = result.elements.find((e) => e.kind === 'group')
+    expect(copy?.group).toEqual({ childIds: [] })
+  })
+
+  it('needs no ordering split between a group and its members, unlike connectors', () => {
+    // The group appears BEFORE its members in `targets` here — the reverse
+    // of what a connector would require — and the remap still succeeds,
+    // because `idMap` is fully populated before any childIds are rewritten.
+    const result = plan([group('g', ['a']), el('a')])
+    const copy = result.elements.find((e) => e.kind === 'group')
+    expect(copy?.group).toEqual({ childIds: [result.idMap.get('a')] })
   })
 })
 

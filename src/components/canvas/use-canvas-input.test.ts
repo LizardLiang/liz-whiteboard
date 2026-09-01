@@ -100,6 +100,7 @@ function setup(initial: Array<CanvasElement> = [makeText()]) {
     onCreate: vi.fn(),
     onUpdate: vi.fn(),
     onDelete: vi.fn(),
+    onClone: vi.fn(),
   }
   const canvas = makeCanvas()
   const canvasRef = { current: canvas } as any
@@ -1116,6 +1117,127 @@ describe('grouping: move and resize (Wave 3)', () => {
     expect(h.scene.byId.get(MID_ID)).toEqual(midBefore)
     expect(h.scene.byId.get(A_ID)).toEqual(aBefore)
     expect(h.scene.byId.get(B_ID)).toEqual(bBefore)
+  })
+})
+
+describe('grouping: delete cascade and duplicate (Wave 4)', () => {
+  // outer > mid > {a, b}, plus `c` (not a member) and a connector `con`
+  // joining `a` (a member, two levels deep) to `c` (outside the group
+  // entirely) — the connector must be swept by a group delete even though
+  // neither of its own ends is the group itself.
+  const A_ID = '11111111-1111-4111-8111-111111111111'
+  const B_ID = '44444444-4444-4444-8444-444444444444'
+  const C_ID = '55555555-5555-4555-8555-555555555555'
+  const CON_ID = '66666666-6666-4666-8666-666666666666'
+  const MID_ID = '22222222-2222-4222-8222-222222222222'
+  const OUTER_ID = '33333333-3333-4333-8333-333333333333'
+
+  function makeDeletableGroupScene(): Array<CanvasElement> {
+    const a: CanvasElement = { ...makeText(), id: A_ID, kind: 'rectangle' }
+    const b: CanvasElement = { ...makeText(), id: B_ID, kind: 'rectangle' }
+    const c: CanvasElement = { ...makeText(), id: C_ID, kind: 'rectangle' }
+    const con: CanvasElement = {
+      ...makeText(),
+      id: CON_ID,
+      kind: 'connector',
+      text: null,
+      width: 1,
+      height: 1,
+      connector: {
+        source: { kind: 'element', elementId: A_ID },
+        target: { kind: 'element', elementId: C_ID },
+        routing: 'straight',
+      },
+    }
+    const mid: CanvasElement = {
+      ...makeText(),
+      id: MID_ID,
+      kind: 'group',
+      text: null,
+      group: { childIds: [A_ID, B_ID] },
+    }
+    const outer: CanvasElement = {
+      ...makeText(),
+      id: OUTER_ID,
+      kind: 'group',
+      text: null,
+      group: { childIds: [MID_ID] },
+    }
+    return [a, b, c, con, mid, outer]
+  }
+
+  it('deleting a group deletes every descendant and every connector touching any of them', () => {
+    const h = setup(makeDeletableGroupScene())
+    act(() => {
+      h.api.setSelectedIds(new Set([OUTER_ID]))
+    })
+    h.sync()
+
+    act(() => {
+      h.api.boardHandlers.onKeyDown(keyEvent('Delete'))
+    })
+
+    expect(h.callbacks.onDelete).toHaveBeenCalledTimes(1)
+    const [deleted] = h.callbacks.onDelete.mock.calls[0]
+    expect(new Set((deleted as Array<CanvasElement>).map((e) => e.id))).toEqual(
+      new Set([OUTER_ID, MID_ID, A_ID, B_ID, CON_ID]),
+    )
+    // `c` is not a member and touches the group only through the now-gone
+    // connector — it must survive.
+    expect((deleted as Array<CanvasElement>).map((e) => e.id)).not.toContain(
+      C_ID,
+    )
+
+    // The board reflects it too: every swept id is gone, `c` remains.
+    for (const id of [OUTER_ID, MID_ID, A_ID, B_ID, CON_ID]) {
+      expect(h.scene.byId.get(id)).toBeUndefined()
+    }
+    expect(h.scene.byId.get(C_ID)).toBeDefined()
+  })
+
+  it('duplicating a group deep-clones it with fresh, independent ids and internally consistent childIds', () => {
+    const h = setup(makeDeletableGroupScene())
+    act(() => {
+      h.api.setSelectedIds(new Set([OUTER_ID]))
+    })
+    h.sync()
+
+    act(() => {
+      h.api.duplicateSelection()
+    })
+
+    expect(h.callbacks.onClone).toHaveBeenCalledTimes(1)
+    const [cloned] = h.callbacks.onClone.mock.calls[0]
+    const clonedElements = cloned as Array<CanvasElement>
+
+    // The whole subtree was cloned — outer, mid, and both leaves — not just
+    // the group row that was actually selected (FR-014).
+    expect(clonedElements).toHaveLength(4)
+    const originalIds = new Set([OUTER_ID, MID_ID, A_ID, B_ID])
+    for (const element of clonedElements) {
+      // No copy shares an id with ANY original — a fresh id, independent of
+      // the original it came from.
+      expect(originalIds.has(element.id)).toBe(false)
+    }
+    // No two copies share an id with each other either.
+    expect(new Set(clonedElements.map((e) => e.id)).size).toBe(4)
+
+    // Internally consistent: the copied groups' childIds point at COPIED
+    // members, never at an original id.
+    const copiedOuter = clonedElements.find((e) => e.kind === 'group' && e.group!.childIds.length === 1)!
+    const copiedMid = clonedElements.find((e) => e.kind === 'group' && e.group!.childIds.length === 2)!
+    const copiedLeafIds = new Set(
+      clonedElements.filter((e) => e.kind === 'rectangle').map((e) => e.id),
+    )
+    expect(copiedOuter.group!.childIds).toEqual([copiedMid.id])
+    for (const childId of copiedMid.group!.childIds) {
+      expect(copiedLeafIds.has(childId)).toBe(true)
+      expect(originalIds.has(childId)).toBe(false)
+    }
+
+    // The board now holds BOTH the original group and the independent copy.
+    expect(h.scene.byId.get(OUTER_ID)).toBeDefined()
+    expect(h.scene.byId.get(copiedOuter.id)).toBeDefined()
   })
 })
 
