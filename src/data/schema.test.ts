@@ -5,11 +5,11 @@ import { describe, expect, it } from 'vitest'
 import {
   MAX_BOARD_COORD,
   areaMoveBroadcastSchema,
+  canvasElementPropsSchema,
   cardinalitySchema,
   createConnectorSchema,
   createRelationshipSchema,
   createShapeSchema,
-  canvasElementPropsSchema,
   loginInputSchema,
   projectRoleSchema,
   registerInputSchema,
