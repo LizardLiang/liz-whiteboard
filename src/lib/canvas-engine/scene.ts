@@ -29,6 +29,7 @@ export type CanvasElementKind =
   | 'triangle'
   | 'text'
   | 'connector'
+  | 'group'
 
 /**
  * The SHAPE kinds: four ways of drawing one world rect.
@@ -336,6 +337,24 @@ export function effectiveCornerRadius(element: CanvasElement): number {
 export const DEFAULT_CONNECTOR_ROUTING: CanvasConnectorRouting = 'straight'
 
 /**
+ * A group's membership: the ids of its DIRECT members only.
+ *
+ * A member id may itself name another group element, which is how nesting
+ * happens (canvas-element-grouping tactical plan, Wave 1) — there is no
+ * separate "nested group" vocabulary, a group is just an element that can
+ * appear in another group's `childIds`.
+ *
+ * Membership lives ONLY here, on the group. No member element carries a
+ * back-reference to its group, so creating, ungrouping or editing membership
+ * is always a write to the group element alone, never to its members — this
+ * is what keeps move/delete/duplicate/undo simple (decisions.md, "Where does
+ * group membership live").
+ */
+export interface CanvasGroup {
+  childIds: Array<string>
+}
+
+/**
  * One element on the board, in WORLD coordinates.
  *
  * `rotation` is stored but not editable in milestone 1 — the field exists
@@ -363,6 +382,15 @@ export interface CanvasElement {
    * push a narrowing step into all of them for a single field.
    */
   connector?: CanvasConnector
+  /**
+   * Present exactly when `kind === 'group'`, absent otherwise. Mirrors
+   * `connector` above for the same reason: uniform element handling
+   * everywhere except the one branch that needs the kind-specific field.
+   *
+   * The group's OWN `x`/`y`/`width`/`height` above are its frame — explicit,
+   * stored, and never derived from `childIds` after creation (PRD FR-003).
+   */
+  group?: CanvasGroup
 }
 
 /**
@@ -493,6 +521,101 @@ export function withAttachedConnectors(
     }
   }
   return [...doomed]
+}
+
+/**
+ * The group whose `childIds` directly contains `elementId`, or null.
+ *
+ * O(groups), a linear scan — the same scan discipline `connectorsTouching`
+ * already uses for the structurally identical "what element references this
+ * one" question. An index belongs behind this signature if it is ever
+ * needed, with no caller changing (canvas-element-grouping tactical plan,
+ * Wave 1).
+ */
+export function groupOwning(
+  scene: Scene,
+  elementId: string,
+): CanvasElement | null {
+  for (const element of scene.elements) {
+    if (element.group?.childIds.includes(elementId)) return element
+  }
+  return null
+}
+
+/**
+ * Walks `groupOwning` repeatedly to the top of the nesting chain. Returns
+ * null when `elementId` is not a member of anything — including when
+ * `elementId` names a group that is itself not nested inside another one.
+ *
+ * Guarded against a cycle (a malformed/hand-edited row whose `childIds`
+ * loops back to an ancestor): a bounded walk, at most one hop per element on
+ * the board, so a cycle terminates instead of looping forever. Cheap
+ * insurance rather than a currently-known reachable bug.
+ */
+export function outermostGroup(
+  scene: Scene,
+  elementId: string,
+): CanvasElement | null {
+  let current: CanvasElement | null = null
+  let cursor = elementId
+  for (let hops = 0; hops <= scene.elements.length; hops++) {
+    const owner = groupOwning(scene, cursor)
+    if (!owner) return current
+    current = owner
+    cursor = owner.id
+  }
+  return current
+}
+
+/**
+ * Every id transitively reachable through `groupId`'s nested `childIds` — a
+ * BFS over the membership tree, recursing into any child that is itself a
+ * group. The direct parallel of `connectorsTouching`/`withAttachedConnectors`
+ * for group relationships.
+ *
+ * Cycle-safe: a visited-set guard means a `childIds` loop stops instead of
+ * hanging the tab, and an id already seen is simply not re-descended into.
+ */
+export function groupDescendants(
+  scene: Scene,
+  groupId: string,
+): Array<string> {
+  const descendants: Array<string> = []
+  const visited = new Set<string>([groupId])
+  const queue: Array<string> = [groupId]
+  while (queue.length > 0) {
+    const id = queue.shift()!
+    const element = scene.byId.get(id)
+    if (!element?.group) continue
+    for (const childId of element.group.childIds) {
+      if (visited.has(childId)) continue
+      visited.add(childId)
+      descendants.push(childId)
+      queue.push(childId)
+    }
+  }
+  return descendants
+}
+
+/**
+ * `ids` plus every descendant of any group among them, deduplicated — the
+ * expanded set move/delete/duplicate/z-order all operate on so a group
+ * transform reaches its whole subtree. Direct parallel to
+ * `withAttachedConnectors`.
+ */
+export function withGroupMembers(
+  scene: Scene,
+  ids: ReadonlyArray<string>,
+): Array<string> {
+  const expanded = new Set(ids)
+  for (const id of ids) {
+    const element = scene.byId.get(id)
+    if (!element?.group) continue
+    for (const descendantId of groupDescendants(scene, id)) {
+      expanded.add(descendantId)
+    }
+  }
+  return [...expanded]
 }
 
 /**

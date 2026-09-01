@@ -218,6 +218,14 @@ export function elementContainsPoint(
       // Resolving them here would give a pure predicate a hidden dependency
       // on the whole scene; `hitTest` below owns the connector case instead.
       return false
+    case 'group':
+      // A group's frame is a plain axis-aligned rect for hit-testing
+      // purposes, regardless of what shapes its members are (canvas-
+      // element-grouping tactical plan, Wave 5, item 12) — this is also what
+      // makes clicking empty frame area select the group (PRD FR-034),
+      // since a hit inside the frame but outside every member falls through
+      // to the group itself in the reverse-z scan `hitTest` performs below.
+      return rectContainsPoint(rect, point)
   }
 }
 

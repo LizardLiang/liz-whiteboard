@@ -1057,6 +1057,7 @@ export const canvasElementKindSchema = z.enum([
   'triangle',
   'text',
   'connector',
+  'group',
 ])
 
 /**
@@ -1223,6 +1224,16 @@ export const canvasElementPropsSchema = z.discriminatedUnion('kind', [
         path: ['targetElementId'],
       },
     ),
+  // A group's membership list — its direct member ids only (canvas-element-
+  // grouping tactical plan, Wave 1). No `.refine` here: cascade/cycle
+  // integrity (PRD FR-018) is a SCENE-level concern, checked where the whole
+  // board's relationships are visible, not a per-write shape concern this
+  // single element's schema can see — exactly how the connector arm's own
+  // `.refine`s above check only ITS shape, never cross-element integrity.
+  z.strictObject({
+    kind: z.literal('group'),
+    childIds: z.array(z.string().uuid()),
+  }),
 ])
 
 /**

@@ -23,6 +23,7 @@ const ELEMENT_KIND_NOUNS: Readonly<Record<CanvasElementKind, string>> = {
   triangle: 'triangle',
   text: 'text element',
   connector: 'connector',
+  group: 'group',
 }
 
 /**

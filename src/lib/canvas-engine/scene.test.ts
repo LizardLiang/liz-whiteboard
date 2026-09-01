@@ -13,12 +13,16 @@ import {
   bringToFront,
   effectiveCornerRadius,
   getElement,
+  groupDescendants,
+  groupOwning,
   nextZIndex,
+  outermostGroup,
   remapConnectorEndpoints,
   removeElement,
   removeElements,
   sceneFrom,
   updateElement,
+  withGroupMembers,
 } from './scene'
 import {
   ATTACH_FORGIVENESS,
@@ -621,5 +625,117 @@ describe('remapConnectorEndpoints', () => {
     // The ELEMENT's own id is renamed by useCanvasElements, not here — this
     // function only ever rewrites references TO it.
     expect(next.byId.get(A)?.id).toBe(A)
+  })
+})
+
+// ─── groups (canvas-element-grouping, tactical plan Wave 1) ────────────────
+//
+// Membership lives ONLY on the group (`childIds`), never on a member, so
+// every one of these helpers reads the group side and is a direct parallel
+// of the connector-relationship helpers above.
+
+function group(id: string, childIds: Array<string>, zIndex = 0): CanvasElement {
+  return el(id, { kind: 'group', group: { childIds }, zIndex })
+}
+
+describe('groupOwning', () => {
+  it('finds the group whose childIds directly contains an id', () => {
+    const scene = sceneFrom([el('a'), group('g1', ['a'])])
+    expect(groupOwning(scene, 'a')?.id).toBe('g1')
+  })
+
+  it('returns null for an element that belongs to nothing', () => {
+    const scene = sceneFrom([el('a')])
+    expect(groupOwning(scene, 'a')).toBeNull()
+  })
+
+  it('does not report a group as its own owner', () => {
+    const scene = sceneFrom([group('g1', [])])
+    expect(groupOwning(scene, 'g1')).toBeNull()
+  })
+})
+
+describe('outermostGroup', () => {
+  it('walks a nested chain to the top', () => {
+    const scene = sceneFrom([
+      el('a'),
+      group('inner', ['a']),
+      group('outer', ['inner']),
+    ])
+    expect(outermostGroup(scene, 'a')?.id).toBe('outer')
+  })
+
+  it('returns null for a group that is not itself nested in another', () => {
+    // A group that owns members but has no owner of its own is not "a
+    // member of anything" — the exact contract Wave 2's caller relies on to
+    // know when to fall back to the raw hit id instead.
+    const scene = sceneFrom([el('a'), group('g1', ['a'])])
+    expect(outermostGroup(scene, 'g1')).toBeNull()
+  })
+
+  it('returns null for an element that is not a member of anything', () => {
+    const scene = sceneFrom([el('a')])
+    expect(outermostGroup(scene, 'a')).toBeNull()
+  })
+
+  it('terminates instead of hanging on a childIds cycle', () => {
+    // A malformed/hand-edited row could loop back to an ancestor. This must
+    // return rather than recurse forever.
+    const scene = sceneFrom([group('g1', ['g2']), group('g2', ['g1'])])
+    expect(() => outermostGroup(scene, 'g1')).not.toThrow()
+  })
+})
+
+describe('groupDescendants', () => {
+  it('collects every id at every nesting depth', () => {
+    const scene = sceneFrom([
+      el('a'),
+      el('b'),
+      group('inner', ['a']),
+      group('outer', ['inner', 'b']),
+    ])
+    expect(new Set(groupDescendants(scene, 'outer'))).toEqual(
+      new Set(['inner', 'a', 'b']),
+    )
+  })
+
+  it('returns an empty list for a group with no members', () => {
+    const scene = sceneFrom([group('empty', [])])
+    expect(groupDescendants(scene, 'empty')).toEqual([])
+  })
+
+  it('is cycle-safe', () => {
+    const scene = sceneFrom([group('g1', ['g2']), group('g2', ['g1'])])
+    expect(() => groupDescendants(scene, 'g1')).not.toThrow()
+  })
+})
+
+describe('withGroupMembers', () => {
+  it('expands a selected group into itself plus every descendant', () => {
+    const scene = sceneFrom([
+      el('a'),
+      el('b'),
+      group('inner', ['a']),
+      group('outer', ['inner', 'b']),
+    ])
+    expect(new Set(withGroupMembers(scene, ['outer']))).toEqual(
+      new Set(['outer', 'inner', 'a', 'b']),
+    )
+  })
+
+  it('leaves a non-group id untouched', () => {
+    const scene = sceneFrom([el('a')])
+    expect(withGroupMembers(scene, ['a'])).toEqual(['a'])
+  })
+
+  it('deduplicates when a member is reachable through more than one path', () => {
+    const scene = sceneFrom([
+      el('a'),
+      group('g1', ['a']),
+    ])
+    expect(withGroupMembers(scene, ['g1', 'a'])).toEqual(
+      expect.arrayContaining(['g1', 'a']),
+    )
+    expect(withGroupMembers(scene, ['g1', 'a'])).toHaveLength(2)
   })
 })

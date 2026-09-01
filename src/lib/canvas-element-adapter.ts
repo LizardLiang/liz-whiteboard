@@ -155,20 +155,45 @@ function toEngineEndpoint(
 }
 
 /**
+ * The engine's `group` field for a stored row, or `undefined`.
+ *
+ * Mirrors `toEngineConnector` exactly, including the null/undefined
+ * tolerance: `props` types as always present but the column is nullable
+ * (schema-sql.ts), and this project's raw-SQL e2e seeds can omit it. A
+ * missing `childIds` on a `kind === 'group'` row reads as an empty group
+ * rather than throwing — the same "draws nothing, does not take the load
+ * down" posture `toEngineConnector` takes for a malformed connector.
+ */
+function toEngineGroup(
+  props: CanvasElementProps | null | undefined,
+): CanvasElement['group'] {
+  if (!props || props.kind !== 'group') return undefined
+  return { childIds: [...props.childIds] }
+}
+
+/**
  * The stored `props` for an engine element — the inverse of
- * `toEngineConnector`.
+ * `toEngineConnector`/`toEngineGroup`.
  *
- * Every non-connector kind's props are still fully derivable from `kind`
- * (they are empty objects, by design — see schema.ts). A connector's are not,
- * which is why this function exists at all rather than the `{ kind }` literal
- * that used to be written inline at each call site.
+ * Every non-connector, non-group kind's props are still fully derivable from
+ * `kind` (they are empty objects, by design — see schema.ts). A connector's
+ * and a group's are not, which is why this function exists at all rather
+ * than the `{ kind }` literal that used to be written inline at each call
+ * site.
  *
- * Throws for a connector element with no `connector` field. That pairing is a
- * programming error, not user input, and the alternative — silently writing a
- * rectangle's props under a connector's kind — persists a row that fails the
+ * Throws for a connector element with no `connector` field, or a group
+ * element with no `group` field. That pairing is a programming error, not
+ * user input, and the alternative — silently writing another kind's empty
+ * props under this element's real kind — persists a row that fails the
  * schema's own cross-validation on the way back in.
  */
 function toStoredProps(element: CanvasElement): CanvasElementProps {
+  if (element.kind === 'group') {
+    if (!element.group) {
+      throw new Error(`Group element ${element.id} has no childIds`)
+    }
+    return { kind: 'group', childIds: [...element.group.childIds] }
+  }
   if (element.kind !== 'connector') return { kind: element.kind }
   if (!element.connector) {
     throw new Error(
@@ -220,6 +245,7 @@ function legacyAttach(
 /** Storage row -> engine element. The only positionX/positionY -> x/y rename. */
 export function toEngineElement(record: CanvasElementRecord): CanvasElement {
   const connector = toEngineConnector(record.props)
+  const group = toEngineGroup(record.props)
   return {
     id: record.id,
     kind: record.kind,
@@ -231,10 +257,12 @@ export function toEngineElement(record: CanvasElementRecord): CanvasElement {
     zIndex: record.zIndex,
     text: record.text,
     style: record.style,
-    // Spread rather than `connector: undefined` so a rectangle's element has
-    // no `connector` KEY at all, not a key holding undefined — `toStrictEqual`
-    // in the existing tests distinguishes the two.
+    // Spread rather than `connector: undefined`/`group: undefined` so a
+    // rectangle's element has no such KEY at all, not a key holding
+    // undefined — `toStrictEqual` in the existing tests distinguishes the
+    // two.
     ...(connector ? { connector } : {}),
+    ...(group ? { group } : {}),
   }
 }
 
@@ -355,6 +383,7 @@ export function fromElementSnapshot(
   snapshot: CanvasElementSnapshot,
 ): CanvasElement {
   const connector = toEngineConnector(snapshot.props)
+  const group = toEngineGroup(snapshot.props)
   return {
     id: snapshot.id,
     kind: snapshot.kind,
@@ -367,9 +396,11 @@ export function fromElementSnapshot(
     text: snapshot.text,
     style: snapshot.style,
     // The half of the round-trip that is easy to forget: `toElementSnapshot`
-    // above writes the endpoints into `props`, and without reading them back
-    // here an undone connector delete would restore a connector with no ends
-    // — present in the scene, drawable by nothing, deletable only by id.
+    // above writes the endpoints/childIds into `props`, and without reading
+    // them back here an undone connector or group delete would restore a
+    // connector with no ends, or a group with no members, even though the
+    // deleted row had them.
     ...(connector ? { connector } : {}),
+    ...(group ? { group } : {}),
   }
 }
