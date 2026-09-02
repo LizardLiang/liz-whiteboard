@@ -229,9 +229,21 @@ function groupUpdateOperations(
  * — the label-and-push tail duplicated between `recordGroup` and
  * `recordUngroup`, six of eight lines byte-identical). Every caller already
  * gated on an empty `operations` array before pushing and pushed exactly
- * once at the end, so folding both steps into one return value shrinks all
- * three `record*` functions that build a label from a primary write plus
- * `groupUpdateOperations`, instead of writing the same tail twice.
+ * once at the end, so both steps fold into this one return value.
+ *
+ * This does NOT make the call sites shorter, and an earlier draft of this
+ * comment claiming it "shrinks all three `record*` functions" was wrong
+ * (Hermes code review round 4, corrected claim — the error originated in
+ * round 3's own recommendation text, which promised the same thing).
+ * Measured against `d59af28`, every site grew by three lines:
+ * `recordDelete` 7 to 9, `recordGroup` 8 to 11, `recordUngroup` 8 to 11 —
+ * a multi-line call argument costs more lines than the inline ternary it
+ * replaced. What it buys instead is that two POLICIES now have one
+ * definition apiece rather than three: the "nothing acked, so no entry"
+ * gate, and the generic multi-element `move` fallback label. Both had
+ * already drifted once — round 2's WARNING 1 was precisely
+ * `recordGroup`/`recordUngroup` silently holding a lesser tier than
+ * `recordDelete` — and neither can drift again while it is written once.
  *
  * `primaryLabel` is the gesture-specific label to use when the entry's
  * PRIMARY write (the group's create, the group's delete, or `recordDelete`'s
