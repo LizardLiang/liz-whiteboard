@@ -53,6 +53,7 @@ import { toast } from 'sonner'
 import type {
   CanvasEditCallbacks,
   CanvasUpdateGesture,
+  MembershipUpdate,
 } from '@/components/canvas/use-canvas-input'
 import type {
   CanvasElement,
@@ -185,6 +186,41 @@ function snapshotToWorldRect(snapshot: CanvasElementSnapshot): WorldRect {
     width: snapshot.width,
     height: snapshot.height,
   }
+}
+
+/**
+ * The `kind: 'update'` operations for a group-cleanup/renormalize patch
+ * batch, built from whichever writes acknowledged — never all of them
+ * unconditionally (Hermes code review BLOCKER: this exact 14-to-16-line
+ * fold — build `updateResultsById`, then loop `groupUpdates` pushing a
+ * `kind: 'update'` operation per ack — existed as three separate,
+ * near-identical copies across `recordDelete`/`recordGroup`/
+ * `recordUngroup`; `rules/default.md` sets the duplication bar at 3
+ * copies). Each caller appends the result AFTER its own primary
+ * operation(s) via `operations.push(...)`, so `operations[0]` stays that
+ * primary operation in every one of them.
+ */
+function groupUpdateOperations(
+  boardId: string,
+  groupUpdates: ReadonlyArray<MembershipUpdate>,
+  updateResults: ReadonlyArray<CanvasMutationResult>,
+): Array<CanvasUndoOperation> {
+  const updateResultsById = new Map(
+    updateResults.map((result) => [result.id, result]),
+  )
+  const operations: Array<CanvasUndoOperation> = []
+  for (const update of groupUpdates) {
+    const result = updateResultsById.get(update.after.id)
+    if (!result?.ok || result.revision === undefined) continue
+    operations.push({
+      kind: 'update',
+      elementId: update.after.id,
+      before: toSnapshot(boardId, update.before),
+      afterRevision: result.revision,
+      after: toSnapshot(boardId, update.after),
+    })
+  }
+  return operations
 }
 
 const EPHEMERAL: CanvasMutationOptions = { ephemeral: true }
@@ -399,7 +435,7 @@ export function useCanvasUndo({
       // (FR-018 write-time scenario, canvas-element-grouping PRD-alignment
       // finding 1) — `deleteSelection`'s own `resolveGroupCleanupUpdates`.
       // Defaults to `[]`: every call site but `deleteSelection` omits it.
-      groupUpdates: Array<{ before: CanvasElement; after: CanvasElement }> = [],
+      groupUpdates: Array<MembershipUpdate> = [],
     ) => {
       if (readOnly) return
       const ids = elements.map((element) => element.id)
@@ -432,20 +468,9 @@ export function useCanvasUndo({
           }
           operations.push(op)
         }
-        const updateResultsById = new Map(
-          updateResults.map((result) => [result.id, result]),
+        operations.push(
+          ...groupUpdateOperations(boardId, groupUpdates, updateResults),
         )
-        for (const update of groupUpdates) {
-          const result = updateResultsById.get(update.after.id)
-          if (!result?.ok || result.revision === undefined) continue
-          operations.push({
-            kind: 'update',
-            elementId: update.after.id,
-            before: toSnapshot(boardId, update.before),
-            afterRevision: result.revision,
-            after: toSnapshot(boardId, update.after),
-          })
-        }
         if (operations.length === 0) return
         // Derived from the FINAL `operations` list, not captured mid-build
         // (Cassandra risk-analysis H-001 / Hermes code review, Major
@@ -656,6 +681,16 @@ export function useCanvasUndo({
    * `move`/`z-order`'s "how many elements does this number describe"
    * convention for a gesture whose single write still affects several
    * elements' grouping state.
+   *
+   * Records whichever writes acknowledged, never all-or-nothing gated on
+   * the group's own create (Hermes code review WARNING 1 / rule proposal
+   * 2026-09-02-record-the-writes-that-acked.md — mirrors `recordDelete`'s
+   * own already-sanctioned tier): if the create fails but a detach/
+   * renormalize update DID land server-side, that write already happened
+   * and needs an entry naming it, or the user has no toast and no way to
+   * reverse it. Falls back to a generic `move`-gesture label in exactly
+   * that case, the same fallback `recordDelete` uses when zero deletes
+   * landed but a group update still did.
    */
   const recordGroup = useCallback(
     (
@@ -668,7 +703,7 @@ export function useCanvasUndo({
       // create, mirroring `recordDelete`'s own disjoint-writes shape — the
       // two id sets never overlap by construction (a prior owner or a
       // member is never the new group's own row).
-      groupUpdates: Array<{ before: CanvasElement; after: CanvasElement }> = [],
+      groupUpdates: Array<MembershipUpdate> = [],
     ) => {
       if (readOnly) return
       void Promise.all([
@@ -677,40 +712,31 @@ export function useCanvasUndo({
           ? updateElements(groupUpdates.map((update) => update.after))
           : Promise.resolve([] as Array<CanvasMutationResult>),
       ]).then(([createResult, updateResults]) => {
-        if (!createResult.ok || createResult.revision === undefined) return
-        const operations: Array<CanvasUndoOperation> = [
-          {
+        const created =
+          createResult.ok && createResult.revision !== undefined
+        const operations: Array<CanvasUndoOperation> = []
+        if (created) {
+          operations.push({
             kind: 'create',
             elementId: createResult.id,
-            afterRevision: createResult.revision,
+            afterRevision: createResult.revision as number,
             after: toSnapshot(boardId, {
               ...groupElement,
               id: createResult.id,
             }),
-          },
-        ]
-        const updateResultsById = new Map(
-          updateResults.map((result) => [result.id, result]),
-        )
-        for (const update of groupUpdates) {
-          const result = updateResultsById.get(update.after.id)
-          if (!result?.ok || result.revision === undefined) continue
-          operations.push({
-            kind: 'update',
-            elementId: update.after.id,
-            before: toSnapshot(boardId, update.before),
-            afterRevision: result.revision,
-            after: toSnapshot(boardId, update.after),
           })
         }
-        const entry: CanvasUndoEntry = {
-          label: {
-            gesture: 'group',
-            count: groupElement.group?.childIds.length ?? 0,
-          },
-          operations,
-        }
-        push(entry)
+        operations.push(
+          ...groupUpdateOperations(boardId, groupUpdates, updateResults),
+        )
+        if (operations.length === 0) return
+        const label: CanvasUndoLabel = created
+          ? {
+              gesture: 'group',
+              count: groupElement.group?.childIds.length ?? 0,
+            }
+          : { gesture: 'move', count: operations.length }
+        push({ label, operations })
       })
     },
     [boardId, createElement, push, readOnly, updateElements],
@@ -731,6 +757,14 @@ export function useCanvasUndo({
    * of a whole subtree (Wave 4's `deleteSelection`) — two very different
    * gestures a user needs to tell apart when Ctrl+Z asks what is coming
    * back.
+   *
+   * Records whichever writes acknowledged, never all-or-nothing gated on
+   * the group's own delete (Hermes code review WARNING 1 / rule proposal
+   * 2026-09-02-record-the-writes-that-acked.md — mirrors `recordDelete`'s
+   * own already-sanctioned tier, and `recordGroup`'s matching fix above):
+   * if the delete fails but a surviving parent's `childIds` patch DID land
+   * server-side, that write already happened and needs an entry naming it.
+   * Falls back to a generic `move`-gesture label in exactly that case.
    */
   const recordUngroup = useCallback(
     (
@@ -740,7 +774,7 @@ export function useCanvasUndo({
       // BLOCKER 1, FR-018). Defaults to `[]`: every call site but a nested
       // `ungroupSelection` supplies an empty array. Issued CONCURRENTLY
       // with the group's own delete, mirroring `recordDelete`'s shape.
-      groupUpdates: Array<{ before: CanvasElement; after: CanvasElement }> = [],
+      groupUpdates: Array<MembershipUpdate> = [],
     ) => {
       if (readOnly) return
       void Promise.all([
@@ -750,44 +784,30 @@ export function useCanvasUndo({
           : Promise.resolve([] as Array<CanvasMutationResult>),
       ]).then(([deleteResults, updateResults]) => {
         const result = deleteResults[0]
-        if (!result.ok) return
-        const operations: Array<CanvasUndoOperation> = [
-          {
+        const deleted = result.ok
+        const operations: Array<CanvasUndoOperation> = []
+        if (deleted) {
+          const op: CanvasUndoOperation = {
             kind: 'delete',
             elementId: groupElement.id,
             before: toSnapshot(boardId, groupElement),
-          },
-        ]
-        if (result.revision !== undefined) {
-          lastRevisionBeforeDeleteRef.current.set(
-            operations[0],
-            result.revision,
-          )
-        }
-        const updateResultsById = new Map(
-          updateResults.map((updateResult) => [updateResult.id, updateResult]),
-        )
-        for (const update of groupUpdates) {
-          const updateResult = updateResultsById.get(update.after.id)
-          if (!updateResult?.ok || updateResult.revision === undefined) {
-            continue
           }
-          operations.push({
-            kind: 'update',
-            elementId: update.after.id,
-            before: toSnapshot(boardId, update.before),
-            afterRevision: updateResult.revision,
-            after: toSnapshot(boardId, update.after),
-          })
+          if (result.revision !== undefined) {
+            lastRevisionBeforeDeleteRef.current.set(op, result.revision)
+          }
+          operations.push(op)
         }
-        const entry: CanvasUndoEntry = {
-          label: {
-            gesture: 'ungroup',
-            count: groupElement.group?.childIds.length ?? 0,
-          },
-          operations,
-        }
-        push(entry)
+        operations.push(
+          ...groupUpdateOperations(boardId, groupUpdates, updateResults),
+        )
+        if (operations.length === 0) return
+        const label: CanvasUndoLabel = deleted
+          ? {
+              gesture: 'ungroup',
+              count: groupElement.group?.childIds.length ?? 0,
+            }
+          : { gesture: 'move', count: operations.length }
+        push({ label, operations })
       })
     },
     [boardId, deleteElements, push, readOnly, updateElements],

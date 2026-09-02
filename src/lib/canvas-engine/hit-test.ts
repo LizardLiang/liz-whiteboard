@@ -586,9 +586,10 @@ export function resolveDropTarget(
   // each other — malformed data, not reachable from any UI gesture — each
   // get filtered out as an ancestor of the other, and the bare `.reduce`
   // this used to be threw on an empty array. Falls back to `candidates`
-  // itself rather than crashing the drop, matching this module's stated
-  // posture elsewhere ("degrades, never throws" — see `toEngineConnector`'s
-  // own precedent for an unresolvable reference).
+  // itself rather than crashing the drop, matching this module's own
+  // stated posture elsewhere (see `resolveClickTarget`'s own "degrades
+  // gracefully" precedent for a stale/unresolvable reference, above,
+  // `:448`).
   const ranked = innermost.length > 0 ? innermost : candidates
   return ranked.reduce((top, candidate) =>
     candidate.zIndex > top.zIndex ? candidate : top,

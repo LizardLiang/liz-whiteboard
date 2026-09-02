@@ -671,6 +671,41 @@ export function withGroupMembers(
 }
 
 /**
+ * Every id in `ids` that is NOT a descendant (via `groupDescendants`) of
+ * another id also in `ids` — `withGroupMembers`'s inverse-shaped sibling: it
+ * COLLAPSES a set that may double-list a group and one of its own members
+ * down to the group alone, rather than expanding a group out to its members.
+ * An id that IS such a descendant is moving/binding WITH that other id, not
+ * independently, and must not also be evaluated on its own.
+ *
+ * Moved here from `use-canvas-input.ts` (Hermes code review, Minor Issue):
+ * `canGroupSelection` (SelectionToolbar.tsx) needs the SAME collapse
+ * `groupSelection` itself applies, so the Group button's enabled state
+ * cannot promise an action the gesture then silently no-ops on. Shared by
+ * `resolveMembershipUpdates`'s top-level filter and `groupSelection`'s own
+ * descendant filter too.
+ *
+ * O(ids^2) `groupDescendants` calls in the worst case (Cassandra/Hermes
+ * Minor Issue) — cheap in the common case, since `groupDescendants`
+ * short-circuits for a non-group id, and this only runs once per gesture
+ * end (or once per toolbar render), not per frame.
+ */
+export function topLevelIds(
+  scene: Scene,
+  ids: ReadonlyArray<string>,
+): Array<string> {
+  const descendantsByOther = new Map(
+    ids.map((other) => [other, new Set(groupDescendants(scene, other))]),
+  )
+  return ids.filter(
+    (id) =>
+      !ids.some(
+        (other) => other !== id && descendantsByOther.get(other)!.has(id),
+      ),
+  )
+}
+
+/**
  * One endpoint, repointed if it names `from`. Returns the SAME object when it
  * does not, so the caller can detect "nothing changed" by identity.
  *

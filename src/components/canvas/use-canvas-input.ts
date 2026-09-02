@@ -75,6 +75,7 @@ import {
   outermostGroup,
   remapConnectorEndpoints,
   removeElements,
+  topLevelIds,
   updateElement,
   withAttachedConnectors,
   withGroupMembers,
@@ -391,7 +392,7 @@ export interface CanvasEditCallbacks {
   onDelete?: (
     elements: Array<CanvasElement>,
     gesture?: 'delete' | 'cut',
-    groupUpdates?: Array<{ before: CanvasElement; after: CanvasElement }>,
+    groupUpdates?: Array<MembershipUpdate>,
   ) => void
   /**
    * One group-creation gesture (canvas-element-grouping tactical plan, Wave
@@ -411,7 +412,7 @@ export interface CanvasEditCallbacks {
    */
   onGroup?: (
     groupElement: CanvasElement,
-    groupUpdates?: Array<{ before: CanvasElement; after: CanvasElement }>,
+    groupUpdates?: Array<MembershipUpdate>,
   ) => void
   /**
    * One ungroup gesture: the group element being dissolved, exactly as it
@@ -430,7 +431,7 @@ export interface CanvasEditCallbacks {
    */
   onUngroup?: (
     groupElement: CanvasElement,
-    groupUpdates?: Array<{ before: CanvasElement; after: CanvasElement }>,
+    groupUpdates?: Array<MembershipUpdate>,
   ) => void
 }
 
@@ -849,8 +850,8 @@ function resizedBounds(
   return { x, y, width, height }
 }
 
-/** One element's patch, before and after — for folding into the SAME `onUpdate`/`onGroup`/`onUngroup`/`onDelete` call a gesture already makes. Carries a group's `childIds` patch OR a member's `zIndex` bump (or, in principle, both) — whatever changed, `after` is the element's whole next row. */
-interface MembershipUpdate {
+/** One element's patch, before and after — for folding into the SAME `onUpdate`/`onGroup`/`onUngroup`/`onDelete` call a gesture already makes. Carries a group's `childIds` patch OR a member's `zIndex` bump (or, in principle, both) — whatever changed, `after` is the element's whole next row. Exported (Hermes code review, Minor Issue) so `use-canvas-undo.ts`'s `groupUpdates` parameters name the same type instead of re-spelling its shape inline at three more call sites. */
+export interface MembershipUpdate {
   before: CanvasElement
   after: CanvasElement
 }
@@ -884,30 +885,66 @@ function patchGroupChildIds(
 }
 
 /**
- * Every id in `ids` that is NOT a descendant (via `groupDescendants`) of
- * another id also in `ids` — shared by `resolveMembershipUpdates`'s own
- * top-level filter and `groupSelection`'s descendant filter (Hermes review
- * BLOCKER 2). An id that IS such a descendant is moving/binding WITH that
- * other id, not independently, and must not also be evaluated on its own.
- *
- * O(ids^2) `groupDescendants` calls in the worst case (Cassandra/Hermes
- * Minor Issue) — cheap in the common case, since `groupDescendants`
- * short-circuits for a non-group id, and this only runs once per gesture
- * end, not per frame.
+ * Materialize an `originals`/`patched` running-map pair — the accumulation
+ * shape `resolveMembershipUpdates`, `resolveGroupCleanupUpdates`, and
+ * `groupSelection`'s own detach/renormalize passes all build up — into
+ * `Array<MembershipUpdate>` (Hermes code review, Minor Issue: this same
+ * four-line expression appeared near-verbatim at three call sites).
  */
-function topLevelIds(
+function toMembershipUpdates(
+  originals: ReadonlyMap<string, CanvasElement>,
+  patched: ReadonlyMap<string, CanvasElement>,
+): Array<MembershipUpdate> {
+  return [...patched.entries()].map(([id, after]) => ({
+    before: originals.get(id) as CanvasElement,
+    after,
+  }))
+}
+
+/**
+ * Bump `elementId`'s `zIndex` to `nextZIndex`, and apply the SAME delta to
+ * every element in its `groupDescendants` subtree — not just its own row
+ * (Hermes code review BLOCKER: a `zIndex` write that repairs "a group's
+ * frame must paint below every member" at the level it was reported broke
+ * the SAME invariant one level down, for a joining/renormalized element
+ * that is ITSELF a group. See
+ * `.claude/.Arena/review-rules/proposals/2026-09-02-z-index-mutation-must-cover-the-subtree.md`).
+ * A no-op for a non-group `elementId` — `groupDescendants` returns `[]`
+ * then — so every caller can apply this unconditionally regardless of kind.
+ *
+ * Composes with a `childIds` patch already recorded for the SAME id via
+ * `patchGroupChildIds` in the caller's own `originals`/`patched` maps: both
+ * read the CURRENT (already-patched) element before writing and spread it
+ * back, so neither helper clobbers a field the other one changed.
+ */
+function bumpZIndexSubtree(
   scene: Scene,
-  ids: ReadonlyArray<string>,
-): Array<string> {
-  const descendantsByOther = new Map(
-    ids.map((other) => [other, new Set(groupDescendants(scene, other))]),
-  )
-  return ids.filter(
-    (id) =>
-      !ids.some(
-        (other) => other !== id && descendantsByOther.get(other)!.has(id),
+  originals: Map<string, CanvasElement>,
+  patched: Map<string, CanvasElement>,
+  elementId: string,
+  targetZIndex: number,
+): void {
+  const element = scene.byId.get(elementId)
+  if (!element) return
+  const current = patched.get(elementId) ?? element
+  const delta = targetZIndex - current.zIndex
+  if (delta === 0) return
+  if (!originals.has(elementId)) originals.set(elementId, element)
+  patched.set(elementId, { ...current, zIndex: targetZIndex })
+
+  for (const descendantId of groupDescendants(scene, elementId)) {
+    const descendant = scene.byId.get(descendantId)
+    if (!descendant) continue
+    const currentDescendant = patched.get(descendantId) ?? descendant
+    if (!originals.has(descendantId)) originals.set(descendantId, descendant)
+    patched.set(descendantId, {
+      ...currentDescendant,
+      zIndex: Math.min(
+        Math.max(currentDescendant.zIndex + delta, Z_MIN),
+        Z_MAX,
       ),
-  )
+    })
+  }
 }
 
 /**
@@ -926,12 +963,15 @@ function topLevelIds(
  * new owner for another within the same gesture — the running patch is
  * accumulated per group id so both edits land in one final `childIds`.
  *
- * Also patches the JOINING element's own `zIndex` when it drops below its
- * new owner's (Hermes review, Major Issue): a group's frame must always
- * paint BELOW every one of its members (see `groupSelection`'s own header),
- * or `hitTest`'s flat reverse-z scan lets the frame occlude a lower-z
- * member permanently the instant it joins. Bumped to one above the owner's
- * current `zIndex`, clamped to `Z_MAX`.
+ * Also bumps the JOINING element's own `zIndex` — and, via
+ * `bumpZIndexSubtree`, its WHOLE subtree's (Hermes code review BLOCKER 1: a
+ * prior fix bumped only the joining element's own row, so dragging a GROUP
+ * into another group left the joining group's frame painting above its own
+ * members) — when it drops below its new owner's: a group's frame must
+ * always paint BELOW every one of its members (see `groupSelection`'s own
+ * header), or `hitTest`'s flat reverse-z scan lets the frame occlude a
+ * lower-z member permanently the instant it joins. Bumped to one above the
+ * owner's current `zIndex`, clamped to `Z_MAX`.
  */
 function resolveMembershipUpdates(
   scene: Scene,
@@ -956,29 +996,27 @@ function resolveMembershipUpdates(
         childIds.filter((childId) => childId !== id),
       )
     }
-    if (newOwnerId) {
-      const newOwner = scene.byId.get(newOwnerId)
-      if (newOwner) {
-        patchGroupChildIds(originals, patched, newOwner, (childIds) => [
-          ...childIds,
-          id,
-        ])
-        const joiningElement = scene.byId.get(id)
-        if (joiningElement && joiningElement.zIndex <= newOwner.zIndex) {
-          if (!originals.has(id)) originals.set(id, joiningElement)
-          patched.set(id, {
-            ...(patched.get(id) ?? joiningElement),
-            zIndex: Math.min(newOwner.zIndex + 1, Z_MAX),
-          })
-        }
-      }
+    if (!newOwnerId) continue
+    const newOwner = scene.byId.get(newOwnerId)
+    if (!newOwner) continue
+
+    patchGroupChildIds(originals, patched, newOwner, (childIds) => [
+      ...childIds,
+      id,
+    ])
+    const joiningElement = scene.byId.get(id)
+    if (joiningElement && joiningElement.zIndex <= newOwner.zIndex) {
+      bumpZIndexSubtree(
+        scene,
+        originals,
+        patched,
+        id,
+        Math.min(newOwner.zIndex + 1, Z_MAX),
+      )
     }
   }
 
-  return [...patched.entries()].map(([id, after]) => ({
-    before: originals.get(id) as CanvasElement,
-    after,
-  }))
+  return toMembershipUpdates(originals, patched)
 }
 
 /**
@@ -1019,10 +1057,7 @@ function resolveGroupCleanupUpdates(
     )
   }
 
-  return [...patched.entries()].map(([id, after]) => ({
-    before: originals.get(id) as CanvasElement,
-    after,
-  }))
+  return toMembershipUpdates(originals, patched)
 }
 
 /**
@@ -1042,6 +1077,33 @@ function applyMembershipUpdates(
     const { id, ...patch } = after
     return updateElement(next, id, patch)
   }, scene)
+}
+
+/**
+ * Every one of `members`'s own `zIndex` bumped one step up, subtree-
+ * inclusive (`bumpZIndexSubtree`) — `groupSelection`'s floor renormalization
+ * when `Z_MIN` would otherwise tie the new group's frame with its lowest
+ * member (Hermes code review, Minor Issue: a plain per-member `+1` bump left
+ * a MEMBER that is itself a group with its own members still below it —
+ * the same subtree-coverage gap BLOCKER 1 fixed for drag-in, one level
+ * down here, so both are fixed with the same shared helper).
+ */
+function renormalizeMembersAboveFloor(
+  scene: Scene,
+  members: ReadonlyArray<CanvasElement>,
+): Array<MembershipUpdate> {
+  const originals = new Map<string, CanvasElement>()
+  const patched = new Map<string, CanvasElement>()
+  for (const member of members) {
+    bumpZIndexSubtree(
+      scene,
+      originals,
+      patched,
+      member.id,
+      Math.min(member.zIndex + 1, Z_MAX),
+    )
+  }
+  return toMembershipUpdates(originals, patched)
 }
 
 export function useCanvasInput({
@@ -2479,11 +2541,15 @@ export function useCanvasInput({
    * border) — clicking a member would hit the group's own frame first and
    * never reach the member underneath, breaking Wave 2's click resolution
    * for every member the instant the group existed. When `minMemberZ - 1`
-   * would run past `Z_MIN`, every member is renormalized one step up
-   * instead of tying the group at the floor (Hermes review, Major Issue):
-   * an exact tie is resolved by `ordered`'s id tie-break, not by "the group
-   * is always below its members", so it silently broke the invariant for a
-   * board already at the floor roughly half the time.
+   * would run past `Z_MIN`, every member is renormalized one step up —
+   * subtree-inclusive, via the shared `bumpZIndexSubtree` (Hermes review,
+   * BLOCKER-adjacent Minor Issue: a member that is ITSELF a group must lift
+   * its own members along with it, or the same "frame paints above its
+   * members" defect BLOCKER 1 fixed for drag-in reappears one level down
+   * here) — instead of tying the group at the floor: an exact tie is
+   * resolved by `ordered`'s id tie-break, not by "the group is always below
+   * its members", so it silently broke the invariant for a board already
+   * at the floor roughly half the time.
    *
    * Selected ids are first collapsed to TOP-LEVEL ones only (Hermes review
    * BLOCKER 2, via the shared `topLevelIds`): a selection containing both a
@@ -2512,10 +2578,7 @@ export function useCanvasInput({
     const atFloor = minMemberZ - 1 < Z_MIN
     const zIndex = atFloor ? Z_MIN : minMemberZ - 1
     const zIndexBumps: Array<MembershipUpdate> = atFloor
-      ? members.map((element) => ({
-          before: element,
-          after: { ...element, zIndex: Math.min(element.zIndex + 1, Z_MAX) },
-        }))
+      ? renormalizeMembersAboveFloor(currentScene, members)
       : []
 
     const group: CanvasElement = {
@@ -2544,12 +2607,7 @@ export function useCanvasInput({
         (childIds) => childIds.filter((childId) => childId !== member.id),
       )
     }
-    const detachUpdates: Array<MembershipUpdate> = [
-      ...detachPatched.entries(),
-    ].map(([id, after]) => ({
-      before: detachOriginals.get(id) as CanvasElement,
-      after,
-    }))
+    const detachUpdates = toMembershipUpdates(detachOriginals, detachPatched)
 
     // Every element this gesture also needs to patch besides the new group
     // itself — folded into the SAME `setScene` call and the SAME undo entry

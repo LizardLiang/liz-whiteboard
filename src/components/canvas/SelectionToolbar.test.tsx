@@ -613,11 +613,39 @@ describe('the duplicate control', () => {
 })
 
 describe('canGroupSelection / canUngroupSelection', () => {
-  it('requires at least 2 selected elements to group (FR-030/A1)', () => {
-    expect(canGroupSelection(new Set())).toBe(false)
-    expect(canGroupSelection(new Set(['a']))).toBe(false)
-    expect(canGroupSelection(new Set(['a', 'b']))).toBe(true)
-    expect(canGroupSelection(new Set(['a', 'b', 'c']))).toBe(true)
+  it('requires at least 2 TOP-LEVEL selected elements to group (FR-030/A1)', () => {
+    const scene = sceneFrom([shape('a'), shape('b'), shape('c')])
+    expect(canGroupSelection(scene, new Set())).toBe(false)
+    expect(canGroupSelection(scene, new Set(['a']))).toBe(false)
+    expect(canGroupSelection(scene, new Set(['a', 'b']))).toBe(true)
+    expect(canGroupSelection(scene, new Set(['a', 'b', 'c']))).toBe(true)
+  })
+
+  // Hermes code review, Major Issue: the predicate used to read the RAW
+  // `selectedIds.size`, so a selection of a group plus one of its OWN
+  // members had size 2 and read as groupable — but `groupSelection` itself
+  // collapses through `topLevelIds` first and no-ops below 2 TOP-LEVEL ids,
+  // so the button rendered enabled for a selection Ctrl+G silently did
+  // nothing to.
+  it('collapses a selection containing a group and one of its own members to ONE top-level id — not groupable', () => {
+    const scene = sceneFrom([
+      shape('a'),
+      shape('b'),
+      groupElement('g', ['a', 'b']),
+    ])
+    expect(canGroupSelection(scene, new Set(['g', 'a']))).toBe(false)
+    // A second, genuinely independent element alongside the group collapses
+    // to TWO top-level ids (the group itself, plus the outsider) and IS
+    // groupable.
+    const sceneWithOutsider = sceneFrom([
+      shape('a'),
+      shape('b'),
+      shape('c'),
+      groupElement('g', ['a', 'b']),
+    ])
+    expect(canGroupSelection(sceneWithOutsider, new Set(['g', 'c']))).toBe(
+      true,
+    )
   })
 
   it('allows ungroup only when the selection is exactly one group element (FR-008)', () => {

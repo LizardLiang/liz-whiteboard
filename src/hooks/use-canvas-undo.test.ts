@@ -1557,23 +1557,129 @@ describe('grouping — recordGroup / recordUngroup (canvas-element-grouping tact
       })
     })
 
-    it('recordGroup does not push an entry at all when the group creation itself fails, even if a detach update would have succeeded', async () => {
-      const h = setup()
-      h.createElement.mockResolvedValueOnce({ id: GROUP_ID, ok: false })
-      const ownerBefore = makeOwner()
-      const ownerAfter = makeOwner({ group: { childIds: [] } })
+    // Both directions below are Hermes code review WARNING 1 / rule
+    // proposal 2026-09-02-record-the-writes-that-acked.md's own required
+    // regression coverage — the SAME "at minimum" tier `recordDelete`
+    // already carries (Cassandra H-001 above): a failed primary write must
+    // not silently discard a detach/parent-patch update that DID land
+    // server-side.
+    describe('partial-failure directions (Hermes code review WARNING 1)', () => {
+      it('recordGroup: group creation fails, detach update succeeds — an entry still records, carrying ONLY the update', async () => {
+        const h = setup()
+        h.createElement.mockResolvedValueOnce({ id: GROUP_ID, ok: false })
+        h.revisions.set(OWNER_ID, 1)
+        const ownerBefore = makeOwner()
+        const ownerAfter = makeOwner({ group: { childIds: [] } })
 
-      act(() => {
-        h.api.callbacks.onGroup?.(makeGroup(), [
-          { before: ownerBefore, after: ownerAfter },
-        ])
-      })
-      await waitFor(() => expect(h.createElement).toHaveBeenCalledTimes(1))
+        act(() => {
+          h.api.callbacks.onGroup?.(makeGroup(), [
+            { before: ownerBefore, after: ownerAfter },
+          ])
+        })
+        await waitFor(() => expect(h.createElement).toHaveBeenCalledTimes(1))
+        await waitFor(() => expect(h.updateElements).toHaveBeenCalledTimes(1))
 
-      act(() => {
-        h.api.undo()
+        // The detach update DID land server-side — an entry must exist to
+        // reverse it, or the user has no toast naming it and no way back.
+        act(() => {
+          h.api.undo()
+        })
+        await waitFor(() => expect(h.updateElements).toHaveBeenCalledTimes(2))
+        // No group row was ever created, so undo has nothing to delete.
+        expect(h.deleteElements).not.toHaveBeenCalled()
+        const [restoredOwner] = h.updateElements.mock.calls[1]
+        expect(restoredOwner[0]).toMatchObject({
+          id: OWNER_ID,
+          group: { childIds: [RECT_ID] },
+        })
+        await waitFor(() =>
+          expect(toast.success).toHaveBeenCalledWith(
+            'Undid moving an element',
+          ),
+        )
       })
-      expect(h.deleteElements).not.toHaveBeenCalled()
+
+      it('recordGroup: both the creation and the update fail — no entry is pushed', async () => {
+        const h = setup()
+        h.createElement.mockResolvedValueOnce({ id: GROUP_ID, ok: false })
+        h.updateElements.mockResolvedValueOnce([{ id: OWNER_ID, ok: false }])
+        const ownerBefore = makeOwner()
+        const ownerAfter = makeOwner({ group: { childIds: [] } })
+
+        act(() => {
+          h.api.callbacks.onGroup?.(makeGroup(), [
+            { before: ownerBefore, after: ownerAfter },
+          ])
+        })
+        await waitFor(() => expect(h.createElement).toHaveBeenCalledTimes(1))
+        await waitFor(() => expect(h.updateElements).toHaveBeenCalledTimes(1))
+
+        act(() => {
+          h.api.undo()
+        })
+        expect(h.deleteElements).not.toHaveBeenCalled()
+        // No SECOND updateElements call — nothing was recorded to reverse.
+        expect(h.updateElements).toHaveBeenCalledTimes(1)
+      })
+
+      it('recordUngroup: group delete fails, parent-patch update succeeds — an entry still records, carrying ONLY the update', async () => {
+        const h = setup()
+        h.deleteElements.mockResolvedValueOnce([{ id: GROUP_ID, ok: false }])
+        h.revisions.set(OWNER_ID, 1)
+        const parentBefore = makeOwner({ group: { childIds: [GROUP_ID] } })
+        const parentAfter = makeOwner({ group: { childIds: [] } })
+
+        act(() => {
+          h.api.callbacks.onUngroup?.(makeGroup(), [
+            { before: parentBefore, after: parentAfter },
+          ])
+        })
+        await waitFor(() => expect(h.deleteElements).toHaveBeenCalledTimes(1))
+        await waitFor(() => expect(h.updateElements).toHaveBeenCalledTimes(1))
+
+        // The parent-patch update DID land server-side — an entry must
+        // exist to reverse it.
+        act(() => {
+          h.api.undo()
+        })
+        await waitFor(() => expect(h.updateElements).toHaveBeenCalledTimes(2))
+        // The group's own delete never landed, so undo has nothing to
+        // recreate.
+        expect(h.createElement).not.toHaveBeenCalled()
+        const [restoredParent] = h.updateElements.mock.calls[1]
+        expect(restoredParent[0]).toMatchObject({
+          id: OWNER_ID,
+          group: { childIds: [GROUP_ID] },
+        })
+        await waitFor(() =>
+          expect(toast.success).toHaveBeenCalledWith(
+            'Undid moving an element',
+          ),
+        )
+      })
+
+      it('recordUngroup: both the delete and the update fail — no entry is pushed', async () => {
+        const h = setup()
+        h.deleteElements.mockResolvedValueOnce([{ id: GROUP_ID, ok: false }])
+        h.updateElements.mockResolvedValueOnce([{ id: OWNER_ID, ok: false }])
+        const parentBefore = makeOwner({ group: { childIds: [GROUP_ID] } })
+        const parentAfter = makeOwner({ group: { childIds: [] } })
+
+        act(() => {
+          h.api.callbacks.onUngroup?.(makeGroup(), [
+            { before: parentBefore, after: parentAfter },
+          ])
+        })
+        await waitFor(() => expect(h.deleteElements).toHaveBeenCalledTimes(1))
+        await waitFor(() => expect(h.updateElements).toHaveBeenCalledTimes(1))
+
+        act(() => {
+          h.api.undo()
+        })
+        expect(h.createElement).not.toHaveBeenCalled()
+        // No SECOND updateElements call — nothing was recorded to reverse.
+        expect(h.updateElements).toHaveBeenCalledTimes(1)
+      })
     })
   })
 })

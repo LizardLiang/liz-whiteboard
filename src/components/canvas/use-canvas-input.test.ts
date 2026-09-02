@@ -1728,6 +1728,86 @@ describe('grouping: drag-in preserves the group-below-members z-order invariant 
     )!
     expect(afterA.zIndex).toBe(20)
   })
+
+  // BLOCKER 1 (Hermes code review, round 2): the joining element is itself a
+  // GROUP with its own members. The prior fix bumped only the joining
+  // group's own row, never its subtree — dragging a group into another
+  // group left the joining group's frame painting ABOVE its own members
+  // (they never moved), breaking hitTest for every one of them. Neither
+  // existing test above exercises this: both build the joining element as
+  // `kind: 'rectangle'`.
+  it("bumps a joining GROUP's whole subtree, not just its own row, when it joins another group", () => {
+    const P_ID = '33333333-3333-4333-8333-333333333333'
+    const M_ID = '44444444-4444-4444-8444-444444444444'
+    const g1: CanvasElement = {
+      ...makeText(),
+      id: G1_ID,
+      kind: 'group',
+      text: null,
+      x: 0,
+      y: 0,
+      width: 300,
+      height: 300,
+      zIndex: 9,
+      group: { childIds: [] },
+    }
+    // P is the joining GROUP, dragged as a whole (a click at 410,410 lands
+    // on P's own frame, outside M's rect, so P — not M — is what gets
+    // selected and dragged).
+    const p: CanvasElement = {
+      ...makeText(),
+      id: P_ID,
+      kind: 'group',
+      text: null,
+      x: 400,
+      y: 400,
+      width: 100,
+      height: 100,
+      zIndex: 3,
+      group: { childIds: [M_ID] },
+    }
+    const m: CanvasElement = {
+      ...makeText(),
+      id: M_ID,
+      kind: 'rectangle',
+      x: 420,
+      y: 420,
+      width: 20,
+      height: 20,
+      zIndex: 4, // above its own group P, per the group-below-members invariant
+    }
+    const h = setup([g1, p, m])
+
+    act(() => {
+      h.api.canvasHandlers.onPointerDown(
+        pointerEvent({ clientX: 410, clientY: 410 }),
+      )
+    })
+    h.sync()
+    act(() => {
+      h.api.canvasHandlers.onPointerMove(
+        pointerEvent({ clientX: 60, clientY: 60 }),
+      )
+    })
+    h.sync()
+    act(() => {
+      h.api.canvasHandlers.onPointerUp(pointerEvent({ clientX: 60, clientY: 60 }))
+    })
+
+    expect(h.callbacks.onUpdate).toHaveBeenCalledTimes(1)
+    const [after] = h.callbacks.onUpdate.mock.calls[0]
+    const afterP = (after as Array<CanvasElement>).find((e) => e.id === P_ID)!
+    const afterM = (after as Array<CanvasElement>).find((e) => e.id === M_ID)!
+    // P bumped to one above g1's own zIndex (9) — same delta (+7) as M, so
+    // M stays above P: the invariant is preserved, not just re-anchored at
+    // the top.
+    expect(afterP.zIndex).toBe(10)
+    expect(afterM.zIndex).toBe(11)
+    // Applied locally too, not just reported to the callback.
+    expect(h.scene.byId.get(P_ID)?.zIndex).toBe(10)
+    expect(h.scene.byId.get(M_ID)?.zIndex).toBe(11)
+    expect(h.scene.byId.get(G1_ID)?.group?.childIds).toEqual([P_ID])
+  })
 })
 
 /** A harness whose tool starts as something other than `select`. */
@@ -1905,6 +1985,58 @@ describe('grouping: groupSelection / ungroupSelection (Wave 6)', () => {
     // Applied locally too, not just reported.
     expect(h.scene.byId.get(A_ID)?.zIndex).toBe(Z_MIN + 1)
     expect(h.scene.byId.get(B_ID)?.zIndex).toBe(Z_MIN + 4)
+  })
+
+  it("renormalizes a member GROUP's own subtree too, not just its own row, at the Z_MIN floor (fix round — Hermes code review, Minor Issue tied to BLOCKER 1)", () => {
+    // A is itself a group (containing C), selected alongside plain
+    // rectangle B. Without the subtree-aware fix, C would stay at its old
+    // zIndex while its own group A moved above it — the same "frame
+    // paints above its members" defect BLOCKER 1 fixed for drag-in, one
+    // level down inside this floor-renormalization path.
+    const C_ID = '55555555-5555-4555-8555-555555555555'
+    const a: CanvasElement = {
+      ...makeText(),
+      id: A_ID,
+      kind: 'group',
+      text: null,
+      x: 0,
+      y: 0,
+      width: 50,
+      height: 50,
+      zIndex: Z_MIN,
+      group: { childIds: [C_ID] },
+    }
+    const c: CanvasElement = {
+      ...makeText(),
+      id: C_ID,
+      kind: 'rectangle',
+      x: 10,
+      y: 10,
+      width: 10,
+      height: 10,
+      zIndex: Z_MIN + 1, // above its own group A, per the invariant
+    }
+    const b = makeRect(B_ID, { zIndex: Z_MIN + 3 })
+    const h = setup([a, c, b])
+    act(() => {
+      h.api.setSelectedIds(new Set([A_ID, B_ID]))
+    })
+    h.sync()
+    act(() => {
+      h.api.groupSelection()
+    })
+    const [group, groupUpdates] = h.callbacks.onGroup.mock.calls[0] as [
+      CanvasElement,
+      Array<{ before: CanvasElement; after: CanvasElement }>,
+    ]
+    expect(group.zIndex).toBe(Z_MIN)
+    const bumpA = groupUpdates.find((u) => u.after.id === A_ID)!
+    const bumpC = groupUpdates.find((u) => u.after.id === C_ID)!
+    expect(bumpA.after.zIndex).toBe(Z_MIN + 1)
+    expect(bumpC.after.zIndex).toBe(Z_MIN + 2)
+    // Applied locally too, not just reported.
+    expect(h.scene.byId.get(A_ID)?.zIndex).toBe(Z_MIN + 1)
+    expect(h.scene.byId.get(C_ID)?.zIndex).toBe(Z_MIN + 2)
   })
 
   it('ungroupSelection() is a no-op unless the selection is exactly one group (FR-008)', () => {

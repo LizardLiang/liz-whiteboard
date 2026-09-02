@@ -76,7 +76,11 @@ import type {
 } from '@/lib/canvas-engine/scene'
 import type { ZOrderCommand } from '@/lib/canvas-engine/z-order'
 import { worldToScreen } from '@/lib/canvas-engine/camera'
-import { boundsOfMany, isCanvasShapeKind } from '@/lib/canvas-engine/scene'
+import {
+  boundsOfMany,
+  isCanvasShapeKind,
+  topLevelIds,
+} from '@/lib/canvas-engine/scene'
 import { zOrderTargets } from '@/lib/canvas-engine/z-order'
 import {
   CANVAS_CORNER_RADII,
@@ -280,13 +284,25 @@ export function selectionToolbarTargets(
 }
 
 /**
- * Whether the CURRENT (unexpanded) selection may be bound into a new group
- * (FR-030/A1) — two or more elements, no upper bound and no kind
+ * Whether the CURRENT selection may be bound into a new group (FR-030/A1)
+ * — two or more TOP-LEVEL elements once collapsed through `topLevelIds`,
+ * capped at 1000 server-side (`schema.ts`'s `childIds.max(1000)`), no kind
  * restriction, since a selection that already contains a group nests it
  * with no special case (FR-009).
+ *
+ * Collapsed through `topLevelIds` — the SAME collapse `groupSelection`
+ * itself applies (Hermes code review, Major Issue) — rather than the raw
+ * `selectedIds.size`: a selection of a group plus one of its own members
+ * has size 2 but collapses to ONE top-level id, and `groupSelection`
+ * already no-ops on that case. Without this, the Group button rendered
+ * enabled for a selection Ctrl+G and this button both silently did nothing
+ * to.
  */
-export function canGroupSelection(selectedIds: ReadonlySet<string>): boolean {
-  return selectedIds.size >= 2
+export function canGroupSelection(
+  scene: Scene,
+  selectedIds: ReadonlySet<string>,
+): boolean {
+  return topLevelIds(scene, [...selectedIds]).length >= 2
 }
 
 /**
@@ -362,7 +378,7 @@ export function SelectionToolbar({
   const box = boundsOfMany(sets?.arrange ?? [])
   if (!sets || !box) return null
   const targets = sets.paint
-  const canGroup = canGroupSelection(selectedIds)
+  const canGroup = canGroupSelection(scene, selectedIds)
   const canUngroup = canUngroupSelection(scene, selectedIds)
 
   const anchor = worldToScreen(camera, { x: box.x + box.width / 2, y: box.y })
