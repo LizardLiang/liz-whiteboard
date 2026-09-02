@@ -48,6 +48,22 @@ export default defineConfig({
         viewport: { width: 1600, height: 1000 },
       },
     },
+    // Firefox, scoped via `testMatch` to ONLY canvas-grouping.spec.ts
+    // (canvas-element-grouping tactical plan, Wave 8 / FR-020's NFR: Ctrl+G
+    // must suppress the browser's native shortcut in more than one engine).
+    // Every other existing spec still runs chromium-only — `testMatch` here
+    // overrides this project's own file selection rather than adding to the
+    // suite-wide default, so this does not double the runtime of, or
+    // introduce first-time Firefox exposure for, any spec that was never
+    // written or verified against it.
+    {
+      name: 'firefox',
+      testMatch: /canvas-grouping\.spec\.ts$/,
+      use: {
+        ...devices['Desktop Firefox'],
+        viewport: { width: 1600, height: 1000 },
+      },
+    },
   ],
   // Reuse the dev server if it's already up on BASE_URL; otherwise start it.
   webServer: {

@@ -84,7 +84,7 @@ function board(id: string, name: string) {
 function element(opts: {
   id: string
   boardId: string
-  kind: 'rectangle' | 'text' | 'connector'
+  kind: 'rectangle' | 'text' | 'connector' | 'group'
   x: number
   y: number
   w: number
@@ -103,6 +103,13 @@ function element(opts: {
     sourceAnchor?: string
     targetAnchor?: string
   }
+  /**
+   * Direct member ids for a `group` (canvas-element-grouping tactical plan,
+   * Wave 1) — the group's ONLY real content beyond its own frame
+   * (x/y/w/h ARE real for a group, unlike a connector's placeholder: the
+   * frame is stored, explicit, and never re-derived from members).
+   */
+  childIds?: Array<string>
 }) {
   db.query(
     'INSERT INTO "CanvasElement" (id, boardId, kind, positionX, positionY, width, height, rotation, "zIndex", text, style, props, createdAt, updatedAt) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?)',
@@ -127,7 +134,9 @@ function element(opts: {
     JSON.stringify(
       opts.connector
         ? { kind: 'connector', ...opts.connector }
-        : { kind: opts.kind },
+        : opts.childIds
+          ? { kind: 'group', childIds: opts.childIds }
+          : { kind: opts.kind },
     ),
     now,
     now,
@@ -137,6 +146,7 @@ function element(opts: {
 board(IDS.canvasBoard, 'E2E Canvas')
 board(IDS.canvasViewerBoard, 'E2E Canvas Viewer')
 board(IDS.canvasConnectorBoard, 'E2E Canvas Connectors')
+board(IDS.canvasGroupBoard, 'E2E Canvas Grouping')
 
 // One seeded rectangle, well clear of the top-left toolbar (which sits at
 // roughly x<200, y<80 in screen space at the default camera) so a pointer
@@ -259,6 +269,145 @@ element({
     sourceAnchor: 'right',
     targetAnchor: 'left',
   },
+})
+
+// ── grouping board (canvas-element-grouping tactical plan, Wave 8) ─────────
+//
+// `canvasGroupRectA`/`canvasGroupRectB` side by side, bound into
+// `canvasGroup` — the frame is the members' own tight union (A8), stored
+// explicitly rather than derived, and its zIndex sits ONE BELOW its lowest
+// member's (mirrors `groupSelection`'s own invariant, so hit-testing a
+// member does not get shadowed by the group's own frame).
+element({
+  id: IDS.canvasGroupRectA,
+  boardId: IDS.canvasGroupBoard,
+  kind: 'rectangle',
+  x: 300,
+  y: 300,
+  w: 150,
+  h: 100,
+  text: null,
+  zIndex: 1,
+})
+element({
+  id: IDS.canvasGroupRectB,
+  boardId: IDS.canvasGroupBoard,
+  kind: 'rectangle',
+  x: 550,
+  y: 300,
+  w: 150,
+  h: 100,
+  text: null,
+  zIndex: 2,
+})
+element({
+  id: IDS.canvasGroup,
+  boardId: IDS.canvasGroupBoard,
+  kind: 'group',
+  x: 300,
+  y: 300,
+  w: 400,
+  h: 100,
+  text: null,
+  zIndex: 0,
+  childIds: [IDS.canvasGroupRectA, IDS.canvasGroupRectB],
+})
+
+// An element OUTSIDE the group, joined to a MEMBER of it — proves a bound
+// connector visibly follows when the group (and that member) move.
+element({
+  id: IDS.canvasGroupExternalRect,
+  boardId: IDS.canvasGroupBoard,
+  kind: 'rectangle',
+  x: 300,
+  y: 550,
+  w: 150,
+  h: 100,
+  text: null,
+  zIndex: 3,
+})
+element({
+  id: IDS.canvasGroupConnector,
+  boardId: IDS.canvasGroupBoard,
+  kind: 'connector',
+  x: 375,
+  y: 400,
+  w: 1,
+  h: 1,
+  text: null,
+  zIndex: 4,
+  connector: {
+    sourceElementId: IDS.canvasGroupRectA,
+    targetElementId: IDS.canvasGroupExternalRect,
+    routing: 'straight',
+  },
+})
+
+// A loose (non-member) element, well clear of `canvasGroup`'s frame — the
+// drag-into-a-group's-frame membership test's starting point.
+element({
+  id: IDS.canvasGroupLooseRect,
+  boardId: IDS.canvasGroupBoard,
+  kind: 'rectangle',
+  x: 900,
+  y: 300,
+  w: 150,
+  h: 100,
+  text: null,
+  zIndex: 5,
+})
+
+// A TWO-LEVEL nested group — `canvasGroupOuter` -> `canvasGroupInner` ->
+// {canvasGroupInnerA, canvasGroupInnerB} — the one fixture the "ungroup
+// dissolves exactly one level" test needs. `canvasGroupOuter`'s frame is the
+// SAME rect as `canvasGroupInner`'s (a group containing only one group has
+// no wider bounds to unify) — realistic, since `boundsOfMany` on a
+// single-group selection always produces exactly this.
+element({
+  id: IDS.canvasGroupInnerA,
+  boardId: IDS.canvasGroupBoard,
+  kind: 'rectangle',
+  x: 300,
+  y: 700,
+  w: 120,
+  h: 80,
+  text: null,
+  zIndex: 8,
+})
+element({
+  id: IDS.canvasGroupInnerB,
+  boardId: IDS.canvasGroupBoard,
+  kind: 'rectangle',
+  x: 500,
+  y: 700,
+  w: 120,
+  h: 80,
+  text: null,
+  zIndex: 9,
+})
+element({
+  id: IDS.canvasGroupInner,
+  boardId: IDS.canvasGroupBoard,
+  kind: 'group',
+  x: 300,
+  y: 700,
+  w: 320,
+  h: 80,
+  text: null,
+  zIndex: 7,
+  childIds: [IDS.canvasGroupInnerA, IDS.canvasGroupInnerB],
+})
+element({
+  id: IDS.canvasGroupOuter,
+  boardId: IDS.canvasGroupBoard,
+  kind: 'group',
+  x: 300,
+  y: 700,
+  w: 320,
+  h: 80,
+  text: null,
+  zIndex: 6,
+  childIds: [IDS.canvasGroupInner],
 })
 
 console.log(`[e2e seed-canvas] ok — board ${IDS.canvasBoard}`)

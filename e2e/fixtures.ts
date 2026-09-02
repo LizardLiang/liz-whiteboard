@@ -190,6 +190,35 @@ export const IDS = {
   // absence of BOTH affordances (handles and routing bar) on one board.
   canvasViewerConnTarget: '60000000-0000-4000-8000-00000000000b',
   canvasViewerConnector: '60000000-0000-4000-8000-00000000000c',
+  // Dedicated board for canvas-grouping.spec.ts (canvas-element-grouping
+  // tactical plan, Wave 8) — own board for the same reason `canvasBoard` and
+  // `canvasConnectorBoard` have their own: this suite creates, moves,
+  // resizes, deletes and re-groups elements every test, and re-seeds before
+  // each one, so a shared board would perturb (or be perturbed by) every
+  // other canvas spec's own element-count/geometry assumptions.
+  canvasGroupBoard: '60000000-0000-4000-8000-00000000000d',
+  // A pre-existing single-level group (`canvasGroup`, containing `canvasGroupRectA`
+  // + `canvasGroupRectB`) — the main fixture for click/double-click/move/
+  // resize/ungroup/delete/duplicate/reload tests, so those do not each have
+  // to build a group from scratch via the UI first.
+  canvasGroupRectA: '60000000-0000-4000-8000-00000000000e',
+  canvasGroupRectB: '60000000-0000-4000-8000-00000000000f',
+  canvasGroup: '60000000-0000-4000-8000-000000000010',
+  // An element OUTSIDE the group, connected to a MEMBER of it — proves a
+  // bound connector visibly follows when the group (and its member) moves.
+  canvasGroupExternalRect: '60000000-0000-4000-8000-000000000011',
+  canvasGroupConnector: '60000000-0000-4000-8000-000000000012',
+  // A loose (non-member) element, well outside `canvasGroup`'s frame, for the
+  // drag-into-a-group's-frame membership test.
+  canvasGroupLooseRect: '60000000-0000-4000-8000-000000000013',
+  // A TWO-LEVEL nested group (`canvasGroupOuter` -> `canvasGroupInner` ->
+  // {canvasGroupInnerA, canvasGroupInnerB}) — the one fixture the
+  // "ungroup dissolves exactly one level" test needs, distinct from the
+  // single-level `canvasGroup` above.
+  canvasGroupInnerA: '60000000-0000-4000-8000-000000000014',
+  canvasGroupInnerB: '60000000-0000-4000-8000-000000000015',
+  canvasGroupInner: '60000000-0000-4000-8000-000000000016',
+  canvasGroupOuter: '60000000-0000-4000-8000-000000000017',
   shapesTableAName: '50000000-0000-4000-8000-00000000000f',
   shapesTableBNote: '50000000-0000-4000-8000-000000000010',
 
