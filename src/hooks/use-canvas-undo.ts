@@ -223,6 +223,35 @@ function groupUpdateOperations(
   return operations
 }
 
+/**
+ * Build one undo entry from whichever writes in a concurrent batch actually
+ * acknowledged, or `null` when none did (Hermes code review round 3, WARNING
+ * — the label-and-push tail duplicated between `recordGroup` and
+ * `recordUngroup`, six of eight lines byte-identical). Every caller already
+ * gated on an empty `operations` array before pushing and pushed exactly
+ * once at the end, so folding both steps into one return value shrinks all
+ * three `record*` functions that build a label from a primary write plus
+ * `groupUpdateOperations`, instead of writing the same tail twice.
+ *
+ * `primaryLabel` is the gesture-specific label to use when the entry's
+ * PRIMARY write (the group's create, the group's delete, or `recordDelete`'s
+ * own doomed elements) itself acknowledged — `null` when it did not, in
+ * which case the entry still needs recording if a group-cleanup update
+ * landed on its own, under the generic multi-element `move` label every
+ * caller already fell back to (matches `recordDelete`'s original tier
+ * exactly, never a lesser one).
+ */
+function entryFromAckedWrites(
+  operations: Array<CanvasUndoOperation>,
+  primaryLabel: CanvasUndoLabel | null,
+): CanvasUndoEntry | null {
+  if (operations.length === 0) return null
+  return {
+    label: primaryLabel ?? { gesture: 'move', count: operations.length },
+    operations,
+  }
+}
+
 const EPHEMERAL: CanvasMutationOptions = { ephemeral: true }
 
 export function useCanvasUndo({
@@ -471,28 +500,31 @@ export function useCanvasUndo({
         operations.push(
           ...groupUpdateOperations(boardId, groupUpdates, updateResults),
         )
-        if (operations.length === 0) return
-        // Derived from the FINAL `operations` list, not captured mid-build
-        // (Cassandra risk-analysis H-001 / Hermes code review, Major
-        // Issue): a count captured BEFORE `groupUpdates`' own operations
-        // were appended is fragile by construction — it happens to equal
-        // the delete count today only because nothing else had been
-        // pushed yet at that point, but it says nothing about what the
-        // FINAL operations list actually contains. When every delete in
-        // the batch fails (0 delete operations) while the group-cleanup
-        // update still lands, labelling the entry `{ gesture, count: 0 }`
-        // — a "delete" gesture describing zero elements — reads as a
-        // misleading no-op toast for an entry that in fact carries a real,
-        // consequential group mutation. Falls back to the generic
-        // multi-element `move` label in exactly that case, so the entry is
-        // still recorded (and still undoable) under a name that actually
-        // describes what changed.
+        // The `deleteOps.length > 0` check is derived from the FINAL
+        // `operations` list, not captured mid-build (Cassandra risk-analysis
+        // H-001 / Hermes code review, Major Issue): a count captured BEFORE
+        // `groupUpdates`' own operations were appended is fragile by
+        // construction — it happens to equal the delete count today only
+        // because nothing else had been pushed yet at that point, but it
+        // says nothing about what the FINAL operations list actually
+        // contains. When every delete in the batch fails (0 delete
+        // operations) while the group-cleanup update still lands, labelling
+        // the entry `{ gesture, count: 0 }` — a "delete" gesture describing
+        // zero elements — reads as a misleading no-op toast for an entry
+        // that in fact carries a real, consequential group mutation.
+        // `entryFromAckedWrites` falls back to the generic multi-element
+        // `move` label in exactly that case, so the entry is still recorded
+        // (and still undoable) under a name that actually describes what
+        // changed.
         const deleteOps = operations.filter((op) => op.kind === 'delete')
-        const label: CanvasUndoLabel =
+        const entry = entryFromAckedWrites(
+          operations,
           deleteOps.length > 0
             ? { gesture, count: deleteOps.length }
-            : { gesture: 'move', count: operations.length }
-        push({ label, operations })
+            : null,
+        )
+        if (!entry) return
+        push(entry)
       })
     },
     [boardId, deleteElements, push, readOnly, updateElements],
@@ -729,14 +761,17 @@ export function useCanvasUndo({
         operations.push(
           ...groupUpdateOperations(boardId, groupUpdates, updateResults),
         )
-        if (operations.length === 0) return
-        const label: CanvasUndoLabel = created
-          ? {
-              gesture: 'group',
-              count: groupElement.group?.childIds.length ?? 0,
-            }
-          : { gesture: 'move', count: operations.length }
-        push({ label, operations })
+        const entry = entryFromAckedWrites(
+          operations,
+          created
+            ? {
+                gesture: 'group',
+                count: groupElement.group?.childIds.length ?? 0,
+              }
+            : null,
+        )
+        if (!entry) return
+        push(entry)
       })
     },
     [boardId, createElement, push, readOnly, updateElements],
@@ -800,14 +835,17 @@ export function useCanvasUndo({
         operations.push(
           ...groupUpdateOperations(boardId, groupUpdates, updateResults),
         )
-        if (operations.length === 0) return
-        const label: CanvasUndoLabel = deleted
-          ? {
-              gesture: 'ungroup',
-              count: groupElement.group?.childIds.length ?? 0,
-            }
-          : { gesture: 'move', count: operations.length }
-        push({ label, operations })
+        const entry = entryFromAckedWrites(
+          operations,
+          deleted
+            ? {
+                gesture: 'ungroup',
+                count: groupElement.group?.childIds.length ?? 0,
+              }
+            : null,
+        )
+        if (!entry) return
+        push(entry)
       })
     },
     [boardId, deleteElements, push, readOnly, updateElements],

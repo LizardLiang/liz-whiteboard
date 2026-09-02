@@ -687,8 +687,19 @@ export function withGroupMembers(
  *
  * O(ids^2) `groupDescendants` calls in the worst case (Cassandra/Hermes
  * Minor Issue) — cheap in the common case, since `groupDescendants`
- * short-circuits for a non-group id, and this only runs once per gesture
- * end (or once per toolbar render), not per frame.
+ * short-circuits for a non-group id, so each comparison is a hash miss on
+ * an empty set. Cost is bounded by SELECTION size, never by scene size.
+ *
+ * Call frequency differs by caller, and the `canGroupSelection` one is NOT
+ * once-per-gesture (Hermes code review round 3, corrected claim):
+ * `resolveMembershipUpdates` and `groupSelection` call this once per
+ * gesture end, but `SelectionToolbar` is unmemoized and re-renders on every
+ * `setScene`, which the `move`/`resize` gesture branches issue on every
+ * pointermove — so `canGroupSelection` re-runs this every frame of a live
+ * drag. Acceptable at that frequency only because the cost is
+ * selection-bounded: the same render already pays `zOrderTargets`' larger,
+ * unconditional O(scene size) scan (see `selectionToolbarTargets`' own
+ * header in `SelectionToolbar.tsx`).
  */
 export function topLevelIds(
   scene: Scene,

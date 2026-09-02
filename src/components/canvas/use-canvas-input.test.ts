@@ -1778,21 +1778,10 @@ describe('grouping: drag-in preserves the group-below-members z-order invariant 
     }
     const h = setup([g1, p, m])
 
-    act(() => {
-      h.api.canvasHandlers.onPointerDown(
-        pointerEvent({ clientX: 410, clientY: 410 }),
-      )
-    })
-    h.sync()
-    act(() => {
-      h.api.canvasHandlers.onPointerMove(
-        pointerEvent({ clientX: 60, clientY: 60 }),
-      )
-    })
-    h.sync()
-    act(() => {
-      h.api.canvasHandlers.onPointerUp(pointerEvent({ clientX: 60, clientY: 60 }))
-    })
+    // Same pointer path the two sibling tests use — the helper is
+    // scene-agnostic (it takes only the harness), and (410,410) still lands
+    // on P's own frame outside M's rect here.
+    dragAIntoG1(h)
 
     expect(h.callbacks.onUpdate).toHaveBeenCalledTimes(1)
     const [after] = h.callbacks.onUpdate.mock.calls[0]
