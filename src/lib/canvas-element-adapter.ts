@@ -175,7 +175,18 @@ function toEngineGroup(
   props: CanvasElementProps | null | undefined,
 ): CanvasElement['group'] {
   if (!props || props.kind !== 'group') return undefined
-  return { childIds: [...props.childIds] }
+  // Guarded rather than a bare `[...props.childIds]` (Hermes review,
+  // Major Issue): that spread THREW on a `kind: 'group'` row whose `props`
+  // carried no `childIds` at all, contradicting this very function's own
+  // doc comment above and crashing the whole board's mount (the throw
+  // happens inside `records.map(toEngineElement)`, before
+  // `repairGroupMembership` ever runs) — reachable from hand-edited data
+  // and from a seed script that omits the field, not from any
+  // Zod-validated application write.
+  const childIds = Array.isArray(props.childIds)
+    ? props.childIds.filter((id): id is string => typeof id === 'string')
+    : []
+  return { childIds }
 }
 
 /**

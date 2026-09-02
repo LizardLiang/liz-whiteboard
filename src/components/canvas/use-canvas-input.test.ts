@@ -42,6 +42,18 @@ function makeText(overrides: Partial<CanvasElement> = {}): CanvasElement {
   }
 }
 
+/**
+ * A plain rectangle, built on `makeText`'s own defaults. Hoisted here
+ * (Hermes review, Minor Issue) — three of the grouping `describe` blocks
+ * below used to each define a byte-for-byte identical local copy of this.
+ */
+function makeRect(
+  id: string,
+  overrides: Partial<CanvasElement> = {},
+): CanvasElement {
+  return { ...makeText(), id, kind: 'rectangle', text: null, ...overrides }
+}
+
 function makeCanvas() {
   return {
     getBoundingClientRect: () => ({
@@ -888,6 +900,35 @@ describe('grouping: selection resolution and entered-group depth (Wave 2)', () =
     }
   })
 
+  it('two isolated single clicks about 700ms apart on the same member BOTH select the outermost group (FR-004 is unconditional; fix round — Hermes code review, Major Issue)', () => {
+    // No `onDoubleClick` fires here at all — this is two genuinely
+    // independent single clicks, not a double-click gesture. 700ms is
+    // deliberately INSIDE the wide `enteredPath`-preservation window
+    // (1500ms) but OUTSIDE the tight raw-hit-target window (500ms) —
+    // exactly the gap a single shared window used to get wrong, which
+    // wrongly resolved the second click to the raw leaf instead of the
+    // outermost group.
+    vi.useFakeTimers()
+    try {
+      const h = setup(makeGroupScene())
+      act(() => {
+        h.api.canvasHandlers.onPointerDown(pointerEvent(HIT))
+      })
+      h.sync()
+      expect(h.api.selectedIds).toEqual(new Set([OUTER_ID]))
+
+      vi.advanceTimersByTime(700)
+
+      act(() => {
+        h.api.canvasHandlers.onPointerDown(pointerEvent(HIT))
+      })
+      h.sync()
+      expect(h.api.selectedIds).toEqual(new Set([OUTER_ID]))
+    } finally {
+      vi.useRealTimers()
+    }
+  })
+
   it('Escape resets entered depth, so the next double-click only descends one level again', () => {
     const h = setup(makeGroupScene())
     act(() => {
@@ -1611,6 +1652,84 @@ describe('grouping: membership drag-in/out, commit-on-drop (Wave 5)', () => {
   })
 })
 
+describe('grouping: drag-in preserves the group-below-members z-order invariant (fix round — Hermes code review, Major Issue)', () => {
+  const G1_ID = '11111111-1111-4111-8111-111111111111'
+  const A_ID = '22222222-2222-4222-8222-222222222222'
+
+  function makeScene(memberZ: number): Array<CanvasElement> {
+    const g1: CanvasElement = {
+      ...makeText(),
+      id: G1_ID,
+      kind: 'group',
+      text: null,
+      x: 0,
+      y: 0,
+      width: 300,
+      height: 300,
+      zIndex: 9,
+      group: { childIds: [] },
+    }
+    const a: CanvasElement = {
+      ...makeText(),
+      id: A_ID,
+      kind: 'rectangle',
+      x: 400,
+      y: 400,
+      width: 20,
+      height: 20,
+      zIndex: memberZ,
+    }
+    return [g1, a]
+  }
+
+  function dragAIntoG1(h: ReturnType<typeof setup>) {
+    act(() => {
+      h.api.canvasHandlers.onPointerDown(
+        pointerEvent({ clientX: 410, clientY: 410 }),
+      )
+    })
+    h.sync()
+    act(() => {
+      h.api.canvasHandlers.onPointerMove(
+        pointerEvent({ clientX: 60, clientY: 60 }),
+      )
+    })
+    h.sync()
+    act(() => {
+      h.api.canvasHandlers.onPointerUp(
+        pointerEvent({ clientX: 60, clientY: 60 }),
+      )
+    })
+  }
+
+  it("bumps the joining element's zIndex above the group's own when it would otherwise land below the frame", () => {
+    // A drops from z=3 into a group at z=9 — without the fix, the group's
+    // frame (a flat rect test in hit-test's reverse-z scan) would occlude
+    // `a` permanently the instant it joined.
+    const h = setup(makeScene(3))
+    dragAIntoG1(h)
+
+    expect(h.callbacks.onUpdate).toHaveBeenCalledTimes(1)
+    const [after] = h.callbacks.onUpdate.mock.calls[0]
+    const afterA = (after as Array<CanvasElement>).find(
+      (e) => e.id === A_ID,
+    )!
+    expect(afterA.zIndex).toBe(10) // one above g1's own zIndex (9)
+    expect(h.scene.byId.get(A_ID)?.zIndex).toBe(10)
+  })
+
+  it('leaves zIndex untouched when the joining element is already above the group', () => {
+    const h = setup(makeScene(20))
+    dragAIntoG1(h)
+
+    const [after] = h.callbacks.onUpdate.mock.calls[0]
+    const afterA = (after as Array<CanvasElement>).find(
+      (e) => e.id === A_ID,
+    )!
+    expect(afterA.zIndex).toBe(20)
+  })
+})
+
 /** A harness whose tool starts as something other than `select`. */
 function setupWithTool(startTool: CanvasTool) {
   let scene: Scene = sceneFrom([])
@@ -1666,17 +1785,10 @@ describe('grouping: groupSelection / ungroupSelection (Wave 6)', () => {
   const B_ID = '22222222-2222-4222-8222-222222222222'
   const G_ID = '33333333-3333-4333-8333-333333333333'
 
-  function rect(
-    id: string,
-    overrides: Partial<CanvasElement> = {},
-  ): CanvasElement {
-    return { ...makeText(), id, kind: 'rectangle', text: null, ...overrides }
-  }
-
   function twoShapes(): Array<CanvasElement> {
     return [
-      rect(A_ID, { x: 0, y: 0, width: 100, height: 50, zIndex: 5 }),
-      rect(B_ID, { x: 200, y: 100, width: 80, height: 40, zIndex: 10 }),
+      makeRect(A_ID, { x: 0, y: 0, width: 100, height: 50, zIndex: 5 }),
+      makeRect(B_ID, { x: 200, y: 100, width: 80, height: 40, zIndex: 10 }),
     ]
   }
 
@@ -1751,8 +1863,8 @@ describe('grouping: groupSelection / ungroupSelection (Wave 6)', () => {
 
   it("clamps the new group's zIndex to Z_MIN rather than going below it", () => {
     const h = setup([
-      rect(A_ID, { zIndex: Z_MIN }),
-      rect(B_ID, { zIndex: Z_MIN + 3 }),
+      makeRect(A_ID, { zIndex: Z_MIN }),
+      makeRect(B_ID, { zIndex: Z_MIN + 3 }),
     ])
     act(() => {
       h.api.setSelectedIds(new Set([A_ID, B_ID]))
@@ -1763,6 +1875,36 @@ describe('grouping: groupSelection / ungroupSelection (Wave 6)', () => {
     })
     const [group] = h.callbacks.onGroup.mock.calls[0] as [CanvasElement]
     expect(group.zIndex).toBe(Z_MIN)
+  })
+
+  it("renormalizes every member's zIndex upward instead of tying at Z_MIN when there's no room below the lowest member's (fix round — Hermes code review, Major Issue)", () => {
+    // Without the fix, the group above would TIE with A_ID at Z_MIN, and
+    // `ordered`'s id tie-break (not "the group is always below its
+    // members") decides which one paints on top — breaking the invariant
+    // roughly half the time.
+    const h = setup([
+      makeRect(A_ID, { zIndex: Z_MIN }),
+      makeRect(B_ID, { zIndex: Z_MIN + 3 }),
+    ])
+    act(() => {
+      h.api.setSelectedIds(new Set([A_ID, B_ID]))
+    })
+    h.sync()
+    act(() => {
+      h.api.groupSelection()
+    })
+    const [group, groupUpdates] = h.callbacks.onGroup.mock.calls[0] as [
+      CanvasElement,
+      Array<{ before: CanvasElement; after: CanvasElement }>,
+    ]
+    expect(group.zIndex).toBe(Z_MIN)
+    const bumpA = groupUpdates.find((u) => u.after.id === A_ID)!
+    const bumpB = groupUpdates.find((u) => u.after.id === B_ID)!
+    expect(bumpA.after.zIndex).toBe(Z_MIN + 1)
+    expect(bumpB.after.zIndex).toBe(Z_MIN + 4)
+    // Applied locally too, not just reported.
+    expect(h.scene.byId.get(A_ID)?.zIndex).toBe(Z_MIN + 1)
+    expect(h.scene.byId.get(B_ID)?.zIndex).toBe(Z_MIN + 4)
   })
 
   it('ungroupSelection() is a no-op unless the selection is exactly one group (FR-008)', () => {
@@ -1821,20 +1963,142 @@ describe('grouping: groupSelection / ungroupSelection (Wave 6)', () => {
   })
 })
 
+describe('grouping: referential integrity on group/ungroup writes (fix round — Hermes code review BLOCKER 1 & 2)', () => {
+  const A_ID = '11111111-1111-4111-8111-111111111111'
+  const B_ID = '22222222-2222-4222-8222-222222222222'
+  const C_ID = '55555555-5555-4555-8555-555555555555'
+  const G_ID = '33333333-3333-4333-8333-333333333333'
+  const OUTER_ID = '66666666-6666-4666-8666-666666666666'
+
+  it('groupSelection() detaches a member from its EXISTING owner before adopting it, in the SAME gesture (BLOCKER 2)', () => {
+    const existingOwner: CanvasElement = {
+      ...makeText(),
+      id: G_ID,
+      kind: 'group',
+      text: null,
+      group: { childIds: [A_ID] },
+    }
+    const h = setup([makeRect(A_ID), makeRect(B_ID), existingOwner])
+    act(() => {
+      h.api.setSelectedIds(new Set([A_ID, B_ID]))
+    })
+    h.sync()
+
+    act(() => {
+      h.api.groupSelection()
+    })
+
+    expect(h.callbacks.onGroup).toHaveBeenCalledTimes(1)
+    const [newGroup, groupUpdates] = h.callbacks.onGroup.mock.calls[0] as [
+      CanvasElement,
+      Array<{ before: CanvasElement; after: CanvasElement }>,
+    ]
+    expect(new Set(newGroup.group!.childIds)).toEqual(new Set([A_ID, B_ID]))
+    // The OLD owner's patch is reported to the callback...
+    const detach = groupUpdates.find((u) => u.after.id === G_ID)!
+    expect(detach.after.group).toEqual({ childIds: [] })
+    // ...and applied locally, so A_ID never sits in two groups' `childIds`
+    // at once — the corruption `repairGroupMembership` cannot heal.
+    expect(h.scene.byId.get(G_ID)?.group?.childIds).toEqual([])
+    expect(h.scene.byId.get(newGroup.id)?.group?.childIds).toContain(A_ID)
+  })
+
+  it('groupSelection() collapses a selection containing both a group and one of its own members to the group alone', () => {
+    const inner: CanvasElement = {
+      ...makeText(),
+      id: G_ID,
+      kind: 'group',
+      text: null,
+      group: { childIds: [A_ID] },
+    }
+    const h = setup([makeRect(A_ID), makeRect(B_ID), inner])
+    act(() => {
+      h.api.setSelectedIds(new Set([A_ID, G_ID, B_ID]))
+    })
+    h.sync()
+
+    act(() => {
+      h.api.groupSelection()
+    })
+
+    const [newGroup] = h.callbacks.onGroup.mock.calls[0] as [CanvasElement]
+    // A_ID is a descendant of G_ID (also selected) — must not ALSO appear
+    // directly in the new group's childIds.
+    expect(new Set(newGroup.group!.childIds)).toEqual(new Set([G_ID, B_ID]))
+  })
+
+  it("ungroupSelection() patches a SURVIVING parent's childIds when the dissolved group is nested, in the SAME gesture (BLOCKER 1)", () => {
+    const inner: CanvasElement = {
+      ...makeText(),
+      id: G_ID,
+      kind: 'group',
+      text: null,
+      group: { childIds: [A_ID, B_ID] },
+    }
+    const outer: CanvasElement = {
+      ...makeText(),
+      id: OUTER_ID,
+      kind: 'group',
+      text: null,
+      group: { childIds: [G_ID, C_ID] },
+    }
+    const h = setup([makeRect(A_ID), makeRect(B_ID), makeRect(C_ID), inner, outer])
+    act(() => {
+      h.api.setSelectedIds(new Set([G_ID]))
+    })
+    h.sync()
+
+    act(() => {
+      h.api.ungroupSelection()
+    })
+
+    expect(h.callbacks.onUngroup).toHaveBeenCalledTimes(1)
+    const [dissolved, groupUpdates] = h.callbacks.onUngroup.mock.calls[0] as [
+      CanvasElement,
+      Array<{ before: CanvasElement; after: CanvasElement }>,
+    ]
+    expect(dissolved.id).toBe(G_ID)
+    // The parent's patch is reported to the callback...
+    const parentPatch = groupUpdates.find((u) => u.after.id === OUTER_ID)!
+    expect(parentPatch.after.group!.childIds).toEqual([C_ID])
+    // ...and applied locally, so the parent never names a deleted row —
+    // the exact FR-018 defect class `cc42e31` fixed for delete but not
+    // for a nested ungroup.
+    expect(h.scene.byId.get(OUTER_ID)?.group?.childIds).toEqual([C_ID])
+    expect(h.scene.byId.get(G_ID)).toBeUndefined()
+  })
+
+  it('ungroupSelection() filters the new selection through the current scene, dropping an id a collaborator already deleted', () => {
+    const group: CanvasElement = {
+      ...makeText(),
+      id: G_ID,
+      kind: 'group',
+      text: null,
+      // B_ID is named here but is NOT present on the board — the
+      // collaborator-deleted-it-mid-selection case.
+      group: { childIds: [A_ID, B_ID] },
+    }
+    const h = setup([makeRect(A_ID), group])
+    act(() => {
+      h.api.setSelectedIds(new Set([G_ID]))
+    })
+    h.sync()
+
+    act(() => {
+      h.api.ungroupSelection()
+    })
+
+    expect(h.api.selectedIds).toEqual(new Set([A_ID]))
+  })
+})
+
 describe('grouping: Ctrl+G / Ctrl+Shift+G keyboard dispatch (Wave 6, FR-020)', () => {
   const A_ID = '11111111-1111-4111-8111-111111111111'
   const B_ID = '22222222-2222-4222-8222-222222222222'
   const G_ID = '33333333-3333-4333-8333-333333333333'
 
-  function rect(
-    id: string,
-    overrides: Partial<CanvasElement> = {},
-  ): CanvasElement {
-    return { ...makeText(), id, kind: 'rectangle', text: null, ...overrides }
-  }
-
   it('Ctrl+G groups the current selection and suppresses the browser default', () => {
-    const h = setup([rect(A_ID), rect(B_ID)])
+    const h = setup([makeRect(A_ID), makeRect(B_ID)])
     act(() => {
       h.api.setSelectedIds(new Set([A_ID, B_ID]))
     })
@@ -1857,7 +2121,7 @@ describe('grouping: Ctrl+G / Ctrl+Shift+G keyboard dispatch (Wave 6, FR-020)', (
       text: null,
       group: { childIds: [A_ID, B_ID] },
     }
-    const h = setup([rect(A_ID), rect(B_ID), group])
+    const h = setup([makeRect(A_ID), makeRect(B_ID), group])
     act(() => {
       h.api.setSelectedIds(new Set([G_ID]))
     })
@@ -1875,7 +2139,7 @@ describe('grouping: Ctrl+G / Ctrl+Shift+G keyboard dispatch (Wave 6, FR-020)', (
   it('Ctrl+G still suppresses the browser default even when there is nothing to group', () => {
     // FR-020's suppression is unconditional on every Ctrl+G press, not only
     // when a group is actually created.
-    const h = setup([rect(A_ID)])
+    const h = setup([makeRect(A_ID)])
     act(() => {
       h.api.setSelectedIds(new Set([A_ID]))
     })
@@ -1891,7 +2155,7 @@ describe('grouping: Ctrl+G / Ctrl+Shift+G keyboard dispatch (Wave 6, FR-020)', (
   })
 
   it('a bare "g" (no modifier) still switches to the triangle tool, unaffected by Ctrl+G', () => {
-    const h = setup([rect(A_ID)])
+    const h = setup([makeRect(A_ID)])
     act(() => {
       h.api.boardHandlers.onKeyDown(keyEvent('g'))
     })
@@ -1900,7 +2164,7 @@ describe('grouping: Ctrl+G / Ctrl+Shift+G keyboard dispatch (Wave 6, FR-020)', (
   })
 
   it('Ctrl+G does not fall through to the triangle-tool shortcut', () => {
-    const h = setup([rect(A_ID), rect(B_ID)])
+    const h = setup([makeRect(A_ID), makeRect(B_ID)])
     act(() => {
       h.api.setSelectedIds(new Set([A_ID, B_ID]))
     })

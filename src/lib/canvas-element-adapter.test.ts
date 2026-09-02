@@ -483,6 +483,25 @@ describe('group conversions', () => {
     expect(toEngineElement(noProps)).not.toHaveProperty('group')
   })
 
+  it('tolerates a group row whose props carry no childIds field at all (fix round — Hermes code review, Major Issue)', () => {
+    // Distinct from the "props column is null or absent" case above: here
+    // `props` IS present and `kind === 'group'`, but `childIds` itself is
+    // missing — the exact shape the doc comment above (`toEngineGroup`)
+    // promises to handle gracefully but a bare `[...props.childIds]`
+    // spread used to throw on instead, crashing the WHOLE board's mount
+    // (the throw happened inside `records.map(toEngineElement)`, before
+    // any per-board repair pass ever ran). Reachable from hand-edited or
+    // partially-migrated data, and from a seed script whose own ternary
+    // omits the field.
+    const malformed = {
+      ...record('grp1'),
+      kind: 'group' as const,
+      props: { kind: 'group' } as unknown as CanvasElementRecord['props'],
+    }
+    expect(() => toEngineElement(malformed)).not.toThrow()
+    expect(toEngineElement(malformed).group).toEqual({ childIds: [] })
+  })
+
   it('refuses to build props for a group element with no childIds', () => {
     const broken = { ...toEngineElement(groupRecord()), group: undefined }
     expect(() => toCreateInput('board-2', broken)).toThrow(/no childIds/)

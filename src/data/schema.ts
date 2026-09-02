@@ -1232,7 +1232,12 @@ export const canvasElementPropsSchema = z.discriminatedUnion('kind', [
   // `.refine`s above check only ITS shape, never cross-element integrity.
   z.strictObject({
     kind: z.literal('group'),
-    childIds: z.array(z.string().uuid()),
+    // Bounded like every sibling id-array in this file (`memberTableIds`
+    // is the closest analog, also `.max(1000)`) — previously unbounded
+    // (Hermes review, Major Issue), and this value now feeds a whole-board
+    // scan (`repairGroupMembership`) on every load, not just a per-write
+    // shape check.
+    childIds: z.array(z.string().uuid()).max(1000),
   }),
 ])
 

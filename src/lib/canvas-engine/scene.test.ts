@@ -1029,4 +1029,39 @@ describe('resolveDropTarget', () => {
       'outer',
     )
   })
+
+  it('degrades to the topmost candidate rather than throwing when every candidate is mutually ancestor-and-descendant (fix round — Hermes code review, Major Issue)', () => {
+    // Malformed, cyclic data — not reachable from any UI gesture, but
+    // `groupDescendants`'s own cycle guard means EACH of `cycleA`/`cycleB`
+    // is filtered out as an "ancestor" of the other, leaving `innermost`
+    // EMPTY even though `candidates` is not. The bare `.reduce` this used
+    // to be threw `TypeError: Reduce of empty array with no initial
+    // value` on exactly this shape, killing the drop from inside
+    // `onPointerUp`.
+    const scene = sceneFrom([
+      el('cycleA', {
+        kind: 'group',
+        group: { childIds: ['cycleB'] },
+        x: 0,
+        y: 0,
+        width: 200,
+        height: 200,
+        zIndex: 1,
+      }),
+      el('cycleB', {
+        kind: 'group',
+        group: { childIds: ['cycleA'] },
+        x: 0,
+        y: 0,
+        width: 200,
+        height: 200,
+        zIndex: 5,
+      }),
+      el('a', { x: 50, y: 50, width: 20, height: 20 }),
+    ])
+    expect(() => resolveDropTarget(scene, 'a', new Set(['a']))).not.toThrow()
+    // Degrades to the topmost of the (undifferentiated) candidates rather
+    // than crashing the drop.
+    expect(resolveDropTarget(scene, 'a', new Set(['a']))).toBe('cycleB')
+  })
 })

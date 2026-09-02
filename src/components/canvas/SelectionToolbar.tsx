@@ -263,9 +263,16 @@ export function selectionToolbarTargets(
     return null
   const arrange = zOrderTargets(scene, selectedIds)
   if (arrange.length === 0) return null
-  const selected = scene.elements.filter((element) =>
-    selectedIds.has(element.id),
-  )
+  // Derived from `arrange` rather than a second full-scene scan (Hermes
+  // review, Major Issue): `arrange` is `zOrderTargets`'s already-computed,
+  // selection-bounded result, and this function is called unmemoized on
+  // every render while a drag/resize/bend gesture is live — a full
+  // `scene.elements.filter` there cost O(scene size) every pointermove
+  // frame instead of O(selection size). Behavior-preserving: `zOrderTargets`
+  // drops only connectors, which the subsequent `isCanvasShapeKind` filter
+  // below already excludes, so intersecting `arrange` with `selectedIds`
+  // yields exactly the same raw-selected, non-connector elements as before.
+  const selected = arrange.filter((element) => selectedIds.has(element.id))
   return {
     arrange,
     paint: selected.filter((e) => isCanvasShapeKind(e.kind)),

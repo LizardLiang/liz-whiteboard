@@ -109,7 +109,10 @@ function makeMutations() {
       Promise.resolve({ id: element.id, ok: true, revision: bump(element.id) }),
   )
   const updateElements = vi.fn(
-    (elements: Array<CanvasElement>, _options?: unknown) =>
+    (
+      elements: Array<CanvasElement>,
+      _options?: unknown,
+    ): Promise<Array<CanvasMutationResult>> =>
       Promise.resolve(
         elements.map((e) => ({ id: e.id, ok: true, revision: bump(e.id) })),
       ),
@@ -335,6 +338,134 @@ describe('recordDelete: group cleanup fold (FR-018 write-time)', () => {
     })
     await waitFor(() => expect(h.deleteElements).toHaveBeenCalledTimes(1))
     expect(h.updateElements).not.toHaveBeenCalled()
+  })
+
+  // Both directions below are Cassandra risk-analysis H-001 / Hermes code
+  // review's own required regression coverage: `recordDelete` issues the
+  // member delete and the group-cleanup update as two independent,
+  // concurrent writes with no reconciliation on partial success. Fixed to
+  // the "at minimum" mitigation depth both reviewers explicitly sanction
+  // (regression tests + the count-mislabeling fix, rather than the fuller
+  // undo()-style compensation) — see implementation-notes.md for the
+  // documented scope boundary.
+  describe('partial-failure directions (Cassandra H-001)', () => {
+    it('direction 1: delete succeeds, group-cleanup update fails — the entry still records, carrying ONLY the delete', async () => {
+      const h = setup()
+      h.revisions.set(RECT_ID, 1)
+      h.revisions.set(GROUP_ID, 1)
+      const deleted = makeRect({ id: RECT_ID })
+      const groupBefore = makeGroup()
+      const groupAfter = makeGroup({ group: { childIds: [RECT_B_ID] } })
+      h.updateElements.mockResolvedValueOnce([{ id: GROUP_ID, ok: false }])
+
+      act(() => {
+        h.api.callbacks.onDelete?.([deleted], 'delete', [
+          { before: groupBefore, after: groupAfter },
+        ])
+      })
+      await waitFor(() => expect(h.deleteElements).toHaveBeenCalledTimes(1))
+      await waitFor(() => expect(h.updateElements).toHaveBeenCalledTimes(1))
+      h.revisions.delete(RECT_ID)
+
+      // Undo restores the deleted element — the entry recorded despite the
+      // update's own failure, correctly labelled as a genuine 1-element
+      // delete (not silently dropped, and not double-counted).
+      act(() => {
+        h.api.undo()
+      })
+      await waitFor(() => expect(h.createElement).toHaveBeenCalledTimes(1))
+      // No SECOND updateElements call from undo — the failed update never
+      // joined the entry, so there is nothing of its own to reverse.
+      expect(h.updateElements).toHaveBeenCalledTimes(1)
+      await waitFor(() =>
+        expect(toast.success).toHaveBeenCalledWith('Undid deleting an element'),
+      )
+    })
+
+    it('direction 2: delete fails, group-cleanup update succeeds — the entry records under an honest label, not "deleting 0 elements"', async () => {
+      const h = setup()
+      h.revisions.set(RECT_ID, 1)
+      h.revisions.set(GROUP_ID, 1)
+      const deleted = makeRect({ id: RECT_ID })
+      const groupBefore = makeGroup()
+      const groupAfter = makeGroup({ group: { childIds: [RECT_B_ID] } })
+      h.deleteElements.mockResolvedValueOnce([{ id: RECT_ID, ok: false }])
+
+      act(() => {
+        h.api.callbacks.onDelete?.([deleted], 'delete', [
+          { before: groupBefore, after: groupAfter },
+        ])
+      })
+      await waitFor(() => expect(h.deleteElements).toHaveBeenCalledTimes(1))
+      await waitFor(() => expect(h.updateElements).toHaveBeenCalledTimes(1))
+
+      // The mislabeling this fixes (Cassandra's "compounding case"): zero
+      // delete operations landed, but the group's childIds update DID —
+      // labelling the entry `{ gesture: 'delete', count: 0 }` would read as
+      // a misleading no-op toast for an entry that in fact carries a real
+      // group mutation. It is recorded as a generic multi-element update
+      // instead, under a name that actually describes what changed.
+      act(() => {
+        h.api.undo()
+      })
+      await waitFor(() => expect(h.updateElements).toHaveBeenCalledTimes(2))
+      // No create call — nothing to restore for a delete that never landed.
+      expect(h.createElement).not.toHaveBeenCalled()
+      await waitFor(() =>
+        expect(toast.success).toHaveBeenCalledWith('Undid moving an element'),
+      )
+    })
+  })
+
+  it('M-001 (Cassandra risk-analysis): a move-time membership ADD and a delete-time membership REMOVE on the SAME group both write via a bare updateElements call with no expectedRevisions guard', async () => {
+    // Documents the accepted, pre-existing tradeoff Cassandra flagged
+    // (MEDIUM, not a blocker): two collaborators' concurrent childIds
+    // patches on ONE group are never reconciled against each other —
+    // whichever write the server applies SECOND silently overwrites the
+    // array wholesale. This is the same convention ordinary `recordUpdate`
+    // already carries (no `expectedRevisions` on that call either); this
+    // test exists so the tradeoff stays documented and verified rather
+    // than merely asserted in prose.
+    const h = setup()
+    h.revisions.set(GROUP_ID, 1)
+    h.revisions.set(RECT_ID, 1)
+    h.revisions.set(RECT_B_ID, 1)
+
+    // Collaborator A drags a third element in — an ADD, persisted through
+    // `recordUpdate`'s own 'move' gesture path.
+    const addedGroup = makeGroup({
+      group: { childIds: [RECT_ID, RECT_B_ID, 'new-member'] },
+    })
+    act(() => {
+      h.api.callbacks.onUpdate?.([addedGroup], [makeGroup()], 'move')
+    })
+    await waitFor(() => expect(h.updateElements).toHaveBeenCalledTimes(1))
+
+    // Collaborator B deletes an existing member — a REMOVE, computed from
+    // B's OWN (stale, pre-A's-write) view of the group, exactly as a real
+    // concurrent client would compute it — persisted through
+    // `recordDelete`'s group-cleanup patch.
+    const removedGroup = makeGroup({ group: { childIds: [RECT_ID] } })
+    act(() => {
+      h.api.callbacks.onDelete?.([makeRect({ id: RECT_B_ID })], 'delete', [
+        { before: makeGroup(), after: removedGroup },
+      ])
+    })
+    await waitFor(() => expect(h.updateElements).toHaveBeenCalledTimes(2))
+
+    const [addCallElements, addOptions] = h.updateElements.mock.calls[0]
+    const [removeCallElements, removeOptions] = h.updateElements.mock.calls[1]
+    expect(addCallElements[0].group?.childIds).toEqual([
+      RECT_ID,
+      RECT_B_ID,
+      'new-member',
+    ])
+    expect(removeCallElements[0].group?.childIds).toEqual([RECT_ID])
+    // Neither call carries an `expectedRevisions` guard for the group row
+    // — nothing reconciles these two writes against each other server-side;
+    // this is the root mechanism M-001 identifies.
+    expect(addOptions).toBeUndefined()
+    expect(removeOptions).toBeUndefined()
   })
 })
 
@@ -1335,6 +1466,115 @@ describe('grouping — recordGroup / recordUngroup (canvas-element-grouping tact
     await Promise.resolve()
     expect(h.createElement).not.toHaveBeenCalled()
     expect(h.deleteElements).not.toHaveBeenCalled()
+  })
+
+  // Fix round — Hermes code review BLOCKER 1 & 2: `groupSelection`/
+  // `ungroupSelection` (use-canvas-input.ts) now compute a `groupUpdates`
+  // patch for every OTHER element the gesture also affects (a prior
+  // owner's detach, or a nested group's surviving parent). These prove
+  // `recordGroup`/`recordUngroup` fold that patch into the SAME
+  // create/delete undo entry, the same shape `recordDelete` already uses.
+  describe('groupUpdates fold into the SAME entry', () => {
+    const OWNER_ID = '77777777-7777-4777-8777-777777777777'
+
+    function makeOwner(overrides: Partial<CanvasElement> = {}): CanvasElement {
+      return {
+        id: OWNER_ID,
+        kind: 'group',
+        x: 0,
+        y: 0,
+        width: 100,
+        height: 100,
+        rotation: 0,
+        zIndex: -2,
+        text: null,
+        style: { ...DEFAULT_ELEMENT_STYLE },
+        group: { childIds: [RECT_ID] },
+        ...overrides,
+      }
+    }
+
+    it('recordGroup persists a detach patch in the SAME entry as the group creation (BLOCKER 2)', async () => {
+      const h = setup()
+      h.revisions.set(OWNER_ID, 1)
+      const newGroup = makeGroup()
+      const ownerBefore = makeOwner()
+      const ownerAfter = makeOwner({ group: { childIds: [] } })
+
+      act(() => {
+        h.api.callbacks.onGroup?.(newGroup, [
+          { before: ownerBefore, after: ownerAfter },
+        ])
+      })
+      await waitFor(() => expect(h.createElement).toHaveBeenCalledTimes(1))
+      await waitFor(() => expect(h.updateElements).toHaveBeenCalledTimes(1))
+      expect(h.updateElements).toHaveBeenCalledWith([ownerAfter])
+      h.revisions.set(GROUP_ID, 1)
+
+      // ONE undo() reverses BOTH — the new group disappears AND the prior
+      // owner's childIds come back — because they are the SAME entry.
+      act(() => {
+        h.api.undo()
+      })
+      await waitFor(() => expect(h.deleteElements).toHaveBeenCalledTimes(1))
+      await waitFor(() => expect(h.updateElements).toHaveBeenCalledTimes(2))
+      const [restoredOwner] = h.updateElements.mock.calls[1]
+      expect(restoredOwner[0]).toMatchObject({
+        id: OWNER_ID,
+        group: { childIds: [RECT_ID] },
+      })
+    })
+
+    it('recordUngroup persists a parent patch in the SAME entry as the dissolve (BLOCKER 1)', async () => {
+      const h = setup()
+      h.revisions.set(GROUP_ID, 1)
+      h.revisions.set(OWNER_ID, 1)
+      const dissolved = makeGroup()
+      const parentBefore = makeOwner({ group: { childIds: [GROUP_ID] } })
+      const parentAfter = makeOwner({ group: { childIds: [] } })
+
+      act(() => {
+        h.api.callbacks.onUngroup?.(dissolved, [
+          { before: parentBefore, after: parentAfter },
+        ])
+      })
+      await waitFor(() => expect(h.deleteElements).toHaveBeenCalledTimes(1))
+      await waitFor(() => expect(h.updateElements).toHaveBeenCalledTimes(1))
+      expect(h.updateElements).toHaveBeenCalledWith([parentAfter])
+      h.revisions.delete(GROUP_ID)
+
+      // ONE undo() restores BOTH — the dissolved group comes back AND the
+      // parent's childIds are patched back to naming it.
+      act(() => {
+        h.api.undo()
+      })
+      await waitFor(() => expect(h.createElement).toHaveBeenCalledTimes(1))
+      await waitFor(() => expect(h.updateElements).toHaveBeenCalledTimes(2))
+      const [restoredParent] = h.updateElements.mock.calls[1]
+      expect(restoredParent[0]).toMatchObject({
+        id: OWNER_ID,
+        group: { childIds: [GROUP_ID] },
+      })
+    })
+
+    it('recordGroup does not push an entry at all when the group creation itself fails, even if a detach update would have succeeded', async () => {
+      const h = setup()
+      h.createElement.mockResolvedValueOnce({ id: GROUP_ID, ok: false })
+      const ownerBefore = makeOwner()
+      const ownerAfter = makeOwner({ group: { childIds: [] } })
+
+      act(() => {
+        h.api.callbacks.onGroup?.(makeGroup(), [
+          { before: ownerBefore, after: ownerAfter },
+        ])
+      })
+      await waitFor(() => expect(h.createElement).toHaveBeenCalledTimes(1))
+
+      act(() => {
+        h.api.undo()
+      })
+      expect(h.deleteElements).not.toHaveBeenCalled()
+    })
   })
 })
 

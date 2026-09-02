@@ -557,6 +557,17 @@ export function resolveDropTarget(
   )
   if (candidates.length === 0) return null
 
+  // Precomputed once per candidate rather than recomputed inside the
+  // `some` below (Cassandra/Hermes Minor Issue: O(candidates^2)
+  // `groupDescendants` BFS calls otherwise, once per drop, not per move —
+  // cheap in the common case, but avoidable at no cost in clarity).
+  const descendantsOf = new Map(
+    candidates.map((candidate) => [
+      candidate.id,
+      new Set(groupDescendants(scene, candidate.id)),
+    ]),
+  )
+
   // Innermost wins: a candidate that is an ancestor of another candidate is
   // never the answer, however deep the overlap goes — drop it and keep
   // walking. What remains is either one candidate or a set of true
@@ -566,11 +577,20 @@ export function resolveDropTarget(
       !candidates.some(
         (other) =>
           other.id !== candidate.id &&
-          groupDescendants(scene, candidate.id).includes(other.id),
+          descendantsOf.get(candidate.id)!.has(other.id),
       ),
   )
 
-  return innermost.reduce((top, candidate) =>
+  // `innermost` can legitimately be EMPTY even though `candidates` is not
+  // (Hermes review, Major Issue): two groups whose `childIds` reference
+  // each other — malformed data, not reachable from any UI gesture — each
+  // get filtered out as an ancestor of the other, and the bare `.reduce`
+  // this used to be threw on an empty array. Falls back to `candidates`
+  // itself rather than crashing the drop, matching this module's stated
+  // posture elsewhere ("degrades, never throws" — see `toEngineConnector`'s
+  // own precedent for an unresolvable reference).
+  const ranked = innermost.length > 0 ? innermost : candidates
+  return ranked.reduce((top, candidate) =>
     candidate.zIndex > top.zIndex ? candidate : top,
   ).id
 }

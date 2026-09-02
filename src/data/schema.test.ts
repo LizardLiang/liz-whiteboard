@@ -805,3 +805,26 @@ describe('canvasElementPropsSchema — the connector arm carries an optional cur
     ).toThrow()
   })
 })
+
+describe("canvasElementPropsSchema — the group arm's childIds is bounded (fix round — Hermes code review, Major Issue)", () => {
+  // A cheap, deterministic v4-shaped UUID — this only needs distinct,
+  // schema-valid ids, not cryptographically real ones.
+  function uuidAt(n: number): string {
+    const hex = n.toString(16).padStart(12, '0')
+    return `00000000-0000-4000-8000-${hex}`
+  }
+
+  it('accepts up to 1000 childIds, matching memberTableIds — the closest analog in this schema', () => {
+    const childIds = Array.from({ length: 1000 }, (_, i) => uuidAt(i))
+    expect(() =>
+      canvasElementPropsSchema.parse({ kind: 'group', childIds }),
+    ).not.toThrow()
+  })
+
+  it('rejects more than 1000 childIds — previously unbounded, and this value now feeds a whole-board scan (repairGroupMembership) on every load, not just a per-write shape check', () => {
+    const childIds = Array.from({ length: 1001 }, (_, i) => uuidAt(i))
+    expect(() =>
+      canvasElementPropsSchema.parse({ kind: 'group', childIds }),
+    ).toThrow()
+  })
+})
