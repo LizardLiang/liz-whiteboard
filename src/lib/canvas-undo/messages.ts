@@ -122,6 +122,14 @@ function describeGesture(label: CanvasUndoLabel): string {
       return label.connected
         ? `creating ${withArticle(describeElementKind(label.elementKind))} and a connector`
         : `creating ${withArticle(describeElementKind(label.elementKind))}`
+    case 'group':
+      return label.count > 1
+        ? `grouping ${label.count} elements`
+        : 'grouping an element'
+    case 'ungroup':
+      return label.count > 1
+        ? `ungrouping ${label.count} elements`
+        : 'ungrouping an element'
   }
 }
 

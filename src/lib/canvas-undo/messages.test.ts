@@ -349,3 +349,45 @@ describe('the copy family', () => {
     expect(wordings.size).toBe(5)
   })
 })
+
+describe('grouping and ungrouping (canvas-element-grouping tactical plan, Wave 7)', () => {
+  it('names grouping, singular and plural', () => {
+    expect(describeUndoSuccess({ gesture: 'group', count: 1 })).toBe(
+      'Undid grouping an element',
+    )
+    expect(describeUndoSuccess({ gesture: 'group', count: 3 })).toBe(
+      'Undid grouping 3 elements',
+    )
+    expect(describeRedoSuccess({ gesture: 'group', count: 3 })).toBe(
+      'Redid grouping 3 elements',
+    )
+  })
+
+  it('names ungrouping, singular and plural', () => {
+    expect(describeUndoSuccess({ gesture: 'ungroup', count: 1 })).toBe(
+      'Undid ungrouping an element',
+    )
+    expect(describeUndoSuccess({ gesture: 'ungroup', count: 2 })).toBe(
+      'Undid ungrouping 2 elements',
+    )
+    expect(describeRedoSuccess({ gesture: 'ungroup', count: 2 })).toBe(
+      'Redid ungrouping 2 elements',
+    )
+  })
+
+  it('distinguishes grouping from ungrouping', () => {
+    expect(describeUndoSuccess({ gesture: 'group', count: 2 })).not.toBe(
+      describeUndoSuccess({ gesture: 'ungroup', count: 2 }),
+    )
+  })
+
+  it('distinguishes both from creating and deleting', () => {
+    const wordings = new Set([
+      describeUndoSuccess({ gesture: 'group', count: 1 }),
+      describeUndoSuccess({ gesture: 'ungroup', count: 1 }),
+      describeUndoSuccess({ gesture: 'create', elementKind: 'group' }),
+      describeUndoSuccess({ gesture: 'delete', count: 1 }),
+    ])
+    expect(wordings.size).toBe(4)
+  })
+})

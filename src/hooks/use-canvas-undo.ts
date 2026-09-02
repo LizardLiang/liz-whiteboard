@@ -452,16 +452,22 @@ export function useCanvasUndo({
   const recordClone = useCallback(
     (elements: Array<CanvasElement>, source: 'paste' | 'duplicate') => {
       if (readOnly) return
-      // `planClone` guarantees this split by ORDER, but filtering rather than
-      // slicing keeps the two independent: a future planner that interleaved
-      // them would break a slice silently and this not at all.
-      const plain = elements.filter((element) => !element.connector)
+      // THREE categories, not two — `planClone` guarantees the plain/
+      // connector split by order, but filtering rather than slicing keeps
+      // every category independent, and a group needs its OWN category
+      // (canvas-element-grouping tactical plan, bug found and fixed during
+      // Wave 8 e2e testing — see `groups`' own handling below for why).
+      const plain = elements.filter(
+        (element) => !element.connector && !element.group,
+      )
+      const groups = elements.filter((element) => element.group)
       const connectors = elements.filter((element) => element.connector)
 
       void (async () => {
         const operations: Array<CanvasUndoOperation> = []
         // Client-side id → the id the server gave it. Also what the
-        // connectors' endpoints are rewritten through below.
+        // connectors' endpoints AND the groups' own `childIds` are
+        // rewritten through below.
         const serverIds = new Map<string, string>()
 
         const results = await Promise.all(
@@ -480,6 +486,82 @@ export function useCanvasUndo({
             after: toSnapshot(boardId, { ...element, id: result.id }),
           })
         }
+
+        // Groups, remapped and created ONLY after every id they could
+        // possibly reference is known — never inside the SAME concurrent
+        // batch as their own members (which is what `plain` above is,
+        // exactly why a group cannot be `plain`). A cloned group's
+        // `childIds` (rewritten client-side by `planClone`'s own idMap,
+        // Wave 4) name the CLIENT-SIDE temporary ids `duplicateSelection`
+        // minted, not the SERVER-assigned ids `createElement` returns for
+        // an ORDINARY create (`toCreateInput` never sends a client id, so
+        // the server always mints an independent one — see
+        // `createElement`'s own header). Persisting the group with those
+        // stale ids unrewritten would write a row whose `childIds` name
+        // rows that were never actually created under those ids — a
+        // dangling reference invisible until a RELOAD (or a second client)
+        // reads it back, which is exactly how this was found: the unit
+        // suite's mocked `createElement` echoes the client id back as the
+        // "server" id, so client-id == server-id there and the bug never
+        // showed; only a real server round trip, with a GENUINELY
+        // different id, exposes it.
+        //
+        // Multi-pass rather than one: a cloned group may contain another
+        // cloned group (nesting), whose OWN server id is not yet known on
+        // the first pass either. Each pass creates every group whose FULL
+        // `childIds` are already resolvable in `serverIds`; repeats until a
+        // pass makes no further progress (bounded by nesting depth, which
+        // `groupDescendants`'s own cycle guard, scene.ts, already keeps
+        // finite).
+        let remainingGroups = groups
+        for (
+          let pass = 0;
+          pass <= elements.length && remainingGroups.length > 0;
+          pass += 1
+        ) {
+          const ready = remainingGroups.filter((element) =>
+            element.group!.childIds.every((childId) => serverIds.has(childId)),
+          )
+          if (ready.length === 0) break // a childId whose own create failed — see below
+          remainingGroups = remainingGroups.filter(
+            (element) => !ready.includes(element),
+          )
+          const groupResults = await Promise.all(
+            ready.map(async (element) => {
+              const remappedChildIds = element.group!.childIds.map(
+                (childId) => serverIds.get(childId)!,
+              )
+              return {
+                element,
+                remappedChildIds,
+                result: await createElement({
+                  ...element,
+                  group: { childIds: remappedChildIds },
+                }),
+              }
+            }),
+          )
+          for (const { element, remappedChildIds, result } of groupResults) {
+            if (!result.ok || result.revision === undefined) continue
+            serverIds.set(element.id, result.id)
+            operations.push({
+              kind: 'create',
+              elementId: result.id,
+              afterRevision: result.revision,
+              after: toSnapshot(boardId, {
+                ...element,
+                id: result.id,
+                group: { childIds: remappedChildIds },
+              }),
+            })
+          }
+        }
+        // Any group left in `remainingGroups` here named a childId whose
+        // own create never landed (failed, or — for a nested group — a
+        // child group that itself never landed) — dropped rather than
+        // persisted with an unresolvable reference, the same "records only
+        // what actually persisted" rule this function's own header already
+        // documents for `plain`/`connectors`.
 
         for (const connector of connectors) {
           const ends = connector.connector
@@ -516,6 +598,92 @@ export function useCanvasUndo({
     [boardId, createElement, push, readOnly],
   )
 
+  /**
+   * One group-creation gesture (canvas-element-grouping tactical plan, Wave
+   * 7) — a thin wrapper mirroring `recordCreate`'s shape exactly: one
+   * `createElement` call, one `kind: 'create'` operation on ack. No writes
+   * to any member — grouping only ever touches the new group row's own
+   * `childIds` (canvas-engine/scene.ts's `group?` field), so this needs
+   * nothing `recordCreate` does not already have.
+   *
+   * `count` on the label is the group's OWN `childIds.length` at creation —
+   * the direct members bound, not a transitively-expanded subtree — mirroring
+   * `move`/`z-order`'s "how many elements does this number describe"
+   * convention for a gesture whose single write still affects several
+   * elements' grouping state.
+   */
+  const recordGroup = useCallback(
+    (groupElement: CanvasElement) => {
+      if (readOnly) return
+      void createElement(groupElement).then((result) => {
+        if (!result.ok || result.revision === undefined) return
+        const entry: CanvasUndoEntry = {
+          label: {
+            gesture: 'group',
+            count: groupElement.group?.childIds.length ?? 0,
+          },
+          operations: [
+            {
+              kind: 'create',
+              elementId: result.id,
+              afterRevision: result.revision,
+              after: toSnapshot(boardId, { ...groupElement, id: result.id }),
+            },
+          ],
+        }
+        push(entry)
+      })
+    },
+    [boardId, createElement, push, readOnly],
+  )
+
+  /**
+   * Dissolve-a-group-only gesture — mirrors `recordDelete`'s single-element
+   * shape: one `deleteElements` call, one `kind: 'delete'` operation on ack.
+   * Members need no write here either: dissolving a group only removes the
+   * group's own row, and its members were never touched by grouping in the
+   * first place (Wave 1), so they are already independent the instant it is
+   * gone.
+   *
+   * Deliberately NOT `recordDelete` itself, even though both end in one
+   * `deleteElements` call: that function's label is always `{ gesture:
+   * 'delete' | 'cut' }`, and reusing it here would make an intentional,
+   * one-level dissolve read in the undo toast exactly like a cascade delete
+   * of a whole subtree (Wave 4's `deleteSelection`) — two very different
+   * gestures a user needs to tell apart when Ctrl+Z asks what is coming
+   * back.
+   */
+  const recordUngroup = useCallback(
+    (groupElement: CanvasElement) => {
+      if (readOnly) return
+      void deleteElements([groupElement.id]).then((results) => {
+        const result = results[0]
+        if (!result.ok) return
+        const entry: CanvasUndoEntry = {
+          label: {
+            gesture: 'ungroup',
+            count: groupElement.group?.childIds.length ?? 0,
+          },
+          operations: [
+            {
+              kind: 'delete',
+              elementId: groupElement.id,
+              before: toSnapshot(boardId, groupElement),
+            },
+          ],
+        }
+        if (result.revision !== undefined) {
+          lastRevisionBeforeDeleteRef.current.set(
+            entry.operations[0],
+            result.revision,
+          )
+        }
+        push(entry)
+      })
+    },
+    [boardId, deleteElements, push, readOnly],
+  )
+
   const callbacks = useMemo<CanvasEditCallbacks>(
     () => ({
       onCreate: recordCreate,
@@ -523,8 +691,18 @@ export function useCanvasUndo({
       onClone: recordClone,
       onUpdate: recordUpdate,
       onDelete: recordDelete,
+      onGroup: recordGroup,
+      onUngroup: recordUngroup,
     }),
-    [recordClone, recordCreate, recordDelete, recordQuickCreate, recordUpdate],
+    [
+      recordClone,
+      recordCreate,
+      recordDelete,
+      recordGroup,
+      recordQuickCreate,
+      recordUngroup,
+      recordUpdate,
+    ],
   )
 
   // ── applying (undo) ──────────────────────────────────────────────────────

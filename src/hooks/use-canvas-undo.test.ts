@@ -51,6 +51,25 @@ function makeRect(overrides: Partial<CanvasElement> = {}): CanvasElement {
   }
 }
 
+const GROUP_ID = '44444444-4444-4444-8444-444444444444'
+
+function makeGroup(overrides: Partial<CanvasElement> = {}): CanvasElement {
+  return {
+    id: GROUP_ID,
+    kind: 'group',
+    x: 0,
+    y: 0,
+    width: 300,
+    height: 200,
+    rotation: 0,
+    zIndex: -1,
+    text: null,
+    style: { ...DEFAULT_ELEMENT_STYLE },
+    group: { childIds: [RECT_ID, RECT_B_ID] },
+    ...overrides,
+  }
+}
+
 /**
  * A mutation-function harness whose ack outcome is controlled per test.
  *
@@ -1068,5 +1087,339 @@ describe('camera focus target reflects the POST-write state (headed-browser BUG-
     await waitFor(() => expect(h.deleteElements).toHaveBeenCalledTimes(2))
     await waitFor(() => expect(focusCalls.length).toBe(1))
     expect(focusCalls[0]).toEqual([RECT_ID, undefined])
+  })
+})
+
+describe('grouping — recordGroup / recordUngroup (canvas-element-grouping tactical plan, Wave 7)', () => {
+  it('records a group entry once the create ack carries a revision, with a create call and no member write', async () => {
+    const h = setup()
+    act(() => {
+      h.api.callbacks.onGroup?.(makeGroup())
+    })
+    await waitFor(() => expect(h.createElement).toHaveBeenCalledTimes(1))
+    expect(h.createElement.mock.calls[0][0]).toMatchObject({
+      id: GROUP_ID,
+      kind: 'group',
+    })
+    // No write to either member — grouping only ever touches the group's
+    // own row (Wave 1).
+    expect(h.updateElements).not.toHaveBeenCalled()
+  })
+
+  it('does not record a group entry when the create ack refuses', async () => {
+    const h = setup()
+    h.createElement.mockResolvedValueOnce({ id: GROUP_ID, ok: false })
+    act(() => {
+      h.api.callbacks.onGroup?.(makeGroup())
+    })
+    await waitFor(() => expect(h.createElement).toHaveBeenCalledTimes(1))
+
+    act(() => {
+      h.api.undo()
+    })
+    expect(h.deleteElements).not.toHaveBeenCalled()
+  })
+
+  it('undo of a group deletes exactly the group row', async () => {
+    const h = setup()
+    act(() => {
+      h.api.callbacks.onGroup?.(makeGroup())
+    })
+    await waitFor(() => expect(h.createElement).toHaveBeenCalledTimes(1))
+    h.revisions.set(GROUP_ID, 1)
+
+    act(() => {
+      h.api.undo()
+    })
+    await waitFor(() => expect(h.deleteElements).toHaveBeenCalledTimes(1))
+    expect(h.deleteElements).toHaveBeenCalledWith(
+      [GROUP_ID],
+      expect.objectContaining({ ephemeral: true }),
+    )
+  })
+
+  it('reports a successful group with the direct childIds count', async () => {
+    const h = setup()
+    act(() => {
+      h.api.callbacks.onGroup?.(makeGroup())
+    })
+    await waitFor(() => expect(h.createElement).toHaveBeenCalledTimes(1))
+    h.revisions.set(GROUP_ID, 1)
+
+    act(() => {
+      h.api.undo()
+    })
+    await waitFor(() =>
+      expect(toast.success).toHaveBeenCalledWith('Undid grouping 2 elements'),
+    )
+  })
+
+  it('records an ungroup entry once the delete ack lands, with a delete call and no member write', async () => {
+    const h = setup()
+    h.revisions.set(GROUP_ID, 1)
+    act(() => {
+      h.api.callbacks.onUngroup?.(makeGroup())
+    })
+    await waitFor(() => expect(h.deleteElements).toHaveBeenCalledTimes(1))
+    // No options on the FORWARD call — matches `recordDelete`'s own
+    // `deleteElements(ids)` shape, no `ephemeral`/`expectedRevisions`.
+    expect(h.deleteElements).toHaveBeenCalledWith([GROUP_ID])
+    expect(h.updateElements).not.toHaveBeenCalled()
+  })
+
+  it('does not record an ungroup entry when the delete ack refuses', async () => {
+    const h = setup()
+    h.revisions.set(GROUP_ID, 1)
+    h.deleteElements.mockResolvedValueOnce([{ id: GROUP_ID, ok: false }])
+    act(() => {
+      h.api.callbacks.onUngroup?.(makeGroup())
+    })
+    await waitFor(() => expect(h.deleteElements).toHaveBeenCalledTimes(1))
+
+    act(() => {
+      h.api.undo()
+    })
+    expect(h.createElement).not.toHaveBeenCalled()
+  })
+
+  it('undo of an ungroup restores the group WITH its original childIds', async () => {
+    const h = setup()
+    h.revisions.set(GROUP_ID, 3)
+    const group = makeGroup()
+    act(() => {
+      h.api.callbacks.onUngroup?.(group)
+    })
+    await waitFor(() => expect(h.deleteElements).toHaveBeenCalledTimes(1))
+    h.revisions.delete(GROUP_ID)
+
+    act(() => {
+      h.api.undo()
+    })
+    await waitFor(() => expect(h.createElement).toHaveBeenCalledTimes(1))
+    const [restored, options] = h.createElement.mock.calls[0]
+    expect(restored).toMatchObject({
+      id: GROUP_ID,
+      group: { childIds: [RECT_ID, RECT_B_ID] },
+    })
+    expect(options).toMatchObject({
+      ephemeral: true,
+      restoreOriginalId: true,
+      // The pre-delete revision (3), same W-C seeding recordDelete uses.
+      minRevision: 3,
+    })
+  })
+
+  it('reports a successful ungroup with the dissolved childIds count', async () => {
+    const h = setup()
+    h.revisions.set(GROUP_ID, 1)
+    act(() => {
+      h.api.callbacks.onUngroup?.(makeGroup())
+    })
+    await waitFor(() => expect(h.deleteElements).toHaveBeenCalledTimes(1))
+    h.revisions.delete(GROUP_ID)
+
+    act(() => {
+      h.api.undo()
+    })
+    await waitFor(() =>
+      expect(toast.success).toHaveBeenCalledWith(
+        'Undid ungrouping 2 elements',
+      ),
+    )
+  })
+
+  it('redo reapplies a group creation after undo removed it', async () => {
+    const h = setup()
+    act(() => {
+      h.api.callbacks.onGroup?.(makeGroup())
+    })
+    await waitFor(() => expect(h.createElement).toHaveBeenCalledTimes(1))
+    h.revisions.set(GROUP_ID, 1)
+
+    act(() => {
+      h.api.undo()
+    })
+    await waitFor(() => expect(h.deleteElements).toHaveBeenCalledTimes(1))
+    h.revisions.delete(GROUP_ID)
+
+    act(() => {
+      h.api.redo()
+    })
+    await waitFor(() => expect(h.createElement).toHaveBeenCalledTimes(2))
+    expect(h.createElement.mock.calls[1][0]).toMatchObject({
+      id: GROUP_ID,
+      group: { childIds: [RECT_ID, RECT_B_ID] },
+    })
+  })
+
+  it('redo reapplies an ungroup (re-deletes the group) after undo restored it', async () => {
+    const h = setup()
+    h.revisions.set(GROUP_ID, 1)
+    act(() => {
+      h.api.callbacks.onUngroup?.(makeGroup())
+    })
+    await waitFor(() => expect(h.deleteElements).toHaveBeenCalledTimes(1))
+    h.revisions.delete(GROUP_ID)
+
+    act(() => {
+      h.api.undo()
+    })
+    await waitFor(() => expect(h.createElement).toHaveBeenCalledTimes(1))
+    h.revisions.set(GROUP_ID, 4)
+
+    act(() => {
+      h.api.redo()
+    })
+    await waitFor(() => expect(h.deleteElements).toHaveBeenCalledTimes(2))
+  })
+
+  it('never calls a mutation function from onGroup/onUngroup while read-only', async () => {
+    const h = setup({ readOnly: true })
+    act(() => {
+      h.api.callbacks.onGroup?.(makeGroup())
+      h.api.callbacks.onUngroup?.(makeGroup())
+    })
+    await Promise.resolve()
+    expect(h.createElement).not.toHaveBeenCalled()
+    expect(h.deleteElements).not.toHaveBeenCalled()
+  })
+})
+
+describe('recordClone remaps a cloned group\'s childIds through the SERVER ids (bug found and fixed during Wave 8 e2e testing)', () => {
+  // `planClone` (clone.ts, Wave 4) already remaps a cloned group's
+  // `childIds` through its OWN client-side idMap before `onClone` ever
+  // fires — the elements handed to `onClone` below are exactly that
+  // client-side-consistent shape, matching what `duplicateSelection`
+  // actually produces. What this describe block covers is the SEPARATE,
+  // SERVER-SIDE remap `recordClone` itself must also do: an ORDINARY
+  // `createElement` call never sends the client's own id (see
+  // `createElement`'s own header in use-canvas-elements.ts), so the
+  // SERVER-assigned id for each cloned member differs from the client id
+  // `planClone` used to build the group's `childIds` — persisting the
+  // group with those UNREWRITTEN client ids would write a row whose
+  // `childIds` name rows that were never created under those ids. This
+  // mock's own default `createElement` (`makeMutations`, top of file)
+  // ECHOES the client id back as the "server" id, which is exactly why
+  // this bug was invisible to every other test in this file — these tests
+  // override it to return a GENUINELY different id per element, matching
+  // what the real server actually does.
+  const GROUP_CLIENT_ID = 'client-group-1'
+  const A_CLIENT_ID = 'client-a-1'
+  const B_CLIENT_ID = 'client-b-1'
+
+  function serverId(clientId: string): string {
+    return `server-${clientId}`
+  }
+
+  function makeCloneElements(): Array<CanvasElement> {
+    const a = makeRect({ id: A_CLIENT_ID, x: 0, y: 0 })
+    const b = makeRect({ id: B_CLIENT_ID, x: 200, y: 0 })
+    const group: CanvasElement = {
+      ...makeRect({ id: GROUP_CLIENT_ID }),
+      kind: 'group',
+      group: { childIds: [A_CLIENT_ID, B_CLIENT_ID] },
+    }
+    // `plain` (non-connector, non-group) elements first in the array,
+    // matching `planClone`'s own ordering convention — not load-bearing for
+    // `recordClone` itself (it re-filters by kind), but keeps this fixture
+    // honest about what a real clone plan looks like.
+    return [a, b, group]
+  }
+
+  it("persists the cloned group's create with SERVER ids, not the stale client ids", async () => {
+    const h = setup()
+    h.createElement.mockImplementation((element: CanvasElement) =>
+      Promise.resolve({ id: serverId(element.id), ok: true, revision: 1 }),
+    )
+
+    act(() => {
+      h.api.callbacks.onClone?.(makeCloneElements(), 'duplicate')
+    })
+    await waitFor(() => expect(h.createElement).toHaveBeenCalledTimes(3))
+
+    const groupCall = h.createElement.mock.calls.find(
+      (call) => call[0].kind === 'group',
+    )!
+    expect(groupCall).toBeDefined()
+    const persistedGroup = groupCall[0]
+    expect(new Set(persistedGroup.group!.childIds)).toEqual(
+      new Set([serverId(A_CLIENT_ID), serverId(B_CLIENT_ID)]),
+    )
+    // The stale CLIENT ids must never reach the server at all.
+    expect(persistedGroup.group!.childIds).not.toContain(A_CLIENT_ID)
+    expect(persistedGroup.group!.childIds).not.toContain(B_CLIENT_ID)
+  })
+
+  it('records the remapped childIds in the undo entry too, so redo recreates a group that references real rows', async () => {
+    const h = setup()
+    h.createElement.mockImplementation((element: CanvasElement) =>
+      Promise.resolve({ id: serverId(element.id), ok: true, revision: 1 }),
+    )
+
+    act(() => {
+      h.api.callbacks.onClone?.(makeCloneElements(), 'duplicate')
+    })
+    await waitFor(() => expect(h.createElement).toHaveBeenCalledTimes(3))
+    h.revisions.set(serverId(A_CLIENT_ID), 1)
+    h.revisions.set(serverId(B_CLIENT_ID), 1)
+    h.revisions.set(serverId(GROUP_CLIENT_ID), 1)
+
+    act(() => {
+      h.api.undo()
+    })
+    await waitFor(() => expect(h.deleteElements).toHaveBeenCalledTimes(3))
+    h.revisions.delete(serverId(A_CLIENT_ID))
+    h.revisions.delete(serverId(B_CLIENT_ID))
+    h.revisions.delete(serverId(GROUP_CLIENT_ID))
+
+    act(() => {
+      h.api.redo()
+    })
+    await waitFor(() => expect(h.createElement).toHaveBeenCalledTimes(6))
+    const redoneGroupCall = h.createElement.mock.calls
+      .slice(3)
+      .find((call) => call[0].kind === 'group')!
+    expect(redoneGroupCall).toBeDefined()
+    const redoneGroup = redoneGroupCall[0]
+    expect(new Set(redoneGroup.group!.childIds)).toEqual(
+      new Set([serverId(A_CLIENT_ID), serverId(B_CLIENT_ID)]),
+    )
+  })
+
+  it('deep nesting: a cloned group containing another cloned group resolves in multiple passes', async () => {
+    const h = setup()
+    h.createElement.mockImplementation((element: CanvasElement) =>
+      Promise.resolve({ id: serverId(element.id), ok: true, revision: 1 }),
+    )
+
+    const INNER_CLIENT_ID = 'client-inner-1'
+    const OUTER_CLIENT_ID = 'client-outer-1'
+    const a = makeRect({ id: A_CLIENT_ID, x: 0, y: 0 })
+    const b = makeRect({ id: B_CLIENT_ID, x: 200, y: 0 })
+    const inner: CanvasElement = {
+      ...makeRect({ id: INNER_CLIENT_ID }),
+      kind: 'group',
+      group: { childIds: [A_CLIENT_ID, B_CLIENT_ID] },
+    }
+    const outer: CanvasElement = {
+      ...makeRect({ id: OUTER_CLIENT_ID }),
+      kind: 'group',
+      group: { childIds: [INNER_CLIENT_ID] },
+    }
+
+    act(() => {
+      // Order deliberately outer-before-inner in the input array — the fix
+      // must not assume the plan hands groups over in dependency order.
+      h.api.callbacks.onClone?.([a, b, outer, inner], 'duplicate')
+    })
+    await waitFor(() => expect(h.createElement).toHaveBeenCalledTimes(4))
+
+    const calls = h.createElement.mock.calls.map((call) => call[0])
+    const persistedInner = calls.find((e) => e.id === INNER_CLIENT_ID)!
+    const persistedOuter = calls.find((e) => e.id === OUTER_CLIENT_ID)!
+    expect(new Set(persistedInner.group!.childIds)).toEqual(
+      new Set([serverId(A_CLIENT_ID), serverId(B_CLIENT_ID)]),
+    )
+    expect(persistedOuter.group!.childIds).toEqual([serverId(INNER_CLIENT_ID)])
   })
 })
