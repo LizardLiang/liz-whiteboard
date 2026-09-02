@@ -1020,6 +1020,109 @@ describe('drawScene: shape kinds', () => {
   })
 })
 
+describe('drawScene: group frame (canvas-element-grouping tactical plan, Wave 6)', () => {
+  // CHROME.light.accent and CHROME.light.marqueeFill, read directly rather
+  // than exported — the same local-constant convention the connector-attach
+  // describe block below already uses for ACCENT.
+  const ACCENT = '#3b82f6'
+  const MARQUEE_FILL = 'rgba(59, 130, 246, 0.10)'
+
+  function groupElement(
+    overrides: Partial<CanvasElement> = {},
+  ): CanvasElement {
+    return makeElement({
+      kind: 'group',
+      group: { childIds: [] },
+      text: null,
+      ...overrides,
+    })
+  }
+
+  it('draws a persistent low-emphasis frame at rest, even with zero members (FR-032)', () => {
+    const element = groupElement()
+    const rec = createRecorder()
+    drawScene(
+      rec.ctx,
+      sceneFrom([element]),
+      { x: 0, y: 0, zoom: 1 },
+      viewport(),
+      NO_SELECTION,
+    )
+    const rects = rec.opsOfType('strokeRect')
+    expect(rects).toHaveLength(1)
+    expect(rects[0].args).toEqual([100, 50, 200, 120, MARQUEE_FILL])
+  })
+
+  it('never fills a group — no fill style of its own (FR-031)', () => {
+    const rec = createRecorder()
+    drawScene(
+      rec.ctx,
+      sceneFrom([groupElement()]),
+      { x: 0, y: 0, zoom: 1 },
+      viewport(),
+      NO_SELECTION,
+    )
+    expect(rec.opsOfType('fillRect')).toHaveLength(0)
+    expect(rec.opsOfType('fill')).toHaveLength(0)
+  })
+
+  it('draws full emphasis (chrome.accent) when hovered but not selected', () => {
+    const element = groupElement()
+    const rec = createRecorder()
+    drawScene(
+      rec.ctx,
+      sceneFrom([element]),
+      { x: 0, y: 0, zoom: 1 },
+      viewport(),
+      { ids: new Set<string>(), hoveredId: element.id },
+    )
+    const rects = rec.opsOfType('strokeRect')
+    expect(rects).toHaveLength(1)
+    expect(rects[0].args).toEqual([100, 50, 200, 120, ACCENT])
+  })
+
+  it('draws full emphasis (chrome.accent) when selected', () => {
+    const element = groupElement()
+    const rec = createRecorder()
+    drawScene(
+      rec.ctx,
+      sceneFrom([element]),
+      { x: 0, y: 0, zoom: 1 },
+      viewport(),
+      { ids: new Set([element.id]) },
+    )
+    // Two strokeRect calls exist for a SELECTED group: this function's own
+    // world-space frame (raw x/y/width/height, asserted here) plus
+    // `drawSelectionOverlay`'s pre-existing screen-space selection outline
+    // (inset by 0.5, width/height -1 — a different call, not this feature's
+    // concern, already covered by that describe block's own tests).
+    const worldFrame = rec
+      .opsOfType('strokeRect')
+      .find((entry) => entry.args[0] === 100 && entry.args[1] === 50)
+    expect(worldFrame?.args).toEqual([100, 50, 200, 120, ACCENT])
+  })
+
+  it('resolves the low-emphasis token per theme', () => {
+    const element = groupElement()
+    const rec = createRecorder()
+    drawScene(
+      rec.ctx,
+      sceneFrom([element]),
+      { x: 0, y: 0, zoom: 1 },
+      viewport(),
+      NO_SELECTION,
+      { theme: 'dark' },
+    )
+    expect(rec.opsOfType('strokeRect')[0].args).toEqual([
+      100,
+      50,
+      200,
+      120,
+      'rgba(96, 165, 250, 0.16)',
+    ])
+  })
+})
+
 describe('text alignment', () => {
   // makeElement is 200x120 at (100, 50), TEXT_PADDING is 8, and the stub
   // measurer is fontSize * 0.5 per character. So for the default 16px font:

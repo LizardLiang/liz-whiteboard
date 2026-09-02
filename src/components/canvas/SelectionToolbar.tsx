@@ -61,7 +61,9 @@ import {
   Ban,
   BringToFront,
   CopyPlus,
+  Group as GroupIcon,
   SendToBack,
+  Ungroup as UngroupIcon,
 } from 'lucide-react'
 import type { ComponentType, ReactNode } from 'react'
 import type { Camera } from '@/lib/canvas-engine/camera'
@@ -237,6 +239,19 @@ function shared<T>(
  * One place decides both the bar's visibility and its two target sets, so a
  * future control cannot accidentally appear for a selection the bar itself is
  * hidden for.
+ *
+ * `arrange` and `paint` deliberately read from TWO DIFFERENT sets, not one
+ * filtered into the other. `arrange` is `zOrderTargets`'s own result, which
+ * (canvas-element-grouping tactical plan, Wave 3) EXPANDS a selected group
+ * to its whole subtree — correct for Bring to Front/Send to Back, which
+ * must move a group's members with it (FR-015). `paint` reads the RAW
+ * selection instead: bulk Fill/Stroke/Width/Corner styling across a
+ * group's members is explicitly out of scope (PRD "Out of Scope" — this
+ * toolbar disables those controls for a group selection rather than
+ * reaching into it), so `paint` must NOT inherit `arrange`'s expansion —
+ * doing so would silently restyle a group's descendants the instant one
+ * was selected, which is exactly the out-of-scope behaviour FR-031 exists
+ * to prevent.
  */
 export function selectionToolbarTargets(
   scene: Scene,
@@ -248,7 +263,36 @@ export function selectionToolbarTargets(
     return null
   const arrange = zOrderTargets(scene, selectedIds)
   if (arrange.length === 0) return null
-  return { arrange, paint: arrange.filter((e) => isCanvasShapeKind(e.kind)) }
+  const selected = scene.elements.filter((element) =>
+    selectedIds.has(element.id),
+  )
+  return {
+    arrange,
+    paint: selected.filter((e) => isCanvasShapeKind(e.kind)),
+  }
+}
+
+/**
+ * Whether the CURRENT (unexpanded) selection may be bound into a new group
+ * (FR-030/A1) — two or more elements, no upper bound and no kind
+ * restriction, since a selection that already contains a group nests it
+ * with no special case (FR-009).
+ */
+export function canGroupSelection(selectedIds: ReadonlySet<string>): boolean {
+  return selectedIds.size >= 2
+}
+
+/**
+ * Whether the CURRENT selection resolves to exactly one group element —
+ * the only state Ungroup is meaningful in (FR-008).
+ */
+export function canUngroupSelection(
+  scene: Scene,
+  selectedIds: ReadonlySet<string>,
+): boolean {
+  if (selectedIds.size !== 1) return false
+  const [id] = selectedIds
+  return scene.byId.get(id)?.group !== undefined
 }
 
 export interface SelectionToolbarProps {
@@ -280,6 +324,14 @@ export interface SelectionToolbarProps {
    * the first.
    */
   onDuplicate: () => void
+  /**
+   * Bind the current selection into a new group. No-argument, mirroring
+   * `onDuplicate`'s own shape and reasoning: reads the LIVE selection from
+   * the input hook, the same source Ctrl+G uses.
+   */
+  onGroup: () => void
+  /** Dissolve the current selection's single group. Mirrors `onGroup`. */
+  onUngroup: () => void
 }
 
 export function SelectionToolbar({
@@ -291,6 +343,8 @@ export function SelectionToolbar({
   onStyleChange,
   onArrange,
   onDuplicate,
+  onGroup,
+  onUngroup,
 }: SelectionToolbarProps) {
   const sets = selectionToolbarTargets(
     scene,
@@ -301,6 +355,8 @@ export function SelectionToolbar({
   const box = boundsOfMany(sets?.arrange ?? [])
   if (!sets || !box) return null
   const targets = sets.paint
+  const canGroup = canGroupSelection(selectedIds)
+  const canUngroup = canUngroupSelection(scene, selectedIds)
 
   const anchor = worldToScreen(camera, { x: box.x + box.width / 2, y: box.y })
 
@@ -490,7 +546,13 @@ export function SelectionToolbar({
       )}
       <ArrangeRow onArrange={(command) => onArrange(sets.arrange, command)} />
       <Divider />
-      <ActionsRow onDuplicate={onDuplicate} />
+      <ActionsRow
+        onDuplicate={onDuplicate}
+        onGroup={onGroup}
+        onUngroup={onUngroup}
+        canGroup={canGroup}
+        canUngroup={canUngroup}
+      />
     </div>
   )
 }
@@ -688,19 +750,36 @@ function radiusSummary(radius: number | null): string {
 }
 
 /**
- * Duplicate.
+ * Duplicate, Group, Ungroup.
  *
- * The one member of the copy family with a button. Paste has no selection to
- * hang a control off — it works with nothing selected, which is exactly when
- * this bar is hidden — and copy and cut are the half of the idiom every user
- * already reaches for on the keyboard. Duplicate is the one people do not
- * know is there, so it is the one that gets shown.
+ * Duplicate is the one member of the copy family with a button. Paste has no
+ * selection to hang a control off — it works with nothing selected, which is
+ * exactly when this bar is hidden — and copy and cut are the half of the
+ * idiom every user already reaches for on the keyboard. Duplicate is the one
+ * people do not know is there, so it is the one that gets shown. Always
+ * enabled, for the same reason the arrange buttons are: the bar only renders
+ * for a non-empty editable selection, so there is always something to copy.
  *
- * Always enabled, for the same reason the arrange buttons are: the bar only
- * renders for a non-empty editable selection, so there is always something to
- * copy.
+ * Group and Ungroup are DISABLED rather than hidden when they do not apply
+ * (FR-030's own wording: "the Group control is disabled"), matching the
+ * literal PRD acceptance criteria rather than the hide-when-inapplicable
+ * pattern the settings popovers above use — those hide because there is
+ * nothing to preview for zero targets; these stay visible so a user can see
+ * the shortcut exists at all.
  */
-function ActionsRow({ onDuplicate }: { onDuplicate: () => void }) {
+function ActionsRow({
+  onDuplicate,
+  onGroup,
+  onUngroup,
+  canGroup,
+  canUngroup,
+}: {
+  onDuplicate: () => void
+  onGroup: () => void
+  onUngroup: () => void
+  canGroup: boolean
+  canUngroup: boolean
+}) {
   return (
     <div className="flex items-center gap-1" role="group" aria-label="Actions">
       <Button
@@ -717,6 +796,30 @@ function ActionsRow({ onDuplicate }: { onDuplicate: () => void }) {
         onClick={() => onDuplicate()}
       >
         <CopyPlus className="h-3.5 w-3.5" />
+      </Button>
+      <Button
+        type="button"
+        size="icon"
+        variant="ghost"
+        className="h-6 w-7"
+        aria-label="Group"
+        title="Group (Ctrl+G)"
+        disabled={!canGroup}
+        onClick={() => onGroup()}
+      >
+        <GroupIcon className="h-3.5 w-3.5" />
+      </Button>
+      <Button
+        type="button"
+        size="icon"
+        variant="ghost"
+        className="h-6 w-7"
+        aria-label="Ungroup"
+        title="Ungroup (Ctrl+Shift+G)"
+        disabled={!canUngroup}
+        onClick={() => onUngroup()}
+      >
+        <UngroupIcon className="h-3.5 w-3.5" />
       </Button>
     </div>
   )

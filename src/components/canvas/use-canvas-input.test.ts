@@ -22,6 +22,7 @@ import type { Camera } from '@/lib/canvas-engine/camera'
 import type { CanvasTool } from './use-canvas-input'
 import { DEFAULT_CAMERA } from '@/lib/canvas-engine/camera'
 import { DEFAULT_ELEMENT_STYLE, sceneFrom } from '@/lib/canvas-engine/scene'
+import { Z_MIN } from '@/lib/canvas-engine/z-order'
 
 const TEXT_ID = '11111111-1111-4111-8111-111111111111'
 
@@ -67,19 +68,24 @@ function pointerEvent(overrides: Record<string, unknown> = {}) {
     clientX: 10,
     clientY: 10,
     shiftKey: false,
-    // A real browser's pointerdown always carries a click count of 1 for an
-    // isolated click (PointerEvent.detail, inherited from MouseEvent) — this
-    // default matches that. Group-click-resolution (canvas-element-grouping
-    // tactical plan, Wave 2) reads it to tell an isolated click from the
-    // second-or-later click of a rapid double/triple-click sequence; tests
-    // exercising that pass `detail: 2` explicitly.
-    detail: 1,
+    // No `detail` field: a real `PointerEvent.detail` does NOT carry click-
+    // count semantics the way `MouseEvent.detail` does — confirmed
+    // empirically (a Wave 8 e2e probe), every browser tested reports a
+    // constant `0` on `pointerdown` regardless of click count. An earlier
+    // version of this fixture set `detail: 1`/`detail: 2` here and the app
+    // read it to tell an isolated click from a rapid second one — a real
+    // bug invisible to this whole suite until real browser input caught it.
+    // Group-click-resolution (canvas-element-grouping tactical plan, Wave
+    // 2/5) now tracks repeat-click detection itself, by REAL time+position
+    // (`lastPointerDownRef` in use-canvas-input.ts), which two synchronous
+    // `onPointerDown` calls at the same point already satisfy for free —
+    // see the grouping describe blocks below for how each case is driven.
     preventDefault: vi.fn(),
     ...overrides,
   } as any
 }
 
-function keyEvent(key: string) {
+function keyEvent(key: string, overrides: Record<string, unknown> = {}) {
   return {
     key,
     ctrlKey: false,
@@ -88,6 +94,7 @@ function keyEvent(key: string) {
     shiftKey: false,
     preventDefault: vi.fn(),
     nativeEvent: { isComposing: false },
+    ...overrides,
   } as any
 }
 
@@ -101,6 +108,8 @@ function setup(initial: Array<CanvasElement> = [makeText()]) {
     onUpdate: vi.fn(),
     onDelete: vi.fn(),
     onClone: vi.fn(),
+    onGroup: vi.fn(),
+    onUngroup: vi.fn(),
   }
   const canvas = makeCanvas()
   const canvasRef = { current: canvas } as any
@@ -767,15 +776,18 @@ describe('grouping: selection resolution and entered-group depth (Wave 2)', () =
 
   it('one double-click descends one level and selects the immediate child', () => {
     const h = setup(makeGroupScene())
-    // click 1 of the double-click: an isolated-looking press, detail 1.
+    // click 1 of the double-click: an isolated-looking press — nothing
+    // preceded it, so `lastPointerDownRef` (the `PointerEvent.detail`
+    // replacement — see `onPointerDown`'s own comment) is null and this is
+    // unconditionally treated as isolated.
     act(() => {
-      h.api.canvasHandlers.onPointerDown(pointerEvent({ ...HIT, detail: 1 }))
+      h.api.canvasHandlers.onPointerDown(pointerEvent(HIT))
     })
     h.sync()
-    // click 2: the browser's own click-count keeps incrementing for a rapid
-    // second press at (about) the same point.
+    // click 2: close enough in time and position to click 1 (two
+    // synchronous calls, same point) to count as a REPEAT click.
     act(() => {
-      h.api.canvasHandlers.onPointerDown(pointerEvent({ ...HIT, detail: 2 }))
+      h.api.canvasHandlers.onPointerDown(pointerEvent(HIT))
     })
     h.sync()
     act(() => {
@@ -792,11 +804,11 @@ describe('grouping: selection resolution and entered-group depth (Wave 2)', () =
   it('a further double-click on the newly selected group reaches the leaf and begins editing', () => {
     const h = setup(makeGroupScene())
     act(() => {
-      h.api.canvasHandlers.onPointerDown(pointerEvent({ ...HIT, detail: 1 }))
+      h.api.canvasHandlers.onPointerDown(pointerEvent(HIT))
     })
     h.sync()
     act(() => {
-      h.api.canvasHandlers.onPointerDown(pointerEvent({ ...HIT, detail: 2 }))
+      h.api.canvasHandlers.onPointerDown(pointerEvent(HIT))
     })
     h.sync()
     act(() => {
@@ -805,17 +817,18 @@ describe('grouping: selection resolution and entered-group depth (Wave 2)', () =
     h.sync()
     expect(h.api.selectedIds).toEqual(new Set([MID_ID]))
 
-    // A SECOND double-click, continuing the same rapid click train (detail
-    // keeps counting up) rather than a fresh, isolated one — the browser
-    // click-count mechanism that lets `enteredPath` survive between the two
-    // double-clicks. See `onPointerDown`'s own comment for why this is what
-    // makes FR-005's progressive descent reachable at all.
+    // A SECOND double-click, continuing the same rapid click train (still
+    // within `lastPointerDownRef`'s repeat-click window and at the same
+    // point) rather than a fresh, isolated one — what lets `enteredPath`
+    // survive between the two double-clicks. See `onPointerDown`'s own
+    // comment for why this is what makes FR-005's progressive descent
+    // reachable at all.
     act(() => {
-      h.api.canvasHandlers.onPointerDown(pointerEvent({ ...HIT, detail: 3 }))
+      h.api.canvasHandlers.onPointerDown(pointerEvent(HIT))
     })
     h.sync()
     act(() => {
-      h.api.canvasHandlers.onPointerDown(pointerEvent({ ...HIT, detail: 4 }))
+      h.api.canvasHandlers.onPointerDown(pointerEvent(HIT))
     })
     h.sync()
     act(() => {
@@ -831,41 +844,58 @@ describe('grouping: selection resolution and entered-group depth (Wave 2)', () =
     // FR-004 is unconditional: it does not carve out an exception for "the
     // user was already several levels deep". A fresh, isolated click (not
     // part of a rapid multi-click train) exits whatever was entered.
-    const h = setup(makeGroupScene())
-    act(() => {
-      h.api.canvasHandlers.onPointerDown(pointerEvent({ ...HIT, detail: 1 }))
-    })
-    h.sync()
-    act(() => {
-      h.api.canvasHandlers.onPointerDown(pointerEvent({ ...HIT, detail: 2 }))
-    })
-    h.sync()
-    act(() => {
-      h.api.canvasHandlers.onDoubleClick(pointerEvent(HIT))
-    })
-    h.sync()
-    expect(h.api.selectedIds).toEqual(new Set([MID_ID]))
-    expect(h.api.enteredPath).toEqual([OUTER_ID])
+    //
+    // Fake timers here, deliberately: this hook tracks a "repeat click" by
+    // REAL elapsed time + position (`lastPointerDownRef`, the
+    // `PointerEvent.detail` replacement — see `onPointerDown`'s own comment
+    // for why `detail` cannot be used for this at all), not by a value this
+    // test can hand-set on the event object. Proving a click AFTER the
+    // window lapses is treated as isolated therefore needs REAL (simulated)
+    // time to pass between the two click trains, which two synchronous
+    // `act()` calls back to back do not provide on their own.
+    vi.useFakeTimers()
+    try {
+      const h = setup(makeGroupScene())
+      act(() => {
+        h.api.canvasHandlers.onPointerDown(pointerEvent(HIT))
+      })
+      h.sync()
+      act(() => {
+        h.api.canvasHandlers.onPointerDown(pointerEvent(HIT))
+      })
+      h.sync()
+      act(() => {
+        h.api.canvasHandlers.onDoubleClick(pointerEvent(HIT))
+      })
+      h.sync()
+      expect(h.api.selectedIds).toEqual(new Set([MID_ID]))
+      expect(h.api.enteredPath).toEqual([OUTER_ID])
 
-    // A fresh click, detail resets to 1 (as it does once the browser's own
-    // click-train window lapses).
-    act(() => {
-      h.api.canvasHandlers.onPointerDown(pointerEvent({ ...HIT, detail: 1 }))
-    })
-    h.sync()
+      // Past the repeat-click window (REPEAT_CLICK_WINDOW_MS, 1500ms) — a
+      // real user's own multi-double-click "drilling down" session would
+      // have lapsed by now too.
+      vi.advanceTimersByTime(1600)
 
-    expect(h.api.selectedIds).toEqual(new Set([OUTER_ID]))
-    expect(h.api.enteredPath).toEqual([])
+      act(() => {
+        h.api.canvasHandlers.onPointerDown(pointerEvent(HIT))
+      })
+      h.sync()
+
+      expect(h.api.selectedIds).toEqual(new Set([OUTER_ID]))
+      expect(h.api.enteredPath).toEqual([])
+    } finally {
+      vi.useRealTimers()
+    }
   })
 
   it('Escape resets entered depth, so the next double-click only descends one level again', () => {
     const h = setup(makeGroupScene())
     act(() => {
-      h.api.canvasHandlers.onPointerDown(pointerEvent({ ...HIT, detail: 1 }))
+      h.api.canvasHandlers.onPointerDown(pointerEvent(HIT))
     })
     h.sync()
     act(() => {
-      h.api.canvasHandlers.onPointerDown(pointerEvent({ ...HIT, detail: 2 }))
+      h.api.canvasHandlers.onPointerDown(pointerEvent(HIT))
     })
     h.sync()
     act(() => {
@@ -881,14 +911,20 @@ describe('grouping: selection resolution and entered-group depth (Wave 2)', () =
     expect(h.api.enteredPath).toEqual([])
     expect(h.api.selectedIds).toEqual(new Set())
 
-    // A brand-new double-click (detail resets to 1, then 2) lands back at
-    // depth 1 (`mid`), not depth 2 (`a`) — proof the reset actually took.
+    // A brand-new double-click lands back at depth 1 (`mid`), not depth 2
+    // (`a`) — proof the reset actually took. `lastPointerDownRef` itself is
+    // NOT reset by Escape (a real browser's own click-streak is a pure
+    // mouse time+position fact, unaffected by an intervening keypress), but
+    // that does not matter here: `enteredPath` — the only thing
+    // `resolveClickTarget` actually reads — was already zeroed by Escape
+    // above, so the double-click below resolves exactly as if it were the
+    // very first one.
     act(() => {
-      h.api.canvasHandlers.onPointerDown(pointerEvent({ ...HIT, detail: 1 }))
+      h.api.canvasHandlers.onPointerDown(pointerEvent(HIT))
     })
     h.sync()
     act(() => {
-      h.api.canvasHandlers.onPointerDown(pointerEvent({ ...HIT, detail: 2 }))
+      h.api.canvasHandlers.onPointerDown(pointerEvent(HIT))
     })
     h.sync()
     act(() => {
@@ -901,11 +937,11 @@ describe('grouping: selection resolution and entered-group depth (Wave 2)', () =
   it('clicking empty canvas resets entered depth', () => {
     const h = setup(makeGroupScene())
     act(() => {
-      h.api.canvasHandlers.onPointerDown(pointerEvent({ ...HIT, detail: 1 }))
+      h.api.canvasHandlers.onPointerDown(pointerEvent(HIT))
     })
     h.sync()
     act(() => {
-      h.api.canvasHandlers.onPointerDown(pointerEvent({ ...HIT, detail: 2 }))
+      h.api.canvasHandlers.onPointerDown(pointerEvent(HIT))
     })
     h.sync()
     act(() => {
@@ -915,9 +951,12 @@ describe('grouping: selection resolution and entered-group depth (Wave 2)', () =
     expect(h.api.enteredPath).toEqual([OUTER_ID])
 
     act(() => {
-      // Far outside every element's bounds.
+      // Far outside every element's bounds — and far enough from HIT that
+      // `lastPointerDownRef`'s own position check would treat this as
+      // isolated even without the empty-canvas branch's own unconditional
+      // reset.
       h.api.canvasHandlers.onPointerDown(
-        pointerEvent({ clientX: 900, clientY: 900, detail: 1 }),
+        pointerEvent({ clientX: 900, clientY: 900 }),
       )
     })
     h.sync()
@@ -927,11 +966,11 @@ describe('grouping: selection resolution and entered-group depth (Wave 2)', () =
   it('deleting the selection resets entered depth', () => {
     const h = setup(makeGroupScene())
     act(() => {
-      h.api.canvasHandlers.onPointerDown(pointerEvent({ ...HIT, detail: 1 }))
+      h.api.canvasHandlers.onPointerDown(pointerEvent(HIT))
     })
     h.sync()
     act(() => {
-      h.api.canvasHandlers.onPointerDown(pointerEvent({ ...HIT, detail: 2 }))
+      h.api.canvasHandlers.onPointerDown(pointerEvent(HIT))
     })
     h.sync()
     act(() => {
@@ -1329,17 +1368,26 @@ describe('grouping: membership drag-in/out, commit-on-drop (Wave 5)', () => {
   it('dragging a member out past the frame edge removes it from the group and it becomes top-level', () => {
     const h = setup(makeFrameScene())
 
-    // Drag `b` (50,50)-(70,70) far outside g1's frame. `detail: 2` — a
-    // PLAIN single click on a member resolves to the OUTERMOST group
-    // (FR-004, Wave 2), so dragging `b` INDIVIDUALLY requires the
-    // raw-hit-resolution path a rapid click sequence's second press takes
-    // (the same mechanism that lets a double-click-then-drag reach a
-    // member without lifting the pointer — see `onPointerDown`'s own
-    // comment on `event.detail`).
+    // Drag `b` (50,50)-(70,70) far outside g1's frame. A PLAIN single click
+    // on a member resolves to the OUTERMOST group (FR-004, Wave 2), so
+    // dragging `b` INDIVIDUALLY requires the drag's own pointerdown to be a
+    // REPEAT click (`lastPointerDownRef` — see `onPointerDown`'s own
+    // comment for why this replaced `event.detail`) — the same
+    // double-click-then-drag-without-releasing mechanism a real user would
+    // use to grab an individual member. A preceding plain click at the same
+    // point establishes that history; the drag's own press then lands
+    // within the repeat-click window/position tolerance for free (two
+    // synchronous calls at the same point).
     act(() => {
-      h.api.canvasHandlers.onPointerDown(
-        pointerEvent({ clientX: 60, clientY: 60, detail: 2 }),
-      )
+      h.api.canvasHandlers.onPointerDown(pointerEvent({ clientX: 60, clientY: 60 }))
+    })
+    h.sync()
+    act(() => {
+      h.api.canvasHandlers.onPointerUp(pointerEvent({ clientX: 60, clientY: 60 }))
+    })
+    h.sync()
+    act(() => {
+      h.api.canvasHandlers.onPointerDown(pointerEvent({ clientX: 60, clientY: 60 }))
     })
     h.sync()
     expect(h.api.selectedIds).toEqual(new Set([B_ID]))
@@ -1508,6 +1556,258 @@ function setupWithTool(startTool: CanvasTool) {
     sync: () => view.rerender(),
   }
 }
+
+describe('grouping: groupSelection / ungroupSelection (Wave 6)', () => {
+  const A_ID = '11111111-1111-4111-8111-111111111111'
+  const B_ID = '22222222-2222-4222-8222-222222222222'
+  const G_ID = '33333333-3333-4333-8333-333333333333'
+
+  function rect(
+    id: string,
+    overrides: Partial<CanvasElement> = {},
+  ): CanvasElement {
+    return { ...makeText(), id, kind: 'rectangle', text: null, ...overrides }
+  }
+
+  function twoShapes(): Array<CanvasElement> {
+    return [
+      rect(A_ID, { x: 0, y: 0, width: 100, height: 50, zIndex: 5 }),
+      rect(B_ID, { x: 200, y: 100, width: 80, height: 40, zIndex: 10 }),
+    ]
+  }
+
+  function groupOf(childIds: Array<string>): CanvasElement {
+    return {
+      ...makeText(),
+      id: G_ID,
+      kind: 'group',
+      text: null,
+      group: { childIds },
+    }
+  }
+
+  it('groupSelection() is a no-op below 2 selected (FR-030/A1)', () => {
+    const h = setup(twoShapes())
+    act(() => {
+      h.api.setSelectedIds(new Set([A_ID]))
+    })
+    h.sync()
+
+    act(() => {
+      h.api.groupSelection()
+    })
+
+    expect(h.callbacks.onGroup).not.toHaveBeenCalled()
+    expect(h.scene.elements).toHaveLength(2)
+  })
+
+  it('groupSelection() binds the current selection into a new group at 2+ selected', () => {
+    const h = setup(twoShapes())
+    act(() => {
+      h.api.setSelectedIds(new Set([A_ID, B_ID]))
+    })
+    h.sync()
+
+    act(() => {
+      h.api.groupSelection()
+    })
+
+    expect(h.callbacks.onGroup).toHaveBeenCalledTimes(1)
+    const [group] = h.callbacks.onGroup.mock.calls[0] as [CanvasElement]
+    expect(group.kind).toBe('group')
+    // childIds is the selection AS GIVEN (FR-009: a selection that already
+    // contains a group nests it with no extra work).
+    expect(new Set(group.group!.childIds)).toEqual(new Set([A_ID, B_ID]))
+    // The frame is the tight bounding box of the selection (A8).
+    expect(group.x).toBe(0)
+    expect(group.y).toBe(0)
+    expect(group.width).toBe(280)
+    expect(group.height).toBe(140)
+    // Selection becomes the new group's id; whatever depth was entered resets.
+    expect(h.api.selectedIds).toEqual(new Set([group.id]))
+    expect(h.api.enteredPath).toEqual([])
+    // On the board, not just reported to the callback.
+    expect(h.scene.byId.get(group.id)).toBeDefined()
+  })
+
+  it("places the new group's zIndex one below its lowest member's", () => {
+    // A group above its own members would shadow them in hit-test's reverse-z
+    // scan — clicking a member would hit the group's own frame first.
+    const h = setup(twoShapes()) // zIndex 5 and 10
+    act(() => {
+      h.api.setSelectedIds(new Set([A_ID, B_ID]))
+    })
+    h.sync()
+    act(() => {
+      h.api.groupSelection()
+    })
+    const [group] = h.callbacks.onGroup.mock.calls[0] as [CanvasElement]
+    expect(group.zIndex).toBe(4)
+  })
+
+  it("clamps the new group's zIndex to Z_MIN rather than going below it", () => {
+    const h = setup([
+      rect(A_ID, { zIndex: Z_MIN }),
+      rect(B_ID, { zIndex: Z_MIN + 3 }),
+    ])
+    act(() => {
+      h.api.setSelectedIds(new Set([A_ID, B_ID]))
+    })
+    h.sync()
+    act(() => {
+      h.api.groupSelection()
+    })
+    const [group] = h.callbacks.onGroup.mock.calls[0] as [CanvasElement]
+    expect(group.zIndex).toBe(Z_MIN)
+  })
+
+  it('ungroupSelection() is a no-op unless the selection is exactly one group (FR-008)', () => {
+    const h = setup(twoShapes())
+    act(() => {
+      h.api.setSelectedIds(new Set([A_ID]))
+    })
+    h.sync()
+
+    act(() => {
+      h.api.ungroupSelection()
+    })
+
+    expect(h.callbacks.onUngroup).not.toHaveBeenCalled()
+    expect(h.scene.elements).toHaveLength(2)
+  })
+
+  it('ungroupSelection() is a no-op for a multi-selection that includes a group', () => {
+    const h = setup([...twoShapes(), groupOf([A_ID, B_ID])])
+    act(() => {
+      h.api.setSelectedIds(new Set([A_ID, G_ID]))
+    })
+    h.sync()
+
+    act(() => {
+      h.api.ungroupSelection()
+    })
+
+    expect(h.callbacks.onUngroup).not.toHaveBeenCalled()
+  })
+
+  it('ungroupSelection() dissolves exactly one level, selects the direct children, writes nothing to members', () => {
+    const h = setup([...twoShapes(), groupOf([A_ID, B_ID])])
+    act(() => {
+      h.api.setSelectedIds(new Set([G_ID]))
+    })
+    h.sync()
+
+    act(() => {
+      h.api.ungroupSelection()
+    })
+
+    expect(h.callbacks.onUngroup).toHaveBeenCalledTimes(1)
+    const [dissolved] = h.callbacks.onUngroup.mock.calls[0] as [CanvasElement]
+    expect(dissolved.id).toBe(G_ID)
+    expect(dissolved.group!.childIds).toEqual([A_ID, B_ID])
+
+    expect(h.scene.byId.get(G_ID)).toBeUndefined()
+    expect(h.api.selectedIds).toEqual(new Set([A_ID, B_ID]))
+    expect(h.api.enteredPath).toEqual([])
+    // Membership lived only on the dissolved group's own row — members
+    // themselves are never written to.
+    expect(h.callbacks.onUpdate).not.toHaveBeenCalled()
+    expect(h.scene.byId.get(A_ID)).toBeDefined()
+    expect(h.scene.byId.get(B_ID)).toBeDefined()
+  })
+})
+
+describe('grouping: Ctrl+G / Ctrl+Shift+G keyboard dispatch (Wave 6, FR-020)', () => {
+  const A_ID = '11111111-1111-4111-8111-111111111111'
+  const B_ID = '22222222-2222-4222-8222-222222222222'
+  const G_ID = '33333333-3333-4333-8333-333333333333'
+
+  function rect(
+    id: string,
+    overrides: Partial<CanvasElement> = {},
+  ): CanvasElement {
+    return { ...makeText(), id, kind: 'rectangle', text: null, ...overrides }
+  }
+
+  it('Ctrl+G groups the current selection and suppresses the browser default', () => {
+    const h = setup([rect(A_ID), rect(B_ID)])
+    act(() => {
+      h.api.setSelectedIds(new Set([A_ID, B_ID]))
+    })
+    h.sync()
+
+    const event = keyEvent('g', { ctrlKey: true })
+    act(() => {
+      h.api.boardHandlers.onKeyDown(event)
+    })
+
+    expect(event.preventDefault).toHaveBeenCalledTimes(1)
+    expect(h.callbacks.onGroup).toHaveBeenCalledTimes(1)
+  })
+
+  it('Ctrl+Shift+G ungroups the current selection and suppresses the browser default', () => {
+    const group: CanvasElement = {
+      ...makeText(),
+      id: G_ID,
+      kind: 'group',
+      text: null,
+      group: { childIds: [A_ID, B_ID] },
+    }
+    const h = setup([rect(A_ID), rect(B_ID), group])
+    act(() => {
+      h.api.setSelectedIds(new Set([G_ID]))
+    })
+    h.sync()
+
+    const event = keyEvent('g', { ctrlKey: true, shiftKey: true })
+    act(() => {
+      h.api.boardHandlers.onKeyDown(event)
+    })
+
+    expect(event.preventDefault).toHaveBeenCalledTimes(1)
+    expect(h.callbacks.onUngroup).toHaveBeenCalledTimes(1)
+  })
+
+  it('Ctrl+G still suppresses the browser default even when there is nothing to group', () => {
+    // FR-020's suppression is unconditional on every Ctrl+G press, not only
+    // when a group is actually created.
+    const h = setup([rect(A_ID)])
+    act(() => {
+      h.api.setSelectedIds(new Set([A_ID]))
+    })
+    h.sync()
+
+    const event = keyEvent('g', { ctrlKey: true })
+    act(() => {
+      h.api.boardHandlers.onKeyDown(event)
+    })
+
+    expect(event.preventDefault).toHaveBeenCalledTimes(1)
+    expect(h.callbacks.onGroup).not.toHaveBeenCalled()
+  })
+
+  it('a bare "g" (no modifier) still switches to the triangle tool, unaffected by Ctrl+G', () => {
+    const h = setup([rect(A_ID)])
+    act(() => {
+      h.api.boardHandlers.onKeyDown(keyEvent('g'))
+    })
+    h.sync()
+    expect(h.tool).toBe('triangle')
+  })
+
+  it('Ctrl+G does not fall through to the triangle-tool shortcut', () => {
+    const h = setup([rect(A_ID), rect(B_ID)])
+    act(() => {
+      h.api.setSelectedIds(new Set([A_ID, B_ID]))
+    })
+    h.sync()
+    act(() => {
+      h.api.boardHandlers.onKeyDown(keyEvent('g', { ctrlKey: true }))
+    })
+    h.sync()
+    expect(h.tool).toBe('select')
+  })
+})
 
 describe('shape tools', () => {
   const SHORTCUTS = [

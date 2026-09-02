@@ -15,6 +15,8 @@ import {
   STYLE_TOOLBAR_OFFSET,
   SelectionToolbar,
   applyStyleChange,
+  canGroupSelection,
+  canUngroupSelection,
   shapeStyleTargets,
 } from './SelectionToolbar'
 import type {
@@ -93,6 +95,14 @@ function connectorElement(id: string): CanvasElement {
   })
 }
 
+function groupElement(
+  id: string,
+  childIds: Array<string>,
+  overrides: Partial<CanvasElement> = {},
+): CanvasElement {
+  return shape(id, { kind: 'group', group: { childIds }, ...overrides })
+}
+
 function setup(
   elements: Array<CanvasElement>,
   selected: Array<string>,
@@ -102,6 +112,8 @@ function setup(
   const onStyleChange = vi.fn()
   const onArrange = vi.fn()
   const onDuplicate = vi.fn()
+  const onGroup = vi.fn()
+  const onUngroup = vi.fn()
   const scene = sceneFrom(elements)
   render(
     <SelectionToolbar
@@ -113,9 +125,11 @@ function setup(
       onStyleChange={onStyleChange}
       onArrange={onArrange}
       onDuplicate={onDuplicate}
+      onGroup={onGroup}
+      onUngroup={onUngroup}
     />,
   )
-  return { onStyleChange, onArrange, onDuplicate, scene }
+  return { onStyleChange, onArrange, onDuplicate, onGroup, onUngroup, scene }
 }
 
 // ───────────────────────────────────────────────────────────────────────────
@@ -270,6 +284,20 @@ describe('rendering', () => {
     setup([shape('s'), shape('t', { kind: 'text' })], ['s', 't'])
     expect(screen.getByRole('button', { name: 'Fill' })).toBeTruthy()
     expect(screen.getByRole('group', { name: 'Arrange' })).toBeTruthy()
+  })
+
+  it('renders for a GROUP selection, with order but no paint rows (FR-031)', () => {
+    // A group has no fill/stroke of its own — bulk-restyling its members from
+    // here is explicitly out of scope (SelectionToolbar.tsx's own header
+    // comment on `paint` vs `arrange`).
+    const g = groupElement('g', ['a', 'b'])
+    setup([shape('a'), shape('b'), g], ['g'])
+    expect(screen.getByRole('toolbar', { name: 'Selection' })).toBeTruthy()
+    expect(screen.getByRole('button', { name: 'Bring to front' })).toBeTruthy()
+    expect(screen.queryByRole('button', { name: 'Fill' })).toBeNull()
+    expect(screen.queryByRole('button', { name: 'Stroke' })).toBeNull()
+    expect(screen.queryByRole('button', { name: 'Width' })).toBeNull()
+    expect(screen.queryByRole('button', { name: 'Corner' })).toBeNull()
   })
 
   it('does not render for a read-only board', () => {
@@ -584,6 +612,104 @@ describe('the duplicate control', () => {
   })
 })
 
+describe('canGroupSelection / canUngroupSelection', () => {
+  it('requires at least 2 selected elements to group (FR-030/A1)', () => {
+    expect(canGroupSelection(new Set())).toBe(false)
+    expect(canGroupSelection(new Set(['a']))).toBe(false)
+    expect(canGroupSelection(new Set(['a', 'b']))).toBe(true)
+    expect(canGroupSelection(new Set(['a', 'b', 'c']))).toBe(true)
+  })
+
+  it('allows ungroup only when the selection is exactly one group element (FR-008)', () => {
+    const scene = sceneFrom([
+      shape('a'),
+      shape('b'),
+      groupElement('g', ['a', 'b']),
+    ])
+    expect(canUngroupSelection(scene, new Set())).toBe(false)
+    expect(canUngroupSelection(scene, new Set(['a']))).toBe(false)
+    expect(canUngroupSelection(scene, new Set(['a', 'g']))).toBe(false)
+    expect(canUngroupSelection(scene, new Set(['g']))).toBe(true)
+  })
+})
+
+describe('the group and ungroup controls', () => {
+  it('Group is disabled below 2 selected', () => {
+    setup([shape('a')], ['a'])
+    expect(
+      screen.getByRole<HTMLButtonElement>('button', { name: 'Group' })
+        .disabled,
+    ).toBe(true)
+  })
+
+  it('Group is enabled at 2 or more selected', () => {
+    setup([shape('a'), shape('b')], ['a', 'b'])
+    expect(
+      screen.getByRole<HTMLButtonElement>('button', { name: 'Group' })
+        .disabled,
+    ).toBe(false)
+  })
+
+  it('Ungroup is enabled when the selection is exactly one group', () => {
+    const g = groupElement('g', ['a', 'b'])
+    setup([shape('a'), shape('b'), g], ['g'])
+    expect(
+      screen.getByRole<HTMLButtonElement>('button', { name: 'Ungroup' })
+        .disabled,
+    ).toBe(false)
+  })
+
+  it('Ungroup stays disabled for a non-group single selection', () => {
+    setup([shape('a')], ['a'])
+    expect(
+      screen.getByRole<HTMLButtonElement>('button', { name: 'Ungroup' })
+        .disabled,
+    ).toBe(true)
+  })
+
+  it('Ungroup stays disabled once a group is part of a larger selection', () => {
+    const g = groupElement('g', ['a', 'b'])
+    setup([shape('a'), shape('b'), g], ['a', 'g'])
+    expect(
+      screen.getByRole<HTMLButtonElement>('button', { name: 'Ungroup' })
+        .disabled,
+    ).toBe(true)
+  })
+
+  it('Group calls back when clicked, with no target list of its own', () => {
+    // Mirrors onDuplicate's own reasoning: reads the LIVE selection from the
+    // input hook, not a target list computed here.
+    const { onGroup } = setup([shape('a'), shape('b')], ['a', 'b'])
+    fireEvent.click(screen.getByRole('button', { name: 'Group' }))
+    expect(onGroup).toHaveBeenCalledTimes(1)
+    expect(onGroup).toHaveBeenCalledWith()
+  })
+
+  it('Ungroup calls back when clicked', () => {
+    const g = groupElement('g', ['a', 'b'])
+    const { onUngroup } = setup([shape('a'), shape('b'), g], ['g'])
+    fireEvent.click(screen.getByRole('button', { name: 'Ungroup' }))
+    expect(onUngroup).toHaveBeenCalledTimes(1)
+    expect(onUngroup).toHaveBeenCalledWith()
+  })
+
+  it('a disabled Ungroup does not call back when clicked', () => {
+    const { onUngroup } = setup([shape('a')], ['a'])
+    fireEvent.click(screen.getByRole('button', { name: 'Ungroup' }))
+    expect(onUngroup).not.toHaveBeenCalled()
+  })
+
+  it('name their shortcuts, so the keyboard path is discoverable', () => {
+    setup([shape('a'), shape('b')], ['a', 'b'])
+    expect(
+      screen.getByRole('button', { name: 'Group' }).getAttribute('title'),
+    ).toContain('Ctrl+G')
+    expect(
+      screen.getByRole('button', { name: 'Ungroup' }).getAttribute('title'),
+    ).toContain('Ctrl+Shift+G')
+  })
+})
+
 describe('the corner radius row', () => {
   it('rounds a rectangle', () => {
     const { onStyleChange } = setup([shape('a')], ['a'])
@@ -783,6 +909,8 @@ describe('the popover and the board keyboard', () => {
           onStyleChange={vi.fn()}
           onArrange={vi.fn()}
           onDuplicate={vi.fn()}
+          onGroup={vi.fn()}
+          onUngroup={vi.fn()}
         />
       </div>,
     )

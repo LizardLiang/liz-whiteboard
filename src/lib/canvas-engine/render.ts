@@ -22,6 +22,7 @@
 import { worldToScreen } from './camera'
 import {
   DEFAULT_ELEMENT_STYLE,
+  bounds,
   effectiveCornerRadius,
   isCanvasShapeKind,
 } from './scene'
@@ -767,14 +768,41 @@ function drawShape(
 /**
  * Draw one element in WORLD space. The caller has already applied the camera
  * transform, so this function uses raw world coordinates throughout.
+ *
+ * `emphasized` (canvas-element-grouping tactical plan, Wave 6) is true when
+ * `element` is hovered OR selected — the ONLY thing a group's frame border
+ * (below) currently reads it for. Every other kind ignores it; it is not a
+ * general "highlight this element" switch.
  */
 function drawElement(
   ctx: CanvasRenderingContext2D,
   element: CanvasElement,
   theme: CanvasTheme,
+  emphasized = false,
 ): TextLayout | null {
   if (isCanvasShapeKind(element.kind)) {
     drawShape(ctx, element)
+  } else if (element.kind === 'group') {
+    // A group has no fill/stroke style of its own (FR-031) — its frame is
+    // drawn as fixed UI chrome, not as data. Persistent (FR-032: this must
+    // render even for a group with zero members, so the branch keys on
+    // `element.kind` alone, never on `childIds.length`) and low-emphasis at
+    // rest so it reads as structure rather than as another shape; full
+    // emphasis (the same `chrome.accent` selection already uses) when
+    // hovered or selected, so the frame confirms what is about to be
+    // grabbed before the user commits to a click.
+    //
+    // Drawn here in WORLD space (raw `element.x/y/width/height`, via
+    // `bounds`), NOT via `worldRectToScreen` — unlike `drawSelectionOverlay`
+    // (screen space, after the camera transform is popped), `drawElement`
+    // runs INSIDE `drawScene`'s `ctx.save()`/`scale`/`translate` block, the
+    // same place every shape's own border is drawn, so the frame scales
+    // with zoom exactly the way a shape's stroke already does.
+    const chrome = CHROME[theme]
+    const frame = bounds(element)
+    ctx.lineWidth = 1
+    ctx.strokeStyle = emphasized ? chrome.accent : chrome.marqueeFill
+    ctx.strokeRect(frame.x, frame.y, frame.width, frame.height)
   }
 
   const text = element.text ?? ''
@@ -1469,11 +1497,15 @@ export function drawScene(
   }
   for (const element of scene.elements) {
     if (element.connector) continue
-    const layout = drawElement(ctx, element, theme)
+    const emphasized =
+      selection.ids.has(element.id) || element.id === selection.hoveredId
+    const layout = drawElement(ctx, element, theme, emphasized)
     if (editing && element.id === editing.elementId) editingLayout = layout
   }
   if (selection.draft) {
-    drawElement(ctx, selection.draft, theme)
+    // Never emphasized: a draft is never in `selection.ids` (it is not yet
+    // in the scene at all) and is not a hover target.
+    drawElement(ctx, selection.draft, theme, false)
   }
 
   if (editing?.caretVisible) {

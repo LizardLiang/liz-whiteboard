@@ -678,6 +678,8 @@ export function CanvasBoard({
         onStyleChange={handleStyleChange}
         onArrange={handleArrange}
         onDuplicate={input.duplicateSelection}
+        onGroup={input.groupSelection}
+        onUngroup={input.ungroupSelection}
       />
 
       <TextInputProxy

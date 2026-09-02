@@ -65,6 +65,7 @@ import {
   addElement,
   attachedEndpoint,
   bounds,
+  boundsOfMany,
   connectorsTouching,
   endpointElementId,
   freeEndpoint,
@@ -94,6 +95,7 @@ import {
 } from '@/lib/canvas-engine/render'
 import { quickCreatePlacement } from '@/lib/canvas-engine/quick-create'
 import { cloneTargets, planClone } from '@/lib/canvas-engine/clone'
+import { Z_MIN } from '@/lib/canvas-engine/z-order'
 import {
   ANCHOR_ATTACH,
   anchorPoint,
@@ -181,6 +183,34 @@ const MIN_ELEMENT_SIZE = 8
 
 /** Caret blink half-period, in milliseconds. */
 const CARET_BLINK_MS = 530
+
+/**
+ * `lastPointerDownRef`'s own repeat-click window and position tolerance
+ * (canvas-element-grouping tactical plan, Wave 2/5 — the `PointerEvent.
+ * detail` replacement; see that ref's own doc comment for why this exists).
+ *
+ * 1500ms, NOT the ~500ms a browser's own native double-click timeout uses —
+ * deliberately wider, confirmed necessary by a Wave 8 e2e probe: a native
+ * `dblclick` DOM event fires ONLY ONCE per rapid click streak (Chromium
+ * does not re-fire it for a 3rd/4th click continuing the same streak), so
+ * FR-005's "a FURTHER double-click descends one more level" can only ever
+ * be reached via a SEPARATE double-click GESTURE — two clicks close
+ * together, but with a genuine, if brief, human pause BEFORE them (long
+ * enough to exceed the browser's own streak window and let it fire a fresh
+ * `dblclick`) — not by clicking rapidly four times without pause. This
+ * window has to outlast that pause, or the first click of the SECOND
+ * double-click would (correctly, by FR-004's own unconditional rule for a
+ * click that turns out to be truly isolated) reset `enteredPath` before its
+ * own `onDoubleClick` ever got to use it, undoing the first double-click's
+ * progress. 1500ms comfortably covers a natural glance-and-click-again
+ * pause without staying open long enough to defeat FR-004's OWN "click
+ * elsewhere or wait me out" escape hatch in ordinary use. 6 world units is
+ * forgiving enough for a real hand holding still at default zoom while
+ * still well inside "the same spot" for any reasonably-sized element this
+ * board draws.
+ */
+const REPEAT_CLICK_WINDOW_MS = 1500
+const REPEAT_CLICK_DISTANCE = 6
 
 /**
  * Wheel-delta normalisation. `WheelEvent.deltaMode` reports pixels (0), lines
@@ -327,6 +357,24 @@ export interface CanvasEditCallbacks {
     elements: Array<CanvasElement>,
     gesture?: 'delete' | 'cut',
   ) => void
+  /**
+   * One group-creation gesture (canvas-element-grouping tactical plan, Wave
+   * 6/7): the new group element, already carrying its `childIds`. No
+   * members are written — membership lives on the group side only (Wave 1)
+   * — so this is closer to `onCreate` than to any multi-element recorder;
+   * the consumer's `recordGroup` (use-canvas-undo.ts, Wave 7) persists it
+   * with a single `element:create`.
+   */
+  onGroup?: (groupElement: CanvasElement) => void
+  /**
+   * One ungroup gesture: the group element being dissolved, exactly as it
+   * stood before removal — everything the consumer's `recordUngroup`
+   * (Wave 7) needs to persist a single `element:delete` and to restore it
+   * on undo. Members need no write either: dissolving a group only deletes
+   * the group row, and the members were never touched by grouping, so they
+   * are already independent the instant it is gone.
+   */
+  onUngroup?: (groupElement: CanvasElement) => void
 }
 
 export interface EditingState {
@@ -885,6 +933,39 @@ export function useCanvasInput({
   const [enteredPath, setEnteredPathState] = useState<Array<string>>([])
   const enteredPathRef = useRef<Array<string>>([])
 
+  /**
+   * The last SELECT-TOOL pointerdown's timestamp and WORLD position — this
+   * hook's own manually-tracked replacement for `PointerEvent.detail`
+   * (canvas-element-grouping tactical plan, Wave 2/5; bug found and fixed
+   * during Wave 8 e2e testing).
+   *
+   * `event.detail` was the ORIGINAL mechanism `onPointerDown` used to tell
+   * an isolated click from click 2+ of a rapid sequence — correct for a
+   * `MouseEvent` (`click`/`dblclick`), but `onPointerDown` receives a
+   * `PointerEvent`, and every real browser tested (confirmed empirically via
+   * a throwaway Playwright probe, not assumed) reports `PointerEvent.detail`
+   * as a constant `0` on `pointerdown`, REGARDLESS of how many times the
+   * user has clicked at that point. `event.detail <= 1` was therefore always
+   * true for every real pointerdown, silently making the "click 2+" branch
+   * (member-specific drag, Wave 5) unreachable, and resetting `enteredPath`
+   * on EVERY click — including the second press of a double-click — which
+   * made a FURTHER double-click (FR-005's "descends one more level")
+   * unreachable too: by the time `onDoubleClick` ran, this same handler's
+   * own second pointerdown had already zeroed `enteredPath` back to `[]`.
+   * The unit-test suite never caught this because its own `pointerEvent()`
+   * fixture sets `detail` directly on a plain object, which is not what a
+   * real `PointerEvent` ever contains.
+   *
+   * Re-implemented at the app level instead: a pointerdown counts as a
+   * "repeat" (the `event.detail > 1` equivalent) when it lands within
+   * `REPEAT_CLICK_WINDOW_MS` and `REPEAT_CLICK_DISTANCE` world units of the
+   * PRECEDING select-tool pointerdown — the same two signals (time,
+   * position) a browser's own native click-counter uses internally.
+   */
+  const lastPointerDownRef = useRef<{ time: number; world: Point } | null>(
+    null,
+  )
+
   const setEnteredPath = useCallback((next: Array<string>) => {
     enteredPathRef.current = next
     setEnteredPathState(next)
@@ -1398,29 +1479,34 @@ export function useCanvasInput({
       // outermost group (FR-004's wording is unconditional) and exits
       // whatever depth was previously entered.
       //
-      // Gated on `event.detail <= 1` — the click COUNT the browser tracks
-      // for a rapid sequence at (about) the same point, not this app's own
-      // state. `event.detail` is 1 for an isolated click and keeps counting
-      // up (2, 3, ...) for as long as the user keeps clicking fast enough to
-      // stay inside the browser's own double/triple-click window; it resets
-      // to 1 once that window lapses. The FIRST click of every sequence
-      // still unconditionally resolves to the outermost group and clears
-      // `enteredPath`, which is what satisfies FR-004 for an isolated single
-      // click. Skipping the reset on click 2+ is what makes FR-005's
-      // "further double-click descends one more level" reachable at all:
-      // `onDoubleClick` fires AFTER this same handler already ran for its
-      // own second click, so if every click reset `enteredPath`
-      // unconditionally, `onDoubleClick` would only ever see it freshly
-      // zeroed and could never build on a previous descent — a rapid second
-      // double-click at the same point would keep landing on the same first
-      // level forever. This is the plan's own documented "which events
-      // reset enteredPath" assumption (Wave 2), resolved this way and
-      // recorded in implementation-notes.md.
-      const target =
-        event.detail <= 1
-          ? (outermostGroup(latest.current.scene, hit.id) ?? hit)
-          : hit
-      if (event.detail <= 1) setEnteredPath([])
+      // Gated on `isRepeatClick` — see `lastPointerDownRef`'s own doc
+      // comment for why this is a manually-tracked time+position check
+      // rather than `event.detail` (a real `PointerEvent.detail` does not
+      // carry click-count semantics; a prior version of this code read it
+      // directly and the bug was invisible to every unit test, only
+      // surfacing under real browser input in Wave 8 e2e testing).
+      // `isRepeatClick` false is the FR-004 "isolated click" case: resolves
+      // to the outermost group and clears `enteredPath`. `isRepeatClick`
+      // true is click 2+ of a rapid sequence: resolves to the RAW hit and
+      // leaves `enteredPath` untouched, which is what lets `onDoubleClick`
+      // (firing after this same handler already ran for its own second
+      // press) see a meaningful, still-entered `enteredPath` and build on a
+      // PREVIOUS descent — the mechanism FR-005's "a further double-click
+      // descends one more level" needs to be reachable at all.
+      const lastPointerDown = lastPointerDownRef.current
+      const isRepeatClick =
+        lastPointerDown !== null &&
+        Date.now() - lastPointerDown.time <= REPEAT_CLICK_WINDOW_MS &&
+        Math.hypot(
+          world.x - lastPointerDown.world.x,
+          world.y - lastPointerDown.world.y,
+        ) <= REPEAT_CLICK_DISTANCE
+      lastPointerDownRef.current = { time: Date.now(), world }
+
+      const target = isRepeatClick
+        ? hit
+        : (outermostGroup(latest.current.scene, hit.id) ?? hit)
+      if (!isRepeatClick) setEnteredPath([])
 
       let nextSelection: Set<string>
       if (event.shiftKey) {
@@ -2168,6 +2254,93 @@ export function useCanvasInput({
     )
   }, [cloneInto])
 
+  // ── group / ungroup ──────────────────────────────────────────────────────
+
+  /**
+   * Bind the CURRENT selection into a new group (canvas-element-grouping
+   * tactical plan, Wave 6). No-op below 2 selected elements (FR-030/A1) —
+   * `SelectionToolbar`'s own Group button is already disabled then, and
+   * Ctrl+G must be an equally honest no-op, not a silent single-element
+   * group.
+   *
+   * The frame is the tightest bounding box of the selection at this moment
+   * (A8, `boundsOfMany`) — explicit and stored, never re-derived from
+   * members afterwards (FR-003). `childIds` is the selection AS GIVEN: a
+   * selection that already contains one or more groups nests them with no
+   * extra work (FR-009), since a group is just an element whose id can
+   * appear in another group's `childIds`.
+   *
+   * The new group's OWN `zIndex` is placed ONE BELOW the lowest member's,
+   * not on top via `nextZIndex` the way every other new element on this
+   * board is created. A group whose frame sits ABOVE its own members would
+   * shadow them in `hitTest`'s reverse-z scan (`elementContainsPoint` for a
+   * `'group'` kind is a plain rect test over the WHOLE frame, not just its
+   * border) — clicking a member would hit the group's own frame first and
+   * never reach the member underneath, breaking Wave 2's click resolution
+   * for every member the instant the group existed. Clamped to `Z_MIN` so a
+   * board already at the schema's floor still gets a group that write-path
+   * validation accepts rather than a value that quietly fails to save.
+   */
+  const groupSelection = useCallback(() => {
+    if (latest.current.readOnly) return
+    const selected = [...latest.current.selectedIds]
+    if (selected.length < 2) return
+    const currentScene = latest.current.scene
+    const members = selected
+      .map((id) => currentScene.byId.get(id))
+      .filter((element): element is CanvasElement => Boolean(element))
+    const frame = boundsOfMany(members)
+    if (!frame) return
+    const zIndex = Math.max(
+      Z_MIN,
+      Math.min(...members.map((element) => element.zIndex)) - 1,
+    )
+    const group: CanvasElement = {
+      id: uuid(),
+      kind: 'group',
+      x: frame.x,
+      y: frame.y,
+      width: frame.width,
+      height: frame.height,
+      rotation: 0,
+      zIndex,
+      text: null,
+      style: { ...DEFAULT_ELEMENT_STYLE },
+      group: { childIds: selected },
+    }
+    setScene((prev) => addElement(prev, group))
+    setSelectedIds(new Set([group.id]))
+    // Leaving whatever depth was entered, the same rule every other
+    // selection-replacing gesture applies (Escape, delete, click-empty).
+    setEnteredPath([])
+    callbacks?.onGroup?.(group)
+  }, [callbacks, setEnteredPath, setScene])
+
+  /**
+   * Dissolve the CURRENT selection's single group, one level only (FR-008).
+   * No-op unless the selection is EXACTLY one group element — mirrors
+   * `groupSelection`'s own honesty rule for Ctrl+Shift+G.
+   *
+   * The group's direct `childIds` become the new selection — not its whole
+   * subtree, and not re-resolved through `withGroupMembers`: a member that
+   * is itself a group stays a group, un-entered, exactly as FR-008
+   * requires. Members receive no write at all; membership lived only on
+   * the dissolved group's own row (Wave 1), so removing that row is the
+   * entire operation.
+   */
+  const ungroupSelection = useCallback(() => {
+    if (latest.current.readOnly) return
+    const selected = [...latest.current.selectedIds]
+    if (selected.length !== 1) return
+    const currentScene = latest.current.scene
+    const group = currentScene.byId.get(selected[0])
+    if (!group?.group) return
+    setScene((prev) => removeElements(prev, [group.id]))
+    setSelectedIds(new Set(group.group.childIds))
+    setEnteredPath([])
+    callbacks?.onUngroup?.(group)
+  }, [callbacks, setEnteredPath, setScene])
+
   /**
    * The four clipboard shortcuts, by key.
    *
@@ -2234,6 +2407,19 @@ export function useCanvasInput({
       // issue a paste per key-repeat tick, each one a fresh round-trip of
       // creates, and the board would fill with copies nobody asked for.
       if ((event.ctrlKey || event.metaKey) && !event.altKey && !event.repeat) {
+        // Ctrl+G / Ctrl+Shift+G (FR-020), checked BEFORE the
+        // `CLIPBOARD_ACTIONS` table below: that table is keyed by
+        // `event.key.toLowerCase()`, which collapses `g` and `G` to the
+        // same key and so cannot tell Ctrl+G from Ctrl+Shift+G apart —
+        // `event.shiftKey` is what makes the distinction, and this branch
+        // reads it directly rather than trying to add a second `g` entry
+        // the table has no way to disambiguate.
+        if (event.key.toLowerCase() === 'g') {
+          event.preventDefault()
+          if (event.shiftKey) ungroupSelection()
+          else groupSelection()
+          return
+        }
         const action = CLIPBOARD_ACTIONS[event.key.toLowerCase()]
         if (action) {
           event.preventDefault()
@@ -2297,9 +2483,11 @@ export function useCanvasInput({
       CLIPBOARD_ACTIONS,
       beginEditing,
       deleteSelection,
+      groupSelection,
       quickCreateInDirection,
       setEnteredPath,
       setTool,
+      ungroupSelection,
     ],
   )
 
@@ -2612,6 +2800,11 @@ export function useCanvasInput({
     // be a second chance to get the offset, the selection hand-off or the
     // undo label wrong.
     duplicateSelection,
+    // Exposed for the same reason: `SelectionToolbar`'s Group/Ungroup
+    // buttons reach the SAME gestures Ctrl+G/Ctrl+Shift+G do (canvas-
+    // element-grouping tactical plan, Wave 6).
+    groupSelection,
+    ungroupSelection,
     editing,
     marquee,
     draft,
