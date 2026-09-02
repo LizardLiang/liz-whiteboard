@@ -1280,6 +1280,110 @@ describe('grouping: delete cascade and duplicate (Wave 4)', () => {
   })
 })
 
+describe('grouping: referential integrity on individual member delete (FR-018)', () => {
+  // A single-level group `mid` with two members. This block exercises the
+  // OTHER delete case Wave 4's cascade describe block above does not: a
+  // member deleted on its OWN, with its owning group left intact — which
+  // `withGroupMembers` never expands and so never sweeps automatically.
+  const A_ID = '11111111-1111-4111-8111-111111111111'
+  const B_ID = '44444444-4444-4444-8444-444444444444'
+  const MID_ID = '22222222-2222-4222-8222-222222222222'
+
+  function makeMemberScene(): Array<CanvasElement> {
+    const a: CanvasElement = { ...makeText(), id: A_ID, kind: 'rectangle' }
+    const b: CanvasElement = { ...makeText(), id: B_ID, kind: 'rectangle' }
+    const mid: CanvasElement = {
+      ...makeText(),
+      id: MID_ID,
+      kind: 'group',
+      text: null,
+      group: { childIds: [A_ID, B_ID] },
+    }
+    return [a, b, mid]
+  }
+
+  it("deleting one member of a multi-member group drops it from the group's childIds in the SAME entry, and the group survives", () => {
+    const h = setup(makeMemberScene())
+    act(() => {
+      h.api.setSelectedIds(new Set([A_ID]))
+    })
+    h.sync()
+
+    act(() => {
+      h.api.boardHandlers.onKeyDown(keyEvent('Delete'))
+    })
+
+    // Only `a` itself was deleted — no cascade, since `a` is not a group.
+    expect(h.callbacks.onDelete).toHaveBeenCalledTimes(1)
+    const [deleted] = h.callbacks.onDelete.mock.calls[0]
+    expect((deleted as Array<CanvasElement>).map((e) => e.id)).toEqual([
+      A_ID,
+    ])
+
+    // The group survives, and its childIds no longer name the deleted id.
+    const group = h.scene.byId.get(MID_ID)
+    expect(group).toBeDefined()
+    expect(group?.group?.childIds).toEqual([B_ID])
+  })
+
+  it('folds the group cleanup into the SAME write/undo entry as the delete (third onDelete argument)', () => {
+    const h = setup(makeMemberScene())
+    act(() => {
+      h.api.setSelectedIds(new Set([A_ID]))
+    })
+    h.sync()
+
+    act(() => {
+      h.api.boardHandlers.onKeyDown(keyEvent('Delete'))
+    })
+
+    expect(h.callbacks.onDelete).toHaveBeenCalledTimes(1)
+    const [, , groupUpdates] = h.callbacks.onDelete.mock.calls[0]
+    const updates = groupUpdates as Array<{
+      before: CanvasElement
+      after: CanvasElement
+    }>
+    expect(updates).toHaveLength(1)
+    expect(updates[0].before.id).toBe(MID_ID)
+    expect(updates[0].before.group).toEqual({ childIds: [A_ID, B_ID] })
+    expect(updates[0].after.group).toEqual({ childIds: [B_ID] })
+  })
+
+  it('deleting every member leaves the group intact with an empty childIds, not deleted itself', () => {
+    const h = setup(makeMemberScene())
+    act(() => {
+      h.api.setSelectedIds(new Set([A_ID, B_ID]))
+    })
+    h.sync()
+
+    act(() => {
+      h.api.boardHandlers.onKeyDown(keyEvent('Delete'))
+    })
+
+    const group = h.scene.byId.get(MID_ID)
+    expect(group).toBeDefined()
+    expect(group?.group?.childIds).toEqual([])
+  })
+
+  it('deleting the whole group (cascade) needs no cleanup update — the owner is gone too', () => {
+    // The Wave-4-already-correct path: selecting the GROUP expands through
+    // `withGroupMembers`, so the group itself is among the doomed ids and
+    // must not also appear in the third `onDelete` argument.
+    const h = setup(makeMemberScene())
+    act(() => {
+      h.api.setSelectedIds(new Set([MID_ID]))
+    })
+    h.sync()
+
+    act(() => {
+      h.api.boardHandlers.onKeyDown(keyEvent('Delete'))
+    })
+
+    const [, , groupUpdates] = h.callbacks.onDelete.mock.calls[0]
+    expect(groupUpdates).toEqual([])
+  })
+})
+
 describe('grouping: membership drag-in/out, commit-on-drop (Wave 5)', () => {
   // `g1` is an EMPTY group frame covering (0,0)-(300,300). `a` starts as a
   // loose (non-member) shape well outside it; `b` starts as an existing

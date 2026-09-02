@@ -395,12 +395,26 @@ export function useCanvasUndo({
       elements: Array<CanvasElement>,
       // Defaults to 'delete': every call site but the cut gesture omits it.
       gesture: 'delete' | 'cut' = 'delete',
+      // A surviving group's `childIds` patch, folded into this SAME entry
+      // (FR-018 write-time scenario, canvas-element-grouping PRD-alignment
+      // finding 1) — `deleteSelection`'s own `resolveGroupCleanupUpdates`.
+      // Defaults to `[]`: every call site but `deleteSelection` omits it.
+      groupUpdates: Array<{ before: CanvasElement; after: CanvasElement }> = [],
     ) => {
       if (readOnly) return
       const ids = elements.map((element) => element.id)
-      void deleteElements(ids).then((results) => {
+      // Issued CONCURRENTLY, not sequentially: the two id sets are disjoint
+      // by construction (`resolveGroupCleanupUpdates` never patches a group
+      // that is itself among the doomed ids), so neither write depends on
+      // the other's ack.
+      void Promise.all([
+        deleteElements(ids),
+        groupUpdates.length > 0
+          ? updateElements(groupUpdates.map((update) => update.after))
+          : Promise.resolve([] as Array<CanvasMutationResult>),
+      ]).then(([deleteResults, updateResults]) => {
         const resultsById = new Map(
-          results.map((result) => [result.id, result]),
+          deleteResults.map((result) => [result.id, result]),
         )
         const operations: Array<CanvasUndoOperation> = []
         for (const element of elements) {
@@ -418,14 +432,33 @@ export function useCanvasUndo({
           }
           operations.push(op)
         }
+        // `count` on the label stays the DELETE count only — see
+        // messages.ts's "deleting N elements" wording, which would misname
+        // the gesture if a group cleanup (a childIds UPDATE, nothing
+        // deleted) inflated it.
+        const deleteCount = operations.length
+        const updateResultsById = new Map(
+          updateResults.map((result) => [result.id, result]),
+        )
+        for (const update of groupUpdates) {
+          const result = updateResultsById.get(update.after.id)
+          if (!result?.ok || result.revision === undefined) continue
+          operations.push({
+            kind: 'update',
+            elementId: update.after.id,
+            before: toSnapshot(boardId, update.before),
+            afterRevision: result.revision,
+            after: toSnapshot(boardId, update.after),
+          })
+        }
         if (operations.length === 0) return
         push({
-          label: { gesture, count: operations.length },
+          label: { gesture, count: deleteCount },
           operations,
         })
       })
     },
-    [boardId, deleteElements, push, readOnly],
+    [boardId, deleteElements, push, readOnly, updateElements],
   )
 
   /**

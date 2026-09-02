@@ -20,6 +20,7 @@ import {
   remapConnectorEndpoints,
   removeElement,
   removeElements,
+  repairGroupMembership,
   sceneFrom,
   updateElement,
   withGroupMembers,
@@ -739,6 +740,77 @@ describe('withGroupMembers', () => {
       expect.arrayContaining(['g1', 'a']),
     )
     expect(withGroupMembers(scene, ['g1', 'a'])).toHaveLength(2)
+  })
+})
+
+// ─── repairGroupMembership: FR-018 load-time referential-integrity repair ──
+//
+// A hand-edited or partially-migrated board can hand a load a group whose
+// `childIds` names a row that simply is not in that load (canvas-element-
+// grouping PRD-alignment finding 1). This is called ONLY at a genuine
+// whole-board load (`toEngineScene`, canvas-element-adapter.ts) — see its
+// own header for why it must NOT be wired into `sceneFrom` itself, which is
+// also used to rebuild the scene from a merely PARTIAL, still-in-flight
+// element list mid-gesture.
+
+describe('repairGroupMembership (FR-018 load-time)', () => {
+  it("drops a group's childId that names no element in the same list", () => {
+    const repaired = repairGroupMembership([el('a'), group('g1', ['a', 'ghost'])])
+    const g1 = repaired.find((e) => e.id === 'g1')
+    expect(g1?.group).toEqual({ childIds: ['a'] })
+  })
+
+  it('does not fail when every childId is dangling', () => {
+    const repaired = repairGroupMembership([group('g1', ['ghost1', 'ghost2'])])
+    expect(repaired).toHaveLength(1)
+    expect(repaired[0].group).toEqual({ childIds: [] })
+  })
+
+  it('leaves an intact group at the SAME object identity — no repair, no new object', () => {
+    const elements = [el('a'), group('g1', ['a'])]
+    const repaired = repairGroupMembership(elements)
+    expect(repaired[1]).toBe(elements[1])
+    // Nothing needed repair at all: the SAME array comes back, not a copy.
+    expect(repaired).toBe(elements)
+  })
+
+  it('leaves a non-group element untouched', () => {
+    const repaired = repairGroupMembership([el('a')])
+    expect(repaired[0].group).toBeUndefined()
+  })
+})
+
+describe('sceneFrom does NOT repair group membership — it rebuilds from a PARTIAL list too', () => {
+  // The regression this guards: an earlier version of `sceneFrom` called
+  // `repairGroupMembership` on every rebuild, which is exactly what EVERY
+  // mutator in this module (`addElement`/`updateElement`/`removeElement(s)`)
+  // funnels through. Found via an e2e regression on undoing a whole-group
+  // cascade delete: undo recreates the group and its members as INDEPENDENT,
+  // CONCURRENT `addElement` calls, and if the group's own call landed before
+  // a member's, the old `sceneFrom` saw a childId that did not YET resolve
+  // and PERMANENTLY stripped it — there was nothing left to add it back once
+  // the member's own create landed moments later. `sceneFrom` must treat
+  // "not yet in this partial list" and "genuinely gone" as indistinguishable
+  // and do nothing about either; only a caller that knows the list is
+  // COMPLETE (`toEngineScene`) may call `repairGroupMembership` itself.
+  it('keeps a dangling childId as-is — a caller mid-gesture may still be assembling the list', () => {
+    const scene = sceneFrom([el('a'), group('g1', ['a', 'not-here-yet'])])
+    expect(scene.byId.get('g1')?.group).toEqual({
+      childIds: ['a', 'not-here-yet'],
+    })
+  })
+
+  it('addElement does not retroactively repair a group when its member finally lands', () => {
+    // Mirrors the real undo-of-cascade-delete sequence: the group's own
+    // `addElement` call lands with a childId that does not resolve YET.
+    let scene = sceneFrom([group('g1', ['a'])])
+    expect(scene.byId.get('g1')?.group).toEqual({ childIds: ['a'] })
+    // `a`'s own create lands moments later.
+    scene = addElement(scene, el('a'))
+    // The group still correctly names `a` — nothing was ever stripped for
+    // `sceneFrom` to have failed to add back.
+    expect(scene.byId.get('g1')?.group).toEqual({ childIds: ['a'] })
+    expect(scene.byId.get('a')).toBeDefined()
   })
 })
 

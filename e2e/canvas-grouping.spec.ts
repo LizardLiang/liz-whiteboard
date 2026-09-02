@@ -571,6 +571,55 @@ test.describe('delete cascade', () => {
   })
 })
 
+test.describe('referential integrity on individual member delete (FR-018)', () => {
+  test("deleting a member individually keeps the group sound, and it survives a reload", async ({
+    page,
+  }) => {
+    await openBoard(page)
+    const memberCentre = await worldToPage(page, { x: 625, y: 350 }) // canvasGroupRectB's centre
+
+    // Same double-click-then-release technique the "dragging a member out"
+    // test above uses to reach an individual member: a PLAIN single click on
+    // a member resolves to the whole group (FR-004), so isolating rectB
+    // needs the SECOND press of a rapid pair (`event.detail > 1`), released
+    // without moving — a plain click on the member, not a drag.
+    await page.mouse.move(memberCentre.x, memberCentre.y)
+    await page.mouse.down()
+    await page.mouse.up() // click 1 (detail 1): selects the whole group
+    await page.mouse.down() // click 2 (detail 2): targets rectB directly
+    await page.mouse.up()
+    await expect
+      .poll(async () => (await engine(page)).selectedIds)
+      .toEqual([IDS.canvasGroupRectB])
+
+    await page.keyboard.press('Delete')
+    await expect
+      .poll(async () => byId(await engine(page), IDS.canvasGroupRectB))
+      .toBeUndefined()
+
+    // The group SURVIVES (Wave 4's whole-group cascade never fired — only
+    // one member, not the group, was selected) and its own `childIds` no
+    // longer names the deleted row.
+    const group = byId(await engine(page), IDS.canvasGroup)!
+    expect(group.group!.childIds).not.toContain(IDS.canvasGroupRectB)
+    expect(group.group!.childIds).toContain(IDS.canvasGroupRectA)
+    await settle(page)
+
+    // The cleanup was WRITTEN, not just rendered locally: a reload reads the
+    // group's `childIds` back from storage, so if the patch had not actually
+    // persisted the deleted id would still be there.
+    await page.reload()
+    await page.waitForSelector('canvas')
+    await page.waitForFunction(() => window.__canvasEngine !== undefined, null, {
+      timeout: 15_000,
+    })
+    const reloaded = byId(await engine(page), IDS.canvasGroup)!
+    expect(reloaded.group!.childIds).not.toContain(IDS.canvasGroupRectB)
+    expect(reloaded.group!.childIds).toContain(IDS.canvasGroupRectA)
+    expect(byId(await engine(page), IDS.canvasGroupRectB)).toBeUndefined()
+  })
+})
+
 test.describe('duplicating a group', () => {
   test('duplicate deep-clones the group with fresh, independent ids (FR-014)', async ({
     page,

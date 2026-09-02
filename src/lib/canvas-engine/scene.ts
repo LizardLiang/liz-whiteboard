@@ -419,6 +419,58 @@ function ordered(elements: Array<CanvasElement>): Array<CanvasElement> {
   )
 }
 
+/**
+ * Drop every group `childId` that names no element in THIS SAME list
+ * (FR-018's load-time repair scenario, canvas-element-grouping PRD-alignment
+ * finding 1). `toEngineGroup`/`toEngineElement` (canvas-element-adapter.ts)
+ * convert ONE row at a time and have no view of the rest of the board, so
+ * they cannot cross-check a `childId` against what else exists — this
+ * function is for a caller that DOES see every element at once.
+ *
+ * Mirrors `toEngineConnector`'s own precedent: an unresolvable reference is
+ * silently dropped, never a hard load failure — a hand-edited or
+ * partially-migrated board still loads, just with the dangling id gone.
+ *
+ * Returns the SAME array when nothing needed repair, and leaves every
+ * unaffected element's own object identity untouched — only a group that
+ * actually lost a childId gets a new object, matching `updateElement`'s
+ * "same reference means nothing changed" contract elsewhere in this module.
+ *
+ * CALLED ONLY AT A GENUINE WHOLE-BOARD LOAD (`toEngineScene`,
+ * canvas-element-adapter.ts) — deliberately NOT wired into `sceneFrom`
+ * itself, even though `sceneFrom` is the one function every scene-rebuilding
+ * mutator in this module already funnels through. `sceneFrom` also rebuilds
+ * the scene from a PARTIAL, still-in-flight element list mid-gesture — e.g.
+ * undoing a whole-group cascade delete recreates the group and its members
+ * as INDEPENDENT, CONCURRENT creates, and if the group's own `addElement`
+ * lands before a member's, `sceneFrom` would see a childId that does not
+ * (yet) resolve and permanently strip it, with nothing left to add it back
+ * once the member's own create lands moments later (found via an e2e
+ * regression on exactly this cascade-undo path; see scene.test.ts's own
+ * "does not run against a partial, in-flight element list" case). A load's
+ * record list, by contrast, is already the server's fully-settled state —
+ * there is no "moments later" for anything still missing to arrive.
+ */
+export function repairGroupMembership(
+  elements: Array<CanvasElement>,
+): Array<CanvasElement> {
+  const ids = new Set(elements.map((element) => element.id))
+  const repaired = elements.map((element) => {
+    if (!element.group) return element
+    const childIds = element.group.childIds.filter((childId) =>
+      ids.has(childId),
+    )
+    if (childIds.length === element.group.childIds.length) return element
+    return { ...element, group: { childIds } }
+  })
+  // Compared by identity rather than tracked with a flag set inside the
+  // callback (mirrors `remapConnectorEndpoints`'s own idiom below): the
+  // callback above returns the SAME object for every element it did not
+  // repair, so a differing reference is exactly "this one changed".
+  const changed = repaired.some((element, i) => element !== elements[i])
+  return changed ? repaired : elements
+}
+
 /** Build a scene from unordered elements — the shape a database load produces. */
 export function sceneFrom(elements: Array<CanvasElement>): Scene {
   return index(ordered(elements))

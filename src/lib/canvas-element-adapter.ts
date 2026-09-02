@@ -11,7 +11,7 @@
 // no imports at all, which is what lets it be unit-tested without a browser or
 // a database. Putting a data-layer import inside it would quietly end that.
 
-import { sceneFrom } from './canvas-engine/scene'
+import { repairGroupMembership, sceneFrom } from './canvas-engine/scene'
 import { ANCHOR_ATTACH } from './canvas-engine/connector-geometry'
 import type {
   CanvasConnector,
@@ -163,6 +163,13 @@ function toEngineEndpoint(
  * missing `childIds` on a `kind === 'group'` row reads as an empty group
  * rather than throwing — the same "draws nothing, does not take the load
  * down" posture `toEngineConnector` takes for a malformed connector.
+ *
+ * Copies `childIds` VERBATIM, including any id that names no other row —
+ * this function converts one row at a time and has no view of the rest of
+ * the board, so it cannot know which ids exist elsewhere. That cross-check
+ * (FR-018's load-time repair) happens one level up, in `toEngineScene`
+ * below, via `canvas-engine/scene.ts`'s `repairGroupMembership`, which sees
+ * every element in the load at once.
  */
 function toEngineGroup(
   props: CanvasElementProps | null | undefined,
@@ -272,9 +279,19 @@ export function toEngineElement(record: CanvasElementRecord): CanvasElement {
  * `sceneFrom` re-sorts into z-order rather than trusting the query's ORDER BY.
  * That is not redundant: the same scene is also built from optimistic local
  * state that never went near SQL.
+ *
+ * `repairGroupMembership` runs HERE, not inside `sceneFrom` itself (FR-018's
+ * load-time repair scenario, canvas-element-grouping PRD-alignment finding
+ * 1): `records` is the server's fully-settled state for the WHOLE board in
+ * one shot, exactly the "sees every element at once, and it is not going to
+ * change out from under it" precondition that repair needs to be safe. See
+ * `repairGroupMembership`'s own header (canvas-engine/scene.ts) for why
+ * applying it inside `sceneFrom` itself is unsafe — that function is also
+ * used to rebuild the scene from a merely PARTIAL, still-in-flight element
+ * list mid-gesture.
  */
 export function toEngineScene(records: Array<CanvasElementRecord>): Scene {
-  return sceneFrom(records.map(toEngineElement))
+  return sceneFrom(repairGroupMembership(records.map(toEngineElement)))
 }
 
 /** Engine element -> create payload, for persisting something drawn locally. */

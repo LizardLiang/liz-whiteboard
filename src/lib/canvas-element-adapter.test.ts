@@ -488,4 +488,20 @@ describe('group conversions', () => {
     expect(() => toCreateInput('board-2', broken)).toThrow(/no childIds/)
     expect(() => toElementSnapshot('board-1', broken)).toThrow(/no childIds/)
   })
+
+  it("toEngineScene drops a stored group's childId with no matching row (FR-018 load-time repair)", () => {
+    // `groupRecord()`'s own `GROUP_PROPS.childIds` names TWO ids — only the
+    // first has a matching row in this board's load; the second is exactly
+    // the "stale reference" a partial migration or a hand-edited row would
+    // leave behind. `toEngineElement` alone (the test above) has no view of
+    // the rest of the board and cannot catch this — `toEngineScene` sees
+    // every record at once and must self-repair rather than fail the load.
+    const memberRecord = record(GROUP_PROPS.childIds[0])
+    const scene = toEngineScene([memberRecord, groupRecord()])
+    expect(scene.byId.get('grp1')?.group).toEqual({
+      childIds: [GROUP_PROPS.childIds[0]],
+    })
+    // The load itself did not fail — every other row still resolved.
+    expect(scene.byId.get(GROUP_PROPS.childIds[0])).toBeDefined()
+  })
 })

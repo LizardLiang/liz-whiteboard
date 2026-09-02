@@ -285,6 +285,59 @@ describe('recording — one entry per gesture', () => {
   })
 })
 
+describe('recordDelete: group cleanup fold (FR-018 write-time)', () => {
+  it("folds a surviving group's childIds patch into the SAME entry as the delete", async () => {
+    const h = setup()
+    h.revisions.set(RECT_ID, 1)
+    h.revisions.set(GROUP_ID, 1)
+    const deleted = makeRect({ id: RECT_ID })
+    const groupBefore = makeGroup() // childIds: [RECT_ID, RECT_B_ID]
+    const groupAfter = makeGroup({ group: { childIds: [RECT_B_ID] } })
+
+    act(() => {
+      h.api.callbacks.onDelete?.([deleted], 'delete', [
+        { before: groupBefore, after: groupAfter },
+      ])
+    })
+    await waitFor(() => expect(h.deleteElements).toHaveBeenCalledTimes(1))
+    await waitFor(() => expect(h.updateElements).toHaveBeenCalledTimes(1))
+    expect(h.updateElements).toHaveBeenCalledWith([groupAfter])
+    // The element no longer exists post-delete; the group's write landed at
+    // revision 2 (bumped from the seeded 1).
+    h.revisions.delete(RECT_ID)
+
+    // ONE undo() command reverses BOTH writes — the deleted element comes
+    // back AND the group's original childIds are restored — because they
+    // are the SAME entry, not two the user would need two Ctrl+Z for.
+    act(() => {
+      h.api.undo()
+    })
+    await waitFor(() => expect(h.createElement).toHaveBeenCalledTimes(1))
+    await waitFor(() => expect(h.updateElements).toHaveBeenCalledTimes(2))
+    const [restoredRect] = h.createElement.mock.calls[0]
+    expect(restoredRect).toMatchObject({ id: RECT_ID })
+    const [restoredGroup, options] = h.updateElements.mock.calls[1]
+    expect(restoredGroup[0]).toMatchObject({
+      id: GROUP_ID,
+      group: { childIds: [RECT_ID, RECT_B_ID] },
+    })
+    expect(options).toMatchObject({
+      ephemeral: true,
+      expectedRevisions: new Map([[GROUP_ID, 2]]),
+    })
+  })
+
+  it('needs no third argument for an ordinary delete — issues no group update at all', async () => {
+    const h = setup()
+    h.revisions.set(RECT_ID, 3)
+    act(() => {
+      h.api.callbacks.onDelete?.([makeRect()])
+    })
+    await waitFor(() => expect(h.deleteElements).toHaveBeenCalledTimes(1))
+    expect(h.updateElements).not.toHaveBeenCalled()
+  })
+})
+
 describe('afterRevision staleness (Hermes review, BLOCKER B1)', () => {
   it('lets a SECOND, consecutive undo on the SAME element succeed after the first already wrote to it', async () => {
     // create -> update, both on RECT_ID. Undoing the update writes to the

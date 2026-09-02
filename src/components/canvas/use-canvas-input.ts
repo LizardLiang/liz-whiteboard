@@ -352,10 +352,22 @@ export interface CanvasEditCallbacks {
    * — but only one of them also filled the clipboard, and the undo toast has
    * to say which happened. Optional, defaulting to `'delete'`, so every
    * existing call site is unchanged.
+   *
+   * `groupUpdates` (canvas-element-grouping PRD-alignment finding 1, FR-018
+   * write-time scenario): the `childIds` patch for every group that SURVIVES
+   * this delete but owned one of the doomed ids directly — empty when
+   * nothing needs cleaning, e.g. every case where the owning group is ITSELF
+   * among the doomed ids (Wave 4's cascade already removes the whole
+   * subtree, so there is no surviving owner left to patch). Folded into the
+   * SAME write/undo entry the delete itself makes, mirroring how
+   * `onUpdate`'s `resolveMembershipUpdates` folds a membership patch into a
+   * move. Optional and defaults to `[]` so a consumer testing this callback
+   * in isolation is not forced to supply it.
    */
   onDelete?: (
     elements: Array<CanvasElement>,
     gesture?: 'delete' | 'cut',
+    groupUpdates?: Array<{ before: CanvasElement; after: CanvasElement }>,
   ) => void
   /**
    * One group-creation gesture (canvas-element-grouping tactical plan, Wave
@@ -861,6 +873,52 @@ function resolveMembershipUpdates(
         })
       }
     }
+  }
+
+  return [...patched.entries()].map(([id, after]) => ({
+    before: originals.get(id) as CanvasElement,
+    after,
+  }))
+}
+
+/**
+ * For every doomed id that is a DIRECT member of a group NOT itself among
+ * `doomedIds`, the patch that drops it from that group's `childIds` —
+ * folded into the SAME delete/undo entry `deleteSelection` makes (mirrors
+ * `resolveMembershipUpdates`'s move-time fold above; canvas-element-grouping
+ * PRD-alignment finding 1, FR-018's write-time scenario).
+ *
+ * A group id that is ITSELF in `doomedIds` needs no patch: Wave 4's cascade
+ * (`withGroupMembers`) already means the group's whole row is going away in
+ * this same gesture, so its `childIds` no longer matter to anything — this
+ * is exactly the "already-correct" whole-group-delete path, kept untouched.
+ *
+ * Only DIRECT ownership is checked (`groupOwning`, not a transitive walk):
+ * deleting a doubly-nested member patches its immediate parent only — an
+ * outer ancestor's `childIds` still correctly names that (surviving,
+ * merely-smaller) parent and needs no change of its own.
+ */
+function resolveGroupCleanupUpdates(
+  scene: Scene,
+  doomedIds: ReadonlyArray<string>,
+): Array<MembershipUpdate> {
+  const doomed = new Set(doomedIds)
+  const originals = new Map<string, CanvasElement>()
+  const patched = new Map<string, CanvasElement>()
+
+  for (const id of doomedIds) {
+    const owner = groupOwning(scene, id)
+    if (!owner || doomed.has(owner.id)) continue
+    if (!originals.has(owner.id)) originals.set(owner.id, owner)
+    const current = patched.get(owner.id) ?? owner
+    patched.set(owner.id, {
+      ...current,
+      group: {
+        childIds: (current.group?.childIds ?? []).filter(
+          (childId) => childId !== id,
+        ),
+      },
+    })
   }
 
   return [...patched.entries()].map(([id, after]) => ({
@@ -2133,12 +2191,27 @@ export function useCanvasInput({
       const elements = ids
         .map((id) => latest.current.scene.byId.get(id))
         .filter((element): element is CanvasElement => Boolean(element))
-      setScene((prev) => removeElements(prev, ids))
+
+      // Referential integrity on write (FR-018, canvas-element-grouping
+      // PRD-alignment finding 1): a member deleted on its own — not via the
+      // whole-group cascade `withGroupMembers` already expanded above — must
+      // not leave a SURVIVING group's `childIds` naming a row that is about
+      // to vanish. Resolved from the SAME pre-delete scene `elements` was
+      // captured from, for the same B2-lesson reason.
+      const groupCleanup = resolveGroupCleanupUpdates(latest.current.scene, ids)
+
+      setScene((prev) => {
+        let next = prev
+        for (const { after } of groupCleanup) {
+          next = updateElement(next, after.id, { group: after.group })
+        }
+        return removeElements(next, ids)
+      })
       setSelectedIds(new Set<string>())
       // Leaving the structure, the same "exit whatever depth was entered"
       // rule the pointerdown `!hit` branch and Escape apply.
       setEnteredPath([])
-      callbacks?.onDelete?.(elements, gesture)
+      callbacks?.onDelete?.(elements, gesture, groupCleanup)
     },
     [callbacks, setEnteredPath, setScene],
   )
