@@ -39,6 +39,11 @@ import type {
   ScreenRect,
 } from '@/lib/canvas-engine/render'
 import type { TextMeasurer } from '@/lib/canvas-engine/text-layout'
+import type {
+  AlignEdge,
+  AlignmentGuide,
+  ResizeAlignment,
+} from '@/lib/canvas-engine/alignment'
 import {
   panByScreenDelta,
   screenToWorld,
@@ -58,6 +63,12 @@ import {
   resolveDropTarget,
 } from '@/lib/canvas-engine/hit-test'
 import { snapPoint, snapRect } from '@/lib/canvas-engine/grid'
+import {
+  alignMovedRect,
+  alignResizedRect,
+  alignmentCandidates,
+  alignmentTolerance,
+} from '@/lib/canvas-engine/alignment'
 import {
   CANVAS_SHAPE_KINDS,
   DEFAULT_CONNECTOR_ROUTING,
@@ -175,6 +186,16 @@ const SHAPE_TOOL_BY_KEY: Readonly<Record<string, CanvasShapeKind | undefined>> =
  */
 const DEFAULT_SHAPE_SIZE = { width: 160, height: 100 }
 const DEFAULT_TEXT_SIZE = { width: 240, height: 40 }
+
+/**
+ * The "no alignment right now" array, shared rather than allocated per frame.
+ *
+ * A fresh `[]` here would be a new identity on every `pointermove` of EVERY
+ * gesture — pan and marquee included — which propagates through
+ * `CanvasBoard`'s `selection` memo into its redraw trigger. Constant, so the
+ * frames that have nothing to do with alignment stay unchanged.
+ */
+const NO_GUIDES: ReadonlyArray<AlignmentGuide> = []
 
 /** Below this many SCREEN pixels a drag counts as a click. */
 const CLICK_SLOP = 4
@@ -496,10 +517,28 @@ type Gesture =
     }
   | {
       kind: 'move'
-      lastWorld: Point
+      /**
+       * Pointer position in WORLD space at pointerdown.
+       *
+       * The move used to accumulate a per-frame `dx`/`dy` from the PREVIOUS
+       * frame's pointer instead. That could not survive alignment snapping:
+       * a frame that pulled the element 3 units to a neighbour's edge would
+       * make the next frame's delta start from the snapped position, so the
+       * correction compounded and the element crept away from the pointer.
+       * Every frame now derives the whole offset from this one fixed point,
+       * which is the same drift argument `resize`'s `startBounds` records.
+       */
+      startWorld: Point
       startScreen: Point
       ids: ReadonlyArray<string>
       moved: boolean
+      /**
+       * Alignment guides for the current frame — chrome only, recomputed
+       * every `pointermove` and never written to an element (see
+       * `alignment.ts`). Lives on the gesture so it clears itself when the
+       * gesture ends, the way `quick-create`'s `candidate` does.
+       */
+      guides: ReadonlyArray<AlignmentGuide>
       /**
        * Every dragged element exactly as it stood at pointerdown, for
        * `onUpdate`'s pre-state (board-undo tactical plan, Wave 3, step 7).
@@ -521,6 +560,8 @@ type Gesture =
       startBounds: WorldRect
       /** The element exactly as it stood at pointerdown, for `onUpdate`'s pre-state. */
       beforeElement: CanvasElement
+      /** Alignment guides for the current frame — see the `move` gesture's own field. */
+      guides: ReadonlyArray<AlignmentGuide>
     }
   | {
       /**
@@ -848,6 +889,25 @@ function resizedBounds(
     height = Math.max(MIN_ELEMENT_SIZE, world.y - start.y)
   }
   return { x, y, width, height }
+}
+
+/**
+ * Which edge a grip moves on each axis, or null for an axis it leaves alone.
+ *
+ * Reads the handle the same way `resizedBounds` above does, and lives beside
+ * it for that reason: the two must agree about what `ne` means, and they are
+ * the only two places in the codebase that decode a `ResizeHandle` at all.
+ * `alignment.ts` takes the decoded answer rather than the handle so that pure
+ * module never needs to import `render.ts`.
+ */
+function resizeAlignEdges(handle: ResizeHandle): {
+  x: AlignEdge | null
+  y: AlignEdge | null
+} {
+  return {
+    x: handle.includes('w') ? 'min' : handle.includes('e') ? 'max' : null,
+    y: handle.includes('n') ? 'min' : handle.includes('s') ? 'max' : null,
+  }
 }
 
 /** One element's patch, before and after — for folding into the SAME `onUpdate`/`onGroup`/`onUngroup`/`onDelete` call a gesture already makes. Carries a group's `childIds` patch OR a member's `zIndex` bump (or, in principle, both) — whatever changed, `after` is the element's whole next row. Exported (Hermes code review, Minor Issue) so `use-canvas-undo.ts`'s `groupUpdates` parameters name the same type instead of re-spelling its shape inline at three more call sites. */
@@ -1199,9 +1259,7 @@ export function useCanvasInput({
    * PRECEDING select-tool pointerdown — the same two signals (time,
    * position) a browser's own native click-counter uses internally.
    */
-  const lastPointerDownRef = useRef<{ time: number; world: Point } | null>(
-    null,
-  )
+  const lastPointerDownRef = useRef<{ time: number; world: Point } | null>(null)
 
   const setEnteredPath = useCallback((next: Array<string>) => {
     enteredPathRef.current = next
@@ -1245,6 +1303,110 @@ export function useCanvasInput({
       return { x: event.clientX - rect.left, y: event.clientY - rect.top }
     },
     [canvasRef],
+  )
+
+  /**
+   * The drawing surface's size in CSS pixels — what `alignmentCandidates`
+   * needs to work out which elements are actually on screen.
+   *
+   * `clientWidth`/`clientHeight` rather than the backing store's `width`/
+   * `height`: those are multiplied by the device pixel ratio, and a 2x
+   * display would report a viewport twice as large as the one the user is
+   * looking at, quietly widening the candidate set.
+   */
+  const viewportSize = useCallback((): { width: number; height: number } => {
+    const canvas = canvasRef.current
+    if (!canvas) return { width: 0, height: 0 }
+    return { width: canvas.clientWidth, height: canvas.clientHeight }
+  }, [canvasRef])
+
+  /**
+   * The drag offset the element should ACTUALLY take this frame, plus the
+   * guides that explain it.
+   *
+   * `disabled` is the live `altKey`. Alt is the universal "I meant exactly
+   * here" escape from a snap, and it is read off the pointer event rather
+   * than tracked as held-key state so it takes effect on the very next frame
+   * — a keyup that arrives while the pointer is captured would otherwise be
+   * missed entirely. Nothing else in this hook binds Alt during a drag (the
+   * Alt+arrow quick-create is a keyboard gesture with no pointer down).
+   *
+   * When snapping is off the guides go with it: a line the element is NOT
+   * being pulled to is a lie about what release will do.
+   */
+  const alignedMoveOffset = useCallback(
+    (
+      moveGesture: Extract<Gesture, { kind: 'move' }>,
+      rawDx: number,
+      rawDy: number,
+      disabled: boolean,
+    ): { dx: number; dy: number; guides: ReadonlyArray<AlignmentGuide> } => {
+      const unaligned = { dx: rawDx, dy: rawDy, guides: NO_GUIDES }
+      if (disabled) return unaligned
+      // A connector's stored bounds are a 1x1 placeholder, so a connector in
+      // the selection must not contribute to the frame being aligned — one
+      // would drag the frame off to the placeholder's corner and align the
+      // whole selection against a box nothing on screen occupies.
+      const box = boundsOfMany(
+        moveGesture.before.filter((element) => !element.connector),
+      )
+      if (!box) return unaligned
+      const current = latest.current
+      const candidates = alignmentCandidates(
+        current.scene,
+        current.camera,
+        viewportSize(),
+        // The whole dragged subtree, which `gesture.ids` already is
+        // (`withGroupMembers` at pointerdown) — a group aligning to its own
+        // members would snap to itself on every frame.
+        new Set(moveGesture.ids),
+      )
+      const outcome = alignMovedRect(
+        {
+          x: box.x + rawDx,
+          y: box.y + rawDy,
+          width: box.width,
+          height: box.height,
+        },
+        candidates,
+        alignmentTolerance(current.camera),
+      )
+      return {
+        dx: rawDx + outcome.dx,
+        dy: rawDy + outcome.dy,
+        guides: outcome.guides,
+      }
+    },
+    [viewportSize],
+  )
+
+  /** The resize's aligned bounds and guides — `alignedMoveOffset`'s sibling. */
+  const alignedResizeBounds = useCallback(
+    (
+      resizeGesture: Extract<Gesture, { kind: 'resize' }>,
+      raw: WorldRect,
+      disabled: boolean,
+    ): ResizeAlignment => {
+      if (disabled) return { rect: raw, guides: NO_GUIDES }
+      const current = latest.current
+      const candidates = alignmentCandidates(
+        current.scene,
+        current.camera,
+        viewportSize(),
+        // Resizing a GROUP leaves its members where they are (FR-003's frame
+        // is stored, not derived), so without the subtree here the frame
+        // would snap to the children it is being dragged across.
+        new Set(withGroupMembers(current.scene, [resizeGesture.elementId])),
+      )
+      return alignResizedRect(
+        raw,
+        candidates,
+        alignmentTolerance(current.camera),
+        resizeAlignEdges(resizeGesture.handle),
+        MIN_ELEMENT_SIZE,
+      )
+    },
+    [viewportSize],
   )
 
   // ── text helpers ─────────────────────────────────────────────────────────
@@ -1688,6 +1850,7 @@ export function useCanvasInput({
               // Shallow clone — same safety rationale as `beginEditing`'s
               // and the move gesture's own `{ ...element }` clones above.
               beforeElement: { ...only },
+              guides: NO_GUIDES,
             })
             return
           }
@@ -1784,10 +1947,11 @@ export function useCanvasInput({
       const moveIds = withGroupMembers(latest.current.scene, [...nextSelection])
       setGesture({
         kind: 'move',
-        lastWorld: world,
+        startWorld: world,
         startScreen: screen,
         ids: moveIds,
         moved: false,
+        guides: NO_GUIDES,
         // Shallow clones — safe for the same reason `beginEditing`'s own
         // `{ ...element }` clone is (see its comment): `canvas-engine`
         // never mutates an element in place, only replaces it, so the drag
@@ -1900,33 +2064,45 @@ export function useCanvasInput({
           break
         }
         case 'move': {
-          const dx = world.x - gesture.lastWorld.x
-          const dy = world.y - gesture.lastWorld.y
+          // The offset the POINTER alone asks for, measured from pointerdown
+          // rather than from the previous frame — see `startWorld`.
+          const rawDx = world.x - gesture.startWorld.x
+          const rawDy = world.y - gesture.startWorld.y
+          const aligned = alignedMoveOffset(gesture, rawDx, rawDy, event.altKey)
           const travelled =
             Math.abs(screen.x - gesture.startScreen.x) +
             Math.abs(screen.y - gesture.startScreen.y)
           setScene((prev) => {
             let next = prev
-            for (const id of gesture.ids) {
-              const element = next.byId.get(id)
-              if (!element) continue
-              next = updateElement(next, id, {
-                x: element.x + dx,
-                y: element.y + dy,
+            // Positions come from the pointerdown SNAPSHOT, not from the
+            // element's live position: re-reading the live position and
+            // adding a delta is what accumulated the snap correction frame
+            // after frame. `before` already excludes ids that were gone at
+            // pointerdown, and `byId` is re-checked because a collaborator
+            // can delete one mid-drag.
+            for (const element of gesture.before) {
+              if (!next.byId.has(element.id)) continue
+              next = updateElement(next, element.id, {
+                x: element.x + aligned.dx,
+                y: element.y + aligned.dy,
               })
             }
             return next
           })
           setGesture({
             ...gesture,
-            lastWorld: world,
             moved: gesture.moved || travelled > CLICK_SLOP,
+            guides: aligned.guides,
           })
           break
         }
         case 'resize': {
-          const next = resizedBounds(gesture.handle, gesture.startBounds, world)
-          setScene((prev) => updateElement(prev, gesture.elementId, next))
+          const raw = resizedBounds(gesture.handle, gesture.startBounds, world)
+          const aligned = alignedResizeBounds(gesture, raw, event.altKey)
+          setScene((prev) =>
+            updateElement(prev, gesture.elementId, aligned.rect),
+          )
+          setGesture({ ...gesture, guides: aligned.guides })
           break
         }
         case 'connector-endpoint': {
@@ -2010,7 +2186,16 @@ export function useCanvasInput({
         }
       }
     },
-    [gesture, screenFromEvent, setCamera, setGesture, setHoveredId, setScene],
+    [
+      alignedMoveOffset,
+      alignedResizeBounds,
+      gesture,
+      screenFromEvent,
+      setCamera,
+      setGesture,
+      setHoveredId,
+      setScene,
+    ],
   )
 
   /**
@@ -2600,11 +2785,8 @@ export function useCanvasInput({
     for (const member of members) {
       const oldOwner = groupOwning(currentScene, member.id)
       if (!oldOwner) continue
-      patchGroupChildIds(
-        detachOriginals,
-        detachPatched,
-        oldOwner,
-        (childIds) => childIds.filter((childId) => childId !== member.id),
+      patchGroupChildIds(detachOriginals, detachPatched, oldOwner, (childIds) =>
+        childIds.filter((childId) => childId !== member.id),
       )
     }
     const detachUpdates = toMembershipUpdates(detachOriginals, detachPatched)
@@ -2660,9 +2842,7 @@ export function useCanvasInput({
       removeElements(applyMembershipUpdates(prev, groupUpdates), [group.id]),
     )
     setSelectedIds(
-      new Set(
-        group.group.childIds.filter((id) => currentScene.byId.has(id)),
-      ),
+      new Set(group.group.childIds.filter((id) => currentScene.byId.has(id))),
     )
     setEnteredPath([])
     callbacks?.onUngroup?.(group, groupUpdates)
@@ -3005,6 +3185,23 @@ export function useCanvasInput({
     [gesture],
   )
 
+  /**
+   * The alignment guides for the gesture in flight, or empty.
+   *
+   * Derived from the gesture the same way `connectorAttach` is, rather than
+   * held in its own state: they are only ever true DURING a drag or resize,
+   * so tying them to the gesture means the release that clears the gesture
+   * clears them too — there is no path that can leave a guide painted over a
+   * board nobody is touching.
+   */
+  const alignmentGuides = useMemo<ReadonlyArray<AlignmentGuide>>(
+    () =>
+      gesture.kind === 'move' || gesture.kind === 'resize'
+        ? gesture.guides
+        : NO_GUIDES,
+    [gesture],
+  )
+
   const draft = useMemo<CanvasElement | null>(() => {
     if (gesture.kind !== 'draw') return null
     // `drawnRect`, not the raw drag: the ghost has to show the snapped
@@ -3146,6 +3343,7 @@ export function useCanvasInput({
     enteredPath,
     quickCreate,
     connectorAttach,
+    alignmentGuides,
     displayScene,
     displayCaret,
     caretVisible,

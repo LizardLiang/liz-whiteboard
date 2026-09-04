@@ -64,6 +64,12 @@ function makeCanvas() {
       right: 800,
       bottom: 600,
     }),
+    // CSS-pixel size, which is what alignment reads to work out which
+    // elements are on screen. It must agree with the bounding rect above —
+    // a stub that reported a different viewport would filter a different set
+    // of alignment candidates than the same gesture does in a browser.
+    clientWidth: 800,
+    clientHeight: 600,
     setPointerCapture: vi.fn(),
     releasePointerCapture: vi.fn(),
     hasPointerCapture: vi.fn(() => true),
@@ -1304,8 +1310,12 @@ describe('grouping: delete cascade and duplicate (Wave 4)', () => {
 
     // Internally consistent: the copied groups' childIds point at COPIED
     // members, never at an original id.
-    const copiedOuter = clonedElements.find((e) => e.kind === 'group' && e.group!.childIds.length === 1)!
-    const copiedMid = clonedElements.find((e) => e.kind === 'group' && e.group!.childIds.length === 2)!
+    const copiedOuter = clonedElements.find(
+      (e) => e.kind === 'group' && e.group!.childIds.length === 1,
+    )!
+    const copiedMid = clonedElements.find(
+      (e) => e.kind === 'group' && e.group!.childIds.length === 2,
+    )!
     const copiedLeafIds = new Set(
       clonedElements.filter((e) => e.kind === 'rectangle').map((e) => e.id),
     )
@@ -1357,9 +1367,7 @@ describe('grouping: referential integrity on individual member delete (FR-018)',
     // Only `a` itself was deleted — no cascade, since `a` is not a group.
     expect(h.callbacks.onDelete).toHaveBeenCalledTimes(1)
     const [deleted] = h.callbacks.onDelete.mock.calls[0]
-    expect((deleted as Array<CanvasElement>).map((e) => e.id)).toEqual([
-      A_ID,
-    ])
+    expect((deleted as Array<CanvasElement>).map((e) => e.id)).toEqual([A_ID])
 
     // The group survives, and its childIds no longer name the deleted id.
     const group = h.scene.byId.get(MID_ID)
@@ -1524,15 +1532,21 @@ describe('grouping: membership drag-in/out, commit-on-drop (Wave 5)', () => {
     // within the repeat-click window/position tolerance for free (two
     // synchronous calls at the same point).
     act(() => {
-      h.api.canvasHandlers.onPointerDown(pointerEvent({ clientX: 60, clientY: 60 }))
+      h.api.canvasHandlers.onPointerDown(
+        pointerEvent({ clientX: 60, clientY: 60 }),
+      )
     })
     h.sync()
     act(() => {
-      h.api.canvasHandlers.onPointerUp(pointerEvent({ clientX: 60, clientY: 60 }))
+      h.api.canvasHandlers.onPointerUp(
+        pointerEvent({ clientX: 60, clientY: 60 }),
+      )
     })
     h.sync()
     act(() => {
-      h.api.canvasHandlers.onPointerDown(pointerEvent({ clientX: 60, clientY: 60 }))
+      h.api.canvasHandlers.onPointerDown(
+        pointerEvent({ clientX: 60, clientY: 60 }),
+      )
     })
     h.sync()
     expect(h.api.selectedIds).toEqual(new Set([B_ID]))
@@ -1644,9 +1658,7 @@ describe('grouping: membership drag-in/out, commit-on-drop (Wave 5)', () => {
     expect(h.callbacks.onUpdate).toHaveBeenCalledTimes(1)
     const [after] = h.callbacks.onUpdate.mock.calls[0]
     // Only position updates for g1 and b — no membership rewrite at all.
-    const afterG1 = (after as Array<CanvasElement>).find(
-      (e) => e.id === G1_ID,
-    )!
+    const afterG1 = (after as Array<CanvasElement>).find((e) => e.id === G1_ID)!
     expect(afterG1.group).toEqual({ childIds: [B_ID] })
     expect(h.scene.byId.get(G1_ID)?.group?.childIds).toEqual([B_ID])
   })
@@ -1711,9 +1723,7 @@ describe('grouping: drag-in preserves the group-below-members z-order invariant 
 
     expect(h.callbacks.onUpdate).toHaveBeenCalledTimes(1)
     const [after] = h.callbacks.onUpdate.mock.calls[0]
-    const afterA = (after as Array<CanvasElement>).find(
-      (e) => e.id === A_ID,
-    )!
+    const afterA = (after as Array<CanvasElement>).find((e) => e.id === A_ID)!
     expect(afterA.zIndex).toBe(10) // one above g1's own zIndex (9)
     expect(h.scene.byId.get(A_ID)?.zIndex).toBe(10)
   })
@@ -1723,9 +1733,7 @@ describe('grouping: drag-in preserves the group-below-members z-order invariant 
     dragAIntoG1(h)
 
     const [after] = h.callbacks.onUpdate.mock.calls[0]
-    const afterA = (after as Array<CanvasElement>).find(
-      (e) => e.id === A_ID,
-    )!
+    const afterA = (after as Array<CanvasElement>).find((e) => e.id === A_ID)!
     expect(afterA.zIndex).toBe(20)
   })
 
@@ -2163,7 +2171,13 @@ describe('grouping: referential integrity on group/ungroup writes (fix round —
       text: null,
       group: { childIds: [G_ID, C_ID] },
     }
-    const h = setup([makeRect(A_ID), makeRect(B_ID), makeRect(C_ID), inner, outer])
+    const h = setup([
+      makeRect(A_ID),
+      makeRect(B_ID),
+      makeRect(C_ID),
+      inner,
+      outer,
+    ])
     act(() => {
       h.api.setSelectedIds(new Set([G_ID]))
     })
@@ -2600,5 +2614,151 @@ describe('dragging a curved connector by its bend grip', () => {
     const link = h.scene.byId.get(LINK)!.connector!
     expect(link.source.kind).toBe('point')
     expect(link).not.toHaveProperty('curvature')
+  })
+})
+
+describe('alignment guides during a drag and a resize', () => {
+  // Two rects of DIFFERENT sizes, for the same reason alignment.test.ts uses
+  // different sizes: same-sized rects agree on left, centre and right at
+  // once, so an assertion about any one of them would prove nothing.
+  const DRAG_ID = '55555555-5555-4555-8555-555555555555'
+  const NEIGHBOUR_ID = '66666666-6666-4666-8666-666666666666'
+
+  /** Dragged rect at (100, 400) 80x40; neighbour at (200, 200) 100x60, whose
+   * x lines are therefore 200 / 250 / 300. Camera is DEFAULT_CAMERA and the
+   * stub canvas sits at the viewport origin, so world and client coordinates
+   * are the same number throughout — every figure below is both. */
+  function scene(): Array<CanvasElement> {
+    return [
+      makeRect(DRAG_ID, { x: 100, y: 400, width: 80, height: 40 }),
+      makeRect(NEIGHBOUR_ID, { x: 200, y: 200, width: 100, height: 60 }),
+    ]
+  }
+
+  /** A point inside the dragged rect, clear of its own grips. */
+  const GRAB = { clientX: 140, clientY: 420 }
+
+  function drag(h: ReturnType<typeof setup>, clientX: number, altKey = false) {
+    act(() => {
+      h.api.canvasHandlers.onPointerDown(pointerEvent(GRAB))
+    })
+    h.sync()
+    act(() => {
+      h.api.canvasHandlers.onPointerMove(
+        pointerEvent({ clientX, clientY: GRAB.clientY, altKey }),
+      )
+    })
+    h.sync()
+  }
+
+  it('pulls a dragged rect onto a neighbour’s edge and says which one', () => {
+    const h = setup(scene())
+    // +103 would put the left edge at 203 — three short of the neighbour's.
+    drag(h, GRAB.clientX + 103)
+
+    expect(h.scene.byId.get(DRAG_ID)!.x).toBeCloseTo(200)
+    expect(h.api.alignmentGuides).toHaveLength(1)
+    expect(h.api.alignmentGuides[0]).toMatchObject({
+      axis: 'x',
+      position: 200,
+    })
+  })
+
+  it('lands the element on the aligned coordinate, not merely near it', () => {
+    // The whole point of the feature: the guide is a claim about the stored
+    // geometry, and a release that left 200.0001 behind would look identical
+    // and be wrong.
+    const h = setup(scene())
+    drag(h, GRAB.clientX + 103)
+    act(() => {
+      h.api.canvasHandlers.onPointerUp(
+        pointerEvent({ clientX: GRAB.clientX + 103, clientY: GRAB.clientY }),
+      )
+    })
+    const [after] = h.callbacks.onUpdate.mock.calls[0]
+    expect(after[0].x).toBe(200)
+  })
+
+  it('holding Alt suppresses both the snap and the guides', () => {
+    const h = setup(scene())
+    drag(h, GRAB.clientX + 103, true)
+    expect(h.scene.byId.get(DRAG_ID)!.x).toBeCloseTo(203)
+    expect(h.api.alignmentGuides).toEqual([])
+  })
+
+  it('does not accumulate the correction from frame to frame', () => {
+    // The regression this pins: the drag used to shift by a delta measured
+    // from the PREVIOUS frame. With snapping added, a frame that pulled the
+    // element 3 units would make the next frame start from the snapped
+    // position, so the correction compounded and the shape crept away from
+    // the pointer. Frame 2 leaves the snap zone entirely, so its position is
+    // pure pointer arithmetic: 100 + 130.
+    const h = setup(scene())
+    drag(h, GRAB.clientX + 103)
+    expect(h.scene.byId.get(DRAG_ID)!.x).toBeCloseTo(200)
+
+    act(() => {
+      h.api.canvasHandlers.onPointerMove(
+        pointerEvent({ clientX: GRAB.clientX + 130, clientY: GRAB.clientY }),
+      )
+    })
+    h.sync()
+    expect(h.scene.byId.get(DRAG_ID)!.x).toBe(230)
+    expect(h.api.alignmentGuides).toEqual([])
+  })
+
+  it('never aligns an element to itself', () => {
+    // With no neighbour there is nothing to align to, so the element must
+    // follow the pointer exactly. An implementation that forgot to exclude
+    // the dragged ids would find its own edges 0 away and never move at all.
+    const h = setup([
+      makeRect(DRAG_ID, { x: 100, y: 400, width: 80, height: 40 }),
+    ])
+    drag(h, GRAB.clientX + 103)
+    expect(h.scene.byId.get(DRAG_ID)!.x).toBe(203)
+    expect(h.api.alignmentGuides).toEqual([])
+  })
+
+  it('snaps the resized edge the grip is holding, and only that one', () => {
+    const h = setup(scene())
+    act(() => {
+      h.api.setSelectedIds(new Set([DRAG_ID]))
+    })
+    h.sync()
+
+    // The SE grip, at the dragged rect's own bottom-right corner.
+    act(() => {
+      h.api.canvasHandlers.onPointerDown(
+        pointerEvent({ clientX: 180, clientY: 440 }),
+      )
+    })
+    h.sync()
+    // A right edge at 297 — three short of the neighbour's right edge.
+    act(() => {
+      h.api.canvasHandlers.onPointerMove(
+        pointerEvent({ clientX: 297, clientY: 440 }),
+      )
+    })
+    h.sync()
+
+    const resized = h.scene.byId.get(DRAG_ID)!
+    expect(resized.x + resized.width).toBeCloseTo(300)
+    // The edge the grip is NOT holding stays exactly where it was.
+    expect(resized.x).toBe(100)
+    expect(h.api.alignmentGuides).toHaveLength(1)
+    expect(h.api.alignmentGuides[0]).toMatchObject({ axis: 'x', position: 300 })
+  })
+
+  it('clears the guides when the gesture ends', () => {
+    const h = setup(scene())
+    drag(h, GRAB.clientX + 103)
+    expect(h.api.alignmentGuides).toHaveLength(1)
+    act(() => {
+      h.api.canvasHandlers.onPointerUp(
+        pointerEvent({ clientX: GRAB.clientX + 103, clientY: GRAB.clientY }),
+      )
+    })
+    h.sync()
+    expect(h.api.alignmentGuides).toEqual([])
   })
 })

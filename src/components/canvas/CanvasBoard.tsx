@@ -464,6 +464,10 @@ export function CanvasBoard({
       // What a dragged connector end would attach to, so the renderer can
       // answer "will this connect, and where?" during the drag.
       connectorAttach: input.connectorAttach,
+      // The red lines that report "these edges line up" during a drag or a
+      // resize. Chrome only — they are recomputed per frame, never stored on
+      // an element and never broadcast (see `alignment.ts`).
+      alignmentGuides: input.alignmentGuides,
       editing: input.editing
         ? {
             elementId: input.editing.elementId,
@@ -480,6 +484,7 @@ export function CanvasBoard({
     }),
     [
       highlight,
+      input.alignmentGuides,
       input.caretVisible,
       input.displayCaret,
       input.draft,

@@ -35,6 +35,7 @@ import {
 import { connectorCurveOf, connectorPathOf } from './hit-test'
 import { QUICK_CREATE_DIRECTIONS } from './quick-create'
 import { DEFAULT_TEXT_STYLE, layoutText, pointFromCaret } from './text-layout'
+import type { AlignmentGuide } from './alignment'
 import type { ConnectorCurve } from './connector-geometry'
 import type { Camera, Point } from './camera'
 import type { QuickCreateDirection } from './quick-create'
@@ -141,6 +142,16 @@ export interface RenderSelection {
    * already follows.
    */
   highlight?: { elementId: string; intensity: number } | null
+  /**
+   * The alignment guides for the drag or resize in flight, in WORLD space.
+   *
+   * Empty or absent whenever nothing is aligned, which is most frames. Like
+   * `marquee` and `quickCreate` these are pure chrome: they are computed per
+   * frame by `use-canvas-input.ts`, never stored on a `CanvasElement` and
+   * never broadcast, so a collaborator sees the element land aligned without
+   * ever seeing the line that got it there.
+   */
+  alignmentGuides?: ReadonlyArray<AlignmentGuide> | null
 }
 
 export interface DrawOptions {
@@ -1387,6 +1398,70 @@ function drawSelectionOverlay(
     ctx.strokeRect(r.x + 0.5, r.y + 0.5, r.width, r.height)
     ctx.setLineDash([])
   }
+
+  // Last, so a guide is never hidden under a grip or an outline: it is the
+  // one piece of chrome the user is reading at that exact moment.
+  drawAlignmentGuides(ctx, camera, selection.alignmentGuides)
+}
+
+/**
+ * Rose rather than the selection accent or the undo amber, for the same
+ * reason those two differ from each other: three different reports need three
+ * different colours, and "these edges line up" must not read as "this is
+ * selected". Fixed rather than themed — a 1px hairline has no fill to carry a
+ * theme, and this hue clears both backgrounds, the same exception
+ * `HIGHLIGHT_COLOR` takes.
+ */
+export const ALIGNMENT_GUIDE_COLOR = '#f43f5e'
+
+/**
+ * Draw the in-flight alignment guides in SCREEN space, after the camera
+ * transform has been popped — a world-space hairline would be 0.1px at
+ * minimum zoom and invisible, which is the whole reason every affordance in
+ * this overlay is drawn here rather than in the transform.
+ *
+ * Each guide is extended by half a pixel past both ends so that two
+ * perpendicular guides meeting at a corner actually close it instead of
+ * leaving a one-pixel notch.
+ */
+function drawAlignmentGuides(
+  ctx: CanvasRenderingContext2D,
+  camera: Camera,
+  guides: RenderSelection['alignmentGuides'],
+): void {
+  if (!guides || guides.length === 0) return
+  ctx.save()
+  ctx.lineWidth = 1
+  ctx.strokeStyle = ALIGNMENT_GUIDE_COLOR
+  ctx.beginPath()
+  for (const guide of guides) {
+    // The two ends of the segment, expressed as world points, so the ONE
+    // transform in `camera.ts` does the conversion (rule 1 in this file's
+    // header) instead of a hand-written multiply per axis.
+    const start =
+      guide.axis === 'x'
+        ? { x: guide.position, y: guide.from }
+        : { x: guide.from, y: guide.position }
+    const end =
+      guide.axis === 'x'
+        ? { x: guide.position, y: guide.to }
+        : { x: guide.to, y: guide.position }
+    const a = worldToScreen(camera, start)
+    const b = worldToScreen(camera, end)
+    // The half-pixel offset puts the hairline on a pixel centre rather than
+    // straddling two, exactly as the outlines above do.
+    if (guide.axis === 'x') {
+      const x = Math.round(a.x) + 0.5
+      ctx.moveTo(x, a.y - 0.5)
+      ctx.lineTo(x, b.y + 0.5)
+    } else {
+      const y = Math.round(a.y) + 0.5
+      ctx.moveTo(a.x - 0.5, y)
+      ctx.lineTo(b.x + 0.5, y)
+    }
+  }
+  ctx.stroke()
+  ctx.restore()
 }
 
 /**

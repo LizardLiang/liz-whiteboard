@@ -144,6 +144,25 @@ export interface CanvasEngineTestHook {
     elementId: string
     attach: { x: number; y: number }
   } | null
+  /**
+   * The alignment guides being drawn RIGHT NOW, in WORLD space.
+   *
+   * Published for the same reason `connectorAttach` is: a guide exists only
+   * mid-gesture, and by the time the pointer is up only its consequence — the
+   * landed coordinate — survives. A spec that asserted the coordinate alone
+   * would pass just as happily if the element snapped with no guide drawn at
+   * all, which is half the feature missing.
+   *
+   * World rather than screen, matching `connectorPath` and for the same
+   * reason: this is a measurement of what was drawn, not something a spec
+   * needs to click.
+   */
+  alignmentGuides: Array<{
+    axis: 'x' | 'y'
+    position: number
+    from: number
+    to: number
+  }>
   tool: CanvasTool
   readOnly: boolean
 }
@@ -235,6 +254,11 @@ export function useCanvasTestHook({
       // "a spec cannot corrupt the board it is measuring".
       connectorPath,
       connectorAttach: selection.connectorAttach ?? null,
+      // Copied out, like `elements`: the array on `selection` is the one the
+      // renderer is holding, and a spec must not be able to mutate it.
+      alignmentGuides: (selection.alignmentGuides ?? []).map((guide) => ({
+        ...guide,
+      })),
       tool,
       readOnly,
     }
