@@ -123,14 +123,24 @@ async function gridStyle(page: Page) {
     const layer = document.querySelector('[data-testid="canvas-dot-grid"]')
     if (!layer) return null
     const computed = window.getComputedStyle(layer)
-    const [sizeX, sizeY] = computed.backgroundSize.split(' ')
-    const [posX, posY] = computed.backgroundPosition.split(' ')
+    // `background-size`/`background-position` collapse to a SINGLE value when
+    // both axes match (e.g. "16px"), so the second element is genuinely absent
+    // at runtime and each axis falls back to the first. `split` is typed
+    // `string[]`, which hides that from the compiler — hence the explicit
+    // widening, without which the `??` fallbacks read as unnecessary
+    // (@typescript-eslint/no-unnecessary-condition).
+    const [sizeX, sizeY] = computed.backgroundSize.split(' ') as Array<
+      string | undefined
+    >
+    const [posX, posY] = computed.backgroundPosition.split(' ') as Array<
+      string | undefined
+    >
     return {
       image: computed.backgroundImage,
-      sizeX: Number.parseFloat(sizeX),
-      sizeY: Number.parseFloat(sizeY ?? sizeX),
-      posX: Number.parseFloat(posX),
-      posY: Number.parseFloat(posY ?? posX),
+      sizeX: Number.parseFloat(sizeX ?? ''),
+      sizeY: Number.parseFloat(sizeY ?? sizeX ?? ''),
+      posX: Number.parseFloat(posX ?? ''),
+      posY: Number.parseFloat(posY ?? posX ?? ''),
     }
   })
   if (!style) throw new Error('the dot grid layer is not in the DOM')
