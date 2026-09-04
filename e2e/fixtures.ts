@@ -250,6 +250,35 @@ export const IDS = {
   handleVisOrdersTable: '90000000-0000-4000-8000-000000000003',
   handleVisUsersId: '90000000-0000-4000-8000-000000000004',
   handleVisOrdersUserId: '90000000-0000-4000-8000-000000000005',
+
+  // Dedicated board for canvas-search.spec.ts (canvas-cmd-k-search-panel
+  // tactical plan). Reuses IDS.canvasProject (not a new project) — this
+  // suite adds no ProjectMember, so the Share-panel member-list layout
+  // regression documented on `viewerProject` above cannot apply. Own BOARD
+  // because a future spec on the shared `canvasBoard` could add/rename/
+  // delete a labelled element and silently change this suite's own
+  // element-count assertion (test 3 below).
+  canvasSearchBoard: 'a0000000-0000-4000-8000-000000000001',
+  // `alpha crate` — matches "alpha", groups under Shapes.
+  canvasSearchRect: 'a0000000-0000-4000-8000-000000000002',
+  // `beta sphere` — second shape; must filter OUT when searching "alpha".
+  canvasSearchEllipse: 'a0000000-0000-4000-8000-000000000003',
+  // `alpha note` — proves the palette splits a text element from a shape
+  // into its own group even though both match the same query.
+  canvasSearchText: 'a0000000-0000-4000-8000-000000000004',
+  // Text is explicitly NULL — proves an unlabelled shape is not indexed
+  // (search-index.ts has nothing to match it on).
+  canvasSearchUntitled: 'a0000000-0000-4000-8000-000000000005',
+  // `gamma target` — one endpoint of `canvasSearchConnector` below, and on
+  // its own a shape that must NOT match "alpha".
+  canvasSearchConnTarget: 'a0000000-0000-4000-8000-000000000006',
+  // `alpha link` — a connector, whose OTHER endpoint is a FREE point (no
+  // second element needed — see e2e/seed-canvas.ts). Both ends sit well past
+  // x=3000, far from `canvasSearchRect` near the origin, so selecting this
+  // result from the default camera position produces an unambiguous pan —
+  // the case that only passes because focus resolves through
+  // `resolvedBounds` (the connector's drawn path), not its 1x1 placeholder.
+  canvasSearchConnector: 'a0000000-0000-4000-8000-000000000007',
 }
 
 export const STORAGE_STATE = 'e2e/.auth/state.json'

@@ -14,15 +14,7 @@
 // globals because they all arrive here and are passed down as arguments.
 
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
-import {
-  Circle,
-  Diamond,
-  Hand,
-  MousePointer2,
-  Square,
-  Triangle,
-  Type,
-} from 'lucide-react'
+import { Hand, MousePointer2, Search, Type } from 'lucide-react'
 import { TextInputProxy } from './TextInputProxy'
 import { ConnectorToolbar } from './ConnectorToolbar'
 import { SelectionToolbar, applyStyleChange } from './SelectionToolbar'
@@ -30,6 +22,8 @@ import { SHAPE_TOOL_SHORTCUTS, useCanvasInput } from './use-canvas-input'
 import { useFrameLoop } from './use-frame-loop'
 import { useCanvasHighlight } from './use-canvas-highlight'
 import { useCanvasTestHook } from './canvas-test-hook'
+import { SHAPE_TOOL_META } from './shape-tool-meta'
+import { CanvasSearch } from './CanvasSearch'
 import type {
   KeyboardEvent as ReactKeyboardEvent,
   PointerEvent as ReactPointerEvent,
@@ -39,7 +33,6 @@ import type { WorldRect } from '@/lib/canvas-engine/hit-test'
 import type {
   CanvasConnectorRouting,
   CanvasElement,
-  CanvasShapeKind,
   Scene,
 } from '@/lib/canvas-engine/scene'
 import type { CanvasElementRecord } from '@/data/models'
@@ -47,6 +40,7 @@ import type { CanvasTool } from './use-canvas-input'
 import type { CanvasStyleChange } from './SelectionToolbar'
 import type { ZOrderCommand } from '@/lib/canvas-engine/z-order'
 import { toEngineScene } from '@/lib/canvas-element-adapter'
+import { resolvedBounds } from '@/lib/canvas-engine/hit-test'
 import { drawScene, measurerFor } from '@/lib/canvas-engine/render'
 import { dotGridBackground } from '@/lib/canvas-engine/grid'
 import { CANVAS_SHAPE_KINDS, updateElement } from '@/lib/canvas-engine/scene'
@@ -89,15 +83,22 @@ interface CanvasBoardProps {
   isPublic?: boolean
 }
 
-/** Engine element -> the world rect `focusOnRect` speaks, or `null` if absent (element already gone). */
-function toElementRect(element: CanvasElement | undefined): WorldRect | null {
-  if (!element) return null
-  return {
-    x: element.x,
-    y: element.y,
-    width: element.width,
-    height: element.height,
-  }
+/**
+ * Element id -> the world rect `focusOnRect` speaks, or `null` when the
+ * element is gone or (a connector) its path cannot be built.
+ *
+ * Connector-aware via `resolvedBounds` (canvas-cmd-k-search-panel tactical
+ * plan, step 3a): a connector's own `x`/`y`/`width`/`height` are the 1x1
+ * placeholder the storage columns demand and nothing else reads (see
+ * `CanvasConnector`'s own doc comment) — its real bounds are its DRAWN path,
+ * which `resolvedBounds` derives from its two endpoints' live geometry. For
+ * every other kind this returns exactly what the old `toElementRect` did
+ * (`bounds(element)`), so this is a strict improvement with no behaviour
+ * change for non-connectors.
+ */
+function focusRectOf(scene: Scene, elementId: string): WorldRect | null {
+  const element = scene.byId.get(elementId)
+  return element ? resolvedBounds(scene, element) : null
 }
 
 interface ToolButton {
@@ -105,20 +106,6 @@ interface ToolButton {
   label: string
   shortcut: string
   Icon: typeof MousePointer2
-}
-
-/**
- * The icon and the human name for each shape kind. The SHORTCUT is not here:
- * it comes from `SHAPE_TOOL_SHORTCUTS`, which is also what the keydown
- * handler binds, so a button can never advertise a key the board ignores.
- */
-const SHAPE_TOOL_META: Readonly<
-  Record<CanvasShapeKind, { label: string; Icon: typeof MousePointer2 }>
-> = {
-  rectangle: { label: 'Rectangle', Icon: Square },
-  ellipse: { label: 'Ellipse', Icon: Circle },
-  diamond: { label: 'Diamond', Icon: Diamond },
-  triangle: { label: 'Triangle', Icon: Triangle },
 }
 
 /**
@@ -171,6 +158,10 @@ export function CanvasBoard({
   const [tool, setTool] = useState<CanvasTool>('select')
   const [viewportSize, setViewportSize] = useState({ width: 0, height: 0 })
   const [devicePixelRatio, setDevicePixelRatio] = useState(1)
+  // Cmd/Ctrl+K search palette (canvas-cmd-k-search-panel tactical plan, step
+  // 3b). Deliberately NOT gated on `effectiveReadOnly` — see the button and
+  // the keydown binding below.
+  const [searchOpen, setSearchOpen] = useState(false)
 
   const getMeasurer = useCallback((fontSize: number) => {
     const ctx = ctxRef.current
@@ -241,9 +232,7 @@ export function CanvasBoard({
       // case with no authoritative post-write value to hand over; the live
       // scene is the correct, and only available, source for it.
       const target =
-        rect === undefined
-          ? toElementRect(sceneRef.current.byId.get(elementId))
-          : rect
+        rect === undefined ? focusRectOf(sceneRef.current, elementId) : rect
       // Nothing to bring into view or highlight — either a refusal whose
       // target was deleted, or a successful undo/redo that left no element
       // behind (undoing a create; redoing a delete).
@@ -291,6 +280,29 @@ export function CanvasBoard({
   })
 
   remapRef.current = input.remapElementId
+
+  /**
+   * A search-palette result was picked (canvas-cmd-k-search-panel tactical
+   * plan, step 3b): select the target, pan the camera to it and pulse it.
+   *
+   * `focusOnElement`, called with no explicit `rect`, already does both
+   * halves of that on its own — `focusOnRect` pans, `triggerHighlight`
+   * pulses — because search and undo/redo should report a jump the exact
+   * same way. Only the selection write is new here.
+   *
+   * The explicit re-focus of `containerRef` matters: the dialog was opened by
+   * a keystroke, not by a trigger element, so Radix has nothing to restore
+   * focus to on close — without this, board shortcuts would stay dead until
+   * the next click.
+   */
+  const handleSearchSelect = useCallback(
+    (elementId: string) => {
+      input.setSelectedIds(new Set([elementId]))
+      focusOnElement(elementId)
+      containerRef.current?.focus({ preventScroll: true })
+    },
+    [focusOnElement, input],
+  )
 
   /**
    * Change a connector's routing (tactical plan, Wave 5, step 15).
@@ -441,6 +453,45 @@ export function CanvasBoard({
     query.addEventListener('change', update)
     return () => query.removeEventListener('change', update)
   }, [devicePixelRatio])
+
+  // ── search palette keybinding ────────────────────────────────────────────
+  //
+  // Cmd/Ctrl+K opens the search palette from anywhere on the board. Copies
+  // ReactFlowWhiteboard.tsx's own binding verbatim in behaviour, so the two
+  // surfaces feel like one product: `preventDefault()` suppresses the
+  // browser's own Ctrl+K (URL/search bar), and the binding is skipped while
+  // typing in a form field so the key still works normally there.
+  //
+  // The TEXTAREA guard is load-bearing here specifically: `TextInputProxy`
+  // renders a real `<textarea>` and holds focus for the whole of a canvas
+  // text edit, so this is what keeps Cmd/Ctrl+K from hijacking a keystroke
+  // mid-typing.
+  //
+  // Bound UNCONDITIONALLY — not gated on `effectiveReadOnly` — because search
+  // is available to viewers and public share-link visitors too (Locked
+  // Decision 3): its button lives outside the editors-only tool palette, and
+  // this binding has to match.
+  //
+  // `k` collides with nothing else this board binds: `SHAPE_TOOL_SHORTCUTS`
+  // is `r`/`o`/`d`/`g`, and `handleBoardKeyDown` below claims only `z`/`y`
+  // under a modifier.
+  useEffect(() => {
+    const handleKeyDown = (event: KeyboardEvent) => {
+      if (!(event.ctrlKey || event.metaKey)) return
+      if (event.key.toLowerCase() !== 'k') return
+
+      const target = event.target as HTMLElement | null
+      const tag = target?.tagName
+      if (tag === 'INPUT' || tag === 'TEXTAREA' || target?.isContentEditable) {
+        return
+      }
+
+      event.preventDefault()
+      setSearchOpen(true)
+    }
+    window.addEventListener('keydown', handleKeyDown)
+    return () => window.removeEventListener('keydown', handleKeyDown)
+  }, [])
 
   // ── the draw loop ────────────────────────────────────────────────────────
 
@@ -696,6 +747,16 @@ export function CanvasBoard({
         onBlur={input.textInput.commitEditing}
       />
 
+      {/* `input.displayScene`, not `scene` — it is what the renderer is
+          handed, so the palette can never index something the board is not
+          currently drawing. */}
+      <CanvasSearch
+        open={searchOpen}
+        onOpenChange={setSearchOpen}
+        scene={input.displayScene}
+        onSelectElement={handleSearchSelect}
+      />
+
       {/* Live-sync state. Shown for authenticated viewers too: a read-only
           member still receives collaborators' edits, so "am I connected?" is
           as relevant to them as it is to an editor.
@@ -749,6 +810,25 @@ export function CanvasBoard({
           ))}
         </div>
       )}
+
+      {/* The search button. OUTSIDE the `!effectiveReadOnly` tool-palette
+          block above (Locked Decision 3) so viewers and public share-link
+          visitors get it too — the same posture the connection badge takes.
+          Placed below the tool palette rather than beside it so it collides
+          with neither that palette (top-left) nor the connection badge
+          (top-right). */}
+      <div className="absolute left-4 top-16 flex gap-1 rounded-md border bg-background/90 p-1 shadow-sm backdrop-blur-sm">
+        <Button
+          type="button"
+          size="icon"
+          variant="ghost"
+          aria-label="Search canvas elements (Ctrl/Cmd+K)"
+          title="Search canvas elements (Ctrl/Cmd+K)"
+          onClick={() => setSearchOpen(true)}
+        >
+          <Search className="h-4 w-4" />
+        </Button>
+      </div>
     </div>
   )
 }

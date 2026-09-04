@@ -84,7 +84,7 @@ function board(id: string, name: string) {
 function element(opts: {
   id: string
   boardId: string
-  kind: 'rectangle' | 'text' | 'connector' | 'group'
+  kind: 'rectangle' | 'ellipse' | 'text' | 'connector' | 'group'
   x: number
   y: number
   w: number
@@ -95,10 +95,18 @@ function element(opts: {
    * Endpoints for a `connector`, which are its ONLY real content — a
    * connector's stored geometry is a degenerate 1x1 placeholder and its shape
    * is derived from these two elements' live bounds every frame.
+   *
+   * Each end is EITHER an existing element's id OR a free point — never
+   * both, mirroring schema.ts's `hasExactlyOneEnd` refinement.
+   * `sourcePoint`/`targetPoint` (canvas-cmd-k-search-panel tactical plan)
+   * are what let a seeded connector's far end be a free point instead of a
+   * dedicated extra element.
    */
   connector?: {
-    sourceElementId: string
-    targetElementId: string
+    sourceElementId?: string
+    targetElementId?: string
+    sourcePoint?: { x: number; y: number }
+    targetPoint?: { x: number; y: number }
     routing: string
     sourceAnchor?: string
     targetAnchor?: string
@@ -133,7 +141,28 @@ function element(opts: {
     }),
     JSON.stringify(
       opts.connector
-        ? { kind: 'connector', ...opts.connector }
+        ? {
+            kind: 'connector',
+            // `?? null`, not left undefined: schema.ts's flat storage shape
+            // requires the KEY present (nullable), never absent — see its
+            // own comment on why an attached end became nullable when free
+            // ends were added.
+            sourceElementId: opts.connector.sourceElementId ?? null,
+            targetElementId: opts.connector.targetElementId ?? null,
+            ...(opts.connector.sourcePoint
+              ? { sourcePoint: opts.connector.sourcePoint }
+              : {}),
+            ...(opts.connector.targetPoint
+              ? { targetPoint: opts.connector.targetPoint }
+              : {}),
+            routing: opts.connector.routing,
+            ...(opts.connector.sourceAnchor
+              ? { sourceAnchor: opts.connector.sourceAnchor }
+              : {}),
+            ...(opts.connector.targetAnchor
+              ? { targetAnchor: opts.connector.targetAnchor }
+              : {}),
+          }
         : opts.childIds
           ? { kind: 'group', childIds: opts.childIds }
           : { kind: opts.kind },
@@ -147,6 +176,7 @@ board(IDS.canvasBoard, 'E2E Canvas')
 board(IDS.canvasViewerBoard, 'E2E Canvas Viewer')
 board(IDS.canvasConnectorBoard, 'E2E Canvas Connectors')
 board(IDS.canvasGroupBoard, 'E2E Canvas Grouping')
+board(IDS.canvasSearchBoard, 'E2E Canvas Search')
 
 // One seeded rectangle, well clear of the top-left toolbar (which sits at
 // roughly x<200, y<80 in screen space at the default camera) so a pointer
@@ -408,6 +438,100 @@ element({
   text: null,
   zIndex: 6,
   childIds: [IDS.canvasGroupInner],
+})
+
+// ── search board (canvas-cmd-k-search-panel tactical plan) ─────────────────
+//
+// Six labelled/unlabelled elements exercising every rule search-index.ts
+// states: one entry per NON-GROUP element with non-empty (trimmed) text, in
+// scene order, connectors included. Text is chosen so "alpha" and "beta"
+// filter unambiguously across the three result groups (Shapes/Text/
+// Connectors) — see e2e/canvas-search.spec.ts.
+//
+// `canvasSearchRect`/`canvasSearchEllipse`/`canvasSearchText` cluster near
+// the origin; `canvasSearchConnTarget`/`canvasSearchConnector` sit well past
+// x=3000 so selecting the connector from the board's default camera position
+// produces an unmissable pan (the case that only passes because focus
+// resolves through `resolvedBounds` — the connector's DRAWN path — rather
+// than its 1x1 placeholder).
+element({
+  id: IDS.canvasSearchRect,
+  boardId: IDS.canvasSearchBoard,
+  kind: 'rectangle',
+  x: 300,
+  y: 300,
+  w: 200,
+  h: 140,
+  text: 'alpha crate',
+  zIndex: 0,
+})
+element({
+  id: IDS.canvasSearchEllipse,
+  boardId: IDS.canvasSearchBoard,
+  kind: 'ellipse',
+  x: 300,
+  y: 520,
+  w: 200,
+  h: 140,
+  text: 'beta sphere',
+  zIndex: 1,
+})
+element({
+  id: IDS.canvasSearchText,
+  boardId: IDS.canvasSearchBoard,
+  kind: 'text',
+  x: 300,
+  y: 720,
+  w: 240,
+  h: 48,
+  text: 'alpha note',
+  zIndex: 2,
+})
+// Text is NULL — proves an unlabelled shape is not indexed at all, not just
+// filtered out of a query.
+element({
+  id: IDS.canvasSearchUntitled,
+  boardId: IDS.canvasSearchBoard,
+  kind: 'rectangle',
+  x: 600,
+  y: 300,
+  w: 150,
+  h: 100,
+  text: null,
+  zIndex: 3,
+})
+element({
+  id: IDS.canvasSearchConnTarget,
+  boardId: IDS.canvasSearchBoard,
+  kind: 'rectangle',
+  x: 3200,
+  y: 400,
+  w: 200,
+  h: 140,
+  text: 'gamma target',
+  zIndex: 4,
+})
+// The connector's SOURCE is a free point (not an 8th element) — the tactical
+// plan enumerates exactly one new element for it (`canvasSearchConnTarget`).
+// Both ends still sit past x=3000, well clear of the rect/ellipse/text
+// cluster at the origin.
+element({
+  id: IDS.canvasSearchConnector,
+  boardId: IDS.canvasSearchBoard,
+  kind: 'connector',
+  // The degenerate placeholder — see createCanvasElementSchema's own note;
+  // nothing reads it once the connector's real path is derived.
+  x: 3050,
+  y: 440,
+  w: 1,
+  h: 1,
+  text: 'alpha link',
+  zIndex: 5,
+  connector: {
+    sourcePoint: { x: 2900, y: 470 },
+    targetElementId: IDS.canvasSearchConnTarget,
+    routing: 'straight',
+  },
 })
 
 console.log(`[e2e seed-canvas] ok — board ${IDS.canvasBoard}`)
