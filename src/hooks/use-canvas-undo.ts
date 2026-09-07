@@ -53,6 +53,7 @@ import { toast } from 'sonner'
 import type {
   CanvasEditCallbacks,
   CanvasUpdateGesture,
+  MembershipUpdate,
 } from '@/components/canvas/use-canvas-input'
 import type {
   CanvasElement,
@@ -184,6 +185,82 @@ function snapshotToWorldRect(snapshot: CanvasElementSnapshot): WorldRect {
     y: snapshot.positionY,
     width: snapshot.width,
     height: snapshot.height,
+  }
+}
+
+/**
+ * The `kind: 'update'` operations for a group-cleanup/renormalize patch
+ * batch, built from whichever writes acknowledged — never all of them
+ * unconditionally (Hermes code review BLOCKER: this exact 14-to-16-line
+ * fold — build `updateResultsById`, then loop `groupUpdates` pushing a
+ * `kind: 'update'` operation per ack — existed as three separate,
+ * near-identical copies across `recordDelete`/`recordGroup`/
+ * `recordUngroup`; `rules/default.md` sets the duplication bar at 3
+ * copies). Each caller appends the result AFTER its own primary
+ * operation(s) via `operations.push(...)`, so `operations[0]` stays that
+ * primary operation in every one of them.
+ */
+function groupUpdateOperations(
+  boardId: string,
+  groupUpdates: ReadonlyArray<MembershipUpdate>,
+  updateResults: ReadonlyArray<CanvasMutationResult>,
+): Array<CanvasUndoOperation> {
+  const updateResultsById = new Map(
+    updateResults.map((result) => [result.id, result]),
+  )
+  const operations: Array<CanvasUndoOperation> = []
+  for (const update of groupUpdates) {
+    const result = updateResultsById.get(update.after.id)
+    if (!result?.ok || result.revision === undefined) continue
+    operations.push({
+      kind: 'update',
+      elementId: update.after.id,
+      before: toSnapshot(boardId, update.before),
+      afterRevision: result.revision,
+      after: toSnapshot(boardId, update.after),
+    })
+  }
+  return operations
+}
+
+/**
+ * Build one undo entry from whichever writes in a concurrent batch actually
+ * acknowledged, or `null` when none did (Hermes code review round 3, WARNING
+ * — the label-and-push tail duplicated between `recordGroup` and
+ * `recordUngroup`, six of eight lines byte-identical). Every caller already
+ * gated on an empty `operations` array before pushing and pushed exactly
+ * once at the end, so both steps fold into this one return value.
+ *
+ * This does NOT make the call sites shorter, and an earlier draft of this
+ * comment claiming it "shrinks all three `record*` functions" was wrong
+ * (Hermes code review round 4, corrected claim — the error originated in
+ * round 3's own recommendation text, which promised the same thing).
+ * Measured against `d59af28`, every site grew by three lines:
+ * `recordDelete` 7 to 9, `recordGroup` 8 to 11, `recordUngroup` 8 to 11 —
+ * a multi-line call argument costs more lines than the inline ternary it
+ * replaced. What it buys instead is that two POLICIES now have one
+ * definition apiece rather than three: the "nothing acked, so no entry"
+ * gate, and the generic multi-element `move` fallback label. Both had
+ * already drifted once — round 2's WARNING 1 was precisely
+ * `recordGroup`/`recordUngroup` silently holding a lesser tier than
+ * `recordDelete` — and neither can drift again while it is written once.
+ *
+ * `primaryLabel` is the gesture-specific label to use when the entry's
+ * PRIMARY write (the group's create, the group's delete, or `recordDelete`'s
+ * own doomed elements) itself acknowledged — `null` when it did not, in
+ * which case the entry still needs recording if a group-cleanup update
+ * landed on its own, under the generic multi-element `move` label every
+ * caller already fell back to (matches `recordDelete`'s original tier
+ * exactly, never a lesser one).
+ */
+function entryFromAckedWrites(
+  operations: Array<CanvasUndoOperation>,
+  primaryLabel: CanvasUndoLabel | null,
+): CanvasUndoEntry | null {
+  if (operations.length === 0) return null
+  return {
+    label: primaryLabel ?? { gesture: 'move', count: operations.length },
+    operations,
   }
 }
 
@@ -395,12 +472,26 @@ export function useCanvasUndo({
       elements: Array<CanvasElement>,
       // Defaults to 'delete': every call site but the cut gesture omits it.
       gesture: 'delete' | 'cut' = 'delete',
+      // A surviving group's `childIds` patch, folded into this SAME entry
+      // (FR-018 write-time scenario, canvas-element-grouping PRD-alignment
+      // finding 1) — `deleteSelection`'s own `resolveGroupCleanupUpdates`.
+      // Defaults to `[]`: every call site but `deleteSelection` omits it.
+      groupUpdates: Array<MembershipUpdate> = [],
     ) => {
       if (readOnly) return
       const ids = elements.map((element) => element.id)
-      void deleteElements(ids).then((results) => {
+      // Issued CONCURRENTLY, not sequentially: the two id sets are disjoint
+      // by construction (`resolveGroupCleanupUpdates` never patches a group
+      // that is itself among the doomed ids), so neither write depends on
+      // the other's ack.
+      void Promise.all([
+        deleteElements(ids),
+        groupUpdates.length > 0
+          ? updateElements(groupUpdates.map((update) => update.after))
+          : Promise.resolve([] as Array<CanvasMutationResult>),
+      ]).then(([deleteResults, updateResults]) => {
         const resultsById = new Map(
-          results.map((result) => [result.id, result]),
+          deleteResults.map((result) => [result.id, result]),
         )
         const operations: Array<CanvasUndoOperation> = []
         for (const element of elements) {
@@ -418,14 +509,37 @@ export function useCanvasUndo({
           }
           operations.push(op)
         }
-        if (operations.length === 0) return
-        push({
-          label: { gesture, count: operations.length },
+        operations.push(
+          ...groupUpdateOperations(boardId, groupUpdates, updateResults),
+        )
+        // The `deleteOps.length > 0` check is derived from the FINAL
+        // `operations` list, not captured mid-build (Cassandra risk-analysis
+        // H-001 / Hermes code review, Major Issue): a count captured BEFORE
+        // `groupUpdates`' own operations were appended is fragile by
+        // construction — it happens to equal the delete count today only
+        // because nothing else had been pushed yet at that point, but it
+        // says nothing about what the FINAL operations list actually
+        // contains. When every delete in the batch fails (0 delete
+        // operations) while the group-cleanup update still lands, labelling
+        // the entry `{ gesture, count: 0 }` — a "delete" gesture describing
+        // zero elements — reads as a misleading no-op toast for an entry
+        // that in fact carries a real, consequential group mutation.
+        // `entryFromAckedWrites` falls back to the generic multi-element
+        // `move` label in exactly that case, so the entry is still recorded
+        // (and still undoable) under a name that actually describes what
+        // changed.
+        const deleteOps = operations.filter((op) => op.kind === 'delete')
+        const entry = entryFromAckedWrites(
           operations,
-        })
+          deleteOps.length > 0
+            ? { gesture, count: deleteOps.length }
+            : null,
+        )
+        if (!entry) return
+        push(entry)
       })
     },
-    [boardId, deleteElements, push, readOnly],
+    [boardId, deleteElements, push, readOnly, updateElements],
   )
 
   /**
@@ -452,16 +566,22 @@ export function useCanvasUndo({
   const recordClone = useCallback(
     (elements: Array<CanvasElement>, source: 'paste' | 'duplicate') => {
       if (readOnly) return
-      // `planClone` guarantees this split by ORDER, but filtering rather than
-      // slicing keeps the two independent: a future planner that interleaved
-      // them would break a slice silently and this not at all.
-      const plain = elements.filter((element) => !element.connector)
+      // THREE categories, not two — `planClone` guarantees the plain/
+      // connector split by order, but filtering rather than slicing keeps
+      // every category independent, and a group needs its OWN category
+      // (canvas-element-grouping tactical plan, bug found and fixed during
+      // Wave 8 e2e testing — see `groups`' own handling below for why).
+      const plain = elements.filter(
+        (element) => !element.connector && !element.group,
+      )
+      const groups = elements.filter((element) => element.group)
       const connectors = elements.filter((element) => element.connector)
 
       void (async () => {
         const operations: Array<CanvasUndoOperation> = []
         // Client-side id → the id the server gave it. Also what the
-        // connectors' endpoints are rewritten through below.
+        // connectors' endpoints AND the groups' own `childIds` are
+        // rewritten through below.
         const serverIds = new Map<string, string>()
 
         const results = await Promise.all(
@@ -480,6 +600,82 @@ export function useCanvasUndo({
             after: toSnapshot(boardId, { ...element, id: result.id }),
           })
         }
+
+        // Groups, remapped and created ONLY after every id they could
+        // possibly reference is known — never inside the SAME concurrent
+        // batch as their own members (which is what `plain` above is,
+        // exactly why a group cannot be `plain`). A cloned group's
+        // `childIds` (rewritten client-side by `planClone`'s own idMap,
+        // Wave 4) name the CLIENT-SIDE temporary ids `duplicateSelection`
+        // minted, not the SERVER-assigned ids `createElement` returns for
+        // an ORDINARY create (`toCreateInput` never sends a client id, so
+        // the server always mints an independent one — see
+        // `createElement`'s own header). Persisting the group with those
+        // stale ids unrewritten would write a row whose `childIds` name
+        // rows that were never actually created under those ids — a
+        // dangling reference invisible until a RELOAD (or a second client)
+        // reads it back, which is exactly how this was found: the unit
+        // suite's mocked `createElement` echoes the client id back as the
+        // "server" id, so client-id == server-id there and the bug never
+        // showed; only a real server round trip, with a GENUINELY
+        // different id, exposes it.
+        //
+        // Multi-pass rather than one: a cloned group may contain another
+        // cloned group (nesting), whose OWN server id is not yet known on
+        // the first pass either. Each pass creates every group whose FULL
+        // `childIds` are already resolvable in `serverIds`; repeats until a
+        // pass makes no further progress (bounded by nesting depth, which
+        // `groupDescendants`'s own cycle guard, scene.ts, already keeps
+        // finite).
+        let remainingGroups = groups
+        for (
+          let pass = 0;
+          pass <= elements.length && remainingGroups.length > 0;
+          pass += 1
+        ) {
+          const ready = remainingGroups.filter((element) =>
+            element.group!.childIds.every((childId) => serverIds.has(childId)),
+          )
+          if (ready.length === 0) break // a childId whose own create failed — see below
+          remainingGroups = remainingGroups.filter(
+            (element) => !ready.includes(element),
+          )
+          const groupResults = await Promise.all(
+            ready.map(async (element) => {
+              const remappedChildIds = element.group!.childIds.map(
+                (childId) => serverIds.get(childId)!,
+              )
+              return {
+                element,
+                remappedChildIds,
+                result: await createElement({
+                  ...element,
+                  group: { childIds: remappedChildIds },
+                }),
+              }
+            }),
+          )
+          for (const { element, remappedChildIds, result } of groupResults) {
+            if (!result.ok || result.revision === undefined) continue
+            serverIds.set(element.id, result.id)
+            operations.push({
+              kind: 'create',
+              elementId: result.id,
+              afterRevision: result.revision,
+              after: toSnapshot(boardId, {
+                ...element,
+                id: result.id,
+                group: { childIds: remappedChildIds },
+              }),
+            })
+          }
+        }
+        // Any group left in `remainingGroups` here named a childId whose
+        // own create never landed (failed, or — for a nested group — a
+        // child group that itself never landed) — dropped rather than
+        // persisted with an unresolvable reference, the same "records only
+        // what actually persisted" rule this function's own header already
+        // documents for `plain`/`connectors`.
 
         for (const connector of connectors) {
           const ends = connector.connector
@@ -516,6 +712,157 @@ export function useCanvasUndo({
     [boardId, createElement, push, readOnly],
   )
 
+  /**
+   * One group-creation gesture (canvas-element-grouping tactical plan, Wave
+   * 7) — a thin wrapper mirroring `recordCreate`'s shape exactly: one
+   * `createElement` call, one `kind: 'create'` operation on ack. No writes
+   * to any member — grouping only ever touches the new group row's own
+   * `childIds` (canvas-engine/scene.ts's `group?` field), so this needs
+   * nothing `recordCreate` does not already have.
+   *
+   * `count` on the label is the group's OWN `childIds.length` at creation —
+   * the direct members bound, not a transitively-expanded subtree — mirroring
+   * `move`/`z-order`'s "how many elements does this number describe"
+   * convention for a gesture whose single write still affects several
+   * elements' grouping state.
+   *
+   * Records whichever writes acknowledged, never all-or-nothing gated on
+   * the group's own create (Hermes code review WARNING 1 / rule proposal
+   * 2026-09-02-record-the-writes-that-acked.md — mirrors `recordDelete`'s
+   * own already-sanctioned tier): if the create fails but a detach/
+   * renormalize update DID land server-side, that write already happened
+   * and needs an entry naming it, or the user has no toast and no way to
+   * reverse it. Falls back to a generic `move`-gesture label in exactly
+   * that case, the same fallback `recordDelete` uses when zero deletes
+   * landed but a group update still did.
+   */
+  const recordGroup = useCallback(
+    (
+      groupElement: CanvasElement,
+      // Every OTHER element this SAME gesture also needs to patch (Hermes
+      // code review BLOCKER 2, FR-018) — a prior owner a joining member was
+      // detached from, and/or a member's own `zIndex` renormalized above
+      // the new group. Defaults to `[]`: every call site but
+      // `groupSelection` omits it. Issued CONCURRENTLY with the group's own
+      // create, mirroring `recordDelete`'s own disjoint-writes shape — the
+      // two id sets never overlap by construction (a prior owner or a
+      // member is never the new group's own row).
+      groupUpdates: Array<MembershipUpdate> = [],
+    ) => {
+      if (readOnly) return
+      void Promise.all([
+        createElement(groupElement),
+        groupUpdates.length > 0
+          ? updateElements(groupUpdates.map((update) => update.after))
+          : Promise.resolve([] as Array<CanvasMutationResult>),
+      ]).then(([createResult, updateResults]) => {
+        const created =
+          createResult.ok && createResult.revision !== undefined
+        const operations: Array<CanvasUndoOperation> = []
+        if (created) {
+          operations.push({
+            kind: 'create',
+            elementId: createResult.id,
+            afterRevision: createResult.revision as number,
+            after: toSnapshot(boardId, {
+              ...groupElement,
+              id: createResult.id,
+            }),
+          })
+        }
+        operations.push(
+          ...groupUpdateOperations(boardId, groupUpdates, updateResults),
+        )
+        const entry = entryFromAckedWrites(
+          operations,
+          created
+            ? {
+                gesture: 'group',
+                count: groupElement.group?.childIds.length ?? 0,
+              }
+            : null,
+        )
+        if (!entry) return
+        push(entry)
+      })
+    },
+    [boardId, createElement, push, readOnly, updateElements],
+  )
+
+  /**
+   * Dissolve-a-group-only gesture — mirrors `recordDelete`'s single-element
+   * shape: one `deleteElements` call, one `kind: 'delete'` operation on ack.
+   * Members need no write here either: dissolving a group only removes the
+   * group's own row, and its members were never touched by grouping in the
+   * first place (Wave 1), so they are already independent the instant it is
+   * gone.
+   *
+   * Deliberately NOT `recordDelete` itself, even though both end in one
+   * `deleteElements` call: that function's label is always `{ gesture:
+   * 'delete' | 'cut' }`, and reusing it here would make an intentional,
+   * one-level dissolve read in the undo toast exactly like a cascade delete
+   * of a whole subtree (Wave 4's `deleteSelection`) — two very different
+   * gestures a user needs to tell apart when Ctrl+Z asks what is coming
+   * back.
+   *
+   * Records whichever writes acknowledged, never all-or-nothing gated on
+   * the group's own delete (Hermes code review WARNING 1 / rule proposal
+   * 2026-09-02-record-the-writes-that-acked.md — mirrors `recordDelete`'s
+   * own already-sanctioned tier, and `recordGroup`'s matching fix above):
+   * if the delete fails but a surviving parent's `childIds` patch DID land
+   * server-side, that write already happened and needs an entry naming it.
+   * Falls back to a generic `move`-gesture label in exactly that case.
+   */
+  const recordUngroup = useCallback(
+    (
+      groupElement: CanvasElement,
+      // The dissolving group's OWN parent's `childIds` patch, when it is
+      // itself nested inside a SURVIVING group (Hermes code review
+      // BLOCKER 1, FR-018). Defaults to `[]`: every call site but a nested
+      // `ungroupSelection` supplies an empty array. Issued CONCURRENTLY
+      // with the group's own delete, mirroring `recordDelete`'s shape.
+      groupUpdates: Array<MembershipUpdate> = [],
+    ) => {
+      if (readOnly) return
+      void Promise.all([
+        deleteElements([groupElement.id]),
+        groupUpdates.length > 0
+          ? updateElements(groupUpdates.map((update) => update.after))
+          : Promise.resolve([] as Array<CanvasMutationResult>),
+      ]).then(([deleteResults, updateResults]) => {
+        const result = deleteResults[0]
+        const deleted = result.ok
+        const operations: Array<CanvasUndoOperation> = []
+        if (deleted) {
+          const op: CanvasUndoOperation = {
+            kind: 'delete',
+            elementId: groupElement.id,
+            before: toSnapshot(boardId, groupElement),
+          }
+          if (result.revision !== undefined) {
+            lastRevisionBeforeDeleteRef.current.set(op, result.revision)
+          }
+          operations.push(op)
+        }
+        operations.push(
+          ...groupUpdateOperations(boardId, groupUpdates, updateResults),
+        )
+        const entry = entryFromAckedWrites(
+          operations,
+          deleted
+            ? {
+                gesture: 'ungroup',
+                count: groupElement.group?.childIds.length ?? 0,
+              }
+            : null,
+        )
+        if (!entry) return
+        push(entry)
+      })
+    },
+    [boardId, deleteElements, push, readOnly, updateElements],
+  )
+
   const callbacks = useMemo<CanvasEditCallbacks>(
     () => ({
       onCreate: recordCreate,
@@ -523,8 +870,18 @@ export function useCanvasUndo({
       onClone: recordClone,
       onUpdate: recordUpdate,
       onDelete: recordDelete,
+      onGroup: recordGroup,
+      onUngroup: recordUngroup,
     }),
-    [recordClone, recordCreate, recordDelete, recordQuickCreate, recordUpdate],
+    [
+      recordClone,
+      recordCreate,
+      recordDelete,
+      recordGroup,
+      recordQuickCreate,
+      recordUngroup,
+      recordUpdate,
+    ],
   )
 
   // ── applying (undo) ──────────────────────────────────────────────────────

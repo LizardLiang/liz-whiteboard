@@ -884,7 +884,7 @@ test.describe('deleting an endpoint', () => {
 
 // ── the pointerless path ────────────────────────────────────────────────────
 
-test.describe('Alt+Arrow', () => {
+test.describe('Ctrl+Arrow', () => {
   test('matches what clicking the same handle does', async ({ page }) => {
     const before = await openBoard(page)
     const source = byId(before, IDS.canvasRect)!
@@ -897,7 +897,7 @@ test.describe('Alt+Arrow', () => {
       .poll(async () => (await engine(page)).selectedIds)
       .toEqual([IDS.canvasRect])
 
-    await page.keyboard.press('Alt+ArrowRight')
+    await page.keyboard.press('Control+ArrowRight')
 
     await expect
       .poll(async () => (await engine(page)).elements.length)

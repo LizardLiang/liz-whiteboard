@@ -29,6 +29,7 @@ export type CanvasElementKind =
   | 'triangle'
   | 'text'
   | 'connector'
+  | 'group'
 
 /**
  * The SHAPE kinds: four ways of drawing one world rect.
@@ -336,6 +337,24 @@ export function effectiveCornerRadius(element: CanvasElement): number {
 export const DEFAULT_CONNECTOR_ROUTING: CanvasConnectorRouting = 'straight'
 
 /**
+ * A group's membership: the ids of its DIRECT members only.
+ *
+ * A member id may itself name another group element, which is how nesting
+ * happens (canvas-element-grouping tactical plan, Wave 1) — there is no
+ * separate "nested group" vocabulary, a group is just an element that can
+ * appear in another group's `childIds`.
+ *
+ * Membership lives ONLY here, on the group. No member element carries a
+ * back-reference to its group, so creating, ungrouping or editing membership
+ * is always a write to the group element alone, never to its members — this
+ * is what keeps move/delete/duplicate/undo simple (decisions.md, "Where does
+ * group membership live").
+ */
+export interface CanvasGroup {
+  childIds: Array<string>
+}
+
+/**
  * One element on the board, in WORLD coordinates.
  *
  * `rotation` is stored but not editable in milestone 1 — the field exists
@@ -363,6 +382,15 @@ export interface CanvasElement {
    * push a narrowing step into all of them for a single field.
    */
   connector?: CanvasConnector
+  /**
+   * Present exactly when `kind === 'group'`, absent otherwise. Mirrors
+   * `connector` above for the same reason: uniform element handling
+   * everywhere except the one branch that needs the kind-specific field.
+   *
+   * The group's OWN `x`/`y`/`width`/`height` above are its frame — explicit,
+   * stored, and never derived from `childIds` after creation (PRD FR-003).
+   */
+  group?: CanvasGroup
 }
 
 /**
@@ -389,6 +417,58 @@ function ordered(elements: Array<CanvasElement>): Array<CanvasElement> {
   return [...elements].sort(
     (a, b) => a.zIndex - b.zIndex || (a.id < b.id ? -1 : a.id > b.id ? 1 : 0),
   )
+}
+
+/**
+ * Drop every group `childId` that names no element in THIS SAME list
+ * (FR-018's load-time repair scenario, canvas-element-grouping PRD-alignment
+ * finding 1). `toEngineGroup`/`toEngineElement` (canvas-element-adapter.ts)
+ * convert ONE row at a time and have no view of the rest of the board, so
+ * they cannot cross-check a `childId` against what else exists — this
+ * function is for a caller that DOES see every element at once.
+ *
+ * Mirrors `toEngineConnector`'s own precedent: an unresolvable reference is
+ * silently dropped, never a hard load failure — a hand-edited or
+ * partially-migrated board still loads, just with the dangling id gone.
+ *
+ * Returns the SAME array when nothing needed repair, and leaves every
+ * unaffected element's own object identity untouched — only a group that
+ * actually lost a childId gets a new object, matching `updateElement`'s
+ * "same reference means nothing changed" contract elsewhere in this module.
+ *
+ * CALLED ONLY AT A GENUINE WHOLE-BOARD LOAD (`toEngineScene`,
+ * canvas-element-adapter.ts) — deliberately NOT wired into `sceneFrom`
+ * itself, even though `sceneFrom` is the one function every scene-rebuilding
+ * mutator in this module already funnels through. `sceneFrom` also rebuilds
+ * the scene from a PARTIAL, still-in-flight element list mid-gesture — e.g.
+ * undoing a whole-group cascade delete recreates the group and its members
+ * as INDEPENDENT, CONCURRENT creates, and if the group's own `addElement`
+ * lands before a member's, `sceneFrom` would see a childId that does not
+ * (yet) resolve and permanently strip it, with nothing left to add it back
+ * once the member's own create lands moments later (found via an e2e
+ * regression on exactly this cascade-undo path; see scene.test.ts's own
+ * "does not run against a partial, in-flight element list" case). A load's
+ * record list, by contrast, is already the server's fully-settled state —
+ * there is no "moments later" for anything still missing to arrive.
+ */
+export function repairGroupMembership(
+  elements: Array<CanvasElement>,
+): Array<CanvasElement> {
+  const ids = new Set(elements.map((element) => element.id))
+  const repaired = elements.map((element) => {
+    if (!element.group) return element
+    const childIds = element.group.childIds.filter((childId) =>
+      ids.has(childId),
+    )
+    if (childIds.length === element.group.childIds.length) return element
+    return { ...element, group: { childIds } }
+  })
+  // Compared by identity rather than tracked with a flag set inside the
+  // callback (mirrors `remapConnectorEndpoints`'s own idiom below): the
+  // callback above returns the SAME object for every element it did not
+  // repair, so a differing reference is exactly "this one changed".
+  const changed = repaired.some((element, i) => element !== elements[i])
+  return changed ? repaired : elements
 }
 
 /** Build a scene from unordered elements — the shape a database load produces. */
@@ -493,6 +573,147 @@ export function withAttachedConnectors(
     }
   }
   return [...doomed]
+}
+
+/**
+ * The group whose `childIds` directly contains `elementId`, or null.
+ *
+ * O(groups), a linear scan — the same scan discipline `connectorsTouching`
+ * already uses for the structurally identical "what element references this
+ * one" question. An index belongs behind this signature if it is ever
+ * needed, with no caller changing (canvas-element-grouping tactical plan,
+ * Wave 1).
+ */
+export function groupOwning(
+  scene: Scene,
+  elementId: string,
+): CanvasElement | null {
+  for (const element of scene.elements) {
+    if (element.group?.childIds.includes(elementId)) return element
+  }
+  return null
+}
+
+/**
+ * Walks `groupOwning` repeatedly to the top of the nesting chain. Returns
+ * null when `elementId` is not a member of anything — including when
+ * `elementId` names a group that is itself not nested inside another one.
+ *
+ * Guarded against a cycle (a malformed/hand-edited row whose `childIds`
+ * loops back to an ancestor): a bounded walk, at most one hop per element on
+ * the board, so a cycle terminates instead of looping forever. Cheap
+ * insurance rather than a currently-known reachable bug.
+ */
+export function outermostGroup(
+  scene: Scene,
+  elementId: string,
+): CanvasElement | null {
+  let current: CanvasElement | null = null
+  let cursor = elementId
+  for (let hops = 0; hops <= scene.elements.length; hops++) {
+    const owner = groupOwning(scene, cursor)
+    if (!owner) return current
+    current = owner
+    cursor = owner.id
+  }
+  return current
+}
+
+/**
+ * Every id transitively reachable through `groupId`'s nested `childIds` — a
+ * BFS over the membership tree, recursing into any child that is itself a
+ * group. The direct parallel of `connectorsTouching`/`withAttachedConnectors`
+ * for group relationships.
+ *
+ * Cycle-safe: a visited-set guard means a `childIds` loop stops instead of
+ * hanging the tab, and an id already seen is simply not re-descended into.
+ */
+export function groupDescendants(
+  scene: Scene,
+  groupId: string,
+): Array<string> {
+  const descendants: Array<string> = []
+  const visited = new Set<string>([groupId])
+  const queue: Array<string> = [groupId]
+  while (queue.length > 0) {
+    const id = queue.shift()!
+    const element = scene.byId.get(id)
+    if (!element?.group) continue
+    for (const childId of element.group.childIds) {
+      if (visited.has(childId)) continue
+      visited.add(childId)
+      descendants.push(childId)
+      queue.push(childId)
+    }
+  }
+  return descendants
+}
+
+/**
+ * `ids` plus every descendant of any group among them, deduplicated — the
+ * expanded set move/delete/duplicate/z-order all operate on so a group
+ * transform reaches its whole subtree. Direct parallel to
+ * `withAttachedConnectors`.
+ */
+export function withGroupMembers(
+  scene: Scene,
+  ids: ReadonlyArray<string>,
+): Array<string> {
+  const expanded = new Set(ids)
+  for (const id of ids) {
+    const element = scene.byId.get(id)
+    if (!element?.group) continue
+    for (const descendantId of groupDescendants(scene, id)) {
+      expanded.add(descendantId)
+    }
+  }
+  return [...expanded]
+}
+
+/**
+ * Every id in `ids` that is NOT a descendant (via `groupDescendants`) of
+ * another id also in `ids` — `withGroupMembers`'s inverse-shaped sibling: it
+ * COLLAPSES a set that may double-list a group and one of its own members
+ * down to the group alone, rather than expanding a group out to its members.
+ * An id that IS such a descendant is moving/binding WITH that other id, not
+ * independently, and must not also be evaluated on its own.
+ *
+ * Moved here from `use-canvas-input.ts` (Hermes code review, Minor Issue):
+ * `canGroupSelection` (SelectionToolbar.tsx) needs the SAME collapse
+ * `groupSelection` itself applies, so the Group button's enabled state
+ * cannot promise an action the gesture then silently no-ops on. Shared by
+ * `resolveMembershipUpdates`'s top-level filter and `groupSelection`'s own
+ * descendant filter too.
+ *
+ * O(ids^2) `groupDescendants` calls in the worst case (Cassandra/Hermes
+ * Minor Issue) — cheap in the common case, since `groupDescendants`
+ * short-circuits for a non-group id, so each comparison is a hash miss on
+ * an empty set. Cost is bounded by SELECTION size, never by scene size.
+ *
+ * Call frequency differs by caller, and the `canGroupSelection` one is NOT
+ * once-per-gesture (Hermes code review round 3, corrected claim):
+ * `resolveMembershipUpdates` and `groupSelection` call this once per
+ * gesture end, but `SelectionToolbar` is unmemoized and re-renders on every
+ * `setScene`, which the `move`/`resize` gesture branches issue on every
+ * pointermove — so `canGroupSelection` re-runs this every frame of a live
+ * drag. Acceptable at that frequency only because the cost is
+ * selection-bounded: the same render already pays `zOrderTargets`' larger,
+ * unconditional O(scene size) scan (see `selectionToolbarTargets`' own
+ * header in `SelectionToolbar.tsx`).
+ */
+export function topLevelIds(
+  scene: Scene,
+  ids: ReadonlyArray<string>,
+): Array<string> {
+  const descendantsByOther = new Map(
+    ids.map((other) => [other, new Set(groupDescendants(scene, other))]),
+  )
+  return ids.filter(
+    (id) =>
+      !ids.some(
+        (other) => other !== id && descendantsByOther.get(other)!.has(id),
+      ),
+  )
 }
 
 /**

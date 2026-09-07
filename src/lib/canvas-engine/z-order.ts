@@ -17,6 +17,7 @@
 //
 // Pure module: no React, no DOM, no database.
 
+import { withGroupMembers } from './scene'
 import type { CanvasElement, Scene } from './scene'
 
 /**
@@ -47,13 +48,25 @@ export interface ZIndexChange {
  * stored number and nothing a user can see. A control that reports success and
  * visibly does nothing is worse than one that is absent — the same rule
  * `shapeStyleTargets` applies to text and connectors.
+ *
+ * EXPANDED THROUGH `withGroupMembers` FIRST (canvas-element-grouping
+ * tactical plan, Wave 3): a selected group's whole subtree — the group
+ * itself plus every descendant at every nesting depth — must move together
+ * so ordering commands cannot interleave a non-member between two of its
+ * members (FR-015). Expanding here, before the connector filter, is what
+ * makes every other consumer (`planZOrder`'s own "already at that end"
+ * short-circuit and its consecutive-value assignment, and
+ * `SelectionToolbar.tsx`'s `sets.arrange`, which is built FROM this
+ * function's own result) group-aware for free — none of them need to know
+ * groups exist.
  */
 export function zOrderTargets(
   scene: Scene,
   selectedIds: ReadonlySet<string>,
 ): Array<CanvasElement> {
+  const expanded = new Set(withGroupMembers(scene, [...selectedIds]))
   return scene.elements.filter(
-    (element) => selectedIds.has(element.id) && !element.connector,
+    (element) => expanded.has(element.id) && !element.connector,
   )
 }
 

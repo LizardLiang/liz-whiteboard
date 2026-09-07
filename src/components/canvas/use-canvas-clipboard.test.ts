@@ -329,6 +329,10 @@ describe('cut', () => {
     expect(board.callbacks.onDelete).toHaveBeenCalledWith(
       expect.arrayContaining([expect.objectContaining({ id: 'a' })]),
       'cut',
+      // No group owned `a`, so there is nothing to clean up (FR-018
+      // write-time scenario, canvas-element-grouping PRD-alignment
+      // finding 1) — `deleteSelection`'s third `onDelete` argument.
+      [],
     )
   })
 

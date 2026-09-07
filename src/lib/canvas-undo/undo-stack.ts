@@ -183,6 +183,20 @@ export type CanvasUndoLabel =
       elementKind: CanvasElementKind | null
       connected: boolean
     }
+  /**
+   * Canvas element grouping (tactical plan, Wave 7). `group` binds the
+   * current selection into a new group element — one `create` operation for
+   * the group row itself, never a write to any member (grouping only ever
+   * touches the group's own `childIds`, canvas-engine/scene.ts's `group?`
+   * field). `ungroup` dissolves exactly one group — one `delete` operation
+   * for the group row, again with no member write. `count` is the number of
+   * DIRECT children bound or released, matching `move`/`delete`'s own
+   * "how many elements does this toast's number describe" convention —
+   * always the group's own `childIds.length`, since the members themselves
+   * carry no operation of their own for either gesture.
+   */
+  | { gesture: 'group'; count: number }
+  | { gesture: 'ungroup'; count: number }
 
 /**
  * One undo-able gesture. `operations` holds more than one member only for a

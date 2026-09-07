@@ -24,6 +24,14 @@ function el(id: string, zIndex: number, patch: Partial<CanvasElement> = {}): Can
   }
 }
 
+function group(
+  id: string,
+  zIndex: number,
+  childIds: Array<string>,
+): CanvasElement {
+  return el(id, zIndex, { kind: 'group', group: { childIds } })
+}
+
 function connector(id: string, zIndex: number): CanvasElement {
   return el(id, zIndex, {
     kind: 'connector',
@@ -77,6 +85,27 @@ describe('zOrderTargets', () => {
     )
     expect(targets.map((e) => e.id)).toEqual(['t', 's'])
   })
+
+  it('expands a selected group to its whole subtree (FR-015)', () => {
+    // outer > mid > {a, b}: selecting only the OUTER group's id must still
+    // sweep mid and both leaves into the target set, or a z-order command
+    // would move the group's own frame without its members, tearing the
+    // group apart visually — the exact failure FR-015 exists to prevent.
+    const targets = zOrderTargets(
+      sceneFrom([
+        el('a', 1),
+        el('x', 2), // not a member — must stay excluded
+        el('b', 3),
+        group('mid', 4, ['a', 'b']),
+        group('outer', 0, ['mid']),
+      ]),
+      new Set(['outer']),
+    )
+    expect(new Set(targets.map((e) => e.id))).toEqual(
+      new Set(['outer', 'mid', 'a', 'b']),
+    )
+    expect(targets.map((e) => e.id)).not.toContain('x')
+  })
 })
 
 describe('bring to front', () => {
@@ -123,6 +152,48 @@ describe('bring to front', () => {
     // A connector sitting at a higher z does not put a shape "behind"
     // anything — the renderer paints every connector first regardless.
     expect(plan([el('a', 0), connector('con', 9)], ['a'], 'front')).toEqual([])
+  })
+
+  it('moves a group\'s whole subtree together, leaving no non-member interleaved', () => {
+    // 3-level nesting: outer > mid > {a, b}. `x` is NOT a member and sits
+    // BETWEEN a and b in the current z-order — exactly the arrangement that
+    // would fragment the group if only `outer`'s own id were moved. Only
+    // `outer` is selected; `zOrderTargets`'s own group expansion (tested
+    // above) is what pulls mid/a/b in too.
+    const elements = [
+      group('outer', 0, ['mid']),
+      el('a', 1),
+      el('x', 2),
+      el('b', 3),
+      group('mid', 4, ['a', 'b']),
+    ]
+    const changes = plan(elements, ['outer'], 'front')
+
+    // Every member of the subtree is planned — not just the group's own row.
+    expect(new Set(changes.map((c) => c.id))).toEqual(
+      new Set(['outer', 'mid', 'a', 'b']),
+    )
+    // `x` never appears in the plan — a z-order command touches only the
+    // selection (and, now, its expansion), never an unselected row.
+    expect(changes.map((c) => c.id)).not.toContain('x')
+
+    // Applying the plan must leave `x` OUTSIDE the group's block — not
+    // sandwiched between two of its members, the visible symptom FR-015
+    // guards against.
+    const patched = sceneFrom(
+      elements.map((element) => {
+        const change = changes.find((c) => c.id === element.id)
+        return change ? { ...element, zIndex: change.zIndex } : element
+      }),
+    )
+    const order = patched.elements.map((element) => element.id)
+    const groupIndices = ['outer', 'mid', 'a', 'b'].map((id) =>
+      order.indexOf(id),
+    )
+    const xIndex = order.indexOf('x')
+    const isOutsideBlock =
+      xIndex < Math.min(...groupIndices) || xIndex > Math.max(...groupIndices)
+    expect(isOutsideBlock).toBe(true)
   })
 })
 

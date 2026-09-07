@@ -404,3 +404,123 @@ describe('connector curvature round-trips, and its absence is preserved', () => 
     expect(restored).toStrictEqual(element)
   })
 })
+
+// ─── groups (canvas-element-grouping, tactical plan Wave 1) ────────────────
+//
+// A group is the second kind (after connector) whose props carry real
+// content — its member ids — that cannot be rebuilt from `kind` alone.
+
+const GROUP_PROPS = {
+  kind: 'group' as const,
+  childIds: [
+    '11111111-1111-4111-8111-111111111111',
+    '22222222-2222-4222-8222-222222222222',
+  ] as Array<string>,
+}
+
+function groupRecord(): CanvasElementRecord {
+  return record('grp1', { kind: 'group', props: GROUP_PROPS })
+}
+
+describe('group conversions', () => {
+  it('reads childIds off the stored props', () => {
+    const element = toEngineElement(groupRecord())
+    expect(element.kind).toBe('group')
+    expect(element.group).toEqual({ childIds: GROUP_PROPS.childIds })
+  })
+
+  it('gives a non-group element no group KEY at all', () => {
+    expect(toEngineElement(record('a'))).not.toHaveProperty('group')
+  })
+
+  it('writes childIds back into create props', () => {
+    const input = toCreateInput('board-2', toEngineElement(groupRecord()))
+    expect(input.kind).toBe('group')
+    expect(input.props).toEqual(GROUP_PROPS)
+  })
+
+  it('carries childIds through an update patch, so membership can be changed', () => {
+    const element = toEngineElement(groupRecord())
+    const changed = {
+      ...element,
+      group: { childIds: [GROUP_PROPS.childIds[0]] },
+    }
+    expect(toUpdatePatch(changed).props).toEqual({
+      kind: 'group',
+      childIds: [GROUP_PROPS.childIds[0]],
+    })
+  })
+
+  it('handles an empty group (0 members)', () => {
+    const empty = record('grp2', {
+      kind: 'group',
+      props: { kind: 'group', childIds: [] },
+    })
+    const element = toEngineElement(empty)
+    expect(element.group).toEqual({ childIds: [] })
+    expect(toCreateInput('board-2', element).props).toEqual({
+      kind: 'group',
+      childIds: [],
+    })
+  })
+
+  it('survives the undo snapshot round trip intact', () => {
+    // Without this, undoing a group delete would restore a group with no
+    // members even though the deleted row had them.
+    const element = toEngineElement(groupRecord())
+    const restored = fromElementSnapshot(toElementSnapshot('board-1', element))
+    expect(restored).toStrictEqual(element)
+    expect(restored.group).toEqual(element.group)
+  })
+
+  it('tolerates a row whose props column is null or absent', () => {
+    const noProps = {
+      ...record('grp1'),
+      kind: 'group' as const,
+      props: undefined,
+    } as unknown as CanvasElementRecord
+    expect(() => toEngineElement(noProps)).not.toThrow()
+    expect(toEngineElement(noProps)).not.toHaveProperty('group')
+  })
+
+  it('tolerates a group row whose props carry no childIds field at all (fix round — Hermes code review, Major Issue)', () => {
+    // Distinct from the "props column is null or absent" case above: here
+    // `props` IS present and `kind === 'group'`, but `childIds` itself is
+    // missing — the exact shape the doc comment above (`toEngineGroup`)
+    // promises to handle gracefully but a bare `[...props.childIds]`
+    // spread used to throw on instead, crashing the WHOLE board's mount
+    // (the throw happened inside `records.map(toEngineElement)`, before
+    // any per-board repair pass ever ran). Reachable from hand-edited or
+    // partially-migrated data, and from a seed script whose own ternary
+    // omits the field.
+    const malformed = {
+      ...record('grp1'),
+      kind: 'group' as const,
+      props: { kind: 'group' } as unknown as CanvasElementRecord['props'],
+    }
+    expect(() => toEngineElement(malformed)).not.toThrow()
+    expect(toEngineElement(malformed).group).toEqual({ childIds: [] })
+  })
+
+  it('refuses to build props for a group element with no childIds', () => {
+    const broken = { ...toEngineElement(groupRecord()), group: undefined }
+    expect(() => toCreateInput('board-2', broken)).toThrow(/no childIds/)
+    expect(() => toElementSnapshot('board-1', broken)).toThrow(/no childIds/)
+  })
+
+  it("toEngineScene drops a stored group's childId with no matching row (FR-018 load-time repair)", () => {
+    // `groupRecord()`'s own `GROUP_PROPS.childIds` names TWO ids — only the
+    // first has a matching row in this board's load; the second is exactly
+    // the "stale reference" a partial migration or a hand-edited row would
+    // leave behind. `toEngineElement` alone (the test above) has no view of
+    // the rest of the board and cannot catch this — `toEngineScene` sees
+    // every record at once and must self-repair rather than fail the load.
+    const memberRecord = record(GROUP_PROPS.childIds[0])
+    const scene = toEngineScene([memberRecord, groupRecord()])
+    expect(scene.byId.get('grp1')?.group).toEqual({
+      childIds: [GROUP_PROPS.childIds[0]],
+    })
+    // The load itself did not fail — every other row still resolved.
+    expect(scene.byId.get(GROUP_PROPS.childIds[0])).toBeDefined()
+  })
+})

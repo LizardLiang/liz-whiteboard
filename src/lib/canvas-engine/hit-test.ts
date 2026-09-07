@@ -14,7 +14,7 @@
 //
 // Pure module: no React, no DOM, no database.
 
-import { bounds, effectiveCornerRadius } from './scene'
+import { bounds, effectiveCornerRadius, groupDescendants, groupOwning } from './scene'
 import {
   connectorBounds,
   connectorCurve,
@@ -218,6 +218,14 @@ export function elementContainsPoint(
       // Resolving them here would give a pure predicate a hidden dependency
       // on the whole scene; `hitTest` below owns the connector case instead.
       return false
+    case 'group':
+      // A group's frame is a plain axis-aligned rect for hit-testing
+      // purposes, regardless of what shapes its members are (canvas-
+      // element-grouping tactical plan, Wave 5, item 12) — this is also what
+      // makes clicking empty frame area select the group (PRD FR-034),
+      // since a hit inside the frame but outside every member falls through
+      // to the group itself in the reverse-z scan `hitTest` performs below.
+      return rectContainsPoint(rect, point)
   }
 }
 
@@ -393,6 +401,199 @@ export function hitTest(
     }
   }
   return null
+}
+
+/** What a click should actually select, and whether it may enter text edit. */
+export interface ClickTargetResolution {
+  targetId: string
+  editable: boolean
+  /**
+   * The `enteredPath` the caller should adopt for its NEXT double-click,
+   * given this resolution — `targetId`'s own ancestor chain, outermost
+   * first (e.g. `['outer']` when `targetId` is `mid` in `outer > mid`).
+   *
+   * Computed FRESH from `targetId`'s actual ancestry, never by appending
+   * onto the CALLER's old `enteredPath`. That is what makes this
+   * self-correcting: appending would duplicate an entry (or drift wrong)
+   * the moment the raw hit resolves directly to a group whose own ancestry
+   * is shorter than the caller's already-entered depth — e.g. double-
+   * clicking a nested group's own empty frame area while already several
+   * levels deep. Recomputing from `targetId` itself is immune to that,
+   * and to a stale `enteredPath` generally.
+   */
+  enteredPath: Array<string>
+}
+
+/**
+ * Resolve a raw hit-test id — a group member, or a group hit directly on its
+ * own frame — to the element a click should actually select, given how deep
+ * the caller has already "entered" the structure (canvas-element-grouping
+ * tactical plan, Wave 2).
+ *
+ * `enteredPath` is the ordered list of group ids already entered, OUTERMOST
+ * FIRST — the `enteredPath` a PREVIOUS call's result carried (see
+ * `use-canvas-input.ts`'s `onDoubleClick`). This function never mutates it;
+ * it only reads how deep the caller already is.
+ *
+ * ALGORITHM: walk `hitElementId` up through `groupOwning` to build its own
+ * ancestor chain, outermost first (e.g. `[outer, mid, leaf]` for a member
+ * nested three groups deep). The OUTERMOST ancestor is always "free" — it is
+ * what a plain single click on any member already selects (FR-004) — so
+ * `enteredPath = []` still means "the caller is already looking at the
+ * outermost group" and the returned target is ONE LEVEL DEEPER than that,
+ * not the outermost itself. Concretely: find the length of the longest
+ * PREFIX the chain and `enteredPath` agree on (position by position); the
+ * target is the chain entry ONE PAST that agreeing prefix. A stale
+ * `enteredPath` — left over from double-clicking a different part of the
+ * board — degrades gracefully this way: the agreement stops at the first
+ * disagreeing position (possibly position 0), and the returned target is
+ * still one step into THIS hit's own chain, never an id from the wrong
+ * structure.
+ *
+ * If the chain runs out — the caller has already entered every group
+ * ancestor `hitElementId` has — the target is `hitElementId` itself.
+ * `editable` is true only then, and only when `hitElementId` is not itself a
+ * group: a group is never editable by construction, since it has no text
+ * (this covers double-clicking a group's own empty frame area directly,
+ * which selects it without attempting to edit it). Every other case returns
+ * a real ancestor group, always with `editable: false`.
+ */
+export function resolveClickTarget(
+  scene: Scene,
+  hitElementId: string,
+  enteredPath: ReadonlyArray<string>,
+): ClickTargetResolution {
+  // Outermost first. Bounded by element count, matching `outermostGroup`'s
+  // own cycle guard (scene.ts) — a malformed `childIds` loop terminates
+  // instead of hanging the tab.
+  const chain: Array<string> = []
+  let cursor = hitElementId
+  for (let hops = 0; hops <= scene.elements.length; hops++) {
+    const owner = groupOwning(scene, cursor)
+    if (!owner) break
+    chain.unshift(owner.id)
+    cursor = owner.id
+  }
+
+  let matched = 0
+  while (
+    matched < enteredPath.length &&
+    matched < chain.length &&
+    enteredPath[matched] === chain[matched]
+  ) {
+    matched += 1
+  }
+
+  // `.at()`, not `chain[matched + 1]`: this project's tsconfig does not set
+  // `noUncheckedIndexedAccess`, so bracket indexing types as plain `string`
+  // and an out-of-bounds `undefined` check reads as dead code to the linter
+  // even though it is very much reachable at runtime. `.at()`'s return type
+  // is `string | undefined` regardless, which is what the check below is
+  // actually guarding against.
+  const target = chain.at(matched + 1)
+  if (target !== undefined) {
+    return {
+      targetId: target,
+      editable: false,
+      // Everything up to AND INCLUDING the newly resolved target's own
+      // position in the chain — that target's real ancestor chain.
+      enteredPath: chain.slice(0, matched + 1),
+    }
+  }
+
+  const isGroup = scene.byId.get(hitElementId)?.group !== undefined
+  return { targetId: hitElementId, editable: !isGroup, enteredPath: chain }
+}
+
+/**
+ * The group `draggedElementId` should belong to after a drag ends, or null
+ * for top-level (canvas-element-grouping tactical plan, Wave 5) — the ONE
+ * genuinely new gesture this feature adds: dropping an element inside a
+ * group's frame joins it, dropping it outside removes it.
+ *
+ * Evaluated from the dragged element's CENTRE POINT (A11), never from
+ * partial bounds overlap — a partial-overlap rule makes an accidental join
+ * likely, exactly the failure commit-on-drop was chosen to avoid. Callers
+ * must call this ONLY at release (`onPointerUp`/`endGesture`), never during
+ * `onPointerMove` — membership must change once, from the final position,
+ * not preview while the pointer is still moving (FR-012).
+ *
+ * `excludedIds` must contain the dragged element's own id AND every id
+ * being moved together with it in the SAME gesture — a group being dragged
+ * cannot "join" itself, one of its own members also mid-drag, or a sibling
+ * also mid-drag alongside it.
+ *
+ * TIE-BREAK (A9/A10): among every group whose frame contains the centre
+ * point, the INNERMOST wins — a candidate that is a STRUCTURAL ANCESTOR of
+ * another candidate always loses to that other candidate, regardless of
+ * z-order (checked via `groupDescendants`, scene.ts). Among whatever
+ * remains — true siblings, unrelated to each other — the TOPMOST in
+ * z-order wins, the same rule `hitTest` above already applies to
+ * overlapping elements.
+ *
+ * Reuses `rectContainsPoint` against each group's own `x`/`y`/`width`/
+ * `height` (the frame) — no new geometry primitive needed, a group is a
+ * plain axis-aligned rect for this purpose regardless of what shapes its
+ * members are.
+ */
+export function resolveDropTarget(
+  scene: Scene,
+  draggedElementId: string,
+  excludedIds: ReadonlySet<string>,
+): string | null {
+  const dragged = scene.byId.get(draggedElementId)
+  if (!dragged) return null
+
+  const centre: Point = {
+    x: dragged.x + dragged.width / 2,
+    y: dragged.y + dragged.height / 2,
+  }
+
+  const candidates = scene.elements.filter(
+    (element) =>
+      element.group !== undefined &&
+      !excludedIds.has(element.id) &&
+      rectContainsPoint(bounds(element), centre),
+  )
+  if (candidates.length === 0) return null
+
+  // Precomputed once per candidate rather than recomputed inside the
+  // `some` below (Cassandra/Hermes Minor Issue: O(candidates^2)
+  // `groupDescendants` BFS calls otherwise, once per drop, not per move —
+  // cheap in the common case, but avoidable at no cost in clarity).
+  const descendantsOf = new Map(
+    candidates.map((candidate) => [
+      candidate.id,
+      new Set(groupDescendants(scene, candidate.id)),
+    ]),
+  )
+
+  // Innermost wins: a candidate that is an ancestor of another candidate is
+  // never the answer, however deep the overlap goes — drop it and keep
+  // walking. What remains is either one candidate or a set of true
+  // siblings (none an ancestor of another).
+  const innermost = candidates.filter(
+    (candidate) =>
+      !candidates.some(
+        (other) =>
+          other.id !== candidate.id &&
+          descendantsOf.get(candidate.id)!.has(other.id),
+      ),
+  )
+
+  // `innermost` can legitimately be EMPTY even though `candidates` is not
+  // (Hermes review, Major Issue): two groups whose `childIds` reference
+  // each other — malformed data, not reachable from any UI gesture — each
+  // get filtered out as an ancestor of the other, and the bare `.reduce`
+  // this used to be threw on an empty array. Falls back to `candidates`
+  // itself rather than crashing the drop, matching this module's own
+  // stated posture elsewhere (see `resolveClickTarget`'s own "degrades
+  // gracefully" precedent for a stale/unresolvable reference, above,
+  // `:448`).
+  const ranked = innermost.length > 0 ? innermost : candidates
+  return ranked.reduce((top, candidate) =>
+    candidate.zIndex > top.zIndex ? candidate : top,
+  ).id
 }
 
 /**

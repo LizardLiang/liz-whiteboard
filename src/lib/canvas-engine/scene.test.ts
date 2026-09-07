@@ -13,12 +13,17 @@ import {
   bringToFront,
   effectiveCornerRadius,
   getElement,
+  groupDescendants,
+  groupOwning,
   nextZIndex,
+  outermostGroup,
   remapConnectorEndpoints,
   removeElement,
   removeElements,
+  repairGroupMembership,
   sceneFrom,
   updateElement,
+  withGroupMembers,
 } from './scene'
 import {
   ATTACH_FORGIVENESS,
@@ -29,6 +34,8 @@ import {
   normaliseRect,
   rectFromPoints,
   rectsIntersect,
+  resolveClickTarget,
+  resolveDropTarget,
 } from './hit-test'
 import type { CanvasElement } from './scene'
 
@@ -621,5 +628,440 @@ describe('remapConnectorEndpoints', () => {
     // The ELEMENT's own id is renamed by useCanvasElements, not here — this
     // function only ever rewrites references TO it.
     expect(next.byId.get(A)?.id).toBe(A)
+  })
+})
+
+// ─── groups (canvas-element-grouping, tactical plan Wave 1) ────────────────
+//
+// Membership lives ONLY on the group (`childIds`), never on a member, so
+// every one of these helpers reads the group side and is a direct parallel
+// of the connector-relationship helpers above.
+
+function group(id: string, childIds: Array<string>, zIndex = 0): CanvasElement {
+  return el(id, { kind: 'group', group: { childIds }, zIndex })
+}
+
+describe('groupOwning', () => {
+  it('finds the group whose childIds directly contains an id', () => {
+    const scene = sceneFrom([el('a'), group('g1', ['a'])])
+    expect(groupOwning(scene, 'a')?.id).toBe('g1')
+  })
+
+  it('returns null for an element that belongs to nothing', () => {
+    const scene = sceneFrom([el('a')])
+    expect(groupOwning(scene, 'a')).toBeNull()
+  })
+
+  it('does not report a group as its own owner', () => {
+    const scene = sceneFrom([group('g1', [])])
+    expect(groupOwning(scene, 'g1')).toBeNull()
+  })
+})
+
+describe('outermostGroup', () => {
+  it('walks a nested chain to the top', () => {
+    const scene = sceneFrom([
+      el('a'),
+      group('inner', ['a']),
+      group('outer', ['inner']),
+    ])
+    expect(outermostGroup(scene, 'a')?.id).toBe('outer')
+  })
+
+  it('returns null for a group that is not itself nested in another', () => {
+    // A group that owns members but has no owner of its own is not "a
+    // member of anything" — the exact contract Wave 2's caller relies on to
+    // know when to fall back to the raw hit id instead.
+    const scene = sceneFrom([el('a'), group('g1', ['a'])])
+    expect(outermostGroup(scene, 'g1')).toBeNull()
+  })
+
+  it('returns null for an element that is not a member of anything', () => {
+    const scene = sceneFrom([el('a')])
+    expect(outermostGroup(scene, 'a')).toBeNull()
+  })
+
+  it('terminates instead of hanging on a childIds cycle', () => {
+    // A malformed/hand-edited row could loop back to an ancestor. This must
+    // return rather than recurse forever.
+    const scene = sceneFrom([group('g1', ['g2']), group('g2', ['g1'])])
+    expect(() => outermostGroup(scene, 'g1')).not.toThrow()
+  })
+})
+
+describe('groupDescendants', () => {
+  it('collects every id at every nesting depth', () => {
+    const scene = sceneFrom([
+      el('a'),
+      el('b'),
+      group('inner', ['a']),
+      group('outer', ['inner', 'b']),
+    ])
+    expect(new Set(groupDescendants(scene, 'outer'))).toEqual(
+      new Set(['inner', 'a', 'b']),
+    )
+  })
+
+  it('returns an empty list for a group with no members', () => {
+    const scene = sceneFrom([group('empty', [])])
+    expect(groupDescendants(scene, 'empty')).toEqual([])
+  })
+
+  it('is cycle-safe', () => {
+    const scene = sceneFrom([group('g1', ['g2']), group('g2', ['g1'])])
+    expect(() => groupDescendants(scene, 'g1')).not.toThrow()
+  })
+})
+
+describe('withGroupMembers', () => {
+  it('expands a selected group into itself plus every descendant', () => {
+    const scene = sceneFrom([
+      el('a'),
+      el('b'),
+      group('inner', ['a']),
+      group('outer', ['inner', 'b']),
+    ])
+    expect(new Set(withGroupMembers(scene, ['outer']))).toEqual(
+      new Set(['outer', 'inner', 'a', 'b']),
+    )
+  })
+
+  it('leaves a non-group id untouched', () => {
+    const scene = sceneFrom([el('a')])
+    expect(withGroupMembers(scene, ['a'])).toEqual(['a'])
+  })
+
+  it('deduplicates when a member is reachable through more than one path', () => {
+    const scene = sceneFrom([
+      el('a'),
+      group('g1', ['a']),
+    ])
+    expect(withGroupMembers(scene, ['g1', 'a'])).toEqual(
+      expect.arrayContaining(['g1', 'a']),
+    )
+    expect(withGroupMembers(scene, ['g1', 'a'])).toHaveLength(2)
+  })
+})
+
+// ─── repairGroupMembership: FR-018 load-time referential-integrity repair ──
+//
+// A hand-edited or partially-migrated board can hand a load a group whose
+// `childIds` names a row that simply is not in that load (canvas-element-
+// grouping PRD-alignment finding 1). This is called ONLY at a genuine
+// whole-board load (`toEngineScene`, canvas-element-adapter.ts) — see its
+// own header for why it must NOT be wired into `sceneFrom` itself, which is
+// also used to rebuild the scene from a merely PARTIAL, still-in-flight
+// element list mid-gesture.
+
+describe('repairGroupMembership (FR-018 load-time)', () => {
+  it("drops a group's childId that names no element in the same list", () => {
+    const repaired = repairGroupMembership([el('a'), group('g1', ['a', 'ghost'])])
+    const g1 = repaired.find((e) => e.id === 'g1')
+    expect(g1?.group).toEqual({ childIds: ['a'] })
+  })
+
+  it('does not fail when every childId is dangling', () => {
+    const repaired = repairGroupMembership([group('g1', ['ghost1', 'ghost2'])])
+    expect(repaired).toHaveLength(1)
+    expect(repaired[0].group).toEqual({ childIds: [] })
+  })
+
+  it('leaves an intact group at the SAME object identity — no repair, no new object', () => {
+    const elements = [el('a'), group('g1', ['a'])]
+    const repaired = repairGroupMembership(elements)
+    expect(repaired[1]).toBe(elements[1])
+    // Nothing needed repair at all: the SAME array comes back, not a copy.
+    expect(repaired).toBe(elements)
+  })
+
+  it('leaves a non-group element untouched', () => {
+    const repaired = repairGroupMembership([el('a')])
+    expect(repaired[0].group).toBeUndefined()
+  })
+})
+
+describe('sceneFrom does NOT repair group membership — it rebuilds from a PARTIAL list too', () => {
+  // The regression this guards: an earlier version of `sceneFrom` called
+  // `repairGroupMembership` on every rebuild, which is exactly what EVERY
+  // mutator in this module (`addElement`/`updateElement`/`removeElement(s)`)
+  // funnels through. Found via an e2e regression on undoing a whole-group
+  // cascade delete: undo recreates the group and its members as INDEPENDENT,
+  // CONCURRENT `addElement` calls, and if the group's own call landed before
+  // a member's, the old `sceneFrom` saw a childId that did not YET resolve
+  // and PERMANENTLY stripped it — there was nothing left to add it back once
+  // the member's own create landed moments later. `sceneFrom` must treat
+  // "not yet in this partial list" and "genuinely gone" as indistinguishable
+  // and do nothing about either; only a caller that knows the list is
+  // COMPLETE (`toEngineScene`) may call `repairGroupMembership` itself.
+  it('keeps a dangling childId as-is — a caller mid-gesture may still be assembling the list', () => {
+    const scene = sceneFrom([el('a'), group('g1', ['a', 'not-here-yet'])])
+    expect(scene.byId.get('g1')?.group).toEqual({
+      childIds: ['a', 'not-here-yet'],
+    })
+  })
+
+  it('addElement does not retroactively repair a group when its member finally lands', () => {
+    // Mirrors the real undo-of-cascade-delete sequence: the group's own
+    // `addElement` call lands with a childId that does not resolve YET.
+    let scene = sceneFrom([group('g1', ['a'])])
+    expect(scene.byId.get('g1')?.group).toEqual({ childIds: ['a'] })
+    // `a`'s own create lands moments later.
+    scene = addElement(scene, el('a'))
+    // The group still correctly names `a` — nothing was ever stripped for
+    // `sceneFrom` to have failed to add back.
+    expect(scene.byId.get('g1')?.group).toEqual({ childIds: ['a'] })
+    expect(scene.byId.get('a')).toBeDefined()
+  })
+})
+
+describe('resolveClickTarget', () => {
+  // Three levels deep: outer > mid > leaf > a. A double click at 'a' should
+  // descend exactly one level of the outer>mid>leaf chain per call, keyed
+  // off `enteredPath`'s LENGTH matched against the chain — never off which
+  // element is topmost at the pixel, which never changes.
+  const threeLevels = sceneFrom([
+    el('a'),
+    group('leaf', ['a']),
+    group('mid', ['leaf']),
+    group('outer', ['mid']),
+  ])
+
+  it('descends one level below the outermost when nothing is entered', () => {
+    // The outermost is always "free" — a plain single click already gives
+    // it (FR-004) — so an empty enteredPath still means "one level in",
+    // not "the outermost itself". A wrong answer of 'outer' here would also
+    // break the caller: appending outer's OWN parent (null) to enteredPath
+    // is not constructible.
+    expect(resolveClickTarget(threeLevels, 'a', [])).toEqual({
+      targetId: 'mid',
+      editable: false,
+      enteredPath: ['outer'],
+    })
+  })
+
+  it('descends one further level once the caller has entered one', () => {
+    expect(resolveClickTarget(threeLevels, 'a', ['outer'])).toEqual({
+      targetId: 'leaf',
+      editable: false,
+      enteredPath: ['outer', 'mid'],
+    })
+  })
+
+  it('reaches the hit element itself once every ancestor is entered', () => {
+    expect(resolveClickTarget(threeLevels, 'a', ['outer', 'mid'])).toEqual({
+      targetId: 'a',
+      editable: true,
+      enteredPath: ['outer', 'mid', 'leaf'],
+    })
+  })
+
+  it('is editable for a non-group element directly, single level', () => {
+    // A single-level group (outer2 directly contains b, no nesting): one
+    // double click reaches the leaf immediately, matching FR-005's plain
+    // (non-nested) case.
+    const oneLevel = sceneFrom([el('b'), group('outer2', ['b'])])
+    expect(resolveClickTarget(oneLevel, 'b', [])).toEqual({
+      targetId: 'b',
+      editable: true,
+      enteredPath: ['outer2'],
+    })
+  })
+
+  it('is never editable when the resolved target is itself a group', () => {
+    // Hitting a nested group's own empty frame directly (FR-034) rather
+    // than one of its members — the chain runs out at that group, and a
+    // group has no text to edit. `enteredPath` recomputes from `mid`'s OWN
+    // ancestry (['outer']) rather than trusting the caller's stale
+    // `['outer']` by coincidence matching here — see the next test for a
+    // case where trusting it would have been wrong.
+    expect(resolveClickTarget(threeLevels, 'mid', ['outer'])).toEqual({
+      targetId: 'mid',
+      editable: false,
+      enteredPath: ['outer'],
+    })
+  })
+
+  it('recomputes enteredPath fresh rather than duplicating a stale entry', () => {
+    // Same hit as above, but the caller's `enteredPath` claims TWO levels
+    // already entered (['outer', 'mid']) even though the raw hit ('mid')
+    // is only ONE level deep. Appending mid's parent onto the OLD
+    // enteredPath would give ['outer', 'mid', 'mid'] — a duplicate. The
+    // correct, self-correcting answer is mid's own real ancestry, ['outer'].
+    expect(resolveClickTarget(threeLevels, 'mid', ['outer', 'mid'])).toEqual({
+      targetId: 'mid',
+      editable: false,
+      enteredPath: ['outer'],
+    })
+  })
+
+  it('degrades gracefully when enteredPath is stale (a different structure)', () => {
+    // Left over from double-clicking elsewhere on the board. The mismatch
+    // is caught at the first disagreeing position, and the result is still
+    // one step into THIS hit's own chain — never an id from the wrong tree.
+    expect(resolveClickTarget(threeLevels, 'a', ['someOtherGroup'])).toEqual({
+      targetId: 'mid',
+      editable: false,
+      enteredPath: ['outer'],
+    })
+  })
+
+  it('is editable for an element that is not a member of anything', () => {
+    const scene = sceneFrom([el('lonely')])
+    expect(resolveClickTarget(scene, 'lonely', [])).toEqual({
+      targetId: 'lonely',
+      editable: true,
+      enteredPath: [],
+    })
+  })
+})
+
+describe('resolveDropTarget', () => {
+  it("resolves to the group whose frame contains the dragged element's centre point", () => {
+    const scene = sceneFrom([
+      el('g1', { kind: 'group', group: { childIds: [] }, x: 0, y: 0, width: 200, height: 200 }),
+      el('a', { x: 50, y: 50, width: 20, height: 20 }), // centre (60, 60)
+    ])
+    expect(resolveDropTarget(scene, 'a', new Set(['a']))).toBe('g1')
+  })
+
+  it("returns null when no group's frame contains the centre point", () => {
+    const scene = sceneFrom([
+      el('g1', { kind: 'group', group: { childIds: [] }, x: 0, y: 0, width: 50, height: 50 }),
+      el('a', { x: 500, y: 500, width: 20, height: 20 }),
+    ])
+    expect(resolveDropTarget(scene, 'a', new Set(['a']))).toBeNull()
+  })
+
+  it('returns null when the dragged element is not in the scene', () => {
+    const scene = sceneFrom([
+      el('g1', { kind: 'group', group: { childIds: [] }, x: 0, y: 0, width: 200, height: 200 }),
+    ])
+    expect(resolveDropTarget(scene, 'ghost', new Set(['ghost']))).toBeNull()
+  })
+
+  it('excludes a group in excludedIds even when its frame contains the point', () => {
+    // The group currently being dragged in the same gesture — it must not
+    // be able to "join" itself.
+    const scene = sceneFrom([
+      el('g1', { kind: 'group', group: { childIds: ['a'] }, x: 0, y: 0, width: 200, height: 200 }),
+      el('a', { x: 50, y: 50, width: 20, height: 20 }),
+    ])
+    expect(resolveDropTarget(scene, 'a', new Set(['a', 'g1']))).toBeNull()
+  })
+
+  it('picks the INNERMOST (structural descendant) over its ancestor, regardless of z-order (A9)', () => {
+    // `outer` has a HIGHER z than `mid` — proof that structural nesting,
+    // not z-order, decides between an ancestor and its own descendant.
+    const scene = sceneFrom([
+      el('outer', {
+        kind: 'group',
+        group: { childIds: ['mid'] },
+        x: 0,
+        y: 0,
+        width: 200,
+        height: 200,
+        zIndex: 5,
+      }),
+      el('mid', {
+        kind: 'group',
+        group: { childIds: [] },
+        x: 50,
+        y: 50,
+        width: 100,
+        height: 100,
+        zIndex: 1,
+      }),
+      el('a', { x: 90, y: 90, width: 20, height: 20 }), // centre (100, 100), inside both
+    ])
+    expect(resolveDropTarget(scene, 'a', new Set(['a']))).toBe('mid')
+  })
+
+  it('picks the TOPMOST z-order among true siblings (A10)', () => {
+    // `sib1` and `sib2` are unrelated groups (neither owns the other) that
+    // happen to overlap at the drop point — the same tie-break `hitTest`
+    // already uses for overlapping elements.
+    const scene = sceneFrom([
+      el('sib1', {
+        kind: 'group',
+        group: { childIds: [] },
+        x: 0,
+        y: 0,
+        width: 100,
+        height: 100,
+        zIndex: 1,
+      }),
+      el('sib2', {
+        kind: 'group',
+        group: { childIds: [] },
+        x: 0,
+        y: 0,
+        width: 100,
+        height: 100,
+        zIndex: 3,
+      }),
+      el('a', { x: 40, y: 40, width: 20, height: 20 }), // centre (50, 50), inside both
+    ])
+    expect(resolveDropTarget(scene, 'a', new Set(['a']))).toBe('sib2')
+  })
+
+  it('resolves against the dragged element itself, when it is a group, joining an enclosing frame', () => {
+    // A12: a group can be dragged into another group's frame under the
+    // same drop rule.
+    const scene = sceneFrom([
+      el('outer', {
+        kind: 'group',
+        group: { childIds: [] },
+        x: 0,
+        y: 0,
+        width: 300,
+        height: 300,
+      }),
+      el('inner', {
+        kind: 'group',
+        group: { childIds: ['a'] },
+        x: 100,
+        y: 100,
+        width: 20,
+        height: 20,
+      }),
+    ])
+    expect(resolveDropTarget(scene, 'inner', new Set(['inner', 'a']))).toBe(
+      'outer',
+    )
+  })
+
+  it('degrades to the topmost candidate rather than throwing when every candidate is mutually ancestor-and-descendant (fix round — Hermes code review, Major Issue)', () => {
+    // Malformed, cyclic data — not reachable from any UI gesture, but
+    // `groupDescendants`'s own cycle guard means EACH of `cycleA`/`cycleB`
+    // is filtered out as an "ancestor" of the other, leaving `innermost`
+    // EMPTY even though `candidates` is not. The bare `.reduce` this used
+    // to be threw `TypeError: Reduce of empty array with no initial
+    // value` on exactly this shape, killing the drop from inside
+    // `onPointerUp`.
+    const scene = sceneFrom([
+      el('cycleA', {
+        kind: 'group',
+        group: { childIds: ['cycleB'] },
+        x: 0,
+        y: 0,
+        width: 200,
+        height: 200,
+        zIndex: 1,
+      }),
+      el('cycleB', {
+        kind: 'group',
+        group: { childIds: ['cycleA'] },
+        x: 0,
+        y: 0,
+        width: 200,
+        height: 200,
+        zIndex: 5,
+      }),
+      el('a', { x: 50, y: 50, width: 20, height: 20 }),
+    ])
+    expect(() => resolveDropTarget(scene, 'a', new Set(['a']))).not.toThrow()
+    // Degrades to the topmost of the (undifferentiated) candidates rather
+    // than crashing the drop.
+    expect(resolveDropTarget(scene, 'a', new Set(['a']))).toBe('cycleB')
   })
 })

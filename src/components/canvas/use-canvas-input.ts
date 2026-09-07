@@ -39,6 +39,11 @@ import type {
   ScreenRect,
 } from '@/lib/canvas-engine/render'
 import type { TextMeasurer } from '@/lib/canvas-engine/text-layout'
+import type {
+  AlignEdge,
+  AlignmentGuide,
+  ResizeAlignment,
+} from '@/lib/canvas-engine/alignment'
 import {
   panByScreenDelta,
   screenToWorld,
@@ -54,8 +59,16 @@ import {
   hitTestRect,
   normaliseRect,
   rectFromPoints,
+  resolveClickTarget,
+  resolveDropTarget,
 } from '@/lib/canvas-engine/hit-test'
 import { snapPoint, snapRect } from '@/lib/canvas-engine/grid'
+import {
+  alignMovedRect,
+  alignResizedRect,
+  alignmentCandidates,
+  alignmentTolerance,
+} from '@/lib/canvas-engine/alignment'
 import {
   CANVAS_SHAPE_KINDS,
   DEFAULT_CONNECTOR_ROUTING,
@@ -63,14 +76,20 @@ import {
   addElement,
   attachedEndpoint,
   bounds,
+  boundsOfMany,
   connectorsTouching,
   endpointElementId,
   freeEndpoint,
+  groupDescendants,
+  groupOwning,
   nextZIndex,
+  outermostGroup,
   remapConnectorEndpoints,
   removeElements,
+  topLevelIds,
   updateElement,
   withAttachedConnectors,
+  withGroupMembers,
 } from '@/lib/canvas-engine/scene'
 import {
   CONNECTOR_ENDS,
@@ -88,6 +107,7 @@ import {
 } from '@/lib/canvas-engine/render'
 import { quickCreatePlacement } from '@/lib/canvas-engine/quick-create'
 import { cloneTargets, planClone } from '@/lib/canvas-engine/clone'
+import { Z_MAX, Z_MIN } from '@/lib/canvas-engine/z-order'
 import {
   ANCHOR_ATTACH,
   anchorPoint,
@@ -167,6 +187,16 @@ const SHAPE_TOOL_BY_KEY: Readonly<Record<string, CanvasShapeKind | undefined>> =
 const DEFAULT_SHAPE_SIZE = { width: 160, height: 100 }
 const DEFAULT_TEXT_SIZE = { width: 240, height: 40 }
 
+/**
+ * The "no alignment right now" array, shared rather than allocated per frame.
+ *
+ * A fresh `[]` here would be a new identity on every `pointermove` of EVERY
+ * gesture — pan and marquee included — which propagates through
+ * `CanvasBoard`'s `selection` memo into its redraw trigger. Constant, so the
+ * frames that have nothing to do with alignment stay unchanged.
+ */
+const NO_GUIDES: ReadonlyArray<AlignmentGuide> = []
+
 /** Below this many SCREEN pixels a drag counts as a click. */
 const CLICK_SLOP = 4
 
@@ -175,6 +205,58 @@ const MIN_ELEMENT_SIZE = 8
 
 /** Caret blink half-period, in milliseconds. */
 const CARET_BLINK_MS = 530
+
+/**
+ * `lastPointerDownRef`'s own repeat-click window and position tolerance
+ * (canvas-element-grouping tactical plan, Wave 2/5 — the `PointerEvent.
+ * detail` replacement; see that ref's own doc comment for why this exists).
+ *
+ * 1500ms, NOT the ~500ms a browser's own native double-click timeout uses —
+ * deliberately wider, confirmed necessary by a Wave 8 e2e probe: a native
+ * `dblclick` DOM event fires ONLY ONCE per rapid click streak (Chromium
+ * does not re-fire it for a 3rd/4th click continuing the same streak), so
+ * FR-005's "a FURTHER double-click descends one more level" can only ever
+ * be reached via a SEPARATE double-click GESTURE — two clicks close
+ * together, but with a genuine, if brief, human pause BEFORE them (long
+ * enough to exceed the browser's own streak window and let it fire a fresh
+ * `dblclick`) — not by clicking rapidly four times without pause. This
+ * window has to outlast that pause, or the first click of the SECOND
+ * double-click would (correctly, by FR-004's own unconditional rule for a
+ * click that turns out to be truly isolated) reset `enteredPath` before its
+ * own `onDoubleClick` ever got to use it, undoing the first double-click's
+ * progress. 1500ms comfortably covers a natural glance-and-click-again
+ * pause without staying open long enough to defeat FR-004's OWN "click
+ * elsewhere or wait me out" escape hatch in ordinary use. 6 world units is
+ * forgiving enough for a real hand holding still at default zoom while
+ * still well inside "the same spot" for any reasonably-sized element this
+ * board draws.
+ *
+ * USED FOR TWO DIFFERENT DECISIONS, deliberately with DIFFERENT tolerances
+ * (Hermes review, Major Issue): this window alone used to gate BOTH (a)
+ * whether to preserve `enteredPath` across a press, and (b) whether that
+ * press should target the raw hit instead of the outermost group. Sharing
+ * one 1500ms window made two separate, unhurried single clicks on the same
+ * member (FR-004's own unconditional case) about 700ms apart wrongly
+ * resolve the SECOND one to the raw leaf, since 700ms is well inside
+ * 1500ms. (a) must stay wide — it is what lets a genuinely separate,
+ * SECOND double-click gesture build on the first one's already-entered
+ * depth. (b) must be much tighter, close to a real double-click's own
+ * inter-press gap, so it fires only for the second press of an ACTUAL
+ * double-click, never for two independent slow clicks. `onDoubleClick`
+ * (which reads `enteredPathRef`, not this decision) is what genuinely
+ * descends a level either way — this only decides what a LONE press shows
+ * in the moment before it, if anything, fires.
+ */
+const REPEAT_CLICK_WINDOW_MS = 1500
+const REPEAT_CLICK_DISTANCE = 6
+/**
+ * How close two presses must land for the SECOND one to target the raw hit
+ * instead of the outermost group — see `REPEAT_CLICK_WINDOW_MS`'s own
+ * header for why this is a separate, tighter window from that one. Close to
+ * a real double-click's own inter-press gap (well under a second in every
+ * mainstream browser's native double-click detection).
+ */
+const RAW_HIT_TARGET_WINDOW_MS = 500
 
 /**
  * Wheel-delta normalisation. `WheelEvent.deltaMode` reports pixels (0), lines
@@ -316,10 +398,61 @@ export interface CanvasEditCallbacks {
    * — but only one of them also filled the clipboard, and the undo toast has
    * to say which happened. Optional, defaulting to `'delete'`, so every
    * existing call site is unchanged.
+   *
+   * `groupUpdates` (canvas-element-grouping PRD-alignment finding 1, FR-018
+   * write-time scenario): the `childIds` patch for every group that SURVIVES
+   * this delete but owned one of the doomed ids directly — empty when
+   * nothing needs cleaning, e.g. every case where the owning group is ITSELF
+   * among the doomed ids (Wave 4's cascade already removes the whole
+   * subtree, so there is no surviving owner left to patch). Folded into the
+   * SAME write/undo entry the delete itself makes, mirroring how
+   * `onUpdate`'s `resolveMembershipUpdates` folds a membership patch into a
+   * move. Optional and defaults to `[]` so a consumer testing this callback
+   * in isolation is not forced to supply it.
    */
   onDelete?: (
     elements: Array<CanvasElement>,
     gesture?: 'delete' | 'cut',
+    groupUpdates?: Array<MembershipUpdate>,
+  ) => void
+  /**
+   * One group-creation gesture (canvas-element-grouping tactical plan, Wave
+   * 6/7): the new group element, already carrying its `childIds`. Members
+   * themselves are never written — membership lives on the group side only
+   * (Wave 1) — so this is closer to `onCreate` than to any multi-element
+   * recorder; the consumer's `recordGroup` (use-canvas-undo.ts) persists it
+   * with a single `element:create`.
+   *
+   * `groupUpdates` (Hermes code review BLOCKER 2, FR-018): every OTHER
+   * element this same gesture also needs to patch — a prior owner's
+   * `childIds` a joining member is detached from, and/or a member's own
+   * `zIndex` bump when the new group's zIndex had to renormalize the whole
+   * membership up. Folded into the SAME write/undo entry the group's own
+   * creation makes, mirroring how `onDelete`'s `groupUpdates` folds a
+   * cleanup patch into a delete. Optional and defaults to `[]`.
+   */
+  onGroup?: (
+    groupElement: CanvasElement,
+    groupUpdates?: Array<MembershipUpdate>,
+  ) => void
+  /**
+   * One ungroup gesture: the group element being dissolved, exactly as it
+   * stood before removal — everything the consumer's `recordUngroup`
+   * needs to persist a single `element:delete` and to restore it on undo.
+   * Members need no write either: dissolving a group only deletes the
+   * group row, and the members were never touched by grouping, so they are
+   * already independent the instant it is gone.
+   *
+   * `groupUpdates` (Hermes code review BLOCKER 1, FR-018): the dissolving
+   * group's OWN parent's `childIds` patch, when it is itself nested inside
+   * a SURVIVING group — empty when it is not nested, or when the selection
+   * even reaches this callback for a top-level group. Folded into the SAME
+   * write/undo entry the dissolve itself makes, mirroring `onDelete`'s
+   * `groupUpdates`. Optional and defaults to `[]`.
+   */
+  onUngroup?: (
+    groupElement: CanvasElement,
+    groupUpdates?: Array<MembershipUpdate>,
   ) => void
 }
 
@@ -384,10 +517,28 @@ type Gesture =
     }
   | {
       kind: 'move'
-      lastWorld: Point
+      /**
+       * Pointer position in WORLD space at pointerdown.
+       *
+       * The move used to accumulate a per-frame `dx`/`dy` from the PREVIOUS
+       * frame's pointer instead. That could not survive alignment snapping:
+       * a frame that pulled the element 3 units to a neighbour's edge would
+       * make the next frame's delta start from the snapped position, so the
+       * correction compounded and the element crept away from the pointer.
+       * Every frame now derives the whole offset from this one fixed point,
+       * which is the same drift argument `resize`'s `startBounds` records.
+       */
+      startWorld: Point
       startScreen: Point
       ids: ReadonlyArray<string>
       moved: boolean
+      /**
+       * Alignment guides for the current frame — chrome only, recomputed
+       * every `pointermove` and never written to an element (see
+       * `alignment.ts`). Lives on the gesture so it clears itself when the
+       * gesture ends, the way `quick-create`'s `candidate` does.
+       */
+      guides: ReadonlyArray<AlignmentGuide>
       /**
        * Every dragged element exactly as it stood at pointerdown, for
        * `onUpdate`'s pre-state (board-undo tactical plan, Wave 3, step 7).
@@ -409,6 +560,8 @@ type Gesture =
       startBounds: WorldRect
       /** The element exactly as it stood at pointerdown, for `onUpdate`'s pre-state. */
       beforeElement: CanvasElement
+      /** Alignment guides for the current frame — see the `move` gesture's own field. */
+      guides: ReadonlyArray<AlignmentGuide>
     }
   | {
       /**
@@ -738,6 +891,281 @@ function resizedBounds(
   return { x, y, width, height }
 }
 
+/**
+ * Which edge a grip moves on each axis, or null for an axis it leaves alone.
+ *
+ * Reads the handle the same way `resizedBounds` above does, and lives beside
+ * it for that reason: the two must agree about what `ne` means, and they are
+ * the only two places in the codebase that decode a `ResizeHandle` at all.
+ * `alignment.ts` takes the decoded answer rather than the handle so that pure
+ * module never needs to import `render.ts`.
+ */
+function resizeAlignEdges(handle: ResizeHandle): {
+  x: AlignEdge | null
+  y: AlignEdge | null
+} {
+  return {
+    x: handle.includes('w') ? 'min' : handle.includes('e') ? 'max' : null,
+    y: handle.includes('n') ? 'min' : handle.includes('s') ? 'max' : null,
+  }
+}
+
+/** One element's patch, before and after — for folding into the SAME `onUpdate`/`onGroup`/`onUngroup`/`onDelete` call a gesture already makes. Carries a group's `childIds` patch OR a member's `zIndex` bump (or, in principle, both) — whatever changed, `after` is the element's whole next row. Exported (Hermes code review, Minor Issue) so `use-canvas-undo.ts`'s `groupUpdates` parameters name the same type instead of re-spelling its shape inline at three more call sites. */
+export interface MembershipUpdate {
+  before: CanvasElement
+  after: CanvasElement
+}
+
+/**
+ * Accumulate one owner's running `childIds` patch across a pass over
+ * several affected ids, keyed by owner id so a single owner touched twice
+ * in the same pass (e.g. both an old and a new owner within one move
+ * gesture) ends up with ONE final patch, not two competing ones.
+ *
+ * Shared by `resolveMembershipUpdates`'s old-owner detach branch,
+ * `resolveGroupCleanupUpdates`, and `groupSelection`'s prior-owner detach
+ * (Hermes review, Major Issue: "two near-identical 9-line blocks... meets
+ * `default.md`'s copy-paste threshold"). `originals` and `patched` are the
+ * caller's own running maps — passed in rather than owned here, so several
+ * calls across one pass (one per affected id) keep composing into the same
+ * two maps.
+ */
+function patchGroupChildIds(
+  originals: Map<string, CanvasElement>,
+  patched: Map<string, CanvasElement>,
+  owner: CanvasElement,
+  updateChildIds: (childIds: ReadonlyArray<string>) => Array<string>,
+): void {
+  if (!originals.has(owner.id)) originals.set(owner.id, owner)
+  const current = patched.get(owner.id) ?? owner
+  patched.set(owner.id, {
+    ...current,
+    group: { childIds: updateChildIds(current.group?.childIds ?? []) },
+  })
+}
+
+/**
+ * Materialize an `originals`/`patched` running-map pair — the accumulation
+ * shape `resolveMembershipUpdates`, `resolveGroupCleanupUpdates`, and
+ * `groupSelection`'s own detach/renormalize passes all build up — into
+ * `Array<MembershipUpdate>` (Hermes code review, Minor Issue: this same
+ * four-line expression appeared near-verbatim at three call sites).
+ */
+function toMembershipUpdates(
+  originals: ReadonlyMap<string, CanvasElement>,
+  patched: ReadonlyMap<string, CanvasElement>,
+): Array<MembershipUpdate> {
+  return [...patched.entries()].map(([id, after]) => ({
+    before: originals.get(id) as CanvasElement,
+    after,
+  }))
+}
+
+/**
+ * Bump `elementId`'s `zIndex` to `nextZIndex`, and apply the SAME delta to
+ * every element in its `groupDescendants` subtree — not just its own row
+ * (Hermes code review BLOCKER: a `zIndex` write that repairs "a group's
+ * frame must paint below every member" at the level it was reported broke
+ * the SAME invariant one level down, for a joining/renormalized element
+ * that is ITSELF a group. See
+ * `.claude/.Arena/review-rules/proposals/2026-09-02-z-index-mutation-must-cover-the-subtree.md`).
+ * A no-op for a non-group `elementId` — `groupDescendants` returns `[]`
+ * then — so every caller can apply this unconditionally regardless of kind.
+ *
+ * Composes with a `childIds` patch already recorded for the SAME id via
+ * `patchGroupChildIds` in the caller's own `originals`/`patched` maps: both
+ * read the CURRENT (already-patched) element before writing and spread it
+ * back, so neither helper clobbers a field the other one changed.
+ */
+function bumpZIndexSubtree(
+  scene: Scene,
+  originals: Map<string, CanvasElement>,
+  patched: Map<string, CanvasElement>,
+  elementId: string,
+  targetZIndex: number,
+): void {
+  const element = scene.byId.get(elementId)
+  if (!element) return
+  const current = patched.get(elementId) ?? element
+  const delta = targetZIndex - current.zIndex
+  if (delta === 0) return
+  if (!originals.has(elementId)) originals.set(elementId, element)
+  patched.set(elementId, { ...current, zIndex: targetZIndex })
+
+  for (const descendantId of groupDescendants(scene, elementId)) {
+    const descendant = scene.byId.get(descendantId)
+    if (!descendant) continue
+    const currentDescendant = patched.get(descendantId) ?? descendant
+    if (!originals.has(descendantId)) originals.set(descendantId, descendant)
+    patched.set(descendantId, {
+      ...currentDescendant,
+      zIndex: Math.min(
+        Math.max(currentDescendant.zIndex + delta, Z_MIN),
+        Z_MAX,
+      ),
+    })
+  }
+}
+
+/**
+ * The group membership changes a completed move gesture produced, or an
+ * empty array if none (canvas-element-grouping tactical plan, Wave 5) — the
+ * one genuinely new gesture this feature adds.
+ *
+ * Evaluated ONCE, from the scene `onPointerMove` has already shifted to the
+ * FINAL dropped positions — never mid-drag (FR-012's commit-on-drop rule).
+ * Only TOP-LEVEL dragged ids are checked (`topLevelIds`, above): an id that
+ * is itself a descendant of ANOTHER id in `draggedIds` is moving WITH that
+ * other id, not independently, so it must not also try to "join" a frame
+ * using its own (dragged-along) position.
+ *
+ * A single group can be BOTH the old owner for one top-level id and the
+ * new owner for another within the same gesture — the running patch is
+ * accumulated per group id so both edits land in one final `childIds`.
+ *
+ * Also bumps the JOINING element's own `zIndex` — and, via
+ * `bumpZIndexSubtree`, its WHOLE subtree's (Hermes code review BLOCKER 1: a
+ * prior fix bumped only the joining element's own row, so dragging a GROUP
+ * into another group left the joining group's frame painting above its own
+ * members) — when it drops below its new owner's: a group's frame must
+ * always paint BELOW every one of its members (see `groupSelection`'s own
+ * header), or `hitTest`'s flat reverse-z scan lets the frame occlude a
+ * lower-z member permanently the instant it joins. Bumped to one above the
+ * owner's current `zIndex`, clamped to `Z_MAX`.
+ */
+function resolveMembershipUpdates(
+  scene: Scene,
+  draggedIds: ReadonlyArray<string>,
+): Array<MembershipUpdate> {
+  const draggedSet = new Set(draggedIds)
+  const ids = topLevelIds(scene, draggedIds)
+
+  const patched = new Map<string, CanvasElement>()
+  const originals = new Map<string, CanvasElement>()
+
+  for (const id of ids) {
+    const oldOwner = groupOwning(scene, id)
+    // `excludedIds` is the WHOLE gesture, not just `id` and its
+    // descendants: a group being dragged cannot join itself, one of its
+    // own members also mid-drag, or a SIBLING also mid-drag alongside it.
+    const newOwnerId = resolveDropTarget(scene, id, draggedSet)
+    if ((oldOwner?.id ?? null) === newOwnerId) continue // unchanged
+
+    if (oldOwner) {
+      patchGroupChildIds(originals, patched, oldOwner, (childIds) =>
+        childIds.filter((childId) => childId !== id),
+      )
+    }
+    if (!newOwnerId) continue
+    const newOwner = scene.byId.get(newOwnerId)
+    if (!newOwner) continue
+
+    patchGroupChildIds(originals, patched, newOwner, (childIds) => [
+      ...childIds,
+      id,
+    ])
+    const joiningElement = scene.byId.get(id)
+    if (joiningElement && joiningElement.zIndex <= newOwner.zIndex) {
+      bumpZIndexSubtree(
+        scene,
+        originals,
+        patched,
+        id,
+        Math.min(newOwner.zIndex + 1, Z_MAX),
+      )
+    }
+  }
+
+  return toMembershipUpdates(originals, patched)
+}
+
+/**
+ * For every doomed id that is a DIRECT member of a group NOT itself among
+ * `doomedIds`, the patch that drops it from that group's `childIds` —
+ * folded into the SAME delete/undo entry `deleteSelection` makes (mirrors
+ * `resolveMembershipUpdates`'s move-time fold above; canvas-element-grouping
+ * PRD-alignment finding 1, FR-018's write-time scenario).
+ *
+ * A group id that is ITSELF in `doomedIds` needs no patch: Wave 4's cascade
+ * (`withGroupMembers`) already means the group's whole row is going away in
+ * this same gesture, so its `childIds` no longer matter to anything — this
+ * is exactly the "already-correct" whole-group-delete path, kept untouched.
+ *
+ * Only DIRECT ownership is checked (`groupOwning`, not a transitive walk):
+ * deleting a doubly-nested member patches its immediate parent only — an
+ * outer ancestor's `childIds` still correctly names that (surviving,
+ * merely-smaller) parent and needs no change of its own.
+ *
+ * Also the fix for BLOCKER 1 (Hermes code review): called with a single
+ * dissolving group's own id from `ungroupSelection` — the `doomed.has
+ * (owner.id)` guard above does not fire when the PARENT of a nested group
+ * survives, so this returns exactly the parent patch that case needs too.
+ */
+function resolveGroupCleanupUpdates(
+  scene: Scene,
+  doomedIds: ReadonlyArray<string>,
+): Array<MembershipUpdate> {
+  const doomed = new Set(doomedIds)
+  const originals = new Map<string, CanvasElement>()
+  const patched = new Map<string, CanvasElement>()
+
+  for (const id of doomedIds) {
+    const owner = groupOwning(scene, id)
+    if (!owner || doomed.has(owner.id)) continue
+    patchGroupChildIds(originals, patched, owner, (childIds) =>
+      childIds.filter((childId) => childId !== id),
+    )
+  }
+
+  return toMembershipUpdates(originals, patched)
+}
+
+/**
+ * Apply a batch of `MembershipUpdate`s to a scene — a `childIds` patch, a
+ * `zIndex` bump, or (in principle) both folded onto the same element — one
+ * `updateElement` call per entry. The WHOLE `after` object is spread as the
+ * patch rather than picking out `group` alone (Hermes review, Major Issue:
+ * the earlier per-call-site `{ group: after.group }` patch silently
+ * dropped a `zIndex` bump the drag-in z-order fix above now also needs to
+ * apply through this same path).
+ */
+function applyMembershipUpdates(
+  scene: Scene,
+  updates: ReadonlyArray<MembershipUpdate>,
+): Scene {
+  return updates.reduce((next, { after }) => {
+    const { id, ...patch } = after
+    return updateElement(next, id, patch)
+  }, scene)
+}
+
+/**
+ * Every one of `members`'s own `zIndex` bumped one step up, subtree-
+ * inclusive (`bumpZIndexSubtree`) — `groupSelection`'s floor renormalization
+ * when `Z_MIN` would otherwise tie the new group's frame with its lowest
+ * member (Hermes code review, Minor Issue: a plain per-member `+1` bump left
+ * a MEMBER that is itself a group with its own members still below it —
+ * the same subtree-coverage gap BLOCKER 1 fixed for drag-in, one level
+ * down here, so both are fixed with the same shared helper).
+ */
+function renormalizeMembersAboveFloor(
+  scene: Scene,
+  members: ReadonlyArray<CanvasElement>,
+): Array<MembershipUpdate> {
+  const originals = new Map<string, CanvasElement>()
+  const patched = new Map<string, CanvasElement>()
+  for (const member of members) {
+    bumpZIndexSubtree(
+      scene,
+      originals,
+      patched,
+      member.id,
+      Math.min(member.zIndex + 1, Z_MAX),
+    )
+  }
+  return toMembershipUpdates(originals, patched)
+}
+
 export function useCanvasInput({
   canvasRef,
   scene,
@@ -789,6 +1217,55 @@ export function useCanvasInput({
     setHoveredIdState(next)
   }, [])
 
+  /**
+   * Group ids the user has double-clicked INTO, outermost first (canvas-
+   * element-grouping tactical plan, Wave 2). Read by `resolveClickTarget`
+   * (hit-test.ts) to know how deep the caller already is. Mirrored in a ref
+   * for the same reason `hoveredIdRef` is: `onDoubleClick` fires as its own,
+   * later browser event, with no React render guaranteed in between it and
+   * whatever `onPointerDown` just did in the same click sequence — reading
+   * `enteredPathRef.current` always sees the latest value, a plain
+   * `enteredPath` closure variable might not.
+   */
+  const [enteredPath, setEnteredPathState] = useState<Array<string>>([])
+  const enteredPathRef = useRef<Array<string>>([])
+
+  /**
+   * The last SELECT-TOOL pointerdown's timestamp and WORLD position — this
+   * hook's own manually-tracked replacement for `PointerEvent.detail`
+   * (canvas-element-grouping tactical plan, Wave 2/5; bug found and fixed
+   * during Wave 8 e2e testing).
+   *
+   * `event.detail` was the ORIGINAL mechanism `onPointerDown` used to tell
+   * an isolated click from click 2+ of a rapid sequence — correct for a
+   * `MouseEvent` (`click`/`dblclick`), but `onPointerDown` receives a
+   * `PointerEvent`, and every real browser tested (confirmed empirically via
+   * a throwaway Playwright probe, not assumed) reports `PointerEvent.detail`
+   * as a constant `0` on `pointerdown`, REGARDLESS of how many times the
+   * user has clicked at that point. `event.detail <= 1` was therefore always
+   * true for every real pointerdown, silently making the "click 2+" branch
+   * (member-specific drag, Wave 5) unreachable, and resetting `enteredPath`
+   * on EVERY click — including the second press of a double-click — which
+   * made a FURTHER double-click (FR-005's "descends one more level")
+   * unreachable too: by the time `onDoubleClick` ran, this same handler's
+   * own second pointerdown had already zeroed `enteredPath` back to `[]`.
+   * The unit-test suite never caught this because its own `pointerEvent()`
+   * fixture sets `detail` directly on a plain object, which is not what a
+   * real `PointerEvent` ever contains.
+   *
+   * Re-implemented at the app level instead: a pointerdown counts as a
+   * "repeat" (the `event.detail > 1` equivalent) when it lands within
+   * `REPEAT_CLICK_WINDOW_MS` and `REPEAT_CLICK_DISTANCE` world units of the
+   * PRECEDING select-tool pointerdown — the same two signals (time,
+   * position) a browser's own native click-counter uses internally.
+   */
+  const lastPointerDownRef = useRef<{ time: number; world: Point } | null>(null)
+
+  const setEnteredPath = useCallback((next: Array<string>) => {
+    enteredPathRef.current = next
+    setEnteredPathState(next)
+  }, [])
+
   const setGesture = useCallback((next: Gesture) => {
     gestureRef.current = next
     setGestureState(next)
@@ -826,6 +1303,111 @@ export function useCanvasInput({
       return { x: event.clientX - rect.left, y: event.clientY - rect.top }
     },
     [canvasRef],
+  )
+
+  /**
+   * The drawing surface's size in CSS pixels — what `alignmentCandidates`
+   * needs to work out which elements are actually on screen.
+   *
+   * `clientWidth`/`clientHeight` rather than the backing store's `width`/
+   * `height`: those are multiplied by the device pixel ratio, and a 2x
+   * display would report a viewport twice as large as the one the user is
+   * looking at, quietly widening the candidate set.
+   */
+  const viewportSize = useCallback((): { width: number; height: number } => {
+    const canvas = canvasRef.current
+    if (!canvas) return { width: 0, height: 0 }
+    return { width: canvas.clientWidth, height: canvas.clientHeight }
+  }, [canvasRef])
+
+  /**
+   * The drag offset the element should ACTUALLY take this frame, plus the
+   * guides that explain it.
+   *
+   * `disabled` is the live `altKey`. Alt is the universal "I meant exactly
+   * here" escape from a snap, and it is read off the pointer event rather
+   * than tracked as held-key state so it takes effect on the very next frame
+   * — a keyup that arrives while the pointer is captured would otherwise be
+   * missed entirely. Nothing else in this hook binds Alt at all any more —
+   * suppressing a snap is Alt's only remaining meaning on the board, since
+   * the quick-create arrows moved to Ctrl/Cmd.
+   *
+   * When snapping is off the guides go with it: a line the element is NOT
+   * being pulled to is a lie about what release will do.
+   */
+  const alignedMoveOffset = useCallback(
+    (
+      moveGesture: Extract<Gesture, { kind: 'move' }>,
+      rawDx: number,
+      rawDy: number,
+      disabled: boolean,
+    ): { dx: number; dy: number; guides: ReadonlyArray<AlignmentGuide> } => {
+      const unaligned = { dx: rawDx, dy: rawDy, guides: NO_GUIDES }
+      if (disabled) return unaligned
+      // A connector's stored bounds are a 1x1 placeholder, so a connector in
+      // the selection must not contribute to the frame being aligned — one
+      // would drag the frame off to the placeholder's corner and align the
+      // whole selection against a box nothing on screen occupies.
+      const box = boundsOfMany(
+        moveGesture.before.filter((element) => !element.connector),
+      )
+      if (!box) return unaligned
+      const current = latest.current
+      const candidates = alignmentCandidates(
+        current.scene,
+        current.camera,
+        viewportSize(),
+        // The whole dragged subtree, which `gesture.ids` already is
+        // (`withGroupMembers` at pointerdown) — a group aligning to its own
+        // members would snap to itself on every frame.
+        new Set(moveGesture.ids),
+      )
+      const outcome = alignMovedRect(
+        {
+          x: box.x + rawDx,
+          y: box.y + rawDy,
+          width: box.width,
+          height: box.height,
+        },
+        candidates,
+        alignmentTolerance(current.camera),
+      )
+      return {
+        dx: rawDx + outcome.dx,
+        dy: rawDy + outcome.dy,
+        guides: outcome.guides,
+      }
+    },
+    [viewportSize],
+  )
+
+  /** The resize's aligned bounds and guides — `alignedMoveOffset`'s sibling. */
+  const alignedResizeBounds = useCallback(
+    (
+      resizeGesture: Extract<Gesture, { kind: 'resize' }>,
+      raw: WorldRect,
+      disabled: boolean,
+    ): ResizeAlignment => {
+      if (disabled) return { rect: raw, guides: NO_GUIDES }
+      const current = latest.current
+      const candidates = alignmentCandidates(
+        current.scene,
+        current.camera,
+        viewportSize(),
+        // Resizing a GROUP leaves its members where they are (FR-003's frame
+        // is stored, not derived), so without the subtree here the frame
+        // would snap to the children it is being dragged across.
+        new Set(withGroupMembers(current.scene, [resizeGesture.elementId])),
+      )
+      return alignResizedRect(
+        raw,
+        candidates,
+        alignmentTolerance(current.camera),
+        resizeAlignEdges(resizeGesture.handle),
+        MIN_ELEMENT_SIZE,
+      )
+    },
+    [viewportSize],
   )
 
   // ── text helpers ─────────────────────────────────────────────────────────
@@ -1069,7 +1651,7 @@ export function useCanvasInput({
   )
 
   /**
-   * The click (and `Alt+Arrow`) case: a new sibling one gap away in
+   * The click (and `Ctrl/Cmd+Arrow`) case: a new sibling one gap away in
    * `direction`, plus the connector joining them.
    *
    * Connectors are excluded from `occupied` because their stored bounds are
@@ -1269,6 +1851,7 @@ export function useCanvasInput({
               // Shallow clone — same safety rationale as `beginEditing`'s
               // and the move gesture's own `{ ...element }` clones above.
               beforeElement: { ...only },
+              guides: NO_GUIDES,
             })
             return
           }
@@ -1277,6 +1860,9 @@ export function useCanvasInput({
 
       const hit = hitTest(latest.current.scene, world)
       if (!hit) {
+        // Leaving the structure entirely — same "exit whatever depth was
+        // entered" rule Escape and deleteSelection apply below.
+        setEnteredPath([])
         const baseIds = event.shiftKey ? currentSelection : new Set<string>()
         if (!event.shiftKey) setSelectedIds(new Set<string>())
         setGesture({
@@ -1288,29 +1874,91 @@ export function useCanvasInput({
         return
       }
 
+      // Group-aware target resolution (canvas-element-grouping tactical
+      // plan, Wave 2). `resolveClickTarget` is NOT needed here — a single
+      // click never consults `enteredPath`, it always resolves to the
+      // outermost group (FR-004's wording is unconditional) and exits
+      // whatever depth was previously entered.
+      //
+      // Gated on `isRepeatClick` — see `lastPointerDownRef`'s own doc
+      // comment for why this is a manually-tracked time+position check
+      // rather than `event.detail` (a real `PointerEvent.detail` does not
+      // carry click-count semantics; a prior version of this code read it
+      // directly and the bug was invisible to every unit test, only
+      // surfacing under real browser input in Wave 8 e2e testing).
+      //
+      // TWO SEPARATE questions share this same timing sample but need
+      // DIFFERENT tolerances (Hermes review, Major Issue — see
+      // `RAW_HIT_TARGET_WINDOW_MS`'s own header): whether to PRESERVE
+      // `enteredPath` across this press (wide — must survive a genuine
+      // pause before a SECOND, separate double-click gesture) versus
+      // whether THIS press should target the raw hit instead of the
+      // outermost group (tight — must not fire for two truly independent,
+      // unhurried single clicks on the same member, FR-004's own
+      // unconditional case). `preservesEnteredPath` false is the FR-004
+      // "isolated click" case: clears `enteredPath`. `targetsRawHit` true
+      // resolves to the RAW hit, which is what lets `onDoubleClick`
+      // (firing after this same handler already ran for its own second
+      // press) see a meaningful, still-entered `enteredPath` and build on a
+      // PREVIOUS descent — the mechanism FR-005's "a further double-click
+      // descends one more level" needs to be reachable at all.
+      const lastPointerDown = lastPointerDownRef.current
+      const withinRepeatDistance =
+        lastPointerDown !== null &&
+        Math.hypot(
+          world.x - lastPointerDown.world.x,
+          world.y - lastPointerDown.world.y,
+        ) <= REPEAT_CLICK_DISTANCE
+      const elapsedSincePointerDown =
+        lastPointerDown === null ? Infinity : Date.now() - lastPointerDown.time
+      const preservesEnteredPath =
+        withinRepeatDistance &&
+        elapsedSincePointerDown <= REPEAT_CLICK_WINDOW_MS
+      const targetsRawHit =
+        withinRepeatDistance &&
+        elapsedSincePointerDown <= RAW_HIT_TARGET_WINDOW_MS
+      lastPointerDownRef.current = { time: Date.now(), world }
+
+      const target = targetsRawHit
+        ? hit
+        : (outermostGroup(latest.current.scene, hit.id) ?? hit)
+      if (!preservesEnteredPath) setEnteredPath([])
+
       let nextSelection: Set<string>
       if (event.shiftKey) {
         nextSelection = new Set(currentSelection)
-        if (nextSelection.has(hit.id)) nextSelection.delete(hit.id)
-        else nextSelection.add(hit.id)
-      } else if (currentSelection.has(hit.id)) {
+        if (nextSelection.has(target.id)) nextSelection.delete(target.id)
+        else nextSelection.add(target.id)
+      } else if (currentSelection.has(target.id)) {
         nextSelection = new Set(currentSelection)
       } else {
-        nextSelection = new Set([hit.id])
+        nextSelection = new Set([target.id])
       }
       setSelectedIds(nextSelection)
+      // Expanded through `withGroupMembers` (canvas-element-grouping
+      // tactical plan, Wave 3) so a group in the selection drags every
+      // descendant at every nesting depth along with it — the rigid-body
+      // move FR-006 requires. `nextSelection` itself (what gets
+      // HIGHLIGHTED/selected) stays just the group id; only the GESTURE's
+      // own `ids`/`before` — what actually gets shifted by `dx`/`dy` in
+      // `onPointerMove`'s `'move'` case below — is expanded. Nothing else
+      // about the move gesture changes: the existing per-element shift loop
+      // and the existing multi-op `recordUpdate` already handle however
+      // many ids land in `gesture.ids`.
+      const moveIds = withGroupMembers(latest.current.scene, [...nextSelection])
       setGesture({
         kind: 'move',
-        lastWorld: world,
+        startWorld: world,
         startScreen: screen,
-        ids: [...nextSelection],
+        ids: moveIds,
         moved: false,
+        guides: NO_GUIDES,
         // Shallow clones — safe for the same reason `beginEditing`'s own
         // `{ ...element }` clone is (see its comment): `canvas-engine`
         // never mutates an element in place, only replaces it, so the drag
         // that follows cannot reach back and corrupt this pre-move snapshot
         // (Hermes review, suggestion).
-        before: [...nextSelection]
+        before: moveIds
           .map((id) => latest.current.scene.byId.get(id))
           .filter((element): element is CanvasElement => Boolean(element))
           .map((element) => ({ ...element })),
@@ -1324,6 +1972,7 @@ export function useCanvasInput({
       editing,
       handleTargetNow,
       screenFromEvent,
+      setEnteredPath,
       setGesture,
       setScene,
       setTool,
@@ -1416,33 +2065,45 @@ export function useCanvasInput({
           break
         }
         case 'move': {
-          const dx = world.x - gesture.lastWorld.x
-          const dy = world.y - gesture.lastWorld.y
+          // The offset the POINTER alone asks for, measured from pointerdown
+          // rather than from the previous frame — see `startWorld`.
+          const rawDx = world.x - gesture.startWorld.x
+          const rawDy = world.y - gesture.startWorld.y
+          const aligned = alignedMoveOffset(gesture, rawDx, rawDy, event.altKey)
           const travelled =
             Math.abs(screen.x - gesture.startScreen.x) +
             Math.abs(screen.y - gesture.startScreen.y)
           setScene((prev) => {
             let next = prev
-            for (const id of gesture.ids) {
-              const element = next.byId.get(id)
-              if (!element) continue
-              next = updateElement(next, id, {
-                x: element.x + dx,
-                y: element.y + dy,
+            // Positions come from the pointerdown SNAPSHOT, not from the
+            // element's live position: re-reading the live position and
+            // adding a delta is what accumulated the snap correction frame
+            // after frame. `before` already excludes ids that were gone at
+            // pointerdown, and `byId` is re-checked because a collaborator
+            // can delete one mid-drag.
+            for (const element of gesture.before) {
+              if (!next.byId.has(element.id)) continue
+              next = updateElement(next, element.id, {
+                x: element.x + aligned.dx,
+                y: element.y + aligned.dy,
               })
             }
             return next
           })
           setGesture({
             ...gesture,
-            lastWorld: world,
             moved: gesture.moved || travelled > CLICK_SLOP,
+            guides: aligned.guides,
           })
           break
         }
         case 'resize': {
-          const next = resizedBounds(gesture.handle, gesture.startBounds, world)
-          setScene((prev) => updateElement(prev, gesture.elementId, next))
+          const raw = resizedBounds(gesture.handle, gesture.startBounds, world)
+          const aligned = alignedResizeBounds(gesture, raw, event.altKey)
+          setScene((prev) =>
+            updateElement(prev, gesture.elementId, aligned.rect),
+          )
+          setGesture({ ...gesture, guides: aligned.guides })
           break
         }
         case 'connector-endpoint': {
@@ -1526,7 +2187,16 @@ export function useCanvasInput({
         }
       }
     },
-    [gesture, screenFromEvent, setCamera, setGesture, setHoveredId, setScene],
+    [
+      alignedMoveOffset,
+      alignedResizeBounds,
+      gesture,
+      screenFromEvent,
+      setCamera,
+      setGesture,
+      setHoveredId,
+      setScene,
+    ],
   )
 
   /**
@@ -1574,22 +2244,68 @@ export function useCanvasInput({
         }
         case 'move': {
           if (!finished.moved) break
+          // Not `scene` — that name is already the hook's own `scene` prop
+          // one scope up, and shadowing it here would make every OTHER
+          // reference inside this block ambiguous to a reader.
+          const currentScene = latest.current.scene
           const moved = finished.ids
-            .map((id) => latest.current.scene.byId.get(id))
+            .map((id) => currentScene.byId.get(id))
             .filter((element): element is CanvasElement => Boolean(element))
-          if (moved.length > 0) {
-            // Pre-state is index-aligned to `moved` by id, not by position: an
-            // element present in `finished.before` but removed mid-drag (rare,
-            // but not impossible with a collaborator's concurrent delete) must
-            // not shift every later entry by one.
-            const beforeById = new Map(
-              finished.before.map((element) => [element.id, element]),
-            )
-            const before = moved
-              .map((element) => beforeById.get(element.id))
-              .filter((element): element is CanvasElement => Boolean(element))
-            callbacks?.onUpdate?.(moved, before, 'move')
+          if (moved.length === 0) break
+
+          // Pre-state is index-aligned to `moved` by id, not by position: an
+          // element present in `finished.before` but removed mid-drag (rare,
+          // but not impossible with a collaborator's concurrent delete) must
+          // not shift every later entry by one.
+          const beforeById = new Map(
+            finished.before.map((element) => [element.id, element]),
+          )
+          const before = moved
+            .map((element) => beforeById.get(element.id))
+            .filter((element): element is CanvasElement => Boolean(element))
+
+          // Membership editing on drop (canvas-element-grouping tactical
+          // plan, Wave 5): resolved HERE, once, from the final dropped
+          // positions `onPointerMove` already applied to the scene —
+          // never mid-drag (FR-012).
+          const membershipUpdates = resolveMembershipUpdates(
+            currentScene,
+            finished.ids,
+          )
+          if (membershipUpdates.length > 0) {
+            setScene((prev) => applyMembershipUpdates(prev, membershipUpdates))
           }
+
+          // Folded into the SAME `onUpdate` call the position update
+          // already makes, so position change + membership change stays
+          // ONE undo entry (FR-016) — not a new undo primitive, just a
+          // bigger element list handed to the existing one.
+          const movedIds = new Set(moved.map((element) => element.id))
+          const after = [...moved]
+          const beforeAll = [...before]
+          for (const update of membershipUpdates) {
+            if (movedIds.has(update.after.id)) {
+              // The affected element was ALSO dragged in this same gesture
+              // — merge every changed field from `update.after` into its
+              // already-captured after-element in place, rather than adding
+              // a duplicate entry; its `before` entry is already the
+              // correct pre-drag snapshot. Every field, not just `group`
+              // (Hermes review, Major Issue): a joining element's own
+              // `zIndex` bump (see `resolveMembershipUpdates`'s z-order
+              // invariant fix) must survive this fold too, and both objects
+              // derive from the SAME post-drop `currentScene`, so merging
+              // the whole thing is safe — no other field actually differs.
+              const idx = after.findIndex(
+                (element) => element.id === update.after.id,
+              )
+              after[idx] = { ...after[idx], ...update.after }
+            } else {
+              after.push(update.after)
+              beforeAll.push(update.before)
+            }
+          }
+
+          callbacks?.onUpdate?.(after, beforeAll, 'move')
           break
         }
         case 'resize': {
@@ -1757,9 +2473,30 @@ export function useCanvasInput({
       const world = screenToWorld(latest.current.camera, screen)
       const hit = hitTest(latest.current.scene, world)
       if (!hit) return
-      beginEditing(hit, caretAtWorldPoint(hit, world), false)
+
+      // Group-aware descent (canvas-element-grouping tactical plan, Wave 2).
+      // `enteredPathRef` (not the `enteredPath` closure variable) because
+      // this handler fires as its own, later browser event — the
+      // `onPointerDown` that just ran for this same click's second press
+      // may have updated it moments ago, with no React render guaranteed in
+      // between (see `enteredPathRef`'s own comment).
+      const resolution = resolveClickTarget(
+        latest.current.scene,
+        hit.id,
+        enteredPathRef.current,
+      )
+      if (resolution.editable) {
+        // A group is never `editable` by construction (it has no text), so
+        // this is unchanged from today: `hit` here is always a genuine leaf.
+        beginEditing(hit, caretAtWorldPoint(hit, world), false)
+        return
+      }
+      const target = latest.current.scene.byId.get(resolution.targetId)
+      if (!target) return
+      setEnteredPath(resolution.enteredPath)
+      setSelectedIds(new Set([target.id]))
     },
-    [beginEditing, caretAtWorldPoint, screenFromEvent],
+    [beginEditing, caretAtWorldPoint, screenFromEvent, setEnteredPath],
   )
 
   // ── wheel ────────────────────────────────────────────────────────────────
@@ -1815,20 +2552,44 @@ export function useCanvasInput({
       // remove. `withAttachedConnectors` deduplicates, which matters when BOTH
       // ends of one connector are in the selection.
       //
+      // GROUP-EXPANDED FIRST (canvas-element-grouping tactical plan, Wave 4):
+      // deleting a group must remove every descendant at every nesting depth
+      // (FR-013), and the order matters — expanding groups before connectors
+      // is what sweeps a MEMBER's own attached connectors too, not just the
+      // group's. Doing it the other way round would only catch connectors
+      // touching the group's own frame.
+      //
       // Both this expansion and the snapshot below read the scene BEFORE
       // `removeElements` — afterwards the connectors are gone and there is
       // nothing left to find (the B2 lesson: capture pre-state, never post).
       // Undo's inverse is a create-with-id, so it needs every persisted
       // property of every row, not just the ids.
-      const ids = withAttachedConnectors(latest.current.scene, selected)
+      const ids = withAttachedConnectors(
+        latest.current.scene,
+        withGroupMembers(latest.current.scene, selected),
+      )
       const elements = ids
         .map((id) => latest.current.scene.byId.get(id))
         .filter((element): element is CanvasElement => Boolean(element))
-      setScene((prev) => removeElements(prev, ids))
+
+      // Referential integrity on write (FR-018, canvas-element-grouping
+      // PRD-alignment finding 1): a member deleted on its own — not via the
+      // whole-group cascade `withGroupMembers` already expanded above — must
+      // not leave a SURVIVING group's `childIds` naming a row that is about
+      // to vanish. Resolved from the SAME pre-delete scene `elements` was
+      // captured from, for the same B2-lesson reason.
+      const groupCleanup = resolveGroupCleanupUpdates(latest.current.scene, ids)
+
+      setScene((prev) =>
+        removeElements(applyMembershipUpdates(prev, groupCleanup), ids),
+      )
       setSelectedIds(new Set<string>())
-      callbacks?.onDelete?.(elements, gesture)
+      // Leaving the structure, the same "exit whatever depth was entered"
+      // rule the pointerdown `!hit` branch and Escape apply.
+      setEnteredPath([])
+      callbacks?.onDelete?.(elements, gesture, groupCleanup)
     },
-    [callbacks, setScene],
+    [callbacks, setEnteredPath, setScene],
   )
 
   // ── copy, cut, paste, duplicate ──────────────────────────────────────────
@@ -1942,6 +2703,152 @@ export function useCanvasInput({
     )
   }, [cloneInto])
 
+  // ── group / ungroup ──────────────────────────────────────────────────────
+
+  /**
+   * Bind the CURRENT selection into a new group (canvas-element-grouping
+   * tactical plan, Wave 6). No-op below 2 selected elements (FR-030/A1) —
+   * `SelectionToolbar`'s own Group button is already disabled then, and
+   * Ctrl+G must be an equally honest no-op, not a silent single-element
+   * group.
+   *
+   * The frame is the tightest bounding box of the selection at this moment
+   * (A8, `boundsOfMany`) — explicit and stored, never re-derived from
+   * members afterwards (FR-003). `childIds` is the selection AS GIVEN: a
+   * selection that already contains one or more groups nests them with no
+   * extra work (FR-009), since a group is just an element whose id can
+   * appear in another group's `childIds`.
+   *
+   * The new group's OWN `zIndex` is placed ONE BELOW the lowest member's,
+   * not on top via `nextZIndex` the way every other new element on this
+   * board is created. A group whose frame sits ABOVE its own members would
+   * shadow them in `hitTest`'s reverse-z scan (`elementContainsPoint` for a
+   * `'group'` kind is a plain rect test over the WHOLE frame, not just its
+   * border) — clicking a member would hit the group's own frame first and
+   * never reach the member underneath, breaking Wave 2's click resolution
+   * for every member the instant the group existed. When `minMemberZ - 1`
+   * would run past `Z_MIN`, every member is renormalized one step up —
+   * subtree-inclusive, via the shared `bumpZIndexSubtree` (Hermes review,
+   * BLOCKER-adjacent Minor Issue: a member that is ITSELF a group must lift
+   * its own members along with it, or the same "frame paints above its
+   * members" defect BLOCKER 1 fixed for drag-in reappears one level down
+   * here) — instead of tying the group at the floor: an exact tie is
+   * resolved by `ordered`'s id tie-break, not by "the group is always below
+   * its members", so it silently broke the invariant for a board already
+   * at the floor roughly half the time.
+   *
+   * Selected ids are first collapsed to TOP-LEVEL ones only (Hermes review
+   * BLOCKER 2, via the shared `topLevelIds`): a selection containing both a
+   * group and one of its own members would otherwise list that member
+   * twice — once directly, once via the group it is already inside. Each
+   * remaining member is also detached from any group it ALREADY belongs to
+   * before joining this new one — without that, a marquee that also sweeps
+   * up an existing group's frame would leave one element listed in TWO
+   * groups' `childIds` at once, a corruption `repairGroupMembership`
+   * cannot heal (both references legitimately name something).
+   */
+  const groupSelection = useCallback(() => {
+    if (latest.current.readOnly) return
+    const selected = [...latest.current.selectedIds]
+    if (selected.length < 2) return
+    const currentScene = latest.current.scene
+    const ids = topLevelIds(currentScene, selected)
+    const members = ids
+      .map((id) => currentScene.byId.get(id))
+      .filter((element): element is CanvasElement => Boolean(element))
+    if (members.length < 2) return
+    const frame = boundsOfMany(members)
+    if (!frame) return
+
+    const minMemberZ = Math.min(...members.map((element) => element.zIndex))
+    const atFloor = minMemberZ - 1 < Z_MIN
+    const zIndex = atFloor ? Z_MIN : minMemberZ - 1
+    const zIndexBumps: Array<MembershipUpdate> = atFloor
+      ? renormalizeMembersAboveFloor(currentScene, members)
+      : []
+
+    const group: CanvasElement = {
+      id: uuid(),
+      kind: 'group',
+      x: frame.x,
+      y: frame.y,
+      width: frame.width,
+      height: frame.height,
+      rotation: 0,
+      zIndex,
+      text: null,
+      style: { ...DEFAULT_ELEMENT_STYLE },
+      group: { childIds: members.map((element) => element.id) },
+    }
+
+    const detachOriginals = new Map<string, CanvasElement>()
+    const detachPatched = new Map<string, CanvasElement>()
+    for (const member of members) {
+      const oldOwner = groupOwning(currentScene, member.id)
+      if (!oldOwner) continue
+      patchGroupChildIds(detachOriginals, detachPatched, oldOwner, (childIds) =>
+        childIds.filter((childId) => childId !== member.id),
+      )
+    }
+    const detachUpdates = toMembershipUpdates(detachOriginals, detachPatched)
+
+    // Every element this gesture also needs to patch besides the new group
+    // itself — folded into the SAME `setScene` call and the SAME undo entry
+    // `onGroup`/`recordGroup` makes (mirrors how `onDelete`'s `groupUpdates`
+    // already fold a cleanup patch into the delete entry).
+    const groupUpdates = [...detachUpdates, ...zIndexBumps]
+
+    setScene((prev) =>
+      addElement(applyMembershipUpdates(prev, groupUpdates), group),
+    )
+    setSelectedIds(new Set([group.id]))
+    // Leaving whatever depth was entered, the same rule every other
+    // selection-replacing gesture applies (Escape, delete, click-empty).
+    setEnteredPath([])
+    callbacks?.onGroup?.(group, groupUpdates)
+  }, [callbacks, setEnteredPath, setScene])
+
+  /**
+   * Dissolve the CURRENT selection's single group, one level only (FR-008).
+   * No-op unless the selection is EXACTLY one group element — mirrors
+   * `groupSelection`'s own honesty rule for Ctrl+Shift+G.
+   *
+   * The group's direct `childIds` become the new selection — not its whole
+   * subtree, and not re-resolved through `withGroupMembers`: a member that
+   * is itself a group stays a group, un-entered, exactly as FR-008
+   * requires. Filtered through the CURRENT scene before becoming the
+   * selection (Hermes review, Major Issue): a collaborator may have
+   * deleted a member while this group was selected, and an unfiltered
+   * `childIds` would select a now-nonexistent id. Members receive no write
+   * of their own either way; membership lived only on the dissolved
+   * group's own row (Wave 1).
+   *
+   * The dissolving group's OWN parent, if any, DOES need a write (Hermes
+   * review BLOCKER 1, FR-018): dissolving a NESTED group must not leave the
+   * parent's `childIds` naming a row that is about to vanish.
+   * `resolveGroupCleanupUpdates`'s `doomed.has(owner.id)` guard does not
+   * fire for a parent that survives this dissolve, so it returns exactly
+   * that patch — the same helper `deleteSelection` already uses for the
+   * structurally identical "an owned id is about to disappear" case.
+   */
+  const ungroupSelection = useCallback(() => {
+    if (latest.current.readOnly) return
+    const selected = [...latest.current.selectedIds]
+    if (selected.length !== 1) return
+    const currentScene = latest.current.scene
+    const group = currentScene.byId.get(selected[0])
+    if (!group?.group) return
+    const groupUpdates = resolveGroupCleanupUpdates(currentScene, [group.id])
+    setScene((prev) =>
+      removeElements(applyMembershipUpdates(prev, groupUpdates), [group.id]),
+    )
+    setSelectedIds(
+      new Set(group.group.childIds.filter((id) => currentScene.byId.has(id))),
+    )
+    setEnteredPath([])
+    callbacks?.onUngroup?.(group, groupUpdates)
+  }, [callbacks, setEnteredPath, setScene])
+
   /**
    * The four clipboard shortcuts, by key.
    *
@@ -1981,33 +2888,60 @@ export function useCanvasInput({
       }
       if (latest.current.readOnly) return
 
-      // The pointerless quick-create (step 13). Checked BEFORE the modifier
-      // guard below, which used to swallow every `altKey` press.
+      // Everything on the platform's primary chord: the pointerless
+      // quick-create arrows, group/ungroup, and the clipboard table. Checked
+      // BEFORE the blanket modifier guard below, which returns on any
+      // ctrl/meta press.
       //
-      // Plain arrows are untouched: they fall through to this switch's
-      // `default` exactly as before, because the board has never bound them.
-      if (event.altKey && !event.ctrlKey && !event.metaKey) {
-        const direction = ARROW_DIRECTIONS[event.key]
-        if (!direction) return
-        const ids = [...latest.current.selectedIds]
-        if (ids.length !== 1) return
-        const source = latest.current.scene.byId.get(ids[0])
-        // A connector has no "same shape one gap to the right" — the same
-        // exclusion `creationHandleTarget` applies to the pointer path.
-        if (!source || source.connector) return
-        event.preventDefault()
-        quickCreateInDirection(source, direction)
-        return
-      }
-      // Copy, cut, paste and duplicate (canvas copy-paste-duplicate tactical
-      // plan, step 2). Checked BEFORE the modifier guard below, which returns
-      // on any ctrl/meta press — the same reason the quick-create arrows sit
-      // above it.
+      // The arrows and the letters share ONE branch rather than sitting in
+      // two with an identical condition, and that is load-bearing: a separate
+      // arrow branch would need its own `return` on a non-arrow key, and that
+      // return would swallow Ctrl+C/X/V/D and Ctrl+G on the way past. Sharing
+      // the branch makes "fall through to the letters" the structural default
+      // instead of a rule someone has to remember. Quick-create used to sit
+      // on Alt, where the question never came up because Alt owned nothing
+      // else.
       //
       // `event.repeat` is ignored deliberately: a held Ctrl+V would otherwise
       // issue a paste per key-repeat tick, each one a fresh round-trip of
-      // creates, and the board would fill with copies nobody asked for.
+      // creates, and the board would fill with copies nobody asked for. The
+      // arrows join that rule — a held Ctrl+Right would otherwise walk a
+      // chain of shapes off the side of the board.
       if ((event.ctrlKey || event.metaKey) && !event.altKey && !event.repeat) {
+        // Ctrl+Arrow / Cmd+Arrow: quick-create on that side.
+        //
+        // `preventDefault` fires for EVERY arrow under this chord, including
+        // the declines below — not just the creating ones. Alt+Arrow had no
+        // browser default worth suppressing; Cmd+Left/Right is back/forward
+        // navigation on macOS, so a declined chord that fell through would
+        // take the user off the board and lose the view.
+        const direction = ARROW_DIRECTIONS[event.key]
+        if (direction) {
+          event.preventDefault()
+          const ids = [...latest.current.selectedIds]
+          // Two selected shapes give no answer to "which one gets extended",
+          // so the chord declines rather than picking.
+          if (ids.length !== 1) return
+          const source = latest.current.scene.byId.get(ids[0])
+          // A connector has no "same shape one gap to the right" — the same
+          // exclusion `creationHandleTarget` applies to the pointer path.
+          if (!source || source.connector) return
+          quickCreateInDirection(source, direction)
+          return
+        }
+        // Ctrl+G / Ctrl+Shift+G (FR-020), checked BEFORE the
+        // `CLIPBOARD_ACTIONS` table below: that table is keyed by
+        // `event.key.toLowerCase()`, which collapses `g` and `G` to the
+        // same key and so cannot tell Ctrl+G from Ctrl+Shift+G apart —
+        // `event.shiftKey` is what makes the distinction, and this branch
+        // reads it directly rather than trying to add a second `g` entry
+        // the table has no way to disambiguate.
+        if (event.key.toLowerCase() === 'g') {
+          event.preventDefault()
+          if (event.shiftKey) ungroupSelection()
+          else groupSelection()
+          return
+        }
         const action = CLIPBOARD_ACTIONS[event.key.toLowerCase()]
         if (action) {
           event.preventDefault()
@@ -2023,18 +2957,24 @@ export function useCanvasInput({
       const shapeTool = SHAPE_TOOL_BY_KEY[event.key]
       if (shapeTool) {
         setTool(shapeTool)
+        // Switching tools abandons whatever group depth was entered — the
+        // same "leaving the structure" rule Escape/delete/click-empty apply.
+        setEnteredPath([])
         return
       }
 
       switch (event.key) {
         case 'v':
           setTool('select')
+          setEnteredPath([])
           break
         case 'h':
           setTool('pan')
+          setEnteredPath([])
           break
         case 't':
           setTool('text')
+          setEnteredPath([])
           break
         case 'Delete':
         case 'Backspace':
@@ -2043,6 +2983,7 @@ export function useCanvasInput({
           break
         case 'Escape':
           setSelectedIds(new Set<string>())
+          setEnteredPath([])
           break
         case 'Enter': {
           // The keyboard path into text editing — the living spec's
@@ -2064,8 +3005,11 @@ export function useCanvasInput({
       CLIPBOARD_ACTIONS,
       beginEditing,
       deleteSelection,
+      groupSelection,
       quickCreateInDirection,
+      setEnteredPath,
       setTool,
+      ungroupSelection,
     ],
   )
 
@@ -2256,6 +3200,23 @@ export function useCanvasInput({
     [gesture],
   )
 
+  /**
+   * The alignment guides for the gesture in flight, or empty.
+   *
+   * Derived from the gesture the same way `connectorAttach` is, rather than
+   * held in its own state: they are only ever true DURING a drag or resize,
+   * so tying them to the gesture means the release that clears the gesture
+   * clears them too — there is no path that can leave a guide painted over a
+   * board nobody is touching.
+   */
+  const alignmentGuides = useMemo<ReadonlyArray<AlignmentGuide>>(
+    () =>
+      gesture.kind === 'move' || gesture.kind === 'resize'
+        ? gesture.guides
+        : NO_GUIDES,
+    [gesture],
+  )
+
   const draft = useMemo<CanvasElement | null>(() => {
     if (gesture.kind !== 'draw') return null
     // `drawnRect`, not the raw drag: the ghost has to show the snapped
@@ -2378,12 +3339,26 @@ export function useCanvasInput({
     // be a second chance to get the offset, the selection hand-off or the
     // undo label wrong.
     duplicateSelection,
+    // Exposed for the same reason: `SelectionToolbar`'s Group/Ungroup
+    // buttons reach the SAME gestures Ctrl+G/Ctrl+Shift+G do (canvas-
+    // element-grouping tactical plan, Wave 6).
+    groupSelection,
+    ungroupSelection,
     editing,
     marquee,
     draft,
     hoveredId,
+    // Exposed for tests to observe descent depth directly (no production
+    // consumer reads this yet — `CanvasBoard.tsx` does not, unlike
+    // `hoveredId` above, which IS genuinely consumed for rendering; Hermes
+    // review, Major Issue). Kept rather than dropped because the test
+    // suite's own descent-depth assertions read it directly; a breadcrumb
+    // UI that would give it a real production consumer is real, tracked
+    // follow-up work, not pre-shipped here — see implementation-notes.md.
+    enteredPath,
     quickCreate,
     connectorAttach,
+    alignmentGuides,
     displayScene,
     displayCaret,
     caretVisible,

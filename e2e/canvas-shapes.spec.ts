@@ -393,9 +393,9 @@ test.describe('shape kinds flow through the existing gestures', () => {
       .poll(async () => (await engine(page)).selectedIds, { timeout: 5_000 })
       .toEqual([drawn.id])
 
-    // The pointerless quick-create: Alt+Arrow makes a sibling one gap away,
+    // The pointerless quick-create: Ctrl+Arrow makes a sibling one gap away,
     // plus the connector joining them.
-    await page.keyboard.press('Alt+ArrowRight')
+    await page.keyboard.press('Control+ArrowRight')
     await expect
       .poll(async () => shapesOf(await engine(page), 'ellipse').length, {
         timeout: 10_000,

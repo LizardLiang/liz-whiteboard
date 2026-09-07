@@ -840,6 +840,95 @@ describe('drawScene — undo/redo highlight (board-undo tactical plan, Wave 4)',
   })
 })
 
+describe('drawScene: alignment guides', () => {
+  // A square-cornered rectangle paints with fillRect/strokeRect and nothing
+  // selected adds no connector path, so every moveTo/lineTo in these frames
+  // belongs to a guide. That is what makes counting them meaningful.
+  const board = sceneFrom([makeElement({ id: 'a' })])
+
+  it('draws one screen-space segment per guide, after the camera transform is popped', () => {
+    const rec = createRecorder()
+    const camera: Camera = { x: 0, y: 0, zoom: 1 }
+    drawScene(rec.ctx, board, camera, viewport(), {
+      ids: new Set<string>(),
+      alignmentGuides: [{ axis: 'x', position: 300, from: 100, to: 500 }],
+    })
+
+    const moves = rec.opsOfType('moveTo')
+    const lines = rec.opsOfType('lineTo')
+    expect(moves).toHaveLength(1)
+    expect(lines).toHaveLength(1)
+    // Half-pixel offsets put the hairline on a pixel centre, and the extra
+    // half at each end is what closes the corner where two guides meet.
+    expect(moves[0].args).toEqual([300.5, 99.5])
+    expect(lines[0].args).toEqual([300.5, 500.5])
+
+    // After `restore`, i.e. in screen space — a guide drawn inside the camera
+    // transform would be 0.1px wide at MIN_ZOOM.
+    expect(rec.indexOf('moveTo')).toBeGreaterThan(rec.indexOf('restore'))
+  })
+
+  it('runs a horizontal guide along the other axis', () => {
+    const rec = createRecorder()
+    drawScene(rec.ctx, board, { x: 0, y: 0, zoom: 1 }, viewport(), {
+      ids: new Set<string>(),
+      alignmentGuides: [{ axis: 'y', position: 200, from: 50, to: 250 }],
+    })
+    expect(rec.opsOfType('moveTo')[0].args).toEqual([49.5, 200.5])
+    expect(rec.opsOfType('lineTo')[0].args).toEqual([250.5, 200.5])
+  })
+
+  it('converts through the camera, so a guide tracks the board at any zoom', () => {
+    const rec = createRecorder()
+    drawScene(rec.ctx, board, { x: 0, y: 0, zoom: 2 }, viewport(), {
+      ids: new Set<string>(),
+      alignmentGuides: [{ axis: 'x', position: 300, from: 100, to: 500 }],
+    })
+    expect(rec.opsOfType('moveTo')[0].args).toEqual([600.5, 199.5])
+    expect(rec.opsOfType('lineTo')[0].args).toEqual([600.5, 1000.5])
+  })
+
+  it('draws every guide of a two-axis snap in one stroked path', () => {
+    const rec = createRecorder()
+    drawScene(rec.ctx, board, { x: 0, y: 0, zoom: 1 }, viewport(), {
+      ids: new Set<string>(),
+      alignmentGuides: [
+        { axis: 'x', position: 300, from: 100, to: 500 },
+        { axis: 'y', position: 200, from: 50, to: 250 },
+      ],
+    })
+    expect(rec.opsOfType('moveTo')).toHaveLength(2)
+    expect(rec.opsOfType('lineTo')).toHaveLength(2)
+  })
+
+  it('draws nothing when the gesture produced no guides', () => {
+    for (const guides of [undefined, null, []]) {
+      const rec = createRecorder()
+      drawScene(rec.ctx, board, { x: 0, y: 0, zoom: 1 }, viewport(), {
+        ids: new Set<string>(),
+        alignmentGuides: guides,
+      })
+      expect(rec.opsOfType('moveTo')).toHaveLength(0)
+    }
+  })
+
+  it('draws the guides ON TOP of the selection outline', () => {
+    // The guide is what the user is reading at that moment; a grip painted
+    // over it would hide the answer at exactly the pixel it is given at.
+    const rec = createRecorder()
+    drawScene(rec.ctx, board, { x: 0, y: 0, zoom: 1 }, viewport(), {
+      ids: new Set(['a']),
+      alignmentGuides: [{ axis: 'x', position: 300, from: 100, to: 500 }],
+    })
+    const lastGrip = rec.ops.reduce(
+      (last, entry, index) => (entry.op === 'strokeRect' ? index : last),
+      -1,
+    )
+    expect(lastGrip).toBeGreaterThan(-1)
+    expect(rec.indexOf('moveTo')).toBeGreaterThan(lastGrip)
+  })
+})
+
 describe('drawScene: shape kinds', () => {
   // These assert the PATH, not the pixels — a stub context cannot say whether
   // a diamond looks like a diamond. What it can prove is that each kind traces
@@ -1017,6 +1106,107 @@ describe('drawScene: shape kinds', () => {
         50 + TEXT_PADDING,
       ])
     }
+  })
+})
+
+describe('drawScene: group frame (canvas-element-grouping tactical plan, Wave 6)', () => {
+  // CHROME.light.accent and CHROME.light.marqueeFill, read directly rather
+  // than exported — the same local-constant convention the connector-attach
+  // describe block below already uses for ACCENT.
+  const ACCENT = '#3b82f6'
+  const MARQUEE_FILL = 'rgba(59, 130, 246, 0.10)'
+
+  function groupElement(overrides: Partial<CanvasElement> = {}): CanvasElement {
+    return makeElement({
+      kind: 'group',
+      group: { childIds: [] },
+      text: null,
+      ...overrides,
+    })
+  }
+
+  it('draws a persistent low-emphasis frame at rest, even with zero members (FR-032)', () => {
+    const element = groupElement()
+    const rec = createRecorder()
+    drawScene(
+      rec.ctx,
+      sceneFrom([element]),
+      { x: 0, y: 0, zoom: 1 },
+      viewport(),
+      NO_SELECTION,
+    )
+    const rects = rec.opsOfType('strokeRect')
+    expect(rects).toHaveLength(1)
+    expect(rects[0].args).toEqual([100, 50, 200, 120, MARQUEE_FILL])
+  })
+
+  it('never fills a group — no fill style of its own (FR-031)', () => {
+    const rec = createRecorder()
+    drawScene(
+      rec.ctx,
+      sceneFrom([groupElement()]),
+      { x: 0, y: 0, zoom: 1 },
+      viewport(),
+      NO_SELECTION,
+    )
+    expect(rec.opsOfType('fillRect')).toHaveLength(0)
+    expect(rec.opsOfType('fill')).toHaveLength(0)
+  })
+
+  it('draws full emphasis (chrome.accent) when hovered but not selected', () => {
+    const element = groupElement()
+    const rec = createRecorder()
+    drawScene(
+      rec.ctx,
+      sceneFrom([element]),
+      { x: 0, y: 0, zoom: 1 },
+      viewport(),
+      { ids: new Set<string>(), hoveredId: element.id },
+    )
+    const rects = rec.opsOfType('strokeRect')
+    expect(rects).toHaveLength(1)
+    expect(rects[0].args).toEqual([100, 50, 200, 120, ACCENT])
+  })
+
+  it('draws full emphasis (chrome.accent) when selected', () => {
+    const element = groupElement()
+    const rec = createRecorder()
+    drawScene(
+      rec.ctx,
+      sceneFrom([element]),
+      { x: 0, y: 0, zoom: 1 },
+      viewport(),
+      { ids: new Set([element.id]) },
+    )
+    // Two strokeRect calls exist for a SELECTED group: this function's own
+    // world-space frame (raw x/y/width/height, asserted here) plus
+    // `drawSelectionOverlay`'s pre-existing screen-space selection outline
+    // (inset by 0.5, width/height -1 — a different call, not this feature's
+    // concern, already covered by that describe block's own tests).
+    const worldFrame = rec
+      .opsOfType('strokeRect')
+      .find((entry) => entry.args[0] === 100 && entry.args[1] === 50)
+    expect(worldFrame?.args).toEqual([100, 50, 200, 120, ACCENT])
+  })
+
+  it('resolves the low-emphasis token per theme', () => {
+    const element = groupElement()
+    const rec = createRecorder()
+    drawScene(
+      rec.ctx,
+      sceneFrom([element]),
+      { x: 0, y: 0, zoom: 1 },
+      viewport(),
+      NO_SELECTION,
+      { theme: 'dark' },
+    )
+    expect(rec.opsOfType('strokeRect')[0].args).toEqual([
+      100,
+      50,
+      200,
+      120,
+      'rgba(96, 165, 250, 0.16)',
+    ])
   })
 })
 
