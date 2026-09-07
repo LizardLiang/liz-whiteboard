@@ -1,6 +1,6 @@
 // src/components/canvas/use-canvas-quick-create.test.ts
 // Wave 4 of the canvas quick-create-handles tactical plan: hover tracking,
-// the creation-handle gesture, the delete cascade and the Alt+Arrow path.
+// the creation-handle gesture, the delete cascade and the Ctrl/Cmd+Arrow path.
 //
 // Driven through the REAL hook, the same way use-canvas-input.test.ts drives
 // the text-commit lifecycle. jsdom has no 2D context, so `getMeasurer`
@@ -91,6 +91,7 @@ function keyEvent(key: string, overrides: Record<string, unknown> = {}) {
     metaKey: false,
     altKey: false,
     shiftKey: false,
+    repeat: false,
     preventDefault: vi.fn(),
     nativeEvent: { isComposing: false },
     ...overrides,
@@ -121,6 +122,8 @@ function setup(
   const callbacks = {
     onCreate: vi.fn(),
     onQuickCreate: vi.fn(),
+    onClone: vi.fn(),
+    onGroup: vi.fn(),
     onUpdate: vi.fn(),
     onDelete: vi.fn(),
   }
@@ -827,13 +830,13 @@ describe('deleting an endpoint deletes its connectors', () => {
 
 // ── step 13: the pointerless path ──────────────────────────────────────────
 
-describe('Alt+Arrow quick-creates without a pointer', () => {
+describe('Ctrl/Cmd+Arrow quick-creates without a pointer', () => {
   it('matches what clicking the same handle does', () => {
     const byKey = setup()
     select(byKey, [SOURCE_ID])
     act(() => {
       byKey.api.boardHandlers.onKeyDown(
-        keyEvent('ArrowRight', { altKey: true }),
+        keyEvent('ArrowRight', { ctrlKey: true }),
       )
     })
     byKey.sync()
@@ -860,7 +863,7 @@ describe('Alt+Arrow quick-creates without a pointer', () => {
       const h = setup()
       select(h, [SOURCE_ID])
       act(() => {
-        h.api.boardHandlers.onKeyDown(keyEvent(key, { altKey: true }))
+        h.api.boardHandlers.onKeyDown(keyEvent(key, { ctrlKey: true }))
       })
       const created = h.callbacks.onQuickCreate.mock
         .calls[0][0] as Array<CanvasElement>
@@ -885,7 +888,7 @@ describe('Alt+Arrow quick-creates without a pointer', () => {
     const h = setup([makeRect(), makeRect({ id: OTHER_ID, x: 400 })])
     select(h, [SOURCE_ID, OTHER_ID])
     act(() => {
-      h.api.boardHandlers.onKeyDown(keyEvent('ArrowRight', { altKey: true }))
+      h.api.boardHandlers.onKeyDown(keyEvent('ArrowRight', { ctrlKey: true }))
     })
     expect(h.callbacks.onQuickCreate).not.toHaveBeenCalled()
   })
@@ -898,7 +901,7 @@ describe('Alt+Arrow quick-creates without a pointer', () => {
     ])
     select(h, [CONNECTOR_ID])
     act(() => {
-      h.api.boardHandlers.onKeyDown(keyEvent('ArrowRight', { altKey: true }))
+      h.api.boardHandlers.onKeyDown(keyEvent('ArrowRight', { ctrlKey: true }))
     })
     expect(h.callbacks.onQuickCreate).not.toHaveBeenCalled()
   })
@@ -907,20 +910,48 @@ describe('Alt+Arrow quick-creates without a pointer', () => {
     const h = setup([makeRect()], { readOnly: true })
     select(h, [SOURCE_ID])
     act(() => {
-      h.api.boardHandlers.onKeyDown(keyEvent('ArrowRight', { altKey: true }))
+      h.api.boardHandlers.onKeyDown(keyEvent('ArrowRight', { ctrlKey: true }))
     })
     expect(h.callbacks.onQuickCreate).not.toHaveBeenCalled()
   })
 
-  it('still ignores Ctrl+Arrow and Meta+Arrow', () => {
+  it('treats Meta as the same chord, for macOS', () => {
     const h = setup()
     select(h, [SOURCE_ID])
     act(() => {
+      h.api.boardHandlers.onKeyDown(keyEvent('ArrowRight', { metaKey: true }))
+    })
+    expect(h.callbacks.onQuickCreate).toHaveBeenCalledTimes(1)
+  })
+
+  it('no longer fires on Alt+Arrow, nor on Ctrl/Meta+Alt+Arrow', () => {
+    // The inverse of the guard this branch used to carry: Alt was the chord
+    // until the Ctrl migration, so the old chord must now be inert — and Alt
+    // held ALONGSIDE the new one is still a decline, matching the sibling
+    // clipboard branch's `!event.altKey`.
+    const h = setup()
+    select(h, [SOURCE_ID])
+    act(() => {
+      h.api.boardHandlers.onKeyDown(keyEvent('ArrowRight', { altKey: true }))
       h.api.boardHandlers.onKeyDown(
         keyEvent('ArrowRight', { altKey: true, ctrlKey: true }),
       )
       h.api.boardHandlers.onKeyDown(
         keyEvent('ArrowRight', { altKey: true, metaKey: true }),
+      )
+    })
+    expect(h.callbacks.onQuickCreate).not.toHaveBeenCalled()
+  })
+
+  it('creates nothing on a key-repeat tick', () => {
+    // A held chord repeats. Without this guard the board fills with a shape
+    // per tick — the same failure the clipboard branch's `!event.repeat`
+    // already prevents for a held Ctrl+V.
+    const h = setup()
+    select(h, [SOURCE_ID])
+    act(() => {
+      h.api.boardHandlers.onKeyDown(
+        keyEvent('ArrowRight', { ctrlKey: true, repeat: true }),
       )
     })
     expect(h.callbacks.onQuickCreate).not.toHaveBeenCalled()
@@ -944,6 +975,28 @@ describe('Alt+Arrow quick-creates without a pointer', () => {
     })
     h.sync()
     expect(h.callbacks.onCreate).toHaveBeenCalledTimes(1)
+  })
+
+  it('does not swallow the Ctrl/Cmd shortcuts it now sits in front of', () => {
+    // THE regression test for this migration. Under Alt the branch could
+    // `return` on any non-arrow key, because Alt owned nothing else on the
+    // board. Under Ctrl/Meta that same return would eat duplicate, group and
+    // the whole clipboard table, which live in the very branch this code now
+    // leads. A non-arrow chord must reach them untouched.
+    const h = setup([makeRect(), makeRect({ id: OTHER_ID, x: 400 })])
+    select(h, [SOURCE_ID])
+    act(() => {
+      h.api.boardHandlers.onKeyDown(keyEvent('d', { ctrlKey: true }))
+    })
+    h.sync()
+    expect(h.callbacks.onClone).toHaveBeenCalledTimes(1)
+
+    select(h, [SOURCE_ID, OTHER_ID])
+    act(() => {
+      h.api.boardHandlers.onKeyDown(keyEvent('g', { ctrlKey: true }))
+    })
+    h.sync()
+    expect(h.callbacks.onGroup).toHaveBeenCalledTimes(1)
   })
 })
 

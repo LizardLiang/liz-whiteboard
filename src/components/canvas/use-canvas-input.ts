@@ -1328,8 +1328,9 @@ export function useCanvasInput({
    * here" escape from a snap, and it is read off the pointer event rather
    * than tracked as held-key state so it takes effect on the very next frame
    * — a keyup that arrives while the pointer is captured would otherwise be
-   * missed entirely. Nothing else in this hook binds Alt during a drag (the
-   * Alt+arrow quick-create is a keyboard gesture with no pointer down).
+   * missed entirely. Nothing else in this hook binds Alt at all any more —
+   * suppressing a snap is Alt's only remaining meaning on the board, since
+   * the quick-create arrows moved to Ctrl/Cmd.
    *
    * When snapping is off the guides go with it: a line the element is NOT
    * being pulled to is a lie about what release will do.
@@ -1650,7 +1651,7 @@ export function useCanvasInput({
   )
 
   /**
-   * The click (and `Alt+Arrow`) case: a new sibling one gap away in
+   * The click (and `Ctrl/Cmd+Arrow`) case: a new sibling one gap away in
    * `direction`, plus the connector joining them.
    *
    * Connectors are excluded from `occupied` because their stored bounds are
@@ -2887,33 +2888,47 @@ export function useCanvasInput({
       }
       if (latest.current.readOnly) return
 
-      // The pointerless quick-create (step 13). Checked BEFORE the modifier
-      // guard below, which used to swallow every `altKey` press.
+      // Everything on the platform's primary chord: the pointerless
+      // quick-create arrows, group/ungroup, and the clipboard table. Checked
+      // BEFORE the blanket modifier guard below, which returns on any
+      // ctrl/meta press.
       //
-      // Plain arrows are untouched: they fall through to this switch's
-      // `default` exactly as before, because the board has never bound them.
-      if (event.altKey && !event.ctrlKey && !event.metaKey) {
-        const direction = ARROW_DIRECTIONS[event.key]
-        if (!direction) return
-        const ids = [...latest.current.selectedIds]
-        if (ids.length !== 1) return
-        const source = latest.current.scene.byId.get(ids[0])
-        // A connector has no "same shape one gap to the right" — the same
-        // exclusion `creationHandleTarget` applies to the pointer path.
-        if (!source || source.connector) return
-        event.preventDefault()
-        quickCreateInDirection(source, direction)
-        return
-      }
-      // Copy, cut, paste and duplicate (canvas copy-paste-duplicate tactical
-      // plan, step 2). Checked BEFORE the modifier guard below, which returns
-      // on any ctrl/meta press — the same reason the quick-create arrows sit
-      // above it.
+      // The arrows and the letters share ONE branch rather than sitting in
+      // two with an identical condition, and that is load-bearing: a separate
+      // arrow branch would need its own `return` on a non-arrow key, and that
+      // return would swallow Ctrl+C/X/V/D and Ctrl+G on the way past. Sharing
+      // the branch makes "fall through to the letters" the structural default
+      // instead of a rule someone has to remember. Quick-create used to sit
+      // on Alt, where the question never came up because Alt owned nothing
+      // else.
       //
       // `event.repeat` is ignored deliberately: a held Ctrl+V would otherwise
       // issue a paste per key-repeat tick, each one a fresh round-trip of
-      // creates, and the board would fill with copies nobody asked for.
+      // creates, and the board would fill with copies nobody asked for. The
+      // arrows join that rule — a held Ctrl+Right would otherwise walk a
+      // chain of shapes off the side of the board.
       if ((event.ctrlKey || event.metaKey) && !event.altKey && !event.repeat) {
+        // Ctrl+Arrow / Cmd+Arrow: quick-create on that side.
+        //
+        // `preventDefault` fires for EVERY arrow under this chord, including
+        // the declines below — not just the creating ones. Alt+Arrow had no
+        // browser default worth suppressing; Cmd+Left/Right is back/forward
+        // navigation on macOS, so a declined chord that fell through would
+        // take the user off the board and lose the view.
+        const direction = ARROW_DIRECTIONS[event.key]
+        if (direction) {
+          event.preventDefault()
+          const ids = [...latest.current.selectedIds]
+          // Two selected shapes give no answer to "which one gets extended",
+          // so the chord declines rather than picking.
+          if (ids.length !== 1) return
+          const source = latest.current.scene.byId.get(ids[0])
+          // A connector has no "same shape one gap to the right" — the same
+          // exclusion `creationHandleTarget` applies to the pointer path.
+          if (!source || source.connector) return
+          quickCreateInDirection(source, direction)
+          return
+        }
         // Ctrl+G / Ctrl+Shift+G (FR-020), checked BEFORE the
         // `CLIPBOARD_ACTIONS` table below: that table is keyed by
         // `event.key.toLowerCase()`, which collapses `g` and `G` to the
