@@ -429,7 +429,7 @@ function WhiteboardEditor() {
   // Early returns AFTER all hooks have been called
   if (isLoading) {
     return (
-      <div className="flex items-center justify-center h-screen">
+      <div className="flex items-center justify-center h-full">
         <p className="text-lg text-muted-foreground">Loading whiteboard...</p>
       </div>
     )
@@ -440,7 +440,7 @@ function WhiteboardEditor() {
   // FORBIDDEN denial, so it's always an access-denied case.
   if (isUnauthorized) {
     return (
-      <div className="flex items-center justify-center h-screen">
+      <div className="flex items-center justify-center h-full">
         <WhiteboardAccessDenied />
       </div>
     )
@@ -454,13 +454,13 @@ function WhiteboardEditor() {
   if (isError) {
     if (classifyQueryFailure({ error: whiteboardPageError }) === 'forbidden') {
       return (
-        <div className="flex items-center justify-center h-screen">
+        <div className="flex items-center justify-center h-full">
           <WhiteboardAccessDenied />
         </div>
       )
     }
     return (
-      <div className="flex flex-col items-center justify-center h-screen gap-4">
+      <div className="flex flex-col items-center justify-center h-full gap-4">
         <p className="text-lg font-semibold">Failed to load whiteboard</p>
         <p className="text-sm text-muted-foreground">
           Something went wrong loading this whiteboard. Please try again.
@@ -477,7 +477,7 @@ function WhiteboardEditor() {
 
   if (!whiteboardData) {
     return (
-      <div className="flex items-center justify-center h-screen">
+      <div className="flex items-center justify-center h-full">
         <p className="text-lg text-muted-foreground">Loading whiteboard...</p>
       </div>
     )
@@ -490,7 +490,7 @@ function WhiteboardEditor() {
   // .tables/.relationships off an { error, status } payload.
   if (isUnauthorizedError(whiteboardData)) {
     return (
-      <div className="flex items-center justify-center h-screen">
+      <div className="flex items-center justify-center h-full">
         <p className="text-lg text-muted-foreground">
           Your session expired. Please sign in again.
         </p>
@@ -504,7 +504,7 @@ function WhiteboardEditor() {
 
   if (!whiteboard) {
     return (
-      <div className="flex flex-col items-center justify-center h-screen gap-4">
+      <div className="flex flex-col items-center justify-center h-full gap-4">
         <p className="text-lg font-semibold">Whiteboard not found</p>
         <p className="text-sm text-muted-foreground">
           This whiteboard does not exist or you don't have access to it.
@@ -520,7 +520,7 @@ function WhiteboardEditor() {
   }
 
   return (
-    <div className="flex flex-col h-screen bg-background">
+    <div className="flex flex-col h-full bg-background">
       {/* Header — hidden in zen mode */}
       {!isZenMode && (
         <div className="flex items-center justify-between px-4 py-2 border-b">
