@@ -26,6 +26,7 @@ import { Route as DemoTanstackQueryRouteImport } from './routes/demo/tanstack-qu
 import { Route as CanvasBoardIdRouteImport } from './routes/canvas/$boardId'
 import { Route as CanvasShareTokenRouteImport } from './routes/canvas-share.$token'
 import { Route as ApiCollabTokenRouteImport } from './routes/api/collab-token'
+import { Route as ApiCanvasBoardsRouteImport } from './routes/api/canvas-boards'
 import { Route as ProjectProjectIdIndexRouteImport } from './routes/project.$projectId.index'
 import { Route as DemoStartServerFuncsRouteImport } from './routes/demo/start.server-funcs'
 import { Route as DemoStartApiRequestRouteImport } from './routes/demo/start.api-request'
@@ -124,6 +125,11 @@ const ApiCollabTokenRoute = ApiCollabTokenRouteImport.update({
   path: '/api/collab-token',
   getParentRoute: () => rootRouteImport,
 } as any)
+const ApiCanvasBoardsRoute = ApiCanvasBoardsRouteImport.update({
+  id: '/api/canvas-boards',
+  path: '/api/canvas-boards',
+  getParentRoute: () => rootRouteImport,
+} as any)
 const ProjectProjectIdIndexRoute = ProjectProjectIdIndexRouteImport.update({
   id: '/',
   path: '/',
@@ -193,6 +199,7 @@ export interface FileRoutesByFullPath {
   '/register': typeof RegisterRoute
   '/revoke': typeof RevokeRoute
   '/token': typeof TokenRoute
+  '/api/canvas-boards': typeof ApiCanvasBoardsRoute
   '/api/collab-token': typeof ApiCollabTokenRoute
   '/canvas-share/$token': typeof CanvasShareTokenRoute
   '/canvas/$boardId': typeof CanvasBoardIdRoute
@@ -224,6 +231,7 @@ export interface FileRoutesByTo {
   '/register': typeof RegisterRoute
   '/revoke': typeof RevokeRoute
   '/token': typeof TokenRoute
+  '/api/canvas-boards': typeof ApiCanvasBoardsRoute
   '/api/collab-token': typeof ApiCollabTokenRoute
   '/canvas-share/$token': typeof CanvasShareTokenRoute
   '/canvas/$boardId': typeof CanvasBoardIdRoute
@@ -255,6 +263,7 @@ export interface FileRoutesById {
   '/register': typeof RegisterRoute
   '/revoke': typeof RevokeRoute
   '/token': typeof TokenRoute
+  '/api/canvas-boards': typeof ApiCanvasBoardsRoute
   '/api/collab-token': typeof ApiCollabTokenRoute
   '/canvas-share/$token': typeof CanvasShareTokenRoute
   '/canvas/$boardId': typeof CanvasBoardIdRoute
@@ -288,6 +297,7 @@ export interface FileRouteTypes {
     | '/register'
     | '/revoke'
     | '/token'
+    | '/api/canvas-boards'
     | '/api/collab-token'
     | '/canvas-share/$token'
     | '/canvas/$boardId'
@@ -319,6 +329,7 @@ export interface FileRouteTypes {
     | '/register'
     | '/revoke'
     | '/token'
+    | '/api/canvas-boards'
     | '/api/collab-token'
     | '/canvas-share/$token'
     | '/canvas/$boardId'
@@ -349,6 +360,7 @@ export interface FileRouteTypes {
     | '/register'
     | '/revoke'
     | '/token'
+    | '/api/canvas-boards'
     | '/api/collab-token'
     | '/canvas-share/$token'
     | '/canvas/$boardId'
@@ -381,6 +393,7 @@ export interface RootRouteChildren {
   RegisterRoute: typeof RegisterRoute
   RevokeRoute: typeof RevokeRoute
   TokenRoute: typeof TokenRoute
+  ApiCanvasBoardsRoute: typeof ApiCanvasBoardsRoute
   ApiCollabTokenRoute: typeof ApiCollabTokenRoute
   CanvasShareTokenRoute: typeof CanvasShareTokenRoute
   CanvasBoardIdRoute: typeof CanvasBoardIdRoute
@@ -525,6 +538,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof ApiCollabTokenRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/api/canvas-boards': {
+      id: '/api/canvas-boards'
+      path: '/api/canvas-boards'
+      fullPath: '/api/canvas-boards'
+      preLoaderRoute: typeof ApiCanvasBoardsRouteImport
+      parentRoute: typeof rootRouteImport
+    }
     '/project/$projectId/': {
       id: '/project/$projectId/'
       path: '/'
@@ -632,6 +652,7 @@ const rootRouteChildren: RootRouteChildren = {
   RegisterRoute: RegisterRoute,
   RevokeRoute: RevokeRoute,
   TokenRoute: TokenRoute,
+  ApiCanvasBoardsRoute: ApiCanvasBoardsRoute,
   ApiCollabTokenRoute: ApiCollabTokenRoute,
   CanvasShareTokenRoute: CanvasShareTokenRoute,
   CanvasBoardIdRoute: CanvasBoardIdRoute,
