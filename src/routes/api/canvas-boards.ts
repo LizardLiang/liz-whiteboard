@@ -27,7 +27,9 @@
 //   - The acting user is the JWT `sub`. Never a body field.
 //   - Authorization: `requireServerFnRole(sub, projectId, 'EDITOR')`, the same
 //     guard and the same role model the session-cookie server functions use.
-//   - Per-IP rate limit: 15 requests / 60s, matching /api/collab-token.
+//   - Rate limit: 600/60s per IP pre-auth (flood guard) plus 120/60s per
+//     JWT subject post-auth (the real per-actor budget). See the block
+//     above the limiters.
 //
 // KNOWN WIDENING (flagged for security review): a collab-audience JWT used to
 // mean "may join a collaboration namespace". It now also means "may create or
@@ -46,25 +48,55 @@ import { z } from 'zod'
 import { createFixedWindowRateLimiter, extractClientIp } from '@/lib/rate-limit'
 
 // ─────────────────────────────────────────────────────────────────────────────
-// Per-IP fixed-window rate limiter (in-process; resets on restart).
-// Same 15 / 60s budget as src/routes/api/collab-token.ts.
+// Rate limiting: two buckets, not the single per-IP bucket this route shipped
+// with. That bucket was a 15 / 60s copy of src/routes/api/collab-token.ts, and
+// it was wrong here for the reason /api/mcp-lifecycle documents at length:
+// `extractClientIp` reads x-forwarded-for, the MCP server calls this route
+// DIRECTLY (no proxy, no such header), so every request keyed on the literal
+// string 'unknown'. One bucket of 15 writes a minute, shared by every user of
+// the MCP server — an agent creating a handful of boards starved everyone else.
+//
+// The split matches /api/mcp-lifecycle so a future fix lands on both:
+//
+//   PRE-AUTH, per IP, 600/60s. Only job is to stop an unauthenticated flood
+//   from reaching JWT verification and body decode. Not a business limit, and
+//   deliberately not the binding constraint on legitimate work.
+//
+//   POST-AUTH, per JWT subject, 120/60s. The real budget: a bound on one
+//   actor, which is what the original 15/60s was trying to express.
+//
+// Both are in-process and reset on restart, like the ones they replace.
 // ─────────────────────────────────────────────────────────────────────────────
-const _rateLimiter = createFixedWindowRateLimiter({
-  max: 15,
+const _ipRateLimiter = createFixedWindowRateLimiter({
+  max: 600,
+  windowMs: 60_000,
+})
+
+const _userRateLimiter = createFixedWindowRateLimiter({
+  max: 120,
   windowMs: 60_000,
 })
 
 /**
- * Returns true if the request is within the rate limit, false if it exceeds it.
+ * Pre-auth flood guard. Returns true if the request is within the limit.
  * Exported for unit testing; do not call from outside this module in production.
  */
 export function checkIpRateLimit(ip: string): boolean {
-  return _rateLimiter.check(ip)
+  return _ipRateLimiter.check(ip)
 }
 
-/** Clears the in-process rate-limit map. For tests only. */
+/**
+ * The real per-actor budget, keyed on the authenticated JWT subject.
+ * Exported for unit testing; do not call from outside this module in production.
+ */
+export function checkUserRateLimit(userId: string): boolean {
+  return _userRateLimiter.check(userId)
+}
+
+/** Clears both in-process rate-limit maps. For tests only. */
 export function _resetIpRateLimitForTests(): void {
-  _rateLimiter.reset()
+  _ipRateLimiter.reset()
+  _userRateLimiter.reset()
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -144,6 +176,18 @@ export async function handleCanvasBoardRequest(
       'invalid_token',
       'The collaboration token is not valid.',
       401,
+    )
+  }
+
+  // ── Per-actor budget (per JWT subject) ─────────────────────────────────────
+  // The real limit. Keyed on the authenticated user rather than the IP, because
+  // every request from the MCP server shares one IP — see the header block.
+  if (!checkUserRateLimit(userId)) {
+    return jsonError(
+      'too_many_requests',
+      'Rate limit exceeded for this user. Try again in 60 seconds.',
+      429,
+      { 'Retry-After': '60' },
     )
   }
 
