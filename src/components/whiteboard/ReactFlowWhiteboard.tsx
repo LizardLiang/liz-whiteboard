@@ -256,6 +256,13 @@ export interface ReactFlowWhiteboardProps {
   showControls?: boolean
   /** Whether nodes are draggable */
   nodesDraggable?: boolean
+  /**
+   * Table to centre and highlight once the board has loaded (LizMeter #83).
+   * Fed by the route's `?focusTable=` search param, which is how a cross-file
+   * reference node jumps you to its source. Applied once per value; an id that
+   * is not on this board is ignored, so a stale link just opens the board.
+   */
+  focusTableId?: string
   /** Requesting user's effective role on the whiteboard's project — gates
    * write affordances (Add Table/Relationship, dragging) in the toolbar. */
   viewerRole?: EffectiveRole | null
@@ -404,6 +411,7 @@ function ReactFlowWhiteboardInner({
   showMinimap,
   showControls,
   nodesDraggable,
+  focusTableId,
   viewerRole = null,
   isPublic = false,
   collaborationEnabled = true,
@@ -426,6 +434,7 @@ function ReactFlowWhiteboardInner({
   showMinimap: boolean
   showControls: boolean
   nodesDraggable: boolean
+  focusTableId?: string
   viewerRole?: EffectiveRole | null
   isPublic?: boolean
   /** R1 (GH #109): when false, no Socket.IO connection is opened. */
@@ -607,6 +616,23 @@ function ReactFlowWhiteboardInner({
     setFocusRequestTableId(tableId)
     setFocusRequestToken((token) => token + 1)
   }, [])
+
+  // LizMeter #83 — arriving from a cross-file reference's jump-to-source:
+  // `?focusTable=<id>` on the route puts that id here, and we replay it
+  // through the same focus pipeline the search palette uses. Deferred until
+  // the node actually exists, because the board's tables land asynchronously
+  // and centring on an id React Flow has never seen is a no-op. Fired once
+  // per id: `appliedFocusRef` keeps a later re-render (or a node update) from
+  // yanking the viewport back after the user has panned away. An id that is
+  // not on this board is simply never applied, so a stale link just opens it.
+  const appliedFocusRef = useRef<string | null>(null)
+  useEffect(() => {
+    if (!focusTableId) return
+    if (appliedFocusRef.current === focusTableId) return
+    if (!nodes.some((node) => node.id === focusTableId)) return
+    appliedFocusRef.current = focusTableId
+    handleNavigateToTable(focusTableId)
+  }, [focusTableId, nodes, handleNavigateToTable])
 
   // GH #138 — jump to a related table from the relations-preview panel: pan
   // + normalized zoom + active-highlight (reusing the search-palette focus
@@ -3245,10 +3271,9 @@ function ReactFlowWhiteboardInner({
             keyboardSelectionOrderRef.current = selected.map((n) => n.id)
           }
           keyboardSelectionOrderRef.current.push(focusedShapeId)
-          reactFlowStoreApi.getState().addSelectedNodes([
-            ...selected.map((n) => n.id),
-            focusedShapeId,
-          ])
+          reactFlowStoreApi
+            .getState()
+            .addSelectedNodes([...selected.map((n) => n.id), focusedShapeId])
         }
         return
       }
@@ -4101,6 +4126,7 @@ export function ReactFlowWhiteboard({
   showMinimap = false,
   showControls = true,
   nodesDraggable = true,
+  focusTableId,
   viewerRole = null,
   isPublic = false,
   data,
@@ -4233,6 +4259,7 @@ export function ReactFlowWhiteboard({
         // never opens a collaboration socket, regardless of the caller-
         // supplied nodesDraggable prop.
         nodesDraggable={isPublic ? false : nodesDraggable}
+        focusTableId={focusTableId}
         viewerRole={viewerRole}
         isPublic={isPublic}
         collaborationEnabled={!isPublic}

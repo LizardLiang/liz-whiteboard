@@ -8,6 +8,7 @@ import {
   createTableReference,
   deleteTableReference,
   isTableReference,
+  listReferenceTargets,
   listTableReferences,
   resolveTableReferences,
   updateTableReference,
@@ -448,5 +449,65 @@ describe('deleteTableReference', () => {
     await expect(deleteTableReference(plain.id)).rejects.toThrow(
       /not a table reference/i,
     )
+  })
+})
+
+describe('listReferenceTargets', () => {
+  it('offers the other files of the project, never the current one', async () => {
+    const { local, source } = makeTwoFileProject()
+
+    const targets = await listReferenceTargets(local.id)
+
+    expect(targets.map((t) => t.whiteboardId)).toEqual([source.id])
+    expect(targets[0].whiteboardName).toBe('Billing')
+  })
+
+  it('carries each table with its columns and key flags', async () => {
+    const { local, sourceTable } = makeTwoFileProject()
+
+    const [file] = await listReferenceTargets(local.id)
+    const table = file.tables.find((t) => t.id === sourceTable.id)!
+
+    expect(table.name).toBe('orders')
+    expect(table.columns.map((c) => c.name)).toEqual(['id', 'customer_id'])
+    expect(table.columns[0].isPrimaryKey).toBe(true)
+    expect(table.columns[1].isPrimaryKey).toBe(false)
+    expect(table.columns[0].dataType).toBe('string')
+  })
+
+  it('never offers another file of a different project', async () => {
+    const { local } = makeTwoFileProject()
+    const otherProject = makeProject({ name: 'Other' })
+    const foreign = makeWhiteboard({ projectId: otherProject.id })
+    makeTable({ whiteboardId: foreign.id, name: 'secrets' })
+
+    const targets = await listReferenceTargets(local.id)
+
+    expect(targets.some((t) => t.whiteboardId === foreign.id)).toBe(false)
+  })
+
+  it('does not offer a reference node as a reference target', async () => {
+    const { local, source, sourceTable, idCol } = makeTwoFileProject()
+    // Put a reference on `source`, pointing back at a table on `local`.
+    const localTable = makeTable({ whiteboardId: local.id, name: 'invoices' })
+    const localCol = makeColumn({ tableId: localTable.id })
+    await createTableReference({
+      whiteboardId: source.id,
+      sourceWhiteboardId: local.id,
+      sourceTableId: localTable.id,
+      sourceColumnIds: [localCol.id],
+    })
+
+    const [file] = await listReferenceTargets(local.id)
+
+    expect(file.tables.map((t) => t.id)).toEqual([sourceTable.id])
+    expect(idCol.id).toBeTruthy()
+  })
+
+  it('returns an empty list for a project with only one file', async () => {
+    const project = makeProject({ name: 'Solo' })
+    const only = makeWhiteboard({ projectId: project.id, name: 'Only' })
+
+    expect(await listReferenceTargets(only.id)).toEqual([])
   })
 })

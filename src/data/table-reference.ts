@@ -65,6 +65,29 @@ export interface ResolvedTableReference {
   missing: boolean
 }
 
+/** One column offered by the reference picker. */
+export interface ReferenceTargetColumn {
+  id: string
+  name: string
+  dataType: string
+  isPrimaryKey: boolean
+  isForeignKey: boolean
+}
+
+/** One table offered by the reference picker. */
+export interface ReferenceTargetTable {
+  id: string
+  name: string
+  columns: Array<ReferenceTargetColumn>
+}
+
+/** One file offered by the reference picker: another whiteboard of this project. */
+export interface ReferenceTargetFile {
+  whiteboardId: string
+  whiteboardName: string
+  tables: Array<ReferenceTargetTable>
+}
+
 export interface UpdateTableReferenceResult {
   reference: TableReference
   /**
@@ -307,6 +330,63 @@ export async function createTableReference(
       insertStubColumn(id, column, index)
     })
     return readReference(id)
+  })
+}
+
+/**
+ * Everything the reference picker needs, in one read: every OTHER whiteboard of
+ * this whiteboard's project, each with its real tables and their columns.
+ *
+ * Reference nodes are excluded from the table lists — a reference to a
+ * reference would resolve to a stub rather than to a real table, so it is not
+ * something the picker should ever offer.
+ */
+export async function listReferenceTargets(
+  whiteboardId: string,
+): Promise<Array<ReferenceTargetFile>> {
+  const projectId = projectIdOf(whiteboardId)
+  if (!projectId) throw new Error('Whiteboard not found')
+
+  const files = db
+    .prepare(
+      'SELECT "id", "name" FROM "Whiteboard" WHERE "projectId" = ? AND "id" != ? ORDER BY "name" ASC',
+    )
+    .all(projectId, whiteboardId) as Array<{ id: string; name: string }>
+
+  return files.map((file) => {
+    const tables = db
+      .prepare(
+        'SELECT "id", "name" FROM "DiagramTable" WHERE "whiteboardId" = ? AND "sourceTableId" IS NULL ORDER BY "name" ASC',
+      )
+      .all(file.id) as Array<{ id: string; name: string }>
+
+    return {
+      whiteboardId: file.id,
+      whiteboardName: file.name,
+      tables: tables.map((table) => ({
+        id: table.id,
+        name: table.name,
+        columns: (
+          db
+            .prepare(
+              'SELECT "id", "name", "dataType", "isPrimaryKey", "isForeignKey" FROM "Column" WHERE "tableId" = ? ORDER BY "order" ASC',
+            )
+            .all(table.id) as Array<{
+            id: string
+            name: string
+            dataType: string
+            isPrimaryKey: unknown
+            isForeignKey: unknown
+          }>
+        ).map((column) => ({
+          id: column.id,
+          name: column.name,
+          dataType: column.dataType,
+          isPrimaryKey: Boolean(Number(column.isPrimaryKey)),
+          isForeignKey: Boolean(Number(column.isForeignKey)),
+        })),
+      })),
+    }
   })
 }
 
