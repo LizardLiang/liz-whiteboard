@@ -25,6 +25,7 @@ import { Route as InviteTokenRouteImport } from './routes/invite.$token'
 import { Route as DemoTanstackQueryRouteImport } from './routes/demo/tanstack-query'
 import { Route as CanvasBoardIdRouteImport } from './routes/canvas/$boardId'
 import { Route as CanvasShareTokenRouteImport } from './routes/canvas-share.$token'
+import { Route as ApiTableReferencesRouteImport } from './routes/api/table-references'
 import { Route as ApiCollabTokenRouteImport } from './routes/api/collab-token'
 import { Route as ApiCanvasBoardsRouteImport } from './routes/api/canvas-boards'
 import { Route as ProjectProjectIdIndexRouteImport } from './routes/project.$projectId.index'
@@ -120,6 +121,11 @@ const CanvasShareTokenRoute = CanvasShareTokenRouteImport.update({
   path: '/canvas-share/$token',
   getParentRoute: () => rootRouteImport,
 } as any)
+const ApiTableReferencesRoute = ApiTableReferencesRouteImport.update({
+  id: '/api/table-references',
+  path: '/api/table-references',
+  getParentRoute: () => rootRouteImport,
+} as any)
 const ApiCollabTokenRoute = ApiCollabTokenRouteImport.update({
   id: '/api/collab-token',
   path: '/api/collab-token',
@@ -201,6 +207,7 @@ export interface FileRoutesByFullPath {
   '/token': typeof TokenRoute
   '/api/canvas-boards': typeof ApiCanvasBoardsRoute
   '/api/collab-token': typeof ApiCollabTokenRoute
+  '/api/table-references': typeof ApiTableReferencesRoute
   '/canvas-share/$token': typeof CanvasShareTokenRoute
   '/canvas/$boardId': typeof CanvasBoardIdRoute
   '/demo/tanstack-query': typeof DemoTanstackQueryRoute
@@ -233,6 +240,7 @@ export interface FileRoutesByTo {
   '/token': typeof TokenRoute
   '/api/canvas-boards': typeof ApiCanvasBoardsRoute
   '/api/collab-token': typeof ApiCollabTokenRoute
+  '/api/table-references': typeof ApiTableReferencesRoute
   '/canvas-share/$token': typeof CanvasShareTokenRoute
   '/canvas/$boardId': typeof CanvasBoardIdRoute
   '/demo/tanstack-query': typeof DemoTanstackQueryRoute
@@ -265,6 +273,7 @@ export interface FileRoutesById {
   '/token': typeof TokenRoute
   '/api/canvas-boards': typeof ApiCanvasBoardsRoute
   '/api/collab-token': typeof ApiCollabTokenRoute
+  '/api/table-references': typeof ApiTableReferencesRoute
   '/canvas-share/$token': typeof CanvasShareTokenRoute
   '/canvas/$boardId': typeof CanvasBoardIdRoute
   '/demo/tanstack-query': typeof DemoTanstackQueryRoute
@@ -299,6 +308,7 @@ export interface FileRouteTypes {
     | '/token'
     | '/api/canvas-boards'
     | '/api/collab-token'
+    | '/api/table-references'
     | '/canvas-share/$token'
     | '/canvas/$boardId'
     | '/demo/tanstack-query'
@@ -331,6 +341,7 @@ export interface FileRouteTypes {
     | '/token'
     | '/api/canvas-boards'
     | '/api/collab-token'
+    | '/api/table-references'
     | '/canvas-share/$token'
     | '/canvas/$boardId'
     | '/demo/tanstack-query'
@@ -362,6 +373,7 @@ export interface FileRouteTypes {
     | '/token'
     | '/api/canvas-boards'
     | '/api/collab-token'
+    | '/api/table-references'
     | '/canvas-share/$token'
     | '/canvas/$boardId'
     | '/demo/tanstack-query'
@@ -395,6 +407,7 @@ export interface RootRouteChildren {
   TokenRoute: typeof TokenRoute
   ApiCanvasBoardsRoute: typeof ApiCanvasBoardsRoute
   ApiCollabTokenRoute: typeof ApiCollabTokenRoute
+  ApiTableReferencesRoute: typeof ApiTableReferencesRoute
   CanvasShareTokenRoute: typeof CanvasShareTokenRoute
   CanvasBoardIdRoute: typeof CanvasBoardIdRoute
   DemoTanstackQueryRoute: typeof DemoTanstackQueryRoute
@@ -531,6 +544,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof CanvasShareTokenRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/api/table-references': {
+      id: '/api/table-references'
+      path: '/api/table-references'
+      fullPath: '/api/table-references'
+      preLoaderRoute: typeof ApiTableReferencesRouteImport
+      parentRoute: typeof rootRouteImport
+    }
     '/api/collab-token': {
       id: '/api/collab-token'
       path: '/api/collab-token'
@@ -654,6 +674,7 @@ const rootRouteChildren: RootRouteChildren = {
   TokenRoute: TokenRoute,
   ApiCanvasBoardsRoute: ApiCanvasBoardsRoute,
   ApiCollabTokenRoute: ApiCollabTokenRoute,
+  ApiTableReferencesRoute: ApiTableReferencesRoute,
   CanvasShareTokenRoute: CanvasShareTokenRoute,
   CanvasBoardIdRoute: CanvasBoardIdRoute,
   DemoTanstackQueryRoute: DemoTanstackQueryRoute,
