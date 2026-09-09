@@ -190,6 +190,7 @@ const makeColumn = (
   isNullable: true,
   isUnique: false,
   description: null,
+  sourceColumnId: null,
   createdAt: new Date('2026-01-01'),
   updatedAt: new Date('2026-01-01'),
   ...override,

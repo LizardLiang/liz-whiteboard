@@ -13,6 +13,8 @@ const baseTable: DiagramTable = {
   positionY: 200,
   width: 240,
   height: 160,
+  sourceWhiteboardId: null,
+  sourceTableId: null,
   createdAt: new Date(),
   updatedAt: new Date(),
 }
@@ -26,6 +28,8 @@ const existingTable: DiagramTable & { columns: Array<Column> } = {
   positionY: 0,
   width: 240,
   height: 160,
+  sourceWhiteboardId: null,
+  sourceTableId: null,
   createdAt: new Date(),
   updatedAt: new Date(),
   columns: [],

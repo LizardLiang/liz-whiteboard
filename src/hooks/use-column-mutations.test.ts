@@ -34,6 +34,8 @@ const makeTableNode = (columns: Array<Column>): TableNodeType => ({
       positionY: 0,
       width: null,
       height: null,
+      sourceWhiteboardId: null,
+      sourceTableId: null,
       createdAt: new Date(),
       updatedAt: new Date(),
       columns,

@@ -150,6 +150,7 @@ const makeColumn = (id: string, order: number) => ({
   isNullable: true,
   isUnique: false,
   description: null as string | null,
+  sourceColumnId: null as string | null,
   createdAt: new Date(),
   updatedAt: new Date(),
 })

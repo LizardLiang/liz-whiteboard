@@ -32,6 +32,8 @@ const makeTableNode = (id = 'tbl-001'): TableNodeType => ({
       positionY: 200,
       width: null,
       height: null,
+      sourceWhiteboardId: null,
+      sourceTableId: null,
       createdAt: new Date(),
       updatedAt: new Date(),
       columns: [],
