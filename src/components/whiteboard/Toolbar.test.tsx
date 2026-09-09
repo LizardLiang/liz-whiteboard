@@ -3,7 +3,7 @@
 
 import { describe, expect, it, vi } from 'vitest'
 import { fireEvent, render, screen, waitFor } from '@testing-library/react'
-import { CARDINALITIES, Toolbar } from './Toolbar'
+import { CARDINALITIES, REFERENCE_DRAG_MIME, Toolbar } from './Toolbar'
 
 // ---------------------------------------------------------------------------
 // Minimal fixture for rendering Toolbar
@@ -377,5 +377,48 @@ describe('CARDINALITIES', () => {
     const entry = CARDINALITIES.find((c) => c.value === 'SELF_REFERENCING')
     expect(entry?.label).toBeTruthy()
     expect(typeof entry?.label).toBe('string')
+  })
+})
+
+// ---------------------------------------------------------------------------
+// Cross-file reference item (LizMeter #83)
+// ---------------------------------------------------------------------------
+
+describe('Toolbar Reference item', () => {
+  it('is not rendered when the board cannot take references', () => {
+    renderToolbar()
+    expect(screen.queryByTestId('add-reference-tool')).toBeNull()
+  })
+
+  it('places a reference at the viewport centre when clicked', () => {
+    const onAddReference = vi.fn()
+    renderToolbar({ onAddReference, viewerRole: 'EDITOR' })
+
+    fireEvent.click(screen.getByTestId('add-reference-tool'))
+
+    // No drop point — the caller decides the centre.
+    expect(onAddReference).toHaveBeenCalledWith()
+  })
+
+  it('carries the reference MIME on drag so the canvas can recognise the drop', () => {
+    renderToolbar({ onAddReference: vi.fn(), viewerRole: 'EDITOR' })
+    const setData = vi.fn()
+
+    fireEvent.dragStart(screen.getByTestId('add-reference-tool'), {
+      dataTransfer: { setData, effectAllowed: 'none' },
+    })
+
+    expect(setData).toHaveBeenCalledWith(
+      REFERENCE_DRAG_MIME,
+      'external-table-reference',
+    )
+  })
+
+  it('is disabled and undraggable for a VIEWER', () => {
+    renderToolbar({ onAddReference: vi.fn(), viewerRole: 'VIEWER' })
+
+    const item = screen.getByTestId('add-reference-tool')
+    expect(item.hasAttribute('disabled')).toBe(true)
+    expect(item.getAttribute('draggable')).toBe('false')
   })
 })

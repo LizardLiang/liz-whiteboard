@@ -11,6 +11,7 @@ import { RelationshipEdge } from '@/components/whiteboard/RelationshipEdge'
 import { AreaNode } from '@/components/whiteboard/AreaNode'
 import { CommentNode } from '@/components/whiteboard/CommentNode'
 import { ShapeNode } from '@/components/whiteboard/ShapeNode'
+import { ExternalTableNode } from '@/components/whiteboard/ExternalTableNode'
 import { ConnectorEdge } from '@/components/whiteboard/ConnectorEdge'
 import { QuickCreateGhostNode } from '@/components/whiteboard/QuickCreateGhostNode'
 
@@ -20,6 +21,9 @@ import { QuickCreateGhostNode } from '@/components/whiteboard/QuickCreateGhostNo
  */
 export const nodeTypes: NodeTypes = {
   table: TableNode,
+  // Cross-file table reference (LizMeter #83) — a DiagramTable row pointing at
+  // a table in another whiteboard of the same project.
+  externalTable: ExternalTableNode,
   area: AreaNode,
   comment: CommentNode,
   shape: ShapeNode,

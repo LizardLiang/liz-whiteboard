@@ -43,6 +43,7 @@ import type {
   AreaNodeType,
   CommentNodeType,
   ConnectorEdgeType,
+  ExternalTableNodeType,
   RelationshipEdgeType,
   ShapeNodeType,
   TableNodeType,
@@ -74,6 +75,7 @@ import {
   computeEdgeBundleOffsets,
 } from '@/lib/auto-layout/d3-force-layout'
 import { edgeTypes, nodeTypes } from '@/lib/react-flow/node-types'
+import { REFERENCE_DRAG_MIME } from '@/components/whiteboard/Toolbar'
 import {
   calculateEdgeHighlighting,
   calculateHighlighting,
@@ -107,6 +109,7 @@ const EMPTY_COMMENT_NODES: Array<CommentNodeType> = []
  * Stable empty defaults for the `shapeNodes`/`connectorEdges` props (Phase 1:
  * shapes-and-connectors) — same rationale as EMPTY_AREA_NODES above.
  */
+const EMPTY_EXTERNAL_TABLE_NODES: Array<ExternalTableNodeType> = []
 const EMPTY_SHAPE_NODES: Array<ShapeNodeType> = []
 const EMPTY_CONNECTOR_EDGES: Array<ConnectorEdgeType> = []
 
@@ -161,7 +164,9 @@ const VIEWPORT_CULLING_NODE_THRESHOLD = 150
  *   one relationship edge — the no-handler case (TableFocusOverlay's nested
  *   canvas) stays silent, as it does today.
  */
-export function computeRelationshipDeleteVeto<T extends { type?: string }>(params: {
+export function computeRelationshipDeleteVeto<
+  T extends { type?: string },
+>(params: {
   deletedEdges: Array<T>
   canPersistRelationshipDelete: boolean
   hasRelationshipDeleteHandler: boolean
@@ -229,6 +234,19 @@ export interface ReactFlowCanvasProps {
    * nodes like areaNodes. Rendered behind tables, above areas (tech-spec §5).
    */
   shapeNodes?: Array<ShapeNodeType>
+  /**
+   * Cross-file table reference nodes (LizMeter #83). Kept separate from table
+   * nodes for the same reason areas and shapes are: they render through a
+   * different `nodeTypes` entry and must not pass through the table-node
+   * handlers, which assume an editable local table.
+   */
+  externalTableNodes?: Array<ExternalTableNodeType>
+  /**
+   * A "Reference" item was dropped on the canvas (LizMeter #83). Receives the
+   * drop point already converted to FLOW coordinates, so the caller can open
+   * the picker and place the node exactly where it landed.
+   */
+  onReferenceDrop?: (point: { x: number; y: number }) => void
   /**
    * Connector edges (Phase 1) — merged with the relationship `edges` prop.
    * Geometry is derived at render time, never stored (FR-031a).
@@ -403,6 +421,8 @@ export function ReactFlowCanvas({
   onAreaDelete,
   commentNodes = EMPTY_COMMENT_NODES,
   shapeNodes = EMPTY_SHAPE_NODES,
+  externalTableNodes = EMPTY_EXTERNAL_TABLE_NODES,
+  onReferenceDrop,
   connectorEdges = EMPTY_CONNECTOR_EDGES,
   onShapeDragStop,
   onShapeDelete,
@@ -484,8 +504,6 @@ export function ReactFlowCanvas({
   // moves — see `onNodeDragStop`'s conversion back to absolute.
   const parentIndexRef = useRef(parentIndex)
   parentIndexRef.current = parentIndex
-
-
 
   // Comment pin nodes (GH #110) — same separate-state pattern as areas, but
   // rendered ON TOP of tables (merged last) since they are small clickable
@@ -572,9 +590,21 @@ export function ReactFlowCanvas({
       ...nodes.map((n) =>
         n.deletable === false ? n : { ...n, deletable: false },
       ),
+      // Reference nodes (LizMeter #83) sit with the tables. Like tables they
+      // are never natively deletable — Delete/Backspace routes through the
+      // confirmation dialog, not React Flow's own removal.
+      ...externalTableNodes.map((n) =>
+        n.deletable === false ? n : { ...n, deletable: false },
+      ),
       ...commentNodesState,
     ],
-    [areaNodesState, shapeNodesState, nodes, commentNodesState],
+    [
+      areaNodesState,
+      shapeNodesState,
+      nodes,
+      externalTableNodes,
+      commentNodesState,
+    ],
   )
 
   // Selection and hover state for highlighting
@@ -751,7 +781,7 @@ export function ReactFlowCanvas({
 
   // React Flow instance — used by the search-palette focus request below to
   // pan/zoom the viewport (shares the store with the container's instance).
-  const { fitView, setCenter, getZoom } = useReactFlow()
+  const { fitView, setCenter, getZoom, screenToFlowPosition } = useReactFlow()
 
   // Single-click on the minimap recenters the viewport on that point.
   // `position` is already in flow coordinates; drag-to-pan is handled
@@ -1690,6 +1720,25 @@ export function ReactFlowCanvas({
           // below the route header and Toolbar — so the rubber-band draw
           // preview rendered that many pixels away from the actual cursor.
           style={{ width: '100%', height: '100%', position: 'relative' }}
+          // LizMeter #83: the Toolbar's Reference item is dragged here and
+          // dropped at an exact spot. onDragOver must preventDefault or the
+          // browser never fires a drop at all. The screen point is converted
+          // to flow coordinates here, where the React Flow instance lives, so
+          // the caller only ever deals in canvas space.
+          onDragOver={(event) => {
+            if (!onReferenceDrop) return
+            if (!event.dataTransfer.types.includes(REFERENCE_DRAG_MIME)) return
+            event.preventDefault()
+            event.dataTransfer.dropEffect = 'copy'
+          }}
+          onDrop={(event) => {
+            if (!onReferenceDrop) return
+            if (!event.dataTransfer.types.includes(REFERENCE_DRAG_MIME)) return
+            event.preventDefault()
+            onReferenceDrop(
+              screenToFlowPosition({ x: event.clientX, y: event.clientY }),
+            )
+          }}
         >
           {/* Global SVG marker definitions for cardinality indicators */}
           <CardinalityMarkerDefs />

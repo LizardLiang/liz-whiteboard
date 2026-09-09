@@ -204,6 +204,56 @@ export interface TableNodeData extends Record<string, unknown> {
 export type TableNodeType = Node<TableNodeData, 'table'>
 
 /**
+ * Data for a cross-file table reference node (LizMeter #83).
+ *
+ * Deliberately NOT a variant of `TableNodeData`: a reference renders a fixed,
+ * read-only summary of a table that lives in another file, and giving it the
+ * table node's editing surface (rename, add column, reorder, notes) would
+ * offer affordances that cannot work here.
+ */
+export interface ExternalTableNodeData extends Record<string, unknown> {
+  /** The local DiagramTable row standing in for the referenced table. */
+  tableId: string
+  /** Whiteboard the referenced table really lives in. */
+  sourceWhiteboardId: string
+  /** The referenced table's id, in that whiteboard. */
+  sourceTableId: string
+  /** Live source table name, or the last-known one when the source is gone. */
+  sourceTableName: string
+  /** Live source file name, or null when that file is gone. */
+  sourceWhiteboardName: string | null
+  /** The picked columns, each one a connectable handle. */
+  columns: Array<{
+    /** Local stub column id — what a relationship actually points at. */
+    id: string
+    name: string
+    dataType: string
+    isPrimaryKey: boolean
+    isForeignKey: boolean
+    /** True when this column no longer exists in the source table. */
+    missing: boolean
+  }>
+  /** True when the source file or table is gone. */
+  missing: boolean
+  /** Whether this node is actively selected. */
+  isActiveHighlighted: boolean
+  /** Whether this node is highlighted through a relationship. */
+  isHighlighted: boolean
+  /** Current display mode, shared with table nodes. */
+  showMode: ShowMode
+  /**
+   * Jump to the referenced table. Omitted on the public share-link path,
+   * where the viewer holds no role on the source board — the node still
+   * renders, it just does not navigate.
+   */
+  onJumpToSource?: (sourceWhiteboardId: string, sourceTableId: string) => void
+  /** Re-open the picker to re-target this reference. EDITOR only. */
+  onRetarget?: (tableId: string) => void
+}
+
+export type ExternalTableNodeType = Node<ExternalTableNodeData, 'externalTable'>
+
+/**
  * Data structure for Relationship edges in React Flow
  * Extends Record<string, unknown> to satisfy React Flow's generic constraint
  */

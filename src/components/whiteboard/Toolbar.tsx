@@ -4,6 +4,7 @@
 import { useState } from 'react'
 import {
   Download,
+  ExternalLink,
   HelpCircle,
   History,
   Link2,
@@ -71,6 +72,12 @@ export interface ZoomControls {
 /**
  * Toolbar component props
  */
+/**
+ * Drag payload type for the Reference toolbar item (LizMeter #83). A custom
+ * MIME keeps the canvas's onDrop from reacting to arbitrary dragged content.
+ */
+export const REFERENCE_DRAG_MIME = 'application/x-liz-table-reference'
+
 export interface ToolbarProps {
   /** Whiteboard ID for creating entities */
   whiteboardId: string
@@ -82,6 +89,13 @@ export interface ToolbarProps {
   /** Callback when relationship is created. Should reject on failure —
    * Toolbar keeps the dialog open and re-throws so callers can surface a toast. */
   onCreateRelationship?: (data: CreateRelationship) => void | Promise<unknown>
+  /**
+   * Place a cross-file reference node (LizMeter #83). Called with a drop point
+   * in FLOW coordinates when the item is dragged onto the canvas, or with no
+   * point when it is simply clicked — the caller then places it at the
+   * viewport centre. When omitted, no Reference item is rendered.
+   */
+  onAddReference?: (dropPoint?: { x: number; y: number }) => void
   /** Total number of tables — drives the Auto Layout button enable/disable guard */
   tableCount: number
   /** Callback when the Auto Layout button is clicked */
@@ -194,6 +208,7 @@ export function Toolbar({
   tables,
   onCreateTable,
   onCreateRelationship,
+  onAddReference,
   tableCount,
   onAutoLayoutClick,
   isAutoLayoutRunning = false,
@@ -394,6 +409,35 @@ export function Toolbar({
           </DialogFooter>
         </DialogContent>
       </Dialog>
+
+      {/* Reference another file's table (LizMeter #83). Draggable so it can
+          be dropped at an exact spot, clickable so a trackpad or touch user
+          can still place one. The drag payload is read by the canvas's
+          onDrop, which converts the screen point to flow coordinates. */}
+      {onAddReference && (
+        <Button
+          variant="outline"
+          disabled={!canEdit}
+          draggable={canEdit}
+          data-testid="add-reference-tool"
+          onDragStart={(event) => {
+            event.dataTransfer.setData(
+              REFERENCE_DRAG_MIME,
+              'external-table-reference',
+            )
+            event.dataTransfer.effectAllowed = 'copy'
+          }}
+          onClick={() => onAddReference()}
+          title={
+            canEdit
+              ? 'Drag onto the canvas, or click to place at the centre'
+              : 'You have view-only access to this whiteboard.'
+          }
+        >
+          <ExternalLink className="h-4 w-4" />
+          Reference
+        </Button>
+      )}
 
       {/* Add Relationship Dialog */}
       <Dialog
