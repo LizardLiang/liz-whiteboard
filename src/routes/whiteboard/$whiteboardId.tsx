@@ -329,9 +329,22 @@ function WhiteboardEditor() {
       if (whiteboardData.whiteboard.textSource && textSource === '') {
         setTextSource(whiteboardData.whiteboard.textSource)
       } else if (isTextSyncEnabled) {
+        // Cross-file references (LizMeter #83) arrive inside `.tables` — a
+        // reference IS a DiagramTable row. Passing them here keeps them out of
+        // the `table` blocks and records them as comments instead, so
+        // re-importing this text never duplicates another file's table.
         const currentText = entitiesToText(
           whiteboardData.whiteboard.tables,
           whiteboardData.relationships,
+          new Map(
+            whiteboardData.whiteboard.tableReferences.map((reference) => [
+              reference.table.id,
+              {
+                sourceTableName: reference.sourceTableName,
+                sourceWhiteboardName: reference.sourceWhiteboardName,
+              },
+            ]),
+          ),
         )
         setTextSource(currentText)
       }

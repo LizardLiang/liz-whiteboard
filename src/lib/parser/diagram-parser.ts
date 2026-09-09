@@ -766,6 +766,16 @@ export function entitiesToText(
     cardinality: string
     label?: string | null
   }>,
+  /**
+   * Cross-file references on this board (LizMeter #83), keyed by the LOCAL
+   * DiagramTable row id. They are written as a comment, never as a `table`
+   * block: the table belongs to another file, and emitting a block here would
+   * make re-importing this text create a duplicate of it.
+   */
+  externalReferences: Map<
+    string,
+    { sourceTableName: string; sourceWhiteboardName: string | null }
+  > = new Map(),
 ): string {
   // Handle empty case
   // eslint-disable-next-line @typescript-eslint/no-unnecessary-condition
@@ -775,8 +785,11 @@ export function entitiesToText(
 
   let text = '# ER Diagram\n\n'
 
-  // Generate table definitions
+  // Generate table definitions. A cross-file reference is skipped here and
+  // recorded as a comment below, so this text never defines a table that
+  // another file owns.
   for (const table of tables) {
+    if (table.id && externalReferences.has(table.id)) continue
     text += `table ${table.name}`
     if (table.description) {
       text += ` "${table.description}"`
@@ -799,6 +812,18 @@ export function entitiesToText(
     }
 
     text += '}\n\n'
+  }
+
+  // Record the cross-file references, so a reader (and a future importer) can
+  // see which file each externally-referenced table really lives in. `#` is
+  // already the comment marker the parser skips, so this round-trips safely.
+  if (externalReferences.size > 0) {
+    for (const reference of externalReferences.values()) {
+      text += `# external ref: file "${
+        reference.sourceWhiteboardName ?? '(missing)'
+      }" table "${reference.sourceTableName}"\n`
+    }
+    text += '\n'
   }
 
   // Generate relationship definitions

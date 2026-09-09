@@ -167,6 +167,7 @@ import { useMinimapFocusShortcut } from '@/hooks/use-minimap-focus-shortcut'
 import { useTableRelationsPreview } from '@/hooks/use-table-relations-preview'
 import {
   buildDiagramTablesFromFlow,
+  buildExternalTableRefs,
   exportTableDdl,
   useTableExportDdl,
 } from '@/hooks/use-table-export-ddl'
@@ -696,6 +697,7 @@ function ReactFlowWhiteboardInner({
     }) => createTableReferenceFn({ data: { whiteboardId, ...input } }),
     onSuccess: () => {
       invalidateBoard()
+      emitCollabEvent('reference:changed', { whiteboardId })
       toast.success('Reference added')
     },
     onError: (error: unknown) => {
@@ -720,6 +722,7 @@ function ReactFlowWhiteboardInner({
         toast.error('Your session expired. Sign in again to keep editing.')
         return
       }
+      emitCollabEvent('reference:changed', { whiteboardId })
       // Report what actually happened, not what was predicted: the count the
       // picker showed was computed before the write, and another editor may
       // have drawn a line in between.
@@ -794,6 +797,14 @@ function ReactFlowWhiteboardInner({
       }),
     [tableReferences, isPublic, handleJumpToSource, handleRetargetReference],
   )
+
+  // The DDL export callback is deliberately not re-created on every reference
+  // change (it is memoised against a stable dependency set), so it reads the
+  // current references through a ref instead of closing over them.
+  const externalTableNodesRef = useRef(externalTableNodes)
+  useEffect(() => {
+    externalTableNodesRef.current = externalTableNodes
+  }, [externalTableNodes])
 
   // GH #138 — jump to a related table from the relations-preview panel: pan
   // + normalized zoom + active-highlight (reusing the search-palette focus
@@ -1264,6 +1275,16 @@ function ReactFlowWhiteboardInner({
     // GH #125: live table-creation sync — the 14th positional param.
     handleTableCreated,
   )
+
+  // Another collaborator added, re-targeted or deleted a reference — refetch
+  // rather than patching a cache entry by hand. Reference content is resolved
+  // server-side against another file, so there is no local computation that
+  // could reproduce it from the event (LizMeter #83).
+  useEffect(() => {
+    const handler = () => invalidateBoard()
+    onCollabEvent('reference:changed', handler)
+    return () => offCollabEvent('reference:changed', handler)
+  }, [onCollabEvent, offCollabEvent, invalidateBoard])
 
   // Column collaboration callbacks (incoming events from other users)
   const onColumnCreated = useCallback(
@@ -1762,7 +1783,14 @@ function ReactFlowWhiteboardInner({
   const handleExportDdl = useCallback(
     (tableId: string, dialect: Dialect) => {
       const tables = buildDiagramTablesFromFlow(getNodes(), getEdges())
-      void exportTableDdl(tables, tableId, dialect)
+      // Cross-file references never reach `tables` (LizMeter #83) — pass them
+      // separately so a foreign key pointing at one still appears in the DDL.
+      void exportTableDdl(
+        tables,
+        tableId,
+        dialect,
+        buildExternalTableRefs(externalTableNodesRef.current),
+      )
     },
     [getNodes, getEdges],
   )
@@ -4059,6 +4087,7 @@ function ReactFlowWhiteboardInner({
           open={searchOpen}
           onOpenChange={setSearchOpen}
           nodes={nodes}
+          referenceNodes={externalTableNodes}
           onNavigateToTable={handleNavigateToTable}
         />
 
@@ -4154,6 +4183,15 @@ function ReactFlowWhiteboardInner({
               initialNodes={nodes}
               initialEdges={edges}
               externalTableNodes={externalTableNodes}
+              // A reference is a DiagramTable row, so its move persists and
+              // broadcasts through the very same `table:move` every table
+              // uses — no parallel event family (LizMeter #83).
+              onReferenceDragStop={
+                isPublic
+                  ? undefined
+                  : (tableId, positionX, positionY) =>
+                      emitPositionUpdate(tableId, positionX, positionY)
+              }
               onReferenceDrop={
                 isPublic
                   ? undefined

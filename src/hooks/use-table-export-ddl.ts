@@ -16,9 +16,10 @@ import { useCallback } from 'react'
 import { useReactFlow } from '@xyflow/react'
 import { toast } from 'sonner'
 import { useSingleSelectedTableShortcut } from './use-single-selected-table-shortcut'
-import type { Dialect } from '@/lib/ddl-generator'
+import type { Dialect, ExternalTableRef } from '@/lib/ddl-generator'
 import type { DiagramTableWithRelations } from '@/data/diagram-table'
 import type {
+  ExternalTableNodeType,
   RelationshipEdgeType,
   TableNodeType,
 } from '@/lib/react-flow/types'
@@ -78,9 +79,10 @@ export async function exportTableDdl(
   tables: Array<DiagramTableWithRelations>,
   tableId: string,
   dialect: Dialect,
+  externalTables?: Map<string, ExternalTableRef>,
 ): Promise<void> {
   try {
-    const ddl = generateTableDDL(tables, tableId, dialect)
+    const ddl = generateTableDDL(tables, tableId, dialect, externalTables)
     const tableName = tables.find((t) => t.id === tableId)?.name ?? tableId
     const copied = await copyText(ddl)
     if (!copied) {
@@ -110,4 +112,29 @@ export function useTableExportDdl(): void {
   )
 
   useSingleSelectedTableShortcut({ key: 'd', onTrigger })
+}
+
+/**
+ * Index the board's cross-file references by their LOCAL row id, in the shape
+ * generateTableDDL needs (LizMeter #83).
+ *
+ * Reference nodes never reach `buildDiagramTablesFromFlow` — they are filtered
+ * out of the table node list — so without this map a foreign key pointing at
+ * one is silently dropped from the exported DDL.
+ */
+export function buildExternalTableRefs(
+  referenceNodes: Array<ExternalTableNodeType>,
+): Map<string, ExternalTableRef> {
+  return new Map(
+    referenceNodes.map((node) => [
+      node.id,
+      {
+        sourceTableName: node.data.sourceTableName,
+        sourceWhiteboardName: node.data.sourceWhiteboardName,
+        columnNames: new Map(
+          node.data.columns.map((column) => [column.id, column.name]),
+        ),
+      },
+    ]),
+  )
 }

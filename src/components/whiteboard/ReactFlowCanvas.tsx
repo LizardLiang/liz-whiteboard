@@ -248,6 +248,16 @@ export interface ReactFlowCanvasProps {
    */
   onReferenceDrop?: (point: { x: number; y: number }) => void
   /**
+   * A reference node finished being dragged (LizMeter #83). It is a
+   * DiagramTable row, so the caller persists it through the same table-move
+   * path an ordinary table uses.
+   */
+  onReferenceDragStop?: (
+    tableId: string,
+    positionX: number,
+    positionY: number,
+  ) => void
+  /**
    * Connector edges (Phase 1) — merged with the relationship `edges` prop.
    * Geometry is derived at render time, never stored (FR-031a).
    */
@@ -423,6 +433,7 @@ export function ReactFlowCanvas({
   shapeNodes = EMPTY_SHAPE_NODES,
   externalTableNodes = EMPTY_EXTERNAL_TABLE_NODES,
   onReferenceDrop,
+  onReferenceDragStop,
   connectorEdges = EMPTY_CONNECTOR_EDGES,
   onShapeDragStop,
   onShapeDelete,
@@ -518,6 +529,24 @@ export function ReactFlowCanvas({
     [commentNodesState],
   )
 
+  // Cross-file reference nodes (LizMeter #83) — same separate-state pattern
+  // as areas/shapes/comments. They need their OWN controlled state, not a
+  // plain prop: React Flow's node changes (drag, selection) must be applied
+  // somewhere, and routing them into the table pipeline would drop them —
+  // a reference node would then snap back the moment you let go of it.
+  const [
+    externalTableNodesState,
+    setExternalTableNodesState,
+    handleExternalTableNodesChange,
+  ] = useNodesState<ExternalTableNodeType>(externalTableNodes)
+  useEffect(() => {
+    setExternalTableNodesState(externalTableNodes)
+  }, [externalTableNodes, setExternalTableNodesState])
+  const externalTableIdSet = useMemo(
+    () => new Set(externalTableNodesState.map((n) => n.id)),
+    [externalTableNodesState],
+  )
+
   // Shape nodes (Phase 1: shapes-and-connectors) — same separate-state
   // pattern as areas. Rendered BEHIND tables, ABOVE areas (tech-spec §5).
   const [shapeNodesState, setShapeNodesState, handleShapeNodesChange] =
@@ -593,7 +622,7 @@ export function ReactFlowCanvas({
       // Reference nodes (LizMeter #83) sit with the tables. Like tables they
       // are never natively deletable — Delete/Backspace routes through the
       // confirmation dialog, not React Flow's own removal.
-      ...externalTableNodes.map((n) =>
+      ...externalTableNodesState.map((n) =>
         n.deletable === false ? n : { ...n, deletable: false },
       ),
       ...commentNodesState,
@@ -602,7 +631,7 @@ export function ReactFlowCanvas({
       areaNodesState,
       shapeNodesState,
       nodes,
-      externalTableNodes,
+      externalTableNodesState,
       commentNodesState,
     ],
   )
@@ -1366,6 +1395,16 @@ export function ReactFlowCanvas({
         return
       }
 
+      // Cross-file reference nodes (LizMeter #83): persist the new position
+      // and stop. A reference IS a DiagramTable row, so the caller writes it
+      // through the same table-move path; but it has no `data.table`, so it
+      // must not fall through to the edge-routing recalculation below, which
+      // reads that field on every dragged node.
+      if (externalTableIdSet.has(node.id)) {
+        onReferenceDragStop?.(node.id, node.position.x, node.position.y)
+        return
+      }
+
       // Shape nodes: persist the new position(s), skip edge routing/hover
       // entirely (tech-spec §10). React Flow reports the WHOLE multi-drag
       // selection to this callback once, so a multi-select drag of N shapes
@@ -1423,11 +1462,13 @@ export function ReactFlowCanvas({
     [
       areaIdSet,
       shapeIdSet,
+      externalTableIdSet,
       nodes,
       parentIndex,
       cancelPendingDragEdgeRecalc,
       onAreaDragStop,
       onShapeDragStop,
+      onReferenceDragStop,
       onNodeDragStopProp,
       mergeCurrentPositions,
       setEdges,
@@ -1443,6 +1484,7 @@ export function ReactFlowCanvas({
       const areaChanges: typeof changes = []
       const shapeChanges: typeof changes = []
       const commentChanges: typeof changes = []
+      const externalTableChanges: typeof changes = []
       const tableChanges: typeof changes = []
       for (const change of changes) {
         if ('id' in change && areaIdSet.has(change.id)) areaChanges.push(change)
@@ -1450,6 +1492,8 @@ export function ReactFlowCanvas({
           shapeChanges.push(change)
         else if ('id' in change && commentIdSet.has(change.id))
           commentChanges.push(change)
+        else if ('id' in change && externalTableIdSet.has(change.id))
+          externalTableChanges.push(change)
         else tableChanges.push(change)
       }
       if (areaChanges.length > 0) {
@@ -1461,6 +1505,9 @@ export function ReactFlowCanvas({
       if (commentChanges.length > 0) {
         handleCommentNodesChange(commentChanges as any)
       }
+      if (externalTableChanges.length > 0) {
+        handleExternalTableNodesChange(externalTableChanges as any)
+      }
       handleNodesChange(tableChanges)
       onNodesChangeProp?.(tableChanges)
     },
@@ -1468,9 +1515,11 @@ export function ReactFlowCanvas({
       areaIdSet,
       shapeIdSet,
       commentIdSet,
+      externalTableIdSet,
       handleAreaNodesChange,
       handleShapeNodesChange,
       handleCommentNodesChange,
+      handleExternalTableNodesChange,
       handleNodesChange,
       onNodesChangeProp,
     ],

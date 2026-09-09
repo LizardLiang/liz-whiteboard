@@ -518,6 +518,46 @@ function setupCollaborationEventHandlers(
     },
   )
 
+  // Cross-file table reference changed (LizMeter #83).
+  //
+  // Creation, re-targeting and deletion all go through server functions (they
+  // need same-project validation against the database), so this event carries
+  // no payload of its own — it is a signal that the board's references moved,
+  // and every other client refetches. Movement is NOT here: a reference is a
+  // DiagramTable row and rides the ordinary `table:move` above.
+  //
+  // Permission is still checked: a VIEWER must not be able to make everyone
+  // else refetch on demand.
+  socket.on(
+    'reference:changed',
+    async (_data: unknown, cb?: (res: AckResult) => void) => {
+      if (isSessionExpired(socket)) {
+        socket.emit('session_expired')
+        socket.disconnect(true)
+        cb?.({ ok: false, code: 'SESSION_EXPIRED', message: 'Session expired' })
+        return
+      }
+      if (
+        await denyIfInsufficientPermission(
+          socket,
+          whiteboardId,
+          'reference:changed',
+        )
+      ) {
+        cb?.({
+          ok: false,
+          code: 'FORBIDDEN',
+          message: 'Insufficient permission',
+        })
+        return
+      }
+
+      socket.broadcast.emit('reference:changed', { whiteboardId, userId })
+      cb?.({ ok: true, entity: { whiteboardId } })
+      await safeUpdateSessionActivity(socket.id)
+    },
+  )
+
   // Table position update (dragging)
   socket.on(
     'table:move',

@@ -13,7 +13,10 @@
 import { useMemo } from 'react'
 import { Columns3, Table2 } from 'lucide-react'
 
-import type { TableNodeType } from '@/lib/react-flow/types'
+import type {
+  ExternalTableNodeType,
+  TableNodeType,
+} from '@/lib/react-flow/types'
 import {
   CommandDialog,
   CommandEmpty,
@@ -24,6 +27,9 @@ import {
 } from '@/components/ui/command'
 import { buildSearchIndex } from '@/lib/react-flow/search-index'
 
+/** Stable empty default, so the index memo is not invalidated every render. */
+const EMPTY_REFERENCE_NODES: Array<ExternalTableNodeType> = []
+
 export interface WhiteboardSearchProps {
   /** Whether the palette is open. */
   open: boolean
@@ -31,6 +37,11 @@ export interface WhiteboardSearchProps {
   onOpenChange: (open: boolean) => void
   /** Current React Flow nodes — the search index is derived from these. */
   nodes: Array<TableNodeType>
+  /**
+   * Cross-file reference nodes (LizMeter #83). Indexed alongside tables so a
+   * reference is findable by the name it actually displays.
+   */
+  referenceNodes?: Array<ExternalTableNodeType>
   /** Called with the target table id when a result is selected. */
   onNavigateToTable: (tableId: string) => void
 }
@@ -39,9 +50,13 @@ export function WhiteboardSearch({
   open,
   onOpenChange,
   nodes,
+  referenceNodes = EMPTY_REFERENCE_NODES,
   onNavigateToTable,
 }: WhiteboardSearchProps) {
-  const index = useMemo(() => buildSearchIndex(nodes), [nodes])
+  const index = useMemo(
+    () => buildSearchIndex(nodes, referenceNodes),
+    [nodes, referenceNodes],
+  )
 
   const tables = index.filter((entry) => entry.type === 'table')
   const columns = index.filter((entry) => entry.type === 'column')
@@ -73,6 +88,11 @@ export function WhiteboardSearch({
               >
                 <Table2 />
                 <span>{entry.tableName}</span>
+                {entry.sourceWhiteboardName != null && (
+                  <span className="ml-auto text-xs text-muted-foreground">
+                    in {entry.sourceWhiteboardName}
+                  </span>
+                )}
               </CommandItem>
             ))}
           </CommandGroup>
@@ -93,6 +113,11 @@ export function WhiteboardSearch({
                   <span className="text-muted-foreground">.</span>
                   {entry.columnName}
                 </span>
+                {entry.sourceWhiteboardName != null && (
+                  <span className="ml-auto text-xs text-muted-foreground">
+                    in {entry.sourceWhiteboardName}
+                  </span>
+                )}
               </CommandItem>
             ))}
           </CommandGroup>
