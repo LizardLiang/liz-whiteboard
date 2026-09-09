@@ -22,7 +22,9 @@
 //   - The acting user is the JWT `sub`. Never a body field.
 //   - Authorization: `requireServerFnRole(sub, projectId, 'EDITOR')` for the
 //     writes, VIEWER for `list` — the same role model the session path uses.
-//   - Per-IP rate limit: 15 requests / 60s.
+//   - Rate limit: 600/60s per IP pre-auth (flood guard) plus 120/60s per JWT
+//     subject post-auth (the real per-actor budget). See the block above the
+//     limiters for why a single per-IP bucket is wrong here.
 //
 // SAME-PROJECT SCOPE: enforced in the data layer, not here. The role check
 // below only proves the caller may write to the board they named; it says
@@ -33,20 +35,46 @@ import { createFileRoute } from '@tanstack/react-router'
 import { z } from 'zod'
 import { createFixedWindowRateLimiter, extractClientIp } from '@/lib/rate-limit'
 
-// Same 15 / 60s budget as /api/canvas-boards and /api/collab-token.
-const _rateLimiter = createFixedWindowRateLimiter({
-  max: 15,
+// Rate limiting: two buckets, NOT the single 15 / 60s per-IP bucket this route
+// shipped with. `extractClientIp` reads x-forwarded-for; the MCP server calls
+// this route DIRECTLY, with no proxy and no such header, so every request from
+// it keyed on the literal string 'unknown' — one bucket of 15 a minute shared by
+// every user of the MCP server. Reference work is bursty by nature (list, then
+// create, then relate, then re-target), so an agent organising one board starved
+// everyone else, and the e2e suite tripped it as a flake.
+//
+// Same split as /api/mcp-lifecycle and /api/canvas-boards, so a future change
+// lands on all three:
+//
+//   PRE-AUTH,  per IP,          600/60s — flood guard for the JWT-verify and
+//                                         body-decode path; not a business limit
+//   POST-AUTH, per JWT subject, 120/60s — the real budget, bounded per actor
+//
+// Both are in-process and reset on restart, like the ones they replace.
+const _ipRateLimiter = createFixedWindowRateLimiter({
+  max: 600,
   windowMs: 60_000,
 })
 
-/** Exported for unit testing; do not call from outside this module. */
+const _userRateLimiter = createFixedWindowRateLimiter({
+  max: 120,
+  windowMs: 60_000,
+})
+
+/** Pre-auth flood guard. Exported for unit testing; do not call from outside. */
 export function checkIpRateLimit(ip: string): boolean {
-  return _rateLimiter.check(ip)
+  return _ipRateLimiter.check(ip)
 }
 
-/** Clears the in-process rate-limit map. For tests only. */
+/** The real per-actor budget. Exported for unit testing; do not call outside. */
+export function checkUserRateLimit(userId: string): boolean {
+  return _userRateLimiter.check(userId)
+}
+
+/** Clears both in-process rate-limit maps. For tests only. */
 export function _resetIpRateLimitForTests(): void {
-  _rateLimiter.reset()
+  _ipRateLimiter.reset()
+  _userRateLimiter.reset()
 }
 
 const bodySchema = z.discriminatedUnion('op', [
@@ -115,6 +143,17 @@ export async function handleTableReferenceRequest(
       'invalid_token',
       'The collaboration token is not valid.',
       401,
+    )
+  }
+
+  // The real limit, keyed on the authenticated user rather than the IP, because
+  // every request from the MCP server shares one IP — see the header block.
+  if (!checkUserRateLimit(userId)) {
+    return jsonError(
+      'too_many_requests',
+      'Rate limit exceeded for this user. Try again in 60 seconds.',
+      429,
+      { 'Retry-After': '60' },
     )
   }
 

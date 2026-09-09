@@ -21,6 +21,8 @@ import {
 import { SignJWT } from 'jose'
 import {
   _resetIpRateLimitForTests,
+  checkIpRateLimit,
+  checkUserRateLimit,
   handleTableReferenceRequest,
 } from './table-references'
 import { _resetKeyPairForTests, getSigningKeyPair } from '@/lib/oauth/keys'
@@ -351,5 +353,108 @@ describe('/api/table-references validation', () => {
     )
 
     expect(res.status).toBe(400)
+  })
+})
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Rate limiting. This route shipped with a single 15 / 60s per-IP bucket and no
+// test at all. The bucket was wrong here: extractClientIp reads
+// x-forwarded-for, the MCP server calls this route directly with no such
+// header, so every request from it keyed on the literal string 'unknown' — 15
+// writes a minute shared by every user of the MCP server. Reference work is
+// bursty (list, create, relate, re-target), so it tripped in ordinary use; the
+// e2e suite hit it as a flake before it was found.
+// ─────────────────────────────────────────────────────────────────────────────
+
+describe('/api/table-references pre-auth per-IP flood guard', () => {
+  it('allows the first 600 requests from one IP and blocks the 601st', () => {
+    for (let i = 0; i < 600; i++) {
+      expect(checkIpRateLimit('10.2.0.1')).toBe(true)
+    }
+    expect(checkIpRateLimit('10.2.0.1')).toBe(false)
+  })
+
+  it('does not block a different IP', () => {
+    for (let i = 0; i < 601; i++) checkIpRateLimit('10.2.0.2')
+    expect(checkIpRateLimit('10.2.0.3')).toBe(true)
+  })
+
+  it('returns 429 with Retry-After once the window is exhausted', async () => {
+    const { owner, local, source, sourceTable, idCol } = await setup()
+    const token = await mintCollabToken(owner.id)
+    for (let i = 0; i < 601; i++) checkIpRateLimit('unknown')
+
+    const resp = await handleTableReferenceRequest(
+      post(
+        {
+          op: 'create',
+          whiteboardId: local.id,
+          sourceWhiteboardId: source.id,
+          sourceTableId: sourceTable.id,
+          sourceColumnIds: [idCol.id],
+        },
+        token,
+      ),
+    )
+
+    expect(resp.status).toBe(429)
+    expect(resp.headers.get('Retry-After')).toBe('60')
+  })
+})
+
+describe('/api/table-references post-auth per-subject budget', () => {
+  it('allows the first 120 requests from one subject and blocks the 121st', () => {
+    for (let i = 0; i < 120; i++) {
+      expect(checkUserRateLimit('user-a')).toBe(true)
+    }
+    expect(checkUserRateLimit('user-a')).toBe(false)
+  })
+
+  // Drives real requests through the real handler rather than poking the
+  // limiter, because what matters is that the handler consults the right
+  // bucket. `list` is used so the budget is spent without creating 120 rows.
+  it(
+    'blocks one user past the budget while still serving another on the same IP',
+    { timeout: 30_000 },
+    async () => {
+      const { owner, viewer, local } = await setup()
+      const heavyToken = await mintCollabToken(owner.id)
+      const lightToken = await mintCollabToken(viewer.id)
+
+      for (let i = 0; i < 120; i++) {
+        const ok = await handleTableReferenceRequest(
+          post({ op: 'list', whiteboardId: local.id }, heavyToken),
+        )
+        expect(ok.status).toBe(200)
+      }
+      const heavyLimited = await handleTableReferenceRequest(
+        post({ op: 'list', whiteboardId: local.id }, heavyToken),
+      )
+      expect(heavyLimited.status).toBe(429)
+      expect(heavyLimited.headers.get('Retry-After')).toBe('60')
+
+      // Same IP, same 'unknown' key, different subject — must still be served.
+      const other = await handleTableReferenceRequest(
+        post({ op: 'list', whiteboardId: local.id }, lightToken),
+      )
+      expect(other.status).toBe(200)
+    },
+  )
+
+  it('an unauthenticated request consumes no user budget', async () => {
+    const { owner, local } = await setup()
+    const token = await mintCollabToken(owner.id)
+
+    for (let i = 0; i < 30; i++) {
+      const rejected = await handleTableReferenceRequest(
+        post({ op: 'list', whiteboardId: local.id }),
+      )
+      expect(rejected.status).toBe(401)
+    }
+
+    const ok = await handleTableReferenceRequest(
+      post({ op: 'list', whiteboardId: local.id }, token),
+    )
+    expect(ok.status).toBe(200)
   })
 })
