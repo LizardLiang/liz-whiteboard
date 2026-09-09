@@ -32,6 +32,7 @@ import { toast } from 'sonner'
 import { ReactFlowCanvas } from './ReactFlowCanvas'
 import { PerfTrackerPanel } from './PerfTrackerPanel'
 import { ConnectionStatusIndicator } from './ConnectionStatusIndicator'
+import { DeleteReferenceDialog } from './DeleteReferenceDialog'
 import { DeleteTableDialog } from './DeleteTableDialog'
 import { Toolbar } from './Toolbar'
 import { WhiteboardSearch } from './WhiteboardSearch'
@@ -137,6 +138,7 @@ import { convertRelationshipsToEdges } from '@/lib/react-flow/convert-to-edges'
 import {
   createRelationshipFn,
   createTableReferenceFn,
+  deleteTableReferenceFn,
   getMcpEndpointUrl,
   getReferenceTargets,
   getWhiteboardRelationships,
@@ -743,6 +745,34 @@ function ReactFlowWhiteboardInner({
     },
   })
 
+  const deleteReferenceMutation = useMutation({
+    mutationFn: (tableId: string) =>
+      deleteTableReferenceFn({ data: { tableId } }),
+    onSuccess: (result) => {
+      invalidateBoard()
+      if (isUnauthorizedError(result)) {
+        toast.error('Your session expired. Sign in again to keep editing.')
+        return
+      }
+      emitCollabEvent('reference:changed', { whiteboardId })
+      toast.success('Reference removed')
+    },
+    onError: (error: unknown) => {
+      toast.error(
+        error instanceof Error
+          ? error.message
+          : 'Could not remove the reference',
+      )
+    },
+  })
+
+  // Which reference the remove-confirmation dialog is about. Removing a
+  // reference takes every relationship drawn to it with it, so it is confirmed
+  // the same way deleting a table is.
+  const [deletingReferenceId, setDeletingReferenceId] = useState<string | null>(
+    null,
+  )
+
   // Jump to the file that owns a referenced table, centring on it there.
   const handleJumpToSource = useCallback(
     (sourceWhiteboardId: string, sourceTableId: string) => {
@@ -794,6 +824,7 @@ function ReactFlowWhiteboardInner({
       convertReferencesToNodes(tableReferences, {
         onJumpToSource: isPublic ? undefined : handleJumpToSource,
         onRetarget: isPublic ? undefined : handleRetargetReference,
+        onDelete: isPublic ? undefined : setDeletingReferenceId,
       }),
     [tableReferences, isPublic, handleJumpToSource, handleRetargetReference],
   )
@@ -4173,6 +4204,30 @@ function ReactFlowWhiteboardInner({
               Exit Zen
             </Button>
           )}
+          {deletingReferenceId &&
+            (() => {
+              const reference = tableReferences.find(
+                (r) => r.table.id === deletingReferenceId,
+              )
+              if (!reference) return null
+              const affected = edges.filter(
+                (edge) =>
+                  edge.source === deletingReferenceId ||
+                  edge.target === deletingReferenceId,
+              ).length
+              return (
+                <DeleteReferenceDialog
+                  tableName={reference.sourceTableName}
+                  sourceWhiteboardName={reference.sourceWhiteboardName}
+                  affectedRelationships={affected}
+                  onConfirm={() => {
+                    deleteReferenceMutation.mutate(deletingReferenceId)
+                    setDeletingReferenceId(null)
+                  }}
+                  onCancel={() => setDeletingReferenceId(null)}
+                />
+              )
+            })()}
           {deletingTableId && deletingNode && (
             <DeleteTableDialog
               tableName={deletingNode.data.table.name}

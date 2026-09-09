@@ -117,4 +117,67 @@ test('reference another file’s table, then follow it back to its source', asyn
       url.pathname === SOURCE_BOARD &&
       url.searchParams.get('focusTable') === IDS.trOrdersTable,
   )
+
+  await page.goBack()
+  await expect(referenceNode).toBeVisible()
+
+  // ── Wire it up: drag from a reference column handle to a local column ─────
+  // Every step here is a bug dogfooding found AFTER the first version of this
+  // suite went green: the node clipped its own handles (nothing to grab), the
+  // connection predicate rejected a reference/table pair, and the resulting
+  // relationship was filtered out of the edge list before React Flow saw it.
+  await page.getByTitle('Fit to Screen').click()
+
+  const handleBox = async (selector: string) => {
+    const box = await page.locator(selector).first().boundingBox()
+    if (!box) throw new Error(`no box for ${selector}`)
+    return { x: box.x + box.width / 2, y: box.y + box.height / 2 }
+  }
+
+  // The reference's own stub column (its handle id is prefixed with the
+  // reference node's id, which is the only id on the board that is not a
+  // seeded one) and the local `invoices.id` target.
+  const referenceId = await referenceNode.getAttribute('data-testid')
+  const referenceNodeId = referenceId!.replace('external-table-node-', '')
+  const from = await handleBox(
+    `[data-handleid^="${referenceNodeId}"][data-handleid$="__left__source"]`,
+  )
+  const to = await handleBox(
+    `[data-handleid^="${IDS.trInvoicesTable}"][data-handleid$="__left__target"]`,
+  )
+
+  // Enter the column row first: the source handle only becomes interactive
+  // while its row is hovered.
+  await page.mouse.move(from.x + 120, from.y)
+  await page.mouse.move(from.x + 20, from.y)
+  await page.mouse.move(from.x, from.y)
+  await page.mouse.down()
+  await page.mouse.move((from.x + to.x) / 2, (from.y + to.y) / 2, { steps: 8 })
+  await page.mouse.move(to.x, to.y, { steps: 8 })
+  await page.mouse.up()
+
+  await page.getByRole('button', { name: 'Create' }).click()
+  await expect(page.locator('.react-flow__edge')).toHaveCount(1)
+
+  // And it is a real row, not just paint: it survives a reload.
+  await page.reload()
+  await expect(page.locator('.react-flow__edge')).toHaveCount(1)
+
+  // ── Remove it, and the relationship goes with it ──────────────────────────
+  // Also dogfooding fallout: `onRetarget`/`onDelete` reached the node's data
+  // from the first wave, but the node rendered no control for either, so a
+  // reference could be created and never removed.
+  await page.getByTitle('Fit to Screen').click()
+  // Select rather than hover: the actions are revealed by hover OR selection,
+  // and selection survives the pointer travelling to the button.
+  await referenceNode.click()
+  await page.getByTestId(`reference-delete-${referenceNodeId}`).click()
+
+  const confirm = page.getByRole('alertdialog')
+  await expect(confirm).toContainText('orders')
+  await expect(confirm).toContainText('1 relationship')
+  await confirm.getByRole('button', { name: /remove reference/i }).click()
+
+  await expect(referenceNode).toHaveCount(0)
+  await expect(page.locator('.react-flow__edge')).toHaveCount(0)
 })

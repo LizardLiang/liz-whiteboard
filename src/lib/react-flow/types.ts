@@ -249,6 +249,8 @@ export interface ExternalTableNodeData extends Record<string, unknown> {
   onJumpToSource?: (sourceWhiteboardId: string, sourceTableId: string) => void
   /** Re-open the picker to re-target this reference. EDITOR only. */
   onRetarget?: (tableId: string) => void
+  /** Remove this reference node (and any relationship drawn to it). EDITOR only. */
+  onDelete?: (tableId: string) => void
 }
 
 export type ExternalTableNodeType = Node<ExternalTableNodeData, 'externalTable'>

@@ -131,3 +131,73 @@ describe('ExternalTableNode', () => {
     expect(screen.getByText('missing')).toBeTruthy()
   })
 })
+
+// Everything below was found by dogfooding the node in a browser, not by
+// review — each unit test above passed the whole time.
+describe('ExternalTableNode — reachability of what it renders', () => {
+  it('does not clip its own box, so the column handles outside it stay hit-testable', () => {
+    const { container } = render(
+      <ExternalTableNode id={NODE_ID} data={makeData()} />,
+    )
+
+    const card = container.querySelector(
+      `[data-testid="external-table-node-${NODE_ID}"]`,
+    ) as HTMLElement
+    // ColumnHandles sits at left/right -14px. `overflow: hidden` here made the
+    // connection dots invisible AND unclickable, so no relationship could be
+    // drawn to a reference at all.
+    expect(card.style.overflow).not.toBe('hidden')
+  })
+
+  it('paints the missing-source header in a colour that is not the header background', () => {
+    const { container } = render(
+      <ExternalTableNode id={NODE_ID} data={makeData({ missing: true })} />,
+    )
+
+    const card = container.querySelector(
+      `[data-testid="external-table-node-${NODE_ID}"]`,
+    ) as HTMLElement
+    const header = card.firstElementChild as HTMLElement
+    // This app's light theme defines --destructive-foreground as the SAME
+    // colour as --destructive, so using it here painted red on red.
+    expect(header.style.background).toBe('var(--destructive)')
+    expect(header.style.color).not.toBe('var(--destructive-foreground)')
+  })
+
+  it('offers re-target and remove once the pointer is on the node', () => {
+    const onRetarget = vi.fn()
+    const onDelete = vi.fn()
+    const { container } = render(
+      <ExternalTableNode
+        id={NODE_ID}
+        data={makeData({ onRetarget, onDelete })}
+      />,
+    )
+    const card = container.querySelector(
+      `[data-testid="external-table-node-${NODE_ID}"]`,
+    ) as HTMLElement
+
+    // Both callbacks were threaded into node data from the start with no
+    // control to fire them: re-targeting and removing were unreachable.
+    fireEvent.pointerEnter(card)
+    fireEvent.click(screen.getByTestId(`reference-retarget-${NODE_ID}`))
+    fireEvent.click(screen.getByTestId(`reference-delete-${NODE_ID}`))
+
+    expect(onRetarget).toHaveBeenCalledWith(NODE_ID)
+    expect(onDelete).toHaveBeenCalledWith(NODE_ID)
+  })
+
+  it('hides both actions for a viewer who may not edit (no handlers wired)', () => {
+    const { container } = render(
+      <ExternalTableNode id={NODE_ID} data={makeData()} />,
+    )
+    const card = container.querySelector(
+      `[data-testid="external-table-node-${NODE_ID}"]`,
+    ) as HTMLElement
+
+    fireEvent.pointerEnter(card)
+
+    expect(screen.queryByTestId(`reference-retarget-${NODE_ID}`)).toBeNull()
+    expect(screen.queryByTestId(`reference-delete-${NODE_ID}`)).toBeNull()
+  })
+})

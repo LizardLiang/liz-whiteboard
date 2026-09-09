@@ -112,6 +112,7 @@ export function convertReferencesToNodes(
   handlers: {
     onJumpToSource?: (sourceWhiteboardId: string, sourceTableId: string) => void
     onRetarget?: (tableId: string) => void
+    onDelete?: (tableId: string) => void
   } = {},
 ): Array<ExternalTableNodeType> {
   return references.map((reference) => ({
@@ -138,6 +139,7 @@ export function convertReferencesToNodes(
       showMode: 'ALL_FIELDS' as const,
       onJumpToSource: handlers.onJumpToSource,
       onRetarget: handlers.onRetarget,
+      onDelete: handlers.onDelete,
     },
     // Same z tier as an ordinary table. Without it React Flow treats the
     // missing value as 0 and every table (which carries NODE_DEFAULT = 1

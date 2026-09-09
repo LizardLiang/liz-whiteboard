@@ -115,6 +115,21 @@ describe('filterValidEdges', () => {
 
     expect(validEdges.map((e) => e.id)).toEqual(['e-ab'])
   })
+
+  // LizMeter #83, found by dogfooding: a relationship drawn to a cross-file
+  // reference persisted but never rendered. Its stub column belongs to a
+  // reference node, which is not in the `table` node list, so this filter
+  // discarded the edge as stale before React Flow ever saw it.
+  it('keeps an edge whose column lives on a reference node, once told about it', () => {
+    const nodeA = makeNode('a', ['a-col-1'])
+    const edges = [makeEdge('e-aref', 'a', 'ref', 'a-col-1', 'stub-1')]
+
+    const withoutStubs = filterValidEdges([nodeA], edges)
+    const withStubs = filterValidEdges([nodeA], edges, ['stub-1'])
+
+    expect(withoutStubs).toEqual([])
+    expect(withStubs.map((e) => e.id)).toEqual(['e-aref'])
+  })
 })
 
 describe('getDirectlyRelatedTableIds', () => {

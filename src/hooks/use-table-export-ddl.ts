@@ -97,6 +97,31 @@ export async function exportTableDdl(
   }
 }
 
+/**
+ * Split React Flow's node list into the two kinds the DDL export cares about.
+ *
+ * `getNodes()` returns EVERY node the board renders — areas, comments, shapes
+ * and cross-file references included — not the table list the export path
+ * assumes. A reference node carries no `data.table`, so spreading it produced
+ * a row with no `columns` and the generator threw "x.columns is not
+ * iterable": DDL export was broken for EVERY table on any board holding a
+ * reference (LizMeter #83, found by dogfooding).
+ */
+export function partitionNodesForDdl(nodes: Array<unknown>): {
+  tableNodes: Array<TableNodeType>
+  referenceNodes: Array<ExternalTableNodeType>
+} {
+  const typed = nodes as Array<{ type?: string }>
+  return {
+    tableNodes: typed.filter(
+      (node) => node.type === 'table',
+    ) as unknown as Array<TableNodeType>,
+    referenceNodes: typed.filter(
+      (node) => node.type === 'externalTable',
+    ) as unknown as Array<ExternalTableNodeType>,
+  }
+}
+
 export function useTableExportDdl(): void {
   const { getNodes, getEdges } = useReactFlow<
     TableNodeType,
@@ -105,8 +130,14 @@ export function useTableExportDdl(): void {
 
   const onTrigger = useCallback(
     (tableId: string) => {
-      const tables = buildDiagramTablesFromFlow(getNodes(), getEdges())
-      void exportTableDdl(tables, tableId, DEFAULT_SHORTCUT_DIALECT)
+      const { tableNodes, referenceNodes } = partitionNodesForDdl(getNodes())
+      const tables = buildDiagramTablesFromFlow(tableNodes, getEdges())
+      void exportTableDdl(
+        tables,
+        tableId,
+        DEFAULT_SHORTCUT_DIALECT,
+        buildExternalTableRefs(referenceNodes),
+      )
     },
     [getNodes, getEdges],
   )

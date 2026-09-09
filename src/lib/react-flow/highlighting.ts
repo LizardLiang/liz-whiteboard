@@ -29,8 +29,13 @@ import type {
 export function filterValidEdges(
   nodes: Array<TableNodeType>,
   edges: Array<RelationshipEdgeType>,
+  // LizMeter #83: column ids that exist on the board but not on a `table`
+  // node — today only the stub columns of a cross-file reference node, which
+  // lives in its own node state. Without them every relationship drawn to a
+  // reference is dropped here as "stale" and never renders.
+  extraColumnIds: Iterable<string> = [],
 ): Array<RelationshipEdgeType> {
-  const existingColumnIds = new Set<string>()
+  const existingColumnIds = new Set<string>(extraColumnIds)
   for (const node of nodes) {
     for (const col of node.data.table.columns) {
       existingColumnIds.add(col.id)

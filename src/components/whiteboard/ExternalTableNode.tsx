@@ -12,8 +12,15 @@
  * `RelationshipEdge` work here with no edge code of their own.
  */
 
-import { memo, useCallback } from 'react'
-import { ExternalLink, FileWarning, KeyRound, Link2 } from 'lucide-react'
+import { memo, useCallback, useState } from 'react'
+import {
+  ExternalLink,
+  FileWarning,
+  KeyRound,
+  Link2,
+  Repeat2,
+  Trash2,
+} from 'lucide-react'
 import { ColumnHandles } from './column/ColumnHandles'
 import type { ExternalTableNodeData } from '@/lib/react-flow/types'
 import { HEADER_H, ROW_H } from '@/lib/react-flow/canvas-node-geometry'
@@ -27,6 +34,21 @@ interface ExternalTableNodeProps {
 /** Minimum width — wide enough for "file / table" without wrapping the badge. */
 const MIN_WIDTH = 200
 
+/** Shared look for the two header actions. */
+const ACTION_BUTTON: React.CSSProperties = {
+  display: 'flex',
+  alignItems: 'center',
+  justifyContent: 'center',
+  width: 18,
+  height: 18,
+  padding: 0,
+  border: 'none',
+  borderRadius: 3,
+  background: 'transparent',
+  color: 'inherit',
+  cursor: 'pointer',
+}
+
 export const ExternalTableNode = memo(
   ({ id, data, selected }: ExternalTableNodeProps) => {
     const {
@@ -39,7 +61,19 @@ export const ExternalTableNode = memo(
       isActiveHighlighted,
       isHighlighted,
       onJumpToSource,
+      onRetarget,
+      onDelete,
     } = data
+
+    // Both actions were threaded into node data from the start but had no
+    // control to fire them, so re-targeting and removing a reference were
+    // unreachable on the board (found by dogfooding). Revealed on hover or
+    // while selected, like every other node-level affordance here.
+    const [hovered, setHovered] = useState(false)
+    const showActions = (hovered || selected === true) && Boolean(onRetarget || onDelete)
+
+    const handleRetarget = useCallback(() => onRetarget?.(id), [onRetarget, id])
+    const handleDelete = useCallback(() => onDelete?.(id), [onDelete, id])
 
     // Double-click is the discoverable half of jump-to-source; `g` on the
     // selected node is the other, and lives in ReactFlowWhiteboard's keyboard
@@ -62,6 +96,8 @@ export const ExternalTableNode = memo(
         data-testid={`external-table-node-${id}`}
         data-missing={missing ? 'true' : 'false'}
         onDoubleClick={handleDoubleClick}
+        onPointerEnter={() => setHovered(true)}
+        onPointerLeave={() => setHovered(false)}
         title={
           missing
             ? 'The table this references no longer exists. Re-target or delete this node.'
@@ -78,7 +114,13 @@ export const ExternalTableNode = memo(
           background: 'var(--card)',
           color: 'var(--card-foreground)',
           opacity: missing ? 0.85 : 1,
-          overflow: 'hidden',
+          // Deliberately NOT `overflow: hidden`. ColumnHandles positions its
+          // handles at left/right -14px, OUTSIDE this box; clipping them made
+          // the connection dots invisible AND un-hit-testable, so a
+          // relationship could not be dragged from a reference node at all
+          // (found by dogfooding — every unit test asserts the handles are
+          // rendered, none that they are reachable). The header clips itself
+          // to the rounded corners below instead.
         }}
       >
         {/* Header: source file badge + table name */}
@@ -89,10 +131,15 @@ export const ExternalTableNode = memo(
             alignItems: 'center',
             gap: 6,
             padding: '0 8px',
+            // Own top corners, because the card no longer clips (see above).
+            borderRadius: '4px 4px 0 0',
             background: missing ? 'var(--destructive)' : 'var(--muted)',
-            color: missing
-              ? 'var(--destructive-foreground)'
-              : 'var(--muted-foreground)',
+            // Not `--destructive-foreground`: this app's light theme defines
+            // it as the SAME colour as `--destructive`, so the whole header
+            // painted red-on-red and the file/table name was unreadable
+            // (found by dogfooding). White reads on the destructive red of
+            // both themes.
+            color: missing ? '#fff' : 'var(--muted-foreground)',
             fontSize: 12,
             fontWeight: 600,
           }}
@@ -121,13 +168,43 @@ export const ExternalTableNode = memo(
               overflow: 'hidden',
               textOverflow: 'ellipsis',
               whiteSpace: 'nowrap',
-              color: missing
-                ? 'var(--destructive-foreground)'
-                : 'var(--foreground)',
+              color: missing ? '#fff' : 'var(--foreground)',
             }}
           >
             {sourceTableName}
           </span>
+
+          {showActions && (
+            <div
+              className="nodrag nopan"
+              style={{ marginLeft: 'auto', display: 'flex', gap: 2 }}
+            >
+              {onRetarget && (
+                <button
+                  type="button"
+                  data-testid={`reference-retarget-${id}`}
+                  aria-label="Point this reference at another table"
+                  title="Point this reference at another table"
+                  onClick={handleRetarget}
+                  style={ACTION_BUTTON}
+                >
+                  <Repeat2 size={13} aria-hidden />
+                </button>
+              )}
+              {onDelete && (
+                <button
+                  type="button"
+                  data-testid={`reference-delete-${id}`}
+                  aria-label="Remove this reference"
+                  title="Remove this reference"
+                  onClick={handleDelete}
+                  style={ACTION_BUTTON}
+                >
+                  <Trash2 size={13} aria-hidden />
+                </button>
+              )}
+            </div>
+          )}
         </div>
 
         {missing && (

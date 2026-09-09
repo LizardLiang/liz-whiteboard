@@ -164,6 +164,59 @@ const VIEWPORT_CULLING_NODE_THRESHOLD = 150
  *   one relationship edge — the no-handler case (TableFocusOverlay's nested
  *   canvas) stays silent, as it does today.
  */
+/**
+ * The one predicate that owns EVERY connection rule (tech-spec §4): the
+ * column-handle table-to-table rule, the shape-to-shape rule (no
+ * self-connectors, no line-kind endpoint), and — LizMeter #83 — cross-file
+ * reference nodes as table-like endpoints.
+ *
+ * Exported and pure so it can be unit-tested directly, the same way
+ * `computeRelationshipDeleteVeto` is. A reference node is a DiagramTable row
+ * with stub columns, so a relationship to it is storable and is the whole
+ * point of the feature; two reference nodes, though, both describe tables
+ * that live elsewhere, so a relationship between them would belong to
+ * neither this file nor theirs.
+ */
+/** The `kind` of a shape node, or undefined for any other node type. */
+function shapeKindOf(node: unknown): string | undefined {
+  const data = (node as { data?: { shape?: { kind?: string } } }).data
+  return data?.shape?.kind
+}
+
+export function computeConnectionValidity(input: {
+  sourceId: string
+  targetId: string
+  sourceType?: string
+  targetType?: string
+  sourceHandle?: string | null
+  targetHandle?: string | null
+  sourceShapeKind?: string
+  targetShapeKind?: string
+}): boolean {
+  const tableLike = (type: string | undefined) =>
+    type === 'table' || type === 'externalTable'
+
+  if (tableLike(input.sourceType) && tableLike(input.targetType)) {
+    if (
+      input.sourceType === 'externalTable' &&
+      input.targetType === 'externalTable'
+    ) {
+      return false
+    }
+    return (
+      parseColumnHandleId(input.sourceHandle ?? '') !== null &&
+      parseColumnHandleId(input.targetHandle ?? '') !== null
+    )
+  }
+
+  if (input.sourceType === 'shape' && input.targetType === 'shape') {
+    if (input.sourceId === input.targetId) return false
+    return input.sourceShapeKind !== 'line' && input.targetShapeKind !== 'line'
+  }
+
+  return false // every mixed pair, both directions
+}
+
 export function computeRelationshipDeleteVeto<
   T extends { type?: string },
 >(params: {
@@ -545,6 +598,13 @@ export function ReactFlowCanvas({
   const externalTableIdSet = useMemo(
     () => new Set(externalTableNodesState.map((n) => n.id)),
     [externalTableNodesState],
+  )
+  // The stub column ids a reference node owns. They belong to no `table`
+  // node, so `filterValidEdges` has to be told about them or it discards
+  // every relationship drawn to a reference (LizMeter #83).
+  const externalColumnIds = useMemo(
+    () => externalTableNodes.flatMap((n) => n.data.columns.map((c) => c.id)),
+    [externalTableNodes],
   )
 
   // Shape nodes (Phase 1: shapes-and-connectors) — same separate-state
@@ -1028,17 +1088,27 @@ export function ReactFlowCanvas({
     // prevent the "[React Flow]: Couldn't create edge for source handle id"
     // warning flood that occurs when handle IDs no longer match any
     // registered handle. Shared with TableFocusOverlay.tsx.
-    const validEdges = filterValidEdges(initialNodes, initialEdges)
+    const validEdges = filterValidEdges(
+      initialNodes,
+      initialEdges,
+      externalColumnIds,
+    )
 
-    const allNodeIds = new Set(initialNodes.map((n) => n.id))
+    // Reference nodes route like tables — pass them in, or an edge to one
+    // keeps the default right→left handles no matter where the node sits.
+    const routableNodes = [
+      ...initialNodes,
+      ...(externalTableNodes as unknown as Array<TableNodeType>),
+    ]
+    const allNodeIds = new Set(routableNodes.map((n) => n.id))
     const recalculated = recalculateEdgesForDraggedNodes(
       validEdges,
-      initialNodes,
+      routableNodes,
       allNodeIds,
     )
     // Compute per-edge bundle offsets so parallel edges fan out consistently
     // after a page reload (they are not persisted; derive them from DB data).
-    const layoutNodes = initialNodes.map((n) => ({
+    const layoutNodes = routableNodes.map((n) => ({
       id: n.id,
       // eslint-disable-next-line @typescript-eslint/no-unnecessary-condition -- React Flow's `measured` dimensions are only populated after the node has actually been measured in the DOM; on initial mount (this effect) they are genuinely undefined despite the non-optional type.
       width: n.measured?.width ?? (n.width as number) ?? 250,
@@ -1066,7 +1136,7 @@ export function ReactFlowCanvas({
       }
     })
     setEdges(withOffsets)
-  }, [initialEdges, initialNodes, setEdges])
+  }, [initialEdges, initialNodes, externalTableNodes, externalColumnIds, setEdges])
 
   // Reset the one-shot re-routing guard whenever the node set changes (e.g.
   // overlay re-opened with a different focal table).
@@ -1084,10 +1154,14 @@ export function ReactFlowCanvas({
     hasReRoutedAfterMeasureRef.current = true
     setEdges((prevEdges) => {
       if (prevEdges.length === 0) return prevEdges
-      const allIds = new Set(nodes.map((n) => n.id))
-      return recalculateEdgesForDraggedNodes(prevEdges, nodes, allIds)
+      const measured = [
+        ...nodes,
+        ...(externalTableNodesState as unknown as typeof nodes),
+      ]
+      const allIds = new Set(measured.map((n) => n.id))
+      return recalculateEdgesForDraggedNodes(prevEdges, measured, allIds)
     })
-  }, [nodesInitialized, nodes, setEdges])
+  }, [nodesInitialized, nodes, externalTableNodesState, setEdges])
 
   // Apply NODE highlighting when selection/relations-preview changes (GH
   // #121 perf, opt #1). Deliberately keyed on [activeTableId,
@@ -1710,29 +1784,23 @@ export function ReactFlowCanvas({
   const effectiveEdges =
     enableEdgeAblation && hideEdges ? EMPTY_EDGES : mergedEdges
 
-  // The one predicate that owns BOTH rule sets (tech-spec §4): today's
-  // column-handle table-to-table rule, unchanged, and the new shape-to-shape
-  // rule (no self-connectors, no line-kind endpoint, no mixed table/shape
-  // pair in either direction). connectionMode stays at its default (strict).
   const isValidConnection = useCallback<IsValidConnection>(
     (connection) => {
       const sourceNode = mergedNodes.find((n) => n.id === connection.source)
       const targetNode = mergedNodes.find((n) => n.id === connection.target)
       if (!sourceNode || !targetNode) return false
-
-      if (sourceNode.type === 'table' && targetNode.type === 'table') {
-        return (
-          parseColumnHandleId(connection.sourceHandle ?? '') !== null &&
-          parseColumnHandleId(connection.targetHandle ?? '') !== null
-        )
-      }
-      if (sourceNode.type === 'shape' && targetNode.type === 'shape') {
-        if (sourceNode.id === targetNode.id) return false
-        const sourceShape = (sourceNode as unknown as ShapeNodeType).data.shape
-        const targetShape = (targetNode as unknown as ShapeNodeType).data.shape
-        return sourceShape.kind !== 'line' && targetShape.kind !== 'line'
-      }
-      return false // every mixed pair, both directions
+      return computeConnectionValidity({
+        sourceId: sourceNode.id,
+        targetId: targetNode.id,
+        sourceType: sourceNode.type,
+        targetType: targetNode.type,
+        sourceHandle: connection.sourceHandle,
+        targetHandle: connection.targetHandle,
+        // Only meaningful for a shape/shape pair; on every other node type
+        // these are genuinely absent, hence the loose read.
+        sourceShapeKind: shapeKindOf(sourceNode),
+        targetShapeKind: shapeKindOf(targetNode),
+      })
     },
     [mergedNodes],
   )
