@@ -68,6 +68,14 @@ describe('convertReferencesToNodes', () => {
     expect(node.position).toEqual({ x: -99999, y: -99999 })
   })
 
+  it('sits in the same z tier as a table, so a table cannot bury it', () => {
+    const [node] = convertReferencesToNodes([makeReference()])
+
+    // Undefined would mean 0, and every table carries NODE_DEFAULT = 1 —
+    // which paints them over the reference and makes it unclickable.
+    expect(node.zIndex).toBe(1)
+  })
+
   it('is never natively deletable, so Delete routes through the dialog', () => {
     const [node] = convertReferencesToNodes([makeReference()])
 

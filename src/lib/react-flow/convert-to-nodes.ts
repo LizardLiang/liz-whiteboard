@@ -4,6 +4,7 @@
  * Convert Prisma DiagramTable entities to React Flow nodes
  */
 
+import { Z_INDEX } from './types'
 import type { Column, DiagramTable } from '@/data/models'
 import type {
   ExternalTableNodeType,
@@ -138,6 +139,11 @@ export function convertReferencesToNodes(
       onJumpToSource: handlers.onJumpToSource,
       onRetarget: handlers.onRetarget,
     },
+    // Same z tier as an ordinary table. Without it React Flow treats the
+    // missing value as 0 and every table (which carries NODE_DEFAULT = 1
+    // through calculateHighlighting) paints over the reference — a node you
+    // can see through but cannot click, drag or connect.
+    zIndex: Z_INDEX.NODE_DEFAULT,
     // Never natively deletable — Delete/Backspace routes through the
     // confirmation dialog, exactly as it does for table nodes.
     deletable: false,

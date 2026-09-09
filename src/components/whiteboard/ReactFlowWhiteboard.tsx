@@ -2114,6 +2114,18 @@ function ReactFlowWhiteboardInner({
 
   // React Flow zoom API (requires ReactFlowProvider context)
   const reactFlowInstance = useReactFlow()
+
+  // Flow-space centre of the visible canvas — where a clicked (rather than
+  // dragged) reference node is placed.
+  const viewportCentre = useCallback(
+    () =>
+      reactFlowInstance.screenToFlowPosition({
+        x: window.innerWidth / 2,
+        y: window.innerHeight / 2,
+      }),
+    [reactFlowInstance],
+  )
+
   // FR-019a: `addSelectedNodes`/`unselectNodesAndEdges` are store-level
   // methods, not exposed on `ReactFlowInstance` itself (unlike
   // `screenToFlowPosition`/`setCenter`/etc above) — accessed via the store
@@ -4053,10 +4065,16 @@ function ReactFlowWhiteboardInner({
             tableCount={nodes.length}
             // No isPublic guard needed: this whole Toolbar is already behind
             // `!isPublic` above.
+            //
+            // A plain click carries no drop point, so the viewport centre is
+            // computed here. It must be computed, not left undefined: an
+            // unpositioned reference row lands on the off-canvas sentinel
+            // (-99999) that table nodes escape through a measure-then-place
+            // effect reference nodes do not run — so it would render nowhere.
             onAddReference={(dropPoint) =>
               setPendingReference({
                 mode: 'create',
-                dropPoint,
+                dropPoint: dropPoint ?? viewportCentre(),
                 pendingDeleteCount: 0,
               })
             }
