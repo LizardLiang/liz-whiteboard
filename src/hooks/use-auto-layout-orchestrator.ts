@@ -67,7 +67,9 @@ export interface UseAutoLayoutOrchestratorArgs {
    * `ReactFlowCanvas` re-syncs `initialNodes` from) and refit areas from the
    * fresh positions instead of stale `getNodes()` state.
    */
-  onAfterLayout?: (positions: Array<{ id: string; x: number; y: number }>) => void
+  onAfterLayout?: (
+    positions: Array<{ id: string; x: number; y: number }>,
+  ) => void
 }
 
 export interface UseAutoLayoutOrchestratorResult {
@@ -233,8 +235,18 @@ export function useAutoLayoutOrchestrator({
       // therefore never contains an area/comment id, so the bulk-apply/
       // persist below leaves them untouched and never targets a
       // non-existent DiagramTable row.
+      // Cross-file references (LizMeter #83) are laid out with the tables:
+      // they occupy space and carry relationships, so leaving them where they
+      // were dropped is what makes a laid-out board still look overlapped.
+      // They are also DiagramTable rows, so the bulk persist below writes
+      // their positions through the same path with no special case.
+      //
+      // The layout adapter (use-d3-force-layout.ts) already falls back to the
+      // measured node box when a node has no `data.table`, which is exactly
+      // what a reference node is.
       const tableNodesOnly = getNodes().filter(
-        (n): n is TableNodeType => n.type === 'table',
+        (n): n is TableNodeType =>
+          n.type === 'table' || n.type === 'externalTable',
       )
       const relationshipEdgesOnly = getEdges().filter(
         (e): e is RelationshipEdgeType => e.type === 'relationship',
@@ -261,7 +273,10 @@ export function useAutoLayoutOrchestrator({
       setNodes(updatedNodes)
       // Edges only ever connect table nodes (never area/comment pins) —
       // narrow for recalculateEdgesForDraggedNodes below, which reads
-      // data.table off each node.
+      // data.table off each node. Reference nodes are deliberately NOT
+      // included: they have no `data.table` to route against, so an edge
+      // touching one keeps the handle side it already had. Its endpoints
+      // still move with the layout; only the side choice is left alone.
       const updatedTableNodes = updatedNodes.filter(
         (n): n is TableNodeType => n.type === 'table',
       )

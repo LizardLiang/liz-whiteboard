@@ -87,6 +87,8 @@ export function useColumnMutations(
         name: data.name,
         dataType: data.dataType,
         order: data.order,
+        // A user-created column, never a cross-file reference stub (LizMeter #83).
+        sourceColumnId: null,
         isPrimaryKey: false,
         isForeignKey: false,
         isUnique: false,
@@ -408,6 +410,8 @@ export function useColumnMutations(
         name: `${sourceColumn.name}_copy`,
         dataType: sourceColumn.dataType,
         order: newOrder,
+        // A user-created column, never a cross-file reference stub (LizMeter #83).
+        sourceColumnId: null,
         isPrimaryKey: false,
         isForeignKey: false,
         isUnique: sourceColumn.isUnique,

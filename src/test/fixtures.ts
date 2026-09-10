@@ -14,6 +14,7 @@ export const mockColumn: Column = {
   isUnique: false,
   description: null,
   order: 1,
+  sourceColumnId: null,
   createdAt: new Date('2026-01-01'),
   updatedAt: new Date('2026-01-01'),
 }
@@ -47,6 +48,7 @@ const BASE = {
   isNullable: true,
   isUnique: false,
   description: null as string | null,
+  sourceColumnId: null as string | null,
   createdAt: new Date('2026-01-01'),
   updatedAt: new Date('2026-01-01'),
 }

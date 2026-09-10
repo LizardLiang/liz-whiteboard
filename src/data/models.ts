@@ -237,6 +237,17 @@ export interface DiagramTable {
   positionY: number | null
   width: number | null
   height: number | null
+  /**
+   * Cross-file table reference (LizMeter #83). Both are set together, and only
+   * on a reference node: the row then stands for a table living in
+   * `sourceWhiteboardId` (always another whiteboard of the SAME project)
+   * rather than describing a table of its own. Null on an ordinary table.
+   *
+   * Not foreign keys — see the note in `schema-sql.ts`. A dangling id means the
+   * source was deleted, which renders as a "missing reference" node.
+   */
+  sourceWhiteboardId: string | null
+  sourceTableId: string | null
   createdAt: Date
   updatedAt: Date
 }
@@ -252,6 +263,12 @@ export interface Column {
   isNullable: boolean
   description: string | null
   order: number
+  /**
+   * Set only on a stub column of a cross-file reference node (LizMeter #83):
+   * the id of the column in the source file this stub mirrors. Null on an
+   * ordinary column.
+   */
+  sourceColumnId: string | null
   createdAt: Date
   updatedAt: Date
 }

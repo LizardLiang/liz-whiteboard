@@ -2,6 +2,7 @@
 // Whiteboard editor route - loads and renders full ER diagram
 
 import { Link, createFileRoute } from '@tanstack/react-router'
+import { z } from 'zod'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { toast } from 'sonner'
@@ -38,8 +39,22 @@ import { hasMinimumRole } from '@/lib/auth/permissions'
  * Whiteboard editor page component
  * Loads whiteboard with full diagram and enables real-time collaboration
  */
+/**
+ * `?focusTable=<tableId>` centres and highlights one table once the board
+ * loads (LizMeter #83). It is how a cross-file reference node jumps you to its
+ * source, and it makes that destination a shareable URL.
+ *
+ * Parsed permissively on purpose: an id that is not on this board, or a
+ * garbage value, must open the board normally rather than error. The canvas
+ * ignores an id it cannot find.
+ */
+export const whiteboardSearchSchema = z.object({
+  focusTable: z.string().uuid().optional().catch(undefined),
+})
+
 export const Route = createFileRoute('/whiteboard/$whiteboardId')({
   component: WhiteboardEditor,
+  validateSearch: whiteboardSearchSchema,
 })
 
 /**
@@ -47,6 +62,7 @@ export const Route = createFileRoute('/whiteboard/$whiteboardId')({
  */
 function WhiteboardEditor() {
   const { whiteboardId } = Route.useParams()
+  const { focusTable } = Route.useSearch()
   const queryClient = useQueryClient()
 
   // Use the authenticated user's DB ID so the server's `createdBy` field matches.
@@ -313,9 +329,22 @@ function WhiteboardEditor() {
       if (whiteboardData.whiteboard.textSource && textSource === '') {
         setTextSource(whiteboardData.whiteboard.textSource)
       } else if (isTextSyncEnabled) {
+        // Cross-file references (LizMeter #83) arrive inside `.tables` — a
+        // reference IS a DiagramTable row. Passing them here keeps them out of
+        // the `table` blocks and records them as comments instead, so
+        // re-importing this text never duplicates another file's table.
         const currentText = entitiesToText(
           whiteboardData.whiteboard.tables,
           whiteboardData.relationships,
+          new Map(
+            whiteboardData.whiteboard.tableReferences.map((reference) => [
+              reference.table.id,
+              {
+                sourceTableName: reference.sourceTableName,
+                sourceWhiteboardName: reference.sourceWhiteboardName,
+              },
+            ]),
+          ),
         )
         setTextSource(currentText)
       }
@@ -576,6 +605,7 @@ function WhiteboardEditor() {
             showMinimap={whiteboard.tables.length > 0}
             showControls={true}
             nodesDraggable={canEdit}
+            focusTableId={focusTable}
             viewerRole={viewerRole}
             onCreateTable={handleCreateTable}
             onCreateRelationship={handleCreateRelationship}

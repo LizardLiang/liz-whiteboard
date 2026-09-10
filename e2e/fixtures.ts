@@ -86,6 +86,19 @@ export const IDS = {
   adInvoicesId: '80000000-0000-4000-8000-000000000006',
   adAuditId: '80000000-0000-4000-8000-000000000007',
 
+  // Dedicated boards for the cross-file reference suite (LizMeter #83). TWO
+  // boards, because the whole feature is about pointing from one file at
+  // another: `trLocal` holds the reference node, `trSource` owns the table it
+  // points at. Isolated from the shared board because the suite CREATES a
+  // reference and never removes it.
+  trLocalWhiteboard: '90000000-0000-4000-8000-000000000001',
+  trSourceWhiteboard: '90000000-0000-4000-8000-000000000002',
+  trInvoicesTable: '90000000-0000-4000-8000-000000000003',
+  trOrdersTable: '90000000-0000-4000-8000-000000000004',
+  trInvoicesId: '90000000-0000-4000-8000-000000000005',
+  trOrdersId: '90000000-0000-4000-8000-000000000006',
+  trOrdersCustomerId: '90000000-0000-4000-8000-000000000007',
+
   // Dedicated board for the React Flow perf stress fixture (GH #121). Owns a
   // fixed id (distinct from the boards above) so `e2e/seed-stress.ts` can be
   // re-run independently (manual profiling or the perf e2e's own setup)

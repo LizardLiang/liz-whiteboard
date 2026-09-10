@@ -184,10 +184,31 @@ function mapDataType(dialect: Dialect, dataType: string): string {
  * Throws if tableId is not found in tables, or if the resolved table has no
  * columns.
  */
+/**
+ * A cross-file reference this board points at (LizMeter #83), keyed by the
+ * LOCAL DiagramTable row id that stands in for it.
+ *
+ * A reference is never emitted as a `CREATE TABLE` — the table belongs to
+ * another file, and defining it here would produce a second, competing
+ * definition of the same table. What IS emitted is a comment recording where
+ * it lives, plus the foreign key of the local table that points at it, using
+ * the SOURCE table's name (the stored local name may carry a de-duplicating
+ * suffix and would name a table that does not exist).
+ */
+export interface ExternalTableRef {
+  /** The referenced table's real name, in the file that owns it. */
+  sourceTableName: string
+  /** That file's name, or null when it is gone. */
+  sourceWhiteboardName: string | null
+  /** Stub column id → the referenced column's real name. */
+  columnNames: Map<string, string>
+}
+
 export function generateTableDDL(
   tables: Array<DiagramTableWithRelations>,
   tableId: string,
   dialect: Dialect,
+  externalTables: Map<string, ExternalTableRef> = new Map(),
 ): string {
   const tableById = new Map<string, DiagramTableWithRelations>()
   const columnById = new Map<
@@ -237,25 +258,45 @@ export function generateTableDDL(
   }
 
   // Foreign-key constraint lines, one per outgoing relationship.
+  // `usedExternals` collects the cross-file references this table actually
+  // points at, so only those get a comment — not every reference on the board.
+  const usedExternals = new Map<string, ExternalTableRef>()
   for (const rel of target.outgoingRelationships) {
     const srcCol = columnById.get(rel.sourceColumnId)
     if (!srcCol) continue
+
     const tgtTable = tableById.get(rel.targetTableId)
-    if (!tgtTable) continue
-    const tgtCol = columnById.get(rel.targetColumnId)
-    if (!tgtCol) continue
+    const external = externalTables.get(rel.targetTableId)
+
+    // A cross-file reference is not among `tables` (it renders as its own node
+    // type), so resolve its names from the reference map instead of dropping
+    // the constraint — the foreign key is real even though the table it points
+    // at is defined in another file.
+    const targetName = tgtTable?.name ?? external?.sourceTableName
+    const targetColumnName =
+      columnById.get(rel.targetColumnId)?.name ??
+      external?.columnNames.get(rel.targetColumnId)
+    if (!targetName || !targetColumnName) continue
+    if (!tgtTable && external) usedExternals.set(rel.targetTableId, external)
+
     lines.push(
       '  FOREIGN KEY (' +
         quoteIdent(dialect, srcCol.name) +
         ') REFERENCES ' +
-        quoteIdent(dialect, tgtTable.name) +
+        quoteIdent(dialect, targetName) +
         '(' +
-        quoteIdent(dialect, tgtCol.name) +
+        quoteIdent(dialect, targetColumnName) +
         ')',
     )
   }
 
+  const header = [...usedExternals.values()].map(
+    (ref) =>
+      `-- external ref: file "${ref.sourceWhiteboardName ?? '(missing)'}" table "${ref.sourceTableName}"`,
+  )
+
   return (
+    (header.length > 0 ? header.join('\n') + '\n' : '') +
     'CREATE TABLE ' +
     quoteIdent(dialect, target.name) +
     ' (\n' +

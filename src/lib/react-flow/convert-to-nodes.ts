@@ -4,8 +4,15 @@
  * Convert Prisma DiagramTable entities to React Flow nodes
  */
 
+import { Z_INDEX } from './types'
 import type { Column, DiagramTable } from '@/data/models'
-import type { ShowMode, TableNodeData, TableNodeType } from './types'
+import type {
+  ExternalTableNodeType,
+  ShowMode,
+  TableNodeData,
+  TableNodeType,
+} from './types'
+import type { ResolvedTableReference } from '@/data/table-reference'
 
 /**
  * Extract table position from DiagramTable entity.
@@ -85,4 +92,62 @@ export function convertTablesToNodes(
       ...(showMode ? { showMode } : {}),
     }),
   )
+}
+
+/**
+ * Convert resolved cross-file references into React Flow nodes (LizMeter #83).
+ *
+ * A reference is a DiagramTable row, so its position comes from the same
+ * columns a table's does — including the off-canvas sentinel used while a row
+ * has no position yet.
+ *
+ * The callbacks are injected here rather than read from a context because
+ * ExternalTableNode is rendered through `nodeTypes` and never receives props
+ * directly. Omitting `onJumpToSource` is meaningful: it disables jump-to-source
+ * on the public share-link path, where the viewer holds no role on the source
+ * board.
+ */
+export function convertReferencesToNodes(
+  references: Array<ResolvedTableReference>,
+  handlers: {
+    onJumpToSource?: (sourceWhiteboardId: string, sourceTableId: string) => void
+    onRetarget?: (tableId: string) => void
+    onDelete?: (tableId: string) => void
+  } = {},
+): Array<ExternalTableNodeType> {
+  return references.map((reference) => ({
+    id: reference.table.id,
+    type: 'externalTable' as const,
+    position: extractTablePosition(reference.table),
+    data: {
+      tableId: reference.table.id,
+      sourceWhiteboardId: reference.table.sourceWhiteboardId ?? '',
+      sourceTableId: reference.table.sourceTableId ?? '',
+      sourceTableName: reference.sourceTableName,
+      sourceWhiteboardName: reference.sourceWhiteboardName,
+      columns: reference.columns.map((column) => ({
+        id: column.id,
+        name: column.name,
+        dataType: column.dataType,
+        isPrimaryKey: column.isPrimaryKey,
+        isForeignKey: column.isForeignKey,
+        missing: column.missing,
+      })),
+      missing: reference.missing,
+      isActiveHighlighted: false,
+      isHighlighted: false,
+      showMode: 'ALL_FIELDS' as const,
+      onJumpToSource: handlers.onJumpToSource,
+      onRetarget: handlers.onRetarget,
+      onDelete: handlers.onDelete,
+    },
+    // Same z tier as an ordinary table. Without it React Flow treats the
+    // missing value as 0 and every table (which carries NODE_DEFAULT = 1
+    // through calculateHighlighting) paints over the reference — a node you
+    // can see through but cannot click, drag or connect.
+    zIndex: Z_INDEX.NODE_DEFAULT,
+    // Never natively deletable — Delete/Backspace routes through the
+    // confirmation dialog, exactly as it does for table nodes.
+    deletable: false,
+  }))
 }

@@ -242,6 +242,49 @@ export function ensureCanvasElementRevisionColumn(
 }
 ensureCanvasElementRevisionColumn(db)
 
+// Additive column migration (cross-file table references, LizMeter #83,
+// 2026-09-09): `DiagramTable` gained `sourceWhiteboardId`/`sourceTableId` and
+// `Column` gained `sourceColumnId` in `schema-sql.ts`. `CREATE TABLE IF NOT
+// EXISTS` above is a no-op on an existing database, so a deployed DB needs the
+// explicit ADD COLUMNs. Mirrors the `ensureCanvasElementRevisionColumn`
+// precedent: guarded on `table_info`, nullable so no backfill is needed — an
+// existing row is simply not a reference.
+//
+// This runs AFTER the DiagramTable nullable-position rebuild above, which
+// re-creates the table from a hard-coded column list that predates these
+// fields; the guard adds them back on that path too.
+//
+// These are deliberately plain columns, NOT foreign keys. A FK with ON DELETE
+// CASCADE would mean deleting one whiteboard silently deletes reference nodes
+// — and their relationships — on every other board in the project.
+export function ensureTableReferenceColumns(database: SqliteDatabase): void {
+  const tableCols = database
+    .prepare(`PRAGMA table_info("DiagramTable")`)
+    .all() as Array<{ name: string }>
+  if (tableCols.length > 0) {
+    if (!tableCols.some((c) => c.name === 'sourceWhiteboardId')) {
+      database.exec(
+        `ALTER TABLE "DiagramTable" ADD COLUMN "sourceWhiteboardId" TEXT`,
+      )
+    }
+    if (!tableCols.some((c) => c.name === 'sourceTableId')) {
+      database.exec(
+        `ALTER TABLE "DiagramTable" ADD COLUMN "sourceTableId" TEXT`,
+      )
+    }
+  }
+  const columnCols = database
+    .prepare(`PRAGMA table_info("Column")`)
+    .all() as Array<{ name: string }>
+  if (
+    columnCols.length > 0 &&
+    !columnCols.some((c) => c.name === 'sourceColumnId')
+  ) {
+    database.exec(`ALTER TABLE "Column" ADD COLUMN "sourceColumnId" TEXT`)
+  }
+}
+ensureTableReferenceColumns(db)
+
 // Backfill ownerless projects to a pre-designated account (by email), if it
 // already exists. Runs once per process at DB-init time, before any HTTP
 // request (and therefore before any registration, including
@@ -479,6 +522,8 @@ export function mapDiagramTable(r: Row): DiagramTable | null {
     positionY: r.positionY == null ? null : Number(r.positionY),
     width: r.width == null ? null : Number(r.width),
     height: r.height == null ? null : Number(r.height),
+    sourceWhiteboardId: (r.sourceWhiteboardId as string | null) ?? null,
+    sourceTableId: (r.sourceTableId as string | null) ?? null,
     createdAt: fromDbDate(r.createdAt),
     updatedAt: fromDbDate(r.updatedAt),
   }
@@ -497,6 +542,7 @@ export function mapColumn(r: Row): Column | null {
     isNullable: fromDbBool(r.isNullable),
     description: (r.description as string | null) ?? null,
     order: Number(r.order),
+    sourceColumnId: (r.sourceColumnId as string | null) ?? null,
     createdAt: fromDbDate(r.createdAt),
     updatedAt: fromDbDate(r.updatedAt),
   }

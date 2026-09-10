@@ -16,9 +16,10 @@ import { useCallback } from 'react'
 import { useReactFlow } from '@xyflow/react'
 import { toast } from 'sonner'
 import { useSingleSelectedTableShortcut } from './use-single-selected-table-shortcut'
-import type { Dialect } from '@/lib/ddl-generator'
+import type { Dialect, ExternalTableRef } from '@/lib/ddl-generator'
 import type { DiagramTableWithRelations } from '@/data/diagram-table'
 import type {
+  ExternalTableNodeType,
   RelationshipEdgeType,
   TableNodeType,
 } from '@/lib/react-flow/types'
@@ -78,9 +79,10 @@ export async function exportTableDdl(
   tables: Array<DiagramTableWithRelations>,
   tableId: string,
   dialect: Dialect,
+  externalTables?: Map<string, ExternalTableRef>,
 ): Promise<void> {
   try {
-    const ddl = generateTableDDL(tables, tableId, dialect)
+    const ddl = generateTableDDL(tables, tableId, dialect, externalTables)
     const tableName = tables.find((t) => t.id === tableId)?.name ?? tableId
     const copied = await copyText(ddl)
     if (!copied) {
@@ -95,6 +97,31 @@ export async function exportTableDdl(
   }
 }
 
+/**
+ * Split React Flow's node list into the two kinds the DDL export cares about.
+ *
+ * `getNodes()` returns EVERY node the board renders — areas, comments, shapes
+ * and cross-file references included — not the table list the export path
+ * assumes. A reference node carries no `data.table`, so spreading it produced
+ * a row with no `columns` and the generator threw "x.columns is not
+ * iterable": DDL export was broken for EVERY table on any board holding a
+ * reference (LizMeter #83, found by dogfooding).
+ */
+export function partitionNodesForDdl(nodes: Array<unknown>): {
+  tableNodes: Array<TableNodeType>
+  referenceNodes: Array<ExternalTableNodeType>
+} {
+  const typed = nodes as Array<{ type?: string }>
+  return {
+    tableNodes: typed.filter(
+      (node) => node.type === 'table',
+    ) as unknown as Array<TableNodeType>,
+    referenceNodes: typed.filter(
+      (node) => node.type === 'externalTable',
+    ) as unknown as Array<ExternalTableNodeType>,
+  }
+}
+
 export function useTableExportDdl(): void {
   const { getNodes, getEdges } = useReactFlow<
     TableNodeType,
@@ -103,11 +130,42 @@ export function useTableExportDdl(): void {
 
   const onTrigger = useCallback(
     (tableId: string) => {
-      const tables = buildDiagramTablesFromFlow(getNodes(), getEdges())
-      void exportTableDdl(tables, tableId, DEFAULT_SHORTCUT_DIALECT)
+      const { tableNodes, referenceNodes } = partitionNodesForDdl(getNodes())
+      const tables = buildDiagramTablesFromFlow(tableNodes, getEdges())
+      void exportTableDdl(
+        tables,
+        tableId,
+        DEFAULT_SHORTCUT_DIALECT,
+        buildExternalTableRefs(referenceNodes),
+      )
     },
     [getNodes, getEdges],
   )
 
   useSingleSelectedTableShortcut({ key: 'd', onTrigger })
+}
+
+/**
+ * Index the board's cross-file references by their LOCAL row id, in the shape
+ * generateTableDDL needs (LizMeter #83).
+ *
+ * Reference nodes never reach `buildDiagramTablesFromFlow` — they are filtered
+ * out of the table node list — so without this map a foreign key pointing at
+ * one is silently dropped from the exported DDL.
+ */
+export function buildExternalTableRefs(
+  referenceNodes: Array<ExternalTableNodeType>,
+): Map<string, ExternalTableRef> {
+  return new Map(
+    referenceNodes.map((node) => [
+      node.id,
+      {
+        sourceTableName: node.data.sourceTableName,
+        sourceWhiteboardName: node.data.sourceWhiteboardName,
+        columnNames: new Map(
+          node.data.columns.map((column) => [column.id, column.name]),
+        ),
+      },
+    ]),
+  )
 }

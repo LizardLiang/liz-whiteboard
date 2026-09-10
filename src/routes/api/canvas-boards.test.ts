@@ -30,6 +30,7 @@ import { SignJWT } from 'jose'
 import {
   _resetIpRateLimitForTests,
   checkIpRateLimit,
+  checkUserRateLimit,
   handleCanvasBoardRequest,
 } from './canvas-boards'
 import { _resetKeyPairForTests, getSigningKeyPair } from '@/lib/oauth/keys'
@@ -479,25 +480,26 @@ describe('TC-CBD-12: delete is EDITOR-gated', () => {
 // Rate limiting
 // ─────────────────────────────────────────────────────────────────────────────
 
-// TC-CBD-13: same 15/60s per-IP window as /api/collab-token, applied before the
-// body is parsed so a flood cannot exhaust the JSON decode path.
-describe('TC-CBD-13: per-IP rate limiter', () => {
-  it('allows the first 15 requests from one IP and blocks the 16th', () => {
-    for (let i = 0; i < 15; i++) {
+// TC-CBD-13: the pre-auth per-IP bucket. 600/60s, applied before the body is
+// parsed so an unauthenticated flood cannot exhaust the JSON decode path. It is
+// a flood guard, not the business limit — TC-CBD-15 covers that.
+describe('TC-CBD-13: pre-auth per-IP flood guard', () => {
+  it('allows the first 600 requests from one IP and blocks the 601st', () => {
+    for (let i = 0; i < 600; i++) {
       expect(checkIpRateLimit('10.1.0.1')).toBe(true)
     }
     expect(checkIpRateLimit('10.1.0.1')).toBe(false)
   })
 
   it('does not block a different IP', () => {
-    for (let i = 0; i < 16; i++) checkIpRateLimit('10.1.0.2')
+    for (let i = 0; i < 601; i++) checkIpRateLimit('10.1.0.2')
     expect(checkIpRateLimit('10.1.0.3')).toBe(true)
   })
 
   it('returns 429 with Retry-After once the window is exhausted', async () => {
     const { owner, project } = await setup()
     const token = await mintCollabToken(owner.id)
-    for (let i = 0; i < 16; i++) checkIpRateLimit('unknown')
+    for (let i = 0; i < 601; i++) checkIpRateLimit('unknown')
 
     const resp = await handleCanvasBoardRequest(
       post({ op: 'create', name: 'Board', projectId: project.id }, token),
@@ -505,6 +507,69 @@ describe('TC-CBD-13: per-IP rate limiter', () => {
 
     expect(resp.status).toBe(429)
     expect(resp.headers.get('Retry-After')).toBe('60')
+  })
+})
+
+// TC-CBD-15: the post-auth per-subject budget — the real limit, and the fix for
+// the bug this route shipped with. The MCP server calls this endpoint directly,
+// with no x-forwarded-for, so every request from it keyed on the same 'unknown'
+// IP: a per-IP budget of 15 starved every user of the MCP server at once. The
+// budget must follow the JWT subject instead. Same model as /api/mcp-lifecycle.
+describe('TC-CBD-15: post-auth per-subject budget', () => {
+  it('allows the first 120 requests from one subject and blocks the 121st', () => {
+    for (let i = 0; i < 120; i++) {
+      expect(checkUserRateLimit('user-a')).toBe(true)
+    }
+    expect(checkUserRateLimit('user-a')).toBe(false)
+  })
+
+  // Drives real writes through the real handler rather than poking the limiter,
+  // because the thing worth pinning is that the handler consults the right
+  // bucket. That costs real time under full-suite parallelism, hence the
+  // explicit timeout.
+  it(
+    'blocks one user past the budget while still serving another on the same IP',
+    { timeout: 30_000 },
+    async () => {
+      const { owner, editor, project } = await setup()
+      const heavyToken = await mintCollabToken(owner.id)
+      const lightToken = await mintCollabToken(editor.id)
+
+      for (let i = 0; i < 120; i++) {
+        const ok = await handleCanvasBoardRequest(
+          post({ op: 'create', name: `H${i}`, projectId: project.id }, heavyToken),
+        )
+        expect(ok.status).toBe(200)
+      }
+      const heavyLimited = await handleCanvasBoardRequest(
+        post({ op: 'create', name: 'H121', projectId: project.id }, heavyToken),
+      )
+      expect(heavyLimited.status).toBe(429)
+      expect(heavyLimited.headers.get('Retry-After')).toBe('60')
+
+      // Same IP, same 'unknown' key, different subject — must still be served.
+      const other = await handleCanvasBoardRequest(
+        post({ op: 'create', name: 'L1', projectId: project.id }, lightToken),
+      )
+      expect(other.status).toBe(200)
+    },
+  )
+
+  it('an unauthenticated request consumes no user budget', async () => {
+    const { owner, project } = await setup()
+    const token = await mintCollabToken(owner.id)
+
+    for (let i = 0; i < 30; i++) {
+      const rejected = await handleCanvasBoardRequest(
+        post({ op: 'create', name: 'X', projectId: project.id }),
+      )
+      expect(rejected.status).toBe(401)
+    }
+
+    const ok = await handleCanvasBoardRequest(
+      post({ op: 'create', name: 'Still fine', projectId: project.id }, token),
+    )
+    expect(ok.status).toBe(200)
   })
 })
 

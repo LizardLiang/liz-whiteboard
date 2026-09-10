@@ -43,6 +43,7 @@ import type {
   AreaNodeType,
   CommentNodeType,
   ConnectorEdgeType,
+  ExternalTableNodeType,
   RelationshipEdgeType,
   ShapeNodeType,
   TableNodeType,
@@ -74,6 +75,7 @@ import {
   computeEdgeBundleOffsets,
 } from '@/lib/auto-layout/d3-force-layout'
 import { edgeTypes, nodeTypes } from '@/lib/react-flow/node-types'
+import { REFERENCE_DRAG_MIME } from '@/components/whiteboard/Toolbar'
 import {
   calculateEdgeHighlighting,
   calculateHighlighting,
@@ -107,6 +109,7 @@ const EMPTY_COMMENT_NODES: Array<CommentNodeType> = []
  * Stable empty defaults for the `shapeNodes`/`connectorEdges` props (Phase 1:
  * shapes-and-connectors) — same rationale as EMPTY_AREA_NODES above.
  */
+const EMPTY_EXTERNAL_TABLE_NODES: Array<ExternalTableNodeType> = []
 const EMPTY_SHAPE_NODES: Array<ShapeNodeType> = []
 const EMPTY_CONNECTOR_EDGES: Array<ConnectorEdgeType> = []
 
@@ -161,7 +164,62 @@ const VIEWPORT_CULLING_NODE_THRESHOLD = 150
  *   one relationship edge — the no-handler case (TableFocusOverlay's nested
  *   canvas) stays silent, as it does today.
  */
-export function computeRelationshipDeleteVeto<T extends { type?: string }>(params: {
+/**
+ * The one predicate that owns EVERY connection rule (tech-spec §4): the
+ * column-handle table-to-table rule, the shape-to-shape rule (no
+ * self-connectors, no line-kind endpoint), and — LizMeter #83 — cross-file
+ * reference nodes as table-like endpoints.
+ *
+ * Exported and pure so it can be unit-tested directly, the same way
+ * `computeRelationshipDeleteVeto` is. A reference node is a DiagramTable row
+ * with stub columns, so a relationship to it is storable and is the whole
+ * point of the feature; two reference nodes, though, both describe tables
+ * that live elsewhere, so a relationship between them would belong to
+ * neither this file nor theirs.
+ */
+/** The `kind` of a shape node, or undefined for any other node type. */
+function shapeKindOf(node: unknown): string | undefined {
+  const data = (node as { data?: { shape?: { kind?: string } } }).data
+  return data?.shape?.kind
+}
+
+export function computeConnectionValidity(input: {
+  sourceId: string
+  targetId: string
+  sourceType?: string
+  targetType?: string
+  sourceHandle?: string | null
+  targetHandle?: string | null
+  sourceShapeKind?: string
+  targetShapeKind?: string
+}): boolean {
+  const tableLike = (type: string | undefined) =>
+    type === 'table' || type === 'externalTable'
+
+  if (tableLike(input.sourceType) && tableLike(input.targetType)) {
+    if (
+      input.sourceType === 'externalTable' &&
+      input.targetType === 'externalTable'
+    ) {
+      return false
+    }
+    return (
+      parseColumnHandleId(input.sourceHandle ?? '') !== null &&
+      parseColumnHandleId(input.targetHandle ?? '') !== null
+    )
+  }
+
+  if (input.sourceType === 'shape' && input.targetType === 'shape') {
+    if (input.sourceId === input.targetId) return false
+    return input.sourceShapeKind !== 'line' && input.targetShapeKind !== 'line'
+  }
+
+  return false // every mixed pair, both directions
+}
+
+export function computeRelationshipDeleteVeto<
+  T extends { type?: string },
+>(params: {
   deletedEdges: Array<T>
   canPersistRelationshipDelete: boolean
   hasRelationshipDeleteHandler: boolean
@@ -229,6 +287,29 @@ export interface ReactFlowCanvasProps {
    * nodes like areaNodes. Rendered behind tables, above areas (tech-spec §5).
    */
   shapeNodes?: Array<ShapeNodeType>
+  /**
+   * Cross-file table reference nodes (LizMeter #83). Kept separate from table
+   * nodes for the same reason areas and shapes are: they render through a
+   * different `nodeTypes` entry and must not pass through the table-node
+   * handlers, which assume an editable local table.
+   */
+  externalTableNodes?: Array<ExternalTableNodeType>
+  /**
+   * A "Reference" item was dropped on the canvas (LizMeter #83). Receives the
+   * drop point already converted to FLOW coordinates, so the caller can open
+   * the picker and place the node exactly where it landed.
+   */
+  onReferenceDrop?: (point: { x: number; y: number }) => void
+  /**
+   * A reference node finished being dragged (LizMeter #83). It is a
+   * DiagramTable row, so the caller persists it through the same table-move
+   * path an ordinary table uses.
+   */
+  onReferenceDragStop?: (
+    tableId: string,
+    positionX: number,
+    positionY: number,
+  ) => void
   /**
    * Connector edges (Phase 1) — merged with the relationship `edges` prop.
    * Geometry is derived at render time, never stored (FR-031a).
@@ -403,6 +484,9 @@ export function ReactFlowCanvas({
   onAreaDelete,
   commentNodes = EMPTY_COMMENT_NODES,
   shapeNodes = EMPTY_SHAPE_NODES,
+  externalTableNodes = EMPTY_EXTERNAL_TABLE_NODES,
+  onReferenceDrop,
+  onReferenceDragStop,
   connectorEdges = EMPTY_CONNECTOR_EDGES,
   onShapeDragStop,
   onShapeDelete,
@@ -485,8 +569,6 @@ export function ReactFlowCanvas({
   const parentIndexRef = useRef(parentIndex)
   parentIndexRef.current = parentIndex
 
-
-
   // Comment pin nodes (GH #110) — same separate-state pattern as areas, but
   // rendered ON TOP of tables (merged last) since they are small clickable
   // markers, not background regions.
@@ -498,6 +580,31 @@ export function ReactFlowCanvas({
   const commentIdSet = useMemo(
     () => new Set(commentNodesState.map((c) => c.id)),
     [commentNodesState],
+  )
+
+  // Cross-file reference nodes (LizMeter #83) — same separate-state pattern
+  // as areas/shapes/comments. They need their OWN controlled state, not a
+  // plain prop: React Flow's node changes (drag, selection) must be applied
+  // somewhere, and routing them into the table pipeline would drop them —
+  // a reference node would then snap back the moment you let go of it.
+  const [
+    externalTableNodesState,
+    setExternalTableNodesState,
+    handleExternalTableNodesChange,
+  ] = useNodesState<ExternalTableNodeType>(externalTableNodes)
+  useEffect(() => {
+    setExternalTableNodesState(externalTableNodes)
+  }, [externalTableNodes, setExternalTableNodesState])
+  const externalTableIdSet = useMemo(
+    () => new Set(externalTableNodesState.map((n) => n.id)),
+    [externalTableNodesState],
+  )
+  // The stub column ids a reference node owns. They belong to no `table`
+  // node, so `filterValidEdges` has to be told about them or it discards
+  // every relationship drawn to a reference (LizMeter #83).
+  const externalColumnIds = useMemo(
+    () => externalTableNodes.flatMap((n) => n.data.columns.map((c) => c.id)),
+    [externalTableNodes],
   )
 
   // Shape nodes (Phase 1: shapes-and-connectors) — same separate-state
@@ -572,9 +679,21 @@ export function ReactFlowCanvas({
       ...nodes.map((n) =>
         n.deletable === false ? n : { ...n, deletable: false },
       ),
+      // Reference nodes (LizMeter #83) sit with the tables. Like tables they
+      // are never natively deletable — Delete/Backspace routes through the
+      // confirmation dialog, not React Flow's own removal.
+      ...externalTableNodesState.map((n) =>
+        n.deletable === false ? n : { ...n, deletable: false },
+      ),
       ...commentNodesState,
     ],
-    [areaNodesState, shapeNodesState, nodes, commentNodesState],
+    [
+      areaNodesState,
+      shapeNodesState,
+      nodes,
+      externalTableNodesState,
+      commentNodesState,
+    ],
   )
 
   // Selection and hover state for highlighting
@@ -751,7 +870,7 @@ export function ReactFlowCanvas({
 
   // React Flow instance — used by the search-palette focus request below to
   // pan/zoom the viewport (shares the store with the container's instance).
-  const { fitView, setCenter, getZoom } = useReactFlow()
+  const { fitView, setCenter, getZoom, screenToFlowPosition } = useReactFlow()
 
   // Single-click on the minimap recenters the viewport on that point.
   // `position` is already in flow coordinates; drag-to-pan is handled
@@ -969,17 +1088,27 @@ export function ReactFlowCanvas({
     // prevent the "[React Flow]: Couldn't create edge for source handle id"
     // warning flood that occurs when handle IDs no longer match any
     // registered handle. Shared with TableFocusOverlay.tsx.
-    const validEdges = filterValidEdges(initialNodes, initialEdges)
+    const validEdges = filterValidEdges(
+      initialNodes,
+      initialEdges,
+      externalColumnIds,
+    )
 
-    const allNodeIds = new Set(initialNodes.map((n) => n.id))
+    // Reference nodes route like tables — pass them in, or an edge to one
+    // keeps the default right→left handles no matter where the node sits.
+    const routableNodes = [
+      ...initialNodes,
+      ...(externalTableNodes as unknown as Array<TableNodeType>),
+    ]
+    const allNodeIds = new Set(routableNodes.map((n) => n.id))
     const recalculated = recalculateEdgesForDraggedNodes(
       validEdges,
-      initialNodes,
+      routableNodes,
       allNodeIds,
     )
     // Compute per-edge bundle offsets so parallel edges fan out consistently
     // after a page reload (they are not persisted; derive them from DB data).
-    const layoutNodes = initialNodes.map((n) => ({
+    const layoutNodes = routableNodes.map((n) => ({
       id: n.id,
       // eslint-disable-next-line @typescript-eslint/no-unnecessary-condition -- React Flow's `measured` dimensions are only populated after the node has actually been measured in the DOM; on initial mount (this effect) they are genuinely undefined despite the non-optional type.
       width: n.measured?.width ?? (n.width as number) ?? 250,
@@ -1007,7 +1136,7 @@ export function ReactFlowCanvas({
       }
     })
     setEdges(withOffsets)
-  }, [initialEdges, initialNodes, setEdges])
+  }, [initialEdges, initialNodes, externalTableNodes, externalColumnIds, setEdges])
 
   // Reset the one-shot re-routing guard whenever the node set changes (e.g.
   // overlay re-opened with a different focal table).
@@ -1025,10 +1154,14 @@ export function ReactFlowCanvas({
     hasReRoutedAfterMeasureRef.current = true
     setEdges((prevEdges) => {
       if (prevEdges.length === 0) return prevEdges
-      const allIds = new Set(nodes.map((n) => n.id))
-      return recalculateEdgesForDraggedNodes(prevEdges, nodes, allIds)
+      const measured = [
+        ...nodes,
+        ...(externalTableNodesState as unknown as typeof nodes),
+      ]
+      const allIds = new Set(measured.map((n) => n.id))
+      return recalculateEdgesForDraggedNodes(prevEdges, measured, allIds)
     })
-  }, [nodesInitialized, nodes, setEdges])
+  }, [nodesInitialized, nodes, externalTableNodesState, setEdges])
 
   // Apply NODE highlighting when selection/relations-preview changes (GH
   // #121 perf, opt #1). Deliberately keyed on [activeTableId,
@@ -1336,6 +1469,16 @@ export function ReactFlowCanvas({
         return
       }
 
+      // Cross-file reference nodes (LizMeter #83): persist the new position
+      // and stop. A reference IS a DiagramTable row, so the caller writes it
+      // through the same table-move path; but it has no `data.table`, so it
+      // must not fall through to the edge-routing recalculation below, which
+      // reads that field on every dragged node.
+      if (externalTableIdSet.has(node.id)) {
+        onReferenceDragStop?.(node.id, node.position.x, node.position.y)
+        return
+      }
+
       // Shape nodes: persist the new position(s), skip edge routing/hover
       // entirely (tech-spec §10). React Flow reports the WHOLE multi-drag
       // selection to this callback once, so a multi-select drag of N shapes
@@ -1393,11 +1536,13 @@ export function ReactFlowCanvas({
     [
       areaIdSet,
       shapeIdSet,
+      externalTableIdSet,
       nodes,
       parentIndex,
       cancelPendingDragEdgeRecalc,
       onAreaDragStop,
       onShapeDragStop,
+      onReferenceDragStop,
       onNodeDragStopProp,
       mergeCurrentPositions,
       setEdges,
@@ -1413,6 +1558,7 @@ export function ReactFlowCanvas({
       const areaChanges: typeof changes = []
       const shapeChanges: typeof changes = []
       const commentChanges: typeof changes = []
+      const externalTableChanges: typeof changes = []
       const tableChanges: typeof changes = []
       for (const change of changes) {
         if ('id' in change && areaIdSet.has(change.id)) areaChanges.push(change)
@@ -1420,6 +1566,8 @@ export function ReactFlowCanvas({
           shapeChanges.push(change)
         else if ('id' in change && commentIdSet.has(change.id))
           commentChanges.push(change)
+        else if ('id' in change && externalTableIdSet.has(change.id))
+          externalTableChanges.push(change)
         else tableChanges.push(change)
       }
       if (areaChanges.length > 0) {
@@ -1431,6 +1579,9 @@ export function ReactFlowCanvas({
       if (commentChanges.length > 0) {
         handleCommentNodesChange(commentChanges as any)
       }
+      if (externalTableChanges.length > 0) {
+        handleExternalTableNodesChange(externalTableChanges as any)
+      }
       handleNodesChange(tableChanges)
       onNodesChangeProp?.(tableChanges)
     },
@@ -1438,9 +1589,11 @@ export function ReactFlowCanvas({
       areaIdSet,
       shapeIdSet,
       commentIdSet,
+      externalTableIdSet,
       handleAreaNodesChange,
       handleShapeNodesChange,
       handleCommentNodesChange,
+      handleExternalTableNodesChange,
       handleNodesChange,
       onNodesChangeProp,
     ],
@@ -1631,29 +1784,23 @@ export function ReactFlowCanvas({
   const effectiveEdges =
     enableEdgeAblation && hideEdges ? EMPTY_EDGES : mergedEdges
 
-  // The one predicate that owns BOTH rule sets (tech-spec §4): today's
-  // column-handle table-to-table rule, unchanged, and the new shape-to-shape
-  // rule (no self-connectors, no line-kind endpoint, no mixed table/shape
-  // pair in either direction). connectionMode stays at its default (strict).
   const isValidConnection = useCallback<IsValidConnection>(
     (connection) => {
       const sourceNode = mergedNodes.find((n) => n.id === connection.source)
       const targetNode = mergedNodes.find((n) => n.id === connection.target)
       if (!sourceNode || !targetNode) return false
-
-      if (sourceNode.type === 'table' && targetNode.type === 'table') {
-        return (
-          parseColumnHandleId(connection.sourceHandle ?? '') !== null &&
-          parseColumnHandleId(connection.targetHandle ?? '') !== null
-        )
-      }
-      if (sourceNode.type === 'shape' && targetNode.type === 'shape') {
-        if (sourceNode.id === targetNode.id) return false
-        const sourceShape = (sourceNode as unknown as ShapeNodeType).data.shape
-        const targetShape = (targetNode as unknown as ShapeNodeType).data.shape
-        return sourceShape.kind !== 'line' && targetShape.kind !== 'line'
-      }
-      return false // every mixed pair, both directions
+      return computeConnectionValidity({
+        sourceId: sourceNode.id,
+        targetId: targetNode.id,
+        sourceType: sourceNode.type,
+        targetType: targetNode.type,
+        sourceHandle: connection.sourceHandle,
+        targetHandle: connection.targetHandle,
+        // Only meaningful for a shape/shape pair; on every other node type
+        // these are genuinely absent, hence the loose read.
+        sourceShapeKind: shapeKindOf(sourceNode),
+        targetShapeKind: shapeKindOf(targetNode),
+      })
     },
     [mergedNodes],
   )
@@ -1690,6 +1837,25 @@ export function ReactFlowCanvas({
           // below the route header and Toolbar — so the rubber-band draw
           // preview rendered that many pixels away from the actual cursor.
           style={{ width: '100%', height: '100%', position: 'relative' }}
+          // LizMeter #83: the Toolbar's Reference item is dragged here and
+          // dropped at an exact spot. onDragOver must preventDefault or the
+          // browser never fires a drop at all. The screen point is converted
+          // to flow coordinates here, where the React Flow instance lives, so
+          // the caller only ever deals in canvas space.
+          onDragOver={(event) => {
+            if (!onReferenceDrop) return
+            if (!event.dataTransfer.types.includes(REFERENCE_DRAG_MIME)) return
+            event.preventDefault()
+            event.dataTransfer.dropEffect = 'copy'
+          }}
+          onDrop={(event) => {
+            if (!onReferenceDrop) return
+            if (!event.dataTransfer.types.includes(REFERENCE_DRAG_MIME)) return
+            event.preventDefault()
+            onReferenceDrop(
+              screenToFlowPosition({ x: event.clientX, y: event.clientY }),
+            )
+          }}
         >
           {/* Global SVG marker definitions for cardinality indicators */}
           <CardinalityMarkerDefs />

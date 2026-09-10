@@ -9,6 +9,11 @@ import type {
   CreateTable,
 } from '@/data/schema'
 import type { WhiteboardWithDiagram } from '@/data/whiteboard'
+import type {
+  ReferenceTargetFile,
+  ResolvedTableReference,
+  UpdateTableReferenceResult,
+} from '@/data/table-reference'
 import type { RelationshipWithDetails } from '@/data/relationship'
 import type { Area, CommentWithAuthor, Connector, Shape } from '@/data/models'
 import type { LayoutOptions, LayoutResult } from '@/lib/canvas/layout-engine'
@@ -42,6 +47,13 @@ import { bulkUpdatePositionsSchema } from '@/data/schema'
 import { requireServerFnRole } from '@/lib/auth/require-role'
 import { findEffectiveRole } from '@/data/permission'
 import { createTableHandler } from '@/lib/diagram-table/handlers'
+import {
+  createTableReference,
+  deleteTableReference,
+  listReferenceTargets,
+  resolveTableReferences,
+  updateTableReference,
+} from '@/data/table-reference'
 
 /**
  * WhiteboardWithDiagram plus the requesting user's effective role on the
@@ -51,6 +63,13 @@ import { createTableHandler } from '@/lib/diagram-table/handlers'
  */
 export type WhiteboardWithDiagramAndRole = WhiteboardWithDiagram & {
   viewerRole: EffectiveRole | null
+  /**
+   * Cross-file reference nodes (LizMeter #83), already resolved against their
+   * source files. They also appear in `tables` — a reference IS a DiagramTable
+   * row — so the canvas splits them by id: a table whose id appears here
+   * renders as an `externalTable` node, everything else as a `table` node.
+   */
+  tableReferences: Array<ResolvedTableReference>
 }
 
 /**
@@ -74,7 +93,8 @@ export const getWhiteboardWithDiagram = createServerFn({
           // projectId is guaranteed non-null here — requireServerFnRole
           // throws ForbiddenError above when it is null.
           const viewerRole = await findEffectiveRole(user.id, projectId!)
-          return { ...whiteboard, viewerRole }
+          const tableReferences = await resolveTableReferences(whiteboardId)
+          return { ...whiteboard, viewerRole, tableReferences }
         } catch (error) {
           console.error('Error fetching whiteboard:', error)
           throw error
@@ -453,6 +473,129 @@ export const saveCanvasState = createServerFn({
         return whiteboard
       } catch (error) {
         console.error('Error saving canvas state:', error)
+        throw error
+      }
+    }),
+  )
+
+// ============================================================================
+// Cross-file table references (LizMeter #83)
+// ============================================================================
+
+/**
+ * Everything the reference picker offers: the other whiteboards of this
+ * whiteboard's project, each with its real tables and their columns.
+ *
+ * VIEWER is the right bar — project roles are project-wide, so anyone who may
+ * read this board may read every other board of the same project.
+ * @requires viewer
+ */
+export const getReferenceTargets = createServerFn({
+  method: 'GET',
+})
+  .inputValidator((whiteboardId: string) => whiteboardId)
+  .handler(
+    requireAuth(
+      async ({ user }, whiteboardId): Promise<Array<ReferenceTargetFile>> => {
+        const projectId = await getWhiteboardProjectId(whiteboardId)
+        await requireServerFnRole(user.id, projectId, 'VIEWER')
+        try {
+          return await listReferenceTargets(whiteboardId)
+        } catch (error) {
+          console.error('Error listing reference targets:', error)
+          throw error
+        }
+      },
+    ),
+  )
+
+/**
+ * Create a cross-file reference node.
+ *
+ * The data layer re-checks that the source lives in the same project, so a
+ * caller cannot reach another project's tables by passing its ids here — the
+ * EDITOR check below only proves they may write to the board they name.
+ * @requires editor
+ */
+export const createTableReferenceFn = createServerFn({
+  method: 'POST',
+})
+  .inputValidator((data: unknown) => {
+    const schema = z.object({
+      whiteboardId: z.string().uuid(),
+      sourceWhiteboardId: z.string().uuid(),
+      sourceTableId: z.string().uuid(),
+      sourceColumnIds: z.array(z.string().uuid()).min(1).max(100),
+      positionX: z.number().finite().optional(),
+      positionY: z.number().finite().optional(),
+    })
+    return schema.parse(data)
+  })
+  .handler(
+    requireAuth(async ({ user }, data) => {
+      const projectId = await getWhiteboardProjectId(data.whiteboardId)
+      await requireServerFnRole(user.id, projectId, 'EDITOR')
+      try {
+        return await createTableReference(data)
+      } catch (error) {
+        console.error('Error creating table reference:', error)
+        throw error
+      }
+    }),
+  )
+
+/**
+ * Re-target a reference node. The result reports how many relationships the
+ * change deleted, so the caller can show it after the fact even when it
+ * confirmed a predicted count beforehand.
+ * @requires editor
+ */
+export const updateTableReferenceFn = createServerFn({
+  method: 'POST',
+})
+  .inputValidator((data: unknown) => {
+    const schema = z.object({
+      tableId: z.string().uuid(),
+      sourceWhiteboardId: z.string().uuid().optional(),
+      sourceTableId: z.string().uuid().optional(),
+      sourceColumnIds: z.array(z.string().uuid()).max(100).optional(),
+    })
+    return schema.parse(data)
+  })
+  .handler(
+    requireAuth(async ({ user }, data): Promise<UpdateTableReferenceResult> => {
+      const projectId = await getTableProjectId(data.tableId)
+      await requireServerFnRole(user.id, projectId, 'EDITOR')
+      try {
+        const { tableId, ...changes } = data
+        return await updateTableReference(tableId, changes)
+      } catch (error) {
+        console.error('Error updating table reference:', error)
+        throw error
+      }
+    }),
+  )
+
+/**
+ * Delete a reference node. Its stub columns and their relationships go with it
+ * through the existing ON DELETE CASCADE chain.
+ * @requires editor
+ */
+export const deleteTableReferenceFn = createServerFn({
+  method: 'POST',
+})
+  .inputValidator((data: unknown) => {
+    const schema = z.object({ tableId: z.string().uuid() })
+    return schema.parse(data)
+  })
+  .handler(
+    requireAuth(async ({ user }, data) => {
+      const projectId = await getTableProjectId(data.tableId)
+      await requireServerFnRole(user.id, projectId, 'EDITOR')
+      try {
+        return await deleteTableReference(data.tableId)
+      } catch (error) {
+        console.error('Error deleting table reference:', error)
         throw error
       }
     }),

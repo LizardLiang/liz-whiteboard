@@ -18,6 +18,7 @@ import {
   useState,
 } from 'react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
+import { useNavigate } from '@tanstack/react-router'
 import {
   ReactFlowProvider,
   useNodesInitialized,
@@ -31,9 +32,11 @@ import { toast } from 'sonner'
 import { ReactFlowCanvas } from './ReactFlowCanvas'
 import { PerfTrackerPanel } from './PerfTrackerPanel'
 import { ConnectionStatusIndicator } from './ConnectionStatusIndicator'
+import { DeleteReferenceDialog } from './DeleteReferenceDialog'
 import { DeleteTableDialog } from './DeleteTableDialog'
 import { Toolbar } from './Toolbar'
 import { WhiteboardSearch } from './WhiteboardSearch'
+import { ExternalTablePicker } from './ExternalTablePicker'
 import { AutoLayoutConfirmDialog } from './AutoLayoutConfirmDialog'
 import { TableFocusOverlay } from './TableFocusOverlay'
 import { WhiteboardAccessDenied } from './WhiteboardAccessDenied'
@@ -79,6 +82,7 @@ import type { RelationshipErrorEvent } from '@/hooks/use-relationship-mutations'
 import type { ReconcileAfterDropParams } from '@/hooks/use-column-reorder-mutations'
 import type { Dialect } from '@/lib/ddl-generator'
 import type { ExportImageDialogOptions } from './ExportImageDialog'
+import type { ResolvedTableReference } from '@/data/table-reference'
 import { useWhiteboardShapes } from '@/hooks/use-whiteboard-shapes'
 import {
   TOOL_TO_SHAPE_KIND,
@@ -124,17 +128,24 @@ import {
 } from '@/components/ui/select'
 import { parseColumnHandleId } from '@/lib/react-flow/edge-routing'
 import { filterValidEdges } from '@/lib/react-flow/highlighting'
-import { convertTablesToNodes } from '@/lib/react-flow/convert-to-nodes'
+import {
+  convertReferencesToNodes,
+  convertTablesToNodes,
+} from '@/lib/react-flow/convert-to-nodes'
 import { applyTableCreated } from '@/lib/react-flow/apply-table-created'
 import { resolvePendingPositions } from '@/lib/react-flow/resolve-pending-positions'
 import { convertRelationshipsToEdges } from '@/lib/react-flow/convert-to-edges'
 import {
   createRelationshipFn,
+  createTableReferenceFn,
+  deleteTableReferenceFn,
   getMcpEndpointUrl,
+  getReferenceTargets,
   getWhiteboardRelationships,
   getWhiteboardWithDiagram,
   updateTablePosition,
   updateTablePositionsBulk,
+  updateTableReferenceFn,
 } from '@/lib/server-functions'
 import { useWhiteboardAreas } from '@/hooks/use-whiteboard-areas'
 import { useWhiteboardComments } from '@/hooks/use-whiteboard-comments'
@@ -158,6 +169,7 @@ import { useMinimapFocusShortcut } from '@/hooks/use-minimap-focus-shortcut'
 import { useTableRelationsPreview } from '@/hooks/use-table-relations-preview'
 import {
   buildDiagramTablesFromFlow,
+  buildExternalTableRefs,
   exportTableDdl,
   useTableExportDdl,
 } from '@/hooks/use-table-export-ddl'
@@ -256,6 +268,13 @@ export interface ReactFlowWhiteboardProps {
   showControls?: boolean
   /** Whether nodes are draggable */
   nodesDraggable?: boolean
+  /**
+   * Table to centre and highlight once the board has loaded (LizMeter #83).
+   * Fed by the route's `?focusTable=` search param, which is how a cross-file
+   * reference node jumps you to its source. Applied once per value; an id that
+   * is not on this board is ignored, so a stale link just opens the board.
+   */
+  focusTableId?: string
   /** Requesting user's effective role on the whiteboard's project — gates
    * write affordances (Add Table/Relationship, dragging) in the toolbar. */
   viewerRole?: EffectiveRole | null
@@ -404,6 +423,8 @@ function ReactFlowWhiteboardInner({
   showMinimap,
   showControls,
   nodesDraggable,
+  tableReferences,
+  focusTableId,
   viewerRole = null,
   isPublic = false,
   collaborationEnabled = true,
@@ -426,6 +447,8 @@ function ReactFlowWhiteboardInner({
   showMinimap: boolean
   showControls: boolean
   nodesDraggable: boolean
+  tableReferences: Array<ResolvedTableReference>
+  focusTableId?: string
   viewerRole?: EffectiveRole | null
   isPublic?: boolean
   /** R1 (GH #109): when false, no Socket.IO connection is opened. */
@@ -447,6 +470,7 @@ function ReactFlowWhiteboardInner({
   publicShapesData?: { shapes: Array<Shape>; connectors: Array<Connector> }
 }) {
   const queryClient = useQueryClient()
+  const navigate = useNavigate()
 
   // In-app performance tracker (GH #121 follow-up). Mounts on `?perf=1` or the
   // Ctrl+Shift+P hotkey — available in production too, unlike the old dev-only
@@ -608,6 +632,211 @@ function ReactFlowWhiteboardInner({
     setFocusRequestToken((token) => token + 1)
   }, [])
 
+  // LizMeter #83 — arriving from a cross-file reference's jump-to-source:
+  // `?focusTable=<id>` on the route puts that id here, and we replay it
+  // through the same focus pipeline the search palette uses. Deferred until
+  // the node actually exists, because the board's tables land asynchronously
+  // and centring on an id React Flow has never seen is a no-op. Fired once
+  // per id: `appliedFocusRef` keeps a later re-render (or a node update) from
+  // yanking the viewport back after the user has panned away. An id that is
+  // not on this board is simply never applied, so a stale link just opens it.
+  const appliedFocusRef = useRef<string | null>(null)
+  useEffect(() => {
+    if (!focusTableId) return
+    if (appliedFocusRef.current === focusTableId) return
+    if (!nodes.some((node) => node.id === focusTableId)) return
+    appliedFocusRef.current = focusTableId
+    handleNavigateToTable(focusTableId)
+  }, [focusTableId, nodes, handleNavigateToTable])
+
+  // ── Cross-file table references (LizMeter #83) ──────────────────────────
+  //
+  // `pendingReference` holds the picker's state: where a newly dropped node
+  // will land, or which existing node is being re-targeted. `null` means the
+  // picker is closed.
+  const [pendingReference, setPendingReference] = useState<{
+    mode: 'create' | 'retarget'
+    dropPoint?: { x: number; y: number }
+    tableId?: string
+    initial?: {
+      sourceWhiteboardId: string
+      sourceTableId: string
+      sourceColumnIds: Array<string>
+    }
+    pendingDeleteCount: number
+  } | null>(null)
+
+  // The picker's file/table/column catalogue. Fetched only while the picker is
+  // open — a project's whole table list is not worth loading on every board
+  // open for a feature most sessions never touch.
+  const { data: referenceTargetsRaw, isLoading: isLoadingTargets } = useQuery({
+    queryKey: ['reference-targets', whiteboardId],
+    queryFn: () => getReferenceTargets({ data: whiteboardId }),
+    enabled: pendingReference !== null && !isPublic,
+    staleTime: 1000 * 30,
+  })
+  const referenceTargets =
+    referenceTargetsRaw && !isUnauthorizedError(referenceTargetsRaw)
+      ? referenceTargetsRaw
+      : []
+
+  const invalidateBoard = useCallback(() => {
+    void queryClient.invalidateQueries({
+      queryKey: ['whiteboard', whiteboardId],
+    })
+    void queryClient.invalidateQueries({
+      queryKey: ['relationships', whiteboardId],
+    })
+  }, [queryClient, whiteboardId])
+
+  const createReferenceMutation = useMutation({
+    mutationFn: (input: {
+      sourceWhiteboardId: string
+      sourceTableId: string
+      sourceColumnIds: Array<string>
+      positionX?: number
+      positionY?: number
+    }) => createTableReferenceFn({ data: { whiteboardId, ...input } }),
+    onSuccess: () => {
+      invalidateBoard()
+      emitCollabEvent('reference:changed', { whiteboardId })
+      toast.success('Reference added')
+    },
+    onError: (error: unknown) => {
+      toast.error(
+        error instanceof Error ? error.message : 'Could not add the reference',
+      )
+    },
+  })
+
+  const updateReferenceMutation = useMutation({
+    mutationFn: (input: {
+      tableId: string
+      sourceWhiteboardId: string
+      sourceTableId: string
+      sourceColumnIds: Array<string>
+    }) => updateTableReferenceFn({ data: input }),
+    onSuccess: (result) => {
+      invalidateBoard()
+      // Server functions widen their return with AuthErrorResponse; a session
+      // that expired mid-edit lands here rather than in onError.
+      if (isUnauthorizedError(result)) {
+        toast.error('Your session expired. Sign in again to keep editing.')
+        return
+      }
+      emitCollabEvent('reference:changed', { whiteboardId })
+      // Report what actually happened, not what was predicted: the count the
+      // picker showed was computed before the write, and another editor may
+      // have drawn a line in between.
+      toast.success(
+        result.deletedRelationships > 0
+          ? `Reference changed — ${result.deletedRelationships} relationship${
+              result.deletedRelationships === 1 ? '' : 's'
+            } removed`
+          : 'Reference changed',
+      )
+    },
+    onError: (error: unknown) => {
+      toast.error(
+        error instanceof Error
+          ? error.message
+          : 'Could not change the reference',
+      )
+    },
+  })
+
+  const deleteReferenceMutation = useMutation({
+    mutationFn: (tableId: string) =>
+      deleteTableReferenceFn({ data: { tableId } }),
+    onSuccess: (result) => {
+      invalidateBoard()
+      if (isUnauthorizedError(result)) {
+        toast.error('Your session expired. Sign in again to keep editing.')
+        return
+      }
+      emitCollabEvent('reference:changed', { whiteboardId })
+      toast.success('Reference removed')
+    },
+    onError: (error: unknown) => {
+      toast.error(
+        error instanceof Error
+          ? error.message
+          : 'Could not remove the reference',
+      )
+    },
+  })
+
+  // Which reference the remove-confirmation dialog is about. Removing a
+  // reference takes every relationship drawn to it with it, so it is confirmed
+  // the same way deleting a table is.
+  const [deletingReferenceId, setDeletingReferenceId] = useState<string | null>(
+    null,
+  )
+
+  // Jump to the file that owns a referenced table, centring on it there.
+  const handleJumpToSource = useCallback(
+    (sourceWhiteboardId: string, sourceTableId: string) => {
+      void navigate({
+        to: '/whiteboard/$whiteboardId',
+        params: { whiteboardId: sourceWhiteboardId },
+        search: { focusTable: sourceTableId },
+      })
+    },
+    [navigate],
+  )
+
+  // Re-open the picker on an existing reference. The delete count is computed
+  // from the edges currently on the canvas, so the warning is about THIS
+  // board's state rather than a guess.
+  const handleRetargetReference = useCallback(
+    (tableId: string) => {
+      const reference = tableReferences.find((r) => r.table.id === tableId)
+      if (!reference) return
+      const stubIds = new Set(reference.columns.map((c) => c.id))
+      const affected = edges.filter(
+        (edge) =>
+          (edge.source === tableId || edge.target === tableId) &&
+          [edge.sourceHandle, edge.targetHandle].some((handle) =>
+            handle ? [...stubIds].some((id) => handle.includes(id)) : false,
+          ),
+      ).length
+      setPendingReference({
+        mode: 'retarget',
+        tableId,
+        initial: {
+          sourceWhiteboardId: reference.table.sourceWhiteboardId ?? '',
+          sourceTableId: reference.table.sourceTableId ?? '',
+          sourceColumnIds: reference.columns
+            .map((c) => c.sourceColumnId)
+            .filter((id): id is string => id !== null),
+        },
+        pendingDeleteCount: affected,
+      })
+    },
+    [tableReferences, edges],
+  )
+
+  // Reference nodes for the canvas. `isPublic` withholds the jump callback:
+  // an anonymous share-link visitor holds no role on the source board, so the
+  // node renders but does not navigate.
+  const externalTableNodes = useMemo(
+    () =>
+      convertReferencesToNodes(tableReferences, {
+        onJumpToSource: isPublic ? undefined : handleJumpToSource,
+        onRetarget: isPublic ? undefined : handleRetargetReference,
+        onDelete: isPublic ? undefined : setDeletingReferenceId,
+      }),
+    [tableReferences, isPublic, handleJumpToSource, handleRetargetReference],
+  )
+
+  // The DDL export callback is deliberately not re-created on every reference
+  // change (it is memoised against a stable dependency set), so it reads the
+  // current references through a ref instead of closing over them.
+  const externalTableNodesRef = useRef(externalTableNodes)
+  useEffect(() => {
+    externalTableNodesRef.current = externalTableNodes
+  }, [externalTableNodes])
+
   // GH #138 — jump to a related table from the relations-preview panel: pan
   // + normalized zoom + active-highlight (reusing the search-palette focus
   // pipeline above) AND re-anchor the panel itself to the target table.
@@ -644,6 +873,44 @@ function ReactFlowWhiteboardInner({
     window.addEventListener('keydown', handleKeyDown)
     return () => window.removeEventListener('keydown', handleKeyDown)
   }, [])
+
+  // `g` — go to the source of the selected cross-file reference (LizMeter #83).
+  // Double-clicking the node does the same thing; this is the keyboard half.
+  // Bare-key, so it carries the same typing guard the other single-key
+  // shortcuts use, and it ignores modifier chords so Ctrl+G (browser find-
+  // again) still works.
+  useEffect(() => {
+    if (isPublic) return
+    const handleKeyDown = (event: KeyboardEvent) => {
+      if (event.ctrlKey || event.metaKey || event.altKey) return
+      if (event.key.toLowerCase() !== 'g') return
+
+      const target = event.target as HTMLElement | null
+      const tag = target?.tagName
+      if (tag === 'INPUT' || tag === 'TEXTAREA' || target?.isContentEditable) {
+        return
+      }
+
+      // Read the live React Flow selection rather than tracking our own —
+      // the same approach the shape shortcuts take. `getNodes` returns every
+      // node type at runtime, table or reference, and only `id`/`selected`
+      // are read here.
+      const selected = getNodes().filter((node) => node.selected)
+      if (selected.length !== 1) return
+      const reference = tableReferences.find(
+        (r) => r.table.id === selected[0].id,
+      )
+      if (!reference) return
+
+      event.preventDefault()
+      handleJumpToSource(
+        reference.table.sourceWhiteboardId ?? '',
+        reference.table.sourceTableId ?? '',
+      )
+    }
+    window.addEventListener('keydown', handleKeyDown)
+    return () => window.removeEventListener('keydown', handleKeyDown)
+  }, [isPublic, getNodes, tableReferences, handleJumpToSource])
 
   // Cardinality picker dialog state for drag-to-connect
   const [pendingConnection, setPendingConnection] =
@@ -1039,6 +1306,16 @@ function ReactFlowWhiteboardInner({
     // GH #125: live table-creation sync — the 14th positional param.
     handleTableCreated,
   )
+
+  // Another collaborator added, re-targeted or deleted a reference — refetch
+  // rather than patching a cache entry by hand. Reference content is resolved
+  // server-side against another file, so there is no local computation that
+  // could reproduce it from the event (LizMeter #83).
+  useEffect(() => {
+    const handler = () => invalidateBoard()
+    onCollabEvent('reference:changed', handler)
+    return () => offCollabEvent('reference:changed', handler)
+  }, [onCollabEvent, offCollabEvent, invalidateBoard])
 
   // Column collaboration callbacks (incoming events from other users)
   const onColumnCreated = useCallback(
@@ -1537,7 +1814,14 @@ function ReactFlowWhiteboardInner({
   const handleExportDdl = useCallback(
     (tableId: string, dialect: Dialect) => {
       const tables = buildDiagramTablesFromFlow(getNodes(), getEdges())
-      void exportTableDdl(tables, tableId, dialect)
+      // Cross-file references never reach `tables` (LizMeter #83) — pass them
+      // separately so a foreign key pointing at one still appears in the DDL.
+      void exportTableDdl(
+        tables,
+        tableId,
+        dialect,
+        buildExternalTableRefs(externalTableNodesRef.current),
+      )
     },
     [getNodes, getEdges],
   )
@@ -1861,6 +2145,18 @@ function ReactFlowWhiteboardInner({
 
   // React Flow zoom API (requires ReactFlowProvider context)
   const reactFlowInstance = useReactFlow()
+
+  // Flow-space centre of the visible canvas — where a clicked (rather than
+  // dragged) reference node is placed.
+  const viewportCentre = useCallback(
+    () =>
+      reactFlowInstance.screenToFlowPosition({
+        x: window.innerWidth / 2,
+        y: window.innerHeight / 2,
+      }),
+    [reactFlowInstance],
+  )
+
   // FR-019a: `addSelectedNodes`/`unselectNodesAndEdges` are store-level
   // methods, not exposed on `ReactFlowInstance` itself (unlike
   // `screenToFlowPosition`/`setCenter`/etc above) — accessed via the store
@@ -3245,10 +3541,9 @@ function ReactFlowWhiteboardInner({
             keyboardSelectionOrderRef.current = selected.map((n) => n.id)
           }
           keyboardSelectionOrderRef.current.push(focusedShapeId)
-          reactFlowStoreApi.getState().addSelectedNodes([
-            ...selected.map((n) => n.id),
-            focusedShapeId,
-          ])
+          reactFlowStoreApi
+            .getState()
+            .addSelectedNodes([...selected.map((n) => n.id), focusedShapeId])
         }
         return
       }
@@ -3799,6 +4094,21 @@ function ReactFlowWhiteboardInner({
             onCreateRelationship={onCreateRelationship}
             onImportSql={onImportSql}
             tableCount={nodes.length}
+            // No isPublic guard needed: this whole Toolbar is already behind
+            // `!isPublic` above.
+            //
+            // A plain click carries no drop point, so the viewport centre is
+            // computed here. It must be computed, not left undefined: an
+            // unpositioned reference row lands on the off-canvas sentinel
+            // (-99999) that table nodes escape through a measure-then-place
+            // effect reference nodes do not run — so it would render nowhere.
+            onAddReference={(dropPoint) =>
+              setPendingReference({
+                mode: 'create',
+                dropPoint: dropPoint ?? viewportCentre(),
+                pendingDeleteCount: 0,
+              })
+            }
             onAutoLayoutClick={() => handleAutoLayoutClick(nodes.length)}
             isAutoLayoutRunning={isAutoLayoutRunning}
             zoomControls={toolbarZoomControls}
@@ -3826,8 +4136,40 @@ function ReactFlowWhiteboardInner({
           open={searchOpen}
           onOpenChange={setSearchOpen}
           nodes={nodes}
+          referenceNodes={externalTableNodes}
           onNavigateToTable={handleNavigateToTable}
         />
+
+        {/* Pick (or re-pick) what a cross-file reference points at */}
+        {pendingReference && (
+          <ExternalTablePicker
+            open
+            onOpenChange={(next) => {
+              if (!next) setPendingReference(null)
+            }}
+            targets={referenceTargets}
+            isLoading={isLoadingTargets}
+            initial={pendingReference.initial}
+            pendingDeleteCount={pendingReference.pendingDeleteCount}
+            onConfirm={(selection) => {
+              if (pendingReference.mode === 'retarget') {
+                if (pendingReference.tableId) {
+                  updateReferenceMutation.mutate({
+                    tableId: pendingReference.tableId,
+                    ...selection,
+                  })
+                }
+              } else {
+                createReferenceMutation.mutate({
+                  ...selection,
+                  positionX: pendingReference.dropPoint?.x,
+                  positionY: pendingReference.dropPoint?.y,
+                })
+              }
+              setPendingReference(null)
+            }}
+          />
+        )}
 
         {/* Auto Layout confirmation dialog (shown when tableCount > 50) */}
         <AutoLayoutConfirmDialog
@@ -3862,6 +4204,30 @@ function ReactFlowWhiteboardInner({
               Exit Zen
             </Button>
           )}
+          {deletingReferenceId &&
+            (() => {
+              const reference = tableReferences.find(
+                (r) => r.table.id === deletingReferenceId,
+              )
+              if (!reference) return null
+              const affected = edges.filter(
+                (edge) =>
+                  edge.source === deletingReferenceId ||
+                  edge.target === deletingReferenceId,
+              ).length
+              return (
+                <DeleteReferenceDialog
+                  tableName={reference.sourceTableName}
+                  sourceWhiteboardName={reference.sourceWhiteboardName}
+                  affectedRelationships={affected}
+                  onConfirm={() => {
+                    deleteReferenceMutation.mutate(deletingReferenceId)
+                    setDeletingReferenceId(null)
+                  }}
+                  onCancel={() => setDeletingReferenceId(null)}
+                />
+              )
+            })()}
           {deletingTableId && deletingNode && (
             <DeleteTableDialog
               tableName={deletingNode.data.table.name}
@@ -3889,6 +4255,26 @@ function ReactFlowWhiteboardInner({
             <ReactFlowCanvas
               initialNodes={nodes}
               initialEdges={edges}
+              externalTableNodes={externalTableNodes}
+              // A reference is a DiagramTable row, so its move persists and
+              // broadcasts through the very same `table:move` every table
+              // uses — no parallel event family (LizMeter #83).
+              onReferenceDragStop={
+                isPublic
+                  ? undefined
+                  : (tableId, positionX, positionY) =>
+                      emitPositionUpdate(tableId, positionX, positionY)
+              }
+              onReferenceDrop={
+                isPublic
+                  ? undefined
+                  : (dropPoint) =>
+                      setPendingReference({
+                        mode: 'create',
+                        dropPoint,
+                        pendingDeleteCount: 0,
+                      })
+              }
               areaNodes={areaNodes}
               commentNodes={commentNodes}
               shapeNodes={shapeNodes}
@@ -4101,6 +4487,7 @@ export function ReactFlowWhiteboard({
   showMinimap = false,
   showControls = true,
   nodesDraggable = true,
+  focusTableId,
   viewerRole = null,
   isPublic = false,
   data,
@@ -4154,8 +4541,14 @@ export function ReactFlowWhiteboard({
     }
     // Guard against AuthErrorResponse
     if (!whiteboardData || isUnauthorizedError(whiteboardData)) return []
-    // whiteboardData is WhiteboardWithDiagram which directly has .tables
-    const tables = whiteboardData.tables
+    // A cross-file reference (LizMeter #83) is itself a DiagramTable row, so
+    // it arrives inside `.tables`. Filter those out here — they render through
+    // the `externalTable` node type instead, and feeding one to TableNode
+    // would offer editing affordances that cannot reach the file that owns it.
+    const referenceIds = new Set(
+      whiteboardData.tableReferences.map((r) => r.table.id),
+    )
+    const tables = whiteboardData.tables.filter((t) => !referenceIds.has(t.id))
 
     if (tables.length === 0) {
       console.log('ReactFlowWhiteboard: No tables data or empty array')
@@ -4166,6 +4559,14 @@ export function ReactFlowWhiteboard({
     console.log('ReactFlowWhiteboard: Converted nodes', convertedNodes)
     return convertedNodes
   }, [isPublic, data, whiteboardData])
+
+  // Resolved cross-file references (LizMeter #83). The public share-link path
+  // has no authenticated read of them, so it simply shows none.
+  const tableReferences = useMemo(() => {
+    if (isPublic) return []
+    if (!whiteboardData || isUnauthorizedError(whiteboardData)) return []
+    return whiteboardData.tableReferences
+  }, [isPublic, whiteboardData])
 
   // Convert relationships to React Flow edges
   const edges = useMemo(() => {
@@ -4233,6 +4634,8 @@ export function ReactFlowWhiteboard({
         // never opens a collaboration socket, regardless of the caller-
         // supplied nodesDraggable prop.
         nodesDraggable={isPublic ? false : nodesDraggable}
+        tableReferences={tableReferences}
+        focusTableId={focusTableId}
         viewerRole={viewerRole}
         isPublic={isPublic}
         collaborationEnabled={!isPublic}

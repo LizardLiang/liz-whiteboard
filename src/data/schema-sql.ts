@@ -86,6 +86,14 @@ CREATE TABLE IF NOT EXISTS "DiagramTable" (
     "positionY" REAL,
     "width" REAL,
     "height" REAL,
+    -- Cross-file table reference (LizMeter #83). When both are set, this row is
+    -- not a table of its own but a reference node pointing at a table in
+    -- another whiteboard of the SAME project. Deliberately NOT foreign keys:
+    -- an ON DELETE CASCADE here would let deleting one file wipe the
+    -- relationships of every board that references it. A dangling id is
+    -- resolved to a "missing reference" node instead (src/data/table-reference.ts).
+    "sourceWhiteboardId" TEXT,
+    "sourceTableId" TEXT,
     "createdAt" DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
     "updatedAt" DATETIME NOT NULL,
     CONSTRAINT "DiagramTable_whiteboardId_fkey" FOREIGN KEY ("whiteboardId") REFERENCES "Whiteboard" ("id") ON DELETE CASCADE ON UPDATE CASCADE
@@ -102,6 +110,10 @@ CREATE TABLE IF NOT EXISTS "Column" (
     "isNullable" BOOLEAN NOT NULL DEFAULT false,
     "description" TEXT,
     "order" INTEGER NOT NULL DEFAULT 0,
+    -- Set on the stub columns of a cross-file reference node (LizMeter #83):
+    -- the id of the column in the source file this stub mirrors. Not a foreign
+    -- key, for the same reason as DiagramTable.sourceTableId above.
+    "sourceColumnId" TEXT,
     "createdAt" DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
     "updatedAt" DATETIME NOT NULL,
     CONSTRAINT "Column_tableId_fkey" FOREIGN KEY ("tableId") REFERENCES "DiagramTable" ("id") ON DELETE CASCADE ON UPDATE CASCADE
