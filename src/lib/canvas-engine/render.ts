@@ -35,6 +35,7 @@ import {
 import { connectorCurveOf, connectorPathOf } from './hit-test'
 import { QUICK_CREATE_DIRECTIONS } from './quick-create'
 import { DEFAULT_TEXT_STYLE, layoutText, pointFromCaret } from './text-layout'
+import { CanvasRenderTarget, canvasFont } from './render-target'
 import type { AlignmentGuide } from './alignment'
 import type { ConnectorCurve } from './connector-geometry'
 import type { Camera, Point } from './camera'
@@ -47,6 +48,13 @@ import type {
   Scene,
 } from './scene'
 import type { TextLayout, TextMeasurer } from './text-layout'
+import type {
+  PersistentRenderTarget,
+  RenderPaint,
+  RenderPathCommand,
+} from './render-target'
+
+export { FONT_FAMILY, canvasFont } from './render-target'
 
 /**
  * The drawing surface's size in CSS pixels plus the display's device pixel
@@ -449,13 +457,6 @@ export function creationHandleTarget(
  * for the measurer and the renderer to build the font string from the same
  * function.
  */
-export const FONT_FAMILY =
-  'system-ui, -apple-system, "Segoe UI", Roboto, "Noto Sans", "Noto Sans CJK TC", sans-serif'
-
-export function canvasFont(fontSize: number): string {
-  return `${fontSize}px ${FONT_FAMILY}`
-}
-
 /**
  * A `TextMeasurer` bound to a context and a font size.
  *
@@ -678,59 +679,51 @@ export function textOriginY(
  * assert on them by name; a rounded one has no rect-call equivalent and has
  * to be traced.
  */
-function traceShapePath(
-  ctx: CanvasRenderingContext2D,
-  element: CanvasElement,
-): void {
+function shapePath(element: CanvasElement): Array<RenderPathCommand> {
   const { x, y, width, height } = element
   const cx = x + width / 2
   const cy = y + height / 2
-  ctx.beginPath()
   switch (element.kind) {
-    case 'ellipse':
-      // Radii, not diameters — `ctx.ellipse` takes half-extents, and passing
-      // the full width here draws a shape twice the size of its own box.
-      ctx.ellipse(cx, cy, width / 2, height / 2, 0, 0, Math.PI * 2)
-      break
     case 'diamond':
-      ctx.moveTo(cx, y)
-      ctx.lineTo(x + width, cy)
-      ctx.lineTo(cx, y + height)
-      ctx.lineTo(x, cy)
-      break
+      return [
+        { kind: 'move', point: { x: cx, y } },
+        { kind: 'line', point: { x: x + width, y: cy } },
+        { kind: 'line', point: { x: cx, y: y + height } },
+        { kind: 'line', point: { x, y: cy } },
+        { kind: 'close' },
+      ]
     case 'triangle':
-      ctx.moveTo(cx, y)
-      ctx.lineTo(x + width, y + height)
-      ctx.lineTo(x, y + height)
-      break
-    case 'rectangle':
-      // Only ever reached with a NON-ZERO radius — `drawShape` sends a square
-      // rectangle down the `fillRect`/`strokeRect` path instead. Traced by
-      // hand rather than through `ctx.roundRect`, which the recording-stub
-      // context used by the tests does not implement and which would put the
-      // corner arithmetic somewhere `elementContainsPoint` cannot mirror it.
-      {
-        const r = effectiveCornerRadius(element)
-        const right = x + width
-        const bottom = y + height
-        ctx.moveTo(x + r, y)
-        ctx.lineTo(right - r, y)
-        ctx.arcTo(right, y, right, y + r, r)
-        ctx.lineTo(right, bottom - r)
-        ctx.arcTo(right, bottom, right - r, bottom, r)
-        ctx.lineTo(x + r, bottom)
-        ctx.arcTo(x, bottom, x, bottom - r, r)
-        ctx.lineTo(x, y + r)
-        ctx.arcTo(x, y, x + r, y, r)
-      }
-      break
+      return [
+        { kind: 'move', point: { x: cx, y } },
+        { kind: 'line', point: { x: x + width, y: y + height } },
+        { kind: 'line', point: { x, y: y + height } },
+        { kind: 'close' },
+      ]
     default:
-      break
+      return []
   }
-  // Closed for every kind: an unclosed diamond or triangle strokes three of
-  // its edges and leaves the fourth open, and fills a shape whose final edge
-  // the browser has to guess at.
-  ctx.closePath()
+}
+
+function traceCanvasPath(
+  ctx: CanvasRenderingContext2D,
+  commands: ReadonlyArray<RenderPathCommand>,
+): void {
+  ctx.beginPath()
+  for (const command of commands) {
+    if (command.kind === 'move') ctx.moveTo(command.point.x, command.point.y)
+    else if (command.kind === 'line')
+      ctx.lineTo(command.point.x, command.point.y)
+    else if (command.kind === 'cubic')
+      ctx.bezierCurveTo(
+        command.c0.x,
+        command.c0.y,
+        command.c1.x,
+        command.c1.y,
+        command.to.x,
+        command.to.y,
+      )
+    else ctx.closePath()
+  }
 }
 
 /**
@@ -741,38 +734,40 @@ function traceShapePath(
  * independently rather than assumed.
  */
 function drawShape(
-  ctx: CanvasRenderingContext2D,
+  target: PersistentRenderTarget,
   element: CanvasElement,
 ): void {
   const filled = element.style.fill !== 'none'
   const stroked = element.style.strokeWidth > 0
-  // A SQUARE rectangle keeps `fillRect`/`strokeRect`: those are the calls the
-  // renderer has always made for it, `traceShapePath` documents their absence
-  // from itself, and the recording-stub tests assert on them by name. A
-  // ROUNDED one has to become a path — there is no `fillRoundRect` — so the
-  // radius decides which of the two ways this kind is drawn.
-  if (element.kind === 'rectangle' && effectiveCornerRadius(element) === 0) {
-    if (filled) {
-      ctx.fillStyle = element.style.fill
-      ctx.fillRect(element.x, element.y, element.width, element.height)
-    }
-    if (stroked) {
-      ctx.strokeStyle = element.style.stroke
-      ctx.lineWidth = element.style.strokeWidth
-      ctx.strokeRect(element.x, element.y, element.width, element.height)
-    }
-    return
-  }
   if (!filled && !stroked) return
-  traceShapePath(ctx, element)
-  if (filled) {
-    ctx.fillStyle = element.style.fill
-    ctx.fill()
+  const paint: RenderPaint = {
+    ...(filled ? { fill: element.style.fill } : {}),
+    ...(stroked
+      ? {
+          stroke: element.style.stroke,
+          strokeWidth: element.style.strokeWidth,
+        }
+      : {}),
   }
-  if (stroked) {
-    ctx.strokeStyle = element.style.stroke
-    ctx.lineWidth = element.style.strokeWidth
-    ctx.stroke()
+  if (element.kind === 'rectangle') {
+    target.rect(
+      element.x,
+      element.y,
+      element.width,
+      element.height,
+      effectiveCornerRadius(element),
+      paint,
+    )
+  } else if (element.kind === 'ellipse') {
+    target.ellipse(
+      element.x + element.width / 2,
+      element.y + element.height / 2,
+      element.width / 2,
+      element.height / 2,
+      paint,
+    )
+  } else {
+    target.path(shapePath(element), paint)
   }
 }
 
@@ -786,13 +781,13 @@ function drawShape(
  * general "highlight this element" switch.
  */
 function drawElement(
-  ctx: CanvasRenderingContext2D,
+  target: PersistentRenderTarget,
   element: CanvasElement,
   theme: CanvasTheme,
   emphasized = false,
 ): TextLayout | null {
   if (isCanvasShapeKind(element.kind)) {
-    drawShape(ctx, element)
+    drawShape(target, element)
   } else if (element.kind === 'group') {
     // A group has no fill/stroke style of its own (FR-031) — its frame is
     // drawn as fixed UI chrome, not as data. Persistent (FR-032: this must
@@ -811,36 +806,30 @@ function drawElement(
     // with zoom exactly the way a shape's stroke already does.
     const chrome = CHROME[theme]
     const frame = bounds(element)
-    ctx.lineWidth = 1
-    ctx.strokeStyle = emphasized ? chrome.accent : chrome.marqueeFill
-    ctx.strokeRect(frame.x, frame.y, frame.width, frame.height)
+    target.rect(frame.x, frame.y, frame.width, frame.height, 0, {
+      stroke: emphasized ? chrome.accent : chrome.marqueeFill,
+      strokeWidth: 1,
+    })
   }
 
   const text = element.text ?? ''
   if (text.length === 0) return null
 
-  const measure = measurerFor(ctx, element.style.fontSize)
+  const measure = (value: string) =>
+    target.measureText(value, element.style.fontSize)
   const layout = layoutElementText(element, measure)
   const frame = textFrame(element)
   const originY = textOriginY(element, layout)
 
-  ctx.fillStyle = resolveTextColor(element.style, theme)
-  ctx.font = canvasFont(element.style.fontSize)
-  ctx.textBaseline = 'top'
-  // Still 'left', under every alignment. The horizontal offset is already in
-  // each line's `carets[0]` — the layout owns it, so that the caret and the
-  // glyphs cannot disagree about where the line starts. Handing the alignment
-  // to `ctx.textAlign` instead would move the glyphs and leave the caret math
-  // behind.
-  ctx.textAlign = 'left'
-  for (let i = 0; i < layout.lines.length; i += 1) {
-    const line = layout.lines[i]
-    ctx.fillText(
-      line.text,
-      frame.x + line.carets[0],
-      originY + i * layout.lineHeight,
-    )
-  }
+  target.text(
+    layout.lines.map((line, index) => ({
+      text: line.text,
+      x: frame.x + line.carets[0],
+      y: originY + index * layout.lineHeight,
+    })),
+    element.style.fontSize,
+    resolveTextColor(element.style, theme),
+  )
   // Returned so `drawScene` can hand it to `drawCaret` instead of paying for
   // a second layout of the same string on the same frame.
   return layout
@@ -867,17 +856,18 @@ export const CONNECTOR_ARROW_SIZE = 14
  * Assumes `ctx.beginPath()` has already been called — same contract as the
  * `moveTo`/`lineTo` walk it replaces.
  */
-function traceCurve(
-  ctx: CanvasRenderingContext2D,
+function curveCommands(
   curve: ConnectorCurve,
   project: (point: Point) => Point = (point) => point,
-): void {
+): Array<RenderPathCommand> {
   const from = project(curve.from)
   const c0 = project(curve.c0)
   const c1 = project(curve.c1)
   const to = project(curve.to)
-  ctx.moveTo(from.x, from.y)
-  ctx.bezierCurveTo(c0.x, c0.y, c1.x, c1.y, to.x, to.y)
+  return [
+    { kind: 'move', point: from },
+    { kind: 'cubic', c0, c1, to },
+  ]
 }
 
 /**
@@ -894,7 +884,7 @@ function traceCurve(
  * and it draws nothing rather than guessing at a position.
  */
 function drawConnector(
-  ctx: CanvasRenderingContext2D,
+  target: PersistentRenderTarget,
   element: CanvasElement,
   scene: Scene,
 ): boolean {
@@ -911,18 +901,16 @@ function drawConnector(
   // the same one path command it costs at 100%.
   const curve = connectorCurveOf(scene, element)
 
-  ctx.strokeStyle = element.style.stroke
-  ctx.lineWidth = element.style.strokeWidth
-  ctx.beginPath()
-  if (curve) {
-    traceCurve(ctx, curve)
-  } else {
-    ctx.moveTo(path[0].x, path[0].y)
-    for (let i = 1; i < path.length; i += 1) {
-      ctx.lineTo(path[i].x, path[i].y)
-    }
-  }
-  ctx.stroke()
+  const commands = curve
+    ? curveCommands(curve)
+    : path.map(
+        (point, index): RenderPathCommand =>
+          index === 0 ? { kind: 'move', point } : { kind: 'line', point },
+      )
+  target.path(commands, {
+    stroke: element.style.stroke,
+    strokeWidth: element.style.strokeWidth,
+  })
 
   // Oriented off the curve's exact arrival tangent where there is one, which
   // is the target face's own normal reversed — so the head lands square to the
@@ -947,17 +935,19 @@ function drawConnector(
     //
     // lineJoin/lineCap are restored: this ctx is shared with every element
     // drawn later in the same frame.
-    const priorJoin = ctx.lineJoin
-    const priorCap = ctx.lineCap
-    ctx.lineJoin = 'round'
-    ctx.lineCap = 'round'
-    ctx.beginPath()
-    ctx.moveTo(head[1].x, head[1].y)
-    ctx.lineTo(head[0].x, head[0].y)
-    ctx.lineTo(head[2].x, head[2].y)
-    ctx.stroke()
-    ctx.lineJoin = priorJoin
-    ctx.lineCap = priorCap
+    target.path(
+      [
+        { kind: 'move', point: head[1] },
+        { kind: 'line', point: head[0] },
+        { kind: 'line', point: head[2] },
+      ],
+      {
+        stroke: element.style.stroke,
+        strokeWidth: element.style.strokeWidth,
+        lineJoin: 'round',
+        lineCap: 'round',
+      },
+    )
   }
   return true
 }
@@ -1038,9 +1028,23 @@ function drawConnectorSelection(
   ctx.beginPath()
   if (curve) {
     // The same two cubics `drawConnector` strokes, projected control point by
-    // control point — see `traceCurve`. Flattening here instead would put a
+    // control point. Flattening here instead would put a
     // faceted halo under a smooth line, and the mismatch widens with the zoom.
-    traceCurve(ctx, curve, (point) => worldToScreen(camera, point))
+    const projected = {
+      from: worldToScreen(camera, curve.from),
+      c0: worldToScreen(camera, curve.c0),
+      c1: worldToScreen(camera, curve.c1),
+      to: worldToScreen(camera, curve.to),
+    }
+    ctx.moveTo(projected.from.x, projected.from.y)
+    ctx.bezierCurveTo(
+      projected.c0.x,
+      projected.c0.y,
+      projected.c1.x,
+      projected.c1.y,
+      projected.to.x,
+      projected.to.y,
+    )
   } else {
     const first = worldToScreen(camera, path[0])
     ctx.moveTo(first.x, first.y)
@@ -1177,7 +1181,22 @@ function drawAttachCandidate(
     // Traced in SCREEN space from a screen-sized copy of the element — the
     // whole overlay is drawn with the camera transform already popped, and a
     // world-space outline would be hairline at 0.1x zoom.
-    traceShapePath(ctx, { ...element, ...halo })
+    const screenElement = { ...element, ...halo }
+    if (screenElement.kind === 'ellipse') {
+      ctx.beginPath()
+      ctx.ellipse(
+        halo.x + halo.width / 2,
+        halo.y + halo.height / 2,
+        halo.width / 2,
+        halo.height / 2,
+        0,
+        0,
+        Math.PI * 2,
+      )
+      ctx.closePath()
+    } else {
+      traceCanvasPath(ctx, shapePath(screenElement))
+    }
     ctx.globalAlpha = ATTACH_CANDIDATE_WASH
     ctx.fill()
     ctx.globalAlpha = 1
@@ -1527,6 +1546,27 @@ function drawHighlight(
  * follows light/dark mode without the renderer knowing anything about design
  * tokens, and how the grid costs nothing per frame. See `grid.ts`.
  */
+/** Render only persisted scene content, with no interaction chrome. */
+export function renderPersistentScene(
+  target: PersistentRenderTarget,
+  scene: Scene,
+  theme: CanvasTheme,
+  emphasizedIds: ReadonlySet<string> = new Set(),
+): Map<string, TextLayout | null> {
+  const layouts = new Map<string, TextLayout | null>()
+  for (const element of scene.elements) {
+    if (element.connector) drawConnector(target, element, scene)
+  }
+  for (const element of scene.elements) {
+    if (element.connector) continue
+    layouts.set(
+      element.id,
+      drawElement(target, element, theme, emphasizedIds.has(element.id)),
+    )
+  }
+  return layouts
+}
+
 export function drawScene(
   ctx: CanvasRenderingContext2D,
   scene: Scene,
@@ -1553,7 +1593,9 @@ export function drawScene(
   ctx.translate(-camera.x, -camera.y)
 
   const editing = selection.editing
-  let editingLayout: TextLayout | null = null
+  const emphasizedIds = new Set(selection.ids)
+  if (selection.hoveredId) emphasizedIds.add(selection.hoveredId)
+  const target = new CanvasRenderTarget(ctx)
 
   // TWO PASSES, and the order is load-bearing rather than cosmetic.
   //
@@ -1567,20 +1609,12 @@ export function drawScene(
   // reason: hit-testing has to agree with what the user can see, or clicking
   // a rectangle sometimes selects a connector drawn behind it. Change the
   // order in one place and the other must change too.
-  for (const element of scene.elements) {
-    if (element.connector) drawConnector(ctx, element, scene)
-  }
-  for (const element of scene.elements) {
-    if (element.connector) continue
-    const emphasized =
-      selection.ids.has(element.id) || element.id === selection.hoveredId
-    const layout = drawElement(ctx, element, theme, emphasized)
-    if (editing && element.id === editing.elementId) editingLayout = layout
-  }
+  const layouts = renderPersistentScene(target, scene, theme, emphasizedIds)
+  const editingLayout = editing ? (layouts.get(editing.elementId) ?? null) : null
   if (selection.draft) {
     // Never emphasized: a draft is never in `selection.ids` (it is not yet
     // in the scene at all) and is not a hover target.
-    drawElement(ctx, selection.draft, theme, false)
+    drawElement(target, selection.draft, theme, false)
   }
 
   if (editing?.caretVisible) {

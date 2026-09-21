@@ -24,6 +24,7 @@ import { useCanvasHighlight } from './use-canvas-highlight'
 import { useCanvasTestHook } from './canvas-test-hook'
 import { SHAPE_TOOL_META } from './shape-tool-meta'
 import { CanvasSearch } from './CanvasSearch'
+import { CanvasExportControl } from './CanvasExportControl'
 import type {
   KeyboardEvent as ReactKeyboardEvent,
   PointerEvent as ReactPointerEvent,
@@ -57,6 +58,8 @@ import { Button } from '@/components/ui/button'
 interface CanvasBoardProps {
   /** Board this canvas belongs to — also the Socket.IO namespace segment. */
   boardId: string
+  /** Human-readable board name used for downloaded files. */
+  boardName?: string | null
   /** Authenticated user id, for the collaboration handshake. */
   userId: string
   /** The board's elements as loaded from the server, in paint order. */
@@ -133,6 +136,7 @@ const TOOLS: ReadonlyArray<ToolButton> = [
 
 export function CanvasBoard({
   boardId,
+  boardName,
   userId,
   initialElements,
   readOnly = false,
@@ -268,6 +272,7 @@ export function CanvasBoard({
 
   const input = useCanvasInput({
     canvasRef,
+    containerRef,
     scene,
     setScene,
     camera,
@@ -828,6 +833,18 @@ export function CanvasBoard({
         >
           <Search className="h-4 w-4" />
         </Button>
+        <CanvasExportControl
+          scene={input.displayScene}
+          theme={resolvedTheme}
+          filename={boardName}
+          getBackgroundColor={() =>
+            containerRef.current
+              ? getComputedStyle(containerRef.current).backgroundColor
+              : resolvedTheme === 'dark'
+                ? '#020617'
+                : '#ffffff'
+          }
+        />
       </div>
     </div>
   )

@@ -54,6 +54,7 @@ import type {
   InitialEditingField,
 } from '@/lib/react-flow/canvas-mode'
 import { isDrawGestureTool } from '@/lib/react-flow/tool-mode'
+import { useSpaceHeld } from '@/hooks/use-space-held'
 import {
   buildParentIndex,
   toAbsolute,
@@ -143,28 +144,6 @@ const DELETE_KEY_CODES = ['Delete', 'Backspace']
 const VIEWPORT_CULLING_NODE_THRESHOLD = 150
 
 /**
- * Pure decision function behind `onBeforeDelete`'s relationship-delete veto
- * (2026-08-31 tactical plan, Part A / D-12). `onBeforeDelete` below delegates
- * to this function rather than reimplementing the same branches, so this is
- * the exact logic that runs in the app — not a parallel copy that could
- * silently drift from it.
- *
- * Exported for direct unit testing: Playwright has no clean seam to sever
- * the whiteboard's live Socket.IO connection mid-test (see the gap noted on
- * relationship-deletion.spec.ts's e2e test), so this predicate is the
- * fallback coverage the tactical plan calls for instead of a live-disconnect
- * e2e.
- *
- * - When `canPersistRelationshipDelete` is true, nothing is vetoed and no
- *   refusal fires.
- * - Otherwise, edges of type 'connector' pass through; every other edge
- *   (relationship edges) is stripped from the batch.
- * - A refusal should be surfaced ONLY when a delete handler was actually
- *   wired (`hasRelationshipDeleteHandler`) AND the batch contained at least
- *   one relationship edge — the no-handler case (TableFocusOverlay's nested
- *   canvas) stays silent, as it does today.
- */
-/**
  * The one predicate that owns EVERY connection rule (tech-spec §4): the
  * column-handle table-to-table rule, the shape-to-shape rule (no
  * self-connectors, no line-kind endpoint), and — LizMeter #83 — cross-file
@@ -217,6 +196,28 @@ export function computeConnectionValidity(input: {
   return false // every mixed pair, both directions
 }
 
+/**
+ * Pure decision function behind `onBeforeDelete`'s relationship-delete veto
+ * (2026-08-31 tactical plan, Part A / D-12). `onBeforeDelete` below delegates
+ * to this function rather than reimplementing the same branches, so this is
+ * the exact logic that runs in the app — not a parallel copy that could
+ * silently drift from it.
+ *
+ * Exported for direct unit testing: Playwright has no clean seam to sever
+ * the whiteboard's live Socket.IO connection mid-test (see the gap noted on
+ * relationship-deletion.spec.ts's e2e test), so this predicate is the
+ * fallback coverage the tactical plan calls for instead of a live-disconnect
+ * e2e.
+ *
+ * - When `canPersistRelationshipDelete` is true, nothing is vetoed and no
+ *   refusal fires.
+ * - Otherwise, edges of type 'connector' pass through; every other edge
+ *   (relationship edges) is stripped from the batch.
+ * - A refusal should be surfaced ONLY when a delete handler was actually
+ *   wired (`hasRelationshipDeleteHandler`) AND the batch contained at least
+ *   one relationship edge — the no-handler case (TableFocusOverlay's nested
+ *   canvas) stays silent, as it does today.
+ */
 export function computeRelationshipDeleteVeto<
   T extends { type?: string },
 >(params: {
@@ -859,6 +860,32 @@ export function ReactFlowCanvas({
   // below toggle CSS classes directly on React Flow's own `.react-flow__node`
   // wrapper elements, bypassing setNodes/React re-render entirely on hover.
   const wrapperRef = useRef<HTMLDivElement>(null)
+
+  /**
+   * Space-to-pan (see `useSpaceHeld`). While it is held, a drag must move the
+   * CAMERA and nothing else — not a node, not an area, not a marquee, not a
+   * shape being drawn.
+   *
+   * React Flow's own `panActivationKeyCode` (default `'Space'`) covers only
+   * half of that: it forces `panOnDrag` on for the pane, but node dragging
+   * never consults it, so pressing space over a table still dragged the
+   * table. The three lines that close the gap are:
+   *
+   *  - `is-space-panning` on the wrapper, which drops `pointer-events` on
+   *    nodes and edges (react-flow-theme.css). The press then hit-tests to
+   *    `.react-flow__pane` instead, so React Flow's node drag never starts
+   *    and d3-zoom pans exactly as it would over empty canvas. This is done
+   *    in CSS rather than by flipping `nodesDraggable`, because that prop
+   *    feeds every node's memo and would re-render the whole board twice per
+   *    space press.
+   *  - `suspended` on ShapeDrawOverlay, which claims pointerdown in the
+   *    capture phase and would otherwise draw a shape instead of panning.
+   *
+   * One case is deliberately NOT covered: Shift held together with space
+   * still draws a selection box. See the `panOnDrag` prop below for why the
+   * only available lever is worse than the gap.
+   */
+  const spacePanning = useSpaceHeld(wrapperRef)
 
   // GH #138 — pending `jump-pulse` timer, covering both phases: the initial
   // delay before the deferred DOM lookup/class-add (waiting for `fitView` to
@@ -1824,7 +1851,7 @@ export function ReactFlowCanvas({
       <CanvasEditContext.Provider value={canvasEditContextValue}>
         <div
           ref={wrapperRef}
-          className={`react-flow-wrapper ${isConnecting ? 'is-connecting' : ''} ${isConnectingFromShape ? 'is-connecting-from-shape' : ''} ${className}`}
+          className={`react-flow-wrapper ${isConnecting ? 'is-connecting' : ''} ${isConnectingFromShape ? 'is-connecting-from-shape' : ''} ${spacePanning ? 'is-space-panning' : ''} ${className}`}
           // W1 (Hermes code review): `position: relative` makes this div
           // the containing block for ShapeDrawOverlay's `position:
           // absolute; inset: 0` child, so that child's box shares this
@@ -1905,7 +1932,23 @@ export function ReactFlowCanvas({
             nodeTypes={memoizedNodeTypes}
             edgeTypes={memoizedEdgeTypes}
             nodesDraggable={nodesDraggable}
-            panOnDrag={panOnDrag}
+            // Space overrides whatever tool state the caller derived: the
+            // modifier's whole contract is that a drag pans regardless of the
+            // armed tool. `panOnDrag` itself stays the caller's single
+            // writer — this composes it, it does not replace it.
+            panOnDrag={spacePanning || panOnDrag}
+            // KNOWN GAP — Shift held at the same time as space still opens a
+            // selection box instead of panning. React Flow resolves the
+            // selection key first (`panOnDrag: !selectionKeyPressed &&
+            // panOnDrag` in its ZoomPane) and the only lever over that is
+            // `selectionKeyCode`.
+            //
+            // Toggling it (`spacePanning ? null : 'Shift'`) was tried and
+            // reverted: React Flow's `useKeyPress` effect tears its listeners
+            // down when the key code changes but never resets `keyPressed`,
+            // so switching keys mid-press latches "Shift is down" forever —
+            // trading a marginal edge case for a stuck board. Left alone
+            // deliberately.
             nodesConnectable={true}
             elementsSelectable={true}
             onlyRenderVisibleElements={onlyRenderVisibleElements}
@@ -1953,6 +1996,7 @@ export function ReactFlowCanvas({
           {isDrawGestureTool(activeTool) && (
             <ShapeDrawOverlay
               activeTool={activeTool}
+              suspended={spacePanning}
               onCommit={(kind, rect, drag) => onDrawCommit?.(kind, rect, drag)}
               onDisarm={() => onDrawDisarm?.()}
             />

@@ -72,6 +72,9 @@ export function ExportImageDialog({
         background: transparent ? 'transparent' : 'solid',
       })
       onOpenChange(false)
+    } catch {
+      // The caller owns the user-facing error. A failed export leaves the
+      // controlled dialog open so the user can retry or choose another format.
     } finally {
       setIsExporting(false)
     }

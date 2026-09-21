@@ -80,6 +80,7 @@ export function SharedCanvasBoardPage() {
       <div className="relative flex-1 overflow-hidden">
         <CanvasBoard
           boardId={result.canvasBoardId}
+          boardName={result.canvasBoardName}
           userId={PUBLIC_VIEWER_ID}
           initialElements={result.elements}
           isPublic

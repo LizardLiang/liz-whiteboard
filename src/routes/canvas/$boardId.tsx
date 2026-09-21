@@ -144,6 +144,7 @@ function CanvasBoardPage() {
           // navigation. Same reasoning as the ER route's `key`.
           key={boardId}
           boardId={boardId}
+          boardName={data.board.name}
           userId={userId}
           initialElements={data.elements}
           readOnly={!canEdit}
