@@ -203,7 +203,8 @@
    hit-testable/droppable target (`pointer-events`, unaffected by this) —
    only its OWN paint is suppressed. */
 .react-flow__node-erTable.content-visibility-armed .react-flow__handle::before,
-.react-flow__node-erTable.content-visibility-connecting .react-flow__handle::before {
+.react-flow__node-erTable.content-visibility-connecting
+  .react-flow__handle::before {
   background: transparent !important;
   border-color: transparent !important;
 }
@@ -218,13 +219,19 @@
    Higher specificity than the rules they override (an extra class each),
    so these win regardless of source order — see each rule's own
    counterpart below. */
-.react-flow__node.rf-hover-highlighted .react-flow__node-erTable.content-visibility-armed,
-.react-flow__node.rf-hover-highlighted .react-flow__node-erTable.content-visibility-connecting {
+.react-flow__node.rf-hover-highlighted
+  .react-flow__node-erTable.content-visibility-armed,
+.react-flow__node.rf-hover-highlighted
+  .react-flow__node-erTable.content-visibility-connecting {
   box-shadow: none !important;
 }
 
-.react-flow__node.rf-hover-highlighted:has(.react-flow__node-erTable.content-visibility-armed),
-.react-flow__node.rf-hover-highlighted:has(.react-flow__node-erTable.content-visibility-connecting) {
+.react-flow__node.rf-hover-highlighted:has(
+    .react-flow__node-erTable.content-visibility-armed
+  ),
+.react-flow__node.rf-hover-highlighted:has(
+    .react-flow__node-erTable.content-visibility-connecting
+  ) {
   z-index: 1 !important;
 }
 
@@ -947,4 +954,60 @@
 }
 .react-flow__edge-connector:hover path.react-flow__edge-path {
   stroke-width: 2.5;
+}
+
+/* ----------------------------------------------------------------------------
+ * Space-to-pan (useSpaceHeld → ReactFlowCanvas `is-space-panning`)
+ * ---------------------------------------------------------------------------- */
+
+/* While space is held, a drag must move the camera and nothing else. React
+ * Flow's own `panActivationKeyCode` forces `panOnDrag` on for the pane, but
+ * node dragging never consults it — pressing space over a table still dragged
+ * the table.
+ *
+ * Dropping pointer-events on nodes and edges is what fixes that: the press
+ * hit-tests to `.react-flow__pane` instead, so React Flow's node drag never
+ * starts, and d3-zoom (bound to the ancestor `.react-flow__renderer`) pans
+ * exactly as it would over empty canvas. React Flow's own pan filter rejects
+ * anything inside `.nopan`, which it puts on every DRAGGABLE node — routing
+ * the press to the pane sidesteps that too.
+ *
+ * Deliberately CSS and not the `nodesDraggable` prop: that prop feeds every
+ * node's memo comparator, so toggling it would re-render the whole board on
+ * every press and release of the key.
+ *
+ * Controls, the minimap and other panels keep their pointer-events — they are
+ * chrome, not board content, and stay clickable mid-pan.
+ *
+ * `!important` is REQUIRED, not defensive: React Flow writes
+ * `pointer-events: all` as an INLINE style on every node wrapper
+ * (`hasPointerEvents` in its NodeWrapper), and an inline declaration outranks
+ * any selector. Without it the rule matched, lost, and the table dragged as
+ * before — confirmed in the browser, not assumed.
+ *
+ * The descendant selectors are there for the same reason at one level down:
+ * handles and the shape-node hit strokes set `pointer-events: all` of their
+ * own, so inheriting `none` from the wrapper is not enough to take them out
+ * of the hit test. While space is held nothing inside a node is a target. */
+.react-flow-wrapper.is-space-panning .react-flow__node,
+.react-flow-wrapper.is-space-panning .react-flow__node *,
+.react-flow-wrapper.is-space-panning .react-flow__edge,
+.react-flow-wrapper.is-space-panning .react-flow__edge * {
+  pointer-events: none !important;
+}
+
+/* The grab cursor covers the whole board, including over nodes — the modifier
+ * is on regardless of what sits under the pointer, and the cursor is the only
+ * thing that says so before the drag starts. `!important` beats React Flow's
+ * own inline `cursor: grab/default` on the pane, and the per-node cursors set
+ * by TableNode and the shape nodes. */
+.react-flow-wrapper.is-space-panning,
+.react-flow-wrapper.is-space-panning .react-flow__pane,
+.react-flow-wrapper.is-space-panning .react-flow__node {
+  cursor: grab !important;
+}
+.react-flow-wrapper.is-space-panning:active,
+.react-flow-wrapper.is-space-panning .react-flow__pane:active,
+.react-flow-wrapper.is-space-panning .react-flow__node:active {
+  cursor: grabbing !important;
 }

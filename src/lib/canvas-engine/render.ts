@@ -889,7 +889,7 @@ function drawConnector(
   scene: Scene,
 ): boolean {
   const link = element.connector
-  if (!link) return false
+  if (!link || element.style.strokeWidth <= 0) return false
   const path = connectorPathOf(scene, element)
   if (!path || path.length < 2) return false
 
@@ -1532,20 +1532,6 @@ function drawHighlight(
   ctx.restore()
 }
 
-/**
- * Draw the whole board: clear, apply the camera, paint every element in
- * z-order, then paint the selection affordances in screen space.
- *
- * Full clear plus full redraw, as the plan's assumption records. The dirty
- * flag that decides WHEN this runs lives in `CanvasBoard.tsx`; this function
- * always draws everything it is asked to.
- *
- * The canvas is cleared to TRANSPARENT rather than filled with a board
- * colour: the surface colour and the dot grid are themed CSS backgrounds on
- * the elements BEHIND the canvas (`CanvasBoard.tsx`), which is how the board
- * follows light/dark mode without the renderer knowing anything about design
- * tokens, and how the grid costs nothing per frame. See `grid.ts`.
- */
 /** Render only persisted scene content, with no interaction chrome. */
 export function renderPersistentScene(
   target: PersistentRenderTarget,
@@ -1567,6 +1553,20 @@ export function renderPersistentScene(
   return layouts
 }
 
+/**
+ * Draw the whole board: clear, apply the camera, paint every element in
+ * z-order, then paint the selection affordances in screen space.
+ *
+ * Full clear plus full redraw, as the plan's assumption records. The dirty
+ * flag that decides WHEN this runs lives in `CanvasBoard.tsx`; this function
+ * always draws everything it is asked to.
+ *
+ * The canvas is cleared to TRANSPARENT rather than filled with a board
+ * colour: the surface colour and the dot grid are themed CSS backgrounds on
+ * the elements BEHIND the canvas (`CanvasBoard.tsx`), which is how the board
+ * follows light/dark mode without the renderer knowing anything about design
+ * tokens, and how the grid costs nothing per frame. See `grid.ts`.
+ */
 export function drawScene(
   ctx: CanvasRenderingContext2D,
   scene: Scene,
@@ -1610,7 +1610,9 @@ export function drawScene(
   // a rectangle sometimes selects a connector drawn behind it. Change the
   // order in one place and the other must change too.
   const layouts = renderPersistentScene(target, scene, theme, emphasizedIds)
-  const editingLayout = editing ? (layouts.get(editing.elementId) ?? null) : null
+  const editingLayout = editing
+    ? (layouts.get(editing.elementId) ?? null)
+    : null
   if (selection.draft) {
     // Never emphasized: a draft is never in `selection.ids` (it is not yet
     // in the scene at all) and is not a hover target.

@@ -102,6 +102,7 @@ function setup(
   const view = renderHook(() =>
     useCanvasInput({
       canvasRef: { current: makeCanvas() } as any,
+      containerRef: { current: document.createElement('div') } as any,
       scene,
       setScene: ((updater: any) => {
         scene = typeof updater === 'function' ? updater(scene) : updater

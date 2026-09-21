@@ -292,6 +292,18 @@ export const IDS = {
   // the case that only passes because focus resolves through
   // `resolvedBounds` (the connector's drawn path), not its 1x1 placeholder.
   canvasSearchConnector: 'a0000000-0000-4000-8000-000000000007',
+
+  // Dedicated ER board for e2e/space-pan.spec.ts. Own board because that
+  // suite's control case (no space held) DOES move a table and persist it —
+  // asserting the modifier is not vacuous requires proving the same drag
+  // moves the node when space is up. Re-seeded before every test by
+  // e2e/seed-space-pan.ts, so the moved position never leaks into the next
+  // test or into another spec's shared board.
+  spWhiteboard: 'b0000000-0000-4000-8000-000000000001',
+  spUsersTable: 'b0000000-0000-4000-8000-000000000002',
+  spOrdersTable: 'b0000000-0000-4000-8000-000000000003',
+  spUsersId: 'b0000000-0000-4000-8000-000000000004',
+  spOrdersId: 'b0000000-0000-4000-8000-000000000005',
 }
 
 export const STORAGE_STATE = 'e2e/.auth/state.json'

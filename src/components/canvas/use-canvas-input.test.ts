@@ -103,6 +103,24 @@ function pointerEvent(overrides: Record<string, unknown> = {}) {
   } as any
 }
 
+/**
+ * The space-to-pan modifier, driven the way production does it.
+ *
+ * It is NOT a board handler any more: `useSpaceHeld` binds to the window so
+ * the modifier works no matter where focus sits (see its module comment).
+ * Dispatching on the window is therefore the only faithful way to arm it —
+ * calling `boardHandlers.onKeyDown(keyEvent(' '))` arms nothing.
+ */
+function pressSpace() {
+  window.dispatchEvent(
+    new KeyboardEvent('keydown', { key: ' ', code: 'Space', cancelable: true }),
+  )
+}
+
+function releaseSpace() {
+  window.dispatchEvent(new KeyboardEvent('keyup', { key: ' ', code: 'Space' }))
+}
+
 function keyEvent(key: string, overrides: Record<string, unknown> = {}) {
   return {
     key,
@@ -131,10 +149,16 @@ function setup(initial: Array<CanvasElement> = [makeText()]) {
   }
   const canvas = makeCanvas()
   const canvasRef = { current: canvas } as any
+  // The board container. `useSpaceHeld` reads it to decide whether a
+  // window-level space press belongs to this board; jsdom leaves focus on
+  // `document.body`, which the hook treats as "focused nowhere" and so
+  // still counts.
+  const containerRef = { current: document.createElement('div') } as any
 
   const view = renderHook(() =>
     useCanvasInput({
       canvasRef,
+      containerRef,
       scene,
       setScene: ((updater: any) => {
         scene = typeof updater === 'function' ? updater(scene) : updater
@@ -161,6 +185,9 @@ function setup(initial: Array<CanvasElement> = [makeText()]) {
     canvas,
     get scene() {
       return scene
+    },
+    get camera() {
+      return camera
     },
     get tool() {
       return tool
@@ -482,6 +509,30 @@ describe('board shortcuts stay out of the way while typing', () => {
     expect(space.preventDefault).not.toHaveBeenCalled()
   })
 
+  it('does not arm the pan modifier from a space typed into an edit', () => {
+    const h = setup([makeText()])
+    startEditing(h)
+
+    // The REAL path a typed space now takes: `useSpaceHeld` listens on the
+    // window, so the keystroke reaches it whether or not the board handler
+    // swallows it first. It must still refuse to arm while an edit is open.
+    act(() => {
+      pressSpace()
+    })
+    h.sync()
+    act(() => {
+      h.api.canvasHandlers.onPointerDown(pointerEvent({ clientX: 10 }))
+    })
+    h.sync()
+    act(() => {
+      h.api.canvasHandlers.onPointerMove(pointerEvent({ clientX: 90 }))
+    })
+    h.sync()
+    releaseSpace()
+
+    expect(h.camera.x).toBe(DEFAULT_CAMERA.x)
+  })
+
   it('still handles shortcuts once the edit is committed', () => {
     const h = setup([makeText()])
     startEditing(h)
@@ -495,6 +546,118 @@ describe('board shortcuts stay out of the way while typing', () => {
     })
 
     expect(h.tool).toBe('rectangle')
+  })
+})
+
+describe('space-to-pan always moves the camera', () => {
+  /**
+   * Drag from inside the element at (0,0)-(240,48) to 80px right. Typed
+   * structurally so both `setup` and `setupWithTool` harnesses fit.
+   */
+  function dragRight(
+    h: ReturnType<typeof setup> | ReturnType<typeof setupWithTool>,
+  ) {
+    act(() => {
+      h.api.canvasHandlers.onPointerDown(
+        pointerEvent({ clientX: 10, clientY: 10 }),
+      )
+    })
+    h.sync()
+    act(() => {
+      h.api.canvasHandlers.onPointerMove(
+        pointerEvent({ clientX: 90, clientY: 10 }),
+      )
+    })
+    h.sync()
+    act(() => {
+      h.api.canvasHandlers.onPointerUp(
+        pointerEvent({ clientX: 90, clientY: 10 }),
+      )
+    })
+    h.sync()
+  }
+
+  it('pans instead of moving the element under the pointer', () => {
+    const h = setup([makeRect('aaaaaaaa-1111-4111-8111-111111111111')])
+
+    act(() => {
+      pressSpace()
+    })
+    h.sync()
+    dragRight(h)
+    releaseSpace()
+
+    // Dragging right moves the camera LEFT in world space (panByScreenDelta
+    // subtracts the screen delta), and the element stays where it was.
+    expect(h.camera.x).toBe(-80)
+    expect(h.scene.byId.get('aaaaaaaa-1111-4111-8111-111111111111')?.x).toBe(0)
+    expect(h.callbacks.onUpdate).not.toHaveBeenCalled()
+  })
+
+  it('never registers the drag as a selection', () => {
+    const h = setup([makeRect('aaaaaaaa-1111-4111-8111-111111111111')])
+
+    act(() => {
+      pressSpace()
+    })
+    h.sync()
+    dragRight(h)
+    releaseSpace()
+
+    expect([...h.api.selectedIds]).toEqual([])
+  })
+
+  it('pans even with a shape tool armed, without drawing anything', () => {
+    const h = setupWithTool('rectangle')
+    const before = h.scene.elements.length
+
+    act(() => {
+      pressSpace()
+    })
+    h.sync()
+    dragRight(h)
+    releaseSpace()
+    h.sync()
+
+    expect(h.camera.x).toBe(-80)
+    expect(h.scene.elements.length).toBe(before)
+    expect(h.callbacks.onCreate).not.toHaveBeenCalled()
+  })
+
+  it('moves the element again once space is released', () => {
+    const h = setup([makeRect('aaaaaaaa-1111-4111-8111-111111111111')])
+
+    act(() => {
+      pressSpace()
+    })
+    h.sync()
+    act(() => {
+      releaseSpace()
+    })
+    h.sync()
+    dragRight(h)
+
+    expect(h.camera.x).toBe(DEFAULT_CAMERA.x)
+    expect(h.scene.byId.get('aaaaaaaa-1111-4111-8111-111111111111')?.x).toBe(80)
+  })
+
+  it('releases the modifier when the window loses focus mid-press', () => {
+    // Alt-tabbing away while space is down delivers no keyup at all. Without
+    // the blur reset the board stayed in pan mode indefinitely.
+    const h = setup([makeRect('aaaaaaaa-1111-4111-8111-111111111111')])
+
+    act(() => {
+      pressSpace()
+    })
+    h.sync()
+    act(() => {
+      window.dispatchEvent(new Event('blur'))
+    })
+    h.sync()
+    dragRight(h)
+
+    expect(h.camera.x).toBe(DEFAULT_CAMERA.x)
+    expect(h.scene.byId.get('aaaaaaaa-1111-4111-8111-111111111111')?.x).toBe(80)
   })
 })
 
@@ -1819,10 +1982,12 @@ function setupWithTool(startTool: CanvasTool) {
     onDelete: vi.fn(),
   }
   const canvasRef = { current: makeCanvas() } as any
+  const containerRef = { current: document.createElement('div') } as any
 
   const view = renderHook(() =>
     useCanvasInput({
       canvasRef,
+      containerRef,
       scene,
       setScene: ((updater: any) => {
         scene = typeof updater === 'function' ? updater(scene) : updater
@@ -1846,6 +2011,9 @@ function setupWithTool(startTool: CanvasTool) {
     callbacks,
     get scene() {
       return scene
+    },
+    get camera() {
+      return camera
     },
     get tool() {
       return tool

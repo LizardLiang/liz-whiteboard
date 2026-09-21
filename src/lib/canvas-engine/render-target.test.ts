@@ -16,8 +16,18 @@ class RecordingTarget implements PersistentRenderTarget {
     return text.length * fontSize * 0.5
   }
 
-  rect(x: number, y: number, width: number, height: number, radius: number, paint: RenderPaint) {
-    this.calls.push({ kind: 'rect', payload: { x, y, width, height, radius, paint } })
+  rect(
+    x: number,
+    y: number,
+    width: number,
+    height: number,
+    radius: number,
+    paint: RenderPaint,
+  ) {
+    this.calls.push({
+      kind: 'rect',
+      payload: { x, y, width, height, radius, paint },
+    })
   }
 
   ellipse(cx: number, cy: number, rx: number, ry: number, paint: RenderPaint) {
@@ -81,7 +91,9 @@ describe('renderPersistentScene', () => {
     renderPersistentScene(recorder, scene, 'light')
 
     expect(recorder.calls[0].kind).toBe('path')
-    expect(recorder.calls.filter((call) => call.kind === 'text')).toHaveLength(2)
+    expect(recorder.calls.filter((call) => call.kind === 'text')).toHaveLength(
+      2,
+    )
     expect(recorder.calls.at(-1)?.kind).toBe('text')
   })
 
@@ -108,12 +120,34 @@ describe('renderPersistentScene', () => {
       },
     })
     const recorder = new RecordingTarget()
-    renderPersistentScene(recorder, sceneFrom([source, target, connector]), 'light')
+    renderPersistentScene(
+      recorder,
+      sceneFrom([source, target, connector]),
+      'light',
+    )
 
     const connectorPaths = recorder.calls.filter((call) => call.kind === 'path')
     expect(connectorPaths).toHaveLength(2)
     expect(connectorPaths[1].payload).toMatchObject({
       paint: { lineCap: 'round', lineJoin: 'round' },
     })
+  })
+
+  it('emits no path for a connector with no visible stroke', () => {
+    const connector = element({
+      kind: 'connector',
+      text: null,
+      style: { ...baseStyle, strokeWidth: 0 },
+      connector: {
+        source: { kind: 'point', point: { x: 0, y: 0 } },
+        target: { kind: 'point', point: { x: 100, y: 100 } },
+        routing: 'straight',
+      },
+    })
+    const recorder = new RecordingTarget()
+
+    renderPersistentScene(recorder, sceneFrom([connector]), 'light')
+
+    expect(recorder.calls).toEqual([])
   })
 })

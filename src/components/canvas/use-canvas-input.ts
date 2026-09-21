@@ -44,6 +44,7 @@ import type {
   AlignmentGuide,
   ResizeAlignment,
 } from '@/lib/canvas-engine/alignment'
+import { useSpaceHeld } from '@/hooks/use-space-held'
 import {
   panByScreenDelta,
   screenToWorld,
@@ -478,6 +479,12 @@ export interface EditingState {
 
 interface UseCanvasInputArgs {
   canvasRef: RefObject<HTMLCanvasElement | null>
+  /**
+   * The board's outermost element — the focusable container the canvas sits
+   * in. Only `useSpaceHeld` reads it, to decide whether a space press
+   * anywhere in the window belongs to this board.
+   */
+  containerRef: RefObject<HTMLElement | null>
   scene: Scene
   setScene: Dispatch<SetStateAction<Scene>>
   camera: Camera
@@ -1168,6 +1175,7 @@ function renormalizeMembersAboveFloor(
 
 export function useCanvasInput({
   canvasRef,
+  containerRef,
   scene,
   setScene,
   camera,
@@ -1285,7 +1293,17 @@ export function useCanvasInput({
     },
     [],
   )
-  const [spaceHeld, setSpaceHeld] = useState(false)
+  /**
+   * The space-to-pan modifier, tracked on `window` rather than on the board
+   * (see `useSpaceHeld`). It used to be a `keydown` case on the container's
+   * own handler, which meant space only panned while the board held DOM
+   * focus — after clicking a toolbar button or closing the search panel it
+   * silently stopped working until the next click on the canvas.
+   *
+   * Disabled while a text edit is open: the caret lives in an off-screen
+   * proxy, and space there is a character, not a modifier.
+   */
+  const spaceHeld = useSpaceHeld(containerRef, editing !== null)
   const [caretVisible, setCaretVisible] = useState(true)
 
   // Latest-value refs. Window-level listeners (wheel, keydown) are attached
@@ -2879,13 +2897,11 @@ export function useCanvasInput({
       // the keys an edit needs.
       if (editingRef.current) return
 
-      if (event.key === ' ') {
-        // Space pans. preventDefault stops the page scrolling under the
-        // board, which is the default action for space on a focusable div.
-        event.preventDefault()
-        setSpaceHeld(true)
-        return
-      }
+      // Space belongs to `useSpaceHeld`'s window listener, which owns both
+      // the modifier state and the `preventDefault` that stops the page
+      // scrolling. Returning here keeps it from falling through to the tool
+      // shortcuts below.
+      if (event.key === ' ') return
       if (latest.current.readOnly) return
 
       // Everything on the platform's primary chord: the pointerless
@@ -3012,18 +3028,6 @@ export function useCanvasInput({
       ungroupSelection,
     ],
   )
-
-  const onBoardKeyUp = useCallback((event: ReactKeyboardEvent<HTMLElement>) => {
-    if (event.key === ' ') setSpaceHeld(false)
-  }, [])
-
-  // Space released while the board did not have focus (alt-tab, a dialog)
-  // would otherwise leave the board stuck in pan mode forever.
-  useEffect(() => {
-    const clear = () => setSpaceHeld(false)
-    window.addEventListener('blur', clear)
-    return () => window.removeEventListener('blur', clear)
-  }, [])
 
   // ── text-editing input (from TextInputProxy) ─────────────────────────────
 
@@ -3384,7 +3388,6 @@ export function useCanvasInput({
     },
     boardHandlers: {
       onKeyDown: onBoardKeyDown,
-      onKeyUp: onBoardKeyUp,
     },
     textInput: {
       insertText,

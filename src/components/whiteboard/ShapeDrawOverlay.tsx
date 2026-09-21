@@ -36,6 +36,18 @@ interface ShapeDrawOverlayProps {
    */
   activeTool: DrawGestureTool
   /**
+   * Stands the gesture down without unmounting the overlay. Set while the
+   * space-to-pan modifier is held: this overlay claims `pointerdown` in the
+   * CAPTURE phase and calls `stopPropagation`, so with a draw tool armed it
+   * would swallow the pan press and rubber-band a shape instead.
+   *
+   * Only the START of a gesture is suppressed. A drag already in flight when
+   * space goes down still completes normally — the same rule the boards
+   * apply everywhere else: space decides what the NEXT press does, it never
+   * reinterprets a press already underway.
+   */
+  suspended?: boolean
+  /**
    * Fires once per completed (>= threshold) drag. `rect` is the normalised
    * top-left bounding box in flow coordinates. `drag` carries the RAW
    * (unsorted) press/release points, also in flow coordinates, so the
@@ -65,6 +77,7 @@ interface ScreenRect {
 
 export function ShapeDrawOverlay({
   activeTool,
+  suspended = false,
   onCommit,
   onDisarm,
 }: ShapeDrawOverlayProps) {
@@ -102,6 +115,11 @@ export function ShapeDrawOverlay({
   onCommitRef.current = onCommit
   const onDisarmRef = useRef(onDisarm)
   onDisarmRef.current = onDisarm
+  // Through a ref for the same reason the three above are: the listener
+  // effect below must not re-attach (and drop an in-flight gesture) just
+  // because the space modifier changed.
+  const suspendedRef = useRef(suspended)
+  suspendedRef.current = suspended
 
   // useLayoutEffect (not useEffect): attaches the native listeners
   // synchronously after DOM mutation, before the browser paints — a plain
@@ -139,6 +157,11 @@ export function ShapeDrawOverlay({
 
     function onPointerDownCapture(e: PointerEvent) {
       if (e.button !== 0 || !e.isPrimary) return
+      // Space is held: this press is a camera pan. Returning WITHOUT
+      // `stopPropagation` is the whole point — the pane below then receives
+      // the pointerdown and d3-zoom pans, while the tool stays armed so the
+      // next press (space released) draws as normal.
+      if (suspendedRef.current) return
       const t = e.target as Element
       // React Flow's own panels (Controls/MiniMap) are children of
       // <ReactFlow>, inside the wrapper — clicking them must not draw.

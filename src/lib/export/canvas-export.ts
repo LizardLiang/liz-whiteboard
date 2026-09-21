@@ -1,13 +1,8 @@
-import { connectorPathOf, resolvedBounds } from '@/lib/canvas-engine/hit-test'
 import {
-  CONNECTOR_ARROW_SIZE,
-  renderPersistentScene,
-} from '@/lib/canvas-engine/render'
-import {
-  CanvasRenderTarget,
-  FONT_FAMILY,
-} from '@/lib/canvas-engine/render-target'
-import { EXPORT_PADDING, PNG_PIXEL_RATIO, sanitizeFilename } from './export-image'
+  EXPORT_PADDING,
+  PNG_PIXEL_RATIO,
+  sanitizeFilename,
+} from './export-image'
 import type { CanvasTheme } from '@/lib/canvas-engine/render'
 import type {
   PersistentRenderTarget,
@@ -17,12 +12,23 @@ import type {
 } from '@/lib/canvas-engine/render-target'
 import type { Scene } from '@/lib/canvas-engine/scene'
 import type { WorldRect } from '@/lib/canvas-engine/hit-test'
-import type {
-  ExportImageBackground,
-  ExportImageFormat,
-} from './export-image'
+import type { ExportImageBackground, ExportImageFormat } from './export-image'
+import {
+  CanvasRenderTarget,
+  FONT_FAMILY,
+} from '@/lib/canvas-engine/render-target'
+import {
+  CONNECTOR_ARROW_SIZE,
+  layoutElementText,
+  renderPersistentScene,
+  textFrame,
+  textOriginY,
+} from '@/lib/canvas-engine/render'
+import { connectorPathOf, resolvedBounds } from '@/lib/canvas-engine/hit-test'
 
 export const CANVAS_EXPORT_MIN_PADDING = 12
+export const PNG_MAX_DIMENSION = 16_384
+export const PNG_MAX_PIXELS = 67_108_864
 
 export interface CanvasExportOptions {
   scene: Scene
@@ -43,21 +49,24 @@ interface SvgSerializationOptions {
 
 function isDrawable(scene: Scene, index: number): boolean {
   const element = scene.elements[index]
-  if (element.connector) return connectorPathOf(scene, element) !== null
+  if (element.connector) {
+    return (
+      element.style.strokeWidth > 0 && connectorPathOf(scene, element) !== null
+    )
+  }
   if (element.kind === 'group') return true
   if ((element.text ?? '').length > 0) return true
   return element.style.fill !== 'none' || element.style.strokeWidth > 0
 }
 
-function expandedElementBounds(
-  scene: Scene,
-  index: number,
-): WorldRect | null {
+function expandedElementBounds(scene: Scene, index: number): WorldRect | null {
   const element = scene.elements[index]
+  if (element.kind === 'text') return null
   const rect = resolvedBounds(scene, element)
   if (!rect || !isDrawable(scene, index)) return null
   const outline =
-    (element.connector ? CONNECTOR_ARROW_SIZE : 0) + element.style.strokeWidth / 2
+    (element.connector ? CONNECTOR_ARROW_SIZE : 0) +
+    element.style.strokeWidth / 2
   const groupOutline = element.kind === 'group' ? 0.5 : 0
   const expansion = Math.max(outline, groupOutline)
   return {
@@ -68,8 +77,41 @@ function expandedElementBounds(
   }
 }
 
-/** Bounds of every drawable persistent element, including output padding. */
-export function canvasExportBounds(scene: Scene): WorldRect {
+function textBounds(
+  scene: Scene,
+  index: number,
+  measureText: (text: string, fontSize: number) => number,
+): WorldRect | null {
+  const element = scene.elements[index]
+  if (element.connector || (element.text ?? '').length === 0) return null
+
+  const measure = (text: string) => measureText(text, element.style.fontSize)
+  const layout = layoutElementText(element, measure)
+  const frame = textFrame(element)
+  const originY = textOriginY(element, layout)
+  let left = Number.POSITIVE_INFINITY
+  let right = Number.NEGATIVE_INFINITY
+
+  for (const line of layout.lines) {
+    const lineLeft = frame.x + line.carets[0]
+    left = Math.min(left, lineLeft)
+    right = Math.max(right, lineLeft + line.width)
+  }
+
+  if (!Number.isFinite(left) || !Number.isFinite(right)) return null
+  return {
+    x: left,
+    y: originY,
+    width: Math.max(0, right - left),
+    height: layout.height,
+  }
+}
+
+/** Bounds of every drawable persistent element, including rendered text. */
+export function canvasExportBounds(
+  scene: Scene,
+  measureText: (text: string, fontSize: number) => number,
+): WorldRect {
   let left = Number.POSITIVE_INFINITY
   let top = Number.POSITIVE_INFINITY
   let right = Number.NEGATIVE_INFINITY
@@ -77,11 +119,14 @@ export function canvasExportBounds(scene: Scene): WorldRect {
 
   for (let index = 0; index < scene.elements.length; index += 1) {
     const rect = expandedElementBounds(scene, index)
-    if (!rect) continue
-    left = Math.min(left, rect.x)
-    top = Math.min(top, rect.y)
-    right = Math.max(right, rect.x + rect.width)
-    bottom = Math.max(bottom, rect.y + rect.height)
+    const text = textBounds(scene, index, measureText)
+    for (const bounds of [rect, text]) {
+      if (!bounds) continue
+      left = Math.min(left, bounds.x)
+      top = Math.min(top, bounds.y)
+      right = Math.max(right, bounds.x + bounds.width)
+      bottom = Math.max(bottom, bounds.y + bounds.height)
+    }
   }
 
   if (![left, top, right, bottom].every(Number.isFinite)) {
@@ -103,12 +148,43 @@ export function canvasExportBounds(scene: Scene): WorldRect {
 }
 
 function xml(value: string): string {
-  return value
+  let valid = ''
+  for (const character of value) {
+    const codePoint = character.codePointAt(0)
+    if (
+      codePoint !== undefined &&
+      (codePoint === 0x9 ||
+        codePoint === 0xa ||
+        codePoint === 0xd ||
+        (codePoint >= 0x20 && codePoint <= 0xd7ff) ||
+        (codePoint >= 0xe000 && codePoint <= 0xfffd) ||
+        (codePoint >= 0x10000 && codePoint <= 0x10ffff))
+    ) {
+      valid += character
+    }
+  }
+  return valid
     .replace(/&/g, '&amp;')
     .replace(/</g, '&lt;')
     .replace(/>/g, '&gt;')
     .replace(/"/g, '&quot;')
     .replace(/'/g, '&apos;')
+}
+
+const SAFE_HEX_COLOR = /^#(?:[\da-f]{3}|[\da-f]{4}|[\da-f]{6}|[\da-f]{8})$/i
+const SAFE_FUNCTION_COLOR = /^(?:rgb|rgba|hsl|hsla)\([\s\d.,%+\-/]*\)$/i
+const SAFE_COLOR_KEYWORDS = new Set(['black', 'white', 'transparent'])
+
+function svgColor(value: string | undefined, fallback: string): string {
+  const normalized = value?.trim() ?? ''
+  if (
+    SAFE_HEX_COLOR.test(normalized) ||
+    SAFE_FUNCTION_COLOR.test(normalized) ||
+    SAFE_COLOR_KEYWORDS.has(normalized.toLowerCase())
+  ) {
+    return normalized
+  }
+  return fallback
 }
 
 function n(value: number): string {
@@ -118,8 +194,8 @@ function n(value: number): string {
 
 function paintAttributes(paint: RenderPaint): string {
   const attributes = [
-    `fill="${xml(paint.fill ?? 'none')}"`,
-    `stroke="${xml(paint.stroke ?? 'none')}"`,
+    `fill="${xml(paint.fill === undefined ? 'none' : svgColor(paint.fill, '#000000'))}"`,
+    `stroke="${xml(paint.stroke === undefined ? 'none' : svgColor(paint.stroke, '#000000'))}"`,
   ]
   if (paint.stroke && paint.strokeWidth !== undefined) {
     attributes.push(`stroke-width="${n(paint.strokeWidth)}"`)
@@ -194,7 +270,7 @@ class SvgRenderTarget implements PersistentRenderTarget {
       )
       .join('')
     this.nodes.push(
-      `<text fill="${xml(color)}" font-family="${xml(FONT_FAMILY)}" font-size="${n(fontSize)}" dominant-baseline="text-before-edge">${tspans}</text>`,
+      `<text fill="${xml(svgColor(color, '#0f172a'))}" font-family="${xml(FONT_FAMILY)}" font-size="${n(fontSize)}" dominant-baseline="text-before-edge">${tspans}</text>`,
     )
   }
 }
@@ -206,12 +282,12 @@ export function serializeCanvasSceneSvg({
   backgroundColor,
   measureText,
 }: SvgSerializationOptions): string {
-  const bounds = canvasExportBounds(scene)
+  const bounds = canvasExportBounds(scene, measureText)
   const target = new SvgRenderTarget(measureText)
   renderPersistentScene(target, scene, theme)
   const backgroundNode =
     background === 'solid'
-      ? `<rect data-export-background="true" x="${n(bounds.x)}" y="${n(bounds.y)}" width="${n(bounds.width)}" height="${n(bounds.height)}" fill="${xml(backgroundColor)}"/>`
+      ? `<rect data-export-background="true" x="${n(bounds.x)}" y="${n(bounds.y)}" width="${n(bounds.width)}" height="${n(bounds.height)}" fill="${xml(svgColor(backgroundColor, theme === 'dark' ? '#020617' : '#ffffff'))}"/>`
       : ''
   return [
     `<svg xmlns="http://www.w3.org/2000/svg" width="${n(bounds.width)}" height="${n(bounds.height)}" viewBox="${n(bounds.x)} ${n(bounds.y)} ${n(bounds.width)} ${n(bounds.height)}">`,
@@ -251,11 +327,28 @@ function canvasBlob(canvas: HTMLCanvasElement): Promise<Blob> {
   })
 }
 
+export function pngExportDimensions(bounds: WorldRect): {
+  width: number
+  height: number
+} {
+  const width = Math.ceil(bounds.width * PNG_PIXEL_RATIO)
+  const height = Math.ceil(bounds.height * PNG_PIXEL_RATIO)
+  if (
+    width > PNG_MAX_DIMENSION ||
+    height > PNG_MAX_DIMENSION ||
+    width * height > PNG_MAX_PIXELS
+  ) {
+    throw new Error('Canvas is too large to export as PNG')
+  }
+  return { width, height }
+}
+
 /** Render and download a complete Canvas 2D scene. */
 export async function exportCanvasScene(
   options: CanvasExportOptions,
 ): Promise<void> {
-  const bounds = canvasExportBounds(options.scene)
+  const measureText = scratchMeasurer()
+  const bounds = canvasExportBounds(options.scene, measureText)
   const stem = sanitizeFilename(options.filename)
 
   if (options.format === 'svg') {
@@ -264,7 +357,7 @@ export async function exportCanvasScene(
       theme: options.theme,
       background: options.background,
       backgroundColor: options.backgroundColor,
-      measureText: scratchMeasurer(),
+      measureText,
     })
     downloadBlob(
       new Blob([svg], { type: 'image/svg+xml;charset=utf-8' }),
@@ -274,8 +367,9 @@ export async function exportCanvasScene(
   }
 
   const canvas = document.createElement('canvas')
-  canvas.width = Math.ceil(bounds.width * PNG_PIXEL_RATIO)
-  canvas.height = Math.ceil(bounds.height * PNG_PIXEL_RATIO)
+  const dimensions = pngExportDimensions(bounds)
+  canvas.width = dimensions.width
+  canvas.height = dimensions.height
   const ctx = canvas.getContext('2d')
   if (!ctx) throw new Error('Canvas export is unavailable in this browser')
   ctx.setTransform(
