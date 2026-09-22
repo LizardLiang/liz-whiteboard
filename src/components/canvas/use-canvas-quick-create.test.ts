@@ -809,7 +809,7 @@ describe('deleting an endpoint deletes its connectors', () => {
     // One keystroke per render. `applyTextEdit` reads the `latest` ref, which
     // only refreshes on render — five backspaces inside one `act` would all
     // apply against the same stale caret and leave text behind.
-    for (let i = 0; i < 'hello'.length; i += 1) {
+    for (const _character of 'hello') {
       act(() => {
         h.api.textInput.onEditingKeyDown(keyEvent('Backspace'))
       })

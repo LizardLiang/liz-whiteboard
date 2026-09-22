@@ -53,6 +53,26 @@ describe('canvas export', () => {
     })
   })
 
+  it('applies proportional export padding independently on each axis', () => {
+    const scene = sceneFrom([
+      rectangle({
+        x: 0,
+        y: 0,
+        width: 1_000,
+        height: 10,
+        text: null,
+        style: { ...style, strokeWidth: 0 },
+      }),
+    ])
+
+    expect(canvasExportBounds(scene, measure)).toEqual({
+      x: -100,
+      y: -12,
+      width: 1_200,
+      height: 34,
+    })
+  })
+
   it('includes horizontal and multiline text overflow in the bounds', () => {
     const scene = sceneFrom([
       rectangle({
@@ -124,6 +144,36 @@ describe('canvas export', () => {
     expect(svg).toContain('A&amp;B &lt;node&gt;')
     expect(svg).toContain('viewBox="-4 6 128 78"')
     expect(measureSpy).toHaveBeenCalled()
+  })
+
+  it('serializes exact shared shape and connector geometry with matching paint', () => {
+    const svg = serializeCanvasSceneSvg({
+      scene: sceneFrom([
+        rectangle({ text: null }),
+        rectangle({
+          id: 'connector',
+          kind: 'connector',
+          text: null,
+          connector: {
+            source: { kind: 'point', point: { x: 0, y: 0 } },
+            target: { kind: 'point', point: { x: 100, y: 0 } },
+            routing: 'straight',
+          },
+        }),
+      ]),
+      theme: 'light',
+      background: 'transparent',
+      backgroundColor: '#ffffff',
+      measureText: measure,
+    })
+
+    expect(svg).toContain(
+      '<rect x="10" y="20" width="100" height="50" rx="8" ry="8" fill="#ffffff" stroke="#2563eb" stroke-width="4"/>',
+    )
+    expect(svg).toContain(
+      '<path d="M 0 0 L 100 0" fill="none" stroke="#2563eb" stroke-width="4"/>',
+    )
+    expect(svg).toContain('stroke-linejoin="round" stroke-linecap="round"')
   })
 
   it('omits the background rectangle in transparent mode', () => {

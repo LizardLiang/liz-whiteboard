@@ -7,9 +7,8 @@ import type { CanvasTheme } from '@/lib/canvas-engine/render'
 import type {
   PersistentRenderTarget,
   RenderPaint,
-  RenderPathCommand,
-  RenderTextLine,
 } from '@/lib/canvas-engine/render-target'
+import type { Point } from '@/lib/canvas-engine/camera'
 import type { Scene } from '@/lib/canvas-engine/scene'
 import type { WorldRect } from '@/lib/canvas-engine/hit-test'
 import type { ExportImageBackground, ExportImageFormat } from './export-image'
@@ -24,7 +23,9 @@ import {
   textFrame,
   textOriginY,
 } from '@/lib/canvas-engine/render'
-import { connectorPathOf, resolvedBounds } from '@/lib/canvas-engine/hit-test'
+import { connectorBounds } from '@/lib/canvas-engine/connector-geometry'
+import { connectorPathOf } from '@/lib/canvas-engine/hit-test'
+import { bounds as elementBounds } from '@/lib/canvas-engine/scene'
 
 export const CANVAS_EXPORT_MIN_PADDING = 12
 export const PNG_MAX_DIMENSION = 16_384
@@ -45,25 +46,37 @@ interface SvgSerializationOptions {
   background: ExportImageBackground
   backgroundColor: string
   measureText: (text: string, fontSize: number) => number
+  prepared?: PreparedCanvasExport
 }
 
-function isDrawable(scene: Scene, index: number): boolean {
-  const element = scene.elements[index]
+interface PreparedCanvasExport {
+  bounds: WorldRect
+  connectorPaths: ReadonlyMap<string, ReadonlyArray<Point> | null>
+}
+
+function isDrawable(
+  element: Scene['elements'][number],
+  connectorPath: ReadonlyArray<Point> | null | undefined,
+): boolean {
   if (element.connector) {
-    return (
-      element.style.strokeWidth > 0 && connectorPathOf(scene, element) !== null
-    )
+    return element.style.strokeWidth > 0 && connectorPath !== null
   }
   if (element.kind === 'group') return true
   if ((element.text ?? '').length > 0) return true
   return element.style.fill !== 'none' || element.style.strokeWidth > 0
 }
 
-function expandedElementBounds(scene: Scene, index: number): WorldRect | null {
-  const element = scene.elements[index]
+function expandedElementBounds(
+  element: Scene['elements'][number],
+  connectorPath: ReadonlyArray<Point> | null | undefined,
+): WorldRect | null {
   if (element.kind === 'text') return null
-  const rect = resolvedBounds(scene, element)
-  if (!rect || !isDrawable(scene, index)) return null
+  const rect = element.connector
+    ? connectorPath
+      ? connectorBounds(connectorPath)
+      : null
+    : elementBounds(element)
+  if (!rect || !isDrawable(element, connectorPath)) return null
   const outline =
     (element.connector ? CONNECTOR_ARROW_SIZE : 0) +
     element.style.strokeWidth / 2
@@ -78,11 +91,9 @@ function expandedElementBounds(scene: Scene, index: number): WorldRect | null {
 }
 
 function textBounds(
-  scene: Scene,
-  index: number,
+  element: Scene['elements'][number],
   measureText: (text: string, fontSize: number) => number,
 ): WorldRect | null {
-  const element = scene.elements[index]
   if (element.connector || (element.text ?? '').length === 0) return null
 
   const measure = (text: string) => measureText(text, element.style.fontSize)
@@ -107,19 +118,23 @@ function textBounds(
   }
 }
 
-/** Bounds of every drawable persistent element, including rendered text. */
-export function canvasExportBounds(
+function prepareCanvasExport(
   scene: Scene,
   measureText: (text: string, fontSize: number) => number,
-): WorldRect {
+): PreparedCanvasExport {
   let left = Number.POSITIVE_INFINITY
   let top = Number.POSITIVE_INFINITY
   let right = Number.NEGATIVE_INFINITY
   let bottom = Number.NEGATIVE_INFINITY
 
-  for (let index = 0; index < scene.elements.length; index += 1) {
-    const rect = expandedElementBounds(scene, index)
-    const text = textBounds(scene, index, measureText)
+  const connectorPaths = new Map<string, ReadonlyArray<Point> | null>()
+  for (const element of scene.elements) {
+    const connectorPath = element.connector
+      ? connectorPathOf(scene, element)
+      : undefined
+    if (element.connector) connectorPaths.set(element.id, connectorPath ?? null)
+    const rect = expandedElementBounds(element, connectorPath)
+    const text = textBounds(element, measureText)
     for (const bounds of [rect, text]) {
       if (!bounds) continue
       left = Math.min(left, bounds.x)
@@ -135,16 +150,31 @@ export function canvasExportBounds(
 
   const contentWidth = Math.max(1, right - left)
   const contentHeight = Math.max(1, bottom - top)
-  const padding = Math.max(
+  const paddingX = Math.max(
     CANVAS_EXPORT_MIN_PADDING,
-    Math.max(contentWidth, contentHeight) * EXPORT_PADDING,
+    contentWidth * EXPORT_PADDING,
+  )
+  const paddingY = Math.max(
+    CANVAS_EXPORT_MIN_PADDING,
+    contentHeight * EXPORT_PADDING,
   )
   return {
-    x: left - padding,
-    y: top - padding,
-    width: contentWidth + padding * 2,
-    height: contentHeight + padding * 2,
+    bounds: {
+      x: left - paddingX,
+      y: top - paddingY,
+      width: contentWidth + paddingX * 2,
+      height: contentHeight + paddingY * 2,
+    },
+    connectorPaths,
   }
+}
+
+/** Bounds of every drawable persistent element, including rendered text. */
+export function canvasExportBounds(
+  scene: Scene,
+  measureText: (text: string, fontSize: number) => number,
+): WorldRect {
+  return prepareCanvasExport(scene, measureText).bounds
 }
 
 function xml(value: string): string {
@@ -193,8 +223,12 @@ function n(value: number): string {
 }
 
 function paintAttributes(paint: RenderPaint): string {
+  const fill =
+    paint.fill === undefined || paint.fill === 'none'
+      ? 'none'
+      : svgColor(paint.fill, '#000000')
   const attributes = [
-    `fill="${xml(paint.fill === undefined ? 'none' : svgColor(paint.fill, '#000000'))}"`,
+    `fill="${xml(fill)}"`,
     `stroke="${xml(paint.stroke === undefined ? 'none' : svgColor(paint.stroke, '#000000'))}"`,
   ]
   if (paint.stroke && paint.strokeWidth !== undefined) {
@@ -207,6 +241,10 @@ function paintAttributes(paint: RenderPaint): string {
 
 class SvgRenderTarget implements PersistentRenderTarget {
   readonly nodes: Array<string> = []
+  private pathData = ''
+  private textData = ''
+  private textFontSize = 0
+  private textColor = ''
 
   constructor(
     private readonly measure: (text: string, fontSize: number) => number,
@@ -242,36 +280,55 @@ class SvgRenderTarget implements PersistentRenderTarget {
     )
   }
 
-  path(commands: ReadonlyArray<RenderPathCommand>, paint: RenderPaint): void {
-    const data = commands
-      .map((command) => {
-        if (command.kind === 'move')
-          return `M ${n(command.point.x)} ${n(command.point.y)}`
-        if (command.kind === 'line')
-          return `L ${n(command.point.x)} ${n(command.point.y)}`
-        if (command.kind === 'cubic') {
-          return `C ${n(command.c0.x)} ${n(command.c0.y)} ${n(command.c1.x)} ${n(command.c1.y)} ${n(command.to.x)} ${n(command.to.y)}`
-        }
-        return 'Z'
-      })
-      .join(' ')
-    this.nodes.push(`<path d="${data}" ${paintAttributes(paint)}/>`)
+  beginPath(): void {
+    this.pathData = ''
   }
 
-  text(
-    lines: ReadonlyArray<RenderTextLine>,
-    fontSize: number,
-    color: string,
+  moveTo(x: number, y: number): void {
+    this.appendPath(`M ${n(x)} ${n(y)}`)
+  }
+
+  lineTo(x: number, y: number): void {
+    this.appendPath(`L ${n(x)} ${n(y)}`)
+  }
+
+  cubicTo(
+    c0x: number,
+    c0y: number,
+    c1x: number,
+    c1y: number,
+    x: number,
+    y: number,
   ): void {
-    const tspans = lines
-      .map(
-        (line) =>
-          `<tspan x="${n(line.x)}" y="${n(line.y)}">${xml(line.text)}</tspan>`,
-      )
-      .join('')
+    this.appendPath(`C ${n(c0x)} ${n(c0y)} ${n(c1x)} ${n(c1y)} ${n(x)} ${n(y)}`)
+  }
+
+  closePath(): void {
+    this.appendPath('Z')
+  }
+
+  paintPath(paint: RenderPaint): void {
+    this.nodes.push(`<path d="${this.pathData}" ${paintAttributes(paint)}/>`)
+  }
+
+  beginText(fontSize: number, color: string): void {
+    this.textData = ''
+    this.textFontSize = fontSize
+    this.textColor = color
+  }
+
+  textLine(text: string, x: number, y: number): void {
+    this.textData += `<tspan x="${n(x)}" y="${n(y)}">${xml(text)}</tspan>`
+  }
+
+  endText(): void {
     this.nodes.push(
-      `<text fill="${xml(svgColor(color, '#0f172a'))}" font-family="${xml(FONT_FAMILY)}" font-size="${n(fontSize)}" dominant-baseline="text-before-edge">${tspans}</text>`,
+      `<text fill="${xml(svgColor(this.textColor, '#0f172a'))}" font-family="${xml(FONT_FAMILY)}" font-size="${n(this.textFontSize)}" dominant-baseline="text-before-edge">${this.textData}</text>`,
     )
+  }
+
+  private appendPath(command: string): void {
+    this.pathData += `${this.pathData.length === 0 ? '' : ' '}${command}`
   }
 }
 
@@ -281,10 +338,20 @@ export function serializeCanvasSceneSvg({
   background,
   backgroundColor,
   measureText,
+  prepared,
 }: SvgSerializationOptions): string {
-  const bounds = canvasExportBounds(scene, measureText)
+  const preparedExport = prepared ?? prepareCanvasExport(scene, measureText)
+  const bounds = preparedExport.bounds
   const target = new SvgRenderTarget(measureText)
-  renderPersistentScene(target, scene, theme)
+  renderPersistentScene(
+    target,
+    scene,
+    theme,
+    undefined,
+    undefined,
+    undefined,
+    preparedExport.connectorPaths,
+  )
   const backgroundNode =
     background === 'solid'
       ? `<rect data-export-background="true" x="${n(bounds.x)}" y="${n(bounds.y)}" width="${n(bounds.width)}" height="${n(bounds.height)}" fill="${xml(svgColor(backgroundColor, theme === 'dark' ? '#020617' : '#ffffff'))}"/>`
@@ -348,7 +415,8 @@ export async function exportCanvasScene(
   options: CanvasExportOptions,
 ): Promise<void> {
   const measureText = scratchMeasurer()
-  const bounds = canvasExportBounds(options.scene, measureText)
+  const prepared = prepareCanvasExport(options.scene, measureText)
+  const bounds = prepared.bounds
   const stem = sanitizeFilename(options.filename)
 
   if (options.format === 'svg') {
@@ -358,6 +426,7 @@ export async function exportCanvasScene(
       background: options.background,
       backgroundColor: options.backgroundColor,
       measureText,
+      prepared,
     })
     downloadBlob(
       new Blob([svg], { type: 'image/svg+xml;charset=utf-8' }),
@@ -388,6 +457,10 @@ export async function exportCanvasScene(
     new CanvasRenderTarget(ctx),
     options.scene,
     options.theme,
+    undefined,
+    undefined,
+    undefined,
+    prepared.connectorPaths,
   )
   downloadBlob(await canvasBlob(canvas), `${stem}.png`)
 }

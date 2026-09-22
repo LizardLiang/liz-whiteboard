@@ -25,28 +25,38 @@ export interface RenderTextLine {
  * targets only translate those decisions to a concrete output format.
  */
 export interface PersistentRenderTarget {
-  measureText(text: string, fontSize: number): number
-  rect(
+  measureText: (text: string, fontSize: number) => number
+  rect: (
     x: number,
     y: number,
     width: number,
     height: number,
     radius: number,
     paint: RenderPaint,
-  ): void
-  ellipse(
+  ) => void
+  ellipse: (
     cx: number,
     cy: number,
     rx: number,
     ry: number,
     paint: RenderPaint,
-  ): void
-  path(commands: ReadonlyArray<RenderPathCommand>, paint: RenderPaint): void
-  text(
-    lines: ReadonlyArray<RenderTextLine>,
-    fontSize: number,
-    color: string,
-  ): void
+  ) => void
+  beginPath: () => void
+  moveTo: (x: number, y: number) => void
+  lineTo: (x: number, y: number) => void
+  cubicTo: (
+    c0x: number,
+    c0y: number,
+    c1x: number,
+    c1y: number,
+    x: number,
+    y: number,
+  ) => void
+  closePath: () => void
+  paintPath: (paint: RenderPaint) => void
+  beginText: (fontSize: number, color: string) => void
+  textLine: (text: string, x: number, y: number) => void
+  endText: () => void
 }
 
 export const FONT_FAMILY =
@@ -73,7 +83,7 @@ export class CanvasRenderTarget implements PersistentRenderTarget {
     paint: RenderPaint,
   ): void {
     if (radius <= 0) {
-      if (paint.fill) {
+      if (paint.fill && paint.fill !== 'none') {
         this.ctx.fillStyle = paint.fill
         this.ctx.fillRect(x, y, width, height)
       }
@@ -114,44 +124,54 @@ export class CanvasRenderTarget implements PersistentRenderTarget {
     this.paint(paint)
   }
 
-  path(commands: ReadonlyArray<RenderPathCommand>, paint: RenderPaint): void {
-    if (commands.length === 0) return
+  beginPath(): void {
     this.ctx.beginPath()
-    for (const command of commands) {
-      if (command.kind === 'move') {
-        this.ctx.moveTo(command.point.x, command.point.y)
-      } else if (command.kind === 'line') {
-        this.ctx.lineTo(command.point.x, command.point.y)
-      } else if (command.kind === 'cubic') {
-        this.ctx.bezierCurveTo(
-          command.c0.x,
-          command.c0.y,
-          command.c1.x,
-          command.c1.y,
-          command.to.x,
-          command.to.y,
-        )
-      } else {
-        this.ctx.closePath()
-      }
-    }
+  }
+
+  moveTo(x: number, y: number): void {
+    this.ctx.moveTo(x, y)
+  }
+
+  lineTo(x: number, y: number): void {
+    this.ctx.lineTo(x, y)
+  }
+
+  cubicTo(
+    c0x: number,
+    c0y: number,
+    c1x: number,
+    c1y: number,
+    x: number,
+    y: number,
+  ): void {
+    this.ctx.bezierCurveTo(c0x, c0y, c1x, c1y, x, y)
+  }
+
+  closePath(): void {
+    this.ctx.closePath()
+  }
+
+  paintPath(paint: RenderPaint): void {
     this.paint(paint)
   }
 
-  text(
-    lines: ReadonlyArray<RenderTextLine>,
-    fontSize: number,
-    color: string,
-  ): void {
+  beginText(fontSize: number, color: string): void {
     this.ctx.fillStyle = color
     this.ctx.font = canvasFont(fontSize)
     this.ctx.textBaseline = 'top'
     this.ctx.textAlign = 'left'
-    for (const line of lines) this.ctx.fillText(line.text, line.x, line.y)
+  }
+
+  textLine(text: string, x: number, y: number): void {
+    this.ctx.fillText(text, x, y)
+  }
+
+  endText(): void {
+    // Canvas text is emitted one line at a time, so there is no group to close.
   }
 
   private paint(paint: RenderPaint): void {
-    if (paint.fill) {
+    if (paint.fill && paint.fill !== 'none') {
       this.ctx.fillStyle = paint.fill
       this.ctx.fill()
     }

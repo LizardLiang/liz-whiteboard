@@ -2561,7 +2561,7 @@ export function useCanvasInput({
   // ── board-level keyboard (NOT editing) ───────────────────────────────────
 
   const deleteSelection = useCallback(
-    (gesture: 'delete' | 'cut' = 'delete') => {
+    (deleteGesture: 'delete' | 'cut' = 'delete') => {
       const selected = [...latest.current.selectedIds]
       if (selected.length === 0) return
       // Expanded to include every connector attached to anything doomed (step
@@ -2605,7 +2605,7 @@ export function useCanvasInput({
       // Leaving the structure, the same "exit whatever depth was entered"
       // rule the pointerdown `!hit` branch and Escape apply.
       setEnteredPath([])
-      callbacks?.onDelete?.(elements, gesture, groupCleanup)
+      callbacks?.onDelete?.(elements, deleteGesture, groupCleanup)
     },
     [callbacks, setEnteredPath, setScene],
   )
@@ -2669,7 +2669,7 @@ export function useCanvasInput({
 
       setScene((prev) =>
         plan.elements.reduce(
-          (scene, element) => addElement(scene, element),
+          (nextScene, element) => addElement(nextScene, element),
           prev,
         ),
       )

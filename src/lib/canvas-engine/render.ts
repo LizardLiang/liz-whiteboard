@@ -37,7 +37,6 @@ import { QUICK_CREATE_DIRECTIONS } from './quick-create'
 import { DEFAULT_TEXT_STYLE, layoutText, pointFromCaret } from './text-layout'
 import { CanvasRenderTarget, canvasFont } from './render-target'
 import type { AlignmentGuide } from './alignment'
-import type { ConnectorCurve } from './connector-geometry'
 import type { Camera, Point } from './camera'
 import type { QuickCreateDirection } from './quick-create'
 import type { WorldRect } from './hit-test'
@@ -733,6 +732,45 @@ function traceCanvasPath(
  * outline-only shape and a fill-only shape — so each half is guarded
  * independently rather than assumed.
  */
+const shapePaintCache = new WeakMap<CanvasElementStyle, RenderPaint>()
+const connectorPaintCache = new WeakMap<
+  CanvasElementStyle,
+  { line: RenderPaint; arrow: RenderPaint }
+>()
+
+function shapePaint(style: CanvasElementStyle): RenderPaint {
+  const cached = shapePaintCache.get(style)
+  if (cached) return cached
+  const paint: RenderPaint = {
+    ...(style.fill !== 'none' ? { fill: style.fill } : {}),
+    ...(style.strokeWidth > 0
+      ? { stroke: style.stroke, strokeWidth: style.strokeWidth }
+      : {}),
+  }
+  shapePaintCache.set(style, paint)
+  return paint
+}
+
+function connectorPaints(style: CanvasElementStyle): {
+  line: RenderPaint
+  arrow: RenderPaint
+} {
+  const cached = connectorPaintCache.get(style)
+  if (cached) return cached
+  const line: RenderPaint = {
+    stroke: style.stroke,
+    strokeWidth: style.strokeWidth,
+  }
+  const arrow: RenderPaint = {
+    ...line,
+    lineJoin: 'round',
+    lineCap: 'round',
+  }
+  const paints = { line, arrow }
+  connectorPaintCache.set(style, paints)
+  return paints
+}
+
 function drawShape(
   target: PersistentRenderTarget,
   element: CanvasElement,
@@ -740,15 +778,7 @@ function drawShape(
   const filled = element.style.fill !== 'none'
   const stroked = element.style.strokeWidth > 0
   if (!filled && !stroked) return
-  const paint: RenderPaint = {
-    ...(filled ? { fill: element.style.fill } : {}),
-    ...(stroked
-      ? {
-          stroke: element.style.stroke,
-          strokeWidth: element.style.strokeWidth,
-        }
-      : {}),
-  }
+  const paint = shapePaint(element.style)
   if (element.kind === 'rectangle') {
     target.rect(
       element.x,
@@ -767,7 +797,20 @@ function drawShape(
       paint,
     )
   } else {
-    target.path(shapePath(element), paint)
+    const { x, y, width, height } = element
+    const cx = x + width / 2
+    target.beginPath()
+    target.moveTo(cx, y)
+    if (element.kind === 'diamond') {
+      target.lineTo(x + width, y + height / 2)
+      target.lineTo(cx, y + height)
+      target.lineTo(x, y + height / 2)
+    } else {
+      target.lineTo(x + width, y + height)
+      target.lineTo(x, y + height)
+    }
+    target.closePath()
+    target.paintPath(paint)
   }
 }
 
@@ -821,15 +864,19 @@ function drawElement(
   const frame = textFrame(element)
   const originY = textOriginY(element, layout)
 
-  target.text(
-    layout.lines.map((line, index) => ({
-      text: line.text,
-      x: frame.x + line.carets[0],
-      y: originY + index * layout.lineHeight,
-    })),
+  target.beginText(
     element.style.fontSize,
     resolveTextColor(element.style, theme),
   )
+  for (let index = 0; index < layout.lines.length; index += 1) {
+    const line = layout.lines[index]
+    target.textLine(
+      line.text,
+      frame.x + line.carets[0],
+      originY + index * layout.lineHeight,
+    )
+  }
+  target.endText()
   // Returned so `drawScene` can hand it to `drawCaret` instead of paying for
   // a second layout of the same string on the same frame.
   return layout
@@ -842,33 +889,6 @@ function drawElement(
  * barbs by `ARROW_HALF_ANGLE`, so the head reaches back less than this.
  */
 export const CONNECTOR_ARROW_SIZE = 14
-
-/**
- * Lay a `ConnectorCurve` into the current path as the cubic it is.
- *
- * `project` is applied to the CONTROL POINTS, not to a flattened sample, and
- * that is exact rather than close: `worldToScreen` is affine, and the image of
- * a bezier under an affine map is the bezier through the images of its control
- * points. So the screen-space selection halo traces the identical curve the
- * world-space stroke does, at any zoom, with no second flattening to disagree
- * about.
- *
- * Assumes `ctx.beginPath()` has already been called — same contract as the
- * `moveTo`/`lineTo` walk it replaces.
- */
-function curveCommands(
-  curve: ConnectorCurve,
-  project: (point: Point) => Point = (point) => point,
-): Array<RenderPathCommand> {
-  const from = project(curve.from)
-  const c0 = project(curve.c0)
-  const c1 = project(curve.c1)
-  const to = project(curve.to)
-  return [
-    { kind: 'move', point: from },
-    { kind: 'cubic', c0, c1, to },
-  ]
-}
 
 /**
  * Draw one connector in WORLD space — the caller has already applied the
@@ -887,10 +907,12 @@ function drawConnector(
   target: PersistentRenderTarget,
   element: CanvasElement,
   scene: Scene,
+  preparedPath?: ReadonlyArray<Point> | null,
 ): boolean {
   const link = element.connector
   if (!link || element.style.strokeWidth <= 0) return false
-  const path = connectorPathOf(scene, element)
+  const path =
+    preparedPath === undefined ? connectorPathOf(scene, element) : preparedPath
   if (!path || path.length < 2) return false
 
   // A `curved` connector is stroked as the cubic it IS, not as the 24-segment
@@ -899,18 +921,30 @@ function drawConnector(
   // walking it drew a visible polygon at any real magnification.
   // `bezierCurveTo` is resolution-independent — the curve is exact at 800% for
   // the same one path command it costs at 100%.
-  const curve = connectorCurveOf(scene, element)
+  const curve =
+    link.routing === 'curved' ? connectorCurveOf(scene, element) : null
+  const paints = connectorPaints(element.style)
 
-  const commands = curve
-    ? curveCommands(curve)
-    : path.map(
-        (point, index): RenderPathCommand =>
-          index === 0 ? { kind: 'move', point } : { kind: 'line', point },
-      )
-  target.path(commands, {
-    stroke: element.style.stroke,
-    strokeWidth: element.style.strokeWidth,
-  })
+  target.beginPath()
+  target.moveTo(
+    curve ? curve.from.x : path[0].x,
+    curve ? curve.from.y : path[0].y,
+  )
+  if (curve) {
+    target.cubicTo(
+      curve.c0.x,
+      curve.c0.y,
+      curve.c1.x,
+      curve.c1.y,
+      curve.to.x,
+      curve.to.y,
+    )
+  } else {
+    for (let index = 1; index < path.length; index += 1) {
+      target.lineTo(path[index].x, path[index].y)
+    }
+  }
+  target.paintPath(paints.line)
 
   // Oriented off the curve's exact arrival tangent where there is one, which
   // is the target face's own normal reversed — so the head lands square to the
@@ -935,19 +969,11 @@ function drawConnector(
     //
     // lineJoin/lineCap are restored: this ctx is shared with every element
     // drawn later in the same frame.
-    target.path(
-      [
-        { kind: 'move', point: head[1] },
-        { kind: 'line', point: head[0] },
-        { kind: 'line', point: head[2] },
-      ],
-      {
-        stroke: element.style.stroke,
-        strokeWidth: element.style.strokeWidth,
-        lineJoin: 'round',
-        lineCap: 'round',
-      },
-    )
+    target.beginPath()
+    target.moveTo(head[1].x, head[1].y)
+    target.lineTo(head[0].x, head[0].y)
+    target.lineTo(head[2].x, head[2].y)
+    target.paintPath(paints.arrow)
   }
   return true
 }
@@ -1532,25 +1558,38 @@ function drawHighlight(
   ctx.restore()
 }
 
+const NO_EMPHASIZED_IDS: ReadonlySet<string> = new Set()
+
 /** Render only persisted scene content, with no interaction chrome. */
 export function renderPersistentScene(
   target: PersistentRenderTarget,
   scene: Scene,
   theme: CanvasTheme,
-  emphasizedIds: ReadonlySet<string> = new Set(),
-): Map<string, TextLayout | null> {
-  const layouts = new Map<string, TextLayout | null>()
+  emphasizedIds: ReadonlySet<string> = NO_EMPHASIZED_IDS,
+  layoutElementId?: string,
+  hoveredId?: string | null,
+  preparedConnectorPaths?: ReadonlyMap<string, ReadonlyArray<Point> | null>,
+): TextLayout | null {
+  let requestedLayout: TextLayout | null = null
   for (const element of scene.elements) {
-    if (element.connector) drawConnector(target, element, scene)
+    if (element.connector) {
+      const preparedPath = preparedConnectorPaths?.has(element.id)
+        ? preparedConnectorPaths.get(element.id)
+        : undefined
+      drawConnector(target, element, scene, preparedPath)
+    }
   }
   for (const element of scene.elements) {
     if (element.connector) continue
-    layouts.set(
-      element.id,
-      drawElement(target, element, theme, emphasizedIds.has(element.id)),
+    const layout = drawElement(
+      target,
+      element,
+      theme,
+      emphasizedIds.has(element.id) || hoveredId === element.id,
     )
+    if (element.id === layoutElementId) requestedLayout = layout
   }
-  return layouts
+  return requestedLayout
 }
 
 /**
@@ -1593,8 +1632,6 @@ export function drawScene(
   ctx.translate(-camera.x, -camera.y)
 
   const editing = selection.editing
-  const emphasizedIds = new Set(selection.ids)
-  if (selection.hoveredId) emphasizedIds.add(selection.hoveredId)
   const target = new CanvasRenderTarget(ctx)
 
   // TWO PASSES, and the order is load-bearing rather than cosmetic.
@@ -1609,10 +1646,14 @@ export function drawScene(
   // reason: hit-testing has to agree with what the user can see, or clicking
   // a rectangle sometimes selects a connector drawn behind it. Change the
   // order in one place and the other must change too.
-  const layouts = renderPersistentScene(target, scene, theme, emphasizedIds)
-  const editingLayout = editing
-    ? (layouts.get(editing.elementId) ?? null)
-    : null
+  const editingLayout = renderPersistentScene(
+    target,
+    scene,
+    theme,
+    selection.ids,
+    editing?.elementId,
+    selection.hoveredId,
+  )
   if (selection.draft) {
     // Never emphasized: a draft is never in `selection.ids` (it is not yet
     // in the scene at all) and is not a hover target.
