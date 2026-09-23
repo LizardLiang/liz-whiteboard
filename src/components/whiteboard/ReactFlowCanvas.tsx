@@ -11,6 +11,7 @@ import {
   Controls,
   MiniMap,
   ReactFlow,
+  SelectionMode,
   useEdgesState,
   useNodesInitialized,
   useNodesState,
@@ -383,6 +384,10 @@ export interface ReactFlowCanvasProps {
   onDrawDisarm?: () => void
   /** Callback when nodes change (position, selection, etc.) */
   onNodesChange?: OnNodesChange<TableNodeType>
+  /** Reports the current heterogeneous React Flow node selection. */
+  onSelectionChange?: (
+    nodes: Array<TableNodeType | ExternalTableNodeType>,
+  ) => void
   /** Callback when edges change */
   onEdgesChange?: OnEdgesChange<RelationshipEdgeType>
   /** Callback when connection is created */
@@ -499,6 +504,7 @@ export function ReactFlowCanvas({
   onDrawCommit,
   onDrawDisarm,
   onNodesChange: onNodesChangeProp,
+  onSelectionChange,
   onEdgesChange: onEdgesChangeProp,
   onConnect,
   onNodeDragStop: onNodeDragStopProp,
@@ -1163,7 +1169,13 @@ export function ReactFlowCanvas({
       }
     })
     setEdges(withOffsets)
-  }, [initialEdges, initialNodes, externalTableNodes, externalColumnIds, setEdges])
+  }, [
+    initialEdges,
+    initialNodes,
+    externalTableNodes,
+    externalColumnIds,
+    setEdges,
+  ])
 
   // Reset the one-shot re-routing guard whenever the node set changes (e.g.
   // overlay re-opened with a different focal table).
@@ -1907,6 +1919,14 @@ export function ReactFlowCanvas({
             // sit above them; nothing may reorder that at runtime.
             elevateNodesOnSelect={false}
             onNodesChange={onNodesChange}
+            onSelectionChange={({ nodes: selectedNodes }) =>
+              onSelectionChange?.(
+                selectedNodes.filter(
+                  (node) =>
+                    node.type === 'table' || node.type === 'externalTable',
+                ) as unknown as Array<TableNodeType | ExternalTableNodeType>,
+              )
+            }
             onEdgesChange={onEdgesChange}
             onConnect={onConnect}
             onConnectStart={onConnectStart}
@@ -1951,6 +1971,10 @@ export function ReactFlowCanvas({
             // deliberately.
             nodesConnectable={true}
             elementsSelectable={true}
+            // A marquee may begin over an area that contains a table. Partial
+            // selection keeps that table eligible rather than requiring the
+            // user to fully enclose its parent area's bounds.
+            selectionMode={SelectionMode.Partial}
             onlyRenderVisibleElements={onlyRenderVisibleElements}
             fitView
             fitViewOptions={fitViewOptions}

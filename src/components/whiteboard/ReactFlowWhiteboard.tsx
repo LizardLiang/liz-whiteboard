@@ -42,6 +42,7 @@ import { TableFocusOverlay } from './TableFocusOverlay'
 import { WhiteboardAccessDenied } from './WhiteboardAccessDenied'
 import { WhiteboardPermissionsProvider } from './whiteboard-permissions-context'
 import { ShapeToolPalette } from './ShapeToolPalette'
+import { SelectedTablesSqlDialog } from './SelectedTablesSqlDialog'
 import { QUICK_CREATE_GHOST_ID } from './QuickCreateGhostNode'
 import type { DrawGestureTool, ToolMode } from '@/lib/react-flow/tool-mode'
 import type {
@@ -70,6 +71,7 @@ import type {
   ShapeNodeType,
   ShowMode,
   TableNodeType,
+  ExternalTableNodeType,
 } from '@/lib/react-flow/types'
 import type { ZoomControls } from './Toolbar'
 import type { Connection } from '@xyflow/react'
@@ -82,6 +84,11 @@ import type { RelationshipErrorEvent } from '@/hooks/use-relationship-mutations'
 import type { ReconcileAfterDropParams } from '@/hooks/use-column-reorder-mutations'
 import type { Dialect } from '@/lib/ddl-generator'
 import type { ExportImageDialogOptions } from './ExportImageDialog'
+import {
+  buildJoinQueryPlan,
+  type JoinQueryPlan,
+  type JoinQueryTable,
+} from '@/lib/join-query-generator'
 import type { ResolvedTableReference } from '@/data/table-reference'
 import { useWhiteboardShapes } from '@/hooks/use-whiteboard-shapes'
 import {
@@ -611,6 +618,78 @@ function ReactFlowWhiteboardInner({
   const [relationsPreviewTableId, setRelationsPreviewTableId] = useState<
     string | null
   >(null)
+  const [selectedSqlTableIds, setSelectedSqlTableIds] = useState<Array<string>>(
+    [],
+  )
+  const [sqlPlan, setSqlPlan] = useState<JoinQueryPlan | null>(null)
+
+  const handleSqlTableSelectionChange = useCallback(
+    (selectedNodes: Array<TableNodeType | ExternalTableNodeType>) => {
+      const next = selectedNodes
+        .map((node) => node.id)
+        .sort((a, b) => a.localeCompare(b))
+      setSelectedSqlTableIds((current) =>
+        current.length === next.length &&
+        current.every((id, index) => id === next[index])
+          ? current
+          : next,
+      )
+    },
+    [],
+  )
+
+  const openSelectedTablesSql = useCallback(() => {
+    const selected = new Set(selectedSqlTableIds)
+    const currentNodes = getNodes().filter((node) =>
+      selected.has(node.id),
+    ) as unknown as Array<TableNodeType | ExternalTableNodeType>
+    const tables: Array<JoinQueryTable> = currentNodes.map((node) => {
+      if (node.type === 'externalTable') {
+        return {
+          id: node.data.tableId,
+          name: node.data.sourceTableName,
+          position: node.position,
+          external: true,
+          incompleteReason:
+            node.data.missing ||
+            !node.data.sourceTableName ||
+            node.data.columns.length === 0 ||
+            node.data.columns.some((column) => column.missing)
+              ? 'Source table or column metadata is missing'
+              : undefined,
+          columns: node.data.columns.map((column, order) => ({
+            id: column.id,
+            name: column.name,
+            order,
+          })),
+        }
+      }
+      return {
+        id: node.data.table.id,
+        name: node.data.table.name,
+        position: node.position,
+        columns: node.data.table.columns.map((column) => ({
+          id: column.id,
+          name: column.name,
+          order: column.order,
+        })),
+      }
+    })
+    const relationships = getEdges()
+      .map((edge) => edge.data?.relationship)
+      .filter(
+        (relationship): relationship is NonNullable<typeof relationship> =>
+          Boolean(relationship),
+      )
+      .map((relationship) => ({
+        id: relationship.id,
+        sourceTableId: relationship.sourceTableId,
+        targetTableId: relationship.targetTableId,
+        sourceColumnId: relationship.sourceColumnId,
+        targetColumnId: relationship.targetColumnId,
+      }))
+    setSqlPlan(buildJoinQueryPlan(tables, relationships))
+  }, [getEdges, getNodes, selectedSqlTableIds])
 
   // Cmd/Ctrl+K search palette state, plus the focus request threaded down to
   // ReactFlowCanvas. The token increments on every navigation so the same
@@ -4251,6 +4330,16 @@ function ReactFlowWhiteboardInner({
             canComment={canComment}
             isPublic={isPublic}
           />
+          {selectedSqlTableIds.length >= 2 && (
+            <div
+              className="absolute bottom-4 left-1/2 z-20 -translate-x-1/2 rounded-lg border bg-background/95 p-2 shadow-lg backdrop-blur-sm"
+              data-testid="selected-tables-actions"
+            >
+              <Button size="sm" onClick={openSelectedTablesSql}>
+                Generate SQL ({selectedSqlTableIds.length} tables)
+              </Button>
+            </div>
+          )}
           <ForceFullDetailContext.Provider value={forceFullDetailForExport}>
             <ReactFlowCanvas
               initialNodes={nodes}
@@ -4311,6 +4400,7 @@ function ReactFlowWhiteboardInner({
               onDrawDisarm={handleDrawDisarm}
               onConnect={handleConnect}
               onNodeDragStop={handleNodeDragStop}
+              onSelectionChange={handleSqlTableSelectionChange}
               nodesDraggable={nodesDraggable}
               // D-2: panOnDrag is a single derived expression composing the
               // pre-existing isColumnDragging flag with the new draw-armed
@@ -4346,6 +4436,15 @@ function ReactFlowWhiteboardInner({
               keyboardFocusedShapeId={focusedShapeId}
             />
           </ForceFullDetailContext.Provider>
+          {sqlPlan && (
+            <SelectedTablesSqlDialog
+              plan={sqlPlan}
+              open={true}
+              onOpenChange={(open) => {
+                if (!open) setSqlPlan(null)
+              }}
+            />
+          )}
           {/* In-app performance tracker (GH #121 follow-up) — Record/Stop ->
               JSON report. Gated by `?perf=1` or Ctrl+Shift+P (usePerfTrackerEnabled),
               and intentionally ships in production so real-hardware numbers can
