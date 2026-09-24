@@ -47,6 +47,20 @@ export const E2E_VIEWER_USER = {
   password: 'E2eViewer123!',
 }
 
+/**
+ * Dedicated user for the forgot-password suite
+ * (e2e/forgot-password.spec.ts). NOT E2E_USER — that suite's flow changes the
+ * password and revokes every session for whoever it targets, which would
+ * break every other spec's login if it ran against the shared dogfood
+ * account. Re-seeded (password reset back to baseline) before every test by
+ * e2e/seed-forgot-password.ts.
+ */
+export const E2E_RESET_USER = {
+  username: 'e2e_forgot_pw',
+  email: 'e2e_forgot_pw@example.com',
+  password: 'E2eForgotPw123!',
+}
+
 // Deterministic, valid-v4-shaped UUIDs (server-fn Zod validates .uuid()).
 export const IDS = {
   user: '11111111-1111-4111-8111-111111111111',
@@ -304,6 +318,10 @@ export const IDS = {
   spOrdersTable: 'b0000000-0000-4000-8000-000000000003',
   spUsersId: 'b0000000-0000-4000-8000-000000000004',
   spOrdersId: 'b0000000-0000-4000-8000-000000000005',
+
+  // Dedicated user for the forgot-password suite — see
+  // E2E_RESET_USER's comment above for why this is separate from E2E_USER.
+  resetPwUser: 'd0000000-0000-4000-8000-000000000001',
 }
 
 export const STORAGE_STATE = 'e2e/.auth/state.json'

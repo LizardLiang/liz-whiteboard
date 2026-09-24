@@ -22,6 +22,7 @@ const ALL_TABLES = [
   'Whiteboard',
   'Folder',
   'ProjectInvite',
+  'PasswordResetToken',
   'ProjectMember',
   'Session',
   'Project',
@@ -120,6 +121,29 @@ export function makeColumn(opts: {
     null,
     opts.order ?? 0,
     ts,
+    ts,
+  )
+  return { id }
+}
+
+/** A forgot-password reset-token row. */
+export function makePasswordResetToken(opts: {
+  userId: string
+  tokenHash?: string
+  expiresAt?: number
+  usedAt?: number | null
+  createdAt?: number
+}): { id: string } {
+  const id = genId()
+  const ts = opts.createdAt ?? nowMs()
+  db.prepare(
+    'INSERT INTO "PasswordResetToken" ("id","userId","tokenHash","expiresAt","usedAt","createdAt") VALUES (?,?,?,?,?,?)',
+  ).run(
+    id,
+    opts.userId,
+    opts.tokenHash ?? `hash_${id.slice(0, 8)}`,
+    opts.expiresAt ?? ts + 30 * 60 * 1000,
+    opts.usedAt ?? null,
     ts,
   )
   return { id }

@@ -460,6 +460,16 @@ export type UpdateArea = z.infer<typeof updateAreaSchema>
 // ============================================================================
 
 /**
+ * Password strength rule, shared by registration and password reset
+ * (forgotPasswordSchema's `resetPasswordInputSchema` below reuses this
+ * exact rule rather than duplicating it).
+ */
+export const passwordRuleSchema = z
+  .string()
+  .min(8, 'Password must be at least 8 characters')
+  .max(128, 'Password must be at most 128 characters')
+
+/**
  * Schema for user registration input
  */
 export const registerInputSchema = z.object({
@@ -472,10 +482,7 @@ export const registerInputSchema = z.object({
       'Username must be alphanumeric with underscores only',
     ),
   email: z.string().email('Invalid email address').max(255),
-  password: z
-    .string()
-    .min(8, 'Password must be at least 8 characters')
-    .max(128, 'Password must be at most 128 characters'),
+  password: passwordRuleSchema,
 })
 
 /**
@@ -486,6 +493,39 @@ export const loginInputSchema = z.object({
   password: z.string().min(1, 'Password is required'),
   rememberMe: z.boolean().default(false),
 })
+
+// ============================================================================
+// Password Reset Schemas (forgot password)
+// ============================================================================
+
+/**
+ * Schema for requesting a password-reset email. `turnstileToken` is the
+ * Cloudflare Turnstile widget's response token, verified server-side before
+ * any other work (src/lib/auth/turnstile.ts).
+ */
+export const forgotPasswordInputSchema = z.object({
+  email: z.string().email('Invalid email address').max(255),
+  turnstileToken: z.string().min(1, 'Verification is required'),
+})
+
+/**
+ * Schema for setting a new password from a reset link. `password` reuses
+ * registerInputSchema's rule (passwordRuleSchema above); the refine checks
+ * the two password fields match.
+ */
+export const resetPasswordInputSchema = z
+  .object({
+    token: z.string().min(1, 'Missing reset token'),
+    password: passwordRuleSchema,
+    confirmPassword: z.string().min(1, 'Please confirm your password'),
+  })
+  .refine((data) => data.password === data.confirmPassword, {
+    message: 'Passwords do not match',
+    path: ['confirmPassword'],
+  })
+
+export type ForgotPasswordInput = z.infer<typeof forgotPasswordInputSchema>
+export type ResetPasswordInput = z.infer<typeof resetPasswordInputSchema>
 
 // ============================================================================
 // Permission Schemas

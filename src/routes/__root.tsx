@@ -45,12 +45,17 @@ interface MyRouterContext {
 // with '/share'. Without it a public canvas link bounces the visitor to
 // /login — which looks exactly like a broken link rather than a missing
 // allowlist entry.
+// '/forgot-password' and '/reset-password' are public — a
+// logged-out visitor who forgot their password has no session to check, and
+// a reset link is designed to be opened straight from an email.
 const PUBLIC_PATHS = [
   '/login',
   '/register',
   '/invite',
   '/share',
   '/canvas-share',
+  '/forgot-password',
+  '/reset-password',
 ]
 
 export const Route = createRootRouteWithContext<MyRouterContext>()({

@@ -11,8 +11,10 @@
 import { Route as rootRouteImport } from './routes/__root'
 import { Route as TokenRouteImport } from './routes/token'
 import { Route as RevokeRouteImport } from './routes/revoke'
+import { Route as ResetPasswordRouteImport } from './routes/reset-password'
 import { Route as RegisterRouteImport } from './routes/register'
 import { Route as LoginRouteImport } from './routes/login'
+import { Route as ForgotPasswordRouteImport } from './routes/forgot-password'
 import { Route as AuthorizeRouteImport } from './routes/authorize'
 import { Route as IndexRouteImport } from './routes/index'
 import { Route as WhiteboardWhiteboardIdRouteImport } from './routes/whiteboard/$whiteboardId'
@@ -52,6 +54,11 @@ const RevokeRoute = RevokeRouteImport.update({
   path: '/revoke',
   getParentRoute: () => rootRouteImport,
 } as any)
+const ResetPasswordRoute = ResetPasswordRouteImport.update({
+  id: '/reset-password',
+  path: '/reset-password',
+  getParentRoute: () => rootRouteImport,
+} as any)
 const RegisterRoute = RegisterRouteImport.update({
   id: '/register',
   path: '/register',
@@ -60,6 +67,11 @@ const RegisterRoute = RegisterRouteImport.update({
 const LoginRoute = LoginRouteImport.update({
   id: '/login',
   path: '/login',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const ForgotPasswordRoute = ForgotPasswordRouteImport.update({
+  id: '/forgot-password',
+  path: '/forgot-password',
   getParentRoute: () => rootRouteImport,
 } as any)
 const AuthorizeRoute = AuthorizeRouteImport.update({
@@ -207,8 +219,10 @@ const DemoStartSsrDataOnlyRoute = DemoStartSsrDataOnlyRouteImport.update({
 export interface FileRoutesByFullPath {
   '/': typeof IndexRoute
   '/authorize': typeof AuthorizeRoute
+  '/forgot-password': typeof ForgotPasswordRoute
   '/login': typeof LoginRoute
   '/register': typeof RegisterRoute
+  '/reset-password': typeof ResetPasswordRoute
   '/revoke': typeof RevokeRoute
   '/token': typeof TokenRoute
   '/api/canvas-boards': typeof ApiCanvasBoardsRoute
@@ -241,8 +255,10 @@ export interface FileRoutesByFullPath {
 export interface FileRoutesByTo {
   '/': typeof IndexRoute
   '/authorize': typeof AuthorizeRoute
+  '/forgot-password': typeof ForgotPasswordRoute
   '/login': typeof LoginRoute
   '/register': typeof RegisterRoute
+  '/reset-password': typeof ResetPasswordRoute
   '/revoke': typeof RevokeRoute
   '/token': typeof TokenRoute
   '/api/canvas-boards': typeof ApiCanvasBoardsRoute
@@ -275,8 +291,10 @@ export interface FileRoutesById {
   __root__: typeof rootRouteImport
   '/': typeof IndexRoute
   '/authorize': typeof AuthorizeRoute
+  '/forgot-password': typeof ForgotPasswordRoute
   '/login': typeof LoginRoute
   '/register': typeof RegisterRoute
+  '/reset-password': typeof ResetPasswordRoute
   '/revoke': typeof RevokeRoute
   '/token': typeof TokenRoute
   '/api/canvas-boards': typeof ApiCanvasBoardsRoute
@@ -311,8 +329,10 @@ export interface FileRouteTypes {
   fullPaths:
     | '/'
     | '/authorize'
+    | '/forgot-password'
     | '/login'
     | '/register'
+    | '/reset-password'
     | '/revoke'
     | '/token'
     | '/api/canvas-boards'
@@ -345,8 +365,10 @@ export interface FileRouteTypes {
   to:
     | '/'
     | '/authorize'
+    | '/forgot-password'
     | '/login'
     | '/register'
+    | '/reset-password'
     | '/revoke'
     | '/token'
     | '/api/canvas-boards'
@@ -378,8 +400,10 @@ export interface FileRouteTypes {
     | '__root__'
     | '/'
     | '/authorize'
+    | '/forgot-password'
     | '/login'
     | '/register'
+    | '/reset-password'
     | '/revoke'
     | '/token'
     | '/api/canvas-boards'
@@ -413,8 +437,10 @@ export interface FileRouteTypes {
 export interface RootRouteChildren {
   IndexRoute: typeof IndexRoute
   AuthorizeRoute: typeof AuthorizeRoute
+  ForgotPasswordRoute: typeof ForgotPasswordRoute
   LoginRoute: typeof LoginRoute
   RegisterRoute: typeof RegisterRoute
+  ResetPasswordRoute: typeof ResetPasswordRoute
   RevokeRoute: typeof RevokeRoute
   TokenRoute: typeof TokenRoute
   ApiCanvasBoardsRoute: typeof ApiCanvasBoardsRoute
@@ -459,6 +485,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof RevokeRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/reset-password': {
+      id: '/reset-password'
+      path: '/reset-password'
+      fullPath: '/reset-password'
+      preLoaderRoute: typeof ResetPasswordRouteImport
+      parentRoute: typeof rootRouteImport
+    }
     '/register': {
       id: '/register'
       path: '/register'
@@ -471,6 +504,13 @@ declare module '@tanstack/react-router' {
       path: '/login'
       fullPath: '/login'
       preLoaderRoute: typeof LoginRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/forgot-password': {
+      id: '/forgot-password'
+      path: '/forgot-password'
+      fullPath: '/forgot-password'
+      preLoaderRoute: typeof ForgotPasswordRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/authorize': {
@@ -688,8 +728,10 @@ const ProjectProjectIdRouteWithChildren =
 const rootRouteChildren: RootRouteChildren = {
   IndexRoute: IndexRoute,
   AuthorizeRoute: AuthorizeRoute,
+  ForgotPasswordRoute: ForgotPasswordRoute,
   LoginRoute: LoginRoute,
   RegisterRoute: RegisterRoute,
+  ResetPasswordRoute: ResetPasswordRoute,
   RevokeRoute: RevokeRoute,
   TokenRoute: TokenRoute,
   ApiCanvasBoardsRoute: ApiCanvasBoardsRoute,

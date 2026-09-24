@@ -14,6 +14,13 @@ import { sanitizeRedirect } from '@/lib/safe-redirect'
 
 const searchSchema = z.object({
   redirect: z.string().optional().default('/'),
+  // Set by reset-password.tsx's post-reset redirect
+  // ('/login?reset=success'). A non-numeric token on purpose: the router's
+  // own search parser reads a bare numeral like "1" as the number 1 rather
+  // than the string "1", which fails z.string() and, once coerced back to a
+  // string, gets JSON-re-encoded on the next URL write. "success" parses as
+  // a plain string on both the initial read and every later re-serialization.
+  reset: z.string().optional(),
 })
 
 export const Route = createFileRoute('/login')({
@@ -22,7 +29,7 @@ export const Route = createFileRoute('/login')({
 })
 
 function LoginPage() {
-  const { redirect: rawRedirect } = Route.useSearch()
+  const { redirect: rawRedirect, reset } = Route.useSearch()
   // S1: reject any redirect that isn't same-origin-relative (blocks
   // "//evil.com" and "/\evil.com" open-redirect payloads) before it's ever
   // handed to window.location.assign, which — unlike router.navigate — honors
@@ -115,6 +122,17 @@ function LoginPage() {
         </div>
 
         <form onSubmit={handleSubmit} aria-busy={isSubmitting} noValidate>
+          {/* Post-reset confirmation banner */}
+          {reset === 'success' && (
+            <div
+              role="status"
+              aria-live="polite"
+              className="mb-4 rounded-md bg-green-50 border border-green-200 px-4 py-3 text-sm text-green-800 dark:bg-green-950 dark:border-green-800 dark:text-green-200"
+            >
+              Password updated. Log in with your new password.
+            </div>
+          )}
+
           {/* Error message */}
           {error && (
             <div
@@ -162,6 +180,14 @@ function LoginPage() {
               className="mt-1"
               placeholder="Your password"
             />
+            <p className="mt-1 text-right text-sm">
+              <Link
+                to="/forgot-password"
+                className="font-medium underline underline-offset-4"
+              >
+                Forgot password?
+              </Link>
+            </p>
           </div>
 
           {/* Remember me */}

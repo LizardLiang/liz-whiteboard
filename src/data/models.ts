@@ -46,6 +46,16 @@ export interface Session {
   createdAt: Date
 }
 
+/** One issued (or attempted) forgot-password reset link. */
+export interface PasswordResetToken {
+  id: string
+  userId: string
+  tokenHash: string
+  expiresAt: Date
+  usedAt: Date | null
+  createdAt: Date
+}
+
 export interface ProjectMember {
   id: string
   projectId: string

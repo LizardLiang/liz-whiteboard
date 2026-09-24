@@ -7,7 +7,12 @@
 // Node.js built-ins (node:crypto, etc.) aren't available in the browser.
 
 import { createServerFn } from '@tanstack/react-start'
-import { loginInputSchema, registerInputSchema } from '@/data/schema'
+import {
+  forgotPasswordInputSchema,
+  loginInputSchema,
+  registerInputSchema,
+  resetPasswordInputSchema,
+} from '@/data/schema'
 import { AUTH_ERROR_CODES } from '@/lib/auth/errors'
 
 const GENERIC_AUTH_ERROR = 'Invalid email or password'
@@ -224,3 +229,154 @@ export const getCurrentUser = createServerFn({ method: 'GET' }).handler(
     return { user: authResult.user }
   },
 )
+
+/**
+ * Return the public Turnstile site key for the forgot-password widget, so
+ * the client reads it from the server rather than hard-coding it.
+ *
+ * @requires unauthenticated
+ */
+export const getTurnstileSiteKey = createServerFn({ method: 'GET' }).handler(
+  () => {
+    return { siteKey: process.env.TURNSTILE_SITE_KEY ?? null }
+  },
+)
+
+/**
+ * Request a password-reset email. Always replies with the same
+ * success-shaped, generic message regardless of whether the email matches an
+ * account (anti-enumeration) — the only branch that reveals anything is the
+ * IP-based rate limit, which says nothing about the email itself.
+ *
+ * Order: IP rate limit -> Turnstile -> lazy token cleanup -> lookup -> (if
+ * eligible) issue token and fire the email without awaiting it, so every
+ * branch replies in about the same time.
+ *
+ * @requires unauthenticated
+ */
+export const requestPasswordReset = createServerFn({ method: 'POST' })
+  .inputValidator((data: unknown) => forgotPasswordInputSchema.parse(data))
+  .handler(async ({ data }) => {
+    const { getRequest } = await import('@tanstack/react-start/server')
+    const { extractClientIp } = await import('@/lib/rate-limit')
+    const { checkResetIpRateLimit, canSendReset } = await import(
+      '@/lib/auth/reset-limits'
+    )
+    const { verifyTurnstile } = await import('@/lib/auth/turnstile')
+    const { findUserByEmail } = await import('@/data/user')
+    const { createResetToken, deleteResetTokensOlderThan } = await import(
+      '@/data/password-reset'
+    )
+    const { generateResetToken, hashResetToken } = await import(
+      '@/lib/auth/reset-token'
+    )
+    const { sendEmail } = await import('@/lib/email/resend')
+
+    const request = getRequest()
+    const ip = extractClientIp(request)
+
+    const GENERIC_SUCCESS = {
+      success: true as const,
+      message: 'If an account exists for that email, a reset link is on its way.',
+    }
+
+    if (!checkResetIpRateLimit(ip)) {
+      return { success: false as const, error: 'RATE_LIMITED' as const }
+    }
+
+    const turnstileOk = await verifyTurnstile(data.turnstileToken, ip)
+    if (!turnstileOk) {
+      return { success: false as const, error: 'CAPTCHA_FAILED' as const }
+    }
+
+    // Lazy cleanup: rows older than 7 days are no longer needed for either
+    // redemption or the rolling 24h abuse-limit windows.
+    await deleteResetTokensOlderThan(7 * 24 * 60 * 60 * 1000)
+
+    const user = await findUserByEmail(data.email)
+    if (user && (await canSendReset(user.id))) {
+      const rawToken = generateResetToken()
+      const tokenHash = hashResetToken(rawToken)
+      await createResetToken(user.id, tokenHash)
+
+      const baseUrl = process.env.APP_BASE_URL
+      if (!baseUrl) {
+        if (process.env.NODE_ENV === 'production') {
+          console.error(
+            '[password-reset] APP_BASE_URL is not set — reset email not sent.',
+          )
+        }
+      } else {
+        const link = `${baseUrl.replace(/\/$/, '')}/reset-password?token=${rawToken}`
+        void sendEmail({
+          to: user.email,
+          subject: 'Reset your password',
+          text: `Use this link to reset your password: ${link}\n\nThis link expires in 30 minutes and can only be used once. If you did not request this, you can ignore this email.`,
+          html: `<p>Use this link to reset your password:</p><p><a href="${link}">${link}</a></p><p>This link expires in 30 minutes and can only be used once. If you did not request this, you can ignore this email.</p>`,
+        }).catch((err: unknown) => {
+          console.error('[password-reset] sendEmail failed:', err)
+        })
+      }
+    }
+
+    return GENERIC_SUCCESS
+  })
+
+/**
+ * Set a new password from a valid reset link. Signs the user out everywhere:
+ * completePasswordReset deletes every Session and OauthRefreshToken row for
+ * the account, and this handler also clears the current browser's own
+ * session cookie.
+ *
+ * @requires unauthenticated
+ */
+export const resetPassword = createServerFn({ method: 'POST' })
+  .inputValidator((data: unknown) => resetPasswordInputSchema.parse(data))
+  .handler(async ({ data }) => {
+    const { setResponseHeader } = await import('@tanstack/react-start/server')
+    const { hashResetToken } = await import('@/lib/auth/reset-token')
+    const { completePasswordReset, findValidResetToken } = await import(
+      '@/data/password-reset'
+    )
+    const { hashPassword } = await import('@/lib/auth/password')
+    const { buildClearCookieHeader } = await import('@/lib/auth/cookies')
+
+    const tokenHash = hashResetToken(data.token)
+    const resetToken = await findValidResetToken(tokenHash)
+    if (!resetToken) {
+      return { success: false as const, error: 'INVALID_TOKEN' as const }
+    }
+
+    const newPasswordHash = await hashPassword(data.password)
+    completePasswordReset(resetToken.userId, newPasswordHash)
+
+    setResponseHeader('Set-Cookie', buildClearCookieHeader())
+
+    console.log(`[auth] Password reset completed: ${resetToken.userId}`)
+
+    return { success: true as const, redirect: '/login?reset=success' }
+  })
+
+/**
+ * Check whether a reset token (from a `/reset-password?token=` link) is
+ * still valid, for the route loader to decide which form state to render.
+ * Deliberately returns only a boolean — never the token's owner or any other
+ * detail a client-side check shouldn't be able to read.
+ *
+ * @requires unauthenticated
+ */
+export const validateResetToken = createServerFn({ method: 'GET' })
+  .inputValidator((token: unknown) => {
+    if (typeof token !== 'string' || token.length === 0) {
+      throw new Error('Invalid token')
+    }
+    return token
+  })
+  .handler(async ({ data: token }) => {
+    const { hashResetToken } = await import('@/lib/auth/reset-token')
+    const { findValidResetToken } = await import('@/data/password-reset')
+
+    const tokenHash = hashResetToken(token)
+    const resetToken = await findValidResetToken(tokenHash)
+    return { valid: resetToken !== null }
+  })

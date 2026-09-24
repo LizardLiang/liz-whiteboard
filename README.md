@@ -109,6 +109,9 @@ Configuration is via environment variables (loaded from `.env.local` in developm
 | `OAUTH_ALLOW_OPEN_CIMD`                                | Set to `false` to disable open CIMD resolution, so only `CIMD_TRUSTED_ORIGINS` resolve and every other https `client_id` is rejected. **On by default.** |
 | `CIMD_TEST_ORIGINS`                                    | JSON array of origins exempt from the SSRF private-address check, for the e2e suite. **Ignored entirely when `NODE_ENV=production`.** |
 | `DEBUG_SUPER_PASSWORD`                                 | Optional dev-only login bypass (never set in production).                                                                          |
+| `APP_BASE_URL`                                         | Public base URL used to build forgot-password reset links (e.g. `https://your-domain`). Required in production — the link is never built from the request's Host header.  |
+| `TURNSTILE_SITE_KEY` / `TURNSTILE_SECRET_KEY`           | Cloudflare Turnstile keys for the forgot-password CAPTCHA. Dev and e2e use Cloudflare's published always-pass test keys: site `1x00000000000000000000AA`, secret `1x0000000000000000000000000000000AA`. |
+| `RESEND_API_KEY` / `RESEND_FROM`                        | Resend API key and verified sender address for forgot-password emails. Unset in development: the email text (including the reset link) is logged to the console instead of sent. |
 
 ### Trusting a new MCP client
 

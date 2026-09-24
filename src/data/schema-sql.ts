@@ -476,4 +476,26 @@ CREATE TABLE IF NOT EXISTS "CanvasBoardShareLink" (
 CREATE UNIQUE INDEX IF NOT EXISTS "CanvasBoardShareLink_tokenHash_key" ON "CanvasBoardShareLink"("tokenHash");
 CREATE INDEX IF NOT EXISTS "CanvasBoardShareLink_canvasBoardId_idx" ON "CanvasBoardShareLink"("canvasBoardId");
 CREATE INDEX IF NOT EXISTS "CanvasBoardShareLink_expiresAt_idx" ON "CanvasBoardShareLink"("expiresAt");
+
+-- Forgot-password reset links. Each row is one issued (or
+-- attempted) reset email. The Resend abuse limits in
+-- src/lib/auth/reset-limits.ts count these rows by userId/createdAt, so a row
+-- is never deleted when it is voided (usedAt set) -- only the lazy cleanup in
+-- src/data/password-reset.ts (deleteResetTokensOlderThan) removes rows, once
+-- they are more than 7 days old. Only the SHA-256 hash of the raw token is
+-- ever stored, matching every other token table in this schema.
+CREATE TABLE IF NOT EXISTS "PasswordResetToken" (
+    "id" TEXT NOT NULL PRIMARY KEY,
+    "userId" TEXT NOT NULL,
+    "tokenHash" TEXT NOT NULL,
+    "expiresAt" INTEGER NOT NULL,
+    "usedAt" INTEGER,
+    "createdAt" INTEGER NOT NULL DEFAULT (unixepoch('now') * 1000),
+    CONSTRAINT "PasswordResetToken_userId_fkey" FOREIGN KEY ("userId")
+        REFERENCES "User" ("id") ON DELETE CASCADE ON UPDATE CASCADE
+);
+
+CREATE UNIQUE INDEX IF NOT EXISTS "PasswordResetToken_tokenHash_key" ON "PasswordResetToken"("tokenHash");
+CREATE INDEX IF NOT EXISTS "PasswordResetToken_userId_idx" ON "PasswordResetToken"("userId");
+CREATE INDEX IF NOT EXISTS "PasswordResetToken_createdAt_idx" ON "PasswordResetToken"("createdAt");
 `

@@ -27,6 +27,7 @@ import type {
   DiagramTable,
   Folder,
   JsonValue,
+  PasswordResetToken,
   PersistedSnapshotPayload,
   Project,
   ProjectInvite,
@@ -415,6 +416,18 @@ export function mapSession(r: Row): Session | null {
     tokenHash: r.tokenHash as string,
     userId: r.userId as string,
     expiresAt: fromDbDate(r.expiresAt),
+    createdAt: fromDbDate(r.createdAt),
+  }
+}
+
+export function mapPasswordResetToken(r: Row): PasswordResetToken | null {
+  if (!r) return null
+  return {
+    id: r.id as string,
+    userId: r.userId as string,
+    tokenHash: r.tokenHash as string,
+    expiresAt: fromDbDate(r.expiresAt),
+    usedAt: r.usedAt == null ? null : fromDbDate(r.usedAt),
     createdAt: fromDbDate(r.createdAt),
   }
 }
