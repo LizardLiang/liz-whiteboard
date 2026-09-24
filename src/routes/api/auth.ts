@@ -250,7 +250,9 @@ export const getTurnstileSiteKey = createServerFn({ method: 'GET' }).handler(
  *
  * Order: IP rate limit -> Turnstile -> lazy token cleanup -> lookup -> (if
  * eligible) issue token and fire the email without awaiting it, so every
- * branch replies in about the same time.
+ * branch replies in about the same time. The abuse-limit check and the token
+ * insert happen together, atomically, in tryCreateResetToken — see that
+ * function's comment for why they cannot be two separate awaited steps.
  *
  * @requires unauthenticated
  */
@@ -259,14 +261,14 @@ export const requestPasswordReset = createServerFn({ method: 'POST' })
   .handler(async ({ data }) => {
     const { getRequest } = await import('@tanstack/react-start/server')
     const { extractClientIp } = await import('@/lib/rate-limit')
-    const { checkResetIpRateLimit, canSendReset } = await import(
-      '@/lib/auth/reset-limits'
-    )
+    const { checkResetIpRateLimit } = await import('@/lib/auth/reset-limits')
     const { verifyTurnstile } = await import('@/lib/auth/turnstile')
     const { findUserByEmail } = await import('@/data/user')
-    const { createResetToken, deleteResetTokensOlderThan } = await import(
-      '@/data/password-reset'
-    )
+    const {
+      RESET_TOKEN_CLEANUP_AGE_MS,
+      deleteResetTokensOlderThan,
+      tryCreateResetToken,
+    } = await import('@/data/password-reset')
     const { generateResetToken, hashResetToken } = await import(
       '@/lib/auth/reset-token'
     )
@@ -281,41 +283,43 @@ export const requestPasswordReset = createServerFn({ method: 'POST' })
     }
 
     if (!checkResetIpRateLimit(ip)) {
-      return { success: false as const, error: 'RATE_LIMITED' as const }
+      return { success: false as const, error: AUTH_ERROR_CODES.RATE_LIMITED }
     }
 
     const turnstileOk = await verifyTurnstile(data.turnstileToken, ip)
     if (!turnstileOk) {
-      return { success: false as const, error: 'CAPTCHA_FAILED' as const }
+      return { success: false as const, error: AUTH_ERROR_CODES.CAPTCHA_FAILED }
     }
 
-    // Lazy cleanup: rows older than 7 days are no longer needed for either
-    // redemption or the rolling 24h abuse-limit windows.
-    await deleteResetTokensOlderThan(7 * 24 * 60 * 60 * 1000)
+    // Lazy cleanup: rows older than the cleanup age are no longer needed for
+    // either redemption or the rolling abuse-limit windows.
+    await deleteResetTokensOlderThan(RESET_TOKEN_CLEANUP_AGE_MS)
 
     const user = await findUserByEmail(data.email)
-    if (user && (await canSendReset(user.id))) {
+    if (user) {
       const rawToken = generateResetToken()
       const tokenHash = hashResetToken(rawToken)
-      await createResetToken(user.id, tokenHash)
+      const created = tryCreateResetToken(user.id, tokenHash)
 
-      const baseUrl = process.env.APP_BASE_URL
-      if (!baseUrl) {
-        if (process.env.NODE_ENV === 'production') {
-          console.error(
-            '[password-reset] APP_BASE_URL is not set — reset email not sent.',
-          )
+      if (created) {
+        const baseUrl = process.env.APP_BASE_URL
+        if (!baseUrl) {
+          if (process.env.NODE_ENV === 'production') {
+            console.error(
+              '[password-reset] APP_BASE_URL is not set — reset email not sent.',
+            )
+          }
+        } else {
+          const link = `${baseUrl.replace(/\/$/, '')}/reset-password?token=${rawToken}`
+          void sendEmail({
+            to: user.email,
+            subject: 'Reset your password',
+            text: `Use this link to reset your password: ${link}\n\nThis link expires in 30 minutes and can only be used once. If you did not request this, you can ignore this email.`,
+            html: `<p>Use this link to reset your password:</p><p><a href="${link}">${link}</a></p><p>This link expires in 30 minutes and can only be used once. If you did not request this, you can ignore this email.</p>`,
+          }).catch((err: unknown) => {
+            console.error('[password-reset] sendEmail failed:', err)
+          })
         }
-      } else {
-        const link = `${baseUrl.replace(/\/$/, '')}/reset-password?token=${rawToken}`
-        void sendEmail({
-          to: user.email,
-          subject: 'Reset your password',
-          text: `Use this link to reset your password: ${link}\n\nThis link expires in 30 minutes and can only be used once. If you did not request this, you can ignore this email.`,
-          html: `<p>Use this link to reset your password:</p><p><a href="${link}">${link}</a></p><p>This link expires in 30 minutes and can only be used once. If you did not request this, you can ignore this email.</p>`,
-        }).catch((err: unknown) => {
-          console.error('[password-reset] sendEmail failed:', err)
-        })
       }
     }
 
@@ -344,7 +348,7 @@ export const resetPassword = createServerFn({ method: 'POST' })
     const tokenHash = hashResetToken(data.token)
     const resetToken = await findValidResetToken(tokenHash)
     if (!resetToken) {
-      return { success: false as const, error: 'INVALID_TOKEN' as const }
+      return { success: false as const, error: AUTH_ERROR_CODES.INVALID_TOKEN }
     }
 
     const newPasswordHash = await hashPassword(data.password)

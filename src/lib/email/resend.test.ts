@@ -118,4 +118,35 @@ describe('sendEmail', () => {
 
     errorSpy.mockRestore()
   })
+
+  it('sends an AbortSignal so a slow Resend response cannot hang forever', async () => {
+    process.env.RESEND_API_KEY = 'test-api-key'
+    const fetchMock = vi
+      .fn()
+      .mockResolvedValue(new Response('{}', { status: 200 }))
+    vi.stubGlobal('fetch', fetchMock)
+
+    await sendEmail(PARAMS)
+
+    const [, init] = fetchMock.mock.calls[0] as [string, RequestInit]
+    expect(init.signal).toBeInstanceOf(AbortSignal)
+  })
+
+  it('never throws — a request that times out is logged instead', async () => {
+    process.env.RESEND_API_KEY = 'test-api-key'
+    vi.stubGlobal(
+      'fetch',
+      vi
+        .fn()
+        .mockRejectedValue(
+          new DOMException('The operation timed out.', 'TimeoutError'),
+        ),
+    )
+    const errorSpy = vi.spyOn(console, 'error').mockImplementation(() => {})
+
+    await expect(sendEmail(PARAMS)).resolves.toBeUndefined()
+    expect(errorSpy).toHaveBeenCalled()
+
+    errorSpy.mockRestore()
+  })
 })

@@ -12,6 +12,7 @@ import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { readAutofilledValue, useAutofillSync } from '@/hooks/use-autofill-sync'
+import { AUTH_ERROR_CODES } from '@/lib/auth/errors'
 
 export const Route = createFileRoute('/forgot-password')({
   loader: async () => {
@@ -69,7 +70,7 @@ function ForgotPasswordPage() {
 
       if (result.success) {
         setSubmittedMessage(result.message)
-      } else if (result.error === 'RATE_LIMITED') {
+      } else if (result.error === AUTH_ERROR_CODES.RATE_LIMITED) {
         setError('Too many requests, try again later.')
         resetWidget()
       } else {

@@ -7,17 +7,23 @@ import { beforeEach, describe, expect, it } from 'vitest'
 
 import { db, nowMs } from '@/db'
 import {
+  RESET_COOLDOWN_MS,
+  RESET_GLOBAL_DAILY_MAX,
+  RESET_PER_USER_DAILY_MAX,
+  _resetGlobalCapWarningForTests,
   completePasswordReset,
   countResetsForUserSince,
   countResetsSince,
   createResetToken,
   deleteResetTokensOlderThan,
   findValidResetToken,
+  tryCreateResetToken,
 } from '@/data/password-reset'
 import { makePasswordResetToken, makeUser, resetDb } from '@/test/db-helpers'
 
 beforeEach(() => {
   resetDb()
+  _resetGlobalCapWarningForTests()
 })
 
 function countResetRows(userId: string): number {
@@ -41,13 +47,15 @@ describe('createResetToken', () => {
     const user = makeUser()
     const before = nowMs()
 
-    const row = await createResetToken(user.id, 'hash-1')
+    await createResetToken(user.id, 'hash-1')
 
-    expect(row.userId).toBe(user.id)
-    expect(row.tokenHash).toBe('hash-1')
-    expect(row.usedAt).toBeNull()
-    expect(row.expiresAt.getTime()).toBeGreaterThan(before + 29 * 60 * 1000)
-    expect(row.expiresAt.getTime()).toBeLessThanOrEqual(before + 30 * 60 * 1000 + 5_000)
+    const row = await findValidResetToken('hash-1')
+    expect(row).not.toBeNull()
+    expect(row?.userId).toBe(user.id)
+    expect(row?.tokenHash).toBe('hash-1')
+    expect(row?.usedAt).toBeNull()
+    expect(row?.expiresAt.getTime()).toBeGreaterThan(before + 29 * 60 * 1000)
+    expect(row?.expiresAt.getTime()).toBeLessThanOrEqual(before + 30 * 60 * 1000 + 5_000)
   })
 
   it('voids every earlier unused token for the same user', async () => {
@@ -109,6 +117,77 @@ describe('findValidResetToken', () => {
 
     const found = await findValidResetToken('live-hash')
     expect(found?.userId).toBe(user.id)
+  })
+})
+
+describe('tryCreateResetToken', () => {
+  it('inserts a new unused row with a 30-minute expiry when no limit blocks it', () => {
+    const user = makeUser()
+    const before = nowMs()
+
+    const created = tryCreateResetToken(user.id, 'atomic-hash')
+
+    expect(created).not.toBeNull()
+    expect(created?.userId).toBe(user.id)
+    expect(created?.tokenHash).toBe('atomic-hash')
+    expect(created?.usedAt).toBeNull()
+    expect(created?.expiresAt.getTime()).toBeGreaterThan(before + 29 * 60 * 1000)
+  })
+
+  it('voids every earlier unused token for the same user on a successful insert', async () => {
+    const user = makeUser()
+    makePasswordResetToken({
+      userId: user.id,
+      tokenHash: 'older-hash',
+      createdAt: nowMs() - (RESET_COOLDOWN_MS + 1_000),
+    })
+
+    const created = tryCreateResetToken(user.id, 'newer-hash')
+
+    expect(created).not.toBeNull()
+    expect(await findValidResetToken('older-hash')).toBeNull()
+    expect(await findValidResetToken('newer-hash')).not.toBeNull()
+  })
+
+  it('returns null and inserts nothing within the cooldown window', async () => {
+    const user = makeUser()
+    makePasswordResetToken({ userId: user.id, createdAt: nowMs() - 1_000 })
+
+    const created = tryCreateResetToken(user.id, 'blocked-hash')
+
+    expect(created).toBeNull()
+    expect(await findValidResetToken('blocked-hash')).toBeNull()
+    expect(countResetRows(user.id)).toBe(1)
+  })
+
+  it('returns null at the per-user daily cap', () => {
+    const user = makeUser()
+    const now = nowMs()
+    for (let i = 0; i < RESET_PER_USER_DAILY_MAX; i++) {
+      makePasswordResetToken({
+        userId: user.id,
+        createdAt: now - RESET_COOLDOWN_MS - 1_000 - i * 3_600_000,
+      })
+    }
+
+    const created = tryCreateResetToken(user.id, 'over-cap-hash')
+
+    expect(created).toBeNull()
+    expect(countResetRows(user.id)).toBe(RESET_PER_USER_DAILY_MAX)
+  })
+
+  it('returns null once the global daily cap is reached', async () => {
+    const now = nowMs()
+    for (let i = 0; i < RESET_GLOBAL_DAILY_MAX; i++) {
+      const u = makeUser()
+      makePasswordResetToken({ userId: u.id, createdAt: now - 3_600_000 })
+    }
+    const freshUser = makeUser()
+
+    const created = tryCreateResetToken(freshUser.id, 'global-cap-hash')
+
+    expect(created).toBeNull()
+    expect(await findValidResetToken('global-cap-hash')).toBeNull()
   })
 })
 

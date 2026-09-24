@@ -5,6 +5,7 @@
 // to deliver the forgot-password reset-link email.
 
 const RESEND_API_URL = 'https://api.resend.com/emails'
+const RESEND_TIMEOUT_MS = 5000
 
 export interface SendEmailParams {
   to: string
@@ -20,8 +21,8 @@ export interface SendEmailParams {
  * (including any link it carries) to the console instead of sending, so a
  * developer can complete the flow without a real API key. When the key is
  * unset in production, logs an error and sends nothing. Resend errors (bad
- * response, network failure) are always logged and never thrown — callers
- * fire this without awaiting it.
+ * response, network failure, or a timeout past RESEND_TIMEOUT_MS) are always
+ * logged and never thrown — callers fire this without awaiting it.
  *
  * @param params - Recipient, subject, and both email bodies
  */
@@ -53,6 +54,7 @@ export async function sendEmail(params: SendEmailParams): Promise<void> {
         html: params.html,
         text: params.text,
       }),
+      signal: AbortSignal.timeout(RESEND_TIMEOUT_MS),
     })
 
     if (!response.ok) {

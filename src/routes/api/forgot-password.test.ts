@@ -13,16 +13,17 @@ import { extractClientIp } from '@/lib/rate-limit'
 import {
   _resetGlobalCapWarningForTests,
   _resetIpRateLimitForTests,
-  canSendReset,
   checkResetIpRateLimit,
 } from '@/lib/auth/reset-limits'
 import { verifyTurnstile } from '@/lib/auth/turnstile'
 import { findUserByEmail } from '@/data/user'
 import {
+  RESET_TOKEN_CLEANUP_AGE_MS,
   completePasswordReset,
   createResetToken,
   deleteResetTokensOlderThan,
   findValidResetToken,
+  tryCreateResetToken,
 } from '@/data/password-reset'
 import { generateResetToken, hashResetToken } from '@/lib/auth/reset-token'
 import { hashPassword, verifyPassword } from '@/lib/auth/password'
@@ -69,23 +70,25 @@ async function requestPasswordResetHandler(data: {
     return { success: false, error: 'CAPTCHA_FAILED' }
   }
 
-  await deleteResetTokensOlderThan(7 * 24 * 60 * 60 * 1000)
+  await deleteResetTokensOlderThan(RESET_TOKEN_CLEANUP_AGE_MS)
 
   const user = await findUserByEmail(data.email)
-  if (user && (await canSendReset(user.id))) {
+  if (user) {
     const rawToken = generateResetToken()
     const tokenHash = hashResetToken(rawToken)
-    await createResetToken(user.id, tokenHash)
+    const created = tryCreateResetToken(user.id, tokenHash)
 
-    const baseUrl = process.env.APP_BASE_URL
-    if (baseUrl) {
-      const link = `${baseUrl.replace(/\/$/, '')}/reset-password?token=${rawToken}`
-      void sendEmail({
-        to: user.email,
-        subject: 'Reset your password',
-        text: `link: ${link}`,
-        html: `<p>${link}</p>`,
-      }).catch(() => {})
+    if (created) {
+      const baseUrl = process.env.APP_BASE_URL
+      if (baseUrl) {
+        const link = `${baseUrl.replace(/\/$/, '')}/reset-password?token=${rawToken}`
+        void sendEmail({
+          to: user.email,
+          subject: 'Reset your password',
+          text: `link: ${link}`,
+          html: `<p>${link}</p>`,
+        }).catch(() => {})
+      }
     }
   }
 
@@ -198,6 +201,26 @@ describe('requestPasswordReset', () => {
 
     expect(result).toEqual({ success: false, error: 'CAPTCHA_FAILED' })
     expect(sendEmail).not.toHaveBeenCalled()
+  })
+
+  it('two concurrent requests for the same user create only one token row', async () => {
+    const user = makeUser({ email: 'alice@example.com' })
+
+    await Promise.all([
+      requestPasswordResetHandler({
+        email: 'alice@example.com',
+        turnstileToken: 'tok',
+      }),
+      requestPasswordResetHandler({
+        email: 'alice@example.com',
+        turnstileToken: 'tok',
+      }),
+    ])
+
+    const row = db
+      .prepare('SELECT count(*) AS c FROM "PasswordResetToken" WHERE "userId" = ?')
+      .get(user.id) as { c: number }
+    expect(row.c).toBe(1)
   })
 })
 
