@@ -7,10 +7,6 @@ import { act, renderHook } from '@testing-library/react'
 // Mock the layout engine so tests are synchronous and controlled (vi.mock is hoisted)
 vi.mock('@/lib/auto-layout/d3-force-layout', () => ({
   computeD3ForceLayout: vi.fn(),
-  // assignLayersBFS and computeEdgeBundleOffsets are called by the hook after
-  // computeD3ForceLayout resolves. Return minimal no-op stubs.
-  assignLayersBFS: vi.fn(() => new Map<string, number>()),
-  computeEdgeBundleOffsets: vi.fn(() => []),
 }))
 
 // eslint-disable-next-line import/first
@@ -92,7 +88,7 @@ describe('useD3ForceLayout', () => {
     expect(result.current.error).toBeNull()
   })
 
-  it('TC-AL-E-12 (cont): returns { positions, edgeOffsets } on success', async () => {
+  it('TC-AL-E-12 (cont): returns { positions } on success', async () => {
     mockComputeLayout.mockResolvedValueOnce(POSITIONS)
 
     const { result } = renderHook(() => useD3ForceLayout())
@@ -102,10 +98,10 @@ describe('useD3ForceLayout', () => {
       layoutResult = await result.current.runLayout(NODES, EDGES)
     })
 
-    // runLayout now returns { positions, edgeOffsets } — not a raw array
+    // runLayout returns { positions } — not a raw array
     expect(layoutResult).not.toBeNull()
     expect(layoutResult.positions).toEqual(POSITIONS)
-    expect(Array.isArray(layoutResult.edgeOffsets)).toBe(true)
+    expect(layoutResult.edgeOffsets).toBeUndefined()
   })
 
   // TC-AL-E-13 — Error surfaced without mutating nodes

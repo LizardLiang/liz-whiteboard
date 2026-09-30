@@ -18,16 +18,13 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { useReactFlow } from '@xyflow/react'
 import { toast } from 'sonner'
-import type {
-  LayoutOutputEdge,
-  LayoutOutputPosition,
-} from '@/lib/auto-layout/d3-force-layout'
+import type { LayoutOutputPosition } from '@/lib/auto-layout/d3-force-layout'
 import type {
   RelationshipEdgeType,
   TableNodeType,
 } from '@/lib/react-flow/types'
 import { applyBulkPositions } from '@/lib/auto-layout'
-import { recalculateEdgesForDraggedNodes } from '@/lib/react-flow/edge-routing'
+import { recalculateEdgeRouting } from '@/lib/react-flow/edge-bundles'
 import { isUnauthorizedError } from '@/lib/auth/errors'
 import { useAuthContext } from '@/components/auth/AuthContext'
 import { updateTablePositionsBulk } from '@/lib/server-functions'
@@ -49,7 +46,6 @@ export interface UseAutoLayoutOrchestratorArgs {
     edges: Array<RelationshipEdgeType>,
   ) => Promise<{
     positions: Array<LayoutOutputPosition>
-    edgeOffsets: Array<LayoutOutputEdge>
   } | null>
   /** Emits table:move:bulk after successful persistence */
   emitBulkPositionUpdate: (
@@ -264,57 +260,33 @@ export function useAutoLayoutOrchestrator({
         return
       }
 
-      const { positions, edgeOffsets } = layoutResult
+      const { positions } = layoutResult
 
       // Step 2 — Optimistic local apply (before network round-trip).
       // Build updated nodes once so we can pass the same array to both
       // setNodes and edge-handle recalculation.
       const updatedNodes = applyBulkPositions(getNodes(), positions)
       setNodes(updatedNodes)
-      // Edges only ever connect table nodes (never area/comment pins) —
-      // narrow for recalculateEdgesForDraggedNodes below, which reads
-      // data.table off each node. Reference nodes are deliberately NOT
-      // included: they have no `data.table` to route against, so an edge
-      // touching one keeps the handle side it already had. Its endpoints
-      // still move with the layout; only the side choice is left alone.
+      // Edges only ever connect table and reference nodes (never area/comment
+      // pins) — narrow for recalculateEdgeRouting below, which reads position
+      // and size off each node. Reference nodes are routed like tables, as the
+      // page-load path does, so an edge to one follows where the node now sits.
       const updatedTableNodes = updatedNodes.filter(
-        (n): n is TableNodeType => n.type === 'table',
+        (n): n is TableNodeType =>
+          n.type === 'table' || n.type === 'externalTable',
       )
-
-      // Build a lookup for fast per-edge offset access
-      const offsetById = new Map(edgeOffsets.map((o) => [o.id, o]))
       const allMovedIds = new Set(positions.map((p) => p.id))
 
       setEdges((prev) => {
         // Every edge in this app is a 'relationship' edge (the sole
         // registered edge type — see node-types.ts) — filter narrows the
-        // type accordingly for recalculateEdgesForDraggedNodes below.
+        // type accordingly for recalculateEdgeRouting below.
         const relationshipEdges = prev.filter(
           (e): e is RelationshipEdgeType => e.type === 'relationship',
         )
-        // Apply bundle offsets to edge data first, then recalculate handle sides.
-        const withOffsets: Array<RelationshipEdgeType> = relationshipEdges.map(
-          (e): RelationshipEdgeType => {
-            const off = offsetById.get(e.id)
-            if (
-              !off ||
-              (off.handleYOffset === 0 && off.centerXOffset === 0) ||
-              !e.data
-            ) {
-              return e
-            }
-            return {
-              ...e,
-              data: {
-                ...e.data,
-                bundleHandleYOffset: off.handleYOffset,
-                bundleCenterXOffset: off.centerXOffset,
-              },
-            }
-          },
-        )
-        return recalculateEdgesForDraggedNodes(
-          withOffsets,
+        // Handle sides and bundle offsets both derive from the new positions.
+        return recalculateEdgeRouting(
+          relationshipEdges,
           updatedTableNodes,
           allMovedIds,
         )

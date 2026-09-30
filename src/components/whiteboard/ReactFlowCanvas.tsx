@@ -67,15 +67,9 @@ import {
   CanvasModeContext,
   DOUBLE_PRESS_WINDOW_MS,
 } from '@/lib/react-flow/canvas-mode'
-import {
-  parseColumnHandleId,
-  recalculateEdgesForDraggedNodes,
-} from '@/lib/react-flow/edge-routing'
+import { parseColumnHandleId } from '@/lib/react-flow/edge-routing'
+import { recalculateEdgeRouting } from '@/lib/react-flow/edge-bundles'
 import { perfTracker } from '@/lib/perf/perf-tracker'
-import {
-  assignLayersBFS,
-  computeEdgeBundleOffsets,
-} from '@/lib/auto-layout/d3-force-layout'
 import { edgeTypes, nodeTypes } from '@/lib/react-flow/node-types'
 import { REFERENCE_DRAG_MIME } from '@/components/whiteboard/Toolbar'
 import {
@@ -1284,41 +1278,14 @@ export function ReactFlowCanvas({
       ...(externalTableNodes as unknown as Array<TableNodeType>),
     ]
     const allNodeIds = new Set(routableNodes.map((n) => n.id))
-    const recalculated = recalculateEdgesForDraggedNodes(
+    // Handle sides and bundle offsets both derive from the node positions, so
+    // page load, peer re-sync and Auto Layout all land on the same fan-out.
+    const recalculated = recalculateEdgeRouting(
       validEdges,
       routableNodes,
       allNodeIds,
     )
-    // Compute per-edge bundle offsets so parallel edges fan out consistently
-    // after a page reload (they are not persisted; derive them from DB data).
-    const layoutNodes = routableNodes.map((n) => ({
-      id: n.id,
-      // eslint-disable-next-line @typescript-eslint/no-unnecessary-condition -- React Flow's `measured` dimensions are only populated after the node has actually been measured in the DOM; on initial mount (this effect) they are genuinely undefined despite the non-optional type.
-      width: n.measured?.width ?? (n.width as number) ?? 250,
-      // eslint-disable-next-line @typescript-eslint/no-unnecessary-condition -- see above: `measured` is undefined pre-measurement at runtime.
-      height: n.measured?.height ?? (n.height as number) ?? 150,
-    }))
-    const layoutEdges = recalculated.map((e) => ({
-      id: e.id,
-      source: e.source,
-      target: e.target,
-    }))
-    const layers = assignLayersBFS(layoutNodes, layoutEdges)
-    const bundleOffsets = computeEdgeBundleOffsets(layoutEdges, layers)
-    const offsetById = new Map(bundleOffsets.map((o) => [o.id, o]))
-    const withOffsets = recalculated.map((e) => {
-      const off = offsetById.get(e.id)
-      if (!off || (off.handleYOffset === 0 && off.centerXOffset === 0)) return e
-      return {
-        ...e,
-        data: {
-          ...e.data!,
-          bundleHandleYOffset: off.handleYOffset,
-          bundleCenterXOffset: off.centerXOffset,
-        },
-      }
-    })
-    setEdges(withOffsets)
+    setEdges(recalculated)
   }, [
     initialEdges,
     initialNodes,
@@ -1348,7 +1315,7 @@ export function ReactFlowCanvas({
         ...(externalTableNodesState as unknown as typeof nodes),
       ]
       const allIds = new Set(measured.map((n) => n.id))
-      return recalculateEdgesForDraggedNodes(prevEdges, measured, allIds)
+      return recalculateEdgeRouting(prevEdges, measured, allIds)
     })
   }, [nodesInitialized, nodes, externalTableNodesState, setEdges])
 
@@ -1504,7 +1471,7 @@ export function ReactFlowCanvas({
   // rAF-throttle drag-frame edge recalculation (GH #121 perf, opt #5).
   // onNodeDrag can fire more than once per animation frame (e.g. a high
   // poll-rate pointer device), and each firing previously ran a full
-  // recalculateEdgesForDraggedNodes + setEdges pass synchronously. Coalescing
+  // recalculateEdgeRouting + setEdges pass synchronously. Coalescing
   // to at most one pass per frame — NOT a delay-debounce, which would
   // visibly lag the dragged node's edges — cuts redundant work during drag
   // while keeping edges visually attached every frame. Only the continuous
@@ -1534,7 +1501,7 @@ export function ReactFlowCanvas({
         pendingDragEdgeRecalcRef.current = null
         if (!pending) return
         setEdges((prevEdges) =>
-          recalculateEdgesForDraggedNodes(
+          recalculateEdgeRouting(
             prevEdges,
             pending.currentNodes,
             pending.draggedIds,
@@ -1704,7 +1671,7 @@ export function ReactFlowCanvas({
       draggedIds.add(node.id)
       const currentNodes = mergeCurrentPositions(node, draggedNodes)
       setEdges((prevEdges) =>
-        recalculateEdgesForDraggedNodes(prevEdges, currentNodes, draggedIds),
+        recalculateEdgeRouting(prevEdges, currentNodes, draggedIds),
       )
       // OUTBOUND coordinate boundary: React Flow reports a nested member's
       // position relative to its area, but everything past this callback —

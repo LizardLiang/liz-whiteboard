@@ -9,15 +9,8 @@ import type {
   RelationshipEdgeType,
   TableNodeType,
 } from '@/lib/react-flow/types'
-import type {
-  LayoutOutputEdge,
-  LayoutOutputPosition,
-} from '@/lib/auto-layout/d3-force-layout'
-import {
-  assignLayersBFS,
-  computeD3ForceLayout,
-  computeEdgeBundleOffsets,
-} from '@/lib/auto-layout/d3-force-layout'
+import type { LayoutOutputPosition } from '@/lib/auto-layout/d3-force-layout'
+import { computeD3ForceLayout } from '@/lib/auto-layout/d3-force-layout'
 import { getCachedTableWidth } from '@/lib/react-flow/canvas-node-metrics'
 import { calculateTableHeight } from '@/lib/react-flow/layout-adapter'
 
@@ -38,8 +31,6 @@ function findColumnRow(
 export interface LayoutResult {
   /** Node positions to apply via applyBulkPositions */
   positions: Array<LayoutOutputPosition>
-  /** Per-edge bundle offsets to apply to edge data */
-  edgeOffsets: Array<LayoutOutputEdge>
 }
 
 export interface UseD3ForceLayoutOptions {
@@ -50,7 +41,7 @@ export interface UseD3ForceLayoutOptions {
 export interface UseD3ForceLayoutResult {
   /**
    * Run the layout computation.
-   * Resolves to { positions, edgeOffsets } or null if an error occurred.
+   * Resolves to { positions } or null if an error occurred.
    */
   runLayout: (
     nodes: Array<TableNodeType>,
@@ -143,7 +134,7 @@ export function useD3ForceLayout(
         })
 
         // Convert React Flow edges to layout input.
-        // Pass id so computeEdgeBundleOffsets can emit per-edge offsets keyed by id.
+        // Pass id so the layout can key edges deterministically.
         // Pass label and cardinality so the layout engine can compute per-edge
         // label pill sizes from actual content (not a fixed constant).
         // sourceRow/targetRow place each edge's port on the FK / referenced row.
@@ -166,13 +157,7 @@ export function useD3ForceLayout(
 
         const positions = await computeD3ForceLayout(layoutNodes, layoutEdges)
 
-        // Compute per-edge bundle offsets (O(n+e), negligible cost).
-        // Re-runs assignLayersBFS over all layout nodes — isolated nodes have
-        // degree 0 so they don't affect the connected cluster's corridor keys.
-        const layers = assignLayersBFS(layoutNodes, layoutEdges)
-        const edgeOffsets = computeEdgeBundleOffsets(layoutEdges, layers)
-
-        const result: LayoutResult = { positions, edgeOffsets }
+        const result: LayoutResult = { positions }
         onLayoutComplete?.(result)
         return result
       } catch (err) {

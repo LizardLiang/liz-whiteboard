@@ -58,10 +58,10 @@ const POSITIONS = [
 ]
 
 /**
- * Wraps positions in the { positions, edgeOffsets } shape that useD3ForceLayout
+ * Wraps positions in the { positions } shape that useD3ForceLayout
  * now returns. Tests mock runD3ForceLayout with this shape.
  */
-const LAYOUT_RESULT = { positions: POSITIONS, edgeOffsets: [] }
+const LAYOUT_RESULT = { positions: POSITIONS }
 
 let mockRunD3ForceLayout: ReturnType<typeof vi.fn>
 let mockEmitBulkPositionUpdate: ReturnType<typeof vi.fn>
@@ -659,18 +659,13 @@ describe('useAutoLayoutOrchestrator', () => {
       type: 'comment',
       position: { x: 0, y: 0 },
     }
-    mockGetNodes.mockReturnValueOnce([
-      tableNode,
-      areaNode,
-      commentNode,
-    ] as any)
+    mockGetNodes.mockReturnValueOnce([tableNode, areaNode, commentNode] as any)
 
     // Layout result only contains the table node's position — mirrors what
     // the real d3-force layout would produce once comment/area nodes are
     // excluded from its input.
     const tableOnlyLayoutResult = {
       positions: [{ id: 'table-1', x: 10, y: 20 }],
-      edgeOffsets: [],
     }
     mockRunD3ForceLayout.mockResolvedValueOnce(tableOnlyLayoutResult)
     ;(

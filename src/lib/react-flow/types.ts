@@ -283,7 +283,7 @@ export interface RelationshipEdgeData extends Record<string, unknown> {
 
   /**
    * Per-edge Y offset (px) for source/target handle positions, computed by
-   * computeEdgeBundleOffsets() to fan parallel edges in same-table-pair bundles.
+   * recalculateEdgeRouting() (edge-bundles.ts) to fan parallel edges in same-table-pair bundles.
    * Applied by RelationshipEdge.tsx to getSmoothStepPath sourceY/targetY
    * and to CardinalityIndicator y position. 0 when edge is not in a bundle.
    */
@@ -291,7 +291,7 @@ export interface RelationshipEdgeData extends Record<string, unknown> {
 
   /**
    * Per-edge X offset (px) relative to the corridor center, computed by
-   * computeEdgeBundleOffsets() to fan parallel edges' vertical step segments.
+   * recalculateEdgeRouting() (edge-bundles.ts) to fan parallel edges' vertical step segments.
    * Applied by RelationshipEdge.tsx to getSmoothStepPath centerX. 0 when
    * edge is not in a bundle.
    */
