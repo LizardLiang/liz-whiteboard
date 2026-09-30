@@ -151,6 +151,13 @@ export const IDS = {
   // heights.
   autoLayoutWhiteboard: '40000000-0000-4000-8000-000000000001',
 
+  // Boards for the Auto Layout engine quality e2e
+  // (e2e/auto-layout-quality.spec.ts). The first holds a seeded snowflake
+  // schema with NULL heights and a tangled starting grid; the second is left
+  // EMPTY so the spec can import the same snowflake DDL into it.
+  autoLayoutQualityWhiteboard: '40000000-0000-4000-8000-000000000011',
+  autoLayoutQualityImportWhiteboard: '40000000-0000-4000-8000-000000000012',
+
   // Dedicated project/board for the shapes-and-connectors suite (Phase 1).
   // Isolated on purpose (Artemis's recommendation): this suite draws,
   // moves, resizes, deletes, and — in the legacy-snapshot-restore case
