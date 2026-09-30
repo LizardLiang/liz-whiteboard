@@ -711,22 +711,36 @@ function ReactFlowWhiteboardInner({
     setFocusRequestToken((token) => token + 1)
   }, [])
 
-  // LizMeter #83 — arriving from a cross-file reference's jump-to-source:
-  // `?focusTable=<id>` on the route puts that id here, and we replay it
-  // through the same focus pipeline the search palette uses. Deferred until
-  // the node actually exists, because the board's tables land asynchronously
-  // and centring on an id React Flow has never seen is a no-op. Fired once
-  // per id: `appliedFocusRef` keeps a later re-render (or a node update) from
-  // yanking the viewport back after the user has panned away. An id that is
-  // not on this board is simply never applied, so a stale link just opens it.
+  // LizMeter #83 tactical fix (2026-09-10) — `?focusTable=<id>` on the route
+  // puts that id here and is now threaded straight into ReactFlowCanvas as
+  // `initialFocusTableId` (below), which owns triggering the jump itself:
+  // its own mount-latched ref + `nodesInitialized` gate replaces what this
+  // effect used to do by polling `nodes` and replaying through the search
+  // palette's `handleNavigateToTable` pipeline. Reusing that ad hoc,
+  // token-driven pipeline for the initial arrival was the bug (see tactical
+  // plan Root Cause) — it fires the moment the id appears in `nodes`, before
+  // React Flow measures it, so its `fitView` was a no-op that the built-in
+  // whole-board `fitView` then silently overrode.
+  //
+  // This effect's only remaining job is Decision 2: once ReactFlowCanvas
+  // reports the focus has landed (success or fallback,
+  // `onInitialFocusApplied` below), strip `?focusTable=` from the URL so a
+  // reload opens the board where the user left it and Back returns to the
+  // referencing board instead of re-triggering a jump. `appliedFocusRef`
+  // is the idempotence guard — the strip must run exactly once per id, even
+  // if `onInitialFocusApplied` were ever invoked more than once.
   const appliedFocusRef = useRef<string | null>(null)
-  useEffect(() => {
+  const handleInitialFocusApplied = useCallback(() => {
     if (!focusTableId) return
     if (appliedFocusRef.current === focusTableId) return
-    if (!nodes.some((node) => node.id === focusTableId)) return
     appliedFocusRef.current = focusTableId
-    handleNavigateToTable(focusTableId)
-  }, [focusTableId, nodes, handleNavigateToTable])
+    void navigate({
+      to: '/whiteboard/$whiteboardId',
+      params: { whiteboardId },
+      search: {},
+      replace: true,
+    })
+  }, [focusTableId, navigate, whiteboardId])
 
   // ── Cross-file table references (LizMeter #83) ──────────────────────────
   //
@@ -4433,6 +4447,8 @@ function ReactFlowWhiteboardInner({
               }}
               focusRequestTableId={focusRequestTableId}
               focusRequestToken={focusRequestToken}
+              initialFocusTableId={focusTableId}
+              onInitialFocusApplied={handleInitialFocusApplied}
               keyboardFocusedShapeId={focusedShapeId}
             />
           </ForceFullDetailContext.Provider>

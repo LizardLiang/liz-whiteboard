@@ -31,8 +31,49 @@
 import { execFileSync } from 'node:child_process'
 import { expect, test } from '@playwright/test'
 import { IDS } from './fixtures'
+import type { Page } from '@playwright/test'
 
 test.use({ viewport: { width: 1600, height: 1000 } })
+
+// LizMeter #83 tactical fix (2026-09-10) — "focusTable jump does not zoom to
+// the table". ERD table text is canvas-drawn (unreadable from the DOM), so
+// the landing is proven by reading the transform React Flow itself commits
+// to `.react-flow__viewport`'s inline `style`, not by reading table names.
+// Mirrors the identical helper in e2e/relations-jump.spec.ts (GH #138).
+function viewportTransform(page: Page) {
+  return page.locator('.react-flow__viewport').getAttribute('style')
+}
+
+function viewportZoom(style: string | null): number | null {
+  const match = style?.match(/scale\(([\d.]+)\)/)
+  return match ? Number.parseFloat(match[1]) : null
+}
+
+// The seeded `SOURCE_BOARD` (E2E Ref Billing) holds exactly ONE table
+// (`orders`), which is what makes this assertion a real regression guard
+// rather than a coincidence: fitting the WHOLE board (the pre-fix bug — see
+// tactical plan Root Cause) and fitting just the ONE target table both
+// centre on `orders`, but at very different zooms. A lone 240×160 table in a
+// 1600×1000 viewport needs far more than 1.2x to fill the fitView padding,
+// so a true whole-board fit is capped at the canvas's own `maxZoom` (5, see
+// VIEWPORT_CONSTRAINTS) — nowhere near the search palette's 1.2. Landing
+// near 1.2 is only possible via the explicit `maxZoom: 1.2` focus fit this
+// fix adds.
+async function expectLandedAtSearchZoom(page: Page) {
+  await expect
+    .poll(
+      async () => {
+        const zoom = viewportZoom(await viewportTransform(page))
+        return zoom !== null && zoom > 1.05 && zoom < 1.35
+      },
+      {
+        timeout: 10_000,
+        message:
+          'expected the viewport to land near the search-palette maxZoom (1.2), not a whole-board fit (~5) or the untouched default (1)',
+      },
+    )
+    .toBe(true)
+}
 
 // Playwright's runner is Node and cannot open bun:sqlite, so the seed is
 // shelled out to Bun — the same pattern every other suite here uses.
@@ -107,6 +148,20 @@ test('reference another file’s table, then follow it back to its source', asyn
       url.searchParams.get('focusTable') === IDS.trOrdersTable,
   )
 
+  // ── It actually ZOOMS to the table (LizMeter #83 tactical fix) — not just
+  // a navigation. Root cause was a built-in whole-board `fitView` racing an
+  // early, unmeasured focus fit and winning; this asserts the WINNER is the
+  // focus fit, at the search palette's own zoom.
+  await expectLandedAtSearchZoom(page)
+
+  // ── `?focusTable=` is stripped once the focus lands (Decision 2) — a
+  // reload opens the board where the user left it, and Back (below) returns
+  // to the referencing board instead of re-triggering the jump.
+  await page.waitForURL(
+    (url) => url.pathname === SOURCE_BOARD && url.searchParams.get('focusTable') === null,
+    { timeout: 10_000 },
+  )
+
   // ── Double-click does the same thing ───────────────────────────────────────
   await page.goBack()
   await expect(referenceNode).toBeVisible()
@@ -116,6 +171,12 @@ test('reference another file’s table, then follow it back to its source', asyn
     (url) =>
       url.pathname === SOURCE_BOARD &&
       url.searchParams.get('focusTable') === IDS.trOrdersTable,
+  )
+
+  await expectLandedAtSearchZoom(page)
+  await page.waitForURL(
+    (url) => url.pathname === SOURCE_BOARD && url.searchParams.get('focusTable') === null,
+    { timeout: 10_000 },
   )
 
   await page.goBack()

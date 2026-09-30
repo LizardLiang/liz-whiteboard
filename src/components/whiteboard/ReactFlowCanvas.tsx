@@ -244,6 +244,79 @@ export function computeRelationshipDeleteVeto<
 }
 
 /**
+ * LizMeter #83 tactical fix (2026-09-10) — "focusTable jump does not zoom to
+ * the table". Pure decision for the initial-mount focus effect, extracted
+ * (same pattern as `computeConnectionValidity` /
+ * `computeRelationshipDeleteVeto` above) so the ORDERING fix — the exact
+ * thing the bug was — is unit-testable without needing to render the full
+ * `<ReactFlow>` tree, which jsdom cannot do for this component (no layout
+ * engine).
+ *
+ * The effect that calls this is gated on `nodesInitialized` for the same
+ * reason the edge re-routing effect a few hundred lines below it is: the
+ * built-in mount `fitView` this replaces only ever ran against MEASURED
+ * nodes too, so gating any earlier just reproduces the original no-op bug
+ * under a different name (see the tactical plan's Root Cause).
+ */
+export type InitialFocusDecision =
+  | { kind: 'skip' }
+  | { kind: 'focus'; targetId: string }
+  | { kind: 'fallback' }
+
+export function computeInitialFocusDecision(params: {
+  /** `initialFocusTableIdRef.current` — latched at mount, see that ref's comment. */
+  targetId: string | null
+  /** React Flow's own "nodes are measured" signal. */
+  nodesInitialized: boolean
+  /** `initialFocusAppliedRef.current` — this effect fires at most once. */
+  alreadyApplied: boolean
+  /** Every node id currently in the canvas's `nodes` state. */
+  nodeIds: Array<string>
+}): InitialFocusDecision {
+  const { targetId, nodesInitialized, alreadyApplied, nodeIds } = params
+  if (!nodesInitialized || alreadyApplied || !targetId) {
+    return { kind: 'skip' }
+  }
+  if (nodeIds.includes(targetId)) {
+    return { kind: 'focus', targetId }
+  }
+  // Step 4 fallback — deleted table, hand-edited URL, or a link to a table
+  // on a different board. Without this, suppressing the built-in whole-board
+  // fit (see the `fitView` JSX prop below) would leave a stale link sitting
+  // at React Flow's raw default viewport with NO fit at all — a regression
+  // the pre-fix code never had (the built-in fit always ran).
+  return { kind: 'fallback' }
+}
+
+/**
+ * The search palette's ad hoc focus decision — deliberately UNTOUCHED by the
+ * LizMeter #83 tactical fix (2026-09-10), extracted here (same pattern as
+ * `computeInitialFocusDecision` above) purely so its "no regression"
+ * contract — duration 300, not 0; fires on every positive token bump, not
+ * once — is unit-testable and provably unchanged.
+ */
+export type SearchFocusDecision =
+  | { kind: 'skip' }
+  | { kind: 'focus'; targetId: string; duration: number; maxZoom: number }
+
+export function computeSearchFocusDecision(params: {
+  focusRequestToken: number
+  focusRequestTableId: string | null
+}): SearchFocusDecision {
+  const { focusRequestToken, focusRequestTableId } = params
+  // token 0 is the initial value and must never trigger a jump on mount.
+  if (focusRequestToken <= 0 || !focusRequestTableId) {
+    return { kind: 'skip' }
+  }
+  return {
+    kind: 'focus',
+    targetId: focusRequestTableId,
+    duration: 300,
+    maxZoom: 1.2,
+  }
+}
+
+/**
  * ReactFlowCanvas Props
  */
 export interface ReactFlowCanvasProps {
@@ -465,6 +538,26 @@ export interface ReactFlowCanvasProps {
    * ReactFlowWhiteboard's traversal effect comment for the full reasoning).
    */
   keyboardFocusedShapeId?: string | null
+  /**
+   * Initial-mount focus target (LizMeter #83 tactical fix, 2026-09-10) —
+   * distinct from `focusRequestTableId`/`focusRequestToken` above, which
+   * drive the search palette's AD HOC jump. This is the board's own
+   * `?focusTable=` arrival: React Flow's built-in mount `fitView` is
+   * suppressed whenever this is set (see the `fitView` prop below), and the
+   * FIRST paint becomes the focus fit instead of a whole-board fit followed
+   * by a race against an early, unmeasured focus fit. Read once, at mount,
+   * into a ref — see `initialFocusTableIdRef` — so a later URL strip
+   * (parent clears this prop once the focus lands) cannot retrigger it.
+   */
+  initialFocusTableId?: string | null
+  /**
+   * Fired exactly once, after the initial-mount focus target either lands
+   * (fitView on the target) or falls back (target absent — plain
+   * whole-board fitView). The parent uses this to strip `?focusTable=` from
+   * the URL only once arrival is certain, per Decision 2. Never fired when
+   * `initialFocusTableId` is unset.
+   */
+  onInitialFocusApplied?: () => void
 }
 
 /**
@@ -524,6 +617,8 @@ export function ReactFlowCanvas({
   minimapExpanded = false,
   onMinimapCollapse,
   keyboardFocusedShapeId = null,
+  initialFocusTableId = null,
+  onInitialFocusApplied,
 }: ReactFlowCanvasProps) {
   // Perf tracker (GH #121 follow-up): count canvas re-renders during a
   // recording session. First-line `if (!isRecording) return` inside makes this
@@ -706,6 +801,18 @@ export function ReactFlowCanvas({
   // Selection and hover state for highlighting
   const [activeTableId, setActiveTableId] = useState<string | null>(null)
   const [hoveredTableId, setHoveredTableId] = useState<string | null>(null)
+
+  // LizMeter #83 tactical fix (2026-09-10) — `initialFocusTableId` latched
+  // at mount. `useRef(initialFocusTableId)` only reads the argument on the
+  // FIRST render; React ignores it on every render after. That is
+  // deliberate: Step 5 of the fix strips `?focusTable=` from the URL once
+  // the focus lands, which flips the prop back to `null`/`undefined` on this
+  // same mounted instance — without the ref, that would look like "focus
+  // target changed" and could re-suppress/re-fire the effect below.
+  const initialFocusTableIdRef = useRef(initialFocusTableId)
+  // One-shot guard for the initial-focus effect below — fires at most once
+  // per mount, mirroring `hasReRoutedAfterMeasureRef`'s pattern just below.
+  const initialFocusAppliedRef = useRef(false)
 
   // Canvas edit overlay (tactical plan Phase 3, "In-place DOM edit
   // overlay") — editingTableId is the one table (if any) whose full-DOM
@@ -905,6 +1012,43 @@ export function ReactFlowCanvas({
   // pan/zoom the viewport (shares the store with the container's instance).
   const { fitView, setCenter, getZoom, screenToFlowPosition } = useReactFlow()
 
+  // GH #138 / LizMeter #83 — the shared "landing cue": persistent
+  // active-highlight plus a one-shot `jump-pulse` DOM class toggle. Extracted
+  // so the search palette's ad hoc `focusRequestToken` path and the
+  // initial-mount `initialFocusTableId` path apply IDENTICAL arrival
+  // feedback instead of two copies that could drift. Callers pass the id
+  // that just landed.
+  //
+  // The `jump-pulse` querySelector is deferred (not run synchronously) —
+  // see the original comment this was extracted from, still on the search
+  // effect below — because `onlyRenderVisibleElements` can cull the target
+  // from the DOM until the viewport pan/zoom settles.
+  const applyLandingCue = useCallback((tableId: string) => {
+    setActiveTableId(tableId)
+    if (jumpPulseTimeoutRef.current !== null) {
+      clearTimeout(jumpPulseTimeoutRef.current)
+      jumpPulseTimeoutRef.current = null
+    }
+    jumpPulseTimeoutRef.current = setTimeout(() => {
+      const targetEl = wrapperRef.current?.querySelector(
+        `.react-flow__node[data-id="${tableId}"]`,
+      )
+      if (targetEl) {
+        targetEl.classList.remove('jump-pulse')
+        // Force reflow so re-adding the class restarts the CSS animation
+        // even when it's already present (rapid re-jump to the same table).
+        void (targetEl as HTMLElement).offsetWidth
+        targetEl.classList.add('jump-pulse')
+        jumpPulseTimeoutRef.current = setTimeout(() => {
+          targetEl.classList.remove('jump-pulse')
+          jumpPulseTimeoutRef.current = null
+        }, 1000)
+      } else {
+        jumpPulseTimeoutRef.current = null
+      }
+    }, 320)
+  }, [])
+
   // Single-click on the minimap recenters the viewport on that point.
   // `position` is already in flow coordinates; drag-to-pan is handled
   // natively by the `pannable` prop below.
@@ -1016,63 +1160,69 @@ export function ReactFlowCanvas({
   // the token (not the id) so re-selecting the same table re-fires; token 0 is
   // the initial value and never triggers a jump on mount.
   useEffect(() => {
-    if (focusRequestToken <= 0 || !focusRequestTableId) return
-    void fitView({
-      nodes: [{ id: focusRequestTableId }],
-      duration: 300,
-      maxZoom: 1.2,
+    const decision = computeSearchFocusDecision({
+      focusRequestToken,
+      focusRequestTableId,
     })
-    setActiveTableId(focusRequestTableId)
-
-    // GH #138 — brief one-shot landing-cue pulse on the target node's DOM
-    // wrapper, layered on top of the persistent active-highlight above.
-    // Mirrors the GH #121 hover-highlight DOM-class pattern (direct
-    // classList toggle on React Flow's own `.react-flow__node[data-id]`
-    // wrapper, no setNodes/React re-render). Clears any prior pending
-    // timer first so rapid re-jumps (even to the same table, where
-    // isActiveHighlighted wouldn't otherwise re-toggle) still replay the
-    // pulse instead of leaving a stale timer to strip it early/late.
-    //
-    // The querySelector is deferred (not run synchronously here) because on
-    // large boards `onlyRenderVisibleElements` culls off-screen nodes from
-    // the DOM — the target node (the common case when jumping to a related
-    // table) may not exist yet. We wait ~320ms (the 300ms `fitView`
-    // animation duration plus a small margin) so the pan/zoom has settled
-    // and the target has been mounted before looking it up. The target id
-    // is captured in this closure so a later-firing timer always resolves
-    // the table it was scheduled for, not whatever `focusRequestTableId` is
-    // by the time it fires.
-    if (jumpPulseTimeoutRef.current !== null) {
-      clearTimeout(jumpPulseTimeoutRef.current)
-      jumpPulseTimeoutRef.current = null
-    }
-    const pulseTargetId = focusRequestTableId
-    jumpPulseTimeoutRef.current = setTimeout(() => {
-      const targetEl = wrapperRef.current?.querySelector(
-        `.react-flow__node[data-id="${pulseTargetId}"]`,
-      )
-      if (targetEl) {
-        targetEl.classList.remove('jump-pulse')
-        // Force reflow so re-adding the class restarts the CSS animation
-        // even when it's already present (rapid re-jump to the same table).
-        void (targetEl as HTMLElement).offsetWidth
-        targetEl.classList.add('jump-pulse')
-        jumpPulseTimeoutRef.current = setTimeout(() => {
-          targetEl.classList.remove('jump-pulse')
-          jumpPulseTimeoutRef.current = null
-        }, 1000)
-      } else {
-        jumpPulseTimeoutRef.current = null
-      }
-    }, 320)
+    if (decision.kind === 'skip') return
+    void fitView({
+      nodes: [{ id: decision.targetId }],
+      duration: decision.duration,
+      maxZoom: decision.maxZoom,
+    })
+    // GH #138 — landing cue (persistent active-highlight + one-shot
+    // `jump-pulse`), shared with the initial-mount focus path below via
+    // `applyLandingCue` so the two cannot drift (LizMeter #83 tactical fix).
+    applyLandingCue(decision.targetId)
     // Intentionally keyed on focusRequestToken only — fire on token bump only.
-    // `fitView` (stable via useReactFlow) and `focusRequestTableId` are read
-    // fresh each time the token bumps; including focusRequestTableId would
-    // also refire this effect whenever the id changes without a token bump,
-    // defeating the "bump-to-refire" contract (re-selecting the same table
-    // must still jump to it).
+    // `fitView`/`applyLandingCue` (both stable) and `focusRequestTableId` are
+    // read fresh each time the token bumps; including focusRequestTableId
+    // would also refire this effect whenever the id changes without a token
+    // bump, defeating the "bump-to-refire" contract (re-selecting the same
+    // table must still jump to it).
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [focusRequestToken])
+
+  // LizMeter #83 tactical fix (2026-09-10) — the initial-mount focus fit.
+  // Gated on `nodesInitialized` (the SAME guard the edge re-routing effect
+  // above uses) rather than on the node merely being present in `nodes`,
+  // because the built-in mount `fitView` this replaces (see the `fitView`
+  // prop below) only ever ran against MEASURED nodes too — an unmeasured
+  // `fitView` is a no-op, which was the entire bug (see tactical plan Root
+  // Cause). `duration: 0` because this IS the first paint, not an
+  // animation (Locked Decision 1) — the built-in whole-board fit is
+  // suppressed below specifically so this can be the only fit that runs.
+  // `maxZoom: 1.2` matches the search palette exactly (Locked Decision,
+  // "Zoom parity").
+  //
+  // Fires at MOST once per mount (`initialFocusAppliedRef`), success or
+  // fallback. Fallback (Step 4): if the target id is not among the measured
+  // nodes (deleted table, hand-edited URL, wrong board), a plain `fitView()`
+  // runs instead — without this, suppressing the built-in fit below would
+  // leave a stale link sitting at React Flow's raw default viewport with NO
+  // fit at all, a regression the pre-fix code never had.
+  useEffect(() => {
+    const decision = computeInitialFocusDecision({
+      targetId: initialFocusTableIdRef.current,
+      nodesInitialized,
+      alreadyApplied: initialFocusAppliedRef.current,
+      nodeIds: nodes.map((node) => node.id),
+    })
+    if (decision.kind === 'skip') return
+    initialFocusAppliedRef.current = true
+
+    if (decision.kind === 'focus') {
+      void fitView({
+        nodes: [{ id: decision.targetId }],
+        duration: 0,
+        maxZoom: 1.2,
+      })
+      applyLandingCue(decision.targetId)
+    } else {
+      void fitView()
+    }
+    onInitialFocusApplied?.()
+  }, [nodesInitialized, nodes, fitView, applyLandingCue, onInitialFocusApplied])
 
   // Clear any pending jump-pulse removal timer on unmount.
   useEffect(() => {
@@ -1976,7 +2126,12 @@ export function ReactFlowCanvas({
             // user to fully enclose its parent area's bounds.
             selectionMode={SelectionMode.Partial}
             onlyRenderVisibleElements={onlyRenderVisibleElements}
-            fitView
+            // LizMeter #83 tactical fix (2026-09-10): suppressed whenever an
+            // initial-mount focus target is present, so it cannot win the
+            // race against — and override — the focus-fit effect above (the
+            // documented Root Cause). `initialFocusTableIdRef.current` is
+            // latched at mount, so this suppression cannot flip mid-life.
+            fitView={!initialFocusTableIdRef.current}
             fitViewOptions={fitViewOptions}
             minZoom={VIEWPORT_CONSTRAINTS.minZoom}
             maxZoom={VIEWPORT_CONSTRAINTS.maxZoom}

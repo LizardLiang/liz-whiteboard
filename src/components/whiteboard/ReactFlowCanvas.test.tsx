@@ -12,7 +12,9 @@
 import { describe, expect, it } from 'vitest'
 import {
   computeConnectionValidity,
+  computeInitialFocusDecision,
   computeRelationshipDeleteVeto,
+  computeSearchFocusDecision,
 } from './ReactFlowCanvas'
 
 describe('computeRelationshipDeleteVeto', () => {
@@ -194,5 +196,97 @@ describe('computeConnectionValidity', () => {
         targetType: 'externalTable',
       }),
     ).toBe(false)
+  })
+})
+
+// ============================================================================
+// LizMeter #83 tactical fix (2026-09-10) — "focusTable jump does not zoom to
+// the table". Root cause: the built-in mount `fitView` raced an early,
+// unmeasured focus fit and won (see the tactical plan's Root Cause table).
+//
+// `computeInitialFocusDecision`/`computeSearchFocusDecision` are the exact
+// pure functions the canvas's two focus effects delegate to (same
+// extract-and-test pattern as `computeConnectionValidity` /
+// `computeRelationshipDeleteVeto` above), NOT a reimplementation. Extracted
+// because rendering the real `<ReactFlow>` tree needs a browser layout
+// engine jsdom does not provide — confirmed by reproducing an unbounded
+// render-time hang against the UNMODIFIED (pre-fix) component with a
+// zero-node render and no test-specific behavior at all, so it is a
+// pre-existing environment limitation, not something this fix introduced or
+// could paper over. The real DOM/viewport assertions live in the e2e suite
+// below (`e2e/cross-file-reference.spec.ts` tests 4-5), which runs in an
+// actual browser.
+// ============================================================================
+describe('computeInitialFocusDecision (LizMeter #83)', () => {
+  it('does nothing before nodesInitialized flips true — the exact ordering the bug got wrong', () => {
+    // Same call, only nodesInitialized differs: false first (target NOT yet
+    // measured), matching mount before React Flow has measured anything.
+    const beforeMeasure = computeInitialFocusDecision({
+      targetId: 't1',
+      nodesInitialized: false,
+      alreadyApplied: false,
+      nodeIds: ['t1', 't2'],
+    })
+    expect(beforeMeasure).toEqual({ kind: 'skip' })
+
+    // Now nodesInitialized flips true (measurement complete) — only then
+    // does the decision become an actual focus fit.
+    const afterMeasure = computeInitialFocusDecision({
+      targetId: 't1',
+      nodesInitialized: true,
+      alreadyApplied: false,
+      nodeIds: ['t1', 't2'],
+    })
+    expect(afterMeasure).toEqual({ kind: 'focus', targetId: 't1' })
+  })
+
+  it('fires at most once per mount even if called again after nodesInitialized is already true', () => {
+    const decision = computeInitialFocusDecision({
+      targetId: 't1',
+      nodesInitialized: true,
+      alreadyApplied: true,
+      nodeIds: ['t1'],
+    })
+    expect(decision).toEqual({ kind: 'skip' })
+  })
+
+  it('skips when there is no initial focus target at all (normal board open, no ?focusTable=)', () => {
+    const decision = computeInitialFocusDecision({
+      targetId: null,
+      nodesInitialized: true,
+      alreadyApplied: false,
+      nodeIds: ['t1'],
+    })
+    expect(decision).toEqual({ kind: 'skip' })
+  })
+
+  it('falls back to a plain whole-board fitView when the target id is not among the measured nodes (Step 4)', () => {
+    const decision = computeInitialFocusDecision({
+      targetId: 'does-not-exist',
+      nodesInitialized: true,
+      alreadyApplied: false,
+      nodeIds: ['t1', 't2'],
+    })
+    expect(decision).toEqual({ kind: 'fallback' })
+  })
+})
+
+describe('computeSearchFocusDecision — search-palette path is untouched (no regression)', () => {
+  it('never triggers on token 0 (the initial value), even with a table id present', () => {
+    expect(
+      computeSearchFocusDecision({
+        focusRequestToken: 0,
+        focusRequestTableId: 't1',
+      }),
+    ).toEqual({ kind: 'skip' })
+  })
+
+  it('still fits with duration 300 (the search palette animation, unlike the initial-focus path\'s duration 0) and maxZoom 1.2, once the token bumps positive', () => {
+    expect(
+      computeSearchFocusDecision({
+        focusRequestToken: 1,
+        focusRequestTableId: 't2',
+      }),
+    ).toEqual({ kind: 'focus', targetId: 't2', duration: 300, maxZoom: 1.2 })
   })
 })
