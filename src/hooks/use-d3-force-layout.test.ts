@@ -239,3 +239,62 @@ describe('useD3ForceLayout', () => {
     )
   })
 })
+
+// ---------------------------------------------------------------------------
+// Regression — reference (externalTable) nodes have no `data.table`
+// ---------------------------------------------------------------------------
+
+describe('useD3ForceLayout with reference nodes', () => {
+  beforeEach(() => {
+    vi.clearAllMocks()
+  })
+
+  it('lays out a table + reference node joined by a relationship, using the reference column index as the row', async () => {
+    mockComputeLayout.mockResolvedValueOnce(POSITIONS)
+    const tableNode = {
+      id: 'T1',
+      type: 'table',
+      position: { x: 0, y: 0 },
+      measured: { width: 200, height: 100 },
+      data: {
+        table: {
+          id: 'T1',
+          name: 'T1',
+          columns: [{ id: 'c-fk' }, { id: 'c-other' }],
+        },
+      },
+    } as any
+    const refNode = {
+      id: 'R1',
+      type: 'externalTable',
+      position: { x: 100, y: 100 },
+      measured: { width: 200, height: 100 },
+      data: {
+        tableId: 'R1',
+        columns: [{ id: 'r-a' }, { id: 'r-b' }, { id: 'r-pk' }],
+      },
+    } as any
+    const edge = {
+      id: 'E1',
+      source: 'T1',
+      target: 'R1',
+      data: {
+        relationship: { sourceColumnId: 'c-other', targetColumnId: 'r-pk' },
+      },
+    } as any
+
+    const { result } = renderHook(() => useD3ForceLayout())
+    let out: any
+    await act(async () => {
+      out = await result.current.runLayout([tableNode, refNode], [edge])
+    })
+
+    expect(out).not.toBeNull()
+    expect(out.positions).toEqual(POSITIONS)
+    expect(result.current.error).toBeNull()
+    const [layoutNodes, layoutEdges] = mockComputeLayout.mock.calls[0]
+    expect(layoutNodes.map((n: any) => n.id)).toEqual(['T1', 'R1'])
+    expect(layoutEdges[0].sourceRow).toBe(1)
+    expect(layoutEdges[0].targetRow).toBe(2)
+  })
+})

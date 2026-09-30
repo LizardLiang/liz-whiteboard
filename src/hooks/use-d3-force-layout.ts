@@ -6,6 +6,7 @@
 
 import { useCallback, useState } from 'react'
 import type {
+  ExternalTableNodeType,
   RelationshipEdgeType,
   TableNodeType,
 } from '@/lib/react-flow/types'
@@ -14,16 +15,21 @@ import { computeD3ForceLayout } from '@/lib/auto-layout/d3-force-layout'
 import { getCachedTableWidth } from '@/lib/react-flow/canvas-node-metrics'
 import { calculateTableHeight } from '@/lib/react-flow/layout-adapter'
 
+/** Nodes the layout accepts: real tables and reference (external) tables. */
+export type LayoutableNodeType = TableNodeType | ExternalTableNodeType
+
 /**
- * Index of a column within a table node's `columns`, or undefined when the node
- * has no table (reference nodes) or the column is not found.
+ * Index of a column within a node's rendered rows, or undefined when the node
+ * is missing or the column is not found. Reference nodes render their own
+ * `data.columns` in array order, so that order is the row order.
  */
 function findColumnRow(
-  node: TableNodeType | undefined,
+  node: LayoutableNodeType | undefined,
   columnId: string | null | undefined,
 ): number | undefined {
-  const columns = node?.data.table.columns
-  if (!columns || !columnId) return undefined
+  if (!node || !columnId) return undefined
+  const columns =
+    node.type === 'externalTable' ? node.data.columns : node.data.table.columns
   const index = columns.findIndex((c) => c.id === columnId)
   return index >= 0 ? index : undefined
 }
@@ -44,7 +50,7 @@ export interface UseD3ForceLayoutResult {
    * Resolves to { positions } or null if an error occurred.
    */
   runLayout: (
-    nodes: Array<TableNodeType>,
+    nodes: Array<LayoutableNodeType>,
     edges: Array<RelationshipEdgeType>,
   ) => Promise<LayoutResult | null>
   /** True while the layout is computing */
@@ -76,7 +82,7 @@ export function useD3ForceLayout(
 
   const runLayout = useCallback(
     async (
-      nodes: Array<TableNodeType>,
+      nodes: Array<LayoutableNodeType>,
       edges: Array<RelationshipEdgeType>,
     ): Promise<LayoutResult | null> => {
       setIsRunning(true)
@@ -109,8 +115,7 @@ export function useD3ForceLayout(
         // Non-table nodes (areas): keep the existing measured/width fallback
         // — they have no `data.table` to size against.
         const layoutNodes = nodes.map((n) => {
-          const table = n.data.table
-          // eslint-disable-next-line @typescript-eslint/no-unnecessary-condition -- `table` is non-nullable per TableNodeData, but this guards against a non-table node reaching this path at runtime (e.g. a future caller passing area nodes cast as TableNodeType).
+          const table = n.type === 'externalTable' ? undefined : n.data.table
           if (table) {
             return {
               id: n.id,

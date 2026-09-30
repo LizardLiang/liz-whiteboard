@@ -19,6 +19,7 @@ import { useCallback, useEffect, useRef, useState } from 'react'
 import { useReactFlow } from '@xyflow/react'
 import { toast } from 'sonner'
 import type { LayoutOutputPosition } from '@/lib/auto-layout/d3-force-layout'
+import type { LayoutableNodeType } from '@/hooks/use-d3-force-layout'
 import type {
   RelationshipEdgeType,
   TableNodeType,
@@ -42,7 +43,7 @@ export interface UseAutoLayoutOrchestratorArgs {
   whiteboardId: string
   /** The d3-force layout function from useD3ForceLayout */
   runD3ForceLayout: (
-    nodes: Array<TableNodeType>,
+    nodes: Array<LayoutableNodeType>,
     edges: Array<RelationshipEdgeType>,
   ) => Promise<{
     positions: Array<LayoutOutputPosition>
@@ -241,7 +242,7 @@ export function useAutoLayoutOrchestrator({
       // measured node box when a node has no `data.table`, which is exactly
       // what a reference node is.
       const tableNodesOnly = getNodes().filter(
-        (n): n is TableNodeType =>
+        (n): n is LayoutableNodeType =>
           n.type === 'table' || n.type === 'externalTable',
       )
       const relationshipEdgesOnly = getEdges().filter(
