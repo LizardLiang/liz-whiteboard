@@ -7,10 +7,32 @@ import type { LayoutInputEdge, LayoutInputNode } from './d3-force-layout'
 import { calculateTableHeight } from '@/lib/react-flow/layout-adapter'
 
 /**
- * Table width the server assumes: the server cannot run canvas measureText, so
- * this is the typical natural width the client measures for an ER table.
+ * The server cannot run canvas measureText, so these approximate the client's
+ * measured widths: a 13px column name + type pair (8 px/char) and a 14px header
+ * (9 px/char).
  */
-export const SERVER_TABLE_WIDTH_ESTIMATE = 280
+export const SERVER_TABLE_MIN_WIDTH = 250
+export const SERVER_COLUMN_BASE_WIDTH = 22
+export const SERVER_COLUMN_CHAR_WIDTH = 8
+export const SERVER_COLUMN_PAIR_GAP_CHARS = 2
+export const SERVER_HEADER_BASE_WIDTH = 24
+export const SERVER_HEADER_CHAR_WIDTH = 9
+
+export function estimateServerTableWidth(table: LayoutSourceTable): number {
+  let widestPair = 0
+  for (const col of table.columns) {
+    widestPair = Math.max(
+      widestPair,
+      col.name.length + col.dataType.length + SERVER_COLUMN_PAIR_GAP_CHARS,
+    )
+  }
+  return Math.max(
+    table.width ?? 0,
+    SERVER_TABLE_MIN_WIDTH,
+    SERVER_COLUMN_BASE_WIDTH + SERVER_COLUMN_CHAR_WIDTH * widestPair,
+    SERVER_HEADER_BASE_WIDTH + SERVER_HEADER_CHAR_WIDTH * table.name.length,
+  )
+}
 
 export type LayoutSourceTable = DiagramTable & { columns: Array<Column> }
 
@@ -39,7 +61,7 @@ export function buildServerLayoutInput(
 
   const nodes = tables.map((table) => ({
     id: table.id,
-    width: Math.max(SERVER_TABLE_WIDTH_ESTIMATE, table.width ?? 0),
+    width: estimateServerTableWidth(table),
     height: calculateTableHeight(table.columns.length),
   }))
 

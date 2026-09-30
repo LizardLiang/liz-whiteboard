@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import {
-  SERVER_TABLE_WIDTH_ESTIMATE,
+  SERVER_TABLE_MIN_WIDTH,
   buildServerLayoutInput,
 } from './server-layout-input'
 import type { LayoutSourceTable } from './server-layout-input'
@@ -13,8 +13,9 @@ function table(
 ): LayoutSourceTable {
   return {
     id,
+    name: id,
     width,
-    columns: columnIds.map((cid) => ({ id: cid })),
+    columns: columnIds.map((cid) => ({ id: cid, name: cid, dataType: 'int' })),
   } as unknown as LayoutSourceTable
 }
 
@@ -34,7 +35,7 @@ describe('buildServerLayoutInput', () => {
     const { nodes } = buildServerLayoutInput(tables, [])
     expect(nodes[0]).toEqual({
       id: 't1',
-      width: SERVER_TABLE_WIDTH_ESTIMATE,
+      width: SERVER_TABLE_MIN_WIDTH,
       height: calculateTableHeight(3),
     })
     expect(nodes[1].width).toBe(400)
@@ -62,5 +63,14 @@ describe('buildServerLayoutInput', () => {
     ])
     expect(edges[0].sourceRow).toBeUndefined()
     expect(edges[0].label).toBeUndefined()
+  })
+
+  it('widens tables with long column text and keeps short ones at 250', () => {
+    const long = table('t3', ['a'])
+    long.columns[0].name = 'x'.repeat(40)
+    const { nodes } = buildServerLayoutInput([long, table('t4', ['a'])], [])
+    expect(nodes[0].width).toBe(22 + 8 * (40 + 3 + 2))
+    expect(nodes[0].width).toBeGreaterThan(280)
+    expect(nodes[1].width).toBe(250)
   })
 })
