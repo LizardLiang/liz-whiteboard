@@ -16,7 +16,7 @@ import type {
 } from '@/data/table-reference'
 import type { RelationshipWithDetails } from '@/data/relationship'
 import type { Area, CommentWithAuthor, Connector, Shape } from '@/data/models'
-import type { LayoutOptions, LayoutResult } from '@/lib/canvas/layout-engine'
+import type { LayoutOutputPosition } from '@/lib/auto-layout/d3-force-layout'
 import type { EffectiveRole } from '@/data/permission'
 import {
   findWhiteboardByIdWithDiagram,
@@ -35,7 +35,8 @@ import { findAreasByWhiteboard } from '@/data/area'
 import { findShapesByWhiteboard } from '@/data/shape'
 import { findConnectorsByWhiteboard } from '@/data/connector'
 import { findCommentsByWhiteboardId } from '@/data/comment'
-import { computeLayout } from '@/lib/canvas/layout-engine'
+import { computeD3ForceLayout } from '@/lib/auto-layout/d3-force-layout'
+import { buildServerLayoutInput } from '@/lib/auto-layout/server-layout-input'
 import { nowMs, transaction, update } from '@/db'
 import { requireAuth } from '@/lib/auth/middleware'
 import { getOAuthConfig } from '@/lib/oauth/config'
@@ -380,58 +381,60 @@ export const updateWhiteboardTextSourceFn = createServerFn({
 
 /**
  * Server function to compute automatic layout for whiteboard
- * Runs layout algorithm and updates table positions in database
+ * Runs the Auto Layout engine and updates table positions in database
  *
  * @requires editor
  */
 export const computeAutoLayout = createServerFn({
   method: 'POST',
 })
-  .inputValidator(
-    (data: { whiteboardId: string; options: LayoutOptions }) => data,
-  )
+  .inputValidator((data: { whiteboardId: string }) => data)
   .handler(
-    requireAuth(async ({ user }, data): Promise<LayoutResult> => {
-      const projectId = await getWhiteboardProjectId(data.whiteboardId)
-      await requireServerFnRole(user.id, projectId, 'EDITOR')
-      try {
-        // Fetch whiteboard with tables and relationships
-        const whiteboard = await findWhiteboardByIdWithDiagram(
-          data.whiteboardId,
-        )
-        if (!whiteboard) {
-          throw new Error('Whiteboard not found')
-        }
-
-        const relationships = await findRelationshipsByWhiteboardIdWithDetails(
-          data.whiteboardId,
-        )
-
-        // Compute layout
-        const layoutResult = computeLayout(
-          whiteboard.tables,
-          relationships,
-          data.options,
-        )
-
-        // Update table positions in database (batch update for performance)
-        transaction(() => {
-          const ts = nowMs()
-          for (const pos of layoutResult.positions) {
-            update('DiagramTable', pos.id, {
-              positionX: pos.x,
-              positionY: pos.y,
-              updatedAt: ts,
-            })
+    requireAuth(
+      async (
+        { user },
+        data,
+      ): Promise<{ positions: Array<LayoutOutputPosition> }> => {
+        const projectId = await getWhiteboardProjectId(data.whiteboardId)
+        await requireServerFnRole(user.id, projectId, 'EDITOR')
+        try {
+          // Fetch whiteboard with tables and relationships
+          const whiteboard = await findWhiteboardByIdWithDiagram(
+            data.whiteboardId,
+          )
+          if (!whiteboard) {
+            throw new Error('Whiteboard not found')
           }
-        })
 
-        return layoutResult
-      } catch (error) {
-        console.error('Error computing auto layout:', error)
-        throw error
-      }
-    }),
+          const relationships =
+            await findRelationshipsByWhiteboardIdWithDetails(data.whiteboardId)
+
+          const { nodes, edges } = buildServerLayoutInput(
+            whiteboard.tables,
+            relationships,
+          )
+          const positions =
+            nodes.length === 0 ? [] : await computeD3ForceLayout(nodes, edges)
+
+          // Update table positions in database (batch update for performance)
+          transaction(() => {
+            const ts = nowMs()
+            for (const pos of positions) {
+              update('DiagramTable', pos.id, {
+                positionX: pos.x,
+                positionY: pos.y,
+                updatedAt: ts,
+              })
+            }
+          })
+
+          return { positions }
+        } catch (error) {
+          console.error('Error computing auto layout:', error)
+          throw error
+        }
+      },
+    ),
   )
 
 /**

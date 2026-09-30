@@ -35,7 +35,7 @@
 - **Canvas**: React Flow (@xyflow/react)
 - **Real-time**: Socket.IO
 - **Parser**: Chevrotain
-- **Layout**: d3-force
+- **Layout**: in-house layered ER layout (src/lib/auto-layout)
 
 ## Project Structure
 

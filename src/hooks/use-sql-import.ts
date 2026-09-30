@@ -45,19 +45,6 @@ export class SqlImportSessionExpiredError extends Error {
   }
 }
 
-/** Same auto-layout options the toolbar's Auto Layout button uses. */
-function defaultLayoutOptions() {
-  return {
-    width: window.innerWidth,
-    height: window.innerHeight - 160,
-    linkDistance: 200,
-    chargeStrength: -1000,
-    collisionPadding: 50,
-    iterations: 300,
-    handleClusters: true,
-  }
-}
-
 export function useSqlImport(whiteboardId: string) {
   const queryClient = useQueryClient()
 
@@ -153,9 +140,10 @@ export function useSqlImport(whiteboardId: string) {
         }),
       ])
 
-      // Trigger the existing (server-computed) auto-layout pass so imported
-      // tables don't overlap the existing diagram — reuses computeAutoLayout,
-      // the same primitive the toolbar's Auto Layout button calls.
+      // Trigger the server-computed auto-layout pass so imported tables don't
+      // overlap the existing diagram — computeAutoLayout runs the same Auto
+      // Layout engine (src/lib/auto-layout) the toolbar button uses, with a
+      // server-side size estimate instead of measured table sizes.
       // Server-side layout avoids racing this hook's own query invalidation
       // against whichever surface's client-side node state hasn't refetched
       // yet, since it recomputes positions directly from the freshly
@@ -163,7 +151,7 @@ export function useSqlImport(whiteboardId: string) {
       if (tables.length > 0) {
         try {
           const layoutResult = await computeAutoLayout({
-            data: { whiteboardId, options: defaultLayoutOptions() },
+            data: { whiteboardId },
           })
           if (!isUnauthorizedError(layoutResult)) {
             await Promise.all([
