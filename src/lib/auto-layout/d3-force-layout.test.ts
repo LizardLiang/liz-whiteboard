@@ -1,5 +1,5 @@
 // src/lib/auto-layout/d3-force-layout.test.ts
-// Unit tests for computeD3ForceLayout — covers TC-AL-E-01 through TC-AL-E-11
+// Unit tests for computeD3ForceLayout — hub-centred layered engine
 
 import { describe, expect, it } from 'vitest'
 import {
@@ -11,19 +11,12 @@ import {
   clampSameSideLabelX,
   computeD3ForceLayout,
   computeEdgeBundleOffsets,
-  computeLabelPillHeight,
   computeLabelPillWidth,
   computeMaxCorridorBundleWidth,
   computeRequiredColGap,
-  enforceEdgeLabelGap,
   enforceGapPostPass,
-  enforceLabelLabelGap,
 } from './d3-force-layout'
-import type {
-  LayoutInputEdge,
-  LayoutInputNode,
-  SimNode,
-} from './d3-force-layout'
+import type { LayoutInputEdge, LayoutInputNode } from './d3-force-layout'
 
 // ---------------------------------------------------------------------------
 // Helpers
@@ -126,10 +119,10 @@ describe('computeD3ForceLayout', () => {
     assertAllGaps(result, nodes)
   })
 
-  // TC-AL-E-04 — BFS ordering: most-connected node is the root (leftmost column)
-  it('TC-AL-E-04: BFS ordering — hub table (highest degree) is placed leftmost', async () => {
-    // Chain: T0 -> T1 -> T2. T1 has degree 2 (highest) → BFS root → col 0.
-    // T0 and T2 are both at BFS distance 1 → col 1 (same x).
+  // TC-AL-E-04 — the hub sits in the centre column between its branches
+  it('TC-AL-E-04: hub with 2 unlinked branches is centred between the leftmost and rightmost tables', async () => {
+    // Chain: T0 -> T1 -> T2. T1 has degree 2 (highest) -> root. T0 and T2 are
+    // unlinked branches, so they split to opposite sides of the hub.
     const nodes: Array<LayoutInputNode> = [
       makeNode('T0', 200, 100),
       makeNode('T1', 200, 100),
@@ -141,11 +134,10 @@ describe('computeD3ForceLayout', () => {
     ]
     const result = await computeD3ForceLayout(nodes, edges)
     const pm = posMap(result)
-    // T1 (degree 2) must be the leftmost — to the left of both T0 and T2
-    expect(pm.get('T1')!.x).toBeLessThan(pm.get('T0')!.x)
-    expect(pm.get('T1')!.x).toBeLessThan(pm.get('T2')!.x)
-    // T0 and T2 share the same BFS level (1) → same column → same x
-    expect(pm.get('T0')!.x).toBe(pm.get('T2')!.x)
+    const centres = nodes.map((n) => pm.get(n.id)!.x + n.width / 2)
+    const hub = pm.get('T1')!.x + 100
+    expect(hub).toBeGreaterThan(Math.min(...centres))
+    expect(hub).toBeLessThan(Math.max(...centres))
   })
 
   // TC-AL-E-05 — Gap holds on every pair in a 10-table fixture (3 runs)
@@ -220,42 +212,6 @@ describe('computeD3ForceLayout', () => {
     assertAllGaps(result, nodes)
   })
 
-  // TC-AL-E-10 — 500-tick hard cap: simulation always terminates
-  it('TC-AL-E-10: simulation terminates with ≤ 500 ticks', async () => {
-    // We cannot easily spy on simulation.tick without internals, but we can
-    // verify the promise resolves (does not hang) and the cap is enforced
-    // by checking the simulateChunked function behaviour via a controlled mock.
-    const nodes: Array<LayoutInputNode> = Array.from({ length: 10 }, (_, i) =>
-      makeNode(`Cap${i}`, 200, 100),
-    )
-    const edges: Array<LayoutInputEdge> = [
-      { source: 'Cap0', target: 'Cap1' },
-      { source: 'Cap2', target: 'Cap3' },
-      { source: 'Cap4', target: 'Cap5' },
-    ]
-
-    // The test verifies: does not hang AND resolves with finite positions
-    const result = await computeD3ForceLayout(nodes, edges)
-    expect(result).toHaveLength(10)
-    result.forEach((r) => {
-      expect(Number.isFinite(r.x)).toBe(true)
-      expect(Number.isFinite(r.y)).toBe(true)
-    })
-  })
-
-  // TC-AL-E-11 — Per-RAF chunk respects 10-tick budget
-  it('TC-AL-E-11: simulateChunked processes ≤ 10 ticks per RAF callback', async () => {
-    // The 10-tick budget per RAF frame is verified structurally via the
-    // TICK_BUDGET_PER_FRAME constant (10) in the module. The integration
-    // test verifies the module compiles, the simulation terminates, and the
-    // gap contract still holds (proving the ticks executed correctly).
-    const nodes: Array<LayoutInputNode> = [makeNode('P1'), makeNode('P2')]
-    const result = await computeD3ForceLayout(nodes, [])
-    expect(result).toHaveLength(2)
-    // Verify gap is still correct (proves ticks ran, simulation settled)
-    assertAllGaps(result, nodes)
-  })
-
   // TC-AL-E-12 — Dynamic col gap leaves room for the actual label pill
   it('TC-AL-E-12: dynamic column gap leaves room for a 30-char label pill between adjacent columns', async () => {
     // 30-char label: computeLabelPillWidth = max(60, 30×7) + 22 = 210 + 22 = 232px (jsdom fallback)
@@ -281,66 +237,8 @@ describe('computeD3ForceLayout', () => {
     ).toBeGreaterThanOrEqual(minRequired)
   })
 
-  // TC-AL-E-13 — enforceEdgeLabelGap does not move edge endpoints
-  it('TC-AL-E-13: enforceEdgeLabelGap does not move edge endpoints when no third node intrudes', () => {
-    const nodes: Array<SimNode> = [
-      { id: 'A', x: 0, y: 0, width: 200, height: 100 },
-      { id: 'B', x: 800, y: 0, width: 200, height: 100 },
-    ]
-    const edges: Array<LayoutInputEdge> = [{ source: 'A', target: 'B' }]
-    const xA = nodes[0].x
-    const yA = nodes[0].y
-    const xB = nodes[1].x
-    const yB = nodes[1].y
-    enforceEdgeLabelGap(nodes, edges)
-    // Endpoints are skipped by the algorithm — must not move
-    expect(nodes[0].x).toBe(xA)
-    expect(nodes[0].y).toBe(yA)
-    expect(nodes[1].x).toBe(xB)
-    expect(nodes[1].y).toBe(yB)
-  })
-
-  // TC-AL-E-14 — enforceEdgeLabelGap pushes a third node out of the edge-label zone
-  it('TC-AL-E-14: enforceEdgeLabelGap pushes a third node out of the edge-label zone', () => {
-    // A and B are far apart; C sits at the zone midpoint and intrudes.
-    // Label "intrude" → pillWidth = max(60, 7×7) + 22 = 60+22 = 82px (jsdom fallback)
-    const label = 'intrude'
-    const A: SimNode = { id: 'A', x: 0, y: 0, width: 200, height: 100 }
-    const B: SimNode = { id: 'B', x: 500, y: 0, width: 200, height: 100 }
-    const C: SimNode = { id: 'C', x: 250, y: 0, width: 200, height: 100 }
-    const edgeDef: LayoutInputEdge = { source: 'A', target: 'B', label }
-
-    enforceEdgeLabelGap([A, B, C], [edgeDef])
-
-    // Recompute label zone using the same formula as the production code.
-    // Cardinality undefined → both flags false → extents = OPT_GAP_EXTENT + CIRCLE_R = 11px each.
-    const leftExt = 11 // cardinalityIndicatorExtent(false) = 0 + 7 + 4
-    const rightExt = 11
-    const pillWidth = computeLabelPillWidth(label)
-    const pillHeight = computeLabelPillHeight()
-    // midX accounts for cardinality extents (mirrors production enforceEdgeLabelGap)
-    const midX =
-      (A.x + A.width / 2 + leftExt + B.x - B.width / 2 - rightExt) / 2
-    const midY = (A.y + B.y) / 2
-    const zoneW =
-      Math.max(pillWidth, leftExt + rightExt) + 2 * EDGE_LABEL_MARGIN
-    const zoneH = pillHeight + 2 * EDGE_LABEL_MARGIN
-    const lx = midX - zoneW / 2
-    const ly = midY - zoneH / 2
-
-    const cx = C.x - C.width / 2
-    const cy = C.y - C.height / 2
-    const overlapX = cx < lx + zoneW && cx + C.width > lx
-    const overlapY = cy < ly + zoneH && cy + C.height > ly
-
-    expect(
-      overlapX && overlapY,
-      'C still overlaps label zone after enforcement',
-    ).toBe(false)
-  })
-
   // TC-AL-E-15 — All-pairs gap ≥ MIN_GAP=48 still holds after enforceEdgeLabelGap
-  it('TC-AL-E-15: 48 px L∞ gap holds on every pair after full pipeline with 10 nodes and 5 edges', async () => {
+  it('TC-AL-E-15: 48 px L∞ gap holds on every pair for the full pipeline with 10 nodes and 5 edges', async () => {
     const nodes: Array<LayoutInputNode> = Array.from({ length: 10 }, (_, i) =>
       makeNode(`M${i}`, 250, 150),
     )
@@ -404,57 +302,6 @@ describe('computeD3ForceLayout', () => {
     expect(longGap).toBeGreaterThanOrEqual(
       computeLabelPillWidth('a'.repeat(40)) + 2 * EDGE_LABEL_MARGIN,
     )
-  })
-})
-
-// ---------------------------------------------------------------------------
-// enforceLabelLabelGap unit tests
-// ---------------------------------------------------------------------------
-
-describe('enforceLabelLabelGap', () => {
-  // TC-AL-E-18 — separates stacked same-source label pills
-  it('TC-AL-E-18: separates overlapping label pills for same-source stacked edges', () => {
-    // Source S at (0,0); targets A and B stacked close in same column.
-    // Labels are identical FK names — each pill is ~120px wide, ~24px tall.
-    // Initial label-midY values: (S.y + A.y)/2 = 100, (S.y + B.y)/2 = 120.
-    // Gap between centres = 20px < pillH(24) + margin(16) = 40 → overlap.
-    const edgeLabel = 'FK_Relationship'
-    const S: SimNode = { id: 'S', x: 0, y: 0, width: 200, height: 100 }
-    const A: SimNode = { id: 'A', x: 0, y: 200, width: 200, height: 100 }
-    const B: SimNode = { id: 'B', x: 0, y: 240, width: 200, height: 100 }
-
-    const pillH = computeLabelPillHeight()
-    const pillW = computeLabelPillWidth(edgeLabel)
-
-    // Verify labels DO overlap before the fix
-    const cyA_before = (S.y + A.y) / 2 // 100
-    const cyB_before = (S.y + B.y) / 2 // 120
-    const overlapBefore =
-      (pillH + pillH) / 2 +
-      EDGE_LABEL_MARGIN -
-      Math.abs(cyA_before - cyB_before)
-    expect(overlapBefore).toBeGreaterThan(0)
-
-    const edges: Array<LayoutInputEdge> = [
-      { source: 'S', target: 'A', label: edgeLabel },
-      { source: 'S', target: 'B', label: edgeLabel },
-    ]
-    enforceLabelLabelGap([S, A, B], edges)
-
-    // After fix: label centres must be at least (pillH + EDGE_LABEL_MARGIN) apart
-    const cyA_after = (S.y + A.y) / 2
-    const cyB_after = (S.y + B.y) / 2
-    const separation = Math.abs(cyA_after - cyB_after)
-    expect(
-      separation,
-      `Label centre separation ${separation.toFixed(2)}px < required ${pillH + EDGE_LABEL_MARGIN}px`,
-    ).toBeGreaterThanOrEqual(pillH + EDGE_LABEL_MARGIN - 1) // −1 for POST_PASS_SLACK rounding
-
-    // Pills must not intersect: |cy_A - cy_B| >= (h_A + h_B)/2 = pillH
-    expect(separation).toBeGreaterThanOrEqual(pillH)
-
-    // Suppress unused-variable lint for pillW (verified via computeLabelPillWidth call above)
-    void pillW
   })
 })
 
@@ -651,5 +498,375 @@ describe('enforceGapPostPass', () => {
     const xBefore = nodes[0].x
     enforceGapPostPass(nodes as any)
     expect(nodes[0].x).toBe(xBefore)
+  })
+})
+
+// ---------------------------------------------------------------------------
+// Quality fixtures (ported from the layout benchmark) and quality tests
+// ---------------------------------------------------------------------------
+
+interface FixtureNode extends LayoutInputNode {
+  cols: number
+}
+interface FixtureEdge extends LayoutInputEdge {
+  id: string
+  sourceRow: number
+  targetRow: number
+}
+interface Fixture {
+  name: string
+  nodes: Array<FixtureNode>
+  edges: Array<FixtureEdge>
+}
+
+function rng(seed: number): () => number {
+  let state = seed
+  return () => {
+    state |= 0
+    state = (state + 0x6d2b79f5) | 0
+    let t = Math.imul(state ^ (state >>> 15), 1 | state)
+    t = (t + Math.imul(t ^ (t >>> 7), 61 | t)) ^ t
+    return ((t ^ (t >>> 14)) >>> 0) / 4294967296
+  }
+}
+
+const FIXTURE_LABELS = [
+  'places',
+  'belongs to',
+  'has many line items',
+  'owns',
+  'references parent',
+  'billed via',
+  'ships from warehouse',
+]
+
+function buildFixture(
+  name: string,
+  spec: Record<string, number>,
+  rels: Array<[string, string]>,
+  seed: number,
+): Fixture {
+  const r = rng(seed)
+  const nodes: Array<FixtureNode> = Object.entries(spec).map(([id, cols]) => ({
+    id,
+    cols,
+    width: 200 + Math.floor(r() * 80),
+    height: 40 + cols * 28 + 12,
+  }))
+  const cols = new Map(nodes.map((n) => [n.id, n.cols]))
+  const fkNext = new Map<string, number>()
+  const edges: Array<FixtureEdge> = rels.map(([source, target], i) => {
+    const row = Math.min(cols.get(source)! - 1, fkNext.get(source) ?? 1)
+    fkNext.set(source, row + 1)
+    return {
+      id: `e${String(i).padStart(3, '0')}`,
+      source,
+      target,
+      sourceRow: row,
+      targetRow: 0,
+      label:
+        r() < 0.4
+          ? FIXTURE_LABELS[Math.floor(r() * FIXTURE_LABELS.length)]
+          : undefined,
+      cardinality: 'MANY_TO_ONE',
+    }
+  })
+  // Shuffle to mimic random creation order.
+  for (let i = nodes.length - 1; i > 0; i--) {
+    const j = Math.floor(r() * (i + 1))
+    ;[nodes[i], nodes[j]] = [nodes[j], nodes[i]]
+  }
+  return { name, nodes, edges }
+}
+
+function snowflakeFixture(): Fixture {
+  const dims = [
+    'dim_date',
+    'dim_time',
+    'dim_product',
+    'dim_store',
+    'dim_customer',
+    'dim_promo',
+    'dim_channel',
+    'dim_currency',
+    'dim_employee',
+    'dim_payment',
+    'dim_ship_mode',
+    'dim_weather',
+    'dim_campaign',
+    'dim_device',
+  ]
+  const spec: Record<string, number> = { fact_sales: 20 }
+  for (const d of dims) spec[d] = 6
+  Object.assign(spec, {
+    dim_brand: 4,
+    dim_category: 4,
+    dim_department: 3,
+    dim_region: 4,
+    dim_country: 3,
+    dim_segment: 3,
+    fact_returns: 9,
+  })
+  const rels: Array<[string, string]> = dims.map(
+    (d) => ['fact_sales', d] as [string, string],
+  )
+  rels.push(
+    ['dim_product', 'dim_brand'],
+    ['dim_product', 'dim_category'],
+    ['dim_category', 'dim_department'],
+    ['dim_store', 'dim_region'],
+    ['dim_region', 'dim_country'],
+    ['dim_customer', 'dim_segment'],
+    ['fact_returns', 'dim_product'],
+    ['fact_returns', 'dim_date'],
+    ['fact_returns', 'dim_store'],
+    ['fact_returns', 'dim_customer'],
+  )
+  return buildFixture('snowflake', spec, rels, 2)
+}
+
+function ecommerceFixture(): Fixture {
+  const spec = {
+    users: 8,
+    addresses: 9,
+    orders: 10,
+    order_items: 6,
+    products: 12,
+    categories: 5,
+    product_categories: 3,
+    reviews: 7,
+    carts: 4,
+    cart_items: 5,
+    payments: 8,
+    shipments: 9,
+    inventory: 5,
+    warehouses: 6,
+    suppliers: 7,
+    coupons: 6,
+    order_coupons: 3,
+    wishlists: 4,
+    wishlist_items: 4,
+    product_images: 5,
+    refunds: 6,
+    audit_log: 8,
+    settings: 4,
+    sessions: 5,
+    roles: 3,
+    user_roles: 3,
+  }
+  const rels: Array<[string, string]> = [
+    ['addresses', 'users'],
+    ['orders', 'users'],
+    ['orders', 'addresses'],
+    ['order_items', 'orders'],
+    ['order_items', 'products'],
+    ['products', 'categories'],
+    ['products', 'suppliers'],
+    ['product_categories', 'products'],
+    ['product_categories', 'categories'],
+    ['reviews', 'products'],
+    ['reviews', 'users'],
+    ['carts', 'users'],
+    ['cart_items', 'carts'],
+    ['cart_items', 'products'],
+    ['payments', 'orders'],
+    ['shipments', 'orders'],
+    ['shipments', 'warehouses'],
+    ['inventory', 'products'],
+    ['inventory', 'warehouses'],
+    ['order_coupons', 'orders'],
+    ['order_coupons', 'coupons'],
+    ['wishlists', 'users'],
+    ['wishlist_items', 'wishlists'],
+    ['wishlist_items', 'products'],
+    ['product_images', 'products'],
+    ['refunds', 'payments'],
+    ['refunds', 'orders'],
+    ['sessions', 'users'],
+    ['user_roles', 'users'],
+    ['user_roles', 'roles'],
+  ]
+  return buildFixture('ecommerce', spec, rels, 1)
+}
+
+function multiComponentFixture(): Fixture {
+  const r = rng(3)
+  const spec: Record<string, number> = {}
+  const rels: Array<[string, string]> = []
+  for (let c = 0; c < 6; c++) {
+    const size = 3 + Math.floor(r() * 6)
+    for (let i = 0; i < size; i++) {
+      spec[`c${c}_t${i}`] = 3 + Math.floor(r() * 10)
+      if (i > 0) rels.push([`c${c}_t${i}`, `c${c}_t${Math.floor(r() * i)}`])
+    }
+    if (size > 4) rels.push([`c${c}_t${size - 1}`, `c${c}_t1`])
+  }
+  for (let i = 0; i < 14; i++) spec[`iso_${i}`] = 2 + Math.floor(r() * 12)
+  return buildFixture('6 components + 14 isolated', spec, rels, 3)
+}
+
+/** Random sparse graph for the performance test. */
+function randomFixture(tables: number, relationships: number): Fixture {
+  const r = rng(7)
+  const spec: Record<string, number> = {}
+  for (let i = 0; i < tables; i++) spec[`t${i}`] = 3 + Math.floor(r() * 12)
+  const rels: Array<[string, string]> = []
+  for (let i = 1; i < tables && rels.length < relationships; i++) {
+    rels.push([`t${i}`, `t${Math.floor(r() * i)}`])
+  }
+  while (rels.length < relationships) {
+    const a = Math.floor(r() * tables)
+    const b = Math.floor(r() * tables)
+    if (a !== b) rels.push([`t${a}`, `t${b}`])
+  }
+  return buildFixture(`random ${tables}t/${relationships}r`, spec, rels, 8)
+}
+
+type Seg = [number, number, number, number]
+
+/**
+ * Count proper crossings between the orthogonal 3-segment routes the renderer
+ * draws: horizontal out of the source port, vertical in the corridor middle,
+ * horizontal into the target port. Same-column edges use a C-curve.
+ */
+function countRouteCrossings(
+  fixture: Fixture,
+  positions: Array<{ id: string; x: number; y: number }>,
+): number {
+  const at = new Map(positions.map((p) => [p.id, p]))
+  const box = new Map(
+    fixture.nodes.map((n) => {
+      const p = at.get(n.id)!
+      return [n.id, { x: p.x, y: p.y, w: n.width }]
+    }),
+  )
+  const routes: Array<Array<Seg>> = []
+  for (const e of fixture.edges) {
+    const s = box.get(e.source)!
+    const t = box.get(e.target)!
+    const sy = s.y + 40 + e.sourceRow * 28 + 14
+    const ty = t.y + 40 + e.targetRow * 28 + 14
+    let pts: Array<[number, number]>
+    if (t.x > s.x + s.w + 20) {
+      const sx = s.x + s.w
+      const mx = (sx + t.x) / 2
+      pts = [
+        [sx, sy],
+        [mx, sy],
+        [mx, ty],
+        [t.x, ty],
+      ]
+    } else if (s.x > t.x + t.w + 20) {
+      const tx = t.x + t.w
+      const mx = (s.x + tx) / 2
+      pts = [
+        [s.x, sy],
+        [mx, sy],
+        [mx, ty],
+        [tx, ty],
+      ]
+    } else {
+      const sx = s.x + s.w
+      const tx = t.x + t.w
+      const cx = Math.max(sx, tx) + 24
+      pts = [
+        [sx, sy],
+        [cx, sy],
+        [cx, ty],
+        [tx, ty],
+      ]
+    }
+    routes.push(
+      [0, 1, 2].map(
+        (i) => [pts[i][0], pts[i][1], pts[i + 1][0], pts[i + 1][1]] as Seg,
+      ),
+    )
+  }
+  const cross = (a: Seg, b: Seg): boolean => {
+    const aHorizontal = a[1] === a[3]
+    if (aHorizontal === (b[1] === b[3])) return false
+    const [h, v] = aHorizontal ? [a, b] : [b, a]
+    return (
+      v[0] > Math.min(h[0], h[2]) + 0.5 &&
+      v[0] < Math.max(h[0], h[2]) - 0.5 &&
+      h[1] > Math.min(v[1], v[3]) + 0.5 &&
+      h[1] < Math.max(v[1], v[3]) - 0.5
+    )
+  }
+  let crossings = 0
+  for (let i = 0; i < routes.length; i++) {
+    for (let j = i + 1; j < routes.length; j++) {
+      for (const a of routes[i]) {
+        for (const b of routes[j]) if (cross(a, b)) crossings++
+      }
+    }
+  }
+  return crossings
+}
+
+describe('computeD3ForceLayout — layout quality', () => {
+  const cases: Array<[Fixture, number]> = [
+    [snowflakeFixture(), 5],
+    [ecommerceFixture(), 16],
+    [multiComponentFixture(), 4],
+  ]
+
+  it.each(cases)(
+    '$0.name: no overlaps, 48 px gaps, crossings within budget, deterministic',
+    async (fixture, maxCrossings) => {
+      const first = await computeD3ForceLayout(fixture.nodes, fixture.edges)
+      expect(first).toHaveLength(fixture.nodes.length)
+      // assertAllGaps at 48 also proves 0 node overlaps
+      assertAllGaps(first, fixture.nodes, 48)
+      expect(countRouteCrossings(fixture, first)).toBeLessThanOrEqual(
+        maxCrossings,
+      )
+      const second = await computeD3ForceLayout(fixture.nodes, fixture.edges)
+      expect(second).toEqual(first)
+    },
+  )
+
+  it('rootId puts the given hub in the centre column', async () => {
+    const fixture = snowflakeFixture()
+    const widthOf = new Map(fixture.nodes.map((n) => [n.id, n.width]))
+    for (const rootId of ['dim_product', 'fact_sales']) {
+      const result = await computeD3ForceLayout(fixture.nodes, fixture.edges, {
+        rootId,
+      })
+      const pm = posMap(result)
+      const centres = result.map((p) => p.x + widthOf.get(p.id)! / 2)
+      const root = pm.get(rootId)!.x + widthOf.get(rootId)! / 2
+      expect(root).toBeGreaterThan(Math.min(...centres))
+      expect(root).toBeLessThan(Math.max(...centres))
+    }
+  })
+
+  it('ignores a rootId that is not in the graph', async () => {
+    const fixture = ecommerceFixture()
+    const without = await computeD3ForceLayout(fixture.nodes, fixture.edges)
+    const bogus = await computeD3ForceLayout(fixture.nodes, fixture.edges, {
+      rootId: 'no-such-table',
+    })
+    expect(bogus).toEqual(without)
+  })
+
+  it('drops self-loops and edges to unknown tables', async () => {
+    const nodes = [makeNode('A'), makeNode('B')]
+    const result = await computeD3ForceLayout(nodes, [
+      { source: 'A', target: 'A' },
+      { source: 'A', target: 'ghost' },
+      { source: 'A', target: 'B' },
+    ])
+    expect(result).toHaveLength(2)
+    assertAllGaps(result, nodes, 48)
+  })
+
+  it('lays out 300 tables and 400 edges in under 250 ms', async () => {
+    const fixture = randomFixture(300, 400)
+    const start = performance.now()
+    const result = await computeD3ForceLayout(fixture.nodes, fixture.edges)
+    const elapsed = performance.now() - start
+    expect(result).toHaveLength(300)
+    expect(elapsed).toBeLessThan(250)
   })
 })

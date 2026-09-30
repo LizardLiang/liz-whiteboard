@@ -21,6 +21,20 @@ import {
 import { getCachedTableWidth } from '@/lib/react-flow/canvas-node-metrics'
 import { calculateTableHeight } from '@/lib/react-flow/layout-adapter'
 
+/**
+ * Index of a column within a table node's `columns`, or undefined when the node
+ * has no table (reference nodes) or the column is not found.
+ */
+function findColumnRow(
+  node: TableNodeType | undefined,
+  columnId: string | null | undefined,
+): number | undefined {
+  const columns = node?.data.table.columns
+  if (!columns || !columnId) return undefined
+  const index = columns.findIndex((c) => c.id === columnId)
+  return index >= 0 ? index : undefined
+}
+
 export interface LayoutResult {
   /** Node positions to apply via applyBulkPositions */
   positions: Array<LayoutOutputPosition>
@@ -132,12 +146,22 @@ export function useD3ForceLayout(
         // Pass id so computeEdgeBundleOffsets can emit per-edge offsets keyed by id.
         // Pass label and cardinality so the layout engine can compute per-edge
         // label pill sizes from actual content (not a fixed constant).
+        // sourceRow/targetRow place each edge's port on the FK / referenced row.
+        const nodesById = new Map(nodes.map((n) => [n.id, n]))
         const layoutEdges = edges.map((e) => ({
           id: e.id,
           source: e.source,
           target: e.target,
           label: e.data?.label ?? undefined,
           cardinality: e.data?.cardinality ?? undefined,
+          sourceRow: findColumnRow(
+            nodesById.get(e.source),
+            e.data?.relationship.sourceColumnId,
+          ),
+          targetRow: findColumnRow(
+            nodesById.get(e.target),
+            e.data?.relationship.targetColumnId,
+          ),
         }))
 
         const positions = await computeD3ForceLayout(layoutNodes, layoutEdges)

@@ -162,20 +162,39 @@ export function TableFocusOverlay({
 
     const layoutNodes = focusNodes.map((n) => ({
       id: n.id,
-      width: n.measured?.width ?? (n.width) ?? 250,
+      width: n.measured?.width ?? n.width ?? 250,
       height:
         n.measured?.height ?? calculateTableHeight(n.data.table.columns.length),
     }))
+    const rowOf = (
+      table: { columns: Array<{ id: string }> } | undefined,
+      columnId: string | null | undefined,
+    ): number | undefined => {
+      if (!table || !columnId) return undefined
+      const index = table.columns.findIndex((c) => c.id === columnId)
+      return index >= 0 ? index : undefined
+    }
+    const tableById = new Map(focusNodes.map((n) => [n.id, n.data.table]))
     const layoutEdges = focusEdges.map((e) => ({
       id: e.id,
       source: e.source,
       target: e.target,
       label: e.data?.label ?? undefined,
       cardinality: e.data?.cardinality ? String(e.data.cardinality) : undefined,
+      sourceRow: rowOf(
+        tableById.get(e.source),
+        e.data?.relationship.sourceColumnId,
+      ),
+      targetRow: rowOf(
+        tableById.get(e.target),
+        e.data?.relationship.targetColumnId,
+      ),
     }))
 
     let cancelled = false
-    computeD3ForceLayout(layoutNodes, layoutEdges)
+    computeD3ForceLayout(layoutNodes, layoutEdges, {
+      rootId: activeFocusId ?? undefined,
+    })
       .then((positions) => {
         if (cancelled) return
         setOverlayPositions(

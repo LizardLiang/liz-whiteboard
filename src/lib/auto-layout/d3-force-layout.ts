@@ -1,21 +1,17 @@
 // src/lib/auto-layout/d3-force-layout.ts
 // Auto Layout engine for ER diagram tables.
 //
-// Strategy: layered (Sugiyama-style) layout.
-//   1. Topological sort assigns each table a column based on FK depth.
-//   2. Tables stack vertically within each column, columns read left-to-right.
-//   3. Isolated tables (no FK edges) are placed in a row below the cluster.
-//   4. A post-pass guarantees every pair has ≥ 48 px L∞ gap.
-//   5. A second post-pass pushes nodes away from estimated edge-label zones.
+// Strategy: hub-centred layered (Sugiyama-style) layout.
+//   1. Split tables into connected components; isolated tables are 1-node blocks.
+//   2. Per component, BFS layers from the hub; hub branches split left and right.
+//   3. Port-aware barycenter sweeps reorder each column to cut crossings.
+//   4. Isotonic regression aligns FK rows with the rows they reference.
+//   5. Each column gap is sized from that corridor's labels and edge bundle.
+//   6. Blocks are shelf-packed onto a ~16:10 canvas.
+//   7. A post-pass guarantees every pair has >= 48 px L-infinity gap.
 //
 // Outputs top-left coordinates matching React Flow's node.position contract.
 // Returns a Promise so the call-site API is unchanged.
-
-import type {
-  Simulation,
-  SimulationLinkDatum,
-  SimulationNodeDatum,
-} from 'd3-force'
 
 // ---------------------------------------------------------------------------
 // Types
@@ -51,6 +47,13 @@ export interface LayoutInputEdge {
    * Passed through from RelationshipEdgeData.cardinality.
    */
   cardinality?: string
+  /**
+   * Index of the FK column in the source table's `columns`. Positions the
+   * edge's port for row alignment; omitted = table middle (e.g. references).
+   */
+  sourceRow?: number
+  /** Index of the referenced column in the target table's `columns`. */
+  targetRow?: number
 }
 
 export interface LayoutOutputPosition {
@@ -85,46 +88,12 @@ export interface LayoutOutputEdge {
 // Internal node type — center coordinates, mutated by post-pass
 // ---------------------------------------------------------------------------
 
-export interface SimNode extends SimulationNodeDatum {
+export interface SimNode {
   id: string
   width: number
   height: number
   x: number
   y: number
-}
-
-type SimLink = SimulationLinkDatum<SimNode>
-
-// ---------------------------------------------------------------------------
-// simulateChunked — kept for backwards-compat and tests (TC-AL-E-10/11)
-// ---------------------------------------------------------------------------
-
-const TICK_BUDGET_PER_FRAME = 10
-const MAX_TICKS = 500
-
-export function simulateChunked(
-  simulation: Simulation<SimNode, SimLink>,
-): Promise<void> {
-  return new Promise((resolve) => {
-    let ticksRun = 0
-
-    function frame() {
-      const remaining = MAX_TICKS - ticksRun
-      const chunk = Math.min(TICK_BUDGET_PER_FRAME, remaining)
-      for (let i = 0; i < chunk; i++) simulation.tick()
-      ticksRun += chunk
-
-      if (ticksRun >= MAX_TICKS || simulation.alpha() < simulation.alphaMin()) {
-        simulation.stop()
-        resolve()
-        return
-      }
-
-      requestAnimationFrame(frame)
-    }
-
-    requestAnimationFrame(frame)
-  })
 }
 
 // ---------------------------------------------------------------------------
@@ -248,7 +217,6 @@ export function computeLabelPillWidth(label: string): number {
   let textWidth: number
   try {
     const canvas =
-       
       typeof document !== 'undefined' ? document.createElement('canvas') : null
     const ctx = canvas?.getContext('2d') ?? null
     if (ctx) {
@@ -375,106 +343,6 @@ export function computeRequiredColGap(edges: Array<LayoutInputEdge>): number {
 }
 
 // ---------------------------------------------------------------------------
-// Edge-label zone post-pass
-// ---------------------------------------------------------------------------
-
-/**
- * Push non-endpoint nodes out of estimated edge-label zones.
- *
- * For each edge, estimates where the label pill will appear (midpoint between
- * the two endpoints' inner-facing edges, adjusted for cardinality extents) and
- * nudges any NON-ENDPOINT node whose AABB intrudes into that zone.
- *
- * Label pill width is computed per-edge from the actual label text using
- * computeLabelPillWidth() — no single shared constant.
- */
-export function enforceEdgeLabelGap(
-  nodes: Array<SimNode>,
-  edges: Array<LayoutInputEdge>,
-): void {
-  for (let sweep = 0; sweep < POST_PASS_MAX_SWEEPS; sweep++) {
-    let anyViolation = false
-
-    for (const edge of edges) {
-      const sourceNode = nodes.find((n) => n.id === edge.source)
-      const targetNode = nodes.find((n) => n.id === edge.target)
-      if (!sourceNode || !targetNode) continue
-
-      const leftNode = sourceNode.x <= targetNode.x ? sourceNode : targetNode
-      const rightNode = sourceNode.x <= targetNode.x ? targetNode : sourceNode
-
-      // Per-edge cardinality extents
-      const leftIsSource = leftNode.id === edge.source
-      const flags =
-        CARDINALITY_MANY[edge.cardinality ?? ''] ?? ([false, false] as const)
-      const leftIsMany = leftIsSource ? flags[0] : flags[1]
-      const rightIsMany = leftIsSource ? flags[1] : flags[0]
-      const leftExt = cardinalityIndicatorExtent(leftIsMany)
-      const rightExt = cardinalityIndicatorExtent(rightIsMany)
-
-      // Per-edge label pill dimensions
-      const pillWidth = computeLabelPillWidth(edge.label ?? '')
-      const pillHeight = computeLabelPillHeight()
-
-      // Estimated label midpoint — between inner-facing edges, accounting for
-      // cardinality indicator extents (mirrors the getSmoothStepPath adjustment
-      // in RelationshipEdge.tsx: adjSourceX + leftExt ... adjTargetX - rightExt)
-      const midX =
-        (leftNode.x +
-          leftNode.width / 2 +
-          leftExt +
-          rightNode.x -
-          rightNode.width / 2 -
-          rightExt) /
-        2
-      const midY = (leftNode.y + rightNode.y) / 2
-
-      // Use minimum label zone width even for unlabelled edges (cardinality markers alone
-      // occupy leftExt + rightExt px of the gap; reserve that + margin on each side)
-      const zoneW =
-        Math.max(pillWidth, leftExt + rightExt) + 2 * EDGE_LABEL_MARGIN
-      const zoneH =
-        (pillWidth > 0 ? pillHeight : leftExt + rightExt) +
-        2 * EDGE_LABEL_MARGIN
-
-      const lx = midX - zoneW / 2
-      const ly = midY - zoneH / 2
-
-      for (const node of nodes) {
-        if (node.id === edge.source || node.id === edge.target) continue
-
-        // Node AABB (top-left from center)
-        const nx = node.x - node.width / 2
-        const ny = node.y - node.height / 2
-        const nw = node.width
-        const nh = node.height
-
-        // Signed gaps on each axis (negative = overlap)
-        const gapX = Math.max(nx - (lx + zoneW), lx - (nx + nw))
-        const gapY = Math.max(ny - (ly + zoneH), ly - (ny + nh))
-        const gap = Math.max(gapX, gapY)
-
-        if (gap < 0) {
-          anyViolation = true
-          // Nudge enough to exit the zone plus a small slack
-          const nudge = -gap + POST_PASS_SLACK
-
-          if (gapX >= gapY) {
-            // Less overlap on X — push horizontally
-            node.x += node.x < midX ? -nudge : nudge
-          } else {
-            // Less overlap on Y — push vertically
-            node.y += node.y < midY ? -nudge : nudge
-          }
-        }
-      }
-    }
-
-    if (!anyViolation) break
-  }
-}
-
-// ---------------------------------------------------------------------------
 // Same-side label X clamping — render-time helper used by RelationshipEdge.tsx
 // ---------------------------------------------------------------------------
 
@@ -531,120 +399,12 @@ export function clampSameSideLabelX(
   return labelX
 }
 
-// ---------------------------------------------------------------------------
-// Label-vs-label pairwise collision resolution
-// ---------------------------------------------------------------------------
-
-/**
- * Separate overlapping edge-label pills by adjusting unique node positions.
- *
- * For each pair of labelled edges, estimates the label centre as the midpoint
- * between node centres and checks whether the two pill AABBs intersect
- * (including EDGE_LABEL_MARGIN as buffer). When they do, the node unique to
- * the lower-y-label edge is pushed downward. The nudge factor is ×2 because
- * label midY = (S.y + T.y)/2 — moving one endpoint by d shifts midY by d/2.
- *
- * Runs up to POST_PASS_MAX_SWEEPS iterations to converge.
- */
-export function enforceLabelLabelGap(
-  nodes: Array<SimNode>,
-  edges: Array<LayoutInputEdge>,
-): void {
-  const pillH = computeLabelPillHeight()
-
-  for (let sweep = 0; sweep < POST_PASS_MAX_SWEEPS; sweep++) {
-    let anyViolation = false
-
-    // Build estimated label AABB centre for each labelled edge
-    const labelBoxes: Array<{
-      edgeIdx: number
-      cx: number
-      cy: number
-      w: number
-      h: number
-    }> = []
-
-    for (let i = 0; i < edges.length; i++) {
-      const edge = edges[i]
-      const sourceNode = nodes.find((n) => n.id === edge.source)
-      const targetNode = nodes.find((n) => n.id === edge.target)
-      if (!sourceNode || !targetNode) continue
-
-      const pillW = computeLabelPillWidth(edge.label ?? '')
-      if (pillW <= 0) continue // skip unlabelled edges
-
-      labelBoxes.push({
-        edgeIdx: i,
-        cx: (sourceNode.x + targetNode.x) / 2,
-        cy: (sourceNode.y + targetNode.y) / 2,
-        w: pillW,
-        h: pillH,
-      })
-    }
-
-    // Check all pairs for overlap
-    for (let i = 0; i < labelBoxes.length; i++) {
-      for (let j = i + 1; j < labelBoxes.length; j++) {
-        const a = labelBoxes[i]
-        const b = labelBoxes[j]
-
-        // Full AABB overlap on X axis
-        const overlapX = (a.w + b.w) / 2 - Math.abs(a.cx - b.cx)
-        // Y overlap including a margin gap between pills
-        const overlapY =
-          (a.h + b.h) / 2 + EDGE_LABEL_MARGIN - Math.abs(a.cy - b.cy)
-
-        if (overlapX > 0 && overlapY > 0) {
-          anyViolation = true
-
-          const edgeA = edges[a.edgeIdx]
-          const edgeB = edges[b.edgeIdx]
-
-          // Lower label = higher cy value (y increases downward in canvas coords)
-          const lowerEdge = a.cy >= b.cy ? edgeA : edgeB
-          const upperEdge = a.cy >= b.cy ? edgeB : edgeA
-
-          // Nudge ×2: moving one endpoint by d shifts label midY by d/2
-          const nudge = 2 * (overlapY + POST_PASS_SLACK)
-
-          // Find the unique node of the lower edge (not shared with upper edge)
-          const upperIds = new Set([upperEdge.source, upperEdge.target])
-          const uniqueId = upperIds.has(lowerEdge.source)
-            ? lowerEdge.target
-            : upperIds.has(lowerEdge.target)
-              ? lowerEdge.source
-              : null // no shared node
-
-          if (uniqueId !== null) {
-            const node = nodes.find((n) => n.id === uniqueId)
-            if (node) node.y += nudge
-          } else {
-            // No shared node: push both lower-edge endpoints down by nudge/2 each
-            // (combined shift of nudge/2 on midY equals overlapY + slack)
-            const srcNode = nodes.find((n) => n.id === lowerEdge.source)
-            const tgtNode = nodes.find((n) => n.id === lowerEdge.target)
-            if (srcNode) srcNode.y += nudge / 2
-            if (tgtNode) tgtNode.y += nudge / 2
-          }
-        }
-      }
-    }
-
-    if (!anyViolation) break
-  }
-}
-
-// ---------------------------------------------------------------------------
-// Layered layout (left-to-right columns)
-// ---------------------------------------------------------------------------
-
 /**
  * Minimum inter-column gap (px) — a visual floor only.
  * computeRequiredColGap() will raise this per layout run based on actual edge labels.
  * Set to cover cardinality indicators (13px×2) + breathing room (54px) = 80px.
  */
 export const COL_GAP = 80
-const ROW_GAP = 80 // vertical gap between nodes within a column
 
 // ---------------------------------------------------------------------------
 // Edge-bundle separation constants
@@ -741,56 +501,6 @@ export function assignLayersBFS(
   }
 
   return layer
-}
-
-/**
- * Place connected nodes in left-to-right columns using BFS from the hub table.
- * BFS level = column index: root in col 0, its direct FK neighbours in col 1,
- * their neighbours in col 2, etc. Nodes stack vertically within each column.
- * Returns SimNodes with center coordinates (x, y).
- *
- * @param colGap  - Inter-column gap (px). Use computeRequiredColGap() to derive from edge labels.
- * @param layers  - Pre-computed layer map from assignLayersBFS (avoids double computation).
- */
-function layeredPlacement(
-  nodes: Array<LayoutInputNode>,
-  colGap: number,
-  layers: Map<string, number>,
-): Array<SimNode> {
-  const layer = layers
-
-  // Group by column (BFS level)
-  const cols = new Map<number, Array<LayoutInputNode>>()
-  for (const n of nodes) {
-    const l = layer.get(n.id)!
-    if (!cols.has(l)) cols.set(l, [])
-    // Within each column sort by degree desc (most-connected at top), then id
-    cols.get(l)!.push(n)
-  }
-
-  const simNodes: Array<SimNode> = []
-  let leftEdge = 0
-
-  for (const l of [...cols.keys()].sort((a, b) => a - b)) {
-    const colNodes = cols.get(l)!
-    const colWidth = Math.max(...colNodes.map((n) => n.width))
-
-    let topEdge = 0
-    for (const n of colNodes) {
-      simNodes.push({
-        id: n.id,
-        width: n.width,
-        height: n.height,
-        x: leftEdge + colWidth / 2,
-        y: topEdge + n.height / 2,
-      })
-      topEdge += n.height + ROW_GAP
-    }
-
-    leftEdge += colWidth + colGap
-  }
-
-  return simNodes
 }
 
 // ---------------------------------------------------------------------------
@@ -907,42 +617,124 @@ export function computeEdgeBundleOffsets(
 }
 
 // ---------------------------------------------------------------------------
-// Isolated node placement
+// Hub-centred layered layout
 // ---------------------------------------------------------------------------
 
+/** Minimum vertical gap between two tables stacked in one column (px). */
+const LAYOUT_ROW_GAP = 64
+
+/** Gap between packed blocks (connected groups and isolated tables) (px). */
+const BLOCK_GAP = 120
+
+/** Distance from a table's top edge to the first column row's top (px). */
+const PORT_HEADER_HEIGHT = 34
+
+/** Height of one column row (px). */
+const PORT_ROW_HEIGHT = 28
+
+/** Room reserved right of a column that carries same-column C-curves (px). */
+const C_CURVE_ROOM = 48
+
+/** Target width : height ratio of the packed canvas. */
+const TARGET_ASPECT = 1.6
+
+/** Barycenter sweeps used to reduce crossings. */
+const ORDER_SWEEPS = 24
+
+/** Alternating sweeps used to align ports vertically. */
+const Y_SWEEPS = 12
+
+/** Weight of the all-column pull relative to the sweep-side pull in the ordering barycenter. */
+const ALL_COLUMN_WEIGHT = 0.5
+
+/** Weight of a table with no neighbours in the y regression. */
+const FREE_TABLE_WEIGHT = 0.25
+
+export interface LayoutOptions {
+  /**
+   * Table to use as the hub of its connected component (centre column).
+   * Ignored when the table is not in the component being laid out.
+   */
+  rootId?: string
+}
+
+interface Adjacency {
+  other: string
+  ownRow?: number
+  otherRow?: number
+}
+
+interface Block {
+  w: number
+  h: number
+  pos: Map<string, { x: number; y: number }>
+}
+
 /**
- * Place isolated nodes in a column to the RIGHT of the connected cluster,
- * starting at the same top edge as the cluster. This keeps them visually
- * adjacent regardless of how tall the cluster is.
+ * Weighted isotonic regression with spacing (pool-adjacent-violators).
+ * Returns centres c_i that minimise Σ w_i (c_i − d_i)² subject to
+ * c_{i+1} − c_i ≥ (h_i + h_{i+1}) / 2 + LAYOUT_ROW_GAP.
  */
-function placeIsolatedNodes(
-  isolated: Array<SimNode>,
-  connected: Array<SimNode>,
-): void {
-  if (isolated.length === 0) return
-
-  // Right edge of the connected cluster (or 0 if no connected nodes)
-  let clusterRight = 0
-  let clusterTop = 0
-  if (connected.length > 0) {
-    clusterRight = connected.reduce(
-      (max, n) => Math.max(max, n.x + n.width / 2),
-      -Infinity,
-    )
-    clusterTop = connected.reduce(
-      (min, n) => Math.min(min, n.y - n.height / 2),
-      Infinity,
+function placeInOrder(
+  heights: Array<number>,
+  desired: Array<number>,
+  weights: Array<number>,
+): Array<number> {
+  const n = heights.length
+  const offset = [0]
+  for (let i = 1; i < n; i++) {
+    offset.push(
+      offset[i - 1] + (heights[i - 1] + heights[i]) / 2 + LAYOUT_ROW_GAP,
     )
   }
-
-  const startX = clusterRight + COL_GAP
-  let topEdge = clusterTop
-
-  for (const n of isolated) {
-    n.x = startX + n.width / 2
-    n.y = topEdge + n.height / 2
-    topEdge += n.height + ROW_GAP
+  const pools: Array<{ v: number; w: number; n: number }> = []
+  for (let i = 0; i < n; i++) {
+    pools.push({ v: desired[i] - offset[i], w: weights[i], n: 1 })
+    while (
+      pools.length > 1 &&
+      pools[pools.length - 2].v > pools[pools.length - 1].v
+    ) {
+      const b = pools.pop()!
+      const a = pools.pop()!
+      pools.push({
+        v: (a.v * a.w + b.v * b.w) / (a.w + b.w),
+        w: a.w + b.w,
+        n: a.n + b.n,
+      })
+    }
   }
+  const out: Array<number> = []
+  for (const pool of pools) {
+    for (let k = 0; k < pool.n; k++) out.push(pool.v + offset[out.length])
+  }
+  return out
+}
+
+/** Shelf-pack blocks (largest first) into rows of roughly TARGET_ASPECT. */
+function packBlocks(blocks: Array<Block>): Array<LayoutOutputPosition> {
+  const area = blocks.reduce(
+    (sum, b) => sum + (b.w + BLOCK_GAP) * (b.h + BLOCK_GAP),
+    0,
+  )
+  const rowWidth = Math.max(
+    Math.max(...blocks.map((b) => b.w)),
+    Math.sqrt(area * TARGET_ASPECT),
+  )
+  const result: Array<LayoutOutputPosition> = []
+  let cx = 0
+  let cy = 0
+  let rowHeight = 0
+  for (const b of blocks) {
+    if (cx > 0 && cx + b.w > rowWidth) {
+      cx = 0
+      cy += rowHeight + BLOCK_GAP
+      rowHeight = 0
+    }
+    for (const [id, p] of b.pos) result.push({ id, x: cx + p.x, y: cy + p.y })
+    cx += b.w + BLOCK_GAP
+    rowHeight = Math.max(rowHeight, b.h)
+  }
+  return result
 }
 
 // ---------------------------------------------------------------------------
@@ -950,90 +742,407 @@ function placeIsolatedNodes(
 // ---------------------------------------------------------------------------
 
 /**
- * Compute a left-to-right layered layout for ER diagram tables.
+ * Compute a hub-centred, layered left-to-right layout for ER diagram tables.
  *
- * - FK-connected tables are arranged in columns ordered by FK depth (left = fewer deps).
- * - Tables within each column stack top-to-bottom.
- * - Isolated tables (no FK edges) appear in a row below the connected cluster.
- * - Every pair of tables is guaranteed an L∞ gap ≥ 48 px.
- * - Returns top-left coordinates matching React Flow's node.position contract.
+ * - Each connected component is layered by BFS distance from its hub; the hub's
+ *   branches split left and right, so every edge spans at most one column.
+ * - Columns are ordered by port-aware barycenter sweeps to cut crossings, and
+ *   tables shift vertically so FK rows line up with the rows they reference.
+ * - Each column gap is sized from that corridor's labels and edge bundle.
+ * - Components and isolated tables are shelf-packed onto a ~16:10 canvas.
+ * - Every pair of tables is guaranteed an L∞ gap ≥ 48 px, and the output is
+ *   deterministic. Returns top-left coordinates (React Flow's contract).
  */
 export async function computeD3ForceLayout(
   nodes: Array<LayoutInputNode>,
-  edges: Array<LayoutInputEdge>,
+  rawEdges: Array<LayoutInputEdge>,
+  options: LayoutOptions = {},
 ): Promise<Array<LayoutOutputPosition>> {
   if (nodes.length === 0) throw new Error('No nodes to layout')
-
   if (nodes.length === 1) return [{ id: nodes[0].id, x: 0, y: 0 }]
 
-  // Split connected vs isolated
-  const connectedIds = new Set<string>()
-  for (const e of edges) {
-    connectedIds.add(e.source)
-    connectedIds.add(e.target)
-  }
-  const connectedNodes = nodes.filter((n) => connectedIds.has(n.id))
-  const isolatedNodes = nodes.filter((n) => !connectedIds.has(n.id))
+  const byId = new Map(nodes.map((n) => [n.id, n]))
+  const edges = rawEdges.filter(
+    (e) => e.source !== e.target && byId.has(e.source) && byId.has(e.target),
+  )
 
-  // All nodes isolated: simple horizontal row
-  if (connectedNodes.length === 0) {
-    let x = 0
-    return nodes.map((n) => {
-      const pos = { id: n.id, x, y: 0 }
-      x += n.width + ROW_GAP
-      return pos
+  const adj = new Map<string, Array<Adjacency>>(nodes.map((n) => [n.id, []]))
+  for (const e of edges) {
+    adj.get(e.source)!.push({
+      other: e.target,
+      ownRow: e.sourceRow,
+      otherRow: e.targetRow,
+    })
+    adj.get(e.target)!.push({
+      other: e.source,
+      ownRow: e.targetRow,
+      otherRow: e.sourceRow,
     })
   }
 
-  // Compute layer assignments once — reused for both placement and bundle offsets
-  const layers = assignLayersBFS(connectedNodes, edges)
+  // Port offset from a table's top edge; an unknown row maps to the middle.
+  const portOffset = (id: string, row?: number): number => {
+    const height = byId.get(id)!.height
+    return row === undefined
+      ? height / 2
+      : Math.min(
+          PORT_HEADER_HEIGHT + row * PORT_ROW_HEIGHT + PORT_ROW_HEIGHT / 2,
+          height,
+        )
+  }
 
-  // Derive column gap from actual edge labels and cardinality indicators,
-  // then widen by the maximum bundle spread needed across all corridors so that
-  // fanned vertical step segments fit without overlapping label pills.
-  const labelColGap = computeRequiredColGap(edges)
-  const bundleExtra = computeMaxCorridorBundleWidth(edges, layers)
-  const effectiveColGap = labelColGap + bundleExtra
+  // ---- Components -----------------------------------------------------------
+  const seen = new Set<string>()
+  const components: Array<Array<string>> = []
+  const isolated: Array<string> = []
+  for (const n of nodes) {
+    if (seen.has(n.id)) continue
+    seen.add(n.id)
+    if (adj.get(n.id)!.length === 0) {
+      isolated.push(n.id)
+      continue
+    }
+    const comp = [n.id]
+    for (let head = 0; head < comp.length; head++) {
+      for (const a of adj.get(comp[head])!) {
+        if (seen.has(a.other)) continue
+        seen.add(a.other)
+        comp.push(a.other)
+      }
+    }
+    components.push(comp)
+  }
 
-  // Layered placement for connected nodes (center coords)
-  const connSimNodes = layeredPlacement(connectedNodes, effectiveColGap, layers)
-  enforceGapPostPass(connSimNodes)
+  const blocks: Array<Block> = components
+    .map((ids) => layoutComponent(ids))
+    .sort((a, b) => b.w * b.h - a.w * a.h)
+  isolated
+    .map((id) => byId.get(id)!)
+    .sort((a, b) => b.height - a.height || a.id.localeCompare(b.id))
+    .forEach((n) =>
+      blocks.push({
+        w: n.width,
+        h: n.height,
+        pos: new Map([[n.id, { x: 0, y: 0 }]]),
+      }),
+    )
 
-  // Isolated nodes below the cluster (center coords)
-  const isoSimNodes: Array<SimNode> = isolatedNodes.map((n) => ({
-    id: n.id,
-    width: n.width,
-    height: n.height,
-    x: 0,
-    y: 0,
+  // Safety net only: the construction above never overlaps.
+  const sim: Array<SimNode> = packBlocks(blocks).map((p) => {
+    const n = byId.get(p.id)!
+    return {
+      id: p.id,
+      width: n.width,
+      height: n.height,
+      x: p.x + n.width / 2,
+      y: p.y + n.height / 2,
+    }
+  })
+  enforceGapPostPass(sim)
+  return sim.map((s) => ({
+    id: s.id,
+    x: Math.round(s.x - s.width / 2),
+    y: Math.round(s.y - s.height / 2),
   }))
-  placeIsolatedNodes(isoSimNodes, connSimNodes)
 
-  if (isoSimNodes.length > 0) {
-    enforceGapPostPass([...connSimNodes, ...isoSimNodes])
+  // ---- Per-component layout -------------------------------------------------
+  function layoutComponent(ids: Array<string>): Block {
+    const degree = (id: string) => adj.get(id)!.length
+    const neighbourDegree = (id: string) =>
+      adj.get(id)!.reduce((sum, a) => sum + degree(a.other), 0)
+    const root =
+      options.rootId !== undefined && ids.includes(options.rootId)
+        ? options.rootId
+        : [...ids].sort(
+            (a, b) =>
+              degree(b) - degree(a) ||
+              neighbourDegree(b) - neighbourDegree(a) ||
+              a.localeCompare(b),
+          )[0]
+
+    // BFS distance from the root, and each table's branch (depth-1 ancestor).
+    const dist = new Map([[root, 0]])
+    const branch = new Map<string, string>()
+    const bfs = [root]
+    for (let head = 0; head < bfs.length; head++) {
+      const u = bfs[head]
+      for (const a of adj.get(u)!) {
+        if (dist.has(a.other)) continue
+        dist.set(a.other, dist.get(u)! + 1)
+        branch.set(a.other, u === root ? a.other : branch.get(u)!)
+        bfs.push(a.other)
+      }
+    }
+
+    // Branches linked by a non-root edge must share a side (union-find).
+    const parent = new Map<string, string>()
+    const find = (start: string): string => {
+      let x = start
+      while (parent.get(x) !== x) {
+        parent.set(x, parent.get(parent.get(x)!)!)
+        x = parent.get(x)!
+      }
+      return x
+    }
+    for (const b of new Set(branch.values())) parent.set(b, b)
+    for (const e of edges) {
+      if (e.source === root || e.target === root || !dist.has(e.source)) {
+        continue
+      }
+      const a = find(branch.get(e.source)!)
+      const b = find(branch.get(e.target)!)
+      if (a !== b) parent.set(a, b)
+    }
+
+    // Branch groups go greedily to the lighter side (right first).
+    const groupHeight = new Map<string, number>()
+    for (const id of ids) {
+      if (id === root) continue
+      const g = find(branch.get(id)!)
+      groupHeight.set(
+        g,
+        (groupHeight.get(g) ?? 0) + byId.get(id)!.height + LAYOUT_ROW_GAP,
+      )
+    }
+    const side = new Map<string, number>()
+    let rightWeight = 0
+    let leftWeight = 0
+    for (const [g, h] of [...groupHeight].sort(
+      (a, b) => b[1] - a[1] || a[0].localeCompare(b[0]),
+    )) {
+      if (rightWeight <= leftWeight) {
+        side.set(g, 1)
+        rightWeight += h
+      } else {
+        side.set(g, -1)
+        leftWeight += h
+      }
+    }
+    const layerOf = (id: string): number =>
+      id === root ? 0 : side.get(find(branch.get(id)!))! * dist.get(id)!
+
+    const layers = new Map<number, Array<string>>()
+    for (const id of bfs) {
+      const layer = layerOf(id)
+      if (!layers.has(layer)) layers.set(layer, [])
+      layers.get(layer)!.push(id)
+    }
+    const layerKeys = [...layers.keys()].sort((a, b) => a - b)
+
+    // ---- Ordering: port-aware barycenter sweeps ----------------------------
+    const top = new Map<string, number>()
+    const stack = (layer: number) => {
+      const col = layers.get(layer)!
+      const total =
+        col.reduce((sum, id) => sum + byId.get(id)!.height, 0) +
+        LAYOUT_ROW_GAP * (col.length - 1)
+      let y = -total / 2
+      for (const id of col) {
+        top.set(id, y)
+        y += byId.get(id)!.height + LAYOUT_ROW_GAP
+      }
+    }
+    layerKeys.forEach(stack)
+
+    // Weighted mean of the y that would align this table's ports with its
+    // neighbours. `fixed` limits it to those layers; null = every other column.
+    const desiredCentre = (
+      id: string,
+      fixed: Set<number> | null,
+    ): { y: number; w: number } | null => {
+      let sum = 0
+      let count = 0
+      for (const a of adj.get(id)!) {
+        const otherLayer = layerOf(a.other)
+        if (fixed ? !fixed.has(otherLayer) : otherLayer === layerOf(id)) {
+          continue
+        }
+        sum +=
+          top.get(a.other)! +
+          portOffset(a.other, a.otherRow) -
+          portOffset(id, a.ownRow) +
+          byId.get(id)!.height / 2
+        count++
+      }
+      return count ? { y: sum / count, w: count } : null
+    }
+
+    const countCrossings = (): number => {
+      let crossings = 0
+      for (let i = 0; i + 1 < layerKeys.length; i++) {
+        const segs: Array<[number, number]> = []
+        for (const e of edges) {
+          if (!dist.has(e.source)) continue
+          const ls = layerOf(e.source)
+          const lt = layerOf(e.target)
+          if (
+            Math.min(ls, lt) !== layerKeys[i] ||
+            Math.max(ls, lt) !== layerKeys[i + 1]
+          ) {
+            continue
+          }
+          const [l, r] =
+            ls < lt
+              ? [
+                  { id: e.source, row: e.sourceRow },
+                  { id: e.target, row: e.targetRow },
+                ]
+              : [
+                  { id: e.target, row: e.targetRow },
+                  { id: e.source, row: e.sourceRow },
+                ]
+          segs.push([
+            top.get(l.id)! + portOffset(l.id, l.row),
+            top.get(r.id)! + portOffset(r.id, r.row),
+          ])
+        }
+        for (let a = 0; a < segs.length; a++) {
+          for (let b = a + 1; b < segs.length; b++) {
+            if ((segs[a][0] - segs[b][0]) * (segs[a][1] - segs[b][1]) < 0) {
+              crossings++
+            }
+          }
+        }
+      }
+      return crossings
+    }
+
+    const snapshot = () =>
+      new Map(layerKeys.map((l) => [l, [...layers.get(l)!]]))
+    let best = snapshot()
+    let bestCrossings = countCrossings()
+    for (let s = 0; s < ORDER_SWEEPS && bestCrossings > 0; s++) {
+      const forward = s % 2 === 0
+      const sequence = forward
+        ? layerKeys.slice(1)
+        : layerKeys.slice(0, -1).reverse()
+      for (const layer of sequence) {
+        const fixed = new Set([forward ? layer - 1 : layer + 1])
+        const col = layers.get(layer)!
+        const key = new Map(
+          col.map((id) => {
+            const across = desiredCentre(id, fixed)
+            const within = desiredCentre(id, null)
+            const own = top.get(id)! + byId.get(id)!.height / 2
+            // Neighbours in every other column pull in lightly on top of the sweep side.
+            const y = across
+              ? within
+                ? (across.y * across.w +
+                    within.y * ALL_COLUMN_WEIGHT * within.w) /
+                  (across.w + ALL_COLUMN_WEIGHT * within.w)
+                : across.y
+              : (within?.y ?? own)
+            return [id, y]
+          }),
+        )
+        col.sort((a, b) => key.get(a)! - key.get(b)!)
+        stack(layer)
+      }
+      const crossings = countCrossings()
+      if (crossings < bestCrossings) {
+        bestCrossings = crossings
+        best = snapshot()
+      }
+    }
+    for (const layer of layerKeys) {
+      layers.set(layer, best.get(layer)!)
+      stack(layer)
+    }
+
+    // ---- Y: align ports, keep order and gap (isotonic regression) ----------
+    const allLayers = new Set(layerKeys)
+    for (let s = 0; s < Y_SWEEPS; s++) {
+      const sequence = [...layerKeys].sort((a, b) =>
+        s % 2 ? Math.abs(b) - Math.abs(a) : Math.abs(a) - Math.abs(b),
+      )
+      for (const layer of sequence) {
+        const col = layers.get(layer)!
+        const others = new Set([...allLayers].filter((x) => x !== layer))
+        const want = col.map(
+          (id) =>
+            desiredCentre(id, others) ?? {
+              y: top.get(id)! + byId.get(id)!.height / 2,
+              w: FREE_TABLE_WEIGHT,
+            },
+        )
+        const centres = placeInOrder(
+          col.map((id) => byId.get(id)!.height),
+          want.map((x) => x.y),
+          want.map((x) => x.w),
+        )
+        col.forEach((id, i) =>
+          top.set(id, centres[i] - byId.get(id)!.height / 2),
+        )
+      }
+    }
+
+    // ---- X: per-corridor column gaps ---------------------------------------
+    const colWidth = new Map(
+      layerKeys.map((l) => [
+        l,
+        Math.max(...layers.get(l)!.map((id) => byId.get(id)!.width)),
+      ]),
+    )
+    const hasIntra = new Set(
+      edges
+        .filter(
+          (e) => dist.has(e.source) && layerOf(e.source) === layerOf(e.target),
+        )
+        .map((e) => layerOf(e.source)),
+    )
+    const xLeft = new Map<number, number>()
+    let x = 0
+    for (let i = 0; i < layerKeys.length; i++) {
+      xLeft.set(layerKeys[i], x)
+      if (i + 1 === layerKeys.length) break
+      const corridor = edges.filter((e) => {
+        if (!dist.has(e.source)) return false
+        const a = layerOf(e.source)
+        const b = layerOf(e.target)
+        return (
+          Math.min(a, b) === layerKeys[i] && Math.max(a, b) === layerKeys[i + 1]
+        )
+      })
+      const gap =
+        computeRequiredColGap(corridor) +
+        Math.max(0, corridor.length - 1) * EDGE_SEP +
+        (hasIntra.has(layerKeys[i]) ? C_CURVE_ROOM : 0)
+      x += colWidth.get(layerKeys[i])! + gap
+    }
+
+    const pos = new Map<string, { x: number; y: number }>()
+    let minX = Infinity
+    let minY = Infinity
+    let maxX = -Infinity
+    let maxY = -Infinity
+    for (const layer of layerKeys) {
+      for (const id of layers.get(layer)!) {
+        const n = byId.get(id)!
+        const slack = colWidth.get(layer)! - n.width
+        // Right-flush when the column carries same-column C-curves (they route
+        // along the right edge) or faces the hub from the left; centred on the hub.
+        const px =
+          xLeft.get(layer)! +
+          (layer < 0 || hasIntra.has(layer)
+            ? slack
+            : layer === 0
+              ? slack / 2
+              : 0)
+        const py = top.get(id)!
+        pos.set(id, { x: px, y: py })
+        minX = Math.min(minX, px)
+        minY = Math.min(minY, py)
+        maxX = Math.max(
+          maxX,
+          px + n.width + (hasIntra.has(layer) ? C_CURVE_ROOM : 0),
+        )
+        maxY = Math.max(maxY, py + n.height)
+      }
+    }
+    for (const p of pos.values()) {
+      p.x -= minX
+      p.y -= minY
+    }
+    return { w: maxX - minX, h: maxY - minY, pos }
   }
-
-  // Push nodes away from estimated edge-label zones
-  enforceEdgeLabelGap(connSimNodes, edges)
-  if (isoSimNodes.length > 0) {
-    enforceEdgeLabelGap([...connSimNodes, ...isoSimNodes], edges)
-  }
-  // Separate overlapping label pills (pairwise label-vs-label)
-  enforceLabelLabelGap(connSimNodes, edges)
-  // Final gap sweep to clean up any node-node overlaps introduced by label-gap expansion
-  enforceGapPostPass([...connSimNodes, ...isoSimNodes])
-
-  // Convert center → top-left for React Flow
-  return [
-    ...connSimNodes.map((n) => ({
-      id: n.id,
-      x: n.x - n.width / 2,
-      y: n.y - n.height / 2,
-    })),
-    ...isoSimNodes.map((n) => ({
-      id: n.id,
-      x: n.x - n.width / 2,
-      y: n.y - n.height / 2,
-    })),
-  ]
 }
