@@ -494,6 +494,9 @@ test.describe('clicking a creation handle', () => {
     await expect
       .poll(async () => (await engine(page)).editingElementId)
       .not.toBeNull()
+    // The engine flags the element as editing before React mounts and focuses
+    // the hidden text input; keys typed in between land on the page body.
+    await expect(page.getByLabel('Canvas text input')).toBeFocused()
 
     await page.keyboard.type('quick note')
     await expect

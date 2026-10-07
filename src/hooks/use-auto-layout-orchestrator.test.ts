@@ -3,7 +3,6 @@
 
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { act, renderHook } from '@testing-library/react'
-import { DOCK_FIT_PADDING } from '@/lib/react-flow/fit-view-padding'
 
 // ---------------------------------------------------------------------------
 // Mocks (order matters — must be before hook imports; vi.mock is hoisted)
@@ -36,6 +35,8 @@ import { toast } from 'sonner'
 import { updateTablePositionsBulk } from '@/lib/server-functions'
 // eslint-disable-next-line import/first
 import { useAuthContext } from '@/components/auth/AuthContext'
+// eslint-disable-next-line import/first
+import { DOCK_FIT_PADDING } from '@/lib/react-flow/fit-view-padding'
 // eslint-disable-next-line import/first, import/order
 import { useAutoLayoutOrchestrator } from './use-auto-layout-orchestrator'
 

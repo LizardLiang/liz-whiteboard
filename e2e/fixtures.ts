@@ -3,6 +3,7 @@
 // random) so the seed script and the specs agree without passing state
 // between the Node (Playwright) and Bun (seed) runtimes.
 
+import { expect } from '@playwright/test'
 import type { Page } from '@playwright/test'
 
 // Default matches `bun run dev`, which serves Vite on 3000 (server.prod.ts also
@@ -336,17 +337,29 @@ export const IDS = {
 export const STORAGE_STATE = 'e2e/.auth/state.json'
 
 /**
+ * Wait until no dock menu is open. A Radix menu stays mounted through its close
+ * animation, so opening the next menu before it unmounts races the old one.
+ */
+async function waitForMenusClosed(page: Page) {
+  await expect(page.getByRole('menu')).toHaveCount(0)
+}
+
+/**
  * Open the dock's "More tools" menu and click one of its items. Secondary
  * tools (Import SQL, Version history, Export as image, Connect an MCP client,
  * Zen mode, Keyboard shortcuts) live in this menu rather than on the dock.
  */
 export async function clickMoreTool(page: Page, name: string | RegExp) {
+  await waitForMenusClosed(page)
   await page.getByRole('button', { name: 'More tools' }).click()
   await page.getByRole('menuitem', { name }).click()
+  await waitForMenusClosed(page)
 }
 
 /** Open the dock's zoom % menu and click one of its items (e.g. "Fit to screen"). */
 export async function clickZoomMenuItem(page: Page, name: string | RegExp) {
+  await waitForMenusClosed(page)
   await page.getByTestId('zoom-menu-trigger').click()
   await page.getByRole('menuitem', { name }).click()
+  await waitForMenusClosed(page)
 }

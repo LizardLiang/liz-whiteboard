@@ -32,6 +32,9 @@ function board(id: string, name: string) {
   ).run(id, name, IDS.project, null, null, null, now, now)
 }
 
+// Height is NULL, as for tables created in the UI: the node wrapper then sizes to
+// its content, so a reference node placed beside the table is not covered by an
+// oversized wrapper.
 function table(
   id: string,
   whiteboardId: string,
@@ -41,7 +44,7 @@ function table(
 ) {
   db.query(
     'INSERT INTO "DiagramTable" (id, whiteboardId, name, description, positionX, positionY, width, height, createdAt, updatedAt) VALUES (?,?,?,?,?,?,?,?,?,?)',
-  ).run(id, whiteboardId, name, null, x, y, 240, 160, now, now)
+  ).run(id, whiteboardId, name, null, x, y, 240, null, now, now)
 }
 
 function col(
