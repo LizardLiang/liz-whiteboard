@@ -147,6 +147,7 @@ export function CanvasBoard({
   // `readOnly` and hand an anonymous visitor a working toolbar.
   const effectiveReadOnly = readOnly || isPublic
   const containerRef = useRef<HTMLDivElement | null>(null)
+  const textInputRef = useRef<HTMLTextAreaElement | null>(null)
   const canvasRef = useRef<HTMLCanvasElement | null>(null)
   const ctxRef = useRef<CanvasRenderingContext2D | null>(null)
 
@@ -273,6 +274,7 @@ export function CanvasBoard({
   const input = useCanvasInput({
     canvasRef,
     containerRef,
+    textInputRef,
     scene,
     setScene,
     camera,
@@ -744,6 +746,7 @@ export function CanvasBoard({
       />
 
       <TextInputProxy
+        inputRef={textInputRef}
         active={input.editing !== null}
         caretScreenPoint={input.caretScreenPoint}
         onInsertText={input.textInput.insertText}

@@ -16,10 +16,12 @@
 // unusable.
 
 import { useEffect, useRef } from 'react'
-import type { CompositionEvent, KeyboardEvent } from 'react'
+import type { CompositionEvent, KeyboardEvent, RefObject } from 'react'
 import type { Point } from '@/lib/canvas-engine/camera'
 
 interface TextInputProxyProps {
+  /** Lets the board focus the input in the same step that starts an edit. */
+  inputRef?: RefObject<HTMLTextAreaElement | null>
   /** True while a canvas element is being typed into. */
   active: boolean
   /** Caret position in canvas-relative CSS pixels, or null. */
@@ -35,6 +37,7 @@ interface TextInputProxyProps {
 }
 
 export function TextInputProxy({
+  inputRef,
   active,
   caretScreenPoint,
   onInsertText,
@@ -42,7 +45,8 @@ export function TextInputProxy({
   onKeyDown,
   onBlur,
 }: TextInputProxyProps) {
-  const ref = useRef<HTMLTextAreaElement | null>(null)
+  const ownRef = useRef<HTMLTextAreaElement | null>(null)
+  const ref = inputRef ?? ownRef
   const composingRef = useRef(false)
 
   useEffect(() => {

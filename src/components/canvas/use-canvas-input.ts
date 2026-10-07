@@ -485,6 +485,13 @@ interface UseCanvasInputArgs {
    * anywhere in the window belongs to this board.
    */
   containerRef: RefObject<HTMLElement | null>
+  /**
+   * The off-screen text input. Focused in the same synchronous step that
+   * starts a text edit, so the first keystroke after the edit opens already
+   * has a focused target instead of landing on the page body while React
+   * mounts the edit.
+   */
+  textInputRef?: RefObject<HTMLTextAreaElement | null>
   scene: Scene
   setScene: Dispatch<SetStateAction<Scene>>
   camera: Camera
@@ -1176,6 +1183,7 @@ function renormalizeMembersAboveFloor(
 export function useCanvasInput({
   canvasRef,
   containerRef,
+  textInputRef,
   scene,
   setScene,
   camera,
@@ -1306,11 +1314,46 @@ export function useCanvasInput({
   const spaceHeld = useSpaceHeld(containerRef, editing !== null)
   const [caretVisible, setCaretVisible] = useState(true)
 
+  /**
+   * Text edits that arrived after `editingRef` changed but before React
+   * rendered the change. `latest` (scene, editing) only catches up after a
+   * render, so applying such an edit straight away would read a scene that
+   * lacks the new element, or a caret that predates the previous keystroke.
+   * They wait here and are applied, in order, by the effect below.
+   */
+  const pendingTextEditsRef = useRef<
+    Array<(text: string, caret: number) => { text: string; caret: number }>
+  >([])
+
   // Latest-value refs. Window-level listeners (wheel, keydown) are attached
   // once and would otherwise close over the first render's scene and camera.
   const latest = useRef({ scene, camera, tool, readOnly, selectedIds, editing })
   useEffect(() => {
     latest.current = { scene, camera, tool, readOnly, selectedIds, editing }
+  })
+
+  useEffect(() => {
+    const pending = pendingTextEditsRef.current
+    if (pending.length === 0) return
+    const current = editingRef.current
+    if (!current) {
+      pendingTextEditsRef.current = []
+      return
+    }
+    if (latest.current.editing !== current) return
+    pendingTextEditsRef.current = []
+    const element = latest.current.scene.byId.get(current.elementId)
+    if (!element) return
+    let text = element.text ?? ''
+    let caret = current.caret
+    for (const produce of pending) {
+      const result = produce(text, caret)
+      text = result.text
+      caret = result.caret
+    }
+    setScene((prev) => updateElement(prev, current.elementId, { text }))
+    setEditing({ ...current, caret })
+    setCaretVisible(true)
   })
 
   const screenFromEvent = useCallback(
@@ -1536,6 +1579,7 @@ export function useCanvasInput({
 
   const beginEditing = useCallback(
     (element: CanvasElement, caret: number, isNew: boolean) => {
+      textInputRef?.current?.focus({ preventScroll: true })
       setEditing({
         elementId: element.id,
         caret,
@@ -1557,7 +1601,7 @@ export function useCanvasInput({
       setSelectedIds(new Set([element.id]))
       setCaretVisible(true)
     },
-    [setEditing],
+    [setEditing, textInputRef],
   )
 
   /** Caret index nearest a world point inside an element's text block. */
@@ -3035,8 +3079,16 @@ export function useCanvasInput({
     (
       produce: (text: string, caret: number) => { text: string; caret: number },
     ) => {
-      const current = latest.current.editing
-      if (!current) return
+      const pendingRender = editingRef.current
+      if (!pendingRender) return
+      if (
+        latest.current.editing !== pendingRender ||
+        pendingTextEditsRef.current.length > 0
+      ) {
+        pendingTextEditsRef.current.push(produce)
+        return
+      }
+      const current = pendingRender
       const element = latest.current.scene.byId.get(current.elementId)
       if (!element) return
       const result = produce(element.text ?? '', current.caret)
