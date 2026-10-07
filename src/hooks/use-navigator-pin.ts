@@ -1,64 +1,91 @@
 // src/hooks/use-navigator-pin.ts
 // Per-browser preference: keep the project navigator docked beside a board
 
-import { useCallback, useEffect, useState } from 'react'
+import { useSyncExternalStore } from 'react'
 
 const NAVIGATOR_PIN_KEY = 'navigator-pinned'
 
-/**
- * Custom event dispatched on `window` whenever the pin changes, so every hook
- * instance in the same tab stays in sync. The native `storage` event only
- * fires in other tabs.
- */
-const NAVIGATOR_PIN_CHANGE_EVENT = 'navigator-pin-change'
+type Listener = () => void
 
-function readPinned(): boolean {
-  if (typeof window === 'undefined') return false
+const listeners = new Set<Listener>()
+
+function readStored(): boolean {
   try {
     return localStorage.getItem(NAVIGATOR_PIN_KEY) === 'true'
   } catch {
-    // Storage blocked (private mode): treat as unpinned.
+    // Storage blocked (private mode): no stored preference.
     return false
   }
 }
 
 /**
- * Whether the project navigator stays docked on board routes.
- * Persisted in localStorage and synchronised across components and tabs.
+ * The in-memory value is the source of truth for every hook instance, so a
+ * blocked or failing localStorage never makes the pin read back as unpinned.
+ * It is seeded from storage on first use in the browser. Persistence is best
+ * effort, and the pin then lasts until the page is reloaded.
  */
-export function useNavigatorPin() {
-  // Start unpinned on the server and first client render so hydration matches,
-  // then adopt the stored value.
-  const [isPinned, setIsPinnedState] = useState<boolean>(false)
+let pinned: boolean | null = null
 
-  const setPinned = useCallback((pinned: boolean) => {
-    if (typeof window !== 'undefined') {
-      try {
-        localStorage.setItem(NAVIGATOR_PIN_KEY, String(pinned))
-      } catch {
-        // Storage blocked: the pin lasts for this page view only.
-      }
-      window.dispatchEvent(new CustomEvent(NAVIGATOR_PIN_CHANGE_EVENT))
-    }
-    setIsPinnedState(pinned)
-  }, [])
+function getSnapshot(): boolean {
+  pinned ??= readStored()
+  return pinned
+}
 
-  useEffect(() => {
-    if (typeof window === 'undefined') return
+function getServerSnapshot(): boolean {
+  return false
+}
 
-    const sync = () => setIsPinnedState(readPinned())
-    const handleStorage = (event: StorageEvent) => {
-      if (event.key === NAVIGATOR_PIN_KEY) sync()
-    }
+function emit() {
+  for (const listener of listeners) listener()
+}
 
-    sync()
-    window.addEventListener(NAVIGATOR_PIN_CHANGE_EVENT, sync)
-    window.addEventListener('storage', handleStorage)
-    return () => {
-      window.removeEventListener(NAVIGATOR_PIN_CHANGE_EVENT, sync)
+function handleStorage(event: StorageEvent) {
+  // A null key means the whole storage area was cleared.
+  if (event.key !== null && event.key !== NAVIGATOR_PIN_KEY) return
+  const next = event.key === null ? false : event.newValue === 'true'
+  if (next === pinned) return
+  pinned = next
+  emit()
+}
+
+function subscribe(listener: Listener): () => void {
+  if (listeners.size === 0) window.addEventListener('storage', handleStorage)
+  listeners.add(listener)
+  return () => {
+    listeners.delete(listener)
+    if (listeners.size === 0) {
       window.removeEventListener('storage', handleStorage)
     }
-  }, [])
+  }
+}
 
-  return { isPinned, setPinned }
+/** Set the pin for every hook instance and persist it where storage allows. */
+export function setNavigatorPinned(next: boolean) {
+  pinned = next
+  try {
+    localStorage.setItem(NAVIGATOR_PIN_KEY, String(next))
+  } catch {
+    // Storage blocked: the in-memory value still serves this page view.
+  }
+  emit()
+}
+
+/**
+ * Whether the project navigator stays docked on board routes.
+ * Persisted in localStorage when available and synchronised across components
+ * and tabs.
+ */
+export function useNavigatorPin() {
+  const isPinned = useSyncExternalStore(
+    subscribe,
+    getSnapshot,
+    getServerSnapshot,
+  )
+  return { isPinned, setPinned: setNavigatorPinned }
+}
+
+/** Forget the in-memory value so the next read comes from storage again. */
+export function resetNavigatorPinForTests() {
+  pinned = null
+  emit()
 }
