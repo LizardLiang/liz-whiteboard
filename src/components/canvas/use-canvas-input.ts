@@ -1322,7 +1322,10 @@ export function useCanvasInput({
    * They wait here and are applied, in order, by the effect below.
    */
   const pendingTextEditsRef = useRef<
-    Array<(text: string, caret: number) => { text: string; caret: number }>
+    Array<{
+      elementId: string
+      produce: (text: string, caret: number) => { text: string; caret: number }
+    }>
   >([])
 
   // Latest-value refs. Window-level listeners (wheel, keydown) are attached
@@ -1346,7 +1349,8 @@ export function useCanvasInput({
     if (!element) return
     let text = element.text ?? ''
     let caret = current.caret
-    for (const produce of pending) {
+    for (const { elementId, produce } of pending) {
+      if (elementId !== current.elementId) continue
       const result = produce(text, caret)
       text = result.text
       caret = result.caret
@@ -3085,7 +3089,10 @@ export function useCanvasInput({
         latest.current.editing !== pendingRender ||
         pendingTextEditsRef.current.length > 0
       ) {
-        pendingTextEditsRef.current.push(produce)
+        pendingTextEditsRef.current.push({
+          elementId: pendingRender.elementId,
+          produce,
+        })
         return
       }
       const current = pendingRender
