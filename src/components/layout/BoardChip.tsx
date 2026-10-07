@@ -46,7 +46,7 @@ export function BoardChip({
     queryKey: ['projects', 'tree'],
     queryFn: () => getProjectsWithTree(),
     // A board load reuses the cached tree instead of refetching it each time.
-    staleTime: 30_000,
+    staleTime: 1000 * 30,
   })
 
   const path = useMemo(

@@ -1375,7 +1375,9 @@ export function useCanvasInput({
     const element = latest.current.scene.byId.get(current.elementId)
     if (!element) return
     const { text, caret } = foldPendingTextEdits(pending, element, current)
-    setScene((prev) => updateElement(prev, current.elementId, { text }))
+    if (text !== (element.text ?? '')) {
+      setScene((prev) => updateElement(prev, current.elementId, { text }))
+    }
     setEditing({ ...current, caret })
     setCaretVisible(true)
   }, [editing, scene, setScene, setEditing])
@@ -1535,17 +1537,22 @@ export function useCanvasInput({
     editingRef.current = null
     setEditingState(null)
 
+    // Keys typed in the same frame as the commit are still queued; apply them
+    // first so the empty check and the persisted text both include them. The
+    // queue is dropped even when the element is gone, so it cannot replay
+    // into the next edit session.
+    const queued = pendingTextEditsRef.current
+    pendingTextEditsRef.current = []
+
     let element = latest.current.scene.byId.get(current.elementId)
     if (!element) return
 
-    // Keys typed in the same frame as the commit are still queued; apply them
-    // first so the empty check and the persisted text both include them.
-    const queued = pendingTextEditsRef.current
-    pendingTextEditsRef.current = []
     if (queued.length > 0) {
       const { text } = foldPendingTextEdits(queued, element, current)
-      element = { ...element, text }
-      setScene((prev) => updateElement(prev, current.elementId, { text }))
+      if (text !== (element.text ?? '')) {
+        element = { ...element, text }
+        setScene((prev) => updateElement(prev, current.elementId, { text }))
+      }
     }
 
     const isEmpty = (element.text ?? '').length === 0
@@ -3127,15 +3134,19 @@ export function useCanvasInput({
       const element = latest.current.scene.byId.get(current.elementId)
       if (!element) return
       const result = produce(element.text ?? '', current.caret, element)
-      setScene((prev) =>
-        updateElement(prev, current.elementId, { text: result.text }),
-      )
+      if (result.text !== (element.text ?? '')) {
+        setScene((prev) =>
+          updateElement(prev, current.elementId, { text: result.text }),
+        )
+        // Mirror the new text into `latest` now: a commit in the same frame
+        // reads the scene from there and would otherwise miss this keystroke.
+        latest.current.scene = updateElement(
+          latest.current.scene,
+          current.elementId,
+          { text: result.text },
+        )
+      }
       setEditing({ ...current, caret: result.caret })
-      // Mirror the new text into `latest` now: a commit in the same frame
-      // reads the scene from there and would otherwise miss this keystroke.
-      latest.current.scene = updateElement(latest.current.scene, current.elementId, {
-        text: result.text,
-      })
       setCaretVisible(true)
     },
     [setEditing, setScene],

@@ -2976,7 +2976,9 @@ describe('queued text edits', () => {
       h.api.textInput.commitEditing()
     })
     expect(h.callbacks.onUpdate).toHaveBeenCalledTimes(1)
-    const [updated] = h.callbacks.onUpdate.mock.calls[0] as [Array<CanvasElement>]
+    const [updated] = h.callbacks.onUpdate.mock.calls[0] as [
+      Array<CanvasElement>,
+    ]
     expect(updated[0].text).toBe('hi!')
   })
 })
