@@ -152,16 +152,33 @@ test.describe('Board navigator drawer', () => {
     page,
   }) => {
     await page.addInitScript(() => {
-      Storage.prototype.setItem = () => {
-        throw new DOMException('blocked', 'SecurityError')
+      const setItem = Storage.prototype.setItem
+      Storage.prototype.setItem = function (key: string, value: string) {
+        if (key === 'navigator-pinned') {
+          throw new DOMException('blocked', 'SecurityError')
+        }
+        setItem.call(this, key, value)
       }
     })
     await openWhiteboard(page)
+    const writeOutcome = await page.evaluate(() => {
+      try {
+        localStorage.setItem('navigator-pinned', 'true')
+        return 'written'
+      } catch {
+        return 'blocked'
+      }
+    })
+    expect(writeOutcome).toBe('blocked')
+
     await page.getByRole('button', { name: 'Show project navigator' }).click()
     await page.getByRole('button', { name: 'Pin navigator' }).click()
 
     await expect(sidebar(page)).toBeVisible()
     await expect(drawer(page)).toBeHidden()
+    // Stay docked after a moment, once any cross-instance re-read has run.
+    await page.waitForTimeout(300)
+    await expect(sidebar(page)).toBeVisible()
   })
 
   test('the canvas board route shows the chip and no sidebar', async ({
