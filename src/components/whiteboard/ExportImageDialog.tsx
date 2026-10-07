@@ -37,6 +37,8 @@ export interface ExportImageDialogProps {
   open: boolean
   /** Called when the dialog should open/close */
   onOpenChange: (open: boolean) => void
+  /** Runs when the dialog has closed; lets the opener take focus back. */
+  onCloseAutoFocus?: (event: Event) => void
   /** Called when the user confirms the export with the chosen options.
    * Failure handling (toast, etc.) is the caller's responsibility — this
    * dialog is a pure controlled form. */
@@ -58,6 +60,7 @@ export interface ExportImageDialogProps {
 export function ExportImageDialog({
   open,
   onOpenChange,
+  onCloseAutoFocus,
   onExport,
 }: ExportImageDialogProps) {
   const [format, setFormat] = useState<ExportImageFormat>('png')
@@ -82,7 +85,10 @@ export function ExportImageDialog({
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="sm:max-w-[425px]">
+      <DialogContent
+        className="sm:max-w-[425px]"
+        onCloseAutoFocus={onCloseAutoFocus}
+      >
         <DialogHeader>
           <DialogTitle>Export as Image</DialogTitle>
           <DialogDescription>

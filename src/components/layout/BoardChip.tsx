@@ -1,6 +1,7 @@
 // src/components/layout/BoardChip.tsx
 // Floating top-left chip on board routes: navigator button, breadcrumb, status
 
+import { useMemo } from 'react'
 import { useQuery } from '@tanstack/react-query'
 import { findBoardPath } from './board-breadcrumb'
 import type { TreeProject } from './board-breadcrumb'
@@ -44,11 +45,17 @@ export function BoardChip({
   const { data: projects } = useQuery({
     queryKey: ['projects', 'tree'],
     queryFn: () => getProjectsWithTree(),
+    // A board load reuses the cached tree instead of refetching it each time.
+    staleTime: 30_000,
   })
 
-  const path = findBoardPath(
-    Array.isArray(projects) ? (projects as Array<TreeProject>) : undefined,
-    boardId,
+  const path = useMemo(
+    () =>
+      findBoardPath(
+        Array.isArray(projects) ? (projects as Array<TreeProject>) : undefined,
+        boardId,
+      ),
+    [projects, boardId],
   )
   const ancestors = path ? path.slice(0, -1) : []
 

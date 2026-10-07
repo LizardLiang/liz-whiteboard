@@ -45,6 +45,8 @@ export interface ImportSqlDialogProps {
   open: boolean
   /** Called when the dialog should open/close */
   onOpenChange: (open: boolean) => void
+  /** Runs when the dialog has closed; lets the opener take focus back. */
+  onCloseAutoFocus?: (event: Event) => void
   /** Called with the parsed AST when the user confirms Import. Failure
    * handling is the caller's responsibility — rejecting keeps this dialog
    * open (with the error surfaced inline) so the user can retry, mirroring
@@ -68,6 +70,7 @@ export interface ImportSqlDialogProps {
 export function ImportSqlDialog({
   open,
   onOpenChange,
+  onCloseAutoFocus,
   onImport,
 }: ImportSqlDialogProps) {
   const [dialect, setDialect] = useState<Dialect>('postgres')
@@ -128,7 +131,10 @@ export function ImportSqlDialog({
 
   return (
     <Dialog open={open} onOpenChange={handleOpenChange}>
-      <DialogContent className="sm:max-w-[600px]">
+      <DialogContent
+        className="sm:max-w-[600px]"
+        onCloseAutoFocus={onCloseAutoFocus}
+      >
         <DialogHeader>
           <DialogTitle>Import SQL</DialogTitle>
           <DialogDescription>

@@ -340,7 +340,7 @@ export const STORAGE_STATE = 'e2e/.auth/state.json'
  * Wait until no dock menu is open. A Radix menu stays mounted through its close
  * animation, so opening the next menu before it unmounts races the old one.
  */
-async function waitForMenusClosed(page: Page) {
+export async function waitForMenusClosed(page: Page) {
   await expect(page.getByRole('menu')).toHaveCount(0)
 }
 

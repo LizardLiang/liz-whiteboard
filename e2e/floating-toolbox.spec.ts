@@ -5,7 +5,13 @@
 // (storageState); the viewer case logs in through the real /login form.
 import { execFileSync } from 'node:child_process'
 import { expect, test } from '@playwright/test'
-import { E2E_VIEWER_USER, IDS, clickMoreTool, clickZoomMenuItem } from './fixtures'
+import {
+  E2E_VIEWER_USER,
+  IDS,
+  clickMoreTool,
+  clickZoomMenuItem,
+  waitForMenusClosed,
+} from './fixtures'
 import { tableNode } from './canvas-helpers'
 import type { Browser, Page } from '@playwright/test'
 
@@ -33,6 +39,23 @@ const dock = (page: Page) => page.getByTestId('whiteboard-dock')
 
 async function zoomLabel(page: Page) {
   return (await page.getByTestId('zoom-menu-trigger').innerText()).trim()
+}
+
+/** The zoom label once two reads in a row agree, so animations have finished. */
+async function settledZoomLabel(
+  page: Page,
+  differentFrom?: string,
+): Promise<string> {
+  let previous = ''
+  await expect
+    .poll(async () => {
+      const current = await zoomLabel(page)
+      const settled = current === previous && current !== differentFrom
+      previous = current
+      return settled
+    })
+    .toBe(true)
+  return previous
 }
 
 async function loginAsViewer(browser: Browser): Promise<Page> {
@@ -125,6 +148,22 @@ test.describe('Board navigator drawer', () => {
     await expect(sidebar(page)).toHaveCount(0)
   })
 
+  test('pinning docks the sidebar even when localStorage rejects writes', async ({
+    page,
+  }) => {
+    await page.addInitScript(() => {
+      Storage.prototype.setItem = () => {
+        throw new DOMException('blocked', 'SecurityError')
+      }
+    })
+    await openWhiteboard(page)
+    await page.getByRole('button', { name: 'Show project navigator' }).click()
+    await page.getByRole('button', { name: 'Pin navigator' }).click()
+
+    await expect(sidebar(page)).toBeVisible()
+    await expect(drawer(page)).toBeHidden()
+  })
+
   test('the canvas board route shows the chip and no sidebar', async ({
     page,
   }) => {
@@ -184,9 +223,10 @@ test.describe('Floating dock', () => {
     const before = await users.boundingBox()
     expect(before).not.toBeNull()
 
+    await waitForMenusClosed(page)
     await page.getByRole('button', { name: 'More tools' }).click()
     await page.getByRole('menuitemradio', { name: 'Keys' }).click()
-    await expect(page.getByRole('menu')).toHaveCount(0)
+    await waitForMenusClosed(page)
 
     // KEY_ONLY drops the non-key `email` row, so the table gets shorter.
     await expect
@@ -201,6 +241,7 @@ test.describe('Floating dock', () => {
       page.getByRole('menuitemradio', { name: 'Keys' }),
     ).toHaveAttribute('aria-checked', 'true')
     await page.keyboard.press('Escape')
+    await waitForMenusClosed(page)
   })
 
   test('More tools > Version history opens the panel', async ({ page }) => {
@@ -216,10 +257,12 @@ test.describe('Floating dock', () => {
     await page.getByTitle(/^Zoom In/).click()
     await page.getByTitle(/^Zoom In/).click()
     await page.getByTitle(/^Zoom In/).click()
-    const zoomed = await zoomLabel(page)
+    const zoomed = await settledZoomLabel(page)
 
     await clickZoomMenuItem(page, 'Fit to screen')
-    await expect.poll(() => zoomLabel(page)).not.toBe(zoomed)
+    // Fit animates for 200ms: wait for a value that differs and has stopped.
+    const fitted = await settledZoomLabel(page, zoomed)
+    expect(fitted).not.toBe(zoomed)
   })
 
   test('Zen mode hides the dock and chip, keeps zoom controls, and exits', async ({

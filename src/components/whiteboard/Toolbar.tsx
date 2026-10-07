@@ -2,7 +2,7 @@
 // Floating bottom dock for whiteboard actions: primary tools stay on the dock,
 // secondary tools live in the More menu, zoom lives in the zoom menu.
 
-import { useState } from 'react'
+import { useRef, useState } from 'react'
 import {
   ExternalLink,
   LayoutGrid,
@@ -263,6 +263,13 @@ export function Toolbar({
 
   // Help dialog and MCP dialog state. Both open from More menu items, so they
   // are controlled rather than wrapped around a trigger inside the menu.
+  const moreToolsRef = useRef<HTMLButtonElement>(null)
+  // A dialog opened from a More menu item has no trigger of its own, so focus
+  // would fall to <body> on close; send it back to the menu button.
+  const returnFocusToMoreTools = (event: Event) => {
+    event.preventDefault()
+    moreToolsRef.current?.focus()
+  }
   const [helpOpen, setHelpOpen] = useState(false)
   const [mcpOpen, setMcpOpen] = useState(false)
 
@@ -814,6 +821,7 @@ export function Toolbar({
       <DropdownMenu modal={false}>
         <DropdownMenuTrigger asChild>
           <Button
+            ref={moreToolsRef}
             variant="ghost"
             size="icon"
             title="More tools"
@@ -915,7 +923,10 @@ export function Toolbar({
 
       {mcpEndpointUrl && (
         <Dialog open={mcpOpen} onOpenChange={setMcpOpen}>
-          <DialogContent className="sm:max-w-[460px]">
+          <DialogContent
+            className="sm:max-w-[460px]"
+            onCloseAutoFocus={returnFocusToMoreTools}
+          >
             <DialogHeader>
               <DialogTitle>Connect an MCP client</DialogTitle>
             </DialogHeader>
@@ -925,7 +936,10 @@ export function Toolbar({
       )}
 
       <Dialog open={helpOpen} onOpenChange={setHelpOpen}>
-        <DialogContent className="sm:max-w-[420px]">
+        <DialogContent
+          className="sm:max-w-[420px]"
+          onCloseAutoFocus={returnFocusToMoreTools}
+        >
           <DialogHeader>
             <DialogTitle>Keyboard Shortcuts</DialogTitle>
           </DialogHeader>
@@ -1035,6 +1049,7 @@ export function Toolbar({
           open={importSqlOpen}
           onOpenChange={setImportSqlOpen}
           onImport={onImportSql}
+          onCloseAutoFocus={returnFocusToMoreTools}
         />
       )}
 
@@ -1042,6 +1057,7 @@ export function Toolbar({
         <ExportImageDialog
           open={exportDialogOpen}
           onOpenChange={setExportDialogOpen}
+          onCloseAutoFocus={returnFocusToMoreTools}
           onExport={async (opts) => {
             try {
               await onExport(opts)
