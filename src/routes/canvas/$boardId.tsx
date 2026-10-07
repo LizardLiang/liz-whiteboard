@@ -12,7 +12,7 @@
 
 import { Link, createFileRoute } from '@tanstack/react-router'
 import { useQuery } from '@tanstack/react-query'
-import { BoardChip } from '@/components/layout/BoardChip'
+import { BoardChip, BoardNavFallback } from '@/components/layout/BoardChip'
 import { CanvasBoard } from '@/components/canvas/CanvasBoard'
 import { CanvasShareDialog } from '@/components/canvas/CanvasShareDialog'
 import { getCanvasBoardPage } from '@/lib/canvas-board/server-functions'
@@ -34,7 +34,8 @@ function CenteredMessage({
   withHomeLink?: boolean
 }) {
   return (
-    <div className="flex h-full flex-col items-center justify-center gap-3 bg-background">
+    <div className="relative flex h-full flex-col items-center justify-center gap-3 bg-background">
+      <BoardNavFallback />
       <p className="text-lg font-semibold">{title}</p>
       {detail && <p className="text-sm text-muted-foreground">{detail}</p>}
       {withHomeLink && (
@@ -59,12 +60,7 @@ function CanvasBoardPage() {
   const { user } = Route.useRouteContext()
   const userId = user?.id ?? getSessionUserId()
 
-  const {
-    data,
-    isLoading,
-    isError,
-    error,
-  } = useQuery({
+  const { data, isLoading, isError, error } = useQuery({
     queryKey: ['canvas-board', boardId],
     queryFn: () => getCanvasBoardPage({ data: boardId }),
   })

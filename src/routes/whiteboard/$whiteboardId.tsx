@@ -13,7 +13,7 @@ import type { CommentActions } from '@/components/whiteboard/ReactFlowWhiteboard
 import type { CommentWithAuthor } from '@/data/models'
 import type { ShowMode } from '@/lib/react-flow/types'
 import { ReactFlowWhiteboard } from '@/components/whiteboard/ReactFlowWhiteboard'
-import { BoardChip } from '@/components/layout/BoardChip'
+import { BoardChip, BoardNavFallback } from '@/components/layout/BoardChip'
 import { WhiteboardAccessDenied } from '@/components/whiteboard/WhiteboardAccessDenied'
 import { WhiteboardHistoryPanel } from '@/components/whiteboard/WhiteboardHistoryPanel'
 import { WhiteboardCommentsPanel } from '@/components/whiteboard/WhiteboardCommentsPanel'
@@ -459,7 +459,8 @@ function WhiteboardEditor() {
   // Early returns AFTER all hooks have been called
   if (isLoading) {
     return (
-      <div className="flex items-center justify-center h-full">
+      <div className="relative flex items-center justify-center h-full">
+        <BoardNavFallback />
         <p className="text-lg text-muted-foreground">Loading whiteboard...</p>
       </div>
     )
@@ -470,7 +471,8 @@ function WhiteboardEditor() {
   // FORBIDDEN denial, so it's always an access-denied case.
   if (isUnauthorized) {
     return (
-      <div className="flex items-center justify-center h-full">
+      <div className="relative flex items-center justify-center h-full">
+        <BoardNavFallback />
         <WhiteboardAccessDenied />
       </div>
     )
@@ -484,13 +486,15 @@ function WhiteboardEditor() {
   if (isError) {
     if (classifyQueryFailure({ error: whiteboardPageError }) === 'forbidden') {
       return (
-        <div className="flex items-center justify-center h-full">
+        <div className="relative flex items-center justify-center h-full">
+          <BoardNavFallback />
           <WhiteboardAccessDenied />
         </div>
       )
     }
     return (
-      <div className="flex flex-col items-center justify-center h-full gap-4">
+      <div className="relative flex flex-col items-center justify-center h-full gap-4">
+        <BoardNavFallback />
         <p className="text-lg font-semibold">Failed to load whiteboard</p>
         <p className="text-sm text-muted-foreground">
           Something went wrong loading this whiteboard. Please try again.
@@ -507,7 +511,8 @@ function WhiteboardEditor() {
 
   if (!whiteboardData) {
     return (
-      <div className="flex items-center justify-center h-full">
+      <div className="relative flex items-center justify-center h-full">
+        <BoardNavFallback />
         <p className="text-lg text-muted-foreground">Loading whiteboard...</p>
       </div>
     )
@@ -520,7 +525,8 @@ function WhiteboardEditor() {
   // .tables/.relationships off an { error, status } payload.
   if (isUnauthorizedError(whiteboardData)) {
     return (
-      <div className="flex items-center justify-center h-full">
+      <div className="relative flex items-center justify-center h-full">
+        <BoardNavFallback />
         <p className="text-lg text-muted-foreground">
           Your session expired. Please sign in again.
         </p>
@@ -534,7 +540,8 @@ function WhiteboardEditor() {
 
   if (!whiteboard) {
     return (
-      <div className="flex flex-col items-center justify-center h-full gap-4">
+      <div className="relative flex flex-col items-center justify-center h-full gap-4">
+        <BoardNavFallback />
         <p className="text-lg font-semibold">Whiteboard not found</p>
         <p className="text-sm text-muted-foreground">
           This whiteboard does not exist or you don't have access to it.

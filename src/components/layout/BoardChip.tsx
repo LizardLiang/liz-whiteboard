@@ -88,3 +88,17 @@ export function BoardChip({
     </div>
   )
 }
+
+/**
+ * Navigator button for board states that have no chip (loading, access denied,
+ * not found). The parent must be positioned.
+ */
+export function BoardNavFallback() {
+  const { isPinned } = useNavigatorPin()
+  if (isPinned) return null
+  return (
+    <div className="absolute left-3 top-3 z-10 rounded-md border bg-background/90 p-1 shadow-sm">
+      <NavigatorDrawer />
+    </div>
+  )
+}

@@ -14,7 +14,12 @@ const NAVIGATOR_PIN_CHANGE_EVENT = 'navigator-pin-change'
 
 function readPinned(): boolean {
   if (typeof window === 'undefined') return false
-  return localStorage.getItem(NAVIGATOR_PIN_KEY) === 'true'
+  try {
+    return localStorage.getItem(NAVIGATOR_PIN_KEY) === 'true'
+  } catch {
+    // Storage blocked (private mode): treat as unpinned.
+    return false
+  }
 }
 
 /**
@@ -28,7 +33,11 @@ export function useNavigatorPin() {
 
   const setPinned = useCallback((pinned: boolean) => {
     if (typeof window !== 'undefined') {
-      localStorage.setItem(NAVIGATOR_PIN_KEY, String(pinned))
+      try {
+        localStorage.setItem(NAVIGATOR_PIN_KEY, String(pinned))
+      } catch {
+        // Storage blocked: the pin lasts for this page view only.
+      }
       window.dispatchEvent(new CustomEvent(NAVIGATOR_PIN_CHANGE_EVENT))
     }
     setIsPinnedState(pinned)
