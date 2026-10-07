@@ -241,6 +241,55 @@ test.describe('Floating dock', () => {
   })
 })
 
+test.describe('Lock canvas', () => {
+  async function dragBy(page: Page, from: { x: number; y: number }, dx: number) {
+    await page.mouse.move(from.x, from.y)
+    await page.mouse.down()
+    await page.mouse.move(from.x + dx / 2, from.y, { steps: 6 })
+    await page.mouse.move(from.x + dx, from.y, { steps: 6 })
+    await page.mouse.up()
+  }
+
+  test('a locked canvas pins areas and tables; unlocking frees them', async ({
+    page,
+  }) => {
+    await openWhiteboard(page)
+    const area = page.locator('.react-flow__node-area').first()
+    const table = tableNode(page, 'orders').first()
+    await expect(area).toBeVisible()
+
+    const areaBox = async () => (await area.boundingBox())!
+    // A point inside the area, clear of its tables and resize handles.
+    const areaGrip = async () => {
+      const b = await areaBox()
+      return { x: b.x + b.width - 40, y: b.y + b.height - 40 }
+    }
+    const tableGrip = async () => {
+      const b = (await table.boundingBox())!
+      return { x: b.x + b.width / 2, y: b.y + 12 }
+    }
+
+    // A locked drag pans the whole canvas, so judge movement by the gap
+    // between the table and the area, which only a node drag changes.
+    const gap = async () =>
+      (await table.boundingBox())!.x - (await areaBox()).x
+
+    await clickZoomMenuItem(page, 'Lock canvas')
+    const lockedGap = await gap()
+    await dragBy(page, await areaGrip(), 80)
+    expect(await gap()).toBeCloseTo(lockedGap, 0)
+    await dragBy(page, await tableGrip(), 80)
+    expect(await gap()).toBeCloseTo(lockedGap, 0)
+
+    await clickZoomMenuItem(page, 'Unlock canvas')
+    await dragBy(page, await areaGrip(), 80)
+    await expect.poll(gap).toBeLessThan(lockedGap - 40)
+    const areaMovedGap = await gap()
+    await dragBy(page, await tableGrip(), 80)
+    await expect.poll(gap).toBeGreaterThan(areaMovedGap + 40)
+  })
+})
+
 test.describe('Viewer role', () => {
   test('a VIEWER cannot add tables but keeps Search, Comments and More tools', async ({
     browser,

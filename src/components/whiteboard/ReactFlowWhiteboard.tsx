@@ -23,7 +23,6 @@ import {
   ReactFlowProvider,
   useNodesInitialized,
   useReactFlow,
-  useStore,
   useStoreApi,
   useUpdateNodeInternals,
   useViewport,
@@ -423,6 +422,14 @@ function buildShapeCreateProps(
 /**
  * Inner component that has access to React Flow context
  */
+/**
+ * Whether areas, shapes, connectors and tables ignore drag and select input.
+ * A viewer-only board is always locked; editors lock it from the dock.
+ */
+function isCanvasLocked(canEdit: boolean, lockedByUser: boolean): boolean {
+  return !canEdit || lockedByUser
+}
+
 function ReactFlowWhiteboardInner({
   whiteboardId,
   userId,
@@ -2258,14 +2265,10 @@ function ReactFlowWhiteboardInner({
   // click-to-select path already updates, so a keyboard-driven select is
   // indistinguishable from a mouse one to every other consumer.
   const reactFlowStoreApi = useStoreApi()
-  // Locked = no node drag, connect or select. Read from the store so the dock
-  // reflects the live interactivity flags rather than a parallel copy.
-  const canvasLocked = useStore(
-    (state) =>
-      !state.nodesDraggable &&
-      !state.nodesConnectable &&
-      !state.elementsSelectable,
-  )
+  // Locked = no node drag, connect or select. React state is the single
+  // source: it feeds the canvas props and the per-node `draggable` /
+  // `selectable` flags, which React Flow ranks above the store-level flags.
+  const [canvasLocked, setCanvasLocked] = useState(false)
   const viewport = useViewport()
   const nodesInitialized = useNodesInitialized()
 
@@ -2590,8 +2593,8 @@ function ReactFlowWhiteboardInner({
         position: { x: area.positionX, y: area.positionY },
         width: area.width,
         height: area.height,
-        draggable: canEdit,
-        selectable: canEdit,
+        draggable: !isCanvasLocked(canEdit, canvasLocked),
+        selectable: !isCanvasLocked(canEdit, canvasLocked),
         // GH #106 Bug 1 fix: area deletion routes through Delete/Backspace ->
         // onNodesDelete in ReactFlowCanvas, which requires the node to be
         // marked deletable. Table nodes are the opposite (deletable: false)
@@ -2611,6 +2614,7 @@ function ReactFlowWhiteboardInner({
     [
       areas,
       canEdit,
+      canvasLocked,
       handleAreaRename,
       handleAreaRecolor,
       handleAreaResize,
@@ -3331,8 +3335,8 @@ function ReactFlowWhiteboardInner({
       position: { x: shape.positionX, y: shape.positionY },
       width: shape.width,
       height: shape.height,
-      draggable: canEdit,
-      selectable: canEdit,
+      draggable: !isCanvasLocked(canEdit, canvasLocked),
+      selectable: !isCanvasLocked(canEdit, canvasLocked),
       deletable: canEdit,
       // `selected` is deliberately NOT computed here (B2, Hermes code
       // review). This memo recomputes on every `shapes` change, so a
@@ -3412,6 +3416,7 @@ function ReactFlowWhiteboardInner({
   }, [
     shapes,
     canEdit,
+    canvasLocked,
     labelEditRequest,
     handleShapeResizeEnd,
     handleShapeStyleChange,
@@ -3490,10 +3495,10 @@ function ReactFlowWhiteboardInner({
         sourceHandle: SHAPE_HANDLE_IDS.sourceTop,
         targetHandle: SHAPE_HANDLE_IDS.target,
         deletable: canEdit,
-        selectable: canEdit,
+        selectable: !isCanvasLocked(canEdit, canvasLocked),
         data: { connector },
       })),
-    [connectors, canEdit],
+    [connectors, canEdit, canvasLocked],
   )
 
   // FR-019a: keyboard-focused shape (creation-order traversal), distinct
@@ -4119,16 +4124,8 @@ function ReactFlowWhiteboardInner({
   )
 
   const toggleCanvasLock = useCallback(() => {
-    const unlocking =
-      reactFlowStoreApi.getState().nodesDraggable === false &&
-      reactFlowStoreApi.getState().nodesConnectable === false &&
-      reactFlowStoreApi.getState().elementsSelectable === false
-    reactFlowStoreApi.setState({
-      nodesDraggable: unlocking && canEdit,
-      nodesConnectable: unlocking,
-      elementsSelectable: unlocking,
-    })
-  }, [reactFlowStoreApi, canEdit])
+    setCanvasLocked((locked) => !locked)
+  }, [])
 
   // Export diagram as image (Issue #104) — captures the full diagram at its
   // natural bounds via html-to-image, independent of the current pan/zoom.
@@ -4435,7 +4432,8 @@ function ReactFlowWhiteboardInner({
               onConnect={handleConnect}
               onNodeDragStop={handleNodeDragStop}
               onSelectionChange={handleSqlTableSelectionChange}
-              nodesDraggable={nodesDraggable}
+              nodesDraggable={nodesDraggable && !canvasLocked}
+              interactive={!canvasLocked}
               // D-2: panOnDrag is a single derived expression composing the
               // pre-existing isColumnDragging flag with the new draw-armed
               // state — never two separate writers (tech-spec §8).

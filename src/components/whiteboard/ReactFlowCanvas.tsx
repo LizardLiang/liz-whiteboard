@@ -463,6 +463,8 @@ export interface ReactFlowCanvasProps {
   onNodeDragStop?: OnNodeDrag<TableNodeType>
   /** Whether nodes are draggable */
   nodesDraggable?: boolean
+  /** Whether nodes can be selected and connected; false locks the canvas */
+  interactive?: boolean
   /** Whether canvas panning on drag is enabled */
   panOnDrag?: boolean
   /** Whether to show minimap */
@@ -597,6 +599,7 @@ export function ReactFlowCanvas({
   onNodeDragStop: onNodeDragStopProp,
   onNodeClick: onNodeClickProp,
   nodesDraggable = true,
+  interactive = true,
   panOnDrag = true,
   showMinimap = false,
   showControls = true,
@@ -2086,8 +2089,8 @@ export function ReactFlowCanvas({
             // so switching keys mid-press latches "Shift is down" forever —
             // trading a marginal edge case for a stuck board. Left alone
             // deliberately.
-            nodesConnectable={true}
-            elementsSelectable={true}
+            nodesConnectable={interactive}
+            elementsSelectable={interactive}
             // A marquee may begin over an area that contains a table. Partial
             // selection keeps that table eligible rather than requiring the
             // user to fully enclose its parent area's bounds.
@@ -2119,7 +2122,7 @@ export function ReactFlowCanvas({
               enabled={canvasMode}
               editingTableId={editingTableId}
             />
-            {showControls && <Controls />}
+            {showControls && <Controls showInteractive={false} />}
             {showBackground && (
               <Background color="var(--rf-background-pattern)" gap={16} />
             )}
