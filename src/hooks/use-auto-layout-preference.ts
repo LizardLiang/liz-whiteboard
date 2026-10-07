@@ -2,6 +2,7 @@
 // Hook to manage user preference for automatic layout
 
 import { useCallback, useEffect, useState } from 'react'
+import { safeGetItem, safeSetItem } from '@/lib/safe-storage'
 
 /**
  * Local storage key for auto-layout preference
@@ -36,7 +37,7 @@ export function useAutoLayoutPreference() {
       // Initialize from localStorage
       if (typeof window === 'undefined') return true
 
-      const stored = localStorage.getItem(AUTO_LAYOUT_PREFERENCE_KEY)
+      const stored = safeGetItem(AUTO_LAYOUT_PREFERENCE_KEY)
       if (stored === null) return true // Default to enabled
 
       return stored === 'true'
@@ -50,7 +51,7 @@ export function useAutoLayoutPreference() {
   const setAutoLayoutEnabled = useCallback((enabled: boolean) => {
     setAutoLayoutEnabledState(enabled)
     if (typeof window !== 'undefined') {
-      localStorage.setItem(AUTO_LAYOUT_PREFERENCE_KEY, String(enabled))
+      safeSetItem(AUTO_LAYOUT_PREFERENCE_KEY, String(enabled))
     }
   }, [])
 

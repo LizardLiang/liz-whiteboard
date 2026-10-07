@@ -1,12 +1,12 @@
 // src/hooks/use-navigator-pin.test.ts
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { act, renderHook } from '@testing-library/react'
-import { resetNavigatorPinForTests, useNavigatorPin } from './use-navigator-pin'
+import { setNavigatorPinned, useNavigatorPin } from './use-navigator-pin'
 
 afterEach(() => {
   vi.restoreAllMocks()
+  setNavigatorPinned(false)
   localStorage.clear()
-  resetNavigatorPinForTests()
 })
 
 describe('useNavigatorPin', () => {

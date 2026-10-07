@@ -19,6 +19,7 @@ import {
 } from 'react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { useNavigate } from '@tanstack/react-router'
+import { safeGetItem, safeSetItem } from '@/lib/safe-storage'
 import {
   ReactFlowProvider,
   useNodesInitialized,
@@ -1023,14 +1024,14 @@ function ReactFlowWhiteboardInner({
   // Display mode state with localStorage persistence
   const [showMode, setShowMode] = useState<ShowMode>(() => {
     // Restore from localStorage on mount
-    const saved = localStorage.getItem('whiteboard-display-mode')
+    const saved = safeGetItem('whiteboard-display-mode')
     // eslint-disable-next-line @typescript-eslint/no-unnecessary-condition -- localStorage.getItem genuinely returns null at runtime when the key is unset, regardless of the `as ShowMode` cast.
     return (saved as ShowMode) || 'ALL_FIELDS'
   })
 
   // Persist showMode to localStorage when it changes
   useEffect(() => {
-    localStorage.setItem('whiteboard-display-mode', showMode)
+    safeSetItem('whiteboard-display-mode', showMode)
 
     // Update all nodes with new showMode
     setNodes((prevNodes) =>

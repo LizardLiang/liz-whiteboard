@@ -1,3 +1,4 @@
+import { safeGetItem, safeSetItem } from './safe-storage'
 import { uuid } from './uuid'
 
 /**
@@ -16,11 +17,11 @@ export function getSessionUserId(): string {
   if (typeof sessionStorage === 'undefined') {
     return uuid()
   }
-  const existing = sessionStorage.getItem(SESSION_USER_ID_KEY)
+  const existing = safeGetItem(SESSION_USER_ID_KEY, 'session')
   if (existing) {
     return existing
   }
   const id = uuid()
-  sessionStorage.setItem(SESSION_USER_ID_KEY, id)
+  safeSetItem(SESSION_USER_ID_KEY, id, 'session')
   return id
 }

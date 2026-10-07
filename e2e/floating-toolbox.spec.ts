@@ -148,16 +148,12 @@ test.describe('Board navigator drawer', () => {
     await expect(sidebar(page)).toHaveCount(0)
   })
 
-  test('pinning docks the sidebar even when localStorage rejects writes', async ({
+  test('the board renders and the pin docks when localStorage rejects every write', async ({
     page,
   }) => {
     await page.addInitScript(() => {
-      const setItem = Storage.prototype.setItem
-      Storage.prototype.setItem = function (key: string, value: string) {
-        if (key === 'navigator-pinned') {
-          throw new DOMException('blocked', 'SecurityError')
-        }
-        setItem.call(this, key, value)
+      Storage.prototype.setItem = function () {
+        throw new DOMException('blocked', 'SecurityError')
       }
     })
     await openWhiteboard(page)

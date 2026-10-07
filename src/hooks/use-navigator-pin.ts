@@ -2,6 +2,7 @@
 // Per-browser preference: keep the project navigator docked beside a board
 
 import { useSyncExternalStore } from 'react'
+import { safeGetItem, safeSetItem } from '@/lib/safe-storage'
 
 const NAVIGATOR_PIN_KEY = 'navigator-pinned'
 
@@ -10,12 +11,7 @@ type Listener = () => void
 const listeners = new Set<Listener>()
 
 function readStored(): boolean {
-  try {
-    return localStorage.getItem(NAVIGATOR_PIN_KEY) === 'true'
-  } catch {
-    // Storage blocked (private mode): no stored preference.
-    return false
-  }
+  return safeGetItem(NAVIGATOR_PIN_KEY) === 'true'
 }
 
 /**
@@ -63,11 +59,8 @@ function subscribe(listener: Listener): () => void {
 /** Set the pin for every hook instance and persist it where storage allows. */
 export function setNavigatorPinned(next: boolean) {
   pinned = next
-  try {
-    localStorage.setItem(NAVIGATOR_PIN_KEY, String(next))
-  } catch {
-    // Storage blocked: the in-memory value still serves this page view.
-  }
+  // A rejected write leaves the in-memory value serving this page view.
+  safeSetItem(NAVIGATOR_PIN_KEY, String(next))
   emit()
 }
 
@@ -83,10 +76,4 @@ export function useNavigatorPin() {
     getServerSnapshot,
   )
   return { isPinned, setPinned: setNavigatorPinned }
-}
-
-/** Forget the in-memory value so the next read comes from storage again. */
-export function resetNavigatorPinForTests() {
-  pinned = null
-  emit()
 }

@@ -2,6 +2,7 @@
 // Hook to manage "zen mode" — hides all UI chrome so only the canvas is visible
 
 import { useCallback, useEffect, useState } from 'react'
+import { safeGetItem, safeSetItem } from '@/lib/safe-storage'
 
 /**
  * Local storage key for zen-mode preference
@@ -17,7 +18,7 @@ const ZEN_MODE_CHANGE_EVENT = 'zen-mode-change'
 
 function readZenMode(): boolean {
   if (typeof window === 'undefined') return false
-  return localStorage.getItem(ZEN_MODE_KEY) === 'true'
+  return safeGetItem(ZEN_MODE_KEY) === 'true'
 }
 
 /**
@@ -43,7 +44,7 @@ export function useZenMode() {
    */
   const setZenMode = useCallback((enabled: boolean) => {
     if (typeof window !== 'undefined') {
-      localStorage.setItem(ZEN_MODE_KEY, String(enabled))
+      safeSetItem(ZEN_MODE_KEY, String(enabled))
       window.dispatchEvent(new CustomEvent(ZEN_MODE_CHANGE_EVENT))
     }
     setIsZenMode(enabled)
