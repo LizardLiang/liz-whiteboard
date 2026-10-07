@@ -39,7 +39,11 @@ describe('useNavigatorPin', () => {
     const a = renderHook(() => useNavigatorPin())
     act(() => {
       window.dispatchEvent(
-        new StorageEvent('storage', { key: 'navigator-pinned', newValue: 'true' }),
+        new StorageEvent('storage', {
+          key: 'navigator-pinned',
+          newValue: 'true',
+          storageArea: localStorage,
+        }),
       )
     })
     expect(a.result.current.isPinned).toBe(true)

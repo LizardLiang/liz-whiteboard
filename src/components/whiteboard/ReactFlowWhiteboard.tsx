@@ -420,16 +420,16 @@ function buildShapeCreateProps(
 }
 
 /**
- * Inner component that has access to React Flow context
- */
-/**
- * Whether areas, shapes, connectors and tables ignore drag and select input.
+ * Whether areas, shapes and connectors ignore drag and select input.
  * A viewer-only board is always locked; editors lock it from the dock.
  */
 function isCanvasLocked(canEdit: boolean, lockedByUser: boolean): boolean {
   return !canEdit || lockedByUser
 }
 
+/**
+ * Inner component that has access to React Flow context
+ */
 function ReactFlowWhiteboardInner({
   whiteboardId,
   userId,

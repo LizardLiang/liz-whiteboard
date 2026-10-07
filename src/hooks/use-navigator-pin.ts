@@ -40,6 +40,7 @@ function emit() {
 }
 
 function handleStorage(event: StorageEvent) {
+  if (event.storageArea !== localStorage) return
   // A null key means the whole storage area was cleared.
   if (event.key !== null && event.key !== NAVIGATOR_PIN_KEY) return
   const next = event.key === null ? false : event.newValue === 'true'

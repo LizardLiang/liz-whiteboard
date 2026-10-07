@@ -176,7 +176,7 @@ test.describe('Board navigator drawer', () => {
 
     await expect(sidebar(page)).toBeVisible()
     await expect(drawer(page)).toBeHidden()
-    // Stay docked after a moment, once any cross-instance re-read has run.
+    // The pin must hold after the dock settles, not only on the first render.
     await page.waitForTimeout(300)
     await expect(sidebar(page)).toBeVisible()
   })
