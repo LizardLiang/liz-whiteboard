@@ -313,6 +313,8 @@ export interface AreaNodeData extends Record<string, unknown> {
   area: Area
   /** Whether the current user may edit (move/resize/rename/recolor/delete) */
   canEdit: boolean
+  /** True while the canvas is locked: no resize handles are offered. */
+  locked?: boolean
   /** Rename the area (fires optimistic update + WebSocket emit) */
   onRename?: (areaId: string, name: string) => void
   /** Recolor the area to a palette id */
@@ -375,6 +377,8 @@ export type CommentNodeType = Node<CommentNodeData, 'comment'>
 export interface ShapeNodeData extends Record<string, unknown> {
   shape: Shape
   canEdit: boolean
+  /** True while the canvas is locked: no resize, connect or quick-create. */
+  locked?: boolean
   /** Keyboard-focus ring (FR-019a) — distinct from React Flow's own `selected`. */
   isKeyboardFocused?: boolean
   /**

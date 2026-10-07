@@ -117,7 +117,10 @@ export interface ToolbarProps {
   zoomControls?: ZoomControls
   /** Current zoom level (0-5) for display */
   currentZoom?: number
-  /** Whether the canvas is locked against drag, connect and select. */
+  /**
+   * Whether the canvas is locked: no element can be moved, resized, created,
+   * connected, deleted or selected. Pan, zoom, search and comments stay live.
+   */
   canvasLocked?: boolean
   /** Toggle the canvas lock. When omitted, no lock item is rendered. */
   onToggleCanvasLock?: () => void
@@ -379,6 +382,12 @@ export function Toolbar({
     tables.find((t) => t.id === targetTableId)?.columns ?? []
 
   const zoomPercent = Math.round(currentZoom * 100)
+  // A locked canvas accepts no new tables, relationships, references, areas
+  // or imports, so every create affordance follows `canWrite`.
+  const canWrite = canEdit && !canvasLocked
+  const writeBlockedTitle = canEdit
+    ? 'Unlock the canvas to make changes.'
+    : 'You have view-only access to this whiteboard.'
   const showAreaTool = canEdit && onSelectTool !== undefined
   const showCommentTool = canComment && onSelectTool !== undefined
 
@@ -399,12 +408,8 @@ export function Toolbar({
           <Button
             variant="default"
             size="sm"
-            disabled={!canEdit}
-            title={
-              canEdit
-                ? undefined
-                : 'You have view-only access to this whiteboard.'
-            }
+            disabled={!canWrite}
+            title={canWrite ? undefined : writeBlockedTitle}
           >
             <Table2 className="h-4 w-4" />
             Add Table
@@ -468,12 +473,8 @@ export function Toolbar({
           <Button
             variant="default"
             size="sm"
-            disabled={tables.length < 2 || !canEdit}
-            title={
-              !canEdit
-                ? 'You have view-only access to this whiteboard.'
-                : undefined
-            }
+            disabled={tables.length < 2 || !canWrite}
+            title={canWrite ? undefined : writeBlockedTitle}
           >
             <Waypoints className="h-4 w-4" />
             Add Relationship
@@ -620,8 +621,8 @@ export function Toolbar({
         <Button
           variant="ghost"
           size="icon"
-          disabled={!canEdit}
-          draggable={canEdit}
+          disabled={!canWrite}
+          draggable={canWrite}
           data-testid="add-reference-tool"
           aria-label="Reference"
           onDragStart={(event) => {
@@ -633,9 +634,9 @@ export function Toolbar({
           }}
           onClick={() => onAddReference()}
           title={
-            canEdit
+            canWrite
               ? 'Reference: drag onto the canvas, or click to place at the centre'
-              : 'You have view-only access to this whiteboard.'
+              : writeBlockedTitle
           }
         >
           <ExternalLink className="h-4 w-4" />
@@ -648,13 +649,16 @@ export function Toolbar({
         <Button
           variant={activeTool === 'area' ? 'default' : 'ghost'}
           size="icon"
+          disabled={canvasLocked}
           onClick={() =>
             onSelectTool(activeTool === 'area' ? 'select' : 'area')
           }
           title={
-            activeTool === 'area'
-              ? 'Drag on the canvas to draw the area'
-              : 'Draw a subject area'
+            canvasLocked
+              ? writeBlockedTitle
+              : activeTool === 'area'
+                ? 'Drag on the canvas to draw the area'
+                : 'Draw a subject area'
           }
           aria-label="Add area"
           aria-pressed={activeTool === 'area'}
@@ -834,12 +838,8 @@ export function Toolbar({
         <DropdownMenuContent side="top" align="end" className="w-56">
           {onImportSql && (
             <DropdownMenuItem
-              disabled={!canEdit}
-              title={
-                canEdit
-                  ? undefined
-                  : 'You have view-only access to this whiteboard.'
-              }
+              disabled={!canWrite}
+              title={canWrite ? undefined : writeBlockedTitle}
               onSelect={() => setImportSqlOpen(true)}
             >
               Import SQL

@@ -187,6 +187,7 @@ export function ShapeNode({
   const {
     shape,
     canEdit,
+    locked,
     isKeyboardFocused,
     isDraft,
     editRequestToken,
@@ -215,7 +216,7 @@ export function ShapeNode({
   const markerPressRef = useRef<{ x: number; y: number } | null>(null)
 
   function handleMarkerPointerDown(event: React.PointerEvent) {
-    if (!canEdit || isDraft) return
+    if (!canEdit || locked || isDraft) return
     markerPressRef.current = { x: event.clientX, y: event.clientY }
   }
 
@@ -225,7 +226,7 @@ export function ShapeNode({
   ) {
     const press = markerPressRef.current
     markerPressRef.current = null
-    if (!press || !canEdit || isDraft) return
+    if (!press || !canEdit || locked || isDraft) return
     const travelled = Math.hypot(
       event.clientX - press.x,
       event.clientY - press.y,
@@ -302,7 +303,7 @@ export function ShapeNode({
 
   return (
     <>
-      {canEdit && !isDraft && (
+      {canEdit && !locked && !isDraft && (
         <NodeResizer
           isVisible={!!selected}
           minWidth={MIN_SHAPE_WIDTH}
@@ -426,6 +427,8 @@ export function ShapeNode({
               id={SHAPE_HANDLE_IDS.sourceTop}
               className="shape-src"
               isConnectable={canEdit}
+              isConnectableStart={!locked}
+              isConnectableEnd={!locked}
               onPointerDown={handleMarkerPointerDown}
               onPointerUp={(event) => handleMarkerPointerUp(event, 'top')}
             />
@@ -435,6 +438,8 @@ export function ShapeNode({
               id={SHAPE_HANDLE_IDS.sourceRight}
               className="shape-src"
               isConnectable={canEdit}
+              isConnectableStart={!locked}
+              isConnectableEnd={!locked}
               onPointerDown={handleMarkerPointerDown}
               onPointerUp={(event) => handleMarkerPointerUp(event, 'right')}
             />
@@ -444,6 +449,8 @@ export function ShapeNode({
               id={SHAPE_HANDLE_IDS.sourceBottom}
               className="shape-src"
               isConnectable={canEdit}
+              isConnectableStart={!locked}
+              isConnectableEnd={!locked}
               onPointerDown={handleMarkerPointerDown}
               onPointerUp={(event) => handleMarkerPointerUp(event, 'bottom')}
             />
@@ -453,6 +460,8 @@ export function ShapeNode({
               id={SHAPE_HANDLE_IDS.sourceLeft}
               className="shape-src"
               isConnectable={canEdit}
+              isConnectableStart={!locked}
+              isConnectableEnd={!locked}
               onPointerDown={handleMarkerPointerDown}
               onPointerUp={(event) => handleMarkerPointerUp(event, 'left')}
             />
@@ -462,6 +471,8 @@ export function ShapeNode({
               id={SHAPE_HANDLE_IDS.target}
               className="shape-tgt"
               isConnectable={canEdit}
+              isConnectableStart={!locked}
+              isConnectableEnd={!locked}
             />
           </>
         )}

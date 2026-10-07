@@ -463,7 +463,11 @@ export interface ReactFlowCanvasProps {
   onNodeDragStop?: OnNodeDrag<TableNodeType>
   /** Whether nodes are draggable */
   nodesDraggable?: boolean
-  /** Whether nodes can be selected and connected; false locks the canvas */
+  /**
+   * Whether nodes and edges can be selected and connected. False is the
+   * locked state: nothing is selectable or connectable, while pan and zoom
+   * stay live. The caller also withholds drag, resize and delete.
+   */
   interactive?: boolean
   /** Whether canvas panning on drag is enabled */
   panOnDrag?: boolean

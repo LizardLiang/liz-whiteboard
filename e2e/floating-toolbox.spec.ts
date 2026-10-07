@@ -344,6 +344,93 @@ test.describe('Lock canvas', () => {
     await dragBy(page, await tableGrip(), 80)
     await expect.poll(gap).toBeGreaterThan(areaMovedGap + 40)
   })
+
+  /** Persisted rows of the ERD board, read through bun:sqlite. */
+  function snapshot(): string {
+    return execFileSync('bun', ['run', 'e2e/db-snapshot.ts', IDS.whiteboard], {
+      encoding: 'utf8',
+    }).trim()
+  }
+
+  const cardinalityPicker = (page: Page) =>
+    page.getByRole('heading', { name: 'Set Relationship Cardinality' })
+
+  /** Drag from users.email's source handle to orders.id's target handle. */
+  async function dragColumnHandle(page: Page) {
+    const centre = async (selector: string) => {
+      const box = (await page.locator(selector).boundingBox())!
+      return { x: box.x + box.width / 2, y: box.y + box.height / 2 }
+    }
+    const from = await centre(
+      `[data-handleid="${IDS.usersTable}__${IDS.usersEmail}__right__source"]`,
+    )
+    const to = await centre(
+      `[data-handleid="${IDS.ordersTable}__${IDS.ordersId}__left__target"]`,
+    )
+    // The source handle only takes pointer events while its row is hovered.
+    await page.mouse.move(from.x - 80, from.y)
+    await page.mouse.move(from.x - 20, from.y)
+    await page.mouse.move(from.x, from.y)
+    await page.mouse.down()
+    await page.mouse.move((from.x + to.x) / 2, (from.y + to.y) / 2, {
+      steps: 10,
+    })
+    await page.mouse.move(to.x, to.y, { steps: 10 })
+    await page.mouse.up()
+  }
+
+  test('a locked canvas persists no resize, delete or connect; unlocking restores them', async ({
+    page,
+  }) => {
+    // The shape keyboard path (n, Enter, arrows, c, Alt+Arrow) cannot run
+    // here: an ERD board renders no shapes, so there is nothing to focus.
+    await openWhiteboard(page)
+    const area = page.locator('.react-flow__node-area').first()
+    await expect(area).toBeVisible()
+
+    // Select the area, which makes its resize handles appear.
+    const box = (await area.boundingBox())!
+    await page.mouse.click(box.x + box.width - 40, box.y + box.height - 40)
+    await expect(area.locator('.react-flow__resize-control').first()).toBeVisible()
+    const corner = { x: box.x + box.width, y: box.y + box.height }
+    const before = snapshot()
+
+    await clickZoomMenuItem(page, 'Lock canvas')
+    // Locking clears the selection, so no resize handle is left to grab.
+    await expect(area.locator('.react-flow__resize-control')).toHaveCount(0)
+
+    // Resize from where the selected area's corner handle sat.
+    await page.mouse.move(corner.x, corner.y)
+    await page.mouse.down()
+    await page.mouse.move(corner.x + 60, corner.y + 90, { steps: 8 })
+    await page.mouse.up()
+
+    // Delete on what was selected before the lock.
+    await page.keyboard.press('Delete')
+    await page.keyboard.press('Backspace')
+
+    // A drag from a column handle to another table.
+    await dragColumnHandle(page)
+    await expect(cardinalityPicker(page)).toHaveCount(0)
+
+    // Let any wrongly issued write reach the server, then judge by reload.
+    await page.waitForTimeout(1000)
+    await page.reload()
+    await expect(page.getByRole('heading', { name: 'E2E ERD' })).toBeVisible()
+    await expect(page.locator('.react-flow__node-area').first()).toBeVisible()
+    expect(snapshot()).toBe(before)
+
+    // Unlocked again, the same actions work.
+    await clickZoomMenuItem(page, 'Lock canvas')
+    await clickZoomMenuItem(page, 'Unlock canvas')
+    const reopened = (await page.locator('.react-flow__node-area').first().boundingBox())!
+    await page.mouse.click(reopened.x + reopened.width - 40, reopened.y + reopened.height - 40)
+    await dragBy(page, { x: reopened.x + reopened.width, y: reopened.y + reopened.height }, 60)
+    await expect.poll(snapshot).not.toBe(before)
+
+    await dragColumnHandle(page)
+    await expect(cardinalityPicker(page)).toBeVisible()
+  })
 })
 
 test.describe('Viewer role', () => {

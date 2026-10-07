@@ -19,7 +19,6 @@ import {
 } from 'react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { useNavigate } from '@tanstack/react-router'
-import { safeGetItem, safeSetItem } from '@/lib/safe-storage'
 import {
   ReactFlowProvider,
   useNodesInitialized,
@@ -184,6 +183,7 @@ import {
 import { useColumnReorderMutations } from '@/hooks/use-column-reorder-mutations'
 import { useColumnReorderCollaboration } from '@/hooks/use-column-reorder-collaboration'
 import { getSessionUserId } from '@/lib/session-user-id'
+import { safeGetItem, safeSetItem } from '@/lib/safe-storage'
 import { classifyQueryFailure, isUnauthorizedError } from '@/lib/auth/errors'
 import { useAuthContext } from '@/components/auth/AuthContext'
 import { useZenMode } from '@/hooks/use-zen-mode'
@@ -1021,6 +1021,13 @@ function ReactFlowWhiteboardInner({
     useState<Cardinality>('ONE_TO_MANY')
   const [pendingLabel, setPendingLabel] = useState('')
 
+  // Locked = no canvas element can be moved, resized, created, connected or
+  // deleted, and nothing can be selected. Panning, zooming, search, comments
+  // and menus stay live. React state is the single source: it feeds the canvas
+  // props, the per-node `draggable` / `selectable` / `deletable` flags (which
+  // React Flow ranks above the store-level flags) and every mutating handler.
+  const [canvasLocked, setCanvasLocked] = useState(false)
+
   // Display mode state with localStorage persistence
   const [showMode, setShowMode] = useState<ShowMode>(() => {
     // Restore from localStorage on mount
@@ -1757,13 +1764,18 @@ function ReactFlowWhiteboardInner({
   )
 
   // Stable ref for the deleteRelationship callback — prevents stale closures in edge data
-  const handleRelationshipDeleteRef = useRef(
-    relationshipMutations.deleteRelationship,
+  const { deleteRelationship } = relationshipMutations
+  const deleteRelationshipUnlocked = useCallback<typeof deleteRelationship>(
+    (...args) => {
+      if (canvasLocked) return
+      return deleteRelationship(...args)
+    },
+    [canvasLocked, deleteRelationship],
   )
+  const handleRelationshipDeleteRef = useRef(deleteRelationshipUnlocked)
   useEffect(() => {
-    handleRelationshipDeleteRef.current =
-      relationshipMutations.deleteRelationship
-  }, [relationshipMutations.deleteRelationship])
+    handleRelationshipDeleteRef.current = deleteRelationshipUnlocked
+  }, [deleteRelationshipUnlocked])
 
   // Stable ref for the updateRelationshipLabel callback — prevents stale closures in edge data
   const handleRelationshipLabelUpdateRef = useRef(
@@ -2266,10 +2278,6 @@ function ReactFlowWhiteboardInner({
   // click-to-select path already updates, so a keyboard-driven select is
   // indistinguishable from a mouse one to every other consumer.
   const reactFlowStoreApi = useStoreApi()
-  // Locked = no node drag, connect or select. React state is the single
-  // source: it feeds the canvas props and the per-node `draggable` /
-  // `selectable` flags, which React Flow ranks above the store-level flags.
-  const [canvasLocked, setCanvasLocked] = useState(false)
   const viewport = useViewport()
   const nodesInitialized = useNodesInitialized()
 
@@ -2320,6 +2328,7 @@ function ReactFlowWhiteboardInner({
   // the target handle (drop).
   const handleConnect = useCallback(
     (connection: Connection) => {
+      if (canvasLocked) return
       const { source, target, sourceHandle, targetHandle } = connection
       if (!source || !target) return
 
@@ -2352,7 +2361,7 @@ function ReactFlowWhiteboardInner({
       })
       setSelectedCardinality('ONE_TO_MANY')
     },
-    [reactFlowInstance, createConnectorMutation],
+    [canvasLocked, reactFlowInstance, createConnectorMutation],
   )
 
   // ── Canvas comments (GH #110) ──────────────────────────────────────────────
@@ -2586,42 +2595,42 @@ function ReactFlowWhiteboardInner({
     [updateAreaMutation],
   )
   // Build React Flow area nodes from the areas list.
-  const areaNodes = useMemo<Array<AreaNodeType>>(
-    () =>
-      areas.map((area) => ({
-        id: area.id,
-        type: 'area',
-        position: { x: area.positionX, y: area.positionY },
-        width: area.width,
-        height: area.height,
-        draggable: !isCanvasLocked(canEdit, canvasLocked),
-        selectable: !isCanvasLocked(canEdit, canvasLocked),
-        // GH #106 Bug 1 fix: area deletion routes through Delete/Backspace ->
-        // onNodesDelete in ReactFlowCanvas, which requires the node to be
-        // marked deletable. Table nodes are the opposite (deletable: false)
-        // so their removal always goes through the confirmation dialog.
-        deletable: canEdit,
-        // Render behind table nodes (which default to zIndex >= 1).
-        zIndex: 0,
-        data: {
-          area,
-          canEdit,
-          onRename: handleAreaRename,
-          onRecolor: handleAreaRecolor,
-          onResize: handleAreaResize,
-          onDelete: deleteAreaMutation,
-        },
-      })),
-    [
-      areas,
-      canEdit,
-      canvasLocked,
-      handleAreaRename,
-      handleAreaRecolor,
-      handleAreaResize,
-      deleteAreaMutation,
-    ],
-  )
+  const areaNodes = useMemo<Array<AreaNodeType>>(() => {
+    const interactionLocked = isCanvasLocked(canEdit, canvasLocked)
+    return areas.map((area) => ({
+      id: area.id,
+      type: 'area',
+      position: { x: area.positionX, y: area.positionY },
+      width: area.width,
+      height: area.height,
+      draggable: !interactionLocked,
+      selectable: !interactionLocked,
+      // GH #106 Bug 1 fix: area deletion routes through Delete/Backspace ->
+      // onNodesDelete in ReactFlowCanvas, which requires the node to be
+      // marked deletable. Table nodes are the opposite (deletable: false)
+      // so their removal always goes through the confirmation dialog.
+      deletable: canEdit && !canvasLocked,
+      // Render behind table nodes (which default to zIndex >= 1).
+      zIndex: 0,
+      data: {
+        area,
+        canEdit,
+        locked: canvasLocked,
+        onRename: handleAreaRename,
+        onRecolor: handleAreaRecolor,
+        onResize: handleAreaResize,
+        onDelete: deleteAreaMutation,
+      },
+    }))
+  }, [
+    areas,
+    canEdit,
+    canvasLocked,
+    handleAreaRename,
+    handleAreaRecolor,
+    handleAreaResize,
+    deleteAreaMutation,
+  ])
 
   // ── Area membership (GH #106) ──────────────────────────────────────────────
   // Lightweight projection of areas for the table "Add to area" submenu.
@@ -3136,6 +3145,10 @@ function ReactFlowWhiteboardInner({
       rect: { x: number; y: number; width: number; height: number },
       drag: { startX: number; startY: number; endX: number; endY: number },
     ) => {
+      if (canvasLocked) {
+        setActiveTool('select')
+        return
+      }
       // 'area' shares the gesture but not the target — it creates an Area row
       // (with membership), not a Shape, so it branches before TOOL_TO_SHAPE_KIND
       // (which has no 'area' entry, by design).
@@ -3189,7 +3202,7 @@ function ReactFlowWhiteboardInner({
       )
       setActiveTool('select')
     },
-    [whiteboardId, createShapeMutation, handleCreateDrawnArea],
+    [canvasLocked, whiteboardId, createShapeMutation, handleCreateDrawnArea],
   )
 
   const handleDrawDisarm = useCallback(() => {
@@ -3274,7 +3287,7 @@ function ReactFlowWhiteboardInner({
 
   const handleQuickCreate = useCallback(
     (shapeId: string, direction: QuickCreateDirection) => {
-      if (!canEdit || isPublic) return
+      if (!canEdit || isPublic || canvasLocked) return
       const target = resolveQuickCreateTarget(shapeId, direction)
       if (!target) return
       const { source, positionX, positionY } = target
@@ -3318,6 +3331,7 @@ function ReactFlowWhiteboardInner({
     [
       canEdit,
       isPublic,
+      canvasLocked,
       resolveQuickCreateTarget,
       createShapeMutation,
       createConnectorMutation,
@@ -3330,15 +3344,16 @@ function ReactFlowWhiteboardInner({
   // authenticated VIEWER, since both pass a viewerRole hasMinimumRole
   // resolves to false for) — the identical pattern area nodes already use.
   const shapeNodes = useMemo<Array<ShapeNodeType>>(() => {
+    const interactionLocked = isCanvasLocked(canEdit, canvasLocked)
     const built: Array<ShapeNodeType> = shapes.map((shape) => ({
       id: shape.id,
       type: 'shape',
       position: { x: shape.positionX, y: shape.positionY },
       width: shape.width,
       height: shape.height,
-      draggable: !isCanvasLocked(canEdit, canvasLocked),
-      selectable: !isCanvasLocked(canEdit, canvasLocked),
-      deletable: canEdit,
+      draggable: !interactionLocked,
+      selectable: !interactionLocked,
+      deletable: canEdit && !canvasLocked,
       // `selected` is deliberately NOT computed here (B2, Hermes code
       // review). This memo recomputes on every `shapes` change, so a
       // derived `selected` value is re-asserted on every recompute — the
@@ -3358,6 +3373,7 @@ function ReactFlowWhiteboardInner({
       data: {
         shape,
         canEdit,
+        locked: canvasLocked,
         editRequestToken:
           labelEditRequest?.shapeId === shape.id
             ? labelEditRequest.token
@@ -3478,29 +3494,28 @@ function ReactFlowWhiteboardInner({
   }, [justCreatedShapeId, shapes, reactFlowStoreApi, requestLabelEdit])
 
   // Build React Flow connector edges from the connectors list.
-  const connectorEdges = useMemo<Array<ConnectorEdgeType>>(
-    () =>
-      connectors.map((connector) => ({
-        id: connector.id,
-        type: 'connector',
-        source: connector.sourceShapeId,
-        target: connector.targetShapeId,
-        // A shape node has FOUR source handles (shape-src-top/right/bottom/
-        // left) and one target handle (shape-tgt). React Flow's own
-        // sourceX/Y-resolution needs a concrete handle id whenever a node
-        // has more than one handle of that type, or it silently declines to
-        // render the edge at all — even though ConnectorEdge ignores
-        // React Flow's sourceX/Y entirely and derives geometry itself via
-        // useInternalNode (FR-031a). The specific side is irrelevant; any
-        // valid handle id satisfies the resolver.
-        sourceHandle: SHAPE_HANDLE_IDS.sourceTop,
-        targetHandle: SHAPE_HANDLE_IDS.target,
-        deletable: canEdit,
-        selectable: !isCanvasLocked(canEdit, canvasLocked),
-        data: { connector },
-      })),
-    [connectors, canEdit, canvasLocked],
-  )
+  const connectorEdges = useMemo<Array<ConnectorEdgeType>>(() => {
+    const interactionLocked = isCanvasLocked(canEdit, canvasLocked)
+    return connectors.map((connector) => ({
+      id: connector.id,
+      type: 'connector',
+      source: connector.sourceShapeId,
+      target: connector.targetShapeId,
+      // A shape node has FOUR source handles (shape-src-top/right/bottom/
+      // left) and one target handle (shape-tgt). React Flow's own
+      // sourceX/Y-resolution needs a concrete handle id whenever a node
+      // has more than one handle of that type, or it silently declines to
+      // render the edge at all — even though ConnectorEdge ignores
+      // React Flow's sourceX/Y entirely and derives geometry itself via
+      // useInternalNode (FR-031a). The specific side is irrelevant; any
+      // valid handle id satisfies the resolver.
+      sourceHandle: SHAPE_HANDLE_IDS.sourceTop,
+      targetHandle: SHAPE_HANDLE_IDS.target,
+      deletable: canEdit && !canvasLocked,
+      selectable: !interactionLocked,
+      data: { connector },
+    }))
+  }, [connectors, canEdit, canvasLocked])
 
   // FR-019a: keyboard-focused shape (creation-order traversal), distinct
   // from React Flow's own `selected` state. Deliberately NOT part of the
@@ -3558,7 +3573,7 @@ function ReactFlowWhiteboardInner({
   // keyboard-driven select and a mouse-driven one are indistinguishable to
   // every other consumer (NodeResizer visibility, ShapeStyleControls, etc).
   useEffect(() => {
-    if (!canEdit || isPublic) return
+    if (!canEdit || isPublic || canvasLocked) return
 
     function selectedShapeNodes() {
       return reactFlowInstance
@@ -3767,6 +3782,7 @@ function ReactFlowWhiteboardInner({
   }, [
     canEdit,
     isPublic,
+    canvasLocked,
     reactFlowInstance,
     reactFlowStoreApi,
     requestLabelEdit,
@@ -4124,9 +4140,17 @@ function ReactFlowWhiteboardInner({
     [reactFlowInstance],
   )
 
+  // Locking clears the selection and disarms any draw tool, so nothing selected
+  // before the lock can still be resized or deleted through React Flow's own
+  // keyboard handling.
   const toggleCanvasLock = useCallback(() => {
-    setCanvasLocked((locked) => !locked)
-  }, [])
+    if (!canvasLocked) {
+      reactFlowStoreApi.getState().unselectNodesAndEdges()
+      keyboardSelectionOrderRef.current = []
+      setActiveTool((tool) => (isDrawGestureTool(tool) ? 'select' : tool))
+    }
+    setCanvasLocked(!canvasLocked)
+  }, [canvasLocked, reactFlowStoreApi])
 
   // Export diagram as image (Issue #104) — captures the full diagram at its
   // natural bounds via html-to-image, independent of the current pan/zoom.
@@ -4190,7 +4214,7 @@ function ReactFlowWhiteboardInner({
   )
 
   return (
-    <WhiteboardPermissionsProvider value={{ canEdit }}>
+    <WhiteboardPermissionsProvider value={{ canEdit, canvasLocked }}>
       <div
         style={{
           display: 'flex',
@@ -4414,7 +4438,7 @@ function ReactFlowWhiteboardInner({
               // socket emit + rollback on error). Before this the key only
               // touched React Flow's internal copy, so the row survived and
               // the line reappeared on the next table drag.
-              onRelationshipDelete={relationshipMutations.deleteRelationship}
+              onRelationshipDelete={deleteRelationshipUnlocked}
               // Part A (2026-08-31 tactical plan, symptom 1): the veto in
               // ReactFlowCanvas's onBeforeDelete now also requires the
               // WHITEBOARD socket to be live, not just a handler being

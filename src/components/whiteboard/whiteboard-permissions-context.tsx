@@ -17,6 +17,8 @@ import { createContext, useContext } from 'react'
 
 interface WhiteboardPermissions {
   canEdit: boolean
+  /** True while the editor has locked the canvas against connecting. */
+  canvasLocked?: boolean
 }
 
 const WhiteboardPermissionsContext = createContext<WhiteboardPermissions>({

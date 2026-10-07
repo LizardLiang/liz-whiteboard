@@ -10,6 +10,7 @@
 
 import { memo } from 'react'
 import { Handle, Position } from '@xyflow/react'
+import { useWhiteboardPermissions } from '../whiteboard-permissions-context'
 import { createColumnHandleId } from '@/lib/react-flow/edge-routing'
 
 export interface ColumnHandlesProps {
@@ -17,39 +18,50 @@ export interface ColumnHandlesProps {
   columnId: string
 }
 
-export const ColumnHandles = memo(({ tableId, columnId }: ColumnHandlesProps) => {
-  return (
-    <>
-      <Handle
-        type="source"
-        position={Position.Left}
-        id={createColumnHandleId(tableId, columnId, 'left', 'source')}
-        className="nodrag"
-        style={{ left: '-14px' }}
-      />
-      <Handle
-        type="target"
-        position={Position.Left}
-        id={createColumnHandleId(tableId, columnId, 'left', 'target')}
-        className="nodrag"
-        style={{ left: '-14px' }}
-      />
-      <Handle
-        type="source"
-        position={Position.Right}
-        id={createColumnHandleId(tableId, columnId, 'right', 'source')}
-        className="nodrag"
-        style={{ right: '-14px' }}
-      />
-      <Handle
-        type="target"
-        position={Position.Right}
-        id={createColumnHandleId(tableId, columnId, 'right', 'target')}
-        className="nodrag"
-        style={{ right: '-14px' }}
-      />
-    </>
-  )
-})
+export const ColumnHandles = memo(
+  ({ tableId, columnId }: ColumnHandlesProps) => {
+    const { canvasLocked = false } = useWhiteboardPermissions()
+    const lockProps = {
+      isConnectableStart: !canvasLocked,
+      isConnectableEnd: !canvasLocked,
+    }
+    return (
+      <>
+        <Handle
+          type="source"
+          position={Position.Left}
+          id={createColumnHandleId(tableId, columnId, 'left', 'source')}
+          className="nodrag"
+          {...lockProps}
+          style={{ left: '-14px' }}
+        />
+        <Handle
+          type="target"
+          position={Position.Left}
+          id={createColumnHandleId(tableId, columnId, 'left', 'target')}
+          className="nodrag"
+          {...lockProps}
+          style={{ left: '-14px' }}
+        />
+        <Handle
+          type="source"
+          position={Position.Right}
+          id={createColumnHandleId(tableId, columnId, 'right', 'source')}
+          className="nodrag"
+          {...lockProps}
+          style={{ right: '-14px' }}
+        />
+        <Handle
+          type="target"
+          position={Position.Right}
+          id={createColumnHandleId(tableId, columnId, 'right', 'target')}
+          className="nodrag"
+          {...lockProps}
+          style={{ right: '-14px' }}
+        />
+      </>
+    )
+  },
+)
 
 ColumnHandles.displayName = 'ColumnHandles'

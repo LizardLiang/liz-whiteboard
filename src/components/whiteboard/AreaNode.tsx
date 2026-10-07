@@ -26,8 +26,15 @@ import { AREA_COLORS, resolveAreaColor } from '@/lib/area-colors'
  * on-screen position because ReactFlowCanvas re-anchors them against the new
  * origin.
  */
-export function AreaNode({ id, data, width, height, selected }: NodeProps<AreaNodeType>) {
-  const { area, canEdit, onRename, onRecolor, onResize, onDelete } = data
+export function AreaNode({
+  id,
+  data,
+  width,
+  height,
+  selected,
+}: NodeProps<AreaNodeType>) {
+  const { area, canEdit, locked, onRename, onRecolor, onResize, onDelete } =
+    data
   const color = resolveAreaColor(area.color)
 
   const [editingName, setEditingName] = useState(false)
@@ -52,7 +59,7 @@ export function AreaNode({ id, data, width, height, selected }: NodeProps<AreaNo
 
   return (
     <>
-      {canEdit && (
+      {canEdit && !locked && (
         <NodeResizer
           color={color.solid}
           isVisible={selected}
@@ -135,7 +142,8 @@ export function AreaNode({ id, data, width, height, selected }: NodeProps<AreaNo
                       backgroundColor: c.solid,
                       borderColor:
                         c.id === area.color ? color.solid : 'transparent',
-                      outline: c.id === area.color ? `1px solid ${c.solid}` : 'none',
+                      outline:
+                        c.id === area.color ? `1px solid ${c.solid}` : 'none',
                     }}
                   />
                 ))}
