@@ -13,6 +13,7 @@ import type { CommentActions } from '@/components/whiteboard/ReactFlowWhiteboard
 import type { CommentWithAuthor } from '@/data/models'
 import type { ShowMode } from '@/lib/react-flow/types'
 import { ReactFlowWhiteboard } from '@/components/whiteboard/ReactFlowWhiteboard'
+import { BoardChip } from '@/components/layout/BoardChip'
 import { WhiteboardAccessDenied } from '@/components/whiteboard/WhiteboardAccessDenied'
 import { WhiteboardHistoryPanel } from '@/components/whiteboard/WhiteboardHistoryPanel'
 import { WhiteboardCommentsPanel } from '@/components/whiteboard/WhiteboardCommentsPanel'
@@ -550,42 +551,30 @@ function WhiteboardEditor() {
 
   return (
     <div className="flex flex-col h-full bg-background">
-      {/* Header — hidden in zen mode */}
-      {!isZenMode && (
-        <div className="flex items-center justify-between px-4 py-2 border-b">
-          <h1 className="text-xl font-semibold">{whiteboard.name}</h1>
-          <div className="flex items-center gap-2">
-            {commentUnreadCount > 0 && (
-              <span
-                className="rounded-full bg-destructive px-2 py-0.5 text-xs font-medium text-destructive-foreground"
-                title={`${commentUnreadCount} unresolved comment thread${commentUnreadCount === 1 ? '' : 's'}`}
-              >
-                {commentUnreadCount} unresolved
-              </span>
-            )}
-            <span
-              className={`text-sm ${
-                connectionState === 'connected'
-                  ? 'text-green-600'
-                  : connectionState === 'connecting'
-                    ? 'text-yellow-600'
-                    : 'text-red-600'
-              }`}
-            >
-              {connectionState === 'connected'
-                ? 'Connected'
-                : connectionState === 'connecting'
-                  ? 'Connecting...'
-                  : 'Disconnected'}
-            </span>
-          </div>
-        </div>
-      )}
-
       {/* Whiteboard canvas */}
       <div className="flex-1 flex flex-col overflow-hidden">
         {/* Canvas — React Flow renders its own Toolbar internally. */}
         <div className="flex-1 overflow-hidden relative">
+          {!isZenMode && (
+            <BoardChip
+              boardId={whiteboardId}
+              boardName={whiteboard.name}
+              // Sits below the toolbar row and clear of the drawing-tool
+              // palette until the toolbar floats over the canvas.
+              className="left-16 top-14"
+              connectionState={connectionState}
+              trailing={
+                commentUnreadCount > 0 ? (
+                  <span
+                    className="rounded-full bg-destructive px-2 py-0.5 text-xs font-medium text-destructive-foreground"
+                    title={`${commentUnreadCount} unresolved comment thread${commentUnreadCount === 1 ? '' : 's'}`}
+                  >
+                    {commentUnreadCount} unresolved
+                  </span>
+                ) : undefined
+              }
+            />
+          )}
           <ReactFlowWhiteboard
             // S3 (Hermes code review): `key` forces a full remount on
             // board switch (client-side navigation reuses this route

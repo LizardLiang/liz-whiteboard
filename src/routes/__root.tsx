@@ -12,6 +12,7 @@ import { Header } from '../components/layout/Header'
 import { Sidebar } from '../components/layout/Sidebar'
 import { ThemeProvider } from '../hooks/use-theme'
 import { useZenMode } from '../hooks/use-zen-mode'
+import { useNavigatorPin } from '../hooks/use-navigator-pin'
 import { Toaster } from '../components/ui/sonner'
 import { AuthProvider } from '../components/auth/AuthContext'
 import { SessionExpiredModal } from '../components/auth/SessionExpiredModal'
@@ -105,6 +106,11 @@ function RootDocument({ children }: { children: React.ReactNode }) {
   const pathname = useRouterState({ select: (s) => s.location.pathname })
   const isPublicRoute = PUBLIC_PATHS.some((p) => pathname.startsWith(p))
   const { isZenMode } = useZenMode()
+  const { isPinned, setPinned } = useNavigatorPin()
+  // Boards give the whole area to the canvas; the navigator is a drawer
+  // opened from the board chip unless the user pins it.
+  const isBoardRoute =
+    pathname.startsWith('/whiteboard/') || pathname.startsWith('/canvas/')
 
   return (
     <html lang="en" suppressHydrationWarning>
@@ -125,7 +131,11 @@ function RootDocument({ children }: { children: React.ReactNode }) {
               <div className="flex h-screen flex-col">
                 <Header />
                 <div className="flex flex-1 overflow-hidden">
-                  <Sidebar />
+                  {!isBoardRoute ? (
+                    <Sidebar />
+                  ) : isPinned ? (
+                    <Sidebar onUnpin={() => setPinned(false)} />
+                  ) : null}
                   <main className="flex-1 overflow-auto">{children}</main>
                 </div>
               </div>

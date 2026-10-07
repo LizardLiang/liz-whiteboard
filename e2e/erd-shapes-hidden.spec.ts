@@ -40,7 +40,7 @@ test.describe('ERD hides shapes and connectors', () => {
     await expect(
       page.getByRole('heading', { name: 'E2E Shapes' }),
     ).toBeVisible()
-    await expect(page.getByText('Connected')).toBeVisible()
+    await expect(page.getByRole('status', { name: 'Connected' })).toBeVisible()
 
     await expect(page.locator('[data-table-name="shapes_a"]')).toBeVisible()
     await expect(page.locator('[data-table-name="shapes_b"]')).toBeVisible()

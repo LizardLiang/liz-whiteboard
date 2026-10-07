@@ -12,6 +12,7 @@
 
 import { Link, createFileRoute } from '@tanstack/react-router'
 import { useQuery } from '@tanstack/react-query'
+import { BoardChip } from '@/components/layout/BoardChip'
 import { CanvasBoard } from '@/components/canvas/CanvasBoard'
 import { CanvasShareDialog } from '@/components/canvas/CanvasShareDialog'
 import { getCanvasBoardPage } from '@/lib/canvas-board/server-functions'
@@ -125,18 +126,24 @@ function CanvasBoardPage() {
 
   return (
     <div className="flex h-full flex-col bg-background">
-      <div className="flex items-center justify-between border-b px-4 py-2">
-        <h1 className="text-xl font-semibold">{data.board.name}</h1>
-        <div className="flex items-center gap-2">
-          {!canEdit && (
-            <span className="rounded-full border px-2 py-0.5 text-xs font-medium text-muted-foreground">
-              Read-only
-            </span>
-          )}
-          {canShare && <CanvasShareDialog boardId={boardId} />}
-        </div>
-      </div>
       <div className="relative flex-1 overflow-hidden">
+        <BoardChip
+          boardId={boardId}
+          boardName={data.board.name}
+          // The board draws its tool palette at the top-left and its
+          // connection badge at the top-right, so the chip sits top-centre.
+          className="left-1/2 -translate-x-1/2"
+          trailing={
+            <>
+              {!canEdit && (
+                <span className="rounded-full border px-2 py-0.5 text-xs font-medium text-muted-foreground">
+                  Read-only
+                </span>
+              )}
+              {canShare && <CanvasShareDialog boardId={boardId} />}
+            </>
+          }
+        />
         <CanvasBoard
           // A different boardId is a different canvas, not a prop update:
           // remounting resets the scene and camera rather than letting the

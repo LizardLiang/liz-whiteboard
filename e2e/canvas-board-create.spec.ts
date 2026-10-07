@@ -59,9 +59,16 @@ test.describe('Navigator: create, rename, move, and delete a canvas board', () =
     await expect(page.getByRole('heading', { name: boardName })).toBeVisible()
     await page.waitForSelector('canvas')
 
+    // Board routes hide the sidebar behind the chip's navigator button. Pin it
+    // so the rest of the test drives the docked sidebar (not a modal drawer).
+    await page.getByRole('button', { name: 'Show project navigator' }).click()
+    await page.getByRole('button', { name: 'Pin navigator' }).click()
+    // The docked sidebar is a fresh mount, so the project starts collapsed.
+    await page.getByRole('button', { name: /toggle e2e project tree/i }).click()
+
     // The row appears in the sidebar WITHOUT a manual refresh — this is a
-    // client-side navigation, the sidebar never unmounted, so its presence
-    // here proves the query-cache invalidation worked, not a fresh load.
+    // client-side navigation, so its presence here proves the query-cache
+    // invalidation worked, not a fresh load.
     const sidebarBoardLink = sidebar.getByRole('link', {
       name: boardName,
       exact: true,
