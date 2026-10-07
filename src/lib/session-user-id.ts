@@ -13,15 +13,21 @@ import { uuid } from './uuid'
  */
 const SESSION_USER_ID_KEY = 'liz-whiteboard:session-user-id'
 
+// Kept in memory so the id stays stable for the page's life when
+// sessionStorage is missing or rejects writes.
+let memoryId: string | null = null
+
 export function getSessionUserId(): string {
   if (typeof sessionStorage === 'undefined') {
     return uuid()
   }
+  if (memoryId) return memoryId
   const existing = safeGetItem(SESSION_USER_ID_KEY, 'session')
   if (existing) {
+    memoryId = existing
     return existing
   }
-  const id = uuid()
-  safeSetItem(SESSION_USER_ID_KEY, id, 'session')
-  return id
+  memoryId = uuid()
+  safeSetItem(SESSION_USER_ID_KEY, memoryId, 'session')
+  return memoryId
 }

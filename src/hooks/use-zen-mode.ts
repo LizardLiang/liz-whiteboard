@@ -16,8 +16,15 @@ const ZEN_MODE_KEY = 'liz-whiteboard:zen-mode'
  */
 const ZEN_MODE_CHANGE_EVENT = 'zen-mode-change'
 
+/**
+ * The in-memory value serves this tab when storage rejects writes, so every
+ * hook instance still agrees. A storage event from another tab resets it.
+ */
+let zenModeInMemory: boolean | null = null
+
 function readZenMode(): boolean {
   if (typeof window === 'undefined') return false
+  if (zenModeInMemory !== null) return zenModeInMemory
   return safeGetItem(ZEN_MODE_KEY) === 'true'
 }
 
@@ -44,6 +51,7 @@ export function useZenMode() {
    */
   const setZenMode = useCallback((enabled: boolean) => {
     if (typeof window !== 'undefined') {
+      zenModeInMemory = enabled
       safeSetItem(ZEN_MODE_KEY, String(enabled))
       window.dispatchEvent(new CustomEvent(ZEN_MODE_CHANGE_EVENT))
     }
@@ -67,7 +75,9 @@ export function useZenMode() {
 
     const handleChange = () => setIsZenMode(readZenMode())
     const handleStorage = (event: StorageEvent) => {
-      if (event.key === ZEN_MODE_KEY) setIsZenMode(readZenMode())
+      if (event.key !== ZEN_MODE_KEY) return
+      zenModeInMemory = null
+      setIsZenMode(readZenMode())
     }
 
     window.addEventListener(ZEN_MODE_CHANGE_EVENT, handleChange)

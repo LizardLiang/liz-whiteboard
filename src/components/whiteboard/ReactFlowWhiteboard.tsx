@@ -1815,7 +1815,9 @@ function ReactFlowWhiteboardInner({
   }, [])
 
   // Keyboard shortcut for table deletion (Delete/Backspace on selected node)
-  useTableDeletion((tableId: string) => setDeletingTableId(tableId))
+  useTableDeletion((tableId: string) => {
+    if (!canvasLocked) setDeletingTableId(tableId)
+  })
 
   // Keyboard shortcut for focus overlay (f key on selected node)
   useTableFocus(
@@ -1885,9 +1887,13 @@ function ReactFlowWhiteboardInner({
   )
 
   // Callback to request table deletion (opens dialog)
-  const handleRequestTableDelete = useCallback((tableId: string) => {
-    setDeletingTableId(tableId)
-  }, [])
+  const handleRequestTableDelete = useCallback(
+    (tableId: string) => {
+      if (canvasLocked) return
+      setDeletingTableId(tableId)
+    },
+    [canvasLocked],
+  )
 
   // Callback to save a table's comment/note (table-comment). Routes through
   // tableMutations.updateTable (table-comment W1 fix) so a rejected save
