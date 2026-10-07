@@ -1154,6 +1154,38 @@ function applyMembershipUpdates(
 }
 
 /**
+ * A text edit waiting for React to render the editing session it belongs to.
+ * `produce` receives the text and caret as left by the earlier queued edits,
+ * plus the element carrying that text, so layout-dependent moves (arrow up and
+ * down, Home, End) measure the text they will land in.
+ */
+export interface PendingTextEdit {
+  elementId: string
+  produce: (
+    text: string,
+    caret: number,
+    element: CanvasElement,
+  ) => { text: string; caret: number }
+}
+
+/** Apply queued edits in order, starting from the element's text and the session caret. */
+export function foldPendingTextEdits(
+  pending: ReadonlyArray<PendingTextEdit>,
+  element: CanvasElement,
+  session: { elementId: string; caret: number },
+): { text: string; caret: number } {
+  let text = element.text ?? ''
+  let caret = session.caret
+  for (const { elementId, produce } of pending) {
+    if (elementId !== session.elementId) continue
+    const result = produce(text, caret, { ...element, text })
+    text = result.text
+    caret = result.caret
+  }
+  return { text, caret }
+}
+
+/**
  * Every one of `members`'s own `zIndex` bumped one step up, subtree-
  * inclusive (`bumpZIndexSubtree`) — `groupSelection`'s floor renormalization
  * when `Z_MIN` would otherwise tie the new group's frame with its lowest
@@ -1321,12 +1353,7 @@ export function useCanvasInput({
    * lacks the new element, or a caret that predates the previous keystroke.
    * They wait here and are applied, in order, by the effect below.
    */
-  const pendingTextEditsRef = useRef<
-    Array<{
-      elementId: string
-      produce: (text: string, caret: number) => { text: string; caret: number }
-    }>
-  >([])
+  const pendingTextEditsRef = useRef<Array<PendingTextEdit>>([])
 
   // Latest-value refs. Window-level listeners (wheel, keydown) are attached
   // once and would otherwise close over the first render's scene and camera.
@@ -1347,18 +1374,11 @@ export function useCanvasInput({
     pendingTextEditsRef.current = []
     const element = latest.current.scene.byId.get(current.elementId)
     if (!element) return
-    let text = element.text ?? ''
-    let caret = current.caret
-    for (const { elementId, produce } of pending) {
-      if (elementId !== current.elementId) continue
-      const result = produce(text, caret)
-      text = result.text
-      caret = result.caret
-    }
+    const { text, caret } = foldPendingTextEdits(pending, element, current)
     setScene((prev) => updateElement(prev, current.elementId, { text }))
     setEditing({ ...current, caret })
     setCaretVisible(true)
-  })
+  }, [editing, scene, setScene, setEditing])
 
   const screenFromEvent = useCallback(
     (event: { clientX: number; clientY: number }): Point | null => {
@@ -1515,8 +1535,18 @@ export function useCanvasInput({
     editingRef.current = null
     setEditingState(null)
 
-    const element = latest.current.scene.byId.get(current.elementId)
+    let element = latest.current.scene.byId.get(current.elementId)
     if (!element) return
+
+    // Keys typed in the same frame as the commit are still queued; apply them
+    // first so the empty check and the persisted text both include them.
+    const queued = pendingTextEditsRef.current
+    pendingTextEditsRef.current = []
+    if (queued.length > 0) {
+      const { text } = foldPendingTextEdits(queued, element, current)
+      element = { ...element, text }
+      setScene((prev) => updateElement(prev, current.elementId, { text }))
+    }
 
     const isEmpty = (element.text ?? '').length === 0
     if (isEmpty && element.kind === 'text') {
@@ -3080,9 +3110,7 @@ export function useCanvasInput({
   // ── text-editing input (from TextInputProxy) ─────────────────────────────
 
   const applyTextEdit = useCallback(
-    (
-      produce: (text: string, caret: number) => { text: string; caret: number },
-    ) => {
+    (produce: PendingTextEdit['produce']) => {
       const pendingRender = editingRef.current
       if (!pendingRender) return
       if (
@@ -3098,11 +3126,16 @@ export function useCanvasInput({
       const current = pendingRender
       const element = latest.current.scene.byId.get(current.elementId)
       if (!element) return
-      const result = produce(element.text ?? '', current.caret)
+      const result = produce(element.text ?? '', current.caret, element)
       setScene((prev) =>
         updateElement(prev, current.elementId, { text: result.text }),
       )
       setEditing({ ...current, caret: result.caret })
+      // Mirror the new text into `latest` now: a commit in the same frame
+      // reads the scene from there and would otherwise miss this keystroke.
+      latest.current.scene = updateElement(latest.current.scene, current.elementId, {
+        text: result.text,
+      })
       setCaretVisible(true)
     },
     [setEditing, setScene],
@@ -3129,43 +3162,43 @@ export function useCanvasInput({
   /**
    * Move the caret vertically, which needs the laid-out lines — arrow up on
    * wrapped text must land on the visual line above, not `caret - lineLength`.
+   * Queued like every other text edit, so it lands on the caret the earlier
+   * keystrokes produced.
    */
   const moveCaretVertically = useCallback(
     (direction: 1 | -1) => {
-      const current = latest.current.editing
-      if (!current) return
-      const element = latest.current.scene.byId.get(current.elementId)
-      if (!element) return
-      const layout = layoutFor(element)
-      if (!layout) return
-      const here = pointFromCaret(layout, current.caret)
-      const target = caretFromPoint(layout, {
-        x: here.x,
-        y: here.y + direction * layout.lineHeight,
+      applyTextEdit((text, caret, element) => {
+        const layout = layoutFor({ ...element, text })
+        if (!layout) return { text, caret }
+        const here = pointFromCaret(layout, caret)
+        return {
+          text,
+          caret: caretFromPoint(layout, {
+            x: here.x,
+            y: here.y + direction * layout.lineHeight,
+          }),
+        }
       })
-      setEditing({ ...current, caret: target })
-      setCaretVisible(true)
     },
-    [layoutFor, setEditing],
+    [applyTextEdit, layoutFor],
   )
 
   const moveCaretToLineEdge = useCallback(
     (edge: 'start' | 'end') => {
-      const current = latest.current.editing
-      if (!current) return
-      const element = latest.current.scene.byId.get(current.elementId)
-      if (!element) return
-      const layout = layoutFor(element)
-      if (!layout) return
-      const here = pointFromCaret(layout, current.caret)
-      const target = caretFromPoint(layout, {
-        x: edge === 'start' ? 0 : Number.MAX_SAFE_INTEGER,
-        y: here.y,
+      applyTextEdit((text, caret, element) => {
+        const layout = layoutFor({ ...element, text })
+        if (!layout) return { text, caret }
+        const here = pointFromCaret(layout, caret)
+        return {
+          text,
+          caret: caretFromPoint(layout, {
+            x: edge === 'start' ? 0 : Number.MAX_SAFE_INTEGER,
+            y: here.y,
+          }),
+        }
       })
-      setEditing({ ...current, caret: target })
-      setCaretVisible(true)
     },
-    [layoutFor, setEditing],
+    [applyTextEdit, layoutFor],
   )
 
   /**
@@ -3176,8 +3209,7 @@ export function useCanvasInput({
    */
   const onEditingKeyDown = useCallback(
     (event: ReactKeyboardEvent<HTMLTextAreaElement>): boolean => {
-      const current = latest.current.editing
-      if (!current) return false
+      if (!editingRef.current) return false
 
       switch (event.key) {
         case 'ArrowLeft':

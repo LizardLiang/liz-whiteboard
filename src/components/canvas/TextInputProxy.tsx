@@ -54,7 +54,7 @@ export function TextInputProxy({
     if (!element) return
     if (active) element.focus({ preventScroll: true })
     else if (document.activeElement === element) element.blur()
-  }, [active])
+  }, [active, ref])
 
   const handleCompositionStart = (
     event: CompositionEvent<HTMLTextAreaElement>,

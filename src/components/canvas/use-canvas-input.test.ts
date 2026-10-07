@@ -16,7 +16,7 @@
 
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { act, renderHook } from '@testing-library/react'
-import { useCanvasInput } from './use-canvas-input'
+import { foldPendingTextEdits, useCanvasInput } from './use-canvas-input'
 import type { CanvasElement, Scene } from '@/lib/canvas-engine/scene'
 import type { Camera } from '@/lib/canvas-engine/camera'
 import type { CanvasTool } from './use-canvas-input'
@@ -2928,5 +2928,55 @@ describe('alignment guides during a drag and a resize', () => {
     })
     h.sync()
     expect(h.api.alignmentGuides).toEqual([])
+  })
+})
+
+describe('queued text edits', () => {
+  it('folds queued edits in order, each seeing the text and caret the last left', () => {
+    const element = makeText({ text: 'ab' })
+    const seen: Array<string> = []
+    const result = foldPendingTextEdits(
+      [
+        {
+          elementId: TEXT_ID,
+          produce: (text, caret) => ({ text: text + 'c', caret: caret + 1 }),
+        },
+        {
+          elementId: TEXT_ID,
+          produce: (text, caret, el) => {
+            seen.push(el.text ?? '')
+            return { text, caret: caret - 2 }
+          },
+        },
+        {
+          elementId: 'other',
+          produce: () => ({ text: 'ignored', caret: 0 }),
+        },
+      ],
+      element,
+      { elementId: TEXT_ID, caret: 2 },
+    )
+    expect(result).toEqual({ text: 'abc', caret: 1 })
+    expect(seen).toEqual(['abc'])
+  })
+
+  it('keeps a key typed in the same frame as a commit', () => {
+    const h = setup([makeText({ text: 'hi' })])
+    act(() => {
+      h.api.setSelectedIds(new Set([TEXT_ID]))
+    })
+    h.sync()
+    act(() => {
+      h.api.boardHandlers.onKeyDown(keyEvent('Enter'))
+    })
+    h.sync()
+
+    act(() => {
+      h.api.textInput.insertText('!')
+      h.api.textInput.commitEditing()
+    })
+    expect(h.callbacks.onUpdate).toHaveBeenCalledTimes(1)
+    const [updated] = h.callbacks.onUpdate.mock.calls[0] as [Array<CanvasElement>]
+    expect(updated[0].text).toBe('hi!')
   })
 })
