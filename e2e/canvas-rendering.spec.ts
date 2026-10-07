@@ -31,7 +31,7 @@ import {
   zoomAboveLodThreshold,
   zoomBelowLodThreshold,
 } from './canvas-helpers'
-import { IDS } from './fixtures'
+import { IDS, clickMoreTool } from './fixtures'
 import type { Locator, Page } from '@playwright/test'
 
 // Small enough to keep the e2e fast/deterministic, large enough to exercise
@@ -331,7 +331,7 @@ test.describe('Canvas node rendering — Phase 4 (parity sweep)', () => {
 
     await captureNextDownloadDataUrl(page)
 
-    await page.getByRole('button', { name: 'Export as image' }).click()
+    await clickMoreTool(page, 'Export as image')
     await expect(
       page.getByRole('heading', { name: 'Export as Image' }),
     ).toBeVisible()

@@ -99,7 +99,7 @@ test.describe('ERD hides shapes and connectors', () => {
     }
     await expect(connectorEdge(visitor, IDS.shapeConnector)).toHaveCount(0)
     await expect(
-      visitor.locator('[data-testid="shape-tool-palette"]'),
+      visitor.getByRole('button', { name: 'Add area' }),
     ).toHaveCount(0)
 
     await context.close()

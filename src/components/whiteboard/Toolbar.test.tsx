@@ -3,6 +3,7 @@
 
 import { describe, expect, it, vi } from 'vitest'
 import { fireEvent, render, screen, waitFor } from '@testing-library/react'
+import userEvent from '@testing-library/user-event'
 import { CARDINALITIES, REFERENCE_DRAG_MIME, Toolbar } from './Toolbar'
 
 // ---------------------------------------------------------------------------
@@ -25,6 +26,11 @@ function makeTable(id: string) {
     updatedAt: new Date(),
     columns: [],
   }
+}
+
+/** Open the More tools menu and return once its items are mounted. */
+async function openMoreTools() {
+  await userEvent.click(screen.getByRole('button', { name: 'More tools' }))
 }
 
 function renderToolbar(
@@ -68,10 +74,9 @@ describe('Toolbar Auto Layout button', () => {
   // TC-AL-T-04 — Loading spinner when isAutoLayoutRunning === true
   it('TC-AL-T-04: shows loading state and is disabled when isAutoLayoutRunning is true', () => {
     renderToolbar({ tableCount: 5, isAutoLayoutRunning: true })
-    const btns = screen.getAllByRole('button')
-    const autoLayoutBtn = btns.find((b) => /running/i.test(b.textContent))
-    expect(autoLayoutBtn).toBeDefined()
-    expect(autoLayoutBtn!.hasAttribute('disabled')).toBe(true)
+    const autoLayoutBtn = screen.getByRole('button', { name: /auto layout/i })
+    expect(autoLayoutBtn.getAttribute('aria-busy')).toBe('true')
+    expect(autoLayoutBtn.hasAttribute('disabled')).toBe(true)
   })
 
   // TC-AL-T-05 — Button click calls onAutoLayoutClick when enabled
@@ -225,45 +230,58 @@ describe('Toolbar dialog stays open on create failure', () => {
 // image-export tactical plan (Issue #104): Toolbar Export button + dialog
 // ---------------------------------------------------------------------------
 
-describe('Toolbar Export button', () => {
-  it('is not rendered when onExport is omitted', () => {
+describe('Toolbar Export menu item', () => {
+  it('is not rendered when onExport is omitted', async () => {
     renderToolbar({})
+    await openMoreTools()
     expect(
-      screen.queryByRole('button', { name: /export as image/i }),
+      screen.queryByRole('menuitem', { name: /export as image/i }),
     ).toBeNull()
   })
 
-  it('renders when onExport is provided', () => {
+  it('renders when onExport is provided', async () => {
     renderToolbar({ onExport: vi.fn(), canExport: true })
+    await openMoreTools()
     expect(
-      screen.getByRole('button', { name: /export as image/i }),
+      screen.getByRole('menuitem', { name: /export as image/i }),
     ).toBeTruthy()
   })
 
-  it('is disabled when canExport is false', () => {
+  it('is disabled when canExport is false', async () => {
     renderToolbar({ onExport: vi.fn(), canExport: false })
-    const btn = screen.getByRole('button', { name: /export as image/i })
-    expect(btn.hasAttribute('disabled')).toBe(true)
+    await openMoreTools()
+    const item = screen.getByRole('menuitem', { name: /export as image/i })
+    expect(item.getAttribute('aria-disabled')).toBe('true')
   })
 
-  it('is enabled when canExport is true', () => {
+  it('is enabled when canExport is true', async () => {
     renderToolbar({ onExport: vi.fn(), canExport: true })
-    const btn = screen.getByRole('button', { name: /export as image/i })
-    expect(btn.hasAttribute('disabled')).toBe(false)
+    await openMoreTools()
+    const item = screen.getByRole('menuitem', { name: /export as image/i })
+    expect(item.hasAttribute('aria-disabled')).toBe(false)
   })
 
-  it('opens the export dialog when clicked', () => {
+  it('opens the export dialog when selected', async () => {
     renderToolbar({ onExport: vi.fn(), canExport: true })
-    fireEvent.click(screen.getByRole('button', { name: /export as image/i }))
-    expect(screen.getByText(/export as image/i)).toBeTruthy()
-    expect(screen.getByRole('button', { name: /^export$/i })).toBeTruthy()
+    await openMoreTools()
+    await userEvent.click(
+      screen.getByRole('menuitem', { name: /export as image/i }),
+    )
+    expect(
+      await screen.findByRole('button', { name: /^export$/i }),
+    ).toBeTruthy()
   })
 
   it('calls onExport with the default format/background when confirmed', async () => {
     const onExport = vi.fn().mockResolvedValue(undefined)
     renderToolbar({ onExport, canExport: true })
-    fireEvent.click(screen.getByRole('button', { name: /export as image/i }))
-    fireEvent.click(screen.getByRole('button', { name: /^export$/i }))
+    await openMoreTools()
+    await userEvent.click(
+      screen.getByRole('menuitem', { name: /export as image/i }),
+    )
+    await userEvent.click(
+      await screen.findByRole('button', { name: /^export$/i }),
+    )
 
     await waitFor(() => expect(onExport).toHaveBeenCalledTimes(1))
     expect(onExport).toHaveBeenCalledWith({
@@ -275,8 +293,13 @@ describe('Toolbar Export button', () => {
   it('shows an error toast and keeps working when onExport rejects', async () => {
     const onExport = vi.fn().mockRejectedValue(new Error('boom'))
     renderToolbar({ onExport, canExport: true })
-    fireEvent.click(screen.getByRole('button', { name: /export as image/i }))
-    fireEvent.click(screen.getByRole('button', { name: /^export$/i }))
+    await openMoreTools()
+    await userEvent.click(
+      screen.getByRole('menuitem', { name: /export as image/i }),
+    )
+    await userEvent.click(
+      await screen.findByRole('button', { name: /^export$/i }),
+    )
 
     await waitFor(() => expect(onExport).toHaveBeenCalledTimes(1))
     // Dialog closes regardless of success/failure — the rejection is caught
@@ -284,6 +307,32 @@ describe('Toolbar Export button', () => {
     await waitFor(() =>
       expect(screen.queryByRole('button', { name: /^export$/i })).toBeNull(),
     )
+  })
+})
+
+describe('Toolbar Area and Comment tool buttons', () => {
+  it('Area reflects the armed tool with aria-pressed and toggles back to select', () => {
+    const onSelectTool = vi.fn()
+    renderToolbar({ activeTool: 'area', onSelectTool, viewerRole: 'EDITOR' })
+    const area = screen.getByRole('button', { name: 'Add area' })
+    expect(area.getAttribute('aria-pressed')).toBe('true')
+    fireEvent.click(area)
+    expect(onSelectTool).toHaveBeenCalledWith('select')
+  })
+
+  it('Comment arms the comment tool and is hidden without canComment', () => {
+    const onSelectTool = vi.fn()
+    const { unmount } = renderToolbar({ onSelectTool, canComment: true })
+    fireEvent.click(screen.getByRole('button', { name: 'Add comment' }))
+    expect(onSelectTool).toHaveBeenCalledWith('comment')
+    unmount()
+    renderToolbar({ onSelectTool, canComment: false })
+    expect(screen.queryByRole('button', { name: 'Add comment' })).toBeNull()
+  })
+
+  it('Area is hidden for a VIEWER', () => {
+    renderToolbar({ onSelectTool: vi.fn(), viewerRole: 'VIEWER' })
+    expect(screen.queryByRole('button', { name: 'Add area' })).toBeNull()
   })
 })
 

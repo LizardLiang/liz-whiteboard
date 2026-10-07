@@ -7,7 +7,7 @@
 // it depends on the single-process prod server (see playwright.config.ts note).
 // We assert restore CORRECTNESS by reloading and checking the diagram content.
 import {  expect, test } from '@playwright/test'
-import { IDS } from './fixtures'
+import { IDS, clickMoreTool } from './fixtures'
 import { tableNode } from './canvas-helpers'
 import type {Page} from '@playwright/test';
 
@@ -26,7 +26,7 @@ async function openWhiteboard(page: Page) {
 }
 
 async function openHistoryPanel(page: Page) {
-  await page.getByRole('button', { name: 'Version history' }).click()
+  await clickMoreTool(page, 'Version history')
   await expect(
     page.getByRole('heading', { name: 'Version History' }),
   ).toBeVisible()

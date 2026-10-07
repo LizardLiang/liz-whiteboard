@@ -91,9 +91,6 @@ function WhiteboardEditor() {
   const [commentActions, setCommentActions] = useState<CommentActions | null>(
     null,
   )
-  const commentUnreadCount = comments.filter(
-    (c) => c.parentId === null && !c.resolved,
-  ).length
   const [textSource, setTextSource] = useState<string>('')
   const [isTextSyncEnabled] = useState(true)
   // React Flow display mode controls (set via callback)
@@ -560,26 +557,13 @@ function WhiteboardEditor() {
     <div className="flex flex-col h-full bg-background">
       {/* Whiteboard canvas */}
       <div className="flex-1 flex flex-col overflow-hidden">
-        {/* Canvas — React Flow renders its own Toolbar internally. */}
+        {/* Canvas — React Flow renders its own floating dock internally. */}
         <div className="flex-1 overflow-hidden relative">
           {!isZenMode && (
             <BoardChip
               boardId={whiteboardId}
               boardName={whiteboard.name}
-              // Sits below the toolbar row and clear of the drawing-tool
-              // palette until the toolbar floats over the canvas.
-              className="left-16 top-14"
               connectionState={connectionState}
-              trailing={
-                commentUnreadCount > 0 ? (
-                  <span
-                    className="rounded-full bg-destructive px-2 py-0.5 text-xs font-medium text-destructive-foreground"
-                    title={`${commentUnreadCount} unresolved comment thread${commentUnreadCount === 1 ? '' : 's'}`}
-                  >
-                    {commentUnreadCount} unresolved
-                  </span>
-                ) : undefined
-              }
             />
           )}
           <ReactFlowWhiteboard
@@ -599,7 +583,9 @@ function WhiteboardEditor() {
             whiteboardId={whiteboardId}
             userId={userId}
             showMinimap={whiteboard.tables.length > 0}
-            showControls={true}
+            // The dock carries zoom; zen mode hides the dock, so React Flow's
+            // own controls take over there.
+            showControls={isZenMode}
             nodesDraggable={canEdit}
             focusTableId={focusTable}
             viewerRole={viewerRole}

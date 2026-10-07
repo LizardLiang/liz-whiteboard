@@ -3,6 +3,8 @@
 // random) so the seed script and the specs agree without passing state
 // between the Node (Playwright) and Bun (seed) runtimes.
 
+import type { Page } from '@playwright/test'
+
 // Default matches `bun run dev`, which serves Vite on 3000 (server.prod.ts also
 // defaults to 3000; server.dev.ts is the separate Socket.IO process on 3010).
 // Nothing in this repo serves 3001 — the previous default meant the plain
@@ -332,3 +334,19 @@ export const IDS = {
 }
 
 export const STORAGE_STATE = 'e2e/.auth/state.json'
+
+/**
+ * Open the dock's "More tools" menu and click one of its items. Secondary
+ * tools (Import SQL, Version history, Export as image, Connect an MCP client,
+ * Zen mode, Keyboard shortcuts) live in this menu rather than on the dock.
+ */
+export async function clickMoreTool(page: Page, name: string | RegExp) {
+  await page.getByRole('button', { name: 'More tools' }).click()
+  await page.getByRole('menuitem', { name }).click()
+}
+
+/** Open the dock's zoom % menu and click one of its items (e.g. "Fit to screen"). */
+export async function clickZoomMenuItem(page: Page, name: string | RegExp) {
+  await page.getByTestId('zoom-menu-trigger').click()
+  await page.getByRole('menuitem', { name }).click()
+}

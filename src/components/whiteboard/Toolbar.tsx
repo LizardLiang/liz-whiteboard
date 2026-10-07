@@ -1,17 +1,21 @@
 // src/components/whiteboard/Toolbar.tsx
-// Toolbar component for whiteboard actions (Add Table, Add Relationship, Auto Layout)
+// Floating bottom dock for whiteboard actions: primary tools stay on the dock,
+// secondary tools live in the More menu, zoom lives in the zoom menu.
 
 import { useState } from 'react'
 import {
-  Download,
   ExternalLink,
-  HelpCircle,
-  History,
-  Link2,
+  LayoutGrid,
   Loader2,
-  Maximize2,
   MessageCircle,
+  MessageSquarePlus,
+  MoreHorizontal,
   Search,
+  SquareDashed,
+  Table2,
+  Waypoints,
+  ZoomIn,
+  ZoomOut,
 } from 'lucide-react'
 import { toast } from 'sonner'
 import { ExportImageDialog } from './ExportImageDialog'
@@ -24,6 +28,7 @@ import type {
   CreateTable,
 } from '@/data/schema'
 import type { ShowMode } from '@/lib/react-flow/types'
+import type { ToolMode } from '@/lib/react-flow/tool-mode'
 import type { EffectiveRole } from '@/data/permission'
 import type { DiagramAST } from '@/lib/parser/ast'
 import { Badge } from '@/components/ui/badge'
@@ -39,6 +44,17 @@ import {
   DialogTitle,
   DialogTrigger,
 } from '@/components/ui/dialog'
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuLabel,
+  DropdownMenuRadioGroup,
+  DropdownMenuRadioItem,
+  DropdownMenuSeparator,
+  DropdownMenuShortcut,
+  DropdownMenuTrigger,
+} from '@/components/ui/dropdown-menu'
 import { Input } from '@/components/ui/input'
 import { Textarea } from '@/components/ui/textarea'
 import {
@@ -48,11 +64,6 @@ import {
   SelectTrigger,
   SelectValue,
 } from '@/components/ui/select'
-import {
-  Popover,
-  PopoverContent,
-  PopoverTrigger,
-} from '@/components/ui/popover'
 import { McpConnectPanel } from '@/components/mcp/McpConnectPanel'
 
 /**
@@ -106,6 +117,16 @@ export interface ToolbarProps {
   zoomControls?: ZoomControls
   /** Current zoom level (0-5) for display */
   currentZoom?: number
+  /** Whether the canvas is locked against drag, connect and select. */
+  canvasLocked?: boolean
+  /** Toggle the canvas lock. When omitted, no lock item is rendered. */
+  onToggleCanvasLock?: () => void
+  /** Armed canvas tool; drives the pressed state of the Area and Comment buttons. */
+  activeTool?: ToolMode
+  /** Arm or disarm a canvas tool. When omitted, no Area or Comment button is rendered. */
+  onSelectTool?: (tool: ToolMode) => void
+  /** Whether the viewer may place comment pins. */
+  canComment?: boolean
   /** Current display mode */
   showMode?: ShowMode
   /** Callback when display mode changes */
@@ -185,11 +206,12 @@ export const CARDINALITIES: Array<{ value: Cardinality; label: string }> = [
 ]
 
 /**
- * Toolbar component for whiteboard actions
+ * Floating dock for whiteboard actions
  *
  * Features:
- * - Add Table button with dialog
- * - Add Relationship button with dialog
+ * - Add Table and Add Relationship buttons with dialogs
+ * - Reference, Area, Comment, Auto Layout, Search and Comments buttons
+ * - Zoom menu and a More menu holding the secondary tools
  * - Table creation form (name, description, initial columns)
  * - Relationship creation form (source/target table + column selection, cardinality)
  *
@@ -214,6 +236,11 @@ export function Toolbar({
   isAutoLayoutRunning = false,
   zoomControls,
   currentZoom = 1,
+  canvasLocked = false,
+  onToggleCanvasLock,
+  activeTool = 'select',
+  onSelectTool,
+  canComment = false,
   showMode = 'ALL_FIELDS',
   onShowModeChange,
   onZenModeToggle,
@@ -234,8 +261,10 @@ export function Toolbar({
   const canEdit =
     viewerRole === undefined || hasMinimumRole(viewerRole, 'EDITOR')
 
-  // Help dialog state
+  // Help dialog and MCP dialog state. Both open from More menu items, so they
+  // are controlled rather than wrapped around a trigger inside the menu.
   const [helpOpen, setHelpOpen] = useState(false)
+  const [mcpOpen, setMcpOpen] = useState(false)
 
   // Export dialog state
   const [exportDialogOpen, setExportDialogOpen] = useState(false)
@@ -342,15 +371,27 @@ export function Toolbar({
   const targetColumns =
     tables.find((t) => t.id === targetTableId)?.columns ?? []
 
+  const zoomPercent = Math.round(currentZoom * 100)
+  const showAreaTool = canEdit && onSelectTool !== undefined
+  const showCommentTool = canComment && onSelectTool !== undefined
+
+  const divider = (
+    <div className="mx-1 h-6 w-px shrink-0 bg-border" aria-hidden="true" />
+  )
+
   return (
     <div
-      className={`flex items-center gap-2 p-4 border-b bg-background ${className}`}
+      role="toolbar"
+      aria-label="Whiteboard tools"
+      data-testid="whiteboard-dock"
+      className={`absolute bottom-4 left-1/2 z-10 flex max-w-[calc(100%-2rem)] -translate-x-1/2 items-center gap-1 overflow-x-auto rounded-xl border bg-background/95 p-2 shadow-lg backdrop-blur-sm ${className}`}
     >
       {/* Add Table Dialog */}
       <Dialog open={tableDialogOpen} onOpenChange={setTableDialogOpen}>
         <DialogTrigger asChild>
           <Button
             variant="default"
+            size="sm"
             disabled={!canEdit}
             title={
               canEdit
@@ -358,6 +399,7 @@ export function Toolbar({
                 : 'You have view-only access to this whiteboard.'
             }
           >
+            <Table2 className="h-4 w-4" />
             Add Table
           </Button>
         </DialogTrigger>
@@ -410,35 +452,6 @@ export function Toolbar({
         </DialogContent>
       </Dialog>
 
-      {/* Reference another file's table (LizMeter #83). Draggable so it can
-          be dropped at an exact spot, clickable so a trackpad or touch user
-          can still place one. The drag payload is read by the canvas's
-          onDrop, which converts the screen point to flow coordinates. */}
-      {onAddReference && (
-        <Button
-          variant="outline"
-          disabled={!canEdit}
-          draggable={canEdit}
-          data-testid="add-reference-tool"
-          onDragStart={(event) => {
-            event.dataTransfer.setData(
-              REFERENCE_DRAG_MIME,
-              'external-table-reference',
-            )
-            event.dataTransfer.effectAllowed = 'copy'
-          }}
-          onClick={() => onAddReference()}
-          title={
-            canEdit
-              ? 'Drag onto the canvas, or click to place at the centre'
-              : 'You have view-only access to this whiteboard.'
-          }
-        >
-          <ExternalLink className="h-4 w-4" />
-          Reference
-        </Button>
-      )}
-
       {/* Add Relationship Dialog */}
       <Dialog
         open={relationshipDialogOpen}
@@ -447,6 +460,7 @@ export function Toolbar({
         <DialogTrigger asChild>
           <Button
             variant="default"
+            size="sm"
             disabled={tables.length < 2 || !canEdit}
             title={
               !canEdit
@@ -454,6 +468,7 @@ export function Toolbar({
                 : undefined
             }
           >
+            <Waypoints className="h-4 w-4" />
             Add Relationship
           </Button>
         </DialogTrigger>
@@ -590,27 +605,73 @@ export function Toolbar({
         </DialogContent>
       </Dialog>
 
-      {/* Import SQL — paste CREATE TABLE DDL to generate tables/columns/relationships */}
-      {onImportSql && (
-        <>
-          <Button
-            variant="outline"
-            disabled={!canEdit}
-            title={
-              canEdit
-                ? undefined
-                : 'You have view-only access to this whiteboard.'
-            }
-            onClick={() => setImportSqlOpen(true)}
-          >
-            Import SQL
-          </Button>
-          <ImportSqlDialog
-            open={importSqlOpen}
-            onOpenChange={setImportSqlOpen}
-            onImport={onImportSql}
-          />
-        </>
+      {/* Reference another file's table (LizMeter #83). Draggable so it can
+          be dropped at an exact spot, clickable so a trackpad or touch user
+          can still place one. The drag payload is read by the canvas's
+          onDrop, which converts the screen point to flow coordinates. */}
+      {onAddReference && (
+        <Button
+          variant="ghost"
+          size="icon"
+          disabled={!canEdit}
+          draggable={canEdit}
+          data-testid="add-reference-tool"
+          aria-label="Reference"
+          onDragStart={(event) => {
+            event.dataTransfer.setData(
+              REFERENCE_DRAG_MIME,
+              'external-table-reference',
+            )
+            event.dataTransfer.effectAllowed = 'copy'
+          }}
+          onClick={() => onAddReference()}
+          title={
+            canEdit
+              ? 'Reference: drag onto the canvas, or click to place at the centre'
+              : 'You have view-only access to this whiteboard.'
+          }
+        >
+          <ExternalLink className="h-4 w-4" />
+        </Button>
+      )}
+
+      {/* Area and Comment are tool modes: the pressed state shows which one
+          is armed. */}
+      {showAreaTool && (
+        <Button
+          variant={activeTool === 'area' ? 'default' : 'ghost'}
+          size="icon"
+          onClick={() =>
+            onSelectTool(activeTool === 'area' ? 'select' : 'area')
+          }
+          title={
+            activeTool === 'area'
+              ? 'Drag on the canvas to draw the area'
+              : 'Draw a subject area'
+          }
+          aria-label="Add area"
+          aria-pressed={activeTool === 'area'}
+        >
+          <SquareDashed className="h-4 w-4" />
+        </Button>
+      )}
+      {showCommentTool && (
+        <Button
+          variant={activeTool === 'comment' ? 'default' : 'ghost'}
+          size="icon"
+          onClick={() =>
+            onSelectTool(activeTool === 'comment' ? 'select' : 'comment')
+          }
+          title={
+            activeTool === 'comment'
+              ? 'Click the canvas to place a comment'
+              : 'Add a comment pin'
+          }
+          aria-label="Add comment"
+          aria-pressed={activeTool === 'comment'}
+        >
+          <MessageSquarePlus className="h-4 w-4" />
+        </Button>
       )}
 
       {/* Auto Layout Button */}
@@ -626,394 +687,369 @@ export function Toolbar({
         }
       >
         <Button
-          variant="outline"
+          variant="ghost"
+          size="icon"
+          aria-label="Auto Layout"
+          aria-busy={isAutoLayoutRunning}
           disabled={tableCount < 2 || isAutoLayoutRunning}
           onClick={() => void onAutoLayoutClick?.()}
         >
           {isAutoLayoutRunning ? (
-            <>
-              <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-              Running…
-            </>
+            <Loader2 className="h-4 w-4 animate-spin" />
           ) : (
-            'Auto Layout'
+            <LayoutGrid className="h-4 w-4" />
           )}
         </Button>
       </span>
 
-      {/* Display Mode Toggle */}
-      {onShowModeChange && (
-        <div className="flex items-center gap-2 border-l pl-4">
-          <Label className="text-sm text-muted-foreground">Display:</Label>
-          <div className="flex items-center gap-1">
-            <Button
-              variant={showMode === 'TABLE_NAME' ? 'default' : 'outline'}
-              size="sm"
-              onClick={() => onShowModeChange('TABLE_NAME')}
-              title="Show table names only"
-            >
-              Compact
-            </Button>
-            <Button
-              variant={showMode === 'KEY_ONLY' ? 'default' : 'outline'}
-              size="sm"
-              onClick={() => onShowModeChange('KEY_ONLY')}
-              title="Show table names and primary/foreign keys"
-            >
-              Keys
-            </Button>
-            <Button
-              variant={showMode === 'ALL_FIELDS' ? 'default' : 'outline'}
-              size="sm"
-              onClick={() => onShowModeChange('ALL_FIELDS')}
-              title="Show all columns"
-            >
-              All
-            </Button>
-          </div>
-        </div>
+      {(onOpenSearch || onOpenComments) && divider}
+
+      {onOpenSearch && (
+        <Button
+          variant="ghost"
+          size="icon"
+          title="Search tables and columns (Ctrl/Cmd+K)"
+          onClick={onOpenSearch}
+        >
+          <Search className="h-4 w-4" />
+        </Button>
       )}
 
-      {/* Spacer to push zoom controls to the right */}
-      <div className="flex-1" />
+      {/* Canvas comments (GH #110) — visible to VIEWER+; the panel itself
+          is rendered by the caller (route) to avoid a circular import,
+          same rationale as the history panel in the More menu. */}
+      {onOpenComments && (
+        <Button
+          variant="ghost"
+          size="icon"
+          title="Comments"
+          aria-label="Comments"
+          className="relative"
+          onClick={onOpenComments}
+        >
+          <MessageCircle className="h-4 w-4" />
+          {commentUnreadCount > 0 && (
+            <Badge
+              variant="destructive"
+              data-testid="comments-unresolved-badge"
+              title={`${commentUnreadCount} unresolved comment thread${commentUnreadCount === 1 ? '' : 's'}`}
+              className="absolute -right-1 -top-1 h-4 min-w-4 justify-center rounded-full px-1 text-[10px]"
+            >
+              {commentUnreadCount}
+            </Badge>
+          )}
+        </Button>
+      )}
 
-      {/* Zoom Controls */}
       {zoomControls && (
-        <div className="flex items-center gap-2">
-          {/* Zoom Out */}
+        <>
+          {divider}
           <Button
-            variant="outline"
+            variant="ghost"
             size="icon"
             onClick={zoomControls.zoomOut}
             disabled={currentZoom <= 0.1}
             title="Zoom Out (Ctrl/Cmd + -)"
           >
-            <svg
-              xmlns="http://www.w3.org/2000/svg"
-              width="16"
-              height="16"
-              viewBox="0 0 24 24"
-              fill="none"
-              stroke="currentColor"
-              strokeWidth="2"
-              strokeLinecap="round"
-              strokeLinejoin="round"
-            >
-              <circle cx="11" cy="11" r="8" />
-              <path d="m21 21-4.35-4.35" />
-              <line x1="8" y1="11" x2="14" y2="11" />
-            </svg>
+            <ZoomOut className="h-4 w-4" />
           </Button>
 
-          {/* Zoom Level Display */}
-          <div className="flex items-center justify-center min-w-[60px] px-2 py-1 text-sm font-medium text-muted-foreground">
-            {Math.round(currentZoom * 100)}%
-          </div>
+          <DropdownMenu modal={false}>
+            <DropdownMenuTrigger asChild>
+              <Button
+                variant="ghost"
+                size="sm"
+                className="min-w-14 tabular-nums"
+                title="Zoom options"
+                data-testid="zoom-menu-trigger"
+              >
+                {zoomPercent}%
+              </Button>
+            </DropdownMenuTrigger>
+            <DropdownMenuContent side="top" align="center" className="w-52">
+              <DropdownMenuItem onSelect={zoomControls.zoomIn}>
+                Zoom in
+                <DropdownMenuShortcut>Ctrl/Cmd +</DropdownMenuShortcut>
+              </DropdownMenuItem>
+              <DropdownMenuItem onSelect={zoomControls.zoomOut}>
+                Zoom out
+                <DropdownMenuShortcut>Ctrl/Cmd -</DropdownMenuShortcut>
+              </DropdownMenuItem>
+              <DropdownMenuItem onSelect={zoomControls.fitToScreen}>
+                Fit to screen
+              </DropdownMenuItem>
+              <DropdownMenuItem onSelect={zoomControls.resetZoom}>
+                Reset to 100%
+                <DropdownMenuShortcut>Ctrl/Cmd 0</DropdownMenuShortcut>
+              </DropdownMenuItem>
+              {onToggleCanvasLock && (
+                <>
+                  <DropdownMenuSeparator />
+                  <DropdownMenuItem onSelect={onToggleCanvasLock}>
+                    {canvasLocked ? 'Unlock canvas' : 'Lock canvas'}
+                  </DropdownMenuItem>
+                </>
+              )}
+            </DropdownMenuContent>
+          </DropdownMenu>
 
-          {/* Zoom In */}
           <Button
-            variant="outline"
+            variant="ghost"
             size="icon"
             onClick={zoomControls.zoomIn}
             disabled={currentZoom >= 5}
             title="Zoom In (Ctrl/Cmd + +)"
           >
-            <svg
-              xmlns="http://www.w3.org/2000/svg"
-              width="16"
-              height="16"
-              viewBox="0 0 24 24"
-              fill="none"
-              stroke="currentColor"
-              strokeWidth="2"
-              strokeLinecap="round"
-              strokeLinejoin="round"
-            >
-              <circle cx="11" cy="11" r="8" />
-              <path d="m21 21-4.35-4.35" />
-              <line x1="11" y1="8" x2="11" y2="14" />
-              <line x1="8" y1="11" x2="14" y2="11" />
-            </svg>
+            <ZoomIn className="h-4 w-4" />
           </Button>
-
-          {/* Fit to Screen */}
-          <Button
-            variant="outline"
-            size="icon"
-            onClick={zoomControls.fitToScreen}
-            title="Fit to Screen"
-          >
-            <svg
-              xmlns="http://www.w3.org/2000/svg"
-              width="16"
-              height="16"
-              viewBox="0 0 24 24"
-              fill="none"
-              stroke="currentColor"
-              strokeWidth="2"
-              strokeLinecap="round"
-              strokeLinejoin="round"
-            >
-              <path d="M8 3H5a2 2 0 0 0-2 2v3" />
-              <path d="M21 8V5a2 2 0 0 0-2-2h-3" />
-              <path d="M3 16v3a2 2 0 0 0 2 2h3" />
-              <path d="M16 21h3a2 2 0 0 0 2-2v-3" />
-            </svg>
-          </Button>
-
-          {/* Reset Zoom */}
-          <Button
-            variant="outline"
-            size="icon"
-            onClick={zoomControls.resetZoom}
-            title="Reset Zoom (Ctrl/Cmd + 0)"
-          >
-            <svg
-              xmlns="http://www.w3.org/2000/svg"
-              width="16"
-              height="16"
-              viewBox="0 0 24 24"
-              fill="none"
-              stroke="currentColor"
-              strokeWidth="2"
-              strokeLinecap="round"
-              strokeLinejoin="round"
-            >
-              <path d="M3 12a9 9 0 0 1 9-9 9.75 9.75 0 0 1 6.74 2.74L21 8" />
-              <path d="M21 3v5h-5" />
-              <path d="M21 12a9 9 0 0 1-9 9 9.75 9.75 0 0 1-6.74-2.74L3 16" />
-              <path d="M8 16H3v5" />
-            </svg>
-          </Button>
-        </div>
+        </>
       )}
 
-      {/* Help button — keyboard shortcuts reference */}
-      <div className="border-l pl-2 flex items-center gap-1">
-        {onOpenSearch && (
+      {divider}
+
+      {/* Secondary tools. Each item opens a controlled dialog or a panel
+          owned by this component or the caller. The menu is
+          non-modal so a dialog opened from an item does not inherit the
+          menu's pointer-events lock. */}
+      <DropdownMenu modal={false}>
+        <DropdownMenuTrigger asChild>
           <Button
-            variant="outline"
+            variant="ghost"
             size="icon"
-            title="Search tables and columns (Ctrl/Cmd+K)"
-            onClick={onOpenSearch}
+            title="More tools"
+            aria-label="More tools"
+            data-testid="more-tools-trigger"
           >
-            <Search className="h-4 w-4" />
+            <MoreHorizontal className="h-4 w-4" />
           </Button>
-        )}
-        <Dialog open={helpOpen} onOpenChange={setHelpOpen}>
-          <DialogTrigger asChild>
-            <Button variant="outline" size="icon" title="Keyboard shortcuts">
-              <HelpCircle className="h-4 w-4" />
-            </Button>
-          </DialogTrigger>
-          <DialogContent className="sm:max-w-[420px]">
+        </DropdownMenuTrigger>
+        <DropdownMenuContent side="top" align="end" className="w-56">
+          {onImportSql && (
+            <DropdownMenuItem
+              disabled={!canEdit}
+              title={
+                canEdit
+                  ? undefined
+                  : 'You have view-only access to this whiteboard.'
+              }
+              onSelect={() => setImportSqlOpen(true)}
+            >
+              Import SQL
+            </DropdownMenuItem>
+          )}
+          {onShowModeChange && (
+            <>
+              {onImportSql && <DropdownMenuSeparator />}
+              <DropdownMenuLabel>Show columns</DropdownMenuLabel>
+              <DropdownMenuRadioGroup
+                value={showMode}
+                onValueChange={(value) => onShowModeChange(value as ShowMode)}
+              >
+                <DropdownMenuRadioItem
+                  value="TABLE_NAME"
+                  title="Show table names only"
+                >
+                  Compact
+                </DropdownMenuRadioItem>
+                <DropdownMenuRadioItem
+                  value="KEY_ONLY"
+                  title="Show table names and primary/foreign keys"
+                >
+                  Keys
+                </DropdownMenuRadioItem>
+                <DropdownMenuRadioItem
+                  value="ALL_FIELDS"
+                  title="Show all columns"
+                >
+                  All
+                </DropdownMenuRadioItem>
+              </DropdownMenuRadioGroup>
+            </>
+          )}
+          {(onOpenHistory || mcpEndpointUrl || onExport) && (
+            <DropdownMenuSeparator />
+          )}
+          {/* Version history (GH #107) — visible to VIEWER+; Save/Restore
+                inside the panel are gated to EDITOR+. The panel itself is
+                rendered by the caller (not here) to avoid a circular
+                import: the panel's preview reuses ReactFlowWhiteboard,
+                which is this Toolbar's own parent. */}
+          {onOpenHistory && (
+            <DropdownMenuItem onSelect={onOpenHistory}>
+              Version history
+            </DropdownMenuItem>
+          )}
+          {/* MCP client connect popover — one McpConnectPanel mount, the
+                other is on /settings/connections. Public-share exclusion
+                comes from the caller passing no endpoint. */}
+          {mcpEndpointUrl && (
+            <DropdownMenuItem
+              onSelect={() => {
+                setMcpOpen(true)
+              }}
+            >
+              Connect an MCP client
+            </DropdownMenuItem>
+          )}
+          {onExport && (
+            <DropdownMenuItem
+              disabled={!canExport}
+              title={canExport ? undefined : 'Add a table to export'}
+              onSelect={() => setExportDialogOpen(true)}
+            >
+              Export as image
+            </DropdownMenuItem>
+          )}
+          <DropdownMenuSeparator />
+          {onZenModeToggle && (
+            <DropdownMenuItem onSelect={onZenModeToggle}>
+              Zen mode
+              <DropdownMenuShortcut>z</DropdownMenuShortcut>
+            </DropdownMenuItem>
+          )}
+          <DropdownMenuItem onSelect={() => setHelpOpen(true)}>
+            Keyboard shortcuts
+          </DropdownMenuItem>
+        </DropdownMenuContent>
+      </DropdownMenu>
+
+      {mcpEndpointUrl && (
+        <Dialog open={mcpOpen} onOpenChange={setMcpOpen}>
+          <DialogContent className="sm:max-w-[460px]">
             <DialogHeader>
-              <DialogTitle>Keyboard Shortcuts</DialogTitle>
+              <DialogTitle>Connect an MCP client</DialogTitle>
             </DialogHeader>
-            <table className="w-full text-sm">
-              <thead>
-                <tr className="border-b">
-                  <th className="py-2 text-left font-medium text-muted-foreground">
-                    Key
-                  </th>
-                  <th className="py-2 text-left font-medium text-muted-foreground">
-                    Action
-                  </th>
-                </tr>
-              </thead>
-              <tbody className="divide-y">
-                <tr>
-                  <td className="py-2 pr-4">
-                    <kbd className="rounded border px-1.5 py-0.5 font-mono text-xs">
-                      Ctrl/Cmd
-                    </kbd>
-                    {' + '}
-                    <kbd className="rounded border px-1.5 py-0.5 font-mono text-xs">
-                      K
-                    </kbd>
-                  </td>
-                  <td className="py-2">Search tables and columns</td>
-                </tr>
-                <tr>
-                  <td className="py-2 pr-4">
-                    <kbd className="rounded border px-1.5 py-0.5 font-mono text-xs">
-                      z
-                    </kbd>
-                  </td>
-                  <td className="py-2">Toggle Zen Mode</td>
-                </tr>
-                <tr>
-                  <td className="py-2 pr-4">
-                    <kbd className="rounded border px-1.5 py-0.5 font-mono text-xs">
-                      f
-                    </kbd>
-                  </td>
-                  <td className="py-2">Open Focus Overlay on selected table</td>
-                </tr>
-                <tr>
-                  <td className="py-2 pr-4">
-                    <kbd className="rounded border px-1.5 py-0.5 font-mono text-xs">
-                      m
-                    </kbd>
-                  </td>
-                  <td className="py-2">Expand/focus the minimap</td>
-                </tr>
-                <tr>
-                  <td className="py-2 pr-4">
-                    <kbd className="rounded border px-1.5 py-0.5 font-mono text-xs">
-                      Delete
-                    </kbd>
-                    {' / '}
-                    <kbd className="rounded border px-1.5 py-0.5 font-mono text-xs">
-                      Backspace
-                    </kbd>
-                  </td>
-                  <td className="py-2">Delete selected table</td>
-                </tr>
-                <tr>
-                  <td className="py-2 pr-4">
-                    <kbd className="rounded border px-1.5 py-0.5 font-mono text-xs">
-                      Ctrl/Cmd
-                    </kbd>
-                    {' + '}
-                    <kbd className="rounded border px-1.5 py-0.5 font-mono text-xs">
-                      -
-                    </kbd>
-                  </td>
-                  <td className="py-2">Zoom Out</td>
-                </tr>
-                <tr>
-                  <td className="py-2 pr-4">
-                    <kbd className="rounded border px-1.5 py-0.5 font-mono text-xs">
-                      Ctrl/Cmd
-                    </kbd>
-                    {' + '}
-                    <kbd className="rounded border px-1.5 py-0.5 font-mono text-xs">
-                      +
-                    </kbd>
-                  </td>
-                  <td className="py-2">Zoom In</td>
-                </tr>
-                <tr>
-                  <td className="py-2 pr-4">
-                    <kbd className="rounded border px-1.5 py-0.5 font-mono text-xs">
-                      Ctrl/Cmd
-                    </kbd>
-                    {' + '}
-                    <kbd className="rounded border px-1.5 py-0.5 font-mono text-xs">
-                      0
-                    </kbd>
-                  </td>
-                  <td className="py-2">Reset zoom to 100%</td>
-                </tr>
-              </tbody>
-            </table>
+            <McpConnectPanel endpointUrl={mcpEndpointUrl} />
           </DialogContent>
         </Dialog>
-
-        {/* MCP client connect popover — one McpConnectPanel mount, the other
-            is on /settings/connections (tactical plan:
-            2026-08-06-mcp-client-install-commands). Guard + public-share
-            exclusion carried over unchanged from the single-platform button
-            this replaces. */}
-        {mcpEndpointUrl && (
-          <Popover>
-            <PopoverTrigger asChild>
-              <Button
-                variant="outline"
-                size="icon"
-                title="Connect an MCP client"
-                aria-label="Connect an MCP client"
-              >
-                <Link2 className="h-4 w-4" />
-              </Button>
-            </PopoverTrigger>
-            <PopoverContent align="end" className="w-[420px] max-w-[90vw]">
-              <McpConnectPanel endpointUrl={mcpEndpointUrl} />
-            </PopoverContent>
-          </Popover>
-        )}
-
-        {/* Version history (GH #107) — visible to VIEWER+; Save/Restore
-            inside the panel are gated to EDITOR+. The panel itself is
-            rendered by the caller (not here) to avoid a circular import:
-            the panel's preview reuses ReactFlowWhiteboard, which is this
-            Toolbar's own parent. */}
-        {onOpenHistory && (
-          <Button
-            variant="outline"
-            size="icon"
-            title="Version history"
-            aria-label="Version history"
-            onClick={onOpenHistory}
-          >
-            <History className="h-4 w-4" />
-          </Button>
-        )}
-
-        {/* Canvas comments (GH #110) — visible to VIEWER+; the panel itself
-            is rendered by the caller (route) to avoid a circular import,
-            same rationale as the history panel above. */}
-        {onOpenComments && (
-          <Button
-            variant="outline"
-            size="icon"
-            title="Comments"
-            aria-label="Comments"
-            className="relative"
-            onClick={onOpenComments}
-          >
-            <MessageCircle className="h-4 w-4" />
-            {commentUnreadCount > 0 && (
-              <Badge
-                variant="destructive"
-                className="absolute -right-1.5 -top-1.5 h-4 min-w-4 justify-center rounded-full px-1 text-[10px]"
-              >
-                {commentUnreadCount}
-              </Badge>
-            )}
-          </Button>
-        )}
-      </div>
-
-      {/* Zen Mode — hides all chrome, leaving only the canvas */}
-      {onZenModeToggle && (
-        <Button
-          variant="outline"
-          size="icon"
-          onClick={onZenModeToggle}
-          title="Zen Mode (z)"
-        >
-          <Maximize2 className="h-4 w-4" />
-        </Button>
       )}
 
-      {/* Export diagram as image */}
+      <Dialog open={helpOpen} onOpenChange={setHelpOpen}>
+        <DialogContent className="sm:max-w-[420px]">
+          <DialogHeader>
+            <DialogTitle>Keyboard Shortcuts</DialogTitle>
+          </DialogHeader>
+          <table className="w-full text-sm">
+            <thead>
+              <tr className="border-b">
+                <th className="py-2 text-left font-medium text-muted-foreground">
+                  Key
+                </th>
+                <th className="py-2 text-left font-medium text-muted-foreground">
+                  Action
+                </th>
+              </tr>
+            </thead>
+            <tbody className="divide-y">
+              <tr>
+                <td className="py-2 pr-4">
+                  <kbd className="rounded border px-1.5 py-0.5 font-mono text-xs">
+                    Ctrl/Cmd
+                  </kbd>
+                  {' + '}
+                  <kbd className="rounded border px-1.5 py-0.5 font-mono text-xs">
+                    K
+                  </kbd>
+                </td>
+                <td className="py-2">Search tables and columns</td>
+              </tr>
+              <tr>
+                <td className="py-2 pr-4">
+                  <kbd className="rounded border px-1.5 py-0.5 font-mono text-xs">
+                    z
+                  </kbd>
+                </td>
+                <td className="py-2">Toggle Zen Mode</td>
+              </tr>
+              <tr>
+                <td className="py-2 pr-4">
+                  <kbd className="rounded border px-1.5 py-0.5 font-mono text-xs">
+                    f
+                  </kbd>
+                </td>
+                <td className="py-2">Open Focus Overlay on selected table</td>
+              </tr>
+              <tr>
+                <td className="py-2 pr-4">
+                  <kbd className="rounded border px-1.5 py-0.5 font-mono text-xs">
+                    m
+                  </kbd>
+                </td>
+                <td className="py-2">Expand/focus the minimap</td>
+              </tr>
+              <tr>
+                <td className="py-2 pr-4">
+                  <kbd className="rounded border px-1.5 py-0.5 font-mono text-xs">
+                    Delete
+                  </kbd>
+                  {' / '}
+                  <kbd className="rounded border px-1.5 py-0.5 font-mono text-xs">
+                    Backspace
+                  </kbd>
+                </td>
+                <td className="py-2">Delete selected table</td>
+              </tr>
+              <tr>
+                <td className="py-2 pr-4">
+                  <kbd className="rounded border px-1.5 py-0.5 font-mono text-xs">
+                    Ctrl/Cmd
+                  </kbd>
+                  {' + '}
+                  <kbd className="rounded border px-1.5 py-0.5 font-mono text-xs">
+                    -
+                  </kbd>
+                </td>
+                <td className="py-2">Zoom Out</td>
+              </tr>
+              <tr>
+                <td className="py-2 pr-4">
+                  <kbd className="rounded border px-1.5 py-0.5 font-mono text-xs">
+                    Ctrl/Cmd
+                  </kbd>
+                  {' + '}
+                  <kbd className="rounded border px-1.5 py-0.5 font-mono text-xs">
+                    +
+                  </kbd>
+                </td>
+                <td className="py-2">Zoom In</td>
+              </tr>
+              <tr>
+                <td className="py-2 pr-4">
+                  <kbd className="rounded border px-1.5 py-0.5 font-mono text-xs">
+                    Ctrl/Cmd
+                  </kbd>
+                  {' + '}
+                  <kbd className="rounded border px-1.5 py-0.5 font-mono text-xs">
+                    0
+                  </kbd>
+                </td>
+                <td className="py-2">Reset zoom to 100%</td>
+              </tr>
+            </tbody>
+          </table>
+        </DialogContent>
+      </Dialog>
+
+      {onImportSql && (
+        <ImportSqlDialog
+          open={importSqlOpen}
+          onOpenChange={setImportSqlOpen}
+          onImport={onImportSql}
+        />
+      )}
+
       {onExport && (
-        <>
-          <span title={canExport ? 'Export as image' : 'Add a table to export'}>
-            <Button
-              variant="outline"
-              size="icon"
-              disabled={!canExport}
-              onClick={() => setExportDialogOpen(true)}
-              aria-label="Export as image"
-            >
-              <Download className="h-4 w-4" />
-            </Button>
-          </span>
-          <ExportImageDialog
-            open={exportDialogOpen}
-            onOpenChange={setExportDialogOpen}
-            onExport={async (opts) => {
-              try {
-                await onExport(opts)
-              } catch {
-                toast.error('Export failed')
-              }
-            }}
-          />
-        </>
+        <ExportImageDialog
+          open={exportDialogOpen}
+          onOpenChange={setExportDialogOpen}
+          onExport={async (opts) => {
+            try {
+              await onExport(opts)
+            } catch {
+              toast.error('Export failed')
+            }
+          }}
+        />
       )}
     </div>
   )

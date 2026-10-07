@@ -36,7 +36,7 @@
 // session global-setup.ts logged in with survives them.
 import { execFileSync } from 'node:child_process'
 import { expect, test } from '@playwright/test'
-import { IDS } from './fixtures'
+import { IDS, clickZoomMenuItem } from './fixtures'
 import { tableNode } from './canvas-helpers'
 import type { Locator, Page } from '@playwright/test'
 
@@ -238,7 +238,7 @@ test.describe('space-to-pan on the ER board', () => {
     // "Fit to Screen" is chosen deliberately: a real toolbar button that opens
     // no panel or dropdown, and whose own effect (a re-fit) settles before the
     // baseline below is read.
-    await page.locator('button[title="Fit to Screen"]').click()
+    await clickZoomMenuItem(page, 'Fit to screen')
     await waitForViewportSettled(page)
     await expect
       .poll(() => page.evaluate(() => document.activeElement?.tagName))

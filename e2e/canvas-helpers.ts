@@ -42,13 +42,13 @@ export async function getViewportScale(page: Page): Promise<number> {
   return parseFloat(match[1])
 }
 
-/** Zoom out via the Controls "zoom out" button until the board is below
+/** Zoom out via the dock's zoom out button until the board is below
  * LOD_ZOOM_THRESHOLD — reproduces the dense-board working zoom canvas mode
  * is actually used at (the seeded stress board's own fitView scale can land
  * above OR below the threshold depending on table count/viewport, so this
  * drives it deliberately below rather than relying on fitView alone). */
 export async function zoomBelowLodThreshold(page: Page) {
-  const zoomOutButton = page.locator('.react-flow__controls-zoomout')
+  const zoomOutButton = page.getByTitle('Zoom Out (Ctrl/Cmd + -)')
   for (let i = 0; i < 30; i++) {
     if ((await getViewportScale(page)) < LOD_ZOOM_THRESHOLD) return
     await zoomOutButton.click()
@@ -71,12 +71,12 @@ export const HEADER_H = 34
 export const ROW_H = 28
 export const PAD_X = 12
 
-/** Zoom in via the Controls "zoom in" button until the board is AT OR ABOVE
+/** Zoom in via the dock's zoom in button until the board is AT OR ABOVE
  * LOD_ZOOM_THRESHOLD — proves the collapse reverses cleanly (not a stuck
  * state) once zoomed back in, and reproduces the zoom a per-column
  * chrome-light row still exists at. */
 export async function zoomAboveLodThreshold(page: Page) {
-  const zoomInButton = page.locator('.react-flow__controls-zoomin')
+  const zoomInButton = page.getByTitle('Zoom In (Ctrl/Cmd + +)')
   for (let i = 0; i < 30; i++) {
     if ((await getViewportScale(page)) >= LOD_ZOOM_THRESHOLD) return
     await zoomInButton.click()

@@ -10,7 +10,7 @@
 // seeded users/orders board, and they are cleaned up at the end so the shared
 // board is left as it was found (global-setup also re-seeds every run).
 import {  expect, test } from '@playwright/test'
-import { IDS } from './fixtures'
+import { IDS, clickMoreTool } from './fixtures'
 import { tableNode } from './canvas-helpers'
 import type {Page} from '@playwright/test';
 
@@ -62,7 +62,7 @@ test.describe('Import SQL (Issue #105)', () => {
   }) => {
     await openWhiteboard(page)
 
-    await page.getByRole('button', { name: 'Import SQL' }).click()
+    await clickMoreTool(page, 'Import SQL')
     await expect(page.getByRole('heading', { name: 'Import SQL' })).toBeVisible()
 
     // Dialect defaults to PostgreSQL; paste the DDL and wait for the debounced

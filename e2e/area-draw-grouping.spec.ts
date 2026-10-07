@@ -202,11 +202,9 @@ async function dragMouse(
 async function drawAreaAroundAccountsAndInvoices(page: Page, margin = 34) {
   const addArea = page.getByRole('button', { name: 'Add area' })
   await addArea.click()
-  // The tool is armed — the button re-labels, which is also the user-visible
-  // signal that the next drag draws rather than pans.
-  await expect(
-    page.getByRole('button', { name: 'Drag to draw...' }),
-  ).toBeVisible()
+  // The tool is armed — the button shows as pressed, which is also the
+  // user-visible signal that the next drag draws rather than pans.
+  await expect(addArea).toHaveAttribute('aria-pressed', 'true')
 
   const accounts = await tableNode(page, 'accounts').first().boundingBox()
   const invoices = await tableNode(page, 'invoices').first().boundingBox()
@@ -656,8 +654,8 @@ test.describe('draw an area around existing tables (todo #55)', () => {
     await openBoard(page)
     await page.getByRole('button', { name: 'Add area' }).click()
     await expect(
-      page.getByRole('button', { name: 'Drag to draw...' }),
-    ).toBeVisible()
+      page.getByRole('button', { name: 'Add area' }),
+    ).toHaveAttribute('aria-pressed', 'true')
 
     // Below ShapeDrawOverlay's drag threshold — the one deliberate
     // non-disarming case: nothing is created and the tool stays armed, so the
@@ -669,12 +667,14 @@ test.describe('draw an area around existing tables (todo #55)', () => {
 
     await expect(areaNodes(page)).toHaveCount(0)
     await expect(
-      page.getByRole('button', { name: 'Drag to draw...' }),
-    ).toBeVisible()
+      page.getByRole('button', { name: 'Add area' }),
+    ).toHaveAttribute('aria-pressed', 'true')
 
     // Escape disarms, back to plain selection.
     await page.keyboard.press('Escape')
-    await expect(page.getByRole('button', { name: 'Add area' })).toBeVisible()
+    await expect(
+      page.getByRole('button', { name: 'Add area' }),
+    ).toHaveAttribute('aria-pressed', 'false')
     await expect(areaNodes(page)).toHaveCount(0)
   })
 })

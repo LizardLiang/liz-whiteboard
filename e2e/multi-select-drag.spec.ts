@@ -274,13 +274,7 @@ async function ensureDragFitsOnScreen(
     const endY = startY + delta.dy * scale
     if (within(startX, startY) && within(endX, endY)) return
 
-    // Both the Toolbar and React Flow's own <Controls/> render a "Zoom Out"
-    // button — scope to the Controls one (stable `rf__controls` testid) to
-    // avoid an ambiguous multi-match.
-    await page
-      .getByTestId('rf__controls')
-      .getByRole('button', { name: 'Zoom Out' })
-      .click()
+    await page.getByTitle('Zoom Out (Ctrl/Cmd + -)').click()
     await waitForViewportSettled(page) // zoomOut animates over 200ms
   }
   throw new Error(

@@ -29,6 +29,7 @@ import { recalculateEdgeRouting } from '@/lib/react-flow/edge-bundles'
 import { isUnauthorizedError } from '@/lib/auth/errors'
 import { useAuthContext } from '@/components/auth/AuthContext'
 import { updateTablePositionsBulk } from '@/lib/server-functions'
+import { DOCK_FIT_PADDING } from '@/lib/react-flow/fit-view-padding'
 
 // ---------------------------------------------------------------------------
 // Types
@@ -157,7 +158,7 @@ export function useAutoLayoutOrchestrator({
       // Success path
       setTimeout(() => {
         if (!isMountedRef.current) return
-        fitView({ padding: 0.2, duration: 300 })
+        fitView({ padding: DOCK_FIT_PADDING, duration: 300 })
       }, 100)
       toast.success(`Layout applied to ${positionsCount} tables`)
       return true

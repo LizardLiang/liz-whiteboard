@@ -145,13 +145,12 @@ test.describe('Auto-Layout LOD sizing + Minimap z-index (GH #151)', () => {
     }
   })
 
-  test('Bug 2: canvas node layer paints below Minimap/Controls, above the node viewport', async ({
+  test('Bug 2: canvas node layer paints below the Minimap, above the node viewport', async ({
     page,
   }) => {
     await page.goto(WB_URL)
     await expect(page.getByTestId('canvas-node-layer')).toBeVisible()
     await expect(page.locator('.react-flow__minimap')).toBeVisible()
-    await expect(page.locator('.react-flow__controls')).toBeVisible()
 
     const canvasZ = await page
       .getByTestId('canvas-node-layer')
@@ -159,16 +158,12 @@ test.describe('Auto-Layout LOD sizing + Minimap z-index (GH #151)', () => {
     const minimapZ = await page
       .locator('.react-flow__minimap')
       .evaluate((el) => Number(getComputedStyle(el).zIndex))
-    const controlsZ = await page
-      .locator('.react-flow__controls')
-      .evaluate((el) => Number(getComputedStyle(el).zIndex))
     const viewportZ = await page
       .locator('.react-flow__viewport')
       .evaluate((el) => Number(getComputedStyle(el).zIndex))
 
-    // Below chrome panels (MiniMap + Controls, z-5) — they now paint on top.
+    // Below the MiniMap chrome panel (z-5) — it paints on top.
     expect(canvasZ).toBeLessThan(minimapZ)
-    expect(canvasZ).toBeLessThan(controlsZ)
     // Still above the node viewport/edges renderer (z-2) — nodes keep
     // painting over edges (out of scope of this fix; must not regress).
     expect(canvasZ).toBeGreaterThan(viewportZ)

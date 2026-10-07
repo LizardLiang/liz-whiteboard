@@ -1,7 +1,7 @@
 // e2e/canvas-comments.spec.ts
 // End-to-end coverage for canvas comments / annotations (GH #110): a
 // table-anchored thread (create → reply → resolve) and a free-canvas-point
-// pin, plus the header's unresolved-thread badge. Auth + seed data come from
+// pin, plus the Comments button's unresolved-thread badge. Auth + seed data come from
 // global-setup (storageState) — mirrors e2e/version-history.spec.ts.
 //
 // Real-time broadcast is NOT asserted here: Socket.IO's `io` is null in the
@@ -93,7 +93,7 @@ test.describe('Canvas comments / annotations (GH #110)', () => {
 
     // Baseline: the "users" thread from the previous test is resolved, so no
     // unread badge should be showing yet.
-    await expect(page.getByText(/unresolved$/)).toHaveCount(0)
+    await expect(page.getByTestId('comments-unresolved-badge')).toHaveCount(0)
 
     // AC — enter placement mode and click an empty region of the canvas
     // (top-right corner, well clear of the seeded tables/area which sit in
@@ -123,16 +123,16 @@ test.describe('Canvas comments / annotations (GH #110)', () => {
     await expect(page.getByText(pinBody)).toBeVisible()
     await page.keyboard.press('Escape')
 
-    // AC — header unread badge reflects the one unresolved thread (the
+    // AC — the Comments dock button's badge reflects the one unresolved thread (the
     // table thread was resolved in the previous test; this new point
     // thread is the only unresolved one).
-    await expect(page.getByText('1 unresolved')).toBeVisible()
+    await expect(page.getByTestId('comments-unresolved-badge')).toHaveText('1')
 
     // Reload — persistence check (dev broadcast no-ops, see file header).
     await page.reload()
     await expect(page.getByRole('heading', { name: 'E2E ERD' })).toBeVisible()
     await expect(page.getByTestId('comment-pin')).toBeVisible()
-    await expect(page.getByText('1 unresolved')).toBeVisible()
+    await expect(page.getByTestId('comments-unresolved-badge')).toHaveText('1')
 
     // AC — the side panel (Toolbar's Comments button) opens and lists it.
     await page.getByRole('button', { name: 'Comments' }).click()

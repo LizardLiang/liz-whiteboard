@@ -23,6 +23,7 @@ import {
   ReactFlowProvider,
   useNodesInitialized,
   useReactFlow,
+  useStore,
   useStoreApi,
   useUpdateNodeInternals,
   useViewport,
@@ -41,7 +42,6 @@ import { AutoLayoutConfirmDialog } from './AutoLayoutConfirmDialog'
 import { TableFocusOverlay } from './TableFocusOverlay'
 import { WhiteboardAccessDenied } from './WhiteboardAccessDenied'
 import { WhiteboardPermissionsProvider } from './whiteboard-permissions-context'
-import { ShapeToolPalette } from './ShapeToolPalette'
 import { SelectedTablesSqlDialog } from './SelectedTablesSqlDialog'
 import { QUICK_CREATE_GHOST_ID } from './QuickCreateGhostNode'
 import type { DrawGestureTool, ToolMode } from '@/lib/react-flow/tool-mode'
@@ -90,6 +90,7 @@ import {
   type JoinQueryTable,
 } from '@/lib/join-query-generator'
 import type { ResolvedTableReference } from '@/data/table-reference'
+import { DOCK_FIT_PADDING } from '@/lib/react-flow/fit-view-padding'
 import { useWhiteboardShapes } from '@/hooks/use-whiteboard-shapes'
 import {
   TOOL_TO_SHAPE_KIND,
@@ -2257,6 +2258,14 @@ function ReactFlowWhiteboardInner({
   // click-to-select path already updates, so a keyboard-driven select is
   // indistinguishable from a mouse one to every other consumer.
   const reactFlowStoreApi = useStoreApi()
+  // Locked = no node drag, connect or select. Read from the store so the dock
+  // reflects the live interactivity flags rather than a parallel copy.
+  const canvasLocked = useStore(
+    (state) =>
+      !state.nodesDraggable &&
+      !state.nodesConnectable &&
+      !state.elementsSelectable,
+  )
   const viewport = useViewport()
   const nodesInitialized = useNodesInitialized()
 
@@ -3844,7 +3853,10 @@ function ReactFlowWhiteboardInner({
             { duration: 200 },
           ),
         fitToScreen: () =>
-          reactFlowInstance.fitView({ duration: 200, padding: 0.2 }),
+          reactFlowInstance.fitView({
+            duration: 200,
+            padding: DOCK_FIT_PADDING,
+          }),
       }
       onZoomControlsReady(controls)
     }
@@ -4101,10 +4113,22 @@ function ReactFlowWhiteboardInner({
           { duration: 200 },
         ),
       fitToScreen: () =>
-        reactFlowInstance.fitView({ duration: 200, padding: 0.2 }),
+        reactFlowInstance.fitView({ duration: 200, padding: DOCK_FIT_PADDING }),
     }),
     [reactFlowInstance],
   )
+
+  const toggleCanvasLock = useCallback(() => {
+    const unlocking =
+      reactFlowStoreApi.getState().nodesDraggable === false &&
+      reactFlowStoreApi.getState().nodesConnectable === false &&
+      reactFlowStoreApi.getState().elementsSelectable === false
+    reactFlowStoreApi.setState({
+      nodesDraggable: unlocking && canEdit,
+      nodesConnectable: unlocking,
+      elementsSelectable: unlocking,
+    })
+  }, [reactFlowStoreApi, canEdit])
 
   // Export diagram as image (Issue #104) — captures the full diagram at its
   // natural bounds via html-to-image, independent of the current pan/zoom.
@@ -4177,53 +4201,6 @@ function ReactFlowWhiteboardInner({
           height: '100%',
         }}
       >
-        {/* Toolbar — owned by ReactFlowWhiteboardInner so auto-layout orchestrator can control it.
-          Hidden in zen mode, and entirely on the public read-only path (GH #109). */}
-        {!isZenMode && !isPublic && (
-          <Toolbar
-            whiteboardId={whiteboardId}
-            tables={toolbarTables as any}
-            onCreateTable={onCreateTable}
-            onCreateRelationship={onCreateRelationship}
-            onImportSql={onImportSql}
-            tableCount={nodes.length}
-            // No isPublic guard needed: this whole Toolbar is already behind
-            // `!isPublic` above.
-            //
-            // A plain click carries no drop point, so the viewport centre is
-            // computed here. It must be computed, not left undefined: an
-            // unpositioned reference row lands on the off-canvas sentinel
-            // (-99999) that table nodes escape through a measure-then-place
-            // effect reference nodes do not run — so it would render nowhere.
-            onAddReference={(dropPoint) =>
-              setPendingReference({
-                mode: 'create',
-                dropPoint: dropPoint ?? viewportCentre(),
-                pendingDeleteCount: 0,
-              })
-            }
-            onAutoLayoutClick={() => handleAutoLayoutClick(nodes.length)}
-            isAutoLayoutRunning={isAutoLayoutRunning}
-            zoomControls={toolbarZoomControls}
-            currentZoom={viewport.zoom}
-            showMode={showMode}
-            onShowModeChange={setShowMode}
-            onZenModeToggle={toggleZenMode}
-            onOpenSearch={() => setSearchOpen(true)}
-            onOpenHistory={onOpenHistory}
-            onOpenComments={onOpenComments}
-            commentUnreadCount={commentUnreadCount}
-            mcpEndpointUrl={
-              mcpEndpointUrl && !isUnauthorizedError(mcpEndpointUrl)
-                ? mcpEndpointUrl
-                : undefined
-            }
-            onExport={handleExport}
-            canExport={nodes.length > 0}
-            viewerRole={viewerRole}
-          />
-        )}
-
         {/* Cmd/Ctrl+K search palette — jump the canvas to a table or column */}
         <WhiteboardSearch
           open={searchOpen}
@@ -4273,6 +4250,56 @@ function ReactFlowWhiteboardInner({
         />
 
         <div ref={canvasWrapperRef} style={{ position: 'relative', flex: 1 }}>
+          {/* Floating dock — owned by ReactFlowWhiteboardInner so the auto-layout
+              orchestrator can control it. Hidden in zen mode, and entirely on
+              the public read-only path (GH #109). */}
+          {!isZenMode && !isPublic && (
+            <Toolbar
+              whiteboardId={whiteboardId}
+              tables={toolbarTables as any}
+              onCreateTable={onCreateTable}
+              onCreateRelationship={onCreateRelationship}
+              onImportSql={onImportSql}
+              tableCount={nodes.length}
+              // A plain click carries no drop point, so the viewport centre is
+              // computed here. It must be computed, not left undefined: an
+              // unpositioned reference row lands on the off-canvas sentinel
+              // (-99999) that table nodes escape through a measure-then-place
+              // effect reference nodes do not run — so it would render nowhere.
+              onAddReference={(dropPoint) =>
+                setPendingReference({
+                  mode: 'create',
+                  dropPoint: dropPoint ?? viewportCentre(),
+                  pendingDeleteCount: 0,
+                })
+              }
+              onAutoLayoutClick={() => handleAutoLayoutClick(nodes.length)}
+              isAutoLayoutRunning={isAutoLayoutRunning}
+              zoomControls={toolbarZoomControls}
+              currentZoom={viewport.zoom}
+              canvasLocked={canvasLocked}
+              onToggleCanvasLock={toggleCanvasLock}
+              activeTool={activeTool}
+              onSelectTool={setActiveTool}
+              canComment={canComment}
+              showMode={showMode}
+              onShowModeChange={setShowMode}
+              onZenModeToggle={toggleZenMode}
+              onOpenSearch={() => setSearchOpen(true)}
+              onOpenHistory={onOpenHistory}
+              onOpenComments={onOpenComments}
+              commentUnreadCount={commentUnreadCount}
+              mcpEndpointUrl={
+                mcpEndpointUrl && !isUnauthorizedError(mcpEndpointUrl)
+                  ? mcpEndpointUrl
+                  : undefined
+              }
+              onExport={handleExport}
+              canExport={nodes.length > 0}
+              viewerRole={viewerRole}
+            />
+          )}
+
           {isPublic ? (
             // Read-only shared-view indicator (GH #109) — replaces the
             // collaboration connection indicator, which is meaningless here
@@ -4337,16 +4364,9 @@ function ReactFlowWhiteboardInner({
               onCancel={() => setDeletingTableId(null)}
             />
           )}
-          <ShapeToolPalette
-            activeTool={activeTool}
-            onSelectTool={setActiveTool}
-            canEdit={canEdit}
-            canComment={canComment}
-            isPublic={isPublic}
-          />
           {selectedSqlTableIds.length >= 2 && (
             <div
-              className="absolute bottom-4 left-1/2 z-20 -translate-x-1/2 rounded-lg border bg-background/95 p-2 shadow-lg backdrop-blur-sm"
+              className="absolute bottom-20 left-1/2 z-20 -translate-x-1/2 rounded-lg border bg-background/95 p-2 shadow-lg backdrop-blur-sm"
               data-testid="selected-tables-actions"
             >
               <Button size="sm" onClick={openSelectedTablesSql}>
@@ -4426,7 +4446,7 @@ function ReactFlowWhiteboardInner({
               showControls={showControls}
               showBackground={true}
               fitViewOptions={{
-                padding: 0.2,
+                padding: isPublic ? 0.2 : DOCK_FIT_PADDING,
                 includeHiddenNodes: false,
               }}
               relationsPreviewTableId={relationsPreviewTableId}

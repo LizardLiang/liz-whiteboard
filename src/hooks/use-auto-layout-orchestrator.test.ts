@@ -3,6 +3,7 @@
 
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { act, renderHook } from '@testing-library/react'
+import { DOCK_FIT_PADDING } from '@/lib/react-flow/fit-view-padding'
 
 // ---------------------------------------------------------------------------
 // Mocks (order matters — must be before hook imports; vi.mock is hoisted)
@@ -156,7 +157,10 @@ describe('useAutoLayoutOrchestrator', () => {
 
     // fitView called after setTimeout(100)
     vi.runAllTimers()
-    expect(mockFitView).toHaveBeenCalledWith({ padding: 0.2, duration: 300 })
+    expect(mockFitView).toHaveBeenCalledWith({
+      padding: DOCK_FIT_PADDING,
+      duration: 300,
+    })
 
     expect(result.current.isRunning).toBe(false)
   })

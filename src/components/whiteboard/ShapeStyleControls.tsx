@@ -4,7 +4,7 @@
 // in this repo: it portals out of the node subtree into the .react-flow
 // wrapper (verified in @xyflow/react v12), so it neither inherits the
 // node's `pointer-events: none` wrapper rule nor collides with the fixed
-// ShapeToolPalette at left-4 top-4 — it follows the shape, not the viewport.
+// bottom dock — it follows the shape, not the viewport.
 
 import { NodeToolbar, Position } from '@xyflow/react'
 import type { ShapeStyle } from '@/data/schema'

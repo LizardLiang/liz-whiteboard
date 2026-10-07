@@ -30,7 +30,7 @@
 // dispatch faithfully; the click path runs the identical picker and mutation).
 import { execFileSync } from 'node:child_process'
 import { expect, test } from '@playwright/test'
-import { IDS } from './fixtures'
+import { IDS, clickZoomMenuItem } from './fixtures'
 import type { Page } from '@playwright/test'
 
 test.use({ viewport: { width: 1600, height: 1000 } })
@@ -137,7 +137,7 @@ test('reference another file’s table, then follow it back to its source', asyn
   // viewport centre in FLOW coordinates, and the reload's fitView leaves the
   // canvas wherever the whole diagram fits — which at this board's zoom can be
   // off-screen. Fitting is what a person does here too.
-  await page.getByTitle('Fit to Screen').click()
+  await clickZoomMenuItem(page, 'Fit to screen')
 
   // ── `g` on the selected node jumps to the source, focused on that table ────
   await referenceNode.click()
@@ -165,7 +165,7 @@ test('reference another file’s table, then follow it back to its source', asyn
   // ── Double-click does the same thing ───────────────────────────────────────
   await page.goBack()
   await expect(referenceNode).toBeVisible()
-  await page.getByTitle('Fit to Screen').click()
+  await clickZoomMenuItem(page, 'Fit to screen')
   await referenceNode.dblclick()
   await page.waitForURL(
     (url) =>
@@ -187,7 +187,7 @@ test('reference another file’s table, then follow it back to its source', asyn
   // suite went green: the node clipped its own handles (nothing to grab), the
   // connection predicate rejected a reference/table pair, and the resulting
   // relationship was filtered out of the edge list before React Flow saw it.
-  await page.getByTitle('Fit to Screen').click()
+  await clickZoomMenuItem(page, 'Fit to screen')
 
   const handleBox = async (selector: string) => {
     const box = await page.locator(selector).first().boundingBox()
@@ -228,7 +228,7 @@ test('reference another file’s table, then follow it back to its source', asyn
   // Also dogfooding fallout: `onRetarget`/`onDelete` reached the node's data
   // from the first wave, but the node rendered no control for either, so a
   // reference could be created and never removed.
-  await page.getByTitle('Fit to Screen').click()
+  await clickZoomMenuItem(page, 'Fit to screen')
   // Select rather than hover: the actions are revealed by hover OR selection,
   // and selection survives the pointer travelling to the button.
   await referenceNode.click()

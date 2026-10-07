@@ -22,7 +22,7 @@
 import { execFileSync } from 'node:child_process'
 import { expect, test } from '@playwright/test'
 import { tableNode } from './canvas-helpers'
-import { IDS } from './fixtures'
+import { IDS, clickMoreTool } from './fixtures'
 import type { Page } from '@playwright/test'
 
 test.use({ viewport: { width: 1600, height: 1000 } })
@@ -211,7 +211,7 @@ test.describe('Auto Layout quality', () => {
       'E2E Auto-Layout Quality Import',
     )
 
-    await page.getByRole('button', { name: 'Import SQL' }).click()
+    await clickMoreTool(page, 'Import SQL')
     await expect(
       page.getByRole('heading', { name: 'Import SQL' }),
     ).toBeVisible()

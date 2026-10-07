@@ -7,7 +7,7 @@
 // panel renders on /settings/connections. Auth + seed data come from
 // global-setup (storageState), same as version-history.spec.ts.
 import { expect, test } from '@playwright/test'
-import { IDS } from './fixtures'
+import { IDS, clickMoreTool } from './fixtures'
 import { tableNode } from './canvas-helpers'
 import type { Page } from '@playwright/test'
 
@@ -26,7 +26,7 @@ async function openWhiteboard(page: Page) {
 }
 
 async function openMcpPopover(page: Page) {
-  await page.getByRole('button', { name: 'Connect an MCP client' }).click()
+  await clickMoreTool(page, 'Connect an MCP client')
   await expect(page.getByRole('tab', { name: 'Claude Code' })).toBeVisible()
 }
 
