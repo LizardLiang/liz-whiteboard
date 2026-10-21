@@ -28,10 +28,13 @@ import { Route as DemoTanstackQueryRouteImport } from './routes/demo/tanstack-qu
 import { Route as CanvasBoardIdRouteImport } from './routes/canvas/$boardId'
 import { Route as CanvasShareTokenRouteImport } from './routes/canvas-share.$token'
 import { Route as ApiTableReferencesRouteImport } from './routes/api/table-references'
+import { Route as ApiRenderTokenRouteImport } from './routes/api/render-token'
 import { Route as ApiMcpLifecycleRouteImport } from './routes/api/mcp-lifecycle'
 import { Route as ApiCollabTokenRouteImport } from './routes/api/collab-token'
 import { Route as ApiCanvasBoardsRouteImport } from './routes/api/canvas-boards'
 import { Route as ProjectProjectIdIndexRouteImport } from './routes/project.$projectId.index'
+import { Route as RenderWhiteboardTokenRouteImport } from './routes/render.whiteboard.$token'
+import { Route as RenderCanvasTokenRouteImport } from './routes/render.canvas.$token'
 import { Route as DemoStartServerFuncsRouteImport } from './routes/demo/start.server-funcs'
 import { Route as DemoStartApiRequestRouteImport } from './routes/demo/start.api-request'
 import { Route as DemoFormSimpleRouteImport } from './routes/demo/form.simple'
@@ -139,6 +142,11 @@ const ApiTableReferencesRoute = ApiTableReferencesRouteImport.update({
   path: '/api/table-references',
   getParentRoute: () => rootRouteImport,
 } as any)
+const ApiRenderTokenRoute = ApiRenderTokenRouteImport.update({
+  id: '/api/render-token',
+  path: '/api/render-token',
+  getParentRoute: () => rootRouteImport,
+} as any)
 const ApiMcpLifecycleRoute = ApiMcpLifecycleRouteImport.update({
   id: '/api/mcp-lifecycle',
   path: '/api/mcp-lifecycle',
@@ -158,6 +166,16 @@ const ProjectProjectIdIndexRoute = ProjectProjectIdIndexRouteImport.update({
   id: '/',
   path: '/',
   getParentRoute: () => ProjectProjectIdRoute,
+} as any)
+const RenderWhiteboardTokenRoute = RenderWhiteboardTokenRouteImport.update({
+  id: '/render/whiteboard/$token',
+  path: '/render/whiteboard/$token',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const RenderCanvasTokenRoute = RenderCanvasTokenRouteImport.update({
+  id: '/render/canvas/$token',
+  path: '/render/canvas/$token',
+  getParentRoute: () => rootRouteImport,
 } as any)
 const DemoStartServerFuncsRoute = DemoStartServerFuncsRouteImport.update({
   id: '/demo/start/server-funcs',
@@ -228,6 +246,7 @@ export interface FileRoutesByFullPath {
   '/api/canvas-boards': typeof ApiCanvasBoardsRoute
   '/api/collab-token': typeof ApiCollabTokenRoute
   '/api/mcp-lifecycle': typeof ApiMcpLifecycleRoute
+  '/api/render-token': typeof ApiRenderTokenRoute
   '/api/table-references': typeof ApiTableReferencesRoute
   '/canvas-share/$token': typeof CanvasShareTokenRoute
   '/canvas/$boardId': typeof CanvasBoardIdRoute
@@ -245,6 +264,8 @@ export interface FileRoutesByFullPath {
   '/demo/form/simple': typeof DemoFormSimpleRoute
   '/demo/start/api-request': typeof DemoStartApiRequestRoute
   '/demo/start/server-funcs': typeof DemoStartServerFuncsRoute
+  '/render/canvas/$token': typeof RenderCanvasTokenRoute
+  '/render/whiteboard/$token': typeof RenderWhiteboardTokenRoute
   '/project/$projectId/': typeof ProjectProjectIdIndexRoute
   '/demo/start/ssr/data-only': typeof DemoStartSsrDataOnlyRoute
   '/demo/start/ssr/full-ssr': typeof DemoStartSsrFullSsrRoute
@@ -264,6 +285,7 @@ export interface FileRoutesByTo {
   '/api/canvas-boards': typeof ApiCanvasBoardsRoute
   '/api/collab-token': typeof ApiCollabTokenRoute
   '/api/mcp-lifecycle': typeof ApiMcpLifecycleRoute
+  '/api/render-token': typeof ApiRenderTokenRoute
   '/api/table-references': typeof ApiTableReferencesRoute
   '/canvas-share/$token': typeof CanvasShareTokenRoute
   '/canvas/$boardId': typeof CanvasBoardIdRoute
@@ -280,6 +302,8 @@ export interface FileRoutesByTo {
   '/demo/form/simple': typeof DemoFormSimpleRoute
   '/demo/start/api-request': typeof DemoStartApiRequestRoute
   '/demo/start/server-funcs': typeof DemoStartServerFuncsRoute
+  '/render/canvas/$token': typeof RenderCanvasTokenRoute
+  '/render/whiteboard/$token': typeof RenderWhiteboardTokenRoute
   '/project/$projectId': typeof ProjectProjectIdIndexRoute
   '/demo/start/ssr/data-only': typeof DemoStartSsrDataOnlyRoute
   '/demo/start/ssr/full-ssr': typeof DemoStartSsrFullSsrRoute
@@ -300,6 +324,7 @@ export interface FileRoutesById {
   '/api/canvas-boards': typeof ApiCanvasBoardsRoute
   '/api/collab-token': typeof ApiCollabTokenRoute
   '/api/mcp-lifecycle': typeof ApiMcpLifecycleRoute
+  '/api/render-token': typeof ApiRenderTokenRoute
   '/api/table-references': typeof ApiTableReferencesRoute
   '/canvas-share/$token': typeof CanvasShareTokenRoute
   '/canvas/$boardId': typeof CanvasBoardIdRoute
@@ -317,6 +342,8 @@ export interface FileRoutesById {
   '/demo/form/simple': typeof DemoFormSimpleRoute
   '/demo/start/api-request': typeof DemoStartApiRequestRoute
   '/demo/start/server-funcs': typeof DemoStartServerFuncsRoute
+  '/render/canvas/$token': typeof RenderCanvasTokenRoute
+  '/render/whiteboard/$token': typeof RenderWhiteboardTokenRoute
   '/project/$projectId/': typeof ProjectProjectIdIndexRoute
   '/demo/start/ssr/data-only': typeof DemoStartSsrDataOnlyRoute
   '/demo/start/ssr/full-ssr': typeof DemoStartSsrFullSsrRoute
@@ -338,6 +365,7 @@ export interface FileRouteTypes {
     | '/api/canvas-boards'
     | '/api/collab-token'
     | '/api/mcp-lifecycle'
+    | '/api/render-token'
     | '/api/table-references'
     | '/canvas-share/$token'
     | '/canvas/$boardId'
@@ -355,6 +383,8 @@ export interface FileRouteTypes {
     | '/demo/form/simple'
     | '/demo/start/api-request'
     | '/demo/start/server-funcs'
+    | '/render/canvas/$token'
+    | '/render/whiteboard/$token'
     | '/project/$projectId/'
     | '/demo/start/ssr/data-only'
     | '/demo/start/ssr/full-ssr'
@@ -374,6 +404,7 @@ export interface FileRouteTypes {
     | '/api/canvas-boards'
     | '/api/collab-token'
     | '/api/mcp-lifecycle'
+    | '/api/render-token'
     | '/api/table-references'
     | '/canvas-share/$token'
     | '/canvas/$boardId'
@@ -390,6 +421,8 @@ export interface FileRouteTypes {
     | '/demo/form/simple'
     | '/demo/start/api-request'
     | '/demo/start/server-funcs'
+    | '/render/canvas/$token'
+    | '/render/whiteboard/$token'
     | '/project/$projectId'
     | '/demo/start/ssr/data-only'
     | '/demo/start/ssr/full-ssr'
@@ -409,6 +442,7 @@ export interface FileRouteTypes {
     | '/api/canvas-boards'
     | '/api/collab-token'
     | '/api/mcp-lifecycle'
+    | '/api/render-token'
     | '/api/table-references'
     | '/canvas-share/$token'
     | '/canvas/$boardId'
@@ -426,6 +460,8 @@ export interface FileRouteTypes {
     | '/demo/form/simple'
     | '/demo/start/api-request'
     | '/demo/start/server-funcs'
+    | '/render/canvas/$token'
+    | '/render/whiteboard/$token'
     | '/project/$projectId/'
     | '/demo/start/ssr/data-only'
     | '/demo/start/ssr/full-ssr'
@@ -446,6 +482,7 @@ export interface RootRouteChildren {
   ApiCanvasBoardsRoute: typeof ApiCanvasBoardsRoute
   ApiCollabTokenRoute: typeof ApiCollabTokenRoute
   ApiMcpLifecycleRoute: typeof ApiMcpLifecycleRoute
+  ApiRenderTokenRoute: typeof ApiRenderTokenRoute
   ApiTableReferencesRoute: typeof ApiTableReferencesRoute
   CanvasShareTokenRoute: typeof CanvasShareTokenRoute
   CanvasBoardIdRoute: typeof CanvasBoardIdRoute
@@ -463,6 +500,8 @@ export interface RootRouteChildren {
   DemoFormSimpleRoute: typeof DemoFormSimpleRoute
   DemoStartApiRequestRoute: typeof DemoStartApiRequestRoute
   DemoStartServerFuncsRoute: typeof DemoStartServerFuncsRoute
+  RenderCanvasTokenRoute: typeof RenderCanvasTokenRoute
+  RenderWhiteboardTokenRoute: typeof RenderWhiteboardTokenRoute
   DemoStartSsrDataOnlyRoute: typeof DemoStartSsrDataOnlyRoute
   DemoStartSsrFullSsrRoute: typeof DemoStartSsrFullSsrRoute
   DemoStartSsrSpaModeRoute: typeof DemoStartSsrSpaModeRoute
@@ -604,6 +643,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof ApiTableReferencesRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/api/render-token': {
+      id: '/api/render-token'
+      path: '/api/render-token'
+      fullPath: '/api/render-token'
+      preLoaderRoute: typeof ApiRenderTokenRouteImport
+      parentRoute: typeof rootRouteImport
+    }
     '/api/mcp-lifecycle': {
       id: '/api/mcp-lifecycle'
       path: '/api/mcp-lifecycle'
@@ -631,6 +677,20 @@ declare module '@tanstack/react-router' {
       fullPath: '/project/$projectId/'
       preLoaderRoute: typeof ProjectProjectIdIndexRouteImport
       parentRoute: typeof ProjectProjectIdRoute
+    }
+    '/render/whiteboard/$token': {
+      id: '/render/whiteboard/$token'
+      path: '/render/whiteboard/$token'
+      fullPath: '/render/whiteboard/$token'
+      preLoaderRoute: typeof RenderWhiteboardTokenRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/render/canvas/$token': {
+      id: '/render/canvas/$token'
+      path: '/render/canvas/$token'
+      fullPath: '/render/canvas/$token'
+      preLoaderRoute: typeof RenderCanvasTokenRouteImport
+      parentRoute: typeof rootRouteImport
     }
     '/demo/start/server-funcs': {
       id: '/demo/start/server-funcs'
@@ -737,6 +797,7 @@ const rootRouteChildren: RootRouteChildren = {
   ApiCanvasBoardsRoute: ApiCanvasBoardsRoute,
   ApiCollabTokenRoute: ApiCollabTokenRoute,
   ApiMcpLifecycleRoute: ApiMcpLifecycleRoute,
+  ApiRenderTokenRoute: ApiRenderTokenRoute,
   ApiTableReferencesRoute: ApiTableReferencesRoute,
   CanvasShareTokenRoute: CanvasShareTokenRoute,
   CanvasBoardIdRoute: CanvasBoardIdRoute,
@@ -754,6 +815,8 @@ const rootRouteChildren: RootRouteChildren = {
   DemoFormSimpleRoute: DemoFormSimpleRoute,
   DemoStartApiRequestRoute: DemoStartApiRequestRoute,
   DemoStartServerFuncsRoute: DemoStartServerFuncsRoute,
+  RenderCanvasTokenRoute: RenderCanvasTokenRoute,
+  RenderWhiteboardTokenRoute: RenderWhiteboardTokenRoute,
   DemoStartSsrDataOnlyRoute: DemoStartSsrDataOnlyRoute,
   DemoStartSsrFullSsrRoute: DemoStartSsrFullSsrRoute,
   DemoStartSsrSpaModeRoute: DemoStartSsrSpaModeRoute,

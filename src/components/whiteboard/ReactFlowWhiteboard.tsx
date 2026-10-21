@@ -83,6 +83,7 @@ import type { RelationshipErrorEvent } from '@/hooks/use-relationship-mutations'
 import type { ReconcileAfterDropParams } from '@/hooks/use-column-reorder-mutations'
 import type { Dialect } from '@/lib/ddl-generator'
 import type { ExportImageDialogOptions } from './ExportImageDialog'
+import type { RenderFraming } from '@/lib/render/framing'
 import {
   buildJoinQueryPlan,
   type JoinQueryPlan,
@@ -114,6 +115,7 @@ import {
 import { usePerfTrackerEnabled } from '@/hooks/use-perf-tracker-enabled'
 import { exportDiagramImage } from '@/lib/export/export-image'
 import { ForceFullDetailContext } from '@/lib/react-flow/level-of-detail'
+import { planFrame } from '@/lib/render/framing'
 import { hasMinimumRole } from '@/lib/auth/permissions'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
@@ -335,6 +337,13 @@ export interface ReactFlowWhiteboardProps {
    */
   isPublic?: boolean
   /**
+   * Headless render path (MCP board images). Only meaningful with `isPublic`.
+   * Frames the viewport once from the table bounds, reports the result through
+   * `renderFraming.onFramed`, forces full detail at any zoom, and drops the
+   * "Read-only" badge so the screenshot shows only the board.
+   */
+  renderFraming?: RenderFraming
+  /**
    * Pre-fetched diagram data for the `isPublic` render path — supplied by
    * the public /share/$token route from its unauthenticated server fn
    * response, instead of the authed getWhiteboardWithDiagram/
@@ -443,6 +452,7 @@ function ReactFlowWhiteboardInner({
   focusTableId,
   viewerRole = null,
   isPublic = false,
+  renderFraming,
   collaborationEnabled = true,
   onCreateTable,
   onCreateRelationship,
@@ -467,6 +477,8 @@ function ReactFlowWhiteboardInner({
   focusTableId?: string
   viewerRole?: EffectiveRole | null
   isPublic?: boolean
+  /** Headless render framing; see ReactFlowWhiteboardProps. */
+  renderFraming?: RenderFraming
   /** R1 (GH #109): when false, no Socket.IO connection is opened. */
   collaborationEnabled?: boolean
   onCreateTable?: (data: CreateTable) => void | Promise<unknown>
@@ -3869,6 +3881,53 @@ function ReactFlowWhiteboardInner({
     })
   }, [nodes, nodesInitialized, emitPositionUpdate, reactFlowInstance])
 
+  // Headless render framing (MCP board images): once React Flow has measured
+  // every node, wait for its own mount `fitView` to settle, then set the
+  // viewport from the planned frame and report it. Runs once.
+  const framedRef = useRef(false)
+  useEffect(() => {
+    if (!renderFraming || framedRef.current) return
+    if (!nodesInitialized && reactFlowInstance.getNodes().length > 0) return
+    const wrapper = canvasWrapperRef.current
+    if (!wrapper) return
+    const timer = window.setTimeout(() => {
+      framedRef.current = true
+      const { width, height } = wrapper.getBoundingClientRect()
+      const rects = new Map<
+        string,
+        { x: number; y: number; width: number; height: number }
+      >()
+      for (const node of reactFlowInstance.getNodes()) {
+        if (node.type === 'comment') continue
+        const w = node.measured?.width ?? node.width ?? 0
+        const h = node.measured?.height ?? node.height ?? 0
+        if (w <= 0 || h <= 0) continue
+        rects.set(node.id, {
+          x: node.position.x,
+          y: node.position.y,
+          width: w,
+          height: h,
+        })
+      }
+      const plan = planFrame({
+        mode: renderFraming.mode,
+        focusIds: renderFraming.focusIds,
+        tile: renderFraming.tile,
+        rects,
+        viewport: { width, height },
+      })
+      if (!('error' in plan)) {
+        void reactFlowInstance.setViewport({
+          x: -plan.camera.x * plan.camera.zoom,
+          y: -plan.camera.y * plan.camera.zoom,
+          zoom: plan.camera.zoom,
+        })
+      }
+      renderFraming.onFramed(plan)
+    }, 150)
+    return () => window.clearTimeout(timer)
+  }, [renderFraming, nodesInitialized, reactFlowInstance])
+
   // Build zoom controls and expose to parent once on mount
   useEffect(() => {
     if (onZoomControlsReady) {
@@ -4328,7 +4387,7 @@ function ReactFlowWhiteboardInner({
             />
           )}
 
-          {isPublic ? (
+          {renderFraming ? null : isPublic ? (
             // Read-only shared-view indicator (GH #109) — replaces the
             // collaboration connection indicator, which is meaningless here
             // since no Socket.IO connection is ever opened on this path.
@@ -4402,7 +4461,9 @@ function ReactFlowWhiteboardInner({
               </Button>
             </div>
           )}
-          <ForceFullDetailContext.Provider value={forceFullDetailForExport}>
+          <ForceFullDetailContext.Provider
+            value={forceFullDetailForExport || renderFraming !== undefined}
+          >
             <ReactFlowCanvas
               initialNodes={nodes}
               initialEdges={edges}
@@ -4654,6 +4715,7 @@ export function ReactFlowWhiteboard({
   focusTableId,
   viewerRole = null,
   isPublic = false,
+  renderFraming,
   data,
   onCreateTable,
   onCreateRelationship,
@@ -4802,6 +4864,7 @@ export function ReactFlowWhiteboard({
         focusTableId={focusTableId}
         viewerRole={viewerRole}
         isPublic={isPublic}
+        renderFraming={isPublic ? renderFraming : undefined}
         collaborationEnabled={!isPublic}
         onCreateTable={onCreateTable}
         onCreateRelationship={onCreateRelationship}

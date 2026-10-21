@@ -40,8 +40,10 @@ import type { CanvasElementRecord } from '@/data/models'
 import type { CanvasTool } from './use-canvas-input'
 import type { CanvasStyleChange } from './SelectionToolbar'
 import type { ZOrderCommand } from '@/lib/canvas-engine/z-order'
+import type { RenderFraming } from '@/lib/render/framing'
 import { toEngineScene } from '@/lib/canvas-element-adapter'
 import { resolvedBounds } from '@/lib/canvas-engine/hit-test'
+import { planFrame } from '@/lib/render/framing'
 import { drawScene, measurerFor } from '@/lib/canvas-engine/render'
 import { dotGridBackground } from '@/lib/canvas-engine/grid'
 import { CANVAS_SHAPE_KINDS, updateElement } from '@/lib/canvas-engine/scene'
@@ -84,6 +86,12 @@ interface CanvasBoardProps {
    * is exactly the distinction that would be lost by merging the two.
    */
   isPublic?: boolean
+  /**
+   * Headless render path (MCP board images): frame the camera once from the
+   * element bounds, report the result through `renderFraming.onFramed`, and
+   * hide the search and export chrome so the screenshot shows only the board.
+   */
+  renderFraming?: RenderFraming
 }
 
 /**
@@ -141,6 +149,7 @@ export function CanvasBoard({
   initialElements,
   readOnly = false,
   isPublic = false,
+  renderFraming,
 }: CanvasBoardProps) {
   // A public visitor is always read-only. Derived here rather than trusted
   // from the caller so no future call site can pass `isPublic` and forget
@@ -613,6 +622,30 @@ export function CanvasBoard({
     readOnly: effectiveReadOnly,
   })
 
+  // Headless render framing: applied exactly once, as soon as the viewport has
+  // a measured size. The scene is final at that point because a render page
+  // passes the complete element list and opens no socket.
+  const framedRef = useRef(false)
+  useEffect(() => {
+    if (!renderFraming || framedRef.current) return
+    if (viewportSize.width === 0 || viewportSize.height === 0) return
+    framedRef.current = true
+    const rects = new Map<string, WorldRect>()
+    for (const element of scene.elements) {
+      const rect = resolvedBounds(scene, element)
+      if (rect) rects.set(element.id, rect)
+    }
+    const plan = planFrame({
+      mode: renderFraming.mode,
+      focusIds: renderFraming.focusIds,
+      tile: renderFraming.tile,
+      rects,
+      viewport: viewportSize,
+    })
+    if (!('error' in plan)) setCamera(plan.camera)
+    renderFraming.onFramed(plan)
+  }, [renderFraming, scene, viewportSize])
+
   // ── interaction plumbing ─────────────────────────────────────────────────
 
   const { onPointerDown, ...restCanvasHandlers } = input.canvasHandlers
@@ -825,30 +858,32 @@ export function CanvasBoard({
           Placed below the tool palette rather than beside it so it collides
           with neither that palette (top-left) nor the connection badge
           (top-right). */}
-      <div className="absolute left-4 top-16 flex gap-1 rounded-md border bg-background/90 p-1 shadow-sm backdrop-blur-sm">
-        <Button
-          type="button"
-          size="icon"
-          variant="ghost"
-          aria-label="Search canvas elements (Ctrl/Cmd+K)"
-          title="Search canvas elements (Ctrl/Cmd+K)"
-          onClick={() => setSearchOpen(true)}
-        >
-          <Search className="h-4 w-4" />
-        </Button>
-        <CanvasExportControl
-          scene={input.displayScene}
-          theme={resolvedTheme}
-          filename={boardName}
-          getBackgroundColor={() =>
-            containerRef.current
-              ? getComputedStyle(containerRef.current).backgroundColor
-              : resolvedTheme === 'dark'
-                ? '#020617'
-                : '#ffffff'
-          }
-        />
-      </div>
+      {!renderFraming && (
+        <div className="absolute left-4 top-16 flex gap-1 rounded-md border bg-background/90 p-1 shadow-sm backdrop-blur-sm">
+          <Button
+            type="button"
+            size="icon"
+            variant="ghost"
+            aria-label="Search canvas elements (Ctrl/Cmd+K)"
+            title="Search canvas elements (Ctrl/Cmd+K)"
+            onClick={() => setSearchOpen(true)}
+          >
+            <Search className="h-4 w-4" />
+          </Button>
+          <CanvasExportControl
+            scene={input.displayScene}
+            theme={resolvedTheme}
+            filename={boardName}
+            getBackgroundColor={() =>
+              containerRef.current
+                ? getComputedStyle(containerRef.current).backgroundColor
+                : resolvedTheme === 'dark'
+                  ? '#020617'
+                  : '#ffffff'
+            }
+          />
+        </div>
+      )}
     </div>
   )
 }

@@ -329,6 +329,29 @@ export const IDS = {
   spUsersId: 'b0000000-0000-4000-8000-000000000004',
   spOrdersId: 'b0000000-0000-4000-8000-000000000005',
 
+  // Dedicated project + boards for e2e/board-render.spec.ts (MCP board images).
+  // Own project so the suite's token minting never depends on another spec's
+  // membership changes. Table names are Chinese on purpose: the render page
+  // must paint CJK text, and an empty-box glyph is the failure to catch.
+  // `renderFarTable` and `renderCanvasFar` sit thousands of world units from
+  // the others so the fit zoom drops below the 0.35 level-of-detail threshold and
+  // the tile grid has more than one occupied tile.
+  renderProject: 'e1000000-0000-4000-8000-000000000001',
+  renderWhiteboard: 'e1000000-0000-4000-8000-000000000002',
+  renderUsersTable: 'e1000000-0000-4000-8000-000000000003',
+  renderOrdersTable: 'e1000000-0000-4000-8000-000000000004',
+  renderFarTable: 'e1000000-0000-4000-8000-000000000005',
+  renderUsersId: 'e1000000-0000-4000-8000-000000000006',
+  renderUsersName: 'e1000000-0000-4000-8000-000000000007',
+  renderOrdersId: 'e1000000-0000-4000-8000-000000000008',
+  renderOrdersUserId: 'e1000000-0000-4000-8000-000000000009',
+  renderFarId: 'e1000000-0000-4000-8000-00000000000a',
+  renderRelationship: 'e1000000-0000-4000-8000-00000000000b',
+  renderCanvasBoard: 'e1000000-0000-4000-8000-000000000010',
+  renderCanvasRect: 'e1000000-0000-4000-8000-000000000011',
+  renderCanvasText: 'e1000000-0000-4000-8000-000000000012',
+  renderCanvasFar: 'e1000000-0000-4000-8000-000000000013',
+
   // Dedicated user for the forgot-password suite — see
   // E2E_RESET_USER's comment above for why this is separate from E2E_USER.
   resetPwUser: 'd0000000-0000-4000-8000-000000000001',
