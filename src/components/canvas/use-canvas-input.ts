@@ -112,10 +112,10 @@ import { Z_MAX, Z_MIN } from '@/lib/canvas-engine/z-order'
 import {
   ANCHOR_ATTACH,
   anchorPoint,
-  borderPoint,
   curvatureForPoint,
   nearestAnchor,
   nearestAttach,
+  radialAttach,
   rectCentre,
 } from '@/lib/canvas-engine/connector-geometry'
 import {
@@ -830,11 +830,7 @@ function dropAttach(element: CanvasElement, world: Point): ConnectorAttach {
   ) {
     return nearestAttach(rect, world)
   }
-  const edge = borderPoint(rect, { x: dx, y: dy })
-  return {
-    x: (edge.x - rect.x) / rect.width,
-    y: (edge.y - rect.y) / rect.height,
-  }
+  return radialAttach(rect, world)
 }
 
 /**

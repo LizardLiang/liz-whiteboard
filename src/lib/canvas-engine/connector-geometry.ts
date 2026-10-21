@@ -444,6 +444,19 @@ export function borderPoint(rect: WorldRect, d: Point): Point {
 }
 
 /**
+ * The attachment on `rect`'s border along the ray from its centre toward
+ * `toward`. Routed through `nearestAttach` so float rounding in `borderPoint`
+ * cannot leave the value outside [0, 1] or off the face the ray hit.
+ */
+export function radialAttach(rect: WorldRect, toward: Point): ConnectorAttach {
+  const centre = rectCentre(rect)
+  return nearestAttach(
+    rect,
+    borderPoint(rect, { x: toward.x - centre.x, y: toward.y - centre.y }),
+  )
+}
+
+/**
  * The two points a straight connector runs between, or null when there is no
  * sensible line to draw.
  *

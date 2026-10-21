@@ -20,6 +20,7 @@ import {
   nearestAnchor,
   nearestAttach,
   pathMidpoint,
+  radialAttach,
   rectCentre,
 } from './connector-geometry'
 import {
@@ -1354,5 +1355,15 @@ describe('connector ends land on the drawn outline', () => {
     expect(endpoints({ rect: BOX, shape: 'rectangle' }, { rect: FAR })).toEqual(
       endpoints({ rect: BOX }, { rect: FAR }),
     )
+  })
+})
+
+describe('radialAttach', () => {
+  it('stays in [0, 1] and exactly on a face despite float rounding', () => {
+    const rect = { x: 915, y: -251, width: 397, height: 424 }
+    const attach = radialAttach(rect, { x: 1153.45, y: -223.28 })
+    expect(attach.x).toBeGreaterThanOrEqual(0)
+    expect(attach.x).toBeLessThanOrEqual(1)
+    expect(attach.y).toBe(0)
   })
 })
