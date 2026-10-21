@@ -30,6 +30,7 @@ import {
   arrowHead,
   attachPoint,
   bendMidpoint,
+  clipToOutline,
   curveEndDirection,
 } from './connector-geometry'
 import { connectorCurveOf, connectorPathOf } from './hit-test'
@@ -1229,7 +1230,10 @@ function drawAttachCandidate(
     ctx.stroke()
   }
 
-  const spot = worldToScreen(camera, attachPoint(element, attach))
+  const spot = worldToScreen(
+    camera,
+    clipToOutline(element, element.kind, attachPoint(element, attach)),
+  )
   ctx.beginPath()
   ctx.arc(spot.x, spot.y, ATTACH_SPOT_SIZE / 2, 0, Math.PI * 2)
   ctx.fillStyle = accent

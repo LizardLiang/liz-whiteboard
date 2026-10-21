@@ -33,6 +33,7 @@ import type { Point } from './camera'
 import type { WorldRect } from './hit-test'
 import type {
   CanvasConnectorRouting,
+  CanvasElementKind,
   ConnectorAnchor,
   ConnectorAttach,
 } from './scene'
@@ -50,7 +51,7 @@ import type {
  * point rather than the pair being all-or-nothing.
  */
 export type EndpointGeometry =
-  | { rect: WorldRect; attach?: ConnectorAttach }
+  | { rect: WorldRect; shape?: CanvasElementKind; attach?: ConnectorAttach }
   | { point: Point }
 
 /** True for a free end — one that names no element and carries its own point. */
@@ -67,15 +68,27 @@ function isFree(end: EndpointGeometry): end is { point: Point } {
  */
 function referencePoint(end: EndpointGeometry): Point {
   if (isFree(end)) return end.point
-  return end.attach ? attachPoint(end.rect, end.attach) : rectCentre(end.rect)
+  return end.attach ? landing(end, end.attach) : rectCentre(end.rect)
+}
+
+/** The stored bounding-box attachment, clipped to the end's drawn outline. */
+function landing(
+  end: { rect: WorldRect; shape?: CanvasElementKind },
+  attach: ConnectorAttach,
+): Point {
+  return clipToOutline(end.rect, end.shape, attachPoint(end.rect, attach))
 }
 
 /** Where an end actually meets the line, given where the other end is. */
 function resolveEnd(end: EndpointGeometry, other: Point): Point {
   if (isFree(end)) return end.point
-  if (end.attach) return attachPoint(end.rect, end.attach)
+  if (end.attach) return landing(end, end.attach)
   const centre = rectCentre(end.rect)
-  return borderPoint(end.rect, { x: other.x - centre.x, y: other.y - centre.y })
+  return clipToOutline(
+    end.rect,
+    end.shape,
+    borderPoint(end.rect, { x: other.x - centre.x, y: other.y - centre.y }),
+  )
 }
 
 /**
@@ -352,6 +365,59 @@ function compact(points: Array<Point>): Array<Point> {
 }
 
 /**
+ * Pull a point on a rect's border in toward the shape's DRAWN outline, along
+ * the ray from the rect centre through that point.
+ *
+ * The outlines match `render.ts` tracing and the containment tests in
+ * `hit-test.ts`: an ellipse inscribed in the rect, a diamond through the four
+ * edge midpoints, a triangle with its apex at the top-edge midpoint and its
+ * base along the bottom edge. Every other kind (and an absent kind) is the
+ * rect itself, so the point is returned untouched.
+ *
+ * All three outlines are convex around the centre, so the ray crosses each
+ * exactly once. Solved in normalised coordinates (centre at the origin, each
+ * half-extent 1) so a wide and a tall shape take the same arithmetic.
+ */
+export function clipToOutline(
+  rect: WorldRect,
+  shape: CanvasElementKind | undefined,
+  point: Point,
+): Point {
+  if (shape !== 'ellipse' && shape !== 'diamond' && shape !== 'triangle') {
+    return point
+  }
+  const rx = rect.width / 2
+  const ry = rect.height / 2
+  if (rx <= 0 || ry <= 0) return point
+  const cx = rect.x + rx
+  const cy = rect.y + ry
+  const u = (point.x - cx) / rx
+  const v = (point.y - cy) / ry
+  if (u === 0 && v === 0) return point
+
+  let scale: number
+  if (shape === 'ellipse') {
+    scale = 1 / Math.hypot(u, v)
+  } else if (shape === 'diamond') {
+    scale = 1 / (Math.abs(u) + Math.abs(v))
+  } else {
+    // Triangle: edges |u| = (v + 1) / 2 (apex at v = -1) and the base v = 1.
+    // Each constraint t * k <= c bounds the ray; the tightest positive one wins.
+    scale = Number.POSITIVE_INFINITY
+    const limits: Array<[number, number]> = [
+      [u - v / 2, 0.5],
+      [-u - v / 2, 0.5],
+      [v, 1],
+    ]
+    for (const [k, c] of limits) {
+      if (k > 0) scale = Math.min(scale, c / k)
+    }
+    if (!Number.isFinite(scale)) return point
+  }
+  return { x: cx + u * scale * rx, y: cy + v * scale * ry }
+}
+
+/**
  * Where a ray leaving `rect`'s centre in direction `d` crosses the rect's
  * border.
  *
@@ -407,14 +473,18 @@ export function endpoints(
     const dy = b.y - a.y
     if (dx === 0 && dy === 0) return null
 
-    const from = borderPoint((source as { rect: WorldRect }).rect, {
-      x: dx,
-      y: dy,
-    })
-    const to = borderPoint((target as { rect: WorldRect }).rect, {
-      x: -dx,
-      y: -dy,
-    })
+    const src = source as { rect: WorldRect; shape?: CanvasElementKind }
+    const tgt = target as { rect: WorldRect; shape?: CanvasElementKind }
+    const from = clipToOutline(
+      src.rect,
+      src.shape,
+      borderPoint(src.rect, { x: dx, y: dy }),
+    )
+    const to = clipToOutline(
+      tgt.rect,
+      tgt.shape,
+      borderPoint(tgt.rect, { x: -dx, y: -dy }),
+    )
     const forward = (to.x - from.x) * dx + (to.y - from.y) * dy
     if (forward <= 0) return null
     return { from, to }
@@ -472,8 +542,10 @@ function elbowPath(
     return path.length >= 2 ? path : null
   }
 
-  const sourceRect = (source as { rect: WorldRect }).rect
-  const targetRect = (target as { rect: WorldRect }).rect
+  const sourceEnd = source as { rect: WorldRect; shape?: CanvasElementKind }
+  const targetEnd = target as { rect: WorldRect; shape?: CanvasElementKind }
+  const sourceRect = sourceEnd.rect
+  const targetRect = targetEnd.rect
   const a = rectCentre(sourceRect)
   const b = rectCentre(targetRect)
   const dx = b.x - a.x
@@ -483,19 +555,24 @@ function elbowPath(
   if (Math.abs(dx) >= Math.abs(dy)) {
     const fromX = dx >= 0 ? sourceRect.x + sourceRect.width : sourceRect.x
     const toX = dx >= 0 ? targetRect.x : targetRect.x + targetRect.width
-    const from = { x: fromX, y: a.y }
-    const to = { x: toX, y: b.y }
+    // Clipping slides each end along its own horizontal (the ray from the
+    // centre is horizontal), so the path stays orthogonal.
+    const from = clipToOutline(sourceRect, sourceEnd.shape, {
+      x: fromX,
+      y: a.y,
+    })
+    const to = clipToOutline(targetRect, targetEnd.shape, { x: toX, y: b.y })
     if (from.y === to.y) return [from, to]
-    const midX = (fromX + toX) / 2
+    const midX = (from.x + to.x) / 2
     return [from, { x: midX, y: from.y }, { x: midX, y: to.y }, to]
   }
 
   const fromY = dy >= 0 ? sourceRect.y + sourceRect.height : sourceRect.y
   const toY = dy >= 0 ? targetRect.y : targetRect.y + targetRect.height
-  const from = { x: a.x, y: fromY }
-  const to = { x: b.x, y: toY }
+  const from = clipToOutline(sourceRect, sourceEnd.shape, { x: a.x, y: fromY })
+  const to = clipToOutline(targetRect, targetEnd.shape, { x: b.x, y: toY })
   if (from.x === to.x) return [from, to]
-  const midY = (fromY + toY) / 2
+  const midY = (from.y + to.y) / 2
   return [from, { x: from.x, y: midY }, { x: to.x, y: midY }, to]
 }
 

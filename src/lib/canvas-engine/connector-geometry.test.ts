@@ -10,6 +10,7 @@ import {
   bendMidpoint,
   borderPoint,
   clampCurvature,
+  clipToOutline,
   connectorBounds,
   connectorCurve,
   connectorPath,
@@ -21,6 +22,11 @@ import {
   pathMidpoint,
   rectCentre,
 } from './connector-geometry'
+import {
+  diamondContainsPoint,
+  ellipseContainsPoint,
+  triangleContainsPoint,
+} from './hit-test'
 import type { WorldRect } from './hit-test'
 import type { Point } from './camera'
 import type { EndpointGeometry } from './connector-geometry'
@@ -1247,5 +1253,106 @@ describe('short connectors do not tie themselves in a knot', () => {
     }
     // At ordinary board spacing it reads as one sweep, not a detour.
     expect(measured[measured.length - 1]).toBeLessThan(45)
+  })
+})
+
+describe('connector ends land on the drawn outline', () => {
+  const BOX: WorldRect = { x: 0, y: 0, width: 200, height: 100 }
+  const FAR: WorldRect = { x: 600, y: 300, width: 100, height: 100 }
+  const EPS = 1e-6
+
+  /** True when `p` is inside the shape but a hair outward is not. */
+  function onOutline(
+    contains: (r: WorldRect, p: Point) => boolean,
+    rect: WorldRect,
+    p: Point,
+  ): boolean {
+    const c = rectCentre(rect)
+    const out = { x: p.x + (p.x - c.x) * 1e-4, y: p.y + (p.y - c.y) * 1e-4 }
+    const inn = { x: p.x - (p.x - c.x) * 1e-4, y: p.y - (p.y - c.y) * 1e-4 }
+    return contains(rect, inn) && !contains(rect, out)
+  }
+
+  const shapes = [
+    ['diamond', diamondContainsPoint],
+    ['ellipse', ellipseContainsPoint],
+    ['triangle', triangleContainsPoint],
+  ] as const
+
+  for (const [shape, contains] of shapes) {
+    it(`${shape}: every bbox border point clips onto the outline`, () => {
+      for (let i = 0; i <= 40; i++) {
+        const t = i / 40
+        const border = [
+          { x: BOX.x + BOX.width * t, y: BOX.y },
+          { x: BOX.x + BOX.width * t, y: BOX.y + BOX.height },
+          { x: BOX.x, y: BOX.y + BOX.height * t },
+          { x: BOX.x + BOX.width, y: BOX.y + BOX.height * t },
+        ]
+        for (const p of border) {
+          const q = clipToOutline(BOX, shape, p)
+          expect(onOutline(contains, BOX, q)).toBe(true)
+        }
+      }
+    })
+
+    it(`${shape}: unattached and attached ends of a connector sit on the outline`, () => {
+      const unattached = endpoints({ rect: BOX, shape }, { rect: FAR }) as {
+        from: Point
+        to: Point
+      }
+      expect(onOutline(contains, BOX, unattached.from)).toBe(true)
+      const attached = endpoints(
+        { rect: BOX, shape, attach: { x: 1, y: 0.5 } },
+        { rect: FAR },
+      ) as { from: Point; to: Point }
+      expect(onOutline(contains, BOX, attached.from)).toBe(true)
+      const legacy = endpoints({ rect: FAR, shape }, { rect: BOX, shape }) as {
+        from: Point
+        to: Point
+      }
+      expect(onOutline(contains, FAR, legacy.from)).toBe(true)
+      expect(onOutline(contains, BOX, legacy.to)).toBe(true)
+    })
+
+    it(`${shape}: legacy elbow ends sit on the outline and stay orthogonal`, () => {
+      const path = connectorPath(
+        { rect: BOX, shape },
+        { rect: FAR, shape },
+        'elbow',
+      ) as Array<Point>
+      expect(onOutline(contains, BOX, path[0])).toBe(true)
+      expect(onOutline(contains, FAR, path[path.length - 1])).toBe(true)
+      for (let i = 1; i < path.length; i++) {
+        const dx = Math.abs(path[i].x - path[i - 1].x)
+        const dy = Math.abs(path[i].y - path[i - 1].y)
+        expect(Math.min(dx, dy)).toBeLessThan(EPS)
+      }
+    })
+  }
+
+  it('diamond right-midpoint attach lands on the right vertex', () => {
+    const p = endpoints(
+      { rect: BOX, shape: 'diamond', attach: { x: 1, y: 0.5 } },
+      { rect: FAR },
+    )
+    expect(p?.from.x).toBeCloseTo(200)
+    expect(p?.from.y).toBeCloseTo(50)
+  })
+
+  it('diamond corner attach lands on the edge midpoint, inside the bbox', () => {
+    const q = clipToOutline(BOX, 'diamond', { x: 200, y: 100 })
+    expect(q.x).toBeCloseTo(150)
+    expect(q.y).toBeCloseTo(75)
+  })
+
+  it('rectangle, text, group and absent shapes are returned bit-for-bit', () => {
+    const p = { x: 123.456, y: 100 }
+    for (const kind of ['rectangle', 'text', 'group', undefined] as const) {
+      expect(clipToOutline(BOX, kind, p)).toBe(p)
+    }
+    expect(endpoints({ rect: BOX, shape: 'rectangle' }, { rect: FAR })).toEqual(
+      endpoints({ rect: BOX }, { rect: FAR }),
+    )
   })
 })

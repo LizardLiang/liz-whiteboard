@@ -112,9 +112,11 @@ import { Z_MAX, Z_MIN } from '@/lib/canvas-engine/z-order'
 import {
   ANCHOR_ATTACH,
   anchorPoint,
+  borderPoint,
   curvatureForPoint,
   nearestAnchor,
   nearestAttach,
+  rectCentre,
 } from '@/lib/canvas-engine/connector-geometry'
 import {
   caretFromPoint,
@@ -799,7 +801,39 @@ function attachCandidateAt(
   if (!dropped || dropped.id === otherElementId) return null
   return {
     elementId: dropped.id,
-    attach: nearestAttach(bounds(dropped), world),
+    attach: dropAttach(dropped, world),
+  }
+}
+
+/**
+ * The stored attachment for an end dropped at `world` on `element`.
+ *
+ * A rectangle keeps `nearestAttach`. An ellipse, diamond or triangle draws its
+ * line to the outline along the ray from the centre, so the attachment is the
+ * radial projection of the drop point onto the bounding box border: after the
+ * outline clip the end lands on the ray through the point the user let go at.
+ */
+function dropAttach(element: CanvasElement, world: Point): ConnectorAttach {
+  const rect = bounds(element)
+  const outlined =
+    element.kind === 'ellipse' ||
+    element.kind === 'diamond' ||
+    element.kind === 'triangle'
+  const centre = rectCentre(rect)
+  const dx = world.x - centre.x
+  const dy = world.y - centre.y
+  if (
+    !outlined ||
+    (dx === 0 && dy === 0) ||
+    rect.width <= 0 ||
+    rect.height <= 0
+  ) {
+    return nearestAttach(rect, world)
+  }
+  const edge = borderPoint(rect, { x: dx, y: dy })
+  return {
+    x: (edge.x - rect.x) / rect.width,
+    y: (edge.y - rect.y) / rect.height,
   }
 }
 

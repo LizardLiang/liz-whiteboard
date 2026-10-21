@@ -14,7 +14,12 @@
 //
 // Pure module: no React, no DOM, no database.
 
-import { bounds, effectiveCornerRadius, groupDescendants, groupOwning } from './scene'
+import {
+  bounds,
+  effectiveCornerRadius,
+  groupDescendants,
+  groupOwning,
+} from './scene'
 import {
   connectorBounds,
   connectorCurve,
@@ -305,8 +310,13 @@ export function endpointGeometry(
   if (endpoint.kind === 'point') return { point: endpoint.point }
   const element = scene.byId.get(endpoint.elementId)
   if (!element) return null
+  const outlined =
+    element.kind === 'ellipse' ||
+    element.kind === 'diamond' ||
+    element.kind === 'triangle'
   return {
     rect: bounds(element),
+    ...(outlined ? { shape: element.kind } : {}),
     ...(endpoint.attach ? { attach: endpoint.attach } : {}),
   }
 }
