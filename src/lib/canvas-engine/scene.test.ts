@@ -15,6 +15,7 @@ import {
   getElement,
   groupDescendants,
   groupOwning,
+  isOutlinedShapeKind,
   nextZIndex,
   outermostGroup,
   remapConnectorEndpoints,
@@ -28,6 +29,7 @@ import {
 import {
   ATTACH_FORGIVENESS,
   elementContainsPoint,
+  endpointGeometry,
   hitTest,
   hitTestAttachTarget,
   hitTestRect,
@@ -1063,5 +1065,41 @@ describe('resolveDropTarget', () => {
     // Degrades to the topmost of the (undifferentiated) candidates rather
     // than crashing the drop.
     expect(resolveDropTarget(scene, 'a', new Set(['a']))).toBe('cycleB')
+  })
+})
+
+describe('isOutlinedShapeKind', () => {
+  it('is true only for the kinds whose outline differs from their box', () => {
+    for (const kind of ['ellipse', 'diamond', 'triangle'] as const) {
+      expect(isOutlinedShapeKind(kind)).toBe(true)
+    }
+    for (const kind of ['rectangle', 'text', 'group', 'connector'] as const) {
+      expect(isOutlinedShapeKind(kind)).toBe(false)
+    }
+  })
+})
+
+describe('endpointGeometry shape and corner radius', () => {
+  const link = (id: string) => ({
+    kind: 'element' as const,
+    elementId: id,
+  })
+
+  it('always carries the element kind, and the effective corner radius', () => {
+    const scene = sceneFrom([
+      el('d', { kind: 'diamond' }),
+      el('r', { style: { ...DEFAULT_ELEMENT_STYLE, cornerRadius: 12 } }),
+      el('sq'),
+    ])
+    expect(endpointGeometry(scene, link('d'))).toMatchObject({
+      shape: 'diamond',
+    })
+    expect(endpointGeometry(scene, link('r'))).toMatchObject({
+      shape: 'rectangle',
+      cornerRadius: 12,
+    })
+    expect(endpointGeometry(scene, link('sq'))).not.toHaveProperty(
+      'cornerRadius',
+    )
   })
 })

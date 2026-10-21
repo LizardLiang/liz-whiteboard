@@ -310,13 +310,11 @@ export function endpointGeometry(
   if (endpoint.kind === 'point') return { point: endpoint.point }
   const element = scene.byId.get(endpoint.elementId)
   if (!element) return null
-  const outlined =
-    element.kind === 'ellipse' ||
-    element.kind === 'diamond' ||
-    element.kind === 'triangle'
+  const cornerRadius = effectiveCornerRadius(element)
   return {
     rect: bounds(element),
-    ...(outlined ? { shape: element.kind } : {}),
+    shape: element.kind,
+    ...(cornerRadius > 0 ? { cornerRadius } : {}),
     ...(endpoint.attach ? { attach: endpoint.attach } : {}),
   }
 }

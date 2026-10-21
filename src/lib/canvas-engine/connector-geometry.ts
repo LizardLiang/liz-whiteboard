@@ -29,6 +29,7 @@
 //
 // Pure module: no React, no DOM, no database, no canvas context.
 
+import { isOutlinedShapeKind } from './scene'
 import type { Point } from './camera'
 import type { WorldRect } from './hit-test'
 import type {
@@ -51,8 +52,17 @@ import type {
  * point rather than the pair being all-or-nothing.
  */
 export type EndpointGeometry =
-  | { rect: WorldRect; shape?: CanvasElementKind; attach?: ConnectorAttach }
+  | {
+      rect: WorldRect
+      shape?: CanvasElementKind
+      /** The rounded-rectangle corner radius as drawn (`effectiveCornerRadius`); absent means sharp. */
+      cornerRadius?: number
+      attach?: ConnectorAttach
+    }
   | { point: Point }
+
+/** An end that stands on an element's rect, as opposed to a free point. */
+type RectEnd = Extract<EndpointGeometry, { rect: WorldRect }>
 
 /** True for a free end — one that names no element and carries its own point. */
 function isFree(end: EndpointGeometry): end is { point: Point } {
@@ -72,11 +82,13 @@ function referencePoint(end: EndpointGeometry): Point {
 }
 
 /** The stored bounding-box attachment, clipped to the end's drawn outline. */
-function landing(
-  end: { rect: WorldRect; shape?: CanvasElementKind },
-  attach: ConnectorAttach,
-): Point {
-  return clipToOutline(end.rect, end.shape, attachPoint(end.rect, attach))
+function landing(end: RectEnd, attach: ConnectorAttach): Point {
+  return clipToOutline(
+    end.rect,
+    end.shape,
+    attachPoint(end.rect, attach),
+    end.cornerRadius,
+  )
 }
 
 /** Where an end actually meets the line, given where the other end is. */
@@ -88,6 +100,7 @@ function resolveEnd(end: EndpointGeometry, other: Point): Point {
     end.rect,
     end.shape,
     borderPoint(end.rect, { x: other.x - centre.x, y: other.y - centre.y }),
+    end.cornerRadius,
   )
 }
 
@@ -118,10 +131,13 @@ function departureNormal(
   other: Point,
 ): Point {
   if (!isFree(end)) {
-    // `self` IS the landing point, so `nearestAttach` here is a projection
-    // back onto the edge that point is already on, not a search. It is also
-    // the function a DROP uses to choose a side, which is what stops a dropped
-    // end and a derived one ever disagreeing about which face they mean.
+    // For a shaped end `self` is the outline-clipped point, which sits inside
+    // the bbox, so `nearestAttach` picks the NEAREST bbox face — not
+    // necessarily the face the centre ray crossed (a 200x100 diamond aimed at
+    // (200,80) clips to (162.5,68.75), whose nearest face is the bottom). That
+    // is acceptable: every bbox-face normal points outward from the ellipse,
+    // diamond and triangle outlines alike. It is also the function a DROP uses
+    // to choose a side, so a dropped end and a derived one agree on the face.
     return anchorNormal(attachSide(end.attach ?? nearestAttach(end.rect, self)))
   }
   const dx = self.x - other.x
@@ -371,21 +387,28 @@ function compact(points: Array<Point>): Array<Point> {
  * The outlines match `render.ts` tracing and the containment tests in
  * `hit-test.ts`: an ellipse inscribed in the rect, a diamond through the four
  * edge midpoints, a triangle with its apex at the top-edge midpoint and its
- * base along the bottom edge. Every other kind (and an absent kind) is the
- * rect itself, so the point is returned untouched.
+ * base along the bottom edge, and a rectangle whose corners are arcs of
+ * `cornerRadius` (the effective radius the renderer and hit-test use).
  *
- * All three outlines are convex around the centre, so the ray crosses each
- * exactly once. Solved in normalised coordinates (centre at the origin, each
- * half-extent 1) so a wide and a tall shape take the same arithmetic.
+ * A rectangle, text, group or absent kind is the rect itself, and so is a
+ * rectangle point on the straight part of an edge: the SAME point object is
+ * returned, so plain rectangle connectors do not move. Only a point inside a
+ * rounded corner's square is moved, onto the arc.
+ *
+ * The ellipse, diamond and triangle outlines are convex around the centre, so
+ * the ray crosses each exactly once. Solved in normalised coordinates (centre
+ * at the origin, each half-extent 1) so a wide and a tall shape take the same
+ * arithmetic.
  */
 export function clipToOutline(
   rect: WorldRect,
   shape: CanvasElementKind | undefined,
   point: Point,
+  cornerRadius = 0,
 ): Point {
-  if (shape !== 'ellipse' && shape !== 'diamond' && shape !== 'triangle') {
-    return point
-  }
+  if (shape === 'rectangle')
+    return clipToRoundedCorner(rect, cornerRadius, point)
+  if (shape === undefined || !isOutlinedShapeKind(shape)) return point
   const rx = rect.width / 2
   const ry = rect.height / 2
   if (rx <= 0 || ry <= 0) return point
@@ -404,17 +427,56 @@ export function clipToOutline(
     // Triangle: edges |u| = (v + 1) / 2 (apex at v = -1) and the base v = 1.
     // Each constraint t * k <= c bounds the ray; the tightest positive one wins.
     scale = Number.POSITIVE_INFINITY
-    const limits: Array<[number, number]> = [
-      [u - v / 2, 0.5],
-      [-u - v / 2, 0.5],
-      [v, 1],
-    ]
-    for (const [k, c] of limits) {
-      if (k > 0) scale = Math.min(scale, c / k)
-    }
+    const left = u - v / 2
+    const right = -u - v / 2
+    if (left > 0) scale = Math.min(scale, 0.5 / left)
+    if (right > 0) scale = Math.min(scale, 0.5 / right)
+    if (v > 0) scale = Math.min(scale, 1 / v)
     if (!Number.isFinite(scale)) return point
   }
   return { x: cx + u * scale * rx, y: cy + v * scale * ry }
+}
+
+/**
+ * Pull a rect-border point that lies in a rounded corner's square onto the
+ * corner arc, along the ray from the rect centre.
+ *
+ * The corner test is the one `roundedRectContainsPoint` uses: how far the
+ * point lies into each corner region. Zero on either axis means the straight
+ * part of an edge, which returns `point` untouched.
+ */
+function clipToRoundedCorner(
+  rect: WorldRect,
+  cornerRadius: number,
+  point: Point,
+): Point {
+  const radius = Math.min(cornerRadius, rect.width / 2, rect.height / 2)
+  if (!(radius > 0)) return point
+  const left = rect.x + radius
+  const right = rect.x + rect.width - radius
+  const top = rect.y + radius
+  const bottom = rect.y + rect.height - radius
+  const dx = Math.max(left - point.x, point.x - right, 0)
+  const dy = Math.max(top - point.y, point.y - bottom, 0)
+  if (dx === 0 || dy === 0) return point
+
+  // The arc's centre is one radius in from the corner the point is in.
+  const kx = point.x < left ? left : right
+  const ky = point.y < top ? top : bottom
+  const cx = rect.x + rect.width / 2
+  const cy = rect.y + rect.height / 2
+  const ux = point.x - cx
+  const uy = point.y - cy
+  const fx = cx - kx
+  const fy = cy - ky
+  // |f + t*u|^2 = radius^2, taking the larger root: the exit from the shape.
+  const a = ux * ux + uy * uy
+  if (a === 0) return point
+  const b = fx * ux + fy * uy
+  const disc = b * b - a * (fx * fx + fy * fy - radius * radius)
+  if (disc < 0) return point
+  const t = Math.min(1, (-b + Math.sqrt(disc)) / a)
+  return { x: cx + ux * t, y: cy + uy * t }
 }
 
 /**
@@ -480,23 +542,25 @@ export function endpoints(
     // rather than folded into the general path below: this is what every
     // pre-existing connector still takes, and its overlap-inversion null is a
     // behaviour a "resolve each end against the other" variant quietly loses.
-    const a = rectCentre((source as { rect: WorldRect }).rect)
-    const b = rectCentre((target as { rect: WorldRect }).rect)
+    const a = rectCentre((source as RectEnd).rect)
+    const b = rectCentre((target as RectEnd).rect)
     const dx = b.x - a.x
     const dy = b.y - a.y
     if (dx === 0 && dy === 0) return null
 
-    const src = source as { rect: WorldRect; shape?: CanvasElementKind }
-    const tgt = target as { rect: WorldRect; shape?: CanvasElementKind }
+    const src = source as RectEnd
+    const tgt = target as RectEnd
     const from = clipToOutline(
       src.rect,
       src.shape,
       borderPoint(src.rect, { x: dx, y: dy }),
+      src.cornerRadius,
     )
     const to = clipToOutline(
       tgt.rect,
       tgt.shape,
       borderPoint(tgt.rect, { x: -dx, y: -dy }),
+      tgt.cornerRadius,
     )
     const forward = (to.x - from.x) * dx + (to.y - from.y) * dy
     if (forward <= 0) return null
@@ -555,8 +619,8 @@ function elbowPath(
     return path.length >= 2 ? path : null
   }
 
-  const sourceEnd = source as { rect: WorldRect; shape?: CanvasElementKind }
-  const targetEnd = target as { rect: WorldRect; shape?: CanvasElementKind }
+  const sourceEnd = source as RectEnd
+  const targetEnd = target as RectEnd
   const sourceRect = sourceEnd.rect
   const targetRect = targetEnd.rect
   const a = rectCentre(sourceRect)

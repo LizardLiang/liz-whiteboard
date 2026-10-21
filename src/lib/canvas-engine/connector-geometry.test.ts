@@ -26,6 +26,7 @@ import {
 import {
   diamondContainsPoint,
   ellipseContainsPoint,
+  roundedRectContainsPoint,
   triangleContainsPoint,
 } from './hit-test'
 import type { WorldRect } from './hit-test'
@@ -1365,5 +1366,96 @@ describe('radialAttach', () => {
     expect(attach.x).toBeGreaterThanOrEqual(0)
     expect(attach.x).toBeLessThanOrEqual(1)
     expect(attach.y).toBe(0)
+  })
+})
+
+describe('rounded rectangle corners', () => {
+  const BOX: WorldRect = { x: 0, y: 0, width: 200, height: 100 }
+  /** On the rounded outline: inside by a hair inward, outside by a hair outward. */
+  function onRounded(radius: number, p: Point): boolean {
+    const c = rectCentre(BOX)
+    const out = { x: p.x + (p.x - c.x) * 1e-4, y: p.y + (p.y - c.y) * 1e-4 }
+    const inn = { x: p.x - (p.x - c.x) * 1e-4, y: p.y - (p.y - c.y) * 1e-4 }
+    return (
+      roundedRectContainsPoint(BOX, radius, inn) &&
+      !roundedRectContainsPoint(BOX, radius, out)
+    )
+  }
+
+  const corners: Array<Point> = [
+    { x: 0, y: 0 },
+    { x: 200, y: 0 },
+    { x: 0, y: 100 },
+    { x: 200, y: 100 },
+  ]
+
+  for (const radius of [8, 20, 50]) {
+    it(`radius ${radius}: every corner attach lands on the arc`, () => {
+      for (const corner of corners) {
+        const q = clipToOutline(BOX, 'rectangle', corner, radius)
+        expect(q).not.toBe(corner)
+        expect(onRounded(radius, q)).toBe(true)
+      }
+    })
+
+    it(`radius ${radius}: border points near a corner land on the arc`, () => {
+      for (let i = 0; i <= 40; i++) {
+        const t = i / 40
+        const border = [
+          { x: 200 * t, y: 0 },
+          { x: 200 * t, y: 100 },
+          { x: 0, y: 100 * t },
+          { x: 200, y: 100 * t },
+        ]
+        for (const p of border) {
+          expect(
+            onRounded(radius, clipToOutline(BOX, 'rectangle', p, radius)),
+          ).toBe(true)
+        }
+      }
+    })
+  }
+
+  it('points on the straight part of an edge are returned as the same object', () => {
+    for (const p of [
+      { x: 100, y: 0 },
+      { x: 100, y: 100 },
+      { x: 0, y: 50 },
+      { x: 200, y: 50 },
+      { x: 8, y: 0 },
+      { x: 192, y: 100 },
+    ]) {
+      expect(clipToOutline(BOX, 'rectangle', p, 8)).toBe(p)
+    }
+  })
+
+  it('radius 0 leaves a sharp corner untouched', () => {
+    for (const corner of corners) {
+      expect(clipToOutline(BOX, 'rectangle', corner, 0)).toBe(corner)
+      expect(clipToOutline(BOX, 'rectangle', corner)).toBe(corner)
+    }
+  })
+
+  it('a corner attach on a rounded end lands on the arc through endpoints()', () => {
+    const p = endpoints(
+      {
+        rect: BOX,
+        shape: 'rectangle',
+        cornerRadius: 20,
+        attach: { x: 1, y: 1 },
+      },
+      { rect: { x: 600, y: 300, width: 100, height: 100 } },
+    )
+    expect(p).not.toBeNull()
+    expect(onRounded(20, p!.from)).toBe(true)
+    expect(Math.hypot(p!.from.x - 180, p!.from.y - 80)).toBeCloseTo(20, 5)
+  })
+
+  it('a plain rectangle end without a radius does not move', () => {
+    const plain = endpoints(
+      { rect: BOX, attach: { x: 1, y: 1 } },
+      { rect: { x: 600, y: 300, width: 100, height: 100 } },
+    )
+    expect(plain?.from).toEqual({ x: 200, y: 100 })
   })
 })

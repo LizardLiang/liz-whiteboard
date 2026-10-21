@@ -1232,7 +1232,12 @@ function drawAttachCandidate(
 
   const spot = worldToScreen(
     camera,
-    clipToOutline(element, element.kind, attachPoint(element, attach)),
+    clipToOutline(
+      element,
+      element.kind,
+      attachPoint(element, attach),
+      effectiveCornerRadius(element),
+    ),
   )
   ctx.beginPath()
   ctx.arc(spot.x, spot.y, ATTACH_SPOT_SIZE / 2, 0, Math.PI * 2)

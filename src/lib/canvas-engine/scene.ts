@@ -66,6 +66,20 @@ export function isCanvasShapeKind(
   return (CANVAS_SHAPE_KINDS as ReadonlyArray<string>).includes(kind)
 }
 
+/** The shape kinds whose drawn outline is NOT their bounding box's border. */
+export type OutlinedShapeKind = 'ellipse' | 'diamond' | 'triangle'
+
+/**
+ * Is this kind drawn on an outline that differs from its bounding box — so a
+ * connector end on its box border must be pulled in to the drawn edge?
+ * Rectangles (rounded or not), text and groups are their box.
+ */
+export function isOutlinedShapeKind(
+  kind: CanvasElementKind,
+): kind is OutlinedShapeKind {
+  return kind === 'ellipse' || kind === 'diamond' || kind === 'triangle'
+}
+
 /**
  * How a connector is drawn between its endpoints — FigJam's three line types.
  *

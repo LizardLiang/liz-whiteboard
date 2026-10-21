@@ -83,6 +83,7 @@ import {
   freeEndpoint,
   groupDescendants,
   groupOwning,
+  isOutlinedShapeKind,
   nextZIndex,
   outermostGroup,
   remapConnectorEndpoints,
@@ -815,15 +816,14 @@ function attachCandidateAt(
  */
 function dropAttach(element: CanvasElement, world: Point): ConnectorAttach {
   const rect = bounds(element)
-  const outlined =
-    element.kind === 'ellipse' ||
-    element.kind === 'diamond' ||
-    element.kind === 'triangle'
   const centre = rectCentre(rect)
   const dx = world.x - centre.x
   const dy = world.y - centre.y
+  // A drop exactly on the centre has no ray to project along (`borderPoint`
+  // returns the centre for a zero vector), so it falls back to `nearestAttach`
+  // on purpose: that always yields a valid face.
   if (
-    !outlined ||
+    !isOutlinedShapeKind(element.kind) ||
     (dx === 0 && dy === 0) ||
     rect.width <= 0 ||
     rect.height <= 0
