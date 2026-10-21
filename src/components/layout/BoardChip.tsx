@@ -2,14 +2,13 @@
 // Floating top-left chip on board routes: navigator button, breadcrumb, status
 
 import { useMemo } from 'react'
-import { useQuery } from '@tanstack/react-query'
-import { findBoardPath } from './board-breadcrumb'
-import type { TreeProject } from './board-breadcrumb'
+import { BreadcrumbPicker } from './BreadcrumbPicker'
+import { findBoardTrail } from './board-tree'
+import { useProjectTree } from './use-tree-navigation'
 import type { ReactNode } from 'react'
 import type { ConnectionState } from '@/hooks/use-collaboration'
 import { NavigatorDrawer } from '@/components/layout/NavigatorDrawer'
 import { useNavigatorPin } from '@/hooks/use-navigator-pin'
-import { getProjectsWithTree } from '@/routes/api/projects'
 import { cn } from '@/lib/utils'
 
 interface BoardChipProps {
@@ -42,22 +41,12 @@ export function BoardChip({
   className,
 }: BoardChipProps) {
   const { isPinned } = useNavigatorPin()
-  const { data: projects } = useQuery({
-    queryKey: ['projects', 'tree'],
-    queryFn: () => getProjectsWithTree(),
-    // A board load reuses the cached tree instead of refetching it each time.
-    staleTime: 1000 * 30,
-  })
+  const projects = useProjectTree()
 
-  const path = useMemo(
-    () =>
-      findBoardPath(
-        Array.isArray(projects) ? (projects as Array<TreeProject>) : undefined,
-        boardId,
-      ),
+  const ancestors = useMemo(
+    () => findBoardTrail(projects, boardId)?.segments ?? [],
     [projects, boardId],
   )
-  const ancestors = path ? path.slice(0, -1) : []
 
   return (
     <div
@@ -69,13 +58,19 @@ export function BoardChip({
     >
       {!isPinned && <NavigatorDrawer />}
       <div className="flex min-w-0 items-center gap-1 px-1 text-sm">
-        {ancestors.map((name, index) => (
+        {ancestors.map((segment) => (
           <span
-            key={`${index}-${name}`}
-            className="hidden max-w-32 truncate text-muted-foreground md:inline"
+            key={`${segment.type}-${segment.id}`}
+            className="hidden items-center md:inline-flex"
           >
-            {name}
-            <span className="pl-1">/</span>
+            <BreadcrumbPicker
+              segment={segment}
+              projects={projects}
+              currentBoardId={boardId}
+            />
+            <span aria-hidden="true" className="pl-1 text-muted-foreground">
+              /
+            </span>
           </span>
         ))}
         <h1 className="truncate font-semibold">{boardName}</h1>

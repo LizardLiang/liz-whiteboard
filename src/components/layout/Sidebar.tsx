@@ -3,6 +3,7 @@
 
 import { Link } from '@tanstack/react-router'
 import { Home, PinOff } from 'lucide-react'
+import { NavigatorSearch } from '@/components/navigator/NavigatorSearch'
 import { ProjectTree } from '@/components/navigator/ProjectTree'
 import { Button } from '@/components/ui/button'
 import { cn } from '@/lib/utils'
@@ -57,8 +58,10 @@ export function Sidebar({ embedded = false, onUnpin }: SidebarProps) {
       </nav>
 
       {/* Project Tree Navigation */}
-      <div className="flex-1 overflow-y-auto px-4 pb-4">
-        <ProjectTree />
+      <div className="flex-1 overflow-y-auto">
+        <NavigatorSearch>
+          <ProjectTree />
+        </NavigatorSearch>
       </div>
     </aside>
   )

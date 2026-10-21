@@ -14,6 +14,7 @@ import {
   SheetTitle,
   SheetTrigger,
 } from '@/components/ui/sheet'
+import { NAVIGATOR_SEARCH_ATTR } from '@/components/navigator/NavigatorSearch'
 import { useNavigatorPin } from '@/hooks/use-navigator-pin'
 
 function isTypingTarget(target: EventTarget | null): boolean {
@@ -65,6 +66,14 @@ export function NavigatorDrawer() {
         side="left"
         className="w-72 gap-0 p-0 sm:max-w-72"
         data-testid="navigator-drawer"
+        onEscapeKeyDown={(event) => {
+          // Esc in a filled search box clears the query; it must not also
+          // close the drawer.
+          const target = event.target as HTMLInputElement | null
+          if (target?.hasAttribute(NAVIGATOR_SEARCH_ATTR) && target.value) {
+            event.preventDefault()
+          }
+        }}
       >
         <SheetHeader className="flex-row items-center justify-between gap-2 border-b py-2 pr-12">
           <SheetTitle className="text-sm">Navigator</SheetTitle>

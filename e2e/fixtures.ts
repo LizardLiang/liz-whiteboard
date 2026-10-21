@@ -329,6 +329,24 @@ export const IDS = {
   spUsersId: 'b0000000-0000-4000-8000-000000000004',
   spOrdersId: 'b0000000-0000-4000-8000-000000000005',
 
+  // Dedicated project for the breadcrumb-picker + navigator-search suite
+  // (e2e/navigator-breadcrumb.spec.ts). Own project so its folder/board names
+  // never leak into another spec's sidebar assertions. Layout (see
+  // e2e/seed-navigator.ts):
+  //   Nav Project / Nav Root ERD (whiteboard)
+  //   Nav Project / Design / Design Overview (whiteboard)
+  //   Nav Project / Design / Specs / Quarterly Orders ERD (whiteboard)
+  //   Nav Project / Design / Specs / Quarterly Flow Sketch (canvas)
+  //   Nav Project / Empty Folder
+  navProject: 'c0000000-0000-4000-8000-000000000001',
+  navRootBoard: 'c0000000-0000-4000-8000-000000000002',
+  navDesignFolder: 'c0000000-0000-4000-8000-000000000003',
+  navSpecsFolder: 'c0000000-0000-4000-8000-000000000004',
+  navEmptyFolder: 'c0000000-0000-4000-8000-000000000005',
+  navDesignBoard: 'c0000000-0000-4000-8000-000000000006',
+  navSpecsBoard: 'c0000000-0000-4000-8000-000000000007',
+  navSpecsCanvas: 'c0000000-0000-4000-8000-000000000008',
+
   // Dedicated user for the forgot-password suite — see
   // E2E_RESET_USER's comment above for why this is separate from E2E_USER.
   resetPwUser: 'd0000000-0000-4000-8000-000000000001',
