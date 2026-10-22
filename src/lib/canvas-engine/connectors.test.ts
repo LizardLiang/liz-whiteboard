@@ -223,17 +223,18 @@ describe('hitTest with connectors', () => {
     ).toBe('a')
   })
 
-  it('does not grab a connector through an element painted over it', () => {
-    // The connector has the HIGHEST z here, but connectors paint beneath
-    // everything (render.ts's two-pass draw). Hit-testing has to agree with
-    // what the user can see, or clicking a box sometimes selects the arrow.
+  it('grabs a connector that runs through a shape, and the shape elsewhere', () => {
+    // Shape fills are translucent, so the line stays visible inside `over`
+    // and a click on it must select the line, whatever the z-order. Off the
+    // line, the same shape still takes the click.
     const covered = sceneFrom([
       el('a', { x: 0, y: 0 }),
       el('b', { x: 300, y: 0 }),
-      el('over', { x: 150, y: 0, width: 100, height: 100, zIndex: 0 }),
-      conn('ab', 'a', 'b', 'straight', { zIndex: 99 }),
+      el('over', { x: 150, y: 0, width: 100, height: 100, zIndex: 99 }),
+      conn('ab', 'a', 'b', 'straight', { zIndex: 0 }),
     ])
-    expect(hitTest(covered, { x: 200, y: 50 })?.id).toBe('over')
+    expect(hitTest(covered, { x: 200, y: 50 })?.id).toBe('ab')
+    expect(hitTest(covered, { x: 200, y: 85 })?.id).toBe('over')
   })
 
   it('ignores a connector whose endpoint is gone', () => {

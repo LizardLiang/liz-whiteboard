@@ -390,16 +390,14 @@ export function hitTest(
    */
   connectorTolerance: number = DEFAULT_CONNECTOR_TOLERANCE,
 ): CanvasElement | null {
-  // Non-connectors first, in reverse z. Connectors are painted BENEATH every
-  // other element (render.ts's two-pass draw), so a connector running under a
-  // rectangle must not be grabbed through it — hit-testing has to agree with
-  // what the user can see, or clicking a shape sometimes selects the arrow
-  // behind it.
-  for (let i = scene.elements.length - 1; i >= 0; i -= 1) {
-    const element = scene.elements[i]
-    if (element.connector) continue
-    if (elementContainsPoint(element, point)) return element
-  }
+  // Connectors first, in reverse z. They are painted BENEATH every other
+  // element (render.ts's two-pass draw), but every fill a shape can carry is
+  // translucent or `none` (canvas-style-palette.ts), so a line running
+  // through a shape stays visible — and a visible line must be clickable.
+  // Testing shapes first made the shape's interior swallow every click on a
+  // connector that crossed it. A connector only wins within
+  // `connectorTolerance` of its line, so the rest of the shape still selects
+  // the shape.
   for (let i = scene.elements.length - 1; i >= 0; i -= 1) {
     const element = scene.elements[i]
     if (!element.connector) continue
@@ -407,6 +405,11 @@ export function hitTest(
     if (path && pointNearPolyline(path, point, connectorTolerance)) {
       return element
     }
+  }
+  for (let i = scene.elements.length - 1; i >= 0; i -= 1) {
+    const element = scene.elements[i]
+    if (element.connector) continue
+    if (elementContainsPoint(element, point)) return element
   }
   return null
 }
