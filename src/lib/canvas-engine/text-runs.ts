@@ -76,10 +76,29 @@ function isNormal(runs: Array<CanvasTextRun>, textLength: number): boolean {
 }
 
 /**
- * Clamp runs to `[0, textLength)`, resolve overlaps (a later run overrides an
- * earlier one attribute by attribute), drop empty and attribute-less runs and
- * merge neighbours with equal attributes. Returns the same array when it is
- * already normal, so a per-frame caller pays one pass and no allocation.
+ * The most runs a label may carry. The schema enforces it on write; readers
+ * enforce it again because a peer's broadcast can skip validation, and layout
+ * runs every frame.
+ */
+export const MAX_TEXT_RUNS = 512
+
+/** Normalized results by input array, so a malformed input is repaired once. */
+const normalizedCache = new WeakMap<
+  Array<CanvasTextRun>,
+  { textLength: number; runs: Array<CanvasTextRun> }
+>()
+
+/**
+ * Clamp runs to `[0, textLength)`, drop empty and attribute-less runs, repair
+ * order and overlap, and merge neighbours with equal attributes. Returns the
+ * same array when it is already normal, so a per-frame caller pays one pass
+ * and no allocation.
+ *
+ * Valid input is sorted and disjoint (the schema says so). Input that is not
+ * — a peer write that skipped validation — is repaired in O(n log n): only the
+ * first `MAX_TEXT_RUNS` runs are read, they are sorted by start, and where two
+ * overlap the earlier-starting one keeps the overlap. The repaired result is
+ * cached per input array.
  */
 export function normalizeRuns(
   runs: Array<CanvasTextRun> | undefined,
@@ -87,48 +106,51 @@ export function normalizeRuns(
 ): Array<CanvasTextRun> {
   if (!runs) return []
   if (runs.length === 0) return runs
-  if (isNormal(runs, textLength)) return runs
+  if (runs.length <= MAX_TEXT_RUNS && isNormal(runs, textLength)) return runs
 
-  const cuts = new Set<number>()
-  for (const run of runs) {
-    const start = Math.max(0, Math.min(textLength, run.start))
+  const cached = normalizedCache.get(runs)
+  if (cached && cached.textLength === textLength) return cached.runs
+
+  const sorted = runs.slice(0, MAX_TEXT_RUNS).sort((a, b) => a.start - b.start)
+  const out: Array<CanvasTextRun> = []
+  let cursor = 0
+  for (const run of sorted) {
+    const start = Math.max(cursor, Math.min(textLength, run.start))
     const end = Math.max(0, Math.min(textLength, run.end))
     if (start >= end) continue
-    cuts.add(start)
-    cuts.add(end)
-  }
-  const points = [...cuts].sort((a, b) => a - b)
-
-  const out: Array<CanvasTextRun> = []
-  for (let index = 0; index + 1 < points.length; index += 1) {
-    const start = points[index]
-    const end = points[index + 1]
-    const merged: TextRunAttrs = {}
-    for (const run of runs) {
-      if (run.start > start || run.end < end) continue
-      Object.assign(merged, attrsOf(run))
-    }
-    if (!hasAttrs(merged)) continue
+    const attrs = attrsOf(run)
+    if (!hasAttrs(attrs)) continue
     const last = out.length > 0 ? out[out.length - 1] : null
-    if (last && last.end === start && sameAttrs(last, merged)) {
+    if (last && last.end === start && sameAttrs(last, attrs)) {
       last.end = end
     } else {
-      out.push({ start, end, ...merged })
+      out.push({ start, end, ...attrs })
     }
+    cursor = end
   }
+  normalizedCache.set(runs, { textLength, runs: out })
   return out
 }
+
+/** Resolved segments by style object; styles are replaced, never mutated. */
+const segmentCache = new WeakMap<
+  CanvasElementStyle,
+  { text: string; segments: Array<TextSegment> }
+>()
 
 /**
  * The text split into contiguous segments with their effective style: the
  * label style, overridden by whichever run covers the segment. Empty text has
- * no segments.
+ * no segments. Cached per style object and text, since layout asks every frame.
  */
 export function resolveRuns(
   text: string,
   style: CanvasElementStyle,
 ): Array<TextSegment> {
   if (text.length === 0) return []
+  const cached = segmentCache.get(style)
+  if (cached && cached.text === text) return cached.segments
+
   const base = (start: number, end: number): TextSegment => ({
     start,
     end,
@@ -152,10 +174,15 @@ export function resolveRuns(
     cursor = run.end
   }
   if (cursor < text.length) segments.push(base(cursor, text.length))
+  segmentCache.set(style, { text, segments })
   return segments
 }
 
-/** Apply `patch` to `[start, end)`, keeping every other character as it was. */
+/**
+ * Apply `patch` to `[start, end)`, keeping every other character as it was.
+ * One pass over the runs: each is split at the range edges, and the part
+ * inside the range takes the patch over its own attributes.
+ */
 export function applyRunStyle(
   runs: Array<CanvasTextRun>,
   start: number,
@@ -165,11 +192,28 @@ export function applyRunStyle(
 ): Array<CanvasTextRun> {
   const from = Math.max(0, Math.min(start, end))
   const to = Math.min(textLength, Math.max(start, end))
-  if (from >= to || !hasAttrs(patch)) return normalizeRuns(runs, textLength)
-  return normalizeRuns(
-    [...runs, { start: from, end: to, ...patch }],
-    textLength,
-  )
+  const current = normalizeRuns(runs, textLength)
+  if (from >= to || !hasAttrs(patch)) return current
+
+  const next: Array<CanvasTextRun> = []
+  let cursor = from
+  for (const run of current) {
+    if (run.end <= from || run.start >= to) {
+      next.push(run)
+      continue
+    }
+    if (run.start < from) next.push({ ...run, end: from })
+    if (run.start > cursor)
+      next.push({ start: cursor, end: run.start, ...patch })
+    const inner = Math.max(run.start, from)
+    const innerEnd = Math.min(run.end, to)
+    next.push({ ...attrsOf(run), ...patch, start: inner, end: innerEnd })
+    if (run.end > to) next.push({ ...run, start: to })
+    cursor = innerEnd
+  }
+  if (cursor < to) next.push({ start: cursor, end: to, ...patch })
+  next.sort((a, b) => a.start - b.start)
+  return normalizeRuns(next, textLength)
 }
 
 /**

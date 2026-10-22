@@ -34,16 +34,35 @@ describe('normalizeRuns', () => {
     ])
   })
 
-  it('lets a later run override an earlier one attribute by attribute', () => {
+  it('sorts unsorted input and lets the earlier-starting run keep an overlap', () => {
     const runs: Array<CanvasTextRun> = [
-      { start: 0, end: 4, fontWeight: 'bold', color: '#ff0000' },
       { start: 2, end: 6, color: '#00ff00' },
+      { start: 0, end: 4, fontWeight: 'bold' },
     ]
     expect(normalizeRuns(runs, 6)).toEqual([
-      { start: 0, end: 2, fontWeight: 'bold', color: '#ff0000' },
-      { start: 2, end: 4, fontWeight: 'bold', color: '#00ff00' },
+      { start: 0, end: 4, fontWeight: 'bold' },
       { start: 4, end: 6, color: '#00ff00' },
     ])
+  })
+
+  it('reads at most MAX_TEXT_RUNS runs of a hostile array', () => {
+    const runs: Array<CanvasTextRun> = Array.from({ length: 50_000 }, () => ({
+      start: 0,
+      end: 10_000,
+      underline: true,
+    }))
+    const began = performance.now()
+    const result = normalizeRuns(runs, 10_000)
+    expect(performance.now() - began).toBeLessThan(200)
+    expect(result).toEqual([{ start: 0, end: 10_000, underline: true }])
+  })
+
+  it('repairs a malformed array once and reuses the result', () => {
+    const runs: Array<CanvasTextRun> = [
+      { start: 3, end: 5, underline: true },
+      { start: 0, end: 2, underline: true },
+    ]
+    expect(normalizeRuns(runs, 5)).toBe(normalizeRuns(runs, 5))
   })
 
   it('merges adjacent runs with equal attributes', () => {
@@ -94,6 +113,14 @@ describe('resolveRuns', () => {
   })
 })
 
+describe('resolveRuns cache', () => {
+  it('returns the same segments for the same style object and text', () => {
+    const s = style([{ start: 1, end: 2, fontWeight: 'bold' }])
+    expect(resolveRuns('abc', s)).toBe(resolveRuns('abc', s))
+    expect(resolveRuns('abcd', s)).not.toBe(resolveRuns('abc', s))
+  })
+})
+
 describe('applyRunStyle', () => {
   it('splits an existing run and keeps the rest of its attributes', () => {
     const runs = [{ start: 0, end: 6, fontWeight: 'bold' as const }]
@@ -101,6 +128,17 @@ describe('applyRunStyle', () => {
       { start: 0, end: 2, fontWeight: 'bold' },
       { start: 2, end: 4, fontWeight: 'bold', color: '#ff0000' },
       { start: 4, end: 6, fontWeight: 'bold' },
+    ])
+  })
+
+  it('lets the patch override a run it overlaps and fills the gaps', () => {
+    const runs = [
+      { start: 2, end: 4, fontWeight: 'bold' as const, color: '#111' },
+    ]
+    expect(applyRunStyle(runs, 0, 6, { color: '#222' }, 6)).toEqual([
+      { start: 0, end: 2, color: '#222' },
+      { start: 2, end: 4, fontWeight: 'bold', color: '#222' },
+      { start: 4, end: 6, color: '#222' },
     ])
   })
 

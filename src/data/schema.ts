@@ -4,6 +4,7 @@
 import { z } from 'zod'
 import { AREA_COLOR_IDS } from '@/lib/area-colors'
 import { DEFAULT_ELEMENT_STYLE } from '@/lib/canvas-engine/scene'
+import { MAX_TEXT_RUNS } from '@/lib/canvas-engine/text-runs'
 
 // ============================================================================
 // JSON Sub-Schemas (for nested JSON fields)
@@ -1092,8 +1093,10 @@ export const canvasElementStyleSchema = z.strictObject({
   underline: z.boolean().default(DEFAULT_ELEMENT_STYLE.underline),
   strikethrough: z.boolean().default(DEFAULT_ELEMENT_STYLE.strikethrough),
   /**
-   * Per-range overrides — see `CanvasElementStyle.textRuns`. Bounded by the
-   * text cap, since one run covers at least one character.
+   * Per-range overrides — see `CanvasElementStyle.textRuns`. Sorted,
+   * disjoint and capped at `MAX_TEXT_RUNS`: layout reads them every frame, so
+   * a stored row must not be able to make that expensive. That the last run
+   * ends inside the text is checked beside `text` (`runsFitText`).
    */
   textRuns: z
     .array(
@@ -1112,9 +1115,26 @@ export const canvasElementStyleSchema = z.strictObject({
           message: 'A text run must cover at least one character',
         }),
     )
-    .max(CANVAS_TEXT_MAX_LENGTH)
+    .max(MAX_TEXT_RUNS)
+    .refine(
+      (runs) => runs.every((run, i) => i === 0 || run.start >= runs[i - 1].end),
+      { message: 'Text runs must be sorted and must not overlap' },
+    )
     .default(() => []),
 })
+
+/**
+ * Whether a style's runs end inside `text`. A style cannot see the text it is
+ * stored beside, so the element schemas check it where both are visible.
+ */
+function runsFitText(data: {
+  text?: string | null
+  style?: { textRuns: Array<{ end: number }> }
+}): boolean {
+  const runs = data.style?.textRuns
+  if (!runs || runs.length === 0 || data.text === undefined) return true
+  return runs[runs.length - 1].end <= (data.text ?? '').length
+}
 
 /**
  * The element kinds the engine renders (see canvas-engine/scene.ts).
@@ -1406,6 +1426,10 @@ export const createCanvasElementSchema = z
     message: 'props.kind must match kind',
     path: ['props', 'kind'],
   })
+  .refine(runsFitText, {
+    message: 'Text runs must end inside the text',
+    path: ['style', 'textRuns'],
+  })
 
 /**
  * Schema for updating a canvas element. Defined independently (not
@@ -1413,16 +1437,21 @@ export const createCanvasElementSchema = z
  * explicitly-provided columns are written. `kind` is absent: an element's
  * kind never changes.
  */
-export const updateCanvasElementSchema = z.object({
-  positionX: boardCoordSchema.optional(),
-  positionY: boardCoordSchema.optional(),
-  width: z.number().positive().max(100_000).optional(),
-  height: z.number().positive().max(100_000).optional(),
-  zIndex: canvasZIndexSchema.optional(),
-  text: z.string().max(CANVAS_TEXT_MAX_LENGTH).nullable().optional(),
-  style: canvasElementStyleSchema.optional(),
-  props: canvasElementPropsSchema.optional(),
-})
+export const updateCanvasElementSchema = z
+  .object({
+    positionX: boardCoordSchema.optional(),
+    positionY: boardCoordSchema.optional(),
+    width: z.number().positive().max(100_000).optional(),
+    height: z.number().positive().max(100_000).optional(),
+    zIndex: canvasZIndexSchema.optional(),
+    text: z.string().max(CANVAS_TEXT_MAX_LENGTH).nullable().optional(),
+    style: canvasElementStyleSchema.optional(),
+    props: canvasElementPropsSchema.optional(),
+  })
+  .refine(runsFitText, {
+    message: 'Text runs must end inside the text',
+    path: ['style', 'textRuns'],
+  })
 
 /**
  * Schema for creating a canvas board. Mirrors `createWhiteboardSchema` —
