@@ -1091,6 +1091,29 @@ export const canvasElementStyleSchema = z.strictObject({
     .default(DEFAULT_ELEMENT_STYLE.fontStyle),
   underline: z.boolean().default(DEFAULT_ELEMENT_STYLE.underline),
   strikethrough: z.boolean().default(DEFAULT_ELEMENT_STYLE.strikethrough),
+  /**
+   * Per-range overrides — see `CanvasElementStyle.textRuns`. Bounded by the
+   * text cap, since one run covers at least one character.
+   */
+  textRuns: z
+    .array(
+      z
+        .strictObject({
+          start: z.number().int().min(0),
+          end: z.number().int().min(1),
+          fontWeight: z.enum(['normal', 'bold']).optional(),
+          fontStyle: z.enum(['normal', 'italic']).optional(),
+          underline: z.boolean().optional(),
+          strikethrough: z.boolean().optional(),
+          fontSize: z.number().finite().min(1).max(512).optional(),
+          color: cssColorSchema.optional(),
+        })
+        .refine((run) => run.start < run.end, {
+          message: 'A text run must cover at least one character',
+        }),
+    )
+    .max(CANVAS_TEXT_MAX_LENGTH)
+    .default(() => []),
 })
 
 /**

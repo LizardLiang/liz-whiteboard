@@ -36,6 +36,7 @@ const scene = sceneFrom([
       fontStyle: 'normal',
       underline: false,
       strikethrough: false,
+      textRuns: [],
     },
   },
 ])

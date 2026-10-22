@@ -68,6 +68,14 @@ export interface PersistentRenderTarget {
   paintPath: (paint: RenderPaint) => void
   beginText: (spec: CanvasFontSpec, color: string) => void
   textLine: (text: string, x: number, y: number) => void
+  /** A stretch of a line in its own font and colour, for run-styled labels. */
+  textPiece: (
+    text: string,
+    x: number,
+    y: number,
+    spec: CanvasFontSpec,
+    color: string,
+  ) => void
   /** A horizontal underline or strikethrough bar for the line just drawn. */
   textDecoration: (
     x: number,
@@ -184,6 +192,18 @@ export class CanvasRenderTarget implements PersistentRenderTarget {
   }
 
   textLine(text: string, x: number, y: number): void {
+    this.ctx.fillText(text, x, y)
+  }
+
+  textPiece(
+    text: string,
+    x: number,
+    y: number,
+    spec: CanvasFontSpec,
+    color: string,
+  ): void {
+    this.ctx.fillStyle = color
+    this.ctx.font = canvasFont(spec)
     this.ctx.fillText(text, x, y)
   }
 

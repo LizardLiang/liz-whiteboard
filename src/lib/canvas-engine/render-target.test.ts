@@ -105,6 +105,19 @@ class RecordingTarget implements PersistentRenderTarget {
     })
   }
 
+  textPiece(
+    text: string,
+    x: number,
+    y: number,
+    spec: CanvasFontSpec,
+    color: string,
+  ) {
+    this.calls.push({
+      kind: 'piece',
+      payload: { text, x, y, spec, color },
+    })
+  }
+
   textDecoration(x: number, y: number, width: number, thickness: number) {
     this.calls.push({
       kind: 'decoration',
@@ -126,6 +139,7 @@ const baseStyle = {
   fontStyle: 'normal' as const,
   underline: false,
   strikethrough: false,
+  textRuns: [],
 }
 
 function element(patch: Partial<CanvasElement>): CanvasElement {
@@ -444,5 +458,64 @@ describe('renderPersistentScene', () => {
     renderPersistentScene(recorder, sceneFrom([connector]), 'light')
 
     expect(recorder.calls).toEqual([])
+  })
+
+  it('draws a run-styled label piece by piece on a shared baseline', () => {
+    const recorder = new RecordingTarget()
+    renderPersistentScene(
+      recorder,
+      sceneFrom([
+        element({
+          width: 200,
+          height: 100,
+          text: 'abcd',
+          style: {
+            ...baseStyle,
+            textAlign: 'left',
+            verticalAlign: 'top',
+            textRuns: [
+              {
+                start: 2,
+                end: 4,
+                fontSize: 32,
+                fontWeight: 'bold',
+                underline: true,
+                color: '#ef4444',
+              },
+            ],
+          },
+        }),
+      ]),
+      'light',
+    )
+
+    const pieces = recorder.calls.filter((call) => call.kind === 'piece')
+    // Plain 16px 'ab' is 16 wide; the 32px run is 2 * 16 wide at x = 18 + 16.
+    // The 16px piece sits (32 - 16) * 0.8 = 12.8 below the 32px piece's top.
+    expect(pieces.map((call) => call.payload)).toEqual([
+      {
+        text: 'ab',
+        x: 18,
+        y: 28 + 12.8,
+        spec: { fontSize: 16, fontWeight: 'normal', fontStyle: 'normal' },
+        color: '#0f172a',
+      },
+      {
+        text: 'cd',
+        x: 34,
+        y: 28,
+        spec: { fontSize: 32, fontWeight: 'bold', fontStyle: 'normal' },
+        color: '#ef4444',
+      },
+    ])
+    // Only the run is underlined, at its own font size.
+    expect(recorder.calls.filter((call) => call.kind === 'decoration')).toEqual(
+      [
+        {
+          kind: 'decoration',
+          payload: { x: 34, y: 28 + 32 * 0.92, width: 32, thickness: 32 / 14 },
+        },
+      ],
+    )
   })
 })

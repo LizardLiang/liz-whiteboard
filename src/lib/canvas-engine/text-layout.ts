@@ -15,8 +15,15 @@
 //
 // Pure module: no React, no DOM, no canvas.
 
-/** Measures a string's advance width in world units, at the caller's font. */
-export type TextMeasurer = (text: string) => number
+import type { CanvasFontSpec } from './render-target'
+import type { TextSegment } from './text-runs'
+
+/**
+ * Measures a string's advance width in world units. Without `spec` it uses the
+ * caller's own font (the label's); a run-aware layout passes each segment's
+ * font explicitly.
+ */
+export type TextMeasurer = (text: string, spec?: CanvasFontSpec) => number
 
 export interface TextStyle {
   fontSize: number
@@ -81,14 +88,45 @@ export interface LaidOutLine {
    * start. Readers add the frame's origin and nothing else.
    */
   carets: Array<number>
+  /** `y` of this line's top within the text block. */
+  top: number
+  /** This line's height: its largest run's font size times the line-height ratio. */
+  height: number
+  /**
+   * The line cut at run boundaries, each piece with its own font. Only present
+   * for a run-aware layout; a uniform label draws `text` as one piece.
+   */
+  pieces?: Array<LinePiece>
+}
+
+/** One stretch of a line drawn in a single font. */
+export interface LinePiece {
+  text: string
+  /** Block-local `x` of the piece's left edge (alignment-adjusted). */
+  x: number
+  width: number
+  /**
+   * Distance from the line's top to the piece's em-box top. Mixed sizes share
+   * one baseline, placed 0.8 em below the em-box top: a piece sits
+   * `(largest size on the line - its size) * BASELINE_ASCENT` lower than the
+   * line's largest piece.
+   */
+  offsetY: number
+  segment: TextSegment
 }
 
 export interface TextLayout {
   lines: Array<LaidOutLine>
+  /** The base (label) line height; a mixed line may be taller. */
   lineHeight: number
   width: number
   height: number
+  /** True when lines can differ in height, so rows are found by `top`. */
+  mixed?: boolean
 }
+
+/** Where the shared baseline sits below an em box's top, as a fraction of its size. */
+export const BASELINE_ASCENT = 0.8
 
 /**
  * Break `text` into lines that fit `maxWidth`, honouring explicit newlines.
@@ -97,13 +135,22 @@ export interface TextLayout {
  * `maxWidth` is broken mid-word rather than allowed to overflow — without
  * that, one long unbroken string (a URL, or any CJK text, which has no
  * spaces at all) would run off the element forever.
+ *
+ * With `segments` (the label split at run boundaries, from `resolveRuns`) the
+ * same wrapping measures each stretch in its own font and each line is as tall
+ * as its largest piece. Without them the layout is the single-font one every
+ * label had before runs existed.
  */
 export function layoutText(
   text: string,
   style: TextStyle,
   maxWidth: number,
   measure: TextMeasurer,
+  segments?: ReadonlyArray<TextSegment>,
 ): TextLayout {
+  if (segments && segments.length > 0) {
+    return layoutRuns(text, style, maxWidth, measure, segments)
+  }
   const lineHeight = style.fontSize * style.lineHeight
   const lines: Array<LaidOutLine> = []
 
@@ -113,7 +160,9 @@ export function layoutText(
   let cursor = 0
 
   for (const paragraph of paragraphs) {
-    const wrapped = wrapParagraph(paragraph, maxWidth, measure)
+    const wrapped = wrapParagraph(paragraph, maxWidth, (from, to) =>
+      measure(paragraph.slice(from, to)),
+    )
     for (const piece of wrapped) {
       const start = cursor + piece.offset
       const width = measure(piece.text)
@@ -127,6 +176,8 @@ export function layoutText(
           measure,
           alignOffset(width, maxWidth, style.align),
         ),
+        top: lines.length * lineHeight,
+        height: lineHeight,
       })
     }
     // +1 for the newline that split() consumed.
@@ -141,14 +192,128 @@ export function layoutText(
   }
 }
 
-/** Greedy wrap of one newline-free paragraph. */
+/** Run-aware counterpart of the uniform branch of `layoutText`. */
+function layoutRuns(
+  text: string,
+  style: TextStyle,
+  maxWidth: number,
+  measure: TextMeasurer,
+  segments: ReadonlyArray<TextSegment>,
+): TextLayout {
+  const lineHeight = style.fontSize * style.lineHeight
+  const specOf = (segment: TextSegment): CanvasFontSpec => ({
+    fontSize: segment.fontSize,
+    fontWeight: segment.fontWeight,
+    fontStyle: segment.fontStyle,
+  })
+  const specs = segments.map(specOf)
+  // A segment's full width is asked for on every wrap step; measure it once.
+  const fullWidths: Array<number | undefined> = []
+  const widthOfRange = (from: number, to: number): number => {
+    let total = 0
+    for (let index = 0; index < segments.length; index += 1) {
+      const segment = segments[index]
+      if (segment.end <= from) continue
+      if (segment.start >= to) break
+      const a = Math.max(from, segment.start)
+      const b = Math.min(to, segment.end)
+      if (a === segment.start && b === segment.end) {
+        const cached =
+          fullWidths[index] ?? measure(text.slice(a, b), specs[index])
+        fullWidths[index] = cached
+        total += cached
+      } else {
+        total += measure(text.slice(a, b), specs[index])
+      }
+    }
+    return total
+  }
+  const segmentIndexAt = (position: number): number => {
+    for (let index = 0; index < segments.length; index += 1) {
+      if (position < segments[index].end) return index
+    }
+    return segments.length - 1
+  }
+
+  const lines: Array<LaidOutLine> = []
+  let top = 0
+  let cursor = 0
+  for (const paragraph of text.split('\n')) {
+    const wrapped = wrapParagraph(paragraph, maxWidth, (from, to) =>
+      widthOfRange(cursor + from, cursor + to),
+    )
+    for (const piece of wrapped) {
+      const start = cursor + piece.offset
+      const end = start + piece.text.length
+      const first = segmentIndexAt(start)
+
+      // Cut the line at segment boundaries; caret slots accumulate across
+      // pieces so each is measured in its own font.
+      const relative: Array<number> = [0]
+      const cuts: Array<{ segment: TextSegment; from: number; to: number }> = []
+      // An empty line has no piece; it is as tall as the run it sits in.
+      let largest = end === start ? segments[first].fontSize : 0
+      let x = 0
+      for (let index = first; index < segments.length; index += 1) {
+        const segment = segments[index]
+        if (segment.start >= end) break
+        const from = Math.max(start, segment.start)
+        const to = Math.min(end, segment.end)
+        if (to <= from) continue
+        largest = Math.max(largest, segment.fontSize)
+        const spec = specs[index]
+        for (let at = from + 1; at <= to; at += 1) {
+          relative.push(x + measure(text.slice(from, at), spec))
+        }
+        cuts.push({ segment, from, to })
+        x = relative[relative.length - 1]
+      }
+      const width = x
+      const origin = alignOffset(width, maxWidth, style.align)
+      const carets = relative.map((offset) => offset + origin)
+      const height = largest * style.lineHeight
+      lines.push({
+        text: piece.text,
+        start,
+        end,
+        width,
+        carets,
+        top,
+        height,
+        pieces: cuts.map(({ segment, from, to }) => ({
+          text: text.slice(from, to),
+          x: carets[from - start],
+          width: carets[to - start] - carets[from - start],
+          offsetY: (largest - segment.fontSize) * BASELINE_ASCENT,
+          segment,
+        })),
+      })
+      top += height
+    }
+    cursor += paragraph.length + 1
+  }
+
+  return {
+    lines,
+    lineHeight,
+    width: lines.reduce((widest, line) => Math.max(widest, line.width), 0),
+    height: top,
+    mixed: true,
+  }
+}
+
+/**
+ * Greedy wrap of one newline-free paragraph. `widthOf(from, to)` is the width
+ * of `paragraph.slice(from, to)`, so a run-aware caller can measure each
+ * stretch in its own font.
+ */
 function wrapParagraph(
   paragraph: string,
   maxWidth: number,
-  measure: TextMeasurer,
+  widthOf: (from: number, to: number) => number,
 ): Array<{ text: string; offset: number }> {
   if (paragraph.length === 0) return [{ text: '', offset: 0 }]
-  if (maxWidth <= 0 || measure(paragraph) <= maxWidth) {
+  if (maxWidth <= 0 || widthOf(0, paragraph.length) <= maxWidth) {
     return [{ text: paragraph, offset: 0 }]
   }
 
@@ -158,8 +323,7 @@ function wrapParagraph(
   let i = 0
 
   while (i < paragraph.length) {
-    const candidate = paragraph.slice(lineStart, i + 1)
-    if (measure(candidate) > maxWidth && i > lineStart) {
+    if (widthOf(lineStart, i + 1) > maxWidth && i > lineStart) {
       // Break at the last space if there was one, otherwise mid-word.
       const breakAt = lastBreak > lineStart ? lastBreak : i
       pieces.push({
@@ -200,6 +364,22 @@ function caretOffsets(
   return offsets
 }
 
+/** The row a block-local `y` falls on, clamped to the first and last line. */
+function lineIndexAt(layout: TextLayout, y: number): number {
+  if (!layout.mixed) {
+    return Math.min(
+      layout.lines.length - 1,
+      Math.max(0, Math.floor(y / layout.lineHeight)),
+    )
+  }
+  let index = 0
+  for (let i = 1; i < layout.lines.length; i += 1) {
+    if (layout.lines[i].top <= y) index = i
+    else break
+  }
+  return index
+}
+
 /**
  * The caret index (into the ORIGINAL string) nearest a local point.
  *
@@ -214,11 +394,7 @@ export function caretFromPoint(
 ): number {
   if (layout.lines.length === 0) return 0
 
-  const lineIndex = Math.min(
-    layout.lines.length - 1,
-    Math.max(0, Math.floor(point.y / layout.lineHeight)),
-  )
-  const line = layout.lines[lineIndex]
+  const line = layout.lines[lineIndexAt(layout, point.y)]
 
   // Nearest caret slot by distance, so clicking the left half of a glyph
   // puts the caret before it and the right half after it.
@@ -244,8 +420,9 @@ export function pointFromCaret(
   layout: TextLayout,
   caret: number,
 ): { x: number; y: number; height: number } {
-  const lineHeight = layout.lineHeight
-  if (layout.lines.length === 0) return { x: 0, y: 0, height: lineHeight }
+  if (layout.lines.length === 0) {
+    return { x: 0, y: 0, height: layout.lineHeight }
+  }
 
   // The LAST line whose start is at or before the caret — so a caret
   // sitting exactly on a line boundary belongs to the line it starts.
@@ -259,8 +436,8 @@ export function pointFromCaret(
   const slot = Math.min(line.carets.length - 1, Math.max(0, caret - line.start))
   return {
     x: line.carets[slot],
-    y: lineIndex * lineHeight,
-    height: lineHeight,
+    y: line.top,
+    height: line.height,
   }
 }
 
@@ -388,14 +565,13 @@ export function selectionRects(
     const isLast = index === layout.lines.length - 1
     // The range runs on past this line's last character: the line break (or
     // the space a wrap consumed) is selected too, so give it a visible stub.
-    if (!isLast && to > lineEnd)
-      x1 += layout.lineHeight * NEWLINE_HIGHLIGHT_RATIO
+    if (!isLast && to > lineEnd) x1 += line.height * NEWLINE_HIGHLIGHT_RATIO
     if (x1 <= x0) continue
     rects.push({
       x: x0,
-      y: index * layout.lineHeight,
+      y: line.top,
       width: x1 - x0,
-      height: layout.lineHeight,
+      height: line.height,
     })
   }
   return rects

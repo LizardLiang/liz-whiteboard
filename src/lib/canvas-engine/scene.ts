@@ -238,6 +238,22 @@ export type CanvasFontWeight = 'normal' | 'bold'
 /** Whole-label font slant. */
 export type CanvasFontStyle = 'normal' | 'italic'
 
+/**
+ * A character range `[start, end)` of a label that overrides the whole-label
+ * style. Offsets are UTF-16 indices into `element.text`; an omitted attribute
+ * inherits the label's value.
+ */
+export interface CanvasTextRun {
+  start: number
+  end: number
+  fontWeight?: CanvasFontWeight
+  fontStyle?: CanvasFontStyle
+  underline?: boolean
+  strikethrough?: boolean
+  fontSize?: number
+  color?: string
+}
+
 /** Styling shared by every element kind. */
 export interface CanvasElementStyle {
   fill: string
@@ -276,6 +292,11 @@ export interface CanvasElementStyle {
   fontStyle: CanvasFontStyle
   underline: boolean
   strikethrough: boolean
+  /**
+   * Per-range overrides of the label style, written together with `text` and
+   * clamped to it at draw time (see `text-runs.ts`).
+   */
+  textRuns: Array<CanvasTextRun>
 }
 
 export const DEFAULT_ELEMENT_STYLE: CanvasElementStyle = {
@@ -327,6 +348,7 @@ export const DEFAULT_ELEMENT_STYLE: CanvasElementStyle = {
   fontStyle: 'normal',
   underline: false,
   strikethrough: false,
+  textRuns: [],
 }
 
 /**

@@ -35,6 +35,7 @@ import {
 } from './connector-geometry'
 import { connectorCurveOf, connectorPathOf, connectorTailOf } from './hit-test'
 import { QUICK_CREATE_DIRECTIONS } from './quick-create'
+import { normalizeRuns, resolveRuns } from './text-runs'
 import {
   DEFAULT_TEXT_STYLE,
   layoutText,
@@ -482,8 +483,8 @@ export function measurerFor(
   spec: CanvasFontSpec,
 ): TextMeasurer {
   const font = canvasFont(spec)
-  return (text: string) => {
-    ctx.font = font
+  return (text: string, override?: CanvasFontSpec) => {
+    ctx.font = override ? canvasFont(override) : font
     return ctx.measureText(text).width
   }
 }
@@ -537,9 +538,12 @@ export function resolveTextColor(
   style: CanvasElementStyle,
   theme: CanvasTheme,
 ): string {
-  return style.color === DEFAULT_ELEMENT_STYLE.color
-    ? CHROME[theme].text
-    : style.color
+  return resolveColor(style.color, theme)
+}
+
+/** `resolveTextColor` for a bare colour, so a run's colour resolves the same way. */
+function resolveColor(color: string, theme: CanvasTheme): string {
+  return color === DEFAULT_ELEMENT_STYLE.color ? CHROME[theme].text : color
 }
 
 /**
@@ -649,8 +653,12 @@ export function layoutElementText(
   measure: TextMeasurer,
 ): TextLayout {
   const frame = textFrame(element)
+  const text = element.text ?? ''
+  // Runs only change the layout when some survive clamping to the text; a
+  // label without them takes the single-font path untouched.
+  const hasRuns = normalizeRuns(element.style.textRuns, text.length).length > 0
   return layoutText(
-    element.text ?? '',
+    text,
     {
       ...DEFAULT_TEXT_STYLE,
       fontSize: element.style.fontSize,
@@ -658,6 +666,7 @@ export function layoutElementText(
     },
     frame.maxWidth,
     measure,
+    hasRuns ? resolveRuns(text, element.style) : undefined,
   )
 }
 
@@ -899,7 +908,8 @@ function drawElement(
   if (text.length === 0) return null
 
   const fontSpec = fontSpecOf(element.style)
-  const measure = (value: string) => target.measureText(value, fontSpec)
+  const measure = (value: string, spec?: CanvasFontSpec) =>
+    target.measureText(value, spec ?? fontSpec)
   const layout = layoutElementText(element, measure)
   const frame = textFrame(element)
   const originY = textOriginY(element, layout)
@@ -924,13 +934,55 @@ function drawElement(
     }
   }
 
-  target.beginText(fontSpec, resolveTextColor(element.style, theme))
+  const textColor = resolveTextColor(element.style, theme)
+  if (!layout.mixed) target.beginText(fontSpec, textColor)
   const { fontSize, underline, strikethrough } = element.style
   const thickness = Math.max(1, fontSize / 14)
-  for (let index = 0; index < layout.lines.length; index += 1) {
-    const line = layout.lines[index]
+  for (const line of layout.lines) {
+    const lineY = originY + line.top
+    if (line.pieces) {
+      // A run-aware line: one pass per piece in its own font and colour. The
+      // pieces share a baseline (see `LinePiece.offsetY`), so a smaller piece
+      // sits lower in the line box and its decorations follow it.
+      target.beginText(fontSpec, textColor)
+      for (const piece of line.pieces) {
+        const { segment } = piece
+        const pieceX = frame.x + piece.x
+        const pieceY = lineY + piece.offsetY
+        target.textPiece(
+          piece.text,
+          pieceX,
+          pieceY,
+          {
+            fontSize: segment.fontSize,
+            fontWeight: segment.fontWeight,
+            fontStyle: segment.fontStyle,
+          },
+          resolveColor(segment.color, theme),
+        )
+        if (piece.width <= 0) continue
+        const pieceThickness = Math.max(1, segment.fontSize / 14)
+        if (segment.underline) {
+          target.textDecoration(
+            pieceX,
+            pieceY + segment.fontSize * 0.92,
+            piece.width,
+            pieceThickness,
+          )
+        }
+        if (segment.strikethrough) {
+          target.textDecoration(
+            pieceX,
+            pieceY + segment.fontSize * 0.55,
+            piece.width,
+            pieceThickness,
+          )
+        }
+      }
+      target.endText()
+      continue
+    }
     const lineX = frame.x + line.carets[0]
-    const lineY = originY + index * layout.lineHeight
     target.textLine(line.text, lineX, lineY)
     const lineWidth = line.carets[line.carets.length - 1] - line.carets[0]
     if (lineWidth <= 0) continue
@@ -951,7 +1003,7 @@ function drawElement(
       )
     }
   }
-  target.endText()
+  if (!layout.mixed) target.endText()
   // Returned so `drawScene` can hand it to `drawCaret` instead of paying for
   // a second layout of the same string on the same frame.
   return layout

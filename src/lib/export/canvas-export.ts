@@ -99,7 +99,9 @@ function textBounds(
 ): WorldRect | null {
   if (element.connector || (element.text ?? '').length === 0) return null
 
-  const measure = (text: string) => measureText(text, fontSpecOf(element.style))
+  const baseSpec = fontSpecOf(element.style)
+  const measure = (text: string, spec?: CanvasFontSpec) =>
+    measureText(text, spec ?? baseSpec)
   const layout = layoutElementText(element, measure)
   const frame = textFrame(element)
   const originY = textOriginY(element, layout)
@@ -250,6 +252,7 @@ class SvgRenderTarget implements PersistentRenderTarget {
   private textWeight = 'normal'
   private textStyle = 'normal'
   private textColor = ''
+  private pieceColor = ''
 
   constructor(
     private readonly measure: (text: string, spec: CanvasFontSpec) => number,
@@ -322,15 +325,29 @@ class SvgRenderTarget implements PersistentRenderTarget {
     this.textWeight = spec.fontWeight
     this.textStyle = spec.fontStyle
     this.textColor = color
+    this.pieceColor = color
   }
 
   textLine(text: string, x: number, y: number): void {
     this.textData += `<tspan x="${n(x)}" y="${n(y)}">${xml(text)}</tspan>`
   }
 
+  textPiece(
+    text: string,
+    x: number,
+    y: number,
+    spec: CanvasFontSpec,
+    color: string,
+  ): void {
+    this.pieceColor = color
+    const weight = spec.fontWeight === 'bold' ? ' font-weight="bold"' : ''
+    const slant = spec.fontStyle === 'italic' ? ' font-style="italic"' : ''
+    this.textData += `<tspan x="${n(x)}" y="${n(y)}" fill="${xml(svgColor(color, '#0f172a'))}" font-size="${n(spec.fontSize)}"${weight}${slant}>${xml(text)}</tspan>`
+  }
+
   textDecoration(x: number, y: number, width: number, thickness: number): void {
     this.nodes.push(
-      `<rect x="${n(x)}" y="${n(y - thickness / 2)}" width="${n(width)}" height="${n(thickness)}" fill="${xml(svgColor(this.textColor, '#0f172a'))}" stroke="none"/>`,
+      `<rect x="${n(x)}" y="${n(y - thickness / 2)}" width="${n(width)}" height="${n(thickness)}" fill="${xml(svgColor(this.pieceColor, '#0f172a'))}" stroke="none"/>`,
     )
   }
 

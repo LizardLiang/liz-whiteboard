@@ -20,6 +20,7 @@ const style = {
   fontStyle: 'normal' as const,
   underline: false,
   strikethrough: false,
+  textRuns: [],
 }
 
 const measure = (text: string, spec: { fontSize: number }) =>
@@ -172,6 +173,40 @@ describe('canvas export', () => {
     expect(svg).toContain('font-style="italic"')
     // One underline bar in the text colour, drawn as a thin rect.
     expect(svg).toMatch(/<rect [^>]*fill="#0f172a" stroke="none"\/>/)
+  })
+
+  it('serializes a run-styled label as one text node per line with a tspan per piece', () => {
+    const svg = serializeCanvasSceneSvg({
+      scene: sceneFrom([
+        rectangle({
+          text: 'ab cd',
+          style: {
+            ...style,
+            textRuns: [
+              {
+                start: 3,
+                end: 5,
+                fontWeight: 'bold',
+                fontSize: 24,
+                color: '#ef4444',
+                underline: true,
+              },
+            ],
+          },
+        }),
+      ]),
+      theme: 'light',
+      background: 'transparent',
+      backgroundColor: '#ffffff',
+      measureText: measure,
+    })
+    expect(svg.match(/<text /g)).toHaveLength(1)
+    expect(svg).toMatch(/<tspan [^>]*font-size="16"[^>]*>ab <\/tspan>/)
+    expect(svg).toMatch(
+      /<tspan [^>]*fill="#ef4444" font-size="24" font-weight="bold">cd<\/tspan>/,
+    )
+    // The underline bar takes the run's colour, not the label's.
+    expect(svg).toMatch(/<rect [^>]*fill="#ef4444" stroke="none"\/>/)
   })
 
   it('leaves weight and style attributes off plain text', () => {

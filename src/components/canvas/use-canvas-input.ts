@@ -3388,7 +3388,10 @@ export function useCanvasInput({
         const here = pointFromCaret(layout, caret)
         const next = caretFromPoint(layout, {
           x: here.x,
-          y: here.y + direction * layout.lineHeight,
+          // The neighbouring row, whatever its height: the next line starts
+          // where this one ends; one unit above this line's top is in the
+          // previous row.
+          y: direction === 1 ? here.y + here.height : here.y - 1,
         })
         return { text, caret: next, anchor: extend ? anchor : next }
       })
