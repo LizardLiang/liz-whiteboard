@@ -3418,9 +3418,7 @@ export function useCanvasInput({
    * Keys handled while text editing is active. Returns true when the key was
    * consumed, so the proxy can `preventDefault` only then and let everything
    * else reach the browser's own input handling (which is what keeps IME
-   * working). Copy, cut and paste are deliberately NOT consumed: the browser
-   * raises `copy` / `cut` / `paste` events on the proxy, and the board's
-   * element-clipboard shortcuts never see these keys while an edit is open.
+   * working).
    */
   const onEditingKeyDown = useCallback(
     (event: ReactKeyboardEvent<HTMLTextAreaElement>): boolean => {
