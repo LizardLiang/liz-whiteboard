@@ -31,7 +31,10 @@ import {
   HIGHLIGHT_INSET,
   RESIZE_HANDLES,
   TEXT_PADDING,
+  canvasFont,
   drawScene,
+  fittedTextHeight,
+  fontSpecOf,
   handleRects,
   layoutElementText,
   resolveTextColor,
@@ -1371,5 +1374,49 @@ describe('text alignment', () => {
     // The caret at index 0 sits exactly where the line's first glyph starts.
     expect(caretMoves.at(-1)?.args[0]).toBe(text.args[1])
     expect(caretMoves.at(-1)?.args[1]).toBe(text.args[2])
+  })
+})
+
+describe('text style font and fit', () => {
+  const plain = { fontSize: 16, fontWeight: 'normal', fontStyle: 'normal' }
+
+  it('builds the canvas font string from size, weight and style', () => {
+    expect(canvasFont(plain as never)).toMatch(/^16px /)
+    expect(canvasFont({ ...plain, fontWeight: 'bold' } as never)).toMatch(
+      /^bold 16px /,
+    )
+    expect(
+      canvasFont({
+        ...plain,
+        fontWeight: 'bold',
+        fontStyle: 'italic',
+      } as never),
+    ).toMatch(/^italic bold 16px /)
+  })
+
+  it('derives the font spec from a style in one place', () => {
+    expect(
+      fontSpecOf({
+        ...DEFAULT_ELEMENT_STYLE,
+        fontSize: 24,
+        fontWeight: 'bold',
+        fontStyle: 'italic',
+      }),
+    ).toEqual({ fontSize: 24, fontWeight: 'bold', fontStyle: 'italic' })
+  })
+
+  it('fits a one-line text element to its line height plus padding', () => {
+    const measure = (text: string) => text.length * 8
+    const element = makeElement({ kind: 'text', text: 'abc' })
+    expect(fittedTextHeight(element, measure)).toBeCloseTo(
+      16 * 1.4 + TEXT_PADDING * 2,
+    )
+    const xl = {
+      ...element,
+      style: { ...element.style, fontSize: 36 },
+    }
+    expect(fittedTextHeight(xl, measure)).toBeCloseTo(
+      36 * 1.4 + TEXT_PADDING * 2,
+    )
   })
 })

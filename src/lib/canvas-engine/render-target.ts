@@ -1,4 +1,5 @@
 import type { Point } from './camera'
+import type { CanvasFontStyle, CanvasFontWeight } from './scene'
 
 export type RenderPathCommand =
   | { kind: 'move'; point: Point }
@@ -21,11 +22,22 @@ export interface RenderTextLine {
 }
 
 /**
+ * Everything that changes a glyph's width. Measuring, drawing, the caret and
+ * export all take this one shape, so a font change cannot reach one of them
+ * and miss another.
+ */
+export interface CanvasFontSpec {
+  fontSize: number
+  fontWeight: CanvasFontWeight
+  fontStyle: CanvasFontStyle
+}
+
+/**
  * Persistent scene primitives. Geometry and layout are decided by the engine;
  * targets only translate those decisions to a concrete output format.
  */
 export interface PersistentRenderTarget {
-  measureText: (text: string, fontSize: number) => number
+  measureText: (text: string, spec: CanvasFontSpec) => number
   rect: (
     x: number,
     y: number,
@@ -54,23 +66,32 @@ export interface PersistentRenderTarget {
   ) => void
   closePath: () => void
   paintPath: (paint: RenderPaint) => void
-  beginText: (fontSize: number, color: string) => void
+  beginText: (spec: CanvasFontSpec, color: string) => void
   textLine: (text: string, x: number, y: number) => void
+  /** A horizontal underline or strikethrough bar for the line just drawn. */
+  textDecoration: (
+    x: number,
+    y: number,
+    width: number,
+    thickness: number,
+  ) => void
   endText: () => void
 }
 
 export const FONT_FAMILY =
   'system-ui, -apple-system, "Segoe UI", Roboto, "Noto Sans", "Noto Sans CJK TC", sans-serif'
 
-export function canvasFont(fontSize: number): string {
-  return `${fontSize}px ${FONT_FAMILY}`
+export function canvasFont(spec: CanvasFontSpec): string {
+  const style = spec.fontStyle === 'italic' ? 'italic ' : ''
+  const weight = spec.fontWeight === 'bold' ? 'bold ' : ''
+  return `${style}${weight}${spec.fontSize}px ${FONT_FAMILY}`
 }
 
 export class CanvasRenderTarget implements PersistentRenderTarget {
   constructor(private readonly ctx: CanvasRenderingContext2D) {}
 
-  measureText(text: string, fontSize: number): number {
-    this.ctx.font = canvasFont(fontSize)
+  measureText(text: string, spec: CanvasFontSpec): number {
+    this.ctx.font = canvasFont(spec)
     return this.ctx.measureText(text).width
   }
 
@@ -155,15 +176,19 @@ export class CanvasRenderTarget implements PersistentRenderTarget {
     this.paint(paint)
   }
 
-  beginText(fontSize: number, color: string): void {
+  beginText(spec: CanvasFontSpec, color: string): void {
     this.ctx.fillStyle = color
-    this.ctx.font = canvasFont(fontSize)
+    this.ctx.font = canvasFont(spec)
     this.ctx.textBaseline = 'top'
     this.ctx.textAlign = 'left'
   }
 
   textLine(text: string, x: number, y: number): void {
     this.ctx.fillText(text, x, y)
+  }
+
+  textDecoration(x: number, y: number, width: number, thickness: number): void {
+    this.ctx.fillRect(x, y - thickness / 2, width, thickness)
   }
 
   endText(): void {

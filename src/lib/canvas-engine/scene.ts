@@ -232,6 +232,12 @@ export type CanvasTextAlign = 'left' | 'center' | 'right'
 /** How an element's text block sits down its box. */
 export type CanvasVerticalAlign = 'top' | 'middle' | 'bottom'
 
+/** Whole-label font weight. */
+export type CanvasFontWeight = 'normal' | 'bold'
+
+/** Whole-label font slant. */
+export type CanvasFontStyle = 'normal' | 'italic'
+
 /** Styling shared by every element kind. */
 export interface CanvasElementStyle {
   fill: string
@@ -265,6 +271,11 @@ export interface CanvasElementStyle {
   textAlign: CanvasTextAlign
   /** Where the text block sits down the element's box. */
   verticalAlign: CanvasVerticalAlign
+  /** Whole-label weight, style and decorations; all off draws plain text. */
+  fontWeight: CanvasFontWeight
+  fontStyle: CanvasFontStyle
+  underline: boolean
+  strikethrough: boolean
 }
 
 export const DEFAULT_ELEMENT_STYLE: CanvasElementStyle = {
@@ -310,6 +321,12 @@ export const DEFAULT_ELEMENT_STYLE: CanvasElementStyle = {
   // kind the first time it was opened.
   textAlign: 'left',
   verticalAlign: 'top',
+  // All off: plain text, which is what every label drew before these keys
+  // existed. They are also the schema defaults, so old rows parse unchanged.
+  fontWeight: 'normal',
+  fontStyle: 'normal',
+  underline: false,
+  strikethrough: false,
 }
 
 /**
@@ -642,10 +659,7 @@ export function outermostGroup(
  * Cycle-safe: a visited-set guard means a `childIds` loop stops instead of
  * hanging the tab, and an id already seen is simply not re-descended into.
  */
-export function groupDescendants(
-  scene: Scene,
-  groupId: string,
-): Array<string> {
+export function groupDescendants(scene: Scene, groupId: string): Array<string> {
   const descendants: Array<string> = []
   const visited = new Set<string>([groupId])
   const queue: Array<string> = [groupId]

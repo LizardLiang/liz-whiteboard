@@ -5,6 +5,7 @@ import {
 } from './export-image'
 import type { CanvasTheme } from '@/lib/canvas-engine/render'
 import type {
+  CanvasFontSpec,
   PersistentRenderTarget,
   RenderPaint,
 } from '@/lib/canvas-engine/render-target'
@@ -15,9 +16,11 @@ import type { ExportImageBackground, ExportImageFormat } from './export-image'
 import {
   CanvasRenderTarget,
   FONT_FAMILY,
+  canvasFont,
 } from '@/lib/canvas-engine/render-target'
 import {
   CONNECTOR_ARROW_SIZE,
+  fontSpecOf,
   layoutElementText,
   renderPersistentScene,
   textFrame,
@@ -45,7 +48,7 @@ interface SvgSerializationOptions {
   theme: CanvasTheme
   background: ExportImageBackground
   backgroundColor: string
-  measureText: (text: string, fontSize: number) => number
+  measureText: (text: string, spec: CanvasFontSpec) => number
   prepared?: PreparedCanvasExport
 }
 
@@ -92,11 +95,11 @@ function expandedElementBounds(
 
 function textBounds(
   element: Scene['elements'][number],
-  measureText: (text: string, fontSize: number) => number,
+  measureText: (text: string, spec: CanvasFontSpec) => number,
 ): WorldRect | null {
   if (element.connector || (element.text ?? '').length === 0) return null
 
-  const measure = (text: string) => measureText(text, element.style.fontSize)
+  const measure = (text: string) => measureText(text, fontSpecOf(element.style))
   const layout = layoutElementText(element, measure)
   const frame = textFrame(element)
   const originY = textOriginY(element, layout)
@@ -120,7 +123,7 @@ function textBounds(
 
 function prepareCanvasExport(
   scene: Scene,
-  measureText: (text: string, fontSize: number) => number,
+  measureText: (text: string, spec: CanvasFontSpec) => number,
 ): PreparedCanvasExport {
   let left = Number.POSITIVE_INFINITY
   let top = Number.POSITIVE_INFINITY
@@ -172,7 +175,7 @@ function prepareCanvasExport(
 /** Bounds of every drawable persistent element, including rendered text. */
 export function canvasExportBounds(
   scene: Scene,
-  measureText: (text: string, fontSize: number) => number,
+  measureText: (text: string, spec: CanvasFontSpec) => number,
 ): WorldRect {
   return prepareCanvasExport(scene, measureText).bounds
 }
@@ -244,14 +247,16 @@ class SvgRenderTarget implements PersistentRenderTarget {
   private pathData = ''
   private textData = ''
   private textFontSize = 0
+  private textWeight = 'normal'
+  private textStyle = 'normal'
   private textColor = ''
 
   constructor(
-    private readonly measure: (text: string, fontSize: number) => number,
+    private readonly measure: (text: string, spec: CanvasFontSpec) => number,
   ) {}
 
-  measureText(text: string, fontSize: number): number {
-    return this.measure(text, fontSize)
+  measureText(text: string, spec: CanvasFontSpec): number {
+    return this.measure(text, spec)
   }
 
   rect(
@@ -311,9 +316,11 @@ class SvgRenderTarget implements PersistentRenderTarget {
     this.nodes.push(`<path d="${this.pathData}" ${paintAttributes(paint)}/>`)
   }
 
-  beginText(fontSize: number, color: string): void {
+  beginText(spec: CanvasFontSpec, color: string): void {
     this.textData = ''
-    this.textFontSize = fontSize
+    this.textFontSize = spec.fontSize
+    this.textWeight = spec.fontWeight
+    this.textStyle = spec.fontStyle
     this.textColor = color
   }
 
@@ -321,9 +328,17 @@ class SvgRenderTarget implements PersistentRenderTarget {
     this.textData += `<tspan x="${n(x)}" y="${n(y)}">${xml(text)}</tspan>`
   }
 
-  endText(): void {
+  textDecoration(x: number, y: number, width: number, thickness: number): void {
     this.nodes.push(
-      `<text fill="${xml(svgColor(this.textColor, '#0f172a'))}" font-family="${xml(FONT_FAMILY)}" font-size="${n(this.textFontSize)}" dominant-baseline="text-before-edge">${this.textData}</text>`,
+      `<rect x="${n(x)}" y="${n(y - thickness / 2)}" width="${n(width)}" height="${n(thickness)}" fill="${xml(svgColor(this.textColor, '#0f172a'))}" stroke="none"/>`,
+    )
+  }
+
+  endText(): void {
+    const weight = this.textWeight === 'bold' ? ' font-weight="bold"' : ''
+    const slant = this.textStyle === 'italic' ? ' font-style="italic"' : ''
+    this.nodes.push(
+      `<text fill="${xml(svgColor(this.textColor, '#0f172a'))}" font-family="${xml(FONT_FAMILY)}" font-size="${n(this.textFontSize)}"${weight}${slant} dominant-baseline="text-before-edge">${this.textData}</text>`,
     )
   }
 
@@ -364,12 +379,12 @@ export function serializeCanvasSceneSvg({
   ].join('')
 }
 
-function scratchMeasurer(): (text: string, fontSize: number) => number {
+function scratchMeasurer(): (text: string, spec: CanvasFontSpec) => number {
   const canvas = document.createElement('canvas')
   const ctx = canvas.getContext('2d')
   if (!ctx) throw new Error('Canvas export is unavailable in this browser')
-  return (text, fontSize) => {
-    ctx.font = `${fontSize}px ${FONT_FAMILY}`
+  return (text, spec) => {
+    ctx.font = canvasFont(spec)
     return ctx.measureText(text).width
   }
 }

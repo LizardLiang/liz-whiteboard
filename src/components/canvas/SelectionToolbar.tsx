@@ -59,10 +59,14 @@ import {
   AlignVerticalJustifyEnd,
   AlignVerticalJustifyStart,
   Ban,
+  Bold,
   BringToFront,
   CopyPlus,
   Group as GroupIcon,
+  Italic,
   SendToBack,
+  Strikethrough,
+  Underline,
   Ungroup as UngroupIcon,
 } from 'lucide-react'
 import type { ComponentType, ReactNode } from 'react'
@@ -70,6 +74,8 @@ import type { Camera } from '@/lib/canvas-engine/camera'
 import type {
   CanvasElement,
   CanvasElementStyle,
+  CanvasFontStyle,
+  CanvasFontWeight,
   CanvasTextAlign,
   CanvasVerticalAlign,
   Scene,
@@ -84,9 +90,12 @@ import {
 import { zOrderTargets } from '@/lib/canvas-engine/z-order'
 import {
   CANVAS_CORNER_RADII,
+  CANVAS_FONT_SIZES,
   CANVAS_STROKE_WIDTHS,
   CANVAS_SWATCHES,
+  CANVAS_TEXT_COLORS,
   DEFAULT_STROKE_WIDTH,
+  DEFAULT_TEXT_COLOR,
   FILL_NONE,
   swatchForFill,
   swatchForStroke,
@@ -145,6 +154,18 @@ export type CanvasStyleChange =
    */
   | { target: 'textAlign'; value: CanvasTextAlign }
   | { target: 'verticalAlign'; value: CanvasVerticalAlign }
+  /**
+   * Whole-label text styling. Same target set as alignment: everything that
+   * can hold text. The toggles carry the RESOLVED value, not "flip" — the
+   * mixed-selection rule (on for all if any is off) is decided where the
+   * click happens, with every target in view, so each element is simply set.
+   */
+  | { target: 'fontWeight'; value: CanvasFontWeight }
+  | { target: 'fontStyle'; value: CanvasFontStyle }
+  | { target: 'underline'; value: boolean }
+  | { target: 'strikethrough'; value: boolean }
+  | { target: 'fontSize'; value: number }
+  | { target: 'color'; value: string }
 
 /**
  * The style an element should end up with after a change.
@@ -177,6 +198,24 @@ export function applyStyleChange(
   }
   if (change.target === 'verticalAlign') {
     return { ...style, verticalAlign: change.value }
+  }
+  if (change.target === 'fontWeight') {
+    return { ...style, fontWeight: change.value }
+  }
+  if (change.target === 'fontStyle') {
+    return { ...style, fontStyle: change.value }
+  }
+  if (change.target === 'underline') {
+    return { ...style, underline: change.value }
+  }
+  if (change.target === 'strikethrough') {
+    return { ...style, strikethrough: change.value }
+  }
+  if (change.target === 'fontSize') {
+    return { ...style, fontSize: change.value }
+  }
+  if (change.target === 'color') {
+    return { ...style, color: change.value }
   }
   if (change.target === 'strokeWidth') {
     // Deliberately unconditional: choosing a weight on a shape whose stroke
@@ -430,6 +469,25 @@ export function SelectionToolbar({
     (element) => element.style.verticalAlign,
   )
 
+  const activeFontSize = shared(alignable, (element) => element.style.fontSize)
+  const activeTextColor = shared(alignable, (element) => element.style.color)
+  const activeBold = shared(
+    alignable,
+    (element) => element.style.fontWeight === 'bold',
+  )
+  const activeItalic = shared(
+    alignable,
+    (element) => element.style.fontStyle === 'italic',
+  )
+  const activeUnderline = shared(
+    alignable,
+    (element) => element.style.underline,
+  )
+  const activeStrike = shared(
+    alignable,
+    (element) => element.style.strikethrough,
+  )
+
   const emit = (change: CanvasStyleChange, list = targets) => {
     // Every target already in the requested state writes nothing. Without
     // this, a stray click on the active swatch pushes an undo entry that
@@ -562,6 +620,62 @@ export function SelectionToolbar({
               onPick={(value) =>
                 emit({ target: 'verticalAlign', value }, alignable)
               }
+            />
+          </SettingPopover>
+          <SettingPopover
+            label="Text"
+            summary={textSummary(activeBold, activeItalic, activeFontSize)}
+            preview={
+              <TextPreview
+                bold={activeBold === true}
+                italic={activeItalic === true}
+                color={activeTextColor}
+              />
+            }
+          >
+            <TextStyleRow
+              bold={activeBold === true}
+              italic={activeItalic === true}
+              underline={activeUnderline === true}
+              strikethrough={activeStrike === true}
+              onToggleBold={() =>
+                emit(
+                  {
+                    target: 'fontWeight',
+                    value: activeBold === true ? 'normal' : 'bold',
+                  },
+                  alignable,
+                )
+              }
+              onToggleItalic={() =>
+                emit(
+                  {
+                    target: 'fontStyle',
+                    value: activeItalic === true ? 'normal' : 'italic',
+                  },
+                  alignable,
+                )
+              }
+              onToggleUnderline={() =>
+                emit(
+                  { target: 'underline', value: activeUnderline !== true },
+                  alignable,
+                )
+              }
+              onToggleStrikethrough={() =>
+                emit(
+                  { target: 'strikethrough', value: activeStrike !== true },
+                  alignable,
+                )
+              }
+            />
+            <TextSizeRow
+              activeSize={activeFontSize}
+              onPick={(value) => emit({ target: 'fontSize', value }, alignable)}
+            />
+            <TextColorRow
+              activeColor={activeTextColor}
+              onPick={(value) => emit({ target: 'color', value }, alignable)}
             />
           </SettingPopover>
           <Divider />
@@ -1133,6 +1247,202 @@ function RadiusRow({ activeRadius, onPick }: RadiusRowProps) {
               className="block h-4 w-4 border border-current"
               style={{ borderRadius: `${radius / 2}px` }}
             />
+          </button>
+        )
+      })}
+    </div>
+  )
+}
+
+/** The current text style in words, for the trigger's tooltip. */
+function textSummary(
+  bold: boolean | null,
+  italic: boolean | null,
+  size: number | null,
+): string {
+  const parts = [
+    bold === true ? 'Bold' : null,
+    italic === true ? 'Italic' : null,
+    size === null
+      ? 'Mixed size'
+      : (CANVAS_FONT_SIZES.find((option) => option.size === size)?.label ??
+        `${size}px`),
+  ]
+  return parts.filter((part) => part !== null).join(', ')
+}
+
+/** "Aa" drawn in the selection's own weight, slant and colour. */
+function TextPreview({
+  bold,
+  italic,
+  color,
+}: {
+  bold: boolean
+  italic: boolean
+  color: string | null
+}) {
+  return (
+    <span
+      className={`text-xs leading-none ${bold ? 'font-bold' : 'font-medium'} ${
+        italic ? 'italic' : ''
+      }`}
+      style={color && color !== DEFAULT_TEXT_COLOR ? { color } : undefined}
+    >
+      Aa
+    </span>
+  )
+}
+
+interface TextStyleRowProps {
+  bold: boolean
+  italic: boolean
+  underline: boolean
+  strikethrough: boolean
+  onToggleBold: () => void
+  onToggleItalic: () => void
+  onToggleUnderline: () => void
+  onToggleStrikethrough: () => void
+}
+
+/**
+ * Bold, Italic, Underline, Strikethrough as four toggles.
+ *
+ * A toggle reads as pressed only when EVERY target has it on; the click then
+ * turns it off for all. Any other state — off, or a mix — reads as not
+ * pressed and turns it on for all, which is the mixed-selection rule.
+ */
+function TextStyleRow({
+  bold,
+  italic,
+  underline,
+  strikethrough,
+  onToggleBold,
+  onToggleItalic,
+  onToggleUnderline,
+  onToggleStrikethrough,
+}: TextStyleRowProps) {
+  const toggles = [
+    { label: 'Bold', hint: 'Ctrl+B', on: bold, Icon: Bold, run: onToggleBold },
+    {
+      label: 'Italic',
+      hint: 'Ctrl+I',
+      on: italic,
+      Icon: Italic,
+      run: onToggleItalic,
+    },
+    {
+      label: 'Underline',
+      hint: 'Ctrl+U',
+      on: underline,
+      Icon: Underline,
+      run: onToggleUnderline,
+    },
+    {
+      label: 'Strikethrough',
+      hint: 'Ctrl+Shift+X',
+      on: strikethrough,
+      Icon: Strikethrough,
+      run: onToggleStrikethrough,
+    },
+  ]
+  return (
+    <div className="flex items-center gap-1.5" role="group" aria-label="Style">
+      {toggles.map(({ label, hint, on, Icon, run }) => (
+        <button
+          key={label}
+          type="button"
+          className={`flex h-7 w-9 items-center justify-center rounded border transition-shadow ${
+            on
+              ? 'border-transparent ring-2 ring-ring ring-offset-1 ring-offset-background'
+              : 'border-border/60'
+          }`}
+          aria-label={label}
+          aria-pressed={on}
+          title={`${label} (${hint})`}
+          onClick={run}
+        >
+          <Icon className="size-4" />
+        </button>
+      ))}
+    </div>
+  )
+}
+
+/** The font size options, S M L XL. */
+function TextSizeRow({
+  activeSize,
+  onPick,
+}: {
+  activeSize: number | null
+  onPick: (size: number) => void
+}) {
+  return (
+    <div
+      className="mt-1.5 flex items-center gap-1.5"
+      role="group"
+      aria-label="Size"
+    >
+      {CANVAS_FONT_SIZES.map(({ size, label }) => {
+        const active = size === activeSize
+        return (
+          <button
+            key={size}
+            type="button"
+            className={`flex h-7 w-9 items-center justify-center rounded border text-xs font-medium transition-shadow ${
+              active
+                ? 'border-transparent ring-2 ring-ring ring-offset-1 ring-offset-background'
+                : 'border-border/60'
+            }`}
+            aria-label={`Text size ${label}`}
+            aria-pressed={active}
+            title={`${label} (${size}px)`}
+            onClick={() => onPick(size)}
+          >
+            {label}
+          </button>
+        )
+      })}
+    </div>
+  )
+}
+
+/** The text colour options: Default (follows the theme) then the eight swatch colours. */
+function TextColorRow({
+  activeColor,
+  onPick,
+}: {
+  activeColor: string | null
+  onPick: (color: string) => void
+}) {
+  return (
+    <div
+      className="mt-1.5 grid grid-cols-5 gap-1.5"
+      role="group"
+      aria-label="Text color"
+    >
+      {CANVAS_TEXT_COLORS.map(({ label, value }) => {
+        const active = value === activeColor
+        const isDefault = value === DEFAULT_TEXT_COLOR
+        return (
+          <button
+            key={label}
+            type="button"
+            className={`flex h-6 w-6 items-center justify-center rounded-full border-2 text-[10px] font-semibold transition-shadow ${
+              active
+                ? 'ring-2 ring-ring ring-offset-1 ring-offset-background'
+                : ''
+            } ${isDefault ? 'border-border bg-background text-foreground' : ''}`}
+            style={
+              isDefault
+                ? undefined
+                : { backgroundColor: value, borderColor: value }
+            }
+            aria-label={`Text color ${label}`}
+            aria-pressed={active}
+            title={`Text color ${label}`}
+            onClick={() => onPick(value)}
+          >
+            {isDefault ? 'A' : null}
           </button>
         )
       })}

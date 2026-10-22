@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest'
 import { renderPersistentScene } from './render'
 import { sceneFrom } from './scene'
 import type {
+  CanvasFontSpec,
   PersistentRenderTarget,
   RenderPaint,
   RenderPathCommand,
@@ -14,10 +15,12 @@ class RecordingTarget implements PersistentRenderTarget {
   private commands: Array<RenderPathCommand> = []
   private lines: Array<RenderTextLine> = []
   private fontSize = 0
+  private fontWeight = 'normal'
+  private fontStyle = 'normal'
   private color = ''
 
-  measureText(text: string, fontSize: number) {
-    return text.length * fontSize * 0.5
+  measureText(text: string, spec: CanvasFontSpec) {
+    return text.length * spec.fontSize * 0.5
   }
 
   rect(
@@ -77,9 +80,11 @@ class RecordingTarget implements PersistentRenderTarget {
     })
   }
 
-  beginText(fontSize: number, color: string) {
+  beginText(spec: CanvasFontSpec, color: string) {
     this.lines = []
-    this.fontSize = fontSize
+    this.fontSize = spec.fontSize
+    this.fontWeight = spec.fontWeight
+    this.fontStyle = spec.fontStyle
     this.color = color
   }
 
@@ -93,8 +98,17 @@ class RecordingTarget implements PersistentRenderTarget {
       payload: {
         lines: this.lines,
         fontSize: this.fontSize,
+        fontWeight: this.fontWeight,
+        fontStyle: this.fontStyle,
         color: this.color,
       },
+    })
+  }
+
+  textDecoration(x: number, y: number, width: number, thickness: number) {
+    this.calls.push({
+      kind: 'decoration',
+      payload: { x, y, width, thickness },
     })
   }
 }
@@ -108,6 +122,10 @@ const baseStyle = {
   cornerRadius: 8,
   textAlign: 'center' as const,
   verticalAlign: 'middle' as const,
+  fontWeight: 'normal' as const,
+  fontStyle: 'normal' as const,
+  underline: false,
+  strikethrough: false,
 }
 
 function element(patch: Partial<CanvasElement>): CanvasElement {
@@ -187,10 +205,76 @@ describe('renderPersistentScene', () => {
             { text: ' beta', x: 22, y: 69.6 },
           ],
           fontSize: 16,
+          fontWeight: 'normal',
+          fontStyle: 'normal',
           color: '#f8fafc',
         },
       },
     ])
+  })
+
+  it('hands the label font weight and style to the target', () => {
+    const recorder = new RecordingTarget()
+    renderPersistentScene(
+      recorder,
+      sceneFrom([
+        element({
+          style: { ...baseStyle, fontWeight: 'bold', fontStyle: 'italic' },
+        }),
+      ]),
+      'light',
+    )
+    expect(recorder.calls.find((call) => call.kind === 'text')).toMatchObject({
+      payload: { fontWeight: 'bold', fontStyle: 'italic' },
+    })
+  })
+
+  it('draws no decoration for plain text', () => {
+    const recorder = new RecordingTarget()
+    renderPersistentScene(recorder, sceneFrom([element({})]), 'light')
+    expect(recorder.calls.some((call) => call.kind === 'decoration')).toBe(
+      false,
+    )
+  })
+
+  it('draws an underline and a strikethrough per wrapped line, spanning that line', () => {
+    const recorder = new RecordingTarget()
+    renderPersistentScene(
+      recorder,
+      sceneFrom([
+        element({
+          width: 60,
+          style: { ...baseStyle, underline: true, strikethrough: true },
+        }),
+      ]),
+      'light',
+    )
+    const text = recorder.calls.find((call) => call.kind === 'text')
+    const lines = (text!.payload as { lines: Array<RenderTextLine> }).lines
+    const decorations = recorder.calls
+      .filter((call) => call.kind === 'decoration')
+      .map((call) => call.payload as Record<string, number>)
+    expect(lines.length).toBeGreaterThan(1)
+    // Two bars per wrapped line (underline, then strikethrough), each as wide
+    // as that line's glyphs (the test metric is 8px per character) and
+    // starting where that line starts.
+    expect(decorations).toHaveLength(lines.length * 2)
+    const thickness = 16 / 14
+    lines.forEach((line, index) => {
+      const [underline, strike] = decorations.slice(index * 2, index * 2 + 2)
+      expect(underline).toMatchObject({
+        x: line.x,
+        width: line.text.length * 8,
+        thickness,
+      })
+      expect(underline.y).toBeCloseTo(line.y + 16 * 0.92)
+      expect(strike).toMatchObject({
+        x: line.x,
+        width: line.text.length * 8,
+        thickness,
+      })
+      expect(strike.y).toBeCloseTo(line.y + 16 * 0.55)
+    })
   })
 
   it('emits a persistent group frame with exact resting and emphasized theme paint', () => {

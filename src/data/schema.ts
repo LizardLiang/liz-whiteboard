@@ -1078,6 +1078,19 @@ export const canvasElementStyleSchema = z.strictObject({
   verticalAlign: z
     .enum(['top', 'middle', 'bottom'])
     .default(DEFAULT_ELEMENT_STYLE.verticalAlign),
+  /**
+   * Whole-label text styling — see `CanvasElementStyle.fontWeight` and its
+   * siblings. `.default()` for the same migration-free reason as `textAlign`:
+   * rows written before these keys existed parse to plain text.
+   */
+  fontWeight: z
+    .enum(['normal', 'bold'])
+    .default(DEFAULT_ELEMENT_STYLE.fontWeight),
+  fontStyle: z
+    .enum(['normal', 'italic'])
+    .default(DEFAULT_ELEMENT_STYLE.fontStyle),
+  underline: z.boolean().default(DEFAULT_ELEMENT_STYLE.underline),
+  strikethrough: z.boolean().default(DEFAULT_ELEMENT_STYLE.strikethrough),
 })
 
 /**

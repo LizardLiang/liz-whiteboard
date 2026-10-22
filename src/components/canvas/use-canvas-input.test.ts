@@ -147,6 +147,7 @@ function setup(initial: Array<CanvasElement> = [makeText()]) {
     onGroup: vi.fn(),
     onUngroup: vi.fn(),
   }
+  const onStyleChange = vi.fn()
   const canvas = makeCanvas()
   const canvasRef = { current: canvas } as any
   // The board container. `useSpaceHeld` reads it to decide whether a
@@ -176,12 +177,14 @@ function setup(initial: Array<CanvasElement> = [makeText()]) {
       // metrics; nothing here silently substitutes a guessed width.
       getMeasurer: () => null,
       callbacks,
+      onStyleChange,
     }),
   )
 
   return {
     view,
     callbacks,
+    onStyleChange,
     canvas,
     get scene() {
       return scene
@@ -3128,5 +3131,77 @@ describe('text selection while editing', () => {
     })
     h.sync()
     expect(h.api.editing).toBeNull()
+  })
+})
+
+describe('whole-label style shortcuts', () => {
+  const A_ID = '11111111-1111-4111-8111-111111111111'
+  const B_ID = '22222222-2222-4222-8222-222222222222'
+
+  function select(h: ReturnType<typeof setup>, ...ids: Array<string>) {
+    act(() => {
+      h.api.setSelectedIds(new Set(ids))
+    })
+    h.sync()
+  }
+
+  function press(
+    h: ReturnType<typeof setup>,
+    key: string,
+    overrides: Record<string, unknown> = {},
+  ) {
+    const event = keyEvent(key, { ctrlKey: true, ...overrides })
+    act(() => {
+      h.api.boardHandlers.onKeyDown(event)
+    })
+    return event
+  }
+
+  it.each([
+    ['b', {}, { target: 'fontWeight', value: 'bold' }],
+    ['i', {}, { target: 'fontStyle', value: 'italic' }],
+    ['u', {}, { target: 'underline', value: true }],
+    ['X', { shiftKey: true }, { target: 'strikethrough', value: true }],
+  ])(
+    'Ctrl+%s styles the selected label and swallows the browser default',
+    (key, mods, change) => {
+      const h = setup([makeRect(A_ID)])
+      select(h, A_ID)
+      const event = press(h, key, mods)
+      expect(event.preventDefault).toHaveBeenCalledTimes(1)
+      expect(h.onStyleChange).toHaveBeenCalledTimes(1)
+      const [targets, sent] = h.onStyleChange.mock.calls[0]
+      expect(targets.map((e: CanvasElement) => e.id)).toEqual([A_ID])
+      expect(sent).toEqual(change)
+    },
+  )
+
+  it('turns bold ON for a partly-bold selection, changing only the plain one', () => {
+    const bold = makeRect(A_ID)
+    bold.style = { ...bold.style, fontWeight: 'bold' }
+    const h = setup([bold, makeRect(B_ID)])
+    select(h, A_ID, B_ID)
+    press(h, 'b')
+    const [targets, sent] = h.onStyleChange.mock.calls[0]
+    expect(targets.map((e: CanvasElement) => e.id)).toEqual([B_ID])
+    expect(sent).toEqual({ target: 'fontWeight', value: 'bold' })
+  })
+
+  it('turns bold OFF when every selected label is bold', () => {
+    const bold = makeRect(A_ID)
+    bold.style = { ...bold.style, fontWeight: 'bold' }
+    const h = setup([bold])
+    select(h, A_ID)
+    press(h, 'b')
+    expect(h.onStyleChange.mock.calls[0][1]).toEqual({
+      target: 'fontWeight',
+      value: 'normal',
+    })
+  })
+
+  it('writes nothing with no selection', () => {
+    const h = setup([makeRect(A_ID)])
+    press(h, 'b')
+    expect(h.onStyleChange).not.toHaveBeenCalled()
   })
 })

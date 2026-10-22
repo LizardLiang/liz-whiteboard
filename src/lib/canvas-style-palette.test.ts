@@ -13,9 +13,12 @@
 import { describe, expect, it } from 'vitest'
 import {
   CANVAS_CORNER_RADII,
+  CANVAS_FONT_SIZES,
   CANVAS_STROKE_WIDTHS,
   CANVAS_SWATCHES,
+  CANVAS_TEXT_COLORS,
   DEFAULT_STROKE_WIDTH,
+  DEFAULT_TEXT_COLOR,
   FILL_NONE,
   swatchForFill,
   swatchForStroke,
@@ -43,6 +46,23 @@ describe('the palette and the engine default agree', () => {
     // broken on the most common shape on the board.
     expect([...CANVAS_CORNER_RADII]).toContain(
       DEFAULT_ELEMENT_STYLE.cornerRadius,
+    )
+  })
+
+  it('includes the default font size among the offered ones', () => {
+    expect(CANVAS_FONT_SIZES.map((option) => option.size)).toContain(
+      DEFAULT_ELEMENT_STYLE.fontSize,
+    )
+  })
+
+  it('leads the text colours with the engine default, then the eight strokes', () => {
+    expect(DEFAULT_TEXT_COLOR).toBe(DEFAULT_ELEMENT_STYLE.color)
+    expect(CANVAS_TEXT_COLORS[0]).toEqual({
+      label: 'Default',
+      value: DEFAULT_ELEMENT_STYLE.color,
+    })
+    expect(CANVAS_TEXT_COLORS.slice(1).map((option) => option.value)).toEqual(
+      CANVAS_SWATCHES.map((swatch) => swatch.stroke),
     )
   })
 

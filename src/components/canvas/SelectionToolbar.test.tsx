@@ -643,9 +643,7 @@ describe('canGroupSelection / canUngroupSelection', () => {
       shape('c'),
       groupElement('g', ['a', 'b']),
     ])
-    expect(canGroupSelection(sceneWithOutsider, new Set(['g', 'c']))).toBe(
-      true,
-    )
+    expect(canGroupSelection(sceneWithOutsider, new Set(['g', 'c']))).toBe(true)
   })
 
   it('allows ungroup only when the selection is exactly one group element (FR-008)', () => {
@@ -665,16 +663,14 @@ describe('the group and ungroup controls', () => {
   it('Group is disabled below 2 selected', () => {
     setup([shape('a')], ['a'])
     expect(
-      screen.getByRole<HTMLButtonElement>('button', { name: 'Group' })
-        .disabled,
+      screen.getByRole<HTMLButtonElement>('button', { name: 'Group' }).disabled,
     ).toBe(true)
   })
 
   it('Group is enabled at 2 or more selected', () => {
     setup([shape('a'), shape('b')], ['a', 'b'])
     expect(
-      screen.getByRole<HTMLButtonElement>('button', { name: 'Group' })
-        .disabled,
+      screen.getByRole<HTMLButtonElement>('button', { name: 'Group' }).disabled,
     ).toBe(false)
   })
 
@@ -1094,5 +1090,121 @@ describe('applyStyleChange for alignment', () => {
     expect(next.stroke).toBe(base.stroke)
     expect(next.strokeWidth).toBe(base.strokeWidth)
     expect(next.cornerRadius).toBe(base.cornerRadius)
+  })
+})
+
+describe('text styling', () => {
+  const base: CanvasElementStyle = { ...DEFAULT_ELEMENT_STYLE }
+
+  it('offers Text for a text element, which takes no paint at all', () => {
+    setup([shape('t', { kind: 'text' })], ['t'])
+    expect(screen.getByRole('button', { name: 'Text' })).toBeTruthy()
+  })
+
+  it('withholds Text on a read-only board', () => {
+    setup([shape('a')], ['a'], true)
+    expect(screen.queryByRole('button', { name: 'Text' })).toBeNull()
+  })
+
+  it('emits a bold change for every text-holding target', () => {
+    const { onStyleChange } = setup(
+      [shape('a'), shape('b', { kind: 'text' })],
+      ['a', 'b'],
+    )
+    openSetting('Text')
+    fireEvent.click(screen.getByRole('button', { name: 'Bold' }))
+    expect(onStyleChange).toHaveBeenCalledTimes(1)
+    const [targets, change] = onStyleChange.mock.calls[0]
+    expect(targets.map((e: CanvasElement) => e.id)).toEqual(['a', 'b'])
+    expect(change).toEqual({ target: 'fontWeight', value: 'bold' })
+  })
+
+  it('turns a partly-bold selection fully ON, then fully OFF', () => {
+    const bold = { ...DEFAULT_ELEMENT_STYLE, fontWeight: 'bold' as const }
+    const mixed = setup([shape('a', { style: bold }), shape('b')], ['a', 'b'])
+    openSetting('Text')
+    fireEvent.click(screen.getByRole('button', { name: 'Bold' }))
+    // Only the plain one actually changes; the result is bold for both.
+    const [targets, change] = mixed.onStyleChange.mock.calls[0]
+    expect(targets.map((e: CanvasElement) => e.id)).toEqual(['b'])
+    expect(change).toEqual({ target: 'fontWeight', value: 'bold' })
+  })
+
+  it('turns bold OFF when every target is bold', () => {
+    const bold = { ...DEFAULT_ELEMENT_STYLE, fontWeight: 'bold' as const }
+    const { onStyleChange } = setup([shape('a', { style: bold })], ['a'])
+    openSetting('Text')
+    const button = screen.getByRole('button', { name: 'Bold' })
+    expect(button.getAttribute('aria-pressed')).toBe('true')
+    fireEvent.click(button)
+    expect(onStyleChange).toHaveBeenCalledWith(expect.anything(), {
+      target: 'fontWeight',
+      value: 'normal',
+    })
+  })
+
+  it('emits underline, strikethrough and italic toggles', () => {
+    const { onStyleChange } = setup([shape('a')], ['a'])
+    openSetting('Text')
+    fireEvent.click(screen.getByRole('button', { name: 'Underline' }))
+    fireEvent.click(screen.getByRole('button', { name: 'Strikethrough' }))
+    fireEvent.click(screen.getByRole('button', { name: 'Italic' }))
+    expect(onStyleChange.mock.calls.map((call) => call[1])).toEqual([
+      { target: 'underline', value: true },
+      { target: 'strikethrough', value: true },
+      { target: 'fontStyle', value: 'italic' },
+    ])
+  })
+
+  it('offers every palette size and marks the stored one', () => {
+    const { onStyleChange } = setup([shape('a')], ['a'])
+    openSetting('Text')
+    expect(
+      screen
+        .getByRole('button', { name: 'Text size M' })
+        .getAttribute('aria-pressed'),
+    ).toBe('true')
+    fireEvent.click(screen.getByRole('button', { name: 'Text size XL' }))
+    expect(onStyleChange).toHaveBeenCalledWith(expect.anything(), {
+      target: 'fontSize',
+      value: 36,
+    })
+  })
+
+  it('emits a text colour, and marks Default active on a fresh shape', () => {
+    const { onStyleChange } = setup([shape('a')], ['a'])
+    openSetting('Text')
+    expect(
+      screen
+        .getByRole('button', { name: 'Text color Default' })
+        .getAttribute('aria-pressed'),
+    ).toBe('true')
+    fireEvent.click(screen.getByRole('button', { name: 'Text color Red' }))
+    expect(onStyleChange).toHaveBeenCalledWith(expect.anything(), {
+      target: 'color',
+      value: '#ef4444',
+    })
+  })
+
+  it('applyStyleChange writes each key and touches nothing else', () => {
+    expect(
+      applyStyleChange(base, { target: 'fontWeight', value: 'bold' }),
+    ).toEqual({ ...base, fontWeight: 'bold' })
+    expect(
+      applyStyleChange(base, { target: 'fontStyle', value: 'italic' }),
+    ).toEqual({ ...base, fontStyle: 'italic' })
+    expect(
+      applyStyleChange(base, { target: 'underline', value: true }),
+    ).toEqual({ ...base, underline: true })
+    expect(
+      applyStyleChange(base, { target: 'strikethrough', value: true }),
+    ).toEqual({ ...base, strikethrough: true })
+    expect(applyStyleChange(base, { target: 'fontSize', value: 24 })).toEqual({
+      ...base,
+      fontSize: 24,
+    })
+    expect(
+      applyStyleChange(base, { target: 'color', value: '#ef4444' }),
+    ).toEqual({ ...base, color: '#ef4444' })
   })
 })

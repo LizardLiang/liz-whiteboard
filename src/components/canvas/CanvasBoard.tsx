@@ -30,6 +30,7 @@ import type {
   PointerEvent as ReactPointerEvent,
 } from 'react'
 import type { Camera } from '@/lib/canvas-engine/camera'
+import type { CanvasFontSpec } from '@/lib/canvas-engine/render-target'
 import type { WorldRect } from '@/lib/canvas-engine/hit-test'
 import type {
   CanvasConnectorRouting,
@@ -44,7 +45,12 @@ import type { RenderFraming } from '@/lib/render/framing'
 import { toEngineScene } from '@/lib/canvas-element-adapter'
 import { resolvedBounds } from '@/lib/canvas-engine/hit-test'
 import { planFrame } from '@/lib/render/framing'
-import { drawScene, measurerFor } from '@/lib/canvas-engine/render'
+import {
+  drawScene,
+  fittedTextHeight,
+  fontSpecOf,
+  measurerFor,
+} from '@/lib/canvas-engine/render'
 import { dotGridBackground } from '@/lib/canvas-engine/grid'
 import { CANVAS_SHAPE_KINDS, updateElement } from '@/lib/canvas-engine/scene'
 import { planZOrder } from '@/lib/canvas-engine/z-order'
@@ -177,9 +183,9 @@ export function CanvasBoard({
   // the keydown binding below.
   const [searchOpen, setSearchOpen] = useState(false)
 
-  const getMeasurer = useCallback((fontSize: number) => {
+  const getMeasurer = useCallback((spec: CanvasFontSpec) => {
     const ctx = ctxRef.current
-    return ctx ? measurerFor(ctx, fontSize) : null
+    return ctx ? measurerFor(ctx, spec) : null
   }, [])
 
   // ── collaboration ────────────────────────────────────────────────────────
@@ -280,6 +286,56 @@ export function CanvasBoard({
   // sixty times a second.
   const callbacks = effectiveReadOnly ? undefined : undoCallbacks
 
+  /**
+   * Change the fill or stroke of every selected shape.
+   *
+   * Structurally identical to `handleRoutingChange` above, and for the same
+   * reasons: the LOCAL scene is written first so the shapes repaint on the
+   * next frame (`updateElements` applies nothing optimistically — it only
+   * reconciles on ack), and the write goes through `callbacks.onUpdate` so
+   * the edit lands on the undo stack like every other one.
+   *
+   * The one difference is arity. A routing change is always one connector; a
+   * restyle is however many shapes are selected, so both the optimistic
+   * writes and the `onUpdate` call are batched — ONE call, therefore one undo
+   * entry, per the one-gesture-one-entry rule.
+   */
+  const handleStyleChange = useCallback(
+    (targets: Array<CanvasElement>, change: CanvasStyleChange) => {
+      const updated = targets.map((element) => {
+        const style = applyStyleChange(element.style, change)
+        const restyled = { ...element, style }
+        // A `text` element is only as tall as its label, so a larger or
+        // bolder style grows it to fit (never shrinks it). Shapes keep the
+        // size the user gave them. Height rides in the same update, so one
+        // undo restores both.
+        if (element.kind !== 'text') return restyled
+        const measure = getMeasurer(fontSpecOf(style))
+        if (!measure) return restyled
+        const fitted = fittedTextHeight(restyled, measure)
+        return fitted > element.height
+          ? { ...restyled, height: fitted }
+          : restyled
+      })
+      setScene((prev) => {
+        let next = prev
+        for (const element of updated) {
+          if (!next.byId.has(element.id)) continue
+          next = updateElement(next, element.id, {
+            style: element.style,
+            height: element.height,
+          })
+        }
+        return next
+      })
+      // `targets` is the pre-state, captured before the change — undo's
+      // inverse writes it back. Same rule every gesture in
+      // use-canvas-input.ts follows.
+      callbacks?.onUpdate?.(updated, targets, 'style')
+    },
+    [callbacks, getMeasurer],
+  )
+
   const input = useCanvasInput({
     canvasRef,
     containerRef,
@@ -293,6 +349,7 @@ export function CanvasBoard({
     readOnly: effectiveReadOnly,
     getMeasurer,
     callbacks,
+    onStyleChange: handleStyleChange,
   })
 
   remapRef.current = input.remapElementId
@@ -353,42 +410,6 @@ export function CanvasBoard({
       // the scene after `setScene`) is the same pre-state rule every gesture
       // in use-canvas-input.ts follows.
       callbacks?.onUpdate?.([updated], [element], 'routing')
-    },
-    [callbacks],
-  )
-
-  /**
-   * Change the fill or stroke of every selected shape.
-   *
-   * Structurally identical to `handleRoutingChange` above, and for the same
-   * reasons: the LOCAL scene is written first so the shapes repaint on the
-   * next frame (`updateElements` applies nothing optimistically — it only
-   * reconciles on ack), and the write goes through `callbacks.onUpdate` so
-   * the edit lands on the undo stack like every other one.
-   *
-   * The one difference is arity. A routing change is always one connector; a
-   * restyle is however many shapes are selected, so both the optimistic
-   * writes and the `onUpdate` call are batched — ONE call, therefore one undo
-   * entry, per the one-gesture-one-entry rule.
-   */
-  const handleStyleChange = useCallback(
-    (targets: Array<CanvasElement>, change: CanvasStyleChange) => {
-      const updated = targets.map((element) => ({
-        ...element,
-        style: applyStyleChange(element.style, change),
-      }))
-      setScene((prev) => {
-        let next = prev
-        for (const element of updated) {
-          if (!next.byId.has(element.id)) continue
-          next = updateElement(next, element.id, { style: element.style })
-        }
-        return next
-      })
-      // `targets` is the pre-state, captured before the change — undo's
-      // inverse writes it back. Same rule every gesture in
-      // use-canvas-input.ts follows.
-      callbacks?.onUpdate?.(updated, targets, 'style')
     },
     [callbacks],
   )

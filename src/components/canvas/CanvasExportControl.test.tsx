@@ -32,6 +32,10 @@ const scene = sceneFrom([
       cornerRadius: 8,
       textAlign: 'left',
       verticalAlign: 'top',
+      fontWeight: 'normal',
+      fontStyle: 'normal',
+      underline: false,
+      strikethrough: false,
     },
   },
 ])

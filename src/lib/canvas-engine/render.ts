@@ -54,6 +54,7 @@ import type {
 } from './scene'
 import type { TextLayout, TextMeasurer } from './text-layout'
 import type {
+  CanvasFontSpec,
   PersistentRenderTarget,
   RenderPaint,
   RenderPathCommand,
@@ -478,12 +479,25 @@ export function creationHandleTarget(
  */
 export function measurerFor(
   ctx: CanvasRenderingContext2D,
-  fontSize: number,
+  spec: CanvasFontSpec,
 ): TextMeasurer {
-  const font = canvasFont(fontSize)
+  const font = canvasFont(spec)
   return (text: string) => {
     ctx.font = font
     return ctx.measureText(text).width
+  }
+}
+
+/**
+ * The font an element's label is measured and drawn with. The one derivation
+ * every measurer call site uses, so a style key that changes glyph widths
+ * reaches layout, drawing, the caret and export together.
+ */
+export function fontSpecOf(style: CanvasElementStyle): CanvasFontSpec {
+  return {
+    fontSize: style.fontSize,
+    fontWeight: style.fontWeight,
+    fontStyle: style.fontStyle,
   }
 }
 
@@ -645,6 +659,17 @@ export function layoutElementText(
     frame.maxWidth,
     measure,
   )
+}
+
+/**
+ * The element height that exactly fits its laid-out text, padding included.
+ * A `text` element grows to this after a style change (never shrinks).
+ */
+export function fittedTextHeight(
+  element: CanvasElement,
+  measure: TextMeasurer,
+): number {
+  return layoutElementText(element, measure).height + TEXT_PADDING * 2
 }
 
 /**
@@ -873,8 +898,8 @@ function drawElement(
   const text = element.text ?? ''
   if (text.length === 0) return null
 
-  const measure = (value: string) =>
-    target.measureText(value, element.style.fontSize)
+  const fontSpec = fontSpecOf(element.style)
+  const measure = (value: string) => target.measureText(value, fontSpec)
   const layout = layoutElementText(element, measure)
   const frame = textFrame(element)
   const originY = textOriginY(element, layout)
@@ -899,17 +924,32 @@ function drawElement(
     }
   }
 
-  target.beginText(
-    element.style.fontSize,
-    resolveTextColor(element.style, theme),
-  )
+  target.beginText(fontSpec, resolveTextColor(element.style, theme))
+  const { fontSize, underline, strikethrough } = element.style
+  const thickness = Math.max(1, fontSize / 14)
   for (let index = 0; index < layout.lines.length; index += 1) {
     const line = layout.lines[index]
-    target.textLine(
-      line.text,
-      frame.x + line.carets[0],
-      originY + index * layout.lineHeight,
-    )
+    const lineX = frame.x + line.carets[0]
+    const lineY = originY + index * layout.lineHeight
+    target.textLine(line.text, lineX, lineY)
+    const lineWidth = line.carets[line.carets.length - 1] - line.carets[0]
+    if (lineWidth <= 0) continue
+    if (underline) {
+      target.textDecoration(
+        lineX,
+        lineY + fontSize * 0.92,
+        lineWidth,
+        thickness,
+      )
+    }
+    if (strikethrough) {
+      target.textDecoration(
+        lineX,
+        lineY + fontSize * 0.55,
+        lineWidth,
+        thickness,
+      )
+    }
   }
   target.endText()
   // Returned so `drawScene` can hand it to `drawCaret` instead of paying for
@@ -1052,7 +1092,7 @@ function drawCaret(
 ): void {
   const layout =
     known ??
-    layoutElementText(element, measurerFor(ctx, element.style.fontSize))
+    layoutElementText(element, measurerFor(ctx, fontSpecOf(element.style)))
   const local = pointFromCaret(layout, caret)
   const frame = textFrame(element)
   // `local.x` is already alignment-shifted (it comes from the line's carets);

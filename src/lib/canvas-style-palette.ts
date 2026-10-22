@@ -39,14 +39,54 @@ export interface CanvasSwatch {
  * is the only place the two can be held together.
  */
 export const CANVAS_SWATCHES: ReadonlyArray<CanvasSwatch> = [
-  { id: 'slate', label: 'Slate', fill: 'rgba(100, 116, 139, 0.10)', stroke: '#64748b' },
-  { id: 'red', label: 'Red', fill: 'rgba(239, 68, 68, 0.10)', stroke: '#ef4444' },
-  { id: 'orange', label: 'Orange', fill: 'rgba(249, 115, 22, 0.10)', stroke: '#f97316' },
-  { id: 'amber', label: 'Amber', fill: 'rgba(245, 158, 11, 0.10)', stroke: '#f59e0b' },
-  { id: 'green', label: 'Green', fill: 'rgba(34, 197, 94, 0.10)', stroke: '#22c55e' },
-  { id: 'teal', label: 'Teal', fill: 'rgba(20, 184, 166, 0.10)', stroke: '#14b8a6' },
-  { id: 'blue', label: 'Blue', fill: 'rgba(59, 130, 246, 0.10)', stroke: '#3b82f6' },
-  { id: 'violet', label: 'Violet', fill: 'rgba(139, 92, 246, 0.10)', stroke: '#8b5cf6' },
+  {
+    id: 'slate',
+    label: 'Slate',
+    fill: 'rgba(100, 116, 139, 0.10)',
+    stroke: '#64748b',
+  },
+  {
+    id: 'red',
+    label: 'Red',
+    fill: 'rgba(239, 68, 68, 0.10)',
+    stroke: '#ef4444',
+  },
+  {
+    id: 'orange',
+    label: 'Orange',
+    fill: 'rgba(249, 115, 22, 0.10)',
+    stroke: '#f97316',
+  },
+  {
+    id: 'amber',
+    label: 'Amber',
+    fill: 'rgba(245, 158, 11, 0.10)',
+    stroke: '#f59e0b',
+  },
+  {
+    id: 'green',
+    label: 'Green',
+    fill: 'rgba(34, 197, 94, 0.10)',
+    stroke: '#22c55e',
+  },
+  {
+    id: 'teal',
+    label: 'Teal',
+    fill: 'rgba(20, 184, 166, 0.10)',
+    stroke: '#14b8a6',
+  },
+  {
+    id: 'blue',
+    label: 'Blue',
+    fill: 'rgba(59, 130, 246, 0.10)',
+    stroke: '#3b82f6',
+  },
+  {
+    id: 'violet',
+    label: 'Violet',
+    fill: 'rgba(139, 92, 246, 0.10)',
+    stroke: '#8b5cf6',
+  },
 ]
 
 /**
@@ -103,6 +143,43 @@ export const CANVAS_STROKE_WIDTHS: ReadonlyArray<number> = [1, 2, 4]
  * beside it.
  */
 export const CANVAS_CORNER_RADII: ReadonlyArray<number> = [0, 8, 20]
+
+/**
+ * The label font sizes the toolbar offers, smallest first.
+ *
+ * Four named steps rather than a free number, for the same reason as the rows
+ * above. 16 (M) is `DEFAULT_ELEMENT_STYLE.fontSize`, so a never-styled label
+ * shows M as active; `canvas-style-palette.test.ts` pins that.
+ */
+export const CANVAS_FONT_SIZES: ReadonlyArray<{ size: number; label: string }> =
+  [
+    { size: 12, label: 'S' },
+    { size: 16, label: 'M' },
+    { size: 24, label: 'L' },
+    { size: 36, label: 'XL' },
+  ]
+
+/**
+ * The `style.color` value of the "Default" text colour. It equals
+ * `DEFAULT_ELEMENT_STYLE.color`, which the renderer resolves per theme, so
+ * Default stays legible in light and dark mode. Pinned by
+ * `canvas-style-palette.test.ts`.
+ */
+export const DEFAULT_TEXT_COLOR = '#0f172a'
+
+/**
+ * The text colours the toolbar offers: Default, then the eight swatch strokes.
+ */
+export const CANVAS_TEXT_COLORS: ReadonlyArray<{
+  label: string
+  value: string
+}> = [
+  { label: 'Default', value: DEFAULT_TEXT_COLOR },
+  ...CANVAS_SWATCHES.map((swatch) => ({
+    label: swatch.label,
+    value: swatch.stroke,
+  })),
+]
 
 /**
  * The swatch whose `fill` matches this stored value, or null.

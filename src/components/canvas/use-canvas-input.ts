@@ -40,6 +40,8 @@ import type {
   ScreenRect,
 } from '@/lib/canvas-engine/render'
 import type { TextMeasurer } from '@/lib/canvas-engine/text-layout'
+import type { CanvasStyleChange } from './SelectionToolbar'
+import type { CanvasFontSpec } from '@/lib/canvas-engine/render-target'
 import type {
   AlignEdge,
   AlignmentGuide,
@@ -102,6 +104,7 @@ import {
   connectorEndpointRects,
   creationHandleRects,
   creationHandleTarget,
+  fontSpecOf,
   handleRects,
   layoutElementText,
   textFrame,
@@ -110,7 +113,7 @@ import {
 } from '@/lib/canvas-engine/render'
 import { quickCreatePlacement } from '@/lib/canvas-engine/quick-create'
 import { cloneTargets, planClone } from '@/lib/canvas-engine/clone'
-import { Z_MAX, Z_MIN } from '@/lib/canvas-engine/z-order'
+import { Z_MAX, Z_MIN, zOrderTargets } from '@/lib/canvas-engine/z-order'
 import {
   ANCHOR_ATTACH,
   anchorPoint,
@@ -515,8 +518,17 @@ interface UseCanvasInputArgs {
    * the canvas has mounted, which is why every caller here bails on null
    * rather than guessing a width.
    */
-  getMeasurer: (fontSize: number) => TextMeasurer | null
+  getMeasurer: (spec: CanvasFontSpec) => TextMeasurer | null
   callbacks?: CanvasEditCallbacks
+  /**
+   * Applies a whole-label text style change to `targets` (the Ctrl/Cmd+B/I/U
+   * and Ctrl/Cmd+Shift+X shortcuts). The same handler the selection toolbar
+   * uses, so a shortcut and a click share one write path and one undo entry.
+   */
+  onStyleChange?: (
+    targets: Array<CanvasElement>,
+    change: CanvasStyleChange,
+  ) => void
 }
 
 type Gesture =
@@ -1280,6 +1292,7 @@ export function useCanvasInput({
   readOnly,
   getMeasurer,
   callbacks,
+  onStyleChange,
 }: UseCanvasInputArgs) {
   const [selectedIds, setSelectedIds] = useState<ReadonlySet<string>>(
     () => new Set<string>(),
@@ -1566,7 +1579,7 @@ export function useCanvasInput({
    */
   const layoutFor = useCallback(
     (element: CanvasElement) => {
-      const measure = getMeasurer(element.style.fontSize)
+      const measure = getMeasurer(fontSpecOf(element.style))
       if (!measure) return null
       return layoutElementText(element, measure)
     },
@@ -3101,6 +3114,53 @@ export function useCanvasInput({
       [copySelection, cutSelection, duplicateSelection, pasteClipboard],
     )
 
+  /**
+   * Ctrl/Cmd+B, I, U and Ctrl/Cmd+Shift+X on the whole label of the selection.
+   *
+   * Returns whether the chord is one of these, so the caller can swallow the
+   * browser default (bookmarks, italics, view-source) even when nothing
+   * changes. The mixed-selection rule matches the toolbar: ON for every
+   * target when any is off, OFF for every target when all are on.
+   */
+  const applyStyleShortcut = useCallback(
+    (event: ReactKeyboardEvent<HTMLElement>): boolean => {
+      const key = event.key.toLowerCase()
+      const kind = event.shiftKey
+        ? key === 'x'
+          ? 'strikethrough'
+          : null
+        : key === 'b'
+          ? 'fontWeight'
+          : key === 'i'
+            ? 'fontStyle'
+            : key === 'u'
+              ? 'underline'
+              : null
+      if (!kind) return false
+      event.preventDefault()
+      if (!onStyleChange) return true
+      const { scene: current, selectedIds: selected } = latest.current
+      const targets = zOrderTargets(current, selected)
+      const isOn = (element: CanvasElement) =>
+        kind === 'fontWeight'
+          ? element.style.fontWeight === 'bold'
+          : kind === 'fontStyle'
+            ? element.style.fontStyle === 'italic'
+            : element.style[kind]
+      const turnOn = !targets.every(isOn)
+      const change: CanvasStyleChange =
+        kind === 'fontWeight'
+          ? { target: kind, value: turnOn ? 'bold' : 'normal' }
+          : kind === 'fontStyle'
+            ? { target: kind, value: turnOn ? 'italic' : 'normal' }
+            : { target: kind, value: turnOn }
+      const changed = targets.filter((element) => isOn(element) !== turnOn)
+      if (changed.length > 0) onStyleChange(changed, change)
+      return true
+    },
+    [onStyleChange],
+  )
+
   const onBoardKeyDown = useCallback(
     (event: ReactKeyboardEvent<HTMLElement>) => {
       // While text is being edited, EVERY key belongs to the text proxy.
@@ -3174,6 +3234,7 @@ export function useCanvasInput({
           else groupSelection()
           return
         }
+        if (applyStyleShortcut(event)) return
         const action = CLIPBOARD_ACTIONS[event.key.toLowerCase()]
         if (action) {
           event.preventDefault()
@@ -3235,6 +3296,7 @@ export function useCanvasInput({
     },
     [
       CLIPBOARD_ACTIONS,
+      applyStyleShortcut,
       beginEditing,
       deleteSelection,
       groupSelection,

@@ -16,9 +16,14 @@ const style = {
   cornerRadius: 8,
   textAlign: 'left' as const,
   verticalAlign: 'top' as const,
+  fontWeight: 'normal' as const,
+  fontStyle: 'normal' as const,
+  underline: false,
+  strikethrough: false,
 }
 
-const measure = (text: string, fontSize: number) => text.length * fontSize * 0.5
+const measure = (text: string, spec: { fontSize: number }) =>
+  text.length * spec.fontSize * 0.5
 
 function rectangle(patch: Partial<CanvasElement> = {}): CanvasElement {
   return {
@@ -144,6 +149,41 @@ describe('canvas export', () => {
     expect(svg).toContain('A&amp;B &lt;node&gt;')
     expect(svg).toContain('viewBox="-4 6 128 78"')
     expect(measureSpy).toHaveBeenCalled()
+  })
+
+  it('serializes weight, style and decoration bars for a styled label', () => {
+    const svg = serializeCanvasSceneSvg({
+      scene: sceneFrom([
+        rectangle({
+          style: {
+            ...style,
+            fontWeight: 'bold',
+            fontStyle: 'italic',
+            underline: true,
+          },
+        }),
+      ]),
+      theme: 'light',
+      background: 'transparent',
+      backgroundColor: '#ffffff',
+      measureText: measure,
+    })
+    expect(svg).toContain('font-weight="bold"')
+    expect(svg).toContain('font-style="italic"')
+    // One underline bar in the text colour, drawn as a thin rect.
+    expect(svg).toMatch(/<rect [^>]*fill="#0f172a" stroke="none"\/>/)
+  })
+
+  it('leaves weight and style attributes off plain text', () => {
+    const svg = serializeCanvasSceneSvg({
+      scene: sceneFrom([rectangle()]),
+      theme: 'light',
+      background: 'transparent',
+      backgroundColor: '#ffffff',
+      measureText: measure,
+    })
+    expect(svg).not.toContain('font-weight')
+    expect(svg).not.toContain('font-style')
   })
 
   it('serializes exact shared shape and connector geometry with matching paint', () => {
