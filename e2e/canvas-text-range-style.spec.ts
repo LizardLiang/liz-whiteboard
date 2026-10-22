@@ -186,6 +186,13 @@ test.describe('per-range text styling', () => {
       .poll(() => runsOf(page))
       .toEqual([{ start: 4, end: 7, fontSize: 36 }])
 
+    // The box grew to hold the taller line while editing: line 0 is 50.4,
+    // line 1 is 22.4, plus 8 padding top and bottom.
+    const laidOutHeight = 36 * 1.4 + 16 * 1.4 + 16
+    await expect
+      .poll(async () => (await elementById(page, TEXT)).height)
+      .toBeGreaterThanOrEqual(laidOutHeight - 0.5)
+
     // The label block is taller than its box, so it starts at the box top plus
     // padding (8). Line 0 is now 36 * 1.4 = 50.4 tall, so 35 units down is
     // still line 0; at the old 22.4 it would be line 1.
@@ -200,6 +207,9 @@ test.describe('per-range text styling', () => {
 
     await commitAndReload(page)
     expect(await runsOf(page)).toEqual([{ start: 4, end: 7, fontSize: 36 }])
+    expect((await elementById(page, TEXT)).height).toBeGreaterThanOrEqual(
+      laidOutHeight - 0.5,
+    )
   })
 
   test('a pending bold applies to the next typed characters only', async ({

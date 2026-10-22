@@ -139,7 +139,10 @@ function keyEvent(key: string, overrides: Record<string, unknown> = {}) {
   } as any
 }
 
-function setup(initial: Array<CanvasElement> = [makeText()]) {
+function setup(
+  initial: Array<CanvasElement> = [makeText()],
+  getMeasurer: Parameters<typeof useCanvasInput>[0]['getMeasurer'] = () => null,
+) {
   let scene: Scene = sceneFrom(initial)
   let camera: Camera = DEFAULT_CAMERA
   let tool: CanvasTool = 'select'
@@ -178,9 +181,9 @@ function setup(initial: Array<CanvasElement> = [makeText()]) {
         tool = next
       },
       readOnly: false,
-      // jsdom has no canvas context. Every path under test avoids text
-      // metrics; nothing here silently substitutes a guessed width.
-      getMeasurer: () => null,
+      // jsdom has no canvas context. Paths that need metrics pass a stub;
+      // nothing here silently substitutes a guessed width.
+      getMeasurer,
       callbacks,
       onStyleChange,
     }),
@@ -3291,6 +3294,69 @@ describe('text runs while editing', () => {
       h.api.textInput.commitEditing()
     })
     expect(h.callbacks.onUpdate).not.toHaveBeenCalled()
+  })
+
+  describe('height fit on a range style pick', () => {
+    const stub = () => (text: string, spec?: { fontSize: number }) =>
+      text.length * (spec?.fontSize ?? 16) * 0.5
+    function sized(kind: 'text' | 'rectangle') {
+      const h = setup(
+        [makeText({ kind, text: 'hello world', height: 30 })],
+        stub,
+      )
+      act(() => {
+        h.api.setSelectedIds(new Set([TEXT_ID]))
+      })
+      h.sync()
+      act(() => {
+        h.api.boardHandlers.onKeyDown(keyEvent('Enter'))
+      })
+      h.sync()
+      return h
+    }
+    const xl = (h: ReturnType<typeof sized>) => {
+      act(() => {
+        h.api.applyEditStyle({ kind: 'set', key: 'fontSize', value: 48 })
+      })
+      h.sync()
+    }
+
+    it('grows a text element and one undo entry restores text, runs and height', () => {
+      const h = sized('text')
+      select(h, 6, 11)
+      xl(h)
+      const grown = h.scene.byId.get(TEXT_ID)!
+      expect(grown.height).toBeGreaterThan(30)
+      act(() => {
+        h.api.textInput.commitEditing()
+      })
+      expect(h.callbacks.onUpdate).toHaveBeenCalledTimes(1)
+      const [after, before] = h.callbacks.onUpdate.mock.calls[0] as [
+        Array<CanvasElement>,
+        Array<CanvasElement>,
+      ]
+      expect(after[0].height).toBe(grown.height)
+      expect(after[0].style.textRuns).toHaveLength(1)
+      expect(before[0].height).toBe(30)
+      expect(before[0].text).toBe('hello world')
+      expect(before[0].style.textRuns ?? []).toEqual([])
+    })
+
+    it('keeps a shape the size it had', () => {
+      const h = sized('rectangle')
+      select(h, 6, 11)
+      xl(h)
+      expect(h.scene.byId.get(TEXT_ID)!.height).toBe(30)
+    })
+
+    it('does not grow on a pending style at a collapsed caret', () => {
+      const h = sized('text')
+      act(() => {
+        h.api.applyEditStyle({ kind: 'set', key: 'fontSize', value: 48 })
+      })
+      h.sync()
+      expect(h.scene.byId.get(TEXT_ID)!.height).toBe(30)
+    })
   })
 
   it('a collapsed-caret toggle is pending, applies to the next insert, then clears', () => {

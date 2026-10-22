@@ -106,6 +106,7 @@ import {
   connectorEndpointRects,
   creationHandleRects,
   creationHandleTarget,
+  fittedTextHeight,
   fontSpecOf,
   handleRects,
   layoutElementText,
@@ -1265,6 +1266,8 @@ export interface TextEditResult {
   runs?: Array<CanvasTextRun>
   /** `undefined` keeps the pending style unless the caret moved; `null` clears it. */
   pending?: TextRunAttrs | null
+  /** A range style pick: a `text` element grows to fit the restyled text. */
+  fit?: boolean
 }
 
 /** Replace `[a, b)` with `insertion`, naming the edited stretch for the runs. */
@@ -1360,7 +1363,7 @@ function styleEditProduce(
     )
     const runs = dropBaseAttrs(applied, style, text.length)
     if (runs.length > MAX_TEXT_RUNS) return keep
-    return { ...keep, runs }
+    return { ...keep, runs, fit: true }
   }
 }
 
@@ -1401,12 +1404,14 @@ export function foldPendingTextEdits(
   anchor: number
   runs: Array<CanvasTextRun>
   pending: TextRunAttrs | null
+  fit: boolean
 } {
   let text = element.text ?? ''
   let caret = session.caret
   let anchor = session.anchor ?? session.caret
   let runs = element.style.textRuns
   let pendingStyle = session.pending ?? null
+  let fit = false
   for (const { elementId, produce } of pending) {
     if (elementId !== session.elementId) continue
     const result = produce(
@@ -1417,6 +1422,7 @@ export function foldPendingTextEdits(
       pendingStyle,
     )
     const nextAnchor = result.anchor ?? result.caret
+    if (result.fit) fit = true
     if (result.runs) {
       runs = result.runs
     } else if (result.edit) {
@@ -1443,7 +1449,7 @@ export function foldPendingTextEdits(
     caret = result.caret
     anchor = nextAnchor
   }
-  return { text, caret, anchor, runs, pending: pendingStyle }
+  return { text, caret, anchor, runs, pending: pendingStyle, fit }
 }
 
 /**
@@ -1453,14 +1459,33 @@ export function foldPendingTextEdits(
  */
 function textEditPatch(
   element: CanvasElement,
-  folded: { text: string; runs: Array<CanvasTextRun> },
-): Partial<Pick<CanvasElement, 'text' | 'style'>> | null {
+  folded: { text: string; runs: Array<CanvasTextRun>; fit?: boolean },
+  getMeasurer: UseCanvasInputArgs['getMeasurer'],
+): Partial<Pick<CanvasElement, 'text' | 'style' | 'height'>> | null {
   const textChanged = folded.text !== (element.text ?? '')
   const runsChanged = !sameRuns(element.style.textRuns, folded.runs)
   if (!textChanged && !runsChanged) return null
   const style = { ...element.style, textRuns: folded.runs }
-  if (textChanged && runsChanged) return { text: folded.text, style }
-  return textChanged ? { text: folded.text } : { style }
+  const patch: Partial<Pick<CanvasElement, 'text' | 'style' | 'height'>> =
+    textChanged && runsChanged
+      ? { text: folded.text, style }
+      : textChanged
+        ? { text: folded.text }
+        : { style }
+  // A range style pick grows a `text` element to fit (never shrinks it);
+  // shapes keep their size. Height rides in the same patch, so the scene,
+  // the write and the undo entry agree.
+  if (folded.fit && runsChanged && element.kind === 'text') {
+    const measure = getMeasurer(fontSpecOf(style))
+    if (measure) {
+      const fitted = fittedTextHeight(
+        { ...element, text: folded.text, style },
+        measure,
+      )
+      if (fitted > element.height) patch.height = fitted
+    }
+  }
+  return patch
 }
 
 /**
@@ -1654,7 +1679,7 @@ export function useCanvasInput({
     const element = latest.current.scene.byId.get(current.elementId)
     if (!element) return
     const folded = foldPendingTextEdits(pending, element, current)
-    const patch = textEditPatch(element, folded)
+    const patch = textEditPatch(element, folded, getMeasurer)
     if (patch) {
       setScene((prev) => updateElement(prev, current.elementId, patch))
     }
@@ -1665,7 +1690,7 @@ export function useCanvasInput({
       pending: folded.pending,
     })
     setCaretVisible(true)
-  }, [editing, scene, setScene, setEditing])
+  }, [editing, scene, setScene, setEditing, getMeasurer])
 
   const screenFromEvent = useCallback(
     (event: { clientX: number; clientY: number }): Point | null => {
@@ -1836,6 +1861,7 @@ export function useCanvasInput({
       const patch = textEditPatch(
         element,
         foldPendingTextEdits(queued, element, current),
+        getMeasurer,
       )
       if (patch) {
         element = { ...element, ...patch }
@@ -1899,17 +1925,18 @@ export function useCanvasInput({
     // new element for typing, and a user who clicks away without typing then
     // has to press Ctrl+Z twice to undo the thing they just created.
     //
-    // Text and the style runs are the whole comparison: they are all an edit
-    // session can touch.
+    // Text, the style runs and the height a range style pick grew are the
+    // whole comparison: they are all an edit session can touch.
     const before = current.before ?? element
     if (
       (before.text ?? '') === (element.text ?? '') &&
-      sameRuns(before.style.textRuns, element.style.textRuns)
+      sameRuns(before.style.textRuns, element.style.textRuns) &&
+      before.height === element.height
     ) {
       return
     }
     callbacks?.onUpdate?.([element], [before], 'text-edit')
-  }, [callbacks, setScene])
+  }, [callbacks, getMeasurer, setScene])
 
   const beginEditing = useCallback(
     (element: CanvasElement, caret: number, isNew: boolean) => {
@@ -3557,7 +3584,7 @@ export function useCanvasInput({
         element,
         current,
       )
-      const patch = textEditPatch(element, folded)
+      const patch = textEditPatch(element, folded, getMeasurer)
       if (patch) {
         setScene((prev) => updateElement(prev, current.elementId, patch))
         // Mirror the new text into `latest` now: a commit in the same frame
@@ -3576,7 +3603,7 @@ export function useCanvasInput({
       })
       setCaretVisible(true)
     },
-    [setEditing, setScene],
+    [getMeasurer, setEditing, setScene],
   )
 
   /** Commit typed or composed text, replacing the selected range if any. */
