@@ -100,6 +100,7 @@ import {
   swatchForFill,
   swatchForStroke,
 } from '@/lib/canvas-style-palette'
+import { stripRunAttribute } from '@/lib/canvas-engine/text-runs'
 import { Button } from '@/components/ui/button'
 import {
   Popover,
@@ -160,6 +161,10 @@ export type CanvasStyleChange =
    * mixed-selection rule (on for all if any is off) is decided where the
    * click happens, with every target in view, so each element is simply set.
    */
+  /**
+   * A whole-label pick also strips that attribute from the per-range runs
+   * (`applyStyleChange`): a label-wide choice means the whole label.
+   */
   | { target: 'fontWeight'; value: CanvasFontWeight }
   | { target: 'fontStyle'; value: CanvasFontStyle }
   | { target: 'underline'; value: boolean }
@@ -200,22 +205,46 @@ export function applyStyleChange(
     return { ...style, verticalAlign: change.value }
   }
   if (change.target === 'fontWeight') {
-    return { ...style, fontWeight: change.value }
+    return {
+      ...style,
+      fontWeight: change.value,
+      textRuns: stripRunAttribute(style.textRuns, 'fontWeight'),
+    }
   }
   if (change.target === 'fontStyle') {
-    return { ...style, fontStyle: change.value }
+    return {
+      ...style,
+      fontStyle: change.value,
+      textRuns: stripRunAttribute(style.textRuns, 'fontStyle'),
+    }
   }
   if (change.target === 'underline') {
-    return { ...style, underline: change.value }
+    return {
+      ...style,
+      underline: change.value,
+      textRuns: stripRunAttribute(style.textRuns, 'underline'),
+    }
   }
   if (change.target === 'strikethrough') {
-    return { ...style, strikethrough: change.value }
+    return {
+      ...style,
+      strikethrough: change.value,
+      textRuns: stripRunAttribute(style.textRuns, 'strikethrough'),
+    }
   }
   if (change.target === 'fontSize') {
-    return { ...style, fontSize: change.value }
+    return {
+      ...style,
+      fontSize: change.value,
+      textRuns: stripRunAttribute(style.textRuns, 'fontSize'),
+    }
   }
   if (change.target === 'color') {
-    return { ...style, color: change.value }
+    return {
+      ...style,
+      color: change.value,
+      textRuns: stripRunAttribute(style.textRuns, 'color'),
+    }
   }
   if (change.target === 'strokeWidth') {
     // Deliberately unconditional: choosing a weight on a shape whose stroke

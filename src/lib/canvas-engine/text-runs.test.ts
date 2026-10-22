@@ -3,10 +3,15 @@
 
 import { describe, expect, it } from 'vitest'
 import {
+  MAX_TEXT_RUNS,
   applyRunStyle,
+  dropBaseAttrs,
+  editRuns,
+  inheritedAttrs,
   normalizeRuns,
   remapRuns,
   resolveRuns,
+  sameRuns,
   stripRunAttribute,
 } from './text-runs'
 import { DEFAULT_ELEMENT_STYLE } from './scene'
@@ -207,5 +212,71 @@ describe('stripRunAttribute', () => {
   it('returns the same array when no run carries the attribute', () => {
     const runs = [{ start: 0, end: 2, underline: true }]
     expect(stripRunAttribute(runs, 'color')).toBe(runs)
+  })
+})
+
+describe('editRuns', () => {
+  it('shifts runs after an insert and lets the insert inherit the char before', () => {
+    const runs: Array<CanvasTextRun> = [
+      { start: 0, end: 2, fontWeight: 'bold' },
+    ]
+    expect(editRuns(runs, 4, 1, 1, 1)).toEqual([
+      { start: 0, end: 3, fontWeight: 'bold' },
+    ])
+  })
+
+  it('inherits the char after at offset 0', () => {
+    const runs: Array<CanvasTextRun> = [{ start: 0, end: 2, underline: true }]
+    expect(editRuns(runs, 3, 0, 0, 1)).toEqual([
+      { start: 0, end: 3, underline: true },
+    ])
+  })
+
+  it('pending overrides the inherited attribute', () => {
+    const runs: Array<CanvasTextRun> = [
+      { start: 0, end: 2, fontWeight: 'bold' },
+    ]
+    expect(editRuns(runs, 2, 2, 2, 1, { fontWeight: 'normal' })).toEqual([
+      { start: 0, end: 2, fontWeight: 'bold' },
+      { start: 2, end: 3, fontWeight: 'normal' },
+    ])
+  })
+
+  it('caps the result at MAX_TEXT_RUNS', () => {
+    const runs: Array<CanvasTextRun> = Array.from(
+      { length: MAX_TEXT_RUNS },
+      (_, i) => ({ start: i * 2, end: i * 2 + 1, underline: true }),
+    )
+    const out = editRuns(runs, MAX_TEXT_RUNS * 2, 1, 1, 1, { color: '#ef4444' })
+    expect(out.length).toBeLessThanOrEqual(MAX_TEXT_RUNS)
+  })
+})
+
+describe('dropBaseAttrs / sameRuns / inheritedAttrs', () => {
+  it('drops overrides equal to the label style', () => {
+    const runs: Array<CanvasTextRun> = [
+      { start: 0, end: 2, fontWeight: 'normal', underline: true },
+      { start: 2, end: 3, fontWeight: 'normal' },
+    ]
+    expect(dropBaseAttrs(runs, style([]), 3)).toEqual([
+      { start: 0, end: 2, underline: true },
+    ])
+  })
+
+  it('treats absent and empty runs as equal', () => {
+    expect(sameRuns(undefined, [])).toBe(true)
+    expect(
+      sameRuns(
+        [{ start: 0, end: 1, underline: true }],
+        [{ start: 0, end: 1, underline: false }],
+      ),
+    ).toBe(false)
+  })
+
+  it('reads the attributes at a caret', () => {
+    const runs: Array<CanvasTextRun> = [{ start: 1, end: 2, color: '#ef4444' }]
+    expect(inheritedAttrs(runs, 3, 2)).toEqual({ color: '#ef4444' })
+    expect(inheritedAttrs(runs, 3, 1)).toEqual({})
+    expect(inheritedAttrs(runs, 0, 0)).toEqual({})
   })
 })

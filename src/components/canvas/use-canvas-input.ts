@@ -29,6 +29,7 @@ import type { WorldRect } from '@/lib/canvas-engine/hit-test'
 import type {
   CanvasElement,
   CanvasShapeKind,
+  CanvasTextRun,
   ConnectorAnchor,
   ConnectorAttach,
   Scene,
@@ -47,6 +48,7 @@ import type {
   AlignmentGuide,
   ResizeAlignment,
 } from '@/lib/canvas-engine/alignment'
+import type { TextRunAttrs } from '@/lib/canvas-engine/text-runs'
 import { useSpaceHeld } from '@/hooks/use-space-held'
 import {
   panByScreenDelta,
@@ -133,6 +135,15 @@ import {
   stepCaret,
   wordRangeAt,
 } from '@/lib/canvas-engine/text-layout'
+import {
+  MAX_TEXT_RUNS,
+  applyRunStyle,
+  dropBaseAttrs,
+  editRuns,
+  normalizeRuns,
+  resolveRuns,
+  sameRuns,
+} from '@/lib/canvas-engine/text-runs'
 import { uuid } from '@/lib/uuid'
 
 /**
@@ -480,6 +491,12 @@ export interface EditingState {
    * renderer is handed a scene with it spliced in at the caret.
    */
   composition: string
+  /**
+   * Style picked at a collapsed caret, waiting for the next insert. Cleared
+   * by that insert and by any caret move, so it never outlives the spot it
+   * was chosen at.
+   */
+  pending?: TextRunAttrs | null
   /** True while the element has never been persisted (created by this edit). */
   isNew: boolean
   /**
@@ -1230,26 +1247,220 @@ export interface PendingTextEdit {
     caret: number,
     element: CanvasElement,
     anchor: number,
-  ) => { text: string; caret: number; anchor?: number }
+    pending: TextRunAttrs | null,
+  ) => TextEditResult
+}
+
+/**
+ * What one queued edit leaves behind. A result that changes `text` names the
+ * stretch it replaced in `edit`, so the runs follow the characters instead of
+ * the offsets; a style pick sets `runs` (or `pending` at a collapsed caret)
+ * and leaves the text alone.
+ */
+export interface TextEditResult {
+  text: string
+  caret: number
+  anchor?: number
+  edit?: { from: number; to: number; insertLength: number }
+  runs?: Array<CanvasTextRun>
+  /** `undefined` keeps the pending style unless the caret moved; `null` clears it. */
+  pending?: TextRunAttrs | null
+}
+
+/** Replace `[a, b)` with `insertion`, naming the edited stretch for the runs. */
+function replaceEdit(
+  text: string,
+  a: number,
+  b: number,
+  insertion: string,
+): TextEditResult {
+  const from = clampCaret(text, Math.min(a, b))
+  const to = clampCaret(text, Math.max(a, b))
+  return {
+    ...replaceRange(text, a, b, insertion),
+    edit: { from, to, insertLength: insertion.length },
+  }
+}
+
+/** The attributes a toggle flips, with the value that means "on". */
+const TOGGLE_ON = {
+  fontWeight: 'bold',
+  fontStyle: 'italic',
+  underline: true,
+  strikethrough: true,
+} as const
+const TOGGLE_OFF = {
+  fontWeight: 'normal',
+  fontStyle: 'normal',
+  underline: false,
+  strikethrough: false,
+} as const
+
+export type TextToggleKey = keyof typeof TOGGLE_ON
+
+/** One style pick made while editing a label. */
+export type TextEditStyleChange =
+  | { kind: 'toggle'; key: TextToggleKey }
+  | { kind: 'set'; key: 'fontSize'; value: number }
+  | { kind: 'set'; key: 'color'; value: string }
+
+/**
+ * The queued edit for a style pick. A range pick re-writes the runs inside the
+ * selection; at a collapsed caret it stores a pending style for the next
+ * insert. A toggle follows the mixed rule over the selected characters: on
+ * for all if any is off, else off for all.
+ *
+ * A pick that would leave more than `MAX_TEXT_RUNS` runs is refused: the
+ * result keeps the runs it had, so nothing is written (the server would reject
+ * the write, and trimming a user's styling silently is worse than ignoring
+ * the click).
+ */
+function styleEditProduce(
+  change: TextEditStyleChange,
+): PendingTextEdit['produce'] {
+  return (text, caret, element, anchor, pending) => {
+    const style = element.style
+    const start = Math.min(anchor, caret)
+    const end = Math.max(anchor, caret)
+    const keep = { text, caret, anchor }
+    let patch: TextRunAttrs
+    if (change.kind === 'set') {
+      patch = { [change.key]: change.value } as TextRunAttrs
+    } else {
+      const key = change.key
+      const segments = resolveRuns(text, style)
+      const isOn = (segment: { [k in TextToggleKey]: unknown }) =>
+        segment[key] === TOGGLE_ON[key]
+      if (start === end) {
+        const segment = segments.find(
+          (candidate) =>
+            candidate.start < Math.max(start, 1) &&
+            Math.max(start, 1) <= candidate.end,
+        )
+        const here = { ...(segment ?? style), ...pending }
+        patch = {
+          [key]: isOn(here) ? TOGGLE_OFF[key] : TOGGLE_ON[key],
+        } as TextRunAttrs
+      } else {
+        const covered = segments.filter(
+          (segment) => segment.end > start && segment.start < end,
+        )
+        patch = {
+          [key]: covered.every(isOn) ? TOGGLE_OFF[key] : TOGGLE_ON[key],
+        } as TextRunAttrs
+      }
+    }
+    if (start === end) return { ...keep, pending: { ...pending, ...patch } }
+    const applied = applyRunStyle(
+      style.textRuns,
+      start,
+      end,
+      patch,
+      text.length,
+    )
+    const runs = dropBaseAttrs(applied, style, text.length)
+    if (runs.length > MAX_TEXT_RUNS) return keep
+    return { ...keep, runs }
+  }
+}
+
+/** Backspace or Delete of one character, naming the edited stretch. */
+function deleteEdit(
+  text: string,
+  caret: number,
+  direction: 'backward' | 'forward',
+): TextEditResult {
+  const result =
+    direction === 'backward'
+      ? deleteBackward(text, caret)
+      : deleteForward(text, caret)
+  const from = result.caret
+  return {
+    ...result,
+    edit: {
+      from,
+      to: from + (text.length - result.text.length),
+      insertLength: 0,
+    },
+  }
 }
 
 /** Apply queued edits in order, starting from the element's text and the session caret. */
 export function foldPendingTextEdits(
   pending: ReadonlyArray<PendingTextEdit>,
   element: CanvasElement,
-  session: { elementId: string; caret: number; anchor?: number },
-): { text: string; caret: number; anchor: number } {
+  session: {
+    elementId: string
+    caret: number
+    anchor?: number
+    pending?: TextRunAttrs | null
+  },
+): {
+  text: string
+  caret: number
+  anchor: number
+  runs: Array<CanvasTextRun>
+  pending: TextRunAttrs | null
+} {
   let text = element.text ?? ''
   let caret = session.caret
   let anchor = session.anchor ?? session.caret
+  let runs = element.style.textRuns
+  let pendingStyle = session.pending ?? null
   for (const { elementId, produce } of pending) {
     if (elementId !== session.elementId) continue
-    const result = produce(text, caret, { ...element, text }, anchor)
+    const result = produce(
+      text,
+      caret,
+      { ...element, text, style: { ...element.style, textRuns: runs } },
+      anchor,
+      pendingStyle,
+    )
+    const nextAnchor = result.anchor ?? result.caret
+    if (result.runs) {
+      runs = result.runs
+    } else if (result.edit) {
+      runs = editRuns(
+        runs,
+        text.length,
+        result.edit.from,
+        result.edit.to,
+        result.edit.insertLength,
+        pendingStyle,
+      )
+    } else if (result.text !== text) {
+      runs = normalizeRuns(runs, result.text.length)
+    }
+    pendingStyle =
+      result.pending !== undefined
+        ? result.pending
+        : result.text !== text ||
+            result.caret !== caret ||
+            nextAnchor !== anchor
+          ? null
+          : pendingStyle
     text = result.text
     caret = result.caret
-    anchor = result.anchor ?? result.caret
+    anchor = nextAnchor
   }
-  return { text, caret, anchor }
+  return { text, caret, anchor, runs, pending: pendingStyle }
+}
+
+/**
+ * The element patch a fold produces, or null when it changes nothing. Text and
+ * runs travel in one patch so the scene, the persisted write and the undo
+ * entry never see runs that disagree with the text beside them.
+ */
+function textEditPatch(
+  element: CanvasElement,
+  folded: { text: string; runs: Array<CanvasTextRun> },
+): Partial<Pick<CanvasElement, 'text' | 'style'>> | null {
+  const textChanged = folded.text !== (element.text ?? '')
+  const runsChanged = !sameRuns(element.style.textRuns, folded.runs)
+  if (!textChanged && !runsChanged) return null
+  const style = { ...element.style, textRuns: folded.runs }
+  if (textChanged && runsChanged) return { text: folded.text, style }
+  return textChanged ? { text: folded.text } : { style }
 }
 
 /**
@@ -1442,15 +1653,17 @@ export function useCanvasInput({
     pendingTextEditsRef.current = []
     const element = latest.current.scene.byId.get(current.elementId)
     if (!element) return
-    const { text, caret, anchor } = foldPendingTextEdits(
-      pending,
-      element,
-      current,
-    )
-    if (text !== (element.text ?? '')) {
-      setScene((prev) => updateElement(prev, current.elementId, { text }))
+    const folded = foldPendingTextEdits(pending, element, current)
+    const patch = textEditPatch(element, folded)
+    if (patch) {
+      setScene((prev) => updateElement(prev, current.elementId, patch))
     }
-    setEditing({ ...current, caret, anchor })
+    setEditing({
+      ...current,
+      caret: folded.caret,
+      anchor: folded.anchor,
+      pending: folded.pending,
+    })
     setCaretVisible(true)
   }, [editing, scene, setScene, setEditing])
 
@@ -1620,10 +1833,13 @@ export function useCanvasInput({
     if (!element) return
 
     if (queued.length > 0) {
-      const { text } = foldPendingTextEdits(queued, element, current)
-      if (text !== (element.text ?? '')) {
-        element = { ...element, text }
-        setScene((prev) => updateElement(prev, current.elementId, { text }))
+      const patch = textEditPatch(
+        element,
+        foldPendingTextEdits(queued, element, current),
+      )
+      if (patch) {
+        element = { ...element, ...patch }
+        setScene((prev) => updateElement(prev, current.elementId, patch))
       }
     }
 
@@ -1683,10 +1899,15 @@ export function useCanvasInput({
     // new element for typing, and a user who clicks away without typing then
     // has to press Ctrl+Z twice to undo the thing they just created.
     //
-    // Text is the whole comparison because text is all an edit session can
-    // touch — `applyTextEdit` patches `text` and nothing else.
+    // Text and the style runs are the whole comparison: they are all an edit
+    // session can touch.
     const before = current.before ?? element
-    if ((before.text ?? '') === (element.text ?? '')) return
+    if (
+      (before.text ?? '') === (element.text ?? '') &&
+      sameRuns(before.style.textRuns, element.style.textRuns)
+    ) {
+      return
+    }
     callbacks?.onUpdate?.([element], [before], 'text-edit')
   }, [callbacks, setScene])
 
@@ -1909,7 +2130,7 @@ export function useCanvasInput({
       ) {
         const caret = caretAtWorldPoint(editedElement, world)
         const anchor = event.shiftKey ? editingNow.anchor : caret
-        setEditing({ ...editingNow, caret, anchor })
+        setEditing({ ...editingNow, caret, anchor, pending: null })
         setGesture({ kind: 'text-select', elementId: editedElement.id, anchor })
         textInputRef?.current?.focus({ preventScroll: true })
         setCaretVisible(true)
@@ -2710,7 +2931,12 @@ export function useCanvasInput({
       const editingNow = editingRef.current
       if (editingNow && editingNow.elementId === hit.id) {
         const range = wordRangeAt(hit.text ?? '', caretAtWorldPoint(hit, world))
-        setEditing({ ...editingNow, anchor: range.start, caret: range.end })
+        setEditing({
+          ...editingNow,
+          anchor: range.start,
+          caret: range.end,
+          pending: null,
+        })
         setCaretVisible(true)
         return
       }
@@ -3326,28 +3552,27 @@ export function useCanvasInput({
       const current = pendingRender
       const element = latest.current.scene.byId.get(current.elementId)
       if (!element) return
-      const result = produce(
-        element.text ?? '',
-        current.caret,
+      const folded = foldPendingTextEdits(
+        [{ elementId: current.elementId, produce }],
         element,
-        current.anchor,
+        current,
       )
-      if (result.text !== (element.text ?? '')) {
-        setScene((prev) =>
-          updateElement(prev, current.elementId, { text: result.text }),
-        )
+      const patch = textEditPatch(element, folded)
+      if (patch) {
+        setScene((prev) => updateElement(prev, current.elementId, patch))
         // Mirror the new text into `latest` now: a commit in the same frame
         // reads the scene from there and would otherwise miss this keystroke.
         latest.current.scene = updateElement(
           latest.current.scene,
           current.elementId,
-          { text: result.text },
+          patch,
         )
       }
       setEditing({
         ...current,
-        caret: result.caret,
-        anchor: result.anchor ?? result.caret,
+        caret: folded.caret,
+        anchor: folded.anchor,
+        pending: folded.pending,
       })
       setCaretVisible(true)
     },
@@ -3359,7 +3584,7 @@ export function useCanvasInput({
     (text: string) => {
       if (text.length === 0) return
       applyTextEdit((value, caret, _element, anchor) =>
-        replaceRange(value, anchor, caret, text),
+        replaceEdit(value, anchor, caret, text),
       )
     },
     [applyTextEdit],
@@ -3433,6 +3658,12 @@ export function useCanvasInput({
     [applyTextEdit],
   )
 
+  /** A style pick from the edit bar, queued like a keystroke. */
+  const applyEditStyle = useCallback(
+    (change: TextEditStyleChange) => applyTextEdit(styleEditProduce(change)),
+    [applyTextEdit],
+  )
+
   /** The text currently selected, as the queued edits leave it. */
   const selectedText = useCallback((): string => {
     const current = editingRef.current
@@ -3473,7 +3704,7 @@ export function useCanvasInput({
       event.clipboardData.setData('text/plain', selected)
       event.preventDefault()
       applyTextEdit((text, caret, _element, anchor) =>
-        replaceRange(text, anchor, caret, ''),
+        replaceEdit(text, anchor, caret, ''),
       )
     },
     [applyTextEdit, selectedText],
@@ -3499,6 +3730,24 @@ export function useCanvasInput({
         return true
       }
 
+      if (event.ctrlKey || event.metaKey) {
+        const key = event.key.toLowerCase()
+        const toggle: TextToggleKey | null =
+          !event.shiftKey && key === 'b'
+            ? 'fontWeight'
+            : !event.shiftKey && key === 'i'
+              ? 'fontStyle'
+              : !event.shiftKey && key === 'u'
+                ? 'underline'
+                : event.shiftKey && key === 'x'
+                  ? 'strikethrough'
+                  : null
+        if (toggle) {
+          applyTextEdit(styleEditProduce({ kind: 'toggle', key: toggle }))
+          return true
+        }
+      }
+
       switch (event.key) {
         case 'ArrowLeft':
           moveCaretHorizontally(-1, extend)
@@ -3521,20 +3770,20 @@ export function useCanvasInput({
         case 'Backspace':
           applyTextEdit((text, caret, _element, anchor) =>
             anchor !== caret
-              ? replaceRange(text, anchor, caret, '')
-              : deleteBackward(text, caret),
+              ? replaceEdit(text, anchor, caret, '')
+              : deleteEdit(text, caret, 'backward'),
           )
           return true
         case 'Delete':
           applyTextEdit((text, caret, _element, anchor) =>
             anchor !== caret
-              ? replaceRange(text, anchor, caret, '')
-              : deleteForward(text, caret),
+              ? replaceEdit(text, anchor, caret, '')
+              : deleteEdit(text, caret, 'forward'),
           )
           return true
         case 'Enter':
           applyTextEdit((text, caret, _element, anchor) =>
-            replaceRange(text, anchor, caret, '\n'),
+            replaceEdit(text, anchor, caret, '\n'),
           )
           return true
         case 'Escape':
@@ -3638,7 +3887,20 @@ export function useCanvasInput({
       editing.caret,
       editing.composition,
     )
-    return updateElement(scene, editing.elementId, { text: spliced.text })
+    // The composed characters take the style typing them would, and the runs
+    // after them shift, so the preview matches what commit will store.
+    const runs = editRuns(
+      element.style.textRuns,
+      (element.text ?? '').length,
+      Math.min(editing.anchor, editing.caret),
+      Math.max(editing.anchor, editing.caret),
+      editing.composition.length,
+      editing.pending,
+    )
+    return updateElement(scene, editing.elementId, {
+      text: spliced.text,
+      style: { ...element.style, textRuns: runs },
+    })
   }, [editing, scene])
 
   const displayCaret = editing
@@ -3796,5 +4058,6 @@ export function useCanvasInput({
       onEditingCut,
       commitEditing,
     },
+    applyEditStyle,
   }
 }

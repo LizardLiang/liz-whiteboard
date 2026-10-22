@@ -269,3 +269,82 @@ export function stripRunAttribute(
   const length = stripped.reduce((max, run) => Math.max(max, run.end), 0)
   return normalizeRuns(stripped, length)
 }
+
+/** True when two run lists describe the same overrides (absent equals empty). */
+export function sameRuns(
+  a: Array<CanvasTextRun> | undefined,
+  b: Array<CanvasTextRun> | undefined,
+): boolean {
+  const left = a ?? []
+  const right = b ?? []
+  if (left === right) return true
+  if (left.length !== right.length) return false
+  return left.every(
+    (run, i) =>
+      run.start === right[i].start &&
+      run.end === right[i].end &&
+      sameAttrs(run, right[i]),
+  )
+}
+
+/**
+ * The overrides typed text inherits at a caret: those of the character before
+ * it, or of the character after it at offset 0. Plain text has none.
+ */
+export function inheritedAttrs(
+  runs: Array<CanvasTextRun>,
+  textLength: number,
+  caret: number,
+): TextRunAttrs {
+  if (textLength === 0) return {}
+  const index = caret > 0 ? caret - 1 : 0
+  const run = normalizeRuns(runs, textLength).find(
+    (candidate) => candidate.start <= index && index < candidate.end,
+  )
+  return run ? attrsOf(run) : {}
+}
+
+/**
+ * Re-map runs across one text edit — `[from, to)` replaced by `insertLength`
+ * characters — giving the inserted text the inherited overrides plus any
+ * pending ones. The result is sorted, disjoint, inside the new text and at
+ * most `MAX_TEXT_RUNS` long; past the cap the tail runs lose their style
+ * rather than the write being refused, since refusing a keystroke is worse.
+ */
+export function editRuns(
+  runs: Array<CanvasTextRun>,
+  textLength: number,
+  from: number,
+  to: number,
+  insertLength: number,
+  pending?: TextRunAttrs | null,
+): Array<CanvasTextRun> {
+  const current = normalizeRuns(runs, textLength)
+  if (current.length === 0 && !(insertLength > 0 && pending)) return current
+  const style =
+    insertLength > 0
+      ? { ...inheritedAttrs(current, textLength, from), ...pending }
+      : undefined
+  const next = remapRuns(current, from, to - from, insertLength, style)
+  return next.length > MAX_TEXT_RUNS ? next.slice(0, MAX_TEXT_RUNS) : next
+}
+
+/**
+ * Drop every override that repeats the label style, so a toggle that lands
+ * back on the label's own value leaves no run behind.
+ */
+export function dropBaseAttrs(
+  runs: Array<CanvasTextRun>,
+  style: CanvasElementStyle,
+  textLength: number,
+): Array<CanvasTextRun> {
+  const kept: Array<CanvasTextRun> = []
+  for (const run of runs) {
+    const rest: CanvasTextRun = { ...run }
+    for (const key of RUN_KEYS) {
+      if (rest[key] === style[key]) delete rest[key]
+    }
+    if (hasAttrs(rest)) kept.push(rest)
+  }
+  return normalizeRuns(kept, textLength)
+}

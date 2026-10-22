@@ -17,9 +17,14 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { act, renderHook } from '@testing-library/react'
 import { foldPendingTextEdits, useCanvasInput } from './use-canvas-input'
-import type { CanvasElement, Scene } from '@/lib/canvas-engine/scene'
+import type {
+  CanvasElement,
+  CanvasTextRun,
+  Scene,
+} from '@/lib/canvas-engine/scene'
 import type { Camera } from '@/lib/canvas-engine/camera'
 import type { CanvasTool } from './use-canvas-input'
+import { MAX_TEXT_RUNS } from '@/lib/canvas-engine/text-runs'
 import { DEFAULT_CAMERA } from '@/lib/canvas-engine/camera'
 import { DEFAULT_ELEMENT_STYLE, sceneFrom } from '@/lib/canvas-engine/scene'
 import { Z_MIN } from '@/lib/canvas-engine/z-order'
@@ -2959,7 +2964,7 @@ describe('queued text edits', () => {
       element,
       { elementId: TEXT_ID, caret: 2 },
     )
-    expect(result).toEqual({ text: 'abc', caret: 1, anchor: 1 })
+    expect(result).toMatchObject({ text: 'abc', caret: 1, anchor: 1 })
     expect(seen).toEqual(['abc'])
   })
 
@@ -3203,5 +3208,192 @@ describe('whole-label style shortcuts', () => {
     const h = setup([makeRect(A_ID)])
     press(h, 'b')
     expect(h.onStyleChange).not.toHaveBeenCalled()
+  })
+})
+
+describe('text runs while editing', () => {
+  function editing(text: string, textRuns: Array<CanvasTextRun> = []) {
+    const element = makeText({
+      text,
+      style: { ...DEFAULT_ELEMENT_STYLE, textRuns },
+    })
+    const h = setup([element])
+    act(() => {
+      h.api.setSelectedIds(new Set([TEXT_ID]))
+    })
+    h.sync()
+    act(() => {
+      h.api.boardHandlers.onKeyDown(keyEvent('Enter'))
+    })
+    h.sync()
+    return h
+  }
+  const press = (h: ReturnType<typeof editing>, key: string, o = {}) => {
+    act(() => {
+      h.api.textInput.onEditingKeyDown(keyEvent(key, o))
+    })
+    h.sync()
+  }
+  const select = (h: ReturnType<typeof editing>, from: number, to: number) => {
+    const length = h.scene.byId.get(TEXT_ID)!.text!.length
+    for (let i = 0; i < length - from; i += 1) press(h, 'ArrowLeft')
+    for (let i = 0; i < to - from; i += 1) {
+      press(h, 'ArrowRight', { shiftKey: true })
+    }
+  }
+  const runsOf = (h: ReturnType<typeof editing>) =>
+    h.scene.byId.get(TEXT_ID)!.style.textRuns
+  const text = (h: ReturnType<typeof editing>) =>
+    h.scene.byId.get(TEXT_ID)!.text
+
+  it('Ctrl+B bolds the selected word and writes nothing else', () => {
+    const h = editing('hello world')
+    select(h, 6, 11)
+    press(h, 'b', { ctrlKey: true })
+    expect(runsOf(h)).toEqual([{ start: 6, end: 11, fontWeight: 'bold' }])
+    expect(text(h)).toBe('hello world')
+  })
+
+  it('a second Ctrl+B on the same range removes the run', () => {
+    const h = editing('hello world')
+    select(h, 0, 5)
+    press(h, 'b', { ctrlKey: true })
+    press(h, 'b', { ctrlKey: true })
+    expect(runsOf(h)).toEqual([])
+  })
+
+  it('mixed selection turns bold on for all', () => {
+    const h = editing('hello world', [{ start: 0, end: 5, fontWeight: 'bold' }])
+    press(h, 'a', { ctrlKey: true })
+    press(h, 'b', { ctrlKey: true })
+    expect(runsOf(h)).toEqual([{ start: 0, end: 11, fontWeight: 'bold' }])
+  })
+
+  it('Ctrl+Shift+X strikes through and Ctrl+U underlines', () => {
+    const h = editing('hello')
+    press(h, 'a', { ctrlKey: true })
+    press(h, 'X', { ctrlKey: true, shiftKey: true })
+    press(h, 'u', { ctrlKey: true })
+    expect(runsOf(h)).toEqual([
+      { start: 0, end: 5, strikethrough: true, underline: true },
+    ])
+  })
+
+  it('a pick that changes nothing writes nothing', () => {
+    const h = editing('hello')
+    press(h, 'a', { ctrlKey: true })
+    act(() => {
+      h.api.applyEditStyle({ kind: 'set', key: 'fontSize', value: 16 })
+    })
+    h.sync()
+    expect(runsOf(h)).toEqual([])
+    act(() => {
+      h.api.textInput.commitEditing()
+    })
+    expect(h.callbacks.onUpdate).not.toHaveBeenCalled()
+  })
+
+  it('a collapsed-caret toggle is pending, applies to the next insert, then clears', () => {
+    const h = editing('ab')
+    press(h, 'b', { ctrlKey: true })
+    expect(h.api.editing!.pending).toEqual({ fontWeight: 'bold' })
+    act(() => {
+      h.api.textInput.insertText('X')
+    })
+    h.sync()
+    expect(text(h)).toBe('abX')
+    expect(runsOf(h)).toEqual([{ start: 2, end: 3, fontWeight: 'bold' }])
+    expect(h.api.editing!.pending ?? null).toBeNull()
+    act(() => {
+      h.api.textInput.insertText('Y')
+    })
+    h.sync()
+    expect(runsOf(h)).toEqual([{ start: 2, end: 4, fontWeight: 'bold' }])
+  })
+
+  it('moving the caret clears the pending style', () => {
+    const h = editing('ab')
+    press(h, 'b', { ctrlKey: true })
+    press(h, 'ArrowLeft')
+    expect(h.api.editing!.pending ?? null).toBeNull()
+  })
+
+  it('typed text inherits the character before the caret', () => {
+    const h = editing('ab', [{ start: 0, end: 2, color: '#ef4444' }])
+    press(h, 'ArrowLeft')
+    act(() => {
+      h.api.textInput.insertText('Z')
+    })
+    h.sync()
+    expect(text(h)).toBe('aZb')
+    expect(runsOf(h)).toEqual([{ start: 0, end: 3, color: '#ef4444' }])
+  })
+
+  it('deleting across a run shrinks it and shifts the runs after it', () => {
+    const h = editing('abcdef', [
+      { start: 1, end: 3, fontWeight: 'bold' },
+      { start: 4, end: 6, underline: true },
+    ])
+    select(h, 2, 5)
+    press(h, 'Backspace')
+    expect(text(h)).toBe('abf')
+    expect(runsOf(h)).toEqual([
+      { start: 1, end: 2, fontWeight: 'bold' },
+      { start: 2, end: 3, underline: true },
+    ])
+  })
+
+  it('deleting a run entirely drops it', () => {
+    const h = editing('abc', [{ start: 1, end: 2, fontWeight: 'bold' }])
+    select(h, 1, 2)
+    press(h, 'Backspace')
+    expect(runsOf(h)).toEqual([])
+  })
+
+  it('cut keeps the runs after the cut aligned', () => {
+    const h = editing('abcd', [{ start: 2, end: 4, fontWeight: 'bold' }])
+    select(h, 0, 2)
+    const setData = vi.fn()
+    act(() => {
+      h.api.textInput.onEditingCut({
+        clipboardData: { setData },
+        preventDefault: vi.fn(),
+      } as any)
+    })
+    h.sync()
+    expect(text(h)).toBe('cd')
+    expect(runsOf(h)).toEqual([{ start: 0, end: 2, fontWeight: 'bold' }])
+  })
+
+  it('refuses a pick that would pass the run cap and writes nothing', () => {
+    const word = 'ab'.repeat(MAX_TEXT_RUNS)
+    const runs: Array<CanvasTextRun> = Array.from(
+      { length: MAX_TEXT_RUNS },
+      (_, i) => ({ start: i * 2, end: i * 2 + 1, underline: true }),
+    )
+    const h = editing(word, runs)
+    select(h, 1, 2)
+    act(() => {
+      h.api.applyEditStyle({ kind: 'set', key: 'color', value: '#ef4444' })
+    })
+    h.sync()
+    expect(runsOf(h)).toHaveLength(MAX_TEXT_RUNS)
+    expect(runsOf(h)[0]).toEqual({ start: 0, end: 1, underline: true })
+  })
+
+  it('commit records the style-only edit as one text-edit update', () => {
+    const h = editing('hello')
+    press(h, 'a', { ctrlKey: true })
+    press(h, 'b', { ctrlKey: true })
+    act(() => {
+      h.api.textInput.commitEditing()
+    })
+    expect(h.callbacks.onUpdate).toHaveBeenCalledTimes(1)
+    const [after, before, gesture] = h.callbacks.onUpdate.mock.calls[0]
+    expect(after[0].style.textRuns).toEqual([
+      { start: 0, end: 5, fontWeight: 'bold' },
+    ])
+    expect(before[0].style.textRuns).toEqual([])
+    expect(gesture).toBe('text-edit')
   })
 })

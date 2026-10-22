@@ -18,6 +18,7 @@ import { Hand, MousePointer2, Search, Type } from 'lucide-react'
 import { TextInputProxy } from './TextInputProxy'
 import { ConnectorToolbar } from './ConnectorToolbar'
 import { SelectionToolbar, applyStyleChange } from './SelectionToolbar'
+import { TextEditBar } from './TextEditBar'
 import { SHAPE_TOOL_SHORTCUTS, useCanvasInput } from './use-canvas-input'
 import { useFrameLoop } from './use-frame-loop'
 import { useCanvasHighlight } from './use-canvas-highlight'
@@ -804,6 +805,14 @@ export function CanvasBoard({
         onDuplicate={input.duplicateSelection}
         onGroup={input.groupSelection}
         onUngroup={input.ungroupSelection}
+      />
+
+      <TextEditBar
+        scene={input.displayScene}
+        editing={input.editing}
+        camera={camera}
+        readOnly={effectiveReadOnly}
+        onPick={input.applyEditStyle}
       />
 
       <TextInputProxy
