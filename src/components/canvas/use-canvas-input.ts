@@ -18,6 +18,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import type {
   Dispatch,
+  ClipboardEvent as ReactClipboardEvent,
   KeyboardEvent as ReactKeyboardEvent,
   PointerEvent as ReactPointerEvent,
   RefObject,
@@ -124,9 +125,10 @@ import {
   clampCaret,
   deleteBackward,
   deleteForward,
-  insertAt,
   pointFromCaret,
+  replaceRange,
   stepCaret,
+  wordRangeAt,
 } from '@/lib/canvas-engine/text-layout'
 import { uuid } from '@/lib/uuid'
 
@@ -462,7 +464,13 @@ export interface CanvasEditCallbacks {
 
 export interface EditingState {
   elementId: string
+  /** The moving end of the selection: where the caret is drawn and typing lands. */
   caret: number
+  /**
+   * The fixed end of the selection. Equal to `caret` when nothing is
+   * selected; the selected range is `[min(anchor, caret), max(anchor, caret))`.
+   */
+  anchor: number
   /**
    * In-flight IME composition text. It is NOT part of the element's stored
    * text until `compositionend`, but it must be visible while typing, so the
@@ -514,6 +522,15 @@ interface UseCanvasInputArgs {
 type Gesture =
   | { kind: 'none' }
   | { kind: 'pan'; lastScreen: Point }
+  | {
+      /**
+       * A mouse drag selecting text inside the element being edited. `anchor`
+       * is the text index the press landed on; the pointer moves the caret.
+       */
+      kind: 'text-select'
+      elementId: string
+      anchor: number
+    }
   | {
       kind: 'marquee'
       originWorld: Point
@@ -1191,28 +1208,36 @@ function applyMembershipUpdates(
  */
 export interface PendingTextEdit {
   elementId: string
+  /**
+   * `anchor` is the fixed end of the selection as the earlier queued edits
+   * left it. A result that omits `anchor` collapses the selection onto its
+   * caret.
+   */
   produce: (
     text: string,
     caret: number,
     element: CanvasElement,
-  ) => { text: string; caret: number }
+    anchor: number,
+  ) => { text: string; caret: number; anchor?: number }
 }
 
 /** Apply queued edits in order, starting from the element's text and the session caret. */
 export function foldPendingTextEdits(
   pending: ReadonlyArray<PendingTextEdit>,
   element: CanvasElement,
-  session: { elementId: string; caret: number },
-): { text: string; caret: number } {
+  session: { elementId: string; caret: number; anchor?: number },
+): { text: string; caret: number; anchor: number } {
   let text = element.text ?? ''
   let caret = session.caret
+  let anchor = session.anchor ?? session.caret
   for (const { elementId, produce } of pending) {
     if (elementId !== session.elementId) continue
-    const result = produce(text, caret, { ...element, text })
+    const result = produce(text, caret, { ...element, text }, anchor)
     text = result.text
     caret = result.caret
+    anchor = result.anchor ?? result.caret
   }
-  return { text, caret }
+  return { text, caret, anchor }
 }
 
 /**
@@ -1404,11 +1429,15 @@ export function useCanvasInput({
     pendingTextEditsRef.current = []
     const element = latest.current.scene.byId.get(current.elementId)
     if (!element) return
-    const { text, caret } = foldPendingTextEdits(pending, element, current)
+    const { text, caret, anchor } = foldPendingTextEdits(
+      pending,
+      element,
+      current,
+    )
     if (text !== (element.text ?? '')) {
       setScene((prev) => updateElement(prev, current.elementId, { text }))
     }
-    setEditing({ ...current, caret })
+    setEditing({ ...current, caret, anchor })
     setCaretVisible(true)
   }, [editing, scene, setScene, setEditing])
 
@@ -1654,6 +1683,7 @@ export function useCanvasInput({
       setEditing({
         elementId: element.id,
         caret,
+        anchor: caret,
         composition: '',
         isNew,
         // Nothing existed before a brand-new element — there is no "before"
@@ -1816,6 +1846,23 @@ export function useCanvasInput({
 
   // ── pointer ──────────────────────────────────────────────────────────────
 
+  /**
+   * True when a primary-button press lands on the element being edited, so
+   * the board must keep focus in the text proxy instead of moving it (which
+   * would blur the proxy and end the edit).
+   */
+  const isPointerOnEditedText = useCallback(
+    (event: { button: number; clientX: number; clientY: number }): boolean => {
+      const current = editingRef.current
+      if (!current || event.button !== 0) return false
+      const screen = screenFromEvent(event)
+      if (!screen) return false
+      const world = screenToWorld(latest.current.camera, screen)
+      return hitTest(latest.current.scene, world)?.id === current.elementId
+    },
+    [screenFromEvent],
+  )
+
   const onPointerDown = useCallback(
     (event: ReactPointerEvent<HTMLCanvasElement>) => {
       const canvas = canvasRef.current
@@ -1834,6 +1881,27 @@ export function useCanvasInput({
         return
       }
       if (event.button !== 0) return
+
+      // A press inside the element being edited belongs to its text: it
+      // places the caret, or starts a drag-selection (Shift extends the
+      // existing one). Only a press anywhere else ends the edit.
+      const editingNow = editingRef.current
+      const editedElement = editingNow
+        ? latest.current.scene.byId.get(editingNow.elementId)
+        : undefined
+      if (
+        editingNow &&
+        editedElement &&
+        hitTest(latest.current.scene, world)?.id === editedElement.id
+      ) {
+        const caret = caretAtWorldPoint(editedElement, world)
+        const anchor = event.shiftKey ? editingNow.anchor : caret
+        setEditing({ ...editingNow, caret, anchor })
+        setGesture({ kind: 'text-select', elementId: editedElement.id, anchor })
+        textInputRef?.current?.focus({ preventScroll: true })
+        setCaretVisible(true)
+        return
+      }
 
       if (editing) commitEditing()
 
@@ -2099,6 +2167,9 @@ export function useCanvasInput({
     },
     [
       beginEditing,
+      caretAtWorldPoint,
+      setEditing,
+      textInputRef,
       canvasRef,
       commitEditing,
       creationHandleAt,
@@ -2182,6 +2253,18 @@ export function useCanvasInput({
           }
           setCamera((prev) => panByScreenDelta(prev, delta))
           setGesture({ kind: 'pan', lastScreen: screen })
+          break
+        }
+        case 'text-select': {
+          const element = latest.current.scene.byId.get(gesture.elementId)
+          if (!element) break
+          const caret = caretAtWorldPoint(element, world)
+          setEditing((current) =>
+            current && current.elementId === gesture.elementId
+              ? { ...current, caret, anchor: gesture.anchor }
+              : current,
+          )
+          setCaretVisible(true)
           break
         }
         case 'marquee': {
@@ -2321,6 +2404,8 @@ export function useCanvasInput({
       }
     },
     [
+      caretAtWorldPoint,
+      setEditing,
       alignedMoveOffset,
       alignedResizeBounds,
       gesture,
@@ -2607,6 +2692,16 @@ export function useCanvasInput({
       const hit = hitTest(latest.current.scene, world)
       if (!hit) return
 
+      // Already editing this element: the double-click selects the word under
+      // the pointer instead of restarting the edit.
+      const editingNow = editingRef.current
+      if (editingNow && editingNow.elementId === hit.id) {
+        const range = wordRangeAt(hit.text ?? '', caretAtWorldPoint(hit, world))
+        setEditing({ ...editingNow, anchor: range.start, caret: range.end })
+        setCaretVisible(true)
+        return
+      }
+
       // Group-aware descent (canvas-element-grouping tactical plan, Wave 2).
       // `enteredPathRef` (not the `enteredPath` closure variable) because
       // this handler fires as its own, later browser event — the
@@ -2629,7 +2724,13 @@ export function useCanvasInput({
       setEnteredPath(resolution.enteredPath)
       setSelectedIds(new Set([target.id]))
     },
-    [beginEditing, caretAtWorldPoint, screenFromEvent, setEnteredPath],
+    [
+      beginEditing,
+      caretAtWorldPoint,
+      screenFromEvent,
+      setEditing,
+      setEnteredPath,
+    ],
   )
 
   // ── wheel ────────────────────────────────────────────────────────────────
@@ -3163,7 +3264,12 @@ export function useCanvasInput({
       const current = pendingRender
       const element = latest.current.scene.byId.get(current.elementId)
       if (!element) return
-      const result = produce(element.text ?? '', current.caret, element)
+      const result = produce(
+        element.text ?? '',
+        current.caret,
+        element,
+        current.anchor,
+      )
       if (result.text !== (element.text ?? '')) {
         setScene((prev) =>
           updateElement(prev, current.elementId, { text: result.text }),
@@ -3176,17 +3282,23 @@ export function useCanvasInput({
           { text: result.text },
         )
       }
-      setEditing({ ...current, caret: result.caret })
+      setEditing({
+        ...current,
+        caret: result.caret,
+        anchor: result.anchor ?? result.caret,
+      })
       setCaretVisible(true)
     },
     [setEditing, setScene],
   )
 
-  /** Commit typed or composed text at the caret. */
+  /** Commit typed or composed text, replacing the selected range if any. */
   const insertText = useCallback(
     (text: string) => {
       if (text.length === 0) return
-      applyTextEdit((value, caret) => insertAt(value, caret, text))
+      applyTextEdit((value, caret, _element, anchor) =>
+        replaceRange(value, anchor, caret, text),
+      )
     },
     [applyTextEdit],
   )
@@ -3204,87 +3316,163 @@ export function useCanvasInput({
    * Move the caret vertically, which needs the laid-out lines — arrow up on
    * wrapped text must land on the visual line above, not `caret - lineLength`.
    * Queued like every other text edit, so it lands on the caret the earlier
-   * keystrokes produced.
+   * keystrokes produced. `extend` keeps the anchor (Shift held).
    */
   const moveCaretVertically = useCallback(
-    (direction: 1 | -1) => {
-      applyTextEdit((text, caret, element) => {
+    (direction: 1 | -1, extend: boolean) => {
+      applyTextEdit((text, caret, element, anchor) => {
         const layout = layoutFor({ ...element, text })
-        if (!layout) return { text, caret }
+        if (!layout) return { text, caret, anchor: extend ? anchor : caret }
         const here = pointFromCaret(layout, caret)
-        return {
-          text,
-          caret: caretFromPoint(layout, {
-            x: here.x,
-            y: here.y + direction * layout.lineHeight,
-          }),
-        }
+        const next = caretFromPoint(layout, {
+          x: here.x,
+          y: here.y + direction * layout.lineHeight,
+        })
+        return { text, caret: next, anchor: extend ? anchor : next }
       })
     },
     [applyTextEdit, layoutFor],
   )
 
   const moveCaretToLineEdge = useCallback(
-    (edge: 'start' | 'end') => {
-      applyTextEdit((text, caret, element) => {
+    (edge: 'start' | 'end', extend: boolean) => {
+      applyTextEdit((text, caret, element, anchor) => {
         const layout = layoutFor({ ...element, text })
-        if (!layout) return { text, caret }
+        if (!layout) return { text, caret, anchor: extend ? anchor : caret }
         const here = pointFromCaret(layout, caret)
-        return {
-          text,
-          caret: caretFromPoint(layout, {
-            x: edge === 'start' ? 0 : Number.MAX_SAFE_INTEGER,
-            y: here.y,
-          }),
-        }
+        const next = caretFromPoint(layout, {
+          x: edge === 'start' ? 0 : Number.MAX_SAFE_INTEGER,
+          y: here.y,
+        })
+        return { text, caret: next, anchor: extend ? anchor : next }
       })
     },
     [applyTextEdit, layoutFor],
+  )
+
+  /** Step the caret one character; a plain step collapses a selection to its near side. */
+  const moveCaretHorizontally = useCallback(
+    (direction: 1 | -1, extend: boolean) => {
+      applyTextEdit((text, caret, _element, anchor) => {
+        if (extend) {
+          return { text, caret: stepCaret(text, caret, direction), anchor }
+        }
+        if (anchor !== caret) {
+          const edge =
+            direction === -1 ? Math.min(anchor, caret) : Math.max(anchor, caret)
+          return { text, caret: edge }
+        }
+        return { text, caret: stepCaret(text, caret, direction) }
+      })
+    },
+    [applyTextEdit],
+  )
+
+  /** The text currently selected, as the queued edits leave it. */
+  const selectedText = useCallback((): string => {
+    const current = editingRef.current
+    if (!current) return ''
+    const element = latest.current.scene.byId.get(current.elementId)
+    if (!element) return ''
+    const state = foldPendingTextEdits(
+      pendingTextEditsRef.current,
+      element,
+      current,
+    )
+    return state.text.slice(
+      Math.min(state.anchor, state.caret),
+      Math.max(state.anchor, state.caret),
+    )
+  }, [])
+
+  /**
+   * Copy event on the text proxy: put the selected text on the clipboard.
+   * Done through the event's own `clipboardData` because
+   * `navigator.clipboard` does not exist over plain-HTTP LAN origins.
+   */
+  const onEditingCopy = useCallback(
+    (event: ReactClipboardEvent<HTMLTextAreaElement>) => {
+      const selected = selectedText()
+      if (selected.length === 0) return
+      event.clipboardData.setData('text/plain', selected)
+      event.preventDefault()
+    },
+    [selectedText],
+  )
+
+  /** Cut event on the text proxy: copy the selection, then remove it. */
+  const onEditingCut = useCallback(
+    (event: ReactClipboardEvent<HTMLTextAreaElement>) => {
+      const selected = selectedText()
+      if (selected.length === 0) return
+      event.clipboardData.setData('text/plain', selected)
+      event.preventDefault()
+      applyTextEdit((text, caret, _element, anchor) =>
+        replaceRange(text, anchor, caret, ''),
+      )
+    },
+    [applyTextEdit, selectedText],
   )
 
   /**
    * Keys handled while text editing is active. Returns true when the key was
    * consumed, so the proxy can `preventDefault` only then and let everything
    * else reach the browser's own input handling (which is what keeps IME
-   * working).
+   * working). Copy, cut and paste are deliberately NOT consumed: the browser
+   * raises `copy` / `cut` / `paste` events on the proxy, and the board's
+   * element-clipboard shortcuts never see these keys while an edit is open.
    */
   const onEditingKeyDown = useCallback(
     (event: ReactKeyboardEvent<HTMLTextAreaElement>): boolean => {
       if (!editingRef.current) return false
 
+      const extend = event.shiftKey
+      if ((event.ctrlKey || event.metaKey) && event.key.toLowerCase() === 'a') {
+        applyTextEdit((text) => ({
+          text,
+          caret: text.length,
+          anchor: 0,
+        }))
+        return true
+      }
+
       switch (event.key) {
         case 'ArrowLeft':
-          applyTextEdit((text, caret) => ({
-            text,
-            caret: stepCaret(text, caret, -1),
-          }))
+          moveCaretHorizontally(-1, extend)
           return true
         case 'ArrowRight':
-          applyTextEdit((text, caret) => ({
-            text,
-            caret: stepCaret(text, caret, 1),
-          }))
+          moveCaretHorizontally(1, extend)
           return true
         case 'ArrowUp':
-          moveCaretVertically(-1)
+          moveCaretVertically(-1, extend)
           return true
         case 'ArrowDown':
-          moveCaretVertically(1)
+          moveCaretVertically(1, extend)
           return true
         case 'Home':
-          moveCaretToLineEdge('start')
+          moveCaretToLineEdge('start', extend)
           return true
         case 'End':
-          moveCaretToLineEdge('end')
+          moveCaretToLineEdge('end', extend)
           return true
         case 'Backspace':
-          applyTextEdit(deleteBackward)
+          applyTextEdit((text, caret, _element, anchor) =>
+            anchor !== caret
+              ? replaceRange(text, anchor, caret, '')
+              : deleteBackward(text, caret),
+          )
           return true
         case 'Delete':
-          applyTextEdit(deleteForward)
+          applyTextEdit((text, caret, _element, anchor) =>
+            anchor !== caret
+              ? replaceRange(text, anchor, caret, '')
+              : deleteForward(text, caret),
+          )
           return true
         case 'Enter':
-          applyTextEdit((text, caret) => insertAt(text, caret, '\n'))
+          applyTextEdit((text, caret, _element, anchor) =>
+            replaceRange(text, anchor, caret, '\n'),
+          )
           return true
         case 'Escape':
         case 'Tab':
@@ -3294,7 +3482,13 @@ export function useCanvasInput({
           return false
       }
     },
-    [applyTextEdit, commitEditing, moveCaretToLineEdge, moveCaretVertically],
+    [
+      applyTextEdit,
+      commitEditing,
+      moveCaretHorizontally,
+      moveCaretToLineEdge,
+      moveCaretVertically,
+    ],
   )
 
   // ── derived render inputs ────────────────────────────────────────────────
@@ -3374,8 +3568,10 @@ export function useCanvasInput({
     if (!editing || editing.composition.length === 0) return scene
     const element = scene.byId.get(editing.elementId)
     if (!element) return scene
-    const spliced = insertAt(
+    // The composition replaces the selected range, as committing it will.
+    const spliced = replaceRange(
       element.text ?? '',
+      editing.anchor,
       editing.caret,
       editing.composition,
     )
@@ -3385,9 +3581,15 @@ export function useCanvasInput({
   const displayCaret = editing
     ? clampCaret(
         (scene.byId.get(editing.elementId)?.text ?? '') + editing.composition,
-        editing.caret + editing.composition.length,
+        editing.composition.length > 0
+          ? Math.min(editing.anchor, editing.caret) + editing.composition.length
+          : editing.caret,
       )
     : 0
+  // The selection's fixed end as drawn: collapsed onto the caret while an IME
+  // composition is replacing the range, so no stale highlight shows.
+  const displayAnchor =
+    editing && editing.composition.length === 0 ? editing.anchor : displayCaret
 
   /**
    * Where the caret is on screen. The IME candidate window is positioned
@@ -3497,6 +3699,7 @@ export function useCanvasInput({
     alignmentGuides,
     displayScene,
     displayCaret,
+    displayAnchor,
     caretVisible,
     caretScreenPoint,
     cursor,
@@ -3518,6 +3721,7 @@ export function useCanvasInput({
       onPointerLeave,
       onDoubleClick,
     },
+    isPointerOnEditedText,
     boardHandlers: {
       onKeyDown: onBoardKeyDown,
     },
@@ -3525,6 +3729,8 @@ export function useCanvasInput({
       insertText,
       setComposition,
       onEditingKeyDown,
+      onEditingCopy,
+      onEditingCut,
       commitEditing,
     },
   }

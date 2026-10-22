@@ -16,7 +16,12 @@
 // unusable.
 
 import { useEffect, useRef } from 'react'
-import type { CompositionEvent, KeyboardEvent, RefObject } from 'react'
+import type {
+  ClipboardEvent,
+  CompositionEvent,
+  KeyboardEvent,
+  RefObject,
+} from 'react'
 import type { Point } from '@/lib/canvas-engine/camera'
 
 interface TextInputProxyProps {
@@ -32,6 +37,10 @@ interface TextInputProxyProps {
   onCompositionChange: (composition: string) => void
   /** Returns true when the key was consumed and should be prevented. */
   onKeyDown: (event: KeyboardEvent<HTMLTextAreaElement>) => boolean
+  /** Copy the selected text to the clipboard (the handler sets the data). */
+  onCopy?: (event: ClipboardEvent<HTMLTextAreaElement>) => void
+  /** Cut the selected text to the clipboard and remove it. */
+  onCut?: (event: ClipboardEvent<HTMLTextAreaElement>) => void
   /** Focus left the proxy — the edit is finished. */
   onBlur: () => void
 }
@@ -43,6 +52,8 @@ export function TextInputProxy({
   onInsertText,
   onCompositionChange,
   onKeyDown,
+  onCopy,
+  onCut,
   onBlur,
 }: TextInputProxyProps) {
   const ownRef = useRef<HTMLTextAreaElement | null>(null)
@@ -136,6 +147,8 @@ export function TextInputProxy({
       defaultValue=""
       onChange={handleChange}
       onKeyDown={handleKeyDown}
+      onCopy={onCopy}
+      onCut={onCut}
       onCompositionStart={handleCompositionStart}
       onCompositionUpdate={handleCompositionUpdate}
       onCompositionEnd={handleCompositionEnd}

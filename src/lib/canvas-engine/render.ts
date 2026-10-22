@@ -35,7 +35,12 @@ import {
 } from './connector-geometry'
 import { connectorCurveOf, connectorPathOf } from './hit-test'
 import { QUICK_CREATE_DIRECTIONS } from './quick-create'
-import { DEFAULT_TEXT_STYLE, layoutText, pointFromCaret } from './text-layout'
+import {
+  DEFAULT_TEXT_STYLE,
+  layoutText,
+  pointFromCaret,
+  selectionRects,
+} from './text-layout'
 import { CanvasRenderTarget, canvasFont } from './render-target'
 import type { AlignmentGuide } from './alignment'
 import type { Camera, Point } from './camera'
@@ -106,7 +111,13 @@ export interface RenderSelection {
   /** In-flight marquee rectangle in WORLD space, or null. */
   marquee?: WorldRect | null
   /** The element being typed into, and where its caret sits. */
-  editing?: { elementId: string; caret: number; caretVisible: boolean } | null
+  editing?: {
+    elementId: string
+    caret: number
+    /** Other end of the selected range; equal to `caret` when nothing is selected. */
+    anchor?: number
+    caretVisible: boolean
+  } | null
   /**
    * A not-yet-committed element being drawn (the rubber-band preview for the
    * rectangle tool). Drawn like a real element but never in the scene.
@@ -485,12 +496,14 @@ const CHROME = {
     accent: '#3b82f6',
     handleFill: '#ffffff',
     marqueeFill: 'rgba(59, 130, 246, 0.10)',
+    textSelection: 'rgba(59, 130, 246, 0.30)',
     text: '#0f172a',
   },
   dark: {
     accent: '#60a5fa',
     handleFill: '#0f172a',
     marqueeFill: 'rgba(96, 165, 250, 0.16)',
+    textSelection: 'rgba(96, 165, 250, 0.40)',
     text: '#f8fafc',
   },
 } as const
@@ -829,6 +842,7 @@ function drawElement(
   element: CanvasElement,
   theme: CanvasTheme,
   emphasized = false,
+  textSelection?: { start: number; end: number } | null,
 ): TextLayout | null {
   if (isCanvasShapeKind(element.kind)) {
     drawShape(target, element)
@@ -864,6 +878,26 @@ function drawElement(
   const layout = layoutElementText(element, measure)
   const frame = textFrame(element)
   const originY = textOriginY(element, layout)
+
+  // Behind the glyphs: painted before the text so the letters stay legible.
+  if (textSelection && textSelection.start !== textSelection.end) {
+    for (const rect of selectionRects(
+      layout,
+      textSelection.start,
+      textSelection.end,
+    )) {
+      target.rect(
+        frame.x + rect.x,
+        originY + rect.y,
+        rect.width,
+        rect.height,
+        0,
+        {
+          fill: CHROME[theme].textSelection,
+        },
+      )
+    }
+  }
 
   target.beginText(
     element.style.fontSize,
@@ -1578,6 +1612,7 @@ export function renderPersistentScene(
   layoutElementId?: string,
   hoveredId?: string | null,
   preparedConnectorPaths?: ReadonlyMap<string, ReadonlyArray<Point> | null>,
+  textSelection?: { elementId: string; start: number; end: number } | null,
 ): TextLayout | null {
   let requestedLayout: TextLayout | null = null
   for (const element of scene.elements) {
@@ -1595,6 +1630,7 @@ export function renderPersistentScene(
       element,
       theme,
       emphasizedIds.has(element.id) || hoveredId === element.id,
+      textSelection?.elementId === element.id ? textSelection : null,
     )
     if (element.id === layoutElementId) requestedLayout = layout
   }
@@ -1662,6 +1698,14 @@ export function drawScene(
     selection.ids,
     editing?.elementId,
     selection.hoveredId,
+    undefined,
+    editing && editing.anchor !== undefined && editing.anchor !== editing.caret
+      ? {
+          elementId: editing.elementId,
+          start: Math.min(editing.anchor, editing.caret),
+          end: Math.max(editing.anchor, editing.caret),
+        }
+      : null,
   )
   if (selection.draft) {
     // Never emphasized: a draft is never in `selection.ids` (it is not yet

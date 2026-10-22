@@ -15,7 +15,10 @@ import {
   insertAt,
   layoutText,
   pointFromCaret,
+  replaceRange,
+  selectionRects,
   stepCaret,
+  wordRangeAt,
 } from './text-layout'
 import type { TextMeasurer } from './text-layout'
 
@@ -324,5 +327,45 @@ describe('caret geometry under alignment', () => {
   it('reads a click past a centred line as its end', () => {
     const layout = layoutText('abc', CENTRED, 100, measure)
     expect(caretFromPoint(layout, { x: 1000, y: 0 })).toBe(3)
+  })
+})
+
+describe('selection helpers', () => {
+  it('draws one highlight rect per line a range touches, either direction', () => {
+    const layout = layoutText('abc def ghi', STYLE, 50, measure)
+    // Wraps as "abc" / "def" / "ghi" (5 chars per line max).
+    const forward = selectionRects(layout, 1, 9)
+    const backward = selectionRects(layout, 9, 1)
+    expect(backward).toEqual(forward)
+    expect(forward.length).toBe(3)
+    expect(forward[0]).toMatchObject({ x: 10, y: 0, height: 20 })
+    expect(forward[0].width).toBeGreaterThanOrEqual(20)
+    expect(forward[1].y).toBe(20)
+    expect(forward[2].y).toBe(40)
+  })
+
+  it('returns nothing for a collapsed range', () => {
+    const layout = layoutText('abc', STYLE, 100, measure)
+    expect(selectionRects(layout, 2, 2)).toEqual([])
+  })
+
+  it('replaceRange swaps the range whichever way it was dragged', () => {
+    expect(replaceRange('hello world', 6, 11, 'X')).toEqual({
+      text: 'hello X',
+      caret: 7,
+    })
+    expect(replaceRange('hello world', 11, 6, '')).toEqual({
+      text: 'hello ',
+      caret: 6,
+    })
+    expect(replaceRange('ab', 1, 1, 'Z')).toEqual({ text: 'aZb', caret: 2 })
+  })
+
+  it('wordRangeAt picks the word beside the caret slot', () => {
+    expect(wordRangeAt('hello world', 8)).toEqual({ start: 6, end: 11 })
+    expect(wordRangeAt('hello world', 5)).toEqual({ start: 0, end: 5 })
+    expect(wordRangeAt('hello world', 11)).toEqual({ start: 6, end: 11 })
+    expect(wordRangeAt('a  b', 2)).toEqual({ start: 1, end: 3 })
+    expect(wordRangeAt('', 0)).toEqual({ start: 0, end: 0 })
   })
 })

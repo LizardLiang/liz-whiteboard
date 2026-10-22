@@ -346,3 +346,120 @@ export function stepCaret(
   const next = [...text.slice(at)][0] ?? ''
   return at + (next.length || 1)
 }
+
+/** A rectangle in the text block's local space. */
+export interface LocalRect {
+  x: number
+  y: number
+  width: number
+  height: number
+}
+
+/** Extra highlight width, as a fraction of line height, where a newline is selected. */
+const NEWLINE_HIGHLIGHT_RATIO = 0.3
+
+/**
+ * The highlight rectangles for the selected range `[start, end)`, one per
+ * visual line the range touches, in the text block's local space.
+ *
+ * `start` and `end` may arrive in either order (anchor and caret). A range
+ * that runs past the end of a line gets a short extra stub there so a selected
+ * newline is visible; the space a wrap consumes is not in any line and gets
+ * none.
+ */
+export function selectionRects(
+  layout: TextLayout,
+  start: number,
+  end: number,
+): Array<LocalRect> {
+  const from = Math.min(start, end)
+  const to = Math.max(start, end)
+  if (from === to) return []
+
+  const rects: Array<LocalRect> = []
+  for (let index = 0; index < layout.lines.length; index += 1) {
+    const line = layout.lines[index]
+    const lineEnd = line.start + line.text.length
+    const lo = Math.max(from, line.start)
+    const hi = Math.min(to, lineEnd)
+    if (lo > hi) continue
+    const x0 = line.carets[lo - line.start]
+    let x1 = line.carets[hi - line.start]
+    const isLast = index === layout.lines.length - 1
+    // The range runs on past this line's last character: the line break (or
+    // the space a wrap consumed) is selected too, so give it a visible stub.
+    if (!isLast && to > lineEnd)
+      x1 += layout.lineHeight * NEWLINE_HIGHLIGHT_RATIO
+    if (x1 <= x0) continue
+    rects.push({
+      x: x0,
+      y: index * layout.lineHeight,
+      width: x1 - x0,
+      height: layout.lineHeight,
+    })
+  }
+  return rects
+}
+
+/**
+ * Replace `[a, b)` (either order) with `insertion`, returning the new text and
+ * the caret just after the insertion. With `a === b` this is `insertAt`.
+ */
+export function replaceRange(
+  text: string,
+  a: number,
+  b: number,
+  insertion: string,
+): { text: string; caret: number } {
+  const from = clampCaret(text, Math.min(a, b))
+  const to = clampCaret(text, Math.max(a, b))
+  return {
+    text: text.slice(0, from) + insertion + text.slice(to),
+    caret: from + insertion.length,
+  }
+}
+
+type CharClass = 'word' | 'space' | 'other'
+
+function classOf(char: string): CharClass {
+  if (/[\p{L}\p{N}_]/u.test(char)) return 'word'
+  if (/\s/u.test(char)) return 'space'
+  return 'other'
+}
+
+/**
+ * The word range `[start, end)` around a caret index, for double-click.
+ *
+ * A caret index is the nearest SLOT, so it sits between two characters: the
+ * word character on either side wins, the one after first. With no word
+ * character beside it, the run of whitespace or punctuation there is selected.
+ */
+export function wordRangeAt(
+  text: string,
+  index: number,
+): { start: number; end: number } {
+  if (text.length === 0) return { start: 0, end: 0 }
+  const at = clampCaret(text, index)
+  const after = at < text.length ? text[at] : undefined
+  const before = at > 0 ? text[at - 1] : undefined
+  const pick =
+    after !== undefined && classOf(after) === 'word'
+      ? at
+      : before !== undefined && classOf(before) === 'word'
+        ? at - 1
+        : after !== undefined
+          ? at
+          : at - 1
+  const kind = classOf(text[pick])
+  let start = pick
+  let end = pick + 1
+  while (
+    start > 0 &&
+    classOf(text[start - 1]) === kind &&
+    text[start - 1] !== '\n'
+  )
+    start -= 1
+  while (end < text.length && classOf(text[end]) === kind && text[end] !== '\n')
+    end += 1
+  return { start, end }
+}

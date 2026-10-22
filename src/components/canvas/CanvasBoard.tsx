@@ -539,6 +539,7 @@ export function CanvasBoard({
         ? {
             elementId: input.editing.elementId,
             caret: input.displayCaret,
+            anchor: input.displayAnchor,
             caretVisible: input.caretVisible,
           }
         : null,
@@ -554,6 +555,7 @@ export function CanvasBoard({
       input.alignmentGuides,
       input.caretVisible,
       input.displayCaret,
+      input.displayAnchor,
       input.draft,
       input.editing,
       input.connectorAttach,
@@ -655,10 +657,15 @@ export function CanvasBoard({
       // Move keyboard focus to the board so shortcuts and the space-pan
       // modifier work after a click. When an edit is in flight this also
       // blurs the text proxy, which is what commits it.
-      containerRef.current?.focus({ preventScroll: true })
+      //
+      // Not when the press lands on the text being edited: that press places
+      // the caret or drags a selection, and moving focus would end the edit.
+      if (!input.isPointerOnEditedText(event)) {
+        containerRef.current?.focus({ preventScroll: true })
+      }
       onPointerDown(event)
     },
-    [onPointerDown],
+    [input, onPointerDown],
   )
 
   // Ctrl/Cmd+Z undo, Ctrl/Cmd+Shift+Z or Ctrl+Y redo (board-undo tactical
@@ -785,6 +792,8 @@ export function CanvasBoard({
         onInsertText={input.textInput.insertText}
         onCompositionChange={input.textInput.setComposition}
         onKeyDown={input.textInput.onEditingKeyDown}
+        onCopy={input.textInput.onEditingCopy}
+        onCut={input.textInput.onEditingCut}
         onBlur={input.textInput.commitEditing}
       />
 

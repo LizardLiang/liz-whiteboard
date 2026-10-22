@@ -2956,7 +2956,7 @@ describe('queued text edits', () => {
       element,
       { elementId: TEXT_ID, caret: 2 },
     )
-    expect(result).toEqual({ text: 'abc', caret: 1 })
+    expect(result).toEqual({ text: 'abc', caret: 1, anchor: 1 })
     expect(seen).toEqual(['abc'])
   })
 
@@ -2980,5 +2980,153 @@ describe('queued text edits', () => {
       Array<CanvasElement>,
     ]
     expect(updated[0].text).toBe('hi!')
+  })
+})
+
+describe('text selection while editing', () => {
+  function editing(text = 'hello world') {
+    const h = setup([makeText({ text })])
+    act(() => {
+      h.api.setSelectedIds(new Set([TEXT_ID]))
+    })
+    h.sync()
+    act(() => {
+      h.api.boardHandlers.onKeyDown(keyEvent('Enter'))
+    })
+    h.sync()
+    return h
+  }
+  const press = (h: ReturnType<typeof editing>, key: string, o = {}) => {
+    act(() => {
+      h.api.textInput.onEditingKeyDown(keyEvent(key, o))
+    })
+    h.sync()
+  }
+  const range = (h: ReturnType<typeof editing>) => [
+    h.api.editing!.anchor,
+    h.api.editing!.caret,
+  ]
+
+  it('Shift+Left extends from the caret and plain Left collapses to the start', () => {
+    const h = editing()
+    expect(range(h)).toEqual([11, 11])
+    press(h, 'ArrowLeft', { shiftKey: true })
+    press(h, 'ArrowLeft', { shiftKey: true })
+    expect(range(h)).toEqual([11, 9])
+    press(h, 'ArrowLeft')
+    expect(range(h)).toEqual([9, 9])
+  })
+
+  it('plain Right collapses a selection to its end side', () => {
+    const h = editing()
+    for (let i = 0; i < 11; i += 1) press(h, 'ArrowLeft')
+    press(h, 'ArrowRight', { shiftKey: true })
+    press(h, 'ArrowRight', { shiftKey: true })
+    expect(range(h)).toEqual([0, 2])
+    press(h, 'ArrowRight')
+    expect(range(h)).toEqual([2, 2])
+  })
+
+  it('Ctrl+A selects the whole text', () => {
+    const h = editing()
+    press(h, 'a', { ctrlKey: true })
+    expect(range(h)).toEqual([0, 11])
+  })
+
+  it('typing replaces the selected range', () => {
+    const h = editing()
+    press(h, 'a', { ctrlKey: true })
+    act(() => {
+      h.api.textInput.insertText('X')
+    })
+    h.sync()
+    expect(h.scene.byId.get(TEXT_ID)!.text).toBe('X')
+    expect(range(h)).toEqual([1, 1])
+  })
+
+  it('Backspace and Delete remove the selected range', () => {
+    const h = editing()
+    press(h, 'ArrowLeft', { shiftKey: true })
+    press(h, 'ArrowLeft', { shiftKey: true })
+    press(h, 'Backspace')
+    expect(h.scene.byId.get(TEXT_ID)!.text).toBe('hello wor')
+    for (let i = 0; i < 9; i += 1) press(h, 'ArrowLeft')
+    press(h, 'ArrowRight', { shiftKey: true })
+    press(h, 'Delete')
+    expect(h.scene.byId.get(TEXT_ID)!.text).toBe('ello wor')
+  })
+
+  it('queued edits in one frame carry the selection', () => {
+    const h = editing()
+    act(() => {
+      h.api.textInput.onEditingKeyDown(keyEvent('a', { ctrlKey: true }))
+      h.api.textInput.insertText('Z')
+      h.api.textInput.insertText('!')
+    })
+    h.sync()
+    expect(h.scene.byId.get(TEXT_ID)!.text).toBe('Z!')
+  })
+
+  it('cut copies the selection and removes it; copy leaves the text', () => {
+    const h = editing()
+    press(h, 'ArrowLeft', { shiftKey: true })
+    press(h, 'ArrowLeft', { shiftKey: true })
+    press(h, 'ArrowLeft', { shiftKey: true })
+    const setData = vi.fn()
+    const copyEvent = {
+      clipboardData: { setData },
+      preventDefault: vi.fn(),
+    } as any
+    act(() => {
+      h.api.textInput.onEditingCopy(copyEvent)
+    })
+    expect(setData).toHaveBeenCalledWith('text/plain', 'rld')
+    expect(h.scene.byId.get(TEXT_ID)!.text).toBe('hello world')
+    act(() => {
+      h.api.textInput.onEditingCut(copyEvent)
+    })
+    h.sync()
+    expect(h.scene.byId.get(TEXT_ID)!.text).toBe('hello wo')
+  })
+
+  it('does not hijack copy when nothing is selected', () => {
+    const h = editing()
+    const event = {
+      clipboardData: { setData: vi.fn() },
+      preventDefault: vi.fn(),
+    } as any
+    act(() => {
+      h.api.textInput.onEditingCopy(event)
+    })
+    expect(event.preventDefault).not.toHaveBeenCalled()
+  })
+
+  it('a press inside the edited element keeps the edit open; a double-click selects the word', () => {
+    const h = editing()
+    const at = { clientX: 20, clientY: 20 }
+    act(() => {
+      h.api.canvasHandlers.onPointerDown(pointerEvent(at))
+    })
+    act(() => {
+      h.api.canvasHandlers.onPointerUp(pointerEvent(at))
+    })
+    h.sync()
+    expect(h.api.editing).not.toBeNull()
+    act(() => {
+      h.api.canvasHandlers.onDoubleClick(pointerEvent(at))
+    })
+    h.sync()
+    expect(range(h)).toEqual([6, 11])
+  })
+
+  it('a press outside the edited element still ends the edit', () => {
+    const h = editing()
+    act(() => {
+      h.api.canvasHandlers.onPointerDown(
+        pointerEvent({ clientX: 900, clientY: 900 }),
+      )
+    })
+    h.sync()
+    expect(h.api.editing).toBeNull()
   })
 })
