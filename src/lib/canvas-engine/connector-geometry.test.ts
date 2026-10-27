@@ -1489,7 +1489,29 @@ describe('straight connectors bend their last stretch into a grazing rect face',
     return { x: v.x / l, y: v.y / l }
   }
 
-  it('arrives at 60 degrees, keeps the straight part and the tip', () => {
+  function cross(a: Point, b: Point): number {
+    return a.x * b.y - a.y * b.x
+  }
+
+  /** The tail's polyline, built the way `connectorPath` builds it. */
+  function polylineOf(source: EndpointGeometry): Array<Point> {
+    const path = connectorPath(source, target(), 'straight')
+    if (!path) throw new Error('expected a path')
+    return path
+  }
+
+  function lengthOf(points: Array<Point>): number {
+    let total = 0
+    for (let i = 1; i < points.length; i += 1) {
+      total += Math.hypot(
+        points[i].x - points[i - 1].x,
+        points[i].y - points[i - 1].y,
+      )
+    }
+    return total
+  }
+
+  it('keeps the straight part straight and the tip where it was', () => {
     const source = grazing(25)
     const tail = connectorTail(source, target(), 'straight')
     expect(tail).not.toBeNull()
@@ -1498,18 +1520,81 @@ describe('straight connectors bend their last stretch into a grazing rect face',
     expect(tail.to).toEqual(TIP)
     expect(tail.from).toEqual((source as { point: Point }).point)
 
-    // The join and first control point lie on the original straight line.
-    const d = unit({ x: TIP.x - tail.from.x, y: TIP.y - tail.from.y })
-    for (const p of [tail.join, tail.c0]) {
-      const cross = (p.x - tail.from.x) * d.y - (p.y - tail.from.y) * d.x
-      expect(Math.abs(cross)).toBeLessThan(1e-9)
-    }
-    expect(Math.hypot(TIP.x - tail.join.x, TIP.y - tail.join.y)).toBeCloseTo(36)
+    // The first control point lies on the straight part S -> P.
+    const u = unit({
+      x: tail.join.x - tail.from.x,
+      y: tail.join.y - tail.from.y,
+    })
+    const c0 = { x: tail.c0.x - tail.join.x, y: tail.c0.y - tail.join.y }
+    expect(Math.abs(cross(u, c0))).toBeLessThan(1e-9)
+    expect(c0.x * u.x + c0.y * u.y).toBeGreaterThan(0)
 
-    // End tangent: 60 degrees to the top face, turned toward its normal (down).
+    // The arc takes about the old tail length.
+    const arc = polylineOf(source).slice(1)
+    expect(lengthOf(arc)).toBeGreaterThan(33)
+    expect(lengthOf(arc)).toBeLessThan(39)
+  })
+
+  it('ends the tail at 60 degrees to the face, turned toward its normal', () => {
+    const tail = connectorTail(grazing(25), target(), 'straight')
+    if (!tail) throw new Error('expected a bent tail')
     const e = unit(curveEndDirection(tail))
-    expect(e.y).toBeCloseTo(Math.sin(60 * DEG))
-    expect(e.x).toBeCloseTo(Math.cos(60 * DEG))
+    expect(e.y).toBeCloseTo(Math.sin(60 * DEG), 9)
+    expect(e.x).toBeCloseTo(Math.cos(60 * DEG), 9)
+  })
+
+  it('leaves P tangent to the straight part and turns less than 90 degrees', () => {
+    const source = grazing(25)
+    const tail = connectorTail(source, target(), 'straight')
+    const path = polylineOf(source)
+    if (!tail) throw new Error('expected a bent tail')
+    const u = unit({
+      x: tail.join.x - tail.from.x,
+      y: tail.join.y - tail.from.y,
+    })
+    const e = unit(curveEndDirection(tail))
+    const turn = Math.atan2(Math.abs(cross(u, e)), u.x * e.x + u.y * e.y)
+    expect(turn).toBeGreaterThan(0)
+    expect(turn).toBeLessThan(90 * DEG)
+
+    // The first arc chord departs the straight line by at most one sample step.
+    const first = unit({ x: path[2].x - path[1].x, y: path[2].y - path[1].y })
+    expect(Math.abs(Math.asin(cross(u, first)))).toBeLessThan(turn / 6)
+
+    // Every arc sample sits on the circle through the tip with tangent `e`
+    // and the radius the cubic's handles imply.
+    const k = (4 / 3) * Math.tan(turn / 4)
+    const radius = Math.hypot(TIP.x - tail.c1.x, TIP.y - tail.c1.y) / k
+    const side = Math.sign(
+      cross(e, { x: tail.from.x - TIP.x, y: tail.from.y - TIP.y }),
+    )
+    const centre = {
+      x: TIP.x + -e.y * side * radius,
+      y: TIP.y + e.x * side * radius,
+    }
+    for (const p of path.slice(1)) {
+      expect(Math.hypot(p.x - centre.x, p.y - centre.y)).toBeCloseTo(radius, 1)
+    }
+  })
+
+  it('turns one way only along the whole polyline', () => {
+    for (const degrees of [10, 25, 40]) {
+      const path = polylineOf(grazing(degrees))
+      const signs = new Set<number>()
+      for (let i = 2; i < path.length; i += 1) {
+        const before = {
+          x: path[i - 1].x - path[i - 2].x,
+          y: path[i - 1].y - path[i - 2].y,
+        }
+        const after = {
+          x: path[i].x - path[i - 1].x,
+          y: path[i].y - path[i - 1].y,
+        }
+        signs.add(Math.sign(cross(before, after)))
+      }
+      expect(signs.size).toBe(1)
+      expect(signs.has(0)).toBe(false)
+    }
   })
 
   it('draws a polyline of the straight part plus the sampled tail', () => {
@@ -1598,6 +1683,8 @@ describe('straight connectors bend their last stretch into a grazing rect face',
     const tail = connectorTail(source, target(), 'straight')
     expect(tail).not.toBeNull()
     if (!tail) return
-    expect(Math.hypot(TIP.x - tail.join.x, TIP.y - tail.join.y)).toBeCloseTo(20)
+    const arc = polylineOf(source).slice(1)
+    expect(lengthOf(arc)).toBeGreaterThan(18)
+    expect(lengthOf(arc)).toBeLessThan(22)
   })
 })

@@ -28,10 +28,13 @@
 // derivation: the polyline is sampled FROM the curve, never derived beside it.
 //
 // A `straight` connector that arrives at a rect or rounded-rect face at a
-// shallow angle bends over its last stretch: a straight segment up to a join
-// point, then a cubic tail that meets the face at `ARROW_MIN_INCIDENCE`.
-// `connectorTail` hands the renderer that segment and cubic, and the polyline
-// is the straight part plus a sample of the same tail.
+// shallow angle bends over its last stretch: a straight segment from the
+// source to a tangent point P, then a circular arc that ends at the tip and
+// meets the face at `ARROW_MIN_INCIDENCE`. The straight part leaves the source
+// along the tangent to that circle, so the line turns once and in one
+// direction, like a J. `connectorTail` hands the renderer the segment and the
+// arc as one cubic, and the polyline is the straight part plus a sample of
+// the same cubic.
 //
 // Pure module: no React, no DOM, no database, no canvas context.
 
@@ -254,14 +257,17 @@ const ARROW_HALF_ANGLE = Math.PI / 4
  */
 const ARROW_MIN_INCIDENCE = ARROW_HALF_ANGLE + Math.PI / 12
 
-/** The longest straight-connector tail, in world units, that bends into a face. */
+/** The arc length, in world units, of the tail that bends into a face. */
 const TAIL_LENGTH = 36
 
-/** The largest share of the connector's length the bent tail may take. */
+/** The largest share of the connector's length the bent tail's arc may take. */
 const TAIL_MAX_SHARE = 0.4
 
-/** Control-handle length of the tail's cubic, as a share of the tail length. */
-const TAIL_HANDLE = 0.4
+/** The largest turn, in radians, from the straight part into the arrival. */
+const TAIL_MAX_TURN = Math.PI / 2
+
+/** Radius refinements, and radius halvings, `tailOf` tries before giving up. */
+const TAIL_FIT_STEPS = 8
 
 /** Segments the tail is sampled into for the polyline. */
 const TAIL_SAMPLES = 12
@@ -1017,9 +1023,10 @@ export function curvatureForPoint(
 
 /**
  * A bent `straight` connector: the straight segment `from` -> `join`, then the
- * cubic `join`, `c0`, `c1`, `to`. `join` and `c0` lie on the straight line, so
- * the two parts meet tangent, and the cubic arrives at `to` at
- * `ARROW_MIN_INCIDENCE` to the face.
+ * cubic `join`, `c0`, `c1`, `to`, which approximates a circular arc. `join` is
+ * the tangent point of that circle and `c0` lies on the straight line, so the
+ * two parts meet tangent. `c1` lies on the arrival tangent, so the cubic
+ * arrives at `to` at `ARROW_MIN_INCIDENCE` to the face.
  */
 export interface ConnectorTail {
   /** Where the line leaves the source. */
@@ -1078,6 +1085,14 @@ function inwardNormal(end: RectEnd, tip: Point): Point {
  * bounding-box normal differs from its outline's. A free end has no face. The
  * line bends only when it heads into the face at less than
  * `ARROW_MIN_INCIDENCE`.
+ *
+ * The tail is a circle of radius R through `to` whose tangent there is the
+ * arrival direction `a`, centred on the side of `a` the source lies on. The
+ * straight part is the tangent from `from` to that circle whose centre is on
+ * the same side, so the line turns toward the face once and never back. R is
+ * fitted so the arc is about `TAIL_LENGTH` long, capped at `TAIL_MAX_SHARE` of
+ * the connector, and halved while `from` is too close to the circle for a
+ * tangent that turns less than `TAIL_MAX_TURN`.
  */
 function tailOf(
   target: EndpointGeometry,
@@ -1110,19 +1125,74 @@ function tailOf(
     y: n.y * sin + (ty / side) * cos,
   }
 
-  const reach = Math.min(TAIL_LENGTH, length * TAIL_MAX_SHARE)
-  const handle = reach * TAIL_HANDLE
-  const join = { x: to.x - d.x * reach, y: to.y - d.y * reach }
+  // m: the unit perpendicular to the arrival on the source's side. +1 when it
+  // is the arrival turned a quarter turn clockwise on screen, -1 otherwise.
+  const toFrom = { x: from.x - to.x, y: from.y - to.y }
+  const sigma = arrive.x * toFrom.y - arrive.y * toFrom.x > 0 ? 1 : -1
+  const m = { x: -arrive.y * sigma, y: arrive.x * sigma }
+
+  const arcLength = Math.min(TAIL_LENGTH, length * TAIL_MAX_SHARE)
+
+  // The straight direction and the turn into the arrival for a radius, or
+  // null when `from` is inside the circle or the turn is out of range.
+  const fit = (radius: number): { u: Point; turn: number } | null => {
+    const w = {
+      x: to.x + m.x * radius - from.x,
+      y: to.y + m.y * radius - from.y,
+    }
+    const distance = Math.hypot(w.x, w.y)
+    if (distance <= radius * (1 + 1e-9)) return null
+    const beta = Math.asin(radius / distance)
+    const angle = Math.atan2(w.y, w.x) - sigma * beta
+    const u = { x: Math.cos(angle), y: Math.sin(angle) }
+    const turn =
+      sigma *
+      Math.atan2(
+        u.x * arrive.y - u.y * arrive.x,
+        u.x * arrive.x + u.y * arrive.y,
+      )
+    return turn > 0 && turn < TAIL_MAX_TURN ? { u, turn } : null
+  }
+
+  // The arc is radius * turn long and the turn depends on the radius, so
+  // refine the radius from the turn the last guess gave.
+  let radius =
+    arcLength /
+    Math.acos(Math.max(-1, Math.min(1, d.x * arrive.x + d.y * arrive.y)))
+  let found: { u: Point; turn: number } | null = null
+  for (let step = 0; step < TAIL_FIT_STEPS * 2 && !found; step += 1) {
+    let candidate = fit(radius)
+    for (let refine = 0; candidate && refine < TAIL_FIT_STEPS; refine += 1) {
+      const next = arcLength / candidate.turn
+      const refined = fit(next)
+      if (!refined) break
+      radius = next
+      candidate = refined
+    }
+    if (candidate) found = candidate
+    else radius /= 2
+  }
+  if (!found) return null
+
+  const { u, turn } = found
+  const centre = { x: to.x + m.x * radius, y: to.y + m.y * radius }
+  // P is where the circle's radius is perpendicular to the straight part, on
+  // the side opposite the centre's side of `u`.
+  const join = {
+    x: centre.x + sigma * u.y * radius,
+    y: centre.y - sigma * u.x * radius,
+  }
+  const handle = (4 / 3) * Math.tan(turn / 4) * radius
   return {
     from,
     join,
-    c0: { x: join.x + d.x * handle, y: join.y + d.y * handle },
+    c0: { x: join.x + u.x * handle, y: join.y + u.y * handle },
     c1: { x: to.x - arrive.x * handle, y: to.y - arrive.y * handle },
     to,
   }
 }
 
-/** The polyline of a bent tail: the straight part, then a sample of the cubic. */
+/** The polyline of a bent tail: the straight part, then a sample of the arc's cubic. */
 function tailPolyline(tail: ConnectorTail): Array<Point> {
   const points: Array<Point> = [tail.from]
   for (let i = 0; i <= TAIL_SAMPLES; i += 1) {
