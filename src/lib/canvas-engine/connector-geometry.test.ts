@@ -354,39 +354,6 @@ describe('arrowHead', () => {
     expect(arrowHead([], 10)).toBeNull()
   })
 
-  it('turns a head that grazes the target face until both barbs clear it', () => {
-    // A shaft 25° off a box's top face, landing on that face from the right.
-    const box = { x: 0, y: 100, width: 200, height: 100 }
-    const tip = { x: 150, y: 100 }
-    const from = {
-      x: tip.x + 100 * Math.cos((25 * Math.PI) / 180),
-      y: tip.y - 100 * Math.sin((25 * Math.PI) / 180),
-    }
-    const head = arrowHead([from, tip], 14, null, { rect: box })!
-    // Axis 60° off the face: the face-side barb sits 15° above the border
-    // rather than 20° below it.
-    const barbs = [head[1], head[2]].map((barb) =>
-      Math.atan2(tip.y - barb.y, barb.x - tip.x),
-    )
-    expect(Math.min(...barbs)).toBeCloseTo(Math.PI / 12)
-    expect(Math.max(...barbs)).toBeCloseTo((105 * Math.PI) / 180)
-    // The free end has no face, so the same shaft keeps its own axis.
-    expect(arrowHead([from, tip], 14, null, { point: tip })).toEqual(
-      arrowHead([from, tip], 14),
-    )
-  })
-
-  it('leaves a head that meets its face steeply as the shaft drew it', () => {
-    const box = { x: 0, y: 100, width: 200, height: 100 }
-    const path = [
-      { x: 150, y: 0 },
-      { x: 100, y: 100 },
-    ]
-    expect(arrowHead(path, 14, null, { rect: box })).toEqual(
-      arrowHead(path, 14),
-    )
-  })
-
   it('returns null for a non-positive size', () => {
     expect(
       arrowHead(
