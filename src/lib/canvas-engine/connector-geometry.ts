@@ -1092,7 +1092,9 @@ export function arrowHead(
     const tx = ux + into * normal.x
     const ty = uy + into * normal.y
     const along = Math.hypot(tx, ty)
-    if (along > 0 && into < Math.sin(ARROW_MIN_INCIDENCE)) {
+    // A shaft leaving the face (`into` < 0) passes through the shape and keeps
+    // its own axis.
+    if (along > 0 && into >= 0 && into < Math.sin(ARROW_MIN_INCIDENCE)) {
       const sin = Math.sin(ARROW_MIN_INCIDENCE)
       const cos = Math.cos(ARROW_MIN_INCIDENCE)
       ux = -normal.x * sin + (tx / along) * cos

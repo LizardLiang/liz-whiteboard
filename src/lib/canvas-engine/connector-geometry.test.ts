@@ -387,6 +387,18 @@ describe('arrowHead', () => {
     )
   })
 
+  it('leaves a head whose shaft leaves the face through the shape', () => {
+    // The shaft runs out of the box's top face from inside it, 24° off the face.
+    const box = { x: 0, y: 100, width: 200, height: 100 }
+    const path = [
+      { x: 60, y: 140 },
+      { x: 150, y: 100 },
+    ]
+    expect(arrowHead(path, 14, null, { rect: box })).toEqual(
+      arrowHead(path, 14),
+    )
+  })
+
   it('returns null for a non-positive size', () => {
     expect(
       arrowHead(
