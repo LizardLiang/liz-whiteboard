@@ -355,11 +355,11 @@ export function connectorPathOf(
 
 /**
  * The same connector as the CURVE it is stroked along, or null when it has
- * none — `straight` and `elbow` are polylines and have no curve to give.
+ * none — only `curved` has one; a bent `straight` tail is `connectorTailOf`.
  *
  * The twin of `connectorPathOf`, and it exists for exactly one reason: what a
  * `curved` connector is DRAWN as is a pair of cubics, while what it is
- * hit-tested, bounded and arrow-headed by is the flattened sample. Both have
+ * hit-tested and bounded by is the flattened sample. Both have
  * to come from one resolution of the two endpoint elements, or the line and
  * the thing you can click will drift apart on the frame an element moves.
  */

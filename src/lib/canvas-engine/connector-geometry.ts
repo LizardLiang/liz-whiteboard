@@ -254,7 +254,7 @@ const ARROW_HALF_ANGLE = Math.PI / 4
  */
 const ARROW_MIN_INCIDENCE = ARROW_HALF_ANGLE + Math.PI / 12
 
-/** How far back from the tip a bent straight connector starts to turn, in world units. */
+/** The longest straight-connector tail, in world units, that bends into a face. */
 const TAIL_LENGTH = 36
 
 /** The largest share of the connector's length the bent tail may take. */
@@ -891,7 +891,7 @@ function curveOf(
 
 /**
  * The direction a curve is travelling as it ARRIVES at its target — the exact
- * tangent, which is what the arrowhead is oriented along.
+ * tangent of a curve or a bent tail, which is what the arrowhead is oriented along.
  *
  * `to - c1`, not the last sampled chord. On an un-bowed curve `c1` sits on the
  * target face's outward normal, so this is that normal reversed to
@@ -1161,7 +1161,7 @@ export function connectorTail(
  *
  * `curvature` is accepted for EVERY routing and consumed by exactly one, and
  * that asymmetry is deliberate. `straight` and `elbow` have no bow to scale —
- * a straight line with a bend in it is not straight, and an elbow with one is
+ * the bend a straight line takes into a grazing face is fixed, not a bow, and an elbow with one is
  * no longer orthogonal — so they IGNORE the value rather than reinterpreting
  * it, and a connector flipped to one of them and back keeps the bow it had.
  * Callers therefore pass a connector's stored curvature through
@@ -1207,7 +1207,7 @@ export function connectorPath(
  * stroked path with it.
  *
  * `direction` overrides that walk with the EXACT arrival tangent, which a
- * `curved` connector has and a sampled polyline can only approach — see
+ * `curved` connector or a bent `straight` tail has and a sampled polyline can only approach — see
  * `curveEndDirection`. It is what sits the head square to the face it points
  * at rather than square to the last 1/24th of the curve. Needs no
  * normalising, and a zero vector falls back to the walk rather than to NaN.
