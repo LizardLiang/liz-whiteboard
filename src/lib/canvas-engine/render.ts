@@ -33,7 +33,11 @@ import {
   clipToOutline,
   curveEndDirection,
 } from './connector-geometry'
-import { connectorCurveOf, connectorPathOf } from './hit-test'
+import {
+  connectorCurveOf,
+  connectorPathOf,
+  endpointGeometry,
+} from './hit-test'
 import { QUICK_CREATE_DIRECTIONS } from './quick-create'
 import {
   DEFAULT_TEXT_STYLE,
@@ -984,11 +988,12 @@ function drawConnector(
   // Oriented off the curve's exact arrival tangent where there is one, which
   // is the target face's own normal reversed — so the head lands square to the
   // shape rather than square to the last sampled chord. See
-  // `curveEndDirection`.
+  // `curveEndDirection`. The target end lifts a head that grazes its face.
   const head = arrowHead(
     path,
     CONNECTOR_ARROW_SIZE,
     curve ? curveEndDirection(curve) : null,
+    endpointGeometry(scene, link.target),
   )
   if (head) {
     // An OPEN line arrowhead: the two barbs stroked THROUGH the tip, with no
