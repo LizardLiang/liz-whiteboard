@@ -266,7 +266,7 @@ const TAIL_MAX_SHARE = 0.4
 /** The largest turn, in radians, from the straight part into the arrival. */
 const TAIL_MAX_TURN = Math.PI / 2
 
-/** Radius refinements, and radius halvings, `tailOf` tries before giving up. */
+/** Radius refinements `tailOf` runs per fit. It halves the radius up to twice this many times. */
 const TAIL_FIT_STEPS = 8
 
 /** Segments the tail is sampled into for the polyline. */

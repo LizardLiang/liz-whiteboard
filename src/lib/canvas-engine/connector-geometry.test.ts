@@ -1557,7 +1557,7 @@ describe('straight connectors bend their last stretch into a grazing rect face',
     expect(turn).toBeGreaterThan(0)
     expect(turn).toBeLessThan(90 * DEG)
 
-    // The first arc chord departs the straight line by at most one sample step.
+    // The first arc chord departs the straight line by less than two sample steps.
     const first = unit({ x: path[2].x - path[1].x, y: path[2].y - path[1].y })
     expect(Math.abs(Math.asin(cross(u, first)))).toBeLessThan(turn / 6)
 
