@@ -23,9 +23,14 @@ import {
 import {
   connectorBounds,
   connectorCurve,
+  connectorTail,
   connectorPath,
 } from './connector-geometry'
-import type { ConnectorCurve, EndpointGeometry } from './connector-geometry'
+import type {
+  ConnectorCurve,
+  ConnectorTail,
+  EndpointGeometry,
+} from './connector-geometry'
 import type { CanvasElement, ConnectorEndpoint, Scene } from './scene'
 import type { Point } from './camera'
 
@@ -369,6 +374,24 @@ export function connectorCurveOf(
     endpointGeometry(scene, link.target),
     link.routing,
     link.curvature,
+  )
+}
+
+/**
+ * The bent tail of a `straight` connector, or null when it has none. Resolved
+ * from the same endpoints as `connectorPathOf`, so the stroked tail and the
+ * polyline that is hit-tested come from one derivation.
+ */
+export function connectorTailOf(
+  scene: Scene,
+  element: CanvasElement,
+): ConnectorTail | null {
+  const link = element.connector
+  if (!link) return null
+  return connectorTail(
+    endpointGeometry(scene, link.source),
+    endpointGeometry(scene, link.target),
+    link.routing,
   )
 }
 

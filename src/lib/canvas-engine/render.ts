@@ -33,7 +33,7 @@ import {
   clipToOutline,
   curveEndDirection,
 } from './connector-geometry'
-import { connectorCurveOf, connectorPathOf } from './hit-test'
+import { connectorCurveOf, connectorPathOf, connectorTailOf } from './hit-test'
 import { QUICK_CREATE_DIRECTIONS } from './quick-create'
 import {
   DEFAULT_TEXT_STYLE,
@@ -958,6 +958,10 @@ function drawConnector(
   // the same one path command it costs at 100%.
   const curve =
     link.routing === 'curved' ? connectorCurveOf(scene, element) : null
+  // A `straight` connector that bends over its last stretch is stroked as a
+  // segment then a cubic, for the same reason.
+  const tail =
+    link.routing === 'straight' ? connectorTailOf(scene, element) : null
   const paints = connectorPaints(element.style)
 
   target.beginPath()
@@ -965,7 +969,17 @@ function drawConnector(
     curve ? curve.from.x : path[0].x,
     curve ? curve.from.y : path[0].y,
   )
-  if (curve) {
+  if (tail) {
+    target.lineTo(tail.join.x, tail.join.y)
+    target.cubicTo(
+      tail.c0.x,
+      tail.c0.y,
+      tail.c1.x,
+      tail.c1.y,
+      tail.to.x,
+      tail.to.y,
+    )
+  } else if (curve) {
     target.cubicTo(
       curve.c0.x,
       curve.c0.y,
@@ -983,12 +997,13 @@ function drawConnector(
 
   // Oriented off the curve's exact arrival tangent where there is one, which
   // is the target face's own normal reversed — so the head lands square to the
-  // shape rather than square to the last sampled chord. See
-  // `curveEndDirection`.
+  // shape rather than square to the last sampled chord. A bent tail's end
+  // tangent orients it the same way. See `curveEndDirection`.
+  const arrival = tail ?? curve
   const head = arrowHead(
     path,
     CONNECTOR_ARROW_SIZE,
-    curve ? curveEndDirection(curve) : null,
+    arrival ? curveEndDirection(arrival) : null,
   )
   if (head) {
     // An OPEN line arrowhead: the two barbs stroked THROUGH the tip, with no
@@ -1082,6 +1097,7 @@ function drawConnectorSelection(
   if (!path || path.length < 2) return
 
   const curve = connectorCurveOf(scene, element)
+  const tail = connectorTailOf(scene, element)
 
   ctx.save()
   ctx.strokeStyle = accent
@@ -1106,6 +1122,17 @@ function drawConnectorSelection(
       projected.to.x,
       projected.to.y,
     )
+  } else if (tail) {
+    // The straight part, then the tail's cubic, projected control point by
+    // control point like the curve above.
+    const from = worldToScreen(camera, tail.from)
+    const join = worldToScreen(camera, tail.join)
+    const c0 = worldToScreen(camera, tail.c0)
+    const c1 = worldToScreen(camera, tail.c1)
+    const to = worldToScreen(camera, tail.to)
+    ctx.moveTo(from.x, from.y)
+    ctx.lineTo(join.x, join.y)
+    ctx.bezierCurveTo(c0.x, c0.y, c1.x, c1.y, to.x, to.y)
   } else {
     const first = worldToScreen(camera, path[0])
     ctx.moveTo(first.x, first.y)

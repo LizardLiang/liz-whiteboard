@@ -14,6 +14,7 @@ import {
   connectorBounds,
   connectorCurve,
   connectorPath,
+  connectorTail,
   curvatureForPoint,
   curveEndDirection,
   endpoints,
@@ -1457,5 +1458,146 @@ describe('rounded rectangle corners', () => {
       { rect: { x: 600, y: 300, width: 100, height: 100 } },
     )
     expect(plain?.from).toEqual({ x: 200, y: 100 })
+  })
+})
+
+describe('straight connectors bend their last stretch into a grazing rect face', () => {
+  const BOX: WorldRect = { x: 0, y: 200, width: 200, height: 100 }
+  const TIP: Point = { x: 160, y: 200 }
+  const DEG = Math.PI / 180
+
+  function target(
+    shape: 'rectangle' | 'diamond' = 'rectangle',
+    attach = { x: 0.8, y: 0 },
+  ): EndpointGeometry {
+    return { rect: BOX, shape, cornerRadius: 12, attach }
+  }
+
+  /** A free source `distance` back from `TIP`, along a shaft `degrees` off the top face. */
+  function grazing(degrees: number, distance = 300): EndpointGeometry {
+    const a = degrees * DEG
+    return {
+      point: {
+        x: TIP.x - Math.cos(a) * distance,
+        y: TIP.y - Math.sin(a) * distance,
+      },
+    }
+  }
+
+  function unit(v: Point): Point {
+    const l = Math.hypot(v.x, v.y)
+    return { x: v.x / l, y: v.y / l }
+  }
+
+  it('arrives at 60 degrees, keeps the straight part and the tip', () => {
+    const source = grazing(25)
+    const tail = connectorTail(source, target(), 'straight')
+    expect(tail).not.toBeNull()
+    if (!tail) return
+
+    expect(tail.to).toEqual(TIP)
+    expect(tail.from).toEqual((source as { point: Point }).point)
+
+    // The join and first control point lie on the original straight line.
+    const d = unit({ x: TIP.x - tail.from.x, y: TIP.y - tail.from.y })
+    for (const p of [tail.join, tail.c0]) {
+      const cross = (p.x - tail.from.x) * d.y - (p.y - tail.from.y) * d.x
+      expect(Math.abs(cross)).toBeLessThan(1e-9)
+    }
+    expect(Math.hypot(TIP.x - tail.join.x, TIP.y - tail.join.y)).toBeCloseTo(36)
+
+    // End tangent: 60 degrees to the top face, turned toward its normal (down).
+    const e = unit(curveEndDirection(tail))
+    expect(e.y).toBeCloseTo(Math.sin(60 * DEG))
+    expect(e.x).toBeCloseTo(Math.cos(60 * DEG))
+  })
+
+  it('draws a polyline of the straight part plus the sampled tail', () => {
+    const source = grazing(25)
+    const tail = connectorTail(source, target(), 'straight')
+    const path = connectorPath(source, target(), 'straight')
+    expect(tail && path).toBeTruthy()
+    if (!tail || !path) return
+    expect(path[0]).toEqual(tail.from)
+    expect(path[1]).toEqual(tail.join)
+    expect(path[path.length - 1]).toEqual(TIP)
+    expect(path.length).toBeGreaterThan(2)
+  })
+
+  it('leaves both arrowhead barbs clear of the border', () => {
+    const source = grazing(25)
+    const tail = connectorTail(source, target(), 'straight')
+    const path = connectorPath(source, target(), 'straight')
+    if (!tail || !path) throw new Error('expected a bent tail')
+    const head = arrowHead(path, 14, curveEndDirection(tail))
+    if (!head) throw new Error('expected a head')
+    expect(head[1].y).toBeLessThan(TIP.y - 3)
+    expect(head[2].y).toBeLessThan(TIP.y - 3)
+    // Symmetric about the arrival tangent.
+    const e = unit(curveEndDirection(tail))
+    const side = (p: Point): number =>
+      (p.x - TIP.x) * -e.y + (p.y - TIP.y) * e.x
+    expect(side(head[1])).toBeCloseTo(-side(head[2]))
+  })
+
+  it('arrives at 60 degrees to the radial normal on a rounded corner', () => {
+    const attach = { x: 1, y: 0 }
+    const tip = clipToOutline(BOX, 'rectangle', { x: 200, y: 200 }, 12)
+    const n = unit({ x: 188 - tip.x, y: 212 - tip.y })
+    const t = { x: -n.y, y: n.x }
+    const a = 20 * DEG
+    const source: EndpointGeometry = {
+      point: {
+        x: tip.x - (n.x * Math.sin(a) + t.x * Math.cos(a)) * 300,
+        y: tip.y - (n.y * Math.sin(a) + t.y * Math.cos(a)) * 300,
+      },
+    }
+    const tail = connectorTail(source, target('rectangle', attach), 'straight')
+    expect(tail).not.toBeNull()
+    if (!tail) return
+    const e = unit(curveEndDirection(tail))
+    expect(e.x * n.x + e.y * n.y).toBeCloseTo(Math.sin(60 * DEG))
+    // Same side of the normal the shaft came from.
+    expect(e.x * t.x + e.y * t.y).toBeGreaterThan(0)
+  })
+
+  it('stays straight (two points) for a steep arrival', () => {
+    const source = grazing(70)
+    expect(connectorTail(source, target(), 'straight')).toBeNull()
+    expect(connectorPath(source, target(), 'straight')).toHaveLength(2)
+  })
+
+  it('stays straight for a shaft leaving the face from inside the shape', () => {
+    const source: EndpointGeometry = { point: { x: 100, y: 260 } }
+    expect(connectorTail(source, target(), 'straight')).toBeNull()
+    expect(connectorPath(source, target(), 'straight')).toHaveLength(2)
+  })
+
+  it('stays straight for a free target end', () => {
+    const source: EndpointGeometry = { rect: BOX, attach: { x: 0.8, y: 0 } }
+    const free: EndpointGeometry = { point: { x: 460, y: 220 } }
+    expect(connectorTail(source, free, 'straight')).toBeNull()
+    expect(connectorPath(source, free, 'straight')).toHaveLength(2)
+  })
+
+  it('stays straight for a diamond target', () => {
+    const source = grazing(25)
+    const diamond = target('diamond', { x: 0.5, y: 0 })
+    expect(connectorTail(source, diamond, 'straight')).toBeNull()
+    expect(connectorPath(source, diamond, 'straight')).toHaveLength(2)
+  })
+
+  it('does not bend elbow or curved routing', () => {
+    const source = grazing(25)
+    expect(connectorTail(source, target(), 'elbow')).toBeNull()
+    expect(connectorTail(source, target(), 'curved')).toBeNull()
+  })
+
+  it('caps the bent length at 40% of a short connector', () => {
+    const source = grazing(25, 50)
+    const tail = connectorTail(source, target(), 'straight')
+    expect(tail).not.toBeNull()
+    if (!tail) return
+    expect(Math.hypot(TIP.x - tail.join.x, TIP.y - tail.join.y)).toBeCloseTo(20)
   })
 })

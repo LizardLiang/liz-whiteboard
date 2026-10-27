@@ -27,6 +27,12 @@
 // magnification. Two answers to "where does this line run", but only one
 // derivation: the polyline is sampled FROM the curve, never derived beside it.
 //
+// A `straight` connector that arrives at a rect or rounded-rect face at a
+// shallow angle bends over its last stretch: a straight segment up to a join
+// point, then a cubic tail that meets the face at `ARROW_MIN_INCIDENCE`.
+// `connectorTail` hands the renderer that segment and cubic, and the polyline
+// is the straight part plus a sample of the same tail.
+//
 // Pure module: no React, no DOM, no database, no canvas context.
 
 import { isOutlinedShapeKind } from './scene'
@@ -236,6 +242,29 @@ const MIDPOINT_PER_CONTROL_OFFSET = 0.75
  * head would have grown as it opened instead of just opening.
  */
 const ARROW_HALF_ANGLE = Math.PI / 4
+
+/**
+ * The shallowest angle, in radians, a straight connector's tail makes with the
+ * face it lands on.
+ *
+ * A barb sits `ARROW_HALF_ANGLE` off the shaft, so a head arriving shallower
+ * than that lays its face-side barb flat along the border or inside the shape,
+ * where the outline stroke covers it and the chevron reads as one line. 15°
+ * past the half-angle holds that barb visibly off the border.
+ */
+const ARROW_MIN_INCIDENCE = ARROW_HALF_ANGLE + Math.PI / 12
+
+/** How far back from the tip a bent straight connector starts to turn, in world units. */
+const TAIL_LENGTH = 36
+
+/** The largest share of the connector's length the bent tail may take. */
+const TAIL_MAX_SHARE = 0.4
+
+/** Control-handle length of the tail's cubic, as a share of the tail length. */
+const TAIL_HANDLE = 0.4
+
+/** Segments the tail is sampled into for the polyline. */
+const TAIL_SAMPLES = 12
 
 /**
  * How far an elbow or curve pushes straight out of an anchored edge before it
@@ -872,7 +901,9 @@ function curveOf(
  *
  * Not normalised — `arrowHead` normalises whatever it is handed.
  */
-export function curveEndDirection(curve: ConnectorCurve): Point {
+export function curveEndDirection(
+  curve: Pick<ConnectorCurve, 'c1' | 'to'>,
+): Point {
   return { x: curve.to.x - curve.c1.x, y: curve.to.y - curve.c1.y }
 }
 
@@ -985,6 +1016,139 @@ export function curvatureForPoint(
 }
 
 /**
+ * A bent `straight` connector: the straight segment `from` -> `join`, then the
+ * cubic `join`, `c0`, `c1`, `to`. `join` and `c0` lie on the straight line, so
+ * the two parts meet tangent, and the cubic arrives at `to` at
+ * `ARROW_MIN_INCIDENCE` to the face.
+ */
+export interface ConnectorTail {
+  /** Where the line leaves the source. */
+  from: Point
+  /** Where the straight part ends and the cubic begins. */
+  join: Point
+  /** First control point, on the straight line. */
+  c0: Point
+  /** Second control point, on the arrival tangent. */
+  c1: Point
+  /** Where the line meets the target. */
+  to: Point
+}
+
+/**
+ * The unit normal pointing INTO a rect or rounded rect from the border point
+ * `tip`: the radial normal on a corner arc, the face normal elsewhere.
+ */
+function inwardNormal(end: RectEnd, tip: Point): Point {
+  const { rect } = end
+  const radius = Math.min(
+    end.cornerRadius ?? 0,
+    rect.width / 2,
+    rect.height / 2,
+  )
+  if (radius > 0) {
+    const left = rect.x + radius
+    const right = rect.x + rect.width - radius
+    const top = rect.y + radius
+    const bottom = rect.y + rect.height - radius
+    const dx = Math.max(left - tip.x, tip.x - right, 0)
+    const dy = Math.max(top - tip.y, tip.y - bottom, 0)
+    if (dx > 0 && dy > 0) {
+      const kx = tip.x < left ? left : right
+      const ky = tip.y < top ? top : bottom
+      const length = Math.hypot(tip.x - kx, tip.y - ky)
+      return { x: (kx - tip.x) / length, y: (ky - tip.y) / length }
+    }
+  }
+  const toLeft = Math.abs(tip.x - rect.x)
+  const toRight = Math.abs(tip.x - (rect.x + rect.width))
+  const toTop = Math.abs(tip.y - rect.y)
+  const toBottom = Math.abs(tip.y - (rect.y + rect.height))
+  const nearest = Math.min(toLeft, toRight, toTop, toBottom)
+  if (nearest === toLeft) return { x: 1, y: 0 }
+  if (nearest === toRight) return { x: -1, y: 0 }
+  if (nearest === toTop) return { x: 0, y: 1 }
+  return { x: 0, y: -1 }
+}
+
+/**
+ * The bent tail of the straight line `from` -> `to` into `target`, or null
+ * when the line stays straight.
+ *
+ * A diamond, ellipse or triangle end keeps its line straight, because its
+ * bounding-box normal differs from its outline's. A free end has no face. The
+ * line bends only when it heads into the face at less than
+ * `ARROW_MIN_INCIDENCE`.
+ */
+function tailOf(
+  target: EndpointGeometry,
+  from: Point,
+  to: Point,
+): ConnectorTail | null {
+  if (isFree(target)) return null
+  if (
+    target.shape !== undefined &&
+    target.shape !== 'rectangle' &&
+    isOutlinedShapeKind(target.shape)
+  ) {
+    return null
+  }
+  const length = Math.hypot(to.x - from.x, to.y - from.y)
+  if (length === 0) return null
+  const d = { x: (to.x - from.x) / length, y: (to.y - from.y) / length }
+  const n = inwardNormal(target, to)
+  const into = d.x * n.x + d.y * n.y
+  const sin = Math.sin(ARROW_MIN_INCIDENCE)
+  if (into <= 0 || into >= sin) return null
+
+  // The shaft's component along the face, which the arrival keeps.
+  const tx = d.x - into * n.x
+  const ty = d.y - into * n.y
+  const side = Math.hypot(tx, ty)
+  const cos = Math.cos(ARROW_MIN_INCIDENCE)
+  const arrive = {
+    x: n.x * sin + (tx / side) * cos,
+    y: n.y * sin + (ty / side) * cos,
+  }
+
+  const reach = Math.min(TAIL_LENGTH, length * TAIL_MAX_SHARE)
+  const handle = reach * TAIL_HANDLE
+  const join = { x: to.x - d.x * reach, y: to.y - d.y * reach }
+  return {
+    from,
+    join,
+    c0: { x: join.x + d.x * handle, y: join.y + d.y * handle },
+    c1: { x: to.x - arrive.x * handle, y: to.y - arrive.y * handle },
+    to,
+  }
+}
+
+/** The polyline of a bent tail: the straight part, then a sample of the cubic. */
+function tailPolyline(tail: ConnectorTail): Array<Point> {
+  const points: Array<Point> = [tail.from]
+  for (let i = 0; i <= TAIL_SAMPLES; i += 1) {
+    points.push(
+      bezierAt(tail.join, tail.c0, tail.c1, tail.to, i / TAIL_SAMPLES),
+    )
+  }
+  return points
+}
+
+/**
+ * The bent tail a connector is STROKED along, or null when it has none:
+ * anything but `straight` routing, or a straight line that arrives steeply
+ * enough, leaves its face, ends free, or lands on a non-rect shape.
+ */
+export function connectorTail(
+  source: EndpointGeometry | null | undefined,
+  target: EndpointGeometry | null | undefined,
+  routing: CanvasConnectorRouting,
+): ConnectorTail | null {
+  if (!source || !target || routing !== 'straight') return null
+  const ends = endpoints(source, target)
+  return ends ? tailOf(target, ends.from, ends.to) : null
+}
+
+/**
  * The polyline a connector is drawn and hit-tested along, or null when there
  * is nothing sensible to draw.
  *
@@ -1014,7 +1178,9 @@ export function connectorPath(
   switch (routing) {
     case 'straight': {
       const ends = endpoints(source, target)
-      return ends ? [ends.from, ends.to] : null
+      if (!ends) return null
+      const tail = tailOf(target, ends.from, ends.to)
+      return tail ? tailPolyline(tail) : [ends.from, ends.to]
     }
     case 'elbow':
       return elbowPath(source, target)
