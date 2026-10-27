@@ -238,17 +238,6 @@ const MIDPOINT_PER_CONTROL_OFFSET = 0.75
 const ARROW_HALF_ANGLE = Math.PI / 4
 
 /**
- * The shallowest angle, in radians, an arrowhead's axis makes with the face it
- * lands on.
- *
- * A barb sits `ARROW_HALF_ANGLE` off the axis, so a head arriving shallower
- * than that lays its face-side barb flat along the border or inside the shape,
- * where the outline stroke covers it and the chevron reads as one line. 15°
- * past the half-angle holds that barb visibly off the border.
- */
-const ARROW_MIN_INCIDENCE = ARROW_HALF_ANGLE + Math.PI / 12
-
-/**
  * How far an elbow or curve pushes straight out of an anchored edge before it
  * is allowed to turn, in world units.
  *
@@ -1056,18 +1045,11 @@ export function connectorPath(
  * `curveEndDirection`. It is what sits the head square to the face it points
  * at rather than square to the last 1/24th of the curve. Needs no
  * normalising, and a zero vector falls back to the walk rather than to NaN.
- *
- * `target` is the end the tip stands on. When the shaft grazes that end's face
- * at less than `ARROW_MIN_INCIDENCE`, the head turns toward the face's inward
- * normal until it reaches that angle, keeping the side the shaft came from, so
- * both barbs stay clear of the outline. A free end has no face and keeps the
- * shaft's direction.
  */
 export function arrowHead(
   points: ReadonlyArray<Point>,
   size: number,
   direction?: Point | null,
-  target?: EndpointGeometry | null,
 ): Array<Point> | null {
   if (points.length < 2 || size <= 0) return null
   const tip = points[points.length - 1]
@@ -1083,22 +1065,8 @@ export function arrowHead(
   const length = Math.hypot(dx, dy)
   if (length === 0) return null
 
-  let ux = dx / length
-  let uy = dy / length
-  if (target && !isFree(target)) {
-    // The same face an elbow or curve leaves this end through.
-    const normal = departureNormal(target, tip, points[0])
-    const into = -(ux * normal.x + uy * normal.y)
-    const tx = ux + into * normal.x
-    const ty = uy + into * normal.y
-    const along = Math.hypot(tx, ty)
-    if (along > 0 && into < Math.sin(ARROW_MIN_INCIDENCE)) {
-      const sin = Math.sin(ARROW_MIN_INCIDENCE)
-      const cos = Math.cos(ARROW_MIN_INCIDENCE)
-      ux = -normal.x * sin + (tx / along) * cos
-      uy = -normal.y * sin + (ty / along) * cos
-    }
-  }
+  const ux = dx / length
+  const uy = dy / length
   // Perpendicular, for the two barb ends.
   const px = -uy
   const py = ux
