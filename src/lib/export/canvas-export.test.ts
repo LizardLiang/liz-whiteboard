@@ -59,6 +59,18 @@ describe('canvas export', () => {
     })
   })
 
+  it('does not widen the bounds past the frame for a wrapped todo line', () => {
+    const wrapped = rectangle({
+      text: '☐ a bbbbbbb ccccccc ddddddd',
+      width: 100,
+      height: 200,
+    })
+    const empty = rectangle({ text: null, width: 100, height: 200 })
+    expect(canvasExportBounds(sceneFrom([wrapped]), measure)).toEqual(
+      canvasExportBounds(sceneFrom([empty]), measure),
+    )
+  })
+
   it('applies proportional export padding independently on each axis', () => {
     const scene = sceneFrom([
       rectangle({

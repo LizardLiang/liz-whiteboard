@@ -104,8 +104,9 @@ export interface LaidOutLine {
    * a marker). Only the line holding the marker has `box`, the checkbox square
    * in block-local space. The marker is not drawn as a glyph: its caret slot
    * is `TODO_BOX_RATIO + TODO_GAP_RATIO` em wide, and wrapped continuation
-   * lines start that far in (hanging indent), so `carets[0]` is the left edge
-   * of the text on every such line.
+   * lines start that far in (hanging indent). On the marker line `carets[0]` is
+   * the left edge of the box and the text starts at `carets[1]`; on wrapped
+   * lines `carets[0]` is the left edge of the text.
    */
   todo?: { state: TodoState; box?: LocalRect }
 }

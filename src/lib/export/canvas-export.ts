@@ -111,7 +111,9 @@ function textBounds(
   for (const line of layout.lines) {
     const lineLeft = frame.x + line.carets[0]
     left = Math.min(left, lineLeft)
-    right = Math.max(right, lineLeft + line.width)
+    // The last caret slot is the line's right edge; `width` would count a todo
+    // line's hanging indent twice.
+    right = Math.max(right, frame.x + line.carets[line.carets.length - 1])
   }
 
   if (!Number.isFinite(left) || !Number.isFinite(right)) return null
