@@ -116,3 +116,16 @@ export function todoShortcut(
     edit: { at: lineStart, deleteCount: bracketLength, insertLength: 1 },
   }
 }
+
+/**
+ * True when every line under `[start, end]` is a todo line, which is when the
+ * checklist button would turn them back into plain lines.
+ */
+export function isChecklistRange(
+  text: string,
+  start: number,
+  end: number,
+): boolean {
+  const { edits } = toggleChecklistLines(text, start, end)
+  return edits.length > 0 && edits.every((edit) => edit.insertLength === 0)
+}

@@ -112,6 +112,7 @@ import {
   layoutElementText,
   textFrame,
   textOriginY,
+  todoBoxAt,
   withinCreationHandleReach,
 } from '@/lib/canvas-engine/render'
 import { quickCreatePlacement } from '@/lib/canvas-engine/quick-create'
@@ -145,6 +146,13 @@ import {
   resolveRuns,
   sameRuns,
 } from '@/lib/canvas-engine/text-runs'
+import {
+  TODO_OPEN,
+  todoMarkerAt,
+  todoShortcut,
+  toggleChecklistLines,
+  toggleTodoAt,
+} from '@/lib/canvas-engine/text-todo'
 import { uuid } from '@/lib/uuid'
 
 /**
@@ -1388,6 +1396,116 @@ function deleteEdit(
   }
 }
 
+/** How far past a todo box a press still counts as on it, in screen pixels. */
+const TODO_BOX_HIT_PAD_PX = 4
+
+/** Where a position lands after one todo edit; inserts at the position push it right. */
+function mapThroughTodoEdit(
+  position: number,
+  edit: { at: number; deleteCount: number; insertLength: number },
+): number {
+  const { at, deleteCount, insertLength } = edit
+  if (position < at) return position
+  if (deleteCount === 0) return position + insertLength
+  if (position >= at + deleteCount) return position + insertLength - deleteCount
+  return at + insertLength
+}
+
+/**
+ * The text, runs and selection after turning the lines under `[start, end]`
+ * into todo lines (or back into plain lines). Every edit goes through
+ * `editRuns`, so styled runs follow their characters.
+ */
+export function checklistEdit(
+  text: string,
+  runs: Array<CanvasTextRun>,
+  start: number,
+  end: number,
+): {
+  text: string
+  runs: Array<CanvasTextRun>
+  map: (position: number) => number
+} {
+  const toggled = toggleChecklistLines(text, start, end)
+  let length = text.length
+  let nextRuns = runs
+  for (const edit of toggled.edits) {
+    nextRuns = editRuns(
+      nextRuns,
+      length,
+      edit.at,
+      edit.at + edit.deleteCount,
+      edit.insertLength,
+      null,
+    )
+    length += edit.insertLength - edit.deleteCount
+  }
+  return {
+    text: toggled.text,
+    runs: nextRuns,
+    map: (position) =>
+      toggled.edits.reduce(
+        (mapped, edit) => mapThroughTodoEdit(mapped, edit),
+        position,
+      ),
+  }
+}
+
+/** The queued edit for the checklist button over the caret or selection. */
+function checklistProduce(): PendingTextEdit['produce'] {
+  return (text, caret, element, anchor) => {
+    const start = Math.min(anchor, caret)
+    const end = Math.max(anchor, caret)
+    const result = checklistEdit(text, element.style.textRuns, start, end)
+    if (result.text === text) return { text, caret, anchor }
+    return {
+      text: result.text,
+      caret: result.map(caret),
+      anchor: result.map(anchor),
+      runs: result.runs,
+    }
+  }
+}
+
+/**
+ * The queued edit for Enter. On a todo line a new line starts open; an Enter
+ * on a line that holds only its marker removes the marker and ends the list.
+ */
+function enterProduce(): PendingTextEdit['produce'] {
+  return (text, caret, _element, anchor) => {
+    const start = Math.min(anchor, caret)
+    if (anchor === caret && start > 0) {
+      const lineStart = text.lastIndexOf('\n', start - 1) + 1
+      if (start > lineStart && todoMarkerAt(text, lineStart) !== null) {
+        const newline = text.indexOf('\n', lineStart)
+        const lineEnd = newline === -1 ? text.length : newline
+        const rest = text.slice(lineStart + 1, lineEnd)
+        if ((rest === '' || rest === ' ') && start === lineEnd) {
+          return replaceEdit(text, lineStart, lineEnd, '')
+        }
+        return replaceEdit(text, anchor, caret, `\n${TODO_OPEN} `)
+      }
+    }
+    return replaceEdit(text, anchor, caret, '\n')
+  }
+}
+
+/** Convert a just-typed "[] " or "[x] " at a line start into a marker. */
+function shortcutProduce(): PendingTextEdit['produce'] {
+  return (text, caret, _element, anchor) => {
+    const unchanged = { text, caret, anchor }
+    if (anchor !== caret) return unchanged
+    const converted = todoShortcut(text, caret)
+    if (!converted) return unchanged
+    const { at, deleteCount, insertLength } = converted.edit
+    return {
+      text: converted.text,
+      caret: converted.caret,
+      edit: { from: at, to: at + deleteCount, insertLength },
+    }
+  }
+}
+
 /** Apply queued edits in order, starting from the element's text and the session caret. */
 export function foldPendingTextEdits(
   pending: ReadonlyArray<PendingTextEdit>,
@@ -2124,6 +2242,22 @@ export function useCanvasInput({
     [screenFromEvent],
   )
 
+  /** The marker index of the todo box under `world` on `element`, or null. */
+  const todoBoxIndexAt = useCallback(
+    (element: CanvasElement, world: Point): number | null => {
+      if (element.connector || (element.text ?? '').length === 0) return null
+      const measure = getMeasurer(fontSpecOf(element.style))
+      if (!measure) return null
+      return todoBoxAt(
+        element,
+        world,
+        measure,
+        TODO_BOX_HIT_PAD_PX / latest.current.camera.zoom,
+      )
+    },
+    [getMeasurer],
+  )
+
   const onPointerDown = useCallback(
     (event: ReactPointerEvent<HTMLCanvasElement>) => {
       const canvas = canvasRef.current
@@ -2336,6 +2470,23 @@ export function useCanvasInput({
         return
       }
 
+      // A press on a todo box ticks or unticks it and nothing else: no
+      // selection change, no drag, and no editor on a double-click. The press
+      // that reaches here is never on the element being edited (that press
+      // placed the caret above).
+      const boxIndex = todoBoxIndexAt(hit, world)
+      if (boxIndex !== null) {
+        const nextText = toggleTodoAt(hit.text ?? '', boxIndex)
+        const updated: CanvasElement = { ...hit, text: nextText }
+        setScene((prev) =>
+          prev.byId.has(hit.id)
+            ? updateElement(prev, hit.id, { text: nextText })
+            : prev,
+        )
+        callbacks?.onUpdate?.([updated], [hit], 'text-edit')
+        return
+      }
+
       // Group-aware target resolution (canvas-element-grouping tactical
       // plan, Wave 2). `resolveClickTarget` is NOT needed here — a single
       // click never consults `enteredPath`, it always resolves to the
@@ -2442,6 +2593,8 @@ export function useCanvasInput({
       setScene,
       setTool,
       spaceHeld,
+      callbacks,
+      todoBoxIndexAt,
     ],
   )
 
@@ -2953,6 +3106,15 @@ export function useCanvasInput({
       const hit = hitTest(latest.current.scene, world)
       if (!hit) return
 
+      // The press pair of a double-click on a todo box already toggled it;
+      // the editor stays closed.
+      if (
+        editingRef.current?.elementId !== hit.id &&
+        todoBoxIndexAt(hit, world) !== null
+      ) {
+        return
+      }
+
       // Already editing this element: the double-click selects the word under
       // the pointer instead of restarting the edit.
       const editingNow = editingRef.current
@@ -2996,6 +3158,7 @@ export function useCanvasInput({
       screenFromEvent,
       setEditing,
       setEnteredPath,
+      todoBoxIndexAt,
     ],
   )
 
@@ -3039,6 +3202,55 @@ export function useCanvasInput({
     )
     return () => clearInterval(timer)
   }, [editing])
+
+  /**
+   * The checklist button on a selection: every line of each text-holding
+   * element becomes a todo, or stops being one when every line already is.
+   * One `onUpdate` call, so one undo step for the whole selection.
+   */
+  const toggleChecklist = useCallback(
+    (targets: Array<CanvasElement>) => {
+      if (latest.current.readOnly) return
+      const before: Array<CanvasElement> = []
+      const after: Array<CanvasElement> = []
+      for (const target of targets) {
+        const current = latest.current.scene.byId.get(target.id)
+        if (!current || current.connector) continue
+        const text = current.text ?? ''
+        const result = checklistEdit(
+          text,
+          current.style.textRuns,
+          0,
+          text.length,
+        )
+        if (result.text === text) continue
+        const patch = textEditPatch(
+          current,
+          { text: result.text, runs: result.runs, fit: true },
+          getMeasurer,
+        )
+        if (!patch) continue
+        before.push(current)
+        after.push({ ...current, ...patch })
+      }
+      if (after.length === 0) return
+      setScene((base) =>
+        after.reduce(
+          (next, element) =>
+            next.byId.has(element.id)
+              ? updateElement(next, element.id, {
+                  text: element.text,
+                  style: element.style,
+                  height: element.height,
+                })
+              : next,
+          base,
+        ),
+      )
+      callbacks?.onUpdate?.(after, before, 'text-edit')
+    },
+    [callbacks, getMeasurer, setScene],
+  )
 
   // ── board-level keyboard (NOT editing) ───────────────────────────────────
 
@@ -3613,6 +3825,9 @@ export function useCanvasInput({
       applyTextEdit((value, caret, _element, anchor) =>
         replaceEdit(value, anchor, caret, text),
       )
+      // A space may finish "[] " or "[x] " at a line start; the conversion
+      // reads the text the insert left behind, so it rides in the same queue.
+      if (text === ' ') applyTextEdit(shortcutProduce())
     },
     [applyTextEdit],
   )
@@ -3688,6 +3903,12 @@ export function useCanvasInput({
   /** A style pick from the edit bar, queued like a keystroke. */
   const applyEditStyle = useCallback(
     (change: TextEditStyleChange) => applyTextEdit(styleEditProduce(change)),
+    [applyTextEdit],
+  )
+
+  /** The checklist button in the edit bar: todo lines under the caret or selection. */
+  const applyEditChecklist = useCallback(
+    () => applyTextEdit(checklistProduce()),
     [applyTextEdit],
   )
 
@@ -3809,9 +4030,7 @@ export function useCanvasInput({
           )
           return true
         case 'Enter':
-          applyTextEdit((text, caret, _element, anchor) =>
-            replaceEdit(text, anchor, caret, '\n'),
-          )
+          applyTextEdit(enterProduce())
           return true
         case 'Escape':
         case 'Tab':
@@ -4086,5 +4305,7 @@ export function useCanvasInput({
       commitEditing,
     },
     applyEditStyle,
+    applyEditChecklist,
+    toggleChecklist,
   }
 }

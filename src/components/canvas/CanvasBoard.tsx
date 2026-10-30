@@ -805,6 +805,7 @@ export function CanvasBoard({
         onDuplicate={input.duplicateSelection}
         onGroup={input.groupSelection}
         onUngroup={input.ungroupSelection}
+        onChecklist={input.toggleChecklist}
       />
 
       <TextEditBar
@@ -813,6 +814,7 @@ export function CanvasBoard({
         camera={camera}
         readOnly={effectiveReadOnly}
         onPick={input.applyEditStyle}
+        onChecklist={input.applyEditChecklist}
       />
 
       <TextInputProxy

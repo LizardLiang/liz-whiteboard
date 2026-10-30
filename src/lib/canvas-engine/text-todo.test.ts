@@ -3,6 +3,7 @@ import { describe, expect, it } from 'vitest'
 import {
   TODO_DONE,
   TODO_OPEN,
+  isChecklistRange,
   todoMarkerAt,
   todoShortcut,
   toggleChecklistLines,
@@ -115,5 +116,14 @@ describe('todoShortcut', () => {
     expect(todoShortcut('a [] ', 5)).toBeNull()
     expect(todoShortcut('[]', 2)).toBeNull()
     expect(todoShortcut('[y] ', 4)).toBeNull()
+  })
+})
+
+describe('isChecklistRange', () => {
+  it('is true only when every touched line is a todo', () => {
+    expect(isChecklistRange('☐ a\n☑ b', 0, 7)).toBe(true)
+    expect(isChecklistRange('☐ a\nb', 0, 5)).toBe(false)
+    expect(isChecklistRange('☐ a\nb', 0, 0)).toBe(true)
+    expect(isChecklistRange('', 0, 0)).toBe(false)
   })
 })

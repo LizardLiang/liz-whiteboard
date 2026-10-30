@@ -17,6 +17,7 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { act, renderHook } from '@testing-library/react'
 import { foldPendingTextEdits, useCanvasInput } from './use-canvas-input'
+import { TEXT_PADDING } from '@/lib/canvas-engine/render'
 import type {
   CanvasElement,
   CanvasTextRun,
@@ -142,6 +143,7 @@ function keyEvent(key: string, overrides: Record<string, unknown> = {}) {
 function setup(
   initial: Array<CanvasElement> = [makeText()],
   getMeasurer: Parameters<typeof useCanvasInput>[0]['getMeasurer'] = () => null,
+  readOnly = false,
 ) {
   let scene: Scene = sceneFrom(initial)
   let camera: Camera = DEFAULT_CAMERA
@@ -180,7 +182,7 @@ function setup(
       setTool: (next: CanvasTool) => {
         tool = next
       },
-      readOnly: false,
+      readOnly,
       // jsdom has no canvas context. Paths that need metrics pass a stub;
       // nothing here silently substitutes a guessed width.
       getMeasurer,
@@ -3461,5 +3463,200 @@ describe('text runs while editing', () => {
     ])
     expect(before[0].style.textRuns).toEqual([])
     expect(gesture).toBe('text-edit')
+  })
+})
+
+describe('todo lines', () => {
+  const stub = () => (text: string, spec?: { fontSize: number }) =>
+    [...text].length * (spec?.fontSize ?? 16) * 0.5
+  const todoStyle = {
+    ...DEFAULT_ELEMENT_STYLE,
+    fontSize: 16,
+    textAlign: 'left' as const,
+    verticalAlign: 'top' as const,
+  }
+
+  function editing(text: string) {
+    const h = setup([makeText({ text, height: 120, style: todoStyle })], stub)
+    act(() => {
+      h.api.setSelectedIds(new Set([TEXT_ID]))
+    })
+    h.sync()
+    act(() => {
+      h.api.boardHandlers.onKeyDown(keyEvent('Enter'))
+    })
+    h.sync()
+    return h
+  }
+  const type = (h: ReturnType<typeof editing>, value: string) => {
+    for (const char of value) {
+      act(() => {
+        h.api.textInput.insertText(char)
+      })
+      h.sync()
+    }
+  }
+  const enter = (h: ReturnType<typeof editing>) => {
+    act(() => {
+      h.api.textInput.onEditingKeyDown(keyEvent('Enter'))
+    })
+    h.sync()
+  }
+  const text = (h: ReturnType<typeof editing>) =>
+    h.scene.byId.get(TEXT_ID)!.text
+
+  it('typing "[] " at a line start becomes an open marker', () => {
+    const h = editing('')
+    type(h, '[] milk')
+    expect(text(h)).toBe('☐ milk')
+  })
+
+  it('typing "[x] " becomes a done marker, also on a later line', () => {
+    const h = editing('')
+    type(h, 'a')
+    enter(h)
+    type(h, '[X] done')
+    expect(text(h)).toBe('a\n☑ done')
+  })
+
+  it('does not convert brackets typed mid-line', () => {
+    const h = editing('')
+    type(h, 'a [] ')
+    expect(text(h)).toBe('a [] ')
+  })
+
+  it('Enter on a todo line starts an open todo line', () => {
+    const h = editing('')
+    type(h, '[x] one')
+    enter(h)
+    expect(text(h)).toBe('☑ one\n☐ ')
+  })
+
+  it('Enter on an empty todo line removes the marker and ends the list', () => {
+    const h = editing('')
+    type(h, '[] one')
+    enter(h)
+    enter(h)
+    expect(text(h)).toBe('☐ one\n')
+  })
+
+  it('Enter on a plain line stays a plain newline', () => {
+    const h = editing('')
+    type(h, 'plain')
+    enter(h)
+    expect(text(h)).toBe('plain\n')
+  })
+
+  it('the checklist button toggles the caret line and back', () => {
+    const h = editing('one\ntwo')
+    act(() => {
+      h.api.applyEditChecklist()
+    })
+    h.sync()
+    expect(text(h)).toBe('one\n☐ two')
+    act(() => {
+      h.api.applyEditChecklist()
+    })
+    h.sync()
+    expect(text(h)).toBe('one\ntwo')
+  })
+
+  describe('box click outside text-edit mode', () => {
+    const left = TEXT_PADDING + 5
+    const top = TEXT_PADDING + 8
+    function board() {
+      const h = setup(
+        [makeText({ text: '☐ one\nplain', height: 120, style: todoStyle })],
+        stub,
+      )
+      return h
+    }
+
+    it('toggles the marker, records one text-edit update, selects nothing', () => {
+      const h = board()
+      act(() => {
+        h.api.canvasHandlers.onPointerDown(
+          pointerEvent({ clientX: left, clientY: top }),
+        )
+      })
+      h.sync()
+      expect(h.scene.byId.get(TEXT_ID)!.text).toBe('☑ one\nplain')
+      expect(h.callbacks.onUpdate).toHaveBeenCalledTimes(1)
+      const [after, before, gesture] = h.callbacks.onUpdate.mock.calls[0]
+      expect(after[0].text).toBe('☑ one\nplain')
+      expect(before[0].text).toBe('☐ one\nplain')
+      expect(gesture).toBe('text-edit')
+      expect(h.api.selectedIds.size).toBe(0)
+    })
+
+    it('a read-only board cannot toggle', () => {
+      const h = setup(
+        [makeText({ text: '☐ one\nplain', height: 120, style: todoStyle })],
+        stub,
+        true,
+      )
+      act(() => {
+        h.api.canvasHandlers.onPointerDown(
+          pointerEvent({ clientX: left, clientY: top }),
+        )
+      })
+      h.sync()
+      expect(h.scene.byId.get(TEXT_ID)!.text).toBe('☐ one\nplain')
+      expect(h.callbacks.onUpdate).not.toHaveBeenCalled()
+    })
+
+    it('a double-click on the box does not open the editor', () => {
+      const h = board()
+      act(() => {
+        h.api.canvasHandlers.onDoubleClick(
+          pointerEvent({ clientX: left, clientY: top }),
+        )
+      })
+      h.sync()
+      expect(h.api.editing).toBeNull()
+    })
+
+    it('a press on the text beside the box still selects', () => {
+      const h = board()
+      act(() => {
+        h.api.canvasHandlers.onPointerDown(
+          pointerEvent({ clientX: TEXT_PADDING + 40, clientY: top }),
+        )
+      })
+      h.sync()
+      expect(h.scene.byId.get(TEXT_ID)!.text).toBe('☐ one\nplain')
+      expect(h.api.selectedIds.has(TEXT_ID)).toBe(true)
+    })
+
+    it('a box press while editing only places the caret', () => {
+      const h = editing('☐ one')
+      act(() => {
+        h.api.canvasHandlers.onPointerDown(
+          pointerEvent({ clientX: left, clientY: top }),
+        )
+      })
+      h.sync()
+      expect(text(h)).toBe('☐ one')
+      expect(h.callbacks.onUpdate).not.toHaveBeenCalled()
+    })
+
+    it('checklist on a selection is one undo entry over every selected element', () => {
+      const other = '22222222-2222-4222-8222-222222222222'
+      const h = setup(
+        [
+          makeText({ text: 'a\nb', style: todoStyle }),
+          makeText({ id: other, text: 'c', style: todoStyle }),
+        ],
+        stub,
+      )
+      act(() => {
+        h.api.toggleChecklist([...h.scene.byId.values()])
+      })
+      h.sync()
+      expect(h.scene.byId.get(TEXT_ID)!.text).toBe('☐ a\n☐ b')
+      expect(h.scene.byId.get(other)!.text).toBe('☐ c')
+      expect(h.callbacks.onUpdate).toHaveBeenCalledTimes(1)
+      expect(h.callbacks.onUpdate.mock.calls[0][0]).toHaveLength(2)
+    })
   })
 })

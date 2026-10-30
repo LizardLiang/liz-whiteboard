@@ -64,6 +64,7 @@ import {
   CopyPlus,
   Group as GroupIcon,
   Italic,
+  ListTodo,
   SendToBack,
   Strikethrough,
   Underline,
@@ -101,6 +102,7 @@ import {
   swatchForStroke,
 } from '@/lib/canvas-style-palette'
 import { stripRunAttribute } from '@/lib/canvas-engine/text-runs'
+import { isChecklistRange } from '@/lib/canvas-engine/text-todo'
 import { Button } from '@/components/ui/button'
 import {
   Popover,
@@ -423,6 +425,11 @@ export interface SelectionToolbarProps {
   onGroup: () => void
   /** Dissolve the current selection's single group. Mirrors `onGroup`. */
   onUngroup: () => void
+  /**
+   * Turn every line of each given element into a todo line, or back into a
+   * plain line when every line already is one. One call is one undo step.
+   */
+  onChecklist?: (targets: Array<CanvasElement>) => void
 }
 
 export function SelectionToolbar({
@@ -436,6 +443,7 @@ export function SelectionToolbar({
   onDuplicate,
   onGroup,
   onUngroup,
+  onChecklist,
 }: SelectionToolbarProps) {
   const sets = selectionToolbarTargets(
     scene,
@@ -516,6 +524,13 @@ export function SelectionToolbar({
     alignable,
     (element) => element.style.strikethrough,
   )
+
+  const activeChecklist =
+    alignable.length > 0 &&
+    alignable.every((element) => {
+      const text = element.text ?? ''
+      return isChecklistRange(text, 0, text.length)
+    })
 
   const emit = (change: CanvasStyleChange, list = targets) => {
     // Every target already in the requested state writes nothing. Without
@@ -667,6 +682,8 @@ export function SelectionToolbar({
               italic={activeItalic === true}
               underline={activeUnderline === true}
               strikethrough={activeStrike === true}
+              checklist={activeChecklist}
+              onToggleChecklist={() => onChecklist?.(alignable)}
               onToggleBold={() =>
                 emit(
                   {
@@ -1327,6 +1344,8 @@ interface TextStyleRowProps {
   italic: boolean
   underline: boolean
   strikethrough: boolean
+  checklist: boolean
+  onToggleChecklist: () => void
   onToggleBold: () => void
   onToggleItalic: () => void
   onToggleUnderline: () => void
@@ -1345,6 +1364,8 @@ function TextStyleRow({
   italic,
   underline,
   strikethrough,
+  checklist,
+  onToggleChecklist,
   onToggleBold,
   onToggleItalic,
   onToggleUnderline,
@@ -1372,6 +1393,13 @@ function TextStyleRow({
       on: strikethrough,
       Icon: Strikethrough,
       run: onToggleStrikethrough,
+    },
+    {
+      label: 'Checklist',
+      hint: 'type [] at a line start',
+      on: checklist,
+      Icon: ListTodo,
+      run: onToggleChecklist,
     },
   ]
   return (

@@ -11,7 +11,7 @@
 // press is `preventDefault`ed on mousedown: moving focus off the text proxy
 // would commit the edit and drop the selection the pick is meant for.
 
-import { Bold, Italic, Strikethrough, Underline } from 'lucide-react'
+import { Bold, Italic, ListTodo, Strikethrough, Underline } from 'lucide-react'
 import { STYLE_TOOLBAR_OFFSET } from './SelectionToolbar'
 import type { ComponentType } from 'react'
 import type { Camera } from '@/lib/canvas-engine/camera'
@@ -20,6 +20,7 @@ import type { TextRunAttrs } from '@/lib/canvas-engine/text-runs'
 import type { TextEditStyleChange, TextToggleKey } from './use-canvas-input'
 import { worldToScreen } from '@/lib/canvas-engine/camera'
 import { resolveRuns } from '@/lib/canvas-engine/text-runs'
+import { isChecklistRange } from '@/lib/canvas-engine/text-todo'
 import {
   CANVAS_FONT_SIZES,
   CANVAS_TEXT_COLORS,
@@ -96,6 +97,8 @@ interface TextEditBarProps {
   camera: Camera
   readOnly: boolean
   onPick: (change: TextEditStyleChange) => void
+  /** Turn the lines under the caret or selection into todo lines, or back. */
+  onChecklist: () => void
 }
 
 const TOGGLES: ReadonlyArray<{
@@ -124,11 +127,17 @@ export function TextEditBar({
   camera,
   readOnly,
   onPick,
+  onChecklist,
 }: TextEditBarProps) {
   if (readOnly || !editing) return null
   const element = scene.byId.get(editing.elementId)
   if (!element) return null
   const state = textEditBarState(element, editing, editing.pending)
+  const checklistOn = isChecklistRange(
+    element.text ?? '',
+    Math.min(editing.anchor, editing.caret),
+    Math.max(editing.anchor, editing.caret),
+  )
   const anchor = worldToScreen(camera, {
     x: element.x + element.width / 2,
     y: element.y,
@@ -161,6 +170,18 @@ export function TextEditBar({
           <Icon className="size-4" />
         </button>
       ))}
+      <button
+        type="button"
+        className={`flex h-7 w-8 items-center justify-center rounded border transition-shadow ${
+          checklistOn ? ACTIVE_RING : 'border-border/60'
+        }`}
+        aria-label="Checklist"
+        aria-pressed={checklistOn}
+        title="Checklist (type [] at a line start)"
+        onClick={onChecklist}
+      >
+        <ListTodo className="size-4" />
+      </button>
       <span className="h-5 w-px bg-border" aria-hidden />
       {CANVAS_FONT_SIZES.map(({ size, label }) => (
         <button
