@@ -1463,6 +1463,7 @@ function checklistProduce(): PendingTextEdit['produce'] {
       caret: result.map(caret),
       anchor: result.map(anchor),
       runs: result.runs,
+      fit: true,
     }
   }
 }
@@ -1480,7 +1481,7 @@ function enterProduce(): PendingTextEdit['produce'] {
         const newline = text.indexOf('\n', lineStart)
         const lineEnd = newline === -1 ? text.length : newline
         const rest = text.slice(lineStart + 1, lineEnd)
-        if ((rest === '' || rest === ' ') && start === lineEnd) {
+        if (rest === '' || rest === ' ') {
           return replaceEdit(text, lineStart, lineEnd, '')
         }
         return replaceEdit(text, anchor, caret, `\n${TODO_OPEN} `)
@@ -1593,7 +1594,7 @@ function textEditPatch(
   // A range style pick grows a `text` element to fit (never shrinks it);
   // shapes keep their size. Height rides in the same patch, so the scene,
   // the write and the undo entry agree.
-  if (folded.fit && runsChanged && element.kind === 'text') {
+  if (folded.fit && (runsChanged || textChanged) && element.kind === 'text') {
     const measure = getMeasurer(fontSpecOf(style))
     if (measure) {
       const fitted = fittedTextHeight(
@@ -3204,8 +3205,8 @@ export function useCanvasInput({
   }, [editing])
 
   /**
-   * The checklist button on a selection: every line of each text-holding
-   * element becomes a todo, or stops being one when every line already is.
+   * The checklist button on a selection: every line of each element that
+   * already holds text becomes a todo, or stops being one when every line already is.
    * One `onUpdate` call, so one undo step for the whole selection.
    */
   const toggleChecklist = useCallback(
@@ -3217,6 +3218,7 @@ export function useCanvasInput({
         const current = latest.current.scene.byId.get(target.id)
         if (!current || current.connector) continue
         const text = current.text ?? ''
+        if (text.length === 0) continue
         const result = checklistEdit(
           text,
           current.style.textRuns,

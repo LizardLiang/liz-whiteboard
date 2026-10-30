@@ -3540,6 +3540,25 @@ describe('todo lines', () => {
     expect(text(h)).toBe('☐ one\n')
   })
 
+  it('Enter with the caret between the marker and its space ends the list', () => {
+    const h = editing('')
+    type(h, '[] ')
+    act(() => {
+      h.api.textInput.onEditingKeyDown(keyEvent('ArrowLeft'))
+    })
+    h.sync()
+    enter(h)
+    expect(text(h)).toBe('')
+  })
+
+  it('the selection checklist leaves empty elements alone', () => {
+    const h = setup([makeText({ text: '', style: todoStyle })], stub)
+    act(() => {
+      h.api.toggleChecklist([...h.scene.byId.values()])
+    })
+    expect(h.callbacks.onUpdate).not.toHaveBeenCalled()
+  })
+
   it('Enter on a plain line stays a plain newline', () => {
     const h = editing('')
     type(h, 'plain')
