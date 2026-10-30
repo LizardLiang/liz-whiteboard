@@ -647,6 +647,33 @@ export function textFrame(element: CanvasElement): {
   }
 }
 
+/** Opacity of a done todo line, box and text. */
+const DONE_TODO_ALPHA = 0.5
+
+/** A todo checkbox at world `(x, y)`, with a tick inside when done. */
+function drawTodoBox(
+  target: PersistentRenderTarget,
+  x: number,
+  y: number,
+  side: number,
+  done: boolean,
+  color: string,
+): void {
+  const strokeWidth = Math.max(1, side / 9)
+  target.rect(x, y, side, side, side * 0.18, { stroke: color, strokeWidth })
+  if (!done) return
+  target.beginPath()
+  target.moveTo(x + side * 0.22, y + side * 0.54)
+  target.lineTo(x + side * 0.43, y + side * 0.74)
+  target.lineTo(x + side * 0.8, y + side * 0.28)
+  target.paintPath({
+    stroke: color,
+    strokeWidth: Math.max(1.5, side / 7),
+    lineJoin: 'round',
+    lineCap: 'round',
+  })
+}
+
 /** Lay out an element's text with the element's own font size and alignment. */
 export function layoutElementText(
   element: CanvasElement,
@@ -668,6 +695,39 @@ export function layoutElementText(
     measure,
     hasRuns ? resolveRuns(text, element.style) : undefined,
   )
+}
+
+/**
+ * The text index of the todo marker whose checkbox contains a world point, or
+ * null. The box is padded by `pad` world units so it stays clickable at small
+ * zoom. Reads the same layout, frame and vertical origin the draw does, so the
+ * hit target and the drawn box cannot drift apart.
+ */
+export function todoBoxAt(
+  element: CanvasElement,
+  point: Point,
+  measure: TextMeasurer,
+  pad = 0,
+): number | null {
+  if ((element.text ?? '').length === 0) return null
+  const layout = layoutElementText(element, measure)
+  const frame = textFrame(element)
+  const originY = textOriginY(element, layout)
+  for (const line of layout.lines) {
+    const box = line.todo?.box
+    if (!box) continue
+    const left = frame.x + box.x - pad
+    const top = originY + box.y - pad
+    if (
+      point.x >= left &&
+      point.x <= left + box.width + pad * 2 &&
+      point.y >= top &&
+      point.y <= top + box.height + pad * 2
+    ) {
+      return line.start
+    }
+  }
+  return null
 }
 
 /**
@@ -935,11 +995,28 @@ function drawElement(
   }
 
   const textColor = resolveTextColor(element.style, theme)
-  if (!layout.mixed) target.beginText(fontSpec, textColor)
+  // One <text> group for the whole label unless a line needs its own: a run
+  // layout draws per piece, and a todo line is faded on its own.
+  const grouped =
+    !layout.mixed && !layout.lines.some((line) => line.todo !== undefined)
+  if (grouped) target.beginText(fontSpec, textColor)
   const { fontSize, underline, strikethrough } = element.style
   const thickness = Math.max(1, fontSize / 14)
   for (const line of layout.lines) {
     const lineY = originY + line.top
+    // A done todo line is struck through and faded, wrapped pieces included.
+    const done = line.todo?.state === 'done'
+    if (done) target.beginFade(DONE_TODO_ALPHA)
+    if (line.todo?.box) {
+      drawTodoBox(
+        target,
+        frame.x + line.todo.box.x,
+        originY + line.todo.box.y,
+        line.todo.box.width,
+        done,
+        textColor,
+      )
+    }
     if (line.pieces) {
       // A run-aware line: one pass per piece in its own font and colour. The
       // pieces share a baseline (see `LinePiece.offsetY`), so a smaller piece
@@ -970,7 +1047,7 @@ function drawElement(
             pieceThickness,
           )
         }
-        if (segment.strikethrough) {
+        if (segment.strikethrough || done) {
           target.textDecoration(
             pieceX,
             pieceY + segment.fontSize * 0.55,
@@ -980,30 +1057,36 @@ function drawElement(
         }
       }
       target.endText()
-      continue
+    } else {
+      // The marker slot is the checkbox, not a glyph: draw the text after it.
+      const skip = line.todo?.box ? 1 : 0
+      const lineX = frame.x + line.carets[skip]
+      if (!grouped) target.beginText(fontSpec, textColor)
+      target.textLine(line.text.slice(skip), lineX, lineY)
+      if (!grouped) target.endText()
+      const lineWidth = line.carets[line.carets.length - 1] - line.carets[skip]
+      if (lineWidth > 0) {
+        if (underline) {
+          target.textDecoration(
+            lineX,
+            lineY + fontSize * 0.92,
+            lineWidth,
+            thickness,
+          )
+        }
+        if (strikethrough || done) {
+          target.textDecoration(
+            lineX,
+            lineY + fontSize * 0.55,
+            lineWidth,
+            thickness,
+          )
+        }
+      }
     }
-    const lineX = frame.x + line.carets[0]
-    target.textLine(line.text, lineX, lineY)
-    const lineWidth = line.carets[line.carets.length - 1] - line.carets[0]
-    if (lineWidth <= 0) continue
-    if (underline) {
-      target.textDecoration(
-        lineX,
-        lineY + fontSize * 0.92,
-        lineWidth,
-        thickness,
-      )
-    }
-    if (strikethrough) {
-      target.textDecoration(
-        lineX,
-        lineY + fontSize * 0.55,
-        lineWidth,
-        thickness,
-      )
-    }
+    if (done) target.endFade()
   }
-  if (!layout.mixed) target.endText()
+  if (grouped) target.endText()
   // Returned so `drawScene` can hand it to `drawCaret` instead of paying for
   // a second layout of the same string on the same frame.
   return layout

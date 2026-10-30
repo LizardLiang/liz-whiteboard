@@ -84,6 +84,9 @@ export interface PersistentRenderTarget {
     thickness: number,
   ) => void
   endText: () => void
+  /** Draw everything until `endFade` at `alpha` times its normal opacity. */
+  beginFade: (alpha: number) => void
+  endFade: () => void
 }
 
 export const FONT_FAMILY =
@@ -96,6 +99,8 @@ export function canvasFont(spec: CanvasFontSpec): string {
 }
 
 export class CanvasRenderTarget implements PersistentRenderTarget {
+  private readonly alphas: Array<number> = []
+
   constructor(private readonly ctx: CanvasRenderingContext2D) {}
 
   measureText(text: string, spec: CanvasFontSpec): number {
@@ -213,6 +218,15 @@ export class CanvasRenderTarget implements PersistentRenderTarget {
 
   endText(): void {
     // Canvas text is emitted one line at a time, so there is no group to close.
+  }
+
+  beginFade(alpha: number): void {
+    this.alphas.push(this.ctx.globalAlpha)
+    this.ctx.globalAlpha *= alpha
+  }
+
+  endFade(): void {
+    this.ctx.globalAlpha = this.alphas.pop() ?? 1
   }
 
   private paint(paint: RenderPaint): void {

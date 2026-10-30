@@ -124,6 +124,14 @@ class RecordingTarget implements PersistentRenderTarget {
       payload: { x, y, width, thickness },
     })
   }
+
+  beginFade(alpha: number) {
+    this.calls.push({ kind: 'fade', payload: { alpha } })
+  }
+
+  endFade() {
+    this.calls.push({ kind: 'fade-end', payload: null })
+  }
 }
 
 const baseStyle = {
@@ -517,5 +525,105 @@ describe('renderPersistentScene', () => {
         },
       ],
     )
+  })
+
+  describe('todo lines', () => {
+    const todoStyle = {
+      ...baseStyle,
+      textAlign: 'left' as const,
+      verticalAlign: 'top' as const,
+    }
+
+    function draw(text: string) {
+      const recorder = new RecordingTarget()
+      renderPersistentScene(
+        recorder,
+        sceneFrom([element({ text, style: todoStyle })]),
+        'light',
+      )
+      // Drop the shape's own rect so only text-related calls remain.
+      return recorder.calls.slice(1)
+    }
+
+    it('draws a box and no marker glyph for an open todo', () => {
+      const calls = draw('☐ open')
+      // Box: 0.9 * 16 = 14.4 square at the text origin (10 + 8, 20 + 8 + 1.6).
+      expect(calls[0]).toEqual({
+        kind: 'rect',
+        payload: {
+          x: 18,
+          y: 29.6,
+          width: 14.4,
+          height: 14.4,
+          radius: 14.4 * 0.18,
+          paint: { stroke: '#0f172a', strokeWidth: 1.6 },
+        },
+      })
+      const text = calls.find((call) => call.kind === 'text')
+      expect(text?.payload).toMatchObject({
+        lines: [{ text: ' open', x: 18 + 16 * 1.25, y: 28 }],
+      })
+      expect(calls.some((call) => call.kind === 'path')).toBe(false)
+      expect(calls.some((call) => call.kind === 'fade')).toBe(false)
+      expect(calls.some((call) => call.kind === 'decoration')).toBe(false)
+    })
+
+    it('draws a tick, a strike and a fade around a done todo', () => {
+      const calls = draw('☑ done')
+      expect(calls.map((call) => call.kind)).toEqual([
+        'fade',
+        'rect',
+        'path',
+        'text',
+        'decoration',
+        'fade-end',
+      ])
+      expect(calls[0].payload).toEqual({ alpha: 0.5 })
+      expect(JSON.stringify(calls)).not.toContain('☑')
+    })
+
+    it('fades and strikes every wrapped piece of a done line only', () => {
+      const recorder = new RecordingTarget()
+      renderPersistentScene(
+        recorder,
+        sceneFrom([
+          element({
+            width: 100,
+            height: 200,
+            text: '☑ aaaa bbbb cccc\n☐ next',
+            style: todoStyle,
+          }),
+        ]),
+        'light',
+      )
+      const kinds = recorder.calls.map((call) => call.kind)
+      const fades = kinds.filter((kind) => kind === 'fade').length
+      expect(fades).toBeGreaterThan(1)
+      expect(kinds.filter((kind) => kind === 'fade-end')).toHaveLength(fades)
+      // One strike per faded piece; the open line below has none.
+      expect(kinds.filter((kind) => kind === 'decoration')).toHaveLength(fades)
+      expect(kinds.filter((kind) => kind === 'path')).toHaveLength(1)
+    })
+
+    it('strikes a done run-styled todo line through its pieces', () => {
+      const recorder = new RecordingTarget()
+      renderPersistentScene(
+        recorder,
+        sceneFrom([
+          element({
+            text: '☑ ab cd',
+            style: {
+              ...todoStyle,
+              textRuns: [{ start: 5, end: 7, fontWeight: 'bold' }],
+            },
+          }),
+        ]),
+        'light',
+      )
+      const kinds = recorder.calls.map((call) => call.kind)
+      expect(kinds.filter((kind) => kind === 'decoration')).toHaveLength(2)
+      expect(kinds[1]).toBe('fade')
+      expect(kinds[kinds.length - 1]).toBe('fade-end')
+    })
   })
 })

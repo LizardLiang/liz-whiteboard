@@ -359,6 +359,14 @@ class SvgRenderTarget implements PersistentRenderTarget {
     )
   }
 
+  beginFade(alpha: number): void {
+    this.nodes.push(`<g opacity="${n(alpha)}">`)
+  }
+
+  endFade(): void {
+    this.nodes.push('</g>')
+  }
+
   private appendPath(command: string): void {
     this.pathData += `${this.pathData.length === 0 ? '' : ' '}${command}`
   }

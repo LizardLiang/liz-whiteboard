@@ -209,6 +209,35 @@ describe('canvas export', () => {
     expect(svg).toMatch(/<rect [^>]*fill="#ef4444" stroke="none"\/>/)
   })
 
+  it('exports a done todo as a box, a tick, a strike and a fade, with no marker glyph', () => {
+    const svg = serializeCanvasSceneSvg({
+      scene: sceneFrom([
+        rectangle({ text: '☑ done\n☐ open', width: 200, height: 100 }),
+      ]),
+      theme: 'light',
+      background: 'transparent',
+      backgroundColor: '#ffffff',
+      measureText: measure,
+    })
+    expect(svg).not.toContain('☑')
+    expect(svg).not.toContain('☐')
+    // Done line: a faded group holding the box, the tick, the text and the strike bar.
+    const faded = svg.slice(
+      svg.indexOf('<g opacity="0.5">'),
+      svg.indexOf('</g>'),
+    )
+    expect(faded).toMatch(/<rect [^>]*rx="[^"]+"[^>]*stroke="#0f172a"/)
+    expect(faded).toMatch(/<path d="M [^"]+L [^"]+L [^"]+"/)
+    expect(faded).toContain('done')
+    expect(faded).toMatch(/<rect [^>]*stroke="none"\/>/)
+    // The open line follows the fade: a box, no tick and no strike.
+    const open = svg.slice(svg.indexOf('</g>'))
+    expect(open).toContain('open')
+    expect(open).toMatch(/<rect [^>]*rx="[^"]+"/)
+    expect(open).not.toContain('<path')
+    expect(open).not.toContain('stroke="none"')
+  })
+
   it('leaves weight and style attributes off plain text', () => {
     const svg = serializeCanvasSceneSvg({
       scene: sceneFrom([rectangle()]),

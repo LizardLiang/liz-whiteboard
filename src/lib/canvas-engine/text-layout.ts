@@ -15,8 +15,10 @@
 //
 // Pure module: no React, no DOM, no canvas.
 
+import { todoMarkerAt } from './text-todo'
 import type { CanvasFontSpec } from './render-target'
 import type { TextSegment } from './text-runs'
+import type { TodoState } from './text-todo'
 
 /**
  * Measures a string's advance width in world units. Without `spec` it uses the
@@ -97,6 +99,15 @@ export interface LaidOutLine {
    * for a run-aware layout; a uniform label draws `text` as one piece.
    */
   pieces?: Array<LinePiece>
+  /**
+   * Present on every visual line of a todo line (a hard line that starts with
+   * a marker). Only the line holding the marker has `box`, the checkbox square
+   * in block-local space. The marker is not drawn as a glyph: its caret slot
+   * is `TODO_BOX_RATIO + TODO_GAP_RATIO` em wide, and wrapped continuation
+   * lines start that far in (hanging indent), so `carets[0]` is the left edge
+   * of the text on every such line.
+   */
+  todo?: { state: TodoState; box?: LocalRect }
 }
 
 /** One stretch of a line drawn in a single font. */
@@ -123,6 +134,22 @@ export interface TextLayout {
   height: number
   /** True when lines can differ in height, so rows are found by `top`. */
   mixed?: boolean
+}
+
+/** Checkbox side, as a fraction of the marker's font size. */
+export const TODO_BOX_RATIO = 0.9
+/** Gap between the checkbox and the text, as a fraction of the font size. */
+export const TODO_GAP_RATIO = 0.35
+
+/** The fixed advance a todo marker takes in place of its glyph. */
+function todoAdvance(fontSize: number): number {
+  return fontSize * (TODO_BOX_RATIO + TODO_GAP_RATIO)
+}
+
+/** The checkbox of a todo line whose text sits at `left` on a line `top` down. */
+function todoBox(left: number, top: number, fontSize: number): LocalRect {
+  const side = fontSize * TODO_BOX_RATIO
+  return { x: left, y: top + fontSize * 0.1, width: side, height: side }
 }
 
 /** Where the shared baseline sits below an em box's top, as a fraction of its size. */
@@ -160,24 +187,51 @@ export function layoutText(
   let cursor = 0
 
   for (const paragraph of paragraphs) {
-    const wrapped = wrapParagraph(paragraph, maxWidth, (from, to) =>
-      measure(paragraph.slice(from, to)),
-    )
+    const state = todoMarkerAt(paragraph, 0)
+    const advance = state ? todoAdvance(style.fontSize) : 0
+    // The marker is measured as the fixed advance, not as its glyph.
+    const markerWidth = state ? measure(paragraph[0]) : 0
+    const wrapped = wrapParagraph(paragraph, maxWidth, (from, to) => {
+      const raw = measure(paragraph.slice(from, to))
+      if (!state) return raw
+      return from === 0 ? raw - markerWidth + advance : raw + advance
+    })
     for (const piece of wrapped) {
       const start = cursor + piece.offset
-      const width = measure(piece.text)
+      const holdsMarker = state !== null && piece.offset === 0
+      let width = measure(piece.text)
+      let carets: Array<number>
+      if (state === null) {
+        carets = caretOffsets(
+          piece.text,
+          measure,
+          alignOffset(width, maxWidth, style.align),
+        )
+      } else {
+        const offsets = caretOffsets(piece.text, measure, 0).map((x, i) =>
+          holdsMarker ? (i === 0 ? x : x - markerWidth + advance) : x + advance,
+        )
+        width = offsets[offsets.length - 1]
+        const origin = alignOffset(width, maxWidth, style.align)
+        carets = offsets.map((x) => x + origin)
+      }
+      const top = lines.length * lineHeight
       lines.push({
         text: piece.text,
         start,
         end: start + piece.text.length,
         width,
-        carets: caretOffsets(
-          piece.text,
-          measure,
-          alignOffset(width, maxWidth, style.align),
-        ),
-        top: lines.length * lineHeight,
+        carets,
+        top,
         height: lineHeight,
+        ...(state && {
+          todo: {
+            state,
+            ...(holdsMarker && {
+              box: todoBox(carets[0], top, style.fontSize),
+            }),
+          },
+        }),
       })
     }
     // +1 for the newline that split() consumed.
@@ -239,21 +293,33 @@ function layoutRuns(
   let top = 0
   let cursor = 0
   for (const paragraph of text.split('\n')) {
-    const wrapped = wrapParagraph(paragraph, maxWidth, (from, to) =>
-      widthOfRange(cursor + from, cursor + to),
-    )
+    const state = todoMarkerAt(paragraph, 0)
+    const markerIndex = segmentIndexAt(cursor)
+    const markerSize = segments[markerIndex].fontSize
+    const advance = state ? todoAdvance(markerSize) : 0
+    // The marker is measured as the fixed advance, not as its glyph.
+    const markerDelta = state
+      ? advance - measure(paragraph[0], specs[markerIndex])
+      : 0
+    const wrapped = wrapParagraph(paragraph, maxWidth, (from, to) => {
+      const raw = widthOfRange(cursor + from, cursor + to)
+      if (!state) return raw
+      return from === 0 ? raw + markerDelta : raw + advance
+    })
     for (const piece of wrapped) {
       const start = cursor + piece.offset
       const end = start + piece.text.length
       const first = segmentIndexAt(start)
+      const holdsMarker = state !== null && piece.offset === 0
+      const indent = state !== null && piece.offset > 0 ? advance : 0
 
       // Cut the line at segment boundaries; caret slots accumulate across
       // pieces so each is measured in its own font.
-      const relative: Array<number> = [0]
+      const relative: Array<number> = [indent]
       const cuts: Array<{ segment: TextSegment; from: number; to: number }> = []
       // An empty line has no piece; it is as tall as the run it sits in.
       let largest = end === start ? segments[first].fontSize : 0
-      let x = 0
+      let x = indent
       for (let index = first; index < segments.length; index += 1) {
         const segment = segments[index]
         if (segment.start >= end) break
@@ -262,8 +328,9 @@ function layoutRuns(
         if (to <= from) continue
         largest = Math.max(largest, segment.fontSize)
         const spec = specs[index]
+        const shift = holdsMarker && from === start ? markerDelta : 0
         for (let at = from + 1; at <= to; at += 1) {
-          relative.push(x + measure(text.slice(from, at), spec))
+          relative.push(x + measure(text.slice(from, at), spec) + shift)
         }
         cuts.push({ segment, from, to })
         x = relative[relative.length - 1]
@@ -280,13 +347,32 @@ function layoutRuns(
         carets,
         top,
         height,
-        pieces: cuts.map(({ segment, from, to }) => ({
-          text: text.slice(from, to),
-          x: carets[from - start],
-          width: carets[to - start] - carets[from - start],
-          offsetY: (largest - segment.fontSize) * BASELINE_ASCENT,
-          segment,
-        })),
+        pieces: cuts.flatMap(({ segment, from, to }) => {
+          // The marker is drawn as a checkbox, so its piece starts after it.
+          const skip = holdsMarker && from === start ? 1 : 0
+          if (to - from <= skip) return []
+          return [
+            {
+              text: text.slice(from + skip, to),
+              x: carets[from + skip - start],
+              width: carets[to - start] - carets[from + skip - start],
+              offsetY: (largest - segment.fontSize) * BASELINE_ASCENT,
+              segment,
+            },
+          ]
+        }),
+        ...(state && {
+          todo: {
+            state,
+            ...(holdsMarker && {
+              box: todoBox(
+                carets[0],
+                top + (largest - markerSize) * BASELINE_ASCENT,
+                markerSize,
+              ),
+            }),
+          },
+        }),
       })
       top += height
     }
