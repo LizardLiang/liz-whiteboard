@@ -1591,10 +1591,13 @@ function textEditPatch(
       : textChanged
         ? { text: folded.text }
         : { style }
-  // A range style pick grows a `text` element to fit (never shrinks it);
-  // shapes keep their size. Height rides in the same patch, so the scene,
+  // Typing and range style picks grow a `text` element to fit (never shrink
+  // it); shapes keep their size. Height rides in the same patch, so the scene,
   // the write and the undo entry agree.
-  if (folded.fit && (runsChanged || textChanged) && element.kind === 'text') {
+  if (
+    (textChanged || (folded.fit && runsChanged)) &&
+    element.kind === 'text'
+  ) {
     const measure = getMeasurer(fontSpecOf(style))
     if (measure) {
       const fitted = fittedTextHeight(

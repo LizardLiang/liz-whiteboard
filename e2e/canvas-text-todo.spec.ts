@@ -175,6 +175,30 @@ test.describe('todo lines in canvas text', () => {
     await expect.poll(() => textOf(page)).toBe('☐ one\nplain')
   })
 
+  test('a text element grows to fit a list as it is typed', async ({
+    page,
+  }) => {
+    await openBoard(page)
+    const before = (await elementById(page, TEXT)).height
+    await editWith(page, '')
+    await page.keyboard.type('[] one')
+    await page.keyboard.press('Enter')
+    await page.keyboard.type('two')
+    await page.keyboard.press('Enter')
+    await page.keyboard.type('three')
+    // Three lines at a 22.4 line height plus padding outgrow the seeded box.
+    await expect
+      .poll(async () => (await elementById(page, TEXT)).height)
+      .toBeGreaterThanOrEqual(3 * LINE_HEIGHT)
+    expect((await elementById(page, TEXT)).height).toBeGreaterThan(before)
+
+    await commit(page)
+    await reload(page)
+    expect((await elementById(page, TEXT)).height).toBeGreaterThanOrEqual(
+      3 * LINE_HEIGHT,
+    )
+  })
+
   test('a box click outside edit mode ticks it and persists', async ({
     page,
   }) => {
