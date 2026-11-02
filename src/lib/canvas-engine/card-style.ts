@@ -215,7 +215,10 @@ export function tintedSurface(fill: string, theme: CanvasTheme): string {
   return mixColors(base, stored, CARD_TINT)
 }
 
-/** The colour a card body is painted with, as `cardShapePaint` resolves it. */
+/**
+ * The colour a card body is painted with, as `cardShapePaint` resolves it.
+ * An unfilled card has no body; the surface stands in for the board behind it.
+ */
 function cardBodyColor(element: CanvasElement, theme: CanvasTheme): string {
   const tokens = CARD[theme]
   if (effectiveRole(element) === 'note' && element.style.fill !== 'none') {
@@ -333,7 +336,8 @@ const RUN_ATTR_KEYS = [
  * The style a card's label is laid out and drawn with: the first hard line is
  * bold and later lines use the muted colour, as a base UNDER the stored runs,
  * so a run's own weight or colour wins. A whole-label bold or non-default
- * colour already says what the user wants, so the base leaves it alone.
+ * colour already says what the user wants, so the base leaves it alone, unless that colour (or a run's colour) has
+ * under 4.5:1 contrast against the card body; then it is treated as unset.
  * Returns the stored style itself when no base is needed.
  */
 export function cardTextStyle(
@@ -383,7 +387,13 @@ export function cardTextStyle(
     const attrs: TextRunAttrs = {}
     for (const key of RUN_ATTR_KEYS) {
       if (run[key] === undefined) continue
-      if (key === 'color' && !readableOn(run.color as string, body)) continue
+      if (
+        key === 'color' &&
+        run.color !== DEFAULT_ELEMENT_STYLE.color &&
+        !readableOn(run.color as string, body)
+      ) {
+        continue
+      }
       ;(attrs as Record<string, unknown>)[key] = run[key]
     }
     runs = applyRunStyle(runs, run.start, run.end, attrs, text.length)
