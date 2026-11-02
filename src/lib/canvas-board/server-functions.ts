@@ -35,8 +35,13 @@ import {
   deleteCanvasBoard,
   findCanvasBoardById,
   updateCanvasBoard,
+  updateCanvasBoardSettings,
 } from '@/data/canvas-board'
-import { createCanvasBoardSchema, updateCanvasBoardSchema } from '@/data/schema'
+import {
+  canvasBoardSettingsPatchSchema,
+  createCanvasBoardSchema,
+  updateCanvasBoardSchema,
+} from '@/data/schema'
 import { findCanvasElementsByBoard } from '@/data/canvas-element'
 
 /**
@@ -131,6 +136,37 @@ export const updateCanvasBoardFn = createServerFn({ method: 'POST' })
       } catch (error) {
         throw new Error(
           `Failed to update canvas board: ${error instanceof Error ? error.message : 'Unknown error'}`,
+        )
+      }
+    }),
+  )
+
+/**
+ * Change board-level canvas settings (diagram style, flow dots).
+ * Requires EDITOR+ role on the board's project.
+ * @requires editor
+ */
+export const updateCanvasBoardSettingsFn = createServerFn({ method: 'POST' })
+  .inputValidator((params: unknown) => {
+    const schema = z.object({
+      id: z.string().uuid(),
+      settings: canvasBoardSettingsPatchSchema,
+    })
+    return schema.parse(params)
+  })
+  .handler(
+    requireAuth(async ({ user }, params) => {
+      const projectId = await getCanvasBoardProjectId(params.id)
+      await requireServerFnRole(user.id, projectId, 'EDITOR')
+      try {
+        const board = await updateCanvasBoardSettings(
+          params.id,
+          params.settings,
+        )
+        return board
+      } catch (error) {
+        throw new Error(
+          `Failed to update canvas board settings: ${error instanceof Error ? error.message : 'Unknown error'}`,
         )
       }
     }),

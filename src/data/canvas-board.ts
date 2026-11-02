@@ -7,10 +7,23 @@
 // project/folder placement so both can sit in the same navigator, and shares
 // nothing else — no DiagramTable, no Shape, no Connector, no snapshot.
 
+import {
+  canvasBoardSettingsPatchSchema,
+  canvasBoardSettingsSchema,
+} from './canvas-board-settings'
 import { createCanvasBoardSchema, updateCanvasBoardSchema } from './schema'
+import type { CanvasBoardSettingsPatch } from './canvas-board-settings'
 import type { CreateCanvasBoard, UpdateCanvasBoard } from './schema'
 import type { CanvasBoard } from './models'
-import { db, genId, insert, mapCanvasBoard, nowMs, update } from '@/db'
+import {
+  db,
+  genId,
+  insert,
+  mapCanvasBoard,
+  nowMs,
+  toDbJson,
+  update,
+} from '@/db'
 
 /**
  * Create a canvas board.
@@ -106,6 +119,44 @@ export async function updateCanvasBoard(
   } catch (error) {
     throw new Error(
       `Failed to update canvas board: ${error instanceof Error ? error.message : 'Unknown error'}`,
+    )
+  }
+}
+
+/**
+ * Merge a partial settings change into a board's stored settings. Only the
+ * keys present in `patch` change; the result always parses as complete
+ * settings.
+ */
+export async function updateCanvasBoardSettings(
+  id: string,
+  patch: CanvasBoardSettingsPatch,
+): Promise<CanvasBoard> {
+  const validated = canvasBoardSettingsPatchSchema.parse(patch)
+
+  try {
+    const prior = mapCanvasBoard(
+      db.prepare('SELECT * FROM "CanvasBoard" WHERE "id" = ?').get(id),
+    )
+    if (!prior) throw new Error('Canvas board not found')
+
+    const defined = Object.fromEntries(
+      Object.entries(validated).filter(([, v]) => Boolean(v)),
+    )
+    const merged = canvasBoardSettingsSchema.parse({
+      ...prior.settings,
+      ...defined,
+    })
+    update('CanvasBoard', id, {
+      settings: toDbJson(merged),
+      updatedAt: nowMs(),
+    })
+    return mapCanvasBoard(
+      db.prepare('SELECT * FROM "CanvasBoard" WHERE "id" = ?').get(id),
+    )!
+  } catch (error) {
+    throw new Error(
+      `Failed to update canvas board settings: ${error instanceof Error ? error.message : 'Unknown error'}`,
     )
   }
 }

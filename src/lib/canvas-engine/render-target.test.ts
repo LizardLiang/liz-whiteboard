@@ -148,6 +148,10 @@ const baseStyle = {
   underline: false,
   strikethrough: false,
   textRuns: [],
+  role: null,
+  step: '',
+  cardShadow: 'auto' as const,
+  cardBorder: 'subtle' as const,
 }
 
 function element(patch: Partial<CanvasElement>): CanvasElement {

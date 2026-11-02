@@ -230,3 +230,15 @@ Broadcast when users join or leave the whiteboard.
 ### `session_expired`
 
 Sent when the user's session has expired — client should redirect to login.
+
+---
+
+## Canvas Board Events (`/canvas/:boardId` namespace)
+
+### `board:settings-update` (Client → Server)
+
+Editor-only. Payload is a partial `{ diagramStyle?: 'card' | 'classic', flowDots?: 'path' | 'always' }`. The server merges it into the board's stored settings. Ack: `{ ok: true, entity: <full settings> }` or `{ ok: false, code, message }`.
+
+### `board:settings-updated` (Server → Client, broadcast)
+
+Sent to every other client on the board after a settings change. Payload: `{ settings: { diagramStyle, flowDots }, updatedBy }`. Viewers receive it and apply it read-only.

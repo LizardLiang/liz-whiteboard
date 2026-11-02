@@ -12,6 +12,7 @@ import {
   boundsOfMany,
   bringToFront,
   effectiveCornerRadius,
+  effectiveRole,
   getElement,
   groupDescendants,
   groupOwning,
@@ -39,7 +40,7 @@ import {
   resolveClickTarget,
   resolveDropTarget,
 } from './hit-test'
-import type { CanvasElement } from './scene'
+import type { CanvasElement, CanvasElementRole } from './scene'
 
 function el(id: string, patch: Partial<CanvasElement> = {}): CanvasElement {
   return {
@@ -734,10 +735,7 @@ describe('withGroupMembers', () => {
   })
 
   it('deduplicates when a member is reachable through more than one path', () => {
-    const scene = sceneFrom([
-      el('a'),
-      group('g1', ['a']),
-    ])
+    const scene = sceneFrom([el('a'), group('g1', ['a'])])
     expect(withGroupMembers(scene, ['g1', 'a'])).toEqual(
       expect.arrayContaining(['g1', 'a']),
     )
@@ -757,7 +755,10 @@ describe('withGroupMembers', () => {
 
 describe('repairGroupMembership (FR-018 load-time)', () => {
   it("drops a group's childId that names no element in the same list", () => {
-    const repaired = repairGroupMembership([el('a'), group('g1', ['a', 'ghost'])])
+    const repaired = repairGroupMembership([
+      el('a'),
+      group('g1', ['a', 'ghost']),
+    ])
     const g1 = repaired.find((e) => e.id === 'g1')
     expect(g1?.group).toEqual({ childIds: ['a'] })
   })
@@ -920,7 +921,14 @@ describe('resolveClickTarget', () => {
 describe('resolveDropTarget', () => {
   it("resolves to the group whose frame contains the dragged element's centre point", () => {
     const scene = sceneFrom([
-      el('g1', { kind: 'group', group: { childIds: [] }, x: 0, y: 0, width: 200, height: 200 }),
+      el('g1', {
+        kind: 'group',
+        group: { childIds: [] },
+        x: 0,
+        y: 0,
+        width: 200,
+        height: 200,
+      }),
       el('a', { x: 50, y: 50, width: 20, height: 20 }), // centre (60, 60)
     ])
     expect(resolveDropTarget(scene, 'a', new Set(['a']))).toBe('g1')
@@ -928,7 +936,14 @@ describe('resolveDropTarget', () => {
 
   it("returns null when no group's frame contains the centre point", () => {
     const scene = sceneFrom([
-      el('g1', { kind: 'group', group: { childIds: [] }, x: 0, y: 0, width: 50, height: 50 }),
+      el('g1', {
+        kind: 'group',
+        group: { childIds: [] },
+        x: 0,
+        y: 0,
+        width: 50,
+        height: 50,
+      }),
       el('a', { x: 500, y: 500, width: 20, height: 20 }),
     ])
     expect(resolveDropTarget(scene, 'a', new Set(['a']))).toBeNull()
@@ -936,7 +951,14 @@ describe('resolveDropTarget', () => {
 
   it('returns null when the dragged element is not in the scene', () => {
     const scene = sceneFrom([
-      el('g1', { kind: 'group', group: { childIds: [] }, x: 0, y: 0, width: 200, height: 200 }),
+      el('g1', {
+        kind: 'group',
+        group: { childIds: [] },
+        x: 0,
+        y: 0,
+        width: 200,
+        height: 200,
+      }),
     ])
     expect(resolveDropTarget(scene, 'ghost', new Set(['ghost']))).toBeNull()
   })
@@ -945,7 +967,14 @@ describe('resolveDropTarget', () => {
     // The group currently being dragged in the same gesture — it must not
     // be able to "join" itself.
     const scene = sceneFrom([
-      el('g1', { kind: 'group', group: { childIds: ['a'] }, x: 0, y: 0, width: 200, height: 200 }),
+      el('g1', {
+        kind: 'group',
+        group: { childIds: ['a'] },
+        x: 0,
+        y: 0,
+        width: 200,
+        height: 200,
+      }),
       el('a', { x: 50, y: 50, width: 20, height: 20 }),
     ])
     expect(resolveDropTarget(scene, 'a', new Set(['a', 'g1']))).toBeNull()
@@ -1101,5 +1130,27 @@ describe('endpointGeometry shape and corner radius', () => {
     expect(endpointGeometry(scene, link('sq'))).not.toHaveProperty(
       'cornerRadius',
     )
+  })
+})
+
+describe('effectiveRole', () => {
+  const el = (kind: CanvasElement['kind'], role: CanvasElementRole) =>
+    ({ kind, style: { ...DEFAULT_ELEMENT_STYLE, role } }) as CanvasElement
+
+  it('derives trigger for an ellipse whose role was never set', () => {
+    expect(effectiveRole(el('ellipse', null))).toBe('trigger')
+  })
+
+  it('gives other kinds no role until one is stored', () => {
+    expect(effectiveRole(el('rectangle', null))).toBeNull()
+    expect(effectiveRole(el('rectangle', 'system'))).toBe('system')
+  })
+
+  it('treats an explicit none as no chip, even on an ellipse', () => {
+    expect(effectiveRole(el('ellipse', 'none'))).toBeNull()
+  })
+
+  it('prefers a stored role over the ellipse default', () => {
+    expect(effectiveRole(el('ellipse', 'data'))).toBe('data')
   })
 })

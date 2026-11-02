@@ -150,6 +150,7 @@ function CanvasBoardPage() {
           boardName={data.board.name}
           userId={userId}
           initialElements={data.elements}
+          initialSettings={data.board.settings}
           readOnly={!canEdit}
         />
       </div>

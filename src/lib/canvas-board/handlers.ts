@@ -24,9 +24,11 @@
 import { z } from 'zod'
 import type { Server as SocketIOServer } from 'socket.io'
 import {
+  canvasBoardSettingsPatchSchema,
   createCanvasElementSchema,
   updateCanvasElementSchema,
 } from '@/data/schema'
+import { updateCanvasBoardSettings } from '@/data/canvas-board'
 import {
   RevisionMismatchError,
   createCanvasElement,
@@ -390,6 +392,44 @@ export function registerCanvasElementHandlers(
 }
 
 /**
+ * Register `board:settings-update` on a canvas socket. Persists the partial
+ * settings change and broadcasts `board:settings-updated` (the full settings)
+ * to every OTHER client on the board.
+ */
+export function registerCanvasBoardSettingsHandlers(
+  socket: CanvasSocket,
+  boardId: string,
+  userId: string,
+): void {
+  socket.on('board:settings-update', async (data: unknown, cb: Ack) => {
+    if (await denyMutation(socket, boardId, 'board:settings-update', cb)) return
+
+    try {
+      // `boardId` comes from the SERVER, never the payload.
+      const patch = canvasBoardSettingsPatchSchema.parse(data)
+      const board = await updateCanvasBoardSettings(boardId, patch)
+      socket.broadcast.emit('board:settings-updated', {
+        settings: board.settings,
+        updatedBy: userId,
+      })
+      cb?.({ ok: true, entity: board.settings })
+    } catch (error) {
+      const message =
+        error instanceof Error
+          ? error.message
+          : 'Failed to update canvas board settings'
+      console.error('Failed to update canvas board settings:', error)
+      socket.emit('error', {
+        event: 'board:settings-update',
+        error: 'VALIDATION_ERROR',
+        message,
+      })
+      cb?.({ ok: false, code: 'VALIDATION_ERROR', message })
+    }
+  })
+}
+
+/**
  * The `/canvas/:boardId` namespace.
  *
  * Separate from `/whiteboard/:id` because the two board kinds resolve their
@@ -424,6 +464,11 @@ export function setupCanvasNamespace(ioServer: SocketIOServer): void {
     socket.emit('connected', { sessionId: null, activeUsers: [] })
 
     registerCanvasElementHandlers(
+      socket as unknown as CanvasSocket,
+      boardId,
+      userId,
+    )
+    registerCanvasBoardSettingsHandlers(
       socket as unknown as CanvasSocket,
       boardId,
       userId,

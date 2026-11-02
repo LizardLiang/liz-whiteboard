@@ -37,6 +37,10 @@ const scene = sceneFrom([
       underline: false,
       strikethrough: false,
       textRuns: [],
+      role: null,
+      step: '',
+      cardShadow: 'auto',
+      cardBorder: 'subtle',
     },
   },
 ])

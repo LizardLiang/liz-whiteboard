@@ -397,6 +397,7 @@ CREATE TABLE IF NOT EXISTS "CanvasBoard" (
     "folderId"  TEXT,
     "createdAt" DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
     "updatedAt" DATETIME NOT NULL,
+    "settings"  JSONB,
     CONSTRAINT "CanvasBoard_projectId_fkey" FOREIGN KEY ("projectId")
         REFERENCES "Project" ("id") ON DELETE CASCADE ON UPDATE CASCADE,
     CONSTRAINT "CanvasBoard_folderId_fkey" FOREIGN KEY ("folderId")

@@ -14,6 +14,7 @@ import { randomUUID } from 'node:crypto'
 import { mkdirSync } from 'node:fs'
 import { dirname } from 'node:path'
 import { SCHEMA_SQL } from './data/schema-sql'
+import { parseCanvasBoardSettings } from './data/canvas-board-settings'
 import { DEFAULT_ELEMENT_STYLE } from './lib/canvas-engine/scene'
 import type {
   Area,
@@ -242,6 +243,22 @@ export function ensureCanvasElementRevisionColumn(
   }
 }
 ensureCanvasElementRevisionColumn(db)
+
+// Additive column migration (canvas diagram style, 2026-11-02): `CanvasBoard`
+// gained a nullable `settings` JSON column in `schema-sql.ts`. Mirrors
+// `ensureCanvasElementRevisionColumn`: guarded on `table_info`, nullable so
+// no backfill is needed — a NULL value reads as the default settings.
+export function ensureCanvasBoardSettingsColumn(
+  database: SqliteDatabase,
+): void {
+  const columns = database
+    .prepare(`PRAGMA table_info("CanvasBoard")`)
+    .all() as Array<{ name: string }>
+  if (columns.length > 0 && !columns.some((c) => c.name === 'settings')) {
+    database.exec(`ALTER TABLE "CanvasBoard" ADD COLUMN "settings" JSONB`)
+  }
+}
+ensureCanvasBoardSettingsColumn(db)
 
 // Additive column migration (cross-file table references, LizMeter #83,
 // 2026-09-09): `DiagramTable` gained `sourceWhiteboardId`/`sourceTableId` and
@@ -737,6 +754,7 @@ export function mapCanvasBoard(r: Row): CanvasBoard | null {
     name: r.name as string,
     projectId: r.projectId as string,
     folderId: (r.folderId as string | null) ?? null,
+    settings: parseCanvasBoardSettings(fromDbJson(r.settings)),
     createdAt: fromDbDate(r.createdAt),
     updatedAt: fromDbDate(r.updatedAt),
   }

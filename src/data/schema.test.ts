@@ -6,6 +6,7 @@ import {
   MAX_BOARD_COORD,
   areaMoveBroadcastSchema,
   canvasElementPropsSchema,
+  canvasElementStyleSchema,
   cardinalitySchema,
   createConnectorSchema,
   createRelationshipSchema,
@@ -826,5 +827,40 @@ describe("canvasElementPropsSchema — the group arm's childIds is bounded (fix 
     expect(() =>
       canvasElementPropsSchema.parse({ kind: 'group', childIds }),
     ).toThrow()
+  })
+})
+
+describe('canvasElementStyleSchema card fields', () => {
+  it('parses an old style with none of the card keys to the defaults', () => {
+    const parsed = canvasElementStyleSchema.parse({})
+    expect(parsed.role).toBeNull()
+    expect(parsed.step).toBe('')
+    expect(parsed.cardShadow).toBe('auto')
+    expect(parsed.cardBorder).toBe('subtle')
+  })
+
+  it('accepts every role including the none sentinel and rejects bad values', () => {
+    for (const role of [
+      'trigger',
+      'action',
+      'system',
+      'data',
+      'note',
+      'none',
+    ]) {
+      expect(canvasElementStyleSchema.safeParse({ role }).success).toBe(true)
+    }
+    expect(canvasElementStyleSchema.safeParse({ role: 'boss' }).success).toBe(
+      false,
+    )
+    expect(canvasElementStyleSchema.safeParse({ step: '12345' }).success).toBe(
+      false,
+    )
+    expect(
+      canvasElementStyleSchema.safeParse({ cardShadow: 'x' }).success,
+    ).toBe(false)
+    expect(
+      canvasElementStyleSchema.safeParse({ cardBorder: 'x' }).success,
+    ).toBe(false)
   })
 })

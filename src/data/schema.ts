@@ -3,7 +3,10 @@
 
 import { z } from 'zod'
 import { AREA_COLOR_IDS } from '@/lib/area-colors'
-import { DEFAULT_ELEMENT_STYLE } from '@/lib/canvas-engine/scene'
+import {
+  CANVAS_STEP_MAX_LENGTH,
+  DEFAULT_ELEMENT_STYLE,
+} from '@/lib/canvas-engine/scene'
 import { MAX_TEXT_RUNS } from '@/lib/canvas-engine/text-runs'
 
 // ============================================================================
@@ -1121,6 +1124,25 @@ export const canvasElementStyleSchema = z.strictObject({
       { message: 'Text runs must be sorted and must not overlap' },
     )
     .default(() => []),
+  /**
+   * Card-style fields — see `CanvasElementStyle.role` and its siblings.
+   * `.default()` on each, so rows written before they existed parse to
+   * "never set" and the stored style is never rewritten.
+   */
+  role: z
+    .enum(['trigger', 'action', 'system', 'data', 'note', 'none'])
+    .nullable()
+    .default(DEFAULT_ELEMENT_STYLE.role),
+  step: z
+    .string()
+    .max(CANVAS_STEP_MAX_LENGTH)
+    .default(DEFAULT_ELEMENT_STYLE.step),
+  cardShadow: z
+    .enum(['auto', 'on', 'off'])
+    .default(DEFAULT_ELEMENT_STYLE.cardShadow),
+  cardBorder: z
+    .enum(['subtle', 'accent'])
+    .default(DEFAULT_ELEMENT_STYLE.cardBorder),
 })
 
 /**
@@ -1471,6 +1493,10 @@ export const updateCanvasBoardSchema = z.object({
 })
 
 export type CanvasElementKind = z.infer<typeof canvasElementKindSchema>
+export {
+  canvasBoardSettingsPatchSchema,
+  canvasBoardSettingsSchema,
+} from './canvas-board-settings'
 export type CanvasElementStyle = z.infer<typeof canvasElementStyleSchema>
 export type CanvasElementProps = z.infer<typeof canvasElementPropsSchema>
 export type CanvasConnectorRouting = z.infer<

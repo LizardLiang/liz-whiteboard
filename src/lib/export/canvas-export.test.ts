@@ -21,6 +21,10 @@ const style = {
   underline: false,
   strikethrough: false,
   textRuns: [],
+  role: null,
+  step: '',
+  cardShadow: 'auto' as const,
+  cardBorder: 'subtle' as const,
 }
 
 const measure = (text: string, spec: { fontSize: number }) =>

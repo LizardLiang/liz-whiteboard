@@ -30,6 +30,7 @@ import type {
   KeyboardEvent as ReactKeyboardEvent,
   PointerEvent as ReactPointerEvent,
 } from 'react'
+import type { CanvasBoardSettings } from '@/data/canvas-board-settings'
 import type { Camera } from '@/lib/canvas-engine/camera'
 import type { CanvasFontSpec } from '@/lib/canvas-engine/render-target'
 import type { WorldRect } from '@/lib/canvas-engine/hit-test'
@@ -73,6 +74,8 @@ interface CanvasBoardProps {
   userId: string
   /** The board's elements as loaded from the server, in paint order. */
   initialElements: Array<CanvasElementRecord>
+  /** Board-level diagram settings as loaded from the server. */
+  initialSettings?: CanvasBoardSettings
   /**
    * Viewers and public visitors get pan and zoom and nothing else. This is a
    * UI affordance only — the server re-checks the role on every mutation.

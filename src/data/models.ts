@@ -6,6 +6,7 @@
 // row-mapping (see src/db.ts): datetimes as `Date`, integer booleans as
 // `boolean`, and JSONB text columns parsed into values.
 
+import type { CanvasBoardSettings } from './canvas-board-settings'
 import type {
   CanvasElementKind,
   CanvasElementProps,
@@ -414,6 +415,8 @@ export interface CanvasBoard {
   name: string
   projectId: string
   folderId: string | null
+  /** Board-level canvas settings; a row with none stored reads as the defaults. */
+  settings: CanvasBoardSettings
   createdAt: Date
   updatedAt: Date
 }

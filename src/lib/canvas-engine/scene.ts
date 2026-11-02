@@ -254,6 +254,26 @@ export interface CanvasTextRun {
   color?: string
 }
 
+/**
+ * Semantic role a card shows as a chip. `'none'` is an explicit "no chip"
+ * choice; `null` means never set, which lets an ellipse derive `'trigger'`
+ * (see `effectiveRole`).
+ */
+export type CanvasElementRole =
+  | 'trigger'
+  | 'action'
+  | 'system'
+  | 'data'
+  | 'note'
+  | 'none'
+  | null
+
+/** Card shadow: `auto` follows the role, `on` / `off` force it. */
+export type CanvasCardShadow = 'auto' | 'on' | 'off'
+
+/** Card border: a hairline neutral line, or the accent colour. */
+export type CanvasCardBorder = 'subtle' | 'accent'
+
 /** Styling shared by every element kind. */
 export interface CanvasElementStyle {
   fill: string
@@ -297,6 +317,15 @@ export interface CanvasElementStyle {
    * clamped to it at draw time (see `text-runs.ts`).
    */
   textRuns: Array<CanvasTextRun>
+  /**
+   * Card-style fields. Stored on every element, drawn only when the board's
+   * diagram style is `card`; `classic` ignores all four.
+   */
+  role: CanvasElementRole
+  /** Short manual step label shown on the card's top row; empty hides it. */
+  step: string
+  cardShadow: CanvasCardShadow
+  cardBorder: CanvasCardBorder
 }
 
 export const DEFAULT_ELEMENT_STYLE: CanvasElementStyle = {
@@ -349,6 +378,28 @@ export const DEFAULT_ELEMENT_STYLE: CanvasElementStyle = {
   underline: false,
   strikethrough: false,
   textRuns: [],
+  // Never set: an ellipse derives its role, every other kind shows no chip.
+  role: null,
+  step: '',
+  cardShadow: 'auto',
+  cardBorder: 'subtle',
+}
+
+/** Longest step label the card's top row has room for. */
+export const CANVAS_STEP_MAX_LENGTH = 4
+
+/**
+ * The role a card shows: the stored role, or `'trigger'` for an ellipse whose
+ * role was never set, or none. A stored `'none'` always means no chip, even on
+ * an ellipse.
+ */
+export function effectiveRole(
+  element: Pick<CanvasElement, 'kind' | 'style'>,
+): Exclude<CanvasElementRole, 'none' | null> | null {
+  const role = element.style.role
+  if (role === 'none') return null
+  if (role) return role
+  return element.kind === 'ellipse' ? 'trigger' : null
 }
 
 /**
