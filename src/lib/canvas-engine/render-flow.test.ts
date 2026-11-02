@@ -148,6 +148,35 @@ describe('flow path render', () => {
     expect(line?.paint.strokeWidth).toBe(4)
   })
 
+  it('draws a legacy swatch stroke as its preset line colour under card, and as stored under classic', () => {
+    const legacy = sceneFrom([
+      shape('a', 0, 'trigger'),
+      shape('b', 300, 'data'),
+      {
+        ...link('ab', 'a', 'b'),
+        style: { ...DEFAULT_ELEMENT_STYLE, stroke: '#f59e0b', strokeWidth: 3 },
+      },
+    ])
+    const stroke = (style: 'card' | 'classic') => {
+      const rec = recorder()
+      renderPersistentScene(
+        rec.target,
+        legacy,
+        'dark',
+        undefined,
+        undefined,
+        null,
+        undefined,
+        null,
+        style,
+      )
+      return rec.paints.find((entry) => entry.op === 'path')?.paint
+    }
+    expect(stroke('card')?.stroke).toBe(PRESET_RAMPS.orange.dark.line)
+    expect(stroke('card')?.strokeWidth).toBe(3)
+    expect(stroke('classic')?.stroke).toBe('#f59e0b')
+  })
+
   it('lights an on-path connector in the target ramp colour at the lit width', () => {
     const { paints } = draw(lit)
     const line = paints.find((entry) => entry.op === 'path')

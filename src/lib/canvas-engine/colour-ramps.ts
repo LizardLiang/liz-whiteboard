@@ -184,6 +184,23 @@ export const LEGACY_FILLS: ReadonlyMap<string, PresetId> = new Map<
   [DEFAULT_ELEMENT_STYLE.fill, 'slate'],
 ])
 
+/**
+ * The stroke strings the pre-ramp swatch row wrote, mapped to the preset they
+ * stand for, so a connector drawn with one reads as that preset's colour.
+ */
+export const LEGACY_STROKES: ReadonlyMap<string, PresetId> = new Map<
+  string,
+  PresetId
+>([
+  ['#64748b', 'slate'],
+  ['#ef4444', 'tomato'],
+  ['#f97316', 'orange'],
+  ['#f59e0b', 'orange'],
+  ['#22c55e', 'green'],
+  ['#14b8a6', 'teal'],
+  ['#8b5cf6', 'violet'],
+])
+
 interface RgbaColour {
   r: number
   g: number

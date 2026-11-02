@@ -62,6 +62,7 @@ import {
   isCard,
   isCardShape,
 } from './card-style'
+import { LEGACY_STROKES, presetRamp } from './colour-ramps'
 import type { CanvasTheme, CardLook, DiagramStyle } from './card-style'
 import type { AlignmentGuide } from './alignment'
 import type { Camera, Point } from './camera'
@@ -2065,14 +2066,23 @@ function connectorLineColour(
 
 /**
  * The resting paint of a card-style connector that still has the default
- * stroke. A connector whose stroke was changed keeps its stored paint.
+ * stroke. A legacy swatch stroke draws as its preset's line colour. Any other
+ * changed stroke keeps its stored paint.
  */
 function restingLine(
   connector: CanvasElement,
   scene: Scene,
   theme: CanvasTheme,
 ): { stroke: string; strokeWidth: number } | undefined {
-  if (connector.style.stroke !== DEFAULT_ELEMENT_STYLE.stroke) return undefined
+  const stroke = connector.style.stroke
+  if (stroke !== DEFAULT_ELEMENT_STYLE.stroke) {
+    const legacy = LEGACY_STROKES.get(stroke)
+    if (!legacy) return undefined
+    return {
+      stroke: presetRamp(legacy, theme).line,
+      strokeWidth: connector.style.strokeWidth,
+    }
+  }
   return {
     stroke: connectorLineColour(connector, scene, theme),
     strokeWidth: CARD_EDGE_WIDTH,
