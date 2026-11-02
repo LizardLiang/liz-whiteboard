@@ -23,7 +23,11 @@ import {
   swatchForFill,
   swatchForStroke,
 } from './canvas-style-palette'
-import { PRESET_IDS, PRESET_RAMPS } from './canvas-engine/colour-ramps'
+import {
+  LEGACY_FILLS,
+  PRESET_IDS,
+  PRESET_RAMPS,
+} from './canvas-engine/colour-ramps'
 import { DEFAULT_ELEMENT_STYLE } from './canvas-engine/scene'
 import { SHAPE_STROKE_WIDTHS } from '@/data/schema'
 
@@ -167,7 +171,30 @@ describe('lookups', () => {
     expect(swatchForStroke(cyan.stroke)?.id).toBe('cyan')
   })
 
-  it('treats the legacy translucent swatch strings as custom', () => {
-    expect(swatchForFill('rgba(245, 158, 11, 0.10)')).toBeNull()
+  it('shows the preset a legacy swatch fill and stroke paint as', () => {
+    const legacy: Array<[string, string, string]> = [
+      ['rgba(100, 116, 139, 0.10)', '#64748b', 'slate'],
+      ['rgba(239, 68, 68, 0.10)', '#ef4444', 'tomato'],
+      ['rgba(249, 115, 22, 0.10)', '#f97316', 'orange'],
+      ['rgba(245, 158, 11, 0.10)', '#f59e0b', 'orange'],
+      ['rgba(34, 197, 94, 0.10)', '#22c55e', 'green'],
+      ['rgba(20, 184, 166, 0.10)', '#14b8a6', 'teal'],
+      ['rgba(139, 92, 246, 0.10)', '#8b5cf6', 'violet'],
+    ]
+    for (const [fill, stroke, id] of legacy) {
+      expect(swatchForFill(fill)?.id).toBe(id)
+      expect(swatchForStroke(stroke)?.id).toBe(id)
+    }
+  })
+
+  it('maps every legacy fill to the preset the ramp module paints it as', () => {
+    for (const [fill, id] of LEGACY_FILLS) {
+      expect(swatchForFill(fill)?.id).toBe(id)
+    }
+  })
+
+  it('still reports Custom for a near-legacy value', () => {
+    expect(swatchForFill('rgba(245, 158, 11, 0.20)')).toBeNull()
+    expect(swatchForStroke('#f59e0c')).toBeNull()
   })
 })

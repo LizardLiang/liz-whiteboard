@@ -162,23 +162,57 @@ export const CANVAS_TEXT_COLORS: ReadonlyArray<{
 ]
 
 /**
+ * The fill strings the pre-preset swatch row wrote, mapped to the preset they
+ * paint as. The card style draws them with that preset's ramp, so the toolbar
+ * shows the preset as active instead of Custom. Restated from `LEGACY_FILLS`
+ * in `canvas-engine/colour-ramps.ts` because this module imports nothing;
+ * `canvas-style-palette.test.ts` pins the two equal.
+ */
+const LEGACY_FILL_PRESETS: ReadonlyMap<string, string> = new Map([
+  ['rgba(100, 116, 139, 0.10)', 'slate'],
+  ['rgba(239, 68, 68, 0.10)', 'tomato'],
+  ['rgba(249, 115, 22, 0.10)', 'orange'],
+  ['rgba(245, 158, 11, 0.10)', 'orange'],
+  ['rgba(34, 197, 94, 0.10)', 'green'],
+  ['rgba(20, 184, 166, 0.10)', 'teal'],
+  ['rgba(139, 92, 246, 0.10)', 'violet'],
+  [DEFAULT_FILL, SLATE_ID],
+])
+
+/** The stroke strings the pre-preset swatch row wrote, mapped like `LEGACY_FILL_PRESETS`. */
+const LEGACY_STROKE_PRESETS: ReadonlyMap<string, string> = new Map([
+  ['#64748b', 'slate'],
+  ['#ef4444', 'tomato'],
+  ['#f97316', 'orange'],
+  ['#f59e0b', 'orange'],
+  ['#22c55e', 'green'],
+  ['#14b8a6', 'teal'],
+  ['#8b5cf6', 'violet'],
+  [DEFAULT_STROKE, SLATE_ID],
+])
+
+/**
  * The swatch whose `fill` matches this stored value, or null.
  *
  * Exact string comparison, not colour parsing: a custom colour correctly
  * reports "no swatch is active" rather than snapping to the nearest one. The
- * one alias is the never-coloured default fill, which reads as Slate.
+ * exceptions are the legacy swatch fills and the never-coloured default, which
+ * paint as a preset and so report that preset.
  */
 export function swatchForFill(fill: string): CanvasSwatch | null {
-  const target = fill === DEFAULT_FILL ? findPresetValue(SLATE_ID) : fill
-  return CANVAS_SWATCHES.find((swatch) => swatch.fill === target) ?? null
+  return findSwatch(LEGACY_FILL_PRESETS.get(fill), fill, 'fill')
 }
 
 /** The swatch whose `stroke` matches this stored value, or null. Same rule as `swatchForFill`. */
 export function swatchForStroke(stroke: string): CanvasSwatch | null {
-  const target = stroke === DEFAULT_STROKE ? findPresetValue(SLATE_ID) : stroke
-  return CANVAS_SWATCHES.find((swatch) => swatch.stroke === target) ?? null
+  return findSwatch(LEGACY_STROKE_PRESETS.get(stroke), stroke, 'stroke')
 }
 
-function findPresetValue(id: string): string {
-  return PRESET_DEFINITIONS.find((preset) => preset.id === id)!.value
+function findSwatch(
+  legacyId: string | undefined,
+  value: string,
+  key: 'fill' | 'stroke',
+): CanvasSwatch | null {
+  if (legacyId) return CANVAS_SWATCHES.find((s) => s.id === legacyId) ?? null
+  return CANVAS_SWATCHES.find((swatch) => swatch[key] === value) ?? null
 }
