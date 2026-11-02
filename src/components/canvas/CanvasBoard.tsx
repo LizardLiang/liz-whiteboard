@@ -22,6 +22,7 @@ import { TextEditBar } from './TextEditBar'
 import { SHAPE_TOOL_SHORTCUTS, useCanvasInput } from './use-canvas-input'
 import { useFrameLoop } from './use-frame-loop'
 import { useCanvasHighlight } from './use-canvas-highlight'
+import { useFlowAnimation } from './use-flow-animation'
 import { useCanvasTestHook } from './canvas-test-hook'
 import { SHAPE_TOOL_META } from './shape-tool-meta'
 import { CanvasSearch } from './CanvasSearch'
@@ -55,6 +56,7 @@ import {
   measurerFor,
 } from '@/lib/canvas-engine/render'
 import { dotGridBackground } from '@/lib/canvas-engine/grid'
+import { flowPath } from '@/lib/canvas-engine/flow-path'
 import { CANVAS_SHAPE_KINDS, updateElement } from '@/lib/canvas-engine/scene'
 import { planZOrder } from '@/lib/canvas-engine/z-order'
 import { DEFAULT_CAMERA } from '@/lib/canvas-engine/camera'
@@ -118,6 +120,8 @@ interface CanvasBoardProps {
  * (`bounds(element)`), so this is a strict improvement with no behaviour
  * change for non-connectors.
  */
+const NO_FLOW_IDS: ReadonlySet<string> = new Set()
+
 function focusRectOf(scene: Scene, elementId: string): WorldRect | null {
   const element = scene.byId.get(elementId)
   return element ? resolvedBounds(scene, element) : null
@@ -176,6 +180,7 @@ export function CanvasBoard({
   // Board-level diagram style. Live updates from collaborators arrive in the
   // settings phase; until then the loaded value applies for the session.
   const diagramStyle: DiagramStyle = initialSettings?.diagramStyle ?? 'card'
+  const flowDots = initialSettings?.flowDots ?? 'path'
   const cardLook = useMemo<CardLook>(
     () => ({ diagramStyle, theme: resolvedTheme }),
     [diagramStyle, resolvedTheme],
@@ -551,8 +556,55 @@ export function CanvasBoard({
     [devicePixelRatio, viewportSize],
   )
 
+  // The flow path follows the hovered shape, else the single selected shape,
+  // and is off while a gesture is in flight. Card style only.
+  const flowAnchorId = useMemo(() => {
+    if (diagramStyle !== 'card' || input.gestureActive) return null
+    const current = input.displayScene
+    const hovered = input.hoveredId ? current.byId.get(input.hoveredId) : null
+    if (hovered && !hovered.connector) return hovered.id
+    if (input.selectedIds.size !== 1) return null
+    const [selectedId] = input.selectedIds
+    const selected = current.byId.get(selectedId)
+    return selected && !selected.connector ? selected.id : null
+  }, [
+    diagramStyle,
+    input.displayScene,
+    input.gestureActive,
+    input.hoveredId,
+    input.selectedIds,
+  ])
+  const flowPathOfAnchor = useMemo(
+    () => (flowAnchorId ? flowPath(input.displayScene, flowAnchorId) : null),
+    [flowAnchorId, input.displayScene],
+  )
+  const hasConnectors = useMemo(
+    () => input.displayScene.elements.some((element) => element.connector),
+    [input.displayScene],
+  )
+  const pathActive =
+    flowPathOfAnchor !== null && flowPathOfAnchor.connectors.size > 0
+  const dotPhase = useFlowAnimation({
+    diagramStyle,
+    flowDots,
+    pathActive,
+    hasConnectors,
+  })
+  const flow = useMemo(
+    () =>
+      diagramStyle === 'card'
+        ? {
+            elements: pathActive ? flowPathOfAnchor.elements : NO_FLOW_IDS,
+            connectors: pathActive ? flowPathOfAnchor.connectors : NO_FLOW_IDS,
+            dotPhase,
+          }
+        : null,
+    [diagramStyle, dotPhase, flowPathOfAnchor, pathActive],
+  )
+
   const selection = useMemo(
     () => ({
+      flow,
       ids: input.selectedIds,
       marquee: input.marquee,
       draft: input.draft,
@@ -586,6 +638,7 @@ export function CanvasBoard({
       highlight,
     }),
     [
+      flow,
       highlight,
       input.alignmentGuides,
       input.caretVisible,
@@ -623,10 +676,12 @@ export function CanvasBoard({
     drawScene(ctx, input.displayScene, camera, viewport, selection, {
       theme: resolvedTheme,
       diagramStyle,
+      flowDots,
     })
   }, [
     camera,
     diagramStyle,
+    flowDots,
     input.displayScene,
     resolvedTheme,
     selection,

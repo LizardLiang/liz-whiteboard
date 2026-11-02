@@ -4285,6 +4285,9 @@ export function useCanvasInput({
     caretScreenPoint,
     cursor,
     isPanning: gesture.kind === 'pan',
+    // A pointer gesture (move, resize, pan, draw...) is in flight. The flow
+    // path highlight stays off while it is.
+    gestureActive: gesture.kind !== 'none',
     canvasHandlers: {
       onPointerDown,
       onPointerMove,

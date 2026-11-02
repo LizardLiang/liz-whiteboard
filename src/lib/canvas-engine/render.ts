@@ -25,6 +25,7 @@ import {
   bounds,
   effectiveCornerRadius,
   effectiveRole,
+  endpointElementId,
   isCanvasShapeKind,
 } from './scene'
 import {
@@ -35,6 +36,7 @@ import {
   curveEndDirection,
 } from './connector-geometry'
 import { connectorCurveOf, connectorPathOf, connectorTailOf } from './hit-test'
+import { pointAlongPath } from './flow-path'
 import { QUICK_CREATE_DIRECTIONS } from './quick-create'
 import { normalizeRuns, resolveRuns } from './text-runs'
 import {
@@ -48,6 +50,7 @@ import {
   CARD,
   CARD_ROLE_LABELS,
   CARD_TOP_ROW,
+  cardAccent,
   cardConnectorPaint,
   cardShapePaint,
   cardTextStyle,
@@ -185,13 +188,41 @@ export interface RenderSelection {
    * ever seeing the line that got it there.
    */
   alignmentGuides?: ReadonlyArray<AlignmentGuide> | null
+  /**
+   * The flow through the hovered or selected element, under the `card` style.
+   *
+   * `elements` and `connectors` are the path (empty when nothing is
+   * hovered); anything outside a non-empty path fades. `dotPhase` is where the
+   * flow dots sit along their connectors, 0..1, or null for no dots. TIME
+   * lives in the caller (`use-flow-animation.ts`): this module is handed the
+   * phase for the frame and draws it. Ignored by `classic`.
+   */
+  flow?: FlowRender | null
+}
+
+/** The flow state one frame is drawn with. */
+export interface FlowRender {
+  elements: ReadonlySet<string>
+  connectors: ReadonlySet<string>
+  dotPhase: number | null
+  /** Dots on every connector, not only the path. Set from the board setting. */
+  dotsAlways?: boolean
 }
 
 export interface DrawOptions {
   theme?: CanvasTheme
   /** Defaults to `classic`, the pre-card render. */
   diagramStyle?: DiagramStyle
+  /** Board setting: dots on the path only, or on every connector. */
+  flowDots?: 'path' | 'always'
 }
+
+/** Opacity of everything outside a lit flow path. */
+export const FLOW_FADE = 0.35
+/** Stroke width of a connector on the lit path, in world units. */
+export const FLOW_LINE_WIDTH = 2.5
+/** Radius of a flow dot, in world units. */
+export const FLOW_DOT_RADIUS = 4
 
 /** Inset between an element's bounds and its text, in WORLD units. */
 export const TEXT_PADDING = 8
@@ -1231,6 +1262,7 @@ function drawConnector(
   scene: Scene,
   preparedPath?: ReadonlyArray<Point> | null,
   look?: CardLook,
+  lit?: { stroke: string; strokeWidth: number },
 ): boolean {
   const link = element.connector
   if (!link || element.style.strokeWidth <= 0) return false
@@ -1250,7 +1282,13 @@ function drawConnector(
   // segment then a cubic, for the same reason.
   const tail =
     link.routing === 'straight' ? connectorTailOf(scene, element) : null
-  const paints = connectorPaints(element.style, look)
+  const basePaints = connectorPaints(element.style, look)
+  const paints = lit
+    ? {
+        line: { ...basePaints.line, ...lit },
+        arrow: { ...basePaints.arrow, ...lit },
+      }
+    : basePaints
 
   target.beginPath()
   target.moveTo(
@@ -1934,20 +1972,61 @@ export function renderPersistentScene(
   preparedConnectorPaths?: ReadonlyMap<string, ReadonlyArray<Point> | null>,
   textSelection?: { elementId: string; start: number; end: number } | null,
   diagramStyle: DiagramStyle = 'classic',
+  flow?: FlowRender | null,
 ): TextLayout | null {
   const look: CardLook | undefined =
     diagramStyle === 'card' ? { diagramStyle, theme } : undefined
+  // Flow cues belong to the card look; `classic` never reads them.
+  const activeFlow = look && flow ? flow : null
+  const lit = activeFlow !== null && activeFlow.elements.size > 0
   let requestedLayout: TextLayout | null = null
   for (const element of scene.elements) {
     if (element.connector) {
       const preparedPath = preparedConnectorPaths?.has(element.id)
         ? preparedConnectorPaths.get(element.id)
         : undefined
-      drawConnector(target, element, scene, preparedPath, look)
+      if (!activeFlow || !look) {
+        drawConnector(target, element, scene, preparedPath, look)
+        continue
+      }
+      const onPath = activeFlow.connectors.has(element.id)
+      const faded = lit && !onPath
+      const colors = flowColors(element, scene, look.theme)
+      if (faded) target.beginFade(FLOW_FADE)
+      const drawn = drawConnector(
+        target,
+        element,
+        scene,
+        preparedPath,
+        look,
+        lit && onPath
+          ? { stroke: colors.line, strokeWidth: FLOW_LINE_WIDTH }
+          : undefined,
+      )
+      if (
+        drawn &&
+        activeFlow.dotPhase !== null &&
+        (onPath || activeFlow.dotsAlways)
+      ) {
+        const path =
+          preparedPath === undefined
+            ? connectorPathOf(scene, element)
+            : preparedPath
+        const dot = path ? pointAlongPath(path, activeFlow.dotPhase) : null
+        if (dot) {
+          target.ellipse(dot.x, dot.y, FLOW_DOT_RADIUS, FLOW_DOT_RADIUS, {
+            fill: colors.dot,
+          })
+        }
+      }
+      if (faded) target.endFade()
     }
   }
   for (const element of scene.elements) {
     if (element.connector) continue
+    const faded =
+      activeFlow !== null && lit && !activeFlow.elements.has(element.id)
+    if (faded) target.beginFade(FLOW_FADE)
     const layout = drawElement(
       target,
       element,
@@ -1956,9 +2035,35 @@ export function renderPersistentScene(
       textSelection?.elementId === element.id ? textSelection : null,
       look,
     )
+    if (faded) target.endFade()
     if (element.id === layoutElementId) requestedLayout = layout
   }
   return requestedLayout
+}
+
+/**
+ * Colours of a connector's lit line and its dot: the line takes the source
+ * element's accent, the dot the target's, and either falls back to the other
+ * end, then to the neutral edge, for a free end.
+ */
+function flowColors(
+  connector: CanvasElement,
+  scene: Scene,
+  theme: CanvasTheme,
+): { line: string; dot: string } {
+  const link = connector.connector
+  const sourceId = link ? endpointElementId(link.source) : null
+  const targetId = link ? endpointElementId(link.target) : null
+  const source = sourceId ? scene.byId.get(sourceId) : undefined
+  const target = targetId ? scene.byId.get(targetId) : undefined
+  const edge = CARD[theme].edge
+  const line = source
+    ? cardAccent(source, theme)
+    : target
+      ? cardAccent(target, theme)
+      : edge
+  const dot = target ? cardAccent(target, theme) : line
+  return { line, dot }
 }
 
 /**
@@ -2005,6 +2110,17 @@ export function drawScene(
 
   const editing = selection.editing
   const target = new CanvasRenderTarget(ctx)
+  // No fade or lit path while typing or marquee-selecting: the board has to
+  // stay readable then. Dots keep running.
+  const quiet = Boolean(editing || selection.marquee)
+  const flow: FlowRender | null = selection.flow
+    ? {
+        ...selection.flow,
+        elements: quiet ? NO_EMPHASIZED_IDS : selection.flow.elements,
+        connectors: quiet ? NO_EMPHASIZED_IDS : selection.flow.connectors,
+        dotsAlways: options.flowDots === 'always',
+      }
+    : null
 
   // TWO PASSES, and the order is load-bearing rather than cosmetic.
   //
@@ -2034,6 +2150,7 @@ export function drawScene(
         }
       : null,
     diagramStyle,
+    flow,
   )
   if (selection.draft) {
     // Never emphasized: a draft is never in `selection.ids` (it is not yet
