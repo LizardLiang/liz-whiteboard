@@ -296,6 +296,17 @@ export const IDS = {
   // delete a labelled element and silently change this suite's own
   // element-count assertion (test 3 below).
   canvasSearchBoard: 'a0000000-0000-4000-8000-000000000001',
+  // Dedicated board for canvas-diagram-style.spec.ts: ellipse -> rect A -> rect
+  // B -> rect C chain plus an unconnected note, no board settings row value.
+  canvasStyleBoard: 'c0000000-0000-4000-8000-000000000001',
+  canvasStyleStart: 'c0000000-0000-4000-8000-000000000002',
+  canvasStyleRectA: 'c0000000-0000-4000-8000-000000000003',
+  canvasStyleRectB: 'c0000000-0000-4000-8000-000000000004',
+  canvasStyleRectC: 'c0000000-0000-4000-8000-000000000005',
+  canvasStyleNote: 'c0000000-0000-4000-8000-000000000006',
+  canvasStyleConnStartA: 'c0000000-0000-4000-8000-000000000007',
+  canvasStyleConnAB: 'c0000000-0000-4000-8000-000000000008',
+  canvasStyleConnBC: 'c0000000-0000-4000-8000-000000000009',
   // `alpha crate` — matches "alpha", groups under Shapes.
   canvasSearchRect: 'a0000000-0000-4000-8000-000000000002',
   // `beta sphere` — second shape; must filter OUT when searching "alpha".

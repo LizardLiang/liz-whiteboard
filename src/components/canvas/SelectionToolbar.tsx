@@ -73,7 +73,10 @@ import {
 import type { ComponentType, ReactNode } from 'react'
 import type { Camera } from '@/lib/canvas-engine/camera'
 import type {
+  CanvasCardBorder,
+  CanvasCardShadow,
   CanvasElement,
+  CanvasElementRole,
   CanvasElementStyle,
   CanvasFontStyle,
   CanvasFontWeight,
@@ -84,7 +87,9 @@ import type {
 import type { ZOrderCommand } from '@/lib/canvas-engine/z-order'
 import { worldToScreen } from '@/lib/canvas-engine/camera'
 import {
+  CANVAS_STEP_MAX_LENGTH,
   boundsOfMany,
+  effectiveRole,
   isCanvasShapeKind,
   topLevelIds,
 } from '@/lib/canvas-engine/scene'
@@ -104,6 +109,7 @@ import {
 import { stripRunAttribute } from '@/lib/canvas-engine/text-runs'
 import { isChecklistRange } from '@/lib/canvas-engine/text-todo'
 import { Button } from '@/components/ui/button'
+import { Input } from '@/components/ui/input'
 import {
   Popover,
   PopoverContent,
@@ -173,6 +179,11 @@ export type CanvasStyleChange =
   | { target: 'strikethrough'; value: boolean }
   | { target: 'fontSize'; value: number }
   | { target: 'color'; value: string }
+  /** Card-style semantics. `'none'` hides the chip even on an ellipse. */
+  | { target: 'role'; value: Exclude<CanvasElementRole, null> }
+  | { target: 'step'; value: string }
+  | { target: 'cardShadow'; value: CanvasCardShadow }
+  | { target: 'cardBorder'; value: CanvasCardBorder }
 
 /**
  * The style an element should end up with after a change.
@@ -197,6 +208,16 @@ export function applyStyleChange(
   }
   if (change.target === 'cornerRadius') {
     return { ...style, cornerRadius: change.value }
+  }
+  if (change.target === 'role') return { ...style, role: change.value }
+  if (change.target === 'step') {
+    return { ...style, step: change.value.slice(0, CANVAS_STEP_MAX_LENGTH) }
+  }
+  if (change.target === 'cardShadow') {
+    return { ...style, cardShadow: change.value }
+  }
+  if (change.target === 'cardBorder') {
+    return { ...style, cardBorder: change.value }
   }
   // Straight writes, both of them — no clear/restore pairing to honour the way
   // stroke has, because neither axis has an "off".
@@ -430,6 +451,8 @@ export interface SelectionToolbarProps {
    * plain line when every line already is one. One call is one undo step.
    */
   onChecklist?: (targets: Array<CanvasElement>) => void
+  /** Card-only rows (role, step, shadow, border) show under `card` only. */
+  diagramStyle?: 'card' | 'classic'
 }
 
 export function SelectionToolbar({
@@ -444,6 +467,7 @@ export function SelectionToolbar({
   onGroup,
   onUngroup,
   onChecklist,
+  diagramStyle = 'classic',
 }: SelectionToolbarProps) {
   const sets = selectionToolbarTargets(
     scene,
@@ -531,6 +555,17 @@ export function SelectionToolbar({
       const text = element.text ?? ''
       return isChecklistRange(text, 0, text.length)
     })
+
+  // Role buttons show the EFFECTIVE role so an unset ellipse reads as
+  // trigger; `undefined` means the targets disagree (no active button).
+  const roleValues = targets.map((e) => effectiveRole(e) ?? 'none')
+  const activeRole: CanvasElementRole | undefined =
+    roleValues.length > 0 && roleValues.every((r) => r === roleValues[0])
+      ? (roleValues[0] as CanvasElementRole)
+      : undefined
+  const activeStep = shared(targets, (element) => element.style.step)
+  const activeShadow = shared(targets, (element) => element.style.cardShadow)
+  const activeBorder = shared(targets, (element) => element.style.cardBorder)
 
   const emit = (change: CanvasStyleChange, list = targets) => {
     // Every target already in the requested state writes nothing. Without
@@ -631,6 +666,35 @@ export function SelectionToolbar({
                 onPick={(value) =>
                   emit({ target: 'cornerRadius', value }, roundable)
                 }
+              />
+            </SettingPopover>
+          )}
+          {diagramStyle === 'card' && (
+            <SettingPopover
+              label="卡片"
+              summary={activeRole === undefined ? 'Mixed' : String(activeRole)}
+              preview={
+                <span
+                  className="block size-3.5 rounded-full border-2"
+                  style={{
+                    borderColor:
+                      activeRole === undefined || activeRole === null
+                        ? 'currentColor'
+                        : ROLE_DOT[activeRole],
+                  }}
+                />
+              }
+            >
+              <CardRows
+                targetKey={targets.map((e) => e.id).join(',')}
+                activeRole={activeRole}
+                activeStep={activeStep}
+                activeShadow={activeShadow}
+                activeBorder={activeBorder}
+                onRole={(value) => emit({ target: 'role', value })}
+                onStep={(value) => emit({ target: 'step', value })}
+                onShadow={(value) => emit({ target: 'cardShadow', value })}
+                onBorder={(value) => emit({ target: 'cardBorder', value })}
               />
             </SettingPopover>
           )}
@@ -735,6 +799,169 @@ export function SelectionToolbar({
         onUngroup={onUngroup}
         canGroup={canGroup}
         canUngroup={canUngroup}
+      />
+    </div>
+  )
+}
+
+const ROLE_DOT: Record<Exclude<CanvasElementRole, null>, string> = {
+  none: '#94a3b8',
+  trigger: '#a78bfa',
+  action: '#60a5fa',
+  system: '#2dd4bf',
+  data: '#fbbf24',
+  note: '#94a3b8',
+}
+
+const ROLE_OPTIONS: ReadonlyArray<{
+  value: Exclude<CanvasElementRole, null>
+  label: string
+}> = [
+  { value: 'none', label: '無' },
+  { value: 'trigger', label: '觸發' },
+  { value: 'action', label: '操作' },
+  { value: 'system', label: '系統' },
+  { value: 'data', label: '資料' },
+  { value: 'note', label: '備註' },
+]
+
+const SHADOW_OPTIONS: ReadonlyArray<{
+  value: CanvasCardShadow
+  label: string
+}> = [
+  { value: 'auto', label: '自動' },
+  { value: 'on', label: '開' },
+  { value: 'off', label: '關' },
+]
+
+const BORDER_OPTIONS: ReadonlyArray<{
+  value: CanvasCardBorder
+  label: string
+}> = [
+  { value: 'subtle', label: '細灰' },
+  { value: 'accent', label: '強調' },
+]
+
+function CardChoiceGroup<T extends string>({
+  groupLabel,
+  options,
+  active,
+  onPick,
+  dots,
+}: {
+  groupLabel: string
+  options: ReadonlyArray<{ value: T; label: string }>
+  active: T | null | undefined
+  onPick: (value: T) => void
+  dots?: Record<string, string>
+}) {
+  return (
+    <div className="mb-2 last:mb-0">
+      <div className="mb-1 select-none px-0.5 text-[10px] text-muted-foreground">
+        {groupLabel}
+      </div>
+      <div
+        className="flex flex-wrap items-center gap-1"
+        role="group"
+        aria-label={groupLabel}
+      >
+        {options.map(({ value, label }) => {
+          const isActive = value === active
+          return (
+            <button
+              key={value}
+              type="button"
+              className={`flex h-7 items-center gap-1 rounded border px-2 text-xs transition-shadow ${
+                isActive
+                  ? 'border-transparent ring-2 ring-ring ring-offset-1 ring-offset-background'
+                  : 'border-border/60'
+              }`}
+              aria-label={`${groupLabel} ${label}`}
+              aria-pressed={isActive}
+              onClick={() => onPick(value)}
+            >
+              {dots && (
+                <span
+                  className="block size-2 rounded-full"
+                  style={{ backgroundColor: dots[value] }}
+                />
+              )}
+              {label}
+            </button>
+          )
+        })}
+      </div>
+    </div>
+  )
+}
+
+/** Role, step, shadow and border: the card-only settings. */
+function CardRows({
+  targetKey,
+  activeRole,
+  activeStep,
+  activeShadow,
+  activeBorder,
+  onRole,
+  onStep,
+  onShadow,
+  onBorder,
+}: {
+  targetKey: string
+  activeRole: CanvasElementRole | undefined
+  activeStep: string | null
+  activeShadow: CanvasCardShadow | null
+  activeBorder: CanvasCardBorder | null
+  onRole: (value: Exclude<CanvasElementRole, null>) => void
+  onStep: (value: string) => void
+  onShadow: (value: CanvasCardShadow) => void
+  onBorder: (value: CanvasCardBorder) => void
+}) {
+  return (
+    <div className="w-60">
+      <CardChoiceGroup
+        groupLabel="角色"
+        options={ROLE_OPTIONS}
+        active={activeRole}
+        onPick={onRole}
+        dots={ROLE_DOT}
+      />
+      <div className="mb-2">
+        <label
+          className="mb-1 block select-none px-0.5 text-[10px] text-muted-foreground"
+          htmlFor="card-step-input"
+        >
+          步驟
+        </label>
+        {/* Commits on blur or Enter: one undo entry per edit, not per key. */}
+        <Input
+          id="card-step-input"
+          aria-label="步驟"
+          className="h-7 w-20 px-2 text-xs"
+          maxLength={CANVAS_STEP_MAX_LENGTH}
+          key={targetKey}
+          defaultValue={activeStep ?? ''}
+          placeholder={activeStep === null ? '—' : ''}
+          onBlur={(event) => {
+            if (activeStep === null && event.target.value === '') return
+            onStep(event.target.value)
+          }}
+          onKeyDown={(event) => {
+            if (event.key === 'Enter') event.currentTarget.blur()
+          }}
+        />
+      </div>
+      <CardChoiceGroup
+        groupLabel="陰影"
+        options={SHADOW_OPTIONS}
+        active={activeShadow}
+        onPick={onShadow}
+      />
+      <CardChoiceGroup
+        groupLabel="外框"
+        options={BORDER_OPTIONS}
+        active={activeBorder}
+        onPick={onBorder}
       />
     </div>
   )

@@ -14,6 +14,7 @@
 // globals because they all arrive here and are passed down as arguments.
 
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import { toast } from 'sonner'
 import { Hand, MousePointer2, Search, Type } from 'lucide-react'
 import { TextInputProxy } from './TextInputProxy'
 import { ConnectorToolbar } from './ConnectorToolbar'
@@ -27,11 +28,15 @@ import { useCanvasTestHook } from './canvas-test-hook'
 import { SHAPE_TOOL_META } from './shape-tool-meta'
 import { CanvasSearch } from './CanvasSearch'
 import { CanvasExportControl } from './CanvasExportControl'
+import { BoardStyleControl } from './BoardStyleControl'
 import type {
   KeyboardEvent as ReactKeyboardEvent,
   PointerEvent as ReactPointerEvent,
 } from 'react'
-import type { CanvasBoardSettings } from '@/data/canvas-board-settings'
+import type {
+  CanvasBoardSettings,
+  CanvasBoardSettingsPatch,
+} from '@/data/canvas-board-settings'
 import type { Camera } from '@/lib/canvas-engine/camera'
 import type { CardLook, DiagramStyle } from '@/lib/canvas-engine/render'
 import type { CanvasFontSpec } from '@/lib/canvas-engine/render-target'
@@ -61,6 +66,7 @@ import { CANVAS_SHAPE_KINDS, updateElement } from '@/lib/canvas-engine/scene'
 import { planZOrder } from '@/lib/canvas-engine/z-order'
 import { DEFAULT_CAMERA } from '@/lib/canvas-engine/camera'
 import { focusOnRect } from '@/lib/canvas-engine/camera-focus'
+import { DEFAULT_CANVAS_BOARD_SETTINGS } from '@/data/canvas-board-settings'
 import { useTheme } from '@/hooks/use-theme'
 import { useCollaboration } from '@/hooks/use-collaboration'
 import { useCanvasElements } from '@/hooks/use-canvas-elements'
@@ -177,10 +183,13 @@ export function CanvasBoard({
   const ctxRef = useRef<CanvasRenderingContext2D | null>(null)
 
   const { resolvedTheme } = useTheme()
-  // Board-level diagram style. Live updates from collaborators arrive in the
-  // settings phase; until then the loaded value applies for the session.
-  const diagramStyle: DiagramStyle = initialSettings?.diagramStyle ?? 'card'
-  const flowDots = initialSettings?.flowDots ?? 'path'
+  // Board-level diagram settings: seeded from the loader, then kept live by
+  // local edits (optimistic) and collaborators' `board:settings-updated`.
+  const [settings, setSettings] = useState<CanvasBoardSettings>(
+    initialSettings ?? DEFAULT_CANVAS_BOARD_SETTINGS,
+  )
+  const diagramStyle: DiagramStyle = settings.diagramStyle
+  const flowDots = settings.flowDots
   const cardLook = useMemo<CardLook>(
     () => ({ diagramStyle, theme: resolvedTheme }),
     [diagramStyle, resolvedTheme],
@@ -220,6 +229,38 @@ export function CanvasBoard({
     triggerSessionExpired,
     !isPublic,
     'canvas',
+  )
+
+  useEffect(() => {
+    const onSettingsUpdated = (payload: { settings?: CanvasBoardSettings }) => {
+      if (payload.settings) setSettings(payload.settings)
+    }
+    on('board:settings-updated', onSettingsUpdated)
+    return () => off('board:settings-updated', onSettingsUpdated)
+  }, [on, off])
+
+  // Optimistic write through the socket handler, which persists AND
+  // broadcasts to collaborators (the server fn persists without broadcasting).
+  const handleSettingsChange = useCallback(
+    (patch: CanvasBoardSettingsPatch) => {
+      let previous: CanvasBoardSettings | null = null
+      setSettings((prev) => {
+        previous = prev
+        return { ...prev, ...patch }
+      })
+      emit(
+        'board:settings-update',
+        patch,
+        (res: { ok: boolean; message?: string }) => {
+          if (res.ok) return
+          if (previous) setSettings(previous)
+          toast.error('Could not save board style', {
+            description: res.message,
+          })
+        },
+      )
+    },
+    [emit],
   )
 
   // Declared before useCanvasInput so the element-id remap can be handed to
@@ -888,6 +929,7 @@ export function CanvasBoard({
         onGroup={input.groupSelection}
         onUngroup={input.ungroupSelection}
         onChecklist={input.toggleChecklist}
+        diagramStyle={diagramStyle}
       />
 
       <TextEditBar
@@ -993,9 +1035,15 @@ export function CanvasBoard({
           >
             <Search className="h-4 w-4" />
           </Button>
+          <BoardStyleControl
+            settings={settings}
+            readOnly={effectiveReadOnly}
+            onChange={handleSettingsChange}
+          />
           <CanvasExportControl
             scene={input.displayScene}
             theme={resolvedTheme}
+            diagramStyle={diagramStyle}
             filename={boardName}
             getBackgroundColor={() =>
               containerRef.current

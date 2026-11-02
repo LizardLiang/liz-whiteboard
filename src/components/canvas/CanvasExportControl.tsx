@@ -5,12 +5,13 @@ import { Button } from '@/components/ui/button'
 import { ExportImageDialog } from '@/components/whiteboard/ExportImageDialog'
 import { exportCanvasScene } from '@/lib/export/canvas-export'
 import type { ExportImageDialogOptions } from '@/components/whiteboard/ExportImageDialog'
-import type { CanvasTheme } from '@/lib/canvas-engine/render'
+import type { CanvasTheme, DiagramStyle } from '@/lib/canvas-engine/render'
 import type { Scene } from '@/lib/canvas-engine/scene'
 
 interface CanvasExportControlProps {
   scene: Scene
   theme: CanvasTheme
+  diagramStyle?: DiagramStyle
   filename?: string | null
   getBackgroundColor: () => string
 }
@@ -18,6 +19,7 @@ interface CanvasExportControlProps {
 export function CanvasExportControl({
   scene,
   theme,
+  diagramStyle,
   filename,
   getBackgroundColor,
 }: CanvasExportControlProps) {
@@ -29,6 +31,7 @@ export function CanvasExportControl({
         await exportCanvasScene({
           scene,
           theme,
+          diagramStyle,
           format,
           background,
           backgroundColor: getBackgroundColor(),
@@ -43,7 +46,7 @@ export function CanvasExportControl({
         throw error
       }
     },
-    [filename, getBackgroundColor, scene, theme],
+    [diagramStyle, filename, getBackgroundColor, scene, theme],
   )
 
   return (
