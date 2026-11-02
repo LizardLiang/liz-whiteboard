@@ -939,7 +939,7 @@ function CardRows({
           aria-label="步驟"
           className="h-7 w-20 px-2 text-xs"
           maxLength={CANVAS_STEP_MAX_LENGTH}
-          key={targetKey}
+          key={`${targetKey}|${activeStep ?? ''}`}
           defaultValue={activeStep ?? ''}
           placeholder={activeStep === null ? '—' : ''}
           onBlur={(event) => {

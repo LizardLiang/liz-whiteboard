@@ -231,9 +231,22 @@ export function CanvasBoard({
     'canvas',
   )
 
+  // Keys with a local edit awaiting its ack. A collaborator's broadcast must
+  // not overwrite those, or the UI would show a value the server is about to
+  // replace.
+  const pendingSettingsRef = useRef<Map<string, number>>(new Map())
+
   useEffect(() => {
     const onSettingsUpdated = (payload: { settings?: CanvasBoardSettings }) => {
-      if (payload.settings) setSettings(payload.settings)
+      const incoming = payload.settings
+      if (!incoming) return
+      setSettings((prev) => {
+        const next: Record<string, unknown> = { ...incoming }
+        for (const key of pendingSettingsRef.current.keys()) {
+          next[key] = (prev as Record<string, unknown>)[key]
+        }
+        return next as unknown as CanvasBoardSettings
+      })
     }
     on('board:settings-updated', onSettingsUpdated)
     return () => off('board:settings-updated', onSettingsUpdated)
@@ -241,19 +254,30 @@ export function CanvasBoard({
 
   // Optimistic write through the socket handler, which persists AND
   // broadcasts to collaborators (the server fn persists without broadcasting).
+  // A failed write reverts only the keys it changed.
   const handleSettingsChange = useCallback(
     (patch: CanvasBoardSettingsPatch) => {
-      let previous: CanvasBoardSettings | null = null
+      const keys = Object.keys(patch)
+      const before: Record<string, unknown> = {}
       setSettings((prev) => {
-        previous = prev
+        for (const key of keys) {
+          before[key] = (prev as Record<string, unknown>)[key]
+        }
         return { ...prev, ...patch }
       })
+      const pending = pendingSettingsRef.current
+      for (const key of keys) pending.set(key, (pending.get(key) ?? 0) + 1)
       emit(
         'board:settings-update',
         patch,
         (res: { ok: boolean; message?: string }) => {
+          for (const key of keys) {
+            const count = (pending.get(key) ?? 1) - 1
+            if (count <= 0) pending.delete(key)
+            else pending.set(key, count)
+          }
           if (res.ok) return
-          if (previous) setSettings(previous)
+          setSettings((prev) => ({ ...prev, ...before }))
           toast.error('Could not save board style', {
             description: res.message,
           })
