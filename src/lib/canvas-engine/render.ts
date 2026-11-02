@@ -678,6 +678,39 @@ export function handleRects(
 }
 
 /**
+ * The rectangle an element's text may occupy, in WORLD units, before
+ * `TEXT_PADDING` is applied: the shape's inscribed text box. A diamond and an
+ * apex-up triangle only have room for a half-width, half-height box (centred
+ * for the diamond, in the lower half for the triangle); every other kind uses
+ * its whole bounding box.
+ */
+function textBox(element: CanvasElement): {
+  x: number
+  y: number
+  width: number
+  height: number
+} {
+  const { x, y, width, height } = element
+  if (element.kind === 'diamond') {
+    return {
+      x: x + width / 4,
+      y: y + height / 4,
+      width: width / 2,
+      height: height / 2,
+    }
+  }
+  if (element.kind === 'triangle') {
+    return {
+      x: x + width / 4,
+      y: y + height / 2,
+      width: width / 2,
+      height: height / 2,
+    }
+  }
+  return { x, y, width, height }
+}
+
+/**
  * Where an element's text block starts and how wide it may run, in WORLD
  * units.
  *
@@ -693,10 +726,11 @@ export function textFrame(
   y: number
   maxWidth: number
 } {
+  const box = textBox(element)
   return {
-    x: element.x + TEXT_PADDING,
-    y: element.y + TEXT_PADDING + cardTopRowHeight(element, look),
-    maxWidth: Math.max(0, element.width - TEXT_PADDING * 2),
+    x: box.x + TEXT_PADDING,
+    y: box.y + TEXT_PADDING + cardTopRowHeight(element, look),
+    maxWidth: Math.max(0, box.width - TEXT_PADDING * 2),
   }
 }
 
@@ -829,11 +863,12 @@ export function textOriginY(
   look?: CardLook,
 ): number {
   const topRow = cardTopRowHeight(element, look)
-  const available = Math.max(0, element.height - TEXT_PADDING * 2 - topRow)
+  const box = textBox(element)
+  const available = Math.max(0, box.height - TEXT_PADDING * 2 - topRow)
   const slack = Math.max(0, available - layout.height)
   const align = element.style.verticalAlign
   const offset = align === 'middle' ? slack / 2 : align === 'bottom' ? slack : 0
-  return element.y + TEXT_PADDING + topRow + offset
+  return box.y + TEXT_PADDING + topRow + offset
 }
 
 /**

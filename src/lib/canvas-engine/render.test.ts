@@ -1093,22 +1093,26 @@ describe('drawScene: shape kinds', () => {
     expect(rec.opsOfType('stroke')).toHaveLength(0)
   })
 
-  it('lays a label out in the same frame for every shape kind', () => {
-    // The text frame is the element RECT for all four kinds — a shape's label
-    // must not shift when its outline changes.
-    const texts = (
-      ['rectangle', 'ellipse', 'diamond', 'triangle'] as const
-    ).map(
-      (kind) =>
-        draw(makeElement({ kind, text: 'hi' })).opsOfType('fillText')[0],
-    )
-    for (const entry of texts) {
-      expect(entry.args.slice(0, 3)).toEqual([
-        'hi',
-        100 + TEXT_PADDING,
-        50 + TEXT_PADDING,
-      ])
-    }
+  it('lays a label out in the inscribed frame of each shape kind', () => {
+    // Rectangle and ellipse use the element RECT; a diamond and a triangle
+    // only have room for their half-size inscribed box.
+    const origin = (kind: 'rectangle' | 'ellipse' | 'diamond' | 'triangle') =>
+      draw(makeElement({ kind, text: 'hi' }))
+        .opsOfType('fillText')[0]
+        .args.slice(0, 3)
+    const full = ['hi', 100 + TEXT_PADDING, 50 + TEXT_PADDING]
+    expect(origin('rectangle')).toEqual(full)
+    expect(origin('ellipse')).toEqual(full)
+    expect(origin('diamond')).toEqual([
+      'hi',
+      150 + TEXT_PADDING,
+      80 + TEXT_PADDING,
+    ])
+    expect(origin('triangle')).toEqual([
+      'hi',
+      150 + TEXT_PADDING,
+      110 + TEXT_PADDING,
+    ])
   })
 })
 
