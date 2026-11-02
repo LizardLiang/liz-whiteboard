@@ -541,8 +541,7 @@ describe('custom colour', () => {
       target: { value: '#12' },
     })
     expect(
-      (screen.getByRole('button', { name: 'Apply' }))
-        .disabled,
+      screen.getByRole('button', { name: 'Apply' }).hasAttribute('disabled'),
     ).toBe(true)
   })
 

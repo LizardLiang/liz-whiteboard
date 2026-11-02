@@ -1107,7 +1107,8 @@ function ColorPreview({
     <span
       className="block size-3.5 rounded-full border-2"
       style={{
-        backgroundColor: swatchForFill(value) ? border : value,
+        backgroundColor:
+          swatchForFill(value) || swatchForStroke(value) ? border : value,
         borderColor: border,
       }}
     />
@@ -1153,13 +1154,7 @@ function RadiusPreview({ radius }: { radius: number | null }) {
   )
 }
 
-/**
- * The current colour in words, for a trigger's tooltip.
- *
- * "Custom" covers a stored value this palette never wrote — an older row, a
- * hand-edited one. It is the same honesty the swatches themselves show by
- * marking none of them active rather than snapping to the nearest hue.
- */
+/** Whether the shared value is a colour no preset stands for. */
 function isCustomColour(
   value: string | null,
   cleared: boolean,
@@ -1168,6 +1163,13 @@ function isCustomColour(
   return !cleared && value !== null && lookup(value) === null
 }
 
+/**
+ * The current colour in words, for a trigger's tooltip.
+ *
+ * "Custom" covers a stored value this palette never wrote — an older row, a
+ * hand-edited one. It is the same honesty the swatches themselves show by
+ * marking none of them active rather than snapping to the nearest hue.
+ */
 function colorSummary(
   value: string | null,
   cleared: boolean,
