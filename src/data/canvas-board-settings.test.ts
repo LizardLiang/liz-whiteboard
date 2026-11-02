@@ -55,6 +55,16 @@ describe('canvas board settings schema', () => {
     )
   })
 
+  it('keeps a valid key when a sibling key is bad', () => {
+    expect(
+      parseCanvasBoardSettings({ diagramStyle: 'classic', flowDots: 'neon' }),
+    ).toEqual({ diagramStyle: 'classic', flowDots: 'path' })
+  })
+
+  it('rejects an empty patch', () => {
+    expect(canvasBoardSettingsPatchSchema.safeParse({}).success).toBe(false)
+  })
+
   it('rejects unknown keys on write', () => {
     expect(canvasBoardSettingsSchema.safeParse({ extra: 1 }).success).toBe(
       false,

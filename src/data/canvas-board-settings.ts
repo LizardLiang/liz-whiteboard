@@ -23,10 +23,14 @@ export const canvasBoardSettingsSchema = z.strictObject({
 })
 
 /** A partial write: only the keys present change. */
-export const canvasBoardSettingsPatchSchema = z.strictObject({
-  diagramStyle: z.enum(DIAGRAM_STYLES).optional(),
-  flowDots: z.enum(FLOW_DOT_MODES).optional(),
-})
+export const canvasBoardSettingsPatchSchema = z
+  .strictObject({
+    diagramStyle: z.enum(DIAGRAM_STYLES).optional(),
+    flowDots: z.enum(FLOW_DOT_MODES).optional(),
+  })
+  .refine((patch) => Object.keys(patch).length > 0, {
+    message: 'A settings patch must change at least one key',
+  })
 
 export type CanvasBoardSettings = z.infer<typeof canvasBoardSettingsSchema>
 export type CanvasBoardSettingsPatch = z.infer<
@@ -37,8 +41,23 @@ export type CanvasBoardSettingsPatch = z.infer<
 export const DEFAULT_CANVAS_BOARD_SETTINGS: CanvasBoardSettings =
   canvasBoardSettingsSchema.parse({})
 
-/** Parse a stored value; null, missing or malformed gives the defaults. */
+/**
+ * Parse a stored value. Each key is checked on its own: a bad or unknown key
+ * falls back to its default and never discards a valid sibling.
+ */
 export function parseCanvasBoardSettings(raw: unknown): CanvasBoardSettings {
-  const parsed = canvasBoardSettingsSchema.safeParse(raw ?? {})
-  return parsed.success ? parsed.data : { ...DEFAULT_CANVAS_BOARD_SETTINGS }
+  const source =
+    typeof raw === 'object' && raw !== null
+      ? (raw as Record<string, unknown>)
+      : {}
+  const diagramStyle = z.enum(DIAGRAM_STYLES).safeParse(source.diagramStyle)
+  const flowDots = z.enum(FLOW_DOT_MODES).safeParse(source.flowDots)
+  return {
+    diagramStyle: diagramStyle.success
+      ? diagramStyle.data
+      : DEFAULT_CANVAS_BOARD_SETTINGS.diagramStyle,
+    flowDots: flowDots.success
+      ? flowDots.data
+      : DEFAULT_CANVAS_BOARD_SETTINGS.flowDots,
+  }
 }
