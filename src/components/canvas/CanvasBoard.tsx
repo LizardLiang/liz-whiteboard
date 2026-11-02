@@ -107,6 +107,8 @@ interface CanvasBoardProps {
   renderFraming?: RenderFraming
 }
 
+const NO_FLOW_IDS: ReadonlySet<string> = new Set()
+
 /**
  * Element id -> the world rect `focusOnRect` speaks, or `null` when the
  * element is gone or (a connector) its path cannot be built.
@@ -120,8 +122,6 @@ interface CanvasBoardProps {
  * (`bounds(element)`), so this is a strict improvement with no behaviour
  * change for non-connectors.
  */
-const NO_FLOW_IDS: ReadonlySet<string> = new Set()
-
 function focusRectOf(scene: Scene, elementId: string): WorldRect | null {
   const element = scene.byId.get(elementId)
   return element ? resolvedBounds(scene, element) : null
@@ -582,8 +582,13 @@ export function CanvasBoard({
     () => input.displayScene.elements.some((element) => element.connector),
     [input.displayScene],
   )
+  // Typing or marquee-selecting drops the lit path (see `drawScene`), so the
+  // path-mode dots stop with it.
   const pathActive =
-    flowPathOfAnchor !== null && flowPathOfAnchor.connectors.size > 0
+    flowPathOfAnchor !== null &&
+    flowPathOfAnchor.connectors.size > 0 &&
+    !input.editing &&
+    !input.marquee
   const dotPhase = useFlowAnimation({
     diagramStyle,
     flowDots,

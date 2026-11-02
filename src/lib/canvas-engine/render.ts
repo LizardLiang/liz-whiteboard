@@ -2111,7 +2111,8 @@ export function drawScene(
   const editing = selection.editing
   const target = new CanvasRenderTarget(ctx)
   // No fade or lit path while typing or marquee-selecting: the board has to
-  // stay readable then. Dots keep running.
+  // stay readable then. Path dots stop with the path; dots on
+  // every connector (`flowDots: 'always'`) keep running.
   const quiet = Boolean(editing || selection.marquee)
   const flow: FlowRender | null = selection.flow
     ? {
