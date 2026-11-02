@@ -234,7 +234,7 @@ function cardBodyColor(element: CanvasElement, theme: CanvasTheme): string {
 /** Largest channel spread (max - min) a label colour may have to count as neutral. */
 export const CARD_NEUTRAL_CHROMA = 40
 
-/** Whether `color` is a grey or slate: a low spread between its channels. */
+/** Whether `color` has a low spread between its channels (greys, slates, pale tints). */
 function isNeutralColor(color: string): boolean {
   const rgb = parseCssColor(color)
   if (!rgb) return false
@@ -349,8 +349,8 @@ const RUN_ATTR_KEYS = [
  * The style a card's label is laid out and drawn with: the first hard line is
  * bold and later lines use the muted colour, as a base UNDER the stored runs,
  * so a run's own weight or colour wins. A stored label colour that is
- * readable and chromatic (a blue, a red) is kept on every line. A readable
- * neutral one (a grey or slate) keeps the title and gives later lines the
+ * readable and strongly coloured (a saturated blue or red) is kept on every line. A readable
+ * low-spread one (a grey, a slate, a pale tint) keeps the title and gives later lines the
  * muted colour. A colour (or a run's colour) with under 4.5:1 contrast against
  * the card body is treated as unset.
  * Returns the stored style itself when no base is needed.
