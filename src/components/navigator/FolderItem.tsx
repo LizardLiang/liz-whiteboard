@@ -163,7 +163,10 @@ export function FolderItem({
         onDrop={handleDrop}
       >
         <div className="flex items-center gap-1 pr-1">
-          <div className="flex items-center gap-2 flex-1 pl-2 pr-2 py-2 rounded-md hover:bg-accent/50 transition-colors">
+          <div
+            className="flex min-w-0 items-center gap-2 flex-1 pl-2 pr-2 py-2 rounded-md hover:bg-accent/50 transition-colors"
+            title={folder.name}
+          >
             {isOpen ? (
               <FolderOpen className="h-4 w-4 text-muted-foreground flex-shrink-0" />
             ) : (

@@ -584,7 +584,8 @@ export function ProjectTree() {
                     <Link
                       to="/project/$projectId"
                       params={{ projectId: project.id }}
-                      className={`flex items-center gap-2 flex-1 pl-2 pr-2 py-2 rounded-md hover:bg-accent/50 transition-colors ${isActiveProject ? 'bg-accent' : ''}`}
+                      title={project.name}
+                      className={`flex min-w-0 items-center gap-2 flex-1 pl-2 pr-2 py-2 rounded-md hover:bg-accent/50 transition-colors ${isActiveProject ? 'bg-accent' : ''}`}
                     >
                       <FolderPlus className="h-4 w-4 text-primary flex-shrink-0" />
                       <span className="text-sm font-medium flex-1 truncate">
@@ -616,8 +617,12 @@ export function ProjectTree() {
                   {/* Project action buttons */}
                   <div className="absolute right-8 top-1 flex gap-1 opacity-0 group-hover:opacity-100 transition-opacity bg-sidebar rounded-md px-0.5 pointer-events-none group-hover:pointer-events-auto">
                     <CreateBoardMenu
-                      onCreateWhiteboard={() => handleCreateWhiteboard(project.id)}
-                      onCreateCanvasBoard={() => handleCreateCanvasBoard(project.id)}
+                      onCreateWhiteboard={() =>
+                        handleCreateWhiteboard(project.id)
+                      }
+                      onCreateCanvasBoard={() =>
+                        handleCreateCanvasBoard(project.id)
+                      }
                     >
                       <Button
                         variant="ghost"
@@ -1124,8 +1129,7 @@ export function ProjectTree() {
                   ? dialogState.name
                   : ''}
               </strong>
-              ? This will permanently delete every element on this canvas
-              board.
+              ? This will permanently delete every element on this canvas board.
             </DialogDescription>
           </DialogHeader>
           <DialogFooter>
