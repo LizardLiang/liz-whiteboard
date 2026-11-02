@@ -179,7 +179,12 @@ const LEGACY_FILL_PRESETS: ReadonlyMap<string, string> = new Map([
   [DEFAULT_FILL, SLATE_ID],
 ])
 
-/** The stroke strings the pre-preset swatch row wrote, mapped like `LEGACY_FILL_PRESETS`. */
+/**
+ * The stroke strings the pre-preset swatch row wrote, mapped like
+ * `LEGACY_FILL_PRESETS`. A card shape's border follows its fill ramp, so the
+ * mapping holds there. A connector keeps a non-default stroke literally, so the
+ * toolbar names the preset while the line keeps its legacy colour.
+ */
 const LEGACY_STROKE_PRESETS: ReadonlyMap<string, string> = new Map([
   ['#64748b', 'slate'],
   ['#ef4444', 'tomato'],
