@@ -47,9 +47,12 @@ export function ProjectContentGrid({
         >
           <Card className="hover:border-primary transition-colors cursor-pointer h-full">
             <CardHeader>
-              <div className="flex items-center gap-3">
+              <div className="flex min-w-0 items-center gap-3">
                 <Folder className="h-8 w-8 text-primary flex-shrink-0" />
-                <CardTitle className="text-base truncate">
+                <CardTitle
+                  className="min-w-0 text-base truncate"
+                  title={folder.name}
+                >
                   {folder.name}
                 </CardTitle>
               </div>
@@ -67,9 +70,12 @@ export function ProjectContentGrid({
         >
           <Card className="hover:border-primary transition-colors cursor-pointer h-full">
             <CardHeader>
-              <div className="flex items-center gap-3">
+              <div className="flex min-w-0 items-center gap-3">
                 <FileText className="h-8 w-8 text-primary flex-shrink-0" />
-                <CardTitle className="text-base truncate">
+                <CardTitle
+                  className="min-w-0 text-base truncate"
+                  title={whiteboard.name}
+                >
                   {whiteboard.name}
                 </CardTitle>
               </div>
@@ -96,9 +102,12 @@ export function ProjectContentGrid({
         >
           <Card className="hover:border-primary transition-colors cursor-pointer h-full">
             <CardHeader>
-              <div className="flex items-center gap-3">
+              <div className="flex min-w-0 items-center gap-3">
                 <Shapes className="h-8 w-8 text-primary flex-shrink-0" />
-                <CardTitle className="text-base truncate">
+                <CardTitle
+                  className="min-w-0 text-base truncate"
+                  title={board.name}
+                >
                   {board.name}
                 </CardTitle>
               </div>
