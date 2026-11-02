@@ -35,6 +35,7 @@ import type {
   Scene,
 } from '@/lib/canvas-engine/scene'
 import type {
+  CardLook,
   ConnectorEnd,
   CreationHandleDirection,
   ResizeHandle,
@@ -546,6 +547,11 @@ interface UseCanvasInputArgs {
    */
   getMeasurer: (spec: CanvasFontSpec) => TextMeasurer | null
   callbacks?: CanvasEditCallbacks
+  /**
+   * The board's diagram style and theme, so caret, click-to-caret and todo
+   * hit positions use the same text frame the card render draws.
+   */
+  cardLook?: CardLook
   /**
    * Applies a whole-label text style change to `targets` (the Ctrl/Cmd+B/I/U
    * and Ctrl/Cmd+Shift+X shortcuts). The same handler the selection toolbar
@@ -1594,10 +1600,7 @@ function textEditPatch(
   // Typing and range style picks grow a `text` element to fit (never shrink
   // it); shapes keep their size. Height rides in the same patch, so the scene,
   // the write and the undo entry agree.
-  if (
-    (textChanged || (folded.fit && runsChanged)) &&
-    element.kind === 'text'
-  ) {
+  if ((textChanged || (folded.fit && runsChanged)) && element.kind === 'text') {
     const measure = getMeasurer(fontSpecOf(style))
     if (measure) {
       const fitted = fittedTextHeight(
@@ -1651,6 +1654,7 @@ export function useCanvasInput({
   getMeasurer,
   callbacks,
   onStyleChange,
+  cardLook,
 }: UseCanvasInputArgs) {
   const [selectedIds, setSelectedIds] = useState<ReadonlySet<string>>(
     () => new Set<string>(),
@@ -1941,9 +1945,9 @@ export function useCanvasInput({
     (element: CanvasElement) => {
       const measure = getMeasurer(fontSpecOf(element.style))
       if (!measure) return null
-      return layoutElementText(element, measure)
+      return layoutElementText(element, measure, cardLook)
     },
-    [getMeasurer],
+    [getMeasurer, cardLook],
   )
 
   /**
@@ -2093,17 +2097,17 @@ export function useCanvasInput({
     (element: CanvasElement, world: Point): number => {
       const layout = layoutFor(element)
       if (!layout) return (element.text ?? '').length
-      const frame = textFrame(element)
+      const frame = textFrame(element, cardLook)
       // `textOriginY`, not `frame.y`: the block may be pushed down its box by
       // `verticalAlign`, and subtracting the frame's top instead would map the
       // click onto the wrong line. The x side needs no such adjustment —
       // horizontal alignment is already inside the layout's caret offsets.
       return caretFromPoint(layout, {
         x: world.x - frame.x,
-        y: world.y - textOriginY(element, layout),
+        y: world.y - textOriginY(element, layout, cardLook),
       })
     },
-    [layoutFor],
+    [layoutFor, cardLook],
   )
 
   // ── quick create (creation handles) ──────────────────────────────────────
@@ -2257,9 +2261,10 @@ export function useCanvasInput({
         world,
         measure,
         TODO_BOX_HIT_PAD_PX / latest.current.camera.zoom,
+        cardLook,
       )
     },
-    [getMeasurer],
+    [getMeasurer, cardLook],
   )
 
   const onPointerDown = useCallback(
@@ -4179,13 +4184,13 @@ export function useCanvasInput({
     const layout = layoutFor(element)
     if (!layout) return null
     const local = pointFromCaret(layout, displayCaret)
-    const frame = textFrame(element)
-    const originY = textOriginY(element, layout)
+    const frame = textFrame(element, cardLook)
+    const originY = textOriginY(element, layout, cardLook)
     return worldToScreen(camera, {
       x: frame.x + local.x,
       y: originY + local.y + local.height,
     })
-  }, [camera, displayCaret, displayScene, editing, layoutFor])
+  }, [camera, cardLook, displayCaret, displayScene, editing, layoutFor])
 
   /**
    * Point every local reference at an element's new id.

@@ -13,6 +13,16 @@ export interface RenderPaint {
   strokeWidth?: number
   lineJoin?: CanvasLineJoin
   lineCap?: CanvasLineCap
+  /** Dash pattern for the stroke, in world units. */
+  dash?: Array<number>
+  /** Soft drop shadow under the fill, with blur and offset in world units. */
+  shadow?: RenderShadow
+}
+
+export interface RenderShadow {
+  color: string
+  blur: number
+  offsetY: number
 }
 
 export interface RenderTextLine {
@@ -119,12 +129,16 @@ export class CanvasRenderTarget implements PersistentRenderTarget {
     if (radius <= 0) {
       if (paint.fill && paint.fill !== 'none') {
         this.ctx.fillStyle = paint.fill
+        this.applyShadow(paint.shadow)
         this.ctx.fillRect(x, y, width, height)
+        this.clearShadow(paint.shadow)
       }
       if (paint.stroke && (paint.strokeWidth ?? 0) > 0) {
         this.ctx.strokeStyle = paint.stroke
         this.ctx.lineWidth = paint.strokeWidth ?? 1
+        this.applyDash(paint.dash)
         this.ctx.strokeRect(x, y, width, height)
+        this.clearDash(paint.dash)
       }
       return
     }
@@ -229,10 +243,44 @@ export class CanvasRenderTarget implements PersistentRenderTarget {
     this.ctx.globalAlpha = this.alphas.pop() ?? 1
   }
 
+  /**
+   * Canvas shadows ignore the context transform, so blur and offset are
+   * scaled by the current zoom (the transform's x scale, device ratio
+   * included) to keep them in world units like every stroke width.
+   */
+  private applyShadow(shadow: RenderShadow | undefined): void {
+    if (!shadow) return
+    const scale =
+      typeof this.ctx.getTransform === 'function'
+        ? Math.abs(this.ctx.getTransform().a) || 1
+        : 1
+    this.ctx.shadowColor = shadow.color
+    this.ctx.shadowBlur = shadow.blur * scale
+    this.ctx.shadowOffsetX = 0
+    this.ctx.shadowOffsetY = shadow.offsetY * scale
+  }
+
+  private clearShadow(shadow: RenderShadow | undefined): void {
+    if (!shadow) return
+    this.ctx.shadowColor = 'rgba(0, 0, 0, 0)'
+    this.ctx.shadowBlur = 0
+    this.ctx.shadowOffsetY = 0
+  }
+
+  private applyDash(dash: Array<number> | undefined): void {
+    if (dash && dash.length > 0) this.ctx.setLineDash(dash)
+  }
+
+  private clearDash(dash: Array<number> | undefined): void {
+    if (dash && dash.length > 0) this.ctx.setLineDash([])
+  }
+
   private paint(paint: RenderPaint): void {
     if (paint.fill && paint.fill !== 'none') {
       this.ctx.fillStyle = paint.fill
+      this.applyShadow(paint.shadow)
       this.ctx.fill()
+      this.clearShadow(paint.shadow)
     }
     if (paint.stroke && (paint.strokeWidth ?? 0) > 0) {
       const priorJoin = this.ctx.lineJoin
@@ -241,7 +289,9 @@ export class CanvasRenderTarget implements PersistentRenderTarget {
       this.ctx.lineWidth = paint.strokeWidth ?? 1
       if (paint.lineJoin) this.ctx.lineJoin = paint.lineJoin
       if (paint.lineCap) this.ctx.lineCap = paint.lineCap
+      this.applyDash(paint.dash)
       this.ctx.stroke()
+      this.clearDash(paint.dash)
       this.ctx.lineJoin = priorJoin
       this.ctx.lineCap = priorCap
     }

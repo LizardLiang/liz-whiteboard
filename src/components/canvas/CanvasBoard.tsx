@@ -32,6 +32,7 @@ import type {
 } from 'react'
 import type { CanvasBoardSettings } from '@/data/canvas-board-settings'
 import type { Camera } from '@/lib/canvas-engine/camera'
+import type { CardLook, DiagramStyle } from '@/lib/canvas-engine/render'
 import type { CanvasFontSpec } from '@/lib/canvas-engine/render-target'
 import type { WorldRect } from '@/lib/canvas-engine/hit-test'
 import type {
@@ -157,6 +158,7 @@ export function CanvasBoard({
   boardName,
   userId,
   initialElements,
+  initialSettings,
   readOnly = false,
   isPublic = false,
   renderFraming,
@@ -171,6 +173,13 @@ export function CanvasBoard({
   const ctxRef = useRef<CanvasRenderingContext2D | null>(null)
 
   const { resolvedTheme } = useTheme()
+  // Board-level diagram style. Live updates from collaborators arrive in the
+  // settings phase; until then the loaded value applies for the session.
+  const diagramStyle: DiagramStyle = initialSettings?.diagramStyle ?? 'card'
+  const cardLook = useMemo<CardLook>(
+    () => ({ diagramStyle, theme: resolvedTheme }),
+    [diagramStyle, resolvedTheme],
+  )
 
   // Seeded once. The route remounts this component on board change (`key`),
   // so there is no stale-board case to resync from; every subsequent change
@@ -354,6 +363,7 @@ export function CanvasBoard({
     getMeasurer,
     callbacks,
     onStyleChange: handleStyleChange,
+    cardLook,
   })
 
   remapRef.current = input.remapElementId
@@ -612,8 +622,16 @@ export function CanvasBoard({
     if (!ctx || viewport.width === 0 || viewport.height === 0) return
     drawScene(ctx, input.displayScene, camera, viewport, selection, {
       theme: resolvedTheme,
+      diagramStyle,
     })
-  }, [camera, input.displayScene, resolvedTheme, selection, viewport])
+  }, [
+    camera,
+    diagramStyle,
+    input.displayScene,
+    resolvedTheme,
+    selection,
+    viewport,
+  ])
 
   // The loop lives in its own hook so its LIFECYCLE is testable without a 2D
   // context — see use-frame-loop.test.ts. A stale frame id surviving a
@@ -630,6 +648,7 @@ export function CanvasBoard({
     input.displayScene,
     requestRedraw,
     resolvedTheme,
+    diagramStyle,
     selection,
     viewport,
   ])

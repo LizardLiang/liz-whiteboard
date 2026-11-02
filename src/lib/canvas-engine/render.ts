@@ -24,6 +24,7 @@ import {
   DEFAULT_ELEMENT_STYLE,
   bounds,
   effectiveCornerRadius,
+  effectiveRole,
   isCanvasShapeKind,
 } from './scene'
 import {
@@ -43,6 +44,18 @@ import {
   selectionRects,
 } from './text-layout'
 import { CanvasRenderTarget, canvasFont } from './render-target'
+import {
+  CARD,
+  CARD_ROLE_LABELS,
+  CARD_TOP_ROW,
+  cardConnectorPaint,
+  cardShapePaint,
+  cardTextStyle,
+  cardTopRowHeight,
+  isCard,
+  isCardShape,
+} from './card-style'
+import type { CanvasTheme, CardLook, DiagramStyle } from './card-style'
 import type { AlignmentGuide } from './alignment'
 import type { Camera, Point } from './camera'
 import type { QuickCreateDirection } from './quick-create'
@@ -77,8 +90,7 @@ export interface Viewport {
   devicePixelRatio: number
 }
 
-/** Which palette the non-data chrome is drawn with. */
-export type CanvasTheme = 'light' | 'dark'
+export type { CanvasTheme, CardLook, DiagramStyle } from './card-style'
 
 /** The eight resize grips around a single selected element. */
 export type ResizeHandle = 'nw' | 'n' | 'ne' | 'e' | 'se' | 's' | 'sw' | 'w'
@@ -177,6 +189,8 @@ export interface RenderSelection {
 
 export interface DrawOptions {
   theme?: CanvasTheme
+  /** Defaults to `classic`, the pre-card render. */
+  diagramStyle?: DiagramStyle
 }
 
 /** Inset between an element's bounds and its text, in WORLD units. */
@@ -635,14 +649,17 @@ export function handleRects(
  * the renderer inset by 8 and the input hook inset by 0, every click would
  * land one character early.
  */
-export function textFrame(element: CanvasElement): {
+export function textFrame(
+  element: CanvasElement,
+  look?: CardLook,
+): {
   x: number
   y: number
   maxWidth: number
 } {
   return {
     x: element.x + TEXT_PADDING,
-    y: element.y + TEXT_PADDING,
+    y: element.y + TEXT_PADDING + cardTopRowHeight(element, look),
     maxWidth: Math.max(0, element.width - TEXT_PADDING * 2),
   }
 }
@@ -678,12 +695,16 @@ function drawTodoBox(
 export function layoutElementText(
   element: CanvasElement,
   measure: TextMeasurer,
+  look?: CardLook,
 ): TextLayout {
-  const frame = textFrame(element)
+  const frame = textFrame(element, look)
   const text = element.text ?? ''
+  // Under `card` the label carries a base style (bold title, muted body) as
+  // runs, so the layout measures the same weights the draw paints.
+  const style = isCard(look) ? cardTextStyle(element, look) : element.style
   // Runs only change the layout when some survive clamping to the text; a
   // label without them takes the single-font path untouched.
-  const hasRuns = normalizeRuns(element.style.textRuns, text.length).length > 0
+  const hasRuns = normalizeRuns(style.textRuns, text.length).length > 0
   return layoutText(
     text,
     {
@@ -693,7 +714,7 @@ export function layoutElementText(
     },
     frame.maxWidth,
     measure,
-    hasRuns ? resolveRuns(text, element.style) : undefined,
+    hasRuns ? resolveRuns(text, style) : undefined,
   )
 }
 
@@ -708,11 +729,12 @@ export function todoBoxAt(
   point: Point,
   measure: TextMeasurer,
   pad = 0,
+  look?: CardLook,
 ): number | null {
   if ((element.text ?? '').length === 0) return null
-  const layout = layoutElementText(element, measure)
-  const frame = textFrame(element)
-  const originY = textOriginY(element, layout)
+  const layout = layoutElementText(element, measure, look)
+  const frame = textFrame(element, look)
+  const originY = textOriginY(element, layout, look)
   for (const line of layout.lines) {
     const box = line.todo?.box
     if (!box) continue
@@ -737,8 +759,13 @@ export function todoBoxAt(
 export function fittedTextHeight(
   element: CanvasElement,
   measure: TextMeasurer,
+  look?: CardLook,
 ): number {
-  return layoutElementText(element, measure).height + TEXT_PADDING * 2
+  return (
+    layoutElementText(element, measure, look).height +
+    TEXT_PADDING * 2 +
+    cardTopRowHeight(element, look)
+  )
 }
 
 /**
@@ -763,12 +790,14 @@ export function fittedTextHeight(
 export function textOriginY(
   element: CanvasElement,
   layout: TextLayout,
+  look?: CardLook,
 ): number {
-  const available = Math.max(0, element.height - TEXT_PADDING * 2)
+  const topRow = cardTopRowHeight(element, look)
+  const available = Math.max(0, element.height - TEXT_PADDING * 2 - topRow)
   const slack = Math.max(0, available - layout.height)
   const align = element.style.verticalAlign
   const offset = align === 'middle' ? slack / 2 : align === 'bottom' ? slack : 0
-  return element.y + TEXT_PADDING + offset
+  return element.y + TEXT_PADDING + topRow + offset
 }
 
 /**
@@ -859,41 +888,63 @@ function shapePaint(style: CanvasElementStyle): RenderPaint {
   return paint
 }
 
-function connectorPaints(style: CanvasElementStyle): {
+const cardConnectorPaintCache = {
+  light: new WeakMap<
+    CanvasElementStyle,
+    { line: RenderPaint; arrow: RenderPaint }
+  >(),
+  dark: new WeakMap<
+    CanvasElementStyle,
+    { line: RenderPaint; arrow: RenderPaint }
+  >(),
+}
+
+function connectorPaints(
+  style: CanvasElementStyle,
+  look?: CardLook,
+): {
   line: RenderPaint
   arrow: RenderPaint
 } {
-  const cached = connectorPaintCache.get(style)
+  const cache = isCard(look)
+    ? cardConnectorPaintCache[look.theme]
+    : connectorPaintCache
+  const cached = cache.get(style)
   if (cached) return cached
-  const line: RenderPaint = {
-    stroke: style.stroke,
-    strokeWidth: style.strokeWidth,
-  }
+  const line: RenderPaint = isCard(look)
+    ? cardConnectorPaint(style, look.theme)
+    : {
+        stroke: style.stroke,
+        strokeWidth: style.strokeWidth,
+      }
   const arrow: RenderPaint = {
     ...line,
     lineJoin: 'round',
     lineCap: 'round',
   }
   const paints = { line, arrow }
-  connectorPaintCache.set(style, paints)
+  cache.set(style, paints)
   return paints
 }
 
 function drawShape(
   target: PersistentRenderTarget,
   element: CanvasElement,
+  look?: CardLook,
 ): void {
   const filled = element.style.fill !== 'none'
   const stroked = element.style.strokeWidth > 0
   if (!filled && !stroked) return
-  const paint = shapePaint(element.style)
+  const card = isCard(look) && isCardShape(element)
+  const cardLook = card ? cardShapePaint(element, look.theme) : null
+  const paint = cardLook ? cardLook.paint : shapePaint(element.style)
   if (element.kind === 'rectangle') {
     target.rect(
       element.x,
       element.y,
       element.width,
       element.height,
-      effectiveCornerRadius(element),
+      cardLook ? cardLook.radius : effectiveCornerRadius(element),
       paint,
     )
   } else if (element.kind === 'ellipse') {
@@ -923,6 +974,65 @@ function drawShape(
 }
 
 /**
+ * The card's top row: a role chip (dot plus label) and the manual step. A
+ * rectangle lays them out left and right; an ellipse, whose corners lie
+ * outside its outline, centres them as one group. Without a role the dot takes
+ * the stored stroke colour and the label is omitted.
+ */
+function drawCardTopRow(
+  target: PersistentRenderTarget,
+  element: CanvasElement,
+  look: CardLook | undefined,
+): void {
+  if (!isCard(look) || cardTopRowHeight(element, look) === 0) return
+  const tokens = CARD[look.theme]
+  const role = effectiveRole(element)
+  const accent = role ? tokens.roles[role] : element.style.stroke
+  const label = role ? CARD_ROLE_LABELS[role] : ''
+  const step = element.style.step
+  const chipSpec: CanvasFontSpec = {
+    fontSize: 12,
+    fontWeight: 'bold',
+    fontStyle: 'normal',
+  }
+  const stepSpec: CanvasFontSpec = {
+    fontSize: 11.5,
+    fontWeight: 'normal',
+    fontStyle: 'normal',
+  }
+  const dot = 3
+  const gap = 6
+  const labelWidth = label ? target.measureText(label, chipSpec) : 0
+  const chipWidth = dot * 2 + (label ? gap + labelWidth : 0)
+  const stepWidth = step ? target.measureText(step, stepSpec) : 0
+  const left = element.x + TEXT_PADDING
+  const right = element.x + element.width - TEXT_PADDING
+  const centreY = element.y + TEXT_PADDING + CARD_TOP_ROW / 2 - 2
+  let chipX = left
+  let stepX = right - stepWidth
+  if (element.kind === 'ellipse') {
+    const total = chipWidth + (step ? gap * 2 + stepWidth : 0)
+    chipX = element.x + element.width / 2 - total / 2
+    stepX = chipX + chipWidth + gap * 2
+  }
+  target.ellipse(chipX + dot, centreY, dot, dot, { fill: accent })
+  if (label) {
+    target.beginText(chipSpec, accent)
+    target.textLine(
+      label,
+      chipX + dot * 2 + gap,
+      centreY - chipSpec.fontSize / 2,
+    )
+    target.endText()
+  }
+  if (step) {
+    target.beginText(stepSpec, tokens.muted)
+    target.textLine(step, stepX, centreY - stepSpec.fontSize / 2)
+    target.endText()
+  }
+}
+
+/**
  * Draw one element in WORLD space. The caller has already applied the camera
  * transform, so this function uses raw world coordinates throughout.
  *
@@ -937,9 +1047,11 @@ function drawElement(
   theme: CanvasTheme,
   emphasized = false,
   textSelection?: { start: number; end: number } | null,
+  look?: CardLook,
 ): TextLayout | null {
   if (isCanvasShapeKind(element.kind)) {
-    drawShape(target, element)
+    drawShape(target, element, look)
+    drawCardTopRow(target, element, look)
   } else if (element.kind === 'group') {
     // A group has no fill/stroke style of its own (FR-031) — its frame is
     // drawn as fixed UI chrome, not as data. Persistent (FR-032: this must
@@ -970,9 +1082,9 @@ function drawElement(
   const fontSpec = fontSpecOf(element.style)
   const measure = (value: string, spec?: CanvasFontSpec) =>
     target.measureText(value, spec ?? fontSpec)
-  const layout = layoutElementText(element, measure)
-  const frame = textFrame(element)
-  const originY = textOriginY(element, layout)
+  const layout = layoutElementText(element, measure, look)
+  const frame = textFrame(element, look)
+  const originY = textOriginY(element, layout, look)
 
   // Behind the glyphs: painted before the text so the letters stay legible.
   if (textSelection && textSelection.start !== textSelection.end) {
@@ -1118,6 +1230,7 @@ function drawConnector(
   element: CanvasElement,
   scene: Scene,
   preparedPath?: ReadonlyArray<Point> | null,
+  look?: CardLook,
 ): boolean {
   const link = element.connector
   if (!link || element.style.strokeWidth <= 0) return false
@@ -1137,7 +1250,7 @@ function drawConnector(
   // segment then a cubic, for the same reason.
   const tail =
     link.routing === 'straight' ? connectorTailOf(scene, element) : null
-  const paints = connectorPaints(element.style)
+  const paints = connectorPaints(element.style, look)
 
   target.beginPath()
   target.moveTo(
@@ -1224,15 +1337,20 @@ function drawCaret(
    * has no text, which `drawElement` skips.
    */
   known: TextLayout | null,
+  look?: CardLook,
 ): void {
   const layout =
     known ??
-    layoutElementText(element, measurerFor(ctx, fontSpecOf(element.style)))
+    layoutElementText(
+      element,
+      measurerFor(ctx, fontSpecOf(element.style)),
+      look,
+    )
   const local = pointFromCaret(layout, caret)
-  const frame = textFrame(element)
+  const frame = textFrame(element, look)
   // `local.x` is already alignment-shifted (it comes from the line's carets);
   // only the vertical origin has to be resolved here.
-  const originY = textOriginY(element, layout)
+  const originY = textOriginY(element, layout, look)
 
   ctx.strokeStyle = CHROME[theme].text
   ctx.lineWidth = 1 / camera.zoom
@@ -1815,14 +1933,17 @@ export function renderPersistentScene(
   hoveredId?: string | null,
   preparedConnectorPaths?: ReadonlyMap<string, ReadonlyArray<Point> | null>,
   textSelection?: { elementId: string; start: number; end: number } | null,
+  diagramStyle: DiagramStyle = 'classic',
 ): TextLayout | null {
+  const look: CardLook | undefined =
+    diagramStyle === 'card' ? { diagramStyle, theme } : undefined
   let requestedLayout: TextLayout | null = null
   for (const element of scene.elements) {
     if (element.connector) {
       const preparedPath = preparedConnectorPaths?.has(element.id)
         ? preparedConnectorPaths.get(element.id)
         : undefined
-      drawConnector(target, element, scene, preparedPath)
+      drawConnector(target, element, scene, preparedPath, look)
     }
   }
   for (const element of scene.elements) {
@@ -1833,6 +1954,7 @@ export function renderPersistentScene(
       theme,
       emphasizedIds.has(element.id) || hoveredId === element.id,
       textSelection?.elementId === element.id ? textSelection : null,
+      look,
     )
     if (element.id === layoutElementId) requestedLayout = layout
   }
@@ -1862,6 +1984,9 @@ export function drawScene(
   options: DrawOptions = {},
 ): void {
   const theme = options.theme ?? 'light'
+  const diagramStyle = options.diagramStyle ?? 'classic'
+  const look: CardLook | undefined =
+    diagramStyle === 'card' ? { diagramStyle, theme } : undefined
   const ratio = viewport.devicePixelRatio > 0 ? viewport.devicePixelRatio : 1
 
   syncBackingStore(ctx, viewport)
@@ -1908,17 +2033,18 @@ export function drawScene(
           end: Math.max(editing.anchor, editing.caret),
         }
       : null,
+    diagramStyle,
   )
   if (selection.draft) {
     // Never emphasized: a draft is never in `selection.ids` (it is not yet
     // in the scene at all) and is not a hover target.
-    drawElement(target, selection.draft, theme, false)
+    drawElement(target, selection.draft, theme, false, undefined, look)
   }
 
   if (editing?.caretVisible) {
     const element = scene.byId.get(editing.elementId)
     if (element) {
-      drawCaret(ctx, element, editing.caret, camera, theme, editingLayout)
+      drawCaret(ctx, element, editing.caret, camera, theme, editingLayout, look)
     }
   }
 

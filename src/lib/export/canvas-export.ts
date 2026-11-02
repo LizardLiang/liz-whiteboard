@@ -3,7 +3,11 @@ import {
   PNG_PIXEL_RATIO,
   sanitizeFilename,
 } from './export-image'
-import type { CanvasTheme } from '@/lib/canvas-engine/render'
+import type {
+  CanvasTheme,
+  CardLook,
+  DiagramStyle,
+} from '@/lib/canvas-engine/render'
 import type {
   CanvasFontSpec,
   PersistentRenderTarget,
@@ -41,6 +45,8 @@ export interface CanvasExportOptions {
   background: ExportImageBackground
   backgroundColor: string
   filename: string | null | undefined
+  /** Defaults to `classic`. The export never carries flow highlight or dots. */
+  diagramStyle?: DiagramStyle
 }
 
 interface SvgSerializationOptions {
@@ -50,6 +56,7 @@ interface SvgSerializationOptions {
   backgroundColor: string
   measureText: (text: string, spec: CanvasFontSpec) => number
   prepared?: PreparedCanvasExport
+  diagramStyle?: DiagramStyle
 }
 
 interface PreparedCanvasExport {
@@ -93,18 +100,26 @@ function expandedElementBounds(
   }
 }
 
+function lookOf(
+  diagramStyle: DiagramStyle | undefined,
+  theme: CanvasTheme,
+): CardLook | undefined {
+  return diagramStyle === 'card' ? { diagramStyle, theme } : undefined
+}
+
 function textBounds(
   element: Scene['elements'][number],
   measureText: (text: string, spec: CanvasFontSpec) => number,
+  look?: CardLook,
 ): WorldRect | null {
   if (element.connector || (element.text ?? '').length === 0) return null
 
   const baseSpec = fontSpecOf(element.style)
   const measure = (text: string, spec?: CanvasFontSpec) =>
     measureText(text, spec ?? baseSpec)
-  const layout = layoutElementText(element, measure)
-  const frame = textFrame(element)
-  const originY = textOriginY(element, layout)
+  const layout = layoutElementText(element, measure, look)
+  const frame = textFrame(element, look)
+  const originY = textOriginY(element, layout, look)
   let left = Number.POSITIVE_INFINITY
   let right = Number.NEGATIVE_INFINITY
 
@@ -128,6 +143,7 @@ function textBounds(
 function prepareCanvasExport(
   scene: Scene,
   measureText: (text: string, spec: CanvasFontSpec) => number,
+  look?: CardLook,
 ): PreparedCanvasExport {
   let left = Number.POSITIVE_INFINITY
   let top = Number.POSITIVE_INFINITY
@@ -141,7 +157,7 @@ function prepareCanvasExport(
       : undefined
     if (element.connector) connectorPaths.set(element.id, connectorPath ?? null)
     const rect = expandedElementBounds(element, connectorPath)
-    const text = textBounds(element, measureText)
+    const text = textBounds(element, measureText, look)
     for (const bounds of [rect, text]) {
       if (!bounds) continue
       left = Math.min(left, bounds.x)
@@ -180,8 +196,9 @@ function prepareCanvasExport(
 export function canvasExportBounds(
   scene: Scene,
   measureText: (text: string, spec: CanvasFontSpec) => number,
+  look?: CardLook,
 ): WorldRect {
-  return prepareCanvasExport(scene, measureText).bounds
+  return prepareCanvasExport(scene, measureText, look).bounds
 }
 
 function xml(value: string): string {
@@ -229,7 +246,10 @@ function n(value: number): string {
   return Number(normalized.toFixed(4)).toString()
 }
 
-function paintAttributes(paint: RenderPaint): string {
+function paintAttributes(
+  paint: RenderPaint,
+  shadowFilter?: string | null,
+): string {
   const fill =
     paint.fill === undefined || paint.fill === 'none'
       ? 'none'
@@ -243,11 +263,18 @@ function paintAttributes(paint: RenderPaint): string {
   }
   if (paint.lineJoin) attributes.push(`stroke-linejoin="${paint.lineJoin}"`)
   if (paint.lineCap) attributes.push(`stroke-linecap="${paint.lineCap}"`)
+  if (paint.stroke && paint.dash && paint.dash.length > 0) {
+    attributes.push(`stroke-dasharray="${paint.dash.map(n).join(' ')}"`)
+  }
+  if (shadowFilter) attributes.push(`filter="url(#${shadowFilter})"`)
   return attributes.join(' ')
 }
 
 class SvgRenderTarget implements PersistentRenderTarget {
   readonly nodes: Array<string> = []
+  /** Drop-shadow filter definitions by id, emitted once in `<defs>`. */
+  readonly filters = new Map<string, string>()
+  private readonly filterKeys = new Map<string, string>()
   private pathData = ''
   private textData = ''
   private textFontSize = 0
@@ -264,6 +291,25 @@ class SvgRenderTarget implements PersistentRenderTarget {
     return this.measure(text, spec)
   }
 
+  /** The id of the shared shadow filter for `paint`, when it has a fill. */
+  private shadowFilter(paint: RenderPaint): string | null {
+    const shadow = paint.shadow
+    if (!shadow || !paint.fill || paint.fill === 'none') return null
+    const key = `${shadow.color}|${shadow.blur}|${shadow.offsetY}`
+    let id = [...this.filters.keys()].find(
+      (existing) => this.filterKeys.get(existing) === key,
+    )
+    if (!id) {
+      id = `card-shadow-${this.filters.size + 1}`
+      this.filterKeys.set(id, key)
+      this.filters.set(
+        id,
+        `<filter id="${id}" x="-50%" y="-50%" width="200%" height="200%"><feDropShadow dx="0" dy="${n(shadow.offsetY)}" stdDeviation="${n(shadow.blur / 2)}" flood-color="${xml(svgColor(shadow.color, '#000000'))}"/></filter>`,
+      )
+    }
+    return id
+  }
+
   rect(
     x: number,
     y: number,
@@ -274,7 +320,7 @@ class SvgRenderTarget implements PersistentRenderTarget {
   ): void {
     const rounded = radius > 0 ? ` rx="${n(radius)}" ry="${n(radius)}"` : ''
     this.nodes.push(
-      `<rect x="${n(x)}" y="${n(y)}" width="${n(width)}" height="${n(height)}"${rounded} ${paintAttributes(paint)}/>`,
+      `<rect x="${n(x)}" y="${n(y)}" width="${n(width)}" height="${n(height)}"${rounded} ${paintAttributes(paint, this.shadowFilter(paint))}/>`,
     )
   }
 
@@ -286,7 +332,7 @@ class SvgRenderTarget implements PersistentRenderTarget {
     paint: RenderPaint,
   ): void {
     this.nodes.push(
-      `<ellipse cx="${n(cx)}" cy="${n(cy)}" rx="${n(rx)}" ry="${n(ry)}" ${paintAttributes(paint)}/>`,
+      `<ellipse cx="${n(cx)}" cy="${n(cy)}" rx="${n(rx)}" ry="${n(ry)}" ${paintAttributes(paint, this.shadowFilter(paint))}/>`,
     )
   }
 
@@ -318,7 +364,9 @@ class SvgRenderTarget implements PersistentRenderTarget {
   }
 
   paintPath(paint: RenderPaint): void {
-    this.nodes.push(`<path d="${this.pathData}" ${paintAttributes(paint)}/>`)
+    this.nodes.push(
+      `<path d="${this.pathData}" ${paintAttributes(paint, this.shadowFilter(paint))}/>`,
+    )
   }
 
   beginText(spec: CanvasFontSpec, color: string): void {
@@ -381,8 +429,11 @@ export function serializeCanvasSceneSvg({
   backgroundColor,
   measureText,
   prepared,
+  diagramStyle,
 }: SvgSerializationOptions): string {
-  const preparedExport = prepared ?? prepareCanvasExport(scene, measureText)
+  const look = lookOf(diagramStyle, theme)
+  const preparedExport =
+    prepared ?? prepareCanvasExport(scene, measureText, look)
   const bounds = preparedExport.bounds
   const target = new SvgRenderTarget(measureText)
   renderPersistentScene(
@@ -393,13 +444,20 @@ export function serializeCanvasSceneSvg({
     undefined,
     undefined,
     preparedExport.connectorPaths,
+    undefined,
+    diagramStyle ?? 'classic',
   )
+  const defsNode =
+    target.filters.size > 0
+      ? `<defs>${[...target.filters.values()].join('')}</defs>`
+      : ''
   const backgroundNode =
     background === 'solid'
       ? `<rect data-export-background="true" x="${n(bounds.x)}" y="${n(bounds.y)}" width="${n(bounds.width)}" height="${n(bounds.height)}" fill="${xml(svgColor(backgroundColor, theme === 'dark' ? '#020617' : '#ffffff'))}"/>`
       : ''
   return [
     `<svg xmlns="http://www.w3.org/2000/svg" width="${n(bounds.width)}" height="${n(bounds.height)}" viewBox="${n(bounds.x)} ${n(bounds.y)} ${n(bounds.width)} ${n(bounds.height)}">`,
+    defsNode,
     backgroundNode,
     ...target.nodes,
     '</svg>',
@@ -457,7 +515,11 @@ export async function exportCanvasScene(
   options: CanvasExportOptions,
 ): Promise<void> {
   const measureText = scratchMeasurer()
-  const prepared = prepareCanvasExport(options.scene, measureText)
+  const prepared = prepareCanvasExport(
+    options.scene,
+    measureText,
+    lookOf(options.diagramStyle, options.theme),
+  )
   const bounds = prepared.bounds
   const stem = sanitizeFilename(options.filename)
 
@@ -469,6 +531,7 @@ export async function exportCanvasScene(
       backgroundColor: options.backgroundColor,
       measureText,
       prepared,
+      diagramStyle: options.diagramStyle,
     })
     downloadBlob(
       new Blob([svg], { type: 'image/svg+xml;charset=utf-8' }),
@@ -503,6 +566,8 @@ export async function exportCanvasScene(
     undefined,
     undefined,
     prepared.connectorPaths,
+    undefined,
+    options.diagramStyle ?? 'classic',
   )
   downloadBlob(await canvasBlob(canvas), `${stem}.png`)
 }
