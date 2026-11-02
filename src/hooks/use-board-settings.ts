@@ -72,7 +72,8 @@ export function useBoardSettings({
 
   // Optimistic write through the socket handler, which persists AND
   // broadcasts to collaborators (the server fn persists without broadcasting).
-  // A failed or unanswered write reverts only the keys it changed.
+  // A failed or unanswered write reverts only the keys it changed, and only
+  // those still holding its value.
   const handleSettingsChange = useCallback(
     (patch: CanvasBoardSettingsPatch) => {
       const keys = Object.keys(patch)
@@ -98,7 +99,21 @@ export function useBoardSettings({
             }
           }
           if (res.ok) return
-          setSettings((prev) => ({ ...prev, ...before }))
+          // A write sent before a connection drop may have been saved; the
+          // reset above already released its keys, so a later broadcast
+          // decides the value.
+          if (epoch !== epochRef.current) return
+          // Revert a key only while it still holds what this write set: a
+          // newer edit or broadcast on that key is not overwritten.
+          setSettings((prev) => {
+            const next: Record<string, unknown> = { ...prev }
+            for (const key of keys) {
+              if (next[key] === (patch as Record<string, unknown>)[key]) {
+                next[key] = before[key]
+              }
+            }
+            return next as unknown as CanvasBoardSettings
+          })
           toast.error('Could not save board style', {
             description: res.message,
           })

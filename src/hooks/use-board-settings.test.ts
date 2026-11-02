@@ -105,4 +105,22 @@ describe('useBoardSettings ack timeout', () => {
     expect(hook.result.current.settings.diagramStyle).toBe('classic')
     expect(toast.error).not.toHaveBeenCalled()
   })
+
+  it('a timeout after a reconnect broadcast does not overwrite the newer value', () => {
+    const { hook, handlers } = setup()
+    act(() => hook.result.current.handleSettingsChange({ diagramStyle: 'classic' }))
+    hook.rerender({ cs: 'disconnected' })
+    hook.rerender({ cs: 'connected' })
+    // Server had saved classic; a collaborator then switched the board to card
+    // and back, landing on classic again via broadcast.
+    act(() =>
+      handlers.get('board:settings-updated')!({
+        settings: { ...BASE, diagramStyle: 'classic' },
+      }),
+    )
+    act(() => {
+      vi.advanceTimersByTime(ACK_TIMEOUT_MS + 1)
+    })
+    expect(hook.result.current.settings.diagramStyle).toBe('classic')
+  })
 })
