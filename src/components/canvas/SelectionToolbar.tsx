@@ -70,6 +70,7 @@ import {
   Underline,
   Ungroup as UngroupIcon,
 } from 'lucide-react'
+import { CustomColourPopover } from './CustomColourPopover'
 import type { ComponentType, ReactNode } from 'react'
 import type { Camera } from '@/lib/canvas-engine/camera'
 import type {
@@ -613,8 +614,17 @@ export function SelectionToolbar({
           >
             <SwatchRow
               rowLabel="Fill"
-              activeSwatchValue={activeFill}
+              activeSwatchValue={
+                activeFill === null
+                  ? null
+                  : (swatchForFill(activeFill)?.fill ?? activeFill)
+              }
               noneActive={fillCleared === true}
+              customActive={isCustomColour(
+                activeFill,
+                fillCleared === true,
+                swatchForFill,
+              )}
               readSwatch={(swatch) => swatch.fill}
               onPick={(value) => emit({ target: 'fill', value })}
             />
@@ -636,8 +646,17 @@ export function SelectionToolbar({
           >
             <SwatchRow
               rowLabel="Stroke"
-              activeSwatchValue={activeStroke}
+              activeSwatchValue={
+                activeStroke === null
+                  ? null
+                  : (swatchForStroke(activeStroke)?.stroke ?? activeStroke)
+              }
               noneActive={strokeCleared === true}
+              customActive={isCustomColour(
+                activeStroke,
+                strokeCleared === true,
+                swatchForStroke,
+              )}
               readSwatch={(swatch) => swatch.stroke}
               onPick={(value) => emit({ target: 'stroke', value })}
             />
@@ -1081,11 +1100,16 @@ function ColorPreview({
   // solid stroke as the border is what makes it legible — the same trick
   // `swatchStyle` plays on the fill swatches themselves.
   const border =
-    row === 'Fill' ? (swatchForFill(value)?.stroke ?? value) : value
+    row === 'Fill'
+      ? (swatchForFill(value)?.stroke ?? value)
+      : (swatchForStroke(value)?.stroke ?? value)
   return (
     <span
       className="block size-3.5 rounded-full border-2"
-      style={{ backgroundColor: value, borderColor: border }}
+      style={{
+        backgroundColor: swatchForFill(value) ? border : value,
+        borderColor: border,
+      }}
     />
   )
 }
@@ -1136,6 +1160,14 @@ function RadiusPreview({ radius }: { radius: number | null }) {
  * hand-edited one. It is the same honesty the swatches themselves show by
  * marking none of them active rather than snapping to the nearest hue.
  */
+function isCustomColour(
+  value: string | null,
+  cleared: boolean,
+  lookup: (value: string) => unknown,
+): boolean {
+  return !cleared && value !== null && lookup(value) === null
+}
+
 function colorSummary(
   value: string | null,
   cleared: boolean,
@@ -1690,7 +1722,7 @@ function TextSizeRow({
   )
 }
 
-/** The text colour options: Default (follows the theme) then the eight swatch colours. */
+/** The text colour options: Default (follows the theme) then the eleven preset colours, then a custom button. */
 function TextColorRow({
   activeColor,
   onPick,
@@ -1730,6 +1762,15 @@ function TextColorRow({
           </button>
         )
       })}
+      <CustomColourPopover
+        rowLabel="Text"
+        storedValue={activeColor}
+        active={
+          activeColor !== null &&
+          !CANVAS_TEXT_COLORS.some(({ value }) => value === activeColor)
+        }
+        onApply={onPick}
+      />
     </div>
   )
 }
@@ -1740,6 +1781,8 @@ interface SwatchRowProps {
   activeSwatchValue: string | null
   /** Whether every target has this half of the paint turned off. */
   noneActive: boolean
+  /** Whether the shared value is a custom colour (not a preset or the default). */
+  customActive: boolean
   readSwatch: (swatch: (typeof CANVAS_SWATCHES)[number]) => string
   onPick: (value: string | null) => void
 }
@@ -1767,7 +1810,7 @@ function swatchStyle(
 }
 
 /**
- * The eight swatches plus the none button, five to a line.
+ * The eleven swatches plus the custom and none buttons, five to a line.
  *
  * A grid rather than the single strip this used to be: inside a popover there
  * is no bar width to stay within, and two short lines are quicker to scan
@@ -1778,6 +1821,7 @@ function SwatchRow({
   rowLabel,
   activeSwatchValue,
   noneActive,
+  customActive,
   readSwatch,
   onPick,
 }: SwatchRowProps) {
@@ -1811,6 +1855,12 @@ function SwatchRow({
           />
         )
       })}
+      <CustomColourPopover
+        rowLabel={rowLabel}
+        storedValue={activeSwatchValue}
+        active={customActive}
+        onApply={onPick}
+      />
       <Button
         type="button"
         size="icon"

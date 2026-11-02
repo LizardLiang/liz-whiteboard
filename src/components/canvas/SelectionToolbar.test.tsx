@@ -54,13 +54,13 @@ window.ResizeObserver = window.ResizeObserver ?? ResizeObserverStub
  * Every option now lives behind a trigger, so a test that asserts on a swatch
  * has to say which setting it is looking at first. The trigger's accessible
  * name is the setting's name ALONE ("Fill"), which is what keeps it distinct
- * from the options inside it ("Fill Red") under an exact-name query.
+ * from the options inside it ("Fill Tomato") under an exact-name query.
  */
 function openSetting(label: string) {
   fireEvent.click(screen.getByRole('button', { name: label }))
 }
 
-const RED = CANVAS_SWATCHES.find((s) => s.id === 'red')!
+const RED = CANVAS_SWATCHES.find((s) => s.id === 'tomato')!
 const TEAL = CANVAS_SWATCHES.find((s) => s.id === 'teal')!
 
 function shape(
@@ -327,20 +327,20 @@ describe('rendering', () => {
     expect(bar.style.top).toBe(`${expected.y - STYLE_TOOLBAR_OFFSET}px`)
   })
 
-  it('marks the default shape as blue in both rows', () => {
+  it('marks the default shape as slate in both rows', () => {
     // The palette/engine-default agreement, seen from the UI: a shape nobody
     // has styled must not render with every swatch inactive.
     setup([shape('a')], ['a'])
     openSetting('Fill')
     expect(
       screen
-        .getByRole('button', { name: 'Fill Blue' })
+        .getByRole('button', { name: 'Fill Slate' })
         .getAttribute('aria-pressed'),
     ).toBe('true')
     openSetting('Stroke')
     expect(
       screen
-        .getByRole('button', { name: 'Stroke Blue' })
+        .getByRole('button', { name: 'Stroke Slate' })
         .getAttribute('aria-pressed'),
     ).toBe('true')
   })
@@ -475,11 +475,91 @@ describe('arranging', () => {
   })
 })
 
+describe('custom colour', () => {
+  it('offers 11 presets plus a custom button in the Fill row', () => {
+    setup([shape('a')], ['a'])
+    openSetting('Fill')
+    expect(CANVAS_SWATCHES).toHaveLength(11)
+    for (const swatch of CANVAS_SWATCHES) {
+      expect(
+        screen.getByRole('button', { name: `Fill ${swatch.label}` }),
+      ).toBeTruthy()
+    }
+    expect(
+      screen
+        .getByRole('button', { name: 'Custom fill colour' })
+        .getAttribute('aria-pressed'),
+    ).toBe('false')
+  })
+
+  it('marks the custom button active for a non-preset value, and no preset', () => {
+    setup(
+      [
+        shape('a', {
+          style: { ...DEFAULT_ELEMENT_STYLE, fill: 'rgba(18, 171, 52, 0.60)' },
+        }),
+      ],
+      ['a'],
+    )
+    openSetting('Fill')
+    expect(
+      screen
+        .getByRole('button', { name: 'Custom fill colour' })
+        .getAttribute('aria-pressed'),
+    ).toBe('true')
+    for (const swatch of CANVAS_SWATCHES) {
+      expect(
+        screen
+          .getByRole('button', { name: `Fill ${swatch.label}` })
+          .getAttribute('aria-pressed'),
+      ).toBe('false')
+    }
+  })
+
+  it('writes #rrggbb at full opacity through the same emit as a swatch', () => {
+    const { onStyleChange } = setup([shape('a')], ['a'])
+    openSetting('Stroke')
+    fireEvent.click(
+      screen.getByRole('button', { name: 'Custom stroke colour' }),
+    )
+    fireEvent.change(screen.getByLabelText('Custom stroke hex'), {
+      target: { value: '#12AB34' },
+    })
+    fireEvent.click(screen.getByRole('button', { name: 'Apply' }))
+    expect(onStyleChange).toHaveBeenCalledTimes(1)
+    expect(onStyleChange.mock.calls[0][1]).toEqual({
+      target: 'stroke',
+      value: '#12ab34',
+    })
+  })
+
+  it('disables Apply for an invalid hex', () => {
+    setup([shape('a')], ['a'])
+    openSetting('Fill')
+    fireEvent.click(screen.getByRole('button', { name: 'Custom fill colour' }))
+    fireEvent.change(screen.getByLabelText('Custom fill hex'), {
+      target: { value: '#12' },
+    })
+    expect(
+      (screen.getByRole('button', { name: 'Apply' }))
+        .disabled,
+    ).toBe(true)
+  })
+
+  it('offers a custom button in the Text row', () => {
+    setup([shape('a')], ['a'])
+    openSetting('Text')
+    expect(
+      screen.getByRole('button', { name: 'Custom text colour' }),
+    ).toBeTruthy()
+  })
+})
+
 describe('emitting', () => {
   it('reports the chosen fill and the shapes it applies to', () => {
     const { onStyleChange } = setup([shape('a'), shape('b')], ['a', 'b'])
     openSetting('Fill')
-    fireEvent.click(screen.getByRole('button', { name: 'Fill Red' }))
+    fireEvent.click(screen.getByRole('button', { name: 'Fill Tomato' }))
 
     expect(onStyleChange).toHaveBeenCalledTimes(1)
     const [targets, change] = onStyleChange.mock.calls[0]
@@ -490,9 +570,12 @@ describe('emitting', () => {
   it('writes nothing when every target is already in that state', () => {
     // Otherwise a stray click pushes an undo entry that reverses to itself,
     // and Ctrl+Z appears to do nothing several times in a row.
-    const { onStyleChange } = setup([shape('a')], ['a'])
+    const { onStyleChange } = setup(
+      [shape('a', { style: { ...DEFAULT_ELEMENT_STYLE, fill: RED.fill } })],
+      ['a'],
+    )
     openSetting('Fill')
-    fireEvent.click(screen.getByRole('button', { name: 'Fill Blue' }))
+    fireEvent.click(screen.getByRole('button', { name: 'Fill Tomato' }))
     expect(onStyleChange).not.toHaveBeenCalled()
   })
 
@@ -509,7 +592,7 @@ describe('emitting', () => {
       ['already', 'changing'],
     )
     openSetting('Fill')
-    fireEvent.click(screen.getByRole('button', { name: 'Fill Red' }))
+    fireEvent.click(screen.getByRole('button', { name: 'Fill Tomato' }))
 
     const [targets] = onStyleChange.mock.calls[0]
     expect(targets.map((e: CanvasElement) => e.id)).toEqual(['changing'])
@@ -838,11 +921,11 @@ describe('the setting popovers', () => {
     // so no swatch is in the document until its setting is opened.
     setup([shape('a')], ['a'])
     expect(screen.queryByRole('group', { name: 'Fill' })).toBeNull()
-    expect(screen.queryByRole('button', { name: 'Fill Red' })).toBeNull()
+    expect(screen.queryByRole('button', { name: 'Fill Tomato' })).toBeNull()
 
     openSetting('Fill')
     expect(screen.getByRole('group', { name: 'Fill' })).toBeTruthy()
-    expect(screen.getByRole('button', { name: 'Fill Red' })).toBeTruthy()
+    expect(screen.getByRole('button', { name: 'Fill Tomato' })).toBeTruthy()
   })
 
   it('offers one trigger per setting, and no more', () => {
@@ -859,7 +942,7 @@ describe('the setting popovers', () => {
     setup([shape('a')], ['a'])
     expect(
       screen.getByRole('button', { name: 'Fill' }).getAttribute('title'),
-    ).toBe('Fill: Blue')
+    ).toBe('Fill: Slate')
     expect(
       screen.getByRole('button', { name: 'Width' }).getAttribute('title'),
     ).toBe('Width: 2px')
@@ -940,7 +1023,7 @@ describe('the popover and the board keyboard', () => {
     )
 
     openSetting('Fill')
-    fireEvent.keyDown(screen.getByRole('button', { name: 'Fill Red' }), {
+    fireEvent.keyDown(screen.getByRole('button', { name: 'Fill Tomato' }), {
       key: 'Escape',
     })
     expect(onKeyDown).not.toHaveBeenCalled()
@@ -1179,10 +1262,10 @@ describe('text styling', () => {
         .getByRole('button', { name: 'Text color Default' })
         .getAttribute('aria-pressed'),
     ).toBe('true')
-    fireEvent.click(screen.getByRole('button', { name: 'Text color Red' }))
+    fireEvent.click(screen.getByRole('button', { name: 'Text color Tomato' }))
     expect(onStyleChange).toHaveBeenCalledWith(expect.anything(), {
       target: 'color',
-      value: '#ef4444',
+      value: '#e54d2e',
     })
   })
 
@@ -1204,7 +1287,7 @@ describe('text styling', () => {
       fontSize: 24,
     })
     expect(
-      applyStyleChange(base, { target: 'color', value: '#ef4444' }),
-    ).toEqual({ ...base, color: '#ef4444' })
+      applyStyleChange(base, { target: 'color', value: '#e54d2e' }),
+    ).toEqual({ ...base, color: '#e54d2e' })
   })
 })

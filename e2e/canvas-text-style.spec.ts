@@ -231,11 +231,11 @@ test.describe('the Text setting', () => {
     await selectElement(page, IDS.canvasText)
 
     const row = await openText(page, 'Text color')
-    await row.getByRole('button', { name: 'Text color Red' }).click()
+    await row.getByRole('button', { name: 'Text color Tomato' }).click()
 
     await expect
       .poll(async () => (await elementById(page, IDS.canvasText)).style.color)
-      .toBe('#ef4444')
+      .toBe('#e54d2e')
   })
 })
 

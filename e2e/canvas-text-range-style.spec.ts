@@ -164,15 +164,15 @@ test.describe('per-range text styling', () => {
     expect(barBox!.y + barBox!.height).toBeLessThanOrEqual(top.y)
 
     await select(page, 4, 7)
-    await bar(page).getByRole('button', { name: 'Text color Red' }).click()
+    await bar(page).getByRole('button', { name: 'Text color Tomato' }).click()
     await expect
       .poll(() => runsOf(page))
-      .toEqual([{ start: 4, end: 7, color: '#ef4444' }])
+      .toEqual([{ start: 4, end: 7, color: '#e54d2e' }])
     // Focus stayed in the text: the edit is still open and typing still lands.
     expect((await engine(page)).editingElementId).toBe(TEXT)
 
     await commitAndReload(page)
-    expect(await runsOf(page)).toEqual([{ start: 4, end: 7, color: '#ef4444' }])
+    expect(await runsOf(page)).toEqual([{ start: 4, end: 7, color: '#e54d2e' }])
   })
 
   test('XL on one word makes a taller line and a click still lands on the right caret', async ({

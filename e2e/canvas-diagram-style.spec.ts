@@ -19,7 +19,7 @@ import { IDS } from './fixtures'
 import type { Page } from '@playwright/test'
 
 const BOARD_URL = `/canvas/${IDS.canvasStyleBoard}`
-const RED_FILL = 'rgba(239, 68, 68, 0.10)'
+const RED_FILL = '#e54d2e'
 const SIZE_B = { x: 860, y: 290, width: 200, height: 120 }
 const NOTE = { x: 560, y: 560, width: 200, height: 120 }
 
@@ -148,7 +148,7 @@ test('card look, per-card settings and persistence', async ({ page }) => {
   await page.getByRole('button', { name: '外框 強調' }).click()
   await page.keyboard.press('Escape')
   await bar.getByRole('button', { name: 'Fill', exact: true }).click()
-  await page.getByRole('button', { name: 'Fill Red' }).click()
+  await page.getByRole('button', { name: 'Fill Tomato' }).click()
   await page.keyboard.press('Escape')
 
   // The writes are acked asynchronously: reload until they have persisted.
@@ -167,7 +167,7 @@ test('card look, per-card settings and persistence', async ({ page }) => {
     })
   }).toPass({ timeout: 15_000 })
 
-  // Red-tinted ramp body (legacy red maps to tomato), not the stored rgba.
+  // Tomato ramp body painted from the stored preset value.
   await expect
     .poll(async () => {
       const px = await pixelAtWorld(page, insideCorner(SIZE_B))

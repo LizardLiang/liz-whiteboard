@@ -23,17 +23,43 @@ import {
   swatchForFill,
   swatchForStroke,
 } from './canvas-style-palette'
+import { PRESET_IDS, PRESET_RAMPS } from './canvas-engine/colour-ramps'
 import { DEFAULT_ELEMENT_STYLE } from './canvas-engine/scene'
 import { SHAPE_STROKE_WIDTHS } from '@/data/schema'
 
 describe('the palette and the engine default agree', () => {
-  it('has a blue swatch whose fill and stroke ARE the default element style', () => {
-    // If this fails, a never-styled shape shows no active swatch and the
-    // toolbar looks broken on the most common board there is.
-    const blue = CANVAS_SWATCHES.find((swatch) => swatch.id === 'blue')
-    expect(blue).toBeDefined()
-    expect(blue!.fill).toBe(DEFAULT_ELEMENT_STYLE.fill)
-    expect(blue!.stroke).toBe(DEFAULT_ELEMENT_STYLE.stroke)
+  it('reads the engine default fill and stroke as the Slate swatch', () => {
+    // A never-styled shape is painted with the slate ramp, so the toolbar must
+    // show Slate active instead of no selection at all.
+    expect(swatchForFill(DEFAULT_ELEMENT_STYLE.fill)?.id).toBe('slate')
+    expect(swatchForStroke(DEFAULT_ELEMENT_STYLE.stroke)?.id).toBe('slate')
+  })
+
+  it('stores the same preset values as the colour ramps module', () => {
+    // This module imports nothing, so the ramp module cannot be derived from it.
+    expect(CANVAS_SWATCHES.map((s) => [s.id, s.fill, s.stroke])).toEqual(
+      PRESET_IDS.map((id) => [
+        id,
+        PRESET_RAMPS[id].value,
+        PRESET_RAMPS[id].value,
+      ]),
+    )
+  })
+
+  it('lists the presets in picker order and offers no amber or yellow', () => {
+    expect(CANVAS_SWATCHES.map((s) => s.label)).toEqual([
+      'Blue',
+      'Indigo',
+      'Violet',
+      'Plum',
+      'Pink',
+      'Tomato',
+      'Orange',
+      'Green',
+      'Teal',
+      'Cyan',
+      'Slate',
+    ])
   })
 
   it('restores the default width when a cleared stroke is re-enabled', () => {
@@ -55,12 +81,13 @@ describe('the palette and the engine default agree', () => {
     )
   })
 
-  it('leads the text colours with the engine default, then the eight strokes', () => {
+  it('leads the text colours with the engine default, then the eleven presets', () => {
     expect(DEFAULT_TEXT_COLOR).toBe(DEFAULT_ELEMENT_STYLE.color)
     expect(CANVAS_TEXT_COLORS[0]).toEqual({
       label: 'Default',
       value: DEFAULT_ELEMENT_STYLE.color,
     })
+    expect(CANVAS_TEXT_COLORS).toHaveLength(12)
     expect(CANVAS_TEXT_COLORS.slice(1).map((option) => option.value)).toEqual(
       CANVAS_SWATCHES.map((swatch) => swatch.stroke),
     )
@@ -104,11 +131,11 @@ describe('the palette and the engine default agree', () => {
 })
 
 describe('the palette itself', () => {
-  it('offers eight distinct swatches with unique ids, fills and strokes', () => {
-    expect(CANVAS_SWATCHES).toHaveLength(8)
-    expect(new Set(CANVAS_SWATCHES.map((s) => s.id)).size).toBe(8)
-    expect(new Set(CANVAS_SWATCHES.map((s) => s.fill)).size).toBe(8)
-    expect(new Set(CANVAS_SWATCHES.map((s) => s.stroke)).size).toBe(8)
+  it('offers eleven distinct swatches with unique ids, fills and strokes', () => {
+    expect(CANVAS_SWATCHES).toHaveLength(11)
+    expect(new Set(CANVAS_SWATCHES.map((s) => s.id)).size).toBe(11)
+    expect(new Set(CANVAS_SWATCHES.map((s) => s.fill)).size).toBe(11)
+    expect(new Set(CANVAS_SWATCHES.map((s) => s.stroke)).size).toBe(11)
   })
 
   it('gives every swatch a label for the picker', () => {
@@ -134,11 +161,13 @@ describe('lookups', () => {
     expect(swatchForFill(FILL_NONE)).toBeNull()
   })
 
-  it('does not match a fill value against a stroke value', () => {
-    // The two halves store different strings for the same swatch (translucent
-    // versus solid); crossing them would light up the wrong row.
-    const blue = CANVAS_SWATCHES.find((s) => s.id === 'blue')!
-    expect(swatchForStroke(blue.fill)).toBeNull()
-    expect(swatchForFill(blue.stroke)).toBeNull()
+  it('matches a preset against both rows, since fill and stroke store one value', () => {
+    const cyan = CANVAS_SWATCHES.find((s) => s.id === 'cyan')!
+    expect(swatchForFill(cyan.fill)?.id).toBe('cyan')
+    expect(swatchForStroke(cyan.stroke)?.id).toBe('cyan')
+  })
+
+  it('treats the legacy translucent swatch strings as custom', () => {
+    expect(swatchForFill('rgba(245, 158, 11, 0.10)')).toBeNull()
   })
 })

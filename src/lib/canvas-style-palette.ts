@@ -1,17 +1,14 @@
 // src/lib/canvas-style-palette.ts
 // The fixed swatch palette the canvas style toolbar offers.
 //
-// SEPARATE FROM `area-colors.ts`, deliberately, despite covering the same
-// eight hues. The two boards store colour differently and that difference is
+// SEPARATE FROM `area-colors.ts`, deliberately, despite covering similar
+// hues. The two boards store colour differently and that difference is
 // not cosmetic: an Area persists a palette *id* ("blue") and resolves it at
 // draw time, while a canvas element persists the CONCRETE CSS string
 // (`canvasElementStyleSchema`'s `cssColorSchema`) because the engine hands it
 // straight to `ctx.fillStyle`. Reusing `AREA_COLORS` here would mean writing
 // an Area's translucency and tone into canvas rows, quietly restyling every
 // board the first time anyone touched a swatch.
-//
-// The hue NAMES match `area-colors.ts` on purpose, so the two board kinds read
-// as one product; the VALUES are the canvas's own.
 //
 // Pure data module — no imports, no side effects — so the schema layer and
 // React components can both use it, exactly as `area-colors.ts` documents for
@@ -28,66 +25,49 @@ export interface CanvasSwatch {
   stroke: string
 }
 
-/**
- * The eight swatches, in picker order.
- *
- * `blue` is FIRST-CLASS here rather than merely present: its two values are
- * byte-for-byte the engine's own `DEFAULT_ELEMENT_STYLE`, which is what makes
- * a never-styled shape show blue as its active swatch instead of showing no
- * selection at all. `canvas-style-palette.test.ts` pins that equality — the
- * engine cannot import this module (it imports nothing, by design), so a test
- * is the only place the two can be held together.
- */
-export const CANVAS_SWATCHES: ReadonlyArray<CanvasSwatch> = [
-  {
-    id: 'slate',
-    label: 'Slate',
-    fill: 'rgba(100, 116, 139, 0.10)',
-    stroke: '#64748b',
-  },
-  {
-    id: 'red',
-    label: 'Red',
-    fill: 'rgba(239, 68, 68, 0.10)',
-    stroke: '#ef4444',
-  },
-  {
-    id: 'orange',
-    label: 'Orange',
-    fill: 'rgba(249, 115, 22, 0.10)',
-    stroke: '#f97316',
-  },
-  {
-    id: 'amber',
-    label: 'Amber',
-    fill: 'rgba(245, 158, 11, 0.10)',
-    stroke: '#f59e0b',
-  },
-  {
-    id: 'green',
-    label: 'Green',
-    fill: 'rgba(34, 197, 94, 0.10)',
-    stroke: '#22c55e',
-  },
-  {
-    id: 'teal',
-    label: 'Teal',
-    fill: 'rgba(20, 184, 166, 0.10)',
-    stroke: '#14b8a6',
-  },
-  {
-    id: 'blue',
-    label: 'Blue',
-    fill: 'rgba(59, 130, 246, 0.10)',
-    stroke: '#3b82f6',
-  },
-  {
-    id: 'violet',
-    label: 'Violet',
-    fill: 'rgba(139, 92, 246, 0.10)',
-    stroke: '#8b5cf6',
-  },
+const PRESET_DEFINITIONS: ReadonlyArray<{
+  id: string
+  label: string
+  value: string
+}> = [
+  { id: 'blue', label: 'Blue', value: '#0090ff' },
+  { id: 'indigo', label: 'Indigo', value: '#3e63dd' },
+  { id: 'violet', label: 'Violet', value: '#6e56cf' },
+  { id: 'plum', label: 'Plum', value: '#ab4aba' },
+  { id: 'pink', label: 'Pink', value: '#d6409f' },
+  { id: 'tomato', label: 'Tomato', value: '#e54d2e' },
+  { id: 'orange', label: 'Orange', value: '#f76b15' },
+  { id: 'green', label: 'Green', value: '#30a46c' },
+  { id: 'teal', label: 'Teal', value: '#12a594' },
+  { id: 'cyan', label: 'Cyan', value: '#00a2c7' },
+  { id: 'slate', label: 'Slate', value: '#696e77' },
 ]
+
+/**
+ * The eleven preset swatches, in picker order. Fill and stroke store the same
+ * solid string (the hue's Radix dark step 9); the card style derives the body,
+ * border and text ramp from it at draw time.
+ *
+ * The values are restated from `canvas-engine/colour-ramps.ts` because this
+ * module imports nothing. `canvas-style-palette.test.ts` pins the two lists
+ * equal.
+ */
+export const CANVAS_SWATCHES: ReadonlyArray<CanvasSwatch> =
+  PRESET_DEFINITIONS.map(({ id, label, value }) => ({
+    id,
+    label,
+    fill: value,
+    stroke: value,
+  }))
+
+/**
+ * The stored fill and stroke of a never-coloured shape. They equal
+ * `DEFAULT_ELEMENT_STYLE` (pinned by test) and read as the Slate swatch,
+ * because the card style paints them with the slate ramp.
+ */
+const DEFAULT_FILL = 'rgba(59, 130, 246, 0.10)'
+const DEFAULT_STROKE = '#3b82f6'
+const SLATE_ID = 'slate'
 
 /**
  * The "no paint" choice, which each of fill and stroke expresses differently.
@@ -168,7 +148,7 @@ export const CANVAS_FONT_SIZES: ReadonlyArray<{ size: number; label: string }> =
 export const DEFAULT_TEXT_COLOR = '#0f172a'
 
 /**
- * The text colours the toolbar offers: Default, then the eight swatch strokes.
+ * The text colours the toolbar offers: Default, then the eleven presets.
  */
 export const CANVAS_TEXT_COLORS: ReadonlyArray<{
   label: string
@@ -184,17 +164,21 @@ export const CANVAS_TEXT_COLORS: ReadonlyArray<{
 /**
  * The swatch whose `fill` matches this stored value, or null.
  *
- * Exact string comparison, not colour parsing. The only values that ever
- * reach here were written by this palette or by the engine's default, so a
- * parser would add a way to be wrong for no reachable benefit — and a value
- * from neither source (an older row, a hand-edited one) correctly reports
- * "no swatch is active" rather than snapping to the nearest one.
+ * Exact string comparison, not colour parsing: a custom colour correctly
+ * reports "no swatch is active" rather than snapping to the nearest one. The
+ * one alias is the never-coloured default fill, which reads as Slate.
  */
 export function swatchForFill(fill: string): CanvasSwatch | null {
-  return CANVAS_SWATCHES.find((swatch) => swatch.fill === fill) ?? null
+  const target = fill === DEFAULT_FILL ? findPresetValue(SLATE_ID) : fill
+  return CANVAS_SWATCHES.find((swatch) => swatch.fill === target) ?? null
 }
 
 /** The swatch whose `stroke` matches this stored value, or null. Same rule as `swatchForFill`. */
 export function swatchForStroke(stroke: string): CanvasSwatch | null {
-  return CANVAS_SWATCHES.find((swatch) => swatch.stroke === stroke) ?? null
+  const target = stroke === DEFAULT_STROKE ? findPresetValue(SLATE_ID) : stroke
+  return CANVAS_SWATCHES.find((swatch) => swatch.stroke === target) ?? null
+}
+
+function findPresetValue(id: string): string {
+  return PRESET_DEFINITIONS.find((preset) => preset.id === id)!.value
 }

@@ -65,11 +65,11 @@ describe('TextEditBar', () => {
       key: 'fontSize',
       value: 36,
     })
-    fireEvent.click(screen.getByLabelText('Text color Red'))
+    fireEvent.click(screen.getByLabelText('Text color Tomato'))
     expect(onPick).toHaveBeenCalledWith({
       kind: 'set',
       key: 'color',
-      value: '#ef4444',
+      value: '#e54d2e',
     })
   })
 

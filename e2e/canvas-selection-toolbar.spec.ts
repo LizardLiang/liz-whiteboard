@@ -59,12 +59,8 @@ test.beforeEach(() => {
  * is what the aria-label is built from, and the strings are what the engine
  * stores.
  */
-const RED = { label: 'Red', fill: 'rgba(239, 68, 68, 0.10)', stroke: '#ef4444' }
-const TEAL = {
-  label: 'Teal',
-  fill: 'rgba(20, 184, 166, 0.10)',
-  stroke: '#14b8a6',
-}
+const RED = { label: 'Tomato', fill: '#e54d2e', stroke: '#e54d2e' }
+const TEAL = { label: 'Teal', fill: '#12a594', stroke: '#12a594' }
 /** `DEFAULT_ELEMENT_STYLE` — what an unstyled shape carries, i.e. the blue swatch. */
 const DEFAULT_FILL = 'rgba(59, 130, 246, 0.10)'
 const DEFAULT_STROKE = '#3b82f6'
@@ -217,7 +213,7 @@ type SettingLabel = 'Fill' | 'Stroke' | 'Width' | 'Corner'
  * nothing at all. The `role="group"` inside the popover carries the setting's
  * name and is the handle every option query below goes through.
  *
- * `exact` on the trigger matters: "Fill" must not also match the "Fill Red"
+ * `exact` on the trigger matters: "Fill" must not also match the "Fill Tomato"
  * option that appears once the popover is open.
  */
 async function openSetting(page: Page, label: SettingLabel): Promise<Locator> {
@@ -389,18 +385,18 @@ test.describe('the style toolbar', () => {
     await drawEllipse(page)
     // The draw leaves the new shape selected, so the bar should already be up.
     await expect(styleBar(page)).toBeVisible()
-    // A never-styled shape is the blue swatch in BOTH settings — the palette
+    // A never-styled shape is the slate swatch in BOTH settings — the palette
     // and the engine default agreeing, seen from the UI. One popover at a
     // time, which is what a user gets too.
     const fill = await openSetting(page, 'Fill')
     await expect(
-      fill.getByRole('button', { name: 'Fill Blue' }),
+      fill.getByRole('button', { name: 'Fill Slate' }),
     ).toHaveAttribute('aria-pressed', 'true')
     await closeSetting(page)
 
     const stroke = await openSetting(page, 'Stroke')
     await expect(
-      stroke.getByRole('button', { name: 'Stroke Blue' }),
+      stroke.getByRole('button', { name: 'Stroke Slate' }),
     ).toHaveAttribute('aria-pressed', 'true')
     await closeSetting(page)
   })
@@ -412,13 +408,13 @@ test.describe('the style toolbar', () => {
     await drawEllipse(page)
     await expect(styleBar(page)).toBeVisible()
     // The bar is one row of triggers. No swatch is on screen yet.
-    await expect(page.getByRole('button', { name: 'Fill Red' })).toBeHidden()
+    await expect(page.getByRole('button', { name: 'Fill Tomato' })).toBeHidden()
 
     const fill = await openSetting(page, 'Fill')
-    await expect(fill.getByRole('button', { name: 'Fill Red' })).toBeVisible()
+    await expect(fill.getByRole('button', { name: 'Fill Tomato' })).toBeVisible()
 
     await closeSetting(page)
-    await expect(page.getByRole('button', { name: 'Fill Red' })).toBeHidden()
+    await expect(page.getByRole('button', { name: 'Fill Tomato' })).toBeHidden()
   })
 
   test('Escape closes the open setting and LEAVES the selection alone', async ({
