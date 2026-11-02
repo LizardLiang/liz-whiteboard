@@ -23,11 +23,13 @@
 
 import { z } from 'zod'
 import type { Server as SocketIOServer } from 'socket.io'
+import type { PresetId } from '@/lib/canvas-engine/colour-ramps'
 import {
   canvasBoardSettingsPatchSchema,
   createCanvasElementSchema,
   updateCanvasElementSchema,
 } from '@/data/schema'
+import { PRESET_RAMPS } from '@/lib/canvas-engine/colour-ramps'
 import { updateCanvasBoardSettings } from '@/data/canvas-board'
 import {
   RevisionMismatchError,
@@ -154,6 +156,46 @@ async function loadOwnedElement(
   return record
 }
 
+const KIND_COLOUR_PRESET: Partial<Record<string, PresetId>> = {
+  rectangle: 'blue',
+  ellipse: 'green',
+  diamond: 'violet',
+  triangle: 'orange',
+}
+
+/**
+ * The style an ordinary create is persisted with. A shape that arrives with no
+ * `style.fill` (an MCP agent that named no colour; the browser always sends
+ * one) gets its kind's preset as fill, and as stroke when the stroke is also
+ * missing, so agent-drawn shapes are told apart instead of all painting slate.
+ * Every other payload keeps its own style untouched.
+ */
+function withKindColour(payload: Record<string, unknown>): unknown {
+  const preset =
+    typeof payload.kind === 'string'
+      ? KIND_COLOUR_PRESET[payload.kind]
+      : undefined
+  if (!preset) return payload.style
+  const style = payload.style
+  if (style !== undefined && style !== null && !isPlainObject(style)) {
+    return style
+  }
+  const given = (style ?? {})
+  if (given.fill !== undefined && given.fill !== null) return style
+  const value = PRESET_RAMPS[preset].value
+  return {
+    ...given,
+    fill: value,
+    ...(given.stroke === undefined || given.stroke === null
+      ? { stroke: value }
+      : {}),
+  }
+}
+
+function isPlainObject(value: unknown): value is Record<string, unknown> {
+  return typeof value === 'object' && value !== null && !Array.isArray(value)
+}
+
 /**
  * Register `element:create` / `element:update` / `element:delete` on a canvas
  * socket. Broadcasts `element:created` / `element:updated` / `element:deleted`
@@ -219,6 +261,7 @@ export function registerCanvasElementHandlers(
           : undefined
       const validated = createCanvasElementSchema.parse({
         ...payload,
+        style: hasExplicitId ? payload.style : withKindColour(payload),
         boardId,
         zIndex,
         minRevision,

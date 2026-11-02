@@ -203,6 +203,73 @@ describe('element:create', () => {
     expect(cb).toHaveBeenCalledWith({ ok: true, entity: record })
   })
 
+  describe('agent colour default', () => {
+    async function createWith(payload: Record<string, unknown>) {
+      vi.mocked(createCanvasElement).mockResolvedValue(makeRecord() as any)
+      const h = makeHarness()
+      await h.handlers['element:create'](payload, vi.fn())
+      return vi.mocked(createCanvasElement).mock.calls[0][0] as any
+    }
+
+    it('colours a diamond with no style by its kind', async () => {
+      const input = await createWith({
+        ...VALID_CREATE,
+        kind: 'diamond',
+        props: { kind: 'diamond' },
+      })
+      expect(input.style.fill).toBe('#6e56cf')
+      expect(input.style.stroke).toBe('#6e56cf')
+    })
+
+    it.each([
+      ['rectangle', '#0090ff'],
+      ['ellipse', '#30a46c'],
+      ['triangle', '#f76b15'],
+    ])('colours a %s as %s', async (kind, value) => {
+      const input = await createWith({
+        ...VALID_CREATE,
+        kind,
+        props: { kind },
+        style: {},
+      })
+      expect(input.style.fill).toBe(value)
+      expect(input.style.stroke).toBe(value)
+    })
+
+    it('keeps a fill the caller named, and its stroke default', async () => {
+      const input = await createWith({
+        ...VALID_CREATE,
+        style: { fill: '#00a2c7' },
+      })
+      expect(input.style.fill).toBe('#00a2c7')
+      expect(input.style.stroke).toBe(DEFAULT_ELEMENT_STYLE.stroke)
+    })
+
+    it('keeps a stroke the caller named when it names no fill', async () => {
+      const input = await createWith({
+        ...VALID_CREATE,
+        style: { stroke: '#ff0000', strokeWidth: 4 },
+      })
+      expect(input.style.fill).toBe('#0090ff')
+      expect(input.style.stroke).toBe('#ff0000')
+      expect(input.style.strokeWidth).toBe(4)
+    })
+
+    it('leaves a restore (explicit id) untouched', async () => {
+      const input = await createWith({ ...VALID_CREATE, id: ELEMENT_ID })
+      expect(input.style).toBeUndefined()
+    })
+
+    it('leaves a text element untouched', async () => {
+      const input = await createWith({
+        ...VALID_CREATE,
+        kind: 'text',
+        props: { kind: 'text' },
+      })
+      expect(input.style).toBeUndefined()
+    })
+  })
+
   it('takes zIndex from the server, never from the payload', async () => {
     // The client computes its z-index from a local scene that is stale the
     // moment a collaborator adds anything, so two clients drawing at once
