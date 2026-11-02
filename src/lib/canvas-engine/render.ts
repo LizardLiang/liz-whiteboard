@@ -52,6 +52,7 @@ import {
   CARD_TOP_ROW,
   cardAccent,
   cardConnectorPaint,
+  cardLookOf,
   cardShapePaint,
   cardTextStyle,
   cardTopRowHeight,
@@ -1974,8 +1975,7 @@ export function renderPersistentScene(
   diagramStyle: DiagramStyle = 'classic',
   flow?: FlowRender | null,
 ): TextLayout | null {
-  const look: CardLook | undefined =
-    diagramStyle === 'card' ? { diagramStyle, theme } : undefined
+  const look = cardLookOf(diagramStyle, theme)
   // Flow cues belong to the card look; `classic` never reads them.
   const activeFlow = look && flow ? flow : null
   const lit = activeFlow !== null && activeFlow.elements.size > 0
@@ -2090,8 +2090,7 @@ export function drawScene(
 ): void {
   const theme = options.theme ?? 'light'
   const diagramStyle = options.diagramStyle ?? 'classic'
-  const look: CardLook | undefined =
-    diagramStyle === 'card' ? { diagramStyle, theme } : undefined
+  const look = cardLookOf(diagramStyle, theme)
   const ratio = viewport.devicePixelRatio > 0 ? viewport.devicePixelRatio : 1
 
   syncBackingStore(ctx, viewport)

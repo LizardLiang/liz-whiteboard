@@ -12,6 +12,7 @@ import {
   checkUserRateLimit,
   handleRenderTokenRequest,
 } from './render-token'
+import { updateCanvasBoardSettings } from '@/data/canvas-board'
 import { getRenderBoardHandler } from '@/lib/render/handlers'
 import { signRenderToken } from '@/lib/render/render-token'
 import { _resetKeyPairForTests, getSigningKeyPair } from '@/lib/oauth/keys'
@@ -216,6 +217,19 @@ describe('getRenderBoardHandler', () => {
     expect(result.valid).toBe(true)
     if (!result.valid) throw new Error('invalid')
     expect(result.kind).toBe('canvas')
+  })
+
+  it('returns the canvas board settings, a classic board included', async () => {
+    const { viewer, canvas } = await setup()
+    const { token } = await signRenderToken({
+      sub: viewer.id,
+      kind: 'canvas',
+      boardId: canvas.id,
+    })
+    await updateCanvasBoardSettings(canvas.id, { diagramStyle: 'classic' })
+    const result = await getRenderBoardHandler(token)
+    if (!result.valid || result.kind !== 'canvas') throw new Error('kind')
+    expect(result.settings.diagramStyle).toBe('classic')
   })
 
   it('resolves garbage to INVALID without throwing', async () => {

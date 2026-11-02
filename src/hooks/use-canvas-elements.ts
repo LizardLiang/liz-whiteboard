@@ -116,7 +116,36 @@ interface AckResult<T> {
  * whose acked mutations are not this hook and were not reviewed here — is not
  * this change to make.
  */
-const ACK_TIMEOUT_MS = 10_000
+export const ACK_TIMEOUT_MS = 10_000
+
+/**
+ * Wrap an ack handler so it runs exactly once, on the server reply or on
+ * timeout, whichever comes first.
+ *
+ * The settle-once guard matters in both directions: a late reply arriving
+ * after the timeout must not re-apply a mutation already rolled back, and
+ * the timeout must not fire after a reply already handled it.
+ */
+export function settleAckOnce<T>(
+  handle: (res: AckResult<T>) => void,
+): (res: AckResult<T>) => void {
+  let settled = false
+  const timer = setTimeout(() => {
+    if (settled) return
+    settled = true
+    handle({
+      ok: false,
+      message: 'The server did not respond. Your change was not saved.',
+    })
+  }, ACK_TIMEOUT_MS)
+
+  return (res: AckResult<T>) => {
+    if (settled) return
+    settled = true
+    clearTimeout(timer)
+    handle(res)
+  }
+}
 
 export interface UseCanvasElementsParams {
   boardId: string
@@ -249,33 +278,8 @@ export function useCanvasElements({
     [],
   )
 
-  /**
-   * Wrap an ack handler so it runs exactly once — on the server reply, or on
-   * timeout, whichever comes first.
-   *
-   * The settle-once guard matters in both directions: a late reply arriving
-   * after the timeout must not re-apply a mutation already rolled back, and
-   * the timeout must not fire after a reply already handled it.
-   */
   const settleOnce = useCallback(
-    <T,>(handle: (res: AckResult<T>) => void) => {
-      let settled = false
-      const timer = setTimeout(() => {
-        if (settled) return
-        settled = true
-        handle({
-          ok: false,
-          message: 'The server did not respond. Your change was not saved.',
-        })
-      }, ACK_TIMEOUT_MS)
-
-      return (res: AckResult<T>) => {
-        if (settled) return
-        settled = true
-        clearTimeout(timer)
-        handle(res)
-      }
-    },
+    <T,>(handle: (res: AckResult<T>) => void) => settleAckOnce(handle),
     [],
   )
 

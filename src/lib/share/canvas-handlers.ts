@@ -231,6 +231,7 @@ export async function getSharedCanvasBoardHandler(token: string) {
     valid: true as const,
     canvasBoardId: board.id,
     canvasBoardName: board.name,
+    settings: board.settings,
     elements,
   }
 }

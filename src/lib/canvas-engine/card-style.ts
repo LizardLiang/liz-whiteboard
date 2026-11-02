@@ -32,6 +32,14 @@ export interface CardLook {
   theme: CanvasTheme
 }
 
+/** The card look for a board style, or undefined for `classic`. */
+export function cardLookOf(
+  diagramStyle: DiagramStyle | undefined,
+  theme: CanvasTheme,
+): CardLook | undefined {
+  return diagramStyle === 'card' ? { diagramStyle, theme } : undefined
+}
+
 export type CardRole = Exclude<ReturnType<typeof effectiveRole>, null>
 
 interface CardTokens {
@@ -206,6 +214,19 @@ function isNearWhite(color: Rgb): boolean {
  * fill (a light-era default) would only grey the card, so it gets no tint.
  */
 export function tintedSurface(fill: string, theme: CanvasTheme): string {
+  const key = `${fill}|${theme}`
+  const hit = TINT_CACHE.get(key)
+  if (hit !== undefined) return hit
+  const value = computeTintedSurface(fill, theme)
+  if (TINT_CACHE.size >= TINT_CACHE_LIMIT) TINT_CACHE.clear()
+  TINT_CACHE.set(key, value)
+  return value
+}
+
+const TINT_CACHE = new Map<string, string>()
+const TINT_CACHE_LIMIT = 512
+
+function computeTintedSurface(fill: string, theme: CanvasTheme): string {
   const surface = CARD[theme].surface
   if (fill === DEFAULT_ELEMENT_STYLE.fill || fill === 'none') return surface
   const stored = parseCssColor(fill)

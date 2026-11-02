@@ -64,6 +64,7 @@ export async function getRenderBoardHandler(token: string) {
       kind: 'canvas' as const,
       canvasBoardId: board.id,
       canvasBoardName: board.name,
+      settings: board.settings,
       elements,
     }
   }

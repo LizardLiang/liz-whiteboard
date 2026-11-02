@@ -14,7 +14,6 @@
 // globals because they all arrive here and are passed down as arguments.
 
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
-import { toast } from 'sonner'
 import { Hand, MousePointer2, Search, Type } from 'lucide-react'
 import { TextInputProxy } from './TextInputProxy'
 import { ConnectorToolbar } from './ConnectorToolbar'
@@ -33,10 +32,7 @@ import type {
   KeyboardEvent as ReactKeyboardEvent,
   PointerEvent as ReactPointerEvent,
 } from 'react'
-import type {
-  CanvasBoardSettings,
-  CanvasBoardSettingsPatch,
-} from '@/data/canvas-board-settings'
+import type { CanvasBoardSettings } from '@/data/canvas-board-settings'
 import type { Camera } from '@/lib/canvas-engine/camera'
 import type { CardLook, DiagramStyle } from '@/lib/canvas-engine/render'
 import type { CanvasFontSpec } from '@/lib/canvas-engine/render-target'
@@ -66,9 +62,9 @@ import { CANVAS_SHAPE_KINDS, updateElement } from '@/lib/canvas-engine/scene'
 import { planZOrder } from '@/lib/canvas-engine/z-order'
 import { DEFAULT_CAMERA } from '@/lib/canvas-engine/camera'
 import { focusOnRect } from '@/lib/canvas-engine/camera-focus'
-import { DEFAULT_CANVAS_BOARD_SETTINGS } from '@/data/canvas-board-settings'
 import { useTheme } from '@/hooks/use-theme'
 import { useCollaboration } from '@/hooks/use-collaboration'
+import { useBoardSettings } from '@/hooks/use-board-settings'
 import { useCanvasElements } from '@/hooks/use-canvas-elements'
 import { useCanvasUndo } from '@/hooks/use-canvas-undo'
 import { useAuthContext } from '@/components/auth/AuthContext'
@@ -183,18 +179,6 @@ export function CanvasBoard({
   const ctxRef = useRef<CanvasRenderingContext2D | null>(null)
 
   const { resolvedTheme } = useTheme()
-  // Board-level diagram settings: seeded from the loader, then kept live by
-  // local edits (optimistic) and collaborators' `board:settings-updated`.
-  const [settings, setSettings] = useState<CanvasBoardSettings>(
-    initialSettings ?? DEFAULT_CANVAS_BOARD_SETTINGS,
-  )
-  const diagramStyle: DiagramStyle = settings.diagramStyle
-  const flowDots = settings.flowDots
-  const cardLook = useMemo<CardLook>(
-    () => ({ diagramStyle, theme: resolvedTheme }),
-    [diagramStyle, resolvedTheme],
-  )
-
   // Seeded once. The route remounts this component on board change (`key`),
   // so there is no stale-board case to resync from; every subsequent change
   // arrives through useCanvasElements — locally, by ack, or by broadcast.
@@ -231,60 +215,20 @@ export function CanvasBoard({
     'canvas',
   )
 
-  // Keys with a local edit awaiting its ack. A collaborator's broadcast must
-  // not overwrite those, or the UI would show a value the server is about to
-  // replace.
-  const pendingSettingsRef = useRef<Map<string, number>>(new Map())
-
-  useEffect(() => {
-    const onSettingsUpdated = (payload: { settings?: CanvasBoardSettings }) => {
-      const incoming = payload.settings
-      if (!incoming) return
-      setSettings((prev) => {
-        const next: Record<string, unknown> = { ...incoming }
-        for (const key of pendingSettingsRef.current.keys()) {
-          next[key] = (prev as Record<string, unknown>)[key]
-        }
-        return next as unknown as CanvasBoardSettings
-      })
-    }
-    on('board:settings-updated', onSettingsUpdated)
-    return () => off('board:settings-updated', onSettingsUpdated)
-  }, [on, off])
-
-  // Optimistic write through the socket handler, which persists AND
-  // broadcasts to collaborators (the server fn persists without broadcasting).
-  // A failed write reverts only the keys it changed.
-  const handleSettingsChange = useCallback(
-    (patch: CanvasBoardSettingsPatch) => {
-      const keys = Object.keys(patch)
-      const before: Record<string, unknown> = {}
-      setSettings((prev) => {
-        for (const key of keys) {
-          before[key] = (prev as Record<string, unknown>)[key]
-        }
-        return { ...prev, ...patch }
-      })
-      const pending = pendingSettingsRef.current
-      for (const key of keys) pending.set(key, (pending.get(key) ?? 0) + 1)
-      emit(
-        'board:settings-update',
-        patch,
-        (res: { ok: boolean; message?: string }) => {
-          for (const key of keys) {
-            const count = (pending.get(key) ?? 1) - 1
-            if (count <= 0) pending.delete(key)
-            else pending.set(key, count)
-          }
-          if (res.ok) return
-          setSettings((prev) => ({ ...prev, ...before }))
-          toast.error('Could not save board style', {
-            description: res.message,
-          })
-        },
-      )
-    },
-    [emit],
+  // Board-level diagram settings: seeded from the loader, then kept live by
+  // local edits (optimistic) and collaborators' `board:settings-updated`.
+  const { settings, handleSettingsChange } = useBoardSettings({
+    initialSettings,
+    emit,
+    on,
+    off,
+    connectionState,
+  })
+  const diagramStyle: DiagramStyle = settings.diagramStyle
+  const flowDots = settings.flowDots
+  const cardLook = useMemo<CardLook>(
+    () => ({ diagramStyle, theme: resolvedTheme }),
+    [diagramStyle, resolvedTheme],
   )
 
   // Declared before useCanvasInput so the element-id remap can be handed to

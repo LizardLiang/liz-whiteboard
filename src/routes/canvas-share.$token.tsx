@@ -83,6 +83,7 @@ export function SharedCanvasBoardPage() {
           boardName={result.canvasBoardName}
           userId={PUBLIC_VIEWER_ID}
           initialElements={result.elements}
+          initialSettings={result.settings}
           isPublic
         />
       </div>

@@ -60,6 +60,7 @@ function RenderCanvasPage() {
         boardName={result.canvasBoardName}
         userId={RENDER_VIEWER_ID}
         initialElements={result.elements}
+        initialSettings={result.settings}
         isPublic
         renderFraming={framing}
       />

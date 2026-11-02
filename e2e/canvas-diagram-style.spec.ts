@@ -150,20 +150,22 @@ test('card look, per-card settings and persistence', async ({ page }) => {
   await bar.getByRole('button', { name: 'Fill', exact: true }).click()
   await page.getByRole('button', { name: 'Fill Red' }).click()
   await page.keyboard.press('Escape')
-  await page.waitForTimeout(1500)
 
-  await page.reload()
-  await page.waitForFunction(() => window.__canvasEngine !== undefined)
-  const b = (await engine(page)).elements.find(
-    (e) => e.id === IDS.canvasStyleRectB,
-  )!
-  expect(b.style).toMatchObject({
-    role: 'system',
-    step: '02',
-    cardShadow: 'off',
-    cardBorder: 'accent',
-    fill: RED_FILL,
-  })
+  // The writes are acked asynchronously: reload until they have persisted.
+  await expect(async () => {
+    await page.reload()
+    await page.waitForFunction(() => window.__canvasEngine !== undefined)
+    const b = (await engine(page)).elements.find(
+      (e) => e.id === IDS.canvasStyleRectB,
+    )!
+    expect(b.style).toMatchObject({
+      role: 'system',
+      step: '02',
+      cardShadow: 'off',
+      cardBorder: 'accent',
+      fill: RED_FILL,
+    })
+  }).toPass({ timeout: 15_000 })
 
   // Surface mixed 14% with red: red-tinted, and not the stored rgba.
   await expect
@@ -200,29 +202,33 @@ test('always mode keeps the frame loop running, classic restores stored paint', 
 
   await openBoardStyle(page)
   await page.getByRole('button', { name: '流動點 一直跑' }).click()
-  await page.waitForTimeout(1500)
-  const before = await page.evaluate(
-    () => (window as unknown as { __rafCount: number }).__rafCount,
-  )
-  await page.waitForTimeout(600)
-  const after = await page.evaluate(
-    () => (window as unknown as { __rafCount: number }).__rafCount,
-  )
-  expect(after - before).toBeGreaterThan(10)
+  const rafCount = () =>
+    page.evaluate(
+      () => (window as unknown as { __rafCount: number }).__rafCount,
+    )
+  const before = await rafCount()
+  await expect
+    .poll(async () => (await rafCount()) - before, { timeout: 10_000 })
+    .toBeGreaterThan(10)
 
   await page.getByRole('button', { name: '樣式 經典' }).click()
-  await page.waitForTimeout(1500)
   await page.keyboard.press('Escape')
-  await page.reload()
-  await page.waitForFunction(() => window.__canvasEngine !== undefined)
 
-  // Classic: the stored 10% blue fill over an empty canvas, not an opaque card.
-  await expect
-    .poll(async () => {
-      const px = await pixelAtWorld(page, insideCorner(SIZE_B))
-      return px ? px[3] < 60 && px[2] > px[0] + 100 : false
-    })
-    .toBe(true)
+  // Classic: the stored 10% blue fill over an empty canvas, not an opaque
+  // card. Reload until the style write has persisted.
+  await expect(async () => {
+    await page.reload()
+    await page.waitForFunction(() => window.__canvasEngine !== undefined)
+    await expect
+      .poll(
+        async () => {
+          const px = await pixelAtWorld(page, insideCorner(SIZE_B))
+          return px ? px[3] < 60 && px[2] > px[0] + 100 : false
+        },
+        { timeout: 3_000 },
+      )
+      .toBe(true)
+  }).toPass({ timeout: 20_000 })
 
   await openBoardStyle(page)
   await expect(page.getByRole('button', { name: '樣式 經典' })).toHaveAttribute(

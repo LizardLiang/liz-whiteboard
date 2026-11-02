@@ -17,7 +17,7 @@ import {
 } from '@/lib/share/canvas-handlers'
 import { hashInviteToken } from '@/lib/auth/invite-token'
 import { createCanvasBoardShareLink } from '@/data/canvas-board-share-link'
-import { createCanvasBoard } from '@/data/canvas-board'
+import { createCanvasBoard, updateCanvasBoardSettings } from '@/data/canvas-board'
 import { createCanvasElement } from '@/data/canvas-element'
 import { upsertProjectMember } from '@/data/permission'
 import { db } from '@/db'
@@ -234,6 +234,24 @@ describe('getSharedCanvasBoardHandler', () => {
     expect(read.canvasBoardName).toBe('Shared Canvas')
     expect(read.elements).toHaveLength(1)
     expect(read.elements[0].positionX).toBe(10)
+  })
+
+  it('returns the board settings, a classic board included', async () => {
+    const { owner, board } = await setup()
+    const created = await createCanvasShareLinkHandler(ctxFor(owner.id), {
+      canvasBoardId: board.id,
+      expiresInHours: SEVEN_DAYS_HOURS,
+    })
+    if (created.success !== true) throw new Error('expected success')
+
+    const fresh = await getSharedCanvasBoardHandler(created.token)
+    if (!fresh.valid) throw new Error('expected valid')
+    expect(fresh.settings.diagramStyle).toBe('card')
+
+    await updateCanvasBoardSettings(board.id, { diagramStyle: 'classic' })
+    const classic = await getSharedCanvasBoardHandler(created.token)
+    if (!classic.valid) throw new Error('expected valid')
+    expect(classic.settings.diagramStyle).toBe('classic')
   })
 
   it('never leaks the project, folder or creator', async () => {

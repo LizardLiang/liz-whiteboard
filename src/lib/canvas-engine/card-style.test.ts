@@ -625,3 +625,21 @@ describe('card first line weight in the drawn output', () => {
     }
   })
 })
+
+describe('cardLookOf and tintedSurface cache', () => {
+  it('cardLookOf is a look only for card', async () => {
+    const { cardLookOf } = await import('./card-style')
+    expect(cardLookOf('card', 'dark')).toEqual({
+      diagramStyle: 'card',
+      theme: 'dark',
+    })
+    expect(cardLookOf('classic', 'dark')).toBeUndefined()
+    expect(cardLookOf(undefined, 'light')).toBeUndefined()
+  })
+
+  it('tintedSurface returns identical values on repeat calls, per theme', () => {
+    const dark = tintedSurface('#ff0000', 'dark')
+    expect(tintedSurface('#ff0000', 'dark')).toBe(dark)
+    expect(tintedSurface('#ff0000', 'light')).not.toBe(dark)
+  })
+})

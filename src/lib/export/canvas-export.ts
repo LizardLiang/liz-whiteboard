@@ -34,6 +34,7 @@ import {
   CARD,
   cardHasShadow,
   isCardShape,
+  cardLookOf,
 } from '@/lib/canvas-engine/card-style'
 import { connectorBounds } from '@/lib/canvas-engine/connector-geometry'
 import { connectorPathOf } from '@/lib/canvas-engine/hit-test'
@@ -109,13 +110,6 @@ function expandedElementBounds(
     width: rect.width + expansion * 2,
     height: rect.height + expansion * 2,
   }
-}
-
-function lookOf(
-  diagramStyle: DiagramStyle | undefined,
-  theme: CanvasTheme,
-): CardLook | undefined {
-  return diagramStyle === 'card' ? { diagramStyle, theme } : undefined
 }
 
 function textBounds(
@@ -442,7 +436,7 @@ export function serializeCanvasSceneSvg({
   prepared,
   diagramStyle,
 }: SvgSerializationOptions): string {
-  const look = lookOf(diagramStyle, theme)
+  const look = cardLookOf(diagramStyle, theme)
   const preparedExport =
     prepared ?? prepareCanvasExport(scene, measureText, look)
   const bounds = preparedExport.bounds
@@ -529,7 +523,7 @@ export async function exportCanvasScene(
   const prepared = prepareCanvasExport(
     options.scene,
     measureText,
-    lookOf(options.diagramStyle, options.theme),
+    cardLookOf(options.diagramStyle, options.theme),
   )
   const bounds = prepared.bounds
   const stem = sanitizeFilename(options.filename)
