@@ -90,9 +90,8 @@ export const CARD: Record<CanvasTheme, CardTokens> = {
 
 /** Corner radius of a card rectangle, in world units. */
 export const CARD_RADIUS = 14
-/** Card border width and the accent border width, in world units. */
-export const CARD_BORDER_WIDTH = 2
-export const CARD_ACCENT_BORDER_WIDTH = 2.5
+/** How much wider the accent border is than the subtle one, in world units. */
+export const CARD_ACCENT_BORDER_EXTRA = 0.5
 /** Width of a connector drawn in a card ramp colour at rest. */
 export const CARD_EDGE_WIDTH = 2.5
 export const NOTE_DASH = [6, 4]
@@ -296,7 +295,9 @@ export function cardShapePaint(
     paint.stroke = accent
       ? cardAccent(element, theme)
       : elementRamp(element, theme).ramp.border
-    paint.strokeWidth = accent ? CARD_ACCENT_BORDER_WIDTH : CARD_BORDER_WIDTH
+    paint.strokeWidth = accent
+      ? style.strokeWidth + CARD_ACCENT_BORDER_EXTRA
+      : style.strokeWidth
     if (note) paint.dash = [...NOTE_DASH]
   }
   const radius =

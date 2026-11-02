@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest'
 import {
   CARD,
-  CARD_ACCENT_BORDER_WIDTH,
+  CARD_ACCENT_BORDER_EXTRA,
   CARD_EDGE_WIDTH,
   CARD_RADIUS,
   CARD_TOP_ROW,
@@ -163,7 +163,7 @@ describe('cardShapePaint', () => {
       'dark',
     ).paint
     expect(withRole.stroke).toBe(CARD.dark.roles.system)
-    expect(withRole.strokeWidth).toBe(CARD_ACCENT_BORDER_WIDTH)
+    expect(withRole.strokeWidth).toBe(2 + CARD_ACCENT_BORDER_EXTRA)
 
     const noRole = cardShapePaint(
       el({ style: { cardBorder: 'accent', fill: PRESET_RAMPS.pink.value } }),
@@ -178,6 +178,19 @@ describe('cardShapePaint', () => {
       'light',
     )
     expect(paint.stroke).toBe(CARD.light.roles.trigger)
+  })
+
+  it('takes the subtle border width from the stored stroke width', () => {
+    const { paint } = cardShapePaint(el({ style: { strokeWidth: 4 } }), 'dark')
+    expect(paint.strokeWidth).toBe(4)
+  })
+
+  it('draws the accent border half a unit wider than the stored width', () => {
+    const { paint } = cardShapePaint(
+      el({ style: { strokeWidth: 4, cardBorder: 'accent' } }),
+      'dark',
+    )
+    expect(paint.strokeWidth).toBe(4.5)
   })
 
   it('draws no stroke when the stroke width is 0', () => {
