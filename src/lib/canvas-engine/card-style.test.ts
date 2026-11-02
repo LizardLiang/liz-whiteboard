@@ -284,7 +284,7 @@ describe('cardTextStyle', () => {
   })
 
   it('leaves a user colour alone', () => {
-    const style = cardTextStyle(el({ text, style: { color: '#e0f2fe' } }), LOOK)
+    const style = cardTextStyle(el({ text, style: { color: '#7dd3fc' } }), LOOK)
     expect(style.textRuns).toEqual([{ start: 0, end: 5, fontWeight: 'bold' }])
   })
 
@@ -506,14 +506,43 @@ describe('contrast guard and neutral fills', () => {
     }
   })
 
-  it('keeps REPRO label colours that read on a light card', () => {
-    for (const color of REPRO_TEXT) {
+  it('mutes lines 2+ for a readable neutral label colour on a light card', () => {
+    for (const color of ['#1f2937', '#334155', '#0f172a']) {
       const style = cardTextStyle(
         el({ text, style: { color, fill: '#ffffff' } }),
         LIGHT,
       )
-      expect(style.textRuns).toEqual([{ start: 0, end: 5, fontWeight: 'bold' }])
+      expect(style.textRuns).toEqual([
+        { start: 0, end: 5, fontWeight: 'bold' },
+        { start: 6, end: text.length, color: CARD.light.muted },
+      ])
     }
+  })
+
+  it('keeps a readable chromatic label colour on every line', () => {
+    const style = cardTextStyle(
+      el({ text, style: { color: '#1d4ed8', fill: '#dbeafe' } }),
+      LIGHT,
+    )
+    expect(style.textRuns).toEqual([{ start: 0, end: 5, fontWeight: 'bold' }])
+  })
+
+  it('lets an explicit run colour win over the neutral muted body', () => {
+    const style = cardTextStyle(
+      el({
+        text,
+        style: {
+          color: '#1f2937',
+          fill: '#ffffff',
+          textRuns: [{ start: 6, end: text.length, color: '#b91c1c' }],
+        },
+      }),
+      LIGHT,
+    )
+    expect(style.textRuns[1]).toMatchObject({
+      start: 6,
+      color: '#b91c1c',
+    })
   })
 
   it('replaces a light-theme-unreadable label colour with the theme text', () => {
@@ -556,5 +585,43 @@ describe('contrast guard and neutral fills', () => {
     expect(
       cardTextStyle(legacy, { diagramStyle: 'classic', theme: 'dark' }),
     ).toBe(legacy.style)
+  })
+})
+
+describe('card first line weight in the drawn output', () => {
+  const text = 'Title\nbody line'
+  function pieces(theme: 'light' | 'dark', color: string, fill: string) {
+    const rec = new Recorder()
+    renderPersistentScene(
+      rec,
+      sceneFrom([el({ text, style: { color, fill } })]),
+      theme,
+      undefined,
+      undefined,
+      undefined,
+      undefined,
+      undefined,
+      'card',
+    )
+    return rec.calls
+      .filter((call) => call.kind === 'piece')
+      .map(
+        (call) =>
+          call.payload as { text: string; color: string; spec: CanvasFontSpec },
+      )
+  }
+
+  it('draws the first line bold in light and dark for REPRO colours', () => {
+    for (const theme of ['light', 'dark'] as const) {
+      for (const [color, fill] of [
+        ['#1f2937', '#ffffff'],
+        ['#1d4ed8', '#dbeafe'],
+        ['#334155', '#eef1f5'],
+      ]) {
+        const drawn = pieces(theme, color, fill)
+        expect(drawn[0].text).toBe('Title')
+        expect(drawn[0].spec.fontWeight).toBe('bold')
+      }
+    }
   })
 })

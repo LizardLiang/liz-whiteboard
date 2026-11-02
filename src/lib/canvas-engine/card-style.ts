@@ -231,6 +231,19 @@ function cardBodyColor(element: CanvasElement, theme: CanvasTheme): string {
   return tintedSurface(element.style.fill, theme)
 }
 
+/** Largest channel spread (max - min) a label colour may have to count as neutral. */
+export const CARD_NEUTRAL_CHROMA = 40
+
+/** Whether `color` is a grey or slate: a low spread between its channels. */
+function isNeutralColor(color: string): boolean {
+  const rgb = parseCssColor(color)
+  if (!rgb) return false
+  return (
+    Math.max(rgb.r, rgb.g, rgb.b) - Math.min(rgb.r, rgb.g, rgb.b) <=
+    CARD_NEUTRAL_CHROMA
+  )
+}
+
 /** Whether `color` reads on `body`. Unparseable colours are kept as stored. */
 function readableOn(color: string, body: string): boolean {
   const ratio = contrastRatio(color, body)
@@ -335,9 +348,11 @@ const RUN_ATTR_KEYS = [
 /**
  * The style a card's label is laid out and drawn with: the first hard line is
  * bold and later lines use the muted colour, as a base UNDER the stored runs,
- * so a run's own weight or colour wins. A whole-label bold or non-default
- * colour already says what the user wants, so the base leaves it alone, unless that colour (or a run's colour) has
- * under 4.5:1 contrast against the card body; then it is treated as unset.
+ * so a run's own weight or colour wins. A stored label colour that is
+ * readable and chromatic (a blue, a red) is kept on every line. A readable
+ * neutral one (a grey or slate) keeps the title and gives later lines the
+ * muted colour. A colour (or a run's colour) with under 4.5:1 contrast against
+ * the card body is treated as unset.
  * Returns the stored style itself when no base is needed.
  */
 export function cardTextStyle(
@@ -365,6 +380,7 @@ export function cardTextStyle(
     style.color !== DEFAULT_ELEMENT_STYLE.color &&
     !readableOn(style.color, body)
   const unset = style.color === DEFAULT_ELEMENT_STYLE.color || unreadable
+  const mutedBody = unset || isNeutralColor(style.color)
   const newline = text.indexOf('\n')
   const firstEnd = newline < 0 ? text.length : newline
   let runs: Array<{ start: number; end: number } & TextRunAttrs> = []
@@ -374,7 +390,7 @@ export function cardTextStyle(
   if (unreadable && firstEnd > 0) {
     runs = applyRunStyle(runs, 0, firstEnd, { color: tokens.text }, text.length)
   }
-  if (newline >= 0 && newline + 1 < text.length && unset) {
+  if (newline >= 0 && newline + 1 < text.length && mutedBody) {
     runs = applyRunStyle(
       runs,
       newline + 1,
