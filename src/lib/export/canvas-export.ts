@@ -30,6 +30,11 @@ import {
   textFrame,
   textOriginY,
 } from '@/lib/canvas-engine/render'
+import {
+  CARD,
+  cardHasShadow,
+  isCardShape,
+} from '@/lib/canvas-engine/card-style'
 import { connectorBounds } from '@/lib/canvas-engine/connector-geometry'
 import { connectorPathOf } from '@/lib/canvas-engine/hit-test'
 import { bounds as elementBounds } from '@/lib/canvas-engine/scene'
@@ -79,6 +84,7 @@ function isDrawable(
 function expandedElementBounds(
   element: Scene['elements'][number],
   connectorPath: ReadonlyArray<Point> | null | undefined,
+  look?: CardLook,
 ): WorldRect | null {
   if (element.kind === 'text') return null
   const rect = element.connector
@@ -91,7 +97,12 @@ function expandedElementBounds(
     (element.connector ? CONNECTOR_ARROW_SIZE : 0) +
     element.style.strokeWidth / 2
   const groupOutline = element.kind === 'group' ? 0.5 : 0
-  const expansion = Math.max(outline, groupOutline)
+  // A card's drop shadow reaches blur + offset beyond its rect.
+  const shadow =
+    look && !element.connector && isCardShape(element) && cardHasShadow(element)
+      ? CARD[look.theme].shadow.blur + CARD[look.theme].shadow.offsetY
+      : 0
+  const expansion = Math.max(outline, groupOutline, shadow)
   return {
     x: rect.x - expansion,
     y: rect.y - expansion,
@@ -156,7 +167,7 @@ function prepareCanvasExport(
       ? connectorPathOf(scene, element)
       : undefined
     if (element.connector) connectorPaths.set(element.id, connectorPath ?? null)
-    const rect = expandedElementBounds(element, connectorPath)
+    const rect = expandedElementBounds(element, connectorPath, look)
     const text = textBounds(element, measureText, look)
     for (const bounds of [rect, text]) {
       if (!bounds) continue

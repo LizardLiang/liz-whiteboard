@@ -1,5 +1,8 @@
 import { describe, expect, it } from 'vitest'
-import { serializeCanvasSceneSvg } from '../export/canvas-export'
+import {
+  canvasExportBounds,
+  serializeCanvasSceneSvg,
+} from '../export/canvas-export'
 import { CanvasRenderTarget } from './render-target'
 import { DEFAULT_ELEMENT_STYLE, sceneFrom } from './scene'
 import type { CanvasElement } from './scene'
@@ -108,5 +111,17 @@ describe('SVG export of the card look', () => {
     expect(out).not.toContain('filter=')
     expect(out).not.toContain('stroke-dasharray')
     expect(out).toContain(`fill="${DEFAULT_ELEMENT_STYLE.fill}"`)
+  })
+})
+
+describe('export bounds under the card look', () => {
+  it('grows to hold the card shadow', () => {
+    const scene = sceneFrom([card()])
+    const classic = canvasExportBounds(scene, (text) => text.length * 8)
+    const withCard = canvasExportBounds(scene, (text) => text.length * 8, {
+      diagramStyle: 'card',
+      theme: 'light',
+    })
+    expect(withCard.width).toBeGreaterThan(classic.width)
   })
 })
