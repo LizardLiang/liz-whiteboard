@@ -37,6 +37,7 @@ export type CardRole = Exclude<ReturnType<typeof effectiveRole>, null>
 interface CardTokens {
   surface: string
   border: string
+  text: string
   muted: string
   edge: string
   shadow: { color: string; blur: number; offsetY: number }
@@ -48,6 +49,7 @@ export const CARD: Record<CanvasTheme, CardTokens> = {
   dark: {
     surface: '#161a23',
     border: '#2a3141',
+    text: '#f8fafc',
     muted: '#9aa3b3',
     edge: '#5c6578',
     shadow: { color: 'rgba(0, 0, 0, 0.45)', blur: 16, offsetY: 4 },
@@ -62,6 +64,7 @@ export const CARD: Record<CanvasTheme, CardTokens> = {
   light: {
     surface: '#ffffff',
     border: '#e2e6ec',
+    text: '#0f172a',
     muted: '#5b6474',
     edge: '#9aa3b2',
     shadow: { color: 'rgba(15, 23, 42, 0.10)', blur: 14, offsetY: 4 },
@@ -159,14 +162,76 @@ export function mixColors(base: Rgb, top: Rgb, amount: number): string {
   return `#${hex2(channel(base.r, top.r))}${hex2(channel(base.g, top.g))}${hex2(channel(base.b, top.b))}`
 }
 
-/** The card body colour for a stored fill, or the plain surface. */
+/** WCAG relative luminance of an opaque RGB colour (0..1). */
+export function relativeLuminance(color: Rgb): number {
+  const linear = (channel: number) => {
+    const value = channel / 255
+    return value <= 0.03928 ? value / 12.92 : ((value + 0.055) / 1.055) ** 2.4
+  }
+  return (
+    0.2126 * linear(color.r) +
+    0.7152 * linear(color.g) +
+    0.0722 * linear(color.b)
+  )
+}
+
+/** WCAG contrast ratio (1..21) between two CSS colours, or null if unparseable. */
+export function contrastRatio(a: string, b: string): number | null {
+  const first = parseCssColor(a)
+  const second = parseCssColor(b)
+  if (!first || !second) return null
+  const high = relativeLuminance(first)
+  const low = relativeLuminance(second)
+  const [light, dark] = high >= low ? [high, low] : [low, high]
+  return (light + 0.05) / (dark + 0.05)
+}
+
+/** Minimum contrast a stored text colour needs against the card body. */
+export const CARD_MIN_TEXT_CONTRAST = 4.5
+/** A fill at or above this luminance and at or below the chroma is neutral. */
+const NEAR_WHITE_LUMINANCE = 0.8
+const NEAR_WHITE_MAX_CHROMA = 20
+
+function isNearWhite(color: Rgb): boolean {
+  const chroma =
+    Math.max(color.r, color.g, color.b) - Math.min(color.r, color.g, color.b)
+  return (
+    relativeLuminance(color) >= NEAR_WHITE_LUMINANCE &&
+    chroma <= NEAR_WHITE_MAX_CHROMA
+  )
+}
+
+/**
+ * The card body colour for a stored fill, or the plain surface. A near-white
+ * fill (a light-era default) would only grey the card, so it gets no tint.
+ */
 export function tintedSurface(fill: string, theme: CanvasTheme): string {
   const surface = CARD[theme].surface
   if (fill === DEFAULT_ELEMENT_STYLE.fill || fill === 'none') return surface
   const stored = parseCssColor(fill)
   const base = parseCssColor(surface)
   if (!stored || !base) return surface
+  if (isNearWhite(stored)) return surface
   return mixColors(base, stored, CARD_TINT)
+}
+
+/** The colour a card body is painted with, as `cardShapePaint` resolves it. */
+function cardBodyColor(element: CanvasElement, theme: CanvasTheme): string {
+  const tokens = CARD[theme]
+  if (effectiveRole(element) === 'note' && element.style.fill !== 'none') {
+    const base = parseCssColor(tokens.surface)
+    const amber = parseCssColor(NOTE_AMBER)
+    return base && amber
+      ? mixColors(base, amber, CARD_NOTE_TINT)
+      : tokens.surface
+  }
+  return tintedSurface(element.style.fill, theme)
+}
+
+/** Whether `color` reads on `body`. Unparseable colours are kept as stored. */
+function readableOn(color: string, body: string): boolean {
+  const ratio = contrastRatio(color, body)
+  return ratio === null || ratio >= CARD_MIN_TEXT_CONTRAST
 }
 
 /** Whether the card draws a shadow under `element`. */
@@ -201,10 +266,7 @@ export function cardShapePaint(
   const paint: RenderPaint = {}
   if (filled) {
     if (note) {
-      const base = parseCssColor(tokens.surface)
-      const amber = parseCssColor(NOTE_AMBER)
-      paint.fill =
-        base && amber ? mixColors(base, amber, CARD_NOTE_TINT) : tokens.surface
+      paint.fill = cardBodyColor(element, theme)
     } else {
       paint.fill = tintedSurface(style.fill, theme)
     }
@@ -291,31 +353,38 @@ export function cardTextStyle(
   const cached = perTheme.get(look.theme)
   if (cached && cached.text === text) return cached.style
 
+  const body = cardBodyColor(element, look.theme)
+  const tokens = CARD[look.theme]
+  // A stored label colour that cannot be read on this body is treated as
+  // unset: the title takes the theme text colour, later lines the muted one.
+  const unreadable =
+    style.color !== DEFAULT_ELEMENT_STYLE.color &&
+    !readableOn(style.color, body)
+  const unset = style.color === DEFAULT_ELEMENT_STYLE.color || unreadable
   const newline = text.indexOf('\n')
   const firstEnd = newline < 0 ? text.length : newline
   let runs: Array<{ start: number; end: number } & TextRunAttrs> = []
   if (style.fontWeight !== 'bold' && firstEnd > 0) {
     runs = applyRunStyle(runs, 0, firstEnd, { fontWeight: 'bold' }, text.length)
   }
-  if (
-    newline >= 0 &&
-    newline + 1 < text.length &&
-    style.color === DEFAULT_ELEMENT_STYLE.color
-  ) {
+  if (unreadable && firstEnd > 0) {
+    runs = applyRunStyle(runs, 0, firstEnd, { color: tokens.text }, text.length)
+  }
+  if (newline >= 0 && newline + 1 < text.length && unset) {
     runs = applyRunStyle(
       runs,
       newline + 1,
       text.length,
-      { color: CARD[look.theme].muted },
+      { color: tokens.muted },
       text.length,
     )
   }
   for (const run of normalizeRuns(style.textRuns, text.length)) {
     const attrs: TextRunAttrs = {}
     for (const key of RUN_ATTR_KEYS) {
-      if (run[key] !== undefined) {
-        ;(attrs as Record<string, unknown>)[key] = run[key]
-      }
+      if (run[key] === undefined) continue
+      if (key === 'color' && !readableOn(run.color as string, body)) continue
+      ;(attrs as Record<string, unknown>)[key] = run[key]
     }
     runs = applyRunStyle(runs, run.start, run.end, attrs, text.length)
   }

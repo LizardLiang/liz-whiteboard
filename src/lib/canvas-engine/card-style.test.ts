@@ -9,7 +9,9 @@ import {
   cardShapePaint,
   cardTextStyle,
   cardTopRowHeight,
+  contrastRatio,
   parseCssColor,
+  relativeLuminance,
   tintedSurface,
 } from './card-style'
 import {
@@ -266,7 +268,9 @@ describe('cardTextStyle', () => {
       el({
         text,
         style: {
-          textRuns: [{ start: 0, end: 5, fontWeight: 'normal', color: '#f00' }],
+          textRuns: [
+            { start: 0, end: 5, fontWeight: 'normal', color: '#fbbf24' },
+          ],
         },
       }),
       LOOK,
@@ -275,12 +279,12 @@ describe('cardTextStyle', () => {
       start: 0,
       end: 5,
       fontWeight: 'normal',
-      color: '#f00',
+      color: '#fbbf24',
     })
   })
 
   it('leaves a user colour alone', () => {
-    const style = cardTextStyle(el({ text, style: { color: '#123456' } }), LOOK)
+    const style = cardTextStyle(el({ text, style: { color: '#e0f2fe' } }), LOOK)
     expect(style.textRuns).toEqual([{ start: 0, end: 5, fontWeight: 'bold' }])
   })
 
@@ -449,5 +453,108 @@ describe('card render', () => {
       stroke: CARD.dark.edge,
       lineJoin: 'round',
     })
+  })
+})
+
+describe('contrast guard and neutral fills', () => {
+  const REPRO_TEXT = ['#1f2937', '#1d4ed8', '#334155']
+  const REPRO_FILLS = ['#ffffff', '#f8fafc', '#eef1f5']
+  const text = 'Title\nbody line'
+  const DARK: CardLook = { diagramStyle: 'card', theme: 'dark' }
+  const LIGHT: CardLook = { diagramStyle: 'card', theme: 'light' }
+
+  it('relativeLuminance and contrastRatio match WCAG', () => {
+    expect(relativeLuminance({ r: 255, g: 255, b: 255 })).toBeCloseTo(1, 5)
+    expect(relativeLuminance({ r: 0, g: 0, b: 0 })).toBe(0)
+    expect(contrastRatio('#000000', '#ffffff')).toBeCloseTo(21, 3)
+    expect(contrastRatio('#ffffff', '#ffffff')).toBeCloseTo(1, 5)
+    expect(contrastRatio('tomato', '#ffffff')).toBeNull()
+  })
+
+  it('gives near-white fills the plain surface in both themes', () => {
+    for (const fill of [...REPRO_FILLS, '#f1f5f9', 'rgb(250, 250, 250)']) {
+      expect(tintedSurface(fill, 'dark')).toBe(CARD.dark.surface)
+      expect(tintedSurface(fill, 'light')).toBe(CARD.light.surface)
+    }
+  })
+
+  it('still tints light blue and the palette swatches (blue is the default fill)', () => {
+    expect(tintedSurface('#dbeafe', 'dark')).not.toBe(CARD.dark.surface)
+    for (const swatch of [
+      'rgba(100, 116, 139, 0.10)',
+      'rgba(239, 68, 68, 0.10)',
+      'rgba(249, 115, 22, 0.10)',
+      'rgba(245, 158, 11, 0.10)',
+      'rgba(34, 197, 94, 0.10)',
+      'rgba(20, 184, 166, 0.10)',
+      'rgba(139, 92, 246, 0.10)',
+    ]) {
+      expect(tintedSurface(swatch, 'dark')).not.toBe(CARD.dark.surface)
+      expect(tintedSurface(swatch, 'light')).not.toBe(CARD.light.surface)
+    }
+  })
+
+  it('treats REPRO label colours as unset on a dark card', () => {
+    for (const color of REPRO_TEXT) {
+      for (const fill of [...REPRO_FILLS, '#dbeafe']) {
+        const style = cardTextStyle(el({ text, style: { color, fill } }), DARK)
+        expect(style.textRuns).toEqual([
+          { start: 0, end: 5, fontWeight: 'bold', color: CARD.dark.text },
+          { start: 6, end: text.length, color: CARD.dark.muted },
+        ])
+      }
+    }
+  })
+
+  it('keeps REPRO label colours that read on a light card', () => {
+    for (const color of REPRO_TEXT) {
+      const style = cardTextStyle(
+        el({ text, style: { color, fill: '#ffffff' } }),
+        LIGHT,
+      )
+      expect(style.textRuns).toEqual([{ start: 0, end: 5, fontWeight: 'bold' }])
+    }
+  })
+
+  it('replaces a light-theme-unreadable label colour with the theme text', () => {
+    const style = cardTextStyle(
+      el({ text, style: { color: '#fefefe', fill: '#ffffff' } }),
+      LIGHT,
+    )
+    expect(style.textRuns).toEqual([
+      { start: 0, end: 5, fontWeight: 'bold', color: CARD.light.text },
+      { start: 6, end: text.length, color: CARD.light.muted },
+    ])
+  })
+
+  it('drops a low-contrast run colour and keeps a readable one', () => {
+    const dropped = cardTextStyle(
+      el({
+        text,
+        style: { textRuns: [{ start: 0, end: 5, color: '#1f2937' }] },
+      }),
+      DARK,
+    )
+    expect(dropped.textRuns[0]).toEqual({
+      start: 0,
+      end: 5,
+      fontWeight: 'bold',
+    })
+    const kept = cardTextStyle(
+      el({
+        text,
+        style: { textRuns: [{ start: 0, end: 5, color: '#fbbf24' }] },
+      }),
+      DARK,
+    )
+    expect(kept.textRuns[0]).toMatchObject({ color: '#fbbf24' })
+  })
+
+  it('leaves classic untouched', () => {
+    const legacy = el({ text, style: { color: '#1f2937', fill: '#f8fafc' } })
+    expect(cardTextStyle(legacy, undefined)).toBe(legacy.style)
+    expect(
+      cardTextStyle(legacy, { diagramStyle: 'classic', theme: 'dark' }),
+    ).toBe(legacy.style)
   })
 })
