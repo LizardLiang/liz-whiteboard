@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest'
-import { CARD } from './card-style'
+import { CARD_EDGE_WIDTH } from './card-style'
+import { PRESET_RAMPS } from './colour-ramps'
 import {
   FLOW_DOT_RADIUS,
   FLOW_FADE,
@@ -77,7 +78,10 @@ function link(id: string, from: string, to: string): CanvasElement {
 // a (0..100) -> b (300..400); c far away and unlinked
 const scene = sceneFrom([
   shape('a', 0, 'trigger'),
-  shape('b', 300, 'data'),
+  {
+    ...shape('b', 300, 'data'),
+    style: { ...DEFAULT_ELEMENT_STYLE, role: 'data', fill: '#00a2c7' },
+  },
   shape('c', 600, 'system'),
   link('ab', 'a', 'b'),
 ])
@@ -111,19 +115,53 @@ const hasDot = (log: Array<string>) =>
   )
 
 describe('flow path render', () => {
-  it('lights an on-path connector in the source role colour at the lit width', () => {
+  it('draws a resting connector in the target ramp colour at the edge width', () => {
+    const { paints } = draw(null)
+    const line = paints.find((entry) => entry.op === 'path')
+    expect(line?.paint.stroke).toBe(PRESET_RAMPS.cyan.dark.line)
+    expect(line?.paint.strokeWidth).toBe(CARD_EDGE_WIDTH)
+  })
+
+  it('keeps a stored non-default connector stroke at rest', () => {
+    const custom = sceneFrom([
+      shape('a', 0, 'trigger'),
+      shape('b', 300, 'data'),
+      {
+        ...link('ab', 'a', 'b'),
+        style: { ...DEFAULT_ELEMENT_STYLE, stroke: '#ff0000', strokeWidth: 4 },
+      },
+    ])
+    const rec = recorder()
+    renderPersistentScene(
+      rec.target,
+      custom,
+      'dark',
+      undefined,
+      undefined,
+      null,
+      undefined,
+      null,
+      'card',
+    )
+    const line = rec.paints.find((entry) => entry.op === 'path')
+    expect(line?.paint.stroke).toBe('#ff0000')
+    expect(line?.paint.strokeWidth).toBe(4)
+  })
+
+  it('lights an on-path connector in the target ramp colour at the lit width', () => {
     const { paints } = draw(lit)
     const line = paints.find((entry) => entry.op === 'path')
-    expect(line?.paint.stroke).toBe(CARD.dark.roles.trigger)
+    expect(line?.paint.stroke).toBe(PRESET_RAMPS.cyan.dark.line)
     expect(line?.paint.strokeWidth).toBe(FLOW_LINE_WIDTH)
   })
 
-  it('places a dot on the connector in the target role colour', () => {
+  it('places a dot on the connector in the target ramp colour', () => {
     const { log, paints } = draw(lit)
     expect(hasDot(log)).toBe(true)
     const dot = paints.find(
       (entry) =>
-        entry.op === 'ellipse' && entry.paint.fill === CARD.dark.roles.data,
+        entry.op === 'ellipse' &&
+        entry.paint.fill === PRESET_RAMPS.cyan.dark.line,
     )
     expect(dot).toBeDefined()
   })

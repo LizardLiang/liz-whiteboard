@@ -48,12 +48,15 @@ import {
 import { CanvasRenderTarget, canvasFont } from './render-target'
 import {
   CARD,
+  CARD_EDGE_WIDTH,
   CARD_ROLE_LABELS,
   CARD_TOP_ROW,
   cardAccent,
   cardConnectorPaint,
   cardLookOf,
+  cardRampLine,
   cardShapePaint,
+  cardSlateLine,
   cardTextStyle,
   cardTopRowHeight,
   isCard,
@@ -221,7 +224,7 @@ export interface DrawOptions {
 /** Opacity of everything outside a lit flow path. */
 export const FLOW_FADE = 0.35
 /** Stroke width of a connector on the lit path, in world units. */
-export const FLOW_LINE_WIDTH = 2.5
+export const FLOW_LINE_WIDTH = 3.5
 /** Radius of a flow dot, in world units. */
 export const FLOW_DOT_RADIUS = 4
 
@@ -1017,9 +1020,8 @@ function drawCardTopRow(
   look: CardLook | undefined,
 ): void {
   if (!isCard(look) || cardTopRowHeight(element, look) === 0) return
-  const tokens = CARD[look.theme]
   const role = effectiveRole(element)
-  const accent = role ? tokens.roles[role] : element.style.stroke
+  const accent = cardAccent(element, look.theme)
   const label = role ? CARD_ROLE_LABELS[role] : ''
   const step = element.style.step
   const chipSpec: CanvasFontSpec = {
@@ -1058,7 +1060,7 @@ function drawCardTopRow(
     target.endText()
   }
   if (step) {
-    target.beginText(stepSpec, tokens.muted)
+    target.beginText(stepSpec, CARD[look.theme].muted)
     target.textLine(step, stepX, centreY - stepSpec.fontSize / 2)
     target.endText()
   }
@@ -1985,8 +1987,9 @@ export function renderPersistentScene(
       const preparedPath = preparedConnectorPaths?.has(element.id)
         ? preparedConnectorPaths.get(element.id)
         : undefined
+      const resting = look ? restingLine(element, scene, look.theme) : undefined
       if (!activeFlow || !look) {
-        drawConnector(target, element, scene, preparedPath, look)
+        drawConnector(target, element, scene, preparedPath, look, resting)
         continue
       }
       const onPath = activeFlow.connectors.has(element.id)
@@ -2001,7 +2004,7 @@ export function renderPersistentScene(
         look,
         lit && onPath
           ? { stroke: colors.line, strokeWidth: FLOW_LINE_WIDTH }
-          : undefined,
+          : resting,
       )
       if (
         drawn &&
@@ -2042,28 +2045,51 @@ export function renderPersistentScene(
 }
 
 /**
- * Colours of a connector's lit line and its dot: the line takes the source
- * element's accent, the dot the target's, and either falls back to the other
- * end, then to the neutral edge, for a free end.
+ * The colour a card-style connector is drawn in: its target's ramp line, then
+ * its source's for a free target end, then slate.
+ */
+function connectorLineColour(
+  connector: CanvasElement,
+  scene: Scene,
+  theme: CanvasTheme,
+): string {
+  const link = connector.connector
+  const sourceId = link ? endpointElementId(link.source) : null
+  const targetId = link ? endpointElementId(link.target) : null
+  const source = sourceId ? scene.byId.get(sourceId) : undefined
+  const target = targetId ? scene.byId.get(targetId) : undefined
+  if (target) return cardRampLine(target, theme)
+  if (source) return cardRampLine(source, theme)
+  return cardSlateLine(theme)
+}
+
+/**
+ * The resting paint of a card-style connector that still has the default
+ * stroke. A connector whose stroke was changed keeps its stored paint.
+ */
+function restingLine(
+  connector: CanvasElement,
+  scene: Scene,
+  theme: CanvasTheme,
+): { stroke: string; strokeWidth: number } | undefined {
+  if (connector.style.stroke !== DEFAULT_ELEMENT_STYLE.stroke) return undefined
+  return {
+    stroke: connectorLineColour(connector, scene, theme),
+    strokeWidth: CARD_EDGE_WIDTH,
+  }
+}
+
+/**
+ * Colours of a connector's lit line and its dot: both take the colour of the
+ * shape the connector points at.
  */
 function flowColors(
   connector: CanvasElement,
   scene: Scene,
   theme: CanvasTheme,
 ): { line: string; dot: string } {
-  const link = connector.connector
-  const sourceId = link ? endpointElementId(link.source) : null
-  const targetId = link ? endpointElementId(link.target) : null
-  const source = sourceId ? scene.byId.get(sourceId) : undefined
-  const target = targetId ? scene.byId.get(targetId) : undefined
-  const edge = CARD[theme].edge
-  const line = source
-    ? cardAccent(source, theme)
-    : target
-      ? cardAccent(target, theme)
-      : edge
-  const dot = target ? cardAccent(target, theme) : line
-  return { line, dot }
+  const line = connectorLineColour(connector, scene, theme)
+  return { line, dot: line }
 }
 
 /**

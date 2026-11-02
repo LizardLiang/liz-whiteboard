@@ -12,8 +12,8 @@ import {
   contrastRatio,
   parseCssColor,
   relativeLuminance,
-  tintedSurface,
 } from './card-style'
+import { PRESET_RAMPS, rampFor } from './colour-ramps'
 import {
   fittedTextHeight,
   layoutElementText,
@@ -78,22 +78,33 @@ describe('parseCssColor', () => {
   })
 })
 
-describe('fill tint', () => {
-  it('gives the plain surface for the default fill', () => {
-    expect(tintedSurface(DEFAULT_ELEMENT_STYLE.fill, 'dark')).toBe(
-      CARD.dark.surface,
+describe('fill ramp', () => {
+  it('paints the default fill with the slate body', () => {
+    const { paint } = cardShapePaint(el(), 'dark')
+    expect(paint.fill).toBe(PRESET_RAMPS.slate.dark.body)
+  })
+
+  it('paints a preset with its Radix body and border', () => {
+    const { paint } = cardShapePaint(
+      el({ style: { fill: PRESET_RAMPS.cyan.value } }),
+      'dark',
     )
+    expect(paint.fill).toBe('#0b6a82')
+    expect(paint.stroke).toBe('#00a2c7')
+    expect(paint.strokeWidth).toBe(2)
   })
 
-  it('mixes a swatch at 14% over the surface', () => {
-    // r: 22 + (255 - 22) * 0.14 = 55; g: 26 * 0.86 = 22; b: 35 * 0.86 = 30.
-    const tint = tintedSurface('#ff0000', 'dark')
-    expect(tint).toBe('#37161e')
-    expect(tint).not.toBe(CARD.dark.surface)
+  it('paints a slate body for an unparseable colour', () => {
+    const { paint } = cardShapePaint(el({ style: { fill: 'tomato' } }), 'light')
+    expect(paint.fill).toBe(PRESET_RAMPS.slate.light.body)
   })
 
-  it('gives the plain surface for an unparseable colour', () => {
-    expect(tintedSurface('tomato', 'light')).toBe(CARD.light.surface)
+  it('paints a see-through body for a custom colour with alpha', () => {
+    const { paint } = cardShapePaint(
+      el({ style: { fill: 'rgba(18, 171, 52, 0.6)' } }),
+      'dark',
+    )
+    expect(paint.fill).toMatch(/^rgba\(\d+, \d+, \d+, 0\.6\)$/)
   })
 
   it('keeps a transparent body for fill none', () => {
@@ -104,12 +115,12 @@ describe('fill tint', () => {
 })
 
 describe('cardShapePaint', () => {
-  it('paints a plain surface, hairline border and shadow by default', () => {
+  it('paints the slate body, a 2 unit border and shadow by default', () => {
     const { paint, radius } = cardShapePaint(el(), 'dark')
     expect(paint).toMatchObject({
-      fill: CARD.dark.surface,
-      stroke: CARD.dark.border,
-      strokeWidth: 1,
+      fill: PRESET_RAMPS.slate.dark.body,
+      stroke: PRESET_RAMPS.slate.dark.border,
+      strokeWidth: 2,
       shadow: CARD.dark.shadow,
     })
     expect(paint.dash).toBeUndefined()
@@ -146,7 +157,7 @@ describe('cardShapePaint', () => {
     ).toBeDefined()
   })
 
-  it('accent border takes the role colour, else the stored stroke', () => {
+  it('accent border takes the role colour, else the ramp border', () => {
     const withRole = cardShapePaint(
       el({ style: { cardBorder: 'accent', role: 'system' } }),
       'dark',
@@ -155,10 +166,10 @@ describe('cardShapePaint', () => {
     expect(withRole.strokeWidth).toBe(CARD_ACCENT_BORDER_WIDTH)
 
     const noRole = cardShapePaint(
-      el({ style: { cardBorder: 'accent', stroke: '#ff00aa' } }),
+      el({ style: { cardBorder: 'accent', fill: PRESET_RAMPS.pink.value } }),
       'dark',
     ).paint
-    expect(noRole.stroke).toBe('#ff00aa')
+    expect(noRole.stroke).toBe(PRESET_RAMPS.pink.dark.border)
   })
 
   it('accent border on an ellipse with no stored role uses the trigger colour', () => {
@@ -176,9 +187,9 @@ describe('cardShapePaint', () => {
 })
 
 describe('cardConnectorPaint', () => {
-  it('turns the default stroke into the neutral edge', () => {
+  it('turns the default stroke into the slate line', () => {
     expect(cardConnectorPaint(DEFAULT_ELEMENT_STYLE, 'dark')).toEqual({
-      stroke: CARD.dark.edge,
+      stroke: PRESET_RAMPS.slate.dark.line,
       strokeWidth: CARD_EDGE_WIDTH,
     })
   })
@@ -259,8 +270,9 @@ describe('cardTextStyle', () => {
     const style = cardTextStyle(el({ text }), LOOK)
     expect(style.textRuns).toEqual([
       { start: 0, end: 5, fontWeight: 'bold' },
-      { start: 6, end: text.length, color: CARD.dark.muted },
+      { start: 6, end: text.length, color: PRESET_RAMPS.slate.dark.bodyText },
     ])
+    expect(style.color).toBe(PRESET_RAMPS.slate.dark.title)
   })
 
   it('lets an explicit run win', () => {
@@ -399,7 +411,7 @@ describe('card render', () => {
     )
     expect(rec.calls[0]).toMatchObject({
       kind: 'rect',
-      payload: { radius: 14, paint: { fill: '#ffffff' } },
+      payload: { radius: 14, paint: { fill: PRESET_RAMPS.slate.light.body } },
     })
     expect(rec.calls[1]).toMatchObject({
       kind: 'ellipse',
@@ -413,7 +425,7 @@ describe('card render', () => {
     expect(rec.calls.some((call) => call.kind === 'piece')).toBe(true)
   })
 
-  it('card connectors use the neutral edge and keep the chevron', () => {
+  it('card connectors use the slate line and keep the chevron', () => {
     const scene = sceneFrom([
       el({ id: 'a', x: 0, y: 0, width: 100, height: 100 }),
       el({ id: 'b', x: 300, y: 0, width: 100, height: 100 }),
@@ -446,11 +458,11 @@ describe('card render', () => {
     const paths = rec.calls.filter((call) => call.kind === 'path')
     expect(paths).toHaveLength(2)
     expect((paths[0].payload as { paint: RenderPaint }).paint).toMatchObject({
-      stroke: CARD.dark.edge,
+      stroke: PRESET_RAMPS.slate.dark.line,
       strokeWidth: CARD_EDGE_WIDTH,
     })
     expect((paths[1].payload as { paint: RenderPaint }).paint).toMatchObject({
-      stroke: CARD.dark.edge,
+      stroke: PRESET_RAMPS.slate.dark.line,
       lineJoin: 'round',
     })
   })
@@ -471,17 +483,16 @@ describe('contrast guard and neutral fills', () => {
     expect(contrastRatio('tomato', '#ffffff')).toBeNull()
   })
 
-  it('gives near-white fills the plain surface in both themes', () => {
+  it('gives near-white fills the slate body in both themes', () => {
     for (const fill of [...REPRO_FILLS, '#f1f5f9', 'rgb(250, 250, 250)']) {
-      expect(tintedSurface(fill, 'dark')).toBe(CARD.dark.surface)
-      expect(tintedSurface(fill, 'light')).toBe(CARD.light.surface)
+      expect(rampFor(fill, 'dark')?.ramp).toBe(PRESET_RAMPS.slate.dark)
+      expect(rampFor(fill, 'light')?.ramp).toBe(PRESET_RAMPS.slate.light)
     }
   })
 
-  it('still tints light blue and the palette swatches (blue is the default fill)', () => {
-    expect(tintedSurface('#dbeafe', 'dark')).not.toBe(CARD.dark.surface)
+  it('maps the legacy swatches to presets and light blue to a derived ramp', () => {
+    expect(rampFor('#dbeafe', 'dark')?.ramp).not.toBe(PRESET_RAMPS.slate.dark)
     for (const swatch of [
-      'rgba(100, 116, 139, 0.10)',
       'rgba(239, 68, 68, 0.10)',
       'rgba(249, 115, 22, 0.10)',
       'rgba(245, 158, 11, 0.10)',
@@ -489,8 +500,8 @@ describe('contrast guard and neutral fills', () => {
       'rgba(20, 184, 166, 0.10)',
       'rgba(139, 92, 246, 0.10)',
     ]) {
-      expect(tintedSurface(swatch, 'dark')).not.toBe(CARD.dark.surface)
-      expect(tintedSurface(swatch, 'light')).not.toBe(CARD.light.surface)
+      expect(rampFor(swatch, 'dark')?.ramp).not.toBe(PRESET_RAMPS.slate.dark)
+      expect(rampFor(swatch, 'dark')?.bodyAlpha).toBe(1)
     }
   })
 
@@ -499,9 +510,14 @@ describe('contrast guard and neutral fills', () => {
       for (const fill of [...REPRO_FILLS, '#dbeafe']) {
         const style = cardTextStyle(el({ text, style: { color, fill } }), DARK)
         expect(style.textRuns).toEqual([
-          { start: 0, end: 5, fontWeight: 'bold', color: CARD.dark.text },
-          { start: 6, end: text.length, color: CARD.dark.muted },
+          { start: 0, end: 5, fontWeight: 'bold' },
+          {
+            start: 6,
+            end: text.length,
+            color: PRESET_RAMPS.slate.dark.bodyText,
+          },
         ])
+        expect(style.color).toBe(PRESET_RAMPS.slate.dark.title)
       }
     }
   })
@@ -514,7 +530,11 @@ describe('contrast guard and neutral fills', () => {
       )
       expect(style.textRuns).toEqual([
         { start: 0, end: 5, fontWeight: 'bold' },
-        { start: 6, end: text.length, color: CARD.light.muted },
+        {
+          start: 6,
+          end: text.length,
+          color: PRESET_RAMPS.slate.light.bodyText,
+        },
       ])
     }
   })
@@ -551,9 +571,10 @@ describe('contrast guard and neutral fills', () => {
       LIGHT,
     )
     expect(style.textRuns).toEqual([
-      { start: 0, end: 5, fontWeight: 'bold', color: CARD.light.text },
-      { start: 6, end: text.length, color: CARD.light.muted },
+      { start: 0, end: 5, fontWeight: 'bold' },
+      { start: 6, end: text.length, color: PRESET_RAMPS.slate.light.bodyText },
     ])
+    expect(style.color).toBe(PRESET_RAMPS.slate.light.title)
   })
 
   it('drops a low-contrast run colour and keeps a readable one', () => {
@@ -626,7 +647,7 @@ describe('card first line weight in the drawn output', () => {
   })
 })
 
-describe('cardLookOf and tintedSurface cache', () => {
+describe('cardLookOf and ramp cache', () => {
   it('cardLookOf is a look only for card', async () => {
     const { cardLookOf } = await import('./card-style')
     expect(cardLookOf('card', 'dark')).toEqual({
@@ -637,9 +658,9 @@ describe('cardLookOf and tintedSurface cache', () => {
     expect(cardLookOf(undefined, 'light')).toBeUndefined()
   })
 
-  it('tintedSurface returns identical values on repeat calls, per theme', () => {
-    const dark = tintedSurface('#ff0000', 'dark')
-    expect(tintedSurface('#ff0000', 'dark')).toBe(dark)
-    expect(tintedSurface('#ff0000', 'light')).not.toBe(dark)
+  it('rampFor returns identical values on repeat calls, per theme', () => {
+    const dark = rampFor('#ff0000', 'dark')
+    expect(rampFor('#ff0000', 'dark')).toBe(dark)
+    expect(rampFor('#ff0000', 'light')).not.toBe(dark)
   })
 })

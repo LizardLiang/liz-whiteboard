@@ -11,7 +11,9 @@ import {
   effectiveRole,
   isCanvasShapeKind,
 } from './scene'
+import { presetRamp, rampFor } from './colour-ramps'
 import { applyRunStyle, normalizeRuns } from './text-runs'
+import type { Ramp } from './colour-ramps'
 import type { TextRunAttrs } from './text-runs'
 import type { RenderPaint } from './render-target'
 import type { CanvasElement, CanvasElementStyle } from './scene'
@@ -65,7 +67,7 @@ export const CARD: Record<CanvasTheme, CardTokens> = {
       trigger: '#a78bfa',
       action: '#60a5fa',
       system: '#2dd4bf',
-      data: '#fbbf24',
+      data: '#ffa057',
       note: '#94a3b8',
     },
   },
@@ -80,7 +82,7 @@ export const CARD: Record<CanvasTheme, CardTokens> = {
       trigger: '#7c3aed',
       action: '#2563eb',
       system: '#0d9488',
-      data: '#d97706',
+      data: '#cc4e00',
       note: '#64748b',
     },
   },
@@ -88,16 +90,11 @@ export const CARD: Record<CanvasTheme, CardTokens> = {
 
 /** Corner radius of a card rectangle, in world units. */
 export const CARD_RADIUS = 14
-/** Share of the stored fill mixed into the card surface. */
-export const CARD_TINT = 0.14
-/** Share of amber mixed into the surface for a note card. */
-export const CARD_NOTE_TINT = 0.1
-const NOTE_AMBER = '#f59e0b'
-/** Hairline border width and the accent border width, in world units. */
-export const CARD_BORDER_WIDTH = 1
-export const CARD_ACCENT_BORDER_WIDTH = 1.5
-/** Width of a connector drawn in the neutral card edge colour. */
-export const CARD_EDGE_WIDTH = 1.75
+/** Card border width and the accent border width, in world units. */
+export const CARD_BORDER_WIDTH = 2
+export const CARD_ACCENT_BORDER_WIDTH = 2.5
+/** Width of a connector drawn in a card ramp colour at rest. */
+export const CARD_EDGE_WIDTH = 2.5
 export const NOTE_DASH = [6, 4]
 /** Height reserved at the top of a card's text frame for the chip row. */
 export const CARD_TOP_ROW = 22
@@ -196,60 +193,46 @@ export function contrastRatio(a: string, b: string): number | null {
 
 /** Minimum contrast a stored text colour needs against the card body. */
 export const CARD_MIN_TEXT_CONTRAST = 4.5
-/** A fill at or above this luminance and at or below the chroma is neutral. */
-const NEAR_WHITE_LUMINANCE = 0.8
-const NEAR_WHITE_MAX_CHROMA = 20
-
-function isNearWhite(color: Rgb): boolean {
-  const chroma =
-    Math.max(color.r, color.g, color.b) - Math.min(color.r, color.g, color.b)
-  return (
-    relativeLuminance(color) >= NEAR_WHITE_LUMINANCE &&
-    chroma <= NEAR_WHITE_MAX_CHROMA
-  )
-}
 
 /**
- * The card body colour for a stored fill, or the plain surface. A near-white
- * fill (a light-era default) would only grey the card, so it gets no tint.
+ * The ramp a shape paints with. A note card is slate whatever its stored
+ * fill; an unfilled shape has no body but its border is slate.
  */
-export function tintedSurface(fill: string, theme: CanvasTheme): string {
-  const key = `${fill}|${theme}`
-  const hit = TINT_CACHE.get(key)
-  if (hit !== undefined) return hit
-  const value = computeTintedSurface(fill, theme)
-  if (TINT_CACHE.size >= TINT_CACHE_LIMIT) TINT_CACHE.clear()
-  TINT_CACHE.set(key, value)
-  return value
+function elementRamp(
+  element: CanvasElement,
+  theme: CanvasTheme,
+): { ramp: Ramp; bodyAlpha: number } {
+  const slate = { ramp: presetRamp('slate', theme), bodyAlpha: 1 }
+  if (effectiveRole(element) === 'note') return slate
+  return rampFor(element.style.fill, theme) ?? slate
 }
 
-const TINT_CACHE = new Map<string, string>()
-const TINT_CACHE_LIMIT = 512
+/** The colour a connector pointing at `element` takes: its ramp line. */
+export function cardRampLine(
+  element: CanvasElement,
+  theme: CanvasTheme,
+): string {
+  return elementRamp(element, theme).ramp.line
+}
 
-function computeTintedSurface(fill: string, theme: CanvasTheme): string {
-  const surface = CARD[theme].surface
-  if (fill === DEFAULT_ELEMENT_STYLE.fill || fill === 'none') return surface
-  const stored = parseCssColor(fill)
-  const base = parseCssColor(surface)
-  if (!stored || !base) return surface
-  if (isNearWhite(stored)) return surface
-  return mixColors(base, stored, CARD_TINT)
+/** The neutral connector colour: the slate ramp line. */
+export function cardSlateLine(theme: CanvasTheme): string {
+  return presetRamp('slate', theme).line
 }
 
 /**
- * The colour a card body is painted with, as `cardShapePaint` resolves it.
- * An unfilled card has no body; the surface stands in for the board behind it.
+ * The colour a card body is painted with, composited over the surface when
+ * the body is see-through. An unfilled card has no body; the surface stands
+ * in for the board behind it.
  */
 function cardBodyColor(element: CanvasElement, theme: CanvasTheme): string {
-  const tokens = CARD[theme]
-  if (effectiveRole(element) === 'note' && element.style.fill !== 'none') {
-    const base = parseCssColor(tokens.surface)
-    const amber = parseCssColor(NOTE_AMBER)
-    return base && amber
-      ? mixColors(base, amber, CARD_NOTE_TINT)
-      : tokens.surface
-  }
-  return tintedSurface(element.style.fill, theme)
+  const surface = CARD[theme].surface
+  if (element.style.fill === 'none') return surface
+  const { ramp, bodyAlpha } = elementRamp(element, theme)
+  if (bodyAlpha >= 1) return ramp.body
+  const base = parseCssColor(surface)
+  const body = parseCssColor(ramp.body)
+  return base && body ? mixColors(base, body, bodyAlpha) : surface
 }
 
 /** Largest channel spread (max - min) a label colour may have to count as neutral. */
@@ -282,7 +265,9 @@ export function cardHasShadow(element: CanvasElement): boolean {
 /** The colour the element's role chip, accent border and path highlight use. */
 export function cardAccent(element: CanvasElement, theme: CanvasTheme): string {
   const role = effectiveRole(element)
-  return role ? CARD[theme].roles[role] : element.style.stroke
+  return role
+    ? CARD[theme].roles[role]
+    : elementRamp(element, theme).ramp.border
 }
 
 /** Whether the shape kind gets card paint at all. */
@@ -302,16 +287,15 @@ export function cardShapePaint(
   const filled = style.fill !== 'none'
   const paint: RenderPaint = {}
   if (filled) {
-    if (note) {
-      paint.fill = cardBodyColor(element, theme)
-    } else {
-      paint.fill = tintedSurface(style.fill, theme)
-    }
+    const { ramp, bodyAlpha } = elementRamp(element, theme)
+    paint.fill = bodyPaintColor(ramp.body, bodyAlpha)
     if (cardHasShadow(element)) paint.shadow = { ...tokens.shadow }
   }
   if (style.strokeWidth > 0) {
     const accent = style.cardBorder === 'accent'
-    paint.stroke = accent ? cardAccent(element, theme) : tokens.border
+    paint.stroke = accent
+      ? cardAccent(element, theme)
+      : elementRamp(element, theme).ramp.border
     paint.strokeWidth = accent ? CARD_ACCENT_BORDER_WIDTH : CARD_BORDER_WIDTH
     if (note) paint.dash = [...NOTE_DASH]
   }
@@ -326,13 +310,25 @@ export function cardShapePaint(
   return { paint, radius }
 }
 
-/** Paint for a connector under `card`: neutral edge unless the stroke was set. */
+/** `#rrggbb` as is, or `rgba()` when the body is see-through. */
+function bodyPaintColor(body: string, alpha: number): string {
+  if (alpha >= 1) return body
+  const rgb = parseCssColor(body)
+  if (!rgb) return body
+  return `rgba(${rgb.r}, ${rgb.g}, ${rgb.b}, ${Math.round(alpha * 1000) / 1000})`
+}
+
+/**
+ * Paint for a connector under `card` with no scene to look at: the slate line
+ * unless the stroke was set. Connectors in a scene take their target's colour
+ * (see `render.ts`).
+ */
 export function cardConnectorPaint(
   style: CanvasElementStyle,
   theme: CanvasTheme,
 ): { stroke: string; strokeWidth: number } {
   if (style.stroke === DEFAULT_ELEMENT_STYLE.stroke) {
-    return { stroke: CARD[theme].edge, strokeWidth: CARD_EDGE_WIDTH }
+    return { stroke: cardSlateLine(theme), strokeWidth: CARD_EDGE_WIDTH }
   }
   return { stroke: style.stroke, strokeWidth: style.strokeWidth }
 }
@@ -394,9 +390,9 @@ export function cardTextStyle(
   if (cached && cached.text === text) return cached.style
 
   const body = cardBodyColor(element, look.theme)
-  const tokens = CARD[look.theme]
+  const { ramp } = elementRamp(element, look.theme)
   // A stored label colour that cannot be read on this body is treated as
-  // unset: the title takes the theme text colour, later lines the muted one.
+  // unset: the title takes the ramp title colour, later lines the ramp body text.
   const unreadable =
     style.color !== DEFAULT_ELEMENT_STYLE.color &&
     !readableOn(style.color, body)
@@ -408,15 +404,12 @@ export function cardTextStyle(
   if (style.fontWeight !== 'bold' && firstEnd > 0) {
     runs = applyRunStyle(runs, 0, firstEnd, { fontWeight: 'bold' }, text.length)
   }
-  if (unreadable && firstEnd > 0) {
-    runs = applyRunStyle(runs, 0, firstEnd, { color: tokens.text }, text.length)
-  }
   if (newline >= 0 && newline + 1 < text.length && mutedBody) {
     runs = applyRunStyle(
       runs,
       newline + 1,
       text.length,
-      { color: tokens.muted },
+      { color: ramp.bodyText },
       text.length,
     )
   }
@@ -435,7 +428,9 @@ export function cardTextStyle(
     }
     runs = applyRunStyle(runs, run.start, run.end, attrs, text.length)
   }
-  const result = runs.length === 0 ? style : { ...style, textRuns: runs }
+  const base = unset ? { ...style, color: ramp.title } : style
+  const result =
+    runs.length === 0 && !unset ? style : { ...base, textRuns: runs }
   perTheme.set(look.theme, { text, style: result })
   return result
 }
