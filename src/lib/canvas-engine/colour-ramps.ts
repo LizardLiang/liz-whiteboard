@@ -214,7 +214,7 @@ export function parseColourWithAlpha(value: string): RgbaColour | null {
   if (!fn) return null
   const parts = fn[1].split(/[\s,/]+/).filter((part) => part.length > 0)
   if (parts.length < 3 || parts.length > 4) return null
-  const number = /^\d+(\.\d+)?%?$/
+  const number = /^(\d+(\.\d+)?|\.\d+)%?$/
   if (!parts.every((part) => number.test(part))) return null
   const channel = (part: string) =>
     Math.max(

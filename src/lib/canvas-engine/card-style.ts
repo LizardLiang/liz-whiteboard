@@ -262,7 +262,7 @@ export function cardHasShadow(element: CanvasElement): boolean {
   return effectiveRole(element) !== 'note'
 }
 
-/** The colour the element's role chip, accent border and path highlight use. */
+/** The colour the element's role chip and accent border use. */
 export function cardAccent(element: CanvasElement, theme: CanvasTheme): string {
   const role = effectiveRole(element)
   return role
@@ -364,7 +364,7 @@ const RUN_ATTR_KEYS = [
 
 /**
  * The style a card's label is laid out and drawn with: the first hard line is
- * bold and later lines use the muted colour, as a base UNDER the stored runs,
+ * bold and later lines use the ramp body-text colour, as a base UNDER the stored runs,
  * so a run's own weight or colour wins. A stored label colour that is
  * readable and strongly coloured (a saturated blue or red) is kept on every line. A readable
  * low-spread one (a grey, a slate, a pale tint) keeps the title and gives later lines the

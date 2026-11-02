@@ -271,7 +271,7 @@ export type CanvasElementRole =
 /** Card shadow: `auto` follows the role, `on` / `off` force it. */
 export type CanvasCardShadow = 'auto' | 'on' | 'off'
 
-/** Card border: a hairline neutral line, or the accent colour. */
+/** Card border: the ramp-coloured line, or the role accent colour. */
 export type CanvasCardBorder = 'subtle' | 'accent'
 
 /** Styling shared by every element kind. */

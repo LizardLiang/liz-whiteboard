@@ -136,3 +136,9 @@ describe('parseColourWithAlpha', () => {
     expect(parseColourWithAlpha('nope')).toBeNull()
   })
 })
+
+describe('parseColourWithAlpha leading-dot numbers', () => {
+  it('accepts .6 as an alpha', () => {
+    expect(parseColourWithAlpha('rgba(18, 171, 52, .6)')?.a).toBe(0.6)
+  })
+})

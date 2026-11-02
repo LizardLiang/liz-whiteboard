@@ -128,12 +128,12 @@ test('card look, per-card settings and persistence', async ({ page }) => {
   )
   await page.keyboard.press('Escape')
 
-  // Surface #161a23, not the stored pale blue.
+  // Slate ramp body #484e54 (the default fill means never coloured).
   await expect
     .poll(async () =>
       (await pixelAtWorld(page, insideCorner(SIZE_B)))?.slice(0, 4),
     )
-    .toEqual([22, 26, 35, 255])
+    .toEqual([72, 78, 84, 255])
 
   // Select card B and edit its card settings.
   const select = await worldToPage(page, insideCorner(SIZE_B))
@@ -167,7 +167,7 @@ test('card look, per-card settings and persistence', async ({ page }) => {
     })
   }).toPass({ timeout: 15_000 })
 
-  // Surface mixed 14% with red: red-tinted, and not the stored rgba.
+  // Red-tinted ramp body (legacy red maps to tomato), not the stored rgba.
   await expect
     .poll(async () => {
       const px = await pixelAtWorld(page, insideCorner(SIZE_B))
