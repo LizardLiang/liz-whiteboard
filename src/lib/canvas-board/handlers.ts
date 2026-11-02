@@ -180,7 +180,7 @@ function withKindColour(payload: Record<string, unknown>): unknown {
   if (style !== undefined && style !== null && !isPlainObject(style)) {
     return style
   }
-  const given = (style ?? {})
+  const given = style ?? {}
   if (given.fill !== undefined && given.fill !== null) return style
   const value = PRESET_RAMPS[preset].value
   return {
