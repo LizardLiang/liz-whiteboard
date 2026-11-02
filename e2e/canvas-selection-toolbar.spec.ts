@@ -377,6 +377,9 @@ async function pixelAtWorld(page: Page, world: { x: number; y: number }) {
 
 // ── when the bar appears ────────────────────────────────────────────────────
 
+/** Highest alpha the card shadow alone can leave on a pixel outside a shape. */
+const SHADOW_ALPHA_CEILING = 32
+
 test.describe('the style toolbar', () => {
   test('appears for a selected shape and shows its current colours', async ({
     page,
@@ -411,7 +414,9 @@ test.describe('the style toolbar', () => {
     await expect(page.getByRole('button', { name: 'Fill Tomato' })).toBeHidden()
 
     const fill = await openSetting(page, 'Fill')
-    await expect(fill.getByRole('button', { name: 'Fill Tomato' })).toBeVisible()
+    await expect(
+      fill.getByRole('button', { name: 'Fill Tomato' }),
+    ).toBeVisible()
 
     await closeSetting(page)
     await expect(page.getByRole('button', { name: 'Fill Tomato' })).toBeHidden()
@@ -1012,7 +1017,7 @@ test.describe('corner radius', () => {
 
     const square = await pixelAtWorld(page, corner)
     expect(square).not.toBeNull()
-    expect(square![3]).toBeGreaterThan(0)
+    expect(square![3]).toBeGreaterThan(SHADOW_ALPHA_CEILING)
 
     await selectSeededRect(page)
     await pickRadius(page, 20)
@@ -1033,7 +1038,9 @@ test.describe('corner radius', () => {
     await settle(page)
 
     const rounded = await pixelAtWorld(page, corner)
-    expect(rounded![3]).toBe(0)
+    // Not `toBe(0)`: the card style's soft shadow tints a pixel just outside
+    // the rounded corner (alpha ~4). The shape's own paint is far above this.
+    expect(rounded![3]).toBeLessThanOrEqual(SHADOW_ALPHA_CEILING)
 
     // The centre is untouched — this rounded the corners, it did not clear
     // the shape.
