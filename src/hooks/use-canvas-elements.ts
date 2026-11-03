@@ -80,6 +80,8 @@ import { toast } from 'sonner'
 import type { Dispatch, SetStateAction } from 'react'
 import type { CanvasElement, Scene } from '@/lib/canvas-engine/scene'
 import type { CanvasElementRecord } from '@/data/models'
+import { tErrorOr } from '@/lib/i18n/t-error'
+import { useT } from '@/lib/i18n/use-t'
 import {
   toCreateInput,
   toEngineElement,
@@ -239,6 +241,7 @@ export function useCanvasElements({
   emit,
   onElementIdReconciled,
 }: UseCanvasElementsParams): UseCanvasElementsReturn {
+  const t = useT()
   /**
    * The last state the SERVER confirmed for each element — the load, plus
    * every successful ack, plus every collaborator broadcast.
@@ -279,7 +282,7 @@ export function useCanvasElements({
   )
 
   const settleOnce = useCallback(
-    <T,>(handle: (res: AckResult<T>) => void) => settleAckOnce(handle),
+    <T>(handle: (res: AckResult<T>) => void) => settleAckOnce(handle),
     [],
   )
 
@@ -386,7 +389,9 @@ export function useCanvasElements({
         revisionsRef.current.set(merged.id, payload.revision)
       }
       setScene((prev) =>
-        prev.byId.has(merged.id) ? updateElement(prev, merged.id, merged) : prev,
+        prev.byId.has(merged.id)
+          ? updateElement(prev, merged.id, merged)
+          : prev,
       )
     }
 
@@ -462,7 +467,7 @@ export function useCanvasElements({
               // a plain reconciliation write, surface an error the user never
               // asked about and cannot act on.
               if (!deletedWhileInFlight && !options?.ephemeral) {
-                toast.error(res.message ?? 'Failed to create element')
+                toast.error(tErrorOr(t, res, 'hooks.element.createFailed'))
               }
               resolve({ id: temporaryId, ok: false })
               return
@@ -485,7 +490,9 @@ export function useCanvasElements({
               // Writes Are Not Undoable's "reconciling optimistic state"
               // scenario).
               confirm(persisted)
-              setScene((prev) => removeElements(prev, [temporaryId, persisted.id]))
+              setScene((prev) =>
+                removeElements(prev, [temporaryId, persisted.id]),
+              )
               emitDeleteRef.current(persisted.id, { ephemeral: true })
               resolve({ id: temporaryId, ok: false })
               return
@@ -548,7 +555,7 @@ export function useCanvasElements({
         )
       })
     },
-    [boardId, confirm, emit, onElementIdReconciled, setScene, settleOnce],
+    [boardId, confirm, emit, onElementIdReconciled, setScene, settleOnce, t],
   )
 
   // ── update ───────────────────────────────────────────────────────────────
@@ -581,9 +588,7 @@ export function useCanvasElements({
               resolve({ id: element.id, ok: false })
               return
             }
-            const expectedRevision = options?.expectedRevisions?.get(
-              element.id,
-            )
+            const expectedRevision = options?.expectedRevisions?.get(element.id)
             emit(
               'element:update',
               {
@@ -611,7 +616,7 @@ export function useCanvasElements({
                   // failure branch above; use-canvas-undo.ts owns that
                   // report instead.
                   if (!options?.ephemeral) {
-                    toast.error(res.message ?? 'Failed to update element')
+                    toast.error(tErrorOr(t, res, 'hooks.element.updateFailed'))
                   }
                   resolve({ id: element.id, ok: false })
                   return
@@ -639,7 +644,7 @@ export function useCanvasElements({
       )
       return Promise.all(results)
     },
-    [confirm, emit, setScene, settleOnce],
+    [confirm, emit, setScene, settleOnce, t],
   )
 
   // ── delete ───────────────────────────────────────────────────────────────
@@ -695,14 +700,14 @@ export function useCanvasElements({
             // Suppressed for an ephemeral write — see the matching comment
             // in `createElement`'s failure branch above.
             if (!options?.ephemeral) {
-              toast.error(res.message ?? 'Failed to delete element')
+              toast.error(tErrorOr(t, res, 'hooks.element.deleteFailed'))
             }
             resolve({ id, ok: false })
           }),
         )
       })
     },
-    [emit, setScene, settleOnce],
+    [emit, setScene, settleOnce, t],
   )
   const emitDeleteRef = useRef(emitDelete)
   useEffect(() => {

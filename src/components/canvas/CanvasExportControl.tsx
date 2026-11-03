@@ -7,6 +7,7 @@ import type { CanvasTheme, DiagramStyle } from '@/lib/canvas-engine/render'
 import type { Scene } from '@/lib/canvas-engine/scene'
 import { Button } from '@/components/ui/button'
 import { useT } from '@/lib/i18n/use-t'
+import { tError } from '@/lib/i18n/t-error'
 import { ExportImageDialog } from '@/components/whiteboard/ExportImageDialog'
 import { exportCanvasScene } from '@/lib/export/canvas-export'
 
@@ -46,7 +47,7 @@ export function CanvasExportControl({
         toast.error(t('canvas.export.failed'), {
           description:
             error instanceof Error
-              ? error.message
+              ? tError(t, error)
               : t('canvas.export.tryAgain'),
         })
         throw error

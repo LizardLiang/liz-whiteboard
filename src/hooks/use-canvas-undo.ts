@@ -73,6 +73,7 @@ import type {
   UndoStack,
 } from '@/lib/canvas-undo/undo-stack'
 import type { InverseWrite } from '@/lib/canvas-undo/inverse'
+import { useT } from '@/lib/i18n/use-t'
 import {
   fromElementSnapshot as snapshotToEngineElement,
   toElementSnapshot as toSnapshot,
@@ -88,8 +89,6 @@ import {
 } from '@/lib/canvas-undo/undo-stack'
 import { buildInverse } from '@/lib/canvas-undo/inverse'
 import {
-  REDO_EXHAUSTED_MESSAGE,
-  UNDO_EXHAUSTED_MESSAGE,
   describeRedoRefusal,
   describeRedoSuccess,
   describeUndoRefusal,
@@ -275,6 +274,7 @@ export function useCanvasUndo({
   getRevision,
   onAffectedElement,
 }: UseCanvasUndoParams): UseCanvasUndoReturn {
+  const t = useT()
   const stackRef = useRef<UndoStack>(EMPTY_UNDO_STACK)
   // Pre-delete-revision side-table (Hermes review, W-C) — keyed by the
   // 'delete' `CanvasUndoOperation` object itself. Safe as a WeakMap key
@@ -531,9 +531,7 @@ export function useCanvasUndo({
         const deleteOps = operations.filter((op) => op.kind === 'delete')
         const entry = entryFromAckedWrites(
           operations,
-          deleteOps.length > 0
-            ? { gesture, count: deleteOps.length }
-            : null,
+          deleteOps.length > 0 ? { gesture, count: deleteOps.length } : null,
         )
         if (!entry) return
         push(entry)
@@ -756,8 +754,7 @@ export function useCanvasUndo({
           ? updateElements(groupUpdates.map((update) => update.after))
           : Promise.resolve([] as Array<CanvasMutationResult>),
       ]).then(([createResult, updateResults]) => {
-        const created =
-          createResult.ok && createResult.revision !== undefined
+        const created = createResult.ok && createResult.revision !== undefined
         const operations: Array<CanvasUndoOperation> = []
         if (created) {
           operations.push({
@@ -1092,7 +1089,7 @@ export function useCanvasUndo({
       // "Reaching the cap is not silent" / "No own edits remain" — an
       // exhausted history is announced, not a command that appears to do
       // nothing.
-      toast.info(UNDO_EXHAUSTED_MESSAGE)
+      toast.info(t('undo.nothingToUndo'))
       return
     }
 
@@ -1124,6 +1121,7 @@ export function useCanvasUndo({
         describeUndoRefusal(
           elementKindForOperation(popped.entry, first.elementId),
           first.reason,
+          t,
         ),
       )
       onAffectedElement?.(first.elementId)
@@ -1151,7 +1149,7 @@ export function useCanvasUndo({
 
       if (allOk) {
         stackRef.current = pushRedoEntry(stackRef.current, popped.entry)
-        toast.success(describeUndoSuccess(popped.entry.label))
+        toast.success(describeUndoSuccess(popped.entry.label, t))
         // An entry always has at least one operation (recordCreate/
         // recordUpdate/recordDelete never push an empty one) — the first is
         // the "primary" element to focus for a multi-element entry.
@@ -1239,6 +1237,7 @@ export function useCanvasUndo({
             describeUndoRefusal(
               elementKindForOperation(popped.entry, failed.elementId),
               'changed',
+              t,
             ),
           )
           onAffectedElement?.(failed.elementId)
@@ -1268,6 +1267,7 @@ export function useCanvasUndo({
     getRevision,
     onAffectedElement,
     readOnly,
+    t,
   ])
 
   // ── applying (redo) ──────────────────────────────────────────────────────
@@ -1276,7 +1276,7 @@ export function useCanvasUndo({
     if (readOnly) return
     const popped = popRedoEntry(stackRef.current)
     if (popped.status === 'nothing-to-redo') {
-      toast.info(REDO_EXHAUSTED_MESSAGE)
+      toast.info(t('undo.nothingToRedo'))
       return
     }
 
@@ -1297,7 +1297,7 @@ export function useCanvasUndo({
       (results) => {
         const allOk = results.length > 0 && results.every((r) => r.ok)
         if (allOk) {
-          toast.success(describeRedoSuccess(popped.entry.label))
+          toast.success(describeRedoSuccess(popped.entry.label, t))
           // Symmetric to `undo()`'s own fix above (headed-browser BUG-2):
           // the rect passed is the REAPPLIED (post-redo) position, read
           // from the operation's own `after` snapshot — the write's own
@@ -1323,6 +1323,7 @@ export function useCanvasUndo({
               describeRedoRefusal(
                 elementKindForOperation(popped.entry, failed.elementId),
                 'changed',
+                t,
               ),
             )
             onAffectedElement?.(failed.elementId)
@@ -1346,7 +1347,7 @@ export function useCanvasUndo({
         bumpVersion()
       },
     )
-  }, [applyForwardWrite, onAffectedElement, readOnly])
+  }, [applyForwardWrite, onAffectedElement, readOnly, t])
 
   return {
     callbacks,

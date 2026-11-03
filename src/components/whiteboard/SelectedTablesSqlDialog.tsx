@@ -1,6 +1,8 @@
 import { useMemo, useState } from 'react'
 import { Copy } from 'lucide-react'
 import { toast } from 'sonner'
+import type { Dialect } from '@/lib/ddl-generator'
+import type {JoinQueryPlan, JoinType} from '@/lib/join-query-generator';
 import { Button } from '@/components/ui/button'
 import {
   Dialog,
@@ -20,14 +22,13 @@ import {
 } from '@/components/ui/select'
 import { copyText } from '@/lib/copy-text'
 import {
+  
+  
   generateJoinQuerySql,
-  getJoinQueryTree,
-  type JoinQueryPlan,
-  type JoinType,
+  getJoinQueryTree
 } from '@/lib/join-query-generator'
 import { useT } from '@/lib/i18n/use-t'
 import { tError } from '@/lib/i18n/t-error'
-import type { Dialect } from '@/lib/ddl-generator'
 
 export interface SelectedTablesSqlDialogProps {
   plan: JoinQueryPlan
@@ -346,7 +347,7 @@ export function SelectedTablesSqlDialog({
           ))}
           {plan.notices.map((notice) => (
             <p key={notice} className="text-sm text-destructive">
-              {notice}
+              {tError(t, notice)}
             </p>
           ))}
 

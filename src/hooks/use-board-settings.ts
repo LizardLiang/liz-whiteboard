@@ -10,6 +10,8 @@ import type {
   CanvasBoardSettings,
   CanvasBoardSettingsPatch,
 } from '@/data/canvas-board-settings'
+import { tError } from '@/lib/i18n/t-error'
+import { useT } from '@/lib/i18n/use-t'
 import { DEFAULT_CANVAS_BOARD_SETTINGS } from '@/data/canvas-board-settings'
 
 type Emit = (event: string, data: any, ack?: (res: any) => void) => void
@@ -30,6 +32,7 @@ export function useBoardSettings({
   off,
   connectionState,
 }: UseBoardSettingsParams) {
+  const t = useT()
   const [settings, setSettings] = useState<CanvasBoardSettings>(
     initialSettings ?? DEFAULT_CANVAS_BOARD_SETTINGS,
   )
@@ -114,13 +117,13 @@ export function useBoardSettings({
             }
             return next as unknown as CanvasBoardSettings
           })
-          toast.error('Could not save board style', {
-            description: res.message,
+          toast.error(t('hooks.boardSettings.saveFailed'), {
+            description: tError(t, res),
           })
         }),
       )
     },
-    [emit],
+    [emit, t],
   )
 
   return { settings, handleSettingsChange }

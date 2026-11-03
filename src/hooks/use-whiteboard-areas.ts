@@ -9,6 +9,8 @@ import { useQuery } from '@tanstack/react-query'
 import { toast } from 'sonner'
 import type { Area } from '@/data/models'
 import type { CreateArea, UpdateArea } from '@/data/schema'
+import { useT } from '@/lib/i18n/use-t'
+import { tErrorOr } from '@/lib/i18n/t-error'
 import { getWhiteboardAreas } from '@/lib/server-functions'
 import { isUnauthorizedError } from '@/lib/auth/errors'
 
@@ -72,6 +74,7 @@ export function useWhiteboardAreas(params: {
   off: Off
   emit: Emit
 }): UseWhiteboardAreasReturn {
+  const t = useT()
   const { whiteboardId, userId, enabled, on, off, emit } = params
   const [areas, setAreas] = useState<Array<Area>>([])
 
@@ -133,11 +136,11 @@ export function useWhiteboardAreas(params: {
             prev.some((a) => a.id === created.id) ? prev : [...prev, created],
           )
         } else {
-          toast.error(res.message ?? 'Failed to create area')
+          toast.error(tErrorOr(t, res, 'hooks.area.createFailed'))
         }
       })
     },
-    [emit, whiteboardId],
+    [emit, whiteboardId, t],
   )
 
   // Update — optimistic local merge, then emit.

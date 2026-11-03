@@ -24,6 +24,7 @@ import type {
   RelationshipEdgeType,
   TableNodeType,
 } from '@/lib/react-flow/types'
+import { useT } from '@/lib/i18n/use-t'
 import { applyBulkPositions } from '@/lib/auto-layout'
 import { recalculateEdgeRouting } from '@/lib/react-flow/edge-bundles'
 import { isUnauthorizedError } from '@/lib/auth/errors'
@@ -99,6 +100,7 @@ export function useAutoLayoutOrchestrator({
 }: UseAutoLayoutOrchestratorArgs): UseAutoLayoutOrchestratorResult {
   const { setNodes, setEdges, getNodes, getEdges, fitView } = useReactFlow()
   const { triggerSessionExpired } = useAuthContext()
+  const t = useT()
 
   const [isRunning, setIsRunning] = useState(false)
   const [showConfirmDialog, setShowConfirmDialog] = useState(false)
@@ -138,19 +140,16 @@ export function useAutoLayoutOrchestrator({
         if (isMountedRef.current) {
           setPersistError(result)
           triggerSessionExpired()
-          toast.error(
-            'Your session expired before Auto Layout could be saved. Please sign in to retry.',
-            {
-              action: {
-                label: 'Retry',
-                onClick: () => {
-                  if (!isMountedRef.current) return
-                  if (!lastPayloadRef.current) return
-                  void handleRetryRef.current()
-                },
+          toast.error(t('hooks.autoLayout.sessionExpired'), {
+            action: {
+              label: t('common.retry'),
+              onClick: () => {
+                if (!isMountedRef.current) return
+                if (!lastPayloadRef.current) return
+                void handleRetryRef.current()
               },
             },
-          )
+          })
         }
         return false
       }
@@ -160,10 +159,10 @@ export function useAutoLayoutOrchestrator({
         if (!isMountedRef.current) return
         fitView({ padding: DOCK_FIT_PADDING, duration: 300 })
       }, 100)
-      toast.success(`Layout applied to ${positionsCount} tables`)
+      toast.success(t('hooks.autoLayout.applied', { count: positionsCount }))
       return true
     },
-    [fitView, triggerSessionExpired],
+    [fitView, triggerSessionExpired, t],
   )
 
   // ---------------------------------------------------------------------------
@@ -208,9 +207,9 @@ export function useAutoLayoutOrchestrator({
       // eslint-disable-next-line @typescript-eslint/no-unnecessary-condition
       if (!isMountedRef.current) return
       setPersistError(err)
-      toast.error('Auto Layout could not be saved on retry. Please try again.')
+      toast.error(t('hooks.autoLayout.retryFailed'))
     }
-  }, [emitBulkPositionUpdate, handlePersistResult, onAfterLayout])
+  }, [emitBulkPositionUpdate, handlePersistResult, onAfterLayout, t])
 
   // Keep the ref pointed at the latest handleRetry so handlePersistResult's
   // toast action always invokes the current closure (see handleRetryRef
@@ -258,7 +257,7 @@ export function useAutoLayoutOrchestrator({
       if (!layoutResult) {
         // runD3ForceLayout already sets error state on the hook and calls onLayoutError;
         // the orchestrator surfaces the user-facing toast here.
-        toast.error('Auto Layout failed — please try again.')
+        toast.error(t('hooks.autoLayout.failed'))
         return
       }
 
@@ -315,19 +314,16 @@ export function useAutoLayoutOrchestrator({
         if (!isMountedRef.current) return
         console.error('Auto Layout persist failed:', persistErr)
         setPersistError(persistErr)
-        toast.error(
-          'Auto Layout could not be saved — your changes are visible locally but not persisted.',
-          {
-            action: {
-              label: 'Retry',
-              onClick: () => {
-                if (!isMountedRef.current) return
-                if (!lastPayloadRef.current) return
-                void handleRetry()
-              },
+        toast.error(t('hooks.autoLayout.notPersisted'), {
+          action: {
+            label: t('common.retry'),
+            onClick: () => {
+              if (!isMountedRef.current) return
+              if (!lastPayloadRef.current) return
+              void handleRetry()
             },
           },
-        )
+        })
         return
         // No fitView on persist failure (PRD NFR Persistence — failure UX).
       }
@@ -369,6 +365,7 @@ export function useAutoLayoutOrchestrator({
     emitBulkPositionUpdate,
     handleRetry,
     onAfterLayout,
+    t,
   ])
 
   // ---------------------------------------------------------------------------

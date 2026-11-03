@@ -70,6 +70,9 @@ interface WhiteboardHistoryPanelProps {
   onOpenChange: (open: boolean) => void
 }
 
+/** Label the server stores on the automatic version made before a restore. */
+const AUTO_RESTORE_LABEL = 'Auto-saved before restore'
+
 /** Fall back to a timestamp-derived name when a snapshot has no label (AC2). */
 function formatSnapshotName(
   label: string | null,
@@ -77,6 +80,8 @@ function formatSnapshotName(
   t: TFunction,
   locale: string,
 ): string {
+  if (label === AUTO_RESTORE_LABEL)
+    return t('whiteboard.history.autoRestoreLabel')
   if (label && label.trim().length > 0) return label
   return t('whiteboard.history.versionName', {
     date: new Date(createdAt).toLocaleString(locale),

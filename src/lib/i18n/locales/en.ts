@@ -4,6 +4,9 @@
 
 import { canvasEn } from './canvas-en'
 import { whiteboardEn } from './whiteboard-en'
+import { sweepEn } from './sweep-en'
+
+const { errorsExtra, ...sweepRest } = sweepEn
 
 export const en = {
   common: {
@@ -382,6 +385,7 @@ export const en = {
   },
   whiteboard: whiteboardEn,
   canvas: canvasEn,
+  ...sweepRest,
   meta: {
     title: 'ER Whiteboard - Collaborative Diagram Editor',
   },
@@ -478,6 +482,7 @@ export const en = {
     lineShapesNoConnect: 'Line shapes cannot be connected',
     alreadyConnected: 'These shapes are already connected in that direction',
     whiteboardNotFound: 'Whiteboard not found',
+    ...errorsExtra,
   },
 } as const
 

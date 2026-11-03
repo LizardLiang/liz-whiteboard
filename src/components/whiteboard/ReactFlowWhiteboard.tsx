@@ -65,12 +65,12 @@ import type {
   CommentNodeType,
   CommentThreadVM,
   ConnectorEdgeType,
+  ExternalTableNodeType,
   QuickCreateDirection,
   RelationshipEdgeType,
   ShapeNodeType,
   ShowMode,
   TableNodeType,
-  ExternalTableNodeType,
 } from '@/lib/react-flow/types'
 import type { ZoomControls } from './Toolbar'
 import type { Connection } from '@xyflow/react'
@@ -84,12 +84,13 @@ import type { ReconcileAfterDropParams } from '@/hooks/use-column-reorder-mutati
 import type { Dialect } from '@/lib/ddl-generator'
 import type { ExportImageDialogOptions } from './ExportImageDialog'
 import type { RenderFraming } from '@/lib/render/framing'
-import {
-  buildJoinQueryPlan,
-  type JoinQueryPlan,
-  type JoinQueryTable,
-} from '@/lib/join-query-generator'
 import type { ResolvedTableReference } from '@/data/table-reference'
+import type {JoinQueryPlan, JoinQueryTable} from '@/lib/join-query-generator';
+import {
+  
+  
+  buildJoinQueryPlan
+} from '@/lib/join-query-generator'
 import { DOCK_FIT_PADDING } from '@/lib/react-flow/fit-view-padding'
 import { useWhiteboardShapes } from '@/hooks/use-whiteboard-shapes'
 import {
@@ -1952,9 +1953,10 @@ function ReactFlowWhiteboardInner({
         tableId,
         dialect,
         buildExternalTableRefs(externalTableNodesRef.current),
+        t,
       )
     },
-    [getNodes, getEdges],
+    [getNodes, getEdges, t],
   )
 
   // Column reorder callback — wraps reconcileAfterDrop with real setNodes
@@ -4517,7 +4519,7 @@ function ReactFlowWhiteboardInner({
               // refused click.
               canDeleteRelationships={connectionState === 'connected'}
               onRelationshipDeleteRefused={() =>
-                toast.error(NOT_CONNECTED_TOAST_MESSAGE)
+                toast.error(tError(t, NOT_CONNECTED_TOAST_MESSAGE))
               }
               activeTool={activeTool}
               onDrawCommit={handleDrawCommit}

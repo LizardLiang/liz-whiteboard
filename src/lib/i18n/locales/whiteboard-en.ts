@@ -402,6 +402,7 @@ export const whiteboardEn = {
   },
   history: {
     versionName: 'Version — {date}',
+    autoRestoreLabel: 'Auto-saved before restore',
     saveFailed: 'Failed to save version',
     saved: 'Version saved',
     restoreFailed: 'Failed to restore version',

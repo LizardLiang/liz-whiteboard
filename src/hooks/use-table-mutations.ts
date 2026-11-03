@@ -12,6 +12,8 @@ import type {
   RelationshipEdgeType,
   TableNodeType,
 } from '@/lib/react-flow/types'
+import { useT } from '@/lib/i18n/use-t'
+import { tError } from '@/lib/i18n/t-error'
 import { NOT_CONNECTED_TOAST_MESSAGE } from '@/lib/react-flow/types'
 import { evictTableWidth } from '@/lib/react-flow/canvas-node-metrics'
 
@@ -54,6 +56,7 @@ export function useTableMutations(
    * Track optimistic mutations for rollback on server error.
    * Key: tableId
    */
+  const t = useT()
   const pendingMutations = useRef<Map<string, PendingTableMutation>>(new Map())
 
   /**
@@ -62,7 +65,7 @@ export function useTableMutations(
   const deleteTable = useCallback(
     (tableId: string) => {
       if (!isConnected) {
-        toast.error(NOT_CONNECTED_TOAST_MESSAGE)
+        toast.error(tError(t, NOT_CONNECTED_TOAST_MESSAGE))
         return
       }
 
@@ -120,24 +123,27 @@ export function useTableMutations(
         emitTableDelete(tableId)
       }
     },
-    [isConnected, setNodes, setEdges, emitTableDelete],
+    [isConnected, setNodes, setEdges, emitTableDelete, t],
   )
 
   /**
    * Called by useWhiteboardCollaboration when server sends an error event for table:delete.
    * Finds the pending mutation and invokes its rollback.
    */
-  const onTableError = useCallback((data: TableErrorEvent) => {
-    toast.error('Failed to delete table. Please try again.')
+  const onTableError = useCallback(
+    (data: TableErrorEvent) => {
+      toast.error(t('hooks.table.deleteFailed'))
 
-    if (data.tableId) {
-      const pending = pendingMutations.current.get(data.tableId)
-      if (pending) {
-        pending.rollback()
-        pendingMutations.current.delete(data.tableId)
+      if (data.tableId) {
+        const pending = pendingMutations.current.get(data.tableId)
+        if (pending) {
+          pending.rollback()
+          pendingMutations.current.delete(data.tableId)
+        }
       }
-    }
-  }, [])
+    },
+    [t],
+  )
 
   /**
    * Update a table's fields (currently just `description` — table-comment)
@@ -153,7 +159,7 @@ export function useTableMutations(
       prevValues?: UpdateTableFields,
     ) => {
       if (!isConnected) {
-        toast.error(NOT_CONNECTED_TOAST_MESSAGE)
+        toast.error(tError(t, NOT_CONNECTED_TOAST_MESSAGE))
         return
       }
 
@@ -220,7 +226,7 @@ export function useTableMutations(
         })
       }
     },
-    [isConnected, setNodes, emitTableUpdate],
+    [isConnected, setNodes, emitTableUpdate, t],
   )
 
   /**
@@ -228,17 +234,20 @@ export function useTableMutations(
    * table:update (FORBIDDEN / NOT_FOUND / VALIDATION_ERROR, etc.).
    * Finds the pending mutation and invokes its rollback.
    */
-  const onTableUpdateError = useCallback((data: TableErrorEvent) => {
-    toast.error('Failed to save table changes. Please try again.')
+  const onTableUpdateError = useCallback(
+    (data: TableErrorEvent) => {
+      toast.error(t('hooks.table.saveFailed'))
 
-    if (data.tableId) {
-      const pending = pendingMutations.current.get(data.tableId)
-      if (pending) {
-        pending.rollback()
-        pendingMutations.current.delete(data.tableId)
+      if (data.tableId) {
+        const pending = pendingMutations.current.get(data.tableId)
+        if (pending) {
+          pending.rollback()
+          pendingMutations.current.delete(data.tableId)
+        }
       }
-    }
-  }, [])
+    },
+    [t],
+  )
 
   return {
     deleteTable,

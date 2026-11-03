@@ -16,7 +16,9 @@ import {
   describeUndoRefusal,
   describeUndoSuccess,
 } from './messages'
+import type { TFunction } from '@/lib/i18n/translate'
 import type { CanvasUndoLabel } from './undo-stack'
+import { translate } from '@/lib/i18n/translate'
 
 const NON_ATTRIBUTION_WORDS = ['another user', 'someone else', 'collaborator']
 
@@ -389,5 +391,33 @@ describe('grouping and ungrouping (canvas-element-grouping tactical plan, Wave 7
       describeUndoSuccess({ gesture: 'delete', count: 1 }),
     ])
     expect(wordings.size).toBe(4)
+  })
+})
+
+describe('translated reports', () => {
+  const zh: TFunction = (key, vars) => translate('zh-TW', key, vars)
+
+  it('names the reversed gesture in Traditional Chinese', () => {
+    expect(
+      describeUndoSuccess({ gesture: 'create', elementKind: 'ellipse' }, zh),
+    ).toBe('已復原建立橢圓形')
+    expect(describeRedoSuccess({ gesture: 'delete', count: 3 }, zh)).toBe(
+      '已重做刪除 3 個元素',
+    )
+  })
+
+  it('keeps the refusal free of attribution in Chinese', () => {
+    expect(describeUndoRefusal('rectangle', 'changed', zh)).toBe(
+      '此矩形在您編輯後已變更，無法復原該變更。',
+    )
+    expect(describeRedoRefusal(undefined, 'missing', zh)).toBe(
+      '此元素已不存在，無法重做該變更。',
+    )
+  })
+
+  it('keeps the English wording when no translator is passed', () => {
+    expect(describeUndoRefusal('rectangle', 'missing')).toBe(
+      "This rectangle no longer exists, so that change can't be undone.",
+    )
   })
 })

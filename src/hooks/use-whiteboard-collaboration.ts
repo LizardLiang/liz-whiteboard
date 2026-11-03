@@ -8,6 +8,7 @@ import { useCollaboration } from './use-collaboration'
 import type { TableErrorEvent } from './use-table-mutations'
 import type { RelationshipErrorEvent } from './use-relationship-mutations'
 import type { DiagramTable } from '@/data/models'
+import { useT } from '@/lib/i18n/use-t'
 import { useAuthContext } from '@/components/auth/AuthContext'
 
 /**
@@ -126,6 +127,7 @@ export function useWhiteboardCollaboration(
     enabled,
   )
   const router = useRouter()
+  const t = useT()
   const redirectTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
 
   // Listen for table position updates from other users
@@ -306,8 +308,8 @@ export function useWhiteboardCollaboration(
   useEffect(() => {
     const handlePermissionRevoked = (data: { projectId: string }) => {
       console.warn('Permission revoked for project:', data.projectId)
-      toast.error('Your access to this project has been removed', {
-        description: 'You will be redirected to the project list in 5 seconds.',
+      toast.error(t('hooks.collaboration.accessRemoved'), {
+        description: t('hooks.collaboration.redirecting'),
         duration: 5000,
       })
       redirectTimerRef.current = setTimeout(() => {
@@ -322,7 +324,7 @@ export function useWhiteboardCollaboration(
         clearTimeout(redirectTimerRef.current)
       }
     }
-  }, [on, off, router])
+  }, [on, off, router, t])
 
   // Listen for bulk position updates from other users (Auto Layout broadcast)
   // NOTE on field names — both this listener and the existing table:moved listener

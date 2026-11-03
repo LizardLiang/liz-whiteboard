@@ -10,6 +10,8 @@ import { useQuery } from '@tanstack/react-query'
 import { toast } from 'sonner'
 import type { CommentWithAuthor } from '@/data/models'
 import type { CreateComment } from '@/data/schema'
+import { useT } from '@/lib/i18n/use-t'
+import { tErrorOr } from '@/lib/i18n/t-error'
 import { getWhiteboardComments } from '@/lib/server-functions'
 import { isUnauthorizedError } from '@/lib/auth/errors'
 
@@ -44,6 +46,7 @@ export function useWhiteboardComments(params: {
   off: Off
   emit: Emit
 }): UseWhiteboardCommentsReturn {
+  const t = useT()
   const { whiteboardId, userId, enabled, on, off, emit } = params
   const [comments, setComments] = useState<Array<CommentWithAuthor>>([])
 
@@ -168,12 +171,12 @@ export function useWhiteboardComments(params: {
             prev.some((c) => c.id === created.id) ? prev : [...prev, created],
           )
         } else {
-          toast.error(res.message ?? 'Failed to create comment')
+          toast.error(tErrorOr(t, res, 'hooks.comment.createFailed'))
         }
         cb?.(res)
       })
     },
-    [emit, whiteboardId],
+    [emit, whiteboardId, t],
   )
 
   const addReply = useCallback(
@@ -197,7 +200,7 @@ export function useWhiteboardComments(params: {
       )
       emit('comment:update', { commentId, body }, (res: AckResult) => {
         if (!res.ok) {
-          toast.error(res.message ?? 'Failed to edit comment')
+          toast.error(tErrorOr(t, res, 'hooks.comment.editFailed'))
           if (priorBody !== undefined) {
             setComments((prev) =>
               prev.map((c) =>
@@ -208,7 +211,7 @@ export function useWhiteboardComments(params: {
         }
       })
     },
-    [emit],
+    [emit, t],
   )
 
   // Resolve/reopen — optimistic local merge, then emit. Revert only the
@@ -237,7 +240,7 @@ export function useWhiteboardComments(params: {
       )
       emit('comment:resolve', { commentId, resolved }, (res: AckResult) => {
         if (!res.ok) {
-          toast.error(res.message ?? 'Failed to update thread')
+          toast.error(tErrorOr(t, res, 'hooks.comment.updateThreadFailed'))
           if (prior !== undefined) {
             setComments((prev) =>
               prev.map((c) => (c.id === commentId ? { ...c, ...prior } : c)),
@@ -246,7 +249,7 @@ export function useWhiteboardComments(params: {
         }
       })
     },
-    [emit, userId],
+    [emit, userId, t],
   )
 
   // Delete — optimistic remove (root takes its replies with it), then emit.
@@ -263,7 +266,7 @@ export function useWhiteboardComments(params: {
       )
       emit('comment:delete', { commentId }, (res: AckResult) => {
         if (!res.ok) {
-          toast.error(res.message ?? 'Failed to delete comment')
+          toast.error(tErrorOr(t, res, 'hooks.comment.deleteFailed'))
           if (removed.length > 0) {
             setComments((prev) => {
               const existingIds = new Set(prev.map((c) => c.id))
@@ -274,7 +277,7 @@ export function useWhiteboardComments(params: {
         }
       })
     },
-    [emit],
+    [emit, t],
   )
 
   return {

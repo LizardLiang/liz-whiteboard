@@ -17,12 +17,16 @@ import { useReactFlow } from '@xyflow/react'
 import { toast } from 'sonner'
 import { useSingleSelectedTableShortcut } from './use-single-selected-table-shortcut'
 import type { Dialect, ExternalTableRef } from '@/lib/ddl-generator'
+import type { TFunction } from '@/lib/i18n/translate'
 import type { DiagramTableWithRelations } from '@/data/diagram-table'
 import type {
   ExternalTableNodeType,
   RelationshipEdgeType,
   TableNodeType,
 } from '@/lib/react-flow/types'
+import { tError } from '@/lib/i18n/t-error'
+import { translate } from '@/lib/i18n/translate'
+import { useT } from '@/lib/i18n/use-t'
 import { generateTableDDL } from '@/lib/ddl-generator'
 import { copyText } from '@/lib/copy-text'
 
@@ -80,19 +84,24 @@ export async function exportTableDdl(
   tableId: string,
   dialect: Dialect,
   externalTables?: Map<string, ExternalTableRef>,
+  t: TFunction = (key, vars) => translate('en', key, vars),
 ): Promise<void> {
   try {
     const ddl = generateTableDDL(tables, tableId, dialect, externalTables)
-    const tableName = tables.find((t) => t.id === tableId)?.name ?? tableId
+    const tableName =
+      tables.find((table) => table.id === tableId)?.name ?? tableId
     const copied = await copyText(ddl)
     if (!copied) {
-      toast.error('Could not copy DDL — select and copy the text manually.')
+      toast.error(t('hooks.ddl.copyFailed'))
       return
     }
-    toast.success(`${tableName} DDL copied (${dialect})`)
+    toast.success(t('hooks.ddl.copied', { table: tableName, dialect }))
   } catch (error) {
     toast.error(
-      `Failed to export DDL: ${error instanceof Error ? error.message : 'Unknown error'}`,
+      t('hooks.ddl.exportFailed', {
+        reason:
+          error instanceof Error ? tError(t, error) : t('errors.unknownError'),
+      }),
     )
   }
 }
@@ -128,6 +137,7 @@ export function useTableExportDdl(): void {
     RelationshipEdgeType
   >()
 
+  const t = useT()
   const onTrigger = useCallback(
     (tableId: string) => {
       const { tableNodes, referenceNodes } = partitionNodesForDdl(getNodes())
@@ -137,9 +147,10 @@ export function useTableExportDdl(): void {
         tableId,
         DEFAULT_SHORTCUT_DIALECT,
         buildExternalTableRefs(referenceNodes),
+        t,
       )
     },
-    [getNodes, getEdges],
+    [getNodes, getEdges, t],
   )
 
   useSingleSelectedTableShortcut({ key: 'd', onTrigger })

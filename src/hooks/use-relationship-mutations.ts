@@ -9,6 +9,8 @@
 import { useCallback, useRef } from 'react'
 import { toast } from 'sonner'
 import type { RelationshipEdgeType } from '@/lib/react-flow/types'
+import { useT } from '@/lib/i18n/use-t'
+import { tError } from '@/lib/i18n/t-error'
 import { NOT_CONNECTED_TOAST_MESSAGE } from '@/lib/react-flow/types'
 
 type SetEdges = React.Dispatch<
@@ -39,6 +41,7 @@ export function useRelationshipMutations(
    * Track optimistic mutations for rollback on server error.
    * Key: relationshipId
    */
+  const t = useT()
   const pendingMutations = useRef<Map<string, PendingRelationshipMutation>>(
     new Map(),
   )
@@ -49,7 +52,7 @@ export function useRelationshipMutations(
   const deleteRelationship = useCallback(
     (relationshipId: string) => {
       if (!isConnected) {
-        toast.error(NOT_CONNECTED_TOAST_MESSAGE)
+        toast.error(tError(t, NOT_CONNECTED_TOAST_MESSAGE))
         return
       }
 
@@ -80,7 +83,7 @@ export function useRelationshipMutations(
         emitRelationshipDelete(relationshipId)
       }
     },
-    [isConnected, setEdges, emitRelationshipDelete],
+    [isConnected, setEdges, emitRelationshipDelete, t],
   )
 
   /**
@@ -89,7 +92,7 @@ export function useRelationshipMutations(
   const updateRelationshipLabel = useCallback(
     (relationshipId: string, label: string) => {
       if (!isConnected) {
-        toast.error(NOT_CONNECTED_TOAST_MESSAGE)
+        toast.error(tError(t, NOT_CONNECTED_TOAST_MESSAGE))
         return
       }
 
@@ -124,7 +127,7 @@ export function useRelationshipMutations(
         emitRelationshipUpdate(relationshipId, label)
       }
     },
-    [isConnected, setEdges, emitRelationshipUpdate],
+    [isConnected, setEdges, emitRelationshipUpdate, t],
   )
 
   /**
@@ -132,21 +135,24 @@ export function useRelationshipMutations(
    * relationship:delete or relationship:update.
    * Finds the pending mutation and invokes its rollback.
    */
-  const onRelationshipError = useCallback((data: RelationshipErrorEvent) => {
-    if (data.event === 'relationship:update') {
-      toast.error('Failed to update relationship label. Please try again.')
-    } else {
-      toast.error('Failed to delete relationship. Please try again.')
-    }
-
-    if (data.relationshipId) {
-      const pending = pendingMutations.current.get(data.relationshipId)
-      if (pending) {
-        pending.rollback()
-        pendingMutations.current.delete(data.relationshipId)
+  const onRelationshipError = useCallback(
+    (data: RelationshipErrorEvent) => {
+      if (data.event === 'relationship:update') {
+        toast.error(t('hooks.relationship.labelFailed'))
+      } else {
+        toast.error(t('hooks.relationship.deleteFailed'))
       }
-    }
-  }, [])
+
+      if (data.relationshipId) {
+        const pending = pendingMutations.current.get(data.relationshipId)
+        if (pending) {
+          pending.rollback()
+          pendingMutations.current.delete(data.relationshipId)
+        }
+      }
+    },
+    [t],
+  )
 
   return {
     deleteRelationship,

@@ -19,6 +19,8 @@ import type {
   TableNodeType,
 } from '@/lib/react-flow/types'
 import type { DataType, UpdateColumn } from '@/data/schema'
+import { tError } from '@/lib/i18n/t-error'
+import { useT } from '@/lib/i18n/use-t'
 import { NOT_CONNECTED_TOAST_MESSAGE } from '@/lib/react-flow/types'
 import { uuid } from '@/lib/uuid'
 
@@ -60,6 +62,7 @@ export function useColumnMutations(
   isConnected: boolean,
   emitColumnDuplicate: EmitColumnDuplicate | null = null,
 ) {
+  const t = useT()
   /**
    * Track optimistic mutations for rollback on server error.
    * Key: temp column ID (for create) or columnId (for update/delete)
@@ -75,7 +78,7 @@ export function useColumnMutations(
       data: { name: string; dataType: DataType; order: number },
     ) => {
       if (!isConnected) {
-        toast.error(NOT_CONNECTED_TOAST_MESSAGE)
+        toast.error(tError(t, NOT_CONNECTED_TOAST_MESSAGE))
         return
       }
 
@@ -153,7 +156,7 @@ export function useColumnMutations(
         })
       }
     },
-    [isConnected, setNodes, emitColumnCreate],
+    [isConnected, setNodes, emitColumnCreate, t],
   )
 
   /**
@@ -211,7 +214,7 @@ export function useColumnMutations(
   const updateColumn = useCallback(
     (columnId: string, tableId: string, data: Partial<UpdateColumn>) => {
       if (!isConnected) {
-        toast.error(NOT_CONNECTED_TOAST_MESSAGE)
+        toast.error(tError(t, NOT_CONNECTED_TOAST_MESSAGE))
         return
       }
 
@@ -286,7 +289,7 @@ export function useColumnMutations(
         emitColumnUpdate(columnId, data)
       }
     },
-    [isConnected, setNodes, emitColumnUpdate],
+    [isConnected, setNodes, emitColumnUpdate, t],
   )
 
   /**
@@ -295,7 +298,7 @@ export function useColumnMutations(
   const deleteColumn = useCallback(
     (columnId: string, tableId: string) => {
       if (!isConnected) {
-        toast.error(NOT_CONNECTED_TOAST_MESSAGE)
+        toast.error(tError(t, NOT_CONNECTED_TOAST_MESSAGE))
         return
       }
 
@@ -379,7 +382,7 @@ export function useColumnMutations(
         emitColumnDelete(columnId)
       }
     },
-    [isConnected, setNodes, setEdges, emitColumnDelete],
+    [isConnected, setNodes, setEdges, emitColumnDelete, t],
   )
 
   /**
@@ -396,7 +399,7 @@ export function useColumnMutations(
   const duplicateColumn = useCallback(
     (sourceColumn: Column) => {
       if (!isConnected) {
-        toast.error(NOT_CONNECTED_TOAST_MESSAGE)
+        toast.error(tError(t, NOT_CONNECTED_TOAST_MESSAGE))
         return
       }
 
@@ -480,7 +483,7 @@ export function useColumnMutations(
         emitColumnDuplicate(sourceColumn.id)
       }
     },
-    [isConnected, setNodes, emitColumnDuplicate],
+    [isConnected, setNodes, emitColumnDuplicate, t],
   )
 
   /**
@@ -535,21 +538,19 @@ export function useColumnMutations(
       /* eslint-enable @typescript-eslint/no-unnecessary-condition */
 
       if (isDuplicateName && data.name) {
-        toast.error(`Column name '${data.name}' already exists in this table.`)
+        toast.error(t('hooks.column.duplicateName', { name: data.name }))
         // eslint-disable-next-line @typescript-eslint/no-unnecessary-condition -- see above: server event payload, `message` can genuinely be absent at runtime.
       } else if (data.message?.toLowerCase().includes('not found')) {
         // "Not found" means different things depending on which operation failed.
         // For deletes it's safe to tell the user the column was already gone.
         // For updates it's more likely a temp-ID race; give a more accurate message.
         if (data.event === 'column:delete') {
-          toast.error('Column was already deleted.')
+          toast.error(t('hooks.column.alreadyDeleted'))
         } else {
-          toast.error(
-            'Column not found — it may still be saving. Please try again.',
-          )
+          toast.error(t('hooks.column.notFoundSaving'))
         }
       } else {
-        toast.error('Unable to save changes. Please try again.')
+        toast.error(t('hooks.column.saveFailed'))
       }
 
       // Find the pending mutation to rollback
@@ -575,7 +576,7 @@ export function useColumnMutations(
         })
       }
     },
-    [],
+    [t],
   )
 
   return {

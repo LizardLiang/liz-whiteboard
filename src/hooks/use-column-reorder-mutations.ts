@@ -15,6 +15,7 @@ import { useCallback, useRef } from 'react'
 import { toast } from 'sonner'
 import type { Column } from '@/data/models'
 import type { TableNodeType } from '@/lib/react-flow/types'
+import { useT } from '@/lib/i18n/use-t'
 
 // ============================================================================
 // Types
@@ -259,6 +260,7 @@ export function detectOverwriteConflict(
 // ============================================================================
 
 export function useColumnReorderMutations(): UseColumnReorderMutationsReturn {
+  const t = useT()
   // Per-table FIFO queue — max 5 entries
   const queueByTable = useRef<Map<string, Array<QueueEntry>>>(new Map())
 
@@ -421,15 +423,13 @@ export function useColumnReorderMutations(): UseColumnReorderMutationsReturn {
       if (buffered) {
         bufferedRemoteByTable.current.delete(tableId)
         if (detectOverwriteConflict(preDragOrder, newOrder, buffered)) {
-          toast.info(
-            'Another collaborator reordered columns while you were dragging. Your order was applied — theirs was overwritten.',
-          )
+          toast.info(t('hooks.columnReorder.overwritten'))
         }
       }
 
       emitColumnReorder(tableId, newOrder)
     },
-    [applyServerOrder],
+    [applyServerOrder, t],
   )
 
   /**
@@ -506,15 +506,15 @@ export function useColumnReorderMutations(): UseColumnReorderMutationsReturn {
           : 'UPDATE_FAILED' // safe fallback for unexpected codes
 
       if (code === 'UPDATE_FAILED') {
-        toast.error('Unable to save column order. Please try again.')
+        toast.error(t('hooks.columnReorder.saveFailed'))
       } else {
         // VALIDATION_FAILED, FORBIDDEN, or NOT_FOUND
-        toast.error('Unable to reorder columns. Please try again.')
+        toast.error(t('hooks.columnReorder.reorderFailed'))
       }
 
       // Note: dirtyByTable deliberately NOT cleared on error (UT-14 pins this)
     },
-    [],
+    [t],
   )
 
   /**
@@ -542,12 +542,10 @@ export function useColumnReorderMutations(): UseColumnReorderMutationsReturn {
       if (!lastOptimistic) return
 
       if (!arraysEqual(serverOrder, lastOptimistic)) {
-        toast.warning(
-          'Your last column reorder may not have saved. Please verify the order and try again if needed.',
-        )
+        toast.warning(t('hooks.columnReorder.maybeNotSaved'))
       }
     },
-    [],
+    [t],
   )
 
   /**

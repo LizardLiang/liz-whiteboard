@@ -4,7 +4,10 @@
 
 import { canvasZhTW } from './canvas-zh-TW'
 import { whiteboardZhTW } from './whiteboard-zh-TW'
+import { sweepZhTW } from './sweep-zh-TW'
 import type { DeepStringRecord, Dictionary } from './en'
+
+const { errorsExtra, ...sweepRest } = sweepZhTW
 
 export const zhTW: DeepStringRecord<Dictionary> = {
   common: {
@@ -371,6 +374,7 @@ export const zhTW: DeepStringRecord<Dictionary> = {
   },
   whiteboard: whiteboardZhTW,
   canvas: canvasZhTW,
+  ...sweepRest,
   meta: {
     title: 'ER Whiteboard - 協作式圖表編輯器',
   },
@@ -460,5 +464,6 @@ export const zhTW: DeepStringRecord<Dictionary> = {
     lineShapesNoConnect: '線條圖形無法連接',
     alreadyConnected: '這些圖形在該方向上已經連接',
     whiteboardNotFound: '找不到白板',
+    ...errorsExtra,
   },
 }

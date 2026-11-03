@@ -15,6 +15,8 @@ import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { toast } from 'sonner'
 import type { Connector, Shape } from '@/data/models'
 import type { ConnectorStyle, CreateShape, UpdateShape } from '@/data/schema'
+import { useT } from '@/lib/i18n/use-t'
+import { tErrorOr } from '@/lib/i18n/t-error'
 import { getWhiteboardShapes } from '@/lib/server-functions'
 import { isUnauthorizedError } from '@/lib/auth/errors'
 
@@ -59,6 +61,7 @@ export function useWhiteboardShapes(params: {
   /** Pre-fetched shapes/connectors for the public path (§6a site 3). */
   publicData?: { shapes: Array<Shape>; connectors: Array<Connector> }
 }): UseWhiteboardShapesReturn {
+  const t = useT()
   const {
     whiteboardId,
     userId,
@@ -192,12 +195,12 @@ export function useWhiteboardShapes(params: {
             )
             onCreated?.(created)
           } else {
-            toast.error(res.message ?? 'Failed to create shape')
+            toast.error(tErrorOr(t, res, 'hooks.shape.createFailed'))
           }
         },
       )
     },
-    [emit, whiteboardId],
+    [emit, whiteboardId, t],
   )
 
   // Update — optimistic local merge, acked with rollback (D-4, NOT the
@@ -219,14 +222,14 @@ export function useWhiteboardShapes(params: {
               prev.map((s) => (s.id === shapeId ? snapshot : s)),
             )
           }
-          toast.error(res.message ?? 'Failed to update shape')
+          toast.error(tErrorOr(t, res, 'hooks.shape.updateFailed'))
         } else if (res.entity) {
           const updated = res.entity
           setShapes((prev) => prev.map((s) => (s.id === shapeId ? updated : s)))
         }
       })
     },
-    [emit],
+    [emit, t],
   )
 
   // Delete — optimistic remove (shape + its local connectors), acked with
@@ -250,11 +253,11 @@ export function useWhiteboardShapes(params: {
         if (!res.ok) {
           setShapes(previousShapes)
           setConnectors(previousConnectors)
-          toast.error(res.message ?? 'Failed to delete shape')
+          toast.error(tErrorOr(t, res, 'hooks.shape.deleteFailed'))
         }
       })
     },
-    [emit],
+    [emit, t],
   )
 
   // Create connector — acked, appended on success.
@@ -270,12 +273,12 @@ export function useWhiteboardShapes(params: {
               prev.some((c) => c.id === created.id) ? prev : [...prev, created],
             )
           } else {
-            toast.error(res.message ?? 'Failed to create connector')
+            toast.error(tErrorOr(t, res, 'hooks.shape.createConnectorFailed'))
           }
         },
       )
     },
-    [emit, whiteboardId],
+    [emit, whiteboardId, t],
   )
 
   // Delete connector — optimistic remove, acked with rollback (M1).
@@ -289,11 +292,11 @@ export function useWhiteboardShapes(params: {
       emit('connector:delete', { connectorId }, (res: AckResult<unknown>) => {
         if (!res.ok) {
           setConnectors(previous)
-          toast.error(res.message ?? 'Failed to delete connector')
+          toast.error(tErrorOr(t, res, 'hooks.shape.deleteConnectorFailed'))
         }
       })
     },
-    [emit],
+    [emit, t],
   )
 
   return {

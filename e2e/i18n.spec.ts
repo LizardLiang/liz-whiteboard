@@ -3,10 +3,10 @@
 // with an explicit browser `locale`, reusing the logged-in storageState from
 // global-setup. The shared config pins the default locale to en-US so other
 // specs that assert English text do not depend on the host machine language.
-import { expect, test } from '@playwright/test'
 import { execFileSync } from 'node:child_process'
+import { expect, test } from '@playwright/test'
 import { BASE_URL, IDS, STORAGE_STATE } from './fixtures'
-import type { Browser } from '@playwright/test'
+import type { Browser, Page } from '@playwright/test'
 
 async function openAs(browser: Browser, locale: string) {
   const context = await browser.newContext({
@@ -153,5 +153,40 @@ test.describe('phase 5: canvas board', () => {
     await expect(page.getByRole('button', { name: '矩形 (R)' })).toBeVisible()
     await expect(page.getByRole('button', { name: '看板樣式' })).toBeVisible()
     await context.close()
+  })
+})
+
+test.describe('phase 6: hydration with a server-rendered zh-TW page', () => {
+  test('logged-out and logged-in pages hydrate with no React hydration warning', async ({
+    browser,
+  }) => {
+    const hydrationMessages: Array<string> = []
+    const watch = (page: Page) => {
+      page.on('console', (msg) => {
+        if (/hydrat/i.test(msg.text())) hydrationMessages.push(msg.text())
+      })
+      page.on('pageerror', (err) => {
+        if (/hydrat/i.test(err.message)) hydrationMessages.push(err.message)
+      })
+    }
+
+    const anonymous = await browser.newContext({
+      baseURL: BASE_URL,
+      locale: 'zh-TW',
+      viewport: { width: 1600, height: 1000 },
+    })
+    const loginPage = await anonymous.newPage()
+    watch(loginPage)
+    await loginPage.goto('/login')
+    await expect(loginPage.getByRole('button', { name: '登入' })).toBeVisible()
+    await anonymous.close()
+
+    const { context, page } = await openAs(browser, 'zh-TW')
+    watch(page)
+    await page.goto('/')
+    await expect(page.getByRole('button', { name: '登出' })).toBeVisible()
+    await context.close()
+
+    expect(hydrationMessages).toEqual([])
   })
 })

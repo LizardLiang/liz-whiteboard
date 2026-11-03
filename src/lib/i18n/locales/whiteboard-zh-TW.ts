@@ -392,14 +392,15 @@ export const whiteboardZhTW: DeepStringRecord<typeof whiteboardEn> = {
   },
   history: {
     versionName: '版本：{date}',
+    autoRestoreLabel: '還原前自動儲存',
     saveFailed: '儲存版本失敗',
     saved: '版本已儲存',
     restoreFailed: '還原版本失敗',
     restored: '版本已還原',
     restoreCopyNoShapes:
-      '此版本是在這個看板有圖形之前儲存的，因此還原後會移除目前的 {shapes} 個圖形與 {connectors} 條連接線。不過系統會先將您目前的看板（含圖形）儲存為名為「Auto-saved before restore」的自動版本，它會出現在此清單最上方並標有「自動」標記，您可以一鍵還原。',
+      '此版本是在這個看板有圖形之前儲存的，因此還原後會移除目前的 {shapes} 個圖形與 {connectors} 條連接線。不過系統會先將您目前的看板（含圖形）儲存為名為「還原前自動儲存」的自動版本，它會出現在此清單最上方並標有「自動」標記，您可以一鍵還原。',
     restoreCopy:
-      '還原會以此版本取代目前的看板。此版本包含 {snapshot} 個圖形，而目前的看板有 {live} 個。系統會先將您目前的看板儲存為名為「Auto-saved before restore」的自動版本，它會出現在此清單最上方，您可以一鍵還原。',
+      '還原會以此版本取代目前的看板。此版本包含 {snapshot} 個圖形，而目前的看板有 {live} 個。系統會先將您目前的看板儲存為名為「還原前自動儲存」的自動版本，它會出現在此清單最上方，您可以一鍵還原。',
     title: '版本記錄',
     description: '儲存並瀏覽此白板在不同時間點的版本。',
     saveCurrent: '儲存目前版本',

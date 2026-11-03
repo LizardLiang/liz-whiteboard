@@ -204,7 +204,7 @@ export function ImportSqlDialog({
               {preview.warnings.length > 0 && (
                 <ul className="list-disc space-y-1 pl-5 text-amber-600 dark:text-amber-500">
                   {preview.warnings.map((warning, i) => (
-                    <li key={i}>{warning}</li>
+                    <li key={i}>{tError(t, warning)}</li>
                   ))}
                 </ul>
               )}
@@ -214,7 +214,7 @@ export function ImportSqlDialog({
                     <li key={i}>
                       {t('whiteboard.importSql.line', {
                         line: error.line,
-                        message: error.message,
+                        message: tError(t, error),
                       })}
                     </li>
                   ))}
