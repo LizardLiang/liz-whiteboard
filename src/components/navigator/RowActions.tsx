@@ -121,8 +121,16 @@ export function RowActions({ children }: RowActionsProps) {
     }
     if (openRef.current) return
     const openNow = () => {
+      const current = flags.current
+      if (!(current.row || current.column || current.focus || current.menu)) {
+        return
+      }
       if (activeRow && activeRow !== api.current) {
-        if (activeRow.pinned()) return
+        if (activeRow.pinned()) {
+          // The open column is held by focus, a menu or the pointer: retry.
+          timer.current = window.setTimeout(openNow, SWITCH_DELAY_MS)
+          return
+        }
         activeRow.close()
       }
       activeRow = api.current
@@ -147,9 +155,32 @@ export function RowActions({ children }: RowActionsProps) {
       f.row = true
       sync()
     }
-    const onLeave = () => {
+    const onLeave = (e: PointerEvent) => {
+      // Touch fires pointerleave on lift; keep the column until a tap lands
+      // elsewhere (see onOutsidePointerDown).
+      if (e.pointerType === 'touch') return
       f.row = false
       sync()
+    }
+    const onOutsidePointerDown = (e: PointerEvent) => {
+      if (!f.row) return
+      const target = e.target as Node
+      if (row.contains(target) || columnRef.current?.contains(target)) return
+      f.row = false
+      sync()
+    }
+    // Tab from the row's last control moves into the column, which is
+    // rendered elsewhere in the DOM.
+    const onKeyDown = (e: KeyboardEvent) => {
+      if (e.key !== 'Tab' || e.shiftKey || !columnRef.current) return
+      const controls = row.querySelectorAll<HTMLElement>(
+        'a[href], button:not([disabled])',
+      )
+      if (controls[controls.length - 1] !== document.activeElement) return
+      const firstButton = columnRef.current.querySelector<HTMLElement>('button')
+      if (!firstButton) return
+      e.preventDefault()
+      firstButton.focus()
     }
     // Keyboard focus only: a mouse click leaves focus on the row, which
     // would keep the column open after the pointer has gone.
@@ -170,7 +201,11 @@ export function RowActions({ children }: RowActionsProps) {
     row.addEventListener('pointerleave', onLeave)
     row.addEventListener('focusin', onFocusIn)
     row.addEventListener('focusout', onFocusOut)
+    row.addEventListener('keydown', onKeyDown)
+    document.addEventListener('pointerdown', onOutsidePointerDown)
     return () => {
+      row.removeEventListener('keydown', onKeyDown)
+      document.removeEventListener('pointerdown', onOutsidePointerDown)
       row.removeEventListener('pointerenter', onEnter)
       row.removeEventListener('pointerleave', onLeave)
       row.removeEventListener('focusin', onFocusIn)
@@ -258,6 +293,18 @@ export function RowActions({ children }: RowActionsProps) {
               onPointerEnter={() => {
                 flags.current.column = true
                 sync()
+              }}
+              onKeyDown={(e) => {
+                if (e.key !== 'Tab' || !e.shiftKey) return
+                const buttons = e.currentTarget.querySelectorAll('button')
+                if (e.target !== buttons[0]) return
+                const row = anchorRef.current?.parentElement
+                const controls = row?.querySelectorAll<HTMLElement>(
+                  'a[href], button:not([disabled])',
+                )
+                if (!controls?.length) return
+                e.preventDefault()
+                controls[controls.length - 1].focus()
               }}
               onPointerLeave={() => {
                 flags.current.column = false
