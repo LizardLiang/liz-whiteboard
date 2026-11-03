@@ -190,10 +190,7 @@ export function ProjectSharePanel({
       }),
     onSuccess: (result) => {
       if ('error' in result) {
-        setAddError(
-          tError(t, result as { message?: string }) ||
-            t('project.share.addFailed'),
-        )
+        setAddError((result as { message?: string }).message ?? '')
         return
       }
       setAddEmail('')
@@ -201,7 +198,7 @@ export function ProjectSharePanel({
       setAddError(null)
       invalidate()
     },
-    onError: () => setAddError(t('project.share.addFailed')),
+    onError: () => setAddError(''),
   })
 
   const updateMutation = useMutation({
@@ -356,13 +353,14 @@ export function ProjectSharePanel({
                 </SelectContent>
               </Select>
             </div>
-            {addError && (
+            {addError !== null && (
               <p
                 role="alert"
                 aria-live="polite"
                 className="text-xs text-destructive"
               >
-                {addError}
+                {tError(t, { message: addError }) ||
+                  t('project.share.addFailed')}
               </p>
             )}
             <Button
