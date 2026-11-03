@@ -189,6 +189,8 @@ import { safeGetItem, safeSetItem } from '@/lib/safe-storage'
 import { classifyQueryFailure, isUnauthorizedError } from '@/lib/auth/errors'
 import { useAuthContext } from '@/components/auth/AuthContext'
 import { useZenMode } from '@/hooks/use-zen-mode'
+import { useT } from '@/lib/i18n/use-t'
+import { tError } from '@/lib/i18n/t-error'
 
 /** Pending connection data waiting for cardinality selection */
 interface PendingConnection {
@@ -218,34 +220,25 @@ export interface CommentActions {
   panToComment: (comment: CommentWithAuthor) => void
 }
 
-/** Cardinality options for the picker dialog */
-const CARDINALITY_OPTIONS: Array<{ value: Cardinality; label: string }> = [
-  { value: 'ONE_TO_ONE', label: 'One to One (1:1)' },
-  { value: 'ONE_TO_MANY', label: 'One to Many (1:N)' },
-  { value: 'MANY_TO_ONE', label: 'Many to One (N:1)' },
-  { value: 'MANY_TO_MANY', label: 'Many to Many (N:N)' },
-  { value: 'ZERO_TO_ONE', label: 'Zero to One (0:1)' },
-  { value: 'ZERO_TO_MANY', label: 'Zero to Many (0:N)' },
-  { value: 'SELF_REFERENCING', label: 'Self Referencing' },
-  { value: 'ZERO_OR_ONE_TO_ONE', label: 'Zero or One to One (0..1:1)' },
-  { value: 'ZERO_OR_ONE_TO_MANY', label: 'Zero or One to Many (0..1:N)' },
-  { value: 'ZERO_OR_MANY_TO_ONE', label: 'Zero or Many to One (0..N:1)' },
-  { value: 'ZERO_OR_MANY_TO_MANY', label: 'Zero or Many to Many (0..N:N)' },
-  { value: 'ZERO_OR_ONE_TO_ZERO_OR_ONE', label: 'Zero or One to Zero or One' },
-  {
-    value: 'ZERO_OR_ONE_TO_ZERO_OR_MANY',
-    label: 'Zero or One to Zero or Many',
-  },
-  { value: 'MANY_TO_ZERO_OR_ONE', label: 'Many to Zero or One (N:0..1)' },
-  { value: 'MANY_TO_ZERO_OR_MANY', label: 'Many to Zero or Many (N:0..N)' },
-  {
-    value: 'ZERO_OR_MANY_TO_ZERO_OR_ONE',
-    label: 'Zero or Many to Zero or One',
-  },
-  {
-    value: 'ZERO_OR_MANY_TO_ZERO_OR_MANY',
-    label: 'Zero or Many to Zero or Many',
-  },
+/** Cardinality options for the picker dialog (labels come from the dictionary) */
+const CARDINALITY_OPTIONS: Array<Cardinality> = [
+  'ONE_TO_ONE',
+  'ONE_TO_MANY',
+  'MANY_TO_ONE',
+  'MANY_TO_MANY',
+  'ZERO_TO_ONE',
+  'ZERO_TO_MANY',
+  'SELF_REFERENCING',
+  'ZERO_OR_ONE_TO_ONE',
+  'ZERO_OR_ONE_TO_MANY',
+  'ZERO_OR_MANY_TO_ONE',
+  'ZERO_OR_MANY_TO_MANY',
+  'ZERO_OR_ONE_TO_ZERO_OR_ONE',
+  'ZERO_OR_ONE_TO_ZERO_OR_MANY',
+  'MANY_TO_ZERO_OR_ONE',
+  'MANY_TO_ZERO_OR_MANY',
+  'ZERO_OR_MANY_TO_ZERO_OR_ONE',
+  'ZERO_OR_MANY_TO_ZERO_OR_MANY',
 ]
 
 /**
@@ -497,6 +490,7 @@ function ReactFlowWhiteboardInner({
   /** §6a: pre-fetched shapes/connectors for the public share-link path. */
   publicShapesData?: { shapes: Array<Shape>; connectors: Array<Connector> }
 }) {
+  const t = useT()
   const queryClient = useQueryClient()
   const navigate = useNavigate()
 
@@ -676,7 +670,7 @@ function ReactFlowWhiteboardInner({
             !node.data.sourceTableName ||
             node.data.columns.length === 0 ||
             node.data.columns.some((column) => column.missing)
-              ? 'Source table or column metadata is missing'
+              ? t('whiteboard.board.incompleteSource')
               : undefined,
           columns: node.data.columns.map((column, order) => ({
             id: column.id,
@@ -710,7 +704,7 @@ function ReactFlowWhiteboardInner({
         targetColumnId: relationship.targetColumnId,
       }))
     setSqlPlan(buildJoinQueryPlan(tables, relationships))
-  }, [getEdges, getNodes, selectedSqlTableIds])
+  }, [getEdges, getNodes, selectedSqlTableIds, t])
 
   // Cmd/Ctrl+K search palette state, plus the focus request threaded down to
   // ReactFlowCanvas. The token increments on every navigation so the same
@@ -814,11 +808,13 @@ function ReactFlowWhiteboardInner({
     onSuccess: () => {
       invalidateBoard()
       emitCollabEvent('reference:changed', { whiteboardId })
-      toast.success('Reference added')
+      toast.success(t('whiteboard.board.referenceAdded'))
     },
     onError: (error: unknown) => {
       toast.error(
-        error instanceof Error ? error.message : 'Could not add the reference',
+        error instanceof Error
+          ? tError(t, error)
+          : t('whiteboard.board.referenceAddFailed'),
       )
     },
   })
@@ -835,7 +831,7 @@ function ReactFlowWhiteboardInner({
       // Server functions widen their return with AuthErrorResponse; a session
       // that expired mid-edit lands here rather than in onError.
       if (isUnauthorizedError(result)) {
-        toast.error('Your session expired. Sign in again to keep editing.')
+        toast.error(t('whiteboard.board.sessionExpired'))
         return
       }
       emitCollabEvent('reference:changed', { whiteboardId })
@@ -844,17 +840,20 @@ function ReactFlowWhiteboardInner({
       // have drawn a line in between.
       toast.success(
         result.deletedRelationships > 0
-          ? `Reference changed — ${result.deletedRelationships} relationship${
-              result.deletedRelationships === 1 ? '' : 's'
-            } removed`
-          : 'Reference changed',
+          ? t(
+              result.deletedRelationships === 1
+                ? 'whiteboard.board.referenceChangedRemovedOne'
+                : 'whiteboard.board.referenceChangedRemovedOther',
+              { count: result.deletedRelationships },
+            )
+          : t('whiteboard.board.referenceChanged'),
       )
     },
     onError: (error: unknown) => {
       toast.error(
         error instanceof Error
-          ? error.message
-          : 'Could not change the reference',
+          ? tError(t, error)
+          : t('whiteboard.board.referenceChangeFailed'),
       )
     },
   })
@@ -865,17 +864,17 @@ function ReactFlowWhiteboardInner({
     onSuccess: (result) => {
       invalidateBoard()
       if (isUnauthorizedError(result)) {
-        toast.error('Your session expired. Sign in again to keep editing.')
+        toast.error(t('whiteboard.board.sessionExpired'))
         return
       }
       emitCollabEvent('reference:changed', { whiteboardId })
-      toast.success('Reference removed')
+      toast.success(t('whiteboard.board.referenceRemoved'))
     },
     onError: (error: unknown) => {
       toast.error(
         error instanceof Error
-          ? error.message
-          : 'Could not remove the reference',
+          ? tError(t, error)
+          : t('whiteboard.board.referenceRemoveFailed'),
       )
     },
   })
@@ -2783,8 +2782,8 @@ function ReactFlowWhiteboardInner({
           console.error('Failed to persist area move:', res.message)
           toast.error(
             res.code === 'SESSION_EXPIRED'
-              ? 'Your session expired before the area move could be saved. Please sign in to retry.'
-              : 'The area move could not be saved — your changes have been reverted.',
+              ? t('whiteboard.board.areaMoveSessionExpired')
+              : t('whiteboard.board.areaMoveFailed'),
           )
           if (res.code === 'SESSION_EXPIRED') {
             triggerSessionExpired()
@@ -2814,6 +2813,7 @@ function ReactFlowWhiteboardInner({
       setNodes,
       triggerSessionExpired,
       patchWhiteboardTablePositions,
+      t,
     ],
   )
 
@@ -3030,7 +3030,7 @@ function ReactFlowWhiteboardInner({
         })
 
       createAreaMutation({
-        name: 'New area',
+        name: t('whiteboard.board.defaultAreaName'),
         color: DEFAULT_AREA_COLOR,
         positionX: areaRect.positionX,
         positionY: areaRect.positionY,
@@ -3039,7 +3039,7 @@ function ReactFlowWhiteboardInner({
         memberTableIds: tableIdsEnclosedByRect(candidates, areaRect),
       })
     },
-    [absolutePositionOf, reactFlowInstance, createAreaMutation],
+    [absolutePositionOf, reactFlowInstance, createAreaMutation, t],
   )
 
   // ── Shapes and Connectors (Phase 1) ────────────────────────────────────────
@@ -4060,9 +4060,7 @@ function ReactFlowWhiteboardInner({
             // the outcome + any toast).
             if (tableDragSeqRef.current !== mySeq) return
             console.error('Failed to persist multi-drag positions:', err)
-            toast.error(
-              'The move could not be saved — your changes have been reverted.',
-            )
+            toast.error(t('whiteboard.board.moveFailed'))
             if (previousPositions.length > 0) {
               setNodes((prev) => applyBulkPositions(prev, previousPositions))
               patchWhiteboardTablePositions(previousPositions)
@@ -4152,6 +4150,7 @@ function ReactFlowWhiteboardInner({
       patchWhiteboardTablePositions,
       setNodes,
       triggerSessionExpired,
+      t,
     ],
   )
 
@@ -4392,7 +4391,7 @@ function ReactFlowWhiteboardInner({
             // collaboration connection indicator, which is meaningless here
             // since no Socket.IO connection is ever opened on this path.
             <div className="absolute left-4 top-4 z-10 rounded-md border bg-background/90 px-3 py-1.5 text-sm font-medium text-muted-foreground shadow-sm backdrop-blur-sm">
-              Read-only &middot; Shared view
+              {t('whiteboard.board.sharedView')}
             </div>
           ) : (
             <ConnectionStatusIndicator connectionState={connectionState} />
@@ -4404,11 +4403,11 @@ function ReactFlowWhiteboardInner({
               variant="outline"
               size="sm"
               onClick={exitZenMode}
-              title="Exit Zen Mode (z)"
+              title={t('whiteboard.board.exitZenHint')}
               className="absolute bottom-4 right-4 z-10"
             >
               <Minimize2 className="mr-2 h-4 w-4" />
-              Exit Zen
+              {t('whiteboard.board.exitZen')}
             </Button>
           )}
           {deletingReferenceId &&
@@ -4457,7 +4456,9 @@ function ReactFlowWhiteboardInner({
               data-testid="selected-tables-actions"
             >
               <Button size="sm" onClick={openSelectedTablesSql}>
-                Generate SQL ({selectedSqlTableIds.length} tables)
+                {t('whiteboard.board.generateSql', {
+                  count: selectedSqlTableIds.length,
+                })}
               </Button>
             </div>
           )}
@@ -4591,7 +4592,7 @@ function ReactFlowWhiteboardInner({
           >
             <DialogContent className="sm:max-w-sm">
               <DialogHeader>
-                <DialogTitle>New comment</DialogTitle>
+                <DialogTitle>{t('whiteboard.board.newComment')}</DialogTitle>
               </DialogHeader>
               <Textarea
                 autoFocus
@@ -4599,7 +4600,7 @@ function ReactFlowWhiteboardInner({
                 onChange={(e) =>
                   setPendingCommentBody(e.target.value.slice(0, 2000))
                 }
-                placeholder="Add a comment..."
+                placeholder={t('whiteboard.board.commentPlaceholder')}
                 className="min-h-24"
               />
               <DialogFooter>
@@ -4610,7 +4611,7 @@ function ReactFlowWhiteboardInner({
                     setPendingCommentBody('')
                   }}
                 >
-                  Cancel
+                  {t('common.cancel')}
                 </Button>
                 <Button
                   disabled={pendingCommentBody.trim().length === 0}
@@ -4626,7 +4627,7 @@ function ReactFlowWhiteboardInner({
                     setPendingCommentBody('')
                   }}
                 >
-                  Comment
+                  {t('whiteboard.board.commentSubmit')}
                 </Button>
               </DialogFooter>
             </DialogContent>
@@ -4652,12 +4653,16 @@ function ReactFlowWhiteboardInner({
           >
             <DialogContent className="sm:max-w-sm">
               <DialogHeader>
-                <DialogTitle>Set Relationship Cardinality</DialogTitle>
+                <DialogTitle>
+                  {t('whiteboard.board.cardinalityTitle')}
+                </DialogTitle>
               </DialogHeader>
 
               <div className="py-4 space-y-4">
                 <div className="space-y-2">
-                  <Label htmlFor="cardinality-select">Cardinality</Label>
+                  <Label htmlFor="cardinality-select">
+                    {t('whiteboard.board.cardinality')}
+                  </Label>
                   <Select
                     value={selectedCardinality}
                     onValueChange={(value) =>
@@ -4665,24 +4670,28 @@ function ReactFlowWhiteboardInner({
                     }
                   >
                     <SelectTrigger id="cardinality-select">
-                      <SelectValue placeholder="Select cardinality" />
+                      <SelectValue
+                        placeholder={t('whiteboard.board.selectCardinality')}
+                      />
                     </SelectTrigger>
                     <SelectContent>
                       {CARDINALITY_OPTIONS.map((option) => (
-                        <SelectItem key={option.value} value={option.value}>
-                          {option.label}
+                        <SelectItem key={option} value={option}>
+                          {t(`whiteboard.cardinality.${option}`)}
                         </SelectItem>
                       ))}
                     </SelectContent>
                   </Select>
                 </div>
                 <div className="space-y-2">
-                  <Label htmlFor="relationship-label">Label (optional)</Label>
+                  <Label htmlFor="relationship-label">
+                    {t('whiteboard.board.labelOptional')}
+                  </Label>
                   <Input
                     id="relationship-label"
                     value={pendingLabel}
                     onChange={(e) => setPendingLabel(e.target.value)}
-                    placeholder="e.g. has many, belongs to"
+                    placeholder={t('whiteboard.board.labelPlaceholder')}
                     maxLength={255}
                   />
                 </div>
@@ -4690,9 +4699,11 @@ function ReactFlowWhiteboardInner({
 
               <DialogFooter>
                 <Button variant="outline" onClick={handleCardinalityCancel}>
-                  Cancel
+                  {t('common.cancel')}
                 </Button>
-                <Button onClick={handleCardinalityConfirm}>Create</Button>
+                <Button onClick={handleCardinalityConfirm}>
+                  {t('common.create')}
+                </Button>
               </DialogFooter>
             </DialogContent>
           </Dialog>
@@ -4728,6 +4739,7 @@ export function ReactFlowWhiteboard({
   onCommentsChange,
   onCommentActionsReady,
 }: ReactFlowWhiteboardProps) {
+  const t = useT()
   // Fetch whiteboard data with tables — disabled on the public read-only
   // path (GH #109): that path never has an authenticated session, and
   // getWhiteboardWithDiagram/getWhiteboardRelationships are both
@@ -4819,7 +4831,9 @@ export function ReactFlowWhiteboard({
   if (isLoadingWhiteboard || isLoadingRelationships) {
     return (
       <div className="flex items-center justify-center h-full">
-        <div className="text-muted-foreground">Loading diagram...</div>
+        <div className="text-muted-foreground">
+          {t('whiteboard.board.loading')}
+        </div>
       </div>
     )
   }
@@ -4841,7 +4855,9 @@ export function ReactFlowWhiteboard({
     }
     return (
       <div className="flex items-center justify-center h-full">
-        <div className="text-destructive">Failed to load whiteboard</div>
+        <div className="text-destructive">
+          {t('whiteboard.board.loadFailed')}
+        </div>
       </div>
     )
   }

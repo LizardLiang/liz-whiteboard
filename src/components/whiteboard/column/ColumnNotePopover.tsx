@@ -6,6 +6,7 @@
  */
 
 import { NotePopover } from '../NotePopover'
+import { useT } from '@/lib/i18n/use-t'
 
 interface ColumnNotePopoverProps {
   description: string | null
@@ -30,14 +31,15 @@ export function ColumnNotePopover({
   anchorOnly,
   anchorStyle,
 }: ColumnNotePopoverProps) {
+  const t = useT()
   return (
     <NotePopover
       description={description}
       onSave={onSave}
-      label="Edit column note"
+      label={t('whiteboard.column.editNote')}
       className="column-note-btn"
       iconSize={13}
-      placeholder="Add a note for this field..."
+      placeholder={t('whiteboard.column.notePlaceholder')}
       idleColor="var(--rf-table-text)"
       open={open}
       onOpenChange={onOpenChange}

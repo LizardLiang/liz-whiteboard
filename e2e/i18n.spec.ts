@@ -4,7 +4,7 @@
 // global-setup. The shared config pins the default locale to en-US so other
 // specs that assert English text do not depend on the host machine language.
 import { expect, test } from '@playwright/test'
-import { BASE_URL, STORAGE_STATE } from './fixtures'
+import { BASE_URL, IDS, STORAGE_STATE } from './fixtures'
 import type { Browser } from '@playwright/test'
 
 async function openAs(browser: Browser, locale: string) {
@@ -121,6 +121,19 @@ test.describe('phase 3: navigator and dashboard', () => {
       page.getByRole('heading', { name: '專案', exact: true }),
     ).toBeVisible()
     await expect(page.getByRole('heading', { name: '所有專案' })).toBeVisible()
+    await context.close()
+  })
+})
+
+test.describe('phase 4: ER whiteboard', () => {
+  test('whiteboard toolbar is Chinese for a zh-TW browser', async ({
+    browser,
+  }) => {
+    const { context, page } = await openAs(browser, 'zh-TW')
+    await page.goto(`/whiteboard/${IDS.whiteboard}`)
+    await expect(page.getByRole('toolbar', { name: '白板工具' })).toBeVisible()
+    await expect(page.getByRole('button', { name: '新增資料表' })).toBeVisible()
+    await expect(page.getByRole('button', { name: '更多工具' })).toBeVisible()
     await context.close()
   })
 })

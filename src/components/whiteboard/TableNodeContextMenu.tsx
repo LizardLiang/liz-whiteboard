@@ -17,6 +17,7 @@ import {
   ContextMenuSubTrigger,
   ContextMenuTrigger,
 } from '@/components/ui/context-menu'
+import { useT } from '@/lib/i18n/use-t'
 
 export interface TableNodeContextMenuProps {
   children: React.ReactNode
@@ -63,6 +64,7 @@ export function TableNodeContextMenu({
   onOpenNote,
   onOpenComment,
 }: TableNodeContextMenuProps) {
+  const t = useT()
   const { canEdit } = useWhiteboardPermissions()
   return (
     <ContextMenu>
@@ -74,7 +76,7 @@ export function TableNodeContextMenu({
           }}
           disabled={disabled}
         >
-          Focus view
+          {t('whiteboard.contextMenu.focusView')}
           <ContextMenuShortcut>F</ContextMenuShortcut>
         </ContextMenuItem>
         <ContextMenuItem
@@ -83,7 +85,7 @@ export function TableNodeContextMenu({
           }}
           disabled={disabled}
         >
-          Show relations
+          {t('whiteboard.contextMenu.showRelations')}
           <ContextMenuShortcut>R</ContextMenuShortcut>
         </ContextMenuItem>
         {/* Comment — viewer+ (canComment), opens the same CommentThreadPopover
@@ -97,7 +99,7 @@ export function TableNodeContextMenu({
             disabled={disabled}
           >
             <MessageCircle className="mr-2 h-4 w-4" />
-            Comment
+            {t('whiteboard.contextMenu.comment')}
           </ContextMenuItem>
         )}
         {/* Note — editor-only (canEdit), opens the same TableNotePopover the
@@ -111,12 +113,12 @@ export function TableNodeContextMenu({
             disabled={disabled}
           >
             <StickyNote className="mr-2 h-4 w-4" />
-            Note
+            {t('whiteboard.contextMenu.note')}
           </ContextMenuItem>
         )}
         <ContextMenuSub>
           <ContextMenuSubTrigger disabled={disabled}>
-            Export DDL
+            {t('whiteboard.contextMenu.exportDdl')}
           </ContextMenuSubTrigger>
           <ContextMenuSubContent>
             <ContextMenuItem
@@ -147,11 +149,13 @@ export function TableNodeContextMenu({
         {canEdit && tableId && (
           <ContextMenuSub>
             <ContextMenuSubTrigger disabled={disabled}>
-              Add to area
+              {t('whiteboard.contextMenu.addToArea')}
             </ContextMenuSubTrigger>
             <ContextMenuSubContent>
               {!areas || areas.length === 0 ? (
-                <ContextMenuItem disabled>No areas yet</ContextMenuItem>
+                <ContextMenuItem disabled>
+                  {t('whiteboard.contextMenu.noAreas')}
+                </ContextMenuItem>
               ) : (
                 areas.map((area) => {
                   const isMember = area.memberTableIds.includes(tableId)
@@ -189,7 +193,7 @@ export function TableNodeContextMenu({
               }}
               disabled={disabled}
             >
-              Delete table
+              {t('whiteboard.contextMenu.deleteTable')}
               <ContextMenuShortcut>Del</ContextMenuShortcut>
             </ContextMenuItem>
           </>

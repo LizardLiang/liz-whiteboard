@@ -4,6 +4,7 @@
  */
 
 import type { ConnectionState } from '@/hooks/use-collaboration'
+import { useT } from '@/lib/i18n/use-t'
 
 export interface ConnectionStatusIndicatorProps {
   connectionState: ConnectionState
@@ -12,6 +13,7 @@ export interface ConnectionStatusIndicatorProps {
 export function ConnectionStatusIndicator({
   connectionState,
 }: ConnectionStatusIndicatorProps) {
+  const t = useT()
   if (connectionState === 'connected') {
     // No indicator in normal state
     return null
@@ -61,8 +63,8 @@ export function ConnectionStatusIndicator({
         }}
       />
       {isReconnecting
-        ? 'Reconnecting — collaborators may not see your changes'
-        : 'Disconnected — changes may not sync to collaborators'}
+        ? t('whiteboard.connection.reconnecting')
+        : t('whiteboard.connection.disconnected')}
     </div>
   )
 }

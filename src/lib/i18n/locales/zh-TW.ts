@@ -2,6 +2,7 @@
 // Traditional Chinese dictionary. Typed against the English shape, so a
 // missing key fails `bun run typecheck`.
 
+import { whiteboardZhTW } from './whiteboard-zh-TW'
 import type { DeepStringRecord, Dictionary } from './en'
 
 export const zhTW: DeepStringRecord<Dictionary> = {
@@ -367,6 +368,7 @@ export const zhTW: DeepStringRecord<Dictionary> = {
       unexpectedRetry: '發生未預期的錯誤，請再試一次。',
     },
   },
+  whiteboard: whiteboardZhTW,
   meta: {
     title: 'ER Whiteboard - 協作式圖表編輯器',
   },
@@ -414,5 +416,47 @@ export const zhTW: DeepStringRecord<Dictionary> = {
     ownerAccessRemoveLocked: '無法移除專案擁有者的存取權限',
     adminRoleOwnerOnly: '只有專案擁有者可以變更管理員的角色',
     adminRemoveOwnerOnly: '只有專案擁有者可以移除管理員',
+    tableRefSameBoard: '資料表參照不能指向它所在的同一個白板',
+    tableRefSameProject: '資料表參照必須指向同一專案內的白板',
+    tableRefNeedsColumn: '資料表參照至少需要一個欄位',
+    areaNotFound: '找不到區域',
+    areaForeign: '此區域不屬於這個白板',
+    collabSessionNotFound: '找不到協作工作階段',
+    columnForeign: '此欄位不屬於這個白板',
+    columnNotFound: '找不到欄位',
+    commentForeign: '此留言不屬於這個白板',
+    commentNotFound: '找不到留言',
+    connectorForeign: '此連接線不屬於這個白板',
+    connectorNotFound: '找不到連接線',
+    deleteAreaFailed: '刪除區域失敗',
+    deleteCommentFailed: '刪除留言失敗',
+    deleteConnectorFailed: '刪除連接線失敗',
+    deleteRelationshipFailed: '刪除關聯失敗',
+    deleteShapeFailed: '刪除圖形失敗',
+    deleteTableFailed: '刪除資料表失敗',
+    collabSetupFailed: '無法建立協作工作階段',
+    moveAreaFailed: '移動區域失敗',
+    syncFailed: '同步白板資料失敗',
+    updatePositionFailed: '更新資料表位置失敗',
+    insufficientPermission: '權限不足',
+    memberTableForeign: '成員資料表不屬於這個白板',
+    authorOnlyEdit: '只有作者可以編輯此留言',
+    parentCommentMissing: '在此白板上找不到上層留言',
+    relationshipForeign: '此關聯不屬於這個白板',
+    relationshipNotFound: '找不到關聯',
+    sessionExpiredShort: '登入已過期',
+    shapeForeign: '此圖形不屬於這個白板',
+    shapeNotFound: '找不到圖形',
+    sourceTableForeign: '來源資料表不屬於來源白板',
+    sourceTableNotFound: '找不到來源資料表',
+    sourceWhiteboardNotFound: '找不到來源白板',
+    tableForeign: '此資料表不屬於這個白板',
+    notTableReference: '此資料表不是資料表參照',
+    tableNotFound: '找不到資料表',
+    tableRefNotFound: '找不到資料表參照',
+    targetTableNotFound: '在此白板上找不到目標資料表',
+    lineShapesNoConnect: '線條圖形無法連接',
+    alreadyConnected: '這些圖形在該方向上已經連接',
+    whiteboardNotFound: '找不到白板',
   },
 }

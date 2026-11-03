@@ -14,6 +14,7 @@ import {
   AlertDialogHeader,
   AlertDialogTitle,
 } from '@/components/ui/alert-dialog'
+import { useT } from '@/lib/i18n/use-t'
 
 /**
  * Re-export ColumnRelationship as TableRelationship for semantic clarity.
@@ -36,6 +37,7 @@ export function DeleteTableDialog({
   onConfirm,
   onCancel,
 }: DeleteTableDialogProps) {
+  const t = useT()
   return (
     <AlertDialog
       open
@@ -46,19 +48,27 @@ export function DeleteTableDialog({
       <AlertDialogContent>
         <AlertDialogHeader>
           <AlertDialogTitle>
-            Delete table &ldquo;{tableName}&rdquo;?
+            {t('whiteboard.deleteTable.title', { name: tableName })}
           </AlertDialogTitle>
           <AlertDialogDescription asChild>
             <div>
               <p>
-                This will permanently delete {columnCount} column
-                {columnCount !== 1 ? 's' : ''}.
+                {t(
+                  columnCount === 1
+                    ? 'whiteboard.deleteTable.columnsOne'
+                    : 'whiteboard.deleteTable.columnsOther',
+                  { count: columnCount },
+                )}
               </p>
               {affectedRelationships.length > 0 && (
                 <>
                   <p style={{ marginTop: '8px' }}>
-                    It will also remove {affectedRelationships.length}{' '}
-                    relationship{affectedRelationships.length !== 1 ? 's' : ''}:
+                    {t(
+                      affectedRelationships.length === 1
+                        ? 'whiteboard.deleteTable.relationshipsOne'
+                        : 'whiteboard.deleteTable.relationshipsOther',
+                      { count: affectedRelationships.length },
+                    )}
                   </p>
                   <ul
                     style={{
@@ -92,12 +102,14 @@ export function DeleteTableDialog({
           </AlertDialogDescription>
         </AlertDialogHeader>
         <AlertDialogFooter>
-          <AlertDialogCancel onClick={onCancel}>Cancel</AlertDialogCancel>
+          <AlertDialogCancel onClick={onCancel}>
+            {t('common.cancel')}
+          </AlertDialogCancel>
           <AlertDialogAction
             onClick={onConfirm}
             className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
           >
-            Delete table
+            {t('whiteboard.deleteTable.confirm')}
           </AlertDialogAction>
         </AlertDialogFooter>
       </AlertDialogContent>

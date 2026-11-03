@@ -23,6 +23,7 @@ import {
   TooltipProvider,
   TooltipTrigger,
 } from '@/components/ui/tooltip'
+import { useT } from '@/lib/i18n/use-t'
 
 /**
  * Lazily mounts the Tooltip machinery (GH #121 perf, opt #4) — when
@@ -100,6 +101,7 @@ export const ColumnRow = memo(
     onDragHandlePointerDown,
     isDraggingActive = false,
   }: ColumnRowProps) => {
+    const t = useT()
     const { canEdit } = useWhiteboardPermissions()
     const isEditingName =
       editingField?.columnId === column.id && editingField.field === 'name'
@@ -220,7 +222,10 @@ export const ColumnRow = memo(
               onCancel={onCancelEdit}
             />
           ) : (
-            <LazyTooltip active={isRowHovered} content="Double-click to edit">
+            <LazyTooltip
+              active={isRowHovered}
+              content={t('whiteboard.column.doubleClickEdit')}
+            >
               <span
                 style={{
                   fontWeight: column.isPrimaryKey ? 600 : 400,
@@ -248,7 +253,7 @@ export const ColumnRow = memo(
           ) : (
             <LazyTooltip
               active={isRowHovered}
-              content="Double-click to edit type"
+              content={t('whiteboard.column.doubleClickEditType')}
             >
               <span
                 style={{
@@ -294,10 +299,15 @@ export const ColumnRow = memo(
 
         {/* Duplicate button — hover visible. Write action, hidden when !canEdit. */}
         {canEdit && (
-          <LazyTooltip active={isRowHovered} content="Duplicate field">
+          <LazyTooltip
+            active={isRowHovered}
+            content={t('whiteboard.column.duplicateField')}
+          >
             <button
               type="button"
-              aria-label={`Duplicate column ${column.name}`}
+              aria-label={t('whiteboard.column.duplicate', {
+                name: column.name,
+              })}
               onClick={handleDuplicateClick}
               className="nodrag nowheel"
               style={{
@@ -328,7 +338,7 @@ export const ColumnRow = memo(
         {canEdit && (
           <button
             type="button"
-            aria-label={`Delete column ${column.name}`}
+            aria-label={t('whiteboard.column.delete', { name: column.name })}
             onClick={handleDeleteClick}
             className="nodrag nowheel"
             style={{
@@ -353,7 +363,6 @@ export const ColumnRow = memo(
             ×
           </button>
         )}
-
       </div>
     )
   },

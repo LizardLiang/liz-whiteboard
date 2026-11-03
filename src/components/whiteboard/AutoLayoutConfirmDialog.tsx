@@ -17,6 +17,7 @@ import {
   AlertDialogHeader,
   AlertDialogTitle,
 } from '@/components/ui/alert-dialog'
+import { useT } from '@/lib/i18n/use-t'
 
 export interface AutoLayoutConfirmDialogProps {
   /** Whether the dialog is open */
@@ -47,6 +48,7 @@ export function AutoLayoutConfirmDialog({
   onConfirm,
   onCancel,
 }: AutoLayoutConfirmDialogProps) {
+  const t = useT()
   return (
     <AlertDialog
       open={open}
@@ -57,19 +59,21 @@ export function AutoLayoutConfirmDialog({
     >
       <AlertDialogContent>
         <AlertDialogHeader>
-          <AlertDialogTitle>Apply Auto Layout?</AlertDialogTitle>
+          <AlertDialogTitle>
+            {t('whiteboard.autoLayout.title')}
+          </AlertDialogTitle>
           <AlertDialogDescription>
-            This whiteboard has {tableCount} tables. Auto Layout may take
-            several seconds and cannot be cancelled once started. Existing
-            positions will be overwritten. Continue?
+            {t('whiteboard.autoLayout.description', { count: tableCount })}
           </AlertDialogDescription>
         </AlertDialogHeader>
         <AlertDialogFooter>
-          <AlertDialogCancel onClick={onCancel}>Cancel</AlertDialogCancel>
+          <AlertDialogCancel onClick={onCancel}>
+            {t('common.cancel')}
+          </AlertDialogCancel>
           {/* autoFocus ensures the "Run Layout" button receives initial focus
               when the dialog opens — satisfies FR-011 a11y AC (c). */}
           <AlertDialogAction autoFocus onClick={onConfirm}>
-            Run Layout
+            {t('whiteboard.autoLayout.run')}
           </AlertDialogAction>
         </AlertDialogFooter>
       </AlertDialogContent>

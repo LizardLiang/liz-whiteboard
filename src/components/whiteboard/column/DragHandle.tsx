@@ -7,6 +7,7 @@ import {
   TooltipProvider,
   TooltipTrigger,
 } from '@/components/ui/tooltip'
+import { useT } from '@/lib/i18n/use-t'
 
 export interface DragHandleProps {
   columnName: string
@@ -17,6 +18,7 @@ export interface DragHandleProps {
 
 export const DragHandle = memo(
   ({ columnName, isDragging, onPointerDown, show }: DragHandleProps) => {
+    const t = useT()
     const { canEdit } = useWhiteboardPermissions()
     // Reordering is a write action — no drag handle for view-only viewers.
     if (!show || !canEdit) return null
@@ -28,7 +30,7 @@ export const DragHandle = memo(
             <button
               type="button"
               onPointerDown={onPointerDown}
-              aria-label={`Reorder column ${columnName}`}
+              aria-label={t('whiteboard.column.reorder', { name: columnName })}
               className="nodrag nowheel column-drag-handle"
               style={{
                 display: 'flex',
@@ -56,7 +58,9 @@ export const DragHandle = memo(
               <GripVertical size={14} />
             </button>
           </TooltipTrigger>
-          <TooltipContent side="left">Drag to reorder</TooltipContent>
+          <TooltipContent side="left">
+            {t('whiteboard.column.dragToReorder')}
+          </TooltipContent>
         </Tooltip>
       </TooltipProvider>
     )

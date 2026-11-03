@@ -22,6 +22,7 @@ import { Button } from '@/components/ui/button'
 import { Badge } from '@/components/ui/badge'
 import { Label } from '@/components/ui/label'
 import { hasMinimumRole } from '@/lib/auth/permissions'
+import { useI18n } from '@/lib/i18n/use-t'
 
 interface CommentThreadListItem {
   root: CommentWithAuthor
@@ -41,8 +42,8 @@ interface WhiteboardCommentsPanelProps {
   onOpenChange: (open: boolean) => void
 }
 
-function formatTimestamp(date: Date | string): string {
-  return new Date(date).toLocaleString()
+function formatTimestamp(date: Date | string, locale: string): string {
+  return new Date(date).toLocaleString(locale)
 }
 
 export function WhiteboardCommentsPanel({
@@ -52,6 +53,7 @@ export function WhiteboardCommentsPanel({
   open,
   onOpenChange,
 }: WhiteboardCommentsPanelProps) {
+  const { t, locale } = useI18n()
   const canComment = hasMinimumRole(viewerRole, 'VIEWER')
 
   const threads = useMemo<Array<CommentThreadListItem>>(() => {
@@ -78,15 +80,20 @@ export function WhiteboardCommentsPanel({
     <Sheet open={open} onOpenChange={onOpenChange}>
       <SheetContent className="w-full gap-0 sm:max-w-lg" side="right">
         <SheetHeader className="px-6 pt-6 pb-4">
-          <SheetTitle>Comments</SheetTitle>
+          <SheetTitle>{t('whiteboard.commentsPanel.title')}</SheetTitle>
           <SheetDescription>
-            Threaded discussion pinned to tables and canvas points.
+            {t('whiteboard.commentsPanel.description')}
           </SheetDescription>
         </SheetHeader>
 
         <div className="flex-1 overflow-y-auto px-6 pt-2 pb-6">
-          <Label className="text-sm font-medium">Threads</Label>
-          <ul className="mt-2 space-y-2" aria-label="Comment thread list">
+          <Label className="text-sm font-medium">
+            {t('whiteboard.commentsPanel.threads')}
+          </Label>
+          <ul
+            className="mt-2 space-y-2"
+            aria-label={t('whiteboard.commentsPanel.threadList')}
+          >
             {threads.map(({ root, replyCount }) => (
               <li key={root.id}>
                 <div className="rounded-md border px-3 py-2 text-left text-sm">
@@ -98,20 +105,28 @@ export function WhiteboardCommentsPanel({
                     <div className="flex items-center justify-between gap-2">
                       <span className="font-medium">
                         {root.targetType === 'table'
-                          ? 'Table comment'
-                          : 'Canvas comment'}
+                          ? t('whiteboard.commentsPanel.tableComment')
+                          : t('whiteboard.commentsPanel.canvasComment')}
                       </span>
                       {root.resolved && (
-                        <Badge variant="secondary">Resolved</Badge>
+                        <Badge variant="secondary">
+                          {t('whiteboard.commentsPanel.resolved')}
+                        </Badge>
                       )}
                     </div>
                     <p className="mt-1 line-clamp-2 text-xs text-muted-foreground">
                       {root.body}
                     </p>
                     <div className="mt-1 text-xs text-muted-foreground">
-                      {root.authorName} · {formatTimestamp(root.createdAt)}
+                      {root.authorName} ·{' '}
+                      {formatTimestamp(root.createdAt, locale)}
                       {replyCount > 0
-                        ? ` · ${replyCount} repl${replyCount === 1 ? 'y' : 'ies'}`
+                        ? ` · ${t(
+                            replyCount === 1
+                              ? 'whiteboard.commentsPanel.replyOne'
+                              : 'whiteboard.commentsPanel.replyOther',
+                            { count: replyCount },
+                          )}`
                         : ''}
                     </div>
                   </button>
@@ -125,7 +140,9 @@ export function WhiteboardCommentsPanel({
                           actions?.resolveComment(root.id, !root.resolved)
                         }
                       >
-                        {root.resolved ? 'Reopen' : 'Resolve'}
+                        {root.resolved
+                          ? t('whiteboard.commentsPanel.reopen')
+                          : t('whiteboard.commentsPanel.resolve')}
                       </Button>
                     </div>
                   )}
@@ -134,7 +151,7 @@ export function WhiteboardCommentsPanel({
             ))}
             {threads.length === 0 && (
               <li className="py-2 text-sm text-muted-foreground">
-                No comments yet.
+                {t('whiteboard.commentsPanel.empty')}
               </li>
             )}
           </ul>

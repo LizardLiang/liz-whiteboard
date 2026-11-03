@@ -26,6 +26,7 @@ import {
 } from '@/lib/react-flow/highlighting'
 import { computeD3ForceLayout } from '@/lib/auto-layout/d3-force-layout'
 import { calculateTableHeight } from '@/lib/react-flow/layout-adapter'
+import { useT } from '@/lib/i18n/use-t'
 
 export interface TableFocusOverlayProps {
   open: boolean
@@ -42,6 +43,7 @@ export function TableFocusOverlay({
   nodes,
   edges,
 }: TableFocusOverlayProps) {
+  const t = useT()
   // Internal navigation state — seeded from the prop, reset on fresh open.
   const [activeFocusId, setActiveFocusId] = useState<string | null>(
     focusedTableId,
@@ -245,17 +247,24 @@ export function TableFocusOverlay({
                   setActiveFocusId(prev)
                 }}
                 className="text-muted-foreground hover:text-foreground text-sm"
-                aria-label="Go back"
+                aria-label={t('whiteboard.focus.back')}
               >
-                ← Back
+                {t('whiteboard.focus.backButton')}
               </button>
             )}
-            <DialogTitle>Focus: {focusedTableName}</DialogTitle>
+            <DialogTitle>
+              {t('whiteboard.focus.title', { name: focusedTableName })}
+            </DialogTitle>
           </div>
           <DialogDescription>
             {relatedCount === 0
-              ? 'No directly related tables'
-              : `${relatedCount} directly related table${relatedCount === 1 ? '' : 's'}`}
+              ? t('whiteboard.focus.noneRelated')
+              : t(
+                  relatedCount === 1
+                    ? 'whiteboard.focus.relatedOne'
+                    : 'whiteboard.focus.relatedOther',
+                  { count: relatedCount },
+                )}
           </DialogDescription>
         </DialogHeader>
         <div className="flex-1 overflow-hidden relative min-h-0">

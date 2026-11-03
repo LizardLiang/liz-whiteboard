@@ -13,6 +13,7 @@ import type { DataType } from '@/data/schema'
 import { Alert, AlertDescription } from '@/components/ui/alert'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
+import { useT } from '@/lib/i18n/use-t'
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Types
@@ -86,11 +87,6 @@ const DATA_TYPES: Array<DataType> = [
   'uuid',
 ]
 
-const BATCH_DENIED_MESSAGE =
-  'This batch could not be saved. One or more items target a resource you no longer have access to.'
-
-const GENERIC_ERROR_MESSAGE = 'Save failed. Please try again.'
-
 // ─────────────────────────────────────────────────────────────────────────────
 // Component
 // ─────────────────────────────────────────────────────────────────────────────
@@ -113,6 +109,7 @@ export function BatchColumnForm({
   initialRows,
   orderOffset = 0,
 }: BatchColumnFormProps) {
+  const t = useT()
   const bannerId = useId()
   const firstBisectRef = useRef<HTMLButtonElement>(null)
 
@@ -218,7 +215,7 @@ export function BatchColumnForm({
 
   return (
     <form
-      aria-label="Batch column creation"
+      aria-label={t('whiteboard.batchColumn.ariaLabel')}
       onSubmit={handleSubmitAll}
       className="flex flex-col gap-2 p-3"
     >
@@ -230,7 +227,7 @@ export function BatchColumnForm({
           aria-describedby={bannerId}
         >
           <AlertDescription id={bannerId} className="text-sm">
-            {BATCH_DENIED_MESSAGE}
+            {t('whiteboard.batchColumn.denied')}
           </AlertDescription>
           {/* SEC-BATCH-UX-03: bisection affordance — only shown on RBAC denial */}
           {rows.length > 1 && (
@@ -240,23 +237,23 @@ export function BatchColumnForm({
                 type="button"
                 variant="outline"
                 size="sm"
-                aria-label="Try first half of batch"
+                aria-label={t('whiteboard.batchColumn.tryFirstHalfAria')}
                 onClick={handleTryFirstHalf}
                 disabled={submitting}
                 className="border-destructive text-destructive hover:bg-destructive/10"
               >
-                Try first half
+                {t('whiteboard.batchColumn.tryFirstHalf')}
               </Button>
               <Button
                 type="button"
                 variant="outline"
                 size="sm"
-                aria-label="Try second half of batch"
+                aria-label={t('whiteboard.batchColumn.trySecondHalfAria')}
                 onClick={handleTrySecondHalf}
                 disabled={submitting}
                 className="border-destructive text-destructive hover:bg-destructive/10"
               >
-                Try second half
+                {t('whiteboard.batchColumn.trySecondHalf')}
               </Button>
             </div>
           )}
@@ -267,13 +264,13 @@ export function BatchColumnForm({
       {genericError && (
         <Alert variant="destructive" aria-live="assertive">
           <AlertDescription className="text-sm">
-            {GENERIC_ERROR_MESSAGE}
+            {t('whiteboard.batchColumn.genericError')}
           </AlertDescription>
         </Alert>
       )}
 
       {/* Row list */}
-      <div role="list" aria-label="Column rows">
+      <div role="list" aria-label={t('whiteboard.batchColumn.rows')}>
         {rows.map((row, idx) => (
           <div
             key={row.id}
@@ -281,32 +278,36 @@ export function BatchColumnForm({
             className="flex items-center gap-1.5 mb-1"
           >
             <label className="sr-only" htmlFor={`col-name-${row.id}`}>
-              Column {idx + 1} name
+              {t('whiteboard.batchColumn.columnName', { index: idx + 1 })}
             </label>
             <Input
               id={`col-name-${row.id}`}
               type="text"
-              aria-label={`Column ${idx + 1} name`}
-              placeholder="column name"
+              aria-label={t('whiteboard.batchColumn.columnName', {
+                index: idx + 1,
+              })}
+              placeholder={t('whiteboard.column.namePlaceholder')}
               value={row.name}
               onChange={(e) => updateRowName(row.id, e.target.value)}
               className="flex-1 h-7 text-xs px-2"
             />
             <label className="sr-only" htmlFor={`col-type-${row.id}`}>
-              Column {idx + 1} type
+              {t('whiteboard.batchColumn.columnType', { index: idx + 1 })}
             </label>
             <select
               id={`col-type-${row.id}`}
-              aria-label={`Column ${idx + 1} type`}
+              aria-label={t('whiteboard.batchColumn.columnType', {
+                index: idx + 1,
+              })}
               value={row.dataType}
               onChange={(e) =>
                 updateRowDataType(row.id, e.target.value as DataType)
               }
               className="text-xs px-1.5 py-1 border border-input rounded-md bg-background text-foreground max-w-[100px] focus:outline-none focus:ring-1 focus:ring-ring"
             >
-              {DATA_TYPES.map((t) => (
-                <option key={t} value={t}>
-                  {t}
+              {DATA_TYPES.map((dt) => (
+                <option key={dt} value={dt}>
+                  {dt}
                 </option>
               ))}
             </select>
@@ -314,7 +315,9 @@ export function BatchColumnForm({
               type="button"
               variant="ghost"
               size="icon-sm"
-              aria-label={`Remove column ${idx + 1}`}
+              aria-label={t('whiteboard.batchColumn.removeColumn', {
+                index: idx + 1,
+              })}
               onClick={() => removeRow(row.id)}
               className="text-muted-foreground hover:text-foreground"
             >
@@ -329,11 +332,11 @@ export function BatchColumnForm({
         type="button"
         variant="outline"
         size="sm"
-        aria-label="Add column row"
+        aria-label={t('whiteboard.batchColumn.addRowAria')}
         onClick={addRow}
         className="self-start border-dashed"
       >
-        + Add row
+        {t('whiteboard.batchColumn.addRow')}
       </Button>
 
       {/* Actions */}
@@ -343,20 +346,22 @@ export function BatchColumnForm({
             type="button"
             variant="outline"
             size="sm"
-            aria-label="Cancel batch column creation"
+            aria-label={t('whiteboard.batchColumn.cancelAria')}
             onClick={onClose}
             disabled={submitting}
           >
-            Cancel
+            {t('common.cancel')}
           </Button>
         )}
         <Button
           type="submit"
           size="sm"
-          aria-label="Save all columns"
+          aria-label={t('whiteboard.batchColumn.saveAllAria')}
           disabled={submitting}
         >
-          {submitting ? 'Saving…' : 'Save all'}
+          {submitting
+            ? t('whiteboard.batchColumn.saving')
+            : t('whiteboard.batchColumn.saveAll')}
         </Button>
       </div>
     </form>

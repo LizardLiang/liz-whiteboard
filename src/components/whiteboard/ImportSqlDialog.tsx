@@ -31,6 +31,8 @@ import {
 } from '@/components/ui/select'
 import { Textarea } from '@/components/ui/textarea'
 import { Button } from '@/components/ui/button'
+import { useT } from '@/lib/i18n/use-t'
+import { tError } from '@/lib/i18n/t-error'
 
 const DIALECT_LABELS: Record<Dialect, string> = {
   postgres: 'PostgreSQL',
@@ -73,6 +75,7 @@ export function ImportSqlDialog({
   onCloseAutoFocus,
   onImport,
 }: ImportSqlDialogProps) {
+  const t = useT()
   const [dialect, setDialect] = useState<Dialect>('postgres')
   const [sql, setSql] = useState('')
   const [preview, setPreview] = useState<SqlParseResult | null>(null)
@@ -106,7 +109,7 @@ export function ImportSqlDialog({
 
   const tableCount = preview?.ast.tables.length ?? 0
   const columnCount =
-    preview?.ast.tables.reduce((sum, t) => sum + t.columns.length, 0) ?? 0
+    preview?.ast.tables.reduce((sum, tb) => sum + tb.columns.length, 0) ?? 0
   const relationshipCount = preview?.ast.relationships.length ?? 0
   const canImport = tableCount > 0 && !isImporting
 
@@ -119,11 +122,7 @@ export function ImportSqlDialog({
       resetForm()
       onOpenChange(false)
     } catch (error) {
-      setImportError(
-        error instanceof Error
-          ? error.message
-          : 'Import failed. Please try again.',
-      )
+      setImportError(error instanceof Error ? error.message : '')
     } finally {
       setIsImporting(false)
     }
@@ -136,17 +135,17 @@ export function ImportSqlDialog({
         onCloseAutoFocus={onCloseAutoFocus}
       >
         <DialogHeader>
-          <DialogTitle>Import SQL</DialogTitle>
+          <DialogTitle>{t('whiteboard.importSql.title')}</DialogTitle>
           <DialogDescription>
-            Paste CREATE TABLE statements to generate tables, columns, and
-            relationships on the canvas. Unsupported statements are skipped
-            with a warning — the rest of the paste still imports.
+            {t('whiteboard.importSql.description')}
           </DialogDescription>
         </DialogHeader>
 
         <div className="grid gap-4 py-2">
           <div className="grid gap-2">
-            <Label htmlFor="import-sql-dialect">Dialect</Label>
+            <Label htmlFor="import-sql-dialect">
+              {t('whiteboard.importSql.dialect')}
+            </Label>
             <Select
               value={dialect}
               onValueChange={(value) => setDialect(value as Dialect)}
@@ -181,10 +180,26 @@ export function ImportSqlDialog({
           {preview && (
             <div className="rounded-md border p-3 text-sm space-y-2">
               <p className="font-medium">
-                {tableCount} table{tableCount === 1 ? '' : 's'},{' '}
-                {columnCount} column{columnCount === 1 ? '' : 's'},{' '}
-                {relationshipCount} relationship
-                {relationshipCount === 1 ? '' : 's'}
+                {t('whiteboard.importSql.summary', {
+                  tables: t(
+                    tableCount === 1
+                      ? 'whiteboard.importSql.tablesOne'
+                      : 'whiteboard.importSql.tablesOther',
+                    { count: tableCount },
+                  ),
+                  columns: t(
+                    columnCount === 1
+                      ? 'whiteboard.importSql.columnsOne'
+                      : 'whiteboard.importSql.columnsOther',
+                    { count: columnCount },
+                  ),
+                  relationships: t(
+                    relationshipCount === 1
+                      ? 'whiteboard.importSql.relationshipsOne'
+                      : 'whiteboard.importSql.relationshipsOther',
+                    { count: relationshipCount },
+                  ),
+                })}
               </p>
               {preview.warnings.length > 0 && (
                 <ul className="list-disc space-y-1 pl-5 text-amber-600 dark:text-amber-500">
@@ -197,7 +212,10 @@ export function ImportSqlDialog({
                 <ul className="list-disc space-y-1 pl-5 text-destructive">
                   {preview.errors.map((error, i) => (
                     <li key={i}>
-                      Line {error.line}: {error.message}
+                      {t('whiteboard.importSql.line', {
+                        line: error.line,
+                        message: error.message,
+                      })}
                     </li>
                   ))}
                 </ul>
@@ -205,8 +223,12 @@ export function ImportSqlDialog({
             </div>
           )}
 
-          {importError && (
-            <p className="text-sm text-destructive">{importError}</p>
+          {importError !== null && (
+            <p className="text-sm text-destructive">
+              {importError
+                ? tError(t, importError)
+                : t('whiteboard.importSql.failed')}
+            </p>
           )}
         </div>
 
@@ -217,14 +239,16 @@ export function ImportSqlDialog({
             onClick={() => handleOpenChange(false)}
             disabled={isImporting}
           >
-            Cancel
+            {t('common.cancel')}
           </Button>
           <Button
             type="button"
             onClick={() => void handleImportClick()}
             disabled={!canImport}
           >
-            {isImporting ? 'Importing…' : 'Import'}
+            {isImporting
+              ? t('whiteboard.importSql.importing')
+              : t('whiteboard.importSql.import')}
           </Button>
         </DialogFooter>
       </DialogContent>

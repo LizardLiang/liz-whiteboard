@@ -17,6 +17,7 @@ import {
   AlertDialogHeader,
   AlertDialogTitle,
 } from '@/components/ui/alert-dialog'
+import { useT } from '@/lib/i18n/use-t'
 
 export interface DeleteReferenceDialogProps {
   /** The referenced table's name, as it reads on the node. */
@@ -36,6 +37,7 @@ export function DeleteReferenceDialog({
   onConfirm,
   onCancel,
 }: DeleteReferenceDialogProps) {
+  const t = useT()
   return (
     <AlertDialog
       open
@@ -46,33 +48,40 @@ export function DeleteReferenceDialog({
       <AlertDialogContent>
         <AlertDialogHeader>
           <AlertDialogTitle>
-            Remove the reference to &ldquo;{tableName}&rdquo;?
+            {t('whiteboard.deleteReference.title', { name: tableName })}
           </AlertDialogTitle>
           <AlertDialogDescription asChild>
             <div>
               <p>
-                This removes the reference from this board only.{' '}
+                {t('whiteboard.deleteReference.boardOnly')}{' '}
                 {sourceWhiteboardName
-                  ? `The table stays exactly as it is in ${sourceWhiteboardName}.`
-                  : 'Nothing in the file that owns the table changes.'}
+                  ? t('whiteboard.deleteReference.tableStays', {
+                      source: sourceWhiteboardName,
+                    })
+                  : t('whiteboard.deleteReference.ownerUnchanged')}
               </p>
               {affectedRelationships > 0 && (
                 <p style={{ marginTop: '8px' }}>
-                  {affectedRelationships} relationship
-                  {affectedRelationships !== 1 ? 's' : ''} drawn to it{' '}
-                  {affectedRelationships !== 1 ? 'are' : 'is'} removed as well.
+                  {t(
+                    affectedRelationships === 1
+                      ? 'whiteboard.deleteReference.relationshipsOne'
+                      : 'whiteboard.deleteReference.relationshipsOther',
+                    { count: affectedRelationships },
+                  )}
                 </p>
               )}
             </div>
           </AlertDialogDescription>
         </AlertDialogHeader>
         <AlertDialogFooter>
-          <AlertDialogCancel onClick={onCancel}>Cancel</AlertDialogCancel>
+          <AlertDialogCancel onClick={onCancel}>
+            {t('common.cancel')}
+          </AlertDialogCancel>
           <AlertDialogAction
             onClick={onConfirm}
             className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
           >
-            Remove reference
+            {t('whiteboard.deleteReference.confirm')}
           </AlertDialogAction>
         </AlertDialogFooter>
       </AlertDialogContent>

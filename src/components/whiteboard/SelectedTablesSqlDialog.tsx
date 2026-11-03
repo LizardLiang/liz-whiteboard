@@ -25,6 +25,8 @@ import {
   type JoinQueryPlan,
   type JoinType,
 } from '@/lib/join-query-generator'
+import { useT } from '@/lib/i18n/use-t'
+import { tError } from '@/lib/i18n/t-error'
 import type { Dialect } from '@/lib/ddl-generator'
 
 export interface SelectedTablesSqlDialogProps {
@@ -44,6 +46,7 @@ export function SelectedTablesSqlDialog({
   open,
   onOpenChange,
 }: SelectedTablesSqlDialogProps) {
+  const t = useT()
   const [dialect, setDialect] = useState<Dialect>('postgres')
   const [roots, setRoots] = useState<Record<string, string>>({})
   const [joinTypes, setJoinTypes] = useState<Record<string, JoinType>>({})
@@ -87,10 +90,12 @@ export function SelectedTablesSqlDialog({
       return {
         sql: '',
         error:
-          error instanceof Error ? error.message : 'Could not generate SQL.',
+          error instanceof Error
+            ? tError(t, error)
+            : t('whiteboard.selectedSql.generateFailed'),
       }
     }
-  }, [plan, dialect, roots, joinTypes, choices, included])
+  }, [plan, dialect, roots, joinTypes, choices, included, t])
 
   const describeRelationship = (relationshipId: string) => {
     const relationship = relationshipById.get(relationshipId)
@@ -108,8 +113,9 @@ export function SelectedTablesSqlDialog({
 
   const handleCopy = async () => {
     if (!generated.sql) return
-    if (await copyText(generated.sql)) toast.success('SQL copied to clipboard')
-    else toast.error('Could not copy — select and copy the SQL manually.')
+    if (await copyText(generated.sql))
+      toast.success(t('whiteboard.selectedSql.copied'))
+    else toast.error(t('whiteboard.selectedSql.copyFailed'))
   }
 
   return (
@@ -119,21 +125,20 @@ export function SelectedTablesSqlDialog({
         data-testid="selected-tables-sql-dialog"
       >
         <DialogHeader>
-          <DialogTitle>Generate SQL</DialogTitle>
+          <DialogTitle>{t('whiteboard.selectedSql.title')}</DialogTitle>
           <DialogDescription>
-            Existing relationships become JOINs. Unconnected tables remain
-            independent SELECT statements.
+            {t('whiteboard.selectedSql.description')}
           </DialogDescription>
         </DialogHeader>
 
         <div className="grid gap-4">
           <div className="grid max-w-xs gap-2">
-            <Label>SQL dialect</Label>
+            <Label>{t('whiteboard.selectedSql.dialect')}</Label>
             <Select
               value={dialect}
               onValueChange={(value) => setDialect(value as Dialect)}
             >
-              <SelectTrigger aria-label="SQL dialect">
+              <SelectTrigger aria-label={t('whiteboard.selectedSql.dialect')}>
                 <SelectValue />
               </SelectTrigger>
               <SelectContent>
@@ -155,9 +160,11 @@ export function SelectedTablesSqlDialog({
                 key={component.id}
                 className="grid gap-3 rounded-md border p-3"
               >
-                <h3 className="font-medium">JOIN group {index + 1}</h3>
+                <h3 className="font-medium">
+                  {t('whiteboard.selectedSql.joinGroup', { index: index + 1 })}
+                </h3>
                 <div className="grid gap-2 sm:max-w-sm">
-                  <Label>Root table</Label>
+                  <Label>{t('whiteboard.selectedSql.rootTable')}</Label>
                   <Select
                     value={roots[component.id] ?? component.defaultRootTableId}
                     onValueChange={(value) =>
@@ -168,7 +175,9 @@ export function SelectedTablesSqlDialog({
                     }
                   >
                     <SelectTrigger
-                      aria-label={`Root table for group ${index + 1}`}
+                      aria-label={t('whiteboard.selectedSql.rootTableFor', {
+                        index: index + 1,
+                      })}
                     >
                       <SelectValue />
                     </SelectTrigger>
@@ -187,10 +196,10 @@ export function SelectedTablesSqlDialog({
                   .map((edge) => (
                     <div key={edge.key} className="grid gap-2 sm:max-w-xl">
                       <Label>
-                        Relationship between{' '}
-                        {edge.tableIds
-                          .map((id) => tableById.get(id)?.name)
-                          .join(' and ')}
+                        {t('whiteboard.selectedSql.relationshipBetween', {
+                          first: tableById.get(edge.tableIds[0])?.name ?? '',
+                          second: tableById.get(edge.tableIds[1])?.name ?? '',
+                        })}
                       </Label>
                       <Select
                         value={choices[edge.key]}
@@ -202,9 +211,18 @@ export function SelectedTablesSqlDialog({
                         }
                       >
                         <SelectTrigger
-                          aria-label={`Relationship for ${edge.key}`}
+                          aria-label={t(
+                            'whiteboard.selectedSql.relationshipFor',
+                            {
+                              key: edge.key,
+                            },
+                          )}
                         >
-                          <SelectValue placeholder="Choose columns" />
+                          <SelectValue
+                            placeholder={t(
+                              'whiteboard.selectedSql.chooseColumns',
+                            )}
+                          />
                         </SelectTrigger>
                         <SelectContent>
                           {edge.relationships.map((relationship) => (
@@ -230,7 +248,9 @@ export function SelectedTablesSqlDialog({
                       className="grid gap-2 sm:max-w-xs"
                     >
                       <Label>
-                        JOIN type: {describeRelationship(relationshipId)}
+                        {t('whiteboard.selectedSql.joinType', {
+                          relationship: describeRelationship(relationshipId),
+                        })}
                       </Label>
                       <Select
                         value={joinTypes[relationshipId] ?? 'INNER'}
@@ -242,7 +262,9 @@ export function SelectedTablesSqlDialog({
                         }
                       >
                         <SelectTrigger
-                          aria-label={`JOIN type for ${relationshipId}`}
+                          aria-label={t('whiteboard.selectedSql.joinTypeFor', {
+                            id: relationshipId,
+                          })}
                         >
                           <SelectValue />
                         </SelectTrigger>
@@ -267,7 +289,7 @@ export function SelectedTablesSqlDialog({
 
                 {component.omittedRelationshipIds.length > 0 && (
                   <div className="grid gap-2">
-                    <Label>Optional cycle conditions</Label>
+                    <Label>{t('whiteboard.selectedSql.optionalCycle')}</Label>
                     {component.omittedRelationshipIds.map((id) => (
                       <label
                         key={id}
@@ -298,22 +320,28 @@ export function SelectedTablesSqlDialog({
             (component) => component.tableIds.length === 1,
           ) && (
             <p className="text-sm text-muted-foreground">
-              Independent SELECTs:{' '}
-              {plan.components
-                .filter((component) => component.tableIds.length === 1)
-                .map((component) => tableById.get(component.tableIds[0])?.name)
-                .join(', ')}
+              {t('whiteboard.selectedSql.independent', {
+                tables: plan.components
+                  .filter((component) => component.tableIds.length === 1)
+                  .map(
+                    (component) => tableById.get(component.tableIds[0])?.name,
+                  )
+                  .join(', '),
+              })}
             </p>
           )}
           {plan.components.flatMap((component) => component.externalTableIds)
             .length > 0 && (
             <p className="text-sm text-muted-foreground">
-              External tables are marked in the generated SQL preview.
+              {t('whiteboard.selectedSql.externalMarked')}
             </p>
           )}
           {plan.skippedTables.map((table) => (
             <p key={table.id} className="text-sm text-destructive">
-              Skipped {table.name}: {table.reason}
+              {t('whiteboard.selectedSql.skipped', {
+                name: table.name,
+                reason: table.reason,
+              })}
             </p>
           ))}
           {plan.notices.map((notice) => (
@@ -341,11 +369,11 @@ export function SelectedTablesSqlDialog({
 
         <DialogFooter>
           <Button variant="outline" onClick={() => onOpenChange(false)}>
-            Close
+            {t('whiteboard.selectedSql.close')}
           </Button>
           <Button onClick={handleCopy} disabled={!generated.sql}>
             <Copy className="mr-2 h-4 w-4" />
-            Copy SQL
+            {t('whiteboard.selectedSql.copy')}
           </Button>
         </DialogFooter>
       </DialogContent>

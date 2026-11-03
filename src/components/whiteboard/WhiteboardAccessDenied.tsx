@@ -6,6 +6,7 @@
 // "Failed to load whiteboard" message on any denial.
 
 import { Link } from '@tanstack/react-router'
+import { useT } from '@/lib/i18n/use-t'
 
 interface WhiteboardAccessDeniedProps {
   message?: string
@@ -14,17 +15,20 @@ interface WhiteboardAccessDeniedProps {
 export function WhiteboardAccessDenied({
   message,
 }: WhiteboardAccessDeniedProps) {
+  const t = useT()
   return (
     <div className="flex flex-col items-center justify-center h-full gap-4 text-center">
-      <p className="text-lg font-semibold">Access denied</p>
+      <p className="text-lg font-semibold">
+        {t('whiteboard.accessDenied.title')}
+      </p>
       <p className="text-sm text-muted-foreground max-w-sm">
-        {message ?? "You don't have access to this whiteboard."}
+        {message ?? t('whiteboard.accessDenied.default')}
       </p>
       <Link
         to="/"
         className="text-sm text-primary underline underline-offset-4"
       >
-        Back to dashboard
+        {t('common.backToDashboard')}
       </Link>
     </div>
   )

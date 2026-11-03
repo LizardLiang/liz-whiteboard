@@ -12,6 +12,7 @@
 
 import { useEffect, useRef, useState } from 'react'
 import { SHAPE_LABEL_MAX_LENGTH } from '@/data/schema'
+import { useT } from '@/lib/i18n/use-t'
 
 export interface ShapeLabelEditorProps {
   initialText: string
@@ -22,6 +23,7 @@ export function ShapeLabelEditor({
   initialText,
   onCommit,
 }: ShapeLabelEditorProps) {
+  const t = useT()
   const [value, setValue] = useState(initialText)
   const ref = useRef<HTMLTextAreaElement>(null)
   const committedRef = useRef(false)
@@ -43,7 +45,7 @@ export function ShapeLabelEditor({
       className="nodrag nopan shape-label-editor"
       value={value}
       maxLength={SHAPE_LABEL_MAX_LENGTH}
-      aria-label="Shape label"
+      aria-label={t('whiteboard.shape.labelAria')}
       style={{
         width: '100%',
         height: '100%',

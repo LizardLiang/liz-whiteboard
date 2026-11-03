@@ -35,6 +35,7 @@ import {
   isUnauthorizedError,
 } from '@/lib/auth/errors'
 import { hasMinimumRole } from '@/lib/auth/permissions'
+import { useT } from '@/lib/i18n/use-t'
 
 /**
  * Whiteboard editor page component
@@ -62,6 +63,7 @@ export const Route = createFileRoute('/whiteboard/$whiteboardId')({
  * Whiteboard Editor component
  */
 function WhiteboardEditor() {
+  const t = useT()
   const { whiteboardId } = Route.useParams()
   const { focusTable } = Route.useSearch()
   const queryClient = useQueryClient()
@@ -246,8 +248,8 @@ function WhiteboardEditor() {
       console.error('Failed to create table:', err)
       toast.error(
         isThrownForbiddenError(err)
-          ? 'You do not have permission to add tables to this whiteboard.'
-          : 'Failed to create table. Please try again.',
+          ? t('whiteboard.page.createTableForbidden')
+          : t('whiteboard.page.createTableFailed'),
       )
     },
   })
@@ -270,8 +272,8 @@ function WhiteboardEditor() {
       console.error('Failed to create relationship:', err)
       toast.error(
         isThrownForbiddenError(err)
-          ? 'You do not have permission to add relationships to this whiteboard.'
-          : 'Failed to create relationship. Please try again.',
+          ? t('whiteboard.page.createRelationshipForbidden')
+          : t('whiteboard.page.createRelationshipFailed'),
       )
     },
   })
@@ -458,7 +460,9 @@ function WhiteboardEditor() {
     return (
       <div className="relative flex items-center justify-center h-full">
         <BoardNavFallback />
-        <p className="text-lg text-muted-foreground">Loading whiteboard...</p>
+        <p className="text-lg text-muted-foreground">
+          {t('whiteboard.page.loading')}
+        </p>
       </div>
     )
   }
@@ -492,15 +496,17 @@ function WhiteboardEditor() {
     return (
       <div className="relative flex flex-col items-center justify-center h-full gap-4">
         <BoardNavFallback />
-        <p className="text-lg font-semibold">Failed to load whiteboard</p>
+        <p className="text-lg font-semibold">
+          {t('whiteboard.page.loadFailed')}
+        </p>
         <p className="text-sm text-muted-foreground">
-          Something went wrong loading this whiteboard. Please try again.
+          {t('whiteboard.page.loadFailedDescription')}
         </p>
         <Link
           to="/"
           className="text-sm text-primary underline underline-offset-4"
         >
-          Back to dashboard
+          {t('common.backToDashboard')}
         </Link>
       </div>
     )
@@ -510,7 +516,9 @@ function WhiteboardEditor() {
     return (
       <div className="relative flex items-center justify-center h-full">
         <BoardNavFallback />
-        <p className="text-lg text-muted-foreground">Loading whiteboard...</p>
+        <p className="text-lg text-muted-foreground">
+          {t('whiteboard.page.loading')}
+        </p>
       </div>
     )
   }
@@ -525,7 +533,7 @@ function WhiteboardEditor() {
       <div className="relative flex items-center justify-center h-full">
         <BoardNavFallback />
         <p className="text-lg text-muted-foreground">
-          Your session expired. Please sign in again.
+          {t('whiteboard.page.sessionExpired')}
         </p>
       </div>
     )
@@ -539,15 +547,15 @@ function WhiteboardEditor() {
     return (
       <div className="relative flex flex-col items-center justify-center h-full gap-4">
         <BoardNavFallback />
-        <p className="text-lg font-semibold">Whiteboard not found</p>
+        <p className="text-lg font-semibold">{t('whiteboard.page.notFound')}</p>
         <p className="text-sm text-muted-foreground">
-          This whiteboard does not exist or you don't have access to it.
+          {t('whiteboard.page.notFoundDescription')}
         </p>
         <Link
           to="/"
           className="text-sm text-primary underline underline-offset-4"
         >
-          Back to dashboard
+          {t('common.backToDashboard')}
         </Link>
       </div>
     )

@@ -42,6 +42,7 @@ import {
   getVisibleColumnsForShowMode,
 } from '@/lib/react-flow/canvas-node-geometry'
 import { getCachedTableWidth } from '@/lib/react-flow/canvas-node-metrics'
+import { useT } from '@/lib/i18n/use-t'
 
 // Row height constant for InsertionLine positioning (matches minHeight in
 // ColumnRow) — sourced from canvas-node-geometry.ts's ROW_H so the DOM path
@@ -131,6 +132,7 @@ function LodColumnRow({
 
 export const TableNode = memo(
   ({ data, selected }: TableNodeProps) => {
+    const t = useT()
     const { canEdit } = useWhiteboardPermissions()
     const {
       table,
@@ -659,7 +661,7 @@ export const TableNode = memo(
       (e: React.PointerEvent, columnId: string) => {
         // Queue-full check BEFORE preventDefault so click behaves normally when rejected
         if (isQueueFullForTable?.(table.id)) {
-          toast.warning('Slow down — previous reorders still saving')
+          toast.warning(t('whiteboard.tableNode.slowDown'))
           return
         }
 
@@ -703,6 +705,7 @@ export const TableNode = memo(
         isQueueFullForTable,
         setLocalDragging,
         cancelEditPress,
+        t,
       ],
     )
 
@@ -1089,8 +1092,7 @@ export const TableNode = memo(
             width: 'max-content',
             minWidth: `${minWidth}px`,
             maxWidth: '500px',
-            opacity:
-              isActiveHighlighted || isHighlighted || selected ? 1 : 0.7,
+            opacity: isActiveHighlighted || isHighlighted || selected ? 1 : 0.7,
             transition: 'opacity 0.2s, box-shadow 0.2s',
             boxShadow:
               isActiveHighlighted || selected
@@ -1142,15 +1144,19 @@ export const TableNode = memo(
                 type="button"
                 aria-label={
                   isRelationsPreviewOpen
-                    ? `Hide relations for ${table.name}`
-                    : `Show relations for ${table.name}`
+                    ? t('whiteboard.tableNode.hideRelations', {
+                        name: table.name,
+                      })
+                    : t('whiteboard.tableNode.showRelations', {
+                        name: table.name,
+                      })
                 }
                 aria-pressed={isRelationsPreviewOpen}
                 data-testid="table-relations-trigger"
                 title={
                   isRelationsPreviewOpen
-                    ? 'Hide relations (r)'
-                    : 'Show relations (r)'
+                    ? t('whiteboard.tableNode.hideRelationsHint')
+                    : t('whiteboard.tableNode.showRelationsHint')
                 }
                 onClick={(e) => {
                   e.stopPropagation()
@@ -1186,8 +1192,18 @@ export const TableNode = memo(
                       type="button"
                       aria-label={
                         unresolvedCommentCount > 0
-                          ? `${unresolvedCommentCount} unresolved comment${unresolvedCommentCount === 1 ? '' : 's'} on ${table.name}`
-                          : `Comment on ${table.name}`
+                          ? t(
+                              unresolvedCommentCount === 1
+                                ? 'whiteboard.tableNode.unresolvedOne'
+                                : 'whiteboard.tableNode.unresolvedOther',
+                              {
+                                count: unresolvedCommentCount,
+                                name: table.name,
+                              },
+                            )
+                          : t('whiteboard.tableNode.commentOn', {
+                              name: table.name,
+                            })
                       }
                       data-testid="table-comment-trigger"
                       className="nodrag nowheel relative flex items-center"
@@ -1252,7 +1268,9 @@ export const TableNode = memo(
               {canEdit && (
                 <button
                   type="button"
-                  aria-label={`Delete table ${table.name}`}
+                  aria-label={t('whiteboard.tableNode.delete', {
+                    name: table.name,
+                  })}
                   onClick={(e) => {
                     e.stopPropagation()
                     handleRequestTableDelete()
@@ -1302,8 +1320,7 @@ export const TableNode = memo(
                 // mid-edit — see the resolveOpenEditOnLodCollapse effect
                 // above for why this carve-out is required (a plain effect
                 // alone runs too late to save the live, uncommitted input).
-                const isEditingThisColumn =
-                  editingField?.columnId === column.id
+                const isEditingThisColumn = editingField?.columnId === column.id
                 return isLodCollapsed && !isEditingThisColumn ? (
                   <LodColumnRow
                     key={column.id}
@@ -1356,9 +1373,7 @@ export const TableNode = memo(
               relatedEdges={relatedEdges}
               tableNameById={tableNameById}
               onJumpToTable={
-                onJumpToTable
-                  ? (id: string) => onJumpToTable(id)
-                  : undefined
+                onJumpToTable ? (id: string) => onJumpToTable(id) : undefined
               }
             />
           )}

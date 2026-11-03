@@ -10,6 +10,7 @@ import { NodeToolbar, Position } from '@xyflow/react'
 import type { ShapeStyle } from '@/data/schema'
 import { SHAPE_STROKE_WIDTHS } from '@/data/schema'
 import { AREA_COLORS } from '@/lib/area-colors'
+import { useT } from '@/lib/i18n/use-t'
 
 interface ShapeStyleControlsProps {
   style: ShapeStyle
@@ -49,6 +50,7 @@ export function ShapeStyleControls({
   visible,
   onChange,
 }: ShapeStyleControlsProps) {
+  const t = useT()
   return (
     <NodeToolbar
       isVisible={visible}
@@ -58,14 +60,18 @@ export function ShapeStyleControls({
     >
       <div
         role="toolbar"
-        aria-label="Shape style"
+        aria-label={t('whiteboard.shapeStyle.ariaLabel')}
         className="flex items-center gap-2 rounded-md border bg-popover p-1.5 shadow-md"
       >
-        <div className="flex items-center gap-1" role="group" aria-label="Fill">
+        <div
+          className="flex items-center gap-1"
+          role="group"
+          aria-label={t('whiteboard.shapeStyle.fill')}
+        >
           <Swatch
             active={style.fill === 'none'}
             color="transparent"
-            title="No fill"
+            title={t('whiteboard.shapeStyle.noFill')}
             onClick={() => onChange({ fill: 'none' })}
           />
           {AREA_COLORS.map((c) => (
@@ -73,7 +79,9 @@ export function ShapeStyleControls({
               key={c.id}
               active={style.fill === c.id}
               color={c.solid}
-              title={`Fill ${c.label}`}
+              title={t('whiteboard.shapeStyle.fillColor', {
+                color: t(`whiteboard.colors.${c.id}`),
+              })}
               onClick={() => onChange({ fill: c.id })}
             />
           ))}
@@ -82,14 +90,16 @@ export function ShapeStyleControls({
         <div
           className="flex items-center gap-1"
           role="group"
-          aria-label="Stroke color"
+          aria-label={t('whiteboard.shapeStyle.strokeColorGroup')}
         >
           {AREA_COLORS.map((c) => (
             <Swatch
               key={c.id}
               active={style.stroke === c.id}
               color={c.solid}
-              title={`Stroke ${c.label}`}
+              title={t('whiteboard.shapeStyle.strokeColor', {
+                color: t(`whiteboard.colors.${c.id}`),
+              })}
               onClick={() => onChange({ stroke: c.id })}
             />
           ))}
@@ -98,14 +108,14 @@ export function ShapeStyleControls({
         <div
           className="flex items-center gap-1"
           role="group"
-          aria-label="Stroke width"
+          aria-label={t('whiteboard.shapeStyle.strokeWidthGroup')}
         >
           {SHAPE_STROKE_WIDTHS.map((w) => (
             <button
               key={w}
               type="button"
-              title={`${w}px stroke`}
-              aria-label={`Stroke width ${w}`}
+              title={t('whiteboard.shapeStyle.pxStroke', { width: w })}
+              aria-label={t('whiteboard.shapeStyle.strokeWidth', { width: w })}
               aria-pressed={style.strokeWidth === w}
               onClick={() => onChange({ strokeWidth: w })}
               className={`h-6 w-6 rounded text-xs ${
@@ -119,8 +129,8 @@ export function ShapeStyleControls({
         <div className="h-5 w-px bg-border" />
         <button
           type="button"
-          title="Toggle dashed stroke"
-          aria-label="Toggle dashed stroke"
+          title={t('whiteboard.shapeStyle.toggleDashed')}
+          aria-label={t('whiteboard.shapeStyle.toggleDashed')}
           aria-pressed={style.strokeStyle === 'dashed'}
           onClick={() =>
             onChange({

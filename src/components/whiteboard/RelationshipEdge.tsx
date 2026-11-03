@@ -8,6 +8,7 @@ import {
   clampSameSideLabelX,
   computeLabelPillWidth,
 } from '@/lib/auto-layout/d3-force-layout'
+import { useT } from '@/lib/i18n/use-t'
 
 // ── Layout constants ──
 // How far past the handle to push the crow's foot prong tips toward the table
@@ -284,6 +285,7 @@ export const RelationshipEdge = memo(
     data,
     selected,
   }: EdgeProps<RelationshipEdgeType>) => {
+    const t = useT()
     const {
       cardinality,
       label,
@@ -623,7 +625,7 @@ export const RelationshipEdge = memo(
                       e.stopPropagation()
                       setIsEditing(true)
                     }}
-                    title="Double-click to edit"
+                    title={t('whiteboard.relationship.editLabel')}
                     style={{ cursor: 'default', userSelect: 'none' }}
                   >
                     {label}
@@ -638,7 +640,7 @@ export const RelationshipEdge = memo(
                       userSelect: 'none',
                     }}
                   >
-                    + Add label
+                    {t('whiteboard.relationship.addLabel')}
                   </span>
                 )}
               </div>
@@ -657,7 +659,7 @@ export const RelationshipEdge = memo(
             >
               <button
                 type="button"
-                aria-label="Delete relationship"
+                aria-label={t('whiteboard.relationship.delete')}
                 className="nodrag nopan"
                 onFocus={() => setIsFocused(true)}
                 onBlur={() => setIsFocused(false)}

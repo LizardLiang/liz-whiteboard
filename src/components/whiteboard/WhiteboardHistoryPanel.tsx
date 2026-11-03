@@ -8,6 +8,7 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { toast } from 'sonner'
 import { ReactFlowWhiteboard } from './ReactFlowWhiteboard'
 import type { EffectiveRole } from '@/data/permission'
+import type { TFunction } from '@/lib/i18n/translate'
 import {
   Sheet,
   SheetContent,
@@ -45,6 +46,7 @@ import {
   restoreSnapshot,
   saveSnapshot,
 } from '@/routes/api/history'
+import { useI18n } from '@/lib/i18n/use-t'
 
 /** Placeholder viewer id for the read-only snapshot preview canvas — never a
  * real authenticated user, mirrors PUBLIC_VIEWER_ID in share.$token.tsx. */
@@ -72,9 +74,13 @@ interface WhiteboardHistoryPanelProps {
 function formatSnapshotName(
   label: string | null,
   createdAt: string | Date,
+  t: TFunction,
+  locale: string,
 ): string {
   if (label && label.trim().length > 0) return label
-  return `Version — ${new Date(createdAt).toLocaleString()}`
+  return t('whiteboard.history.versionName', {
+    date: new Date(createdAt).toLocaleString(locale),
+  })
 }
 
 /**
@@ -107,6 +113,7 @@ export function WhiteboardHistoryPanel({
   open,
   onOpenChange,
 }: WhiteboardHistoryPanelProps) {
+  const { t, locale } = useI18n()
   const queryClient = useQueryClient()
   const canEdit = hasMinimumRole(viewerRole, 'EDITOR')
 
@@ -143,14 +150,14 @@ export function WhiteboardHistoryPanel({
       }),
     onSuccess: (result) => {
       if ('error' in result) {
-        toast.error('Failed to save version')
+        toast.error(t('whiteboard.history.saveFailed'))
         return
       }
       setNewLabel('')
       invalidateSnapshots()
-      toast.success('Version saved')
+      toast.success(t('whiteboard.history.saved'))
     },
-    onError: () => toast.error('Failed to save version'),
+    onError: () => toast.error(t('whiteboard.history.saveFailed')),
   })
 
   const restoreMutation = useMutation({
@@ -158,12 +165,12 @@ export function WhiteboardHistoryPanel({
       restoreSnapshot({ data: { snapshotId } }),
     onSuccess: (result) => {
       if ('error' in result) {
-        toast.error('Failed to restore version')
+        toast.error(t('whiteboard.history.restoreFailed'))
         return
       }
       setPreviewSnapshotId(null)
       invalidateSnapshots()
-      toast.success('Version restored')
+      toast.success(t('whiteboard.history.restored'))
       // AC5: other connected clients refresh via the whiteboard:restored
       // socket broadcast (emitted server-side in restoreSnapshotHandler).
       // Belt-and-suspenders — also invalidate the acting client's own
@@ -187,7 +194,7 @@ export function WhiteboardHistoryPanel({
       // that stale position back — a silent partial undo of the restore.
       queryClient.invalidateQueries({ queryKey: ['shapes', whiteboardId] })
     },
-    onError: () => toast.error('Failed to restore version'),
+    onError: () => toast.error(t('whiteboard.history.restoreFailed')),
   })
 
   const { data: previewData, isLoading: isPreviewLoading } = useQuery({
@@ -217,17 +224,23 @@ export function WhiteboardHistoryPanel({
 
   const restoreConfirmCopy =
     snapshotShapeCount === 0 && liveShapeCount > 0
-      ? `This version was saved before there were shapes on this board, so restoring it will remove the ${liveShapeCount} shape(s) and ${liveConnectorCount} connector(s) currently here — but your current board, shapes included, is saved first as an automatic version called "Auto-saved before restore", which appears at the top of this list with an Auto badge and can be restored in one click.`
-      : `Restoring replaces the current board with this version, which contains ${snapshotShapeCount} shape(s); the board currently has ${liveShapeCount}. Your current board is saved first as an automatic version called "Auto-saved before restore", which appears at the top of this list and can be restored in one click.`
+      ? t('whiteboard.history.restoreCopyNoShapes', {
+          shapes: liveShapeCount,
+          connectors: liveConnectorCount,
+        })
+      : t('whiteboard.history.restoreCopy', {
+          snapshot: snapshotShapeCount,
+          live: liveShapeCount,
+        })
 
   return (
     <>
       <Sheet open={open} onOpenChange={onOpenChange}>
         <SheetContent className="w-full gap-0 sm:max-w-lg" side="right">
           <SheetHeader className="px-6 pt-6 pb-4">
-            <SheetTitle>Version History</SheetTitle>
+            <SheetTitle>{t('whiteboard.history.title')}</SheetTitle>
             <SheetDescription>
-              Save and browse point-in-time versions of this whiteboard.
+              {t('whiteboard.history.description')}
             </SheetDescription>
           </SheetHeader>
 
@@ -235,39 +248,48 @@ export function WhiteboardHistoryPanel({
             {canEdit && (
               <div className="space-y-2">
                 <Label className="text-sm font-medium">
-                  Save current version
+                  {t('whiteboard.history.saveCurrent')}
                 </Label>
                 <div className="flex gap-2">
                   <Input
-                    placeholder="Optional label"
+                    placeholder={t('whiteboard.history.labelPlaceholder')}
                     value={newLabel}
                     onChange={(e) => setNewLabel(e.target.value)}
-                    aria-label="Version label"
+                    aria-label={t('whiteboard.history.labelAria')}
                   />
                   <Button
                     size="sm"
                     disabled={saveMutation.isPending}
                     onClick={() => saveMutation.mutate()}
                   >
-                    {saveMutation.isPending ? 'Saving...' : 'Save version'}
+                    {saveMutation.isPending
+                      ? t('whiteboard.history.saving')
+                      : t('whiteboard.history.saveVersion')}
                   </Button>
                 </div>
               </div>
             )}
 
             <div>
-              <Label className="text-sm font-medium">Versions</Label>
+              <Label className="text-sm font-medium">
+                {t('whiteboard.history.versions')}
+              </Label>
               {isLoading ? (
-                <p className="mt-2 text-sm text-muted-foreground">Loading...</p>
+                <p className="mt-2 text-sm text-muted-foreground">
+                  {t('whiteboard.history.loading')}
+                </p>
               ) : isSnapshotsError ? (
                 <p className="mt-2 text-sm text-destructive">
                   {classifyQueryFailure({ error: snapshotsError }) ===
                   'forbidden'
-                    ? 'You no longer have access to this version history.'
-                    : 'Failed to load versions. Please try again.'}
+                    ? t('whiteboard.history.noAccess')
+                    : t('whiteboard.history.loadFailed')}
                 </p>
               ) : (
-                <ul className="mt-2 space-y-2" aria-label="Version list">
+                <ul
+                  className="mt-2 space-y-2"
+                  aria-label={t('whiteboard.history.list')}
+                >
                   {snapshots.map((snapshot) => (
                     <li key={snapshot.id}>
                       <button
@@ -280,14 +302,18 @@ export function WhiteboardHistoryPanel({
                             {formatSnapshotName(
                               snapshot.label,
                               snapshot.createdAt,
+                              t,
+                              locale,
                             )}
                           </span>
                           {snapshot.isAuto && (
-                            <Badge variant="secondary">Auto</Badge>
+                            <Badge variant="secondary">
+                              {t('whiteboard.history.auto')}
+                            </Badge>
                           )}
                         </div>
                         <div className="mt-1 text-xs text-muted-foreground">
-                          {new Date(snapshot.createdAt).toLocaleString()}
+                          {new Date(snapshot.createdAt).toLocaleString(locale)}
                           {snapshot.authorName
                             ? ` · ${snapshot.authorName}`
                             : ''}
@@ -297,7 +323,7 @@ export function WhiteboardHistoryPanel({
                   ))}
                   {snapshots.length === 0 && (
                     <li className="py-2 text-sm text-muted-foreground">
-                      No versions saved yet.
+                      {t('whiteboard.history.empty')}
                     </li>
                   )}
                 </ul>
@@ -318,11 +344,16 @@ export function WhiteboardHistoryPanel({
           <DialogHeader>
             <DialogTitle>
               {previewValid
-                ? formatSnapshotName(previewData.label, previewData.createdAt)
-                : 'Preview'}
+                ? formatSnapshotName(
+                    previewData.label,
+                    previewData.createdAt,
+                    t,
+                    locale,
+                  )
+                : t('whiteboard.history.preview')}
             </DialogTitle>
             <DialogDescription>
-              Read-only preview — this does not change the live whiteboard.
+              {t('whiteboard.history.previewDescription')}
             </DialogDescription>
           </DialogHeader>
 
@@ -330,7 +361,7 @@ export function WhiteboardHistoryPanel({
             {isPreviewLoading ? (
               <div className="flex h-full items-center justify-center">
                 <p className="text-sm text-muted-foreground">
-                  Loading preview...
+                  {t('whiteboard.history.previewLoading')}
                 </p>
               </div>
             ) : previewValid ? (
@@ -369,7 +400,7 @@ export function WhiteboardHistoryPanel({
             ) : (
               <div className="flex h-full items-center justify-center">
                 <p className="text-sm text-muted-foreground">
-                  Preview unavailable.
+                  {t('whiteboard.history.previewUnavailable')}
                 </p>
               </div>
             )}
@@ -380,7 +411,7 @@ export function WhiteboardHistoryPanel({
               variant="outline"
               onClick={() => setPreviewSnapshotId(null)}
             >
-              Close
+              {t('whiteboard.history.close')}
             </Button>
             {canEdit && previewSnapshotId && (
               <Button
@@ -388,8 +419,8 @@ export function WhiteboardHistoryPanel({
                 onClick={() => setRestoreConfirmOpen(true)}
               >
                 {restoreMutation.isPending
-                  ? 'Restoring...'
-                  : 'Restore this version'}
+                  ? t('whiteboard.history.restoring')
+                  : t('whiteboard.history.restoreThis')}
               </Button>
             )}
           </DialogFooter>
@@ -405,13 +436,15 @@ export function WhiteboardHistoryPanel({
       >
         <AlertDialogContent>
           <AlertDialogHeader>
-            <AlertDialogTitle>Restore this version?</AlertDialogTitle>
+            <AlertDialogTitle>
+              {t('whiteboard.history.restoreTitle')}
+            </AlertDialogTitle>
             <AlertDialogDescription>
               {restoreConfirmCopy}
             </AlertDialogDescription>
           </AlertDialogHeader>
           <AlertDialogFooter>
-            <AlertDialogCancel>Cancel</AlertDialogCancel>
+            <AlertDialogCancel>{t('common.cancel')}</AlertDialogCancel>
             <AlertDialogAction
               disabled={restoreMutation.isPending}
               onClick={() => {
@@ -420,7 +453,9 @@ export function WhiteboardHistoryPanel({
                 setRestoreConfirmOpen(false)
               }}
             >
-              {restoreMutation.isPending ? 'Restoring...' : 'Restore'}
+              {restoreMutation.isPending
+                ? t('whiteboard.history.restoring')
+                : t('whiteboard.history.restore')}
             </AlertDialogAction>
           </AlertDialogFooter>
         </AlertDialogContent>

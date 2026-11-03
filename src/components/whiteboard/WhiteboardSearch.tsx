@@ -26,6 +26,7 @@ import {
   CommandList,
 } from '@/components/ui/command'
 import { buildSearchIndex } from '@/lib/react-flow/search-index'
+import { useT } from '@/lib/i18n/use-t'
 
 /** Stable empty default, so the index memo is not invalidated every render. */
 const EMPTY_REFERENCE_NODES: Array<ExternalTableNodeType> = []
@@ -53,6 +54,7 @@ export function WhiteboardSearch({
   referenceNodes = EMPTY_REFERENCE_NODES,
   onNavigateToTable,
 }: WhiteboardSearchProps) {
+  const t = useT()
   const index = useMemo(
     () => buildSearchIndex(nodes, referenceNodes),
     [nodes, referenceNodes],
@@ -70,15 +72,15 @@ export function WhiteboardSearch({
     <CommandDialog
       open={open}
       onOpenChange={onOpenChange}
-      title="Search tables and columns"
-      description="Type a table or column name to jump to it on the canvas."
+      title={t('whiteboard.search.title')}
+      description={t('whiteboard.search.description')}
     >
-      <CommandInput placeholder="Search tables and columns…" />
+      <CommandInput placeholder={t('whiteboard.search.placeholder')} />
       <CommandList>
-        <CommandEmpty>No matching tables or columns.</CommandEmpty>
+        <CommandEmpty>{t('whiteboard.search.empty')}</CommandEmpty>
 
         {tables.length > 0 && (
-          <CommandGroup heading="Tables">
+          <CommandGroup heading={t('whiteboard.search.tables')}>
             {tables.map((entry) => (
               <CommandItem
                 key={`table:${entry.tableId}`}
@@ -90,7 +92,9 @@ export function WhiteboardSearch({
                 <span>{entry.tableName}</span>
                 {entry.sourceWhiteboardName != null && (
                   <span className="ml-auto text-xs text-muted-foreground">
-                    in {entry.sourceWhiteboardName}
+                    {t('whiteboard.search.inFile', {
+                      name: entry.sourceWhiteboardName,
+                    })}
                   </span>
                 )}
               </CommandItem>
@@ -99,7 +103,7 @@ export function WhiteboardSearch({
         )}
 
         {columns.length > 0 && (
-          <CommandGroup heading="Columns">
+          <CommandGroup heading={t('whiteboard.search.columns')}>
             {columns.map((entry) => (
               <CommandItem
                 key={`column:${entry.columnId}`}
@@ -115,7 +119,9 @@ export function WhiteboardSearch({
                 </span>
                 {entry.sourceWhiteboardName != null && (
                   <span className="ml-auto text-xs text-muted-foreground">
-                    in {entry.sourceWhiteboardName}
+                    {t('whiteboard.search.inFile', {
+                      name: entry.sourceWhiteboardName,
+                    })}
                   </span>
                 )}
               </CommandItem>

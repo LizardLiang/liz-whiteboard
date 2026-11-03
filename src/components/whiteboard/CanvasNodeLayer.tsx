@@ -37,6 +37,7 @@ import {
 } from '@/lib/react-flow/level-of-detail'
 import { createColumnHandleId } from '@/lib/react-flow/edge-routing'
 import { useTheme } from '@/hooks/use-theme'
+import { useT } from '@/lib/i18n/use-t'
 
 // Safe-corridor tuning (bug fix: canvas-handle-visibility) — see the
 // `lastInsideRef`/`corridorRef` doc comment inside CanvasNodeLayer for the
@@ -470,6 +471,7 @@ export function CanvasNodeLayer({
    */
   editingTableId?: string | null
 }) {
+  const t = useT()
   const canvasRef = useRef<HTMLCanvasElement>(null)
 
   // Image export (tactical plan Phase 4, "export forces full DOM + canvas
@@ -733,7 +735,9 @@ export function CanvasNodeLayer({
 
       // Safe-corridor bookkeeping (bug fix: canvas-handle-visibility) — see
       // the refs' doc comments above for the full mechanism.
-      const insideGeometry = found ? rowGeometryRef.current.get(found) : undefined
+      const insideGeometry = found
+        ? rowGeometryRef.current.get(found)
+        : undefined
       if (found && insideGeometry) {
         // Genuinely inside a row: keep refreshing the anchor, and drop any
         // in-progress corridor — both dots are already shown/interactive
@@ -845,9 +849,9 @@ export function CanvasNodeLayer({
           `[data-handleid="${armedDomHandleIdRef.current}"]`,
         )
         el?.classList.remove('handle-armed')
-        el
-          ?.closest('.react-flow__node-erTable')
-          ?.classList.remove('content-visibility-armed')
+        el?.closest('.react-flow__node-erTable')?.classList.remove(
+          'content-visibility-armed',
+        )
         armedDomHandleIdRef.current = null
       }
       lastInsideRef.current = null
@@ -1400,7 +1404,7 @@ export function CanvasNodeLayer({
       const REL_ROW_H = 32
 
       ctx.font = '600 11px Inter, system-ui, sans-serif'
-      let listW = ctx.measureText('Related tables').width
+      let listW = ctx.measureText(t('whiteboard.relations.title')).width
       for (const r of rl.related) {
         ctx.font = NAME_FONT
         listW = Math.max(listW, ctx.measureText(r.name).width)
@@ -1427,13 +1431,21 @@ export function CanvasNodeLayer({
       ctx.fillStyle = colors.headerText
       ctx.font = '600 11px Inter, system-ui, sans-serif'
       ctx.textAlign = 'left'
-      ctx.fillText('Related tables', px + PANEL_PAD, py + HEADER / 2 + 2)
+      ctx.fillText(
+        t('whiteboard.relations.title'),
+        px + PANEL_PAD,
+        py + HEADER / 2 + 2,
+      )
 
       if (rl.related.length === 0) {
         ctx.font = NAME_FONT
         ctx.fillStyle = colors.text
         ctx.globalAlpha = 0.6
-        ctx.fillText('None', px + PANEL_PAD, py + HEADER + REL_ROW_H / 2)
+        ctx.fillText(
+          t('whiteboard.relations.noneShort'),
+          px + PANEL_PAD,
+          py + HEADER + REL_ROW_H / 2,
+        )
         ctx.globalAlpha = 1
       } else {
         rl.related.forEach((r, i) => {
@@ -1517,6 +1529,7 @@ export function CanvasNodeLayer({
     armedHandleKey,
     isConnectingFromTable,
     edges,
+    t,
   ])
 
   if (!enabled || forceFullDetail) return null

@@ -8,6 +8,7 @@
  */
 
 import { NotePopover } from './NotePopover'
+import { useT } from '@/lib/i18n/use-t'
 
 interface TableNotePopoverProps {
   description: string | null
@@ -27,16 +28,17 @@ export function TableNotePopover({
   onOpenChange,
   anchorOnly,
 }: TableNotePopoverProps) {
+  const t = useT()
   return (
     <NotePopover
       description={description}
       onSave={onSave}
-      label="Edit table note"
-      title="Table note"
+      label={t('whiteboard.tableNote.edit')}
+      title={t('whiteboard.tableNote.title')}
       testId="table-note-trigger"
       className="table-note-btn"
       iconSize={14}
-      placeholder="Add a note for this table..."
+      placeholder={t('whiteboard.tableNote.placeholder')}
       idleColor="var(--rf-table-header-text)"
       open={open}
       onOpenChange={onOpenChange}

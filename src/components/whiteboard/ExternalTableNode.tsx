@@ -24,6 +24,7 @@ import {
 import { ColumnHandles } from './column/ColumnHandles'
 import type { ExternalTableNodeData } from '@/lib/react-flow/types'
 import { HEADER_H, ROW_H } from '@/lib/react-flow/canvas-node-geometry'
+import { useT } from '@/lib/i18n/use-t'
 
 interface ExternalTableNodeProps {
   id: string
@@ -51,6 +52,7 @@ const ACTION_BUTTON: React.CSSProperties = {
 
 export const ExternalTableNode = memo(
   ({ id, data, selected }: ExternalTableNodeProps) => {
+    const t = useT()
     const {
       sourceWhiteboardId,
       sourceTableId,
@@ -70,7 +72,8 @@ export const ExternalTableNode = memo(
     // unreachable on the board (found by dogfooding). Revealed on hover or
     // while selected, like every other node-level affordance here.
     const [hovered, setHovered] = useState(false)
-    const showActions = (hovered || selected === true) && Boolean(onRetarget || onDelete)
+    const showActions =
+      (hovered || selected === true) && Boolean(onRetarget || onDelete)
 
     const handleRetarget = useCallback(() => onRetarget?.(id), [onRetarget, id])
     const handleDelete = useCallback(() => onDelete?.(id), [onDelete, id])
@@ -100,10 +103,20 @@ export const ExternalTableNode = memo(
         onPointerLeave={() => setHovered(false)}
         title={
           missing
-            ? 'The table this references no longer exists. Re-target or delete this node.'
+            ? t('whiteboard.externalNode.missingHint')
             : onJumpToSource
-              ? `Open ${sourceWhiteboardName ?? 'the source file'} at ${sourceTableName} (double-click or press g)`
-              : `${sourceTableName} in ${sourceWhiteboardName ?? 'another file'}`
+              ? t('whiteboard.externalNode.openSource', {
+                  file:
+                    sourceWhiteboardName ??
+                    t('whiteboard.externalNode.sourceFallback'),
+                  table: sourceTableName,
+                })
+              : t('whiteboard.externalNode.inFile', {
+                  table: sourceTableName,
+                  file:
+                    sourceWhiteboardName ??
+                    t('whiteboard.externalNode.anotherFile'),
+                })
         }
         style={{
           minWidth: MIN_WIDTH,
@@ -158,7 +171,7 @@ export const ExternalTableNode = memo(
               opacity: 0.9,
             }}
           >
-            {sourceWhiteboardName ?? 'Missing file'}
+            {sourceWhiteboardName ?? t('whiteboard.externalNode.missingFile')}
           </span>
           <span aria-hidden style={{ opacity: 0.5 }}>
             /
@@ -183,8 +196,8 @@ export const ExternalTableNode = memo(
                 <button
                   type="button"
                   data-testid={`reference-retarget-${id}`}
-                  aria-label="Point this reference at another table"
-                  title="Point this reference at another table"
+                  aria-label={t('whiteboard.externalNode.retarget')}
+                  title={t('whiteboard.externalNode.retarget')}
                   onClick={handleRetarget}
                   style={ACTION_BUTTON}
                 >
@@ -195,8 +208,8 @@ export const ExternalTableNode = memo(
                 <button
                   type="button"
                   data-testid={`reference-delete-${id}`}
-                  aria-label="Remove this reference"
-                  title="Remove this reference"
+                  aria-label={t('whiteboard.externalNode.remove')}
+                  title={t('whiteboard.externalNode.remove')}
                   onClick={handleDelete}
                   style={ACTION_BUTTON}
                 >
@@ -215,7 +228,7 @@ export const ExternalTableNode = memo(
               color: 'var(--destructive)',
             }}
           >
-            Source table no longer exists
+            {t('whiteboard.externalNode.sourceMissing')}
           </div>
         )}
 
@@ -240,9 +253,12 @@ export const ExternalTableNode = memo(
           >
             <ColumnHandles tableId={id} columnId={column.id} />
             {column.isPrimaryKey ? (
-              <KeyRound size={11} aria-label="Primary key" />
+              <KeyRound
+                size={11}
+                aria-label={t('whiteboard.common.primaryKey')}
+              />
             ) : column.isForeignKey ? (
-              <Link2 size={11} aria-label="Foreign key" />
+              <Link2 size={11} aria-label={t('whiteboard.common.foreignKey')} />
             ) : null}
             <span
               style={{
@@ -262,7 +278,9 @@ export const ExternalTableNode = memo(
                 whiteSpace: 'nowrap',
               }}
             >
-              {column.missing ? 'missing' : column.dataType}
+              {column.missing
+                ? t('whiteboard.externalNode.missingColumn')
+                : column.dataType}
             </span>
           </div>
         ))}

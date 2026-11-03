@@ -36,6 +36,7 @@ import {
   DialogTitle,
 } from '@/components/ui/dialog'
 import { Button } from '@/components/ui/button'
+import { useT } from '@/lib/i18n/use-t'
 
 export interface ExternalTablePickerSelection {
   sourceWhiteboardId: string
@@ -69,6 +70,7 @@ export function ExternalTablePicker({
   pendingDeleteCount = 0,
   onConfirm,
 }: ExternalTablePickerProps) {
+  const t = useT()
   const [fileId, setFileId] = useState<string | null>(
     initial?.sourceWhiteboardId ?? null,
   )
@@ -94,11 +96,11 @@ export function ExternalTablePicker({
   ])
 
   const file = useMemo(
-    () => targets.find((t) => t.whiteboardId === fileId) ?? null,
+    () => targets.find((tg) => tg.whiteboardId === fileId) ?? null,
     [targets, fileId],
   )
   const table = useMemo<ReferenceTargetTable | null>(
-    () => file?.tables.find((t) => t.id === tableId) ?? null,
+    () => file?.tables.find((tb) => tb.id === tableId) ?? null,
     [file, tableId],
   )
 
@@ -131,45 +133,50 @@ export function ExternalTablePicker({
         <DialogHeader>
           <DialogTitle>
             {initial?.sourceTableId
-              ? 'Change referenced table'
-              : 'Reference a table from another file'}
+              ? t('whiteboard.externalPicker.changeTitle')
+              : t('whiteboard.externalPicker.addTitle')}
           </DialogTitle>
           <DialogDescription>
             {step === 'file'
-              ? 'Pick the file the table lives in. Only files in this project are shown.'
+              ? t('whiteboard.externalPicker.pickFile')
               : step === 'table'
-                ? `Pick the table in ${file?.whiteboardName}.`
-                : `Pick the columns of ${table?.name} you want to connect to.`}
+                ? t('whiteboard.externalPicker.pickTable', {
+                    file: file?.whiteboardName ?? '',
+                  })
+                : t('whiteboard.externalPicker.pickColumns', {
+                    table: table?.name ?? '',
+                  })}
           </DialogDescription>
         </DialogHeader>
 
         {isLoading ? (
           <p className="py-6 text-center text-sm text-muted-foreground">
-            Loading…
+            {t('whiteboard.externalPicker.loading')}
           </p>
         ) : targets.length === 0 ? (
           // A single-file project has nothing to reference. Say why, rather
           // than showing an empty list that reads like a loading failure.
           <p className="py-6 text-center text-sm text-muted-foreground">
-            This project has no other files yet. Create a second file to
-            reference a table from it.
+            {t('whiteboard.externalPicker.noOtherFiles')}
           </p>
         ) : (
           <Command className="rounded-md border">
             <CommandInput
               placeholder={
                 step === 'file'
-                  ? 'Search files…'
+                  ? t('whiteboard.externalPicker.searchFiles')
                   : step === 'table'
-                    ? 'Search tables…'
-                    : 'Search columns…'
+                    ? t('whiteboard.externalPicker.searchTables')
+                    : t('whiteboard.externalPicker.searchColumns')
               }
             />
             <CommandList>
-              <CommandEmpty>Nothing matches.</CommandEmpty>
+              <CommandEmpty>
+                {t('whiteboard.externalPicker.noMatch')}
+              </CommandEmpty>
 
               {step === 'file' && (
-                <CommandGroup heading="Files">
+                <CommandGroup heading={t('whiteboard.externalPicker.files')}>
                   {targets.map((target) => (
                     <CommandItem
                       key={target.whiteboardId}
@@ -178,8 +185,12 @@ export function ExternalTablePicker({
                     >
                       <span>{target.whiteboardName}</span>
                       <span className="ml-auto text-xs text-muted-foreground">
-                        {target.tables.length} table
-                        {target.tables.length === 1 ? '' : 's'}
+                        {t(
+                          target.tables.length === 1
+                            ? 'whiteboard.externalPicker.tablesOne'
+                            : 'whiteboard.externalPicker.tablesOther',
+                          { count: target.tables.length },
+                        )}
                       </span>
                     </CommandItem>
                   ))}
@@ -196,8 +207,12 @@ export function ExternalTablePicker({
                     >
                       <span>{candidate.name}</span>
                       <span className="ml-auto text-xs text-muted-foreground">
-                        {candidate.columns.length} column
-                        {candidate.columns.length === 1 ? '' : 's'}
+                        {t(
+                          candidate.columns.length === 1
+                            ? 'whiteboard.externalPicker.columnsOne'
+                            : 'whiteboard.externalPicker.columnsOther',
+                          { count: candidate.columns.length },
+                        )}
                       </span>
                     </CommandItem>
                   ))}
@@ -220,12 +235,20 @@ export function ExternalTablePicker({
                           checked={picked}
                           readOnly
                           tabIndex={-1}
-                          aria-label={`Use ${column.name}`}
+                          aria-label={t('whiteboard.externalPicker.useColumn', {
+                            name: column.name,
+                          })}
                         />
                         {column.isPrimaryKey ? (
-                          <KeyRound size={12} aria-label="Primary key" />
+                          <KeyRound
+                            size={12}
+                            aria-label={t('whiteboard.common.primaryKey')}
+                          />
                         ) : column.isForeignKey ? (
-                          <Link2 size={12} aria-label="Foreign key" />
+                          <Link2
+                            size={12}
+                            aria-label={t('whiteboard.common.foreignKey')}
+                          />
                         ) : null}
                         <span>{column.name}</span>
                         <span className="ml-auto text-xs text-muted-foreground">
@@ -242,8 +265,12 @@ export function ExternalTablePicker({
 
         {pendingDeleteCount > 0 && step === 'column' && (
           <p className="text-sm text-destructive">
-            This change deletes {pendingDeleteCount} relationship
-            {pendingDeleteCount === 1 ? '' : 's'} drawn from this reference.
+            {t(
+              pendingDeleteCount === 1
+                ? 'whiteboard.externalPicker.deletesOne'
+                : 'whiteboard.externalPicker.deletesOther',
+              { count: pendingDeleteCount },
+            )}
           </p>
         )}
 
@@ -255,7 +282,7 @@ export function ExternalTablePicker({
             disabled={step === 'file'}
           >
             <ArrowLeft size={14} />
-            Back
+            {t('whiteboard.externalPicker.back')}
           </Button>
           <Button
             type="button"
@@ -269,7 +296,9 @@ export function ExternalTablePicker({
               })
             }}
           >
-            {initial?.sourceTableId ? 'Change reference' : 'Add reference'}
+            {initial?.sourceTableId
+              ? t('whiteboard.externalPicker.changeReference')
+              : t('whiteboard.externalPicker.addReference')}
           </Button>
         </DialogFooter>
       </DialogContent>

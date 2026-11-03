@@ -26,6 +26,7 @@ import {
 } from '@/components/ui/select'
 import { Switch } from '@/components/ui/switch'
 import { Button } from '@/components/ui/button'
+import { useT } from '@/lib/i18n/use-t'
 
 export interface ExportImageDialogOptions {
   format: ExportImageFormat
@@ -63,6 +64,7 @@ export function ExportImageDialog({
   onCloseAutoFocus,
   onExport,
 }: ExportImageDialogProps) {
+  const t = useT()
   const [format, setFormat] = useState<ExportImageFormat>('png')
   const [transparent, setTransparent] = useState(false)
   const [isExporting, setIsExporting] = useState(false)
@@ -90,15 +92,16 @@ export function ExportImageDialog({
         onCloseAutoFocus={onCloseAutoFocus}
       >
         <DialogHeader>
-          <DialogTitle>Export as Image</DialogTitle>
+          <DialogTitle>{t('whiteboard.exportImage.title')}</DialogTitle>
           <DialogDescription>
-            Export the entire diagram at its natural size, regardless of the
-            current zoom or pan position.
+            {t('whiteboard.exportImage.description')}
           </DialogDescription>
         </DialogHeader>
         <div className="grid gap-4 py-4">
           <div className="grid gap-2">
-            <Label htmlFor="export-format">Format</Label>
+            <Label htmlFor="export-format">
+              {t('whiteboard.exportImage.format')}
+            </Label>
             <Select
               value={format}
               onValueChange={(value) => setFormat(value as ExportImageFormat)}
@@ -113,7 +116,9 @@ export function ExportImageDialog({
             </Select>
           </div>
           <div className="flex items-center justify-between gap-2">
-            <Label htmlFor="export-transparent">Transparent background</Label>
+            <Label htmlFor="export-transparent">
+              {t('whiteboard.exportImage.transparent')}
+            </Label>
             <Switch
               id="export-transparent"
               checked={transparent}
@@ -128,14 +133,16 @@ export function ExportImageDialog({
             onClick={() => onOpenChange(false)}
             disabled={isExporting}
           >
-            Cancel
+            {t('common.cancel')}
           </Button>
           <Button
             type="button"
             onClick={() => void handleExportClick()}
             disabled={isExporting}
           >
-            {isExporting ? 'Exporting…' : 'Export'}
+            {isExporting
+              ? t('whiteboard.exportImage.exporting')
+              : t('whiteboard.exportImage.export')}
           </Button>
         </DialogFooter>
       </DialogContent>

@@ -17,11 +17,18 @@
  * PK/FK badge lists.
  */
 
-import { useCallback, useEffect, useLayoutEffect, useRef, useState } from 'react'
+import {
+  useCallback,
+  useEffect,
+  useLayoutEffect,
+  useRef,
+  useState,
+} from 'react'
 import { createPortal } from 'react-dom'
 import { useStore } from '@xyflow/react'
 import type { Column, DiagramTable } from '@/data/models'
 import type { RelationshipEdgeType } from '@/lib/react-flow/types'
+import { useT } from '@/lib/i18n/use-t'
 
 export interface TableRelationsPanelProps {
   table: DiagramTable & { columns: Array<Column> }
@@ -43,6 +50,7 @@ export function TableRelationsPanel({
   tableNameById,
   onJumpToTable,
 }: TableRelationsPanelProps) {
+  const t = useT()
   // A 0-size marker rendered inside the table node's DOM; we measure its
   // parent `.react-flow__node` to anchor the (portaled) panel in screen space.
   const anchorRef = useRef<HTMLSpanElement>(null)
@@ -145,113 +153,117 @@ export function TableRelationsPanel({
             color: 'var(--rf-table-text)',
           }}
         >
-      <div
-        style={{
-          fontWeight: 700,
-          fontSize: '13px',
-          color: 'var(--rf-table-header-text)',
-          marginBottom: '6px',
-        }}
-      >
-        Related tables
-      </div>
+          <div
+            style={{
+              fontWeight: 700,
+              fontSize: '13px',
+              color: 'var(--rf-table-header-text)',
+              marginBottom: '6px',
+            }}
+          >
+            {t('whiteboard.relations.title')}
+          </div>
 
-      {relatedEdges.length === 0 ? (
-        <div style={{ color: 'var(--rf-table-text)', opacity: 0.7 }}>
-          No related tables
-        </div>
-      ) : (
-        <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
-          {relatedEdges.map((edge) => {
-            const rel = edge.data?.relationship
-            if (!rel) return null
+          {relatedEdges.length === 0 ? (
+            <div style={{ color: 'var(--rf-table-text)', opacity: 0.7 }}>
+              {t('whiteboard.relations.none')}
+            </div>
+          ) : (
+            <div
+              style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}
+            >
+              {relatedEdges.map((edge) => {
+                const rel = edge.data?.relationship
+                if (!rel) return null
 
-            const hoveredIsSource = rel.sourceTableId === table.id
-            const hoveredColumn = hoveredIsSource
-              ? rel.sourceColumn
-              : rel.targetColumn
-            const relatedColumn = hoveredIsSource
-              ? rel.targetColumn
-              : rel.sourceColumn
-            const relatedTableId = hoveredIsSource
-              ? rel.targetTableId
-              : rel.sourceTableId
+                const hoveredIsSource = rel.sourceTableId === table.id
+                const hoveredColumn = hoveredIsSource
+                  ? rel.sourceColumn
+                  : rel.targetColumn
+                const relatedColumn = hoveredIsSource
+                  ? rel.targetColumn
+                  : rel.sourceColumn
+                const relatedTableId = hoveredIsSource
+                  ? rel.targetTableId
+                  : rel.sourceTableId
 
-            if (!tableNameById.has(relatedTableId)) {
-              return null
-            }
+                if (!tableNameById.has(relatedTableId)) {
+                  return null
+                }
 
-            const relatedTableName = tableNameById.get(relatedTableId)
-            const relationshipText =
-              edge.data?.label || edge.data?.cardinality || ''
+                const relatedTableName = tableNameById.get(relatedTableId)
+                const relationshipText =
+                  edge.data?.label || edge.data?.cardinality || ''
 
-            const jumpProps = onJumpToTable
-              ? {
-                  role: 'button' as const,
-                  tabIndex: 0,
-                  'aria-label': `Jump to ${relatedTableName}`,
-                  onClick: () => onJumpToTable(relatedTableId),
-                  onKeyDown: (e: React.KeyboardEvent) => {
-                    if (e.key === 'Enter' || e.key === ' ') {
-                      e.preventDefault()
-                      onJumpToTable(relatedTableId)
+                const jumpProps = onJumpToTable
+                  ? {
+                      role: 'button' as const,
+                      tabIndex: 0,
+                      'aria-label': t('whiteboard.relations.jumpTo', {
+                        name: relatedTableName ?? '',
+                      }),
+                      onClick: () => onJumpToTable(relatedTableId),
+                      onKeyDown: (e: React.KeyboardEvent) => {
+                        if (e.key === 'Enter' || e.key === ' ') {
+                          e.preventDefault()
+                          onJumpToTable(relatedTableId)
+                        }
+                      },
                     }
-                  },
-                }
-              : {}
+                  : {}
 
-            return (
-              <div
-                key={edge.id}
-                data-testid="relations-panel-row"
-                className={
-                  onJumpToTable ? 'relations-panel-row-btn' : undefined
-                }
-                style={{
-                  borderTop: '1px solid var(--rf-table-border)',
-                  paddingTop: '6px',
-                  cursor: onJumpToTable ? 'pointer' : undefined,
-                }}
-                {...jumpProps}
-              >
-                <div style={{ fontWeight: 600 }}>{relatedTableName}</div>
-                <div
-                  data-testid="relations-panel-connection"
-                  style={{
-                    marginTop: '4px',
-                    fontFamily:
-                      'ui-monospace, SFMono-Regular, Menlo, Consolas, monospace',
-                    fontSize: '11px',
-                    display: 'flex',
-                    flexWrap: 'wrap',
-                    alignItems: 'center',
-                    gap: '4px',
-                  }}
-                >
-                  <span>
-                    {table.name}.{hoveredColumn.name}
-                  </span>
-                  <span>{'→'}</span>
-                  <span>
-                    {relatedTableName}.{relatedColumn.name}
-                  </span>
-                </div>
-                {relationshipText && (
+                return (
                   <div
+                    key={edge.id}
+                    data-testid="relations-panel-row"
+                    className={
+                      onJumpToTable ? 'relations-panel-row-btn' : undefined
+                    }
                     style={{
-                      marginTop: '4px',
-                      opacity: 0.75,
-                      fontSize: '11px',
+                      borderTop: '1px solid var(--rf-table-border)',
+                      paddingTop: '6px',
+                      cursor: onJumpToTable ? 'pointer' : undefined,
                     }}
+                    {...jumpProps}
                   >
-                    {relationshipText}
+                    <div style={{ fontWeight: 600 }}>{relatedTableName}</div>
+                    <div
+                      data-testid="relations-panel-connection"
+                      style={{
+                        marginTop: '4px',
+                        fontFamily:
+                          'ui-monospace, SFMono-Regular, Menlo, Consolas, monospace',
+                        fontSize: '11px',
+                        display: 'flex',
+                        flexWrap: 'wrap',
+                        alignItems: 'center',
+                        gap: '4px',
+                      }}
+                    >
+                      <span>
+                        {table.name}.{hoveredColumn.name}
+                      </span>
+                      <span>{'→'}</span>
+                      <span>
+                        {relatedTableName}.{relatedColumn.name}
+                      </span>
+                    </div>
+                    {relationshipText && (
+                      <div
+                        style={{
+                          marginTop: '4px',
+                          opacity: 0.75,
+                          fontSize: '11px',
+                        }}
+                      >
+                        {relationshipText}
+                      </div>
+                    )}
                   </div>
-                )}
-              </div>
-            )
-          })}
-        </div>
-      )}
+                )
+              })}
+            </div>
+          )}
         </div>,
         document.body,
       )}

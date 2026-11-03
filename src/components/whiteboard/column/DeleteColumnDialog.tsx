@@ -16,6 +16,7 @@ import {
   AlertDialogHeader,
   AlertDialogTitle,
 } from '@/components/ui/alert-dialog'
+import { useT } from '@/lib/i18n/use-t'
 
 export interface DeleteColumnDialogProps {
   column: Column
@@ -30,6 +31,7 @@ export function DeleteColumnDialog({
   onConfirm,
   onCancel,
 }: DeleteColumnDialogProps) {
+  const t = useT()
   return (
     <AlertDialog
       open
@@ -40,14 +42,17 @@ export function DeleteColumnDialog({
       <AlertDialogContent>
         <AlertDialogHeader>
           <AlertDialogTitle>
-            Delete column &ldquo;{column.name}&rdquo;?
+            {t('whiteboard.deleteColumn.title', { name: column.name })}
           </AlertDialogTitle>
           <AlertDialogDescription asChild>
             <div>
               <p>
-                This column is involved in {affectedRelationships.length}{' '}
-                relationship{affectedRelationships.length !== 1 ? 's' : ''}.
-                Deleting it will also remove:
+                {t(
+                  affectedRelationships.length === 1
+                    ? 'whiteboard.deleteColumn.involvedOne'
+                    : 'whiteboard.deleteColumn.involvedOther',
+                  { count: affectedRelationships.length },
+                )}
               </p>
               <ul
                 style={{
@@ -87,20 +92,21 @@ export function DeleteColumnDialog({
                     fontSize: '13px',
                   }}
                 >
-                  Warning: This column is a foreign key. Deleting it will break
-                  the relationship referencing this column.
+                  {t('whiteboard.deleteColumn.fkWarning')}
                 </p>
               )}
             </div>
           </AlertDialogDescription>
         </AlertDialogHeader>
         <AlertDialogFooter>
-          <AlertDialogCancel onClick={onCancel}>Cancel</AlertDialogCancel>
+          <AlertDialogCancel onClick={onCancel}>
+            {t('common.cancel')}
+          </AlertDialogCancel>
           <AlertDialogAction
             onClick={onConfirm}
             className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
           >
-            Delete column
+            {t('whiteboard.deleteColumn.confirm')}
           </AlertDialogAction>
         </AlertDialogFooter>
       </AlertDialogContent>

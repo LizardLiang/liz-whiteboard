@@ -8,6 +8,7 @@
 
 import { memo, useCallback, useEffect, useRef, useState } from 'react'
 import { useWhiteboardPermissions } from '../whiteboard-permissions-context'
+import { useT } from '@/lib/i18n/use-t'
 
 export interface ConstraintBadgesProps {
   isPrimaryKey: boolean
@@ -30,7 +31,10 @@ export const ConstraintBadges = memo(
     isForeignKey,
     onToggle,
   }: ConstraintBadgesProps) => {
+    const t = useT()
     const { canEdit } = useWhiteboardPermissions()
+    const state = (on: boolean) =>
+      t(on ? 'whiteboard.column.enabled' : 'whiteboard.column.disabled')
 
     // Local optimistic state mirrors the props initially
     const [localPK, setLocalPK] = useState(isPrimaryKey)
@@ -142,8 +146,8 @@ export const ConstraintBadges = memo(
           aria-pressed={canEdit ? localPK : undefined}
           aria-label={
             canEdit
-              ? `Toggle primary key, currently ${localPK ? 'enabled' : 'disabled'}`
-              : `Primary key ${localPK ? 'enabled' : 'disabled'}`
+              ? t('whiteboard.column.togglePk', { state: state(localPK) })
+              : t('whiteboard.column.pkState', { state: state(localPK) })
           }
           onClick={canEdit ? handlePKClick : undefined}
           style={{
@@ -170,7 +174,7 @@ export const ConstraintBadges = memo(
               color: '#fff',
               border: '1px solid var(--rf-foreign-key-color, #6366f1)',
             }}
-            title="Foreign Key (managed via relationships)"
+            title={t('whiteboard.column.fkTitle')}
           >
             FK
           </span>
@@ -182,8 +186,8 @@ export const ConstraintBadges = memo(
           aria-pressed={canEdit ? localN : undefined}
           aria-label={
             canEdit
-              ? `Toggle nullable, currently ${localN ? 'enabled' : 'disabled'}`
-              : `Nullable ${localN ? 'enabled' : 'disabled'}`
+              ? t('whiteboard.column.toggleNullable', { state: state(localN) })
+              : t('whiteboard.column.nullableState', { state: state(localN) })
           }
           onClick={canEdit ? handleNClick : undefined}
           style={{
@@ -206,8 +210,8 @@ export const ConstraintBadges = memo(
           aria-pressed={canEdit ? localU : undefined}
           aria-label={
             canEdit
-              ? `Toggle unique, currently ${localU ? 'enabled' : 'disabled'}`
-              : `Unique ${localU ? 'enabled' : 'disabled'}`
+              ? t('whiteboard.column.toggleUnique', { state: state(localU) })
+              : t('whiteboard.column.uniqueState', { state: state(localU) })
           }
           onClick={canEdit ? handleUClick : undefined}
           style={{

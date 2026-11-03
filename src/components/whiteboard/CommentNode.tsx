@@ -19,8 +19,10 @@ import {
   PopoverContent,
   PopoverTrigger,
 } from '@/components/ui/popover'
+import { useT } from '@/lib/i18n/use-t'
 
 export function CommentNode({ data }: NodeProps<CommentNodeType>) {
+  const t = useT()
   const {
     thread,
     canComment,
@@ -45,7 +47,9 @@ export function CommentNode({ data }: NodeProps<CommentNodeType>) {
           data-testid="comment-pin"
           data-comment-id={thread.root.id}
           aria-label={
-            resolved ? 'Resolved comment thread' : 'Open comment thread'
+            resolved
+              ? t('whiteboard.commentPin.resolved')
+              : t('whiteboard.commentPin.open')
           }
           className="nodrag nowheel flex h-7 w-7 items-center justify-center rounded-full border shadow-sm"
           style={{

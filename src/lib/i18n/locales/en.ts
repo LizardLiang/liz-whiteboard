@@ -2,6 +2,8 @@
 // English dictionary. Source of truth for the key shape: zh-TW must match it.
 // Interpolation uses {name} placeholders.
 
+import { whiteboardEn } from './whiteboard-en'
+
 export const en = {
   common: {
     appName: 'ER Whiteboard',
@@ -377,6 +379,7 @@ export const en = {
       unexpectedRetry: 'An unexpected error occurred. Please try again.',
     },
   },
+  whiteboard: whiteboardEn,
   meta: {
     title: 'ER Whiteboard - Collaborative Diagram Editor',
   },
@@ -429,6 +432,50 @@ export const en = {
     ownerAccessRemoveLocked: "Cannot remove the project owner's access",
     adminRoleOwnerOnly: "Only the project owner can change an admin's role",
     adminRemoveOwnerOnly: 'Only the project owner can remove an admin',
+    tableRefSameBoard:
+      'A table reference cannot point at the same whiteboard it lives on',
+    tableRefSameProject:
+      'A table reference must point at a whiteboard in the same project',
+    tableRefNeedsColumn: 'A table reference needs at least one column',
+    areaNotFound: 'Area not found',
+    areaForeign: 'Area does not belong to this whiteboard',
+    collabSessionNotFound: 'Collaboration session not found',
+    columnForeign: 'Column does not belong to this whiteboard',
+    columnNotFound: 'Column not found',
+    commentForeign: 'Comment does not belong to this whiteboard',
+    commentNotFound: 'Comment not found',
+    connectorForeign: 'Connector does not belong to this whiteboard',
+    connectorNotFound: 'Connector not found',
+    deleteAreaFailed: 'Failed to delete area',
+    deleteCommentFailed: 'Failed to delete comment',
+    deleteConnectorFailed: 'Failed to delete connector',
+    deleteRelationshipFailed: 'Failed to delete relationship',
+    deleteShapeFailed: 'Failed to delete shape',
+    deleteTableFailed: 'Failed to delete table',
+    collabSetupFailed: 'Failed to establish collaboration session',
+    moveAreaFailed: 'Failed to move area',
+    syncFailed: 'Failed to sync whiteboard data',
+    updatePositionFailed: 'Failed to update table position',
+    insufficientPermission: 'Insufficient permission',
+    memberTableForeign: 'Member table does not belong to this whiteboard',
+    authorOnlyEdit: 'Only the author may edit this comment',
+    parentCommentMissing: 'Parent comment not found on this whiteboard',
+    relationshipForeign: 'Relationship does not belong to this whiteboard',
+    relationshipNotFound: 'Relationship not found',
+    sessionExpiredShort: 'Session expired',
+    shapeForeign: 'Shape does not belong to this whiteboard',
+    shapeNotFound: 'Shape not found',
+    sourceTableForeign: 'Source table does not belong to the source whiteboard',
+    sourceTableNotFound: 'Source table not found',
+    sourceWhiteboardNotFound: 'Source whiteboard not found',
+    tableForeign: 'Table does not belong to this whiteboard',
+    notTableReference: 'Table is not a table reference',
+    tableNotFound: 'Table not found',
+    tableRefNotFound: 'Table reference not found',
+    targetTableNotFound: 'Target table not found on this whiteboard',
+    lineShapesNoConnect: 'Line shapes cannot be connected',
+    alreadyConnected: 'These shapes are already connected in that direction',
+    whiteboardNotFound: 'Whiteboard not found',
   },
 } as const
 

@@ -17,6 +17,7 @@ import { MessageSquarePlus } from 'lucide-react'
 import type { ReactNode } from 'react'
 import type { CommentThreadVM } from '@/lib/react-flow/types'
 import type { CommentWithAuthor } from '@/data/models'
+import type { TFunction } from '@/lib/i18n/translate'
 import {
   Popover,
   PopoverAnchor,
@@ -25,22 +26,28 @@ import {
 } from '@/components/ui/popover'
 import { Textarea } from '@/components/ui/textarea'
 import { Button } from '@/components/ui/button'
+import { useI18n, useT } from '@/lib/i18n/use-t'
 
 const MAX_LENGTH = 2000
 
 /** Absolute-ish relative time (no new date dependency): "just now", "5m ago",
  * "3h ago", "2d ago", falling back to a locale date string beyond a week. */
-function formatRelativeTime(date: Date | string): string {
+function formatRelativeTime(
+  date: Date | string,
+  t: TFunction,
+  locale: string,
+): string {
   const d = typeof date === 'string' ? new Date(date) : date
   const diffMs = Date.now() - d.getTime()
   const minutes = Math.floor(diffMs / 60_000)
-  if (minutes < 1) return 'just now'
-  if (minutes < 60) return `${minutes}m ago`
+  if (minutes < 1) return t('whiteboard.comment.justNow')
+  if (minutes < 60)
+    return t('whiteboard.comment.minutesAgo', { count: minutes })
   const hours = Math.floor(minutes / 60)
-  if (hours < 24) return `${hours}h ago`
+  if (hours < 24) return t('whiteboard.comment.hoursAgo', { count: hours })
   const days = Math.floor(hours / 24)
-  if (days < 7) return `${days}d ago`
-  return d.toLocaleDateString()
+  if (days < 7) return t('whiteboard.comment.daysAgo', { count: days })
+  return d.toLocaleDateString(locale)
 }
 
 interface CommentActionHandlers {
@@ -66,6 +73,7 @@ function CommentRow({
   onEdit: (body: string) => void
   onDelete: () => void
 }) {
+  const { t, locale } = useI18n()
   const [editing, setEditing] = useState(false)
   const [draft, setDraft] = useState(comment.body)
 
@@ -88,7 +96,7 @@ function CommentRow({
               setEditing(false)
             }}
           >
-            Cancel
+            {t('common.cancel')}
           </Button>
           <Button
             size="sm"
@@ -99,7 +107,7 @@ function CommentRow({
               setEditing(false)
             }}
           >
-            Save
+            {t('common.save')}
           </Button>
         </div>
       </div>
@@ -111,7 +119,7 @@ function CommentRow({
       <div className="flex items-center justify-between gap-2">
         <span className="text-xs font-medium">{comment.authorName}</span>
         <span className="text-[10px] text-muted-foreground">
-          {formatRelativeTime(comment.createdAt)}
+          {formatRelativeTime(comment.createdAt, t, locale)}
         </span>
       </div>
       <p className="whitespace-pre-wrap text-xs">{comment.body}</p>
@@ -123,7 +131,7 @@ function CommentRow({
               className="text-[10px] text-muted-foreground hover:underline"
               onClick={() => setEditing(true)}
             >
-              Edit
+              {t('whiteboard.comment.edit')}
             </button>
           )}
           {canDelete && (
@@ -132,7 +140,7 @@ function CommentRow({
               className="text-[10px] text-destructive hover:underline"
               onClick={onDelete}
             >
-              Delete
+              {t('common.delete')}
             </button>
           )}
         </div>
@@ -151,6 +159,7 @@ export function CommentThreadCard({
   onDelete,
   onResolve,
 }: { thread: CommentThreadVM } & CommentActionHandlers) {
+  const t = useT()
   const { root, replies } = thread
   const [replyDraft, setReplyDraft] = useState('')
 
@@ -185,7 +194,9 @@ export function CommentThreadCard({
             className="h-6 shrink-0 px-2 text-[10px]"
             onClick={() => onResolve(root.id, !root.resolved)}
           >
-            {root.resolved ? 'Reopen' : 'Resolve'}
+            {root.resolved
+              ? t('whiteboard.comment.reopen')
+              : t('whiteboard.comment.resolve')}
           </Button>
         )}
       </div>
@@ -208,7 +219,7 @@ export function CommentThreadCard({
       {canComment && (
         <div className="flex flex-col gap-1.5">
           <Textarea
-            placeholder="Reply..."
+            placeholder={t('whiteboard.comment.replyPlaceholder')}
             value={replyDraft}
             onChange={(e) => setReplyDraft(e.target.value.slice(0, MAX_LENGTH))}
             className="min-h-12 resize-none text-xs"
@@ -222,7 +233,7 @@ export function CommentThreadCard({
               setReplyDraft('')
             }}
           >
-            Reply
+            {t('whiteboard.comment.reply')}
           </Button>
         </div>
       )}
@@ -268,6 +279,7 @@ export function CommentThreadPopover({
   onOpenChange,
   ...handlers
 }: CommentThreadPopoverProps) {
+  const t = useT()
   const [newThreadDraft, setNewThreadDraft] = useState('')
   // Spread only when controlled (openProp !== undefined) so the uncontrolled
   // full-DOM usage (no open/onOpenChange passed) is completely unaffected —
@@ -289,7 +301,13 @@ export function CommentThreadPopover({
         <PopoverAnchor asChild>
           <span
             aria-hidden
-            style={{ position: 'absolute', top: 0, right: 18, width: 0, height: 0 }}
+            style={{
+              position: 'absolute',
+              top: 0,
+              right: 18,
+              width: 0,
+              height: 0,
+            }}
           />
         </PopoverAnchor>
       )}
@@ -302,7 +320,9 @@ export function CommentThreadPopover({
       >
         <div className="flex max-h-96 flex-col gap-3 overflow-y-auto">
           {threads.length === 0 && (
-            <p className="text-xs text-muted-foreground">No comments yet.</p>
+            <p className="text-xs text-muted-foreground">
+              {t('whiteboard.comment.empty')}
+            </p>
           )}
           {threads.map((thread) => (
             <CommentThreadCard
@@ -315,7 +335,7 @@ export function CommentThreadPopover({
           {handlers.canComment && (
             <div className="flex flex-col gap-1.5 border-t pt-2">
               <Textarea
-                placeholder="Start a new thread..."
+                placeholder={t('whiteboard.comment.newThreadPlaceholder')}
                 value={newThreadDraft}
                 onChange={(e) =>
                   setNewThreadDraft(e.target.value.slice(0, MAX_LENGTH))
@@ -332,7 +352,7 @@ export function CommentThreadPopover({
                 }}
               >
                 <MessageSquarePlus className="mr-1 h-3 w-3" />
-                Comment
+                {t('whiteboard.comment.submit')}
               </Button>
             </div>
           )}

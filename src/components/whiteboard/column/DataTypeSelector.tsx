@@ -22,6 +22,17 @@ import {
   CommandItem,
   CommandList,
 } from '@/components/ui/command'
+import { useT } from '@/lib/i18n/use-t'
+
+const GROUP_KEYS: Record<string, string> = {
+  Numeric: 'numeric',
+  String: 'string',
+  Boolean: 'boolean',
+  'Date / Time': 'dateTime',
+  Binary: 'binary',
+  Structured: 'structured',
+  Identity: 'identity',
+}
 
 export interface DataTypeSelectorProps {
   value: DataType
@@ -36,6 +47,7 @@ export function DataTypeSelector({
   onCancel,
   autoOpen = false,
 }: DataTypeSelectorProps) {
+  const t = useT()
   const [open, setOpen] = useState(false)
   // Track whether a selection was made so we can distinguish close-via-select
   // from close-via-cancel (Escape or click outside)
@@ -115,13 +127,18 @@ export function DataTypeSelector({
         >
           <Command>
             <CommandInput
-              placeholder="Search types..."
+              placeholder={t('whiteboard.column.searchTypes')}
               className="h-8 text-xs"
             />
             <CommandList>
-              <CommandEmpty>No type found.</CommandEmpty>
+              <CommandEmpty>{t('whiteboard.column.noType')}</CommandEmpty>
               {DATA_TYPE_GROUPS.map((group) => (
-                <CommandGroup key={group.heading} heading={group.heading}>
+                <CommandGroup
+                  key={group.heading}
+                  heading={t(
+                    `whiteboard.column.group.${GROUP_KEYS[group.heading] ?? group.heading}`,
+                  )}
+                >
                   {group.types.map((dt) => (
                     <CommandItem
                       key={dt}

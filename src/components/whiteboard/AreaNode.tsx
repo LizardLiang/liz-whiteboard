@@ -11,6 +11,7 @@ import type { NodeProps } from '@xyflow/react'
 import type { AreaNodeType } from '@/lib/react-flow/types'
 import { MIN_AREA_HEIGHT, MIN_AREA_WIDTH } from '@/lib/react-flow/types'
 import { AREA_COLORS, resolveAreaColor } from '@/lib/area-colors'
+import { useT } from '@/lib/i18n/use-t'
 
 /**
  * React Flow custom node for a subject area. Sizing comes from the node's
@@ -33,6 +34,7 @@ export function AreaNode({
   height,
   selected,
 }: NodeProps<AreaNodeType>) {
+  const t = useT()
   const { area, canEdit, locked, onRename, onRecolor, onResize, onDelete } =
     data
   const color = resolveAreaColor(area.color)
@@ -117,7 +119,7 @@ export function AreaNode({
           ) : (
             <span
               className="select-none text-sm font-semibold"
-              title={canEdit ? 'Double-click to rename' : undefined}
+              title={canEdit ? t('whiteboard.area.rename') : undefined}
               onDoubleClick={() => {
                 if (canEdit) setEditingName(true)
               }}
@@ -134,8 +136,10 @@ export function AreaNode({
                   <button
                     key={c.id}
                     type="button"
-                    title={c.label}
-                    aria-label={`Set color ${c.label}`}
+                    title={t(`whiteboard.colors.${c.id}`)}
+                    aria-label={t('whiteboard.area.setColor', {
+                      color: t(`whiteboard.colors.${c.id}`),
+                    })}
                     onClick={() => onRecolor?.(id, c.id)}
                     className="h-3 w-3 rounded-full border"
                     style={{
@@ -150,8 +154,8 @@ export function AreaNode({
               {selected && (
                 <button
                   type="button"
-                  title="Delete area"
-                  aria-label="Delete area"
+                  title={t('whiteboard.area.delete')}
+                  aria-label={t('whiteboard.area.delete')}
                   onClick={() => onDelete?.(id)}
                   className="ml-1 rounded p-0.5 hover:bg-black/10 dark:hover:bg-white/10"
                 >

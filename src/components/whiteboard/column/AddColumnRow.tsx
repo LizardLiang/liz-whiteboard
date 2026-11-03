@@ -8,6 +8,7 @@ import { useCallback, useEffect, useRef, useState } from 'react'
 import { DataTypeSelector } from './DataTypeSelector'
 import type { Column } from '@/data/models'
 import type { DataType } from '@/data/schema'
+import { useT } from '@/lib/i18n/use-t'
 
 export interface AddColumnRowProps {
   existingColumns: Array<Column>
@@ -18,10 +19,8 @@ export interface AddColumnRowProps {
   }) => Promise<void>
 }
 
-export function AddColumnRow({
-  existingColumns,
-  onCreate,
-}: AddColumnRowProps) {
+export function AddColumnRow({ existingColumns, onCreate }: AddColumnRowProps) {
+  const t = useT()
   const [isExpanded, setIsExpanded] = useState(false)
   const [name, setName] = useState('')
   const [dataType, setDataType] = useState<DataType>('string')
@@ -164,7 +163,7 @@ export function AddColumnRow({
       >
         <button
           type="button"
-          aria-label="Add new column"
+          aria-label={t('whiteboard.column.addNew')}
           onClick={handlePlusClick}
           className="nodrag nowheel"
           style={{
@@ -221,7 +220,7 @@ export function AddColumnRow({
       <input
         ref={inputRef}
         type="text"
-        placeholder="column name"
+        placeholder={t('whiteboard.column.namePlaceholder')}
         value={name}
         onChange={(e) => setName(e.target.value)}
         onKeyDown={handleKeyDown}
@@ -242,7 +241,7 @@ export function AddColumnRow({
       />
       <button
         type="button"
-        aria-label="Save column"
+        aria-label={t('whiteboard.column.save')}
         className="nodrag nowheel"
         onPointerDown={(e) => {
           e.stopPropagation()

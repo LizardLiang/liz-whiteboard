@@ -65,6 +65,7 @@ import {
   SelectValue,
 } from '@/components/ui/select'
 import { McpConnectPanel } from '@/components/mcp/McpConnectPanel'
+import { useT } from '@/lib/i18n/use-t'
 
 /**
  * Canvas zoom controls
@@ -258,6 +259,7 @@ export function Toolbar({
   viewerRole,
   className = '',
 }: ToolbarProps) {
+  const t = useT()
   // Write affordances (Add Table, Add Relationship, Import SQL) require EDITOR+.
   // viewerRole === undefined means the caller didn't opt into role gating —
   // treated as full access for backward compatibility with existing callers.
@@ -301,7 +303,7 @@ export function Toolbar({
    */
   const handleCreateTable = async () => {
     if (!tableName.trim()) {
-      alert('Table name is required')
+      alert(t('whiteboard.toolbar.tableNameRequired'))
       return
     }
 
@@ -340,7 +342,7 @@ export function Toolbar({
       !sourceColumnId ||
       !targetColumnId
     ) {
-      alert('Please select source and target tables and columns')
+      alert(t('whiteboard.toolbar.relationshipFieldsRequired'))
       return
     }
 
@@ -375,19 +377,19 @@ export function Toolbar({
 
   // Get columns for selected source table
   const sourceColumns =
-    tables.find((t) => t.id === sourceTableId)?.columns ?? []
+    tables.find((tb) => tb.id === sourceTableId)?.columns ?? []
 
   // Get columns for selected target table
   const targetColumns =
-    tables.find((t) => t.id === targetTableId)?.columns ?? []
+    tables.find((tb) => tb.id === targetTableId)?.columns ?? []
 
   const zoomPercent = Math.round(currentZoom * 100)
   // A locked canvas accepts no new tables, relationships, references, areas
   // or imports, so every create affordance follows `canWrite`.
   const canWrite = canEdit && !canvasLocked
   const writeBlockedTitle = canEdit
-    ? 'Unlock the canvas to make changes.'
-    : 'You have view-only access to this whiteboard.'
+    ? t('whiteboard.toolbar.unlockToEdit')
+    : t('whiteboard.toolbar.viewOnly')
   const showAreaTool = canEdit && onSelectTool !== undefined
   const showCommentTool = canComment && onSelectTool !== undefined
 
@@ -398,7 +400,7 @@ export function Toolbar({
   return (
     <div
       role="toolbar"
-      aria-label="Whiteboard tools"
+      aria-label={t('whiteboard.toolbar.ariaLabel')}
       data-testid="whiteboard-dock"
       className={`absolute bottom-4 left-1/2 z-10 flex max-w-[calc(100%-2rem)] -translate-x-1/2 items-center gap-1 overflow-x-auto rounded-xl border bg-background/95 p-2 shadow-lg backdrop-blur-sm ${className}`}
     >
@@ -412,23 +414,24 @@ export function Toolbar({
             title={canWrite ? undefined : writeBlockedTitle}
           >
             <Table2 className="h-4 w-4" />
-            Add Table
+            {t('whiteboard.toolbar.addTable')}
           </Button>
         </DialogTrigger>
         <DialogContent className="sm:max-w-[425px]">
           <DialogHeader>
-            <DialogTitle>Create Table</DialogTitle>
+            <DialogTitle>{t('whiteboard.toolbar.createTable')}</DialogTitle>
             <DialogDescription>
-              Add a new table to your ER diagram. You can add columns after
-              creating the table.
+              {t('whiteboard.toolbar.createTableDescription')}
             </DialogDescription>
           </DialogHeader>
           <div className="grid gap-4 py-4">
             <div className="grid gap-2">
-              <Label htmlFor="table-name">Table Name *</Label>
+              <Label htmlFor="table-name">
+                {t('whiteboard.toolbar.tableName')}
+              </Label>
               <Input
                 id="table-name"
-                placeholder="e.g., Users"
+                placeholder={t('whiteboard.toolbar.tableNamePlaceholder')}
                 value={tableName}
                 onChange={(e) => setTableName(e.target.value)}
                 onKeyDown={(e) => {
@@ -439,10 +442,12 @@ export function Toolbar({
               />
             </div>
             <div className="grid gap-2">
-              <Label htmlFor="table-description">Description</Label>
+              <Label htmlFor="table-description">
+                {t('whiteboard.toolbar.description')}
+              </Label>
               <Textarea
                 id="table-description"
-                placeholder="Optional description of the table..."
+                placeholder={t('whiteboard.toolbar.descriptionPlaceholder')}
                 value={tableDescription}
                 onChange={(e) => setTableDescription(e.target.value)}
                 rows={3}
@@ -455,10 +460,10 @@ export function Toolbar({
               variant="outline"
               onClick={() => setTableDialogOpen(false)}
             >
-              Cancel
+              {t('common.cancel')}
             </Button>
             <Button type="button" onClick={handleCreateTable}>
-              Create Table
+              {t('whiteboard.toolbar.createTable')}
             </Button>
           </DialogFooter>
         </DialogContent>
@@ -477,24 +482,29 @@ export function Toolbar({
             title={canWrite ? undefined : writeBlockedTitle}
           >
             <Waypoints className="h-4 w-4" />
-            Add Relationship
+            {t('whiteboard.toolbar.addRelationship')}
           </Button>
         </DialogTrigger>
         <DialogContent className="sm:max-w-[500px]">
           <DialogHeader>
-            <DialogTitle>Create Relationship</DialogTitle>
+            <DialogTitle>
+              {t('whiteboard.toolbar.createRelationship')}
+            </DialogTitle>
             <DialogDescription>
-              Define a relationship between two tables by selecting the source
-              and target columns.
+              {t('whiteboard.toolbar.createRelationshipDescription')}
             </DialogDescription>
           </DialogHeader>
           <div className="grid gap-4 py-4">
             {/* Source Table Selection */}
             <div className="grid gap-2">
-              <Label htmlFor="source-table">Source Table *</Label>
+              <Label htmlFor="source-table">
+                {t('whiteboard.toolbar.sourceTable')}
+              </Label>
               <Select value={sourceTableId} onValueChange={setSourceTableId}>
                 <SelectTrigger id="source-table">
-                  <SelectValue placeholder="Select source table" />
+                  <SelectValue
+                    placeholder={t('whiteboard.toolbar.selectSourceTable')}
+                  />
                 </SelectTrigger>
                 <SelectContent>
                   {tables.map((table) => (
@@ -508,14 +518,18 @@ export function Toolbar({
 
             {/* Source Column Selection */}
             <div className="grid gap-2">
-              <Label htmlFor="source-column">Source Column *</Label>
+              <Label htmlFor="source-column">
+                {t('whiteboard.toolbar.sourceColumn')}
+              </Label>
               <Select
                 value={sourceColumnId}
                 onValueChange={setSourceColumnId}
                 disabled={!sourceTableId || sourceColumns.length === 0}
               >
                 <SelectTrigger id="source-column">
-                  <SelectValue placeholder="Select source column" />
+                  <SelectValue
+                    placeholder={t('whiteboard.toolbar.selectSourceColumn')}
+                  />
                 </SelectTrigger>
                 <SelectContent>
                   {sourceColumns.map((column) => (
@@ -529,10 +543,14 @@ export function Toolbar({
 
             {/* Target Table Selection */}
             <div className="grid gap-2">
-              <Label htmlFor="target-table">Target Table *</Label>
+              <Label htmlFor="target-table">
+                {t('whiteboard.toolbar.targetTable')}
+              </Label>
               <Select value={targetTableId} onValueChange={setTargetTableId}>
                 <SelectTrigger id="target-table">
-                  <SelectValue placeholder="Select target table" />
+                  <SelectValue
+                    placeholder={t('whiteboard.toolbar.selectTargetTable')}
+                  />
                 </SelectTrigger>
                 <SelectContent>
                   {tables
@@ -548,14 +566,18 @@ export function Toolbar({
 
             {/* Target Column Selection */}
             <div className="grid gap-2">
-              <Label htmlFor="target-column">Target Column *</Label>
+              <Label htmlFor="target-column">
+                {t('whiteboard.toolbar.targetColumn')}
+              </Label>
               <Select
                 value={targetColumnId}
                 onValueChange={setTargetColumnId}
                 disabled={!targetTableId || targetColumns.length === 0}
               >
                 <SelectTrigger id="target-column">
-                  <SelectValue placeholder="Select target column" />
+                  <SelectValue
+                    placeholder={t('whiteboard.toolbar.selectTargetColumn')}
+                  />
                 </SelectTrigger>
                 <SelectContent>
                   {targetColumns.map((column) => (
@@ -569,7 +591,9 @@ export function Toolbar({
 
             {/* Cardinality Selection */}
             <div className="grid gap-2">
-              <Label htmlFor="cardinality">Cardinality *</Label>
+              <Label htmlFor="cardinality">
+                {t('whiteboard.toolbar.cardinality')}
+              </Label>
               <Select
                 value={cardinality}
                 onValueChange={(value) => setCardinality(value as Cardinality)}
@@ -580,7 +604,7 @@ export function Toolbar({
                 <SelectContent>
                   {CARDINALITIES.map((option) => (
                     <SelectItem key={option.value} value={option.value}>
-                      {option.label}
+                      {t(`whiteboard.cardinality.${option.value}`)}
                     </SelectItem>
                   ))}
                 </SelectContent>
@@ -589,10 +613,14 @@ export function Toolbar({
 
             {/* Relationship Label */}
             <div className="grid gap-2">
-              <Label htmlFor="rel-label">Label (Optional)</Label>
+              <Label htmlFor="rel-label">
+                {t('whiteboard.toolbar.relationshipLabel')}
+              </Label>
               <Input
                 id="rel-label"
-                placeholder="e.g., has, belongs to"
+                placeholder={t(
+                  'whiteboard.toolbar.relationshipLabelPlaceholder',
+                )}
                 value={relationshipLabel}
                 onChange={(e) => setRelationshipLabel(e.target.value)}
               />
@@ -604,10 +632,10 @@ export function Toolbar({
               variant="outline"
               onClick={() => setRelationshipDialogOpen(false)}
             >
-              Cancel
+              {t('common.cancel')}
             </Button>
             <Button type="button" onClick={handleCreateRelationship}>
-              Create Relationship
+              {t('whiteboard.toolbar.createRelationship')}
             </Button>
           </DialogFooter>
         </DialogContent>
@@ -624,7 +652,7 @@ export function Toolbar({
           disabled={!canWrite}
           draggable={canWrite}
           data-testid="add-reference-tool"
-          aria-label="Reference"
+          aria-label={t('whiteboard.toolbar.reference')}
           onDragStart={(event) => {
             event.dataTransfer.setData(
               REFERENCE_DRAG_MIME,
@@ -634,9 +662,7 @@ export function Toolbar({
           }}
           onClick={() => onAddReference()}
           title={
-            canWrite
-              ? 'Reference: drag onto the canvas, or click to place at the centre'
-              : writeBlockedTitle
+            canWrite ? t('whiteboard.toolbar.referenceHint') : writeBlockedTitle
           }
         >
           <ExternalLink className="h-4 w-4" />
@@ -657,10 +683,10 @@ export function Toolbar({
             canvasLocked
               ? writeBlockedTitle
               : activeTool === 'area'
-                ? 'Drag on the canvas to draw the area'
-                : 'Draw a subject area'
+                ? t('whiteboard.toolbar.areaDrawing')
+                : t('whiteboard.toolbar.areaIdle')
           }
-          aria-label="Add area"
+          aria-label={t('whiteboard.toolbar.addArea')}
           aria-pressed={activeTool === 'area'}
         >
           <SquareDashed className="h-4 w-4" />
@@ -675,10 +701,10 @@ export function Toolbar({
           }
           title={
             activeTool === 'comment'
-              ? 'Click the canvas to place a comment'
-              : 'Add a comment pin'
+              ? t('whiteboard.toolbar.commentPlacing')
+              : t('whiteboard.toolbar.commentIdle')
           }
-          aria-label="Add comment"
+          aria-label={t('whiteboard.toolbar.addComment')}
           aria-pressed={activeTool === 'comment'}
         >
           <MessageSquarePlus className="h-4 w-4" />
@@ -691,16 +717,16 @@ export function Toolbar({
       <span
         title={
           tableCount < 2
-            ? 'Add at least 2 tables to use Auto Layout'
+            ? t('whiteboard.toolbar.autoLayoutNeedTables')
             : tableCount > 50
-              ? 'Layout cannot be cancelled once started.'
-              : 'Automatically arrange tables based on FK relationships.'
+              ? t('whiteboard.toolbar.autoLayoutNoCancel')
+              : t('whiteboard.toolbar.autoLayoutHint')
         }
       >
         <Button
           variant="ghost"
           size="icon"
-          aria-label="Auto Layout"
+          aria-label={t('whiteboard.toolbar.autoLayout')}
           aria-busy={isAutoLayoutRunning}
           disabled={tableCount < 2 || isAutoLayoutRunning}
           onClick={() => void onAutoLayoutClick?.()}
@@ -719,7 +745,7 @@ export function Toolbar({
         <Button
           variant="ghost"
           size="icon"
-          title="Search tables and columns (Ctrl/Cmd+K)"
+          title={t('whiteboard.toolbar.searchHint')}
           onClick={onOpenSearch}
         >
           <Search className="h-4 w-4" />
@@ -733,8 +759,8 @@ export function Toolbar({
         <Button
           variant="ghost"
           size="icon"
-          title="Comments"
-          aria-label="Comments"
+          title={t('whiteboard.toolbar.comments')}
+          aria-label={t('whiteboard.toolbar.comments')}
           className="relative"
           onClick={onOpenComments}
         >
@@ -743,7 +769,12 @@ export function Toolbar({
             <Badge
               variant="destructive"
               data-testid="comments-unresolved-badge"
-              title={`${commentUnreadCount} unresolved comment thread${commentUnreadCount === 1 ? '' : 's'}`}
+              title={t(
+                commentUnreadCount === 1
+                  ? 'whiteboard.toolbar.unresolvedOne'
+                  : 'whiteboard.toolbar.unresolvedOther',
+                { count: commentUnreadCount },
+              )}
               className="absolute -right-1 -top-1 h-4 min-w-4 justify-center rounded-full px-1 text-[10px]"
             >
               {commentUnreadCount}
@@ -760,7 +791,7 @@ export function Toolbar({
             size="icon"
             onClick={zoomControls.zoomOut}
             disabled={currentZoom <= 0.1}
-            title="Zoom Out (Ctrl/Cmd + -)"
+            title={t('whiteboard.toolbar.zoomOutHint')}
           >
             <ZoomOut className="h-4 w-4" />
           </Button>
@@ -771,7 +802,7 @@ export function Toolbar({
                 variant="ghost"
                 size="sm"
                 className="min-w-14 tabular-nums"
-                title="Zoom options"
+                title={t('whiteboard.toolbar.zoomOptions')}
                 data-testid="zoom-menu-trigger"
               >
                 {zoomPercent}%
@@ -779,25 +810,27 @@ export function Toolbar({
             </DropdownMenuTrigger>
             <DropdownMenuContent side="top" align="center" className="w-52">
               <DropdownMenuItem onSelect={zoomControls.zoomIn}>
-                Zoom in
+                {t('whiteboard.toolbar.zoomIn')}
                 <DropdownMenuShortcut>Ctrl/Cmd +</DropdownMenuShortcut>
               </DropdownMenuItem>
               <DropdownMenuItem onSelect={zoomControls.zoomOut}>
-                Zoom out
+                {t('whiteboard.toolbar.zoomOut')}
                 <DropdownMenuShortcut>Ctrl/Cmd -</DropdownMenuShortcut>
               </DropdownMenuItem>
               <DropdownMenuItem onSelect={zoomControls.fitToScreen}>
-                Fit to screen
+                {t('whiteboard.toolbar.fitToScreen')}
               </DropdownMenuItem>
               <DropdownMenuItem onSelect={zoomControls.resetZoom}>
-                Reset to 100%
+                {t('whiteboard.toolbar.resetZoom')}
                 <DropdownMenuShortcut>Ctrl/Cmd 0</DropdownMenuShortcut>
               </DropdownMenuItem>
               {onToggleCanvasLock && (
                 <>
                   <DropdownMenuSeparator />
                   <DropdownMenuItem onSelect={onToggleCanvasLock}>
-                    {canvasLocked ? 'Unlock canvas' : 'Lock canvas'}
+                    {canvasLocked
+                      ? t('whiteboard.toolbar.unlockCanvas')
+                      : t('whiteboard.toolbar.lockCanvas')}
                   </DropdownMenuItem>
                 </>
               )}
@@ -809,7 +842,7 @@ export function Toolbar({
             size="icon"
             onClick={zoomControls.zoomIn}
             disabled={currentZoom >= 5}
-            title="Zoom In (Ctrl/Cmd + +)"
+            title={t('whiteboard.toolbar.zoomInHint')}
           >
             <ZoomIn className="h-4 w-4" />
           </Button>
@@ -828,8 +861,8 @@ export function Toolbar({
             ref={moreToolsRef}
             variant="ghost"
             size="icon"
-            title="More tools"
-            aria-label="More tools"
+            title={t('whiteboard.toolbar.moreTools')}
+            aria-label={t('whiteboard.toolbar.moreTools')}
             data-testid="more-tools-trigger"
           >
             <MoreHorizontal className="h-4 w-4" />
@@ -842,34 +875,36 @@ export function Toolbar({
               title={canWrite ? undefined : writeBlockedTitle}
               onSelect={() => setImportSqlOpen(true)}
             >
-              Import SQL
+              {t('whiteboard.toolbar.importSql')}
             </DropdownMenuItem>
           )}
           {onShowModeChange && (
             <>
               {onImportSql && <DropdownMenuSeparator />}
-              <DropdownMenuLabel>Show columns</DropdownMenuLabel>
+              <DropdownMenuLabel>
+                {t('whiteboard.toolbar.showColumns')}
+              </DropdownMenuLabel>
               <DropdownMenuRadioGroup
                 value={showMode}
                 onValueChange={(value) => onShowModeChange(value as ShowMode)}
               >
                 <DropdownMenuRadioItem
                   value="TABLE_NAME"
-                  title="Show table names only"
+                  title={t('whiteboard.toolbar.showCompactHint')}
                 >
-                  Compact
+                  {t('whiteboard.toolbar.showCompact')}
                 </DropdownMenuRadioItem>
                 <DropdownMenuRadioItem
                   value="KEY_ONLY"
-                  title="Show table names and primary/foreign keys"
+                  title={t('whiteboard.toolbar.showKeysHint')}
                 >
-                  Keys
+                  {t('whiteboard.toolbar.showKeys')}
                 </DropdownMenuRadioItem>
                 <DropdownMenuRadioItem
                   value="ALL_FIELDS"
-                  title="Show all columns"
+                  title={t('whiteboard.toolbar.showAllHint')}
                 >
-                  All
+                  {t('whiteboard.toolbar.showAll')}
                 </DropdownMenuRadioItem>
               </DropdownMenuRadioGroup>
             </>
@@ -884,7 +919,7 @@ export function Toolbar({
                 which is this Toolbar's own parent. */}
           {onOpenHistory && (
             <DropdownMenuItem onSelect={onOpenHistory}>
-              Version history
+              {t('whiteboard.toolbar.versionHistory')}
             </DropdownMenuItem>
           )}
           {/* MCP client connect popover — one McpConnectPanel mount, the
@@ -896,27 +931,29 @@ export function Toolbar({
                 setMcpOpen(true)
               }}
             >
-              Connect an MCP client
+              {t('whiteboard.toolbar.connectMcp')}
             </DropdownMenuItem>
           )}
           {onExport && (
             <DropdownMenuItem
               disabled={!canExport}
-              title={canExport ? undefined : 'Add a table to export'}
+              title={
+                canExport ? undefined : t('whiteboard.toolbar.addTableToExport')
+              }
               onSelect={() => setExportDialogOpen(true)}
             >
-              Export as image
+              {t('whiteboard.toolbar.exportImage')}
             </DropdownMenuItem>
           )}
           <DropdownMenuSeparator />
           {onZenModeToggle && (
             <DropdownMenuItem onSelect={onZenModeToggle}>
-              Zen mode
+              {t('whiteboard.toolbar.zenMode')}
               <DropdownMenuShortcut>z</DropdownMenuShortcut>
             </DropdownMenuItem>
           )}
           <DropdownMenuItem onSelect={() => setHelpOpen(true)}>
-            Keyboard shortcuts
+            {t('whiteboard.toolbar.keyboardShortcuts')}
           </DropdownMenuItem>
         </DropdownMenuContent>
       </DropdownMenu>
@@ -928,7 +965,7 @@ export function Toolbar({
             onCloseAutoFocus={returnFocusToMoreTools}
           >
             <DialogHeader>
-              <DialogTitle>Connect an MCP client</DialogTitle>
+              <DialogTitle>{t('whiteboard.toolbar.connectMcp')}</DialogTitle>
             </DialogHeader>
             <McpConnectPanel endpointUrl={mcpEndpointUrl} />
           </DialogContent>
@@ -941,16 +978,16 @@ export function Toolbar({
           onCloseAutoFocus={returnFocusToMoreTools}
         >
           <DialogHeader>
-            <DialogTitle>Keyboard Shortcuts</DialogTitle>
+            <DialogTitle>{t('whiteboard.toolbar.shortcutsTitle')}</DialogTitle>
           </DialogHeader>
           <table className="w-full text-sm">
             <thead>
               <tr className="border-b">
                 <th className="py-2 text-left font-medium text-muted-foreground">
-                  Key
+                  {t('whiteboard.toolbar.shortcutKey')}
                 </th>
                 <th className="py-2 text-left font-medium text-muted-foreground">
-                  Action
+                  {t('whiteboard.toolbar.shortcutAction')}
                 </th>
               </tr>
             </thead>
@@ -965,7 +1002,9 @@ export function Toolbar({
                     K
                   </kbd>
                 </td>
-                <td className="py-2">Search tables and columns</td>
+                <td className="py-2">
+                  {t('whiteboard.toolbar.shortcutSearch')}
+                </td>
               </tr>
               <tr>
                 <td className="py-2 pr-4">
@@ -973,7 +1012,7 @@ export function Toolbar({
                     z
                   </kbd>
                 </td>
-                <td className="py-2">Toggle Zen Mode</td>
+                <td className="py-2">{t('whiteboard.toolbar.shortcutZen')}</td>
               </tr>
               <tr>
                 <td className="py-2 pr-4">
@@ -981,7 +1020,9 @@ export function Toolbar({
                     f
                   </kbd>
                 </td>
-                <td className="py-2">Open Focus Overlay on selected table</td>
+                <td className="py-2">
+                  {t('whiteboard.toolbar.shortcutFocus')}
+                </td>
               </tr>
               <tr>
                 <td className="py-2 pr-4">
@@ -989,7 +1030,9 @@ export function Toolbar({
                     m
                   </kbd>
                 </td>
-                <td className="py-2">Expand/focus the minimap</td>
+                <td className="py-2">
+                  {t('whiteboard.toolbar.shortcutMinimap')}
+                </td>
               </tr>
               <tr>
                 <td className="py-2 pr-4">
@@ -1001,7 +1044,9 @@ export function Toolbar({
                     Backspace
                   </kbd>
                 </td>
-                <td className="py-2">Delete selected table</td>
+                <td className="py-2">
+                  {t('whiteboard.toolbar.shortcutDelete')}
+                </td>
               </tr>
               <tr>
                 <td className="py-2 pr-4">
@@ -1013,7 +1058,9 @@ export function Toolbar({
                     -
                   </kbd>
                 </td>
-                <td className="py-2">Zoom Out</td>
+                <td className="py-2">
+                  {t('whiteboard.toolbar.shortcutZoomOut')}
+                </td>
               </tr>
               <tr>
                 <td className="py-2 pr-4">
@@ -1025,7 +1072,9 @@ export function Toolbar({
                     +
                   </kbd>
                 </td>
-                <td className="py-2">Zoom In</td>
+                <td className="py-2">
+                  {t('whiteboard.toolbar.shortcutZoomIn')}
+                </td>
               </tr>
               <tr>
                 <td className="py-2 pr-4">
@@ -1037,7 +1086,9 @@ export function Toolbar({
                     0
                   </kbd>
                 </td>
-                <td className="py-2">Reset zoom to 100%</td>
+                <td className="py-2">
+                  {t('whiteboard.toolbar.shortcutZoomReset')}
+                </td>
               </tr>
             </tbody>
           </table>
@@ -1062,7 +1113,7 @@ export function Toolbar({
             try {
               await onExport(opts)
             } catch {
-              toast.error('Export failed')
+              toast.error(t('whiteboard.toolbar.exportFailed'))
             }
           }}
         />
