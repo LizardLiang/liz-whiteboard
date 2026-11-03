@@ -128,6 +128,8 @@ export function useWhiteboardCollaboration(
   )
   const router = useRouter()
   const t = useT()
+  const tRef = useRef(t)
+  tRef.current = t
   const redirectTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
 
   // Listen for table position updates from other users
@@ -308,8 +310,8 @@ export function useWhiteboardCollaboration(
   useEffect(() => {
     const handlePermissionRevoked = (data: { projectId: string }) => {
       console.warn('Permission revoked for project:', data.projectId)
-      toast.error(t('hooks.collaboration.accessRemoved'), {
-        description: t('hooks.collaboration.redirecting'),
+      toast.error(tRef.current('hooks.collaboration.accessRemoved'), {
+        description: tRef.current('hooks.collaboration.redirecting'),
         duration: 5000,
       })
       redirectTimerRef.current = setTimeout(() => {
@@ -324,7 +326,7 @@ export function useWhiteboardCollaboration(
         clearTimeout(redirectTimerRef.current)
       }
     }
-  }, [on, off, router, t])
+  }, [on, off, router])
 
   // Listen for bulk position updates from other users (Auto Layout broadcast)
   // NOTE on field names — both this listener and the existing table:moved listener

@@ -16,9 +16,9 @@ import { translate } from '@/lib/i18n/translate'
 const defaultT: TFunction = (key, vars) => translate('en', key, vars)
 
 /**
- * Keys are the schema's own kind union, so adding a kind to
- * `canvasElementKindSchema` without naming it in the dictionary stops
- * compiling there (the dictionary is typed against the English shape).
+ * Dictionary key suffix for a kind. The key is built at runtime, so the
+ * compiler cannot check it: messages.test.ts asserts that every kind in
+ * `canvasElementKindSchema` has a noun entry in both languages.
  */
 function nounKey(kind: CanvasElementKind | undefined): string {
   return kind ?? 'element'

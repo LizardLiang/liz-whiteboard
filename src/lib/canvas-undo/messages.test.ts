@@ -18,6 +18,7 @@ import {
 } from './messages'
 import type { TFunction } from '@/lib/i18n/translate'
 import type { CanvasUndoLabel } from './undo-stack'
+import { canvasElementKindSchema } from '@/data/schema'
 import { translate } from '@/lib/i18n/translate'
 
 const NON_ATTRIBUTION_WORDS = ['another user', 'someone else', 'collaborator']
@@ -395,6 +396,17 @@ describe('grouping and ungrouping (canvas-element-grouping tactical plan, Wave 7
 })
 
 describe('translated reports', () => {
+  it('has a noun for every canvas element kind in both languages', () => {
+    for (const kind of canvasElementKindSchema.options) {
+      for (const locale of ['en', 'zh-TW'] as const) {
+        for (const ns of ['noun', 'nounA']) {
+          const key = `undo.${ns}.${kind}`
+          expect(translate(locale, key)).not.toBe(key)
+        }
+      }
+    }
+  })
+
   const zh: TFunction = (key, vars) => translate('zh-TW', key, vars)
 
   it('names the reversed gesture in Traditional Chinese', () => {

@@ -79,8 +79,9 @@ function formatSnapshotName(
   createdAt: string | Date,
   t: TFunction,
   locale: string,
+  isAuto = false,
 ): string {
-  if (label === AUTO_RESTORE_LABEL)
+  if (isAuto && label === AUTO_RESTORE_LABEL)
     return t('whiteboard.history.autoRestoreLabel')
   if (label && label.trim().length > 0) return label
   return t('whiteboard.history.versionName', {
@@ -309,6 +310,7 @@ export function WhiteboardHistoryPanel({
                               snapshot.createdAt,
                               t,
                               locale,
+                              snapshot.isAuto,
                             )}
                           </span>
                           {snapshot.isAuto && (
@@ -354,6 +356,7 @@ export function WhiteboardHistoryPanel({
                     previewData.createdAt,
                     t,
                     locale,
+                    previewData.isAuto,
                   )
                 : t('whiteboard.history.preview')}
             </DialogTitle>
