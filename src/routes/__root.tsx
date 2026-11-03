@@ -25,6 +25,7 @@ import { getCurrentUser } from './api/auth'
 import type { QueryClient } from '@tanstack/react-query'
 import type { Locale } from '@/lib/i18n/resolve-locale'
 import { I18nProvider } from '@/lib/i18n/I18nProvider'
+import { useI18n } from '@/lib/i18n/use-t'
 import { resolveLocale } from '@/lib/i18n/get-locale'
 import { translate } from '@/lib/i18n/translate'
 
@@ -117,6 +118,17 @@ export const Route = createRootRouteWithContext<MyRouterContext>()({
 
 function RootDocument({ children }: { children: React.ReactNode }) {
   const { locale = 'en' } = Route.useRouteContext()
+  return (
+    <I18nProvider initialLocale={locale}>
+      <RootHtml>{children}</RootHtml>
+    </I18nProvider>
+  )
+}
+
+// Reads the live locale from the provider, so the picker updates the tab title
+// and lang attribute too, not only the route-context value from beforeLoad.
+function RootHtml({ children }: { children: React.ReactNode }) {
+  const { locale } = useI18n()
   const pathname = useRouterState({ select: (s) => s.location.pathname })
   const isPublicRoute = PUBLIC_PATHS.some((p) => pathname.startsWith(p))
   const { isZenMode } = useZenMode()
@@ -133,48 +145,46 @@ function RootDocument({ children }: { children: React.ReactNode }) {
         <HeadContent />
       </head>
       <body>
-        <I18nProvider initialLocale={locale}>
-          <ThemeProvider>
-            <AuthProvider>
-              {isPublicRoute ? (
-                // Public routes: render content only (no header/sidebar)
-                <main>{children}</main>
-              ) : isZenMode ? (
-                // Zen mode: hide the global shell, canvas fills the viewport
-                <main className="h-screen overflow-auto">{children}</main>
-              ) : (
-                // Authenticated routes: render full shell
-                <div className="flex h-screen flex-col">
-                  <Header />
-                  <div className="flex flex-1 overflow-hidden">
-                    {!isBoardRoute ? (
-                      <Sidebar />
-                    ) : isPinned ? (
-                      <Sidebar onUnpin={() => setPinned(false)} />
-                    ) : null}
-                    <main className="flex-1 overflow-auto">{children}</main>
-                  </div>
+        <ThemeProvider>
+          <AuthProvider>
+            {isPublicRoute ? (
+              // Public routes: render content only (no header/sidebar)
+              <main>{children}</main>
+            ) : isZenMode ? (
+              // Zen mode: hide the global shell, canvas fills the viewport
+              <main className="h-screen overflow-auto">{children}</main>
+            ) : (
+              // Authenticated routes: render full shell
+              <div className="flex h-screen flex-col">
+                <Header />
+                <div className="flex flex-1 overflow-hidden">
+                  {!isBoardRoute ? (
+                    <Sidebar />
+                  ) : isPinned ? (
+                    <Sidebar onUnpin={() => setPinned(false)} />
+                  ) : null}
+                  <main className="flex-1 overflow-auto">{children}</main>
                 </div>
-              )}
-              <SessionExpiredModal />
-              <Toaster />
-              {import.meta.env.DEV && (
-                <TanStackDevtools
-                  config={{
-                    position: 'bottom-right',
-                  }}
-                  plugins={[
-                    {
-                      name: 'Tanstack Router',
-                      render: <TanStackRouterDevtoolsPanel />,
-                    },
-                    TanStackQueryDevtools,
-                  ]}
-                />
-              )}
-            </AuthProvider>
-          </ThemeProvider>
-        </I18nProvider>
+              </div>
+            )}
+            <SessionExpiredModal />
+            <Toaster />
+            {import.meta.env.DEV && (
+              <TanStackDevtools
+                config={{
+                  position: 'bottom-right',
+                }}
+                plugins={[
+                  {
+                    name: 'Tanstack Router',
+                    render: <TanStackRouterDevtoolsPanel />,
+                  },
+                  TanStackQueryDevtools,
+                ]}
+              />
+            )}
+          </AuthProvider>
+        </ThemeProvider>
         <Scripts />
       </body>
     </html>

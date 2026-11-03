@@ -69,6 +69,7 @@ test.describe('browser language default', () => {
     await option.click()
     await expect(page.getByRole('button', { name: '登出' })).toBeVisible()
     await expect(page.locator('html')).toHaveAttribute('lang', 'zh-TW')
+    await expect(page).toHaveTitle(/協作式圖表編輯器/)
 
     const cookies = await context.cookies()
     expect(cookies.find((c) => c.name === 'locale')?.value).toBe('zh-TW')
