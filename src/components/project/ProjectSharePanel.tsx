@@ -314,15 +314,15 @@ export function ProjectSharePanel({
 
   return (
     <Sheet open={open} onOpenChange={onOpenChange}>
-      <SheetContent className="w-full sm:max-w-md" side="right">
-        <SheetHeader>
+      <SheetContent className="w-full gap-0 sm:max-w-lg" side="right">
+        <SheetHeader className="px-6 pt-6 pb-4">
           <SheetTitle>Share Project</SheetTitle>
           <SheetDescription>
             Manage who has access to this project and their roles.
           </SheetDescription>
         </SheetHeader>
 
-        <div className="mt-6 space-y-6">
+        <div className="flex-1 space-y-6 overflow-y-auto px-6 pt-2 pb-6">
           {/* Add user form */}
           <form onSubmit={handleAddUser} className="space-y-3">
             <Label className="text-sm font-medium">Add a person</Label>
