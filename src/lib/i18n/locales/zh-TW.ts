@@ -163,6 +163,7 @@ export const zhTW: DeepStringRecord<Dictionary> = {
     usernameMax: '使用者名稱最多 50 個字元',
     usernameFormat: '使用者名稱只能包含英文字母、數字和底線',
     invalidEmail: '電子郵件格式不正確',
+    emailMax: '電子郵件最多 255 個字元',
     passwordRequired: '請輸入密碼',
     verificationRequired: '需要驗證',
     missingResetToken: '缺少重設權杖',

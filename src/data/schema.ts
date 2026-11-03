@@ -485,7 +485,10 @@ export const registerInputSchema = z.object({
       /^[a-zA-Z0-9_]+$/,
       'Username must be alphanumeric with underscores only',
     ),
-  email: z.string().email('Invalid email address').max(255),
+  email: z
+    .string()
+    .email('Invalid email address')
+    .max(255, 'Email must be at most 255 characters'),
   password: passwordRuleSchema,
 })
 
@@ -508,7 +511,10 @@ export const loginInputSchema = z.object({
  * any other work (src/lib/auth/turnstile.ts).
  */
 export const forgotPasswordInputSchema = z.object({
-  email: z.string().email('Invalid email address').max(255),
+  email: z
+    .string()
+    .email('Invalid email address')
+    .max(255, 'Email must be at most 255 characters'),
   turnstileToken: z.string().min(1, 'Verification is required'),
 })
 

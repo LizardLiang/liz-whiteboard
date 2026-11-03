@@ -168,6 +168,7 @@ export const en = {
     usernameMax: 'Username must be at most 50 characters',
     usernameFormat: 'Username must be alphanumeric with underscores only',
     invalidEmail: 'Invalid email address',
+    emailMax: 'Email must be at most 255 characters',
     passwordRequired: 'Password is required',
     verificationRequired: 'Verification is required',
     missingResetToken: 'Missing reset token',
