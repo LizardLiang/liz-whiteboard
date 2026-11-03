@@ -4,6 +4,7 @@
 // global-setup. The shared config pins the default locale to en-US so other
 // specs that assert English text do not depend on the host machine language.
 import { expect, test } from '@playwright/test'
+import { execFileSync } from 'node:child_process'
 import { BASE_URL, IDS, STORAGE_STATE } from './fixtures'
 import type { Browser } from '@playwright/test'
 
@@ -134,6 +135,23 @@ test.describe('phase 4: ER whiteboard', () => {
     await expect(page.getByRole('toolbar', { name: '白板工具' })).toBeVisible()
     await expect(page.getByRole('button', { name: '新增資料表' })).toBeVisible()
     await expect(page.getByRole('button', { name: '更多工具' })).toBeVisible()
+    await context.close()
+  })
+})
+
+test.describe('phase 5: canvas board', () => {
+  test('canvas toolbar and board style are Chinese for a zh-TW browser', async ({
+    browser,
+  }) => {
+    // seed-canvas.ts reuses members created by seed-stress.ts.
+    execFileSync('bun', ['run', 'e2e/seed-stress.ts'], { stdio: 'inherit' })
+    execFileSync('bun', ['run', 'e2e/seed-canvas.ts'], { stdio: 'inherit' })
+    const { context, page } = await openAs(browser, 'zh-TW')
+    await page.goto(`/canvas/${IDS.canvasBoard}`)
+    await page.waitForSelector('canvas')
+    await expect(page.getByRole('toolbar', { name: '畫布工具' })).toBeVisible()
+    await expect(page.getByRole('button', { name: '矩形 (R)' })).toBeVisible()
+    await expect(page.getByRole('button', { name: '看板樣式' })).toBeVisible()
     await context.close()
   })
 })

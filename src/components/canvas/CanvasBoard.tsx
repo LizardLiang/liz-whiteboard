@@ -34,7 +34,11 @@ import type {
 } from 'react'
 import type { CanvasBoardSettings } from '@/data/canvas-board-settings'
 import type { Camera } from '@/lib/canvas-engine/camera'
-import type { CardLook, DiagramStyle } from '@/lib/canvas-engine/render'
+import type {
+  CardLook,
+  CardRoleLabels,
+  DiagramStyle,
+} from '@/lib/canvas-engine/render'
 import type { CanvasFontSpec } from '@/lib/canvas-engine/render-target'
 import type { WorldRect } from '@/lib/canvas-engine/hit-test'
 import type {
@@ -47,6 +51,7 @@ import type { CanvasTool } from './use-canvas-input'
 import type { CanvasStyleChange } from './SelectionToolbar'
 import type { ZOrderCommand } from '@/lib/canvas-engine/z-order'
 import type { RenderFraming } from '@/lib/render/framing'
+import { useT } from '@/lib/i18n/use-t'
 import { toEngineScene } from '@/lib/canvas-element-adapter'
 import { resolvedBounds } from '@/lib/canvas-engine/hit-test'
 import { planFrame } from '@/lib/render/framing'
@@ -131,7 +136,7 @@ function focusRectOf(scene: Scene, elementId: string): WorldRect | null {
 
 interface ToolButton {
   id: CanvasTool
-  label: string
+  labelKey: string
   shortcut: string
   Icon: typeof MousePointer2
 }
@@ -146,17 +151,22 @@ interface ToolButton {
  * unreachable.
  */
 const TOOLS: ReadonlyArray<ToolButton> = [
-  { id: 'select', label: 'Select', shortcut: 'V', Icon: MousePointer2 },
-  { id: 'pan', label: 'Pan', shortcut: 'H', Icon: Hand },
+  {
+    id: 'select',
+    labelKey: 'canvas.tool.select',
+    shortcut: 'V',
+    Icon: MousePointer2,
+  },
+  { id: 'pan', labelKey: 'canvas.tool.pan', shortcut: 'H', Icon: Hand },
   ...CANVAS_SHAPE_KINDS.map(
     (kind): ToolButton => ({
       id: kind,
-      label: SHAPE_TOOL_META[kind].label,
+      labelKey: `canvas.shape.${kind}`,
       shortcut: SHAPE_TOOL_SHORTCUTS[kind].toUpperCase(),
       Icon: SHAPE_TOOL_META[kind].Icon,
     }),
   ),
-  { id: 'text', label: 'Text', shortcut: 'T', Icon: Type },
+  { id: 'text', labelKey: 'canvas.tool.text', shortcut: 'T', Icon: Type },
 ]
 
 export function CanvasBoard({
@@ -179,6 +189,7 @@ export function CanvasBoard({
   const ctxRef = useRef<CanvasRenderingContext2D | null>(null)
 
   const { resolvedTheme } = useTheme()
+  const t = useT()
   // Seeded once. The route remounts this component on board change (`key`),
   // so there is no stale-board case to resync from; every subsequent change
   // arrives through useCanvasElements — locally, by ack, or by broadcast.
@@ -226,6 +237,19 @@ export function CanvasBoard({
   })
   const diagramStyle: DiagramStyle = settings.diagramStyle
   const flowDots = settings.flowDots
+  // The canvas draws outside React, so the translated role names are handed
+  // to the renderer as plain strings and follow a language switch via deps.
+  const roleLabels = useMemo<CardRoleLabels>(
+    () => ({
+      none: t('canvas.card.roles.none'),
+      trigger: t('canvas.card.roles.trigger'),
+      action: t('canvas.card.roles.action'),
+      system: t('canvas.card.roles.system'),
+      data: t('canvas.card.roles.data'),
+      note: t('canvas.card.roles.note'),
+    }),
+    [t],
+  )
   const cardLook = useMemo<CardLook>(
     () => ({ diagramStyle, theme: resolvedTheme }),
     [diagramStyle, resolvedTheme],
@@ -691,6 +715,7 @@ export function CanvasBoard({
       theme: resolvedTheme,
       diagramStyle,
       flowDots,
+      roleLabels,
     })
   }, [
     camera,
@@ -698,6 +723,7 @@ export function CanvasBoard({
     flowDots,
     input.displayScene,
     resolvedTheme,
+    roleLabels,
     selection,
     viewport,
   ])
@@ -718,6 +744,7 @@ export function CanvasBoard({
     requestRedraw,
     resolvedTheme,
     diagramStyle,
+    roleLabels,
     selection,
     viewport,
   ])
@@ -824,7 +851,7 @@ export function CanvasBoard({
       className="relative h-full w-full overflow-hidden bg-background outline-none"
       tabIndex={0}
       role="application"
-      aria-label="Canvas board"
+      aria-label={t('canvas.board.ariaLabel')}
       {...input.boardHandlers}
       onKeyDown={handleBoardKeyDown}
     >
@@ -954,10 +981,10 @@ export function CanvasBoard({
             }
           >
             {connectionState === 'connected'
-              ? 'Connected'
+              ? t('layout.connection.connected')
               : connectionState === 'connecting'
-                ? 'Connecting...'
-                : 'Disconnected'}
+                ? t('layout.connection.connecting')
+                : t('layout.connection.disconnected')}
           </span>
         </div>
       )}
@@ -966,17 +993,17 @@ export function CanvasBoard({
         <div
           className="absolute left-4 top-4 flex gap-1 rounded-md border bg-background/90 p-1 shadow-sm backdrop-blur-sm"
           role="toolbar"
-          aria-label="Canvas tools"
+          aria-label={t('canvas.board.toolsAria')}
         >
-          {TOOLS.map(({ id, label, shortcut, Icon }) => (
+          {TOOLS.map(({ id, labelKey, shortcut, Icon }) => (
             <Button
               key={id}
               type="button"
               size="icon"
               variant={tool === id ? 'default' : 'ghost'}
-              aria-label={`${label} (${shortcut})`}
+              aria-label={`${t(labelKey)} (${shortcut})`}
               aria-pressed={tool === id}
-              title={`${label} (${shortcut})`}
+              title={`${t(labelKey)} (${shortcut})`}
               onClick={() => setTool(id)}
             >
               <Icon className="h-4 w-4" />
@@ -997,8 +1024,8 @@ export function CanvasBoard({
             type="button"
             size="icon"
             variant="ghost"
-            aria-label="Search canvas elements (Ctrl/Cmd+K)"
-            title="Search canvas elements (Ctrl/Cmd+K)"
+            aria-label={t('canvas.board.searchAria')}
+            title={t('canvas.board.searchAria')}
             onClick={() => setSearchOpen(true)}
           >
             <Search className="h-4 w-4" />

@@ -2,6 +2,7 @@
 // English dictionary. Source of truth for the key shape: zh-TW must match it.
 // Interpolation uses {name} placeholders.
 
+import { canvasEn } from './canvas-en'
 import { whiteboardEn } from './whiteboard-en'
 
 export const en = {
@@ -380,6 +381,7 @@ export const en = {
     },
   },
   whiteboard: whiteboardEn,
+  canvas: canvasEn,
   meta: {
     title: 'ER Whiteboard - Collaborative Diagram Editor',
   },

@@ -19,6 +19,7 @@ import { getCanvasBoardPage } from '@/lib/canvas-board/server-functions'
 import { hasMinimumRole } from '@/lib/auth/permissions'
 import { getSessionUserId } from '@/lib/session-user-id'
 import { classifyQueryFailure, isUnauthorizedError } from '@/lib/auth/errors'
+import { useT } from '@/lib/i18n/use-t'
 
 export const Route = createFileRoute('/canvas/$boardId')({
   component: CanvasBoardPage,
@@ -33,6 +34,7 @@ function CenteredMessage({
   detail?: string
   withHomeLink?: boolean
 }) {
+  const t = useT()
   return (
     <div className="relative flex h-full flex-col items-center justify-center gap-3 bg-background">
       <BoardNavFallback />
@@ -43,7 +45,7 @@ function CenteredMessage({
           to="/"
           className="text-sm text-primary underline underline-offset-4"
         >
-          Back to dashboard
+          {t('common.backToDashboard')}
         </Link>
       )}
     </div>
@@ -51,6 +53,7 @@ function CenteredMessage({
 }
 
 function CanvasBoardPage() {
+  const t = useT()
   const { boardId } = Route.useParams()
 
   // The authenticated user's DB id, so the server's `createdBy` on broadcasts
@@ -66,7 +69,7 @@ function CanvasBoardPage() {
   })
 
   if (isLoading) {
-    return <CenteredMessage title="Loading board..." />
+    return <CenteredMessage title={t('share.loadingBoard')} />
   }
 
   // A rejected query is not automatically a permissions denial — it can be a
@@ -76,16 +79,16 @@ function CanvasBoardPage() {
     if (classifyQueryFailure({ error }) === 'forbidden') {
       return (
         <CenteredMessage
-          title="You do not have access to this board"
-          detail="Ask a project admin for access, then reload."
+          title={t('canvas.board.noAccessTitle')}
+          detail={t('canvas.board.noAccessDetail')}
           withHomeLink
         />
       )
     }
     return (
       <CenteredMessage
-        title="Failed to load board"
-        detail="Something went wrong loading this canvas board. Please try again."
+        title={t('canvas.board.loadFailedTitle')}
+        detail={t('canvas.board.loadFailedDetail')}
         withHomeLink
       />
     )
@@ -98,8 +101,8 @@ function CanvasBoardPage() {
   if (isUnauthorizedError(data)) {
     return (
       <CenteredMessage
-        title="Your session expired"
-        detail="Please sign in again."
+        title={t('canvas.board.sessionExpiredTitle')}
+        detail={t('canvas.board.sessionExpiredDetail')}
       />
     )
   }
@@ -107,8 +110,8 @@ function CanvasBoardPage() {
   if (!data) {
     return (
       <CenteredMessage
-        title="Board not found"
-        detail="This canvas board does not exist or you don't have access to it."
+        title={t('canvas.board.notFoundTitle')}
+        detail={t('canvas.board.notFoundDetail')}
         withHomeLink
       />
     )
@@ -133,7 +136,7 @@ function CanvasBoardPage() {
             <>
               {!canEdit && (
                 <span className="rounded-full border px-2 py-0.5 text-xs font-medium text-muted-foreground">
-                  Read-only
+                  {t('common.readOnly')}
                 </span>
               )}
               {canShare && <CanvasShareDialog boardId={boardId} />}

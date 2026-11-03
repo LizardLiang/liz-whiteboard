@@ -86,6 +86,7 @@ import type {
   Scene,
 } from '@/lib/canvas-engine/scene'
 import type { ZOrderCommand } from '@/lib/canvas-engine/z-order'
+import type { TFunction } from '@/lib/i18n/translate'
 import { worldToScreen } from '@/lib/canvas-engine/camera'
 import {
   CANVAS_STEP_MAX_LENGTH,
@@ -111,6 +112,7 @@ import { stripRunAttribute } from '@/lib/canvas-engine/text-runs'
 import { isChecklistRange } from '@/lib/canvas-engine/text-todo'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
+import { useT } from '@/lib/i18n/use-t'
 import {
   Popover,
   PopoverContent,
@@ -470,6 +472,7 @@ export function SelectionToolbar({
   onChecklist,
   diagramStyle = 'classic',
 }: SelectionToolbarProps) {
+  const t = useT()
   const sets = selectionToolbarTargets(
     scene,
     selectedIds,
@@ -593,13 +596,14 @@ export function SelectionToolbar({
         transform: 'translate(-50%, -100%)',
       }}
       role="toolbar"
-      aria-label="Selection"
+      aria-label={t('canvas.selection.aria')}
     >
       {targets.length > 0 && (
         <>
           <SettingPopover
-            label="Fill"
+            label={t('canvas.selection.fill')}
             summary={colorSummary(
+              t,
               activeFill,
               fillCleared === true,
               swatchForFill,
@@ -630,8 +634,9 @@ export function SelectionToolbar({
             />
           </SettingPopover>
           <SettingPopover
-            label="Stroke"
+            label={t('canvas.selection.stroke')}
             summary={colorSummary(
+              t,
               activeStroke,
               strokeCleared === true,
               swatchForStroke,
@@ -662,8 +667,8 @@ export function SelectionToolbar({
             />
           </SettingPopover>
           <SettingPopover
-            label="Width"
-            summary={widthSummary(activeWidth, strokeCleared === true)}
+            label={t('canvas.selection.width')}
+            summary={widthSummary(t, activeWidth, strokeCleared === true)}
             preview={
               <WidthPreview width={activeWidth} strokeColor={activeStroke} />
             }
@@ -676,8 +681,8 @@ export function SelectionToolbar({
           </SettingPopover>
           {roundable.length > 0 && (
             <SettingPopover
-              label="Corner"
-              summary={radiusSummary(activeRadius)}
+              label={t('canvas.selection.corner')}
+              summary={radiusSummary(t, activeRadius)}
               preview={<RadiusPreview radius={activeRadius} />}
             >
               <RadiusRow
@@ -690,8 +695,12 @@ export function SelectionToolbar({
           )}
           {diagramStyle === 'card' && (
             <SettingPopover
-              label="卡片"
-              summary={activeRole === undefined ? 'Mixed' : String(activeRole)}
+              label={t('canvas.selection.card')}
+              summary={
+                activeRole === undefined
+                  ? t('canvas.selection.mixed')
+                  : t(`canvas.card.roles.${activeRole}`)
+              }
               preview={
                 <span
                   className="block size-3.5 rounded-full border-2"
@@ -723,8 +732,8 @@ export function SelectionToolbar({
       {alignable.length > 0 && (
         <>
           <SettingPopover
-            label="Align"
-            summary={alignSummary(activeTextAlign, activeVerticalAlign)}
+            label={t('canvas.selection.align')}
+            summary={alignSummary(t, activeTextAlign, activeVerticalAlign)}
             preview={
               <AlignPreview
                 textAlign={activeTextAlign}
@@ -750,8 +759,8 @@ export function SelectionToolbar({
             />
           </SettingPopover>
           <SettingPopover
-            label="Text"
-            summary={textSummary(activeBold, activeItalic, activeFontSize)}
+            label={t('canvas.selection.text')}
+            summary={textSummary(t, activeBold, activeItalic, activeFontSize)}
             preview={
               <TextPreview
                 bold={activeBold === true}
@@ -834,31 +843,31 @@ const ROLE_DOT: Record<Exclude<CanvasElementRole, null>, string> = {
 
 const ROLE_OPTIONS: ReadonlyArray<{
   value: Exclude<CanvasElementRole, null>
-  label: string
+  labelKey: string
 }> = [
-  { value: 'none', label: '無' },
-  { value: 'trigger', label: '觸發' },
-  { value: 'action', label: '操作' },
-  { value: 'system', label: '系統' },
-  { value: 'data', label: '資料' },
-  { value: 'note', label: '備註' },
+  { value: 'none', labelKey: 'canvas.card.roles.none' },
+  { value: 'trigger', labelKey: 'canvas.card.roles.trigger' },
+  { value: 'action', labelKey: 'canvas.card.roles.action' },
+  { value: 'system', labelKey: 'canvas.card.roles.system' },
+  { value: 'data', labelKey: 'canvas.card.roles.data' },
+  { value: 'note', labelKey: 'canvas.card.roles.note' },
 ]
 
 const SHADOW_OPTIONS: ReadonlyArray<{
   value: CanvasCardShadow
-  label: string
+  labelKey: string
 }> = [
-  { value: 'auto', label: '自動' },
-  { value: 'on', label: '開' },
-  { value: 'off', label: '關' },
+  { value: 'auto', labelKey: 'canvas.card.shadows.auto' },
+  { value: 'on', labelKey: 'canvas.card.shadows.on' },
+  { value: 'off', labelKey: 'canvas.card.shadows.off' },
 ]
 
 const BORDER_OPTIONS: ReadonlyArray<{
   value: CanvasCardBorder
-  label: string
+  labelKey: string
 }> = [
-  { value: 'subtle', label: '細灰' },
-  { value: 'accent', label: '強調' },
+  { value: 'subtle', labelKey: 'canvas.card.borders.subtle' },
+  { value: 'accent', labelKey: 'canvas.card.borders.accent' },
 ]
 
 function CardChoiceGroup<T extends string>({
@@ -869,11 +878,12 @@ function CardChoiceGroup<T extends string>({
   dots,
 }: {
   groupLabel: string
-  options: ReadonlyArray<{ value: T; label: string }>
+  options: ReadonlyArray<{ value: T; labelKey: string }>
   active: T | null | undefined
   onPick: (value: T) => void
   dots?: Record<string, string>
 }) {
+  const t = useT()
   return (
     <div className="mb-2 last:mb-0">
       <div className="mb-1 select-none px-0.5 text-[10px] text-muted-foreground">
@@ -884,8 +894,9 @@ function CardChoiceGroup<T extends string>({
         role="group"
         aria-label={groupLabel}
       >
-        {options.map(({ value, label }) => {
+        {options.map(({ value, labelKey }) => {
           const isActive = value === active
+          const label = t(labelKey)
           return (
             <button
               key={value}
@@ -936,10 +947,11 @@ function CardRows({
   onShadow: (value: CanvasCardShadow) => void
   onBorder: (value: CanvasCardBorder) => void
 }) {
+  const t = useT()
   return (
     <div className="w-60">
       <CardChoiceGroup
-        groupLabel="角色"
+        groupLabel={t('canvas.card.role')}
         options={ROLE_OPTIONS}
         active={activeRole}
         onPick={onRole}
@@ -950,12 +962,12 @@ function CardRows({
           className="mb-1 block select-none px-0.5 text-[10px] text-muted-foreground"
           htmlFor="card-step-input"
         >
-          步驟
+          {t('canvas.card.step')}
         </label>
         {/* Commits on blur or Enter: one undo entry per edit, not per key. */}
         <Input
           id="card-step-input"
-          aria-label="步驟"
+          aria-label={t('canvas.card.step')}
           className="h-7 w-20 px-2 text-xs"
           maxLength={CANVAS_STEP_MAX_LENGTH}
           key={`${targetKey}|${activeStep ?? ''}`}
@@ -971,13 +983,13 @@ function CardRows({
         />
       </div>
       <CardChoiceGroup
-        groupLabel="陰影"
+        groupLabel={t('canvas.card.shadow')}
         options={SHADOW_OPTIONS}
         active={activeShadow}
         onPick={onShadow}
       />
       <CardChoiceGroup
-        groupLabel="外框"
+        groupLabel={t('canvas.card.border')}
         options={BORDER_OPTIONS}
         active={activeBorder}
         onPick={onBorder}
@@ -1040,6 +1052,7 @@ function SettingPopover({
   preview,
   children,
 }: SettingPopoverProps) {
+  const t = useT()
   return (
     <Popover>
       <PopoverTrigger asChild>
@@ -1048,7 +1061,7 @@ function SettingPopover({
           variant="ghost"
           className="h-6 gap-1 px-1.5"
           aria-label={label}
-          title={`${label}: ${summary}`}
+          title={t('canvas.selection.settingTitle', { label, summary })}
         >
           {preview}
           <span className="select-none text-[10px] font-medium uppercase tracking-wide text-muted-foreground">
@@ -1171,26 +1184,34 @@ function isCustomColour(
  * marking none of them active rather than snapping to the nearest hue.
  */
 function colorSummary(
+  t: TFunction,
   value: string | null,
   cleared: boolean,
   lookup: (value: string) => { label: string } | null,
 ): string {
-  if (cleared) return 'None'
-  if (value === null) return 'Mixed'
-  return lookup(value)?.label ?? 'Custom'
+  if (cleared) return t('canvas.selection.none')
+  if (value === null) return t('canvas.selection.mixed')
+  const label = lookup(value)?.label
+  return label
+    ? t(`canvas.color.${label.toLowerCase()}`)
+    : t('canvas.selection.custom')
 }
 
 /** The current weight in words. A cleared stroke has no weight, and says so. */
-function widthSummary(width: number | null, cleared: boolean): string {
-  if (cleared) return 'None'
-  if (width === null) return 'Mixed'
+function widthSummary(
+  t: TFunction,
+  width: number | null,
+  cleared: boolean,
+): string {
+  if (cleared) return t('canvas.selection.none')
+  if (width === null) return t('canvas.selection.mixed')
   return `${width}px`
 }
 
 /** The current rounding in words. Zero is "Square", not "0px" — it is a shape, not a measurement. */
-function radiusSummary(radius: number | null): string {
-  if (radius === null) return 'Mixed'
-  return radius === 0 ? 'Square' : `${radius}px`
+function radiusSummary(t: TFunction, radius: number | null): string {
+  if (radius === null) return t('canvas.selection.mixed')
+  return radius === 0 ? t('canvas.selection.square') : `${radius}px`
 }
 
 /**
@@ -1224,15 +1245,20 @@ function ActionsRow({
   canGroup: boolean
   canUngroup: boolean
 }) {
+  const t = useT()
   return (
-    <div className="flex items-center gap-1" role="group" aria-label="Actions">
+    <div
+      className="flex items-center gap-1"
+      role="group"
+      aria-label={t('canvas.actions.group')}
+    >
       <Button
         type="button"
         size="icon"
         variant="ghost"
         className="h-6 w-7"
-        aria-label="Duplicate"
-        title="Duplicate (Ctrl+D)"
+        aria-label={t('canvas.actions.duplicate')}
+        title={t('canvas.actions.duplicateTitle')}
         // Wrapped rather than passed straight through: React would otherwise
         // hand the click event to a callback declared as taking nothing, and
         // the next person to give `onDuplicate` a parameter would find a
@@ -1246,8 +1272,8 @@ function ActionsRow({
         size="icon"
         variant="ghost"
         className="h-6 w-7"
-        aria-label="Group"
-        title="Group (Ctrl+G)"
+        aria-label={t('canvas.actions.groupAction')}
+        title={t('canvas.actions.groupTitle')}
         disabled={!canGroup}
         onClick={() => onGroup()}
       >
@@ -1258,8 +1284,8 @@ function ActionsRow({
         size="icon"
         variant="ghost"
         className="h-6 w-7"
-        aria-label="Ungroup"
-        title="Ungroup (Ctrl+Shift+G)"
+        aria-label={t('canvas.actions.ungroup')}
+        title={t('canvas.actions.ungroupTitle')}
         disabled={!canUngroup}
         onClick={() => onUngroup()}
       >
@@ -1315,15 +1341,20 @@ function ArrangeRow({
 }: {
   onArrange: (command: ZOrderCommand) => void
 }) {
+  const t = useT()
   return (
-    <div className="flex items-center gap-1" role="group" aria-label="Arrange">
+    <div
+      className="flex items-center gap-1"
+      role="group"
+      aria-label={t('canvas.actions.arrange')}
+    >
       <Button
         type="button"
         size="icon"
         variant="ghost"
         className="h-6 w-7"
-        aria-label="Bring to front"
-        title="Bring to front"
+        aria-label={t('canvas.actions.front')}
+        title={t('canvas.actions.front')}
         onClick={() => onArrange('front')}
       >
         <BringToFront className="h-3.5 w-3.5" />
@@ -1333,8 +1364,8 @@ function ArrangeRow({
         size="icon"
         variant="ghost"
         className="h-6 w-7"
-        aria-label="Send to back"
-        title="Send to back"
+        aria-label={t('canvas.actions.back')}
+        title={t('canvas.actions.back')}
         onClick={() => onArrange('back')}
       >
         <SendToBack className="h-3.5 w-3.5" />
@@ -1360,8 +1391,13 @@ interface WidthRowProps {
  * a weight previews the actual outline rather than a generic grey rule.
  */
 function WidthRow({ activeWidth, strokeColor, onPick }: WidthRowProps) {
+  const t = useT()
   return (
-    <div className="flex items-center gap-1.5" role="group" aria-label="Width">
+    <div
+      className="flex items-center gap-1.5"
+      role="group"
+      aria-label={t('canvas.selection.width')}
+    >
       {CANVAS_STROKE_WIDTHS.map((width) => {
         const active = width === activeWidth
         return (
@@ -1373,9 +1409,9 @@ function WidthRow({ activeWidth, strokeColor, onPick }: WidthRowProps) {
                 ? 'border-transparent ring-2 ring-ring ring-offset-1 ring-offset-background'
                 : 'border-border/60'
             }`}
-            aria-label={`Stroke width ${width}`}
+            aria-label={t('canvas.selection.strokeWidthAria', { width })}
             aria-pressed={active}
-            title={`${width}px stroke`}
+            title={t('canvas.selection.strokeWidthTitle', { width })}
             onClick={() => onPick(width)}
           >
             <span
@@ -1402,20 +1438,32 @@ function WidthRow({ activeWidth, strokeColor, onPick }: WidthRowProps) {
  */
 interface AlignOption<T> {
   value: T
-  label: string
+  labelKey: string
   Icon: ComponentType<{ className?: string }>
 }
 
 const HORIZONTAL_ALIGNS: ReadonlyArray<AlignOption<CanvasTextAlign>> = [
-  { value: 'left', label: 'Left', Icon: AlignLeft },
-  { value: 'center', label: 'Center', Icon: AlignCenter },
-  { value: 'right', label: 'Right', Icon: AlignRight },
+  { value: 'left', labelKey: 'canvas.align.left', Icon: AlignLeft },
+  { value: 'center', labelKey: 'canvas.align.center', Icon: AlignCenter },
+  { value: 'right', labelKey: 'canvas.align.right', Icon: AlignRight },
 ]
 
 const VERTICAL_ALIGNS: ReadonlyArray<AlignOption<CanvasVerticalAlign>> = [
-  { value: 'top', label: 'Top', Icon: AlignVerticalJustifyStart },
-  { value: 'middle', label: 'Middle', Icon: AlignVerticalJustifyCenter },
-  { value: 'bottom', label: 'Bottom', Icon: AlignVerticalJustifyEnd },
+  {
+    value: 'top',
+    labelKey: 'canvas.align.top',
+    Icon: AlignVerticalJustifyStart,
+  },
+  {
+    value: 'middle',
+    labelKey: 'canvas.align.middle',
+    Icon: AlignVerticalJustifyCenter,
+  },
+  {
+    value: 'bottom',
+    labelKey: 'canvas.align.bottom',
+    Icon: AlignVerticalJustifyEnd,
+  },
 ]
 
 interface AlignRowProps<T> {
@@ -1445,14 +1493,18 @@ function AlignRow<T extends string>({
   active,
   onPick,
 }: AlignRowProps<T>) {
+  const t = useT()
   return (
     <div
       className="flex items-center gap-1.5 [&+&]:mt-1.5"
       role="group"
-      aria-label={rowLabel}
+      aria-label={t(`canvas.align.${rowLabel.toLowerCase()}`)}
     >
-      {options.map(({ value, label, Icon }) => {
+      {options.map(({ value, labelKey, Icon }) => {
         const isActive = value === active
+        const alignLabel = t('canvas.align.action', {
+          direction: t(labelKey).toLowerCase(),
+        })
         return (
           <button
             key={value}
@@ -1462,9 +1514,9 @@ function AlignRow<T extends string>({
                 ? 'border-transparent ring-2 ring-ring ring-offset-1 ring-offset-background'
                 : 'border-border/60'
             }`}
-            aria-label={`Align ${label.toLowerCase()}`}
+            aria-label={alignLabel}
             aria-pressed={isActive}
-            title={`Align ${label.toLowerCase()}`}
+            title={alignLabel}
             onClick={() => onPick(value)}
           >
             <Icon className="size-4" />
@@ -1503,15 +1555,20 @@ function AlignPreview({
 
 /** The current alignment in words, for the trigger's tooltip. */
 function alignSummary(
+  t: TFunction,
   textAlign: CanvasTextAlign | null,
   verticalAlign: CanvasVerticalAlign | null,
 ): string {
-  const horizontal =
-    HORIZONTAL_ALIGNS.find((option) => option.value === textAlign)?.label ??
-    'Mixed'
-  const vertical =
-    VERTICAL_ALIGNS.find((option) => option.value === verticalAlign)?.label ??
-    'Mixed'
+  const horizontalKey = HORIZONTAL_ALIGNS.find(
+    (option) => option.value === textAlign,
+  )?.labelKey
+  const verticalKey = VERTICAL_ALIGNS.find(
+    (option) => option.value === verticalAlign,
+  )?.labelKey
+  const horizontal = horizontalKey
+    ? t(horizontalKey)
+    : t('canvas.selection.mixed')
+  const vertical = verticalKey ? t(verticalKey) : t('canvas.selection.mixed')
   return `${horizontal} · ${vertical}`
 }
 
@@ -1532,8 +1589,13 @@ interface RadiusRowProps {
  * mean different things on a small shape and a large one.
  */
 function RadiusRow({ activeRadius, onPick }: RadiusRowProps) {
+  const t = useT()
   return (
-    <div className="flex items-center gap-1.5" role="group" aria-label="Corner">
+    <div
+      className="flex items-center gap-1.5"
+      role="group"
+      aria-label={t('canvas.selection.corner')}
+    >
       {CANVAS_CORNER_RADII.map((radius) => {
         const active = radius === activeRadius
         return (
@@ -1545,9 +1607,13 @@ function RadiusRow({ activeRadius, onPick }: RadiusRowProps) {
                 ? 'border-transparent ring-2 ring-ring ring-offset-1 ring-offset-background'
                 : 'border-border/60'
             }`}
-            aria-label={`Corner radius ${radius}`}
+            aria-label={t('canvas.selection.cornerRadiusAria', { radius })}
             aria-pressed={active}
-            title={radius === 0 ? 'Square corners' : `${radius}px corners`}
+            title={
+              radius === 0
+                ? t('canvas.selection.squareCorners')
+                : t('canvas.selection.pxCorners', { radius })
+            }
             onClick={() => onPick(radius)}
           >
             <span
@@ -1563,15 +1629,16 @@ function RadiusRow({ activeRadius, onPick }: RadiusRowProps) {
 
 /** The current text style in words, for the trigger's tooltip. */
 function textSummary(
+  t: TFunction,
   bold: boolean | null,
   italic: boolean | null,
   size: number | null,
 ): string {
   const parts = [
-    bold === true ? 'Bold' : null,
-    italic === true ? 'Italic' : null,
+    bold === true ? t('canvas.text.bold') : null,
+    italic === true ? t('canvas.text.italic') : null,
     size === null
-      ? 'Mixed size'
+      ? t('canvas.text.mixedSize')
       : (CANVAS_FONT_SIZES.find((option) => option.size === size)?.label ??
         `${size}px`),
   ]
@@ -1632,39 +1699,50 @@ function TextStyleRow({
   onToggleUnderline,
   onToggleStrikethrough,
 }: TextStyleRowProps) {
+  const t = useT()
   const toggles = [
-    { label: 'Bold', hint: 'Ctrl+B', on: bold, Icon: Bold, run: onToggleBold },
     {
-      label: 'Italic',
+      label: t('canvas.text.bold'),
+      hint: 'Ctrl+B',
+      on: bold,
+      Icon: Bold,
+      run: onToggleBold,
+    },
+    {
+      label: t('canvas.text.italic'),
       hint: 'Ctrl+I',
       on: italic,
       Icon: Italic,
       run: onToggleItalic,
     },
     {
-      label: 'Underline',
+      label: t('canvas.text.underline'),
       hint: 'Ctrl+U',
       on: underline,
       Icon: Underline,
       run: onToggleUnderline,
     },
     {
-      label: 'Strikethrough',
+      label: t('canvas.text.strikethrough'),
       hint: 'Ctrl+Shift+X',
       on: strikethrough,
       Icon: Strikethrough,
       run: onToggleStrikethrough,
     },
     {
-      label: 'Checklist',
-      hint: 'type [] at a line start',
+      label: t('canvas.text.checklist'),
+      hint: t('canvas.text.checklistHint'),
       on: checklist,
       Icon: ListTodo,
       run: onToggleChecklist,
     },
   ]
   return (
-    <div className="flex items-center gap-1.5" role="group" aria-label="Style">
+    <div
+      className="flex items-center gap-1.5"
+      role="group"
+      aria-label={t('canvas.text.styleGroup')}
+    >
       {toggles.map(({ label, hint, on, Icon, run }) => (
         <button
           key={label}
@@ -1694,11 +1772,12 @@ function TextSizeRow({
   activeSize: number | null
   onPick: (size: number) => void
 }) {
+  const t = useT()
   return (
     <div
       className="mt-1.5 flex items-center gap-1.5"
       role="group"
-      aria-label="Size"
+      aria-label={t('canvas.text.sizeGroup')}
     >
       {CANVAS_FONT_SIZES.map(({ size, label }) => {
         const active = size === activeSize
@@ -1711,7 +1790,7 @@ function TextSizeRow({
                 ? 'border-transparent ring-2 ring-ring ring-offset-1 ring-offset-background'
                 : 'border-border/60'
             }`}
-            aria-label={`Text size ${label}`}
+            aria-label={t('canvas.text.sizeAria', { label })}
             aria-pressed={active}
             title={`${label} (${size}px)`}
             onClick={() => onPick(size)}
@@ -1732,18 +1811,20 @@ function TextColorRow({
   activeColor: string | null
   onPick: (color: string) => void
 }) {
+  const t = useT()
   return (
     <div
       className="mt-1.5 grid grid-cols-5 gap-1.5"
       role="group"
-      aria-label="Text color"
+      aria-label={t('canvas.text.colorGroup')}
     >
-      {CANVAS_TEXT_COLORS.map(({ label, value }) => {
+      {CANVAS_TEXT_COLORS.map(({ label: colorId, value }) => {
+        const label = t(`canvas.color.${colorId.toLowerCase()}`)
         const active = value === activeColor
         const isDefault = value === DEFAULT_TEXT_COLOR
         return (
           <button
-            key={label}
+            key={colorId}
             type="button"
             className={`flex h-6 w-6 items-center justify-center rounded-full border-2 text-[10px] font-semibold transition-shadow ${
               active
@@ -1755,9 +1836,9 @@ function TextColorRow({
                 ? undefined
                 : { backgroundColor: value, borderColor: value }
             }
-            aria-label={`Text color ${label}`}
+            aria-label={t('canvas.text.colorAria', { label })}
             aria-pressed={active}
-            title={`Text color ${label}`}
+            title={t('canvas.text.colorAria', { label })}
             onClick={() => onPick(value)}
           >
             {isDefault ? 'A' : null}
@@ -1765,7 +1846,7 @@ function TextColorRow({
         )
       })}
       <CustomColourPopover
-        rowLabel="Text"
+        rowLabel={t('canvas.selection.text')}
         storedValue={activeColor}
         active={
           activeColor !== null &&
@@ -1827,14 +1908,18 @@ function SwatchRow({
   readSwatch,
   onPick,
 }: SwatchRowProps) {
+  const t = useT()
+  const row = t(
+    rowLabel === 'Fill' ? 'canvas.selection.fill' : 'canvas.selection.stroke',
+  )
   return (
-    <div
-      className="grid grid-cols-5 gap-1.5"
-      role="group"
-      aria-label={rowLabel}
-    >
+    <div className="grid grid-cols-5 gap-1.5" role="group" aria-label={row}>
       {CANVAS_SWATCHES.map((swatch) => {
         const value = readSwatch(swatch)
+        const swatchLabel = t('canvas.selection.swatchAria', {
+          row,
+          color: t(`canvas.color.${swatch.label.toLowerCase()}`),
+        })
         const active = value === activeSwatchValue
         return (
           <button
@@ -1850,15 +1935,15 @@ function SwatchRow({
                 : ''
             }`}
             style={swatchStyle(rowLabel, swatch, value)}
-            aria-label={`${rowLabel} ${swatch.label}`}
+            aria-label={swatchLabel}
             aria-pressed={active}
-            title={`${rowLabel} ${swatch.label}`}
+            title={swatchLabel}
             onClick={() => onPick(value)}
           />
         )
       })}
       <CustomColourPopover
-        rowLabel={rowLabel}
+        rowLabel={row}
         storedValue={activeSwatchValue}
         active={customActive}
         onApply={onPick}
@@ -1868,9 +1953,11 @@ function SwatchRow({
         size="icon"
         variant={noneActive ? 'default' : 'ghost'}
         className="h-6 w-6 border-2 border-transparent"
-        aria-label={`${rowLabel} none`}
+        aria-label={t('canvas.selection.swatchNone', { row })}
         aria-pressed={noneActive}
-        title={`No ${rowLabel.toLowerCase()}`}
+        title={t('canvas.selection.swatchNoneTitle', {
+          row: row.toLowerCase(),
+        })}
         onClick={() => onPick(null)}
       >
         <Ban className="size-3.5" />

@@ -23,6 +23,7 @@ import type {
   RefObject,
 } from 'react'
 import type { Point } from '@/lib/canvas-engine/camera'
+import { useT } from '@/lib/i18n/use-t'
 
 interface TextInputProxyProps {
   /** Lets the board focus the input in the same step that starts an edit. */
@@ -59,6 +60,7 @@ export function TextInputProxy({
   const ownRef = useRef<HTMLTextAreaElement | null>(null)
   const ref = inputRef ?? ownRef
   const composingRef = useRef(false)
+  const t = useT()
 
   useEffect(() => {
     const element = ref.current
@@ -138,7 +140,7 @@ export function TextInputProxy({
         caretColor: 'transparent',
         pointerEvents: 'none',
       }}
-      aria-label="Canvas text input"
+      aria-label={t('canvas.board.textInputAria')}
       autoComplete="off"
       autoCorrect="off"
       autoCapitalize="off"

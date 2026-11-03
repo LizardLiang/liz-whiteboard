@@ -20,6 +20,7 @@ import type { TextRunAttrs } from '@/lib/canvas-engine/text-runs'
 import type { TextEditStyleChange, TextToggleKey } from './use-canvas-input'
 import { worldToScreen } from '@/lib/canvas-engine/camera'
 import { resolveRuns } from '@/lib/canvas-engine/text-runs'
+import { useT } from '@/lib/i18n/use-t'
 import { isChecklistRange } from '@/lib/canvas-engine/text-todo'
 import {
   CANVAS_FONT_SIZES,
@@ -103,16 +104,31 @@ interface TextEditBarProps {
 
 const TOGGLES: ReadonlyArray<{
   key: TextToggleKey
-  label: string
+  labelKey: string
   hint: string
   Icon: ComponentType<{ className?: string }>
 }> = [
-  { key: 'fontWeight', label: 'Bold', hint: 'Ctrl+B', Icon: Bold },
-  { key: 'fontStyle', label: 'Italic', hint: 'Ctrl+I', Icon: Italic },
-  { key: 'underline', label: 'Underline', hint: 'Ctrl+U', Icon: Underline },
+  {
+    key: 'fontWeight',
+    labelKey: 'canvas.text.bold',
+    hint: 'Ctrl+B',
+    Icon: Bold,
+  },
+  {
+    key: 'fontStyle',
+    labelKey: 'canvas.text.italic',
+    hint: 'Ctrl+I',
+    Icon: Italic,
+  },
+  {
+    key: 'underline',
+    labelKey: 'canvas.text.underline',
+    hint: 'Ctrl+U',
+    Icon: Underline,
+  },
   {
     key: 'strikethrough',
-    label: 'Strikethrough',
+    labelKey: 'canvas.text.strikethrough',
     hint: 'Ctrl+Shift+X',
     Icon: Strikethrough,
   },
@@ -129,6 +145,7 @@ export function TextEditBar({
   onPick,
   onChecklist,
 }: TextEditBarProps) {
+  const t = useT()
   if (readOnly || !editing) return null
   const element = scene.byId.get(editing.elementId)
   if (!element) return null
@@ -152,32 +169,35 @@ export function TextEditBar({
         transform: 'translate(-50%, -100%)',
       }}
       role="toolbar"
-      aria-label="Text styling"
+      aria-label={t('canvas.text.stylingGroup')}
       onMouseDown={(event) => event.preventDefault()}
     >
-      {TOGGLES.map(({ key, label, hint, Icon }) => (
-        <button
-          key={key}
-          type="button"
-          className={`flex h-7 w-8 items-center justify-center rounded border transition-shadow ${
-            state[key] === true ? ACTIVE_RING : 'border-border/60'
-          }`}
-          aria-label={label}
-          aria-pressed={state[key] === true}
-          title={`${label} (${hint})`}
-          onClick={() => onPick({ kind: 'toggle', key })}
-        >
-          <Icon className="size-4" />
-        </button>
-      ))}
+      {TOGGLES.map(({ key, labelKey, hint, Icon }) => {
+        const label = t(labelKey)
+        return (
+          <button
+            key={key}
+            type="button"
+            className={`flex h-7 w-8 items-center justify-center rounded border transition-shadow ${
+              state[key] === true ? ACTIVE_RING : 'border-border/60'
+            }`}
+            aria-label={label}
+            aria-pressed={state[key] === true}
+            title={`${label} (${hint})`}
+            onClick={() => onPick({ kind: 'toggle', key })}
+          >
+            <Icon className="size-4" />
+          </button>
+        )
+      })}
       <button
         type="button"
         className={`flex h-7 w-8 items-center justify-center rounded border transition-shadow ${
           checklistOn ? ACTIVE_RING : 'border-border/60'
         }`}
-        aria-label="Checklist"
+        aria-label={t('canvas.text.checklist')}
         aria-pressed={checklistOn}
-        title="Checklist (type [] at a line start)"
+        title={t('canvas.text.checklistTitle')}
         onClick={onChecklist}
       >
         <ListTodo className="size-4" />
@@ -190,7 +210,7 @@ export function TextEditBar({
           className={`flex h-7 w-8 items-center justify-center rounded border text-xs font-medium transition-shadow ${
             state.fontSize === size ? ACTIVE_RING : 'border-border/60'
           }`}
-          aria-label={`Text size ${label}`}
+          aria-label={t('canvas.text.sizeAria', { label })}
           aria-pressed={state.fontSize === size}
           title={`${label} (${size}px)`}
           onClick={() => onPick({ kind: 'set', key: 'fontSize', value: size })}
@@ -199,12 +219,13 @@ export function TextEditBar({
         </button>
       ))}
       <span className="h-5 w-px bg-border" aria-hidden />
-      {CANVAS_TEXT_COLORS.map(({ label, value }) => {
+      {CANVAS_TEXT_COLORS.map(({ label: colorId, value }) => {
+        const label = t(`canvas.color.${colorId.toLowerCase()}`)
         const active = state.color === value
         const isDefault = value === DEFAULT_TEXT_COLOR
         return (
           <button
-            key={label}
+            key={colorId}
             type="button"
             className={`flex size-5 items-center justify-center rounded-full border-2 text-[10px] font-semibold transition-shadow ${
               active
@@ -216,7 +237,7 @@ export function TextEditBar({
                 ? undefined
                 : { backgroundColor: value, borderColor: value }
             }
-            aria-label={`Text color ${label}`}
+            aria-label={t('canvas.text.colorAria', { label })}
             aria-pressed={active}
             title={label}
             onClick={() => onPick({ kind: 'set', key: 'color', value })}

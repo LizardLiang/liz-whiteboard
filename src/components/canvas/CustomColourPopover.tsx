@@ -8,6 +8,7 @@
 import { useState } from 'react'
 import { Pipette } from 'lucide-react'
 import { Button } from '@/components/ui/button'
+import { useT } from '@/lib/i18n/use-t'
 import { Input } from '@/components/ui/input'
 import {
   Popover,
@@ -76,6 +77,7 @@ export function CustomColourPopover({
   const [hex, setHex] = useState(FALLBACK_HEX)
   const [transparency, setTransparency] = useState(0)
 
+  const t = useT()
   const lower = rowLabel.toLowerCase()
   const formatted = formatCustomColour({ hex, transparency })
 
@@ -103,9 +105,9 @@ export function CustomColourPopover({
               ? { backgroundColor: storedValue, borderColor: storedValue }
               : undefined
           }
-          aria-label={`Custom ${lower} colour`}
+          aria-label={t('canvas.custom.colour', { row: lower })}
           aria-pressed={active}
-          title={`Custom ${lower} colour`}
+          title={t('canvas.custom.colour', { row: lower })}
         >
           {active ? null : <Pipette className="size-3 text-muted-foreground" />}
         </button>
@@ -126,7 +128,7 @@ export function CustomColourPopover({
                 : FALLBACK_HEX
             }
             onChange={(event) => setHex(event.target.value)}
-            aria-label={`Custom ${lower} colour field`}
+            aria-label={t('canvas.custom.field', { row: lower })}
           />
           <Input
             className="h-8 font-mono text-xs"
@@ -134,13 +136,13 @@ export function CustomColourPopover({
             maxLength={7}
             spellCheck={false}
             onChange={(event) => setHex(event.target.value)}
-            aria-label={`Custom ${lower} hex`}
+            aria-label={t('canvas.custom.hex', { row: lower })}
             aria-invalid={formatted === null}
           />
         </div>
         <div className="space-y-1">
           <div className="flex justify-between text-[10px] font-medium uppercase tracking-wide text-muted-foreground">
-            <span>Transparency</span>
+            <span>{t('canvas.custom.transparencyLabel')}</span>
             <span>{transparency}%</span>
           </div>
           <Slider
@@ -149,7 +151,7 @@ export function CustomColourPopover({
             step={1}
             value={[transparency]}
             onValueChange={([next]) => setTransparency(next)}
-            aria-label={`Custom ${lower} transparency`}
+            aria-label={t('canvas.custom.transparency', { row: lower })}
           />
         </div>
         <Button
@@ -163,7 +165,7 @@ export function CustomColourPopover({
             setOpen(false)
           }}
         >
-          Apply
+          {t('canvas.custom.apply')}
         </Button>
       </PopoverContent>
     </Popover>

@@ -1,5 +1,5 @@
 // src/components/canvas/BoardStyleControl.tsx
-// The 看板樣式 popover: board-wide diagram style and flow-dot mode.
+// The board-style popover: board-wide diagram style and flow-dot mode.
 //
 // Plain buttons in groups rather than a ToggleGroup primitive (the project has
 // none installed). Viewers see the current values but cannot change them.
@@ -9,6 +9,7 @@ import type {
   CanvasBoardSettings,
   CanvasBoardSettingsPatch,
 } from '@/data/canvas-board-settings'
+import { useT } from '@/lib/i18n/use-t'
 import { Button } from '@/components/ui/button'
 import {
   Popover,
@@ -23,13 +24,13 @@ interface BoardStyleControlProps {
 }
 
 const STYLE_OPTIONS = [
-  { value: 'card', label: '卡片' },
-  { value: 'classic', label: '經典' },
+  { value: 'card', labelKey: 'canvas.boardStyle.card' },
+  { value: 'classic', labelKey: 'canvas.boardStyle.classic' },
 ] as const
 
 const DOT_OPTIONS = [
-  { value: 'path', label: '只在滑過或選取時' },
-  { value: 'always', label: '一直跑' },
+  { value: 'path', labelKey: 'canvas.boardStyle.dotsPath' },
+  { value: 'always', labelKey: 'canvas.boardStyle.dotsAlways' },
 ] as const
 
 function Group<T extends string>({
@@ -75,6 +76,15 @@ export function BoardStyleControl({
   readOnly,
   onChange,
 }: BoardStyleControlProps) {
+  const t = useT()
+  const styleOptions = STYLE_OPTIONS.map((option) => ({
+    value: option.value,
+    label: t(option.labelKey),
+  }))
+  const dotOptions = DOT_OPTIONS.map((option) => ({
+    value: option.value,
+    label: t(option.labelKey),
+  }))
   return (
     <Popover>
       <PopoverTrigger asChild>
@@ -82,8 +92,8 @@ export function BoardStyleControl({
           type="button"
           size="icon"
           variant="ghost"
-          aria-label="看板樣式"
-          title="看板樣式"
+          aria-label={t('canvas.boardStyle.control')}
+          title={t('canvas.boardStyle.control')}
         >
           <Palette className="h-4 w-4" />
         </Button>
@@ -96,15 +106,15 @@ export function BoardStyleControl({
         onKeyDown={(event) => event.stopPropagation()}
       >
         <Group
-          label="樣式"
-          options={STYLE_OPTIONS}
+          label={t('canvas.boardStyle.style')}
+          options={styleOptions}
           active={settings.diagramStyle}
           disabled={readOnly}
           onPick={(diagramStyle) => onChange({ diagramStyle })}
         />
         <Group
-          label="流動點"
-          options={DOT_OPTIONS}
+          label={t('canvas.boardStyle.flowDots')}
+          options={dotOptions}
           active={settings.flowDots}
           disabled={readOnly}
           onPick={(flowDots) => onChange({ flowDots })}

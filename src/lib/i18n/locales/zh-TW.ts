@@ -2,6 +2,7 @@
 // Traditional Chinese dictionary. Typed against the English shape, so a
 // missing key fails `bun run typecheck`.
 
+import { canvasZhTW } from './canvas-zh-TW'
 import { whiteboardZhTW } from './whiteboard-zh-TW'
 import type { DeepStringRecord, Dictionary } from './en'
 
@@ -369,6 +370,7 @@ export const zhTW: DeepStringRecord<Dictionary> = {
     },
   },
   whiteboard: whiteboardZhTW,
+  canvas: canvasZhTW,
   meta: {
     title: 'ER Whiteboard - 協作式圖表編輯器',
   },

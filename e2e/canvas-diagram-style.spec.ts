@@ -111,9 +111,9 @@ const insideCorner = (r: {
 })
 
 async function openBoardStyle(page: Page) {
-  await page.getByRole('button', { name: '看板樣式', exact: true }).click()
+  await page.getByRole('button', { name: 'Board style', exact: true }).click()
   await expect(
-    page.getByRole('group', { name: '樣式', exact: true }),
+    page.getByRole('group', { name: 'Style', exact: true }),
   ).toBeVisible()
 }
 
@@ -122,7 +122,7 @@ test('card look, per-card settings and persistence', async ({ page }) => {
 
   // Default board (no stored settings) opens as cards.
   await openBoardStyle(page)
-  await expect(page.getByRole('button', { name: '樣式 卡片' })).toHaveAttribute(
+  await expect(page.getByRole('button', { name: 'Style Card' })).toHaveAttribute(
     'aria-pressed',
     'true',
   )
@@ -139,13 +139,13 @@ test('card look, per-card settings and persistence', async ({ page }) => {
   const select = await worldToPage(page, insideCorner(SIZE_B))
   await page.mouse.click(select.x, select.y)
   const bar = page.getByRole('toolbar', { name: 'Selection' })
-  await bar.getByRole('button', { name: '卡片', exact: true }).click()
-  await page.getByRole('button', { name: '角色 系統' }).click()
-  const step = page.getByRole('textbox', { name: '步驟' })
+  await bar.getByRole('button', { name: 'Card', exact: true }).click()
+  await page.getByRole('button', { name: 'Role System' }).click()
+  const step = page.getByRole('textbox', { name: 'Step' })
   await step.fill('02')
   await step.press('Enter')
-  await page.getByRole('button', { name: '陰影 關' }).click()
-  await page.getByRole('button', { name: '外框 強調' }).click()
+  await page.getByRole('button', { name: 'Shadow Off' }).click()
+  await page.getByRole('button', { name: 'Border Accent' }).click()
   await page.keyboard.press('Escape')
   await bar.getByRole('button', { name: 'Fill', exact: true }).click()
   await page.getByRole('button', { name: 'Fill Tomato' }).click()
@@ -201,7 +201,7 @@ test('always mode keeps the frame loop running, classic restores stored paint', 
   await page.mouse.move(away.x, away.y)
 
   await openBoardStyle(page)
-  await page.getByRole('button', { name: '流動點 一直跑' }).click()
+  await page.getByRole('button', { name: 'Flow dots Always running' }).click()
   const rafCount = () =>
     page.evaluate(
       () => (window as unknown as { __rafCount: number }).__rafCount,
@@ -211,7 +211,7 @@ test('always mode keeps the frame loop running, classic restores stored paint', 
     .poll(async () => (await rafCount()) - before, { timeout: 10_000 })
     .toBeGreaterThan(10)
 
-  await page.getByRole('button', { name: '樣式 經典' }).click()
+  await page.getByRole('button', { name: 'Style Classic' }).click()
   await page.keyboard.press('Escape')
 
   // Classic: the stored 10% blue fill over an empty canvas, not an opaque
@@ -231,11 +231,11 @@ test('always mode keeps the frame loop running, classic restores stored paint', 
   }).toPass({ timeout: 20_000 })
 
   await openBoardStyle(page)
-  await expect(page.getByRole('button', { name: '樣式 經典' })).toHaveAttribute(
+  await expect(page.getByRole('button', { name: 'Style Classic' })).toHaveAttribute(
     'aria-pressed',
     'true',
   )
   await expect(
-    page.getByRole('button', { name: '流動點 一直跑' }),
+    page.getByRole('button', { name: 'Flow dots Always running' }),
   ).toHaveAttribute('aria-pressed', 'true')
 })

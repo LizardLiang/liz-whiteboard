@@ -32,14 +32,19 @@ export type CanvasTheme = 'light' | 'dark'
 export interface CardLook {
   diagramStyle: DiagramStyle
   theme: CanvasTheme
+  /** Translated role names for the chip; `CARD_ROLE_LABELS` when absent. */
+  roleLabels?: CardRoleLabels
 }
 
 /** The card look for a board style, or undefined for `classic`. */
 export function cardLookOf(
   diagramStyle: DiagramStyle | undefined,
   theme: CanvasTheme,
+  roleLabels?: CardRoleLabels,
 ): CardLook | undefined {
-  return diagramStyle === 'card' ? { diagramStyle, theme } : undefined
+  return diagramStyle === 'card'
+    ? { diagramStyle, theme, roleLabels }
+    : undefined
 }
 
 export type CardRole = Exclude<ReturnType<typeof effectiveRole>, null>
@@ -98,13 +103,17 @@ export const NOTE_DASH = [6, 4]
 /** Height reserved at the top of a card's text frame for the chip row. */
 export const CARD_TOP_ROW = 22
 
-export const CARD_ROLE_LABELS: Record<CardRole | 'none', string> = {
-  trigger: '觸發',
-  action: '操作',
-  system: '系統',
-  data: '資料',
-  note: '備註',
-  none: '無',
+/** The role names drawn on the card chip, in the language the host picked. */
+export type CardRoleLabels = Record<CardRole | 'none', string>
+
+/** English defaults, used when the host passes no labels (export, headless). */
+export const CARD_ROLE_LABELS: CardRoleLabels = {
+  trigger: 'Trigger',
+  action: 'Action',
+  system: 'System',
+  data: 'Data',
+  note: 'Note',
+  none: 'None',
 }
 
 export function isCard(look: CardLook | undefined): look is CardLook {

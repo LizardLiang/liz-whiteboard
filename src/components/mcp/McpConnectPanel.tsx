@@ -11,15 +11,37 @@ import { Check, Copy } from 'lucide-react'
 import { Link } from '@tanstack/react-router'
 import { toast } from 'sonner'
 import { MCP_PLATFORMS } from './mcp-platforms'
+import type { McpPlatformId } from './mcp-platforms'
 import { Button } from '@/components/ui/button'
-import {
-  Tabs,
-  TabsContent,
-  TabsList,
-  TabsTrigger,
-} from '@/components/ui/tabs'
+import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import { copyText } from '@/lib/copy-text'
+import { useT } from '@/lib/i18n/use-t'
 import { cn } from '@/lib/utils'
+
+// The platform table keeps English data (an accuracy-gated source list). The
+// panel shows the translation for each platform's note and steps by id.
+const STEP_KEY: Record<McpPlatformId, string> = {
+  'claude-code': 'claudeCode',
+  codex: 'codex',
+  vscode: 'vscode',
+  cursor: 'cursor',
+  'claude-desktop': 'claudeDesktop',
+  other: 'other',
+}
+
+const CONSENT_KEY: Record<McpPlatformId, string> = {
+  'claude-code': 'cimd',
+  codex: 'cimd',
+  vscode: 'unverified',
+  cursor: 'unverified',
+  'claude-desktop': 'unverified',
+  other: 'dcr',
+}
+
+const TRANSLATED_CONFIG_PATH: ReadonlySet<McpPlatformId> = new Set([
+  'vscode',
+  'other',
+])
 
 export interface McpConnectPanelProps {
   /** The user's MCP endpoint URL (from getMcpEndpointUrl()). */
@@ -31,6 +53,7 @@ export function McpConnectPanel({
   endpointUrl,
   className,
 }: McpConnectPanelProps) {
+  const t = useT()
   const [copiedId, setCopiedId] = useState<string | null>(null)
 
   // buildText() only depends on endpointUrl (stable across re-renders caused
@@ -51,12 +74,12 @@ export function McpConnectPanel({
     const ok = await copyText(text)
     if (ok) {
       setCopiedId(platformId)
-      toast.success('Copied to clipboard')
+      toast.success(t('canvas.mcp.copied'))
       window.setTimeout(() => {
         setCopiedId((current) => (current === platformId ? null : current))
       }, 2000)
     } else {
-      toast.error('Could not copy — select and copy the text manually.')
+      toast.error(t('canvas.mcp.copyFailed'))
     }
   }
 
@@ -86,9 +109,11 @@ export function McpConnectPanel({
             >
               {platform.configPath && (
                 <p className="text-xs text-muted-foreground">
-                  Add to{' '}
+                  {t('canvas.mcp.addTo')}{' '}
                   <code className="rounded bg-muted px-1 py-0.5">
-                    {platform.configPath}
+                    {TRANSLATED_CONFIG_PATH.has(platform.id)
+                      ? t(`canvas.mcp.configPath.${platform.id}`)
+                      : platform.configPath}
                   </code>
                 </p>
               )}
@@ -106,9 +131,12 @@ export function McpConnectPanel({
                   variant="ghost"
                   size="icon"
                   className="h-7 w-7 shrink-0"
-                  aria-label={`Copy ${platform.label} ${
-                    platform.kind === 'cli' ? 'command' : 'config'
-                  }`}
+                  aria-label={t(
+                    platform.kind === 'cli'
+                      ? 'canvas.mcp.copyCommandAria'
+                      : 'canvas.mcp.copyConfigAria',
+                    { platform: platform.label },
+                  )}
                   onClick={() => handleCopy(platform.id, text)}
                 >
                   {isCopied ? (
@@ -120,12 +148,16 @@ export function McpConnectPanel({
               </div>
 
               <p className="text-xs text-muted-foreground">
-                {platform.consentNote}
+                {t(`canvas.mcp.consent.${CONSENT_KEY[platform.id]}`)}
               </p>
 
               <ol className="list-decimal space-y-1 pl-4 text-xs text-muted-foreground">
-                {platform.steps.map((step) => (
-                  <li key={step}>{step}</li>
+                {platform.steps.map((step, index) => (
+                  <li key={step}>
+                    {t(
+                      `canvas.mcp.steps.${STEP_KEY[platform.id]}.s${index + 1}`,
+                    )}
+                  </li>
                 ))}
               </ol>
             </TabsContent>
@@ -137,7 +169,7 @@ export function McpConnectPanel({
         to="/settings/connections"
         className="mt-3 inline-block text-xs text-muted-foreground underline underline-offset-2 hover:text-foreground"
       >
-        Manage connected applications
+        {t('canvas.mcp.manage')}
       </Link>
     </div>
   )

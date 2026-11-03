@@ -4,6 +4,7 @@ import {
   CARD_ACCENT_BORDER_EXTRA,
   CARD_EDGE_WIDTH,
   CARD_RADIUS,
+  CARD_ROLE_LABELS,
   CARD_TOP_ROW,
   cardConnectorPaint,
   cardShapePaint,
@@ -409,6 +410,27 @@ describe('card render', () => {
     })
   })
 
+  it('card chip draws the role labels the host passes in', () => {
+    const rec = new Recorder()
+    renderPersistentScene(
+      rec,
+      sceneFrom([el({ text: 'Hi', style: { role: 'system', step: '02' } })]),
+      'light',
+      undefined,
+      undefined,
+      undefined,
+      undefined,
+      undefined,
+      'card',
+      undefined,
+      { ...CARD_ROLE_LABELS, system: 'Sistema' },
+    )
+    const lines = rec.calls.filter((call) => call.kind === 'line')
+    expect(
+      lines.map((call) => (call.payload as { text: string }).text),
+    ).toEqual(['Sistema', '02'])
+  })
+
   it('card paints the surface, shadow and the chip row', () => {
     const rec = new Recorder()
     renderPersistentScene(
@@ -433,7 +455,7 @@ describe('card render', () => {
     const lines = rec.calls.filter((call) => call.kind === 'line')
     expect(
       lines.map((call) => (call.payload as { text: string }).text),
-    ).toEqual(['系統', '02'])
+    ).toEqual(['System', '02'])
     // The label is laid out below the chip row, as a bold run.
     expect(rec.calls.some((call) => call.kind === 'piece')).toBe(true)
   })

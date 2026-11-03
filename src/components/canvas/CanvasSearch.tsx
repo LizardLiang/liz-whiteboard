@@ -19,6 +19,7 @@ import { SHAPE_TOOL_META } from './shape-tool-meta'
 import type { CanvasSearchEntry } from '@/lib/canvas-engine/search-index'
 import type { CanvasShapeKind, Scene } from '@/lib/canvas-engine/scene'
 import { buildCanvasSearchIndex } from '@/lib/canvas-engine/search-index'
+import { useT } from '@/lib/i18n/use-t'
 import { isCanvasShapeKind } from '@/lib/canvas-engine/scene'
 import {
   CommandDialog,
@@ -56,6 +57,7 @@ export function CanvasSearch({
   scene,
   onSelectElement,
 }: CanvasSearchProps) {
+  const t = useT()
   const index = useMemo(() => buildCanvasSearchIndex(scene), [scene])
 
   // The type-guard predicate (rather than a plain `=>` filter) is what lets
@@ -78,15 +80,15 @@ export function CanvasSearch({
     <CommandDialog
       open={open}
       onOpenChange={onOpenChange}
-      title="Search canvas elements"
-      description="Type an element's text to jump to it on the board."
+      title={t('canvas.board.searchTitle')}
+      description={t('canvas.board.searchDescription')}
     >
-      <CommandInput placeholder="Search canvas elements…" />
+      <CommandInput placeholder={t('canvas.board.searchPlaceholder')} />
       <CommandList>
-        <CommandEmpty>No matching elements.</CommandEmpty>
+        <CommandEmpty>{t('canvas.board.searchEmpty')}</CommandEmpty>
 
         {shapes.length > 0 && (
-          <CommandGroup heading="Shapes">
+          <CommandGroup heading={t('canvas.board.searchShapes')}>
             {shapes.map((entry) => {
               const Icon = SHAPE_TOOL_META[entry.kind].Icon
               return (
@@ -105,7 +107,7 @@ export function CanvasSearch({
         )}
 
         {texts.length > 0 && (
-          <CommandGroup heading="Text">
+          <CommandGroup heading={t('canvas.board.searchText')}>
             {texts.map((entry) => (
               <CommandItem
                 key={entry.elementId}
@@ -121,7 +123,7 @@ export function CanvasSearch({
         )}
 
         {connectors.length > 0 && (
-          <CommandGroup heading="Connectors">
+          <CommandGroup heading={t('canvas.board.searchConnectors')}>
             {connectors.map((entry) => (
               <CommandItem
                 key={entry.elementId}

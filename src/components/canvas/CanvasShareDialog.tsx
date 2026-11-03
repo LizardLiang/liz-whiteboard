@@ -18,12 +18,16 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { toast } from 'sonner'
 import { Link2 } from 'lucide-react'
 import type { InviteExpiryHours } from '@/data/schema'
+import type { Locale } from '@/lib/i18n/resolve-locale'
+import type { TFunction } from '@/lib/i18n/translate'
 import {
   createCanvasShareLink,
   listCanvasShareLinks,
   revokeCanvasShareLink,
 } from '@/routes/api/canvas-share'
 import { copyText } from '@/lib/copy-text'
+import { useI18n } from '@/lib/i18n/use-t'
+import { tError } from '@/lib/i18n/t-error'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
@@ -45,11 +49,11 @@ import {
 
 /** Same choices as ProjectSharePanel's EXPIRY_OPTIONS — the two link kinds
  * share one expiry policy, enforced by one Zod schema. */
-const EXPIRY_OPTIONS: Array<{ value: InviteExpiryHours; label: string }> = [
-  { value: 1, label: '1 hour' },
-  { value: 24, label: '24 hours' },
-  { value: 24 * 7, label: '7 days' },
-  { value: 24 * 30, label: '30 days' },
+const EXPIRY_OPTIONS: Array<{ value: InviteExpiryHours; labelKey: string }> = [
+  { value: 1, labelKey: 'project.share.expiry.hour1' },
+  { value: 24, labelKey: 'project.share.expiry.hours24' },
+  { value: 24 * 7, labelKey: 'project.share.expiry.days7' },
+  { value: 24 * 30, labelKey: 'project.share.expiry.days30' },
 ]
 
 interface CanvasShareDialogProps {
@@ -64,19 +68,20 @@ interface CanvasShareDialogProps {
  * reaches for it through `as any`; narrowing is the same length and keeps the
  * union honest if either shape changes.
  */
-function denialMessage(result: object, fallback: string): string {
+function denialMessage(t: TFunction, result: object, fallback: string): string {
   return 'message' in result && typeof result.message === 'string'
-    ? result.message
+    ? tError(t, result)
     : fallback
 }
 
-function formatDate(value: Date | string | null): string {
+function formatDate(locale: Locale, value: Date | string | null): string {
   if (!value) return '—'
   const d = value instanceof Date ? value : new Date(value)
-  return Number.isNaN(d.getTime()) ? '—' : d.toLocaleString()
+  return Number.isNaN(d.getTime()) ? '—' : d.toLocaleString(locale)
 }
 
 export function CanvasShareDialog({ boardId }: CanvasShareDialogProps) {
+  const { t, locale } = useI18n()
   const queryClient = useQueryClient()
   const [open, setOpen] = useState(false)
   const [expiresInHours, setExpiresInHours] = useState<InviteExpiryHours>(
@@ -97,10 +102,12 @@ export function CanvasShareDialog({ boardId }: CanvasShareDialogProps) {
 
   const createMutation = useMutation({
     mutationFn: () =>
-      createCanvasShareLink({ data: { canvasBoardId: boardId, expiresInHours } }),
+      createCanvasShareLink({
+        data: { canvasBoardId: boardId, expiresInHours },
+      }),
     onSuccess: (result) => {
       if ('error' in result) {
-        toast.error(denialMessage(result, 'Could not create the share link.'))
+        toast.error(denialMessage(t, result, t('canvas.share.createFailed')))
         return
       }
       // The one and only moment this value exists outside the creator's
@@ -111,23 +118,22 @@ export function CanvasShareDialog({ boardId }: CanvasShareDialogProps) {
         queryKey: ['canvas-share-links', boardId],
       })
     },
-    onError: () => toast.error('Could not create the share link.'),
+    onError: () => toast.error(t('canvas.share.createFailed')),
   })
 
   const revokeMutation = useMutation({
-    mutationFn: (linkId: string) =>
-      revokeCanvasShareLink({ data: { linkId } }),
+    mutationFn: (linkId: string) => revokeCanvasShareLink({ data: { linkId } }),
     onSuccess: (result) => {
       if ('error' in result) {
-        toast.error(denialMessage(result, 'Could not revoke the link.'))
+        toast.error(denialMessage(t, result, t('canvas.share.revokeFailed')))
         return
       }
-      toast.success('Link revoked.')
+      toast.success(t('canvas.share.revokedToast'))
       void queryClient.invalidateQueries({
         queryKey: ['canvas-share-links', boardId],
       })
     },
-    onError: () => toast.error('Could not revoke the link.'),
+    onError: () => toast.error(t('canvas.share.revokeFailed')),
   })
 
   const shareUrl = createdToken
@@ -138,7 +144,7 @@ export function CanvasShareDialog({ boardId }: CanvasShareDialogProps) {
     if (!shareUrl) return
     const didCopy = await copyText(shareUrl)
     if (!didCopy) {
-      toast.error('Could not copy — select and copy the link manually.')
+      toast.error(t('project.share.copyFailed'))
       return
     }
     setCopied(true)
@@ -160,27 +166,23 @@ export function CanvasShareDialog({ boardId }: CanvasShareDialogProps) {
       <DialogTrigger asChild>
         <Button variant="outline" size="sm">
           <Link2 className="mr-2 h-4 w-4" />
-          Share
+          {t('canvas.share.button')}
         </Button>
       </DialogTrigger>
       <DialogContent className="sm:max-w-lg">
         <DialogHeader>
-          <DialogTitle>Share this board</DialogTitle>
-          <DialogDescription>
-            Anyone with the link can view this board — no account needed. They
-            cannot edit it, and the link stops working when it expires or is
-            revoked.
-          </DialogDescription>
+          <DialogTitle>{t('canvas.share.title')}</DialogTitle>
+          <DialogDescription>{t('canvas.share.description')}</DialogDescription>
         </DialogHeader>
 
         <div className="flex items-end gap-2">
           <div className="flex-1 space-y-1.5">
-            <Label htmlFor="canvas-share-expiry">Link expires after</Label>
+            <Label htmlFor="canvas-share-expiry">
+              {t('canvas.share.expiresAfter')}
+            </Label>
             <Select
               value={String(expiresInHours)}
-              onValueChange={(v) =>
-                setExpiresInHours(Number(v))
-              }
+              onValueChange={(v) => setExpiresInHours(Number(v))}
             >
               <SelectTrigger id="canvas-share-expiry">
                 <SelectValue />
@@ -188,7 +190,7 @@ export function CanvasShareDialog({ boardId }: CanvasShareDialogProps) {
               <SelectContent>
                 {EXPIRY_OPTIONS.map((opt) => (
                   <SelectItem key={opt.value} value={String(opt.value)}>
-                    {opt.label}
+                    {t(opt.labelKey)}
                   </SelectItem>
                 ))}
               </SelectContent>
@@ -198,32 +200,36 @@ export function CanvasShareDialog({ boardId }: CanvasShareDialogProps) {
             onClick={() => createMutation.mutate()}
             disabled={createMutation.isPending}
           >
-            {createMutation.isPending ? 'Creating...' : 'Create link'}
+            {createMutation.isPending
+              ? t('canvas.share.creating')
+              : t('canvas.share.createLink')}
           </Button>
         </div>
 
         {createdToken && (
           <div className="space-y-1.5 rounded-md border bg-muted/40 p-3">
             <Label htmlFor="canvas-share-url">
-              Copy this link now — it cannot be shown again
+              {t('canvas.share.copyNow')}
             </Label>
             <div className="flex gap-2">
               <Input id="canvas-share-url" readOnly value={shareUrl} />
               <Button variant="secondary" onClick={handleCopy}>
-                {copied ? 'Copied' : 'Copy'}
+                {copied ? t('project.share.copied') : t('project.share.copy')}
               </Button>
             </div>
           </div>
         )}
 
         <div className="space-y-2">
-          <p className="text-sm font-medium">Existing links</p>
+          <p className="text-sm font-medium">{t('canvas.share.existing')}</p>
           {isLoading && (
-            <p className="text-sm text-muted-foreground">Loading...</p>
+            <p className="text-sm text-muted-foreground">
+              {t('canvas.share.loading')}
+            </p>
           )}
           {!isLoading && links.length === 0 && (
             <p className="text-sm text-muted-foreground">
-              No share links on this board yet.
+              {t('canvas.share.none')}
             </p>
           )}
           <ul className="space-y-1">
@@ -235,7 +241,11 @@ export function CanvasShareDialog({ boardId }: CanvasShareDialogProps) {
                   className="flex items-center justify-between gap-3 rounded-md border px-3 py-2 text-sm"
                 >
                   <span className="text-muted-foreground">
-                    {revoked ? 'Revoked' : `Expires ${formatDate(link.expiresAt)}`}
+                    {revoked
+                      ? t('project.share.revoked')
+                      : t('project.share.expiresOn', {
+                          date: formatDate(locale, link.expiresAt),
+                        })}
                   </span>
                   <Button
                     variant="ghost"
@@ -243,7 +253,7 @@ export function CanvasShareDialog({ boardId }: CanvasShareDialogProps) {
                     disabled={revoked || revokeMutation.isPending}
                     onClick={() => revokeMutation.mutate(link.id)}
                   >
-                    Revoke
+                    {t('project.share.revoke')}
                   </Button>
                 </li>
               )

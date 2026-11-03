@@ -63,7 +63,12 @@ import {
   isCardShape,
 } from './card-style'
 import { LEGACY_STROKES, presetRamp } from './colour-ramps'
-import type { CanvasTheme, CardLook, DiagramStyle } from './card-style'
+import type {
+  CanvasTheme,
+  CardLook,
+  CardRoleLabels,
+  DiagramStyle,
+} from './card-style'
 import type { AlignmentGuide } from './alignment'
 import type { Camera, Point } from './camera'
 import type { QuickCreateDirection } from './quick-create'
@@ -98,7 +103,12 @@ export interface Viewport {
   devicePixelRatio: number
 }
 
-export type { CanvasTheme, CardLook, DiagramStyle } from './card-style'
+export type {
+  CanvasTheme,
+  CardLook,
+  CardRoleLabels,
+  DiagramStyle,
+} from './card-style'
 
 /** The eight resize grips around a single selected element. */
 export type ResizeHandle = 'nw' | 'n' | 'ne' | 'e' | 'se' | 's' | 'sw' | 'w'
@@ -220,6 +230,8 @@ export interface DrawOptions {
   diagramStyle?: DiagramStyle
   /** Board setting: dots on the path only, or on every connector. */
   flowDots?: 'path' | 'always'
+  /** Translated card role names; English when absent. */
+  roleLabels?: CardRoleLabels
 }
 
 /** Opacity of everything outside a lit flow path. */
@@ -1058,7 +1070,7 @@ function drawCardTopRow(
   if (!isCard(look) || cardTopRowHeight(element, look) === 0) return
   const role = effectiveRole(element)
   const accent = cardAccent(element, look.theme)
-  const label = role ? CARD_ROLE_LABELS[role] : ''
+  const label = role ? (look.roleLabels ?? CARD_ROLE_LABELS)[role] : ''
   const step = element.style.step
   const chipSpec: CanvasFontSpec = {
     fontSize: 12,
@@ -2012,8 +2024,9 @@ export function renderPersistentScene(
   textSelection?: { elementId: string; start: number; end: number } | null,
   diagramStyle: DiagramStyle = 'classic',
   flow?: FlowRender | null,
+  roleLabels?: CardRoleLabels,
 ): TextLayout | null {
-  const look = cardLookOf(diagramStyle, theme)
+  const look = cardLookOf(diagramStyle, theme, roleLabels)
   // Flow cues belong to the card look; `classic` never reads them.
   const activeFlow = look && flow ? flow : null
   const lit = activeFlow !== null && activeFlow.elements.size > 0
@@ -2161,7 +2174,7 @@ export function drawScene(
 ): void {
   const theme = options.theme ?? 'light'
   const diagramStyle = options.diagramStyle ?? 'classic'
-  const look = cardLookOf(diagramStyle, theme)
+  const look = cardLookOf(diagramStyle, theme, options.roleLabels)
   const ratio = viewport.devicePixelRatio > 0 ? viewport.devicePixelRatio : 1
 
   syncBackingStore(ctx, viewport)
@@ -2222,6 +2235,7 @@ export function drawScene(
       : null,
     diagramStyle,
     flow,
+    options.roleLabels,
   )
   if (selection.draft) {
     // Never emphasized: a draft is never in `selection.ids` (it is not yet

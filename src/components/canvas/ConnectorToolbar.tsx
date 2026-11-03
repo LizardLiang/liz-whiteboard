@@ -29,6 +29,7 @@ import { worldToScreen } from '@/lib/canvas-engine/camera'
 import { pathMidpoint } from '@/lib/canvas-engine/connector-geometry'
 import { connectorPathOf } from '@/lib/canvas-engine/hit-test'
 import { Button } from '@/components/ui/button'
+import { useT } from '@/lib/i18n/use-t'
 
 /**
  * How far ABOVE the connector's midpoint the bar sits, in screen pixels.
@@ -107,6 +108,7 @@ export function ConnectorToolbar({
   readOnly,
   onRoutingChange,
 }: ConnectorToolbarProps) {
+  const t = useT()
   const element = connectorToolbarTarget(scene, selectedIds, readOnly)
   if (!element?.connector) return null
 
@@ -124,6 +126,8 @@ export function ConnectorToolbar({
 
   const anchor = worldToScreen(camera, midpoint)
   const active = element.connector.routing
+  const connectorLabel = (routing: CanvasConnectorRouting) =>
+    t('canvas.routing.connector', { label: t(`canvas.routing.${routing}`) })
 
   return (
     <div
@@ -138,17 +142,17 @@ export function ConnectorToolbar({
         transform: 'translate(-50%, -100%)',
       }}
       role="toolbar"
-      aria-label="Connector routing"
+      aria-label={t('canvas.routing.group')}
     >
-      {ROUTING_OPTIONS.map(({ routing, label, Icon }) => (
+      {ROUTING_OPTIONS.map(({ routing, Icon }) => (
         <Button
           key={routing}
           type="button"
           size="icon"
           variant={routing === active ? 'default' : 'ghost'}
-          aria-label={`${label} connector`}
+          aria-label={connectorLabel(routing)}
           aria-pressed={routing === active}
-          title={`${label} connector`}
+          title={connectorLabel(routing)}
           onClick={() => {
             // Re-selecting the current routing writes nothing. Otherwise every
             // stray click would push an undo entry that reverses to itself,
