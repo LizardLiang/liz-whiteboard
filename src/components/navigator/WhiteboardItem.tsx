@@ -10,6 +10,7 @@ import {
   RowActions,
 } from './RowActions'
 import { Button } from '@/components/ui/button'
+import { useT } from '@/lib/i18n/use-t'
 
 /**
  * Props for WhiteboardItem component
@@ -44,6 +45,7 @@ export function WhiteboardItem({
   draggable = true,
   onDragStart,
 }: WhiteboardItemProps) {
+  const t = useT()
   const [isDragging, setIsDragging] = useState(false)
 
   const handleDragStart = (e: React.DragEvent) => {
@@ -98,10 +100,10 @@ export function WhiteboardItem({
                 e.stopPropagation()
                 onRename(id, name)
               }}
-              title="Rename"
+              title={t('common.rename')}
             >
               <Pencil className="h-3 w-3" />
-              <span className="sr-only">Rename</span>
+              <span className="sr-only">{t('common.rename')}</span>
             </Button>
           )}
           {onDelete && (
@@ -114,10 +116,10 @@ export function WhiteboardItem({
                 e.stopPropagation()
                 onDelete(id, name)
               }}
-              title="Delete"
+              title={t('common.delete')}
             >
               <Trash2 className="h-3 w-3" />
-              <span className="sr-only">Delete</span>
+              <span className="sr-only">{t('common.delete')}</span>
             </Button>
           )}
         </RowActions>

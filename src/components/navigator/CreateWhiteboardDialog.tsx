@@ -20,6 +20,8 @@ import {
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { createWhiteboardFn } from '@/routes/api/whiteboards'
+import { useT } from '@/lib/i18n/use-t'
+import { tError } from '@/lib/i18n/t-error'
 
 interface CreateWhiteboardDialogProps {
   open: boolean
@@ -34,6 +36,7 @@ export function CreateWhiteboardDialog({
   projectId,
   folderId,
 }: CreateWhiteboardDialogProps) {
+  const t = useT()
   const navigate = useNavigate()
   const queryClient = useQueryClient()
   const [name, setName] = useState('')
@@ -42,15 +45,17 @@ export function CreateWhiteboardDialog({
     mutationFn: (data: CreateWhiteboard) => createWhiteboardFn({ data }),
     onSuccess: (whiteboard) => {
       if (isUnauthorizedError(whiteboard)) {
-        toast.error('Session expired', { description: 'Please log in again.' })
+        toast.error(t('toast.sessionExpired'), {
+          description: t('toast.loginAgain'),
+        })
         return
       }
       queryClient.invalidateQueries({ queryKey: ['projects'] })
       queryClient.invalidateQueries({ queryKey: ['project-page'] })
       onOpenChange(false)
       setName('')
-      toast.success('Whiteboard created!', {
-        description: `${whiteboard.name} has been created successfully.`,
+      toast.success(t('navigator.toast.whiteboardCreated'), {
+        description: t('toast.createdDesc', { name: whiteboard.name }),
       })
       navigate({
         to: '/whiteboard/$whiteboardId',
@@ -58,8 +63,8 @@ export function CreateWhiteboardDialog({
       })
     },
     onError: (error: Error) => {
-      toast.error('Failed to create whiteboard', {
-        description: error.message || 'An unexpected error occurred.',
+      toast.error(t('navigator.toast.failCreateWhiteboard'), {
+        description: tError(t, error) || t('toast.unexpected'),
       })
     },
   })
@@ -89,19 +94,21 @@ export function CreateWhiteboardDialog({
       <DialogContent>
         <form onSubmit={handleSubmit}>
           <DialogHeader>
-            <DialogTitle>Create Whiteboard</DialogTitle>
+            <DialogTitle>
+              {t('navigator.dialog.createWhiteboardTitle')}
+            </DialogTitle>
             <DialogDescription>
-              Create a new whiteboard for your ER diagrams.
+              {t('navigator.dialog.createWhiteboardDesc')}
             </DialogDescription>
           </DialogHeader>
           <div className="space-y-4 py-4">
             <div className="space-y-2">
-              <Label htmlFor="whiteboard-name">Name</Label>
+              <Label htmlFor="whiteboard-name">{t('common.name')}</Label>
               <Input
                 id="whiteboard-name"
                 value={name}
                 onChange={(e) => setName(e.target.value)}
-                placeholder="My Whiteboard"
+                placeholder={t('navigator.dialog.whiteboardPlaceholder')}
                 required
                 autoFocus
               />
@@ -113,13 +120,15 @@ export function CreateWhiteboardDialog({
               variant="outline"
               onClick={() => handleOpenChange(false)}
             >
-              Cancel
+              {t('common.cancel')}
             </Button>
             <Button
               type="submit"
               disabled={!name.trim() || createWhiteboardMutation.isPending}
             >
-              {createWhiteboardMutation.isPending ? 'Creating...' : 'Create'}
+              {createWhiteboardMutation.isPending
+                ? t('common.creating')
+                : t('common.create')}
             </Button>
           </DialogFooter>
         </form>

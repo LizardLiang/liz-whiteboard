@@ -109,3 +109,18 @@ test.describe('phase 2: auth pages', () => {
     await context.close()
   })
 })
+
+test.describe('phase 3: navigator and dashboard', () => {
+  test('sidebar navigator and project dashboard are Chinese for a zh-TW browser', async ({
+    browser,
+  }) => {
+    const { context, page } = await openAs(browser, 'zh-TW')
+    await page.goto('/')
+    await expect(page.getByRole('link', { name: '首頁' })).toBeVisible()
+    await expect(
+      page.getByRole('heading', { name: '專案', exact: true }),
+    ).toBeVisible()
+    await expect(page.getByRole('heading', { name: '所有專案' })).toBeVisible()
+    await context.close()
+  })
+})

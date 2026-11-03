@@ -29,6 +29,8 @@ import { Textarea } from '@/components/ui/textarea'
 import { createProjectFn, getProjectsWithTree } from '@/routes/api/projects'
 import { getRecentWhiteboards } from '@/routes/api/whiteboards'
 import { isUnauthorizedError } from '@/lib/auth/errors'
+import { useI18n } from '@/lib/i18n/use-t'
+import { tError } from '@/lib/i18n/t-error'
 
 export const Route = createFileRoute('/')({
   component: HomePage,
@@ -39,6 +41,7 @@ export const Route = createFileRoute('/')({
  * Shows list of projects and quick access to whiteboards
  */
 function HomePage() {
+  const { t, locale } = useI18n()
   const queryClient = useQueryClient()
   const [showCreateProject, setShowCreateProject] = useState(false)
   const [projectName, setProjectName] = useState('')
@@ -69,14 +72,13 @@ function HomePage() {
       setShowCreateProject(false)
       setProjectName('')
       setProjectDescription('')
-      toast.success('Project created successfully!', {
-        description: `${data.name} has been added to your projects.`,
+      toast.success(t('home.toast.projectCreated'), {
+        description: t('home.toast.projectAdded', { name: data.name }),
       })
     },
     onError: (error: Error) => {
-      toast.error('Failed to create project', {
-        description:
-          error.message || 'An unexpected error occurred. Please try again.',
+      toast.error(t('navigator.toast.failCreateProject'), {
+        description: tError(t, error) || t('home.toast.unexpectedRetry'),
       })
     },
   })
@@ -100,7 +102,9 @@ function HomePage() {
   if (projectsLoading) {
     return (
       <div className="flex items-center justify-center min-h-screen bg-background">
-        <p className="text-lg text-muted-foreground">Loading projects...</p>
+        <p className="text-lg text-muted-foreground">
+          {t('navigator.loadingProjects')}
+        </p>
       </div>
     )
   }
@@ -112,14 +116,12 @@ function HomePage() {
         <div className="container mx-auto px-4 py-6">
           <div className="flex items-center justify-between">
             <div>
-              <h1 className="text-3xl font-bold">ER Diagram Whiteboard</h1>
-              <p className="text-muted-foreground mt-1">
-                Collaborative database schema design tool
-              </p>
+              <h1 className="text-3xl font-bold">{t('home.title')}</h1>
+              <p className="text-muted-foreground mt-1">{t('home.tagline')}</p>
             </div>
             <Button onClick={() => setShowCreateProject(true)}>
               <PlusCircle className="mr-2 h-4 w-4" />
-              New Project
+              {t('home.newProject')}
             </Button>
           </div>
         </div>
@@ -131,14 +133,15 @@ function HomePage() {
           // Empty state
           <div className="flex flex-col items-center justify-center py-20">
             <FolderOpen className="h-24 w-24 text-muted-foreground mb-4" />
-            <h2 className="text-2xl font-semibold mb-2">No projects yet</h2>
+            <h2 className="text-2xl font-semibold mb-2">
+              {t('home.empty.title')}
+            </h2>
             <p className="text-muted-foreground mb-6 text-center max-w-md">
-              Get started by creating your first project to organize your ER
-              diagrams
+              {t('home.empty.description')}
             </p>
             <Button size="lg" onClick={() => setShowCreateProject(true)}>
               <PlusCircle className="mr-2 h-5 w-5" />
-              Create Your First Project
+              {t('home.empty.cta')}
             </Button>
           </div>
         ) : (
@@ -151,7 +154,7 @@ function HomePage() {
                   <div className="flex items-center gap-2 mb-4">
                     <Clock className="h-5 w-5 text-muted-foreground" />
                     <h2 className="text-2xl font-semibold">
-                      Recent Whiteboards
+                      {t('home.recent')}
                     </h2>
                   </div>
                   <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
@@ -171,7 +174,9 @@ function HomePage() {
                                 {board.name}
                               </CardTitle>
                               <CardDescription className="text-xs">
-                                {new Date(board.updatedAt).toLocaleDateString()}
+                                {new Date(board.updatedAt).toLocaleDateString(
+                                  locale,
+                                )}
                               </CardDescription>
                             </CardHeader>
                           </Card>
@@ -191,7 +196,9 @@ function HomePage() {
                                 {board.name}
                               </CardTitle>
                               <CardDescription className="text-xs">
-                                {new Date(board.updatedAt).toLocaleDateString()}
+                                {new Date(board.updatedAt).toLocaleDateString(
+                                  locale,
+                                )}
                               </CardDescription>
                             </CardHeader>
                           </Card>
@@ -205,7 +212,9 @@ function HomePage() {
             {/* Projects Section */}
             <div>
               <div className="flex items-center justify-between mb-4">
-                <h2 className="text-2xl font-semibold">All Projects</h2>
+                <h2 className="text-2xl font-semibold">
+                  {t('home.allProjects')}
+                </h2>
               </div>
               <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
                 {Array.isArray(projects) &&
@@ -230,12 +239,20 @@ function HomePage() {
                         <CardContent>
                           <div className="text-sm text-muted-foreground space-y-1">
                             <div>
-                              {project.folders.length} folder
-                              {project.folders.length !== 1 ? 's' : ''}
+                              {t(
+                                project.folders.length === 1
+                                  ? 'home.folderOne'
+                                  : 'home.folderOther',
+                                { count: project.folders.length },
+                              )}
                             </div>
                             <div>
-                              {project.whiteboards.length} whiteboard
-                              {project.whiteboards.length !== 1 ? 's' : ''}
+                              {t(
+                                project.whiteboards.length === 1
+                                  ? 'home.whiteboardOne'
+                                  : 'home.whiteboardOther',
+                                { count: project.whiteboards.length },
+                              )}
                             </div>
                           </div>
                         </CardContent>
@@ -252,7 +269,7 @@ function HomePage() {
       <div className="border-t mt-20">
         <div className="container mx-auto px-4 py-6">
           <p className="text-center text-sm text-muted-foreground">
-            Collaborative ER Diagram Whiteboard - Built with TanStack Start
+            {t('home.footer')}
           </p>
         </div>
       </div>
@@ -262,29 +279,33 @@ function HomePage() {
         <DialogContent>
           <form onSubmit={handleCreateProject}>
             <DialogHeader>
-              <DialogTitle>Create Project</DialogTitle>
+              <DialogTitle>
+                {t('navigator.dialog.createProjectTitle')}
+              </DialogTitle>
               <DialogDescription>
-                Create a new project to organize your whiteboards.
+                {t('navigator.dialog.createProjectDesc')}
               </DialogDescription>
             </DialogHeader>
             <div className="space-y-4 py-4">
               <div className="space-y-2">
-                <Label htmlFor="name">Name</Label>
+                <Label htmlFor="name">{t('common.name')}</Label>
                 <Input
                   id="name"
                   value={projectName}
                   onChange={(e) => setProjectName(e.target.value)}
-                  placeholder="My Project"
+                  placeholder={t('navigator.dialog.projectPlaceholder')}
                   required
                 />
               </div>
               <div className="space-y-2">
-                <Label htmlFor="description">Description (optional)</Label>
+                <Label htmlFor="description">
+                  {t('navigator.dialog.descriptionOptional')}
+                </Label>
                 <Textarea
                   id="description"
                   value={projectDescription}
                   onChange={(e) => setProjectDescription(e.target.value)}
-                  placeholder="Project description..."
+                  placeholder={t('navigator.dialog.descriptionPlaceholder')}
                   rows={3}
                 />
               </div>
@@ -299,7 +320,7 @@ function HomePage() {
                   setProjectDescription('')
                 }}
               >
-                Cancel
+                {t('common.cancel')}
               </Button>
               <Button
                 type="submit"
@@ -307,7 +328,9 @@ function HomePage() {
                   !projectName.trim() || createProjectMutation.isPending
                 }
               >
-                {createProjectMutation.isPending ? 'Creating...' : 'Create'}
+                {createProjectMutation.isPending
+                  ? t('common.creating')
+                  : t('common.create')}
               </Button>
             </DialogFooter>
           </form>

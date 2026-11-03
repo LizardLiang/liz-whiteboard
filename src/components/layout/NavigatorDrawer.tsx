@@ -16,6 +16,7 @@ import {
 } from '@/components/ui/sheet'
 import { NAVIGATOR_SEARCH_ATTR } from '@/components/navigator/NavigatorSearch'
 import { useNavigatorPin } from '@/hooks/use-navigator-pin'
+import { useT } from '@/lib/i18n/use-t'
 
 function isTypingTarget(target: EventTarget | null): boolean {
   const el = target as HTMLElement | null
@@ -28,6 +29,7 @@ function isTypingTarget(target: EventTarget | null): boolean {
  * outside click, or navigation.
  */
 export function NavigatorDrawer() {
+  const t = useT()
   const [open, setOpen] = useState(false)
   const { setPinned } = useNavigatorPin()
   const pathname = useRouterState({ select: (s) => s.location.pathname })
@@ -56,8 +58,8 @@ export function NavigatorDrawer() {
           variant="ghost"
           size="icon"
           className="h-8 w-8"
-          aria-label="Show project navigator"
-          title="Show project navigator ([)"
+          aria-label={t('layout.drawer.show')}
+          title={t('layout.drawer.showHint')}
         >
           <Menu className="h-4 w-4" />
         </Button>
@@ -76,17 +78,19 @@ export function NavigatorDrawer() {
         }}
       >
         <SheetHeader className="flex-row items-center justify-between gap-2 border-b py-2 pr-12">
-          <SheetTitle className="text-sm">Navigator</SheetTitle>
+          <SheetTitle className="text-sm">
+            {t('layout.drawer.title')}
+          </SheetTitle>
           <SheetDescription className="sr-only">
-            Browse projects, folders and boards
+            {t('layout.drawer.description')}
           </SheetDescription>
           <Button
             type="button"
             variant="ghost"
             size="icon"
             className="h-7 w-7"
-            aria-label="Pin navigator"
-            title="Pin navigator"
+            aria-label={t('layout.drawer.pin')}
+            title={t('layout.drawer.pin')}
             onClick={() => {
               setPinned(true)
               setOpen(false)

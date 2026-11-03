@@ -4,6 +4,7 @@
 import { AlertCircle } from 'lucide-react'
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert'
 import { Button } from '@/components/ui/button'
+import { useT } from '@/lib/i18n/use-t'
 
 interface ProjectPageErrorProps {
   message: string
@@ -11,10 +12,11 @@ interface ProjectPageErrorProps {
 }
 
 export function ProjectPageError({ message, onRetry }: ProjectPageErrorProps) {
+  const t = useT()
   return (
     <Alert variant="destructive">
       <AlertCircle className="h-4 w-4" />
-      <AlertTitle>Error</AlertTitle>
+      <AlertTitle>{t('common.error')}</AlertTitle>
       <AlertDescription className="flex items-center gap-3">
         <span>{message}</span>
         {onRetry && (
@@ -24,7 +26,7 @@ export function ProjectPageError({ message, onRetry }: ProjectPageErrorProps) {
             onClick={onRetry}
             className="shrink-0"
           >
-            Retry
+            {t('common.retry')}
           </Button>
         )}
       </AlertDescription>

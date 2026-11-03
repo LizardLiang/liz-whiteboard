@@ -7,6 +7,7 @@ import { NavigatorSearch } from '@/components/navigator/NavigatorSearch'
 import { ProjectTree } from '@/components/navigator/ProjectTree'
 import { Button } from '@/components/ui/button'
 import { cn } from '@/lib/utils'
+import { useT } from '@/lib/i18n/use-t'
 
 interface SidebarProps {
   /** Renders without the docked column chrome, to fill a drawer. */
@@ -20,6 +21,7 @@ interface SidebarProps {
  * Provides navigation to projects, folders, and whiteboards
  */
 export function Sidebar({ embedded = false, onUnpin }: SidebarProps) {
+  const t = useT()
   return (
     <aside
       className={cn(
@@ -40,7 +42,7 @@ export function Sidebar({ embedded = false, onUnpin }: SidebarProps) {
           }}
         >
           <Home className="h-4 w-4" />
-          <span>Home</span>
+          <span>{t('layout.sidebar.home')}</span>
         </Link>
         {onUnpin && (
           <Button
@@ -48,8 +50,8 @@ export function Sidebar({ embedded = false, onUnpin }: SidebarProps) {
             variant="ghost"
             size="icon"
             className="h-8 w-8"
-            aria-label="Unpin navigator"
-            title="Unpin navigator"
+            aria-label={t('layout.sidebar.unpin')}
+            title={t('layout.sidebar.unpin')}
             onClick={onUnpin}
           >
             <PinOff className="h-4 w-4" />

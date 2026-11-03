@@ -4,6 +4,7 @@
 import { FolderOpen } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { CreateBoardMenu } from '@/components/navigator/CreateBoardMenu'
+import { useT } from '@/lib/i18n/use-t'
 
 interface EmptyStateProps {
   onCreateWhiteboard: () => void
@@ -26,15 +27,18 @@ export function EmptyState({
   onCreateCanvasBoard,
   variant = 'empty-project',
 }: EmptyStateProps) {
+  const t = useT()
   const message =
     variant === 'first-user'
-      ? 'No projects yet. Create your first project to get started.'
+      ? t('project.empty.firstUser')
       : variant === 'no-permissions'
-        ? "You don't have any projects yet. Create a new project or ask a teammate to share one with you."
-        : 'Get started by creating your first whiteboard in this project.'
+        ? t('project.empty.noPermissions')
+        : t('project.empty.emptyProject')
 
   const title =
-    variant === 'no-permissions' ? 'No projects' : 'Nothing here yet'
+    variant === 'no-permissions'
+      ? t('project.empty.noProjectsTitle')
+      : t('project.empty.nothingYet')
 
   return (
     <div className="flex flex-col items-center justify-center py-20">
@@ -49,11 +53,11 @@ export function EmptyState({
             onCreateWhiteboard={onCreateWhiteboard}
             onCreateCanvasBoard={onCreateCanvasBoard}
           >
-            <Button size="lg">Create your first board</Button>
+            <Button size="lg">{t('project.empty.createFirstBoard')}</Button>
           </CreateBoardMenu>
         ) : (
           <Button size="lg" onClick={onCreateWhiteboard}>
-            Create your first whiteboard
+            {t('project.empty.createFirstWhiteboard')}
           </Button>
         ))}
     </div>

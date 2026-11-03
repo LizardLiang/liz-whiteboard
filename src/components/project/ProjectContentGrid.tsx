@@ -5,6 +5,7 @@
 import { Link } from '@tanstack/react-router'
 import { FileText, Folder, Shapes } from 'lucide-react'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
+import { useI18n } from '@/lib/i18n/use-t'
 
 interface ProjectContentGridProps {
   projectId: string
@@ -36,6 +37,7 @@ export function ProjectContentGrid({
   whiteboards,
   canvasBoards = [],
 }: ProjectContentGridProps) {
+  const { t, locale } = useI18n()
   return (
     <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4">
       {/* Folders first */}
@@ -82,10 +84,16 @@ export function ProjectContentGrid({
             </CardHeader>
             <CardContent>
               <div className="text-sm text-muted-foreground space-y-1">
-                <div>{new Date(whiteboard.updatedAt).toLocaleDateString()}</div>
                 <div>
-                  {whiteboard._count.tables} table
-                  {whiteboard._count.tables !== 1 ? 's' : ''}
+                  {new Date(whiteboard.updatedAt).toLocaleDateString(locale)}
+                </div>
+                <div>
+                  {t(
+                    whiteboard._count.tables === 1
+                      ? 'project.grid.tableOne'
+                      : 'project.grid.tableOther',
+                    { count: whiteboard._count.tables },
+                  )}
                 </div>
               </div>
             </CardContent>
@@ -114,10 +122,16 @@ export function ProjectContentGrid({
             </CardHeader>
             <CardContent>
               <div className="text-sm text-muted-foreground space-y-1">
-                <div>{new Date(board.updatedAt).toLocaleDateString()}</div>
                 <div>
-                  {board._count.elements} element
-                  {board._count.elements !== 1 ? 's' : ''}
+                  {new Date(board.updatedAt).toLocaleDateString(locale)}
+                </div>
+                <div>
+                  {t(
+                    board._count.elements === 1
+                      ? 'project.grid.elementOne'
+                      : 'project.grid.elementOther',
+                    { count: board._count.elements },
+                  )}
                 </div>
               </div>
             </CardContent>

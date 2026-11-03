@@ -26,6 +26,8 @@ import {
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { createCanvasBoardFn } from '@/lib/canvas-board/server-functions'
+import { useT } from '@/lib/i18n/use-t'
+import { tError } from '@/lib/i18n/t-error'
 
 interface CreateCanvasBoardDialogProps {
   open: boolean
@@ -40,6 +42,7 @@ export function CreateCanvasBoardDialog({
   projectId,
   folderId,
 }: CreateCanvasBoardDialogProps) {
+  const t = useT()
   const navigate = useNavigate()
   const queryClient = useQueryClient()
   const [name, setName] = useState('')
@@ -48,7 +51,9 @@ export function CreateCanvasBoardDialog({
     mutationFn: (data: CreateCanvasBoard) => createCanvasBoardFn({ data }),
     onSuccess: (board) => {
       if (isUnauthorizedError(board)) {
-        toast.error('Session expired', { description: 'Please log in again.' })
+        toast.error(t('toast.sessionExpired'), {
+          description: t('toast.loginAgain'),
+        })
         return
       }
       queryClient.invalidateQueries({ queryKey: ['projects'] })
@@ -56,8 +61,8 @@ export function CreateCanvasBoardDialog({
       queryClient.invalidateQueries({ queryKey: ['project-page'] })
       onOpenChange(false)
       setName('')
-      toast.success('Canvas board created!', {
-        description: `${board.name} has been created successfully.`,
+      toast.success(t('navigator.toast.canvasBoardCreated'), {
+        description: t('toast.createdDesc', { name: board.name }),
       })
       navigate({
         to: '/canvas/$boardId',
@@ -65,8 +70,8 @@ export function CreateCanvasBoardDialog({
       })
     },
     onError: (error: Error) => {
-      toast.error('Failed to create canvas board', {
-        description: error.message || 'An unexpected error occurred.',
+      toast.error(t('navigator.toast.failCreateCanvasBoard'), {
+        description: tError(t, error) || t('toast.unexpected'),
       })
     },
   })
@@ -96,19 +101,19 @@ export function CreateCanvasBoardDialog({
       <DialogContent>
         <form onSubmit={handleSubmit}>
           <DialogHeader>
-            <DialogTitle>Create Canvas Board</DialogTitle>
+            <DialogTitle>{t('navigator.dialog.createCanvasTitle')}</DialogTitle>
             <DialogDescription>
-              Create a new canvas board for freeform diagrams and notes.
+              {t('navigator.dialog.createCanvasDesc')}
             </DialogDescription>
           </DialogHeader>
           <div className="space-y-4 py-4">
             <div className="space-y-2">
-              <Label htmlFor="canvas-board-name">Name</Label>
+              <Label htmlFor="canvas-board-name">{t('common.name')}</Label>
               <Input
                 id="canvas-board-name"
                 value={name}
                 onChange={(e) => setName(e.target.value)}
-                placeholder="My Canvas Board"
+                placeholder={t('navigator.dialog.canvasPlaceholder')}
                 required
                 autoFocus
               />
@@ -120,13 +125,15 @@ export function CreateCanvasBoardDialog({
               variant="outline"
               onClick={() => handleOpenChange(false)}
             >
-              Cancel
+              {t('common.cancel')}
             </Button>
             <Button
               type="submit"
               disabled={!name.trim() || createCanvasBoardMutation.isPending}
             >
-              {createCanvasBoardMutation.isPending ? 'Creating...' : 'Create'}
+              {createCanvasBoardMutation.isPending
+                ? t('common.creating')
+                : t('common.create')}
             </Button>
           </DialogFooter>
         </form>

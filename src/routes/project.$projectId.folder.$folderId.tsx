@@ -18,12 +18,15 @@ import { CreateFolderDialog } from '@/components/navigator/CreateFolderDialog'
 import { CreateBoardMenu } from '@/components/navigator/CreateBoardMenu'
 import { getProjectPageContent } from '@/routes/api/projects'
 import { isForbiddenError, isUnauthorizedError } from '@/lib/auth/errors'
+import { useT } from '@/lib/i18n/use-t'
+import { tError } from '@/lib/i18n/t-error'
 
 export const Route = createFileRoute('/project/$projectId/folder/$folderId')({
   component: FolderPage,
 })
 
 export function FolderPage() {
+  const t = useT()
   const { projectId, folderId } = Route.useParams()
   const [whiteboardDialogOpen, setWhiteboardDialogOpen] = useState(false)
   const [canvasBoardDialogOpen, setCanvasBoardDialogOpen] = useState(false)
@@ -55,7 +58,9 @@ export function FolderPage() {
       <div className="container mx-auto px-4 py-8">
         <ProjectPageError
           message={
-            error instanceof Error ? error.message : 'Failed to load folder'
+            error instanceof Error
+              ? tError(t, error)
+              : t('project.page.loadFolderFailed')
           }
           onRetry={() => refetch()}
         />
@@ -84,7 +89,8 @@ export function FolderPage() {
     )
   }
 
-  const folderName = content.currentFolder?.name ?? 'Folder'
+  const folderName =
+    content.currentFolder?.name ?? t('project.page.folderFallback')
   const isEmpty =
     content.folders.length === 0 &&
     content.whiteboards.length === 0 &&
@@ -104,7 +110,7 @@ export function FolderPage() {
                 onClick={() => setFolderDialogOpen(true)}
               >
                 <FolderPlus className="mr-2 h-4 w-4" />
-                New Folder
+                {t('navigator.newFolder')}
               </Button>
               <CreateBoardMenu
                 onCreateWhiteboard={() => setWhiteboardDialogOpen(true)}
@@ -112,7 +118,7 @@ export function FolderPage() {
               >
                 <Button>
                   <Plus className="mr-2 h-4 w-4" />
-                  New board
+                  {t('navigator.newBoard')}
                 </Button>
               </CreateBoardMenu>
             </div>

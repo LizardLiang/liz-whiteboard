@@ -20,6 +20,7 @@ import {
   DropdownMenuItem,
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu'
+import { useT } from '@/lib/i18n/use-t'
 
 interface CreateBoardMenuProps {
   onCreateWhiteboard: () => void
@@ -35,6 +36,7 @@ export function CreateBoardMenu({
   children,
   align = 'start',
 }: CreateBoardMenuProps) {
+  const t = useT()
   const rowActions = useRowActionsMenu()
   return (
     <DropdownMenu onOpenChange={(open) => rowActions?.setMenuOpen(open)}>
@@ -42,11 +44,11 @@ export function CreateBoardMenu({
       <DropdownMenuContent align={align}>
         <DropdownMenuItem onSelect={onCreateWhiteboard}>
           <FileText className="h-4 w-4" />
-          New ERD board
+          {t('navigator.newErdBoard')}
         </DropdownMenuItem>
         <DropdownMenuItem onSelect={onCreateCanvasBoard}>
           <Shapes className="h-4 w-4" />
-          New Canvas board
+          {t('navigator.newCanvasBoard')}
         </DropdownMenuItem>
       </DropdownMenuContent>
     </DropdownMenu>

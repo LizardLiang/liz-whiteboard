@@ -10,6 +10,7 @@ import type { ConnectionState } from '@/hooks/use-collaboration'
 import { NavigatorDrawer } from '@/components/layout/NavigatorDrawer'
 import { useNavigatorPin } from '@/hooks/use-navigator-pin'
 import { cn } from '@/lib/utils'
+import { useT } from '@/lib/i18n/use-t'
 
 interface BoardChipProps {
   boardId: string
@@ -21,11 +22,11 @@ interface BoardChipProps {
   className?: string
 }
 
-const CONNECTION_LABEL: Record<ConnectionState, string> = {
-  connected: 'Connected',
-  connecting: 'Connecting...',
-  disconnected: 'Disconnected',
-}
+const CONNECTION_LABEL_KEY = {
+  connected: 'layout.connection.connected',
+  connecting: 'layout.connection.connecting',
+  disconnected: 'layout.connection.disconnected',
+} as const satisfies Record<ConnectionState, string>
 
 const CONNECTION_DOT: Record<ConnectionState, string> = {
   connected: 'bg-green-500',
@@ -40,6 +41,7 @@ export function BoardChip({
   trailing,
   className,
 }: BoardChipProps) {
+  const t = useT()
   const { isPinned } = useNavigatorPin()
   const projects = useProjectTree()
 
@@ -82,8 +84,8 @@ export function BoardChip({
             'mx-1 h-2 w-2 shrink-0 rounded-full',
             CONNECTION_DOT[connectionState],
           )}
-          title={CONNECTION_LABEL[connectionState]}
-          aria-label={CONNECTION_LABEL[connectionState]}
+          title={t(CONNECTION_LABEL_KEY[connectionState])}
+          aria-label={t(CONNECTION_LABEL_KEY[connectionState])}
         />
       )}
       {trailing}

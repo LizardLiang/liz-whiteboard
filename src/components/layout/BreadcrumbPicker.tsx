@@ -26,6 +26,7 @@ import {
   PopoverTrigger,
 } from '@/components/ui/popover'
 import { cn } from '@/lib/utils'
+import { useT } from '@/lib/i18n/use-t'
 
 interface BreadcrumbPickerProps {
   segment: PathSegment
@@ -41,6 +42,7 @@ export function BreadcrumbPicker({
   currentBoardId,
   className,
 }: BreadcrumbPickerProps) {
+  const t = useT()
   const [open, setOpen] = useState(false)
   const [folderId, setFolderId] = useState<string | null>(segment.folderId)
   const [query, setQuery] = useState('')
@@ -92,7 +94,7 @@ export function BreadcrumbPicker({
             'max-w-32 truncate rounded px-1 text-muted-foreground hover:bg-accent hover:text-accent-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring',
             className,
           )}
-          aria-label={`Browse ${segment.name}`}
+          aria-label={t('layout.breadcrumb.browse', { name: segment.name })}
           aria-haspopup="dialog"
           data-testid="breadcrumb-segment"
         >
@@ -102,15 +104,18 @@ export function BreadcrumbPicker({
       <PopoverContent
         align="start"
         className="w-72 p-0"
-        aria-label={`Contents of ${here}`}
+        aria-label={t('layout.breadcrumb.contentsOf', { name: here })}
         data-testid="breadcrumb-picker"
       >
-        <Command shouldFilter={false} label={`Contents of ${here}`}>
+        <Command
+          shouldFilter={false}
+          label={t('layout.breadcrumb.contentsOf', { name: here })}
+        >
           <CommandInput
             value={query}
             onValueChange={setQuery}
-            placeholder={`Filter in ${here}...`}
-            aria-label={`Filter contents of ${here}`}
+            placeholder={t('layout.breadcrumb.filterIn', { name: here })}
+            aria-label={t('layout.breadcrumb.filterContents', { name: here })}
           />
           <CommandList>
             {/* Hidden while filtering so Enter opens the first match. */}
@@ -120,16 +125,22 @@ export function BreadcrumbPicker({
                   <CommandItem
                     value="__up"
                     onSelect={() => drillTo(parent)}
-                    aria-label={`Back to ${parentName}`}
+                    aria-label={t('layout.breadcrumb.backTo', {
+                      name: parentName,
+                    })}
                   >
                     <ArrowUpLeft aria-hidden="true" />
-                    <span className="truncate">Back to {parentName}</span>
+                    <span className="truncate">
+                      {t('layout.breadcrumb.backTo', { name: parentName })}
+                    </span>
                   </CommandItem>
                 )}
                 <CommandItem value="__open" onSelect={openHere}>
                   <ExternalLink aria-hidden="true" />
                   <span className="truncate">
-                    Open {folderId === null ? 'project' : 'folder'} page
+                    {folderId === null
+                      ? t('layout.breadcrumb.openProjectPage')
+                      : t('layout.breadcrumb.openFolderPage')}
                   </span>
                 </CommandItem>
               </CommandGroup>
@@ -155,7 +166,10 @@ export function BreadcrumbPicker({
                   <EntryIcon type={entry.type} />
                   <span className="min-w-0 flex-1 truncate">{entry.name}</span>
                   {entry.id === currentBoardId && (
-                    <Check aria-label="Current board" className="size-4" />
+                    <Check
+                      aria-label={t('layout.breadcrumb.currentBoard')}
+                      className="size-4"
+                    />
                   )}
                   {entry.type === 'folder' && (
                     <ChevronRight aria-hidden="true" className="size-4" />
@@ -168,7 +182,9 @@ export function BreadcrumbPicker({
                 role="status"
                 className="py-4 text-center text-sm text-muted-foreground"
               >
-                {hasChildren ? 'No matches' : 'This folder is empty'}
+                {hasChildren
+                  ? t('layout.breadcrumb.noMatches')
+                  : t('layout.breadcrumb.folderEmpty')}
               </p>
             )}
           </CommandList>

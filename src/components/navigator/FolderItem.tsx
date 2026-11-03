@@ -28,6 +28,7 @@ import {
   CollapsibleContent,
   CollapsibleTrigger,
 } from '@/components/ui/collapsible'
+import { useT } from '@/lib/i18n/use-t'
 
 /**
  * Maximum nesting depth for folders
@@ -104,6 +105,7 @@ export function FolderItem({
   onWhiteboardDrop,
   onCanvasBoardDrop,
 }: FolderItemProps) {
+  const t = useT()
   const [isOpen, setIsOpen] = useState(false)
   const [isDragOver, setIsDragOver] = useState(false)
 
@@ -219,10 +221,10 @@ export function FolderItem({
                   size="sm"
                   className={ROW_ACTION_BUTTON_CLASS}
                   onClick={(e) => e.stopPropagation()}
-                  title="New board"
+                  title={t('navigator.newBoard')}
                 >
                   <Plus className="h-3 w-3" />
-                  <span className="sr-only">New board</span>
+                  <span className="sr-only">{t('navigator.newBoard')}</span>
                 </Button>
               </CreateBoardMenu>
             )}
@@ -235,10 +237,10 @@ export function FolderItem({
                   e.stopPropagation()
                   onCreateFolder(folder.id)
                 }}
-                title="New Subfolder"
+                title={t('navigator.newSubfolder')}
               >
                 <Folder className="h-3 w-3" />
-                <span className="sr-only">New Subfolder</span>
+                <span className="sr-only">{t('navigator.newSubfolder')}</span>
               </Button>
             )}
             {onRenameFolder && (
@@ -250,10 +252,10 @@ export function FolderItem({
                   e.stopPropagation()
                   onRenameFolder(folder.id, folder.name)
                 }}
-                title="Rename"
+                title={t('common.rename')}
               >
                 <Pencil className="h-3 w-3" />
-                <span className="sr-only">Rename</span>
+                <span className="sr-only">{t('common.rename')}</span>
               </Button>
             )}
             {onDeleteFolder && (
@@ -265,10 +267,10 @@ export function FolderItem({
                   e.stopPropagation()
                   onDeleteFolder(folder.id, folder.name)
                 }}
-                title="Delete"
+                title={t('common.delete')}
               >
                 <Trash2 className="h-3 w-3" />
-                <span className="sr-only">Delete</span>
+                <span className="sr-only">{t('common.delete')}</span>
               </Button>
             )}
           </RowActions>
@@ -332,7 +334,7 @@ export function FolderItem({
             folder.childFolders &&
             folder.childFolders.length > 0 && (
               <div className="px-3 py-2 text-xs text-muted-foreground italic">
-                Maximum nesting depth reached
+                {t('navigator.maxDepth')}
               </div>
             )}
         </div>

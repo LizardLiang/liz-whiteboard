@@ -72,6 +72,8 @@ import {
   updateCanvasBoardFn,
 } from '@/lib/canvas-board/server-functions'
 import { isForbiddenError, isUnauthorizedError } from '@/lib/auth/errors'
+import { useT } from '@/lib/i18n/use-t'
+import { tError } from '@/lib/i18n/t-error'
 
 /**
  * Dialog state types
@@ -114,6 +116,7 @@ type CreateCanvasBoardDialogState = {
  * Displays hierarchical navigation tree for projects, folders, and whiteboards
  */
 export function ProjectTree() {
+  const t = useT()
   const navigate = useNavigate()
   const params = useParams({ strict: false })
   const queryClient = useQueryClient()
@@ -165,20 +168,22 @@ export function ProjectTree() {
     mutationFn: (data: CreateProject) => createProjectFn({ data }),
     onSuccess: (data) => {
       if (isUnauthorizedError(data)) {
-        toast.error('Session expired', { description: 'Please log in again.' })
+        toast.error(t('toast.sessionExpired'), {
+          description: t('toast.loginAgain'),
+        })
         return
       }
       queryClient.invalidateQueries({ queryKey: ['projects'] })
       queryClient.invalidateQueries({ queryKey: ['projects', 'tree'] })
       setDialogState({ type: 'none' })
       resetForm()
-      toast.success('Project created!', {
-        description: `${data.name} has been created successfully.`,
+      toast.success(t('navigator.toast.projectCreated'), {
+        description: t('toast.createdDesc', { name: data.name }),
       })
     },
     onError: (error: Error) => {
-      toast.error('Failed to create project', {
-        description: error.message || 'An unexpected error occurred.',
+      toast.error(t('navigator.toast.failCreateProject'), {
+        description: tError(t, error) || t('toast.unexpected'),
       })
     },
   })
@@ -188,23 +193,27 @@ export function ProjectTree() {
       updateProjectFn({ data }),
     onSuccess: (data) => {
       if (isUnauthorizedError(data)) {
-        toast.error('Session expired', { description: 'Please log in again.' })
+        toast.error(t('toast.sessionExpired'), {
+          description: t('toast.loginAgain'),
+        })
         return
       }
       if (isForbiddenError(data)) {
-        toast.error('Failed to update project', { description: data.message })
+        toast.error(t('navigator.toast.failUpdateProject'), {
+          description: tError(t, data),
+        })
         return
       }
       queryClient.invalidateQueries({ queryKey: ['projects'] })
       setDialogState({ type: 'none' })
       resetForm()
-      toast.success('Project updated!', {
-        description: `${data.name} has been updated successfully.`,
+      toast.success(t('navigator.toast.projectUpdated'), {
+        description: t('toast.updatedDesc', { name: data.name }),
       })
     },
     onError: (error: Error) => {
-      toast.error('Failed to update project', {
-        description: error.message || 'An unexpected error occurred.',
+      toast.error(t('navigator.toast.failUpdateProject'), {
+        description: tError(t, error) || t('toast.unexpected'),
       })
     },
   })
@@ -214,13 +223,13 @@ export function ProjectTree() {
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['projects'] })
       setDialogState({ type: 'none' })
-      toast.success('Project deleted', {
-        description: 'The project has been deleted successfully.',
+      toast.success(t('navigator.toast.projectDeleted'), {
+        description: t('navigator.toast.projectDeletedDesc'),
       })
     },
     onError: (error: Error) => {
-      toast.error('Failed to delete project', {
-        description: error.message || 'An unexpected error occurred.',
+      toast.error(t('navigator.toast.failDeleteProject'), {
+        description: tError(t, error) || t('toast.unexpected'),
       })
     },
   })
@@ -230,23 +239,27 @@ export function ProjectTree() {
       updateFolderFn({ data }),
     onSuccess: (data) => {
       if (isUnauthorizedError(data)) {
-        toast.error('Session expired', { description: 'Please log in again.' })
+        toast.error(t('toast.sessionExpired'), {
+          description: t('toast.loginAgain'),
+        })
         return
       }
       if (isForbiddenError(data)) {
-        toast.error('Failed to update folder', { description: data.message })
+        toast.error(t('navigator.toast.failUpdateFolder'), {
+          description: tError(t, data),
+        })
         return
       }
       queryClient.invalidateQueries({ queryKey: ['projects'] })
       setDialogState({ type: 'none' })
       resetForm()
-      toast.success('Folder updated!', {
-        description: `${data.name} has been updated successfully.`,
+      toast.success(t('navigator.toast.folderUpdated'), {
+        description: t('toast.updatedDesc', { name: data.name }),
       })
     },
     onError: (error: Error) => {
-      toast.error('Failed to update folder', {
-        description: error.message || 'An unexpected error occurred.',
+      toast.error(t('navigator.toast.failUpdateFolder'), {
+        description: tError(t, error) || t('toast.unexpected'),
       })
     },
   })
@@ -256,13 +269,13 @@ export function ProjectTree() {
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['projects'] })
       setDialogState({ type: 'none' })
-      toast.success('Folder deleted', {
-        description: 'The folder has been deleted successfully.',
+      toast.success(t('navigator.toast.folderDeleted'), {
+        description: t('navigator.toast.folderDeletedDesc'),
       })
     },
     onError: (error: Error) => {
-      toast.error('Failed to delete folder', {
-        description: error.message || 'An unexpected error occurred.',
+      toast.error(t('navigator.toast.failDeleteFolder'), {
+        description: tError(t, error) || t('toast.unexpected'),
       })
     },
   })
@@ -272,20 +285,22 @@ export function ProjectTree() {
       updateWhiteboardFn({ data }),
     onSuccess: (data) => {
       if (isUnauthorizedError(data)) {
-        toast.error('Session expired', { description: 'Please log in again.' })
+        toast.error(t('toast.sessionExpired'), {
+          description: t('toast.loginAgain'),
+        })
         return
       }
       queryClient.invalidateQueries({ queryKey: ['projects'] })
       queryClient.invalidateQueries({ queryKey: ['whiteboard'] })
       setDialogState({ type: 'none' })
       resetForm()
-      toast.success('Whiteboard updated!', {
-        description: `${data.name} has been updated successfully.`,
+      toast.success(t('navigator.toast.whiteboardUpdated'), {
+        description: t('toast.updatedDesc', { name: data.name }),
       })
     },
     onError: (error: Error) => {
-      toast.error('Failed to update whiteboard', {
-        description: error.message || 'An unexpected error occurred.',
+      toast.error(t('navigator.toast.failUpdateWhiteboard'), {
+        description: tError(t, error) || t('toast.unexpected'),
       })
     },
   })
@@ -296,8 +311,8 @@ export function ProjectTree() {
     onSuccess: (_, deletedId) => {
       queryClient.invalidateQueries({ queryKey: ['projects'] })
       setDialogState({ type: 'none' })
-      toast.success('Whiteboard deleted', {
-        description: 'The whiteboard has been deleted successfully.',
+      toast.success(t('navigator.toast.whiteboardDeleted'), {
+        description: t('navigator.toast.whiteboardDeletedDesc'),
       })
       // Navigate home if we deleted the active whiteboard
       if (deletedId === activeWhiteboardId) {
@@ -305,8 +320,8 @@ export function ProjectTree() {
       }
     },
     onError: (error: Error) => {
-      toast.error('Failed to delete whiteboard', {
-        description: error.message || 'An unexpected error occurred.',
+      toast.error(t('navigator.toast.failDeleteWhiteboard'), {
+        description: tError(t, error) || t('toast.unexpected'),
       })
     },
   })
@@ -316,19 +331,21 @@ export function ProjectTree() {
       updateCanvasBoardFn({ data }),
     onSuccess: (data) => {
       if (isUnauthorizedError(data)) {
-        toast.error('Session expired', { description: 'Please log in again.' })
+        toast.error(t('toast.sessionExpired'), {
+          description: t('toast.loginAgain'),
+        })
         return
       }
       queryClient.invalidateQueries({ queryKey: ['projects'] })
       setDialogState({ type: 'none' })
       resetForm()
-      toast.success('Canvas board updated!', {
-        description: `${data.name} has been updated successfully.`,
+      toast.success(t('navigator.toast.canvasBoardUpdated'), {
+        description: t('toast.updatedDesc', { name: data.name }),
       })
     },
     onError: (error: Error) => {
-      toast.error('Failed to update canvas board', {
-        description: error.message || 'An unexpected error occurred.',
+      toast.error(t('navigator.toast.failUpdateCanvasBoard'), {
+        description: tError(t, error) || t('toast.unexpected'),
       })
     },
   })
@@ -339,8 +356,8 @@ export function ProjectTree() {
     onSuccess: (_, deletedId) => {
       queryClient.invalidateQueries({ queryKey: ['projects'] })
       setDialogState({ type: 'none' })
-      toast.success('Canvas board deleted', {
-        description: 'The canvas board has been deleted successfully.',
+      toast.success(t('navigator.toast.canvasBoardDeleted'), {
+        description: t('navigator.toast.canvasBoardDeletedDesc'),
       })
       // Navigate home if we deleted the active canvas board
       if (deletedId === activeCanvasBoardId) {
@@ -348,8 +365,8 @@ export function ProjectTree() {
       }
     },
     onError: (error: Error) => {
-      toast.error('Failed to delete canvas board', {
-        description: error.message || 'An unexpected error occurred.',
+      toast.error(t('navigator.toast.failDeleteCanvasBoard'), {
+        description: tError(t, error) || t('toast.unexpected'),
       })
     },
   })
@@ -537,7 +554,7 @@ export function ProjectTree() {
   if (isLoading) {
     return (
       <div className="p-4 text-sm text-muted-foreground">
-        Loading projects...
+        {t('navigator.loadingProjects')}
       </div>
     )
   }
@@ -547,7 +564,7 @@ export function ProjectTree() {
       {/* Header with Create Project button */}
       <div className="flex items-center justify-between px-2">
         <h3 className="text-xs font-semibold text-muted-foreground uppercase">
-          Projects
+          {t('navigator.projects')}
         </h3>
         <Button
           variant="ghost"
@@ -556,14 +573,14 @@ export function ProjectTree() {
           onClick={handleCreateProject}
         >
           <Plus className="h-4 w-4" />
-          <span className="sr-only">Create project</span>
+          <span className="sr-only">{t('navigator.createProject')}</span>
         </Button>
       </div>
 
       {/* Projects list */}
       {!projects || !Array.isArray(projects) || projects.length === 0 ? (
         <div className="px-3 py-2 text-sm text-muted-foreground">
-          No projects yet. Create one to get started.
+          {t('navigator.noProjects')}
         </div>
       ) : (
         <div className="space-y-1">
@@ -604,7 +621,9 @@ export function ProjectTree() {
                         variant="ghost"
                         size="sm"
                         className="h-8 w-6 p-0 flex-shrink-0"
-                        aria-label={`Toggle ${project.name} tree`}
+                        aria-label={t('navigator.toggleTree', {
+                          name: project.name,
+                        })}
                         onClick={(e) => {
                           e.stopPropagation()
                           toggleProject(project.id)
@@ -634,10 +653,12 @@ export function ProjectTree() {
                         size="sm"
                         className={ROW_ACTION_BUTTON_CLASS}
                         onClick={(e) => e.stopPropagation()}
-                        title="New board"
+                        title={t('navigator.newBoard')}
                       >
                         <Plus className="h-3 w-3" />
-                        <span className="sr-only">New board</span>
+                        <span className="sr-only">
+                          {t('navigator.newBoard')}
+                        </span>
                       </Button>
                     </CreateBoardMenu>
                     <Button
@@ -648,10 +669,12 @@ export function ProjectTree() {
                         e.stopPropagation()
                         handleCreateFolder(project.id)
                       }}
-                      title="New Folder"
+                      title={t('navigator.newFolder')}
                     >
                       <FolderPlus className="h-3 w-3" />
-                      <span className="sr-only">New Folder</span>
+                      <span className="sr-only">
+                        {t('navigator.newFolder')}
+                      </span>
                     </Button>
                     <Button
                       variant="ghost"
@@ -665,10 +688,10 @@ export function ProjectTree() {
                           project.description || undefined,
                         )
                       }}
-                      title="Rename"
+                      title={t('common.rename')}
                     >
                       <Pencil className="h-3 w-3" />
-                      <span className="sr-only">Rename</span>
+                      <span className="sr-only">{t('common.rename')}</span>
                     </Button>
                     <Button
                       variant="ghost"
@@ -678,10 +701,10 @@ export function ProjectTree() {
                         e.stopPropagation()
                         handleDeleteProject(project.id, project.name)
                       }}
-                      title="Delete"
+                      title={t('common.delete')}
                     >
                       <Trash2 className="h-3 w-3" />
-                      <span className="sr-only">Delete</span>
+                      <span className="sr-only">{t('common.delete')}</span>
                     </Button>
                   </RowActions>
                 </div>
@@ -770,35 +793,35 @@ export function ProjectTree() {
             <DialogHeader>
               <DialogTitle>
                 {dialogState.type === 'createProject'
-                  ? 'Create Project'
-                  : 'Edit Project'}
+                  ? t('navigator.dialog.createProjectTitle')
+                  : t('navigator.dialog.editProjectTitle')}
               </DialogTitle>
               <DialogDescription>
                 {dialogState.type === 'createProject'
-                  ? 'Create a new project to organize your whiteboards.'
-                  : 'Update the project details.'}
+                  ? t('navigator.dialog.createProjectDesc')
+                  : t('navigator.dialog.editProjectDesc')}
               </DialogDescription>
             </DialogHeader>
             <div className="space-y-4 py-4">
               <div className="space-y-2">
-                <Label htmlFor="project-name">Name</Label>
+                <Label htmlFor="project-name">{t('common.name')}</Label>
                 <Input
                   id="project-name"
                   value={formName}
                   onChange={(e) => setFormName(e.target.value)}
-                  placeholder="My Project"
+                  placeholder={t('navigator.dialog.projectPlaceholder')}
                   required
                 />
               </div>
               <div className="space-y-2">
                 <Label htmlFor="project-description">
-                  Description (optional)
+                  {t('navigator.dialog.descriptionOptional')}
                 </Label>
                 <Textarea
                   id="project-description"
                   value={formDescription}
                   onChange={(e) => setFormDescription(e.target.value)}
-                  placeholder="Project description..."
+                  placeholder={t('navigator.dialog.descriptionPlaceholder')}
                   rows={3}
                 />
               </div>
@@ -812,10 +835,12 @@ export function ProjectTree() {
                   resetForm()
                 }}
               >
-                Cancel
+                {t('common.cancel')}
               </Button>
               <Button type="submit" disabled={!formName.trim()}>
-                {dialogState.type === 'createProject' ? 'Create' : 'Save'}
+                {dialogState.type === 'createProject'
+                  ? t('common.create')
+                  : t('common.save')}
               </Button>
             </DialogFooter>
           </form>
@@ -831,14 +856,15 @@ export function ProjectTree() {
       >
         <DialogContent>
           <DialogHeader>
-            <DialogTitle>Delete Project</DialogTitle>
+            <DialogTitle>
+              {t('navigator.dialog.deleteProjectTitle')}
+            </DialogTitle>
             <DialogDescription>
-              Are you sure you want to delete{' '}
+              {t('navigator.dialog.deleteConfirmPrefix')}
               <strong>
                 {dialogState.type === 'deleteProject' ? dialogState.name : ''}
               </strong>
-              ? This will permanently delete all folders and whiteboards in this
-              project.
+              {t('navigator.dialog.deleteProjectSuffix')}
             </DialogDescription>
           </DialogHeader>
           <DialogFooter>
@@ -846,7 +872,7 @@ export function ProjectTree() {
               variant="outline"
               onClick={() => setDialogState({ type: 'none' })}
             >
-              Cancel
+              {t('common.cancel')}
             </Button>
             <Button
               variant="destructive"
@@ -856,7 +882,7 @@ export function ProjectTree() {
                 }
               }}
             >
-              Delete
+              {t('common.delete')}
             </Button>
           </DialogFooter>
         </DialogContent>
@@ -885,17 +911,21 @@ export function ProjectTree() {
         <DialogContent>
           <form onSubmit={handleSubmitFolder}>
             <DialogHeader>
-              <DialogTitle>Rename Folder</DialogTitle>
-              <DialogDescription>Update the folder name.</DialogDescription>
+              <DialogTitle>
+                {t('navigator.dialog.renameFolderTitle')}
+              </DialogTitle>
+              <DialogDescription>
+                {t('navigator.dialog.renameFolderDesc')}
+              </DialogDescription>
             </DialogHeader>
             <div className="space-y-4 py-4">
               <div className="space-y-2">
-                <Label htmlFor="folder-name">Name</Label>
+                <Label htmlFor="folder-name">{t('common.name')}</Label>
                 <Input
                   id="folder-name"
                   value={formName}
                   onChange={(e) => setFormName(e.target.value)}
-                  placeholder="My Folder"
+                  placeholder={t('navigator.dialog.folderPlaceholder')}
                   required
                 />
               </div>
@@ -909,10 +939,10 @@ export function ProjectTree() {
                   resetForm()
                 }}
               >
-                Cancel
+                {t('common.cancel')}
               </Button>
               <Button type="submit" disabled={!formName.trim()}>
-                Save
+                {t('common.save')}
               </Button>
             </DialogFooter>
           </form>
@@ -928,14 +958,13 @@ export function ProjectTree() {
       >
         <DialogContent>
           <DialogHeader>
-            <DialogTitle>Delete Folder</DialogTitle>
+            <DialogTitle>{t('navigator.dialog.deleteFolderTitle')}</DialogTitle>
             <DialogDescription>
-              Are you sure you want to delete{' '}
+              {t('navigator.dialog.deleteConfirmPrefix')}
               <strong>
                 {dialogState.type === 'deleteFolder' ? dialogState.name : ''}
               </strong>
-              ? This will permanently delete all subfolders and whiteboards in
-              this folder.
+              {t('navigator.dialog.deleteFolderSuffix')}
             </DialogDescription>
           </DialogHeader>
           <DialogFooter>
@@ -943,7 +972,7 @@ export function ProjectTree() {
               variant="outline"
               onClick={() => setDialogState({ type: 'none' })}
             >
-              Cancel
+              {t('common.cancel')}
             </Button>
             <Button
               variant="destructive"
@@ -953,7 +982,7 @@ export function ProjectTree() {
                 }
               }}
             >
-              Delete
+              {t('common.delete')}
             </Button>
           </DialogFooter>
         </DialogContent>
@@ -982,17 +1011,21 @@ export function ProjectTree() {
         <DialogContent>
           <form onSubmit={handleSubmitWhiteboard}>
             <DialogHeader>
-              <DialogTitle>Rename Whiteboard</DialogTitle>
-              <DialogDescription>Update the whiteboard name.</DialogDescription>
+              <DialogTitle>
+                {t('navigator.dialog.renameWhiteboardTitle')}
+              </DialogTitle>
+              <DialogDescription>
+                {t('navigator.dialog.renameWhiteboardDesc')}
+              </DialogDescription>
             </DialogHeader>
             <div className="space-y-4 py-4">
               <div className="space-y-2">
-                <Label htmlFor="whiteboard-name">Name</Label>
+                <Label htmlFor="whiteboard-name">{t('common.name')}</Label>
                 <Input
                   id="whiteboard-name"
                   value={formName}
                   onChange={(e) => setFormName(e.target.value)}
-                  placeholder="My Whiteboard"
+                  placeholder={t('navigator.dialog.whiteboardPlaceholder')}
                   required
                 />
               </div>
@@ -1006,10 +1039,10 @@ export function ProjectTree() {
                   resetForm()
                 }}
               >
-                Cancel
+                {t('common.cancel')}
               </Button>
               <Button type="submit" disabled={!formName.trim()}>
-                Save
+                {t('common.save')}
               </Button>
             </DialogFooter>
           </form>
@@ -1025,16 +1058,17 @@ export function ProjectTree() {
       >
         <DialogContent>
           <DialogHeader>
-            <DialogTitle>Delete Whiteboard</DialogTitle>
+            <DialogTitle>
+              {t('navigator.dialog.deleteWhiteboardTitle')}
+            </DialogTitle>
             <DialogDescription>
-              Are you sure you want to delete{' '}
+              {t('navigator.dialog.deleteConfirmPrefix')}
               <strong>
                 {dialogState.type === 'deleteWhiteboard'
                   ? dialogState.name
                   : ''}
               </strong>
-              ? This will permanently delete all tables and relationships in
-              this whiteboard.
+              {t('navigator.dialog.deleteWhiteboardSuffix')}
             </DialogDescription>
           </DialogHeader>
           <DialogFooter>
@@ -1042,7 +1076,7 @@ export function ProjectTree() {
               variant="outline"
               onClick={() => setDialogState({ type: 'none' })}
             >
-              Cancel
+              {t('common.cancel')}
             </Button>
             <Button
               variant="destructive"
@@ -1052,7 +1086,7 @@ export function ProjectTree() {
                 }
               }}
             >
-              Delete
+              {t('common.delete')}
             </Button>
           </DialogFooter>
         </DialogContent>
@@ -1081,19 +1115,21 @@ export function ProjectTree() {
         <DialogContent>
           <form onSubmit={handleSubmitCanvasBoard}>
             <DialogHeader>
-              <DialogTitle>Rename Canvas Board</DialogTitle>
+              <DialogTitle>
+                {t('navigator.dialog.renameCanvasTitle')}
+              </DialogTitle>
               <DialogDescription>
-                Update the canvas board name.
+                {t('navigator.dialog.renameCanvasDesc')}
               </DialogDescription>
             </DialogHeader>
             <div className="space-y-4 py-4">
               <div className="space-y-2">
-                <Label htmlFor="canvas-board-rename">Name</Label>
+                <Label htmlFor="canvas-board-rename">{t('common.name')}</Label>
                 <Input
                   id="canvas-board-rename"
                   value={formName}
                   onChange={(e) => setFormName(e.target.value)}
-                  placeholder="My Canvas Board"
+                  placeholder={t('navigator.dialog.canvasPlaceholder')}
                   required
                 />
               </div>
@@ -1107,10 +1143,10 @@ export function ProjectTree() {
                   resetForm()
                 }}
               >
-                Cancel
+                {t('common.cancel')}
               </Button>
               <Button type="submit" disabled={!formName.trim()}>
-                Save
+                {t('common.save')}
               </Button>
             </DialogFooter>
           </form>
@@ -1126,15 +1162,15 @@ export function ProjectTree() {
       >
         <DialogContent>
           <DialogHeader>
-            <DialogTitle>Delete Canvas Board</DialogTitle>
+            <DialogTitle>{t('navigator.dialog.deleteCanvasTitle')}</DialogTitle>
             <DialogDescription>
-              Are you sure you want to delete{' '}
+              {t('navigator.dialog.deleteConfirmPrefix')}
               <strong>
                 {dialogState.type === 'deleteCanvasBoard'
                   ? dialogState.name
                   : ''}
               </strong>
-              ? This will permanently delete every element on this canvas board.
+              {t('navigator.dialog.deleteCanvasSuffix')}
             </DialogDescription>
           </DialogHeader>
           <DialogFooter>
@@ -1142,7 +1178,7 @@ export function ProjectTree() {
               variant="outline"
               onClick={() => setDialogState({ type: 'none' })}
             >
-              Cancel
+              {t('common.cancel')}
             </Button>
             <Button
               variant="destructive"
@@ -1152,7 +1188,7 @@ export function ProjectTree() {
                 }
               }}
             >
-              Delete
+              {t('common.delete')}
             </Button>
           </DialogFooter>
         </DialogContent>

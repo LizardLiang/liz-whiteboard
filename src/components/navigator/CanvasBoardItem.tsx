@@ -19,6 +19,7 @@ import {
   RowActions,
 } from './RowActions'
 import { Button } from '@/components/ui/button'
+import { useT } from '@/lib/i18n/use-t'
 
 /**
  * Props for CanvasBoardItem component
@@ -53,6 +54,7 @@ export function CanvasBoardItem({
   draggable = true,
   onDragStart,
 }: CanvasBoardItemProps) {
+  const t = useT()
   const [isDragging, setIsDragging] = useState(false)
 
   const handleDragStart = (e: React.DragEvent) => {
@@ -110,10 +112,10 @@ export function CanvasBoardItem({
                 e.stopPropagation()
                 onRename(id, name)
               }}
-              title="Rename"
+              title={t('common.rename')}
             >
               <Pencil className="h-3 w-3" />
-              <span className="sr-only">Rename</span>
+              <span className="sr-only">{t('common.rename')}</span>
             </Button>
           )}
           {onDelete && (
@@ -126,10 +128,10 @@ export function CanvasBoardItem({
                 e.stopPropagation()
                 onDelete(id, name)
               }}
-              title="Delete"
+              title={t('common.delete')}
             >
               <Trash2 className="h-3 w-3" />
-              <span className="sr-only">Delete</span>
+              <span className="sr-only">{t('common.delete')}</span>
             </Button>
           )}
         </RowActions>

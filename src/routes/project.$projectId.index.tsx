@@ -21,12 +21,15 @@ import { ProjectSharePanel } from '@/components/project/ProjectSharePanel'
 import { getProjectPageContent } from '@/routes/api/projects'
 import { hasMinimumRole } from '@/lib/auth/permissions'
 import { isForbiddenError, isUnauthorizedError } from '@/lib/auth/errors'
+import { useT } from '@/lib/i18n/use-t'
+import { tError } from '@/lib/i18n/t-error'
 
 export const Route = createFileRoute('/project/$projectId/')({
   component: ProjectPage,
 })
 
 export function ProjectPage() {
+  const t = useT()
   const { projectId } = Route.useParams()
   const [whiteboardDialogOpen, setWhiteboardDialogOpen] = useState(false)
   const [canvasBoardDialogOpen, setCanvasBoardDialogOpen] = useState(false)
@@ -58,7 +61,9 @@ export function ProjectPage() {
       <div className="container mx-auto px-4 py-8">
         <ProjectPageError
           message={
-            error instanceof Error ? error.message : 'Failed to load project'
+            error instanceof Error
+              ? tError(t, error)
+              : t('project.page.loadProjectFailed')
           }
           onRetry={() => refetch()}
         />
@@ -103,7 +108,7 @@ export function ProjectPage() {
               {hasMinimumRole(content.viewerRole, 'ADMIN') && (
                 <Button variant="outline" onClick={() => setShareOpen(true)}>
                   <Share2 className="mr-2 h-4 w-4" />
-                  Share
+                  {t('project.page.share')}
                 </Button>
               )}
               <Button
@@ -111,7 +116,7 @@ export function ProjectPage() {
                 onClick={() => setFolderDialogOpen(true)}
               >
                 <FolderPlus className="mr-2 h-4 w-4" />
-                New Folder
+                {t('navigator.newFolder')}
               </Button>
               <CreateBoardMenu
                 onCreateWhiteboard={() => setWhiteboardDialogOpen(true)}
@@ -119,7 +124,7 @@ export function ProjectPage() {
               >
                 <Button>
                   <Plus className="mr-2 h-4 w-4" />
-                  New board
+                  {t('navigator.newBoard')}
                 </Button>
               </CreateBoardMenu>
             </div>

@@ -44,28 +44,30 @@ import {
 } from '@/routes/api/share'
 import { getWhiteboardsByProject } from '@/routes/api/whiteboards'
 import { copyText } from '@/lib/copy-text'
+import { useI18n, useT } from '@/lib/i18n/use-t'
+import { tError } from '@/lib/i18n/t-error'
 
-const EXPIRY_OPTIONS: Array<{ value: InviteExpiryHours; label: string }> = [
-  { value: 1, label: '1 hour' },
-  { value: 24, label: '24 hours' },
-  { value: 24 * 7, label: '7 days' },
-  { value: 24 * 30, label: '30 days' },
-]
+const EXPIRY_OPTIONS = [
+  { value: 1, labelKey: 'project.share.expiry.hour1' },
+  { value: 24, labelKey: 'project.share.expiry.hours24' },
+  { value: 24 * 7, labelKey: 'project.share.expiry.days7' },
+  { value: 24 * 30, labelKey: 'project.share.expiry.days30' },
+] as const satisfies ReadonlyArray<{
+  value: InviteExpiryHours
+  labelKey: string
+}>
 
 /** VIEWER/EDITOR/ADMIN role choices — shared by every role Select in this
  * panel (add-a-person, existing-member role change, invite-link role). */
-const ROLE_OPTIONS: Array<{ value: ProjectRole; label: string }> = [
-  { value: 'VIEWER', label: 'Viewer' },
-  { value: 'EDITOR', label: 'Editor' },
-  { value: 'ADMIN', label: 'Admin' },
-]
+const ROLE_OPTIONS: Array<ProjectRole> = ['VIEWER', 'EDITOR', 'ADMIN']
 
 function RoleSelectItems() {
+  const t = useT()
   return (
     <>
-      {ROLE_OPTIONS.map((opt) => (
-        <SelectItem key={opt.value} value={opt.value}>
-          {opt.label}
+      {ROLE_OPTIONS.map((role) => (
+        <SelectItem key={role} value={role}>
+          {t(`invite.roles.${role}`)}
         </SelectItem>
       ))}
     </>
@@ -117,6 +119,7 @@ export function ProjectSharePanel({
   open,
   onOpenChange,
 }: ProjectSharePanelProps) {
+  const { t, locale } = useI18n()
   const queryClient = useQueryClient()
   const [addEmail, setAddEmail] = useState('')
   const [addRole, setAddRole] = useState<ProjectRole>('VIEWER')
@@ -187,7 +190,10 @@ export function ProjectSharePanel({
       }),
     onSuccess: (result) => {
       if ('error' in result) {
-        setAddError((result as any).message || 'Failed to add user')
+        setAddError(
+          tError(t, result as { message?: string }) ||
+            t('project.share.addFailed'),
+        )
         return
       }
       setAddEmail('')
@@ -195,7 +201,7 @@ export function ProjectSharePanel({
       setAddError(null)
       invalidate()
     },
-    onError: () => setAddError('Failed to add user'),
+    onError: () => setAddError(t('project.share.addFailed')),
   })
 
   const updateMutation = useMutation({
@@ -283,7 +289,7 @@ export function ProjectSharePanel({
     const url = `${window.location.origin}/invite/${createdInviteToken}`
     const didCopy = await copyText(url)
     if (!didCopy) {
-      toast.error('Could not copy — select and copy the link manually.')
+      toast.error(t('project.share.copyFailed'))
       return
     }
     setCopied(true)
@@ -294,7 +300,7 @@ export function ProjectSharePanel({
     const url = `${window.location.origin}/share/${createdShareToken}`
     const didCopy = await copyText(url)
     if (!didCopy) {
-      toast.error('Could not copy — select and copy the link manually.')
+      toast.error(t('project.share.copyFailed'))
       return
     }
     setShareCopied(true)
@@ -316,16 +322,16 @@ export function ProjectSharePanel({
     <Sheet open={open} onOpenChange={onOpenChange}>
       <SheetContent className="w-full gap-0 sm:max-w-lg" side="right">
         <SheetHeader className="px-6 pt-6 pb-4">
-          <SheetTitle>Share Project</SheetTitle>
-          <SheetDescription>
-            Manage who has access to this project and their roles.
-          </SheetDescription>
+          <SheetTitle>{t('project.share.title')}</SheetTitle>
+          <SheetDescription>{t('project.share.description')}</SheetDescription>
         </SheetHeader>
 
         <div className="flex-1 space-y-6 overflow-y-auto px-6 pt-2 pb-6">
           {/* Add user form */}
           <form onSubmit={handleAddUser} className="space-y-3">
-            <Label className="text-sm font-medium">Add a person</Label>
+            <Label className="text-sm font-medium">
+              {t('project.share.addPerson')}
+            </Label>
             <div className="flex gap-2">
               <Input
                 type="email"
@@ -333,13 +339,16 @@ export function ProjectSharePanel({
                 value={addEmail}
                 onChange={(e) => setAddEmail(e.target.value)}
                 className="flex-1"
-                aria-label="Email address to add"
+                aria-label={t('project.share.emailAria')}
               />
               <Select
                 value={addRole}
                 onValueChange={(v) => setAddRole(v as ProjectRole)}
               >
-                <SelectTrigger className="w-28" aria-label="Select role">
+                <SelectTrigger
+                  className="w-28"
+                  aria-label={t('project.share.selectRole')}
+                >
                   <SelectValue />
                 </SelectTrigger>
                 <SelectContent>
@@ -362,17 +371,26 @@ export function ProjectSharePanel({
               disabled={!addEmail || grantMutation.isPending}
               className="w-full"
             >
-              {grantMutation.isPending ? 'Adding...' : 'Add'}
+              {grantMutation.isPending
+                ? t('project.share.adding')
+                : t('project.share.add')}
             </Button>
           </form>
 
           {/* Current members */}
           <div>
-            <Label className="text-sm font-medium">Current access</Label>
+            <Label className="text-sm font-medium">
+              {t('project.share.currentAccess')}
+            </Label>
             {isLoading ? (
-              <p className="mt-2 text-sm text-muted-foreground">Loading...</p>
+              <p className="mt-2 text-sm text-muted-foreground">
+                {t('common.loading')}
+              </p>
             ) : (
-              <ul className="mt-2 space-y-2" aria-label="Project members">
+              <ul
+                className="mt-2 space-y-2"
+                aria-label={t('project.share.membersAria')}
+              >
                 {/* Owner row */}
                 {permissions.owner && (
                   <li className="flex items-center gap-2 rounded-md border px-3 py-2">
@@ -384,7 +402,9 @@ export function ProjectSharePanel({
                         {permissions.owner.email}
                       </p>
                     </div>
-                    <Badge variant="secondary">Owner</Badge>
+                    <Badge variant="secondary">
+                      {t('project.share.owner')}
+                    </Badge>
                   </li>
                 )}
 
@@ -413,7 +433,9 @@ export function ProjectSharePanel({
                     >
                       <SelectTrigger
                         className="w-24 h-7 text-xs"
-                        aria-label={`Change ${member.username}'s role`}
+                        aria-label={t('project.share.changeRole', {
+                          name: member.username,
+                        })}
                       >
                         <SelectValue />
                       </SelectTrigger>
@@ -426,7 +448,9 @@ export function ProjectSharePanel({
                       size="sm"
                       className="h-7 w-7 p-0 text-muted-foreground hover:text-destructive"
                       onClick={() => revokeMutation.mutate(member.userId)}
-                      aria-label={`Remove ${member.username}`}
+                      aria-label={t('project.share.remove', {
+                        name: member.username,
+                      })}
                       disabled={revokeMutation.isPending}
                     >
                       ×
@@ -436,7 +460,7 @@ export function ProjectSharePanel({
 
                 {permissions.members.length === 0 && !permissions.owner && (
                   <li className="text-sm text-muted-foreground py-2">
-                    No members yet.
+                    {t('project.share.noMembers')}
                   </li>
                 )}
               </ul>
@@ -445,13 +469,18 @@ export function ProjectSharePanel({
 
           {/* Create invite link */}
           <div className="space-y-3 border-t pt-6">
-            <Label className="text-sm font-medium">Invite by link</Label>
+            <Label className="text-sm font-medium">
+              {t('project.share.inviteByLink')}
+            </Label>
             <div className="flex gap-2">
               <Select
                 value={inviteRole}
                 onValueChange={(v) => setInviteRole(v as ProjectRole)}
               >
-                <SelectTrigger className="flex-1" aria-label="Invite role">
+                <SelectTrigger
+                  className="flex-1"
+                  aria-label={t('project.share.inviteRole')}
+                >
                   <SelectValue />
                 </SelectTrigger>
                 <SelectContent>
@@ -462,13 +491,16 @@ export function ProjectSharePanel({
                 value={String(inviteExpiresInHours)}
                 onValueChange={(v) => setInviteExpiresInHours(Number(v))}
               >
-                <SelectTrigger className="flex-1" aria-label="Link expiry">
+                <SelectTrigger
+                  className="flex-1"
+                  aria-label={t('project.share.linkExpiry')}
+                >
                   <SelectValue />
                 </SelectTrigger>
                 <SelectContent>
                   {EXPIRY_OPTIONS.map((opt) => (
                     <SelectItem key={opt.value} value={String(opt.value)}>
-                      {opt.label}
+                      {t(opt.labelKey)}
                     </SelectItem>
                   ))}
                 </SelectContent>
@@ -481,8 +513,8 @@ export function ProjectSharePanel({
               onClick={() => createInviteMutation.mutate()}
             >
               {createInviteMutation.isPending
-                ? 'Creating link...'
-                : 'Create link'}
+                ? t('project.share.creatingLink')
+                : t('project.share.createLink')}
             </Button>
 
             {createdInviteToken && (
@@ -491,7 +523,7 @@ export function ProjectSharePanel({
                   <Input
                     readOnly
                     value={`${window.location.origin}/invite/${createdInviteToken}`}
-                    aria-label="Invite link"
+                    aria-label={t('project.share.inviteLinkAria')}
                     className="flex-1 text-xs"
                     onFocus={(e) => e.target.select()}
                   />
@@ -501,11 +533,13 @@ export function ProjectSharePanel({
                     variant="outline"
                     onClick={handleCopyInviteLink}
                   >
-                    {copied ? 'Copied' : 'Copy'}
+                    {copied
+                      ? t('project.share.copied')
+                      : t('project.share.copy')}
                   </Button>
                 </div>
                 <p className="text-xs text-muted-foreground">
-                  This link won't be shown again — copy it now.
+                  {t('project.share.wontShowAgain')}
                 </p>
               </div>
             )}
@@ -513,13 +547,17 @@ export function ProjectSharePanel({
 
           {/* Outstanding invite links */}
           <div>
-            <Label className="text-sm font-medium">Outstanding links</Label>
+            <Label className="text-sm font-medium">
+              {t('project.share.outstandingLinks')}
+            </Label>
             {isInvitesLoading ? (
-              <p className="mt-2 text-sm text-muted-foreground">Loading...</p>
+              <p className="mt-2 text-sm text-muted-foreground">
+                {t('common.loading')}
+              </p>
             ) : (
               <ul
                 className="mt-2 space-y-2"
-                aria-label="Outstanding invite links"
+                aria-label={t('project.share.outstandingInviteAria')}
               >
                 {invites.map((invite) => {
                   const isRevoked = invite.revokedAt !== null
@@ -533,26 +571,37 @@ export function ProjectSharePanel({
                     >
                       <div className="flex-1 min-w-0">
                         <div className="flex items-center gap-2">
-                          <Badge variant="secondary">{invite.role}</Badge>
+                          <Badge variant="secondary">
+                            {t(`invite.roles.${invite.role}`)}
+                          </Badge>
                           {isRevoked && (
                             <span className="text-xs text-destructive">
-                              Revoked
+                              {t('project.share.revoked')}
                             </span>
                           )}
                           {!isRevoked && isExpired && (
                             <span className="text-xs text-muted-foreground">
-                              Expired
+                              {t('project.share.expired')}
                             </span>
                           )}
                         </div>
                         <p className="text-xs text-muted-foreground truncate">
-                          Expires{' '}
-                          {new Date(invite.expiresAt).toLocaleDateString()} ·{' '}
-                          {invite.usedCount}
-                          {invite.maxUses !== null
-                            ? `/${invite.maxUses}`
-                            : ''}{' '}
-                          use{invite.usedCount === 1 ? '' : 's'}
+                          {t('project.share.inviteMeta', {
+                            date: new Date(invite.expiresAt).toLocaleDateString(
+                              locale,
+                            ),
+                            uses: t(
+                              invite.usedCount === 1
+                                ? 'project.share.usesOne'
+                                : 'project.share.usesOther',
+                              {
+                                count:
+                                  invite.maxUses !== null
+                                    ? `${invite.usedCount}/${invite.maxUses}`
+                                    : invite.usedCount,
+                              },
+                            ),
+                          })}
                         </p>
                       </div>
                       <Button
@@ -560,10 +609,12 @@ export function ProjectSharePanel({
                         size="sm"
                         className="h-7 px-2 text-xs text-muted-foreground hover:text-destructive"
                         onClick={() => revokeInviteMutation.mutate(invite.id)}
-                        aria-label={`Revoke ${invite.role} invite link`}
+                        aria-label={t('project.share.revokeInviteAria', {
+                          role: t(`invite.roles.${invite.role}`),
+                        })}
                         disabled={isInactive || revokeInviteMutation.isPending}
                       >
-                        Revoke
+                        {t('project.share.revoke')}
                       </Button>
                     </li>
                   )
@@ -571,7 +622,7 @@ export function ProjectSharePanel({
 
                 {invites.length === 0 && (
                   <li className="text-sm text-muted-foreground py-2">
-                    No outstanding links.
+                    {t('project.share.noOutstanding')}
                   </li>
                 )}
               </ul>
@@ -580,10 +631,11 @@ export function ProjectSharePanel({
 
           {/* Share read-only links (GH #109) */}
           <div className="space-y-3 border-t pt-6">
-            <Label className="text-sm font-medium">Share read-only links</Label>
+            <Label className="text-sm font-medium">
+              {t('project.share.shareReadOnly')}
+            </Label>
             <p className="text-xs text-muted-foreground">
-              Anyone with the link can view a whiteboard's diagram — no account
-              required. No editing, no live collaboration.
+              {t('project.share.readOnlyHint')}
             </p>
             <div className="flex gap-2">
               <Select
@@ -592,9 +644,11 @@ export function ProjectSharePanel({
               >
                 <SelectTrigger
                   className="flex-1"
-                  aria-label="Select whiteboard"
+                  aria-label={t('project.share.selectWhiteboard')}
                 >
-                  <SelectValue placeholder="Select whiteboard" />
+                  <SelectValue
+                    placeholder={t('project.share.selectWhiteboard')}
+                  />
                 </SelectTrigger>
                 <SelectContent>
                   {whiteboards.map((wb) => (
@@ -610,14 +664,14 @@ export function ProjectSharePanel({
               >
                 <SelectTrigger
                   className="flex-1"
-                  aria-label="Share link expiry"
+                  aria-label={t('project.share.shareExpiryAria')}
                 >
                   <SelectValue />
                 </SelectTrigger>
                 <SelectContent>
                   {EXPIRY_OPTIONS.map((opt) => (
                     <SelectItem key={opt.value} value={String(opt.value)}>
-                      {opt.label}
+                      {t(opt.labelKey)}
                     </SelectItem>
                   ))}
                 </SelectContent>
@@ -626,7 +680,7 @@ export function ProjectSharePanel({
             <Button
               size="sm"
               className="w-full"
-              aria-label="Create read-only share link"
+              aria-label={t('project.share.createShareAria')}
               disabled={
                 !shareWhiteboardId ||
                 isWhiteboardsLoading ||
@@ -635,8 +689,8 @@ export function ProjectSharePanel({
               onClick={() => createShareLinkMutation.mutate()}
             >
               {createShareLinkMutation.isPending
-                ? 'Creating link...'
-                : 'Create link'}
+                ? t('project.share.creatingLink')
+                : t('project.share.createLink')}
             </Button>
 
             {createdShareToken && (
@@ -645,7 +699,7 @@ export function ProjectSharePanel({
                   <Input
                     readOnly
                     value={`${window.location.origin}/share/${createdShareToken}`}
-                    aria-label="Share link"
+                    aria-label={t('project.share.shareLinkAria')}
                     className="flex-1 text-xs"
                     onFocus={(e) => e.target.select()}
                   />
@@ -655,11 +709,13 @@ export function ProjectSharePanel({
                     variant="outline"
                     onClick={handleCopyShareLink}
                   >
-                    {shareCopied ? 'Copied' : 'Copy'}
+                    {shareCopied
+                      ? t('project.share.copied')
+                      : t('project.share.copy')}
                   </Button>
                 </div>
                 <p className="text-xs text-muted-foreground">
-                  This link won't be shown again — copy it now.
+                  {t('project.share.wontShowAgain')}
                 </p>
               </div>
             )}
@@ -668,14 +724,16 @@ export function ProjectSharePanel({
           {/* Outstanding read-only links */}
           <div>
             <Label className="text-sm font-medium">
-              Outstanding read-only links
+              {t('project.share.outstandingReadOnly')}
             </Label>
             {isShareLinksLoading ? (
-              <p className="mt-2 text-sm text-muted-foreground">Loading...</p>
+              <p className="mt-2 text-sm text-muted-foreground">
+                {t('common.loading')}
+              </p>
             ) : (
               <ul
                 className="mt-2 space-y-2"
-                aria-label="Outstanding read-only links"
+                aria-label={t('project.share.outstandingReadOnlyAria')}
               >
                 {shareLinks.map((link) => {
                   const isRevoked = link.revokedAt !== null
@@ -695,19 +753,23 @@ export function ProjectSharePanel({
                           </Badge>
                           {isRevoked && (
                             <span className="text-xs text-destructive">
-                              Revoked
+                              {t('project.share.revoked')}
                             </span>
                           )}
                           {!isRevoked && isExpired && (
                             <span className="text-xs text-muted-foreground">
-                              Expired
+                              {t('project.share.expired')}
                             </span>
                           )}
                         </div>
                         <p className="text-xs text-muted-foreground truncate">
                           {link.expiresAt === null
-                            ? 'Never expires'
-                            : `Expires ${new Date(link.expiresAt).toLocaleDateString()}`}
+                            ? t('project.share.neverExpires')
+                            : t('project.share.expiresOn', {
+                                date: new Date(
+                                  link.expiresAt,
+                                ).toLocaleDateString(locale),
+                              })}
                         </p>
                       </div>
                       <Button
@@ -715,12 +777,14 @@ export function ProjectSharePanel({
                         size="sm"
                         className="h-7 px-2 text-xs text-muted-foreground hover:text-destructive"
                         onClick={() => revokeShareLinkMutation.mutate(link.id)}
-                        aria-label={`Revoke ${link.whiteboardName} share link`}
+                        aria-label={t('project.share.revokeShareAria', {
+                          name: link.whiteboardName,
+                        })}
                         disabled={
                           isInactive || revokeShareLinkMutation.isPending
                         }
                       >
-                        Revoke
+                        {t('project.share.revoke')}
                       </Button>
                     </li>
                   )
@@ -728,7 +792,7 @@ export function ProjectSharePanel({
 
                 {shareLinks.length === 0 && (
                   <li className="text-sm text-muted-foreground py-2">
-                    No outstanding links.
+                    {t('project.share.noOutstanding')}
                   </li>
                 )}
               </ul>

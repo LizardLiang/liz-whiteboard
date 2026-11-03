@@ -6,30 +6,32 @@
 
 import { Link } from '@tanstack/react-router'
 import { ShieldAlert } from 'lucide-react'
+import { useT } from '@/lib/i18n/use-t'
+import { tError } from '@/lib/i18n/t-error'
 
 interface ProjectAccessDeniedProps {
   message?: string
 }
 
 export function ProjectAccessDenied({ message }: ProjectAccessDeniedProps) {
+  const t = useT()
   return (
     <div className="flex flex-col items-center justify-center gap-4 py-24 text-center">
       <ShieldAlert
         className="h-10 w-10 text-muted-foreground"
         aria-hidden="true"
       />
-      <p className="text-lg font-semibold">
-        You don't have access to this project
-      </p>
+      <p className="text-lg font-semibold">{t('project.denied.title')}</p>
       <p className="text-sm text-muted-foreground max-w-sm">
-        {message ??
-          "You don't have permission to view this project. Ask a project admin for access."}
+        {message === undefined
+          ? t('project.denied.defaultMessage')
+          : tError(t, { message })}
       </p>
       <Link
         to="/"
         className="text-sm text-primary underline underline-offset-4"
       >
-        Back to dashboard
+        {t('common.backToDashboard')}
       </Link>
     </div>
   )
