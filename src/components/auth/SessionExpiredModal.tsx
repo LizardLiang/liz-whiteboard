@@ -12,6 +12,7 @@ import {
   DialogTitle,
 } from '@/components/ui/dialog'
 import { Button } from '@/components/ui/button'
+import { useT } from '@/lib/i18n/use-t'
 
 /**
  * SessionExpiredModal renders a dialog when the user's session has expired.
@@ -23,6 +24,7 @@ import { Button } from '@/components/ui/button'
 export function SessionExpiredModal() {
   const { sessionExpired, dismissSessionExpired } = useAuthContext()
   const router = useRouter()
+  const t = useT()
 
   const handleLogin = () => {
     dismissSessionExpired()
@@ -45,15 +47,14 @@ export function SessionExpiredModal() {
         onInteractOutside={(e) => e.preventDefault()}
       >
         <DialogHeader>
-          <DialogTitle>Your session has expired</DialogTitle>
+          <DialogTitle>{t('auth.sessionExpired.title')}</DialogTitle>
           <DialogDescription>
-            You have been logged out due to inactivity. Please log in again to
-            continue.
+            {t('auth.sessionExpired.description')}
           </DialogDescription>
         </DialogHeader>
         <DialogFooter>
           <Button onClick={handleLogin} className="w-full">
-            Log in again
+            {t('auth.sessionExpired.action')}
           </Button>
         </DialogFooter>
       </DialogContent>

@@ -11,6 +11,8 @@ import { Label } from '@/components/ui/label'
 import { Switch } from '@/components/ui/switch'
 import { readAutofilledValue, useAutofillSync } from '@/hooks/use-autofill-sync'
 import { sanitizeRedirect } from '@/lib/safe-redirect'
+import { useT } from '@/lib/i18n/use-t'
+import { tError } from '@/lib/i18n/t-error'
 
 const searchSchema = z.object({
   redirect: z.string().optional().default('/'),
@@ -29,6 +31,7 @@ export const Route = createFileRoute('/login')({
 })
 
 function LoginPage() {
+  const t = useT()
   const { redirect: rawRedirect, reset } = Route.useSearch()
   // S1: reject any redirect that isn't same-origin-relative (blocks
   // "//evil.com" and "/\evil.com" open-redirect payloads) before it's ever
@@ -73,7 +76,7 @@ function LoginPage() {
     // desynced form left it disabled forever, with Enter dead too), so an
     // empty submit reaches here and must produce a message instead of silence.
     if (!submittedEmail || !submittedPassword) {
-      setError('Enter your email and password.')
+      setError(t('auth.login.emptyFields'))
       return
     }
 
@@ -103,10 +106,10 @@ function LoginPage() {
         const target = redirect || '/'
         window.location.assign(target)
       } else {
-        setError(result.message)
+        setError(tError(t, result))
       }
     } catch {
-      setError('Something went wrong. Please try again.')
+      setError(t('common.somethingWentWrong'))
     } finally {
       setIsSubmitting(false)
     }
@@ -117,8 +120,10 @@ function LoginPage() {
       <div className="w-full max-w-sm">
         {/* Branding */}
         <div className="mb-8 text-center">
-          <h1 className="text-2xl font-bold">ER Whiteboard</h1>
-          <p className="text-muted-foreground mt-1">Sign in to your account</p>
+          <h1 className="text-2xl font-bold">{t('common.appName')}</h1>
+          <p className="text-muted-foreground mt-1">
+            {t('auth.login.subtitle')}
+          </p>
         </div>
 
         <form onSubmit={handleSubmit} aria-busy={isSubmitting} noValidate>
@@ -129,7 +134,7 @@ function LoginPage() {
               aria-live="polite"
               className="mb-4 rounded-md bg-green-50 border border-green-200 px-4 py-3 text-sm text-green-800 dark:bg-green-950 dark:border-green-800 dark:text-green-200"
             >
-              Password updated. Log in with your new password.
+              {t('auth.login.resetSuccess')}
             </div>
           )}
 
@@ -146,7 +151,7 @@ function LoginPage() {
 
           {/* Email */}
           <div className="mb-4">
-            <Label htmlFor="email">Email</Label>
+            <Label htmlFor="email">{t('common.email')}</Label>
             <Input
               id="email"
               name="email"
@@ -159,13 +164,13 @@ function LoginPage() {
               required
               disabled={isSubmitting}
               className="mt-1"
-              placeholder="you@example.com"
+              placeholder={t('auth.login.emailPlaceholder')}
             />
           </div>
 
           {/* Password */}
           <div className="mb-4">
-            <Label htmlFor="password">Password</Label>
+            <Label htmlFor="password">{t('common.password')}</Label>
             <Input
               id="password"
               name="password"
@@ -178,14 +183,14 @@ function LoginPage() {
               required
               disabled={isSubmitting}
               className="mt-1"
-              placeholder="Your password"
+              placeholder={t('auth.login.passwordPlaceholder')}
             />
             <p className="mt-1 text-right text-sm">
               <Link
                 to="/forgot-password"
                 className="font-medium underline underline-offset-4"
               >
-                Forgot password?
+                {t('auth.login.forgotPassword')}
               </Link>
             </p>
           </div>
@@ -199,7 +204,7 @@ function LoginPage() {
               disabled={isSubmitting}
             />
             <Label htmlFor="remember-me" className="cursor-pointer">
-              Remember me for 30 days
+              {t('auth.login.rememberMe')}
             </Label>
           </div>
 
@@ -209,18 +214,18 @@ function LoginPage() {
               button permanently and kill the Enter key with it. handleSubmit
               reads the form and reports an empty submit instead. */}
           <Button type="submit" className="w-full" disabled={isSubmitting}>
-            {isSubmitting ? 'Signing in...' : 'Sign in'}
+            {isSubmitting ? t('auth.login.submitting') : t('auth.login.submit')}
           </Button>
         </form>
 
         {/* Register link */}
         <p className="mt-6 text-center text-sm text-muted-foreground">
-          Don&apos;t have an account?{' '}
+          {t('auth.login.noAccount')}{' '}
           <Link
             to="/register"
             className="font-medium underline underline-offset-4"
           >
-            Register
+            {t('auth.login.register')}
           </Link>
         </p>
       </div>

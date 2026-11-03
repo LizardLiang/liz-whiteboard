@@ -91,3 +91,21 @@ test.describe('browser language default', () => {
     await context.close()
   })
 })
+
+test.describe('phase 2: auth pages', () => {
+  test('login page is Chinese for a zh-TW browser, with no session', async ({
+    browser,
+  }) => {
+    const context = await browser.newContext({
+      baseURL: BASE_URL,
+      locale: 'zh-TW',
+      viewport: { width: 1600, height: 1000 },
+    })
+    const page = await context.newPage()
+    await page.goto('/login')
+    await expect(page.getByRole('button', { name: '登入' })).toBeVisible()
+    await expect(page.getByText('登入您的帳號')).toBeVisible()
+    await expect(page.getByLabel('電子郵件')).toBeVisible()
+    await context.close()
+  })
+})

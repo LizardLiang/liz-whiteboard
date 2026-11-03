@@ -44,6 +44,8 @@ import {
   CardTitle,
 } from '@/components/ui/card'
 import { isUnauthorizedError } from '@/lib/auth/errors'
+import { useT } from '@/lib/i18n/use-t'
+import { tError } from '@/lib/i18n/t-error'
 
 const searchSchema = z.object({
   request_id: z.string().min(1),
@@ -55,6 +57,7 @@ export const Route = createFileRoute('/oauth/consent')({
 })
 
 function ConsentPage() {
+  const t = useT()
   const { request_id: requestId } = Route.useSearch()
 
   const { data, isLoading, isError } = useQuery({
@@ -66,13 +69,13 @@ function ConsentPage() {
   const approveMutation = useMutation({
     mutationFn: () => approveConsent({ data: { requestId } }),
     onSuccess: (result) => navigateOnResult(result),
-    onError: () => toast.error('Something went wrong approving this request.'),
+    onError: () => toast.error(t('consent.approveFailed')),
   })
 
   const denyMutation = useMutation({
     mutationFn: () => denyConsent({ data: { requestId } }),
     onSuccess: (result) => navigateOnResult(result),
-    onError: () => toast.error('Something went wrong denying this request.'),
+    onError: () => toast.error(t('consent.denyFailed')),
   })
 
   function navigateOnResult(result: ConsentActionResult | AuthErrorResponse) {
@@ -89,8 +92,11 @@ function ConsentPage() {
     // request — see consent-handlers.ts) was previously discarded here, so
     // the button just silently stopped spinning with no feedback. Surface it.
     toast.error(
-      result.message ??
-        'This consent request has expired or is invalid. Please try connecting again from your client.',
+      tError(t, {
+        message:
+          result.message ??
+          'This consent request has expired or is invalid. Please try connecting again from your client.',
+      }),
     )
   }
 
@@ -106,32 +112,35 @@ function ConsentPage() {
       <div className="w-full max-w-sm">
         {isLoading ? (
           <p className="text-center text-sm text-muted-foreground">
-            Loading request...
+            {t('consent.loading')}
           </p>
         ) : isError || !view || !view.valid ? (
           <Card>
             <CardHeader>
-              <CardTitle>Consent request unavailable</CardTitle>
+              <CardTitle>{t('consent.unavailable')}</CardTitle>
             </CardHeader>
             <CardContent>
               <p className="text-sm text-muted-foreground">
-                {view && !view.valid
-                  ? view.message
-                  : 'This consent request has expired or is invalid. Please try connecting again from your client.'}
+                {tError(t, {
+                  message:
+                    view && !view.valid
+                      ? view.message
+                      : 'This consent request has expired or is invalid. Please try connecting again from your client.',
+                })}
               </p>
             </CardContent>
           </Card>
         ) : (
           <Card>
             <CardHeader>
-              <CardTitle>Authorize application</CardTitle>
+              <CardTitle>{t('consent.title')}</CardTitle>
               <CardDescription>
                 {/* client_name is attacker-controlled (open DCR) — plain text
                     node only, never dangerouslySetInnerHTML. */}
                 <span className="font-semibold text-foreground">
                   {view.clientName}
                 </span>{' '}
-                wants to access your ER Whiteboard account.
+                {t('consent.wantsAccess')}
               </CardDescription>
             </CardHeader>
             <CardContent className="space-y-4">
@@ -139,8 +148,7 @@ function ConsentPage() {
                 role="alert"
                 className="rounded-md border border-destructive/30 bg-destructive/10 px-3 py-2 text-xs text-destructive"
               >
-                This application is not verified by ER Whiteboard. Only approve
-                it if you trust the client that sent you here.
+                {t('consent.notVerified')}
               </div>
 
               {/* Provenance (mcp-oauth-open-cimd): "not verified" alone
@@ -152,25 +160,25 @@ function ConsentPage() {
               <div className="rounded-md bg-muted px-3 py-2 text-xs text-muted-foreground">
                 {view.provenance === 'cimd' && view.cimdOrigin ? (
                   <>
-                    Identity document fetched from{' '}
+                    {t('consent.identityFetched')}{' '}
                     <span className="font-medium break-all text-foreground">
                       {view.cimdOrigin}
                     </span>
                   </>
                 ) : (
                   <>
-                    This client{' '}
+                    {t('consent.clientThis')}{' '}
                     <span className="font-medium text-foreground">
-                      registered itself
+                      {t('consent.registeredItself')}
                     </span>
-                    . Its name and identity are self-asserted.
+                    {t('consent.selfAsserted')}
                   </>
                 )}
               </div>
 
               <div>
                 <p className="text-xs font-medium text-muted-foreground">
-                  Requesting access to
+                  {t('consent.requestingAccess')}
                 </p>
                 <ul className="mt-1 list-disc pl-5 text-sm">
                   {view.scopes.map((scope) => (
@@ -181,7 +189,7 @@ function ConsentPage() {
 
               <div>
                 <p className="text-xs font-medium text-muted-foreground">
-                  Sends you back to
+                  {t('consent.sendsBackTo')}
                 </p>
                 {/* Hostname is the prominent element, full URI secondary —
                     MCP spec 2026-07-28 requires prominent redirect-URI-
@@ -203,9 +211,11 @@ function ConsentPage() {
                   role="alert"
                   className="rounded-md border border-amber-500/40 bg-amber-500/10 px-3 py-2 text-xs text-amber-700 dark:text-amber-400"
                 >
-                  This will hand access to an application running on{' '}
-                  <span className="font-semibold">your own computer</span>. Only
-                  approve if you just started this client yourself.
+                  {t('consent.loopbackPrefix')}{' '}
+                  <span className="font-semibold">
+                    {t('consent.loopbackEmphasis')}
+                  </span>
+                  {t('consent.loopbackSuffix')}
                 </div>
               ) : null}
             </CardContent>
@@ -216,14 +226,18 @@ function ConsentPage() {
                 disabled={isPending}
                 onClick={() => denyMutation.mutate()}
               >
-                {denyMutation.isPending ? 'Denying...' : 'Deny'}
+                {denyMutation.isPending
+                  ? t('consent.denying')
+                  : t('consent.deny')}
               </Button>
               <Button
                 className="flex-1"
                 disabled={isPending}
                 onClick={() => approveMutation.mutate()}
               >
-                {approveMutation.isPending ? 'Approving...' : 'Approve'}
+                {approveMutation.isPending
+                  ? t('consent.approving')
+                  : t('consent.approve')}
               </Button>
             </CardFooter>
           </Card>

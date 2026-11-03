@@ -7,15 +7,20 @@ import { Link } from '@tanstack/react-router'
 import { ShieldAlert } from 'lucide-react'
 import type { ShareDenialReason } from '@/lib/share/denial-reasons'
 import { SHARE_DENIAL_MESSAGES } from '@/lib/share/denial-reasons'
+import { useT } from '@/lib/i18n/use-t'
+import { tError } from '@/lib/i18n/t-error'
 
 interface ShareLinkInvalidProps {
   reason?: ShareDenialReason
 }
 
 export function ShareLinkInvalid({ reason }: ShareLinkInvalidProps) {
-  const message = reason
-    ? SHARE_DENIAL_MESSAGES[reason]
-    : 'This shared link is no longer valid.'
+  const t = useT()
+  const message = tError(t, {
+    message: reason
+      ? SHARE_DENIAL_MESSAGES[reason]
+      : 'This shared link is no longer valid.',
+  })
 
   return (
     <div className="flex flex-col items-center justify-center gap-4 py-24 text-center">
@@ -23,13 +28,13 @@ export function ShareLinkInvalid({ reason }: ShareLinkInvalidProps) {
         className="h-10 w-10 text-muted-foreground"
         aria-hidden="true"
       />
-      <p className="text-lg font-semibold">Shared link unavailable</p>
+      <p className="text-lg font-semibold">{t('share.unavailable')}</p>
       <p className="text-sm text-muted-foreground max-w-sm">{message}</p>
       <Link
         to="/"
         className="text-sm text-primary underline underline-offset-4"
       >
-        Back to dashboard
+        {t('common.backToDashboard')}
       </Link>
     </div>
   )

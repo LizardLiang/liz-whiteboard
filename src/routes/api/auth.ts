@@ -274,12 +274,17 @@ export const requestPasswordReset = createServerFn({ method: 'POST' })
     )
     const { sendEmail } = await import('@/lib/email/resend')
 
+    const { getRequestLocale } = await import('@/lib/i18n/server-locale')
+    const { translate } = await import('@/lib/i18n/translate')
+
     const request = getRequest()
     const ip = extractClientIp(request)
+    const locale = await getRequestLocale()
 
     const GENERIC_SUCCESS = {
       success: true as const,
-      message: 'If an account exists for that email, a reset link is on its way.',
+      message:
+        'If an account exists for that email, a reset link is on its way.',
     }
 
     if (!checkResetIpRateLimit(ip)) {
@@ -313,9 +318,9 @@ export const requestPasswordReset = createServerFn({ method: 'POST' })
           const link = `${baseUrl.replace(/\/$/, '')}/reset-password?token=${rawToken}`
           void sendEmail({
             to: user.email,
-            subject: 'Reset your password',
-            text: `Use this link to reset your password: ${link}\n\nThis link expires in 30 minutes and can only be used once. If you did not request this, you can ignore this email.`,
-            html: `<p>Use this link to reset your password:</p><p><a href="${link}">${link}</a></p><p>This link expires in 30 minutes and can only be used once. If you did not request this, you can ignore this email.</p>`,
+            subject: translate(locale, 'email.resetSubject'),
+            text: translate(locale, 'email.resetText', { link }),
+            html: `<p>${translate(locale, 'email.resetHtmlIntro')}</p><p><a href="${link}">${link}</a></p><p>${translate(locale, 'email.resetHtmlOutro')}</p>`,
           }).catch((err: unknown) => {
             console.error('[password-reset] sendEmail failed:', err)
           })

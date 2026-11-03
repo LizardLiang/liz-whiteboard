@@ -17,6 +17,7 @@ import { useQuery } from '@tanstack/react-query'
 import { getSharedCanvasBoard } from '@/routes/api/canvas-share'
 import { ShareLinkInvalid } from '@/components/project/ShareLinkInvalid'
 import { CanvasBoard } from '@/components/canvas/CanvasBoard'
+import { useT } from '@/lib/i18n/use-t'
 
 export const Route = createFileRoute('/canvas-share/$token')({
   component: SharedCanvasBoardPage,
@@ -32,6 +33,7 @@ export const Route = createFileRoute('/canvas-share/$token')({
 const PUBLIC_VIEWER_ID = 'public-viewer'
 
 export function SharedCanvasBoardPage() {
+  const t = useT()
   const { token } = Route.useParams()
 
   // Public endpoint that resolves rather than throws, same as
@@ -50,7 +52,9 @@ export function SharedCanvasBoardPage() {
   if (isLoading) {
     return (
       <div className="flex min-h-screen items-center justify-center">
-        <p className="text-sm text-muted-foreground">Loading board...</p>
+        <p className="text-sm text-muted-foreground">
+          {t('share.loadingBoard')}
+        </p>
       </div>
     )
   }
@@ -75,7 +79,9 @@ export function SharedCanvasBoardPage() {
     <div className="flex h-screen flex-col bg-background">
       <div className="flex items-center justify-between border-b px-4 py-2">
         <h1 className="text-xl font-semibold">{result.canvasBoardName}</h1>
-        <span className="text-xs text-muted-foreground">Read-only</span>
+        <span className="text-xs text-muted-foreground">
+          {t('common.readOnly')}
+        </span>
       </div>
       <div className="relative flex-1 overflow-hidden">
         <CanvasBoard

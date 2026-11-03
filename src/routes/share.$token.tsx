@@ -13,6 +13,7 @@ import { useQuery } from '@tanstack/react-query'
 import { getSharedWhiteboard } from '@/routes/api/share'
 import { ShareLinkInvalid } from '@/components/project/ShareLinkInvalid'
 import { ReactFlowWhiteboard } from '@/components/whiteboard/ReactFlowWhiteboard'
+import { useT } from '@/lib/i18n/use-t'
 
 export const Route = createFileRoute('/share/$token')({
   component: SharedWhiteboardPage,
@@ -29,6 +30,7 @@ export const Route = createFileRoute('/share/$token')({
 const PUBLIC_VIEWER_ID = 'public-viewer'
 
 export function SharedWhiteboardPage() {
+  const t = useT()
   const { token } = Route.useParams()
 
   // Public endpoint that resolves (never throws), same as getInvitePreview —
@@ -46,7 +48,9 @@ export function SharedWhiteboardPage() {
   if (isLoading) {
     return (
       <div className="flex min-h-screen items-center justify-center">
-        <p className="text-sm text-muted-foreground">Loading diagram...</p>
+        <p className="text-sm text-muted-foreground">
+          {t('share.loadingDiagram')}
+        </p>
       </div>
     )
   }

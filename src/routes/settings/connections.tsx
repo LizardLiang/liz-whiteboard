@@ -26,20 +26,15 @@ import { Badge } from '@/components/ui/badge'
 import { isUnauthorizedError } from '@/lib/auth/errors'
 import { getMcpEndpointUrl } from '@/lib/server-functions'
 import { McpConnectPanel } from '@/components/mcp/McpConnectPanel'
+import { useI18n } from '@/lib/i18n/use-t'
+import { formatDate } from '@/lib/i18n/translate'
 
 export const Route = createFileRoute('/settings/connections')({
   component: ConnectionsPage,
 })
 
-function formatDate(ms: number): string {
-  return new Date(ms).toLocaleDateString(undefined, {
-    year: 'numeric',
-    month: 'short',
-    day: 'numeric',
-  })
-}
-
 function ConnectionsPage() {
+  const { t, locale } = useI18n()
   const queryClient = useQueryClient()
 
   const { data, isLoading } = useQuery({
@@ -61,11 +56,11 @@ function ConnectionsPage() {
     mutationFn: (clientId: string) =>
       revokeConnectedApp({ data: { clientId } }),
     onSuccess: () => {
-      toast.success('Access revoked')
+      toast.success(t('settings.connections.revoked'))
       queryClient.invalidateQueries({ queryKey: ['connected-apps'] })
     },
     onError: () => {
-      toast.error('Something went wrong revoking access.')
+      toast.error(t('settings.connections.revokeFailed'))
     },
   })
 
@@ -84,18 +79,18 @@ function ConnectionsPage() {
 
   return (
     <div className="mx-auto max-w-2xl px-4 py-8">
-      <h1 className="text-2xl font-bold">Connected applications</h1>
+      <h1 className="text-2xl font-bold">{t('settings.connections.title')}</h1>
       <p className="mt-1 text-sm text-muted-foreground">
-        Applications you've approved to access your ER Whiteboard account via
-        OAuth. Revoking access here stops a client's next token refresh — an
-        already-issued access token remains valid for up to 1 hour.
+        {t('settings.connections.description')}
       </p>
 
       {resolvedMcpEndpointUrl && (
         <div className="mt-6 rounded-lg border p-4">
-          <h2 className="text-sm font-semibold">Connect an MCP client</h2>
+          <h2 className="text-sm font-semibold">
+            {t('settings.connections.connectMcp')}
+          </h2>
           <p className="mt-1 text-xs text-muted-foreground">
-            Let an AI coding assistant read and edit this diagram.
+            {t('settings.connections.connectMcpHint')}
           </p>
           <div className="mt-3">
             <McpConnectPanel endpointUrl={resolvedMcpEndpointUrl} />
@@ -105,10 +100,10 @@ function ConnectionsPage() {
 
       <div className="mt-6 space-y-3">
         {isLoading ? (
-          <p className="text-sm text-muted-foreground">Loading...</p>
+          <p className="text-sm text-muted-foreground">{t('common.loading')}</p>
         ) : apps.length === 0 ? (
           <p className="text-sm text-muted-foreground">
-            No connected applications yet.
+            {t('settings.connections.empty')}
           </p>
         ) : (
           apps.map((app) => (
@@ -120,7 +115,13 @@ function ConnectionsPage() {
                         text node only, never dangerouslySetInnerHTML. */}
                     <CardTitle>{app.clientName}</CardTitle>
                     <CardDescription>
-                      Granted {formatDate(app.grantedAt)}
+                      {t('settings.connections.granted', {
+                        date: formatDate(locale, app.grantedAt, {
+                          year: 'numeric',
+                          month: 'short',
+                          day: 'numeric',
+                        }),
+                      })}
                     </CardDescription>
                   </div>
                   <Button
@@ -129,7 +130,7 @@ function ConnectionsPage() {
                     disabled={revokeMutation.isPending}
                     onClick={() => revokeMutation.mutate(app.clientId)}
                   >
-                    Revoke
+                    {t('settings.connections.revoke')}
                   </Button>
                 </div>
               </CardHeader>

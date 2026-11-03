@@ -13,6 +13,8 @@ import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { resetPasswordInputSchema } from '@/data/schema'
+import { useT } from '@/lib/i18n/use-t'
+import { tError } from '@/lib/i18n/t-error'
 
 const searchSchema = z.object({
   token: z.string().optional().default(''),
@@ -27,6 +29,7 @@ export const Route = createFileRoute('/reset-password')({
 })
 
 function ResetPasswordPage() {
+  const t = useT()
   const { token } = Route.useSearch()
 
   const { data: validation, isLoading } = useQuery({
@@ -53,7 +56,7 @@ function ResetPasswordPage() {
     if (!parsed.success) {
       const fieldErrors: Record<string, string> = {}
       parsed.error.issues.forEach((issue) => {
-        if (issue.path[0]) fieldErrors[String(issue.path[0])] = issue.message
+        if (issue.path[0]) fieldErrors[String(issue.path[0])] = tError(t, issue)
       })
       setErrors(fieldErrors)
       return
@@ -70,10 +73,10 @@ function ResetPasswordPage() {
         // mirroring login.tsx's identical reasoning for its own redirect.
         window.location.assign(response.redirect)
       } else {
-        setErrors({ form: 'This link is invalid or has expired.' })
+        setErrors({ form: t('errors.linkInvalidOrExpired') })
       }
     } catch {
-      setErrors({ form: 'Something went wrong. Please try again.' })
+      setErrors({ form: t('common.somethingWentWrong') })
     } finally {
       setIsSubmitting(false)
     }
@@ -83,7 +86,7 @@ function ResetPasswordPage() {
     return (
       <div className="flex min-h-screen items-center justify-center bg-background px-4">
         <p className="text-sm text-muted-foreground">
-          {isLoading ? 'Checking your link...' : ''}
+          {isLoading ? t('auth.reset.checking') : ''}
         </p>
       </div>
     )
@@ -93,16 +96,16 @@ function ResetPasswordPage() {
     return (
       <div className="flex min-h-screen items-center justify-center bg-background px-4">
         <div className="w-full max-w-sm text-center">
-          <h1 className="text-2xl font-bold">Link invalid</h1>
+          <h1 className="text-2xl font-bold">{t('auth.reset.linkInvalid')}</h1>
           <p className="mt-4 text-muted-foreground">
-            This link is invalid or has expired.
+            {t('errors.linkInvalidOrExpired')}
           </p>
           <p className="mt-6 text-sm">
             <Link
               to="/forgot-password"
               className="font-medium underline underline-offset-4"
             >
-              Request a new link
+              {t('auth.reset.requestNew')}
             </Link>
           </p>
         </div>
@@ -114,7 +117,7 @@ function ResetPasswordPage() {
     <div className="flex min-h-screen items-center justify-center bg-background px-4">
       <div className="w-full max-w-sm">
         <div className="mb-8 text-center">
-          <h1 className="text-2xl font-bold">Set a new password</h1>
+          <h1 className="text-2xl font-bold">{t('auth.reset.title')}</h1>
         </div>
 
         <form onSubmit={handleSubmit} aria-busy={isSubmitting} noValidate>
@@ -129,7 +132,7 @@ function ResetPasswordPage() {
           )}
 
           <div className="mb-4">
-            <Label htmlFor="password">New password</Label>
+            <Label htmlFor="password">{t('auth.reset.newPassword')}</Label>
             <Input
               id="password"
               name="password"
@@ -140,7 +143,7 @@ function ResetPasswordPage() {
               required
               disabled={isSubmitting}
               className="mt-1"
-              placeholder="At least 8 characters"
+              placeholder={t('auth.register.passwordPlaceholder')}
               aria-describedby={errors.password ? 'password-error' : undefined}
               aria-invalid={!!errors.password}
             />
@@ -157,7 +160,9 @@ function ResetPasswordPage() {
           </div>
 
           <div className="mb-6">
-            <Label htmlFor="confirmPassword">Confirm password</Label>
+            <Label htmlFor="confirmPassword">
+              {t('auth.reset.confirmPassword')}
+            </Label>
             <Input
               id="confirmPassword"
               name="confirmPassword"
@@ -186,7 +191,7 @@ function ResetPasswordPage() {
           </div>
 
           <Button type="submit" className="w-full" disabled={isSubmitting}>
-            {isSubmitting ? 'Updating...' : 'Update password'}
+            {isSubmitting ? t('auth.reset.submitting') : t('auth.reset.submit')}
           </Button>
         </form>
       </div>

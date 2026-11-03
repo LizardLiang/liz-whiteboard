@@ -12,6 +12,8 @@ import { registerInputSchema } from '@/data/schema'
 import { readAutofilledValue, useAutofillSync } from '@/hooks/use-autofill-sync'
 import { AUTH_ERROR_CODES } from '@/lib/auth/errors'
 import { sanitizeRedirect } from '@/lib/safe-redirect'
+import { useT } from '@/lib/i18n/use-t'
+import { tError } from '@/lib/i18n/t-error'
 
 const searchSchema = z.object({
   redirect: z.string().optional().default('/'),
@@ -23,6 +25,7 @@ export const Route = createFileRoute('/register')({
 })
 
 function RegisterPage() {
+  const t = useT()
   const router = useRouter()
   const { redirect: rawRedirect } = Route.useSearch()
   // S1: reject any redirect that isn't same-origin-relative (blocks
@@ -65,7 +68,7 @@ function RegisterPage() {
       const fieldError = result.error.issues.find(
         (issue) => issue.path[0] === field,
       )
-      return fieldError?.message ?? null
+      return fieldError ? tError(t, fieldError) : null
     }
     return null
   }
@@ -97,7 +100,7 @@ function RegisterPage() {
       const fieldErrors: Record<string, string> = {}
       result.error.issues.forEach((issue) => {
         if (issue.path[0]) {
-          fieldErrors[String(issue.path[0])] = issue.message
+          fieldErrors[String(issue.path[0])] = tError(t, issue)
         }
       })
       setErrors(fieldErrors)
@@ -119,10 +122,16 @@ function RegisterPage() {
       } else if (response.error === AUTH_ERROR_CODES.VALIDATION_ERROR) {
         // Server-side field validation error (e.g. username already taken)
         if (Object.keys(response.fields).length > 0) {
-          setErrors({ ...response.fields } as Record<string, string>)
+          setErrors(
+            Object.fromEntries(
+              Object.entries(response.fields as Record<string, string>).map(
+                ([field, message]) => [field, tError(t, { message })],
+              ),
+            ),
+          )
         } else {
           setErrors({
-            form: 'Validation failed. Please check your input and try again.',
+            form: t('auth.register.validationFailed'),
           })
         }
         // eslint-disable-next-line @typescript-eslint/no-unnecessary-condition -- exhaustive per today's registerUser union, but kept as a deliberate defensive fallback: if the response shape ever diverges from this assumption (e.g. a future branch added server-side), we must not silently fall into "success" (see the final else's "do not show false success").
@@ -134,10 +143,10 @@ function RegisterPage() {
         }, 2000)
       } else {
         // Unrecognized response — do not show false success
-        setErrors({ form: 'Something went wrong. Please try again.' })
+        setErrors({ form: t('common.somethingWentWrong') })
       }
     } catch {
-      setErrors({ form: 'Something went wrong. Please try again.' })
+      setErrors({ form: t('common.somethingWentWrong') })
     } finally {
       setIsSubmitting(false)
     }
@@ -148,9 +157,11 @@ function RegisterPage() {
       <div className="flex min-h-screen items-center justify-center bg-background px-4">
         <div className="w-full max-w-sm text-center">
           <div className="mb-4 rounded-md bg-green-50 border border-green-200 px-4 py-6 text-sm text-green-800 dark:bg-green-950 dark:border-green-800 dark:text-green-200">
-            <p className="font-medium">{successMessage}</p>
+            <p className="font-medium">
+              {tError(t, { message: successMessage })}
+            </p>
             <p className="mt-1 text-xs text-muted-foreground">
-              Redirecting to login...
+              {t('auth.register.redirecting')}
             </p>
           </div>
         </div>
@@ -163,8 +174,10 @@ function RegisterPage() {
       <div className="w-full max-w-sm">
         {/* Branding */}
         <div className="mb-8 text-center">
-          <h1 className="text-2xl font-bold">ER Whiteboard</h1>
-          <p className="text-muted-foreground mt-1">Create your account</p>
+          <h1 className="text-2xl font-bold">{t('common.appName')}</h1>
+          <p className="text-muted-foreground mt-1">
+            {t('auth.register.subtitle')}
+          </p>
         </div>
 
         <form onSubmit={handleSubmit} aria-busy={isSubmitting} noValidate>
@@ -181,7 +194,7 @@ function RegisterPage() {
 
           {/* Username */}
           <div className="mb-4">
-            <Label htmlFor="username">Username</Label>
+            <Label htmlFor="username">{t('auth.register.username')}</Label>
             <Input
               id="username"
               name="username"
@@ -198,7 +211,7 @@ function RegisterPage() {
               required
               disabled={isSubmitting}
               className="mt-1"
-              placeholder="your_username"
+              placeholder={t('auth.register.usernamePlaceholder')}
               aria-describedby={errors.username ? 'username-error' : undefined}
               aria-invalid={!!errors.username}
             />
@@ -216,7 +229,7 @@ function RegisterPage() {
 
           {/* Email */}
           <div className="mb-4">
-            <Label htmlFor="email">Email</Label>
+            <Label htmlFor="email">{t('common.email')}</Label>
             <Input
               id="email"
               name="email"
@@ -233,7 +246,7 @@ function RegisterPage() {
               required
               disabled={isSubmitting}
               className="mt-1"
-              placeholder="you@example.com"
+              placeholder={t('auth.login.emailPlaceholder')}
               aria-describedby={errors.email ? 'email-error' : undefined}
               aria-invalid={!!errors.email}
             />
@@ -251,7 +264,7 @@ function RegisterPage() {
 
           {/* Password */}
           <div className="mb-6">
-            <Label htmlFor="password">Password</Label>
+            <Label htmlFor="password">{t('common.password')}</Label>
             <Input
               id="password"
               name="password"
@@ -268,7 +281,7 @@ function RegisterPage() {
               required
               disabled={isSubmitting}
               className="mt-1"
-              placeholder="At least 8 characters"
+              placeholder={t('auth.register.passwordPlaceholder')}
               aria-describedby={errors.password ? 'password-error' : undefined}
               aria-invalid={!!errors.password}
             />
@@ -290,18 +303,20 @@ function RegisterPage() {
               button permanently and kill the Enter key with it. handleSubmit
               reads the form and surfaces field errors for an empty submit. */}
           <Button type="submit" className="w-full" disabled={isSubmitting}>
-            {isSubmitting ? 'Creating account...' : 'Create account'}
+            {isSubmitting
+              ? t('auth.register.submitting')
+              : t('auth.register.submit')}
           </Button>
         </form>
 
         {/* Login link */}
         <p className="mt-6 text-center text-sm text-muted-foreground">
-          Already have an account?{' '}
+          {t('auth.register.hasAccount')}{' '}
           <Link
             to="/login"
             className="font-medium underline underline-offset-4"
           >
-            Log in
+            {t('auth.register.logIn')}
           </Link>
         </p>
       </div>

@@ -10,18 +10,17 @@ import { getCurrentUser } from '@/routes/api/auth'
 import { InviteInvalid } from '@/components/project/InviteInvalid'
 import { Button } from '@/components/ui/button'
 import { isUnauthorizedError } from '@/lib/auth/errors'
+import { useT } from '@/lib/i18n/use-t'
+import { tError } from '@/lib/i18n/t-error'
 
 export const Route = createFileRoute('/invite/$token')({
   component: InvitePage,
 })
 
-const ROLE_LABELS: Record<string, string> = {
-  VIEWER: 'Viewer',
-  EDITOR: 'Editor',
-  ADMIN: 'Admin',
-}
+const ROLE_KEYS = ['VIEWER', 'EDITOR', 'ADMIN'] as const
 
 export function InvitePage() {
+  const t = useT()
   const { token } = Route.useParams()
   const router = useRouter()
 
@@ -57,24 +56,24 @@ export function InvitePage() {
       // requires currentUser) and this mutation resolving — root-provider's
       // global handler already surfaces the session-expired modal.
       if (isUnauthorizedError(result)) {
-        toast.error('Your session expired. Please sign in again.')
+        toast.error(t('errors.sessionExpired'))
         return
       }
       if (result.success) {
         router.navigate({ to: `/project/${result.projectId}` })
         return
       }
-      toast.error(result.message)
+      toast.error(tError(t, result))
     },
     onError: () => {
-      toast.error('Something went wrong accepting this invite.')
+      toast.error(t('invite.acceptFailed'))
     },
   })
 
   if (isPreviewLoading) {
     return (
       <div className="flex min-h-screen items-center justify-center">
-        <p className="text-sm text-muted-foreground">Loading invite...</p>
+        <p className="text-sm text-muted-foreground">{t('invite.loading')}</p>
       </div>
     )
   }
@@ -95,20 +94,23 @@ export function InvitePage() {
     )
   }
 
-  const roleLabel = ROLE_LABELS[preview.role] ?? preview.role
+  const roleKey = ROLE_KEYS.find((r) => r === preview.role)
+  const roleLabel = roleKey ? t(`invite.roles.${roleKey}`) : preview.role
 
   return (
     <div className="flex min-h-screen items-center justify-center px-4">
       <div className="w-full max-w-sm text-center">
-        <h1 className="text-2xl font-bold">You've been invited</h1>
+        <h1 className="text-2xl font-bold">{t('invite.title')}</h1>
         <p className="mt-2 text-muted-foreground">
-          Join <span className="font-semibold">{preview.projectName}</span> as{' '}
+          {t('invite.joinPrefix')}{' '}
+          <span className="font-semibold">{preview.projectName}</span>{' '}
+          {t('invite.joinAs')}{' '}
           <span className="font-semibold">{roleLabel}</span>
         </p>
 
         {isUserLoading ? (
           <p className="mt-6 text-sm text-muted-foreground">
-            Checking your account...
+            {t('invite.checkingAccount')}
           </p>
         ) : currentUser ? (
           <Button
@@ -116,7 +118,9 @@ export function InvitePage() {
             onClick={() => redeemMutation.mutate()}
             disabled={redeemMutation.isPending}
           >
-            {redeemMutation.isPending ? 'Accepting...' : 'Accept invite'}
+            {redeemMutation.isPending
+              ? t('invite.accepting')
+              : t('invite.accept')}
           </Button>
         ) : (
           // S1 note: this redirect is always same-origin-relative by
@@ -128,12 +132,12 @@ export function InvitePage() {
           <div className="mt-6 flex flex-col gap-2">
             <Button asChild className="w-full">
               <Link to="/login" search={{ redirect: `/invite/${token}` }}>
-                Sign in
+                {t('common.signIn')}
               </Link>
             </Button>
             <Button asChild variant="outline" className="w-full">
               <Link to="/register" search={{ redirect: `/invite/${token}` }}>
-                Create account
+                {t('invite.createAccount')}
               </Link>
             </Button>
           </div>

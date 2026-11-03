@@ -13,6 +13,8 @@ import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { readAutofilledValue, useAutofillSync } from '@/hooks/use-autofill-sync'
 import { AUTH_ERROR_CODES } from '@/lib/auth/errors'
+import { useT } from '@/lib/i18n/use-t'
+import { tError } from '@/lib/i18n/t-error'
 
 export const Route = createFileRoute('/forgot-password')({
   loader: async () => {
@@ -23,6 +25,7 @@ export const Route = createFileRoute('/forgot-password')({
 })
 
 function ForgotPasswordPage() {
+  const t = useT()
   const { siteKey } = Route.useLoaderData()
   const widgetRef = useRef<TurnstileWidgetHandle>(null)
   const emailRef = useRef<HTMLInputElement>(null)
@@ -71,15 +74,15 @@ function ForgotPasswordPage() {
       if (result.success) {
         setSubmittedMessage(result.message)
       } else if (result.error === AUTH_ERROR_CODES.RATE_LIMITED) {
-        setError('Too many requests, try again later.')
+        setError(t('auth.forgot.rateLimited'))
         resetWidget()
       } else {
         // CAPTCHA_FAILED
-        setError('Verification failed. Please try again.')
+        setError(t('auth.forgot.captchaFailed'))
         resetWidget()
       }
     } catch {
-      setError('Something went wrong. Please try again.')
+      setError(t('common.somethingWentWrong'))
       resetWidget()
     } finally {
       setIsSubmitting(false)
@@ -90,14 +93,16 @@ function ForgotPasswordPage() {
     return (
       <div className="flex min-h-screen items-center justify-center bg-background px-4">
         <div className="w-full max-w-sm text-center">
-          <h1 className="text-2xl font-bold">Check your email</h1>
-          <p className="mt-4 text-muted-foreground">{submittedMessage}</p>
+          <h1 className="text-2xl font-bold">{t('auth.forgot.checkEmail')}</h1>
+          <p className="mt-4 text-muted-foreground">
+            {tError(t, { message: submittedMessage })}
+          </p>
           <p className="mt-6 text-sm">
             <Link
               to="/login"
               className="font-medium underline underline-offset-4"
             >
-              Back to sign in
+              {t('auth.forgot.backToSignIn')}
             </Link>
           </p>
         </div>
@@ -109,9 +114,9 @@ function ForgotPasswordPage() {
     <div className="flex min-h-screen items-center justify-center bg-background px-4">
       <div className="w-full max-w-sm">
         <div className="mb-8 text-center">
-          <h1 className="text-2xl font-bold">Forgot your password?</h1>
+          <h1 className="text-2xl font-bold">{t('auth.forgot.title')}</h1>
           <p className="text-muted-foreground mt-1">
-            Enter your email and we&apos;ll send you a reset link.
+            {t('auth.forgot.subtitle')}
           </p>
         </div>
 
@@ -127,7 +132,7 @@ function ForgotPasswordPage() {
           )}
 
           <div className="mb-4">
-            <Label htmlFor="email">Email</Label>
+            <Label htmlFor="email">{t('common.email')}</Label>
             <Input
               id="email"
               name="email"
@@ -140,7 +145,7 @@ function ForgotPasswordPage() {
               required
               disabled={isSubmitting}
               className="mt-1"
-              placeholder="you@example.com"
+              placeholder={t('auth.login.emailPlaceholder')}
             />
           </div>
 
@@ -155,7 +160,7 @@ function ForgotPasswordPage() {
               />
             ) : (
               <p className="text-xs text-destructive">
-                Verification is not configured. Contact your administrator.
+                {t('auth.forgot.notConfigured')}
               </p>
             )}
           </div>
@@ -165,17 +170,19 @@ function ForgotPasswordPage() {
             className="w-full"
             disabled={isSubmitting || !turnstileToken}
           >
-            {isSubmitting ? 'Sending...' : 'Send reset link'}
+            {isSubmitting
+              ? t('auth.forgot.submitting')
+              : t('auth.forgot.submit')}
           </Button>
         </form>
 
         <p className="mt-6 text-center text-sm text-muted-foreground">
-          Remembered your password?{' '}
+          {t('auth.forgot.remembered')}{' '}
           <Link
             to="/login"
             className="font-medium underline underline-offset-4"
           >
-            Sign in
+            {t('common.signIn')}
           </Link>
         </p>
       </div>
