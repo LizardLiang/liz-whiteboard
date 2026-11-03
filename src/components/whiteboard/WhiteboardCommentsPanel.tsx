@@ -76,15 +76,15 @@ export function WhiteboardCommentsPanel({
 
   return (
     <Sheet open={open} onOpenChange={onOpenChange}>
-      <SheetContent className="w-full sm:max-w-md" side="right">
-        <SheetHeader>
+      <SheetContent className="w-full gap-0 sm:max-w-lg" side="right">
+        <SheetHeader className="px-6 pt-6 pb-4">
           <SheetTitle>Comments</SheetTitle>
           <SheetDescription>
             Threaded discussion pinned to tables and canvas points.
           </SheetDescription>
         </SheetHeader>
 
-        <div className="mt-6">
+        <div className="flex-1 overflow-y-auto px-6 pt-2 pb-6">
           <Label className="text-sm font-medium">Threads</Label>
           <ul className="mt-2 space-y-2" aria-label="Comment thread list">
             {threads.map(({ root, replyCount }) => (
