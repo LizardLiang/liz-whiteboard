@@ -25,6 +25,11 @@ import { CreateWhiteboardDialog } from './CreateWhiteboardDialog'
 import { CreateCanvasBoardDialog } from './CreateCanvasBoardDialog'
 import { CreateFolderDialog } from './CreateFolderDialog'
 import { CreateBoardMenu } from './CreateBoardMenu'
+import {
+  ROW_ACTION_BUTTON_CLASS,
+  ROW_ACTION_DELETE_CLASS,
+  RowActions,
+} from './RowActions'
 import { mergeBoardsByUpdatedAt } from './merge-boards'
 import type { FolderWithChildren } from './FolderItem'
 import type {
@@ -547,7 +552,7 @@ export function ProjectTree() {
         <Button
           variant="ghost"
           size="sm"
-          className="h-6 w-6 p-0"
+          className={ROW_ACTION_BUTTON_CLASS}
           onClick={handleCreateProject}
         >
           <Plus className="h-4 w-4" />
@@ -615,7 +620,7 @@ export function ProjectTree() {
                   </div>
 
                   {/* Project action buttons */}
-                  <div className="absolute right-8 top-1 flex gap-1 opacity-0 group-hover:opacity-100 transition-opacity bg-sidebar rounded-md px-0.5 pointer-events-none group-hover:pointer-events-auto">
+                  <RowActions>
                     <CreateBoardMenu
                       onCreateWhiteboard={() =>
                         handleCreateWhiteboard(project.id)
@@ -627,7 +632,7 @@ export function ProjectTree() {
                       <Button
                         variant="ghost"
                         size="sm"
-                        className="h-6 w-6 p-0"
+                        className={ROW_ACTION_BUTTON_CLASS}
                         onClick={(e) => e.stopPropagation()}
                         title="New board"
                       >
@@ -638,7 +643,7 @@ export function ProjectTree() {
                     <Button
                       variant="ghost"
                       size="sm"
-                      className="h-6 w-6 p-0"
+                      className={ROW_ACTION_BUTTON_CLASS}
                       onClick={(e) => {
                         e.stopPropagation()
                         handleCreateFolder(project.id)
@@ -651,7 +656,7 @@ export function ProjectTree() {
                     <Button
                       variant="ghost"
                       size="sm"
-                      className="h-6 w-6 p-0"
+                      className={ROW_ACTION_BUTTON_CLASS}
                       onClick={(e) => {
                         e.stopPropagation()
                         handleEditProject(
@@ -668,7 +673,7 @@ export function ProjectTree() {
                     <Button
                       variant="ghost"
                       size="sm"
-                      className="h-6 w-6 p-0 text-destructive hover:text-destructive hover:bg-destructive/10"
+                      className={ROW_ACTION_DELETE_CLASS}
                       onClick={(e) => {
                         e.stopPropagation()
                         handleDeleteProject(project.id, project.name)
@@ -678,7 +683,7 @@ export function ProjectTree() {
                       <Trash2 className="h-3 w-3" />
                       <span className="sr-only">Delete</span>
                     </Button>
-                  </div>
+                  </RowActions>
                 </div>
 
                 {/* Collapsible content */}

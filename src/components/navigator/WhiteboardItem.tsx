@@ -4,6 +4,11 @@
 import { Link } from '@tanstack/react-router'
 import { FileText, Pencil, Trash2 } from 'lucide-react'
 import { useState } from 'react'
+import {
+  ROW_ACTION_BUTTON_CLASS,
+  ROW_ACTION_DELETE_CLASS,
+  RowActions,
+} from './RowActions'
 import { Button } from '@/components/ui/button'
 
 /**
@@ -61,7 +66,7 @@ export function WhiteboardItem({
 
   return (
     <div
-      className={`group relative pr-8 ${isDragging ? 'opacity-50' : ''}`}
+      className={`group relative ${isDragging ? 'opacity-50' : ''}`}
       draggable={draggable}
       onDragStart={handleDragStart}
       onDragEnd={handleDragEnd}
@@ -82,12 +87,12 @@ export function WhiteboardItem({
 
       {/* Action Buttons */}
       {(onRename || onDelete) && (
-        <div className="absolute right-1 top-1 flex gap-1 opacity-0 group-hover:opacity-100 transition-opacity bg-sidebar rounded-md px-0.5">
+        <RowActions>
           {onRename && (
             <Button
               variant="ghost"
               size="sm"
-              className="h-6 w-6 p-0"
+              className={ROW_ACTION_BUTTON_CLASS}
               onClick={(e) => {
                 e.preventDefault()
                 e.stopPropagation()
@@ -103,7 +108,7 @@ export function WhiteboardItem({
             <Button
               variant="ghost"
               size="sm"
-              className="h-6 w-6 p-0 text-destructive hover:text-destructive hover:bg-destructive/10"
+              className={ROW_ACTION_DELETE_CLASS}
               onClick={(e) => {
                 e.preventDefault()
                 e.stopPropagation()
@@ -115,7 +120,7 @@ export function WhiteboardItem({
               <span className="sr-only">Delete</span>
             </Button>
           )}
-        </div>
+        </RowActions>
       )}
     </div>
   )

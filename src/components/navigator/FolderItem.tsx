@@ -14,6 +14,11 @@ import { useState } from 'react'
 import { WhiteboardItem } from './WhiteboardItem'
 import { CanvasBoardItem } from './CanvasBoardItem'
 import { CreateBoardMenu } from './CreateBoardMenu'
+import {
+  ROW_ACTION_BUTTON_CLASS,
+  ROW_ACTION_DELETE_CLASS,
+  RowActions,
+} from './RowActions'
 import { mergeBoardsByUpdatedAt } from './merge-boards'
 import type { TreeBoardRow } from '@/data/project'
 import type { Folder as FolderType, Whiteboard } from '@/data/models'
@@ -108,6 +113,12 @@ export function FolderItem({
     (folder.canvasBoards && folder.canvasBoards.length > 0)
 
   const canNestDeeper = depth < MAX_FOLDER_DEPTH
+  const hasActions = Boolean(
+    (onCreateWhiteboard && onCreateCanvasBoard) ||
+      (onCreateFolder && canNestDeeper) ||
+      onRenameFolder ||
+      onDeleteFolder,
+  )
 
   // Whiteboard rows and canvas board rows interleaved by updatedAt, most
   // recently updated first across both kinds — mirrors ProjectTree.tsx's
@@ -196,70 +207,72 @@ export function FolderItem({
         </div>
 
         {/* Action Buttons */}
-        <div className="absolute right-8 top-1 flex gap-1 opacity-0 group-hover:opacity-100 transition-opacity bg-sidebar rounded-md px-0.5">
-          {onCreateWhiteboard && onCreateCanvasBoard && (
-            <CreateBoardMenu
-              onCreateWhiteboard={() => onCreateWhiteboard(folder.id)}
-              onCreateCanvasBoard={() => onCreateCanvasBoard(folder.id)}
-            >
+        {hasActions && (
+          <RowActions>
+            {onCreateWhiteboard && onCreateCanvasBoard && (
+              <CreateBoardMenu
+                onCreateWhiteboard={() => onCreateWhiteboard(folder.id)}
+                onCreateCanvasBoard={() => onCreateCanvasBoard(folder.id)}
+              >
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  className={ROW_ACTION_BUTTON_CLASS}
+                  onClick={(e) => e.stopPropagation()}
+                  title="New board"
+                >
+                  <Plus className="h-3 w-3" />
+                  <span className="sr-only">New board</span>
+                </Button>
+              </CreateBoardMenu>
+            )}
+            {onCreateFolder && canNestDeeper && (
               <Button
                 variant="ghost"
                 size="sm"
-                className="h-6 w-6 p-0"
-                onClick={(e) => e.stopPropagation()}
-                title="New board"
+                className={ROW_ACTION_BUTTON_CLASS}
+                onClick={(e) => {
+                  e.stopPropagation()
+                  onCreateFolder(folder.id)
+                }}
+                title="New Subfolder"
               >
-                <Plus className="h-3 w-3" />
-                <span className="sr-only">New board</span>
+                <Folder className="h-3 w-3" />
+                <span className="sr-only">New Subfolder</span>
               </Button>
-            </CreateBoardMenu>
-          )}
-          {onCreateFolder && canNestDeeper && (
-            <Button
-              variant="ghost"
-              size="sm"
-              className="h-6 w-6 p-0"
-              onClick={(e) => {
-                e.stopPropagation()
-                onCreateFolder(folder.id)
-              }}
-              title="New Subfolder"
-            >
-              <Folder className="h-3 w-3" />
-              <span className="sr-only">New Subfolder</span>
-            </Button>
-          )}
-          {onRenameFolder && (
-            <Button
-              variant="ghost"
-              size="sm"
-              className="h-6 w-6 p-0"
-              onClick={(e) => {
-                e.stopPropagation()
-                onRenameFolder(folder.id, folder.name)
-              }}
-              title="Rename"
-            >
-              <Pencil className="h-3 w-3" />
-              <span className="sr-only">Rename</span>
-            </Button>
-          )}
-          {onDeleteFolder && (
-            <Button
-              variant="ghost"
-              size="sm"
-              className="h-6 w-6 p-0 text-destructive hover:text-destructive hover:bg-destructive/10"
-              onClick={(e) => {
-                e.stopPropagation()
-                onDeleteFolder(folder.id, folder.name)
-              }}
-              title="Delete"
-            >
-              <Trash2 className="h-3 w-3" />
-              <span className="sr-only">Delete</span>
-            </Button>
-          )}
-        </div>
+            )}
+            {onRenameFolder && (
+              <Button
+                variant="ghost"
+                size="sm"
+                className={ROW_ACTION_BUTTON_CLASS}
+                onClick={(e) => {
+                  e.stopPropagation()
+                  onRenameFolder(folder.id, folder.name)
+                }}
+                title="Rename"
+              >
+                <Pencil className="h-3 w-3" />
+                <span className="sr-only">Rename</span>
+              </Button>
+            )}
+            {onDeleteFolder && (
+              <Button
+                variant="ghost"
+                size="sm"
+                className={ROW_ACTION_DELETE_CLASS}
+                onClick={(e) => {
+                  e.stopPropagation()
+                  onDeleteFolder(folder.id, folder.name)
+                }}
+                title="Delete"
+              >
+                <Trash2 className="h-3 w-3" />
+                <span className="sr-only">Delete</span>
+              </Button>
+            )}
+          </RowActions>
+        )}
       </div>
 
       {/* Collapsible Content */}

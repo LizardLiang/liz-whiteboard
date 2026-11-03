@@ -19,6 +19,7 @@
 // without a manual refresh" an observable, meaningful assertion rather than
 // a tautology.
 import { expect, test } from '@playwright/test'
+import type { Locator } from '@playwright/test'
 
 test.use({ viewport: { width: 1600, height: 1000 } })
 
@@ -27,23 +28,25 @@ test.describe('Navigator: create, rename, move, and delete a canvas board', () =
     page,
   }) => {
     const sidebar = page.locator('aside')
+    const projectRow = sidebar
+      .locator('div.group')
+      .filter({ has: page.getByText('E2E Project', { exact: true }) })
+    // Row actions float in a column outside the panel and exist only while the
+    // row is hovered: park the pointer so the previous column is gone, hover
+    // the row, then click the button inside the column.
+    const clickRowAction = async (row: Locator, name: string) => {
+      const column = page.getByTestId('row-actions-column')
+      await page.mouse.move(800, 500)
+      await expect(column).toHaveCount(0)
+      await row.hover()
+      await column.getByRole('button', { name }).click()
+    }
 
     await page.goto('/')
     await page.getByRole('button', { name: /toggle e2e project tree/i }).click()
 
     // ── Create (spec-delta: "Editor creates a canvas board in the project root") ──
-    // { force: true } on every navigator row action button below: these
-    // buttons only reach `opacity-100`/`pointer-events-auto` on a real CSS
-    // `:hover` of their `.group` ancestor, and Chromium's hover state is
-    // whatever the mouse's last dispatched position left it as — fragile to
-    // pin down deterministically across a long multi-step test with dialogs,
-    // portals, and a drag gesture in between. `force: true` clicks the
-    // element directly, bypassing the actionability/interception check,
-    // which is the correct tool for a hover-revealed control whose presence
-    // (not its opacity transition) is what this test is verifying.
-    await page.getByRole('button', { name: 'New board' }).first().click({
-      force: true,
-    })
+    await clickRowAction(projectRow, 'New board')
     await page.getByRole('menuitem', { name: 'New Canvas board' }).click()
     await expect(
       page.getByRole('heading', { name: 'Create Canvas Board' }),
@@ -82,9 +85,7 @@ test.describe('Navigator: create, rename, move, and delete a canvas board', () =
     // that exact parent is simpler and less failure-prone than filtering by
     // containment.
     const boardRow = sidebarBoardLink.locator('xpath=..')
-    await boardRow.getByRole('button', { name: 'Rename' }).click({
-      force: true,
-    })
+    await clickRowAction(boardRow, 'Rename')
     await expect(
       page.getByRole('heading', { name: 'Rename Canvas Board' }),
     ).toBeVisible()
@@ -108,9 +109,7 @@ test.describe('Navigator: create, rename, move, and delete a canvas board', () =
 
     // ── Move into a folder (spec-delta: "Canvas board dropped on a folder") ──
     const folderName = `E2E Canvas Folder ${Date.now()}`
-    await page.getByRole('button', { name: 'New Folder' }).first().click({
-      force: true,
-    })
+    await clickRowAction(projectRow, 'New Folder')
     await expect(
       page.getByRole('heading', { name: 'Create Folder' }),
     ).toBeVisible()
@@ -171,9 +170,7 @@ test.describe('Navigator: create, rename, move, and delete a canvas board', () =
     await expect(movedBoardLink).toBeVisible()
     await expect(movedBoardLink).toHaveAttribute('href', /\/canvas\//)
     const movedBoardRow = movedBoardLink.locator('xpath=..')
-    await movedBoardRow.getByRole('button', { name: 'Delete' }).click({
-      force: true,
-    })
+    await clickRowAction(movedBoardRow, 'Delete')
 
     const deleteDialog = page.getByRole('dialog')
     await expect(

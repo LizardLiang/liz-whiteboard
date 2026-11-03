@@ -12,6 +12,7 @@
 // strings the repo has already had to correct multiple times.
 
 import { FileText, Shapes } from 'lucide-react'
+import { useRowActionsMenu } from './RowActions'
 import type { ReactNode } from 'react'
 import {
   DropdownMenu,
@@ -34,8 +35,9 @@ export function CreateBoardMenu({
   children,
   align = 'start',
 }: CreateBoardMenuProps) {
+  const rowActions = useRowActionsMenu()
   return (
-    <DropdownMenu>
+    <DropdownMenu onOpenChange={(open) => rowActions?.setMenuOpen(open)}>
       <DropdownMenuTrigger asChild>{children}</DropdownMenuTrigger>
       <DropdownMenuContent align={align}>
         <DropdownMenuItem onSelect={onCreateWhiteboard}>
