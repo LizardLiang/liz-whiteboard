@@ -23,10 +23,15 @@ import appCss from '../styles.css?url'
 
 import { getCurrentUser } from './api/auth'
 import type { QueryClient } from '@tanstack/react-query'
+import type { Locale } from '@/lib/i18n/resolve-locale'
+import { I18nProvider } from '@/lib/i18n/I18nProvider'
+import { resolveLocale } from '@/lib/i18n/get-locale'
+import { translate } from '@/lib/i18n/translate'
 
 interface MyRouterContext {
   queryClient: QueryClient
   user?: { id: string; username: string; email: string }
+  locale?: Locale
 }
 
 // Routes that do not require authentication
@@ -72,9 +77,6 @@ export const Route = createRootRouteWithContext<MyRouterContext>()({
         name: 'viewport',
         content: 'width=device-width, initial-scale=1',
       },
-      {
-        title: 'ER Whiteboard - Collaborative Diagram Editor',
-      },
     ],
     links: [
       {
@@ -88,9 +90,14 @@ export const Route = createRootRouteWithContext<MyRouterContext>()({
   }),
 
   beforeLoad: async ({ location }) => {
+    // Resolve the language first: public routes return early below and still
+    // need it. Server reads cookie then Accept-Language; client reads
+    // document.cookie then navigator.languages.
+    const locale = await resolveLocale()
+
     // Allow public routes without auth
     if (PUBLIC_PATHS.some((p) => location.pathname.startsWith(p))) {
-      return
+      return { locale }
     }
 
     // Check current session
@@ -102,13 +109,14 @@ export const Route = createRootRouteWithContext<MyRouterContext>()({
       })
     }
 
-    return { user: result.user }
+    return { user: result.user, locale }
   },
 
   shellComponent: RootDocument,
 })
 
 function RootDocument({ children }: { children: React.ReactNode }) {
+  const { locale = 'en' } = Route.useRouteContext()
   const pathname = useRouterState({ select: (s) => s.location.pathname })
   const isPublicRoute = PUBLIC_PATHS.some((p) => pathname.startsWith(p))
   const { isZenMode } = useZenMode()
@@ -119,51 +127,54 @@ function RootDocument({ children }: { children: React.ReactNode }) {
     pathname.startsWith('/whiteboard/') || pathname.startsWith('/canvas/')
 
   return (
-    <html lang="en" suppressHydrationWarning>
+    <html lang={locale} suppressHydrationWarning>
       <head>
+        <title>{translate(locale, 'meta.title')}</title>
         <HeadContent />
       </head>
       <body>
-        <ThemeProvider>
-          <AuthProvider>
-            {isPublicRoute ? (
-              // Public routes: render content only (no header/sidebar)
-              <main>{children}</main>
-            ) : isZenMode ? (
-              // Zen mode: hide the global shell, canvas fills the viewport
-              <main className="h-screen overflow-auto">{children}</main>
-            ) : (
-              // Authenticated routes: render full shell
-              <div className="flex h-screen flex-col">
-                <Header />
-                <div className="flex flex-1 overflow-hidden">
-                  {!isBoardRoute ? (
-                    <Sidebar />
-                  ) : isPinned ? (
-                    <Sidebar onUnpin={() => setPinned(false)} />
-                  ) : null}
-                  <main className="flex-1 overflow-auto">{children}</main>
+        <I18nProvider initialLocale={locale}>
+          <ThemeProvider>
+            <AuthProvider>
+              {isPublicRoute ? (
+                // Public routes: render content only (no header/sidebar)
+                <main>{children}</main>
+              ) : isZenMode ? (
+                // Zen mode: hide the global shell, canvas fills the viewport
+                <main className="h-screen overflow-auto">{children}</main>
+              ) : (
+                // Authenticated routes: render full shell
+                <div className="flex h-screen flex-col">
+                  <Header />
+                  <div className="flex flex-1 overflow-hidden">
+                    {!isBoardRoute ? (
+                      <Sidebar />
+                    ) : isPinned ? (
+                      <Sidebar onUnpin={() => setPinned(false)} />
+                    ) : null}
+                    <main className="flex-1 overflow-auto">{children}</main>
+                  </div>
                 </div>
-              </div>
-            )}
-            <SessionExpiredModal />
-            <Toaster />
-            {import.meta.env.DEV && (
-              <TanStackDevtools
-                config={{
-                  position: 'bottom-right',
-                }}
-                plugins={[
-                  {
-                    name: 'Tanstack Router',
-                    render: <TanStackRouterDevtoolsPanel />,
-                  },
-                  TanStackQueryDevtools,
-                ]}
-              />
-            )}
-          </AuthProvider>
-        </ThemeProvider>
+              )}
+              <SessionExpiredModal />
+              <Toaster />
+              {import.meta.env.DEV && (
+                <TanStackDevtools
+                  config={{
+                    position: 'bottom-right',
+                  }}
+                  plugins={[
+                    {
+                      name: 'Tanstack Router',
+                      render: <TanStackRouterDevtoolsPanel />,
+                    },
+                    TanStackQueryDevtools,
+                  ]}
+                />
+              )}
+            </AuthProvider>
+          </ThemeProvider>
+        </I18nProvider>
         <Scripts />
       </body>
     </html>

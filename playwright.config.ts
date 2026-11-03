@@ -37,6 +37,9 @@ export default defineConfig({
     baseURL: BASE_URL,
     storageState: STORAGE_STATE,
     viewport: { width: 1600, height: 1000 },
+    // Pin the browser language so specs asserting English text do not depend
+    // on the host machine's language (the app follows navigator.languages).
+    locale: 'en-US',
     trace: 'on-first-retry',
     screenshot: 'only-on-failure',
   },
