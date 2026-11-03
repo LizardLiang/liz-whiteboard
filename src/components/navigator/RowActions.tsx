@@ -32,7 +32,7 @@ const VIEWPORT_MARGIN_PX = 4
 export const ROW_ACTION_BUTTON_CLASS =
   'h-6 w-6 cursor-pointer p-0 text-muted-foreground hover:bg-accent hover:text-foreground focus-visible:bg-accent focus-visible:text-foreground dark:hover:bg-accent'
 export const ROW_ACTION_DELETE_CLASS =
-  'h-6 w-6 cursor-pointer p-0 text-destructive hover:bg-destructive/15 hover:text-destructive focus-visible:bg-destructive/15 focus-visible:text-destructive dark:hover:bg-destructive/25'
+  'h-6 w-6 cursor-pointer p-0 text-red-600 hover:bg-red-500/15 hover:text-red-700 focus-visible:bg-red-500/15 focus-visible:text-red-700 dark:text-red-400 dark:hover:bg-red-500/30 dark:hover:text-red-300 dark:focus-visible:bg-red-500/30 dark:focus-visible:text-red-300'
 
 const SWITCH_DELAY_MS = 120
 
