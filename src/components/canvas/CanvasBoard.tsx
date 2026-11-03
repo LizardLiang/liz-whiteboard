@@ -25,6 +25,7 @@ import { useCanvasHighlight } from './use-canvas-highlight'
 import { useFlowAnimation } from './use-flow-animation'
 import { useCanvasTestHook } from './canvas-test-hook'
 import { SHAPE_TOOL_META } from './shape-tool-meta'
+import { cardRoleLabelsOf } from './card-role-labels'
 import { CanvasSearch } from './CanvasSearch'
 import { CanvasExportControl } from './CanvasExportControl'
 import { BoardStyleControl } from './BoardStyleControl'
@@ -239,17 +240,7 @@ export function CanvasBoard({
   const flowDots = settings.flowDots
   // The canvas draws outside React, so the translated role names are handed
   // to the renderer as plain strings and follow a language switch via deps.
-  const roleLabels = useMemo<CardRoleLabels>(
-    () => ({
-      none: t('canvas.card.roles.none'),
-      trigger: t('canvas.card.roles.trigger'),
-      action: t('canvas.card.roles.action'),
-      system: t('canvas.card.roles.system'),
-      data: t('canvas.card.roles.data'),
-      note: t('canvas.card.roles.note'),
-    }),
-    [t],
-  )
+  const roleLabels = useMemo<CardRoleLabels>(() => cardRoleLabelsOf(t), [t])
   const cardLook = useMemo<CardLook>(
     () => ({ diagramStyle, theme: resolvedTheme }),
     [diagramStyle, resolvedTheme],

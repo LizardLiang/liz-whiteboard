@@ -1,6 +1,7 @@
 import { useCallback, useState } from 'react'
 import { Download } from 'lucide-react'
 import { toast } from 'sonner'
+import { cardRoleLabelsOf } from './card-role-labels'
 import type { ExportImageDialogOptions } from '@/components/whiteboard/ExportImageDialog'
 import type { CanvasTheme, DiagramStyle } from '@/lib/canvas-engine/render'
 import type { Scene } from '@/lib/canvas-engine/scene'
@@ -34,6 +35,7 @@ export function CanvasExportControl({
           scene,
           theme,
           diagramStyle,
+          roleLabels: cardRoleLabelsOf(t),
           format,
           background,
           backgroundColor: getBackgroundColor(),

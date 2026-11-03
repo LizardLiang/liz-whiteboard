@@ -6,6 +6,7 @@ import {
 import type {
   CanvasTheme,
   CardLook,
+  CardRoleLabels,
   DiagramStyle,
 } from '@/lib/canvas-engine/render'
 import type {
@@ -33,8 +34,8 @@ import {
 import {
   CARD,
   cardHasShadow,
-  isCardShape,
   cardLookOf,
+  isCardShape,
 } from '@/lib/canvas-engine/card-style'
 import { connectorBounds } from '@/lib/canvas-engine/connector-geometry'
 import { connectorPathOf } from '@/lib/canvas-engine/hit-test'
@@ -53,6 +54,8 @@ export interface CanvasExportOptions {
   filename: string | null | undefined
   /** Defaults to `classic`. The export never carries flow highlight or dots. */
   diagramStyle?: DiagramStyle
+  /** Translated card role names for the chip; English when absent. */
+  roleLabels?: CardRoleLabels
 }
 
 interface SvgSerializationOptions {
@@ -63,6 +66,7 @@ interface SvgSerializationOptions {
   measureText: (text: string, spec: CanvasFontSpec) => number
   prepared?: PreparedCanvasExport
   diagramStyle?: DiagramStyle
+  roleLabels?: CardRoleLabels
 }
 
 interface PreparedCanvasExport {
@@ -435,8 +439,9 @@ export function serializeCanvasSceneSvg({
   measureText,
   prepared,
   diagramStyle,
+  roleLabels,
 }: SvgSerializationOptions): string {
-  const look = cardLookOf(diagramStyle, theme)
+  const look = cardLookOf(diagramStyle, theme, roleLabels)
   const preparedExport =
     prepared ?? prepareCanvasExport(scene, measureText, look)
   const bounds = preparedExport.bounds
@@ -451,6 +456,8 @@ export function serializeCanvasSceneSvg({
     preparedExport.connectorPaths,
     undefined,
     diagramStyle ?? 'classic',
+    undefined,
+    roleLabels,
   )
   const defsNode =
     target.filters.size > 0
@@ -523,7 +530,7 @@ export async function exportCanvasScene(
   const prepared = prepareCanvasExport(
     options.scene,
     measureText,
-    cardLookOf(options.diagramStyle, options.theme),
+    cardLookOf(options.diagramStyle, options.theme, options.roleLabels),
   )
   const bounds = prepared.bounds
   const stem = sanitizeFilename(options.filename)
@@ -537,6 +544,7 @@ export async function exportCanvasScene(
       measureText,
       prepared,
       diagramStyle: options.diagramStyle,
+      roleLabels: options.roleLabels,
     })
     downloadBlob(
       new Blob([svg], { type: 'image/svg+xml;charset=utf-8' }),
@@ -573,6 +581,8 @@ export async function exportCanvasScene(
     prepared.connectorPaths,
     undefined,
     options.diagramStyle ?? 'classic',
+    undefined,
+    options.roleLabels,
   )
   downloadBlob(await canvasBlob(canvas), `${stem}.png`)
 }

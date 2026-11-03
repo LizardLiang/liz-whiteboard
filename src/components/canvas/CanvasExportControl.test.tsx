@@ -75,6 +75,7 @@ describe('CanvasExportControl', () => {
       background: 'solid',
       backgroundColor: 'rgb(2, 6, 23)',
       filename: 'Board name',
+      roleLabels: expect.objectContaining({ system: 'System' }),
     })
   })
 
