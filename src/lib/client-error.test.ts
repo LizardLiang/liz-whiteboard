@@ -42,3 +42,30 @@ describe('clientErrorMessage', () => {
     expect(clientErrorMessage(sqlite, 'fallback')).toBe(sqlite.message)
   })
 })
+
+describe('known translated server messages', () => {
+  it('keeps messages the UI maps to i18n keys, including templates', async () => {
+    vi.stubEnv('NODE_ENV', 'production')
+    const { en } = await import('@/lib/i18n/locales/en')
+    for (const text of Object.values(en.errors)) {
+      if (text.includes('{')) continue
+      expect(clientErrorMessage(new Error(text), 'fallback')).toBe(text)
+    }
+    expect(
+      clientErrorMessage(
+        new Error('Only ADMIN or OWNER can grant permissions'),
+        'x',
+      ),
+    ).toBe('Only ADMIN or OWNER can grant permissions')
+  })
+
+  it('no dictionary template is a bare placeholder that would match everything', async () => {
+    vi.stubEnv('NODE_ENV', 'production')
+    expect(
+      clientErrorMessage(new Error('SQLITE_CONSTRAINT: boom'), 'fallback'),
+    ).toBe('fallback')
+    expect(clientErrorMessage(new Error('anything at all'), 'fallback')).toBe(
+      'fallback',
+    )
+  })
+})
