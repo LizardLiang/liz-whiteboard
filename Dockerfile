@@ -1,4 +1,5 @@
-FROM oven/bun:1
+# Pinned: the built react-dom 19.x bundle does not parse on Bun < 1.4.4.
+FROM oven/bun:1.4.4
 
 WORKDIR /app
 
@@ -22,5 +23,12 @@ ENV PORT=3000
 
 EXPOSE 3000
 
-RUN chmod +x /app/entrypoint.sh
+# ── Non-root runtime ─────────────────────────────────────────────────────────
+# The app only needs to write /app/data (SQLite). A volume mounted there that
+# was created by an earlier root-running image stays root-owned; entrypoint.sh
+# stops with the one-time chown command in that case.
+RUN chmod +x /app/entrypoint.sh \
+ && mkdir -p /app/data \
+ && chown -R bun:bun /app/data
+USER bun
 CMD ["/app/entrypoint.sh"]

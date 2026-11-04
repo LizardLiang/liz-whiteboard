@@ -15,3 +15,11 @@ dogfood-output
 scripts
 specs
 coverage
+data
+.git
+.claude
+.codegraph
+e2e
+test-results
+playwright-report
+scratchpad*
