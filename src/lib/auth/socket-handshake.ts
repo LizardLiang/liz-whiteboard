@@ -14,12 +14,15 @@
 import { parseSessionCookie } from '@/lib/auth/cookies'
 import { validateSessionToken } from '@/lib/auth/session'
 import { validateCollabToken } from '@/lib/oauth/collab-verify'
+import { cookieHandshakeOriginOk } from '@/lib/auth/socket-origin'
 
 /** The minimum socket surface this middleware touches. */
 export interface HandshakeSocket {
   handshake: {
     auth: unknown
-    headers: { cookie?: string }
+    headers: Record<string, string | Array<string> | undefined> & {
+      cookie?: string
+    }
   }
   data: Record<string, unknown>
 }
@@ -78,6 +81,11 @@ export async function authenticateSocketHandshake(
     }
 
     // --- Cookie path (browser app) ---
+    // A cookie handshake must prove it came from one of our own pages. The
+    // bearer path above is exempt: it carries no ambient credential.
+    if (!cookieHandshakeOriginOk(socket.handshake.headers)) {
+      return next(new Error('UNAUTHORIZED'))
+    }
     const cookieHeader = socket.handshake.headers.cookie ?? ''
     const token = parseSessionCookie(cookieHeader)
     if (!token) {

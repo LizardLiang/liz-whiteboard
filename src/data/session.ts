@@ -2,6 +2,7 @@
 // Data access layer for auth Session entity (not CollaborationSession)
 
 import type { Session } from '@/data/models'
+import { disconnectSessionSockets } from '@/lib/auth/socket-registry'
 import { db, genId, insert, mapSession, nowMs, toDbDate } from '@/db'
 
 /**
@@ -71,6 +72,9 @@ export async function findAuthSessionByTokenHash(
 export async function deleteAuthSession(id: string): Promise<void> {
   try {
     db.prepare('DELETE FROM "Session" WHERE "id" = ?').run(id)
+    // The browser's live sockets handshook with this session: cut them now
+    // instead of letting them outlive the logout until the session's expiry.
+    disconnectSessionSockets(id)
   } catch {
     // ignore
   }

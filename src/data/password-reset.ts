@@ -15,6 +15,7 @@
 import type { PasswordResetToken } from '@/data/models'
 import { db, genId, insert, mapPasswordResetToken, nowMs, transaction } from '@/db'
 import { RESET_TOKEN_TTL_MS } from '@/lib/auth/reset-token'
+import { disconnectUserSockets } from '@/lib/auth/socket-registry'
 
 /** Per-user cooldown: at most one reset row per user inside this window. */
 export const RESET_COOLDOWN_MS = 2 * 60_000
@@ -100,7 +101,7 @@ export async function createResetToken(
  * Atomically check the reset abuse limits (cooldown, per-user daily cap,
  * global daily cap — the same three checks, in the same order, against the
  * same constants as src/lib/auth/reset-limits.ts's canSendReset) and, if all
- * pass, void every earlier unused token for the user and insert the new one.
+ * pass, insert the new one (earlier unused tokens are left to expire).
  *
  * Everything above runs inside ONE synchronous transaction with no `await`
  * between the check and the insert. The previous call site ran
@@ -138,10 +139,10 @@ export function tryCreateResetToken(
       return null
     }
 
-    db.prepare(
-      'UPDATE "PasswordResetToken" SET "usedAt" = ? WHERE "userId" = ? AND "usedAt" IS NULL',
-    ).run(now, userId)
-
+    // Earlier unused tokens stay valid until they expire: an attacker who
+    // requests reset links must not be able to void the victim's in-flight
+    // legitimate link. Redemption (completePasswordReset) still marks every
+    // unused token used, so each link remains single-use.
     const id = genId()
     insert('PasswordResetToken', {
       id,
@@ -247,4 +248,6 @@ export function completePasswordReset(userId: string, newPasswordHash: string): 
     db.prepare('DELETE FROM "Session" WHERE "userId" = ?').run(userId)
     db.prepare('DELETE FROM "OauthRefreshToken" WHERE "userId" = ?').run(userId)
   })
+  // Every session just died: cut the user's live sockets too.
+  disconnectUserSockets(userId, 'password_reset')
 }

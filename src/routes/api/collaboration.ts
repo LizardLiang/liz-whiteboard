@@ -86,6 +86,11 @@ import {
   authenticateSocketHandshake,
   isSocketSessionExpired,
 } from '@/lib/auth/socket-handshake'
+import {
+  configuredOrigins,
+  isHandshakeAllowed,
+} from '@/lib/auth/socket-origin'
+import { trackSocket } from '@/lib/auth/socket-registry'
 import { requireRole } from '@/lib/auth/require-role'
 import { findEffectiveRole } from '@/data/permission'
 import { hasMinimumRole } from '@/lib/auth/permissions'
@@ -185,8 +190,19 @@ export function initializeSocketIO(httpServer: HTTPServer): SocketIOServer {
   }
 
   io = new SocketIOServer(httpServer, {
+    // Enforcement is allowRequest below (Origin allowlist); cors only shapes
+    // the response headers for requests that already passed it.
+    allowRequest: (req, callback) => {
+      const ok = isHandshakeAllowed(req)
+      if (!ok) {
+        console.warn(
+          `[collab] Handshake refused: origin ${String(req.headers.origin)} not allowed`,
+        )
+      }
+      callback(null, ok)
+    },
     cors: {
-      origin: process.env.CLIENT_URL || true,
+      origin: configuredOrigins().length > 0 ? configuredOrigins() : true,
       methods: ['GET', 'POST'],
       credentials: true, // Required for cookies to be sent with handshake
     },
@@ -297,6 +313,18 @@ function setupWhiteboardNamespace(ioServer: SocketIOServer): void {
       return
     }
 
+    // Register for revocation (logout, reset, removal) and the periodic
+    // session + role recheck.
+    trackSocket(socket, async () => {
+      const denied = await requireRole(
+        { data: { userId }, emit: () => {} },
+        whiteboardId,
+        'recheck',
+        'VIEWER',
+      )
+      return !denied
+    })
+
     try {
       // Create collaboration session
       const session = await createCollaborationSession({
@@ -400,6 +428,10 @@ function setupCollaborationEventHandlers(
 ): void {
   // Cursor update (throttled by client to 60Hz)
   socket.on('cursor:update', async (data: { x: number; y: number }) => {
+    if (isSessionExpired(socket)) {
+      socket.disconnect(true)
+      return
+    }
     try {
       // Update cursor position in session
       await updateCollaborationSession(socket.id, {
@@ -419,6 +451,10 @@ function setupCollaborationEventHandlers(
 
   // Activity heartbeat
   socket.on('activity:heartbeat', async (_data: { action: string }) => {
+    if (isSessionExpired(socket)) {
+      socket.disconnect(true)
+      return
+    }
     try {
       await updateSessionActivity(socket.id)
     } catch (error) {

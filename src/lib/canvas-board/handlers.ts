@@ -44,6 +44,7 @@ import {
   authenticateSocketHandshake,
   isSocketSessionExpired,
 } from '@/lib/auth/socket-handshake'
+import { trackSocket } from '@/lib/auth/socket-registry'
 import { requireCanvasBoardRole } from '@/lib/auth/require-role'
 
 /**
@@ -507,6 +508,16 @@ export function setupCanvasNamespace(ioServer: SocketIOServer): void {
     // foreign-keys Whiteboard, and presence is out of scope (plan E2). The
     // event is still emitted so the client's connection state settles.
     socket.emit('connected', { sessionId: null, activeUsers: [] })
+
+    trackSocket(socket, async () => {
+      const denied = await requireCanvasBoardRole(
+        { data: { userId }, emit: () => {} },
+        boardId,
+        'recheck',
+        'VIEWER',
+      )
+      return !denied
+    })
 
     registerCanvasElementHandlers(
       socket as unknown as CanvasSocket,

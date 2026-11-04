@@ -3,6 +3,7 @@
 
 import type { ProjectMember } from '@/data/models'
 import type { ProjectRoleValue as ProjectRole } from '@/data/schema'
+import { disconnectUserSockets } from '@/lib/auth/socket-registry'
 import { db, genId, insert, mapProjectMember, nowMs, transaction } from '@/db'
 
 export type EffectiveRole = 'OWNER' | ProjectRole
@@ -147,6 +148,9 @@ export async function setProjectMemberRole(data: {
         .get(data.projectId, data.userId),
     )!
   })
+  // Role changed (possibly demoted): cut the user's live sockets so they
+  // re-handshake and are re-authorised at the new role.
+  disconnectUserSockets(data.userId, 'role_changed')
   return member
 }
 
@@ -164,6 +168,7 @@ export async function removeProjectMember(
     ).run(projectId, userId)
     revokeLinksCreatedBy(projectId, userId)
   })
+  disconnectUserSockets(userId, 'member_removed')
 }
 
 /**
@@ -177,6 +182,7 @@ export async function deleteProjectMember(
     db.prepare(
       'DELETE FROM "ProjectMember" WHERE "projectId" = ? AND "userId" = ?',
     ).run(projectId, userId)
+    disconnectUserSockets(userId, 'member_removed')
   } catch {
     // ignore
   }
