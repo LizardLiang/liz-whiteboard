@@ -68,14 +68,12 @@ describe('resolveCimdClient: open resolution + trust split (mcp-oauth-open-cimd)
     const url = 'https://chatgpt.com/oauth/codex/abc123/client.json'
     vi.stubGlobal(
       'fetch',
-      vi
-        .fn()
-        .mockResolvedValue(
-          jsonResponse({
-            client_id: url,
-            redirect_uris: ['http://127.0.0.1:1455/callback'],
-          }),
-        ),
+      vi.fn().mockResolvedValue(
+        jsonResponse({
+          client_id: url,
+          redirect_uris: ['http://127.0.0.1:1455/callback'],
+        }),
+      ),
     )
 
     const result = await resolveCimdClient(url)
@@ -97,14 +95,12 @@ describe('resolveCimdClient: open resolution + trust split (mcp-oauth-open-cimd)
     const url = 'https://claude.ai/oauth/claude-code-client-metadata'
     vi.stubGlobal(
       'fetch',
-      vi
-        .fn()
-        .mockResolvedValue(
-          jsonResponse({
-            client_id: url,
-            redirect_uris: ['http://127.0.0.1:0/callback'],
-          }),
-        ),
+      vi.fn().mockResolvedValue(
+        jsonResponse({
+          client_id: url,
+          redirect_uris: ['http://127.0.0.1:0/callback'],
+        }),
+      ),
     )
 
     const result = await resolveCimdClient(url)
@@ -181,14 +177,12 @@ describe('resolveCimdClient: open resolution + trust split (mcp-oauth-open-cimd)
     const url = 'https://legacy.example/client'
     vi.stubGlobal(
       'fetch',
-      vi
-        .fn()
-        .mockResolvedValue(
-          jsonResponse({
-            client_id: url,
-            redirect_uris: ['https://legacy.example/cb'],
-          }),
-        ),
+      vi.fn().mockResolvedValue(
+        jsonResponse({
+          client_id: url,
+          redirect_uris: ['https://legacy.example/cb'],
+        }),
+      ),
     )
 
     expect((await resolveCimdClient(url))?.trusted).toBe(true)
@@ -200,14 +194,12 @@ describe('resolveCimdClient: open resolution + trust split (mcp-oauth-open-cimd)
     const url = 'https://old.example/client'
     vi.stubGlobal(
       'fetch',
-      vi
-        .fn()
-        .mockResolvedValue(
-          jsonResponse({
-            client_id: url,
-            redirect_uris: ['https://old.example/cb'],
-          }),
-        ),
+      vi.fn().mockResolvedValue(
+        jsonResponse({
+          client_id: url,
+          redirect_uris: ['https://old.example/cb'],
+        }),
+      ),
     )
 
     expect((await resolveCimdClient(url))?.trusted).toBe(false)
@@ -467,14 +459,12 @@ describe('resolveCimdClient: bounded caches (mcp-oauth-open-cimd)', () => {
     const url = 'https://claude.ai/oauth/claude-code-client-metadata'
     vi.stubGlobal(
       'fetch',
-      vi
-        .fn()
-        .mockResolvedValue(
-          jsonResponse({
-            client_id: url,
-            redirect_uris: ['http://127.0.0.1:0/callback'],
-          }),
-        ),
+      vi.fn().mockResolvedValue(
+        jsonResponse({
+          client_id: url,
+          redirect_uris: ['http://127.0.0.1:0/callback'],
+        }),
+      ),
     )
     expect(await resolveCimdClient(url)).not.toBeNull()
 
@@ -489,5 +479,17 @@ describe('resolveCimdClient: bounded caches (mcp-oauth-open-cimd)', () => {
     } finally {
       vi.useRealTimers()
     }
+  })
+})
+
+describe('resolveCimdClient: fragment client_ids', () => {
+  it('rejects a client_id with a fragment without fetching', async () => {
+    const fetchMock = vi.fn()
+    vi.stubGlobal('fetch', fetchMock)
+    const result = await resolveCimdClient(
+      'https://untrusted.example/client.json#0123456789abcdef',
+    )
+    expect(result).toBeNull()
+    expect(fetchMock).not.toHaveBeenCalled()
   })
 })

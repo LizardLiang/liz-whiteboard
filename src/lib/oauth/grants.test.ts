@@ -228,8 +228,12 @@ describe('origin-scoped CIMD grants (mcp-oauth-open-cimd)', () => {
 
   it('does not strip the port of a non-loopback redirect_uri', () => {
     const { id: userId } = makeUser()
-    upsertGrant(userId, CODEX_A, 'whiteboard', 'X', ['https://app.example:8443/cb'])
-    expect(getGrant(userId, CODEX_A, ['https://app.example:9443/cb'])).toBeNull()
+    upsertGrant(userId, CODEX_A, 'whiteboard', 'X', [
+      'https://app.example:8443/cb',
+    ])
+    expect(
+      getGrant(userId, CODEX_A, ['https://app.example:9443/cb']),
+    ).toBeNull()
   })
 
   it('a different origin never matches, even with identical redirect_uris', () => {
@@ -256,13 +260,20 @@ describe('origin-scoped CIMD grants (mcp-oauth-open-cimd)', () => {
     expect(
       getGrant(userId, CODEX_A, ['https://evil.example/callback']),
     ).toBeNull()
-    expect(getGrant(userId, CODEX_A, [...URIS, 'https://evil.example/cb'])).toBeNull()
+    expect(
+      getGrant(userId, CODEX_A, [...URIS, 'https://evil.example/cb']),
+    ).toBeNull()
   })
 
   it('redirect_uris order does not matter', () => {
     const { id: userId } = makeUser()
-    upsertGrant(userId, CODEX_A, 'whiteboard', 'Codex', ['http://a/1', 'http://a/2'])
-    expect(getGrant(userId, CODEX_A, ['http://a/2', 'http://a/1'])).not.toBeNull()
+    upsertGrant(userId, CODEX_A, 'whiteboard', 'Codex', [
+      'http://a/1',
+      'http://a/2',
+    ])
+    expect(
+      getGrant(userId, CODEX_A, ['http://a/2', 'http://a/1']),
+    ).not.toBeNull()
   })
 
   it('a legacy origin-keyed grant never auto-approves; re-consent replaces it', () => {
@@ -347,5 +358,19 @@ describe('trusted CIMD origins never use the grant store', () => {
     ]) {
       expect(isTrustedCimdOrigin(new URL(doc).origin)).toBe(true)
     }
+  })
+})
+
+describe('fragment client_ids cannot forge a grant key', () => {
+  it('a client_id ending in an existing key never matches that grant', () => {
+    const { id: userId } = makeUser()
+    const real = 'https://evil.example/c.json'
+    const grant = upsertGrant(userId, real, 'whiteboard', 'X', [
+      'https://evil.example/cb',
+    ])
+    // Attacker presents the stored key itself as its client_id.
+    expect(
+      getGrant(userId, grant.clientId, ['https://other.example/cb']),
+    ).toBeNull()
   })
 })

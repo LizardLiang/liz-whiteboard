@@ -114,7 +114,6 @@ export function grantKeyFor(
   redirectUris: ReadonlyArray<string> = [],
 ): string {
   if (!isCimdUrl(clientId)) return clientId
-  if (clientId.includes('#')) return clientId // already a full key
   const digest = createHash('sha256')
     .update([...redirectUris].map(normalizeRedirectUri).sort().join('\n'))
     .digest('hex')

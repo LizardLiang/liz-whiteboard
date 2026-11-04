@@ -249,6 +249,9 @@ export async function resolveCimdClient(
   }
   // https, or a named CIMD_TEST_ORIGINS entry outside production.
   if (!isCimdUrl(url)) return null
+  // CIMD client_ids must not carry a fragment: the grant store uses '#' to
+  // separate the client_id from the redirect_uris hash.
+  if (url.includes('#')) return null
 
   const origin = parsedUrl.origin
   const trusted = isTrustedCimdOrigin(origin)

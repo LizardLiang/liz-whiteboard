@@ -97,12 +97,28 @@ describe('extractClientIp: peer address + trusted proxies (audit L2)', () => {
   })
 
   it('rotating the leftmost XFF hop does not change the bucket', () => {
-    const a = req({ [PEER_IP_HEADER]: '127.0.0.1', 'x-forwarded-for': '9.9.9.9, 203.0.113.9' })
-    const b = req({ [PEER_IP_HEADER]: '127.0.0.1', 'x-forwarded-for': '8.8.8.8, 203.0.113.9' })
+    const a = req({
+      [PEER_IP_HEADER]: '127.0.0.1',
+      'x-forwarded-for': '9.9.9.9, 203.0.113.9',
+    })
+    const b = req({
+      [PEER_IP_HEADER]: '127.0.0.1',
+      'x-forwarded-for': '8.8.8.8, 203.0.113.9',
+    })
     expect(extractClientIp(a)).toBe(extractClientIp(b))
   })
 
-  it('honours x-real-ip from a trusted peer without XFF', () => {
+  it('ignores x-real-ip under the default trusted list, even from a trusted peer', () => {
+    delete process.env.TRUSTED_PROXIES
+    expect(
+      extractClientIp(
+        req({ [PEER_IP_HEADER]: '127.0.0.1', 'x-real-ip': '198.51.100.7' }),
+      ),
+    ).toBe('127.0.0.1')
+  })
+
+  it('honours x-real-ip from a trusted peer when TRUSTED_PROXIES is explicit', () => {
+    process.env.TRUSTED_PROXIES = '127.0.0.1'
     expect(
       extractClientIp(
         req({ [PEER_IP_HEADER]: '127.0.0.1', 'x-real-ip': '198.51.100.7' }),
@@ -110,10 +126,39 @@ describe('extractClientIp: peer address + trusted proxies (audit L2)', () => {
     ).toBe('198.51.100.7')
   })
 
+  it('LAN spoof: client-supplied first hop loses to the proxy-appended LAN IP', () => {
+    delete process.env.TRUSTED_PROXIES
+    // Caddy (172.18.0.2) appended the LAN client 192.168.1.50; the client
+    // forged a leading private hop.
+    expect(
+      extractClientIp(
+        req({
+          [PEER_IP_HEADER]: '172.18.0.2',
+          'x-forwarded-for': '10.9.9.9, 192.168.1.50',
+        }),
+      ),
+    ).toBe('192.168.1.50')
+  })
+
+  it('all-trusted XFF chain returns the rightmost hop, never the first', () => {
+    delete process.env.TRUSTED_PROXIES
+    expect(
+      extractClientIp(
+        req({
+          [PEER_IP_HEADER]: '172.18.0.2',
+          'x-forwarded-for': '10.1.1.1, 10.2.2.2, 192.168.0.9',
+        }),
+      ),
+    ).toBe('192.168.0.9')
+  })
+
   it('normalises an IPv4-mapped IPv6 peer', () => {
     expect(
       extractClientIp(
-        req({ [PEER_IP_HEADER]: '::ffff:172.17.0.2', 'x-forwarded-for': '203.0.113.9' }),
+        req({
+          [PEER_IP_HEADER]: '::ffff:172.17.0.2',
+          'x-forwarded-for': '203.0.113.9',
+        }),
       ),
     ).toBe('203.0.113.9')
   })

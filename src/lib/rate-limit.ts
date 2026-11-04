@@ -8,8 +8,8 @@
 // forge. server.prod.ts (and the Vite dev middleware) stamp it on every
 // request as the PEER_IP_HEADER, overwriting any value the client sent.
 //
-// X-Forwarded-For / X-Real-IP are honoured ONLY when that peer is a trusted
-// proxy (env TRUSTED_PROXIES: comma list of IPs/CIDRs; default loopback plus
+// X-Forwarded-For (and X-Real-IP, only when TRUSTED_PROXIES is set) are
+// honoured ONLY when that peer is a trusted proxy (env TRUSTED_PROXIES: comma list of IPs/CIDRs; default loopback plus
 // the private ranges 10/8, 172.16/12, 192.168/16 that Docker networks use).
 // When port 3000 is reachable directly, the peer is the attacker, is not a
 // trusted proxy, and its XFF header is ignored (audit L2).
@@ -115,10 +115,16 @@ export function extractClientIp(request: Request): string {
   for (let i = hops.length - 1; i >= 0; i--) {
     if (!isTrustedProxy(hops[i], trusted)) return hops[i]
   }
-  if (hops.length > 0) return hops[0]
+  // Every hop is a trusted proxy: the rightmost was appended by the nearest
+  // proxy; everything to its left is client-controlled.
+  if (hops.length > 0) return hops[hops.length - 1]
 
-  const realIp = request.headers.get('x-real-ip')?.trim()
-  if (realIp && parseIp(realIp)) return realIp
+  // X-Real-IP is a single client-settable value: honour it only when the
+  // operator pinned the proxy list explicitly.
+  if (process.env.TRUSTED_PROXIES?.trim()) {
+    const realIp = request.headers.get('x-real-ip')?.trim()
+    if (realIp && parseIp(realIp)) return realIp
+  }
   return peer
 }
 
