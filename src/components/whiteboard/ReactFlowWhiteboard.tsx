@@ -3006,10 +3006,11 @@ function ReactFlowWhiteboardInner({
   // the user visibly circled joins even if a corner pokes out, and it does not
   // immediately drop back out on the next nudge.
   //
-  // NO AUTO-FIT, anywhere: the rectangle the user drew IS the area's size, and
+  // NO AUTO-FIT on edit: the rectangle the user drew IS the area's size, and
   // nothing recomputes it afterwards — not a member moving, not a table joining
-  // or leaving, not Auto Layout. An area is resized only by the user, by
-  // dragging AreaNode's NodeResizer handles. Auto-fit used to exist and was
+  // or leaving. The one exception is an explicit Auto Layout run, which sizes
+  // each area around its members. Otherwise an area is resized only by the
+  // user, by dragging AreaNode's NodeResizer handles. Auto-fit used to exist and was
   // removed deliberately: it fought the resize handles (any member move snapped
   // the box back), and because members are now React Flow children, an auto-fit
   // that repositioned the area dragged every OTHER member along with it.

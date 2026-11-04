@@ -21,8 +21,8 @@ import { useT } from '@/lib/i18n/use-t'
  * Resize is ALWAYS available to an editor, members or not. It used to be
  * disabled for an area with members, because auto-fit derived those bounds from
  * the members and the two sizing mechanisms would have fought each other.
- * Auto-fit is gone: an area's size is the user's, so the handles are always
- * live. Resizing from a top or left handle also moves the area's origin, which
+ * Auto-fit is gone: edits never resize an area (only an explicit Auto Layout
+ * run does), so the handles are always live. Resizing from a top or left handle also moves the area's origin, which
  * React Flow applies to member children automatically — members keep their
  * on-screen position because ReactFlowCanvas re-anchors them against the new
  * origin.

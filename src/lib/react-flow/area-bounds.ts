@@ -6,9 +6,10 @@
 // which derived an area's rectangle from its members and was applied on every
 // membership change, member drag and Auto Layout run. It was removed with the
 // rest of auto-fit: an area's size and position belong to the user (drawn on
-// create, changed with AreaNode's resize handles), and nothing recomputes them.
-// Everything left here READS an area's rectangle to decide membership; nothing
-// writes one.
+// create, changed with AreaNode's resize handles), and no edit recomputes them.
+// The one writer is an explicit Auto Layout run (src/lib/auto-layout/
+// area-aware-layout.ts). Everything left here READS an area's rectangle to
+// decide membership.
 
 
 /**
