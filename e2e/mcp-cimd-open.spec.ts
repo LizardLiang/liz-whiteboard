@@ -224,10 +224,10 @@ test.describe('Open CIMD resolution + consent gate (mcp-oauth-open-cimd)', () =>
     refreshToken = tokens.refresh_token
   })
 
-  // The reason grants are origin-scoped: Codex publishes its metadata at a
-  // path containing a per-login callback id, so per-URL keying would prompt on
-  // every single login.
-  test('a DIFFERENT document URL on the same origin skips consent', async ({
+  // Grants are keyed by the FULL document URL + redirect_uris hash, so another
+  // document on the same untrusted origin must be consented separately.
+  // (Trusted origins such as chatgpt.com never reach the grant store.)
+  test('a DIFFERENT document URL on the same origin asks for consent again', async ({
     request,
   }) => {
     const { challenge } = makePkce()
@@ -244,13 +244,11 @@ test.describe('Open CIMD resolution + consent gate (mcp-oauth-open-cimd)', () =>
 
     expect(status).toBe(302)
     expect(location).toBeTruthy()
-    // Straight to the client's redirect_uri with a code — never /oauth/consent.
-    expect(location).toContain(`http://127.0.0.1:${REDIRECT_PORT}`)
-    expect(location).not.toContain('/oauth/consent')
-    expect(new URL(location!).searchParams.get('code')).toBeTruthy()
+    expect(location).toContain('/oauth/consent')
+    expect(new URL(location!).searchParams.get('code')).toBeNull()
   })
 
-  test('the connected-apps page lists ONE row for the origin', async ({
+  test('the connected-apps page lists ONE row for the consented document', async ({
     page,
   }) => {
     await page.goto(`${BASE_URL}/settings/connections`)
@@ -258,7 +256,7 @@ test.describe('Open CIMD resolution + consent gate (mcp-oauth-open-cimd)', () =>
   })
 
   // F6d: refresh tokens are stored against the FULL document URL while the
-  // grant is keyed by origin. An exact-key delete would leave them alive.
+  // grant key adds a redirect_uris hash; revoke is origin-wide. An exact-key delete would leave them alive.
   test('revoking the origin kills refresh tokens issued to its document URLs', async ({
     page,
     request,
