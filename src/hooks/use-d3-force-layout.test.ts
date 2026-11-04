@@ -13,8 +13,10 @@ vi.mock('@/lib/auto-layout/d3-force-layout', () => ({
 import { useD3ForceLayout } from './use-d3-force-layout'
 // eslint-disable-next-line import/first
 import { computeD3ForceLayout } from '@/lib/auto-layout/d3-force-layout'
+// eslint-disable-next-line import/first, import/order
+import type { Mock } from 'vitest'
 
-const mockComputeLayout = computeD3ForceLayout as ReturnType<typeof vi.fn>
+const mockComputeLayout = computeD3ForceLayout as Mock
 
 // ---------------------------------------------------------------------------
 // Fixtures

@@ -4,6 +4,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { renderHook } from '@testing-library/react'
 import { useTableDeletion } from './use-table-deletion'
+import type { Mock } from 'vitest'
 
 // Mock useReactFlow so we can control getNodes() return value
 const mockGetNodes = vi.fn()
@@ -15,7 +16,7 @@ vi.mock('@xyflow/react', () => ({
 }))
 
 describe('useTableDeletion', () => {
-  let onRequestDelete: ReturnType<typeof vi.fn>
+  let onRequestDelete: Mock
 
   beforeEach(() => {
     onRequestDelete = vi.fn()

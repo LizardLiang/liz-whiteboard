@@ -4,6 +4,7 @@
 //         AC-07b (transactional), FM-03 (invalid payload rejected), FM-07 (merge)
 
 import { beforeEach, describe, expect, it, vi } from 'vitest'
+import type { Mock } from 'vitest'
 import { reorderColumnsSchema } from '@/data/schema'
 
 // ============================================================================
@@ -183,7 +184,7 @@ describe('column:reorder socket handler (Suite S5)', () => {
   let socket: ReturnType<typeof buildSocketMock>['socket']
   let emitSpy: ReturnType<typeof buildSocketMock>['emitSpy']
   let broadcastEmitSpy: ReturnType<typeof buildSocketMock>['broadcastEmitSpy']
-  let deps: { [K in keyof ColumnReorderDeps]: ReturnType<typeof vi.fn> }
+  let deps: { [K in keyof ColumnReorderDeps]: Mock }
 
   beforeEach(() => {
     ;({ socket, emitSpy, broadcastEmitSpy } = buildSocketMock())

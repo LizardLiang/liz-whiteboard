@@ -13,7 +13,7 @@ import { getRenderBoardHandler } from '@/lib/render/handlers'
  * @requires unauthenticated
  */
 export const getRenderBoard = createServerFn({ method: 'GET' })
-  .inputValidator((token: unknown) => {
+  .validator((token: unknown) => {
     if (typeof token !== 'string' || token.length === 0) {
       throw new Error('Invalid token')
     }

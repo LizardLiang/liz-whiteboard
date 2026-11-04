@@ -5,6 +5,7 @@ import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { act, renderHook } from '@testing-library/react'
 import { toast } from 'sonner'
 import { useRelationshipMutations } from './use-relationship-mutations'
+import type { Mock } from 'vitest'
 import type { RelationshipEdgeType } from '@/lib/react-flow/types'
 
 vi.mock('sonner', () => ({
@@ -40,8 +41,8 @@ const makeEdge = (id = 'rel-001'): RelationshipEdgeType => ({
 })
 
 describe('useRelationshipMutations', () => {
-  let setEdges: ReturnType<typeof vi.fn>
-  let emitRelationshipDelete: ReturnType<typeof vi.fn>
+  let setEdges: Mock
+  let emitRelationshipDelete: Mock
   let edges: Array<RelationshipEdgeType>
 
   beforeEach(() => {
@@ -155,7 +156,7 @@ describe('useRelationshipMutations', () => {
     })
 
     expect(toast.error).toHaveBeenCalledWith(expect.any(String))
-    const message = (toast.error as ReturnType<typeof vi.fn>).mock.calls[0][0]
+    const message = (toast.error as Mock).mock.calls[0][0]
     expect(message.length).toBeGreaterThan(0)
   })
 

@@ -25,7 +25,7 @@ import { getFolderProjectId } from '@/data/resolve-project'
  * @requires viewer
  */
 export const getFoldersByProject = createServerFn({ method: 'GET' })
-  .inputValidator((projectId: string) => {
+  .validator((projectId: string) => {
     const idSchema = z.string().uuid()
     return idSchema.parse(projectId)
   })
@@ -57,7 +57,7 @@ export const getFoldersByProject = createServerFn({ method: 'GET' })
  * @requires viewer
  */
 export const getChildFolders = createServerFn({ method: 'GET' })
-  .inputValidator((parentFolderId: string) => {
+  .validator((parentFolderId: string) => {
     const idSchema = z.string().uuid()
     return idSchema.parse(parentFolderId)
   })
@@ -93,7 +93,7 @@ export const getChildFolders = createServerFn({ method: 'GET' })
  * @requires viewer
  */
 export const getFolder = createServerFn({ method: 'GET' })
-  .inputValidator((folderId: string) => {
+  .validator((folderId: string) => {
     const idSchema = z.string().uuid()
     return idSchema.parse(folderId)
   })
@@ -132,7 +132,7 @@ export const getFolder = createServerFn({ method: 'GET' })
  * @requires viewer
  */
 export const getFolderById = createServerFn({ method: 'GET' })
-  .inputValidator((folderId: string) => {
+  .validator((folderId: string) => {
     const idSchema = z.string().uuid()
     return idSchema.parse(folderId)
   })
@@ -171,7 +171,7 @@ export const getFolderById = createServerFn({ method: 'GET' })
  * @requires editor
  */
 export const createFolderFn = createServerFn({ method: 'POST' })
-  .inputValidator((data: unknown) => createFolderSchema.parse(data))
+  .validator((data: unknown) => createFolderSchema.parse(data))
   .handler(
     requireAuth(async ({ user }, data) => {
       const role = await findEffectiveRole(user.id, data.projectId)
@@ -200,7 +200,7 @@ export const createFolderFn = createServerFn({ method: 'POST' })
  * @requires editor
  */
 export const updateFolderFn = createServerFn({ method: 'POST' })
-  .inputValidator((params: unknown) => {
+  .validator((params: unknown) => {
     const schema = z.object({
       id: z.string().uuid(),
       data: updateFolderSchema,
@@ -240,7 +240,7 @@ export const updateFolderFn = createServerFn({ method: 'POST' })
  * @requires editor
  */
 export const deleteFolderFn = createServerFn({ method: 'POST' })
-  .inputValidator((folderId: string) => {
+  .validator((folderId: string) => {
     const idSchema = z.string().uuid()
     return idSchema.parse(folderId)
   })

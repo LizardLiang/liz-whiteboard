@@ -34,7 +34,7 @@ import { requireServerFnRole } from '@/lib/auth/require-role'
  * @requires viewer
  */
 export const getRelationshipsByWhiteboardId = createServerFn({ method: 'GET' })
-  .inputValidator((whiteboardId: string) => {
+  .validator((whiteboardId: string) => {
     const idSchema = z.string().uuid()
     return idSchema.parse(whiteboardId)
   })
@@ -73,7 +73,7 @@ export const getRelationshipsByWhiteboardId = createServerFn({ method: 'GET' })
 export const getRelationshipsByWhiteboardIdWithDetails = createServerFn({
   method: 'GET',
 })
-  .inputValidator((whiteboardId: string) => {
+  .validator((whiteboardId: string) => {
     const idSchema = z.string().uuid()
     return idSchema.parse(whiteboardId)
   })
@@ -110,7 +110,7 @@ export const getRelationshipsByWhiteboardIdWithDetails = createServerFn({
  * @requires viewer
  */
 export const getRelationship = createServerFn({ method: 'GET' })
-  .inputValidator((relationshipId: string) => {
+  .validator((relationshipId: string) => {
     const idSchema = z.string().uuid()
     return idSchema.parse(relationshipId)
   })
@@ -149,7 +149,7 @@ export const getRelationship = createServerFn({ method: 'GET' })
  * @requires viewer
  */
 export const getRelationshipWithDetails = createServerFn({ method: 'GET' })
-  .inputValidator((relationshipId: string) => {
+  .validator((relationshipId: string) => {
     const idSchema = z.string().uuid()
     return idSchema.parse(relationshipId)
   })
@@ -189,7 +189,7 @@ export const getRelationshipWithDetails = createServerFn({ method: 'GET' })
  * @requires viewer
  */
 export const getRelationshipsByTableId = createServerFn({ method: 'GET' })
-  .inputValidator((tableId: string) => {
+  .validator((tableId: string) => {
     const idSchema = z.string().uuid()
     return idSchema.parse(tableId)
   })
@@ -225,7 +225,7 @@ export const getRelationshipsByTableId = createServerFn({ method: 'GET' })
  * @requires editor
  */
 export const createRelationshipFn = createServerFn({ method: 'POST' })
-  .inputValidator((data: unknown) => createRelationshipSchema.parse(data))
+  .validator((data: unknown) => createRelationshipSchema.parse(data))
   .handler(
     requireAuth(async ({ user }, data) => {
       const projectId = await getWhiteboardProjectId(data.whiteboardId)
@@ -248,7 +248,7 @@ export const createRelationshipFn = createServerFn({ method: 'POST' })
  * @requires editor
  */
 export const updateRelationshipFn = createServerFn({ method: 'POST' })
-  .inputValidator((params: unknown) => {
+  .validator((params: unknown) => {
     const schema = z.object({
       id: z.string().uuid(),
       data: updateRelationshipSchema,
@@ -277,7 +277,7 @@ export const updateRelationshipFn = createServerFn({ method: 'POST' })
  * @requires editor
  */
 export const deleteRelationshipFn = createServerFn({ method: 'POST' })
-  .inputValidator((relationshipId: string) => {
+  .validator((relationshipId: string) => {
     const idSchema = z.string().uuid()
     return idSchema.parse(relationshipId)
   })

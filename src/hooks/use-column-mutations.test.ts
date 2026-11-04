@@ -6,6 +6,7 @@ import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { act, renderHook } from '@testing-library/react'
 import { toast } from 'sonner'
 import { useColumnMutations } from './use-column-mutations'
+import type { Mock } from 'vitest'
 import type {
   RelationshipEdgeType,
   TableNodeType,
@@ -73,11 +74,11 @@ const makeEdge = (
 })
 
 describe('useColumnMutations', () => {
-  let setNodes: ReturnType<typeof vi.fn>
-  let setEdges: ReturnType<typeof vi.fn>
-  let emitColumnCreate: ReturnType<typeof vi.fn>
-  let emitColumnUpdate: ReturnType<typeof vi.fn>
-  let emitColumnDelete: ReturnType<typeof vi.fn>
+  let setNodes: Mock
+  let setEdges: Mock
+  let emitColumnCreate: Mock
+  let emitColumnUpdate: Mock
+  let emitColumnDelete: Mock
 
   const initialColumns = [mockPKColumn, mockColumn, mockFKColumn]
   let nodes: Array<TableNodeType>

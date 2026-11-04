@@ -37,14 +37,14 @@ import {
  * @requires admin
  */
 export const createProjectInvite = createServerFn({ method: 'POST' })
-  .inputValidator((data: unknown) => createInviteSchema.parse(data))
+  .validator((data: unknown) => createInviteSchema.parse(data))
   .handler(requireAuth(createProjectInviteHandler))
 
 /**
  * @requires admin
  */
 export const listProjectInvites = createServerFn({ method: 'GET' })
-  .inputValidator((projectId: unknown) => {
+  .validator((projectId: unknown) => {
     if (typeof projectId !== 'string') throw new Error('Invalid projectId')
     return projectId
   })
@@ -54,21 +54,21 @@ export const listProjectInvites = createServerFn({ method: 'GET' })
  * @requires admin
  */
 export const revokeInvite = createServerFn({ method: 'POST' })
-  .inputValidator((data: unknown) => revokeInviteSchema.parse(data))
+  .validator((data: unknown) => revokeInviteSchema.parse(data))
   .handler(requireAuth(revokeInviteHandler))
 
 /**
  * @requires authenticated
  */
 export const redeemInvite = createServerFn({ method: 'POST' })
-  .inputValidator((data: unknown) => redeemInviteSchema.parse(data))
+  .validator((data: unknown) => redeemInviteSchema.parse(data))
   .handler(requireAuth(redeemInviteHandler))
 
 /**
  * @requires unauthenticated
  */
 export const getInvitePreview = createServerFn({ method: 'GET' })
-  .inputValidator((token: unknown) => {
+  .validator((token: unknown) => {
     if (typeof token !== 'string' || token.length === 0) {
       throw new Error('Invalid token')
     }

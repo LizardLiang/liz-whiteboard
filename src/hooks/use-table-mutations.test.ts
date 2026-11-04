@@ -6,6 +6,7 @@ import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { act, renderHook } from '@testing-library/react'
 import { toast } from 'sonner'
 import { useTableMutations } from './use-table-mutations'
+import type { Mock } from 'vitest'
 import type {
   RelationshipEdgeType,
   TableNodeType,
@@ -72,9 +73,9 @@ const makeEdge = (
 })
 
 describe('useTableMutations', () => {
-  let setNodes: ReturnType<typeof vi.fn>
-  let setEdges: ReturnType<typeof vi.fn>
-  let emitTableDelete: ReturnType<typeof vi.fn>
+  let setNodes: Mock
+  let setEdges: Mock
+  let emitTableDelete: Mock
   let nodes: Array<TableNodeType>
   let edges: Array<RelationshipEdgeType>
 
@@ -276,7 +277,7 @@ describe('useTableMutations', () => {
 
     expect(toast.error).toHaveBeenCalled()
     // Toast message should contain failure language
-    const callArgs = (toast.error as ReturnType<typeof vi.fn>).mock.calls[0]
+    const callArgs = (toast.error as Mock).mock.calls[0]
     expect(typeof callArgs[0] === 'string' && callArgs[0].length > 0).toBe(true)
   })
 
@@ -373,7 +374,7 @@ describe('useTableMutations', () => {
   // useColumnMutations.updateColumn.
   // -------------------------------------------------------------------------
   describe('updateTable', () => {
-    let emitTableUpdate: ReturnType<typeof vi.fn>
+    let emitTableUpdate: Mock
 
     beforeEach(() => {
       emitTableUpdate = vi.fn()

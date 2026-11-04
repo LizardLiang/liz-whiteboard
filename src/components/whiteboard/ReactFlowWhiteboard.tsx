@@ -3975,7 +3975,7 @@ function ReactFlowWhiteboardInner({
   // failure (FR-1, FR-3, FR-5), matching handleAreaDragStop's precedent.
   const handleNodeDragStop = useCallback(
     (
-      _event: React.MouseEvent,
+      _event: MouseEvent | TouchEvent,
       node: TableNodeType,
       draggedNodes?: Array<TableNodeType>,
     ) => {

@@ -4,6 +4,7 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { act, renderHook } from '@testing-library/react'
 import { useColumnCollaboration } from './use-column-collaboration'
+import type { Mock } from 'vitest'
 
 // Mock useAuthContext — required after SEC-MODAL-04 fix (AD-7)
 vi.mock('@/components/auth/AuthContext', () => ({
@@ -39,10 +40,10 @@ describe('useColumnCollaboration', () => {
   const whiteboardId = 'wb-001'
 
   let callbacks: {
-    onColumnCreated: ReturnType<typeof vi.fn>
-    onColumnUpdated: ReturnType<typeof vi.fn>
-    onColumnDeleted: ReturnType<typeof vi.fn>
-    onColumnError: ReturnType<typeof vi.fn>
+    onColumnCreated: Mock
+    onColumnUpdated: Mock
+    onColumnDeleted: Mock
+    onColumnError: Mock
   }
 
   beforeEach(() => {

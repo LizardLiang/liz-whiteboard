@@ -22,5 +22,5 @@ export const listConnectedApps = createServerFn({ method: 'GET' }).handler(
  * @requires authenticated
  */
 export const revokeConnectedApp = createServerFn({ method: 'POST' })
-  .inputValidator((data: unknown) => revokeGrantSchema.parse(data))
+  .validator((data: unknown) => revokeGrantSchema.parse(data))
   .handler(requireAuth(revokeConnectedAppHandler))

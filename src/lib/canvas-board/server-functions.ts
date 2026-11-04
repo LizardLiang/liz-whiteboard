@@ -66,7 +66,7 @@ export interface CanvasBoardPageData {
  * @requires viewer
  */
 export const getCanvasBoardPage = createServerFn({ method: 'GET' })
-  .inputValidator((boardId: string) => boardId)
+  .validator((boardId: string) => boardId)
   .handler(
     requireAuth(
       async ({ user }, boardId): Promise<CanvasBoardPageData | null> => {
@@ -98,7 +98,7 @@ export const getCanvasBoardPage = createServerFn({ method: 'GET' })
  * @requires editor
  */
 export const createCanvasBoardFn = createServerFn({ method: 'POST' })
-  .inputValidator((data: unknown) => createCanvasBoardSchema.parse(data))
+  .validator((data: unknown) => createCanvasBoardSchema.parse(data))
   .handler(
     requireAuth(async ({ user }, data) => {
       await requireServerFnRole(user.id, data.projectId, 'EDITOR')
@@ -119,7 +119,7 @@ export const createCanvasBoardFn = createServerFn({ method: 'POST' })
  * @requires editor
  */
 export const updateCanvasBoardFn = createServerFn({ method: 'POST' })
-  .inputValidator((params: unknown) => {
+  .validator((params: unknown) => {
     const schema = z.object({
       id: z.string().uuid(),
       data: updateCanvasBoardSchema,
@@ -147,7 +147,7 @@ export const updateCanvasBoardFn = createServerFn({ method: 'POST' })
  * @requires editor
  */
 export const updateCanvasBoardSettingsFn = createServerFn({ method: 'POST' })
-  .inputValidator((params: unknown) => {
+  .validator((params: unknown) => {
     const schema = z.object({
       id: z.string().uuid(),
       settings: canvasBoardSettingsPatchSchema,
@@ -179,7 +179,7 @@ export const updateCanvasBoardSettingsFn = createServerFn({ method: 'POST' })
  * @requires editor
  */
 export const deleteCanvasBoardFn = createServerFn({ method: 'POST' })
-  .inputValidator((boardId: string) => {
+  .validator((boardId: string) => {
     const idSchema = z.string().uuid()
     return idSchema.parse(boardId)
   })

@@ -63,7 +63,7 @@ export const getProjectsWithTree = createServerFn({
  * @requires viewer
  */
 export const getProject = createServerFn({ method: 'GET' })
-  .inputValidator((projectId: string) => {
+  .validator((projectId: string) => {
     // Accept any non-empty id, not just UUIDs: seed/legacy projects (e.g.
     // "test-project-id") have non-UUID ids and must remain operable. The id is
     // an opaque key used only in parameterized lookups; authz is enforced
@@ -102,7 +102,7 @@ export const getProject = createServerFn({ method: 'GET' })
  * @requires authenticated
  */
 export const createProjectFn = createServerFn({ method: 'POST' })
-  .inputValidator((data: unknown) => createProjectSchema.parse(data))
+  .validator((data: unknown) => createProjectSchema.parse(data))
   .handler(
     requireAuth(async ({ user }, data) => {
       try {
@@ -122,7 +122,7 @@ export const createProjectFn = createServerFn({ method: 'POST' })
  * @requires admin
  */
 export const updateProjectFn = createServerFn({ method: 'POST' })
-  .inputValidator((params: unknown) => {
+  .validator((params: unknown) => {
     const schema = z.object({
       id: z.string().min(1),
       data: updateProjectSchema,
@@ -157,7 +157,7 @@ export const updateProjectFn = createServerFn({ method: 'POST' })
  * @requires viewer
  */
 export const getProjectPageContent = createServerFn({ method: 'GET' })
-  .inputValidator((params: unknown) => {
+  .validator((params: unknown) => {
     const schema = z.object({
       projectId: z.string().min(1),
       folderId: z.string().uuid().optional(),
@@ -194,7 +194,7 @@ export const getProjectPageContent = createServerFn({ method: 'GET' })
  * @requires owner
  */
 export const deleteProjectFn = createServerFn({ method: 'POST' })
-  .inputValidator((projectId: string) => {
+  .validator((projectId: string) => {
     // Accept any non-empty id, not just UUIDs: seed/legacy projects (e.g.
     // "test-project-id") have non-UUID ids and must remain operable. The id is
     // an opaque key used only in parameterized lookups; authz is enforced

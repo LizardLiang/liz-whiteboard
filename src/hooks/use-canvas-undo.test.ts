@@ -14,6 +14,7 @@ import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { act, renderHook, waitFor } from '@testing-library/react'
 import { toast } from 'sonner'
 import { useCanvasUndo } from './use-canvas-undo'
+import type { Mock } from 'vitest'
 import type { CanvasElement } from '@/lib/canvas-engine/scene'
 import type { CanvasMutationResult } from './use-canvas-elements'
 import type { Camera } from '@/lib/canvas-engine/camera'
@@ -1055,7 +1056,7 @@ describe('reporting (board-undo tactical plan, Wave 4, step 11 — "Canvas Undo 
       expect(toast.warning).toHaveBeenCalledWith(
         "This rectangle changed since your edit, so that change can't be undone.",
       )
-      const [message] = (toast.warning as ReturnType<typeof vi.fn>).mock.calls[0]
+      const [message] = (toast.warning as Mock).mock.calls[0]
       expect(message.toLowerCase()).not.toMatch(
         /another user|someone else|collaborator/,
       )

@@ -33,14 +33,14 @@ import { createShareLinkSchema, revokeShareLinkSchema } from '@/data/schema'
  * @requires admin
  */
 export const createShareLink = createServerFn({ method: 'POST' })
-  .inputValidator((data: unknown) => createShareLinkSchema.parse(data))
+  .validator((data: unknown) => createShareLinkSchema.parse(data))
   .handler(requireAuth(createShareLinkHandler))
 
 /**
  * @requires admin
  */
 export const revokeShareLink = createServerFn({ method: 'POST' })
-  .inputValidator((data: unknown) => revokeShareLinkSchema.parse(data))
+  .validator((data: unknown) => revokeShareLinkSchema.parse(data))
   .handler(requireAuth(revokeShareLinkHandler))
 
 /**
@@ -48,7 +48,7 @@ export const revokeShareLink = createServerFn({ method: 'POST' })
  * @requires admin
  */
 export const listShareLinks = createServerFn({ method: 'GET' })
-  .inputValidator((projectId: unknown) => {
+  .validator((projectId: unknown) => {
     if (typeof projectId !== 'string') {
       throw new Error('Invalid projectId')
     }
@@ -60,7 +60,7 @@ export const listShareLinks = createServerFn({ method: 'GET' })
  * @requires unauthenticated
  */
 export const getSharedWhiteboard = createServerFn({ method: 'GET' })
-  .inputValidator((token: unknown) => {
+  .validator((token: unknown) => {
     if (typeof token !== 'string' || token.length === 0) {
       throw new Error('Invalid token')
     }

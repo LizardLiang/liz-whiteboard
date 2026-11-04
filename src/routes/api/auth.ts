@@ -25,7 +25,7 @@ const GENERIC_AUTH_ERROR = 'Invalid email or password'
  * @requires unauthenticated
  */
 export const registerUser = createServerFn({ method: 'POST' })
-  .inputValidator((data: unknown) => registerInputSchema.parse(data))
+  .validator((data: unknown) => registerInputSchema.parse(data))
   .handler(async ({ data }) => {
     const { setResponseHeader } = await import('@tanstack/react-start/server')
     const { transaction, db, genId, nowMs, mapUser } = await import('@/db')
@@ -104,7 +104,7 @@ export const registerUser = createServerFn({ method: 'POST' })
  * @requires unauthenticated
  */
 export const loginUser = createServerFn({ method: 'POST' })
-  .inputValidator((data: unknown) => loginInputSchema.parse(data))
+  .validator((data: unknown) => loginInputSchema.parse(data))
   .handler(async ({ data }) => {
     const { setResponseHeader } = await import('@tanstack/react-start/server')
     const { createUserSession } = await import('@/lib/auth/session')
@@ -257,7 +257,7 @@ export const getTurnstileSiteKey = createServerFn({ method: 'GET' }).handler(
  * @requires unauthenticated
  */
 export const requestPasswordReset = createServerFn({ method: 'POST' })
-  .inputValidator((data: unknown) => forgotPasswordInputSchema.parse(data))
+  .validator((data: unknown) => forgotPasswordInputSchema.parse(data))
   .handler(async ({ data }) => {
     const { getRequest } = await import('@tanstack/react-start/server')
     const { extractClientIp } = await import('@/lib/rate-limit')
@@ -340,7 +340,7 @@ export const requestPasswordReset = createServerFn({ method: 'POST' })
  * @requires unauthenticated
  */
 export const resetPassword = createServerFn({ method: 'POST' })
-  .inputValidator((data: unknown) => resetPasswordInputSchema.parse(data))
+  .validator((data: unknown) => resetPasswordInputSchema.parse(data))
   .handler(async ({ data }) => {
     const { setResponseHeader } = await import('@tanstack/react-start/server')
     const { hashResetToken } = await import('@/lib/auth/reset-token')
@@ -375,7 +375,7 @@ export const resetPassword = createServerFn({ method: 'POST' })
  * @requires unauthenticated
  */
 export const validateResetToken = createServerFn({ method: 'GET' })
-  .inputValidator((token: unknown) => {
+  .validator((token: unknown) => {
     if (typeof token !== 'string' || token.length === 0) {
       throw new Error('Invalid token')
     }

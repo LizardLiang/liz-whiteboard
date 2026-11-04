@@ -25,7 +25,7 @@ import {
  * @requires admin
  */
 export const listProjectPermissions = createServerFn({ method: 'GET' })
-  .inputValidator((projectId: unknown) => {
+  .validator((projectId: unknown) => {
     if (typeof projectId !== 'string') throw new Error('Invalid projectId')
     return projectId
   })
@@ -74,7 +74,7 @@ export const listProjectPermissions = createServerFn({ method: 'GET' })
  * @requires admin
  */
 export const grantPermission = createServerFn({ method: 'POST' })
-  .inputValidator((data: unknown) => grantPermissionSchema.parse(data))
+  .validator((data: unknown) => grantPermissionSchema.parse(data))
   .handler(
     requireAuth(async ({ user }, data) => {
       const effectiveRole = await findEffectiveRole(user.id, data.projectId)
@@ -124,7 +124,7 @@ export const grantPermission = createServerFn({ method: 'POST' })
  * @requires admin
  */
 export const updatePermission = createServerFn({ method: 'POST' })
-  .inputValidator((data: unknown) => updatePermissionSchema.parse(data))
+  .validator((data: unknown) => updatePermissionSchema.parse(data))
   .handler(
     requireAuth(async ({ user }, data) => {
       const effectiveRole = await findEffectiveRole(user.id, data.projectId)
@@ -165,7 +165,7 @@ export const updatePermission = createServerFn({ method: 'POST' })
  * @requires admin
  */
 export const revokePermission = createServerFn({ method: 'POST' })
-  .inputValidator((data: unknown) => revokePermissionSchema.parse(data))
+  .validator((data: unknown) => revokePermissionSchema.parse(data))
   .handler(
     requireAuth(async ({ user }, data) => {
       const effectiveRole = await findEffectiveRole(user.id, data.projectId)

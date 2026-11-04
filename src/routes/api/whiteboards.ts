@@ -36,7 +36,7 @@ import { requireServerFnRole } from '@/lib/auth/require-role'
  * @requires viewer
  */
 export const getWhiteboardsByProject = createServerFn({ method: 'GET' })
-  .inputValidator((projectId: string) => {
+  .validator((projectId: string) => {
     const idSchema = z.string().uuid()
     return idSchema.parse(projectId)
   })
@@ -68,7 +68,7 @@ export const getWhiteboardsByProject = createServerFn({ method: 'GET' })
  * @requires viewer
  */
 export const getWhiteboardsByFolder = createServerFn({ method: 'GET' })
-  .inputValidator((folderId: string) => {
+  .validator((folderId: string) => {
     const idSchema = z.string().uuid()
     return idSchema.parse(folderId)
   })
@@ -105,7 +105,7 @@ export const getWhiteboardsByFolder = createServerFn({ method: 'GET' })
  * @requires viewer
  */
 export const getWhiteboard = createServerFn({ method: 'GET' })
-  .inputValidator((whiteboardId: string) => {
+  .validator((whiteboardId: string) => {
     const idSchema = z.string().uuid()
     return idSchema.parse(whiteboardId)
   })
@@ -144,7 +144,7 @@ export const getWhiteboard = createServerFn({ method: 'GET' })
  * @requires viewer
  */
 export const getWhiteboardById = createServerFn({ method: 'GET' })
-  .inputValidator((whiteboardId: string) => {
+  .validator((whiteboardId: string) => {
     const idSchema = z.string().uuid()
     return idSchema.parse(whiteboardId)
   })
@@ -183,7 +183,7 @@ export const getWhiteboardById = createServerFn({ method: 'GET' })
  * @requires editor
  */
 export const createWhiteboardFn = createServerFn({ method: 'POST' })
-  .inputValidator((data: unknown) => createWhiteboardSchema.parse(data))
+  .validator((data: unknown) => createWhiteboardSchema.parse(data))
   .handler(
     requireAuth(async ({ user }, data) => {
       await requireServerFnRole(user.id, data.projectId, 'EDITOR')
@@ -205,7 +205,7 @@ export const createWhiteboardFn = createServerFn({ method: 'POST' })
  * @requires editor
  */
 export const updateWhiteboardFn = createServerFn({ method: 'POST' })
-  .inputValidator((params: unknown) => {
+  .validator((params: unknown) => {
     const schema = z.object({
       id: z.string().uuid(),
       data: updateWhiteboardSchema,
@@ -234,7 +234,7 @@ export const updateWhiteboardFn = createServerFn({ method: 'POST' })
  * @requires editor
  */
 export const updateCanvasState = createServerFn({ method: 'POST' })
-  .inputValidator((params: unknown) => {
+  .validator((params: unknown) => {
     const schema = z.object({
       id: z.string().uuid(),
       canvasState: canvasStateSchema,
@@ -266,7 +266,7 @@ export const updateCanvasState = createServerFn({ method: 'POST' })
  * @requires editor
  */
 export const updateTextSource = createServerFn({ method: 'POST' })
-  .inputValidator((params: unknown) => {
+  .validator((params: unknown) => {
     const schema = z.object({
       id: z.string().uuid(),
       textSource: z.string(),
@@ -299,7 +299,7 @@ export const updateTextSource = createServerFn({ method: 'POST' })
  * @requires editor
  */
 export const deleteWhiteboardFn = createServerFn({ method: 'POST' })
-  .inputValidator((whiteboardId: string) => {
+  .validator((whiteboardId: string) => {
     const idSchema = z.string().uuid()
     return idSchema.parse(whiteboardId)
   })
@@ -341,7 +341,7 @@ export interface RecentBoardRow {
  * @requires authenticated
  */
 export const getRecentWhiteboards = createServerFn({ method: 'GET' })
-  .inputValidator((limit: number = 10) => limit)
+  .validator((limit: number = 10) => limit)
   .handler(
     requireAuth(async ({ user }, limit) => {
       try {

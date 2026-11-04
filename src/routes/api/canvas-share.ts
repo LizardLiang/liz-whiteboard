@@ -25,14 +25,14 @@ import {
  * @requires admin
  */
 export const createCanvasShareLink = createServerFn({ method: 'POST' })
-  .inputValidator((data: unknown) => createCanvasShareLinkSchema.parse(data))
+  .validator((data: unknown) => createCanvasShareLinkSchema.parse(data))
   .handler(requireAuth(createCanvasShareLinkHandler))
 
 /**
  * @requires admin
  */
 export const revokeCanvasShareLink = createServerFn({ method: 'POST' })
-  .inputValidator((data: unknown) => revokeCanvasShareLinkSchema.parse(data))
+  .validator((data: unknown) => revokeCanvasShareLinkSchema.parse(data))
   .handler(requireAuth(revokeCanvasShareLinkHandler))
 
 /**
@@ -40,7 +40,7 @@ export const revokeCanvasShareLink = createServerFn({ method: 'POST' })
  * @requires admin
  */
 export const listCanvasShareLinks = createServerFn({ method: 'GET' })
-  .inputValidator((canvasBoardId: unknown) => {
+  .validator((canvasBoardId: unknown) => {
     if (typeof canvasBoardId !== 'string') {
       throw new Error('Invalid canvasBoardId')
     }
@@ -52,7 +52,7 @@ export const listCanvasShareLinks = createServerFn({ method: 'GET' })
  * @requires unauthenticated
  */
 export const getSharedCanvasBoard = createServerFn({ method: 'GET' })
-  .inputValidator((token: unknown) => {
+  .validator((token: unknown) => {
     if (typeof token !== 'string' || token.length === 0) {
       throw new Error('Invalid token')
     }

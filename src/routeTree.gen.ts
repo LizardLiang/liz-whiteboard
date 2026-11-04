@@ -9,72 +9,47 @@
 // Additionally, you should also exclude this file from your linter and/or formatter to prevent it from being checked or modified.
 
 import { Route as rootRouteImport } from './routes/__root'
-import { Route as TokenRouteImport } from './routes/token'
-import { Route as RevokeRouteImport } from './routes/revoke'
-import { Route as ResetPasswordRouteImport } from './routes/reset-password'
-import { Route as RegisterRouteImport } from './routes/register'
-import { Route as LoginRouteImport } from './routes/login'
-import { Route as ForgotPasswordRouteImport } from './routes/forgot-password'
-import { Route as AuthorizeRouteImport } from './routes/authorize'
 import { Route as IndexRouteImport } from './routes/index'
-import { Route as WhiteboardWhiteboardIdRouteImport } from './routes/whiteboard/$whiteboardId'
-import { Route as ShareTokenRouteImport } from './routes/share.$token'
-import { Route as SettingsConnectionsRouteImport } from './routes/settings/connections'
-import { Route as ProjectProjectIdRouteImport } from './routes/project.$projectId'
-import { Route as OauthRegisterRouteImport } from './routes/oauth/register'
-import { Route as OauthConsentRouteImport } from './routes/oauth/consent'
-import { Route as InviteTokenRouteImport } from './routes/invite.$token'
-import { Route as DemoTanstackQueryRouteImport } from './routes/demo/tanstack-query'
-import { Route as CanvasBoardIdRouteImport } from './routes/canvas/$boardId'
-import { Route as CanvasShareTokenRouteImport } from './routes/canvas-share.$token'
-import { Route as ApiTableReferencesRouteImport } from './routes/api/table-references'
-import { Route as ApiRenderTokenRouteImport } from './routes/api/render-token'
-import { Route as ApiMcpLifecycleRouteImport } from './routes/api/mcp-lifecycle'
-import { Route as ApiCollabTokenRouteImport } from './routes/api/collab-token'
+import { Route as AuthorizeRouteImport } from './routes/authorize'
+import { Route as ForgotPasswordRouteImport } from './routes/forgot-password'
+import { Route as LoginRouteImport } from './routes/login'
+import { Route as RegisterRouteImport } from './routes/register'
+import { Route as ResetPasswordRouteImport } from './routes/reset-password'
+import { Route as RevokeRouteImport } from './routes/revoke'
+import { Route as TokenRouteImport } from './routes/token'
 import { Route as ApiCanvasBoardsRouteImport } from './routes/api/canvas-boards'
-import { Route as ProjectProjectIdIndexRouteImport } from './routes/project.$projectId.index'
-import { Route as RenderWhiteboardTokenRouteImport } from './routes/render.whiteboard.$token'
-import { Route as RenderCanvasTokenRouteImport } from './routes/render.canvas.$token'
-import { Route as DemoStartServerFuncsRouteImport } from './routes/demo/start.server-funcs'
-import { Route as DemoStartApiRequestRouteImport } from './routes/demo/start.api-request'
-import { Route as DemoFormSimpleRouteImport } from './routes/demo/form.simple'
-import { Route as DemoFormAddressRouteImport } from './routes/demo/form.address'
-import { Route as DemoApiTqTodosRouteImport } from './routes/demo/api.tq-todos'
+import { Route as ApiCollabTokenRouteImport } from './routes/api/collab-token'
+import { Route as ApiMcpLifecycleRouteImport } from './routes/api/mcp-lifecycle'
+import { Route as ApiRenderTokenRouteImport } from './routes/api/render-token'
+import { Route as ApiTableReferencesRouteImport } from './routes/api/table-references'
+import { Route as CanvasShareTokenRouteImport } from './routes/canvas-share.$token'
+import { Route as CanvasBoardIdRouteImport } from './routes/canvas/$boardId'
+import { Route as DemoTanstackQueryRouteImport } from './routes/demo/tanstack-query'
+import { Route as InviteTokenRouteImport } from './routes/invite.$token'
+import { Route as OauthConsentRouteImport } from './routes/oauth/consent'
+import { Route as OauthRegisterRouteImport } from './routes/oauth/register'
+import { Route as ProjectProjectIdRouteImport } from './routes/project.$projectId'
+import { Route as SettingsConnectionsRouteImport } from './routes/settings/connections'
+import { Route as ShareTokenRouteImport } from './routes/share.$token'
+import { Route as WhiteboardWhiteboardIdRouteImport } from './routes/whiteboard/$whiteboardId'
 import { Route as DemoApiNamesRouteImport } from './routes/demo/api.names'
+import { Route as DemoApiTqTodosRouteImport } from './routes/demo/api.tq-todos'
+import { Route as DemoFormAddressRouteImport } from './routes/demo/form.address'
+import { Route as DemoFormSimpleRouteImport } from './routes/demo/form.simple'
+import { Route as DemoStartApiRequestRouteImport } from './routes/demo/start.api-request'
+import { Route as DemoStartServerFuncsRouteImport } from './routes/demo/start.server-funcs'
+import { Route as ProjectProjectIdIndexRouteImport } from './routes/project.$projectId.index'
+import { Route as RenderCanvasTokenRouteImport } from './routes/render.canvas.$token'
+import { Route as RenderWhiteboardTokenRouteImport } from './routes/render.whiteboard.$token'
 import { Route as DemoStartSsrIndexRouteImport } from './routes/demo/start.ssr.index'
-import { Route as ProjectProjectIdFolderFolderIdRouteImport } from './routes/project.$projectId.folder.$folderId'
-import { Route as DemoStartSsrSpaModeRouteImport } from './routes/demo/start.ssr.spa-mode'
-import { Route as DemoStartSsrFullSsrRouteImport } from './routes/demo/start.ssr.full-ssr'
 import { Route as DemoStartSsrDataOnlyRouteImport } from './routes/demo/start.ssr.data-only'
+import { Route as DemoStartSsrFullSsrRouteImport } from './routes/demo/start.ssr.full-ssr'
+import { Route as DemoStartSsrSpaModeRouteImport } from './routes/demo/start.ssr.spa-mode'
+import { Route as ProjectProjectIdFolderFolderIdRouteImport } from './routes/project.$projectId.folder.$folderId'
 
-const TokenRoute = TokenRouteImport.update({
-  id: '/token',
-  path: '/token',
-  getParentRoute: () => rootRouteImport,
-} as any)
-const RevokeRoute = RevokeRouteImport.update({
-  id: '/revoke',
-  path: '/revoke',
-  getParentRoute: () => rootRouteImport,
-} as any)
-const ResetPasswordRoute = ResetPasswordRouteImport.update({
-  id: '/reset-password',
-  path: '/reset-password',
-  getParentRoute: () => rootRouteImport,
-} as any)
-const RegisterRoute = RegisterRouteImport.update({
-  id: '/register',
-  path: '/register',
-  getParentRoute: () => rootRouteImport,
-} as any)
-const LoginRoute = LoginRouteImport.update({
-  id: '/login',
-  path: '/login',
-  getParentRoute: () => rootRouteImport,
-} as any)
-const ForgotPasswordRoute = ForgotPasswordRouteImport.update({
-  id: '/forgot-password',
-  path: '/forgot-password',
+const IndexRoute = IndexRouteImport.update({
+  id: '/',
+  path: '/',
   getParentRoute: () => rootRouteImport,
 } as any)
 const AuthorizeRoute = AuthorizeRouteImport.update({
@@ -82,79 +57,34 @@ const AuthorizeRoute = AuthorizeRouteImport.update({
   path: '/authorize',
   getParentRoute: () => rootRouteImport,
 } as any)
-const IndexRoute = IndexRouteImport.update({
-  id: '/',
-  path: '/',
+const ForgotPasswordRoute = ForgotPasswordRouteImport.update({
+  id: '/forgot-password',
+  path: '/forgot-password',
   getParentRoute: () => rootRouteImport,
 } as any)
-const WhiteboardWhiteboardIdRoute = WhiteboardWhiteboardIdRouteImport.update({
-  id: '/whiteboard/$whiteboardId',
-  path: '/whiteboard/$whiteboardId',
+const LoginRoute = LoginRouteImport.update({
+  id: '/login',
+  path: '/login',
   getParentRoute: () => rootRouteImport,
 } as any)
-const ShareTokenRoute = ShareTokenRouteImport.update({
-  id: '/share/$token',
-  path: '/share/$token',
+const RegisterRoute = RegisterRouteImport.update({
+  id: '/register',
+  path: '/register',
   getParentRoute: () => rootRouteImport,
 } as any)
-const SettingsConnectionsRoute = SettingsConnectionsRouteImport.update({
-  id: '/settings/connections',
-  path: '/settings/connections',
+const ResetPasswordRoute = ResetPasswordRouteImport.update({
+  id: '/reset-password',
+  path: '/reset-password',
   getParentRoute: () => rootRouteImport,
 } as any)
-const ProjectProjectIdRoute = ProjectProjectIdRouteImport.update({
-  id: '/project/$projectId',
-  path: '/project/$projectId',
+const RevokeRoute = RevokeRouteImport.update({
+  id: '/revoke',
+  path: '/revoke',
   getParentRoute: () => rootRouteImport,
 } as any)
-const OauthRegisterRoute = OauthRegisterRouteImport.update({
-  id: '/oauth/register',
-  path: '/oauth/register',
-  getParentRoute: () => rootRouteImport,
-} as any)
-const OauthConsentRoute = OauthConsentRouteImport.update({
-  id: '/oauth/consent',
-  path: '/oauth/consent',
-  getParentRoute: () => rootRouteImport,
-} as any)
-const InviteTokenRoute = InviteTokenRouteImport.update({
-  id: '/invite/$token',
-  path: '/invite/$token',
-  getParentRoute: () => rootRouteImport,
-} as any)
-const DemoTanstackQueryRoute = DemoTanstackQueryRouteImport.update({
-  id: '/demo/tanstack-query',
-  path: '/demo/tanstack-query',
-  getParentRoute: () => rootRouteImport,
-} as any)
-const CanvasBoardIdRoute = CanvasBoardIdRouteImport.update({
-  id: '/canvas/$boardId',
-  path: '/canvas/$boardId',
-  getParentRoute: () => rootRouteImport,
-} as any)
-const CanvasShareTokenRoute = CanvasShareTokenRouteImport.update({
-  id: '/canvas-share/$token',
-  path: '/canvas-share/$token',
-  getParentRoute: () => rootRouteImport,
-} as any)
-const ApiTableReferencesRoute = ApiTableReferencesRouteImport.update({
-  id: '/api/table-references',
-  path: '/api/table-references',
-  getParentRoute: () => rootRouteImport,
-} as any)
-const ApiRenderTokenRoute = ApiRenderTokenRouteImport.update({
-  id: '/api/render-token',
-  path: '/api/render-token',
-  getParentRoute: () => rootRouteImport,
-} as any)
-const ApiMcpLifecycleRoute = ApiMcpLifecycleRouteImport.update({
-  id: '/api/mcp-lifecycle',
-  path: '/api/mcp-lifecycle',
-  getParentRoute: () => rootRouteImport,
-} as any)
-const ApiCollabTokenRoute = ApiCollabTokenRouteImport.update({
-  id: '/api/collab-token',
-  path: '/api/collab-token',
+const TokenRoute = TokenRouteImport.update({
+  id: '/token',
+  path: '/token',
   getParentRoute: () => rootRouteImport,
 } as any)
 const ApiCanvasBoardsRoute = ApiCanvasBoardsRouteImport.update({
@@ -162,44 +92,74 @@ const ApiCanvasBoardsRoute = ApiCanvasBoardsRouteImport.update({
   path: '/api/canvas-boards',
   getParentRoute: () => rootRouteImport,
 } as any)
-const ProjectProjectIdIndexRoute = ProjectProjectIdIndexRouteImport.update({
-  id: '/',
-  path: '/',
-  getParentRoute: () => ProjectProjectIdRoute,
-} as any)
-const RenderWhiteboardTokenRoute = RenderWhiteboardTokenRouteImport.update({
-  id: '/render/whiteboard/$token',
-  path: '/render/whiteboard/$token',
+const ApiCollabTokenRoute = ApiCollabTokenRouteImport.update({
+  id: '/api/collab-token',
+  path: '/api/collab-token',
   getParentRoute: () => rootRouteImport,
 } as any)
-const RenderCanvasTokenRoute = RenderCanvasTokenRouteImport.update({
-  id: '/render/canvas/$token',
-  path: '/render/canvas/$token',
+const ApiMcpLifecycleRoute = ApiMcpLifecycleRouteImport.update({
+  id: '/api/mcp-lifecycle',
+  path: '/api/mcp-lifecycle',
   getParentRoute: () => rootRouteImport,
 } as any)
-const DemoStartServerFuncsRoute = DemoStartServerFuncsRouteImport.update({
-  id: '/demo/start/server-funcs',
-  path: '/demo/start/server-funcs',
+const ApiRenderTokenRoute = ApiRenderTokenRouteImport.update({
+  id: '/api/render-token',
+  path: '/api/render-token',
   getParentRoute: () => rootRouteImport,
 } as any)
-const DemoStartApiRequestRoute = DemoStartApiRequestRouteImport.update({
-  id: '/demo/start/api-request',
-  path: '/demo/start/api-request',
+const ApiTableReferencesRoute = ApiTableReferencesRouteImport.update({
+  id: '/api/table-references',
+  path: '/api/table-references',
   getParentRoute: () => rootRouteImport,
 } as any)
-const DemoFormSimpleRoute = DemoFormSimpleRouteImport.update({
-  id: '/demo/form/simple',
-  path: '/demo/form/simple',
+const CanvasShareTokenRoute = CanvasShareTokenRouteImport.update({
+  id: '/canvas-share/$token',
+  path: '/canvas-share/$token',
   getParentRoute: () => rootRouteImport,
 } as any)
-const DemoFormAddressRoute = DemoFormAddressRouteImport.update({
-  id: '/demo/form/address',
-  path: '/demo/form/address',
+const CanvasBoardIdRoute = CanvasBoardIdRouteImport.update({
+  id: '/canvas/$boardId',
+  path: '/canvas/$boardId',
   getParentRoute: () => rootRouteImport,
 } as any)
-const DemoApiTqTodosRoute = DemoApiTqTodosRouteImport.update({
-  id: '/demo/api/tq-todos',
-  path: '/demo/api/tq-todos',
+const DemoTanstackQueryRoute = DemoTanstackQueryRouteImport.update({
+  id: '/demo/tanstack-query',
+  path: '/demo/tanstack-query',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const InviteTokenRoute = InviteTokenRouteImport.update({
+  id: '/invite/$token',
+  path: '/invite/$token',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const OauthConsentRoute = OauthConsentRouteImport.update({
+  id: '/oauth/consent',
+  path: '/oauth/consent',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const OauthRegisterRoute = OauthRegisterRouteImport.update({
+  id: '/oauth/register',
+  path: '/oauth/register',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const ProjectProjectIdRoute = ProjectProjectIdRouteImport.update({
+  id: '/project/$projectId',
+  path: '/project/$projectId',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const SettingsConnectionsRoute = SettingsConnectionsRouteImport.update({
+  id: '/settings/connections',
+  path: '/settings/connections',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const ShareTokenRoute = ShareTokenRouteImport.update({
+  id: '/share/$token',
+  path: '/share/$token',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const WhiteboardWhiteboardIdRoute = WhiteboardWhiteboardIdRouteImport.update({
+  id: '/whiteboard/$whiteboardId',
+  path: '/whiteboard/$whiteboardId',
   getParentRoute: () => rootRouteImport,
 } as any)
 const DemoApiNamesRoute = DemoApiNamesRouteImport.update({
@@ -207,9 +167,64 @@ const DemoApiNamesRoute = DemoApiNamesRouteImport.update({
   path: '/demo/api/names',
   getParentRoute: () => rootRouteImport,
 } as any)
+const DemoApiTqTodosRoute = DemoApiTqTodosRouteImport.update({
+  id: '/demo/api/tq-todos',
+  path: '/demo/api/tq-todos',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const DemoFormAddressRoute = DemoFormAddressRouteImport.update({
+  id: '/demo/form/address',
+  path: '/demo/form/address',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const DemoFormSimpleRoute = DemoFormSimpleRouteImport.update({
+  id: '/demo/form/simple',
+  path: '/demo/form/simple',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const DemoStartApiRequestRoute = DemoStartApiRequestRouteImport.update({
+  id: '/demo/start/api-request',
+  path: '/demo/start/api-request',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const DemoStartServerFuncsRoute = DemoStartServerFuncsRouteImport.update({
+  id: '/demo/start/server-funcs',
+  path: '/demo/start/server-funcs',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const ProjectProjectIdIndexRoute = ProjectProjectIdIndexRouteImport.update({
+  id: '/',
+  path: '/',
+  getParentRoute: () => ProjectProjectIdRoute,
+} as any)
+const RenderCanvasTokenRoute = RenderCanvasTokenRouteImport.update({
+  id: '/render/canvas/$token',
+  path: '/render/canvas/$token',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const RenderWhiteboardTokenRoute = RenderWhiteboardTokenRouteImport.update({
+  id: '/render/whiteboard/$token',
+  path: '/render/whiteboard/$token',
+  getParentRoute: () => rootRouteImport,
+} as any)
 const DemoStartSsrIndexRoute = DemoStartSsrIndexRouteImport.update({
   id: '/demo/start/ssr/',
   path: '/demo/start/ssr/',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const DemoStartSsrDataOnlyRoute = DemoStartSsrDataOnlyRouteImport.update({
+  id: '/demo/start/ssr/data-only',
+  path: '/demo/start/ssr/data-only',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const DemoStartSsrFullSsrRoute = DemoStartSsrFullSsrRouteImport.update({
+  id: '/demo/start/ssr/full-ssr',
+  path: '/demo/start/ssr/full-ssr',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const DemoStartSsrSpaModeRoute = DemoStartSsrSpaModeRouteImport.update({
+  id: '/demo/start/ssr/spa-mode',
+  path: '/demo/start/ssr/spa-mode',
   getParentRoute: () => rootRouteImport,
 } as any)
 const ProjectProjectIdFolderFolderIdRoute =
@@ -218,21 +233,6 @@ const ProjectProjectIdFolderFolderIdRoute =
     path: '/folder/$folderId',
     getParentRoute: () => ProjectProjectIdRoute,
   } as any)
-const DemoStartSsrSpaModeRoute = DemoStartSsrSpaModeRouteImport.update({
-  id: '/demo/start/ssr/spa-mode',
-  path: '/demo/start/ssr/spa-mode',
-  getParentRoute: () => rootRouteImport,
-} as any)
-const DemoStartSsrFullSsrRoute = DemoStartSsrFullSsrRouteImport.update({
-  id: '/demo/start/ssr/full-ssr',
-  path: '/demo/start/ssr/full-ssr',
-  getParentRoute: () => rootRouteImport,
-} as any)
-const DemoStartSsrDataOnlyRoute = DemoStartSsrDataOnlyRouteImport.update({
-  id: '/demo/start/ssr/data-only',
-  path: '/demo/start/ssr/data-only',
-  getParentRoute: () => rootRouteImport,
-} as any)
 
 export interface FileRoutesByFullPath {
   '/': typeof IndexRoute
@@ -510,46 +510,11 @@ export interface RootRouteChildren {
 
 declare module '@tanstack/react-router' {
   interface FileRoutesByPath {
-    '/token': {
-      id: '/token'
-      path: '/token'
-      fullPath: '/token'
-      preLoaderRoute: typeof TokenRouteImport
-      parentRoute: typeof rootRouteImport
-    }
-    '/revoke': {
-      id: '/revoke'
-      path: '/revoke'
-      fullPath: '/revoke'
-      preLoaderRoute: typeof RevokeRouteImport
-      parentRoute: typeof rootRouteImport
-    }
-    '/reset-password': {
-      id: '/reset-password'
-      path: '/reset-password'
-      fullPath: '/reset-password'
-      preLoaderRoute: typeof ResetPasswordRouteImport
-      parentRoute: typeof rootRouteImport
-    }
-    '/register': {
-      id: '/register'
-      path: '/register'
-      fullPath: '/register'
-      preLoaderRoute: typeof RegisterRouteImport
-      parentRoute: typeof rootRouteImport
-    }
-    '/login': {
-      id: '/login'
-      path: '/login'
-      fullPath: '/login'
-      preLoaderRoute: typeof LoginRouteImport
-      parentRoute: typeof rootRouteImport
-    }
-    '/forgot-password': {
-      id: '/forgot-password'
-      path: '/forgot-password'
-      fullPath: '/forgot-password'
-      preLoaderRoute: typeof ForgotPasswordRouteImport
+    '/': {
+      id: '/'
+      path: '/'
+      fullPath: '/'
+      preLoaderRoute: typeof IndexRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/authorize': {
@@ -559,109 +524,46 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof AuthorizeRouteImport
       parentRoute: typeof rootRouteImport
     }
-    '/': {
-      id: '/'
-      path: '/'
-      fullPath: '/'
-      preLoaderRoute: typeof IndexRouteImport
+    '/forgot-password': {
+      id: '/forgot-password'
+      path: '/forgot-password'
+      fullPath: '/forgot-password'
+      preLoaderRoute: typeof ForgotPasswordRouteImport
       parentRoute: typeof rootRouteImport
     }
-    '/whiteboard/$whiteboardId': {
-      id: '/whiteboard/$whiteboardId'
-      path: '/whiteboard/$whiteboardId'
-      fullPath: '/whiteboard/$whiteboardId'
-      preLoaderRoute: typeof WhiteboardWhiteboardIdRouteImport
+    '/login': {
+      id: '/login'
+      path: '/login'
+      fullPath: '/login'
+      preLoaderRoute: typeof LoginRouteImport
       parentRoute: typeof rootRouteImport
     }
-    '/share/$token': {
-      id: '/share/$token'
-      path: '/share/$token'
-      fullPath: '/share/$token'
-      preLoaderRoute: typeof ShareTokenRouteImport
+    '/register': {
+      id: '/register'
+      path: '/register'
+      fullPath: '/register'
+      preLoaderRoute: typeof RegisterRouteImport
       parentRoute: typeof rootRouteImport
     }
-    '/settings/connections': {
-      id: '/settings/connections'
-      path: '/settings/connections'
-      fullPath: '/settings/connections'
-      preLoaderRoute: typeof SettingsConnectionsRouteImport
+    '/reset-password': {
+      id: '/reset-password'
+      path: '/reset-password'
+      fullPath: '/reset-password'
+      preLoaderRoute: typeof ResetPasswordRouteImport
       parentRoute: typeof rootRouteImport
     }
-    '/project/$projectId': {
-      id: '/project/$projectId'
-      path: '/project/$projectId'
-      fullPath: '/project/$projectId'
-      preLoaderRoute: typeof ProjectProjectIdRouteImport
+    '/revoke': {
+      id: '/revoke'
+      path: '/revoke'
+      fullPath: '/revoke'
+      preLoaderRoute: typeof RevokeRouteImport
       parentRoute: typeof rootRouteImport
     }
-    '/oauth/register': {
-      id: '/oauth/register'
-      path: '/oauth/register'
-      fullPath: '/oauth/register'
-      preLoaderRoute: typeof OauthRegisterRouteImport
-      parentRoute: typeof rootRouteImport
-    }
-    '/oauth/consent': {
-      id: '/oauth/consent'
-      path: '/oauth/consent'
-      fullPath: '/oauth/consent'
-      preLoaderRoute: typeof OauthConsentRouteImport
-      parentRoute: typeof rootRouteImport
-    }
-    '/invite/$token': {
-      id: '/invite/$token'
-      path: '/invite/$token'
-      fullPath: '/invite/$token'
-      preLoaderRoute: typeof InviteTokenRouteImport
-      parentRoute: typeof rootRouteImport
-    }
-    '/demo/tanstack-query': {
-      id: '/demo/tanstack-query'
-      path: '/demo/tanstack-query'
-      fullPath: '/demo/tanstack-query'
-      preLoaderRoute: typeof DemoTanstackQueryRouteImport
-      parentRoute: typeof rootRouteImport
-    }
-    '/canvas/$boardId': {
-      id: '/canvas/$boardId'
-      path: '/canvas/$boardId'
-      fullPath: '/canvas/$boardId'
-      preLoaderRoute: typeof CanvasBoardIdRouteImport
-      parentRoute: typeof rootRouteImport
-    }
-    '/canvas-share/$token': {
-      id: '/canvas-share/$token'
-      path: '/canvas-share/$token'
-      fullPath: '/canvas-share/$token'
-      preLoaderRoute: typeof CanvasShareTokenRouteImport
-      parentRoute: typeof rootRouteImport
-    }
-    '/api/table-references': {
-      id: '/api/table-references'
-      path: '/api/table-references'
-      fullPath: '/api/table-references'
-      preLoaderRoute: typeof ApiTableReferencesRouteImport
-      parentRoute: typeof rootRouteImport
-    }
-    '/api/render-token': {
-      id: '/api/render-token'
-      path: '/api/render-token'
-      fullPath: '/api/render-token'
-      preLoaderRoute: typeof ApiRenderTokenRouteImport
-      parentRoute: typeof rootRouteImport
-    }
-    '/api/mcp-lifecycle': {
-      id: '/api/mcp-lifecycle'
-      path: '/api/mcp-lifecycle'
-      fullPath: '/api/mcp-lifecycle'
-      preLoaderRoute: typeof ApiMcpLifecycleRouteImport
-      parentRoute: typeof rootRouteImport
-    }
-    '/api/collab-token': {
-      id: '/api/collab-token'
-      path: '/api/collab-token'
-      fullPath: '/api/collab-token'
-      preLoaderRoute: typeof ApiCollabTokenRouteImport
+    '/token': {
+      id: '/token'
+      path: '/token'
+      fullPath: '/token'
+      preLoaderRoute: typeof TokenRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/api/canvas-boards': {
@@ -671,60 +573,102 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof ApiCanvasBoardsRouteImport
       parentRoute: typeof rootRouteImport
     }
-    '/project/$projectId/': {
-      id: '/project/$projectId/'
-      path: '/'
-      fullPath: '/project/$projectId/'
-      preLoaderRoute: typeof ProjectProjectIdIndexRouteImport
-      parentRoute: typeof ProjectProjectIdRoute
-    }
-    '/render/whiteboard/$token': {
-      id: '/render/whiteboard/$token'
-      path: '/render/whiteboard/$token'
-      fullPath: '/render/whiteboard/$token'
-      preLoaderRoute: typeof RenderWhiteboardTokenRouteImport
+    '/api/collab-token': {
+      id: '/api/collab-token'
+      path: '/api/collab-token'
+      fullPath: '/api/collab-token'
+      preLoaderRoute: typeof ApiCollabTokenRouteImport
       parentRoute: typeof rootRouteImport
     }
-    '/render/canvas/$token': {
-      id: '/render/canvas/$token'
-      path: '/render/canvas/$token'
-      fullPath: '/render/canvas/$token'
-      preLoaderRoute: typeof RenderCanvasTokenRouteImport
+    '/api/mcp-lifecycle': {
+      id: '/api/mcp-lifecycle'
+      path: '/api/mcp-lifecycle'
+      fullPath: '/api/mcp-lifecycle'
+      preLoaderRoute: typeof ApiMcpLifecycleRouteImport
       parentRoute: typeof rootRouteImport
     }
-    '/demo/start/server-funcs': {
-      id: '/demo/start/server-funcs'
-      path: '/demo/start/server-funcs'
-      fullPath: '/demo/start/server-funcs'
-      preLoaderRoute: typeof DemoStartServerFuncsRouteImport
+    '/api/render-token': {
+      id: '/api/render-token'
+      path: '/api/render-token'
+      fullPath: '/api/render-token'
+      preLoaderRoute: typeof ApiRenderTokenRouteImport
       parentRoute: typeof rootRouteImport
     }
-    '/demo/start/api-request': {
-      id: '/demo/start/api-request'
-      path: '/demo/start/api-request'
-      fullPath: '/demo/start/api-request'
-      preLoaderRoute: typeof DemoStartApiRequestRouteImport
+    '/api/table-references': {
+      id: '/api/table-references'
+      path: '/api/table-references'
+      fullPath: '/api/table-references'
+      preLoaderRoute: typeof ApiTableReferencesRouteImport
       parentRoute: typeof rootRouteImport
     }
-    '/demo/form/simple': {
-      id: '/demo/form/simple'
-      path: '/demo/form/simple'
-      fullPath: '/demo/form/simple'
-      preLoaderRoute: typeof DemoFormSimpleRouteImport
+    '/canvas-share/$token': {
+      id: '/canvas-share/$token'
+      path: '/canvas-share/$token'
+      fullPath: '/canvas-share/$token'
+      preLoaderRoute: typeof CanvasShareTokenRouteImport
       parentRoute: typeof rootRouteImport
     }
-    '/demo/form/address': {
-      id: '/demo/form/address'
-      path: '/demo/form/address'
-      fullPath: '/demo/form/address'
-      preLoaderRoute: typeof DemoFormAddressRouteImport
+    '/canvas/$boardId': {
+      id: '/canvas/$boardId'
+      path: '/canvas/$boardId'
+      fullPath: '/canvas/$boardId'
+      preLoaderRoute: typeof CanvasBoardIdRouteImport
       parentRoute: typeof rootRouteImport
     }
-    '/demo/api/tq-todos': {
-      id: '/demo/api/tq-todos'
-      path: '/demo/api/tq-todos'
-      fullPath: '/demo/api/tq-todos'
-      preLoaderRoute: typeof DemoApiTqTodosRouteImport
+    '/demo/tanstack-query': {
+      id: '/demo/tanstack-query'
+      path: '/demo/tanstack-query'
+      fullPath: '/demo/tanstack-query'
+      preLoaderRoute: typeof DemoTanstackQueryRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/invite/$token': {
+      id: '/invite/$token'
+      path: '/invite/$token'
+      fullPath: '/invite/$token'
+      preLoaderRoute: typeof InviteTokenRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/oauth/consent': {
+      id: '/oauth/consent'
+      path: '/oauth/consent'
+      fullPath: '/oauth/consent'
+      preLoaderRoute: typeof OauthConsentRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/oauth/register': {
+      id: '/oauth/register'
+      path: '/oauth/register'
+      fullPath: '/oauth/register'
+      preLoaderRoute: typeof OauthRegisterRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/project/$projectId': {
+      id: '/project/$projectId'
+      path: '/project/$projectId'
+      fullPath: '/project/$projectId'
+      preLoaderRoute: typeof ProjectProjectIdRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/settings/connections': {
+      id: '/settings/connections'
+      path: '/settings/connections'
+      fullPath: '/settings/connections'
+      preLoaderRoute: typeof SettingsConnectionsRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/share/$token': {
+      id: '/share/$token'
+      path: '/share/$token'
+      fullPath: '/share/$token'
+      preLoaderRoute: typeof ShareTokenRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/whiteboard/$whiteboardId': {
+      id: '/whiteboard/$whiteboardId'
+      path: '/whiteboard/$whiteboardId'
+      fullPath: '/whiteboard/$whiteboardId'
+      preLoaderRoute: typeof WhiteboardWhiteboardIdRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/demo/api/names': {
@@ -734,6 +678,62 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof DemoApiNamesRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/demo/api/tq-todos': {
+      id: '/demo/api/tq-todos'
+      path: '/demo/api/tq-todos'
+      fullPath: '/demo/api/tq-todos'
+      preLoaderRoute: typeof DemoApiTqTodosRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/demo/form/address': {
+      id: '/demo/form/address'
+      path: '/demo/form/address'
+      fullPath: '/demo/form/address'
+      preLoaderRoute: typeof DemoFormAddressRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/demo/form/simple': {
+      id: '/demo/form/simple'
+      path: '/demo/form/simple'
+      fullPath: '/demo/form/simple'
+      preLoaderRoute: typeof DemoFormSimpleRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/demo/start/api-request': {
+      id: '/demo/start/api-request'
+      path: '/demo/start/api-request'
+      fullPath: '/demo/start/api-request'
+      preLoaderRoute: typeof DemoStartApiRequestRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/demo/start/server-funcs': {
+      id: '/demo/start/server-funcs'
+      path: '/demo/start/server-funcs'
+      fullPath: '/demo/start/server-funcs'
+      preLoaderRoute: typeof DemoStartServerFuncsRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/project/$projectId/': {
+      id: '/project/$projectId/'
+      path: '/'
+      fullPath: '/project/$projectId/'
+      preLoaderRoute: typeof ProjectProjectIdIndexRouteImport
+      parentRoute: typeof ProjectProjectIdRoute
+    }
+    '/render/canvas/$token': {
+      id: '/render/canvas/$token'
+      path: '/render/canvas/$token'
+      fullPath: '/render/canvas/$token'
+      preLoaderRoute: typeof RenderCanvasTokenRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/render/whiteboard/$token': {
+      id: '/render/whiteboard/$token'
+      path: '/render/whiteboard/$token'
+      fullPath: '/render/whiteboard/$token'
+      preLoaderRoute: typeof RenderWhiteboardTokenRouteImport
+      parentRoute: typeof rootRouteImport
+    }
     '/demo/start/ssr/': {
       id: '/demo/start/ssr/'
       path: '/demo/start/ssr'
@@ -741,18 +741,11 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof DemoStartSsrIndexRouteImport
       parentRoute: typeof rootRouteImport
     }
-    '/project/$projectId/folder/$folderId': {
-      id: '/project/$projectId/folder/$folderId'
-      path: '/folder/$folderId'
-      fullPath: '/project/$projectId/folder/$folderId'
-      preLoaderRoute: typeof ProjectProjectIdFolderFolderIdRouteImport
-      parentRoute: typeof ProjectProjectIdRoute
-    }
-    '/demo/start/ssr/spa-mode': {
-      id: '/demo/start/ssr/spa-mode'
-      path: '/demo/start/ssr/spa-mode'
-      fullPath: '/demo/start/ssr/spa-mode'
-      preLoaderRoute: typeof DemoStartSsrSpaModeRouteImport
+    '/demo/start/ssr/data-only': {
+      id: '/demo/start/ssr/data-only'
+      path: '/demo/start/ssr/data-only'
+      fullPath: '/demo/start/ssr/data-only'
+      preLoaderRoute: typeof DemoStartSsrDataOnlyRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/demo/start/ssr/full-ssr': {
@@ -762,12 +755,19 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof DemoStartSsrFullSsrRouteImport
       parentRoute: typeof rootRouteImport
     }
-    '/demo/start/ssr/data-only': {
-      id: '/demo/start/ssr/data-only'
-      path: '/demo/start/ssr/data-only'
-      fullPath: '/demo/start/ssr/data-only'
-      preLoaderRoute: typeof DemoStartSsrDataOnlyRouteImport
+    '/demo/start/ssr/spa-mode': {
+      id: '/demo/start/ssr/spa-mode'
+      path: '/demo/start/ssr/spa-mode'
+      fullPath: '/demo/start/ssr/spa-mode'
+      preLoaderRoute: typeof DemoStartSsrSpaModeRouteImport
       parentRoute: typeof rootRouteImport
+    }
+    '/project/$projectId/folder/$folderId': {
+      id: '/project/$projectId/folder/$folderId'
+      path: '/folder/$folderId'
+      fullPath: '/project/$projectId/folder/$folderId'
+      preLoaderRoute: typeof ProjectProjectIdFolderFolderIdRouteImport
+      parentRoute: typeof ProjectProjectIdRoute
     }
   }
 }

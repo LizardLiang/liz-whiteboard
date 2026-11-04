@@ -5,6 +5,7 @@
 
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { copyText } from './copy-text'
+import type { Mock } from 'vitest'
 
 describe('copyText: navigator.clipboard available (secure context)', () => {
   afterEach(() => {
@@ -36,7 +37,7 @@ describe('copyText: navigator.clipboard available (secure context)', () => {
 })
 
 describe('copyText: navigator.clipboard absent (plain-HTTP LAN origin)', () => {
-  let execCommandSpy: ReturnType<typeof vi.fn>
+  let execCommandSpy: Mock
 
   beforeEach(() => {
     // Simulate the non-secure-context shape: `navigator` exists (jsdom

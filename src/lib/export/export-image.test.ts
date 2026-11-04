@@ -6,6 +6,7 @@
 // exercised.
 
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
+import type { Mock } from 'vitest'
 import type { Node } from '@xyflow/react'
 
 const toPngMock = vi.fn()
@@ -131,7 +132,7 @@ describe('computeExportViewport', () => {
 // ---------------------------------------------------------------------------
 
 describe('exportDiagramImage', () => {
-  let clickSpy: ReturnType<typeof vi.fn>
+  let clickSpy: Mock
 
   beforeEach(() => {
     toPngMock.mockReset().mockResolvedValue('data:image/png;base64,PNG')

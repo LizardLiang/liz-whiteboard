@@ -34,26 +34,26 @@ import {
  * @requires editor
  */
 export const saveSnapshot = createServerFn({ method: 'POST' })
-  .inputValidator((data: unknown) => saveSnapshotSchema.parse(data))
+  .validator((data: unknown) => saveSnapshotSchema.parse(data))
   .handler(requireAuth(saveSnapshotHandler))
 
 /**
  * @requires viewer
  */
 export const listSnapshots = createServerFn({ method: 'GET' })
-  .inputValidator((data: unknown) => listSnapshotsSchema.parse(data))
+  .validator((data: unknown) => listSnapshotsSchema.parse(data))
   .handler(requireAuth(listSnapshotsHandler))
 
 /**
  * @requires viewer
  */
 export const getSnapshot = createServerFn({ method: 'GET' })
-  .inputValidator((data: unknown) => getSnapshotSchema.parse(data))
+  .validator((data: unknown) => getSnapshotSchema.parse(data))
   .handler(requireAuth(getSnapshotHandler))
 
 /**
  * @requires editor
  */
 export const restoreSnapshot = createServerFn({ method: 'POST' })
-  .inputValidator((data: unknown) => restoreSnapshotSchema.parse(data))
+  .validator((data: unknown) => restoreSnapshotSchema.parse(data))
   .handler(requireAuth(restoreSnapshotHandler))

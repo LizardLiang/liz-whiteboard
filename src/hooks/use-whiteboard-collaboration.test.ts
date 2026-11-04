@@ -5,6 +5,7 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { act, renderHook } from '@testing-library/react'
 import { useWhiteboardCollaboration } from './use-whiteboard-collaboration'
+import type { Mock } from 'vitest'
 
 vi.mock('@tanstack/react-router', () => ({
   useRouter: () => ({ navigate: vi.fn() }),
@@ -40,9 +41,9 @@ describe('useWhiteboardCollaboration — table deletion extension', () => {
   const whiteboardId = 'wb-001'
   const userId = 'user-current'
 
-  let onPositionUpdate: ReturnType<typeof vi.fn>
-  let onTableDeleted: ReturnType<typeof vi.fn>
-  let onTableError: ReturnType<typeof vi.fn>
+  let onPositionUpdate: Mock
+  let onTableDeleted: Mock
+  let onTableError: Mock
 
   beforeEach(() => {
     onPositionUpdate = vi.fn()
@@ -211,9 +212,9 @@ describe('useWhiteboardCollaboration — relationship events', () => {
   const whiteboardId = 'wb-001'
   const userId = 'user-current'
 
-  let onPositionUpdate: ReturnType<typeof vi.fn>
-  let onRelationshipDeleted: ReturnType<typeof vi.fn>
-  let onRelationshipError: ReturnType<typeof vi.fn>
+  let onPositionUpdate: Mock
+  let onRelationshipDeleted: Mock
+  let onRelationshipError: Mock
 
   beforeEach(() => {
     onPositionUpdate = vi.fn()
@@ -397,8 +398,8 @@ describe('useWhiteboardCollaboration — table creation sync (GH #125)', () => {
   const whiteboardId = 'wb-001'
   const userId = 'user-current'
 
-  let onPositionUpdate: ReturnType<typeof vi.fn>
-  let onTableCreated: ReturnType<typeof vi.fn>
+  let onPositionUpdate: Mock
+  let onTableCreated: Mock
 
   // onTableCreated is the 13th positional param — pad the unused slots with
   // undefined to reach it, matching this file's existing convention (see the

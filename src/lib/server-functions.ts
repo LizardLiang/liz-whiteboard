@@ -79,7 +79,7 @@ export type WhiteboardWithDiagramAndRole = WhiteboardWithDiagram & {
 export const getWhiteboardWithDiagram = createServerFn({
   method: 'GET',
 })
-  .inputValidator((whiteboardId: string) => whiteboardId)
+  .validator((whiteboardId: string) => whiteboardId)
   .handler(
     requireAuth(
       async (
@@ -110,7 +110,7 @@ export const getWhiteboardWithDiagram = createServerFn({
 export const getWhiteboardRelationships = createServerFn({
   method: 'GET',
 })
-  .inputValidator((whiteboardId: string) => whiteboardId)
+  .validator((whiteboardId: string) => whiteboardId)
   .handler(
     requireAuth(
       async (
@@ -139,7 +139,7 @@ export const getWhiteboardRelationships = createServerFn({
 export const getWhiteboardAreas = createServerFn({
   method: 'GET',
 })
-  .inputValidator((whiteboardId: string) => whiteboardId)
+  .validator((whiteboardId: string) => whiteboardId)
   .handler(
     requireAuth(async ({ user }, whiteboardId): Promise<Array<Area>> => {
       const projectId = await getWhiteboardProjectId(whiteboardId)
@@ -163,7 +163,7 @@ export const getWhiteboardAreas = createServerFn({
 export const getWhiteboardShapes = createServerFn({
   method: 'GET',
 })
-  .inputValidator((whiteboardId: string) => whiteboardId)
+  .validator((whiteboardId: string) => whiteboardId)
   .handler(
     requireAuth(
       async (
@@ -194,7 +194,7 @@ export const getWhiteboardShapes = createServerFn({
 export const getWhiteboardComments = createServerFn({
   method: 'GET',
 })
-  .inputValidator((whiteboardId: string) => whiteboardId)
+  .validator((whiteboardId: string) => whiteboardId)
   .handler(
     requireAuth(
       async ({ user }, whiteboardId): Promise<Array<CommentWithAuthor>> => {
@@ -230,7 +230,7 @@ export const getWhiteboardComments = createServerFn({
 export const createTable = createServerFn({
   method: 'POST',
 })
-  .inputValidator((data: CreateTable) => data)
+  .validator((data: CreateTable) => data)
   .handler(requireAuth(createTableHandler))
 
 /**
@@ -245,7 +245,7 @@ export const createTable = createServerFn({
 export const updateTablePosition = createServerFn({
   method: 'POST',
 })
-  .inputValidator((data: unknown) => {
+  .validator((data: unknown) => {
     const schema = z.object({
       id: z.string().uuid(),
       positionX: z.number().finite(),
@@ -286,7 +286,7 @@ export const updateTablePosition = createServerFn({
  * @requires editor
  */
 export const updateTablePositionsBulk = createServerFn({ method: 'POST' })
-  .inputValidator((data: BulkUpdatePositions) =>
+  .validator((data: BulkUpdatePositions) =>
     bulkUpdatePositionsSchema.parse(data),
   )
   .handler(
@@ -340,7 +340,7 @@ export const updateTablePositionsBulk = createServerFn({ method: 'POST' })
 export const createRelationshipFn = createServerFn({
   method: 'POST',
 })
-  .inputValidator((data: CreateRelationship) => data)
+  .validator((data: CreateRelationship) => data)
   .handler(
     requireAuth(async ({ user }, data) => {
       const projectId = await getWhiteboardProjectId(data.whiteboardId)
@@ -361,7 +361,7 @@ export const createRelationshipFn = createServerFn({
 export const updateWhiteboardTextSourceFn = createServerFn({
   method: 'POST',
 })
-  .inputValidator((data: { whiteboardId: string; textSource: string }) => data)
+  .validator((data: { whiteboardId: string; textSource: string }) => data)
   .handler(
     requireAuth(async ({ user }, data) => {
       const projectId = await getWhiteboardProjectId(data.whiteboardId)
@@ -388,7 +388,7 @@ export const updateWhiteboardTextSourceFn = createServerFn({
 export const computeAutoLayout = createServerFn({
   method: 'POST',
 })
-  .inputValidator((data: { whiteboardId: string }) => data)
+  .validator((data: { whiteboardId: string }) => data)
   .handler(
     requireAuth(
       async (
@@ -458,7 +458,7 @@ export const getMcpEndpointUrl = createServerFn({ method: 'GET' }).handler(
 export const saveCanvasState = createServerFn({
   method: 'POST',
 })
-  .inputValidator(
+  .validator(
     (data: {
       whiteboardId: string
       canvasState: { zoom: number; offsetX: number; offsetY: number }
@@ -496,7 +496,7 @@ export const saveCanvasState = createServerFn({
 export const getReferenceTargets = createServerFn({
   method: 'GET',
 })
-  .inputValidator((whiteboardId: string) => whiteboardId)
+  .validator((whiteboardId: string) => whiteboardId)
   .handler(
     requireAuth(
       async ({ user }, whiteboardId): Promise<Array<ReferenceTargetFile>> => {
@@ -523,7 +523,7 @@ export const getReferenceTargets = createServerFn({
 export const createTableReferenceFn = createServerFn({
   method: 'POST',
 })
-  .inputValidator((data: unknown) => {
+  .validator((data: unknown) => {
     const schema = z.object({
       whiteboardId: z.string().uuid(),
       sourceWhiteboardId: z.string().uuid(),
@@ -556,7 +556,7 @@ export const createTableReferenceFn = createServerFn({
 export const updateTableReferenceFn = createServerFn({
   method: 'POST',
 })
-  .inputValidator((data: unknown) => {
+  .validator((data: unknown) => {
     const schema = z.object({
       tableId: z.string().uuid(),
       sourceWhiteboardId: z.string().uuid().optional(),
@@ -587,7 +587,7 @@ export const updateTableReferenceFn = createServerFn({
 export const deleteTableReferenceFn = createServerFn({
   method: 'POST',
 })
-  .inputValidator((data: unknown) => {
+  .validator((data: unknown) => {
     const schema = z.object({ tableId: z.string().uuid() })
     return schema.parse(data)
   })

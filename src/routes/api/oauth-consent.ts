@@ -18,19 +18,19 @@ import { consentRequestIdSchema } from '@/data/schema'
  * @requires authenticated
  */
 export const getConsentRequest = createServerFn({ method: 'GET' })
-  .inputValidator((data: unknown) => consentRequestIdSchema.parse(data))
+  .validator((data: unknown) => consentRequestIdSchema.parse(data))
   .handler(requireAuth(getConsentRequestHandler))
 
 /**
  * @requires authenticated
  */
 export const approveConsent = createServerFn({ method: 'POST' })
-  .inputValidator((data: unknown) => consentRequestIdSchema.parse(data))
+  .validator((data: unknown) => consentRequestIdSchema.parse(data))
   .handler(requireAuth(approveConsentHandler))
 
 /**
  * @requires authenticated
  */
 export const denyConsent = createServerFn({ method: 'POST' })
-  .inputValidator((data: unknown) => consentRequestIdSchema.parse(data))
+  .validator((data: unknown) => consentRequestIdSchema.parse(data))
   .handler(requireAuth(denyConsentHandler))

@@ -3,10 +3,8 @@ FROM oven/bun:1
 WORKDIR /app
 
 # ── Layer: dependencies (cached until lockfile changes) ──────────────────────
-# Note: not using --frozen-lockfile so the integration-test image builds even
-# when the working-tree lockfile is mid-development / not perfectly synced.
 COPY package.json bun.lock ./
-RUN bun install
+RUN bun install --frozen-lockfile
 
 # ── Layer: source ────────────────────────────────────────────────────────────
 COPY . .

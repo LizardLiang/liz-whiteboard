@@ -33,7 +33,7 @@ import { logSampledError } from '@/lib/auth/log-sample'
  * @requires viewer
  */
 export const getColumnsByTableId = createServerFn({ method: 'GET' })
-  .inputValidator((tableId: string) => {
+  .validator((tableId: string) => {
     const idSchema = z.string().uuid()
     return idSchema.parse(tableId)
   })
@@ -69,7 +69,7 @@ export const getColumnsByTableId = createServerFn({ method: 'GET' })
  * @requires viewer
  */
 export const getColumn = createServerFn({ method: 'GET' })
-  .inputValidator((columnId: string) => {
+  .validator((columnId: string) => {
     const idSchema = z.string().uuid()
     return idSchema.parse(columnId)
   })
@@ -108,7 +108,7 @@ export const getColumn = createServerFn({ method: 'GET' })
  * @requires viewer
  */
 export const getPrimaryKeyColumnsByTableId = createServerFn({ method: 'GET' })
-  .inputValidator((tableId: string) => {
+  .validator((tableId: string) => {
     const idSchema = z.string().uuid()
     return idSchema.parse(tableId)
   })
@@ -144,7 +144,7 @@ export const getPrimaryKeyColumnsByTableId = createServerFn({ method: 'GET' })
  * @requires viewer
  */
 export const getForeignKeyColumnsByTableId = createServerFn({ method: 'GET' })
-  .inputValidator((tableId: string) => {
+  .validator((tableId: string) => {
     const idSchema = z.string().uuid()
     return idSchema.parse(tableId)
   })
@@ -180,7 +180,7 @@ export const getForeignKeyColumnsByTableId = createServerFn({ method: 'GET' })
  * @requires editor
  */
 export const createColumnFn = createServerFn({ method: 'POST' })
-  .inputValidator((data: unknown) => createColumnSchema.parse(data))
+  .validator((data: unknown) => createColumnSchema.parse(data))
   .handler(
     requireAuth(async ({ user }, data) => {
       const projectId = await getTableProjectId(data.tableId)
@@ -208,7 +208,7 @@ export const createColumnFn = createServerFn({ method: 'POST' })
  * @requires editor
  */
 export const createColumnsFn = createServerFn({ method: 'POST' })
-  .inputValidator((data: unknown) => {
+  .validator((data: unknown) => {
     const schema = z.array(createColumnSchema)
     return schema.parse(data)
   })
@@ -261,7 +261,7 @@ export const createColumnsFn = createServerFn({ method: 'POST' })
  * @requires editor
  */
 export const updateColumnFn = createServerFn({ method: 'POST' })
-  .inputValidator((params: unknown) => {
+  .validator((params: unknown) => {
     const schema = z.object({
       id: z.string().uuid(),
       data: updateColumnSchema,
@@ -290,7 +290,7 @@ export const updateColumnFn = createServerFn({ method: 'POST' })
  * @requires editor
  */
 export const updateColumnOrderFn = createServerFn({ method: 'POST' })
-  .inputValidator((params: unknown) => {
+  .validator((params: unknown) => {
     const schema = z.object({
       id: z.string().uuid(),
       order: z.number().int().min(0),
@@ -320,7 +320,7 @@ export const updateColumnOrderFn = createServerFn({ method: 'POST' })
  * @requires editor
  */
 export const deleteColumnFn = createServerFn({ method: 'POST' })
-  .inputValidator((columnId: string) => {
+  .validator((columnId: string) => {
     const idSchema = z.string().uuid()
     return idSchema.parse(columnId)
   })
