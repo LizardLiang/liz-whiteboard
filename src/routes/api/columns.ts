@@ -1,6 +1,7 @@
 // src/routes/api/columns.ts
 // TanStack Start server functions for Column CRUD operations
 
+import { clientErrorMessage } from '@/lib/client-error'
 import { createServerFn } from '@tanstack/react-start'
 import { z } from 'zod'
 import {
@@ -56,7 +57,7 @@ export const getColumnsByTableId = createServerFn({ method: 'GET' })
         return columns
       } catch (error) {
         throw new Error(
-          `Failed to fetch columns: ${error instanceof Error ? error.message : 'Unknown error'}`,
+          `Failed to fetch columns: ${clientErrorMessage(error, 'Unknown error')}`,
         )
       }
     }),
@@ -95,7 +96,7 @@ export const getColumn = createServerFn({ method: 'GET' })
         return column
       } catch (error) {
         throw new Error(
-          `Failed to fetch column: ${error instanceof Error ? error.message : 'Unknown error'}`,
+          `Failed to fetch column: ${clientErrorMessage(error, 'Unknown error')}`,
         )
       }
     }),
@@ -131,7 +132,7 @@ export const getPrimaryKeyColumnsByTableId = createServerFn({ method: 'GET' })
         return columns
       } catch (error) {
         throw new Error(
-          `Failed to fetch primary key columns: ${error instanceof Error ? error.message : 'Unknown error'}`,
+          `Failed to fetch primary key columns: ${clientErrorMessage(error, 'Unknown error')}`,
         )
       }
     }),
@@ -167,7 +168,7 @@ export const getForeignKeyColumnsByTableId = createServerFn({ method: 'GET' })
         return columns
       } catch (error) {
         throw new Error(
-          `Failed to fetch foreign key columns: ${error instanceof Error ? error.message : 'Unknown error'}`,
+          `Failed to fetch foreign key columns: ${clientErrorMessage(error, 'Unknown error')}`,
         )
       }
     }),
@@ -190,7 +191,7 @@ export const createColumnFn = createServerFn({ method: 'POST' })
         return column
       } catch (error) {
         throw new Error(
-          `Failed to create column: ${error instanceof Error ? error.message : 'Unknown error'}`,
+          `Failed to create column: ${clientErrorMessage(error, 'Unknown error')}`,
         )
       }
     }),
@@ -248,7 +249,7 @@ export const createColumnsFn = createServerFn({ method: 'POST' })
         return columns
       } catch (error) {
         throw new Error(
-          `Failed to create columns: ${error instanceof Error ? error.message : 'Unknown error'}`,
+          `Failed to create columns: ${clientErrorMessage(error, 'Unknown error')}`,
         )
       }
     }),
@@ -277,7 +278,7 @@ export const updateColumnFn = createServerFn({ method: 'POST' })
         return column
       } catch (error) {
         throw new Error(
-          `Failed to update column: ${error instanceof Error ? error.message : 'Unknown error'}`,
+          `Failed to update column: ${clientErrorMessage(error, 'Unknown error')}`,
         )
       }
     }),
@@ -306,7 +307,7 @@ export const updateColumnOrderFn = createServerFn({ method: 'POST' })
         return column
       } catch (error) {
         throw new Error(
-          `Failed to update column order: ${error instanceof Error ? error.message : 'Unknown error'}`,
+          `Failed to update column order: ${clientErrorMessage(error, 'Unknown error')}`,
         )
       }
     }),
@@ -333,7 +334,7 @@ export const deleteColumnFn = createServerFn({ method: 'POST' })
         return column
       } catch (error) {
         throw new Error(
-          `Failed to delete column: ${error instanceof Error ? error.message : 'Unknown error'}`,
+          `Failed to delete column: ${clientErrorMessage(error, 'Unknown error')}`,
         )
       }
     }),

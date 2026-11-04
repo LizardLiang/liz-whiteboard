@@ -21,6 +21,7 @@
 // Unlike the shape handlers, `registerCanvasElementHandlers` is EXPORTED, so
 // its tests drive the real function instead of a reimplementation of it.
 
+import { clientErrorMessage } from '@/lib/client-error'
 import { z } from 'zod'
 import type { Server as SocketIOServer } from 'socket.io'
 import type { PresetId } from '@/lib/canvas-engine/colour-ramps'
@@ -279,10 +280,10 @@ export function registerCanvasElementHandlers(
       })
       cb?.({ ok: true, entity: element })
     } catch (error) {
-      const message =
-        error instanceof Error
-          ? error.message
-          : 'Failed to create canvas element'
+      const message = clientErrorMessage(
+        error,
+        'Failed to create canvas element',
+      )
       console.error('Failed to create canvas element:', error)
       socket.emit('error', {
         event: 'element:create',
@@ -357,10 +358,10 @@ export function registerCanvasElementHandlers(
           cb?.({ ok: false, code: error.code, message: error.message })
           return
         }
-        const message =
-          error instanceof Error
-            ? error.message
-            : 'Failed to update canvas element'
+        const message = clientErrorMessage(
+          error,
+          'Failed to update canvas element',
+        )
         console.error('Failed to update canvas element:', error)
         socket.emit('error', {
           event: 'element:update',
@@ -463,10 +464,10 @@ export function registerCanvasBoardSettingsHandlers(
       })
       cb?.({ ok: true, entity: board.settings })
     } catch (error) {
-      const message =
-        error instanceof Error
-          ? error.message
-          : 'Failed to update canvas board settings'
+      const message = clientErrorMessage(
+        error,
+        'Failed to update canvas board settings',
+      )
       console.error('Failed to update canvas board settings:', error)
       socket.emit('error', {
         event: 'board:settings-update',

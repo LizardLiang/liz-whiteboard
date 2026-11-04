@@ -1,6 +1,7 @@
 // src/routes/api/folders.ts
 // TanStack Start server functions for Folder CRUD operations
 
+import { clientErrorMessage } from '@/lib/client-error'
 import { createServerFn } from '@tanstack/react-start'
 import { z } from 'zod'
 import {
@@ -45,7 +46,7 @@ export const getFoldersByProject = createServerFn({ method: 'GET' })
         return folders
       } catch (error) {
         throw new Error(
-          `Failed to fetch folders: ${error instanceof Error ? error.message : 'Unknown error'}`,
+          `Failed to fetch folders: ${clientErrorMessage(error, 'Unknown error')}`,
         )
       }
     }),
@@ -81,7 +82,7 @@ export const getChildFolders = createServerFn({ method: 'GET' })
         return folders
       } catch (error) {
         throw new Error(
-          `Failed to fetch child folders: ${error instanceof Error ? error.message : 'Unknown error'}`,
+          `Failed to fetch child folders: ${clientErrorMessage(error, 'Unknown error')}`,
         )
       }
     }),
@@ -120,7 +121,7 @@ export const getFolder = createServerFn({ method: 'GET' })
         return folder
       } catch (error) {
         throw new Error(
-          `Failed to fetch folder: ${error instanceof Error ? error.message : 'Unknown error'}`,
+          `Failed to fetch folder: ${clientErrorMessage(error, 'Unknown error')}`,
         )
       }
     }),
@@ -159,7 +160,7 @@ export const getFolderById = createServerFn({ method: 'GET' })
         return folder
       } catch (error) {
         throw new Error(
-          `Failed to fetch folder: ${error instanceof Error ? error.message : 'Unknown error'}`,
+          `Failed to fetch folder: ${clientErrorMessage(error, 'Unknown error')}`,
         )
       }
     }),
@@ -189,7 +190,7 @@ export const createFolderFn = createServerFn({ method: 'POST' })
         return folder
       } catch (error) {
         throw new Error(
-          `Failed to create folder: ${error instanceof Error ? error.message : 'Unknown error'}`,
+          `Failed to create folder: ${clientErrorMessage(error, 'Unknown error')}`,
         )
       }
     }),
@@ -228,7 +229,7 @@ export const updateFolderFn = createServerFn({ method: 'POST' })
         return folder
       } catch (error) {
         throw new Error(
-          `Failed to update folder: ${error instanceof Error ? error.message : 'Unknown error'}`,
+          `Failed to update folder: ${clientErrorMessage(error, 'Unknown error')}`,
         )
       }
     }),
@@ -265,7 +266,7 @@ export const deleteFolderFn = createServerFn({ method: 'POST' })
         return folder
       } catch (error) {
         throw new Error(
-          `Failed to delete folder: ${error instanceof Error ? error.message : 'Unknown error'}`,
+          `Failed to delete folder: ${clientErrorMessage(error, 'Unknown error')}`,
         )
       }
     }),

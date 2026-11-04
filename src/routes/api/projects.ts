@@ -1,6 +1,7 @@
 // src/routes/api/projects.ts
 // TanStack Start server functions for Project CRUD operations
 
+import { clientErrorMessage } from '@/lib/client-error'
 import { createServerFn } from '@tanstack/react-start'
 import { z } from 'zod'
 import {
@@ -30,7 +31,7 @@ export const getProjects = createServerFn({ method: 'GET' }).handler(
       return projects
     } catch (error) {
       throw new Error(
-        `Failed to fetch projects: ${error instanceof Error ? error.message : 'Unknown error'}`,
+        `Failed to fetch projects: ${clientErrorMessage(error, 'Unknown error')}`,
       )
     }
   }),
@@ -51,7 +52,7 @@ export const getProjectsWithTree = createServerFn({
       return projects
     } catch (error) {
       throw new Error(
-        `Failed to fetch project tree: ${error instanceof Error ? error.message : 'Unknown error'}`,
+        `Failed to fetch project tree: ${clientErrorMessage(error, 'Unknown error')}`,
       )
     }
   }),
@@ -90,7 +91,7 @@ export const getProject = createServerFn({ method: 'GET' })
         return project
       } catch (error) {
         throw new Error(
-          `Failed to fetch project: ${error instanceof Error ? error.message : 'Unknown error'}`,
+          `Failed to fetch project: ${clientErrorMessage(error, 'Unknown error')}`,
         )
       }
     }),
@@ -110,7 +111,7 @@ export const createProjectFn = createServerFn({ method: 'POST' })
         return project
       } catch (error) {
         throw new Error(
-          `Failed to create project: ${error instanceof Error ? error.message : 'Unknown error'}`,
+          `Failed to create project: ${clientErrorMessage(error, 'Unknown error')}`,
         )
       }
     }),
@@ -145,7 +146,7 @@ export const updateProjectFn = createServerFn({ method: 'POST' })
         return project
       } catch (error) {
         throw new Error(
-          `Failed to update project: ${error instanceof Error ? error.message : 'Unknown error'}`,
+          `Failed to update project: ${clientErrorMessage(error, 'Unknown error')}`,
         )
       }
     }),
@@ -218,7 +219,7 @@ export const deleteProjectFn = createServerFn({ method: 'POST' })
         return project
       } catch (error) {
         throw new Error(
-          `Failed to delete project: ${error instanceof Error ? error.message : 'Unknown error'}`,
+          `Failed to delete project: ${clientErrorMessage(error, 'Unknown error')}`,
         )
       }
     }),

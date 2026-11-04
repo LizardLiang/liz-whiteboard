@@ -1,6 +1,7 @@
 // src/routes/api/relationships.ts
 // TanStack Start server functions for Relationship CRUD operations
 
+import { clientErrorMessage } from '@/lib/client-error'
 import { createServerFn } from '@tanstack/react-start'
 import { z } from 'zod'
 import {
@@ -58,7 +59,7 @@ export const getRelationshipsByWhiteboardId = createServerFn({ method: 'GET' })
         return relationships
       } catch (error) {
         throw new Error(
-          `Failed to fetch relationships: ${error instanceof Error ? error.message : 'Unknown error'}`,
+          `Failed to fetch relationships: ${clientErrorMessage(error, 'Unknown error')}`,
         )
       }
     }),
@@ -97,7 +98,7 @@ export const getRelationshipsByWhiteboardIdWithDetails = createServerFn({
         return relationships
       } catch (error) {
         throw new Error(
-          `Failed to fetch relationships with details: ${error instanceof Error ? error.message : 'Unknown error'}`,
+          `Failed to fetch relationships with details: ${clientErrorMessage(error, 'Unknown error')}`,
         )
       }
     }),
@@ -136,7 +137,7 @@ export const getRelationship = createServerFn({ method: 'GET' })
         return relationship
       } catch (error) {
         throw new Error(
-          `Failed to fetch relationship: ${error instanceof Error ? error.message : 'Unknown error'}`,
+          `Failed to fetch relationship: ${clientErrorMessage(error, 'Unknown error')}`,
         )
       }
     }),
@@ -176,7 +177,7 @@ export const getRelationshipWithDetails = createServerFn({ method: 'GET' })
         return relationship
       } catch (error) {
         throw new Error(
-          `Failed to fetch relationship with details: ${error instanceof Error ? error.message : 'Unknown error'}`,
+          `Failed to fetch relationship with details: ${clientErrorMessage(error, 'Unknown error')}`,
         )
       }
     }),
@@ -212,7 +213,7 @@ export const getRelationshipsByTableId = createServerFn({ method: 'GET' })
         return relationships
       } catch (error) {
         throw new Error(
-          `Failed to fetch table relationships: ${error instanceof Error ? error.message : 'Unknown error'}`,
+          `Failed to fetch table relationships: ${clientErrorMessage(error, 'Unknown error')}`,
         )
       }
     }),
@@ -235,7 +236,7 @@ export const createRelationshipFn = createServerFn({ method: 'POST' })
         return relationship
       } catch (error) {
         throw new Error(
-          `Failed to create relationship: ${error instanceof Error ? error.message : 'Unknown error'}`,
+          `Failed to create relationship: ${clientErrorMessage(error, 'Unknown error')}`,
         )
       }
     }),
@@ -264,7 +265,7 @@ export const updateRelationshipFn = createServerFn({ method: 'POST' })
         return relationship
       } catch (error) {
         throw new Error(
-          `Failed to update relationship: ${error instanceof Error ? error.message : 'Unknown error'}`,
+          `Failed to update relationship: ${clientErrorMessage(error, 'Unknown error')}`,
         )
       }
     }),
@@ -290,7 +291,7 @@ export const deleteRelationshipFn = createServerFn({ method: 'POST' })
         return relationship
       } catch (error) {
         throw new Error(
-          `Failed to delete relationship: ${error instanceof Error ? error.message : 'Unknown error'}`,
+          `Failed to delete relationship: ${clientErrorMessage(error, 'Unknown error')}`,
         )
       }
     }),

@@ -12,6 +12,7 @@
 // module is what lets Rollup tree-shake that import out of the browser
 // bundle instead of pulling `socket.io` into it (see history.ts/invites.ts's
 // header comments for the real `bun run build` failure this pattern avoids).
+import { clientErrorMessage } from '@/lib/client-error'
 import type { AuthContext } from '@/lib/auth/middleware'
 import type { CreateTable } from '@/data/schema'
 import { createDiagramTable } from '@/data/diagram-table'
@@ -68,7 +69,7 @@ export async function createTableHandler(
     return table
   } catch (error) {
     throw new Error(
-      `Failed to create table: ${error instanceof Error ? error.message : 'Unknown error'}`,
+      `Failed to create table: ${clientErrorMessage(error, 'Unknown error')}`,
     )
   }
 }

@@ -22,6 +22,7 @@
 // `getWhiteboardWithDiagram` / `createWhiteboardFn` do. Canvas boards are a
 // new board kind, not a new permission model.
 
+import { clientErrorMessage } from '@/lib/client-error'
 import { createServerFn } from '@tanstack/react-start'
 import { z } from 'zod'
 import type { EffectiveRole } from '@/data/permission'
@@ -111,7 +112,7 @@ export const createCanvasBoardFn = createServerFn({ method: 'POST' })
         return board
       } catch (error) {
         throw new Error(
-          `Failed to create canvas board: ${error instanceof Error ? error.message : 'Unknown error'}`,
+          `Failed to create canvas board: ${clientErrorMessage(error, 'Unknown error')}`,
         )
       }
     }),
@@ -140,7 +141,7 @@ export const updateCanvasBoardFn = createServerFn({ method: 'POST' })
         return board
       } catch (error) {
         throw new Error(
-          `Failed to update canvas board: ${error instanceof Error ? error.message : 'Unknown error'}`,
+          `Failed to update canvas board: ${clientErrorMessage(error, 'Unknown error')}`,
         )
       }
     }),
@@ -171,7 +172,7 @@ export const updateCanvasBoardSettingsFn = createServerFn({ method: 'POST' })
         return board
       } catch (error) {
         throw new Error(
-          `Failed to update canvas board settings: ${error instanceof Error ? error.message : 'Unknown error'}`,
+          `Failed to update canvas board settings: ${clientErrorMessage(error, 'Unknown error')}`,
         )
       }
     }),
@@ -197,7 +198,7 @@ export const deleteCanvasBoardFn = createServerFn({ method: 'POST' })
         return board
       } catch (error) {
         throw new Error(
-          `Failed to delete canvas board: ${error instanceof Error ? error.message : 'Unknown error'}`,
+          `Failed to delete canvas board: ${clientErrorMessage(error, 'Unknown error')}`,
         )
       }
     }),

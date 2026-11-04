@@ -1,6 +1,7 @@
 // src/routes/api/collaboration.ts
 // Socket.IO server integration for real-time collaboration
 
+import { clientErrorMessage } from '@/lib/client-error'
 import { Server as SocketIOServer } from 'socket.io'
 import { z } from 'zod'
 import type { Server as HTTPServer } from 'node:http'
@@ -560,8 +561,7 @@ function setupCollaborationEventHandlers(
         cb?.({ ok: true, entity: table })
       } catch (error) {
         console.error('Failed to create table:', error)
-        const message =
-          error instanceof Error ? error.message : 'Failed to create table'
+        const message = clientErrorMessage(error, 'Failed to create table')
         socket.emit('error', {
           event: 'table:create',
           error: 'VALIDATION_ERROR',
@@ -923,8 +923,7 @@ function setupCollaborationEventHandlers(
         cb?.({ ok: true, entity: updatedTable })
       } catch (error) {
         console.error('Failed to update table:', error)
-        const message =
-          error instanceof Error ? error.message : 'Failed to update table'
+        const message = clientErrorMessage(error, 'Failed to update table')
         socket.emit('error', {
           event: 'table:update',
           error: 'UPDATE_FAILED',
@@ -1115,8 +1114,7 @@ function setupCollaborationEventHandlers(
       cb?.({ ok: true, entity: area })
     } catch (error) {
       console.error('Failed to create area:', error)
-      const message =
-        error instanceof Error ? error.message : 'Failed to create area'
+      const message = clientErrorMessage(error, 'Failed to create area')
       socket.emit('error', {
         event: 'area:create',
         error: 'VALIDATION_ERROR',
@@ -1205,8 +1203,7 @@ function setupCollaborationEventHandlers(
         cb?.({ ok: true, entity: updatedArea })
       } catch (error) {
         console.error('Failed to update area:', error)
-        const message =
-          error instanceof Error ? error.message : 'Failed to update area'
+        const message = clientErrorMessage(error, 'Failed to update area')
         socket.emit('error', {
           event: 'area:update',
           error: 'UPDATE_FAILED',
@@ -1459,8 +1456,7 @@ function setupCollaborationEventHandlers(
         cb?.({ ok: true, entity: shape })
       } catch (error) {
         console.error('Failed to create shape:', error)
-        const message =
-          error instanceof Error ? error.message : 'Failed to create shape'
+        const message = clientErrorMessage(error, 'Failed to create shape')
         socket.emit('error', {
           event: 'shape:create',
           error: 'VALIDATION_ERROR',
@@ -1542,8 +1538,7 @@ function setupCollaborationEventHandlers(
         cb?.({ ok: true, entity: updatedShape })
       } catch (error) {
         console.error('Failed to update shape:', error)
-        const message =
-          error instanceof Error ? error.message : 'Failed to update shape'
+        const message = clientErrorMessage(error, 'Failed to update shape')
         socket.emit('error', {
           event: 'shape:update',
           error: 'UPDATE_FAILED',
@@ -1722,8 +1717,7 @@ function setupCollaborationEventHandlers(
         cb?.({ ok: true, entity: connector })
       } catch (error) {
         console.error('Failed to create connector:', error)
-        const message =
-          error instanceof Error ? error.message : 'Failed to create connector'
+        const message = clientErrorMessage(error, 'Failed to create connector')
         socket.emit('error', {
           event: 'connector:create',
           error: 'VALIDATION_ERROR',
@@ -1904,16 +1898,14 @@ function setupCollaborationEventHandlers(
         socket.emit('error', {
           event: 'column:create',
           error: 'VALIDATION_ERROR',
-          message:
-            error instanceof Error ? error.message : 'Failed to create column',
+          message: clientErrorMessage(error, 'Failed to create column'),
           name: validated?.name,
           tableId: validated?.tableId,
         })
         cb?.({
           ok: false,
           code: 'VALIDATION_ERROR',
-          message:
-            error instanceof Error ? error.message : 'Failed to create column',
+          message: clientErrorMessage(error, 'Failed to create column'),
         })
         return
       }
@@ -1998,8 +1990,7 @@ function setupCollaborationEventHandlers(
         cb?.({ ok: true, entity: column })
       } catch (error) {
         console.error('Failed to update column:', error)
-        const message =
-          error instanceof Error ? error.message : 'Failed to update column'
+        const message = clientErrorMessage(error, 'Failed to update column')
         socket.emit('error', {
           event: 'column:update',
           error: 'UPDATE_FAILED',
@@ -2097,8 +2088,7 @@ function setupCollaborationEventHandlers(
         })
       } catch (error) {
         console.error('Failed to delete column:', error)
-        const message =
-          error instanceof Error ? error.message : 'Failed to delete column'
+        const message = clientErrorMessage(error, 'Failed to delete column')
         socket.emit('error', {
           event: 'column:delete',
           error: 'DELETE_FAILED',
@@ -2247,18 +2237,12 @@ function setupCollaborationEventHandlers(
         socket.emit('error', {
           event: 'column:reorder',
           error: 'UPDATE_FAILED',
-          message:
-            error instanceof Error
-              ? error.message
-              : 'Failed to reorder columns',
+          message: clientErrorMessage(error, 'Failed to reorder columns'),
         })
         cb?.({
           ok: false,
           code: 'VALIDATION_ERROR',
-          message:
-            error instanceof Error
-              ? error.message
-              : 'Failed to reorder columns',
+          message: clientErrorMessage(error, 'Failed to reorder columns'),
         })
         return
       }
@@ -2331,8 +2315,7 @@ function setupCollaborationEventHandlers(
       socket.emit('error', {
         event: 'column:duplicate',
         error: 'DUPLICATE_FAILED',
-        message:
-          error instanceof Error ? error.message : 'Failed to duplicate column',
+        message: clientErrorMessage(error, 'Failed to duplicate column'),
         columnId: (data as { columnId?: string } | null)?.columnId,
       })
       return
@@ -2389,10 +2372,10 @@ function setupCollaborationEventHandlers(
         cb?.({ ok: true, entity: relationship })
       } catch (error) {
         console.error('Failed to create relationship:', error)
-        const message =
-          error instanceof Error
-            ? error.message
-            : 'Failed to create relationship'
+        const message = clientErrorMessage(
+          error,
+          'Failed to create relationship',
+        )
         socket.emit('error', {
           event: 'relationship:create',
           error: 'VALIDATION_ERROR',
@@ -2529,10 +2512,10 @@ function setupCollaborationEventHandlers(
         cb?.({ ok: true, entity: updatedRelationship })
       } catch (error) {
         console.error('Failed to update relationship:', error)
-        const message =
-          error instanceof Error
-            ? error.message
-            : 'Failed to update relationship'
+        const message = clientErrorMessage(
+          error,
+          'Failed to update relationship',
+        )
         socket.emit('error', {
           event: 'relationship:update',
           error: 'UPDATE_FAILED',
@@ -2725,8 +2708,7 @@ function setupCollaborationEventHandlers(
         cb?.({ ok: true, entity: comment })
       } catch (error) {
         console.error('Failed to create comment:', error)
-        const message =
-          error instanceof Error ? error.message : 'Failed to create comment'
+        const message = clientErrorMessage(error, 'Failed to create comment')
         socket.emit('error', {
           event: 'comment:create',
           error: 'VALIDATION_ERROR',
@@ -2820,8 +2802,7 @@ function setupCollaborationEventHandlers(
         cb?.({ ok: true, entity: updated })
       } catch (error) {
         console.error('Failed to update comment:', error)
-        const message =
-          error instanceof Error ? error.message : 'Failed to update comment'
+        const message = clientErrorMessage(error, 'Failed to update comment')
         socket.emit('error', {
           event: 'comment:update',
           error: 'VALIDATION_ERROR',
@@ -2902,8 +2883,7 @@ function setupCollaborationEventHandlers(
         cb?.({ ok: true, entity: updated })
       } catch (error) {
         console.error('Failed to resolve comment:', error)
-        const message =
-          error instanceof Error ? error.message : 'Failed to resolve comment'
+        const message = clientErrorMessage(error, 'Failed to resolve comment')
         socket.emit('error', {
           event: 'comment:resolve',
           error: 'VALIDATION_ERROR',

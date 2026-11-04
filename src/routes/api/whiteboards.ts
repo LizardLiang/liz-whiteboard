@@ -1,6 +1,7 @@
 // src/routes/api/whiteboards.ts
 // TanStack Start server functions for Whiteboard CRUD operations
 
+import { clientErrorMessage } from '@/lib/client-error'
 import { createServerFn } from '@tanstack/react-start'
 import { z } from 'zod'
 import {
@@ -60,7 +61,7 @@ export const getWhiteboardsByProject = createServerFn({ method: 'GET' })
         return whiteboards
       } catch (error) {
         throw new Error(
-          `Failed to fetch whiteboards: ${error instanceof Error ? error.message : 'Unknown error'}`,
+          `Failed to fetch whiteboards: ${clientErrorMessage(error, 'Unknown error')}`,
         )
       }
     }),
@@ -96,7 +97,7 @@ export const getWhiteboardsByFolder = createServerFn({ method: 'GET' })
         return whiteboards
       } catch (error) {
         throw new Error(
-          `Failed to fetch whiteboards: ${error instanceof Error ? error.message : 'Unknown error'}`,
+          `Failed to fetch whiteboards: ${clientErrorMessage(error, 'Unknown error')}`,
         )
       }
     }),
@@ -136,7 +137,7 @@ export const getWhiteboard = createServerFn({ method: 'GET' })
         return whiteboard
       } catch (error) {
         throw new Error(
-          `Failed to fetch whiteboard: ${error instanceof Error ? error.message : 'Unknown error'}`,
+          `Failed to fetch whiteboard: ${clientErrorMessage(error, 'Unknown error')}`,
         )
       }
     }),
@@ -175,7 +176,7 @@ export const getWhiteboardById = createServerFn({ method: 'GET' })
         return whiteboard
       } catch (error) {
         throw new Error(
-          `Failed to fetch whiteboard: ${error instanceof Error ? error.message : 'Unknown error'}`,
+          `Failed to fetch whiteboard: ${clientErrorMessage(error, 'Unknown error')}`,
         )
       }
     }),
@@ -198,7 +199,7 @@ export const createWhiteboardFn = createServerFn({ method: 'POST' })
         return whiteboard
       } catch (error) {
         throw new Error(
-          `Failed to create whiteboard: ${error instanceof Error ? error.message : 'Unknown error'}`,
+          `Failed to create whiteboard: ${clientErrorMessage(error, 'Unknown error')}`,
         )
       }
     }),
@@ -228,7 +229,7 @@ export const updateWhiteboardFn = createServerFn({ method: 'POST' })
         return whiteboard
       } catch (error) {
         throw new Error(
-          `Failed to update whiteboard: ${error instanceof Error ? error.message : 'Unknown error'}`,
+          `Failed to update whiteboard: ${clientErrorMessage(error, 'Unknown error')}`,
         )
       }
     }),
@@ -260,7 +261,7 @@ export const updateCanvasState = createServerFn({ method: 'POST' })
         return whiteboard
       } catch (error) {
         throw new Error(
-          `Failed to update canvas state: ${error instanceof Error ? error.message : 'Unknown error'}`,
+          `Failed to update canvas state: ${clientErrorMessage(error, 'Unknown error')}`,
         )
       }
     }),
@@ -292,7 +293,7 @@ export const updateTextSource = createServerFn({ method: 'POST' })
         return whiteboard
       } catch (error) {
         throw new Error(
-          `Failed to update text source: ${error instanceof Error ? error.message : 'Unknown error'}`,
+          `Failed to update text source: ${clientErrorMessage(error, 'Unknown error')}`,
         )
       }
     }),
@@ -319,7 +320,7 @@ export const deleteWhiteboardFn = createServerFn({ method: 'POST' })
         return whiteboard
       } catch (error) {
         throw new Error(
-          `Failed to delete whiteboard: ${error instanceof Error ? error.message : 'Unknown error'}`,
+          `Failed to delete whiteboard: ${clientErrorMessage(error, 'Unknown error')}`,
         )
       }
     }),
@@ -387,7 +388,7 @@ export const getRecentWhiteboards = createServerFn({ method: 'GET' })
         return boards
       } catch (error) {
         throw new Error(
-          `Failed to fetch recent whiteboards: ${error instanceof Error ? error.message : 'Unknown error'}`,
+          `Failed to fetch recent whiteboards: ${clientErrorMessage(error, 'Unknown error')}`,
         )
       }
     }),
