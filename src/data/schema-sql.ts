@@ -153,6 +153,9 @@ CREATE TABLE IF NOT EXISTS "CollaborationSession" (
 CREATE UNIQUE INDEX IF NOT EXISTS "User_username_key" ON "User"("username");
 CREATE UNIQUE INDEX IF NOT EXISTS "User_email_key" ON "User"("email");
 CREATE INDEX IF NOT EXISTS "User_email_idx" ON "User"("email");
+-- Case-insensitive lookups (findUserByEmail uses lower(email)). Non-unique on
+-- purpose: existing rows may differ only by case and must not break boot.
+CREATE INDEX IF NOT EXISTS "User_email_lower_idx" ON "User"(lower("email"));
 CREATE UNIQUE INDEX IF NOT EXISTS "Session_tokenHash_key" ON "Session"("tokenHash");
 CREATE INDEX IF NOT EXISTS "Session_userId_idx" ON "Session"("userId");
 CREATE INDEX IF NOT EXISTS "Session_expiresAt_idx" ON "Session"("expiresAt");
@@ -226,7 +229,7 @@ CREATE INDEX IF NOT EXISTS "OauthClient_lastAuthorizedAt_idx" ON "OauthClient"("
 -- — they auto-approve and never reach the consent branch.
 CREATE TABLE IF NOT EXISTS "OauthGrant" (
     "userId"     TEXT    NOT NULL,
-    -- Grant key: a CIMD document ORIGIN, or a static/DCR client id verbatim.
+    -- Grant key: CIMD full client_id + "#" + redirect_uris hash (legacy rows: origin), or a static/DCR client id verbatim.
     -- See src/lib/oauth/grants.ts (grantKeyFor).
     "clientId"   TEXT    NOT NULL,
     "scope"      TEXT    NOT NULL,

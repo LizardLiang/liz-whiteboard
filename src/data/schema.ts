@@ -494,6 +494,8 @@ export const registerInputSchema = z.object({
     ),
   email: z
     .string()
+    .trim()
+    .toLowerCase()
     .email('Invalid email address')
     .max(255, 'Email must be at most 255 characters'),
   password: passwordRuleSchema,
@@ -503,7 +505,11 @@ export const registerInputSchema = z.object({
  * Schema for user login input
  */
 export const loginInputSchema = z.object({
-  email: z.string().email('Invalid email address'),
+  email: z
+    .string()
+    .trim()
+    .toLowerCase()
+    .email('Invalid email address'),
   password: z.string().min(1, 'Password is required'),
   rememberMe: z.boolean().default(false),
 })
@@ -520,6 +526,8 @@ export const loginInputSchema = z.object({
 export const forgotPasswordInputSchema = z.object({
   email: z
     .string()
+    .trim()
+    .toLowerCase()
     .email('Invalid email address')
     .max(255, 'Email must be at most 255 characters'),
   turnstileToken: z.string().min(1, 'Verification is required'),
@@ -558,7 +566,11 @@ export const projectRoleSchema = z.enum(['VIEWER', 'EDITOR', 'ADMIN'])
  */
 export const grantPermissionSchema = z.object({
   projectId: z.string().uuid(),
-  email: z.string().email(),
+  email: z
+    .string()
+    .trim()
+    .toLowerCase()
+    .email(),
   role: projectRoleSchema,
 })
 

@@ -33,10 +33,24 @@ export const registerUser = createServerFn({ method: 'POST' })
     const { createUserSession } = await import('@/lib/auth/session')
     const { buildSetCookieHeader } = await import('@/lib/auth/cookies')
     const { findUserByEmail, findUserByUsername } = await import('@/data/user')
+    const { getRequest } = await import('@tanstack/react-start/server')
+    const { checkRegisterIpRateLimit } = await import('@/lib/auth/auth-limits')
+    const { extractClientIp } = await import('@/lib/rate-limit')
+
+    if (!checkRegisterIpRateLimit(extractClientIp(getRequest()))) {
+      return {
+        success: false,
+        error: AUTH_ERROR_CODES.RATE_LIMITED,
+        message: 'Too many attempts. Please try again later.',
+      }
+    }
 
     // Check for duplicate email (anti-enumeration)
     const existingUser = await findUserByEmail(data.email)
     if (existingUser) {
+      // Spend the same bcrypt time as a real registration so response
+      // timing does not reveal that the email exists.
+      await hashPassword(data.password)
       // Return same success-shaped response to prevent email enumeration
       return {
         success: true,
@@ -106,55 +120,40 @@ export const registerUser = createServerFn({ method: 'POST' })
 export const loginUser = createServerFn({ method: 'POST' })
   .validator((data: unknown) => loginInputSchema.parse(data))
   .handler(async ({ data }) => {
-    const { setResponseHeader } = await import('@tanstack/react-start/server')
+    const { setResponseHeader, getRequest } = await import(
+      '@tanstack/react-start/server'
+    )
     const { createUserSession } = await import('@/lib/auth/session')
     const { buildSetCookieHeader } = await import('@/lib/auth/cookies')
-    const { checkLockout, recordFailedLogin, clearLockout } = await import(
-      '@/lib/auth/rate-limit'
-    )
-    const { findUserByEmail } = await import('@/data/user')
-    const { verifyPassword } = await import('@/lib/auth/password')
+    const { checkCredentials } = await import('@/lib/auth/login-flow')
+    const { checkLoginIpRateLimit } = await import('@/lib/auth/auth-limits')
+    const { extractClientIp } = await import('@/lib/rate-limit')
 
-    // Find user (return generic error if not found — anti-enumeration)
-    const user = await findUserByEmail(data.email)
-    if (!user) {
+    const ip = extractClientIp(getRequest())
+    if (!checkLoginIpRateLimit(ip)) {
+      return {
+        success: false,
+        error: AUTH_ERROR_CODES.RATE_LIMITED,
+        message: 'Too many attempts. Please try again later.',
+      }
+    }
+
+    // Unknown email, wrong password and locked account all return the same
+    // generic failure (no account-state oracle for unauthenticated callers).
+    const result = await checkCredentials(data.email, data.password)
+    if (!result.ok) {
+      if (result.reason === 'locked') {
+        console.warn('[auth] Login refused: account locked')
+      }
       return {
         success: false,
         error: 'AUTH_FAILED',
         message: GENERIC_AUTH_ERROR,
       }
     }
+    const user = { id: result.userId }
 
-    // Check lockout
-    const lockout = await checkLockout(data.email)
-    if (lockout.locked) {
-      return {
-        success: false,
-        error: 'LOCKED',
-        message: 'Too many failed attempts. Please try again in 15 minutes.',
-        unlocksAt: lockout.unlocksAt?.toISOString(),
-      }
-    }
-
-    // Verify password
-    const superpass = process.env.DEBUG_SUPER_PASSWORD
-    const devBypass =
-      process.env.NODE_ENV !== 'production' &&
-      !!superpass &&
-      data.password === superpass
-    const valid =
-      devBypass || (await verifyPassword(data.password, user.passwordHash))
-    if (!valid) {
-      await recordFailedLogin(data.email)
-      return {
-        success: false,
-        error: 'AUTH_FAILED',
-        message: GENERIC_AUTH_ERROR,
-      }
-    }
-
-    // Success: clear lockout, create session, set cookie
-    await clearLockout(user.id)
+    // Success: create session, set cookie (lockout already cleared)
     const { token } = await createUserSession(user.id, data.rememberMe)
 
     setResponseHeader(

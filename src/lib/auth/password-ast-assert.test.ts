@@ -22,11 +22,7 @@ describe('SEC-SP-01: DEBUG_SUPER_PASSWORD is dev-only when present', () => {
     )
     expect(authContent).not.toContain('isSuperpassword')
     expect(authContent).not.toContain('debugSuperPassword')
-    if (authContent.includes('DEBUG_SUPER_PASSWORD')) {
-      expect(authContent).toMatch(
-        /NODE_ENV.*!==.*production|NODE_ENV.*!==.*'production'/,
-      )
-    }
+    expect(authContent).not.toContain('DEBUG_SUPER_PASSWORD')
   })
 
   it('TC-AST-02: password.ts does not contain DEBUG_SUPER_PASSWORD', () => {
@@ -68,15 +64,14 @@ describe('SEC-SP-02: verifyPassword returns only bcrypt.compare result', () => {
       resolve(SRC_ROOT, 'routes/api/auth.ts'),
       'utf-8',
     )
-    expect(authContent).toContain('await verifyPassword(')
+    const loginFlow = readFileSync(
+      resolve(SRC_ROOT, 'lib/auth/login-flow.ts'),
+      'utf-8',
+    )
+    expect(loginFlow).toContain('await verifyPassword(')
+    expect(authContent).not.toContain('DEBUG_SUPER_PASSWORD')
     // Old ad-hoc bypass names must not exist
     expect(authContent).not.toMatch(/isSuperpassword\s*\|\|/)
     expect(authContent).not.toMatch(/debugSuperPassword/)
-    // If the env-var bypass is present it must be guarded by NODE_ENV
-    if (authContent.includes('DEBUG_SUPER_PASSWORD')) {
-      expect(authContent).toMatch(
-        /NODE_ENV.*!==.*production|NODE_ENV.*!==.*'production'/,
-      )
-    }
   })
 })

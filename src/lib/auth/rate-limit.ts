@@ -5,7 +5,7 @@
 // Anti-enumeration: operations on non-existent emails are silently discarded.
 
 import { findUserByEmail } from '@/data/user'
-import { nowMs, toDbDate, update } from '@/db'
+import { db, nowMs, toDbDate, update } from '@/db'
 
 const MAX_ATTEMPTS = 5
 const LOCKOUT_DURATION_MS = 15 * 60 * 1000 // 15 minutes
@@ -33,32 +33,51 @@ export async function checkLockout(
 
 /**
  * Record a failed login attempt.
- * Increments counter and sets lockedUntil if threshold is reached.
- * Silently discards attempts for non-existent emails (anti-enumeration).
+ *
+ * The increment is ONE atomic UPDATE (not read-modify-write across an await):
+ * parallel failures can no longer overwrite each other's counter. A counter
+ * whose lockout already expired restarts at 1. Reaching MAX_ATTEMPTS sets
+ * lockedUntil in the same statement. Silently discards attempts for
+ * non-existent emails (anti-enumeration).
  *
  * @param email - Email address that failed login
  */
 export async function recordFailedLogin(email: string): Promise<void> {
-  const user = await findUserByEmail(email)
+  const now = nowMs()
+  const lockUntil = toDbDate(new Date(now + LOCKOUT_DURATION_MS))
+  const next = `(CASE WHEN "lockedUntil" IS NOT NULL AND "lockedUntil" <= ? THEN 1 ELSE "failedLoginAttempts" + 1 END)`
+  db.prepare(
+      `UPDATE "User" SET
+         "failedLoginAttempts" = ${next},
+         "lockedUntil" = CASE WHEN ${next} >= ? THEN ?
+                              WHEN "lockedUntil" IS NOT NULL AND "lockedUntil" <= ? THEN NULL
+                              ELSE "lockedUntil" END,
+         "updatedAt" = ?
+       WHERE lower("email") = lower(?)
+       RETURNING "failedLoginAttempts" AS attempts`,
+  ).get(now, now, MAX_ATTEMPTS, lockUntil, now, now, email)
+}
 
-  if (!user) return // Unknown user: silently discard (anti-enumeration)
+const emailChains = new Map<string, Promise<unknown>>()
 
-  // If previous lockout has expired, reset counter to 1
-  const currentAttempts =
-    user.lockedUntil && user.lockedUntil <= new Date()
-      ? 1
-      : user.failedLoginAttempts + 1
-
-  const updates: Record<string, unknown> = {
-    failedLoginAttempts: currentAttempts,
-    updatedAt: nowMs(),
-  }
-
-  if (currentAttempts >= MAX_ATTEMPTS) {
-    updates.lockedUntil = toDbDate(new Date(Date.now() + LOCKOUT_DURATION_MS))
-  }
-
-  update('User', user.id, updates)
+/**
+ * Run `fn` serialized per email (single-process server). The lock state must
+ * be re-read after the previous attempt's bcrypt+record finished; otherwise N
+ * parallel guesses all pass checkLockout before any failure is recorded.
+ */
+export function withEmailLock<T>(
+  email: string,
+  fn: () => Promise<T>,
+): Promise<T> {
+  const key = email.trim().toLowerCase()
+  const prev = emailChains.get(key) ?? Promise.resolve()
+  const run = prev.then(fn, fn)
+  const tail = run.catch(() => undefined)
+  emailChains.set(key, tail)
+  void tail.then(() => {
+    if (emailChains.get(key) === tail) emailChains.delete(key)
+  })
+  return run
 }
 
 /**

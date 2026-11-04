@@ -14,7 +14,6 @@ import { dirname, resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { readFileSync } from 'node:fs'
 import {
-  afterEach,
   beforeAll,
   beforeEach,
   describe,
@@ -39,11 +38,7 @@ import {
   buildSetCookieHeader,
   parseSessionCookie,
 } from '@/lib/auth/cookies'
-import {
-  checkLockout,
-  clearLockout,
-  recordFailedLogin,
-} from '@/lib/auth/rate-limit'
+import { checkCredentials } from '@/lib/auth/login-flow'
 import { makeProject, makeUser, resetDb } from '@/test/db-helpers'
 
 const GENERIC_AUTH_ERROR = 'Invalid email or password'
@@ -105,8 +100,8 @@ async function loginUserHandler(data: {
   password: string
   rememberMe: boolean
 }) {
-  const user = await findUserByEmail(data.email)
-  if (!user) {
+  const result = await checkCredentials(data.email, data.password)
+  if (!result.ok) {
     return {
       success: false,
       error: 'AUTH_FAILED',
@@ -114,35 +109,7 @@ async function loginUserHandler(data: {
     }
   }
 
-  const lockout = await checkLockout(data.email)
-  if (lockout.locked) {
-    return {
-      success: false,
-      error: 'LOCKED',
-      message: 'Too many failed attempts. Please try again in 15 minutes.',
-      unlocksAt: lockout.unlocksAt?.toISOString(),
-    }
-  }
-
-  // Dev-only superpassword bypass (guarded by NODE_ENV) — mirrors auth.ts.
-  const superpass = process.env.DEBUG_SUPER_PASSWORD
-  const devBypass =
-    process.env.NODE_ENV !== 'production' &&
-    !!superpass &&
-    data.password === superpass
-  const valid =
-    devBypass || (await verifyPassword(data.password, user.passwordHash))
-  if (!valid) {
-    await recordFailedLogin(data.email)
-    return {
-      success: false,
-      error: 'AUTH_FAILED',
-      message: GENERIC_AUTH_ERROR,
-    }
-  }
-
-  await clearLockout(user.id)
-  const { token } = await createUserSession(user.id, data.rememberMe)
+  const { token } = await createUserSession(result.userId, data.rememberMe)
   ;(setResponseHeader as any)(
     'Set-Cookie',
     buildSetCookieHeader(token, data.rememberMe),
@@ -208,8 +175,6 @@ beforeAll(async () => {
 beforeEach(() => {
   resetDb()
   vi.clearAllMocks()
-  // Ensure the dev superpassword bypass is inactive in these tests.
-  delete process.env.DEBUG_SUPER_PASSWORD
 })
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -412,7 +377,7 @@ describe('loginUser', () => {
   })
 
   // TC-P3-11: locked account returns lockout message without creating a session
-  it('TC-P3-11: locked account returns lockout message, no session created', async () => {
+  it('TC-P3-11: locked account returns the generic failure (no LOCKED oracle), no session created', async () => {
     const user = makeUser({
       email: 'alice@example.com',
       passwordHash: VALID_HASH,
@@ -429,8 +394,8 @@ describe('loginUser', () => {
       rememberMe: false,
     })
 
-    expect(result.error).toBe('LOCKED')
-    expect(result.message).toContain('Too many failed attempts')
+    expect(result.error).toBe('AUTH_FAILED')
+    expect(result.message).toBe(GENERIC_AUTH_ERROR)
     expect(countSessionsForUser(user.id)).toBe(0)
     expect(setResponseHeader).not.toHaveBeenCalled()
   })
@@ -527,15 +492,6 @@ describe('TC-P3-23: requireAuth wrapper returns 401 when unauthenticated', () =>
 describe('SEC-SP-04 Regression: superpassword bypass must be absent', () => {
   const DEBUG_SUPER_PASSWORD_VALUE = 'debug-super-password-literal-value'
 
-  beforeEach(() => {
-    // DEBUG_SUPER_PASSWORD is unset (see top-level beforeEach), so the bypass
-    // path is inactive and the value behaves like any other wrong password.
-  })
-
-  afterEach(() => {
-    delete process.env.DEBUG_SUPER_PASSWORD
-  })
-
   // TC-SP-01: a superpassword-shaped value is rejected → AUTH_FAILED, no session
   it('TC-SP-01: debug superpassword value rejected → AUTH_FAILED', async () => {
     const user = makeUser({
@@ -592,17 +548,13 @@ describe('SEC-SP-04 Regression: superpassword bypass must be absent', () => {
     expect((result1 as any).message).toBe((result2 as any).message)
   })
 
-  // TC-SP-04: structural check — any DEBUG_SUPER_PASSWORD bypass must be
-  // dev-only (guarded by a NODE_ENV !== 'production' check) and must not use
-  // the old ad-hoc identifiers.
-  it('TC-SP-04: DEBUG_SUPER_PASSWORD bypass is dev-only (NODE_ENV guarded)', () => {
+  // TC-SP-04: the env-var bypass is deleted outright, not merely guarded.
+  it('TC-SP-04: DEBUG_SUPER_PASSWORD no longer appears in auth.ts', () => {
     const authPath = resolve(dirname(fileURLToPath(import.meta.url)), 'auth.ts')
     const authContent = readFileSync(authPath, 'utf-8')
 
+    expect(authContent).not.toContain('DEBUG_SUPER_PASSWORD')
     expect(authContent).not.toContain('isSuperpassword')
     expect(authContent).not.toContain('debugSuperPassword')
-    if (authContent.includes('DEBUG_SUPER_PASSWORD')) {
-      expect(authContent).toMatch(/NODE_ENV.*!==.*production/)
-    }
   })
 })

@@ -34,7 +34,8 @@ export async function createUser(data: {
  */
 export async function findUserByEmail(email: string): Promise<User | null> {
   return mapUser(
-    db.prepare('SELECT * FROM "User" WHERE "email" = ?').get(email),
+    db.prepare('SELECT * FROM "User" WHERE lower("email") = lower(?) ORDER BY "createdAt" ASC')
+      .get(email),
   )
 }
 

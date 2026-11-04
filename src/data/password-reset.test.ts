@@ -134,7 +134,7 @@ describe('tryCreateResetToken', () => {
     expect(created?.expiresAt.getTime()).toBeGreaterThan(before + 29 * 60 * 1000)
   })
 
-  it('voids every earlier unused token for the same user on a successful insert', async () => {
+  it('keeps an earlier unused token valid when a new one is issued (no DoS on in-flight link)', async () => {
     const user = makeUser()
     makePasswordResetToken({
       userId: user.id,
@@ -145,7 +145,7 @@ describe('tryCreateResetToken', () => {
     const created = tryCreateResetToken(user.id, 'newer-hash')
 
     expect(created).not.toBeNull()
-    expect(await findValidResetToken('older-hash')).toBeNull()
+    expect(await findValidResetToken('older-hash')).not.toBeNull()
     expect(await findValidResetToken('newer-hash')).not.toBeNull()
   })
 

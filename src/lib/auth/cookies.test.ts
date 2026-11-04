@@ -1,7 +1,7 @@
 // src/lib/auth/cookies.test.ts
 // Unit tests for cookie utilities (TC-P2-11 through TC-P2-13)
 
-import { describe, expect, it } from 'vitest'
+import { afterEach, describe, expect, it } from 'vitest'
 import {
   buildClearCookieHeader,
   buildSetCookieHeader,
@@ -90,5 +90,26 @@ describe('buildClearCookieHeader', () => {
       const header = buildClearCookieHeader()
       expect(header).not.toContain('Secure')
     })
+  })
+})
+
+describe('Secure flag follows APP_BASE_URL scheme', () => {
+  const orig = process.env.APP_BASE_URL
+  afterEach(() => {
+    if (orig === undefined) delete process.env.APP_BASE_URL
+    else process.env.APP_BASE_URL = orig
+  })
+
+  it('is set for https base URL on set and clear', () => {
+    process.env.APP_BASE_URL = 'https://app.example.com'
+    expect(buildSetCookieHeader('t', false)).toContain('; Secure')
+    expect(buildClearCookieHeader()).toContain('; Secure')
+  })
+
+  it('is absent for http or unset base URL', () => {
+    process.env.APP_BASE_URL = 'http://192.168.1.5:3000'
+    expect(buildSetCookieHeader('t', true)).not.toContain('Secure')
+    delete process.env.APP_BASE_URL
+    expect(buildSetCookieHeader('t', true)).not.toContain('Secure')
   })
 })

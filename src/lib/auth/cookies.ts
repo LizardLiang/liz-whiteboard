@@ -1,14 +1,23 @@
 // src/lib/auth/cookies.ts
 // Cookie utilities for session management
 //
-// NOTE: The `Secure` flag is intentionally absent.
-// The developer accesses the app over HTTP on a LAN. Adding the Secure flag
-// would prevent cookies from being sent over HTTP.
+// The `Secure` flag is added only when APP_BASE_URL is https:// (production
+// behind TLS). Over plain-HTTP LAN dev it is omitted, because browsers drop
+// Secure cookies on http:// origins.
 
 import { validateSessionToken } from './session'
 import type { AuthSession, AuthUser } from './session'
 
 const COOKIE_NAME = 'session_token'
+
+/** True when the configured public base URL is https (cookie gets `Secure`). */
+export function isSecureCookieEnv(): boolean {
+  return (process.env.APP_BASE_URL ?? '').trim().toLowerCase().startsWith('https://')
+}
+
+function secureAttr(): string {
+  return isSecureCookieEnv() ? '; Secure' : ''
+}
 
 /**
  * Parse the session token from a Cookie header string.
@@ -43,7 +52,7 @@ export async function getSessionFromCookie(
 
 /**
  * Build a Set-Cookie header value for the session token.
- * HttpOnly and SameSite=Lax are set. Secure flag is NOT set (LAN HTTP).
+ * HttpOnly and SameSite=Lax are set. Secure is set only for an https APP_BASE_URL.
  *
  * @param token - Raw session token
  * @param rememberMe - true = 30-day Max-Age; false = 24-hour Max-Age
@@ -54,7 +63,7 @@ export function buildSetCookieHeader(
   rememberMe: boolean,
 ): string {
   const maxAge = rememberMe ? 30 * 24 * 60 * 60 : 24 * 60 * 60
-  return `${COOKIE_NAME}=${token}; HttpOnly; SameSite=Lax; Path=/; Max-Age=${maxAge}`
+  return `${COOKIE_NAME}=${token}; HttpOnly; SameSite=Lax; Path=/; Max-Age=${maxAge}${secureAttr()}`
 }
 
 /**
@@ -63,5 +72,5 @@ export function buildSetCookieHeader(
  * @returns Set-Cookie header value string with Max-Age=0
  */
 export function buildClearCookieHeader(): string {
-  return `${COOKIE_NAME}=; HttpOnly; SameSite=Lax; Path=/; Max-Age=0`
+  return `${COOKIE_NAME}=; HttpOnly; SameSite=Lax; Path=/; Max-Age=0${secureAttr()}`
 }

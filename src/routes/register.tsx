@@ -119,6 +119,8 @@ function RegisterPage() {
         // target (e.g. an invite link) if present, else the server's default.
         const target = redirect !== '/' ? redirect : response.redirect
         router.navigate({ to: target })
+      } else if (response.error === AUTH_ERROR_CODES.RATE_LIMITED) {
+        setErrors({ form: 'Too many attempts. Please try again later.' })
       } else if (response.error === AUTH_ERROR_CODES.VALIDATION_ERROR) {
         // Server-side field validation error (e.g. username already taken)
         if (Object.keys(response.fields).length > 0) {
