@@ -11,6 +11,7 @@
 import { request as httpRequest } from 'node:http'
 import { expect, test } from '@playwright/test'
 import { BASE_URL, E2E_USER, STORAGE_STATE } from './fixtures'
+import { slotIndex, slotPorts, usesExternalServer } from './worker-slot'
 
 test.use({ storageState: { cookies: [], origins: [] } })
 
@@ -158,9 +159,13 @@ test.describe('Open redirect after login (security batch 3, M4)', () => {
 // cookie-vs-bearer split is unit-tested in src/lib/auth/socket-origin.test.ts.
 test.describe('Socket.IO Origin allowlist (security batch 3, M8)', () => {
   // Dev stack: Vite's global auth redirect answers /socket.io before the proxy
-  // sees it, so point E2E_SOCKET_URL at the server.dev.ts port (e.g.
-  // http://localhost:3010). In the single-process prod build it is BASE_URL.
-  const socketBase = process.env.E2E_SOCKET_URL ?? BASE_URL
+  // sees it, so the default is this worker's own server.dev.ts port; with an
+  // external server set E2E_SOCKET_URL (e.g. http://localhost:3010). In the single-process prod build it is BASE_URL.
+  const socketBase =
+    process.env.E2E_SOCKET_URL ??
+    (usesExternalServer()
+      ? BASE_URL
+      : `http://localhost:${slotPorts(slotIndex()).socket}`)
   const polling = '/socket.io/?EIO=4&transport=polling'
 
   test('foreign Origin is refused', async () => {
