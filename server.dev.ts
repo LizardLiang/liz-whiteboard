@@ -17,6 +17,15 @@ const httpServer = createServer((_req, res) => {
   res.end('socket-io-dev ok')
 })
 
+// Backstop only: a stray rejection from a socket handler must not kill the
+// dev socket server.
+process.on('unhandledRejection', (reason) => {
+  console.error('Unhandled rejection:', reason)
+})
+process.on('uncaughtException', (error) => {
+  console.error('Uncaught exception:', error)
+})
+
 initializeSocketIO(httpServer)
 
 httpServer.listen(PORT, '0.0.0.0', () => {

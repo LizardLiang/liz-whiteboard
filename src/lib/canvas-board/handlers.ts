@@ -31,6 +31,7 @@ import {
 } from '@/data/schema'
 import { PRESET_RAMPS } from '@/lib/canvas-engine/colour-ramps'
 import { updateCanvasBoardSettings } from '@/data/canvas-board'
+import { CANVAS_NAMESPACE_RE, guardSocketHandlers } from '@/lib/socket-safe'
 import {
   RevisionMismatchError,
   createCanvasElement,
@@ -481,11 +482,12 @@ export function registerCanvasBoardSettingsHandlers(
  * refused every write.
  */
 export function setupCanvasNamespace(ioServer: SocketIOServer): void {
-  const canvasNsp = ioServer.of(/^\/canvas\/[\w-]+$/)
+  const canvasNsp = ioServer.of(CANVAS_NAMESPACE_RE)
 
   canvasNsp.use(authenticateSocketHandshake)
 
   canvasNsp.on('connection', async (socket) => {
+    guardSocketHandlers(socket)
     const boardId = socket.nsp.name.replace('/canvas/', '')
     const userId = socket.data.userId as string | undefined
 

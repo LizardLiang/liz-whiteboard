@@ -91,6 +91,10 @@ import { findEffectiveRole } from '@/data/permission'
 import { hasMinimumRole } from '@/lib/auth/permissions'
 import { getWhiteboardProjectId } from '@/data/resolve-project'
 import { setupCanvasNamespace } from '@/lib/canvas-board/handlers'
+import {
+  WHITEBOARD_NAMESPACE_RE,
+  guardSocketHandlers,
+} from '@/lib/socket-safe'
 import { db } from '@/db'
 
 // ---------------------------------------------------------------------------
@@ -187,6 +191,9 @@ export function initializeSocketIO(httpServer: HTTPServer): SocketIOServer {
       credentials: true, // Required for cookies to be sent with handshake
     },
     transports: ['websocket', 'polling'],
+    // Dynamic child namespaces are removed when their last socket leaves, so
+    // connecting to many ids cannot grow server memory without bound.
+    cleanupEmptyChildNamespaces: true,
   })
   // Bridge for callers running in a different module instantiation (see the
   // Phase 6 comment above) — e.g. server functions bundled into the built
@@ -251,7 +258,7 @@ export function getSocketIO(): SocketIOServer | null {
  */
 function setupWhiteboardNamespace(ioServer: SocketIOServer): void {
   // Dynamic namespace for whiteboards
-  const whiteboardNsp = ioServer.of(/^\/whiteboard\/[\w-]+$/)
+  const whiteboardNsp = ioServer.of(WHITEBOARD_NAMESPACE_RE)
 
   // Auth middleware: runs on EVERY connection attempt to this namespace.
   // Shared with the canvas namespace — see src/lib/auth/socket-handshake.ts
@@ -260,6 +267,7 @@ function setupWhiteboardNamespace(ioServer: SocketIOServer): void {
   whiteboardNsp.use(authenticateSocketHandshake)
 
   whiteboardNsp.on('connection', async (socket) => {
+    guardSocketHandlers(socket)
     // Extract whiteboard ID from namespace
     const namespace = socket.nsp.name
     const whiteboardId = namespace.replace('/whiteboard/', '')
@@ -976,7 +984,7 @@ function setupCollaborationEventHandlers(
           event: 'table:delete',
           error: 'DELETE_FAILED',
           message,
-          tableId: data.tableId,
+          tableId: (data as { tableId?: string } | null)?.tableId,
         })
         cb?.({ ok: false, code: 'INTERNAL_ERROR', message })
         return
@@ -1222,7 +1230,7 @@ function setupCollaborationEventHandlers(
           event: 'area:move',
           error: 'UPDATE_FAILED',
           message,
-          areaId: data.areaId,
+          areaId: (data as { areaId?: string } | null)?.areaId,
         })
         cb?.({ ok: false, code: 'INTERNAL_ERROR', message })
         return
@@ -1291,7 +1299,7 @@ function setupCollaborationEventHandlers(
           event: 'area:delete',
           error: 'DELETE_FAILED',
           message,
-          areaId: data.areaId,
+          areaId: (data as { areaId?: string } | null)?.areaId,
         })
         cb?.({ ok: false, code: 'INTERNAL_ERROR', message })
         return
@@ -2216,7 +2224,7 @@ function setupCollaborationEventHandlers(
         error: 'DUPLICATE_FAILED',
         message:
           error instanceof Error ? error.message : 'Failed to duplicate column',
-        columnId: data.columnId,
+        columnId: (data as { columnId?: string } | null)?.columnId,
       })
       return
     }
@@ -2524,7 +2532,7 @@ function setupCollaborationEventHandlers(
           event: 'relationship:delete',
           error: 'DELETE_FAILED',
           message,
-          relationshipId: relationshipId ?? data.relationshipId,
+          relationshipId: relationshipId ?? (data as { relationshipId?: string } | null)?.relationshipId,
         })
         cb?.({ ok: false, code: 'INTERNAL_ERROR', message })
         return
@@ -2887,7 +2895,7 @@ function setupCollaborationEventHandlers(
           event: 'comment:delete',
           error: 'DELETE_FAILED',
           message,
-          commentId: data.commentId,
+          commentId: (data as { commentId?: string } | null)?.commentId,
         })
         cb?.({ ok: false, code: 'INTERNAL_ERROR', message })
         return
