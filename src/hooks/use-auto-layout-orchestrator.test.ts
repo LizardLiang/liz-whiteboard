@@ -41,10 +41,27 @@ import { DOCK_FIT_PADDING } from '@/lib/react-flow/fit-view-padding'
 import { useAutoLayoutOrchestrator } from './use-auto-layout-orchestrator'
 // eslint-disable-next-line import/first, import/order
 import type { Mock } from 'vitest'
+// eslint-disable-next-line import/first, import/order
+import { buildParentIndex, toAbsolute } from '@/lib/react-flow/node-nesting'
+// eslint-disable-next-line import/first, import/order
+import { reconcileAreaMembership } from '@/lib/react-flow/area-bounds'
 
 const mockSetNodes = vi.fn()
 const mockSetEdges = vi.fn()
-const mockGetNodes = vi.fn(() => [])
+// Two table nodes: the orchestrator bails out when the store holds no tables.
+const DEFAULT_NODES = [
+  {
+    id: '22222222-2222-2222-2222-222222222222',
+    type: 'table',
+    position: { x: 0, y: 0 },
+  },
+  {
+    id: '33333333-3333-3333-3333-333333333333',
+    type: 'table',
+    position: { x: 5, y: 5 },
+  },
+]
+const mockGetNodes = vi.fn((): Array<any> => DEFAULT_NODES)
 const mockGetEdges = vi.fn(() => [])
 const mockFitView = vi.fn()
 const mockTriggerSessionExpired = vi.fn()
@@ -756,7 +773,7 @@ describe('useAutoLayoutOrchestrator', () => {
     }
 
     afterEach(() => {
-      mockGetNodes.mockReturnValue([] as any)
+      mockGetNodes.mockReturnValue(DEFAULT_NODES)
     })
 
     it('passes area inputs (with membership) to the layout', async () => {
@@ -849,10 +866,146 @@ describe('useAutoLayoutOrchestrator', () => {
       })
       expect(mockBulk).toHaveBeenCalledTimes(2)
       expect(mockBulk.mock.calls[1][0].data.areas).toEqual([NEW_AREA])
-      expect(onAfterLayout).toHaveBeenCalledWith(
-        expect.any(Array),
-        [NEW_AREA],
+      expect(onAfterLayout).toHaveBeenCalledWith(expect.any(Array), [NEW_AREA])
+    })
+
+    const OLD_AREA = {
+      id: AREA_ID,
+      positionX: 0,
+      positionY: 0,
+      width: 200,
+      height: 150,
+    }
+
+    it('persist throws: store nodes and area bounds are restored', async () => {
+      arrange()
+      const original = [areaNode, memberNode, freeNode]
+      ;(
+        updateTablePositionsBulk as unknown as ReturnType<typeof vi.fn>
+      ).mockRejectedValueOnce(new Error('network'))
+      const onAreaBoundsChange = vi.fn()
+      const { result } = renderHook(() =>
+        useAutoLayoutOrchestrator({ ...makeHookArgs(), onAreaBoundsChange }),
       )
+      await act(async () => {
+        await result.current.handleAutoLayoutClick(2)
+      })
+      expect(mockSetNodes).toHaveBeenCalledTimes(2)
+      expect(mockSetNodes.mock.calls[1][0]).toEqual(original)
+      expect(mockSetEdges).toHaveBeenCalledTimes(2)
+      expect(onAreaBoundsChange).toHaveBeenNthCalledWith(1, [NEW_AREA])
+      expect(onAreaBoundsChange).toHaveBeenNthCalledWith(2, [OLD_AREA])
+    })
+
+    it('auth error: store nodes and area bounds are restored', async () => {
+      arrange()
+      ;(
+        updateTablePositionsBulk as unknown as ReturnType<typeof vi.fn>
+      ).mockResolvedValueOnce(AUTH_ERROR_RESPONSE)
+      const onAreaBoundsChange = vi.fn()
+      const { result } = renderHook(() =>
+        useAutoLayoutOrchestrator({ ...makeHookArgs(), onAreaBoundsChange }),
+      )
+      await act(async () => {
+        await result.current.handleAutoLayoutClick(2)
+      })
+      expect(mockSetNodes).toHaveBeenCalledTimes(2)
+      expect(onAreaBoundsChange).toHaveBeenLastCalledWith([OLD_AREA])
+    })
+
+    it('retry success re-applies the store nodes and area bounds', async () => {
+      arrange()
+      const mockBulk = updateTablePositionsBulk as unknown as ReturnType<
+        typeof vi.fn
+      >
+      mockBulk.mockRejectedValueOnce(new Error('network'))
+      mockBulk.mockResolvedValueOnce({ success: true, count: 2 })
+      const onAreaBoundsChange = vi.fn()
+      const { result } = renderHook(() =>
+        useAutoLayoutOrchestrator({ ...makeHookArgs(), onAreaBoundsChange }),
+      )
+      await act(async () => {
+        await result.current.handleAutoLayoutClick(2)
+      })
+      await act(async () => {
+        await result.current.handleRetry()
+      })
+      expect(mockSetNodes).toHaveBeenCalledTimes(3)
+      expect(mockSetNodes.mock.calls[2][0]).toEqual(
+        mockSetNodes.mock.calls[0][0],
+      )
+      expect(onAreaBoundsChange).toHaveBeenLastCalledWith([NEW_AREA])
+    })
+
+    it('a failed retry does not overwrite the store a second time', async () => {
+      arrange()
+      const mockBulk = updateTablePositionsBulk as unknown as ReturnType<
+        typeof vi.fn
+      >
+      mockBulk.mockRejectedValueOnce(new Error('network'))
+      mockBulk.mockResolvedValueOnce(AUTH_ERROR_RESPONSE)
+      const { result } = renderHook(() =>
+        useAutoLayoutOrchestrator(makeHookArgs()),
+      )
+      await act(async () => {
+        await result.current.handleAutoLayoutClick(2)
+      })
+      await act(async () => {
+        await result.current.handleRetry()
+      })
+      expect(mockSetNodes).toHaveBeenCalledTimes(2)
+    })
+
+    it('a 1px member drag after a failed layout keeps the member in its area', async () => {
+      arrange()
+      ;(
+        updateTablePositionsBulk as unknown as ReturnType<typeof vi.fn>
+      ).mockRejectedValueOnce(new Error('network'))
+      const onAreaBoundsChange = vi.fn()
+      const { result } = renderHook(() =>
+        useAutoLayoutOrchestrator({ ...makeHookArgs(), onAreaBoundsChange }),
+      )
+      await act(async () => {
+        await result.current.handleAutoLayoutClick(2)
+      })
+      // What the canvas holds after the failure: the restored store nodes and
+      // the `areas` state last written through onAreaBoundsChange.
+      const stored = mockSetNodes.mock.calls.at(-1)![0] as Array<any>
+      const storedArea = stored.find((n) => n.id === AREA_ID)
+      const storedMember = stored.find((n) => n.id === MEMBER_ID)
+      const bounds = onAreaBoundsChange.mock.calls.at(-1)![0][0]
+      const areaState = {
+        ...bounds,
+        memberTableIds: storedArea.data.area.memberTableIds,
+      }
+      expect(storedArea.position).toEqual({
+        x: areaState.positionX,
+        y: areaState.positionY,
+      })
+      const parent = buildParentIndex([areaState]).get(MEMBER_ID)
+      const abs = toAbsolute(
+        { x: storedMember.position.x + 1, y: storedMember.position.y + 1 },
+        parent,
+      )
+      const { leave } = reconcileAreaMembership([areaState], MEMBER_ID, {
+        x: abs.x + 50,
+        y: abs.y + 25,
+      })
+      expect(leave).toEqual([])
+    })
+
+    it('does nothing when the board has areas but no tables', async () => {
+      mockGetNodes.mockReturnValue([areaNode] as any)
+      const { result } = renderHook(() =>
+        useAutoLayoutOrchestrator(makeHookArgs()),
+      )
+      await act(async () => {
+        await result.current.handleAutoLayoutClick(2)
+      })
+      expect(mockRunD3ForceLayout).not.toHaveBeenCalled()
+      expect(mockSetNodes).not.toHaveBeenCalled()
+      expect(updateTablePositionsBulk).not.toHaveBeenCalled()
+      expect(result.current.isRunning).toBe(false)
     })
   })
 })

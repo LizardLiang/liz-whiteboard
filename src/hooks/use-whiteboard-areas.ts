@@ -64,6 +64,20 @@ export interface UseWhiteboardAreasReturn {
     areaId: string,
     position: { positionX: number; positionY: number },
   ) => void
+  /**
+   * Merge area bounds (position + size) into `areas` state. No emit, no
+   * persist. Used by Auto Layout to keep `areas` on the same origin as the
+   * React Flow store, and to roll that back when the save fails.
+   */
+  applyAreaBounds: (
+    bounds: Array<{
+      id: string
+      positionX: number
+      positionY: number
+      width: number
+      height: number
+    }>,
+  ) => void
 }
 
 export function useWhiteboardAreas(params: {
@@ -174,6 +188,35 @@ export function useWhiteboardAreas(params: {
     [],
   )
 
+  const applyAreaBounds = useCallback(
+    (
+      bounds: Array<{
+        id: string
+        positionX: number
+        positionY: number
+        width: number
+        height: number
+      }>,
+    ) => {
+      const byId = new Map(bounds.map((b) => [b.id, b]))
+      setAreas((prev) =>
+        prev.map((a) => {
+          const b = byId.get(a.id)
+          return b
+            ? {
+                ...a,
+                positionX: b.positionX,
+                positionY: b.positionY,
+                width: b.width,
+                height: b.height,
+              }
+            : a
+        }),
+      )
+    },
+    [],
+  )
+
   // Atomic move (area-atomic-move fix) — area position + member positions
   // persist server-side in one transaction and rebroadcast as one
   // area:moved event. This function only emits + forwards the ack; the
@@ -208,5 +251,6 @@ export function useWhiteboardAreas(params: {
     deleteArea,
     moveArea,
     applyRemoteAreaMove,
+    applyAreaBounds,
   }
 }

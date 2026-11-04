@@ -78,6 +78,15 @@ export interface UseAutoLayoutOrchestratorArgs {
     positions: Array<{ id: string; x: number; y: number }>,
     areas: Array<AreaLayoutOutputArea>,
   ) => void
+  /**
+   * Mirrors area bounds into the caller's `areas` state WITHOUT emitting or
+   * persisting. The orchestrator calls it with the new bounds when it writes
+   * the optimistic layout to the React Flow store, and with the previous
+   * bounds when a failed persist rolls the store back. This keeps the store
+   * (members relative to the area origin) and `areas` state (which membership
+   * reconcile reads) on the same origin at all times.
+   */
+  onAreaBoundsChange?: (areas: Array<AreaLayoutOutputArea>) => void
 }
 
 export interface UseAutoLayoutOrchestratorResult {
@@ -106,6 +115,7 @@ export function useAutoLayoutOrchestrator({
   runD3ForceLayout,
   emitBulkPositionUpdate,
   onAfterLayout,
+  onAreaBoundsChange,
 }: UseAutoLayoutOrchestratorArgs): UseAutoLayoutOrchestratorResult {
   const { setNodes, setEdges, getNodes, getEdges, fitView } = useReactFlow()
   const { triggerSessionExpired } = useAuthContext()
@@ -117,6 +127,13 @@ export function useAutoLayoutOrchestrator({
 
   // Stash the last payload so handleRetry can re-submit without recomputing.
   const lastPayloadRef = useRef<BulkPayload | null>(null)
+
+  // Apply / roll back the optimistic layout (store nodes + edges + area
+  // bounds). Set by runLayout; handleRetry re-applies after a retry succeeds.
+  const layoutActionsRef = useRef<{
+    apply: () => void
+    revert: () => void
+  } | null>(null)
 
   // handlePersistResult (below) and handleRetry are mutually recursive:
   // handlePersistResult's toast action invokes handleRetry, and handleRetry
@@ -160,6 +177,7 @@ export function useAutoLayoutOrchestrator({
             },
           })
         }
+        layoutActionsRef.current?.revert()
         return false
       }
 
@@ -194,6 +212,8 @@ export function useAutoLayoutOrchestrator({
         lastPayloadRef.current.positions.length,
       )
       if (ok) {
+        // The failed attempt rolled the optimistic layout back; re-apply it.
+        layoutActionsRef.current?.apply()
         // Re-emit the broadcast on successful retry.
         emitBulkPositionUpdate(
           lastPayloadRef.current.positions.map((p) => ({
@@ -257,6 +277,10 @@ export function useAutoLayoutOrchestrator({
         (n): n is LayoutableNodeType =>
           n.type === 'table' || n.type === 'externalTable',
       )
+      // Nothing to arrange: areas alone give the server an empty positions
+      // list, which its schema rejects, so Retry could never succeed.
+      if (tableNodesOnly.length === 0) return
+
       const relationshipEdgesOnly = getEdges().filter(
         (e): e is RelationshipEdgeType => e.type === 'relationship',
       )
@@ -297,7 +321,18 @@ export function useAutoLayoutOrchestrator({
       // which speaks absolute coordinates. The store gets the same nodes with
       // member tables made RELATIVE to their area's NEW origin, because React
       // Flow paints a child at parent.position + child.position.
-      const updatedNodes = applyBulkPositions(getNodes(), positions)
+      const snapshotNodes = getNodes()
+      const snapshotEdges = getEdges()
+      const previousAreaBounds: Array<AreaLayoutOutputArea> = areaInputs
+        .filter((a) => areaBounds.some((b) => b.id === a.id))
+        .map((a) => ({
+          id: a.id,
+          positionX: a.positionX,
+          positionY: a.positionY,
+          width: a.width,
+          height: a.height,
+        }))
+      const updatedNodes = applyBulkPositions(snapshotNodes, positions)
       let storeNodes: typeof updatedNodes = updatedNodes
       if (areaBounds.length > 0) {
         const boundsById = new Map(areaBounds.map((a) => [a.id, a]))
@@ -336,7 +371,6 @@ export function useAutoLayoutOrchestrator({
           return { ...n, position: toRelative(n.position, parent) }
         })
       }
-      setNodes(storeNodes)
       // Edges only ever connect table and reference nodes (never area/comment
       // pins) — narrow for recalculateEdgeRouting below, which reads position
       // and size off each node. Reference nodes are routed like tables, as the
@@ -347,20 +381,40 @@ export function useAutoLayoutOrchestrator({
       )
       const allMovedIds = new Set(positions.map((p) => p.id))
 
-      setEdges((prev) => {
-        // Every edge in this app is a 'relationship' edge (the sole
-        // registered edge type — see node-types.ts) — filter narrows the
-        // type accordingly for recalculateEdgeRouting below.
-        const relationshipEdges = prev.filter(
-          (e): e is RelationshipEdgeType => e.type === 'relationship',
-        )
-        // Handle sides and bundle offsets both derive from the new positions.
-        return recalculateEdgeRouting(
-          relationshipEdges,
-          updatedTableNodes,
-          allMovedIds,
-        )
-      })
+      // `applied` makes both actions idempotent, so a second failure (a failed
+      // Retry) never overwrites edits made since the first rollback.
+      let applied = false
+      layoutActionsRef.current = {
+        apply: () => {
+          if (applied) return
+          applied = true
+          setNodes(storeNodes)
+          setEdges((prev) => {
+            // Every edge in this app is a 'relationship' edge (the sole
+            // registered edge type — see node-types.ts) — filter narrows the
+            // type accordingly for recalculateEdgeRouting below.
+            const relationshipEdges = prev.filter(
+              (e): e is RelationshipEdgeType => e.type === 'relationship',
+            )
+            // Handle sides and bundle offsets both derive from the new positions.
+            return recalculateEdgeRouting(
+              relationshipEdges,
+              updatedTableNodes,
+              allMovedIds,
+            )
+          })
+          if (areaBounds.length > 0) onAreaBoundsChange?.(areaBounds)
+        },
+        revert: () => {
+          if (!applied) return
+          applied = false
+          setNodes(snapshotNodes)
+          setEdges(snapshotEdges)
+          if (previousAreaBounds.length > 0)
+            onAreaBoundsChange?.(previousAreaBounds)
+        },
+      }
+      layoutActionsRef.current.apply()
 
       // Step 3 — Stash payload BEFORE the await so Retry can re-submit
       // (Bundle offsets are UI-only; only node positions are persisted.)
@@ -383,6 +437,7 @@ export function useAutoLayoutOrchestrator({
         // eslint-disable-next-line @typescript-eslint/no-unnecessary-condition
         if (!isMountedRef.current) return
         console.error('Auto Layout persist failed:', persistErr)
+        layoutActionsRef.current.revert()
         setPersistError(persistErr)
         toast.error(t('hooks.autoLayout.notPersisted'), {
           action: {
@@ -433,6 +488,7 @@ export function useAutoLayoutOrchestrator({
     emitBulkPositionUpdate,
     handleRetry,
     onAfterLayout,
+    onAreaBoundsChange,
     t,
   ])
 

@@ -49,7 +49,21 @@ export function useSqlImport(whiteboardId: string) {
   const queryClient = useQueryClient()
 
   const importDiagram = useCallback(
-    async (ast: DiagramAST): Promise<SqlImportSummary> => {
+    async (
+      ast: DiagramAST,
+      options?: {
+        /** Receives the area bounds the layout pass wrote, so the caller can tell peers. */
+        onAreasResized?: (
+          areas: Array<{
+            id: string
+            positionX: number
+            positionY: number
+            width: number
+            height: number
+          }>,
+        ) => void
+      },
+    ): Promise<SqlImportSummary> => {
       const { tables, relationships } = astToEntities(ast, whiteboardId)
 
       const tableIdByName = new Map<string, string>()
@@ -154,6 +168,7 @@ export function useSqlImport(whiteboardId: string) {
             data: { whiteboardId },
           })
           if (!isUnauthorizedError(layoutResult)) {
+            options?.onAreasResized?.(layoutResult.areas)
             await Promise.all([
               queryClient.invalidateQueries({
                 queryKey: ['whiteboard', whiteboardId],

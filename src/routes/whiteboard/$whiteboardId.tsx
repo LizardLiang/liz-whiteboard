@@ -139,18 +139,6 @@ function WhiteboardEditor() {
     },
   })
 
-  // SQL DDL import orchestration (Issue #105) — threaded through as a prop to
-  // the Toolbar ReactFlowWhiteboard renders internally. Toolbar's onImportSql
-  // contract discards the resolved summary (void | Promise<void>) —
-  // ImportSqlDialog only needs to know success/failure.
-  const { importDiagram } = useSqlImport(whiteboardId)
-  const handleImportSql = useCallback(
-    async (ast: DiagramAST) => {
-      await importDiagram(ast)
-    },
-    [importDiagram],
-  )
-
   /**
    * Toggle zen mode with the `z` shortcut. Ignored when a modifier is held
    * (so Ctrl/Cmd+Z undo is never hijacked) and while typing in a form field
@@ -180,6 +168,26 @@ function WhiteboardEditor() {
     whiteboardId,
     userId,
     triggerSessionExpired,
+  )
+
+  // SQL DDL import orchestration (Issue #105) — threaded through as a prop to
+  // the Toolbar ReactFlowWhiteboard renders internally. Toolbar's onImportSql
+  // contract discards the resolved summary (void | Promise<void>) —
+  // ImportSqlDialog only needs to know success/failure.
+  // The import's layout pass resizes areas; peers learn the new bounds
+  // through area:update, the event the toolbar Auto Layout also emits.
+  const { importDiagram } = useSqlImport(whiteboardId)
+  const handleImportSql = useCallback(
+    async (ast: DiagramAST) => {
+      await importDiagram(ast, {
+        onAreasResized: (areas) => {
+          for (const { id, ...bounds } of areas) {
+            emit('area:update', { areaId: id, ...bounds })
+          }
+        },
+      })
+    },
+    [importDiagram, emit],
   )
 
   // Mutations

@@ -1547,6 +1547,7 @@ function ReactFlowWhiteboardInner({
     justReconnectedRef.current = true
     queryClient.invalidateQueries({ queryKey: ['whiteboard', whiteboardId] })
     queryClient.invalidateQueries({ queryKey: ['relationships', whiteboardId] })
+    queryClient.invalidateQueries({ queryKey: ['areas', whiteboardId] })
   }, [queryClient, whiteboardId])
 
   // Ref for onReconnect — keeps the callback stable without re-registering socket listeners
@@ -2310,6 +2311,7 @@ function ReactFlowWhiteboardInner({
     deleteArea: deleteAreaMutation,
     moveArea,
     applyRemoteAreaMove,
+    applyAreaBounds,
   } = useWhiteboardAreas({
     whiteboardId,
     userId,
@@ -2914,6 +2916,7 @@ function ReactFlowWhiteboardInner({
     runD3ForceLayout,
     emitBulkPositionUpdate,
     onAfterLayout: handleAfterAutoLayout,
+    onAreaBoundsChange: applyAreaBounds,
   })
 
   const handleAddTableToArea = useCallback(
