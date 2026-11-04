@@ -162,6 +162,17 @@ export const IDS = {
   autoLayoutQualityWhiteboard: '40000000-0000-4000-8000-000000000011',
   autoLayoutQualityImportWhiteboard: '40000000-0000-4000-8000-000000000012',
 
+  // Dedicated board for the area-aware Auto Layout suite. The suite re-seeds it
+  // before every test via e2e/seed-auto-layout-areas.ts (it resets only this
+  // board).
+  alaWhiteboard: 'c1000000-0000-4000-8000-000000000001',
+  alaArea: 'c1000000-0000-4000-8000-000000000002',
+  alaMember1: 'c1000000-0000-4000-8000-000000000011',
+  alaMember2: 'c1000000-0000-4000-8000-000000000012',
+  alaMember3: 'c1000000-0000-4000-8000-000000000013',
+  alaFree1: 'c1000000-0000-4000-8000-000000000014',
+  alaFree2: 'c1000000-0000-4000-8000-000000000015',
+
   // Dedicated project/board for the shapes-and-connectors suite (Phase 1).
   // Isolated on purpose (Artemis's recommendation): this suite draws,
   // moves, resizes, deletes, and — in the legacy-snapshot-restore case
