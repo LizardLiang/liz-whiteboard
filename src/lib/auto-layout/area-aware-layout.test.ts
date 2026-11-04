@@ -95,7 +95,7 @@ describe('computeAreaAwareLayout', () => {
     }
   })
 
-  it('(d) an edge from a member to an outside table is kept', async () => {
+  it('(d) an edge from a member to an outside table still lays out every table', async () => {
     const areas = [area('A1', ['a', 'b', 'c'])]
     const out = await computeAreaAwareLayout({ tables, edges, areas })
     expect(out.tables).toHaveLength(tables.length)

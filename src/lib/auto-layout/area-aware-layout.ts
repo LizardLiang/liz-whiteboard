@@ -147,7 +147,7 @@ export async function computeAreaAwareLayout(
     const t = endpoint(e.target)
     if (s.id === t.id) continue
     const key = s.id + '\n' + t.id
-    if (seen.has(key)) continue
+    if ((s.remapped || t.remapped) && seen.has(key)) continue
     seen.add(key)
     const { sourceRow, targetRow, ...rest } = e
     outerEdges.push({
