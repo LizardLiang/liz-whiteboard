@@ -31,7 +31,11 @@ import {
 } from '@/data/schema'
 import { PRESET_RAMPS } from '@/lib/canvas-engine/colour-ramps'
 import { updateCanvasBoardSettings } from '@/data/canvas-board'
-import { CANVAS_NAMESPACE_RE, guardSocketHandlers } from '@/lib/socket-safe'
+import {
+  CANVAS_NAMESPACE_RE,
+  guardSocketHandlers,
+  safeConnectionHandler,
+} from '@/lib/socket-safe'
 import {
   RevisionMismatchError,
   createCanvasElement,
@@ -487,47 +491,52 @@ export function setupCanvasNamespace(ioServer: SocketIOServer): void {
 
   canvasNsp.use(authenticateSocketHandshake)
 
-  canvasNsp.on('connection', async (socket) => {
-    guardSocketHandlers(socket)
-    const boardId = socket.nsp.name.replace('/canvas/', '')
-    const userId = socket.data.userId as string | undefined
+  canvasNsp.on(
+    'connection',
+    safeConnectionHandler(async (socket) => {
+      guardSocketHandlers(socket)
+      const boardId = socket.nsp.name.replace('/canvas/', '')
+      const userId = socket.data.userId as string | undefined
 
-    if (!userId) {
-      socket.disconnect(true)
-      return
-    }
+      if (!userId) {
+        socket.disconnect(true)
+        return
+      }
 
-    // Authentication is not authorisation: the handshake middleware proved
-    // who this is, not that they may see this board.
-    if (await requireCanvasBoardRole(socket, boardId, 'connection', 'VIEWER')) {
-      socket.disconnect(true)
-      return
-    }
+      // Authentication is not authorisation: the handshake middleware proved
+      // who this is, not that they may see this board.
+      if (
+        await requireCanvasBoardRole(socket, boardId, 'connection', 'VIEWER')
+      ) {
+        socket.disconnect(true)
+        return
+      }
 
-    // No CollaborationSession row and no active-user list: that table
-    // foreign-keys Whiteboard, and presence is out of scope (plan E2). The
-    // event is still emitted so the client's connection state settles.
-    socket.emit('connected', { sessionId: null, activeUsers: [] })
+      // No CollaborationSession row and no active-user list: that table
+      // foreign-keys Whiteboard, and presence is out of scope (plan E2). The
+      // event is still emitted so the client's connection state settles.
+      socket.emit('connected', { sessionId: null, activeUsers: [] })
 
-    trackSocket(socket, async () => {
-      const denied = await requireCanvasBoardRole(
-        { data: { userId }, emit: () => {} },
+      trackSocket(socket, async () => {
+        const denied = await requireCanvasBoardRole(
+          { data: { userId }, emit: () => {} },
+          boardId,
+          'recheck',
+          'VIEWER',
+        )
+        return !denied
+      })
+
+      registerCanvasElementHandlers(
+        socket as unknown as CanvasSocket,
         boardId,
-        'recheck',
-        'VIEWER',
+        userId,
       )
-      return !denied
-    })
-
-    registerCanvasElementHandlers(
-      socket as unknown as CanvasSocket,
-      boardId,
-      userId,
-    )
-    registerCanvasBoardSettingsHandlers(
-      socket as unknown as CanvasSocket,
-      boardId,
-      userId,
-    )
-  })
+      registerCanvasBoardSettingsHandlers(
+        socket as unknown as CanvasSocket,
+        boardId,
+        userId,
+      )
+    }),
+  )
 }

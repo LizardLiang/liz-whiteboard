@@ -86,10 +86,7 @@ import {
   authenticateSocketHandshake,
   isSocketSessionExpired,
 } from '@/lib/auth/socket-handshake'
-import {
-  configuredOrigins,
-  isHandshakeAllowed,
-} from '@/lib/auth/socket-origin'
+import { configuredOrigins, isHandshakeAllowed } from '@/lib/auth/socket-origin'
 import { trackSocket } from '@/lib/auth/socket-registry'
 import { requireRole } from '@/lib/auth/require-role'
 import { findEffectiveRole } from '@/data/permission'
@@ -99,6 +96,7 @@ import { setupCanvasNamespace } from '@/lib/canvas-board/handlers'
 import {
   WHITEBOARD_NAMESPACE_RE,
   guardSocketHandlers,
+  safeConnectionHandler,
 } from '@/lib/socket-safe'
 import { db } from '@/db'
 
@@ -282,104 +280,107 @@ function setupWhiteboardNamespace(ioServer: SocketIOServer): void {
   // there is exactly one copy of them.
   whiteboardNsp.use(authenticateSocketHandshake)
 
-  whiteboardNsp.on('connection', async (socket) => {
-    guardSocketHandlers(socket)
-    // Extract whiteboard ID from namespace
-    const namespace = socket.nsp.name
-    const whiteboardId = namespace.replace('/whiteboard/', '')
+  whiteboardNsp.on(
+    'connection',
+    safeConnectionHandler(async (socket) => {
+      guardSocketHandlers(socket)
+      // Extract whiteboard ID from namespace
+      const namespace = socket.nsp.name
+      const whiteboardId = namespace.replace('/whiteboard/', '')
 
-    // userId is set by the io.use() handshake middleware (authenticated)
-    const userId = socket.data.userId as string
+      // userId is set by the io.use() handshake middleware (authenticated)
+      const userId = socket.data.userId as string
 
-    if (!userId) {
-      socket.disconnect(true)
-      return
-    }
+      if (!userId) {
+        socket.disconnect(true)
+        return
+      }
 
-    console.log(
-      `User ${userId} connected to whiteboard ${whiteboardId} (socket: ${socket.id})`,
-    )
-
-    // Authorization check: verify the user has at least VIEWER access to this
-    // whiteboard's project before creating any session or emitting any data.
-    // The io.use() handshake middleware only validates authentication, not
-    // project-level RBAC — any authenticated user could otherwise join any
-    // whiteboard's live collab namespace. Reuses requireRole (AD-1) so the
-    // emitted payload matches the canonical SEC-ERR-02 shape the client expects
-    // ({ code: 'FORBIDDEN', event, message }) and fail-closed behavior is shared
-    // with every other gated event.
-    if (await requireRole(socket, whiteboardId, 'connection', 'VIEWER')) {
-      socket.disconnect(true)
-      return
-    }
-
-    // Register for revocation (logout, reset, removal) and the periodic
-    // session + role recheck.
-    trackSocket(socket, async () => {
-      const denied = await requireRole(
-        { data: { userId }, emit: () => {} },
-        whiteboardId,
-        'recheck',
-        'VIEWER',
+      console.log(
+        `User ${userId} connected to whiteboard ${whiteboardId} (socket: ${socket.id})`,
       )
-      return !denied
-    })
 
-    try {
-      // Create collaboration session
-      const session = await createCollaborationSession({
-        whiteboardId,
-        userId,
-        socketId: socket.id,
-      })
+      // Authorization check: verify the user has at least VIEWER access to this
+      // whiteboard's project before creating any session or emitting any data.
+      // The io.use() handshake middleware only validates authentication, not
+      // project-level RBAC — any authenticated user could otherwise join any
+      // whiteboard's live collab namespace. Reuses requireRole (AD-1) so the
+      // emitted payload matches the canonical SEC-ERR-02 shape the client expects
+      // ({ code: 'FORBIDDEN', event, message }) and fail-closed behavior is shared
+      // with every other gated event.
+      if (await requireRole(socket, whiteboardId, 'connection', 'VIEWER')) {
+        socket.disconnect(true)
+        return
+      }
 
-      // Get active collaborators
-      const activeUsers = await findActiveCollaborators(whiteboardId)
-
-      // Send connection acknowledgment with active users
-      socket.emit('connected', {
-        sessionId: session.id,
-        activeUsers: activeUsers
-          .filter((s) => s.socketId !== socket.id)
-          .map((s) => ({
-            userId: s.userId,
-            cursor: s.cursor as CursorPosition | null,
-            lastActivityAt: s.lastActivityAt.toISOString(),
-          })),
-      })
-
-      // Notify other users of new connection
-      socket.broadcast.emit('user:connected', {
-        userId,
-        sessionId: session.id,
-      })
-
-      // Setup event handlers
-      setupCollaborationEventHandlers(socket, whiteboardId, userId)
-
-      // Handle disconnection
-      socket.on('disconnect', async () => {
-        console.log(
-          `User ${userId} disconnected from whiteboard ${whiteboardId}`,
+      // Register for revocation (logout, reset, removal) and the periodic
+      // session + role recheck.
+      trackSocket(socket, async () => {
+        const denied = await requireRole(
+          { data: { userId }, emit: () => {} },
+          whiteboardId,
+          'recheck',
+          'VIEWER',
         )
+        return !denied
+      })
 
-        try {
-          await deleteCollaborationSession(socket.id)
-          socket.broadcast.emit('user:disconnected', { userId })
-        } catch (error) {
-          console.error('Failed to cleanup session on disconnect:', error)
-        }
-      })
-    } catch (error) {
-      console.error('Failed to setup collaboration session:', error)
-      socket.emit('error', {
-        event: 'connection',
-        error: 'SETUP_FAILED',
-        message: 'Failed to establish collaboration session',
-      })
-      socket.disconnect(true)
-    }
-  })
+      try {
+        // Create collaboration session
+        const session = await createCollaborationSession({
+          whiteboardId,
+          userId,
+          socketId: socket.id,
+        })
+
+        // Get active collaborators
+        const activeUsers = await findActiveCollaborators(whiteboardId)
+
+        // Send connection acknowledgment with active users
+        socket.emit('connected', {
+          sessionId: session.id,
+          activeUsers: activeUsers
+            .filter((s) => s.socketId !== socket.id)
+            .map((s) => ({
+              userId: s.userId,
+              cursor: s.cursor as CursorPosition | null,
+              lastActivityAt: s.lastActivityAt.toISOString(),
+            })),
+        })
+
+        // Notify other users of new connection
+        socket.broadcast.emit('user:connected', {
+          userId,
+          sessionId: session.id,
+        })
+
+        // Setup event handlers
+        setupCollaborationEventHandlers(socket, whiteboardId, userId)
+
+        // Handle disconnection
+        socket.on('disconnect', async () => {
+          console.log(
+            `User ${userId} disconnected from whiteboard ${whiteboardId}`,
+          )
+
+          try {
+            await deleteCollaborationSession(socket.id)
+            socket.broadcast.emit('user:disconnected', { userId })
+          } catch (error) {
+            console.error('Failed to cleanup session on disconnect:', error)
+          }
+        })
+      } catch (error) {
+        console.error('Failed to setup collaboration session:', error)
+        socket.emit('error', {
+          event: 'connection',
+          error: 'SETUP_FAILED',
+          message: 'Failed to establish collaboration session',
+        })
+        socket.disconnect(true)
+      }
+    }),
+  )
 }
 
 async function safeUpdateSessionActivity(socketId: string): Promise<void> {
@@ -2568,7 +2569,9 @@ function setupCollaborationEventHandlers(
           event: 'relationship:delete',
           error: 'DELETE_FAILED',
           message,
-          relationshipId: relationshipId ?? (data as { relationshipId?: string } | null)?.relationshipId,
+          relationshipId:
+            relationshipId ??
+            (data as { relationshipId?: string } | null)?.relationshipId,
         })
         cb?.({ ok: false, code: 'INTERNAL_ERROR', message })
         return

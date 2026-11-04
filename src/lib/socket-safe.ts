@@ -61,3 +61,26 @@ export function guardSocketHandlers(socket: any): void {
     })
   }
 }
+
+/**
+ * Wrap a namespace `connection` callback. Its awaited checks (requireRole,
+ * session setup) can reject; an unwrapped async callback turns that into an
+ * unhandled rejection that only the process backstop sees. Log it and drop
+ * the socket instead.
+ */
+export function safeConnectionHandler<
+  S extends { disconnect: (close?: boolean) => unknown },
+>(handler: (socket: S) => Promise<void> | void): (socket: S) => Promise<void> {
+  return async (socket: S) => {
+    try {
+      await handler(socket)
+    } catch (error) {
+      console.error('Unhandled error in socket connection handler:', error)
+      try {
+        socket.disconnect(true)
+      } catch {
+        // already closed
+      }
+    }
+  }
+}

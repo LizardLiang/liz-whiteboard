@@ -2,6 +2,7 @@
 // process, and dynamic namespaces only accept UUID ids.
 import { describe, expect, it, vi } from 'vitest'
 import {
+  safeConnectionHandler,
   CANVAS_NAMESPACE_RE,
   WHITEBOARD_NAMESPACE_RE,
   guardSocketHandlers,
@@ -94,5 +95,24 @@ describe('namespace patterns', () => {
       expect(WHITEBOARD_NAMESPACE_RE.test(`/whiteboard/${id}`)).toBe(false)
       expect(CANVAS_NAMESPACE_RE.test(`/canvas/${id}`)).toBe(false)
     }
+  })
+})
+
+describe('safeConnectionHandler', () => {
+  it('disconnects the socket and does not reject when the handler throws', async () => {
+    const disconnect = vi.fn()
+    const spy = vi.spyOn(console, 'error').mockImplementation(() => {})
+    const wrapped = safeConnectionHandler(async () => {
+      throw new Error('db down')
+    })
+    await expect(wrapped({ disconnect })).resolves.toBeUndefined()
+    expect(disconnect).toHaveBeenCalledWith(true)
+    spy.mockRestore()
+  })
+
+  it('leaves the socket alone when the handler succeeds', async () => {
+    const disconnect = vi.fn()
+    await safeConnectionHandler(async () => {})({ disconnect })
+    expect(disconnect).not.toHaveBeenCalled()
   })
 })
