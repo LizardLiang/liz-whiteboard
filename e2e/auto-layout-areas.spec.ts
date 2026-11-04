@@ -17,7 +17,7 @@ import type { Page } from '@playwright/test'
 test.use({ viewport: { width: 1600, height: 1000 } })
 
 // Client-side layout width: DEFAULT_W (canvas-node-geometry) — the toolbar
-// button lays out with the browser's measured widths, not the server's 250.
+// button lays out with getCachedTableWidth (floor DEFAULT_W, grows with text), not the server's 250.
 const TABLE_W = 220
 const TABLE_H = 40 + 2 * 28 + 12
 const MEMBER_IDS = [IDS.alaMember1, IDS.alaMember2, IDS.alaMember3]
@@ -121,11 +121,11 @@ test.describe('Auto Layout with areas', () => {
     // Membership is untouched.
     expect(new Set(after.area.members)).toEqual(new Set(MEMBER_IDS))
 
-    // Every member lies fully inside the (resized) area, label header cleared.
+    // Every member lies fully inside the (resized) area, label header cleared (AREA_PAD_TOP = 44).
     for (const t of boxes.filter((b) => MEMBER_IDS.includes(b.id))) {
       expect(t.x, `${t.id} left`).toBeGreaterThanOrEqual(area.x)
       expect(t.x + t.w, `${t.id} right`).toBeLessThanOrEqual(area.x + area.w)
-      expect(t.y, `${t.id} top`).toBeGreaterThanOrEqual(area.y + 40)
+      expect(t.y, `${t.id} top`).toBeGreaterThanOrEqual(area.y + 44)
       expect(t.y + t.h, `${t.id} bottom`).toBeLessThanOrEqual(area.y + area.h)
       expect(centreInside(t, after.area)).toBe(true)
     }
