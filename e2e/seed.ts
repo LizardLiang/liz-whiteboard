@@ -1,7 +1,7 @@
 // e2e/seed.ts
 // Deterministic seed for the version-history Playwright suite. Run under BUN
-// (needs bun:sqlite): `bun run e2e/seed.ts`. Idempotent — wipes and recreates
-// the e2e user + its project/whiteboard so every run starts from a known
+// (needs bun:sqlite): `bun run e2e/seed.ts`. Idempotent — keeps the e2e user row
+// (and its sessions) and recreates its project/whiteboard so every run starts from a known
 // 2-table diagram (users + orders + a relationship + an area).
 //
 // Password hashing is replicated inline from src/lib/auth/password.ts
@@ -32,33 +32,32 @@ db.exec('PRAGMA foreign_keys = ON')
 db.exec('PRAGMA busy_timeout = 5000')
 const now = Date.now()
 
-// Wipe any prior e2e user (cascades project → whiteboard → tables/…)
-const prior = db
-  .query('SELECT id FROM "User" WHERE username = ?')
-  .get(E2E_USER.username) as { id: string } | null
-if (prior) {
-  db.query('DELETE FROM "Project" WHERE ownerId = ?').run(prior.id)
-  db.query('DELETE FROM "User" WHERE id = ?').run(prior.id)
-}
-// Also clear any leftover rows on the fixed ids (defensive; explicit child
-// deletes in case a prior run left rows behind with foreign_keys OFF).
+// Keep the fixed e2e user row (IDS.user): deleting it cascades its Session rows
+// and kills the shared storageState login for every spec that runs afterwards.
+// A stale user with the same username/email but another id is removed instead.
+db.query(
+  'DELETE FROM "User" WHERE (username = ? OR email = ?) AND id <> ?',
+).run(E2E_USER.username, E2E_USER.email, IDS.user)
+// Reset the e2e user's data: its projects cascade to whiteboards/tables/….
+db.query('DELETE FROM "Project" WHERE ownerId = ?').run(IDS.user)
+// Defensive: leftover rows on the fixed ids with foreign_keys OFF.
 db.query('DELETE FROM "ProjectMember" WHERE projectId = ? OR userId = ?').run(
   IDS.project,
   IDS.user,
 )
 db.query('DELETE FROM "Project" WHERE id = ?').run(IDS.project)
-db.query('DELETE FROM "User" WHERE id = ?').run(IDS.user)
 
-db.query(
-  'INSERT INTO "User" (id, username, email, passwordHash, createdAt, updatedAt) VALUES (?,?,?,?,?,?)',
-).run(
-  IDS.user,
-  E2E_USER.username,
-  E2E_USER.email,
-  await hashPassword(E2E_USER.password),
-  now,
-  now,
-)
+const passwordHash = await hashPassword(E2E_USER.password)
+const hasUser = db.query('SELECT id FROM "User" WHERE id = ?').get(IDS.user)
+if (hasUser) {
+  db.query(
+    'UPDATE "User" SET username = ?, email = ?, passwordHash = ?, updatedAt = ? WHERE id = ?',
+  ).run(E2E_USER.username, E2E_USER.email, passwordHash, now, IDS.user)
+} else {
+  db.query(
+    'INSERT INTO "User" (id, username, email, passwordHash, createdAt, updatedAt) VALUES (?,?,?,?,?,?)',
+  ).run(IDS.user, E2E_USER.username, E2E_USER.email, passwordHash, now, now)
+}
 
 db.query(
   'INSERT INTO "Project" (id, name, description, createdAt, updatedAt, ownerId) VALUES (?,?,?,?,?,?)',
