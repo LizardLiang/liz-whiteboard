@@ -51,7 +51,7 @@ function slotServer(i: number) {
     url: `http://localhost:${web}`,
     // A stale stack on a slot port would serve another database. Fail instead.
     reuseExistingServer: false,
-    // Up to 3 cold Vite compiles run at once.
+    // All stacks compile cold at the same time.
     timeout: 300_000,
     env: {
       [PATH_KEY]: SERVER_PATH,

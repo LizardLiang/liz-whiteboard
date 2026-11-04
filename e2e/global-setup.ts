@@ -23,7 +23,14 @@ import {
 } from './worker-slot'
 import type { BrowserContext, FullConfig } from '@playwright/test'
 
-export default async function globalSetup(_config: FullConfig) {
+export default async function globalSetup(config: FullConfig) {
+  // A --workers flag above the slot count would send workers to stacks that
+  // do not exist. Set E2E_WORKERS instead.
+  if (config.workers > workerCount()) {
+    throw new Error(
+      `e2e global-setup: ${config.workers} workers requested but only ${workerCount()} stacks are configured. Set E2E_WORKERS=${config.workers} instead of --workers.`,
+    )
+  }
   mkdirSync('e2e/.auth', { recursive: true })
 
   if (usesExternalServer()) {

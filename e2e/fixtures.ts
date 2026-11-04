@@ -7,13 +7,8 @@ import { expect } from '@playwright/test'
 import type { Page } from '@playwright/test'
 import { slotIndex, slotPorts, slotStorageState } from './worker-slot'
 
-// Default matches `bun run dev`, which serves Vite on 3000 (server.prod.ts also
-// defaults to 3000; server.dev.ts is the separate Socket.IO process on 3010).
-// Nothing in this repo serves 3001 — the previous default meant the plain
-// `bun run test:e2e` invocation could never satisfy playwright.config.ts's
-// webServer health check and died after a 120s timeout that looked like a
-// broken suite. The coedit and cimd suites are unaffected: they carry their own
-// base URLs (COEDIT_PORT in fixtures-collab.ts, 3099 in playwright.cimd.config.ts).
+// Nothing in this repo serves 3001. The coedit suite carries its own base URL
+// (COEDIT_PORT in fixtures-collab.ts); the cimd suite sets E2E_BASE_URL (3099).
 //
 // In the default (managed-server) mode each Playwright worker slot has its own
 // dev stack, so the default is the slot's web port (see ./worker-slot.ts).

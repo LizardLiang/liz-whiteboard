@@ -38,6 +38,9 @@ export function slotDbPath(i: number): string {
 }
 
 export function slotStorageState(i: number): string {
+  // External-server mode keeps the single historical session file, which
+  // playwright.cimd.config.ts also reads.
+  if (usesExternalServer()) return 'e2e/.auth/state.json'
   return `e2e/.auth/state-w${i}.json`
 }
 
