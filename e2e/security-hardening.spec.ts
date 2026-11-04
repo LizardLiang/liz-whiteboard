@@ -10,7 +10,7 @@
 // Unit coverage of the throwing code lives in src/lib/serve-static.test.ts.
 import { request as httpRequest } from 'node:http'
 import { expect, test } from '@playwright/test'
-import { BASE_URL, STORAGE_STATE } from './fixtures'
+import { BASE_URL, E2E_USER, STORAGE_STATE } from './fixtures'
 
 test.use({ storageState: { cookies: [], origins: [] } })
 
@@ -18,8 +18,9 @@ test.use({ storageState: { cookies: [], origins: [] } })
 function rawGet(
   path: string,
   headers: Record<string, string> = {},
+  base: string = BASE_URL,
 ): Promise<number> {
-  const target = new URL(BASE_URL)
+  const target = new URL(base)
   return new Promise((resolve, reject) => {
     const req = httpRequest(
       {
@@ -112,5 +113,67 @@ test.describe('OAuth resource allowlist (security batch 2, M1)', () => {
     })
     expect(res.status()).toBe(400)
     expect((await res.json()).error).toBe('invalid_target')
+  })
+})
+
+// Batch 3 — session & auth.
+// M4: `/\t/evil.com` passed the old prefix check and, because browsers strip
+// tab/CR/LF from URLs, window.location.assign resolved it to http://evil.com/.
+test.describe('Open redirect after login (security batch 3, M4)', () => {
+  test.use({ storageState: { cookies: [], origins: [] } })
+
+  for (const [label, redirect] of [
+    ['tab', '/\t/evil.example'],
+    ['LF', '/\n/evil.example'],
+    ['CR', '/\r/evil.example'],
+    ['tab + backslash', '/\t\\/evil.example'],
+  ] as const) {
+    test(`redirect=${label} bypass lands on the app origin`, async ({
+      page,
+    }) => {
+      await page.goto(`/login?redirect=${encodeURIComponent(redirect)}`)
+      await page.waitForLoadState('networkidle')
+
+      const email = page.getByRole('textbox', { name: 'Email' })
+      const password = page.getByRole('textbox', { name: 'Password' })
+      await email.click()
+      await email.pressSequentially(E2E_USER.email)
+      await password.click()
+      await password.pressSequentially(E2E_USER.password)
+      const signIn = page.getByRole('button', { name: 'Sign in' })
+      await expect(signIn).toBeEnabled({ timeout: 10_000 })
+      await signIn.click()
+
+      await page.waitForURL((url) => url.origin === new URL(BASE_URL).origin)
+      await page.waitForURL((url) => url.pathname === '/')
+      expect(new URL(page.url()).hostname).not.toContain('evil')
+      await expect(page.getByRole('button', { name: 'Log out' })).toBeVisible()
+    })
+  }
+})
+
+// M8: Socket.IO handshakes from a foreign Origin are refused by allowRequest.
+// A real cookie-carrying namespace CONNECT cannot be driven cross-origin from
+// Playwright's runner, so this asserts the transport-level refusal; the
+// cookie-vs-bearer split is unit-tested in src/lib/auth/socket-origin.test.ts.
+test.describe('Socket.IO Origin allowlist (security batch 3, M8)', () => {
+  // Dev stack: Vite's global auth redirect answers /socket.io before the proxy
+  // sees it, so point E2E_SOCKET_URL at the server.dev.ts port (e.g.
+  // http://localhost:3010). In the single-process prod build it is BASE_URL.
+  const socketBase = process.env.E2E_SOCKET_URL ?? BASE_URL
+  const polling = '/socket.io/?EIO=4&transport=polling'
+
+  test('foreign Origin is refused', async () => {
+    const status = await rawGet(
+      polling,
+      { Origin: 'https://evil.example', Cookie: 'session_token=anything' },
+      socketBase,
+    )
+    expect(status).toBe(403)
+  })
+
+  test('own Origin and a bearer client with no Origin are accepted', async () => {
+    expect(await rawGet(polling, { Origin: BASE_URL }, socketBase)).toBe(200)
+    expect(await rawGet(polling, {}, socketBase)).toBe(200)
   })
 })
