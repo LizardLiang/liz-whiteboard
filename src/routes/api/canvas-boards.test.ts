@@ -35,6 +35,7 @@ import {
 } from './canvas-boards'
 import { _resetKeyPairForTests, getSigningKeyPair } from '@/lib/oauth/keys'
 import { createCanvasBoard } from '@/data/canvas-board'
+import { createFolder } from '@/data/folder'
 import { createCanvasElement } from '@/data/canvas-element'
 import { upsertProjectMember } from '@/data/permission'
 import { db } from '@/db'
@@ -596,5 +597,59 @@ describe('TC-CBD-14: identity comes from the token, not the body', () => {
     )
 
     expect(resp.status).toBe(403)
+  })
+})
+
+// TC-CBD-16: a folder id in the body must belong to the project being written
+// to (mirrors the mcp-lifecycle folder-ownership cases).
+describe('TC-CBD-16: folder ownership', () => {
+  it('rejects create into a foreign project folder', async () => {
+    const { editor, project } = await setup()
+    const other = makeProject({ ownerId: makeUser().id })
+    const foreign = await createFolder({ name: 'F', projectId: other.id })
+    const token = await mintCollabToken(editor.id)
+    const resp = await handleCanvasBoardRequest(
+      post(
+        { op: 'create', name: 'B', projectId: project.id, folderId: foreign.id },
+        token,
+      ),
+    )
+    expect(resp.status).toBe(403)
+    expect((await resp.json()).error).toBe('FORBIDDEN')
+  })
+
+  it('rejects update moving a board into a foreign project folder', async () => {
+    const { editor, project } = await setup()
+    const other = makeProject({ ownerId: makeUser().id })
+    const foreign = await createFolder({ name: 'F', projectId: other.id })
+    const board = await createCanvasBoard({ name: 'B', projectId: project.id })
+    const token = await mintCollabToken(editor.id)
+    const resp = await handleCanvasBoardRequest(
+      post(
+        { op: 'update', canvasBoardId: board.id, folderId: foreign.id },
+        token,
+      ),
+    )
+    expect(resp.status).toBe(403)
+    expect(boardRow(board.id)?.folderId).toBeNull()
+  })
+
+  it('accepts an own-project folder and null', async () => {
+    const { editor, project } = await setup()
+    const own = await createFolder({ name: 'O', projectId: project.id })
+    const token = await mintCollabToken(editor.id)
+    const created = await handleCanvasBoardRequest(
+      post(
+        { op: 'create', name: 'B', projectId: project.id, folderId: own.id },
+        token,
+      ),
+    )
+    expect(created.status).toBe(200)
+    const { board } = (await created.json()) as { board: { id: string } }
+    const moved = await handleCanvasBoardRequest(
+      post({ op: 'update', canvasBoardId: board.id, folderId: null }, token),
+    )
+    expect(moved.status).toBe(200)
+    expect(boardRow(board.id)?.folderId).toBeNull()
   })
 })

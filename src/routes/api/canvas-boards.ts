@@ -240,6 +240,22 @@ export async function handleCanvasBoardRequest(
     )
   }
 
+  // ── Folder ownership ───────────────────────────────────────────────────────
+  // A folder id in the body must belong to the project being written to; the
+  // role gate above only covered that project. Same response as a role denial.
+  if (body.op === 'create' || body.op === 'update') {
+    const { assertFolderInProject } = await import('@/lib/auth/require-role')
+    try {
+      await assertFolderInProject(body.folderId, projectId)
+    } catch {
+      return jsonError(
+        'FORBIDDEN',
+        'You do not have access to perform this action.',
+        403,
+      )
+    }
+  }
+
   // ── Perform ────────────────────────────────────────────────────────────────
   const { createCanvasBoard, deleteCanvasBoard, updateCanvasBoard } =
     await import('@/data/canvas-board')
