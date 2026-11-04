@@ -5,6 +5,7 @@
 
 import { expect } from '@playwright/test'
 import type { Page } from '@playwright/test'
+import { slotIndex, slotPorts, slotStorageState } from './worker-slot'
 
 // Default matches `bun run dev`, which serves Vite on 3000 (server.prod.ts also
 // defaults to 3000; server.dev.ts is the separate Socket.IO process on 3010).
@@ -13,7 +14,12 @@ import type { Page } from '@playwright/test'
 // webServer health check and died after a 120s timeout that looked like a
 // broken suite. The coedit and cimd suites are unaffected: they carry their own
 // base URLs (COEDIT_PORT in fixtures-collab.ts, 3099 in playwright.cimd.config.ts).
-export const BASE_URL = process.env.E2E_BASE_URL ?? 'http://localhost:3000'
+//
+// In the default (managed-server) mode each Playwright worker slot has its own
+// dev stack, so the default is the slot's web port (see ./worker-slot.ts).
+// E2E_BASE_URL points every worker at one already-running server instead.
+export const BASE_URL =
+  process.env.E2E_BASE_URL ?? `http://localhost:${slotPorts(slotIndex()).web}`
 
 export const E2E_USER = {
   username: 'e2e_dogfood',
@@ -386,7 +392,7 @@ export const IDS = {
   resetPwUser: 'd0000000-0000-4000-8000-000000000001',
 }
 
-export const STORAGE_STATE = 'e2e/.auth/state.json'
+export const STORAGE_STATE = slotStorageState(slotIndex())
 
 /**
  * Wait until no dock menu is open. A Radix menu stays mounted through its close

@@ -82,9 +82,12 @@ function tanstackStartClientVirtualModules(): Plugin {
   }
 }
 
-const SOCKET_IO_DEV_PORT = 3010
+const SOCKET_IO_DEV_PORT = Number(process.env.SOCKET_IO_DEV_PORT) || 3010
 
 const config = defineConfig({
+  ...(process.env.VITE_CACHE_DIR
+    ? { cacheDir: process.env.VITE_CACHE_DIR }
+    : {}),
   define: {
     __APP_VERSION__: JSON.stringify(version),
   },

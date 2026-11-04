@@ -13,20 +13,53 @@
 import { execFileSync } from 'node:child_process'
 import { mkdirSync } from 'node:fs'
 import { chromium, expect } from '@playwright/test'
-import { BASE_URL, E2E_USER, STORAGE_STATE } from './fixtures'
+import { E2E_USER } from './fixtures'
+import {
+  slotDbPath,
+  slotPorts,
+  slotStorageState,
+  usesExternalServer,
+  workerCount,
+} from './worker-slot'
 import type { BrowserContext, FullConfig } from '@playwright/test'
 
 export default async function globalSetup(_config: FullConfig) {
+  mkdirSync('e2e/.auth', { recursive: true })
+
+  if (usesExternalServer()) {
+    // One external server, one database (E2E_DB_PATH or data/app.db), one login.
+    await seedAndLogin(
+      process.env.E2E_BASE_URL as string,
+      slotStorageState(0),
+      process.env,
+    )
+    return
+  }
+
+  // One stack per worker slot, each with its own database and saved login.
+  for (let i = 0; i < workerCount(); i++) {
+    await seedAndLogin(
+      `http://localhost:${slotPorts(i).web}`,
+      slotStorageState(i),
+      { ...process.env, E2E_DB_PATH: slotDbPath(i) },
+    )
+  }
+}
+
+async function seedAndLogin(
+  baseUrl: string,
+  storageStatePath: string,
+  env: NodeJS.ProcessEnv,
+) {
   // 1. Seed via Bun.
-  execFileSync('bun', ['run', 'e2e/seed.ts'], { stdio: 'inherit' })
+  execFileSync('bun', ['run', 'e2e/seed.ts'], { stdio: 'inherit', env })
 
   // 2. Log in and capture the session cookie.
-  mkdirSync('e2e/.auth', { recursive: true })
   const browser = await chromium.launch()
   const context = await browser.newContext()
   const page = await context.newPage()
 
-  await page.goto(`${BASE_URL}/login`)
+  await page.goto(`${baseUrl}/login`)
   await page.waitForLoadState('networkidle')
 
   const email = page.getByRole('textbox', { name: 'Email' })
@@ -49,7 +82,7 @@ export default async function globalSetup(_config: FullConfig) {
   // Wait until the HttpOnly session cookie exists (independent of any redirect).
   await expectSessionCookie(context)
 
-  await context.storageState({ path: STORAGE_STATE })
+  await context.storageState({ path: storageStatePath })
   await browser.close()
 }
 
