@@ -24,7 +24,6 @@ import { Route as ApiRenderTokenRouteImport } from './routes/api/render-token'
 import { Route as ApiTableReferencesRouteImport } from './routes/api/table-references'
 import { Route as CanvasShareTokenRouteImport } from './routes/canvas-share.$token'
 import { Route as CanvasBoardIdRouteImport } from './routes/canvas/$boardId'
-import { Route as DemoTanstackQueryRouteImport } from './routes/demo/tanstack-query'
 import { Route as InviteTokenRouteImport } from './routes/invite.$token'
 import { Route as OauthConsentRouteImport } from './routes/oauth/consent'
 import { Route as OauthRegisterRouteImport } from './routes/oauth/register'
@@ -32,19 +31,9 @@ import { Route as ProjectProjectIdRouteImport } from './routes/project.$projectI
 import { Route as SettingsConnectionsRouteImport } from './routes/settings/connections'
 import { Route as ShareTokenRouteImport } from './routes/share.$token'
 import { Route as WhiteboardWhiteboardIdRouteImport } from './routes/whiteboard/$whiteboardId'
-import { Route as DemoApiNamesRouteImport } from './routes/demo/api.names'
-import { Route as DemoApiTqTodosRouteImport } from './routes/demo/api.tq-todos'
-import { Route as DemoFormAddressRouteImport } from './routes/demo/form.address'
-import { Route as DemoFormSimpleRouteImport } from './routes/demo/form.simple'
-import { Route as DemoStartApiRequestRouteImport } from './routes/demo/start.api-request'
-import { Route as DemoStartServerFuncsRouteImport } from './routes/demo/start.server-funcs'
 import { Route as ProjectProjectIdIndexRouteImport } from './routes/project.$projectId.index'
 import { Route as RenderCanvasTokenRouteImport } from './routes/render.canvas.$token'
 import { Route as RenderWhiteboardTokenRouteImport } from './routes/render.whiteboard.$token'
-import { Route as DemoStartSsrIndexRouteImport } from './routes/demo/start.ssr.index'
-import { Route as DemoStartSsrDataOnlyRouteImport } from './routes/demo/start.ssr.data-only'
-import { Route as DemoStartSsrFullSsrRouteImport } from './routes/demo/start.ssr.full-ssr'
-import { Route as DemoStartSsrSpaModeRouteImport } from './routes/demo/start.ssr.spa-mode'
 import { Route as ProjectProjectIdFolderFolderIdRouteImport } from './routes/project.$projectId.folder.$folderId'
 
 const IndexRoute = IndexRouteImport.update({
@@ -122,11 +111,6 @@ const CanvasBoardIdRoute = CanvasBoardIdRouteImport.update({
   path: '/canvas/$boardId',
   getParentRoute: () => rootRouteImport,
 } as any)
-const DemoTanstackQueryRoute = DemoTanstackQueryRouteImport.update({
-  id: '/demo/tanstack-query',
-  path: '/demo/tanstack-query',
-  getParentRoute: () => rootRouteImport,
-} as any)
 const InviteTokenRoute = InviteTokenRouteImport.update({
   id: '/invite/$token',
   path: '/invite/$token',
@@ -162,36 +146,6 @@ const WhiteboardWhiteboardIdRoute = WhiteboardWhiteboardIdRouteImport.update({
   path: '/whiteboard/$whiteboardId',
   getParentRoute: () => rootRouteImport,
 } as any)
-const DemoApiNamesRoute = DemoApiNamesRouteImport.update({
-  id: '/demo/api/names',
-  path: '/demo/api/names',
-  getParentRoute: () => rootRouteImport,
-} as any)
-const DemoApiTqTodosRoute = DemoApiTqTodosRouteImport.update({
-  id: '/demo/api/tq-todos',
-  path: '/demo/api/tq-todos',
-  getParentRoute: () => rootRouteImport,
-} as any)
-const DemoFormAddressRoute = DemoFormAddressRouteImport.update({
-  id: '/demo/form/address',
-  path: '/demo/form/address',
-  getParentRoute: () => rootRouteImport,
-} as any)
-const DemoFormSimpleRoute = DemoFormSimpleRouteImport.update({
-  id: '/demo/form/simple',
-  path: '/demo/form/simple',
-  getParentRoute: () => rootRouteImport,
-} as any)
-const DemoStartApiRequestRoute = DemoStartApiRequestRouteImport.update({
-  id: '/demo/start/api-request',
-  path: '/demo/start/api-request',
-  getParentRoute: () => rootRouteImport,
-} as any)
-const DemoStartServerFuncsRoute = DemoStartServerFuncsRouteImport.update({
-  id: '/demo/start/server-funcs',
-  path: '/demo/start/server-funcs',
-  getParentRoute: () => rootRouteImport,
-} as any)
 const ProjectProjectIdIndexRoute = ProjectProjectIdIndexRouteImport.update({
   id: '/',
   path: '/',
@@ -205,26 +159,6 @@ const RenderCanvasTokenRoute = RenderCanvasTokenRouteImport.update({
 const RenderWhiteboardTokenRoute = RenderWhiteboardTokenRouteImport.update({
   id: '/render/whiteboard/$token',
   path: '/render/whiteboard/$token',
-  getParentRoute: () => rootRouteImport,
-} as any)
-const DemoStartSsrIndexRoute = DemoStartSsrIndexRouteImport.update({
-  id: '/demo/start/ssr/',
-  path: '/demo/start/ssr/',
-  getParentRoute: () => rootRouteImport,
-} as any)
-const DemoStartSsrDataOnlyRoute = DemoStartSsrDataOnlyRouteImport.update({
-  id: '/demo/start/ssr/data-only',
-  path: '/demo/start/ssr/data-only',
-  getParentRoute: () => rootRouteImport,
-} as any)
-const DemoStartSsrFullSsrRoute = DemoStartSsrFullSsrRouteImport.update({
-  id: '/demo/start/ssr/full-ssr',
-  path: '/demo/start/ssr/full-ssr',
-  getParentRoute: () => rootRouteImport,
-} as any)
-const DemoStartSsrSpaModeRoute = DemoStartSsrSpaModeRouteImport.update({
-  id: '/demo/start/ssr/spa-mode',
-  path: '/demo/start/ssr/spa-mode',
   getParentRoute: () => rootRouteImport,
 } as any)
 const ProjectProjectIdFolderFolderIdRoute =
@@ -250,7 +184,6 @@ export interface FileRoutesByFullPath {
   '/api/table-references': typeof ApiTableReferencesRoute
   '/canvas-share/$token': typeof CanvasShareTokenRoute
   '/canvas/$boardId': typeof CanvasBoardIdRoute
-  '/demo/tanstack-query': typeof DemoTanstackQueryRoute
   '/invite/$token': typeof InviteTokenRoute
   '/oauth/consent': typeof OauthConsentRoute
   '/oauth/register': typeof OauthRegisterRoute
@@ -258,20 +191,10 @@ export interface FileRoutesByFullPath {
   '/settings/connections': typeof SettingsConnectionsRoute
   '/share/$token': typeof ShareTokenRoute
   '/whiteboard/$whiteboardId': typeof WhiteboardWhiteboardIdRoute
-  '/demo/api/names': typeof DemoApiNamesRoute
-  '/demo/api/tq-todos': typeof DemoApiTqTodosRoute
-  '/demo/form/address': typeof DemoFormAddressRoute
-  '/demo/form/simple': typeof DemoFormSimpleRoute
-  '/demo/start/api-request': typeof DemoStartApiRequestRoute
-  '/demo/start/server-funcs': typeof DemoStartServerFuncsRoute
   '/render/canvas/$token': typeof RenderCanvasTokenRoute
   '/render/whiteboard/$token': typeof RenderWhiteboardTokenRoute
   '/project/$projectId/': typeof ProjectProjectIdIndexRoute
-  '/demo/start/ssr/data-only': typeof DemoStartSsrDataOnlyRoute
-  '/demo/start/ssr/full-ssr': typeof DemoStartSsrFullSsrRoute
-  '/demo/start/ssr/spa-mode': typeof DemoStartSsrSpaModeRoute
   '/project/$projectId/folder/$folderId': typeof ProjectProjectIdFolderFolderIdRoute
-  '/demo/start/ssr/': typeof DemoStartSsrIndexRoute
 }
 export interface FileRoutesByTo {
   '/': typeof IndexRoute
@@ -289,27 +212,16 @@ export interface FileRoutesByTo {
   '/api/table-references': typeof ApiTableReferencesRoute
   '/canvas-share/$token': typeof CanvasShareTokenRoute
   '/canvas/$boardId': typeof CanvasBoardIdRoute
-  '/demo/tanstack-query': typeof DemoTanstackQueryRoute
   '/invite/$token': typeof InviteTokenRoute
   '/oauth/consent': typeof OauthConsentRoute
   '/oauth/register': typeof OauthRegisterRoute
   '/settings/connections': typeof SettingsConnectionsRoute
   '/share/$token': typeof ShareTokenRoute
   '/whiteboard/$whiteboardId': typeof WhiteboardWhiteboardIdRoute
-  '/demo/api/names': typeof DemoApiNamesRoute
-  '/demo/api/tq-todos': typeof DemoApiTqTodosRoute
-  '/demo/form/address': typeof DemoFormAddressRoute
-  '/demo/form/simple': typeof DemoFormSimpleRoute
-  '/demo/start/api-request': typeof DemoStartApiRequestRoute
-  '/demo/start/server-funcs': typeof DemoStartServerFuncsRoute
   '/render/canvas/$token': typeof RenderCanvasTokenRoute
   '/render/whiteboard/$token': typeof RenderWhiteboardTokenRoute
   '/project/$projectId': typeof ProjectProjectIdIndexRoute
-  '/demo/start/ssr/data-only': typeof DemoStartSsrDataOnlyRoute
-  '/demo/start/ssr/full-ssr': typeof DemoStartSsrFullSsrRoute
-  '/demo/start/ssr/spa-mode': typeof DemoStartSsrSpaModeRoute
   '/project/$projectId/folder/$folderId': typeof ProjectProjectIdFolderFolderIdRoute
-  '/demo/start/ssr': typeof DemoStartSsrIndexRoute
 }
 export interface FileRoutesById {
   __root__: typeof rootRouteImport
@@ -328,7 +240,6 @@ export interface FileRoutesById {
   '/api/table-references': typeof ApiTableReferencesRoute
   '/canvas-share/$token': typeof CanvasShareTokenRoute
   '/canvas/$boardId': typeof CanvasBoardIdRoute
-  '/demo/tanstack-query': typeof DemoTanstackQueryRoute
   '/invite/$token': typeof InviteTokenRoute
   '/oauth/consent': typeof OauthConsentRoute
   '/oauth/register': typeof OauthRegisterRoute
@@ -336,20 +247,10 @@ export interface FileRoutesById {
   '/settings/connections': typeof SettingsConnectionsRoute
   '/share/$token': typeof ShareTokenRoute
   '/whiteboard/$whiteboardId': typeof WhiteboardWhiteboardIdRoute
-  '/demo/api/names': typeof DemoApiNamesRoute
-  '/demo/api/tq-todos': typeof DemoApiTqTodosRoute
-  '/demo/form/address': typeof DemoFormAddressRoute
-  '/demo/form/simple': typeof DemoFormSimpleRoute
-  '/demo/start/api-request': typeof DemoStartApiRequestRoute
-  '/demo/start/server-funcs': typeof DemoStartServerFuncsRoute
   '/render/canvas/$token': typeof RenderCanvasTokenRoute
   '/render/whiteboard/$token': typeof RenderWhiteboardTokenRoute
   '/project/$projectId/': typeof ProjectProjectIdIndexRoute
-  '/demo/start/ssr/data-only': typeof DemoStartSsrDataOnlyRoute
-  '/demo/start/ssr/full-ssr': typeof DemoStartSsrFullSsrRoute
-  '/demo/start/ssr/spa-mode': typeof DemoStartSsrSpaModeRoute
   '/project/$projectId/folder/$folderId': typeof ProjectProjectIdFolderFolderIdRoute
-  '/demo/start/ssr/': typeof DemoStartSsrIndexRoute
 }
 export interface FileRouteTypes {
   fileRoutesByFullPath: FileRoutesByFullPath
@@ -369,7 +270,6 @@ export interface FileRouteTypes {
     | '/api/table-references'
     | '/canvas-share/$token'
     | '/canvas/$boardId'
-    | '/demo/tanstack-query'
     | '/invite/$token'
     | '/oauth/consent'
     | '/oauth/register'
@@ -377,20 +277,10 @@ export interface FileRouteTypes {
     | '/settings/connections'
     | '/share/$token'
     | '/whiteboard/$whiteboardId'
-    | '/demo/api/names'
-    | '/demo/api/tq-todos'
-    | '/demo/form/address'
-    | '/demo/form/simple'
-    | '/demo/start/api-request'
-    | '/demo/start/server-funcs'
     | '/render/canvas/$token'
     | '/render/whiteboard/$token'
     | '/project/$projectId/'
-    | '/demo/start/ssr/data-only'
-    | '/demo/start/ssr/full-ssr'
-    | '/demo/start/ssr/spa-mode'
     | '/project/$projectId/folder/$folderId'
-    | '/demo/start/ssr/'
   fileRoutesByTo: FileRoutesByTo
   to:
     | '/'
@@ -408,27 +298,16 @@ export interface FileRouteTypes {
     | '/api/table-references'
     | '/canvas-share/$token'
     | '/canvas/$boardId'
-    | '/demo/tanstack-query'
     | '/invite/$token'
     | '/oauth/consent'
     | '/oauth/register'
     | '/settings/connections'
     | '/share/$token'
     | '/whiteboard/$whiteboardId'
-    | '/demo/api/names'
-    | '/demo/api/tq-todos'
-    | '/demo/form/address'
-    | '/demo/form/simple'
-    | '/demo/start/api-request'
-    | '/demo/start/server-funcs'
     | '/render/canvas/$token'
     | '/render/whiteboard/$token'
     | '/project/$projectId'
-    | '/demo/start/ssr/data-only'
-    | '/demo/start/ssr/full-ssr'
-    | '/demo/start/ssr/spa-mode'
     | '/project/$projectId/folder/$folderId'
-    | '/demo/start/ssr'
   id:
     | '__root__'
     | '/'
@@ -446,7 +325,6 @@ export interface FileRouteTypes {
     | '/api/table-references'
     | '/canvas-share/$token'
     | '/canvas/$boardId'
-    | '/demo/tanstack-query'
     | '/invite/$token'
     | '/oauth/consent'
     | '/oauth/register'
@@ -454,20 +332,10 @@ export interface FileRouteTypes {
     | '/settings/connections'
     | '/share/$token'
     | '/whiteboard/$whiteboardId'
-    | '/demo/api/names'
-    | '/demo/api/tq-todos'
-    | '/demo/form/address'
-    | '/demo/form/simple'
-    | '/demo/start/api-request'
-    | '/demo/start/server-funcs'
     | '/render/canvas/$token'
     | '/render/whiteboard/$token'
     | '/project/$projectId/'
-    | '/demo/start/ssr/data-only'
-    | '/demo/start/ssr/full-ssr'
-    | '/demo/start/ssr/spa-mode'
     | '/project/$projectId/folder/$folderId'
-    | '/demo/start/ssr/'
   fileRoutesById: FileRoutesById
 }
 export interface RootRouteChildren {
@@ -486,7 +354,6 @@ export interface RootRouteChildren {
   ApiTableReferencesRoute: typeof ApiTableReferencesRoute
   CanvasShareTokenRoute: typeof CanvasShareTokenRoute
   CanvasBoardIdRoute: typeof CanvasBoardIdRoute
-  DemoTanstackQueryRoute: typeof DemoTanstackQueryRoute
   InviteTokenRoute: typeof InviteTokenRoute
   OauthConsentRoute: typeof OauthConsentRoute
   OauthRegisterRoute: typeof OauthRegisterRoute
@@ -494,18 +361,8 @@ export interface RootRouteChildren {
   SettingsConnectionsRoute: typeof SettingsConnectionsRoute
   ShareTokenRoute: typeof ShareTokenRoute
   WhiteboardWhiteboardIdRoute: typeof WhiteboardWhiteboardIdRoute
-  DemoApiNamesRoute: typeof DemoApiNamesRoute
-  DemoApiTqTodosRoute: typeof DemoApiTqTodosRoute
-  DemoFormAddressRoute: typeof DemoFormAddressRoute
-  DemoFormSimpleRoute: typeof DemoFormSimpleRoute
-  DemoStartApiRequestRoute: typeof DemoStartApiRequestRoute
-  DemoStartServerFuncsRoute: typeof DemoStartServerFuncsRoute
   RenderCanvasTokenRoute: typeof RenderCanvasTokenRoute
   RenderWhiteboardTokenRoute: typeof RenderWhiteboardTokenRoute
-  DemoStartSsrDataOnlyRoute: typeof DemoStartSsrDataOnlyRoute
-  DemoStartSsrFullSsrRoute: typeof DemoStartSsrFullSsrRoute
-  DemoStartSsrSpaModeRoute: typeof DemoStartSsrSpaModeRoute
-  DemoStartSsrIndexRoute: typeof DemoStartSsrIndexRoute
 }
 
 declare module '@tanstack/react-router' {
@@ -615,13 +472,6 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof CanvasBoardIdRouteImport
       parentRoute: typeof rootRouteImport
     }
-    '/demo/tanstack-query': {
-      id: '/demo/tanstack-query'
-      path: '/demo/tanstack-query'
-      fullPath: '/demo/tanstack-query'
-      preLoaderRoute: typeof DemoTanstackQueryRouteImport
-      parentRoute: typeof rootRouteImport
-    }
     '/invite/$token': {
       id: '/invite/$token'
       path: '/invite/$token'
@@ -671,48 +521,6 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof WhiteboardWhiteboardIdRouteImport
       parentRoute: typeof rootRouteImport
     }
-    '/demo/api/names': {
-      id: '/demo/api/names'
-      path: '/demo/api/names'
-      fullPath: '/demo/api/names'
-      preLoaderRoute: typeof DemoApiNamesRouteImport
-      parentRoute: typeof rootRouteImport
-    }
-    '/demo/api/tq-todos': {
-      id: '/demo/api/tq-todos'
-      path: '/demo/api/tq-todos'
-      fullPath: '/demo/api/tq-todos'
-      preLoaderRoute: typeof DemoApiTqTodosRouteImport
-      parentRoute: typeof rootRouteImport
-    }
-    '/demo/form/address': {
-      id: '/demo/form/address'
-      path: '/demo/form/address'
-      fullPath: '/demo/form/address'
-      preLoaderRoute: typeof DemoFormAddressRouteImport
-      parentRoute: typeof rootRouteImport
-    }
-    '/demo/form/simple': {
-      id: '/demo/form/simple'
-      path: '/demo/form/simple'
-      fullPath: '/demo/form/simple'
-      preLoaderRoute: typeof DemoFormSimpleRouteImport
-      parentRoute: typeof rootRouteImport
-    }
-    '/demo/start/api-request': {
-      id: '/demo/start/api-request'
-      path: '/demo/start/api-request'
-      fullPath: '/demo/start/api-request'
-      preLoaderRoute: typeof DemoStartApiRequestRouteImport
-      parentRoute: typeof rootRouteImport
-    }
-    '/demo/start/server-funcs': {
-      id: '/demo/start/server-funcs'
-      path: '/demo/start/server-funcs'
-      fullPath: '/demo/start/server-funcs'
-      preLoaderRoute: typeof DemoStartServerFuncsRouteImport
-      parentRoute: typeof rootRouteImport
-    }
     '/project/$projectId/': {
       id: '/project/$projectId/'
       path: '/'
@@ -732,34 +540,6 @@ declare module '@tanstack/react-router' {
       path: '/render/whiteboard/$token'
       fullPath: '/render/whiteboard/$token'
       preLoaderRoute: typeof RenderWhiteboardTokenRouteImport
-      parentRoute: typeof rootRouteImport
-    }
-    '/demo/start/ssr/': {
-      id: '/demo/start/ssr/'
-      path: '/demo/start/ssr'
-      fullPath: '/demo/start/ssr/'
-      preLoaderRoute: typeof DemoStartSsrIndexRouteImport
-      parentRoute: typeof rootRouteImport
-    }
-    '/demo/start/ssr/data-only': {
-      id: '/demo/start/ssr/data-only'
-      path: '/demo/start/ssr/data-only'
-      fullPath: '/demo/start/ssr/data-only'
-      preLoaderRoute: typeof DemoStartSsrDataOnlyRouteImport
-      parentRoute: typeof rootRouteImport
-    }
-    '/demo/start/ssr/full-ssr': {
-      id: '/demo/start/ssr/full-ssr'
-      path: '/demo/start/ssr/full-ssr'
-      fullPath: '/demo/start/ssr/full-ssr'
-      preLoaderRoute: typeof DemoStartSsrFullSsrRouteImport
-      parentRoute: typeof rootRouteImport
-    }
-    '/demo/start/ssr/spa-mode': {
-      id: '/demo/start/ssr/spa-mode'
-      path: '/demo/start/ssr/spa-mode'
-      fullPath: '/demo/start/ssr/spa-mode'
-      preLoaderRoute: typeof DemoStartSsrSpaModeRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/project/$projectId/folder/$folderId': {
@@ -801,7 +581,6 @@ const rootRouteChildren: RootRouteChildren = {
   ApiTableReferencesRoute: ApiTableReferencesRoute,
   CanvasShareTokenRoute: CanvasShareTokenRoute,
   CanvasBoardIdRoute: CanvasBoardIdRoute,
-  DemoTanstackQueryRoute: DemoTanstackQueryRoute,
   InviteTokenRoute: InviteTokenRoute,
   OauthConsentRoute: OauthConsentRoute,
   OauthRegisterRoute: OauthRegisterRoute,
@@ -809,18 +588,8 @@ const rootRouteChildren: RootRouteChildren = {
   SettingsConnectionsRoute: SettingsConnectionsRoute,
   ShareTokenRoute: ShareTokenRoute,
   WhiteboardWhiteboardIdRoute: WhiteboardWhiteboardIdRoute,
-  DemoApiNamesRoute: DemoApiNamesRoute,
-  DemoApiTqTodosRoute: DemoApiTqTodosRoute,
-  DemoFormAddressRoute: DemoFormAddressRoute,
-  DemoFormSimpleRoute: DemoFormSimpleRoute,
-  DemoStartApiRequestRoute: DemoStartApiRequestRoute,
-  DemoStartServerFuncsRoute: DemoStartServerFuncsRoute,
   RenderCanvasTokenRoute: RenderCanvasTokenRoute,
   RenderWhiteboardTokenRoute: RenderWhiteboardTokenRoute,
-  DemoStartSsrDataOnlyRoute: DemoStartSsrDataOnlyRoute,
-  DemoStartSsrFullSsrRoute: DemoStartSsrFullSsrRoute,
-  DemoStartSsrSpaModeRoute: DemoStartSsrSpaModeRoute,
-  DemoStartSsrIndexRoute: DemoStartSsrIndexRoute,
 }
 export const routeTree = rootRouteImport
   ._addFileChildren(rootRouteChildren)
