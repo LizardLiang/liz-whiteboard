@@ -22,6 +22,8 @@ import type { Page } from '@playwright/test'
 const BOARD_URL = `/canvas/${IDS.canvasBoard}`
 
 test.beforeAll(() => {
+  // seed-canvas.ts needs the VIEWER user that seed-stress.ts creates.
+  execFileSync('bun', ['run', 'e2e/seed-stress.ts'], { stdio: 'inherit' })
   execFileSync('bun', ['run', 'e2e/seed-canvas.ts'], { stdio: 'inherit' })
 })
 
