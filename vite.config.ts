@@ -82,6 +82,23 @@ function tanstackStartClientVirtualModules(): Plugin {
   }
 }
 
+/**
+ * Dev counterpart of the peer stamp in server.prod.ts: records the TCP peer
+ * address (overwriting any client value) so extractClientIp() gives each LAN
+ * client its own rate-limit bucket.
+ */
+function peerIpPlugin(): Plugin {
+  return {
+    name: 'peer-ip-header',
+    configureServer(viteDevServer) {
+      viteDevServer.middlewares.use((req, _res, next) => {
+        req.headers['x-liz-peer-ip'] = req.socket.remoteAddress ?? ''
+        next()
+      })
+    },
+  }
+}
+
 const SOCKET_IO_DEV_PORT = Number(process.env.SOCKET_IO_DEV_PORT) || 3010
 
 const config = defineConfig({
@@ -131,6 +148,7 @@ const config = defineConfig({
     }),
     viteReact(),
     socketIOPlugin(),
+    peerIpPlugin(),
   ],
 })
 

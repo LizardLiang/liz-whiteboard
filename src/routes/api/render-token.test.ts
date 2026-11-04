@@ -48,7 +48,7 @@ async function mintCollabToken(sub: string, audience = COLLAB_URI) {
 function post(body: unknown, token?: string, ip?: string): Request {
   const headers: Record<string, string> = { 'Content-Type': 'application/json' }
   if (token) headers.Authorization = `Bearer ${token}`
-  if (ip) headers['x-forwarded-for'] = ip
+  if (ip) headers['x-liz-peer-ip'] = ip
   return new Request('http://localhost:3000/api/render-token', {
     method: 'POST',
     headers,

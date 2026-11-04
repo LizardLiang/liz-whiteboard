@@ -4,8 +4,12 @@
 // extraction (W2 + W5 fixes) used by src/routes/oauth/register.ts and
 // src/routes/api/collab-token.ts.
 
-import { describe, expect, it } from 'vitest'
-import { createFixedWindowRateLimiter, extractClientIp } from './rate-limit'
+import { afterEach, describe, expect, it } from 'vitest'
+import {
+  PEER_IP_HEADER,
+  createFixedWindowRateLimiter,
+  extractClientIp,
+} from './rate-limit'
 
 describe('createFixedWindowRateLimiter', () => {
   it('allows requests under the limit', () => {
@@ -39,50 +43,99 @@ describe('createFixedWindowRateLimiter', () => {
   })
 })
 
-describe('extractClientIp: trusted-proxy last-hop extraction (W2 fix)', () => {
-  it('uses the LAST X-Forwarded-For hop, not the first (spoof resistance)', () => {
-    const request = new Request('http://localhost/', {
-      headers: {
-        // Attacker-controlled first hop, real-proxy-appended last hop.
-        'x-forwarded-for': 'attacker-spoofed-value, 203.0.113.9',
-      },
-    })
-    expect(extractClientIp(request)).toBe('203.0.113.9')
+describe('extractClientIp: peer address + trusted proxies (audit L2)', () => {
+  const req = (headers: Record<string, string>) =>
+    new Request('http://localhost/', { headers })
+  const ORIGINAL = process.env.TRUSTED_PROXIES
+  afterEach(() => {
+    if (ORIGINAL === undefined) delete process.env.TRUSTED_PROXIES
+    else process.env.TRUSTED_PROXIES = ORIGINAL
   })
 
-  it('an attacker cannot get a fresh rate-limit bucket by rotating the first XFF hop', () => {
-    const request1 = new Request('http://localhost/', {
-      headers: { 'x-forwarded-for': 'fake-1, 203.0.113.9' },
-    })
-    const request2 = new Request('http://localhost/', {
-      headers: { 'x-forwarded-for': 'fake-2, 203.0.113.9' },
-    })
-    expect(extractClientIp(request1)).toBe(extractClientIp(request2))
+  it('uses the peer address when there is no forwarding header', () => {
+    expect(extractClientIp(req({ [PEER_IP_HEADER]: '192.0.2.5' }))).toBe(
+      '192.0.2.5',
+    )
   })
 
-  it('handles a single-hop X-Forwarded-For value', () => {
-    const request = new Request('http://localhost/', {
-      headers: { 'x-forwarded-for': '203.0.113.9' },
-    })
-    expect(extractClientIp(request)).toBe('203.0.113.9')
+  it('ignores X-Forwarded-For from an untrusted (public) peer', () => {
+    expect(
+      extractClientIp(
+        req({ [PEER_IP_HEADER]: '192.0.2.5', 'x-forwarded-for': '1.2.3.4' }),
+      ),
+    ).toBe('192.0.2.5')
   })
 
-  it('trims whitespace around hops', () => {
-    const request = new Request('http://localhost/', {
-      headers: { 'x-forwarded-for': ' fake-1 ,  203.0.113.9  ' },
-    })
-    expect(extractClientIp(request)).toBe('203.0.113.9')
+  it('ignores x-real-ip from an untrusted peer', () => {
+    expect(
+      extractClientIp(
+        req({ [PEER_IP_HEADER]: '192.0.2.5', 'x-real-ip': '1.2.3.4' }),
+      ),
+    ).toBe('192.0.2.5')
   })
 
-  it('falls back to x-real-ip when X-Forwarded-For is absent', () => {
-    const request = new Request('http://localhost/', {
-      headers: { 'x-real-ip': '198.51.100.7' },
-    })
-    expect(extractClientIp(request)).toBe('198.51.100.7')
+  it('trusts the rightmost non-proxy XFF hop behind a default-trusted proxy', () => {
+    expect(
+      extractClientIp(
+        req({
+          [PEER_IP_HEADER]: '172.18.0.4',
+          'x-forwarded-for': 'spoofed, 1.1.1.1, 203.0.113.9',
+        }),
+      ),
+    ).toBe('203.0.113.9')
   })
 
-  it('falls back to "unknown" when neither header is present', () => {
-    const request = new Request('http://localhost/')
-    expect(extractClientIp(request)).toBe('unknown')
+  it('skips trusted proxies in the XFF chain', () => {
+    expect(
+      extractClientIp(
+        req({
+          [PEER_IP_HEADER]: '10.0.0.2',
+          'x-forwarded-for': '203.0.113.9, 192.168.1.1',
+        }),
+      ),
+    ).toBe('203.0.113.9')
+  })
+
+  it('rotating the leftmost XFF hop does not change the bucket', () => {
+    const a = req({ [PEER_IP_HEADER]: '127.0.0.1', 'x-forwarded-for': '9.9.9.9, 203.0.113.9' })
+    const b = req({ [PEER_IP_HEADER]: '127.0.0.1', 'x-forwarded-for': '8.8.8.8, 203.0.113.9' })
+    expect(extractClientIp(a)).toBe(extractClientIp(b))
+  })
+
+  it('honours x-real-ip from a trusted peer without XFF', () => {
+    expect(
+      extractClientIp(
+        req({ [PEER_IP_HEADER]: '127.0.0.1', 'x-real-ip': '198.51.100.7' }),
+      ),
+    ).toBe('198.51.100.7')
+  })
+
+  it('normalises an IPv4-mapped IPv6 peer', () => {
+    expect(
+      extractClientIp(
+        req({ [PEER_IP_HEADER]: '::ffff:172.17.0.2', 'x-forwarded-for': '203.0.113.9' }),
+      ),
+    ).toBe('203.0.113.9')
+  })
+
+  it('TRUSTED_PROXIES replaces the default list', () => {
+    process.env.TRUSTED_PROXIES = '203.0.113.0/24'
+    // default-trusted 10.x is now untrusted
+    expect(
+      extractClientIp(
+        req({ [PEER_IP_HEADER]: '10.0.0.2', 'x-forwarded-for': '1.2.3.4' }),
+      ),
+    ).toBe('10.0.0.2')
+    expect(
+      extractClientIp(
+        req({ [PEER_IP_HEADER]: '203.0.113.50', 'x-forwarded-for': '1.2.3.4' }),
+      ),
+    ).toBe('1.2.3.4')
+  })
+
+  it('falls back to "unknown" when no peer is stamped', () => {
+    expect(extractClientIp(req({ 'x-forwarded-for': '1.2.3.4' }))).toBe(
+      'unknown',
+    )
   })
 })

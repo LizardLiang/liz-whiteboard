@@ -4,39 +4,122 @@
 // src/routes/api/collab-token.ts (previously duplicated independently in
 // each file — W5 fix).
 //
-// TRUST BOUNDARY (W2 fix): this app is deployed behind a single reverse
-// proxy hop (see the Docker Compose / prod topology — a proxy terminates
-// TLS in front of the app; the app process is never reached directly from
-// the public internet). A well-behaved single-hop proxy APPENDS the real
-// connecting peer's IP as the LAST entry of X-Forwarded-For (e.g. nginx's
-// `proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for` appends to,
-// rather than replaces, whatever XFF the client sent) — an attacker can
-// prepend arbitrary spoofed values, but the last hop is always the value
-// the trusted proxy itself observed and wrote.
+// TRUST BOUNDARY: the direct TCP peer is the only address a client cannot
+// forge. server.prod.ts (and the Vite dev middleware) stamp it on every
+// request as the PEER_IP_HEADER, overwriting any value the client sent.
 //
-// The previous implementation trusted the FIRST (left-most) XFF value, which
-// is exactly the attacker-controlled part of the header — any caller could
-// set `X-Forwarded-For: <random-value>` on every request and get a fresh
-// rate-limit bucket each time, defeating the limiter entirely.
+// X-Forwarded-For / X-Real-IP are honoured ONLY when that peer is a trusted
+// proxy (env TRUSTED_PROXIES: comma list of IPs/CIDRs; default loopback plus
+// the private ranges 10/8, 172.16/12, 192.168/16 that Docker networks use).
+// When port 3000 is reachable directly, the peer is the attacker, is not a
+// trusted proxy, and its XFF header is ignored (audit L2).
 //
-// If the deployment topology changes (additional proxy hops, a CDN in
-// front, etc.), this single-hop assumption must be revisited — e.g. by
-// trusting the Nth-from-last hop, or switching to a platform-provided
-// "real IP" header that the edge guarantees clients cannot set.
-export function extractClientIp(request: Request): string {
-  const xff = request.headers.get('x-forwarded-for')
-  if (xff) {
-    const hops = xff
-      .split(',')
-      .map((hop) => hop.trim())
-      .filter(Boolean)
-    if (hops.length > 0) {
-      // Last hop = appended by our single trusted proxy; not spoofable by
-      // the client without also controlling the proxy.
-      return hops[hops.length - 1]
-    }
+// With a trusted peer, XFF is walked from the right: each trusted proxy
+// appends the address it saw, so the first non-trusted hop from the right is
+// the real client. Anything left of it is client-controlled and ignored.
+import { isIP } from 'node:net'
+
+/** Header that carries the direct peer address, set by the server entry. */
+export const PEER_IP_HEADER = 'x-liz-peer-ip'
+
+const DEFAULT_TRUSTED_PROXIES =
+  '127.0.0.0/8,::1/128,10.0.0.0/8,172.16.0.0/12,192.168.0.0/16'
+
+interface Cidr {
+  version: 4 | 6
+  base: bigint
+  bits: number
+}
+
+function parseIp(ip: string): { version: 4 | 6; value: bigint } | null {
+  let addr = ip.trim()
+  if (addr.toLowerCase().startsWith('::ffff:') && isIP(addr.slice(7)) === 4) {
+    addr = addr.slice(7)
   }
-  return request.headers.get('x-real-ip') ?? 'unknown'
+  const kind = isIP(addr)
+  if (kind === 4) {
+    const value = addr
+      .split('.')
+      .reduce((acc, part) => (acc << 8n) | BigInt(Number(part)), 0n)
+    return { version: 4, value }
+  }
+  if (kind === 6) {
+    let [head, tail = ''] = addr.split('::')
+    if (!addr.includes('::')) {
+      tail = ''
+    }
+    const toGroups = (part: string): Array<string> =>
+      part === '' ? [] : part.split(':')
+    const headGroups = toGroups(head)
+    const tailGroups = addr.includes('::') ? toGroups(tail) : []
+    const groups = addr.includes('::')
+      ? [
+          ...headGroups,
+          ...Array<string>(8 - headGroups.length - tailGroups.length).fill('0'),
+          ...tailGroups,
+        ]
+      : headGroups
+    const value = groups.reduce(
+      (acc, g) => (acc << 16n) | BigInt(parseInt(g, 16)),
+      0n,
+    )
+    return { version: 6, value }
+  }
+  return null
+}
+
+function parseCidr(entry: string): Cidr | null {
+  const [addr, len] = entry.trim().split('/')
+  const parsed = parseIp(addr)
+  if (!parsed) return null
+  const max = parsed.version === 4 ? 32 : 128
+  const bits = len === undefined ? max : Number(len)
+  if (!Number.isInteger(bits) || bits < 0 || bits > max) return null
+  return { version: parsed.version, base: parsed.value, bits }
+}
+
+function ipInCidr(ip: string, cidr: Cidr): boolean {
+  const parsed = parseIp(ip)
+  if (!parsed || parsed.version !== cidr.version) return false
+  const total = cidr.version === 4 ? 32 : 128
+  const shift = BigInt(total - cidr.bits)
+  return parsed.value >> shift === cidr.base >> shift
+}
+
+function trustedProxyList(): Array<Cidr> {
+  const raw = process.env.TRUSTED_PROXIES?.trim() || DEFAULT_TRUSTED_PROXIES
+  return raw
+    .split(',')
+    .map(parseCidr)
+    .filter((c): c is Cidr => c !== null)
+}
+
+function isTrustedProxy(ip: string, list: Array<Cidr>): boolean {
+  return list.some((cidr) => ipInCidr(ip, cidr))
+}
+
+export function extractClientIp(request: Request): string {
+  const peer = request.headers.get(PEER_IP_HEADER)?.trim()
+  // No peer stamp (unit tests, unknown host): forwarded headers cannot be
+  // trusted, so the request gets the shared 'unknown' bucket.
+  if (!peer) return 'unknown'
+
+  const trusted = trustedProxyList()
+  if (!isTrustedProxy(peer, trusted)) return peer
+
+  const xff = request.headers.get('x-forwarded-for')
+  const hops = (xff ?? '')
+    .split(',')
+    .map((hop) => hop.trim())
+    .filter((hop) => parseIp(hop) !== null)
+  for (let i = hops.length - 1; i >= 0; i--) {
+    if (!isTrustedProxy(hops[i], trusted)) return hops[i]
+  }
+  if (hops.length > 0) return hops[0]
+
+  const realIp = request.headers.get('x-real-ip')?.trim()
+  if (realIp && parseIp(realIp)) return realIp
+  return peer
 }
 
 interface RateLimitEntry {
