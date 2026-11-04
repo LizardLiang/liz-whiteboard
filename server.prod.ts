@@ -16,6 +16,11 @@ import { middleware } from './.output/server/index.mjs'
 import { initializeSocketIO } from './src/routes/api/collaboration'
 import { serveStatic } from './src/lib/serve-static'
 import { PEER_IP_HEADER } from './src/lib/rate-limit'
+import {
+  buildSecurityHeaders,
+  checkBodyLimit,
+  maxBodyBytes,
+} from './src/lib/security-headers'
 
 const port = Number(process.env.PORT) || 3000
 const host = process.env.HOST || '0.0.0.0'
@@ -26,12 +31,33 @@ const host = process.env.HOST || '0.0.0.0'
 const scriptDir = dirname(fileURLToPath(import.meta.url))
 const publicDir = join(scriptDir, '.output', 'public')
 
+const securityHeaders = buildSecurityHeaders()
+const bodyLimit = maxBodyBytes()
+
 const server = createServer(async (req, res) => {
   try {
     // Stamp the TCP peer address, overwriting anything the client sent, so
     // extractClientIp() can tell whether X-Forwarded-For comes from a trusted
     // proxy (src/lib/rate-limit.ts).
     req.headers[PEER_IP_HEADER] = req.socket.remoteAddress ?? ''
+
+    // Security headers on every response (static and SSR, errors included).
+    for (const [name, value] of Object.entries(securityHeaders)) {
+      res.setHeader(name, value)
+    }
+
+    // Bound the request body before anything reads it.
+    const verdict = checkBodyLimit(req.method ?? 'GET', req.headers, bodyLimit)
+    if (verdict !== 'ok') {
+      res.writeHead(verdict === 'too-large' ? 413 : 411, {
+        'Content-Type': 'text/plain',
+        Connection: 'close',
+      })
+      res.end(verdict === 'too-large' ? 'Payload Too Large' : 'Length Required')
+      req.resume()
+      return
+    }
+
     // Try serving static files first (bypasses SSR auth)
     const served = await serveStatic(req, res, publicDir)
     if (!served) {

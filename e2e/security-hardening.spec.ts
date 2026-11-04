@@ -177,3 +177,85 @@ test.describe('Socket.IO Origin allowlist (security batch 3, M8)', () => {
     expect(await rawGet(polling, {}, socketBase)).toBe(200)
   })
 })
+
+// Batch 4 — response hardening (audit M10). These headers and the body cap
+// are applied by server.prod.ts, so they exist ONLY in the single-process
+// prod build; the Vite dev stack neither sets them nor caps bodies. Run this
+// block against the prod build: E2E_PROD_BUILD=1 E2E_BASE_URL=http://localhost:<port>.
+test.describe('Response hardening (security batch 4, M10)', () => {
+  test.skip(
+    !process.env.E2E_PROD_BUILD,
+    'server.prod.ts headers/body cap do not exist on the dev stack',
+  )
+
+  test('/login carries CSP, nosniff and frame-ancestors none', async ({
+    request,
+  }) => {
+    const res = await request.get('/login')
+    const headers = res.headers()
+    expect(headers['content-security-policy']).toContain(
+      "frame-ancestors 'none'",
+    )
+    expect(headers['content-security-policy']).toContain("default-src 'self'")
+    expect(headers['content-security-policy']).not.toContain('unsafe-eval')
+    expect(headers['x-content-type-options']).toBe('nosniff')
+    expect(headers['x-frame-options']).toBe('DENY')
+    expect(headers['referrer-policy']).toBe('strict-origin-when-cross-origin')
+  })
+
+  test('static assets carry the headers too', async ({ page, request }) => {
+    await page.goto('/login')
+    const href = await page
+      .locator('link[rel="stylesheet"]')
+      .first()
+      .getAttribute('href')
+    const res = await request.get(href!)
+    expect(res.headers()['x-content-type-options']).toBe('nosniff')
+    expect(res.headers()['content-security-policy']).toBeTruthy()
+  })
+
+  test('login page raises no CSP violation in a real browser', async ({
+    page,
+  }) => {
+    await page.addInitScript(() => {
+      ;(window as unknown as { __csp: Array<string> }).__csp = []
+      document.addEventListener('securitypolicyviolation', (e) =>
+        (window as unknown as { __csp: Array<string> }).__csp.push(
+          `${e.violatedDirective} ${e.blockedURI}`,
+        ),
+      )
+    })
+    await page.goto('/login')
+    await page.waitForLoadState('networkidle')
+    const violations = await page.evaluate(
+      () => (window as unknown as { __csp: Array<string> }).__csp,
+    )
+    expect(violations).toEqual([])
+  })
+
+  test('a body over the cap is rejected with 413', async () => {
+    const target = new URL(BASE_URL)
+    const status = await new Promise<number>((resolve, reject) => {
+      const req = httpRequest(
+        {
+          host: target.hostname,
+          port: target.port,
+          path: '/api/auth/login',
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            // Declared, not sent: the server refuses on the header alone.
+            'Content-Length': String(11 * 1024 * 1024),
+          },
+        },
+        (res) => {
+          res.resume()
+          resolve(res.statusCode ?? 0)
+        },
+      )
+      req.on('error', reject)
+      req.write('{}')
+    })
+    expect(status).toBe(413)
+  })
+})
