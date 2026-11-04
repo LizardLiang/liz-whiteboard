@@ -40,10 +40,16 @@ async function mintCollabJWT(
     aud?: string | Array<string>
     sub?: string
     exp?: number
+    tokenUse?: string | null
   } = {},
 ) {
   const now = Math.floor(Date.now() / 1000)
-  let jwt = new SignJWT({ sub: overrides.sub ?? 'user-123' })
+  let jwt = new SignJWT({
+    sub: overrides.sub ?? 'user-123',
+    ...(overrides.tokenUse === null
+      ? {}
+      : { token_use: overrides.tokenUse ?? 'collab' }),
+  })
     .setProtectedHeader({ alg: 'RS256', kid })
     .setIssuedAt(now)
     .setNotBefore(now)
@@ -110,13 +116,39 @@ describe('TC-CT-05: missing sub rejected', () => {
   it('throws when sub claim is absent', async () => {
     // Build a JWT with no sub by overriding after construction
     const now = Math.floor(Date.now() / 1000)
-    const token = await new SignJWT({}) // no sub
+    const token = await new SignJWT({ token_use: 'collab' }) // no sub
       .setProtectedHeader({ alg: 'RS256', kid })
       .setIssuer(TEST_ISSUER)
       .setAudience(TEST_COLLAB_URI)
       .setIssuedAt(now)
       .setNotBefore(now)
       .setExpirationTime(now + 120)
+      .sign(privateKey)
+    await expect(validateCollabToken(token)).rejects.toThrow()
+  })
+})
+
+// M1: an OAuth-flow access token (aud may even match) lacks token_use=collab
+describe('M1: token_use=collab is required', () => {
+  it('rejects a token with the right aud/iss but no token_use claim', async () => {
+    const token = await mintCollabJWT({ tokenUse: null })
+    await expect(validateCollabToken(token)).rejects.toThrow()
+  })
+
+  it('rejects a token with a different token_use value', async () => {
+    const token = await mintCollabJWT({ tokenUse: 'access' })
+    await expect(validateCollabToken(token)).rejects.toThrow()
+  })
+
+  it('rejects an OAuth-flow-shaped access token (sub+scope, aud=collab)', async () => {
+    const now = Math.floor(Date.now() / 1000)
+    const token = await new SignJWT({ sub: 'user-1', scope: 'whiteboard:read' })
+      .setProtectedHeader({ alg: 'RS256', kid })
+      .setIssuer(TEST_ISSUER)
+      .setAudience(TEST_COLLAB_URI)
+      .setIssuedAt(now)
+      .setNotBefore(now)
+      .setExpirationTime(now + 600)
       .sign(privateKey)
     await expect(validateCollabToken(token)).rejects.toThrow()
   })

@@ -386,6 +386,22 @@ export const Route = createFileRoute('/authorize')({
         const { getOAuthConfig } = await import('@/lib/oauth/config')
         const config = getOAuthConfig()
 
+        // Validate resource (RFC 8707): optional, but when present it must be
+        // exactly the MCP resource. Any other audience (notably the collab
+        // audience) is refused so an OAuth-flow token can never be minted
+        // for a different resource server.
+        const { isAllowedResource } = await import('@/lib/oauth/resource')
+        if (parsed.resource && !isAllowedResource(parsed.resource, config)) {
+          return new Response(
+            JSON.stringify({
+              error: 'invalid_target',
+              error_description:
+                'resource is not a valid target for this server',
+            }),
+            { status: 400, headers: { 'Content-Type': 'application/json' } },
+          )
+        }
+
         // ── Resolution ordering (mcp-oauth-open-cimd, 2026-08-19) ──
         // Resolving an UNTRUSTED CIMD client_id means fetching a URL the
         // caller chose. Doing that before the session check would let an
@@ -394,9 +410,8 @@ export const Route = createFileRoute('/authorize')({
         // (static allowlist, DCR row, trusted CIMD origin) resolves in its
         // original position, which is what keeps the pre-existing error
         // Response shapes — pinned by src/routes/authorize.test.ts — identical.
-        const { isUntrustedCimdCandidate } = await import(
-          '@/lib/oauth/resolve-client'
-        )
+        const { isUntrustedCimdCandidate } =
+          await import('@/lib/oauth/resolve-client')
         const deferResolution = isUntrustedCimdCandidate(parsed.clientId)
 
         let client: OAuthClient
@@ -426,8 +441,7 @@ export const Route = createFileRoute('/authorize')({
           user = session.user
         }
 
-        // Validate resource (RFC 8707) — optional for first increment.
-        const effectiveResource = parsed.resource || config.mcpResourceUri
+        const effectiveResource = config.mcpResourceUri
 
         // --- Trust gate (three-way; mcp-oauth-dcr-consent) ---
         const isTrustedClient = client.firstParty || client.trusted === true

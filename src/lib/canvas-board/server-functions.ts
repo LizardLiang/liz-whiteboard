@@ -27,7 +27,10 @@ import { z } from 'zod'
 import type { EffectiveRole } from '@/data/permission'
 import type { CanvasBoard, CanvasElementRecord } from '@/data/models'
 import { requireAuth } from '@/lib/auth/middleware'
-import { requireServerFnRole } from '@/lib/auth/require-role'
+import {
+  assertFolderInProject,
+  requireServerFnRole,
+} from '@/lib/auth/require-role'
 import { findEffectiveRole } from '@/data/permission'
 import { getCanvasBoardProjectId } from '@/data/resolve-project'
 import {
@@ -102,6 +105,7 @@ export const createCanvasBoardFn = createServerFn({ method: 'POST' })
   .handler(
     requireAuth(async ({ user }, data) => {
       await requireServerFnRole(user.id, data.projectId, 'EDITOR')
+      await assertFolderInProject(data.folderId, data.projectId)
       try {
         const board = await createCanvasBoard(data)
         return board
@@ -130,6 +134,7 @@ export const updateCanvasBoardFn = createServerFn({ method: 'POST' })
     requireAuth(async ({ user }, params) => {
       const projectId = await getCanvasBoardProjectId(params.id)
       await requireServerFnRole(user.id, projectId, 'EDITOR')
+      await assertFolderInProject(params.data.folderId, projectId as string)
       try {
         const board = await updateCanvasBoard(params.id, params.data)
         return board

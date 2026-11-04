@@ -97,6 +97,13 @@ async function handleAuthCodeGrant(body: URLSearchParams): Promise<Response> {
     return tokenError('invalid_client', 'Unknown client_id', 401)
   }
 
+  // RFC 8707: only the MCP resource is a valid target.
+  const { isAllowedResource } = await import('@/lib/oauth/resource')
+  const requestedResource = body.get('resource')
+  if (requestedResource && !isAllowedResource(requestedResource, config)) {
+    return tokenError('invalid_target', 'resource is not a valid target')
+  }
+
   // Consume the authorization code
   const { consumeAuthCode } = await import('@/lib/oauth/codes')
   const authCode = consumeAuthCode(code)
@@ -105,6 +112,10 @@ async function handleAuthCodeGrant(body: URLSearchParams): Promise<Response> {
       'invalid_grant',
       'Authorization code is invalid, expired, or already used',
     )
+  }
+
+  if (!isAllowedResource(authCode.resource, config)) {
+    return tokenError('invalid_target', 'resource is not a valid target')
   }
 
   // Verify client_id matches what was used at /authorize
@@ -187,7 +198,21 @@ async function handleRefreshTokenGrant(
     return tokenError('invalid_client', 'Unknown client_id', 401)
   }
 
-  const { rotateRefreshToken } = await import('@/lib/oauth/tokens')
+  // RFC 8707: reject an explicit non-MCP resource, and any refresh token whose
+  // stored grant resource is not the MCP resource (e.g. issued before the
+  // allowlist existed).
+  const { isAllowedResource } = await import('@/lib/oauth/resource')
+  const requestedResource = body.get('resource')
+  if (requestedResource && !isAllowedResource(requestedResource, config)) {
+    return tokenError('invalid_target', 'resource is not a valid target')
+  }
+
+  const { rotateRefreshToken, getRefreshTokenResource } =
+    await import('@/lib/oauth/tokens')
+  const storedResource = getRefreshTokenResource(refreshToken)
+  if (storedResource !== null && !isAllowedResource(storedResource, config)) {
+    return tokenError('invalid_target', 'resource is not a valid target')
+  }
   const result = await rotateRefreshToken(refreshToken, clientId, config)
 
   if (!result) {

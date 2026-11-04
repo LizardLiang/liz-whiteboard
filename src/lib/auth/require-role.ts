@@ -280,3 +280,24 @@ export async function requireServerFnRole(
     throw new ForbiddenError()
   }
 }
+
+/**
+ * Require that `folderId` (when given) is a folder of `projectId`.
+ *
+ * A folder id is a bare UUID, so a request can name a folder from a project
+ * the caller has no access to. The role check covers only the project being
+ * written to; without this check the board or folder would be filed under a
+ * foreign folder. SEC-ERR-03: a missing folder and a foreign folder throw the
+ * same ForbiddenError.
+ */
+export async function assertFolderInProject(
+  folderId: string | null | undefined,
+  projectId: string,
+): Promise<void> {
+  if (!folderId) return
+  const { getFolderProjectId } = await import('@/data/resolve-project')
+  const folderProjectId = await getFolderProjectId(folderId)
+  if (folderProjectId !== projectId) {
+    throw new ForbiddenError()
+  }
+}

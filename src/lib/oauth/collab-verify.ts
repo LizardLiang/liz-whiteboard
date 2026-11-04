@@ -6,10 +6,17 @@
 // than making an HTTP round-trip to the JWKS endpoint.
 //
 // Validated claims: RS256 algorithm, correct signature, iss == AS issuer,
-// aud contains collabResourceUri, exp not in the past.
+// token_use == 'collab', aud contains collabResourceUri, exp not in the past.
 
 import { jwtVerify } from 'jose'
 import { getSigningKeyPair } from './keys'
+
+/**
+ * Claim marking a token as minted by /api/collab-token. OAuth-flow access
+ * tokens never carry it, so they cannot pass as collab tokens even if their
+ * audience were to match.
+ */
+export const COLLAB_TOKEN_USE = 'collab'
 
 export interface CollabTokenPayload {
   /** User.id of the acting user */
@@ -37,6 +44,10 @@ export async function validateCollabToken(
     audience: collabResourceUri,
     algorithms: ['RS256'],
   })
+
+  if (payload.token_use !== COLLAB_TOKEN_USE) {
+    throw new Error('collab JWT missing token_use=collab claim')
+  }
 
   const sub = payload.sub
   if (!sub || typeof sub !== 'string') {

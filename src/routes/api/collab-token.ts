@@ -171,12 +171,16 @@ export const Route = createFileRoute('/api/collab-token')({
         // Issue the collab-audience JWT
         const { getSigningKeyPair } = await import('@/lib/oauth/keys')
         const { SignJWT } = await import('jose')
+        const { COLLAB_TOKEN_USE } = await import('@/lib/oauth/collab-verify')
 
         const { kid, privateKey } = await getSigningKeyPair()
         const now = Math.floor(Date.now() / 1000)
         const exp = now + config.collabTokenTtl
 
-        const token = await new SignJWT({ sub: user_id })
+        const token = await new SignJWT({
+          sub: user_id,
+          token_use: COLLAB_TOKEN_USE,
+        })
           .setProtectedHeader({ alg: 'RS256', kid })
           .setIssuer(config.issuer)
           .setAudience(config.collabResourceUri)

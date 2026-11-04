@@ -161,9 +161,16 @@ export const createWhiteboardSchema = z.object({
 })
 
 /**
- * Schema for updating an existing whiteboard
+ * Schema for updating an existing whiteboard.
+ *
+ * Deliberately has no `projectId`: moving a board to another project would
+ * apply the role check to the SOURCE project while writing into the
+ * destination. Zod strips an unknown `projectId` key, so a hostile payload
+ * cannot re-parent a board.
  */
-export const updateWhiteboardSchema = createWhiteboardSchema.partial()
+export const updateWhiteboardSchema = createWhiteboardSchema
+  .omit({ projectId: true })
+  .partial()
 
 // ============================================================================
 // DiagramTable Schemas

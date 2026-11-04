@@ -17,6 +17,7 @@ import { requireAuth } from '@/lib/auth/middleware'
 import { findEffectiveRole } from '@/data/permission'
 import { hasMinimumRole } from '@/lib/auth/permissions'
 import { getFolderProjectId } from '@/data/resolve-project'
+import { assertFolderInProject } from '@/lib/auth/require-role'
 
 /**
  * Get all folders in a project
@@ -182,6 +183,7 @@ export const createFolderFn = createServerFn({ method: 'POST' })
           message: 'Access denied',
         } as const
       }
+      await assertFolderInProject(data.parentFolderId, data.projectId)
       try {
         const folder = await createFolder(data)
         return folder

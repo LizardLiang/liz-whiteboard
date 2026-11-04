@@ -58,7 +58,7 @@ async function mintCollabToken(
 ): Promise<string> {
   const { kid, privateKey } = await getSigningKeyPair()
   const now = Math.floor(Date.now() / 1000)
-  return new SignJWT({ sub })
+  return new SignJWT({ sub, token_use: 'collab' })
     .setProtectedHeader({ alg: 'RS256', kid })
     .setIssuer(opts.issuer ?? TEST_ISSUER)
     .setAudience(opts.audience ?? TEST_COLLAB_URI)
@@ -101,8 +101,7 @@ async function setup() {
 
 function boardRow(id: string) {
   return db.prepare('SELECT * FROM "CanvasBoard" WHERE "id" = ?').get(id) as
-    | { id: string; name: string; folderId: string | null }
-    | undefined
+    { id: string; name: string; folderId: string | null } | undefined
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -537,7 +536,10 @@ describe('TC-CBD-15: post-auth per-subject budget', () => {
 
       for (let i = 0; i < 120; i++) {
         const ok = await handleCanvasBoardRequest(
-          post({ op: 'create', name: `H${i}`, projectId: project.id }, heavyToken),
+          post(
+            { op: 'create', name: `H${i}`, projectId: project.id },
+            heavyToken,
+          ),
         )
         expect(ok.status).toBe(200)
       }

@@ -27,7 +27,10 @@ import {
   getWhiteboardProjectId,
 } from '@/data/resolve-project'
 import { db } from '@/db'
-import { requireServerFnRole } from '@/lib/auth/require-role'
+import {
+  assertFolderInProject,
+  requireServerFnRole,
+} from '@/lib/auth/require-role'
 
 /**
  * Get all whiteboards in a project
@@ -187,6 +190,7 @@ export const createWhiteboardFn = createServerFn({ method: 'POST' })
   .handler(
     requireAuth(async ({ user }, data) => {
       await requireServerFnRole(user.id, data.projectId, 'EDITOR')
+      await assertFolderInProject(data.folderId, data.projectId)
       try {
         const whiteboard = await createWhiteboard(data)
         return whiteboard
@@ -216,6 +220,7 @@ export const updateWhiteboardFn = createServerFn({ method: 'POST' })
     requireAuth(async ({ user }, params) => {
       const projectId = await getWhiteboardProjectId(params.id)
       await requireServerFnRole(user.id, projectId, 'EDITOR')
+      await assertFolderInProject(params.data.folderId, projectId as string)
       try {
         const whiteboard = await updateWhiteboard(params.id, params.data)
         return whiteboard

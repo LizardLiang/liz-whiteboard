@@ -3,7 +3,7 @@
 
 import type { ProjectMember } from '@/data/models'
 import type { ProjectRoleValue as ProjectRole } from '@/data/schema'
-import { db, genId, insert, mapProjectMember, nowMs } from '@/db'
+import { db, genId, insert, mapProjectMember, nowMs, transaction } from '@/db'
 
 export type EffectiveRole = 'OWNER' | ProjectRole
 
@@ -96,6 +96,74 @@ export async function upsertProjectMember(data: {
       )
       .get(data.projectId, data.userId),
   )!
+}
+
+/**
+ * Revoke every outstanding share link and invite that `userId` created for
+ * `projectId`. Sync so a caller can run it inside its own transaction.
+ *
+ * Creating a share link or an invite needs ADMIN, so a creator who is removed
+ * or demoted below ADMIN must not leave working links behind.
+ */
+export function revokeLinksCreatedBy(projectId: string, userId: string): void {
+  const ts = nowMs()
+  db.prepare(
+    `UPDATE "WhiteboardShareLink" SET "revokedAt" = ?
+     WHERE "createdByUserId" = ? AND "revokedAt" IS NULL
+       AND "whiteboardId" IN (SELECT "id" FROM "Whiteboard" WHERE "projectId" = ?)`,
+  ).run(ts, userId, projectId)
+  db.prepare(
+    `UPDATE "CanvasBoardShareLink" SET "revokedAt" = ?
+     WHERE "createdByUserId" = ? AND "revokedAt" IS NULL
+       AND "canvasBoardId" IN (SELECT "id" FROM "CanvasBoard" WHERE "projectId" = ?)`,
+  ).run(ts, userId, projectId)
+  db.prepare(
+    `UPDATE "ProjectInvite" SET "revokedAt" = ?
+     WHERE "createdByUserId" = ? AND "projectId" = ? AND "revokedAt" IS NULL`,
+  ).run(ts, userId, projectId)
+}
+
+/**
+ * Set a member's role. When the new role is below ADMIN, the member's
+ * outstanding share links and invites for the project are revoked in the same
+ * transaction.
+ */
+export async function setProjectMemberRole(data: {
+  projectId: string
+  userId: string
+  role: ProjectRole
+}): Promise<ProjectMember> {
+  const member = transaction(() => {
+    const ts = nowMs()
+    db.prepare(
+      'INSERT INTO "ProjectMember" ("id", "projectId", "userId", "role", "createdAt", "updatedAt") VALUES (?, ?, ?, ?, ?, ?) ON CONFLICT("projectId", "userId") DO UPDATE SET "role" = excluded."role", "updatedAt" = excluded."updatedAt"',
+    ).run(genId(), data.projectId, data.userId, data.role, ts, ts)
+    if (data.role !== 'ADMIN') revokeLinksCreatedBy(data.projectId, data.userId)
+    return mapProjectMember(
+      db
+        .prepare(
+          'SELECT * FROM "ProjectMember" WHERE "projectId" = ? AND "userId" = ?',
+        )
+        .get(data.projectId, data.userId),
+    )!
+  })
+  return member
+}
+
+/**
+ * Remove a member and, in the same transaction, revoke the share links and
+ * invites they created for the project.
+ */
+export async function removeProjectMember(
+  projectId: string,
+  userId: string,
+): Promise<void> {
+  transaction(() => {
+    db.prepare(
+      'DELETE FROM "ProjectMember" WHERE "projectId" = ? AND "userId" = ?',
+    ).run(projectId, userId)
+    revokeLinksCreatedBy(projectId, userId)
+  })
 }
 
 /**

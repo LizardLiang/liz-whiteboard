@@ -65,7 +65,7 @@ async function mintCollabToken(
 ): Promise<string> {
   const { kid, privateKey } = await getSigningKeyPair()
   const now = Math.floor(Date.now() / 1000)
-  return new SignJWT({ sub })
+  return new SignJWT({ sub, token_use: 'collab' })
     .setProtectedHeader({ alg: 'RS256', kid })
     .setIssuer(opts.issuer ?? TEST_ISSUER)
     .setAudience(opts.audience ?? TEST_COLLAB_URI)
@@ -557,5 +557,80 @@ describe('not found, validation and rate limiting', () => {
       post({ entity: 'project', op: 'create', name: 'Still fine' }, token),
     )
     expect(ok.status).toBe(200)
+  })
+})
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Folder ownership (M2): a folder id must belong to the project written to
+// ─────────────────────────────────────────────────────────────────────────────
+
+describe('folder ownership', () => {
+  it('refuses a whiteboard create filed under a folder of another project', async () => {
+    const { editor, project } = await setup()
+    const other = makeUser()
+    const otherProject = makeProject({ ownerId: other.id })
+    const foreign = await createFolder({
+      name: 'Foreign',
+      projectId: otherProject.id,
+    })
+    const token = await mintCollabToken(editor.id)
+    const res = await handleMcpLifecycleRequest(
+      post(
+        {
+          entity: 'whiteboard',
+          op: 'create',
+          projectId: project.id,
+          name: 'W',
+          folderId: foreign.id,
+        },
+        token,
+      ),
+    )
+    expect(res.status).toBe(403)
+    expect(countRows('Whiteboard', 'projectId', project.id)).toBe(0)
+  })
+
+  it('refuses a folder create whose parent is in another project', async () => {
+    const { editor, project } = await setup()
+    const other = makeUser()
+    const otherProject = makeProject({ ownerId: other.id })
+    const foreign = await createFolder({
+      name: 'Foreign',
+      projectId: otherProject.id,
+    })
+    const token = await mintCollabToken(editor.id)
+    const res = await handleMcpLifecycleRequest(
+      post(
+        {
+          entity: 'folder',
+          op: 'create',
+          projectId: project.id,
+          name: 'Child',
+          parentFolderId: foreign.id,
+        },
+        token,
+      ),
+    )
+    expect(res.status).toBe(403)
+    expect(countRows('Folder', 'projectId', project.id)).toBe(0)
+  })
+
+  it('still allows a same-project parent folder', async () => {
+    const { editor, project } = await setup()
+    const parent = await createFolder({ name: 'P', projectId: project.id })
+    const token = await mintCollabToken(editor.id)
+    const res = await handleMcpLifecycleRequest(
+      post(
+        {
+          entity: 'folder',
+          op: 'create',
+          projectId: project.id,
+          name: 'Child',
+          parentFolderId: parent.id,
+        },
+        token,
+      ),
+    )
+    expect(res.status).toBe(200)
   })
 })

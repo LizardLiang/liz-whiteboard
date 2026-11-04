@@ -36,7 +36,7 @@ vi.stubEnv('OAUTH_ISSUER', ISSUER)
 async function mintCollabToken(sub: string, audience = COLLAB_URI) {
   const { kid, privateKey } = await getSigningKeyPair()
   const now = Math.floor(Date.now() / 1000)
-  return new SignJWT({ sub })
+  return new SignJWT({ sub, token_use: 'collab' })
     .setProtectedHeader({ alg: 'RS256', kid })
     .setIssuer(ISSUER)
     .setAudience(audience)

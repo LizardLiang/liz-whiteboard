@@ -5,11 +5,12 @@ import { createServerFn } from '@tanstack/react-start'
 import { requireAuth } from '@/lib/auth/middleware'
 import { hasMinimumRole } from '@/lib/auth/permissions'
 import {
-  deleteProjectMember,
   findEffectiveRole,
   findProjectMembers,
-  upsertProjectMember,
+  removeProjectMember,
+  setProjectMemberRole,
 } from '@/data/permission'
+import { checkAdminRoleChange } from '@/lib/auth/admin-role-guard'
 import { findUserByEmail, findUserById } from '@/data/user'
 import { findProjectById } from '@/data/project'
 import {
@@ -69,7 +70,7 @@ export const listProjectPermissions = createServerFn({ method: 'GET' })
 
 /**
  * Grant a permission to a user by email.
- * Requires ADMIN or OWNER effective role.
+ * Requires ADMIN or OWNER effective role; granting ADMIN requires OWNER.
  *
  * @requires admin
  */
@@ -106,8 +107,16 @@ export const grantPermission = createServerFn({ method: 'POST' })
         }
       }
 
+      // Granting ADMIN, or overwriting an existing ADMIN, needs OWNER.
+      const targetRole = await findEffectiveRole(targetUser.id, data.projectId)
+      const adminDenial = checkAdminRoleChange(effectiveRole, {
+        newRole: data.role,
+        targetRole,
+      })
+      if (adminDenial) return adminDenial
+
       // Upsert the permission (create or update)
-      const member = await upsertProjectMember({
+      const member = await setProjectMemberRole({
         projectId: data.projectId,
         userId: targetUser.id,
         role: data.role,
@@ -136,17 +145,33 @@ export const updatePermission = createServerFn({ method: 'POST' })
         }
       }
 
-      // Check if target is an ADMIN — only OWNER can change ADMINs
-      const targetRole = await findEffectiveRole(data.userId, data.projectId)
-      if (targetRole === 'ADMIN' && effectiveRole !== 'OWNER') {
+      // The target must be a real user; the owner's access is not editable here.
+      const targetUser = await findUserById(data.userId)
+      if (!targetUser) {
+        return {
+          error: 'USER_NOT_FOUND' as const,
+          status: 404,
+          message: 'No user found with that id',
+        }
+      }
+      const project = await findProjectById(data.projectId)
+      if (project?.ownerId === data.userId) {
         return {
           error: 'FORBIDDEN' as const,
           status: 403,
-          message: "Only the project owner can change an admin's role",
+          message: "Cannot modify the project owner's access",
         }
       }
 
-      const member = await upsertProjectMember({
+      // Granting ADMIN, or changing an existing ADMIN, needs OWNER.
+      const targetRole = await findEffectiveRole(data.userId, data.projectId)
+      const adminDenial = checkAdminRoleChange(effectiveRole, {
+        newRole: data.role,
+        targetRole,
+      })
+      if (adminDenial) return adminDenial
+
+      const member = await setProjectMemberRole({
         projectId: data.projectId,
         userId: data.userId,
         role: data.role,
@@ -189,15 +214,13 @@ export const revokePermission = createServerFn({ method: 'POST' })
 
       // Only OWNER can remove an ADMIN
       const targetRole = await findEffectiveRole(data.userId, data.projectId)
-      if (targetRole === 'ADMIN' && effectiveRole !== 'OWNER') {
-        return {
-          error: 'FORBIDDEN' as const,
-          status: 403,
-          message: 'Only the project owner can remove an admin',
-        }
-      }
+      const adminDenial = checkAdminRoleChange(effectiveRole, {
+        newRole: null,
+        targetRole,
+      })
+      if (adminDenial) return adminDenial
 
-      await deleteProjectMember(data.projectId, data.userId)
+      await removeProjectMember(data.projectId, data.userId)
       return { success: true }
     }),
   )

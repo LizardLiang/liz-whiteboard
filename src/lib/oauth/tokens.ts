@@ -135,6 +135,14 @@ function hashToken(token: string): string {
   return createHash('sha256').update(token).digest('hex')
 }
 
+/** Returns the `resource` bound to a stored refresh token, or null if unknown. */
+export function getRefreshTokenResource(refreshToken: string): string | null {
+  const row = db
+    .prepare(`SELECT resource FROM "OauthRefreshToken" WHERE tokenHash = ?`)
+    .get(hashToken(refreshToken)) as { resource: string } | undefined
+  return row ? row.resource : null
+}
+
 /** Sign a fresh RS256 access token bound to the given grant attributes. */
 async function signAccessToken(
   params: { userId: string; scope: string; resource: string },
@@ -284,8 +292,7 @@ export async function rotateRefreshToken(
       let currentHash = cached.successorHash
       let currentRawToken = cached.successorRawToken
       let liveRow:
-        | Pick<RefreshTokenRow, 'userId' | 'scope' | 'resource'>
-        | undefined
+        Pick<RefreshTokenRow, 'userId' | 'scope' | 'resource'> | undefined
       const seenHashes = new Set<string>()
 
       for (let depth = 0; depth < MAX_REPLAY_CHAIN_DEPTH; depth++) {
@@ -434,8 +441,7 @@ export function revokeRefreshToken(token: string, clientId: string): boolean {
   `,
     )
     .get(tokenHash) as
-    | Pick<RefreshTokenRow, 'familyId' | 'clientId'>
-    | undefined
+    Pick<RefreshTokenRow, 'familyId' | 'clientId'> | undefined
 
   if (!row) return false
   if (row.clientId !== clientId) return false

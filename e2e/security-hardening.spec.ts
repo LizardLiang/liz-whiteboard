@@ -10,7 +10,7 @@
 // Unit coverage of the throwing code lives in src/lib/serve-static.test.ts.
 import { request as httpRequest } from 'node:http'
 import { expect, test } from '@playwright/test'
-import { BASE_URL } from './fixtures'
+import { BASE_URL, STORAGE_STATE } from './fixtures'
 
 test.use({ storageState: { cookies: [], origins: [] } })
 
@@ -60,5 +60,57 @@ test.describe('Server crash-proofing (security batch 1)', () => {
 
     await page.goto('/login')
     await expect(page.getByRole('textbox', { name: 'Email' })).toBeVisible()
+  })
+})
+
+// Batch 2 — authorization holes.
+// M3: the TanStack starter demo routes (unauthenticated todo writes, in-memory
+// pushes) must not exist. A removed route falls through to the app's 404.
+test.describe('Demo routes are gone (security batch 2, M3)', () => {
+  // Signed in, so a 404 proves the route is absent rather than auth-gated
+  // (anonymous requests get the global login redirect for any path).
+  test.use({ storageState: STORAGE_STATE })
+
+  for (const path of [
+    '/demo/start/server-funcs',
+    '/demo/api/names',
+    '/demo/api/tq-todos',
+  ]) {
+    test(`GET ${path} is 404`, async ({ request }) => {
+      const res = await request.get(path, { failOnStatusCode: false })
+      expect(res.status()).toBe(404)
+      const body = await res.text()
+      expect(body).not.toContain('Start - Server Functions')
+    })
+  }
+
+  test('the demo page does not render in a browser', async ({ page }) => {
+    await page.goto('/demo/start/server-funcs')
+    await expect(page.getByText('Start - Server Functions')).toHaveCount(0)
+    await expect(page.getByRole('button', { name: 'Add todo' })).toHaveCount(0)
+  })
+})
+
+// M1: an OAuth client cannot ask /authorize for any audience but the MCP
+// resource (RFC 8707). The check runs before client lookup and login, so an
+// anonymous request is enough to prove it.
+test.describe('OAuth resource allowlist (security batch 2, M1)', () => {
+  test('/authorize rejects resource=<collab audience> with invalid_target', async ({
+    request,
+  }) => {
+    const params = new URLSearchParams({
+      response_type: 'code',
+      client_id: 'anything',
+      redirect_uri: 'http://127.0.0.1:19999/callback',
+      code_challenge: 'x'.repeat(43),
+      code_challenge_method: 'S256',
+      resource: 'http://localhost:3010',
+    })
+    const res = await request.get(`/authorize?${params.toString()}`, {
+      failOnStatusCode: false,
+      maxRedirects: 0,
+    })
+    expect(res.status()).toBe(400)
+    expect((await res.json()).error).toBe('invalid_target')
   })
 })

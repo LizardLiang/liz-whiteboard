@@ -347,6 +347,29 @@ export async function handleMcpLifecycleRequest(
     }
   }
 
+  // ── Folder ownership ───────────────────────────────────────────────────────
+  // A folder id in the body must belong to the project being written to; the
+  // role gate above only covered that project. Same response as a role denial.
+  if (resolved.projectId !== null) {
+    const folderRef =
+      body.entity === 'folder' && body.op === 'create'
+        ? body.parentFolderId
+        : body.entity === 'whiteboard' &&
+            (body.op === 'create' || body.op === 'update')
+          ? body.folderId
+          : undefined
+    const { assertFolderInProject } = await import('@/lib/auth/require-role')
+    try {
+      await assertFolderInProject(folderRef, resolved.projectId)
+    } catch {
+      return jsonError(
+        'FORBIDDEN',
+        'You do not have access to perform this action.',
+        403,
+      )
+    }
+  }
+
   // ── Perform ────────────────────────────────────────────────────────────────
   try {
     return await perform(body, userId)
@@ -439,9 +462,8 @@ async function resolveTarget(body: Body): Promise<ResolvedTarget> {
 
 async function perform(body: Body, userId: string): Promise<Response> {
   if (body.entity === 'project') {
-    const { createProject, deleteProject, updateProject } = await import(
-      '@/data/project'
-    )
+    const { createProject, deleteProject, updateProject } =
+      await import('@/data/project')
     if (body.op === 'create') {
       // ownerId comes from the JWT subject. An ownerId in the body is not read.
       const project = await createProject({
@@ -467,9 +489,8 @@ async function perform(body: Body, userId: string): Promise<Response> {
   }
 
   if (body.entity === 'folder') {
-    const { createFolder, deleteFolder, updateFolder } = await import(
-      '@/data/folder'
-    )
+    const { createFolder, deleteFolder, updateFolder } =
+      await import('@/data/folder')
     if (body.op === 'create') {
       const folder = await createFolder({
         name: body.name,
@@ -488,9 +509,8 @@ async function perform(body: Body, userId: string): Promise<Response> {
     return jsonOk({ folder })
   }
 
-  const { createWhiteboard, deleteWhiteboard, updateWhiteboard } = await import(
-    '@/data/whiteboard'
-  )
+  const { createWhiteboard, deleteWhiteboard, updateWhiteboard } =
+    await import('@/data/whiteboard')
   if (body.op === 'create') {
     const whiteboard = await createWhiteboard({
       name: body.name,

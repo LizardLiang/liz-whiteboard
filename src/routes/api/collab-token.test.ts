@@ -91,7 +91,7 @@ async function handleCollabToken(body: unknown): Promise<Response> {
   const now = Math.floor(Date.now() / 1000)
   const exp = now + config.collabTokenTtl
 
-  const token = await new SignJWT({ sub: user_id })
+  const token = await new SignJWT({ sub: user_id, token_use: 'collab' })
     .setProtectedHeader({ alg: 'RS256', kid })
     .setIssuer(config.issuer)
     .setAudience(config.collabResourceUri)

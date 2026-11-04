@@ -446,15 +446,20 @@ export async function findProjectPageContent(
           `WITH RECURSIVE ancestors AS (
             SELECT id, name, "parentFolderId", "projectId"
             FROM "Folder"
-            WHERE id = ?
+            WHERE id = ? AND "projectId" = ?
             UNION ALL
             SELECT f.id, f.name, f."parentFolderId", f."projectId"
             FROM "Folder" f
             INNER JOIN ancestors a ON f.id = a."parentFolderId"
+            WHERE f."projectId" = ?
           )
           SELECT id, name, "parentFolderId" FROM ancestors`,
         )
-        .all(targetFolder.parentFolderId) as Array<AncestorRow>
+        .all(
+          targetFolder.parentFolderId,
+          projectId,
+          projectId,
+        ) as Array<AncestorRow>
       // CTE returns leaf→root order; reverse to get root→leaf for the breadcrumb trail
       for (const ancestor of ancestors.reverse()) {
         breadcrumb.push({

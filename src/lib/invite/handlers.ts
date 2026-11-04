@@ -33,6 +33,7 @@ import type {
 } from '@/data/schema'
 import type { InviteDenialReason } from '@/lib/invite/denial-reasons'
 import { hasMinimumRole } from '@/lib/auth/permissions'
+import { checkAdminRoleChange } from '@/lib/auth/admin-role-guard'
 import { findEffectiveRole } from '@/data/permission'
 import { findProjectById } from '@/data/project'
 import {
@@ -115,6 +116,14 @@ export async function createProjectInviteHandler(
     'Only ADMIN or OWNER can create invite links',
   )
   if (denial) return denial
+
+  // Inviting at the ADMIN role needs OWNER, same as granting it directly.
+  const callerRole = await findEffectiveRole(user.id, data.projectId)
+  const adminDenial = checkAdminRoleChange(callerRole, {
+    newRole: data.role,
+    targetRole: null,
+  })
+  if (adminDenial) return adminDenial
 
   const rawToken = generateInviteToken()
   const tokenHash = hashInviteToken(rawToken)
