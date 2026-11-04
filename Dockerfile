@@ -23,12 +23,10 @@ ENV PORT=3000
 
 EXPOSE 3000
 
-# ── Non-root runtime ─────────────────────────────────────────────────────────
-# The app only needs to write /app/data (SQLite). A volume mounted there that
-# was created by an earlier root-running image stays root-owned; entrypoint.sh
-# stops with the one-time chown command in that case.
+# Runs as root for now. The prod data volume is root-owned and the mcp service
+# (root) writes the same SQLite file and its -wal/-shm, so a non-root app would
+# lose write access. Switching needs both services on one uid plus a one-time
+# chown of the volume.
 RUN chmod +x /app/entrypoint.sh \
- && mkdir -p /app/data \
- && chown -R bun:bun /app/data
-USER bun
+ && mkdir -p /app/data
 CMD ["/app/entrypoint.sh"]
