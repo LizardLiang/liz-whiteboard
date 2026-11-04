@@ -194,20 +194,58 @@ describe('origin-scoped CIMD grants (mcp-oauth-open-cimd)', () => {
 
   const URIS = ['http://127.0.0.1:1455/auth/callback']
 
-  it('stores a CIMD grant under its full client_id plus a redirect_uris hash', () => {
+  it('stores a CIMD grant under its origin plus a redirect_uris hash', () => {
     const { id: userId } = makeUser()
     const grant = upsertGrant(userId, CODEX_A, 'whiteboard', 'Codex', URIS)
-    expect(grant.clientId).toMatch(
-      new RegExp(`^${CODEX_A.replace(/[.]/g, '\\.')}#[0-9a-f]{16}$`),
-    )
+    expect(grant.clientId).toMatch(/^https:\/\/chatgpt\.com#[0-9a-f]{16}$/)
     expect(grant.clientName).toBe('Codex')
   })
 
-  it('does NOT match a different document URL on the same origin (re-consent)', () => {
+  it('matches a different document URL on the same origin with the same redirect_uris (no re-consent per login)', () => {
     const { id: userId } = makeUser()
     upsertGrant(userId, CODEX_A, 'whiteboard', 'Codex', URIS)
     expect(getGrant(userId, CODEX_A, URIS)).not.toBeNull()
-    expect(getGrant(userId, CODEX_B, URIS)).toBeNull()
+    expect(getGrant(userId, CODEX_B, URIS)).not.toBeNull()
+  })
+
+  it('ignores the port of a loopback http redirect_uri', () => {
+    const { id: userId } = makeUser()
+    upsertGrant(userId, CODEX_A, 'whiteboard', 'Codex', [
+      'http://127.0.0.1:1455/auth/callback',
+    ])
+    expect(
+      getGrant(userId, CODEX_B, ['http://127.0.0.1:53211/auth/callback']),
+    ).not.toBeNull()
+    expect(
+      getGrant(userId, CODEX_B, ['http://localhost:53211/auth/callback']),
+    ).toBeNull()
+    expect(
+      getGrant(userId, CODEX_B, ['http://127.0.0.1:53211/other/path']),
+    ).toBeNull()
+  })
+
+  it('does not strip the port of a non-loopback redirect_uri', () => {
+    const { id: userId } = makeUser()
+    upsertGrant(userId, CODEX_A, 'whiteboard', 'X', ['https://app.example:8443/cb'])
+    expect(getGrant(userId, CODEX_A, ['https://app.example:9443/cb'])).toBeNull()
+  })
+
+  it('a different origin never matches, even with identical redirect_uris', () => {
+    const { id: userId } = makeUser()
+    upsertGrant(userId, CODEX_A, 'whiteboard', 'Codex', URIS)
+    expect(
+      getGrant(userId, 'https://other.example/client.json', URIS),
+    ).toBeNull()
+  })
+
+  it('a full-client_id#hash row from the previous scheme never auto-approves; re-consent replaces it', () => {
+    const { id: userId } = makeUser()
+    db.prepare(
+      `INSERT INTO "OauthGrant" (userId, clientId, scope, grantedAt) VALUES (?, ?, ?, ?)`,
+    ).run(userId, `${CODEX_A}#0123456789abcdef`, 'whiteboard', nowMs())
+    expect(getGrant(userId, CODEX_A, URIS)).toBeNull()
+    upsertGrant(userId, CODEX_A, 'whiteboard', 'Codex', URIS)
+    expect(listGrants(userId)).toHaveLength(1)
   })
 
   it('does NOT match when the redirect_uris changed since consent (re-consent)', () => {

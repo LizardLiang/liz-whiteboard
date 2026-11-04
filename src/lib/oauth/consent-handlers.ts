@@ -144,7 +144,7 @@ export async function approveConsentHandler(
     }
   }
 
-  // Grant key is full client_id + redirect_uris hash for CIMD clients (see grants.ts grantKeyFor);
+  // Grant key is client_id origin + normalized redirect_uris hash for CIMD clients (see grants.ts grantKeyFor);
   // clientName is captured here so /settings/connections never has to resolve
   // the client over the network.
   const { upsertGrant } = await import('./grants')

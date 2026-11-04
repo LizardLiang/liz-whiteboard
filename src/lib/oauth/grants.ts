@@ -72,16 +72,38 @@ function mapRow(row: OauthGrantRow): OauthGrant {
   }
 }
 
+const LOOPBACK_HOSTS = new Set(['127.0.0.1', 'localhost', '[::1]'])
+
+/**
+ * Normalise a redirect URI for the grant hash: an http loopback URI loses its
+ * port (RFC 8252 §7.3 — native apps pick an ephemeral port, and
+ * redirectUriAllowed() already accepts any port there). Anything else is kept
+ * verbatim.
+ */
+function normalizeRedirectUri(uri: string): string {
+  try {
+    const url = new URL(uri)
+    if (url.protocol === 'http:' && LOOPBACK_HOSTS.has(url.hostname)) {
+      url.port = ''
+      return url.toString()
+    }
+  } catch {
+    // not a URL — hash it as given
+  }
+  return uri
+}
+
 /**
  * Collapse a client id (+ the redirect_uris it was consented with) to the key
  * this store uses.
  *
- * CIMD (absolute https client_id): `<full client_id>#<hash of sorted
- * redirect_uris>`. A different document URL, or the same document later
- * advertising different redirect_uris, produces a different key, so consent
- * is asked again instead of being inherited from the origin. (Previously the
- * key was the ORIGIN; those legacy rows are never matched any more — they
- * force a fresh consent — and are deleted when the user re-consents.)
+ * CIMD (absolute https client_id): `<client_id origin>#<hash of normalized,
+ * sorted redirect_uris>`. The path of a CIMD document may change on every
+ * login (Codex), so it is not part of the key; the redirect_uris are, because
+ * they decide who receives the authorization code. An attacker sharing the
+ * origin must use different redirect_uris, which gives a different key and a
+ * consent prompt. Rows from earlier schemes (bare origin, or
+ * `<full client_id>#hash`) never match and are deleted on re-consent.
  * Static and DCR client ids are opaque strings and are keyed verbatim.
  */
 export function grantKeyFor(
@@ -91,10 +113,10 @@ export function grantKeyFor(
   if (!isCimdUrl(clientId)) return clientId
   if (clientId.includes('#')) return clientId // already a full key
   const digest = createHash('sha256')
-    .update([...redirectUris].sort().join('\n'))
+    .update([...redirectUris].map(normalizeRedirectUri).sort().join('\n'))
     .digest('hex')
     .slice(0, 16)
-  return `${clientId}#${digest}`
+  return `${new URL(clientId).origin}#${digest}`
 }
 
 /** The client_id part of a grant key (fragment stripped). */
@@ -139,12 +161,14 @@ export function upsertGrant(
   const grantedAt = nowMs()
   const key = grantKeyFor(clientId, redirectUris)
   if (isCimdUrl(clientId)) {
-    // Drop the legacy origin-keyed row: it no longer auto-approves anything,
-    // and leaving it would show a duplicate in /settings/connections.
-    db.prepare(`DELETE FROM "OauthGrant" WHERE userId = ? AND clientId = ?`).run(
-      userId,
-      new URL(clientId).origin,
-    )
+    // Drop legacy rows (bare origin, or full client_id + hash): they no longer
+    // auto-approve anything and would show as duplicates in
+    // /settings/connections.
+    const origin = new URL(clientId).origin
+    db.prepare(
+      `DELETE FROM "OauthGrant"
+        WHERE userId = ? AND (clientId = ? OR clientId LIKE ? ESCAPE '\\')`,
+    ).run(userId, origin, `${escapeLike(origin)}/%`)
   }
   db.prepare(
     `
@@ -186,7 +210,7 @@ export function listGrants(userId: string): Array<OauthGrant> {
  * `https://chatgpt.com.evil.example/...`.
  */
 export function revokeGrant(userId: string, clientId: string): void {
-  // `clientId` may be a stored grant key (full client_id + '#hash'), a bare
+  // `clientId` may be a stored grant key (origin + '#hash'), a bare
   // client_id, or a legacy origin key. Revocation is origin-wide for CIMD
   // clients: every grant row and refresh token under the same origin goes.
   const base = baseClientId(clientId)
@@ -201,8 +225,9 @@ export function revokeGrant(userId: string, clientId: string): void {
     db.prepare(
       `DELETE FROM "OauthGrant"
         WHERE userId = ?
-          AND (clientId = ? OR clientId LIKE ? ESCAPE '\\')`,
-    ).run(userId, key, originPrefix)
+          AND (clientId = ? OR clientId LIKE ? ESCAPE '\\'
+               OR clientId LIKE ? ESCAPE '\\')`,
+    ).run(userId, key, originPrefix, `${escapeLike(key)}#%`)
   })
 }
 
