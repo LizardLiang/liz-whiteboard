@@ -323,14 +323,17 @@ export function useAutoLayoutOrchestrator({
       // Flow paints a child at parent.position + child.position.
       const snapshotNodes = getNodes()
       const snapshotEdges = getEdges()
-      const previousAreaBounds: Array<AreaLayoutOutputArea> = areaInputs
-        .filter((a) => areaBounds.some((b) => b.id === a.id))
-        .map((a) => ({
-          id: a.id,
-          positionX: a.positionX,
-          positionY: a.positionY,
-          width: a.width,
-          height: a.height,
+      const previousAreaBounds: Array<AreaLayoutOutputArea> = snapshotNodes
+        .filter(
+          (n): n is AreaNodeType =>
+            n.type === 'area' && areaBounds.some((b) => b.id === n.id),
+        )
+        .map((n) => ({
+          id: n.id,
+          positionX: n.data.area.positionX,
+          positionY: n.data.area.positionY,
+          width: n.data.area.width,
+          height: n.data.area.height,
         }))
       const updatedNodes = applyBulkPositions(snapshotNodes, positions)
       let storeNodes: typeof updatedNodes = updatedNodes
