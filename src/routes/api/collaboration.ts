@@ -99,6 +99,12 @@ import {
   safeConnectionHandler,
 } from '@/lib/socket-safe'
 import { db } from '@/db'
+import {
+  createEventLimiter,
+  cursorPayloadSchema,
+  findForeignTableIds,
+  tableMovePayloadSchema,
+} from '@/lib/socket-payload'
 
 // ---------------------------------------------------------------------------
 // FR-022 — Sender acknowledgement type
@@ -428,11 +434,16 @@ function setupCollaborationEventHandlers(
   userId: string,
 ): void {
   // Cursor update (throttled by client to 60Hz)
+  const allowCursor = createEventLimiter(60, 1000)
   socket.on('cursor:update', async (data: { x: number; y: number }) => {
     if (isSessionExpired(socket)) {
       socket.disconnect(true)
       return
     }
+    if (!allowCursor()) return
+    const cursor = cursorPayloadSchema.safeParse(data)
+    if (!cursor.success) return
+    data = cursor.data
     try {
       // Update cursor position in session
       await updateCollaborationSession(socket.id, {
@@ -632,6 +643,22 @@ function setupCollaborationEventHandlers(
         return
       }
 
+      const movePayload = tableMovePayloadSchema.safeParse(data)
+      if (!movePayload.success) {
+        socket.emit('error', {
+          event: 'table:move',
+          error: 'VALIDATION_ERROR',
+          message: 'Invalid table:move payload',
+        })
+        cb?.({
+          ok: false,
+          code: 'VALIDATION_ERROR',
+          message: 'Invalid table:move payload',
+        })
+        return
+      }
+      data = movePayload.data
+
       try {
         // Ownership check: verify table belongs to this whiteboard (IDOR prevention)
         const table = await findDiagramTableById(data.tableId)
@@ -790,6 +817,22 @@ function setupCollaborationEventHandlers(
           event: 'table:move:bulk',
           error: 'VALIDATION_ERROR',
           message: 'Invalid table:move:bulk payload',
+        })
+        return
+      }
+
+      // Every table must belong to this board: otherwise a client could move
+      // another board's tables on its collaborators' canvases.
+      if (
+        findForeignTableIds(
+          whiteboardId,
+          parsed.data.positions.map((p) => p.tableId),
+        ).length > 0
+      ) {
+        socket.emit('error', {
+          event: 'table:move:bulk',
+          error: 'FORBIDDEN',
+          message: 'Table does not belong to this whiteboard',
         })
         return
       }
@@ -1051,6 +1094,22 @@ function setupCollaborationEventHandlers(
 
     try {
       const validated = createAreaSchema.parse({ ...data, whiteboardId })
+      if (
+        findForeignTableIds(whiteboardId, validated.memberTableIds ?? [])
+          .length > 0
+      ) {
+        socket.emit('error', {
+          event: 'area:create',
+          error: 'FORBIDDEN',
+          message: 'Area members must belong to this whiteboard',
+        })
+        cb?.({
+          ok: false,
+          code: 'FORBIDDEN',
+          message: 'Area members must belong to this whiteboard',
+        })
+        return
+      }
       const area = await createArea(validated)
       socket.broadcast.emit('area:created', { ...area, createdBy: userId })
       cb?.({ ok: true, entity: area })
@@ -1124,6 +1183,19 @@ function setupCollaborationEventHandlers(
         }
 
         const validated = updateAreaSchema.parse(updateData)
+        if (
+          validated.memberTableIds &&
+          findForeignTableIds(whiteboardId, validated.memberTableIds).length > 0
+        ) {
+          const message = 'Area members must belong to this whiteboard'
+          socket.emit('error', {
+            event: 'area:update',
+            error: 'FORBIDDEN',
+            message,
+          })
+          cb?.({ ok: false, code: 'FORBIDDEN', message })
+          return
+        }
         const updatedArea = await updateArea(areaId, validated)
         socket.broadcast.emit('area:updated', {
           areaId,
