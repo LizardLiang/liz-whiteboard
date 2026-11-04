@@ -17,6 +17,14 @@ import { MAX_TEXT_RUNS } from '@/lib/canvas-engine/text-runs'
  * Canvas viewport state schema
  * Used in Whiteboard.canvasState
  */
+/** Cap on a whiteboard's text source (SQL/DSL), in UTF-16 code units. */
+export const MAX_TEXT_SOURCE_LENGTH = 1_000_000
+/** Cap on table / column / relationship descriptions. */
+export const MAX_DESCRIPTION_LENGTH = 5000
+
+/** `limit` accepted by getRecentWhiteboards. */
+export const recentBoardsLimitSchema = z.number().int().min(1).max(100)
+
 export const canvasStateSchema = z.object({
   zoom: z.number().min(0.1).max(5),
   offsetX: z.number().finite(),
@@ -157,7 +165,7 @@ export const createWhiteboardSchema = z.object({
   projectId: z.string().uuid(),
   folderId: z.string().uuid().optional(),
   canvasState: canvasStateSchema.optional(),
-  textSource: z.string().optional(),
+  textSource: z.string().max(MAX_TEXT_SOURCE_LENGTH).optional(),
 })
 
 /**
@@ -182,7 +190,7 @@ export const updateWhiteboardSchema = createWhiteboardSchema
 export const createTableSchema = z.object({
   whiteboardId: z.string().uuid(),
   name: z.string().min(1).max(255),
-  description: z.string().optional(),
+  description: z.string().max(MAX_DESCRIPTION_LENGTH).optional(),
   positionX: z.number().finite().optional(),
   positionY: z.number().finite().optional(),
   width: z.number().positive().optional(),
@@ -211,7 +219,7 @@ export const createColumnSchema = z.object({
   isForeignKey: z.boolean().default(false),
   isUnique: z.boolean().default(false),
   isNullable: z.boolean().default(false),
-  description: z.string().optional(),
+  description: z.string().max(MAX_DESCRIPTION_LENGTH).optional(),
   order: z.number().int().min(0).default(0),
 })
 
@@ -242,7 +250,7 @@ export const updateColumnSchema = z.object({
   isForeignKey: z.boolean().optional(),
   isUnique: z.boolean().optional(),
   isNullable: z.boolean().optional(),
-  description: z.string().optional(),
+  description: z.string().max(MAX_DESCRIPTION_LENGTH).optional(),
 })
 
 // ============================================================================
@@ -505,11 +513,7 @@ export const registerInputSchema = z.object({
  * Schema for user login input
  */
 export const loginInputSchema = z.object({
-  email: z
-    .string()
-    .trim()
-    .toLowerCase()
-    .email('Invalid email address'),
+  email: z.string().trim().toLowerCase().email('Invalid email address'),
   password: z.string().min(1, 'Password is required'),
   rememberMe: z.boolean().default(false),
 })
@@ -566,11 +570,7 @@ export const projectRoleSchema = z.enum(['VIEWER', 'EDITOR', 'ADMIN'])
  */
 export const grantPermissionSchema = z.object({
   projectId: z.string().uuid(),
-  email: z
-    .string()
-    .trim()
-    .toLowerCase()
-    .email(),
+  email: z.string().trim().toLowerCase().email(),
   role: projectRoleSchema,
 })
 

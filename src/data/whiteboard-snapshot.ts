@@ -92,8 +92,13 @@ export async function captureWhiteboardState(
   }
 }
 
+/** Newest snapshots kept per board; older rows are pruned on every insert. */
+export const MAX_SNAPSHOTS_PER_BOARD = 100
+
 /**
- * Persist a captured payload as a new immutable snapshot row.
+ * Persist a captured payload as a new immutable snapshot row, then prune the
+ * board's oldest snapshots beyond MAX_SNAPSHOTS_PER_BOARD in the same
+ * transaction.
  */
 export async function createWhiteboardSnapshot(data: {
   whiteboardId: string
@@ -104,14 +109,26 @@ export async function createWhiteboardSnapshot(data: {
 }): Promise<WhiteboardSnapshot> {
   const id = genId()
   const ts = nowMs()
-  insert('WhiteboardSnapshot', {
-    id,
-    whiteboardId: data.whiteboardId,
-    label: data.label,
-    payload: toDbJson(data.payload),
-    createdByUserId: data.createdByUserId,
-    isAuto: toDbBool(data.isAuto),
-    createdAt: ts,
+  transaction(() => {
+    insert('WhiteboardSnapshot', {
+      id,
+      whiteboardId: data.whiteboardId,
+      label: data.label,
+      payload: toDbJson(data.payload),
+      createdByUserId: data.createdByUserId,
+      isAuto: toDbBool(data.isAuto),
+      createdAt: ts,
+    })
+    db.prepare(
+      `DELETE FROM "WhiteboardSnapshot"
+        WHERE "whiteboardId" = ?
+          AND "id" NOT IN (
+            SELECT "id" FROM "WhiteboardSnapshot"
+             WHERE "whiteboardId" = ?
+             ORDER BY "createdAt" DESC, "rowid" DESC
+             LIMIT ?
+          )`,
+    ).run(data.whiteboardId, data.whiteboardId, MAX_SNAPSHOTS_PER_BOARD)
   })
   return mapWhiteboardSnapshot(
     db.prepare('SELECT * FROM "WhiteboardSnapshot" WHERE "id" = ?').get(id),

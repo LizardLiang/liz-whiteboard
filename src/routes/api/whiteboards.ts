@@ -15,7 +15,9 @@ import {
   updateWhiteboardTextSource,
 } from '@/data/whiteboard'
 import {
+  MAX_TEXT_SOURCE_LENGTH,
   canvasStateSchema,
+  recentBoardsLimitSchema,
   createWhiteboardSchema,
   updateWhiteboardSchema,
 } from '@/data/schema'
@@ -274,7 +276,7 @@ export const updateTextSource = createServerFn({ method: 'POST' })
   .validator((params: unknown) => {
     const schema = z.object({
       id: z.string().uuid(),
-      textSource: z.string(),
+      textSource: z.string().max(MAX_TEXT_SOURCE_LENGTH),
     })
     return schema.parse(params)
   })
@@ -346,7 +348,7 @@ export interface RecentBoardRow {
  * @requires authenticated
  */
 export const getRecentWhiteboards = createServerFn({ method: 'GET' })
-  .validator((limit: number = 10) => limit)
+  .validator((limit: unknown = 10) => recentBoardsLimitSchema.parse(limit))
   .handler(
     requireAuth(async ({ user }, limit) => {
       try {

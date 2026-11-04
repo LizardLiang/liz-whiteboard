@@ -209,7 +209,7 @@ export const createColumnFn = createServerFn({ method: 'POST' })
  */
 export const createColumnsFn = createServerFn({ method: 'POST' })
   .validator((data: unknown) => {
-    const schema = z.array(createColumnSchema)
+    const schema = z.array(createColumnSchema).max(500)
     return schema.parse(data)
   })
   .handler(

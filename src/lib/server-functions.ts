@@ -3,6 +3,7 @@
 
 import { createServerFn } from '@tanstack/react-start'
 import { z } from 'zod'
+import { MAX_TEXT_SOURCE_LENGTH, canvasStateSchema } from '@/data/schema'
 import type {
   BulkUpdatePositions,
   CreateRelationship,
@@ -361,7 +362,14 @@ export const createRelationshipFn = createServerFn({
 export const updateWhiteboardTextSourceFn = createServerFn({
   method: 'POST',
 })
-  .validator((data: { whiteboardId: string; textSource: string }) => data)
+  .validator((data: unknown) =>
+    z
+      .object({
+        whiteboardId: z.string().uuid(),
+        textSource: z.string().max(MAX_TEXT_SOURCE_LENGTH),
+      })
+      .parse(data),
+  )
   .handler(
     requireAuth(async ({ user }, data) => {
       const projectId = await getWhiteboardProjectId(data.whiteboardId)
@@ -385,6 +393,9 @@ export const updateWhiteboardTextSourceFn = createServerFn({
  *
  * @requires editor
  */
+/** Upper bound on tables the O(n^2) force layout will be run on. */
+export const MAX_AUTO_LAYOUT_TABLES = 1000
+
 export const computeAutoLayout = createServerFn({
   method: 'POST',
 })
@@ -404,6 +415,11 @@ export const computeAutoLayout = createServerFn({
           )
           if (!whiteboard) {
             throw new Error('Whiteboard not found')
+          }
+          if (whiteboard.tables.length > MAX_AUTO_LAYOUT_TABLES) {
+            throw new Error(
+              `Auto layout supports at most ${MAX_AUTO_LAYOUT_TABLES} tables`,
+            )
           }
 
           const relationships =
@@ -458,11 +474,13 @@ export const getMcpEndpointUrl = createServerFn({ method: 'GET' }).handler(
 export const saveCanvasState = createServerFn({
   method: 'POST',
 })
-  .validator(
-    (data: {
-      whiteboardId: string
-      canvasState: { zoom: number; offsetX: number; offsetY: number }
-    }) => data,
+  .validator((data: unknown) =>
+    z
+      .object({
+        whiteboardId: z.string().uuid(),
+        canvasState: canvasStateSchema,
+      })
+      .parse(data),
   )
   .handler(
     requireAuth(async ({ user }, data) => {
