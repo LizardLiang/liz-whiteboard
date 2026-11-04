@@ -14,6 +14,19 @@ export function isSafeRedirect(path: string): boolean {
   if (!path.startsWith('/')) return false
   if (path.startsWith('//')) return false
   if (path.startsWith('/\\')) return false
+  // Browsers strip tab/CR/LF and treat backslash as '/' when parsing URLs, so
+  // "/\t/evil.com" resolves to "//evil.com". Reject any control character,
+  // space, DEL or backslash anywhere in the path.
+  for (let i = 0; i < path.length; i++) {
+    const c = path.charCodeAt(i)
+    if (c <= 0x20 || c === 0x7f || c === 0x5c) return false
+  }
+  // Final proof: the path must resolve to the same origin it is based on.
+  try {
+    if (new URL(path, 'http://x').origin !== 'http://x') return false
+  } catch {
+    return false
+  }
   return true
 }
 
