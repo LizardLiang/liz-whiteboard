@@ -11,7 +11,11 @@ import type {
   TableNodeType,
 } from '@/lib/react-flow/types'
 import type { LayoutOutputPosition } from '@/lib/auto-layout/d3-force-layout'
-import { computeD3ForceLayout } from '@/lib/auto-layout/d3-force-layout'
+import type {
+  AreaLayoutInputArea,
+  AreaLayoutOutputArea,
+} from '@/lib/auto-layout/area-aware-layout'
+import { computeAreaAwareLayout } from '@/lib/auto-layout/area-aware-layout'
 import { getCachedTableWidth } from '@/lib/react-flow/canvas-node-metrics'
 import { calculateTableHeight } from '@/lib/react-flow/layout-adapter'
 
@@ -37,6 +41,8 @@ function findColumnRow(
 export interface LayoutResult {
   /** Node positions to apply via applyBulkPositions */
   positions: Array<LayoutOutputPosition>
+  /** New bounds for every area, in absolute coordinates (empty without areas) */
+  areas: Array<AreaLayoutOutputArea>
 }
 
 export interface UseD3ForceLayoutOptions {
@@ -52,6 +58,7 @@ export interface UseD3ForceLayoutResult {
   runLayout: (
     nodes: Array<LayoutableNodeType>,
     edges: Array<RelationshipEdgeType>,
+    areas?: ReadonlyArray<AreaLayoutInputArea>,
   ) => Promise<LayoutResult | null>
   /** True while the layout is computing */
   isRunning: boolean
@@ -84,6 +91,7 @@ export function useD3ForceLayout(
     async (
       nodes: Array<LayoutableNodeType>,
       edges: Array<RelationshipEdgeType>,
+      areas: ReadonlyArray<AreaLayoutInputArea> = [],
     ): Promise<LayoutResult | null> => {
       setIsRunning(true)
       setError(null)
@@ -160,9 +168,14 @@ export function useD3ForceLayout(
           ),
         }))
 
-        const positions = await computeD3ForceLayout(layoutNodes, layoutEdges)
+        const { tables: positions, areas: areaBounds } =
+          await computeAreaAwareLayout({
+            tables: layoutNodes,
+            edges: layoutEdges,
+            areas,
+          })
 
-        const result: LayoutResult = { positions }
+        const result: LayoutResult = { positions, areas: areaBounds }
         onLayoutComplete?.(result)
         return result
       } catch (err) {

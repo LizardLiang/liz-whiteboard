@@ -2259,9 +2259,9 @@ function ReactFlowWhiteboardInner({
   // d3-force layout hook (wraps the pure computeD3ForceLayout engine)
   const { runLayout: runD3ForceLayout } = useD3ForceLayout()
 
-  // NOTE: the Auto Layout orchestrator is initialized further down. Areas are
-  // excluded from the layout and are NOT resized afterwards — an area's bounds
-  // belong to the user (see `handleCreateDrawnArea`).
+  // NOTE: the Auto Layout orchestrator is initialized further down. Auto
+  // Layout treats each area as one block and resizes it around its members;
+  // drag and draw paths still never auto-fit (see `handleCreateDrawnArea`).
 
   // Expose display mode controls to parent component (only once on mount)
   useEffect(() => {
@@ -2875,20 +2875,34 @@ function ReactFlowWhiteboardInner({
   // re-render (ReactFlowCanvas.tsx). That stale cache is why tables visibly
   // reverted to their pre-layout positions and areas detached from their
   // members after a re-render. This mirrors `updatePositionMutation`'s
-  // onSuccess cache patch above, generalized to N tables. Areas are NOT
-  // resized to follow: an area's bounds are the user's to set (see the
-  // no-auto-fit note on `handleCreateDrawnArea`).
+  // onSuccess cache patch above, generalized to N tables.
+  // Auto Layout also resized the areas around their members (and persisted
+  // the bounds in the same transaction). `updateAreaMutation` merges the new
+  // bounds into `areas` state and emits `area:update` so peers adopt them;
+  // the server re-writes the same values. Membership is never sent.
   const handleAfterAutoLayout = useCallback(
-    (positions: Array<{ id: string; x: number; y: number }>) => {
+    (
+      positions: Array<{ id: string; x: number; y: number }>,
+      areaBounds: Array<{
+        id: string
+        positionX: number
+        positionY: number
+        width: number
+        height: number
+      }>,
+    ) => {
       patchWhiteboardTablePositions(positions)
+      for (const { id, ...bounds } of areaBounds) {
+        updateAreaMutation(id, bounds)
+      }
     },
-    [patchWhiteboardTablePositions],
+    [patchWhiteboardTablePositions, updateAreaMutation],
   )
 
   // Auto Layout orchestrator — owns the full flow:
   // button click → optional dialog → layout → optimistic setNodes → persist → broadcast → fitView
-  // GH #106 Bug 2 fix: onAfterLayout re-fits every area once the (area-
-  // excluded) table layout has applied + persisted.
+  // onAfterLayout adopts the resized areas once the layout has applied +
+  // persisted.
   const {
     isRunning: isAutoLayoutRunning,
     showConfirmDialog: showAutoLayoutDialog,

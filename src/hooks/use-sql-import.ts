@@ -161,6 +161,10 @@ export function useSqlImport(whiteboardId: string) {
               queryClient.invalidateQueries({
                 queryKey: ['whiteboard-page', whiteboardId],
               }),
+              // The layout also resizes areas around their members.
+              queryClient.invalidateQueries({
+                queryKey: ['areas', whiteboardId],
+              }),
             ])
           }
         } catch (error) {

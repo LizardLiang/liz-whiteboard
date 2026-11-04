@@ -19,14 +19,20 @@ import { useCallback, useEffect, useRef, useState } from 'react'
 import { useReactFlow } from '@xyflow/react'
 import { toast } from 'sonner'
 import type { LayoutOutputPosition } from '@/lib/auto-layout/d3-force-layout'
+import type {
+  AreaLayoutInputArea,
+  AreaLayoutOutputArea,
+} from '@/lib/auto-layout/area-aware-layout'
 import type { LayoutableNodeType } from '@/hooks/use-d3-force-layout'
 import type {
+  AreaNodeType,
   RelationshipEdgeType,
   TableNodeType,
 } from '@/lib/react-flow/types'
 import { useT } from '@/lib/i18n/use-t'
 import { applyBulkPositions } from '@/lib/auto-layout'
 import { recalculateEdgeRouting } from '@/lib/react-flow/edge-bundles'
+import { buildParentIndex, toRelative } from '@/lib/react-flow/node-nesting'
 import { isUnauthorizedError } from '@/lib/auth/errors'
 import { useAuthContext } from '@/components/auth/AuthContext'
 import { updateTablePositionsBulk } from '@/lib/server-functions'
@@ -39,6 +45,8 @@ import { DOCK_FIT_PADDING } from '@/lib/react-flow/fit-view-padding'
 type BulkPayload = {
   whiteboardId: string
   positions: Array<{ id: string; positionX: number; positionY: number }>
+  /** New bounds for every area; omitted when the board has no areas */
+  areas?: Array<AreaLayoutOutputArea>
 }
 
 export interface UseAutoLayoutOrchestratorArgs {
@@ -47,8 +55,10 @@ export interface UseAutoLayoutOrchestratorArgs {
   runD3ForceLayout: (
     nodes: Array<LayoutableNodeType>,
     edges: Array<RelationshipEdgeType>,
+    areas?: Array<AreaLayoutInputArea>,
   ) => Promise<{
     positions: Array<LayoutOutputPosition>
+    areas?: Array<AreaLayoutOutputArea>
   } | null>
   /** Emits table:move:bulk after successful persistence */
   emitBulkPositionUpdate: (
@@ -56,18 +66,17 @@ export interface UseAutoLayoutOrchestratorArgs {
   ) => void
   /**
    * Called once after a layout run's optimistic apply + persist has
-   * succeeded (GH #106 Bug 2 fix) — used by ReactFlowWhiteboard to re-fit
-   * every subject area around its members now that the (area-excluded)
-   * table layout has settled. Not called on layout error, persist failure,
-   * or auth error.
+   * succeeded — used by ReactFlowWhiteboard to patch the React Query cache
+   * (the source of truth that `ReactFlowCanvas` re-syncs `initialNodes`
+   * from) and to adopt and broadcast the new area bounds. Not called on
+   * layout error, persist failure, or auth error.
    *
-   * Receives the applied positions (area-autolayout-persistence-fix) so the
-   * caller can also patch the React Query cache (the source of truth that
-   * `ReactFlowCanvas` re-syncs `initialNodes` from) and refit areas from the
-   * fresh positions instead of stale `getNodes()` state.
+   * Receives the applied table positions and the new area bounds (empty
+   * when the board has no areas). Both use absolute coordinates.
    */
   onAfterLayout?: (
     positions: Array<{ id: string; x: number; y: number }>,
+    areas: Array<AreaLayoutOutputArea>,
   ) => void
 }
 
@@ -201,6 +210,7 @@ export function useAutoLayoutOrchestrator({
             x: p.positionX,
             y: p.positionY,
           })),
+          lastPayloadRef.current.areas ?? [],
         )
       }
     } catch (err) {
@@ -224,14 +234,15 @@ export function useAutoLayoutOrchestrator({
     if (isMountedRef.current) setPersistError(null)
 
     try {
-      // Step 1 — Compute layout (may return null on error). Subject-area
-      // (GH #106) and comment-pin (GH #110) nodes are excluded from the
-      // layout input: d3-force would otherwise treat them like a table,
-      // scattering them away from their members/anchors (Bug 2) — they have
-      // no `data.table` for computeD3ForceLayout to size against. `positions`
-      // therefore never contains an area/comment id, so the bulk-apply/
-      // persist below leaves them untouched and never targets a
-      // non-existent DiagramTable row.
+      // Step 1 — Compute layout (may return null on error). Comment-pin
+      // (GH #110) nodes are excluded from the layout input: they have no
+      // `data.table` to size against and are anchored to a point or table.
+      // Subject areas (GH #106) are not table nodes either: they are passed
+      // separately, and the layout treats each area as one block. Its member
+      // tables are arranged inside it and it is resized around them, so the
+      // grouping survives. `positions` never contains an area/comment id, so
+      // the table persist never targets a non-existent DiagramTable row.
+      // Area bounds travel in their own `areas` list.
       // Cross-file references (LizMeter #83) are laid out with the tables:
       // they occupy space and carry relationships, so leaving them where they
       // were dropped is what makes a laid-out board still look overlapped.
@@ -241,16 +252,33 @@ export function useAutoLayoutOrchestrator({
       // The layout adapter (use-d3-force-layout.ts) already falls back to the
       // measured node box when a node has no `data.table`, which is exactly
       // what a reference node is.
-      const tableNodesOnly = getNodes().filter(
+      const currentNodes = getNodes()
+      const tableNodesOnly = currentNodes.filter(
         (n): n is LayoutableNodeType =>
           n.type === 'table' || n.type === 'externalTable',
       )
       const relationshipEdgesOnly = getEdges().filter(
         (e): e is RelationshipEdgeType => e.type === 'relationship',
       )
+      const areaInputs: Array<AreaLayoutInputArea> = currentNodes
+        .filter(
+          (n): n is AreaNodeType =>
+            n.type === 'area' &&
+            // eslint-disable-next-line @typescript-eslint/no-unnecessary-condition
+            (n as AreaNodeType).data?.area != null,
+        )
+        .map((n) => ({
+          id: n.id,
+          positionX: n.position.x,
+          positionY: n.position.y,
+          width: n.width ?? n.data.area.width,
+          height: n.height ?? n.data.area.height,
+          memberTableIds: n.data.area.memberTableIds,
+        }))
       const layoutResult = await runD3ForceLayout(
         tableNodesOnly,
         relationshipEdgesOnly,
+        areaInputs,
       )
 
       if (!isMountedRef.current) return
@@ -262,12 +290,53 @@ export function useAutoLayoutOrchestrator({
       }
 
       const { positions } = layoutResult
+      const areaBounds = layoutResult.areas ?? []
 
       // Step 2 — Optimistic local apply (before network round-trip).
-      // Build updated nodes once so we can pass the same array to both
-      // setNodes and edge-handle recalculation.
+      // `updatedNodes` holds ABSOLUTE table positions: it feeds edge routing,
+      // which speaks absolute coordinates. The store gets the same nodes with
+      // member tables made RELATIVE to their area's NEW origin, because React
+      // Flow paints a child at parent.position + child.position.
       const updatedNodes = applyBulkPositions(getNodes(), positions)
-      setNodes(updatedNodes)
+      let storeNodes: typeof updatedNodes = updatedNodes
+      if (areaBounds.length > 0) {
+        const boundsById = new Map(areaBounds.map((a) => [a.id, a]))
+        const parentIndex = buildParentIndex(
+          areaInputs.map((a) => {
+            const b = boundsById.get(a.id)
+            return b
+              ? { ...a, positionX: b.positionX, positionY: b.positionY }
+              : a
+          }),
+        )
+        storeNodes = updatedNodes.map((n) => {
+          if (n.type === 'area') {
+            const b = boundsById.get(n.id)
+            if (!b) return n
+            const areaNode = n as AreaNodeType
+            return {
+              ...areaNode,
+              position: { x: b.positionX, y: b.positionY },
+              width: b.width,
+              height: b.height,
+              data: {
+                ...areaNode.data,
+                area: {
+                  ...areaNode.data.area,
+                  positionX: b.positionX,
+                  positionY: b.positionY,
+                  width: b.width,
+                  height: b.height,
+                },
+              },
+            }
+          }
+          const parent = parentIndex.get(n.id)
+          if (!parent) return n
+          return { ...n, position: toRelative(n.position, parent) }
+        })
+      }
+      setNodes(storeNodes)
       // Edges only ever connect table and reference nodes (never area/comment
       // pins) — narrow for recalculateEdgeRouting below, which reads position
       // and size off each node. Reference nodes are routed like tables, as the
@@ -302,6 +371,7 @@ export function useAutoLayoutOrchestrator({
           positionX: p.x,
           positionY: p.y,
         })),
+        ...(areaBounds.length > 0 ? { areas: areaBounds } : {}),
       }
       lastPayloadRef.current = payload
 
@@ -344,12 +414,10 @@ export function useAutoLayoutOrchestrator({
             positionY: p.y,
           })),
         )
-        // Step 7 — Re-fit subject areas around their (now-relaid-out) members
-        // now that apply + persist has fully succeeded (GH #106 Bug 2 fix).
-        // Pass the applied positions (area-autolayout-persistence-fix) so the
-        // caller can also patch the query cache and refit from fresh data
-        // instead of stale getNodes() state.
-        onAfterLayout?.(positions)
+        // Step 7 — Hand the applied positions and area bounds to the caller
+        // so it can patch the query cache and adopt/broadcast the new areas
+        // (area-autolayout-persistence-fix).
+        onAfterLayout?.(positions, areaBounds)
       }
     } finally {
       if (isMountedRef.current) setIsRunning(false)

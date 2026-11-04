@@ -764,6 +764,21 @@ export const bulkUpdatePositionsSchema = z.object({
     )
     .min(1)
     .max(500),
+  // Area bounds resized by Auto Layout (each area is laid out as one block).
+  // Written in the same transaction as the table positions; membership
+  // (memberTableIds) is never part of this payload.
+  areas: z
+    .array(
+      z.object({
+        id: z.string().uuid(),
+        positionX: z.number().finite(),
+        positionY: z.number().finite(),
+        width: z.number().finite().positive(),
+        height: z.number().finite().positive(),
+      }),
+    )
+    .max(1000)
+    .optional(),
 })
 
 export type BulkUpdatePositions = z.infer<typeof bulkUpdatePositionsSchema>

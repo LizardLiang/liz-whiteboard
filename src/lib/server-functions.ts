@@ -19,6 +19,7 @@ import type { RelationshipWithDetails } from '@/data/relationship'
 import type { Area, CommentWithAuthor, Connector, Shape } from '@/data/models'
 import type { LayoutOutputPosition } from '@/lib/auto-layout/d3-force-layout'
 import type { EffectiveRole } from '@/data/permission'
+import type { AreaLayoutOutputArea } from '@/lib/auto-layout/area-aware-layout'
 import {
   findWhiteboardByIdWithDiagram,
   updateWhiteboardCanvasState,
@@ -36,7 +37,7 @@ import { findAreasByWhiteboard } from '@/data/area'
 import { findShapesByWhiteboard } from '@/data/shape'
 import { findConnectorsByWhiteboard } from '@/data/connector'
 import { findCommentsByWhiteboardId } from '@/data/comment'
-import { computeD3ForceLayout } from '@/lib/auto-layout/d3-force-layout'
+import { computeAreaAwareLayout } from '@/lib/auto-layout/area-aware-layout'
 import { buildServerLayoutInput } from '@/lib/auto-layout/server-layout-input'
 import { nowMs, transaction, update } from '@/db'
 import { requireAuth } from '@/lib/auth/middleware'
@@ -275,7 +276,8 @@ export const updateTablePosition = createServerFn({
 /**
  * Server function to bulk-update table positions (used by Auto Layout).
  *
- * Persists N positions atomically in a single SQLite transaction.
+ * Persists N positions atomically in a single SQLite transaction, together
+ * with the new bounds of any areas Auto Layout resized (optional `areas`).
  * Does NOT emit any Socket.IO event — the originator's client emits the
  * table:move:bulk broadcast after this call resolves successfully
  * (mirrors the existing single-table updateTablePositionMutation.onSuccess pattern;
@@ -293,16 +295,20 @@ export const updateTablePositionsBulk = createServerFn({ method: 'POST' })
   .handler(
     requireAuth(
       async ({ user }, data): Promise<{ success: true; count: number }> => {
-        const { whiteboardId, positions } = data
+        const { whiteboardId, positions, areas } = data
 
         // IDOR guard: verify the whiteboard exists AND every supplied
-        // position.id belongs to it. Both queries are independent — run in
-        // parallel to avoid a serial round-trip penalty (B2 fix).
+        // position.id (and area id) belongs to it. The queries are
+        // independent — run in parallel to avoid a serial round-trip penalty
+        // (B2 fix).
         // In the rare "whiteboard not found" case the findMany returns [] (wasted
         // query), but the request still rejects correctly on the projectId check.
-        const [projectId, owned] = await Promise.all([
+        const [projectId, owned, ownedAreas] = await Promise.all([
           getWhiteboardProjectId(whiteboardId),
           findDiagramTablesByWhiteboardId(whiteboardId),
+          areas && areas.length > 0
+            ? findAreasByWhiteboard(whiteboardId)
+            : Promise.resolve([]),
         ])
         await requireServerFnRole(user.id, projectId, 'EDITOR')
 
@@ -310,6 +316,12 @@ export const updateTablePositionsBulk = createServerFn({ method: 'POST' })
         for (const p of positions) {
           if (!ownedIds.has(p.id)) {
             throw new Error('Table does not belong to this whiteboard')
+          }
+        }
+        const ownedAreaIds = new Set(ownedAreas.map((a) => a.id))
+        for (const a of areas ?? []) {
+          if (!ownedAreaIds.has(a.id)) {
+            throw new Error('Area does not belong to this whiteboard')
           }
         }
 
@@ -321,6 +333,16 @@ export const updateTablePositionsBulk = createServerFn({ method: 'POST' })
               update('DiagramTable', p.id, {
                 positionX: p.positionX,
                 positionY: p.positionY,
+                updatedAt: ts,
+              })
+            }
+            // Bounds only: membership (memberTableIds) is never rewritten.
+            for (const a of areas ?? []) {
+              update('Area', a.id, {
+                positionX: a.positionX,
+                positionY: a.positionY,
+                width: a.width,
+                height: a.height,
                 updatedAt: ts,
               })
             }
@@ -389,7 +411,8 @@ export const updateWhiteboardTextSourceFn = createServerFn({
 
 /**
  * Server function to compute automatic layout for whiteboard
- * Runs the Auto Layout engine and updates table positions in database
+ * Runs the area-aware Auto Layout engine and updates table positions and
+ * area bounds in database
  *
  * @requires editor
  */
@@ -405,7 +428,10 @@ export const computeAutoLayout = createServerFn({
       async (
         { user },
         data,
-      ): Promise<{ positions: Array<LayoutOutputPosition> }> => {
+      ): Promise<{
+        positions: Array<LayoutOutputPosition>
+        areas: Array<AreaLayoutOutputArea>
+      }> => {
         const projectId = await getWhiteboardProjectId(data.whiteboardId)
         await requireServerFnRole(user.id, projectId, 'EDITOR')
         try {
@@ -422,15 +448,25 @@ export const computeAutoLayout = createServerFn({
             )
           }
 
-          const relationships =
-            await findRelationshipsByWhiteboardIdWithDetails(data.whiteboardId)
+          const [relationships, existingAreas] = await Promise.all([
+            findRelationshipsByWhiteboardIdWithDetails(data.whiteboardId),
+            findAreasByWhiteboard(data.whiteboardId),
+          ])
 
           const { nodes, edges } = buildServerLayoutInput(
             whiteboard.tables,
             relationships,
           )
-          const positions =
-            nodes.length === 0 ? [] : await computeD3ForceLayout(nodes, edges)
+          // Each area is one block: members are arranged inside it and the
+          // area is resized around them. Membership is never rewritten.
+          const { tables: positions, areas } =
+            nodes.length === 0
+              ? { tables: [], areas: [] }
+              : await computeAreaAwareLayout({
+                  tables: nodes,
+                  edges,
+                  areas: existingAreas,
+                })
 
           // Update table positions in database (batch update for performance)
           transaction(() => {
@@ -442,9 +478,18 @@ export const computeAutoLayout = createServerFn({
                 updatedAt: ts,
               })
             }
+            for (const a of areas) {
+              update('Area', a.id, {
+                positionX: a.positionX,
+                positionY: a.positionY,
+                width: a.width,
+                height: a.height,
+                updatedAt: ts,
+              })
+            }
           })
 
-          return { positions }
+          return { positions, areas }
         } catch (error) {
           console.error('Error computing auto layout:', error)
           throw error

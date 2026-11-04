@@ -561,7 +561,7 @@ describe('useAutoLayoutOrchestrator', () => {
     // area-autolayout-persistence-fix: onAfterLayout must receive the applied
     // positions (not be called with no args) — the caller uses these to
     // patch the query cache and refit areas from fresh data.
-    expect(mockOnAfterLayout).toHaveBeenCalledWith(POSITIONS)
+    expect(mockOnAfterLayout).toHaveBeenCalledWith(POSITIONS, [])
   })
 
   // TC-AL-O-16 — onAfterLayout NOT called on layout error, persist failure, or auth error
@@ -648,7 +648,7 @@ describe('useAutoLayoutOrchestrator', () => {
     // onAfterLayout must receive that same payload's positions converted
     // back to the { id, x, y } shape (the stashed payload uses
     // { id, positionX, positionY }).
-    expect(mockOnAfterLayout).toHaveBeenCalledWith(POSITIONS)
+    expect(mockOnAfterLayout).toHaveBeenCalledWith(POSITIONS, [])
   })
 
   // TC-AL-O-18 — Comment-pin nodes filtered out of the layout input AND the
@@ -702,6 +702,157 @@ describe('useAutoLayoutOrchestrator', () => {
         whiteboardId: WB_ID,
         positions: [{ id: 'table-1', positionX: 10, positionY: 20 }],
       },
+    })
+  })
+  // Area-aware layout: areas are passed in, members are stored RELATIVE to the
+  // area's NEW origin, the payload carries the bounds, and retry re-sends them.
+  describe('area-aware layout', () => {
+    const AREA_ID = 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa'
+    const MEMBER_ID = POSITIONS[0].id
+    const FREE_ID = POSITIONS[1].id
+    const areaNode = {
+      id: AREA_ID,
+      type: 'area',
+      position: { x: 0, y: 0 },
+      width: 200,
+      height: 150,
+      data: {
+        area: {
+          id: AREA_ID,
+          positionX: 0,
+          positionY: 0,
+          width: 200,
+          height: 150,
+          memberTableIds: [MEMBER_ID],
+        },
+      },
+    }
+    const memberNode = {
+      id: MEMBER_ID,
+      type: 'table',
+      parentId: AREA_ID,
+      position: { x: 10, y: 10 },
+    }
+    const freeNode = { id: FREE_ID, type: 'table', position: { x: 0, y: 0 } }
+    const NEW_AREA = {
+      id: AREA_ID,
+      positionX: 500,
+      positionY: 300,
+      width: 400,
+      height: 260,
+    }
+    // Member's absolute position inside the new area rect.
+    const POSITIONS_WITH_AREA = [
+      { id: MEMBER_ID, x: 524, y: 344 },
+      { id: FREE_ID, x: 50, y: 60 },
+    ]
+
+    function arrange() {
+      mockGetNodes.mockReturnValue([areaNode, memberNode, freeNode] as any)
+      mockRunD3ForceLayout.mockResolvedValueOnce({
+        positions: POSITIONS_WITH_AREA,
+        areas: [NEW_AREA],
+      })
+    }
+
+    afterEach(() => {
+      mockGetNodes.mockReturnValue([] as any)
+    })
+
+    it('passes area inputs (with membership) to the layout', async () => {
+      arrange()
+      ;(
+        updateTablePositionsBulk as unknown as ReturnType<typeof vi.fn>
+      ).mockResolvedValueOnce({ success: true, count: 2 })
+      const { result } = renderHook(() =>
+        useAutoLayoutOrchestrator(makeHookArgs()),
+      )
+      await act(async () => {
+        await result.current.handleAutoLayoutClick(2)
+      })
+      const [nodesArg, , areasArg] = mockRunD3ForceLayout.mock.calls[0]
+      expect(nodesArg.map((n: any) => n.id)).toEqual([MEMBER_ID, FREE_ID])
+      expect(areasArg).toEqual([
+        {
+          id: AREA_ID,
+          positionX: 0,
+          positionY: 0,
+          width: 200,
+          height: 150,
+          memberTableIds: [MEMBER_ID],
+        },
+      ])
+    })
+
+    it('stores members relative to the new area origin and resizes the area node', async () => {
+      arrange()
+      ;(
+        updateTablePositionsBulk as unknown as ReturnType<typeof vi.fn>
+      ).mockResolvedValueOnce({ success: true, count: 2 })
+      const { result } = renderHook(() =>
+        useAutoLayoutOrchestrator(makeHookArgs()),
+      )
+      await act(async () => {
+        await result.current.handleAutoLayoutClick(2)
+      })
+      const stored = mockSetNodes.mock.calls[0][0] as Array<any>
+      const byId = new Map(stored.map((n) => [n.id, n]))
+      expect(byId.get(MEMBER_ID).position).toEqual({ x: 24, y: 44 })
+      expect(byId.get(MEMBER_ID).parentId).toBe(AREA_ID)
+      expect(byId.get(FREE_ID).position).toEqual({ x: 50, y: 60 })
+      const a = byId.get(AREA_ID)
+      expect(a.position).toEqual({ x: 500, y: 300 })
+      expect(a.width).toBe(400)
+      expect(a.height).toBe(260)
+      expect(a.data.area.width).toBe(400)
+      expect(a.data.area.memberTableIds).toEqual([MEMBER_ID])
+    })
+
+    it('persists area bounds in the payload and hands them to onAfterLayout', async () => {
+      arrange()
+      ;(
+        updateTablePositionsBulk as unknown as ReturnType<typeof vi.fn>
+      ).mockResolvedValueOnce({ success: true, count: 2 })
+      const onAfterLayout = vi.fn()
+      const { result } = renderHook(() =>
+        useAutoLayoutOrchestrator({ ...makeHookArgs(), onAfterLayout }),
+      )
+      await act(async () => {
+        await result.current.handleAutoLayoutClick(2)
+      })
+      const payload = (
+        updateTablePositionsBulk as unknown as ReturnType<typeof vi.fn>
+      ).mock.calls[0][0].data
+      expect(payload.areas).toEqual([NEW_AREA])
+      expect(payload).not.toHaveProperty('memberTableIds')
+      expect(onAfterLayout).toHaveBeenCalledWith(POSITIONS_WITH_AREA, [
+        NEW_AREA,
+      ])
+    })
+
+    it('retry re-sends the area bounds', async () => {
+      arrange()
+      const mockBulk = updateTablePositionsBulk as unknown as ReturnType<
+        typeof vi.fn
+      >
+      mockBulk.mockRejectedValueOnce(new Error('network'))
+      mockBulk.mockResolvedValueOnce({ success: true, count: 2 })
+      const onAfterLayout = vi.fn()
+      const { result } = renderHook(() =>
+        useAutoLayoutOrchestrator({ ...makeHookArgs(), onAfterLayout }),
+      )
+      await act(async () => {
+        await result.current.handleAutoLayoutClick(2)
+      })
+      await act(async () => {
+        await result.current.handleRetry()
+      })
+      expect(mockBulk).toHaveBeenCalledTimes(2)
+      expect(mockBulk.mock.calls[1][0].data.areas).toEqual([NEW_AREA])
+      expect(onAfterLayout).toHaveBeenCalledWith(
+        expect.any(Array),
+        [NEW_AREA],
+      )
     })
   })
 })

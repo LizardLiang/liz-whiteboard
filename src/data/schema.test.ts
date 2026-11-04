@@ -5,6 +5,7 @@ import { describe, expect, it } from 'vitest'
 import {
   MAX_BOARD_COORD,
   areaMoveBroadcastSchema,
+  bulkUpdatePositionsSchema,
   canvasElementPropsSchema,
   canvasElementStyleSchema,
   cardinalitySchema,
@@ -862,5 +863,55 @@ describe('canvasElementStyleSchema card fields', () => {
     expect(
       canvasElementStyleSchema.safeParse({ cardBorder: 'x' }).success,
     ).toBe(false)
+  })
+})
+
+describe('bulkUpdatePositionsSchema areas', () => {
+  const WB = '11111111-1111-4111-8111-111111111111'
+  const T1 = '22222222-2222-4222-8222-222222222222'
+  const A1 = '33333333-3333-4333-8333-333333333333'
+  const positions = [{ id: T1, positionX: 1, positionY: 2 }]
+  const area = { id: A1, positionX: 0, positionY: 0, width: 300, height: 200 }
+
+  it('accepts a payload without areas (existing callers)', () => {
+    expect(
+      bulkUpdatePositionsSchema.safeParse({ whiteboardId: WB, positions })
+        .success,
+    ).toBe(true)
+  })
+
+  it('accepts a payload with area bounds', () => {
+    const r = bulkUpdatePositionsSchema.safeParse({
+      whiteboardId: WB,
+      positions,
+      areas: [area],
+    })
+    expect(r.success).toBe(true)
+  })
+
+  it('rejects non-finite or non-positive area bounds and non-uuid ids', () => {
+    for (const bad of [
+      { ...area, width: 0 },
+      { ...area, height: -5 },
+      { ...area, positionX: Infinity },
+      { ...area, id: 'not-a-uuid' },
+    ]) {
+      expect(
+        bulkUpdatePositionsSchema.safeParse({
+          whiteboardId: WB,
+          positions,
+          areas: [bad],
+        }).success,
+      ).toBe(false)
+    }
+  })
+
+  it('strips memberTableIds: layout can never write membership', () => {
+    const r = bulkUpdatePositionsSchema.parse({
+      whiteboardId: WB,
+      positions,
+      areas: [{ ...area, memberTableIds: [T1] }],
+    })
+    expect(r.areas?.[0]).not.toHaveProperty('memberTableIds')
   })
 })
