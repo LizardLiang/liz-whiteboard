@@ -187,6 +187,12 @@ export const en = {
       noMatches: 'No matches',
       folderEmpty: 'This folder is empty',
     },
+    search: {
+      label: 'Search boards and folders',
+      placeholder: 'Search boards and folders...',
+      results: 'Search results',
+      noMatch: 'No boards or folders match "{query}"',
+    },
     drawer: {
       show: 'Show project navigator',
       showHint: 'Show project navigator ([)',
@@ -224,6 +230,8 @@ export const en = {
       folderDeleted: 'Folder deleted',
       folderDeletedDesc: 'The folder has been deleted successfully.',
       failDeleteFolder: 'Failed to delete folder',
+      folderCreated: 'Folder created!',
+      failCreateFolder: 'Failed to create folder',
       whiteboardCreated: 'Whiteboard created!',
       failCreateWhiteboard: 'Failed to create whiteboard',
       whiteboardUpdated: 'Whiteboard updated!',
@@ -251,6 +259,8 @@ export const en = {
       deleteProjectTitle: 'Delete Project',
       deleteProjectSuffix:
         '? This will permanently delete all folders and whiteboards in this project.',
+      createFolderTitle: 'Create Folder',
+      createFolderDesc: 'Create a new folder to organize your whiteboards.',
       renameFolderTitle: 'Rename Folder',
       renameFolderDesc: 'Update the folder name.',
       folderPlaceholder: 'My Folder',

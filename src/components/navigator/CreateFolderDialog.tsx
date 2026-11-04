@@ -19,6 +19,8 @@ import {
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { createFolderFn } from '@/routes/api/folders'
+import { useT } from '@/lib/i18n/use-t'
+import { tError } from '@/lib/i18n/t-error'
 
 interface CreateFolderDialogProps {
   open: boolean
@@ -33,6 +35,7 @@ export function CreateFolderDialog({
   projectId,
   parentFolderId,
 }: CreateFolderDialogProps) {
+  const t = useT()
   const queryClient = useQueryClient()
   const [name, setName] = useState('')
 
@@ -40,12 +43,14 @@ export function CreateFolderDialog({
     mutationFn: (data: CreateFolder) => createFolderFn({ data }),
     onSuccess: (folder) => {
       if (isUnauthorizedError(folder)) {
-        toast.error('Session expired', { description: 'Please log in again.' })
+        toast.error(t('toast.sessionExpired'), {
+          description: t('toast.loginAgain'),
+        })
         return
       }
       if (isForbiddenError(folder)) {
-        toast.error('Failed to create folder', {
-          description: folder.message,
+        toast.error(t('navigator.toast.failCreateFolder'), {
+          description: tError(t, folder.message),
         })
         return
       }
@@ -53,13 +58,13 @@ export function CreateFolderDialog({
       queryClient.invalidateQueries({ queryKey: ['project-page'] })
       onOpenChange(false)
       setName('')
-      toast.success('Folder created!', {
-        description: `${folder.name} has been created successfully.`,
+      toast.success(t('navigator.toast.folderCreated'), {
+        description: t('toast.createdDesc', { name: folder.name }),
       })
     },
     onError: (error: Error) => {
-      toast.error('Failed to create folder', {
-        description: error.message || 'An unexpected error occurred.',
+      toast.error(t('navigator.toast.failCreateFolder'), {
+        description: tError(t, error) || t('toast.unexpected'),
       })
     },
   })
@@ -89,19 +94,19 @@ export function CreateFolderDialog({
       <DialogContent>
         <form onSubmit={handleSubmit}>
           <DialogHeader>
-            <DialogTitle>Create Folder</DialogTitle>
+            <DialogTitle>{t('navigator.dialog.createFolderTitle')}</DialogTitle>
             <DialogDescription>
-              Create a new folder to organize your whiteboards.
+              {t('navigator.dialog.createFolderDesc')}
             </DialogDescription>
           </DialogHeader>
           <div className="space-y-4 py-4">
             <div className="space-y-2">
-              <Label htmlFor="folder-name">Name</Label>
+              <Label htmlFor="folder-name">{t('common.name')}</Label>
               <Input
                 id="folder-name"
                 value={name}
                 onChange={(e) => setName(e.target.value)}
-                placeholder="My Folder"
+                placeholder={t('navigator.dialog.folderPlaceholder')}
                 required
                 autoFocus
               />
@@ -113,13 +118,15 @@ export function CreateFolderDialog({
               variant="outline"
               onClick={() => handleOpenChange(false)}
             >
-              Cancel
+              {t('common.cancel')}
             </Button>
             <Button
               type="submit"
               disabled={!name.trim() || createFolderMutation.isPending}
             >
-              {createFolderMutation.isPending ? 'Creating...' : 'Create'}
+              {createFolderMutation.isPending
+                ? t('common.creating')
+                : t('common.create')}
             </Button>
           </DialogFooter>
         </form>

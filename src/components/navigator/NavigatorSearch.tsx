@@ -17,11 +17,13 @@ import {
   CommandItem,
   CommandList,
 } from '@/components/ui/command'
+import { useT } from '@/lib/i18n/use-t'
 
 /** Marks the input so the drawer can leave Esc to "clear the query". */
 export const NAVIGATOR_SEARCH_ATTR = 'data-navigator-search'
 
 export function NavigatorSearch({ children }: { children: ReactNode }) {
+  const t = useT()
   const [query, setQuery] = useState('')
   const projects = useProjectTree()
   const openEntry = useOpenEntry()
@@ -34,7 +36,7 @@ export function NavigatorSearch({ children }: { children: ReactNode }) {
     <>
       <Command
         shouldFilter={false}
-        label="Search boards and folders"
+        label={t('layout.search.label')}
         className="h-auto overflow-visible bg-transparent"
       >
         <div className="sticky top-0 z-10 bg-background px-4 pb-2">
@@ -42,8 +44,8 @@ export function NavigatorSearch({ children }: { children: ReactNode }) {
             <CommandInput
               value={query}
               onValueChange={setQuery}
-              placeholder="Search boards and folders..."
-              aria-label="Search boards and folders"
+              placeholder={t('layout.search.placeholder')}
+              aria-label={t('layout.search.label')}
               {...{ [NAVIGATOR_SEARCH_ATTR]: '' }}
               onKeyDown={(event) => {
                 if (event.key === 'Escape' && query) {
@@ -58,14 +60,14 @@ export function NavigatorSearch({ children }: { children: ReactNode }) {
         {searching ? (
           <CommandList
             className="max-h-none px-4 pb-4"
-            aria-label="Search results"
+            aria-label={t('layout.search.results')}
           >
             {results.length === 0 ? (
               <p
                 role="status"
                 className="py-6 text-center text-sm text-muted-foreground"
               >
-                No boards or folders match "{query.trim()}"
+                {t('layout.search.noMatch', { query: query.trim() })}
               </p>
             ) : (
               <CommandGroup className="p-0">
