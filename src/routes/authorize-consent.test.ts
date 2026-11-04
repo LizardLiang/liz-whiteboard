@@ -66,7 +66,7 @@ async function handleUntrustedAuthorize(params: {
   }
 
   const intersectionScopeStr = intersectionScopes.join(' ')
-  const existingGrant = getGrant(params.userId, params.clientId)
+  const existingGrant = getGrant(params.userId, params.clientId, client.redirectUris)
 
   if (existingGrant && scopeCovers(existingGrant.scope, intersectionScopes)) {
     const { issueAuthCode } = await import('@/lib/oauth/codes')
@@ -100,6 +100,7 @@ async function handleUntrustedAuthorize(params: {
     provenance: cimdOrigin ? 'cimd' : 'dcr',
     cimdOrigin,
     redirectUri: params.redirectUri,
+    redirectUris: client.redirectUris,
     scope: intersectionScopeStr,
     codeChallenge: 'test-challenge',
     codeChallengeMethod: 'S256',

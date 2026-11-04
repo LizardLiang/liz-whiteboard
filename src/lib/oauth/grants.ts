@@ -34,6 +34,7 @@
 // The authorization CODE stays bound to the full client_id (token.ts requires
 // an exact match) — only this grant store is origin-scoped.
 
+import { createHash } from 'node:crypto'
 import { isCimdUrl } from './cimd-origins'
 import { db, nowMs, transaction } from '@/db'
 
@@ -72,17 +73,34 @@ function mapRow(row: OauthGrantRow): OauthGrant {
 }
 
 /**
- * Collapse a client id to the key this store uses: the ORIGIN for an absolute
- * https client_id (CIMD), the value verbatim otherwise (static allowlist ids
- * and DCR-issued ids are opaque strings, not URLs).
+ * Collapse a client id (+ the redirect_uris it was consented with) to the key
+ * this store uses.
+ *
+ * CIMD (absolute https client_id): `<full client_id>#<hash of sorted
+ * redirect_uris>`. A different document URL, or the same document later
+ * advertising different redirect_uris, produces a different key, so consent
+ * is asked again instead of being inherited from the origin. (Previously the
+ * key was the ORIGIN; those legacy rows are never matched any more — they
+ * force a fresh consent — and are deleted when the user re-consents.)
+ * Static and DCR client ids are opaque strings and are keyed verbatim.
  */
-export function grantKeyFor(clientId: string): string {
-  // isCimdUrl(), not an inline https check — it is the single definition of
-  // "this client_id is a CIMD document URL", shared with resolve-client.ts and
-  // authorize.ts. Anything else (static allowlist ids, DCR-issued ids) is an
-  // opaque string and is keyed verbatim.
+export function grantKeyFor(
+  clientId: string,
+  redirectUris: ReadonlyArray<string> = [],
+): string {
   if (!isCimdUrl(clientId)) return clientId
-  return new URL(clientId).origin
+  if (clientId.includes('#')) return clientId // already a full key
+  const digest = createHash('sha256')
+    .update([...redirectUris].sort().join('\n'))
+    .digest('hex')
+    .slice(0, 16)
+  return `${clientId}#${digest}`
+}
+
+/** The client_id part of a grant key (fragment stripped). */
+function baseClientId(keyOrId: string): string {
+  const i = keyOrId.indexOf('#')
+  return i === -1 ? keyOrId : keyOrId.slice(0, i)
 }
 
 /** Escape LIKE metacharacters so an origin is matched literally. */
@@ -91,10 +109,16 @@ function escapeLike(value: string): string {
 }
 
 /** Look up a user's existing grant for a client. Returns null if none exists. */
-export function getGrant(userId: string, clientId: string): OauthGrant | null {
+export function getGrant(
+  userId: string,
+  clientId: string,
+  redirectUris: ReadonlyArray<string> = [],
+): OauthGrant | null {
   const row = db
     .prepare(`SELECT * FROM "OauthGrant" WHERE userId = ? AND clientId = ?`)
-    .get(userId, grantKeyFor(clientId)) as OauthGrantRow | undefined
+    .get(userId, grantKeyFor(clientId, redirectUris)) as
+    | OauthGrantRow
+    | undefined
   if (!row) return null
   return mapRow(row)
 }
@@ -110,9 +134,18 @@ export function upsertGrant(
   clientId: string,
   scope: string,
   clientName: string | null = null,
+  redirectUris: ReadonlyArray<string> = [],
 ): OauthGrant {
   const grantedAt = nowMs()
-  const key = grantKeyFor(clientId)
+  const key = grantKeyFor(clientId, redirectUris)
+  if (isCimdUrl(clientId)) {
+    // Drop the legacy origin-keyed row: it no longer auto-approves anything,
+    // and leaving it would show a duplicate in /settings/connections.
+    db.prepare(`DELETE FROM "OauthGrant" WHERE userId = ? AND clientId = ?`).run(
+      userId,
+      new URL(clientId).origin,
+    )
+  }
   db.prepare(
     `
     INSERT INTO "OauthGrant" (userId, clientId, scope, grantedAt, clientName)
@@ -153,7 +186,11 @@ export function listGrants(userId: string): Array<OauthGrant> {
  * `https://chatgpt.com.evil.example/...`.
  */
 export function revokeGrant(userId: string, clientId: string): void {
-  const key = grantKeyFor(clientId)
+  // `clientId` may be a stored grant key (full client_id + '#hash'), a bare
+  // client_id, or a legacy origin key. Revocation is origin-wide for CIMD
+  // clients: every grant row and refresh token under the same origin goes.
+  const base = baseClientId(clientId)
+  const key = isCimdUrl(base) ? new URL(base).origin : base
   const originPrefix = `${escapeLike(key)}/%`
   transaction(() => {
     db.prepare(
@@ -162,8 +199,10 @@ export function revokeGrant(userId: string, clientId: string): void {
           AND (clientId = ? OR clientId LIKE ? ESCAPE '\\')`,
     ).run(userId, key, originPrefix)
     db.prepare(
-      `DELETE FROM "OauthGrant" WHERE userId = ? AND clientId = ?`,
-    ).run(userId, key)
+      `DELETE FROM "OauthGrant"
+        WHERE userId = ?
+          AND (clientId = ? OR clientId LIKE ? ESCAPE '\\')`,
+    ).run(userId, key, originPrefix)
   })
 }
 

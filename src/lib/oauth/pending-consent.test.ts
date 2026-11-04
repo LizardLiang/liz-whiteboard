@@ -25,6 +25,7 @@ const baseParams = {
   userId: 'user-1',
   provenance: 'dcr' as const,
   cimdOrigin: null,
+  redirectUris: ['http://127.0.0.1/cb'],
 }
 
 beforeEach(() => {

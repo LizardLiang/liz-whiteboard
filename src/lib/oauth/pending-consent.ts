@@ -27,6 +27,8 @@ export interface PendingConsentRequest {
   /** Display name resolved once at /authorize time (client.name). */
   clientName: string
   redirectUri: string
+  /** The client's registered/advertised redirect_uris at /authorize time; part of the CIMD grant key. */
+  redirectUris: Array<string>
   /** Space-delimited, already intersected with config.scopes — see authorize.ts. */
   scope: string
   codeChallenge: string

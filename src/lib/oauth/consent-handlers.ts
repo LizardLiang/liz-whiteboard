@@ -144,11 +144,17 @@ export async function approveConsentHandler(
     }
   }
 
-  // Grant key is origin-scoped for CIMD clients (see grants.ts grantKeyFor);
+  // Grant key is full client_id + redirect_uris hash for CIMD clients (see grants.ts grantKeyFor);
   // clientName is captured here so /settings/connections never has to resolve
   // the client over the network.
   const { upsertGrant } = await import('./grants')
-  upsertGrant(user.id, pending.clientId, pending.scope, pending.clientName)
+  upsertGrant(
+    user.id,
+    pending.clientId,
+    pending.scope,
+    pending.clientName,
+    pending.redirectUris,
+  )
 
   const { getOAuthConfig } = await import('./config')
   const { issueAuthCode } = await import('./codes')

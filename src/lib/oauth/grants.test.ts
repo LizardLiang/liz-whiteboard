@@ -192,36 +192,55 @@ describe('origin-scoped CIMD grants (mcp-oauth-open-cimd)', () => {
     return row.n
   }
 
-  it('stores a CIMD grant under its origin, not its full document URL', () => {
+  const URIS = ['http://127.0.0.1:1455/auth/callback']
+
+  it('stores a CIMD grant under its full client_id plus a redirect_uris hash', () => {
     const { id: userId } = makeUser()
-    const grant = upsertGrant(userId, CODEX_A, 'whiteboard', 'Codex')
-    expect(grant.clientId).toBe('https://chatgpt.com')
+    const grant = upsertGrant(userId, CODEX_A, 'whiteboard', 'Codex', URIS)
+    expect(grant.clientId).toMatch(
+      new RegExp(`^${CODEX_A.replace(/[.]/g, '\\.')}#[0-9a-f]{16}$`),
+    )
     expect(grant.clientName).toBe('Codex')
   })
 
-  // The whole point of origin keying: Codex's document path carries a
-  // per-login callback id, so per-URL keying would re-prompt every login.
-  it('matches a grant across different document URLs on the same origin', () => {
+  it('does NOT match a different document URL on the same origin (re-consent)', () => {
     const { id: userId } = makeUser()
-    upsertGrant(userId, CODEX_A, 'whiteboard', 'Codex')
-    expect(getGrant(userId, CODEX_B)).not.toBeNull()
+    upsertGrant(userId, CODEX_A, 'whiteboard', 'Codex', URIS)
+    expect(getGrant(userId, CODEX_A, URIS)).not.toBeNull()
+    expect(getGrant(userId, CODEX_B, URIS)).toBeNull()
+  })
+
+  it('does NOT match when the redirect_uris changed since consent (re-consent)', () => {
+    const { id: userId } = makeUser()
+    upsertGrant(userId, CODEX_A, 'whiteboard', 'Codex', URIS)
+    expect(
+      getGrant(userId, CODEX_A, ['https://evil.example/callback']),
+    ).toBeNull()
+    expect(getGrant(userId, CODEX_A, [...URIS, 'https://evil.example/cb'])).toBeNull()
+  })
+
+  it('redirect_uris order does not matter', () => {
+    const { id: userId } = makeUser()
+    upsertGrant(userId, CODEX_A, 'whiteboard', 'Codex', ['http://a/1', 'http://a/2'])
+    expect(getGrant(userId, CODEX_A, ['http://a/2', 'http://a/1'])).not.toBeNull()
+  })
+
+  it('a legacy origin-keyed grant never auto-approves; re-consent replaces it', () => {
+    const { id: userId } = makeUser()
+    db.prepare(
+      `INSERT INTO "OauthGrant" (userId, clientId, scope, grantedAt) VALUES (?, ?, ?, ?)`,
+    ).run(userId, 'https://chatgpt.com', 'whiteboard', nowMs())
+    expect(getGrant(userId, CODEX_A, URIS)).toBeNull()
+    upsertGrant(userId, CODEX_A, 'whiteboard', 'Codex', URIS)
+    expect(listGrants(userId)).toHaveLength(1)
   })
 
   it('does NOT match a lookalike origin', () => {
     const { id: userId } = makeUser()
-    upsertGrant(userId, CODEX_A, 'whiteboard', 'Codex')
+    upsertGrant(userId, CODEX_A, 'whiteboard', 'Codex', URIS)
     expect(
-      getGrant(userId, 'https://chatgpt.com.evil.example/client.json'),
+      getGrant(userId, 'https://chatgpt.com.evil.example/client.json', URIS),
     ).toBeNull()
-  })
-
-  it('lists one row per origin rather than one per login', () => {
-    const { id: userId } = makeUser()
-    upsertGrant(userId, CODEX_A, 'whiteboard', 'Codex')
-    upsertGrant(userId, CODEX_B, 'whiteboard', 'Codex')
-    const grants = listGrants(userId)
-    expect(grants).toHaveLength(1)
-    expect(grants[0].clientId).toBe('https://chatgpt.com')
   })
 
   it('keeps non-URL client ids (static/DCR) keyed verbatim', () => {
@@ -242,14 +261,14 @@ describe('origin-scoped CIMD grants (mcp-oauth-open-cimd)', () => {
   // the rest of the 7-day refresh TTL. This is the regression this asserts.
   it('revoking an origin grant deletes refresh tokens for EVERY document URL on that origin', () => {
     const { id: userId } = makeUser()
-    upsertGrant(userId, CODEX_A, 'whiteboard', 'Codex')
+    upsertGrant(userId, CODEX_A, 'whiteboard', 'Codex', URIS)
     seedRefreshToken(userId, CODEX_A, 'hash-a')
     seedRefreshToken(userId, CODEX_B, 'hash-b')
     expect(refreshCount(userId)).toBe(2)
 
     revokeGrant(userId, CODEX_A)
 
-    expect(getGrant(userId, CODEX_A)).toBeNull()
+    expect(getGrant(userId, CODEX_A, URIS)).toBeNull()
     expect(refreshCount(userId)).toBe(0)
   })
 

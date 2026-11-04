@@ -262,6 +262,7 @@ async function handleTrustedClient(p: TrustedClientParams): Promise<Response> {
 interface UntrustedClientParams {
   clientId: string
   clientName: string
+  redirectUris: Array<string>
   redirectUri: string
   userId: string
   codeChallenge: string
@@ -304,7 +305,7 @@ async function handleUntrustedClient(
   const intersectionScopeStr = intersectionScopes.join(' ')
 
   const { getGrant, scopeCovers } = await import('@/lib/oauth/grants')
-  const existingGrant = getGrant(p.userId, p.clientId)
+  const existingGrant = getGrant(p.userId, p.clientId, p.redirectUris)
 
   if (existingGrant && scopeCovers(existingGrant.scope, intersectionScopes)) {
     // Already consented to at least this much — skip the prompt and issue a
@@ -348,6 +349,7 @@ async function handleUntrustedClient(
     provenance: cimdOrigin ? 'cimd' : 'dcr',
     cimdOrigin,
     redirectUri: p.redirectUri,
+    redirectUris: p.redirectUris,
     scope: intersectionScopeStr,
     codeChallenge: p.codeChallenge,
     codeChallengeMethod: 'S256',
@@ -461,6 +463,7 @@ export const Route = createFileRoute('/authorize')({
         return handleUntrustedClient({
           clientId: parsed.clientId,
           clientName: client.name,
+          redirectUris: client.redirectUris,
           redirectUri: parsed.redirectUri,
           userId: user.id,
           codeChallenge: parsed.codeChallenge,
