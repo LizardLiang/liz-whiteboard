@@ -20,6 +20,11 @@ test.use({ viewport: { width: 1600, height: 1000 } })
 // button lays out with getCachedTableWidth (floor DEFAULT_W, grows with text), not the server's 250.
 const TABLE_W = 220
 const TABLE_H = 40 + 2 * 28 + 12
+/** Mirrors AREA_PAD_TOP in area-aware-layout.ts: the area header label height. */
+const AREA_HEADER_PAD = 44
+/** The seeded area size before Auto Layout resizes it. */
+const SEEDED_AREA_W = 500
+const SEEDED_AREA_H = 420
 const MEMBER_IDS = [IDS.alaMember1, IDS.alaMember2, IDS.alaMember3]
 const FREE_IDS = [IDS.alaFree1, IDS.alaFree2]
 
@@ -121,17 +126,20 @@ test.describe('Auto Layout with areas', () => {
     // Membership is untouched.
     expect(new Set(after.area.members)).toEqual(new Set(MEMBER_IDS))
 
-    // Every member lies fully inside the (resized) area, label header cleared (AREA_PAD_TOP = 44).
+    // Every member lies fully inside the (resized) area, label header cleared (AREA_HEADER_PAD).
     for (const t of boxes.filter((b) => MEMBER_IDS.includes(b.id))) {
       expect(t.x, `${t.id} left`).toBeGreaterThanOrEqual(area.x)
       expect(t.x + t.w, `${t.id} right`).toBeLessThanOrEqual(area.x + area.w)
-      expect(t.y, `${t.id} top`).toBeGreaterThanOrEqual(area.y + 44)
+      expect(t.y, `${t.id} top`).toBeGreaterThanOrEqual(area.y + AREA_HEADER_PAD)
       expect(t.y + t.h, `${t.id} bottom`).toBeLessThanOrEqual(area.y + area.h)
       expect(centreInside(t, after.area)).toBe(true)
     }
 
-    // The area was resized (it was 500x420).
-    expect([after.area.w, after.area.h]).not.toEqual([500, 420])
+    // The area was resized (it was SEEDED_AREA_W x SEEDED_AREA_H).
+    expect([after.area.w, after.area.h]).not.toEqual([
+      SEEDED_AREA_W,
+      SEEDED_AREA_H,
+    ])
 
     // No two tables overlap, and no ungrouped table sits on the area box.
     for (const f of boxes.filter((b) => FREE_IDS.includes(b.id))) {

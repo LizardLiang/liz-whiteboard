@@ -262,7 +262,7 @@ describe('useAutoLayoutOrchestrator', () => {
   })
 
   // TC-AL-O-05 — Retry success
-  it('TC-AL-O-05: retry success — re-submits same payload, emits broadcast, clears error', async () => {
+  it('TC-AL-O-05: retry success — re-runs the layout, persists, emits broadcast, clears error', async () => {
     vi.useFakeTimers()
     // First call fails (throw)
     mockRunD3ForceLayout.mockResolvedValueOnce(LAYOUT_RESULT)
@@ -281,16 +281,15 @@ describe('useAutoLayoutOrchestrator', () => {
     expect(result.current.persistError).toBeTruthy()
 
     vi.clearAllMocks()
+    mockRunD3ForceLayout.mockResolvedValueOnce(LAYOUT_RESULT)
 
     // Retry → succeeds
     await act(async () => {
       await result.current.handleRetry()
     })
 
-    // runD3ForceLayout NOT called again (no recompute)
-    expect(mockRunD3ForceLayout).not.toHaveBeenCalled()
-
-    // updateTablePositionsBulk called with the same payload
+    // The layout runs again from the current board
+    expect(mockRunD3ForceLayout).toHaveBeenCalledTimes(1)
     expect(updateTablePositionsBulk).toHaveBeenCalledTimes(1)
 
     // emitBulkPositionUpdate called
@@ -489,6 +488,7 @@ describe('useAutoLayoutOrchestrator', () => {
     ;(updateTablePositionsBulk as unknown as Mock).mockResolvedValueOnce(
       AUTH_ERROR_RESPONSE,
     )
+    mockRunD3ForceLayout.mockResolvedValueOnce(LAYOUT_RESULT)
 
     // Retry → auth error
     await act(async () => {
@@ -517,7 +517,21 @@ describe('useAutoLayoutOrchestrator', () => {
     ;(updateTablePositionsBulk as unknown as Mock).mockReset()
 
     const tableNode = { id: 'table-1', type: 'table', position: { x: 0, y: 0 } }
-    const areaNode = { id: 'area-1', type: 'area', position: { x: 0, y: 0 } }
+    const areaNode = {
+      id: 'area-1',
+      type: 'area',
+      position: { x: 0, y: 0 },
+      data: {
+        area: {
+          id: 'area-1',
+          positionX: 0,
+          positionY: 0,
+          width: 200,
+          height: 150,
+          memberTableIds: [],
+        },
+      },
+    }
     mockGetNodes.mockReturnValueOnce([tableNode, areaNode] as any)
     mockRunD3ForceLayout.mockResolvedValueOnce(LAYOUT_RESULT)
     ;(updateTablePositionsBulk as unknown as Mock).mockResolvedValueOnce({
@@ -638,14 +652,11 @@ describe('useAutoLayoutOrchestrator', () => {
     })
     expect(mockOnAfterLayout).not.toHaveBeenCalled()
 
+    mockRunD3ForceLayout.mockResolvedValueOnce(LAYOUT_RESULT)
     await act(async () => {
       await result.current.handleRetry()
     })
     expect(mockOnAfterLayout).toHaveBeenCalledTimes(1)
-    // area-autolayout-persistence-fix: retry re-submits the same payload, so
-    // onAfterLayout must receive that same payload's positions converted
-    // back to the { id, x, y } shape (the stashed payload uses
-    // { id, positionX, positionY }).
     expect(mockOnAfterLayout).toHaveBeenCalledWith(POSITIONS, [])
   })
 
@@ -656,7 +667,21 @@ describe('useAutoLayoutOrchestrator', () => {
     ;(updateTablePositionsBulk as unknown as Mock).mockReset()
 
     const tableNode = { id: 'table-1', type: 'table', position: { x: 0, y: 0 } }
-    const areaNode = { id: 'area-1', type: 'area', position: { x: 0, y: 0 } }
+    const areaNode = {
+      id: 'area-1',
+      type: 'area',
+      position: { x: 0, y: 0 },
+      data: {
+        area: {
+          id: 'area-1',
+          positionX: 0,
+          positionY: 0,
+          width: 200,
+          height: 150,
+          memberTableIds: [],
+        },
+      },
+    }
     const commentNode = {
       id: 'comment-1',
       type: 'comment',
@@ -741,16 +766,27 @@ describe('useAutoLayoutOrchestrator', () => {
       { id: FREE_ID, x: 50, y: 60 },
     ]
 
-    function arrange() {
-      mockGetNodes.mockReturnValue([areaNode, memberNode, freeNode] as any)
-      mockRunD3ForceLayout.mockResolvedValueOnce({
-        positions: POSITIONS_WITH_AREA,
-        areas: [NEW_AREA],
+    // A minimal React Flow store: setNodes takes a value or an updater,
+    // getNodes reads what was last written.
+    let store: Array<any> = []
+
+    function arrange(times = 1) {
+      store = [areaNode, memberNode, freeNode]
+      mockGetNodes.mockImplementation(() => store)
+      mockSetNodes.mockImplementation((next: any) => {
+        store = typeof next === 'function' ? next(store) : next
       })
+      for (let i = 0; i < times; i++) {
+        mockRunD3ForceLayout.mockResolvedValueOnce({
+          positions: POSITIONS_WITH_AREA,
+          areas: [NEW_AREA],
+        })
+      }
     }
 
     afterEach(() => {
-      mockGetNodes.mockReturnValue(DEFAULT_NODES)
+      mockGetNodes.mockImplementation(() => DEFAULT_NODES)
+      mockSetNodes.mockReset()
     })
 
     it('passes area inputs (with membership) to the layout', async () => {
@@ -846,8 +882,8 @@ describe('useAutoLayoutOrchestrator', () => {
       )
     })
 
-    it('retry re-sends the area bounds', async () => {
-      arrange()
+    it('retry re-runs the layout and sends the area bounds again', async () => {
+      arrange(2)
       const mockBulk = updateTablePositionsBulk as unknown as ReturnType<
         typeof vi.fn
       >
@@ -863,6 +899,7 @@ describe('useAutoLayoutOrchestrator', () => {
       await act(async () => {
         await result.current.handleRetry()
       })
+      expect(mockRunD3ForceLayout).toHaveBeenCalledTimes(2)
       expect(mockBulk).toHaveBeenCalledTimes(2)
       expect(mockBulk.mock.calls[1][0].data.areas).toEqual([NEW_AREA])
       expect(onAfterLayout).toHaveBeenCalledWith(expect.any(Array), [NEW_AREA])
@@ -890,7 +927,7 @@ describe('useAutoLayoutOrchestrator', () => {
         await result.current.handleAutoLayoutClick(2)
       })
       expect(mockSetNodes).toHaveBeenCalledTimes(2)
-      expect(mockSetNodes.mock.calls[1][0]).toEqual(original)
+      expect(store).toEqual(original)
       expect(mockSetEdges).toHaveBeenCalledTimes(2)
       expect(onAreaBoundsChange).toHaveBeenNthCalledWith(1, [NEW_AREA])
       expect(onAreaBoundsChange).toHaveBeenNthCalledWith(2, [OLD_AREA])
@@ -909,11 +946,12 @@ describe('useAutoLayoutOrchestrator', () => {
         await result.current.handleAutoLayoutClick(2)
       })
       expect(mockSetNodes).toHaveBeenCalledTimes(2)
+      expect(store).toEqual([areaNode, memberNode, freeNode])
       expect(onAreaBoundsChange).toHaveBeenLastCalledWith([OLD_AREA])
     })
 
-    it('retry success re-applies the store nodes and area bounds', async () => {
-      arrange()
+    it('retry success applies the store nodes and area bounds again', async () => {
+      arrange(2)
       const mockBulk = updateTablePositionsBulk as unknown as ReturnType<
         typeof vi.fn
       >
@@ -936,8 +974,8 @@ describe('useAutoLayoutOrchestrator', () => {
       expect(onAreaBoundsChange).toHaveBeenLastCalledWith([NEW_AREA])
     })
 
-    it('a failed retry does not overwrite the store a second time', async () => {
-      arrange()
+    it('a failed retry rolls its own apply back too', async () => {
+      arrange(2)
       const mockBulk = updateTablePositionsBulk as unknown as ReturnType<
         typeof vi.fn
       >
@@ -952,7 +990,8 @@ describe('useAutoLayoutOrchestrator', () => {
       await act(async () => {
         await result.current.handleRetry()
       })
-      expect(mockSetNodes).toHaveBeenCalledTimes(2)
+      expect(mockSetNodes).toHaveBeenCalledTimes(4)
+      expect(store).toEqual([areaNode, memberNode, freeNode])
     })
 
     it('a 1px member drag after a failed layout keeps the member in its area', async () => {
@@ -969,7 +1008,7 @@ describe('useAutoLayoutOrchestrator', () => {
       })
       // What the canvas holds after the failure: the restored store nodes and
       // the `areas` state last written through onAreaBoundsChange.
-      const stored = mockSetNodes.mock.calls.at(-1)![0] as Array<any>
+      const stored = store
       const storedArea = stored.find((n) => n.id === AREA_ID)
       const storedMember = stored.find((n) => n.id === MEMBER_ID)
       const bounds = onAreaBoundsChange.mock.calls.at(-1)![0][0]
@@ -991,6 +1030,153 @@ describe('useAutoLayoutOrchestrator', () => {
         y: abs.y + 25,
       })
       expect(leave).toEqual([])
+    })
+
+    describe('rollback, stale runs, retry, unmount', () => {
+      function deferred<T>() {
+        let resolve!: (v: T) => void
+        let reject!: (e: unknown) => void
+        const promise = new Promise<T>((res, rej) => {
+          resolve = res
+          reject = rej
+        })
+        return { promise, resolve, reject }
+      }
+      const mockBulk = () =>
+        updateTablePositionsBulk as unknown as ReturnType<typeof vi.fn>
+
+      it('Retry after a table was deleted lays out the current board and succeeds', async () => {
+        arrange()
+        mockBulk().mockRejectedValueOnce(new Error('network'))
+        mockBulk().mockResolvedValueOnce({ success: true, count: 1 })
+        const { result } = renderHook(() =>
+          useAutoLayoutOrchestrator(makeHookArgs()),
+        )
+        await act(async () => {
+          await result.current.handleAutoLayoutClick(2)
+        })
+        // A peer deleted the free table while the save was failing.
+        store = store.filter((n) => n.id !== FREE_ID)
+        mockRunD3ForceLayout.mockResolvedValueOnce({
+          positions: [POSITIONS_WITH_AREA[0]],
+          areas: [NEW_AREA],
+        })
+        await act(async () => {
+          await result.current.handleRetry()
+        })
+        expect(mockRunD3ForceLayout).toHaveBeenCalledTimes(2)
+        const second = mockBulk().mock.calls[1][0].data
+        expect(second.positions.map((p: any) => p.id)).toEqual([MEMBER_ID])
+        expect(result.current.persistError).toBeNull()
+      })
+
+      it('a failed save keeps a table a peer added, a rename, and a peer move', async () => {
+        arrange()
+        const save = deferred<unknown>()
+        mockBulk().mockReturnValueOnce(save.promise)
+        const { result } = renderHook(() =>
+          useAutoLayoutOrchestrator(makeHookArgs()),
+        )
+        let run!: Promise<void>
+        await act(async () => {
+          run = Promise.resolve(result.current.handleAutoLayoutClick(2))
+          await Promise.resolve()
+        })
+        await act(async () => {
+          await new Promise((r) => setTimeout(r, 0))
+        })
+        // While the save is in flight a peer adds a table, renames the free
+        // table and moves the member by 7px.
+        const peerTable = {
+          id: 'peer-table',
+          type: 'table',
+          position: { x: 900, y: 900 },
+        }
+        store = [
+          ...store.map((n) =>
+            n.id === FREE_ID
+              ? { ...n, data: { renamed: true } }
+              : n.id === MEMBER_ID
+                ? { ...n, position: { x: n.position.x + 7, y: n.position.y } }
+                : n,
+          ),
+          peerTable,
+        ]
+        await act(async () => {
+          save.reject(new Error('network'))
+          await run
+          await new Promise((r) => setTimeout(r, 0))
+        })
+        const byId = new Map(store.map((n) => [n.id, n]))
+        expect(byId.get('peer-table')).toEqual(peerTable)
+        expect(byId.get(FREE_ID).data).toEqual({ renamed: true })
+        expect(byId.get(FREE_ID).position).toEqual({ x: 0, y: 0 })
+        // The peer-moved member keeps its absolute place: 7px right of the
+        // laid-out spot, expressed against the restored area origin.
+        expect(byId.get(MEMBER_ID).position).toEqual({
+          x: 24 + 7 + NEW_AREA.positionX - 0,
+          y: 44 + NEW_AREA.positionY - 0,
+        })
+        expect(byId.get(AREA_ID).position).toEqual({ x: 0, y: 0 })
+      })
+
+      it('an old run that fails after a newer run started does not revert', async () => {
+        arrange(2)
+        const first = deferred<unknown>()
+        mockBulk().mockReturnValueOnce(first.promise)
+        mockBulk().mockResolvedValueOnce({ success: true, count: 2 })
+        const { result } = renderHook(() =>
+          useAutoLayoutOrchestrator(makeHookArgs()),
+        )
+        await act(async () => {
+          void result.current.handleAutoLayoutClick(2)
+          await new Promise((r) => setTimeout(r, 0))
+        })
+        await act(async () => {
+          await result.current.handleAutoLayoutClick(2)
+        })
+        const afterSecond = store
+        mockSetNodes.mockClear()
+        ;(toast.error as unknown as Mock).mockClear()
+        await act(async () => {
+          first.reject(new Error('network'))
+          await new Promise((r) => setTimeout(r, 0))
+        })
+        expect(mockSetNodes).not.toHaveBeenCalled()
+        expect(store).toBe(afterSecond)
+        expect(toast.error).not.toHaveBeenCalled()
+        expect(result.current.persistError).toBeNull()
+      })
+
+      it('unmount between persist and emit still broadcasts and patches the cache', async () => {
+        arrange()
+        const save = deferred<unknown>()
+        mockBulk().mockReturnValueOnce(save.promise)
+        const onAfterLayout = vi.fn()
+        const { result, unmount } = renderHook(() =>
+          useAutoLayoutOrchestrator({ ...makeHookArgs(), onAfterLayout }),
+        )
+        await act(async () => {
+          void result.current.handleAutoLayoutClick(2)
+          await new Promise((r) => setTimeout(r, 0))
+        })
+        unmount()
+        ;(toast.success as unknown as Mock).mockClear()
+        save.resolve({ success: true, count: 2 })
+        await new Promise((r) => setTimeout(r, 0))
+        expect(mockEmitBulkPositionUpdate).toHaveBeenCalledWith(
+          POSITIONS_WITH_AREA.map((p) => ({
+            tableId: p.id,
+            positionX: p.x,
+            positionY: p.y,
+          })),
+          [NEW_AREA],
+        )
+        expect(onAfterLayout).toHaveBeenCalledWith(POSITIONS_WITH_AREA, [
+          NEW_AREA,
+        ])
+        expect(toast.success).not.toHaveBeenCalled()
+      })
     })
 
     it('does nothing when the board has areas but no tables', async () => {

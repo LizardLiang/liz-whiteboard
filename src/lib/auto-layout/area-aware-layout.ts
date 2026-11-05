@@ -16,6 +16,7 @@ import { buildParentIndex } from '@/lib/react-flow/node-nesting'
 import { MIN_AREA_HEIGHT, MIN_AREA_WIDTH } from '@/lib/react-flow/types'
 
 export const AREA_PAD_X = 24
+/** Clears the area's header label above the first member row. */
 export const AREA_PAD_TOP = 44
 export const AREA_PAD_BOTTOM = 24
 

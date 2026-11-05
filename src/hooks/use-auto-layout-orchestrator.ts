@@ -7,7 +7,9 @@
 // Error handling:
 //   - Layout error (thrown): show error toast, no setNodes
 //   - Auth error (resolved AuthErrorResponse): persist-failure UX + triggerSessionExpired
-//   - Persist error (thrown): persist-failure UX with Retry toast
+//   - Persist error (thrown): persist-failure UX with Retry toast; the rollback
+//     restores only what the layout itself changed (edits by peers stay)
+//   - Retry re-runs Auto Layout from the current board
 //
 // Apollo findings addressed:
 //   Finding 1: isUnauthorizedError(result) check on every updateTablePositionsBulk await
@@ -18,6 +20,7 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { useReactFlow } from '@xyflow/react'
 import { toast } from 'sonner'
+import type { Node } from '@xyflow/react'
 import type { LayoutOutputPosition } from '@/lib/auto-layout/d3-force-layout'
 import type {
   AreaLayoutInputArea,
@@ -32,6 +35,10 @@ import type {
 import { useT } from '@/lib/i18n/use-t'
 import { applyBulkPositions } from '@/lib/auto-layout'
 import { toStoreNodes } from '@/lib/auto-layout/to-store-nodes'
+import {
+  rollbackLayout,
+  toAbsoluteTableNodes,
+} from '@/lib/auto-layout/rollback-layout'
 import { recalculateEdgeRouting } from '@/lib/react-flow/edge-bundles'
 import { isUnauthorizedError } from '@/lib/auth/errors'
 import { useAuthContext } from '@/components/auth/AuthContext'
@@ -127,15 +134,14 @@ export function useAutoLayoutOrchestrator({
   const [showConfirmDialog, setShowConfirmDialog] = useState(false)
   const [persistError, setPersistError] = useState<unknown>(null)
 
-  // Stash the last payload so handleRetry can re-submit without recomputing.
-  const lastPayloadRef = useRef<BulkPayload | null>(null)
+  // Rolls back the optimistic layout of the current run (its own table
+  // positions, area bounds and edge routing). Set by runLayout.
+  const layoutActionsRef = useRef<{ revert: () => void } | null>(null)
 
-  // Apply / roll back the optimistic layout (store nodes + edges + area
-  // bounds). Set by runLayout; handleRetry re-applies after a retry succeeds.
-  const layoutActionsRef = useRef<{
-    apply: () => void
-    revert: () => void
-  } | null>(null)
+  // Generation counter: every runLayout call takes the next number. A run
+  // that finds a newer number after an await is stale and leaves the board,
+  // the toasts and the broadcast alone.
+  const runIdRef = useRef(0)
 
   // handlePersistResult (below) and handleRetry are mutually recursive:
   // handlePersistResult's toast action invokes handleRetry, and handleRetry
@@ -173,7 +179,6 @@ export function useAutoLayoutOrchestrator({
               label: t('common.retry'),
               onClick: () => {
                 if (!isMountedRef.current) return
-                if (!lastPayloadRef.current) return
                 void handleRetryRef.current()
               },
             },
@@ -195,64 +200,11 @@ export function useAutoLayoutOrchestrator({
   )
 
   // ---------------------------------------------------------------------------
-  // handleRetry — re-submit the last payload without recomputing layout
-  // ---------------------------------------------------------------------------
-  const handleRetry = useCallback(async (): Promise<void> => {
-    // Mount-guard at the entry of the action (Apollo Finding 4).
-    if (!isMountedRef.current) return
-    if (!lastPayloadRef.current) return
-
-    try {
-      const result = await updateTablePositionsBulk({
-        data: lastPayloadRef.current,
-      })
-      // eslint-disable-next-line @typescript-eslint/no-unnecessary-condition
-      if (!isMountedRef.current) return // re-check after await
-
-      const ok = handlePersistResult(
-        result,
-        lastPayloadRef.current.positions.length,
-      )
-      if (ok) {
-        // The failed attempt rolled the optimistic layout back; re-apply it.
-        layoutActionsRef.current?.apply()
-        // Re-emit the broadcast on successful retry.
-        emitBulkPositionUpdate(
-          lastPayloadRef.current.positions.map((p) => ({
-            tableId: p.id,
-            positionX: p.positionX,
-            positionY: p.positionY,
-          })),
-          lastPayloadRef.current.areas,
-        )
-        // eslint-disable-next-line @typescript-eslint/no-unnecessary-condition
-        if (isMountedRef.current) setPersistError(null)
-        onAfterLayout?.(
-          lastPayloadRef.current.positions.map((p) => ({
-            id: p.id,
-            x: p.positionX,
-            y: p.positionY,
-          })),
-          lastPayloadRef.current.areas ?? [],
-        )
-      }
-    } catch (err) {
-      // eslint-disable-next-line @typescript-eslint/no-unnecessary-condition
-      if (!isMountedRef.current) return
-      setPersistError(err)
-      toast.error(t('hooks.autoLayout.retryFailed'))
-    }
-  }, [emitBulkPositionUpdate, handlePersistResult, onAfterLayout, t])
-
-  // Keep the ref pointed at the latest handleRetry so handlePersistResult's
-  // toast action always invokes the current closure (see handleRetryRef
-  // comment above).
-  handleRetryRef.current = handleRetry
-
-  // ---------------------------------------------------------------------------
   // runLayout — the core flow
   // ---------------------------------------------------------------------------
   const runLayout = useCallback(async (): Promise<void> => {
+    const myRun = ++runIdRef.current
+    const isStale = () => runIdRef.current !== myRun
     if (isMountedRef.current) setIsRunning(true)
     if (isMountedRef.current) setPersistError(null)
 
@@ -288,12 +240,7 @@ export function useAutoLayoutOrchestrator({
         (e): e is RelationshipEdgeType => e.type === 'relationship',
       )
       const areaInputs: Array<AreaLayoutInputArea> = currentNodes
-        .filter(
-          (n): n is AreaNodeType =>
-            n.type === 'area' &&
-            // eslint-disable-next-line @typescript-eslint/no-unnecessary-condition
-            (n as AreaNodeType).data?.area != null,
-        )
+        .filter((n): n is AreaNodeType => n.type === 'area')
         .map((n) => ({
           id: n.id,
           positionX: n.position.x,
@@ -308,7 +255,7 @@ export function useAutoLayoutOrchestrator({
         areaInputs,
       )
 
-      if (!isMountedRef.current) return
+      if (!isMountedRef.current || isStale()) return
       if (!layoutResult) {
         // runD3ForceLayout already sets error state on the hook and calls onLayoutError;
         // the orchestrator surfaces the user-facing toast here.
@@ -325,7 +272,6 @@ export function useAutoLayoutOrchestrator({
       // member tables made RELATIVE to their area's NEW origin, because React
       // Flow paints a child at parent.position + child.position.
       const snapshotNodes = getNodes()
-      const snapshotEdges = getEdges()
       const previousAreaBounds: Array<AreaLayoutOutputArea> = snapshotNodes
         .filter(
           (n): n is AreaNodeType =>
@@ -353,43 +299,69 @@ export function useAutoLayoutOrchestrator({
       )
       const allMovedIds = new Set(positions.map((p) => p.id))
 
-      // `applied` makes both actions idempotent, so a second failure (a failed
-      // Retry) never overwrites edits made since the first rollback.
-      let applied = false
+      // Apply the optimistic layout.
+      setNodes(storeNodes)
+      setEdges((prev) => {
+        // Every edge in this app is a 'relationship' edge (the sole
+        // registered edge type — see node-types.ts) — filter narrows the
+        // type accordingly for recalculateEdgeRouting below.
+        const relationshipEdges = prev.filter(
+          (e): e is RelationshipEdgeType => e.type === 'relationship',
+        )
+        // Handle sides and bundle offsets both derive from the new positions.
+        return recalculateEdgeRouting(
+          relationshipEdges,
+          updatedTableNodes,
+          allMovedIds,
+        )
+      })
+      if (areaBounds.length > 0) onAreaBoundsChange?.(areaBounds)
+
+      // Roll back ONLY what this layout changed, in the store's coordinate
+      // space (members relative to their area's origin). A table whose store
+      // position no longer equals the one the layout applied was moved by
+      // someone else since, so it keeps that position. Nodes and edges added
+      // or edited meanwhile stay. `reverted` makes a second call a no-op.
+      let reverted = false
       layoutActionsRef.current = {
-        apply: () => {
-          if (applied) return
-          applied = true
-          setNodes(storeNodes)
+        revert: () => {
+          if (reverted) return
+          reverted = true
+          let next: Array<Node> = []
+          let restoredAreas = new Set<string>()
+          let restoredTableIds = new Set<string>()
+          setNodes((prev) => {
+            const out = rollbackLayout(
+              prev,
+              snapshotNodes,
+              storeNodes,
+              allMovedIds,
+              areaBounds,
+              previousAreaBounds,
+            )
+            next = out.nodes
+            restoredAreas = out.restoredAreaIds
+            restoredTableIds = out.restoredTableIds
+            return out.nodes
+          })
+          const absTables = toAbsoluteTableNodes(next)
           setEdges((prev) => {
-            // Every edge in this app is a 'relationship' edge (the sole
-            // registered edge type — see node-types.ts) — filter narrows the
-            // type accordingly for recalculateEdgeRouting below.
             const relationshipEdges = prev.filter(
               (e): e is RelationshipEdgeType => e.type === 'relationship',
             )
-            // Handle sides and bundle offsets both derive from the new positions.
             return recalculateEdgeRouting(
               relationshipEdges,
-              updatedTableNodes,
-              allMovedIds,
+              absTables,
+              restoredTableIds,
             )
           })
-          if (areaBounds.length > 0) onAreaBoundsChange?.(areaBounds)
-        },
-        revert: () => {
-          if (!applied) return
-          applied = false
-          setNodes(snapshotNodes)
-          setEdges(snapshotEdges)
-          if (previousAreaBounds.length > 0)
-            onAreaBoundsChange?.(previousAreaBounds)
+          const restoredBounds = previousAreaBounds.filter((b) =>
+            restoredAreas.has(b.id),
+          )
+          if (restoredBounds.length > 0) onAreaBoundsChange?.(restoredBounds)
         },
       }
-      layoutActionsRef.current.apply()
 
-      // Step 3 — Stash payload BEFORE the await so Retry can re-submit
-      // (Bundle offsets are UI-only; only node positions are persisted.)
       const payload: BulkPayload = {
         whiteboardId,
         positions: positions.map((p) => ({
@@ -399,7 +371,6 @@ export function useAutoLayoutOrchestrator({
         })),
         ...(areaBounds.length > 0 ? { areas: areaBounds } : {}),
       }
-      lastPayloadRef.current = payload
 
       // Step 4 — Persist
       let result: unknown
@@ -407,7 +378,7 @@ export function useAutoLayoutOrchestrator({
         result = await updateTablePositionsBulk({ data: payload })
       } catch (persistErr) {
         // eslint-disable-next-line @typescript-eslint/no-unnecessary-condition
-        if (!isMountedRef.current) return
+        if (!isMountedRef.current || isStale()) return
         console.error('Auto Layout persist failed:', persistErr)
         layoutActionsRef.current.revert()
         setPersistError(persistErr)
@@ -416,8 +387,7 @@ export function useAutoLayoutOrchestrator({
             label: t('common.retry'),
             onClick: () => {
               if (!isMountedRef.current) return
-              if (!lastPayloadRef.current) return
-              void handleRetry()
+              void handleRetryRef.current()
             },
           },
         })
@@ -425,8 +395,27 @@ export function useAutoLayoutOrchestrator({
         // No fitView on persist failure (PRD NFR Persistence — failure UX).
       }
 
+      // A newer run owns the board, the toasts and the broadcast now.
+      if (isStale()) return
+
+      // The server holds the layout. Peers and the query cache must learn of
+      // it even when this component unmounted during the request; only the
+      // toast, fitView and state updates are skipped after unmount.
       // eslint-disable-next-line @typescript-eslint/no-unnecessary-condition
-      if (!isMountedRef.current) return
+      if (!isMountedRef.current) {
+        if (!isUnauthorizedError(result)) {
+          emitBulkPositionUpdate(
+            positions.map((p) => ({
+              tableId: p.id,
+              positionX: p.x,
+              positionY: p.y,
+            })),
+            areaBounds,
+          )
+          onAfterLayout?.(positions, areaBounds)
+        }
+        return
+      }
 
       // Step 5 — Handle result (auth-error or success)
       const ok = handlePersistResult(result, positions.length)
@@ -443,12 +432,11 @@ export function useAutoLayoutOrchestrator({
           areaBounds,
         )
         // Step 7 — Hand the applied positions and area bounds to the caller
-        // so it can patch the query cache and adopt/broadcast the new areas
-        // (area-autolayout-persistence-fix).
+        // so it can patch the query cache (area-autolayout-persistence-fix).
         onAfterLayout?.(positions, areaBounds)
       }
     } finally {
-      if (isMountedRef.current) setIsRunning(false)
+      if (isMountedRef.current && !isStale()) setIsRunning(false)
     }
   }, [
     whiteboardId,
@@ -459,11 +447,25 @@ export function useAutoLayoutOrchestrator({
     setEdges,
     handlePersistResult,
     emitBulkPositionUpdate,
-    handleRetry,
     onAfterLayout,
     onAreaBoundsChange,
     t,
   ])
+
+  // ---------------------------------------------------------------------------
+  // handleRetry — run Auto Layout again from the current board. The board may
+  // have changed since the failed save, so the failed payload is not re-sent.
+  // ---------------------------------------------------------------------------
+  const handleRetry = useCallback(async (): Promise<void> => {
+    // Mount-guard at the entry of the action (Apollo Finding 4).
+    if (!isMountedRef.current) return
+    await runLayout()
+  }, [runLayout])
+
+  // Keep the ref pointed at the latest handleRetry so handlePersistResult's
+  // toast action always invokes the current closure (see handleRetryRef
+  // comment above).
+  handleRetryRef.current = handleRetry
 
   // ---------------------------------------------------------------------------
   // Dialog handlers
