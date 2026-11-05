@@ -4,8 +4,8 @@
 //
 // React Flow paints a child at parent.position + child.position, so a member
 // table's store position is RELATIVE to its area's origin. The layout speaks
-// ABSOLUTE coordinates. This helper is the one place that converts, shared by
-// the local orchestrator and the peer receiver so both land on the same nodes.
+// ABSOLUTE coordinates. This helper is the one place that converts; the
+// orchestrator (use-auto-layout-orchestrator.ts) is its only caller.
 
 import type { AreaNodeType } from '@/lib/react-flow/types'
 import { buildParentIndex, toRelative } from '@/lib/react-flow/node-nesting'

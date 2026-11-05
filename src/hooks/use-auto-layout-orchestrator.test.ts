@@ -12,6 +12,14 @@ vi.mock('@xyflow/react', () => ({
   useReactFlow: vi.fn(),
 }))
 
+vi.mock('@/lib/react-flow/edge-bundles', async (importOriginal) => {
+  const actual = await importOriginal<Record<string, any>>()
+  return {
+    ...actual,
+    recalculateEdgeRouting: vi.fn(actual.recalculateEdgeRouting),
+  }
+})
+
 vi.mock('sonner', () => ({
   toast: {
     success: vi.fn(),
@@ -45,6 +53,8 @@ import type { Mock } from 'vitest'
 import { buildParentIndex, toAbsolute } from '@/lib/react-flow/node-nesting'
 // eslint-disable-next-line import/first, import/order
 import { reconcileAreaMembership } from '@/lib/react-flow/area-bounds'
+// eslint-disable-next-line import/first, import/order
+import { recalculateEdgeRouting } from '@/lib/react-flow/edge-bundles'
 
 const mockSetNodes = vi.fn()
 const mockSetEdges = vi.fn()
@@ -766,15 +776,34 @@ describe('useAutoLayoutOrchestrator', () => {
       { id: FREE_ID, x: 50, y: 60 },
     ]
 
-    // A minimal React Flow store: setNodes takes a value or an updater,
-    // getNodes reads what was last written.
+    // A minimal React Flow store. Like the real one (@xyflow/react 12),
+    // setNodes only QUEUES its argument: the store changes at the next flush
+    // (a microtask here, the next render there), so getNodes() right after a
+    // setNodes() still returns the old nodes. After unmount the queue is
+    // never applied. A value or an updater may be queued.
     let store: Array<any> = []
+    let queue: Array<any> = []
+    let rfMounted = true
+
+    function flushQueue() {
+      const pending = queue
+      queue = []
+      if (!rfMounted) return
+      for (const next of pending)
+        store = typeof next === 'function' ? next(store) : next
+    }
 
     function arrange(times = 1) {
       store = [areaNode, memberNode, freeNode]
+      queue = []
+      rfMounted = true
       mockGetNodes.mockImplementation(() => store)
       mockSetNodes.mockImplementation((next: any) => {
-        store = typeof next === 'function' ? next(store) : next
+        queue.push(next)
+        queueMicrotask(flushQueue)
+      })
+      mockSetEdges.mockImplementation((next: any) => {
+        if (typeof next === 'function') next([])
       })
       for (let i = 0; i < times; i++) {
         mockRunD3ForceLayout.mockResolvedValueOnce({
@@ -1229,6 +1258,44 @@ describe('useAutoLayoutOrchestrator', () => {
         )
       })
 
+      it('a failed save re-routes edges against the restored nodes, not an empty list', async () => {
+        arrange()
+        mockBulk().mockRejectedValueOnce(new Error('network'))
+        const { result } = renderHook(() =>
+          useAutoLayoutOrchestrator(makeHookArgs()),
+        )
+        await act(async () => {
+          await result.current.handleAutoLayoutClick(2)
+        })
+        const route = recalculateEdgeRouting as unknown as Mock
+        const [, nodesArg, movedArg] = route.mock.calls.at(-1)!
+        expect(nodesArg.map((n: any) => [n.id, n.position])).toEqual([
+          [MEMBER_ID, { x: 10, y: 10 }],
+          [FREE_ID, { x: 0, y: 0 }],
+        ])
+        expect([...movedArg].sort()).toEqual([FREE_ID, MEMBER_ID].sort())
+      })
+
+      it('unmount during a save that then fails hands the previous area bounds to the cache', async () => {
+        arrange()
+        const save = deferred<unknown>()
+        mockBulk().mockReturnValueOnce(save.promise)
+        const onAreaBoundsChange = vi.fn()
+        const { result, unmount } = renderHook(() =>
+          useAutoLayoutOrchestrator({ ...makeHookArgs(), onAreaBoundsChange }),
+        )
+        await act(async () => {
+          void result.current.handleAutoLayoutClick(2)
+          await new Promise((r) => setTimeout(r, 0))
+        })
+        unmount()
+        rfMounted = false
+        onAreaBoundsChange.mockClear()
+        save.reject(new Error('network'))
+        await new Promise((r) => setTimeout(r, 0))
+        expect(onAreaBoundsChange).toHaveBeenCalledWith([OLD_AREA])
+      })
+
       it('a stale run that saved later does not patch the cache over the newer run', async () => {
         arrange(2)
         const first = deferred<unknown>()
@@ -1271,6 +1338,7 @@ describe('useAutoLayoutOrchestrator', () => {
           await new Promise((r) => setTimeout(r, 0))
         })
         unmount()
+        rfMounted = false
         onTablePositionsChange.mockClear()
         save.reject(new Error('network'))
         await new Promise((r) => setTimeout(r, 0))
@@ -1295,6 +1363,7 @@ describe('useAutoLayoutOrchestrator', () => {
           await new Promise((r) => setTimeout(r, 0))
         })
         unmount()
+        rfMounted = false
         ;(toast.success as unknown as Mock).mockClear()
         save.resolve({ success: true, count: 2 })
         await new Promise((r) => setTimeout(r, 0))

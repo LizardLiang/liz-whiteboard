@@ -21,7 +21,6 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { useReactFlow } from '@xyflow/react'
 import { toast } from 'sonner'
-import type { Node } from '@xyflow/react'
 import type { LayoutOutputPosition } from '@/lib/auto-layout/d3-force-layout'
 import type {
   AreaLayoutInputArea,
@@ -343,24 +342,19 @@ export function useAutoLayoutOrchestrator({
         revert: () => {
           if (reverted) return
           reverted = true
-          let next: Array<Node> = []
-          let restoredAreas = new Set<string>()
-          let restoredTableIds = new Set<string>()
-          setNodes((prev) => {
-            const out = rollbackLayout(
-              prev,
-              snapshotNodes,
-              storeNodes,
-              allMovedIds,
-              areaBounds,
-              previousAreaBounds,
-            )
-            next = out.nodes
-            restoredAreas = out.restoredAreaIds
-            restoredTableIds = out.restoredTableIds
-            return out.nodes
-          })
-          const absTables = toAbsoluteTableNodes(next)
+          // setNodes only queues in React Flow, so everything below derives
+          // from `out`, computed here, never from what setNodes did.
+          const out = rollbackLayout(
+            getNodes(),
+            snapshotNodes,
+            storeNodes,
+            allMovedIds,
+            areaBounds,
+            previousAreaBounds,
+          )
+          const { restoredAreaIds: restoredAreas, restoredTableIds } = out
+          setNodes(out.nodes)
+          const absTables = toAbsoluteTableNodes(out.nodes)
           setEdges((prev) => {
             const relationshipEdges = prev.filter(
               (e): e is RelationshipEdgeType => e.type === 'relationship',
@@ -400,8 +394,8 @@ export function useAutoLayoutOrchestrator({
       try {
         result = await updateTablePositionsBulk({ data: payload })
       } catch (persistErr) {
-        // eslint-disable-next-line @typescript-eslint/no-unnecessary-condition
         if (isStale()) return
+        // eslint-disable-next-line @typescript-eslint/no-unnecessary-condition
         if (!isMountedRef.current) {
           // The cache outlives the component: take the mirrored layout out.
           layoutActionsRef.current.revert()
