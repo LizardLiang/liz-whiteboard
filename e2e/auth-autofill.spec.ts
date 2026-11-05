@@ -269,6 +269,42 @@ test.describe('Register — browser autofill', () => {
     await expect(page.getByRole('button', { name: 'Log out' })).toBeVisible()
   })
 
+  // A full page load can be submitted before React hydrates. With no onSubmit
+  // handler yet, the browser runs the form's native GET submit: /register
+  // reloads with ?password=… in the URL and the submit is lost. The button
+  // must stay disabled until hydration, and no native submit may ever put the
+  // password in a URL.
+  test('submit before hydration does not reload /register or leak the password into the URL', async ({
+    page,
+    context,
+  }) => {
+    const navigations: Array<string> = []
+    page.on('request', (r) => {
+      if (r.isNavigationRequest()) navigations.push(r.url())
+    })
+
+    await page.goto('/register', { waitUntil: 'commit' })
+    await page.waitForSelector('#username', { state: 'attached' })
+    await page.fill('#username', E2E_AUTOFILL_USER.username)
+    await page.fill('#email', E2E_AUTOFILL_USER.email)
+    await page.fill('#password', E2E_AUTOFILL_USER.password)
+    // Enter right away — on the dev server this lands before hydration.
+    await page.press('#password', 'Enter')
+
+    // The hydrated form submits and registers.
+    await page.getByRole('button', { name: 'Create account' }).click()
+    await expect
+      .poll(
+        async () =>
+          (await context.cookies()).some((c) => c.name === 'session_token'),
+        { timeout: 15_000 },
+      )
+      .toBe(true)
+    await expect(page.getByRole('button', { name: 'Log out' })).toBeVisible()
+
+    expect(navigations.filter((u) => u.includes('password='))).toEqual([])
+  })
+
   test('empty submit surfaces field errors instead of failing silently', async ({
     page,
   }) => {

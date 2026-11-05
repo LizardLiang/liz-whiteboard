@@ -1,7 +1,12 @@
 // src/routes/register.tsx
 // Registration page — public route (no auth required)
 
-import { Link, createFileRoute, useRouter } from '@tanstack/react-router'
+import {
+  Link,
+  createFileRoute,
+  useHydrated,
+  useRouter,
+} from '@tanstack/react-router'
 import { useRef, useState } from 'react'
 import { z } from 'zod'
 import { registerUser } from './api/auth'
@@ -46,6 +51,10 @@ function RegisterPage() {
   const [errors, setErrors] = useState<Record<string, string>>({})
   const [isSubmitting, setIsSubmitting] = useState(false)
   const [successMessage, setSuccessMessage] = useState<string | null>(null)
+  // False in the server-rendered HTML and until React hydrates. A submit in
+  // that window has no onSubmit handler, so the browser would run the form's
+  // native submit and reload the page with the password in the URL.
+  const hydrated = useHydrated()
 
   const usernameRef = useRef<HTMLInputElement>(null)
   const emailRef = useRef<HTMLInputElement>(null)
@@ -182,7 +191,14 @@ function RegisterPage() {
           </p>
         </div>
 
-        <form onSubmit={handleSubmit} aria-busy={isSubmitting} noValidate>
+        {/* method="post": if a native submit ever runs, the credentials go in
+            the body, never in the URL (history, server logs). */}
+        <form
+          method="post"
+          onSubmit={handleSubmit}
+          aria-busy={isSubmitting}
+          noValidate
+        >
           {/* Form-level error */}
           {errors.form && (
             <div
@@ -303,8 +319,15 @@ function RegisterPage() {
           {/* Never gate on emptiness: browser autofill can leave state empty
               while the fields are visibly filled, which used to disable this
               button permanently and kill the Enter key with it. handleSubmit
-              reads the form and surfaces field errors for an empty submit. */}
-          <Button type="submit" className="w-full" disabled={isSubmitting}>
+              reads the form and surfaces field errors for an empty submit.
+              It does gate on hydration: a disabled default button also blocks
+              Enter-key submit, so no native submit can run before onSubmit
+              exists. */}
+          <Button
+            type="submit"
+            className="w-full"
+            disabled={isSubmitting || !hydrated}
+          >
             {isSubmitting
               ? t('auth.register.submitting')
               : t('auth.register.submit')}

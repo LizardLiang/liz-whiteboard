@@ -165,6 +165,49 @@ test.describe('Forgot password', () => {
     await expect(page.getByText('Invalid email or password')).toBeVisible()
   })
 
+  // A full page load can be submitted before React hydrates. With no onSubmit
+  // handler yet, the browser runs the form's native GET submit: the reset
+  // token and new password land in the URL (history, server logs) and the
+  // submit is lost. The button must wait for hydration and no native submit
+  // may ever put the password in a URL.
+  test('submit before hydration does not reload /reset-password or leak the password into the URL', async ({
+    page,
+  }) => {
+    const rawToken = generateRawToken()
+    seedResetUser({ RESET_TOKEN_HASH: hashToken(rawToken) })
+
+    const navigations: Array<string> = []
+    page.on('request', (r) => {
+      if (r.isNavigationRequest()) navigations.push(r.url())
+    })
+
+    await page.goto(`/reset-password?token=${rawToken}`, {
+      waitUntil: 'commit',
+    })
+    await page.waitForSelector('#password', { state: 'attached' })
+    // This form only renders after the client-side token check, so a real
+    // pre-hydration submit cannot occur today. method="post" is the guarantee
+    // that a native submit, if one ever ran, would not put the password in the
+    // URL — assert it directly so removing it fails here.
+    await expect(page.locator('form')).toHaveAttribute('method', 'post')
+    const newPassword = 'PreHydration654!'
+    await page.fill('#password', newPassword)
+    await page.fill('#confirmPassword', newPassword)
+    // Enter right away — on the dev server this lands before hydration.
+    await page.press('#confirmPassword', 'Enter')
+
+    // The hydrated form submits and lands on the login page's banner. If the
+    // Enter already did that, there is no button left to click.
+    const submit = page.getByRole('button', { name: 'Update password' })
+    await expect(async () => {
+      if (/\/login\?reset=success/.test(page.url())) return
+      await submit.click({ timeout: 2_000 })
+      await page.waitForURL(/\/login\?reset=success/, { timeout: 2_000 })
+    }).toPass({ timeout: 30_000 })
+
+    expect(navigations.filter((u) => u.includes('password='))).toEqual([])
+  })
+
   test('(d) an already-used link shows the invalid-link message on a second open', async ({
     page,
   }) => {

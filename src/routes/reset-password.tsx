@@ -4,7 +4,7 @@
 // validateResetToken before the password form is shown, so an invalid link
 // never renders a form the server would reject anyway.
 
-import { Link, createFileRoute } from '@tanstack/react-router'
+import { Link, createFileRoute, useHydrated } from '@tanstack/react-router'
 import { useQuery } from '@tanstack/react-query'
 import { useState } from 'react'
 import { z } from 'zod'
@@ -43,6 +43,10 @@ function ResetPasswordPage() {
   const [confirmPassword, setConfirmPassword] = useState('')
   const [errors, setErrors] = useState<Record<string, string>>({})
   const [isSubmitting, setIsSubmitting] = useState(false)
+  // False in the server-rendered HTML and until React hydrates. A submit in
+  // that window has no onSubmit handler, so the browser would run the form's
+  // native submit and reload the page with the password in the URL.
+  const hydrated = useHydrated()
 
   const handleSubmit = async (e: React.FormEvent<HTMLFormElement>) => {
     e.preventDefault()
@@ -120,7 +124,14 @@ function ResetPasswordPage() {
           <h1 className="text-2xl font-bold">{t('auth.reset.title')}</h1>
         </div>
 
-        <form onSubmit={handleSubmit} aria-busy={isSubmitting} noValidate>
+        {/* method="post": if a native submit ever runs, the password and reset
+            token go in the body, never in the URL (history, server logs). */}
+        <form
+          method="post"
+          onSubmit={handleSubmit}
+          aria-busy={isSubmitting}
+          noValidate
+        >
           {errors.form && (
             <div
               role="alert"
@@ -190,7 +201,13 @@ function ResetPasswordPage() {
             )}
           </div>
 
-          <Button type="submit" className="w-full" disabled={isSubmitting}>
+          {/* A disabled default button also blocks Enter-key submit, so no
+              native submit can run before onSubmit exists. */}
+          <Button
+            type="submit"
+            className="w-full"
+            disabled={isSubmitting || !hydrated}
+          >
             {isSubmitting ? t('auth.reset.submitting') : t('auth.reset.submit')}
           </Button>
         </form>
