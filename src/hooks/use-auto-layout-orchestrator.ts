@@ -31,8 +31,8 @@ import type {
 } from '@/lib/react-flow/types'
 import { useT } from '@/lib/i18n/use-t'
 import { applyBulkPositions } from '@/lib/auto-layout'
+import { toStoreNodes } from '@/lib/auto-layout/to-store-nodes'
 import { recalculateEdgeRouting } from '@/lib/react-flow/edge-bundles'
-import { buildParentIndex, toRelative } from '@/lib/react-flow/node-nesting'
 import { isUnauthorizedError } from '@/lib/auth/errors'
 import { useAuthContext } from '@/components/auth/AuthContext'
 import { updateTablePositionsBulk } from '@/lib/server-functions'
@@ -63,16 +63,18 @@ export interface UseAutoLayoutOrchestratorArgs {
   /** Emits table:move:bulk after successful persistence */
   emitBulkPositionUpdate: (
     positions: Array<{ tableId: string; positionX: number; positionY: number }>,
+    areas?: Array<AreaLayoutOutputArea>,
   ) => void
   /**
    * Called once after a layout run's optimistic apply + persist has
    * succeeded — used by ReactFlowWhiteboard to patch the React Query cache
    * (the source of truth that `ReactFlowCanvas` re-syncs `initialNodes`
-   * from) and to adopt and broadcast the new area bounds. Not called on
+   * from). Not called on
    * layout error, persist failure, or auth error.
    *
    * Receives the applied table positions and the new area bounds (empty
-   * when the board has no areas). Both use absolute coordinates.
+   * when the board has no areas). Both use absolute coordinates. The area
+   * bounds are already persisted and broadcast with the positions.
    */
   onAfterLayout?: (
     positions: Array<{ id: string; x: number; y: number }>,
@@ -221,6 +223,7 @@ export function useAutoLayoutOrchestrator({
             positionX: p.positionX,
             positionY: p.positionY,
           })),
+          lastPayloadRef.current.areas,
         )
         // eslint-disable-next-line @typescript-eslint/no-unnecessary-condition
         if (isMountedRef.current) setPersistError(null)
@@ -336,44 +339,10 @@ export function useAutoLayoutOrchestrator({
           height: n.data.area.height,
         }))
       const updatedNodes = applyBulkPositions(snapshotNodes, positions)
-      let storeNodes: typeof updatedNodes = updatedNodes
-      if (areaBounds.length > 0) {
-        const boundsById = new Map(areaBounds.map((a) => [a.id, a]))
-        const parentIndex = buildParentIndex(
-          areaInputs.map((a) => {
-            const b = boundsById.get(a.id)
-            return b
-              ? { ...a, positionX: b.positionX, positionY: b.positionY }
-              : a
-          }),
-        )
-        storeNodes = updatedNodes.map((n) => {
-          if (n.type === 'area') {
-            const b = boundsById.get(n.id)
-            if (!b) return n
-            const areaNode = n as AreaNodeType
-            return {
-              ...areaNode,
-              position: { x: b.positionX, y: b.positionY },
-              width: b.width,
-              height: b.height,
-              data: {
-                ...areaNode.data,
-                area: {
-                  ...areaNode.data.area,
-                  positionX: b.positionX,
-                  positionY: b.positionY,
-                  width: b.width,
-                  height: b.height,
-                },
-              },
-            }
-          }
-          const parent = parentIndex.get(n.id)
-          if (!parent) return n
-          return { ...n, position: toRelative(n.position, parent) }
-        })
-      }
+      const storeNodes =
+        areaBounds.length > 0
+          ? toStoreNodes(snapshotNodes, positions, areaBounds, areaInputs)
+          : updatedNodes
       // Edges only ever connect table and reference nodes (never area/comment
       // pins) — narrow for recalculateEdgeRouting below, which reads position
       // and size off each node. Reference nodes are routed like tables, as the
@@ -471,6 +440,7 @@ export function useAutoLayoutOrchestrator({
             positionX: p.x,
             positionY: p.y,
           })),
+          areaBounds,
         )
         // Step 7 — Hand the applied positions and area bounds to the caller
         // so it can patch the query cache and adopt/broadcast the new areas

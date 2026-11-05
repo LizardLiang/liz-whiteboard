@@ -52,8 +52,9 @@ export function useSqlImport(whiteboardId: string) {
     async (
       ast: DiagramAST,
       options?: {
-        /** Receives the area bounds the layout pass wrote, so the caller can tell peers. */
-        onAreasResized?: (
+        /** Receives the positions and area bounds the layout pass wrote, so the caller can tell peers. */
+        onLayoutApplied?: (
+          positions: Array<{ id: string; x: number; y: number }>,
           areas: Array<{
             id: string
             positionX: number
@@ -168,7 +169,10 @@ export function useSqlImport(whiteboardId: string) {
             data: { whiteboardId },
           })
           if (!isUnauthorizedError(layoutResult)) {
-            options?.onAreasResized?.(layoutResult.areas)
+            options?.onLayoutApplied?.(
+              layoutResult.positions,
+              layoutResult.areas,
+            )
             await Promise.all([
               queryClient.invalidateQueries({
                 queryKey: ['whiteboard', whiteboardId],

@@ -78,7 +78,17 @@ export interface BulkPositionUpdateEvent {
     positionX: number
     positionY: number
   }>
+  /** New area bounds sent with an Auto Layout; absent for plain bulk moves */
+  areas?: Array<BulkAreaBounds>
   userId: string
+}
+
+export interface BulkAreaBounds {
+  id: string
+  positionX: number
+  positionY: number
+  width: number
+  height: number
 }
 
 export function useWhiteboardCollaboration(
@@ -96,6 +106,7 @@ export function useWhiteboardCollaboration(
   onRelationshipUpdated?: (relationshipId: string, label: string) => void,
   onBulkPositionUpdate?: (
     positions: Array<{ tableId: string; positionX: number; positionY: number }>,
+    areas?: Array<BulkAreaBounds>,
   ) => void,
   // R1 (GH #109): the public read-only /share route passes false so no
   // Socket.IO connection is ever opened on that path. Defaults to true for
@@ -349,7 +360,7 @@ export function useWhiteboardCollaboration(
       // existing table:moved listener and as a defense against any future
       // change that might re-route the broadcast through emitToWhiteboard.
       if (data.userId === userId) return
-      onBulkPositionUpdate(data.positions)
+      onBulkPositionUpdate(data.positions, data.areas)
     }
 
     on('table:move:bulk', handler)
@@ -387,8 +398,13 @@ export function useWhiteboardCollaboration(
         positionX: number
         positionY: number
       }>,
+      areas?: Array<BulkAreaBounds>,
     ) => {
-      emit('table:move:bulk', { positions, userId })
+      emit('table:move:bulk', {
+        positions,
+        userId,
+        ...(areas && areas.length > 0 ? { areas } : {}),
+      })
     },
     [emit, userId],
   )

@@ -43,29 +43,32 @@ const AREA = {
 }
 
 describe('useSqlImport', () => {
-  it('hands the resized area bounds to onAreasResized', async () => {
+  it('hands the positions and resized area bounds to onLayoutApplied', async () => {
     ;(
       computeAutoLayout as unknown as ReturnType<typeof vi.fn>
     ).mockResolvedValueOnce({
-      positions: [],
+      positions: [{ id: 't1', x: 5, y: 6 }],
       areas: [AREA],
     })
-    const onAreasResized = vi.fn()
+    const onLayoutApplied = vi.fn()
     const { result } = renderHook(() => useSqlImport('wb'))
-    await result.current.importDiagram({} as any, { onAreasResized })
-    expect(onAreasResized).toHaveBeenCalledWith([AREA])
+    await result.current.importDiagram({} as any, { onLayoutApplied })
+    expect(onLayoutApplied).toHaveBeenCalledWith(
+      [{ id: 't1', x: 5, y: 6 }],
+      [AREA],
+    )
   })
 
-  it('does not call onAreasResized when the layout call is unauthorized', async () => {
+  it('does not call onLayoutApplied when the layout call is unauthorized', async () => {
     ;(
       computeAutoLayout as unknown as ReturnType<typeof vi.fn>
     ).mockResolvedValueOnce({
       error: 'UNAUTHORIZED',
       status: 401,
     })
-    const onAreasResized = vi.fn()
+    const onLayoutApplied = vi.fn()
     const { result } = renderHook(() => useSqlImport('wb'))
-    await result.current.importDiagram({} as any, { onAreasResized })
-    expect(onAreasResized).not.toHaveBeenCalled()
+    await result.current.importDiagram({} as any, { onLayoutApplied })
+    expect(onLayoutApplied).not.toHaveBeenCalled()
   })
 })

@@ -174,20 +174,27 @@ function WhiteboardEditor() {
   // the Toolbar ReactFlowWhiteboard renders internally. Toolbar's onImportSql
   // contract discards the resolved summary (void | Promise<void>) —
   // ImportSqlDialog only needs to know success/failure.
-  // The import's layout pass resizes areas; peers learn the new bounds
-  // through area:update, the event the toolbar Auto Layout also emits.
+  // The import's layout pass moves tables and resizes areas; peers learn both
+  // through one table:move:bulk, the event the toolbar Auto Layout also emits.
   const { importDiagram } = useSqlImport(whiteboardId)
   const handleImportSql = useCallback(
     async (ast: DiagramAST) => {
       await importDiagram(ast, {
-        onAreasResized: (areas) => {
-          for (const { id, ...bounds } of areas) {
-            emit('area:update', { areaId: id, ...bounds })
-          }
+        onLayoutApplied: (positions, areas) => {
+          if (positions.length === 0) return
+          emit('table:move:bulk', {
+            positions: positions.map((p) => ({
+              tableId: p.id,
+              positionX: p.x,
+              positionY: p.y,
+            })),
+            ...(areas.length > 0 ? { areas } : {}),
+            userId,
+          })
         },
       })
     },
-    [importDiagram, emit],
+    [importDiagram, emit, userId],
   )
 
   // Mutations

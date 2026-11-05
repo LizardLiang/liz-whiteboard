@@ -804,6 +804,10 @@ export const tableMoveBulkBroadcastSchema = z.object({
     )
     .min(1)
     .max(500),
+  // Area bounds resized by Auto Layout, sent in the same message as the
+  // positions so peers apply both in one render. Optional: a multi-select
+  // drag sends positions only.
+  areas: z.array(areaBoundsSchema).max(1000).optional(),
 })
 
 export type TableMoveBulkBroadcast = z.infer<

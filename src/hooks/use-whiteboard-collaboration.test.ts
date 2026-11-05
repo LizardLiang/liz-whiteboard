@@ -502,3 +502,64 @@ describe('useWhiteboardCollaboration — table creation sync (GH #125)', () => {
     expect(removedEvents).toContain('table:created')
   })
 })
+
+describe('useWhiteboardCollaboration — table:move:bulk with area bounds', () => {
+  const POS = [{ tableId: 't1', positionX: 1, positionY: 2 }]
+  const AREA = {
+    id: 'a1',
+    positionX: 0,
+    positionY: 0,
+    width: 300,
+    height: 200,
+  }
+
+  beforeEach(() => vi.clearAllMocks())
+
+  it('emits areas with the positions when given, omits the key when empty', () => {
+    const { result } = renderHook(() =>
+      useWhiteboardCollaboration('wb', 'me', vi.fn()),
+    )
+    act(() => {
+      result.current.emitBulkPositionUpdate(POS, [AREA])
+      result.current.emitBulkPositionUpdate(POS, [])
+      result.current.emitBulkPositionUpdate(POS)
+    })
+    expect(mockEmit).toHaveBeenNthCalledWith(1, 'table:move:bulk', {
+      positions: POS,
+      userId: 'me',
+      areas: [AREA],
+    })
+    expect(mockEmit).toHaveBeenNthCalledWith(2, 'table:move:bulk', {
+      positions: POS,
+      userId: 'me',
+    })
+    expect(mockEmit).toHaveBeenNthCalledWith(3, 'table:move:bulk', {
+      positions: POS,
+      userId: 'me',
+    })
+  })
+
+  it('passes areas from a peer broadcast to onBulkPositionUpdate', () => {
+    const onBulk = vi.fn()
+    renderHook(() =>
+      useWhiteboardCollaboration(
+        'wb',
+        'me',
+        vi.fn(),
+        undefined,
+        undefined,
+        undefined,
+        undefined,
+        undefined,
+        onBulk,
+      ),
+    )
+    const handler = mockOn.mock.calls.find(
+      ([event]) => event === 'table:move:bulk',
+    )![1]
+    handler({ positions: POS, areas: [AREA], userId: 'peer' })
+    expect(onBulk).toHaveBeenCalledWith(POS, [AREA])
+    handler({ positions: POS, userId: 'me' })
+    expect(onBulk).toHaveBeenCalledTimes(1)
+  })
+})

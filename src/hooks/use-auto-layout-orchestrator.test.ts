@@ -124,9 +124,7 @@ describe('useAutoLayoutOrchestrator', () => {
   it('TC-AL-O-01: success path — setNodes, persist, emit, fitView, toast', async () => {
     vi.useFakeTimers()
     mockRunD3ForceLayout.mockResolvedValueOnce(LAYOUT_RESULT)
-    ;(
-      updateTablePositionsBulk as unknown as Mock
-    ).mockResolvedValueOnce({
+    ;(updateTablePositionsBulk as unknown as Mock).mockResolvedValueOnce({
       success: true,
       count: 2,
     })
@@ -170,6 +168,7 @@ describe('useAutoLayoutOrchestrator', () => {
           positionY: POSITIONS[0].y,
         },
       ]),
+      [],
     )
 
     // success toast
@@ -208,9 +207,9 @@ describe('useAutoLayoutOrchestrator', () => {
   it('TC-AL-O-03: auth error — persist-failure UX, no success toast, no fitView, no emit', async () => {
     vi.useFakeTimers()
     mockRunD3ForceLayout.mockResolvedValueOnce(LAYOUT_RESULT)
-    ;(
-      updateTablePositionsBulk as unknown as Mock
-    ).mockResolvedValueOnce(AUTH_ERROR_RESPONSE)
+    ;(updateTablePositionsBulk as unknown as Mock).mockResolvedValueOnce(
+      AUTH_ERROR_RESPONSE,
+    )
 
     const { result } = renderHook(() =>
       useAutoLayoutOrchestrator(makeHookArgs()),
@@ -241,9 +240,9 @@ describe('useAutoLayoutOrchestrator', () => {
   it('TC-AL-O-04: persist throws — persist-failure UX, no fitView, no emit', async () => {
     vi.useFakeTimers()
     mockRunD3ForceLayout.mockResolvedValueOnce(LAYOUT_RESULT)
-    ;(
-      updateTablePositionsBulk as unknown as Mock
-    ).mockRejectedValueOnce(new Error('DB connection lost'))
+    ;(updateTablePositionsBulk as unknown as Mock).mockRejectedValueOnce(
+      new Error('DB connection lost'),
+    )
 
     const { result } = renderHook(() =>
       useAutoLayoutOrchestrator(makeHookArgs()),
@@ -305,9 +304,9 @@ describe('useAutoLayoutOrchestrator', () => {
   it('TC-AL-O-06: retry after unmount — updateTablePositionsBulk NOT called', async () => {
     // Bring to persist-failure state
     mockRunD3ForceLayout.mockResolvedValueOnce(LAYOUT_RESULT)
-    ;(
-      updateTablePositionsBulk as unknown as Mock
-    ).mockRejectedValueOnce(new Error('DB error'))
+    ;(updateTablePositionsBulk as unknown as Mock).mockRejectedValueOnce(
+      new Error('DB error'),
+    )
 
     const { result, unmount } = renderHook(() =>
       useAutoLayoutOrchestrator(makeHookArgs()),
@@ -335,9 +334,9 @@ describe('useAutoLayoutOrchestrator', () => {
     // Simpler version: bring to persist-failure state, unmount, call handleRetry
     // — the entry-point guard in handleRetry prevents any calls.
     mockRunD3ForceLayout.mockResolvedValueOnce(LAYOUT_RESULT)
-    ;(
-      updateTablePositionsBulk as unknown as Mock
-    ).mockRejectedValueOnce(new Error('DB error'))
+    ;(updateTablePositionsBulk as unknown as Mock).mockRejectedValueOnce(
+      new Error('DB error'),
+    )
 
     const { result, unmount } = renderHook(() =>
       useAutoLayoutOrchestrator(makeHookArgs()),
@@ -367,9 +366,7 @@ describe('useAutoLayoutOrchestrator', () => {
   // TC-AL-O-08 — handleAutoLayoutClick with tableCount ≤ 50: runs immediately
   it('TC-AL-O-08: tableCount ≤ 50 runs layout immediately without dialog', async () => {
     mockRunD3ForceLayout.mockResolvedValueOnce(LAYOUT_RESULT)
-    ;(
-      updateTablePositionsBulk as unknown as Mock
-    ).mockResolvedValueOnce({
+    ;(updateTablePositionsBulk as unknown as Mock).mockResolvedValueOnce({
       success: true,
       count: 2,
     })
@@ -403,9 +400,7 @@ describe('useAutoLayoutOrchestrator', () => {
   // TC-AL-O-10 — handleConfirm: hides dialog and calls runLayout
   it('TC-AL-O-10: handleConfirm hides dialog and runs layout', async () => {
     mockRunD3ForceLayout.mockResolvedValueOnce(LAYOUT_RESULT)
-    ;(
-      updateTablePositionsBulk as unknown as Mock
-    ).mockResolvedValueOnce({
+    ;(updateTablePositionsBulk as unknown as Mock).mockResolvedValueOnce({
       success: true,
       count: 2,
     })
@@ -451,9 +446,7 @@ describe('useAutoLayoutOrchestrator', () => {
   // TC-AL-O-12 — isRunning transitions
   it('TC-AL-O-12: isRunning is false before run, and false after successful run', async () => {
     mockRunD3ForceLayout.mockResolvedValueOnce(LAYOUT_RESULT)
-    ;(
-      updateTablePositionsBulk as unknown as Mock
-    ).mockResolvedValueOnce({
+    ;(updateTablePositionsBulk as unknown as Mock).mockResolvedValueOnce({
       success: true,
       count: 2,
     })
@@ -493,9 +486,9 @@ describe('useAutoLayoutOrchestrator', () => {
     // Clear call counts (but keep mock implementations)
     vi.clearAllMocks()
     // Re-apply the return values that were consumed
-    ;(
-      updateTablePositionsBulk as unknown as Mock
-    ).mockResolvedValueOnce(AUTH_ERROR_RESPONSE)
+    ;(updateTablePositionsBulk as unknown as Mock).mockResolvedValueOnce(
+      AUTH_ERROR_RESPONSE,
+    )
 
     // Retry → auth error
     await act(async () => {
@@ -521,17 +514,13 @@ describe('useAutoLayoutOrchestrator', () => {
     // .mockResolvedValueOnce/.mockRejectedValueOnce left over from an earlier
     // test that pushed more once-values than it consumed (TC-AL-O-13 does
     // this) — clearAllMocks only clears call history, not the once-queue.
-    ;(
-      updateTablePositionsBulk as unknown as Mock
-    ).mockReset()
+    ;(updateTablePositionsBulk as unknown as Mock).mockReset()
 
     const tableNode = { id: 'table-1', type: 'table', position: { x: 0, y: 0 } }
     const areaNode = { id: 'area-1', type: 'area', position: { x: 0, y: 0 } }
     mockGetNodes.mockReturnValueOnce([tableNode, areaNode] as any)
     mockRunD3ForceLayout.mockResolvedValueOnce(LAYOUT_RESULT)
-    ;(
-      updateTablePositionsBulk as unknown as Mock
-    ).mockResolvedValueOnce({
+    ;(updateTablePositionsBulk as unknown as Mock).mockResolvedValueOnce({
       success: true,
       count: 2,
     })
@@ -551,14 +540,10 @@ describe('useAutoLayoutOrchestrator', () => {
 
   // TC-AL-O-15 — onAfterLayout called after a successful run
   it('TC-AL-O-15: onAfterLayout is called after successful apply + persist', async () => {
-    ;(
-      updateTablePositionsBulk as unknown as Mock
-    ).mockReset()
+    ;(updateTablePositionsBulk as unknown as Mock).mockReset()
     const mockOnAfterLayout = vi.fn()
     mockRunD3ForceLayout.mockResolvedValueOnce(LAYOUT_RESULT)
-    ;(
-      updateTablePositionsBulk as unknown as Mock
-    ).mockResolvedValueOnce({
+    ;(updateTablePositionsBulk as unknown as Mock).mockResolvedValueOnce({
       success: true,
       count: 2,
     })
@@ -583,9 +568,7 @@ describe('useAutoLayoutOrchestrator', () => {
 
   // TC-AL-O-16 — onAfterLayout NOT called on layout error, persist failure, or auth error
   it('TC-AL-O-16: onAfterLayout is not called when layout/persist/auth fails', async () => {
-    ;(
-      updateTablePositionsBulk as unknown as Mock
-    ).mockReset()
+    ;(updateTablePositionsBulk as unknown as Mock).mockReset()
     const mockOnAfterLayout = vi.fn()
 
     // Layout error
@@ -603,9 +586,9 @@ describe('useAutoLayoutOrchestrator', () => {
 
     // Persist throws
     mockRunD3ForceLayout.mockResolvedValueOnce(LAYOUT_RESULT)
-    ;(
-      updateTablePositionsBulk as unknown as Mock
-    ).mockRejectedValueOnce(new Error('DB error'))
+    ;(updateTablePositionsBulk as unknown as Mock).mockRejectedValueOnce(
+      new Error('DB error'),
+    )
     const { result: r2 } = renderHook(() =>
       useAutoLayoutOrchestrator({
         ...makeHookArgs(),
@@ -619,9 +602,9 @@ describe('useAutoLayoutOrchestrator', () => {
 
     // Auth error
     mockRunD3ForceLayout.mockResolvedValueOnce(LAYOUT_RESULT)
-    ;(
-      updateTablePositionsBulk as unknown as Mock
-    ).mockResolvedValueOnce(AUTH_ERROR_RESPONSE)
+    ;(updateTablePositionsBulk as unknown as Mock).mockResolvedValueOnce(
+      AUTH_ERROR_RESPONSE,
+    )
     const { result: r3 } = renderHook(() =>
       useAutoLayoutOrchestrator({
         ...makeHookArgs(),
@@ -636,9 +619,7 @@ describe('useAutoLayoutOrchestrator', () => {
 
   // TC-AL-O-17 — onAfterLayout called after a successful retry
   it('TC-AL-O-17: onAfterLayout is called after a successful retry', async () => {
-    ;(
-      updateTablePositionsBulk as unknown as Mock
-    ).mockReset()
+    ;(updateTablePositionsBulk as unknown as Mock).mockReset()
     const mockOnAfterLayout = vi.fn()
     mockRunD3ForceLayout.mockResolvedValueOnce(LAYOUT_RESULT)
     ;(updateTablePositionsBulk as unknown as Mock)
@@ -672,9 +653,7 @@ describe('useAutoLayoutOrchestrator', () => {
   // bulk-persist payload (GH #110 regression — the n.type === 'table' filter
   // must exclude 'comment' nodes just like it excludes 'area' nodes).
   it('TC-AL-O-18: comment-pin nodes are excluded from layout input and bulk persist payload', async () => {
-    ;(
-      updateTablePositionsBulk as unknown as Mock
-    ).mockReset()
+    ;(updateTablePositionsBulk as unknown as Mock).mockReset()
 
     const tableNode = { id: 'table-1', type: 'table', position: { x: 0, y: 0 } }
     const areaNode = { id: 'area-1', type: 'area', position: { x: 0, y: 0 } }
@@ -692,9 +671,7 @@ describe('useAutoLayoutOrchestrator', () => {
       positions: [{ id: 'table-1', x: 10, y: 20 }],
     }
     mockRunD3ForceLayout.mockResolvedValueOnce(tableOnlyLayoutResult)
-    ;(
-      updateTablePositionsBulk as unknown as Mock
-    ).mockResolvedValueOnce({
+    ;(updateTablePositionsBulk as unknown as Mock).mockResolvedValueOnce({
       success: true,
       count: 1,
     })
@@ -845,6 +822,28 @@ describe('useAutoLayoutOrchestrator', () => {
       expect(onAfterLayout).toHaveBeenCalledWith(POSITIONS_WITH_AREA, [
         NEW_AREA,
       ])
+    })
+
+    it('broadcasts positions and area bounds in one emit', async () => {
+      arrange()
+      ;(
+        updateTablePositionsBulk as unknown as ReturnType<typeof vi.fn>
+      ).mockResolvedValueOnce({ success: true, count: 2 })
+      const { result } = renderHook(() =>
+        useAutoLayoutOrchestrator(makeHookArgs()),
+      )
+      await act(async () => {
+        await result.current.handleAutoLayoutClick(2)
+      })
+      expect(mockEmitBulkPositionUpdate).toHaveBeenCalledTimes(1)
+      expect(mockEmitBulkPositionUpdate).toHaveBeenCalledWith(
+        POSITIONS_WITH_AREA.map((p) => ({
+          tableId: p.id,
+          positionX: p.x,
+          positionY: p.y,
+        })),
+        [NEW_AREA],
+      )
     })
 
     it('retry re-sends the area bounds', async () => {

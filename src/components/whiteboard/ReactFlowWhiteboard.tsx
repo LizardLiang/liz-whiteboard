@@ -1293,6 +1293,20 @@ function ReactFlowWhiteboardInner({
   const patchPositionsRef = useRef<
     (positions: Array<{ id: string; x: number; y: number }>) => void
   >(() => {})
+  // Merges a peer's Auto Layout area bounds into `areas`. `applyAreaBounds`
+  // comes from useWhiteboardAreas, declared after the collaboration hook call,
+  // so it is populated by an effect further down.
+  const applyAreaBoundsRef = useRef<
+    (
+      bounds: Array<{
+        id: string
+        positionX: number
+        positionY: number
+        width: number
+        height: number
+      }>,
+    ) => void
+  >(() => {})
 
   // Concurrent-drag rollback guards (GH #111 review). Each drag-stop that
   // persists asynchronously bumps its sequence; a stale in-flight persist
@@ -1403,13 +1417,27 @@ function ReactFlowWhiteboardInner({
           positionX: number
           positionY: number
         }>,
+        areaBounds?: Array<{
+          id: string
+          positionX: number
+          positionY: number
+          width: number
+          height: number
+        }>,
       ) => {
         const normalised = positions.map((p) => ({
           id: p.tableId,
           x: p.positionX,
           y: p.positionY,
         }))
+        // This list holds ABSOLUTE positions; ReactFlowCanvas converts members
+        // to area-relative against the `areas` of the same render. Applying the
+        // area bounds in this same callback means that conversion sees the new
+        // origin, so members never paint against the old one.
         setNodes((nds) => applyBulkPositions(nds, normalised))
+        if (areaBounds && areaBounds.length > 0) {
+          applyAreaBoundsRef.current(areaBounds)
+        }
         // Patch the query cache too — without this a peer's received bulk move
         // (Auto Layout OR a multi-select drag, GH #111) reverts on the next
         // initialNodes re-sync, mirroring the area:moved receiver's fix.
@@ -2670,6 +2698,10 @@ function ReactFlowWhiteboardInner({
     areasRef.current = areas
   }, [areas])
 
+  useEffect(() => {
+    applyAreaBoundsRef.current = applyAreaBounds
+  }, [applyAreaBounds])
+
   // React Flow reports a nested member table's position RELATIVE to its area
   // (todo #55 follow-up — see node-nesting.ts). Everything in this component
   // reasons in ABSOLUTE flow coordinates, so every read of live geometry via
@@ -2877,27 +2909,14 @@ function ReactFlowWhiteboardInner({
   // reverted to their pre-layout positions and areas detached from their
   // members after a re-render. This mirrors `updatePositionMutation`'s
   // onSuccess cache patch above, generalized to N tables.
-  // Auto Layout also resized the areas around their members (and persisted
-  // the bounds in the same transaction). `updateAreaMutation` merges the new
-  // bounds into `areas` state and emits `area:update` so peers adopt them;
-  // the server re-writes the same values. Membership is never sent.
+  // The resized area bounds are already persisted (same transaction) and the
+  // orchestrator broadcasts them with the positions in one table:move:bulk, so
+  // only the cache patch is left here.
   const handleAfterAutoLayout = useCallback(
-    (
-      positions: Array<{ id: string; x: number; y: number }>,
-      areaBounds: Array<{
-        id: string
-        positionX: number
-        positionY: number
-        width: number
-        height: number
-      }>,
-    ) => {
+    (positions: Array<{ id: string; x: number; y: number }>) => {
       patchWhiteboardTablePositions(positions)
-      for (const { id, ...bounds } of areaBounds) {
-        updateAreaMutation(id, bounds)
-      }
     },
-    [patchWhiteboardTablePositions, updateAreaMutation],
+    [patchWhiteboardTablePositions],
   )
 
   // Auto Layout orchestrator — owns the full flow:

@@ -103,6 +103,7 @@ import { db } from '@/db'
 import {
   createEventLimiter,
   cursorPayloadSchema,
+  findForeignAreaIds,
   findForeignTableIds,
   tableMovePayloadSchema,
 } from '@/lib/socket-payload'
@@ -791,6 +792,13 @@ function setupCollaborationEventHandlers(
         positionX: number
         positionY: number
       }>
+      areas?: Array<{
+        id: string
+        positionX: number
+        positionY: number
+        width: number
+        height: number
+      }>
       userId: string
     }) => {
       // Standard auth prelude — matches every other handler in this file (Apollo R2-1).
@@ -833,6 +841,22 @@ function setupCollaborationEventHandlers(
           event: 'table:move:bulk',
           error: 'FORBIDDEN',
           message: 'Table does not belong to this whiteboard',
+        })
+        return
+      }
+
+      // Every area must belong to this board too: otherwise a client could
+      // resize another board's areas on its collaborators' canvases.
+      if (
+        findForeignAreaIds(
+          whiteboardId,
+          (parsed.data.areas ?? []).map((a) => a.id),
+        ).length > 0
+      ) {
+        socket.emit('error', {
+          event: 'table:move:bulk',
+          error: 'FORBIDDEN',
+          message: 'Area does not belong to this whiteboard',
         })
         return
       }

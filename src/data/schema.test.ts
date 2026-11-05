@@ -370,6 +370,34 @@ describe('tableMoveBulkBroadcastSchema (B1 socket payload validation)', () => {
     expect(result.success).toBe(true)
   })
 
+  it('accepts optional areas bounds and rejects malformed ones', () => {
+    const area = {
+      id: validTableId,
+      positionX: 1,
+      positionY: 2,
+      width: 300,
+      height: 200,
+    }
+    expect(
+      tableMoveBulkBroadcastSchema.safeParse({
+        ...validPayload,
+        areas: [area],
+      }).success,
+    ).toBe(true)
+    for (const bad of [
+      { ...area, id: 'nope' },
+      { ...area, width: 0 },
+      { ...area, positionX: NaN },
+    ]) {
+      expect(
+        tableMoveBulkBroadcastSchema.safeParse({
+          ...validPayload,
+          areas: [bad],
+        }).success,
+      ).toBe(false)
+    }
+  })
+
   it('TC-AL-C-B1-02: rejects NaN positionX', () => {
     const result = tableMoveBulkBroadcastSchema.safeParse({
       ...validPayload,

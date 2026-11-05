@@ -3,9 +3,11 @@ import { beforeEach, describe, expect, it } from 'vitest'
 import {
   createEventLimiter,
   cursorPayloadSchema,
+  findForeignAreaIds,
   findForeignTableIds,
   tableMovePayloadSchema,
 } from './socket-payload'
+import { db } from '@/db'
 import {
   makeProject,
   makeTable,
@@ -83,5 +85,29 @@ describe('findForeignTableIds', () => {
     expect(findForeignTableIds(a.id, [ta.id])).toEqual([])
     expect(findForeignTableIds(a.id, [ta.id, tb.id, ID])).toEqual([tb.id, ID])
     expect(findForeignTableIds(a.id, [])).toEqual([])
+  })
+})
+
+describe('findForeignAreaIds', () => {
+  beforeEach(() => resetDb())
+
+  function makeArea(whiteboardId: string, id: string) {
+    db.prepare(
+      'INSERT INTO "Area" ("id","whiteboardId","name","color","positionX","positionY","width","height","memberTableIds","updatedAt") VALUES (?,?,?,?,?,?,?,?,?,?)',
+    ).run(id, whiteboardId, 'A', '#fff', 0, 0, 100, 100, '[]', Date.now())
+  }
+
+  it('returns only ids that are not areas of the board', () => {
+    const { id: userId } = makeUser()
+    const project = makeProject({ ownerId: userId })
+    const a = makeWhiteboard({ projectId: project.id })
+    const b = makeWhiteboard({ projectId: project.id })
+    const aa = '30000000-0000-4000-8000-000000000001'
+    const ab = '30000000-0000-4000-8000-000000000002'
+    makeArea(a.id, aa)
+    makeArea(b.id, ab)
+    expect(findForeignAreaIds(a.id, [aa])).toEqual([])
+    expect(findForeignAreaIds(a.id, [aa, ab, ID])).toEqual([ab, ID])
+    expect(findForeignAreaIds(a.id, [])).toEqual([])
   })
 })
