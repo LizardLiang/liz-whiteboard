@@ -17,6 +17,7 @@
 // suite).
 import {  expect, test } from '@playwright/test'
 import { E2E_USER, IDS } from './fixtures'
+import { holdClientScripts } from './hold-hydration'
 import type {Page} from '@playwright/test';
 
 test.use({ storageState: { cookies: [], origins: [] } })
@@ -94,30 +95,53 @@ test.describe('Login redirect (GH #115)', () => {
 
   // Expired-session landing: the server guard redirects a full page load to
   // /login, and an autofilled form can be submitted before React hydrates.
-  // Without a guard the browser runs the form's native GET submit — the page
-  // reloads to /login?email=…&password=… and the user must log in a second
-  // time. The submit must wait for hydration, and no native submit may ever
-  // put the password in a URL.
-  test('submit before hydration does not reload /login or leak the password into the URL', async ({
+  // With no onSubmit handler the browser would run the form's native submit and
+  // reload /login — the user must log in a second time. Hydration is held back
+  // here, so the order is deterministic: the button must be disabled, Enter
+  // must do nothing, and only the hydrated form may submit. method="post" alone
+  // would pass the password check below; the disabled-button and no-navigation
+  // assertions are what fail if the `!hydrated` gate is removed.
+  test('submit before hydration is blocked, then succeeds once hydrated, with no password in any URL', async ({
     page,
   }) => {
     const navigations: Array<string> = []
     page.on('request', (r) => {
       if (r.isNavigationRequest()) navigations.push(r.url())
     })
+    const release = await holdClientScripts(page)
 
     await page.goto('/', { waitUntil: 'commit' })
     await page.waitForSelector('#email', { state: 'attached' })
     await page.fill('#email', E2E_USER.email)
     await page.fill('#password', E2E_USER.password)
-    // Enter right away — on the dev server this lands before hydration.
-    await page.press('#password', 'Enter')
 
-    // The hydrated form submits and lands on the target.
-    await page.getByRole('button', { name: 'Sign in' }).click()
+    const signIn = page.getByRole('button', { name: 'Sign in' })
+    await expect(signIn).toBeDisabled()
+
+    const before = navigations.length
+    await page.press('#password', 'Enter')
+    // Give a native submit time to start; none may.
+    await page.waitForTimeout(1_000)
+    expect(navigations.length).toBe(before)
+    expect(new URL(page.url()).pathname).toBe('/login')
+
+    release()
+    await expect(signIn).toBeEnabled({ timeout: 15_000 })
+    await signIn.click()
     await page.waitForURL((url) => url.pathname === '/')
     await expect(page.getByRole('button', { name: 'Log out' })).toBeVisible()
 
     expect(navigations.filter((u) => u.includes('password='))).toEqual([])
+  })
+
+  // The <noscript> notice is only useful if the server renders it: a browser
+  // with JavaScript off never runs the client render.
+  test('server HTML carries the no-JavaScript notice for /login', async ({
+    request,
+  }) => {
+    const html = await (await request.get('/login')).text()
+    expect(html).toMatch(
+      /<noscript>.*JavaScript is required to sign in\..*<\/noscript>/s,
+    )
   })
 })

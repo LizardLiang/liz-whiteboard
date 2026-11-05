@@ -30,6 +30,7 @@
 import { execFileSync } from 'node:child_process'
 import { expect, test } from '@playwright/test'
 import { E2E_AUTOFILL_USER, E2E_USER } from './fixtures'
+import { holdClientScripts } from './hold-hydration'
 import type { Page } from '@playwright/test'
 
 test.use({ storageState: { cookies: [], origins: [] } })
@@ -270,11 +271,13 @@ test.describe('Register — browser autofill', () => {
   })
 
   // A full page load can be submitted before React hydrates. With no onSubmit
-  // handler yet, the browser runs the form's native GET submit: /register
-  // reloads with ?password=… in the URL and the submit is lost. The button
-  // must stay disabled until hydration, and no native submit may ever put the
-  // password in a URL.
-  test('submit before hydration does not reload /register or leak the password into the URL', async ({
+  // handler yet, the browser would run the form's native submit and reload
+  // /register, losing the submit. Hydration is held back here, so the order is
+  // deterministic: the button must be disabled, Enter must do nothing, and only
+  // the hydrated form may register. method="post" alone would pass the
+  // password check below; the disabled-button and no-navigation assertions are
+  // what fail if the `!hydrated` gate is removed.
+  test('submit before hydration is blocked, then registers once hydrated, with no password in any URL', async ({
     page,
     context,
   }) => {
@@ -282,23 +285,27 @@ test.describe('Register — browser autofill', () => {
     page.on('request', (r) => {
       if (r.isNavigationRequest()) navigations.push(r.url())
     })
+    const release = await holdClientScripts(page)
 
     await page.goto('/register', { waitUntil: 'commit' })
     await page.waitForSelector('#username', { state: 'attached' })
     await page.fill('#username', E2E_AUTOFILL_USER.username)
     await page.fill('#email', E2E_AUTOFILL_USER.email)
     await page.fill('#password', E2E_AUTOFILL_USER.password)
-    // Enter right away — usually lands before hydration; either order must
-    // end in one successful registration.
-    await page.press('#password', 'Enter')
 
-    // The hydrated form submits and registers. If the Enter already did that
-    // (hydration won the race), there is no button left to click.
     const createAccount = page.getByRole('button', { name: 'Create account' })
-    await expect(async () => {
-      if (!/\/register/.test(page.url())) return
-      await createAccount.click({ timeout: 2_000 })
-    }).toPass({ timeout: 15_000 })
+    await expect(createAccount).toBeDisabled()
+
+    const before = navigations.length
+    await page.press('#password', 'Enter')
+    // Give a native submit time to start; none may.
+    await page.waitForTimeout(1_000)
+    expect(navigations.length).toBe(before)
+    expect(new URL(page.url()).pathname).toBe('/register')
+
+    release()
+    await expect(createAccount).toBeEnabled({ timeout: 15_000 })
+    await createAccount.click()
     await expect
       .poll(
         async () =>

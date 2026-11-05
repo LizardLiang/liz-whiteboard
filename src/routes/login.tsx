@@ -1,7 +1,7 @@
 // src/routes/login.tsx
 // Login page — public route (no auth required)
 
-import { Link, createFileRoute, useHydrated } from '@tanstack/react-router'
+import { Link, createFileRoute } from '@tanstack/react-router'
 import { useRef, useState } from 'react'
 import { z } from 'zod'
 import { loginUser } from './api/auth'
@@ -11,6 +11,7 @@ import { Label } from '@/components/ui/label'
 import { Switch } from '@/components/ui/switch'
 import { readAutofilledValue, useAutofillSync } from '@/hooks/use-autofill-sync'
 import { sanitizeRedirect } from '@/lib/safe-redirect'
+import { useHydrated } from '@/hooks/use-hydrated'
 import { useT } from '@/lib/i18n/use-t'
 import { tError } from '@/lib/i18n/t-error'
 
@@ -130,14 +131,21 @@ function LoginPage() {
           </p>
         </div>
 
-        {/* method="post": if a native submit ever runs, the credentials go in
-            the body, never in the URL (history, server logs). */}
+        {/* method="post" is defense in depth: a native submit never puts
+            credentials in a URL (history, server logs). It does not save the
+            submit: a native POST reloads the page and loses it. The hydration
+            gate on the submit button is what prevents that. */}
         <form
           method="post"
           onSubmit={handleSubmit}
-          aria-busy={isSubmitting}
+          aria-busy={isSubmitting || !hydrated}
           noValidate
         >
+          <noscript>
+            <div className="mb-4 rounded-md bg-destructive/10 border border-destructive/30 px-4 py-3 text-sm text-destructive">
+              {t('auth.login.noscript')}
+            </div>
+          </noscript>
           {/* Post-reset confirmation banner */}
           {reset === 'success' && (
             <div

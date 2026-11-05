@@ -42,6 +42,7 @@ export const zhTW: DeepStringRecord<Dictionary> = {
       noAccount: '還沒有帳號？',
       register: '註冊',
       emptyFields: '請輸入電子郵件和密碼。',
+      noscript: '登入需要啟用 JavaScript。',
     },
     register: {
       subtitle: '建立您的帳號',
@@ -54,6 +55,7 @@ export const zhTW: DeepStringRecord<Dictionary> = {
       hasAccount: '已經有帳號？',
       logIn: '登入',
       validationFailed: '驗證失敗，請檢查輸入內容後再試一次。',
+      noscript: '建立帳號需要啟用 JavaScript。',
     },
     forgot: {
       title: '忘記密碼？',
@@ -76,6 +78,7 @@ export const zhTW: DeepStringRecord<Dictionary> = {
       confirmPassword: '確認密碼',
       submit: '更新密碼',
       submitting: '更新中...',
+      noscript: '重設密碼需要啟用 JavaScript。',
     },
     sessionExpired: {
       title: '您的登入已過期',

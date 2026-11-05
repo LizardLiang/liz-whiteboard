@@ -41,6 +41,7 @@ export const en = {
       noAccount: "Don't have an account?",
       register: 'Register',
       emptyFields: 'Enter your email and password.',
+      noscript: 'JavaScript is required to sign in.',
     },
     register: {
       subtitle: 'Create your account',
@@ -54,6 +55,7 @@ export const en = {
       logIn: 'Log in',
       validationFailed:
         'Validation failed. Please check your input and try again.',
+      noscript: 'JavaScript is required to create an account.',
     },
     forgot: {
       title: 'Forgot your password?',
@@ -77,6 +79,7 @@ export const en = {
       confirmPassword: 'Confirm password',
       submit: 'Update password',
       submitting: 'Updating...',
+      noscript: 'JavaScript is required to reset your password.',
     },
     sessionExpired: {
       title: 'Your session has expired',

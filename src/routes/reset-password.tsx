@@ -4,7 +4,7 @@
 // validateResetToken before the password form is shown, so an invalid link
 // never renders a form the server would reject anyway.
 
-import { Link, createFileRoute, useHydrated } from '@tanstack/react-router'
+import { Link, createFileRoute } from '@tanstack/react-router'
 import { useQuery } from '@tanstack/react-query'
 import { useState } from 'react'
 import { z } from 'zod'
@@ -13,6 +13,7 @@ import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { resetPasswordInputSchema } from '@/data/schema'
+import { useHydrated } from '@/hooks/use-hydrated'
 import { useT } from '@/lib/i18n/use-t'
 import { tError } from '@/lib/i18n/t-error'
 
@@ -125,14 +126,21 @@ function ResetPasswordPage() {
           <h1 className="text-2xl font-bold">{t('auth.reset.title')}</h1>
         </div>
 
-        {/* method="post": if a native submit ever runs, the password and reset
-            token go in the body, never in the URL (history, server logs). */}
+        {/* method="post" is defense in depth: a native submit never puts the
+            password or reset token in a URL (history, server logs). It does
+            not save the submit: a native POST reloads the page and loses it.
+            The hydration gate on the submit button is what prevents that. */}
         <form
           method="post"
           onSubmit={handleSubmit}
-          aria-busy={isSubmitting}
+          aria-busy={isSubmitting || !hydrated}
           noValidate
         >
+          <noscript>
+            <div className="mb-4 rounded-md bg-destructive/10 border border-destructive/30 px-4 py-3 text-sm text-destructive">
+              {t('auth.reset.noscript')}
+            </div>
+          </noscript>
           {errors.form && (
             <div
               role="alert"
