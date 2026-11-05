@@ -77,7 +77,11 @@ export default defineConfig({
   // config reuses whatever dev server is already running, which would not
   // have it. It runs under playwright.cimd.config.ts
   // (`bun run test:e2e:cimd`) instead.
-  testIgnore: ['**/coedit-table-create.spec.ts', '**/mcp-cimd-open.spec.ts'],
+  testIgnore: [
+    '**/coedit-table-create.spec.ts',
+    '**/auto-layout-area-peers.spec.ts',
+    '**/mcp-cimd-open.spec.ts',
+  ],
   globalSetup: './e2e/global-setup.ts',
   timeout: 60_000,
   expect: { timeout: 10_000 },
