@@ -132,4 +132,59 @@ describe('useAutoLayoutOrchestrator with a real ReactFlowProvider', () => {
       ]),
     )
   })
+
+  it('a save failing in the same tick as the apply restores the store and hands the previous layout to the cache', async () => {
+    // The save fails after React Flow applied the optimistic layout, as a
+    // network failure does; a same-tick rejection would beat the store.
+    ;(updateTablePositionsBulk as any).mockImplementationOnce(
+      () => new Promise((_, reject) => reject(new Error('network'))),
+    )
+    const onAreaBoundsChange = vi.fn()
+    const onTablePositionsChange = vi.fn()
+    const runD3ForceLayout = vi.fn().mockResolvedValue({
+      positions: [
+        { id: MEMBER_ID, x: 524, y: 344 },
+        { id: FREE_ID, x: 50, y: 60 },
+      ],
+      areas: [NEW_AREA],
+    })
+    const wrapper = ({ children }: { children: ReactNode }) => (
+      <ReactFlowProvider
+        defaultNodes={[areaNode, memberNode, freeNode]}
+        defaultEdges={[]}
+      >
+        {children}
+      </ReactFlowProvider>
+    )
+    const { result } = renderHook(
+      () => ({
+        rf: useReactFlow(),
+        orch: useAutoLayoutOrchestrator({
+          whiteboardId: WB_ID,
+          runD3ForceLayout,
+          emitBulkPositionUpdate: vi.fn(),
+          onAreaBoundsChange,
+          onTablePositionsChange,
+        }),
+      }),
+      { wrapper },
+    )
+    await act(async () => {
+      await result.current.orch.handleAutoLayoutClick(2)
+    })
+    await act(async () => {
+      await new Promise((r) => setTimeout(r, 0))
+    })
+    const byId = new Map(result.current.rf.getNodes().map((n) => [n.id, n]))
+    expect(byId.get(AREA_ID)?.position).toEqual({ x: 0, y: 0 })
+    expect(byId.get(MEMBER_ID)?.position).toEqual({ x: 10, y: 10 })
+    expect(byId.get(FREE_ID)?.position).toEqual({ x: 0, y: 0 })
+    expect(onAreaBoundsChange).toHaveBeenLastCalledWith([OLD_AREA])
+    expect(onTablePositionsChange).toHaveBeenLastCalledWith(
+      expect.arrayContaining([
+        { id: MEMBER_ID, x: 10, y: 10 },
+        { id: FREE_ID, x: 0, y: 0 },
+      ]),
+    )
+  })
 })

@@ -21,6 +21,7 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { useReactFlow } from '@xyflow/react'
 import { toast } from 'sonner'
+import type { Node } from '@xyflow/react'
 import type { LayoutOutputPosition } from '@/lib/auto-layout/d3-force-layout'
 import type {
   AreaLayoutInputArea,
@@ -342,18 +343,33 @@ export function useAutoLayoutOrchestrator({
         revert: () => {
           if (reverted) return
           reverted = true
-          // setNodes only queues in React Flow, so everything below derives
-          // from `out`, computed here, never from what setNodes did.
-          const out = rollbackLayout(
-            getNodes(),
-            snapshotNodes,
-            storeNodes,
-            allMovedIds,
-            areaBounds,
-            previousAreaBounds,
-          )
+          // setNodes only queues in React Flow, so everything the cache and
+          // edge routing need derives from `out`, computed here. The store
+          // gets an updater over its own latest nodes, so a change queued
+          // meanwhile is kept. A save that fails in the same tick as the
+          // apply finds the store not yet flushed: then the applied nodes
+          // are the current ones.
+          const live = getNodes()
+          const applyFlushed = [...allMovedIds].some((id) => {
+            const now = live.find((n) => n.id === id)
+            const was = snapshotNodes.find((n) => n.id === id)
+            return (
+              now?.position.x !== was?.position.x ||
+              now?.position.y !== was?.position.y
+            )
+          })
+          const rollback = (current: ReadonlyArray<Node>) =>
+            rollbackLayout(
+              current,
+              snapshotNodes,
+              storeNodes,
+              allMovedIds,
+              areaBounds,
+              previousAreaBounds,
+            )
+          const out = rollback(applyFlushed ? live : storeNodes)
           const { restoredAreaIds: restoredAreas, restoredTableIds } = out
-          setNodes(out.nodes)
+          setNodes((prev) => rollback(prev).nodes)
           const absTables = toAbsoluteTableNodes(out.nodes)
           setEdges((prev) => {
             const relationshipEdges = prev.filter(
