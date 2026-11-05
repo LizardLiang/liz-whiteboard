@@ -43,9 +43,10 @@ function ResetPasswordPage() {
   const [confirmPassword, setConfirmPassword] = useState('')
   const [errors, setErrors] = useState<Record<string, string>>({})
   const [isSubmitting, setIsSubmitting] = useState(false)
-  // False in the server-rendered HTML and until React hydrates. A submit in
-  // that window has no onSubmit handler, so the browser would run the form's
-  // native submit and reload the page with the password in the URL.
+  // The form only renders after the client-side token check, so it is not in
+  // the server HTML today. This gate keeps it safe if that ever changes: a
+  // submit before hydration has no onSubmit handler and would run the
+  // browser's native submit.
   const hydrated = useHydrated()
 
   const handleSubmit = async (e: React.FormEvent<HTMLFormElement>) => {

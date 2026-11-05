@@ -165,12 +165,10 @@ test.describe('Forgot password', () => {
     await expect(page.getByText('Invalid email or password')).toBeVisible()
   })
 
-  // A full page load can be submitted before React hydrates. With no onSubmit
-  // handler yet, the browser runs the form's native GET submit: the reset
-  // token and new password land in the URL (history, server logs) and the
-  // submit is lost. The button must wait for hydration and no native submit
-  // may ever put the password in a URL.
-  test('submit before hydration does not reload /reset-password or leak the password into the URL', async ({
+  // Defense in depth: a native submit of this form must never put the reset
+  // token or new password in the URL (history, server logs). See the test
+  // body for why a real pre-hydration submit cannot occur on this page.
+  test('reset form posts and never puts the password or token in the URL', async ({
     page,
   }) => {
     const rawToken = generateRawToken()
@@ -193,7 +191,6 @@ test.describe('Forgot password', () => {
     const newPassword = 'PreHydration654!'
     await page.fill('#password', newPassword)
     await page.fill('#confirmPassword', newPassword)
-    // Enter right away — on the dev server this lands before hydration.
     await page.press('#confirmPassword', 'Enter')
 
     // The hydrated form submits and lands on the login page's banner. If the

@@ -288,11 +288,17 @@ test.describe('Register — browser autofill', () => {
     await page.fill('#username', E2E_AUTOFILL_USER.username)
     await page.fill('#email', E2E_AUTOFILL_USER.email)
     await page.fill('#password', E2E_AUTOFILL_USER.password)
-    // Enter right away — on the dev server this lands before hydration.
+    // Enter right away — usually lands before hydration; either order must
+    // end in one successful registration.
     await page.press('#password', 'Enter')
 
-    // The hydrated form submits and registers.
-    await page.getByRole('button', { name: 'Create account' }).click()
+    // The hydrated form submits and registers. If the Enter already did that
+    // (hydration won the race), there is no button left to click.
+    const createAccount = page.getByRole('button', { name: 'Create account' })
+    await expect(async () => {
+      if (!/\/register/.test(page.url())) return
+      await createAccount.click({ timeout: 2_000 })
+    }).toPass({ timeout: 15_000 })
     await expect
       .poll(
         async () =>
