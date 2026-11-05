@@ -57,7 +57,7 @@ const NAMES: Record<string, string> = {
 }
 
 /** Persisted position of every table as "name:x,y" lines, snapped to the
- * expected value when within 2 units so a pass compares equal and a failure
+ * expected value when within TOL units so a pass compares equal and a failure
  * prints the real numbers. */
 function snapshot(moved: Array<string>, dx: number, dy: number): string {
   const { pos } = readPersisted()
