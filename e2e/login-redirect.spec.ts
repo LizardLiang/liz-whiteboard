@@ -91,4 +91,33 @@ test.describe('Login redirect (GH #115)', () => {
       page.getByRole('textbox', { name: 'Email' }),
     ).not.toBeVisible()
   })
+
+  // Expired-session landing: the server guard redirects a full page load to
+  // /login, and an autofilled form can be submitted before React hydrates.
+  // Without a guard the browser runs the form's native GET submit — the page
+  // reloads to /login?email=…&password=… and the user must log in a second
+  // time. The submit must wait for hydration, and no native submit may ever
+  // put the password in a URL.
+  test('submit before hydration does not reload /login or leak the password into the URL', async ({
+    page,
+  }) => {
+    const navigations: Array<string> = []
+    page.on('request', (r) => {
+      if (r.isNavigationRequest()) navigations.push(r.url())
+    })
+
+    await page.goto('/', { waitUntil: 'commit' })
+    await page.waitForSelector('#email', { state: 'attached' })
+    await page.fill('#email', E2E_USER.email)
+    await page.fill('#password', E2E_USER.password)
+    // Enter right away — on the dev server this lands before hydration.
+    await page.press('#password', 'Enter')
+
+    // The hydrated form submits and lands on the target.
+    await page.getByRole('button', { name: 'Sign in' }).click()
+    await page.waitForURL((url) => url.pathname === '/')
+    await expect(page.getByRole('button', { name: 'Log out' })).toBeVisible()
+
+    expect(navigations.filter((u) => u.includes('password='))).toEqual([])
+  })
 })
