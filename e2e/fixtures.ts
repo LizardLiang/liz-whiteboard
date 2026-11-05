@@ -173,6 +173,15 @@ export const IDS = {
   alaFree1: 'c1000000-0000-4000-8000-000000000014',
   alaFree2: 'c1000000-0000-4000-8000-000000000015',
 
+  // Dedicated board for the multi-drag-of-area-members suite (#2258).
+  // Re-seeded before every test via e2e/seed-multi-drag-area.ts.
+  mdaWhiteboard: 'c2000000-0000-4000-8000-000000000001',
+  mdaArea: 'c2000000-0000-4000-8000-000000000002',
+  mdaMember1: 'c2000000-0000-4000-8000-000000000011',
+  mdaMember2: 'c2000000-0000-4000-8000-000000000012',
+  mdaMember3: 'c2000000-0000-4000-8000-000000000013',
+  mdaFree: 'c2000000-0000-4000-8000-000000000014',
+
   // Dedicated project/board for the shapes-and-connectors suite (Phase 1).
   // Isolated on purpose (Artemis's recommendation): this suite draws,
   // moves, resizes, deletes, and — in the legacy-snapshot-restore case
