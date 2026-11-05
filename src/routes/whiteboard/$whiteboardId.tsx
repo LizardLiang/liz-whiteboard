@@ -181,16 +181,20 @@ function WhiteboardEditor() {
     async (ast: DiagramAST) => {
       await importDiagram(ast, {
         onLayoutApplied: (positions, areas) => {
-          if (positions.length === 0) return
-          emit('table:move:bulk', {
-            positions: positions.map((p) => ({
-              tableId: p.id,
-              positionX: p.x,
-              positionY: p.y,
-            })),
-            ...(areas.length > 0 ? { areas } : {}),
-            userId,
-          })
+          // The broadcast schema caps positions at 500 per message; an import
+          // can lay out up to 1000 tables, so send the area bounds with the
+          // first chunk and the remaining positions after it.
+          for (let i = 0; i < positions.length; i += 500) {
+            emit('table:move:bulk', {
+              positions: positions.slice(i, i + 500).map((p) => ({
+                tableId: p.id,
+                positionX: p.x,
+                positionY: p.y,
+              })),
+              ...(i === 0 && areas.length > 0 ? { areas } : {}),
+              userId,
+            })
+          }
         },
       })
     },
