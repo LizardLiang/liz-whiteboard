@@ -1255,6 +1255,33 @@ describe('useAutoLayoutOrchestrator', () => {
         expect(onAfterLayout).toHaveBeenCalledTimes(1)
       })
 
+      it('unmount during a save that then fails takes the mirrored layout out of the cache', async () => {
+        arrange()
+        const save = deferred<unknown>()
+        mockBulk().mockReturnValueOnce(save.promise)
+        const onTablePositionsChange = vi.fn()
+        const { result, unmount } = renderHook(() =>
+          useAutoLayoutOrchestrator({
+            ...makeHookArgs(),
+            onTablePositionsChange,
+          }),
+        )
+        await act(async () => {
+          void result.current.handleAutoLayoutClick(2)
+          await new Promise((r) => setTimeout(r, 0))
+        })
+        unmount()
+        onTablePositionsChange.mockClear()
+        save.reject(new Error('network'))
+        await new Promise((r) => setTimeout(r, 0))
+        expect(onTablePositionsChange).toHaveBeenCalledWith(
+          expect.arrayContaining([
+            { id: MEMBER_ID, x: 10, y: 10 },
+            { id: FREE_ID, x: 0, y: 0 },
+          ]),
+        )
+      })
+
       it('unmount during the save still broadcasts and patches the cache', async () => {
         arrange()
         const save = deferred<unknown>()

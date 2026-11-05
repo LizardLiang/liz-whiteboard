@@ -401,7 +401,12 @@ export function useAutoLayoutOrchestrator({
         result = await updateTablePositionsBulk({ data: payload })
       } catch (persistErr) {
         // eslint-disable-next-line @typescript-eslint/no-unnecessary-condition
-        if (!isMountedRef.current || isStale()) return
+        if (isStale()) return
+        if (!isMountedRef.current) {
+          // The cache outlives the component: take the mirrored layout out.
+          layoutActionsRef.current.revert()
+          return
+        }
         console.error('Auto Layout persist failed:', persistErr)
         layoutActionsRef.current.revert()
         setPersistError(persistErr)
@@ -435,6 +440,8 @@ export function useAutoLayoutOrchestrator({
             areaBounds,
           )
           if (!isStale()) onAfterLayout?.(positions, areaBounds)
+        } else if (!isStale()) {
+          layoutActionsRef.current.revert()
         }
         return
       }
