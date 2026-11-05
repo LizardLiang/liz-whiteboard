@@ -16,7 +16,10 @@ import { COEDIT_BASE_URL, COEDIT_PORT } from './e2e/fixtures-collab'
 
 export default defineConfig({
   testDir: './e2e',
-  testMatch: 'coedit-table-create.spec.ts',
+  testMatch: [
+    'coedit-table-create.spec.ts',
+    'auto-layout-area-peers.spec.ts',
+  ],
   globalSetup: './e2e/global-setup-collab.ts',
   timeout: 90_000,
   expect: { timeout: 10_000 },

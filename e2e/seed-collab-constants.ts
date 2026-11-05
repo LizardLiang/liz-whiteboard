@@ -27,6 +27,15 @@ export const COLLAB_ID = {
   usersEmail: 'c0114b00-0000-4000-8000-0000000c0102',
   ordersId: 'c0114b00-0000-4000-8000-0000000c0201',
   ordersUserId: 'c0114b00-0000-4000-8000-0000000c0202',
+  // Second board in the same project: one area with three members plus two
+  // ungrouped tables, for e2e/auto-layout-area-peers.spec.ts.
+  areaWhiteboard: 'c0114b00-0000-4000-8000-000000000ed2',
+  area: 'c0114b00-0000-4000-8000-0000000a0e01',
+  areaMember1: 'c0114b00-0000-4000-8000-000000000a11',
+  areaMember2: 'c0114b00-0000-4000-8000-000000000a12',
+  areaMember3: 'c0114b00-0000-4000-8000-000000000a13',
+  areaFree1: 'c0114b00-0000-4000-8000-000000000a14',
+  areaFree2: 'c0114b00-0000-4000-8000-000000000a15',
 } as const
 
 export const COLLAB_USERS = [
@@ -52,3 +61,4 @@ export const COLLAB_USERS = [
 
 export const COLLAB_PASSWORD = 'CoEdit123!'
 export const COLLAB_WHITEBOARD_ID = COLLAB_ID.whiteboard
+export const COLLAB_AREA_WHITEBOARD_ID = COLLAB_ID.areaWhiteboard

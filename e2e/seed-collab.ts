@@ -86,6 +86,65 @@ col(ID.usersEmail, ID.usersTable, 'email', 'VARCHAR', 0, 0, 1)
 col(ID.ordersId, ID.ordersTable, 'id', 'UUID', 1, 0, 0)
 col(ID.ordersUserId, ID.ordersTable, 'user_id', 'UUID', 0, 1, 1)
 
+// --- Second board: one area (3 members, all inside it) + 2 ungrouped tables ---
+db.query(
+  'INSERT INTO "Whiteboard" (id, name, projectId, folderId, canvasState, textSource, createdAt, updatedAt) VALUES (?,?,?,?,?,?,?,?)',
+).run(ID.areaWhiteboard, 'Area ERD', ID.project, null, null, null, now, now)
+
+const areaTables: Array<[string, string, number, number]> = [
+  [ID.areaMember1, 'a_orders', 140, 170],
+  [ID.areaMember2, 'a_items', 400, 400],
+  [ID.areaMember3, 'a_refunds', 140, 420],
+  [ID.areaFree1, 'a_customers', 820, 120],
+  [ID.areaFree2, 'a_audit', 820, 360],
+]
+const pkIds = new Map<string, string>()
+const fkIds = new Map<string, string>()
+for (const [id, name, x, y] of areaTables) {
+  table.run(id, ID.areaWhiteboard, name, null, x, y, null, null, now, now)
+  const pk = crypto.randomUUID()
+  const fk = crypto.randomUUID()
+  pkIds.set(id, pk)
+  fkIds.set(id, fk)
+  col(pk, id, 'id', 'UUID', 1, 0, 0)
+  col(fk, id, 'ref_id', 'UUID', 0, 1, 1)
+}
+const rel = (source: string, target: string) =>
+  db
+    .query(
+      'INSERT INTO "Relationship" (id, whiteboardId, sourceTableId, targetTableId, sourceColumnId, targetColumnId, cardinality, label, routingPoints, createdAt, updatedAt) VALUES (?,?,?,?,?,?,?,?,?,?,?)',
+    )
+    .run(
+      crypto.randomUUID(),
+      ID.areaWhiteboard,
+      source,
+      target,
+      fkIds.get(source),
+      pkIds.get(target),
+      'MANY_TO_ONE',
+      null,
+      null,
+      now,
+      now,
+    )
+rel(ID.areaMember2, ID.areaMember1)
+rel(ID.areaMember3, ID.areaFree2)
+db.query(
+  'INSERT INTO "Area" (id, whiteboardId, name, color, positionX, positionY, width, height, memberTableIds, createdAt, updatedAt) VALUES (?,?,?,?,?,?,?,?,?,?,?)',
+).run(
+  ID.area,
+  ID.areaWhiteboard,
+  'Billing',
+  '#8b5cf6',
+  100,
+  100,
+  620,
+  520,
+  JSON.stringify([ID.areaMember1, ID.areaMember2, ID.areaMember3]),
+  now,
+  now,
+)
+
 db.close()
 
 console.log(
