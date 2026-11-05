@@ -5,6 +5,7 @@ import { createServerFn } from '@tanstack/react-start'
 import { z } from 'zod'
 import { MAX_TEXT_SOURCE_LENGTH, canvasStateSchema } from '@/data/schema'
 import type {
+  AreaBounds,
   BulkUpdatePositions,
   CreateRelationship,
   CreateTable,
@@ -274,6 +275,35 @@ export const updateTablePosition = createServerFn({
   )
 
 /**
+ * Write table positions and area bounds in one transaction (all-or-nothing).
+ * Bounds only for areas: membership (memberTableIds) is never rewritten.
+ */
+function persistLayout(
+  positions: Array<{ id: string; positionX: number; positionY: number }>,
+  areas: Array<AreaBounds>,
+): void {
+  transaction(() => {
+    const ts = nowMs()
+    for (const p of positions) {
+      update('DiagramTable', p.id, {
+        positionX: p.positionX,
+        positionY: p.positionY,
+        updatedAt: ts,
+      })
+    }
+    for (const a of areas) {
+      update('Area', a.id, {
+        positionX: a.positionX,
+        positionY: a.positionY,
+        width: a.width,
+        height: a.height,
+        updatedAt: ts,
+      })
+    }
+  })
+}
+
+/**
  * Server function to bulk-update table positions (used by Auto Layout).
  *
  * Persists N positions atomically in a single SQLite transaction, together
@@ -327,26 +357,7 @@ export const updateTablePositionsBulk = createServerFn({ method: 'POST' })
 
         try {
           // Single transaction — all-or-nothing per NFR Reliability.
-          transaction(() => {
-            const ts = nowMs()
-            for (const p of positions) {
-              update('DiagramTable', p.id, {
-                positionX: p.positionX,
-                positionY: p.positionY,
-                updatedAt: ts,
-              })
-            }
-            // Bounds only: membership (memberTableIds) is never rewritten.
-            for (const a of areas ?? []) {
-              update('Area', a.id, {
-                positionX: a.positionX,
-                positionY: a.positionY,
-                width: a.width,
-                height: a.height,
-                updatedAt: ts,
-              })
-            }
-          })
+          persistLayout(positions, areas ?? [])
         } catch (error) {
           console.error('Error bulk-updating table positions:', error)
           throw error
@@ -422,7 +433,9 @@ export const MAX_AUTO_LAYOUT_TABLES = 1000
 export const computeAutoLayout = createServerFn({
   method: 'POST',
 })
-  .validator((data: { whiteboardId: string }) => data)
+  .validator((data: { whiteboardId: string }) =>
+    z.object({ whiteboardId: z.string().uuid() }).parse(data),
+  )
   .handler(
     requireAuth(
       async (
@@ -468,26 +481,14 @@ export const computeAutoLayout = createServerFn({
                   areas: existingAreas,
                 })
 
-          // Update table positions in database (batch update for performance)
-          transaction(() => {
-            const ts = nowMs()
-            for (const pos of positions) {
-              update('DiagramTable', pos.id, {
-                positionX: pos.x,
-                positionY: pos.y,
-                updatedAt: ts,
-              })
-            }
-            for (const a of areas) {
-              update('Area', a.id, {
-                positionX: a.positionX,
-                positionY: a.positionY,
-                width: a.width,
-                height: a.height,
-                updatedAt: ts,
-              })
-            }
-          })
+          persistLayout(
+            positions.map((p) => ({
+              id: p.id,
+              positionX: p.x,
+              positionY: p.y,
+            })),
+            areas,
+          )
 
           return { positions, areas }
         } catch (error) {

@@ -745,6 +745,17 @@ export type RedeemInvite = z.infer<typeof redeemInviteSchema>
 // Auto Layout Schemas
 // ============================================================================
 
+/** Position and size of one area, as written by Auto Layout. */
+export const areaBoundsSchema = z.object({
+  id: z.string().uuid(),
+  positionX: z.number().finite(),
+  positionY: z.number().finite(),
+  width: z.number().finite().positive(),
+  height: z.number().finite().positive(),
+})
+
+export type AreaBounds = z.infer<typeof areaBoundsSchema>
+
 /**
  * Schema for bulk-updating table positions (used by Auto Layout).
  * - whiteboardId scopes the IDOR guard
@@ -767,18 +778,7 @@ export const bulkUpdatePositionsSchema = z.object({
   // Area bounds resized by Auto Layout (each area is laid out as one block).
   // Written in the same transaction as the table positions; membership
   // (memberTableIds) is never part of this payload.
-  areas: z
-    .array(
-      z.object({
-        id: z.string().uuid(),
-        positionX: z.number().finite(),
-        positionY: z.number().finite(),
-        width: z.number().finite().positive(),
-        height: z.number().finite().positive(),
-      }),
-    )
-    .max(1000)
-    .optional(),
+  areas: z.array(areaBoundsSchema).max(1000).optional(),
 })
 
 export type BulkUpdatePositions = z.infer<typeof bulkUpdatePositionsSchema>

@@ -4,6 +4,7 @@
 import { describe, expect, it } from 'vitest'
 import {
   MAX_BOARD_COORD,
+  areaBoundsSchema,
   areaMoveBroadcastSchema,
   bulkUpdatePositionsSchema,
   canvasElementPropsSchema,
@@ -913,5 +914,47 @@ describe('bulkUpdatePositionsSchema areas', () => {
       areas: [{ ...area, memberTableIds: [T1] }],
     })
     expect(r.areas?.[0]).not.toHaveProperty('memberTableIds')
+  })
+})
+
+describe('areaBoundsSchema', () => {
+  const valid = {
+    id: '123e4567-e89b-42d3-a456-426614174000',
+    positionX: 10,
+    positionY: -20,
+    width: 300,
+    height: 200,
+  }
+
+  it('accepts finite bounds with positive size', () => {
+    expect(areaBoundsSchema.safeParse(valid).success).toBe(true)
+  })
+
+  it.each([
+    ['non-uuid id', { id: 'nope' }],
+    ['zero width', { width: 0 }],
+    ['negative height', { height: -1 }],
+    ['non-finite x', { positionX: Infinity }],
+    ['NaN y', { positionY: NaN }],
+  ])('rejects %s', (_label, patch) => {
+    expect(areaBoundsSchema.safeParse({ ...valid, ...patch }).success).toBe(
+      false,
+    )
+  })
+
+  it('is used by bulkUpdatePositionsSchema.areas', () => {
+    const base = {
+      whiteboardId: valid.id,
+      positions: [{ id: valid.id, positionX: 0, positionY: 0 }],
+    }
+    expect(
+      bulkUpdatePositionsSchema.safeParse({ ...base, areas: [valid] }).success,
+    ).toBe(true)
+    expect(
+      bulkUpdatePositionsSchema.safeParse({
+        ...base,
+        areas: [{ ...valid, width: 0 }],
+      }).success,
+    ).toBe(false)
   })
 })

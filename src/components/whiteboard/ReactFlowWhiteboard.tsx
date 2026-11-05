@@ -85,12 +85,11 @@ import type { Dialect } from '@/lib/ddl-generator'
 import type { ExportImageDialogOptions } from './ExportImageDialog'
 import type { RenderFraming } from '@/lib/render/framing'
 import type { ResolvedTableReference } from '@/data/table-reference'
-import type {JoinQueryPlan, JoinQueryTable} from '@/lib/join-query-generator';
-import {
-  
-  
-  buildJoinQueryPlan
+import type {
+  JoinQueryPlan,
+  JoinQueryTable,
 } from '@/lib/join-query-generator'
+import { buildJoinQueryPlan } from '@/lib/join-query-generator'
 import { DOCK_FIT_PADDING } from '@/lib/react-flow/fit-view-padding'
 import { useWhiteboardShapes } from '@/hooks/use-whiteboard-shapes'
 import {

@@ -4,8 +4,8 @@
 // single whiteboard connection. Areas are loaded once via getWhiteboardAreas
 // and then kept live through area:created/updated/deleted events.
 
-import { useCallback, useEffect, useState } from 'react'
-import { useQuery } from '@tanstack/react-query'
+import { useCallback, useEffect, useMemo } from 'react'
+import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { toast } from 'sonner'
 import type { Area } from '@/data/models'
 import type { CreateArea, UpdateArea } from '@/data/schema'
@@ -90,7 +90,8 @@ export function useWhiteboardAreas(params: {
 }): UseWhiteboardAreasReturn {
   const t = useT()
   const { whiteboardId, userId, enabled, on, off, emit } = params
-  const [areas, setAreas] = useState<Array<Area>>([])
+  const queryClient = useQueryClient()
+  const queryKey = useMemo(() => ['areas', whiteboardId], [whiteboardId])
 
   // Initial load — disabled on the public read-only path (getWhiteboardAreas is
   // requireAuth-gated, mirroring the tables/relationships queries).
@@ -101,11 +102,25 @@ export function useWhiteboardAreas(params: {
     enabled,
   })
 
-  useEffect(() => {
-    // Session expired — root-provider's global handler surfaces the
-    // session-expired modal; nothing to reconcile locally.
-    if (data && !isUnauthorizedError(data)) setAreas(data)
-  }, [data])
+  // The query cache is the single owner of area state: every writer below
+  // updates it, so a remount reads the same rects the screen showed.
+  // Session expired — root-provider's global handler surfaces the
+  // session-expired modal; nothing to reconcile locally.
+  const areas = useMemo<Array<Area>>(
+    () => (data && !isUnauthorizedError(data) ? data : []),
+    [data],
+  )
+
+  const setAreas = useCallback(
+    (updater: (prev: Array<Area>) => Array<Area>) => {
+      queryClient.setQueryData(queryKey, (old: unknown) =>
+        !old || isUnauthorizedError(old)
+          ? old
+          : updater(old as Array<Area>),
+      )
+    },
+    [queryClient, queryKey],
+  )
 
   // Live sync from other collaborators.
   useEffect(() => {
@@ -138,7 +153,7 @@ export function useWhiteboardAreas(params: {
       off('area:updated', onUpdated)
       off('area:deleted', onDeleted)
     }
-  }, [enabled, on, off, userId])
+  }, [enabled, on, off, userId, setAreas])
 
   // Create — waits for the server ack so we get the real id, then appends.
   const createArea = useCallback(
@@ -154,7 +169,7 @@ export function useWhiteboardAreas(params: {
         }
       })
     },
-    [emit, whiteboardId, t],
+    [emit, whiteboardId, t, setAreas],
   )
 
   // Update — optimistic local merge, then emit.
@@ -165,7 +180,7 @@ export function useWhiteboardAreas(params: {
       )
       emit('area:update', { areaId, ...patch })
     },
-    [emit],
+    [emit, setAreas],
   )
 
   // Delete — optimistic remove, then emit.
@@ -174,7 +189,7 @@ export function useWhiteboardAreas(params: {
       setAreas((prev) => prev.filter((a) => a.id !== areaId))
       emit('area:delete', { areaId })
     },
-    [emit],
+    [emit, setAreas],
   )
 
   // Merge a position into `areas` state only — no emit. Shared by the local
@@ -185,7 +200,7 @@ export function useWhiteboardAreas(params: {
         prev.map((a) => (a.id === areaId ? { ...a, ...position } : a)),
       )
     },
-    [],
+    [setAreas],
   )
 
   const applyAreaBounds = useCallback(
@@ -214,7 +229,7 @@ export function useWhiteboardAreas(params: {
         }),
       )
     },
-    [],
+    [setAreas],
   )
 
   // Atomic move (area-atomic-move fix) — area position + member positions
