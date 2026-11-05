@@ -143,13 +143,11 @@ export function useAutoLayoutOrchestrator({
   // the toasts and the broadcast alone.
   const runIdRef = useRef(0)
 
-  // handlePersistResult (below) and handleRetry are mutually recursive:
   // handlePersistResult's toast action invokes handleRetry, and handleRetry
-  // calls handlePersistResult. Declaring either as a direct dependency of the
-  // other is a temporal-dead-zone crash (both are `const` in the same
-  // function scope). Route the forward reference through a ref, kept in
-  // sync on every render, so handlePersistResult never needs handleRetry in
-  // its own dependency array.
+  // (through runLayout) calls handlePersistResult. Declaring either as a
+  // direct dependency of the other is a temporal-dead-zone crash (both are
+  // `const` in the same function scope). Route the forward reference through
+  // a ref, kept in sync on every render.
   const handleRetryRef = useRef<() => Promise<void>>(async () => {})
 
   // Mount tracking — Retry and all state setters must no-op after unmount
@@ -163,7 +161,7 @@ export function useAutoLayoutOrchestrator({
   }, [])
 
   // ---------------------------------------------------------------------------
-  // handlePersistResult — shared between runLayout and handleRetry
+  // handlePersistResult — result handling for runLayout
   // Returns true on success, false on auth-error
   // ---------------------------------------------------------------------------
   const handlePersistResult = useCallback(
@@ -395,14 +393,12 @@ export function useAutoLayoutOrchestrator({
         // No fitView on persist failure (PRD NFR Persistence — failure UX).
       }
 
-      // A newer run owns the board, the toasts and the broadcast now.
-      if (isStale()) return
-
       // The server holds the layout. Peers and the query cache must learn of
-      // it even when this component unmounted during the request; only the
-      // toast, fitView and state updates are skipped after unmount.
+      // it even when this component unmounted during the request or a newer
+      // run started; only the toast, fitView and state updates are skipped.
+      // A newer run overwrites the positions again when it succeeds.
       // eslint-disable-next-line @typescript-eslint/no-unnecessary-condition
-      if (!isMountedRef.current) {
+      if (!isMountedRef.current || isStale()) {
         if (!isUnauthorizedError(result)) {
           emitBulkPositionUpdate(
             positions.map((p) => ({

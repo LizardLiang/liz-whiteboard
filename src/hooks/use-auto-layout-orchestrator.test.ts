@@ -1148,7 +1148,7 @@ describe('useAutoLayoutOrchestrator', () => {
         expect(result.current.persistError).toBeNull()
       })
 
-      it('unmount between persist and emit still broadcasts and patches the cache', async () => {
+      it('unmount during the save still broadcasts and patches the cache', async () => {
         arrange()
         const save = deferred<unknown>()
         mockBulk().mockReturnValueOnce(save.promise)
