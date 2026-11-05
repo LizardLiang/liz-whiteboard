@@ -156,7 +156,8 @@ export function useAutoLayoutOrchestrator({
   // Layout generation: a run that applies its layout takes the next number.
   // A run that finds a different number after an await was overtaken by a
   // newer applied layout. It is stale and leaves the board, the toasts and
-  // the cache alone. A run that exits without applying never takes a number,
+  // the cache alone. A stale run whose save succeeds still broadcasts to
+  // peers, because the server holds its layout. A run that exits without applying never takes a number,
   // so it cannot make an older run stale.
   const layoutGenRef = useRef(0)
 
