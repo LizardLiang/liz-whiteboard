@@ -2901,14 +2901,13 @@ function ReactFlowWhiteboardInner({
   ])
 
   // Auto Layout onAfterLayout callback (area-autolayout-persistence-fix).
-  // Auto Layout previously only wrote the applied positions to the React
-  // Flow store (via setNodes inside the orchestrator) and never patched the
-  // React Query cache — the source of truth `whiteboardData` → `nodes` memo
-  // → `initialNodes` that ReactFlowCanvas re-syncs `setNodes` from on every
-  // re-render (ReactFlowCanvas.tsx). That stale cache is why tables visibly
-  // reverted to their pre-layout positions and areas detached from their
-  // members after a re-render. This mirrors `updatePositionMutation`'s
-  // onSuccess cache patch above, generalized to N tables.
+  // The query cache is the source of truth `whiteboardData` → `nodes` memo
+  // → `initialNodes` that ReactFlowCanvas re-syncs `setNodes` from. The
+  // orchestrator mirrors the layout into the cache when it applies it
+  // (`onTablePositionsChange`), so a peer's edit during the save cannot
+  // revert the layout. This callback re-patches the same positions once the
+  // save has succeeded, as `updatePositionMutation`'s onSuccess does for one
+  // table.
   // The resized area bounds are already persisted (same transaction) and the
   // orchestrator broadcasts them with the positions in one table:move:bulk, so
   // only the cache patch is left here.
@@ -2935,6 +2934,7 @@ function ReactFlowWhiteboardInner({
     emitBulkPositionUpdate,
     onAfterLayout: handleAfterAutoLayout,
     onAreaBoundsChange: applyAreaBounds,
+    onTablePositionsChange: patchWhiteboardTablePositions,
   })
 
   const handleAddTableToArea = useCallback(

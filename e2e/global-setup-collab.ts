@@ -43,7 +43,10 @@ export default async function globalSetupCollab(_config: FullConfig) {
   await loginAndSaveState(bob.email, COEDIT_BOB_STORAGE_STATE)
 }
 
-async function loginAndSaveState(email: string, storageStatePath: string) {
+export async function loginAndSaveState(
+  email: string,
+  storageStatePath: string,
+) {
   const browser = await chromium.launch()
   const context = await browser.newContext({ baseURL: COEDIT_BASE_URL })
   const page = await context.newPage()
@@ -71,10 +74,7 @@ async function loginAndSaveState(email: string, storageStatePath: string) {
   await browser.close()
 }
 
-async function expectSessionCookie(
-  context: BrowserContext,
-  email: string,
-) {
+async function expectSessionCookie(context: BrowserContext, email: string) {
   const deadline = Date.now() + 15_000
   while (Date.now() < deadline) {
     const cookies = await context.cookies()

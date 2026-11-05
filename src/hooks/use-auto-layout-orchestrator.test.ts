@@ -1148,6 +1148,113 @@ describe('useAutoLayoutOrchestrator', () => {
         expect(result.current.persistError).toBeNull()
       })
 
+      it('mirrors the layout positions into the cache before the save resolves', async () => {
+        arrange()
+        const save = deferred<unknown>()
+        mockBulk().mockReturnValueOnce(save.promise)
+        const onTablePositionsChange = vi.fn()
+        const onAfterLayout = vi.fn()
+        const { result } = renderHook(() =>
+          useAutoLayoutOrchestrator({
+            ...makeHookArgs(),
+            onTablePositionsChange,
+            onAfterLayout,
+          }),
+        )
+        await act(async () => {
+          void result.current.handleAutoLayoutClick(2)
+          await new Promise((r) => setTimeout(r, 0))
+        })
+        expect(onTablePositionsChange).toHaveBeenCalledWith(POSITIONS_WITH_AREA)
+        expect(onAfterLayout).not.toHaveBeenCalled()
+        await act(async () => {
+          save.resolve({ success: true, count: 2 })
+          await new Promise((r) => setTimeout(r, 0))
+        })
+      })
+
+      it('a failed save mirrors the pre-layout absolute positions of restored tables only', async () => {
+        arrange()
+        const save = deferred<unknown>()
+        mockBulk().mockReturnValueOnce(save.promise)
+        const onTablePositionsChange = vi.fn()
+        const { result } = renderHook(() =>
+          useAutoLayoutOrchestrator({
+            ...makeHookArgs(),
+            onTablePositionsChange,
+          }),
+        )
+        await act(async () => {
+          void result.current.handleAutoLayoutClick(2)
+          await new Promise((r) => setTimeout(r, 0))
+        })
+        // A peer moves the member by 7px while the save is in flight.
+        store = store.map((n) =>
+          n.id === MEMBER_ID
+            ? { ...n, position: { x: n.position.x + 7, y: n.position.y } }
+            : n,
+        )
+        onTablePositionsChange.mockClear()
+        await act(async () => {
+          save.reject(new Error('network'))
+          await new Promise((r) => setTimeout(r, 0))
+        })
+        // The free table is restored to its saved spot. The member is
+        // excluded: its cache value stays what the peer's move left.
+        expect(onTablePositionsChange).toHaveBeenCalledTimes(1)
+        expect(onTablePositionsChange).toHaveBeenCalledWith([
+          { id: FREE_ID, x: 0, y: 0 },
+        ])
+      })
+
+      it('a failed save restores a member to its pre-layout ABSOLUTE position', async () => {
+        arrange()
+        mockBulk().mockRejectedValueOnce(new Error('network'))
+        const onTablePositionsChange = vi.fn()
+        const { result } = renderHook(() =>
+          useAutoLayoutOrchestrator({
+            ...makeHookArgs(),
+            onTablePositionsChange,
+          }),
+        )
+        await act(async () => {
+          await result.current.handleAutoLayoutClick(2)
+        })
+        const last = onTablePositionsChange.mock.calls.at(-1)![0]
+        expect(last).toEqual(
+          expect.arrayContaining([
+            { id: MEMBER_ID, x: 10, y: 10 },
+            { id: FREE_ID, x: 0, y: 0 },
+          ]),
+        )
+      })
+
+      it('a stale run that saved later does not patch the cache over the newer run', async () => {
+        arrange(2)
+        const first = deferred<unknown>()
+        mockBulk().mockReturnValueOnce(first.promise)
+        mockBulk().mockResolvedValueOnce({ success: true, count: 2 })
+        const onAfterLayout = vi.fn()
+        const { result } = renderHook(() =>
+          useAutoLayoutOrchestrator({ ...makeHookArgs(), onAfterLayout }),
+        )
+        await act(async () => {
+          void result.current.handleAutoLayoutClick(2)
+          await new Promise((r) => setTimeout(r, 0))
+        })
+        await act(async () => {
+          await result.current.handleAutoLayoutClick(2)
+        })
+        expect(onAfterLayout).toHaveBeenCalledTimes(1)
+        mockEmitBulkPositionUpdate.mockClear()
+        await act(async () => {
+          first.resolve({ success: true, count: 2 })
+          await new Promise((r) => setTimeout(r, 0))
+        })
+        expect(mockEmitBulkPositionUpdate).toHaveBeenCalledTimes(1)
+        expect(onAfterLayout).toHaveBeenCalledTimes(1)
+      })
+
       it('unmount during the save still broadcasts and patches the cache', async () => {
         arrange()
         const save = deferred<unknown>()

@@ -2,7 +2,8 @@
 // Central hook that wires all Auto Layout phases together inside ReactFlowWhiteboard.
 // Owns the full user-facing flow:
 //   button click → optional confirmation dialog → layout computation
-//   → optimistic setNodes → bulk persist → emit broadcast → fitView → toast.
+//   → optimistic setNodes + cache mirror → bulk persist → emit broadcast
+//   → fitView → toast.
 //
 // Error handling:
 //   - Layout error (thrown): show error toast, no setNodes
@@ -73,11 +74,12 @@ export interface UseAutoLayoutOrchestratorArgs {
     areas?: Array<AreaLayoutOutputArea>,
   ) => void
   /**
-   * Called once after a layout run's optimistic apply + persist has
-   * succeeded — used by ReactFlowWhiteboard to patch the React Query cache
-   * (the source of truth that `ReactFlowCanvas` re-syncs `initialNodes`
-   * from). Not called on
-   * layout error, persist failure, or auth error.
+   * Called after a layout run's persist has succeeded — used by
+   * ReactFlowWhiteboard to patch the React Query cache (the source of truth
+   * that `ReactFlowCanvas` re-syncs `initialNodes` from). An idempotent
+   * re-patch: `onTablePositionsChange` already mirrored the same positions
+   * when the layout was applied. Not called on layout error, persist
+   * failure, auth error, or when a newer run has taken over.
    *
    * Receives the applied table positions and the new area bounds (empty
    * when the board has no areas). Both use absolute coordinates. The area
@@ -96,6 +98,18 @@ export interface UseAutoLayoutOrchestratorArgs {
    * reconcile reads) on the same origin at all times.
    */
   onAreaBoundsChange?: (areas: Array<AreaLayoutOutputArea>) => void
+  /**
+   * Mirrors table positions (ABSOLUTE) into the caller's cache WITHOUT
+   * emitting or persisting. The orchestrator calls it with the layout's
+   * positions when it writes the optimistic layout to the React Flow store,
+   * and with the pre-layout positions of the tables it restores when a
+   * failed persist rolls the store back. The cache therefore never lags the
+   * store while a save is pending, so a re-sync from the cache (a peer's
+   * edit) cannot snap the layout back.
+   */
+  onTablePositionsChange?: (
+    positions: Array<{ id: string; x: number; y: number }>,
+  ) => void
 }
 
 export interface UseAutoLayoutOrchestratorResult {
@@ -125,6 +139,7 @@ export function useAutoLayoutOrchestrator({
   emitBulkPositionUpdate,
   onAfterLayout,
   onAreaBoundsChange,
+  onTablePositionsChange,
 }: UseAutoLayoutOrchestratorArgs): UseAutoLayoutOrchestratorResult {
   const { setNodes, setEdges, getNodes, getEdges, fitView } = useReactFlow()
   const { triggerSessionExpired } = useAuthContext()
@@ -314,6 +329,9 @@ export function useAutoLayoutOrchestrator({
         )
       })
       if (areaBounds.length > 0) onAreaBoundsChange?.(areaBounds)
+      onTablePositionsChange?.(
+        positions.map((p) => ({ id: p.id, x: p.x, y: p.y })),
+      )
 
       // Roll back ONLY what this layout changed, in the store's coordinate
       // space (members relative to their area's origin). A table whose store
@@ -357,6 +375,13 @@ export function useAutoLayoutOrchestrator({
             restoredAreas.has(b.id),
           )
           if (restoredBounds.length > 0) onAreaBoundsChange?.(restoredBounds)
+          // Tables someone else moved meanwhile are not in restoredTableIds,
+          // so their cache value stays.
+          const restoredPositions = toAbsoluteTableNodes(snapshotNodes)
+            .filter((n) => restoredTableIds.has(n.id))
+            .map((n) => ({ id: n.id, x: n.position.x, y: n.position.y }))
+          if (restoredPositions.length > 0)
+            onTablePositionsChange?.(restoredPositions)
         },
       }
 
@@ -393,10 +418,11 @@ export function useAutoLayoutOrchestrator({
         // No fitView on persist failure (PRD NFR Persistence — failure UX).
       }
 
-      // The server holds the layout. Peers and the query cache must learn of
-      // it even when this component unmounted during the request or a newer
-      // run started; only the toast, fitView and state updates are skipped.
-      // A newer run overwrites the positions again when it succeeds.
+      // The server holds the layout. Peers must learn of it even when this
+      // component unmounted during the request or a newer run started; only
+      // the toast, fitView and state updates are skipped. The cache patch
+      // runs only when this run is still current: a newer run has already
+      // written its own positions into the cache and must keep them.
       // eslint-disable-next-line @typescript-eslint/no-unnecessary-condition
       if (!isMountedRef.current || isStale()) {
         if (!isUnauthorizedError(result)) {
@@ -408,7 +434,7 @@ export function useAutoLayoutOrchestrator({
             })),
             areaBounds,
           )
-          onAfterLayout?.(positions, areaBounds)
+          if (!isStale()) onAfterLayout?.(positions, areaBounds)
         }
         return
       }
@@ -445,6 +471,7 @@ export function useAutoLayoutOrchestrator({
     emitBulkPositionUpdate,
     onAfterLayout,
     onAreaBoundsChange,
+    onTablePositionsChange,
     t,
   ])
 

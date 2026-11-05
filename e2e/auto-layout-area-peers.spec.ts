@@ -11,13 +11,19 @@
 // The intermediate frame lasts only a render or two, so bob's page samples the
 // rendered boxes on EVERY animation frame (requestAnimationFrame) instead of
 // polling from the test runner.
+import { execFileSync } from 'node:child_process'
 import { expect, test } from '@playwright/test'
+import { loginAndSaveState } from './global-setup-collab'
 import {
   COEDIT_ALICE_STORAGE_STATE,
   COEDIT_BASE_URL,
   COEDIT_BOB_STORAGE_STATE,
 } from './fixtures-collab'
-import { COLLAB_AREA_WHITEBOARD_ID, COLLAB_ID } from './seed-collab-constants'
+import {
+  COLLAB_AREA_WHITEBOARD_ID,
+  COLLAB_ID,
+  COLLAB_USERS,
+} from './seed-collab-constants'
 import type { Page } from '@playwright/test'
 
 test.use({ viewport: { width: 1600, height: 1000 } })
@@ -149,7 +155,9 @@ test('a peer never sees an area member outside its area during Auto Layout', asy
     await startSampler(bobPage, MEMBER_IDS)
 
     await alicePage.getByRole('button', { name: 'Auto Layout' }).click()
-    await expect(alicePage.getByText('Layout applied to 5 tables')).toBeVisible()
+    await expect(
+      alicePage.getByText('Layout applied to 5 tables'),
+    ).toBeVisible()
 
     // Wait for the layout to reach bob: a member moves relative to its area.
     await expect
@@ -222,6 +230,119 @@ test('a peer never sees an area member outside its area during Auto Layout', asy
       y: bobStart.members[0].y - bobStart.area.y,
     })
   } finally {
+    await aliceContext.close()
+    await bobContext.close()
+  }
+})
+
+/** React Flow paints a node at `style.transform`; members are area-relative. */
+async function memberTransforms(page: Page) {
+  return page.evaluate(
+    (ids) =>
+      ids.map(
+        (id) =>
+          (
+            document.querySelector(
+              `.react-flow__node[data-id="${id}"]`,
+            ) as HTMLElement | null
+          )?.style.transform ?? null,
+      ),
+    MEMBER_IDS,
+  )
+}
+
+// A peer's table:created patches the query cache, and ReactFlowCanvas re-syncs
+// its node store from that cache. Until the save succeeded the cache held the
+// pre-layout positions, so every laid-out table snapped back on Alice's screen
+// while her save was pending (LizMeter #2246). Alice's bulk save is held back
+// here, so the assertions run strictly inside the pending-save window.
+test('a peer creating a table during the save does not snap the layout back', async ({
+  browser,
+}) => {
+  // The first test already laid the board out and saved it, and Auto Layout is
+  // deterministic, so a second run would not move anything. Re-seed the board
+  // (this drops the sessions) and log both users in again.
+  execFileSync('bun', ['run', 'e2e/seed-collab.ts'], { stdio: 'inherit' })
+  for (const [username, state] of [
+    ['alice_collab', COEDIT_ALICE_STORAGE_STATE],
+    ['bob_collab', COEDIT_BOB_STORAGE_STATE],
+  ] as const) {
+    const user = COLLAB_USERS.find((u) => u.username === username)
+    if (!user) throw new Error(`no ${username} in COLLAB_USERS`)
+    await loginAndSaveState(user.email, state)
+  }
+
+  const aliceContext = await browser.newContext({
+    baseURL: COEDIT_BASE_URL,
+    storageState: COEDIT_ALICE_STORAGE_STATE,
+  })
+  const bobContext = await browser.newContext({
+    baseURL: COEDIT_BASE_URL,
+    storageState: COEDIT_BOB_STORAGE_STATE,
+  })
+
+  let releaseSave!: () => void
+  const saveGate = new Promise<void>((resolve) => {
+    releaseSave = resolve
+  })
+
+  try {
+    const alicePage = await aliceContext.newPage()
+    const bobPage = await bobContext.newPage()
+
+    // Prod server-function URLs are hashes, not names: match the request by
+    // its body. Only the bulk layout save carries a `positions` list.
+    let saveHeld = false
+    await alicePage.route('**/_serverFn/*', async (route) => {
+      const req = route.request()
+      if (
+        req.method() === 'POST' &&
+        (req.postData() ?? '').includes('positions')
+      ) {
+        saveHeld = true
+        await saveGate
+      }
+      await route.continue()
+    })
+
+    await openBoard(alicePage)
+    await openBoard(bobPage)
+
+    const seedTransforms = await memberTransforms(alicePage)
+    const nodeCount = () => alicePage.locator('.react-flow__node').count()
+    const nodesBefore = await nodeCount()
+
+    await alicePage.getByRole('button', { name: 'Auto Layout' }).click()
+
+    // The optimistic layout reaches Alice's store before the save returns.
+    await expect
+      .poll(async () => memberTransforms(alicePage), { timeout: 10_000 })
+      .not.toEqual(seedTransforms)
+    await expect.poll(() => saveHeld).toBe(true)
+    const laidOut = await memberTransforms(alicePage)
+
+    // Bob creates a table while Alice's save is pending.
+    await bobPage.getByRole('button', { name: 'Add Table' }).click()
+    await bobPage.getByPlaceholder('e.g., Users').fill('snapback_probe')
+    await bobPage.getByRole('button', { name: 'Create Table' }).click()
+
+    // Alice receives the new table (her cache is patched and the store
+    // re-syncs from it) ...
+    await expect.poll(nodeCount, { timeout: 10_000 }).toBe(nodesBefore + 1)
+    await alicePage.waitForTimeout(500)
+
+    // ... and the layout is still on screen, with the save still pending.
+    expect(await memberTransforms(alicePage)).toEqual(laidOut)
+    expect(await memberTransforms(alicePage)).not.toEqual(seedTransforms)
+
+    // Release the save: the layout stays.
+    releaseSave()
+    await expect(
+      alicePage.getByText(/Layout applied to \d+ tables/),
+    ).toBeVisible()
+    expect(await memberTransforms(alicePage)).toEqual(laidOut)
+  } finally {
+    releaseSave()
     await aliceContext.close()
     await bobContext.close()
   }
