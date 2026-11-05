@@ -430,11 +430,15 @@ export const updateWhiteboardTextSourceFn = createServerFn({
 /** Upper bound on tables the O(n^2) force layout will be run on. */
 export const MAX_AUTO_LAYOUT_TABLES = 1000
 
+export const computeAutoLayoutInputSchema = z.object({
+  whiteboardId: z.string().uuid(),
+})
+
 export const computeAutoLayout = createServerFn({
   method: 'POST',
 })
   .validator((data: { whiteboardId: string }) =>
-    z.object({ whiteboardId: z.string().uuid() }).parse(data),
+    computeAutoLayoutInputSchema.parse(data),
   )
   .handler(
     requireAuth(

@@ -81,7 +81,7 @@ describe('useWhiteboardAreas query-cache ownership', () => {
     )
   })
 
-  it('ignores writes while the cache is empty and returns [] for unauthorized', async () => {
+  it('leaves an unauthorized cache entry untouched and returns []', async () => {
     vi.mocked(getWhiteboardAreas).mockResolvedValue({
       error: 'UNAUTHORIZED',
       status: 401,
@@ -98,5 +98,15 @@ describe('useWhiteboardAreas query-cache ownership', () => {
       error: 'UNAUTHORIZED',
       status: 401,
     })
+  })
+
+  it('does not create a cache entry when a write arrives before the first load', () => {
+    const { result } = renderHook(
+      () => useWhiteboardAreas({ ...params, enabled: false }),
+      { wrapper },
+    )
+    act(() => result.current.updateArea('a', { width: 1 }))
+    expect(client.getQueryData(['areas', 'wb'])).toBeUndefined()
+    expect(result.current.areas).toEqual([])
   })
 })
