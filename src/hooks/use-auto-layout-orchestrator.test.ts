@@ -1177,6 +1177,70 @@ describe('useAutoLayoutOrchestrator', () => {
         expect(result.current.persistError).toBeNull()
       })
 
+      it('Retry while a run is in flight does nothing', async () => {
+        arrange()
+        const save = deferred<unknown>()
+        mockBulk().mockReturnValueOnce(save.promise)
+        const { result } = renderHook(() =>
+          useAutoLayoutOrchestrator(makeHookArgs()),
+        )
+        await act(async () => {
+          void result.current.handleAutoLayoutClick(2)
+          await new Promise((r) => setTimeout(r, 0))
+        })
+        expect(mockRunD3ForceLayout).toHaveBeenCalledTimes(1)
+        await act(async () => {
+          await result.current.handleRetry()
+        })
+        expect(mockRunD3ForceLayout).toHaveBeenCalledTimes(1)
+        expect(mockBulk()).toHaveBeenCalledTimes(1)
+        await act(async () => {
+          save.resolve({ success: true, count: 2 })
+          await new Promise((r) => setTimeout(r, 0))
+        })
+        expect(result.current.isRunning).toBe(false)
+      })
+
+      it.each([
+        ['returns no layout', null],
+        ['finds no table', 'empty'],
+      ])(
+        'a newer run that %s does not stop an older failing save from reverting',
+        async (_label, kind) => {
+          arrange()
+          const original = [areaNode, memberNode, freeNode]
+          const first = deferred<unknown>()
+          mockBulk().mockReturnValueOnce(first.promise)
+          const { result } = renderHook(() =>
+            useAutoLayoutOrchestrator(makeHookArgs()),
+          )
+          await act(async () => {
+            void result.current.handleAutoLayoutClick(2)
+            await new Promise((r) => setTimeout(r, 0))
+          })
+          const applied = store
+          if (kind === 'empty') {
+            mockGetNodes.mockImplementation(() => [areaNode])
+          } else {
+            mockRunD3ForceLayout.mockResolvedValueOnce(null)
+          }
+          await act(async () => {
+            await result.current.handleAutoLayoutClick(2)
+          })
+          mockGetNodes.mockImplementation(() => store)
+          expect(store).toBe(applied)
+          ;(toast.error as unknown as Mock).mockClear()
+          await act(async () => {
+            first.reject(new Error('network'))
+            await new Promise((r) => setTimeout(r, 0))
+          })
+          expect(store).toEqual(original)
+          expect(toast.error).toHaveBeenCalledTimes(1)
+          expect(result.current.persistError).toBeTruthy()
+          expect(result.current.isRunning).toBe(false)
+        },
+      )
+
       it('mirrors the layout positions into the cache before the save resolves', async () => {
         arrange()
         const save = deferred<unknown>()

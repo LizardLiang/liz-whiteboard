@@ -8,6 +8,7 @@
 // orchestrator (use-auto-layout-orchestrator.ts) is its only caller.
 
 import type { AreaNodeType } from '@/lib/react-flow/types'
+import type { AreaBounds } from '@/data/schema'
 import { buildParentIndex, toRelative } from '@/lib/react-flow/node-nesting'
 
 export interface ToStoreNodesPosition {
@@ -16,13 +17,7 @@ export interface ToStoreNodesPosition {
   y: number
 }
 
-export interface ToStoreNodesAreaBounds {
-  id: string
-  positionX: number
-  positionY: number
-  width: number
-  height: number
-}
+export type ToStoreNodesAreaBounds = AreaBounds
 
 export interface ToStoreNodesMembership {
   id: string

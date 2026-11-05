@@ -153,10 +153,16 @@ export function useAutoLayoutOrchestrator({
   // positions, area bounds and edge routing). Set by runLayout.
   const layoutActionsRef = useRef<{ revert: () => void } | null>(null)
 
-  // Generation counter: every runLayout call takes the next number. A run
-  // that finds a newer number after an await is stale and leaves the board,
-  // the toasts and the broadcast alone.
-  const runIdRef = useRef(0)
+  // Layout generation: a run that applies its layout takes the next number.
+  // A run that finds a different number after an await was overtaken by a
+  // newer applied layout. It is stale and leaves the board, the toasts and
+  // the cache alone. A run that exits without applying never takes a number,
+  // so it cannot make an older run stale.
+  const layoutGenRef = useRef(0)
+
+  // Runs between start and finish. Read from a ref, not from render state,
+  // because a toast's Retry closure outlives the render that created it.
+  const activeRunsRef = useRef(0)
 
   // handlePersistResult's toast action invokes handleRetry, and handleRetry
   // (through runLayout) calls handlePersistResult. Declaring either as a
@@ -216,8 +222,9 @@ export function useAutoLayoutOrchestrator({
   // runLayout — the core flow
   // ---------------------------------------------------------------------------
   const runLayout = useCallback(async (): Promise<void> => {
-    const myRun = ++runIdRef.current
-    const isStale = () => runIdRef.current !== myRun
+    let myGen = layoutGenRef.current
+    const isStale = () => layoutGenRef.current !== myGen
+    activeRunsRef.current += 1
     if (isMountedRef.current) setIsRunning(true)
     if (isMountedRef.current) setPersistError(null)
 
@@ -278,6 +285,18 @@ export function useAutoLayoutOrchestrator({
 
       const { positions } = layoutResult
       const areaBounds = layoutResult.areas ?? []
+      myGen = ++layoutGenRef.current
+      const broadcastApplied = () => {
+        emitBulkPositionUpdate(
+          positions.map((p) => ({
+            tableId: p.id,
+            positionX: p.x,
+            positionY: p.y,
+          })),
+          areaBounds,
+        )
+        if (!isStale()) onAfterLayout?.(positions, areaBounds)
+      }
 
       // Step 2 — Optimistic local apply (before network round-trip).
       // `updatedNodes` holds ABSOLUTE table positions: it feeds edge routing,
@@ -441,15 +460,7 @@ export function useAutoLayoutOrchestrator({
       // eslint-disable-next-line @typescript-eslint/no-unnecessary-condition
       if (!isMountedRef.current || isStale()) {
         if (!isUnauthorizedError(result)) {
-          emitBulkPositionUpdate(
-            positions.map((p) => ({
-              tableId: p.id,
-              positionX: p.x,
-              positionY: p.y,
-            })),
-            areaBounds,
-          )
-          if (!isStale()) onAfterLayout?.(positions, areaBounds)
+          broadcastApplied()
         } else if (!isStale()) {
           layoutActionsRef.current.revert()
         }
@@ -462,20 +473,14 @@ export function useAutoLayoutOrchestrator({
         // Step 6 — Emit broadcast AFTER server-function success
         // Mirrors the single-table updateTablePositionMutation.onSuccess pattern
         // (resolves Apollo Finding 3).
-        emitBulkPositionUpdate(
-          positions.map((p) => ({
-            tableId: p.id,
-            positionX: p.x,
-            positionY: p.y,
-          })),
-          areaBounds,
-        )
         // Step 7 — Hand the applied positions and area bounds to the caller
         // so it can patch the query cache (area-autolayout-persistence-fix).
-        onAfterLayout?.(positions, areaBounds)
+        broadcastApplied()
       }
     } finally {
-      if (isMountedRef.current && !isStale()) setIsRunning(false)
+      activeRunsRef.current -= 1
+      if (isMountedRef.current && activeRunsRef.current === 0)
+        setIsRunning(false)
     }
   }, [
     whiteboardId,
@@ -499,6 +504,8 @@ export function useAutoLayoutOrchestrator({
   const handleRetry = useCallback(async (): Promise<void> => {
     // Mount-guard at the entry of the action (Apollo Finding 4).
     if (!isMountedRef.current) return
+    // A run in flight owns the board; a second run would race its save.
+    if (activeRunsRef.current > 0) return
     await runLayout()
   }, [runLayout])
 

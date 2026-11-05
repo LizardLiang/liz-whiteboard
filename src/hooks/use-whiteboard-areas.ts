@@ -8,7 +8,7 @@ import { useCallback, useEffect, useMemo } from 'react'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { toast } from 'sonner'
 import type { Area } from '@/data/models'
-import type { CreateArea, UpdateArea } from '@/data/schema'
+import type { AreaBounds, CreateArea, UpdateArea } from '@/data/schema'
 import { useT } from '@/lib/i18n/use-t'
 import { tErrorOr } from '@/lib/i18n/t-error'
 import { getWhiteboardAreas } from '@/lib/server-functions'
@@ -69,15 +69,7 @@ export interface UseWhiteboardAreasReturn {
    * persist. Used by Auto Layout to keep `areas` on the same origin as the
    * React Flow store, and to roll that back when the save fails.
    */
-  applyAreaBounds: (
-    bounds: Array<{
-      id: string
-      positionX: number
-      positionY: number
-      width: number
-      height: number
-    }>,
-  ) => void
+  applyAreaBounds: (bounds: Array<AreaBounds>) => void
 }
 
 export function useWhiteboardAreas(params: {
@@ -204,15 +196,7 @@ export function useWhiteboardAreas(params: {
   )
 
   const applyAreaBounds = useCallback(
-    (
-      bounds: Array<{
-        id: string
-        positionX: number
-        positionY: number
-        width: number
-        height: number
-      }>,
-    ) => {
+    (bounds: Array<AreaBounds>) => {
       const byId = new Map(bounds.map((b) => [b.id, b]))
       setAreas((prev) =>
         prev.map((a) => {

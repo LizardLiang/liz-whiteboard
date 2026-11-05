@@ -5,7 +5,7 @@ import { clientErrorMessage } from '@/lib/client-error'
 import { Server as SocketIOServer } from 'socket.io'
 import { z } from 'zod'
 import type { Server as HTTPServer } from 'node:http'
-import type { CursorPosition } from '@/data/schema'
+import type { AreaBounds, CursorPosition } from '@/data/schema'
 import type { EffectiveRole } from '@/data/permission'
 import {
   createCollaborationSession,
@@ -792,13 +792,7 @@ function setupCollaborationEventHandlers(
         positionX: number
         positionY: number
       }>
-      areas?: Array<{
-        id: string
-        positionX: number
-        positionY: number
-        width: number
-        height: number
-      }>
+      areas?: Array<AreaBounds>
       userId: string
     }) => {
       // Standard auth prelude — matches every other handler in this file (Apollo R2-1).

@@ -45,6 +45,7 @@ import { SelectedTablesSqlDialog } from './SelectedTablesSqlDialog'
 import { QUICK_CREATE_GHOST_ID } from './QuickCreateGhostNode'
 import type { DrawGestureTool, ToolMode } from '@/lib/react-flow/tool-mode'
 import type {
+  AreaBounds,
   Cardinality,
   CreateRelationship,
   CreateTable,
@@ -1297,15 +1298,7 @@ function ReactFlowWhiteboardInner({
   // comes from useWhiteboardAreas, declared after the collaboration hook call,
   // so it is populated by an effect further down.
   const applyAreaBoundsRef = useRef<
-    (
-      bounds: Array<{
-        id: string
-        positionX: number
-        positionY: number
-        width: number
-        height: number
-      }>,
-    ) => void
+    (bounds: Array<AreaBounds>) => void
   >(() => {})
 
   // Concurrent-drag rollback guards (GH #111 review). Each drag-stop that
@@ -1417,13 +1410,7 @@ function ReactFlowWhiteboardInner({
           positionX: number
           positionY: number
         }>,
-        areaBounds?: Array<{
-          id: string
-          positionX: number
-          positionY: number
-          width: number
-          height: number
-        }>,
+        areaBounds?: Array<AreaBounds>,
       ) => {
         const normalised = positions.map((p) => ({
           id: p.tableId,

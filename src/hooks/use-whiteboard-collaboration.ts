@@ -8,6 +8,7 @@ import { useCollaboration } from './use-collaboration'
 import type { TableErrorEvent } from './use-table-mutations'
 import type { RelationshipErrorEvent } from './use-relationship-mutations'
 import type { DiagramTable } from '@/data/models'
+import type { AreaBounds } from '@/data/schema'
 import { useT } from '@/lib/i18n/use-t'
 import { useAuthContext } from '@/components/auth/AuthContext'
 
@@ -83,13 +84,7 @@ export interface BulkPositionUpdateEvent {
   userId: string
 }
 
-export interface BulkAreaBounds {
-  id: string
-  positionX: number
-  positionY: number
-  width: number
-  height: number
-}
+export type BulkAreaBounds = AreaBounds
 
 export function useWhiteboardCollaboration(
   whiteboardId: string,

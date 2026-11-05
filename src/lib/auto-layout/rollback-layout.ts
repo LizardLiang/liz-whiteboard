@@ -11,19 +11,14 @@
 
 import type { Node } from '@xyflow/react'
 import type { AreaNodeType, TableNodeType } from '@/lib/react-flow/types'
+import type { AreaBounds } from '@/data/schema'
 
 interface Point {
   x: number
   y: number
 }
 
-export interface RollbackAreaBounds {
-  id: string
-  positionX: number
-  positionY: number
-  width: number
-  height: number
-}
+export type RollbackAreaBounds = AreaBounds
 
 export interface RollbackResult {
   nodes: Array<Node>
