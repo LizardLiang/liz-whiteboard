@@ -6,8 +6,13 @@
  * node data so the sub-canvas is fully read-only.
  */
 
-import { useCallback, useEffect, useMemo, useState } from 'react'
-import { ReactFlowProvider } from '@xyflow/react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import {
+  ReactFlowProvider,
+  useNodesInitialized,
+  useReactFlow,
+  useStore,
+} from '@xyflow/react'
 import { ReactFlowCanvas } from './ReactFlowCanvas'
 import type {
   RelationshipEdgeType,
@@ -27,6 +32,45 @@ import {
 import { computeD3ForceLayout } from '@/lib/auto-layout/d3-force-layout'
 import { calculateTableHeight } from '@/lib/react-flow/layout-adapter'
 import { useT } from '@/lib/i18n/use-t'
+
+const OVERLAY_FIT_PADDING = 0.25
+
+/**
+ * Re-fits the overlay camera once the compact layout's positions have
+ * reached React Flow's store. The sub-canvas's built-in mount fitView runs
+ * against the MAIN-canvas positions; the D3 layout resolves afterwards and
+ * moves every table, so without this re-fit the tables can land outside the
+ * visible pane. Fires once per layout result (a fresh Map per focal change).
+ */
+function FitViewOnLayout({
+  positions,
+}: {
+  positions: Map<string, { x: number; y: number }> | null
+}) {
+  const { fitView } = useReactFlow()
+  const nodesInitialized = useNodesInitialized()
+  // True once every laid-out node in the store sits at its layout position —
+  // i.e. ReactFlowCanvas's initialNodes sync has pushed the new coordinates.
+  const layoutApplied = useStore(
+    (s) =>
+      positions !== null &&
+      s.nodes.length > 0 &&
+      s.nodes.every((n) => {
+        const p = positions.get(n.id)
+        return !p || (n.position.x === p.x && n.position.y === p.y)
+      }),
+  )
+  const fittedFor = useRef<Map<string, { x: number; y: number }> | null>(null)
+
+  useEffect(() => {
+    if (!positions || !layoutApplied || !nodesInitialized) return
+    if (fittedFor.current === positions) return
+    fittedFor.current = positions
+    void fitView({ padding: OVERLAY_FIT_PADDING })
+  }, [positions, layoutApplied, nodesInitialized, fitView])
+
+  return null
+}
 
 export interface TableFocusOverlayProps {
   open: boolean
@@ -276,11 +320,12 @@ export function TableFocusOverlay({
               showControls={true}
               showMinimap={false}
               showBackground={true}
-              fitViewOptions={{ padding: 0.25 }}
+              fitViewOptions={{ padding: OVERLAY_FIT_PADDING }}
               onNodeClick={(nodeId) => {
                 if (nodeId !== activeFocusId) handleRefocus(nodeId)
               }}
             />
+            <FitViewOnLayout positions={overlayPositions} />
           </ReactFlowProvider>
         </div>
       </DialogContent>
