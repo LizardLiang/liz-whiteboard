@@ -91,9 +91,19 @@ function ResetPasswordPage() {
   if (!token || isLoading) {
     return (
       <div className="flex min-h-screen items-center justify-center bg-background px-4">
-        <p className="text-sm text-muted-foreground">
-          {isLoading ? t('auth.reset.checking') : ''}
-        </p>
+        {/* This is the screen the server sends: the token check runs in the
+            browser. With JavaScript off it never changes, so the notice
+            lives here, not in the form. */}
+        <div className="w-full max-w-sm">
+          <noscript>
+            <div className="mb-4 rounded-md bg-destructive/10 border border-destructive/30 px-4 py-3 text-sm text-destructive">
+              {t('auth.reset.noscript')}
+            </div>
+          </noscript>
+          <p className="text-center text-sm text-muted-foreground">
+            {isLoading ? t('auth.reset.checking') : ''}
+          </p>
+        </div>
       </div>
     )
   }
@@ -136,11 +146,6 @@ function ResetPasswordPage() {
           aria-busy={isSubmitting || !hydrated}
           noValidate
         >
-          <noscript>
-            <div className="mb-4 rounded-md bg-destructive/10 border border-destructive/30 px-4 py-3 text-sm text-destructive">
-              {t('auth.reset.noscript')}
-            </div>
-          </noscript>
           {errors.form && (
             <div
               role="alert"

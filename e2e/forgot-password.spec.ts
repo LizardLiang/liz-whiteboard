@@ -205,6 +205,20 @@ test.describe('Forgot password', () => {
     expect(navigations.filter((u) => u.includes('password='))).toEqual([])
   })
 
+  // The server never renders the form: it sends the "Checking your link..."
+  // screen, and the token check runs in the browser. With JavaScript off that
+  // screen stays forever, so the no-JavaScript notice must be on it.
+  test('server HTML carries the no-JavaScript notice for /reset-password', async ({
+    request,
+  }) => {
+    const html = await (
+      await request.get(`/reset-password?token=${generateRawToken()}`)
+    ).text()
+    expect(html).toMatch(
+      /<noscript>.*JavaScript is required to reset your password\..*<\/noscript>/s,
+    )
+  })
+
   test('(d) an already-used link shows the invalid-link message on a second open', async ({
     page,
   }) => {
