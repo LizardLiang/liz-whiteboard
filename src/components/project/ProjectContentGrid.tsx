@@ -2,7 +2,7 @@
 // Shared grid component that renders folder and whiteboard cards.
 // Used by both ProjectPage (root view) and FolderPage (folder view).
 
-import { useRef, useState } from 'react'
+import { useState } from 'react'
 import { Link } from '@tanstack/react-router'
 import { useMutation, useQueryClient } from '@tanstack/react-query'
 import { FileText, Folder, Shapes, Trash2 } from 'lucide-react'
@@ -27,12 +27,23 @@ import { useI18n } from '@/lib/i18n/use-t'
 
 type DeleteTarget = { kind: 'whiteboard' | 'canvas'; id: string; name: string }
 
+/**
+ * The target stays set after the dialog closes, so the text does not blank
+ * out during the close animation.
+ */
+type DeleteDialogState = { target: DeleteTarget | null; open: boolean }
+
 function DeleteBoardDialog({
   target,
+  open,
   onClose,
+  onDone,
 }: {
   target: DeleteTarget | null
+  open: boolean
   onClose: () => void
+  /** A delete request for this board ended; closes the dialog only if it still shows that board. */
+  onDone: (boardId: string) => void
 }) {
   const { t } = useI18n()
   const queryClient = useQueryClient()
@@ -44,6 +55,8 @@ function DeleteBoardDialog({
         : await deleteCanvasBoardFn({ data: board.id }),
     onSuccess: (result, board) => {
       if (isUnauthorizedError(result)) {
+        // The global mutation cache opens the session-expired modal.
+        onDone(board.id)
         toast.error(t('toast.sessionExpired'), {
           description: t('toast.loginAgain'),
         })
@@ -51,7 +64,7 @@ function DeleteBoardDialog({
       }
       queryClient.invalidateQueries({ queryKey: ['project-page'] })
       queryClient.invalidateQueries({ queryKey: ['projects'] })
-      onClose()
+      onDone(board.id)
       if (board.kind === 'whiteboard') {
         toast.success(t('navigator.toast.whiteboardDeleted'), {
           description: t('navigator.toast.whiteboardDeletedDesc'),
@@ -74,16 +87,12 @@ function DeleteBoardDialog({
     },
   })
 
-  // Keep showing the last target while the dialog fades out after target becomes null.
-  const lastTarget = useRef<DeleteTarget | null>(target)
-  if (target) lastTarget.current = target
-  const shown = lastTarget.current
-  const isWhiteboard = shown?.kind === 'whiteboard'
+  const isWhiteboard = target?.kind === 'whiteboard'
   return (
     <Dialog
-      open={target !== null}
-      onOpenChange={(open) => {
-        if (!open) onClose()
+      open={open}
+      onOpenChange={(isOpen) => {
+        if (!isOpen) onClose()
       }}
     >
       <DialogContent>
@@ -97,7 +106,7 @@ function DeleteBoardDialog({
           </DialogTitle>
           <DialogDescription>
             {t('navigator.dialog.deleteConfirmPrefix')}
-            <strong>{shown?.name ?? ''}</strong>
+            <strong>{target?.name ?? ''}</strong>
             {t(
               isWhiteboard
                 ? 'navigator.dialog.deleteWhiteboardSuffix'
@@ -113,7 +122,7 @@ function DeleteBoardDialog({
             variant="destructive"
             disabled={mutation.isPending}
             onClick={() => {
-              if (target) mutation.mutate(target)
+              if (open && target) mutation.mutate(target)
             }}
           >
             {t('common.delete')}
@@ -124,6 +133,11 @@ function DeleteBoardDialog({
   )
 }
 
+/**
+ * Sits beside the card's <Link>, not inside it: a button inside an <a> is
+ * invalid HTML and screen readers read it as part of the link. It is placed
+ * over the card's title row (Card py-6 + CardHeader px-6 → top-6 right-6).
+ */
 function CardDeleteButton({
   name,
   onClick,
@@ -137,14 +151,10 @@ function CardDeleteButton({
       type="button"
       variant="ghost"
       size="icon"
-      className={cn(ROW_ACTION_DELETE_CLASS, 'ml-auto h-8 w-8 flex-shrink-0')}
+      className={cn(ROW_ACTION_DELETE_CLASS, 'absolute right-6 top-6 h-8 w-8')}
       aria-label={t('project.grid.deleteAria', { name })}
       title={t('common.delete')}
-      onClick={(e) => {
-        e.preventDefault()
-        e.stopPropagation()
-        onClick()
-      }}
+      onClick={onClick}
     >
       <Trash2 className="h-4 w-4" />
     </Button>
@@ -188,13 +198,29 @@ export function ProjectContentGrid({
   canDelete = false,
 }: ProjectContentGridProps) {
   const { t, locale } = useI18n()
-  const [deleteTarget, setDeleteTarget] = useState<DeleteTarget | null>(null)
+  const [deleteDialog, setDeleteDialog] = useState<DeleteDialogState>({
+    target: null,
+    open: false,
+  })
+  const openDelete = (target: DeleteTarget) =>
+    setDeleteDialog({ target, open: true })
+  // Title row leaves room for the absolutely placed delete button (h-8 + gap).
+  const titleRowClass = cn(
+    'flex min-w-0 items-center gap-3',
+    canDelete && 'pr-10',
+  )
   return (
     <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4">
       {canDelete && (
         <DeleteBoardDialog
-          target={deleteTarget}
-          onClose={() => setDeleteTarget(null)}
+          target={deleteDialog.target}
+          open={deleteDialog.open}
+          onClose={() => setDeleteDialog((d) => ({ ...d, open: false }))}
+          onDone={(boardId) =>
+            setDeleteDialog((d) =>
+              d.target?.id === boardId ? { ...d, open: false } : d,
+            )
+          }
         />
       )}
       {/* Folders first */}
@@ -222,102 +248,102 @@ export function ProjectContentGrid({
 
       {/* Whiteboard cards after folders */}
       {whiteboards.map((whiteboard) => (
-        <Link
-          key={whiteboard.id}
-          to="/whiteboard/$whiteboardId"
-          params={{ whiteboardId: whiteboard.id }}
-        >
-          <Card className="hover:border-primary transition-colors cursor-pointer h-full">
-            <CardHeader>
-              <div className="flex min-w-0 items-center gap-3">
-                <FileText className="h-8 w-8 text-primary flex-shrink-0" />
-                <CardTitle
-                  className="min-w-0 text-base truncate"
-                  title={whiteboard.name}
-                >
-                  {whiteboard.name}
-                </CardTitle>
-                {canDelete && (
-                  <CardDeleteButton
-                    name={whiteboard.name}
-                    onClick={() =>
-                      setDeleteTarget({
-                        kind: 'whiteboard',
-                        id: whiteboard.id,
-                        name: whiteboard.name,
-                      })
-                    }
-                  />
-                )}
-              </div>
-            </CardHeader>
-            <CardContent>
-              <div className="text-sm text-muted-foreground space-y-1">
-                <div>
-                  {new Date(whiteboard.updatedAt).toLocaleDateString(locale)}
+        <div key={whiteboard.id} className="group relative">
+          <Link
+            to="/whiteboard/$whiteboardId"
+            params={{ whiteboardId: whiteboard.id }}
+            className="block h-full"
+          >
+            <Card className="hover:border-primary group-hover:border-primary transition-colors cursor-pointer h-full">
+              <CardHeader>
+                <div className={titleRowClass}>
+                  <FileText className="h-8 w-8 text-primary flex-shrink-0" />
+                  <CardTitle
+                    className="min-w-0 text-base truncate"
+                    title={whiteboard.name}
+                  >
+                    {whiteboard.name}
+                  </CardTitle>
                 </div>
-                <div>
-                  {t(
-                    whiteboard._count.tables === 1
-                      ? 'project.grid.tableOne'
-                      : 'project.grid.tableOther',
-                    { count: whiteboard._count.tables },
-                  )}
+              </CardHeader>
+              <CardContent>
+                <div className="text-sm text-muted-foreground space-y-1">
+                  <div>
+                    {new Date(whiteboard.updatedAt).toLocaleDateString(locale)}
+                  </div>
+                  <div>
+                    {t(
+                      whiteboard._count.tables === 1
+                        ? 'project.grid.tableOne'
+                        : 'project.grid.tableOther',
+                      { count: whiteboard._count.tables },
+                    )}
+                  </div>
                 </div>
-              </div>
-            </CardContent>
-          </Card>
-        </Link>
+              </CardContent>
+            </Card>
+          </Link>
+          {canDelete && (
+            <CardDeleteButton
+              name={whiteboard.name}
+              onClick={() =>
+                openDelete({
+                  kind: 'whiteboard',
+                  id: whiteboard.id,
+                  name: whiteboard.name,
+                })
+              }
+            />
+          )}
+        </div>
       ))}
 
       {/* Canvas board cards after whiteboard cards */}
       {canvasBoards.map((board) => (
-        <Link
-          key={board.id}
-          to="/canvas/$boardId"
-          params={{ boardId: board.id }}
-        >
-          <Card className="hover:border-primary transition-colors cursor-pointer h-full">
-            <CardHeader>
-              <div className="flex min-w-0 items-center gap-3">
-                <Shapes className="h-8 w-8 text-primary flex-shrink-0" />
-                <CardTitle
-                  className="min-w-0 text-base truncate"
-                  title={board.name}
-                >
-                  {board.name}
-                </CardTitle>
-                {canDelete && (
-                  <CardDeleteButton
-                    name={board.name}
-                    onClick={() =>
-                      setDeleteTarget({
-                        kind: 'canvas',
-                        id: board.id,
-                        name: board.name,
-                      })
-                    }
-                  />
-                )}
-              </div>
-            </CardHeader>
-            <CardContent>
-              <div className="text-sm text-muted-foreground space-y-1">
-                <div>
-                  {new Date(board.updatedAt).toLocaleDateString(locale)}
+        <div key={board.id} className="group relative">
+          <Link
+            to="/canvas/$boardId"
+            params={{ boardId: board.id }}
+            className="block h-full"
+          >
+            <Card className="hover:border-primary group-hover:border-primary transition-colors cursor-pointer h-full">
+              <CardHeader>
+                <div className={titleRowClass}>
+                  <Shapes className="h-8 w-8 text-primary flex-shrink-0" />
+                  <CardTitle
+                    className="min-w-0 text-base truncate"
+                    title={board.name}
+                  >
+                    {board.name}
+                  </CardTitle>
                 </div>
-                <div>
-                  {t(
-                    board._count.elements === 1
-                      ? 'project.grid.elementOne'
-                      : 'project.grid.elementOther',
-                    { count: board._count.elements },
-                  )}
+              </CardHeader>
+              <CardContent>
+                <div className="text-sm text-muted-foreground space-y-1">
+                  <div>
+                    {new Date(board.updatedAt).toLocaleDateString(locale)}
+                  </div>
+                  <div>
+                    {t(
+                      board._count.elements === 1
+                        ? 'project.grid.elementOne'
+                        : 'project.grid.elementOther',
+                      { count: board._count.elements },
+                    )}
+                  </div>
                 </div>
-              </div>
-            </CardContent>
-          </Card>
-        </Link>
+              </CardContent>
+            </Card>
+          </Link>
+          {canDelete && (
+            <CardDeleteButton
+              name={board.name}
+              onClick={() =>
+                openDelete({ kind: 'canvas', id: board.id, name: board.name })
+              }
+            />
+          )}
+        </div>
       ))}
     </div>
   )

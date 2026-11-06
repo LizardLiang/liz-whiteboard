@@ -382,18 +382,73 @@ describe('ProjectContentGrid', () => {
       expect(screen.queryAllByRole('button').length).toBe(0)
     })
 
-    it('click opens the dialog without following the link', () => {
+    it('the button sits outside the card link and opens the dialog', () => {
+      renderGrid({
+        projectId: PROJECT_ID,
+        folders: [],
+        whiteboards: [board],
+        canvasBoards: [canvas],
+        canDelete: true,
+      })
+      for (const name of ['Delete Doomed ERD', 'Delete Doomed Canvas']) {
+        // A button inside an <a> is invalid HTML and reads as link text.
+        expect(screen.getByRole('button', { name }).closest('a')).toBeNull()
+      }
+      fireEvent.click(screen.getByRole('button', { name: 'Delete Doomed ERD' }))
+      expect(screen.getByRole('dialog')).toBeTruthy()
+      expect(deleteWhiteboardFn).not.toHaveBeenCalled()
+    })
+
+    it('a delete that ends after Cancel does not close another board’s dialog', async () => {
+      let finish: (value: unknown) => void = () => {}
+      deleteWhiteboardFn.mockReturnValue(
+        new Promise((resolve) => {
+          finish = resolve
+        }),
+      )
+      renderGrid({
+        projectId: PROJECT_ID,
+        folders: [],
+        whiteboards: [board],
+        canvasBoards: [canvas],
+        canDelete: true,
+      })
+      fireEvent.click(screen.getByRole('button', { name: 'Delete Doomed ERD' }))
+      fireEvent.click(
+        screen.getByRole('dialog').querySelector('button.bg-destructive')!,
+      )
+      await waitFor(() => expect(deleteWhiteboardFn).toHaveBeenCalled())
+      fireEvent.click(screen.getByRole('button', { name: 'Cancel' }))
+      await waitFor(() => expect(screen.queryByRole('dialog')).toBeNull())
+
+      fireEvent.click(
+        screen.getByRole('button', { name: 'Delete Doomed Canvas' }),
+      )
+      expect(screen.getByRole('dialog').textContent).toContain('Doomed Canvas')
+      finish({ id: 'wb-del' })
+      await waitFor(() => expect(deleteWhiteboardFn).toHaveBeenCalledTimes(1))
+      // Let the first mutation's onSuccess run, then check the canvas dialog survived.
+      await new Promise((r) => setTimeout(r, 50))
+      expect(screen.getByRole('dialog').textContent).toContain('Doomed Canvas')
+    })
+
+    it('an expired session closes the dialog', async () => {
+      deleteWhiteboardFn.mockResolvedValue({
+        error: 'UNAUTHORIZED',
+        status: 401,
+      })
       renderGrid({
         projectId: PROJECT_ID,
         folders: [],
         whiteboards: [board],
         canDelete: true,
       })
-      const btn = screen.getByRole('button', { name: 'Delete Doomed ERD' })
-      const notPrevented = fireEvent.click(btn)
-      expect(notPrevented).toBe(false)
-      expect(screen.getByRole('dialog')).toBeTruthy()
-      expect(deleteWhiteboardFn).not.toHaveBeenCalled()
+      fireEvent.click(screen.getByRole('button', { name: 'Delete Doomed ERD' }))
+      fireEvent.click(
+        screen.getByRole('dialog').querySelector('button.bg-destructive')!,
+      )
+      await waitFor(() => expect(deleteWhiteboardFn).toHaveBeenCalled())
+      await waitFor(() => expect(screen.queryByRole('dialog')).toBeNull())
     })
 
     it('Cancel closes the dialog and deletes nothing', async () => {
