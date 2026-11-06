@@ -2,7 +2,7 @@
 // Shared grid component that renders folder and whiteboard cards.
 // Used by both ProjectPage (root view) and FolderPage (folder view).
 
-import { useState } from 'react'
+import { useRef, useState } from 'react'
 import { Link } from '@tanstack/react-router'
 import { useMutation, useQueryClient } from '@tanstack/react-query'
 import { FileText, Folder, Shapes, Trash2 } from 'lucide-react'
@@ -74,7 +74,11 @@ function DeleteBoardDialog({
     },
   })
 
-  const isWhiteboard = target?.kind === 'whiteboard'
+  // Keep showing the last target while the dialog fades out after target becomes null.
+  const lastTarget = useRef<DeleteTarget | null>(target)
+  if (target) lastTarget.current = target
+  const shown = lastTarget.current
+  const isWhiteboard = shown?.kind === 'whiteboard'
   return (
     <Dialog
       open={target !== null}
@@ -93,7 +97,7 @@ function DeleteBoardDialog({
           </DialogTitle>
           <DialogDescription>
             {t('navigator.dialog.deleteConfirmPrefix')}
-            <strong>{target?.name ?? ''}</strong>
+            <strong>{shown?.name ?? ''}</strong>
             {t(
               isWhiteboard
                 ? 'navigator.dialog.deleteWhiteboardSuffix'
