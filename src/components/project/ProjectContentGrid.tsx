@@ -137,7 +137,7 @@ function CardDeleteButton({
       type="button"
       variant="ghost"
       size="icon"
-      className={cn(ROW_ACTION_DELETE_CLASS, 'h-8 w-8 flex-shrink-0')}
+      className={cn(ROW_ACTION_DELETE_CLASS, 'ml-auto h-8 w-8 flex-shrink-0')}
       aria-label={t('project.grid.deleteAria', { name })}
       title={t('common.delete')}
       onClick={(e) => {
