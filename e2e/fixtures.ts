@@ -410,6 +410,20 @@ export const IDS = {
   gridDelCanvasKeep: 'f1000000-0000-4000-8000-000000000004',
   gridDelCanvasDrop: 'f1000000-0000-4000-8000-000000000005',
 
+  // Dedicated project for e2e/schema-export.spec.ts (see
+  // e2e/seed-schema-export.ts): one ERD board with two tables and a
+  // relationship, plus one empty ERD board.
+  schemaExpProject: 'f2000000-0000-4000-8000-000000000001',
+  schemaExpBoard: 'f2000000-0000-4000-8000-000000000002',
+  schemaExpEmptyBoard: 'f2000000-0000-4000-8000-000000000003',
+  schemaExpCustomers: 'f2000000-0000-4000-8000-000000000004',
+  schemaExpOrders: 'f2000000-0000-4000-8000-000000000005',
+  schemaExpCustomersId: 'f2000000-0000-4000-8000-000000000006',
+  schemaExpCustomersEmail: 'f2000000-0000-4000-8000-000000000007',
+  schemaExpOrdersId: 'f2000000-0000-4000-8000-000000000008',
+  schemaExpOrdersCustomerId: 'f2000000-0000-4000-8000-000000000009',
+  schemaExpRelationship: 'f2000000-0000-4000-8000-00000000000a',
+
   // Dedicated user for the forgot-password suite — see
   // E2E_RESET_USER's comment above for why this is separate from E2E_USER.
   resetPwUser: 'd0000000-0000-4000-8000-000000000001',

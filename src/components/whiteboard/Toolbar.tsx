@@ -19,8 +19,10 @@ import {
 } from 'lucide-react'
 import { toast } from 'sonner'
 import { ExportImageDialog } from './ExportImageDialog'
+import { ExportSchemaDialog } from './ExportSchemaDialog'
 import { ImportSqlDialog } from './ImportSqlDialog'
 import type { ExportImageDialogOptions } from './ExportImageDialog'
+import type { SchemaExportOptions } from '@/lib/export/schema-export'
 import type { Column, DiagramTable } from '@/data/models'
 import type {
   Cardinality,
@@ -160,6 +162,11 @@ export interface ToolbarProps {
   /** Whether export is currently possible — false when the diagram has 0
    * tables. Disables the Export button with an explanatory tooltip. */
   canExport?: boolean
+  /** Callback when the user confirms the Export schema dialog (tables,
+   * columns and relationships as Excel / JSON / XML). When omitted, no
+   * Export schema item is rendered. Disabled with `canExport`, like the
+   * image export. Rejection is caught here and shown as an error toast. */
+  onExportSchema?: (options: SchemaExportOptions) => void | Promise<void>
   /** Called with the parsed AST when the user confirms Import in the Import
    * SQL dialog. When omitted, no Import SQL button is rendered. Rejection is
    * caught by the dialog itself (keeps it open so the user can retry). */
@@ -255,6 +262,7 @@ export function Toolbar({
   mcpEndpointUrl,
   onExport,
   canExport = false,
+  onExportSchema,
   onImportSql,
   viewerRole,
   className = '',
@@ -280,6 +288,7 @@ export function Toolbar({
 
   // Export dialog state
   const [exportDialogOpen, setExportDialogOpen] = useState(false)
+  const [exportSchemaOpen, setExportSchemaOpen] = useState(false)
 
   // Import SQL dialog state
   const [importSqlOpen, setImportSqlOpen] = useState(false)
@@ -909,7 +918,7 @@ export function Toolbar({
               </DropdownMenuRadioGroup>
             </>
           )}
-          {(onOpenHistory || mcpEndpointUrl || onExport) && (
+          {(onOpenHistory || mcpEndpointUrl || onExport || onExportSchema) && (
             <DropdownMenuSeparator />
           )}
           {/* Version history (GH #107) — visible to VIEWER+; Save/Restore
@@ -943,6 +952,17 @@ export function Toolbar({
               onSelect={() => setExportDialogOpen(true)}
             >
               {t('whiteboard.toolbar.exportImage')}
+            </DropdownMenuItem>
+          )}
+          {onExportSchema && (
+            <DropdownMenuItem
+              disabled={!canExport}
+              title={
+                canExport ? undefined : t('whiteboard.toolbar.addTableToExport')
+              }
+              onSelect={() => setExportSchemaOpen(true)}
+            >
+              {t('whiteboard.toolbar.exportSchema')}
             </DropdownMenuItem>
           )}
           <DropdownMenuSeparator />
@@ -1114,6 +1134,22 @@ export function Toolbar({
               await onExport(opts)
             } catch {
               toast.error(t('whiteboard.toolbar.exportFailed'))
+            }
+          }}
+        />
+      )}
+
+      {onExportSchema && (
+        <ExportSchemaDialog
+          open={exportSchemaOpen}
+          onOpenChange={setExportSchemaOpen}
+          onCloseAutoFocus={returnFocusToMoreTools}
+          onExport={async (options) => {
+            try {
+              await onExportSchema(options)
+            } catch (error) {
+              toast.error(t('whiteboard.toolbar.exportFailed'))
+              throw error
             }
           }}
         />

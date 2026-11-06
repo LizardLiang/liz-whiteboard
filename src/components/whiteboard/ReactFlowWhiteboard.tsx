@@ -84,12 +84,10 @@ import type { RelationshipErrorEvent } from '@/hooks/use-relationship-mutations'
 import type { ReconcileAfterDropParams } from '@/hooks/use-column-reorder-mutations'
 import type { Dialect } from '@/lib/ddl-generator'
 import type { ExportImageDialogOptions } from './ExportImageDialog'
+import type { SchemaExportOptions } from '@/lib/export/schema-export'
 import type { RenderFraming } from '@/lib/render/framing'
 import type { ResolvedTableReference } from '@/data/table-reference'
-import type {
-  JoinQueryPlan,
-  JoinQueryTable,
-} from '@/lib/join-query-generator'
+import type { JoinQueryPlan, JoinQueryTable } from '@/lib/join-query-generator'
 import { buildJoinQueryPlan } from '@/lib/join-query-generator'
 import { DOCK_FIT_PADDING } from '@/lib/react-flow/fit-view-padding'
 import { useWhiteboardShapes } from '@/hooks/use-whiteboard-shapes'
@@ -115,6 +113,7 @@ import {
 } from '@/lib/react-flow/shape-geometry'
 import { usePerfTrackerEnabled } from '@/hooks/use-perf-tracker-enabled'
 import { exportDiagramImage } from '@/lib/export/export-image'
+import { buildSchemaExport, downloadSchema } from '@/lib/export/schema-export'
 import { ForceFullDetailContext } from '@/lib/react-flow/level-of-detail'
 import { planFrame } from '@/lib/render/framing'
 import { hasMinimumRole } from '@/lib/auth/permissions'
@@ -1297,9 +1296,9 @@ function ReactFlowWhiteboardInner({
   // Merges a peer's Auto Layout area bounds into `areas`. `applyAreaBounds`
   // comes from useWhiteboardAreas, declared after the collaboration hook call,
   // so it is populated by an effect further down.
-  const applyAreaBoundsRef = useRef<
-    (bounds: Array<AreaBounds>) => void
-  >(() => {})
+  const applyAreaBoundsRef = useRef<(bounds: Array<AreaBounds>) => void>(
+    () => {},
+  )
 
   // Concurrent-drag rollback guards (GH #111 review). Each drag-stop that
   // persists asynchronously bumps its sequence; a stale in-flight persist
@@ -4302,6 +4301,25 @@ function ReactFlowWhiteboardInner({
     [queryClient, whiteboardId, getNodes],
   )
 
+  // Export the schema (tables, columns, relationships) as Excel / JSON / XML.
+  // Reads the live React Flow nodes and edges — the same source the DDL
+  // export uses — so the file matches what is on screen.
+  const handleExportSchema = useCallback(
+    (options: SchemaExportOptions) => {
+      const cachedWhiteboard = queryClient.getQueryData([
+        'whiteboard',
+        whiteboardId,
+      ])
+      const whiteboardName =
+        cachedWhiteboard && !isUnauthorizedError(cachedWhiteboard)
+          ? (cachedWhiteboard as { name?: string }).name
+          : undefined
+      const schema = buildSchemaExport(getNodes(), getEdges(), whiteboardName)
+      downloadSchema(schema, options)
+    },
+    [queryClient, whiteboardId, getNodes, getEdges],
+  )
+
   return (
     <WhiteboardPermissionsProvider value={{ canEdit, canvasLocked }}>
       <div
@@ -4406,6 +4424,7 @@ function ReactFlowWhiteboardInner({
                   : undefined
               }
               onExport={handleExport}
+              onExportSchema={handleExportSchema}
               canExport={nodes.length > 0}
               viewerRole={viewerRole}
             />
