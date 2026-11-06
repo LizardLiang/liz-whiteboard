@@ -2,17 +2,30 @@
 // src/components/project/ProjectContentGrid.test.tsx
 // TS-02 (R2) + TS-04 (R4): ProjectContentGrid unit tests
 
-import { describe, expect, it } from 'vitest'
-import { render, screen } from '@testing-library/react'
+import { beforeEach, describe, expect, it, vi } from 'vitest'
+import { fireEvent, render, screen, waitFor } from '@testing-library/react'
 import {
   RouterContextProvider,
   createMemoryHistory,
   createRouter,
 } from '@tanstack/react-router'
-import { QueryClient } from '@tanstack/react-query'
+import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { ProjectContentGrid } from './ProjectContentGrid'
 import type { ReactNode } from 'react'
 import { routeTree } from '@/routeTree.gen'
+
+const { deleteWhiteboardFn, deleteCanvasBoardFn } = vi.hoisted(() => ({
+  deleteWhiteboardFn: vi.fn(),
+  deleteCanvasBoardFn: vi.fn(),
+}))
+vi.mock('@/routes/api/whiteboards', async (importOriginal) => ({
+  ...(await importOriginal<Record<string, unknown>>()),
+  deleteWhiteboardFn,
+}))
+vi.mock('@/lib/canvas-board/server-functions', async (importOriginal) => ({
+  ...(await importOriginal<Record<string, unknown>>()),
+  deleteCanvasBoardFn,
+}))
 
 function createTestRouter() {
   const history = createMemoryHistory({ initialEntries: ['/'] })
@@ -22,10 +35,16 @@ function createTestRouter() {
   return createRouter({ routeTree, history, context: { queryClient } })
 }
 
+const testQueryClient = new QueryClient({
+  defaultOptions: { queries: { retry: false }, mutations: { retry: false } },
+})
+
 function RouterWrapper({ children }: { children: ReactNode }) {
   const router = createTestRouter()
   return (
-    <RouterContextProvider router={router}>{children}</RouterContextProvider>
+    <QueryClientProvider client={testQueryClient}>
+      <RouterContextProvider router={router}>{children}</RouterContextProvider>
+    </QueryClientProvider>
   )
 }
 
@@ -310,6 +329,125 @@ describe('ProjectContentGrid', () => {
         whiteboards: [],
       })
       expect(container.querySelectorAll('a').length).toBe(0)
+    })
+  })
+
+  describe('delete buttons', () => {
+    const board = {
+      id: 'wb-del',
+      name: 'Doomed ERD',
+      updatedAt: new Date(),
+      _count: { tables: 1 },
+    }
+    const canvas = {
+      id: 'canvas-del',
+      name: 'Doomed Canvas',
+      updatedAt: new Date(),
+      _count: { elements: 1 },
+    }
+    const folder = { id: 'f-1', name: 'Keep Folder', createdAt: new Date() }
+
+    beforeEach(() => {
+      deleteWhiteboardFn.mockReset().mockResolvedValue({ id: 'wb-del' })
+      deleteCanvasBoardFn.mockReset().mockResolvedValue({ id: 'canvas-del' })
+    })
+
+    it('shows a button on ERD and canvas cards, not folders, when canDelete', () => {
+      renderGrid({
+        projectId: PROJECT_ID,
+        folders: [folder],
+        whiteboards: [board],
+        canvasBoards: [canvas],
+        canDelete: true,
+      })
+      expect(
+        screen.getByRole('button', { name: 'Delete Doomed ERD' }),
+      ).toBeTruthy()
+      expect(
+        screen.getByRole('button', { name: 'Delete Doomed Canvas' }),
+      ).toBeTruthy()
+      expect(
+        screen.queryByRole('button', { name: 'Delete Keep Folder' }),
+      ).toBeNull()
+      expect(screen.getAllByRole('button').length).toBe(2)
+    })
+
+    it('shows no buttons when canDelete is omitted', () => {
+      renderGrid({
+        projectId: PROJECT_ID,
+        folders: [folder],
+        whiteboards: [board],
+        canvasBoards: [canvas],
+      })
+      expect(screen.queryAllByRole('button').length).toBe(0)
+    })
+
+    it('click opens the dialog without following the link', () => {
+      renderGrid({
+        projectId: PROJECT_ID,
+        folders: [],
+        whiteboards: [board],
+        canDelete: true,
+      })
+      const btn = screen.getByRole('button', { name: 'Delete Doomed ERD' })
+      const notPrevented = fireEvent.click(btn)
+      expect(notPrevented).toBe(false)
+      expect(screen.getByRole('dialog')).toBeTruthy()
+      expect(deleteWhiteboardFn).not.toHaveBeenCalled()
+    })
+
+    it('Cancel closes the dialog and deletes nothing', async () => {
+      renderGrid({
+        projectId: PROJECT_ID,
+        folders: [],
+        whiteboards: [board],
+        canDelete: true,
+      })
+      fireEvent.click(screen.getByRole('button', { name: 'Delete Doomed ERD' }))
+      fireEvent.click(screen.getByRole('button', { name: 'Cancel' }))
+      await waitFor(() => expect(screen.queryByRole('dialog')).toBeNull())
+      expect(deleteWhiteboardFn).not.toHaveBeenCalled()
+    })
+
+    it('confirming an ERD card calls deleteWhiteboardFn with its id', async () => {
+      renderGrid({
+        projectId: PROJECT_ID,
+        folders: [],
+        whiteboards: [board],
+        canvasBoards: [canvas],
+        canDelete: true,
+      })
+      fireEvent.click(screen.getByRole('button', { name: 'Delete Doomed ERD' }))
+      fireEvent.click(
+        screen.getByRole('dialog').querySelector('button.bg-destructive')!,
+      )
+      await waitFor(() =>
+        expect(deleteWhiteboardFn).toHaveBeenCalledWith({ data: 'wb-del' }),
+      )
+      expect(deleteCanvasBoardFn).not.toHaveBeenCalled()
+      await waitFor(() => expect(screen.queryByRole('dialog')).toBeNull())
+    })
+
+    it('confirming a canvas card calls deleteCanvasBoardFn with its id', async () => {
+      renderGrid({
+        projectId: PROJECT_ID,
+        folders: [],
+        whiteboards: [board],
+        canvasBoards: [canvas],
+        canDelete: true,
+      })
+      fireEvent.click(
+        screen.getByRole('button', { name: 'Delete Doomed Canvas' }),
+      )
+      fireEvent.click(
+        screen.getByRole('dialog').querySelector('button.bg-destructive')!,
+      )
+      await waitFor(() =>
+        expect(deleteCanvasBoardFn).toHaveBeenCalledWith({
+          data: 'canvas-del',
+        }),
+      )
+      expect(deleteWhiteboardFn).not.toHaveBeenCalled()
     })
   })
 })

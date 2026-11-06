@@ -284,6 +284,7 @@ export const zhTW: DeepStringRecord<Dictionary> = {
   },
   project: {
     grid: {
+      deleteAria: '刪除 {name}',
       tableOne: '{count} 個資料表',
       tableOther: '{count} 個資料表',
       elementOne: '{count} 個元素',

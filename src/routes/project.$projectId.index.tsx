@@ -145,6 +145,7 @@ export function ProjectPage() {
             folders={content.folders}
             whiteboards={content.whiteboards}
             canvasBoards={content.canvasBoards}
+            canDelete={hasMinimumRole(content.viewerRole, 'EDITOR')}
           />
         )}
       </div>

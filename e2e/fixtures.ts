@@ -402,6 +402,14 @@ export const IDS = {
   navSpecsBoard: 'c0000000-0000-4000-8000-000000000007',
   navSpecsCanvas: 'c0000000-0000-4000-8000-000000000008',
 
+  // Dedicated project for e2e/project-grid-delete.spec.ts (see
+  // e2e/seed-grid-delete.ts): two ERD boards and two canvas boards at root.
+  gridDelProject: 'f1000000-0000-4000-8000-000000000001',
+  gridDelErdKeep: 'f1000000-0000-4000-8000-000000000002',
+  gridDelErdDrop: 'f1000000-0000-4000-8000-000000000003',
+  gridDelCanvasKeep: 'f1000000-0000-4000-8000-000000000004',
+  gridDelCanvasDrop: 'f1000000-0000-4000-8000-000000000005',
+
   // Dedicated user for the forgot-password suite — see
   // E2E_RESET_USER's comment above for why this is separate from E2E_USER.
   resetPwUser: 'd0000000-0000-4000-8000-000000000001',

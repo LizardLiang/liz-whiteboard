@@ -18,6 +18,7 @@ import { CreateFolderDialog } from '@/components/navigator/CreateFolderDialog'
 import { CreateBoardMenu } from '@/components/navigator/CreateBoardMenu'
 import { getProjectPageContent } from '@/routes/api/projects'
 import { isForbiddenError, isUnauthorizedError } from '@/lib/auth/errors'
+import { hasMinimumRole } from '@/lib/auth/permissions'
 import { useT } from '@/lib/i18n/use-t'
 import { tError } from '@/lib/i18n/t-error'
 
@@ -139,6 +140,7 @@ export function FolderPage() {
             folders={content.folders}
             whiteboards={content.whiteboards}
             canvasBoards={content.canvasBoards}
+            canDelete={hasMinimumRole(content.viewerRole, 'EDITOR')}
           />
         )}
       </div>

@@ -2,10 +2,150 @@
 // Shared grid component that renders folder and whiteboard cards.
 // Used by both ProjectPage (root view) and FolderPage (folder view).
 
+import { useState } from 'react'
 import { Link } from '@tanstack/react-router'
-import { FileText, Folder, Shapes } from 'lucide-react'
+import { useMutation, useQueryClient } from '@tanstack/react-query'
+import { FileText, Folder, Shapes, Trash2 } from 'lucide-react'
+import { toast } from 'sonner'
+import { ROW_ACTION_DELETE_CLASS } from '@/components/navigator/RowActions'
+import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from '@/components/ui/dialog'
+import { deleteWhiteboardFn } from '@/routes/api/whiteboards'
+import { deleteCanvasBoardFn } from '@/lib/canvas-board/server-functions'
+import { isUnauthorizedError } from '@/lib/auth/errors'
+import { cn } from '@/lib/utils'
+import { tError } from '@/lib/i18n/t-error'
 import { useI18n } from '@/lib/i18n/use-t'
+
+type DeleteTarget = { kind: 'whiteboard' | 'canvas'; id: string; name: string }
+
+function DeleteBoardDialog({
+  target,
+  onClose,
+}: {
+  target: DeleteTarget | null
+  onClose: () => void
+}) {
+  const { t } = useI18n()
+  const queryClient = useQueryClient()
+
+  const mutation = useMutation({
+    mutationFn: async (board: DeleteTarget): Promise<unknown> =>
+      board.kind === 'whiteboard'
+        ? await deleteWhiteboardFn({ data: board.id })
+        : await deleteCanvasBoardFn({ data: board.id }),
+    onSuccess: (result, board) => {
+      if (isUnauthorizedError(result)) {
+        toast.error(t('toast.sessionExpired'), {
+          description: t('toast.loginAgain'),
+        })
+        return
+      }
+      queryClient.invalidateQueries({ queryKey: ['project-page'] })
+      queryClient.invalidateQueries({ queryKey: ['projects'] })
+      onClose()
+      if (board.kind === 'whiteboard') {
+        toast.success(t('navigator.toast.whiteboardDeleted'), {
+          description: t('navigator.toast.whiteboardDeletedDesc'),
+        })
+      } else {
+        toast.success(t('navigator.toast.canvasBoardDeleted'), {
+          description: t('navigator.toast.canvasBoardDeletedDesc'),
+        })
+      }
+    },
+    onError: (error: Error, board) => {
+      toast.error(
+        t(
+          board.kind === 'whiteboard'
+            ? 'navigator.toast.failDeleteWhiteboard'
+            : 'navigator.toast.failDeleteCanvasBoard',
+        ),
+        { description: tError(t, error) || t('toast.unexpected') },
+      )
+    },
+  })
+
+  const isWhiteboard = target?.kind === 'whiteboard'
+  return (
+    <Dialog
+      open={target !== null}
+      onOpenChange={(open) => {
+        if (!open) onClose()
+      }}
+    >
+      <DialogContent>
+        <DialogHeader>
+          <DialogTitle>
+            {t(
+              isWhiteboard
+                ? 'navigator.dialog.deleteWhiteboardTitle'
+                : 'navigator.dialog.deleteCanvasTitle',
+            )}
+          </DialogTitle>
+          <DialogDescription>
+            {t('navigator.dialog.deleteConfirmPrefix')}
+            <strong>{target?.name ?? ''}</strong>
+            {t(
+              isWhiteboard
+                ? 'navigator.dialog.deleteWhiteboardSuffix'
+                : 'navigator.dialog.deleteCanvasSuffix',
+            )}
+          </DialogDescription>
+        </DialogHeader>
+        <DialogFooter>
+          <Button variant="outline" onClick={onClose}>
+            {t('common.cancel')}
+          </Button>
+          <Button
+            variant="destructive"
+            disabled={mutation.isPending}
+            onClick={() => {
+              if (target) mutation.mutate(target)
+            }}
+          >
+            {t('common.delete')}
+          </Button>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
+  )
+}
+
+function CardDeleteButton({
+  name,
+  onClick,
+}: {
+  name: string
+  onClick: () => void
+}) {
+  const { t } = useI18n()
+  return (
+    <Button
+      type="button"
+      variant="ghost"
+      size="icon"
+      className={cn(ROW_ACTION_DELETE_CLASS, 'h-8 w-8 flex-shrink-0')}
+      aria-label={t('project.grid.deleteAria', { name })}
+      title={t('common.delete')}
+      onClick={(e) => {
+        e.preventDefault()
+        e.stopPropagation()
+        onClick()
+      }}
+    >
+      <Trash2 className="h-4 w-4" />
+    </Button>
+  )
+}
 
 interface ProjectContentGridProps {
   projectId: string
@@ -29,6 +169,11 @@ interface ProjectContentGridProps {
     updatedAt: Date
     _count: { elements: number }
   }>
+  /**
+   * Show a delete button on whiteboard and canvas cards. Callers pass
+   * `hasMinimumRole(viewerRole, 'EDITOR')`; defaults to false.
+   */
+  canDelete?: boolean
 }
 
 export function ProjectContentGrid({
@@ -36,10 +181,18 @@ export function ProjectContentGrid({
   folders,
   whiteboards,
   canvasBoards = [],
+  canDelete = false,
 }: ProjectContentGridProps) {
   const { t, locale } = useI18n()
+  const [deleteTarget, setDeleteTarget] = useState<DeleteTarget | null>(null)
   return (
     <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4">
+      {canDelete && (
+        <DeleteBoardDialog
+          target={deleteTarget}
+          onClose={() => setDeleteTarget(null)}
+        />
+      )}
       {/* Folders first */}
       {folders.map((folder) => (
         <Link
@@ -80,6 +233,18 @@ export function ProjectContentGrid({
                 >
                   {whiteboard.name}
                 </CardTitle>
+                {canDelete && (
+                  <CardDeleteButton
+                    name={whiteboard.name}
+                    onClick={() =>
+                      setDeleteTarget({
+                        kind: 'whiteboard',
+                        id: whiteboard.id,
+                        name: whiteboard.name,
+                      })
+                    }
+                  />
+                )}
               </div>
             </CardHeader>
             <CardContent>
@@ -118,6 +283,18 @@ export function ProjectContentGrid({
                 >
                   {board.name}
                 </CardTitle>
+                {canDelete && (
+                  <CardDeleteButton
+                    name={board.name}
+                    onClick={() =>
+                      setDeleteTarget({
+                        kind: 'canvas',
+                        id: board.id,
+                        name: board.name,
+                      })
+                    }
+                  />
+                )}
               </div>
             </CardHeader>
             <CardContent>

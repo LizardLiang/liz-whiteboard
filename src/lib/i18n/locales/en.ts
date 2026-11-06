@@ -291,6 +291,7 @@ export const en = {
   },
   project: {
     grid: {
+      deleteAria: 'Delete {name}',
       tableOne: '{count} table',
       tableOther: '{count} tables',
       elementOne: '{count} element',
