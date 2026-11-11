@@ -500,17 +500,24 @@ export function registerCanvasElementHandlers(
           if (error instanceof RevisionMismatchError) continue
           throw error
         }
-        socket.broadcast.emit('element:updated', {
-          elementId,
-          props,
-          width: size.width,
-          height: size.height,
-          ...moved,
-          updatedAt: updated.updatedAt,
+        // The op itself travels, not the table: a peer applies it to its own
+        // confirmed table. `revision` lets the peer detect a gap and resync.
+        const applied = {
           revision: updated.revision,
+          width: updated.width,
+          height: updated.height,
+          positionX: updated.positionX,
+          positionY: updated.positionY,
+          updatedAt: updated.updatedAt,
+        }
+        socket.broadcast.emit('element:table-op-applied', {
+          elementId,
+          op,
+          ...applied,
           updatedBy: userId,
         })
-        cb?.({ ok: true, entity: updated, inverse })
+        // The issuer applies its own op, so the ack stays small too.
+        cb?.({ ok: true, entity: { id: elementId, ...applied }, inverse })
         return
       }
       const message = 'The table is changing too fast; try again'
@@ -528,6 +535,44 @@ export function registerCanvasElementHandlers(
         message,
       })
       cb?.({ ok: false, code: 'VALIDATION_ERROR', message })
+    }
+  })
+
+  // A client that missed a table op (a revision gap, or an op its table could
+  // not take) asks for the whole element once. Viewers may ask: it is a read.
+  socket.on('element:sync', async (data: unknown, cb: Ack) => {
+    if (isSocketSessionExpired(socket)) {
+      socket.emit('session_expired', {})
+      socket.disconnect(true)
+      cb?.({ ok: false, code: 'SESSION_EXPIRED', message: 'Session expired' })
+      return
+    }
+    const parsed = z.object({ elementId: z.string().uuid() }).safeParse(data)
+    if (!parsed.success) {
+      cb?.({
+        ok: false,
+        code: 'VALIDATION_ERROR',
+        message: 'Invalid element:sync payload',
+      })
+      return
+    }
+    try {
+      const existing = await loadOwnedElement(
+        socket,
+        boardId,
+        parsed.data.elementId,
+        'element:sync',
+        cb,
+      )
+      if (!existing) return
+      cb?.({ ok: true, entity: existing })
+    } catch (error) {
+      console.error('Failed to sync element:', error)
+      cb?.({
+        ok: false,
+        code: 'INTERNAL_ERROR',
+        message: clientErrorMessage(error, 'Failed to load element'),
+      })
     }
   })
 

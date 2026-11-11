@@ -11,7 +11,9 @@
 //   element:create  -> element:created
 //   element:update  -> element:updated
 //   element:delete  -> element:deleted
-//   element:table-op -> element:updated   (a table's cells and grid)
+//   element:table-op -> element:table-op-applied   (the op, not the table;
+//                       a peer applies it, or fetches the element with
+//                       element:sync when it missed one)
 //
 // Persistence happens at gesture END, not per frame. That rule is enforced
 // upstream in use-canvas-input.ts, which calls these only on pointerup or
@@ -82,6 +84,7 @@ import type { Dispatch, SetStateAction } from 'react'
 import type { CanvasElement, Scene } from '@/lib/canvas-engine/scene'
 import type { CanvasElementRecord } from '@/data/models'
 import type {
+  CanvasTable,
   CellExpect,
   LayoutExpect,
   TableOp,
@@ -371,12 +374,125 @@ export function useCanvasElements({
     >(),
   )
   /**
-   * How many table ops per element are emitted and not yet acked. An ack
-   * carries the server's table as of THAT op; applying it while a later op is
-   * still in flight would wipe that op's optimistic change (an appended row
-   * would vanish and come back). Only the last ack of a burst touches the scene.
+   * The table ops per element that are emitted and not yet acked, in issue
+   * order. A collaborator's broadcast or an ack replaces the CONFIRMED table;
+   * the scene shows that table with these ops applied on top, so this client's
+   * optimistic change never flickers off while it is in flight.
    */
-  const inflightTableOpsRef = useRef(new Map<string, number>())
+  const inflightTableOpsRef = useRef(new Map<string, Array<{ op: TableOp }>>())
+
+  /** The confirmed element with this client's in-flight table ops applied on top, in issue order. */
+  const withInflightTableOps = useCallback(
+    (elementId: string): CanvasElement | undefined => {
+      const base = confirmedRef.current.get(elementId)
+      const inflight = inflightTableOpsRef.current.get(elementId)
+      if (!base?.table || !inflight || inflight.length === 0) return base
+      let table = base.table
+      let x = base.x
+      let y = base.y
+      for (const entry of inflight) {
+        try {
+          const next = applyTableOpLocally(table, entry.op).table
+          const shift = tableOpShift(table, next, entry.op)
+          table = next
+          x += shift.dx
+          y += shift.dy
+        } catch {
+          // This op no longer fits the confirmed table; the server decides.
+        }
+      }
+      return { ...base, table, ...tableSize(table), x, y }
+    },
+    [],
+  )
+
+  /**
+   * Fold one table op the server applied into the confirmed element. `applied`
+   * when it was the next revision; `stale` when the confirmed state already
+   * has that revision; `resync` when a revision is missing or the op does not
+   * fit, so the caller must fetch the element instead of guessing.
+   */
+  const confirmTableOp = useCallback(
+    (
+      elementId: string,
+      op: TableOp,
+      meta: {
+        revision: number
+        width: number
+        height: number
+        positionX: number
+        positionY: number
+      },
+    ): 'applied' | 'stale' | 'resync' => {
+      const base = confirmedRef.current.get(elementId)
+      const known = revisionsRef.current.get(elementId)
+      if (!base?.table) return 'stale'
+      if (known === undefined) return 'resync'
+      if (meta.revision <= known) return 'stale'
+      if (meta.revision !== known + 1) return 'resync'
+      let table: CanvasTable
+      try {
+        table = applyTableOpLocally(base.table, op).table
+      } catch {
+        return 'resync'
+      }
+      confirmedRef.current.set(elementId, {
+        ...base,
+        table,
+        width: meta.width,
+        height: meta.height,
+        x: meta.positionX,
+        y: meta.positionY,
+      })
+      revisionsRef.current.set(elementId, meta.revision)
+      return 'applied'
+    },
+    [],
+  )
+
+  /** Show the confirmed element, plus in-flight table ops, in the scene. */
+  const showConfirmed = useCallback(
+    (elementId: string): void => {
+      const shown = withInflightTableOps(elementId)
+      if (!shown) return
+      setScene((prev) =>
+        prev.byId.has(elementId) ? updateElement(prev, elementId, shown) : prev,
+      )
+    },
+    [setScene, withInflightTableOps],
+  )
+
+  /** Elements being fetched after a missed table op; `true` = ask once more when it lands. */
+  const resyncingRef = useRef(new Map<string, boolean>())
+  /** Fetch the whole element (`element:sync`) and adopt it when it is newer than the confirmed one. */
+  const resyncElement = useCallback(
+    function resync(elementId: string): void {
+      const running = resyncingRef.current
+      if (running.has(elementId)) {
+        running.set(elementId, true)
+        return
+      }
+      running.set(elementId, false)
+      emit(
+        'element:sync',
+        { elementId },
+        settleOnce<CanvasElementRecord>((res) => {
+          const again = running.get(elementId)
+          running.delete(elementId)
+          if (res.ok && res.entity && confirmedRef.current.has(elementId)) {
+            const known = revisionsRef.current.get(elementId)
+            if (known === undefined || res.entity.revision > known) {
+              confirm(toEngineElement(res.entity))
+              revisionsRef.current.set(elementId, res.entity.revision)
+              showConfirmed(elementId)
+            }
+          }
+          if (again) resync(elementId)
+        }),
+      )
+    },
+    [confirm, emit, settleOnce, showConfirmed],
+  )
   /** The create never produced a row: its queued ops resolve as refused. */
   const dropQueuedTableOps = useCallback((temporaryId: string): void => {
     const queued = pendingTableOpsRef.current.get(temporaryId)
@@ -467,14 +583,33 @@ export function useCanvasElements({
           (base.table ? { kind: 'table', table: base.table } : undefined),
       } as CanvasElementRecord)
       confirm(merged)
-      if (payload.revision !== undefined) {
+      // A non-table update carries no grid, so a table-op revision skipped
+      // before it would be claimed as seen. Leave the revision alone and fetch.
+      const known = revisionsRef.current.get(merged.id)
+      const missedTableOp =
+        merged.kind === 'table' &&
+        payload.revision !== undefined &&
+        known !== undefined &&
+        payload.revision > known + 1
+      if (payload.revision !== undefined && !missedTableOp) {
         revisionsRef.current.set(merged.id, payload.revision)
       }
-      setScene((prev) =>
-        prev.byId.has(merged.id)
-          ? updateElement(prev, merged.id, merged)
-          : prev,
-      )
+      showConfirmed(merged.id)
+      if (missedTableOp) resyncElement(merged.id)
+    }
+
+    const onTableOpApplied = (payload: {
+      elementId: string
+      op: TableOp
+      revision: number
+      width: number
+      height: number
+      positionX: number
+      positionY: number
+    }) => {
+      const outcome = confirmTableOp(payload.elementId, payload.op, payload)
+      if (outcome === 'resync') resyncElement(payload.elementId)
+      else if (outcome === 'applied') showConfirmed(payload.elementId)
     }
 
     const onDeleted = (payload: { elementId: string; deletedBy: string }) => {
@@ -485,13 +620,25 @@ export function useCanvasElements({
 
     on('element:created', onCreated)
     on('element:updated', onUpdated)
+    on('element:table-op-applied', onTableOpApplied)
     on('element:deleted', onDeleted)
     return () => {
       off('element:created', onCreated)
       off('element:updated', onUpdated)
+      off('element:table-op-applied', onTableOpApplied)
       off('element:deleted', onDeleted)
     }
-  }, [boardId, confirm, enabled, off, on, setScene])
+  }, [
+    boardId,
+    confirm,
+    confirmTableOp,
+    enabled,
+    off,
+    on,
+    resyncElement,
+    setScene,
+    showConfirmed,
+  ])
 
   // ── create ───────────────────────────────────────────────────────────────
   //
@@ -930,10 +1077,11 @@ export function useCanvasElements({
           return
         }
         applyLocally()
-        inflightTableOpsRef.current.set(
-          elementId,
-          (inflightTableOpsRef.current.get(elementId) ?? 0) + 1,
-        )
+        const entry = { op }
+        inflightTableOpsRef.current.set(elementId, [
+          ...(inflightTableOpsRef.current.get(elementId) ?? []),
+          entry,
+        ])
         emit(
           'element:table-op',
           {
@@ -944,37 +1092,31 @@ export function useCanvasElements({
               ? { expectLayout: options.expectLayout }
               : {}),
           },
-          settleOnce<CanvasElementRecord & { inverse?: TableOp }>((res) => {
-            const remaining =
-              (inflightTableOpsRef.current.get(elementId) ?? 1) - 1
-            if (remaining > 0)
+          settleOnce<{
+            revision: number
+            width: number
+            height: number
+            positionX: number
+            positionY: number
+          }>((res) => {
+            const remaining = (
+              inflightTableOpsRef.current.get(elementId) ?? []
+            ).filter((other) => other !== entry)
+            if (remaining.length > 0)
               inflightTableOpsRef.current.set(elementId, remaining)
             else inflightTableOpsRef.current.delete(elementId)
             if (!res.ok || !res.entity) {
-              const base = confirmedRef.current.get(elementId)
-              if (base && remaining === 0) {
-                setScene((prev) =>
-                  prev.byId.has(elementId)
-                    ? updateElement(prev, elementId, base)
-                    : prev,
-                )
-              }
+              // The confirmed table, with the ops still in flight on top.
+              showConfirmed(elementId)
               if (!options?.ephemeral) {
                 toast.error(tErrorOr(t, res, 'hooks.element.tableOpFailed'))
               }
               resolve({ ok: false })
               return
             }
-            const persisted = toEngineElement(res.entity)
-            confirm(persisted)
-            revisionsRef.current.set(persisted.id, res.entity.revision)
-            if (remaining === 0) {
-              setScene((prev) =>
-                prev.byId.has(persisted.id)
-                  ? updateElement(prev, persisted.id, persisted)
-                  : prev,
-              )
-            }
+            const outcome = confirmTableOp(elementId, op, res.entity)
+            if (outcome === 'resync') resyncElement(elementId)
+            else showConfirmed(elementId)
             resolve({
               ok: true,
               inverse: (res as { inverse?: TableOp }).inverse,
@@ -984,7 +1126,15 @@ export function useCanvasElements({
         )
       })
     },
-    [confirm, emit, setScene, settleOnce, t],
+    [
+      confirmTableOp,
+      emit,
+      resyncElement,
+      setScene,
+      settleOnce,
+      showConfirmed,
+      t,
+    ],
   )
   useEffect(() => {
     applyTableOpRef.current = applyTableOp

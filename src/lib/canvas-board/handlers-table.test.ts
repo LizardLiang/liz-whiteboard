@@ -121,7 +121,7 @@ beforeEach(() => {
 const table3 = () => createTable(3, 3, () => `id-${++seq}`)
 
 describe('element:table-op', () => {
-  it('applies a cell edit to the stored table and broadcasts element:updated', async () => {
+  it('applies a cell edit to the stored table and broadcasts the op, not the table', async () => {
     const table = table3()
     seedTable(table)
     const h = makeHarness()
@@ -141,13 +141,21 @@ describe('element:table-op', () => {
       'hello',
     )
     expect(h.broadcast).toHaveLength(1)
-    expect(h.broadcast[0].event).toBe('element:updated')
+    expect(h.broadcast[0].event).toBe('element:table-op-applied')
     expect(h.broadcast[0].payload).toMatchObject({
       elementId: TABLE_ID,
+      op: { type: 'setCellText', text: 'hello' },
       revision: 2,
       width: 360,
       height: 120,
+      positionX: 0,
+      positionY: 0,
+      updatedBy: 'u1',
     })
+    expect(h.broadcast[0].payload.props).toBeUndefined()
+    // The ack is compact as well: no table in it.
+    expect(res.entity).toMatchObject({ id: TABLE_ID, revision: 2 })
+    expect(res.entity.props).toBeUndefined()
   })
 
   it('keeps both cells when two people edit different cells at once', async () => {
@@ -343,7 +351,7 @@ describe('element:table-op', () => {
       },
     })
     expect(store.get(TABLE_ID).positionX).toBe(0)
-    expect(h.broadcast[0].payload).not.toHaveProperty('positionX')
+    expect(h.broadcast[0].payload).toMatchObject({ positionX: 0, positionY: 0 })
   })
 
   it('rejects a malformed op payload', async () => {
@@ -473,6 +481,26 @@ describe('element:table-op expectLayout (undo contested check)', () => {
     expect(
       store.get(TABLE_ID).props.table.cells[cellKey(rowId, 'late')].text,
     ).toBe('keep')
+  })
+})
+
+describe('element:sync', () => {
+  it('returns the whole stored element, to a viewer as well', async () => {
+    seedTable(table3())
+    vi.mocked(requireCanvasBoardRole).mockResolvedValue(true)
+    const h = makeHarness()
+    const res = await call(h, 'element:sync', { elementId: TABLE_ID })
+    expect(res.ok).toBe(true)
+    expect(res.entity).toMatchObject({ id: TABLE_ID, revision: 1 })
+    expect(res.entity.props.table.rows).toHaveLength(3)
+  })
+
+  it('refuses an element of another board', async () => {
+    seedTable(table3())
+    store.get(TABLE_ID).boardId = '99999999-9999-4999-8999-999999999999'
+    const h = makeHarness()
+    const res = await call(h, 'element:sync', { elementId: TABLE_ID })
+    expect(res.ok).toBe(false)
   })
 })
 

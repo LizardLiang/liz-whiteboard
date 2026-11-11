@@ -259,8 +259,23 @@ Editor-only. Changes a canvas **table** element by one small op instead of a who
 | `setHeaderRow` | `on` |
 | `setSizes`, `restoreCells` | the inverse ops of `scaleTable` (`setSizes` carries the exact `dx`, `dy` that put the corner back) and of fill/align. `restoreCells` has an optional `only` (`fill`, `align` or `text`) that writes just that field of each cell, so a collaborator's other fields survive; `only: 'text'` is also the Clear cells op |
 
-Rows and columns are addressed by **id**, never by index. The server loads the **latest stored** table, applies the op, validates the result (at most 500 cells, at least one row and one column), recomputes the element's `width`/`height`, and writes `props` conditional on the revision it read; on a lost race it re-reads and re-applies (up to 4 attempts). Ack: `{ ok: true, entity: <row>, inverse: TableOp }` or `{ ok: false, code, message }` (`VALIDATION_ERROR` for a missing id, the last row or column, or a table over the cap; `FORBIDDEN` for a viewer).
+Rows and columns are addressed by **id**, never by index. The server loads the **latest stored** table, applies the op, validates the result (at most 500 cells, at least one row and one column), recomputes the element's `width`/`height`, and writes `props` conditional on the revision it read; on a lost race it re-reads and re-applies (up to 4 attempts). Ack: `{ ok: true, entity: { id, revision, width, height, positionX, positionY, updatedAt }, inverse: TableOp }` or `{ ok: false, code, message }` (the ack carries no table: the issuer applies its own op to its confirmed table; `VALIDATION_ERROR` for a missing id, the last row or column, or a table over the cap; `FORBIDDEN` for a viewer).
 
-The server then broadcasts the existing `element:updated` event to every other client with `{ elementId, props, width, height, updatedAt, revision, updatedBy }`, so receivers need no new handler.
+The server then broadcasts `element:table-op-applied` to every other client (see below). It no longer sends the whole table.
+
+### `element:table-op-applied` (Server → Client, broadcast)
+
+Sent to every other client on the board after a table op. Payload: `{ elementId, op: TableOp, revision, width, height, positionX, positionY, updatedAt, updatedBy }`. `width`, `height`, `positionX` and `positionY` are the stored result (a scale can move the table). A receiver applies `op` with the pure `applyTableOp` to its **confirmed** table, then shows it with its own in-flight ops re-applied on top, in issue order, so a local optimistic change never flickers off. Rules for the receiver:
+
+- `revision` equal to the confirmed revision plus 1: apply the op.
+- `revision` at or below the confirmed revision: ignore (the state already includes it).
+- `revision` above the confirmed revision plus 1, or an op that throws: do not guess. Send `element:sync` and adopt the answer when it is newer.
+- A non-table `element:updated` for a table whose revision skips ahead also triggers `element:sync`, because that event carries no grid.
+
+Viewers receive it and apply it read-only.
+
+### `element:sync` (Client → Server)
+
+Any connected role, including viewers (it is a read). Payload: `{ elementId: string (uuid) }`. Ack: `{ ok: true, entity: <full element row> }` or `{ ok: false, code: 'NOT_FOUND' | 'VALIDATION_ERROR' | ... }` (an element of another board is `NOT_FOUND`).
 
 `element:update` rejects a `props` change for a `table` element (`VALIDATION_ERROR`). It drops a `width` or `height` for a table, because the stored size always follows the grid; position, zIndex and style updates are still allowed.

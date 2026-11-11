@@ -18,6 +18,7 @@ import { toast } from 'sonner'
 import { useCanvasElements } from './use-canvas-elements'
 import type { CanvasElement, Scene } from '@/lib/canvas-engine/scene'
 import type { CanvasElementRecord } from '@/data/models'
+import type { CanvasTable, TableOp } from '@/lib/canvas-engine/table'
 import { DEFAULT_ELEMENT_STYLE, sceneFrom } from '@/lib/canvas-engine/scene'
 import { toEngineElement } from '@/lib/canvas-element-adapter'
 import { applyTableOp, cellKey, createTable } from '@/lib/canvas-engine/table'
@@ -881,9 +882,12 @@ describe('applyTableOp', () => {
       h.socket.ackLast({
         ok: true,
         entity: {
-          ...record,
+          id: TABLE_ID,
           revision: 2,
-          props: { kind: 'table', table: stored.table },
+          width: record.width,
+          height: record.height,
+          positionX: record.positionX,
+          positionY: record.positionY,
         },
         inverse: stored.inverse,
       }),
@@ -925,29 +929,176 @@ describe('applyTableOp', () => {
     expect(element.table?.rows).toHaveLength(2)
   })
 
-  it('takes the grid from a table-op broadcast', () => {
+  function textOp(table: CanvasTable, row: number, col: number, text: string) {
+    return {
+      type: 'setCellText' as const,
+      rowId: table.rows[row].id,
+      colId: table.cols[col].id,
+      text,
+    }
+  }
+  function applied(op: TableOp, revision: number, extra = {}) {
+    return {
+      elementId: TABLE_ID,
+      op,
+      revision,
+      width: 240,
+      height: 80,
+      positionX: 10,
+      positionY: 20,
+      updatedAt: new Date(),
+      updatedBy: 'bob',
+      ...extra,
+    }
+  }
+  const textAt = (h: ReturnType<typeof setup>, row: number, col: number) => {
+    const table = h.scene.byId.get(TABLE_ID)!.table!
+    const cells: Record<string, { text: string } | undefined> = table.cells
+    return cells[cellKey(table.rows[row].id, table.cols[col].id)]?.text
+  }
+
+  it('applies a peer op from element:table-op-applied to the confirmed table', () => {
+    const h = setup([tableRecord()])
+    const table = h.scene.byId.get(TABLE_ID)!.table!
+    act(() => {
+      h.socket.receive(
+        'element:table-op-applied',
+        applied(textOp(table, 1, 1, 'from bob'), 2),
+      )
+    })
+    expect(textAt(h, 1, 1)).toBe('from bob')
+    expect(h.view.result.current.getRevision(TABLE_ID)).toBe(2)
+    expect(h.socket.sent).toHaveLength(0)
+  })
+
+  it('keeps this client\'s in-flight edit on screen when a peer op arrives, and after its ack', () => {
     const record = tableRecord()
     const h = setup([record])
     const table = h.scene.byId.get(TABLE_ID)!.table!
-    const next = applyTableOp(table, {
-      type: 'setCellText',
-      rowId: table.rows[1].id,
-      colId: table.cols[1].id,
-      text: 'from bob',
-    }).table
+    const mine = textOp(table, 0, 0, 'mine')
+    act(() => {
+      void h.view.result.current.applyTableOp(TABLE_ID, mine)
+    })
+    expect(textAt(h, 0, 0)).toBe('mine')
+    // Bob's op lands first (revision 2); mine is still in flight.
+    act(() => {
+      h.socket.receive(
+        'element:table-op-applied',
+        applied(textOp(table, 1, 1, 'bob'), 2),
+      )
+    })
+    expect(textAt(h, 0, 0)).toBe('mine')
+    expect(textAt(h, 1, 1)).toBe('bob')
+    act(() =>
+      h.socket.ackLast({
+        ok: true,
+        entity: {
+          id: TABLE_ID,
+          revision: 3,
+          width: 240,
+          height: 80,
+          positionX: 10,
+          positionY: 20,
+        },
+        inverse: textOp(table, 0, 0, ''),
+      }),
+    )
+    expect(textAt(h, 0, 0)).toBe('mine')
+    expect(textAt(h, 1, 1)).toBe('bob')
+    expect(h.view.result.current.getRevision(TABLE_ID)).toBe(3)
+    expect(h.socket.sent.filter((e) => e.event === 'element:sync')).toHaveLength(0)
+  })
+
+  it('re-applies every in-flight op, in issue order, over a peer op', () => {
+    const h = setup([tableRecord()])
+    const table = h.scene.byId.get(TABLE_ID)!.table!
+    act(() => {
+      void h.view.result.current.applyTableOp(
+        TABLE_ID,
+        textOp(table, 0, 0, 'first'),
+      )
+      void h.view.result.current.applyTableOp(
+        TABLE_ID,
+        textOp(table, 0, 0, 'second'),
+      )
+    })
+    act(() => {
+      h.socket.receive(
+        'element:table-op-applied',
+        applied(textOp(table, 0, 0, 'bob'), 2),
+      )
+    })
+    expect(textAt(h, 0, 0)).toBe('second')
+  })
+
+  it('fetches the element, instead of guessing, when a peer op skips a revision', () => {
+    const record = tableRecord()
+    const h = setup([record])
+    const table = h.scene.byId.get(TABLE_ID)!.table!
+    act(() => {
+      h.socket.receive(
+        'element:table-op-applied',
+        applied(textOp(table, 1, 1, 'late'), 3),
+      )
+    })
+    expect(textAt(h, 1, 1)).toBeUndefined()
+    expect(h.socket.sent[0]).toMatchObject({
+      event: 'element:sync',
+      data: { elementId: TABLE_ID },
+    })
+    const full = applyTableOp(
+      applyTableOp(table, textOp(table, 0, 1, 'missed')).table,
+      textOp(table, 1, 1, 'late'),
+    ).table
+    act(() =>
+      h.socket.ackLast({
+        ok: true,
+        entity: { ...record, revision: 3, props: { kind: 'table', table: full } },
+      }),
+    )
+    expect(textAt(h, 0, 1)).toBe('missed')
+    expect(textAt(h, 1, 1)).toBe('late')
+    expect(h.view.result.current.getRevision(TABLE_ID)).toBe(3)
+  })
+
+  it('fetches the element when the peer op does not fit the confirmed table', () => {
+    const h = setup([tableRecord()])
+    const table = h.scene.byId.get(TABLE_ID)!.table!
+    act(() => {
+      h.socket.receive(
+        'element:table-op-applied',
+        applied({ type: 'removeRow', rowId: 'no-such-row' }, 2),
+      )
+    })
+    expect(h.socket.sent[0].event).toBe('element:sync')
+    expect(table.rows).toHaveLength(2)
+  })
+
+  it('ignores a peer op that the confirmed table already has', () => {
+    const h = setup([tableRecord()])
+    const table = h.scene.byId.get(TABLE_ID)!.table!
+    act(() => {
+      h.socket.receive(
+        'element:table-op-applied',
+        applied(textOp(table, 1, 1, 'old'), 1),
+      )
+    })
+    expect(textAt(h, 1, 1)).toBeUndefined()
+    expect(h.socket.sent).toHaveLength(0)
+  })
+
+  it('fetches the element when a non-table update arrives after a missed table op', () => {
+    const h = setup([tableRecord()])
     act(() => {
       h.socket.receive('element:updated', {
         elementId: TABLE_ID,
-        props: { kind: 'table', table: next },
+        positionX: 400,
         updatedBy: 'bob',
-        revision: 2,
+        revision: 3,
       })
     })
-    expect(
-      h.scene.byId.get(TABLE_ID)!.table!.cells[
-        cellKey(table.rows[1].id, table.cols[1].id)
-      ].text,
-    ).toBe('from bob')
+    expect(h.socket.sent[0].event).toBe('element:sync')
+    expect(h.view.result.current.getRevision(TABLE_ID)).toBe(1)
   })
 })
 
