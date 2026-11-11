@@ -71,8 +71,16 @@ export type TableOp =
       colId: string
       text: string
       textRuns?: Array<CanvasTextRun>
-      /** The row height the client measured for this text; the server stores max(it, 24). */
+      /**
+       * The row height the client measured for this text; the server stores
+       * max(it, 24).
+       */
       rowHeight?: number
+      /**
+       * Set by an undo: `rowHeight` applies, shrinking included, only while the
+       * row still has exactly this height, the height the undone edit gave it.
+       */
+      ifRowHeight?: number
     }
   | { type: 'setCellFill'; cells: Array<CellRef>; fill: string | null }
   | { type: 'setCellAlign'; cells: Array<CellRef>; align: CanvasTextAlign }
@@ -98,12 +106,18 @@ export type TableOp =
       type: 'scaleTable'
       sx: number
       sy: number
-      /** How far the table's top-left moves: a resize from a left or top handle keeps the opposite side still. */
-      dx?: number
-      dy?: number
+      /**
+       * The edge that stays still. A resize from the left handle keeps the right
+       * edge (`anchorX: 'right'`), one from the top handle keeps the bottom
+       * (`anchorY: 'bottom'`). The server derives the shift from the real
+       * before and after sizes, so a clamp or a collaborator's grid change
+       * cannot make the anchored edge drift.
+       */
+      anchorX?: 'left' | 'right'
+      anchorY?: 'top' | 'bottom'
     }
   | { type: 'setHeaderRow'; on: boolean }
-  /** The inverse of `scaleTable`: puts every named row height and column width back. */
+  /** The inverse of `scaleTable`: puts every named row height and column width back, and the table's corner where it was. */
   | {
       type: 'setSizes'
       rows: Array<TableRow>
@@ -111,11 +125,19 @@ export type TableOp =
       dx?: number
       dy?: number
     }
-  /** The inverse of a fill or align op: puts each cell back as it was (null = no cell). */
+  /**
+   * The inverse of a fill or align op, and the clear-cells op: puts each cell
+   * back as it was (null = no cell). `only` names the one field written, so the
+   * rest of the cell, a collaborator's text for one, is left alone.
+   */
   | {
       type: 'restoreCells'
       cells: Array<{ rowId: string; colId: string; cell: TableCell | null }>
+      only?: RestoreField
     }
+
+/** A cell field a narrow `restoreCells` writes: the fill, the alignment, or the text with its runs. */
+export type RestoreField = 'fill' | 'align' | 'text'
 
 export type TableOpType = TableOp['type']
 
@@ -308,14 +330,16 @@ export function normalizeTable(raw: unknown): CanvasTable {
 
 /**
  * What a cell must hold for a table op to apply: the contested check of an
- * undo or redo. Text and runs only — fill and alignment are not edited by the
- * ops an expectation guards.
+ * undo or redo. Each field is checked only when present: `text` (with
+ * `textRuns`), `fill` (null = no fill) and `textAlign` (null = none set).
  */
 export interface CellExpect {
   rowId: string
   colId: string
-  text: string
+  text?: string
   textRuns?: Array<CanvasTextRun>
+  fill?: string | null
+  textAlign?: CanvasTextAlign | null
 }
 
 function sameRunList(
@@ -327,25 +351,152 @@ function sameRunList(
   return JSON.stringify(left) === JSON.stringify(right)
 }
 
-/** True when every expected cell holds exactly the expected text and runs. */
+/** True when every expected cell holds exactly the expected fields. */
 export function tableMatchesExpect(
   table: CanvasTable,
   expect: ReadonlyArray<CellExpect>,
 ): boolean {
   return expect.every((entry) => {
     const cell = lookupCell(table.cells, cellKey(entry.rowId, entry.colId))
+    if (
+      entry.text !== undefined &&
+      ((cell?.text ?? '') !== entry.text ||
+        !sameRunList(cell?.textRuns, entry.textRuns))
+    ) {
+      return false
+    }
+    if (entry.fill !== undefined && (cell?.fill ?? null) !== entry.fill) {
+      return false
+    }
     return (
-      (cell?.text ?? '') === entry.text &&
-      sameRunList(cell?.textRuns, entry.textRuns)
+      entry.textAlign === undefined ||
+      (cell?.textAlign ?? null) === entry.textAlign
     )
   })
 }
 
-/** What `op` leaves in the cells it writes — the expectation its undo is guarded by. */
-export function expectAfterOp(
+/**
+ * What the layout of a table must be for an undo or redo of a size, header or
+ * insert op to apply. Checked against the STORED table, so a collaborator's
+ * change since the edit makes the undo contested instead of overwriting it.
+ */
+export interface LayoutExpect {
+  /** Each named row has this height. */
+  rows?: Array<TableRow>
+  /** Each named column has this width. */
+  cols?: Array<TableCol>
+  /** The table has exactly as many rows and columns as `rows` and `cols` name. */
+  complete?: boolean
+  headerRow?: boolean
+  /** Every cell of this row is blank: the undo of a row insert removes it. */
+  blankRowId?: string
+  /** Every cell of this column is blank: the undo of a column insert removes it. */
+  blankColId?: string
+}
+
+const SIZE_EPSILON = 0.01
+
+function isBlankText(cell: TableCell | undefined): boolean {
+  return !cell || (cell.text === '' && !(cell.textRuns?.length ?? 0))
+}
+
+/** True when the table's layout is what `layout` expects. */
+export function tableMatchesLayout(
+  table: CanvasTable,
+  layout: LayoutExpect,
+): boolean {
+  for (const row of layout.rows ?? []) {
+    const found = table.rows.find((entry) => entry.id === row.id)
+    if (!found || Math.abs(found.height - row.height) > SIZE_EPSILON) {
+      return false
+    }
+  }
+  for (const col of layout.cols ?? []) {
+    const found = table.cols.find((entry) => entry.id === col.id)
+    if (!found || Math.abs(found.width - col.width) > SIZE_EPSILON) {
+      return false
+    }
+  }
+  if (
+    layout.complete &&
+    (table.rows.length !== (layout.rows?.length ?? 0) ||
+      table.cols.length !== (layout.cols?.length ?? 0))
+  ) {
+    return false
+  }
+  if (layout.headerRow !== undefined && table.headerRow !== layout.headerRow) {
+    return false
+  }
+  const blankRowId = layout.blankRowId
+  if (
+    blankRowId !== undefined &&
+    !table.cols.every((col) =>
+      isBlankText(lookupCell(table.cells, cellKey(blankRowId, col.id))),
+    )
+  ) {
+    return false
+  }
+  const blankColId = layout.blankColId
+  return (
+    blankColId === undefined ||
+    table.rows.every((row) =>
+      isBlankText(lookupCell(table.cells, cellKey(row.id, blankColId))),
+    )
+  )
+}
+
+function layoutOf(table: CanvasTable, op: TableOp): LayoutExpect | undefined {
+  switch (op.type) {
+    case 'resizeRow': {
+      const row = table.rows.find((entry) => entry.id === op.rowId)
+      return row ? { rows: [{ ...row }] } : undefined
+    }
+    case 'resizeCol': {
+      const col = table.cols.find((entry) => entry.id === op.colId)
+      return col ? { cols: [{ ...col }] } : undefined
+    }
+    case 'scaleTable':
+    case 'setSizes':
+      return {
+        rows: table.rows.map((row) => ({ ...row })),
+        cols: table.cols.map((col) => ({ ...col })),
+        complete: true,
+      }
+    case 'setHeaderRow':
+      return { headerRow: table.headerRow }
+    default:
+      return undefined
+  }
+}
+
+/**
+ * The layout an UNDO of `op` expects to find: what the op itself left. `table`
+ * is the table as it stood before the op. An inserted row or column must still
+ * be blank in the table as it is when the undo runs.
+ */
+export function undoLayoutExpectFor(
   table: CanvasTable,
   op: TableOp,
-): Array<CellExpect> | undefined {
+): LayoutExpect | undefined {
+  if (op.type === 'insertRow') return { blankRowId: op.row.id }
+  if (op.type === 'insertCol') return { blankColId: op.col.id }
+  try {
+    return layoutOf(applyTableOp(table, op).table, op)
+  } catch {
+    return undefined
+  }
+}
+
+/** The layout a REDO of `op` expects to find: what the op replaced. */
+export function redoLayoutExpectFor(
+  table: CanvasTable,
+  op: TableOp,
+): LayoutExpect | undefined {
+  return layoutOf(table, op)
+}
+
+/** What `op` leaves in the cells it writes — the expectation its undo is guarded by. */
+export function expectAfterOp(op: TableOp): Array<CellExpect> | undefined {
   if (op.type === 'setCellText') {
     return [
       {
@@ -357,14 +508,6 @@ export function expectAfterOp(
           : {}),
       },
     ]
-  }
-  if (op.type === 'removeRow') {
-    // Undoing a row insert removes the row: it must still be blank.
-    return table.cols.map((col) => ({
-      rowId: op.rowId,
-      colId: col.id,
-      text: '',
-    }))
   }
   return undefined
 }
@@ -386,41 +529,75 @@ function expectOf(
   })
 }
 
+/** Expects each cell to hold the fill (or alignment) `source` holds for it. */
+function expectFieldOf(
+  source: CanvasTable,
+  refs: ReadonlyArray<CellRef>,
+  field: 'fill' | 'textAlign',
+): Array<CellExpect> {
+  return refs.map((ref) => {
+    const cell = lookupCell(source.cells, cellKey(ref.rowId, ref.colId))
+    return field === 'fill'
+      ? { rowId: ref.rowId, colId: ref.colId, fill: cell?.fill ?? null }
+      : {
+          rowId: ref.rowId,
+          colId: ref.colId,
+          textAlign: cell?.textAlign ?? null,
+        }
+  })
+}
+
 /**
- * What the cells must hold for the UNDO of a user op to apply: the text the
- * op itself left behind. `table` is the table as it stood before the op.
- * A structural op that removes cells has nothing left to contest.
+ * What the cells must hold for the UNDO of a user op to apply: the content the
+ * op itself left behind, and only the field the op wrote. A structural op that
+ * removes cells has nothing left to contest here (`undoLayoutExpectFor` guards
+ * an inserted row or column).
  */
 export function undoExpectFor(
-  table: CanvasTable,
+  _table: CanvasTable,
   op: TableOp,
-  inverse: TableOp,
+  _inverse: TableOp,
 ): Array<CellExpect> | undefined {
   switch (op.type) {
     case 'setCellText':
-      return expectAfterOp(table, op)
-    case 'insertRow':
-      // An undo removes the row: it must still be blank.
-      return expectAfterOp(table, inverse)
-    case 'insertCol':
-      return table.rows.map((row) => ({
-        rowId: row.id,
-        colId: op.col.id,
-        text: '',
-      }))
+      return expectAfterOp(op)
     case 'setCellFill':
-    case 'setCellAlign':
-      // The undo rewrites each whole cell, so the text must still be what it was.
-      return expectOf(table, op.cells)
-    case 'restoreCells':
-      return op.cells.map((entry) => ({
-        rowId: entry.rowId,
-        colId: entry.colId,
-        text: entry.cell?.text ?? '',
-        ...(entry.cell?.textRuns && entry.cell.textRuns.length > 0
-          ? { textRuns: entry.cell.textRuns }
-          : {}),
+      return op.cells.map((ref) => ({
+        rowId: ref.rowId,
+        colId: ref.colId,
+        fill: op.fill,
       }))
+    case 'setCellAlign':
+      return op.cells.map((ref) => ({
+        rowId: ref.rowId,
+        colId: ref.colId,
+        textAlign: op.align,
+      }))
+    case 'restoreCells':
+      return op.cells.map((entry) => {
+        if (op.only === 'fill') {
+          return {
+            rowId: entry.rowId,
+            colId: entry.colId,
+            fill: entry.cell?.fill ?? null,
+          }
+        }
+        if (op.only === 'align') {
+          return {
+            rowId: entry.rowId,
+            colId: entry.colId,
+            textAlign: entry.cell?.textAlign ?? null,
+          }
+        }
+        return {
+          rowId: entry.rowId,
+          colId: entry.colId,
+          text: entry.cell?.text ?? '',
+          ...(entry.cell?.textRuns && entry.cell.textRuns.length > 0
+            ? { textRuns: entry.cell.textRuns }
+            : {}),
+        }
+      })
     default:
       return undefined
   }
@@ -438,7 +615,11 @@ export function redoExpectFor(
 ): Array<CellExpect> | undefined {
   switch (op.type) {
     case 'setCellText':
-      return expectAfterOp(table, inverse)
+      return expectAfterOp(inverse)
+    case 'setCellFill':
+      return expectFieldOf(table, op.cells, 'fill')
+    case 'setCellAlign':
+      return expectFieldOf(table, op.cells, 'textAlign')
     case 'removeRow':
       return expectOf(
         table,
@@ -450,6 +631,10 @@ export function redoExpectFor(
         table.rows.map((row) => ({ rowId: row.id, colId: op.colId })),
       )
     case 'restoreCells':
+      if (op.only === 'fill') return expectFieldOf(table, op.cells, 'fill')
+      if (op.only === 'align') {
+        return expectFieldOf(table, op.cells, 'textAlign')
+      }
       return expectOf(table, op.cells)
     default:
       return undefined
@@ -606,22 +791,26 @@ export function tabCell(
   }
 }
 
-/** The inverse of a shift: an op that moved the table by (dx, dy) is undone by moving it back. */
-function shiftBack(op: { dx?: number; dy?: number }): {
-  dx?: number
-  dy?: number
-} {
-  return {
-    ...(op.dx ? { dx: -op.dx } : {}),
-    ...(op.dy ? { dy: -op.dy } : {}),
+/**
+ * How far an op moves the table's top-left corner, from the table before and
+ * after it. A scale from a left or top handle keeps the opposite edge still, so
+ * the shift is the real change in size; `setSizes` (the undo of a scale)
+ * carries the exact shift that puts the corner back.
+ */
+export function tableOpShift(
+  before: CanvasTable,
+  after: CanvasTable,
+  op: TableOp,
+): { dx: number; dy: number } {
+  if (op.type === 'scaleTable') {
+    const from = tableSize(before)
+    const to = tableSize(after)
+    return {
+      dx: op.anchorX === 'right' ? from.width - to.width : 0,
+      dy: op.anchorY === 'bottom' ? from.height - to.height : 0,
+    }
   }
-}
-
-/** How far an op moves the table's top-left corner. Only a resize from a left or top handle moves it. */
-export function tableOpShift(op: TableOp): { dx: number; dy: number } {
-  if (op.type === 'scaleTable' || op.type === 'setSizes') {
-    return { dx: op.dx ?? 0, dy: op.dy ?? 0 }
-  }
+  if (op.type === 'setSizes') return { dx: op.dx ?? 0, dy: op.dy ?? 0 }
   return { dx: 0, dy: 0 }
 }
 
@@ -931,7 +1120,14 @@ export function tableScaleForDrag(
   start: WorldRect,
   world: { x: number; y: number },
   rowMinHeights: ReadonlyArray<number>,
-): { sx: number; sy: number; dx: number; dy: number } {
+): {
+  sx: number
+  sy: number
+  dx: number
+  dy: number
+  anchorX?: 'right'
+  anchorY?: 'bottom'
+} {
   const right = start.x + start.width
   const bottom = start.y + start.height
   const west = handle.includes('w')
@@ -982,6 +1178,8 @@ export function tableScaleForDrag(
     sy: scaleY,
     dx: west ? start.width - start.width * scaleX : 0,
     dy: north ? start.height - start.height * scaleY : 0,
+    ...(west ? { anchorX: 'right' as const } : {}),
+    ...(north ? { anchorY: 'bottom' as const } : {}),
   }
 }
 
@@ -1090,6 +1288,28 @@ function withCell(
   return next
 }
 
+/** `current` with one field taken from `source` (a missing field clears it). */
+function restoreField(
+  current: TableCell | undefined,
+  source: TableCell | null,
+  field: RestoreField,
+): TableCell {
+  const next: TableCell = { ...(current ?? { text: '' }) }
+  if (field === 'fill') {
+    if (source?.fill === undefined) delete next.fill
+    else next.fill = source.fill
+  } else if (field === 'align') {
+    if (source?.textAlign === undefined) delete next.textAlign
+    else next.textAlign = source.textAlign
+  } else {
+    next.text = source?.text ?? ''
+    if (source?.textRuns && source.textRuns.length > 0) {
+      next.textRuns = source.textRuns
+    } else delete next.textRuns
+  }
+  return next
+}
+
 function checkSize(rows: number, cols: number): void {
   if (rows * cols > TABLE_MAX_CELLS) {
     throw new TableOpError(
@@ -1127,17 +1347,20 @@ export function applyTableOp(
       if (op.textRuns && op.textRuns.length > 0) next.textRuns = op.textRuns
       else delete next.textRuns
       const priorHeight = table.rows[rowIndex].height
-      const grownHeight = op.rowHeight
+      let height = priorHeight
+      if (op.rowHeight !== undefined) {
+        const wanted = Math.max(op.rowHeight, TABLE_MIN_ROW_HEIGHT)
+        if (op.ifRowHeight === undefined) {
+          height = wanted
+        } else if (Math.abs(priorHeight - op.ifRowHeight) <= SIZE_EPSILON) {
+          height = wanted
+        }
+      }
       const rows =
-        grownHeight === undefined
+        height === priorHeight
           ? table.rows
           : table.rows.map((row, i) =>
-              i === rowIndex
-                ? {
-                    ...row,
-                    height: Math.max(grownHeight, TABLE_MIN_ROW_HEIGHT),
-                  }
-                : row,
+              i === rowIndex ? { ...row, height } : row,
             )
       return {
         table: { ...table, rows, cells: withCell(table.cells, key, next) },
@@ -1149,7 +1372,11 @@ export function applyTableOp(
           ...(prior?.textRuns && prior.textRuns.length > 0
             ? { textRuns: prior.textRuns }
             : {}),
-          ...(op.rowHeight === undefined ? {} : { rowHeight: priorHeight }),
+          // Undo gives back the height this edit added, and only while the
+          // row still has it: a collaborator's taller row stays.
+          ...(height === priorHeight
+            ? {}
+            : { rowHeight: priorHeight, ifRowHeight: height }),
         },
       }
     }
@@ -1177,7 +1404,11 @@ export function applyTableOp(
       }
       return {
         table: { ...table, cells },
-        inverse: { type: 'restoreCells', cells: before },
+        inverse: {
+          type: 'restoreCells',
+          cells: before,
+          only: op.type === 'setCellFill' ? 'fill' : 'align',
+        },
       }
     }
     case 'restoreCells': {
@@ -1195,11 +1426,21 @@ export function applyTableOp(
           colId: entry.colId,
           cell: lookupCell(cells, key) ?? null,
         })
-        cells = withCell(cells, key, entry.cell)
+        cells = withCell(
+          cells,
+          key,
+          op.only === undefined
+            ? entry.cell
+            : restoreField(lookupCell(cells, key), entry.cell, op.only),
+        )
       }
       return {
         table: { ...table, cells },
-        inverse: { type: 'restoreCells', cells: before.reverse() },
+        inverse: {
+          type: 'restoreCells',
+          cells: before.reverse(),
+          ...(op.only === undefined ? {} : { only: op.only }),
+        },
       }
     }
     case 'insertRow': {
@@ -1350,23 +1591,26 @@ export function applyTableOp(
       if (!(op.sx > 0) || !(op.sy > 0)) {
         throw new TableOpError('INVALID', 'Scale factors must be positive')
       }
+      const scaled: CanvasTable = {
+        ...table,
+        rows: table.rows.map((row) => ({
+          ...row,
+          height: Math.max(row.height * op.sy, TABLE_MIN_ROW_HEIGHT),
+        })),
+        cols: table.cols.map((col) => ({
+          ...col,
+          width: Math.max(col.width * op.sx, TABLE_MIN_COL_WIDTH),
+        })),
+      }
+      const shift = tableOpShift(table, scaled, op)
       return {
-        table: {
-          ...table,
-          rows: table.rows.map((row) => ({
-            ...row,
-            height: Math.max(row.height * op.sy, TABLE_MIN_ROW_HEIGHT),
-          })),
-          cols: table.cols.map((col) => ({
-            ...col,
-            width: Math.max(col.width * op.sx, TABLE_MIN_COL_WIDTH),
-          })),
-        },
+        table: scaled,
         inverse: {
           type: 'setSizes',
           rows: table.rows.map((row) => ({ ...row })),
           cols: table.cols.map((col) => ({ ...col })),
-          ...shiftBack(op),
+          ...(shift.dx ? { dx: -shift.dx } : {}),
+          ...(shift.dy ? { dy: -shift.dy } : {}),
         },
       }
     }
@@ -1397,7 +1641,8 @@ export function applyTableOp(
           type: 'setSizes',
           rows: table.rows.map((row) => ({ ...row })),
           cols: table.cols.map((col) => ({ ...col })),
-          ...shiftBack(op),
+          ...(op.dx ? { dx: -op.dx } : {}),
+          ...(op.dy ? { dy: -op.dy } : {}),
         },
       }
     }

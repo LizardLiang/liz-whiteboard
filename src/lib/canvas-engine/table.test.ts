@@ -16,6 +16,7 @@ import {
   normalizeTable,
   pruneSelection,
   redoExpectFor,
+  redoLayoutExpectFor,
   sameAffordance,
   selectionCells,
   stepCell,
@@ -26,12 +27,14 @@ import {
   tableDimsForDrag,
   tableHoverAffordanceAt,
   tableMatchesExpect,
+  tableMatchesLayout,
   tableOpShift,
   tablePlusRect,
   tableScaleForDrag,
   tableSearchText,
   tableSize,
   undoExpectFor,
+  undoLayoutExpectFor,
 } from './table'
 import { DEFAULT_ELEMENT_STYLE } from './scene'
 import type { CanvasTable, TableOp } from './table'
@@ -633,40 +636,52 @@ describe('undo expectations', () => {
     ).toBe(false)
   })
 
-  it('expects a text op to leave its own text behind, and a row removal a blank row', () => {
-    const table = fresh(2, 2)
+  it('expects a text op to leave its own text behind', () => {
     expect(
-      expectAfterOp(table, {
+      expectAfterOp({
         type: 'setCellText',
         rowId: 'id-1',
         colId: 'id-3',
         text: 'a',
       }),
     ).toEqual([{ rowId: 'id-1', colId: 'id-3', text: 'a' }])
-    expect(expectAfterOp(table, { type: 'removeRow', rowId: 'id-2' })).toEqual([
-      { rowId: 'id-2', colId: 'id-3', text: '' },
-      { rowId: 'id-2', colId: 'id-4', text: '' },
-    ])
-    expect(
-      expectAfterOp(table, { type: 'setHeaderRow', on: false }),
-    ).toBeUndefined()
+    expect(expectAfterOp({ type: 'removeRow', rowId: 'id-2' })).toBeUndefined()
+    expect(expectAfterOp({ type: 'setHeaderRow', on: false })).toBeUndefined()
   })
 })
 
-describe('scaleTable and setSizes carry a position shift', () => {
-  it('inverts a shifted scale into a shifted setSizes that undoes it', () => {
+describe('scaleTable derives its position shift from the real sizes', () => {
+  it('inverts an anchored scale into a setSizes that puts the corner back', () => {
     const table = fresh(2, 2)
-    const op: TableOp = { type: 'scaleTable', sx: 0.5, sy: 1, dx: 120, dy: 0 }
+    const op: TableOp = {
+      type: 'scaleTable',
+      sx: 0.5,
+      sy: 1,
+      anchorX: 'right',
+    }
     const { table: scaled, inverse } = applyTableOp(table, op)
     expect(tableSize(scaled).width).toBe(120)
+    expect(tableOpShift(table, scaled, op)).toEqual({ dx: 120, dy: 0 })
     expect(inverse).toMatchObject({ type: 'setSizes', dx: -120 })
     expect(inverse).not.toHaveProperty('dy')
-    expect(tableOpShift(inverse)).toEqual({ dx: -120, dy: 0 })
-    expect(applyTableOp(scaled, inverse).table).toEqual(table)
-    expect(tableOpShift({ type: 'removeRow', rowId: 'x' })).toEqual({
-      dx: 0,
+    const restored = applyTableOp(scaled, inverse)
+    expect(tableOpShift(scaled, restored.table, inverse)).toEqual({
+      dx: -120,
       dy: 0,
     })
+    expect(restored.table).toEqual(table)
+    expect(
+      tableOpShift(table, table, { type: 'removeRow', rowId: 'x' }),
+    ).toEqual({ dx: 0, dy: 0 })
+  })
+
+  it('shifts by the clamped change, so the anchored edge never drifts', () => {
+    const table = fresh(1, 2)
+    const op: TableOp = { type: 'scaleTable', sx: 0.1, sy: 1, anchorX: 'right' }
+    const { table: scaled } = applyTableOp(table, op)
+    // Each 120 px column clamps at 40: 240 -> 80, not 24.
+    expect(tableSize(scaled).width).toBe(80)
+    expect(tableOpShift(table, scaled, op)).toEqual({ dx: 160, dy: 0 })
   })
 })
 
@@ -805,25 +820,165 @@ describe('table hover affordances', () => {
 })
 
 describe('undoExpectFor for fill and align', () => {
-  it('guards the undo with the text the cells hold now, so a collaborator edit is not overwritten', () => {
+  it('guards the undo with the fill or alignment the op wrote, not with the text', () => {
+    const table = fresh(2, 2)
+    const ref = { rowId: table.rows[0].id, colId: table.cols[0].id }
+    const fill: TableOp = { type: 'setCellFill', cells: [ref], fill: '#e5484d' }
+    const align: TableOp = {
+      type: 'setCellAlign',
+      cells: [ref],
+      align: 'center',
+    }
+    expect(
+      undoExpectFor(table, fill, applyTableOp(table, fill).inverse),
+    ).toEqual([{ ...ref, fill: '#e5484d' }])
+    expect(
+      undoExpectFor(table, align, applyTableOp(table, align).inverse),
+    ).toEqual([{ ...ref, textAlign: 'center' }])
+    expect(
+      redoExpectFor(table, fill, applyTableOp(table, fill).inverse),
+    ).toEqual([{ ...ref, fill: null }])
+  })
+
+  it('inverts into a narrow restore that leaves a collaborator text alone', () => {
     let table = fresh(2, 2)
     const ref = { rowId: table.rows[0].id, colId: table.cols[0].id }
-    table = applyTableOp(table, {
+    const fill: TableOp = { type: 'setCellFill', cells: [ref], fill: '#e5484d' }
+    const done = applyTableOp(table, fill)
+    expect(done.inverse).toMatchObject({ type: 'restoreCells', only: 'fill' })
+    table = applyTableOp(done.table, {
       type: 'setCellText',
       ...ref,
-      text: 'hi',
+      text: 'theirs',
     }).table
-    const ops: Array<TableOp> = [
-      { type: 'setCellFill', cells: [ref], fill: '#e5484d' },
-      { type: 'setCellAlign', cells: [ref], align: 'center' },
-    ]
-    for (const op of ops) {
-      const { inverse } = applyTableOp(table, op)
-      expect(inverse.type).toBe('restoreCells')
-      expect(undoExpectFor(table, op, inverse)).toEqual([
-        { ...ref, text: 'hi' },
-      ])
+    const undone = applyTableOp(table, done.inverse).table
+    expect(undone.cells[`${ref.rowId}:${ref.colId}`]).toEqual({
+      text: 'theirs',
+    })
+  })
+
+  it('reports a fill or alignment a collaborator changed since as a mismatch', () => {
+    const table = fresh(1, 1)
+    const ref = { rowId: table.rows[0].id, colId: table.cols[0].id }
+    const fill: TableOp = { type: 'setCellFill', cells: [ref], fill: '#e5484d' }
+    const expectFill = undoExpectFor(table, fill, fill)!
+    const filled = applyTableOp(table, fill).table
+    expect(tableMatchesExpect(filled, expectFill)).toBe(true)
+    const recoloured = applyTableOp(filled, {
+      type: 'setCellFill',
+      cells: [ref],
+      fill: '#0090ff',
+    }).table
+    expect(tableMatchesExpect(recoloured, expectFill)).toBe(false)
+    const align: TableOp = {
+      type: 'setCellAlign',
+      cells: [ref],
+      align: 'right',
     }
+    const aligned = applyTableOp(table, align).table
+    const expectAlign = undoExpectFor(table, align, align)!
+    expect(tableMatchesExpect(aligned, expectAlign)).toBe(true)
+    expect(
+      tableMatchesExpect(
+        applyTableOp(aligned, {
+          type: 'setCellAlign',
+          cells: [ref],
+          align: 'center',
+        }).table,
+        expectAlign,
+      ),
+    ).toBe(false)
+  })
+})
+
+describe('layout expectations for size and header ops', () => {
+  it('contests the undo of a row resize another user changed since', () => {
+    const table = fresh(2, 2)
+    const rowId = table.rows[0].id
+    const op: TableOp = { type: 'resizeRow', rowId, height: 80 }
+    const { table: resized, inverse } = applyTableOp(table, op)
+    const guard = undoLayoutExpectFor(table, op)!
+    expect(tableMatchesLayout(resized, guard)).toBe(true)
+    const theirs = applyTableOp(resized, {
+      type: 'resizeRow',
+      rowId,
+      height: 120,
+    })
+    expect(tableMatchesLayout(theirs.table, guard)).toBe(false)
+    expect(applyTableOp(resized, inverse).table.rows[0].height).toBe(40)
+    expect(tableMatchesLayout(table, redoLayoutExpectFor(table, op)!)).toBe(
+      true,
+    )
+  })
+
+  it('contests the undo of a scale after a collaborator added a row', () => {
+    const table = fresh(2, 2)
+    const op: TableOp = { type: 'scaleTable', sx: 2, sy: 1 }
+    const { table: scaled } = applyTableOp(table, op)
+    const guard = undoLayoutExpectFor(table, op)!
+    expect(tableMatchesLayout(scaled, guard)).toBe(true)
+    const grown = applyTableOp(scaled, {
+      type: 'insertRow',
+      afterRowId: null,
+      row: { id: 'theirs', height: 40 },
+    }).table
+    expect(tableMatchesLayout(grown, guard)).toBe(false)
+  })
+
+  it('contests the undo of a header toggle someone flipped since', () => {
+    const table = fresh(1, 1)
+    const op: TableOp = { type: 'setHeaderRow', on: false }
+    const guard = undoLayoutExpectFor(table, op)!
+    const off = applyTableOp(table, op).table
+    expect(tableMatchesLayout(off, guard)).toBe(true)
+    expect(tableMatchesLayout({ ...off, headerRow: true }, guard)).toBe(false)
+  })
+
+  it('checks the whole row or column at undo time, so a later column with text is not dropped', () => {
+    const table = fresh(1, 1)
+    const op: TableOp = {
+      type: 'insertRow',
+      afterRowId: null,
+      row: { id: 'new-row', height: 40 },
+    }
+    const guard = undoLayoutExpectFor(table, op)!
+    expect(guard).toEqual({ blankRowId: 'new-row' })
+    let now = applyTableOp(table, op).table
+    expect(tableMatchesLayout(now, guard)).toBe(true)
+    now = applyTableOp(now, {
+      type: 'insertCol',
+      afterColId: null,
+      col: { id: 'theirs', width: 120 },
+    }).table
+    now = applyTableOp(now, {
+      type: 'setCellText',
+      rowId: 'new-row',
+      colId: 'theirs',
+      text: 'keep',
+    }).table
+    expect(tableMatchesLayout(now, guard)).toBe(false)
+  })
+})
+
+describe('a text edit and the row height', () => {
+  it('does not shrink a row another user grew since the edit', () => {
+    const table = fresh(1, 2)
+    const ref = { rowId: table.rows[0].id, colId: table.cols[0].id }
+    const edit = applyTableOp(table, {
+      type: 'setCellText',
+      ...ref,
+      text: 'a\nb',
+      rowHeight: 80,
+    })
+    expect(edit.table.rows[0].height).toBe(80)
+    expect(edit.inverse).toMatchObject({ rowHeight: 40, ifRowHeight: 80 })
+    const theirs = applyTableOp(edit.table, {
+      type: 'resizeRow',
+      rowId: ref.rowId,
+      height: 120,
+    }).table
+    expect(applyTableOp(theirs, edit.inverse).table.rows[0].height).toBe(120)
+    expect(applyTableOp(edit.table, edit.inverse).table.rows[0].height).toBe(40)
   })
 })
 
@@ -833,18 +988,20 @@ describe('undoExpectFor and redoExpectFor', () => {
     const row = { id: 'new-row', height: 40 }
     const insertRow: TableOp = { type: 'insertRow', afterRowId: null, row }
     const { inverse } = applyTableOp(table, insertRow)
-    expect(undoExpectFor(table, insertRow, inverse)).toEqual(
-      table.cols.map((col) => ({ rowId: 'new-row', colId: col.id, text: '' })),
-    )
+    expect(undoExpectFor(table, insertRow, inverse)).toBeUndefined()
+    expect(undoLayoutExpectFor(table, insertRow)).toEqual({
+      blankRowId: 'new-row',
+    })
     const insertCol: TableOp = {
       type: 'insertCol',
       afterColId: null,
       col: { id: 'new-col', width: 120 },
     }
     const colInverse = applyTableOp(table, insertCol).inverse
-    expect(undoExpectFor(table, insertCol, colInverse)).toEqual(
-      table.rows.map((r) => ({ rowId: r.id, colId: 'new-col', text: '' })),
-    )
+    expect(undoExpectFor(table, insertCol, colInverse)).toBeUndefined()
+    expect(undoLayoutExpectFor(table, insertCol)).toEqual({
+      blankColId: 'new-col',
+    })
   })
 
   it('guards the redo of a delete with what the row or column held', () => {
@@ -883,6 +1040,7 @@ describe('undoExpectFor and redoExpectFor', () => {
     const clear: TableOp = {
       type: 'restoreCells',
       cells: [{ ...ref, cell: { text: '' } }],
+      only: 'text',
     }
     const { inverse } = applyTableOp(table, clear)
     expect(undoExpectFor(table, clear, inverse)).toEqual([{ ...ref, text: '' }])

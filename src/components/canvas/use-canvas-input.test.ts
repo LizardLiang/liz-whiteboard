@@ -4391,8 +4391,8 @@ describe('table rows and columns', () => {
       type: 'scaleTable',
       sx: 1.25,
       sy: 1.25,
-      dx: -60,
-      dy: -20,
+      anchorX: 'right',
+      anchorY: 'bottom',
     })
   })
 
@@ -4531,6 +4531,7 @@ describe('table rows and columns', () => {
           { rowId: 'id1', colId: 'id3', cell: { text: '', fill: '#ff0000' } },
           { rowId: 'id1', colId: 'id4', cell: { text: '' } },
         ],
+        only: 'text',
       })
       expect(h2.callbacks.onDelete).not.toHaveBeenCalled()
     })

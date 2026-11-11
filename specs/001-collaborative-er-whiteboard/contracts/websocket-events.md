@@ -245,22 +245,22 @@ Sent to every other client on the board after a settings change. Payload: `{ set
 
 ### `element:table-op` (Client → Server)
 
-Editor-only. Changes a canvas **table** element by one small op instead of a whole-props write, so two people who edit different cells of one table both keep their text. Payload: `{ elementId: string (uuid), op: TableOp, expect?: CellExpect[] }`. `expect` is undo's contested check: each `{rowId, colId, text, textRuns?}` must match the stored cell, or the op is refused with `REVISION_MISMATCH` and the table stays as it was. `TableOp` is a discriminated union on `type` (schema: `tableOpSchema` in `src/data/schema.ts`; semantics: `applyTableOp` in `src/lib/canvas-engine/table.ts`):
+Editor-only. Changes a canvas **table** element by one small op instead of a whole-props write, so two people who edit different cells of one table both keep their text. Payload: `{ elementId: string (uuid), op: TableOp, expect?: CellExpect[], expectLayout?: LayoutExpect }`. `expect` and `expectLayout` are undo's and redo's contested checks; if either does not match the stored table the op is refused with `REVISION_MISMATCH` and the table stays as it was. Each `CellExpect` is `{rowId, colId, text?, textRuns?, fill?, textAlign?}` and checks only the fields it names (`fill` and `textAlign` accept `null` for "none"). `LayoutExpect` is `{rows?, cols?, complete?, headerRow?, blankRowId?, blankColId?}`: the named rows and columns must have those sizes, `complete` requires that the table has no other rows or columns, `headerRow` must match, and `blankRowId`/`blankColId` require that every cell of that row or column is blank in the stored table (the undo of an insert). `TableOp` is a discriminated union on `type` (schema: `tableOpSchema` in `src/data/schema.ts`; semantics: `applyTableOp` in `src/lib/canvas-engine/table.ts`):
 
 | `type` | Fields |
 |---|---|
-| `setCellText` | `rowId`, `colId`, `text`, `textRuns?`, `rowHeight?` |
+| `setCellText` | `rowId`, `colId`, `text`, `textRuns?`, `rowHeight?`, `ifRowHeight?` (set by an undo: `rowHeight` applies only while the row still has this height) |
 | `setCellFill` | `cells[]` (`{rowId, colId}`), `fill` (colour or `null`) |
 | `setCellAlign` | `cells[]`, `align` (`left`/`center`/`right`) |
 | `insertRow` / `insertCol` | `afterRowId`/`afterColId` (id or `null` = first), `row`/`col` (`{id, height\|width}`), `cells?` (restored with the row or column) |
 | `removeRow` / `removeCol` | `rowId` / `colId` |
 | `resizeRow` / `resizeCol` | `rowId`+`height` / `colId`+`width` |
-| `scaleTable` | `sx`, `sy`, optional `dx`, `dy` (a resize from a left or top handle moves the table's top-left by this much; the server writes `positionX`/`positionY` and broadcasts them) |
+| `scaleTable` | `sx`, `sy`, optional `anchorX` (`left`/`right`), `anchorY` (`top`/`bottom`): the edge that stays still. A resize from a left or top handle sends `anchorX: 'right'` or `anchorY: 'bottom'`; the server computes the shift of the top-left corner from the real before and after sizes (clamps included), writes `positionX`/`positionY` and broadcasts them |
 | `setHeaderRow` | `on` |
-| `setSizes`, `restoreCells` | the inverse ops of `scaleTable` (`setSizes` carries the opposite `dx`, `dy`) and of fill/align; `restoreCells` with emptied cells is also the Clear cells op |
+| `setSizes`, `restoreCells` | the inverse ops of `scaleTable` (`setSizes` carries the exact `dx`, `dy` that put the corner back) and of fill/align. `restoreCells` has an optional `only` (`fill`, `align` or `text`) that writes just that field of each cell, so a collaborator's other fields survive; `only: 'text'` is also the Clear cells op |
 
 Rows and columns are addressed by **id**, never by index. The server loads the **latest stored** table, applies the op, validates the result (at most 500 cells, at least one row and one column), recomputes the element's `width`/`height`, and writes `props` conditional on the revision it read; on a lost race it re-reads and re-applies (up to 4 attempts). Ack: `{ ok: true, entity: <row>, inverse: TableOp }` or `{ ok: false, code, message }` (`VALIDATION_ERROR` for a missing id, the last row or column, or a table over the cap; `FORBIDDEN` for a viewer).
 
 The server then broadcasts the existing `element:updated` event to every other client with `{ elementId, props, width, height, updatedAt, revision, updatedBy }`, so receivers need no new handler.
 
-`element:update` rejects a `props` change for a `table` element (`VALIDATION_ERROR`); position, size, zIndex and style updates are still allowed.
+`element:update` rejects a `props` change for a `table` element (`VALIDATION_ERROR`). It drops a `width` or `height` for a table, because the stored size always follows the grid; position, zIndex and style updates are still allowed.

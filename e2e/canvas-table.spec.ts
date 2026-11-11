@@ -341,6 +341,29 @@ async function cellCentre(
   }
 }
 
+interface StoredTable {
+  rows: Array<{ id: string; height: number }>
+  cols: Array<{ id: string; width: number }>
+  cells: Record<string, { text: string } | undefined>
+}
+
+/** The first table's grid as the server stored it (read from the e2e database). */
+function storedTable(): StoredTable | null {
+  const out = execFileSync(
+    'bun',
+    ['run', 'e2e/canvas-table-stored.ts', IDS.canvasBoard],
+    { encoding: 'utf8' },
+  )
+  return JSON.parse(out) as StoredTable | null
+}
+
+/** The stored text of the cell at (row, col), by position; undefined when empty. */
+function storedCellText(row: number, col: number): string | undefined {
+  const table = storedTable()
+  if (!table) return undefined
+  return table.cells[`${table.rows[row]?.id}:${table.cols[col]?.id}`]?.text
+}
+
 function cellOf(
   table: EngineElement,
   row: number,
@@ -637,40 +660,39 @@ test.describe('undo and redo of cell edits', () => {
     await openCell(page, created.id, 2, 2)
     await page.keyboard.type('end')
     await page.keyboard.press('Tab')
+    // Wait on what the server STORED, not on the optimistic rows: the undo
+    // entries exist from the moment the ops were issued, but an undo is only
+    // checkable against the persisted table.
     await expect
-      .poll(async () => (await currentTable(page)).table!.rows.length, {
-        timeout: 5_000,
-      })
+      .poll(() => storedTable()?.rows.length, { timeout: 10_000 })
       .toBe(4)
     await page.keyboard.press('Escape')
     await expect.poll(() => editingCell(page)).toBeNull()
-    await settle(page)
+    await expect.poll(() => storedCellText(2, 2)).toBe('end')
 
+    // One press at a time, each waited out on the stored result, so a press
+    // never races the ack of the one before it.
     await focusBoard(page)
     await page.keyboard.press('Control+z')
     await expect
-      .poll(async () => (await currentTable(page)).table!.rows.length, {
-        timeout: 10_000,
-      })
+      .poll(() => storedTable()?.rows.length, { timeout: 10_000 })
       .toBe(3)
     // The text typed before the Tab is still there; it is the earlier entry.
-    expect(cellOf(await currentTable(page), 2, 2)?.text).toBe('end')
+    expect(storedCellText(2, 2)).toBe('end')
 
     await page.keyboard.press('Control+z')
     await expect
-      .poll(async () => cellOf(await currentTable(page), 2, 2)?.text, {
-        timeout: 10_000,
-      })
+      .poll(() => storedCellText(2, 2), { timeout: 10_000 })
       .toBeUndefined()
 
     await page.keyboard.press('Control+Shift+z')
+    await expect
+      .poll(() => storedCellText(2, 2), { timeout: 10_000 })
+      .toBe('end')
     await page.keyboard.press('Control+Shift+z')
     await expect
-      .poll(async () => (await currentTable(page)).table!.rows.length, {
-        timeout: 10_000,
-      })
+      .poll(() => storedTable()?.rows.length, { timeout: 10_000 })
       .toBe(4)
-    await settle(page)
     await reloadBoard(page)
     const table = await currentTable(page)
     expect(table.table!.rows).toHaveLength(4)

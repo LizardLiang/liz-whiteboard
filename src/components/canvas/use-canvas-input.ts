@@ -764,7 +764,7 @@ type Gesture =
       before: CanvasElement
       /** Each row's text height, the floor its scale is clamped to. */
       rowMinHeights: ReadonlyArray<number>
-      scale: { sx: number; sy: number; dx: number; dy: number }
+      scale: ReturnType<typeof tableScaleForDrag>
     }
   | {
       /**
@@ -1794,6 +1794,18 @@ export type TableMenuAction =
   | 'deleteCol'
   | 'clearCells'
 
+/** `grid` with one row set to `height`. */
+function withRowHeight(
+  grid: CanvasTable,
+  rowId: string,
+  height: number,
+): CanvasTable {
+  return {
+    ...grid,
+    rows: grid.rows.map((row) => (row.id === rowId ? { ...row, height } : row)),
+  }
+}
+
 export function useCanvasInput({
   canvasRef,
   containerRef,
@@ -2286,8 +2298,14 @@ export function useCanvasInput({
           ...(runs.length > 0 ? { textRuns: runs } : {}),
           ...(rowHeight !== undefined ? { rowHeight } : {}),
         },
-        latest.current.scene.byId.get(cell.tableId)?.table ??
-          tableElement.table,
+        // The table as it stood before this edit: typing grew the row for the
+        // preview, and the undo entry must remember the height it had before.
+        withRowHeight(
+          latest.current.scene.byId.get(cell.tableId)?.table ??
+            tableElement.table,
+          cell.rowId,
+          baseHeight,
+        ),
       )
     },
     [callbacks, getMeasurer, setRowHeight, writeScene],
@@ -2576,7 +2594,7 @@ export function useCanvasInput({
         })
       }
       if (cells.length === 0) return
-      issueTableOp(tableId, { type: 'restoreCells', cells })
+      issueTableOp(tableId, { type: 'restoreCells', cells, only: 'text' })
     },
     [issueTableOp],
   )
@@ -3873,7 +3891,7 @@ export function useCanvasInput({
         case 'table-scale': {
           const before = finished.before.table
           if (!before) break
-          const { sx, sy, dx, dy } = finished.scale
+          const { sx, sy, anchorX, anchorY } = finished.scale
           writeScene((prev) =>
             prev.byId.has(finished.tableId)
               ? updateElement(prev, finished.tableId, {
@@ -3892,8 +3910,8 @@ export function useCanvasInput({
               type: 'scaleTable',
               sx,
               sy,
-              ...(dx !== 0 ? { dx } : {}),
-              ...(dy !== 0 ? { dy } : {}),
+              ...(anchorX ? { anchorX } : {}),
+              ...(anchorY ? { anchorY } : {}),
             },
             before,
           )

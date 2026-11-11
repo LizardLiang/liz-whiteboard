@@ -277,12 +277,12 @@ describe('element:table-op', () => {
     expect(store.get(TABLE_ID).height).toBe(180)
   })
 
-  it('moves the table by dx and dy when a resize from a left or top handle sends them', async () => {
+  it('shifts the table by the real size change when a scale anchors the right edge', async () => {
     seedTable(table3())
     const h = makeHarness()
     const res = await call(h, 'element:table-op', {
       elementId: TABLE_ID,
-      op: { type: 'scaleTable', sx: 0.5, sy: 1, dx: 180 },
+      op: { type: 'scaleTable', sx: 0.5, sy: 1, anchorX: 'right' },
     })
     expect(res.ok).toBe(true)
     expect(store.get(TABLE_ID)).toMatchObject({
@@ -305,6 +305,29 @@ describe('element:table-op', () => {
     expect(store.get(TABLE_ID)).toMatchObject({
       positionX: 0,
       width: 360,
+    })
+  })
+
+  it('keeps the anchored edge still when the minimum width clamps the scale', async () => {
+    seedTable(table3())
+    const h = makeHarness()
+    const res = await call(h, 'element:table-op', {
+      elementId: TABLE_ID,
+      op: {
+        type: 'scaleTable',
+        sx: 0.1,
+        sy: 0.1,
+        anchorX: 'right',
+        anchorY: 'bottom',
+      },
+    })
+    expect(res.ok).toBe(true)
+    // 3 columns clamp at 40 px (120 total), 3 rows at 24 px (72 total).
+    expect(store.get(TABLE_ID)).toMatchObject({
+      positionX: 240,
+      positionY: 48,
+      width: 120,
+      height: 72,
     })
   })
 
@@ -397,6 +420,62 @@ describe('element:table-op expect (undo contested check)', () => {
   })
 })
 
+describe('element:table-op expectLayout (undo contested check)', () => {
+  it('refuses an undo of a row resize after someone resized the row again', async () => {
+    const table = table3()
+    seedTable(table)
+    const rowId = table.rows[0].id
+    const h = makeHarness()
+    await call(h, 'element:table-op', {
+      elementId: TABLE_ID,
+      op: { type: 'resizeRow', rowId, height: 120 },
+    })
+    const res = await call(h, 'element:table-op', {
+      elementId: TABLE_ID,
+      op: { type: 'resizeRow', rowId, height: 40 },
+      expectLayout: { rows: [{ id: rowId, height: 80 }] },
+    })
+    expect(res).toMatchObject({ ok: false, code: 'REVISION_MISMATCH' })
+    expect(store.get(TABLE_ID).props.table.rows[0].height).toBe(120)
+  })
+
+  it('refuses the undo of a row insert once a collaborator typed in a later column', async () => {
+    const table = table3()
+    seedTable(table)
+    const h = makeHarness()
+    const rowId = 'new-row'
+    await call(h, 'element:table-op', {
+      elementId: TABLE_ID,
+      op: {
+        type: 'insertRow',
+        afterRowId: null,
+        row: { id: rowId, height: 40 },
+      },
+    })
+    await call(h, 'element:table-op', {
+      elementId: TABLE_ID,
+      op: {
+        type: 'insertCol',
+        afterColId: null,
+        col: { id: 'late', width: 120 },
+      },
+    })
+    await call(h, 'element:table-op', {
+      elementId: TABLE_ID,
+      op: { type: 'setCellText', rowId, colId: 'late', text: 'keep' },
+    })
+    const res = await call(h, 'element:table-op', {
+      elementId: TABLE_ID,
+      op: { type: 'removeRow', rowId },
+      expectLayout: { blankRowId: rowId },
+    })
+    expect(res).toMatchObject({ ok: false, code: 'REVISION_MISMATCH' })
+    expect(
+      store.get(TABLE_ID).props.table.cells[cellKey(rowId, 'late')].text,
+    ).toBe('keep')
+  })
+})
+
 describe('element:update on a table', () => {
   it('rejects a props change but allows moving it', async () => {
     const table = table3()
@@ -413,6 +492,24 @@ describe('element:update on a table', () => {
       positionX: 500,
     })
     expect(moved.ok).toBe(true)
+  })
+
+  it('drops a width or height, so the stored size always follows the grid', async () => {
+    seedTable(table3())
+    const h = makeHarness()
+    const res = await call(h, 'element:update', {
+      elementId: TABLE_ID,
+      positionX: 500,
+      width: 999,
+      height: 999,
+    })
+    expect(res.ok).toBe(true)
+    expect(store.get(TABLE_ID)).toMatchObject({
+      positionX: 500,
+      width: 360,
+      height: 120,
+    })
+    expect(h.broadcast[0].payload).not.toHaveProperty('width')
   })
 })
 

@@ -1959,9 +1959,10 @@ describe('table ops', () => {
       type: 'removeRow',
       rowId: 'r2',
     })
-    expect(applyTableOp.mock.calls[1][2].expect).toEqual([
-      { rowId: 'r2', colId: 'c1', text: '' },
-    ])
+    expect(applyTableOp.mock.calls[1][2].expect).toBeUndefined()
+    expect(applyTableOp.mock.calls[1][2].expectLayout).toEqual({
+      blankRowId: 'r2',
+    })
   })
 
   it('names the real element id when the op was issued before the create ack', async () => {
@@ -1996,9 +1997,9 @@ describe('table ops', () => {
       type: 'removeCol',
       colId: 'c2',
     })
-    expect(applyTableOp.mock.calls[1][2].expect).toEqual([
-      { rowId: 'r1', colId: 'c2', text: '' },
-    ])
+    expect(applyTableOp.mock.calls[1][2].expectLayout).toEqual({
+      blankColId: 'c2',
+    })
   })
 
   it('guards the redo of a row delete with the text the row held', async () => {
@@ -2041,6 +2042,87 @@ describe('table ops', () => {
     expect(applyTableOp.mock.calls[2][2].expect).toEqual([
       { rowId: 'r2', colId: 'c1', text: 'kept' },
     ])
+  })
+
+  it('undoes a commit with Ctrl+Z straight away, before the server has answered', async () => {
+    let answer: (value: unknown) => void = () => {}
+    const applyTableOp = vi
+      .fn()
+      .mockImplementationOnce(
+        () => new Promise((resolve) => (answer = resolve)),
+      )
+      .mockResolvedValue({ ok: true, revision: 7 })
+    const { m, view } = setupTableOps(applyTableOp)
+    m.revisions.set(TABLE_ID, 5)
+    act(() => {
+      view.result.current.callbacks.onTableOp?.(TABLE_ID, setText('new'), grid)
+    })
+    // The ack has not arrived, yet the entry is already there to undo.
+    act(() => view.result.current.undo())
+    await waitFor(() => expect(applyTableOp).toHaveBeenCalledTimes(2))
+    expect(applyTableOp.mock.calls[1][1]).toEqual(setText(''))
+    expect(applyTableOp.mock.calls[1][2]).toMatchObject({
+      expect: [{ rowId: 'r1', colId: 'c1', text: 'new' }],
+    })
+    answer({ ok: true, inverse: setText(''), revision: 6 })
+  })
+
+  it('keeps two ops issued back to back in issue order, whichever ack comes first', async () => {
+    const resolvers: Array<(value: unknown) => void> = []
+    const applyTableOp = vi
+      .fn()
+      .mockImplementationOnce(
+        () => new Promise((resolve) => resolvers.push(resolve)),
+      )
+      .mockImplementationOnce(
+        () => new Promise((resolve) => resolvers.push(resolve)),
+      )
+      .mockResolvedValue({ ok: true, revision: 9 })
+    const { m, view } = setupTableOps(applyTableOp)
+    m.revisions.set(TABLE_ID, 5)
+    const insert = {
+      type: 'insertRow',
+      afterRowId: 'r1',
+      row: { id: 'r2', height: 40 },
+    } as const
+    act(() => {
+      view.result.current.callbacks.onTableOp?.(TABLE_ID, setText('typed'), grid)
+      view.result.current.callbacks.onTableOp?.(TABLE_ID, insert, grid)
+    })
+    // The second ack (the insert) comes back before the first (the text).
+    await act(async () => {
+      await Promise.resolve()
+      resolvers[1]({ ok: true, inverse: { type: 'removeRow', rowId: 'r2' }, revision: 6 })
+      resolvers[0]({ ok: true, inverse: setText(''), revision: 7 })
+    })
+    act(() => view.result.current.undo())
+    await waitFor(() => expect(applyTableOp).toHaveBeenCalledTimes(3))
+    expect(applyTableOp.mock.calls[2][1]).toEqual({
+      type: 'removeRow',
+      rowId: 'r2',
+    })
+    act(() => view.result.current.undo())
+    await waitFor(() => expect(applyTableOp).toHaveBeenCalledTimes(4))
+    expect(applyTableOp.mock.calls[3][1]).toEqual(setText(''))
+  })
+
+  it('takes back the entry of an op the server refuses', async () => {
+    let answer: (value: unknown) => void = () => {}
+    const applyTableOp = vi
+      .fn()
+      .mockImplementationOnce(
+        () => new Promise((resolve) => (answer = resolve)),
+      )
+    const { view } = setupTableOps(applyTableOp)
+    act(() => {
+      view.result.current.callbacks.onTableOp?.(TABLE_ID, setText('x'), grid)
+    })
+    await act(async () => {
+      answer({ ok: false })
+      await Promise.resolve()
+    })
+    act(() => view.result.current.undo())
+    expect(toast.info).toHaveBeenCalledWith('Nothing left to undo.')
   })
 
   it('records nothing while read-only or when the op is refused', async () => {

@@ -81,7 +81,11 @@ import { toast } from 'sonner'
 import type { Dispatch, SetStateAction } from 'react'
 import type { CanvasElement, Scene } from '@/lib/canvas-engine/scene'
 import type { CanvasElementRecord } from '@/data/models'
-import type { CellExpect, TableOp } from '@/lib/canvas-engine/table'
+import type {
+  CellExpect,
+  LayoutExpect,
+  TableOp,
+} from '@/lib/canvas-engine/table'
 import { tErrorOr } from '@/lib/i18n/t-error'
 import { useT } from '@/lib/i18n/use-t'
 import {
@@ -154,6 +158,12 @@ export function settleAckOnce<T>(
     clearTimeout(timer)
     handle(res)
   }
+}
+
+/** The contested checks an undo or redo sends with a table op; the server refuses the op when the stored table differs. */
+export interface TableOpGuards {
+  expect?: Array<CellExpect>
+  expectLayout?: LayoutExpect
 }
 
 /** What a table op resolves with. `elementId` is set when the server named the row after the op was issued. */
@@ -251,7 +261,7 @@ export interface UseCanvasElementsReturn {
   applyTableOp: (
     elementId: string,
     op: TableOp,
-    options?: CanvasMutationOptions & { expect?: Array<CellExpect> },
+    options?: CanvasMutationOptions & TableOpGuards,
   ) => Promise<TableOpResult>
   /** This hook's own revision index — see the file header. */
   getRevision: (id: string) => number | undefined
@@ -355,6 +365,7 @@ export function useCanvasElements({
       Array<{
         op: TableOp
         expect?: Array<CellExpect>
+        expectLayout?: LayoutExpect
         settle: (result: TableOpResult) => void
       }>
     >(),
@@ -377,7 +388,7 @@ export function useCanvasElements({
     | ((
         elementId: string,
         op: TableOp,
-        options?: CanvasMutationOptions & { expect?: Array<CellExpect> },
+        options?: CanvasMutationOptions & TableOpGuards,
       ) => Promise<TableOpResult>)
     | null
   >(null)
@@ -625,12 +636,12 @@ export function useCanvasElements({
               // In order, one after another: each op reads the table the
               // previous one left. Ephemeral for the reason above.
               void deferredOps.reduce(
-                (chain, { op, expect, settle }) =>
+                (chain, { op, expect, expectLayout, settle }) =>
                   chain.then(async () => {
                     const outcome = await applyTableOpRef.current?.(
                       persisted.id,
                       op,
-                      { ephemeral: true, expect },
+                      { ephemeral: true, expect, expectLayout },
                     )
                     settle(
                       outcome
@@ -871,7 +882,7 @@ export function useCanvasElements({
     (
       elementId: string,
       op: TableOp,
-      options?: CanvasMutationOptions & { expect?: Array<CellExpect> },
+      options?: CanvasMutationOptions & TableOpGuards,
     ): Promise<TableOpResult> => {
       return new Promise((resolve) => {
         // Never inside a state updater: an updater that throws would take the
@@ -884,7 +895,7 @@ export function useCanvasElements({
             if (!current?.table) return prev
             try {
               const { table } = applyTableOpLocally(current.table, op)
-              const shift = tableOpShift(op)
+              const shift = tableOpShift(current.table, table, op)
               return updateElement(prev, elementId, {
                 table,
                 ...tableSize(table),
@@ -904,7 +915,12 @@ export function useCanvasElements({
         if (pendingCreatesRef.current.has(elementId)) {
           applyLocally()
           const queued = pendingTableOpsRef.current.get(elementId) ?? []
-          queued.push({ op, expect: options?.expect, settle: resolve })
+          queued.push({
+            op,
+            expect: options?.expect,
+            expectLayout: options?.expectLayout,
+            settle: resolve,
+          })
           pendingTableOpsRef.current.set(elementId, queued)
           return
         }
@@ -924,6 +940,9 @@ export function useCanvasElements({
             elementId,
             op,
             ...(options?.expect ? { expect: options.expect } : {}),
+            ...(options?.expectLayout
+              ? { expectLayout: options.expectLayout }
+              : {}),
           },
           settleOnce<CanvasElementRecord & { inverse?: TableOp }>((res) => {
             const remaining =

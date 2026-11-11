@@ -74,7 +74,13 @@ import type {
 } from '@/lib/canvas-undo/undo-stack'
 import type { InverseWrite } from '@/lib/canvas-undo/inverse'
 import type { CanvasTable, TableOp } from '@/lib/canvas-engine/table'
-import { redoExpectFor, undoExpectFor } from '@/lib/canvas-engine/table'
+import {
+  applyTableOp as applyTableOpLocally,
+  redoExpectFor,
+  redoLayoutExpectFor,
+  undoExpectFor,
+  undoLayoutExpectFor,
+} from '@/lib/canvas-engine/table'
 import { useT } from '@/lib/i18n/use-t'
 import {
   fromElementSnapshot as snapshotToEngineElement,
@@ -88,6 +94,7 @@ import {
   pushRedoEntry,
   pushUndoEntry,
   refreshRevision,
+  removeUndoOperation,
 } from '@/lib/canvas-undo/undo-stack'
 import { buildInverse } from '@/lib/canvas-undo/inverse'
 import {
@@ -866,37 +873,70 @@ export function useCanvasUndo({
   )
 
   /**
-   * One table op (a cell's text, a row appended by Tab) as ONE undo entry.
+   * One table op (a cell's text, a row appended by Tab) as ONE undo entry,
+   * pushed when the op is ISSUED, not when the server answers: Ctrl+Z right
+   * after Tab or Enter must undo that edit, and two ops issued back to back
+   * (Tab in the last cell commits its text, then appends a row) must land in
+   * issue order whatever order their acks come back in.
    *
-   * The server answers with the op's inverse; undo sends it back and redo
-   * sends `op` again. `table` is the table as it stood before the op, which
-   * the contested checks are built from: undo expects the cell to hold what
-   * this edit wrote, redo expects it to hold what the edit replaced.
+   * The entry starts with the inverse `applyTableOp` computes locally from
+   * `table`, the table as it stood before the op. The ack replaces it with the
+   * server's inverse, which was computed against the latest stored table, and
+   * names the real element id of a table still being created at issue time.
+   * A refused op drops its entry. Undo sends the inverse and redo sends `op`;
+   * the contested checks are built from `table`: undo expects the cells (and
+   * layout) to hold what this edit wrote, redo what it replaced.
    */
   const recordTableOp = useCallback(
     (elementId: string, op: TableOp, table: CanvasTable) => {
       if (readOnly || !applyTableOp) return
+      let local: TableOp | null = null
+      try {
+        local = applyTableOpLocally(table, op).inverse
+      } catch {
+        // The local table cannot take the op; the server decides, and the
+        // entry is recorded from its answer.
+      }
+      const build = (
+        targetId: string,
+        inverse: TableOp,
+      ): Extract<CanvasUndoOperation, { kind: 'table-op' }> => {
+        const undoExpect = undoExpectFor(table, op, inverse)
+        const redoExpect = redoExpectFor(table, op, inverse)
+        const undoLayoutExpect = undoLayoutExpectFor(table, op)
+        const redoLayoutExpect = redoLayoutExpectFor(table, op)
+        return {
+          kind: 'table-op',
+          elementId: targetId,
+          op,
+          inverse,
+          ...(undoExpect ? { undoExpect } : {}),
+          ...(redoExpect ? { redoExpect } : {}),
+          ...(undoLayoutExpect ? { undoLayoutExpect } : {}),
+          ...(redoLayoutExpect ? { redoLayoutExpect } : {}),
+        }
+      }
+      const label: CanvasUndoLabel = { gesture: 'table-op', op: op.type }
+      const issued = local ? build(elementId, local) : null
+      if (issued) push({ label, operations: [issued] })
       void applyTableOp(elementId, op).then((result) => {
-        if (!result.ok || !result.inverse) return
-        const inverse = result.inverse
+        if (!result.ok) {
+          if (issued) {
+            stackRef.current = removeUndoOperation(stackRef.current, issued)
+            bumpVersion()
+          }
+          return
+        }
         // A table still being created when the op was issued gets its real id
         // from the create ack; the undo entry must name that one.
         const targetId = result.elementId ?? elementId
-        const undoExpect = undoExpectFor(table, op, inverse)
-        const redoExpect = redoExpectFor(table, op, inverse)
-        push({
-          label: { gesture: 'table-op', op: op.type },
-          operations: [
-            {
-              kind: 'table-op',
-              elementId: targetId,
-              op,
-              inverse,
-              ...(undoExpect ? { undoExpect } : {}),
-              ...(redoExpect ? { redoExpect } : {}),
-            },
-          ],
-        })
+        const inverse = result.inverse ?? local
+        if (!inverse) return
+        if (issued) {
+          Object.assign(issued, build(targetId, inverse))
+          return
+        }
+        push({ label, operations: [build(targetId, inverse)] })
       })
     },
     [applyTableOp, push, readOnly],
@@ -997,6 +1037,7 @@ export function useCanvasUndo({
           const res = await applyTableOp(write.elementId, write.op, {
             ...EPHEMERAL,
             expect: write.expect,
+            expectLayout: write.expectLayout,
           })
           return {
             ok: res.ok,
@@ -1109,6 +1150,7 @@ export function useCanvasUndo({
           const res = await applyTableOp(op.elementId, op.op, {
             ...EPHEMERAL,
             expect: op.redoExpect,
+            expectLayout: op.redoLayoutExpect,
           })
           return { ok: res.ok, elementId: op.elementId, revision: res.revision }
         }

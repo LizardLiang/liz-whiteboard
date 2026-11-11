@@ -9,7 +9,7 @@
 // (use-canvas-undo.ts, Wave 3, out of scope for this phase) is responsible
 // for supplying it from the live scene or a fresh server read.
 
-import type { CellExpect, TableOp } from '@/lib/canvas-engine/table'
+import type { CellExpect, LayoutExpect, TableOp } from '@/lib/canvas-engine/table'
 import type { CanvasElementSnapshot, CanvasUndoEntry } from './undo-stack'
 
 /**
@@ -39,6 +39,7 @@ export type InverseWrite =
       elementId: string
       op: TableOp
       expect?: Array<CellExpect>
+      expectLayout?: LayoutExpect
     }
 
 export interface ContestedMember {
@@ -130,6 +131,7 @@ export function buildInverse(
           elementId: operation.elementId,
           op: operation.inverse,
           expect: operation.undoExpect,
+          expectLayout: operation.undoLayoutExpect,
         })
         break
       }

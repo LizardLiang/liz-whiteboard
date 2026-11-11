@@ -29,6 +29,7 @@ import {
   canvasBoardSettingsPatchSchema,
   canvasTableSchema,
   createCanvasElementSchema,
+  tableLayoutExpectSchema,
   tableOpExpectSchema,
   tableOpSchema,
   updateCanvasElementSchema,
@@ -38,6 +39,7 @@ import {
   applyTableOp,
   normalizeTable,
   tableMatchesExpect,
+  tableMatchesLayout,
   tableOpShift,
   tableSize,
 } from '@/lib/canvas-engine/table'
@@ -367,6 +369,13 @@ export function registerCanvasElementHandlers(
           cb?.({ ok: false, code: 'VALIDATION_ERROR', message })
           return
         }
+        // A table's size follows from its grid (`tableSize`); a stored width
+        // or height that disagrees with it would desync the frame from the
+        // cells, so a size in the payload is dropped.
+        if (existing.kind === 'table') {
+          delete validated.width
+          delete validated.height
+        }
         const updated = await updateCanvasElement(
           elementId,
           validated,
@@ -418,6 +427,8 @@ export function registerCanvasElementHandlers(
         // Undo's contested check: the op applies only while these cells hold
         // the text the undone (or redone) edit left in them.
         expect: tableOpExpectSchema.optional(),
+        // The same for sizes, the header flag and an inserted row or column.
+        expectLayout: tableLayoutExpectSchema.optional(),
       })
       .safeParse(data)
     if (!parsed.success) {
@@ -430,7 +441,7 @@ export function registerCanvasElementHandlers(
       cb?.({ ok: false, code: 'VALIDATION_ERROR', message })
       return
     }
-    const { elementId, op, expect } = parsed.data
+    const { elementId, op, expect, expectLayout } = parsed.data
 
     try {
       for (let attempt = 0; attempt < TABLE_OP_ATTEMPTS; attempt += 1) {
@@ -459,13 +470,18 @@ export function registerCanvasElementHandlers(
           cb?.({ ok: false, code: 'REVISION_MISMATCH', message })
           return
         }
+        if (expectLayout && !tableMatchesLayout(stored, expectLayout)) {
+          const message = 'The table changed since that edit'
+          cb?.({ ok: false, code: 'REVISION_MISMATCH', message })
+          return
+        }
         const { table, inverse } = applyTableOp(stored, op)
         const props = {
           kind: 'table' as const,
           table: canvasTableSchema.parse(table),
         }
         const size = tableSize(table)
-        const shift = tableOpShift(op)
+        const shift = tableOpShift(stored, table, op)
         const moved =
           shift.dx !== 0 || shift.dy !== 0
             ? {

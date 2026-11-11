@@ -132,6 +132,83 @@ describe('table props schema', () => {
     ).toBe(false)
     expect(tableOpSchema.safeParse({ type: 'bogus' }).success).toBe(false)
   })
+
+  describe('table consistency', () => {
+    const parse = (table: unknown) =>
+      canvasElementPropsSchema.safeParse({ kind: 'table', table }).success
+    const base = () => ({
+      rows: [
+        { id: 'r1', height: 40 },
+        { id: 'r2', height: 40 },
+      ],
+      cols: [
+        { id: 'c1', width: 120 },
+        { id: 'c2', width: 120 },
+      ],
+      cells: { 'r1:c1': { text: 'abc' } } as Record<string, unknown>,
+      headerRow: true,
+    })
+
+    it('accepts a consistent table', () => {
+      expect(parse(base())).toBe(true)
+    })
+
+    it('rejects duplicate row ids and duplicate column ids', () => {
+      const dupRow = base()
+      dupRow.rows[1].id = 'r1'
+      expect(parse(dupRow)).toBe(false)
+      const dupCol = base()
+      dupCol.cols[1].id = 'c1'
+      expect(parse(dupCol)).toBe(false)
+    })
+
+    it('rejects a cell key naming a row or column the table lacks', () => {
+      const ghostRow = base()
+      ghostRow.cells['gone:c1'] = { text: 'x' }
+      expect(parse(ghostRow)).toBe(false)
+      const ghostCol = base()
+      ghostCol.cells['r1:gone'] = { text: 'x' }
+      expect(parse(ghostCol)).toBe(false)
+      const malformed = base()
+      malformed.cells['r1'] = { text: 'x' }
+      expect(parse(malformed)).toBe(false)
+    })
+
+    it('rejects text runs that end past the cell text', () => {
+      const table = base()
+      table.cells['r1:c1'] = {
+        text: 'abc',
+        textRuns: [{ start: 0, end: 4, fontWeight: 'bold' }],
+      }
+      expect(parse(table)).toBe(false)
+      table.cells['r1:c1'] = {
+        text: 'abc',
+        textRuns: [{ start: 0, end: 3, fontWeight: 'bold' }],
+      }
+      expect(parse(table)).toBe(true)
+    })
+
+    it('applies the run check to the ops that carry cells', () => {
+      const runs = [{ start: 0, end: 9, fontWeight: 'bold' }]
+      expect(
+        tableOpSchema.safeParse({
+          type: 'setCellText',
+          rowId: 'r',
+          colId: 'c',
+          text: 'abc',
+          textRuns: runs,
+        }).success,
+      ).toBe(false)
+      expect(
+        tableOpSchema.safeParse({
+          type: 'insertRow',
+          afterRowId: null,
+          row: { id: 'r', height: 40 },
+          cells: { c1: { text: 'abc', textRuns: runs } },
+        }).success,
+      ).toBe(false)
+    })
+  })
 })
 
 describe('adapter', () => {

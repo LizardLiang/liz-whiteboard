@@ -14,6 +14,7 @@ import type { CanvasElementSnapshot } from '@/lib/canvas-element-adapter'
 import type { CanvasElementKind } from '@/data/schema'
 import type {
   CellExpect,
+  LayoutExpect,
   TableOp,
   TableOpType,
 } from '@/lib/canvas-engine/table'
@@ -100,6 +101,9 @@ export type CanvasUndoOperation =
       inverse: TableOp
       undoExpect?: Array<CellExpect>
       redoExpect?: Array<CellExpect>
+      /** The same checks for a size, header or insert op: the stored layout must be what the op left (undo) or replaced (redo). */
+      undoLayoutExpect?: LayoutExpect
+      redoLayoutExpect?: LayoutExpect
     }
 
 /**
@@ -305,6 +309,25 @@ export function pushUndoEntry(
       ? entries.slice(entries.length - UNDO_STACK_CAP)
       : entries
   return { entries: trimmed, redo: [] }
+}
+
+/**
+ * Drop the entry holding `operation` (compared by reference) from both lists.
+ * A table op is recorded when it is issued; this removes the entry of one the
+ * server then refused. A stack that never held it comes back unchanged.
+ */
+export function removeUndoOperation(
+  stack: UndoStack,
+  operation: CanvasUndoOperation,
+): UndoStack {
+  const keep = (entry: CanvasUndoEntry): boolean =>
+    !entry.operations.includes(operation)
+  const entries = stack.entries.filter(keep)
+  const redo = stack.redo.filter(keep)
+  return entries.length === stack.entries.length &&
+    redo.length === stack.redo.length
+    ? stack
+    : { entries, redo }
 }
 
 export type UndoPopResult =

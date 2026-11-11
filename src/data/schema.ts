@@ -1285,14 +1285,28 @@ const tableIdSchema = z
   .max(64)
   .refine((id) => !id.includes(':'), { message: 'An id cannot contain ":"' })
 
-const tableCellSchema = z.strictObject({
-  text: z.string().max(5000),
-  textRuns: z.array(canvasTextRunSchema).max(MAX_TEXT_RUNS).optional(),
-  textAlign: z.enum(['left', 'center', 'right']).optional(),
-  fill: cssColorSchema.optional(),
-})
+/** Whether a cell's runs end inside its text (the cell counterpart of `runsFitText`). */
+function cellRunsFitText(data: {
+  text: string
+  textRuns?: Array<{ end: number }>
+}): boolean {
+  const runs = data.textRuns
+  if (!runs || runs.length === 0) return true
+  return runs[runs.length - 1].end <= data.text.length
+}
 
-/** How far a resize moves a table's top-left corner. */
+const CELL_RUNS_MESSAGE = 'Text runs must end inside the text'
+
+const tableCellSchema = z
+  .strictObject({
+    text: z.string().max(5000),
+    textRuns: z.array(canvasTextRunSchema).max(MAX_TEXT_RUNS).optional(),
+    textAlign: z.enum(['left', 'center', 'right']).optional(),
+    fill: cssColorSchema.optional(),
+  })
+  .refine(cellRunsFitText, { message: CELL_RUNS_MESSAGE, path: ['textRuns'] })
+
+/** How far a resize moves a table's top-left corner (the undo of a scale). */
 const tableShiftSchema = z.number().finite().min(-100_000).max(100_000)
 
 const tableRowSchema = z.strictObject({
@@ -1317,6 +1331,45 @@ export const canvasTableSchema = z
     cells: z.record(z.string().max(129), tableCellSchema),
     headerRow: z.boolean(),
   })
+  .superRefine((table, ctx) => {
+    const rowIds = new Set<string>()
+    for (const [index, row] of table.rows.entries()) {
+      if (rowIds.has(row.id)) {
+        ctx.addIssue({
+          code: 'custom',
+          message: `Duplicate row id ${row.id}`,
+          path: ['rows', index, 'id'],
+        })
+      }
+      rowIds.add(row.id)
+    }
+    const colIds = new Set<string>()
+    for (const [index, col] of table.cols.entries()) {
+      if (colIds.has(col.id)) {
+        ctx.addIssue({
+          code: 'custom',
+          message: `Duplicate column id ${col.id}`,
+          path: ['cols', index, 'id'],
+        })
+      }
+      colIds.add(col.id)
+    }
+    // An id holds no ":", so a cell key splits into exactly two parts.
+    for (const key of Object.keys(table.cells)) {
+      const parts = key.split(':')
+      if (
+        parts.length !== 2 ||
+        !rowIds.has(parts[0]) ||
+        !colIds.has(parts[1])
+      ) {
+        ctx.addIssue({
+          code: 'custom',
+          message: `Cell ${key} names a row or column the table does not have`,
+          path: ['cells', key],
+        })
+      }
+    }
+  })
   .refine((table) => table.rows.length * table.cols.length <= TABLE_MAX_CELLS, {
     message: `A table holds at most ${TABLE_MAX_CELLS} cells`,
   })
@@ -1339,14 +1392,20 @@ const tableCellsRefsSchema = z
  * (`element:table-op`). Mirrors `TableOp` in canvas-engine/table.ts.
  */
 export const tableOpSchema = z.discriminatedUnion('type', [
-  z.strictObject({
-    type: z.literal('setCellText'),
-    rowId: tableIdSchema,
-    colId: tableIdSchema,
-    text: z.string().max(5000),
-    textRuns: z.array(canvasTextRunSchema).max(MAX_TEXT_RUNS).optional(),
-    rowHeight: z.number().finite().min(1).max(100_000).optional(),
-  }),
+  z
+    .strictObject({
+      type: z.literal('setCellText'),
+      rowId: tableIdSchema,
+      colId: tableIdSchema,
+      text: z.string().max(5000),
+      textRuns: z.array(canvasTextRunSchema).max(MAX_TEXT_RUNS).optional(),
+      rowHeight: z.number().finite().min(1).max(100_000).optional(),
+      ifRowHeight: z.number().finite().min(1).max(100_000).optional(),
+    })
+    .refine(cellRunsFitText, {
+      message: CELL_RUNS_MESSAGE,
+      path: ['textRuns'],
+    }),
   z.strictObject({
     type: z.literal('setCellFill'),
     cells: tableCellsRefsSchema,
@@ -1385,17 +1444,24 @@ export const tableOpSchema = z.discriminatedUnion('type', [
     type: z.literal('scaleTable'),
     sx: z.number().finite().min(0.01).max(100),
     sy: z.number().finite().min(0.01).max(100),
-    dx: tableShiftSchema.optional(),
-    dy: tableShiftSchema.optional(),
+    anchorX: z.enum(['left', 'right']).optional(),
+    anchorY: z.enum(['top', 'bottom']).optional(),
   }),
   z.strictObject({ type: z.literal('setHeaderRow'), on: z.boolean() }),
-  z.strictObject({
-    type: z.literal('setSizes'),
-    rows: z.array(tableRowSchema).max(TABLE_MAX_CELLS),
-    cols: z.array(tableColSchema).max(TABLE_MAX_CELLS),
-    dx: tableShiftSchema.optional(),
-    dy: tableShiftSchema.optional(),
-  }),
+  z
+    .strictObject({
+      type: z.literal('setSizes'),
+      rows: z.array(tableRowSchema).max(TABLE_MAX_CELLS),
+      cols: z.array(tableColSchema).max(TABLE_MAX_CELLS),
+      dx: tableShiftSchema.optional(),
+      dy: tableShiftSchema.optional(),
+    })
+    .refine(
+      (op) =>
+        new Set(op.rows.map((row) => row.id)).size === op.rows.length &&
+        new Set(op.cols.map((col) => col.id)).size === op.cols.length,
+      { message: 'Row and column ids must be unique' },
+    ),
   z.strictObject({
     type: z.literal('restoreCells'),
     cells: z
@@ -1408,6 +1474,7 @@ export const tableOpSchema = z.discriminatedUnion('type', [
       )
       .min(1)
       .max(TABLE_MAX_CELLS),
+    only: z.enum(['fill', 'align', 'text']).optional(),
   }),
 ])
 
@@ -1420,11 +1487,26 @@ export const tableOpExpectSchema = z
     z.strictObject({
       rowId: tableIdSchema,
       colId: tableIdSchema,
-      text: z.string().max(5000),
+      text: z.string().max(5000).optional(),
       textRuns: z.array(canvasTextRunSchema).max(MAX_TEXT_RUNS).optional(),
+      fill: cssColorSchema.nullable().optional(),
+      textAlign: z.enum(['left', 'center', 'right']).nullable().optional(),
     }),
   )
   .max(TABLE_MAX_CELLS)
+
+/**
+ * The layout an undo or redo of a size, header or insert op expects to find.
+ * Mirrors `LayoutExpect` in canvas-engine/table.ts.
+ */
+export const tableLayoutExpectSchema = z.strictObject({
+  rows: z.array(tableRowSchema).max(TABLE_MAX_CELLS).optional(),
+  cols: z.array(tableColSchema).max(TABLE_MAX_CELLS).optional(),
+  complete: z.boolean().optional(),
+  headerRow: z.boolean().optional(),
+  blankRowId: tableIdSchema.optional(),
+  blankColId: tableIdSchema.optional(),
+})
 
 /**
  * Kind-specific payload, a discriminated union on `kind`. Every shape arm and
