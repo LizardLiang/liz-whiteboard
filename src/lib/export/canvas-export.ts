@@ -81,7 +81,8 @@ function isDrawable(
   if (element.connector) {
     return element.style.strokeWidth > 0 && connectorPath !== null
   }
-  if (element.kind === 'group') return true
+  // A table always draws: its cells carry fills and text of their own.
+  if (element.kind === 'group' || element.kind === 'table') return true
   if ((element.text ?? '').length > 0) return true
   return element.style.fill !== 'none' || element.style.strokeWidth > 0
 }

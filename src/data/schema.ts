@@ -1067,6 +1067,22 @@ export const CANVAS_TEXT_MAX_LENGTH = 10_000
  */
 const cssColorSchema = z.string().min(1).max(64)
 
+/** One styled range of a label. Shared by an element's `style.textRuns` and a table cell's `textRuns`. */
+const canvasTextRunSchema = z
+  .strictObject({
+    start: z.number().int().min(0),
+    end: z.number().int().min(1),
+    fontWeight: z.enum(['normal', 'bold']).optional(),
+    fontStyle: z.enum(['normal', 'italic']).optional(),
+    underline: z.boolean().optional(),
+    strikethrough: z.boolean().optional(),
+    fontSize: z.number().finite().min(1).max(512).optional(),
+    color: cssColorSchema.optional(),
+  })
+  .refine((run) => run.start < run.end, {
+    message: 'A text run must cover at least one character',
+  })
+
 /**
  * Element appearance. Defaults are taken from the ENGINE's own
  * `DEFAULT_ELEMENT_STYLE` rather than restated here, so the value the
@@ -1146,22 +1162,7 @@ export const canvasElementStyleSchema = z.strictObject({
    * ends inside the text is checked beside `text` (`runsFitText`).
    */
   textRuns: z
-    .array(
-      z
-        .strictObject({
-          start: z.number().int().min(0),
-          end: z.number().int().min(1),
-          fontWeight: z.enum(['normal', 'bold']).optional(),
-          fontStyle: z.enum(['normal', 'italic']).optional(),
-          underline: z.boolean().optional(),
-          strikethrough: z.boolean().optional(),
-          fontSize: z.number().finite().min(1).max(512).optional(),
-          color: cssColorSchema.optional(),
-        })
-        .refine((run) => run.start < run.end, {
-          message: 'A text run must cover at least one character',
-        }),
-    )
+    .array(canvasTextRunSchema)
     .max(MAX_TEXT_RUNS)
     .refine(
       (runs) => runs.every((run, i) => i === 0 || run.start >= runs[i - 1].end),
@@ -1220,6 +1221,7 @@ export const canvasElementKindSchema = z.enum([
   'text',
   'connector',
   'group',
+  'table',
 ])
 
 /**
@@ -1272,6 +1274,134 @@ export const canvasConnectorAnchorSchema = z.enum([
   'right',
   'bottom',
   'left',
+])
+
+/** Caps a table; mirrors `TABLE_MAX_CELLS` in canvas-engine/table.ts. */
+const TABLE_MAX_CELLS = 500
+
+const tableIdSchema = z
+  .string()
+  .min(1)
+  .max(64)
+  .refine((id) => !id.includes(':'), { message: 'An id cannot contain ":"' })
+
+const tableCellSchema = z.strictObject({
+  text: z.string().max(5000),
+  textRuns: z.array(canvasTextRunSchema).max(MAX_TEXT_RUNS).optional(),
+  textAlign: z.enum(['left', 'center', 'right']).optional(),
+  fill: cssColorSchema.optional(),
+})
+
+const tableRowSchema = z.strictObject({
+  id: tableIdSchema,
+  height: z.number().finite().min(1).max(100_000),
+})
+
+const tableColSchema = z.strictObject({
+  id: tableIdSchema,
+  width: z.number().finite().min(1).max(100_000),
+})
+
+/**
+ * A canvas table's stored grid. Rows and columns are addressed by id, and
+ * `cells` is keyed `"rowId:colId"`; a missing cell is an empty cell. Bounded
+ * so a stored row cannot make layout expensive.
+ */
+export const canvasTableSchema = z
+  .strictObject({
+    rows: z.array(tableRowSchema).min(1).max(TABLE_MAX_CELLS),
+    cols: z.array(tableColSchema).min(1).max(TABLE_MAX_CELLS),
+    cells: z.record(z.string().max(129), tableCellSchema),
+    headerRow: z.boolean(),
+  })
+  .refine((table) => table.rows.length * table.cols.length <= TABLE_MAX_CELLS, {
+    message: `A table holds at most ${TABLE_MAX_CELLS} cells`,
+  })
+  .refine((table) => Object.keys(table.cells).length <= TABLE_MAX_CELLS, {
+    message: `A table holds at most ${TABLE_MAX_CELLS} cells`,
+  })
+
+const tableCellRefSchema = z.strictObject({
+  rowId: tableIdSchema,
+  colId: tableIdSchema,
+})
+
+const tableCellsRefsSchema = z
+  .array(tableCellRefSchema)
+  .min(1)
+  .max(TABLE_MAX_CELLS)
+
+/**
+ * A table op: one small change the server applies to the LATEST stored table
+ * (`element:table-op`). Mirrors `TableOp` in canvas-engine/table.ts.
+ */
+export const tableOpSchema = z.discriminatedUnion('type', [
+  z.strictObject({
+    type: z.literal('setCellText'),
+    rowId: tableIdSchema,
+    colId: tableIdSchema,
+    text: z.string().max(5000),
+    textRuns: z.array(canvasTextRunSchema).max(MAX_TEXT_RUNS).optional(),
+    rowHeight: z.number().finite().min(1).max(100_000).optional(),
+  }),
+  z.strictObject({
+    type: z.literal('setCellFill'),
+    cells: tableCellsRefsSchema,
+    fill: cssColorSchema.nullable(),
+  }),
+  z.strictObject({
+    type: z.literal('setCellAlign'),
+    cells: tableCellsRefsSchema,
+    align: z.enum(['left', 'center', 'right']),
+  }),
+  z.strictObject({
+    type: z.literal('insertRow'),
+    afterRowId: tableIdSchema.nullable(),
+    row: tableRowSchema,
+    cells: z.record(tableIdSchema, tableCellSchema).optional(),
+  }),
+  z.strictObject({ type: z.literal('removeRow'), rowId: tableIdSchema }),
+  z.strictObject({
+    type: z.literal('insertCol'),
+    afterColId: tableIdSchema.nullable(),
+    col: tableColSchema,
+    cells: z.record(tableIdSchema, tableCellSchema).optional(),
+  }),
+  z.strictObject({ type: z.literal('removeCol'), colId: tableIdSchema }),
+  z.strictObject({
+    type: z.literal('resizeRow'),
+    rowId: tableIdSchema,
+    height: z.number().finite().min(1).max(100_000),
+  }),
+  z.strictObject({
+    type: z.literal('resizeCol'),
+    colId: tableIdSchema,
+    width: z.number().finite().min(1).max(100_000),
+  }),
+  z.strictObject({
+    type: z.literal('scaleTable'),
+    sx: z.number().finite().min(0.01).max(100),
+    sy: z.number().finite().min(0.01).max(100),
+  }),
+  z.strictObject({ type: z.literal('setHeaderRow'), on: z.boolean() }),
+  z.strictObject({
+    type: z.literal('setSizes'),
+    rows: z.array(tableRowSchema).max(TABLE_MAX_CELLS),
+    cols: z.array(tableColSchema).max(TABLE_MAX_CELLS),
+  }),
+  z.strictObject({
+    type: z.literal('restoreCells'),
+    cells: z
+      .array(
+        z.strictObject({
+          rowId: tableIdSchema,
+          colId: tableIdSchema,
+          cell: tableCellSchema.nullable(),
+        }),
+      )
+      .min(1)
+      .max(TABLE_MAX_CELLS),
+  }),
 ])
 
 /**
@@ -1401,6 +1531,10 @@ export const canvasElementPropsSchema = z.discriminatedUnion('kind', [
     // shape check.
     childIds: z.array(z.string().uuid()).max(1000),
   }),
+  // A table's grid. Written whole only by create (and a restore); after that
+  // only the `element:table-op` handler changes it, so concurrent cell edits
+  // by different people both survive.
+  z.strictObject({ kind: z.literal('table'), table: canvasTableSchema }),
 ])
 
 /**
@@ -1543,6 +1677,7 @@ export {
 } from './canvas-board-settings'
 export type CanvasElementStyle = z.infer<typeof canvasElementStyleSchema>
 export type CanvasElementProps = z.infer<typeof canvasElementPropsSchema>
+export type TableOpInput = z.infer<typeof tableOpSchema>
 export type CanvasConnectorRouting = z.infer<
   typeof canvasConnectorRoutingSchema
 >

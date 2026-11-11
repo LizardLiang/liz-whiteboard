@@ -51,6 +51,7 @@ export const sweepZhTW: DeepStringRecord<typeof sweepEn> = {
     element: {
       createFailed: '建立元素失敗',
       updateFailed: '更新元素失敗',
+      tableOpFailed: '更新表格失敗',
       deleteFailed: '刪除元素失敗',
     },
     shape: {
@@ -88,6 +89,7 @@ export const sweepZhTW: DeepStringRecord<typeof sweepEn> = {
       text: '文字元素',
       connector: '連接線',
       group: '群組',
+      table: '表格',
     },
     nounA: {
       element: '元素',
@@ -98,6 +100,7 @@ export const sweepZhTW: DeepStringRecord<typeof sweepEn> = {
       text: '文字元素',
       connector: '連接線',
       group: '群組',
+      table: '表格',
     },
     gesture: {
       create: '建立{kind}',

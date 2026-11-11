@@ -20,6 +20,7 @@ import type { CanvasElement, Scene } from '@/lib/canvas-engine/scene'
 import type { CanvasElementRecord } from '@/data/models'
 import { DEFAULT_ELEMENT_STYLE, sceneFrom } from '@/lib/canvas-engine/scene'
 import { toEngineElement } from '@/lib/canvas-element-adapter'
+import { applyTableOp, cellKey, createTable } from '@/lib/canvas-engine/table'
 
 vi.mock('sonner', () => ({
   toast: { error: vi.fn(), success: vi.fn() },
@@ -829,5 +830,123 @@ describe('ephemeral writes suppress the generic error toast (board-undo tactical
     })
     act(() => h.socket.ackLast({ ok: false, message: 'contested' }))
     expect(toast.error).not.toHaveBeenCalled()
+  })
+})
+
+describe('applyTableOp', () => {
+  const TABLE_ID = '55555555-5555-4555-8555-555555555555'
+
+  function tableRecord(): CanvasElementRecord {
+    const table = createTable(2, 2, (() => {
+      let n = 0
+      return () => `id-${++n}`
+    })())
+    return makeRecord({
+      id: TABLE_ID,
+      kind: 'table',
+      width: 240,
+      height: 80,
+      props: { kind: 'table', table },
+    })
+  }
+
+  it('applies optimistically, emits element:table-op, and reconciles from the ack', () => {
+    const record = tableRecord()
+    const h = setup([record])
+    const table = h.scene.byId.get(TABLE_ID)!.table!
+    const op = {
+      type: 'setCellText' as const,
+      rowId: table.rows[0].id,
+      colId: table.cols[0].id,
+      text: 'hi',
+    }
+    let result: any
+    act(() => {
+      void h.view.result.current
+        .applyTableOp(TABLE_ID, op)
+        .then((r) => (result = r))
+    })
+    expect(h.socket.sent[0]).toMatchObject({
+      event: 'element:table-op',
+      data: { elementId: TABLE_ID, op },
+    })
+    expect(
+      h.scene.byId.get(TABLE_ID)!.table!.cells[
+        cellKey(op.rowId, op.colId)
+      ].text,
+    ).toBe('hi')
+
+    const stored = applyTableOp(table, op)
+    act(() =>
+      h.socket.ackLast({
+        ok: true,
+        entity: {
+          ...record,
+          revision: 2,
+          props: { kind: 'table', table: stored.table },
+        },
+        inverse: stored.inverse,
+      }),
+    )
+    expect(h.view.result.current.getRevision(TABLE_ID)).toBe(2)
+    return Promise.resolve().then(() => {
+      expect(result).toMatchObject({ ok: true, inverse: stored.inverse })
+    })
+  })
+
+  it('rolls back to the confirmed table and toasts when the server refuses', () => {
+    const h = setup([tableRecord()])
+    const table = h.scene.byId.get(TABLE_ID)!.table!
+    act(() => {
+      void h.view.result.current.applyTableOp(TABLE_ID, {
+        type: 'setCellText',
+        rowId: table.rows[0].id,
+        colId: table.cols[0].id,
+        text: 'nope',
+      })
+    })
+    act(() => h.socket.ackLast({ ok: false, message: 'refused' }))
+    expect(h.scene.byId.get(TABLE_ID)!.table!.cells).toEqual({})
+    expect(toast.error).toHaveBeenCalledWith('refused')
+  })
+
+  it('keeps the table when a collaborator broadcast carries only a move', () => {
+    const h = setup([tableRecord()])
+    act(() => {
+      h.socket.receive('element:updated', {
+        elementId: TABLE_ID,
+        positionX: 400,
+        updatedBy: 'someone',
+        revision: 2,
+      })
+    })
+    const element = h.scene.byId.get(TABLE_ID)!
+    expect(element.x).toBe(400)
+    expect(element.table?.rows).toHaveLength(2)
+  })
+
+  it('takes the grid from a table-op broadcast', () => {
+    const record = tableRecord()
+    const h = setup([record])
+    const table = h.scene.byId.get(TABLE_ID)!.table!
+    const next = applyTableOp(table, {
+      type: 'setCellText',
+      rowId: table.rows[1].id,
+      colId: table.cols[1].id,
+      text: 'from bob',
+    }).table
+    act(() => {
+      h.socket.receive('element:updated', {
+        elementId: TABLE_ID,
+        props: { kind: 'table', table: next },
+        updatedBy: 'bob',
+        revision: 2,
+      })
+    })
+    expect(
+      h.scene.byId.get(TABLE_ID)!.table!.cells[
+        cellKey(table.rows[1].id, table.cols[1].id)
+      ].text,
+    ).toBe('from bob')
   })
 })

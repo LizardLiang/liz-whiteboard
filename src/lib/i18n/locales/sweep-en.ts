@@ -51,6 +51,7 @@ export const sweepEn = {
     element: {
       createFailed: 'Failed to create element',
       updateFailed: 'Failed to update element',
+      tableOpFailed: 'Failed to update table',
       deleteFailed: 'Failed to delete element',
     },
     shape: {
@@ -92,6 +93,7 @@ export const sweepEn = {
       text: 'text element',
       connector: 'connector',
       group: 'group',
+      table: 'table',
     },
     nounA: {
       element: 'an element',
@@ -102,6 +104,7 @@ export const sweepEn = {
       text: 'a text element',
       connector: 'a connector',
       group: 'a group',
+      table: 'a table',
     },
     gesture: {
       create: 'creating {kind}',

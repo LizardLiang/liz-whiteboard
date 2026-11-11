@@ -214,6 +214,8 @@ export function elementContainsPoint(
         point,
       )
     case 'text':
+    case 'table':
+      // A table is its rect: every cell is inside it.
       return rectContainsPoint(rect, point)
     case 'ellipse':
       return ellipseContainsPoint(rect, point)

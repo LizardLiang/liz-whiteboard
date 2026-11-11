@@ -13,6 +13,7 @@ export const canvasEn = {
     searchShapes: 'Shapes',
     searchText: 'Text',
     searchConnectors: 'Connectors',
+    searchTables: 'Tables',
     textInputAria: 'Canvas text input',
     notFoundTitle: 'Board not found',
     notFoundDetail:
@@ -29,6 +30,7 @@ export const canvasEn = {
     select: 'Select',
     pan: 'Pan',
     text: 'Text',
+    table: 'Table',
   },
   shape: {
     rectangle: 'Rectangle',

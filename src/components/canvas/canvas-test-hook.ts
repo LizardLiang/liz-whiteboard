@@ -31,7 +31,9 @@ import {
   connectorEndpointRects,
   creationHandleRects,
   creationHandleTarget,
+  worldRectToScreen,
 } from '@/lib/canvas-engine/render'
+import { tableCellRects as tableCellRectsOf } from '@/lib/canvas-engine/table'
 import { connectorPathOf } from '@/lib/canvas-engine/hit-test'
 import { bounds } from '@/lib/canvas-engine/scene'
 
@@ -163,6 +165,19 @@ export interface CanvasEngineTestHook {
     from: number
     to: number
   }>
+  /**
+   * Every table's cell rectangles in canvas-relative screen pixels, keyed by
+   * element id, row-major.
+   *
+   * Published so a spec clicks the cell the renderer drew. Deriving a cell's
+   * screen position in the spec would mean re-deriving every row height and
+   * column width plus the camera — the same drift the other rect fields here
+   * exist to prevent.
+   */
+  tableCellRects: Record<
+    string,
+    Array<{ rowId: string; colId: string; rect: ScreenRect }>
+  >
   tool: CanvasTool
   readOnly: boolean
 }
@@ -233,6 +248,16 @@ export function useCanvasTestHook({
         ? connectorBendRect(camera, connectorPath)
         : null
 
+    const tableCellRects: CanvasEngineTestHook['tableCellRects'] = {}
+    for (const element of scene.elements) {
+      if (element.kind !== 'table') continue
+      tableCellRects[element.id] = tableCellRectsOf(element).map((cell) => ({
+        rowId: cell.rowId,
+        colId: cell.colId,
+        rect: worldRectToScreen(camera, cell.rect),
+      }))
+    }
+
     const published: CanvasEngineTestHook = {
       boardId,
       // A plain array copy, not the live scene: a spec that mutated it must
@@ -259,6 +284,7 @@ export function useCanvasTestHook({
       alignmentGuides: (selection.alignmentGuides ?? []).map((guide) => ({
         ...guide,
       })),
+      tableCellRects,
       tool,
       readOnly,
     }

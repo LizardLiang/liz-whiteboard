@@ -29,6 +29,7 @@ import { MAX_TEXT_RUNS } from '@/lib/canvas-engine/text-runs'
 import { DEFAULT_CAMERA } from '@/lib/canvas-engine/camera'
 import { DEFAULT_ELEMENT_STYLE, sceneFrom } from '@/lib/canvas-engine/scene'
 import { Z_MIN } from '@/lib/canvas-engine/z-order'
+import { createTable, tableSize } from '@/lib/canvas-engine/table'
 
 const TEXT_ID = '11111111-1111-4111-8111-111111111111'
 
@@ -3677,5 +3678,104 @@ describe('todo lines', () => {
       expect(h.callbacks.onUpdate).toHaveBeenCalledTimes(1)
       expect(h.callbacks.onUpdate.mock.calls[0][0]).toHaveLength(2)
     })
+  })
+})
+
+describe('table tool', () => {
+  it('Shift+T selects the table tool', () => {
+    const h = setup([])
+    act(() => {
+      h.api.boardHandlers.onKeyDown(keyEvent('T', { shiftKey: true }))
+    })
+    expect(h.tool).toBe('table')
+  })
+
+  it('creates a 3 x 3 table from a click and selects it', () => {
+    const h = setupWithTool('table')
+    act(() => {
+      h.api.canvasHandlers.onPointerDown(
+        pointerEvent({ clientX: 20, clientY: 30 }),
+      )
+    })
+    h.sync()
+    act(() => {
+      h.api.canvasHandlers.onPointerUp(
+        pointerEvent({ clientX: 21, clientY: 31 }),
+      )
+    })
+    h.sync()
+
+    const created = h.scene.elements[0]
+    expect(created.kind).toBe('table')
+    expect(created.table?.rows).toHaveLength(3)
+    expect(created.table?.cols).toHaveLength(3)
+    expect(created.table?.headerRow).toBe(true)
+    expect(created.width).toBe(360)
+    expect(created.height).toBe(120)
+    expect(h.callbacks.onCreate).toHaveBeenCalledWith(created)
+    expect(h.tool).toBe('select')
+    expect([...h.api.selectedIds]).toEqual([created.id])
+  })
+
+  it('sizes a dragged table at one cell per 120 x 40 world px', () => {
+    const h = setupWithTool('table')
+    act(() => {
+      h.api.canvasHandlers.onPointerDown(
+        pointerEvent({ clientX: 100, clientY: 100 }),
+      )
+    })
+    h.sync()
+    act(() => {
+      h.api.canvasHandlers.onPointerMove(
+        pointerEvent({ clientX: 100 + 480, clientY: 100 + 80 }),
+      )
+    })
+    h.sync()
+    // The live preview already carries the dimensions the release will use.
+    expect(h.api.draft?.table?.cols).toHaveLength(4)
+    expect(h.api.draft?.table?.rows).toHaveLength(2)
+    act(() => {
+      h.api.canvasHandlers.onPointerUp(
+        pointerEvent({ clientX: 100 + 480, clientY: 100 + 80 }),
+      )
+    })
+    h.sync()
+
+    const created = h.scene.elements[0]
+    expect(created.table?.cols).toHaveLength(4)
+    expect(created.table?.rows).toHaveLength(2)
+    expect(created.width).toBe(480)
+    expect(created.height).toBe(80)
+  })
+
+  it('draws no resize grips for a table, so none can be hit', () => {
+    const table = createTable(2, 2, () => Math.random().toString(36))
+    const element = makeRect('66666666-6666-4666-8666-666666666666', {
+      kind: 'table',
+      x: 0,
+      y: 0,
+      ...tableSize(table),
+      table,
+    })
+    const h = setup([element])
+    act(() => {
+      h.api.setSelectedIds(new Set([element.id]))
+    })
+    h.sync()
+    // A press exactly on the bottom-right corner starts a move, not a resize.
+    act(() => {
+      h.api.canvasHandlers.onPointerDown(
+        pointerEvent({ clientX: element.width, clientY: element.height }),
+      )
+    })
+    h.sync()
+    expect(h.api.gestureActive).toBe(true)
+    act(() => {
+      h.api.canvasHandlers.onPointerMove(
+        pointerEvent({ clientX: element.width + 50, clientY: element.height }),
+      )
+    })
+    h.sync()
+    expect(h.scene.byId.get(element.id)?.width).toBe(element.width)
   })
 })

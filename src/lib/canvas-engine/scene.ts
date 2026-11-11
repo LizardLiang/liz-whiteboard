@@ -20,6 +20,7 @@
 // no-dependency property nothing at runtime. A free connector endpoint needs a
 // point, and re-declaring the shape locally would be a second `Point`.
 import type { Point } from './camera'
+import type { CanvasTable } from './table'
 
 /** The element kinds the engine renders. New kinds are added here first. */
 export type CanvasElementKind =
@@ -30,6 +31,7 @@ export type CanvasElementKind =
   | 'text'
   | 'connector'
   | 'group'
+  | 'table'
 
 /**
  * The SHAPE kinds: four ways of drawing one world rect.
@@ -495,6 +497,13 @@ export interface CanvasElement {
    * stored, and never derived from `childIds` after creation (PRD FR-003).
    */
   group?: CanvasGroup
+  /**
+   * Present exactly when `kind === 'table'`, absent otherwise. Mirrors
+   * `connector` and `group` above. Only the server's table-op handler changes
+   * the stored table after create (`element:table-op`); the element's
+   * `width`/`height` are derived from the rows and columns on every op.
+   */
+  table?: CanvasTable
 }
 
 /**

@@ -17,6 +17,7 @@ export const canvasZhTW: DeepStringRecord<typeof canvasEn> = {
     searchShapes: '形狀',
     searchText: '文字',
     searchConnectors: '連接線',
+    searchTables: '表格',
     textInputAria: '畫布文字輸入',
     notFoundTitle: '找不到畫板',
     notFoundDetail: '這個畫板不存在，或你沒有存取權限。',
@@ -31,6 +32,7 @@ export const canvasZhTW: DeepStringRecord<typeof canvasEn> = {
     select: '選取',
     pan: '平移',
     text: '文字',
+    table: '表格',
   },
   shape: {
     rectangle: '矩形',

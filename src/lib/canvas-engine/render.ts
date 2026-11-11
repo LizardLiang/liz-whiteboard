@@ -39,6 +39,7 @@ import { connectorCurveOf, connectorPathOf, connectorTailOf } from './hit-test'
 import { pointAlongPath } from './flow-path'
 import { QUICK_CREATE_DIRECTIONS } from './quick-create'
 import { normalizeRuns, resolveRuns } from './text-runs'
+import { cellKey, cellTextElement, lookupCell, tableCellRects } from './table'
 import {
   DEFAULT_TEXT_STYLE,
   layoutText,
@@ -523,6 +524,9 @@ export function creationHandleTarget(
   // own bounds are a placeholder, so handles around it would sit at the
   // origin. Excluded outright.
   if (!element || element.connector) return null
+  // A table has no "same shape one gap to the right" either: its copies would
+  // be whole new grids, not a next step in a flow.
+  if (element.kind === 'table') return null
   return element
 }
 
@@ -1114,6 +1118,98 @@ function drawCardTopRow(
   }
 }
 
+/** The tint behind a table's header row, per theme. A cell fill of its own wins. */
+const TABLE_HEADER_TINT = {
+  light: 'rgba(100, 116, 139, 0.16)',
+  dark: 'rgba(148, 163, 184, 0.22)',
+} as const
+
+/**
+ * Draw a table in WORLD space: cell fills, the header tint, the grid, then each
+ * cell's text through the same code a board label uses.
+ *
+ * Cells are drawn with no card look on purpose: a table is a grid, not a card.
+ */
+function drawTable(
+  target: PersistentRenderTarget,
+  element: CanvasElement,
+  theme: CanvasTheme,
+): void {
+  const table = element.table
+  if (!table) return
+  const cells = tableCellRects(element)
+  for (const { rowId, colId, rect } of cells) {
+    const cell = lookupCell(table.cells, cellKey(rowId, colId))
+    const header = table.headerRow && table.rows[0].id === rowId
+    const fill = cell?.fill ?? (header ? TABLE_HEADER_TINT[theme] : undefined)
+    if (fill) {
+      target.rect(rect.x, rect.y, rect.width, rect.height, 0, { fill })
+    }
+  }
+  const { stroke, strokeWidth } = element.style
+  if (strokeWidth > 0) {
+    // Every inner grid line in one path, then the outer border.
+    target.beginPath()
+    let x = element.x
+    for (const col of table.cols.slice(0, -1)) {
+      x += col.width
+      target.moveTo(x, element.y)
+      target.lineTo(x, element.y + element.height)
+    }
+    let y = element.y
+    for (const row of table.rows.slice(0, -1)) {
+      y += row.height
+      target.moveTo(element.x, y)
+      target.lineTo(element.x + element.width, y)
+    }
+    target.paintPath({ stroke, strokeWidth })
+    target.rect(element.x, element.y, element.width, element.height, 0, {
+      stroke,
+      strokeWidth,
+    })
+  }
+  for (const { rowId, colId } of cells) {
+    const cell = lookupCell(table.cells, cellKey(rowId, colId))
+    if (!cell || cell.text.length === 0) continue
+    const virtual = cellTextElement(element, rowId, colId)
+    if (virtual) drawElementText(target, virtual, theme)
+  }
+}
+
+/**
+ * The live "rows x columns" label over a table being drawn, in SCREEN space so
+ * it stays one size at every zoom.
+ */
+function drawTableDraftLabel(
+  ctx: CanvasRenderingContext2D,
+  draft: CanvasElement,
+  camera: Camera,
+  theme: CanvasTheme,
+): void {
+  const table = draft.table
+  if (!table) return
+  const rect = worldRectToScreen(camera, bounds(draft))
+  const label = `${table.rows.length} \u00d7 ${table.cols.length}`
+  const spec: CanvasFontSpec = {
+    fontSize: 12,
+    fontWeight: 'bold',
+    fontStyle: 'normal',
+  }
+  ctx.save()
+  ctx.font = canvasFont(spec)
+  const padX = 8
+  const width = ctx.measureText(label).width + padX * 2
+  const height = 22
+  const x = rect.x
+  const y = Math.max(4, rect.y - height - 6)
+  ctx.fillStyle = CHROME[theme].accent
+  ctx.fillRect(x, y, width, height)
+  ctx.fillStyle = '#ffffff'
+  ctx.textBaseline = 'middle'
+  ctx.fillText(label, x + padX, y + height / 2)
+  ctx.restore()
+}
+
 /**
  * Draw one element in WORLD space. The caller has already applied the camera
  * transform, so this function uses raw world coordinates throughout.
@@ -1134,6 +1230,10 @@ function drawElement(
   if (isCanvasShapeKind(element.kind)) {
     drawShape(target, element, look)
     drawCardTopRow(target, element, look)
+  } else if (element.kind === 'table') {
+    drawTable(target, element, theme)
+    // The cells draw their own text; the table has no label of its own.
+    return null
   } else if (element.kind === 'group') {
     // A group has no fill/stroke style of its own (FR-031) — its frame is
     // drawn as fixed UI chrome, not as data. Persistent (FR-032: this must
@@ -1158,6 +1258,23 @@ function drawElement(
     })
   }
 
+  return drawElementText(target, element, theme, textSelection, look)
+}
+
+/**
+ * Draw one element's label in WORLD space and return the layout it used.
+ *
+ * Split out of `drawElement` so a table cell's virtual text element runs
+ * through the SAME drawing code as a board label: one place decides wrapping,
+ * runs, decorations and todo boxes.
+ */
+function drawElementText(
+  target: PersistentRenderTarget,
+  element: CanvasElement,
+  theme: CanvasTheme,
+  textSelection?: { start: number; end: number } | null,
+  look?: CardLook,
+): TextLayout | null {
   const text = element.text ?? ''
   if (text.length === 0) return null
 
@@ -1840,6 +1957,9 @@ function drawSelectionOverlay(
   if (!selection.editing) {
     for (const element of selected) {
       if (element.connector) continue
+      // A table resizes through its rows and columns (`scaleTable`), not by
+      // writing a new width and height over a grid that no longer matches.
+      if (element.kind === 'table') continue
       const grips = handleRects(camera, element)
       for (const handle of RESIZE_HANDLES) {
         const g = grips[handle]
@@ -2252,6 +2372,9 @@ export function drawScene(
 
   ctx.restore()
 
+  if (selection.draft?.kind === 'table' && selection.draft.table) {
+    drawTableDraftLabel(ctx, selection.draft, camera, theme)
+  }
   drawSelectionOverlay(ctx, scene, camera, selection, theme)
   drawHighlight(ctx, scene, camera, selection.highlight)
 }

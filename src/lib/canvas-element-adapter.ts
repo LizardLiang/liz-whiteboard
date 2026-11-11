@@ -13,6 +13,7 @@
 
 import { repairGroupMembership, sceneFrom } from './canvas-engine/scene'
 import { ANCHOR_ATTACH } from './canvas-engine/connector-geometry'
+import { normalizeTable } from './canvas-engine/table'
 import type {
   CanvasConnector,
   CanvasElement,
@@ -190,6 +191,20 @@ function toEngineGroup(
 }
 
 /**
+ * The engine's `table` field for a stored row, or `undefined`.
+ *
+ * Reads through `normalizeTable`, so a row whose table is missing a field (a
+ * hand-edited row, or a table written before a field existed) still loads and
+ * draws. Same null/undefined tolerance as `toEngineConnector`.
+ */
+function toEngineTable(
+  props: CanvasElementProps | null | undefined,
+): CanvasElement['table'] {
+  if (!props || props.kind !== 'table') return undefined
+  return normalizeTable(props.table)
+}
+
+/**
  * The stored `props` for an engine element — the inverse of
  * `toEngineConnector`/`toEngineGroup`.
  *
@@ -206,6 +221,12 @@ function toEngineGroup(
  * schema's own cross-validation on the way back in.
  */
 function toStoredProps(element: CanvasElement): CanvasElementProps {
+  if (element.kind === 'table') {
+    if (!element.table) {
+      throw new Error(`Table element ${element.id} has no table`)
+    }
+    return { kind: 'table', table: normalizeTable(element.table) }
+  }
   if (element.kind === 'group') {
     if (!element.group) {
       throw new Error(`Group element ${element.id} has no childIds`)
@@ -264,6 +285,7 @@ function legacyAttach(
 export function toEngineElement(record: CanvasElementRecord): CanvasElement {
   const connector = toEngineConnector(record.props)
   const group = toEngineGroup(record.props)
+  const table = toEngineTable(record.props)
   return {
     id: record.id,
     kind: record.kind,
@@ -281,6 +303,7 @@ export function toEngineElement(record: CanvasElementRecord): CanvasElement {
     // two.
     ...(connector ? { connector } : {}),
     ...(group ? { group } : {}),
+    ...(table ? { table } : {}),
   }
 }
 
@@ -345,7 +368,11 @@ export function toUpdatePatch(element: CanvasElement): UpdateCanvasElement {
     // "what the client believes the element is now", not a diff. It also
     // carries the ONLY editable props any kind has — a connector's `routing`
     // — so without it a routing change would have no way to reach storage.
-    props: toStoredProps(element),
+    //
+    // A table is the exception: only `element:table-op` changes its grid, and
+    // the server rejects a `props` change for one. Sending the client's copy
+    // here would also overwrite a collaborator's cell with a stale one.
+    ...(element.kind === 'table' ? {} : { props: toStoredProps(element) }),
   }
 }
 
@@ -412,6 +439,7 @@ export function fromElementSnapshot(
 ): CanvasElement {
   const connector = toEngineConnector(snapshot.props)
   const group = toEngineGroup(snapshot.props)
+  const table = toEngineTable(snapshot.props)
   return {
     id: snapshot.id,
     kind: snapshot.kind,
@@ -430,5 +458,6 @@ export function fromElementSnapshot(
     // deleted row had them.
     ...(connector ? { connector } : {}),
     ...(group ? { group } : {}),
+    ...(table ? { table } : {}),
   }
 }

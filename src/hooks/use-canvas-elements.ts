@@ -11,6 +11,7 @@
 //   element:create  -> element:created
 //   element:update  -> element:updated
 //   element:delete  -> element:deleted
+//   element:table-op -> element:updated   (a table's cells and grid)
 //
 // Persistence happens at gesture END, not per frame. That rule is enforced
 // upstream in use-canvas-input.ts, which calls these only on pointerup or
@@ -80,6 +81,7 @@ import { toast } from 'sonner'
 import type { Dispatch, SetStateAction } from 'react'
 import type { CanvasElement, Scene } from '@/lib/canvas-engine/scene'
 import type { CanvasElementRecord } from '@/data/models'
+import type { TableOp } from '@/lib/canvas-engine/table'
 import { tErrorOr } from '@/lib/i18n/t-error'
 import { useT } from '@/lib/i18n/use-t'
 import {
@@ -93,6 +95,10 @@ import {
   removeElements,
   updateElement,
 } from '@/lib/canvas-engine/scene'
+import {
+  applyTableOp as applyTableOpLocally,
+  tableSize,
+} from '@/lib/canvas-engine/table'
 
 type Emit = (event: string, data: any, ack?: (res: any) => void) => void
 type On = (event: string, handler: (...args: Array<any>) => void) => void
@@ -227,6 +233,17 @@ export interface UseCanvasElementsReturn {
     ids: Array<string>,
     options?: CanvasMutationOptions,
   ) => Promise<Array<CanvasMutationResult>>
+  /**
+   * Apply one table op: optimistically in the scene, then on the server, which
+   * applies it to the LATEST stored table (`element:table-op`). Rolls back to
+   * the last confirmed element on `ok: false`. Resolves with the inverse op the
+   * server computed, for undo.
+   */
+  applyTableOp: (
+    elementId: string,
+    op: TableOp,
+    options?: CanvasMutationOptions,
+  ) => Promise<{ ok: boolean; inverse?: TableOp; revision?: number }>
   /** This hook's own revision index — see the file header. */
   getRevision: (id: string) => number | undefined
 }
@@ -383,6 +400,12 @@ export function useCanvasElements({
         zIndex: payload.zIndex ?? base.zIndex,
         text: payload.text !== undefined ? payload.text : base.text,
         style: payload.style ?? base.style,
+        // A table's grid rides in `props` on a table-op broadcast; any other
+        // update leaves it as confirmed. Without this the merged element would
+        // lose its table, and a rollback to it would restore an empty one.
+        props:
+          payload.props ??
+          (base.table ? { kind: 'table', table: base.table } : undefined),
       } as CanvasElementRecord)
       confirm(merged)
       if (payload.revision !== undefined) {
@@ -757,5 +780,87 @@ export function useCanvasElements({
     [emitDelete, setScene],
   )
 
-  return { createElement, updateElements, deleteElements, getRevision }
+  // ── table ops ────────────────────────────────────────────────────────────
+  //
+  // A table changes through small ops the SERVER applies to its latest stored
+  // table, so two people editing different cells both keep their text. The op
+  // is applied here first so the grid repaints at once; the ack's row then
+  // reconciles it, and a refusal rolls back to the last confirmed element.
+  const applyTableOp = useCallback(
+    (
+      elementId: string,
+      op: TableOp,
+      options?: CanvasMutationOptions,
+    ): Promise<{ ok: boolean; inverse?: TableOp; revision?: number }> => {
+      return new Promise((resolve) => {
+        // A table whose create is still in flight has no server row to change.
+        if (pendingCreatesRef.current.has(elementId)) {
+          resolve({ ok: false })
+          return
+        }
+        const confirmed = confirmedRef.current.get(elementId)
+        if (!confirmed?.table) {
+          resolve({ ok: false })
+          return
+        }
+        try {
+          setScene((prev) => {
+            const current = prev.byId.get(elementId)
+            if (!current?.table) return prev
+            const { table } = applyTableOpLocally(current.table, op)
+            return updateElement(prev, elementId, {
+              table,
+              ...tableSize(table),
+            })
+          })
+        } catch {
+          // The local table cannot take this op (a collaborator removed the
+          // row it names); the server decides, and reports on its ack.
+        }
+        emit(
+          'element:table-op',
+          { elementId, op },
+          settleOnce<CanvasElementRecord & { inverse?: TableOp }>((res) => {
+            if (!res.ok || !res.entity) {
+              const base = confirmedRef.current.get(elementId)
+              if (base) {
+                setScene((prev) =>
+                  prev.byId.has(elementId)
+                    ? updateElement(prev, elementId, base)
+                    : prev,
+                )
+              }
+              if (!options?.ephemeral) {
+                toast.error(tErrorOr(t, res, 'hooks.element.tableOpFailed'))
+              }
+              resolve({ ok: false })
+              return
+            }
+            const persisted = toEngineElement(res.entity)
+            confirm(persisted)
+            revisionsRef.current.set(persisted.id, res.entity.revision)
+            setScene((prev) =>
+              prev.byId.has(persisted.id)
+                ? updateElement(prev, persisted.id, persisted)
+                : prev,
+            )
+            resolve({
+              ok: true,
+              inverse: (res as { inverse?: TableOp }).inverse,
+              revision: res.entity.revision,
+            })
+          }),
+        )
+      })
+    },
+    [confirm, emit, setScene, settleOnce, t],
+  )
+
+  return {
+    createElement,
+    updateElements,
+    deleteElements,
+    applyTableOp,
+    getRevision,
+  }
 }

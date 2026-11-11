@@ -71,6 +71,12 @@ import {
 } from '@/lib/canvas-engine/hit-test'
 import { snapPoint, snapRect } from '@/lib/canvas-engine/grid'
 import {
+  TABLE_DEFAULT_STYLE,
+  createTable,
+  tableDimsForDrag,
+  tableSize,
+} from '@/lib/canvas-engine/table'
+import {
   alignMovedRect,
   alignResizedRect,
   alignmentCandidates,
@@ -164,7 +170,7 @@ import { uuid } from '@/lib/uuid'
  * the draw gesture carry the kind it will create without a lookup table, and
  * it means adding a shape kind to the engine adds its tool for free.
  */
-export type CanvasTool = 'select' | 'pan' | CanvasShapeKind | 'text'
+export type CanvasTool = 'select' | 'pan' | CanvasShapeKind | 'text' | 'table'
 
 /** Is this tool one that draws a shape — and if so, which kind does it draw? */
 export function shapeKindForTool(tool: CanvasTool): CanvasShapeKind | null {
@@ -589,7 +595,7 @@ type Gesture =
        * mid-drag (a keyboard shortcut still fires while the pointer is
        * down), and a drag that started as an ellipse must finish as one.
        */
-      shape: CanvasShapeKind
+      shape: CanvasShapeKind | 'table'
       originWorld: Point
       currentWorld: Point
     }
@@ -755,6 +761,43 @@ function makeElement(
     text: kind === 'text' ? '' : null,
     style: { ...DEFAULT_ELEMENT_STYLE },
   }
+}
+
+/**
+ * The table a Table-tool gesture produces: a click gives 3 x 3 at the nearest
+ * dot, a drag gives one cell per 120 x 40 world px of drag in each direction
+ * (min 1 x 1, at most 500 cells), anchored at the drag's top-left corner.
+ */
+function makeTableElement(
+  origin: Point,
+  current: Point,
+  zIndex: number,
+  makeId: () => string,
+): { element: CanvasElement; rows: number; cols: number } {
+  const dx = Math.abs(current.x - origin.x)
+  const dy = Math.abs(current.y - origin.y)
+  const clicked = dx < MIN_ELEMENT_SIZE && dy < MIN_ELEMENT_SIZE
+  const { rows, cols } = clicked
+    ? { rows: 3, cols: 3 }
+    : tableDimsForDrag(dx, dy)
+  const corner = snapPoint({
+    x: Math.min(origin.x, current.x),
+    y: Math.min(origin.y, current.y),
+  })
+  const table = createTable(rows, cols, makeId)
+  const element: CanvasElement = {
+    id: makeId(),
+    kind: 'table',
+    x: corner.x,
+    y: corner.y,
+    ...tableSize(table),
+    rotation: 0,
+    zIndex,
+    text: null,
+    style: { ...DEFAULT_ELEMENT_STYLE, ...TABLE_DEFAULT_STYLE },
+    table,
+  }
+  return { element, rows, cols }
 }
 
 /**
@@ -2309,7 +2352,10 @@ export function useCanvasInput({
 
       if (editing) commitEditing()
 
-      const drawnShape = shapeKindForTool(latest.current.tool)
+      const drawnShape =
+        latest.current.tool === 'table'
+          ? 'table'
+          : shapeKindForTool(latest.current.tool)
       if (drawnShape) {
         setGesture({
           kind: 'draw',
@@ -2437,7 +2483,8 @@ export function useCanvasInput({
         // gesture this milestone has — so a press on one falls through to the
         // element beneath and starts a move, which is what a press inside a
         // multi-selection should do anyway.
-        if (only && !only.connector) {
+        // A table draws no grips (see `drawSelectionOverlay`), so it tests none.
+        if (only && !only.connector && only.kind !== 'table') {
           const grips = handleRects(latest.current.camera, only)
           const grabbed = RESIZE_HANDLES.find((handle) =>
             screenRectContains(grips[handle], screen),
@@ -2866,6 +2913,19 @@ export function useCanvasInput({
 
       switch (finished.kind) {
         case 'draw': {
+          if (finished.shape === 'table') {
+            const { element } = makeTableElement(
+              finished.originWorld,
+              finished.currentWorld,
+              nextZIndex(latest.current.scene),
+              uuid,
+            )
+            setScene((prev) => addElement(prev, element))
+            setSelectedIds(new Set([element.id]))
+            setTool('select')
+            callbacks?.onCreate?.(element)
+            break
+          }
           // Snapped to the dot grid, and by the same function the draft
           // preview used — see `drawnRect`. A click (rather than a drag)
           // creates a default-sized element at the click point, which is what
@@ -3692,7 +3752,7 @@ export function useCanvasInput({
           const source = latest.current.scene.byId.get(ids[0])
           // A connector has no "same shape one gap to the right" — the same
           // exclusion `creationHandleTarget` applies to the pointer path.
-          if (!source || source.connector) return
+          if (!source || source.connector || source.kind === 'table') return
           quickCreateInDirection(source, direction)
           return
         }
@@ -3742,6 +3802,11 @@ export function useCanvasInput({
           break
         case 't':
           setTool('text')
+          setEnteredPath([])
+          break
+        case 'T':
+          // Shift+T: the Table tool.
+          setTool('table')
           setEnteredPath([])
           break
         case 'Delete':
@@ -4117,6 +4182,15 @@ export function useCanvasInput({
 
   const draft = useMemo<CanvasElement | null>(() => {
     if (gesture.kind !== 'draw') return null
+    if (gesture.shape === 'table') {
+      let n = 0
+      return makeTableElement(
+        gesture.originWorld,
+        gesture.currentWorld,
+        nextZIndex(scene),
+        () => `draft-${n++}`,
+      ).element
+    }
     // `drawnRect`, not the raw drag: the ghost has to show the snapped
     // rectangle the release will actually commit, including the default-sized
     // one a press-without-drag would produce.
@@ -4245,7 +4319,7 @@ export function useCanvasInput({
         : 'grab'
       : tool === 'text'
         ? 'text'
-        : shapeKindForTool(tool)
+        : shapeKindForTool(tool) || tool === 'table'
           ? 'crosshair'
           : 'default'
 

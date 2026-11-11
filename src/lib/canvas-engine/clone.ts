@@ -232,6 +232,16 @@ export function planClone(
     if (element.group) {
       copy.group = cloneGroupChildIds(element.group, idMap)
     }
+    // A table is copied verbatim; only the element id is new. Row and column
+    // ids need no remap — they are scoped to their own table.
+    if (element.table) {
+      copy.table = {
+        ...element.table,
+        rows: element.table.rows.map((row) => ({ ...row })),
+        cols: element.table.cols.map((col) => ({ ...col })),
+        cells: { ...element.table.cells },
+      }
+    }
     return copy
   })
 

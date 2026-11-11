@@ -242,3 +242,25 @@ Editor-only. Payload is a partial `{ diagramStyle?: 'card' | 'classic', flowDots
 ### `board:settings-updated` (Server → Client, broadcast)
 
 Sent to every other client on the board after a settings change. Payload: `{ settings: { diagramStyle, flowDots }, updatedBy }`. Viewers receive it and apply it read-only.
+
+### `element:table-op` (Client → Server)
+
+Editor-only. Changes a canvas **table** element by one small op instead of a whole-props write, so two people who edit different cells of one table both keep their text. Payload: `{ elementId: string (uuid), op: TableOp }`. `TableOp` is a discriminated union on `type` (schema: `tableOpSchema` in `src/data/schema.ts`; semantics: `applyTableOp` in `src/lib/canvas-engine/table.ts`):
+
+| `type` | Fields |
+|---|---|
+| `setCellText` | `rowId`, `colId`, `text`, `textRuns?`, `rowHeight?` |
+| `setCellFill` | `cells[]` (`{rowId, colId}`), `fill` (colour or `null`) |
+| `setCellAlign` | `cells[]`, `align` (`left`/`center`/`right`) |
+| `insertRow` / `insertCol` | `afterRowId`/`afterColId` (id or `null` = first), `row`/`col` (`{id, height\|width}`), `cells?` (restored with the row or column) |
+| `removeRow` / `removeCol` | `rowId` / `colId` |
+| `resizeRow` / `resizeCol` | `rowId`+`height` / `colId`+`width` |
+| `scaleTable` | `sx`, `sy` |
+| `setHeaderRow` | `on` |
+| `setSizes`, `restoreCells` | the inverse ops of `scaleTable` and of fill/align |
+
+Rows and columns are addressed by **id**, never by index. The server loads the **latest stored** table, applies the op, validates the result (at most 500 cells, at least one row and one column), recomputes the element's `width`/`height`, and writes `props` conditional on the revision it read; on a lost race it re-reads and re-applies (up to 4 attempts). Ack: `{ ok: true, entity: <row>, inverse: TableOp }` or `{ ok: false, code, message }` (`VALIDATION_ERROR` for a missing id, the last row or column, or a table over the cap; `FORBIDDEN` for a viewer).
+
+The server then broadcasts the existing `element:updated` event to every other client with `{ elementId, props, width, height, updatedAt, revision, updatedBy }`, so receivers need no new handler.
+
+`element:update` rejects a `props` change for a `table` element (`VALIDATION_ERROR`); position, size, zIndex and style updates are still allowed.

@@ -27,9 +27,17 @@ import type { Server as SocketIOServer } from 'socket.io'
 import type { PresetId } from '@/lib/canvas-engine/colour-ramps'
 import {
   canvasBoardSettingsPatchSchema,
+  canvasTableSchema,
   createCanvasElementSchema,
+  tableOpSchema,
   updateCanvasElementSchema,
 } from '@/data/schema'
+import {
+  TableOpError,
+  applyTableOp,
+  normalizeTable,
+  tableSize,
+} from '@/lib/canvas-engine/table'
 import { PRESET_RAMPS } from '@/lib/canvas-engine/colour-ramps'
 import { updateCanvasBoardSettings } from '@/data/canvas-board'
 import {
@@ -58,7 +66,7 @@ import { requireCanvasBoardRole } from '@/lib/auth/require-role'
  * imported so this library module does not depend on a route module.
  */
 export type CanvasAckResult =
-  | { ok: true; entity: unknown }
+  | { ok: true; entity: unknown; inverse?: unknown }
   | {
       ok: false
       code:
@@ -85,6 +93,9 @@ export interface CanvasSocket {
 }
 
 type Ack = ((res: CanvasAckResult) => void) | undefined
+
+/** How often a table op re-reads and re-applies after losing a write race. */
+const TABLE_OP_ATTEMPTS = 4
 
 /**
  * True when the caller was rejected and the handler must return immediately.
@@ -273,7 +284,13 @@ export function registerCanvasElementHandlers(
         zIndex,
         minRevision,
       })
-      const element = await createCanvasElement(validated)
+      // A table's size is derived from its rows and columns, never trusted
+      // from the client: it must agree with the grid the ops will change.
+      const element = await createCanvasElement(
+        validated.props.kind === 'table'
+          ? { ...validated, ...tableSize(validated.props.table) }
+          : validated,
+      )
       socket.broadcast.emit('element:created', {
         ...element,
         createdBy: userId,
@@ -336,6 +353,18 @@ export function registerCanvasElementHandlers(
           ...updateData
         } = data
         const validated = updateCanvasElementSchema.parse(updateData)
+        // Only `element:table-op` changes a table's grid. Accepting a whole
+        // `props` here would overwrite a collaborator's cell with a stale copy.
+        if (existing.kind === 'table' && validated.props !== undefined) {
+          const message = 'A table changes through element:table-op only'
+          socket.emit('error', {
+            event: 'element:update',
+            error: 'VALIDATION_ERROR',
+            message,
+          })
+          cb?.({ ok: false, code: 'VALIDATION_ERROR', message })
+          return
+        }
         const updated = await updateCanvasElement(
           elementId,
           validated,
@@ -372,6 +401,99 @@ export function registerCanvasElementHandlers(
       }
     },
   )
+
+  // One table op, applied to the LATEST stored table (not to a copy the
+  // client holds), so two people editing different cells both keep their text.
+  // The write is conditional on the revision just read; a lost race re-reads
+  // and re-applies, so an op never overwrites a change it did not see.
+  socket.on('element:table-op', async (data: unknown, cb: Ack) => {
+    if (await denyMutation(socket, boardId, 'element:table-op', cb)) return
+
+    const parsed = z
+      .object({ elementId: z.string().uuid(), op: tableOpSchema })
+      .safeParse(data)
+    if (!parsed.success) {
+      const message = 'Invalid element:table-op payload'
+      socket.emit('error', {
+        event: 'element:table-op',
+        error: 'VALIDATION_ERROR',
+        message,
+      })
+      cb?.({ ok: false, code: 'VALIDATION_ERROR', message })
+      return
+    }
+    const { elementId, op } = parsed.data
+
+    try {
+      for (let attempt = 0; attempt < TABLE_OP_ATTEMPTS; attempt += 1) {
+        const existing = await loadOwnedElement(
+          socket,
+          boardId,
+          elementId,
+          'element:table-op',
+          cb,
+        )
+        if (!existing) return
+        if (existing.kind !== 'table' || existing.props.kind !== 'table') {
+          const message = 'Table ops apply to table elements only'
+          socket.emit('error', {
+            event: 'element:table-op',
+            error: 'VALIDATION_ERROR',
+            message,
+          })
+          cb?.({ ok: false, code: 'VALIDATION_ERROR', message })
+          return
+        }
+
+        const { table, inverse } = applyTableOp(
+          normalizeTable(existing.props.table),
+          op,
+        )
+        const props = {
+          kind: 'table' as const,
+          table: canvasTableSchema.parse(table),
+        }
+        const size = tableSize(table)
+        let updated
+        try {
+          updated = await updateCanvasElement(
+            elementId,
+            { props, width: size.width, height: size.height },
+            existing.revision,
+          )
+        } catch (error) {
+          if (error instanceof RevisionMismatchError) continue
+          throw error
+        }
+        socket.broadcast.emit('element:updated', {
+          elementId,
+          props,
+          width: size.width,
+          height: size.height,
+          updatedAt: updated.updatedAt,
+          revision: updated.revision,
+          updatedBy: userId,
+        })
+        cb?.({ ok: true, entity: updated, inverse })
+        return
+      }
+      const message = 'The table is changing too fast; try again'
+      cb?.({ ok: false, code: 'REVISION_MISMATCH', message })
+    } catch (error) {
+      if (error instanceof TableOpError) {
+        cb?.({ ok: false, code: 'VALIDATION_ERROR', message: error.message })
+        return
+      }
+      const message = clientErrorMessage(error, 'Failed to update table')
+      console.error('Failed to apply table op:', error)
+      socket.emit('error', {
+        event: 'element:table-op',
+        error: 'UPDATE_FAILED',
+        message,
+      })
+      cb?.({ ok: false, code: 'VALIDATION_ERROR', message })
+    }
+  })
 
   socket.on('element:delete', async (data: unknown, cb: Ack) => {
     if (await denyMutation(socket, boardId, 'element:delete', cb)) return

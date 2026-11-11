@@ -12,6 +12,7 @@
 // Pure module: no React, no DOM, no database. Imports only `./scene`'s
 // types, matching every other file in this directory.
 
+import { tableSearchText } from './table'
 import type { CanvasElementKind, Scene } from './scene'
 
 /** One searchable element — selecting it navigates to `elementId`. */
@@ -51,7 +52,11 @@ export function buildCanvasSearchIndex(
   const entries: Array<CanvasSearchEntry> = []
   for (const element of scene.elements) {
     if (element.kind === 'group') continue
-    const text = element.text?.trim()
+    // A table's words live in its cells, not in `text`.
+    const text =
+      element.kind === 'table' && element.table
+        ? tableSearchText(element.table)
+        : element.text?.trim()
     if (!text) continue
     entries.push({ elementId: element.id, kind: element.kind, text })
   }

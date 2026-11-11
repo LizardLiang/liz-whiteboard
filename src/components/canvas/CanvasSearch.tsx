@@ -14,7 +14,7 @@
  */
 
 import { useMemo } from 'react'
-import { Spline, Type } from 'lucide-react'
+import { Spline, Table, Type } from 'lucide-react'
 import { SHAPE_TOOL_META } from './shape-tool-meta'
 import type { CanvasSearchEntry } from '@/lib/canvas-engine/search-index'
 import type { CanvasShapeKind, Scene } from '@/lib/canvas-engine/scene'
@@ -70,6 +70,7 @@ export function CanvasSearch({
   )
   const texts = index.filter((entry) => entry.kind === 'text')
   const connectors = index.filter((entry) => entry.kind === 'connector')
+  const tables = index.filter((entry) => entry.kind === 'table')
 
   const handleSelect = (elementId: string) => {
     onSelectElement(elementId)
@@ -132,6 +133,22 @@ export function CanvasSearch({
                 onSelect={() => handleSelect(entry.elementId)}
               >
                 <Spline />
+                <span>{entry.text}</span>
+              </CommandItem>
+            ))}
+          </CommandGroup>
+        )}
+
+        {tables.length > 0 && (
+          <CommandGroup heading={t('canvas.board.searchTables')}>
+            {tables.map((entry) => (
+              <CommandItem
+                key={entry.elementId}
+                value={itemValue(entry)}
+                keywords={[entry.text]}
+                onSelect={() => handleSelect(entry.elementId)}
+              >
+                <Table />
                 <span>{entry.text}</span>
               </CommandItem>
             ))}

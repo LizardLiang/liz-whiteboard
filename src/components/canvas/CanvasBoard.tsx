@@ -14,7 +14,7 @@
 // globals because they all arrive here and are passed down as arguments.
 
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
-import { Hand, MousePointer2, Search, Type } from 'lucide-react'
+import { Hand, MousePointer2, Search, Table, Type } from 'lucide-react'
 import { TextInputProxy } from './TextInputProxy'
 import { ConnectorToolbar } from './ConnectorToolbar'
 import { SelectionToolbar, applyStyleChange } from './SelectionToolbar'
@@ -168,6 +168,12 @@ const TOOLS: ReadonlyArray<ToolButton> = [
     }),
   ),
   { id: 'text', labelKey: 'canvas.tool.text', shortcut: 'T', Icon: Type },
+  {
+    id: 'table',
+    labelKey: 'canvas.tool.table',
+    shortcut: 'Shift+T',
+    Icon: Table,
+  },
 ]
 
 export function CanvasBoard({
