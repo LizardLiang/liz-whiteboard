@@ -696,6 +696,7 @@ export function CanvasBoard({
         : null,
       tableSelection: input.tableSelection,
       tableAffordance: input.tableAffordance,
+      tableGrips: input.tableGrips,
       // Post-undo/redo highlight pulse (Wave 4, step 12). Folded into
       // `selection` rather than passed to `drawScene` separately: this
       // object already drives the dirty-flag `useEffect` below, so a new
@@ -714,6 +715,7 @@ export function CanvasBoard({
       input.editing,
       input.tableSelection,
       input.tableAffordance,
+      input.tableGrips,
       input.connectorAttach,
       input.hoveredId,
       input.marquee,

@@ -4231,6 +4231,39 @@ describe('table rows and columns', () => {
     return calls[calls.length - 1]?.[1]
   }
 
+  it('shows the grabbers of the hovered cell, and only the one under the pointer', () => {
+    const h = setupTable()
+    hover(h, { clientX: 150, clientY: 120 })
+    expect(h.api.tableGrips).toMatchObject({
+      tableId: TABLE_ID,
+      rowId: 'id1',
+      colId: 'id3',
+      over: null,
+    })
+    // Level with the second row, 7px left of the table: that row's grabber alone.
+    hover(h, { clientX: 93, clientY: 160 })
+    expect(h.api.tableGrips).toMatchObject({
+      rowId: 'id2',
+      colId: null,
+      over: { kind: 'row', rowId: 'id2' },
+    })
+    hover(h, { clientX: 20, clientY: 20 })
+    expect(h.api.tableGrips).toBeNull()
+  })
+
+  it('shows no grabber on a read-only board or a table that is not selected', () => {
+    const ro = setupTable(true)
+    hover(ro, { clientX: 150, clientY: 120 })
+    expect(ro.api.tableGrips).toBeNull()
+    const h = setupTable()
+    act(() => {
+      h.api.setSelectedIds(new Set<string>())
+    })
+    h.sync()
+    hover(h, { clientX: 150, clientY: 120 })
+    expect(h.api.tableGrips).toBeNull()
+  })
+
   it('shows the "+" of an inner column border and inserts a column on press', () => {
     const h = setupTable()
     // The "+" sits 14px below the table's bottom edge, under the border at x = 220.

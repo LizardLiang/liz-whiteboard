@@ -194,6 +194,13 @@ export interface CanvasEngineTestHook {
   } | null
   /** What the pointer is over on the selected table beyond its cells, or null. */
   tableAffordance: { tableId: string; kind: string } | null
+  /** The grabbers the pointer reveals on the selected table; `over` is the one it is on. */
+  tableGrips: {
+    tableId: string
+    rowId: string | null
+    colId: string | null
+    over: 'row' | 'col' | null
+  } | null
   /** The table cell open for typing, or null. */
   editingCell: { tableId: string; rowId: string; colId: string } | null
   tool: CanvasTool
@@ -325,6 +332,14 @@ export function useCanvasTestHook({
         ? {
             tableId: selection.tableAffordance.tableId,
             kind: selection.tableAffordance.affordance.kind,
+          }
+        : null,
+      tableGrips: selection.tableGrips
+        ? {
+            tableId: selection.tableGrips.tableId,
+            rowId: selection.tableGrips.rowId,
+            colId: selection.tableGrips.colId,
+            over: selection.tableGrips.over?.kind ?? null,
           }
         : null,
       editingCell: selection.editing?.cell ?? null,

@@ -18,6 +18,7 @@ import {
   redoExpectFor,
   redoLayoutExpectFor,
   sameAffordance,
+  sameHoverGrips,
   selectionCells,
   stepCell,
   tabCell,
@@ -26,6 +27,7 @@ import {
   tableCellRects,
   tableDimsForDrag,
   tableHoverAffordanceAt,
+  tableHoverGripsAt,
   tableMatchesExpect,
   tableMatchesLayout,
   tableOpShift,
@@ -528,6 +530,61 @@ describe('gripAtPoint', () => {
   it('scales the strip with the zoom: a fixed screen size is more world px when zoomed out', () => {
     expect(gripAtPoint(el, { x: 70, y: 120 }, 14 / 0.25)).not.toBeNull()
     expect(gripAtPoint(el, { x: 70, y: 120 }, 14 / 2)).toBeNull()
+  })
+})
+
+describe('tableHoverGripsAt', () => {
+  const table = fresh(2, 2)
+  // rows id-1, id-2; cols id-3, id-4
+  const el = { x: 100, y: 100, ...tableSize(table), table }
+
+  it("shows the hovered cell's own row and column grabbers, flagged not over", () => {
+    expect(tableHoverGripsAt(el, { x: 110, y: 110 }, 14)).toEqual({
+      rowId: 'id-1',
+      colId: 'id-3',
+      over: null,
+    })
+    expect(tableHoverGripsAt(el, { x: 250, y: 150 }, 14)).toEqual({
+      rowId: 'id-2',
+      colId: 'id-4',
+      over: null,
+    })
+  })
+
+  it('shows only the row grabber, flagged over, in the strip left of the table', () => {
+    expect(tableHoverGripsAt(el, { x: 93, y: 150 }, 14)).toEqual({
+      rowId: 'id-2',
+      colId: null,
+      over: { kind: 'row', rowId: 'id-2' },
+    })
+  })
+
+  it('shows only the column grabber, flagged over, in the strip above the table', () => {
+    expect(tableHoverGripsAt(el, { x: 250, y: 93 }, 14)).toEqual({
+      rowId: null,
+      colId: 'id-4',
+      over: { kind: 'col', colId: 'id-4' },
+    })
+  })
+
+  it('shows nothing outside the table and its grabber strips', () => {
+    expect(tableHoverGripsAt(el, { x: 50, y: 50 }, 14)).toBeNull()
+    expect(tableHoverGripsAt(el, { x: 93, y: 93 }, 14)).toBeNull()
+    expect(
+      tableHoverGripsAt(el, { x: el.x + el.width + 5, y: 120 }, 14),
+    ).toBeNull()
+  })
+
+  it('compares grabber states', () => {
+    const a = tableHoverGripsAt(el, { x: 110, y: 110 }, 14)
+    expect(
+      sameHoverGrips(a, tableHoverGripsAt(el, { x: 120, y: 120 }, 14)),
+    ).toBe(true)
+    expect(
+      sameHoverGrips(a, tableHoverGripsAt(el, { x: 250, y: 110 }, 14)),
+    ).toBe(false)
+    expect(sameHoverGrips(a, null)).toBe(false)
+    expect(sameHoverGrips(null, null)).toBe(true)
   })
 })
 

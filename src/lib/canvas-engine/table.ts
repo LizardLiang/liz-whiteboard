@@ -716,6 +716,55 @@ export function gripAtPoint(
   return null
 }
 
+/**
+ * Which grabbers a hovering pointer shows. `rowId` and `colId` are the row and
+ * column whose grabber is visible; `over` is the grabber the pointer is ON, if
+ * any (its row or column is highlighted).
+ */
+export interface TableHoverGrips {
+  rowId: string | null
+  colId: string | null
+  over: TableGrip | null
+}
+
+/**
+ * The grabbers a pointer reveals on a selected table. Over a cell: that cell's
+ * row and column. Over a grabber zone: that grabber alone, flagged `over`.
+ * Anywhere else: null.
+ */
+export function tableHoverGripsAt(
+  element: Pick<CanvasElement, 'x' | 'y' | 'width' | 'height' | 'table'>,
+  world: { x: number; y: number },
+  padWorld: number,
+): TableHoverGrips | null {
+  if (!element.table) return null
+  const over = gripAtPoint(element, world, padWorld)
+  if (over) {
+    return {
+      rowId: over.kind === 'row' ? over.rowId : null,
+      colId: over.kind === 'col' ? over.colId : null,
+      over,
+    }
+  }
+  const cell = cellAtPoint(element, world)
+  return cell ? { rowId: cell.rowId, colId: cell.colId, over: null } : null
+}
+
+/** True when `a` and `b` show the same grabbers. */
+export function sameHoverGrips(
+  a: TableHoverGrips | null,
+  b: TableHoverGrips | null,
+): boolean {
+  return (
+    a === b ||
+    (!!a &&
+      !!b &&
+      a.rowId === b.rowId &&
+      a.colId === b.colId &&
+      a.over?.kind === b.over?.kind)
+  )
+}
+
 /** Every cell a selection covers, row-major. A range is the rectangle between its corners. */
 export function selectionCells(
   table: CanvasTable,

@@ -1890,6 +1890,7 @@ export function useCanvasInput({
     tableSelection,
     tableSelectionRef,
     tableAffordance,
+    tableGrips,
     setTableAffordance,
     tableMenu,
     onTableMenuAction,
@@ -1897,7 +1898,7 @@ export function useCanvasInput({
     setRowHeight,
     finishCellEdit,
     moveCellEditing,
-    affordanceAtPoint,
+    hoverAtPoint,
     deleteTableSelection,
     pressTableMenu,
     beginTableScale,
@@ -2821,7 +2822,7 @@ export function useCanvasInput({
           setTableAffordance(null)
           return
         }
-        setTableAffordance(affordanceAtPoint(world, true))
+        setTableAffordance(hoverAtPoint(world))
         const previous = hoveredIdRef.current
           ? latest.current.scene.byId.get(hoveredIdRef.current)
           : undefined
@@ -3041,7 +3042,7 @@ export function useCanvasInput({
       setHoveredId,
       setScene,
       setTableAffordance,
-      affordanceAtPoint,
+      hoverAtPoint,
       dragTableBorder,
       dragTableScale,
     ],
@@ -4544,6 +4545,7 @@ export function useCanvasInput({
     tableSelection,
     issueTableOp,
     tableAffordance,
+    tableGrips,
     tableMenu,
     onTableMenuAction,
     marquee,

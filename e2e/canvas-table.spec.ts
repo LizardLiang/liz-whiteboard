@@ -84,6 +84,12 @@ interface EngineState {
     cells: Array<{ rowId: string; colId: string }>
   } | null
   tableAffordance: { tableId: string; kind: string } | null
+  tableGrips: {
+    tableId: string
+    rowId: string | null
+    colId: string | null
+    over: 'row' | 'col' | null
+  } | null
   editingCell: { tableId: string; rowId: string; colId: string } | null
   tool: string
 }
@@ -1745,6 +1751,174 @@ test.describe('export', () => {
   })
 })
 
+/** The RGBA pixel under a PAGE point (page.screenshot lags the canvas draw, so read the canvas). */
+async function pixelAtPage(
+  page: Page,
+  x: number,
+  y: number,
+): Promise<[number, number, number, number]> {
+  const box = await canvasBox(page)
+  return page.evaluate(
+    ({ px, py }) => {
+      const c = document.querySelector('canvas')!
+      const ctx = c.getContext('2d')!
+      const ratio = c.width / c.getBoundingClientRect().width
+      const d = ctx.getImageData(
+        Math.round(px * ratio),
+        Math.round(py * ratio),
+        1,
+        1,
+      ).data
+      return [d[0], d[1], d[2], d[3]] as [number, number, number, number]
+    },
+    { px: x - box.x, py: y - box.y },
+  )
+}
+
+function relLuminance([r, g, b]: Array<number>): number {
+  const lin = (v: number) => {
+    const c = v / 255
+    return c <= 0.03928 ? c / 12.92 : ((c + 0.055) / 1.055) ** 2.4
+  }
+  return 0.2126 * lin(r) + 0.7152 * lin(g) + 0.0722 * lin(b)
+}
+
+function contrast(a: Array<number>, b: Array<number>): number {
+  const [hi, lo] = [relLuminance(a), relLuminance(b)].sort((x, y) => y - x)
+  return (hi + 0.05) / (lo + 0.05)
+}
+
+for (const theme of ['light', 'dark'] as const) {
+  test.describe(`row and column grabbers, ${theme} mode`, () => {
+    test.beforeEach(async ({ page }) => {
+      await page.addInitScript(
+        (value) => localStorage.setItem('theme', value),
+        theme,
+      )
+    })
+
+    const surface = theme === 'dark' ? [22, 26, 35] : [255, 255, 255]
+
+    /** Page point of a column grabber's pill (above the table) and a row grabber's (left of it). */
+    async function pills(
+      page: Page,
+      tableId: string,
+      row: number,
+      col: number,
+    ) {
+      const geo = await geometry(page, tableId)
+      const cell = await cellCentre(page, tableId, row, col)
+      const first = await cellCentre(page, tableId, 0, 0)
+      return {
+        geo,
+        colPill: { x: cell.x, y: geo.top - 7 },
+        rowPill: { x: geo.left - 7, y: cell.y },
+        // Pill ends sit clear of the grip dots: 10px along the long side.
+        colPillEdge: { x: cell.x + 10, y: geo.top - 7 },
+        rowPillEdge: { x: geo.left - 7, y: cell.y + 10 },
+        first,
+      }
+    }
+
+    test('a selected table shows no grabber at rest', async ({ page }) => {
+      const created = await makeTable(page)
+      await focusBoard(page)
+      await pickCell(page, created.id, 1, 1)
+      const p = await pills(page, created.id, 1, 1)
+      // Park the pointer well away from the table.
+      const box = await canvasBox(page)
+      await page.mouse.move(box.x + 30, box.y + 30)
+      await page.waitForTimeout(300)
+      expect((await engine(page)).tableGrips).toBeNull()
+      expect((await pixelAtPage(page, p.colPill.x, p.colPill.y))[3]).toBe(0)
+      expect((await pixelAtPage(page, p.rowPill.x, p.rowPill.y))[3]).toBe(0)
+    })
+
+    test('hovering a cell shows its column and row grabber, as a readable pill', async ({
+      page,
+    }) => {
+      const created = await makeTable(page)
+      await focusBoard(page)
+      await pickCell(page, created.id, 1, 1)
+      const p = await pills(page, created.id, 1, 1)
+      const other = await pills(page, created.id, 1, 0)
+      const at = await cellCentre(page, created.id, 1, 1)
+      await page.mouse.move(at.x + 20, at.y + 5)
+      await expect
+        .poll(async () => (await engine(page)).tableGrips?.over ?? 'none')
+        .toBe('none')
+      await expect
+        .poll(async () => {
+          const grips = (await engine(page)).tableGrips
+          return grips
+            ? [
+                grips.rowId === created.table!.rows[1].id,
+                grips.colId === created.table!.cols[1].id,
+              ]
+            : null
+        })
+        .toEqual([true, true])
+      await expect
+        .poll(
+          async () =>
+            (await pixelAtPage(page, p.colPillEdge.x, p.colPillEdge.y))[3],
+        )
+        .toBe(255)
+      for (const edge of [p.colPillEdge, p.rowPillEdge]) {
+        const px = await pixelAtPage(page, edge.x, edge.y)
+        expect(contrast(px, surface)).toBeGreaterThanOrEqual(3)
+      }
+      // Only the hovered column's grabber shows, not its neighbour's.
+      expect(
+        (await pixelAtPage(page, other.colPill.x, other.colPill.y))[3],
+      ).toBe(0)
+    })
+
+    test('hovering a grabber tints its column, and a click selects it; the grabber stays while selected', async ({
+      page,
+    }) => {
+      const created = await makeTable(page)
+      await focusBoard(page)
+      await pickCell(page, created.id, 1, 1)
+      const p = await pills(page, created.id, 1, 1)
+      const probe = async (col: number) => {
+        const c = await cellCentre(page, created.id, 2, col)
+        return pixelAtPage(page, c.x + 30, c.y - 12)
+      }
+      const before = await probe(1)
+      await page.mouse.move(p.colPill.x, p.colPill.y)
+      await expect
+        .poll(async () => (await engine(page)).tableGrips?.over)
+        .toBe('col')
+      await expect
+        .poll(
+          async () => JSON.stringify(await probe(1)) !== JSON.stringify(before),
+        )
+        .toBe(true)
+      expect(JSON.stringify(await probe(0))).toBe(JSON.stringify(before))
+      expect(
+        (await pixelAtPage(page, p.colPillEdge.x, p.colPillEdge.y))[3],
+      ).toBe(255)
+
+      await page.mouse.click(p.colPill.x, p.colPill.y)
+      await expect
+        .poll(async () => (await engine(page)).tableSelection?.kind)
+        .toBe('col')
+      // Move away: the selected column keeps its filled grabber, nothing else shows.
+      const box = await canvasBox(page)
+      await page.mouse.move(box.x + 30, box.y + 30)
+      await expect.poll(async () => (await engine(page)).tableGrips).toBeNull()
+      await expect
+        .poll(
+          async () =>
+            (await pixelAtPage(page, p.colPillEdge.x, p.colPillEdge.y))[3],
+        )
+        .toBe(255)
+      expect((await pixelAtPage(page, p.rowPill.x, p.rowPill.y))[3]).toBe(0)
+    })
+  })
+}
+
 test.describe('a read-only viewer', () => {
   /** Mirrors canvas-board.spec.ts: the real login form, the session cookie is the ground truth. */
   async function loginAsViewer(browser: Browser): Promise<Page> {
@@ -1800,6 +1974,12 @@ test.describe('a read-only viewer', () => {
       const state = await engine(viewer)
       expect(state.tableSelection).toBeNull()
       expect(state.tableAffordance).toBeNull()
+      expect(state.tableGrips).toBeNull()
+      const viewerGeo = await geometry(viewer, created.id)
+      expect((await pixelAtPage(viewer, viewerGeo.left - 7, first.y))[3]).toBe(
+        0,
+      )
+      expect((await pixelAtPage(viewer, first.x, viewerGeo.top - 7))[3]).toBe(0)
       expect(state.editingCell).toBeNull()
       await expect(
         viewer.getByRole('toolbar', { name: 'Selection' }),

@@ -80,7 +80,12 @@ import {
   tableCellRects,
   tablePlusRect,
 } from './table'
-import type { TableAffordance, TableSelection } from './table'
+import type {
+  TableAffordance,
+  TableGrip,
+  TableHoverGrips,
+  TableSelection,
+} from './table'
 import type {
   CanvasTheme,
   CardLook,
@@ -174,6 +179,8 @@ export interface RenderSelection {
   tableSelection?: TableSelection | null
   /** What the pointer is over on the selected table beyond its cells: a "+" button, an append bar or an inner border. */
   tableAffordance?: { tableId: string; affordance: TableAffordance } | null
+  /** The row and column grabbers the pointer reveals on the selected table (hidden otherwise), and the one it is over. */
+  tableGrips?: ({ tableId: string } & TableHoverGrips) | null
   /**
    * A not-yet-committed element being drawn (the rubber-band preview for the
    * rectangle tool). Drawn like a real element but never in the scene.
@@ -602,6 +609,9 @@ const CHROME = {
     marqueeFill: 'rgba(59, 130, 246, 0.10)',
     textSelection: 'rgba(59, 130, 246, 0.30)',
     text: '#0f172a',
+    gripFill: '#64748b',
+    gripGlyph: '#ffffff',
+    gripTint: 'rgba(59, 130, 246, 0.14)',
   },
   dark: {
     accent: '#60a5fa',
@@ -609,6 +619,9 @@ const CHROME = {
     marqueeFill: 'rgba(96, 165, 250, 0.16)',
     textSelection: 'rgba(96, 165, 250, 0.40)',
     text: '#f8fafc',
+    gripFill: '#94a3b8',
+    gripGlyph: '#0f172a',
+    gripTint: 'rgba(96, 165, 250, 0.22)',
   },
 } as const
 
@@ -1983,31 +1996,121 @@ function drawTableSelection(
   }
 
   if (!selection.editing) {
-    ctx.fillStyle = chrome.handleFill
-    ctx.strokeStyle = chrome.accent
-    ctx.lineWidth = 1
-    const thick = Math.max(4, TABLE_GRIP_PX - 6)
+    const grips =
+      selection.tableGrips?.tableId === element.id ? selection.tableGrips : null
+    const pickedRow = picked?.kind === 'row' ? picked.rowId : null
+    const pickedCol = picked?.kind === 'col' ? picked.colId : null
+    const firstCol = table.cols[0].id
+    const firstRow = table.rows[0].id
+    // The hovered grabber tints the whole row or column a click would pick.
+    if (grips?.over) {
+      ctx.fillStyle = chrome.gripTint
+      const cells =
+        grips.over.kind === 'row'
+          ? selectionCells(table, {
+              tableId: element.id,
+              kind: 'row',
+              rowId: grips.over.rowId,
+            })
+          : selectionCells(table, {
+              tableId: element.id,
+              kind: 'col',
+              colId: grips.over.colId,
+            })
+      for (const { rowId, colId } of cells) {
+        const rect = rectOf.get(cellKey(rowId, colId))
+        if (!rect) continue
+        const r = worldRectToScreen(camera, rect)
+        ctx.fillRect(r.x, r.y, r.width, r.height)
+      }
+    }
     for (const row of table.rows) {
-      const rect = rectOf.get(cellKey(row.id, table.cols[0].id))
+      if (row.id !== grips?.rowId && row.id !== pickedRow) continue
+      const rect = rectOf.get(cellKey(row.id, firstCol))
       if (!rect) continue
       const r = worldRectToScreen(camera, rect)
-      const x = r.x - TABLE_GRIP_PX + 3
-      const y = r.y + 3
-      ctx.fillRect(x, y, thick, Math.max(2, r.height - 6))
-      ctx.strokeRect(x + 0.5, y + 0.5, thick - 1, Math.max(2, r.height - 6) - 1)
+      drawGrabber(
+        ctx,
+        'row',
+        r,
+        row.id === pickedRow
+          ? 'selected'
+          : grips?.over?.kind === 'row' && grips.over.rowId === row.id
+            ? 'hover'
+            : 'rest',
+        chrome,
+      )
     }
     for (const col of table.cols) {
-      const rect = rectOf.get(cellKey(table.rows[0].id, col.id))
+      if (col.id !== grips?.colId && col.id !== pickedCol) continue
+      const rect = rectOf.get(cellKey(firstRow, col.id))
       if (!rect) continue
       const r = worldRectToScreen(camera, rect)
-      const x = r.x + 3
-      const y = r.y - TABLE_GRIP_PX + 3
-      ctx.fillRect(x, y, Math.max(2, r.width - 6), thick)
-      ctx.strokeRect(x + 0.5, y + 0.5, Math.max(2, r.width - 6) - 1, thick - 1)
+      drawGrabber(
+        ctx,
+        'col',
+        r,
+        col.id === pickedCol
+          ? 'selected'
+          : grips?.over?.kind === 'col' && grips.over.colId === col.id
+            ? 'hover'
+            : 'rest',
+        chrome,
+      )
     }
     const hover = selection.tableAffordance
     if (hover && hover.tableId === element.id) {
       drawTableAffordance(ctx, element, camera, hover.affordance, chrome)
+    }
+  }
+  ctx.restore()
+}
+
+/** A grabber pill's long side and thickness on screen, in px. */
+const GRABBER_LONG_PX = 28
+const GRABBER_THICK_PX = 10
+
+/**
+ * One row or column grabber in SCREEN space: a small rounded pill centred on
+ * the row's (or column's) edge strip, with a grip of six dots. `rect` is the
+ * row's first cell (row) or the column's first cell (col). The pill is
+ * smaller than the strip `gripAtPoint` hits, so the whole strip stays
+ * pressable.
+ */
+function drawGrabber(
+  ctx: CanvasRenderingContext2D,
+  axis: TableGrip['kind'],
+  rect: ScreenRect,
+  state: 'rest' | 'hover' | 'selected',
+  chrome: (typeof CHROME)[CanvasTheme],
+): void {
+  const isRow = axis === 'row'
+  const span = isRow ? rect.height : rect.width
+  const long = Math.max(8, Math.min(GRABBER_LONG_PX, span - 4))
+  const w = isRow ? GRABBER_THICK_PX : long
+  const h = isRow ? long : GRABBER_THICK_PX
+  const x = isRow
+    ? rect.x - (TABLE_GRIP_PX + GRABBER_THICK_PX) / 2
+    : rect.x + (rect.width - w) / 2
+  const y = isRow
+    ? rect.y + (rect.height - h) / 2
+    : rect.y - (TABLE_GRIP_PX + GRABBER_THICK_PX) / 2
+  ctx.save()
+  ctx.fillStyle = state === 'rest' ? chrome.gripFill : chrome.accent
+  ctx.beginPath()
+  ctx.roundRect(x, y, w, h, Math.min(w, h) / 2)
+  ctx.fill()
+  ctx.fillStyle = state === 'rest' ? chrome.gripGlyph : '#ffffff'
+  // Six dots, 2 across the short side and 3 along the long: the grip.
+  const cx = x + w / 2
+  const cy = y + h / 2
+  for (let along = -1; along <= 1; along += 1) {
+    for (let across = -1; across <= 1; across += 2) {
+      const dx = isRow ? across * 2 : along * 4
+      const dy = isRow ? along * 4 : across * 2
+      ctx.beginPath()
+      ctx.arc(cx + dx, cy + dy, 1, 0, Math.PI * 2)
+      ctx.fill()
     }
   }
   ctx.restore()

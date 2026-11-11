@@ -21,6 +21,7 @@ import type {
   CanvasTable,
   CellRef,
   TableAffordance,
+  TableHoverGrips,
   TableOp,
   TableSelection,
 } from '@/lib/canvas-engine/table'
@@ -52,11 +53,13 @@ import {
   lookupCell,
   pruneSelection,
   sameAffordance,
+  sameHoverGrips,
   selectionCells,
   stepCell,
   tabCell,
   tableAffordanceAt,
   tableHoverAffordanceAt,
+  tableHoverGripsAt,
   tableScaleForDrag,
   tableSize,
 } from '@/lib/canvas-engine/table'
@@ -89,6 +92,13 @@ export function tableInsertLimits(grid: CanvasTable): {
 }
 
 /** What the right-click menu on a table acts on, and which of its items are live. */
+/** What the pointer is over on the one selected table: an affordance, the grabbers it reveals, or both. */
+export interface TableHover {
+  tableId: string
+  affordance: TableAffordance | null
+  grips: TableHoverGrips | null
+}
+
 export interface TableMenuState {
   tableId: string
   rowId: string
@@ -185,22 +195,35 @@ export function useCanvasTableInput({
     tableSelectionRef.current = next
     setTableSelectionState(next)
   }, [])
-  // What the pointer is over on the selected table beyond its cells (a "+"
-  // button, an append bar, an inner border). Chrome only, never persisted.
-  const [tableAffordance, setTableAffordanceState] = useState<{
-    tableId: string
-    affordance: TableAffordance
-  } | null>(null)
-  const setTableAffordance = useCallback(
-    (next: { tableId: string; affordance: TableAffordance } | null) => {
-      setTableAffordanceState((current) =>
-        current?.tableId === next?.tableId &&
-        sameAffordance(current?.affordance ?? null, next?.affordance ?? null)
-          ? current
-          : next,
-      )
-    },
-    [],
+  // What the pointer is over on the selected table: beyond its cells (a "+"
+  // button, an append bar, an inner border) and the grabbers it reveals (the
+  // hovered row's and column's). Chrome only, never persisted.
+  const [tableHover, setTableHoverState] = useState<TableHover | null>(null)
+  const setTableAffordance = useCallback((next: TableHover | null) => {
+    setTableHoverState((current) =>
+      current?.tableId === next?.tableId &&
+      sameAffordance(current?.affordance ?? null, next?.affordance ?? null) &&
+      sameHoverGrips(current?.grips ?? null, next?.grips ?? null)
+        ? current
+        : next,
+    )
+  }, [])
+  const hoverAffordance = tableHover?.affordance ?? null
+  const hoverTableId = tableHover?.tableId
+  const tableAffordance = useMemo(
+    () =>
+      hoverAffordance && hoverTableId
+        ? { tableId: hoverTableId, affordance: hoverAffordance }
+        : null,
+    [hoverAffordance, hoverTableId],
+  )
+  const hoverGrips = tableHover?.grips ?? null
+  const tableGrips = useMemo(
+    () =>
+      hoverGrips && hoverTableId
+        ? { tableId: hoverTableId, ...hoverGrips }
+        : null,
+    [hoverGrips, hoverTableId],
   )
   // The cell a right-click landed on; the context menu acts on it.
   const [tableMenuTarget, setTableMenuTarget] = useState<{
@@ -543,28 +566,55 @@ export function useCanvasTableInput({
    * table the user can edit. `hover` also reveals the append bar over the last
    * column or row; a press only ever acts on the bar itself.
    */
+  /** The one selected element when it is a table the user can edit, else null. */
+  const editableSoleTable = useCallback((): CanvasElement | null => {
+    const current = latest.current
+    if (current.readOnly || current.tool !== 'select' || editingRef.current) {
+      return null
+    }
+    if (current.selectedIds.size !== 1) return null
+    const only = current.scene.byId.get([...current.selectedIds][0])
+    return only?.kind === 'table' && only.table ? only : null
+  }, [editingRef, latest])
+
   const affordanceAtPoint = useCallback(
     (
       world: Point,
       hover = false,
     ): { tableId: string; affordance: TableAffordance } | null => {
-      const current = latest.current
-      if (current.readOnly || current.tool !== 'select' || editingRef.current) {
-        return null
-      }
-      if (current.selectedIds.size !== 1) return null
-      const only = current.scene.byId.get([...current.selectedIds][0])
-      if (only?.kind !== 'table' || !only.table) return null
+      const only = editableSoleTable()
+      if (!only?.table) return null
       const find = hover ? tableHoverAffordanceAt : tableAffordanceAt
       const affordance = find(
         only,
         world,
-        current.camera.zoom,
+        latest.current.camera.zoom,
         tableInsertLimits(only.table),
       )
       return affordance ? { tableId: only.id, affordance } : null
     },
-    [editingRef, latest],
+    [editableSoleTable, latest],
+  )
+
+  /**
+   * Everything a hovering pointer reveals on the one selected table: its
+   * affordance and its grabbers. Null when nothing is.
+   */
+  const hoverAtPoint = useCallback(
+    (world: Point): TableHover | null => {
+      const only = editableSoleTable()
+      if (!only) return null
+      const affordance = affordanceAtPoint(world, true)?.affordance ?? null
+      const grips = tableHoverGripsAt(
+        only,
+        world,
+        TABLE_GRIP_PX / latest.current.camera.zoom,
+      )
+      return affordance || grips
+        ? { tableId: only.id, affordance, grips }
+        : null
+    },
+    [affordanceAtPoint, editableSoleTable, latest],
   )
 
   /** The context menu's target with the live state of each item. */
@@ -1115,10 +1165,10 @@ export function useCanvasTableInput({
           ? 'col-resize'
           : tableAffordance?.affordance.kind === 'border-row'
             ? 'row-resize'
-            : tableAffordance
+            : tableAffordance || tableGrips?.over
               ? 'pointer'
               : null,
-    [tableAffordance],
+    [tableAffordance, tableGrips],
   )
 
   return {
@@ -1126,7 +1176,9 @@ export function useCanvasTableInput({
     tableSelectionRef,
     setTableSelection,
     tableAffordance,
+    tableGrips,
     setTableAffordance,
+    hoverAtPoint,
     tableMenu,
     onTableMenuAction,
     issueTableOp,
