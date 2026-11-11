@@ -1843,6 +1843,7 @@ describe('table ops', () => {
   function setupTableOps(
     applyTableOp: Mock,
     readOnly = false,
+    clampTableOp?: (elementId: string, op: any) => any,
   ) {
     const m = makeMutations()
     const view = renderHook(() =>
@@ -1854,10 +1855,56 @@ describe('table ops', () => {
         deleteElements: m.deleteElements,
         getRevision: m.getRevision,
         applyTableOp: applyTableOp as any,
+        clampTableOp,
       }),
     )
     return { m, view }
   }
+
+  it('clamps the row height of an undo and a redo through clampTableOp before sending', async () => {
+    const withHeight = (text: string, rowHeight: number) =>
+      ({ ...setText(text), rowHeight }) as const
+    const applyTableOp = vi
+      .fn()
+      .mockResolvedValueOnce({
+        ok: true,
+        inverse: { ...setText('old'), rowHeight: 24, ifRowHeight: 60 },
+        revision: 5,
+      })
+      .mockResolvedValue({ ok: true, revision: 6 })
+    const clamp = vi.fn((_id: string, op: any) =>
+      op.rowHeight !== undefined ? { ...op, rowHeight: 48 } : op,
+    )
+    const { m, view } = setupTableOps(applyTableOp, false, clamp)
+    m.revisions.set(TABLE_ID, 5)
+
+    act(() => {
+      view.result.current.callbacks.onTableOp?.(
+        TABLE_ID,
+        withHeight('new', 60),
+        grid,
+      )
+    })
+    await waitFor(() => expect(applyTableOp).toHaveBeenCalledTimes(1))
+    act(() => view.result.current.undo())
+    await waitFor(() => expect(applyTableOp).toHaveBeenCalledTimes(2))
+    expect(clamp).toHaveBeenCalledWith(
+      TABLE_ID,
+      expect.objectContaining({ rowHeight: 24, ifRowHeight: 60 }),
+    )
+    expect(applyTableOp.mock.calls[1][1]).toMatchObject({
+      text: 'old',
+      rowHeight: 48,
+      ifRowHeight: 60,
+    })
+    act(() => view.result.current.redo())
+    await waitFor(() => expect(applyTableOp).toHaveBeenCalledTimes(3))
+    expect(applyTableOp.mock.calls[2][1]).toMatchObject({
+      text: 'new',
+      rowHeight: 48,
+    })
+    expect(clamp).toHaveBeenCalledTimes(2)
+  })
 
   it('records one entry per op and undoes it by sending the inverse, guarded by the cell text', async () => {
     const applyTableOp = vi

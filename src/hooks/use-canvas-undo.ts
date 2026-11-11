@@ -115,6 +115,12 @@ export interface UseCanvasUndoParams {
   /** Sends one table op; absent in a consumer that never edits tables. */
   applyTableOp?: UseCanvasElementsReturn['applyTableOp']
   /**
+   * Raises the row height of an undo or redo text op to what the row's other
+   * cells need. The server cannot measure text, so the client does, with the
+   * measurer the row auto-grow uses. Absent: the op is sent as it is.
+   */
+  clampTableOp?: (elementId: string, op: TableOp) => TableOp
+  /**
    * Called with the id of the element a successful undo/redo affected, or a
    * refusal's contested target (board-undo tactical plan, Wave 4, step 12).
    * The caller (CanvasBoard.tsx) is the one place that knows the camera and
@@ -284,6 +290,7 @@ export function useCanvasUndo({
   deleteElements,
   getRevision,
   applyTableOp,
+  clampTableOp,
   onAffectedElement,
 }: UseCanvasUndoParams): UseCanvasUndoReturn {
   const t = useT()
@@ -1034,11 +1041,15 @@ export function useCanvasUndo({
         }
         case 'table-op': {
           if (!applyTableOp) return { ok: false, elementId: write.elementId }
-          const res = await applyTableOp(write.elementId, write.op, {
-            ...EPHEMERAL,
-            expect: write.expect,
-            expectLayout: write.expectLayout,
-          })
+          const res = await applyTableOp(
+            write.elementId,
+            clampTableOp ? clampTableOp(write.elementId, write.op) : write.op,
+            {
+              ...EPHEMERAL,
+              expect: write.expect,
+              expectLayout: write.expectLayout,
+            },
+          )
           return {
             ok: res.ok,
             elementId: write.elementId,
@@ -1075,7 +1086,13 @@ export function useCanvasUndo({
         }
       }
     },
-    [applyTableOp, createElement, deleteElements, updateElements],
+    [
+      applyTableOp,
+      clampTableOp,
+      createElement,
+      deleteElements,
+      updateElements,
+    ],
   )
 
   /**
@@ -1147,11 +1164,15 @@ export function useCanvasUndo({
         }
         case 'table-op': {
           if (!applyTableOp) return { ok: false, elementId: op.elementId }
-          const res = await applyTableOp(op.elementId, op.op, {
-            ...EPHEMERAL,
-            expect: op.redoExpect,
-            expectLayout: op.redoLayoutExpect,
-          })
+          const res = await applyTableOp(
+            op.elementId,
+            clampTableOp ? clampTableOp(op.elementId, op.op) : op.op,
+            {
+              ...EPHEMERAL,
+              expect: op.redoExpect,
+              expectLayout: op.redoLayoutExpect,
+            },
+          )
           return { ok: res.ok, elementId: op.elementId, revision: res.revision }
         }
         case 'delete': {
@@ -1185,7 +1206,14 @@ export function useCanvasUndo({
         }
       }
     },
-    [applyTableOp, createElement, deleteElements, getRevision, updateElements],
+    [
+      applyTableOp,
+      clampTableOp,
+      createElement,
+      deleteElements,
+      getRevision,
+      updateElements,
+    ],
   )
 
   const undo = useCallback(() => {

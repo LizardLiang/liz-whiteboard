@@ -42,6 +42,7 @@ import type {
 } from '@/lib/canvas-engine/render'
 import type { CanvasFontSpec } from '@/lib/canvas-engine/render-target'
 import type { WorldRect } from '@/lib/canvas-engine/hit-test'
+import type { TableOp } from '@/lib/canvas-engine/table'
 import type {
   CanvasConnectorRouting,
   CanvasElement,
@@ -69,6 +70,7 @@ import {
   fontSpecOf,
   measurerFor,
 } from '@/lib/canvas-engine/render'
+import { clampTextOpRowHeight } from '@/lib/canvas-engine/table-row-fit'
 import { dotGridBackground } from '@/lib/canvas-engine/grid'
 import { flowPath } from '@/lib/canvas-engine/flow-path'
 import { CANVAS_SHAPE_KINDS, updateElement } from '@/lib/canvas-engine/scene'
@@ -323,6 +325,18 @@ export function CanvasBoard({
     [triggerHighlight, viewportSize],
   )
 
+  // An undo or redo of a cell edit must not shrink a row below the text of the
+  // row's other cells; only the client can measure it.
+  const clampTableOp = useCallback(
+    (elementId: string, op: TableOp) =>
+      clampTextOpRowHeight(
+        sceneRef.current.byId.get(elementId),
+        op,
+        getMeasurer,
+      ),
+    [getMeasurer],
+  )
+
   // Owns the undo/redo stack (board-undo tactical plan, Wave 3). Its
   // `callbacks` IS the recording surface: it wraps createElement/
   // updateElements/deleteElements, so wiring it in place of those three
@@ -339,6 +353,7 @@ export function CanvasBoard({
     deleteElements,
     getRevision,
     applyTableOp,
+    clampTableOp,
     onAffectedElement: focusOnElement,
   })
 
