@@ -9,6 +9,7 @@
 // (use-canvas-undo.ts, Wave 3, out of scope for this phase) is responsible
 // for supplying it from the live scene or a fresh server read.
 
+import type { CellExpect, TableOp } from '@/lib/canvas-engine/table'
 import type { CanvasElementSnapshot, CanvasUndoEntry } from './undo-stack'
 
 /**
@@ -32,6 +33,13 @@ export type InverseWrite =
   | { kind: 'create'; elementId: string; snapshot: CanvasElementSnapshot }
   | { kind: 'update'; elementId: string; expectedRevision: number }
   | { kind: 'delete'; elementId: string; expectedRevision: number }
+  /** A table op the server applies to the latest table, guarded by cell text. */
+  | {
+      kind: 'table-op'
+      elementId: string
+      op: TableOp
+      expect?: Array<CellExpect>
+    }
 
 export interface ContestedMember {
   elementId: string
@@ -105,6 +113,23 @@ export function buildInverse(
           kind: 'update',
           elementId: operation.elementId,
           expectedRevision: operation.afterRevision,
+        })
+        break
+      }
+
+      case 'table-op': {
+        // Not guarded by revision: any collaborator's op on ANOTHER cell
+        // advances it. Only a vanished table is contested here; the server
+        // checks the cell text the edit left behind.
+        if (current === undefined) {
+          members.push({ elementId: operation.elementId, reason: 'missing' })
+          break
+        }
+        writes.push({
+          kind: 'table-op',
+          elementId: operation.elementId,
+          op: operation.inverse,
+          expect: operation.undoExpect,
         })
         break
       }

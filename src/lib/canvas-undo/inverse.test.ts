@@ -254,3 +254,41 @@ describe('buildInverse — multi-element entries', () => {
     })
   })
 })
+
+describe('buildInverse — table op', () => {
+  const entry: CanvasUndoEntry = {
+    label: { gesture: 'table-op', op: 'setCellText' },
+    operations: [
+      {
+        kind: 'table-op',
+        elementId: 'tbl-1',
+        op: { type: 'setCellText', rowId: 'r', colId: 'c', text: 'new' },
+        inverse: { type: 'setCellText', rowId: 'r', colId: 'c', text: 'old' },
+        undoExpect: [{ rowId: 'r', colId: 'c', text: 'new' }],
+      },
+    ],
+  }
+
+  it('sends the stored inverse with its cell expectation, whatever the revision is', () => {
+    // Another user's edit to a DIFFERENT cell advanced the revision; that must
+    // not contest this undo.
+    expect(buildInverse(entry, revisions({ 'tbl-1': 41 }))).toEqual({
+      status: 'ok',
+      writes: [
+        {
+          kind: 'table-op',
+          elementId: 'tbl-1',
+          op: { type: 'setCellText', rowId: 'r', colId: 'c', text: 'old' },
+          expect: [{ rowId: 'r', colId: 'c', text: 'new' }],
+        },
+      ],
+    })
+  })
+
+  it('is contested (missing) when the table is gone', () => {
+    expect(buildInverse(entry, revisions({ 'tbl-1': undefined }))).toEqual({
+      status: 'contested',
+      members: [{ elementId: 'tbl-1', reason: 'missing' }],
+    })
+  })
+})

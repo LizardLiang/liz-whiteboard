@@ -157,6 +157,7 @@ function setup(
     onClone: vi.fn(),
     onGroup: vi.fn(),
     onUngroup: vi.fn(),
+    onTableOp: vi.fn(),
   }
   const onStyleChange = vi.fn()
   const canvas = makeCanvas()
@@ -3777,5 +3778,395 @@ describe('table tool', () => {
     })
     h.sync()
     expect(h.scene.byId.get(element.id)?.width).toBe(element.width)
+  })
+})
+
+describe('table cells', () => {
+  const TABLE_ID = '77777777-7777-4777-8777-777777777777'
+
+  function makeGrid() {
+    let n = 0
+    const table = createTable(2, 2, () => `id${(n += 1)}`)
+    // id1, id2 are the rows; id3, id4 the columns.
+    return table
+  }
+
+  function setupTable() {
+    const table = makeGrid()
+    const element = makeRect(TABLE_ID, {
+      kind: 'table',
+      x: 100,
+      y: 100,
+      ...tableSize(table),
+      table,
+    })
+    const h = setup([element])
+    return { h, table }
+  }
+
+  /** The centre of a cell, in screen px (the default camera is the identity). */
+  function centre(
+    _table: ReturnType<typeof makeGrid>,
+    row: number,
+    col: number,
+  ) {
+    return {
+      clientX: 100 + col * 120 + 60,
+      clientY: 100 + row * 40 + 20,
+    }
+  }
+
+  function press(h: ReturnType<typeof setup>, at: Record<string, unknown>) {
+    act(() => {
+      h.api.canvasHandlers.onPointerDown(pointerEvent(at))
+    })
+    h.sync()
+    act(() => {
+      h.api.canvasHandlers.onPointerUp(pointerEvent(at))
+    })
+    h.sync()
+  }
+
+  function selectTable(h: ReturnType<typeof setup>) {
+    act(() => {
+      h.api.setSelectedIds(new Set([TABLE_ID]))
+    })
+    h.sync()
+  }
+
+  it('selects the table on the first click and a cell on the next', () => {
+    const { h, table } = setupTable()
+    press(h, centre(table, 1, 1))
+    expect([...h.api.selectedIds]).toEqual([TABLE_ID])
+    expect(h.api.tableSelection).toBeNull()
+
+    press(h, centre(table, 1, 1))
+    expect(h.api.tableSelection).toEqual({
+      tableId: TABLE_ID,
+      kind: 'cells',
+      anchor: { rowId: 'id2', colId: 'id4' },
+      focus: { rowId: 'id2', colId: 'id4' },
+    })
+  })
+
+  it('extends a range with Shift-click and keeps the table selected', () => {
+    const { h, table } = setupTable()
+    selectTable(h)
+    press(h, centre(table, 0, 0))
+    press(h, { ...centre(table, 1, 1), shiftKey: true })
+    expect(h.api.tableSelection).toMatchObject({
+      kind: 'cells',
+      anchor: { rowId: 'id1', colId: 'id3' },
+      focus: { rowId: 'id2', colId: 'id4' },
+    })
+    expect([...h.api.selectedIds]).toEqual([TABLE_ID])
+  })
+
+  it('selects a row from its grabber, left of the table', () => {
+    const { h } = setupTable()
+    selectTable(h)
+    // 7px left of the table's edge, level with the second row.
+    press(h, { clientX: 93, clientY: 100 + 40 + 20 })
+    expect(h.api.tableSelection).toEqual({
+      tableId: TABLE_ID,
+      kind: 'row',
+      rowId: 'id2',
+    })
+  })
+
+  it('moves the cell selection with the arrows and drops it with Escape', () => {
+    const { h, table } = setupTable()
+    selectTable(h)
+    press(h, centre(table, 0, 0))
+    const arrow = keyEvent('ArrowRight')
+    act(() => {
+      h.api.boardHandlers.onKeyDown(arrow)
+    })
+    h.sync()
+    expect(arrow.preventDefault).toHaveBeenCalled()
+    expect(h.api.tableSelection).toMatchObject({
+      focus: { rowId: 'id1', colId: 'id4' },
+    })
+    act(() => {
+      h.api.boardHandlers.onKeyDown(keyEvent('ArrowDown'))
+    })
+    h.sync()
+    expect(h.api.tableSelection).toMatchObject({
+      focus: { rowId: 'id2', colId: 'id4' },
+    })
+    act(() => {
+      h.api.boardHandlers.onKeyDown(keyEvent('Escape'))
+    })
+    h.sync()
+    expect(h.api.tableSelection).toBeNull()
+    expect([...h.api.selectedIds]).toEqual([TABLE_ID])
+  })
+
+  it('opens the cell on Enter, as a virtual text element in the scene', () => {
+    const { h, table } = setupTable()
+    selectTable(h)
+    press(h, centre(table, 0, 1))
+    act(() => {
+      h.api.boardHandlers.onKeyDown(keyEvent('Enter'))
+    })
+    h.sync()
+    expect(h.api.editing?.cell).toEqual({
+      tableId: TABLE_ID,
+      rowId: 'id1',
+      colId: 'id4',
+    })
+    const virtual = h.scene.byId.get(h.api.editing!.elementId)
+    expect(virtual).toMatchObject({ kind: 'text', x: 220, y: 100, width: 120 })
+  })
+
+  it('starts a cell edit from a printable key, which becomes its first character', () => {
+    const { h, table } = setupTable()
+    selectTable(h)
+    press(h, centre(table, 0, 0))
+    const key = keyEvent('x')
+    act(() => {
+      h.api.boardHandlers.onKeyDown(key)
+    })
+    h.sync()
+    h.sync()
+    expect(key.preventDefault).toHaveBeenCalled()
+    expect(h.api.editing?.cell).toMatchObject({ rowId: 'id1', colId: 'id3' })
+    expect(h.scene.byId.get(h.api.editing!.elementId)?.text).toBe('x')
+  })
+
+  it('starts editing a cell on double-click', () => {
+    const { h, table } = setupTable()
+    const at = centre(table, 1, 0)
+    act(() => {
+      h.api.canvasHandlers.onDoubleClick(pointerEvent(at))
+    })
+    h.sync()
+    expect(h.api.editing?.cell).toMatchObject({ rowId: 'id2', colId: 'id3' })
+  })
+
+  it('commits a cell with Tab as one setCellText op and opens the next cell', () => {
+    const { h, table } = setupTable()
+    selectTable(h)
+    press(h, centre(table, 0, 0))
+    act(() => {
+      h.api.boardHandlers.onKeyDown(keyEvent('Enter'))
+    })
+    h.sync()
+    act(() => {
+      h.api.textInput.insertText('abc')
+    })
+    h.sync()
+    const tab = keyEvent('Tab')
+    let consumed = false
+    act(() => {
+      consumed = h.api.textInput.onEditingKeyDown(tab)
+    })
+    h.sync()
+
+    expect(consumed).toBe(true)
+    expect(h.callbacks.onTableOp).toHaveBeenCalledTimes(1)
+    expect(h.callbacks.onTableOp.mock.calls[0][0]).toBe(TABLE_ID)
+    expect(h.callbacks.onTableOp.mock.calls[0][1]).toEqual({
+      type: 'setCellText',
+      rowId: 'id1',
+      colId: 'id3',
+      text: 'abc',
+    })
+    // No `onUpdate`: a cell edit never writes the table's props whole.
+    expect(h.callbacks.onUpdate).not.toHaveBeenCalled()
+    expect(h.api.editing?.cell).toMatchObject({ rowId: 'id1', colId: 'id4' })
+    // The finished cell's virtual element is gone; only the next one remains.
+    expect(h.scene.elements.filter((e) => e.kind === 'text')).toHaveLength(1)
+  })
+
+  it('moves back with Shift+Tab', () => {
+    const { h, table } = setupTable()
+    selectTable(h)
+    press(h, centre(table, 1, 0))
+    act(() => {
+      h.api.boardHandlers.onKeyDown(keyEvent('Enter'))
+    })
+    h.sync()
+    act(() => {
+      h.api.textInput.onEditingKeyDown(keyEvent('Tab', { shiftKey: true }))
+    })
+    h.sync()
+    expect(h.api.editing?.cell).toMatchObject({ rowId: 'id1', colId: 'id4' })
+    expect(h.callbacks.onTableOp).not.toHaveBeenCalled()
+  })
+
+  it('appends a row on Tab in the last cell and moves into it', () => {
+    const { h, table } = setupTable()
+    selectTable(h)
+    press(h, centre(table, 1, 1))
+    act(() => {
+      h.api.boardHandlers.onKeyDown(keyEvent('Enter'))
+    })
+    h.sync()
+    act(() => {
+      h.api.textInput.insertText('z')
+    })
+    h.sync()
+    act(() => {
+      h.api.textInput.onEditingKeyDown(keyEvent('Tab'))
+    })
+    h.sync()
+
+    const ops = h.callbacks.onTableOp.mock.calls.map((call) => call[1])
+    expect(ops.map((op: any) => op.type)).toEqual(['setCellText', 'insertRow'])
+    expect(ops[1]).toMatchObject({ afterRowId: 'id2', row: { height: 40 } })
+    const newRowId = ops[1].row.id
+    expect(h.scene.byId.get(TABLE_ID)?.table?.rows).toHaveLength(3)
+    expect(h.api.editing?.cell).toEqual({
+      tableId: TABLE_ID,
+      rowId: newRowId,
+      colId: 'id3',
+    })
+    expect(h.scene.byId.get(TABLE_ID)?.height).toBe(120)
+  })
+
+  it('keeps Enter as a new line inside a cell', () => {
+    const { h, table } = setupTable()
+    selectTable(h)
+    press(h, centre(table, 0, 0))
+    act(() => {
+      h.api.boardHandlers.onKeyDown(keyEvent('Enter'))
+    })
+    h.sync()
+    act(() => {
+      h.api.textInput.insertText('a')
+    })
+    h.sync()
+    act(() => {
+      h.api.textInput.onEditingKeyDown(keyEvent('Enter'))
+    })
+    h.sync()
+    h.sync()
+    expect(h.scene.byId.get(h.api.editing!.elementId)?.text).toBe('a\n')
+    expect(h.callbacks.onTableOp).not.toHaveBeenCalled()
+  })
+
+  it('commits on Escape and keeps the cell selected', () => {
+    const { h, table } = setupTable()
+    selectTable(h)
+    press(h, centre(table, 0, 0))
+    act(() => {
+      h.api.boardHandlers.onKeyDown(keyEvent('Enter'))
+    })
+    h.sync()
+    act(() => {
+      h.api.textInput.insertText('hi')
+    })
+    h.sync()
+    act(() => {
+      h.api.textInput.onEditingKeyDown(keyEvent('Escape'))
+    })
+    h.sync()
+    expect(h.api.editing).toBeNull()
+    expect(h.callbacks.onTableOp).toHaveBeenCalledTimes(1)
+    expect(h.api.tableSelection).toMatchObject({
+      focus: { rowId: 'id1', colId: 'id3' },
+    })
+  })
+
+  it('commits when the press lands outside the open cell', () => {
+    const { h, table } = setupTable()
+    selectTable(h)
+    press(h, centre(table, 0, 0))
+    act(() => {
+      h.api.boardHandlers.onKeyDown(keyEvent('Enter'))
+    })
+    h.sync()
+    act(() => {
+      h.api.textInput.insertText('hi')
+    })
+    h.sync()
+    press(h, { clientX: 600, clientY: 500 })
+    expect(h.api.editing).toBeNull()
+    expect(h.callbacks.onTableOp).toHaveBeenCalledTimes(1)
+    expect(h.api.tableSelection).toBeNull()
+  })
+
+  it('sends no op when the cell text did not change', () => {
+    const { h, table } = setupTable()
+    selectTable(h)
+    press(h, centre(table, 0, 0))
+    act(() => {
+      h.api.boardHandlers.onKeyDown(keyEvent('Enter'))
+    })
+    h.sync()
+    act(() => {
+      h.api.textInput.onEditingKeyDown(keyEvent('Escape'))
+    })
+    h.sync()
+    expect(h.callbacks.onTableOp).not.toHaveBeenCalled()
+  })
+
+  it('sends the measured row height when the text wraps taller than the row', () => {
+    const { h, table } = setupTable()
+    // Three lines of 14px text plus padding exceed the 40px row.
+    const measurer = (() => (text: string) => text.length * 6) as any
+    const taller = setup(
+      [
+        makeRect(TABLE_ID, {
+          kind: 'table',
+          x: 100,
+          y: 100,
+          ...tableSize(table),
+          table,
+        }),
+      ],
+      measurer,
+    )
+    void h
+    act(() => {
+      taller.api.setSelectedIds(new Set([TABLE_ID]))
+    })
+    taller.sync()
+    press(taller, centre(table, 0, 0))
+    act(() => {
+      taller.api.boardHandlers.onKeyDown(keyEvent('Enter'))
+    })
+    taller.sync()
+    act(() => {
+      taller.api.textInput.insertText('a')
+      taller.api.textInput.onEditingKeyDown(keyEvent('Enter'))
+    })
+    taller.sync()
+    act(() => {
+      taller.api.textInput.insertText('b')
+      taller.api.textInput.onEditingKeyDown(keyEvent('Enter'))
+    })
+    taller.sync()
+    act(() => {
+      taller.api.textInput.insertText('c')
+    })
+    taller.sync()
+    act(() => {
+      taller.api.textInput.commitEditing()
+    })
+    const op = taller.callbacks.onTableOp.mock.calls[0]?.[1]
+    expect(op.text).toBe('a\nb\nc')
+    expect(op.rowHeight).toBeGreaterThan(40)
+    expect(taller.scene.byId.get(TABLE_ID)?.table?.rows[0].height).toBe(
+      op.rowHeight,
+    )
+  })
+
+  it('moves its cell edit onto the new id when the create ack renames the table', () => {
+    const { h, table } = setupTable()
+    selectTable(h)
+    press(h, centre(table, 0, 0))
+    act(() => {
+      h.api.boardHandlers.onKeyDown(keyEvent('Enter'))
+    })
+    h.sync()
+    const SERVER_ID = '88888888-8888-4888-8888-888888888888'
+    act(() => {
+      h.api.remapElementId(TABLE_ID, SERVER_ID)
+    })
+    h.sync()
+    expect(h.api.editing?.cell?.tableId).toBe(SERVER_ID)
+    expect(h.api.editing?.elementId).toBe(`${SERVER_ID}:id1:id3`)
   })
 })

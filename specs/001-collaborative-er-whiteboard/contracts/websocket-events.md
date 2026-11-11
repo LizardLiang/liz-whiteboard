@@ -245,7 +245,7 @@ Sent to every other client on the board after a settings change. Payload: `{ set
 
 ### `element:table-op` (Client → Server)
 
-Editor-only. Changes a canvas **table** element by one small op instead of a whole-props write, so two people who edit different cells of one table both keep their text. Payload: `{ elementId: string (uuid), op: TableOp }`. `TableOp` is a discriminated union on `type` (schema: `tableOpSchema` in `src/data/schema.ts`; semantics: `applyTableOp` in `src/lib/canvas-engine/table.ts`):
+Editor-only. Changes a canvas **table** element by one small op instead of a whole-props write, so two people who edit different cells of one table both keep their text. Payload: `{ elementId: string (uuid), op: TableOp, expect?: CellExpect[] }`. `expect` is undo's contested check: each `{rowId, colId, text, textRuns?}` must match the stored cell, or the op is refused with `REVISION_MISMATCH` and the table stays as it was. `TableOp` is a discriminated union on `type` (schema: `tableOpSchema` in `src/data/schema.ts`; semantics: `applyTableOp` in `src/lib/canvas-engine/table.ts`):
 
 | `type` | Fields |
 |---|---|

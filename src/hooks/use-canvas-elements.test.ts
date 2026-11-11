@@ -950,3 +950,181 @@ describe('applyTableOp', () => {
     ).toBe('from bob')
   })
 })
+
+describe('applyTableOp — expect and a table whose create is in flight', () => {
+  const TABLE_ID = '55555555-5555-4555-8555-555555555555'
+  const SERVER_TABLE_ID = '66666666-6666-4666-8666-666666666666'
+
+  function makeTable() {
+    let n = 0
+    return createTable(2, 2, () => `id-${++n}`)
+  }
+
+  it('sends the contested-check expectation with the op', () => {
+    const table = makeTable()
+    const h = setup([
+      makeRecord({
+        id: TABLE_ID,
+        kind: 'table',
+        width: 240,
+        height: 80,
+        props: { kind: 'table', table },
+      }),
+    ])
+    const expectation = [{ rowId: 'id-1', colId: 'id-3', text: 'new' }]
+    act(() => {
+      void h.view.result.current.applyTableOp(
+        TABLE_ID,
+        { type: 'setCellText', rowId: 'id-1', colId: 'id-3', text: 'old' },
+        { expect: expectation },
+      )
+    })
+    expect(h.socket.sent[0].data.expect).toEqual(expectation)
+  })
+
+  it('holds an op typed before the create ack and re-issues it on the real id', async () => {
+    const table = makeTable()
+    const h = setup([])
+    const drawn = makeElement({
+      id: TEMP_ID,
+      kind: 'table',
+      width: 240,
+      height: 80,
+      table,
+    })
+    h.applyLocally((scene) => ({
+      elements: [...scene.elements, drawn],
+      byId: new Map(scene.byId).set(drawn.id, drawn),
+    }))
+    act(() => {
+      void h.view.result.current.createElement(drawn)
+    })
+    let early: any
+    act(() => {
+      void h.view.result.current
+        .applyTableOp(TEMP_ID, {
+          type: 'setCellText',
+          rowId: 'id-1',
+          colId: 'id-3',
+          text: 'typed early',
+        })
+        .then((r) => (early = r))
+    })
+    // Nothing the server can address yet, but the user already sees the text.
+    expect(h.socket.sent.map((entry) => entry.event)).toEqual([
+      'element:create',
+    ])
+    expect(h.scene.byId.get(TEMP_ID)?.table?.cells['id-1:id-3']?.text).toBe(
+      'typed early',
+    )
+
+    act(() =>
+      h.socket.sent[0].ack?.({
+        ok: true,
+        entity: makeRecord({
+          id: SERVER_TABLE_ID,
+          kind: 'table',
+          width: 240,
+          height: 80,
+          props: { kind: 'table', table },
+        }),
+      }),
+    )
+    await Promise.resolve()
+    expect(h.socket.sent.map((entry) => entry.event)).toEqual([
+      'element:create',
+      'element:table-op',
+    ])
+    expect(h.socket.sent[1].data).toMatchObject({
+      elementId: SERVER_TABLE_ID,
+      op: { type: 'setCellText', text: 'typed early' },
+    })
+    expect(early).toEqual({ ok: false })
+  })
+
+  it('leaves the scene alone, instead of throwing, when the local table cannot take the op', () => {
+    const table = makeTable()
+    const h = setup([
+      makeRecord({
+        id: TABLE_ID,
+        kind: 'table',
+        width: 240,
+        height: 80,
+        props: { kind: 'table', table },
+      }),
+    ])
+    expect(() => {
+      act(() => {
+        void h.view.result.current.applyTableOp(TABLE_ID, {
+          type: 'removeRow',
+          rowId: 'no-such-row',
+        })
+      })
+    }).not.toThrow()
+    expect(h.scene.byId.get(TABLE_ID)?.table?.rows).toHaveLength(2)
+    expect(h.socket.sent[0].event).toBe('element:table-op')
+  })
+})
+
+describe('applyTableOp — a burst of ops in flight', () => {
+  const TABLE_ID = '55555555-5555-4555-8555-555555555555'
+
+  it('keeps the later optimistic op when the earlier ack arrives first', () => {
+    let n = 0
+    const table = createTable(1, 1, () => `id-${++n}`)
+    const record = makeRecord({
+      id: TABLE_ID,
+      kind: 'table',
+      width: 120,
+      height: 40,
+      props: { kind: 'table', table },
+    })
+    const h = setup([record])
+    const first = {
+      type: 'setCellText' as const,
+      rowId: 'id-1',
+      colId: 'id-2',
+      text: 'a',
+    }
+    const second = {
+      type: 'insertRow' as const,
+      afterRowId: 'id-1',
+      row: { id: 'row-new', height: 40 },
+    }
+    act(() => {
+      void h.view.result.current.applyTableOp(TABLE_ID, first)
+      void h.view.result.current.applyTableOp(TABLE_ID, second)
+    })
+    expect(h.scene.byId.get(TABLE_ID)?.table?.rows).toHaveLength(2)
+
+    const afterFirst = applyTableOp(table, first)
+    act(() =>
+      h.socket.sent[0].ack?.({
+        ok: true,
+        entity: {
+          ...record,
+          revision: 2,
+          props: { kind: 'table', table: afterFirst.table },
+        },
+        inverse: afterFirst.inverse,
+      }),
+    )
+    // The server's table, as of the first op, has no new row yet.
+    expect(h.scene.byId.get(TABLE_ID)?.table?.rows).toHaveLength(2)
+
+    const afterSecond = applyTableOp(afterFirst.table, second)
+    act(() =>
+      h.socket.sent[1].ack?.({
+        ok: true,
+        entity: {
+          ...record,
+          revision: 3,
+          props: { kind: 'table', table: afterSecond.table },
+        },
+        inverse: afterSecond.inverse,
+      }),
+    )
+    expect(h.scene.byId.get(TABLE_ID)?.table?.rows).toHaveLength(2)
+    expect(h.view.result.current.getRevision(TABLE_ID)).toBe(3)
+  })
+})

@@ -297,6 +297,228 @@ export function normalizeTable(raw: unknown): CanvasTable {
   }
 }
 
+/**
+ * What a cell must hold for a table op to apply: the contested check of an
+ * undo or redo. Text and runs only — fill and alignment are not edited by the
+ * ops an expectation guards.
+ */
+export interface CellExpect {
+  rowId: string
+  colId: string
+  text: string
+  textRuns?: Array<CanvasTextRun>
+}
+
+function sameRunList(
+  a: ReadonlyArray<CanvasTextRun> | undefined,
+  b: ReadonlyArray<CanvasTextRun> | undefined,
+): boolean {
+  const left = a ?? []
+  const right = b ?? []
+  return JSON.stringify(left) === JSON.stringify(right)
+}
+
+/** True when every expected cell holds exactly the expected text and runs. */
+export function tableMatchesExpect(
+  table: CanvasTable,
+  expect: ReadonlyArray<CellExpect>,
+): boolean {
+  return expect.every((entry) => {
+    const cell = lookupCell(table.cells, cellKey(entry.rowId, entry.colId))
+    return (
+      (cell?.text ?? '') === entry.text &&
+      sameRunList(cell?.textRuns, entry.textRuns)
+    )
+  })
+}
+
+/** What `op` leaves in the cells it writes — the expectation its undo is guarded by. */
+export function expectAfterOp(
+  table: CanvasTable,
+  op: TableOp,
+): Array<CellExpect> | undefined {
+  if (op.type === 'setCellText') {
+    return [
+      {
+        rowId: op.rowId,
+        colId: op.colId,
+        text: op.text,
+        ...(op.textRuns && op.textRuns.length > 0
+          ? { textRuns: op.textRuns }
+          : {}),
+      },
+    ]
+  }
+  if (op.type === 'removeRow') {
+    // Undoing a row insert removes the row: it must still be blank.
+    return table.cols.map((col) => ({
+      rowId: op.rowId,
+      colId: col.id,
+      text: '',
+    }))
+  }
+  return undefined
+}
+
+// ── selection ───────────────────────────────────────────────────────────────
+
+/** The cells, row or column a user picked inside one table. Client-only state. */
+export type TableSelection =
+  | { tableId: string; kind: 'cells'; anchor: CellRef; focus: CellRef }
+  | { tableId: string; kind: 'row'; rowId: string }
+  | { tableId: string; kind: 'col'; colId: string }
+
+/** The cell at a world point, or null outside the table. */
+export function cellAtPoint(
+  element: Pick<CanvasElement, 'x' | 'y' | 'table'>,
+  world: { x: number; y: number },
+): CellRef | null {
+  const table = element.table
+  if (!table) return null
+  let y = element.y
+  let rowId: string | null = null
+  for (const row of table.rows) {
+    if (world.y >= y && world.y < y + row.height) {
+      rowId = row.id
+      break
+    }
+    y += row.height
+  }
+  let x = element.x
+  let colId: string | null = null
+  for (const col of table.cols) {
+    if (world.x >= x && world.x < x + col.width) {
+      colId = col.id
+      break
+    }
+    x += col.width
+  }
+  return rowId !== null && colId !== null ? { rowId, colId } : null
+}
+
+/** A grabber strip's size on screen, in px. */
+export const TABLE_GRIP_PX = 14
+
+export type TableGrip =
+  { kind: 'row'; rowId: string } | { kind: 'col'; colId: string }
+
+/**
+ * The row or column grabber at a world point. A row grabber is a strip just
+ * left of the table, a column grabber a strip just above it; `padWorld` is the
+ * strip's width in world units (screen px divided by the zoom).
+ */
+export function gripAtPoint(
+  element: Pick<CanvasElement, 'x' | 'y' | 'width' | 'height' | 'table'>,
+  world: { x: number; y: number },
+  padWorld: number,
+): TableGrip | null {
+  const table = element.table
+  if (!table) return null
+  if (
+    world.x >= element.x - padWorld &&
+    world.x < element.x &&
+    world.y >= element.y &&
+    world.y < element.y + element.height
+  ) {
+    const cell = cellAtPoint(element, { x: element.x, y: world.y })
+    return cell ? { kind: 'row', rowId: cell.rowId } : null
+  }
+  if (
+    world.y >= element.y - padWorld &&
+    world.y < element.y &&
+    world.x >= element.x &&
+    world.x < element.x + element.width
+  ) {
+    const cell = cellAtPoint(element, { x: world.x, y: element.y })
+    return cell ? { kind: 'col', colId: cell.colId } : null
+  }
+  return null
+}
+
+/** Every cell a selection covers, row-major. A range is the rectangle between its corners. */
+export function selectionCells(
+  table: CanvasTable,
+  selection: TableSelection,
+): Array<CellRef> {
+  if (selection.kind === 'row') {
+    return table.rows.some((row) => row.id === selection.rowId)
+      ? table.cols.map((col) => ({ rowId: selection.rowId, colId: col.id }))
+      : []
+  }
+  if (selection.kind === 'col') {
+    return table.cols.some((col) => col.id === selection.colId)
+      ? table.rows.map((row) => ({ rowId: row.id, colId: selection.colId }))
+      : []
+  }
+  const r1 = table.rows.findIndex((row) => row.id === selection.anchor.rowId)
+  const r2 = table.rows.findIndex((row) => row.id === selection.focus.rowId)
+  const c1 = table.cols.findIndex((col) => col.id === selection.anchor.colId)
+  const c2 = table.cols.findIndex((col) => col.id === selection.focus.colId)
+  if (r1 < 0 || r2 < 0 || c1 < 0 || c2 < 0) return []
+  const out: Array<CellRef> = []
+  for (let r = Math.min(r1, r2); r <= Math.max(r1, r2); r += 1) {
+    for (let c = Math.min(c1, c2); c <= Math.max(c1, c2); c += 1) {
+      out.push({ rowId: table.rows[r].id, colId: table.cols[c].id })
+    }
+  }
+  return out
+}
+
+/**
+ * The selection after a table change: a row or column that no longer exists
+ * drops out. Returns null when nothing selectable remains.
+ */
+export function pruneSelection(
+  table: CanvasTable,
+  selection: TableSelection,
+): TableSelection | null {
+  return selectionCells(table, selection).length > 0 ? selection : null
+}
+
+/** The cell `dRow`/`dCol` steps from `from`, clamped at the table's edges. */
+export function stepCell(
+  table: CanvasTable,
+  from: CellRef,
+  dRow: number,
+  dCol: number,
+): CellRef {
+  const r = table.rows.findIndex((row) => row.id === from.rowId)
+  const c = table.cols.findIndex((col) => col.id === from.colId)
+  if (r < 0 || c < 0) return from
+  const row = Math.min(table.rows.length - 1, Math.max(0, r + dRow))
+  const col = Math.min(table.cols.length - 1, Math.max(0, c + dCol))
+  return { rowId: table.rows[row].id, colId: table.cols[col].id }
+}
+
+/**
+ * The cell Tab (`direction` 1) or Shift+Tab (-1) moves to, reading order, or
+ * null past the last (first) cell.
+ */
+export function tabCell(
+  table: CanvasTable,
+  from: CellRef,
+  direction: 1 | -1,
+): CellRef | null {
+  const r = table.rows.findIndex((row) => row.id === from.rowId)
+  const c = table.cols.findIndex((col) => col.id === from.colId)
+  if (r < 0 || c < 0) return null
+  const index = r * table.cols.length + c + direction
+  if (index < 0 || index >= table.rows.length * table.cols.length) return null
+  return {
+    rowId: table.rows[Math.floor(index / table.cols.length)].id,
+    colId: table.cols[index % table.cols.length].id,
+  }
+}
+
+/** The id of a cell's virtual text element, and its parts back. */
+export function cellElementId(
+  tableId: string,
+  rowId: string,
+  colId: string,
+): string {
+  return `${tableId}:${rowId}:${colId}`
+}
+
 /** The joined text of every cell, row-major, for search. */
 export function tableSearchText(table: CanvasTable): string {
   const parts: Array<string> = []

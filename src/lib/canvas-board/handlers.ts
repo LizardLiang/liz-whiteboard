@@ -29,6 +29,7 @@ import {
   canvasBoardSettingsPatchSchema,
   canvasTableSchema,
   createCanvasElementSchema,
+  tableOpExpectSchema,
   tableOpSchema,
   updateCanvasElementSchema,
 } from '@/data/schema'
@@ -36,6 +37,7 @@ import {
   TableOpError,
   applyTableOp,
   normalizeTable,
+  tableMatchesExpect,
   tableSize,
 } from '@/lib/canvas-engine/table'
 import { PRESET_RAMPS } from '@/lib/canvas-engine/colour-ramps'
@@ -409,7 +411,13 @@ export function registerCanvasElementHandlers(
     if (await denyMutation(socket, boardId, 'element:table-op', cb)) return
 
     const parsed = z
-      .object({ elementId: z.string().uuid(), op: tableOpSchema })
+      .object({
+        elementId: z.string().uuid(),
+        op: tableOpSchema,
+        // Undo's contested check: the op applies only while these cells hold
+        // the text the undone (or redone) edit left in them.
+        expect: tableOpExpectSchema.optional(),
+      })
       .safeParse(data)
     if (!parsed.success) {
       const message = 'Invalid element:table-op payload'
@@ -421,7 +429,7 @@ export function registerCanvasElementHandlers(
       cb?.({ ok: false, code: 'VALIDATION_ERROR', message })
       return
     }
-    const { elementId, op } = parsed.data
+    const { elementId, op, expect } = parsed.data
 
     try {
       for (let attempt = 0; attempt < TABLE_OP_ATTEMPTS; attempt += 1) {
@@ -444,10 +452,13 @@ export function registerCanvasElementHandlers(
           return
         }
 
-        const { table, inverse } = applyTableOp(
-          normalizeTable(existing.props.table),
-          op,
-        )
+        const stored = normalizeTable(existing.props.table)
+        if (expect && !tableMatchesExpect(stored, expect)) {
+          const message = 'The table changed since that edit'
+          cb?.({ ok: false, code: 'REVISION_MISMATCH', message })
+          return
+        }
+        const { table, inverse } = applyTableOp(stored, op)
         const props = {
           kind: 'table' as const,
           table: canvasTableSchema.parse(table),

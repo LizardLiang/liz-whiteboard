@@ -35,6 +35,12 @@ import type {
   Scene,
 } from '@/lib/canvas-engine/scene'
 import type {
+  CanvasTable,
+  CellRef,
+  TableOp,
+  TableSelection,
+} from '@/lib/canvas-engine/table'
+import type {
   CardLook,
   ConnectorEnd,
   CreationHandleDirection,
@@ -71,8 +77,19 @@ import {
 } from '@/lib/canvas-engine/hit-test'
 import { snapPoint, snapRect } from '@/lib/canvas-engine/grid'
 import {
+  TABLE_CELL_HEIGHT,
   TABLE_DEFAULT_STYLE,
+  TABLE_GRIP_PX,
+  TABLE_MAX_CELLS,
+  applyTableOp as applyTableOpLocally,
+  cellAtPoint,
+  cellElementId,
+  cellTextElement,
   createTable,
+  gripAtPoint,
+  pruneSelection,
+  stepCell,
+  tabCell,
   tableDimsForDrag,
   tableSize,
 } from '@/lib/canvas-engine/table'
@@ -490,6 +507,21 @@ export interface CanvasEditCallbacks {
     groupElement: CanvasElement,
     groupUpdates?: Array<MembershipUpdate>,
   ) => void
+  /**
+   * One table op — a cell's text committed, a row appended by Tab. The
+   * consumer sends it as an `element:table-op`, which the server applies to the
+   * latest stored table, and records it as one undo entry. `table` is the
+   * table as it stood before the op.
+   */
+  onTableOp?: (elementId: string, op: TableOp, table: CanvasTable) => void
+}
+
+/** Arrow key to [rows, columns] step of the table cell selection. */
+const TABLE_ARROW_STEPS: Partial<Record<string, [number, number]>> = {
+  ArrowUp: [-1, 0],
+  ArrowDown: [1, 0],
+  ArrowLeft: [0, -1],
+  ArrowRight: [0, 1],
 }
 
 export interface EditingState {
@@ -513,6 +545,12 @@ export interface EditingState {
    * was chosen at.
    */
   pending?: TextRunAttrs | null
+  /**
+   * Set while a table cell is being edited. The edit runs on a virtual `text`
+   * element (`cellTextElement`, id `elementId`) added to the scene for the
+   * edit's duration; commit removes it and sends one `setCellText` table op.
+   */
+  cell?: { tableId: string; rowId: string; colId: string } | null
   /** True while the element has never been persisted (created by this edit). */
   isNew: boolean
   /**
@@ -1704,6 +1742,15 @@ export function useCanvasInput({
   )
   const [gesture, setGestureState] = useState<Gesture>({ kind: 'none' })
   const [editing, setEditingState] = useState<EditingState | null>(null)
+  // The cells, row or column picked inside a selected table. Client-only; a
+  // ref mirror for the same reason `editingRef` has one.
+  const [tableSelection, setTableSelectionState] =
+    useState<TableSelection | null>(null)
+  const tableSelectionRef = useRef<TableSelection | null>(null)
+  const setTableSelection = useCallback((next: TableSelection | null) => {
+    tableSelectionRef.current = next
+    setTableSelectionState(next)
+  }, [])
 
   /**
    * Synchronous mirrors of `gesture` and `editing`.
@@ -1835,6 +1882,39 @@ export function useCanvasInput({
     latest.current = { scene, camera, tool, readOnly, selectedIds, editing }
   })
 
+  // Table cell edits (see `beginCellEditing`) write the scene and one row's
+  // height from several places, so both writers live up here.
+  /** Write the scene now and mirror it into `latest`, so a handler running in the same frame reads what this wrote. */
+  const writeScene = useCallback(
+    (produce: (current: Scene) => Scene) => {
+      setScene(produce)
+      latest.current.scene = produce(latest.current.scene)
+    },
+    [setScene],
+  )
+
+  /** Set one row's height in the local scene: only ever taller when `onlyGrow`. */
+  const setRowHeight = useCallback(
+    (tableId: string, rowId: string, height: number, onlyGrow: boolean) => {
+      writeScene((prev) => {
+        const element = prev.byId.get(tableId)
+        const grid = element?.table
+        if (!element || !grid) return prev
+        const row = grid.rows.find((entry) => entry.id === rowId)
+        if (!row || row.height === height) return prev
+        if (onlyGrow && row.height >= height) return prev
+        const table: CanvasTable = {
+          ...grid,
+          rows: grid.rows.map((entry) =>
+            entry.id === rowId ? { ...entry, height } : entry,
+          ),
+        }
+        return updateElement(prev, tableId, { table, ...tableSize(table) })
+      })
+    },
+    [writeScene],
+  )
+
   useEffect(() => {
     const pending = pendingTextEditsRef.current
     if (pending.length === 0) return
@@ -1851,6 +1931,22 @@ export function useCanvasInput({
     const patch = textEditPatch(element, folded, getMeasurer)
     if (patch) {
       setScene((prev) => updateElement(prev, current.elementId, patch))
+      // Mirrored into `latest` for the reason `applyTextEdit` gives: a commit
+      // before the next render would otherwise fold its queued keys onto the
+      // text this drain just replaced, and the drained keys would be lost.
+      latest.current.scene = updateElement(
+        latest.current.scene,
+        current.elementId,
+        patch,
+      )
+      if (current.cell && patch.height !== undefined) {
+        setRowHeight(
+          current.cell.tableId,
+          current.cell.rowId,
+          patch.height,
+          true,
+        )
+      }
     }
     setEditing({
       ...current,
@@ -1859,7 +1955,20 @@ export function useCanvasInput({
       pending: folded.pending,
     })
     setCaretVisible(true)
-  }, [editing, scene, setScene, setEditing, getMeasurer])
+  }, [editing, scene, setScene, setEditing, setRowHeight, getMeasurer])
+
+  // The table selection follows the element selection and the table itself: it
+  // drops when something else is selected, when the table goes, or when a remote
+  // op removes the row or column it names.
+  useEffect(() => {
+    const picked = tableSelectionRef.current
+    if (!picked) return
+    const grid = scene.byId.get(picked.tableId)?.table
+    const stillOne = selectedIds.size === 1 && selectedIds.has(picked.tableId)
+    if (!grid || !stillOne || !pruneSelection(grid, picked)) {
+      setTableSelection(null)
+    }
+  }, [scene, selectedIds, setTableSelection])
 
   const screenFromEvent = useCallback(
     (event: { clientX: number; clientY: number }): Point | null => {
@@ -1993,6 +2102,101 @@ export function useCanvasInput({
     [getMeasurer, cardLook],
   )
 
+  // ── table cells ──────────────────────────────────────────────────────────
+  //
+  // A cell is edited as a virtual `text` element (`cellTextElement`) that lives
+  // in the scene for the length of the edit, so the caret, selection, IME, text
+  // bar and every layout call run on it unchanged. Commit takes it out again and
+  // sends one `setCellText` table op.
+
+  /**
+   * Open a cell for typing. `typed` is a key that started the edit from a
+   * selected cell: it is queued as the first keystroke, so it lands after the
+   * caret like any other.
+   */
+  const beginCellEditing = useCallback(
+    (tableId: string, cell: CellRef, caret: number | 'end', typed?: string) => {
+      const tableElement = latest.current.scene.byId.get(tableId)
+      if (!tableElement?.table) return
+      const virtual = cellTextElement(tableElement, cell.rowId, cell.colId)
+      if (!virtual) return
+      const element: CanvasElement = {
+        ...virtual,
+        // Above everything, so a press in the cell reaches the editor first.
+        zIndex: nextZIndex(latest.current.scene),
+      }
+      writeScene((prev) =>
+        addElement(removeElements(prev, [element.id]), element),
+      )
+      textInputRef?.current?.focus({ preventScroll: true })
+      const at = caret === 'end' ? (element.text ?? '').length : caret
+      pendingTextEditsRef.current = []
+      setEditing({
+        elementId: element.id,
+        caret: at,
+        anchor: at,
+        composition: '',
+        isNew: false,
+        before: { ...element },
+        cell: { tableId, rowId: cell.rowId, colId: cell.colId },
+      })
+      if (typed) {
+        pendingTextEditsRef.current.push({
+          elementId: element.id,
+          produce: (value, position, _element, anchor) =>
+            replaceEdit(value, anchor, position, typed),
+        })
+      }
+      setSelectedIds(new Set([tableId]))
+      setTableSelection({ tableId, kind: 'cells', anchor: cell, focus: cell })
+      setCaretVisible(true)
+    },
+    [setEditing, setTableSelection, textInputRef, writeScene],
+  )
+
+  /** The scene change and table op that end a cell edit. */
+  const finishCellEdit = useCallback(
+    (
+      current: EditingState,
+      cell: NonNullable<EditingState['cell']>,
+      element: CanvasElement,
+    ) => {
+      writeScene((prev) => removeElements(prev, [element.id]))
+      const tableElement = latest.current.scene.byId.get(cell.tableId)
+      if (!tableElement?.table) return
+      const before = current.before ?? element
+      const baseHeight = before.height
+      const runs = element.style.textRuns
+      const unchanged =
+        (before.text ?? '') === (element.text ?? '') &&
+        sameRuns(before.style.textRuns, element.style.textRuns)
+      if (unchanged) {
+        // Typing grew the row for the preview; nothing was kept.
+        setRowHeight(cell.tableId, cell.rowId, baseHeight, false)
+        return
+      }
+      // The server cannot measure text, so the row height travels in the op.
+      const measure = getMeasurer(fontSpecOf(element.style))
+      const fitted = measure ? Math.ceil(fittedTextHeight(element, measure)) : 0
+      const rowHeight = fitted > baseHeight ? fitted : undefined
+      setRowHeight(cell.tableId, cell.rowId, rowHeight ?? baseHeight, false)
+      callbacks?.onTableOp?.(
+        cell.tableId,
+        {
+          type: 'setCellText',
+          rowId: cell.rowId,
+          colId: cell.colId,
+          text: element.text ?? '',
+          ...(runs.length > 0 ? { textRuns: runs } : {}),
+          ...(rowHeight !== undefined ? { rowHeight } : {}),
+        },
+        latest.current.scene.byId.get(cell.tableId)?.table ??
+          tableElement.table,
+      )
+    },
+    [callbacks, getMeasurer, setRowHeight, writeScene],
+  )
+
   /**
    * Commit the element being edited.
    *
@@ -2036,6 +2240,11 @@ export function useCanvasInput({
         element = { ...element, ...patch }
         setScene((prev) => updateElement(prev, current.elementId, patch))
       }
+    }
+
+    if (current.cell) {
+      finishCellEdit(current, current.cell, element)
+      return
     }
 
     const isEmpty = (element.text ?? '').length === 0
@@ -2105,7 +2314,7 @@ export function useCanvasInput({
       return
     }
     callbacks?.onUpdate?.([element], [before], 'text-edit')
-  }, [callbacks, getMeasurer, setScene])
+  }, [callbacks, finishCellEdit, getMeasurer, setScene])
 
   const beginEditing = useCallback(
     (element: CanvasElement, caret: number, isNew: boolean) => {
@@ -2133,6 +2342,59 @@ export function useCanvasInput({
       setCaretVisible(true)
     },
     [setEditing, textInputRef],
+  )
+
+  /**
+   * Tab (`direction` 1) or Shift+Tab (-1) inside a cell: commit it and open the
+   * next or previous one. Tab in the last cell appends a row and moves into it.
+   */
+  const moveCellEditing = useCallback(
+    (direction: 1 | -1) => {
+      const cell = editingRef.current?.cell
+      if (!cell) return
+      commitEditing()
+      const grid = latest.current.scene.byId.get(cell.tableId)?.table
+      if (!grid) return
+      const from = { rowId: cell.rowId, colId: cell.colId }
+      let target = tabCell(grid, from, direction)
+      if (!target) {
+        const full = (grid.rows.length + 1) * grid.cols.length > TABLE_MAX_CELLS
+        if (direction === -1 || full) {
+          setTableSelection({
+            tableId: cell.tableId,
+            kind: 'cells',
+            anchor: from,
+            focus: from,
+          })
+          return
+        }
+        const row = { id: uuid(), height: TABLE_CELL_HEIGHT }
+        const op: TableOp = {
+          type: 'insertRow',
+          afterRowId: grid.rows[grid.rows.length - 1].id,
+          row,
+        }
+        // Shown now, so the next cell exists to be opened; the table op the
+        // consumer sends is what persists it.
+        writeScene((prev) => {
+          const element = prev.byId.get(cell.tableId)
+          if (!element?.table) return prev
+          try {
+            const { table } = applyTableOpLocally(element.table, op)
+            return updateElement(prev, cell.tableId, {
+              table,
+              ...tableSize(table),
+            })
+          } catch {
+            return prev
+          }
+        })
+        callbacks?.onTableOp?.(cell.tableId, op, grid)
+        target = { rowId: row.id, colId: grid.cols[0].id }
+      }
+      beginCellEditing(cell.tableId, target, 'end')
+    },
+    [beginCellEditing, callbacks, commitEditing, setTableSelection, writeScene],
   )
 
   /** Caret index nearest a world point inside an element's text block. */
@@ -2510,6 +2772,27 @@ export function useCanvasInput({
         }
       }
 
+      // A selected table's row and column grabbers sit just OUTSIDE its rect,
+      // so `hitTest` below would see empty canvas there.
+      if (currentSelection.size === 1) {
+        const only = latest.current.scene.byId.get([...currentSelection][0])
+        if (only?.kind === 'table') {
+          const grip = gripAtPoint(
+            only,
+            world,
+            TABLE_GRIP_PX / latest.current.camera.zoom,
+          )
+          if (grip) {
+            setTableSelection(
+              grip.kind === 'row'
+                ? { tableId: only.id, kind: 'row', rowId: grip.rowId }
+                : { tableId: only.id, kind: 'col', colId: grip.colId },
+            )
+            return
+          }
+        }
+      }
+
       const hit = hitTest(latest.current.scene, world)
       if (!hit) {
         // Leaving the structure entirely — same "exit whatever depth was
@@ -2593,6 +2876,41 @@ export function useCanvasInput({
         : (outermostGroup(latest.current.scene, hit.id) ?? hit)
       if (!preservesEnteredPath) setEnteredPath([])
 
+      // A press on a cell of the table that is already the one selection picks
+      // that cell (Shift extends a range). Anything else selects the table
+      // first. A plain press still falls through to the move gesture, so a
+      // drag from a cell moves the table.
+      if (
+        hit.kind === 'table' &&
+        target.id === hit.id &&
+        currentSelection.size === 1 &&
+        currentSelection.has(hit.id)
+      ) {
+        const cell = cellAtPoint(hit, world)
+        const existing = tableSelectionRef.current
+        if (cell) {
+          if (event.shiftKey) {
+            const anchor =
+              existing?.tableId === hit.id && existing.kind === 'cells'
+                ? existing.anchor
+                : cell
+            setTableSelection({
+              tableId: hit.id,
+              kind: 'cells',
+              anchor,
+              focus: cell,
+            })
+            return
+          }
+          setTableSelection({
+            tableId: hit.id,
+            kind: 'cells',
+            anchor: cell,
+            focus: cell,
+          })
+        }
+      }
+
       let nextSelection: Set<string>
       if (event.shiftKey) {
         nextSelection = new Set(currentSelection)
@@ -2648,6 +2966,7 @@ export function useCanvasInput({
       setGesture,
       setScene,
       setTool,
+      setTableSelection,
       spaceHeld,
       callbacks,
       todoBoxIndexAt,
@@ -3210,6 +3529,18 @@ export function useCanvasInput({
         hit.id,
         enteredPathRef.current,
       )
+      if (resolution.editable && hit.kind === 'table') {
+        // A table is edited one cell at a time.
+        const cell = cellAtPoint(hit, world)
+        if (!cell) return
+        const virtual = cellTextElement(hit, cell.rowId, cell.colId)
+        beginCellEditing(
+          hit.id,
+          cell,
+          virtual ? caretAtWorldPoint(virtual, world) : 'end',
+        )
+        return
+      }
       if (resolution.editable) {
         // A group is never `editable` by construction (it has no text), so
         // this is unchanged from today: `hit` here is always a genuine leaf.
@@ -3222,6 +3553,7 @@ export function useCanvasInput({
       setSelectedIds(new Set([target.id]))
     },
     [
+      beginCellEditing,
       beginEditing,
       caretAtWorldPoint,
       screenFromEvent,
@@ -3779,6 +4111,50 @@ export function useCanvasInput({
       }
       if (event.ctrlKey || event.metaKey || event.altKey) return
 
+      // A selected table cell, row or column owns the keys that would
+      // otherwise switch tools: arrows move the selection, Enter or a printable
+      // key opens the cell, Escape drops back to the table.
+      const picked = tableSelectionRef.current
+      const pickedTable = picked
+        ? latest.current.scene.byId.get(picked.tableId)
+        : undefined
+      const grid = pickedTable?.table
+      if (picked && grid) {
+        const focus: CellRef =
+          picked.kind === 'cells'
+            ? picked.focus
+            : picked.kind === 'row'
+              ? { rowId: picked.rowId, colId: grid.cols[0].id }
+              : { rowId: grid.rows[0].id, colId: picked.colId }
+        const step = TABLE_ARROW_STEPS[event.key]
+        if (step) {
+          event.preventDefault()
+          const next = stepCell(grid, focus, step[0], step[1])
+          setTableSelection({
+            tableId: picked.tableId,
+            kind: 'cells',
+            anchor:
+              event.shiftKey && picked.kind === 'cells' ? picked.anchor : next,
+            focus: next,
+          })
+          return
+        }
+        if (event.key === 'Escape') {
+          setTableSelection(null)
+          return
+        }
+        if (event.key === 'Enter') {
+          event.preventDefault()
+          beginCellEditing(picked.tableId, focus, 'end')
+          return
+        }
+        if (event.key.length === 1) {
+          event.preventDefault()
+          beginCellEditing(picked.tableId, focus, 'end', event.key)
+          return
+        }
+      }
+
       // Every shape tool's shortcut, from the one table that also labels the
       // palette buttons — checked before the switch so adding a shape kind
       // needs no new case here.
@@ -3837,11 +4213,13 @@ export function useCanvasInput({
     [
       CLIPBOARD_ACTIONS,
       applyStyleShortcut,
+      beginCellEditing,
       beginEditing,
       deleteSelection,
       groupSelection,
       quickCreateInDirection,
       setEnteredPath,
+      setTableSelection,
       setTool,
       ungroupSelection,
     ],
@@ -3881,6 +4259,14 @@ export function useCanvasInput({
           current.elementId,
           patch,
         )
+        if (current.cell && patch.height !== undefined) {
+          setRowHeight(
+            current.cell.tableId,
+            current.cell.rowId,
+            patch.height,
+            true,
+          )
+        }
       }
       setEditing({
         ...current,
@@ -3890,7 +4276,7 @@ export function useCanvasInput({
       })
       setCaretVisible(true)
     },
-    [getMeasurer, setEditing, setScene],
+    [getMeasurer, setEditing, setRowHeight, setScene],
   )
 
   /** Commit typed or composed text, replacing the selected range if any. */
@@ -4108,9 +4494,15 @@ export function useCanvasInput({
           applyTextEdit(enterProduce())
           return true
         case 'Escape':
-        case 'Tab':
           commitEditing()
-          return event.key === 'Escape'
+          return true
+        case 'Tab':
+          if (editingRef.current.cell) {
+            moveCellEditing(event.shiftKey ? -1 : 1)
+            return true
+          }
+          commitEditing()
+          return false
         default:
           return false
       }
@@ -4121,6 +4513,7 @@ export function useCanvasInput({
       moveCaretHorizontally,
       moveCaretToLineEdge,
       moveCaretVertically,
+      moveCellEditing,
     ],
   )
 
@@ -4284,6 +4677,41 @@ export function useCanvasInput({
         next.add(to)
         return next
       })
+      // A table whose create ack renames it while one of its cells is open:
+      // the cell's virtual element carries the table id in its own.
+      const open = editingRef.current
+      if (open?.cell?.tableId === from) {
+        const { rowId, colId } = open.cell
+        const oldId = open.elementId
+        const newId = cellElementId(to, rowId, colId)
+        setScene((prev) => {
+          const virtual = prev.byId.get(oldId)
+          return virtual
+            ? addElement(removeElements(prev, [oldId]), {
+                ...virtual,
+                id: newId,
+              })
+            : prev
+        })
+        setEditing((current) =>
+          current?.cell?.tableId === from
+            ? {
+                ...current,
+                elementId: newId,
+                cell: { ...current.cell, tableId: to },
+                before: current.before
+                  ? { ...current.before, id: newId }
+                  : null,
+              }
+            : current,
+        )
+        pendingTextEditsRef.current = pendingTextEditsRef.current.map((edit) =>
+          edit.elementId === oldId ? { ...edit, elementId: newId } : edit,
+        )
+      }
+      const picked = tableSelectionRef.current
+      if (picked?.tableId === from)
+        setTableSelection({ ...picked, tableId: to })
       setEditing((current) =>
         current && current.elementId === from
           ? {
@@ -4306,7 +4734,7 @@ export function useCanvasInput({
       // renamed it.
       setScene((prev) => remapConnectorEndpoints(prev, from, to))
     },
-    [setEditing, setScene],
+    [setEditing, setScene, setTableSelection],
   )
 
   const cursor = readOnly
@@ -4338,6 +4766,7 @@ export function useCanvasInput({
     groupSelection,
     ungroupSelection,
     editing,
+    tableSelection,
     marquee,
     draft,
     hoveredId,

@@ -289,6 +289,68 @@ describe('element:table-op', () => {
   })
 })
 
+describe('element:table-op expect (undo contested check)', () => {
+  it('applies the op while the cell still holds the expected text', async () => {
+    const table = table3()
+    const [row] = table.rows
+    const [col] = table.cols
+    seedTable({
+      ...table,
+      cells: { [cellKey(row.id, col.id)]: { text: 'new' } },
+    })
+    const h = makeHarness()
+    const res = await call(h, 'element:table-op', {
+      elementId: TABLE_ID,
+      op: { type: 'setCellText', rowId: row.id, colId: col.id, text: 'old' },
+      expect: [{ rowId: row.id, colId: col.id, text: 'new' }],
+    })
+    expect(res.ok).toBe(true)
+    const stored = store.get(TABLE_ID).props.table as CanvasTable
+    expect(stored.cells[cellKey(row.id, col.id)].text).toBe('old')
+  })
+
+  it('refuses, and changes nothing, when someone edited the cell since', async () => {
+    const table = table3()
+    const [row] = table.rows
+    const [col] = table.cols
+    seedTable({
+      ...table,
+      cells: { [cellKey(row.id, col.id)]: { text: 'theirs' } },
+    })
+    const h = makeHarness()
+    const res = await call(h, 'element:table-op', {
+      elementId: TABLE_ID,
+      op: { type: 'setCellText', rowId: row.id, colId: col.id, text: 'old' },
+      expect: [{ rowId: row.id, colId: col.id, text: 'new' }],
+    })
+    expect(res).toMatchObject({ ok: false, code: 'REVISION_MISMATCH' })
+    expect(store.get(TABLE_ID).revision).toBe(1)
+    expect(h.broadcast).toHaveLength(0)
+  })
+
+  it('is not disturbed by an edit to a different cell', async () => {
+    const table = table3()
+    const [row] = table.rows
+    const [colA, colB] = table.cols
+    seedTable({
+      ...table,
+      cells: {
+        [cellKey(row.id, colA.id)]: { text: 'mine' },
+        [cellKey(row.id, colB.id)]: { text: 'theirs' },
+      },
+    })
+    const h = makeHarness()
+    const res = await call(h, 'element:table-op', {
+      elementId: TABLE_ID,
+      op: { type: 'setCellText', rowId: row.id, colId: colA.id, text: '' },
+      expect: [{ rowId: row.id, colId: colA.id, text: 'mine' }],
+    })
+    expect(res.ok).toBe(true)
+    const stored = store.get(TABLE_ID).props.table as CanvasTable
+    expect(stored.cells[cellKey(row.id, colB.id)].text).toBe('theirs')
+  })
+})
+
 describe('element:update on a table', () => {
   it('rejects a props change but allows moving it', async () => {
     const table = table3()

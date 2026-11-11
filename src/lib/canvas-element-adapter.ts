@@ -359,8 +359,11 @@ export function toUpdatePatch(element: CanvasElement): UpdateCanvasElement {
   return {
     positionX: element.x,
     positionY: element.y,
-    width: element.width,
-    height: element.height,
+    // A table's size follows its rows and columns, which only a table op
+    // changes; a stale pre-edit snapshot written back must not undo that.
+    ...(element.kind === 'table'
+      ? {}
+      : { width: element.width, height: element.height }),
     zIndex: element.zIndex,
     text: element.text,
     style: element.style,

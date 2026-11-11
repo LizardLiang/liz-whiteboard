@@ -259,8 +259,13 @@ export function CanvasBoard({
     remapRef.current?.(from, to)
   }, [])
 
-  const { createElement, updateElements, deleteElements, getRevision } =
-    useCanvasElements({
+  const {
+    createElement,
+    updateElements,
+    deleteElements,
+    applyTableOp,
+    getRevision,
+  } = useCanvasElements({
       boardId,
       enabled: true,
       initialElements,
@@ -326,6 +331,7 @@ export function CanvasBoard({
     updateElements,
     deleteElements,
     getRevision,
+    applyTableOp,
     onAffectedElement: focusOnElement,
   })
 
@@ -663,8 +669,10 @@ export function CanvasBoard({
             caret: input.displayCaret,
             anchor: input.displayAnchor,
             caretVisible: input.caretVisible,
+            cell: input.editing.cell ?? null,
           }
         : null,
+      tableSelection: input.tableSelection,
       // Post-undo/redo highlight pulse (Wave 4, step 12). Folded into
       // `selection` rather than passed to `drawScene` separately: this
       // object already drives the dirty-flag `useEffect` below, so a new
@@ -681,6 +689,7 @@ export function CanvasBoard({
       input.displayAnchor,
       input.draft,
       input.editing,
+      input.tableSelection,
       input.connectorAttach,
       input.hoveredId,
       input.marquee,

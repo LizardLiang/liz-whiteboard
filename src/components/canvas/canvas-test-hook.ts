@@ -26,6 +26,7 @@ import type {
   ScreenRect,
 } from '@/lib/canvas-engine/render'
 import type { CanvasTool } from './use-canvas-input'
+import type { CanvasTable } from '@/lib/canvas-engine/table'
 import {
   connectorBendRect,
   connectorEndpointRects,
@@ -33,7 +34,10 @@ import {
   creationHandleTarget,
   worldRectToScreen,
 } from '@/lib/canvas-engine/render'
-import { tableCellRects as tableCellRectsOf } from '@/lib/canvas-engine/table'
+import {
+  selectionCells,
+  tableCellRects as tableCellRectsOf,
+} from '@/lib/canvas-engine/table'
 import { connectorPathOf } from '@/lib/canvas-engine/hit-test'
 import { bounds } from '@/lib/canvas-engine/scene'
 
@@ -178,6 +182,18 @@ export interface CanvasEngineTestHook {
     string,
     Array<{ rowId: string; colId: string; rect: ScreenRect }>
   >
+  /**
+   * The cells, row or column picked inside the selected table, or null. Cells
+   * are listed row-major so a spec asserts the picked range without
+   * re-deriving it from two corners.
+   */
+  tableSelection: {
+    tableId: string
+    kind: 'cells' | 'row' | 'col'
+    cells: Array<{ rowId: string; colId: string }>
+  } | null
+  /** The table cell open for typing, or null. */
+  editingCell: { tableId: string; rowId: string; colId: string } | null
   tool: CanvasTool
   readOnly: boolean
 }
@@ -205,6 +221,13 @@ interface UseCanvasTestHookArgs {
   selection: RenderSelection
   tool: CanvasTool
   readOnly: boolean
+}
+
+const EMPTY_TABLE: CanvasTable = {
+  rows: [],
+  cols: [],
+  cells: {},
+  headerRow: false,
 }
 
 export function useCanvasTestHook({
@@ -248,6 +271,7 @@ export function useCanvasTestHook({
         ? connectorBendRect(camera, connectorPath)
         : null
 
+    const pickedTable = selection.tableSelection ?? null
     const tableCellRects: CanvasEngineTestHook['tableCellRects'] = {}
     for (const element of scene.elements) {
       if (element.kind !== 'table') continue
@@ -285,6 +309,17 @@ export function useCanvasTestHook({
         ...guide,
       })),
       tableCellRects,
+      tableSelection: pickedTable
+        ? {
+            tableId: pickedTable.tableId,
+            kind: pickedTable.kind,
+            cells: selectionCells(
+              scene.byId.get(pickedTable.tableId)?.table ?? EMPTY_TABLE,
+              pickedTable,
+            ),
+          }
+        : null,
+      editingCell: selection.editing?.cell ?? null,
       tool,
       readOnly,
     }

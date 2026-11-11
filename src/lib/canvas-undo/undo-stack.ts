@@ -12,6 +12,11 @@
 
 import type { CanvasElementSnapshot } from '@/lib/canvas-element-adapter'
 import type { CanvasElementKind } from '@/data/schema'
+import type {
+  CellExpect,
+  TableOp,
+  TableOpType,
+} from '@/lib/canvas-engine/table'
 
 /**
  * Row-shaped snapshot of one element (positionX/positionY, not the engine's
@@ -81,6 +86,21 @@ export type CanvasUndoOperation =
       after?: CanvasElementSnapshot
     }
   | { kind: 'delete'; elementId: string; before: CanvasElementSnapshot }
+  /**
+   * One table op (canvas table element). Undo sends `inverse`, redo sends `op`;
+   * neither is guarded by a revision, because every op by anyone on the table
+   * advances it. Each is guarded by the cell text it expects to find instead:
+   * `undoExpect` is what the op left in the cells, `redoExpect` what it
+   * replaced. Absent when the op needs no such check.
+   */
+  | {
+      kind: 'table-op'
+      elementId: string
+      op: TableOp
+      inverse: TableOp
+      undoExpect?: Array<CellExpect>
+      redoExpect?: Array<CellExpect>
+    }
 
 /**
  * Which user gesture an entry reverses, and just enough shape to build a
@@ -197,6 +217,8 @@ export type CanvasUndoLabel =
    */
   | { gesture: 'group'; count: number }
   | { gesture: 'ungroup'; count: number }
+  /** One table op; the op type picks the wording. */
+  | { gesture: 'table-op'; op: TableOpType }
 
 /**
  * One undo-able gesture. `operations` holds more than one member only for a
@@ -247,6 +269,7 @@ export function elementKindForOperation(
       ? entry.label.elementKind
       : undefined
   }
+  if (operation.kind === 'table-op') return 'table'
   return operation.before.kind
 }
 
@@ -376,7 +399,9 @@ export function refreshRevision(
   const refresh = (entries: Array<CanvasUndoEntry>): Array<CanvasUndoEntry> =>
     entries.map((entry) => {
       const operations = entry.operations.map((op) =>
-        op.elementId === elementId && op.kind !== 'delete'
+        op.elementId === elementId &&
+        op.kind !== 'delete' &&
+        op.kind !== 'table-op'
           ? { ...op, afterRevision: revision }
           : op,
       )

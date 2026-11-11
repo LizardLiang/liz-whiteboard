@@ -81,7 +81,7 @@ import { toast } from 'sonner'
 import type { Dispatch, SetStateAction } from 'react'
 import type { CanvasElement, Scene } from '@/lib/canvas-engine/scene'
 import type { CanvasElementRecord } from '@/data/models'
-import type { TableOp } from '@/lib/canvas-engine/table'
+import type { CellExpect, TableOp } from '@/lib/canvas-engine/table'
 import { tErrorOr } from '@/lib/i18n/t-error'
 import { useT } from '@/lib/i18n/use-t'
 import {
@@ -242,7 +242,7 @@ export interface UseCanvasElementsReturn {
   applyTableOp: (
     elementId: string,
     op: TableOp,
-    options?: CanvasMutationOptions,
+    options?: CanvasMutationOptions & { expect?: Array<CellExpect> },
   ) => Promise<{ ok: boolean; inverse?: TableOp; revision?: number }>
   /** This hook's own revision index — see the file header. */
   getRevision: (id: string) => number | undefined
@@ -332,6 +332,32 @@ export function useCanvasElements({
    * fast, and the text never reached the database.
    */
   const pendingUpdatesRef = useRef(new Map<string, CanvasElement>())
+
+  /**
+   * Table ops issued while their table's create was still in flight, keyed by
+   * the temporary id, in issue order. The counterpart of `pendingUpdatesRef`:
+   * a user can create a table and type into it at once, and an op naming a
+   * temporary id addresses a row the server has never heard of. The create ack
+   * re-issues each one against the real id.
+   */
+  const pendingTableOpsRef = useRef(
+    new Map<string, Array<{ op: TableOp; expect?: Array<CellExpect> }>>(),
+  )
+  /**
+   * How many table ops per element are emitted and not yet acked. An ack
+   * carries the server's table as of THAT op; applying it while a later op is
+   * still in flight would wipe that op's optimistic change (an appended row
+   * would vanish and come back). Only the last ack of a burst touches the scene.
+   */
+  const inflightTableOpsRef = useRef(new Map<string, number>())
+  const applyTableOpRef = useRef<
+    | ((
+        elementId: string,
+        op: TableOp,
+        options?: CanvasMutationOptions & { expect?: Array<CellExpect> },
+      ) => Promise<{ ok: boolean; inverse?: TableOp; revision?: number }>)
+    | null
+  >(null)
 
   /**
    * Forward reference to `updateElements`, which is declared below
@@ -568,6 +594,22 @@ export function useCanvasElements({
                 { ephemeral: true },
               )
             }
+            const deferredOps = pendingTableOpsRef.current.get(temporaryId)
+            if (deferredOps) {
+              pendingTableOpsRef.current.delete(temporaryId)
+              // In order, one after another: each op reads the table the
+              // previous one left. Ephemeral for the reason above.
+              void deferredOps.reduce(
+                (chain, { op, expect }) =>
+                  chain.then(() =>
+                    applyTableOpRef.current?.(persisted.id, op, {
+                      ephemeral: true,
+                      expect,
+                    }),
+                  ),
+                Promise.resolve<unknown>(undefined),
+              )
+            }
             resolve({
               id: persisted.id,
               ok: true,
@@ -789,11 +831,35 @@ export function useCanvasElements({
     (
       elementId: string,
       op: TableOp,
-      options?: CanvasMutationOptions,
+      options?: CanvasMutationOptions & { expect?: Array<CellExpect> },
     ): Promise<{ ok: boolean; inverse?: TableOp; revision?: number }> => {
       return new Promise((resolve) => {
-        // A table whose create is still in flight has no server row to change.
+        // Never inside a state updater: an updater that throws would take the
+        // render down. A table that cannot take the op (a collaborator removed
+        // the row it names, or an optimistic copy already holds it) is left as
+        // it is, and the server decides on its ack.
+        const applyLocally = (): void => {
+          setScene((prev) => {
+            const current = prev.byId.get(elementId)
+            if (!current?.table) return prev
+            try {
+              const { table } = applyTableOpLocally(current.table, op)
+              return updateElement(prev, elementId, {
+                table,
+                ...tableSize(table),
+              })
+            } catch {
+              return prev
+            }
+          })
+        }
+        // A table whose create is still in flight has no server row to
+        // change. The op shows at once and waits for the create ack.
         if (pendingCreatesRef.current.has(elementId)) {
+          applyLocally()
+          const queued = pendingTableOpsRef.current.get(elementId) ?? []
+          queued.push({ op, expect: options?.expect })
+          pendingTableOpsRef.current.set(elementId, queued)
           resolve({ ok: false })
           return
         }
@@ -802,26 +868,27 @@ export function useCanvasElements({
           resolve({ ok: false })
           return
         }
-        try {
-          setScene((prev) => {
-            const current = prev.byId.get(elementId)
-            if (!current?.table) return prev
-            const { table } = applyTableOpLocally(current.table, op)
-            return updateElement(prev, elementId, {
-              table,
-              ...tableSize(table),
-            })
-          })
-        } catch {
-          // The server decides this op; its ack reports any refusal.
-        }
+        applyLocally()
+        inflightTableOpsRef.current.set(
+          elementId,
+          (inflightTableOpsRef.current.get(elementId) ?? 0) + 1,
+        )
         emit(
           'element:table-op',
-          { elementId, op },
+          {
+            elementId,
+            op,
+            ...(options?.expect ? { expect: options.expect } : {}),
+          },
           settleOnce<CanvasElementRecord & { inverse?: TableOp }>((res) => {
+            const remaining =
+              (inflightTableOpsRef.current.get(elementId) ?? 1) - 1
+            if (remaining > 0)
+              inflightTableOpsRef.current.set(elementId, remaining)
+            else inflightTableOpsRef.current.delete(elementId)
             if (!res.ok || !res.entity) {
               const base = confirmedRef.current.get(elementId)
-              if (base) {
+              if (base && remaining === 0) {
                 setScene((prev) =>
                   prev.byId.has(elementId)
                     ? updateElement(prev, elementId, base)
@@ -837,11 +904,13 @@ export function useCanvasElements({
             const persisted = toEngineElement(res.entity)
             confirm(persisted)
             revisionsRef.current.set(persisted.id, res.entity.revision)
-            setScene((prev) =>
-              prev.byId.has(persisted.id)
-                ? updateElement(prev, persisted.id, persisted)
-                : prev,
-            )
+            if (remaining === 0) {
+              setScene((prev) =>
+                prev.byId.has(persisted.id)
+                  ? updateElement(prev, persisted.id, persisted)
+                  : prev,
+              )
+            }
             resolve({
               ok: true,
               inverse: (res as { inverse?: TableOp }).inverse,
@@ -853,6 +922,9 @@ export function useCanvasElements({
     },
     [confirm, emit, setScene, settleOnce, t],
   )
+  useEffect(() => {
+    applyTableOpRef.current = applyTableOp
+  })
 
   return {
     createElement,

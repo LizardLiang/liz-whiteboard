@@ -129,6 +129,9 @@ export const sweepZhTW: DeepStringRecord<typeof sweepEn> = {
       groupMany: '群組 {count} 個元素',
       ungroupOne: '取消群組元素',
       ungroupMany: '取消群組 {count} 個元素',
+      tableCellText: '編輯表格儲存格',
+      tableInsertRow: '新增表格列',
+      tableEdit: '編輯表格',
     },
   },
   errorParts: {

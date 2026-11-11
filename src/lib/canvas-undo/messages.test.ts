@@ -433,3 +433,17 @@ describe('translated reports', () => {
     )
   })
 })
+
+describe('table op gestures', () => {
+  it('names a cell edit and a row append', () => {
+    expect(
+      describeUndoSuccess({ gesture: 'table-op', op: 'setCellText' }),
+    ).toBe('Undid editing a table cell')
+    expect(describeRedoSuccess({ gesture: 'table-op', op: 'insertRow' })).toBe(
+      'Redid adding a table row',
+    )
+    expect(describeUndoSuccess({ gesture: 'table-op', op: 'scaleTable' })).toBe(
+      'Undid editing a table',
+    )
+  })
+})

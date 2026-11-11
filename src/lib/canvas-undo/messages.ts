@@ -112,6 +112,14 @@ function describeGesture(label: CanvasUndoLabel, t: TFunction): string {
           })
     case 'group':
       return plural(label, 'undo.gesture.groupOne', 'undo.gesture.groupMany', t)
+    case 'table-op':
+      return t(
+        label.op === 'setCellText'
+          ? 'undo.gesture.tableCellText'
+          : label.op === 'insertRow'
+            ? 'undo.gesture.tableInsertRow'
+            : 'undo.gesture.tableEdit',
+      )
     case 'ungroup':
       return plural(
         label,

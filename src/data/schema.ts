@@ -1405,6 +1405,21 @@ export const tableOpSchema = z.discriminatedUnion('type', [
 ])
 
 /**
+ * The cell text an undo or redo of a table op expects to find (the contested
+ * check of `element:table-op`). Mirrors `CellExpect` in canvas-engine/table.ts.
+ */
+export const tableOpExpectSchema = z
+  .array(
+    z.strictObject({
+      rowId: tableIdSchema,
+      colId: tableIdSchema,
+      text: z.string().max(5000),
+      textRuns: z.array(canvasTextRunSchema).max(MAX_TEXT_RUNS).optional(),
+    }),
+  )
+  .max(TABLE_MAX_CELLS)
+
+/**
  * Kind-specific payload, a discriminated union on `kind`. Every shape arm and
  * the `text` arm are empty objects, and that is deliberate — exactly as
  * `shapePropsSchema` documents. This union is the dispatch point that let

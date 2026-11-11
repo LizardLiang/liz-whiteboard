@@ -39,7 +39,6 @@ import { connectorCurveOf, connectorPathOf, connectorTailOf } from './hit-test'
 import { pointAlongPath } from './flow-path'
 import { QUICK_CREATE_DIRECTIONS } from './quick-create'
 import { normalizeRuns, resolveRuns } from './text-runs'
-import { cellKey, cellTextElement, lookupCell, tableCellRects } from './table'
 import {
   DEFAULT_TEXT_STYLE,
   layoutText,
@@ -64,6 +63,15 @@ import {
   isCardShape,
 } from './card-style'
 import { LEGACY_STROKES, presetRamp } from './colour-ramps'
+import {
+  TABLE_GRIP_PX,
+  cellKey,
+  cellTextElement,
+  lookupCell,
+  selectionCells,
+  tableCellRects,
+} from './table'
+import type { TableSelection } from './table'
 import type {
   CanvasTheme,
   CardLook,
@@ -150,7 +158,11 @@ export interface RenderSelection {
     /** Other end of the selected range; equal to `caret` when nothing is selected. */
     anchor?: number
     caretVisible: boolean
+    /** Set while a table cell is open: the table and cell the virtual element stands for. */
+    cell?: { tableId: string; rowId: string; colId: string } | null
   } | null
+  /** The cells, row or column picked inside a selected table, or null. */
+  tableSelection?: TableSelection | null
   /**
    * A not-yet-committed element being drawn (the rubber-band preview for the
    * rectangle tool). Drawn like a real element but never in the scene.
@@ -1134,6 +1146,7 @@ function drawTable(
   target: PersistentRenderTarget,
   element: CanvasElement,
   theme: CanvasTheme,
+  openCellKey?: string,
 ): void {
   const table = element.table
   if (!table) return
@@ -1169,6 +1182,8 @@ function drawTable(
     })
   }
   for (const { rowId, colId } of cells) {
+    // The cell being edited is drawn by its own virtual text element.
+    if (cellKey(rowId, colId) === openCellKey) continue
     const cell = lookupCell(table.cells, cellKey(rowId, colId))
     if (!cell || cell.text.length === 0) continue
     const virtual = cellTextElement(element, rowId, colId)
@@ -1226,12 +1241,13 @@ function drawElement(
   emphasized = false,
   textSelection?: { start: number; end: number } | null,
   look?: CardLook,
+  openCellKey?: string,
 ): TextLayout | null {
   if (isCanvasShapeKind(element.kind)) {
     drawShape(target, element, look)
     drawCardTopRow(target, element, look)
   } else if (element.kind === 'table') {
-    drawTable(target, element, theme)
+    drawTable(target, element, theme, openCellKey)
     // The cells draw their own text; the table has no label of its own.
     return null
   } else if (element.kind === 'group') {
@@ -1897,6 +1913,78 @@ function drawQuickCreatePreview(
 }
 
 /**
+ * The picked cells of a selected table, and the row and column grabbers, in
+ * SCREEN space. Grabbers are drawn only for the table that is the one selection
+ * and not while a cell is open for typing.
+ */
+function drawTableSelection(
+  ctx: CanvasRenderingContext2D,
+  scene: Scene,
+  camera: Camera,
+  selection: RenderSelection,
+  chrome: (typeof CHROME)[CanvasTheme],
+): void {
+  const picked = selection.tableSelection ?? null
+  const soleId = selection.ids.size === 1 ? [...selection.ids][0] : undefined
+  const element = scene.byId.get(picked?.tableId ?? soleId ?? '')
+  const table = element?.table
+  if (!element || !table || soleId !== element.id) return
+
+  const rects = tableCellRects(element)
+  const rectOf = new Map(
+    rects.map((cell) => [cellKey(cell.rowId, cell.colId), cell.rect]),
+  )
+  const chosen = picked ? selectionCells(table, picked) : []
+  let minX = Infinity
+  let minY = Infinity
+  let maxX = -Infinity
+  let maxY = -Infinity
+  ctx.save()
+  ctx.fillStyle = chrome.marqueeFill
+  for (const { rowId, colId } of chosen) {
+    const rect = rectOf.get(cellKey(rowId, colId))
+    if (!rect) continue
+    const r = worldRectToScreen(camera, rect)
+    if (chosen.length > 1) ctx.fillRect(r.x, r.y, r.width, r.height)
+    minX = Math.min(minX, r.x)
+    minY = Math.min(minY, r.y)
+    maxX = Math.max(maxX, r.x + r.width)
+    maxY = Math.max(maxY, r.y + r.height)
+  }
+  if (minX !== Infinity) {
+    ctx.strokeStyle = chrome.accent
+    ctx.lineWidth = 2
+    ctx.strokeRect(minX + 1, minY + 1, maxX - minX - 2, maxY - minY - 2)
+  }
+
+  if (!selection.editing) {
+    ctx.fillStyle = chrome.handleFill
+    ctx.strokeStyle = chrome.accent
+    ctx.lineWidth = 1
+    const thick = Math.max(4, TABLE_GRIP_PX - 6)
+    for (const row of table.rows) {
+      const rect = rectOf.get(cellKey(row.id, table.cols[0].id))
+      if (!rect) continue
+      const r = worldRectToScreen(camera, rect)
+      const x = r.x - TABLE_GRIP_PX + 3
+      const y = r.y + 3
+      ctx.fillRect(x, y, thick, Math.max(2, r.height - 6))
+      ctx.strokeRect(x + 0.5, y + 0.5, thick - 1, Math.max(2, r.height - 6) - 1)
+    }
+    for (const col of table.cols) {
+      const rect = rectOf.get(cellKey(table.rows[0].id, col.id))
+      if (!rect) continue
+      const r = worldRectToScreen(camera, rect)
+      const x = r.x + 3
+      const y = r.y - TABLE_GRIP_PX + 3
+      ctx.fillRect(x, y, Math.max(2, r.width - 6), thick)
+      ctx.strokeRect(x + 0.5, y + 0.5, Math.max(2, r.width - 6) - 1, thick - 1)
+    }
+  }
+  ctx.restore()
+}
+
+/**
  * Draw selection outlines, resize grips and the marquee in SCREEN space.
  *
  * Called with the camera transform already popped: everything here is in CSS
@@ -1970,6 +2058,8 @@ function drawSelectionOverlay(
       }
     }
   }
+
+  drawTableSelection(ctx, scene, camera, selection, chrome)
 
   const handleTarget = creationHandleTarget(scene, selection)
   if (handleTarget) {
@@ -2206,6 +2296,9 @@ export function renderPersistentScene(
       emphasizedIds.has(element.id) || hoveredId === element.id,
       textSelection?.elementId === element.id ? textSelection : null,
       look,
+      element.kind === 'table' && layoutElementId?.startsWith(`${element.id}:`)
+        ? layoutElementId.slice(element.id.length + 1)
+        : undefined,
     )
     if (faded) target.endFade()
     if (element.id === layoutElementId) requestedLayout = layout

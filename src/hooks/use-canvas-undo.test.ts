@@ -1823,3 +1823,166 @@ describe('recordClone remaps a cloned group\'s childIds through the SERVER ids (
     expect(persistedOuter.group!.childIds).toEqual([serverId(INNER_CLIENT_ID)])
   })
 })
+
+describe('table ops', () => {
+  const TABLE_ID = '99999999-9999-4999-8999-999999999999'
+  const setText = (text: string) =>
+    ({
+      type: 'setCellText',
+      rowId: 'r1',
+      colId: 'c1',
+      text,
+    }) as const
+  const grid = {
+    rows: [{ id: 'r1', height: 40 }],
+    cols: [{ id: 'c1', width: 120 }],
+    cells: {},
+    headerRow: true,
+  }
+
+  function setupTableOps(
+    applyTableOp: Mock,
+    readOnly = false,
+  ) {
+    const m = makeMutations()
+    const view = renderHook(() =>
+      useCanvasUndo({
+        boardId: BOARD_ID,
+        readOnly,
+        createElement: m.createElement,
+        updateElements: m.updateElements,
+        deleteElements: m.deleteElements,
+        getRevision: m.getRevision,
+        applyTableOp: applyTableOp as any,
+      }),
+    )
+    return { m, view }
+  }
+
+  it('records one entry per op and undoes it by sending the inverse, guarded by the cell text', async () => {
+    const applyTableOp = vi
+      .fn()
+      .mockResolvedValueOnce({ ok: true, inverse: setText('old'), revision: 5 })
+      .mockResolvedValue({ ok: true, revision: 6 })
+    const { m, view } = setupTableOps(applyTableOp)
+    m.revisions.set(TABLE_ID, 5)
+
+    act(() => {
+      view.result.current.callbacks.onTableOp?.(TABLE_ID, setText('new'), grid)
+    })
+    await waitFor(() => expect(applyTableOp).toHaveBeenCalledTimes(1))
+    // Another user edits a different cell: the revision moves on.
+    act(() => {
+      m.revisions.set(TABLE_ID, 9)
+      view.result.current.undo()
+    })
+    await waitFor(() => expect(applyTableOp).toHaveBeenCalledTimes(2))
+    expect(applyTableOp.mock.calls[1][0]).toBe(TABLE_ID)
+    expect(applyTableOp.mock.calls[1][1]).toEqual(setText('old'))
+    expect(applyTableOp.mock.calls[1][2]).toMatchObject({
+      ephemeral: true,
+      expect: [{ rowId: 'r1', colId: 'c1', text: 'new' }],
+    })
+    expect(toast.success).toHaveBeenCalledWith('Undid editing a table cell')
+  })
+
+  it('redoes by sending the op again, expecting the text the edit replaced', async () => {
+    const applyTableOp = vi
+      .fn()
+      .mockResolvedValueOnce({ ok: true, inverse: setText('old'), revision: 5 })
+      .mockResolvedValue({ ok: true, revision: 6 })
+    const { m, view } = setupTableOps(applyTableOp)
+    m.revisions.set(TABLE_ID, 5)
+
+    act(() => {
+      view.result.current.callbacks.onTableOp?.(TABLE_ID, setText('new'), grid)
+    })
+    await waitFor(() => expect(applyTableOp).toHaveBeenCalledTimes(1))
+    act(() => view.result.current.undo())
+    await waitFor(() => expect(applyTableOp).toHaveBeenCalledTimes(2))
+    act(() => view.result.current.redo())
+    await waitFor(() => expect(applyTableOp).toHaveBeenCalledTimes(3))
+    expect(applyTableOp.mock.calls[2][1]).toEqual(setText('new'))
+    expect(applyTableOp.mock.calls[2][2]).toMatchObject({
+      expect: [{ rowId: 'r1', colId: 'c1', text: 'old' }],
+    })
+  })
+
+  it('reports a contested undo when the server refuses the expectation, and drops the entry', async () => {
+    const applyTableOp = vi
+      .fn()
+      .mockResolvedValueOnce({ ok: true, inverse: setText('old'), revision: 5 })
+      .mockResolvedValue({ ok: false })
+    const { m, view } = setupTableOps(applyTableOp)
+    m.revisions.set(TABLE_ID, 5)
+
+    act(() => {
+      view.result.current.callbacks.onTableOp?.(TABLE_ID, setText('new'), grid)
+    })
+    await waitFor(() => expect(applyTableOp).toHaveBeenCalledTimes(1))
+    act(() => view.result.current.undo())
+    await waitFor(() => expect(toast.warning).toHaveBeenCalled())
+    expect(toast.warning).toHaveBeenCalledWith(
+      'This table changed since your edit, so that change can\'t be undone.',
+    )
+    act(() => view.result.current.redo())
+    expect(toast.info).toHaveBeenCalledWith('Nothing left to redo.')
+  })
+
+  it('expects a blank row when undoing a row append', async () => {
+    const applyTableOp = vi
+      .fn()
+      .mockResolvedValueOnce({
+        ok: true,
+        inverse: { type: 'removeRow', rowId: 'r2' },
+        revision: 5,
+      })
+      .mockResolvedValue({ ok: true, revision: 6 })
+    const { m, view } = setupTableOps(applyTableOp)
+    m.revisions.set(TABLE_ID, 5)
+
+    act(() => {
+      view.result.current.callbacks.onTableOp?.(
+        TABLE_ID,
+        {
+          type: 'insertRow',
+          afterRowId: 'r1',
+          row: { id: 'r2', height: 40 },
+        },
+        grid,
+      )
+    })
+    await waitFor(() => expect(applyTableOp).toHaveBeenCalledTimes(1))
+    act(() => view.result.current.undo())
+    await waitFor(() => expect(applyTableOp).toHaveBeenCalledTimes(2))
+    expect(applyTableOp.mock.calls[1][1]).toEqual({
+      type: 'removeRow',
+      rowId: 'r2',
+    })
+    expect(applyTableOp.mock.calls[1][2].expect).toEqual([
+      { rowId: 'r2', colId: 'c1', text: '' },
+    ])
+  })
+
+  it('records nothing while read-only or when the op is refused', async () => {
+    const refused = vi.fn().mockResolvedValue({ ok: false })
+    const { view } = setupTableOps(refused)
+    act(() => {
+      view.result.current.callbacks.onTableOp?.(TABLE_ID, setText('x'), grid)
+    })
+    await waitFor(() => expect(refused).toHaveBeenCalled())
+    act(() => view.result.current.undo())
+    expect(toast.info).toHaveBeenCalledWith('Nothing left to undo.')
+
+    const ro = vi.fn()
+    const readOnly = setupTableOps(ro, true)
+    act(() => {
+      readOnly.view.result.current.callbacks.onTableOp?.(
+        TABLE_ID,
+        setText('x'),
+        grid,
+      )
+    })
+    expect(ro).not.toHaveBeenCalled()
+  })
+})

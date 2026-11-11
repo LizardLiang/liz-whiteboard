@@ -73,6 +73,8 @@ import type {
   UndoStack,
 } from '@/lib/canvas-undo/undo-stack'
 import type { InverseWrite } from '@/lib/canvas-undo/inverse'
+import type { CanvasTable, TableOp } from '@/lib/canvas-engine/table'
+import { expectAfterOp } from '@/lib/canvas-engine/table'
 import { useT } from '@/lib/i18n/use-t'
 import {
   fromElementSnapshot as snapshotToEngineElement,
@@ -103,6 +105,8 @@ export interface UseCanvasUndoParams {
   updateElements: UseCanvasElementsReturn['updateElements']
   deleteElements: UseCanvasElementsReturn['deleteElements']
   getRevision: UseCanvasElementsReturn['getRevision']
+  /** Sends one table op; absent in a consumer that never edits tables. */
+  applyTableOp?: UseCanvasElementsReturn['applyTableOp']
   /**
    * Called with the id of the element a successful undo/redo affected, or a
    * refusal's contested target (board-undo tactical plan, Wave 4, step 12).
@@ -272,6 +276,7 @@ export function useCanvasUndo({
   updateElements,
   deleteElements,
   getRevision,
+  applyTableOp,
   onAffectedElement,
 }: UseCanvasUndoParams): UseCanvasUndoReturn {
   const t = useT()
@@ -860,6 +865,44 @@ export function useCanvasUndo({
     [boardId, deleteElements, push, readOnly, updateElements],
   )
 
+  /**
+   * One table op (a cell's text, a row appended by Tab) as ONE undo entry.
+   *
+   * The server answers with the op's inverse; undo sends it back and redo
+   * sends `op` again. `table` is the table as it stood before the op, which
+   * the contested checks are built from: undo expects the cell to hold what
+   * this edit wrote, redo expects it to hold what the edit replaced.
+   */
+  const recordTableOp = useCallback(
+    (elementId: string, op: TableOp, table: CanvasTable) => {
+      if (readOnly || !applyTableOp) return
+      void applyTableOp(elementId, op).then((result) => {
+        if (!result.ok || !result.inverse) return
+        const inverse = result.inverse
+        const undoExpect =
+          op.type === 'setCellText'
+            ? expectAfterOp(table, op)
+            : expectAfterOp(table, inverse)
+        const redoExpect =
+          op.type === 'setCellText' ? expectAfterOp(table, inverse) : undefined
+        push({
+          label: { gesture: 'table-op', op: op.type },
+          operations: [
+            {
+              kind: 'table-op',
+              elementId,
+              op,
+              inverse,
+              ...(undoExpect ? { undoExpect } : {}),
+              ...(redoExpect ? { redoExpect } : {}),
+            },
+          ],
+        })
+      })
+    },
+    [applyTableOp, push, readOnly],
+  )
+
   const callbacks = useMemo<CanvasEditCallbacks>(
     () => ({
       onCreate: recordCreate,
@@ -869,6 +912,7 @@ export function useCanvasUndo({
       onDelete: recordDelete,
       onGroup: recordGroup,
       onUngroup: recordUngroup,
+      onTableOp: recordTableOp,
     }),
     [
       recordClone,
@@ -876,6 +920,7 @@ export function useCanvasUndo({
       recordDelete,
       recordGroup,
       recordQuickCreate,
+      recordTableOp,
       recordUngroup,
       recordUpdate,
     ],
@@ -948,6 +993,18 @@ export function useCanvasUndo({
             revision: result.revision,
           }
         }
+        case 'table-op': {
+          if (!applyTableOp) return { ok: false, elementId: write.elementId }
+          const res = await applyTableOp(write.elementId, write.op, {
+            ...EPHEMERAL,
+            expect: write.expect,
+          })
+          return {
+            ok: res.ok,
+            elementId: write.elementId,
+            revision: res.revision,
+          }
+        }
         case 'delete': {
           const results = await deleteElements([write.elementId], {
             ...EPHEMERAL,
@@ -978,7 +1035,7 @@ export function useCanvasUndo({
         }
       }
     },
-    [createElement, deleteElements, updateElements],
+    [applyTableOp, createElement, deleteElements, updateElements],
   )
 
   /**
@@ -1048,6 +1105,14 @@ export function useCanvasUndo({
             revision: result.revision,
           }
         }
+        case 'table-op': {
+          if (!applyTableOp) return { ok: false, elementId: op.elementId }
+          const res = await applyTableOp(op.elementId, op.op, {
+            ...EPHEMERAL,
+            expect: op.redoExpect,
+          })
+          return { ok: res.ok, elementId: op.elementId, revision: res.revision }
+        }
         case 'delete': {
           // Guarded exactly like the 'update' case immediately above
           // (Hermes review, W-A): an unconditional write here would
@@ -1079,7 +1144,7 @@ export function useCanvasUndo({
         }
       }
     },
-    [createElement, deleteElements, getRevision, updateElements],
+    [applyTableOp, createElement, deleteElements, getRevision, updateElements],
   )
 
   const undo = useCallback(() => {
@@ -1163,7 +1228,9 @@ export function useCanvasUndo({
         // is exactly the element's new state.
         const primary = popped.entry.operations[0]
         const restoredRect: WorldRect | null =
-          primary.kind === 'create' ? null : snapshotToWorldRect(primary.before)
+          primary.kind === 'create' || primary.kind === 'table-op'
+            ? null
+            : snapshotToWorldRect(primary.before)
         onAffectedElement?.(primary.elementId, restoredRect)
       } else {
         // Partial-application guard (Hermes review, finding 1): a
@@ -1306,7 +1373,9 @@ export function useCanvasUndo({
           // (nothing to focus).
           const primary = popped.entry.operations[0]
           const reappliedRect: WorldRect | null =
-            primary.kind === 'delete' || !primary.after
+            primary.kind === 'delete' ||
+            primary.kind === 'table-op' ||
+            !primary.after
               ? null
               : snapshotToWorldRect(primary.after)
           onAffectedElement?.(primary.elementId, reappliedRect)

@@ -5,13 +5,22 @@ import {
   TABLE_MIN_ROW_HEIGHT,
   TableOpError,
   applyTableOp,
+  cellAtPoint,
+  cellElementId,
   cellKey,
   cellRect,
   cellTextElement,
   createTable,
+  expectAfterOp,
+  gripAtPoint,
   normalizeTable,
+  pruneSelection,
+  selectionCells,
+  stepCell,
+  tabCell,
   tableCellRects,
   tableDimsForDrag,
+  tableMatchesExpect,
   tableSearchText,
   tableSize,
 } from './table'
@@ -440,5 +449,197 @@ describe('geometry', () => {
       text: 'first',
     }).table
     expect(tableSearchText(table)).toBe('first second')
+  })
+})
+
+describe('cellAtPoint', () => {
+  function placed() {
+    const table = fresh(2, 3)
+    return { x: 100, y: 50, ...tableSize(table), table }
+  }
+
+  it('finds the cell under a world point', () => {
+    const el = placed()
+    expect(cellAtPoint(el, { x: 110, y: 60 })).toEqual({
+      rowId: 'id-1',
+      colId: 'id-3',
+    })
+    expect(cellAtPoint(el, { x: 100 + 250, y: 50 + 50 })).toEqual({
+      rowId: 'id-2',
+      colId: 'id-5',
+    })
+  })
+
+  it('puts a border point in the cell right/below it, and the table edge outside', () => {
+    const el = placed()
+    expect(cellAtPoint(el, { x: 220, y: 90 })).toEqual({
+      rowId: 'id-2',
+      colId: 'id-4',
+    })
+    expect(cellAtPoint(el, { x: 100 + 360, y: 60 })).toBeNull()
+    expect(cellAtPoint(el, { x: 99, y: 60 })).toBeNull()
+  })
+
+  it('follows uneven row heights and column widths', () => {
+    const table = applyTableOp(fresh(2, 2), {
+      type: 'resizeRow',
+      rowId: 'id-1',
+      height: 100,
+    }).table
+    const el = { x: 0, y: 0, ...tableSize(table), table }
+    expect(cellAtPoint(el, { x: 10, y: 90 })?.rowId).toBe('id-1')
+    expect(cellAtPoint(el, { x: 10, y: 110 })?.rowId).toBe('id-2')
+  })
+})
+
+describe('gripAtPoint', () => {
+  const table = fresh(2, 2)
+  const el = { x: 100, y: 100, ...tableSize(table), table }
+
+  it('hits a row grabber left of the table and a column grabber above it', () => {
+    expect(gripAtPoint(el, { x: 93, y: 150 }, 14)).toEqual({
+      kind: 'row',
+      rowId: 'id-2',
+    })
+    expect(gripAtPoint(el, { x: 250, y: 93 }, 14)).toEqual({
+      kind: 'col',
+      colId: 'id-4',
+    })
+  })
+
+  it('misses inside the table, past the strip, and on the outer corner', () => {
+    expect(gripAtPoint(el, { x: 110, y: 110 }, 14)).toBeNull()
+    expect(gripAtPoint(el, { x: 80, y: 120 }, 14)).toBeNull()
+    expect(gripAtPoint(el, { x: 93, y: 93 }, 14)).toBeNull()
+  })
+
+  it('scales the strip with the zoom: a fixed screen size is more world px when zoomed out', () => {
+    expect(gripAtPoint(el, { x: 70, y: 120 }, 14 / 0.25)).not.toBeNull()
+    expect(gripAtPoint(el, { x: 70, y: 120 }, 14 / 2)).toBeNull()
+  })
+})
+
+describe('cell selection helpers', () => {
+  const table = fresh(3, 3)
+  // rows id-1..3, cols id-4..6
+  it('covers the rectangle between two corners, whichever way round', () => {
+    const cells = selectionCells(table, {
+      tableId: 't',
+      kind: 'cells',
+      anchor: { rowId: 'id-3', colId: 'id-5' },
+      focus: { rowId: 'id-2', colId: 'id-4' },
+    })
+    expect(cells.map((c) => `${c.rowId}:${c.colId}`)).toEqual([
+      'id-2:id-4',
+      'id-2:id-5',
+      'id-3:id-4',
+      'id-3:id-5',
+    ])
+  })
+
+  it('covers a whole row or column, and nothing for a removed one', () => {
+    expect(
+      selectionCells(table, { tableId: 't', kind: 'row', rowId: 'id-2' }),
+    ).toHaveLength(3)
+    expect(
+      selectionCells(table, { tableId: 't', kind: 'col', colId: 'id-6' }),
+    ).toHaveLength(3)
+    expect(
+      selectionCells(table, { tableId: 't', kind: 'row', rowId: 'gone' }),
+    ).toEqual([])
+  })
+
+  it('drops a selection whose row was removed by a remote op', () => {
+    const selection = {
+      tableId: 't',
+      kind: 'row' as const,
+      rowId: 'id-2',
+    }
+    expect(pruneSelection(table, selection)).toBe(selection)
+    const after = applyTableOp(table, { type: 'removeRow', rowId: 'id-2' })
+    expect(pruneSelection(after.table, selection)).toBeNull()
+  })
+
+  it('clamps arrow steps at the edges', () => {
+    expect(stepCell(table, { rowId: 'id-1', colId: 'id-4' }, -1, -1)).toEqual({
+      rowId: 'id-1',
+      colId: 'id-4',
+    })
+    expect(stepCell(table, { rowId: 'id-3', colId: 'id-6' }, 1, 1)).toEqual({
+      rowId: 'id-3',
+      colId: 'id-6',
+    })
+    expect(stepCell(table, { rowId: 'id-1', colId: 'id-4' }, 1, 1)).toEqual({
+      rowId: 'id-2',
+      colId: 'id-5',
+    })
+  })
+
+  it('Tab reads left to right, wraps to the next row, and ends at the last cell', () => {
+    expect(tabCell(table, { rowId: 'id-1', colId: 'id-6' }, 1)).toEqual({
+      rowId: 'id-2',
+      colId: 'id-4',
+    })
+    expect(tabCell(table, { rowId: 'id-2', colId: 'id-4' }, -1)).toEqual({
+      rowId: 'id-1',
+      colId: 'id-6',
+    })
+    expect(tabCell(table, { rowId: 'id-3', colId: 'id-6' }, 1)).toBeNull()
+    expect(tabCell(table, { rowId: 'id-1', colId: 'id-4' }, -1)).toBeNull()
+  })
+
+  it('names a cell virtual element by table, row and column', () => {
+    expect(cellElementId('t', 'r', 'c')).toBe('t:r:c')
+  })
+})
+
+describe('undo expectations', () => {
+  it('matches a cell on text and runs, and treats a missing cell as empty', () => {
+    const table = fresh(1, 2)
+    const typed = applyTableOp(table, {
+      type: 'setCellText',
+      rowId: 'id-1',
+      colId: 'id-2',
+      text: 'hi',
+      textRuns: [{ start: 0, end: 2, fontWeight: 'bold' } as never],
+    }).table
+    expect(
+      tableMatchesExpect(typed, [
+        {
+          rowId: 'id-1',
+          colId: 'id-2',
+          text: 'hi',
+          textRuns: [{ start: 0, end: 2, fontWeight: 'bold' } as never],
+        },
+      ]),
+    ).toBe(true)
+    expect(
+      tableMatchesExpect(typed, [{ rowId: 'id-1', colId: 'id-2', text: 'hi' }]),
+    ).toBe(false)
+    expect(
+      tableMatchesExpect(typed, [{ rowId: 'id-1', colId: 'id-3', text: '' }]),
+    ).toBe(true)
+    expect(
+      tableMatchesExpect(typed, [{ rowId: 'id-1', colId: 'id-3', text: 'x' }]),
+    ).toBe(false)
+  })
+
+  it('expects a text op to leave its own text behind, and a row removal a blank row', () => {
+    const table = fresh(2, 2)
+    expect(
+      expectAfterOp(table, {
+        type: 'setCellText',
+        rowId: 'id-1',
+        colId: 'id-3',
+        text: 'a',
+      }),
+    ).toEqual([{ rowId: 'id-1', colId: 'id-3', text: 'a' }])
+    expect(expectAfterOp(table, { type: 'removeRow', rowId: 'id-2' })).toEqual([
+      { rowId: 'id-2', colId: 'id-3', text: '' },
+      { rowId: 'id-2', colId: 'id-4', text: '' },
+    ])
+    expect(
+      expectAfterOp(table, { type: 'setHeaderRow', on: false }),
+    ).toBeUndefined()
   })
 })

@@ -133,6 +133,9 @@ export const sweepEn = {
       groupMany: 'grouping {count} elements',
       ungroupOne: 'ungrouping an element',
       ungroupMany: 'ungrouping {count} elements',
+      tableCellText: 'editing a table cell',
+      tableInsertRow: 'adding a table row',
+      tableEdit: 'editing a table',
     },
   },
   // Pieces for "Failed to <verb> <noun>: <reason>" server messages.
