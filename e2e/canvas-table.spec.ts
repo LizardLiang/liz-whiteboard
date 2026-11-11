@@ -7,8 +7,10 @@
 // 120 x 40 world px), the renderer paints it, and the grid survives a reload.
 // Phase 2: cell selection and editing — type in cells, Tab across, Tab in the
 // last cell appends a row, Enter is a newline, a wrapped cell grows its row,
-// the text bar styles a run inside a cell, undo/redo, reload. Rows/columns,
-// resize, header and fill arrive in later phases and extend this file.
+// the text bar styles a run inside a cell, undo/redo, reload.
+// Phase 3: rows and columns — the hover "+" on an inner border, the append bars,
+// the right-click menu, Delete semantics, dragging an inner border, and scaling
+// from the handles. Header and fill arrive in the last phase.
 //
 // Mechanics (focusBoard, dragMouse, worldToPage, the engine hook) are
 // duplicated from e2e/canvas-shapes.spec.ts on purpose: every canvas spec in
@@ -71,6 +73,7 @@ interface EngineState {
     kind: 'cells' | 'row' | 'col'
     cells: Array<{ rowId: string; colId: string }>
   } | null
+  tableAffordance: { tableId: string; kind: string } | null
   editingCell: { tableId: string; rowId: string; colId: string } | null
   tool: string
 }
@@ -662,5 +665,582 @@ test.describe('undo and redo of cell edits', () => {
     const table = await currentTable(page)
     expect(table.table!.rows).toHaveLength(4)
     expect(cellOf(table, 2, 2)?.text).toBe('end')
+  })
+})
+
+// ── Phase 3: rows and columns ──────────────────────────────────────────────
+
+/** The table's edges and its inner borders, in PAGE px, from the cell rects the renderer drew. */
+async function geometry(page: Page, tableId: string) {
+  const state = await engine(page)
+  const table = state.elements.find((element) => element.id === tableId)!
+  const cells = state.tableCellRects[tableId]
+  const box = await canvasBox(page)
+  const rect = (row: number, col: number) => {
+    const cell = cells.find(
+      (entry) =>
+        entry.rowId === table.table!.rows[row].id &&
+        entry.colId === table.table!.cols[col].id,
+    )!.rect
+    return {
+      left: box.x + cell.x,
+      top: box.y + cell.y,
+      right: box.x + cell.x + cell.width,
+      bottom: box.y + cell.y + cell.height,
+    }
+  }
+  const rows = table.table!.rows.length
+  const cols = table.table!.cols.length
+  const first = rect(0, 0)
+  const last = rect(rows - 1, cols - 1)
+  return {
+    left: first.left,
+    top: first.top,
+    right: last.right,
+    bottom: last.bottom,
+    midX: (first.left + last.right) / 2,
+    midY: (first.top + last.bottom) / 2,
+    /** The x of the border after column i (0-based, not the last). */
+    colBorder: (i: number) => rect(0, i).right,
+    /** The y of the border after row i (0-based, not the last). */
+    rowBorder: (i: number) => rect(i, 0).bottom,
+  }
+}
+
+async function rightClickCell(
+  page: Page,
+  tableId: string,
+  row: number,
+  col: number,
+) {
+  const at = await cellCentre(page, tableId, row, col)
+  await page.mouse.click(at.x, at.y, { button: 'right' })
+}
+
+async function chooseMenuItem(page: Page, name: string) {
+  await page.getByRole('menuitem', { name }).click()
+}
+
+test.describe('inserting rows and columns', () => {
+  test('hovering an inner column border shows its "+", and pressing it inserts a column there, persisted', async ({
+    page,
+  }) => {
+    const created = await makeTable(page)
+    const geo = await geometry(page, created.id)
+    // The "+" sits 14px below the table's bottom edge, under the border.
+    await page.mouse.move(geo.colBorder(0), geo.bottom + 14)
+    await expect
+      .poll(async () => (await engine(page)).tableAffordance?.kind)
+      .toBe('insert-col')
+    await page.mouse.click(geo.colBorder(0), geo.bottom + 14)
+
+    await expect
+      .poll(async () => (await currentTable(page)).table!.cols.length, {
+        timeout: 10_000,
+      })
+      .toBe(4)
+    const table = await currentTable(page)
+    expect(table.table!.cols[0].id).toBe(created.table!.cols[0].id)
+    expect(table.table!.cols[2].id).toBe(created.table!.cols[1].id)
+    expect(Math.round(table.width)).toBe(480)
+    await settle(page)
+    await reloadBoard(page)
+    const stored = await currentTable(page)
+    expect(stored.table!.cols.map((c) => c.id)).toEqual(
+      table.table!.cols.map((c) => c.id),
+    )
+  })
+
+  test('hovering an inner row border shows its "+", and pressing it inserts a row there', async ({
+    page,
+  }) => {
+    const created = await makeTable(page)
+    const geo = await geometry(page, created.id)
+    await page.mouse.move(geo.right + 14, geo.rowBorder(0))
+    await expect
+      .poll(async () => (await engine(page)).tableAffordance?.kind)
+      .toBe('insert-row')
+    await page.mouse.click(geo.right + 14, geo.rowBorder(0))
+    await expect
+      .poll(async () => (await currentTable(page)).table!.rows.length, {
+        timeout: 10_000,
+      })
+      .toBe(4)
+    const table = await currentTable(page)
+    expect(table.table!.rows[0].id).toBe(created.table!.rows[0].id)
+    expect(table.table!.rows[2].id).toBe(created.table!.rows[1].id)
+    await settle(page)
+    await reloadBoard(page)
+    expect((await currentTable(page)).table!.rows).toHaveLength(4)
+  })
+
+  test('the bars past the last column and the last row append', async ({
+    page,
+  }) => {
+    const created = await makeTable(page)
+    const geo = await geometry(page, created.id)
+    await page.mouse.move(geo.right + 10, geo.top + 10)
+    await expect
+      .poll(async () => (await engine(page)).tableAffordance?.kind)
+      .toBe('append-col')
+    await page.mouse.click(geo.right + 10, geo.top + 10)
+    await expect
+      .poll(async () => (await currentTable(page)).table!.cols.length, {
+        timeout: 10_000,
+      })
+      .toBe(4)
+    expect((await currentTable(page)).table!.cols[3].id).not.toBe(
+      created.table!.cols[2].id,
+    )
+
+    const after = await geometry(page, created.id)
+    await page.mouse.move(after.left + 20, after.bottom + 10)
+    await expect
+      .poll(async () => (await engine(page)).tableAffordance?.kind)
+      .toBe('append-row')
+    await page.mouse.click(after.left + 20, after.bottom + 10)
+    await expect
+      .poll(async () => (await currentTable(page)).table!.rows.length, {
+        timeout: 10_000,
+      })
+      .toBe(4)
+    await settle(page)
+    await reloadBoard(page)
+    const stored = await currentTable(page)
+    expect(stored.table!.cols).toHaveLength(4)
+    expect(stored.table!.rows).toHaveLength(4)
+  })
+
+  test('a table that is not selected shows no affordance', async ({ page }) => {
+    const created = await makeTable(page)
+    const geo = await geometry(page, created.id)
+    // Click empty canvas to drop the selection.
+    const box = await canvasBox(page)
+    await page.mouse.click(box.x + 40, box.y + 150)
+    await expect.poll(async () => (await engine(page)).selectedIds).toEqual([])
+    await page.mouse.move(geo.right + 10, geo.top + 10)
+    await page.waitForTimeout(200)
+    expect((await engine(page)).tableAffordance).toBeNull()
+  })
+
+  test('one undo reverses an inserted column, and redo brings it back', async ({
+    page,
+  }) => {
+    const created = await makeTable(page)
+    const geo = await geometry(page, created.id)
+    await page.mouse.click(geo.right + 10, geo.top + 10)
+    await expect
+      .poll(async () => (await currentTable(page)).table!.cols.length, {
+        timeout: 10_000,
+      })
+      .toBe(4)
+    await settle(page)
+    await page.keyboard.press('Control+z')
+    await expect
+      .poll(async () => (await currentTable(page)).table!.cols.length, {
+        timeout: 10_000,
+      })
+      .toBe(3)
+    await page.keyboard.press('Control+Shift+z')
+    await expect
+      .poll(async () => (await currentTable(page)).table!.cols.length, {
+        timeout: 10_000,
+      })
+      .toBe(4)
+  })
+})
+
+test.describe('the right-click menu', () => {
+  test('inserts a row above and a column to the right of the clicked cell', async ({
+    page,
+  }) => {
+    const created = await makeTable(page)
+    await rightClickCell(page, created.id, 1, 1)
+    await expect(page.getByRole('menuitem')).toHaveCount(7)
+    await chooseMenuItem(page, 'Insert row above')
+    await expect
+      .poll(async () => (await currentTable(page)).table!.rows.length, {
+        timeout: 10_000,
+      })
+      .toBe(4)
+    let table = await currentTable(page)
+    expect(table.table!.rows[0].id).toBe(created.table!.rows[0].id)
+    expect(table.table!.rows[2].id).toBe(created.table!.rows[1].id)
+
+    await rightClickCell(page, created.id, 0, 1)
+    await chooseMenuItem(page, 'Insert column right')
+    await expect
+      .poll(async () => (await currentTable(page)).table!.cols.length, {
+        timeout: 10_000,
+      })
+      .toBe(4)
+    table = await currentTable(page)
+    expect(table.table!.cols[1].id).toBe(created.table!.cols[1].id)
+    expect(table.table!.cols[3].id).toBe(created.table!.cols[2].id)
+    await settle(page)
+    await reloadBoard(page)
+    const stored = await currentTable(page)
+    expect(stored.table!.rows).toHaveLength(4)
+    expect(stored.table!.cols).toHaveLength(4)
+  })
+
+  test('deletes the clicked row and column, and Delete row / Delete column are disabled on the last one', async ({
+    page,
+  }) => {
+    const created = await makeTable(page)
+    await rightClickCell(page, created.id, 2, 2)
+    await chooseMenuItem(page, 'Delete row')
+    await expect
+      .poll(async () => (await currentTable(page)).table!.rows.length, {
+        timeout: 10_000,
+      })
+      .toBe(2)
+    await rightClickCell(page, created.id, 1, 1)
+    await chooseMenuItem(page, 'Delete row')
+    await expect
+      .poll(async () => (await currentTable(page)).table!.rows.length, {
+        timeout: 10_000,
+      })
+      .toBe(1)
+
+    // One row left: Delete row is disabled, Delete column is not.
+    await rightClickCell(page, created.id, 0, 0)
+    await expect(
+      page.getByRole('menuitem', { name: 'Delete row' }),
+    ).toHaveAttribute('aria-disabled', 'true')
+    await expect(
+      page.getByRole('menuitem', { name: 'Delete column' }),
+    ).not.toHaveAttribute('aria-disabled', 'true')
+    await page.keyboard.press('Escape')
+
+    await rightClickCell(page, created.id, 0, 2)
+    await chooseMenuItem(page, 'Delete column')
+    await rightClickCell(page, created.id, 0, 1)
+    await chooseMenuItem(page, 'Delete column')
+    await expect
+      .poll(async () => (await currentTable(page)).table!.cols.length, {
+        timeout: 10_000,
+      })
+      .toBe(1)
+    await rightClickCell(page, created.id, 0, 0)
+    await expect(
+      page.getByRole('menuitem', { name: 'Delete column' }),
+    ).toHaveAttribute('aria-disabled', 'true')
+    await page.keyboard.press('Escape')
+    await settle(page)
+    await reloadBoard(page)
+    const stored = await currentTable(page)
+    expect(stored.table!.rows).toHaveLength(1)
+    expect(stored.table!.cols).toHaveLength(1)
+  })
+
+  test('Clear cells empties the picked cells and one undo brings the text back', async ({
+    page,
+  }) => {
+    const created = await makeTable(page)
+    await openCell(page, created.id, 0, 0)
+    await page.keyboard.type('alpha')
+    await page.keyboard.press('Tab')
+    await page.keyboard.type('beta')
+    await page.keyboard.press('Escape')
+    await expect.poll(() => editingCell(page)).toBeNull()
+    await settle(page)
+
+    // Pick both cells, then clear from the menu.
+    const first = await cellCentre(page, created.id, 0, 0)
+    await page.mouse.click(first.x, first.y)
+    const second = await cellCentre(page, created.id, 0, 1)
+    await page.keyboard.down('Shift')
+    await page.mouse.click(second.x, second.y)
+    await page.keyboard.up('Shift')
+    await rightClickCell(page, created.id, 0, 1)
+    await chooseMenuItem(page, 'Clear cells')
+    await expect
+      .poll(async () => cellOf(await currentTable(page), 0, 0)?.text, {
+        timeout: 10_000,
+      })
+      .toBeUndefined()
+    expect(cellOf(await currentTable(page), 0, 1)?.text).toBeUndefined()
+    await settle(page)
+    await page.keyboard.press('Control+z')
+    await expect
+      .poll(async () => cellOf(await currentTable(page), 0, 0)?.text, {
+        timeout: 10_000,
+      })
+      .toBe('alpha')
+    expect(cellOf(await currentTable(page), 0, 1)?.text).toBe('beta')
+  })
+
+  test('the browser menu is left alone away from a table', async ({ page }) => {
+    await makeTable(page)
+    const box = await canvasBox(page)
+    await page.mouse.click(box.x + 40, box.y + 150, { button: 'right' })
+    await page.waitForTimeout(300)
+    await expect(page.getByRole('menuitem')).toHaveCount(0)
+  })
+})
+
+test.describe('Delete with part of a table picked', () => {
+  test('a picked row or column is removed, not the table', async ({ page }) => {
+    const created = await makeTable(page)
+    let geo = await geometry(page, created.id)
+    // The row grabber: a strip just left of the table.
+    await page.mouse.click(geo.left - 7, (geo.top + geo.rowBorder(0)) / 2)
+    await expect
+      .poll(async () => (await engine(page)).tableSelection?.kind)
+      .toBe('row')
+    await page.keyboard.press('Delete')
+    await expect
+      .poll(async () => (await currentTable(page)).table!.rows.length, {
+        timeout: 10_000,
+      })
+      .toBe(2)
+    expect(tablesOf(await engine(page))).toHaveLength(1)
+
+    geo = await geometry(page, created.id)
+    await page.mouse.click((geo.left + geo.colBorder(0)) / 2, geo.top - 7)
+    await expect
+      .poll(async () => (await engine(page)).tableSelection?.kind)
+      .toBe('col')
+    await page.keyboard.press('Backspace')
+    await expect
+      .poll(async () => (await currentTable(page)).table!.cols.length, {
+        timeout: 10_000,
+      })
+      .toBe(2)
+    expect(tablesOf(await engine(page))).toHaveLength(1)
+    await settle(page)
+    await reloadBoard(page)
+    const stored = await currentTable(page)
+    expect(stored.table!.rows).toHaveLength(2)
+    expect(stored.table!.cols).toHaveLength(2)
+  })
+
+  test('a picked cell is cleared, the table stays, and Delete on the whole table deletes it', async ({
+    page,
+  }) => {
+    const created = await makeTable(page)
+    await openCell(page, created.id, 1, 1)
+    await page.keyboard.type('gone soon')
+    await page.keyboard.press('Escape')
+    await expect.poll(() => editingCell(page)).toBeNull()
+    await settle(page)
+    expect(cellOf(await currentTable(page), 1, 1)?.text).toBe('gone soon')
+
+    // Pick the cell again (this also puts the keyboard focus back on the board).
+    const cell = await cellCentre(page, created.id, 1, 1)
+    await page.mouse.click(cell.x, cell.y)
+    await expect
+      .poll(async () => (await engine(page)).tableSelection?.kind)
+      .toBe('cells')
+    await page.keyboard.press('Delete')
+    await expect
+      .poll(async () => cellOf(await currentTable(page), 1, 1)?.text, {
+        timeout: 10_000,
+      })
+      .toBeUndefined()
+    expect(tablesOf(await engine(page))).toHaveLength(1)
+    await settle(page)
+    await reloadBoard(page)
+    expect(tablesOf(await engine(page))).toHaveLength(1)
+    expect(cellOf(await currentTable(page), 1, 1)?.text).toBeUndefined()
+
+    // Whole-table selection: click the table, Delete removes the element.
+    const at = await cellCentre(page, created.id, 0, 0)
+    await page.mouse.click(at.x, at.y)
+    await expect
+      .poll(async () => (await engine(page)).selectedIds)
+      .toEqual([created.id])
+    expect((await engine(page)).tableSelection).toBeNull()
+    await page.keyboard.press('Delete')
+    await expect
+      .poll(async () => tablesOf(await engine(page)).length, {
+        timeout: 10_000,
+      })
+      .toBe(0)
+  })
+})
+
+test.describe('resizing', () => {
+  test('dragging an inner column border resizes that column live, persisted', async ({
+    page,
+  }) => {
+    const created = await makeTable(page)
+    const geo = await geometry(page, created.id)
+    const x = geo.colBorder(0)
+    const y = geo.top + 20
+    await page.mouse.move(x, y)
+    await expect
+      .poll(async () => (await engine(page)).tableAffordance?.kind)
+      .toBe('border-col')
+    await page.mouse.down()
+    await page.mouse.move(x + 30, y, { steps: 5 })
+    // Live: the grid follows the pointer before the release.
+    await expect
+      .poll(async () => (await currentTable(page)).table!.cols[0].width)
+      .toBe(150)
+    await page.mouse.move(x + 60, y, { steps: 5 })
+    await page.mouse.up()
+    await expect
+      .poll(async () => (await currentTable(page)).table!.cols[0].width)
+      .toBe(180)
+    const table = await currentTable(page)
+    expect(Math.round(table.width)).toBe(420)
+    await settle(page)
+    // One undo puts the column back (the stack lives in the tab, so before the reload).
+    await page.keyboard.press('Control+z')
+    await expect
+      .poll(async () => (await currentTable(page)).table!.cols[0].width, {
+        timeout: 10_000,
+      })
+      .toBe(120)
+    await page.keyboard.press('Control+Shift+z')
+    await expect
+      .poll(async () => (await currentTable(page)).table!.cols[0].width, {
+        timeout: 10_000,
+      })
+      .toBe(180)
+    await settle(page)
+    await reloadBoard(page)
+    const stored = await currentTable(page)
+    expect(stored.table!.cols[0].width).toBe(180)
+    expect(Math.round(stored.width)).toBe(420)
+  })
+
+  test('dragging an inner row border resizes that row', async ({ page }) => {
+    const created = await makeTable(page)
+    const geo = await geometry(page, created.id)
+    const y = geo.rowBorder(0)
+    const x = geo.left + 20
+    await dragMouse(page, { x, y }, { x, y: y + 30 })
+    await expect
+      .poll(async () => (await currentTable(page)).table!.rows[0].height, {
+        timeout: 10_000,
+      })
+      .toBe(70)
+    await settle(page)
+    await reloadBoard(page)
+    expect((await currentTable(page)).table!.rows[0].height).toBe(70)
+  })
+
+  test('a border stops at the minimum column width', async ({ page }) => {
+    const created = await makeTable(page)
+    const geo = await geometry(page, created.id)
+    const x = geo.colBorder(0)
+    const y = geo.top + 20
+    await dragMouse(page, { x, y }, { x: x - 300, y })
+    await expect
+      .poll(async () => (await currentTable(page)).table!.cols[0].width, {
+        timeout: 10_000,
+      })
+      .toBe(40)
+  })
+
+  test('the bottom-right corner scales every row and column together, persisted and undoable', async ({
+    page,
+  }) => {
+    const created = await makeTable(page)
+    const geo = await geometry(page, created.id)
+    await dragMouse(
+      page,
+      { x: geo.right, y: geo.bottom },
+      { x: geo.right + 180, y: geo.bottom + 60 },
+    )
+    // 360 x 120 grows by 1.5 on both axes.
+    await expect
+      .poll(async () => Math.round((await currentTable(page)).width), {
+        timeout: 10_000,
+      })
+      .toBe(540)
+    const table = await currentTable(page)
+    expect(Math.round(table.height)).toBe(180)
+    expect(table.table!.cols.map((c) => Math.round(c.width))).toEqual([
+      180, 180, 180,
+    ])
+    expect(table.table!.rows.map((r) => Math.round(r.height))).toEqual([
+      60, 60, 60,
+    ])
+    expect(Math.round(table.x)).toBe(Math.round(created.x))
+    await settle(page)
+    // The undo stack lives in the tab, so undo before the reload.
+    await page.keyboard.press('Control+z')
+    await expect
+      .poll(async () => Math.round((await currentTable(page)).width), {
+        timeout: 10_000,
+      })
+      .toBe(360)
+    await page.keyboard.press('Control+Shift+z')
+    await expect
+      .poll(async () => Math.round((await currentTable(page)).width), {
+        timeout: 10_000,
+      })
+      .toBe(540)
+    await settle(page)
+    await reloadBoard(page)
+    expect(Math.round((await currentTable(page)).width)).toBe(540)
+  })
+
+  test('the top-left corner scales from the opposite corner, which stays put', async ({
+    page,
+  }) => {
+    const created = await makeTable(page)
+    const geo = await geometry(page, created.id)
+    await dragMouse(
+      page,
+      { x: geo.left, y: geo.top },
+      { x: geo.left - 180, y: geo.top - 60 },
+    )
+    await expect
+      .poll(async () => Math.round((await currentTable(page)).width), {
+        timeout: 10_000,
+      })
+      .toBe(540)
+    const table = await currentTable(page)
+    // The bottom-right corner is where it was.
+    expect(Math.round(table.x + table.width)).toBe(
+      Math.round(created.x + created.width),
+    )
+    expect(Math.round(table.y + table.height)).toBe(
+      Math.round(created.y + created.height),
+    )
+    await settle(page)
+    // Undo restores the size AND the position (the stack lives in the tab,
+    // so this runs before the reload).
+    await page.keyboard.press('Control+z')
+    await expect
+      .poll(async () => Math.round((await currentTable(page)).width), {
+        timeout: 10_000,
+      })
+      .toBe(360)
+    expect(Math.round((await currentTable(page)).x)).toBe(Math.round(created.x))
+    expect(Math.round((await currentTable(page)).y)).toBe(Math.round(created.y))
+    await page.keyboard.press('Control+Shift+z')
+    await expect
+      .poll(async () => Math.round((await currentTable(page)).width), {
+        timeout: 10_000,
+      })
+      .toBe(540)
+    await settle(page)
+    await reloadBoard(page)
+    const stored = await currentTable(page)
+    expect(Math.round(stored.x)).toBe(Math.round(table.x))
+    expect(Math.round(stored.y)).toBe(Math.round(table.y))
+    expect(Math.round(stored.width)).toBe(540)
+  })
+
+  test('the right edge handle scales the width only', async ({ page }) => {
+    const created = await makeTable(page)
+    const geo = await geometry(page, created.id)
+    await dragMouse(
+      page,
+      { x: geo.right, y: geo.midY },
+      { x: geo.right + 180, y: geo.midY },
+    )
+    await expect
+      .poll(async () => Math.round((await currentTable(page)).width), {
+        timeout: 10_000,
+      })
+      .toBe(540)
+    expect(Math.round((await currentTable(page)).height)).toBe(120)
   })
 })

@@ -132,6 +132,10 @@ export const sweepZhTW: DeepStringRecord<typeof sweepEn> = {
       tableCellText: '編輯表格儲存格',
       tableInsertRow: '新增表格列',
       tableEdit: '編輯表格',
+      tableInsertCol: '新增表格欄',
+      tableDelete: '刪除表格列或欄',
+      tableResize: '調整表格大小',
+      tableClear: '清除表格儲存格',
     },
   },
   errorParts: {

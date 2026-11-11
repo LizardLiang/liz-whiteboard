@@ -1964,6 +1964,85 @@ describe('table ops', () => {
     ])
   })
 
+  it('names the real element id when the op was issued before the create ack', async () => {
+    const REAL_ID = '88888888-8888-4888-8888-888888888888'
+    const applyTableOp = vi
+      .fn()
+      .mockResolvedValueOnce({
+        ok: true,
+        inverse: { type: 'removeCol', colId: 'c2' },
+        revision: 5,
+        elementId: REAL_ID,
+      })
+      .mockResolvedValue({ ok: true, revision: 6 })
+    const { m, view } = setupTableOps(applyTableOp)
+    m.revisions.set(REAL_ID, 5)
+    act(() => {
+      view.result.current.callbacks.onTableOp?.(
+        TABLE_ID,
+        {
+          type: 'insertCol',
+          afterColId: 'c1',
+          col: { id: 'c2', width: 120 },
+        },
+        grid,
+      )
+    })
+    await waitFor(() => expect(applyTableOp).toHaveBeenCalledTimes(1))
+    act(() => view.result.current.undo())
+    await waitFor(() => expect(applyTableOp).toHaveBeenCalledTimes(2))
+    expect(applyTableOp.mock.calls[1][0]).toBe(REAL_ID)
+    expect(applyTableOp.mock.calls[1][1]).toEqual({
+      type: 'removeCol',
+      colId: 'c2',
+    })
+    expect(applyTableOp.mock.calls[1][2].expect).toEqual([
+      { rowId: 'r1', colId: 'c2', text: '' },
+    ])
+  })
+
+  it('guards the redo of a row delete with the text the row held', async () => {
+    const withText = {
+      ...grid,
+      rows: [
+        { id: 'r1', height: 40 },
+        { id: 'r2', height: 40 },
+      ],
+      cells: { 'r2:c1': { text: 'kept' } },
+    }
+    const inverse = {
+      type: 'insertRow',
+      afterRowId: 'r1',
+      row: { id: 'r2', height: 40 },
+      cells: { c1: { text: 'kept' } },
+    }
+    const applyTableOp = vi
+      .fn()
+      .mockResolvedValueOnce({ ok: true, inverse, revision: 5 })
+      .mockResolvedValue({ ok: true, revision: 6 })
+    const { m, view } = setupTableOps(applyTableOp)
+    m.revisions.set(TABLE_ID, 5)
+    act(() => {
+      view.result.current.callbacks.onTableOp?.(
+        TABLE_ID,
+        { type: 'removeRow', rowId: 'r2' },
+        withText,
+      )
+    })
+    await waitFor(() => expect(applyTableOp).toHaveBeenCalledTimes(1))
+    act(() => view.result.current.undo())
+    await waitFor(() => expect(applyTableOp).toHaveBeenCalledTimes(2))
+    act(() => view.result.current.redo())
+    await waitFor(() => expect(applyTableOp).toHaveBeenCalledTimes(3))
+    expect(applyTableOp.mock.calls[2][1]).toEqual({
+      type: 'removeRow',
+      rowId: 'r2',
+    })
+    expect(applyTableOp.mock.calls[2][2].expect).toEqual([
+      { rowId: 'r2', colId: 'c1', text: 'kept' },
+    ])
+  })
+
   it('records nothing while read-only or when the op is refused', async () => {
     const refused = vi.fn().mockResolvedValue({ ok: false })
     const { view } = setupTableOps(refused)

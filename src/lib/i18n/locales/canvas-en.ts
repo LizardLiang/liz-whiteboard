@@ -155,6 +155,16 @@ export const canvasEn = {
       accent: 'Accent',
     },
   },
+  tableMenu: {
+    aria: 'Table',
+    insertRowAbove: 'Insert row above',
+    insertRowBelow: 'Insert row below',
+    insertColLeft: 'Insert column left',
+    insertColRight: 'Insert column right',
+    deleteRow: 'Delete row',
+    deleteCol: 'Delete column',
+    clearCells: 'Clear cells',
+  },
   actions: {
     group: 'Actions',
     duplicate: 'Duplicate',

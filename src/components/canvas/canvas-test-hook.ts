@@ -192,6 +192,8 @@ export interface CanvasEngineTestHook {
     kind: 'cells' | 'row' | 'col'
     cells: Array<{ rowId: string; colId: string }>
   } | null
+  /** What the pointer is over on the selected table beyond its cells, or null. */
+  tableAffordance: { tableId: string; kind: string } | null
   /** The table cell open for typing, or null. */
   editingCell: { tableId: string; rowId: string; colId: string } | null
   tool: CanvasTool
@@ -317,6 +319,12 @@ export function useCanvasTestHook({
               scene.byId.get(pickedTable.tableId)?.table ?? EMPTY_TABLE,
               pickedTable,
             ),
+          }
+        : null,
+      tableAffordance: selection.tableAffordance
+        ? {
+            tableId: selection.tableAffordance.tableId,
+            kind: selection.tableAffordance.affordance.kind,
           }
         : null,
       editingCell: selection.editing?.cell ?? null,

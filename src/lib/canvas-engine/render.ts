@@ -65,13 +65,17 @@ import {
 import { LEGACY_STROKES, presetRamp } from './colour-ramps'
 import {
   TABLE_GRIP_PX,
+  TABLE_PLUS_PX,
+  affordanceBorderAt,
   cellKey,
   cellTextElement,
   lookupCell,
   selectionCells,
+  tableAppendRect,
   tableCellRects,
+  tablePlusRect,
 } from './table'
-import type { TableSelection } from './table'
+import type { TableAffordance, TableSelection } from './table'
 import type {
   CanvasTheme,
   CardLook,
@@ -163,6 +167,8 @@ export interface RenderSelection {
   } | null
   /** The cells, row or column picked inside a selected table, or null. */
   tableSelection?: TableSelection | null
+  /** What the pointer is over on the selected table beyond its cells: a "+" button, an append bar or an inner border. */
+  tableAffordance?: { tableId: string; affordance: TableAffordance } | null
   /**
    * A not-yet-committed element being drawn (the rubber-band preview for the
    * rectangle tool). Drawn like a real element but never in the scene.
@@ -1980,8 +1986,108 @@ function drawTableSelection(
       ctx.fillRect(x, y, Math.max(2, r.width - 6), thick)
       ctx.strokeRect(x + 0.5, y + 0.5, Math.max(2, r.width - 6) - 1, thick - 1)
     }
+    const hover = selection.tableAffordance
+    if (hover && hover.tableId === element.id) {
+      drawTableAffordance(ctx, element, camera, hover.affordance, chrome)
+    }
   }
   ctx.restore()
+}
+
+/** A "+" button: a ring with a plus, centred in a screen rect. */
+function drawPlusButton(
+  ctx: CanvasRenderingContext2D,
+  rect: ScreenRect,
+  chrome: (typeof CHROME)[CanvasTheme],
+  faded: boolean,
+): void {
+  const cx = rect.x + rect.width / 2
+  const cy = rect.y + rect.height / 2
+  const radius = TABLE_PLUS_PX / 2
+  ctx.save()
+  ctx.globalAlpha = faded ? 0.55 : 1
+  ctx.fillStyle = chrome.handleFill
+  ctx.strokeStyle = chrome.accent
+  ctx.lineWidth = 1.5
+  ctx.beginPath()
+  ctx.arc(cx, cy, radius, 0, Math.PI * 2)
+  ctx.fill()
+  ctx.stroke()
+  ctx.beginPath()
+  ctx.moveTo(cx - 4, cy)
+  ctx.lineTo(cx + 4, cy)
+  ctx.moveTo(cx, cy - 4)
+  ctx.lineTo(cx, cy + 4)
+  ctx.stroke()
+  ctx.restore()
+}
+
+/**
+ * The hover affordance of a selected table, in SCREEN space: the "+" button of
+ * an inner border, the append bar past the last row or column, or the border
+ * about to be dragged. Drawn from the same rects the hit test uses.
+ */
+function drawTableAffordance(
+  ctx: CanvasRenderingContext2D,
+  element: CanvasElement,
+  camera: Camera,
+  affordance: TableAffordance,
+  chrome: (typeof CHROME)[CanvasTheme],
+): void {
+  const zoom = camera.zoom
+  if (affordance.kind === 'append-col' || affordance.kind === 'append-row') {
+    const r = worldRectToScreen(
+      camera,
+      tableAppendRect(
+        element,
+        affordance.kind === 'append-col' ? 'col' : 'row',
+        zoom,
+      ),
+    )
+    ctx.save()
+    ctx.fillStyle = chrome.marqueeFill
+    ctx.strokeStyle = chrome.accent
+    ctx.lineWidth = 1
+    ctx.fillRect(r.x, r.y, r.width, r.height)
+    ctx.strokeRect(r.x + 0.5, r.y + 0.5, r.width - 1, r.height - 1)
+    const cx = r.x + r.width / 2
+    const cy = r.y + r.height / 2
+    ctx.beginPath()
+    ctx.moveTo(cx - 3, cy)
+    ctx.lineTo(cx + 3, cy)
+    ctx.moveTo(cx, cy - 3)
+    ctx.lineTo(cx, cy + 3)
+    ctx.stroke()
+    ctx.restore()
+    return
+  }
+  const isCol =
+    affordance.kind === 'insert-col' || affordance.kind === 'border-col'
+  const at = affordanceBorderAt(element, affordance)
+  if (at === null) return
+  const button = worldRectToScreen(
+    camera,
+    tablePlusRect(element, isCol ? 'col' : 'row', at, zoom),
+  )
+  if (affordance.kind === 'border-col' || affordance.kind === 'border-row') {
+    const table = worldRectToScreen(camera, element)
+    ctx.save()
+    ctx.strokeStyle = chrome.accent
+    ctx.lineWidth = 2
+    ctx.beginPath()
+    if (isCol) {
+      const x = button.x + button.width / 2
+      ctx.moveTo(x, table.y)
+      ctx.lineTo(x, table.y + table.height)
+    } else {
+      const y = button.y + button.height / 2
+      ctx.moveTo(table.x, y)
+      ctx.lineTo(table.x + table.width, y)
+    }
+    ctx.stroke()
+    ctx.restore()
+  }
+  drawPlusButton(ctx, button, chrome, affordance.kind.startsWith('border'))
 }
 
 /**
@@ -2045,9 +2151,6 @@ function drawSelectionOverlay(
   if (!selection.editing) {
     for (const element of selected) {
       if (element.connector) continue
-      // A table resizes through its rows and columns (`scaleTable`), not by
-      // writing a new width and height over a grid that no longer matches.
-      if (element.kind === 'table') continue
       const grips = handleRects(camera, element)
       for (const handle of RESIZE_HANDLES) {
         const g = grips[handle]

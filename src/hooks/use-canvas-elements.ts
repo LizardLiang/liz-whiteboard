@@ -97,6 +97,7 @@ import {
 } from '@/lib/canvas-engine/scene'
 import {
   applyTableOp as applyTableOpLocally,
+  tableOpShift,
   tableSize,
 } from '@/lib/canvas-engine/table'
 
@@ -153,6 +154,14 @@ export function settleAckOnce<T>(
     clearTimeout(timer)
     handle(res)
   }
+}
+
+/** What a table op resolves with. `elementId` is set when the server named the row after the op was issued. */
+export interface TableOpResult {
+  ok: boolean
+  inverse?: TableOp
+  revision?: number
+  elementId?: string
 }
 
 export interface UseCanvasElementsParams {
@@ -243,7 +252,7 @@ export interface UseCanvasElementsReturn {
     elementId: string,
     op: TableOp,
     options?: CanvasMutationOptions & { expect?: Array<CellExpect> },
-  ) => Promise<{ ok: boolean; inverse?: TableOp; revision?: number }>
+  ) => Promise<TableOpResult>
   /** This hook's own revision index — see the file header. */
   getRevision: (id: string) => number | undefined
 }
@@ -341,7 +350,14 @@ export function useCanvasElements({
    * re-issues each one against the real id.
    */
   const pendingTableOpsRef = useRef(
-    new Map<string, Array<{ op: TableOp; expect?: Array<CellExpect> }>>(),
+    new Map<
+      string,
+      Array<{
+        op: TableOp
+        expect?: Array<CellExpect>
+        settle: (result: TableOpResult) => void
+      }>
+    >(),
   )
   /**
    * How many table ops per element are emitted and not yet acked. An ack
@@ -350,12 +366,19 @@ export function useCanvasElements({
    * would vanish and come back). Only the last ack of a burst touches the scene.
    */
   const inflightTableOpsRef = useRef(new Map<string, number>())
+  /** The create never produced a row: its queued ops resolve as refused. */
+  const dropQueuedTableOps = useCallback((temporaryId: string): void => {
+    const queued = pendingTableOpsRef.current.get(temporaryId)
+    if (!queued) return
+    pendingTableOpsRef.current.delete(temporaryId)
+    for (const entry of queued) entry.settle({ ok: false })
+  }, [])
   const applyTableOpRef = useRef<
     | ((
         elementId: string,
         op: TableOp,
         options?: CanvasMutationOptions & { expect?: Array<CellExpect> },
-      ) => Promise<{ ok: boolean; inverse?: TableOp; revision?: number }>)
+      ) => Promise<TableOpResult>)
     | null
   >(null)
 
@@ -505,6 +528,7 @@ export function useCanvasElements({
               pendingDeletesRef.current.delete(temporaryId)
 
             if (!res.ok || !res.entity) {
+              dropQueuedTableOps(temporaryId)
               setScene((prev) => removeElement(prev, temporaryId))
               // A create that failed and was then deleted needs no error: the
               // element is gone, which is what the user asked for. Nor does
@@ -537,6 +561,7 @@ export function useCanvasElements({
               // another observer to have seen (Remote And Derived Canvas
               // Writes Are Not Undoable's "reconciling optimistic state"
               // scenario).
+              dropQueuedTableOps(temporaryId)
               confirm(persisted)
               setScene((prev) =>
                 removeElements(prev, [temporaryId, persisted.id]),
@@ -600,13 +625,19 @@ export function useCanvasElements({
               // In order, one after another: each op reads the table the
               // previous one left. Ephemeral for the reason above.
               void deferredOps.reduce(
-                (chain, { op, expect }) =>
-                  chain.then(() =>
-                    applyTableOpRef.current?.(persisted.id, op, {
-                      ephemeral: true,
-                      expect,
-                    }),
-                  ),
+                (chain, { op, expect, settle }) =>
+                  chain.then(async () => {
+                    const outcome = await applyTableOpRef.current?.(
+                      persisted.id,
+                      op,
+                      { ephemeral: true, expect },
+                    )
+                    settle(
+                      outcome
+                        ? { ...outcome, elementId: persisted.id }
+                        : { ok: false },
+                    )
+                  }),
                 Promise.resolve<unknown>(undefined),
               )
             }
@@ -619,7 +650,16 @@ export function useCanvasElements({
         )
       })
     },
-    [boardId, confirm, emit, onElementIdReconciled, setScene, settleOnce, t],
+    [
+      boardId,
+      confirm,
+      dropQueuedTableOps,
+      emit,
+      onElementIdReconciled,
+      setScene,
+      settleOnce,
+      t,
+    ],
   )
 
   // ── update ───────────────────────────────────────────────────────────────
@@ -832,7 +872,7 @@ export function useCanvasElements({
       elementId: string,
       op: TableOp,
       options?: CanvasMutationOptions & { expect?: Array<CellExpect> },
-    ): Promise<{ ok: boolean; inverse?: TableOp; revision?: number }> => {
+    ): Promise<TableOpResult> => {
       return new Promise((resolve) => {
         // Never inside a state updater: an updater that throws would take the
         // render down. A table that cannot take the op (a collaborator removed
@@ -844,9 +884,13 @@ export function useCanvasElements({
             if (!current?.table) return prev
             try {
               const { table } = applyTableOpLocally(current.table, op)
+              const shift = tableOpShift(op)
               return updateElement(prev, elementId, {
                 table,
                 ...tableSize(table),
+                ...(shift.dx !== 0 || shift.dy !== 0
+                  ? { x: current.x + shift.dx, y: current.y + shift.dy }
+                  : {}),
               })
             } catch {
               return prev
@@ -854,13 +898,14 @@ export function useCanvasElements({
           })
         }
         // A table whose create is still in flight has no server row to
-        // change. The op shows at once and waits for the create ack.
+        // change. The op shows at once and waits for the create ack; it
+        // resolves with the server's real answer (and the real element id)
+        // when the queue drains, so it still gets its undo entry.
         if (pendingCreatesRef.current.has(elementId)) {
           applyLocally()
           const queued = pendingTableOpsRef.current.get(elementId) ?? []
-          queued.push({ op, expect: options?.expect })
+          queued.push({ op, expect: options?.expect, settle: resolve })
           pendingTableOpsRef.current.set(elementId, queued)
-          resolve({ ok: false })
           return
         }
         const confirmed = confirmedRef.current.get(elementId)

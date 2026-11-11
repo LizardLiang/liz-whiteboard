@@ -277,6 +277,52 @@ describe('element:table-op', () => {
     expect(store.get(TABLE_ID).height).toBe(180)
   })
 
+  it('moves the table by dx and dy when a resize from a left or top handle sends them', async () => {
+    seedTable(table3())
+    const h = makeHarness()
+    const res = await call(h, 'element:table-op', {
+      elementId: TABLE_ID,
+      op: { type: 'scaleTable', sx: 0.5, sy: 1, dx: 180 },
+    })
+    expect(res.ok).toBe(true)
+    expect(store.get(TABLE_ID)).toMatchObject({
+      positionX: 180,
+      positionY: 0,
+      width: 180,
+      height: 120,
+    })
+    expect(h.broadcast[0].payload).toMatchObject({
+      positionX: 180,
+      positionY: 0,
+    })
+    // The inverse puts the sizes AND the position back.
+    expect(res.inverse).toMatchObject({ type: 'setSizes', dx: -180 })
+    const undone = await call(h, 'element:table-op', {
+      elementId: TABLE_ID,
+      op: res.inverse,
+    })
+    expect(undone.ok).toBe(true)
+    expect(store.get(TABLE_ID)).toMatchObject({
+      positionX: 0,
+      width: 360,
+    })
+  })
+
+  it('does not touch the position for an op without a shift', async () => {
+    seedTable(table3())
+    const h = makeHarness()
+    await call(h, 'element:table-op', {
+      elementId: TABLE_ID,
+      op: {
+        type: 'resizeCol',
+        colId: store.get(TABLE_ID).props.table.cols[0].id,
+        width: 200,
+      },
+    })
+    expect(store.get(TABLE_ID).positionX).toBe(0)
+    expect(h.broadcast[0].payload).not.toHaveProperty('positionX')
+  })
+
   it('rejects a malformed op payload', async () => {
     seedTable(table3())
     const h = makeHarness()

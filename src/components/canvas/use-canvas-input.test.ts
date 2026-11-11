@@ -3749,7 +3749,7 @@ describe('table tool', () => {
     expect(created.height).toBe(80)
   })
 
-  it('draws no resize grips for a table, so none can be hit', () => {
+  it('scales a table from its corner handle: live preview, then one scaleTable op', () => {
     const table = createTable(2, 2, () => Math.random().toString(36))
     const element = makeRect('66666666-6666-4666-8666-666666666666', {
       kind: 'table',
@@ -3763,7 +3763,6 @@ describe('table tool', () => {
       h.api.setSelectedIds(new Set([element.id]))
     })
     h.sync()
-    // A press exactly on the bottom-right corner starts a move, not a resize.
     act(() => {
       h.api.canvasHandlers.onPointerDown(
         pointerEvent({ clientX: element.width, clientY: element.height }),
@@ -3773,10 +3772,26 @@ describe('table tool', () => {
     expect(h.api.gestureActive).toBe(true)
     act(() => {
       h.api.canvasHandlers.onPointerMove(
-        pointerEvent({ clientX: element.width + 50, clientY: element.height }),
+        pointerEvent({
+          clientX: element.width + 120,
+          clientY: element.height + 40,
+        }),
       )
     })
     h.sync()
+    expect(h.scene.byId.get(element.id)?.width).toBe(360)
+    expect(h.scene.byId.get(element.id)?.height).toBe(120)
+    act(() => {
+      h.api.canvasHandlers.onPointerUp(pointerEvent())
+    })
+    h.sync()
+    expect(h.callbacks.onTableOp).toHaveBeenCalledTimes(1)
+    expect(h.callbacks.onTableOp.mock.calls[0][1]).toEqual({
+      type: 'scaleTable',
+      sx: 1.5,
+      sy: 1.5,
+    })
+    // The consumer applies the op; the preview does not stay behind to be applied twice.
     expect(h.scene.byId.get(element.id)?.width).toBe(element.width)
   })
 })
@@ -4168,5 +4183,470 @@ describe('table cells', () => {
     h.sync()
     expect(h.api.editing?.cell?.tableId).toBe(SERVER_ID)
     expect(h.api.editing?.elementId).toBe(`${SERVER_ID}:id1:id3`)
+  })
+})
+
+describe('table rows and columns', () => {
+  const TABLE_ID = '99999999-9999-4999-8999-999999999999'
+
+  /** Rows id1, id2; columns id3, id4; at (100, 100), 240 x 80. */
+  function setupTable(readOnly = false) {
+    let n = 0
+    const table = createTable(2, 2, () => `id${(n += 1)}`)
+    const element = makeRect(TABLE_ID, {
+      kind: 'table',
+      x: 100,
+      y: 100,
+      ...tableSize(table),
+      table,
+    })
+    const h = setup([element], () => null, readOnly)
+    act(() => {
+      h.api.setSelectedIds(new Set([TABLE_ID]))
+    })
+    h.sync()
+    return h
+  }
+
+  function press(h: ReturnType<typeof setup>, at: Record<string, unknown>) {
+    act(() => {
+      h.api.canvasHandlers.onPointerDown(pointerEvent(at))
+    })
+    h.sync()
+    act(() => {
+      h.api.canvasHandlers.onPointerUp(pointerEvent(at))
+    })
+    h.sync()
+  }
+
+  function hover(h: ReturnType<typeof setup>, at: Record<string, unknown>) {
+    act(() => {
+      h.api.canvasHandlers.onPointerMove(pointerEvent({ ...at, buttons: 0 }))
+    })
+    h.sync()
+  }
+
+  function lastOp(h: ReturnType<typeof setup>) {
+    const calls = h.callbacks.onTableOp.mock.calls
+    return calls[calls.length - 1]?.[1]
+  }
+
+  it('shows the "+" of an inner column border and inserts a column on press', () => {
+    const h = setupTable()
+    // The "+" sits 14px below the table's bottom edge, under the border at x = 220.
+    hover(h, { clientX: 220, clientY: 180 + 14 })
+    expect(h.api.tableAffordance?.affordance).toMatchObject({
+      kind: 'insert-col',
+      afterColId: 'id3',
+    })
+    press(h, { clientX: 220, clientY: 194 })
+    expect(lastOp(h)).toMatchObject({
+      type: 'insertCol',
+      afterColId: 'id3',
+      col: { width: 120 },
+    })
+  })
+
+  it('inserts a row from the "+" of an inner row border', () => {
+    const h = setupTable()
+    hover(h, { clientX: 340 + 14, clientY: 140 })
+    expect(h.api.tableAffordance?.affordance.kind).toBe('insert-row')
+    press(h, { clientX: 354, clientY: 140 })
+    expect(lastOp(h)).toMatchObject({ type: 'insertRow', afterRowId: 'id1' })
+  })
+
+  it('appends a column or a row from the bar past the last one', () => {
+    const h = setupTable()
+    press(h, { clientX: 340 + 10, clientY: 120 })
+    expect(lastOp(h)).toMatchObject({ type: 'insertCol', afterColId: 'id4' })
+    press(h, { clientX: 200, clientY: 180 + 10 })
+    expect(lastOp(h)).toMatchObject({ type: 'insertRow', afterRowId: 'id2' })
+  })
+
+  it('offers no affordance on a table that is not the one selection', () => {
+    const h = setupTable()
+    act(() => {
+      h.api.setSelectedIds(new Set<string>())
+    })
+    h.sync()
+    hover(h, { clientX: 350, clientY: 120 })
+    expect(h.api.tableAffordance).toBeNull()
+  })
+
+  it('offers no affordance, and inserts nothing, on a read-only board', () => {
+    const h = setupTable(true)
+    hover(h, { clientX: 350, clientY: 120 })
+    expect(h.api.tableAffordance).toBeNull()
+    press(h, { clientX: 350, clientY: 120 })
+    expect(h.callbacks.onTableOp).not.toHaveBeenCalled()
+  })
+
+  it('offers no insert at the 500-cell cap', () => {
+    let n = 0
+    const table = createTable(25, 20, () => `id${(n += 1)}`)
+    const element = makeRect(TABLE_ID, {
+      kind: 'table',
+      x: 100,
+      y: 100,
+      ...tableSize(table),
+      table,
+    })
+    const h = setup([element])
+    act(() => {
+      h.api.setSelectedIds(new Set([TABLE_ID]))
+    })
+    h.sync()
+    const right = 100 + element.width
+    hover(h, { clientX: right + 10, clientY: 120 })
+    expect(h.api.tableAffordance).toBeNull()
+  })
+
+  it('drags an inner column border: live width, one resizeCol on release', () => {
+    const h = setupTable()
+    press(h, { clientX: 500, clientY: 500 })
+    act(() => {
+      h.api.setSelectedIds(new Set([TABLE_ID]))
+    })
+    h.sync()
+    act(() => {
+      h.api.canvasHandlers.onPointerDown(
+        pointerEvent({ clientX: 220, clientY: 120 }),
+      )
+    })
+    h.sync()
+    act(() => {
+      h.api.canvasHandlers.onPointerMove(
+        pointerEvent({ clientX: 280, clientY: 120 }),
+      )
+    })
+    h.sync()
+    expect(h.scene.byId.get(TABLE_ID)?.table?.cols[0].width).toBe(180)
+    expect(h.scene.byId.get(TABLE_ID)?.width).toBe(300)
+    act(() => {
+      h.api.canvasHandlers.onPointerUp(pointerEvent())
+    })
+    h.sync()
+    expect(h.callbacks.onTableOp).toHaveBeenCalledTimes(1)
+    expect(lastOp(h)).toEqual({ type: 'resizeCol', colId: 'id3', width: 180 })
+    expect(h.scene.byId.get(TABLE_ID)?.table?.cols[0].width).toBe(120)
+  })
+
+  it('stops a column border at the minimum width', () => {
+    const h = setupTable()
+    act(() => {
+      h.api.canvasHandlers.onPointerDown(
+        pointerEvent({ clientX: 220, clientY: 120 }),
+      )
+    })
+    h.sync()
+    act(() => {
+      h.api.canvasHandlers.onPointerMove(
+        pointerEvent({ clientX: 0, clientY: 120 }),
+      )
+    })
+    h.sync()
+    expect(h.scene.byId.get(TABLE_ID)?.table?.cols[0].width).toBe(40)
+  })
+
+  it('drags an inner row border into one resizeRow', () => {
+    const h = setupTable()
+    act(() => {
+      h.api.canvasHandlers.onPointerDown(
+        pointerEvent({ clientX: 150, clientY: 140 }),
+      )
+    })
+    h.sync()
+    act(() => {
+      h.api.canvasHandlers.onPointerMove(
+        pointerEvent({ clientX: 150, clientY: 170 }),
+      )
+    })
+    h.sync()
+    act(() => {
+      h.api.canvasHandlers.onPointerUp(pointerEvent())
+    })
+    h.sync()
+    expect(lastOp(h)).toEqual({ type: 'resizeRow', rowId: 'id1', height: 70 })
+  })
+
+  it('scales from the top-left handle keeping the bottom-right corner still', () => {
+    const h = setupTable()
+    act(() => {
+      h.api.canvasHandlers.onPointerDown(
+        pointerEvent({ clientX: 100, clientY: 100 }),
+      )
+    })
+    h.sync()
+    act(() => {
+      h.api.canvasHandlers.onPointerMove(
+        pointerEvent({ clientX: 40, clientY: 100 }),
+      )
+    })
+    h.sync()
+    act(() => {
+      h.api.canvasHandlers.onPointerUp(pointerEvent())
+    })
+    h.sync()
+    expect(lastOp(h)).toEqual({
+      type: 'scaleTable',
+      sx: 1.25,
+      sy: 1.25,
+      dx: -60,
+      dy: -20,
+    })
+  })
+
+  it('clamps a corner scale at the smallest the columns allow', () => {
+    const h = setupTable()
+    act(() => {
+      h.api.canvasHandlers.onPointerDown(
+        pointerEvent({ clientX: 340, clientY: 180 }),
+      )
+    })
+    h.sync()
+    act(() => {
+      h.api.canvasHandlers.onPointerMove(
+        pointerEvent({ clientX: 101, clientY: 101 }),
+      )
+    })
+    h.sync()
+    // 40px columns and 24px rows are the floors: 24 / 40 = 0.6 is the tighter one.
+    expect(h.scene.byId.get(TABLE_ID)?.width).toBeCloseTo(144)
+    expect(h.scene.byId.get(TABLE_ID)?.height).toBeCloseTo(48)
+  })
+
+  describe('Delete and Backspace with part of a table picked', () => {
+    function pickCell(h: ReturnType<typeof setup>, x: number, y: number) {
+      press(h, { clientX: x, clientY: y })
+    }
+
+    it('removes a picked row, and a picked column', () => {
+      const h = setupTable()
+      act(() => {
+        h.api.canvasHandlers.onPointerDown(
+          pointerEvent({ clientX: 95, clientY: 120 }),
+        )
+      })
+      h.sync()
+      act(() => {
+        h.api.canvasHandlers.onPointerUp(pointerEvent())
+      })
+      h.sync()
+      expect(h.api.tableSelection).toMatchObject({ kind: 'row', rowId: 'id1' })
+      act(() => {
+        h.api.boardHandlers.onKeyDown(keyEvent('Delete'))
+      })
+      expect(lastOp(h)).toEqual({ type: 'removeRow', rowId: 'id1' })
+      expect(h.callbacks.onDelete).not.toHaveBeenCalled()
+
+      act(() => {
+        h.api.canvasHandlers.onPointerDown(
+          pointerEvent({ clientX: 150, clientY: 95 }),
+        )
+      })
+      h.sync()
+      act(() => {
+        h.api.canvasHandlers.onPointerUp(pointerEvent())
+      })
+      h.sync()
+      act(() => {
+        h.api.boardHandlers.onKeyDown(keyEvent('Backspace'))
+      })
+      expect(lastOp(h)).toEqual({ type: 'removeCol', colId: 'id3' })
+      expect(h.callbacks.onDelete).not.toHaveBeenCalled()
+    })
+
+    it('never removes the last row, and never deletes the table for it', () => {
+      let n = 0
+      const table = createTable(1, 2, () => `id${(n += 1)}`)
+      const element = makeRect(TABLE_ID, {
+        kind: 'table',
+        x: 100,
+        y: 100,
+        ...tableSize(table),
+        table,
+      })
+      const h = setup([element])
+      act(() => {
+        h.api.setSelectedIds(new Set([TABLE_ID]))
+      })
+      h.sync()
+      act(() => {
+        h.api.canvasHandlers.onPointerDown(
+          pointerEvent({ clientX: 95, clientY: 120 }),
+        )
+      })
+      h.sync()
+      act(() => {
+        h.api.canvasHandlers.onPointerUp(pointerEvent())
+      })
+      h.sync()
+      act(() => {
+        h.api.boardHandlers.onKeyDown(keyEvent('Delete'))
+      })
+      expect(h.callbacks.onTableOp).not.toHaveBeenCalled()
+      expect(h.callbacks.onDelete).not.toHaveBeenCalled()
+    })
+
+    it('clears the text of the picked cells in ONE op and keeps the table', () => {
+      const h = setupTable()
+      // Give two cells text through the local scene.
+      const element = h.scene.byId.get(TABLE_ID)!
+      act(() => {
+        h.view.rerender()
+      })
+      const filled = {
+        ...element,
+        table: {
+          ...element.table!,
+          cells: {
+            'id1:id3': { text: 'a', fill: '#ff0000' },
+            'id1:id4': { text: 'b' },
+          },
+        },
+      }
+      const h2 = setup([filled])
+      act(() => {
+        h2.api.setSelectedIds(new Set([TABLE_ID]))
+      })
+      h2.sync()
+      pickCell(h2, 160, 120)
+      act(() => {
+        h2.api.canvasHandlers.onPointerDown(
+          pointerEvent({ clientX: 280, clientY: 120, shiftKey: true }),
+        )
+      })
+      h2.sync()
+      act(() => {
+        h2.api.canvasHandlers.onPointerUp(pointerEvent())
+      })
+      h2.sync()
+      act(() => {
+        h2.api.boardHandlers.onKeyDown(keyEvent('Delete'))
+      })
+      expect(h2.callbacks.onTableOp).toHaveBeenCalledTimes(1)
+      expect(h2.callbacks.onTableOp.mock.calls[0][1]).toEqual({
+        type: 'restoreCells',
+        cells: [
+          { rowId: 'id1', colId: 'id3', cell: { text: '', fill: '#ff0000' } },
+          { rowId: 'id1', colId: 'id4', cell: { text: '' } },
+        ],
+      })
+      expect(h2.callbacks.onDelete).not.toHaveBeenCalled()
+    })
+
+    it('sends nothing when the picked cells are already empty', () => {
+      const h = setupTable()
+      pickCell(h, 160, 120)
+      act(() => {
+        h.api.boardHandlers.onKeyDown(keyEvent('Delete'))
+      })
+      expect(h.callbacks.onTableOp).not.toHaveBeenCalled()
+      expect(h.callbacks.onDelete).not.toHaveBeenCalled()
+    })
+
+    it('deletes the element when the whole table is selected', () => {
+      const h = setupTable()
+      act(() => {
+        h.api.boardHandlers.onKeyDown(keyEvent('Delete'))
+      })
+      expect(h.callbacks.onDelete).toHaveBeenCalledTimes(1)
+    })
+
+    it('does not cut the whole table while part of it is picked', () => {
+      const h = setupTable()
+      pickCell(h, 160, 120)
+      act(() => {
+        h.api.boardHandlers.onKeyDown(keyEvent('x', { ctrlKey: true }))
+      })
+      expect(h.callbacks.onDelete).not.toHaveBeenCalled()
+    })
+  })
+
+  describe('the right-click menu', () => {
+    function rightClick(h: ReturnType<typeof setup>, x: number, y: number) {
+      act(() => {
+        h.api.canvasHandlers.onPointerDown(
+          pointerEvent({ button: 2, buttons: 2, clientX: x, clientY: y }),
+        )
+      })
+      h.sync()
+    }
+
+    it('targets the cell under the pointer and selects it', () => {
+      const h = setupTable()
+      rightClick(h, 280, 160)
+      expect(h.api.tableMenu).toMatchObject({
+        tableId: TABLE_ID,
+        rowId: 'id2',
+        colId: 'id4',
+        canDeleteRow: true,
+        canDeleteCol: true,
+      })
+      expect(h.api.tableSelection).toMatchObject({
+        kind: 'cells',
+        focus: { rowId: 'id2', colId: 'id4' },
+      })
+    })
+
+    it('has no target away from a table, and none while read-only', () => {
+      const h = setupTable()
+      rightClick(h, 600, 500)
+      expect(h.api.tableMenu).toBeNull()
+      const readOnly = setupTable(true)
+      rightClick(readOnly, 280, 160)
+      expect(readOnly.api.tableMenu).toBeNull()
+    })
+
+    it('inserts above and below, left and right, of the clicked cell', () => {
+      const h = setupTable()
+      rightClick(h, 280, 160)
+      act(() => h.api.onTableMenuAction('insertRowAbove'))
+      expect(lastOp(h)).toMatchObject({ type: 'insertRow', afterRowId: 'id1' })
+      act(() => h.api.onTableMenuAction('insertRowBelow'))
+      expect(lastOp(h)).toMatchObject({ type: 'insertRow', afterRowId: 'id2' })
+      act(() => h.api.onTableMenuAction('insertColLeft'))
+      expect(lastOp(h)).toMatchObject({ type: 'insertCol', afterColId: 'id3' })
+      act(() => h.api.onTableMenuAction('insertColRight'))
+      expect(lastOp(h)).toMatchObject({ type: 'insertCol', afterColId: 'id4' })
+    })
+
+    it('inserts above the first row and left of the first column', () => {
+      const h = setupTable()
+      rightClick(h, 160, 120)
+      act(() => h.api.onTableMenuAction('insertRowAbove'))
+      expect(lastOp(h)).toMatchObject({ type: 'insertRow', afterRowId: null })
+      act(() => h.api.onTableMenuAction('insertColLeft'))
+      expect(lastOp(h)).toMatchObject({ type: 'insertCol', afterColId: null })
+    })
+
+    it('deletes the clicked row and column, and disables both on a 1 x 1 table', () => {
+      const h = setupTable()
+      rightClick(h, 280, 160)
+      act(() => h.api.onTableMenuAction('deleteRow'))
+      expect(lastOp(h)).toEqual({ type: 'removeRow', rowId: 'id2' })
+      act(() => h.api.onTableMenuAction('deleteCol'))
+      expect(lastOp(h)).toEqual({ type: 'removeCol', colId: 'id4' })
+
+      let n = 0
+      const table = createTable(1, 1, () => `id${(n += 1)}`)
+      const single = setup([
+        makeRect(TABLE_ID, {
+          kind: 'table',
+          x: 100,
+          y: 100,
+          ...tableSize(table),
+          table,
+        }),
+      ])
+      rightClick(single, 160, 120)
+      expect(single.api.tableMenu).toMatchObject({
+        canDeleteRow: false,
+        canDeleteCol: false,
+      })
+      act(() => single.api.onTableMenuAction('deleteRow'))
+      act(() => single.api.onTableMenuAction('deleteCol'))
+      expect(single.callbacks.onTableOp).not.toHaveBeenCalled()
+    })
   })
 })

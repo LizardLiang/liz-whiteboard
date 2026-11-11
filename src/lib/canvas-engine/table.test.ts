@@ -15,14 +15,22 @@ import {
   gripAtPoint,
   normalizeTable,
   pruneSelection,
+  redoExpectFor,
+  sameAffordance,
   selectionCells,
   stepCell,
   tabCell,
+  tableAffordanceAt,
+  tableAppendRect,
   tableCellRects,
   tableDimsForDrag,
   tableMatchesExpect,
+  tableOpShift,
+  tablePlusRect,
+  tableScaleForDrag,
   tableSearchText,
   tableSize,
+  undoExpectFor,
 } from './table'
 import { DEFAULT_ELEMENT_STYLE } from './scene'
 import type { CanvasTable, TableOp } from './table'
@@ -641,5 +649,193 @@ describe('undo expectations', () => {
     expect(
       expectAfterOp(table, { type: 'setHeaderRow', on: false }),
     ).toBeUndefined()
+  })
+})
+
+describe('scaleTable and setSizes carry a position shift', () => {
+  it('inverts a shifted scale into a shifted setSizes that undoes it', () => {
+    const table = fresh(2, 2)
+    const op: TableOp = { type: 'scaleTable', sx: 0.5, sy: 1, dx: 120, dy: 0 }
+    const { table: scaled, inverse } = applyTableOp(table, op)
+    expect(tableSize(scaled).width).toBe(120)
+    expect(inverse).toMatchObject({ type: 'setSizes', dx: -120 })
+    expect(inverse).not.toHaveProperty('dy')
+    expect(tableOpShift(inverse)).toEqual({ dx: -120, dy: 0 })
+    expect(applyTableOp(scaled, inverse).table).toEqual(table)
+    expect(tableOpShift({ type: 'removeRow', rowId: 'x' })).toEqual({
+      dx: 0,
+      dy: 0,
+    })
+  })
+})
+
+describe('tableScaleForDrag', () => {
+  const start = { x: 100, y: 100, width: 240, height: 80 }
+  const mins = [24, 24]
+
+  it('scales both axes by the larger change from a corner', () => {
+    const table = fresh(2, 2)
+    expect(
+      tableScaleForDrag('se', table, start, { x: 340 + 120, y: 180 + 8 }, mins),
+    ).toEqual({ sx: 1.5, sy: 1.5, dx: 0, dy: 0 })
+  })
+
+  it('scales one axis from an edge handle', () => {
+    const table = fresh(2, 2)
+    expect(
+      tableScaleForDrag('e', table, start, { x: 100 + 480, y: 0 }, mins),
+    ).toEqual({ sx: 2, sy: 1, dx: 0, dy: 0 })
+    expect(
+      tableScaleForDrag('s', table, start, { x: 0, y: 100 + 160 }, mins),
+    ).toEqual({ sx: 1, sy: 2, dx: 0, dy: 0 })
+  })
+
+  it('keeps the opposite side still from a left or top handle', () => {
+    const table = fresh(2, 2)
+    const scale = tableScaleForDrag('nw', table, start, { x: 40, y: 100 }, mins)
+    expect(scale.sx).toBe(1.25)
+    expect(scale.dx).toBe(-60)
+    expect(scale.dy).toBe(-20)
+  })
+
+  it('never goes under the minimum column width or a row text height', () => {
+    const table = fresh(2, 2)
+    expect(
+      tableScaleForDrag('e', table, start, { x: 0, y: 0 }, mins).sx,
+    ).toBeCloseTo(1 / 3)
+    // A row whose text needs 60px of its 40px keeps the whole table at 1.5.
+    expect(
+      tableScaleForDrag('s', table, start, { x: 0, y: 0 }, [60, 24]).sy,
+    ).toBe(1.5)
+  })
+})
+
+describe('table hover affordances', () => {
+  const table = fresh(2, 3)
+  const element = { x: 100, y: 100, width: 360, height: 80, table }
+  const both = { canInsertRow: true, canInsertCol: true }
+
+  it('finds the "+" of an inner column border below the table', () => {
+    const border = 100 + 120
+    expect(
+      tableAffordanceAt(element, { x: border, y: 180 + 14 }, 1, both),
+    ).toEqual({ kind: 'insert-col', afterColId: table.cols[0].id, at: border })
+    // The button's own rect, so a drawn button is always a pressable one.
+    const rect = tablePlusRect(element, 'col', border, 1)
+    expect(
+      tableAffordanceAt(
+        element,
+        { x: rect.x + rect.width / 2, y: rect.y + rect.height / 2 },
+        1,
+        both,
+      )?.kind,
+    ).toBe('insert-col')
+  })
+
+  it('finds the "+" of an inner row border right of the table', () => {
+    expect(
+      tableAffordanceAt(element, { x: 460 + 14, y: 140 }, 1, both),
+    ).toEqual({ kind: 'insert-row', afterRowId: table.rows[0].id, at: 140 })
+  })
+
+  it('finds the append bars, but not past the cell cap', () => {
+    expect(tableAffordanceAt(element, { x: 470, y: 110 }, 1, both)?.kind).toBe(
+      'append-col',
+    )
+    expect(tableAffordanceAt(element, { x: 200, y: 190 }, 1, both)?.kind).toBe(
+      'append-row',
+    )
+    expect(
+      tableAffordanceAt(element, { x: 470, y: 110 }, 1, {
+        canInsertRow: false,
+        canInsertCol: false,
+      }),
+    ).toBeNull()
+    const bar = tableAppendRect(element, 'col', 2)
+    expect(bar.width).toBe(6)
+  })
+
+  it('finds an inner border inside the table, and only an inner one', () => {
+    expect(
+      tableAffordanceAt(element, { x: 100 + 120 + 2, y: 120 }, 1, both),
+    ).toMatchObject({ kind: 'border-col', colId: table.cols[0].id })
+    expect(
+      tableAffordanceAt(element, { x: 150, y: 140 - 3 }, 1, both),
+    ).toMatchObject({ kind: 'border-row', rowId: table.rows[0].id })
+    // The outer edge is a resize handle's, not a border.
+    expect(tableAffordanceAt(element, { x: 100, y: 120 }, 1, both)).toBeNull()
+    expect(tableAffordanceAt(element, { x: 150, y: 120 }, 1, both)).toBeNull()
+  })
+
+  it('compares affordances by value', () => {
+    expect(sameAffordance(null, null)).toBe(true)
+    expect(sameAffordance({ kind: 'append-col' }, { kind: 'append-row' })).toBe(
+      false,
+    )
+  })
+})
+
+describe('undoExpectFor and redoExpectFor', () => {
+  it('guards the undo of a row or column insert: the new line must still be blank', () => {
+    const table = fresh(2, 2)
+    const row = { id: 'new-row', height: 40 }
+    const insertRow: TableOp = { type: 'insertRow', afterRowId: null, row }
+    const { inverse } = applyTableOp(table, insertRow)
+    expect(undoExpectFor(table, insertRow, inverse)).toEqual(
+      table.cols.map((col) => ({ rowId: 'new-row', colId: col.id, text: '' })),
+    )
+    const insertCol: TableOp = {
+      type: 'insertCol',
+      afterColId: null,
+      col: { id: 'new-col', width: 120 },
+    }
+    const colInverse = applyTableOp(table, insertCol).inverse
+    expect(undoExpectFor(table, insertCol, colInverse)).toEqual(
+      table.rows.map((r) => ({ rowId: r.id, colId: 'new-col', text: '' })),
+    )
+  })
+
+  it('guards the redo of a delete with what the row or column held', () => {
+    let table = fresh(2, 2)
+    table = applyTableOp(table, {
+      type: 'setCellText',
+      rowId: table.rows[0].id,
+      colId: table.cols[0].id,
+      text: 'keep me',
+    }).table
+    const remove: TableOp = { type: 'removeRow', rowId: table.rows[0].id }
+    const { inverse } = applyTableOp(table, remove)
+    expect(redoExpectFor(table, remove, inverse)).toEqual([
+      { rowId: table.rows[0].id, colId: table.cols[0].id, text: 'keep me' },
+      { rowId: table.rows[0].id, colId: table.cols[1].id, text: '' },
+    ])
+    // Removing a row leaves nothing for its own undo to contest.
+    expect(undoExpectFor(table, remove, inverse)).toBeUndefined()
+    const removeCol: TableOp = { type: 'removeCol', colId: table.cols[0].id }
+    expect(
+      redoExpectFor(table, removeCol, applyTableOp(table, removeCol).inverse),
+    ).toEqual([
+      { rowId: table.rows[0].id, colId: table.cols[0].id, text: 'keep me' },
+      { rowId: table.rows[1].id, colId: table.cols[0].id, text: '' },
+    ])
+  })
+
+  it('guards a clear: undo needs the cells still empty, redo the text still there', () => {
+    let table = fresh(1, 2)
+    const ref = { rowId: table.rows[0].id, colId: table.cols[0].id }
+    table = applyTableOp(table, {
+      type: 'setCellText',
+      ...ref,
+      text: 'abc',
+    }).table
+    const clear: TableOp = {
+      type: 'restoreCells',
+      cells: [{ ...ref, cell: { text: '' } }],
+    }
+    const { inverse } = applyTableOp(table, clear)
+    expect(undoExpectFor(table, clear, inverse)).toEqual([{ ...ref, text: '' }])
+    expect(redoExpectFor(table, clear, inverse)).toEqual([
+      { ...ref, text: 'abc' },
+    ])
   })
 })

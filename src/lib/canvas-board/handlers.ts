@@ -38,6 +38,7 @@ import {
   applyTableOp,
   normalizeTable,
   tableMatchesExpect,
+  tableOpShift,
   tableSize,
 } from '@/lib/canvas-engine/table'
 import { PRESET_RAMPS } from '@/lib/canvas-engine/colour-ramps'
@@ -464,11 +465,19 @@ export function registerCanvasElementHandlers(
           table: canvasTableSchema.parse(table),
         }
         const size = tableSize(table)
+        const shift = tableOpShift(op)
+        const moved =
+          shift.dx !== 0 || shift.dy !== 0
+            ? {
+                positionX: existing.positionX + shift.dx,
+                positionY: existing.positionY + shift.dy,
+              }
+            : {}
         let updated
         try {
           updated = await updateCanvasElement(
             elementId,
-            { props, width: size.width, height: size.height },
+            { props, width: size.width, height: size.height, ...moved },
             existing.revision,
           )
         } catch (error) {
@@ -480,6 +489,7 @@ export function registerCanvasElementHandlers(
           props,
           width: size.width,
           height: size.height,
+          ...moved,
           updatedAt: updated.updatedAt,
           revision: updated.revision,
           updatedBy: userId,

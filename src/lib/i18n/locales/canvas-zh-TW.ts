@@ -157,6 +157,16 @@ export const canvasZhTW: DeepStringRecord<typeof canvasEn> = {
       accent: '強調',
     },
   },
+  tableMenu: {
+    aria: '表格',
+    insertRowAbove: '在上方插入列',
+    insertRowBelow: '在下方插入列',
+    insertColLeft: '在左側插入欄',
+    insertColRight: '在右側插入欄',
+    deleteRow: '刪除列',
+    deleteCol: '刪除欄',
+    clearCells: '清除儲存格',
+  },
   actions: {
     group: '動作',
     duplicate: '複製',

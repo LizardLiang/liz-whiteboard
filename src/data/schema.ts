@@ -1292,6 +1292,9 @@ const tableCellSchema = z.strictObject({
   fill: cssColorSchema.optional(),
 })
 
+/** How far a resize moves a table's top-left corner. */
+const tableShiftSchema = z.number().finite().min(-100_000).max(100_000)
+
 const tableRowSchema = z.strictObject({
   id: tableIdSchema,
   height: z.number().finite().min(1).max(100_000),
@@ -1382,12 +1385,16 @@ export const tableOpSchema = z.discriminatedUnion('type', [
     type: z.literal('scaleTable'),
     sx: z.number().finite().min(0.01).max(100),
     sy: z.number().finite().min(0.01).max(100),
+    dx: tableShiftSchema.optional(),
+    dy: tableShiftSchema.optional(),
   }),
   z.strictObject({ type: z.literal('setHeaderRow'), on: z.boolean() }),
   z.strictObject({
     type: z.literal('setSizes'),
     rows: z.array(tableRowSchema).max(TABLE_MAX_CELLS),
     cols: z.array(tableColSchema).max(TABLE_MAX_CELLS),
+    dx: tableShiftSchema.optional(),
+    dy: tableShiftSchema.optional(),
   }),
   z.strictObject({
     type: z.literal('restoreCells'),

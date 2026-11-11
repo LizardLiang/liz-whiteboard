@@ -255,9 +255,9 @@ Editor-only. Changes a canvas **table** element by one small op instead of a who
 | `insertRow` / `insertCol` | `afterRowId`/`afterColId` (id or `null` = first), `row`/`col` (`{id, height\|width}`), `cells?` (restored with the row or column) |
 | `removeRow` / `removeCol` | `rowId` / `colId` |
 | `resizeRow` / `resizeCol` | `rowId`+`height` / `colId`+`width` |
-| `scaleTable` | `sx`, `sy` |
+| `scaleTable` | `sx`, `sy`, optional `dx`, `dy` (a resize from a left or top handle moves the table's top-left by this much; the server writes `positionX`/`positionY` and broadcasts them) |
 | `setHeaderRow` | `on` |
-| `setSizes`, `restoreCells` | the inverse ops of `scaleTable` and of fill/align |
+| `setSizes`, `restoreCells` | the inverse ops of `scaleTable` (`setSizes` carries the opposite `dx`, `dy`) and of fill/align; `restoreCells` with emptied cells is also the Clear cells op |
 
 Rows and columns are addressed by **id**, never by index. The server loads the **latest stored** table, applies the op, validates the result (at most 500 cells, at least one row and one column), recomputes the element's `width`/`height`, and writes `props` conditional on the revision it read; on a lost race it re-reads and re-applies (up to 4 attempts). Ack: `{ ok: true, entity: <row>, inverse: TableOp }` or `{ ok: false, code, message }` (`VALIDATION_ERROR` for a missing id, the last row or column, or a table over the cap; `FORBIDDEN` for a viewer).
 

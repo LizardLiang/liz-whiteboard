@@ -1039,7 +1039,67 @@ describe('applyTableOp — expect and a table whose create is in flight', () => 
       elementId: SERVER_TABLE_ID,
       op: { type: 'setCellText', text: 'typed early' },
     })
+    // The op resolves with the server's answer and the real id once the queue
+    // drains, so the caller can still record it as an undo entry.
+    expect(early).toBeUndefined()
+    const inverse = {
+      type: 'setCellText',
+      rowId: 'id-1',
+      colId: 'id-3',
+      text: '',
+    }
+    await act(async () => {
+      h.socket.sent[1].ack?.({
+        ok: true,
+        entity: makeRecord({
+          id: SERVER_TABLE_ID,
+          kind: 'table',
+          width: 240,
+          height: 80,
+          props: { kind: 'table', table },
+        }),
+        inverse,
+      })
+      await Promise.resolve()
+    })
+    expect(early).toMatchObject({
+      ok: true,
+      elementId: SERVER_TABLE_ID,
+      inverse,
+    })
+  })
+
+  it('resolves a queued op as refused when its create fails', async () => {
+    const table = makeTable()
+    const h = setup([])
+    const drawn = makeElement({
+      id: TEMP_ID,
+      kind: 'table',
+      width: 240,
+      height: 80,
+      table,
+    })
+    h.applyLocally((scene) => ({
+      elements: [...scene.elements, drawn],
+      byId: new Map(scene.byId).set(drawn.id, drawn),
+    }))
+    act(() => {
+      void h.view.result.current.createElement(drawn)
+    })
+    let early: any
+    act(() => {
+      void h.view.result.current
+        .applyTableOp(TEMP_ID, { type: 'removeRow', rowId: 'id-1' })
+        .then((r) => (early = r))
+    })
+    await act(async () => {
+      h.socket.sent[0].ack?.({ ok: false, code: 'VALIDATION_ERROR' })
+      await Promise.resolve()
+    })
     expect(early).toEqual({ ok: false })
+    expect(h.socket.sent.map((entry) => entry.event)).toEqual([
+      'element:create',
+    ])
   })
 
   it('leaves the scene alone, instead of throwing, when the local table cannot take the op', () => {

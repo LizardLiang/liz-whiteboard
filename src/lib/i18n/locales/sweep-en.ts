@@ -136,6 +136,10 @@ export const sweepEn = {
       tableCellText: 'editing a table cell',
       tableInsertRow: 'adding a table row',
       tableEdit: 'editing a table',
+      tableInsertCol: 'adding a table column',
+      tableDelete: 'deleting a table row or column',
+      tableResize: 'resizing a table',
+      tableClear: 'clearing table cells',
     },
   },
   // Pieces for "Failed to <verb> <noun>: <reason>" server messages.

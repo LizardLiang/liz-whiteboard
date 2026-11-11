@@ -52,6 +52,13 @@ import type { CanvasTool } from './use-canvas-input'
 import type { CanvasStyleChange } from './SelectionToolbar'
 import type { ZOrderCommand } from '@/lib/canvas-engine/z-order'
 import type { RenderFraming } from '@/lib/render/framing'
+import {
+  ContextMenu,
+  ContextMenuContent,
+  ContextMenuItem,
+  ContextMenuSeparator,
+  ContextMenuTrigger,
+} from '@/components/ui/context-menu'
 import { useT } from '@/lib/i18n/use-t'
 import { toEngineScene } from '@/lib/canvas-element-adapter'
 import { resolvedBounds } from '@/lib/canvas-engine/hit-test'
@@ -673,6 +680,7 @@ export function CanvasBoard({
           }
         : null,
       tableSelection: input.tableSelection,
+      tableAffordance: input.tableAffordance,
       // Post-undo/redo highlight pulse (Wave 4, step 12). Folded into
       // `selection` rather than passed to `drawScene` separately: this
       // object already drives the dirty-flag `useEffect` below, so a new
@@ -690,6 +698,7 @@ export function CanvasBoard({
       input.draft,
       input.editing,
       input.tableSelection,
+      input.tableAffordance,
       input.connectorAttach,
       input.hoveredId,
       input.marquee,
@@ -873,31 +882,92 @@ export function CanvasBoard({
         style={gridStyle}
       />
 
-      <canvas
-        ref={canvasRef}
-        className="absolute inset-0 h-full w-full"
-        // `touch-action: none` is what makes pointer capture work on touch
-        // and pen: without it the browser claims the gesture for scrolling
-        // and the board never sees a pointermove.
-        style={{ cursor: input.cursor, touchAction: 'none' }}
-        // Suppress the browser's native focus-on-mousedown. The canvas is not
-        // focusable, so the browser walks up and focuses the nearest focusable
-        // ancestor — this component's container, which carries `tabIndex={0}`
-        // for keyboard shortcuts. That happened AFTER the text tool had
-        // already focused the off-screen proxy, blurring it, committing an
-        // empty element and discarding it: the text tool could never create
-        // anything, and every later keystroke hit the container and fired
-        // tool shortcuts instead of typing.
-        //
-        // preventDefault on `mousedown` suppresses focus and text selection
-        // only. `click` and `dblclick` still fire (double-click-to-edit keeps
-        // working), pointer events and pointer capture are untouched. Focus is
-        // now entirely ours to place: the container on a plain click, the
-        // proxy while an edit is open.
-        onMouseDown={(event) => event.preventDefault()}
-        onPointerDown={handleCanvasPointerDown}
-        {...restCanvasHandlers}
-      />
+      {/* The table context menu. The trigger is switched on only while a
+          right-click has landed on a table cell (`input.tableMenu`), so every
+          other right-click keeps the browser's own menu. */}
+      <ContextMenu>
+        <ContextMenuTrigger
+          asChild
+          disabled={effectiveReadOnly || input.tableMenu === null}
+        >
+          <canvas
+            ref={canvasRef}
+            className="absolute inset-0 h-full w-full"
+            // `touch-action: none` is what makes pointer capture work on touch
+            // and pen: without it the browser claims the gesture for scrolling
+            // and the board never sees a pointermove.
+            style={{ cursor: input.cursor, touchAction: 'none' }}
+            // Suppress the browser's native focus-on-mousedown. The canvas is not
+            // focusable, so the browser walks up and focuses the nearest focusable
+            // ancestor — this component's container, which carries `tabIndex={0}`
+            // for keyboard shortcuts. That happened AFTER the text tool had
+            // already focused the off-screen proxy, blurring it, committing an
+            // empty element and discarding it: the text tool could never create
+            // anything, and every later keystroke hit the container and fired
+            // tool shortcuts instead of typing.
+            //
+            // preventDefault on `mousedown` suppresses focus and text selection
+            // only. `click` and `dblclick` still fire (double-click-to-edit keeps
+            // working), pointer events and pointer capture are untouched. Focus is
+            // now entirely ours to place: the container on a plain click, the
+            // proxy while an edit is open.
+            onMouseDown={(event) => event.preventDefault()}
+            onPointerDown={handleCanvasPointerDown}
+            {...restCanvasHandlers}
+          />
+        </ContextMenuTrigger>
+        <ContextMenuContent
+          aria-label={t('canvas.tableMenu.aria')}
+          onCloseAutoFocus={(event) => {
+            event.preventDefault()
+            containerRef.current?.focus({ preventScroll: true })
+          }}
+        >
+          <ContextMenuItem
+            disabled={!input.tableMenu?.canInsertRow}
+            onSelect={() => input.onTableMenuAction('insertRowAbove')}
+          >
+            {t('canvas.tableMenu.insertRowAbove')}
+          </ContextMenuItem>
+          <ContextMenuItem
+            disabled={!input.tableMenu?.canInsertRow}
+            onSelect={() => input.onTableMenuAction('insertRowBelow')}
+          >
+            {t('canvas.tableMenu.insertRowBelow')}
+          </ContextMenuItem>
+          <ContextMenuItem
+            disabled={!input.tableMenu?.canInsertCol}
+            onSelect={() => input.onTableMenuAction('insertColLeft')}
+          >
+            {t('canvas.tableMenu.insertColLeft')}
+          </ContextMenuItem>
+          <ContextMenuItem
+            disabled={!input.tableMenu?.canInsertCol}
+            onSelect={() => input.onTableMenuAction('insertColRight')}
+          >
+            {t('canvas.tableMenu.insertColRight')}
+          </ContextMenuItem>
+          <ContextMenuSeparator />
+          <ContextMenuItem
+            disabled={!input.tableMenu?.canDeleteRow}
+            onSelect={() => input.onTableMenuAction('deleteRow')}
+          >
+            {t('canvas.tableMenu.deleteRow')}
+          </ContextMenuItem>
+          <ContextMenuItem
+            disabled={!input.tableMenu?.canDeleteCol}
+            onSelect={() => input.onTableMenuAction('deleteCol')}
+          >
+            {t('canvas.tableMenu.deleteCol')}
+          </ContextMenuItem>
+          <ContextMenuSeparator />
+          <ContextMenuItem
+            onSelect={() => input.onTableMenuAction('clearCells')}
+          >
+            {t('canvas.tableMenu.clearCells')}
+          </ContextMenuItem>
+        </ContextMenuContent>
+      </ContextMenu>
 
       {/* The routing picker (tactical plan, Wave 5). Rendered
           unconditionally — it decides for itself whether there is a single

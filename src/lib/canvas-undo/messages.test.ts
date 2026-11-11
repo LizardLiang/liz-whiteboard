@@ -443,7 +443,19 @@ describe('table op gestures', () => {
       'Redid adding a table row',
     )
     expect(describeUndoSuccess({ gesture: 'table-op', op: 'scaleTable' })).toBe(
-      'Undid editing a table',
+      'Undid resizing a table',
     )
+    expect(describeUndoSuccess({ gesture: 'table-op', op: 'removeCol' })).toBe(
+      'Undid deleting a table row or column',
+    )
+    expect(describeUndoSuccess({ gesture: 'table-op', op: 'insertCol' })).toBe(
+      'Undid adding a table column',
+    )
+    expect(
+      describeUndoSuccess({ gesture: 'table-op', op: 'restoreCells' }),
+    ).toBe('Undid clearing table cells')
+    expect(
+      describeUndoSuccess({ gesture: 'table-op', op: 'setHeaderRow' }),
+    ).toBe('Undid editing a table')
   })
 })

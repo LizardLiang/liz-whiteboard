@@ -8,12 +8,27 @@
 // displayed.
 
 import type { CanvasElementKind } from '@/data/schema'
+import type { TableOpType } from '@/lib/canvas-engine/table'
 import type { TFunction } from '@/lib/i18n/translate'
 import type { CanvasUndoLabel } from './undo-stack'
 import { translate } from '@/lib/i18n/translate'
 
 /** English by default, so callers without a locale keep the original wording. */
 const defaultT: TFunction = (key, vars) => translate('en', key, vars)
+
+/** The undo wording of each table op; an op not listed reads "editing a table". */
+const TABLE_OP_LABEL_KEYS: Partial<Record<TableOpType, string>> = {
+  setCellText: 'undo.gesture.tableCellText',
+  insertRow: 'undo.gesture.tableInsertRow',
+  insertCol: 'undo.gesture.tableInsertCol',
+  removeRow: 'undo.gesture.tableDelete',
+  removeCol: 'undo.gesture.tableDelete',
+  resizeRow: 'undo.gesture.tableResize',
+  resizeCol: 'undo.gesture.tableResize',
+  scaleTable: 'undo.gesture.tableResize',
+  setSizes: 'undo.gesture.tableResize',
+  restoreCells: 'undo.gesture.tableClear',
+}
 
 /**
  * Dictionary key suffix for a kind. The key is built at runtime, so the
@@ -113,13 +128,7 @@ function describeGesture(label: CanvasUndoLabel, t: TFunction): string {
     case 'group':
       return plural(label, 'undo.gesture.groupOne', 'undo.gesture.groupMany', t)
     case 'table-op':
-      return t(
-        label.op === 'setCellText'
-          ? 'undo.gesture.tableCellText'
-          : label.op === 'insertRow'
-            ? 'undo.gesture.tableInsertRow'
-            : 'undo.gesture.tableEdit',
-      )
+      return t(TABLE_OP_LABEL_KEYS[label.op] ?? 'undo.gesture.tableEdit')
     case 'ungroup':
       return plural(
         label,

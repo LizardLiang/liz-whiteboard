@@ -94,13 +94,22 @@ export type TableOp =
   | { type: 'removeCol'; colId: string }
   | { type: 'resizeRow'; rowId: string; height: number }
   | { type: 'resizeCol'; colId: string; width: number }
-  | { type: 'scaleTable'; sx: number; sy: number }
+  | {
+      type: 'scaleTable'
+      sx: number
+      sy: number
+      /** How far the table's top-left moves: a resize from a left or top handle keeps the opposite side still. */
+      dx?: number
+      dy?: number
+    }
   | { type: 'setHeaderRow'; on: boolean }
   /** The inverse of `scaleTable`: puts every named row height and column width back. */
   | {
       type: 'setSizes'
       rows: Array<TableRow>
       cols: Array<TableCol>
+      dx?: number
+      dy?: number
     }
   /** The inverse of a fill or align op: puts each cell back as it was (null = no cell). */
   | {
@@ -360,6 +369,89 @@ export function expectAfterOp(
   return undefined
 }
 
+function expectOf(
+  table: CanvasTable,
+  refs: ReadonlyArray<CellRef>,
+): Array<CellExpect> {
+  return refs.map((ref) => {
+    const cell = lookupCell(table.cells, cellKey(ref.rowId, ref.colId))
+    return {
+      rowId: ref.rowId,
+      colId: ref.colId,
+      text: cell?.text ?? '',
+      ...(cell?.textRuns && cell.textRuns.length > 0
+        ? { textRuns: cell.textRuns }
+        : {}),
+    }
+  })
+}
+
+/**
+ * What the cells must hold for the UNDO of a user op to apply: the text the
+ * op itself left behind. `table` is the table as it stood before the op.
+ * A structural op that removes cells has nothing left to contest.
+ */
+export function undoExpectFor(
+  table: CanvasTable,
+  op: TableOp,
+  inverse: TableOp,
+): Array<CellExpect> | undefined {
+  switch (op.type) {
+    case 'setCellText':
+      return expectAfterOp(table, op)
+    case 'insertRow':
+      // An undo removes the row: it must still be blank.
+      return expectAfterOp(table, inverse)
+    case 'insertCol':
+      return table.rows.map((row) => ({
+        rowId: row.id,
+        colId: op.col.id,
+        text: '',
+      }))
+    case 'restoreCells':
+      return op.cells.map((entry) => ({
+        rowId: entry.rowId,
+        colId: entry.colId,
+        text: entry.cell?.text ?? '',
+        ...(entry.cell?.textRuns && entry.cell.textRuns.length > 0
+          ? { textRuns: entry.cell.textRuns }
+          : {}),
+      }))
+    default:
+      return undefined
+  }
+}
+
+/**
+ * What the cells must hold for the REDO of a user op to apply: the content
+ * the op replaced or removed. Without it, a redo of a row delete would discard
+ * text a collaborator typed into the restored row.
+ */
+export function redoExpectFor(
+  table: CanvasTable,
+  op: TableOp,
+  inverse: TableOp,
+): Array<CellExpect> | undefined {
+  switch (op.type) {
+    case 'setCellText':
+      return expectAfterOp(table, inverse)
+    case 'removeRow':
+      return expectOf(
+        table,
+        table.cols.map((col) => ({ rowId: op.rowId, colId: col.id })),
+      )
+    case 'removeCol':
+      return expectOf(
+        table,
+        table.rows.map((row) => ({ rowId: row.id, colId: op.colId })),
+      )
+    case 'restoreCells':
+      return expectOf(table, op.cells)
+    default:
+      return undefined
+  }
+}
+
 // ── selection ───────────────────────────────────────────────────────────────
 
 /** The cells, row or column a user picked inside one table. Client-only state. */
@@ -507,6 +599,345 @@ export function tabCell(
   return {
     rowId: table.rows[Math.floor(index / table.cols.length)].id,
     colId: table.cols[index % table.cols.length].id,
+  }
+}
+
+/** The inverse of a shift: an op that moved the table by (dx, dy) is undone by moving it back. */
+function shiftBack(op: { dx?: number; dy?: number }): {
+  dx?: number
+  dy?: number
+} {
+  return {
+    ...(op.dx ? { dx: -op.dx } : {}),
+    ...(op.dy ? { dy: -op.dy } : {}),
+  }
+}
+
+/** How far an op moves the table's top-left corner. Only a resize from a left or top handle moves it. */
+export function tableOpShift(op: TableOp): { dx: number; dy: number } {
+  if (op.type === 'scaleTable' || op.type === 'setSizes') {
+    return { dx: op.dx ?? 0, dy: op.dy ?? 0 }
+  }
+  return { dx: 0, dy: 0 }
+}
+
+// ── rows and columns: hover affordances, borders, resize ────────────────────
+
+/** Diameter of the hover "+" button, in screen px. */
+export const TABLE_PLUS_PX = 18
+/** How far the "+" centre sits outside the table edge, in screen px. */
+export const TABLE_PLUS_OFFSET_PX = 14
+/** Half-width of the strip around a border that counts as "on" it, inside the table, in screen px. */
+export const TABLE_BORDER_HIT_PX = 4
+/** Where the append bar sits: its near and far edge outside the table, in screen px. */
+export const TABLE_APPEND_NEAR_PX = 4
+export const TABLE_APPEND_FAR_PX = 16
+
+/**
+ * What the pointer is over on a selected table, beyond its cells. `at` is the
+ * world coordinate of the border the affordance belongs to (x for a column
+ * border, y for a row border). Only the first four are pressable as a
+ * button; the two `border-*` kinds are the draggable inner borders, and they
+ * also reveal the "+" of their own border.
+ */
+export type TableAffordance =
+  | { kind: 'insert-col'; afterColId: string; at: number }
+  | { kind: 'insert-row'; afterRowId: string; at: number }
+  | { kind: 'append-col' }
+  | { kind: 'append-row' }
+  | { kind: 'border-col'; colId: string; afterColId: string; at: number }
+  | { kind: 'border-row'; rowId: string; afterRowId: string; at: number }
+
+/** True when `a` and `b` name the same affordance. */
+export function sameAffordance(
+  a: TableAffordance | null,
+  b: TableAffordance | null,
+): boolean {
+  return JSON.stringify(a) === JSON.stringify(b)
+}
+
+/** The world x of each INNER column border: between column i and i + 1. */
+function innerColBorders(
+  element: Pick<CanvasElement, 'x' | 'table'>,
+): Array<{ colId: string; nextColId: string; at: number }> {
+  const table = element.table
+  if (!table) return []
+  const out: Array<{ colId: string; nextColId: string; at: number }> = []
+  let x = element.x
+  for (let i = 0; i < table.cols.length - 1; i += 1) {
+    x += table.cols[i].width
+    out.push({
+      colId: table.cols[i].id,
+      nextColId: table.cols[i + 1].id,
+      at: x,
+    })
+  }
+  return out
+}
+
+/** The world y of each INNER row border: between row i and i + 1. */
+function innerRowBorders(
+  element: Pick<CanvasElement, 'y' | 'table'>,
+): Array<{ rowId: string; nextRowId: string; at: number }> {
+  const table = element.table
+  if (!table) return []
+  const out: Array<{ rowId: string; nextRowId: string; at: number }> = []
+  let y = element.y
+  for (let i = 0; i < table.rows.length - 1; i += 1) {
+    y += table.rows[i].height
+    out.push({
+      rowId: table.rows[i].id,
+      nextRowId: table.rows[i + 1].id,
+      at: y,
+    })
+  }
+  return out
+}
+
+/**
+ * Where an affordance's border is NOW, in world units. A border drag moves the
+ * border while the hover state still holds where it started.
+ */
+export function affordanceBorderAt(
+  element: Pick<CanvasElement, 'x' | 'y' | 'table'>,
+  affordance: TableAffordance,
+): number | null {
+  const table = element.table
+  if (!table) return null
+  if (affordance.kind === 'append-col' || affordance.kind === 'append-row') {
+    return null
+  }
+  if (affordance.kind === 'insert-col' || affordance.kind === 'border-col') {
+    const id = affordance.afterColId
+    const index = table.cols.findIndex((col) => col.id === id)
+    if (index < 0) return null
+    return (
+      element.x +
+      table.cols.slice(0, index + 1).reduce((sum, col) => sum + col.width, 0)
+    )
+  }
+  const id = affordance.afterRowId
+  const index = table.rows.findIndex((row) => row.id === id)
+  if (index < 0) return null
+  return (
+    element.y +
+    table.rows.slice(0, index + 1).reduce((sum, row) => sum + row.height, 0)
+  )
+}
+
+/** The "+" button of an inner border, as a screen-space-sized rect in WORLD units (`zoom` converts px). */
+export function tablePlusRect(
+  element: Pick<CanvasElement, 'x' | 'y' | 'width' | 'height'>,
+  kind: 'col' | 'row',
+  at: number,
+  zoom: number,
+): WorldRect {
+  const size = TABLE_PLUS_PX / zoom
+  const offset = TABLE_PLUS_OFFSET_PX / zoom
+  return kind === 'col'
+    ? {
+        x: at - size / 2,
+        y: element.y + element.height + offset - size / 2,
+        width: size,
+        height: size,
+      }
+    : {
+        x: element.x + element.width + offset - size / 2,
+        y: at - size / 2,
+        width: size,
+        height: size,
+      }
+}
+
+/** The append bar past the last column (`kind: 'col'`) or the last row, in WORLD units. */
+export function tableAppendRect(
+  element: Pick<CanvasElement, 'x' | 'y' | 'width' | 'height'>,
+  kind: 'col' | 'row',
+  zoom: number,
+): WorldRect {
+  const near = TABLE_APPEND_NEAR_PX / zoom
+  const thick = (TABLE_APPEND_FAR_PX - TABLE_APPEND_NEAR_PX) / zoom
+  return kind === 'col'
+    ? {
+        x: element.x + element.width + near,
+        y: element.y,
+        width: thick,
+        height: element.height,
+      }
+    : {
+        x: element.x,
+        y: element.y + element.height + near,
+        width: element.width,
+        height: thick,
+      }
+}
+
+function rectHas(rect: WorldRect, point: { x: number; y: number }): boolean {
+  return (
+    point.x >= rect.x &&
+    point.x <= rect.x + rect.width &&
+    point.y >= rect.y &&
+    point.y <= rect.y + rect.height
+  )
+}
+
+/**
+ * The affordance under a world point on a table: a "+" button, an append bar,
+ * or an inner border. A button beats a bar, a bar beats a border. `canInsertRow`
+ * and `canInsertCol` are false at the cell cap, which hides every way to add.
+ *
+ * The "+" button of a border answers over the strip between the table's edge
+ * and the button's far side, so moving the pointer from the border out to the
+ * button never crosses a dead zone.
+ */
+export function tableAffordanceAt(
+  element: Pick<CanvasElement, 'x' | 'y' | 'width' | 'height' | 'table'>,
+  world: { x: number; y: number },
+  zoom: number,
+  limits: { canInsertRow: boolean; canInsertCol: boolean },
+): TableAffordance | null {
+  if (!element.table) return null
+  const pad = TABLE_BORDER_HIT_PX / zoom
+  const reach = (TABLE_PLUS_OFFSET_PX + TABLE_PLUS_PX / 2) / zoom
+  const right = element.x + element.width
+  const bottom = element.y + element.height
+  const cols = innerColBorders(element)
+  const rows = innerRowBorders(element)
+
+  if (limits.canInsertCol) {
+    for (const border of cols) {
+      const half = TABLE_PLUS_PX / 2 / zoom
+      if (
+        Math.abs(world.x - border.at) <= half &&
+        world.y >= bottom &&
+        world.y <= bottom + reach
+      ) {
+        return { kind: 'insert-col', afterColId: border.colId, at: border.at }
+      }
+    }
+  }
+  if (limits.canInsertRow) {
+    for (const border of rows) {
+      const half = TABLE_PLUS_PX / 2 / zoom
+      if (
+        Math.abs(world.y - border.at) <= half &&
+        world.x >= right &&
+        world.x <= right + reach
+      ) {
+        return { kind: 'insert-row', afterRowId: border.rowId, at: border.at }
+      }
+    }
+  }
+  if (
+    limits.canInsertCol &&
+    rectHas(tableAppendRect(element, 'col', zoom), world)
+  ) {
+    return { kind: 'append-col' }
+  }
+  if (
+    limits.canInsertRow &&
+    rectHas(tableAppendRect(element, 'row', zoom), world)
+  ) {
+    return { kind: 'append-row' }
+  }
+  const inside =
+    world.x >= element.x &&
+    world.x <= right &&
+    world.y >= element.y &&
+    world.y <= bottom
+  if (inside) {
+    for (const border of cols) {
+      if (Math.abs(world.x - border.at) <= pad) {
+        return {
+          kind: 'border-col',
+          colId: border.colId,
+          afterColId: border.colId,
+          at: border.at,
+        }
+      }
+    }
+    for (const border of rows) {
+      if (Math.abs(world.y - border.at) <= pad) {
+        return {
+          kind: 'border-row',
+          rowId: border.rowId,
+          afterRowId: border.rowId,
+          at: border.at,
+        }
+      }
+    }
+  }
+  return null
+}
+
+/** Handles a table scales from. Matches `ResizeHandle` in render.ts, spelled out so this module imports nothing from it. */
+export type TableScaleHandle = 'nw' | 'n' | 'ne' | 'e' | 'se' | 's' | 'sw' | 'w'
+
+/**
+ * The scale a drag of `handle` asks of a table, clamped so no column drops
+ * under the minimum width and no row under its content height.
+ *
+ * A corner scales both axes by the same factor (the larger change wins), an
+ * edge scales one axis. `dx` and `dy` move the top-left corner so a drag from
+ * the left or top handle keeps the opposite side still.
+ */
+export function tableScaleForDrag(
+  handle: TableScaleHandle,
+  table: CanvasTable,
+  start: WorldRect,
+  world: { x: number; y: number },
+  rowMinHeights: ReadonlyArray<number>,
+): { sx: number; sy: number; dx: number; dy: number } {
+  const right = start.x + start.width
+  const bottom = start.y + start.height
+  const west = handle.includes('w')
+  const east = handle.includes('e')
+  const north = handle.includes('n')
+  const south = handle.includes('s')
+  const wantWidth = east
+    ? world.x - start.x
+    : west
+      ? right - world.x
+      : start.width
+  const wantHeight = south
+    ? world.y - start.y
+    : north
+      ? bottom - world.y
+      : start.height
+  let sx = wantWidth / start.width
+  let sy = wantHeight / start.height
+  const corner = (west || east) && (north || south)
+  if (corner) {
+    const uniform = Math.abs(sx - 1) >= Math.abs(sy - 1) ? sx : sy
+    sx = uniform
+    sy = uniform
+  } else if (!(west || east)) {
+    sx = 1
+  } else {
+    sy = 1
+  }
+  const minSx = Math.max(
+    ...table.cols.map((col) => TABLE_MIN_COL_WIDTH / col.width),
+  )
+  const minSy = Math.max(
+    ...table.rows.map(
+      (row, i) =>
+        Math.max(
+          rowMinHeights[i] ?? TABLE_MIN_ROW_HEIGHT,
+          TABLE_MIN_ROW_HEIGHT,
+        ) / row.height,
+    ),
+  )
+  const floor = corner ? Math.max(minSx, minSy) : 1
+  const scaleX =
+    west || east ? Math.min(100, Math.max(sx, corner ? floor : minSx)) : 1
+  const scaleY =
+    north || south ? Math.min(100, Math.max(sy, corner ? floor : minSy)) : 1
+  return {
+    sx: scaleX,
+    sy: scaleY,
+    dx: west ? start.width - start.width * scaleX : 0,
+    dy: north ? start.height - start.height * scaleY : 0,
   }
 }
 
@@ -891,6 +1322,7 @@ export function applyTableOp(
           type: 'setSizes',
           rows: table.rows.map((row) => ({ ...row })),
           cols: table.cols.map((col) => ({ ...col })),
+          ...shiftBack(op),
         },
       }
     }
@@ -921,6 +1353,7 @@ export function applyTableOp(
           type: 'setSizes',
           rows: table.rows.map((row) => ({ ...row })),
           cols: table.cols.map((col) => ({ ...col })),
+          ...shiftBack(op),
         },
       }
     }

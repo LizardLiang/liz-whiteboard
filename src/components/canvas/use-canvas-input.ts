@@ -37,6 +37,7 @@ import type {
 import type {
   CanvasTable,
   CellRef,
+  TableAffordance,
   TableOp,
   TableSelection,
 } from '@/lib/canvas-engine/table'
@@ -78,19 +79,28 @@ import {
 import { snapPoint, snapRect } from '@/lib/canvas-engine/grid'
 import {
   TABLE_CELL_HEIGHT,
+  TABLE_CELL_WIDTH,
   TABLE_DEFAULT_STYLE,
   TABLE_GRIP_PX,
   TABLE_MAX_CELLS,
+  TABLE_MIN_COL_WIDTH,
+  TABLE_MIN_ROW_HEIGHT,
   applyTableOp as applyTableOpLocally,
   cellAtPoint,
   cellElementId,
+  cellKey,
   cellTextElement,
   createTable,
   gripAtPoint,
+  lookupCell,
   pruneSelection,
+  sameAffordance,
+  selectionCells,
   stepCell,
   tabCell,
+  tableAffordanceAt,
   tableDimsForDrag,
+  tableScaleForDrag,
   tableSize,
 } from '@/lib/canvas-engine/table'
 import {
@@ -723,6 +733,37 @@ type Gesture =
       connectorId: string
       /** The connector as it stood at pointerdown, for `onUpdate`'s pre-state. */
       beforeElement: CanvasElement
+    }
+  | {
+      /**
+       * A drag of an inner column or row border of the selected table. The
+       * grid follows the pointer live; the release sends ONE `resizeCol` or
+       * `resizeRow` op. `before` is the element as it stood at pointerdown.
+       */
+      kind: 'table-border'
+      tableId: string
+      axis: 'col' | 'row'
+      /** The column left of, or the row above, the border. */
+      id: string
+      startWorld: Point
+      startSize: number
+      /** The smallest the column or row may get: the minimum width, or the row's text height. */
+      minSize: number
+      before: CanvasElement
+    }
+  | {
+      /**
+       * A drag of a resize handle of the selected table: every row and column
+       * scales together, and the release sends ONE `scaleTable` op.
+       */
+      kind: 'table-scale'
+      handle: ResizeHandle
+      tableId: string
+      startBounds: WorldRect
+      before: CanvasElement
+      /** Each row's text height, the floor its scale is clamped to. */
+      rowMinHeights: ReadonlyArray<number>
+      scale: { sx: number; sy: number; dx: number; dy: number }
     }
   | {
       /**
@@ -1721,6 +1762,37 @@ function renormalizeMembersAboveFloor(
   return toMembershipUpdates(originals, patched)
 }
 
+/** Whether one more row, or one more column, still fits under the cell cap. */
+function tableInsertLimits(grid: CanvasTable): {
+  canInsertRow: boolean
+  canInsertCol: boolean
+} {
+  return {
+    canInsertRow: (grid.rows.length + 1) * grid.cols.length <= TABLE_MAX_CELLS,
+    canInsertCol: grid.rows.length * (grid.cols.length + 1) <= TABLE_MAX_CELLS,
+  }
+}
+
+/** What the right-click menu on a table acts on, and which of its items are live. */
+export interface TableMenuState {
+  tableId: string
+  rowId: string
+  colId: string
+  canInsertRow: boolean
+  canInsertCol: boolean
+  canDeleteRow: boolean
+  canDeleteCol: boolean
+}
+
+export type TableMenuAction =
+  | 'insertRowAbove'
+  | 'insertRowBelow'
+  | 'insertColLeft'
+  | 'insertColRight'
+  | 'deleteRow'
+  | 'deleteCol'
+  | 'clearCells'
+
 export function useCanvasInput({
   canvasRef,
   containerRef,
@@ -1751,6 +1823,29 @@ export function useCanvasInput({
     tableSelectionRef.current = next
     setTableSelectionState(next)
   }, [])
+  // What the pointer is over on the selected table beyond its cells (a "+"
+  // button, an append bar, an inner border). Chrome only, never persisted.
+  const [tableAffordance, setTableAffordanceState] = useState<{
+    tableId: string
+    affordance: TableAffordance
+  } | null>(null)
+  const setTableAffordance = useCallback(
+    (next: { tableId: string; affordance: TableAffordance } | null) => {
+      setTableAffordanceState((current) =>
+        current?.tableId === next?.tableId &&
+        sameAffordance(current?.affordance ?? null, next?.affordance ?? null)
+          ? current
+          : next,
+      )
+    },
+    [],
+  )
+  // The cell a right-click landed on; the context menu acts on it.
+  const [tableMenuTarget, setTableMenuTarget] = useState<{
+    tableId: string
+    rowId: string
+    colId: string
+  } | null>(null)
 
   /**
    * Synchronous mirrors of `gesture` and `editing`.
@@ -2397,6 +2492,226 @@ export function useCanvasInput({
     [beginCellEditing, callbacks, commitEditing, setTableSelection, writeScene],
   )
 
+  // ── table rows and columns ───────────────────────────────────────────────
+  //
+  // Every structural change goes out as ONE table op through `onTableOp`, which
+  // applies it to the scene at once, sends it to the server and records one
+  // undo entry (with the contested checks `undoExpectFor` builds).
+
+  const issueTableOp = useCallback(
+    (tableId: string, op: TableOp) => {
+      if (latest.current.readOnly) return
+      const grid = latest.current.scene.byId.get(tableId)?.table
+      if (!grid) return
+      callbacks?.onTableOp?.(tableId, op, grid)
+    },
+    [callbacks],
+  )
+
+  /** A row after `afterRowId` (null = first), if the cell cap allows one more. */
+  const insertTableRow = useCallback(
+    (tableId: string, afterRowId: string | null) => {
+      const grid = latest.current.scene.byId.get(tableId)?.table
+      if (!grid || !tableInsertLimits(grid).canInsertRow) return
+      issueTableOp(tableId, {
+        type: 'insertRow',
+        afterRowId,
+        row: { id: uuid(), height: TABLE_CELL_HEIGHT },
+      })
+    },
+    [issueTableOp],
+  )
+
+  const insertTableCol = useCallback(
+    (tableId: string, afterColId: string | null) => {
+      const grid = latest.current.scene.byId.get(tableId)?.table
+      if (!grid || !tableInsertLimits(grid).canInsertCol) return
+      issueTableOp(tableId, {
+        type: 'insertCol',
+        afterColId,
+        col: { id: uuid(), width: TABLE_CELL_WIDTH },
+      })
+    },
+    [issueTableOp],
+  )
+
+  /** Remove a row; the last row is never removed. */
+  const removeTableRow = useCallback(
+    (tableId: string, rowId: string) => {
+      const grid = latest.current.scene.byId.get(tableId)?.table
+      if (!grid || grid.rows.length <= 1) return
+      issueTableOp(tableId, { type: 'removeRow', rowId })
+    },
+    [issueTableOp],
+  )
+
+  const removeTableCol = useCallback(
+    (tableId: string, colId: string) => {
+      const grid = latest.current.scene.byId.get(tableId)?.table
+      if (!grid || grid.cols.length <= 1) return
+      issueTableOp(tableId, { type: 'removeCol', colId })
+    },
+    [issueTableOp],
+  )
+
+  /** Clear the text of `refs` in ONE op. Fill and alignment stay. Nothing to clear sends nothing. */
+  const clearTableCells = useCallback(
+    (tableId: string, refs: ReadonlyArray<CellRef>) => {
+      const grid = latest.current.scene.byId.get(tableId)?.table
+      if (!grid) return
+      const cells: Array<{
+        rowId: string
+        colId: string
+        cell: NonNullable<ReturnType<typeof lookupCell>>
+      }> = []
+      for (const ref of refs) {
+        const prior = lookupCell(grid.cells, cellKey(ref.rowId, ref.colId))
+        if (!prior || prior.text === '') continue
+        const { textRuns: _runs, ...kept } = prior
+        cells.push({
+          rowId: ref.rowId,
+          colId: ref.colId,
+          cell: { ...kept, text: '' },
+        })
+      }
+      if (cells.length === 0) return
+      issueTableOp(tableId, { type: 'restoreCells', cells })
+    },
+    [issueTableOp],
+  )
+
+  /** The height each row of a table needs to show its text, the floor a resize is clamped to. */
+  const tableRowMinHeights = useCallback(
+    (element: CanvasElement): Array<number> => {
+      const grid = element.table
+      if (!grid) return []
+      return grid.rows.map((row) => {
+        let height = TABLE_MIN_ROW_HEIGHT
+        for (const col of grid.cols) {
+          const cell = lookupCell(grid.cells, cellKey(row.id, col.id))
+          if (!cell || cell.text === '') continue
+          const virtual = cellTextElement(element, row.id, col.id)
+          const measure = virtual && getMeasurer(fontSpecOf(virtual.style))
+          if (!virtual || !measure) continue
+          height = Math.max(
+            height,
+            Math.ceil(fittedTextHeight(virtual, measure)),
+          )
+        }
+        return height
+      })
+    },
+    [getMeasurer],
+  )
+
+  /** The affordance under a world point, when the one selected element is a table the user can edit. */
+  const affordanceAtPoint = useCallback(
+    (world: Point): { tableId: string; affordance: TableAffordance } | null => {
+      const current = latest.current
+      if (current.readOnly || current.tool !== 'select' || editingRef.current) {
+        return null
+      }
+      if (current.selectedIds.size !== 1) return null
+      const only = current.scene.byId.get([...current.selectedIds][0])
+      if (only?.kind !== 'table' || !only.table) return null
+      const affordance = tableAffordanceAt(
+        only,
+        world,
+        current.camera.zoom,
+        tableInsertLimits(only.table),
+      )
+      return affordance ? { tableId: only.id, affordance } : null
+    },
+    [],
+  )
+
+  /** The context menu's target with the live state of each item. */
+  const tableMenu = useMemo<TableMenuState | null>(() => {
+    if (!tableMenuTarget) return null
+    const grid = scene.byId.get(tableMenuTarget.tableId)?.table
+    if (!grid) return null
+    return {
+      ...tableMenuTarget,
+      ...tableInsertLimits(grid),
+      canDeleteRow: grid.rows.length > 1,
+      canDeleteCol: grid.cols.length > 1,
+    }
+  }, [scene, tableMenuTarget])
+
+  const onTableMenuAction = useCallback(
+    (action: TableMenuAction) => {
+      const target = tableMenuTarget
+      if (!target) return
+      const grid = latest.current.scene.byId.get(target.tableId)?.table
+      if (!grid) return
+      const row = grid.rows.findIndex((entry) => entry.id === target.rowId)
+      const col = grid.cols.findIndex((entry) => entry.id === target.colId)
+      if (row < 0 || col < 0) return
+      switch (action) {
+        case 'insertRowAbove':
+          insertTableRow(
+            target.tableId,
+            row === 0 ? null : grid.rows[row - 1].id,
+          )
+          break
+        case 'insertRowBelow':
+          insertTableRow(target.tableId, target.rowId)
+          break
+        case 'insertColLeft':
+          insertTableCol(
+            target.tableId,
+            col === 0 ? null : grid.cols[col - 1].id,
+          )
+          break
+        case 'insertColRight':
+          insertTableCol(target.tableId, target.colId)
+          break
+        case 'deleteRow':
+          removeTableRow(target.tableId, target.rowId)
+          break
+        case 'deleteCol':
+          removeTableCol(target.tableId, target.colId)
+          break
+        case 'clearCells': {
+          const picked = tableSelectionRef.current
+          clearTableCells(
+            target.tableId,
+            picked?.tableId === target.tableId
+              ? selectionCells(grid, picked)
+              : [{ rowId: target.rowId, colId: target.colId }],
+          )
+          break
+        }
+      }
+    },
+    [
+      clearTableCells,
+      insertTableCol,
+      insertTableRow,
+      removeTableCol,
+      removeTableRow,
+      tableMenuTarget,
+    ],
+  )
+
+  /**
+   * Delete or Backspace with part of a table picked. A row or column goes (the
+   * last one never does); cells lose their text in one op. Returns whether the
+   * key was handled — only a whole-table selection falls through to deleting
+   * the element.
+   */
+  const deleteTableSelection = useCallback((): boolean => {
+    const picked = tableSelectionRef.current
+    const ids = latest.current.selectedIds
+    if (!picked || ids.size !== 1 || !ids.has(picked.tableId)) return false
+    const grid = latest.current.scene.byId.get(picked.tableId)?.table
+    if (!grid) return false
+    if (picked.kind === 'row') removeTableRow(picked.tableId, picked.rowId)
+    else if (picked.kind === 'col') removeTableCol(picked.tableId, picked.colId)
+    else clearTableCells(picked.tableId, selectionCells(grid, picked))
+    return true
+  }, [clearTableCells, removeTableCol, removeTableRow])
+
   /** Caret index nearest a world point inside an element's text block. */
   const caretAtWorldPoint = useCallback(
     (element: CanvasElement, world: Point): number => {
@@ -2589,6 +2904,40 @@ export function useCanvasInput({
         setGesture({ kind: 'pan', lastScreen: screen })
         return
       }
+      if (event.button === 2) {
+        // The first canvas context menu: a table cell's. A right-click picks
+        // the cell under it (unless it is already in the picked range) and
+        // hands the menu its target; anywhere else clears the target, which
+        // leaves the browser's own menu alone.
+        if (latest.current.tool !== 'select') return
+        if (editingRef.current) commitEditing()
+        const pressed = hitTest(latest.current.scene, world)
+        const pressedCell =
+          pressed?.kind === 'table' ? cellAtPoint(pressed, world) : null
+        if (!pressed?.table || !pressedCell) {
+          setTableMenuTarget(null)
+          return
+        }
+        setSelectedIds(new Set([pressed.id]))
+        const existing = tableSelectionRef.current
+        const inRange =
+          existing?.tableId === pressed.id &&
+          selectionCells(pressed.table, existing).some(
+            (ref) =>
+              ref.rowId === pressedCell.rowId &&
+              ref.colId === pressedCell.colId,
+          )
+        if (!inRange) {
+          setTableSelection({
+            tableId: pressed.id,
+            kind: 'cells',
+            anchor: pressedCell,
+            focus: pressedCell,
+          })
+        }
+        setTableMenuTarget({ tableId: pressed.id, ...pressedCell })
+        return
+      }
       if (event.button !== 0) return
 
       // A press inside the element being edited belongs to its text: it
@@ -2745,12 +3094,30 @@ export function useCanvasInput({
         // gesture this milestone has — so a press on one falls through to the
         // element beneath and starts a move, which is what a press inside a
         // multi-selection should do anyway.
-        // A table draws no grips (see `drawSelectionOverlay`), so it tests none.
-        if (only && !only.connector && only.kind !== 'table') {
+        if (only && !only.connector) {
           const grips = handleRects(latest.current.camera, only)
           const grabbed = RESIZE_HANDLES.find((handle) =>
             screenRectContains(grips[handle], screen),
           )
+          if (grabbed && only.kind === 'table' && only.table) {
+            // A table scales its rows and columns together (`scaleTable`)
+            // rather than stretching a frame the grid would no longer fill.
+            setGesture({
+              kind: 'table-scale',
+              handle: grabbed,
+              tableId: only.id,
+              startBounds: {
+                x: only.x,
+                y: only.y,
+                width: only.width,
+                height: only.height,
+              },
+              before: { ...only },
+              rowMinHeights: tableRowMinHeights(only),
+              scale: { sx: 1, sy: 1, dx: 0, dy: 0 },
+            })
+            return
+          }
           if (grabbed) {
             setGesture({
               kind: 'resize',
@@ -2772,10 +3139,62 @@ export function useCanvasInput({
         }
       }
 
-      // A selected table's row and column grabbers sit just OUTSIDE its rect,
-      // so `hitTest` below would see empty canvas there.
+      // A selected table's "+" buttons, append bars and inner borders, then
+      // its row and column grabbers: all sit on or just OUTSIDE its rect, so
+      // `hitTest` below would see empty canvas there.
       if (currentSelection.size === 1) {
         const only = latest.current.scene.byId.get([...currentSelection][0])
+        const over = affordanceAtPoint(world)
+        if (only?.kind === 'table' && only.table && over) {
+          const grid = only.table
+          const { affordance } = over
+          switch (affordance.kind) {
+            case 'insert-col':
+              insertTableCol(only.id, affordance.afterColId)
+              break
+            case 'insert-row':
+              insertTableRow(only.id, affordance.afterRowId)
+              break
+            case 'append-col':
+              insertTableCol(only.id, grid.cols[grid.cols.length - 1].id)
+              break
+            case 'append-row':
+              insertTableRow(only.id, grid.rows[grid.rows.length - 1].id)
+              break
+            case 'border-col':
+              setGesture({
+                kind: 'table-border',
+                tableId: only.id,
+                axis: 'col',
+                id: affordance.colId,
+                startWorld: world,
+                startSize:
+                  grid.cols.find((col) => col.id === affordance.colId)?.width ??
+                  TABLE_CELL_WIDTH,
+                minSize: TABLE_MIN_COL_WIDTH,
+                before: { ...only },
+              })
+              break
+            case 'border-row': {
+              const index = grid.rows.findIndex(
+                (row) => row.id === affordance.rowId,
+              )
+              setGesture({
+                kind: 'table-border',
+                tableId: only.id,
+                axis: 'row',
+                id: affordance.rowId,
+                startWorld: world,
+                startSize: grid.rows[index]?.height ?? TABLE_CELL_HEIGHT,
+                minSize:
+                  tableRowMinHeights(only)[index] ?? TABLE_MIN_ROW_HEIGHT,
+                before: { ...only },
+              })
+              break
+            }
+          }
+          return
+        }
         if (only?.kind === 'table') {
           const grip = gripAtPoint(
             only,
@@ -2970,6 +3389,10 @@ export function useCanvasInput({
       spaceHeld,
       callbacks,
       todoBoxIndexAt,
+      affordanceAtPoint,
+      insertTableCol,
+      insertTableRow,
+      tableRowMinHeights,
     ],
   )
 
@@ -2989,8 +3412,10 @@ export function useCanvasInput({
           // owns the next press, so handles there would be decoration that
           // does nothing.
           setHoveredId(null)
+          setTableAffordance(null)
           return
         }
+        setTableAffordance(affordanceAtPoint(world))
         const previous = hoveredIdRef.current
           ? latest.current.scene.byId.get(hoveredIdRef.current)
           : undefined
@@ -3111,6 +3536,72 @@ export function useCanvasInput({
           setGesture({ ...gesture, guides: aligned.guides })
           break
         }
+        case 'table-border': {
+          const delta =
+            gesture.axis === 'col'
+              ? world.x - gesture.startWorld.x
+              : world.y - gesture.startWorld.y
+          const size = Math.max(
+            gesture.minSize,
+            Math.round(gesture.startSize + delta),
+          )
+          setScene((prev) => {
+            const grid = prev.byId.get(gesture.tableId)?.table
+            if (!grid) return prev
+            const table: CanvasTable =
+              gesture.axis === 'col'
+                ? {
+                    ...grid,
+                    cols: grid.cols.map((col) =>
+                      col.id === gesture.id ? { ...col, width: size } : col,
+                    ),
+                  }
+                : {
+                    ...grid,
+                    rows: grid.rows.map((row) =>
+                      row.id === gesture.id ? { ...row, height: size } : row,
+                    ),
+                  }
+            return updateElement(prev, gesture.tableId, {
+              table,
+              ...tableSize(table),
+            })
+          })
+          break
+        }
+        case 'table-scale': {
+          const start = gesture.before.table
+          if (!start) break
+          const scale = tableScaleForDrag(
+            gesture.handle,
+            start,
+            gesture.startBounds,
+            world,
+            gesture.rowMinHeights,
+          )
+          let scaled: CanvasTable
+          try {
+            scaled = applyTableOpLocally(start, {
+              type: 'scaleTable',
+              sx: scale.sx,
+              sy: scale.sy,
+            }).table
+          } catch {
+            break
+          }
+          setScene((prev) =>
+            prev.byId.has(gesture.tableId)
+              ? updateElement(prev, gesture.tableId, {
+                  table: scaled,
+                  ...tableSize(scaled),
+                  x: gesture.before.x + scale.dx,
+                  y: gesture.before.y + scale.dy,
+                })
+              : prev,
+          )
+          setGesture({ ...gesture, scale })
+          break
+        }
         case 'connector-endpoint': {
           // The end becomes a FREE point for the duration of the drag, so the
           // line follows the pointer with no extra renderer state — the same
@@ -3203,6 +3694,8 @@ export function useCanvasInput({
       setGesture,
       setHoveredId,
       setScene,
+      setTableAffordance,
+      affordanceAtPoint,
     ],
   )
 
@@ -3213,7 +3706,8 @@ export function useCanvasInput({
    */
   const onPointerLeave = useCallback(() => {
     setHoveredId(null)
-  }, [setHoveredId])
+    setTableAffordance(null)
+  }, [setHoveredId, setTableAffordance])
 
   const endGesture = useCallback(
     (event: ReactPointerEvent<HTMLCanvasElement>) => {
@@ -3333,6 +3827,67 @@ export function useCanvasInput({
           if (element) {
             callbacks?.onUpdate?.([element], [finished.beforeElement], 'resize')
           }
+          break
+        }
+        case 'table-border': {
+          const grid = latest.current.scene.byId.get(finished.tableId)?.table
+          const before = finished.before.table
+          if (!grid || !before) break
+          const size =
+            finished.axis === 'col'
+              ? grid.cols.find((col) => col.id === finished.id)?.width
+              : grid.rows.find((row) => row.id === finished.id)?.height
+          if (size === undefined) break
+          // The live preview is dropped first: the op is applied to the scene
+          // by the consumer, so leaving the preview in would apply it twice.
+          const restore = (): void =>
+            writeScene((prev) =>
+              prev.byId.has(finished.tableId)
+                ? updateElement(prev, finished.tableId, {
+                    table: before,
+                    width: finished.before.width,
+                    height: finished.before.height,
+                  })
+                : prev,
+            )
+          restore()
+          if (Math.abs(size - finished.startSize) < 0.5) break
+          callbacks?.onTableOp?.(
+            finished.tableId,
+            finished.axis === 'col'
+              ? { type: 'resizeCol', colId: finished.id, width: size }
+              : { type: 'resizeRow', rowId: finished.id, height: size },
+            before,
+          )
+          break
+        }
+        case 'table-scale': {
+          const before = finished.before.table
+          if (!before) break
+          const { sx, sy, dx, dy } = finished.scale
+          writeScene((prev) =>
+            prev.byId.has(finished.tableId)
+              ? updateElement(prev, finished.tableId, {
+                  table: before,
+                  width: finished.before.width,
+                  height: finished.before.height,
+                  x: finished.before.x,
+                  y: finished.before.y,
+                })
+              : prev,
+          )
+          if (Math.abs(sx - 1) < 0.001 && Math.abs(sy - 1) < 0.001) break
+          callbacks?.onTableOp?.(
+            finished.tableId,
+            {
+              type: 'scaleTable',
+              sx,
+              sy,
+              ...(dx !== 0 ? { dx } : {}),
+              ...(dy !== 0 ? { dy } : {}),
+            },
+            before,
+          )
           break
         }
         case 'connector-endpoint': {
@@ -3482,6 +4037,7 @@ export function useCanvasInput({
       setGesture,
       setScene,
       setTool,
+      writeScene,
     ],
   )
 
@@ -3660,6 +4216,9 @@ export function useCanvasInput({
     (deleteGesture: 'delete' | 'cut' = 'delete') => {
       const selected = [...latest.current.selectedIds]
       if (selected.length === 0) return
+      // A picked row, column or run of cells is what Delete means when one is
+      // picked; only a whole-table selection removes the element.
+      if (deleteGesture === 'delete' && deleteTableSelection()) return
       // Expanded to include every connector attached to anything doomed (step
       // 12): a connector whose endpoint is gone can never be drawn or clicked
       // again, so leaving it behind means an invisible row nothing can ever
@@ -3703,7 +4262,7 @@ export function useCanvasInput({
       setEnteredPath([])
       callbacks?.onDelete?.(elements, deleteGesture, groupCleanup)
     },
-    [callbacks, setEnteredPath, setScene],
+    [callbacks, deleteTableSelection, setEnteredPath, setScene],
   )
 
   // ── copy, cut, paste, duplicate ──────────────────────────────────────────
@@ -3789,6 +4348,9 @@ export function useCanvasInput({
    */
   const cutSelection = useCallback(() => {
     if (latest.current.readOnly) return
+    // Cells are not cut in v1: cutting with part of a table picked must not
+    // take the whole table with it.
+    if (tableSelectionRef.current) return
     if (captureSelection().length === 0) return
     deleteSelection('cut')
   }, [captureSelection, deleteSelection])
@@ -4737,6 +5299,18 @@ export function useCanvasInput({
     [setEditing, setScene, setTableSelection],
   )
 
+  const tableCursor =
+    gesture.kind === 'table-border'
+      ? gesture.axis === 'col'
+        ? 'col-resize'
+        : 'row-resize'
+      : tableAffordance?.affordance.kind === 'border-col'
+        ? 'col-resize'
+        : tableAffordance?.affordance.kind === 'border-row'
+          ? 'row-resize'
+          : tableAffordance
+            ? 'pointer'
+            : null
   const cursor = readOnly
     ? gesture.kind === 'pan'
       ? 'grabbing'
@@ -4749,7 +5323,7 @@ export function useCanvasInput({
         ? 'text'
         : shapeKindForTool(tool) || tool === 'table'
           ? 'crosshair'
-          : 'default'
+          : (tableCursor ?? 'default')
 
   return {
     selectedIds,
@@ -4767,6 +5341,9 @@ export function useCanvasInput({
     ungroupSelection,
     editing,
     tableSelection,
+    tableAffordance,
+    tableMenu,
+    onTableMenuAction,
     marquee,
     draft,
     hoveredId,

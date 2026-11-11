@@ -74,7 +74,7 @@ import type {
 } from '@/lib/canvas-undo/undo-stack'
 import type { InverseWrite } from '@/lib/canvas-undo/inverse'
 import type { CanvasTable, TableOp } from '@/lib/canvas-engine/table'
-import { expectAfterOp } from '@/lib/canvas-engine/table'
+import { redoExpectFor, undoExpectFor } from '@/lib/canvas-engine/table'
 import { useT } from '@/lib/i18n/use-t'
 import {
   fromElementSnapshot as snapshotToEngineElement,
@@ -879,18 +879,17 @@ export function useCanvasUndo({
       void applyTableOp(elementId, op).then((result) => {
         if (!result.ok || !result.inverse) return
         const inverse = result.inverse
-        const undoExpect =
-          op.type === 'setCellText'
-            ? expectAfterOp(table, op)
-            : expectAfterOp(table, inverse)
-        const redoExpect =
-          op.type === 'setCellText' ? expectAfterOp(table, inverse) : undefined
+        // A table still being created when the op was issued gets its real id
+        // from the create ack; the undo entry must name that one.
+        const targetId = result.elementId ?? elementId
+        const undoExpect = undoExpectFor(table, op, inverse)
+        const redoExpect = redoExpectFor(table, op, inverse)
         push({
           label: { gesture: 'table-op', op: op.type },
           operations: [
             {
               kind: 'table-op',
-              elementId,
+              elementId: targetId,
               op,
               inverse,
               ...(undoExpect ? { undoExpect } : {}),
