@@ -353,8 +353,7 @@ export function registerCanvasElementHandlers(
           ...updateData
         } = data
         const validated = updateCanvasElementSchema.parse(updateData)
-        // Only `element:table-op` changes a table's grid. Accepting a whole
-        // `props` here would overwrite a collaborator's cell with a stale copy.
+        // A table's grid changes through `element:table-op` only.
         if (existing.kind === 'table' && validated.props !== undefined) {
           const message = 'A table changes through element:table-op only'
           socket.emit('error', {

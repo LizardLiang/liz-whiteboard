@@ -369,9 +369,8 @@ export function toUpdatePatch(element: CanvasElement): UpdateCanvasElement {
     // carries the ONLY editable props any kind has — a connector's `routing`
     // — so without it a routing change would have no way to reach storage.
     //
-    // A table is the exception: only `element:table-op` changes its grid, and
-    // the server rejects a `props` change for one. Sending the client's copy
-    // here would also overwrite a collaborator's cell with a stale one.
+    // A table's grid changes through `element:table-op` only, so its update
+    // patch carries no `props`.
     ...(element.kind === 'table' ? {} : { props: toStoredProps(element) }),
   }
 }

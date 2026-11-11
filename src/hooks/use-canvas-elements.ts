@@ -400,9 +400,8 @@ export function useCanvasElements({
         zIndex: payload.zIndex ?? base.zIndex,
         text: payload.text !== undefined ? payload.text : base.text,
         style: payload.style ?? base.style,
-        // A table's grid rides in `props` on a table-op broadcast; any other
-        // update leaves it as confirmed. Without this the merged element would
-        // lose its table, and a rollback to it would restore an empty one.
+        // A table-op broadcast carries the grid in `props`; any other update
+        // keeps the confirmed table.
         props:
           payload.props ??
           (base.table ? { kind: 'table', table: base.table } : undefined),
@@ -814,8 +813,7 @@ export function useCanvasElements({
             })
           })
         } catch {
-          // The local table cannot take this op (a collaborator removed the
-          // row it names); the server decides, and reports on its ack.
+          // The server decides this op; its ack reports any refusal.
         }
         emit(
           'element:table-op',
