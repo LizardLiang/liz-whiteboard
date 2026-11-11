@@ -100,6 +100,7 @@ import {
   tabCell,
   tableAffordanceAt,
   tableDimsForDrag,
+  tableHoverAffordanceAt,
   tableScaleForDrag,
   tableSize,
 } from '@/lib/canvas-engine/table'
@@ -2604,9 +2605,16 @@ export function useCanvasInput({
     [getMeasurer],
   )
 
-  /** The affordance under a world point, when the one selected element is a table the user can edit. */
+  /**
+   * The affordance under a world point, when the one selected element is a
+   * table the user can edit. `hover` also reveals the append bar over the last
+   * column or row; a press only ever acts on the bar itself.
+   */
   const affordanceAtPoint = useCallback(
-    (world: Point): { tableId: string; affordance: TableAffordance } | null => {
+    (
+      world: Point,
+      hover = false,
+    ): { tableId: string; affordance: TableAffordance } | null => {
       const current = latest.current
       if (current.readOnly || current.tool !== 'select' || editingRef.current) {
         return null
@@ -2614,7 +2622,8 @@ export function useCanvasInput({
       if (current.selectedIds.size !== 1) return null
       const only = current.scene.byId.get([...current.selectedIds][0])
       if (only?.kind !== 'table' || !only.table) return null
-      const affordance = tableAffordanceAt(
+      const find = hover ? tableHoverAffordanceAt : tableAffordanceAt
+      const affordance = find(
         only,
         world,
         current.camera.zoom,
@@ -3415,7 +3424,7 @@ export function useCanvasInput({
           setTableAffordance(null)
           return
         }
-        setTableAffordance(affordanceAtPoint(world))
+        setTableAffordance(affordanceAtPoint(world, true))
         const previous = hoveredIdRef.current
           ? latest.current.scene.byId.get(hoveredIdRef.current)
           : undefined

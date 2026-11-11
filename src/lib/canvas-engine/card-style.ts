@@ -450,7 +450,7 @@ export function cardTextStyle(
 /** Per-theme table colours: the default grid line and the header row tint. */
 export const TABLE_TOKENS = {
   light: { grid: '#94a3b8', header: 'rgba(100, 116, 139, 0.16)' },
-  dark: { grid: '#64748b', header: 'rgba(148, 163, 184, 0.22)' },
+  dark: { grid: '#64748b', header: 'rgba(148, 163, 184, 0.42)' },
 } as const satisfies Record<CanvasTheme, { grid: string; header: string }>
 
 /** The stored default grid colour of a new table. */

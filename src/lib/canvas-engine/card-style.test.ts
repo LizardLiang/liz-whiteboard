@@ -738,6 +738,21 @@ describe('table colours', () => {
     }
   })
 
+  it('keeps the header row clearly distinct from the body, in both themes', () => {
+    for (const theme of themes) {
+      const header = tableCellBackdrop(undefined, true, theme)
+      const body = tableCellBackdrop(undefined, false, theme)
+      expect(body).toBe(CARD[theme].surface)
+      expect(contrastRatio(header, body) ?? 0).toBeGreaterThanOrEqual(1.2)
+    }
+    expect(
+      contrastRatio(
+        tableCellBackdrop(undefined, true, 'dark'),
+        CARD.dark.surface,
+      ) ?? 0,
+    ).toBeGreaterThanOrEqual(2)
+  })
+
   it('has no paint for "none"', () => {
     expect(tableFillPaint('none', 'dark')).toBeNull()
   })

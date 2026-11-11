@@ -633,9 +633,13 @@ export const TABLE_PLUS_PX = 18
 export const TABLE_PLUS_OFFSET_PX = 14
 /** Half-width of the strip around a border that counts as "on" it, inside the table, in screen px. */
 export const TABLE_BORDER_HIT_PX = 4
-/** Where the append bar sits: its near and far edge outside the table, in screen px. */
-export const TABLE_APPEND_NEAR_PX = 4
-export const TABLE_APPEND_FAR_PX = 16
+/**
+ * Where the append bar sits: its near and far edge outside the table, in
+ * screen px. The near edge clears the edge's middle resize handle (it reaches
+ * HANDLE_SIZE / 2 = 4px outside), so the bar never covers it.
+ */
+export const TABLE_APPEND_NEAR_PX = 8
+export const TABLE_APPEND_FAR_PX = 24
 
 /**
  * What the pointer is over on a selected table, beyond its cells. `at` is the
@@ -871,6 +875,42 @@ export function tableAffordanceAt(
       }
     }
   }
+  return null
+}
+
+/**
+ * What a hovering pointer reveals on a selected table: everything
+ * `tableAffordanceAt` finds, plus the append bar while the pointer is over the
+ * last column (or last row) or the gap between it and the bar. Only the bar
+ * itself is pressable, so a press inside the last column still edits a cell.
+ */
+export function tableHoverAffordanceAt(
+  element: Pick<CanvasElement, 'x' | 'y' | 'width' | 'height' | 'table'>,
+  world: { x: number; y: number },
+  zoom: number,
+  limits: { canInsertRow: boolean; canInsertCol: boolean },
+): TableAffordance | null {
+  const hit = tableAffordanceAt(element, world, zoom, limits)
+  if (hit || !element.table) return hit
+  const { cols, rows } = element.table
+  const right = element.x + element.width
+  const bottom = element.y + element.height
+  const gap = TABLE_APPEND_NEAR_PX / zoom
+  const inX = world.x >= element.x && world.x <= right + gap
+  const inY = world.y >= element.y && world.y <= bottom + gap
+  if (!inX || !inY) return null
+  const lastColX = right - cols[cols.length - 1].width
+  const lastRowY = bottom - rows[rows.length - 1].height
+  const overCol = limits.canInsertCol && world.x >= lastColX
+  const overRow = limits.canInsertRow && world.y >= lastRowY
+  if (overCol && overRow) {
+    // The corner cell: the nearer edge wins.
+    return right - world.x <= bottom - world.y
+      ? { kind: 'append-col' }
+      : { kind: 'append-row' }
+  }
+  if (overCol) return { kind: 'append-col' }
+  if (overRow) return { kind: 'append-row' }
   return null
 }
 

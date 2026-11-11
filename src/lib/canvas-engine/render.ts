@@ -1142,7 +1142,7 @@ function drawCardTopRow(
 }
 
 /**
- * Draw a table in WORLD space: cell fills, the header tint, the grid, then each
+ * Draw a table in WORLD space: the opaque surface, cell fills, the header tint, the grid, then each
  * cell's text through the same code a board label uses.
  *
  * Cells are drawn with no card look on purpose: a table is a grid, not a card.
@@ -1165,6 +1165,10 @@ function drawTable(
       : header
         ? TABLE_TOKENS[theme].header
         : null
+    // Opaque surface first, so the board's dot grid never shows through a cell.
+    target.rect(rect.x, rect.y, rect.width, rect.height, 0, {
+      fill: CARD[theme].surface,
+    })
     if (fill) {
       target.rect(rect.x, rect.y, rect.width, rect.height, 0, { fill })
     }
@@ -2060,18 +2064,19 @@ function drawTableAffordance(
       ),
     )
     ctx.save()
-    ctx.fillStyle = chrome.marqueeFill
-    ctx.strokeStyle = chrome.accent
-    ctx.lineWidth = 1
+    ctx.globalAlpha = 0.85
+    ctx.fillStyle = chrome.accent
     ctx.fillRect(r.x, r.y, r.width, r.height)
-    ctx.strokeRect(r.x + 0.5, r.y + 0.5, r.width - 1, r.height - 1)
+    ctx.globalAlpha = 1
+    ctx.strokeStyle = '#ffffff'
+    ctx.lineWidth = 2
     const cx = r.x + r.width / 2
     const cy = r.y + r.height / 2
     ctx.beginPath()
-    ctx.moveTo(cx - 3, cy)
-    ctx.lineTo(cx + 3, cy)
-    ctx.moveTo(cx, cy - 3)
-    ctx.lineTo(cx, cy + 3)
+    ctx.moveTo(cx - 5, cy)
+    ctx.lineTo(cx + 5, cy)
+    ctx.moveTo(cx, cy - 5)
+    ctx.lineTo(cx, cy + 5)
     ctx.stroke()
     ctx.restore()
     return

@@ -24,6 +24,7 @@ import {
   tableAppendRect,
   tableCellRects,
   tableDimsForDrag,
+  tableHoverAffordanceAt,
   tableMatchesExpect,
   tableOpShift,
   tablePlusRect,
@@ -752,7 +753,35 @@ describe('table hover affordances', () => {
       }),
     ).toBeNull()
     const bar = tableAppendRect(element, 'col', 2)
-    expect(bar.width).toBe(6)
+    expect(bar.width).toBe(8)
+  })
+
+  it('keeps the append bar off the edge middle resize handle', () => {
+    // The handle reaches 4px outside the edge; the bar starts past it.
+    const bar = tableAppendRect(element, 'col', 1)
+    expect(bar.x - (element.x + element.width)).toBeGreaterThan(4)
+    const row = tableAppendRect(element, 'row', 1)
+    expect(row.y - (element.y + element.height)).toBeGreaterThan(4)
+    // On the handle itself nothing is pressable.
+    expect(
+      tableAffordanceAt(element, { x: 460 + 3, y: 120 }, 1, both),
+    ).toBeNull()
+  })
+
+  it('reveals the append bar over the last column or row, but a press there is not a hit', () => {
+    const hover = (x: number, y: number) =>
+      tableHoverAffordanceAt(element, { x, y }, 1, both)?.kind
+    expect(hover(400, 110)).toBe('append-col')
+    expect(hover(460 + 3, 120)).toBe('append-col')
+    expect(hover(200, 170)).toBe('append-row')
+    expect(hover(150, 110)).toBeUndefined()
+    expect(tableAffordanceAt(element, { x: 400, y: 110 }, 1, both)).toBeNull()
+    expect(
+      tableHoverAffordanceAt(element, { x: 400, y: 110 }, 1, {
+        canInsertRow: false,
+        canInsertCol: false,
+      }),
+    ).toBeNull()
   })
 
   it('finds an inner border inside the table, and only an inner one', () => {

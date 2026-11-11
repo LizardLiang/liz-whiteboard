@@ -821,6 +821,75 @@ test.describe('inserting rows and columns', () => {
     expect(stored.table!.rows).toHaveLength(4)
   })
 
+  test('hovering anywhere over the last column or row shows its append bar, which appends on click', async ({
+    page,
+  }) => {
+    const created = await makeTable(page)
+    const geo = await geometry(page, created.id)
+    // Mid-cell of the last column, away from every border: the bar shows.
+    await page.mouse.move(geo.right - 30, geo.top + 20)
+    await expect
+      .poll(async () => (await engine(page)).tableAffordance?.kind)
+      .toBe('append-col')
+    // The bar is drawn solid outside the right edge, with its "+" glyph.
+    const bar = await pixelAtWorld(page, {
+      x: created.x + created.width + 12,
+      y: created.y + 8,
+    })
+    expect(bar[3]).toBeGreaterThan(200)
+    expect(bar[2]).toBeGreaterThan(bar[0])
+    // Sliding onto the bar keeps it, and pressing there appends.
+    await page.mouse.move(geo.right + 16, geo.top + 20)
+    await expect
+      .poll(async () => (await engine(page)).tableAffordance?.kind)
+      .toBe('append-col')
+    await page.mouse.click(geo.right + 16, geo.top + 20)
+    await expect
+      .poll(async () => (await currentTable(page)).table!.cols.length, {
+        timeout: 10_000,
+      })
+      .toBe(4)
+
+    const after = await geometry(page, created.id)
+    await page.mouse.move(after.left + 40, after.bottom - 10)
+    await expect
+      .poll(async () => (await engine(page)).tableAffordance?.kind)
+      .toBe('append-row')
+    await page.mouse.move(after.left + 40, after.bottom + 16)
+    await page.mouse.click(after.left + 40, after.bottom + 16)
+    await expect
+      .poll(async () => (await currentTable(page)).table!.rows.length, {
+        timeout: 10_000,
+      })
+      .toBe(4)
+  })
+
+  test('pressing inside the last column still edits a cell, not the bar', async ({
+    page,
+  }) => {
+    const created = await makeTable(page)
+    const geo = await geometry(page, created.id)
+    await page.mouse.move(geo.right - 30, geo.top + 60)
+    await page.mouse.click(geo.right - 30, geo.top + 60)
+    expect((await currentTable(page)).table!.cols).toHaveLength(3)
+  })
+
+  test('the middle handle of the right edge still scales the table', async ({
+    page,
+  }) => {
+    const created = await makeTable(page)
+    const geo = await geometry(page, created.id)
+    await dragMouse(
+      page,
+      { x: geo.right, y: geo.midY },
+      { x: geo.right + 60, y: geo.midY },
+    )
+    await expect
+      .poll(async () => (await currentTable(page)).width, { timeout: 10_000 })
+      .toBeGreaterThan(created.width + 40)
+    expect((await currentTable(page)).table!.cols).toHaveLength(3)
+  })
+
   test('a table that is not selected shows no affordance', async ({ page }) => {
     const created = await makeTable(page)
     const geo = await geometry(page, created.id)
@@ -1329,13 +1398,14 @@ test.describe('the header row', () => {
       .getByRole('toolbar', { name: 'Selection' })
       .getByRole('button', { name: 'Header row' })
     await expect(toggle).toHaveAttribute('aria-pressed', 'true')
-    // The header cell is tinted, a body cell is not.
+    // The header cell is tinted, a body cell is the plain opaque surface.
     await expect
-      .poll(
-        async () => (await pixelAtWorld(page, insideCell(created, 0, 1)))[3],
+      .poll(async () =>
+        luminance(await pixelAtWorld(page, insideCell(created, 0, 1))),
       )
-      .toBeGreaterThan(0)
-    expect((await pixelAtWorld(page, insideCell(created, 1, 1)))[3]).toBe(0)
+      .toBeLessThan(
+        luminance(await pixelAtWorld(page, insideCell(created, 1, 1))) - 0.05,
+      )
 
     await toggle.click()
     await expect(toggle).toHaveAttribute('aria-pressed', 'false')
@@ -1343,10 +1413,8 @@ test.describe('the header row', () => {
       .poll(async () => (await currentTable(page)).table!.headerRow)
       .toBe(false)
     await expect
-      .poll(
-        async () => (await pixelAtWorld(page, insideCell(created, 0, 1)))[3],
-      )
-      .toBe(0)
+      .poll(async () => await pixelAtWorld(page, insideCell(created, 0, 1)))
+      .toEqual(await pixelAtWorld(page, insideCell(created, 1, 1)))
 
     // One undo brings the header back (the undo stack lives in the page, so
     // this runs before the reload).
@@ -1554,6 +1622,25 @@ for (const theme of ['light', 'dark'] as const) {
       )
     })
 
+    test('an empty cell paints the opaque surface, so no board dot shows through', async ({
+      page,
+    }) => {
+      const created = await makeTable(page)
+      await selectCell(page, created.id, 2, 2)
+      const surface = theme === 'dark' ? [22, 26, 35] : [255, 255, 255]
+      // Sample a spread of points in an empty body cell: all opaque surface.
+      for (let dy = 4; dy < 36; dy += 4) {
+        for (let dx = 4; dx < 116; dx += 4) {
+          const x = created.x + created.table!.cols[0].width + dx
+          const y = created.y + created.table!.rows[0].height + dy
+          const px = await pixelAtWorld(page, { x, y })
+          expect(px[3]).toBe(255)
+          for (let i = 0; i < 3; i += 1)
+            expect(Math.abs(px[i] - surface[i])).toBeLessThan(3)
+        }
+      }
+    })
+
     test('a cell fill and the header tint read through the theme, and the grid is drawn', async ({
       page,
     }) => {
@@ -1573,9 +1660,14 @@ for (const theme of ['light', 'dark'] as const) {
         )
       expect((await pixelAtWorld(page, insideCell(created, 1, 1)))[3]).toBe(255)
 
-      // The header tint is a translucent wash, lighter than the dark body fill.
+      // The header tint reads clearly against the opaque body surface.
       const header = await pixelAtWorld(page, insideCell(created, 0, 1))
-      expect(header[3]).toBeGreaterThan(0)
+      const body = await pixelAtWorld(page, insideCell(created, 2, 1))
+      expect(header[3]).toBe(255)
+      expect(body[3]).toBe(255)
+      expect(Math.abs(luminance(header) - luminance(body))).toBeGreaterThan(
+        theme === 'dark' ? 0.1 : 0.05,
+      )
 
       // The grid line: the strongest pixel in a window across the first inner
       // column border is the theme's grid colour (default stroke is per theme).
@@ -1585,15 +1677,23 @@ for (const theme of ['light', 'dark'] as const) {
         created.table!.rows[0].height +
         created.table!.rows[1].height +
         20
-      let best = [0, 0, 0, 0]
-      for (let dx = -2; dx <= 2; dx += 1) {
+      // The cells are opaque now, so the grid is the pixel furthest from the surface.
+      const surface = theme === 'dark' ? [22, 26, 35] : [255, 255, 255]
+      const away = (px: Array<number>) =>
+        Math.abs(px[0] - surface[0]) +
+        Math.abs(px[1] - surface[1]) +
+        Math.abs(px[2] - surface[2])
+      let best = await pixelAtWorld(page, { x: lineX - 2, y: midY })
+      for (let dx = -1; dx <= 2; dx += 1) {
         const px = await pixelAtWorld(page, { x: lineX + dx, y: midY })
-        if (px[3] > best[3]) best = px
+        if (away(px) > away(best)) best = px
       }
-      expect(best[3]).toBeGreaterThan(100)
+      expect(best[3]).toBe(255)
+      expect(away(best)).toBeGreaterThan(60)
       const expected = theme === 'dark' ? [100, 116, 139] : [148, 163, 184]
       for (let i = 0; i < 3; i += 1)
-        expect(Math.abs(best[i] - expected[i])).toBeLessThan(16)
+        // A 1px line on a half pixel blends with the surface, so allow a wide band.
+        expect(Math.abs(best[i] - expected[i])).toBeLessThan(64)
     })
   })
 }
