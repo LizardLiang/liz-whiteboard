@@ -10,7 +10,10 @@
 // the text bar styles a run inside a cell, undo/redo, reload.
 // Phase 3: rows and columns — the hover "+" on an inner border, the append bars,
 // the right-click menu, Delete semantics, dragging an inner border, and scaling
-// from the handles. Header and fill arrive in the last phase.
+// from the handles.
+// Phase 4: the header-row toggle, cell fill and alignment from the selection
+// toolbar, dark mode, and SVG export carrying the cell text. The two-browser
+// concurrent edit lives in e2e/canvas-table-coedit.spec.ts (prod build).
 //
 // Mechanics (focusBoard, dragMouse, worldToPage, the engine hook) are
 // duplicated from e2e/canvas-shapes.spec.ts on purpose: every canvas spec in
@@ -21,11 +24,12 @@
 // assertions below prove real PERSISTENCE. A live two-browser broadcast of a
 // table op only works in the single-process PROD build (`io` is null in the
 // Vite process), so the two-context concurrent-edit case (added with cell
-// editing) asserts the merged result via reload and notes that split.
+// editing) lives in e2e/canvas-table-coedit.spec.ts, which runs against the
+// prod build and asserts the merged result live and via reload.
 import { execFileSync } from 'node:child_process'
 import { expect, test } from '@playwright/test'
-import { IDS } from './fixtures'
-import type { Page } from '@playwright/test'
+import { BASE_URL, E2E_VIEWER_USER, IDS } from './fixtures'
+import type { Browser, Download, Page } from '@playwright/test'
 
 const BOARD_URL = `/canvas/${IDS.canvasBoard}`
 
@@ -57,7 +61,13 @@ interface EngineElement {
     cols: Array<{ id: string; width: number }>
     cells: Record<
       string,
-      { text: string; textRuns?: Array<{ start: number; end: number }> }
+      | {
+          text: string
+          textRuns?: Array<{ start: number; end: number }>
+          fill?: string
+          textAlign?: string
+        }
+      | undefined
     >
     headerRow: boolean
   }
@@ -1242,5 +1252,448 @@ test.describe('resizing', () => {
       })
       .toBe(540)
     expect(Math.round((await currentTable(page)).height)).toBe(120)
+  })
+})
+
+// ── Phase 4: header, fill, alignment, dark mode, export ────────────────────
+
+/** The RGBA of the canvas pixel at a WORLD point (non-premultiplied). */
+async function pixelAtWorld(
+  page: Page,
+  world: { x: number; y: number },
+): Promise<Array<number>> {
+  const { camera } = await engine(page)
+  return page.evaluate(
+    ({ target, view }) => {
+      const c = document.querySelector('canvas')
+      const ctx = c?.getContext('2d')
+      if (!c || !ctx) return [0, 0, 0, 0]
+      const rect = c.getBoundingClientRect()
+      const ratio = c.width / rect.width
+      const x = Math.round((target.x - view.x) * view.zoom * ratio)
+      const y = Math.round((target.y - view.y) * view.zoom * ratio)
+      return Array.from(ctx.getImageData(x, y, 1, 1).data)
+    },
+    { target: world, view: camera },
+  )
+}
+
+/** The world point just inside a cell's top-left corner, clear of its text. */
+function insideCell(table: EngineElement, row: number, col: number) {
+  const x =
+    table.x + table.table!.cols.slice(0, col).reduce((n, c) => n + c.width, 0)
+  const y =
+    table.y + table.table!.rows.slice(0, row).reduce((n, r) => n + r.height, 0)
+  return { x: x + 8, y: y + 6 }
+}
+
+function luminance([r, g, b]: Array<number>) {
+  return (0.2126 * r + 0.7152 * g + 0.0722 * b) / 255
+}
+
+async function pickCell(page: Page, tableId: string, row: number, col: number) {
+  const at = await cellCentre(page, tableId, row, col)
+  await page.mouse.click(at.x, at.y)
+}
+
+async function pickFill(page: Page, colour: string) {
+  await page
+    .getByRole('toolbar', { name: 'Selection' })
+    .getByRole('button', { name: 'Fill', exact: true })
+    .click()
+  await page
+    .getByRole('button', { name: `Fill ${colour}`, exact: true })
+    .click()
+  await page.keyboard.press('Escape')
+}
+
+/** Select the table, then one cell of it (the first click selects the table). */
+async function selectCell(
+  page: Page,
+  tableId: string,
+  row: number,
+  col: number,
+) {
+  await pickCell(page, tableId, row, col)
+  await expect
+    .poll(async () => (await engine(page)).tableSelection?.kind)
+    .toBe('cells')
+}
+
+test.describe('the header row', () => {
+  test('the toolbar toggle turns the header tint on and off, persisted and undoable', async ({
+    page,
+  }) => {
+    const created = await makeTable(page)
+    const toggle = page
+      .getByRole('toolbar', { name: 'Selection' })
+      .getByRole('button', { name: 'Header row' })
+    await expect(toggle).toHaveAttribute('aria-pressed', 'true')
+    // The header cell is tinted, a body cell is not.
+    await expect
+      .poll(
+        async () => (await pixelAtWorld(page, insideCell(created, 0, 1)))[3],
+      )
+      .toBeGreaterThan(0)
+    expect((await pixelAtWorld(page, insideCell(created, 1, 1)))[3]).toBe(0)
+
+    await toggle.click()
+    await expect(toggle).toHaveAttribute('aria-pressed', 'false')
+    await expect
+      .poll(async () => (await currentTable(page)).table!.headerRow)
+      .toBe(false)
+    await expect
+      .poll(
+        async () => (await pixelAtWorld(page, insideCell(created, 0, 1)))[3],
+      )
+      .toBe(0)
+
+    // One undo brings the header back (the undo stack lives in the page, so
+    // this runs before the reload).
+    await focusBoard(page)
+    const at = await cellCentre(page, created.id, 1, 1)
+    await page.mouse.click(at.x, at.y)
+    await page.keyboard.press('Control+z')
+    await expect
+      .poll(async () => (await currentTable(page)).table!.headerRow, {
+        timeout: 10_000,
+      })
+      .toBe(true)
+    // Let the undo's ack land: the redo entry exists only after it.
+    await settle(page)
+    await page.keyboard.press('Control+Shift+z')
+    await expect
+      .poll(async () => (await currentTable(page)).table!.headerRow, {
+        timeout: 10_000,
+      })
+      .toBe(false)
+    await settle(page)
+    await reloadBoard(page)
+    expect((await currentTable(page)).table!.headerRow).toBe(false)
+  })
+
+  test('header text is bold', async ({ page }) => {
+    const created = await makeTable(page)
+    await openCell(page, created.id, 0, 0)
+    await page.keyboard.type('Name')
+    await page.keyboard.press('Escape')
+    await expect.poll(() => editingCell(page)).toBeNull()
+    await settle(page)
+    // Bold is drawn, not stored: the cell keeps no run for the header weight.
+    expect(cellOf(await currentTable(page), 0, 0)?.text).toBe('Name')
+    expect(cellOf(await currentTable(page), 0, 0)?.textRuns ?? []).toHaveLength(
+      0,
+    )
+  })
+})
+
+test.describe('cell fill', () => {
+  test('colours a picked row, then a Shift-range, each pick one undo step', async ({
+    page,
+  }) => {
+    const created = await makeTable(page)
+    // The row grabber sits just left of the table's first column.
+    await focusBoard(page)
+    await pickCell(page, created.id, 1, 1)
+    const state = await engine(page)
+    const rect = state.tableCellRects[created.id][0].rect
+    const box = await canvasBox(page)
+    const rowAt = await cellCentre(page, created.id, 1, 0)
+    await pickCell(page, created.id, 1, 1)
+    await page.mouse.click(box.x + rect.x - 7, rowAt.y)
+    await expect
+      .poll(async () => (await engine(page)).tableSelection?.kind)
+      .toBe('row')
+    await pickFill(page, 'Green')
+    await expect
+      .poll(
+        async () => {
+          const table = (await currentTable(page)).table!
+          return table.cols.map(
+            (c) => table.cells[`${table.rows[1].id}:${c.id}`]?.fill,
+          )
+        },
+        { timeout: 10_000 },
+      )
+      .toEqual(['#30a46c', '#30a46c', '#30a46c'])
+    expect(Object.keys((await currentTable(page)).table!.cells)).toHaveLength(3)
+
+    // A Shift-range: (1,0) to (2,1) is four cells.
+    await selectCell(page, created.id, 1, 0)
+    const corner = await cellCentre(page, created.id, 2, 1)
+    await page.keyboard.down('Shift')
+    await page.mouse.click(corner.x, corner.y)
+    await page.keyboard.up('Shift')
+    await expect
+      .poll(async () => (await engine(page)).tableSelection?.cells.length)
+      .toBe(4)
+    await pickFill(page, 'Blue')
+    await expect
+      .poll(
+        async () =>
+          (await currentTable(page)).table!.cells[
+            `${created.table!.rows[2].id}:${created.table!.cols[1].id}`
+          ]?.fill,
+        { timeout: 10_000 },
+      )
+      .toBe('#0090ff')
+    // One undo reverses the whole range pick, leaving the row colour; one redo
+    // brings the range back. (The undo stack lives in the page: before reload.)
+    await selectCell(page, created.id, 0, 2)
+    const rangeFills = async () => {
+      const t = (await currentTable(page)).table!
+      return [
+        t.cells[`${t.rows[1].id}:${t.cols[0].id}`]?.fill,
+        t.cells[`${t.rows[2].id}:${t.cols[1].id}`]?.fill,
+      ]
+    }
+    await page.keyboard.press('Control+z')
+    await expect
+      .poll(rangeFills, { timeout: 10_000 })
+      .toEqual(['#30a46c', undefined])
+    await settle(page)
+    await page.keyboard.press('Control+Shift+z')
+    await expect
+      .poll(rangeFills, { timeout: 10_000 })
+      .toEqual(['#0090ff', '#0090ff'])
+
+    await settle(page)
+    await reloadBoard(page)
+    const stored = (await currentTable(page)).table!
+    const fillAt = (r: number, c: number) =>
+      stored.cells[`${stored.rows[r].id}:${stored.cols[c].id}`]?.fill
+    expect([fillAt(1, 0), fillAt(1, 1), fillAt(2, 0), fillAt(2, 1)]).toEqual([
+      '#0090ff',
+      '#0090ff',
+      '#0090ff',
+      '#0090ff',
+    ])
+    expect(fillAt(1, 2)).toBe('#30a46c')
+    expect(fillAt(0, 0)).toBeUndefined()
+  })
+
+  test('"none" clears a fill', async ({ page }) => {
+    const created = await makeTable(page)
+    await selectCell(page, created.id, 1, 1)
+    await pickFill(page, 'Green')
+    await expect
+      .poll(
+        async () =>
+          (await currentTable(page)).table!.cells[
+            `${created.table!.rows[1].id}:${created.table!.cols[1].id}`
+          ]?.fill,
+      )
+      .toBe('#30a46c')
+    await page
+      .getByRole('toolbar', { name: 'Selection' })
+      .getByRole('button', { name: 'Fill', exact: true })
+      .click()
+    await page.getByRole('button', { name: 'Fill none' }).click()
+    await expect
+      .poll(
+        async () =>
+          (await currentTable(page)).table!.cells[
+            `${created.table!.rows[1].id}:${created.table!.cols[1].id}`
+          ],
+      )
+      .toBeUndefined()
+  })
+})
+
+test.describe('cell alignment', () => {
+  test('centres the picked cells, persisted', async ({ page }) => {
+    const created = await makeTable(page)
+    await selectCell(page, created.id, 1, 1)
+    await page
+      .getByRole('toolbar', { name: 'Selection' })
+      .getByRole('button', { name: 'Align', exact: true })
+      .click()
+    await page.getByRole('button', { name: 'Align center' }).click()
+    await page.keyboard.press('Escape')
+    const key = `${created.table!.rows[1].id}:${created.table!.cols[1].id}`
+    await expect
+      .poll(
+        async () => (await currentTable(page)).table!.cells[key]?.textAlign,
+        { timeout: 10_000 },
+      )
+      .toBe('center')
+    await settle(page)
+    await reloadBoard(page)
+    expect((await currentTable(page)).table!.cells[key]?.textAlign).toBe(
+      'center',
+    )
+  })
+
+  test('a centred cell types and draws its text in the middle of the cell', async ({
+    page,
+  }) => {
+    const created = await makeTable(page)
+    await selectCell(page, created.id, 1, 1)
+    await page
+      .getByRole('toolbar', { name: 'Selection' })
+      .getByRole('button', { name: 'Align', exact: true })
+      .click()
+    await page.getByRole('button', { name: 'Align center' }).click()
+    await page.keyboard.press('Escape')
+    await openCell(page, created.id, 1, 1)
+    await page.keyboard.type('mid')
+    await page.keyboard.press('Escape')
+    await settle(page)
+    const key = `${created.table!.rows[1].id}:${created.table!.cols[1].id}`
+    const cell = (await currentTable(page)).table!.cells[key]
+    expect(cell).toMatchObject({ text: 'mid', textAlign: 'center' })
+  })
+})
+
+for (const theme of ['light', 'dark'] as const) {
+  test.describe(`${theme} mode`, () => {
+    test.beforeEach(async ({ page }) => {
+      await page.addInitScript(
+        (value) => localStorage.setItem('theme', value),
+        theme,
+      )
+    })
+
+    test('a cell fill and the header tint read through the theme, and the grid is drawn', async ({
+      page,
+    }) => {
+      const created = await makeTable(page)
+      await selectCell(page, created.id, 1, 1)
+      await pickFill(page, 'Blue')
+      // Move the selection away so the picked-cell overlay is off the filled cell.
+      await selectCell(page, created.id, 2, 2)
+      await expect
+        .poll(
+          async () =>
+            luminance(await pixelAtWorld(page, insideCell(created, 1, 1))),
+          { timeout: 10_000 },
+        )
+        [theme === 'light' ? 'toBeGreaterThan' : 'toBeLessThan'](
+          theme === 'light' ? 0.6 : 0.45,
+        )
+      expect((await pixelAtWorld(page, insideCell(created, 1, 1)))[3]).toBe(255)
+
+      // The header tint is a translucent wash, lighter than the dark body fill.
+      const header = await pixelAtWorld(page, insideCell(created, 0, 1))
+      expect(header[3]).toBeGreaterThan(0)
+
+      // The grid line: the strongest pixel in a window across the first inner
+      // column border is the theme's grid colour (default stroke is per theme).
+      const lineX = created.x + created.table!.cols[0].width
+      const midY =
+        created.y +
+        created.table!.rows[0].height +
+        created.table!.rows[1].height +
+        20
+      let best = [0, 0, 0, 0]
+      for (let dx = -2; dx <= 2; dx += 1) {
+        const px = await pixelAtWorld(page, { x: lineX + dx, y: midY })
+        if (px[3] > best[3]) best = px
+      }
+      expect(best[3]).toBeGreaterThan(100)
+      const expected = theme === 'dark' ? [100, 116, 139] : [148, 163, 184]
+      for (let i = 0; i < 3; i += 1)
+        expect(Math.abs(best[i] - expected[i])).toBeLessThan(16)
+    })
+  })
+}
+
+test.describe('export', () => {
+  test('the exported SVG carries the cell text', async ({ page }) => {
+    const created = await makeTable(page)
+    await openCell(page, created.id, 1, 1)
+    await page.keyboard.type('exported cell')
+    await page.keyboard.press('Escape')
+    await expect.poll(() => editingCell(page)).toBeNull()
+    await settle(page)
+
+    await page.getByRole('button', { name: 'Export canvas as image' }).click()
+    await expect(page.getByRole('dialog')).toContainText('Export as Image')
+    await page.getByRole('combobox', { name: 'Format' }).click()
+    await page.getByRole('option', { name: 'SVG' }).click()
+    const downloadPromise = page.waitForEvent('download')
+    await page.getByRole('button', { name: /^export$/i }).click()
+    const download: Download = await downloadPromise
+    const stream = await download.createReadStream()
+    const chunks: Array<Buffer> = []
+    for await (const chunk of stream) chunks.push(Buffer.from(chunk))
+    const svg = Buffer.concat(chunks).toString('utf8')
+    expect(svg).toContain('exported cell')
+    expect(svg).toContain('<path')
+  })
+})
+
+test.describe('a read-only viewer', () => {
+  /** Mirrors canvas-board.spec.ts: the real login form, the session cookie is the ground truth. */
+  async function loginAsViewer(browser: Browser): Promise<Page> {
+    const context = await browser.newContext({
+      baseURL: BASE_URL,
+      storageState: { cookies: [], origins: [] },
+    })
+    const page = await context.newPage()
+    await page.goto('/login')
+    await page.waitForLoadState('networkidle')
+    const email = page.getByRole('textbox', { name: 'Email' })
+    const password = page.getByRole('textbox', { name: 'Password' })
+    const signIn = page.getByRole('button', { name: 'Sign in' })
+    await email.click()
+    await email.pressSequentially(E2E_VIEWER_USER.email)
+    await password.click()
+    await password.pressSequentially(E2E_VIEWER_USER.password)
+    await expect(signIn).toBeEnabled({ timeout: 10_000 })
+    await signIn.click()
+    await expect
+      .poll(
+        async () =>
+          (await context.cookies()).some(
+            (c) => c.name === 'session_token' && c.value.length > 0,
+          ),
+        { timeout: 15_000 },
+      )
+      .toBe(true)
+    const fresh = await context.newPage()
+    await page.close()
+    return fresh
+  }
+
+  test('sees the table but gets no toolbar, "+", append bar, grabbers or menu', async ({
+    page,
+    browser,
+  }) => {
+    const created = await makeTable(page)
+    await settle(page)
+
+    const viewer = await loginAsViewer(browser)
+    try {
+      await openBoard(viewer)
+      await expect
+        .poll(async () => tablesOf(await engine(viewer)).length)
+        .toBe(1)
+      // Click the table, then a cell, then hover its inner border and the
+      // table's edges: nothing editable ever appears.
+      const first = await cellCentre(viewer, created.id, 1, 1)
+      await viewer.mouse.click(first.x, first.y)
+      await viewer.mouse.click(first.x, first.y)
+      await viewer.mouse.move(first.x + 60, first.y)
+      const state = await engine(viewer)
+      expect(state.tableSelection).toBeNull()
+      expect(state.tableAffordance).toBeNull()
+      expect(state.editingCell).toBeNull()
+      await expect(
+        viewer.getByRole('toolbar', { name: 'Selection' }),
+      ).toHaveCount(0)
+      await viewer.mouse.click(first.x, first.y, { button: 'right' })
+      await expect(
+        viewer.getByRole('menuitem', { name: 'Insert row above' }),
+      ).toHaveCount(0)
+      // A double-click does not open a cell, and a keystroke changes nothing.
+      await viewer.mouse.dblclick(first.x, first.y)
+      await viewer.keyboard.type('nope')
+      expect(
+        cellOf(tablesOf(await engine(viewer))[0], 1, 1)?.text,
+      ).toBeUndefined()
+    } finally {
+      await viewer.context().close()
+    }
   })
 })

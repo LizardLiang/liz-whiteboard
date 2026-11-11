@@ -19,6 +19,7 @@ export default defineConfig({
   testMatch: [
     'coedit-table-create.spec.ts',
     'auto-layout-area-peers.spec.ts',
+    'canvas-table-coedit.spec.ts',
   ],
   globalSetup: './e2e/global-setup-collab.ts',
   timeout: 90_000,
@@ -42,10 +43,11 @@ export default defineConfig({
     },
   ],
   // Builds the Nitro/prod bundle then boots the single-process prod server
-  // (server.prod.ts) on a fixed test port so it never collides with a
+  // (server.prod.ts, with the canvas test hook compiled in via
+  // VITE_E2E_HOOKS=1) on a fixed test port so it never collides with a
   // locally-running dev server (default port 3000/3001).
   webServer: {
-    command: `bun run build && PORT=${COEDIT_PORT} ./node_modules/.bin/dotenv -e .env.local -- bun run server.prod.ts`,
+    command: `VITE_E2E_HOOKS=1 bun run build && PORT=${COEDIT_PORT} ./node_modules/.bin/dotenv -e .env.local -- bun run server.prod.ts`,
     url: COEDIT_BASE_URL,
     reuseExistingServer: false,
     timeout: 300_000,

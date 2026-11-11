@@ -775,6 +775,29 @@ describe('table hover affordances', () => {
   })
 })
 
+describe('undoExpectFor for fill and align', () => {
+  it('guards the undo with the text the cells hold now, so a collaborator edit is not overwritten', () => {
+    let table = fresh(2, 2)
+    const ref = { rowId: table.rows[0].id, colId: table.cols[0].id }
+    table = applyTableOp(table, {
+      type: 'setCellText',
+      ...ref,
+      text: 'hi',
+    }).table
+    const ops: Array<TableOp> = [
+      { type: 'setCellFill', cells: [ref], fill: '#e5484d' },
+      { type: 'setCellAlign', cells: [ref], align: 'center' },
+    ]
+    for (const op of ops) {
+      const { inverse } = applyTableOp(table, op)
+      expect(inverse.type).toBe('restoreCells')
+      expect(undoExpectFor(table, op, inverse)).toEqual([
+        { ...ref, text: 'hi' },
+      ])
+    }
+  })
+})
+
 describe('undoExpectFor and redoExpectFor', () => {
   it('guards the undo of a row or column insert: the new line must still be blank', () => {
     const table = fresh(2, 2)

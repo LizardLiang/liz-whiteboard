@@ -5341,6 +5341,7 @@ export function useCanvasInput({
     ungroupSelection,
     editing,
     tableSelection,
+    issueTableOp,
     tableAffordance,
     tableMenu,
     onTableMenuAction,

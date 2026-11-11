@@ -6,6 +6,7 @@ import {
   CARD_RADIUS,
   CARD_ROLE_LABELS,
   CARD_TOP_ROW,
+  TABLE_TOKENS,
   cardConnectorPaint,
   cardShapePaint,
   cardTextStyle,
@@ -13,6 +14,10 @@ import {
   contrastRatio,
   parseCssColor,
   relativeLuminance,
+  tableCellBackdrop,
+  tableCellTextStyle,
+  tableFillPaint,
+  tableGridColor,
 } from './card-style'
 import { PRESET_RAMPS, rampFor } from './colour-ramps'
 import {
@@ -697,5 +702,60 @@ describe('cardLookOf and ramp cache', () => {
     const dark = rampFor('#ff0000', 'dark')
     expect(rampFor('#ff0000', 'dark')).toBe(dark)
     expect(rampFor('#ff0000', 'light')).not.toBe(dark)
+  })
+})
+
+describe('table colours', () => {
+  const themes = ['light', 'dark'] as const
+  const textOn = { light: '#0f172a', dark: '#f8fafc' } as const
+
+  it('resolves the default grid colour per theme and keeps a chosen one', () => {
+    expect(tableGridColor('#94a3b8', 'dark')).toBe(TABLE_TOKENS.dark.grid)
+    expect(tableGridColor('#94a3b8', 'light')).toBe('#94a3b8')
+    expect(tableGridColor('#ff0000', 'dark')).toBe('#ff0000')
+  })
+
+  it('keeps the dark grid visible against the dark surface', () => {
+    expect(
+      contrastRatio(TABLE_TOKENS.dark.grid, CARD.dark.surface) ?? 0,
+    ).toBeGreaterThanOrEqual(3)
+  })
+
+  it('reads every palette fill and the header tint with the theme text, in both themes', () => {
+    for (const theme of themes) {
+      const header = tableCellBackdrop(undefined, true, theme)
+      expect(contrastRatio(textOn[theme], header) ?? 0).toBeGreaterThanOrEqual(
+        4.5,
+      )
+      for (const id of Object.keys(PRESET_RAMPS)) {
+        const fill = PRESET_RAMPS[id as keyof typeof PRESET_RAMPS].light.border
+        expect(tableFillPaint(fill, theme)).not.toBeNull()
+        const backdrop = tableCellBackdrop(fill, false, theme)
+        expect(
+          contrastRatio(textOn[theme], backdrop) ?? 0,
+        ).toBeGreaterThanOrEqual(4.5)
+      }
+    }
+  })
+
+  it('has no paint for "none"', () => {
+    expect(tableFillPaint('none', 'dark')).toBeNull()
+  })
+
+  it('treats a text colour that cannot be read on the cell as unset', () => {
+    const backdrop = tableCellBackdrop(undefined, false, 'dark')
+    const style = { ...DEFAULT_ELEMENT_STYLE, color: '#1e293b' }
+    expect(tableCellTextStyle(style, backdrop).color).toBe(
+      DEFAULT_ELEMENT_STYLE.color,
+    )
+    const readable = { ...DEFAULT_ELEMENT_STYLE, color: '#f8fafc' }
+    expect(tableCellTextStyle(readable, backdrop)).toBe(readable)
+    const run = {
+      ...DEFAULT_ELEMENT_STYLE,
+      textRuns: [{ start: 0, end: 1, color: '#1e293b' }],
+    }
+    expect(tableCellTextStyle(run, backdrop).textRuns[0].color).toBe(
+      DEFAULT_ELEMENT_STYLE.color,
+    )
   })
 })

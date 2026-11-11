@@ -408,6 +408,10 @@ export function undoExpectFor(
         colId: op.col.id,
         text: '',
       }))
+    case 'setCellFill':
+    case 'setCellAlign':
+      // The undo rewrites each whole cell, so the text must still be what it was.
+      return expectOf(table, op.cells)
     case 'restoreCells':
       return op.cells.map((entry) => ({
         rowId: entry.rowId,

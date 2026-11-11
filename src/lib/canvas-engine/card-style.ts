@@ -444,3 +444,81 @@ export function cardTextStyle(
   perTheme.set(look.theme, { text, style: result })
   return result
 }
+
+// ── table colours ───────────────────────────────────────────────────────────
+
+/** Per-theme table colours: the default grid line and the header row tint. */
+export const TABLE_TOKENS = {
+  light: { grid: '#94a3b8', header: 'rgba(100, 116, 139, 0.16)' },
+  dark: { grid: '#64748b', header: 'rgba(148, 163, 184, 0.22)' },
+} as const satisfies Record<CanvasTheme, { grid: string; header: string }>
+
+/** The stored default grid colour of a new table. */
+const TABLE_DEFAULT_GRID = '#94a3b8'
+
+/** The grid colour to draw: the default stored colour follows the theme, a chosen one is kept. */
+export function tableGridColor(stroke: string, theme: CanvasTheme): string {
+  return stroke === TABLE_DEFAULT_GRID ? TABLE_TOKENS[theme].grid : stroke
+}
+
+/**
+ * The colour a table cell's fill paints with. A stored fill is a card-palette
+ * colour, so it reads through the same ramp a card body does: a pale tint on
+ * light, a deep one on dark.
+ */
+export function tableFillPaint(
+  fill: string,
+  theme: CanvasTheme,
+): string | null {
+  const resolved = rampFor(fill, theme)
+  return resolved
+    ? bodyPaintColor(resolved.ramp.body, resolved.bodyAlpha)
+    : null
+}
+
+/** The opaque colour behind a cell's text: its fill over the surface, or the header tint, or the surface. */
+export function tableCellBackdrop(
+  fill: string | undefined,
+  header: boolean,
+  theme: CanvasTheme,
+): string {
+  const surface = parseCssColor(CARD[theme].surface)
+  const painted =
+    fill !== undefined && fill !== 'none'
+      ? tableFillPaint(fill, theme)
+      : header
+        ? TABLE_TOKENS[theme].header
+        : null
+  const top = painted ? parseCssColor(painted) : null
+  if (!surface || !top) return CARD[theme].surface
+  const alpha = painted
+    ? (/rgba\(.*,\s*([\d.]+)\)\s*$/.exec(painted)?.[1] ?? '1')
+    : '1'
+  return mixColors(surface, top, Number(alpha))
+}
+
+/**
+ * A cell's text style with its colours kept readable on the cell backdrop: a
+ * colour (or a run's colour) under 4.5:1 against it is treated as unset, so
+ * it resolves to the theme's own text colour. Returns `style` itself when
+ * nothing changes.
+ */
+export function tableCellTextStyle(
+  style: CanvasElementStyle,
+  backdrop: string,
+): CanvasElementStyle {
+  const fix = (color: string) =>
+    color !== DEFAULT_ELEMENT_STYLE.color && !readableOn(color, backdrop)
+      ? DEFAULT_ELEMENT_STYLE.color
+      : color
+  const color = fix(style.color)
+  let changed = color !== style.color
+  const runs = style.textRuns.map((run) => {
+    if (run.color === undefined) return run
+    const next = fix(run.color)
+    if (next === run.color) return run
+    changed = true
+    return { ...run, color: next }
+  })
+  return changed ? { ...style, color, textRuns: runs } : style
+}

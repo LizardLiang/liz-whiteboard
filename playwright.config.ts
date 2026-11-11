@@ -80,6 +80,7 @@ export default defineConfig({
   testIgnore: [
     '**/coedit-table-create.spec.ts',
     '**/auto-layout-area-peers.spec.ts',
+    '**/canvas-table-coedit.spec.ts',
     '**/mcp-cimd-open.spec.ts',
   ],
   globalSetup: './e2e/global-setup.ts',

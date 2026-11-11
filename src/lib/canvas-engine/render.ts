@@ -51,6 +51,7 @@ import {
   CARD_EDGE_WIDTH,
   CARD_ROLE_LABELS,
   CARD_TOP_ROW,
+  TABLE_TOKENS,
   cardAccent,
   cardConnectorPaint,
   cardLookOf,
@@ -61,6 +62,10 @@ import {
   cardTopRowHeight,
   isCard,
   isCardShape,
+  tableCellBackdrop,
+  tableCellTextStyle,
+  tableFillPaint,
+  tableGridColor,
 } from './card-style'
 import { LEGACY_STROKES, presetRamp } from './colour-ramps'
 import {
@@ -1136,12 +1141,6 @@ function drawCardTopRow(
   }
 }
 
-/** The tint behind a table's header row, per theme. A cell fill of its own wins. */
-const TABLE_HEADER_TINT = {
-  light: 'rgba(100, 116, 139, 0.16)',
-  dark: 'rgba(148, 163, 184, 0.22)',
-} as const
-
 /**
  * Draw a table in WORLD space: cell fills, the header tint, the grid, then each
  * cell's text through the same code a board label uses.
@@ -1160,12 +1159,18 @@ function drawTable(
   for (const { rowId, colId, rect } of cells) {
     const cell = lookupCell(table.cells, cellKey(rowId, colId))
     const header = table.headerRow && table.rows[0].id === rowId
-    const fill = cell?.fill ?? (header ? TABLE_HEADER_TINT[theme] : undefined)
+    // A cell fill of its own wins over the header tint.
+    const fill = cell?.fill
+      ? tableFillPaint(cell.fill, theme)
+      : header
+        ? TABLE_TOKENS[theme].header
+        : null
     if (fill) {
       target.rect(rect.x, rect.y, rect.width, rect.height, 0, { fill })
     }
   }
-  const { stroke, strokeWidth } = element.style
+  const { strokeWidth } = element.style
+  const stroke = tableGridColor(element.style.stroke, theme)
   if (strokeWidth > 0) {
     // Every inner grid line in one path, then the outer border.
     target.beginPath()
@@ -1193,7 +1198,17 @@ function drawTable(
     const cell = lookupCell(table.cells, cellKey(rowId, colId))
     if (!cell || cell.text.length === 0) continue
     const virtual = cellTextElement(element, rowId, colId)
-    if (virtual) drawElementText(target, virtual, theme)
+    if (!virtual) continue
+    const header = table.headerRow && table.rows[0].id === rowId
+    const style = tableCellTextStyle(
+      virtual.style,
+      tableCellBackdrop(cell.fill, header, theme),
+    )
+    drawElementText(
+      target,
+      style === virtual.style ? virtual : { ...virtual, style },
+      theme,
+    )
   }
 }
 

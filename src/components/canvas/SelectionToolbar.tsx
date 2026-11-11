@@ -65,6 +65,7 @@ import {
   Group as GroupIcon,
   Italic,
   ListTodo,
+  PanelTop,
   SendToBack,
   Strikethrough,
   Underline,
@@ -86,6 +87,12 @@ import type {
   Scene,
 } from '@/lib/canvas-engine/scene'
 import type { ZOrderCommand } from '@/lib/canvas-engine/z-order'
+import type {
+  CanvasTable,
+  CellRef,
+  TableOp,
+  TableSelection,
+} from '@/lib/canvas-engine/table'
 import type { TFunction } from '@/lib/i18n/translate'
 import { worldToScreen } from '@/lib/canvas-engine/camera'
 import {
@@ -96,6 +103,7 @@ import {
   topLevelIds,
 } from '@/lib/canvas-engine/scene'
 import { zOrderTargets } from '@/lib/canvas-engine/z-order'
+import { cellKey, lookupCell, selectionCells } from '@/lib/canvas-engine/table'
 import {
   CANVAS_CORNER_RADII,
   CANVAS_FONT_SIZES,
@@ -456,6 +464,10 @@ export interface SelectionToolbarProps {
   onChecklist?: (targets: Array<CanvasElement>) => void
   /** Card-only rows (role, step, shadow, border) show under `card` only. */
   diagramStyle?: 'card' | 'classic'
+  /** The cells, row or column picked inside the selected table, if any. */
+  tableSelection?: TableSelection | null
+  /** Send one table op: one call is one undo step. */
+  onTableOp?: (tableId: string, op: TableOp) => void
 }
 
 export function SelectionToolbar({
@@ -471,6 +483,8 @@ export function SelectionToolbar({
   onUngroup,
   onChecklist,
   diagramStyle = 'classic',
+  tableSelection = null,
+  onTableOp,
 }: SelectionToolbarProps) {
   const t = useT()
   const sets = selectionToolbarTargets(
@@ -482,6 +496,12 @@ export function SelectionToolbar({
   const box = boundsOfMany(sets?.arrange ?? [])
   if (!sets || !box) return null
   const targets = sets.paint
+  // A lone selected table swaps the text controls for its own: they would
+  // write the table's base style, which no cell picks up as an alignment.
+  const soleId = selectedIds.size === 1 ? [...selectedIds][0] : null
+  const tableElement = soleId ? scene.byId.get(soleId) : undefined
+  const tableMode =
+    tableElement?.kind === 'table' && tableElement.table ? tableElement : null
   const canGroup = canGroupSelection(scene, selectedIds)
   const canUngroup = canUngroupSelection(scene, selectedIds)
 
@@ -729,7 +749,18 @@ export function SelectionToolbar({
           <Divider />
         </>
       )}
-      {alignable.length > 0 && (
+      {tableMode?.table && (
+        <>
+          <TableControls
+            tableId={tableMode.id}
+            table={tableMode.table}
+            picked={tableSelection}
+            onTableOp={onTableOp}
+          />
+          <Divider />
+        </>
+      )}
+      {alignable.length > 0 && !tableMode && (
         <>
           <SettingPopover
             label={t('canvas.selection.align')}
@@ -829,6 +860,112 @@ export function SelectionToolbar({
         canUngroup={canUngroup}
       />
     </div>
+  )
+}
+
+/**
+ * The header toggle of a selected table, and fill and alignment for the cells,
+ * row or column picked inside it. Each pick sends ONE op over every picked
+ * cell, so it is one undo step; a pick that changes nothing sends nothing.
+ */
+function TableControls({
+  tableId,
+  table,
+  picked,
+  onTableOp,
+}: {
+  tableId: string
+  table: CanvasTable
+  picked: TableSelection | null
+  onTableOp?: (tableId: string, op: TableOp) => void
+}) {
+  const t = useT()
+  const cells: Array<CellRef> =
+    picked && picked.tableId === tableId ? selectionCells(table, picked) : []
+  const cellOf = (ref: CellRef) =>
+    lookupCell(table.cells, cellKey(ref.rowId, ref.colId))
+  const fills = cells.map((ref) => cellOf(ref)?.fill ?? null)
+  const aligns = cells.map((ref) => cellOf(ref)?.textAlign ?? 'left')
+  const fillCleared = fills.length > 0 && fills.every((fill) => fill === null)
+  const activeFill =
+    fills.length > 0 && fills.every((fill) => fill === fills[0])
+      ? fills[0]
+      : null
+  const activeAlign =
+    aligns.length > 0 && aligns.every((align) => align === aligns[0])
+      ? aligns[0]
+      : null
+  return (
+    <>
+      <Button
+        type="button"
+        variant={table.headerRow ? 'secondary' : 'ghost'}
+        className="h-6 gap-1 px-1.5"
+        aria-label={t('canvas.selection.headerRow')}
+        aria-pressed={table.headerRow}
+        title={t('canvas.selection.headerRow')}
+        onClick={() =>
+          onTableOp?.(tableId, { type: 'setHeaderRow', on: !table.headerRow })
+        }
+      >
+        <PanelTop className="size-3.5" />
+        <span className="select-none text-[10px] font-medium uppercase tracking-wide text-muted-foreground">
+          {t('canvas.selection.headerRow')}
+        </span>
+      </Button>
+      {cells.length > 0 && (
+        <>
+          <SettingPopover
+            label={t('canvas.selection.fill')}
+            summary={colorSummary(t, activeFill, fillCleared, swatchForFill)}
+            preview={
+              <ColorPreview
+                row="Fill"
+                value={activeFill}
+                cleared={fillCleared}
+              />
+            }
+          >
+            <SwatchRow
+              rowLabel="Fill"
+              activeSwatchValue={activeFill}
+              noneActive={fillCleared}
+              customActive={isCustomColour(
+                activeFill,
+                fillCleared,
+                swatchForFill,
+              )}
+              readSwatch={(swatch) => swatch.fill}
+              onPick={(value) => {
+                if (fills.every((fill) => fill === value)) return
+                onTableOp?.(tableId, {
+                  type: 'setCellFill',
+                  cells,
+                  fill: value,
+                })
+              }}
+            />
+          </SettingPopover>
+          <SettingPopover
+            label={t('canvas.selection.align')}
+            summary={alignSummary(t, activeAlign, null)}
+            preview={
+              <AlignPreview textAlign={activeAlign} verticalAlign={null} />
+            }
+          >
+            <AlignRow
+              rowLabel="Horizontal"
+              options={HORIZONTAL_ALIGNS}
+              active={activeAlign}
+              onPick={(align) => {
+                if (aligns.every((current) => current === align)) return
+                onTableOp?.(tableId, { type: 'setCellAlign', cells, align })
+              }}
+            />
+          </SettingPopover>
+        </>
+      )}
+    </>
   )
 }
 

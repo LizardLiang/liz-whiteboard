@@ -23,7 +23,9 @@ import type {
   CanvasElement,
   CanvasElementStyle,
 } from '@/lib/canvas-engine/scene'
+import type { TableSelection } from '@/lib/canvas-engine/table'
 import { DEFAULT_CAMERA, worldToScreen } from '@/lib/canvas-engine/camera'
+import { createTable } from '@/lib/canvas-engine/table'
 import {
   DEFAULT_ELEMENT_STYLE,
   boundsOfMany,
@@ -1288,5 +1290,89 @@ describe('text styling', () => {
     expect(
       applyStyleChange(base, { target: 'color', value: '#e54d2e' }),
     ).toEqual({ ...base, color: '#e54d2e' })
+  })
+})
+
+describe('the table controls', () => {
+  function tableSetup(picked: TableSelection | null) {
+    const table = createTable(
+      2,
+      3,
+      (() => {
+        let n = 0
+        return () => `id-${++n}`
+      })(),
+    )
+    const element = shape('tbl', { kind: 'table', table })
+    const onTableOp = vi.fn()
+    render(
+      <SelectionToolbar
+        scene={sceneFrom([element])}
+        selectedIds={new Set(['tbl'])}
+        camera={DEFAULT_CAMERA}
+        readOnly={false}
+        editingElementId={null}
+        onStyleChange={vi.fn()}
+        onArrange={vi.fn()}
+        onDuplicate={vi.fn()}
+        onGroup={vi.fn()}
+        onUngroup={vi.fn()}
+        tableSelection={picked}
+        onTableOp={onTableOp}
+      />,
+    )
+    return { table, onTableOp }
+  }
+
+  it('shows the header toggle and no board text controls for a table', () => {
+    const { onTableOp } = tableSetup(null)
+    expect(screen.queryByRole('button', { name: 'Text' })).toBeNull()
+    expect(screen.queryByRole('button', { name: 'Fill' })).toBeNull()
+    const toggle = screen.getByRole('button', { name: 'Header row' })
+    expect(toggle.getAttribute('aria-pressed')).toBe('true')
+    fireEvent.click(toggle)
+    expect(onTableOp).toHaveBeenCalledWith('tbl', {
+      type: 'setHeaderRow',
+      on: false,
+    })
+  })
+
+  it('sends ONE fill op over every picked cell of a row', () => {
+    const { table, onTableOp } = tableSetup({
+      tableId: 'tbl',
+      kind: 'row',
+      rowId: 'id-1',
+    })
+    openSetting('Fill')
+    fireEvent.click(screen.getByRole('button', { name: 'Fill Tomato' }))
+    expect(onTableOp).toHaveBeenCalledTimes(1)
+    expect(onTableOp).toHaveBeenCalledWith('tbl', {
+      type: 'setCellFill',
+      cells: table.cols.map((col) => ({ rowId: 'id-1', colId: col.id })),
+      fill: RED.fill,
+    })
+  })
+
+  it('sends one align op for a Shift-range and nothing for the current alignment', () => {
+    const { onTableOp } = tableSetup({
+      tableId: 'tbl',
+      kind: 'cells',
+      anchor: { rowId: 'id-1', colId: 'id-3' },
+      focus: { rowId: 'id-2', colId: 'id-4' },
+    })
+    openSetting('Align')
+    fireEvent.click(screen.getByRole('button', { name: 'Align left' }))
+    expect(onTableOp).not.toHaveBeenCalled()
+    fireEvent.click(screen.getByRole('button', { name: 'Align center' }))
+    expect(onTableOp).toHaveBeenCalledTimes(1)
+    const op = onTableOp.mock.calls[0][1]
+    expect(op.type).toBe('setCellAlign')
+    expect(op.align).toBe('center')
+    expect(op.cells).toHaveLength(4)
+  })
+
+  it('offers fill and align only when cells are picked', () => {
+    tableSetup(null)
+    expect(screen.queryByRole('button', { name: 'Align' })).toBeNull()
   })
 })

@@ -145,6 +145,47 @@ db.query(
   now,
 )
 
+// --- Canvas board with one 2 x 3 table (e2e/canvas-table-coedit.spec.ts) ---
+db.query(
+  'INSERT INTO "CanvasBoard" (id, name, projectId, folderId, createdAt, updatedAt) VALUES (?,?,?,?,?,?)',
+).run(ID.canvasBoard, 'Team Canvas', ID.project, null, now, now)
+const coeditRows = [
+  { id: 'row-1', height: 40 },
+  { id: 'row-2', height: 40 },
+]
+const coeditCols = [
+  { id: 'col-1', width: 120 },
+  { id: 'col-2', width: 120 },
+  { id: 'col-3', width: 120 },
+]
+db.query(
+  'INSERT INTO "CanvasElement" (id, boardId, kind, positionX, positionY, width, height, rotation, "zIndex", text, style, props, createdAt, updatedAt) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?)',
+).run(
+  ID.coeditTable,
+  ID.canvasBoard,
+  'table',
+  200,
+  200,
+  360,
+  80,
+  0,
+  1,
+  null,
+  JSON.stringify({
+    fill: 'none',
+    stroke: '#94a3b8',
+    strokeWidth: 1,
+    fontSize: 14,
+    color: '#0f172a',
+  }),
+  JSON.stringify({
+    kind: 'table',
+    table: { rows: coeditRows, cols: coeditCols, cells: {}, headerRow: false },
+  }),
+  now,
+  now,
+)
+
 db.close()
 
 console.log(

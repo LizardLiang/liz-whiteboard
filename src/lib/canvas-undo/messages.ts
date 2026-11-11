@@ -28,6 +28,9 @@ const TABLE_OP_LABEL_KEYS: Partial<Record<TableOpType, string>> = {
   scaleTable: 'undo.gesture.tableResize',
   setSizes: 'undo.gesture.tableResize',
   restoreCells: 'undo.gesture.tableClear',
+  setCellFill: 'undo.gesture.tableFill',
+  setCellAlign: 'undo.gesture.tableAlign',
+  setHeaderRow: 'undo.gesture.tableHeader',
 }
 
 /**

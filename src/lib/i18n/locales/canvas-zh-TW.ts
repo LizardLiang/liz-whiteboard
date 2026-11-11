@@ -125,6 +125,7 @@ export const canvasZhTW: DeepStringRecord<typeof canvasEn> = {
     squareCorners: '直角',
     pxCorners: '圓角 {radius}px',
     settingTitle: '{label}：{summary}',
+    headerRow: '標題列',
   },
   custom: {
     colour: '自訂{row}顏色',

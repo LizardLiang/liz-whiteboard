@@ -1001,6 +1001,8 @@ export function CanvasBoard({
         onUngroup={input.ungroupSelection}
         onChecklist={input.toggleChecklist}
         diagramStyle={diagramStyle}
+        tableSelection={input.tableSelection}
+        onTableOp={input.issueTableOp}
       />
 
       <TextEditBar

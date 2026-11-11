@@ -140,6 +140,9 @@ export const sweepEn = {
       tableDelete: 'deleting a table row or column',
       tableResize: 'resizing a table',
       tableClear: 'clearing table cells',
+      tableFill: 'filling table cells',
+      tableAlign: 'aligning table cells',
+      tableHeader: 'toggling the table header row',
     },
   },
   // Pieces for "Failed to <verb> <noun>: <reason>" server messages.

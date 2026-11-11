@@ -123,6 +123,7 @@ export const canvasEn = {
     squareCorners: 'Square corners',
     pxCorners: '{radius}px corners',
     settingTitle: '{label}: {summary}',
+    headerRow: 'Header row',
   },
   custom: {
     colour: 'Custom {row} colour',

@@ -456,6 +456,12 @@ describe('table op gestures', () => {
     ).toBe('Undid clearing table cells')
     expect(
       describeUndoSuccess({ gesture: 'table-op', op: 'setHeaderRow' }),
-    ).toBe('Undid editing a table')
+    ).toBe('Undid toggling the table header row')
+    expect(
+      describeUndoSuccess({ gesture: 'table-op', op: 'setCellFill' }),
+    ).toBe('Undid filling table cells')
+    expect(
+      describeRedoSuccess({ gesture: 'table-op', op: 'setCellAlign' }),
+    ).toBe('Redid aligning table cells')
   })
 })

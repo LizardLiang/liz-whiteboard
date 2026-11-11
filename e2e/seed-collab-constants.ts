@@ -36,6 +36,10 @@ export const COLLAB_ID = {
   areaMember3: 'c0114b00-0000-4000-8000-000000000a13',
   areaFree1: 'c0114b00-0000-4000-8000-000000000a14',
   areaFree2: 'c0114b00-0000-4000-8000-000000000a15',
+  // Canvas board in the same project, holding one 2 x 3 table, for
+  // e2e/canvas-table-coedit.spec.ts.
+  canvasBoard: 'c0114b00-0000-4000-8000-000000000cb1',
+  coeditTable: 'c0114b00-0000-4000-8000-000000000cb2',
 } as const
 
 export const COLLAB_USERS = [
@@ -62,3 +66,4 @@ export const COLLAB_USERS = [
 export const COLLAB_PASSWORD = 'CoEdit123!'
 export const COLLAB_WHITEBOARD_ID = COLLAB_ID.whiteboard
 export const COLLAB_AREA_WHITEBOARD_ID = COLLAB_ID.areaWhiteboard
+export const COLLAB_CANVAS_BOARD_ID = COLLAB_ID.canvasBoard
