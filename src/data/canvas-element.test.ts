@@ -21,6 +21,7 @@ import {
   nextCanvasZIndex,
   updateCanvasElement,
 } from './canvas-element'
+import { AlreadyExistsError } from './already-exists'
 import { canvasElementStyleSchema } from '@/data/schema'
 import { db } from '@/db'
 import { DEFAULT_ELEMENT_STYLE } from '@/lib/canvas-engine/scene'
@@ -241,7 +242,10 @@ describe('createCanvasElement', () => {
     // actually saw.
     const boardId = await makeBoard()
     const element = await createCanvasElement(
-      baseElement(boardId, { id: '55555555-5555-4555-8555-555555555555', minRevision: 4 }),
+      baseElement(boardId, {
+        id: '55555555-5555-4555-8555-555555555555',
+        minRevision: 4,
+      }),
     )
     expect(element.revision).toBe(5)
   })
@@ -301,6 +305,19 @@ describe('createCanvasElement', () => {
     await expect(
       createCanvasElement(baseElement(boardId, { id: explicitId })),
     ).rejects.toThrow()
+  })
+
+  it('refuses a re-sent id on the same board with AlreadyExistsError, leaving the row unchanged', async () => {
+    const boardId = await makeBoard()
+    const explicitId = '77777777-7777-4777-8777-777777777777'
+    await createCanvasElement(
+      baseElement(boardId, { id: explicitId, width: 160 }),
+    )
+
+    await expect(
+      createCanvasElement(baseElement(boardId, { id: explicitId, width: 999 })),
+    ).rejects.toBeInstanceOf(AlreadyExistsError)
+    expect((await findCanvasElementById(explicitId))?.width).toBe(160)
   })
 
   it('does not leak the raw SQLite constraint text on an id collision (Hermes review, finding 2)', async () => {

@@ -15,12 +15,8 @@
 
 import { z } from 'zod'
 
-import {
-  assertIdFree,
-  refuseTakenIdAfterInsertError,
-} from './already-exists'
+import { claimClientId, refuseTakenIdAfterInsertError } from './already-exists'
 import type { Column, DiagramTable } from './models'
-import type { IdClaim } from './already-exists'
 import {
   db,
   genId,
@@ -311,14 +307,11 @@ export async function createTableReference(
         .get(validated.sourceWhiteboardId) as { name?: string } | undefined
     )?.name ?? null
 
-  const claim: IdClaim = {
-    table: 'DiagramTable',
-    id: validated.id,
-    whiteboardId: validated.whiteboardId,
-    noun: 'table reference',
-  }
-  assertIdFree(claim)
-  const id = validated.id ?? genId()
+  const { id, claim } = claimClientId(
+    'DiagramTable',
+    'table reference',
+    validated,
+  )
   const ts = nowMs()
   const name = uniqueNameOn(
     validated.whiteboardId,
@@ -468,7 +461,11 @@ export async function resolveTableReferences(
               .get(stub.sourceColumnId),
           )
         : null
-      const liveBelongs = live !== null && live.tableId === table.sourceTableId
+      // The live column counts only when it sits on the source table AND that
+      // table is the live table on the source whiteboard: a squatter on another
+      // whiteboard can re-use a deleted table/column id.
+      const liveBelongs =
+        sourceIsLive && live !== null && live.tableId === table.sourceTableId
       return {
         id: stub.id,
         sourceColumnId: stub.sourceColumnId,

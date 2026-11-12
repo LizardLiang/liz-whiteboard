@@ -2,17 +2,11 @@
 // Data access layer for Relationship entity
 
 import { createRelationshipSchema, updateRelationshipSchema } from './schema'
-import {
-  assertIdFree,
-  isIdRefusal,
-  refuseTakenIdAfterInsertError,
-} from './already-exists'
-import type { IdClaim } from './already-exists'
+import { claimClientId, refuseTakenIdAfterInsertError } from './already-exists'
 import type { CreateRelationship, UpdateRelationship } from './schema'
 import type { Column, DiagramTable, Relationship } from './models'
 import {
   db,
-  genId,
   insert,
   mapColumn,
   mapDiagramTable,
@@ -148,13 +142,7 @@ export async function createRelationship(
 ): Promise<Relationship> {
   // Validate input with Zod schema
   const validated = createRelationshipSchema.parse(data)
-  const claim: IdClaim = {
-    table: 'Relationship',
-    id: validated.id,
-    whiteboardId: validated.whiteboardId,
-    noun: 'relationship',
-  }
-  assertIdFree(claim)
+  const { id, claim } = claimClientId('Relationship', 'relationship', validated)
 
   try {
     // Verify referential integrity using the shared validator (Apollo SA-2)
@@ -166,7 +154,6 @@ export async function createRelationship(
       whiteboardId: validated.whiteboardId,
     })
 
-    const id = validated.id ?? genId()
     const ts = nowMs()
     insert('Relationship', {
       id,
@@ -185,7 +172,6 @@ export async function createRelationship(
       db.prepare('SELECT * FROM "Relationship" WHERE "id" = ?').get(id),
     )!
   } catch (error) {
-    if (isIdRefusal(error)) throw error
     refuseTakenIdAfterInsertError(error, claim)
     throw new Error(
       `Failed to create relationship: ${error instanceof Error ? error.message : 'Unknown error'}`,

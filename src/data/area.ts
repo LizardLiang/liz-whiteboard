@@ -2,23 +2,10 @@
 // Data access layer for the Area entity (subject areas / table grouping, GH #106)
 
 import { createAreaSchema, updateAreaSchema } from './schema'
-import {
-  assertIdFree,
-  refuseTakenIdAfterInsertError,
-} from './already-exists'
+import { claimClientId, refuseTakenIdAfterInsertError } from './already-exists'
 import type { CreateArea, UpdateArea } from './schema'
 import type { Area } from './models'
-import type { IdClaim } from './already-exists'
-import {
-  db,
-  genId,
-  insert,
-  mapArea,
-  nowMs,
-  toDbJson,
-  transaction,
-  update,
-} from '@/db'
+import { db, insert, mapArea, nowMs, toDbJson, transaction, update } from '@/db'
 
 /**
  * Create a new subject area. A given `id` is stored as the area's id; an id
@@ -29,16 +16,9 @@ import {
  */
 export async function createArea(data: CreateArea): Promise<Area> {
   const validated = createAreaSchema.parse(data)
-  const claim: IdClaim = {
-    table: 'Area',
-    id: validated.id,
-    whiteboardId: validated.whiteboardId,
-    noun: 'area',
-  }
-  assertIdFree(claim)
+  const { id, claim } = claimClientId('Area', 'area', validated)
 
   try {
-    const id = validated.id ?? genId()
     const ts = nowMs()
     insert('Area', {
       id,

@@ -27,6 +27,8 @@ const ALL_TABLES = [
   'Session',
   'Project',
   'User',
+  // Last: the delete triggers above refill it.
+  'RetiredId',
 ] as const
 
 /** Delete every row from every table. Call in beforeEach for test isolation. */

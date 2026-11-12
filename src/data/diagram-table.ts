@@ -3,15 +3,14 @@
 
 import { createTableSchema, updateTableSchema } from './schema'
 import {
-  assertIdFree,
+  claimClientId,
+  isUniqueViolation,
   refuseTakenIdAfterInsertError,
 } from './already-exists'
 import type { CreateTable, UpdateTable } from './schema'
 import type { Column, DiagramTable, Relationship } from './models'
-import type { IdClaim } from './already-exists'
 import {
   db,
-  genId,
   insert,
   mapColumn,
   mapDiagramTable,
@@ -62,16 +61,9 @@ export async function createDiagramTable(
 ): Promise<DiagramTable> {
   // Validate input with Zod schema
   const validated = createTableSchema.parse(data)
-  const claim: IdClaim = {
-    table: 'DiagramTable',
-    id: validated.id,
-    whiteboardId: validated.whiteboardId,
-    noun: 'table',
-  }
-  assertIdFree(claim)
+  const { id, claim } = claimClientId('DiagramTable', 'table', validated)
 
   try {
-    const id = validated.id ?? genId()
     const ts = nowMs()
     insert('DiagramTable', {
       id,
@@ -123,8 +115,7 @@ function refuseTakenTableName(
   whiteboardId: string,
   name: string,
 ): void {
-  if (!(error instanceof Error)) return
-  if (!error.message.includes('UNIQUE constraint failed')) return
+  if (!isUniqueViolation(error)) return
   const taken = db
     .prepare(
       'SELECT 1 AS "x" FROM "DiagramTable" WHERE "whiteboardId" = ? AND "name" = ?',

@@ -24,6 +24,7 @@
 import { z } from 'zod'
 import type { Server as SocketIOServer } from 'socket.io'
 import type { PresetId } from '@/lib/canvas-engine/colour-ramps'
+import { ALREADY_EXISTS, AlreadyExistsError } from '@/data/already-exists'
 import { clientErrorMessage } from '@/lib/client-error'
 import {
   canvasBoardSettingsPatchSchema,
@@ -76,6 +77,8 @@ export type CanvasAckResult =
       ok: false
       code:
         | 'VALIDATION_ERROR'
+        // `element:create` named an id an element of THIS board already has.
+        | 'ALREADY_EXISTS'
         | 'NOT_FOUND'
         | 'FORBIDDEN'
         | 'SESSION_EXPIRED'
@@ -245,7 +248,8 @@ export function registerCanvasElementHandlers(
       // trusted. `MAX(zIndex) + 1` in SQL is correct regardless of what either
       // client has seen.
       //
-      // The one exception is undo's restore path for a deleted element:
+      // The exception is an explicit id, which arrives from undo's restore
+      // path for a deleted element and from MCP idempotent creates:
       // `data.id`, when present, flows straight through
       // `createCanvasElementSchema` (which validates it like any other field)
       // and through the SAME `denyMutation` gate above — no privileged,
@@ -255,6 +259,7 @@ export function registerCanvasElementHandlers(
       // is violated: the element would resurrect on top of the board instead
       // of back where it was.
       //
+      // The zIndex/minRevision trust below applies to both id sources.
       // Gating the exception on `id` being present (rather than a separate
       // "isRestore" flag) grants no new capability to an ordinary create: any
       // editor can already set an element's zIndex to anything within
@@ -270,14 +275,14 @@ export function registerCanvasElementHandlers(
         hasExplicitId && hasNumericZIndex
           ? (payload.zIndex as number)
           : await nextCanvasZIndex(boardId)
-      // Same restore-only gating as `zIndex` immediately above, for the same
-      // reason: `minRevision` seeds the restored row's revision ABOVE the
-      // deleted row's last one, closing an ABA hole where a stale undo/redo
-      // entry could otherwise match a freshly-restored row's revision by
-      // coincidence (Hermes review, W-C). Gated on `id` being present, not a
-      // separate flag — an ordinary create spreads `payload` first and this
-      // key overrides whatever it sent, so a client cannot set it without
-      // ALSO supplying the id undo already knows.
+      // Same id-gated trust as `zIndex` immediately above (undo restore and
+      // MCP creates), for the same reason: `minRevision` seeds the restored
+      // row's revision ABOVE the deleted row's last one, closing an ABA hole
+      // where a stale undo/redo entry could otherwise match a freshly-restored
+      // row's revision by coincidence (Hermes review, W-C). Gated on `id`
+      // being present, not a separate flag — an ordinary create spreads
+      // `payload` first and this key overrides whatever it sent, so a client
+      // cannot set it without ALSO supplying an id.
       const hasNumericMinRevision = typeof payload.minRevision === 'number'
       const minRevision =
         hasExplicitId && hasNumericMinRevision
@@ -308,12 +313,14 @@ export function registerCanvasElementHandlers(
         'Failed to create canvas element',
       )
       console.error('Failed to create canvas element:', error)
-      socket.emit('error', {
-        event: 'element:create',
-        error: 'VALIDATION_ERROR',
-        message,
-      })
-      cb?.({ ok: false, code: 'VALIDATION_ERROR', message })
+      // An id an element of this board already has is ALREADY_EXISTS; an id
+      // held on another board is the generic failure (already-exists.ts).
+      const code =
+        error instanceof AlreadyExistsError
+          ? ALREADY_EXISTS
+          : 'VALIDATION_ERROR'
+      socket.emit('error', { event: 'element:create', error: code, message })
+      cb?.({ ok: false, code, message })
     }
   })
 

@@ -23,6 +23,7 @@ import {
   nextCanvasZIndex,
   updateCanvasElement,
 } from '@/data/canvas-element'
+import { AlreadyExistsError } from '@/data/already-exists'
 import { requireCanvasBoardRole } from '@/lib/auth/require-role'
 import { DEFAULT_ELEMENT_STYLE } from '@/lib/canvas-engine/scene'
 
@@ -287,6 +288,38 @@ describe('element:create', () => {
       })
       expect(input.style).toBeUndefined()
     })
+  })
+
+  it('acks ALREADY_EXISTS when the id is already an element of this board', async () => {
+    vi.mocked(createCanvasElement).mockRejectedValue(
+      new AlreadyExistsError(
+        'A canvas element with this id already exists on this whiteboard',
+      ),
+    )
+    const h = makeHarness()
+    const cb = vi.fn()
+
+    await h.handlers['element:create']({ ...VALID_CREATE, id: ELEMENT_ID }, cb)
+
+    expect(cb).toHaveBeenCalledWith({
+      ok: false,
+      code: 'ALREADY_EXISTS',
+      message:
+        'A canvas element with this id already exists on this whiteboard',
+    })
+    expect(h.broadcast).toEqual([])
+  })
+
+  it('acks the generic VALIDATION_ERROR for any other create failure', async () => {
+    vi.mocked(createCanvasElement).mockRejectedValue(
+      new Error('Failed to create canvas element'),
+    )
+    const h = makeHarness()
+    const cb = vi.fn()
+
+    await h.handlers['element:create']({ ...VALID_CREATE, id: ELEMENT_ID }, cb)
+
+    expect(cb.mock.calls[0][0].code).toBe('VALIDATION_ERROR')
   })
 
   it('takes zIndex from the server, never from the payload', async () => {

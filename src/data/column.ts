@@ -61,6 +61,16 @@ function rethrowIdTaken(error: unknown, validated: CreateColumn): void {
   refuseTakenIdAfterInsertError(error, columnClaim(validated))
 }
 
+/** True when `error` is a UNIQUE violation and a stored column now holds one of the batch ids. */
+function refusesAnyId(error: unknown, batch: Array<CreateColumn>): boolean {
+  try {
+    for (const data of batch) rethrowIdTaken(error, data)
+  } catch {
+    return true
+  }
+  return false
+}
+
 /**
  * Create a new column. A given `id` is stored as the column's id; an id any
  * column already has is refused (see already-exists.ts).
@@ -78,16 +88,30 @@ export async function createColumn(data: CreateColumnInput): Promise<Column> {
 }
 
 /**
- * Create multiple columns in a single transaction
+ * Create multiple columns in a single transaction.
+ *
+ * A batch is all-or-nothing, so it never answers ALREADY_EXISTS: after the
+ * rollback nothing is stored, and a caller that read "already exists" as
+ * success would record columns that were never written. A batch that names the
+ * same id twice is refused before the transaction; any other refusal inside it
+ * surfaces as the plain batch failure.
  */
 export async function createColumns(
   columns: Array<CreateColumnInput>,
 ): Promise<Array<Column>> {
   const validated = columns.map((col) => createColumnSchema.parse(col))
+  const ids = validated.flatMap((data) =>
+    data.id === undefined ? [] : [data.id],
+  )
+  if (new Set(ids).size !== ids.length) {
+    throw new Error('Failed to create columns: the batch repeats a column id')
+  }
   try {
     return transaction(() => validated.map((data) => insertColumn(data)))
   } catch (error) {
-    for (const data of validated) rethrowIdTaken(error, data)
+    if (isIdRefusal(error) || refusesAnyId(error, validated)) {
+      throw new Error('Failed to create columns')
+    }
     throw new Error(
       `Failed to create columns: ${error instanceof Error ? error.message : 'Unknown error'}`,
     )

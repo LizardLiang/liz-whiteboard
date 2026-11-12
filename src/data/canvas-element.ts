@@ -17,17 +17,10 @@ import {
   createCanvasElementSchema,
   updateCanvasElementSchema,
 } from './schema'
+import { claimClientId, refuseTakenIdAfterInsertError } from './already-exists'
 import type { CreateCanvasElement, UpdateCanvasElement } from './schema'
 import type { CanvasElementRecord } from './models'
-import {
-  db,
-  genId,
-  insert,
-  mapCanvasElement,
-  nowMs,
-  toDbJson,
-  update,
-} from '@/db'
+import { db, insert, mapCanvasElement, nowMs, toDbJson, update } from '@/db'
 
 /**
  * Thrown by `updateCanvasElement`/`deleteCanvasElement` when the caller
@@ -69,21 +62,27 @@ export class RevisionMismatchError extends Error {
  * exists so rotation needs no schema change later, but milestone 1 has no way
  * to set it. `createShape` does the same thing for the same reason.
  *
- * `id` is normally server-generated. A caller MAY supply one instead — the
- * only user is undo restoring a deleted element under the identifier every
- * other client still has cached — and it is validated by
+ * `id` is normally server-generated. A caller MAY supply one instead — undo
+ * restoring a deleted element under the identifier every other client still
+ * has cached, and an MCP idempotent create — and it is validated by
  * `createCanvasElementSchema` exactly like every other field, so this is not
- * a second, laxer write path (board-undo tactical plan, Wave 1, step 3). A
- * collision with an existing id fails on the PRIMARY KEY constraint and
- * surfaces through the catch below like any other write fault.
+ * a second, laxer write path (board-undo tactical plan, Wave 1, step 3).
+ * An id already stored is refused and never overwritten (already-exists.ts
+ * decides what the caller learns): `AlreadyExistsError` when the element is on
+ * the caller's own board, otherwise the generic "Failed to create canvas
+ * element". An id that last belonged to another board is refused the same way.
  */
 export async function createCanvasElement(
   data: CreateCanvasElement,
 ): Promise<CanvasElementRecord> {
   const validated = createCanvasElementSchema.parse(data)
 
+  const { id, claim } = claimClientId('CanvasElement', 'canvas element', {
+    id: validated.id,
+    whiteboardId: validated.boardId,
+  })
+
   try {
-    const id = validated.id ?? genId()
     const ts = nowMs()
     insert('CanvasElement', {
       id,
@@ -114,21 +113,12 @@ export async function createCanvasElement(
       db.prepare('SELECT * FROM "CanvasElement" WHERE "id" = ?').get(id),
     )!
   } catch (error) {
+    // A UNIQUE violation on an explicit id is refused by id: the raw SQLite
+    // text embeds the literal id and "CanvasElement.id", so returning it would
+    // let any editor probe whether an arbitrary UUID exists on ANOTHER board
+    // (the oracle `ELEMENT_REFUSED` in handlers.ts closes for update/delete).
+    refuseTakenIdAfterInsertError(error, claim)
     const message = error instanceof Error ? error.message : 'Unknown error'
-    // Map the SQLite unique-index violation on the explicit-`id` restore
-    // path (undo's create-with-id) to a fixed message. The raw SQLite text
-    // embeds the literal id and "CanvasElement.id" — returned verbatim, it
-    // would let any editor on any board probe an arbitrary UUID and learn
-    // whether it exists on ANOTHER board from the ack/error alone. This is
-    // the exact existence oracle `ELEMENT_REFUSED` (handlers.ts) already
-    // closes for `element:update`/`element:delete`; this closes it for
-    // `element:create` too (Hermes review, finding 2). Full detail stays in
-    // the server log, matching `connector.ts`'s identical precedent for its
-    // own unique-index violation.
-    if (message.includes('UNIQUE constraint failed')) {
-      console.error('Canvas element id collision on create-with-id:', error)
-      throw new Error('Failed to create canvas element')
-    }
     throw new Error(`Failed to create canvas element: ${message}`)
   }
 }

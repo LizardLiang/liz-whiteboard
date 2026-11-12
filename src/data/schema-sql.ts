@@ -502,4 +502,65 @@ CREATE TABLE IF NOT EXISTS "PasswordResetToken" (
 CREATE UNIQUE INDEX IF NOT EXISTS "PasswordResetToken_tokenHash_key" ON "PasswordResetToken"("tokenHash");
 CREATE INDEX IF NOT EXISTS "PasswordResetToken_userId_idx" ON "PasswordResetToken"("userId");
 CREATE INDEX IF NOT EXISTS "PasswordResetToken_createdAt_idx" ON "PasswordResetToken"("createdAt");
+
+-- Tombstones for ids a client may choose (RetiredId). A create can name its own
+-- id, so a deleted row's id must not be claimable from another whiteboard: a
+-- later restore of the home whiteboard would then collide with the squatter.
+-- Each row records the whiteboard (or canvas board) an id last belonged to;
+-- src/data/already-exists.ts refuses a create whose id is retired on ANOTHER
+-- board. The triggers also see FK cascade deletes. SQLite fires the cascaded
+-- child triggers after the parent row is already gone, so a table's columns are
+-- recorded by the table's BEFORE DELETE trigger (the column trigger finds no
+-- parent then and records nothing). The Whiteboard/CanvasBoard AFTER DELETE
+-- trigger runs last and prunes the tombstones of the dead board.
+CREATE TABLE IF NOT EXISTS "RetiredId" (
+    "id" TEXT NOT NULL,
+    "entity" TEXT NOT NULL,
+    "whiteboardId" TEXT NOT NULL,
+    "retiredAt" INTEGER NOT NULL DEFAULT (unixepoch('now') * 1000),
+    PRIMARY KEY ("id", "entity")
+);
+CREATE INDEX IF NOT EXISTS "RetiredId_whiteboardId_idx" ON "RetiredId"("whiteboardId");
+
+CREATE TRIGGER IF NOT EXISTS "RetiredId_DiagramTable_delete" BEFORE DELETE ON "DiagramTable"
+BEGIN
+    INSERT OR REPLACE INTO "RetiredId" ("id", "entity", "whiteboardId")
+        VALUES (OLD."id", 'DiagramTable', OLD."whiteboardId");
+    INSERT OR REPLACE INTO "RetiredId" ("id", "entity", "whiteboardId")
+        SELECT "id", 'Column', OLD."whiteboardId" FROM "Column" WHERE "tableId" = OLD."id";
+END;
+
+CREATE TRIGGER IF NOT EXISTS "RetiredId_Column_delete" AFTER DELETE ON "Column"
+BEGIN
+    INSERT OR REPLACE INTO "RetiredId" ("id", "entity", "whiteboardId")
+        SELECT OLD."id", 'Column', "whiteboardId" FROM "DiagramTable" WHERE "id" = OLD."tableId";
+END;
+
+CREATE TRIGGER IF NOT EXISTS "RetiredId_Relationship_delete" AFTER DELETE ON "Relationship"
+BEGIN
+    INSERT OR REPLACE INTO "RetiredId" ("id", "entity", "whiteboardId")
+        VALUES (OLD."id", 'Relationship', OLD."whiteboardId");
+END;
+
+CREATE TRIGGER IF NOT EXISTS "RetiredId_Area_delete" AFTER DELETE ON "Area"
+BEGIN
+    INSERT OR REPLACE INTO "RetiredId" ("id", "entity", "whiteboardId")
+        VALUES (OLD."id", 'Area', OLD."whiteboardId");
+END;
+
+CREATE TRIGGER IF NOT EXISTS "RetiredId_CanvasElement_delete" AFTER DELETE ON "CanvasElement"
+BEGIN
+    INSERT OR REPLACE INTO "RetiredId" ("id", "entity", "whiteboardId")
+        VALUES (OLD."id", 'CanvasElement', OLD."boardId");
+END;
+
+CREATE TRIGGER IF NOT EXISTS "RetiredId_Whiteboard_delete" AFTER DELETE ON "Whiteboard"
+BEGIN
+    DELETE FROM "RetiredId" WHERE "whiteboardId" = OLD."id";
+END;
+
+CREATE TRIGGER IF NOT EXISTS "RetiredId_CanvasBoard_delete" AFTER DELETE ON "CanvasBoard"
+BEGIN
+    DELETE FROM "RetiredId" WHERE "whiteboardId" = OLD."id";
+END;
 `
