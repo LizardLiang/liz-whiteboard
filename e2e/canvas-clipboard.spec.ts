@@ -29,7 +29,8 @@
 // workaround.
 import { execFileSync } from 'node:child_process'
 import { expect, test } from '@playwright/test'
-import { BASE_URL, E2E_VIEWER_USER, IDS } from './fixtures'
+import { IDS } from './fixtures'
+import { openViewerPage } from './viewer-session'
 import type { Browser, Page } from '@playwright/test'
 
 const BOARD_URL = `/canvas/${IDS.canvasBoard}`
@@ -90,7 +91,10 @@ interface EngineState {
   /** Whose creation handles are showing, or null when none are. */
   creationHandleTargetId: string | null
   /** Canvas-relative screen rects — the ones the renderer actually drew. */
-  creationHandles: Record<'top' | 'right' | 'bottom' | 'left', ScreenRect> | null
+  creationHandles: Record<
+    'top' | 'right' | 'bottom' | 'left',
+    ScreenRect
+  > | null
 }
 
 async function engine(page: Page): Promise<EngineState> {
@@ -107,6 +111,7 @@ async function waitForBoard(page: Page) {
 }
 
 async function openBoard(page: Page, url = BOARD_URL) {
+  trackAcks(page)
   await page.goto(url)
   await waitForBoard(page)
   return engine(page)
@@ -145,9 +150,77 @@ async function focusBoard(page: Page) {
   await page.mouse.click(box.x + 40, box.y + 120)
 }
 
-/** Wait for the server ack that pushes the undo entry. */
+// ── ack tracking ────────────────────────────────────────────────────────────
+// The undo entry for a write is pushed only when the server's ack arrives
+// (use-canvas-undo.ts records nothing optimistically), and a paste or a
+// duplicate pushes ONE entry only after every create in it has acked. The
+// scene shows the copies at once, so "the copies are on screen" says nothing
+// about whether Ctrl+Z has an entry for them. A fixed sleep guessed at the
+// ack time and lost that guess under load (parallel stacks): Ctrl+Z then
+// popped an older entry, or none, and the "Undid pasting 2 elements" toast
+// never came. So the spec watches the Socket.IO frames itself: an emitted
+// event that carries an ack id is pending until the ack frame with that id
+// arrives.
+
+interface AckTracker {
+  /** Emits that carry an ack id and have no ack yet. */
+  pending: Set<string>
+  /** `performance.now()` at the last emit or ack frame. Monotonic: the wall
+   * clock of this machine steps by 15 s, which would skip or stretch the
+   * quiet time. */
+  lastActivity: number
+}
+
+const ackTrackers = new WeakMap<Page, AckTracker>()
+const SOCKET_EMIT_FRAME = /^42(?:\/[^,]*,)?(\d+)\[/
+const SOCKET_ACK_FRAME = /^43(?:\/[^,]*,)?(\d+)\[/
+
+/** Start watching the page's sockets. Call BEFORE the page opens its socket. */
+function trackAcks(page: Page) {
+  if (ackTrackers.has(page)) return
+  const tracker: AckTracker = { pending: new Set(), lastActivity: performance.now() }
+  ackTrackers.set(page, tracker)
+  page.on('websocket', (socket) => {
+    socket.on('framesent', (frame) => {
+      if (typeof frame.payload !== 'string') return
+      const id = SOCKET_EMIT_FRAME.exec(frame.payload)?.[1]
+      if (id === undefined) return
+      tracker.pending.add(id)
+      tracker.lastActivity = performance.now()
+    })
+    socket.on('framereceived', (frame) => {
+      if (typeof frame.payload !== 'string') return
+      const id = SOCKET_ACK_FRAME.exec(frame.payload)?.[1]
+      if (id === undefined) return
+      tracker.pending.delete(id)
+      tracker.lastActivity = performance.now()
+    })
+  })
+}
+
+/** Quiet time that must follow the last emit or ack. A paste writes its
+ * connectors in a second round, only after the first round's acks. */
+const ACK_QUIET_MS = 400
+
+/** Wait until every emitted write has its ack and no new frame came for a
+ * short quiet time, so the undo entry the acks push exists. */
 async function settle(page: Page) {
-  await page.waitForTimeout(1500)
+  const tracker = ackTrackers.get(page)
+  if (!tracker) {
+    // A page this spec did not open through `openBoard` (no frame watching).
+    await page.waitForTimeout(1500)
+    return
+  }
+  await expect
+    .poll(
+      () =>
+        tracker.pending.size === 0 &&
+        performance.now() - tracker.lastActivity >= ACK_QUIET_MS,
+      { timeout: 30_000, intervals: [50] },
+    )
+    .toBe(true)
+  // Let the page run the callbacks that the last ack frame queued.
+  await page.evaluate(() => new Promise((resolve) => setTimeout(resolve, 0)))
 }
 
 const selectionBar = (page: Page) =>
@@ -163,35 +236,10 @@ const selectionBar = (page: Page) =>
  * OWNER session.
  */
 async function loginAsViewer(browser: Browser): Promise<Page> {
-  const context = await browser.newContext({
-    baseURL: BASE_URL,
-    storageState: { cookies: [], origins: [] },
-  })
-  const page = await context.newPage()
-
-  await page.goto('/login')
-  await page.waitForLoadState('networkidle')
-  const email = page.getByRole('textbox', { name: 'Email' })
-  const password = page.getByRole('textbox', { name: 'Password' })
-  const signIn = page.getByRole('button', { name: 'Sign in' })
-  await email.click()
-  await email.pressSequentially(E2E_VIEWER_USER.email)
-  await password.click()
-  await password.pressSequentially(E2E_VIEWER_USER.password)
-  await expect(signIn).toBeEnabled({ timeout: 10_000 })
-  await signIn.click()
-
-  const deadline = Date.now() + 15_000
-  while (Date.now() < deadline) {
-    const cookies = await context.cookies()
-    if (cookies.some((c) => c.name === 'session_token' && c.value.length > 0)) {
-      const fresh = await context.newPage()
-      await page.close()
-      return fresh
-    }
-    await page.waitForTimeout(250)
-  }
-  throw new Error('viewer login failed: session_token cookie was never set')
+  // No form login here: global-setup.ts logs the viewer in once per stack and
+  // saves the session. A form login per test spent the login IP limiter (30
+  // per 15 min, one shared bucket per server process). See viewer-session.ts.
+  return openViewerPage(browser)
 }
 
 // ── drawing ─────────────────────────────────────────────────────────────────
@@ -212,7 +260,9 @@ async function drawEllipse(page: Page, at = SHAPE_RECT) {
   })
   await dragMouse(page, from, to)
   await expect
-    .poll(async () => ellipsesOf(await engine(page)).length, { timeout: 10_000 })
+    .poll(async () => ellipsesOf(await engine(page)).length, {
+      timeout: 10_000,
+    })
     .toBe(before + 1)
   await settle(page)
 }
@@ -251,7 +301,9 @@ test.describe('paste', () => {
     await chord(page, 'v')
 
     await expect
-      .poll(async () => ellipsesOf(await engine(page)).length, { timeout: 10_000 })
+      .poll(async () => ellipsesOf(await engine(page)).length, {
+        timeout: 10_000,
+      })
       .toBe(2)
 
     const after = ellipsesOf(await engine(page))
@@ -271,7 +323,9 @@ test.describe('paste', () => {
     await page.reload()
     await waitForBoard(page)
     await expect
-      .poll(async () => ellipsesOf(await engine(page)).length, { timeout: 10_000 })
+      .poll(async () => ellipsesOf(await engine(page)).length, {
+        timeout: 10_000,
+      })
       .toBe(2)
   })
 
@@ -301,7 +355,9 @@ test.describe('paste', () => {
     await chord(page, 'v')
 
     await expect
-      .poll(async () => ellipsesOf(await engine(page)).length, { timeout: 15_000 })
+      .poll(async () => ellipsesOf(await engine(page)).length, {
+        timeout: 15_000,
+      })
       .toBe(4)
 
     const xs = ellipsesOf(await engine(page))
@@ -315,7 +371,9 @@ test.describe('paste', () => {
     ])
   })
 
-  test('the copy lands IN FRONT of what it was copied from', async ({ page }) => {
+  test('the copy lands IN FRONT of what it was copied from', async ({
+    page,
+  }) => {
     // Otherwise the copy hides behind the original and paste reads as a no-op.
     await openBoard(page)
     await drawEllipse(page)
@@ -349,7 +407,9 @@ test.describe('duplicate', () => {
 
     await chord(page, 'd')
     await expect
-      .poll(async () => ellipsesOf(await engine(page)).length, { timeout: 10_000 })
+      .poll(async () => ellipsesOf(await engine(page)).length, {
+        timeout: 10_000,
+      })
       .toBe(2)
     const copy = ellipsesOf(await engine(page)).find(
       (element) => element.id !== original.id,
@@ -368,7 +428,9 @@ test.describe('duplicate', () => {
     await settle(page)
 
     await expect
-      .poll(async () => ellipsesOf(await engine(page)).length, { timeout: 10_000 })
+      .poll(async () => ellipsesOf(await engine(page)).length, {
+        timeout: 10_000,
+      })
       .toBe(2)
   })
 
@@ -383,7 +445,9 @@ test.describe('duplicate', () => {
     await chord(page, 'd')
 
     await expect
-      .poll(async () => ellipsesOf(await engine(page)).length, { timeout: 15_000 })
+      .poll(async () => ellipsesOf(await engine(page)).length, {
+        timeout: 15_000,
+      })
       .toBe(3)
     const xs = ellipsesOf(await engine(page))
       .map((element) => element.x)
@@ -429,13 +493,17 @@ test.describe('cut', () => {
 
     await chord(page, 'x')
     await expect
-      .poll(async () => ellipsesOf(await engine(page)).length, { timeout: 10_000 })
+      .poll(async () => ellipsesOf(await engine(page)).length, {
+        timeout: 10_000,
+      })
       .toBe(0)
 
     await focusBoard(page)
     await chord(page, 'v')
     await expect
-      .poll(async () => ellipsesOf(await engine(page)).length, { timeout: 10_000 })
+      .poll(async () => ellipsesOf(await engine(page)).length, {
+        timeout: 10_000,
+      })
       .toBe(1)
     expect(ellipsesOf(await engine(page))[0].x).toBe(original.x + CLONE_OFFSET)
   })
@@ -448,7 +516,9 @@ test.describe('cut', () => {
 
     await chord(page, 'x')
     await expect
-      .poll(async () => ellipsesOf(await engine(page)).length, { timeout: 10_000 })
+      .poll(async () => ellipsesOf(await engine(page)).length, {
+        timeout: 10_000,
+      })
       .toBe(0)
 
     await focusBoard(page)
@@ -459,7 +529,9 @@ test.describe('cut', () => {
       timeout: 5_000,
     })
     await expect
-      .poll(async () => ellipsesOf(await engine(page)).length, { timeout: 10_000 })
+      .poll(async () => ellipsesOf(await engine(page)).length, {
+        timeout: 10_000,
+      })
       .toBe(1)
   })
 })
@@ -475,13 +547,17 @@ test.describe('undo', () => {
     const to = await worldToPage(page, { x: 1180, y: 600 })
     await dragMouse(page, from, to)
     await expect
-      .poll(async () => (await engine(page)).selectedIds.length, { timeout: 10_000 })
+      .poll(async () => (await engine(page)).selectedIds.length, {
+        timeout: 10_000,
+      })
       .toBe(2)
 
     await chord(page, 'c')
     await chord(page, 'v')
     await expect
-      .poll(async () => ellipsesOf(await engine(page)).length, { timeout: 15_000 })
+      .poll(async () => ellipsesOf(await engine(page)).length, {
+        timeout: 15_000,
+      })
       .toBe(4)
 
     await focusBoard(page)
@@ -491,7 +567,9 @@ test.describe('undo', () => {
     })
     // Both copies go together — one gesture, one entry.
     await expect
-      .poll(async () => ellipsesOf(await engine(page)).length, { timeout: 10_000 })
+      .poll(async () => ellipsesOf(await engine(page)).length, {
+        timeout: 10_000,
+      })
       .toBe(2)
   })
 
@@ -500,7 +578,9 @@ test.describe('undo', () => {
     await drawEllipse(page)
     await chord(page, 'd')
     await expect
-      .poll(async () => ellipsesOf(await engine(page)).length, { timeout: 10_000 })
+      .poll(async () => ellipsesOf(await engine(page)).length, {
+        timeout: 10_000,
+      })
       .toBe(2)
 
     await focusBoard(page)
@@ -543,7 +623,9 @@ test.describe('connectors travel with what they join', () => {
     // right one's handles and the drag starts from the wrong shape.
     await focusBoard(page)
     await expect
-      .poll(async () => (await engine(page)).selectedIds.length, { timeout: 5_000 })
+      .poll(async () => (await engine(page)).selectedIds.length, {
+        timeout: 5_000,
+      })
       .toBe(0)
 
     // Hover it and wait for the engine to report ITS handles. Moved away
@@ -574,7 +656,9 @@ test.describe('connectors travel with what they join', () => {
     })
     await dragMouse(page, handle, onto)
     await expect
-      .poll(async () => connectorsOf(await engine(page)).length, { timeout: 10_000 })
+      .poll(async () => connectorsOf(await engine(page)).length, {
+        timeout: 10_000,
+      })
       .toBe(1)
     await settle(page)
     return { left, right }
@@ -596,13 +680,17 @@ test.describe('connectors travel with what they join', () => {
     })
     await dragMouse(page, from, to)
     await expect
-      .poll(async () => (await engine(page)).selectedIds.length, { timeout: 10_000 })
+      .poll(async () => (await engine(page)).selectedIds.length, {
+        timeout: 10_000,
+      })
       .toBeGreaterThanOrEqual(3)
 
     await chord(page, 'c')
     await chord(page, 'v')
     await expect
-      .poll(async () => connectorsOf(await engine(page)).length, { timeout: 15_000 })
+      .poll(async () => connectorsOf(await engine(page)).length, {
+        timeout: 15_000,
+      })
       .toBe(2)
 
     // THE ASSERTION THIS SUITE EXISTS FOR: after a reload — i.e. read back
@@ -653,13 +741,17 @@ test.describe('connectors travel with what they join', () => {
       y: left.y + left.height / 2,
     })
     await expect
-      .poll(async () => (await engine(page)).selectedIds.length, { timeout: 10_000 })
+      .poll(async () => (await engine(page)).selectedIds.length, {
+        timeout: 10_000,
+      })
       .toBe(1)
 
     await chord(page, 'c')
     await chord(page, 'v')
     await expect
-      .poll(async () => ellipsesOf(await engine(page)).length, { timeout: 10_000 })
+      .poll(async () => ellipsesOf(await engine(page)).length, {
+        timeout: 10_000,
+      })
       .toBe(3)
 
     // The shape came across; the connector did not.
@@ -688,14 +780,18 @@ test.describe('copying an element whose create is still in flight', () => {
     await settle(page)
 
     await expect
-      .poll(async () => ellipsesOf(await engine(page)).length, { timeout: 10_000 })
+      .poll(async () => ellipsesOf(await engine(page)).length, {
+        timeout: 10_000,
+      })
       .toBe(2)
 
     // Both survive a reload, so both are real rows with server ids.
     await page.reload()
     await waitForBoard(page)
     await expect
-      .poll(async () => ellipsesOf(await engine(page)).length, { timeout: 10_000 })
+      .poll(async () => ellipsesOf(await engine(page)).length, {
+        timeout: 10_000,
+      })
       .toBe(2)
   })
 })
