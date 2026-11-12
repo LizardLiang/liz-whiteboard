@@ -903,14 +903,21 @@ test.describe('Ctrl+Arrow', () => {
       .poll(async () => (await engine(page)).elements.length)
       .toBe(before.elements.length + 2)
 
-    const created = nonConnectorsOf(await engine(page)).find(
+    // Settle, then read the element and the connector from ONE snapshot. The
+    // scene shows both under client ids until the server ack renames them,
+    // and the element and the connector's endpoint are renamed in separate
+    // updates: two reads either side of that name two different ids for the
+    // same new element.
+    await settle(page)
+    const after = await engine(page)
+    const created = nonConnectorsOf(after).find(
       (element) => !byId(before, element.id),
     )!
     // The same placement the click case produces: one gap to the right,
     // vertically centred on the source.
     expect(created.x).toBeGreaterThanOrEqual(source.x + source.width)
     expect(created.y).toBe(source.y)
-    expect(connectorsOf(await engine(page))[0].connector).toMatchObject({
+    expect(connectorsOf(after)[0].connector).toMatchObject({
       source: { kind: 'element', elementId: IDS.canvasRect },
       target: { kind: 'element', elementId: created.id },
     })
