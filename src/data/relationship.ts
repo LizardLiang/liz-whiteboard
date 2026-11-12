@@ -2,6 +2,11 @@
 // Data access layer for Relationship entity
 
 import { createRelationshipSchema, updateRelationshipSchema } from './schema'
+import {
+  AlreadyExistsError,
+  assertIdFree,
+  refuseTakenIdAfterInsertError,
+} from './already-exists'
 import type { CreateRelationship, UpdateRelationship } from './schema'
 import type { Column, DiagramTable, Relationship } from './models'
 import {
@@ -130,8 +135,11 @@ function attachRelationshipDetails(
   }
 }
 
+const RELATIONSHIP_ID_TAKEN = 'A relationship with this id already exists'
+
 /**
- * Create a new relationship
+ * Create a new relationship. A given `id` is stored as the relationship's id;
+ * an id any relationship already has is refused with `AlreadyExistsError`.
  * @param data - Relationship creation data (validated with Zod)
  * @returns Created relationship
  * @throws Error if validation fails or database operation fails
@@ -141,6 +149,7 @@ export async function createRelationship(
 ): Promise<Relationship> {
   // Validate input with Zod schema
   const validated = createRelationshipSchema.parse(data)
+  assertIdFree('Relationship', validated.id, RELATIONSHIP_ID_TAKEN)
 
   try {
     // Verify referential integrity using the shared validator (Apollo SA-2)
@@ -152,7 +161,7 @@ export async function createRelationship(
       whiteboardId: validated.whiteboardId,
     })
 
-    const id = genId()
+    const id = validated.id ?? genId()
     const ts = nowMs()
     insert('Relationship', {
       id,
@@ -171,6 +180,13 @@ export async function createRelationship(
       db.prepare('SELECT * FROM "Relationship" WHERE "id" = ?').get(id),
     )!
   } catch (error) {
+    if (error instanceof AlreadyExistsError) throw error
+    refuseTakenIdAfterInsertError(
+      error,
+      'Relationship',
+      validated.id,
+      RELATIONSHIP_ID_TAKEN,
+    )
     throw new Error(
       `Failed to create relationship: ${error instanceof Error ? error.message : 'Unknown error'}`,
     )

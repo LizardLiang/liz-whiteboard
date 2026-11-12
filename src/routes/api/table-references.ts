@@ -80,6 +80,7 @@ export function _resetIpRateLimitForTests(): void {
 const bodySchema = z.discriminatedUnion('op', [
   z.object({
     op: z.literal('create'),
+    id: z.string().uuid().optional(),
     whiteboardId: z.string().uuid(),
     sourceWhiteboardId: z.string().uuid(),
     sourceTableId: z.string().uuid(),
@@ -225,6 +226,7 @@ export async function handleTableReferenceRequest(
   try {
     if (body.op === 'create') {
       const reference = await createTableReference({
+        id: body.id,
         whiteboardId: body.whiteboardId,
         sourceWhiteboardId: body.sourceWhiteboardId,
         sourceTableId: body.sourceTableId,
@@ -263,6 +265,12 @@ export async function handleTableReferenceRequest(
     // caller's mistake, and its message is written for them — pass it through
     // as a 400. Anything else is logged and generalised.
     const message = error instanceof Error ? error.message : ''
+    // A create naming an id some table already has: refused, nothing changed.
+    // The MCP reads the row by that id to tell a re-sent create of its own
+    // from a collision.
+    if (isAlreadyExists(error)) {
+      return jsonError('ALREADY_EXISTS', message, 409)
+    }
     if (isCallerError(message)) {
       return jsonError('invalid_request', message, 400)
     }
@@ -273,6 +281,13 @@ export async function handleTableReferenceRequest(
       500,
     )
   }
+}
+
+function isAlreadyExists(error: unknown): boolean {
+  return (
+    error instanceof Error &&
+    (error as { code?: unknown }).code === 'ALREADY_EXISTS'
+  )
 }
 
 /**

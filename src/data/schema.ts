@@ -188,6 +188,7 @@ export const updateWhiteboardSchema = createWhiteboardSchema
  * Schema for creating a new table
  */
 export const createTableSchema = z.object({
+  id: z.string().uuid().optional(),
   whiteboardId: z.string().uuid(),
   name: z.string().min(1).max(255),
   description: z.string().max(MAX_DESCRIPTION_LENGTH).optional(),
@@ -201,7 +202,7 @@ export const createTableSchema = z.object({
  * Schema for updating an existing table
  */
 export const updateTableSchema = createTableSchema
-  .omit({ whiteboardId: true })
+  .omit({ id: true, whiteboardId: true })
   .partial()
 
 // ============================================================================
@@ -212,6 +213,7 @@ export const updateTableSchema = createTableSchema
  * Schema for creating a new column
  */
 export const createColumnSchema = z.object({
+  id: z.string().uuid().optional(),
   tableId: z.string().uuid(),
   name: z.string().min(1).max(255),
   dataType: dataTypeSchema,
@@ -261,6 +263,7 @@ export const updateColumnSchema = z.object({
  * Schema for creating a new relationship
  */
 export const createRelationshipSchema = z.object({
+  id: z.string().uuid().optional(),
   whiteboardId: z.string().uuid(),
   sourceTableId: z.string().uuid(),
   targetTableId: z.string().uuid(),
@@ -275,7 +278,7 @@ export const createRelationshipSchema = z.object({
  * Schema for updating an existing relationship
  */
 export const updateRelationshipSchema = createRelationshipSchema
-  .omit({ whiteboardId: true })
+  .omit({ id: true, whiteboardId: true })
   .partial()
 
 // ============================================================================
@@ -295,6 +298,7 @@ export const areaColorSchema = z.enum(AREA_COLOR_IDS)
  * .uuid() per project convention (never .cuid()).
  */
 export const createAreaSchema = z.object({
+  id: z.string().uuid().optional(),
   whiteboardId: z.string().uuid(),
   name: z.string().min(1).max(255),
   color: areaColorSchema,

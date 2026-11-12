@@ -194,6 +194,54 @@ describe('/api/table-references operations', () => {
     expect(await listTableReferences(local.id)).toHaveLength(1)
   })
 
+  it('stores a create under its client id and answers 409 ALREADY_EXISTS on a repeat', async () => {
+    const { owner, local, source, sourceTable, idCol } = await setup()
+    const token = await mintCollabToken(owner.id)
+    const id = crypto.randomUUID()
+    const body = {
+      op: 'create',
+      id,
+      whiteboardId: local.id,
+      sourceWhiteboardId: source.id,
+      sourceTableId: sourceTable.id,
+      sourceColumnIds: [idCol.id],
+    }
+
+    const first = await handleTableReferenceRequest(post(body, token))
+    expect(first.status).toBe(200)
+    const payload = (await first.json()) as { reference: { table: { id: string } } }
+    expect(payload.reference.table.id).toBe(id)
+
+    const again = await handleTableReferenceRequest(post(body, token))
+    expect(again.status).toBe(409)
+    expect(((await again.json()) as { error: string }).error).toBe(
+      'ALREADY_EXISTS',
+    )
+    expect(await listTableReferences(local.id)).toHaveLength(1)
+  })
+
+  it('rejects a non-UUID client id', async () => {
+    const { owner, local, source, sourceTable, idCol } = await setup()
+    const token = await mintCollabToken(owner.id)
+
+    const res = await handleTableReferenceRequest(
+      post(
+        {
+          op: 'create',
+          id: 'not-a-uuid',
+          whiteboardId: local.id,
+          sourceWhiteboardId: source.id,
+          sourceTableId: sourceTable.id,
+          sourceColumnIds: [idCol.id],
+        },
+        token,
+      ),
+    )
+
+    expect(res.status).toBe(400)
+    expect(await listTableReferences(local.id)).toHaveLength(0)
+  })
+
   it('lists a reference resolved against its source', async () => {
     const { owner, local, source, sourceTable, idCol } = await setup()
     const token = await mintCollabToken(owner.id)

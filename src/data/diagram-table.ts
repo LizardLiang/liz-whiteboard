@@ -5,6 +5,10 @@ import { createTableSchema, updateTableSchema } from './schema'
 import type { CreateTable, UpdateTable } from './schema'
 import type { Column, DiagramTable, Relationship } from './models'
 import {
+  assertIdFree,
+  refuseTakenIdAfterInsertError,
+} from './already-exists'
+import {
   db,
   genId,
   insert,
@@ -44,8 +48,11 @@ function attachTableRelations(table: DiagramTable): DiagramTableWithRelations {
   return { ...table, columns, outgoingRelationships, incomingRelationships }
 }
 
+const TABLE_ID_TAKEN = 'A table with this id already exists'
+
 /**
- * Create a new table
+ * Create a new table. A given `id` is stored as the table's id; an id any
+ * table already has is refused with `AlreadyExistsError`, never overwritten.
  * @param data - Table creation data (validated with Zod)
  * @returns Created table
  * @throws Error if validation fails or database operation fails
@@ -55,9 +62,10 @@ export async function createDiagramTable(
 ): Promise<DiagramTable> {
   // Validate input with Zod schema
   const validated = createTableSchema.parse(data)
+  assertIdFree('DiagramTable', validated.id, TABLE_ID_TAKEN)
 
   try {
-    const id = genId()
+    const id = validated.id ?? genId()
     const ts = nowMs()
     insert('DiagramTable', {
       id,
@@ -75,6 +83,12 @@ export async function createDiagramTable(
       db.prepare('SELECT * FROM "DiagramTable" WHERE "id" = ?').get(id),
     )!
   } catch (error) {
+    refuseTakenIdAfterInsertError(
+      error,
+      'DiagramTable',
+      validated.id,
+      TABLE_ID_TAKEN,
+    )
     throw new Error(
       `Failed to create table: ${error instanceof Error ? error.message : 'Unknown error'}`,
     )

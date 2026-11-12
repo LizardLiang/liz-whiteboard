@@ -5,6 +5,11 @@ import { createColumnSchema, updateColumnSchema } from './schema'
 import type { CreateColumn, CreateColumnInput, UpdateColumn } from './schema'
 import type { Column } from './models'
 import {
+  AlreadyExistsError,
+  assertIdFree,
+  refuseTakenIdAfterInsertError,
+} from './already-exists'
+import {
   db,
   genId,
   insert,
@@ -15,8 +20,11 @@ import {
   update,
 } from '@/db'
 
+const COLUMN_ID_TAKEN = 'A column with this id already exists'
+
 function insertColumn(validated: CreateColumn): Column {
-  const id = genId()
+  assertIdFree('Column', validated.id, COLUMN_ID_TAKEN)
+  const id = validated.id ?? genId()
   const ts = nowMs()
   insert('Column', {
     id,
@@ -35,14 +43,21 @@ function insertColumn(validated: CreateColumn): Column {
   return mapColumn(db.prepare('SELECT * FROM "Column" WHERE "id" = ?').get(id))!
 }
 
+function rethrowIdTaken(error: unknown, id: string | undefined): void {
+  if (error instanceof AlreadyExistsError) throw error
+  refuseTakenIdAfterInsertError(error, 'Column', id, COLUMN_ID_TAKEN)
+}
+
 /**
- * Create a new column
+ * Create a new column. A given `id` is stored as the column's id; an id any
+ * column already has is refused with `AlreadyExistsError`.
  */
 export async function createColumn(data: CreateColumnInput): Promise<Column> {
   const validated = createColumnSchema.parse(data)
   try {
     return insertColumn(validated)
   } catch (error) {
+    rethrowIdTaken(error, validated.id)
     throw new Error(
       `Failed to create column: ${error instanceof Error ? error.message : 'Unknown error'}`,
     )
@@ -59,6 +74,7 @@ export async function createColumns(
   try {
     return transaction(() => validated.map((data) => insertColumn(data)))
   } catch (error) {
+    for (const data of validated) rethrowIdTaken(error, data.id)
     throw new Error(
       `Failed to create columns: ${error instanceof Error ? error.message : 'Unknown error'}`,
     )

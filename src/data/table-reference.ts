@@ -17,6 +17,10 @@ import { z } from 'zod'
 
 import type { Column, DiagramTable } from './models'
 import {
+  assertIdFree,
+  refuseTakenIdAfterInsertError,
+} from './already-exists'
+import {
   db,
   genId,
   insert,
@@ -103,6 +107,7 @@ export interface UpdateTableReferenceResult {
 // ============================================================================
 
 export const createTableReferenceSchema = z.object({
+  id: z.string().uuid().optional(),
   whiteboardId: z.string().uuid(),
   sourceWhiteboardId: z.string().uuid(),
   sourceTableId: z.string().uuid(),
@@ -283,8 +288,12 @@ function requireReference(tableId: string): DiagramTable {
 // Public API
 // ============================================================================
 
+const REFERENCE_ID_TAKEN = 'A table with this id already exists'
+
 /**
- * Create a cross-file reference node on `whiteboardId`.
+ * Create a cross-file reference node on `whiteboardId`. A given `id` is stored
+ * as the node's DiagramTable id; an id any table already has is refused with
+ * `AlreadyExistsError`.
  *
  * The DiagramTable row and every stub column are written in ONE transaction:
  * a half-built reference (a node with no connectable column) would render as a
@@ -303,7 +312,8 @@ export async function createTableReference(
         .get(validated.sourceWhiteboardId) as { name?: string } | undefined
     )?.name ?? null
 
-  const id = genId()
+  assertIdFree('DiagramTable', validated.id, REFERENCE_ID_TAKEN)
+  const id = validated.id ?? genId()
   const ts = nowMs()
   const name = uniqueNameOn(
     validated.whiteboardId,
@@ -311,26 +321,36 @@ export async function createTableReference(
     sourceFileName,
   )
 
-  return transaction(() => {
-    insert('DiagramTable', {
-      id,
-      whiteboardId: validated.whiteboardId,
-      name,
-      description: sourceTable.description ?? null,
-      positionX: validated.positionX ?? null,
-      positionY: validated.positionY ?? null,
-      width: null,
-      height: null,
-      sourceWhiteboardId: validated.sourceWhiteboardId,
-      sourceTableId: validated.sourceTableId,
-      createdAt: ts,
-      updatedAt: ts,
+  try {
+    return transaction(() => {
+      insert('DiagramTable', {
+        id,
+        whiteboardId: validated.whiteboardId,
+        name,
+        description: sourceTable.description ?? null,
+        positionX: validated.positionX ?? null,
+        positionY: validated.positionY ?? null,
+        width: null,
+        height: null,
+        sourceWhiteboardId: validated.sourceWhiteboardId,
+        sourceTableId: validated.sourceTableId,
+        createdAt: ts,
+        updatedAt: ts,
+      })
+      sourceColumns.forEach((column, index) => {
+        insertStubColumn(id, column, index)
+      })
+      return readReference(id)
     })
-    sourceColumns.forEach((column, index) => {
-      insertStubColumn(id, column, index)
-    })
-    return readReference(id)
-  })
+  } catch (error) {
+    refuseTakenIdAfterInsertError(
+      error,
+      'DiagramTable',
+      validated.id,
+      REFERENCE_ID_TAKEN,
+    )
+    throw error
+  }
 }
 
 /**

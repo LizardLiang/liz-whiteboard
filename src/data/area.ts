@@ -5,6 +5,10 @@ import { createAreaSchema, updateAreaSchema } from './schema'
 import type { CreateArea, UpdateArea } from './schema'
 import type { Area } from './models'
 import {
+  assertIdFree,
+  refuseTakenIdAfterInsertError,
+} from './already-exists'
+import {
   db,
   genId,
   insert,
@@ -15,17 +19,21 @@ import {
   update,
 } from '@/db'
 
+const AREA_ID_TAKEN = 'An area with this id already exists'
+
 /**
- * Create a new subject area.
+ * Create a new subject area. A given `id` is stored as the area's id; an id
+ * any area already has is refused with `AlreadyExistsError`.
  * @param data - Area creation data (validated with Zod)
  * @returns Created area
  * @throws Error if validation fails or database operation fails
  */
 export async function createArea(data: CreateArea): Promise<Area> {
   const validated = createAreaSchema.parse(data)
+  assertIdFree('Area', validated.id, AREA_ID_TAKEN)
 
   try {
-    const id = genId()
+    const id = validated.id ?? genId()
     const ts = nowMs()
     insert('Area', {
       id,
@@ -42,6 +50,7 @@ export async function createArea(data: CreateArea): Promise<Area> {
     })
     return mapArea(db.prepare('SELECT * FROM "Area" WHERE "id" = ?').get(id))!
   } catch (error) {
+    refuseTakenIdAfterInsertError(error, 'Area', validated.id, AREA_ID_TAKEN)
     throw new Error(
       `Failed to create area: ${error instanceof Error ? error.message : 'Unknown error'}`,
     )

@@ -44,6 +44,7 @@ import {
   updateDiagramTablePosition,
 } from '@/data/diagram-table'
 import { findWhiteboardByIdWithDiagram } from '@/data/whiteboard'
+import { AlreadyExistsError } from '@/data/already-exists'
 import {
   createArea,
   deleteArea,
@@ -131,12 +132,26 @@ type AckResult =
       ok: false
       code:
         | 'VALIDATION_ERROR'
+        | 'ALREADY_EXISTS'
         | 'NOT_FOUND'
         | 'FORBIDDEN'
         | 'SESSION_EXPIRED'
         | 'INTERNAL_ERROR'
       message: string
     }
+
+/**
+ * The failure code of a create handler. A create that names an id some row
+ * already has (on any whiteboard) is `ALREADY_EXISTS`: refused, the stored row
+ * unchanged. A client that re-sent its own create reads the row by that id.
+ */
+function createFailureCode(
+  error: unknown,
+): 'ALREADY_EXISTS' | 'VALIDATION_ERROR' {
+  return error instanceof AlreadyExistsError
+    ? 'ALREADY_EXISTS'
+    : 'VALIDATION_ERROR'
+}
 
 /**
  * Ack callback payload for the area:move atomic-drag handler
@@ -428,9 +443,10 @@ async function denyIfInsufficientPermission(
 }
 
 /**
- * Setup event handlers for collaboration events
+ * Setup event handlers for collaboration events. Exported so tests drive the
+ * real handlers rather than a copy of them.
  */
-function setupCollaborationEventHandlers(
+export function setupCollaborationEventHandlers(
   socket: any,
   whiteboardId: string,
   userId: string,
@@ -563,12 +579,13 @@ function setupCollaborationEventHandlers(
       } catch (error) {
         console.error('Failed to create table:', error)
         const message = clientErrorMessage(error, 'Failed to create table')
+        const code = createFailureCode(error)
         socket.emit('error', {
           event: 'table:create',
-          error: 'VALIDATION_ERROR',
+          error: code,
           message,
         })
-        cb?.({ ok: false, code: 'VALIDATION_ERROR', message })
+        cb?.({ ok: false, code, message })
         return
       }
       await safeUpdateSessionActivity(socket.id)
@@ -1133,12 +1150,13 @@ function setupCollaborationEventHandlers(
     } catch (error) {
       console.error('Failed to create area:', error)
       const message = clientErrorMessage(error, 'Failed to create area')
+      const code = createFailureCode(error)
       socket.emit('error', {
         event: 'area:create',
-        error: 'VALIDATION_ERROR',
+        error: code,
         message,
       })
-      cb?.({ ok: false, code: 'VALIDATION_ERROR', message })
+      cb?.({ ok: false, code, message })
       return
     }
     await safeUpdateSessionActivity(socket.id)
@@ -1913,16 +1931,17 @@ function setupCollaborationEventHandlers(
         cb?.({ ok: true, entity: column })
       } catch (error) {
         console.error('Failed to create column:', error)
+        const code = createFailureCode(error)
         socket.emit('error', {
           event: 'column:create',
-          error: 'VALIDATION_ERROR',
+          error: code,
           message: clientErrorMessage(error, 'Failed to create column'),
           name: validated?.name,
           tableId: validated?.tableId,
         })
         cb?.({
           ok: false,
-          code: 'VALIDATION_ERROR',
+          code,
           message: clientErrorMessage(error, 'Failed to create column'),
         })
         return
@@ -2394,12 +2413,13 @@ function setupCollaborationEventHandlers(
           error,
           'Failed to create relationship',
         )
+        const code = createFailureCode(error)
         socket.emit('error', {
           event: 'relationship:create',
-          error: 'VALIDATION_ERROR',
+          error: code,
           message,
         })
-        cb?.({ ok: false, code: 'VALIDATION_ERROR', message })
+        cb?.({ ok: false, code, message })
         return
       }
       await safeUpdateSessionActivity(socket.id)
