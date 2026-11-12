@@ -114,12 +114,16 @@ describe('MCP_PLATFORMS', () => {
       )
     })
 
-    it('codex adds http_headers after the add command', () => {
-      const text = build('codex', ['er', 'canvas'])
-      expect(text).toContain(`codex mcp add liz-whiteboard --url '${URL}'`)
-      expect(text).toContain(
-        'http_headers = { "X-Liz-Toolsets" = "er,canvas" }',
+    it('codex keeps the command pure and puts http_headers in a second config block', () => {
+      const codex = MCP_PLATFORMS.find((p) => p.id === 'codex')!
+      expect(build('codex', ['er', 'canvas'])).toBe(
+        `codex mcp add liz-whiteboard --url '${URL}'`,
       )
+      expect(codex.buildExtra!([])).toBeNull()
+      expect(codex.buildExtra!(['er', 'canvas'])).toEqual({
+        configPath: '~/.codex/config.toml',
+        text: 'http_headers = { "X-Liz-Toolsets" = "er,canvas" }',
+      })
     })
 
     it('vscode and cursor put the header in a "headers" object', () => {

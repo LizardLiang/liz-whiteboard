@@ -24,6 +24,12 @@ function toolsetHeaderValue(toolsets: ReadonlyArray<McpToolset>): string {
   return MCP_TOOLSETS.filter((name) => toolsets.includes(name)).join(',')
 }
 
+/** A copyable block that belongs in a config file, not the main command. */
+export interface McpExtraBlock {
+  configPath: string
+  text: string
+}
+
 export interface McpPlatform {
   id: McpPlatformId
   label: string
@@ -34,7 +40,8 @@ export interface McpPlatform {
   /** File the config block should be added to (kind: 'config' only). */
   configPath?: string
   /** Whether the client can send a custom X-Liz-Toolsets request header.
-   * Claude Desktop custom connectors cannot, so it always gets every tool. */
+   * Claude Desktop custom connectors cannot (custom header names need
+   * Anthropic approval), so it always gets every tool. */
   supportsToolsets: boolean
   /** Renders the copyable command/config text for a given MCP endpoint URL.
    * A non-empty toolsets list adds the X-Liz-Toolsets header (ignored when
@@ -43,6 +50,10 @@ export interface McpPlatform {
     endpointUrl: string,
     toolsets?: ReadonlyArray<McpToolset>,
   ) => string
+  /** A second copyable block, shown after the main one, for a platform whose
+   * header cannot go in the main command (Codex: `codex mcp add` has no header
+   * flag). Returns null when there is nothing extra for the selection. */
+  buildExtra?: (toolsets?: ReadonlyArray<McpToolset>) => McpExtraBlock | null
   /** Whether the user sees an OAuth consent/approval screen after signing
    * in. Claude Code and Codex pin their identity via CIMD from origins this
    * server trusts by default, so they skip it entirely. Every other client
@@ -107,13 +118,17 @@ export const MCP_PLATFORMS: Array<McpPlatform> = [
     // Header source: https://developers.openai.com/codex/mcp — a streamable
     // HTTP server table in ~/.codex/config.toml takes
     // `http_headers = { "Name" = "value" }`. `codex mcp add` has no header
-    // flag, so the header goes in config.toml after the add command.
+    // flag, so the header goes in config.toml, shown as a second block
+    // (buildExtra) under the table the add command creates.
     supportsToolsets: true,
-    buildText: (url, toolsets = []) => {
-      const command = `codex mcp add liz-whiteboard --url '${url}'`
+    buildText: (url) => `codex mcp add liz-whiteboard --url '${url}'`,
+    buildExtra: (toolsets = []) => {
       const value = toolsetHeaderValue(toolsets)
-      if (!value) return command
-      return `${command}\n\n# Then add this line under [mcp_servers.liz-whiteboard] in ~/.codex/config.toml:\nhttp_headers = { "${MCP_TOOLSET_HEADER}" = "${value}" }`
+      if (!value) return null
+      return {
+        configPath: '~/.codex/config.toml',
+        text: `http_headers = { "${MCP_TOOLSET_HEADER}" = "${value}" }`,
+      }
     },
     consentNote:
       'Uses CIMD client identity — no separate consent screen after sign-in.',

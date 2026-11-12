@@ -209,9 +209,9 @@ export const canvasEn = {
       manage: 'Manage',
       hint: 'Fewer tools means fewer tokens per session. Core tools (browse projects, tool guide) are always included.',
       codexExtra:
-        'Codex adds this header in config.toml, after the command above.',
+        'Add this line under the existing [mcp_servers.liz-whiteboard] table that the command above created. Do not add a second table header.',
       desktopNote:
-        'Claude Desktop cannot set headers, so it always gets all tools.',
+        "Claude Desktop custom connectors can't send this header (custom header names need Anthropic approval), so it always gets all tools.",
     },
     consent: {
       cimd: 'Uses CIMD client identity — no separate consent screen after sign-in.',

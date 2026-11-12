@@ -6,7 +6,7 @@
 // presentational — the endpoint URL is a prop so this stays testable without
 // the auth-gated getMcpEndpointUrl() server fn (tactical plan:
 // 2026-08-06-mcp-client-install-commands).
-import { useMemo, useState } from 'react'
+import { useId, useMemo, useState } from 'react'
 import { Check, Copy } from 'lucide-react'
 import { Link } from '@tanstack/react-router'
 import { toast } from 'sonner'
@@ -49,11 +49,46 @@ export interface McpConnectPanelProps {
   className?: string
 }
 
+interface CodeBlockProps {
+  text: string
+  copyLabel: string
+  isCopied: boolean
+  onCopy: () => void
+}
+
+/** Copy button sits BESIDE the box (not absolutely overlaid on top of it), so
+ * it never covers the text. The text wraps instead of scrolling sideways, so a
+ * trailing part such as the toolset header is always visible. */
+function CodeBlock({ text, copyLabel, isCopied, onCopy }: CodeBlockProps) {
+  return (
+    <div className="flex items-start gap-2">
+      <pre className="max-h-40 min-w-0 flex-1 overflow-y-auto whitespace-pre-wrap rounded-md border bg-muted p-3 font-mono text-xs [overflow-wrap:anywhere]">
+        {text}
+      </pre>
+      <Button
+        type="button"
+        variant="ghost"
+        size="icon"
+        className="h-7 w-7 shrink-0"
+        aria-label={copyLabel}
+        onClick={onCopy}
+      >
+        {isCopied ? (
+          <Check className="h-3.5 w-3.5" />
+        ) : (
+          <Copy className="h-3.5 w-3.5" />
+        )}
+      </Button>
+    </div>
+  )
+}
+
 export function McpConnectPanel({
   endpointUrl,
   className,
 }: McpConnectPanelProps) {
   const t = useT()
+  const panelId = useId()
   const [copiedId, setCopiedId] = useState<string | null>(null)
   // Empty = all tools (no header). One selection drives every client's snippet.
   const [toolsets, setToolsets] = useState<Array<McpToolset>>([])
@@ -110,6 +145,9 @@ export function McpConnectPanel({
         {MCP_PLATFORMS.map((platform) => {
           const text = platformTexts[platform.id]
           const isCopied = copiedId === platform.id
+          const extra = platform.buildExtra?.(toolsets) ?? null
+          const labelId = `${panelId}-${platform.id}-toolsets-label`
+          const hintId = `${panelId}-${platform.id}-toolsets-hint`
           return (
             <TabsContent
               key={platform.id}
@@ -130,18 +168,22 @@ export function McpConnectPanel({
               {platform.supportsToolsets ? (
                 <div
                   role="group"
-                  aria-label={t('canvas.mcp.toolsets.label')}
+                  aria-labelledby={labelId}
+                  aria-describedby={hintId}
                   className="space-y-1"
                 >
                   <div className="flex flex-wrap items-center gap-1">
-                    <span className="mr-1 text-xs text-muted-foreground">
+                    <span
+                      id={labelId}
+                      className="mr-1 text-xs text-muted-foreground"
+                    >
                       {t('canvas.mcp.toolsets.label')}
                     </span>
                     <Button
                       type="button"
                       size="sm"
                       variant={toolsets.length === 0 ? 'default' : 'outline'}
-                      className="h-6 px-2 text-xs"
+                      className="h-7 px-2 text-xs"
                       aria-pressed={toolsets.length === 0}
                       onClick={() => setToolsets([])}
                     >
@@ -155,7 +197,7 @@ export function McpConnectPanel({
                           type="button"
                           size="sm"
                           variant={active ? 'default' : 'outline'}
-                          className="h-6 px-2 text-xs"
+                          className="h-7 px-2 text-xs"
                           aria-pressed={active}
                           onClick={() => toggleToolset(name)}
                         >
@@ -164,11 +206,8 @@ export function McpConnectPanel({
                       )
                     })}
                   </div>
-                  <p className="text-xs text-muted-foreground">
+                  <p id={hintId} className="text-xs text-muted-foreground">
                     {t('canvas.mcp.toolsets.hint')}
-                    {platform.id === 'codex' && toolsets.length > 0
-                      ? ` ${t('canvas.mcp.toolsets.codexExtra')}`
-                      : ''}
                   </p>
                 </div>
               ) : (
@@ -179,34 +218,41 @@ export function McpConnectPanel({
                 )
               )}
 
-              {/* Copy button sits BESIDE the command box (not absolutely
-                  overlaid on top of it), so it never covers the text. The
-                  command wraps instead of scrolling sideways, so a trailing
-                  part such as the toolset header is always visible. */}
-              <div className="flex items-start gap-2">
-                <pre className="max-h-40 min-w-0 flex-1 overflow-y-auto whitespace-pre-wrap rounded-md border bg-muted p-3 font-mono text-xs [overflow-wrap:anywhere]">
-                  {text}
-                </pre>
-                <Button
-                  type="button"
-                  variant="ghost"
-                  size="icon"
-                  className="h-7 w-7 shrink-0"
-                  aria-label={t(
-                    platform.kind === 'cli'
-                      ? 'canvas.mcp.copyCommandAria'
-                      : 'canvas.mcp.copyConfigAria',
-                    { platform: platform.label },
-                  )}
-                  onClick={() => handleCopy(platform.id, text)}
-                >
-                  {isCopied ? (
-                    <Check className="h-3.5 w-3.5" />
-                  ) : (
-                    <Copy className="h-3.5 w-3.5" />
-                  )}
-                </Button>
-              </div>
+              <CodeBlock
+                text={text}
+                isCopied={isCopied}
+                copyLabel={t(
+                  platform.kind === 'cli'
+                    ? 'canvas.mcp.copyCommandAria'
+                    : 'canvas.mcp.copyConfigAria',
+                  { platform: platform.label },
+                )}
+                onCopy={() => handleCopy(platform.id, text)}
+              />
+
+              {extra && (
+                <div className="space-y-2">
+                  <p className="text-xs text-muted-foreground">
+                    {t('canvas.mcp.addTo')}{' '}
+                    <code className="rounded bg-muted px-1 py-0.5">
+                      {extra.configPath}
+                    </code>
+                  </p>
+                  <p className="text-xs text-muted-foreground">
+                    {t('canvas.mcp.toolsets.codexExtra')}
+                  </p>
+                  <CodeBlock
+                    text={extra.text}
+                    isCopied={copiedId === `${platform.id}-extra`}
+                    copyLabel={t('canvas.mcp.copyConfigAria', {
+                      platform: platform.label,
+                    })}
+                    onCopy={() =>
+                      handleCopy(`${platform.id}-extra`, extra.text)
+                    }
+                  />
+                </div>
+              )}
 
               <p className="text-xs text-muted-foreground">
                 {t(`canvas.mcp.consent.${CONSENT_KEY[platform.id]}`)}

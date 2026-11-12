@@ -98,6 +98,17 @@ test.describe('MCP client install commands (tactical plan: 2026-08-06-mcp-client
 
     const header = /X-Liz-Toolsets/
     await expect(page.getByText(header)).toHaveCount(0)
+    const allTools = page.getByRole('button', { name: 'All tools' })
+    const canvasButton = page.getByRole('button', {
+      name: 'Canvas',
+      exact: true,
+    })
+    const erButton = page.getByRole('button', {
+      name: 'ER diagrams',
+      exact: true,
+    })
+    await expect(allTools).toHaveAttribute('aria-pressed', 'true')
+    await expect(canvasButton).toHaveAttribute('aria-pressed', 'false')
 
     // Claude Code: picking "Canvas" adds the --header flag to the command.
     await page.getByRole('button', { name: 'Canvas', exact: true }).click()
@@ -105,17 +116,34 @@ test.describe('MCP client install commands (tactical plan: 2026-08-06-mcp-client
       page.getByText(/--header 'X-Liz-Toolsets: canvas'/),
     ).toBeVisible()
 
+    await expect(allTools).toHaveAttribute('aria-pressed', 'false')
+    await expect(canvasButton).toHaveAttribute('aria-pressed', 'true')
+
     // Multi-select, rendered in canonical order whatever the click order.
-    await page.getByRole('button', { name: 'ER diagrams', exact: true }).click()
+    await erButton.click()
+    await expect(erButton).toHaveAttribute('aria-pressed', 'true')
     await expect(
       page.getByText(/--header 'X-Liz-Toolsets: er,canvas'/),
     ).toBeVisible()
+
+    // Turning one toolset off keeps the other selected.
+    await erButton.click()
+    await expect(erButton).toHaveAttribute('aria-pressed', 'false')
+    await expect(
+      page.getByText(/--header 'X-Liz-Toolsets: canvas'/),
+    ).toBeVisible()
+    await erButton.click()
 
     // The selection carries to the other clients' snippets.
     await page.getByRole('tab', { name: 'Codex' }).click()
     await expect(
       page.getByText(/http_headers = \{ "X-Liz-Toolsets" = "er,canvas" \}/),
     ).toBeVisible()
+    await expect(page.getByText('~/.codex/config.toml')).toBeVisible()
+    // The command block stays a pure shell command.
+    await expect(
+      page.getByText(/codex mcp add liz-whiteboard --url/),
+    ).not.toContainText('http_headers')
     await page.getByRole('tab', { name: 'VS Code' }).click()
     await expect(page.getByText(/"headers"/)).toBeVisible()
     await expect(page.getByText(/"X-Liz-Toolsets": "er,canvas"/)).toBeVisible()
@@ -131,7 +159,8 @@ test.describe('MCP client install commands (tactical plan: 2026-08-06-mcp-client
 
     // "All tools" resets: the header disappears again.
     await page.getByRole('tab', { name: 'Claude Code' }).click()
-    await page.getByRole('button', { name: 'All tools' }).click()
+    await allTools.click()
+    await expect(allTools).toHaveAttribute('aria-pressed', 'true')
     await expect(page.getByText(header)).toHaveCount(0)
   })
 

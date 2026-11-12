@@ -210,8 +210,10 @@ export const canvasZhTW: DeepStringRecord<typeof canvasEn> = {
       canvas: '畫布',
       manage: '管理',
       hint: '工具越少，每個工作階段使用的 token 越少。核心工具（瀏覽專案、工具說明）一律包含。',
-      codexExtra: 'Codex 需在上述指令之後，於 config.toml 加入此標頭。',
-      desktopNote: 'Claude Desktop 無法設定標頭，因此一律取得全部工具。',
+      codexExtra:
+        '請將此行加入上述指令已建立的 [mcp_servers.liz-whiteboard] 區段下，不要再新增第二個區段標題。',
+      desktopNote:
+        'Claude Desktop 自訂連接器無法傳送此標頭（自訂標頭名稱需經 Anthropic 核准），因此一律取得全部工具。',
     },
     consent: {
       cimd: '使用 CIMD 用戶端身分，登入後不需要另外的同意畫面。',
