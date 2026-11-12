@@ -45,6 +45,36 @@ try {
     .run('missing')
   assert.equal(untouched.changes, 0)
 
+  // The RetiredId tombstone triggers (schema-sql.ts) on the production driver:
+  // a deleted table and its cascaded column are recorded against their
+  // whiteboard, and deleting the whiteboard prunes them again.
+  const ts = Date.now()
+  db.prepare(
+    'INSERT INTO "Project" ("id","name","createdAt","updatedAt") VALUES (?,?,?,?)',
+  ).run('p1', 'P', ts, ts)
+  db.prepare(
+    'INSERT INTO "Whiteboard" ("id","name","projectId","createdAt","updatedAt") VALUES (?,?,?,?,?)',
+  ).run('w1', 'W', 'p1', ts, ts)
+  db.prepare(
+    'INSERT INTO "DiagramTable" ("id","whiteboardId","name","createdAt","updatedAt") VALUES (?,?,?,?,?)',
+  ).run('t1', 'w1', 'T', ts, ts)
+  db.prepare(
+    'INSERT INTO "Column" ("id","tableId","name","dataType","createdAt","updatedAt") VALUES (?,?,?,?,?,?)',
+  ).run('c1', 't1', 'C', 'text', ts, ts)
+  db.prepare('DELETE FROM "DiagramTable" WHERE "id" = ?').run('t1')
+  const retired = db
+    .prepare(
+      'SELECT "id","entity","whiteboardId" FROM "RetiredId" ORDER BY "id"',
+    )
+    .all()
+    .map((row) => ({ ...row }))
+  assert.deepEqual(retired, [
+    { id: 'c1', entity: 'Column', whiteboardId: 'w1' },
+    { id: 't1', entity: 'DiagramTable', whiteboardId: 'w1' },
+  ])
+  db.prepare('DELETE FROM "Whiteboard" WHERE "id" = ?').run('w1')
+  assert.deepEqual(db.prepare('SELECT * FROM "RetiredId"').all(), [])
+
   console.log('db-bun-smoke: ok')
 } finally {
   rmSync(dir, { recursive: true, force: true })
