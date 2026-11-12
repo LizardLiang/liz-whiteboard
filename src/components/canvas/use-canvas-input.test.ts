@@ -17,7 +17,6 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { act, renderHook } from '@testing-library/react'
 import { foldPendingTextEdits, useCanvasInput } from './use-canvas-input'
-import { TEXT_PADDING } from '@/lib/canvas-engine/render'
 import type {
   CanvasElement,
   CanvasTextRun,
@@ -25,6 +24,7 @@ import type {
 } from '@/lib/canvas-engine/scene'
 import type { Camera } from '@/lib/canvas-engine/camera'
 import type { CanvasTool } from './use-canvas-input'
+import { TEXT_PADDING } from '@/lib/canvas-engine/render'
 import { MAX_TEXT_RUNS } from '@/lib/canvas-engine/text-runs'
 import { DEFAULT_CAMERA } from '@/lib/canvas-engine/camera'
 import { DEFAULT_ELEMENT_STYLE, sceneFrom } from '@/lib/canvas-engine/scene'
@@ -3468,7 +3468,7 @@ describe('text runs while editing', () => {
       expect(after[0].style.textRuns).toHaveLength(1)
       expect(before[0].height).toBe(30)
       expect(before[0].text).toBe('hello world')
-      expect(before[0].style.textRuns ?? []).toEqual([])
+      expect(before[0].style.textRuns).toEqual([])
     })
 
     it('keeps a shape the size it had', () => {

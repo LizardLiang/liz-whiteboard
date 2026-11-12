@@ -1437,7 +1437,7 @@ function styleEditProduce(
     const keep = { text, caret, anchor }
     let patch: TextRunAttrs
     if (change.kind === 'set') {
-      patch = { [change.key]: change.value } as TextRunAttrs
+      patch = { [change.key]: change.value }
     } else {
       const key = change.key
       const segments = resolveRuns(text, style)
@@ -1452,14 +1452,14 @@ function styleEditProduce(
         const here = { ...(segment ?? style), ...pending }
         patch = {
           [key]: isOn(here) ? TOGGLE_OFF[key] : TOGGLE_ON[key],
-        } as TextRunAttrs
+        }
       } else {
         const covered = segments.filter(
           (segment) => segment.end > start && segment.start < end,
         )
         patch = {
           [key]: covered.every(isOn) ? TOGGLE_OFF[key] : TOGGLE_ON[key],
-        } as TextRunAttrs
+        }
       }
     }
     if (start === end) return { ...keep, pending: { ...pending, ...patch } }

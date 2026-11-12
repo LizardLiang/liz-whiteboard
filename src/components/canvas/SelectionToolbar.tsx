@@ -585,7 +585,7 @@ export function SelectionToolbar({
   const roleValues = targets.map((e) => effectiveRole(e) ?? 'none')
   const activeRole: CanvasElementRole | undefined =
     roleValues.length > 0 && roleValues.every((r) => r === roleValues[0])
-      ? (roleValues[0] as CanvasElementRole)
+      ? roleValues[0]
       : undefined
   const activeStep = shared(targets, (element) => element.style.step)
   const activeShadow = shared(targets, (element) => element.style.cardShadow)
@@ -726,7 +726,7 @@ export function SelectionToolbar({
                   className="block size-3.5 rounded-full border-2"
                   style={{
                     borderColor:
-                      activeRole === undefined || activeRole === null
+                      activeRole === undefined
                         ? 'currentColor'
                         : ROLE_DOT[activeRole],
                   }}

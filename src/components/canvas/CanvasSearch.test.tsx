@@ -16,7 +16,7 @@ if (!('ResizeObserver' in globalThis)) {
     observe() {}
     unobserve() {}
     disconnect() {}
-  } as unknown as typeof ResizeObserver
+  }
 }
 // eslint-disable-next-line @typescript-eslint/no-unnecessary-condition -- lib.dom types scrollIntoView as always-present, but jsdom does not implement it at runtime; this guard avoids clobbering a real implementation if one is ever polyfilled elsewhere.
 if (!HTMLElement.prototype.scrollIntoView) {
