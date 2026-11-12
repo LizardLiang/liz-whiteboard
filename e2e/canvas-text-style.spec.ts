@@ -20,6 +20,7 @@
 // assertions below prove real PERSISTENCE.
 import { execFileSync } from 'node:child_process'
 import { expect, test } from '@playwright/test'
+import { settle, trackAcks } from './canvas-helpers'
 import { IDS } from './fixtures'
 import type { Download, Locator, Page } from '@playwright/test'
 
@@ -78,6 +79,7 @@ async function waitForBoard(page: Page) {
 }
 
 async function openBoard(page: Page) {
+  trackAcks(page)
   await page.goto(BOARD_URL)
   await waitForBoard(page)
 }
@@ -108,11 +110,6 @@ async function worldToPage(page: Page, world: { x: number; y: number }) {
 async function focusBoard(page: Page) {
   const box = await canvasBox(page)
   await page.mouse.click(box.x + 40, box.y + 120)
-}
-
-/** Wait for the server ack that pushes the undo entry. */
-async function settle(page: Page) {
-  await page.waitForTimeout(1500)
 }
 
 const styleBar = (page: Page) =>

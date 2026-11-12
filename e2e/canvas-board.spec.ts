@@ -48,6 +48,7 @@
 // its own public route, both covered by the last describe block below.
 import { execFileSync } from 'node:child_process'
 import { expect, test } from '@playwright/test'
+import { settle, trackAcks } from './canvas-helpers'
 import { BASE_URL, IDS, STORAGE_STATE } from './fixtures'
 import { openViewerPage } from './viewer-session'
 import type { Browser, Page } from '@playwright/test'
@@ -100,6 +101,7 @@ async function engine(page: Page): Promise<EngineState> {
 
 /** Wait for the board to mount and publish its state. */
 async function openBoard(page: Page, url = BOARD_URL): Promise<EngineState> {
+  trackAcks(page)
   await page.goto(url)
   await page.waitForSelector('canvas')
   await page.waitForFunction(() => window.__canvasEngine !== undefined, null, {
@@ -283,7 +285,7 @@ test.describe('regressions', () => {
       .not.toBeNull()
 
     await page.keyboard.press('Escape')
-    await page.waitForTimeout(800)
+    await settle(page)
 
     const after = await openBoard(page)
     const created = after.elements.filter(
@@ -345,7 +347,7 @@ test.describe('draw, move, persist', () => {
     await expect
       .poll(async () => byId(await engine(page), IDS.canvasRect)?.x ?? 0)
       .toBeGreaterThan(500)
-    await page.waitForTimeout(800)
+    await settle(page)
 
     const after = await openBoard(page)
     const moved = byId(after, IDS.canvasRect)!
@@ -368,7 +370,7 @@ test.describe('draw, move, persist', () => {
       .toEqual([IDS.canvasRect])
 
     await page.keyboard.press('Delete')
-    await page.waitForTimeout(800)
+    await settle(page)
 
     const after = await openBoard(page)
     expect(byId(after, IDS.canvasRect)).toBeUndefined()
@@ -402,7 +404,7 @@ test.describe('selection and transform', () => {
     await expect
       .poll(async () => byId(await engine(page), IDS.canvasRect)?.width ?? 0)
       .toBeGreaterThan(280)
-    await page.waitForTimeout(800)
+    await settle(page)
 
     const after = await openBoard(page)
     const resized = byId(after, IDS.canvasRect)!

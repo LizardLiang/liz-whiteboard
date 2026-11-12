@@ -38,6 +38,7 @@
 // to avoid — and it would fail as "the click did nothing" with no hint why.
 import { execFileSync } from 'node:child_process'
 import { expect, test } from '@playwright/test'
+import { settle, trackAcks } from './canvas-helpers'
 import { IDS } from './fixtures'
 import { openViewerPage } from './viewer-session'
 import type { Browser, Page } from '@playwright/test'
@@ -113,6 +114,7 @@ async function engine(page: Page): Promise<EngineState> {
 }
 
 async function openBoard(page: Page, url = BOARD_URL): Promise<EngineState> {
+  trackAcks(page)
   await page.goto(url)
   await page.waitForSelector('canvas')
   await page.waitForFunction(() => window.__canvasEngine !== undefined, null, {
@@ -186,11 +188,6 @@ async function dragMouse(
 async function focusBoard(page: Page) {
   const box = await canvasBox(page)
   await page.mouse.click(box.x + 40, box.y + 150)
-}
-
-/** Wait for the server ack that pushes the undo entry — see the file header. */
-async function settle(page: Page) {
-  await page.waitForTimeout(1500)
 }
 
 async function undo(page: Page) {

@@ -12,6 +12,7 @@
 // AND full-DOM node roots (TableNode.tsx), so this one selector works
 // regardless of which branch is currently rendering that table (e.g. the
 // active edit overlay, or a table with its relations panel open).
+import { expect } from '@playwright/test'
 import type { Locator, Page } from '@playwright/test'
 
 /** Find a table node by name — works whether it's currently chrome-light
@@ -84,4 +85,86 @@ export async function zoomAboveLodThreshold(page: Page) {
   throw new Error(
     `could not zoom above LOD_ZOOM_THRESHOLD (${LOD_ZOOM_THRESHOLD}) after 30 clicks`,
   )
+}
+
+// ── ack tracking ────────────────────────────────────────────────────────────
+// The undo entry for a write is pushed only when the server's ack arrives
+// (use-canvas-undo.ts records nothing optimistically), and a paste or a
+// duplicate pushes ONE entry only after every create in it has acked. The
+// scene shows the copies at once, so "the copies are on screen" says nothing
+// about whether Ctrl+Z has an entry for them. A fixed sleep guessed at the
+// ack time and lost that guess under load (parallel stacks): Ctrl+Z then
+// popped an older entry, or none, and the "Undid pasting 2 elements" toast
+// never came. So the spec watches the Socket.IO frames itself: an emitted
+// event that carries an ack id is pending until the ack frame with that id
+// arrives.
+
+interface AckTracker {
+  /** Emits that carry an ack id and have no ack yet. */
+  pending: Set<string>
+  /** `performance.now()` at the last emit or ack frame. Monotonic: the wall
+   * clock of this machine steps by 15 s, which would skip or stretch the
+   * quiet time. */
+  lastActivity: number
+}
+
+const ackTrackers = new WeakMap<Page, AckTracker>()
+const SOCKET_EMIT_FRAME = /^42(?:\/[^,]*,)?(\d+)\[/
+const SOCKET_ACK_FRAME = /^43(?:\/[^,]*,)?(\d+)\[/
+
+/** Start watching the page's sockets. Call BEFORE the page opens its socket. */
+export function trackAcks(page: Page) {
+  if (ackTrackers.has(page)) return
+  const tracker: AckTracker = {
+    pending: new Set(),
+    lastActivity: performance.now(),
+  }
+  ackTrackers.set(page, tracker)
+  page.on('websocket', (socket) => {
+    socket.on('framesent', (frame) => {
+      if (typeof frame.payload !== 'string') return
+      const id = SOCKET_EMIT_FRAME.exec(frame.payload)?.[1]
+      if (id === undefined) return
+      tracker.pending.add(id)
+      tracker.lastActivity = performance.now()
+    })
+    socket.on('framereceived', (frame) => {
+      if (typeof frame.payload !== 'string') return
+      const id = SOCKET_ACK_FRAME.exec(frame.payload)?.[1]
+      if (id === undefined) return
+      tracker.pending.delete(id)
+      tracker.lastActivity = performance.now()
+    })
+    // A closed socket (reload, navigation) never delivers its acks, and the
+    // next socket numbers its ack ids from the start again.
+    socket.on('close', () => {
+      tracker.pending.clear()
+      tracker.lastActivity = performance.now()
+    })
+  })
+}
+
+/** Quiet time that must follow the last emit or ack. A paste writes its
+ * connectors in a second round, only after the first round's acks. */
+const ACK_QUIET_MS = 400
+
+/** Wait until every emitted write has its ack and no new frame came for a
+ * short quiet time, so the undo entry the acks push exists. */
+export async function settle(page: Page) {
+  const tracker = ackTrackers.get(page)
+  if (!tracker) {
+    // A page this spec did not open through the board-open helper that calls `trackAcks` (no frame watching).
+    await page.waitForTimeout(1500)
+    return
+  }
+  await expect
+    .poll(
+      () =>
+        tracker.pending.size === 0 &&
+        performance.now() - tracker.lastActivity >= ACK_QUIET_MS,
+      { timeout: 30_000, intervals: [50] },
+    )
+    .toBe(true)
+  // Let the page run the callbacks that the last ack frame queued.
+  await page.evaluate(() => new Promise((resolve) => setTimeout(resolve, 0)))
 }

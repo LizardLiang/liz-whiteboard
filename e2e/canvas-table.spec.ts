@@ -28,6 +28,7 @@
 // prod build and asserts the merged result live and via reload.
 import { execFileSync } from 'node:child_process'
 import { expect, test } from '@playwright/test'
+import { settle, trackAcks } from './canvas-helpers'
 import { IDS } from './fixtures'
 import { openViewerPage } from './viewer-session'
 import type { Browser, Download, Page } from '@playwright/test'
@@ -102,6 +103,7 @@ async function engine(page: Page): Promise<EngineState> {
 }
 
 async function openBoard(page: Page): Promise<EngineState> {
+  trackAcks(page)
   await page.goto(BOARD_URL)
   await page.waitForSelector('canvas')
   await page.waitForFunction(() => window.__canvasEngine !== undefined, null, {
@@ -143,10 +145,6 @@ async function dragMouse(
 async function focusBoard(page: Page) {
   const box = await canvasBox(page)
   await page.mouse.click(box.x + 40, box.y + 150)
-}
-
-async function settle(page: Page) {
-  await page.waitForTimeout(1500)
 }
 
 function tablesOf(state: EngineState) {

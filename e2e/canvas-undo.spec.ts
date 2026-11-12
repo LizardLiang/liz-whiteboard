@@ -74,6 +74,7 @@
 //     undo — the pan is left alone, the content edit is reversed)
 import { execFileSync } from 'node:child_process'
 import { expect, test } from '@playwright/test'
+import { settle, trackAcks } from './canvas-helpers'
 import { BASE_URL, IDS, STORAGE_STATE } from './fixtures'
 import { openViewerPage } from './viewer-session'
 import type { Browser, Page } from '@playwright/test'
@@ -123,6 +124,7 @@ async function engine(page: Page): Promise<EngineState> {
 }
 
 async function openBoard(page: Page, url = BOARD_URL): Promise<EngineState> {
+  trackAcks(page)
   await page.goto(url)
   await page.waitForSelector('canvas')
   await page.waitForFunction(() => window.__canvasEngine !== undefined, null, {
@@ -218,32 +220,6 @@ async function focusBoard(page: Page) {
   // would silently reintroduce the exact "click lands on nothing" failure
   // this helper exists to prevent.
   await page.mouse.click(box.x + 40, box.y + 150)
-}
-
-/**
- * Wait for a just-committed forward gesture (move/create/delete) to be
- * RECORDED, not merely rendered.
- *
- * A drag's destination, a freshly drawn element and a delete all update
- * `window.__canvasEngine`'s scene OPTIMISTICALLY, synchronously, before any
- * network round trip — exactly what canvas-board.spec.ts's own `.poll()`
- * calls after a drag observe. This suite's own undo/redo ENTRY, however, is
- * only pushed inside `recordCreate`/`recordUpdate`/`recordDelete`'s
- * `.then()` — after the server's ack resolves. Calling `undo()` between
- * those two moments finds an EMPTY stack and shows "Nothing left to undo."
- * — a toast that fades (sonner's default ~4s) long before a later
- * `getByText('Undid ...')` assertion's 10s timeout elapses, which is
- * exactly how this suite's own first run misread a pure timing race as
- * "Ctrl+Z does nothing at all". canvas-board.spec.ts's own "moves an
- * element ... survives a reload" test uses 800ms for the same underlying
- * race; this suite gives it a wider 1500ms margin because it chains MANY
- * more of these round trips per test (up to 4-5 recorded writes before a
- * single undo/redo call), so the same dev socket connection has strictly
- * more queued traffic ahead of any one of them by the time a later test in
- * this file runs.
- */
-async function settle(page: Page) {
-  await page.waitForTimeout(1500)
 }
 
 /**

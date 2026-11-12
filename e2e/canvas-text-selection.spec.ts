@@ -12,6 +12,7 @@
 // reload; that proves real persistence, not a dev-only broadcast.
 import { execFileSync } from 'node:child_process'
 import { expect, test } from '@playwright/test'
+import { settle, trackAcks } from './canvas-helpers'
 import { IDS } from './fixtures'
 import type { Page } from '@playwright/test'
 
@@ -49,6 +50,7 @@ async function engine(page: Page): Promise<EngineState> {
 }
 
 async function openBoard(page: Page) {
+  trackAcks(page)
   await page.goto(BOARD_URL)
   await page.waitForSelector('canvas')
   await page.waitForFunction(() => window.__canvasEngine !== undefined, null, {
@@ -95,7 +97,7 @@ async function commitAndReload(page: Page) {
   await expect
     .poll(async () => (await engine(page)).editingElementId)
     .toBeNull()
-  await page.waitForTimeout(1500)
+  await settle(page)
   await page.reload()
   await page.waitForFunction(() => window.__canvasEngine !== undefined)
 }

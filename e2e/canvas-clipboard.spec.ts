@@ -29,6 +29,7 @@
 // workaround.
 import { execFileSync } from 'node:child_process'
 import { expect, test } from '@playwright/test'
+import { settle, trackAcks } from './canvas-helpers'
 import { IDS } from './fixtures'
 import { openViewerPage } from './viewer-session'
 import type { Browser, Page } from '@playwright/test'
@@ -148,79 +149,6 @@ async function dragMouse(
 async function focusBoard(page: Page) {
   const box = await canvasBox(page)
   await page.mouse.click(box.x + 40, box.y + 120)
-}
-
-// ── ack tracking ────────────────────────────────────────────────────────────
-// The undo entry for a write is pushed only when the server's ack arrives
-// (use-canvas-undo.ts records nothing optimistically), and a paste or a
-// duplicate pushes ONE entry only after every create in it has acked. The
-// scene shows the copies at once, so "the copies are on screen" says nothing
-// about whether Ctrl+Z has an entry for them. A fixed sleep guessed at the
-// ack time and lost that guess under load (parallel stacks): Ctrl+Z then
-// popped an older entry, or none, and the "Undid pasting 2 elements" toast
-// never came. So the spec watches the Socket.IO frames itself: an emitted
-// event that carries an ack id is pending until the ack frame with that id
-// arrives.
-
-interface AckTracker {
-  /** Emits that carry an ack id and have no ack yet. */
-  pending: Set<string>
-  /** `performance.now()` at the last emit or ack frame. Monotonic: the wall
-   * clock of this machine steps by 15 s, which would skip or stretch the
-   * quiet time. */
-  lastActivity: number
-}
-
-const ackTrackers = new WeakMap<Page, AckTracker>()
-const SOCKET_EMIT_FRAME = /^42(?:\/[^,]*,)?(\d+)\[/
-const SOCKET_ACK_FRAME = /^43(?:\/[^,]*,)?(\d+)\[/
-
-/** Start watching the page's sockets. Call BEFORE the page opens its socket. */
-function trackAcks(page: Page) {
-  if (ackTrackers.has(page)) return
-  const tracker: AckTracker = { pending: new Set(), lastActivity: performance.now() }
-  ackTrackers.set(page, tracker)
-  page.on('websocket', (socket) => {
-    socket.on('framesent', (frame) => {
-      if (typeof frame.payload !== 'string') return
-      const id = SOCKET_EMIT_FRAME.exec(frame.payload)?.[1]
-      if (id === undefined) return
-      tracker.pending.add(id)
-      tracker.lastActivity = performance.now()
-    })
-    socket.on('framereceived', (frame) => {
-      if (typeof frame.payload !== 'string') return
-      const id = SOCKET_ACK_FRAME.exec(frame.payload)?.[1]
-      if (id === undefined) return
-      tracker.pending.delete(id)
-      tracker.lastActivity = performance.now()
-    })
-  })
-}
-
-/** Quiet time that must follow the last emit or ack. A paste writes its
- * connectors in a second round, only after the first round's acks. */
-const ACK_QUIET_MS = 400
-
-/** Wait until every emitted write has its ack and no new frame came for a
- * short quiet time, so the undo entry the acks push exists. */
-async function settle(page: Page) {
-  const tracker = ackTrackers.get(page)
-  if (!tracker) {
-    // A page this spec did not open through `openBoard` (no frame watching).
-    await page.waitForTimeout(1500)
-    return
-  }
-  await expect
-    .poll(
-      () =>
-        tracker.pending.size === 0 &&
-        performance.now() - tracker.lastActivity >= ACK_QUIET_MS,
-      { timeout: 30_000, intervals: [50] },
-    )
-    .toBe(true)
-  // Let the page run the callbacks that the last ack frame queued.
-  await page.evaluate(() => new Promise((resolve) => setTimeout(resolve, 0)))
 }
 
 const selectionBar = (page: Page) =>
