@@ -222,7 +222,9 @@ test.describe('creating a group', () => {
     const a = await drawRectangle(page, { x: 950, y: 550 }, { x: 1050, y: 620 })
     const b = await drawRectangle(page, { x: 1150, y: 550 }, { x: 1250, y: 620 })
 
-    await marqueeSelect(page, { x: 900, y: 530 }, { x: 1300, y: 650 })
+    // Starts below the rectangles: the selection toolbar of the last-drawn
+    // one sits above them and covers (900, 530).
+    await marqueeSelect(page, { x: 900, y: 650 }, { x: 1300, y: 530 })
     await expect
       .poll(async () => (await engine(page)).selectedIds.length)
       .toBe(2)
@@ -704,7 +706,9 @@ test.describe('keyboard shortcuts (FR-020)', () => {
     const a = await drawRectangle(page, { x: 950, y: 550 }, { x: 1050, y: 620 })
     const b = await drawRectangle(page, { x: 1150, y: 550 }, { x: 1250, y: 620 })
 
-    await marqueeSelect(page, { x: 900, y: 530 }, { x: 1300, y: 650 })
+    // Starts below the rectangles: the selection toolbar of the last-drawn
+    // one sits above them and covers (900, 530).
+    await marqueeSelect(page, { x: 900, y: 650 }, { x: 1300, y: 530 })
     await expect
       .poll(async () => (await engine(page)).selectedIds.length)
       .toBe(2)
@@ -771,7 +775,9 @@ test.describe('collaboration', () => {
         { x: 1150, y: 550 },
         { x: 1250, y: 620 },
       )
-      await marqueeSelect(page, { x: 900, y: 530 }, { x: 1300, y: 650 })
+      // Starts below the rectangles: the selection toolbar of the last-drawn
+      // one sits above them and covers (900, 530).
+      await marqueeSelect(page, { x: 900, y: 650 }, { x: 1300, y: 530 })
       await expect
         .poll(async () => (await engine(page)).selectedIds.length)
         .toBe(2)

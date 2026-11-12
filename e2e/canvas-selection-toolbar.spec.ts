@@ -616,7 +616,18 @@ test.describe('changing stroke width', () => {
     // here depends on guessing where an antialiased edge lands. The board is
     // deselected before each count: selection chrome is opaque too, and
     // leaving it up would add a constant that muddies the comparison.
+    //
+    // The board is switched to the classic style first. The default card
+    // style paints an opaque body, so an alpha count over it measures the
+    // shape's area, not its outline. Classic paints the stored 10% fill, which
+    // stays under the count's alpha threshold.
     await openBoard(page)
+    await page.getByRole('button', { name: 'Board style', exact: true }).click()
+    await page.getByRole('button', { name: 'Style Classic' }).click()
+    await expect(
+      page.getByRole('button', { name: 'Style Classic' }),
+    ).toHaveAttribute('aria-pressed', 'true')
+    await page.keyboard.press('Escape')
     await drawEllipse(page)
 
     await pickWidth(page, 1)
@@ -626,6 +637,11 @@ test.describe('changing stroke width', () => {
         timeout: 5_000,
       })
       .toBe(0)
+    await expect
+      .poll(async () => (await pixelAtWorld(page, SHAPE_CENTRE))?.[3] ?? 255, {
+        timeout: 5_000,
+      })
+      .toBeLessThan(200)
     const thin = await opaquePixelsIn(page, SHAPE_PROBE_BOX)
     expect(thin).toBeGreaterThan(0)
 

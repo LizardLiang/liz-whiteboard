@@ -377,10 +377,14 @@ test.describe('draw, move, persist', () => {
   test('moves an element and the move survives a reload', async ({ page }) => {
     await openBoard(page)
 
+    // The drop keeps every edge and centre line of the rectangle more than
+    // the 6 px alignment tolerance away from the seeded text's lines (x 300,
+    // 420, 540; y 520, 544, 568), so no guide snaps it and the stored
+    // position is the plain drag offset.
     await dragMouse(
       page,
       await worldToPage(page, { x: 400, y: 370 }), // inside canvasRect
-      await worldToPage(page, { x: 700, y: 620 }),
+      await worldToPage(page, { x: 700, y: 720 }),
     )
 
     await expect
@@ -390,9 +394,9 @@ test.describe('draw, move, persist', () => {
 
     const after = await openBoard(page)
     const moved = byId(after, IDS.canvasRect)!
-    // Dragged by +300/+250 world units from 300,300.
+    // Dragged by +300/+350 world units from 300,300.
     expect(moved.x).toBeCloseTo(600, 0)
-    expect(moved.y).toBeCloseTo(550, 0)
+    expect(moved.y).toBeCloseTo(650, 0)
     // Geometry must not drift while moving.
     expect(moved.width).toBeCloseTo(200, 0)
     expect(moved.height).toBeCloseTo(140, 0)
@@ -430,11 +434,14 @@ test.describe('selection and transform', () => {
       .toBe(1)
 
     // The south-east grip sits ON the element's bottom-right corner in SCREEN
-    // space, a constant 8px regardless of zoom (plan decision B7).
+    // space, a constant 8px regardless of zoom (plan decision B7). The drop
+    // keeps the moving edges and centre lines more than the 6 px alignment
+    // tolerance away from the seeded text's lines (x 300, 420, 540; y 520,
+    // 544, 568), so no guide snaps the new size.
     await dragMouse(
       page,
       await worldToPage(page, { x: 500, y: 440 }),
-      await worldToPage(page, { x: 620, y: 540 }),
+      await worldToPage(page, { x: 640, y: 600 }),
     )
 
     await expect
@@ -444,8 +451,8 @@ test.describe('selection and transform', () => {
 
     const after = await openBoard(page)
     const resized = byId(after, IDS.canvasRect)!
-    expect(resized.width).toBeCloseTo(320, 0)
-    expect(resized.height).toBeCloseTo(240, 0)
+    expect(resized.width).toBeCloseTo(340, 0)
+    expect(resized.height).toBeCloseTo(300, 0)
     // Resizing from the SE corner must not move the origin.
     expect(resized.x).toBeCloseTo(300, 0)
     expect(resized.y).toBeCloseTo(300, 0)
@@ -763,8 +770,11 @@ test.describe('touch input', () => {
     const page = await context.newPage()
     try {
       await openBoard(page)
+      // The drop keeps the rectangle's lines more than the 6 px alignment
+      // tolerance away from the seeded text's lines (x 300, 420, 540; y 520,
+      // 544, 568), so the stored position is the plain drag offset.
       const from = await worldToPage(page, { x: 400, y: 370 })
-      const to = await worldToPage(page, { x: 650, y: 570 })
+      const to = await worldToPage(page, { x: 650, y: 720 })
 
       const cdp = await context.newCDPSession(page)
       const touch = (x: number, y: number) => [{ x, y, id: 1 }]
@@ -791,7 +801,7 @@ test.describe('touch input', () => {
         .toBeCloseTo(550, 0)
       await expect
         .poll(async () => byId(await engine(page), IDS.canvasRect)?.y ?? 0)
-        .toBeCloseTo(500, 0)
+        .toBeCloseTo(650, 0)
     } finally {
       await context.close()
     }

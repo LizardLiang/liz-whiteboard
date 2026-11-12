@@ -418,10 +418,13 @@ test.describe('redo a move', () => {
   }) => {
     await openBoard(page)
 
+    // The drop keeps the rectangle's lines more than the 6 px alignment
+    // tolerance away from the seeded text's lines (x 300, 420, 540; y 520,
+    // 544, 568), so the move is the plain drag offset, +300/+350.
     await dragMouse(
       page,
       await worldToPage(page, { x: 400, y: 370 }),
-      await worldToPage(page, { x: 700, y: 620 }),
+      await worldToPage(page, { x: 700, y: 720 }),
     )
     await expect
       .poll(async () => byId(await engine(page), IDS.canvasRect)?.x ?? 0)
@@ -440,7 +443,7 @@ test.describe('redo a move', () => {
       .poll(async () => byId(await engine(page), IDS.canvasRect)?.x ?? 0)
       .toBeCloseTo(600, 0)
     const after = byId(await engine(page), IDS.canvasRect)!
-    expect(after.y).toBeCloseTo(550, 0)
+    expect(after.y).toBeCloseTo(650, 0)
   })
 })
 
