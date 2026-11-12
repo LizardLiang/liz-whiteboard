@@ -30,6 +30,7 @@ import {
   HIGHLIGHT_COLOR,
   HIGHLIGHT_INSET,
   RESIZE_HANDLES,
+  TABLE_TEXT_MIN_SCREEN_PX,
   TEXT_PADDING,
   canvasFont,
   drawScene,
@@ -37,6 +38,7 @@ import {
   fontSpecOf,
   handleRects,
   layoutElementText,
+  renderPersistentScene,
   resolveTextColor,
   syncBackingStore,
   textFrame,
@@ -44,6 +46,8 @@ import {
   worldRectToScreen,
 } from './render'
 import { DEFAULT_ELEMENT_STYLE, sceneFrom } from './scene'
+import { CanvasRenderTarget } from './render-target'
+import { cellKey } from './table'
 import { worldToScreen } from './camera'
 import type { RenderSelection, Viewport } from './render'
 import type { Camera } from './camera'
@@ -1422,5 +1426,100 @@ describe('text style font and fit', () => {
     expect(fittedTextHeight(xl, measure)).toBeCloseTo(
       36 * 1.4 + TEXT_PADDING * 2,
     )
+  })
+})
+
+describe('drawScene — table level of detail', () => {
+  // A 2 x 2 table at 14 px with text in every cell and a cell fill of its own.
+  function tableElement(
+    runs: Array<{ start: number; end: number; fontSize: number }> = [],
+  ): CanvasElement {
+    return makeElement({
+      id: 't',
+      kind: 'table',
+      x: 0,
+      y: 0,
+      width: 200,
+      height: 80,
+      style: {
+        ...DEFAULT_ELEMENT_STYLE,
+        cornerRadius: 0,
+        fontSize: 14,
+        strokeWidth: 1,
+      },
+      table: {
+        rows: [
+          { id: 'r1', height: 40 },
+          { id: 'r2', height: 40 },
+        ],
+        cols: [
+          { id: 'c1', width: 100 },
+          { id: 'c2', width: 100 },
+        ],
+        cells: {
+          [cellKey('r1', 'c1')]: { text: 'id', fill: '#fde68a' },
+          [cellKey('r1', 'c2')]: { text: 'name', textRuns: runs },
+          [cellKey('r2', 'c1')]: { text: '1' },
+          [cellKey('r2', 'c2')]: { text: 'Ada' },
+        },
+        headerRow: false,
+      },
+    })
+  }
+
+  function drawAt(zoom: number, element = tableElement()) {
+    const rec = createRecorder()
+    drawScene(
+      rec.ctx,
+      sceneFrom([element]),
+      { x: 0, y: 0, zoom },
+      viewport(),
+      NO_SELECTION,
+    )
+    return rec
+  }
+
+  it('draws cell text, fills and grid at zoom 1.0', () => {
+    const rec = drawAt(1)
+    const texts = rec.opsOfType('fillText').map((op) => op.args[0])
+    expect(texts).toEqual(expect.arrayContaining(['id', 'name', '1', 'Ada']))
+    // Four cell surfaces plus the one cell fill of its own.
+    expect(rec.opsOfType('fillRect')).toHaveLength(5)
+    expect(rec.opsOfType('stroke')).toHaveLength(1)
+    expect(rec.opsOfType('strokeRect')).toHaveLength(1)
+  })
+
+  it('skips cell text at zoom 0.2 but still draws fills and grid', () => {
+    const near = drawAt(1)
+    const far = drawAt(0.2)
+    expect(far.opsOfType('fillText')).toHaveLength(0)
+    expect(far.opsOfType('fillRect')).toEqual(near.opsOfType('fillRect'))
+    expect(far.opsOfType('stroke')).toHaveLength(1)
+    expect(far.opsOfType('strokeRect')).toEqual(near.opsOfType('strokeRect'))
+  })
+
+  it('switches at fontSize x zoom = TABLE_TEXT_MIN_SCREEN_PX screen px', () => {
+    const edge = TABLE_TEXT_MIN_SCREEN_PX / 14
+    expect(drawAt(edge).opsOfType('fillText').length).toBeGreaterThan(0)
+    expect(drawAt(edge * 0.99).opsOfType('fillText')).toHaveLength(0)
+  })
+
+  it('keeps a cell whose larger run would still draw tall enough', () => {
+    const element = tableElement([{ start: 0, end: 4, fontSize: 40 }])
+    const texts = drawAt(0.2, element)
+      .opsOfType('fillText')
+      .map((op) => op.args[0])
+    expect(texts).toEqual(['name'])
+  })
+
+  it('export (renderPersistentScene with no zoom) keeps every cell text', () => {
+    const rec = createRecorder()
+    renderPersistentScene(
+      new CanvasRenderTarget(rec.ctx),
+      sceneFrom([tableElement()]),
+      'light',
+    )
+    const texts = rec.opsOfType('fillText').map((op) => op.args[0])
+    expect(texts).toEqual(expect.arrayContaining(['id', 'name', '1', 'Ada']))
   })
 })

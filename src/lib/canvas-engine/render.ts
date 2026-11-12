@@ -279,6 +279,18 @@ export const TEXT_PADDING = 8
 export const HANDLE_SIZE = 8
 
 /**
+ * Table level of detail: a table cell's text is skipped when its largest font
+ * would draw under this many SCREEN pixels tall (`fontSize * zoom`). Grid
+ * lines and cell fills still draw.
+ *
+ * A judgment, not a measured value: glyphs under about 4 px render as noise,
+ * and laying them out costs time on a big table zoomed far out. At the
+ * default 14 px this hides text below zoom ~0.29. Tune it here if it hides
+ * text a user can still read.
+ */
+export const TABLE_TEXT_MIN_SCREEN_PX = 4
+
+/**
  * The four sides a creation handle sits on.
  *
  * An ALIAS of `quick-create.ts`'s `QuickCreateDirection`, not a second
@@ -1165,6 +1177,7 @@ function drawTable(
   element: CanvasElement,
   theme: CanvasTheme,
   openCellKey?: string,
+  zoom = 1,
 ): void {
   const table = element.table
   if (!table) return
@@ -1214,6 +1227,11 @@ function drawTable(
     if (cellKey(rowId, colId) === openCellKey) continue
     const cell = lookupCell(table.cells, cellKey(rowId, colId))
     if (!cell || cell.text.length === 0) continue
+    const fontSize = Math.max(
+      element.style.fontSize,
+      ...(cell.textRuns ?? []).map((run) => run.fontSize ?? 0),
+    )
+    if (fontSize * zoom < TABLE_TEXT_MIN_SCREEN_PX) continue
     const virtual = cellTextElement(element, rowId, colId)
     if (!virtual) continue
     const header = table.headerRow && table.rows[0].id === rowId
@@ -1280,12 +1298,13 @@ function drawElement(
   textSelection?: { start: number; end: number } | null,
   look?: CardLook,
   openCellKey?: string,
+  zoom = 1,
 ): TextLayout | null {
   if (isCanvasShapeKind(element.kind)) {
     drawShape(target, element, look)
     drawCardTopRow(target, element, look)
   } else if (element.kind === 'table') {
-    drawTable(target, element, theme, openCellKey)
+    drawTable(target, element, theme, openCellKey, zoom)
     // The cells draw their own text; the table has no label of its own.
     return null
   } else if (element.kind === 'group') {
@@ -2448,7 +2467,13 @@ function drawHighlight(
 
 const NO_EMPHASIZED_IDS: ReadonlySet<string> = new Set()
 
-/** Render only persisted scene content, with no interaction chrome. */
+/**
+ * Render only persisted scene content, with no interaction chrome.
+ *
+ * `zoom` is the camera zoom the scene is shown at; table cell text below
+ * `TABLE_TEXT_MIN_SCREEN_PX` is skipped. Export leaves it at 1, so an export
+ * always carries every cell's text.
+ */
 export function renderPersistentScene(
   target: PersistentRenderTarget,
   scene: Scene,
@@ -2461,6 +2486,7 @@ export function renderPersistentScene(
   diagramStyle: DiagramStyle = 'classic',
   flow?: FlowRender | null,
   roleLabels?: CardRoleLabels,
+  zoom = 1,
 ): TextLayout | null {
   const look = cardLookOf(diagramStyle, theme, roleLabels)
   // Flow cues belong to the card look; `classic` never reads them.
@@ -2525,6 +2551,7 @@ export function renderPersistentScene(
       element.kind === 'table' && layoutElementId?.startsWith(`${element.id}:`)
         ? layoutElementId.slice(element.id.length + 1)
         : undefined,
+      zoom,
     )
     if (faded) target.endFade()
     if (element.id === layoutElementId) requestedLayout = layout
@@ -2675,6 +2702,7 @@ export function drawScene(
     diagramStyle,
     flow,
     options.roleLabels,
+    camera.zoom,
   )
   if (selection.draft) {
     // Never emphasized: a draft is never in `selection.ids` (it is not yet
