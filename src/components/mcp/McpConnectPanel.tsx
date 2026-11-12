@@ -180,11 +180,11 @@ export function McpConnectPanel({
               )}
 
               {/* Copy button sits BESIDE the command box (not absolutely
-                  overlaid on top of it) — a long single-line CLI command
-                  scrolls horizontally under an overlaid button and visually
-                  collides with it in the narrow toolbar popover width. */}
+                  overlaid on top of it), so it never covers the text. The
+                  command wraps instead of scrolling sideways, so a trailing
+                  part such as the toolset header is always visible. */}
               <div className="flex items-start gap-2">
-                <pre className="max-h-40 flex-1 overflow-x-auto whitespace-pre rounded-md border bg-muted p-3 font-mono text-xs">
+                <pre className="max-h-40 min-w-0 flex-1 overflow-y-auto whitespace-pre-wrap rounded-md border bg-muted p-3 font-mono text-xs [overflow-wrap:anywhere]">
                   {text}
                 </pre>
                 <Button
