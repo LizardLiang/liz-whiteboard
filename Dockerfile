@@ -11,6 +11,11 @@ RUN bun install --frozen-lockfile
 COPY . .
 
 # ── Layer: Vite / Nitro build ────────────────────────────────────────────────
+# VITE_E2E_HOOKS=1 publishes window.__canvasEngine for Playwright
+# (src/components/canvas/canvas-test-hook.ts). Vite reads VITE_* at build time,
+# so it must be a build arg. Empty by default: production images omit the hook.
+ARG VITE_E2E_HOOKS=
+ENV VITE_E2E_HOOKS=$VITE_E2E_HOOKS
 RUN bun run build
 # Result: .output/ (Nitro middleware bundle + public assets)
 
