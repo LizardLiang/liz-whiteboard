@@ -1890,12 +1890,17 @@ export function useCanvasInput({
    * Write the scene now and mirror it into `latest`, so a release in the same
    * frame commits what this wrote. A touch pointerup can arrive right after
    * the last pointermove with no render between them, and `endGesture` reads
-   * `latest.current.scene`.
+   * `latest.current.scene`. `produce` must be pure: React may call it again
+   * on the queued state. It runs once here, and again only when other writes
+   * changed the queued scene since `latest` was read, so a later functional
+   * `setScene` still sees this write.
    */
   const writeScene = useCallback(
     (produce: (current: Scene) => Scene) => {
-      setScene(produce)
-      latest.current.scene = produce(latest.current.scene)
+      const base = latest.current.scene
+      const next = produce(base)
+      latest.current.scene = next
+      setScene((queued) => (queued === base ? next : produce(queued)))
     },
     [setScene],
   )
@@ -1930,6 +1935,7 @@ export function useCanvasInput({
     latest,
     scene,
     setScene,
+    writeScene,
     selectedIds,
     setSelectedIds,
     setGesture,

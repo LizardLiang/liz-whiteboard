@@ -63,6 +63,7 @@ function setup(readOnly = false, selected: Array<string> = [], rows = 2) {
       latest,
       scene,
       setScene: vi.fn(),
+      writeScene: vi.fn(),
       selectedIds: latest.current.selectedIds,
       setSelectedIds: vi.fn(),
       setGesture: vi.fn(),

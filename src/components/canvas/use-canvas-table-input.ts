@@ -146,6 +146,8 @@ export interface UseCanvasTableInputArgs {
   latest: MutableRefObject<TableInputLatest>
   scene: Scene
   setScene: Dispatch<SetStateAction<Scene>>
+  /** The input hook's `writeScene`: writes the scene and mirrors it into `latest`. */
+  writeScene: (produce: (current: Scene) => Scene) => void
   selectedIds: ReadonlySet<string>
   setSelectedIds: Dispatch<SetStateAction<ReadonlySet<string>>>
   setGesture: (next: Gesture) => void
@@ -174,6 +176,7 @@ export function useCanvasTableInput({
   latest,
   scene,
   setScene,
+  writeScene,
   selectedIds,
   setSelectedIds,
   setGesture,
@@ -234,15 +237,6 @@ export function useCanvasTableInput({
 
   // Table cell edits (see `beginCellEditing`) write the scene and one row's
   // height from several places, so both writers live up here.
-  /** Write the scene now and mirror it into `latest`, so a handler running in the same frame reads what this wrote. */
-  const writeScene = useCallback(
-    (produce: (current: Scene) => Scene) => {
-      setScene(produce)
-      latest.current.scene = produce(latest.current.scene)
-    },
-    [setScene, latest],
-  )
-
   /** Set one row's height in the local scene: only ever taller when `onlyGrow`. */
   const setRowHeight = useCallback(
     (tableId: string, rowId: string, height: number, onlyGrow: boolean) => {
