@@ -11,7 +11,7 @@ const boardId = process.argv[2]
 if (!boardId) throw new Error('usage: canvas-table-stored.ts <boardId>')
 
 const db = new Database(DB_PATH, { readonly: true })
-db.exec('PRAGMA busy_timeout = 5000')
+db.exec('PRAGMA busy_timeout = 30000')
 const row = db
   .query(
     `SELECT props FROM "CanvasElement" WHERE boardId = ? AND kind = 'table' ORDER BY createdAt LIMIT 1`,

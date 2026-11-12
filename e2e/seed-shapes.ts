@@ -22,7 +22,7 @@ db.exec('PRAGMA foreign_keys = ON')
 // once-per-file seed.ts/seed-stress.ts — that raises real contention odds
 // against the live dev server's own WAL writer. busy_timeout makes SQLite
 // retry internally instead of throwing SQLITE_BUSY immediately.
-db.exec('PRAGMA busy_timeout = 5000')
+db.exec('PRAGMA busy_timeout = 30000')
 const now = Date.now()
 
 // ── Wipe prior rows on the fixed ids (defensive, mirrors seed.ts) ──────────

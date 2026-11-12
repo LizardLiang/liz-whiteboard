@@ -32,7 +32,7 @@ const db = new Database(DB_PATH)
 db.exec('PRAGMA foreign_keys = ON')
 // The live dev server holds its own WAL writer against this same file — see
 // e2e/seed.ts's identical comment.
-db.exec('PRAGMA busy_timeout = 5000')
+db.exec('PRAGMA busy_timeout = 30000')
 const now = Date.now()
 
 // Wipe this user's prior rows (fixed id, so this is safe to re-run).

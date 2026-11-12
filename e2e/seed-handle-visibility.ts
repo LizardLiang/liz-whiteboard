@@ -22,7 +22,7 @@ db.exec('PRAGMA foreign_keys = ON')
 // The live dev server holds its own WAL writer against this same file, so a
 // concurrent seed run hits SQLITE_BUSY without this (seed.ts documents the
 // identical failure).
-db.exec('PRAGMA busy_timeout = 5000')
+db.exec('PRAGMA busy_timeout = 30000')
 const now = Date.now()
 
 // Wipe and recreate the board — cascades to DiagramTable / Column /

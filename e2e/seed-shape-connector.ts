@@ -13,7 +13,7 @@ const DB_PATH =
 
 const db = new Database(DB_PATH)
 db.exec('PRAGMA foreign_keys = ON')
-db.exec('PRAGMA busy_timeout = 5000')
+db.exec('PRAGMA busy_timeout = 30000')
 
 db.query('UPDATE "CanvasElement" SET kind = ?, props = ? WHERE id = ?').run(
   'diamond',

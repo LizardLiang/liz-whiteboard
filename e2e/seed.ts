@@ -29,7 +29,7 @@ db.exec('PRAGMA foreign_keys = ON')
 // so a seed run concurrent with it hits SQLITE_BUSY immediately without
 // this. busy_timeout makes SQLite retry internally instead of throwing —
 // seed-shapes.ts already documents the identical failure.
-db.exec('PRAGMA busy_timeout = 5000')
+db.exec('PRAGMA busy_timeout = 30000')
 const now = Date.now()
 
 // Keep the fixed e2e user row (IDS.user): deleting it cascades its Session rows

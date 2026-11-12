@@ -55,7 +55,10 @@ async function main() {
   // so a seed run concurrent with it hits SQLITE_BUSY immediately without
   // this. busy_timeout makes SQLite retry internally instead of throwing —
   // seed-shapes.ts already documents the identical failure.
-  db.exec('PRAGMA busy_timeout = 5000')
+  // busy_timeout is 30 s, not 5 s: a full run saw this script throw SQLITE_BUSY after
+  // exactly ~5 s, so something held the write lock longer than 5 s (the holder was
+  // not identified). A longer wait rides that out; a lock that never clears still fails.
+  db.exec('PRAGMA busy_timeout = 30000')
   const now = Date.now()
 
   // Ensure the shared e2e user/project/membership exist — this script must
@@ -177,7 +180,19 @@ async function main() {
   )
   db.query(
     'INSERT INTO "Column" (id, tableId, name, dataType, isPrimaryKey, isForeignKey, isUnique, isNullable, "order", createdAt, updatedAt) VALUES (?,?,?,?,?,?,?,?,?,?,?)',
-  ).run(crypto.randomUUID(), IDS.viewerTable, 'id', 'UUID', 1, 0, 1, 0, 0, now, now)
+  ).run(
+    crypto.randomUUID(),
+    IDS.viewerTable,
+    'id',
+    'UUID',
+    1,
+    0,
+    1,
+    0,
+    0,
+    now,
+    now,
+  )
 
   // Wipe any prior stress board — cascades to its DiagramTable/Column/
   // Relationship/Area rows via the schema's ON DELETE CASCADE FKs.

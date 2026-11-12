@@ -15,7 +15,7 @@ const DB_PATH =
 
 const db = new Database(DB_PATH)
 db.exec('PRAGMA foreign_keys = ON')
-db.exec('PRAGMA busy_timeout = 5000')
+db.exec('PRAGMA busy_timeout = 30000')
 const now = Date.now()
 
 db.query('DELETE FROM "Project" WHERE id = ?').run(IDS.schemaExpProject)

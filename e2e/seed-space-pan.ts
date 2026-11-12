@@ -27,7 +27,7 @@ db.exec('PRAGMA foreign_keys = ON')
 // This script re-seeds once per test, so it races the live dev server's own
 // WAL writer more often than a once-per-run seed. busy_timeout makes SQLite
 // retry internally instead of throwing SQLITE_BUSY.
-db.exec('PRAGMA busy_timeout = 5000')
+db.exec('PRAGMA busy_timeout = 30000')
 const now = Date.now()
 
 db.query('DELETE FROM "Whiteboard" WHERE id = ?').run(IDS.spWhiteboard)

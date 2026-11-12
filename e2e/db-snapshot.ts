@@ -10,7 +10,7 @@ const whiteboardId = process.argv[2]
 if (!whiteboardId) throw new Error('usage: db-snapshot.ts <whiteboardId>')
 
 const db = new Database(DB_PATH, { readonly: true })
-db.exec('PRAGMA busy_timeout = 5000')
+db.exec('PRAGMA busy_timeout = 30000')
 const rows = (sql: string) => db.query(sql).all(whiteboardId)
 
 console.log(
