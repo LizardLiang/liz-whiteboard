@@ -162,6 +162,15 @@ test.describe('MCP client install commands (tactical plan: 2026-08-06-mcp-client
     await allTools.click()
     await expect(allTools).toHaveAttribute('aria-pressed', 'true')
     await expect(page.getByText(header)).toHaveCount(0)
+
+    // Picking every toolset is the same as "All tools": the selection
+    // collapses back to it and no header is sent.
+    await erButton.click()
+    await canvasButton.click()
+    await page.getByRole('button', { name: 'Manage', exact: true }).click()
+    await expect(allTools).toHaveAttribute('aria-pressed', 'true')
+    await expect(erButton).toHaveAttribute('aria-pressed', 'false')
+    await expect(page.getByText(header)).toHaveCount(0)
   })
 
   test('/settings/connections renders the same connect panel', async ({

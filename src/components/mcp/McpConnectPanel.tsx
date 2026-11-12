@@ -93,12 +93,15 @@ export function McpConnectPanel({
   // Empty = all tools (no header). One selection drives every client's snippet.
   const [toolsets, setToolsets] = useState<Array<McpToolset>>([])
 
+  // Picking every toolset is the same as "All tools", so it collapses back to
+  // the empty selection (no header) and "All tools" shows as pressed.
   const toggleToolset = (name: McpToolset) =>
-    setToolsets((current) =>
-      current.includes(name)
+    setToolsets((current) => {
+      const next = current.includes(name)
         ? current.filter((n) => n !== name)
-        : [...current, name],
-    )
+        : [...current, name]
+      return next.length === MCP_TOOLSETS.length ? [] : next
+    })
 
   // buildText() only depends on endpointUrl (stable across re-renders caused
   // by copiedId toggling on copy) — memoize per platform instead of calling
