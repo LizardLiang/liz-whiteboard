@@ -13,7 +13,12 @@
 // ReactFlowWhiteboard.tsx's handleTableCreated), not merely that the write
 // persisted to the database (whiteboard-crud.spec.ts already covers
 // persistence-via-reload against the dev server).
+//
+// Tables are canvas-drawn on the main board (canvas-unconditional-default), so
+// a table node carries no DOM text: tables are found by `tableNode()`
+// (data-table-name), the same way version-history.spec.ts does it.
 import { expect, test } from '@playwright/test'
+import { tableNode } from './canvas-helpers'
 import {
   COEDIT_ALICE_STORAGE_STATE,
   COEDIT_BASE_URL,
@@ -46,23 +51,13 @@ test('a peer sees a newly-created table live, without reloading', async ({
     await expect(
       alicePage.getByRole('heading', { name: 'Team ERD' }),
     ).toBeVisible()
-    await expect(
-      alicePage
-        .locator('.react-flow')
-        .getByText('users', { exact: true })
-        .first(),
-    ).toBeVisible()
+    await expect(tableNode(alicePage, 'users').first()).toBeVisible()
 
     await bobPage.goto(WB_URL)
     await expect(
       bobPage.getByRole('heading', { name: 'Team ERD' }),
     ).toBeVisible()
-    await expect(
-      bobPage
-        .locator('.react-flow')
-        .getByText('users', { exact: true })
-        .first(),
-    ).toBeVisible()
+    await expect(tableNode(bobPage, 'users').first()).toBeVisible()
 
     const tableName = `coedit_live_${Date.now()}`
 
@@ -73,16 +68,14 @@ test('a peer sees a newly-created table live, without reloading', async ({
     ).toBeVisible()
     await alicePage.getByPlaceholder('e.g., Users').fill(tableName)
     await alicePage.getByRole('button', { name: 'Create Table' }).click()
-    await expect(
-      alicePage.locator('.react-flow__node').filter({ hasText: tableName }),
-    ).toBeVisible()
+    await expect(tableNode(alicePage, tableName)).toBeVisible()
 
     // Bob — WITHOUT reloading — must see the table appear on his own canvas.
     // This is the crux of #125: it proves the table:created broadcast is
     // applied live through the working collaboration-hook path.
-    await expect(
-      bobPage.locator('.react-flow__node').filter({ hasText: tableName }),
-    ).toBeVisible({ timeout: 10_000 })
+    await expect(tableNode(bobPage, tableName)).toBeVisible({
+      timeout: 10_000,
+    })
   } finally {
     await aliceContext.close()
     await bobContext.close()

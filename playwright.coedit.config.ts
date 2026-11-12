@@ -47,8 +47,12 @@ export default defineConfig({
   // (server.prod.ts, with the canvas test hook compiled in via
   // VITE_E2E_HOOKS=1) on a fixed test port so it never collides with a
   // locally-running dev server (default port 3000/3001).
+  //
+  // The server runs on a pinned Bun (`bunx bun@1.4.4`, the Dockerfile's
+  // `oven/bun:1.4.4` pin): the built react-dom 19.x bundle does not parse on
+  // Bun < 1.4.4, and the pin leaves the machine's global Bun untouched.
   webServer: {
-    command: `VITE_E2E_HOOKS=1 bun run build && PORT=${COEDIT_PORT} ./node_modules/.bin/dotenv -e .env.local -- bun run server.prod.ts`,
+    command: `VITE_E2E_HOOKS=1 bun run build && PORT=${COEDIT_PORT} ./node_modules/.bin/dotenv -e .env.local -- bunx bun@1.4.4 run server.prod.ts`,
     url: COEDIT_BASE_URL,
     reuseExistingServer: false,
     timeout: 300_000,
