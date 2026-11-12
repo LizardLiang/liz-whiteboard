@@ -5,6 +5,7 @@
 // Board: ellipse start -> rect A -> rect B -> rect C, plus an unconnected note.
 // Fills are the default blue swatch and the board has NO settings value, so
 // the board must open in the default `card` style.
+import './busy-report'
 import { Database } from 'bun:sqlite'
 import { IDS } from './fixtures'
 

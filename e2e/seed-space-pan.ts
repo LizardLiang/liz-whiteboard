@@ -13,6 +13,7 @@
 // is safe to run mid-suite: deleting the User row (as e2e/seed.ts does) would
 // invalidate the storageState session global-setup.ts logged in with.
 // e2e/seed.ts must have run first, since the board hangs off IDS.project.
+import './busy-report'
 import { Database } from 'bun:sqlite'
 import { IDS } from './fixtures'
 

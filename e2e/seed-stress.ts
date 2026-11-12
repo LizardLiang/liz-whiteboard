@@ -10,6 +10,7 @@
 // for manual profiling, without global-setup's seed.ts having run first) but
 // owns a DEDICATED whiteboard id so it never collides with — or gets wiped
 // by — the version-history / multi-select-drag boards seed.ts owns.
+import './busy-report'
 import { createHash } from 'node:crypto'
 import { Database } from 'bun:sqlite'
 import bcrypt from 'bcryptjs'

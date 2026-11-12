@@ -10,6 +10,7 @@
 // must run before this one; global-setup.ts runs seed.ts, and this suite's
 // own test.beforeAll runs seed-stress.ts then this script (mirrors
 // canvas-affordances.spec.ts's pattern).
+import './busy-report'
 import { Database } from 'bun:sqlite'
 import { IDS } from './fixtures'
 

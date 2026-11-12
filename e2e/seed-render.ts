@@ -6,6 +6,7 @@
 //
 // Both boards carry Chinese labels and one element far from the rest, so the
 // spec can assert CJK text paints and that the tile grid spans several tiles.
+import './busy-report'
 import { Database } from 'bun:sqlite'
 import { IDS } from './fixtures'
 

@@ -15,6 +15,7 @@
 // Password hashing is replicated inline from src/lib/auth/password.ts
 // (SHA-256 pre-hash -> bcrypt cost 12) rather than imported, to keep this
 // script free of app path-alias resolution — mirrors e2e/seed.ts.
+import './busy-report'
 import { createHash, randomUUID } from 'node:crypto'
 import { Database } from 'bun:sqlite'
 import bcrypt from 'bcryptjs'

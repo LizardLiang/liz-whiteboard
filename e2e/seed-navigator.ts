@@ -3,6 +3,7 @@
 // `bun run e2e/seed-navigator.ts`. Idempotent — wipes and recreates a
 // dedicated project (IDS.navProject) owned by IDS.user (seeded by seed.ts,
 // which global-setup.ts runs first).
+import './busy-report'
 import { Database } from 'bun:sqlite'
 import { IDS } from './fixtures'
 

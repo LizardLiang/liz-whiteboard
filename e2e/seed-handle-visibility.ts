@@ -10,6 +10,7 @@
 // user cascades to "Session", which would invalidate the storageState
 // cookie every spec is authenticated with (same rationale as
 // seed-relationship.ts).
+import './busy-report'
 import { Database } from 'bun:sqlite'
 import { IDS } from './fixtures'
 

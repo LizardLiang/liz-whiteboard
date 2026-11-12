@@ -17,6 +17,7 @@
 //   canvasBoard       — the editor board. Every mutating test uses it.
 //   canvasViewerBoard — read-only gate only. Kept separate so the VIEWER
 //                       assertions can never race a mutating test.
+import './busy-report'
 import { Database } from 'bun:sqlite'
 import { IDS } from './fixtures'
 

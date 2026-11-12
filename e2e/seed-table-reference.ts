@@ -9,6 +9,7 @@
 // starts clean on the next run.
 //
 // Depends on e2e/seed.ts having created the user and project first.
+import './busy-report'
 import { Database } from 'bun:sqlite'
 import { IDS } from './fixtures'
 

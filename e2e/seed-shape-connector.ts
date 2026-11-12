@@ -5,6 +5,7 @@
 // target into a DIAMOND with an UNANCHORED connector, so the connector's end
 // is derived from the centre-to-centre ray. A side-midpoint anchor would land
 // on a diamond vertex with or without the fix and prove nothing.
+import './busy-report'
 import { Database } from 'bun:sqlite'
 import { IDS } from './fixtures'
 

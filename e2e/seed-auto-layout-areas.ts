@@ -8,6 +8,7 @@
 // Resets ONLY this board, so it is safe to run before every test. e2e/seed.ts
 // must have run first (the board hangs off IDS.project). Table width/height
 // are NULL like real tables; the spec uses the client's 220 px default width.
+import './busy-report'
 import { Database } from 'bun:sqlite'
 import { IDS } from './fixtures'
 

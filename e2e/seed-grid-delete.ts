@@ -3,6 +3,7 @@
 // `bun run e2e/seed-grid-delete.ts`. Idempotent — wipes and recreates a
 // dedicated project (IDS.gridDelProject) owned by IDS.user, with two ERD
 // boards and two canvas boards at the project root.
+import './busy-report'
 import { Database } from 'bun:sqlite'
 import { IDS } from './fixtures'
 

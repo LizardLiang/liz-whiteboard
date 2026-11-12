@@ -2,6 +2,7 @@
 // Prints one whiteboard's persisted geometry and rows as JSON, so a spec can
 // prove an interaction changed nothing. Run under BUN (needs bun:sqlite):
 // `bun run e2e/db-snapshot.ts <whiteboardId>`. Read-only.
+import './busy-report'
 import { Database } from 'bun:sqlite'
 
 const DB_PATH =

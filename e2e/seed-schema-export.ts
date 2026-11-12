@@ -7,6 +7,7 @@
 //     email column a Chinese description, so the spec can check escaping
 //     and Unicode in every format.
 //   - "Schema Export Empty": no tables (the export item must be disabled).
+import './busy-report'
 import { Database } from 'bun:sqlite'
 import { IDS } from './fixtures'
 

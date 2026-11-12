@@ -3,6 +3,7 @@
 // `bun run e2e/seed-multi-drag-area.ts`. One area holding three member tables
 // plus one ungrouped table well clear of the area. Resets ONLY this board, so
 // it is safe to run before every test. e2e/seed.ts must have run first.
+import './busy-report'
 import { Database } from 'bun:sqlite'
 import { IDS } from './fixtures'
 

@@ -3,6 +3,7 @@
 // (null when there is none), so a spec can wait on what the server persisted
 // instead of the optimistic scene. Run under BUN (needs bun:sqlite):
 // `bun run e2e/canvas-table-stored.ts <boardId>`. Read-only.
+import './busy-report'
 import { Database } from 'bun:sqlite'
 
 const DB_PATH =

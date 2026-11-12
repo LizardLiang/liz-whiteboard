@@ -9,6 +9,7 @@
 // authenticated with — fatal for a script that has to run in `beforeEach`.
 // Each test in that spec deletes the relationship, so it must be restored
 // before the next one rather than once per suite.
+import './busy-report'
 import { Database } from 'bun:sqlite'
 import { IDS } from './fixtures'
 
