@@ -2,12 +2,13 @@
 // Data access layer for DiagramTable entity
 
 import { createTableSchema, updateTableSchema } from './schema'
-import type { CreateTable, UpdateTable } from './schema'
-import type { Column, DiagramTable, Relationship } from './models'
 import {
   assertIdFree,
   refuseTakenIdAfterInsertError,
 } from './already-exists'
+import type { CreateTable, UpdateTable } from './schema'
+import type { Column, DiagramTable, Relationship } from './models'
+import type { IdClaim } from './already-exists'
 import {
   db,
   genId,
@@ -48,11 +49,10 @@ function attachTableRelations(table: DiagramTable): DiagramTableWithRelations {
   return { ...table, columns, outgoingRelationships, incomingRelationships }
 }
 
-const TABLE_ID_TAKEN = 'A table with this id already exists'
-
 /**
  * Create a new table. A given `id` is stored as the table's id; an id any
- * table already has is refused with `AlreadyExistsError`, never overwritten.
+ * table already has is refused and never overwritten (see already-exists.ts
+ * for what the caller is told).
  * @param data - Table creation data (validated with Zod)
  * @returns Created table
  * @throws Error if validation fails or database operation fails
@@ -62,7 +62,13 @@ export async function createDiagramTable(
 ): Promise<DiagramTable> {
   // Validate input with Zod schema
   const validated = createTableSchema.parse(data)
-  assertIdFree('DiagramTable', validated.id, TABLE_ID_TAKEN)
+  const claim: IdClaim = {
+    table: 'DiagramTable',
+    id: validated.id,
+    whiteboardId: validated.whiteboardId,
+    noun: 'table',
+  }
+  assertIdFree(claim)
 
   try {
     const id = validated.id ?? genId()
@@ -83,12 +89,7 @@ export async function createDiagramTable(
       db.prepare('SELECT * FROM "DiagramTable" WHERE "id" = ?').get(id),
     )!
   } catch (error) {
-    refuseTakenIdAfterInsertError(
-      error,
-      'DiagramTable',
-      validated.id,
-      TABLE_ID_TAKEN,
-    )
+    refuseTakenIdAfterInsertError(error, claim)
     throw new Error(
       `Failed to create table: ${error instanceof Error ? error.message : 'Unknown error'}`,
     )

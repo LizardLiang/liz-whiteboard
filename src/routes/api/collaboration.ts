@@ -141,9 +141,10 @@ type AckResult =
     }
 
 /**
- * The failure code of a create handler. A create that names an id some row
- * already has (on any whiteboard) is `ALREADY_EXISTS`: refused, the stored row
- * unchanged. A client that re-sent its own create reads the row by that id.
+ * The failure code of a create handler. A create that names an id a row on
+ * this whiteboard already has is `ALREADY_EXISTS`: refused, the stored row
+ * unchanged. An id held on another whiteboard is refused with the generic
+ * failure, like any other failed create (src/data/already-exists.ts).
  */
 function createFailureCode(
   error: unknown,

@@ -220,6 +220,35 @@ describe('/api/table-references operations', () => {
     expect(await listTableReferences(local.id)).toHaveLength(1)
   })
 
+  it('refuses a client id held by a table on another whiteboard with the generic failure', async () => {
+    const { owner, local, source, sourceTable, idCol } = await setup()
+    const token = await mintCollabToken(owner.id)
+
+    const res = await handleTableReferenceRequest(
+      post(
+        {
+          op: 'create',
+          id: sourceTable.id,
+          whiteboardId: local.id,
+          sourceWhiteboardId: source.id,
+          sourceTableId: sourceTable.id,
+          sourceColumnIds: [idCol.id],
+        },
+        token,
+      ),
+    )
+
+    expect(res.status).toBe(500)
+    const text = await res.text()
+    expect(JSON.parse(text)).toEqual({
+      error: 'server_error',
+      error_description: 'The table reference operation failed.',
+      message: 'The table reference operation failed.',
+    })
+    expect(text).not.toContain(sourceTable.id)
+    expect(await listTableReferences(local.id)).toHaveLength(0)
+  })
+
   it('rejects a non-UUID client id', async () => {
     const { owner, local, source, sourceTable, idCol } = await setup()
     const token = await mintCollabToken(owner.id)

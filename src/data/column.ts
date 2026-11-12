@@ -2,13 +2,15 @@
 // Data access layer for Column entity
 
 import { createColumnSchema, updateColumnSchema } from './schema'
+import {
+  assertIdFree,
+  isIdRefusal,
+  refuseTakenIdAfterInsertError,
+  whiteboardOfTable,
+} from './already-exists'
 import type { CreateColumn, CreateColumnInput, UpdateColumn } from './schema'
 import type { Column } from './models'
-import {
-  AlreadyExistsError,
-  assertIdFree,
-  refuseTakenIdAfterInsertError,
-} from './already-exists'
+import type { IdClaim } from './already-exists'
 import {
   db,
   genId,
@@ -20,10 +22,21 @@ import {
   update,
 } from '@/db'
 
-const COLUMN_ID_TAKEN = 'A column with this id already exists'
+/** A column create's id claim: it writes to the whiteboard of its table. */
+function columnClaim(validated: CreateColumn): IdClaim {
+  return {
+    table: 'Column',
+    id: validated.id,
+    whiteboardId:
+      validated.id === undefined
+        ? undefined
+        : whiteboardOfTable(validated.tableId),
+    noun: 'column',
+  }
+}
 
 function insertColumn(validated: CreateColumn): Column {
-  assertIdFree('Column', validated.id, COLUMN_ID_TAKEN)
+  assertIdFree(columnClaim(validated))
   const id = validated.id ?? genId()
   const ts = nowMs()
   insert('Column', {
@@ -43,21 +56,21 @@ function insertColumn(validated: CreateColumn): Column {
   return mapColumn(db.prepare('SELECT * FROM "Column" WHERE "id" = ?').get(id))!
 }
 
-function rethrowIdTaken(error: unknown, id: string | undefined): void {
-  if (error instanceof AlreadyExistsError) throw error
-  refuseTakenIdAfterInsertError(error, 'Column', id, COLUMN_ID_TAKEN)
+function rethrowIdTaken(error: unknown, validated: CreateColumn): void {
+  if (isIdRefusal(error)) throw error
+  refuseTakenIdAfterInsertError(error, columnClaim(validated))
 }
 
 /**
  * Create a new column. A given `id` is stored as the column's id; an id any
- * column already has is refused with `AlreadyExistsError`.
+ * column already has is refused (see already-exists.ts).
  */
 export async function createColumn(data: CreateColumnInput): Promise<Column> {
   const validated = createColumnSchema.parse(data)
   try {
     return insertColumn(validated)
   } catch (error) {
-    rethrowIdTaken(error, validated.id)
+    rethrowIdTaken(error, validated)
     throw new Error(
       `Failed to create column: ${error instanceof Error ? error.message : 'Unknown error'}`,
     )
@@ -74,7 +87,7 @@ export async function createColumns(
   try {
     return transaction(() => validated.map((data) => insertColumn(data)))
   } catch (error) {
-    for (const data of validated) rethrowIdTaken(error, data.id)
+    for (const data of validated) rethrowIdTaken(error, data)
     throw new Error(
       `Failed to create columns: ${error instanceof Error ? error.message : 'Unknown error'}`,
     )

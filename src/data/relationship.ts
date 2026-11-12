@@ -3,10 +3,11 @@
 
 import { createRelationshipSchema, updateRelationshipSchema } from './schema'
 import {
-  AlreadyExistsError,
   assertIdFree,
+  isIdRefusal,
   refuseTakenIdAfterInsertError,
 } from './already-exists'
+import type { IdClaim } from './already-exists'
 import type { CreateRelationship, UpdateRelationship } from './schema'
 import type { Column, DiagramTable, Relationship } from './models'
 import {
@@ -135,11 +136,9 @@ function attachRelationshipDetails(
   }
 }
 
-const RELATIONSHIP_ID_TAKEN = 'A relationship with this id already exists'
-
 /**
  * Create a new relationship. A given `id` is stored as the relationship's id;
- * an id any relationship already has is refused with `AlreadyExistsError`.
+ * an id any relationship already has is refused (see already-exists.ts).
  * @param data - Relationship creation data (validated with Zod)
  * @returns Created relationship
  * @throws Error if validation fails or database operation fails
@@ -149,7 +148,13 @@ export async function createRelationship(
 ): Promise<Relationship> {
   // Validate input with Zod schema
   const validated = createRelationshipSchema.parse(data)
-  assertIdFree('Relationship', validated.id, RELATIONSHIP_ID_TAKEN)
+  const claim: IdClaim = {
+    table: 'Relationship',
+    id: validated.id,
+    whiteboardId: validated.whiteboardId,
+    noun: 'relationship',
+  }
+  assertIdFree(claim)
 
   try {
     // Verify referential integrity using the shared validator (Apollo SA-2)
@@ -180,13 +185,8 @@ export async function createRelationship(
       db.prepare('SELECT * FROM "Relationship" WHERE "id" = ?').get(id),
     )!
   } catch (error) {
-    if (error instanceof AlreadyExistsError) throw error
-    refuseTakenIdAfterInsertError(
-      error,
-      'Relationship',
-      validated.id,
-      RELATIONSHIP_ID_TAKEN,
-    )
+    if (isIdRefusal(error)) throw error
+    refuseTakenIdAfterInsertError(error, claim)
     throw new Error(
       `Failed to create relationship: ${error instanceof Error ? error.message : 'Unknown error'}`,
     )

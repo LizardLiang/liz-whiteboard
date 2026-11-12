@@ -265,9 +265,9 @@ export async function handleTableReferenceRequest(
     // caller's mistake, and its message is written for them — pass it through
     // as a 400. Anything else is logged and generalised.
     const message = error instanceof Error ? error.message : ''
-    // A create naming an id some table already has: refused, nothing changed.
-    // The MCP reads the row by that id to tell a re-sent create of its own
-    // from a collision.
+    // A create naming an id a table on THIS whiteboard already has: refused,
+    // nothing changed. An id held on another whiteboard falls through to the
+    // generic failure below (src/data/already-exists.ts decides which).
     if (isAlreadyExists(error)) {
       return jsonError('ALREADY_EXISTS', message, 409)
     }

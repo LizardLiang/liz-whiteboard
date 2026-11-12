@@ -15,11 +15,12 @@
 
 import { z } from 'zod'
 
-import type { Column, DiagramTable } from './models'
 import {
   assertIdFree,
   refuseTakenIdAfterInsertError,
 } from './already-exists'
+import type { Column, DiagramTable } from './models'
+import type { IdClaim } from './already-exists'
 import {
   db,
   genId,
@@ -288,12 +289,10 @@ function requireReference(tableId: string): DiagramTable {
 // Public API
 // ============================================================================
 
-const REFERENCE_ID_TAKEN = 'A table with this id already exists'
-
 /**
  * Create a cross-file reference node on `whiteboardId`. A given `id` is stored
- * as the node's DiagramTable id; an id any table already has is refused with
- * `AlreadyExistsError`.
+ * as the node's DiagramTable id; an id any table already has is refused (see
+ * already-exists.ts).
  *
  * The DiagramTable row and every stub column are written in ONE transaction:
  * a half-built reference (a node with no connectable column) would render as a
@@ -312,7 +311,13 @@ export async function createTableReference(
         .get(validated.sourceWhiteboardId) as { name?: string } | undefined
     )?.name ?? null
 
-  assertIdFree('DiagramTable', validated.id, REFERENCE_ID_TAKEN)
+  const claim: IdClaim = {
+    table: 'DiagramTable',
+    id: validated.id,
+    whiteboardId: validated.whiteboardId,
+    noun: 'table reference',
+  }
+  assertIdFree(claim)
   const id = validated.id ?? genId()
   const ts = nowMs()
   const name = uniqueNameOn(
@@ -343,12 +348,7 @@ export async function createTableReference(
       return readReference(id)
     })
   } catch (error) {
-    refuseTakenIdAfterInsertError(
-      error,
-      'DiagramTable',
-      validated.id,
-      REFERENCE_ID_TAKEN,
-    )
+    refuseTakenIdAfterInsertError(error, claim)
     throw error
   }
 }

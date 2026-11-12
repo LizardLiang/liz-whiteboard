@@ -1,15 +1,19 @@
 // src/data/already-exists.test.ts
-// The primary-key path of the id refusal: two creates with the same id that
-// both pass the pre-insert check (a concurrent create) must still end with one
-// row and an AlreadyExistsError, decided by SQLite's own constraint.
+// The id refusal's one decision point. A taken id is ALREADY_EXISTS only when
+// the row holding it is on the caller's own whiteboard; a row elsewhere gets
+// the generic "Failed to create <noun>" failure, so a refusal never reveals a
+// row the caller cannot see. The primary-key path covers two creates with the
+// same id that both pass the pre-insert check (a concurrent create).
 
-import { beforeEach, describe, expect, it } from 'vitest'
 import { randomUUID } from 'node:crypto'
+import { beforeEach, describe, expect, it } from 'vitest'
 import {
   AlreadyExistsError,
   assertIdFree,
+  isIdRefusal,
   refuseTakenIdAfterInsertError,
 } from './already-exists'
+import type { IdClaim } from './already-exists'
 import { db, insert } from '@/db'
 import { makeProject, makeWhiteboard, resetDb } from '@/test/db-helpers'
 
@@ -33,76 +37,123 @@ function caught(fn: () => void): unknown {
   throw new Error('expected a throw')
 }
 
+function boards(): { mine: string; theirs: string } {
+  const projectId = makeProject().id
+  return {
+    mine: makeWhiteboard({ projectId }).id,
+    theirs: makeWhiteboard({ projectId }).id,
+  }
+}
+
+function claim(id: string | undefined, whiteboardId: string): IdClaim {
+  return { table: 'DiagramTable', id, whiteboardId, noun: 'table' }
+}
+
+/** The refusal `fn` throws, checked to be one of the two refusal kinds. */
+function refusal(fn: () => void): Error {
+  const error = caught(fn)
+  expect(isIdRefusal(error)).toBe(true)
+  return error as Error
+}
+
 beforeEach(() => {
   resetDb()
 })
 
-describe('refuseTakenIdAfterInsertError', () => {
-  it('turns a primary-key violation into AlreadyExistsError', () => {
-    const whiteboardId = makeWhiteboard({ projectId: makeProject().id }).id
+describe('assertIdFree', () => {
+  it('passes a free id and an absent id', () => {
+    const { mine } = boards()
+    expect(() => assertIdFree(claim(randomUUID(), mine))).not.toThrow()
+    expect(() => assertIdFree(claim(undefined, mine))).not.toThrow()
+  })
+
+  it('refuses an id on the caller whiteboard with AlreadyExistsError', () => {
+    const { mine } = boards()
     const id = randomUUID()
-    insertTable(id, whiteboardId, 'first')
+    insertTable(id, mine, 't')
 
-    const error = caught(() => insertTable(id, whiteboardId, 'second'))
+    const error = refusal(() => assertIdFree(claim(id, mine)))
 
-    expect(() =>
-      refuseTakenIdAfterInsertError(error, 'DiagramTable', id, 'taken'),
-    ).toThrow(AlreadyExistsError)
+    expect(error).toBeInstanceOf(AlreadyExistsError)
+  })
+
+  it('refuses an id on another whiteboard with the generic failure only', () => {
+    const { mine, theirs } = boards()
+    const id = randomUUID()
+    insertTable(id, theirs, 't')
+
+    const error = refusal(() => assertIdFree(claim(id, mine)))
+
+    expect(error).not.toBeInstanceOf(AlreadyExistsError)
+    expect(error.name).toBe('Error')
+    expect(error.message).toBe('Failed to create table')
+    expect((error as { code?: unknown }).code).toBeUndefined()
+  })
+})
+
+describe('refuseTakenIdAfterInsertError', () => {
+  it('turns a primary-key violation on the caller whiteboard into AlreadyExistsError', () => {
+    const { mine } = boards()
+    const id = randomUUID()
+    insertTable(id, mine, 'first')
+
+    const error = caught(() => insertTable(id, mine, 'second'))
+
+    expect(() => refuseTakenIdAfterInsertError(error, claim(id, mine))).toThrow(
+      AlreadyExistsError,
+    )
     expect(
       db.prepare('SELECT "name" FROM "DiagramTable" WHERE "id" = ?').get(id),
     ).toEqual({ name: 'first' })
   })
 
+  it('turns a primary-key violation against another whiteboard into the generic failure', () => {
+    const { mine, theirs } = boards()
+    const id = randomUUID()
+    insertTable(id, theirs, 'theirs')
+
+    const error = caught(() => insertTable(id, mine, 'mine'))
+    const refused = refusal(() =>
+      refuseTakenIdAfterInsertError(error, claim(id, mine)),
+    )
+
+    expect(refused).not.toBeInstanceOf(AlreadyExistsError)
+    expect(refused.message).toBe('Failed to create table')
+  })
+
   it('reads the id even when another unique index fires first', () => {
     // Same id AND same (whiteboardId, name): whichever index SQLite checks
-    // first, the id is taken, so the create is ALREADY_EXISTS.
-    const whiteboardId = makeWhiteboard({ projectId: makeProject().id }).id
+    // first, the id is taken, so the create is refused.
+    const { mine } = boards()
     const id = randomUUID()
-    insertTable(id, whiteboardId, 'same')
+    insertTable(id, mine, 'same')
 
-    const error = caught(() => insertTable(id, whiteboardId, 'same'))
+    const error = caught(() => insertTable(id, mine, 'same'))
 
-    expect(() =>
-      refuseTakenIdAfterInsertError(error, 'DiagramTable', id, 'taken'),
-    ).toThrow(AlreadyExistsError)
+    expect(() => refuseTakenIdAfterInsertError(error, claim(id, mine))).toThrow(
+      AlreadyExistsError,
+    )
   })
 
   it('leaves a unique violation on a free id alone', () => {
-    const whiteboardId = makeWhiteboard({ projectId: makeProject().id }).id
-    insertTable(randomUUID(), whiteboardId, 'dup')
+    const { mine } = boards()
+    insertTable(randomUUID(), mine, 'dup')
     const freeId = randomUUID()
 
-    const error = caught(() => insertTable(freeId, whiteboardId, 'dup'))
+    const error = caught(() => insertTable(freeId, mine, 'dup'))
 
     expect(() =>
-      refuseTakenIdAfterInsertError(error, 'DiagramTable', freeId, 'taken'),
+      refuseTakenIdAfterInsertError(error, claim(freeId, mine)),
     ).not.toThrow()
   })
 
   it('does nothing for a create without an id', () => {
+    const { mine } = boards()
     expect(() =>
       refuseTakenIdAfterInsertError(
         new Error('UNIQUE constraint failed: DiagramTable.id'),
-        'DiagramTable',
-        undefined,
-        'taken',
+        claim(undefined, mine),
       ),
     ).not.toThrow()
-  })
-})
-
-describe('assertIdFree', () => {
-  it('passes a free id and an absent id, refuses a taken one', () => {
-    const whiteboardId = makeWhiteboard({ projectId: makeProject().id }).id
-    const id = randomUUID()
-    insertTable(id, whiteboardId, 't')
-
-    expect(() =>
-      assertIdFree('DiagramTable', randomUUID(), 'taken'),
-    ).not.toThrow()
-    expect(() => assertIdFree('DiagramTable', undefined, 'taken')).not.toThrow()
-    expect(() => assertIdFree('DiagramTable', id, 'taken')).toThrow(
-      AlreadyExistsError,
-    )
   })
 })

@@ -6,13 +6,16 @@
 //
 // For each create event:
 //   - a new id is stored as the row's id
-//   - an id some row already has (on another whiteboard) is refused with
+//   - an id a row on the SAME whiteboard already has is refused with
 //     ALREADY_EXISTS and the stored row is unchanged
+//   - an id a row on ANOTHER whiteboard has is refused with the generic
+//     "Failed to create <noun>" failure, which names no id and no existence,
+//     and the stored row is unchanged
 //   - no id keeps today's behaviour: the server assigns a fresh id
 //   - a non-UUID id is rejected with VALIDATION_ERROR and nothing is written
 
 import { randomUUID } from 'node:crypto'
-import { beforeEach, describe, expect, it, vi } from 'vitest'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { setupCollaborationEventHandlers } from './collaboration'
 import type * as RequireRoleModule from '@/lib/auth/require-role'
 import { db } from '@/db'
@@ -119,27 +122,57 @@ function makeFixture(): Fixture {
 interface CreateCase {
   event: string
   table: string
+  /** The handler's generic failure text. */
+  generic: string
   payload: (f: Fixture) => Record<string, unknown>
   /** The id of an existing row of `table` that lives on the OTHER whiteboard. */
   takenId: (f: Fixture) => string
+  /** The id of an existing row of `table` on the caller's own whiteboard. */
+  ownId: (f: Fixture) => string
+}
+
+function insertRelationship(f: Fixture, whiteboardId: string): string {
+  const id = randomUUID()
+  const ts = Date.now()
+  const onMine = whiteboardId === f.whiteboardId
+  const tableId = onMine ? f.tableId : f.otherTableId
+  const columnId = onMine ? f.sourceColumnId : f.otherColumnId
+  db.prepare(
+    'INSERT INTO "Relationship" ("id","whiteboardId","sourceTableId","targetTableId","sourceColumnId","targetColumnId","cardinality","label","createdAt","updatedAt") VALUES (?,?,?,?,?,?,?,?,?,?)',
+  ).run(id, whiteboardId, tableId, tableId, columnId, columnId, 'ONE_TO_ONE', 'theirs', ts, ts)
+  return id
+}
+
+function insertArea(whiteboardId: string): string {
+  const id = randomUUID()
+  const ts = Date.now()
+  db.prepare(
+    'INSERT INTO "Area" ("id","whiteboardId","name","color","positionX","positionY","width","height","memberTableIds","createdAt","updatedAt") VALUES (?,?,?,?,?,?,?,?,?,?,?)',
+  ).run(id, whiteboardId, 'Theirs', 'red', 5, 5, 50, 50, '[]', ts, ts)
+  return id
 }
 
 const CASES: Array<CreateCase> = [
   {
     event: 'table:create',
     table: 'DiagramTable',
+    generic: 'Failed to create table',
     payload: () => ({ name: 'customers', positionX: 1, positionY: 2 }),
     takenId: (f) => f.otherTableId,
+    ownId: (f) => f.tableId,
   },
   {
     event: 'column:create',
     table: 'Column',
+    generic: 'Failed to create column',
     payload: (f) => ({ tableId: f.tableId, name: 'email', dataType: 'string' }),
     takenId: (f) => f.otherColumnId,
+    ownId: (f) => f.sourceColumnId,
   },
   {
     event: 'relationship:create',
     table: 'Relationship',
+    generic: 'Failed to create relationship',
     payload: (f) => ({
       sourceTableId: f.tableId,
       targetTableId: f.tableId,
@@ -147,29 +180,13 @@ const CASES: Array<CreateCase> = [
       targetColumnId: f.targetColumnId,
       cardinality: 'MANY_TO_ONE',
     }),
-    takenId: (f) => {
-      const id = randomUUID()
-      const ts = Date.now()
-      db.prepare(
-        'INSERT INTO "Relationship" ("id","whiteboardId","sourceTableId","targetTableId","sourceColumnId","targetColumnId","cardinality","label","createdAt","updatedAt") VALUES (?,?,?,?,?,?,?,?,?,?)',
-      ).run(
-        id,
-        f.otherWhiteboardId,
-        f.otherTableId,
-        f.otherTableId,
-        f.otherColumnId,
-        f.otherColumnId,
-        'ONE_TO_ONE',
-        'theirs',
-        ts,
-        ts,
-      )
-      return id
-    },
+    takenId: (f) => insertRelationship(f, f.otherWhiteboardId),
+    ownId: (f) => insertRelationship(f, f.whiteboardId),
   },
   {
     event: 'area:create',
     table: 'Area',
+    generic: 'Failed to create area',
     payload: () => ({
       name: 'Billing',
       color: 'blue',
@@ -178,14 +195,8 @@ const CASES: Array<CreateCase> = [
       width: 300,
       height: 200,
     }),
-    takenId: (f) => {
-      const id = randomUUID()
-      const ts = Date.now()
-      db.prepare(
-        'INSERT INTO "Area" ("id","whiteboardId","name","color","positionX","positionY","width","height","memberTableIds","createdAt","updatedAt") VALUES (?,?,?,?,?,?,?,?,?,?,?)',
-      ).run(id, f.otherWhiteboardId, 'Theirs', 'red', 5, 5, 50, 50, '[]', ts, ts)
-      return id
-    },
+    takenId: (f) => insertArea(f.otherWhiteboardId),
+    ownId: (f) => insertArea(f.whiteboardId),
   },
 ]
 
@@ -206,7 +217,7 @@ describe.each(CASES)('$event with a client id', (c) => {
     expect(row(c.table, id)).toBeDefined()
   })
 
-  it('refuses an id that exists on another whiteboard and leaves that row unchanged', async () => {
+  it('refuses an id on another whiteboard with the generic failure, revealing nothing', async () => {
     const f = makeFixture()
     const { handlers, socket } = makeSocket(f.whiteboardId)
     const takenId = c.takenId(f)
@@ -215,8 +226,33 @@ describe.each(CASES)('$event with a client id', (c) => {
 
     const ack = await send(handlers, c.event, { ...c.payload(f), id: takenId })
 
-    expect(ack).toMatchObject({ ok: false, code: 'ALREADY_EXISTS' })
+    expect(ack).toEqual({
+      ok: false,
+      code: 'VALIDATION_ERROR',
+      message: c.generic,
+    })
+    const errorEvent = socket.emit.mock.calls.find(([e]) => e === 'error')
+    expect(errorEvent?.[1]).toMatchObject({
+      error: 'VALIDATION_ERROR',
+      message: c.generic,
+    })
+    expect(JSON.stringify(errorEvent?.[1])).not.toContain(takenId)
     expect(row(c.table, takenId)).toEqual(before)
+    expect(count(c.table)).toBe(rowsBefore)
+    expect(socket.broadcast.emit).not.toHaveBeenCalled()
+  })
+
+  it('refuses an id on its own whiteboard with ALREADY_EXISTS and leaves that row unchanged', async () => {
+    const f = makeFixture()
+    const { handlers, socket } = makeSocket(f.whiteboardId)
+    const ownId = c.ownId(f)
+    const before = row(c.table, ownId)
+    const rowsBefore = count(c.table)
+
+    const ack = await send(handlers, c.event, { ...c.payload(f), id: ownId })
+
+    expect(ack).toMatchObject({ ok: false, code: 'ALREADY_EXISTS' })
+    expect(row(c.table, ownId)).toEqual(before)
     expect(count(c.table)).toBe(rowsBefore)
     expect(socket.broadcast.emit).not.toHaveBeenCalled()
   })
@@ -267,6 +303,28 @@ describe.each(CASES)('$event with a client id', (c) => {
   })
 })
 
+describe('a refused foreign id looks like any other failed create in production', () => {
+  afterEach(() => {
+    vi.unstubAllEnvs()
+  })
+
+  it('table:create acks the same as a create that fails on a duplicate name', async () => {
+    vi.stubEnv('NODE_ENV', 'production')
+    const f = makeFixture()
+    const { handlers } = makeSocket(f.whiteboardId)
+
+    const foreign = await send(handlers, 'table:create', {
+      name: 'fresh_name',
+      id: f.otherTableId,
+    })
+    const duplicateName = await send(handlers, 'table:create', {
+      name: 'orders',
+    })
+
+    expect(foreign).toEqual(duplicateName)
+  })
+})
+
 describe('update schemas do not take an id', () => {
   it('table:update ignores an id in the payload', async () => {
     const f = makeFixture()
@@ -300,33 +358,46 @@ describe('server functions that share the create schemas', () => {
     expect(created.id).toBe(id)
 
     const before = row('DiagramTable', f.otherTableId)
+    const foreign = createTableHandler(auth, {
+      id: f.otherTableId,
+      whiteboardId: f.whiteboardId,
+      name: 'stolen',
+    })
+    await expect(foreign).rejects.toThrow('Failed to create table')
+    await expect(foreign).rejects.not.toThrow(/exist/i)
+    expect(row('DiagramTable', f.otherTableId)).toEqual(before)
+
     await expect(
       createTableHandler(auth, {
-        id: f.otherTableId,
+        id,
         whiteboardId: f.whiteboardId,
-        name: 'stolen',
+        name: 'invoices_again',
       }),
     ).rejects.toThrow('already exists')
-    expect(row('DiagramTable', f.otherTableId)).toEqual(before)
   })
 
   it('createRelationshipHandler refuses a taken id', async () => {
     const f = makeFixture()
+    const relationship = (id: string) => ({
+      id,
+      whiteboardId: f.whiteboardId,
+      sourceTableId: f.tableId,
+      targetTableId: f.tableId,
+      sourceColumnId: f.sourceColumnId,
+      targetColumnId: f.targetColumnId,
+      cardinality: 'MANY_TO_ONE' as const,
+    })
     const takenId = CASES[2].takenId(f)
     const before = row('Relationship', takenId)
 
-    await expect(
-      createRelationshipHandler(auth, {
-        id: takenId,
-        whiteboardId: f.whiteboardId,
-        sourceTableId: f.tableId,
-        targetTableId: f.tableId,
-        sourceColumnId: f.sourceColumnId,
-        targetColumnId: f.targetColumnId,
-        cardinality: 'MANY_TO_ONE',
-      }),
-    ).rejects.toBeInstanceOf(AlreadyExistsError)
+    const foreign = createRelationshipHandler(auth, relationship(takenId))
+    await expect(foreign).rejects.toThrow('Failed to create relationship')
+    await expect(foreign).rejects.not.toBeInstanceOf(AlreadyExistsError)
     expect(row('Relationship', takenId)).toEqual(before)
+
+    await expect(
+      createRelationshipHandler(auth, relationship(CASES[2].ownId(f))),
+    ).rejects.toBeInstanceOf(AlreadyExistsError)
   })
 })
 
@@ -344,16 +415,23 @@ describe('createTableReference with a client id', () => {
     })
     expect(reference.table.id).toBe(id)
 
+    const referenceWith = (refId: string) => ({
+      id: refId,
+      whiteboardId: f.whiteboardId,
+      sourceWhiteboardId: f.otherWhiteboardId,
+      sourceTableId: f.otherTableId,
+      sourceColumnIds: [f.otherColumnId],
+    })
     const before = row('DiagramTable', f.tableId)
     await expect(
-      createTableReference({
-        id: f.tableId,
-        whiteboardId: f.whiteboardId,
-        sourceWhiteboardId: f.otherWhiteboardId,
-        sourceTableId: f.otherTableId,
-        sourceColumnIds: [f.otherColumnId],
-      }),
+      createTableReference(referenceWith(f.tableId)),
     ).rejects.toBeInstanceOf(AlreadyExistsError)
     expect(row('DiagramTable', f.tableId)).toEqual(before)
+
+    const foreignBefore = row('DiagramTable', f.otherTableId)
+    const foreign = createTableReference(referenceWith(f.otherTableId))
+    await expect(foreign).rejects.toThrow('Failed to create table reference')
+    await expect(foreign).rejects.not.toBeInstanceOf(AlreadyExistsError)
+    expect(row('DiagramTable', f.otherTableId)).toEqual(foreignBefore)
   })
 })

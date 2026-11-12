@@ -2,12 +2,13 @@
 // Data access layer for the Area entity (subject areas / table grouping, GH #106)
 
 import { createAreaSchema, updateAreaSchema } from './schema'
-import type { CreateArea, UpdateArea } from './schema'
-import type { Area } from './models'
 import {
   assertIdFree,
   refuseTakenIdAfterInsertError,
 } from './already-exists'
+import type { CreateArea, UpdateArea } from './schema'
+import type { Area } from './models'
+import type { IdClaim } from './already-exists'
 import {
   db,
   genId,
@@ -19,18 +20,22 @@ import {
   update,
 } from '@/db'
 
-const AREA_ID_TAKEN = 'An area with this id already exists'
-
 /**
  * Create a new subject area. A given `id` is stored as the area's id; an id
- * any area already has is refused with `AlreadyExistsError`.
+ * any area already has is refused (see already-exists.ts).
  * @param data - Area creation data (validated with Zod)
  * @returns Created area
  * @throws Error if validation fails or database operation fails
  */
 export async function createArea(data: CreateArea): Promise<Area> {
   const validated = createAreaSchema.parse(data)
-  assertIdFree('Area', validated.id, AREA_ID_TAKEN)
+  const claim: IdClaim = {
+    table: 'Area',
+    id: validated.id,
+    whiteboardId: validated.whiteboardId,
+    noun: 'area',
+  }
+  assertIdFree(claim)
 
   try {
     const id = validated.id ?? genId()
@@ -50,7 +55,7 @@ export async function createArea(data: CreateArea): Promise<Area> {
     })
     return mapArea(db.prepare('SELECT * FROM "Area" WHERE "id" = ?').get(id))!
   } catch (error) {
-    refuseTakenIdAfterInsertError(error, 'Area', validated.id, AREA_ID_TAKEN)
+    refuseTakenIdAfterInsertError(error, claim)
     throw new Error(
       `Failed to create area: ${error instanceof Error ? error.message : 'Unknown error'}`,
     )
