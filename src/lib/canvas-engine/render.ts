@@ -69,7 +69,6 @@ import {
 } from './card-style'
 import { LEGACY_STROKES, presetRamp } from './colour-ramps'
 import {
-  TABLE_GRIP_PX,
   TABLE_PLUS_PX,
   affordanceBorderAt,
   cellKey,
@@ -2088,14 +2087,41 @@ function drawTableSelection(
 /** A grabber pill's long side and thickness on screen, in px. */
 const GRABBER_LONG_PX = 28
 const GRABBER_THICK_PX = 10
+/** Clear space between a grabber pill and the resize handles on the table edge, in px. */
+const GRABBER_HANDLE_GAP_PX = 2
 
 /**
- * One row or column grabber in SCREEN space: a small rounded pill centred on
- * the row's (or column's) edge strip, with a grip of six dots. `rect` is the
- * row's first cell (row) or the column's first cell (col). The pill is
- * smaller than the strip `gripAtPoint` hits, so the whole strip stays
- * pressable.
+ * One row or column grabber pill in SCREEN space. `rect` is the row's first
+ * cell (row) or the column's first cell (col). The pill sits outside the
+ * table edge, past the part of the edge's resize handles that reaches out
+ * (`HANDLE_SIZE / 2`), so the middle row's or column's pill never covers the
+ * edge's middle handle. It stays inside the strip `gripAtPoint` hits
+ * (`TABLE_GRIP_PX`), so all of the pill is pressable.
  */
+export function grabberRect(
+  axis: TableGrip['kind'],
+  rect: ScreenRect,
+): ScreenRect {
+  const isRow = axis === 'row'
+  const span = isRow ? rect.height : rect.width
+  const long = Math.max(8, Math.min(GRABBER_LONG_PX, span - 4))
+  const outside = HANDLE_SIZE / 2 + GRABBER_HANDLE_GAP_PX + GRABBER_THICK_PX
+  return isRow
+    ? {
+        x: rect.x - outside,
+        y: rect.y + (rect.height - long) / 2,
+        width: GRABBER_THICK_PX,
+        height: long,
+      }
+    : {
+        x: rect.x + (rect.width - long) / 2,
+        y: rect.y - outside,
+        width: long,
+        height: GRABBER_THICK_PX,
+      }
+}
+
+/** One row or column grabber in SCREEN space: the pill of `grabberRect` with a grip of six dots. */
 function drawGrabber(
   ctx: CanvasRenderingContext2D,
   axis: TableGrip['kind'],
@@ -2104,16 +2130,7 @@ function drawGrabber(
   chrome: (typeof CHROME)[CanvasTheme],
 ): void {
   const isRow = axis === 'row'
-  const span = isRow ? rect.height : rect.width
-  const long = Math.max(8, Math.min(GRABBER_LONG_PX, span - 4))
-  const w = isRow ? GRABBER_THICK_PX : long
-  const h = isRow ? long : GRABBER_THICK_PX
-  const x = isRow
-    ? rect.x - (TABLE_GRIP_PX + GRABBER_THICK_PX) / 2
-    : rect.x + (rect.width - w) / 2
-  const y = isRow
-    ? rect.y + (rect.height - h) / 2
-    : rect.y - (TABLE_GRIP_PX + GRABBER_THICK_PX) / 2
+  const { x, y, width: w, height: h } = grabberRect(axis, rect)
   ctx.save()
   ctx.fillStyle = state === 'rest' ? chrome.gripFill : chrome.accent
   ctx.beginPath()

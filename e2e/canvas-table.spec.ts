@@ -186,6 +186,13 @@ async function paintedAtWorld(
 // A world point clear of the seeded elements, so nothing under it absorbs the press.
 const ORIGIN = { x: 600, y: 420 }
 
+/**
+ * How far a grabber pill's centre line sits outside the table edge, in page
+ * px: past the 4 px a resize handle reaches out and a 2 px gap, then half the
+ * 10 px pill (`grabberRect` in src/lib/canvas-engine/render.ts).
+ */
+const PILL_OUTSIDE = 11
+
 test.describe('the table tool', () => {
   test('is in the palette and Shift+T selects it', async ({ page }) => {
     await openBoard(page)
@@ -1811,11 +1818,11 @@ for (const theme of ['light', 'dark'] as const) {
       const first = await cellCentre(page, tableId, 0, 0)
       return {
         geo,
-        colPill: { x: cell.x, y: geo.top - 7 },
-        rowPill: { x: geo.left - 7, y: cell.y },
+        colPill: { x: cell.x, y: geo.top - PILL_OUTSIDE },
+        rowPill: { x: geo.left - PILL_OUTSIDE, y: cell.y },
         // Pill ends sit clear of the grip dots: 10px along the long side.
-        colPillEdge: { x: cell.x + 10, y: geo.top - 7 },
-        rowPillEdge: { x: geo.left - 7, y: cell.y + 10 },
+        colPillEdge: { x: cell.x + 10, y: geo.top - PILL_OUTSIDE },
+        rowPillEdge: { x: geo.left - PILL_OUTSIDE, y: cell.y + 10 },
         first,
       }
     }
@@ -1919,6 +1926,121 @@ for (const theme of ['light', 'dark'] as const) {
   })
 }
 
+test.describe('grabber pills beside the resize handles', () => {
+  /** A pill's outer edge from the table edge, in page px (`grabberRect` in render.ts: 4 + 2 + 10). */
+  const PILL_OUTER = 16
+
+  /** Select the table, then hover its middle column's cell so the column and row grabbers show. */
+  async function selectAndHover(page: Page) {
+    const created = await makeTable(page)
+    await focusBoard(page)
+    await pickCell(page, created.id, 1, 1)
+    const geo = await geometry(page, created.id)
+    const at = await cellCentre(page, created.id, 1, 1)
+    await page.mouse.move(at.x + 20, at.y + 5)
+    await expect
+      .poll(async () => (await engine(page)).tableGrips?.colId ?? null)
+      .toBe(created.table!.cols[1].id)
+    return { created, geo, at }
+  }
+
+  test('the top pill, the left pill and both middle handles are all painted, with the toolbar clear above the pill', async ({
+    page,
+  }) => {
+    const { created, geo, at } = await selectAndHover(page)
+    const handleTop = { x: geo.midX, y: geo.top }
+    const handleLeft = { x: geo.left, y: geo.midY }
+    // The pills: centred 11 px outside the edge, on the hovered cell's column and row.
+    expect(
+      (await pixelAtPage(page, at.x + 10, geo.top - 11))[3],
+      'column pill',
+    ).toBe(255)
+    expect(
+      (await pixelAtPage(page, geo.left - 11, at.y + 10))[3],
+      'row pill',
+    ).toBe(255)
+    // The 2 px gap between a pill and its edge's handle stays clear.
+    expect(
+      (await pixelAtPage(page, handleTop.x, geo.top - 5))[3],
+      'top gap',
+    ).toBe(0)
+    expect(
+      (await pixelAtPage(page, geo.left - 5, handleLeft.y))[3],
+      'left gap',
+    ).toBe(0)
+    // The handles are still painted on the edge.
+    expect(
+      (await pixelAtPage(page, handleTop.x, geo.top - 2))[3],
+      'top handle',
+    ).toBe(255)
+    expect(
+      (await pixelAtPage(page, geo.left - 2, handleLeft.y))[3],
+      'left handle',
+    ).toBe(255)
+    // The selection toolbar sits above the pill, not over it.
+    const bar = await page
+      .getByRole('toolbar', { name: 'Selection' })
+      .boundingBox()
+    expect(bar).not.toBeNull()
+    expect(bar!.y + bar!.height).toBeLessThanOrEqual(geo.top - PILL_OUTER)
+    expect(created.table!.cols.length).toBeGreaterThan(1)
+  })
+
+  test('pressing the column pill picks the column; dragging the top-middle handle resizes the table', async ({
+    page,
+  }) => {
+    const { created, geo, at } = await selectAndHover(page)
+    const before = await currentTable(page)
+    // The handle first, while the table is still the plain selection.
+    await dragMouse(
+      page,
+      { x: geo.midX, y: geo.top - 1 },
+      { x: geo.midX, y: geo.top - 40 },
+    )
+    await expect
+      .poll(async () => (await currentTable(page)).height, {
+        timeout: 10_000,
+      })
+      .toBeGreaterThan(before.height + 20)
+    // Then the pill, hovered in again from a cell.
+    await settle(page)
+    const nowGeo = await geometry(page, created.id)
+    await page.mouse.move(at.x + 20, at.y + 5)
+    await expect
+      .poll(async () => (await engine(page)).tableGrips?.colId ?? null)
+      .toBe(created.table!.cols[1].id)
+    await page.mouse.click(at.x + 10, nowGeo.top - 11)
+    await expect
+      .poll(async () => (await engine(page)).tableSelection?.kind)
+      .toBe('col')
+  })
+
+  test('pressing the row pill picks the row; dragging the left-middle handle resizes the table', async ({
+    page,
+  }) => {
+    const { created, geo, at } = await selectAndHover(page)
+    const before = await currentTable(page)
+    await page.mouse.click(geo.left - 11, at.y + 10)
+    await expect
+      .poll(async () => (await engine(page)).tableSelection?.kind)
+      .toBe('row')
+    // Back to the whole table, then the handle.
+    await page.keyboard.press('Escape')
+    await pickCell(page, created.id, 1, 1)
+    const nowGeo = await geometry(page, created.id)
+    await dragMouse(
+      page,
+      { x: nowGeo.left - 1, y: nowGeo.midY },
+      { x: nowGeo.left - 40, y: nowGeo.midY },
+    )
+    await expect
+      .poll(async () => (await currentTable(page)).width, {
+        timeout: 10_000,
+      })
+      .toBeGreaterThan(before.width + 20)
+  })
+})
+
 test.describe('a read-only viewer', () => {
   /** Mirrors canvas-board.spec.ts: the real login form, the session cookie is the ground truth. */
   async function loginAsViewer(browser: Browser): Promise<Page> {
@@ -1976,10 +2098,12 @@ test.describe('a read-only viewer', () => {
       expect(state.tableAffordance).toBeNull()
       expect(state.tableGrips).toBeNull()
       const viewerGeo = await geometry(viewer, created.id)
-      expect((await pixelAtPage(viewer, viewerGeo.left - 7, first.y))[3]).toBe(
-        0,
-      )
-      expect((await pixelAtPage(viewer, first.x, viewerGeo.top - 7))[3]).toBe(0)
+      expect(
+        (await pixelAtPage(viewer, viewerGeo.left - PILL_OUTSIDE, first.y))[3],
+      ).toBe(0)
+      expect(
+        (await pixelAtPage(viewer, first.x, viewerGeo.top - PILL_OUTSIDE))[3],
+      ).toBe(0)
       expect(state.editingCell).toBeNull()
       await expect(
         viewer.getByRole('toolbar', { name: 'Selection' }),

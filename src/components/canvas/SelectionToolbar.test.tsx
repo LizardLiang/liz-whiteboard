@@ -26,6 +26,7 @@ import type {
 import type { TableSelection } from '@/lib/canvas-engine/table'
 import { DEFAULT_CAMERA, worldToScreen } from '@/lib/canvas-engine/camera'
 import { createTable } from '@/lib/canvas-engine/table'
+import { grabberRect } from '@/lib/canvas-engine/render'
 import {
   DEFAULT_ELEMENT_STYLE,
   boundsOfMany,
@@ -1323,6 +1324,21 @@ describe('the table controls', () => {
     )
     return { table, onTableOp }
   }
+
+  it('sits clear above the column grabber pill of a lone selected table', () => {
+    tableSetup(null)
+    const bar = screen.getByRole('toolbar', { name: 'Selection' })
+    // The bar's bottom edge is its `top` (translate -100%). The fixture table
+    // is at world (100, 200); a column's first cell has the table's top edge.
+    const edge = worldToScreen(DEFAULT_CAMERA, { x: 100, y: 200 })
+    const pill = grabberRect('col', {
+      x: edge.x,
+      y: edge.y,
+      width: 40,
+      height: 24,
+    })
+    expect(parseFloat(bar.style.top)).toBeLessThanOrEqual(pill.y)
+  })
 
   it('shows the header toggle and no board text controls for a table', () => {
     const { onTableOp } = tableSetup(null)

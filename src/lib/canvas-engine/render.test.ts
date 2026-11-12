@@ -36,6 +36,7 @@ import {
   drawScene,
   fittedTextHeight,
   fontSpecOf,
+  grabberRect,
   handleRects,
   layoutElementText,
   renderPersistentScene,
@@ -47,7 +48,14 @@ import {
 } from './render'
 import { DEFAULT_ELEMENT_STYLE, sceneFrom } from './scene'
 import { CanvasRenderTarget } from './render-target'
-import { cellKey } from './table'
+import {
+  TABLE_GRIP_PX,
+  cellKey,
+  createTable,
+  gripAtPoint,
+  tableCellRects,
+  tableSize,
+} from './table'
 import { worldToScreen } from './camera'
 import type { RenderSelection, Viewport } from './render'
 import type { Camera } from './camera'
@@ -1522,4 +1530,97 @@ describe('drawScene — table level of detail', () => {
     const texts = rec.opsOfType('fillText').map((op) => op.args[0])
     expect(texts).toEqual(expect.arrayContaining(['id', 'name', '1', 'Ada']))
   })
+})
+
+describe('grabberRect', () => {
+  /** A 3 x 3 table: its middle row and column sit on the edges' middle handles. */
+  function table3x3(): CanvasElement {
+    let n = 0
+    const grid = createTable(3, 3, () => `id${(n += 1)}`)
+    return {
+      id: 'table',
+      kind: 'table',
+      x: 100,
+      y: 100,
+      ...tableSize(grid),
+      rotation: 0,
+      zIndex: 0,
+      text: null,
+      style: { ...DEFAULT_ELEMENT_STYLE },
+      table: grid,
+    }
+  }
+
+  function overlaps(
+    a: { x: number; y: number; width: number; height: number },
+    b: { x: number; y: number; width: number; height: number },
+  ): boolean {
+    return (
+      a.x < b.x + b.width &&
+      b.x < a.x + a.width &&
+      a.y < b.y + b.height &&
+      b.y < a.y + a.height
+    )
+  }
+
+  it('puts every corner of every pill inside the strip a press hits', () => {
+    // Drawing (`grabberRect`) and hit-testing (`gripAtPoint`) must agree: a
+    // pill the press misses would look pressable and do nothing.
+    const element = table3x3()
+    const grid = element.table!
+    const camera: Camera = { x: 0, y: 0, zoom: 1 }
+    const cells = tableCellRects(element)
+    const world = (x: number, y: number) => ({ x, y })
+    for (const [axis, cell] of [
+      ['row', cells.find((c) => c.colId === grid.cols[0].id)!],
+      ['col', cells.find((c) => c.rowId === grid.rows[0].id)!],
+    ] as const) {
+      const pill = grabberRect(axis, worldRectToScreen(camera, cell.rect))
+      const hit = (x: number, y: number) =>
+        gripAtPoint(element, world(x, y), TABLE_GRIP_PX)
+      const inset = 0.01
+      for (const [x, y] of [
+        [pill.x + inset, pill.y + inset],
+        [pill.x + pill.width - inset, pill.y + pill.height - inset],
+      ]) {
+        expect(hit(x, y)?.kind).toBe(axis)
+      }
+    }
+  })
+
+  for (const zoom of [0.5, 1, 2]) {
+    it(`keeps every pill off the resize handles and inside the grip strip at zoom ${zoom}`, () => {
+      const camera: Camera = { x: 0, y: 0, zoom }
+      const element = table3x3()
+      const grid = element.table!
+      const edge = worldRectToScreen(camera, element)
+      const handles = handleRects(camera, element)
+      const cells = tableCellRects(element)
+      const firstCell = (rowId: string, colId: string) =>
+        worldRectToScreen(
+          camera,
+          cells.find((c) => c.rowId === rowId && c.colId === colId)!.rect,
+        )
+
+      for (const row of grid.rows) {
+        const pill = grabberRect('row', firstCell(row.id, grid.cols[0].id))
+        for (const handle of RESIZE_HANDLES) {
+          expect(overlaps(pill, handles[handle])).toBe(false)
+        }
+        expect(pill.x).toBeGreaterThanOrEqual(edge.x - TABLE_GRIP_PX)
+        expect(pill.x + pill.width).toBeLessThanOrEqual(edge.x)
+      }
+      for (const col of grid.cols) {
+        const cell = firstCell(grid.rows[0].id, col.id)
+        const pill = grabberRect('col', cell)
+        for (const handle of RESIZE_HANDLES) {
+          expect(overlaps(pill, handles[handle])).toBe(false)
+        }
+        expect(pill.y).toBeGreaterThanOrEqual(edge.y - TABLE_GRIP_PX)
+        expect(pill.y + pill.height).toBeLessThanOrEqual(edge.y)
+        // Centred on its column, the FigJam placement.
+        expect(pill.x + pill.width / 2).toBeCloseTo(cell.x + cell.width / 2, 6)
+      }
+    })
+  }
 })

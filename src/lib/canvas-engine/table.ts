@@ -677,8 +677,12 @@ export function cellAtPoint(
   return rowId !== null && colId !== null ? { rowId, colId } : null
 }
 
-/** A grabber strip's size on screen, in px. */
-export const TABLE_GRIP_PX = 14
+/**
+ * A grabber strip's size on screen, in px. It holds the grabber pill (10 px
+ * thick) past the 4 px a resize handle reaches outside the table edge and a
+ * 2 px gap, plus a 2 px margin outside the pill (`grabberRect` in render.ts).
+ */
+export const TABLE_GRIP_PX = 18
 
 export type TableGrip =
   { kind: 'row'; rowId: string } | { kind: 'col'; colId: string }

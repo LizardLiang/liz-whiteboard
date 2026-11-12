@@ -103,7 +103,12 @@ import {
   topLevelIds,
 } from '@/lib/canvas-engine/scene'
 import { zOrderTargets } from '@/lib/canvas-engine/z-order'
-import { cellKey, lookupCell, selectionCells } from '@/lib/canvas-engine/table'
+import {
+  TABLE_GRIP_PX,
+  cellKey,
+  lookupCell,
+  selectionCells,
+} from '@/lib/canvas-engine/table'
 import {
   CANVAS_CORNER_RADII,
   CANVAS_FONT_SIZES,
@@ -135,6 +140,14 @@ import {
  * user has that a swatch did anything.
  */
 export const STYLE_TOOLBAR_OFFSET = 12
+
+/**
+ * The offset for a selection of exactly one table: raised by the grabber
+ * strip's height (`TABLE_GRIP_PX`) so the bar never covers the column pill
+ * that hovers above the table's top edge. Other selections keep
+ * `STYLE_TOOLBAR_OFFSET`.
+ */
+export const TABLE_TOOLBAR_OFFSET = STYLE_TOOLBAR_OFFSET + TABLE_GRIP_PX
 
 /**
  * One requested change, named by which half of the paint it touches.
@@ -609,7 +622,7 @@ export function SelectionToolbar({
       className="absolute z-10 flex items-center gap-1 rounded-md border bg-background/90 p-1 shadow-sm backdrop-blur-sm"
       style={{
         left: anchor.x,
-        top: anchor.y - STYLE_TOOLBAR_OFFSET,
+        top: anchor.y - (tableMode ? TABLE_TOOLBAR_OFFSET : STYLE_TOOLBAR_OFFSET),
         // Centred on the selection and sitting entirely above it. A transform
         // rather than a measured width, which would need a layout pass and
         // would be wrong on the first frame of every selection.
