@@ -6,7 +6,8 @@
 // 200 ms every 5 s. A token minted inside a step carries an `nbf` up to 15 s
 // ahead of the clock that checks it after the step. RFC 7519 §4.1.4 (exp) and
 // §4.1.5 (nbf) allow "some small leeway, usually no more than a few minutes".
-// The MCP server uses the same pair (liz-whiteboard-mcp commit 730d333).
+// The MCP server uses the same pair: `notBeforeLeeway` and `expiryLeeway` in
+// its internal/auth/verifier.go.
 
 import { errors, jwtVerify } from 'jose'
 import type { JWTVerifyOptions, JWTVerifyResult, KeyObject } from 'jose'

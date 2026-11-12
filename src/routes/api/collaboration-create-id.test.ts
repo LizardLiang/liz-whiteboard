@@ -287,6 +287,43 @@ describe.each(CASES)('$event with a client id', (c) => {
     expect(count(c.table)).toBe(rowsAfterFirst)
   })
 
+  it('refuses the id of a row deleted from another whiteboard, but not from its own', async () => {
+    const f = makeFixture()
+    const { handlers } = makeSocket(f.whiteboardId)
+    const foreignId = c.takenId(f)
+    const ownId = c.ownId(f)
+    db.prepare(`DELETE FROM "${c.table}" WHERE "id" IN (?, ?)`).run(
+      foreignId,
+      ownId,
+    )
+
+    const foreign = await send(handlers, c.event, {
+      ...c.payload(f),
+      id: foreignId,
+    })
+    const own = await send(handlers, c.event, { ...c.payload(f), id: ownId })
+
+    expect(foreign).toMatchObject({ ok: false, code: 'VALIDATION_ERROR' })
+    expect(foreign.message).toBe(c.generic)
+    expect(row(c.table, foreignId)).toBeUndefined()
+    expect(own).toMatchObject({ ok: true })
+    expect(own.entity.id).toBe(ownId)
+  })
+
+  it('acks a committed create even when telling the other clients throws', async () => {
+    const f = makeFixture()
+    const { socket, handlers } = makeSocket(f.whiteboardId)
+    socket.broadcast.emit.mockImplementation(() => {
+      throw new Error('broadcast failed')
+    })
+    const id = randomUUID()
+
+    const ack = await send(handlers, c.event, { ...c.payload(f), id })
+
+    expect(ack).toMatchObject({ ok: true })
+    expect(row(c.table, id)).toBeDefined()
+  })
+
   it('assigns a fresh id when the create carries none', async () => {
     const f = makeFixture()
     const { handlers } = makeSocket(f.whiteboardId)

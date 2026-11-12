@@ -44,7 +44,7 @@ import {
   updateDiagramTablePosition,
 } from '@/data/diagram-table'
 import { findWhiteboardByIdWithDiagram } from '@/data/whiteboard'
-import { AlreadyExistsError } from '@/data/already-exists'
+import { ALREADY_EXISTS, AlreadyExistsError } from '@/data/already-exists'
 import {
   createArea,
   deleteArea,
@@ -132,7 +132,7 @@ type AckResult =
       ok: false
       code:
         | 'VALIDATION_ERROR'
-        | 'ALREADY_EXISTS'
+        | typeof ALREADY_EXISTS
         | 'NOT_FOUND'
         | 'FORBIDDEN'
         | 'SESSION_EXPIRED'
@@ -148,10 +148,44 @@ type AckResult =
  */
 function createFailureCode(
   error: unknown,
-): 'ALREADY_EXISTS' | 'VALIDATION_ERROR' {
+): typeof ALREADY_EXISTS | 'VALIDATION_ERROR' {
   return error instanceof AlreadyExistsError
-    ? 'ALREADY_EXISTS'
+    ? ALREADY_EXISTS
     : 'VALIDATION_ERROR'
+}
+
+/**
+ * Tell the other clients about a create that is already committed. A throw
+ * from the broadcast is logged and swallowed: it must not turn the ack of a
+ * stored row into a failure, because a caller that reads the failure as "not
+ * stored" would send the create again.
+ */
+function broadcastCommitted(event: string, emit: () => void): void {
+  try {
+    emit()
+  } catch (error) {
+    console.error(`Failed to broadcast ${event}:`, error)
+  }
+}
+
+/**
+ * Report a failed create: log it, emit the `error` event and ack the failure
+ * with the code `createFailureCode` picks. `extra` adds fields to the `error`
+ * event only.
+ */
+function ackCreateFailure(
+  socket: { emit: (e: string, p: any) => void },
+  event: string,
+  noun: string,
+  error: unknown,
+  cb: ((res: AckResult) => void) | undefined,
+  extra: Record<string, unknown> = {},
+): void {
+  console.error(`Failed to create ${noun}:`, error)
+  const message = clientErrorMessage(error, `Failed to create ${noun}`)
+  const code = createFailureCode(error)
+  socket.emit('error', { event, error: code, message, ...extra })
+  cb?.({ ok: false, code, message })
 }
 
 /**
@@ -570,23 +604,17 @@ export function setupCollaborationEventHandlers(
         const table = await createDiagramTable(validated)
 
         // Broadcast to other users
-        socket.broadcast.emit('table:created', {
-          ...table,
-          createdBy: userId,
-        })
+        broadcastCommitted('table:created', () =>
+          socket.broadcast.emit('table:created', {
+            ...table,
+            createdBy: userId,
+          }),
+        )
 
         // FR-022: ack to sender (MCP or any emitWithAck caller)
         cb?.({ ok: true, entity: table })
       } catch (error) {
-        console.error('Failed to create table:', error)
-        const message = clientErrorMessage(error, 'Failed to create table')
-        const code = createFailureCode(error)
-        socket.emit('error', {
-          event: 'table:create',
-          error: code,
-          message,
-        })
-        cb?.({ ok: false, code, message })
+        ackCreateFailure(socket, 'table:create', 'table', error, cb)
         return
       }
       await safeUpdateSessionActivity(socket.id)
@@ -1145,18 +1173,12 @@ export function setupCollaborationEventHandlers(
         return
       }
       const area = await createArea(validated)
-      socket.broadcast.emit('area:created', { ...area, createdBy: userId })
+      broadcastCommitted('area:created', () =>
+        socket.broadcast.emit('area:created', { ...area, createdBy: userId }),
+      )
       cb?.({ ok: true, entity: area })
     } catch (error) {
-      console.error('Failed to create area:', error)
-      const message = clientErrorMessage(error, 'Failed to create area')
-      const code = createFailureCode(error)
-      socket.emit('error', {
-        event: 'area:create',
-        error: code,
-        message,
-      })
-      cb?.({ ok: false, code, message })
+      ackCreateFailure(socket, 'area:create', 'area', error, cb)
       return
     }
     await safeUpdateSessionActivity(socket.id)
@@ -1914,35 +1936,23 @@ export function setupCollaborationEventHandlers(
         // Create column in database
         const column = await createColumn(validated)
 
-        // Broadcast to other users
-        socket.broadcast.emit('column:created', {
-          ...column,
-          createdBy: userId,
-        })
-
-        // Also confirm creation back to the originating socket so the client
-        // can replace its optimistic temp ID with the real database ID.
-        socket.emit('column:created', {
-          ...column,
-          createdBy: userId,
+        // Broadcast to other users, and confirm creation back to the
+        // originating socket so the client can replace its optimistic temp ID
+        // with the real database ID.
+        broadcastCommitted('column:created', () => {
+          socket.broadcast.emit('column:created', {
+            ...column,
+            createdBy: userId,
+          })
+          socket.emit('column:created', { ...column, createdBy: userId })
         })
 
         // FR-022: ack callback for MCP write tools
         cb?.({ ok: true, entity: column })
       } catch (error) {
-        console.error('Failed to create column:', error)
-        const code = createFailureCode(error)
-        socket.emit('error', {
-          event: 'column:create',
-          error: code,
-          message: clientErrorMessage(error, 'Failed to create column'),
+        ackCreateFailure(socket, 'column:create', 'column', error, cb, {
           name: validated?.name,
           tableId: validated?.tableId,
-        })
-        cb?.({
-          ok: false,
-          code,
-          message: clientErrorMessage(error, 'Failed to create column'),
         })
         return
       }
@@ -2400,26 +2410,23 @@ export function setupCollaborationEventHandlers(
         const relationship = await createRelationship(validated)
 
         // Broadcast to other users
-        socket.broadcast.emit('relationship:created', {
-          ...relationship,
-          createdBy: userId,
-        })
+        broadcastCommitted('relationship:created', () =>
+          socket.broadcast.emit('relationship:created', {
+            ...relationship,
+            createdBy: userId,
+          }),
+        )
 
         // FR-022: ack to sender
         cb?.({ ok: true, entity: relationship })
       } catch (error) {
-        console.error('Failed to create relationship:', error)
-        const message = clientErrorMessage(
+        ackCreateFailure(
+          socket,
+          'relationship:create',
+          'relationship',
           error,
-          'Failed to create relationship',
+          cb,
         )
-        const code = createFailureCode(error)
-        socket.emit('error', {
-          event: 'relationship:create',
-          error: code,
-          message,
-        })
-        cb?.({ ok: false, code, message })
         return
       }
       await safeUpdateSessionActivity(socket.id)

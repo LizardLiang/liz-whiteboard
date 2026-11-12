@@ -33,6 +33,7 @@
 
 import { createFileRoute } from '@tanstack/react-router'
 import { z } from 'zod'
+import { ALREADY_EXISTS, AlreadyExistsError } from '@/data/already-exists'
 import { createFixedWindowRateLimiter, extractClientIp } from '@/lib/rate-limit'
 
 // Rate limiting: two buckets, NOT the single 15 / 60s per-IP bucket this route
@@ -183,9 +184,8 @@ export async function handleTableReferenceRequest(
   // Resolve the project the operation targets. `create` and `list` name the
   // board directly; `update` and `delete` name the reference row, which is a
   // DiagramTable row, so the table resolver finds its project.
-  const { getTableProjectId, getWhiteboardProjectId } = await import(
-    '@/data/resolve-project'
-  )
+  const { getTableProjectId, getWhiteboardProjectId } =
+    await import('@/data/resolve-project')
   let projectId: string
   if (body.op === 'create' || body.op === 'list') {
     const resolved = await getWhiteboardProjectId(body.whiteboardId)
@@ -268,8 +268,8 @@ export async function handleTableReferenceRequest(
     // A create naming an id a table on THIS whiteboard already has: refused,
     // nothing changed. An id held on another whiteboard falls through to the
     // generic failure below (src/data/already-exists.ts decides which).
-    if (isAlreadyExists(error)) {
-      return jsonError('ALREADY_EXISTS', message, 409)
+    if (error instanceof AlreadyExistsError) {
+      return jsonError(ALREADY_EXISTS, message, 409)
     }
     if (isCallerError(message)) {
       return jsonError('invalid_request', message, 400)
@@ -281,13 +281,6 @@ export async function handleTableReferenceRequest(
       500,
     )
   }
-}
-
-function isAlreadyExists(error: unknown): boolean {
-  return (
-    error instanceof Error &&
-    (error as { code?: unknown }).code === 'ALREADY_EXISTS'
-  )
 }
 
 /**
