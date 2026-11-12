@@ -255,9 +255,28 @@ describe('element:create', () => {
       expect(input.style.strokeWidth).toBe(4)
     })
 
-    it('leaves a restore (explicit id) untouched', async () => {
+    it('colours a create with an id and no fill by its kind (an MCP shape)', async () => {
       const input = await createWith({ ...VALID_CREATE, id: ELEMENT_ID })
-      expect(input.style).toBeUndefined()
+      expect(input.id).toBe(ELEMENT_ID)
+      expect(input.style.fill).toBe('#0090ff')
+      expect(input.style.stroke).toBe('#0090ff')
+    })
+
+    it('keeps the stored style of an id create exactly (undo, paste)', async () => {
+      const stored = {
+        ...DEFAULT_ELEMENT_STYLE,
+        fill: '#e5484d',
+        stroke: '#1c2024',
+        strokeWidth: 3,
+      }
+      const input = await createWith({
+        ...VALID_CREATE,
+        kind: 'ellipse',
+        props: { kind: 'ellipse' },
+        id: ELEMENT_ID,
+        style: stored,
+      })
+      expect(input.style).toEqual(stored)
     })
 
     it('leaves a text element untouched', async () => {

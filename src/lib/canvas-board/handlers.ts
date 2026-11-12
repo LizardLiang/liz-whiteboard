@@ -187,11 +187,12 @@ const KIND_COLOUR_PRESET: Partial<Record<string, PresetId>> = {
 }
 
 /**
- * The style an ordinary create is persisted with. A shape that arrives with no
- * `style.fill` (an MCP agent that named no colour; the browser always sends
- * one) gets its kind's preset as fill, and as stroke when the stroke is also
- * missing, so agent-drawn shapes are told apart instead of all painting slate.
- * Every other payload keeps its own style untouched.
+ * The style every create is persisted with, with or without a client `id`. A
+ * shape that arrives with no `style.fill` (an MCP agent that named no colour;
+ * the browser always sends one) gets its kind's preset as fill, and as stroke
+ * when the stroke is also missing, so agent-drawn shapes are told apart
+ * instead of all painting slate. Every other payload keeps its own style
+ * untouched — undo and paste send the stored style, which carries its `fill`.
  */
 function withKindColour(payload: Record<string, unknown>): unknown {
   const preset =
@@ -284,7 +285,7 @@ export function registerCanvasElementHandlers(
           : undefined
       const validated = createCanvasElementSchema.parse({
         ...payload,
-        style: hasExplicitId ? payload.style : withKindColour(payload),
+        style: withKindColour(payload),
         boardId,
         zIndex,
         minRevision,
