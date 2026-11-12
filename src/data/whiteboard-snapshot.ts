@@ -5,9 +5,11 @@
 //
 // D1: the entire diagram is captured as a single self-contained JSON blob
 // (`payload`) — immune to future live-schema drift, trivial to capture and
-// restore. D3: restore reuses the original entity UUIDs verbatim (no
-// remapping), so relationship column references and Area.memberTableIds
-// survive a restore for free.
+// restore. D3: restore reuses the original entity UUIDs, so relationship
+// column references and Area.memberTableIds survive a restore for free. The
+// one exception is a row whose id another whiteboard now holds (a row deleted
+// before ids were tombstoned, see RetiredId in schema-sql.ts): it is restored
+// under a fresh id and every reference to it inside the snapshot is remapped.
 
 import { findDiagramTablesByWhiteboardId } from './diagram-table'
 import { findColumnsByTableId } from './column'
@@ -202,6 +204,11 @@ export async function findSnapshotById(
  * function that itself opens a transaction()), since SQLite does not
  * support nested BEGIN.
  *
+ * A row whose id a live row on ANOTHER whiteboard now holds is inserted under
+ * a fresh id (`idFor`), and the references to it in this payload follow: a
+ * column's table, a relationship's endpoints, an area's member tables. Other
+ * whiteboards' rows are never touched.
+ *
  * @throws on any failure — the transaction() wrapper rolls back, leaving the
  * live diagram completely unchanged (AC8).
  */
@@ -228,9 +235,22 @@ export async function restoreWhiteboardFromSnapshot(
 
     const ts = nowMs()
 
+    // The board is wiped, so any live row still holding an id is not ours.
+    const idFor = (entity: string, id: string): string =>
+      db.prepare(`SELECT 1 AS "x" FROM "${entity}" WHERE "id" = ?`).get(id) ===
+      undefined
+        ? id
+        : genId()
+    const tableIds = new Map<string, string>()
+    const columnIds = new Map<string, string>()
+    const mapped = (ids: Map<string, string>, id: string): string =>
+      ids.get(id) ?? id
+
     for (const table of payload.tables) {
+      const tableId = idFor('DiagramTable', table.id)
+      tableIds.set(table.id, tableId)
       insert('DiagramTable', {
-        id: table.id,
+        id: tableId,
         whiteboardId,
         name: table.name,
         description: table.description,
@@ -243,9 +263,11 @@ export async function restoreWhiteboardFromSnapshot(
       })
 
       for (const column of table.columns) {
+        const columnId = idFor('Column', column.id)
+        columnIds.set(column.id, columnId)
         insert('Column', {
-          id: column.id,
-          tableId: table.id,
+          id: columnId,
+          tableId,
           name: column.name,
           dataType: column.dataType,
           isPrimaryKey: toDbBool(column.isPrimaryKey),
@@ -262,12 +284,12 @@ export async function restoreWhiteboardFromSnapshot(
 
     for (const relationship of payload.relationships) {
       insert('Relationship', {
-        id: relationship.id,
+        id: idFor('Relationship', relationship.id),
         whiteboardId,
-        sourceTableId: relationship.sourceTableId,
-        targetTableId: relationship.targetTableId,
-        sourceColumnId: relationship.sourceColumnId,
-        targetColumnId: relationship.targetColumnId,
+        sourceTableId: mapped(tableIds, relationship.sourceTableId),
+        targetTableId: mapped(tableIds, relationship.targetTableId),
+        sourceColumnId: mapped(columnIds, relationship.sourceColumnId),
+        targetColumnId: mapped(columnIds, relationship.targetColumnId),
         cardinality: relationship.cardinality,
         label: relationship.label,
         routingPoints: toDbJson(relationship.routingPoints),
@@ -278,7 +300,7 @@ export async function restoreWhiteboardFromSnapshot(
 
     for (const area of payload.areas) {
       insert('Area', {
-        id: area.id,
+        id: idFor('Area', area.id),
         whiteboardId,
         name: area.name,
         color: area.color,
@@ -286,7 +308,9 @@ export async function restoreWhiteboardFromSnapshot(
         positionY: area.positionY,
         width: area.width,
         height: area.height,
-        memberTableIds: toDbJson(area.memberTableIds),
+        memberTableIds: toDbJson(
+          area.memberTableIds.map((id) => mapped(tableIds, id)),
+        ),
         createdAt: coerceStoredDate(area.createdAt),
         updatedAt: ts,
       })

@@ -18,11 +18,15 @@ import {
   findDiagramTablesByWhiteboardId,
 } from './diagram-table'
 import { createColumn } from './column'
-import { createRelationship } from './relationship'
+import {
+  createRelationship,
+  findRelationshipsByWhiteboardId,
+} from './relationship'
 import { createArea, findAreaById, findAreasByWhiteboard } from './area'
 import { createShape, findShapesByWhiteboard } from './shape'
 import { createConnector, findConnectorsByWhiteboard } from './connector'
 import type * as DbModule from '@/db'
+import { db, insert, nowMs, toDbJson } from '@/db'
 import {
   makeProject,
   makeUser,
@@ -287,6 +291,107 @@ describe('restoreWhiteboardFromSnapshot', () => {
     expect(shapes.map((s) => s.id).sort()).toEqual([shape.id, shape2.id].sort())
     const connectors = await findConnectorsByWhiteboard(whiteboardId)
     expect(connectors.map((c) => c.id)).toEqual([connector.id])
+  })
+
+  it('restores under fresh ids the rows whose ids another whiteboard now holds, remapping every reference', async () => {
+    // Rows deleted before ids were tombstoned (RetiredId) can have had their
+    // ids claimed from another project. The restore must still succeed, and
+    // must leave the squatter's rows alone.
+    const whiteboardId = makeWhiteboardId()
+    const { t1, c1, t2, c2, rel, area } = await seedDiagram(whiteboardId)
+    const payload = await captureWhiteboardState(whiteboardId)
+
+    db.prepare('DELETE FROM "Area" WHERE "whiteboardId" = ?').run(whiteboardId)
+    db.prepare('DELETE FROM "DiagramTable" WHERE "whiteboardId" = ?').run(
+      whiteboardId,
+    )
+    db.exec('DELETE FROM "RetiredId"')
+
+    const elsewhere = makeWhiteboardId()
+    const ts = nowMs()
+    insert('DiagramTable', {
+      id: t1.id,
+      whiteboardId: elsewhere,
+      name: 'squat',
+      createdAt: ts,
+      updatedAt: ts,
+    })
+    insert('Column', {
+      id: c2.id,
+      tableId: t1.id,
+      name: 'INJECTED',
+      dataType: 'text',
+      isPrimaryKey: 0,
+      isForeignKey: 0,
+      isUnique: 0,
+      isNullable: 0,
+      order: 0,
+      createdAt: ts,
+      updatedAt: ts,
+    })
+    insert('Area', {
+      id: area.id,
+      whiteboardId: elsewhere,
+      name: 'squat area',
+      color: 'red',
+      positionX: 0,
+      positionY: 0,
+      width: 1,
+      height: 1,
+      memberTableIds: toDbJson([]),
+      createdAt: ts,
+      updatedAt: ts,
+    })
+
+    await restoreWhiteboardFromSnapshot(whiteboardId, payload)
+
+    const tables = await findDiagramTablesByWhiteboardId(whiteboardId)
+    expect(tables).toHaveLength(2)
+    const users = tables.find((t) => t.name === 'users')!
+    const posts = tables.find((t) => t.name === 'posts')!
+    expect(users.id).not.toBe(t1.id)
+    expect(posts.id).toBe(t2.id)
+
+    const usersColumns = db
+      .prepare('SELECT "id" FROM "Column" WHERE "tableId" = ?')
+      .all(users.id)
+      .map((r) => r.id)
+    expect(usersColumns).toEqual([c1.id])
+    const postsColumns = db
+      .prepare('SELECT "id" FROM "Column" WHERE "tableId" = ?')
+      .all(posts.id)
+      .map((r) => r.id)
+    expect(postsColumns).toHaveLength(1)
+    expect(postsColumns[0]).not.toBe(c2.id)
+
+    const [restoredRel] = await findRelationshipsByWhiteboardId(whiteboardId)
+    expect(restoredRel.id).toBe(rel.id)
+    expect(restoredRel.sourceTableId).toBe(users.id)
+    expect(restoredRel.sourceColumnId).toBe(c1.id)
+    expect(restoredRel.targetTableId).toBe(posts.id)
+    expect(restoredRel.targetColumnId).toBe(postsColumns[0])
+
+    const [restoredArea] = await findAreasByWhiteboard(whiteboardId)
+    expect(restoredArea.id).not.toBe(area.id)
+    expect(restoredArea.memberTableIds.slice().sort()).toEqual(
+      [users.id, posts.id].sort(),
+    )
+
+    // The squatter's rows are untouched.
+    const squatTable = db
+      .prepare(
+        'SELECT "whiteboardId", "name" FROM "DiagramTable" WHERE "id" = ?',
+      )
+      .get(t1.id)
+    expect({ ...squatTable }).toEqual({
+      whiteboardId: elsewhere,
+      name: 'squat',
+    })
+    const squatColumn = db
+      .prepare('SELECT "tableId", "name" FROM "Column" WHERE "id" = ?')
+      .get(c2.id)
+    expect({ ...squatColumn }).toEqual({ tableId: t1.id, name: 'INJECTED' })
+    expect((await findAreaById(area.id))?.whiteboardId).toBe(elsewhere)
   })
 
   it('restores whiteboard scalars (name, canvasState, textSource)', async () => {
