@@ -127,7 +127,7 @@ const config = defineConfig({
     tanstackStart({
       router: {
         routeFileIgnorePattern:
-          '\\.(test|spec)\\.(ts|tsx)$|^(auth|collaboration|columns|folders|permissions|projects|relationships|tables|whiteboards)\\.ts$',
+          '\\.(test|spec)\\.(ts|tsx)$|^(auth|collaboration|columns|folders|permissions|projects|whiteboards)\\.ts$',
       },
     }),
     nitro({
