@@ -69,11 +69,13 @@ describe('useAutoLayoutOrchestrator with a real ReactFlowProvider', () => {
   it('a failed save restores the store and hands the previous layout to the cache', async () => {
     // The save fails after React Flow applied the optimistic layout, as a
     // network failure does; a same-tick rejection would beat the store.
+    let failSave!: (err: Error) => void
+    ;(updateTablePositionsBulk as any).mockClear()
     ;(updateTablePositionsBulk as any).mockImplementationOnce(
       () =>
-        new Promise((_, reject) =>
-          setTimeout(() => reject(new Error('network')), 20),
-        ),
+        new Promise((_, reject) => {
+          failSave = reject
+        }),
     )
     const onAreaBoundsChange = vi.fn()
     const onTablePositionsChange = vi.fn()
@@ -105,19 +107,21 @@ describe('useAutoLayoutOrchestrator with a real ReactFlowProvider', () => {
       }),
       { wrapper },
     )
-    let run!: Promise<void>
+    // handleAutoLayoutClick starts the run without returning it: wait for
+    // the save request, which the run sends after it applied the layout.
+    act(() => {
+      result.current.orch.handleAutoLayoutClick(2)
+    })
+    await vi.waitFor(() => expect(updateTablePositionsBulk).toHaveBeenCalled())
     await act(async () => {
-      run = Promise.resolve(result.current.orch.handleAutoLayoutClick(2))
-      await new Promise((r) => setTimeout(r, 5))
+      await new Promise((r) => setTimeout(r, 0))
     })
     // The optimistic layout reached the store before the save failed.
     expect(
       result.current.rf.getNodes().find((n) => n.id === AREA_ID)?.position,
     ).toEqual({ x: 500, y: 300 })
     await act(async () => {
-      await run
-    })
-    await act(async () => {
+      failSave(new Error('network'))
       await new Promise((r) => setTimeout(r, 0))
     })
     const byId = new Map(result.current.rf.getNodes().map((n) => [n.id, n]))
