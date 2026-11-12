@@ -15,10 +15,10 @@
 // round trip, not an HTTP server-function reaching for `io`), but we still
 // reload to prove the DB write itself succeeded, independent of any socket
 // path — the same pattern version-history.spec.ts uses for restore.
-import {   expect, test } from '@playwright/test'
+import { expect, test } from '@playwright/test'
 import { IDS } from './fixtures'
 import { tableNode } from './canvas-helpers'
-import type {Locator, Page} from '@playwright/test';
+import type { Locator, Page } from '@playwright/test'
 
 // This suite mutates positions + area membership and does NOT restore them,
 // so it runs against its OWN dedicated board (IDS.mdWhiteboard, seeded in
@@ -34,7 +34,9 @@ const WB_URL = `/whiteboard/${IDS.mdWhiteboard}`
 
 async function openWhiteboard(page: Page) {
   await page.goto(WB_URL)
-  await expect(page.getByRole('heading', { name: 'E2E Multi-Drag' })).toBeVisible()
+  await expect(
+    page.getByRole('heading', { name: 'E2E Multi-Drag' }),
+  ).toBeVisible()
   await expect(tableNode(page, 'users').first()).toBeVisible()
   await expect(tableNode(page, 'orders').first()).toBeVisible()
 }
@@ -175,7 +177,9 @@ async function reloadAndReadAreaAndTables(
   page: Page,
 ): Promise<SettledAreaAndTables> {
   await page.reload()
-  await expect(page.getByRole('heading', { name: 'E2E Multi-Drag' })).toBeVisible()
+  await expect(
+    page.getByRole('heading', { name: 'E2E Multi-Drag' }),
+  ).toBeVisible()
   await expect(tableNode(page, 'orders').first()).toBeVisible()
 
   await Promise.all([
@@ -228,14 +232,14 @@ async function reloadUntilAreaReconciled(
   page: Page,
   timeoutMs = 8000,
 ): Promise<SettledAreaAndTables> {
-  const deadline = Date.now() + timeoutMs
+  const deadline = performance.now() + timeoutMs
   let last: SettledAreaAndTables
   for (;;) {
     last = await reloadAndReadAreaAndTables(page)
     const ordersJoined = isCenterInsideRect(last.areaRect, last.ordersCenter)
     const usersLeft = !isCenterInsideRect(last.areaRect, last.usersCenter)
     if (ordersJoined && usersLeft) return last
-    if (Date.now() > deadline) return last
+    if (performance.now() > deadline) return last
     await page.waitForTimeout(300)
   }
 }
@@ -295,7 +299,10 @@ async function multiSelectAndDrag(
   const ordersHeader = tableNode(page, 'orders').first()
 
   await usersHeader.click({ position: { x: 20, y: 10 } })
-  await ordersHeader.click({ position: { x: 20, y: 10 }, modifiers: ['Control'] })
+  await ordersHeader.click({
+    position: { x: 20, y: 10 },
+    modifiers: ['Control'],
+  })
 
   const getAnchor = () => headerAnchor(page, 'users')
   await ensureDragFitsOnScreen(page, getAnchor, delta)
@@ -317,7 +324,8 @@ async function multiSelectAndDrag(
   // the observed flake: a reload firing before the persist POST resolved
   // reads back the pre-drag position).
   const persisted = page.waitForResponse(
-    (res) => res.request().method() === 'POST' && isBulkPositionPersistUrl(res.url()),
+    (res) =>
+      res.request().method() === 'POST' && isBulkPositionPersistUrl(res.url()),
     { timeout: 10_000 },
   )
   await page.mouse.up()
@@ -352,7 +360,7 @@ test.describe('Multi-select table drag persist + area reconcile (GH #111)', () =
   // well outside it) to compute the drag delta below. Because this suite owns
   // its board (no other spec touches it), that geometry holds regardless of
   // run order — so this test is not order-dependent.
-  test('multi-drag reconciles each dragged table\'s area membership independently (FR-2, NFR-1)', async ({
+  test("multi-drag reconciles each dragged table's area membership independently (FR-2, NFR-1)", async ({
     page,
   }) => {
     await openWhiteboard(page)
@@ -365,7 +373,11 @@ test.describe('Multi-select table drag persist + area reconcile (GH #111)', () =
       y: areaPos.y + areaSize.height / 2,
     }
 
-    const ordersCenterBefore = await getNodeCenter(page, IDS.mdOrdersTable, scale)
+    const ordersCenterBefore = await getNodeCenter(
+      page,
+      IDS.mdOrdersTable,
+      scale,
+    )
 
     // Drag the shared selection so `orders`' new center lands exactly at the
     // (stationary) area's center — guaranteed inside. Because both dragged
@@ -386,8 +398,11 @@ test.describe('Multi-select table drag persist + area reconcile (GH #111)', () =
     // retrying (bounded) if the area's membership/bounds haven't reconciled
     // yet — see `reloadUntilAreaReconciled` for why a single reload can race
     // the fire-and-forget `area:update` persist.
-    const { areaRect: areaRectAfter, usersCenter: usersCenterAfter, ordersCenter: ordersCenterAfter } =
-      await reloadUntilAreaReconciled(page)
+    const {
+      areaRect: areaRectAfter,
+      usersCenter: usersCenterAfter,
+      ordersCenter: ordersCenterAfter,
+    } = await reloadUntilAreaReconciled(page)
 
     // `orders` (the co-dragged, non-leader table) joined — its new center
     // persisted inside the refit area rect. This is the behavior that did
@@ -450,7 +465,9 @@ test.describe('Multi-select table drag persist + area reconcile (GH #111)', () =
     // GH #111 core assertion: reload and confirm BOTH tables' new positions
     // persisted server-side (not just the drag leader's).
     await page.reload()
-    await expect(page.getByRole('heading', { name: 'E2E Multi-Drag' })).toBeVisible()
+    await expect(
+      page.getByRole('heading', { name: 'E2E Multi-Drag' }),
+    ).toBeVisible()
     await expect(tableNode(page, 'users').first()).toBeVisible()
 
     const usersAfterReload = await getNodePosition(page, IDS.mdUsersTable)
@@ -485,7 +502,9 @@ test.describe('Multi-select table drag persist + area reconcile (GH #111)', () =
     ).toBeGreaterThan(20)
 
     await page.reload()
-    await expect(page.getByRole('heading', { name: 'E2E Multi-Drag' })).toBeVisible()
+    await expect(
+      page.getByRole('heading', { name: 'E2E Multi-Drag' }),
+    ).toBeVisible()
     await expect(tableNode(page, 'orders').first()).toBeVisible()
 
     const afterReload = await getNodePosition(page, IDS.mdOrdersTable)

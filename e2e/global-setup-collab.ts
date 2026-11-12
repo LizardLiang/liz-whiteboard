@@ -75,8 +75,8 @@ export async function loginAndSaveState(
 }
 
 async function expectSessionCookie(context: BrowserContext, email: string) {
-  const deadline = Date.now() + 15_000
-  while (Date.now() < deadline) {
+  const deadline = performance.now() + 15_000
+  while (performance.now() < deadline) {
     const cookies = await context.cookies()
     if (cookies.some((c) => c.name === 'session_token' && c.value.length > 0)) {
       return

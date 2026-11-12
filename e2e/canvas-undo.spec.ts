@@ -74,7 +74,8 @@
 //     undo — the pan is left alone, the content edit is reversed)
 import { execFileSync } from 'node:child_process'
 import { expect, test } from '@playwright/test'
-import { BASE_URL, E2E_VIEWER_USER, IDS, STORAGE_STATE } from './fixtures'
+import { BASE_URL, IDS, STORAGE_STATE } from './fixtures'
+import { openViewerPage } from './viewer-session'
 import type { Browser, Page } from '@playwright/test'
 
 const BOARD_URL = `/canvas/${IDS.canvasBoard}`
@@ -279,39 +280,10 @@ function captureSocketFrames(page: Page): Array<string> {
 
 /** Mirrors global-setup.ts's login flow — real form, cookie is ground truth. */
 async function loginAsViewer(browser: Browser): Promise<Page> {
-  // An EXPLICITLY empty storage state is load-bearing — see
-  // canvas-board.spec.ts's identical helper for the full rationale: without
-  // it, `browser.newContext()` inherits the config's ADMIN storageState and
-  // this test would silently assert "read-only" against an owner session.
-  const context = await browser.newContext({
-    baseURL: BASE_URL,
-    storageState: { cookies: [], origins: [] },
-  })
-  const page = await context.newPage()
-
-  await page.goto('/login')
-  await page.waitForLoadState('networkidle')
-  const email = page.getByRole('textbox', { name: 'Email' })
-  const password = page.getByRole('textbox', { name: 'Password' })
-  const signIn = page.getByRole('button', { name: 'Sign in' })
-  await email.click()
-  await email.pressSequentially(E2E_VIEWER_USER.email)
-  await password.click()
-  await password.pressSequentially(E2E_VIEWER_USER.password)
-  await expect(signIn).toBeEnabled({ timeout: 10_000 })
-  await signIn.click()
-
-  const deadline = Date.now() + 15_000
-  while (Date.now() < deadline) {
-    const cookies = await context.cookies()
-    if (cookies.some((c) => c.name === 'session_token' && c.value.length > 0)) {
-      const fresh = await context.newPage()
-      await page.close()
-      return fresh
-    }
-    await page.waitForTimeout(250)
-  }
-  throw new Error('viewer login failed: session_token cookie was never set')
+  // No form login here: global-setup.ts logs the viewer in once per stack and
+  // saves the session. A form login per test spent the login IP limiter (30
+  // per 15 min, one shared bucket per server process). See viewer-session.ts.
+  return openViewerPage(browser)
 }
 
 /** A context with genuinely no session — the state a real public-share visitor arrives in. */
@@ -768,10 +740,9 @@ test.describe('contested undo across two clients', () => {
       // it again — this is what makes B's drag start from the rect's ACTUAL
       // current position rather than a stale local copy.
       await expect
-        .poll(
-          async () => byId(await engine(pageB), IDS.canvasRect)?.x ?? 0,
-          { timeout: 15_000 },
-        )
+        .poll(async () => byId(await engine(pageB), IDS.canvasRect)?.x ?? 0, {
+          timeout: 15_000,
+        })
         .toBeCloseTo(600, 0)
 
       // B moves the SAME rectangle again, advancing its revision past what
@@ -788,10 +759,9 @@ test.describe('contested undo across two clients', () => {
       // client-side (this hook's own revisionsRef), not merely as a
       // server-side race.
       await expect
-        .poll(
-          async () => byId(await engine(page), IDS.canvasRect)?.x ?? 0,
-          { timeout: 15_000 },
-        )
+        .poll(async () => byId(await engine(page), IDS.canvasRect)?.x ?? 0, {
+          timeout: 15_000,
+        })
         .toBeCloseTo(850, 0)
       await settle(page)
 

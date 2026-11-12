@@ -6,12 +6,12 @@
 import { execFileSync } from 'node:child_process'
 import { expect, test } from '@playwright/test'
 import {
-  E2E_VIEWER_USER,
   IDS,
   clickMoreTool,
   clickZoomMenuItem,
   waitForMenusClosed,
 } from './fixtures'
+import { openViewerPage } from './viewer-session'
 import { tableNode } from './canvas-helpers'
 import type { Browser, Page } from '@playwright/test'
 
@@ -59,30 +59,10 @@ async function settledZoomLabel(
 }
 
 async function loginAsViewer(browser: Browser): Promise<Page> {
-  const context = await browser.newContext({ storageState: undefined })
-  const page = await context.newPage()
-  await page.goto('/login')
-  await page.waitForLoadState('networkidle')
-  const email = page.getByRole('textbox', { name: 'Email' })
-  const password = page.getByRole('textbox', { name: 'Password' })
-  const signIn = page.getByRole('button', { name: 'Sign in' })
-  await email.click()
-  await email.pressSequentially(E2E_VIEWER_USER.email)
-  await password.click()
-  await password.pressSequentially(E2E_VIEWER_USER.password)
-  await expect(signIn).toBeEnabled({ timeout: 10_000 })
-  await signIn.click()
-  await expect
-    .poll(async () =>
-      (await context.cookies()).some(
-        (c) => c.name === 'session_token' && c.value.length > 0,
-      ),
-    )
-    .toBe(true)
-  // The login success handler does a full-page navigation; let it settle
-  // before the caller issues its own goto.
-  await page.waitForLoadState('networkidle')
-  return page
+  // No form login here: global-setup.ts logs the viewer in once per stack and
+  // saves the session. A form login per test spent the login IP limiter (30
+  // per 15 min, one shared bucket per server process). See viewer-session.ts.
+  return openViewerPage(browser)
 }
 
 test.describe('Board navigator drawer', () => {
@@ -183,7 +163,9 @@ test.describe('Board navigator drawer', () => {
     await page.goto(CANVAS_URL)
     const chip = page.getByTestId('board-chip')
     await expect(chip).toBeVisible()
-    await expect(chip.getByRole('heading', { name: 'E2E Canvas' })).toBeVisible()
+    await expect(
+      chip.getByRole('heading', { name: 'E2E Canvas' }),
+    ).toBeVisible()
     await expect(sidebar(page)).toHaveCount(0)
     await expect(
       chip.getByRole('button', { name: 'Show project navigator' }),
@@ -246,7 +228,9 @@ test.describe('Floating dock', () => {
       .poll(async () => (await users.boundingBox())?.height ?? Infinity)
       .toBeLessThan(before!.height)
     expect(
-      await page.evaluate(() => localStorage.getItem('whiteboard-display-mode')),
+      await page.evaluate(() =>
+        localStorage.getItem('whiteboard-display-mode'),
+      ),
     ).toBe('KEY_ONLY')
 
     await page.getByRole('button', { name: 'More tools' }).click()
@@ -298,7 +282,11 @@ test.describe('Floating dock', () => {
 })
 
 test.describe('Lock canvas', () => {
-  async function dragBy(page: Page, from: { x: number; y: number }, dx: number) {
+  async function dragBy(
+    page: Page,
+    from: { x: number; y: number },
+    dx: number,
+  ) {
     await page.mouse.move(from.x, from.y)
     await page.mouse.down()
     await page.mouse.move(from.x + dx / 2, from.y, { steps: 6 })
@@ -327,8 +315,7 @@ test.describe('Lock canvas', () => {
 
     // A locked drag pans the whole canvas, so judge movement by the gap
     // between the table and the area, which only a node drag changes.
-    const gap = async () =>
-      (await table.boundingBox())!.x - (await areaBox()).x
+    const gap = async () => (await table.boundingBox())!.x - (await areaBox()).x
 
     await clickZoomMenuItem(page, 'Lock canvas')
     const lockedGap = await gap()
@@ -391,7 +378,9 @@ test.describe('Lock canvas', () => {
     // Select the area, which makes its resize handles appear.
     const box = (await area.boundingBox())!
     await page.mouse.click(box.x + box.width - 40, box.y + box.height - 40)
-    await expect(area.locator('.react-flow__resize-control').first()).toBeVisible()
+    await expect(
+      area.locator('.react-flow__resize-control').first(),
+    ).toBeVisible()
     const corner = { x: box.x + box.width, y: box.y + box.height }
     const before = snapshot()
 
@@ -423,9 +412,19 @@ test.describe('Lock canvas', () => {
     // Unlocked again, the same actions work.
     await clickZoomMenuItem(page, 'Lock canvas')
     await clickZoomMenuItem(page, 'Unlock canvas')
-    const reopened = (await page.locator('.react-flow__node-area').first().boundingBox())!
-    await page.mouse.click(reopened.x + reopened.width - 40, reopened.y + reopened.height - 40)
-    await dragBy(page, { x: reopened.x + reopened.width, y: reopened.y + reopened.height }, 60)
+    const reopened = (await page
+      .locator('.react-flow__node-area')
+      .first()
+      .boundingBox())!
+    await page.mouse.click(
+      reopened.x + reopened.width - 40,
+      reopened.y + reopened.height - 40,
+    )
+    await dragBy(
+      page,
+      { x: reopened.x + reopened.width, y: reopened.y + reopened.height },
+      60,
+    )
     await expect.poll(snapshot).not.toBe(before)
 
     await dragColumnHandle(page)

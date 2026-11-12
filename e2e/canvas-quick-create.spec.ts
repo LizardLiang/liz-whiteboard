@@ -38,7 +38,8 @@
 // to avoid — and it would fail as "the click did nothing" with no hint why.
 import { execFileSync } from 'node:child_process'
 import { expect, test } from '@playwright/test'
-import { BASE_URL, E2E_VIEWER_USER, IDS } from './fixtures'
+import { IDS } from './fixtures'
+import { openViewerPage } from './viewer-session'
 import type { Browser, Page } from '@playwright/test'
 
 const BOARD_URL = `/canvas/${IDS.canvasBoard}`
@@ -228,35 +229,10 @@ async function hoverElement(page: Page, id: string) {
  * session that should have had them.
  */
 async function loginAsViewer(browser: Browser): Promise<Page> {
-  const context = await browser.newContext({
-    baseURL: BASE_URL,
-    storageState: { cookies: [], origins: [] },
-  })
-  const page = await context.newPage()
-
-  await page.goto('/login')
-  await page.waitForLoadState('networkidle')
-  const email = page.getByRole('textbox', { name: 'Email' })
-  const password = page.getByRole('textbox', { name: 'Password' })
-  const signIn = page.getByRole('button', { name: 'Sign in' })
-  await email.click()
-  await email.pressSequentially(E2E_VIEWER_USER.email)
-  await password.click()
-  await password.pressSequentially(E2E_VIEWER_USER.password)
-  await expect(signIn).toBeEnabled({ timeout: 10_000 })
-  await signIn.click()
-
-  const deadline = Date.now() + 15_000
-  while (Date.now() < deadline) {
-    const cookies = await context.cookies()
-    if (cookies.some((c) => c.name === 'session_token' && c.value.length > 0)) {
-      const fresh = await context.newPage()
-      await page.close()
-      return fresh
-    }
-    await page.waitForTimeout(250)
-  }
-  throw new Error('viewer login failed: session_token cookie was never set')
+  // No form login here: global-setup.ts logs the viewer in once per stack and
+  // saves the session. A form login per test spent the login IP limiter (30
+  // per 15 min, one shared bucket per server process). See viewer-session.ts.
+  return openViewerPage(browser)
 }
 
 /**

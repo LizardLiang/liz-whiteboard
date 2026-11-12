@@ -28,7 +28,8 @@
 // prod build and asserts the merged result live and via reload.
 import { execFileSync } from 'node:child_process'
 import { expect, test } from '@playwright/test'
-import { BASE_URL, E2E_VIEWER_USER, IDS } from './fixtures'
+import { IDS } from './fixtures'
+import { openViewerPage } from './viewer-session'
 import type { Browser, Download, Page } from '@playwright/test'
 
 const BOARD_URL = `/canvas/${IDS.canvasBoard}`
@@ -2044,34 +2045,10 @@ test.describe('grabber pills beside the resize handles', () => {
 test.describe('a read-only viewer', () => {
   /** Mirrors canvas-board.spec.ts: the real login form, the session cookie is the ground truth. */
   async function loginAsViewer(browser: Browser): Promise<Page> {
-    const context = await browser.newContext({
-      baseURL: BASE_URL,
-      storageState: { cookies: [], origins: [] },
-    })
-    const page = await context.newPage()
-    await page.goto('/login')
-    await page.waitForLoadState('networkidle')
-    const email = page.getByRole('textbox', { name: 'Email' })
-    const password = page.getByRole('textbox', { name: 'Password' })
-    const signIn = page.getByRole('button', { name: 'Sign in' })
-    await email.click()
-    await email.pressSequentially(E2E_VIEWER_USER.email)
-    await password.click()
-    await password.pressSequentially(E2E_VIEWER_USER.password)
-    await expect(signIn).toBeEnabled({ timeout: 10_000 })
-    await signIn.click()
-    await expect
-      .poll(
-        async () =>
-          (await context.cookies()).some(
-            (c) => c.name === 'session_token' && c.value.length > 0,
-          ),
-        { timeout: 15_000 },
-      )
-      .toBe(true)
-    const fresh = await context.newPage()
-    await page.close()
-    return fresh
+    // No form login here: global-setup.ts logs the viewer in once per stack and
+    // saves the session. A form login per test spent the login IP limiter (30
+    // per 15 min, one shared bucket per server process). See viewer-session.ts.
+    return openViewerPage(browser)
   }
 
   test('sees the table but gets no toolbar, "+", append bar, grabbers or menu', async ({

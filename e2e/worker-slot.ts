@@ -8,7 +8,9 @@
 // variable, so it reads slot 0.
 import { resolve } from 'node:path'
 
-const WEB_PORT_BASE = 3100
+// E2E_PORT_BASE moves every stack (web = base + 10 i, socket = web + 1), so two
+// runs on one machine, for example from two git worktrees, do not collide.
+const WEB_PORT_BASE = Number(process.env.E2E_PORT_BASE) || 3100
 const PORT_STEP = 10
 const DEFAULT_WORKERS = 3
 
@@ -42,6 +44,12 @@ export function slotStorageState(i: number): string {
   // playwright.cimd.config.ts also reads.
   if (usesExternalServer()) return 'e2e/.auth/state.json'
   return `e2e/.auth/state-w${i}.json`
+}
+
+/** Saved login of the VIEWER member (E2E_VIEWER_USER), written by global-setup. */
+export function slotViewerStorageState(i: number): string {
+  if (usesExternalServer()) return 'e2e/.auth/state-viewer.json'
+  return `e2e/.auth/state-viewer-w${i}.json`
 }
 
 export function slotViteCacheDir(i: number): string {

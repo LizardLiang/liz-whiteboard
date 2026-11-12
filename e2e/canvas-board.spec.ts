@@ -48,7 +48,8 @@
 // its own public route, both covered by the last describe block below.
 import { execFileSync } from 'node:child_process'
 import { expect, test } from '@playwright/test'
-import { BASE_URL, E2E_VIEWER_USER, IDS, STORAGE_STATE } from './fixtures'
+import { BASE_URL, IDS, STORAGE_STATE } from './fixtures'
+import { openViewerPage } from './viewer-session'
 import type { Browser, Page } from '@playwright/test'
 
 const BOARD_URL = `/canvas/${IDS.canvasBoard}`
@@ -219,56 +220,10 @@ function byId(state: EngineState, id: string) {
 
 /** Mirrors global-setup.ts's login flow — real form, cookie is ground truth. */
 async function loginAsViewer(browser: Browser): Promise<Page> {
-  // An EXPLICITLY empty storage state is load-bearing. `browser.newContext()`
-  // here picks up the config's ADMIN `use.storageState`, so without this the
-  // context arrives already signed in as the owner: /login redirects away, the
-  // credentials below never take effect, and the cookie check passes on its
-  // first iteration against the OWNER's cookie. The test then asserts
-  // "read-only" against a session that can edit everything, and fails in a way
-  // that looks like a permissions bug in the app.
-  const context = await browser.newContext({
-    baseURL: BASE_URL,
-    storageState: { cookies: [], origins: [] },
-  })
-  const page = await context.newPage()
-
-  await page.goto('/login')
-  await page.waitForLoadState('networkidle')
-  const email = page.getByRole('textbox', { name: 'Email' })
-  const password = page.getByRole('textbox', { name: 'Password' })
-  const signIn = page.getByRole('button', { name: 'Sign in' })
-  await email.click()
-  await email.pressSequentially(E2E_VIEWER_USER.email)
-  await password.click()
-  await password.pressSequentially(E2E_VIEWER_USER.password)
-  await expect(signIn).toBeEnabled({ timeout: 10_000 })
-  await signIn.click()
-
-  // Wait for the session cookie rather than any redirect — global-setup.ts
-  // records the same rationale: the post-login client redirect can bounce, so
-  // the cookie, not the URL, is the ground truth.
-  const deadline = Date.now() + 15_000
-  while (Date.now() < deadline) {
-    const cookies = await context.cookies()
-    if (cookies.some((c) => c.name === 'session_token' && c.value.length > 0)) {
-      // Hand back a FRESH page in the now-authenticated context rather than
-      // the one that submitted the form.
-      //
-      // The app bounces back to `/login?redirect=%2F` after sign-in (the
-      // known, pre-existing redirect bounce global-setup.ts documents) and
-      // then client-redirects again. Navigating that page supersedes the
-      // in-flight navigation and Playwright reports `net::ERR_ABORTED`, which
-      // reads like a broken route rather than a race — and `networkidle` does
-      // not settle it, because the redirect is client-side. A brand-new page
-      // in the same context carries the session cookie and has no pending
-      // navigation to lose to.
-      const fresh = await context.newPage()
-      await page.close()
-      return fresh
-    }
-    await page.waitForTimeout(250)
-  }
-  throw new Error('viewer login failed: session_token cookie was never set')
+  // No form login here: global-setup.ts logs the viewer in once per stack and
+  // saves the session. A form login per test spent the login IP limiter (30
+  // per 15 min, one shared bucket per server process). See viewer-session.ts.
+  return openViewerPage(browser)
 }
 
 // ── regressions that shipped green and were only caught by hand ─────────────
@@ -674,9 +629,9 @@ test.describe('permissions', () => {
         viewerPage.locator('[role="toolbar"][aria-label="Canvas tools"]'),
       ).toHaveCount(0)
       for (const label of ['Select (V)', 'Rectangle (R)', 'Text (T)']) {
-        await expect(
-          viewerPage.locator(`[aria-label="${label}"]`),
-        ).toHaveCount(0)
+        await expect(viewerPage.locator(`[aria-label="${label}"]`)).toHaveCount(
+          0,
+        )
       }
 
       // The board still renders for them.
@@ -916,8 +871,9 @@ test.describe('public share links', () => {
       await visitor.waitForSelector('canvas')
 
       await page.getByRole('button', { name: 'Revoke' }).first().click()
-      await expect(page.getByRole('button', { name: 'Revoke' }).first())
-        .toBeDisabled({ timeout: 10_000 })
+      await expect(
+        page.getByRole('button', { name: 'Revoke' }).first(),
+      ).toBeDisabled({ timeout: 10_000 })
 
       // The already-issued URL must stop working — a revoke that only hid the
       // link from the list would leave every copy of it live.

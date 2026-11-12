@@ -120,9 +120,8 @@ export const registerUser = createServerFn({ method: 'POST' })
 export const loginUser = createServerFn({ method: 'POST' })
   .validator((data: unknown) => loginInputSchema.parse(data))
   .handler(async ({ data }) => {
-    const { setResponseHeader, getRequest } = await import(
-      '@tanstack/react-start/server'
-    )
+    const { setResponseHeader, getRequest } =
+      await import('@tanstack/react-start/server')
     const { createUserSession } = await import('@/lib/auth/session')
     const { buildSetCookieHeader } = await import('@/lib/auth/cookies')
     const { checkCredentials } = await import('@/lib/auth/login-flow')
@@ -131,6 +130,10 @@ export const loginUser = createServerFn({ method: 'POST' })
 
     const ip = extractClientIp(getRequest())
     if (!checkLoginIpRateLimit(ip)) {
+      // Log it: this refusal returns a normal-looking failure and no cookie,
+      // so without a line here it is invisible in the server output. The IP is
+      // a network address, not a credential; the email is deliberately absent.
+      console.warn(`[auth] Login refused: IP rate limit reached (ip=${ip})`)
       return {
         success: false,
         error: AUTH_ERROR_CODES.RATE_LIMITED,
@@ -173,13 +176,11 @@ export const loginUser = createServerFn({ method: 'POST' })
  */
 export const logoutUser = createServerFn({ method: 'POST' }).handler(
   async () => {
-    const { getRequest, setResponseHeader } = await import(
-      '@tanstack/react-start/server'
-    )
+    const { getRequest, setResponseHeader } =
+      await import('@tanstack/react-start/server')
     const { db } = await import('@/db')
-    const { parseSessionCookie, buildClearCookieHeader } = await import(
-      '@/lib/auth/cookies'
-    )
+    const { parseSessionCookie, buildClearCookieHeader } =
+      await import('@/lib/auth/cookies')
     const { deleteAuthSession } = await import('@/data/session')
     const { hashToken } = await import('@/lib/auth/session')
 
@@ -268,9 +269,8 @@ export const requestPasswordReset = createServerFn({ method: 'POST' })
       deleteResetTokensOlderThan,
       tryCreateResetToken,
     } = await import('@/data/password-reset')
-    const { generateResetToken, hashResetToken } = await import(
-      '@/lib/auth/reset-token'
-    )
+    const { generateResetToken, hashResetToken } =
+      await import('@/lib/auth/reset-token')
     const { sendEmail } = await import('@/lib/email/resend')
 
     const { getRequestLocale } = await import('@/lib/i18n/server-locale')
@@ -343,9 +343,8 @@ export const resetPassword = createServerFn({ method: 'POST' })
   .handler(async ({ data }) => {
     const { setResponseHeader } = await import('@tanstack/react-start/server')
     const { hashResetToken } = await import('@/lib/auth/reset-token')
-    const { completePasswordReset, findValidResetToken } = await import(
-      '@/data/password-reset'
-    )
+    const { completePasswordReset, findValidResetToken } =
+      await import('@/data/password-reset')
     const { hashPassword } = await import('@/lib/auth/password')
     const { buildClearCookieHeader } = await import('@/lib/auth/cookies')
 

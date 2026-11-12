@@ -17,7 +17,8 @@
 // serially, so no other file's own re-seed can race this one's.
 import { execFileSync } from 'node:child_process'
 import { expect, test } from '@playwright/test'
-import { BASE_URL, E2E_VIEWER_USER, IDS } from './fixtures'
+import { IDS } from './fixtures'
+import { openViewerPage } from './viewer-session'
 import type { Browser, Page } from '@playwright/test'
 
 const BOARD_URL = `/canvas/${IDS.canvasSearchBoard}`
@@ -72,44 +73,10 @@ async function openSearchViaButton(page: Page) {
 /** Mirrors global-setup.ts's / canvas-board.spec.ts's own login flow: a real
  * form submission, with the session cookie (not a redirect) as ground truth. */
 async function loginAsViewer(browser: Browser): Promise<Page> {
-  // An EXPLICITLY empty storage state is load-bearing — `browser.newContext()`
-  // would otherwise inherit the config's ADMIN `use.storageState`, and every
-  // assertion below would silently run as the wrong user.
-  const context = await browser.newContext({
-    baseURL: BASE_URL,
-    storageState: { cookies: [], origins: [] },
-  })
-  const page = await context.newPage()
-
-  await page.goto('/login')
-  await page.waitForLoadState('networkidle')
-  const email = page.getByRole('textbox', { name: 'Email' })
-  const password = page.getByRole('textbox', { name: 'Password' })
-  const signIn = page.getByRole('button', { name: 'Sign in' })
-  await email.click()
-  await email.pressSequentially(E2E_VIEWER_USER.email)
-  await password.click()
-  await password.pressSequentially(E2E_VIEWER_USER.password)
-  await expect(signIn).toBeEnabled({ timeout: 10_000 })
-  await signIn.click()
-
-  const deadline = Date.now() + 15_000
-  while (Date.now() < deadline) {
-    const cookies = await context.cookies()
-    if (
-      cookies.some((c) => c.name === 'session_token' && c.value.length > 0)
-    ) {
-      // A fresh page in the now-authenticated context — the app bounces back
-      // to `/login?redirect=%2F` after sign-in and then client-redirects
-      // again, which would otherwise race this navigation and fail with
-      // `net::ERR_ABORTED`.
-      const fresh = await context.newPage()
-      await page.close()
-      return fresh
-    }
-    await page.waitForTimeout(250)
-  }
-  throw new Error('viewer login failed: session_token cookie was never set')
+  // No form login here: global-setup.ts logs the viewer in once per stack and
+  // saves the session. A form login per test spent the login IP limiter (30
+  // per 15 min, one shared bucket per server process). See viewer-session.ts.
+  return openViewerPage(browser)
 }
 
 test.describe('Canvas search palette (Cmd/Ctrl+K)', () => {
@@ -118,16 +85,12 @@ test.describe('Canvas search palette (Cmd/Ctrl+K)', () => {
 
     await openSearchViaButton(page)
     await page.keyboard.press('Escape')
-    await expect(
-      page.getByPlaceholder('Search canvas elements…'),
-    ).toBeHidden()
+    await expect(page.getByPlaceholder('Search canvas elements…')).toBeHidden()
 
     // Playwright's `ControlOrMeta` modifier is what makes this portable
     // across a Ctrl-based CI runner and a local Cmd-based Mac.
     await page.keyboard.press('ControlOrMeta+k')
-    await expect(
-      page.getByPlaceholder('Search canvas elements…'),
-    ).toBeVisible()
+    await expect(page.getByPlaceholder('Search canvas elements…')).toBeVisible()
   })
 
   test('filters into Shapes/Text/Connectors groups', async ({ page }) => {
@@ -203,9 +166,7 @@ test.describe('Canvas search palette (Cmd/Ctrl+K)', () => {
       .getByRole('option', { name: 'alpha link', exact: true })
       .click()
 
-    await expect(
-      page.getByPlaceholder('Search canvas elements…'),
-    ).toBeHidden()
+    await expect(page.getByPlaceholder('Search canvas elements…')).toBeHidden()
 
     const after = await engine(page)
     expect(after.selectedIds).toEqual([IDS.canvasSearchConnector])

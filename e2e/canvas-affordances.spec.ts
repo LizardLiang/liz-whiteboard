@@ -32,8 +32,9 @@
 //      offered at all (no edit-mode entry point for it either)
 import { execFileSync } from 'node:child_process'
 import { expect, test } from '@playwright/test'
-import { E2E_VIEWER_USER, IDS } from './fixtures'
-import type { Browser, BrowserContext, Locator, Page } from '@playwright/test'
+import { IDS } from './fixtures'
+import { openViewerPage } from './viewer-session'
+import type { Browser, Locator, Page } from '@playwright/test'
 
 const STRESS_TABLE_COUNT = 12
 
@@ -169,54 +170,10 @@ test.describe('Canvas table affordances — context menu (tactical plan: canvas-
  * (`hasMinimumRole` in src/lib/auth/permissions.ts).
  */
 async function loginAsViewer(browser: Browser): Promise<Page> {
-  const context: BrowserContext = await browser.newContext()
-  const page = await context.newPage()
-
-  await page.goto('/login')
-  await page.waitForLoadState('networkidle')
-
-  const email = page.getByRole('textbox', { name: 'Email' })
-  const password = page.getByRole('textbox', { name: 'Password' })
-  const signIn = page.getByRole('button', { name: 'Sign in' })
-
-  await email.click()
-  await email.pressSequentially(E2E_VIEWER_USER.email)
-  await password.click()
-  await password.pressSequentially(E2E_VIEWER_USER.password)
-  await expect(signIn).toBeEnabled({ timeout: 10_000 })
-  await signIn.click()
-
-  // Wait for the session cookie rather than any redirect (see
-  // global-setup.ts's identical rationale: the app's post-login client
-  // redirect can bounce, so the cookie — not the URL — is the ground truth).
-  const deadline = Date.now() + 15_000
-  let authenticated = false
-  while (Date.now() < deadline) {
-    const cookies = await context.cookies()
-    if (
-      cookies.some((c) => c.name === 'session_token' && c.value.length > 0)
-    ) {
-      authenticated = true
-      break
-    }
-    await new Promise((r) => setTimeout(r, 250))
-  }
-  if (!authenticated) {
-    throw new Error(
-      'canvas-affordances e2e: session_token cookie was never set after viewer login',
-    )
-  }
-  // Let the app's own post-login redirect settle before the caller issues
-  // its own `page.goto` — login.tsx's success handler does a FULL
-  // `window.location.assign('/')` (not a client-side router.navigate — see
-  // that file's comment on why), which is a real, separate navigation that
-  // can still be in flight once the session cookie appears. Racing a
-  // `page.goto` against it aborts one of the two navigations
-  // (net::ERR_ABORTED) — wait for the URL to actually leave /login first.
-  await page.waitForURL((url) => !url.pathname.startsWith('/login'), {
-    timeout: 15_000,
-  })
-  return page
+  // No form login here: global-setup.ts logs the viewer in once per stack and
+  // saves the session. A form login per test spent the login IP limiter (30
+  // per 15 min, one shared bucket per server process). See viewer-session.ts.
+  return openViewerPage(browser)
 }
 
 test.describe('Canvas table affordances — viewer permission gate', () => {
