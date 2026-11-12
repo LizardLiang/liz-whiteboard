@@ -1,4 +1,4 @@
-import { defineConfig } from 'vitest/config'
+import { configDefaults, defineConfig } from 'vitest/config'
 import viteReact from '@vitejs/plugin-react'
 import viteTsConfigPaths from 'vite-tsconfig-paths'
 
@@ -13,13 +13,20 @@ export default defineConfig({
     environment: 'jsdom',
     globals: false,
     setupFiles: ['./src/test/setup.ts'],
-    // Playwright E2E specs live under dogfood-output/ and e2e/ and require
-    // @playwright/test's own `test`/`expect`, which is incompatible with
-    // Vitest's globals. Exclude both so Vitest doesn't try to collect them
-    // (pre-existing gap — e2e/ was missing here, so `bun run test` was
-    // already trying and failing to collect every e2e/*.spec.ts; surfaced
-    // while adding e2e/react-flow-perf.spec.ts for GH #121).
-    exclude: ['dogfood-output/**', 'e2e/**', 'node_modules/**'],
+    // Collect only the project's own unit tests. Playwright specs (e2e/,
+    // dogfood-output/) use @playwright/test's `test`/`expect`; build output
+    // and agent worktrees under .claude/ hold stale copies of src/ and their
+    // own node_modules. configDefaults.exclude keeps `**/node_modules/**`.
+    exclude: [
+      ...configDefaults.exclude,
+      '.claude/**',
+      '.output/**',
+      '.tanstack/**',
+      'dist/**',
+      'dogfood-output/**',
+      'e2e/**',
+      'test-results/**',
+    ],
     // Safety: tests must never touch the real database file. Any test that
     // imports `@/db` gets a throwaway in-memory SQLite instance.
     env: {
