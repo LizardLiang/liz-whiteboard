@@ -402,7 +402,6 @@ describe('restoreWhiteboardFromSnapshot', () => {
 
     await restoreWhiteboardFromSnapshot(whiteboardId, payload)
 
-    const db = (await import('@/db')).db
     const row = db
       .prepare('SELECT * FROM "Whiteboard" WHERE "id" = ?')
       .get(whiteboardId) as any
