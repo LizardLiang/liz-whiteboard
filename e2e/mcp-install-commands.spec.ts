@@ -90,6 +90,51 @@ test.describe('MCP client install commands (tactical plan: 2026-08-06-mcp-client
     await expect(page.getByText(/"mcpServers"/)).toBeVisible()
   })
 
+  test('toolset picker adds the X-Liz-Toolsets header to each supporting client and is absent for Claude Desktop', async ({
+    page,
+  }) => {
+    await openWhiteboard(page)
+    await openMcpPopover(page)
+
+    const header = /X-Liz-Toolsets/
+    await expect(page.getByText(header)).toHaveCount(0)
+
+    // Claude Code: picking "Canvas" adds the --header flag to the command.
+    await page.getByRole('button', { name: 'Canvas', exact: true }).click()
+    await expect(
+      page.getByText(/--header 'X-Liz-Toolsets: canvas'/),
+    ).toBeVisible()
+
+    // Multi-select, rendered in canonical order whatever the click order.
+    await page.getByRole('button', { name: 'ER diagrams', exact: true }).click()
+    await expect(
+      page.getByText(/--header 'X-Liz-Toolsets: er,canvas'/),
+    ).toBeVisible()
+
+    // The selection carries to the other clients' snippets.
+    await page.getByRole('tab', { name: 'Codex' }).click()
+    await expect(
+      page.getByText(/http_headers = \{ "X-Liz-Toolsets" = "er,canvas" \}/),
+    ).toBeVisible()
+    await page.getByRole('tab', { name: 'VS Code' }).click()
+    await expect(page.getByText(/"headers"/)).toBeVisible()
+    await expect(page.getByText(/"X-Liz-Toolsets": "er,canvas"/)).toBeVisible()
+    await page.getByRole('tab', { name: 'Cursor' }).click()
+    await expect(page.getByText(/"X-Liz-Toolsets": "er,canvas"/)).toBeVisible()
+
+    // Claude Desktop: no picker, one-line note.
+    await page.getByRole('tab', { name: 'Claude Desktop' }).click()
+    await expect(page.getByText(/always gets all tools/)).toBeVisible()
+    await expect(
+      page.getByRole('button', { name: 'Canvas', exact: true }),
+    ).toHaveCount(0)
+
+    // "All tools" resets: the header disappears again.
+    await page.getByRole('tab', { name: 'Claude Code' }).click()
+    await page.getByRole('button', { name: 'All tools' }).click()
+    await expect(page.getByText(header)).toHaveCount(0)
+  })
+
   test('/settings/connections renders the same connect panel', async ({
     page,
   }) => {

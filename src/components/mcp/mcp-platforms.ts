@@ -7,12 +7,22 @@
 // dropping a platform is the correct outcome when it can't be confirmed.
 
 export type McpPlatformId =
-  | 'claude-code'
-  | 'codex'
-  | 'vscode'
-  | 'cursor'
-  | 'claude-desktop'
-  | 'other'
+  'claude-code' | 'codex' | 'vscode' | 'cursor' | 'claude-desktop' | 'other'
+
+/** Toolsets a client can request with the X-Liz-Toolsets header. The MCP
+ * server always includes its `core` tools; an absent header means every tool.
+ * Unknown names are rejected with HTTP 400, so keep this list in step with
+ * liz-whiteboard-mcp. */
+export const MCP_TOOLSETS = ['er', 'canvas', 'manage'] as const
+export type McpToolset = (typeof MCP_TOOLSETS)[number]
+
+export const MCP_TOOLSET_HEADER = 'X-Liz-Toolsets'
+
+/** Header value for a selection, in canonical order. Empty selection = no
+ * header (the server then serves every tool). */
+function toolsetHeaderValue(toolsets: ReadonlyArray<McpToolset>): string {
+  return MCP_TOOLSETS.filter((name) => toolsets.includes(name)).join(',')
+}
 
 export interface McpPlatform {
   id: McpPlatformId
@@ -23,8 +33,16 @@ export interface McpPlatform {
   kind: 'cli' | 'config' | 'manual'
   /** File the config block should be added to (kind: 'config' only). */
   configPath?: string
-  /** Renders the copyable command/config text for a given MCP endpoint URL. */
-  buildText: (endpointUrl: string) => string
+  /** Whether the client can send a custom X-Liz-Toolsets request header.
+   * Claude Desktop custom connectors cannot, so it always gets every tool. */
+  supportsToolsets: boolean
+  /** Renders the copyable command/config text for a given MCP endpoint URL.
+   * A non-empty toolsets list adds the X-Liz-Toolsets header (ignored when
+   * supportsToolsets is false). */
+  buildText: (
+    endpointUrl: string,
+    toolsets?: ReadonlyArray<McpToolset>,
+  ) => string
   /** Whether the user sees an OAuth consent/approval screen after signing
    * in. Claude Code and Codex pin their identity via CIMD from origins this
    * server trusts by default, so they skip it entirely. Every other client
@@ -54,8 +72,14 @@ export const MCP_PLATFORMS: Array<McpPlatform> = [
     id: 'claude-code',
     label: 'Claude Code',
     kind: 'cli',
-    buildText: (url) =>
-      `claude mcp add --transport http liz-whiteboard '${url}'`,
+    // Header flag source: https://code.claude.com/docs/en/mcp — "claude mcp
+    // add --transport http <name> <url> --header "Name: value"".
+    supportsToolsets: true,
+    buildText: (url, toolsets = []) => {
+      const value = toolsetHeaderValue(toolsets)
+      const header = value ? ` --header '${MCP_TOOLSET_HEADER}: ${value}'` : ''
+      return `claude mcp add --transport http liz-whiteboard '${url}'${header}`
+    },
     consentNote:
       'Uses CIMD client identity — no separate consent screen after sign-in.',
     steps: [
@@ -80,7 +104,17 @@ export const MCP_PLATFORMS: Array<McpPlatform> = [
     id: 'codex',
     label: 'Codex',
     kind: 'cli',
-    buildText: (url) => `codex mcp add liz-whiteboard --url '${url}'`,
+    // Header source: https://developers.openai.com/codex/mcp — a streamable
+    // HTTP server table in ~/.codex/config.toml takes
+    // `http_headers = { "Name" = "value" }`. `codex mcp add` has no header
+    // flag, so the header goes in config.toml after the add command.
+    supportsToolsets: true,
+    buildText: (url, toolsets = []) => {
+      const command = `codex mcp add liz-whiteboard --url '${url}'`
+      const value = toolsetHeaderValue(toolsets)
+      if (!value) return command
+      return `${command}\n\n# Then add this line under [mcp_servers.liz-whiteboard] in ~/.codex/config.toml:\nhttp_headers = { "${MCP_TOOLSET_HEADER}" = "${value}" }`
+    },
     consentNote:
       'Uses CIMD client identity — no separate consent screen after sign-in.',
     steps: [
@@ -100,12 +134,25 @@ export const MCP_PLATFORMS: Array<McpPlatform> = [
     label: 'VS Code',
     kind: 'config',
     configPath: '.vscode/mcp.json (or your user mcp.json)',
-    buildText: (url) =>
-      JSON.stringify(
-        { servers: { 'liz-whiteboard': { type: 'http', url } } },
+    // Header source: https://code.visualstudio.com/docs/copilot/reference/
+    // mcp-configuration — remote servers take "url" plus a "headers" object.
+    supportsToolsets: true,
+    buildText: (url, toolsets = []) => {
+      const value = toolsetHeaderValue(toolsets)
+      return JSON.stringify(
+        {
+          servers: {
+            'liz-whiteboard': {
+              type: 'http',
+              url,
+              ...(value && { headers: { [MCP_TOOLSET_HEADER]: value } }),
+            },
+          },
+        },
         null,
         2,
-      ),
+      )
+    },
     // VS Code implements CIMD, but its client-metadata URL ships only in
     // Microsoft's proprietary product.json and is absent from the OSS repo,
     // so its origin cannot be put on the trusted list ahead of time — it is
@@ -128,8 +175,24 @@ export const MCP_PLATFORMS: Array<McpPlatform> = [
     label: 'Cursor',
     kind: 'config',
     configPath: '~/.cursor/mcp.json',
-    buildText: (url) =>
-      JSON.stringify({ mcpServers: { 'liz-whiteboard': { url } } }, null, 2),
+    // Header source: https://cursor.com/docs/context/mcp — the "Remote
+    // Server" example takes "url" plus a "headers" object.
+    supportsToolsets: true,
+    buildText: (url, toolsets = []) => {
+      const value = toolsetHeaderValue(toolsets)
+      return JSON.stringify(
+        {
+          mcpServers: {
+            'liz-whiteboard': {
+              url,
+              ...(value && { headers: { [MCP_TOOLSET_HEADER]: value } }),
+            },
+          },
+        },
+        null,
+        2,
+      )
+    },
     consentNote: UNVERIFIED_CONSENT_NOTE,
     steps: [
       'Add the block above to the file shown.',
@@ -145,6 +208,7 @@ export const MCP_PLATFORMS: Array<McpPlatform> = [
     id: 'claude-desktop',
     label: 'Claude Desktop',
     kind: 'manual',
+    supportsToolsets: false,
     buildText: (url) => url,
     consentNote: UNVERIFIED_CONSENT_NOTE,
     steps: [
@@ -166,6 +230,7 @@ export const MCP_PLATFORMS: Array<McpPlatform> = [
     label: 'Other (mcp.json)',
     kind: 'config',
     configPath: "your client's MCP config file",
+    supportsToolsets: false,
     buildText: (url) =>
       JSON.stringify({ mcpServers: { 'liz-whiteboard': { url } } }, null, 2),
     consentNote:

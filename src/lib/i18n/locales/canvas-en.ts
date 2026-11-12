@@ -201,6 +201,18 @@ export const canvasEn = {
     copyCommandAria: 'Copy {platform} command',
     copyConfigAria: 'Copy {platform} config',
     manage: 'Manage connected applications',
+    toolsets: {
+      label: 'Tools to load',
+      all: 'All tools',
+      er: 'ER diagrams',
+      canvas: 'Canvas',
+      manage: 'Manage',
+      hint: 'Fewer tools means fewer tokens per session. Core tools (browse projects, tool guide) are always included.',
+      codexExtra:
+        'Codex adds this header in config.toml, after the command above.',
+      desktopNote:
+        'Claude Desktop cannot set headers, so it always gets all tools.',
+    },
     consent: {
       cimd: 'Uses CIMD client identity — no separate consent screen after sign-in.',
       unverified:

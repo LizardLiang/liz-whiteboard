@@ -96,4 +96,57 @@ describe('MCP_PLATFORMS', () => {
     expect(claudeDesktop?.configPath).toBeUndefined()
     expect(claudeDesktop?.buildText(URL)).toBe(URL)
   })
+
+  describe('toolsets (X-Liz-Toolsets header)', () => {
+    const build = (id: string, toolsets: Array<'er' | 'canvas' | 'manage'>) =>
+      MCP_PLATFORMS.find((p) => p.id === id)!.buildText(URL, toolsets)
+
+    it('adds no header when no toolset is selected', () => {
+      for (const platform of MCP_PLATFORMS) {
+        expect(platform.buildText(URL, [])).toBe(platform.buildText(URL))
+        expect(platform.buildText(URL, [])).not.toContain('X-Liz-Toolsets')
+      }
+    })
+
+    it('claude-code uses --header', () => {
+      expect(build('claude-code', ['canvas'])).toBe(
+        `claude mcp add --transport http liz-whiteboard '${URL}' --header 'X-Liz-Toolsets: canvas'`,
+      )
+    })
+
+    it('codex adds http_headers after the add command', () => {
+      const text = build('codex', ['er', 'canvas'])
+      expect(text).toContain(`codex mcp add liz-whiteboard --url '${URL}'`)
+      expect(text).toContain(
+        'http_headers = { "X-Liz-Toolsets" = "er,canvas" }',
+      )
+    })
+
+    it('vscode and cursor put the header in a "headers" object', () => {
+      const vscode = JSON.parse(build('vscode', ['manage']))
+      expect(vscode.servers['liz-whiteboard'].headers).toEqual({
+        'X-Liz-Toolsets': 'manage',
+      })
+      const cursor = JSON.parse(build('cursor', ['manage']))
+      expect(cursor.mcpServers['liz-whiteboard'].headers).toEqual({
+        'X-Liz-Toolsets': 'manage',
+      })
+    })
+
+    it('orders the header value canonically regardless of click order', () => {
+      expect(build('claude-code', ['manage', 'er'])).toContain(
+        'X-Liz-Toolsets: er,manage',
+      )
+    })
+
+    it('claude-desktop and other ignore toolsets', () => {
+      for (const id of ['claude-desktop', 'other']) {
+        const platform = MCP_PLATFORMS.find((p) => p.id === id)!
+        expect(platform.supportsToolsets).toBe(false)
+        expect(platform.buildText(URL, ['canvas'])).toBe(
+          platform.buildText(URL),
+        )
+      }
+    })
+  })
 })

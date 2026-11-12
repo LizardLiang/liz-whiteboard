@@ -203,6 +203,16 @@ export const canvasZhTW: DeepStringRecord<typeof canvasEn> = {
     copyCommandAria: '複製 {platform} 指令',
     copyConfigAria: '複製 {platform} 設定',
     manage: '管理已連線的應用程式',
+    toolsets: {
+      label: '要載入的工具',
+      all: '全部工具',
+      er: 'ER 圖',
+      canvas: '畫布',
+      manage: '管理',
+      hint: '工具越少，每個工作階段使用的 token 越少。核心工具（瀏覽專案、工具說明）一律包含。',
+      codexExtra: 'Codex 需在上述指令之後，於 config.toml 加入此標頭。',
+      desktopNote: 'Claude Desktop 無法設定標頭，因此一律取得全部工具。',
+    },
     consent: {
       cimd: '使用 CIMD 用戶端身分，登入後不需要另外的同意畫面。',
       unverified:

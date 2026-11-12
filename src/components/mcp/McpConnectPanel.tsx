@@ -10,8 +10,8 @@ import { useMemo, useState } from 'react'
 import { Check, Copy } from 'lucide-react'
 import { Link } from '@tanstack/react-router'
 import { toast } from 'sonner'
-import { MCP_PLATFORMS } from './mcp-platforms'
-import type { McpPlatformId } from './mcp-platforms'
+import { MCP_PLATFORMS, MCP_TOOLSETS } from './mcp-platforms'
+import type { McpPlatformId, McpToolset } from './mcp-platforms'
 import { Button } from '@/components/ui/button'
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import { copyText } from '@/lib/copy-text'
@@ -55,6 +55,15 @@ export function McpConnectPanel({
 }: McpConnectPanelProps) {
   const t = useT()
   const [copiedId, setCopiedId] = useState<string | null>(null)
+  // Empty = all tools (no header). One selection drives every client's snippet.
+  const [toolsets, setToolsets] = useState<Array<McpToolset>>([])
+
+  const toggleToolset = (name: McpToolset) =>
+    setToolsets((current) =>
+      current.includes(name)
+        ? current.filter((n) => n !== name)
+        : [...current, name],
+    )
 
   // buildText() only depends on endpointUrl (stable across re-renders caused
   // by copiedId toggling on copy) — memoize per platform instead of calling
@@ -64,10 +73,10 @@ export function McpConnectPanel({
       Object.fromEntries(
         MCP_PLATFORMS.map((platform) => [
           platform.id,
-          platform.buildText(endpointUrl),
+          platform.buildText(endpointUrl, toolsets),
         ]),
       ),
-    [endpointUrl],
+    [endpointUrl, toolsets],
   )
 
   const handleCopy = async (platformId: string, text: string) => {
@@ -116,6 +125,58 @@ export function McpConnectPanel({
                       : platform.configPath}
                   </code>
                 </p>
+              )}
+
+              {platform.supportsToolsets ? (
+                <div
+                  role="group"
+                  aria-label={t('canvas.mcp.toolsets.label')}
+                  className="space-y-1"
+                >
+                  <div className="flex flex-wrap items-center gap-1">
+                    <span className="mr-1 text-xs text-muted-foreground">
+                      {t('canvas.mcp.toolsets.label')}
+                    </span>
+                    <Button
+                      type="button"
+                      size="sm"
+                      variant={toolsets.length === 0 ? 'default' : 'outline'}
+                      className="h-6 px-2 text-xs"
+                      aria-pressed={toolsets.length === 0}
+                      onClick={() => setToolsets([])}
+                    >
+                      {t('canvas.mcp.toolsets.all')}
+                    </Button>
+                    {MCP_TOOLSETS.map((name) => {
+                      const active = toolsets.includes(name)
+                      return (
+                        <Button
+                          key={name}
+                          type="button"
+                          size="sm"
+                          variant={active ? 'default' : 'outline'}
+                          className="h-6 px-2 text-xs"
+                          aria-pressed={active}
+                          onClick={() => toggleToolset(name)}
+                        >
+                          {t(`canvas.mcp.toolsets.${name}`)}
+                        </Button>
+                      )
+                    })}
+                  </div>
+                  <p className="text-xs text-muted-foreground">
+                    {t('canvas.mcp.toolsets.hint')}
+                    {platform.id === 'codex' && toolsets.length > 0
+                      ? ` ${t('canvas.mcp.toolsets.codexExtra')}`
+                      : ''}
+                  </p>
+                </div>
+              ) : (
+                platform.id === 'claude-desktop' && (
+                  <p className="text-xs text-muted-foreground">
+                    {t('canvas.mcp.toolsets.desktopNote')}
+                  </p>
+                )
               )}
 
               {/* Copy button sits BESIDE the command box (not absolutely
