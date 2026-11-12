@@ -899,7 +899,7 @@ export function useCanvasTableInput({
     [setTableSelection],
   )
 
-  /** The live preview of a table border drag. */
+  /** The live preview of a table border drag, mirrored into `latest` for the release to read. */
   const dragTableBorder = useCallback(
     (active: TableBorderGesture, world: Point) => {
       const delta =
@@ -910,7 +910,7 @@ export function useCanvasTableInput({
         active.minSize,
         Math.round(active.startSize + delta),
       )
-      setScene((prev) => {
+      writeScene((prev) => {
         const grid = prev.byId.get(active.tableId)?.table
         if (!grid) return prev
         const table: CanvasTable =
@@ -933,7 +933,7 @@ export function useCanvasTableInput({
         })
       })
     },
-    [setScene],
+    [writeScene],
   )
 
   /** The live preview of a table scale drag. */

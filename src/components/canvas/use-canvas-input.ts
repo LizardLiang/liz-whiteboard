@@ -1886,6 +1886,20 @@ export function useCanvasInput({
     latest.current = { scene, camera, tool, readOnly, selectedIds, editing }
   })
 
+  /**
+   * Write the scene now and mirror it into `latest`, so a release in the same
+   * frame commits what this wrote. A touch pointerup can arrive right after
+   * the last pointermove with no render between them, and `endGesture` reads
+   * `latest.current.scene`.
+   */
+  const writeScene = useCallback(
+    (produce: (current: Scene) => Scene) => {
+      setScene(produce)
+      latest.current.scene = produce(latest.current.scene)
+    },
+    [setScene],
+  )
+
   const {
     tableSelection,
     tableSelectionRef,
@@ -2910,7 +2924,7 @@ export function useCanvasInput({
           const travelled =
             Math.abs(screen.x - gesture.startScreen.x) +
             Math.abs(screen.y - gesture.startScreen.y)
-          setScene((prev) => {
+          writeScene((prev) => {
             let next = prev
             // Positions come from the pointerdown SNAPSHOT, not from the
             // element's live position: re-reading the live position and
@@ -2937,7 +2951,7 @@ export function useCanvasInput({
         case 'resize': {
           const raw = resizedBounds(gesture.handle, gesture.startBounds, world)
           const aligned = alignedResizeBounds(gesture, raw, event.altKey)
-          setScene((prev) =>
+          writeScene((prev) =>
             updateElement(prev, gesture.elementId, aligned.rect),
           )
           setGesture({ ...gesture, guides: aligned.guides })
@@ -2987,7 +3001,7 @@ export function useCanvasInput({
           // bend point exactly here" against the current chord, so a drag that
           // is clamped at the limit and dragged back does not come back
           // offset by however long it spent pinned there.
-          setScene((prev) => {
+          writeScene((prev) => {
             const element = prev.byId.get(gesture.connectorId)
             const link = element?.connector
             if (!link) return prev
@@ -3043,6 +3057,7 @@ export function useCanvasInput({
       setScene,
       setTableAffordance,
       hoverAtPoint,
+      writeScene,
       dragTableBorder,
       dragTableScale,
     ],

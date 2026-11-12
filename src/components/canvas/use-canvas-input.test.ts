@@ -719,6 +719,108 @@ describe('lost pointer capture ends the gesture (W5)', () => {
   })
 })
 
+// A touch release can arrive in the same tick as the last pointermove, before
+// React renders that move. The tests below model that by NOT calling
+// `h.sync()` between the last move and the release: the hook's own scene
+// state has the move, its render-time `latest` mirror does not yet.
+describe('a release with no render after the last move commits that move', () => {
+  function rect(): CanvasElement {
+    return makeRect(TEXT_ID, { x: 10, y: 10, width: 100, height: 100 })
+  }
+
+  it('commits the last touch move position, not the one a frame before', () => {
+    const h = setup([rect()])
+    act(() => {
+      h.api.canvasHandlers.onPointerDown(
+        pointerEvent({ pointerType: 'touch', clientX: 15, clientY: 15 }),
+      )
+    })
+    h.sync()
+    act(() => {
+      h.api.canvasHandlers.onPointerMove(
+        pointerEvent({ pointerType: 'touch', clientX: 65, clientY: 15 }),
+      )
+    })
+    h.sync()
+    act(() => {
+      h.api.canvasHandlers.onPointerMove(
+        pointerEvent({ pointerType: 'touch', clientX: 115, clientY: 15 }),
+      )
+      h.api.canvasHandlers.onPointerUp(
+        pointerEvent({ pointerType: 'touch', clientX: 115, clientY: 15 }),
+      )
+    })
+
+    expect(h.scene.byId.get(TEXT_ID)!.x).toBe(110)
+    expect(h.callbacks.onUpdate).toHaveBeenCalledTimes(1)
+    const [after, before] = h.callbacks.onUpdate.mock.calls[0]
+    expect(before[0].x).toBe(10)
+    expect(after[0].x).toBe(110)
+    expect(after[0].y).toBe(10)
+  })
+
+  it('commits the same position for a mouse release after a rendered move', () => {
+    const h = setup([rect()])
+    act(() => {
+      h.api.canvasHandlers.onPointerDown(
+        pointerEvent({ pointerType: 'mouse', clientX: 15, clientY: 15 }),
+      )
+    })
+    h.sync()
+    act(() => {
+      h.api.canvasHandlers.onPointerMove(
+        pointerEvent({ pointerType: 'mouse', clientX: 115, clientY: 15 }),
+      )
+    })
+    h.sync()
+    act(() => {
+      h.api.canvasHandlers.onPointerUp(
+        pointerEvent({ pointerType: 'mouse', clientX: 115, clientY: 15 }),
+      )
+    })
+
+    expect(h.callbacks.onUpdate).toHaveBeenCalledTimes(1)
+    expect(h.callbacks.onUpdate.mock.calls[0][0][0].x).toBe(110)
+  })
+
+  it('commits the last resize bounds', () => {
+    const h = setup([rect()])
+    act(() => {
+      h.api.setSelectedIds(new Set([TEXT_ID]))
+    })
+    h.sync()
+    act(() => {
+      // The south-east handle: the element's bottom-right corner.
+      h.api.canvasHandlers.onPointerDown(
+        pointerEvent({ pointerType: 'touch', clientX: 110, clientY: 110 }),
+      )
+    })
+    h.sync()
+    act(() => {
+      h.api.canvasHandlers.onPointerMove(
+        pointerEvent({ pointerType: 'touch', clientX: 150, clientY: 150 }),
+      )
+    })
+    h.sync()
+    act(() => {
+      h.api.canvasHandlers.onPointerMove(
+        pointerEvent({ pointerType: 'touch', clientX: 190, clientY: 170 }),
+      )
+      h.api.canvasHandlers.onPointerUp(
+        pointerEvent({ pointerType: 'touch', clientX: 190, clientY: 170 }),
+      )
+    })
+
+    const live = h.scene.byId.get(TEXT_ID)!
+    expect(live.width).toBeGreaterThan(140)
+    expect(h.callbacks.onUpdate).toHaveBeenCalledTimes(1)
+    const [after, , gesture] = h.callbacks.onUpdate.mock.calls[0]
+    expect(gesture).toBe('resize')
+    expect(after[0].width).toBe(live.width)
+    expect(after[0].height).toBe(live.height)
+  })
+})
+
 describe('pre-state capture for undo (board-undo tactical plan, Wave 3)', () => {
   it('passes the pre-drag position as `before` on a single-element move', () => {
     const rect: CanvasElement = {
@@ -2703,6 +2805,29 @@ describe('dragging a curved connector by its bend grip', () => {
     expect(before[0].connector).not.toHaveProperty('curvature')
   })
 
+  it('persists the last bow when the release comes before a render', () => {
+    const h = setup(board('curved'))
+    grabBend(h)
+    act(() => {
+      h.api.canvasHandlers.onPointerMove(
+        pointerEvent({ pointerType: 'touch', clientX: 200, clientY: 10 }),
+      )
+    })
+    h.sync()
+    act(() => {
+      h.api.canvasHandlers.onPointerMove(
+        pointerEvent({ pointerType: 'touch', clientX: 200, clientY: 110 }),
+      )
+      h.api.canvasHandlers.onPointerUp(
+        pointerEvent({ pointerType: 'touch', clientX: 200, clientY: 110 }),
+      )
+    })
+
+    expect(h.callbacks.onUpdate).toHaveBeenCalledTimes(1)
+    const [after] = h.callbacks.onUpdate.mock.calls[0]
+    expect(after[0].connector.curvature).toBeCloseTo(-0.3, 6)
+  })
+
   it('bows the other way for a drag to the other side', () => {
     // Positive is the LEFT-hand normal of source -> target; this line runs
     // left to right, so downward on screen is negative.
@@ -4362,6 +4487,32 @@ describe('table rows and columns', () => {
     expect(h.callbacks.onTableOp).toHaveBeenCalledTimes(1)
     expect(lastOp(h)).toEqual({ type: 'resizeCol', colId: 'id3', width: 180 })
     expect(h.scene.byId.get(TABLE_ID)?.table?.cols[0].width).toBe(120)
+  })
+
+  it('sends the last border width when the release comes before a render', () => {
+    const h = setupTable()
+    act(() => {
+      h.api.canvasHandlers.onPointerDown(
+        pointerEvent({ pointerType: 'touch', clientX: 220, clientY: 120 }),
+      )
+    })
+    h.sync()
+    act(() => {
+      h.api.canvasHandlers.onPointerMove(
+        pointerEvent({ pointerType: 'touch', clientX: 250, clientY: 120 }),
+      )
+    })
+    h.sync()
+    act(() => {
+      h.api.canvasHandlers.onPointerMove(
+        pointerEvent({ pointerType: 'touch', clientX: 280, clientY: 120 }),
+      )
+      h.api.canvasHandlers.onPointerUp(
+        pointerEvent({ pointerType: 'touch', clientX: 280, clientY: 120 }),
+      )
+    })
+    h.sync()
+    expect(lastOp(h)).toEqual({ type: 'resizeCol', colId: 'id3', width: 180 })
   })
 
   it('stops a column border at the minimum width', () => {
