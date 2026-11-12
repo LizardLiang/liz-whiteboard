@@ -4,12 +4,16 @@
 // extraction (W2 + W5 fixes) used by src/routes/oauth/register.ts and
 // src/routes/api/collab-token.ts.
 
+import { createServer } from 'node:http'
+import { NodeRequest } from 'srvx/node'
 import { afterEach, describe, expect, it } from 'vitest'
 import {
   PEER_IP_HEADER,
   createFixedWindowRateLimiter,
   extractClientIp,
+  stampPeerIp,
 } from './rate-limit'
+import type { IncomingMessage } from 'node:http'
 
 describe('createFixedWindowRateLimiter', () => {
   it('allows requests under the limit', () => {
@@ -182,5 +186,40 @@ describe('extractClientIp: peer address + trusted proxies (audit L2)', () => {
     expect(extractClientIp(req({ 'x-forwarded-for': '1.2.3.4' }))).toBe(
       'unknown',
     )
+  })
+})
+
+describe('stampPeerIp', () => {
+  // Sends a real request and returns the extractClientIp() verdict on the web
+  // Request srvx builds from it, the way the dev server's Nitro layer does.
+  async function seenIp(stamp: (req: IncomingMessage) => void) {
+    let seen = ''
+    const server = createServer((req, res) => {
+      stamp(req)
+      const webReq = new NodeRequest({ req, res })
+      // Entries come from rawHeaders, as when the Request crosses to a worker.
+      seen = extractClientIp(
+        new Request(webReq.url, { headers: [...webReq.headers] }),
+      )
+      res.end()
+    })
+    await new Promise<void>((r) => server.listen(0, '127.0.0.1', r))
+    const { port } = server.address() as { port: number }
+    await fetch(`http://127.0.0.1:${port}/`, {
+      headers: { [PEER_IP_HEADER]: '9.9.9.9' },
+    })
+    server.close()
+    return seen
+  }
+
+  it('a stamp on req.headers alone does not reach the web Request', async () => {
+    const ip = await seenIp((req) => {
+      req.headers[PEER_IP_HEADER] = req.socket.remoteAddress ?? ''
+    })
+    expect(ip).toBe('9.9.9.9')
+  })
+
+  it('stampPeerIp gives the web Request the real peer, replacing a forged value', async () => {
+    expect(await seenIp((req) => stampPeerIp(req))).toBe('127.0.0.1')
   })
 })

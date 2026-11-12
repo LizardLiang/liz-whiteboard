@@ -5,6 +5,7 @@ import viteReact from '@vitejs/plugin-react'
 import viteTsConfigPaths from 'vite-tsconfig-paths'
 import tailwindcss from '@tailwindcss/vite'
 import { version } from './package.json'
+import { stampPeerIp } from './src/lib/rate-limit'
 import type { Plugin } from 'vite'
 
 /**
@@ -90,9 +91,12 @@ function tanstackStartClientVirtualModules(): Plugin {
 function peerIpPlugin(): Plugin {
   return {
     name: 'peer-ip-header',
+    // Nitro's dev middleware answers the request without calling next(), so a
+    // plugin that registers after it never runs. 'pre' registers this first.
+    enforce: 'pre',
     configureServer(viteDevServer) {
       viteDevServer.middlewares.use((req, _res, next) => {
-        req.headers['x-liz-peer-ip'] = req.socket.remoteAddress ?? ''
+        stampPeerIp(req)
         next()
       })
     },

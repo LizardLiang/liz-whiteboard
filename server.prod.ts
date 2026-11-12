@@ -15,7 +15,7 @@ import { fileURLToPath } from 'node:url'
 import { middleware } from './.output/server/index.mjs'
 import { initializeSocketIO } from './src/routes/api/collaboration'
 import { serveStatic } from './src/lib/serve-static'
-import { PEER_IP_HEADER } from './src/lib/rate-limit'
+import { stampPeerIp } from './src/lib/rate-limit'
 import {
   buildSecurityHeaders,
   checkBodyLimit,
@@ -39,7 +39,7 @@ const server = createServer(async (req, res) => {
     // Stamp the TCP peer address, overwriting anything the client sent, so
     // extractClientIp() can tell whether X-Forwarded-For comes from a trusted
     // proxy (src/lib/rate-limit.ts).
-    req.headers[PEER_IP_HEADER] = req.socket.remoteAddress ?? ''
+    stampPeerIp(req)
 
     // Security headers on every response (static and SSR, errors included).
     for (const [name, value] of Object.entries(securityHeaders)) {

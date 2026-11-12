@@ -22,6 +22,29 @@ import { isIP } from 'node:net'
 /** Header that carries the direct peer address, set by the server entry. */
 export const PEER_IP_HEADER = 'x-liz-peer-ip'
 
+interface PeerStampTarget {
+  headers: Record<string, string | Array<string> | undefined>
+  rawHeaders: Array<string>
+  socket: { remoteAddress?: string }
+}
+
+/**
+ * Record the direct TCP peer as PEER_IP_HEADER on a Node request, replacing any
+ * value the client sent. It writes `rawHeaders` as well as `headers`: srvx
+ * builds the web Request that reaches the server functions from `rawHeaders`,
+ * so a stamp on `headers` alone is lost in the Vite dev server.
+ */
+export function stampPeerIp(req: PeerStampTarget): void {
+  const peer = req.socket.remoteAddress ?? ''
+  req.headers[PEER_IP_HEADER] = peer
+  for (let i = req.rawHeaders.length - 2; i >= 0; i -= 2) {
+    if (req.rawHeaders[i].toLowerCase() === PEER_IP_HEADER) {
+      req.rawHeaders.splice(i, 2)
+    }
+  }
+  req.rawHeaders.push(PEER_IP_HEADER, peer)
+}
+
 const DEFAULT_TRUSTED_PROXIES =
   '127.0.0.0/8,::1/128,10.0.0.0/8,172.16.0.0/12,192.168.0.0/16'
 
