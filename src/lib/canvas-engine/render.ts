@@ -284,8 +284,8 @@ export const HANDLE_SIZE = 8
  *
  * A judgment, not a measured value: glyphs under about 4 px render as noise,
  * and laying them out costs time on a big table zoomed far out. At the
- * default 14 px this hides text below zoom ~0.29. Tune it here if it hides
- * text a user can still read.
+ * default 14 px this hides text below zoom ~0.29. The value is fixed by the
+ * spec requirement "Table Text Hidden When Too Small" (4 screen pixels).
  */
 export const TABLE_TEXT_MIN_SCREEN_PX = 4
 
@@ -1226,11 +1226,7 @@ function drawTable(
     if (cellKey(rowId, colId) === openCellKey) continue
     const cell = lookupCell(table.cells, cellKey(rowId, colId))
     if (!cell || cell.text.length === 0) continue
-    const fontSize = Math.max(
-      element.style.fontSize,
-      ...(cell.textRuns ?? []).map((run) => run.fontSize ?? 0),
-    )
-    if (fontSize * zoom < TABLE_TEXT_MIN_SCREEN_PX) continue
+    if (!cellTextReadable(element.style.fontSize, cell.textRuns, zoom)) continue
     const virtual = cellTextElement(element, rowId, colId)
     if (!virtual) continue
     const header = table.headerRow && table.rows[0].id === rowId
@@ -1244,6 +1240,22 @@ function drawTable(
       theme,
     )
   }
+}
+
+/**
+ * True when the cell's largest font draws at least `TABLE_TEXT_MIN_SCREEN_PX`
+ * tall. The element font is checked first, so the runs are only walked when
+ * that font alone is too small.
+ */
+function cellTextReadable(
+  baseFontSize: number,
+  runs: ReadonlyArray<{ fontSize?: number }> | undefined,
+  zoom: number,
+): boolean {
+  if (baseFontSize * zoom >= TABLE_TEXT_MIN_SCREEN_PX) return true
+  return (runs ?? []).some(
+    (run) => (run.fontSize ?? 0) * zoom >= TABLE_TEXT_MIN_SCREEN_PX,
+  )
 }
 
 /**
