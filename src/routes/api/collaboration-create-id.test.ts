@@ -75,7 +75,7 @@ async function send(
 }
 
 function row(table: string, id: string): Record<string, unknown> | undefined {
-  return db.prepare(`SELECT * FROM "${table}" WHERE "id" = ?`).get(id)
+  return db.prepare(`SELECT * FROM "${table}" WHERE "id" = ?`).get(id) ?? undefined
 }
 
 function count(table: string): number {
@@ -308,20 +308,100 @@ describe('a refused foreign id looks like any other failed create in production'
     vi.unstubAllEnvs()
   })
 
-  it('table:create acks the same as a create that fails on a duplicate name', async () => {
+  it('table:create acks the same as a create that fails on a driver error', async () => {
     vi.stubEnv('NODE_ENV', 'production')
     const f = makeFixture()
     const { handlers } = makeSocket(f.whiteboardId)
+    // A whiteboard id with no row: the insert fails on its foreign key.
+    const { handlers: noBoard } = makeSocket(randomUUID())
 
     const foreign = await send(handlers, 'table:create', {
       name: 'fresh_name',
       id: f.otherTableId,
     })
-    const duplicateName = await send(handlers, 'table:create', {
-      name: 'orders',
+    const driverError = await send(noBoard, 'table:create', {
+      name: 'fresh_name',
     })
 
-    expect(foreign).toEqual(duplicateName)
+    expect(driverError).toEqual({
+      ok: false,
+      code: 'VALIDATION_ERROR',
+      message: 'Failed to create table',
+    })
+    expect(foreign).toEqual(driverError)
+  })
+})
+
+describe('a duplicate table name gets its own error in production', () => {
+  afterEach(() => {
+    vi.unstubAllEnvs()
+  })
+
+  it.each([
+    ['without an id', {}],
+    ['with a free id', { id: randomUUID() }],
+  ])('table:create %s names the taken name', async (_label, extra) => {
+    vi.stubEnv('NODE_ENV', 'production')
+    const f = makeFixture()
+    const { handlers } = makeSocket(f.whiteboardId)
+    const rowsBefore = count('DiagramTable')
+
+    const ack = await send(handlers, 'table:create', { name: 'orders', ...extra })
+
+    expect(ack).toEqual({
+      ok: false,
+      code: 'VALIDATION_ERROR',
+      message: 'A table named "orders" already exists on this whiteboard',
+    })
+    expect(count('DiagramTable')).toBe(rowsBefore)
+  })
+})
+
+// bun:sqlite (production) answers a query with no row with `null`; node:sqlite
+// (this suite) answers `undefined`. These tests make `get()` answer `null`.
+describe('table:create under bun:sqlite, where get() returns null for no row', () => {
+  beforeEach(() => {
+    const prepare = db.prepare.bind(db)
+    vi.spyOn(db, 'prepare').mockImplementation((sql: string) => {
+      const statement = prepare(sql)
+      return {
+        get: (...params: Array<unknown>) => statement.get(...params) ?? null,
+        all: (...params: Array<unknown>) => statement.all(...params),
+        run: (...params: Array<unknown>) => statement.run(...params),
+      }
+    })
+  })
+
+  afterEach(() => {
+    vi.restoreAllMocks()
+    vi.unstubAllEnvs()
+  })
+
+  it('creates a table with a fresh client id', async () => {
+    const f = makeFixture()
+    const { handlers } = makeSocket(f.whiteboardId)
+    const id = randomUUID()
+
+    const ack = await send(handlers, 'table:create', { name: 'fresh_name', id })
+
+    expect(ack).toMatchObject({ ok: true, entity: { id, name: 'fresh_name' } })
+  })
+
+  it('gives a duplicate name with a fresh id its own error', async () => {
+    vi.stubEnv('NODE_ENV', 'production')
+    const f = makeFixture()
+    const { handlers } = makeSocket(f.whiteboardId)
+
+    const ack = await send(handlers, 'table:create', {
+      name: 'orders',
+      id: randomUUID(),
+    })
+
+    expect(ack).toEqual({
+      ok: false,
+      code: 'VALIDATION_ERROR',
+      message: 'A table named "orders" already exists on this whiteboard',
+    })
   })
 })
 

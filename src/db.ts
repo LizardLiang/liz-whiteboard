@@ -58,7 +58,7 @@ const isBun = typeof (globalThis as { Bun?: unknown }).Bun !== 'undefined'
 
 /** Minimal shared surface of bun:sqlite / node:sqlite we rely on. */
 interface SqliteStatement {
-  get: (...params: Array<unknown>) => Record<string, unknown> | undefined
+  get: (...params: Array<unknown>) => Record<string, unknown> | undefined | null
   all: (...params: Array<unknown>) => Array<Record<string, unknown>>
   run: (...params: Array<unknown>) => unknown
 }

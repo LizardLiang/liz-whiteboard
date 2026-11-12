@@ -6,7 +6,7 @@
 // same id that both pass the pre-insert check (a concurrent create).
 
 import { randomUUID } from 'node:crypto'
-import { beforeEach, describe, expect, it } from 'vitest'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import {
   AlreadyExistsError,
   assertIdFree,
@@ -154,6 +154,52 @@ describe('refuseTakenIdAfterInsertError', () => {
         new Error('UNIQUE constraint failed: DiagramTable.id'),
         claim(undefined, mine),
       ),
+    ).not.toThrow()
+  })
+})
+
+// bun:sqlite (production) answers a query with no row with `null`; node:sqlite
+// (vitest, dev) answers `undefined`. This suite runs on node:sqlite, so these
+// tests make `get()` answer `null` the way bun:sqlite does.
+describe('under bun:sqlite, where get() returns null for no row', () => {
+  beforeEach(() => {
+    const prepare = db.prepare.bind(db)
+    vi.spyOn(db, 'prepare').mockImplementation((sql: string) => {
+      const statement = prepare(sql)
+      return {
+        get: (...params: Array<unknown>) => statement.get(...params) ?? null,
+        all: (...params: Array<unknown>) => statement.all(...params),
+        run: (...params: Array<unknown>) => statement.run(...params),
+      }
+    })
+  })
+
+  afterEach(() => {
+    vi.restoreAllMocks()
+  })
+
+  it('passes a free id', () => {
+    const { mine } = boards()
+    expect(() => assertIdFree(claim(randomUUID(), mine))).not.toThrow()
+  })
+
+  it('still refuses a taken id on the caller whiteboard', () => {
+    const { mine } = boards()
+    const id = randomUUID()
+    insertTable(id, mine, 't')
+
+    expect(() => assertIdFree(claim(id, mine))).toThrow(AlreadyExistsError)
+  })
+
+  it('leaves a duplicate name on a free id alone, so its own error stands', () => {
+    const { mine } = boards()
+    insertTable(randomUUID(), mine, 'dup')
+    const freeId = randomUUID()
+
+    const error = caught(() => insertTable(freeId, mine, 'dup'))
+
+    expect(() =>
+      refuseTakenIdAfterInsertError(error, claim(freeId, mine)),
     ).not.toThrow()
   })
 })

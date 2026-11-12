@@ -90,10 +90,47 @@ export async function createDiagramTable(
     )!
   } catch (error) {
     refuseTakenIdAfterInsertError(error, claim)
+    refuseTakenTableName(error, validated.whiteboardId, validated.name)
     throw new Error(
       `Failed to create table: ${error instanceof Error ? error.message : 'Unknown error'}`,
     )
   }
+}
+
+/**
+ * A create was refused because the whiteboard already has a table with that
+ * name. The `code` makes `clientErrorMessage` pass the message through, so the
+ * caller learns which name to change. The caller can edit this whiteboard, so
+ * the name of a table on it reveals nothing the caller cannot read.
+ */
+export class DuplicateTableNameError extends Error {
+  readonly code = 'DUPLICATE_NAME' as const
+
+  constructor(name: string) {
+    super(`A table named "${name}" already exists on this whiteboard`)
+    this.name = 'DuplicateTableNameError'
+  }
+}
+
+/**
+ * After an insert failed: refuse the create with DuplicateTableNameError when
+ * the failure is a UNIQUE violation and the whiteboard now has a table with
+ * that name. Like `refuseTakenIdAfterInsertError`, it reads the row instead of
+ * parsing which index failed.
+ */
+function refuseTakenTableName(
+  error: unknown,
+  whiteboardId: string,
+  name: string,
+): void {
+  if (!(error instanceof Error)) return
+  if (!error.message.includes('UNIQUE constraint failed')) return
+  const taken = db
+    .prepare(
+      'SELECT 1 AS "x" FROM "DiagramTable" WHERE "whiteboardId" = ? AND "name" = ?',
+    )
+    .get(whiteboardId, name)
+  if (taken != null) throw new DuplicateTableNameError(name)
 }
 
 /**
