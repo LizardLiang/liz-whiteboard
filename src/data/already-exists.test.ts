@@ -14,7 +14,7 @@ import {
   refuseTakenIdAfterInsertError,
 } from './already-exists'
 import type { IdClaim } from './already-exists'
-import { db, insert } from '@/db'
+import { adaptStatement, db, insert } from '@/db'
 import { makeProject, makeWhiteboard, resetDb } from '@/test/db-helpers'
 
 function insertTable(id: string, whiteboardId: string, name: string): void {
@@ -160,17 +160,18 @@ describe('refuseTakenIdAfterInsertError', () => {
 
 // bun:sqlite (production) answers a query with no row with `null`; node:sqlite
 // (vitest, dev) answers `undefined`. This suite runs on node:sqlite, so these
-// tests make `get()` answer `null` the way bun:sqlite does.
+// tests make the driver answer `null` the way bun:sqlite does.
 describe('under bun:sqlite, where get() returns null for no row', () => {
   beforeEach(() => {
     const prepare = db.prepare.bind(db)
     vi.spyOn(db, 'prepare').mockImplementation((sql: string) => {
       const statement = prepare(sql)
-      return {
+      // A bun:sqlite statement, read through the adapter as in production.
+      return adaptStatement({
         get: (...params: Array<unknown>) => statement.get(...params) ?? null,
         all: (...params: Array<unknown>) => statement.all(...params),
         run: (...params: Array<unknown>) => statement.run(...params),
-      }
+      })
     })
   })
 

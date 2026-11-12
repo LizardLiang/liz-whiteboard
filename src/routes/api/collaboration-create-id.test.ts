@@ -18,7 +18,7 @@ import { randomUUID } from 'node:crypto'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { setupCollaborationEventHandlers } from './collaboration'
 import type * as RequireRoleModule from '@/lib/auth/require-role'
-import { db } from '@/db'
+import { adaptStatement, db } from '@/db'
 import {
   makeColumn,
   makeProject,
@@ -75,7 +75,9 @@ async function send(
 }
 
 function row(table: string, id: string): Record<string, unknown> | undefined {
-  return db.prepare(`SELECT * FROM "${table}" WHERE "id" = ?`).get(id) ?? undefined
+  return (
+    db.prepare(`SELECT * FROM "${table}" WHERE "id" = ?`).get(id) ?? undefined
+  )
 }
 
 function count(table: string): number {
@@ -139,7 +141,18 @@ function insertRelationship(f: Fixture, whiteboardId: string): string {
   const columnId = onMine ? f.sourceColumnId : f.otherColumnId
   db.prepare(
     'INSERT INTO "Relationship" ("id","whiteboardId","sourceTableId","targetTableId","sourceColumnId","targetColumnId","cardinality","label","createdAt","updatedAt") VALUES (?,?,?,?,?,?,?,?,?,?)',
-  ).run(id, whiteboardId, tableId, tableId, columnId, columnId, 'ONE_TO_ONE', 'theirs', ts, ts)
+  ).run(
+    id,
+    whiteboardId,
+    tableId,
+    tableId,
+    columnId,
+    columnId,
+    'ONE_TO_ONE',
+    'theirs',
+    ts,
+    ts,
+  )
   return id
 }
 
@@ -346,7 +359,10 @@ describe('a duplicate table name gets its own error in production', () => {
     const { handlers } = makeSocket(f.whiteboardId)
     const rowsBefore = count('DiagramTable')
 
-    const ack = await send(handlers, 'table:create', { name: 'orders', ...extra })
+    const ack = await send(handlers, 'table:create', {
+      name: 'orders',
+      ...extra,
+    })
 
     expect(ack).toEqual({
       ok: false,
@@ -358,17 +374,18 @@ describe('a duplicate table name gets its own error in production', () => {
 })
 
 // bun:sqlite (production) answers a query with no row with `null`; node:sqlite
-// (this suite) answers `undefined`. These tests make `get()` answer `null`.
+// (this suite) answers `undefined`. These tests make the driver answer `null`.
 describe('table:create under bun:sqlite, where get() returns null for no row', () => {
   beforeEach(() => {
     const prepare = db.prepare.bind(db)
     vi.spyOn(db, 'prepare').mockImplementation((sql: string) => {
       const statement = prepare(sql)
-      return {
+      // A bun:sqlite statement, read through the adapter as in production.
+      return adaptStatement({
         get: (...params: Array<unknown>) => statement.get(...params) ?? null,
         all: (...params: Array<unknown>) => statement.all(...params),
         run: (...params: Array<unknown>) => statement.run(...params),
-      }
+      })
     })
   })
 

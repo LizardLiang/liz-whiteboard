@@ -6,8 +6,11 @@
 // module works in both, so we pick the matching one at load time:
 //   - Bun  -> `bun:sqlite`  (Database)
 //   - Node -> `node:sqlite` (DatabaseSync, Node >= 22.5)
-// Both expose an identical `prepare().get()/.all()/.run()` synchronous API and
-// return identical plain-object rows. See memory: project_sqlite_runtime_split.
+// Both expose a synchronous `prepare().get()/.all()/.run()` API, but they
+// differ in what they return: bun:sqlite answers `get()` with no row with
+// `null`, node:sqlite with `undefined`. Unit tests run on node:sqlite only, so
+// `adaptDatabase` gives both drivers one return shape. See memory:
+// project_sqlite_runtime_split.
 
 import { createRequire } from 'node:module'
 import { randomUUID } from 'node:crypto'
@@ -56,15 +59,60 @@ import type {
 const require = createRequire(import.meta.url)
 const isBun = typeof (globalThis as { Bun?: unknown }).Bun !== 'undefined'
 
-/** Minimal shared surface of bun:sqlite / node:sqlite we rely on. */
-interface SqliteStatement {
-  get: (...params: Array<unknown>) => Record<string, unknown> | undefined | null
-  all: (...params: Array<unknown>) => Array<Record<string, unknown>>
-  run: (...params: Array<unknown>) => unknown
+/** What a bun:sqlite or node:sqlite statement returns, before adaptation. */
+export interface DriverStatement {
+  get: (...params: Array<unknown>) => unknown
+  all: (...params: Array<unknown>) => Array<unknown>
+  run: (...params: Array<unknown>) => {
+    changes: number | bigint
+    lastInsertRowid: number | bigint
+  }
 }
-interface SqliteDatabase {
+interface DriverDatabase {
+  prepare: (sql: string) => DriverStatement
+  exec: (sql: string) => void
+}
+
+/** The statement surface the app uses: one return shape under both drivers. */
+export interface SqliteStatement {
+  /** The first row, or `undefined` when the query returns no row. */
+  get: (...params: Array<unknown>) => Record<string, unknown> | undefined
+  all: (...params: Array<unknown>) => Array<Record<string, unknown>>
+  run: (...params: Array<unknown>) => RunResult
+}
+export interface RunResult {
+  changes: number
+  lastInsertRowid: number | bigint
+}
+export interface SqliteDatabase {
   prepare: (sql: string) => SqliteStatement
   exec: (sql: string) => void
+}
+
+/** Give a driver statement the app's return shape. */
+export function adaptStatement(statement: DriverStatement): SqliteStatement {
+  return {
+    get: (...params) =>
+      (statement.get(...params) ?? undefined) as
+        Record<string, unknown> | undefined,
+    all: (...params) =>
+      statement.all(...params) as Array<Record<string, unknown>>,
+    run: (...params) => {
+      const result = statement.run(...params)
+      return {
+        changes: Number(result.changes),
+        lastInsertRowid: result.lastInsertRowid,
+      }
+    },
+  }
+}
+
+/** Give a driver connection the app's return shape. */
+export function adaptDatabase(database: DriverDatabase): SqliteDatabase {
+  return {
+    prepare: (sql) => adaptStatement(database.prepare(sql)),
+    exec: (sql) => database.exec(sql),
+  }
 }
 
 function openDatabase(): SqliteDatabase {
@@ -75,10 +123,10 @@ function openDatabase(): SqliteDatabase {
   }
   if (isBun) {
     const { Database } = require('bun:sqlite')
-    return new Database(path, { create: true }) as SqliteDatabase
+    return adaptDatabase(new Database(path, { create: true }) as DriverDatabase)
   }
   const { DatabaseSync } = require('node:sqlite')
-  return new DatabaseSync(path) as SqliteDatabase
+  return adaptDatabase(new DatabaseSync(path) as DriverDatabase)
 }
 
 function resolveDbPath(): string {

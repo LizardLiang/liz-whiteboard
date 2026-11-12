@@ -40,7 +40,8 @@ export function isIdRefusal(error: unknown): boolean {
 
 /** The tables a client id can be claimed in, with how to find a row's whiteboard. */
 const WHITEBOARD_OF_ROW = {
-  DiagramTable: 'SELECT "whiteboardId" AS "wb" FROM "DiagramTable" WHERE "id" = ?',
+  DiagramTable:
+    'SELECT "whiteboardId" AS "wb" FROM "DiagramTable" WHERE "id" = ?',
   Column:
     'SELECT t."whiteboardId" AS "wb" FROM "Column" c JOIN "DiagramTable" t ON t."id" = c."tableId" WHERE c."id" = ?',
   Relationship:
@@ -65,19 +66,15 @@ function holderWhiteboard(claim: IdClaim & { id: string }): {
   found: boolean
   whiteboardId: string | null
 } {
-  // get() answers a missing row with null under bun:sqlite and with
-  // undefined under node:sqlite, so both checks test for either.
   const row = db.prepare(WHITEBOARD_OF_ROW[claim.table]).get(claim.id) as
-    | { wb?: string | null }
-    | undefined
-    | null
-  if (row != null) return { found: true, whiteboardId: row.wb ?? null }
+    { wb?: string | null } | undefined
+  if (row !== undefined) return { found: true, whiteboardId: row.wb ?? null }
   // A row the whiteboard query cannot place still holds the id: it is refused
   // with the generic failure.
   const bare = db
     .prepare(`SELECT 1 AS "x" FROM "${claim.table}" WHERE "id" = ?`)
     .get(claim.id)
-  return { found: bare != null, whiteboardId: null }
+  return { found: bare !== undefined, whiteboardId: null }
 }
 
 /** Throw the refusal the caller may see for a taken id. */
@@ -122,6 +119,6 @@ export function refuseTakenIdAfterInsertError(
 export function whiteboardOfTable(tableId: string): string | undefined {
   const row = db
     .prepare('SELECT "whiteboardId" AS "wb" FROM "DiagramTable" WHERE "id" = ?')
-    .get(tableId) as { wb?: string } | undefined | null
+    .get(tableId) as { wb?: string } | undefined
   return row?.wb
 }
