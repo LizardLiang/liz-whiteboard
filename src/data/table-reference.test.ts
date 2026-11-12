@@ -13,7 +13,7 @@ import {
   resolveTableReferences,
   updateTableReference,
 } from './table-reference'
-import { db, genId, nowMs } from '@/db'
+import { db, genId, insert, nowMs } from '@/db'
 import {
   makeColumn,
   makeProject,
@@ -301,6 +301,49 @@ describe('resolveTableReferences', () => {
     const [resolved] = await resolveTableReferences(local.id)
     expect(resolved.missing).toBe(true)
     expect(await listTableReferences(local.id)).toHaveLength(1)
+  })
+
+  it('does not show columns a squatter on another whiteboard chose for a deleted source id', async () => {
+    // Before ids were tombstoned, a user on ANOTHER project could create a
+    // table and a column that re-used a deleted source's ids. The reference
+    // must not read them as the source's own.
+    const { local, source, sourceTable, idCol } = makeTwoFileProject()
+    await createTableReference({
+      whiteboardId: local.id,
+      sourceWhiteboardId: source.id,
+      sourceTableId: sourceTable.id,
+      sourceColumnIds: [idCol.id],
+    })
+    db.prepare('DELETE FROM "DiagramTable" WHERE "id" = ?').run(sourceTable.id)
+    db.exec('DELETE FROM "RetiredId"')
+
+    const elsewhere = makeWhiteboard({ projectId: makeProject().id })
+    const ts = nowMs()
+    insert('DiagramTable', {
+      id: sourceTable.id,
+      whiteboardId: elsewhere.id,
+      name: 'squat',
+      createdAt: ts,
+      updatedAt: ts,
+    })
+    insert('Column', {
+      id: idCol.id,
+      tableId: sourceTable.id,
+      name: 'INJECTED',
+      dataType: 'text',
+      isPrimaryKey: 0,
+      isForeignKey: 1,
+      isUnique: 0,
+      isNullable: 0,
+      order: 0,
+      createdAt: ts,
+      updatedAt: ts,
+    })
+
+    const [resolved] = await resolveTableReferences(local.id)
+    expect(resolved.missing).toBe(true)
+    expect(resolved.columns[0].name).toBe('id')
+    expect(resolved.columns[0].missing).toBe(true)
   })
 
   it('marks only the vanished column missing when the table survives', async () => {

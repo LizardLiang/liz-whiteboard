@@ -3,8 +3,10 @@
 // database (DATABASE_URL=:memory:). Covers createColumn, createColumns (batch),
 // reorderColumns, duplicateColumn, updateColumn and deleteColumn.
 
+import { randomUUID } from 'node:crypto'
 import { beforeEach, describe, expect, it } from 'vitest'
 
+import { AlreadyExistsError } from './already-exists'
 import {
   createColumn,
   createColumns,
@@ -96,6 +98,36 @@ describe('createColumns', () => {
 
     const persisted = await findColumnsByTableId(tableId)
     expect(persisted.map((c) => c.name)).toEqual(['a', 'b', 'c'])
+  })
+
+  it('refuses a batch that repeats an id before writing, never as ALREADY_EXISTS', async () => {
+    const tableId = makeTableId()
+    const id = randomUUID()
+
+    const error = await createColumns([
+      { id, tableId, name: 'a', dataType: 'string', order: 0 },
+      { id, tableId, name: 'b', dataType: 'string', order: 1 },
+    ]).catch((e: unknown) => e)
+
+    expect(error).toBeInstanceOf(Error)
+    expect(error).not.toBeInstanceOf(AlreadyExistsError)
+    expect(await findColumnsByTableId(tableId)).toHaveLength(0)
+  })
+
+  it('answers a stored id inside a batch with the plain failure, not ALREADY_EXISTS', async () => {
+    const tableId = makeTableId()
+    const taken = makeColumn({ tableId })
+
+    const error = await createColumns([
+      { tableId, name: 'fresh', dataType: 'string', order: 0 },
+      { id: taken.id, tableId, name: 'again', dataType: 'string', order: 1 },
+    ]).catch((e: unknown) => e)
+
+    expect(error).toBeInstanceOf(Error)
+    expect(error).not.toBeInstanceOf(AlreadyExistsError)
+    expect((error as Error).message).toBe('Failed to create columns')
+    // The batch rolled back: only the pre-existing column is stored.
+    expect(await findColumnsByTableId(tableId)).toHaveLength(1)
   })
 
   it('rolls back the whole batch when one column is invalid', async () => {
