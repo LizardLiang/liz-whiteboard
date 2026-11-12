@@ -30,10 +30,7 @@ import {
   findDiagramTablesByWhiteboardId,
   updateDiagramTablePosition,
 } from '@/data/diagram-table'
-import {
-  createRelationship,
-  findRelationshipsByWhiteboardIdWithDetails,
-} from '@/data/relationship'
+import { findRelationshipsByWhiteboardIdWithDetails } from '@/data/relationship'
 import { findAreasByWhiteboard } from '@/data/area'
 import { findShapesByWhiteboard } from '@/data/shape'
 import { findConnectorsByWhiteboard } from '@/data/connector'
@@ -51,6 +48,7 @@ import { bulkUpdatePositionsSchema } from '@/data/schema'
 import { requireServerFnRole } from '@/lib/auth/require-role'
 import { findEffectiveRole } from '@/data/permission'
 import { createTableHandler } from '@/lib/diagram-table/handlers'
+import { createRelationshipHandler } from '@/lib/diagram-relationship/handlers'
 import {
   createTableReference,
   deleteTableReference,
@@ -369,25 +367,18 @@ export const updateTablePositionsBulk = createServerFn({ method: 'POST' })
   )
 
 /**
+ * Delegates to `createRelationshipHandler`, which persists the relationship
+ * and broadcasts `relationship:created` to the whiteboard's peers. The import
+ * is referenced only inside `.handler(...)`, so the client bundle drops it
+ * (same pattern as `createTable`).
+ *
  * @requires editor
  */
 export const createRelationshipFn = createServerFn({
   method: 'POST',
 })
   .validator((data: CreateRelationship) => data)
-  .handler(
-    requireAuth(async ({ user }, data) => {
-      const projectId = await getWhiteboardProjectId(data.whiteboardId)
-      await requireServerFnRole(user.id, projectId, 'EDITOR')
-      try {
-        const relationship = await createRelationship(data)
-        return relationship
-      } catch (error) {
-        console.error('Error creating relationship:', error)
-        throw error
-      }
-    }),
-  )
+  .handler(requireAuth(createRelationshipHandler))
 
 /**
  * @requires editor

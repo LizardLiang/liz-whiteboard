@@ -18,6 +18,7 @@ export default defineConfig({
   testDir: './e2e',
   testMatch: [
     'coedit-table-create.spec.ts',
+    'coedit-relationship-create.spec.ts',
     'auto-layout-area-peers.spec.ts',
     'canvas-table-coedit.spec.ts',
   ],

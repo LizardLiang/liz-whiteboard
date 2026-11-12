@@ -277,15 +277,17 @@ function WhiteboardEditor() {
     mutationFn: async (data: CreateRelationship) => {
       return await createRelationshipFn({ data })
     },
-    onSuccess: (createdRelationship) => {
-      // Emit WebSocket event for other users
-      emit('relationship:create', createdRelationship)
-
-      // Invalidate and refetch
+    // Peers learn of the new relationship from the server function's own
+    // relationship:created broadcast (src/lib/diagram-relationship/handlers.ts).
+    // ['relationships', id] is the query the canvas draws its edges from.
+    onSuccess: () => {
       queryClient.invalidateQueries({
         queryKey: ['whiteboard-page', whiteboardId],
       })
       queryClient.invalidateQueries({ queryKey: ['whiteboard', whiteboardId] })
+      queryClient.invalidateQueries({
+        queryKey: ['relationships', whiteboardId],
+      })
     },
     onError: (err) => {
       console.error('Failed to create relationship:', err)
@@ -378,10 +380,9 @@ function WhiteboardEditor() {
   // table-creation sync is now handled entirely by
   // useWhiteboardCollaboration's table:created effect + ReactFlowWhiteboard's
   // handleTableCreated, which patch the canvas's own query cache. Removed
-  // rather than reinstated here. The sibling handlers below
-  // (relationship:created, text:updated, whiteboard:restored) share the same
-  // family of non-firing-subscription risk but are explicitly out of scope
-  // for #125 — flagged as a follow-up, not touched in this change.
+  // rather than reinstated here. The relationship:created handler below does
+  // fire live: e2e/coedit-relationship-create.spec.ts proves it against the
+  // prod build.
   useEffect(() => {
     const handleTableMoved = (data: {
       tableId: string
