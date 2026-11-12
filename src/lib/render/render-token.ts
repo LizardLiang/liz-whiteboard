@@ -11,8 +11,9 @@
 //   The token names one board and one user. It stores nothing: no DB row to
 //   clean up and nothing to list or revoke. It expires in 60 seconds.
 
-import { SignJWT, jwtVerify } from 'jose'
+import { SignJWT } from 'jose'
 import { getSigningKeyPair } from '@/lib/oauth/keys'
+import { jwtVerifyWithLeeway } from '@/lib/oauth/jwt-leeway'
 
 export const RENDER_TOKEN_AUDIENCE = 'render'
 export const RENDER_TOKEN_TTL_SECONDS = 60
@@ -61,7 +62,7 @@ export async function verifyRenderToken(
   token: string,
 ): Promise<RenderTokenClaims> {
   const { publicKey } = await getSigningKeyPair()
-  const { payload } = await jwtVerify(token, publicKey, {
+  const { payload } = await jwtVerifyWithLeeway(token, publicKey, {
     issuer: issuer(),
     audience: RENDER_TOKEN_AUDIENCE,
     algorithms: ['RS256'],

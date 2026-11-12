@@ -25,6 +25,7 @@ async function forge(opts: {
   audience?: string
   issuer?: string
   ttlSeconds?: number
+  notBeforeSeconds?: number
   claims?: Record<string, unknown>
   sub?: string | null
 }): Promise<string> {
@@ -40,6 +41,8 @@ async function forge(opts: {
     .setAudience(opts.audience ?? RENDER_TOKEN_AUDIENCE)
     .setIssuedAt(now)
     .setExpirationTime(now + (opts.ttlSeconds ?? 60))
+  if (opts.notBeforeSeconds !== undefined)
+    jwt.setNotBefore(now + opts.notBeforeSeconds)
   if (opts.sub !== null) jwt.setSubject(opts.sub ?? USER_ID)
   return jwt.sign(privateKey)
 }
@@ -145,5 +148,35 @@ describe('signRenderToken / verifyRenderToken', () => {
 
   it('rejects garbage', async () => {
     await expect(verifyRenderToken('not-a-jwt')).rejects.toThrow()
+  })
+})
+
+// The verifying clock may run behind the minting clock (a measured +14.7 s
+// step on the dev host): nbf has a 30 s leeway, exp only 5 s.
+describe('verifyRenderToken clock leeway', () => {
+  it('accepts a token whose nbf is 15 s in the future', async () => {
+    const token = await forge({ notBeforeSeconds: 15 })
+    await expect(verifyRenderToken(token)).resolves.toMatchObject({
+      sub: USER_ID,
+    })
+  })
+
+  it('rejects a token whose nbf is 2 min in the future', async () => {
+    const token = await forge({ notBeforeSeconds: 120 })
+    await expect(verifyRenderToken(token)).rejects.toThrow()
+  })
+
+  it('accepts a token that expired 2 s ago', async () => {
+    const token = await forge({ ttlSeconds: -2 })
+    await expect(verifyRenderToken(token)).resolves.toMatchObject({
+      sub: USER_ID,
+    })
+  })
+
+  it('rejects a token that expired 15 s ago with the jose expiry code', async () => {
+    const token = await forge({ ttlSeconds: -15 })
+    await expect(verifyRenderToken(token)).rejects.toMatchObject({
+      code: 'ERR_JWT_EXPIRED',
+    })
   })
 })

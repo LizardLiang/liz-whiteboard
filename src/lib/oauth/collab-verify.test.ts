@@ -40,6 +40,7 @@ async function mintCollabJWT(
     aud?: string | Array<string>
     sub?: string
     exp?: number
+    nbf?: number
     tokenUse?: string | null
   } = {},
 ) {
@@ -52,7 +53,7 @@ async function mintCollabJWT(
   })
     .setProtectedHeader({ alg: 'RS256', kid })
     .setIssuedAt(now)
-    .setNotBefore(now)
+    .setNotBefore(overrides.nbf ?? now)
 
   if (overrides.iss !== undefined) {
     jwt = jwt.setIssuer(overrides.iss)
@@ -151,5 +152,37 @@ describe('M1: token_use=collab is required', () => {
       .setExpirationTime(now + 600)
       .sign(privateKey)
     await expect(validateCollabToken(token)).rejects.toThrow()
+  })
+})
+
+// The verifying clock may run behind the minting clock (a measured +14.7 s
+// step on the dev host): nbf has a 30 s leeway, exp only 5 s.
+describe('clock leeway', () => {
+  const nowSeconds = () => Math.floor(Date.now() / 1000)
+
+  it('accepts a token whose nbf is 15 s in the future', async () => {
+    const token = await mintCollabJWT({ nbf: nowSeconds() + 15 })
+    await expect(validateCollabToken(token)).resolves.toMatchObject({
+      sub: 'user-123',
+    })
+  })
+
+  it('rejects a token whose nbf is 2 min in the future', async () => {
+    const token = await mintCollabJWT({ nbf: nowSeconds() + 120 })
+    await expect(validateCollabToken(token)).rejects.toThrow()
+  })
+
+  it('accepts a token that expired 2 s ago', async () => {
+    const token = await mintCollabJWT({ exp: nowSeconds() - 2 })
+    await expect(validateCollabToken(token)).resolves.toMatchObject({
+      sub: 'user-123',
+    })
+  })
+
+  it('rejects a token that expired 15 s ago', async () => {
+    const token = await mintCollabJWT({ exp: nowSeconds() - 15 })
+    await expect(validateCollabToken(token)).rejects.toMatchObject({
+      code: 'ERR_JWT_EXPIRED',
+    })
   })
 })

@@ -6,10 +6,11 @@
 // than making an HTTP round-trip to the JWKS endpoint.
 //
 // Validated claims: RS256 algorithm, correct signature, iss == AS issuer,
-// token_use == 'collab', aud contains collabResourceUri, exp not in the past.
+// token_use == 'collab', aud contains collabResourceUri, nbf and exp within
+// the clock leeway of jwt-leeway.ts.
 
-import { jwtVerify } from 'jose'
 import { getSigningKeyPair } from './keys'
+import { jwtVerifyWithLeeway } from './jwt-leeway'
 
 /**
  * Claim marking a token as minted by /api/collab-token. OAuth-flow access
@@ -39,7 +40,7 @@ export async function validateCollabToken(
 
   const { publicKey } = await getSigningKeyPair()
 
-  const { payload } = await jwtVerify(token, publicKey, {
+  const { payload } = await jwtVerifyWithLeeway(token, publicKey, {
     issuer,
     audience: collabResourceUri,
     algorithms: ['RS256'],
