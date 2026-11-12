@@ -30,7 +30,7 @@
 // dispatch faithfully; the click path runs the identical picker and mutation).
 import { execFileSync } from 'node:child_process'
 import { expect, test } from '@playwright/test'
-import { IDS, clickZoomMenuItem } from './fixtures'
+import { IDS, clickMoreTool, clickZoomMenuItem } from './fixtures'
 import type { Page } from '@playwright/test'
 
 test.use({ viewport: { width: 1600, height: 1000 } })
@@ -241,4 +241,68 @@ test('reference another file’s table, then follow it back to its source', asyn
 
   await expect(referenceNode).toHaveCount(0)
   await expect(page.locator('.react-flow__edge')).toHaveCount(0)
+})
+
+// Restoring a version snapshot must bring a reference node back AS a reference.
+// The restore once dropped sourceWhiteboardId/sourceTableId/sourceColumnId, so
+// the node returned as a plain table: no external-table-node, no source file.
+test('restoring a version brings a deleted reference node back as a reference', async ({
+  page,
+}) => {
+  const referenceNode = page.locator('[data-testid^="external-table-node-"]')
+
+  await page.goto(LOCAL_BOARD)
+  await expect(referenceNode).toHaveCount(0)
+
+  // Reference the Billing `orders` table.
+  await page.getByTestId('add-reference-tool').click()
+  const picker = page.getByRole('dialog')
+  await picker.getByText('E2E Ref Billing').click()
+  await picker.getByText('orders').click()
+  await picker.getByText('id', { exact: true }).click()
+  await picker.getByRole('button', { name: /add reference/i }).click()
+  await expect(referenceNode).toBeVisible()
+
+  // Save a version that contains the reference.
+  await clickMoreTool(page, 'Version history')
+  await page.getByRole('textbox', { name: 'Version label' }).fill('With reference')
+  await page.getByRole('button', { name: 'Save version' }).click()
+  await expect(page.getByText('Version saved')).toBeVisible()
+  await page.keyboard.press('Escape')
+
+  // Delete the reference node.
+  await clickZoomMenuItem(page, 'Fit to screen')
+  await referenceNode.click()
+  const referenceNodeId = (await referenceNode.getAttribute('data-testid'))!.replace(
+    'external-table-node-',
+    '',
+  )
+  await page.getByTestId(`reference-delete-${referenceNodeId}`).click()
+  await page
+    .getByRole('alertdialog')
+    .getByRole('button', { name: /remove reference/i })
+    .click()
+  await expect(referenceNode).toHaveCount(0)
+
+  // Restore the saved version.
+  await clickMoreTool(page, 'Version history')
+  await page
+    .getByRole('list', { name: 'Version list' })
+    .getByRole('button', { name: /With reference/ })
+    .click()
+  const dialog = page.getByRole('dialog').filter({ hasText: 'Read-only preview' })
+  await dialog.getByRole('button', { name: 'Restore this version' }).click()
+  await page
+    .getByRole('alertdialog', { name: 'Restore this version?' })
+    .getByRole('button', { name: 'Restore', exact: true })
+    .click()
+  await expect(page.getByText('Version restored')).toBeVisible()
+
+  // After a reload (the live broadcast is prod-only, see playwright.config.ts)
+  // the node is a reference again, naming its source file, and it resolves.
+  await page.reload()
+  await expect(referenceNode).toBeVisible()
+  await expect(referenceNode).toContainText('E2E Ref Billing')
+  await expect(referenceNode).toContainText('orders')
+  await expect(referenceNode).toHaveAttribute('data-missing', 'false')
 })

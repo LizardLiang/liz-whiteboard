@@ -17,18 +17,25 @@ import {
   createDiagramTable,
   findDiagramTablesByWhiteboardId,
 } from './diagram-table'
-import { createColumn } from './column'
+import { createColumn, findColumnsByTableId } from './column'
 import {
   createRelationship,
   findRelationshipsByWhiteboardId,
 } from './relationship'
 import { createArea, findAreaById, findAreasByWhiteboard } from './area'
+import {
+  createTableReference,
+  isTableReference,
+  resolveTableReferences,
+} from './table-reference'
 import { createShape, findShapesByWhiteboard } from './shape'
 import { createConnector, findConnectorsByWhiteboard } from './connector'
 import type * as DbModule from '@/db'
 import { db, insert, nowMs, toDbJson } from '@/db'
 import {
+  makeColumn,
   makeProject,
+  makeTable,
   makeUser,
   makeWhiteboard,
   resetDb,
@@ -527,5 +534,189 @@ describe('UNIT-07: legacy (pre-feature) snapshot payload restore (FR-035a — ma
     expect(tables.map((t) => t.id).sort()).toEqual([t1.id, t2.id].sort())
     const areas = await findAreasByWhiteboard(whiteboardId)
     expect(areas.map((a) => a.id)).toEqual([area.id])
+  })
+})
+
+describe('restore of a cross-file table reference', () => {
+  /** A local board holding a reference to `orders` on a source board, wired to a local table. */
+  async function seedReference() {
+    const project = makeProject()
+    const local = makeWhiteboard({ projectId: project.id, name: 'Local' })
+    const source = makeWhiteboard({ projectId: project.id, name: 'Billing' })
+    const orders = makeTable({ whiteboardId: source.id, name: 'orders' })
+    const ordersId = makeColumn({
+      tableId: orders.id,
+      name: 'id',
+      isPrimaryKey: true,
+      order: 0,
+    })
+    const ordersCustomer = makeColumn({
+      tableId: orders.id,
+      name: 'customer_id',
+      order: 1,
+    })
+    const ref = await createTableReference({
+      whiteboardId: local.id,
+      sourceWhiteboardId: source.id,
+      sourceTableId: orders.id,
+      sourceColumnIds: [ordersId.id, ordersCustomer.id],
+      positionX: 10,
+      positionY: 20,
+    })
+    const invoices = await createDiagramTable({
+      whiteboardId: local.id,
+      name: 'invoices',
+      positionX: 0,
+      positionY: 0,
+    })
+    const invoiceCol = await createColumn({
+      tableId: invoices.id,
+      name: 'order_id',
+      dataType: 'uuid',
+      isPrimaryKey: false,
+      isForeignKey: true,
+      isUnique: false,
+      isNullable: false,
+      order: 0,
+    })
+    const stubId = ref.columns.find((c) => c.sourceColumnId === ordersId.id)!
+    const rel = await createRelationship({
+      whiteboardId: local.id,
+      sourceTableId: ref.table.id,
+      targetTableId: invoices.id,
+      sourceColumnId: stubId.id,
+      targetColumnId: invoiceCol.id,
+      cardinality: 'ONE_TO_MANY',
+    })
+    return { local, source, orders, ordersId, ordersCustomer, ref, rel }
+  }
+
+  /** Mimic storage: createWhiteboardSnapshot -> findSnapshotById round-trips JSON. */
+  async function snapshotOf(whiteboardId: string) {
+    const created = await createWhiteboardSnapshot({
+      whiteboardId,
+      label: null,
+      createdByUserId: null,
+      isAuto: false,
+      payload: await captureWhiteboardState(whiteboardId),
+    })
+    return (await findSnapshotById(created.id))!.payload
+  }
+
+  it('keeps the reference fields and resolves the node live after a restore', async () => {
+    const { local, source, orders, ordersId, ordersCustomer, ref, rel } =
+      await seedReference()
+    const payload = await snapshotOf(local.id)
+    // Capture already carries the reference fields; only restore dropped them.
+    const captured = payload.tables.find((t) => t.id === ref.table.id)!
+    expect(captured.sourceTableId).toBe(orders.id)
+    expect(captured.columns.map((c) => c.sourceColumnId)).toContain(ordersId.id)
+
+    await restoreWhiteboardFromSnapshot(local.id, payload)
+
+    const tables = await findDiagramTablesByWhiteboardId(local.id)
+    const restoredRef = tables.find((t) => t.name === ref.table.name)!
+    expect(restoredRef.id).toBe(ref.table.id)
+    expect(isTableReference(restoredRef)).toBe(true)
+    expect(restoredRef.sourceWhiteboardId).toBe(source.id)
+    expect(restoredRef.sourceTableId).toBe(orders.id)
+    const stubs = await findColumnsByTableId(restoredRef.id)
+    expect(stubs.map((c) => c.sourceColumnId).sort()).toEqual(
+      [ordersId.id, ordersCustomer.id].sort(),
+    )
+
+    const [resolved] = await resolveTableReferences(local.id)
+    expect(resolved.missing).toBe(false)
+    expect(resolved.columns.map((c) => c.missing)).toEqual([false, false])
+
+    const [restoredRel] = await findRelationshipsByWhiteboardId(local.id)
+    expect(restoredRel.id).toBe(rel.id)
+    expect(restoredRel.sourceTableId).toBe(restoredRef.id)
+  })
+
+  it('leaves the source board untouched and does not remap source ids when the reference node itself is restored under fresh ids', async () => {
+    const { local, source, orders, ordersId, ref, rel } = await seedReference()
+    const payload = await snapshotOf(local.id)
+
+    // Free the ids, then let another board claim the reference node's table
+    // id and its stub column ids (the squatter case the backstop handles).
+    db.prepare('DELETE FROM "DiagramTable" WHERE "whiteboardId" = ?').run(
+      local.id,
+    )
+    db.exec('DELETE FROM "RetiredId"')
+    const elsewhere = makeWhiteboardId()
+    const ts = nowMs()
+    insert('DiagramTable', {
+      id: ref.table.id,
+      whiteboardId: elsewhere,
+      name: 'squat',
+      createdAt: ts,
+      updatedAt: ts,
+    })
+    for (const stub of ref.columns) {
+      insert('Column', {
+        id: stub.id,
+        tableId: ref.table.id,
+        name: `INJECTED-${stub.id}`,
+        dataType: 'text',
+        isPrimaryKey: 0,
+        isForeignKey: 0,
+        isUnique: 0,
+        isNullable: 0,
+        order: 9,
+        createdAt: ts,
+        updatedAt: ts,
+      })
+    }
+
+    await restoreWhiteboardFromSnapshot(local.id, payload)
+
+    const restoredRef = (await findDiagramTablesByWhiteboardId(local.id)).find(
+      (t) => t.name === ref.table.name,
+    )!
+    expect(restoredRef.id).not.toBe(ref.table.id)
+    expect(restoredRef.sourceWhiteboardId).toBe(source.id)
+    expect(restoredRef.sourceTableId).toBe(orders.id)
+    const stubs = await findColumnsByTableId(restoredRef.id)
+    expect(stubs.every((c) => !ref.columns.some((o) => o.id === c.id))).toBe(
+      true,
+    )
+    expect(stubs.map((c) => c.sourceColumnId)).toContain(ordersId.id)
+
+    const [resolved] = await resolveTableReferences(local.id)
+    expect(resolved.missing).toBe(false)
+    expect(resolved.columns.every((c) => !c.missing)).toBe(true)
+
+    const [restoredRel] = await findRelationshipsByWhiteboardId(local.id)
+    expect(restoredRel.id).toBe(rel.id)
+    expect(restoredRel.sourceTableId).toBe(restoredRef.id)
+    expect(stubs.map((c) => c.id)).toContain(restoredRel.sourceColumnId)
+
+    expect((await findDiagramTablesByWhiteboardId(source.id))[0].id).toBe(
+      orders.id,
+    )
+  })
+
+  it('restores a snapshot taken before reference fields were captured as a plain table', async () => {
+    const { local, ref } = await seedReference()
+    const payload = await snapshotOf(local.id)
+    for (const table of payload.tables) {
+      delete (table as Record<string, unknown>).sourceWhiteboardId
+      delete (table as Record<string, unknown>).sourceTableId
+      for (const column of table.columns) {
+        delete (column as Record<string, unknown>).sourceColumnId
+      }
+    }
+
+    await restoreWhiteboardFromSnapshot(local.id, payload)
+
+    const restored = (await findDiagramTablesByWhiteboardId(local.id)).find(
+      (t) => t.id === ref.table.id,
+    )!
+    expect(restored.sourceWhiteboardId).toBeNull()
+    expect(restored.sourceTableId).toBeNull()
+    expect(isTableReference(restored)).toBe(false)
+    const stubs = await findColumnsByTableId(restored.id)
+    expect(stubs.every((c) => c.sourceColumnId === null)).toBe(true)
   })
 })

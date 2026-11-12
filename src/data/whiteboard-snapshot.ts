@@ -258,6 +258,10 @@ export async function restoreWhiteboardFromSnapshot(
         positionY: table.positionY,
         width: table.width,
         height: table.height,
+        // A reference node's source lives on ANOTHER whiteboard, so these are
+        // never remapped. Snapshots taken before they were captured lack them.
+        sourceWhiteboardId: table.sourceWhiteboardId ?? null,
+        sourceTableId: table.sourceTableId ?? null,
         createdAt: coerceStoredDate(table.createdAt),
         updatedAt: ts,
       })
@@ -276,6 +280,7 @@ export async function restoreWhiteboardFromSnapshot(
           isNullable: toDbBool(column.isNullable),
           description: column.description,
           order: column.order,
+          sourceColumnId: column.sourceColumnId ?? null,
           createdAt: coerceStoredDate(column.createdAt),
           updatedAt: ts,
         })
