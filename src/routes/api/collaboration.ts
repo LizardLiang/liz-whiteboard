@@ -1,12 +1,12 @@
 // src/routes/api/collaboration.ts
 // Socket.IO server integration for real-time collaboration
 
-import { clientErrorMessage } from '@/lib/client-error'
 import { Server as SocketIOServer } from 'socket.io'
 import { z } from 'zod'
 import type { Server as HTTPServer } from 'node:http'
 import type { AreaBounds, CursorPosition } from '@/data/schema'
 import type { EffectiveRole } from '@/data/permission'
+import { clientErrorMessage } from '@/lib/client-error'
 import {
   createCollaborationSession,
   deleteCollaborationSession,
@@ -1130,8 +1130,7 @@ export function setupCollaborationEventHandlers(
     try {
       const validated = createAreaSchema.parse({ ...data, whiteboardId })
       if (
-        findForeignTableIds(whiteboardId, validated.memberTableIds ?? [])
-          .length > 0
+        findForeignTableIds(whiteboardId, validated.memberTableIds).length > 0
       ) {
         socket.emit('error', {
           event: 'area:create',

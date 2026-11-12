@@ -22,11 +22,11 @@
 // `getWhiteboardWithDiagram` / `createWhiteboardFn` do. Canvas boards are a
 // new board kind, not a new permission model.
 
-import { clientErrorMessage } from '@/lib/client-error'
 import { createServerFn } from '@tanstack/react-start'
 import { z } from 'zod'
 import type { EffectiveRole } from '@/data/permission'
 import type { CanvasBoard, CanvasElementRecord } from '@/data/models'
+import { clientErrorMessage } from '@/lib/client-error'
 import { requireAuth } from '@/lib/auth/middleware'
 import {
   assertFolderInProject,

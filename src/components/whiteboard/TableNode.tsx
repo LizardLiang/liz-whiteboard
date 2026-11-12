@@ -767,7 +767,7 @@ export const TableNode = memo(
           newOrder,
           preState: preDragColumnsRef.current,
           emitColumnReorder: emitColumnReorderNow,
-          setNodes: (() => {}) as any,
+          setNodes: () => {},
           bumpReorderTick: bumpReorderTickNow,
         })
       }
@@ -787,7 +787,7 @@ export const TableNode = memo(
             newOrder: null,
             preState: preDragColumnsRef.current,
             emitColumnReorder: emitColumnReorderNow,
-            setNodes: (() => {}) as any,
+            setNodes: () => {},
             bumpReorderTick: bumpReorderTickNow,
           })
         }

@@ -190,7 +190,7 @@ describe('canvas handlers — authorisation', () => {
 describe('element:create', () => {
   it('persists the element and broadcasts element:created with createdBy', async () => {
     const record = makeRecord()
-    vi.mocked(createCanvasElement).mockResolvedValue(record as any)
+    vi.mocked(createCanvasElement).mockResolvedValue(record)
     const h = makeHarness()
     const cb = vi.fn()
 
@@ -205,7 +205,7 @@ describe('element:create', () => {
 
   describe('agent colour default', () => {
     async function createWith(payload: Record<string, unknown>) {
-      vi.mocked(createCanvasElement).mockResolvedValue(makeRecord() as any)
+      vi.mocked(createCanvasElement).mockResolvedValue(makeRecord())
       const h = makeHarness()
       await h.handlers['element:create'](payload, vi.fn())
       return vi.mocked(createCanvasElement).mock.calls[0][0] as any
@@ -293,7 +293,7 @@ describe('element:create', () => {
     // The client computes its z-index from a local scene that is stale the
     // moment a collaborator adds anything, so two clients drawing at once
     // would both claim the same top slot.
-    vi.mocked(createCanvasElement).mockResolvedValue(makeRecord() as any)
+    vi.mocked(createCanvasElement).mockResolvedValue(makeRecord())
     const h = makeHarness()
 
     await h.handlers['element:create'](
@@ -309,7 +309,7 @@ describe('element:create', () => {
     // "Canvas Undo Restores Deleted Elements Faithfully" names stacking order
     // explicitly. Restoring a deleted element must land it back at its
     // original zIndex, not on top of the board.
-    vi.mocked(createCanvasElement).mockResolvedValue(makeRecord() as any)
+    vi.mocked(createCanvasElement).mockResolvedValue(makeRecord())
     const h = makeHarness()
 
     await h.handlers['element:create'](
@@ -326,7 +326,7 @@ describe('element:create', () => {
     // A well-formed restore always sends both id and zIndex, but a payload
     // that sends only `id` must not fall through to trusting some OTHER
     // stale value — it still gets a fresh top-of-stack slot.
-    vi.mocked(createCanvasElement).mockResolvedValue(makeRecord() as any)
+    vi.mocked(createCanvasElement).mockResolvedValue(makeRecord())
     const h = makeHarness()
 
     await h.handlers['element:create'](
@@ -339,7 +339,7 @@ describe('element:create', () => {
   })
 
   it('honours a caller-supplied minRevision when restoring with an explicit id (Hermes review, W-C)', async () => {
-    vi.mocked(createCanvasElement).mockResolvedValue(makeRecord() as any)
+    vi.mocked(createCanvasElement).mockResolvedValue(makeRecord())
     const h = makeHarness()
 
     await h.handlers['element:create'](
@@ -351,7 +351,7 @@ describe('element:create', () => {
   })
 
   it('strips minRevision from a payload without an explicit id (no privileged path)', async () => {
-    vi.mocked(createCanvasElement).mockResolvedValue(makeRecord() as any)
+    vi.mocked(createCanvasElement).mockResolvedValue(makeRecord())
     const h = makeHarness()
 
     await h.handlers['element:create'](
@@ -368,7 +368,7 @@ describe('element:create', () => {
     // The payload is client-controlled. A create naming another board must
     // still be written to the board this socket was authorised for — the role
     // check above proved access to BOARD_ID and to nothing else.
-    vi.mocked(createCanvasElement).mockResolvedValue(makeRecord() as any)
+    vi.mocked(createCanvasElement).mockResolvedValue(makeRecord())
     const h = makeHarness()
 
     await h.handlers['element:create'](
@@ -418,8 +418,8 @@ describe('element:update', () => {
       positionX: 99,
       updatedAt: new Date('2026-08-24T12:00:00Z'),
     })
-    vi.mocked(findCanvasElementById).mockResolvedValue(existing as any)
-    vi.mocked(updateCanvasElement).mockResolvedValue(updated as any)
+    vi.mocked(findCanvasElementById).mockResolvedValue(existing)
+    vi.mocked(updateCanvasElement).mockResolvedValue(updated)
     const h = makeHarness()
     const cb = vi.fn()
 
@@ -445,9 +445,9 @@ describe('element:update', () => {
   })
 
   it('forwards expectedRevision as a conditional-write guard', async () => {
-    vi.mocked(findCanvasElementById).mockResolvedValue(makeRecord() as any)
+    vi.mocked(findCanvasElementById).mockResolvedValue(makeRecord())
     vi.mocked(updateCanvasElement).mockResolvedValue(
-      makeRecord({ revision: 2 }) as any,
+      makeRecord({ revision: 2 }),
     )
     const h = makeHarness()
 
@@ -464,8 +464,8 @@ describe('element:update', () => {
   })
 
   it('never forwards expectedRevision into the update patch', async () => {
-    vi.mocked(findCanvasElementById).mockResolvedValue(makeRecord() as any)
-    vi.mocked(updateCanvasElement).mockResolvedValue(makeRecord() as any)
+    vi.mocked(findCanvasElementById).mockResolvedValue(makeRecord())
+    vi.mocked(updateCanvasElement).mockResolvedValue(makeRecord())
     const h = makeHarness()
 
     await h.handlers['element:update'](
@@ -479,7 +479,7 @@ describe('element:update', () => {
   })
 
   it('replies REVISION_MISMATCH without a generic error when the target is contested', async () => {
-    vi.mocked(findCanvasElementById).mockResolvedValue(makeRecord() as any)
+    vi.mocked(findCanvasElementById).mockResolvedValue(makeRecord())
     vi.mocked(updateCanvasElement).mockRejectedValue(
       new RevisionMismatchError(ELEMENT_ID, 2, 1),
     )
@@ -504,7 +504,7 @@ describe('element:update', () => {
 
   it('refuses an element belonging to another board (IDOR)', async () => {
     vi.mocked(findCanvasElementById).mockResolvedValue(
-      makeRecord({ boardId: OTHER_BOARD_ID }) as any,
+      makeRecord({ boardId: OTHER_BOARD_ID }),
     )
     const h = makeHarness()
     const cb = vi.fn()
@@ -555,7 +555,7 @@ describe('element:update', () => {
     )
 
     vi.mocked(findCanvasElementById).mockResolvedValue(
-      makeRecord({ boardId: OTHER_BOARD_ID }) as any,
+      makeRecord({ boardId: OTHER_BOARD_ID }),
     )
     const foreignHarness = makeHarness()
     const foreign = vi.fn()
@@ -587,8 +587,8 @@ describe('element:update', () => {
   it('never forwards elementId into the update patch', async () => {
     // `updateCanvasElementSchema` has no `elementId`; leaking it through would
     // make the parse fail on a payload that is actually valid.
-    vi.mocked(findCanvasElementById).mockResolvedValue(makeRecord() as any)
-    vi.mocked(updateCanvasElement).mockResolvedValue(makeRecord() as any)
+    vi.mocked(findCanvasElementById).mockResolvedValue(makeRecord())
+    vi.mocked(updateCanvasElement).mockResolvedValue(makeRecord())
     const h = makeHarness()
 
     await h.handlers['element:update'](
@@ -605,8 +605,8 @@ describe('element:update', () => {
 describe('element:delete', () => {
   it('deletes and broadcasts element:deleted with deletedBy', async () => {
     const existing = makeRecord()
-    vi.mocked(findCanvasElementById).mockResolvedValue(existing as any)
-    vi.mocked(deleteCanvasElement).mockResolvedValue(existing as any)
+    vi.mocked(findCanvasElementById).mockResolvedValue(existing)
+    vi.mocked(deleteCanvasElement).mockResolvedValue(existing)
     const h = makeHarness()
     const cb = vi.fn()
 
@@ -635,8 +635,8 @@ describe('element:delete', () => {
 
   it('forwards expectedRevision as a conditional-delete guard', async () => {
     const existing = makeRecord()
-    vi.mocked(findCanvasElementById).mockResolvedValue(existing as any)
-    vi.mocked(deleteCanvasElement).mockResolvedValue(existing as any)
+    vi.mocked(findCanvasElementById).mockResolvedValue(existing)
+    vi.mocked(deleteCanvasElement).mockResolvedValue(existing)
     const h = makeHarness()
 
     await h.handlers['element:delete'](
@@ -648,7 +648,7 @@ describe('element:delete', () => {
   })
 
   it('replies REVISION_MISMATCH without a generic error when the target is contested', async () => {
-    vi.mocked(findCanvasElementById).mockResolvedValue(makeRecord() as any)
+    vi.mocked(findCanvasElementById).mockResolvedValue(makeRecord())
     vi.mocked(deleteCanvasElement).mockRejectedValue(
       new RevisionMismatchError(ELEMENT_ID, 2, 1),
     )
@@ -671,7 +671,7 @@ describe('element:delete', () => {
 
   it('refuses an element belonging to another board (IDOR)', async () => {
     vi.mocked(findCanvasElementById).mockResolvedValue(
-      makeRecord({ boardId: OTHER_BOARD_ID }) as any,
+      makeRecord({ boardId: OTHER_BOARD_ID }),
     )
     const h = makeHarness()
     const cb = vi.fn()
@@ -703,10 +703,10 @@ describe('browser clients without an ack callback', () => {
     // Browser clients emit without a callback; `cb?.()` everywhere is what
     // stops a missing ack from throwing inside the handler and skipping the
     // broadcast.
-    vi.mocked(createCanvasElement).mockResolvedValue(makeRecord() as any)
-    vi.mocked(findCanvasElementById).mockResolvedValue(makeRecord() as any)
-    vi.mocked(updateCanvasElement).mockResolvedValue(makeRecord() as any)
-    vi.mocked(deleteCanvasElement).mockResolvedValue(makeRecord() as any)
+    vi.mocked(createCanvasElement).mockResolvedValue(makeRecord())
+    vi.mocked(findCanvasElementById).mockResolvedValue(makeRecord())
+    vi.mocked(updateCanvasElement).mockResolvedValue(makeRecord())
+    vi.mocked(deleteCanvasElement).mockResolvedValue(makeRecord())
     const h = makeHarness()
 
     await h.handlers['element:create'](VALID_CREATE)

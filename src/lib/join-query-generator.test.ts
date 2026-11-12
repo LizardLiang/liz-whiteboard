@@ -3,8 +3,10 @@ import {
   buildJoinQueryPlan,
   generateJoinQuerySql,
   getJoinQueryTree,
-  type JoinQueryRelationship,
-  type JoinQueryTable,
+} from './join-query-generator'
+import type {
+  JoinQueryRelationship,
+  JoinQueryTable,
 } from './join-query-generator'
 
 const table = (

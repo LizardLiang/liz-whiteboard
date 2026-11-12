@@ -2,10 +2,10 @@
 // process, and dynamic namespaces only accept UUID ids.
 import { describe, expect, it, vi } from 'vitest'
 import {
-  safeConnectionHandler,
   CANVAS_NAMESPACE_RE,
   WHITEBOARD_NAMESPACE_RE,
   guardSocketHandlers,
+  safeConnectionHandler,
 } from './socket-safe'
 
 function buildSocket() {

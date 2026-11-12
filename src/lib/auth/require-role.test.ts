@@ -209,10 +209,7 @@ describe('requireRole', () => {
     mockFindEffectiveRole.mockResolvedValue('VIEWER')
     const socket = makeMockSocket()
     await requireRole(socket, 'wb-1', 'column:create', 'EDITOR')
-    const [, payload] = vi.mocked(socket.emit).mock.calls[0] as [
-      string,
-      WSAuthErrorPayload,
-    ]
+    const [, payload] = vi.mocked(socket.emit).mock.calls[0]
     expect(Object.keys(payload).sort()).toEqual(
       ['code', 'event', 'message'].sort(),
     )
@@ -378,7 +375,11 @@ describe('requireCanvasBoardRole', () => {
     mockFindEffectiveRole.mockResolvedValue('EDITOR')
     const socket = makeMockSocket()
 
-    const denied = await requireCanvasBoardRole(socket, 'board-1', 'element:create')
+    const denied = await requireCanvasBoardRole(
+      socket,
+      'board-1',
+      'element:create',
+    )
 
     expect(denied).toBe(false)
     expect(mockGetCanvasBoardProjectId).toHaveBeenCalledWith('board-1')
@@ -389,7 +390,11 @@ describe('requireCanvasBoardRole', () => {
     mockFindEffectiveRole.mockResolvedValue('VIEWER')
     const socket = makeMockSocket()
 
-    const denied = await requireCanvasBoardRole(socket, 'board-1', 'element:update')
+    const denied = await requireCanvasBoardRole(
+      socket,
+      'board-1',
+      'element:update',
+    )
 
     expect(denied).toBe(true)
     expect(socket.emit).toHaveBeenCalledWith(

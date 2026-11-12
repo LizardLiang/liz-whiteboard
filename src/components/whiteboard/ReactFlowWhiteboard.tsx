@@ -3238,7 +3238,7 @@ function ReactFlowWhiteboardInner({
           positionY: rect.y,
           width,
           height,
-          props: props as never,
+          props: props,
         },
         (created) => setJustCreatedShapeId(created.id),
       )
@@ -3348,9 +3348,10 @@ function ReactFlowWhiteboardInner({
           // target id to point at. Committing its label empty then deletes
           // it through the existing path and cascades the connector
           // (FR-018). `buildShapeCreateProps` excludes 'text' by design.
-          props: (source.kind === 'text'
-            ? { kind: 'text' as const }
-            : buildShapeCreateProps(source.kind)) as never,
+          props:
+            source.kind === 'text'
+              ? { kind: 'text' as const }
+              : buildShapeCreateProps(source.kind),
           text: null,
         },
         (created) => {
@@ -4385,7 +4386,7 @@ function ReactFlowWhiteboardInner({
           {!isZenMode && !isPublic && (
             <Toolbar
               whiteboardId={whiteboardId}
-              tables={toolbarTables as any}
+              tables={toolbarTables}
               onCreateTable={onCreateTable}
               onCreateRelationship={onCreateRelationship}
               onImportSql={onImportSql}

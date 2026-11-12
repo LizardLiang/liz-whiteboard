@@ -47,7 +47,6 @@ import type {
 import type {
   CanvasElementKind,
   CanvasElementProps,
-  CanvasElementStyle,
   Cardinality,
   ConnectorStyle,
   ProjectRoleValue,
@@ -693,7 +692,7 @@ function defaultShapeProps(kind: ShapeKind): ShapeProps {
       arrowEnd: true,
     }
   }
-  return { kind } as ShapeProps
+  return { kind }
 }
 
 function isPlainObject(v: unknown): v is Record<string, unknown> {
@@ -717,7 +716,7 @@ export function mapShape(r: Row): Shape | null {
     zIndex: Number(r.zIndex),
     text: (r.text as string | null) ?? null,
     style: isPlainObject(style)
-      ? ({ ...DEFAULT_SHAPE_STYLE, ...style } as ShapeStyle)
+      ? { ...DEFAULT_SHAPE_STYLE, ...style }
       : DEFAULT_SHAPE_STYLE,
     props: isPlainObject(props)
       ? (props as unknown as ShapeProps)
@@ -736,7 +735,7 @@ export function mapConnector(r: Row): Connector | null {
     sourceShapeId: r.sourceShapeId as string,
     targetShapeId: r.targetShapeId as string,
     style: isPlainObject(style)
-      ? ({ ...DEFAULT_CONNECTOR_STYLE, ...style } as ConnectorStyle)
+      ? { ...DEFAULT_CONNECTOR_STYLE, ...style }
       : DEFAULT_CONNECTOR_STYLE,
     createdAt: fromDbDate(r.createdAt),
     updatedAt: fromDbDate(r.updatedAt),
@@ -829,7 +828,7 @@ export function mapCanvasElement(r: Row): CanvasElementRecord | null {
     // render, and it renders with the default rather than `undefined`
     // reaching ctx.fillStyle.
     style: isPlainObject(style)
-      ? ({ ...DEFAULT_ELEMENT_STYLE, ...style } as CanvasElementStyle)
+      ? { ...DEFAULT_ELEMENT_STYLE, ...style }
       : DEFAULT_ELEMENT_STYLE,
     props: isPlainObject(props)
       ? (props as unknown as CanvasElementProps)

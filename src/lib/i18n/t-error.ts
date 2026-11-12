@@ -46,7 +46,7 @@ const FAILED_RE = /^Failed to (\w+) ([a-z ]+?)(?:: ([\s\S]*))?$/
 function messageOf(err: unknown): string {
   if (typeof err === 'string') return err
   if (err && typeof err === 'object' && 'message' in err) {
-    const m = (err as { message: unknown }).message
+    const m = err.message
     if (typeof m === 'string') return m
   }
   return ''

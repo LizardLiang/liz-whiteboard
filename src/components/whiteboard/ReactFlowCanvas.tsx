@@ -26,7 +26,6 @@ import { ShapeDrawOverlay } from './ShapeDrawOverlay'
 import { CanvasNodeLayer } from './CanvasNodeLayer'
 import type { MouseEvent as ReactMouseEvent } from 'react'
 import type {
-  Edge,
   FitViewOptions,
   IsValidConnection,
   Node,
@@ -253,9 +252,7 @@ export function computeRelationshipDeleteVeto<
  * under a different name (see the tactical plan's Root Cause).
  */
 export type InitialFocusDecision =
-  | { kind: 'skip' }
-  | { kind: 'focus'; targetId: string }
-  | { kind: 'fallback' }
+  { kind: 'skip' } | { kind: 'focus'; targetId: string } | { kind: 'fallback' }
 
 export function computeInitialFocusDecision(params: {
   /** `initialFocusTableIdRef.current` — latched at mount, see that ref's comment. */
@@ -1850,7 +1847,7 @@ export function ReactFlowCanvas({
       // — see the comment on relationship-deletion.spec.ts's e2e test for
       // that gap).
       const veto = computeRelationshipDeleteVeto({
-        deletedEdges: deletedEdges as Array<Edge>,
+        deletedEdges: deletedEdges,
         canPersistRelationshipDelete,
         hasRelationshipDeleteHandler: onRelationshipDelete !== undefined,
       })
@@ -1860,7 +1857,7 @@ export function ReactFlowCanvas({
       if (canPersistRelationshipDelete) return true
       return {
         nodes: deletedNodes,
-        edges: veto.edges as typeof deletedEdges,
+        edges: veto.edges,
       }
     },
     [
@@ -2043,12 +2040,19 @@ export function ReactFlowCanvas({
             // sit above them; nothing may reorder that at runtime.
             elevateNodesOnSelect={false}
             onNodesChange={onNodesChange}
-            onSelectionChange={({ nodes: selectedNodes }) =>
+            // The selection holds every merged node type (see the cast on
+            // `nodes` above), not only the TableNodeType React Flow is typed
+            // with.
+            onSelectionChange={({
+              nodes: selectedNodes,
+            }: {
+              nodes: Array<Node>
+            }) =>
               onSelectionChange?.(
                 selectedNodes.filter(
-                  (node) =>
+                  (node): node is TableNodeType | ExternalTableNodeType =>
                     node.type === 'table' || node.type === 'externalTable',
-                ) as unknown as Array<TableNodeType | ExternalTableNodeType>,
+                ),
               )
             }
             onEdgesChange={onEdgesChange}

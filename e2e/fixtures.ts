@@ -4,8 +4,8 @@
 // between the Node (Playwright) and Bun (seed) runtimes.
 
 import { expect } from '@playwright/test'
-import type { Page } from '@playwright/test'
 import { slotIndex, slotPorts, slotStorageState } from './worker-slot'
+import type { Page } from '@playwright/test'
 
 // Nothing in this repo serves 3001. The coedit suite carries its own base URL
 // (COEDIT_PORT in fixtures-collab.ts); the cimd suite sets E2E_BASE_URL (3099).

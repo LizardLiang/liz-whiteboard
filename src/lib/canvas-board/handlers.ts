@@ -21,10 +21,10 @@
 // Unlike the shape handlers, `registerCanvasElementHandlers` is EXPORTED, so
 // its tests drive the real function instead of a reimplementation of it.
 
-import { clientErrorMessage } from '@/lib/client-error'
 import { z } from 'zod'
 import type { Server as SocketIOServer } from 'socket.io'
 import type { PresetId } from '@/lib/canvas-engine/colour-ramps'
+import { clientErrorMessage } from '@/lib/client-error'
 import {
   canvasBoardSettingsPatchSchema,
   canvasTableSchema,
@@ -732,16 +732,8 @@ export function setupCanvasNamespace(ioServer: SocketIOServer): void {
         return !denied
       })
 
-      registerCanvasElementHandlers(
-        socket as unknown as CanvasSocket,
-        boardId,
-        userId,
-      )
-      registerCanvasBoardSettingsHandlers(
-        socket as unknown as CanvasSocket,
-        boardId,
-        userId,
-      )
+      registerCanvasElementHandlers(socket, boardId, userId)
+      registerCanvasBoardSettingsHandlers(socket, boardId, userId)
     }),
   )
 }

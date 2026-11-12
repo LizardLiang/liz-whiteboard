@@ -15,7 +15,7 @@ export function useProjectTree(): ReadonlyArray<TreeProject> | undefined {
     // A board load reuses the cached tree instead of refetching it each time.
     staleTime: 1000 * 30,
   })
-  return Array.isArray(data) ? (data as Array<TreeProject>) : undefined
+  return Array.isArray(data) ? data : undefined
 }
 
 /** Navigate to a board (right route per type) or a folder page. */

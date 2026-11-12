@@ -50,7 +50,7 @@ export function AddColumnRow({ existingColumns, onCreate }: AddColumnRowProps) {
       const target = e.target as Element
 
       // Click was inside this row
-      if (rowRef.current?.contains(target as Node)) {
+      if (rowRef.current?.contains(target)) {
         return
       }
       // Click was inside a Radix portal (SelectContent dropdown)
@@ -64,7 +64,7 @@ export function AddColumnRow({ existingColumns, onCreate }: AddColumnRowProps) {
         const contextMenuTrigger = target.closest(
           '[data-radix-context-menu-trigger]',
         )
-        if (contextMenuTrigger?.contains(rowRef.current as Node)) {
+        if (contextMenuTrigger?.contains(rowRef.current)) {
           return
         }
       }
@@ -182,13 +182,13 @@ export function AddColumnRow({ existingColumns, onCreate }: AddColumnRowProps) {
             borderRadius: '4px',
           }}
           onMouseEnter={(e) => {
-            const btn = e.currentTarget as HTMLButtonElement
+            const btn = e.currentTarget
             btn.style.opacity = '1'
             btn.style.background =
               'var(--rf-column-edit-bg, rgba(99,102,241,0.07))'
           }}
           onMouseLeave={(e) => {
-            const btn = e.currentTarget as HTMLButtonElement
+            const btn = e.currentTarget
             btn.style.opacity = '0.5'
             btn.style.background = 'none'
           }}

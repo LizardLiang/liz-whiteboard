@@ -46,7 +46,7 @@ function makeTableNode(name: string, columns: Array<string>): TableNodeType {
       isRelationsPreviewOpen: false,
       showMode: 'ALL_FIELDS',
     },
-  } as TableNodeType
+  }
 }
 
 function makeReferenceNode(): ExternalTableNodeType {
@@ -75,7 +75,7 @@ function makeReferenceNode(): ExternalTableNodeType {
       isHighlighted: false,
       showMode: 'ALL_FIELDS',
     },
-  } as ExternalTableNodeType
+  }
 }
 
 describe('buildSearchIndex with references', () => {

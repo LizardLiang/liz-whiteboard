@@ -401,14 +401,14 @@ function WhiteboardEditor() {
             ...old,
             whiteboard: {
               ...old.whiteboard,
-              tables: old.whiteboard.tables.map((t: any) =>
-                t.id === data.tableId
+              tables: old.whiteboard.tables.map((table: any) =>
+                table.id === data.tableId
                   ? {
-                      ...t,
+                      ...table,
                       positionX: data.positionX,
                       positionY: data.positionY,
                     }
-                  : t,
+                  : table,
               ),
             },
           }

@@ -70,7 +70,7 @@ export type BodyVerdict = 'ok' | 'too-large' | 'length-required'
  */
 export function checkBodyLimit(
   method: string,
-  headers: Record<string, string | string[] | undefined>,
+  headers: Record<string, string | Array<string> | undefined>,
   limit: number,
 ): BodyVerdict {
   const contentLength = headers['content-length']

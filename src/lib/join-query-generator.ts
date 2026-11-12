@@ -1,4 +1,5 @@
-import { quoteIdent, type Dialect } from './ddl-generator'
+import { quoteIdent } from './ddl-generator'
+import type { Dialect } from './ddl-generator'
 
 export interface JoinQueryColumn {
   id: string
@@ -92,7 +93,7 @@ function spanningTree(
           a.key.localeCompare(b.key)
         )
       })
-    const edge = candidates[0]
+    const edge = candidates.at(0)
     if (!edge) break
     tree.push(edge)
     visited.add(edge.tableIds[0])

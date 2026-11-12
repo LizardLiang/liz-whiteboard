@@ -36,7 +36,7 @@ function makeNode(id: string, x: number, y: number): Node {
     position: { x, y },
     measured: { width: 200, height: 100 },
     data: {},
-  } as unknown as Node
+  }
 }
 
 const twoNodes = [makeNode('a', 0, 0), makeNode('b', 300, 0)]

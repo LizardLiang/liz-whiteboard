@@ -128,7 +128,7 @@ describe('TC-P3-22: beforeLoad — valid session allows through', () => {
         username: 'alice',
         email: 'alice@example.com',
       },
-    } as any)
+    })
 
     const outcome = await simulateBeforeLoad('/projects')
 
@@ -146,7 +146,7 @@ describe('TC-P3-22: beforeLoad — valid session allows through', () => {
         username: 'alice',
         email: 'alice@example.com',
       },
-    } as any)
+    })
 
     const outcome = await simulateBeforeLoad('/whiteboard/abc')
 
@@ -159,7 +159,7 @@ describe('TC-P3-22: beforeLoad — valid session allows through', () => {
       username: 'alice',
       email: 'alice@example.com',
     }
-    vi.mocked(getCurrentUser).mockResolvedValue({ user: mockUser } as any)
+    vi.mocked(getCurrentUser).mockResolvedValue({ user: mockUser })
 
     const outcome = await simulateBeforeLoad('/projects')
 

@@ -40,9 +40,7 @@ export async function getRenderBoardHandler(token: string) {
     const code = (error as { code?: string }).code
     return {
       valid: false as const,
-      reason: (code === 'ERR_JWT_EXPIRED'
-        ? 'EXPIRED'
-        : 'INVALID') as RenderDenialReason,
+      reason: code === 'ERR_JWT_EXPIRED' ? 'EXPIRED' : 'INVALID',
     }
   }
 

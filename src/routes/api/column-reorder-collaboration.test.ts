@@ -197,7 +197,7 @@ describe('column:reorder socket handler (Suite S5)', () => {
   })
 
   function makeHandler() {
-    return createColumnReorderHandler(socket, WB_ID, USER_ID, deps as any)
+    return createColumnReorderHandler(socket, WB_ID, USER_ID, deps)
   }
 
   // INT-05: happy path — persists, broadcasts, acks (AC-07a, AC-04b, AC-04f)

@@ -3,7 +3,6 @@
 
 import { createServerFn } from '@tanstack/react-start'
 import { z } from 'zod'
-import { MAX_TEXT_SOURCE_LENGTH, canvasStateSchema } from '@/data/schema'
 import type {
   AreaBounds,
   BulkUpdatePositions,
@@ -21,6 +20,11 @@ import type { Area, CommentWithAuthor, Connector, Shape } from '@/data/models'
 import type { LayoutOutputPosition } from '@/lib/auto-layout/d3-force-layout'
 import type { EffectiveRole } from '@/data/permission'
 import type { AreaLayoutOutputArea } from '@/lib/auto-layout/area-aware-layout'
+import {
+  MAX_TEXT_SOURCE_LENGTH,
+  bulkUpdatePositionsSchema,
+  canvasStateSchema,
+} from '@/data/schema'
 import {
   findWhiteboardByIdWithDiagram,
   updateWhiteboardCanvasState,
@@ -44,7 +48,6 @@ import {
   getTableProjectId,
   getWhiteboardProjectId,
 } from '@/data/resolve-project'
-import { bulkUpdatePositionsSchema } from '@/data/schema'
 import { requireServerFnRole } from '@/lib/auth/require-role'
 import { findEffectiveRole } from '@/data/permission'
 import { createTableHandler } from '@/lib/diagram-table/handlers'
@@ -411,13 +414,6 @@ export const updateWhiteboardTextSourceFn = createServerFn({
     }),
   )
 
-/**
- * Server function to compute automatic layout for whiteboard
- * Runs the area-aware Auto Layout engine and updates table positions and
- * area bounds in database
- *
- * @requires editor
- */
 /** Upper bound on tables the O(n^2) force layout will be run on. */
 export const MAX_AUTO_LAYOUT_TABLES = 1000
 
@@ -425,6 +421,13 @@ export const computeAutoLayoutInputSchema = z.object({
   whiteboardId: z.string().uuid(),
 })
 
+/**
+ * Server function to compute automatic layout for whiteboard
+ * Runs the area-aware Auto Layout engine and updates table positions and
+ * area bounds in database
+ *
+ * @requires editor
+ */
 export const computeAutoLayout = createServerFn({
   method: 'POST',
 })
@@ -500,9 +503,9 @@ export const computeAutoLayout = createServerFn({
  * @requires authenticated (any logged-in user; not scoped to a project/role — the URL is not sensitive)
  */
 export const getMcpEndpointUrl = createServerFn({ method: 'GET' }).handler(
-  requireAuth(async (): Promise<string> => {
+  requireAuth((): Promise<string> => {
     const { mcpResourceUri } = getOAuthConfig()
-    return mcpResourceUri
+    return Promise.resolve(mcpResourceUri)
   }),
 )
 

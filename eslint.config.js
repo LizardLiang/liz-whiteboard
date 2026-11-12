@@ -48,6 +48,8 @@ export default [
       'coverage',
       // TanStack Start internals
       '.tanstack',
+      // Agent worktrees (stale copies of the repo) and agent notes
+      '.claude',
       // Deliberately-malformed fixtures for require-server-fn-authz.test.js
       // (read as text, not meant to parse) — excluded from tsconfig.json's
       // typed-linting project too; keep both in sync.

@@ -215,7 +215,7 @@ describe('TC-P5-01: handshake — no session cookie rejected', () => {
 describe('TC-P5-02: handshake — valid session accepted', () => {
   it('calls next with no error for valid session cookie', async () => {
     vi.mocked(parseSessionCookie).mockReturnValue(SESSION_TOKEN)
-    vi.mocked(validateSessionToken).mockResolvedValue(mockAuthResult as any)
+    vi.mocked(validateSessionToken).mockResolvedValue(mockAuthResult)
 
     const { socket, nextSpy } = buildMockSocket({
       cookieHeader: `session_token=${SESSION_TOKEN}`,
@@ -228,7 +228,7 @@ describe('TC-P5-02: handshake — valid session accepted', () => {
 
   it('sets socket.data.userId to the authenticated user ID', async () => {
     vi.mocked(parseSessionCookie).mockReturnValue(SESSION_TOKEN)
-    vi.mocked(validateSessionToken).mockResolvedValue(mockAuthResult as any)
+    vi.mocked(validateSessionToken).mockResolvedValue(mockAuthResult)
 
     const { socket, nextSpy } = buildMockSocket({
       cookieHeader: `session_token=${SESSION_TOKEN}`,
@@ -240,7 +240,7 @@ describe('TC-P5-02: handshake — valid session accepted', () => {
 
   it('sets socket.data.sessionId to the session ID', async () => {
     vi.mocked(parseSessionCookie).mockReturnValue(SESSION_TOKEN)
-    vi.mocked(validateSessionToken).mockResolvedValue(mockAuthResult as any)
+    vi.mocked(validateSessionToken).mockResolvedValue(mockAuthResult)
 
     const { socket, nextSpy } = buildMockSocket({
       cookieHeader: `session_token=${SESSION_TOKEN}`,
@@ -256,7 +256,7 @@ describe('TC-P5-02: handshake — valid session accepted', () => {
     vi.mocked(validateSessionToken).mockResolvedValue({
       ...mockAuthResult,
       session: { id: SESSION_ID, expiresAt: futureDate },
-    } as any)
+    })
 
     const { socket, nextSpy } = buildMockSocket({
       cookieHeader: `session_token=${SESSION_TOKEN}`,
@@ -400,7 +400,7 @@ describe('TC-P5-08: CollaborationSession created with real userId from socket.da
       cursor: null,
       lastActivityAt: new Date(),
       createdAt: new Date(),
-    } as any)
+    })
 
     // Simulate the connection handler logic:
     // it uses socket.data.userId (set by handshake middleware) to create the session
@@ -662,7 +662,7 @@ describe('TC-JWT-02: invalid collab JWT rejected, no cookie fallback', () => {
 describe('TC-JWT-03: no auth.token falls back to cookie path', () => {
   it('accepts valid cookie when auth.token is absent', async () => {
     vi.mocked(parseSessionCookie).mockReturnValue(SESSION_TOKEN)
-    vi.mocked(validateSessionToken).mockResolvedValue(mockAuthResult as any)
+    vi.mocked(validateSessionToken).mockResolvedValue(mockAuthResult)
     const { socket, nextSpy } = buildJwtSocket({
       cookieHeader: `session_token=${SESSION_TOKEN}`,
     })

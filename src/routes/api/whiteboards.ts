@@ -1,9 +1,9 @@
 // src/routes/api/whiteboards.ts
 // TanStack Start server functions for Whiteboard CRUD operations
 
-import { clientErrorMessage } from '@/lib/client-error'
 import { createServerFn } from '@tanstack/react-start'
 import { z } from 'zod'
+import { clientErrorMessage } from '@/lib/client-error'
 import {
   createWhiteboard,
   deleteWhiteboard,
@@ -18,8 +18,8 @@ import {
 import {
   MAX_TEXT_SOURCE_LENGTH,
   canvasStateSchema,
-  recentBoardsLimitSchema,
   createWhiteboardSchema,
+  recentBoardsLimitSchema,
   updateWhiteboardSchema,
 } from '@/data/schema'
 import { requireAuth } from '@/lib/auth/middleware'

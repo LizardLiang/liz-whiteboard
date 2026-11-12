@@ -181,7 +181,7 @@ export function useWhiteboardComments(params: {
 
   const addReply = useCallback(
     (parentId: string, body: string) => {
-      createComment({ parentId, body } as Omit<CreateComment, 'whiteboardId'>)
+      createComment({ parentId, body })
     },
     [createComment],
   )

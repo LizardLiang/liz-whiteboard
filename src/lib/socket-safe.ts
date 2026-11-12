@@ -69,9 +69,11 @@ export function guardSocketHandlers(socket: any): void {
  * the socket instead.
  */
 export function safeConnectionHandler<
-  S extends { disconnect: (close?: boolean) => unknown },
->(handler: (socket: S) => Promise<void> | void): (socket: S) => Promise<void> {
-  return async (socket: S) => {
+  TSocket extends { disconnect: (close?: boolean) => unknown },
+>(
+  handler: (socket: TSocket) => Promise<void> | void,
+): (socket: TSocket) => Promise<void> {
+  return async (socket: TSocket) => {
     try {
       await handler(socket)
     } catch (error) {

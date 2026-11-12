@@ -447,7 +447,7 @@ describe('entitiesToText', () => {
       },
     ]
 
-    const text = entitiesToText(tables, relationships as any)
+    const text = entitiesToText(tables, relationships)
     expect(text).not.toContain('->')
   })
 })

@@ -42,7 +42,7 @@ export function requireAuth<TInput, TResult>(
     const request = getRequest()
     const authResult = await getSessionFromCookie(request)
     if (!authResult) {
-      return { error: 'UNAUTHORIZED', status: 401 } as AuthErrorResponse
+      return { error: 'UNAUTHORIZED', status: 401 }
     }
     return handler({ user: authResult.user, session: authResult.session }, data)
   }

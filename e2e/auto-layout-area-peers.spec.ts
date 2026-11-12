@@ -241,10 +241,8 @@ async function memberTransforms(page: Page) {
     (ids) =>
       ids.map(
         (id) =>
-          (
-            document.querySelector(
-              `.react-flow__node[data-id="${id}"]`,
-            ) as HTMLElement | null
+          document.querySelector<HTMLElement>(
+            `.react-flow__node[data-id="${id}"]`,
           )?.style.transform ?? null,
       ),
     MEMBER_IDS,

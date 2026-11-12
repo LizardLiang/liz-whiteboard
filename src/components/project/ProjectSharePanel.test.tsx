@@ -71,12 +71,12 @@ describe('ProjectSharePanel', () => {
     vi.clearAllMocks()
     // Default resolved value so pre-existing tests that don't care about the
     // invite-link section (which now always queries on open) don't hang.
-    vi.mocked(listProjectInvites).mockResolvedValue({ invites: [] } as any)
+    vi.mocked(listProjectInvites).mockResolvedValue({ invites: [] })
     // Default resolved values so pre-existing tests that don't care about the
     // read-only share-link section (which now always queries on open) don't
     // hang.
-    vi.mocked(getWhiteboardsByProject).mockResolvedValue([] as any)
-    vi.mocked(listShareLinks).mockResolvedValue({ links: [] } as any)
+    vi.mocked(getWhiteboardsByProject).mockResolvedValue([])
+    vi.mocked(listShareLinks).mockResolvedValue({ links: [] })
   })
 
   it('does not call listProjectPermissions while closed', () => {
@@ -126,7 +126,7 @@ describe('ProjectSharePanel', () => {
     vi.mocked(listProjectPermissions).mockResolvedValue({
       owner: null,
       members: [],
-    } as any)
+    })
     vi.mocked(grantPermission).mockResolvedValue({
       success: true,
       member: { userId: 'new-user', role: 'VIEWER' },
@@ -157,7 +157,7 @@ describe('ProjectSharePanel', () => {
     vi.mocked(listProjectPermissions).mockResolvedValue({
       owner: null,
       members: [],
-    } as any)
+    })
     vi.mocked(grantPermission).mockResolvedValue({
       error: 'USER_NOT_FOUND',
       status: 404,
@@ -197,7 +197,7 @@ describe('ProjectSharePanel', () => {
         },
       ],
     } as any)
-    vi.mocked(revokePermission).mockResolvedValue({ success: true } as any)
+    vi.mocked(revokePermission).mockResolvedValue({ success: true })
 
     render(
       <Wrapper>
@@ -227,7 +227,7 @@ describe('ProjectSharePanel', () => {
     vi.mocked(listProjectPermissions).mockResolvedValue({
       owner: null,
       members: [],
-    } as any)
+    })
     const rawToken = 'a'.repeat(64)
     vi.mocked(createProjectInvite).mockResolvedValue({
       success: true,
@@ -272,7 +272,7 @@ describe('ProjectSharePanel', () => {
     vi.mocked(listProjectPermissions).mockResolvedValue({
       owner: null,
       members: [],
-    } as any)
+    })
     vi.mocked(listProjectInvites).mockResolvedValue({
       invites: [
         {
@@ -316,7 +316,7 @@ describe('ProjectSharePanel', () => {
     vi.mocked(listProjectPermissions).mockResolvedValue({
       owner: null,
       members: [],
-    } as any)
+    })
     vi.mocked(listProjectInvites).mockResolvedValue({
       invites: [
         {
@@ -357,7 +357,7 @@ describe('ProjectSharePanel', () => {
     vi.mocked(listProjectPermissions).mockResolvedValue({
       owner: null,
       members: [],
-    } as any)
+    })
     vi.mocked(getWhiteboardsByProject).mockResolvedValue([
       { id: 'whiteboard-1', name: 'ER Diagram' },
     ] as any)
@@ -409,7 +409,7 @@ describe('ProjectSharePanel', () => {
     vi.mocked(listProjectPermissions).mockResolvedValue({
       owner: null,
       members: [],
-    } as any)
+    })
     vi.mocked(listShareLinks).mockResolvedValue({
       links: [
         {

@@ -44,10 +44,7 @@ function parseIp(ip: string): { version: 4 | 6; value: bigint } | null {
     return { version: 4, value }
   }
   if (kind === 6) {
-    let [head, tail = ''] = addr.split('::')
-    if (!addr.includes('::')) {
-      tail = ''
-    }
+    const [head, tail = ''] = addr.split('::')
     const toGroups = (part: string): Array<string> =>
       part === '' ? [] : part.split(':')
     const headGroups = toGroups(head)
@@ -69,7 +66,9 @@ function parseIp(ip: string): { version: 4 | 6; value: bigint } | null {
 }
 
 function parseCidr(entry: string): Cidr | null {
-  const [addr, len] = entry.trim().split('/')
+  const parts = entry.trim().split('/')
+  const addr = parts[0]
+  const len = parts.at(1)
   const parsed = parseIp(addr)
   if (!parsed) return null
   const max = parsed.version === 4 ? 32 : 128

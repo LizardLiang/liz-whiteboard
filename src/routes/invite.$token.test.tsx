@@ -83,7 +83,7 @@ describe('Invite landing page', () => {
       projectName: 'Test Project',
       role: 'EDITOR',
     } as any)
-    vi.mocked(getCurrentUser).mockResolvedValue(null as any)
+    vi.mocked(getCurrentUser).mockResolvedValue(null)
 
     const InvitePage = await importInvitePage()
     renderInvitePage(InvitePage)
@@ -111,7 +111,7 @@ describe('Invite landing page', () => {
     } as any)
     vi.mocked(getCurrentUser).mockResolvedValue({
       user: { id: 'user-1', username: 'alice', email: 'alice@example.com' },
-    } as any)
+    })
     vi.mocked(redeemInvite).mockResolvedValue({
       success: true,
       projectId: 'proj-1',
@@ -139,7 +139,7 @@ describe('Invite landing page', () => {
       valid: false,
       reason: 'EXPIRED',
     } as any)
-    vi.mocked(getCurrentUser).mockResolvedValue(null as any)
+    vi.mocked(getCurrentUser).mockResolvedValue(null)
 
     const InvitePage = await importInvitePage()
     renderInvitePage(InvitePage)

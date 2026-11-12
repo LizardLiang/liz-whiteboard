@@ -175,7 +175,7 @@ export function useTableMutations(
                 key,
                 current[key as keyof UpdateTableFields],
               ]),
-            ) as UpdateTableFields
+            )
           }
           return {
             ...node,

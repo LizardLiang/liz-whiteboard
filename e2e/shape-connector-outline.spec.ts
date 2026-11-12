@@ -58,7 +58,7 @@ interface EngineState {
 async function engine(page: Page): Promise<EngineState> {
   const state = await page.evaluate(() => window.__canvasEngine)
   if (!state) throw new Error('window.__canvasEngine is not published')
-  return state as unknown as EngineState
+  return state
 }
 
 test('a connector ends on the diamond outline, not its bounding box', async ({

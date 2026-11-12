@@ -155,7 +155,13 @@ function setup(overrides: Partial<Parameters<typeof useCanvasUndo>[0]> = {}) {
       ...overrides,
     }),
   )
-  return { view, ...mutations, get api() { return view.result.current } }
+  return {
+    view,
+    ...mutations,
+    get api() {
+      return view.result.current
+    },
+  }
 }
 
 beforeEach(() => {
@@ -734,25 +740,27 @@ describe('partial multi-element inverse application (Hermes review, finding 1)',
     // implementation, so call 1 here is A's undo-inverse write and call 2 is
     // B's, not 2 and 3.
     let call = 0
-    h.updateElements.mockImplementation(((
-      elements: Array<CanvasElement>,
-    ): Promise<Array<CanvasMutationResult>> => {
-      call += 1
-      if (call === 2) {
-        return Promise.resolve(elements.map((e) => ({ id: e.id, ok: false })))
-      }
-      return Promise.resolve(
-        elements.map((e) => {
-          const next = (h.revisions.get(e.id) ?? 0) + 1
-          h.revisions.set(e.id, next)
-          return { id: e.id, ok: true, revision: next }
-        }),
-      )
-      // The original mock's `vi.fn` narrows to a stricter inferred type
-      // (`revision: number` required even on failure) than the real
-      // `updateElements` signature actually promises — this override
-      // matches the real, optional-`revision` contract instead.
-    }) as typeof h.updateElements)
+    h.updateElements.mockImplementation(
+      (
+        elements: Array<CanvasElement>,
+      ): Promise<Array<CanvasMutationResult>> => {
+        call += 1
+        if (call === 2) {
+          return Promise.resolve(elements.map((e) => ({ id: e.id, ok: false })))
+        }
+        return Promise.resolve(
+          elements.map((e) => {
+            const next = (h.revisions.get(e.id) ?? 0) + 1
+            h.revisions.set(e.id, next)
+            return { id: e.id, ok: true, revision: next }
+          }),
+        )
+        // The original mock's `vi.fn` narrows to a stricter inferred type
+        // (`revision: number` required even on failure) than the real
+        // `updateElements` signature actually promises — this override
+        // matches the real, optional-`revision` contract instead.
+      },
+    )
 
     await act(async () => {
       h.api.undo()
@@ -933,7 +941,9 @@ describe('reporting (board-undo tactical plan, Wave 4, step 11 — "Canvas Undo 
       })
       await waitFor(() => expect(h.deleteElements).toHaveBeenCalledTimes(1))
       await waitFor(() =>
-        expect(toast.success).toHaveBeenCalledWith('Undid creating a rectangle'),
+        expect(toast.success).toHaveBeenCalledWith(
+          'Undid creating a rectangle',
+        ),
       )
       // `null`: undoing a create DELETES the element — nothing exists to
       // bring into view or highlight (headed-browser BUG-2's `rect` contract).
@@ -961,7 +971,9 @@ describe('reporting (board-undo tactical plan, Wave 4, step 11 — "Canvas Undo 
       })
       await waitFor(() => expect(h.createElement).toHaveBeenCalledTimes(2))
       await waitFor(() =>
-        expect(toast.success).toHaveBeenCalledWith('Redid creating a rectangle'),
+        expect(toast.success).toHaveBeenCalledWith(
+          'Redid creating a rectangle',
+        ),
       )
       // The recreated element's rect (makeRect()'s default geometry) — the
       // POST-redo state, not derived from a caller-side scene read.
@@ -1019,7 +1031,10 @@ describe('reporting (board-undo tactical plan, Wave 4, step 11 — "Canvas Undo 
       const b = makeRect({ id: RECT_B_ID, x: 200 })
       act(() => {
         h.api.callbacks.onUpdate?.(
-          [{ ...a, x: 999 }, { ...b, x: 888 }],
+          [
+            { ...a, x: 999 },
+            { ...b, x: 888 },
+          ],
           [a, b],
           'move',
         )
@@ -1211,7 +1226,11 @@ describe('camera focus target reflects the POST-write state (headed-browser BUG-
     await waitFor(() => expect(h.updateElements).toHaveBeenCalledTimes(2))
     focusCalls.length = 0
 
-    const cameraBeforeRedo: Camera = { x: before.x + before.width / 2 - VIEWPORT.width / 2, y: 0, zoom: 1 }
+    const cameraBeforeRedo: Camera = {
+      x: before.x + before.width / 2 - VIEWPORT.width / 2,
+      y: 0,
+      zoom: 1,
+    }
 
     act(() => {
       h.api.redo()
@@ -1407,9 +1426,7 @@ describe('grouping — recordGroup / recordUngroup (canvas-element-grouping tact
       h.api.undo()
     })
     await waitFor(() =>
-      expect(toast.success).toHaveBeenCalledWith(
-        'Undid ungrouping 2 elements',
-      ),
+      expect(toast.success).toHaveBeenCalledWith('Undid ungrouping 2 elements'),
     )
   })
 
@@ -1594,9 +1611,7 @@ describe('grouping — recordGroup / recordUngroup (canvas-element-grouping tact
           group: { childIds: [RECT_ID] },
         })
         await waitFor(() =>
-          expect(toast.success).toHaveBeenCalledWith(
-            'Undid moving an element',
-          ),
+          expect(toast.success).toHaveBeenCalledWith('Undid moving an element'),
         )
       })
 
@@ -1653,9 +1668,7 @@ describe('grouping — recordGroup / recordUngroup (canvas-element-grouping tact
           group: { childIds: [GROUP_ID] },
         })
         await waitFor(() =>
-          expect(toast.success).toHaveBeenCalledWith(
-            'Undid moving an element',
-          ),
+          expect(toast.success).toHaveBeenCalledWith('Undid moving an element'),
         )
       })
 
@@ -1685,7 +1698,7 @@ describe('grouping — recordGroup / recordUngroup (canvas-element-grouping tact
   })
 })
 
-describe('recordClone remaps a cloned group\'s childIds through the SERVER ids (bug found and fixed during Wave 8 e2e testing)', () => {
+describe("recordClone remaps a cloned group's childIds through the SERVER ids (bug found and fixed during Wave 8 e2e testing)", () => {
   // `planClone` (clone.ts, Wave 4) already remaps a cloned group's
   // `childIds` through its OWN client-side idMap before `onClone` ever
   // fires — the elements handed to `onClone` below are exactly that
@@ -1970,7 +1983,7 @@ describe('table ops', () => {
     act(() => view.result.current.undo())
     await waitFor(() => expect(toast.warning).toHaveBeenCalled())
     expect(toast.warning).toHaveBeenCalledWith(
-      'This table changed since your edit, so that change can\'t be undone.',
+      "This table changed since your edit, so that change can't be undone.",
     )
     act(() => view.result.current.redo())
     expect(toast.info).toHaveBeenCalledWith('Nothing left to redo.')
@@ -2133,13 +2146,21 @@ describe('table ops', () => {
       row: { id: 'r2', height: 40 },
     } as const
     act(() => {
-      view.result.current.callbacks.onTableOp?.(TABLE_ID, setText('typed'), grid)
+      view.result.current.callbacks.onTableOp?.(
+        TABLE_ID,
+        setText('typed'),
+        grid,
+      )
       view.result.current.callbacks.onTableOp?.(TABLE_ID, insert, grid)
     })
     // The second ack (the insert) comes back before the first (the text).
     await act(async () => {
       await Promise.resolve()
-      resolvers[1]({ ok: true, inverse: { type: 'removeRow', rowId: 'r2' }, revision: 6 })
+      resolvers[1]({
+        ok: true,
+        inverse: { type: 'removeRow', rowId: 'r2' },
+        revision: 6,
+      })
       resolvers[0]({ ok: true, inverse: setText(''), revision: 7 })
     })
     act(() => view.result.current.undo())

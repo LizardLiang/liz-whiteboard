@@ -396,7 +396,7 @@ describe('enforceGapPostPass', () => {
       { id: 'A', x: 0, y: 0, width: 200, height: 100, vx: 0, vy: 0 },
       { id: 'B', x: 50, y: 0, width: 200, height: 100, vx: 0, vy: 0 },
     ]
-    enforceGapPostPass(nodes as any)
+    enforceGapPostPass(nodes)
 
     const ax = nodes[0].x - nodes[0].width / 2
     const bx = nodes[1].x - nodes[1].width / 2
@@ -421,7 +421,7 @@ describe('enforceGapPostPass', () => {
       { id: 'B', x: 500, y: 0, width: 200, height: 100, vx: 0, vy: 0 },
     ]
     const xBefore = nodes[0].x
-    enforceGapPostPass(nodes as any)
+    enforceGapPostPass(nodes)
     expect(nodes[0].x).toBe(xBefore)
   })
 })

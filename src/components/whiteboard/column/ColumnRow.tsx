@@ -323,10 +323,10 @@ export const ColumnRow = memo(
                 lineHeight: 1,
               }}
               onMouseEnter={(e) => {
-                ;(e.currentTarget as HTMLButtonElement).style.opacity = '1'
+                e.currentTarget.style.opacity = '1'
               }}
               onMouseLeave={(e) => {
-                ;(e.currentTarget as HTMLButtonElement).style.opacity = '0'
+                e.currentTarget.style.opacity = '0'
               }}
             >
               ⧉
@@ -354,10 +354,10 @@ export const ColumnRow = memo(
               lineHeight: 1,
             }}
             onMouseEnter={(e) => {
-              ;(e.currentTarget as HTMLButtonElement).style.opacity = '1'
+              e.currentTarget.style.opacity = '1'
             }}
             onMouseLeave={(e) => {
-              ;(e.currentTarget as HTMLButtonElement).style.opacity = '0'
+              e.currentTarget.style.opacity = '0'
             }}
           >
             ×

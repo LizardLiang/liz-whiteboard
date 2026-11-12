@@ -9,7 +9,7 @@ import type { RelationshipEdgeType, TableNodeData } from './types'
 import { EDGE_SEP } from '@/lib/auto-layout/d3-force-layout'
 
 function makeNode(id: string, x: number, y: number, width = 200): Node {
-  return { id, position: { x, y }, width, data: {} } as Node
+  return { id, position: { x, y }, width, data: {} }
 }
 
 function makeEdge(

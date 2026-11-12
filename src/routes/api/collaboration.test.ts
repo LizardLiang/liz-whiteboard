@@ -144,9 +144,8 @@ describe('relationship:delete handler', () => {
     const { z } = await import('zod')
     const { findRelationshipById: findRel, deleteRelationship: deleteRel } =
       await import('@/data/relationship')
-    const { updateSessionActivity: updateActivity } = await import(
-      '@/data/collaboration'
-    )
+    const { updateSessionActivity: updateActivity } =
+      await import('@/data/collaboration')
 
     // Mirror the handler implementation from collaboration.ts
     socket.on(
@@ -843,7 +842,7 @@ describe('shape/connector mutation handlers', () => {
     it('NOT_FOUND (not INTERNAL_ERROR) when deleteShapeWithConnectors races to null (L5)', async () => {
       await registerShapeDelete()
       vi.mocked(findShapeById).mockResolvedValue(makeShapeRow() as any)
-      vi.mocked(deleteShapeWithConnectors).mockResolvedValue(null as any)
+      vi.mocked(deleteShapeWithConnectors).mockResolvedValue(null)
       const cb = vi.fn()
       await handlers['shape:delete']({ shapeId }, cb)
       expect(cb).toHaveBeenCalledWith({

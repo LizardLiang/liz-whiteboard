@@ -55,8 +55,8 @@ describe('requireAuth', () => {
   // TC-P3-02: passes user and session to handler for valid session
   it('TC-P3-02: passes user and session to handler when session is valid', async () => {
     vi.mocked(getSessionFromCookie).mockResolvedValue({
-      user: mockUser as any,
-      session: mockSession as any,
+      user: mockUser,
+      session: mockSession,
     })
 
     const capturedCtx: Array<any> = []

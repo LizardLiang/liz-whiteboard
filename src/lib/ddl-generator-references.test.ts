@@ -118,7 +118,7 @@ describe('generateTableDDL with cross-file references', () => {
               columnNames: new Map([[STUB_COL_ID, 'id']]),
             }
           : undefined,
-    } as unknown as Map<string, ExternalTableRef>)
+    })
 
     expect(ddl).toContain('-- external ref: file "(missing)" table "orders"')
   })

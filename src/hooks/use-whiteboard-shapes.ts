@@ -210,9 +210,7 @@ export function useWhiteboardShapes(params: {
       let previous: Shape | undefined
       setShapes((prev) => {
         previous = prev.find((s) => s.id === shapeId)
-        return prev.map((s) =>
-          s.id === shapeId ? ({ ...s, ...patch } as Shape) : s,
-        )
+        return prev.map((s) => (s.id === shapeId ? { ...s, ...patch } : s))
       })
       emit('shape:update', { shapeId, ...patch }, (res: AckResult<Shape>) => {
         if (!res.ok) {

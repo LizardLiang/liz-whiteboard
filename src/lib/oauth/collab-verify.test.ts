@@ -61,7 +61,7 @@ async function mintCollabJWT(
   }
 
   if (overrides.aud !== undefined) {
-    jwt = jwt.setAudience(overrides.aud as string)
+    jwt = jwt.setAudience(overrides.aud)
   } else {
     jwt = jwt.setAudience(TEST_COLLAB_URI)
   }

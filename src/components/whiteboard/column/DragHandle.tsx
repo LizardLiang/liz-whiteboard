@@ -47,11 +47,11 @@ export const DragHandle = memo(
                 touchAction: 'none',
               }}
               onMouseEnter={(e) => {
-                ;(e.currentTarget as HTMLButtonElement).style.opacity = '1'
+                e.currentTarget.style.opacity = '1'
               }}
               onMouseLeave={(e) => {
                 if (!isDragging) {
-                  ;(e.currentTarget as HTMLButtonElement).style.opacity = '0.4'
+                  e.currentTarget.style.opacity = '0.4'
                 }
               }}
             >

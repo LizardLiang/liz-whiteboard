@@ -23,8 +23,8 @@ import {
 import {
   connectorBounds,
   connectorCurve,
-  connectorTail,
   connectorPath,
+  connectorTail,
 } from './connector-geometry'
 import type {
   ConnectorCurve,

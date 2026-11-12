@@ -12,9 +12,9 @@
 // module is what lets Rollup tree-shake that import out of the browser
 // bundle instead of pulling `socket.io` into it (see history.ts/invites.ts's
 // header comments for the real `bun run build` failure this pattern avoids).
-import { clientErrorMessage } from '@/lib/client-error'
 import type { AuthContext } from '@/lib/auth/middleware'
 import type { CreateTable } from '@/data/schema'
+import { clientErrorMessage } from '@/lib/client-error'
 import { createDiagramTable } from '@/data/diagram-table'
 import { getWhiteboardProjectId } from '@/data/resolve-project'
 import { requireServerFnRole } from '@/lib/auth/require-role'

@@ -62,7 +62,7 @@ async function createCanvasBoardHandler(
   data: { name: string; projectId: string; folderId?: string },
 ) {
   await requireServerFnRole(userId, data.projectId, 'EDITOR')
-  return createCanvasBoard(data as any)
+  return createCanvasBoard(data)
 }
 
 async function updateCanvasBoardHandler(
@@ -71,7 +71,7 @@ async function updateCanvasBoardHandler(
 ) {
   const projectId = await getCanvasBoardProjectId(params.id)
   await requireServerFnRole(userId, projectId, 'EDITOR')
-  return updateCanvasBoard(params.id, params.data as any)
+  return updateCanvasBoard(params.id, params.data)
 }
 
 async function deleteCanvasBoardHandler(userId: string, boardId: string) {
@@ -175,9 +175,9 @@ describe('deleteCanvasBoardFn RBAC gate', () => {
     mockGetCanvasBoardProjectId.mockResolvedValue('project-1')
     mockRequireServerFnRole.mockRejectedValue(new ForbiddenError())
 
-    await expect(
-      deleteCanvasBoardHandler('user-1', 'board-1'),
-    ).rejects.toThrow(ForbiddenError)
+    await expect(deleteCanvasBoardHandler('user-1', 'board-1')).rejects.toThrow(
+      ForbiddenError,
+    )
 
     expect(mockDeleteCanvasBoard).not.toHaveBeenCalled()
   })
