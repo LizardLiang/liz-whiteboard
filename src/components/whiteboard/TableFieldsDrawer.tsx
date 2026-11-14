@@ -1,5 +1,6 @@
 // src/components/whiteboard/TableFieldsDrawer.tsx
-// Non-modal right-hand drawer listing the clicked table's fields as a
+// Non-modal right-hand drawer (floats inside the canvas wrapper, below the
+// app header and above the bottom toolbar) listing the clicked table's fields as a
 // markdown-style grid (Name | Type | Key | Nullable | Comment). It reads the
 // live table passed by the caller, so canvas/socket edits show immediately.
 // A plain fixed panel rather than shadcn Sheet: Sheet is a modal Radix Dialog
@@ -46,7 +47,7 @@ export function TableFieldsDrawer({ table, onClose }: TableFieldsDrawerProps) {
       role="complementary"
       aria-labelledby="table-fields-drawer-title"
       data-testid="table-fields-drawer"
-      className="fixed top-0 right-0 z-40 flex h-full w-full flex-col border-l bg-background text-foreground shadow-lg sm:max-w-xl"
+      className="absolute top-3 right-3 z-30 flex max-h-[calc(100%-5.75rem)] w-[calc(100%-1.5rem)] flex-col rounded-lg border bg-background text-foreground shadow-lg sm:w-[36rem]"
     >
       <header className="flex items-start justify-between gap-2 px-6 pt-6 pb-4">
         <div className="min-w-0">
@@ -69,7 +70,7 @@ export function TableFieldsDrawer({ table, onClose }: TableFieldsDrawerProps) {
           <XIcon className="size-4" />
         </Button>
       </header>
-      <div className="flex-1 overflow-auto px-6 pb-6">
+      <div className="min-h-0 flex-1 overflow-auto px-6 pb-6">
         {columns.length === 0 ? (
           <p className="text-sm text-muted-foreground">
             {t('whiteboard.fieldsDrawer.empty')}
