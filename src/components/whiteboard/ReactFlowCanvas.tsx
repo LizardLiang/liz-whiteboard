@@ -487,7 +487,7 @@ export interface ReactFlowCanvasProps {
    */
   enableEdgeAblation?: boolean
   /** Callback when a node is clicked — receives the node id */
-  onNodeClick?: (nodeId: string) => void
+  onNodeClick?: (nodeId: string, event: ReactMouseEvent) => void
   /**
    * ID of the table whose relations panel is currently open (if any) —
    * threaded into calculateHighlighting so that table's node wrapper gets
@@ -1411,10 +1411,10 @@ export function ReactFlowCanvas({
   // commentIdSet guard is defense-in-depth against treating a comment's id
   // as a table selection (which would spuriously clear real highlighting).
   const onNodeClick = useCallback<NodeMouseHandler>(
-    (_event, node) => {
+    (event, node) => {
       if (commentIdSet.has(node.id)) return
       setActiveTableId(node.id)
-      onNodeClickProp?.(node.id)
+      onNodeClickProp?.(node.id, event)
     },
     [commentIdSet, onNodeClickProp],
   )

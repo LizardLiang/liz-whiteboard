@@ -109,14 +109,24 @@ const col = (
   pk: number,
   fk: number,
   ord: number,
+  description: string | null = null,
 ) =>
   db
     .query(
-      'INSERT INTO "Column" (id, tableId, name, dataType, isPrimaryKey, isForeignKey, isUnique, isNullable, "order", createdAt, updatedAt) VALUES (?,?,?,?,?,?,?,?,?,?,?)',
+      'INSERT INTO "Column" (id, tableId, name, dataType, isPrimaryKey, isForeignKey, isUnique, isNullable, description, "order", createdAt, updatedAt) VALUES (?,?,?,?,?,?,?,?,?,?,?,?)',
     )
-    .run(cid, tid, name, type, pk, fk, 0, 0, ord, now, now)
+    .run(cid, tid, name, type, pk, fk, 0, 0, description, ord, now, now)
 col(IDS.usersId, IDS.usersTable, 'id', 'UUID', 1, 0, 0)
-col(IDS.usersEmail, IDS.usersTable, 'email', 'VARCHAR', 0, 0, 1)
+col(
+  IDS.usersEmail,
+  IDS.usersTable,
+  'email',
+  'VARCHAR',
+  0,
+  0,
+  1,
+  'Login email address',
+)
 col(IDS.ordersId, IDS.ordersTable, 'id', 'UUID', 1, 0, 0)
 col(IDS.ordersUserId, IDS.ordersTable, 'user_id', 'UUID', 0, 1, 1)
 

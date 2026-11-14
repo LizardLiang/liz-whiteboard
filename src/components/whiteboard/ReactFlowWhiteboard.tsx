@@ -38,11 +38,13 @@ import { Toolbar } from './Toolbar'
 import { WhiteboardSearch } from './WhiteboardSearch'
 import { ExternalTablePicker } from './ExternalTablePicker'
 import { AutoLayoutConfirmDialog } from './AutoLayoutConfirmDialog'
+import { TableFieldsDrawer } from './TableFieldsDrawer'
 import { TableFocusOverlay } from './TableFocusOverlay'
 import { WhiteboardAccessDenied } from './WhiteboardAccessDenied'
 import { WhiteboardPermissionsProvider } from './whiteboard-permissions-context'
 import { SelectedTablesSqlDialog } from './SelectedTablesSqlDialog'
 import { QUICK_CREATE_GHOST_ID } from './QuickCreateGhostNode'
+import type { MouseEvent as ReactMouseEvent } from 'react'
 import type { DrawGestureTool, ToolMode } from '@/lib/react-flow/tool-mode'
 import type {
   AreaBounds,
@@ -633,6 +635,33 @@ function ReactFlowWhiteboardInner({
   const [relationsPreviewTableId, setRelationsPreviewTableId] = useState<
     string | null
   >(null)
+  // Fields drawer state — which table's field list is open (non-modal, so a
+  // click on another table just swaps this id).
+  const [fieldsDrawerTableId, setFieldsDrawerTableId] = useState<string | null>(
+    null,
+  )
+  const closeFieldsDrawer = useCallback(() => setFieldsDrawerTableId(null), [])
+  const handleTableNodeClick = useCallback(
+    (nodeId: string, event: ReactMouseEvent) => {
+      // Shift/Ctrl/Meta-click is the SQL multi-select path; the second click
+      // of a double-click starts an inline edit; clicks on form controls are
+      // edit interactions.
+      if (event.shiftKey || event.ctrlKey || event.metaKey) return
+      if (event.detail > 1) return
+      if (
+        event.target instanceof Element &&
+        event.target.closest(
+          'input, textarea, select, button, [contenteditable]',
+        )
+      ) {
+        return
+      }
+      const node = nodesRef.current.find((n) => n.id === nodeId)
+      if (node?.type !== 'table') return
+      setFieldsDrawerTableId(nodeId)
+    },
+    [],
+  )
   const [selectedSqlTableIds, setSelectedSqlTableIds] = useState<Array<string>>(
     [],
   )
@@ -4570,6 +4599,7 @@ function ReactFlowWhiteboardInner({
               onConnect={handleConnect}
               onNodeDragStop={handleNodeDragStop}
               onSelectionChange={handleSqlTableSelectionChange}
+              onNodeClick={handleTableNodeClick}
               nodesDraggable={nodesDraggable && !canvasLocked}
               interactive={!canvasLocked}
               // D-2: panOnDrag is a single derived expression composing the
@@ -4588,6 +4618,7 @@ function ReactFlowWhiteboardInner({
               relationsPreviewTableId={relationsPreviewTableId}
               onPaneClick={(event) => {
                 setRelationsPreviewTableId(null)
+                setFieldsDrawerTableId(null)
                 // A pane click deselects everything (React Flow's own
                 // resetSelectedElements) — release the "just created"
                 // forced-selection override too, or the next unrelated
@@ -4677,6 +4708,15 @@ function ReactFlowWhiteboardInner({
               </DialogFooter>
             </DialogContent>
           </Dialog>
+
+          <TableFieldsDrawer
+            table={
+              fieldsDrawerTableId
+                ? nodes.find((n) => n.id === fieldsDrawerTableId)?.data.table
+                : null
+            }
+            onClose={closeFieldsDrawer}
+          />
 
           {/* Focus View Overlay — read-only sub-canvas for the selected table + 1-hop neighbors */}
           <TableFocusOverlay
