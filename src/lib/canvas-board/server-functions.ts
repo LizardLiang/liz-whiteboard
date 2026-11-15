@@ -69,7 +69,7 @@ export interface CanvasBoardPageData {
  *
  * @requires viewer
  */
-export const getCanvasBoardPage = createServerFn({ method: 'GET' })
+export const getCanvasBoardPage = createServerFn({ method: 'POST' })
   .validator((boardId: string) => boardId)
   .handler(
     requireAuth(
