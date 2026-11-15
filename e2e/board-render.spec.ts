@@ -16,8 +16,8 @@
 // Both boards are seeded by e2e/seed-render.ts.
 import { execFileSync } from 'node:child_process'
 import { expect, test } from '@playwright/test'
-import { IDS } from './fixtures'
 import { JWT_EXPIRY_LEEWAY_SECONDS } from '../src/lib/oauth/jwt-leeway'
+import { IDS } from './fixtures'
 import type { APIRequestContext, Page } from '@playwright/test'
 
 const MCP_CLIENT_ID = process.env.MCP_CLIENT_ID ?? 'mcp-server'
