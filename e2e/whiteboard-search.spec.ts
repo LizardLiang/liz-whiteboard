@@ -4,25 +4,26 @@
 // into Tables/Columns, shows an empty state for no match, and closes on select.
 // Read-only — it never mutates the board, so it is safe to run after the
 // mutating suites. Auth + seed data come from global-setup (storageState).
-import {  expect, test } from '@playwright/test'
+import { expect, test } from '@playwright/test'
+import { tableNode } from './canvas-helpers'
 import { IDS } from './fixtures'
-import type {Page} from '@playwright/test';
+import type { Page } from '@playwright/test'
 
 const WB_URL = `/whiteboard/${IDS.whiteboard}`
 
 async function openWhiteboard(page: Page) {
   await page.goto(WB_URL)
   await expect(page.getByRole('heading', { name: 'E2E ERD' })).toBeVisible()
-  await expect(
-    page.locator('.react-flow').getByText('users', { exact: true }).first(),
-  ).toBeVisible()
+  await expect(tableNode(page, 'users')).toBeVisible()
 }
 
 async function openSearch(page: Page) {
   // The toolbar's search button carries its shortcut in the accessible name
   // (title attr). Using it avoids OS-specific Cmd-vs-Ctrl keyboard differences.
   await page.getByRole('button', { name: /Search tables and columns/ }).click()
-  await expect(page.getByPlaceholder('Search tables and columns…')).toBeVisible()
+  await expect(
+    page.getByPlaceholder('Search tables and columns…'),
+  ).toBeVisible()
 }
 
 test.describe('Whiteboard search palette (Cmd/Ctrl+K)', () => {
@@ -56,9 +57,7 @@ test.describe('Whiteboard search palette (Cmd/Ctrl+K)', () => {
     await page
       .getByPlaceholder('Search tables and columns…')
       .fill('zzz_no_such_thing')
-    await expect(
-      page.getByText('No matching tables or columns.'),
-    ).toBeVisible()
+    await expect(page.getByText('No matching tables or columns.')).toBeVisible()
 
     // Selecting a result closes the palette (it pans the canvas to the table;
     // the pan itself is a canvas viewport change we don't assert here).

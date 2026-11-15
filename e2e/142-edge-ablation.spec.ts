@@ -10,6 +10,7 @@
 // and return the DOM while table nodes stay put — not a mocked flag.
 import { execFileSync } from 'node:child_process'
 import { expect, test } from '@playwright/test'
+import { tableNode } from './canvas-helpers'
 import { IDS } from './fixtures'
 import type { Page } from '@playwright/test'
 
@@ -31,9 +32,7 @@ async function openStressWhiteboard(page: Page) {
   await expect(
     page.getByRole('heading', { name: `E2E Stress (${STRESS_TABLE_COUNT})` }),
   ).toBeVisible()
-  await expect(
-    page.locator('.react-flow').getByText('stress_table_0', { exact: true }),
-  ).toBeVisible()
+  await expect(tableNode(page, 'stress_table_0')).toBeVisible()
 }
 
 test.describe('Perf edge-ablation toggle (GH #142)', () => {

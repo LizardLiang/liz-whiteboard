@@ -17,6 +17,7 @@
 // corrected hook end-to-end. Auth + seed data come from global-setup
 // (storageState), matching e2e/version-history.spec.ts.
 import { expect, test } from '@playwright/test'
+import { tableNode } from './canvas-helpers'
 import { IDS } from './fixtures'
 import type { Page } from '@playwright/test'
 
@@ -26,9 +27,7 @@ async function openWhiteboard(page: Page) {
   await page.goto(WB_URL)
   await expect(page.getByRole('heading', { name: 'E2E ERD' })).toBeVisible()
   // Canvas ready: the react-flow pane has rendered the seeded tables.
-  await expect(
-    page.locator('.react-flow').getByText('users', { exact: true }).first(),
-  ).toBeVisible()
+  await expect(tableNode(page, 'users')).toBeVisible()
 }
 
 // Seeds the persisted theme choice before the app's first script runs, so
