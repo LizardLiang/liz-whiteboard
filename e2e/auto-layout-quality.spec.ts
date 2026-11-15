@@ -223,6 +223,12 @@ test.describe('Auto Layout quality', () => {
       page.getByText(new RegExp(`${RELATIONSHIP_COUNT} relationships\\b`)),
     ).toBeVisible()
     await page.getByRole('button', { name: 'Import', exact: true }).click()
+    // The tables render as soon as they are created, BEFORE the server layout
+    // pass runs. The dialog closes only after that pass has been persisted
+    // (use-sql-import.ts awaits computeAutoLayout), so wait for it.
+    await expect(
+      page.getByRole('heading', { name: 'Import SQL' }),
+    ).toBeHidden()
     await expect(tableNode(page, HUB).first()).toBeVisible()
 
     await page.reload()
