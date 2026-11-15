@@ -8,11 +8,13 @@ import {
   MODE_KEY,
   PINNED_KEY,
   POS_KEY,
+  TOUR_SEEN_KEY,
   getFieldWindowPrefs,
   resetFieldWindowPrefs,
   setFieldWindowMode,
   setFieldWindowPinned,
   setFieldWindowPos,
+  setFieldWindowTourSeen,
 } from './use-field-window-prefs'
 import { CASCADE_STEP_PX, cascadePlacement } from './FieldWindows'
 import type { FieldWindowsAction, FieldWindowsState } from './use-field-windows'
@@ -391,7 +393,28 @@ describe('field window prefs', () => {
       pinned: true,
       mode: 'windows',
       pos: { x: 5, y: 6 },
+      tourSeen: false,
     })
+  })
+
+  it('seeds the tour-seen flag from storage and remembers it', () => {
+    expect(getFieldWindowPrefs().tourSeen).toBe(false)
+    setFieldWindowTourSeen()
+    expect(localStorage.getItem(TOUR_SEEN_KEY)).toBe('true')
+    resetFieldWindowPrefs()
+    expect(getFieldWindowPrefs().tourSeen).toBe(true)
+  })
+
+  it('keeps the tour-seen flag in memory when storage rejects writes', () => {
+    vi.stubGlobal('localStorage', {
+      getItem: () => null,
+      setItem: () => {
+        throw new Error('blocked')
+      },
+    })
+    resetFieldWindowPrefs()
+    setFieldWindowTourSeen()
+    expect(getFieldWindowPrefs().tourSeen).toBe(true)
   })
 
   it('treats a corrupt stored position as unset', () => {
@@ -415,6 +438,7 @@ describe('field window prefs', () => {
       pinned: true,
       mode: 'windows',
       pos: { x: 1, y: 2 },
+      tourSeen: false,
     })
   })
 })

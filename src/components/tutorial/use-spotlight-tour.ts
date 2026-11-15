@@ -1,4 +1,4 @@
-import { useReducer } from 'react'
+import { useCallback, useMemo, useReducer } from 'react'
 
 export interface TourStep {
   id: string
@@ -42,11 +42,15 @@ export function tourReducer(state: TourState, action: TourAction): TourState {
 
 export function useSpotlightTour() {
   const [state, dispatch] = useReducer(tourReducer, initialTourState)
-  return {
-    state,
-    start: (total: number) => dispatch({ type: 'start', total }),
-    next: () => dispatch({ type: 'next' }),
-    back: () => dispatch({ type: 'back' }),
-    end: () => dispatch({ type: 'end' }),
-  }
+  const start = useCallback(
+    (total: number) => dispatch({ type: 'start', total }),
+    [],
+  )
+  const next = useCallback(() => dispatch({ type: 'next' }), [])
+  const back = useCallback(() => dispatch({ type: 'back' }), [])
+  const end = useCallback(() => dispatch({ type: 'end' }), [])
+  return useMemo(
+    () => ({ state, start, next, back, end }),
+    [state, start, next, back, end],
+  )
 }

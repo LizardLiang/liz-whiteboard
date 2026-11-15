@@ -1,5 +1,6 @@
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { cleanup, fireEvent, render, screen } from '@testing-library/react'
+import { useState } from 'react'
 import { SpotlightTour } from './SpotlightTour'
 import type { TourStep } from './use-spotlight-tour'
 
@@ -78,6 +79,43 @@ describe('SpotlightTour', () => {
     fireEvent.pointerDown(screen.getByTestId('spotlight-tour'))
     document.removeEventListener('pointerdown', outside)
     expect(outside).not.toHaveBeenCalled()
+  })
+
+  it('moves focus to Next and returns it to the earlier element on end', () => {
+    function Harness() {
+      const [open, setOpen] = useState(false)
+      return (
+        <>
+          <button onClick={() => setOpen(true)}>opener</button>
+          <SpotlightTour
+            open={open}
+            step={0}
+            steps={steps}
+            labels={labels}
+            onNext={vi.fn()}
+            onBack={vi.fn()}
+            onEnd={() => setOpen(false)}
+          />
+        </>
+      )
+    }
+    render(<Harness />)
+    const opener = screen.getByText('opener')
+    opener.focus()
+    fireEvent.click(opener)
+    expect(document.activeElement).toBe(screen.getByText('Next'))
+    fireEvent.keyDown(document.body, { key: 'Escape' })
+    expect(screen.queryByRole('dialog')).toBeNull()
+    expect(document.activeElement).toBe(opener)
+  })
+
+  it('animates the card only under motion-safe (reduced motion = none)', () => {
+    setup()
+    const classes = screen.getByTestId('spotlight-card').className.split(/\s+/)
+    expect(classes).toContain('motion-safe:transition-[left,top]')
+    expect(
+      classes.filter((c) => /^(transition|duration|ease)/.test(c)),
+    ).toEqual([])
   })
 
   it('renders nothing when closed', () => {

@@ -17,7 +17,7 @@ import {
   useRef,
   useState,
 } from 'react'
-import { MinusIcon, PinIcon, XIcon } from 'lucide-react'
+import { CircleHelpIcon, MinusIcon, PinIcon, XIcon } from 'lucide-react'
 import { FieldsGrid } from './FieldsGrid'
 import type { FieldsGridTable } from './FieldsGrid'
 import type {
@@ -56,6 +56,8 @@ export interface FieldWindowProps {
   onCloseTable: (id: string) => void
   onCloseAll: () => void
   onTogglePin: () => void
+  /** Starts the field window tour for this window. */
+  onHelp?: () => void
   onMinimizedChange: (minimized: boolean) => void
   /** In-memory position update (clamping); not remembered. */
   onMove: (pos: FieldWindowPos) => void
@@ -211,6 +213,7 @@ export function FieldWindow(props: FieldWindowProps) {
     onCloseTable,
     onCloseAll,
     onTogglePin,
+    onHelp,
     onMinimizedChange,
     onMove,
     onMoveEnd,
@@ -278,6 +281,7 @@ export function FieldWindow(props: FieldWindowProps) {
   const layering: CSSProperties = zIndex === undefined ? {} : { zIndex }
   const raiseProps = {
     'data-field-window': '',
+    'data-field-window-id': active.id,
     onPointerDownCapture: onRaise,
   }
 
@@ -387,17 +391,18 @@ export function FieldWindow(props: FieldWindowProps) {
         {/* Title shares the top line with the controls; the description sits
             below at full width, so on a phone it is not squeezed into the
             ~100 px the controls leave beside them. */}
-        <div className="flex items-start justify-between gap-2">
+        <div className="flex flex-wrap items-start justify-between gap-x-2 gap-y-1">
           <h2
             id="table-fields-drawer-title"
-            className="min-w-0 text-lg font-semibold [overflow-wrap:anywhere]"
+            className="min-w-[10rem] flex-1 text-lg font-semibold [overflow-wrap:anywhere]"
           >
             {t('whiteboard.fieldsDrawer.title', { name: active.table.name })}
           </h2>
-          <div className="flex shrink-0 items-center gap-0.5">
+          <div className="ml-auto flex shrink-0 items-center gap-0.5">
             <div
               role="group"
               aria-label={t('whiteboard.fieldsDrawer.mode')}
+              data-testid="fields-window-mode"
               className="mr-1 flex rounded-md border p-0.5"
             >
               {(['tabs', 'windows'] as const).map((m) => (
@@ -422,6 +427,18 @@ export function FieldWindow(props: FieldWindowProps) {
                 </button>
               ))}
             </div>
+            {onHelp && (
+              <Button
+                variant="ghost"
+                size="icon"
+                aria-label={t('whiteboard.fieldsTour.help')}
+                title={t('whiteboard.fieldsTour.help')}
+                data-testid="fields-window-help"
+                onClick={onHelp}
+              >
+                <CircleHelpIcon className="size-4" />
+              </Button>
+            )}
             <Button
               variant="ghost"
               size="icon"

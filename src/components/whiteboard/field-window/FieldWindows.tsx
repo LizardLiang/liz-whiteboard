@@ -4,12 +4,21 @@
 // raise above each other with small z values yet stay below dialogs and
 // popovers (z-50) and above the minimap.
 
-import { useEffect, useState } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { createPortal } from 'react-dom'
 import { FieldWindow } from './FieldWindow'
+import { TOUR_STEP_COUNT, buildFieldWindowTour } from './field-window-tour'
+import {
+  getFieldWindowPrefs,
+  setFieldWindowTourSeen,
+} from './use-field-window-prefs'
 import type { FieldWindowItem } from './FieldWindow'
 import type { FieldWindowMode, FieldWindowPos } from './use-field-window-prefs'
 import type { useFieldWindows } from './use-field-windows'
+import type { TourFlow } from './field-window-tour'
+import { SpotlightTour } from '@/components/tutorial/SpotlightTour'
+import { useSpotlightTour } from '@/components/tutorial/use-spotlight-tour'
+import { useI18n } from '@/lib/i18n/use-t'
 
 /**
  * Cascade step: the visible strip of a back window must show its whole title
@@ -103,11 +112,100 @@ export function cascadePlacement(
 interface FieldWindowsProps {
   fieldWindows: ReturnType<typeof useFieldWindows>
   items: Array<FieldWindowItem>
+  /** Canvas instance; tour step 4 pans it to show the table. */
+  flow?: TourFlow
 }
 
-export function FieldWindows({ fieldWindows, items }: FieldWindowsProps) {
+/** The window a tour explains: the one tabs window, or one window by id. */
+interface TourWindow {
+  mode: FieldWindowMode
+  id: string
+}
+
+export function FieldWindows({ fieldWindows, items, flow }: FieldWindowsProps) {
   const { state, actions } = fieldWindows
   const viewport = useViewportBox()
+  const { t } = useI18n()
+  const tour = useSpotlightTour()
+  const [tourWindow, setTourWindow] = useState<TourWindow | null>(null)
+
+  const latest = useRef({ items, state, flow, tourWindow })
+  latest.current = { items, state, flow, tourWindow }
+
+  const { start: startSteps, end: endTour } = tour
+  const startTour = useCallback(
+    (target: TourWindow) => {
+      setFieldWindowTourSeen()
+      setTourWindow(target)
+      startSteps(TOUR_STEP_COUNT)
+    },
+    [startSteps],
+  )
+
+  // The first time a window opens in this browser, explain it.
+  const hasItems = items.length > 0
+  useEffect(() => {
+    if (!hasItems || getFieldWindowPrefs().tourSeen) return
+    const { items: now, state: current } = latest.current
+    startTour({
+      mode: current.mode,
+      id: current.mode === 'windows' ? now[0].id : '',
+    })
+  }, [hasItems, startTour])
+
+  const tourOpen = tour.state.open
+  const tourItem = tourWindow
+    ? tourWindow.mode === 'tabs'
+      ? (items.find((i) => i.id === state.activeId) ?? items.at(-1))
+      : items.find((i) => i.id === tourWindow.id)
+    : undefined
+  const tourAlive =
+    tourWindow !== null && tourWindow.mode === state.mode && !!tourItem
+
+  // The tour ends with its window (closed, deleted, or switched mode).
+  useEffect(() => {
+    if (tourOpen && !tourAlive) endTour()
+  }, [tourOpen, tourAlive, endTour])
+
+  const steps = useMemo(
+    () =>
+      buildFieldWindowTour({
+        t,
+        getWindowEl: () => {
+          const { tourWindow: w } = latest.current
+          if (!w) return null
+          const selector =
+            w.mode === 'tabs'
+              ? '[data-testid="table-fields-drawer"]'
+              : `[data-testid="table-fields-drawer"][data-field-window-id="${CSS.escape(w.id)}"]`
+          return document.querySelector<HTMLElement>(selector)
+        },
+        getTable: () => {
+          const { items: all, state: s, tourWindow: w } = latest.current
+          if (!w) return null
+          const item =
+            w.mode === 'tabs'
+              ? (all.find((i) => i.id === s.activeId) ?? all.at(-1))
+              : all.find((i) => i.id === w.id)
+          return item ? { id: item.id, name: item.table.name } : null
+        },
+        getFlow: () => latest.current.flow ?? null,
+        getBottomReserve: () => measureBottomReserve(window.innerHeight),
+      }),
+    [t],
+  )
+  const labels = useMemo(
+    () => ({
+      next: t('whiteboard.fieldsTour.next'),
+      back: t('whiteboard.fieldsTour.back'),
+      skip: t('whiteboard.fieldsTour.skip'),
+      done: t('whiteboard.fieldsTour.done'),
+      stepOf: (step: number, total: number) =>
+        t('whiteboard.fieldsTour.stepOf', { step, total }),
+    }),
+    [t],
+  )
+
   if (typeof document === 'undefined' || items.length === 0) return null
 
   const onModeChange = (mode: FieldWindowMode) => fieldWindows.switchMode(mode)
@@ -142,6 +240,7 @@ export function FieldWindows({ fieldWindows, items }: FieldWindowsProps) {
           onTogglePin={() =>
             fieldWindows.setWindowPinned(item.id, !entry.pinned)
           }
+          onHelp={() => startTour({ mode: 'windows', id: item.id })}
           onMinimizedChange={(m) => actions.setWindowMinimized(item.id, m)}
           onMove={(pos) => actions.moveWindow(item.id, pos)}
           onMoveEnd={(pos) => fieldWindows.commitWindowPos(item.id, pos)}
@@ -163,6 +262,7 @@ export function FieldWindows({ fieldWindows, items }: FieldWindowsProps) {
         onCloseTable={actions.close}
         onCloseAll={actions.closeAll}
         onTogglePin={() => fieldWindows.setPinned(!state.pinned)}
+        onHelp={() => startTour({ mode: 'tabs', id: '' })}
         onMinimizedChange={actions.setMinimized}
         onMove={actions.move}
         onMoveEnd={fieldWindows.commitPos}
@@ -170,13 +270,26 @@ export function FieldWindows({ fieldWindows, items }: FieldWindowsProps) {
     )
   }
 
-  return createPortal(
-    <div
-      data-testid="field-window-layer"
-      className="pointer-events-none fixed inset-0 z-40 isolate"
-    >
-      {content}
-    </div>,
-    document.body,
+  return (
+    <>
+      {createPortal(
+        <div
+          data-testid="field-window-layer"
+          className="pointer-events-none fixed inset-0 z-40 isolate"
+        >
+          {content}
+        </div>,
+        document.body,
+      )}
+      <SpotlightTour
+        open={tourOpen && tourAlive}
+        step={tour.state.step}
+        steps={steps}
+        labels={labels}
+        onNext={tour.next}
+        onBack={tour.back}
+        onEnd={tour.end}
+      />
+    </>
   )
 }

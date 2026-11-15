@@ -16,16 +16,20 @@ export interface FieldWindowPrefs {
   pinned: boolean
   mode: FieldWindowMode
   pos: FieldWindowPos | null
+  /** The tour has started once in this browser; it never auto-starts again. */
+  tourSeen: boolean
 }
 
 export const PINNED_KEY = 'fields-window-pinned'
 export const MODE_KEY = 'fields-window-mode'
 export const POS_KEY = 'fields-window-pos'
+export const TOUR_SEEN_KEY = 'fields-window-tour-seen'
 
 const DEFAULT_PREFS: FieldWindowPrefs = {
   pinned: false,
   mode: 'tabs',
   pos: null,
+  tourSeen: false,
 }
 
 const listeners = new Set<() => void>()
@@ -58,6 +62,7 @@ function readStored(): FieldWindowPrefs {
     pinned: safeGetItem(PINNED_KEY) === 'true',
     mode: safeGetItem(MODE_KEY) === 'windows' ? 'windows' : 'tabs',
     pos: parsePos(safeGetItem(POS_KEY)),
+    tourSeen: safeGetItem(TOUR_SEEN_KEY) === 'true',
   }
 }
 
@@ -98,6 +103,12 @@ export function setFieldWindowMode(mode: FieldWindowMode) {
 export function setFieldWindowPos(pos: FieldWindowPos) {
   prefs = { ...getFieldWindowPrefs(), pos }
   safeSetItem(POS_KEY, JSON.stringify(pos))
+  emit()
+}
+
+export function setFieldWindowTourSeen() {
+  prefs = { ...getFieldWindowPrefs(), tourSeen: true }
+  safeSetItem(TOUR_SEEN_KEY, 'true')
   emit()
 }
 

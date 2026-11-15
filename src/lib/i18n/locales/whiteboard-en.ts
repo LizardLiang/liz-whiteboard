@@ -369,6 +369,34 @@ export const whiteboardEn = {
     dragHandle: 'Fields window (drag to move, arrow keys nudge)',
     tabList: 'Open tables',
   },
+  fieldsTour: {
+    help: 'Show field window tour',
+    next: 'Next',
+    back: 'Back',
+    skip: 'Skip',
+    done: 'Done',
+    stepOf: '{step} of {total}',
+    windowTitle: 'Fields of the table',
+    windowBody:
+      'This window lists the fields of the table you clicked: name, type, key, nullable and comment.',
+    headerTitle: 'Move the window',
+    headerBody:
+      'Drag the header to move the window anywhere on screen. The arrow keys move it 16 px, and Shift moves it 64 px. The window keeps its place when the canvas pans or zooms.',
+    pinTitle: 'Pin the window',
+    pinBody:
+      'A pinned window stays open when you press Esc or click an empty canvas. A click on a table then adds a tab.',
+    canvasTitle: 'Add or remove tables',
+    canvasBody:
+      'Ctrl-click (Cmd-click on a Mac) a table to add it to the window. Ctrl-click a listed table to remove it.',
+    modeTitle: 'Tabs or windows',
+    modeBody:
+      'Tabs shows one window with a tab for each table. Windows shows one window for each table.',
+    minimizeTitle: 'Minimize',
+    minimizeBody:
+      'Minimize shrinks the window to a block with the table name. Drag the block to move it. Click the block to restore the window.',
+    helpTitle: 'Replay this tour',
+    helpBody: 'Click this button at any time to see the tour again.',
+  },
   commentsPanel: {
     title: 'Comments',
     description: 'Threaded discussion pinned to tables and canvas points.',

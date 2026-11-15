@@ -4726,7 +4726,11 @@ function ReactFlowWhiteboardInner({
             </DialogContent>
           </Dialog>
 
-          <FieldWindows fieldWindows={fieldWindows} items={fieldWindowItems} />
+          <FieldWindows
+            fieldWindows={fieldWindows}
+            items={fieldWindowItems}
+            flow={reactFlowInstance}
+          />
 
           {/* Focus View Overlay — read-only sub-canvas for the selected table + 1-hop neighbors */}
           <TableFocusOverlay

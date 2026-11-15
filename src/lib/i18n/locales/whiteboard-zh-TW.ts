@@ -357,6 +357,34 @@ export const whiteboardZhTW: DeepStringRecord<typeof whiteboardEn> = {
     dragHandle: '欄位視窗（拖曳移動，方向鍵微調）',
     tabList: '已開啟的資料表',
   },
+  fieldsTour: {
+    help: '顯示欄位視窗導覽',
+    next: '下一步',
+    back: '上一步',
+    skip: '略過',
+    done: '完成',
+    stepOf: '第 {step} 步，共 {total} 步',
+    windowTitle: '欄位視窗',
+    windowBody:
+      '這個視窗列出所點選資料表的欄位：名稱、型別、鍵、可為空與備註。',
+    headerTitle: '移動視窗',
+    headerBody:
+      '拖曳標題列，把視窗移到畫面任何位置。方向鍵每次移動 16 px，按住 Shift 移動 64 px。畫布平移或縮放時，視窗留在原處。',
+    pinTitle: '釘選視窗',
+    pinBody:
+      '釘選後，按 Esc 或點選空白畫布都不會關閉視窗。這時點選資料表會新增一個分頁。',
+    canvasTitle: '新增或移除資料表',
+    canvasBody:
+      '按住 Ctrl（Mac 為 Cmd）點選資料表，把它加入視窗。再點選已列出的資料表，就會移除它。',
+    modeTitle: '分頁或多視窗',
+    modeBody:
+      '分頁：一個視窗，每個資料表一個分頁。多視窗：每個資料表一個視窗。',
+    minimizeTitle: '最小化',
+    minimizeBody:
+      '最小化會把視窗縮成顯示資料表名稱的方塊。拖曳方塊可移動它，點選方塊可還原視窗。',
+    helpTitle: '重看導覽',
+    helpBody: '隨時點這個按鈕，重新播放導覽。',
+  },
   commentsPanel: {
     title: '留言',
     description: '釘選在資料表與畫布位置上的串接討論。',
