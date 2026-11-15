@@ -381,82 +381,84 @@ export function FieldWindow(props: FieldWindowProps) {
         role="group"
         aria-label={t('whiteboard.fieldsDrawer.dragHandle')}
         data-testid="table-fields-header"
-        className="flex cursor-grab touch-none items-start justify-between gap-2 rounded-t-lg px-4 pt-3 pb-2 select-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-none active:cursor-grabbing"
+        className="cursor-grab touch-none rounded-t-lg px-4 pt-3 pb-2 select-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-none active:cursor-grabbing"
         {...handlers}
       >
-        <div className="min-w-0">
+        {/* Title shares the top line with the controls; the description sits
+            below at full width, so on a phone it is not squeezed into the
+            ~100 px the controls leave beside them. */}
+        <div className="flex items-start justify-between gap-2">
           <h2
             id="table-fields-drawer-title"
-            className="text-lg font-semibold [overflow-wrap:anywhere]"
+            className="min-w-0 text-lg font-semibold [overflow-wrap:anywhere]"
           >
             {t('whiteboard.fieldsDrawer.title', { name: active.table.name })}
           </h2>
-          <p className="mt-1 text-sm break-words text-muted-foreground">
-            {active.table.description ||
-              t('whiteboard.fieldsDrawer.description')}
-          </p>
-        </div>
-        <div className="flex shrink-0 items-center gap-0.5">
-          <div
-            role="group"
-            aria-label={t('whiteboard.fieldsDrawer.mode')}
-            className="mr-1 flex rounded-md border p-0.5"
-          >
-            {(['tabs', 'windows'] as const).map((m) => (
-              <button
-                key={m}
-                type="button"
-                aria-pressed={mode === m}
-                data-testid={`fields-window-mode-${m}`}
-                className={cn(
-                  'rounded px-2 py-0.5 text-xs focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-none',
-                  mode === m
-                    ? 'bg-muted font-semibold'
-                    : 'text-muted-foreground hover:text-foreground',
-                )}
-                onClick={() => onModeChange(m)}
-              >
-                {t(
-                  m === 'tabs'
-                    ? 'whiteboard.fieldsDrawer.modeTabs'
-                    : 'whiteboard.fieldsDrawer.modeWindows',
-                )}
-              </button>
-            ))}
+          <div className="flex shrink-0 items-center gap-0.5">
+            <div
+              role="group"
+              aria-label={t('whiteboard.fieldsDrawer.mode')}
+              className="mr-1 flex rounded-md border p-0.5"
+            >
+              {(['tabs', 'windows'] as const).map((m) => (
+                <button
+                  key={m}
+                  type="button"
+                  aria-pressed={mode === m}
+                  data-testid={`fields-window-mode-${m}`}
+                  className={cn(
+                    'rounded px-2 py-0.5 text-xs focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-none',
+                    mode === m
+                      ? 'bg-muted font-semibold'
+                      : 'text-muted-foreground hover:text-foreground',
+                  )}
+                  onClick={() => onModeChange(m)}
+                >
+                  {t(
+                    m === 'tabs'
+                      ? 'whiteboard.fieldsDrawer.modeTabs'
+                      : 'whiteboard.fieldsDrawer.modeWindows',
+                  )}
+                </button>
+              ))}
+            </div>
+            <Button
+              variant="ghost"
+              size="icon"
+              aria-label={t('whiteboard.fieldsDrawer.pin')}
+              title={t('whiteboard.fieldsDrawer.pin')}
+              aria-pressed={pinned}
+              className={cn(
+                pinned &&
+                  'bg-primary text-primary-foreground hover:bg-primary/90 hover:text-primary-foreground',
+              )}
+              data-testid="fields-window-pin"
+              onClick={onTogglePin}
+            >
+              <PinIcon className="size-4" />
+            </Button>
+            <Button
+              variant="ghost"
+              size="icon"
+              aria-label={t('whiteboard.fieldsDrawer.minimize')}
+              data-testid="fields-window-minimize"
+              onClick={minimize}
+            >
+              <MinusIcon className="size-4" />
+            </Button>
+            <Button
+              variant="ghost"
+              size="icon"
+              aria-label={t('whiteboard.fieldsDrawer.close')}
+              onClick={onCloseAll}
+            >
+              <XIcon className="size-4" />
+            </Button>
           </div>
-          <Button
-            variant="ghost"
-            size="icon"
-            aria-label={t('whiteboard.fieldsDrawer.pin')}
-            title={t('whiteboard.fieldsDrawer.pin')}
-            aria-pressed={pinned}
-            className={cn(
-              pinned &&
-                'bg-primary text-primary-foreground hover:bg-primary/90 hover:text-primary-foreground',
-            )}
-            data-testid="fields-window-pin"
-            onClick={onTogglePin}
-          >
-            <PinIcon className="size-4" />
-          </Button>
-          <Button
-            variant="ghost"
-            size="icon"
-            aria-label={t('whiteboard.fieldsDrawer.minimize')}
-            data-testid="fields-window-minimize"
-            onClick={minimize}
-          >
-            <MinusIcon className="size-4" />
-          </Button>
-          <Button
-            variant="ghost"
-            size="icon"
-            aria-label={t('whiteboard.fieldsDrawer.close')}
-            onClick={onCloseAll}
-          >
-            <XIcon className="size-4" />
-          </Button>
         </div>
+        <p className="mt-1 text-sm break-words text-muted-foreground">
+          {active.table.description || t('whiteboard.fieldsDrawer.description')}
+        </p>
       </header>
       {count > 1 && (
         <div
