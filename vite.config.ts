@@ -117,9 +117,9 @@ const config = defineConfig({
     // stacks. A source edit during a run (a developer, or another agent in the
     // same working tree) otherwise makes every worker's Vite server HMR-update
     // or fully reload the open page mid-test.
-    ...(process.env.E2E_FREEZE_SOURCE
-      ? { hmr: false, watch: null }
-      : {}),
+    // Only the watcher is off: `hmr: false` too makes the page remount once
+    // after hydration, which swallows the first click on the navigator drawer.
+    ...(process.env.E2E_FREEZE_SOURCE ? { watch: null } : {}),
     proxy: {
       '/socket.io': {
         target: `http://localhost:${SOCKET_IO_DEV_PORT}`,

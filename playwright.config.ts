@@ -59,7 +59,7 @@ function slotServer(i: number) {
       SOCKET_IO_DEV_PORT: String(socket),
       COLLAB_RESOURCE_URI: `http://localhost:${socket}`,
       VITE_CACHE_DIR: slotViteCacheDir(i),
-      // No HMR or file watching: a source edit mid-run must not reload pages.
+      // No file watching: a source edit mid-run must not reload pages.
       E2E_FREEZE_SOURCE: '1',
       // board-render.spec.ts reads the same variable, default included.
       MCP_CLIENT_SECRET: process.env.MCP_CLIENT_SECRET ?? 'e2e-mcp-secret',
