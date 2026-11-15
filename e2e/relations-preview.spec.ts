@@ -22,12 +22,12 @@ import type { Page } from '@playwright/test'
 // Canvas is unconditional (canvas-unconditional-default) — no `?canvas` opt
 // out. A chrome-light table has no DOM relations trigger button (canvas
 // paints the header), so the panel is opened via right-click → "Show
-// relations" (TableNodeContextMenu) instead. Opening it forces that ONE
-// table to its full-DOM render (TableNode.tsx's `isNotOverlayTarget` now
-// also exempts a table with its relations panel open, mirroring the existing
-// edit-overlay exemption — see implementation-notes.md deviation), which is
-// what mounts `table-relations-trigger`/`table-relations-panel` — same
-// testids/component the pre-canvas-unconditional spec asserted on.
+// relations" (TableNodeContextMenu) instead. Since 72f9d53 the panel itself
+// is canvas-painted too (CanvasNodeLayer) and the table stays chrome-light,
+// so this spec reads the panel through its screen-reader mirror: the
+// `table-relations-panel` region TableNode.tsx renders inside the
+// chrome-light node while the panel is open (same content as the painted
+// list). Open/closed = that region attached/absent.
 const WB_URL = `/whiteboard/${IDS.whiteboard}`
 
 async function openWhiteboard(page: Page) {
@@ -55,12 +55,8 @@ async function openRelationsViaContextMenu(node: ReturnType<typeof usersNode>) {
   await node.page().getByRole('menuitem', { name: 'Show relations' }).click()
 }
 
-function relationsTrigger(page: Page) {
-  return usersNode(page).getByTestId('table-relations-trigger')
-}
-
 function relationsPanel(page: Page) {
-  return page.getByTestId('table-relations-panel')
+  return usersNode(page).getByTestId('table-relations-panel')
 }
 
 test.describe('Relations preview panel (GH #134)', () => {
@@ -71,11 +67,7 @@ test.describe('Relations preview panel (GH #134)', () => {
 
     await openRelationsViaContextMenu(usersNode(page))
 
-    await expect(relationsTrigger(page)).toHaveAttribute(
-      'aria-pressed',
-      'true',
-    )
-    await expect(relationsPanel(page)).toBeVisible()
+    await expect(relationsPanel(page)).toBeAttached()
     await expect(relationsPanel(page)).toContainText('orders')
   })
 
@@ -85,11 +77,7 @@ test.describe('Relations preview panel (GH #134)', () => {
     await openWhiteboard(page)
 
     await openRelationsViaContextMenu(usersNode(page))
-    await expect(relationsTrigger(page)).toHaveAttribute(
-      'aria-pressed',
-      'true',
-    )
-    await expect(relationsPanel(page)).toBeVisible()
+    await expect(relationsPanel(page)).toBeAttached()
 
     // Force a parent node re-sync: dragging the table fires onNodeDragStop,
     // which persists the new position and round-trips through the parent's
@@ -107,16 +95,12 @@ test.describe('Relations preview panel (GH #134)', () => {
     await page.mouse.move(startX + 40, startY + 40, { steps: 5 })
     await page.mouse.up()
 
-    // The panel and the trigger's pressed state must survive the re-sync.
+    // The open panel must survive the re-sync.
     // NOTE: GH #135 fixed content preservation across this same re-sync — the
     // preserve branch of ReactFlowWhiteboard's initialNodes-sync effect
     // (L573+) now re-injects `edges`/`relationsEdges` from the canonical
     // refs, so the panel's related-table list no longer empties.
-    await expect(relationsTrigger(page)).toHaveAttribute(
-      'aria-pressed',
-      'true',
-    )
-    await expect(relationsPanel(page)).toBeVisible()
+    await expect(relationsPanel(page)).toBeAttached()
     // #135: panel content (1-hop neighbor list) must survive the re-sync too,
     // not just the open flag — the preserve branch now carries relationsEdges.
     await expect(relationsPanel(page)).toContainText('orders')
@@ -173,24 +157,16 @@ test.describe('Relations preview panel (GH #134)', () => {
       .toBeGreaterThan(startBox.y + dy / 2)
   })
 
-  test('toggles off on second click', async ({ page }) => {
+  test('toggles off on second open', async ({ page }) => {
     await openWhiteboard(page)
 
     await openRelationsViaContextMenu(usersNode(page))
-    await expect(relationsTrigger(page)).toHaveAttribute(
-      'aria-pressed',
-      'true',
-    )
-    await expect(relationsPanel(page)).toBeVisible()
+    await expect(relationsPanel(page)).toBeAttached()
 
-    // Closing reverts the table to chrome-light (isNotOverlayTarget's
-    // relations-open exemption no longer applies), which unmounts the
-    // trigger/panel entirely rather than just hiding them — so the
-    // post-close assertion is absence, not an aria-pressed="false" read on
-    // an element that no longer exists.
-    await relationsTrigger(page).click()
+    // "Show relations" is a toggle (handleTogglePreviewTable): choosing it
+    // again for the same table closes the panel, which unmounts the mirror.
+    await openRelationsViaContextMenu(usersNode(page))
 
-    await expect(relationsPanel(page)).toBeHidden()
-    await expect(relationsTrigger(page)).toHaveCount(0)
+    await expect(relationsPanel(page)).toHaveCount(0)
   })
 })

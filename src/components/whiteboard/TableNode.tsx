@@ -1068,6 +1068,46 @@ export const TableNode = memo(
                 }}
               />
             )}
+            {/* Screen-reader mirror of the canvas-painted relations panel
+                (CanvasNodeLayer draws it as pixels, which assistive tech and
+                e2e cannot read). Same content and order as the painted list:
+                one entry per related edge, oriented from this table's side. */}
+            {isRelationsPreviewOpen && (
+              <div
+                role="region"
+                aria-label={t('whiteboard.relations.title')}
+                data-testid="table-relations-panel"
+                className="sr-only"
+              >
+                {relatedEdges.length === 0 ? (
+                  <p>{t('whiteboard.relations.none')}</p>
+                ) : (
+                  <ul>
+                    {relatedEdges.map((edge) => {
+                      const rel = edge.data?.relationship
+                      if (!rel) return null
+                      const thisIsSource = rel.sourceTableId === table.id
+                      const otherId = thisIsSource
+                        ? rel.targetTableId
+                        : rel.sourceTableId
+                      const otherName = tableNameById.get(otherId)
+                      if (!otherName) return null
+                      const thisCol = thisIsSource
+                        ? rel.sourceColumn
+                        : rel.targetColumn
+                      const otherCol = thisIsSource
+                        ? rel.targetColumn
+                        : rel.sourceColumn
+                      return (
+                        <li key={edge.id}>
+                          {`${otherName}: ${table.name}.${thisCol.name} → ${otherName}.${otherCol.name}`}
+                        </li>
+                      )
+                    })}
+                  </ul>
+                )}
+              </div>
+            )}
           </div>
         </TableNodeContextMenu>
       )
