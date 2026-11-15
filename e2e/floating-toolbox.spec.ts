@@ -383,11 +383,17 @@ test.describe('Lock canvas', () => {
     await expect(area).toBeVisible()
 
     // Select the area, which makes its resize handles appear.
+    // The board can still be fitting its view when the area first shows, so a
+    // click aimed at the first box can miss. Re-read the box and click again
+    // until the selection (the resize handles) appears.
+    await expect(async () => {
+      const b = (await area.boundingBox())!
+      await page.mouse.click(b.x + b.width - 40, b.y + b.height - 40)
+      await expect(
+        area.locator('.react-flow__resize-control').first(),
+      ).toBeVisible({ timeout: 2_000 })
+    }).toPass()
     const box = (await area.boundingBox())!
-    await page.mouse.click(box.x + box.width - 40, box.y + box.height - 40)
-    await expect(
-      area.locator('.react-flow__resize-control').first(),
-    ).toBeVisible()
     const corner = { x: box.x + box.width, y: box.y + box.height }
     const before = snapshot()
 
