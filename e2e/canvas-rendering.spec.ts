@@ -291,7 +291,10 @@ test.describe('Canvas node rendering — Phase 1 (DOM strip + perf gate)', () =>
     // under canvas mode) — React Flow's node select/drag handlers bind to
     // the whole node body, not a specific inner element, so this exercises
     // the same native select/drag path the pre-canvas DOM relied on.
-    await nodeA.click()
+    // Both clicks use Control: a plain click on a table opens the fields
+    // drawer, which then covers nodeB; a modifier click is the multi-select
+    // gesture and leaves the drawer closed.
+    await nodeA.click({ modifiers: ['Control'] })
     await nodeB.click({ modifiers: ['Control'] })
 
     const beforeA = await nodeTransform(nodeA)
