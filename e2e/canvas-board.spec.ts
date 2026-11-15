@@ -748,6 +748,16 @@ test.describe('touch input', () => {
           ),
         })
       }
+      // Let two frames pass so the browser delivers the last touchMove as a
+      // pointermove before the lift. Pointer moves are coalesced to one per
+      // frame; under load a touchEnd sent straight after the loop can win,
+      // and the drop then lands one step short.
+      await page.evaluate(
+        () =>
+          new Promise<void>((resolve) =>
+            requestAnimationFrame(() => requestAnimationFrame(() => resolve())),
+          ),
+      )
       await cdp.send('Input.dispatchTouchEvent', {
         type: 'touchEnd',
         touchPoints: [],
