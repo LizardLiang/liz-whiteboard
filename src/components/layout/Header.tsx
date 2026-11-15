@@ -57,11 +57,11 @@ export function Header() {
 
   return (
     <header className="border-b bg-background">
-      <div className="flex h-16 items-center px-6 gap-4">
+      <div className="flex h-16 items-center gap-2 px-3 sm:gap-4 sm:px-6">
         {/* App Logo/Branding */}
         <Link
           to="/"
-          className="flex items-center gap-2 font-semibold text-lg hover:opacity-80 transition-opacity"
+          className="flex shrink-0 items-center gap-2 whitespace-nowrap font-semibold text-lg hover:opacity-80 transition-opacity"
         >
           <svg
             xmlns="http://www.w3.org/2000/svg"
@@ -79,7 +79,7 @@ export function Header() {
             <rect x="3" y="14" width="7" height="7" />
           </svg>
           <span>{t('common.appName')}</span>
-          <span className="ml-1 text-xs text-muted-foreground font-normal">
+          <span className="ml-1 hidden text-xs text-muted-foreground font-normal sm:inline">
             v{__APP_VERSION__}
           </span>
         </Link>
@@ -119,7 +119,10 @@ export function Header() {
 
         {/* Dark Mode Toggle with Switch */}
         <div className="flex items-center gap-2">
-          <Sun className="h-4 w-4 text-muted-foreground" aria-hidden="true" />
+          <Sun
+            className="hidden h-4 w-4 text-muted-foreground sm:block"
+            aria-hidden="true"
+          />
           {mounted ? (
             <Switch
               checked={isDark}
@@ -136,7 +139,10 @@ export function Header() {
               disabled
             />
           )}
-          <Moon className="h-4 w-4 text-muted-foreground" aria-hidden="true" />
+          <Moon
+            className="hidden h-4 w-4 text-muted-foreground sm:block"
+            aria-hidden="true"
+          />
         </div>
 
         {/* Connected applications (OAuth revocation) */}
