@@ -15,7 +15,7 @@
 // depends on the initial whiteboard data load, not the live broadcast.
 import { expect, test } from '@playwright/test'
 import { IDS } from './fixtures'
-import { tableNode } from './canvas-helpers'
+import { settle, tableNode, trackAcks } from './canvas-helpers'
 import type { Page } from '@playwright/test'
 
 // Canvas is unconditional (canvas-unconditional-default) — no `?canvas` opt
@@ -28,6 +28,7 @@ import type { Page } from '@playwright/test'
 const WB_URL = `/whiteboard/${IDS.whiteboard}`
 
 async function openWhiteboard(page: Page) {
+  trackAcks(page)
   await page.goto(WB_URL)
   await expect(page.getByRole('heading', { name: 'E2E ERD' })).toBeVisible()
   await expect(tableNode(page, 'users').first()).toBeVisible()
@@ -74,6 +75,9 @@ test.describe('Table comment / note (table-comment)', () => {
     // Debounced autosave (500ms) — wait past the debounce window before
     // closing, since there is no visible "saved" indicator to poll for.
     await page.waitForTimeout(800)
+    // The save is on the wire after the debounce; wait for its ack so the
+    // reload below cannot cut it off on a loaded machine.
+    await settle(page)
     await page.keyboard.press('Escape')
 
     // Persistence check via reload (dev Socket.IO broadcast no-ops — see
