@@ -2734,14 +2734,18 @@ export function useCanvasInput({
           world.y - lastPointerDown.world.y,
         ) <= REPEAT_CLICK_DISTANCE
       const elapsedSincePointerDown =
-        lastPointerDown === null ? Infinity : Date.now() - lastPointerDown.time
+        lastPointerDown === null
+          ? Infinity
+          : performance.now() - lastPointerDown.time
       const preservesEnteredPath =
         withinRepeatDistance &&
         elapsedSincePointerDown <= REPEAT_CLICK_WINDOW_MS
       const targetsRawHit =
         withinRepeatDistance &&
         elapsedSincePointerDown <= RAW_HIT_TARGET_WINDOW_MS
-      lastPointerDownRef.current = { time: Date.now(), world }
+      // Monotonic clock: a wall-clock step (NTP, suspend) must not lapse or
+      // extend the repeat-click window.
+      lastPointerDownRef.current = { time: performance.now(), world }
 
       const target = targetsRawHit
         ? hit
