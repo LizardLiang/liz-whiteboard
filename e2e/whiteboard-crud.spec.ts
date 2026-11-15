@@ -70,10 +70,20 @@ test.describe('Whiteboard core CRUD (tables + relationships)', () => {
     // +1 delta rather than an absolute count. React Flow renders each edge as
     // a `.react-flow__edge` element.
     const edges = page.locator('.react-flow__edge')
-    // Edges mount a beat after the table nodes; reading the count at once can
-    // return 0 and skew the +1 delta.
-    await expect.poll(() => edges.count()).toBeGreaterThan(0)
-    const before = await edges.count()
+    // Edges mount a beat after the table nodes and can remount once while
+    // the nodes settle, so a single read can return 0 (or a stale value) and
+    // skew the +1 delta. Take the baseline only once two reads 300ms apart
+    // agree on a non-zero count.
+    let before = -1
+    await expect
+      .poll(async () => {
+        const count = await edges.count()
+        const settled = count > 0 && count === before
+        before = count
+        if (!settled) await page.waitForTimeout(300)
+        return settled
+      })
+      .toBe(true)
 
     // A label unique enough to assert without colliding with the seeded
     // "belongs to" relationship already on the board.
