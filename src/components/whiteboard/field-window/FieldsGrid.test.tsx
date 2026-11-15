@@ -1,12 +1,12 @@
-// src/components/whiteboard/TableFieldsDrawer.test.tsx
-import { afterEach, describe, expect, it, vi } from 'vitest'
-import { cleanup, fireEvent, render, screen } from '@testing-library/react'
-import { TableFieldsDrawer } from './TableFieldsDrawer'
-import type { TableFieldsDrawerTable } from './TableFieldsDrawer'
+// src/components/whiteboard/field-window/FieldsGrid.test.tsx
+import { afterEach, describe, expect, it } from 'vitest'
+import { cleanup, render, screen } from '@testing-library/react'
+import { FieldsGrid } from './FieldsGrid'
+import type { FieldsGridTable } from './FieldsGrid'
 
 afterEach(() => cleanup())
 
-function makeTable(): TableFieldsDrawerTable {
+function makeTable(): FieldsGridTable {
   const base = {
     tableId: 't1',
     isPrimaryKey: false,
@@ -41,21 +41,12 @@ function makeTable(): TableFieldsDrawerTable {
         isPrimaryKey: true,
       },
     ],
-  } as unknown as TableFieldsDrawerTable
+  } as unknown as FieldsGridTable
 }
 
-describe('TableFieldsDrawer', () => {
-  it('renders nothing without a table', () => {
-    render(<TableFieldsDrawer table={null} onClose={() => {}} />)
-    expect(screen.queryByTestId('table-fields-drawer')).toBeNull()
-  })
-
+describe('FieldsGrid', () => {
   it('lists one row per column in order with badges and comments', () => {
-    render(<TableFieldsDrawer table={makeTable()} onClose={() => {}} />)
-    expect(
-      screen.getByRole('heading', { name: 'Fields of users' }),
-    ).toBeTruthy()
-    expect(screen.getByText('app users')).toBeTruthy()
+    render(<FieldsGrid table={makeTable()} />)
     const rows = screen.getAllByTestId('fields-drawer-row')
     expect(rows).toHaveLength(2)
     expect(rows[0].textContent).toContain('id')
@@ -66,17 +57,14 @@ describe('TableFieldsDrawer', () => {
   })
 
   it('shows a muted dash for an empty comment', () => {
-    render(<TableFieldsDrawer table={makeTable()} onClose={() => {}} />)
+    render(<FieldsGrid table={makeTable()} />)
     const comments = screen.getAllByTestId('fields-drawer-comment')
     expect(comments[0].textContent).toBe('—')
     expect(comments[1].textContent).toBe('login email')
   })
 
-  it('closes on Escape and on the close button', () => {
-    const onClose = vi.fn()
-    render(<TableFieldsDrawer table={makeTable()} onClose={onClose} />)
-    fireEvent.keyDown(document, { key: 'Escape' })
-    fireEvent.click(screen.getByRole('button', { name: 'Close fields drawer' }))
-    expect(onClose).toHaveBeenCalledTimes(2)
+  it('shows an empty message for a table without fields', () => {
+    render(<FieldsGrid table={{ ...makeTable(), columns: [] }} />)
+    expect(screen.getByText('This table has no fields yet.')).toBeTruthy()
   })
 })

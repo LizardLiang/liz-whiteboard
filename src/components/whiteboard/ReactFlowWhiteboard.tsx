@@ -38,7 +38,8 @@ import { Toolbar } from './Toolbar'
 import { WhiteboardSearch } from './WhiteboardSearch'
 import { ExternalTablePicker } from './ExternalTablePicker'
 import { AutoLayoutConfirmDialog } from './AutoLayoutConfirmDialog'
-import { TableFieldsDrawer } from './TableFieldsDrawer'
+import { FieldWindow } from './field-window/FieldWindow'
+import { useFieldWindows } from './field-window/use-field-windows'
 import { TableFocusOverlay } from './TableFocusOverlay'
 import { WhiteboardAccessDenied } from './WhiteboardAccessDenied'
 import { WhiteboardPermissionsProvider } from './whiteboard-permissions-context'
@@ -635,18 +636,17 @@ function ReactFlowWhiteboardInner({
   const [relationsPreviewTableId, setRelationsPreviewTableId] = useState<
     string | null
   >(null)
-  // Fields drawer state — which table's field list is open (non-modal, so a
-  // click on another table just swaps this id).
-  const [fieldsDrawerTableId, setFieldsDrawerTableId] = useState<string | null>(
-    null,
-  )
-  const closeFieldsDrawer = useCallback(() => setFieldsDrawerTableId(null), [])
+  // Field window: its own table list, separate from the canvas selection.
+  // A plain click replaces it (or adds while pinned), a Ctrl/Cmd-click toggles
+  // a table, Esc and a pane click dismiss it unless pinned.
+  const fieldWindows = useFieldWindows()
+  const fieldWindowActions = fieldWindows.actions
   const handleTableNodeClick = useCallback(
     (nodeId: string, event: ReactMouseEvent) => {
-      // Shift/Ctrl/Meta-click is the SQL multi-select path; the second click
-      // of a double-click starts an inline edit; clicks on form controls are
-      // edit interactions.
-      if (event.shiftKey || event.ctrlKey || event.metaKey) return
+      // Shift-click is the box/SQL multi-select path and does nothing here;
+      // the second click of a double-click starts an inline edit; clicks on
+      // form controls are edit interactions.
+      if (event.shiftKey) return
       if (event.detail > 1) return
       if (
         event.target instanceof Element &&
@@ -658,10 +658,27 @@ function ReactFlowWhiteboardInner({
       }
       const node = nodesRef.current.find((n) => n.id === nodeId)
       if (node?.type !== 'table') return
-      setFieldsDrawerTableId(nodeId)
+      if (event.ctrlKey || event.metaKey) fieldWindowActions.toggle(nodeId)
+      else fieldWindowActions.plainClick(nodeId)
     },
-    [],
+    [fieldWindowActions],
   )
+  const fieldWindowItems = useMemo(
+    () =>
+      fieldWindows.state.tableIds.flatMap((id) => {
+        const node = nodes.find((n) => n.id === id)
+        return node ? [{ id, table: node.data.table }] : []
+      }),
+    [fieldWindows.state.tableIds, nodes],
+  )
+  // A deleted table (here or by a collaborator) leaves the window list.
+  const tableNodeIdKey = useMemo(
+    () => nodes.map((n) => n.id).join('|'),
+    [nodes],
+  )
+  useEffect(() => {
+    fieldWindowActions.prune(new Set(tableNodeIdKey.split('|')))
+  }, [tableNodeIdKey, fieldWindowActions])
   const [selectedSqlTableIds, setSelectedSqlTableIds] = useState<Array<string>>(
     [],
   )
@@ -4618,7 +4635,7 @@ function ReactFlowWhiteboardInner({
               relationsPreviewTableId={relationsPreviewTableId}
               onPaneClick={(event) => {
                 setRelationsPreviewTableId(null)
-                setFieldsDrawerTableId(null)
+                fieldWindowActions.dismissUnpinned()
                 // A pane click deselects everything (React Flow's own
                 // resetSelectedElements) — release the "just created"
                 // forced-selection override too, or the next unrelated
@@ -4709,13 +4726,21 @@ function ReactFlowWhiteboardInner({
             </DialogContent>
           </Dialog>
 
-          <TableFieldsDrawer
-            table={
-              fieldsDrawerTableId
-                ? nodes.find((n) => n.id === fieldsDrawerTableId)?.data.table
-                : null
+          <FieldWindow
+            items={fieldWindowItems}
+            activeId={fieldWindows.state.activeId}
+            pinned={fieldWindows.state.pinned}
+            minimized={fieldWindows.state.minimized}
+            pos={fieldWindows.state.pos}
+            onFocus={fieldWindowActions.focus}
+            onCloseTable={fieldWindowActions.close}
+            onCloseAll={fieldWindowActions.closeAll}
+            onTogglePin={() =>
+              fieldWindows.setPinned(!fieldWindows.state.pinned)
             }
-            onClose={closeFieldsDrawer}
+            onMinimizedChange={fieldWindowActions.setMinimized}
+            onMove={fieldWindowActions.move}
+            onMoveEnd={fieldWindows.commitPos}
           />
 
           {/* Focus View Overlay — read-only sub-canvas for the selected table + 1-hop neighbors */}
