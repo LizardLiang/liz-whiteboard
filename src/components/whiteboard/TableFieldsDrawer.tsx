@@ -40,20 +40,24 @@ export function TableFieldsDrawer({ table, onClose }: TableFieldsDrawerProps) {
   if (!table) return null
 
   const columns = [...table.columns].sort((a, b) => a.order - b.order)
-  const cell = 'border border-border px-2 py-1.5 align-top text-left'
+  // overflow-wrap:anywhere (not break-words) so an unbroken value such as
+  // `ENUM('draft','pending',…)` wraps inside its fixed-width column instead
+  // of widening the table and pushing Comment out of view.
+  const cell =
+    'border border-border px-2 py-1.5 align-top text-left [overflow-wrap:anywhere]'
 
   return (
     <aside
       role="complementary"
       aria-labelledby="table-fields-drawer-title"
       data-testid="table-fields-drawer"
-      className="absolute top-3 right-3 z-30 flex max-h-[calc(100%-5.75rem)] w-[calc(100%-1.5rem)] flex-col rounded-lg border bg-background text-foreground shadow-lg sm:w-[36rem]"
+      className="absolute top-3 right-3 z-30 flex max-h-[calc(100%-5.75rem)] w-[calc(100%-1.5rem)] flex-col rounded-lg border bg-background text-foreground shadow-lg sm:w-[48rem]"
     >
       <header className="flex items-start justify-between gap-2 px-6 pt-6 pb-4">
         <div className="min-w-0">
           <h2
             id="table-fields-drawer-title"
-            className="text-lg font-semibold break-words"
+            className="text-lg font-semibold [overflow-wrap:anywhere]"
           >
             {t('whiteboard.fieldsDrawer.title', { name: table.name })}
           </h2>
@@ -77,10 +81,18 @@ export function TableFieldsDrawer({ table, onClose }: TableFieldsDrawerProps) {
           </p>
         ) : (
           <table
-            className="w-full border-collapse text-sm"
+            className="w-full min-w-[40rem] table-fixed border-collapse text-sm"
             aria-label={t('whiteboard.fieldsDrawer.fieldList')}
           >
-            <thead>
+            {/* Fixed widths for the short columns; Comment takes the rest. */}
+            <colgroup>
+              <col className="w-[8.5rem]" />
+              <col className="w-[7.5rem]" />
+              <col className="w-[5.5rem]" />
+              <col className="w-[5rem]" />
+              <col />
+            </colgroup>
+            <thead className="sticky top-0 z-10">
               <tr className="bg-muted">
                 <th scope="col" className={cell}>
                   {t('whiteboard.fieldsDrawer.name')}
@@ -102,10 +114,8 @@ export function TableFieldsDrawer({ table, onClose }: TableFieldsDrawerProps) {
             <tbody>
               {columns.map((col) => (
                 <tr key={col.id} data-testid="fields-drawer-row">
-                  <td className={`${cell} font-medium break-words`}>
-                    {col.name}
-                  </td>
-                  <td className={`${cell} font-mono text-xs break-words`}>
+                  <td className={`${cell} font-medium`}>{col.name}</td>
+                  <td className={`${cell} font-mono text-xs`}>
                     {col.dataType}
                   </td>
                   <td className={cell}>
@@ -131,7 +141,7 @@ export function TableFieldsDrawer({ table, onClose }: TableFieldsDrawerProps) {
                       : t('whiteboard.fieldsDrawer.no')}
                   </td>
                   <td
-                    className={`${cell} break-words whitespace-pre-wrap`}
+                    className={`${cell} whitespace-pre-wrap`}
                     data-testid="fields-drawer-comment"
                   >
                     {col.description ? (
