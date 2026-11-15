@@ -16,10 +16,10 @@
 // for the rest of the run. That is harmless — the only later spec
 // (whiteboard-search) is read-only and queries the seeded users/orders names,
 // and global-setup re-seeds the whole board from scratch on every suite run.
-import {  expect, test } from '@playwright/test'
+import { expect, test } from '@playwright/test'
 import { IDS } from './fixtures'
 import { tableNode } from './canvas-helpers'
-import type {Page} from '@playwright/test';
+import type { Page } from '@playwright/test'
 
 // Canvas is unconditional (canvas-unconditional-default) — no `?canvas` opt
 // out. Table text is painted on <canvas>, not DOM, so this spec asserts table
@@ -44,7 +44,9 @@ test.describe('Whiteboard core CRUD (tables + relationships)', () => {
     // Create — the Add Table dialog only captures name/description; columns
     // are added later (that flow is exercised via SQL import elsewhere).
     await page.getByRole('button', { name: 'Add Table' }).click()
-    await expect(page.getByRole('heading', { name: 'Create Table' })).toBeVisible()
+    await expect(
+      page.getByRole('heading', { name: 'Create Table' }),
+    ).toBeVisible()
     await page.getByPlaceholder('e.g., Users').fill(tableName)
     await page.getByRole('button', { name: 'Create Table' }).click()
 
@@ -68,6 +70,9 @@ test.describe('Whiteboard core CRUD (tables + relationships)', () => {
     // +1 delta rather than an absolute count. React Flow renders each edge as
     // a `.react-flow__edge` element.
     const edges = page.locator('.react-flow__edge')
+    // Edges mount a beat after the table nodes; reading the count at once can
+    // return 0 and skew the +1 delta.
+    await expect.poll(() => edges.count()).toBeGreaterThan(0)
     const before = await edges.count()
 
     // A label unique enough to assert without colliding with the seeded
