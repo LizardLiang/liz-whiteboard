@@ -61,6 +61,14 @@ function slotServer(i: number) {
       VITE_CACHE_DIR: slotViteCacheDir(i),
       // board-render.spec.ts reads the same variable, default included.
       MCP_CLIENT_SECRET: process.env.MCP_CLIENT_SECRET ?? 'e2e-mcp-secret',
+      // The vite process (which runs the server functions) loads no dotenv
+      // file, so forgot-password.spec.ts needs these set here. Cloudflare's
+      // published always-pass test keys (README.md, Configuration).
+      TURNSTILE_SITE_KEY:
+        process.env.TURNSTILE_SITE_KEY ?? '1x00000000000000000000AA',
+      TURNSTILE_SECRET_KEY:
+        process.env.TURNSTILE_SECRET_KEY ??
+        '1x0000000000000000000000000000000AA',
     },
   }
 }
