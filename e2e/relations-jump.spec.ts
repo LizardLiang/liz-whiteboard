@@ -9,7 +9,7 @@
 // e2e/relations-preview.spec.ts (GH #134/#135).
 import { expect, test } from '@playwright/test'
 import { IDS } from './fixtures'
-import { tableNode } from './canvas-helpers'
+import { getViewportScale, tableNode } from './canvas-helpers'
 import type { Locator, Page } from '@playwright/test'
 
 // Canvas is unconditional (canvas-unconditional-default) — no `?canvas` opt
@@ -62,7 +62,10 @@ function viewportTransform(page: Page) {
 // transform asynchronously (animated over `duration: 300`), so a single
 // synchronous read right after the click/keypress can race the bug this test
 // guards against.
-async function expectViewportTransformChanged(page: Page, before: string | null) {
+async function expectViewportTransformChanged(
+  page: Page,
+  before: string | null,
+) {
   await expect
     .poll(() => viewportTransform(page), { timeout: 10_000 })
     .not.toBe(before)
@@ -81,11 +84,16 @@ test.describe('Jump to related table from the relations panel (GH #138)', () => 
 
     const before = await viewportTransform(page)
 
-    // Click the `orders` row inside the (still users-anchored) panel.
-    await relationsPanel(page)
-      .getByTestId('relations-panel-row')
-      .filter({ hasText: 'orders' })
-      .click()
+    // Click the painted `orders` row. The relations list is drawn on the
+    // canvas (CanvasNodeLayer: 12 world px right of the table, 20 px header,
+    // 32 px rows), so aim at the first row's centre in screen space.
+    const box = await usersNode(page).boundingBox()
+    if (!box) throw new Error('users node has no bounding box')
+    const zoom = await getViewportScale(page)
+    await page.mouse.click(
+      box.x + box.width + (12 + 24) * zoom,
+      box.y + (20 + 16) * zoom,
+    )
 
     // Viewport recentered — fitView's animated transform must change.
     await expectViewportTransformChanged(page, before)
@@ -93,12 +101,8 @@ test.describe('Jump to related table from the relations panel (GH #138)', () => 
     // Panel re-anchored to `orders`: the table-relations-panel is now
     // rendered inside the orders node (not the users node) and lists
     // `users` as its related row.
-    await expect(
-      relationsPanel(page),
-    ).toBeVisible()
-    await expect(
-      relationsPanel(page),
-    ).toContainText('users')
+    await expect(relationsPanel(page)).toBeVisible()
+    await expect(relationsPanel(page)).toContainText('users')
 
     // Target indicated: orders node carries the persistent active-highlight
     // class directly (driven by isActiveHighlighted via the reused
@@ -127,12 +131,8 @@ test.describe('Jump to related table from the relations panel (GH #138)', () => 
 
     await expectViewportTransformChanged(page, before)
 
-    await expect(
-      relationsPanel(page),
-    ).toBeVisible()
-    await expect(
-      relationsPanel(page),
-    ).toContainText('users')
+    await expect(relationsPanel(page)).toBeVisible()
+    await expect(relationsPanel(page)).toContainText('users')
     await expect(ordersNode(page)).toHaveClass(/active-highlighted/)
   })
 })

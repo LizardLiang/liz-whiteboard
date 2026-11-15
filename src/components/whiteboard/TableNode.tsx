@@ -1100,7 +1100,17 @@ export const TableNode = memo(
                         : rel.sourceColumn
                       return (
                         <li key={edge.id}>
-                          {`${otherName}: ${table.name}.${thisCol.name} → ${otherName}.${otherCol.name}`}
+                          {onJumpToTable ? (
+                            <button
+                              type="button"
+                              data-testid="relations-panel-row"
+                              onClick={() => onJumpToTable(otherId)}
+                            >
+                              {`${otherName}: ${table.name}.${thisCol.name} → ${otherName}.${otherCol.name}`}
+                            </button>
+                          ) : (
+                            `${otherName}: ${table.name}.${thisCol.name} → ${otherName}.${otherCol.name}`
+                          )}
                         </li>
                       )
                     })}

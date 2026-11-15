@@ -813,6 +813,14 @@ export function CanvasNodeLayer({
         // Canvas relations list → jump to the related table: re-anchor the
         // relations preview to it AND pan the viewport so it's centered.
         const targetId = parts[2]
+        // Prefer the board's own jump (the one the keyboard path uses): it
+        // pans, highlights the target and re-anchors the panel together.
+        const sourceData = rf.getNode(parts[0])?.data as unknown as
+          TableNodeData | undefined
+        if (sourceData?.onJumpToTable) {
+          sourceData.onJumpToTable(targetId)
+          return
+        }
         requestAffordance(targetId, 'relations')
         const tn = rf.getInternalNode(targetId)
         if (tn) {
