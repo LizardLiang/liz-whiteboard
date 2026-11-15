@@ -202,6 +202,27 @@ test.describe('Table fields drawer - complex data', () => {
       expect(headBox!.y).toBeLessThan(scrollBox!.y + 60)
     })
 
+    // The drawer is non-modal: a click on another table while it is open
+    // swaps its content without closing it. customers and companies both sit
+    // left of the drawer at 1600px, so neither click lands on the panel.
+    test('switches tables while open, without closing', async ({ page }) => {
+      await openComplexBoard(page)
+      await openTable(page, 'customers')
+      const d = drawer(page)
+      await expect(
+        d.getByRole('heading', { name: 'Fields of customers' }),
+      ).toBeVisible()
+      await expect(d.getByTestId('fields-drawer-row')).toHaveCount(12)
+
+      await clickTable(page, 'companies')
+      await expect(
+        d.getByRole('heading', { name: 'Fields of companies' }),
+      ).toBeVisible()
+      await expect(d.getByTestId('fields-drawer-row')).toHaveCount(6)
+      await expect(d).toContainText('統一編號')
+      await expect(drawer(page)).toHaveCount(1)
+    })
+
     test('audit_log dashes and order_line_items PK+FK badges', async ({
       page,
     }) => {
