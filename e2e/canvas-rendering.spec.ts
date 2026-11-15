@@ -272,9 +272,7 @@ test.describe('Canvas node rendering — Phase 1 (DOM strip + perf gate)', () =>
     // Connecting two columns opens the cardinality-selection dialog
     // (ReactFlowWhiteboard.tsx's `pendingConnection` flow) rather than
     // creating the relationship immediately — confirm it to finalize.
-    await page
-      .getByRole('button', { name: 'Create', exact: true })
-      .click()
+    await page.getByRole('button', { name: 'Create', exact: true }).click()
 
     await expect(edges).toHaveCount(edgeCountBefore + 1)
   })
@@ -291,11 +289,21 @@ test.describe('Canvas node rendering — Phase 1 (DOM strip + perf gate)', () =>
     // under canvas mode) — React Flow's node select/drag handlers bind to
     // the whole node body, not a specific inner element, so this exercises
     // the same native select/drag path the pre-canvas DOM relied on.
-    // Both clicks use Control: a plain click on a table opens the fields
-    // drawer, which then covers nodeB; a modifier click is the multi-select
-    // gesture and leaves the drawer closed.
+    // Both clicks use Control, the multi-select gesture. A Ctrl-click also
+    // adds the table to the floating fields window, which can cover the other
+    // node, so the window's close button dismisses it after each click (Esc
+    // would also clear the canvas selection).
+    const closeFieldsWindow = async () => {
+      await page
+        .getByTestId('table-fields-drawer')
+        .getByRole('button', { name: 'Close fields drawer' })
+        .click()
+      await expect(page.getByTestId('table-fields-drawer')).toBeHidden()
+    }
     await nodeA.click({ modifiers: ['Control'] })
+    await closeFieldsWindow()
     await nodeB.click({ modifiers: ['Control'] })
+    await closeFieldsWindow()
 
     const beforeA = await nodeTransform(nodeA)
     const beforeB = await nodeTransform(nodeB)
@@ -394,9 +402,7 @@ test.describe('Canvas node rendering — Phase 4 (parity sweep)', () => {
     // Existing relationships survive the collapse — the top migration risk
     // (handle preservation) applies just as much to the LOD collapse as it
     // does to the base chrome-light strip.
-    await expect(page.locator('.react-flow__edge')).toHaveCount(
-      edgeCountBefore,
-    )
+    await expect(page.locator('.react-flow__edge')).toHaveCount(edgeCountBefore)
 
     // A NEW connection can still be dragged between two columns' handles
     // while collapsed — proof the handles collapsing onto the header row
