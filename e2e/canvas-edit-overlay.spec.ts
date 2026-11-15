@@ -28,7 +28,7 @@ import {
   zoomAboveLodThreshold,
   zoomBelowLodThreshold,
 } from './canvas-helpers'
-import { IDS } from './fixtures'
+import { IDS, markTourSeen } from './fixtures'
 import type { Browser, Locator, Page } from '@playwright/test'
 
 const STRESS_TABLE_COUNT = 12
@@ -239,7 +239,7 @@ test.describe('Canvas edit overlay — Phase 3 (in-place DOM edit overlay)', () 
     await expect(openNameEditorInput(page)).toHaveValue('field_1_edited')
   })
 
-  test('double-clicking a specific column row above LOD_ZOOM_THRESHOLD still opens that column\'s editor directly', async ({
+  test("double-clicking a specific column row above LOD_ZOOM_THRESHOLD still opens that column's editor directly", async ({
     page,
   }) => {
     // Complements the test above: above the threshold, a chrome-light node
@@ -358,9 +358,7 @@ test.describe('Canvas edit overlay — Phase 3 (in-place DOM edit overlay)', () 
  * share-links.spec.ts's identical helper. */
 async function openSharePanel(page: Page) {
   await page.goto(PROJECT_URL)
-  await expect(
-    page.getByRole('heading', { name: 'E2E Project' }),
-  ).toBeVisible()
+  await expect(page.getByRole('heading', { name: 'E2E Project' })).toBeVisible()
   await page.getByRole('button', { name: 'Share' }).click()
   await expect(
     page.getByRole('heading', { name: 'Share Project' }),
@@ -401,6 +399,7 @@ async function anonPage(browser: Browser): Promise<Page> {
   const context = await browser.newContext({
     storageState: { cookies: [], origins: [] },
   })
+  await markTourSeen(context)
   return context.newPage()
 }
 

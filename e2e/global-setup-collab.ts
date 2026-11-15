@@ -53,6 +53,11 @@ export async function loginAndSaveState(
 
   await page.goto(`${COEDIT_BASE_URL}/login`)
   await page.waitForLoadState('networkidle')
+  // Carry the field window tour's "seen" flag in the saved session.
+  await page.evaluate(
+    (key) => localStorage.setItem(key, 'true'),
+    'fields-window-tour-seen',
+  )
 
   const emailInput = page.getByRole('textbox', { name: 'Email' })
   const passwordInput = page.getByRole('textbox', { name: 'Password' })

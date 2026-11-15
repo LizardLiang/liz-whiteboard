@@ -5,7 +5,7 @@
 
 import { expect } from '@playwright/test'
 import { slotIndex, slotPorts, slotStorageState } from './worker-slot'
-import type { Page } from '@playwright/test'
+import type { BrowserContext, Page } from '@playwright/test'
 
 // Nothing in this repo serves 3001. The coedit suite carries its own base URL
 // (COEDIT_PORT in fixtures-collab.ts); the cimd suite sets E2E_BASE_URL (3099).
@@ -461,4 +461,22 @@ export async function clickZoomMenuItem(page: Page, name: string | RegExp) {
   await page.getByTestId('zoom-menu-trigger').click()
   await page.getByRole('menuitem', { name }).click()
   await waitForMenusClosed(page)
+}
+
+/** localStorage key of the field window tour's "seen" flag (see use-field-window-prefs.ts). */
+export const TOUR_SEEN_KEY = 'fields-window-tour-seen'
+
+/**
+ * The field window tour starts on the first field window of a browser and its
+ * mask blocks the canvas. Saved sessions carry the flag (global-setup); a
+ * context built with an empty storage state must set it itself.
+ */
+export async function markTourSeen(context: BrowserContext) {
+  await context.addInitScript((key) => {
+    try {
+      localStorage.setItem(key, 'true')
+    } catch {
+      // Storage is blocked on this page; the tour then shows once per page view.
+    }
+  }, TOUR_SEEN_KEY)
 }

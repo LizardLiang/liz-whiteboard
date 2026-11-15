@@ -14,10 +14,10 @@
 // renders in ReactFlowWhiteboard's `isPublic` mode, which passes
 // collaborationEnabled=false so the collaboration hook never opens a socket
 // (src/hooks/use-collaboration.ts) and the edit toolbar is never mounted.
-import {   expect, test } from '@playwright/test'
-import { IDS } from './fixtures'
+import { expect, test } from '@playwright/test'
+import { IDS, markTourSeen } from './fixtures'
 import { tableNode } from './canvas-helpers'
-import type {Browser, Page} from '@playwright/test';
+import type { Browser, Page } from '@playwright/test'
 
 const PROJECT_URL = `/project/${IDS.project}`
 
@@ -26,7 +26,9 @@ async function openSharePanel(page: Page) {
   await page.goto(PROJECT_URL)
   await expect(page.getByRole('heading', { name: 'E2E Project' })).toBeVisible()
   await page.getByRole('button', { name: 'Share' }).click()
-  await expect(page.getByRole('heading', { name: 'Share Project' })).toBeVisible()
+  await expect(
+    page.getByRole('heading', { name: 'Share Project' }),
+  ).toBeVisible()
 }
 
 /**
@@ -39,7 +41,9 @@ async function createShareLink(page: Page): Promise<string> {
   await page.getByRole('combobox', { name: 'Select whiteboard' }).click()
   await page.getByRole('option', { name: 'E2E ERD' }).click()
 
-  const create = page.getByRole('button', { name: 'Create read-only share link' })
+  const create = page.getByRole('button', {
+    name: 'Create read-only share link',
+  })
   await expect(create).toBeEnabled()
   await create.click()
 
@@ -56,6 +60,7 @@ async function anonPage(browser: Browser): Promise<Page> {
   const context = await browser.newContext({
     storageState: { cookies: [], origins: [] },
   })
+  await markTourSeen(context)
   return context.newPage()
 }
 
@@ -124,16 +129,14 @@ test.describe('Read-only public share links (GH #109)', () => {
 
     // AC — the SAME public URL is now dead for the anonymous visitor.
     await visitor.reload()
-    await expect(
-      visitor.getByText('Shared link unavailable'),
-    ).toBeVisible()
+    await expect(visitor.getByText('Shared link unavailable')).toBeVisible()
     await expect(
       visitor.getByText('This shared link has been revoked.'),
     ).toBeVisible()
     // The diagram is no longer rendered.
-    await expect(
-      visitor.getByRole('heading', { name: 'E2E ERD' }),
-    ).toHaveCount(0)
+    await expect(visitor.getByRole('heading', { name: 'E2E ERD' })).toHaveCount(
+      0,
+    )
 
     await visitor.context().close()
   })
@@ -145,9 +148,7 @@ test.describe('Read-only public share links (GH #109)', () => {
     // A well-formed-looking but non-existent token.
     await visitor.goto('/share/not-a-real-share-token-000000000000')
 
-    await expect(
-      visitor.getByText('Shared link unavailable'),
-    ).toBeVisible()
+    await expect(visitor.getByText('Shared link unavailable')).toBeVisible()
     await expect(
       visitor.getByText('This shared link is invalid.'),
     ).toBeVisible()

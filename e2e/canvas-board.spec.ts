@@ -49,7 +49,7 @@
 import { execFileSync } from 'node:child_process'
 import { expect, test } from '@playwright/test'
 import { settle, trackAcks } from './canvas-helpers'
-import { BASE_URL, IDS, STORAGE_STATE } from './fixtures'
+import { BASE_URL, IDS, STORAGE_STATE, markTourSeen } from './fixtures'
 import { openViewerPage } from './viewer-session'
 import type { Browser, Page } from '@playwright/test'
 
@@ -790,6 +790,7 @@ async function anonymousPage(browser: Browser): Promise<Page> {
     baseURL: BASE_URL,
     storageState: { cookies: [], origins: [] },
   })
+  await markTourSeen(context)
   return context.newPage()
 }
 

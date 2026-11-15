@@ -1,7 +1,7 @@
 // e2e/erd-shapes-hidden.spec.ts
 import { execFileSync } from 'node:child_process'
 import { expect, test } from '@playwright/test'
-import { IDS } from './fixtures'
+import { IDS, markTourSeen } from './fixtures'
 import type { Page } from '@playwright/test'
 
 const WB_URL = `/whiteboard/${IDS.shapesWhiteboard}`
@@ -33,7 +33,7 @@ function connectorEdge(page: Page, connectorId: string) {
 }
 
 test.describe('ERD hides shapes and connectors', () => {
-  test('edit view renders none of the seeded shapes/connectors, no shape-drawing tools, but the board\'s own tables still render', async ({
+  test("edit view renders none of the seeded shapes/connectors, no shape-drawing tools, but the board's own tables still render", async ({
     page,
   }) => {
     await page.goto(WB_URL)
@@ -84,23 +84,22 @@ test.describe('ERD hides shapes and connectors', () => {
     const context = await browser.newContext({
       storageState: { cookies: [], origins: [] },
     })
+    await markTourSeen(context)
     const visitor = await context.newPage()
     await visitor.goto(shareUrl)
 
     await expect(
       visitor.getByRole('heading', { name: 'E2E Shapes' }),
     ).toBeVisible()
-    await expect(
-      visitor.locator('[data-table-name="shapes_a"]'),
-    ).toBeVisible()
+    await expect(visitor.locator('[data-table-name="shapes_a"]')).toBeVisible()
 
     for (const id of SHAPE_IDS) {
       await expect(shapeNode(visitor, id)).toHaveCount(0)
     }
     await expect(connectorEdge(visitor, IDS.shapeConnector)).toHaveCount(0)
-    await expect(
-      visitor.getByRole('button', { name: 'Add area' }),
-    ).toHaveCount(0)
+    await expect(visitor.getByRole('button', { name: 'Add area' })).toHaveCount(
+      0,
+    )
 
     await context.close()
   })

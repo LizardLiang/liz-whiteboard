@@ -84,6 +84,12 @@ async function loginAndSaveState(
 
   await page.goto(`${baseUrl}/login`)
   await page.waitForLoadState('networkidle')
+  // The saved session carries the field window tour's "seen" flag, so no
+  // spec meets the tour mask unless it clears the flag itself.
+  await page.evaluate(
+    (key) => localStorage.setItem(key, 'true'),
+    'fields-window-tour-seen',
+  )
 
   const email = page.getByRole('textbox', { name: 'Email' })
   const password = page.getByRole('textbox', { name: 'Password' })
