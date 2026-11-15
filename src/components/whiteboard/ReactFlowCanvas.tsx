@@ -862,7 +862,8 @@ export function ReactFlowCanvas({
   const registerEditPress = useCallback(
     (tableId: string, columnId?: string, field?: 'name' | 'dataType') => {
       const key = columnId ? `${tableId}:${columnId}` : tableId
-      const now = Date.now()
+      // Monotonic clock: a wall-clock step must not lapse the press window.
+      const now = performance.now()
       const prev = pressTrackerRef.current
       if (
         prev &&
