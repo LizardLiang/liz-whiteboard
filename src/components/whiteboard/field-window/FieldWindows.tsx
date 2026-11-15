@@ -4,17 +4,62 @@
 // raise above each other with small z values yet stay below dialogs and
 // popovers (z-50) and above the minimap.
 
+import { useEffect, useState } from 'react'
 import { createPortal } from 'react-dom'
 import { FieldWindow } from './FieldWindow'
 import type { FieldWindowItem } from './FieldWindow'
 import type { FieldWindowMode, FieldWindowPos } from './use-field-window-prefs'
 import type { useFieldWindows } from './use-field-windows'
 
-const CASCADE_STEP_PX = 24
+/**
+ * Cascade step: the visible strip of a back window must show its whole title
+ * row. The header is 1 px border + 12 px top padding (pt-3) + 28 px title line
+ * (text-lg, line-height 1.75 rem) = 41 px; rounded up to 44 px, the next
+ * multiple of 4 (the Tailwind spacing grid), so descenders are not clipped.
+ */
+export const CASCADE_STEP_PX = 44
 const DEFAULT_RIGHT_PX = 12
 const DEFAULT_TOP_PX = 76
 /** Rows below this stay reachable when the cascade wraps. */
 const MIN_WINDOW_HEIGHT_PX = 160
+/**
+ * Space kept free at the viewport bottom when the bottom toolbar
+ * (data-testid="whiteboard-dock", `absolute bottom-4` in Toolbar.tsx) cannot
+ * be measured: 16 px bottom offset + about 54 px toolbar height + 8 px gap.
+ */
+const FALLBACK_BOTTOM_RESERVE_PX = 78
+const DOCK_GAP_PX = 8
+
+/** Free space to keep at the viewport bottom, measured from the real toolbar. */
+export function measureBottomReserve(viewportHeight: number): number {
+  const dock = document.querySelector('[data-testid="whiteboard-dock"]')
+  const rect = dock?.getBoundingClientRect()
+  if (!rect || rect.height === 0) {
+    return dock ? DEFAULT_RIGHT_PX : FALLBACK_BOTTOM_RESERVE_PX
+  }
+  return Math.max(DEFAULT_RIGHT_PX, viewportHeight - rect.top + DOCK_GAP_PX)
+}
+
+/** Viewport size and toolbar reserve; re-renders the layer when the window resizes. */
+function useViewportBox() {
+  const read = () => ({
+    width: window.innerWidth,
+    height: window.innerHeight,
+    reserve: measureBottomReserve(window.innerHeight),
+  })
+  const [box, setBox] = useState(read)
+  useEffect(() => {
+    const onResize = () => setBox(read())
+    window.addEventListener('resize', onResize)
+    return () => window.removeEventListener('resize', onResize)
+  }, [])
+  const live = read()
+  return live.reserve === box.reserve &&
+    live.width === box.width &&
+    live.height === box.height
+    ? box
+    : live
+}
 
 /**
  * Top-left of the window in cascade `slot`. The origin is the remembered
@@ -27,21 +72,26 @@ export function cascadePlacement(
   slot: number,
   viewportWidth: number,
   viewportHeight: number,
+  bottomReserve = 0,
 ): FieldWindowPos {
   const width = Math.min(768, viewportWidth - 24)
-  const start = origin ?? {
+  const maxX = Math.max(0, viewportWidth - width)
+  const maxY = Math.max(
+    0,
+    viewportHeight - bottomReserve - MIN_WINDOW_HEIGHT_PX,
+  )
+  const raw = origin ?? {
     x: viewportWidth - DEFAULT_RIGHT_PX - width,
     y: DEFAULT_TOP_PX,
   }
+  // A remembered origin can predate a resize: pull it back inside first.
+  const start = {
+    x: Math.min(Math.max(raw.x, 0), maxX),
+    y: Math.min(Math.max(raw.y, 0), maxY),
+  }
   const dir = origin ? 1 : -1
-  const steps = Math.max(
-    1,
-    Math.floor(
-      (viewportHeight - start.y - MIN_WINDOW_HEIGHT_PX) / CASCADE_STEP_PX,
-    ) + 1,
-  )
+  const steps = Math.max(1, Math.floor((maxY - start.y) / CASCADE_STEP_PX) + 1)
   const i = slot % steps
-  const maxX = Math.max(0, viewportWidth - width)
   return {
     x: Math.round(
       Math.min(Math.max(start.x + dir * CASCADE_STEP_PX * i, 0), maxX),
@@ -57,6 +107,7 @@ interface FieldWindowsProps {
 
 export function FieldWindows({ fieldWindows, items }: FieldWindowsProps) {
   const { state, actions } = fieldWindows
+  const viewport = useViewportBox()
   if (typeof document === 'undefined' || items.length === 0) return null
 
   const onModeChange = (mode: FieldWindowMode) => fieldWindows.switchMode(mode)
@@ -79,9 +130,11 @@ export function FieldWindows({ fieldWindows, items }: FieldWindowsProps) {
           cascadePos={cascadePlacement(
             state.pos,
             entry.slot,
-            window.innerWidth,
-            window.innerHeight,
+            viewport.width,
+            viewport.height,
+            viewport.reserve,
           )}
+          bottomReserve={viewport.reserve}
           onRaise={() => actions.focus(item.id)}
           onFocus={actions.focus}
           onCloseTable={actions.close}
@@ -101,6 +154,7 @@ export function FieldWindows({ fieldWindows, items }: FieldWindowsProps) {
         items={items}
         activeId={state.activeId}
         mode="tabs"
+        bottomReserve={viewport.reserve}
         onModeChange={onModeChange}
         pinned={state.pinned}
         minimized={state.minimized}

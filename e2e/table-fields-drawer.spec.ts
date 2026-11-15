@@ -586,7 +586,7 @@ test.describe('Table fields drawer - complex data', () => {
       await expect(windows(page)).toHaveCount(3)
     }
 
-    test('tabs to windows keeps the three tables; windows cascade by 24 px', async ({
+    test('tabs to windows keeps the three tables; windows cascade by one title row', async ({
       page,
     }) => {
       await openThreeTabs(page)
@@ -600,15 +600,24 @@ test.describe('Table fields drawer - complex data', () => {
       for (const name of ['customers', 'companies', 'customer_orders']) {
         await expect(winFor(page, name)).toHaveCount(1)
       }
-      // List order = cascade order: each window sits 24 px lower than the last.
+      // List order = cascade order: each window sits one title row (44 px,
+      // CASCADE_STEP_PX) lower than the last, so a back title shows whole.
       const tops = [
         (await box(winFor(page, 'customers'))).y,
         (await box(winFor(page, 'companies'))).y,
         (await box(winFor(page, 'customer_orders'))).y,
       ]
-      expect(tops[1] - tops[0]).toBeCloseTo(24, 0)
-      expect(tops[2] - tops[1]).toBeCloseTo(24, 0)
+      expect(tops[1] - tops[0]).toBeCloseTo(44, 0)
+      expect(tops[2] - tops[1]).toBeCloseTo(44, 0)
       await expectInsideViewport(page)
+      // The strip of each back window holds its whole title line.
+      for (const name of ['customers', 'companies']) {
+        const front = await box(
+          winFor(page, name === 'customers' ? 'companies' : 'customer_orders'),
+        )
+        const title = await box(winFor(page, name).getByRole('heading'))
+        expect(title.y + title.height).toBeLessThanOrEqual(front.y + 0.5)
+      }
 
       // Back to tabs: the same three tables.
       await modeButton(page, 'tabs').click()
@@ -731,6 +740,90 @@ test.describe('Table fields drawer - complex data', () => {
           return true
         })
         .toBe(true)
+    })
+
+    test('undragged windows are moved inside the viewport by a resize (windows mode)', async ({
+      page,
+    }) => {
+      await openThreeWindows(page)
+      await page.setViewportSize({ width: 390, height: 844 })
+      await expect
+        .poll(async () => {
+          for (const w of await windows(page).all()) {
+            const b = await w.boundingBox()
+            if (!b) return false
+            if (b.x < -0.5 || b.x + b.width > 390.5) return false
+            if (b.y + b.height > 844.5) return false
+          }
+          return true
+        })
+        .toBe(true)
+      await page.setViewportSize({ width: 1600, height: 1000 })
+    })
+
+    test('the undragged tabs window stays inside the viewport after a resize', async ({
+      page,
+    }) => {
+      await openThreeTabs(page)
+      await page.setViewportSize({ width: 390, height: 844 })
+      await expect
+        .poll(async () => {
+          const b = await drawer(page).boundingBox()
+          if (!b) return false
+          return (
+            b.x >= -0.5 && b.x + b.width <= 390.5 && b.y + b.height <= 844.5
+          )
+        })
+        .toBe(true)
+      await page.setViewportSize({ width: 1600, height: 1000 })
+    })
+
+    test('a 19-field window does not cover the bottom toolbar', async ({
+      page,
+    }) => {
+      const dock = page.getByTestId('whiteboard-dock')
+      const covers = async () => {
+        const d = await box(dock)
+        for (const w of await windows(page).all()) {
+          const b = await box(w)
+          const overlapX = b.x < d.x + d.width && b.x + b.width > d.x
+          const overlapY = b.y < d.y + d.height && b.y + b.height > d.y
+          if (overlapX && overlapY) return true
+        }
+        return false
+      }
+      // Tabs mode: customer_orders alone at the default anchor.
+      await openComplexBoard(page)
+      await clickTable(page, 'customer_orders')
+      await expect(drawer(page)).toBeVisible()
+      expect(await covers()).toBe(false)
+      // Windows mode: the cascaded window.
+      await modeButton(page, 'windows').click()
+      await expect(windows(page)).toHaveCount(1)
+      expect(await covers()).toBe(false)
+      await modeButton(page, 'tabs').click()
+    })
+
+    test('the pin button shows a pin icon with a pressed background', async ({
+      page,
+    }) => {
+      await openComplexBoard(page)
+      await clickTable(page, 'customers')
+      const button = pin(page)
+      await expect(button).toHaveAttribute('aria-pressed', 'false')
+      await expect(button).toHaveAccessibleName('Pin window')
+      const before = await button.evaluate(
+        (el) => getComputedStyle(el).backgroundColor,
+      )
+      await button.click()
+      await expect(button).toHaveAttribute('aria-pressed', 'true')
+      await expect(button).toHaveAccessibleName('Pin window')
+      await expect(button.locator('svg')).toHaveClass(/lucide-pin(?!-off)/)
+      const after = await button.evaluate(
+        (el) => getComputedStyle(el).backgroundColor,
+      )
+      expect(after).not.toBe(before)
+      await button.click()
     })
 
     test('reload remembers windows mode and opens no window', async ({

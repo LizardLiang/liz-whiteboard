@@ -14,7 +14,7 @@ import {
   setFieldWindowPinned,
   setFieldWindowPos,
 } from './use-field-window-prefs'
-import { cascadePlacement } from './FieldWindows'
+import { CASCADE_STEP_PX, cascadePlacement } from './FieldWindows'
 import type { FieldWindowsAction, FieldWindowsState } from './use-field-windows'
 
 function run(
@@ -330,31 +330,48 @@ describe('fieldWindowsReducer - windows mode', () => {
 })
 
 describe('cascadePlacement', () => {
-  it('steps left and down by 24 px from the default anchor', () => {
-    const p0 = cascadePlacement(null, 0, 1600, 1000)
-    const p2 = cascadePlacement(null, 2, 1600, 1000)
+  it('steps left and down by one title row from the default anchor', () => {
+    const p0 = cascadePlacement(null, 0, 1600, 1000, 78)
+    const p2 = cascadePlacement(null, 2, 1600, 1000, 78)
+    expect(CASCADE_STEP_PX).toBe(44)
     expect(p0).toEqual({ x: 1600 - 12 - 768, y: 76 })
-    expect(p2).toEqual({ x: p0.x - 48, y: 76 + 48 })
+    expect(p2).toEqual({
+      x: p0.x - 2 * CASCADE_STEP_PX,
+      y: 76 + 2 * CASCADE_STEP_PX,
+    })
   })
 
   it('steps right and down from a remembered position', () => {
     expect(cascadePlacement({ x: 100, y: 100 }, 1, 1600, 1000)).toEqual({
-      x: 124,
-      y: 124,
+      x: 100 + CASCADE_STEP_PX,
+      y: 100 + CASCADE_STEP_PX,
     })
   })
 
   it('wraps to the start when a step would leave the viewport', () => {
-    const steps = Math.floor((600 - 76 - 160) / 24) + 1
-    expect(cascadePlacement(null, steps, 1600, 600)).toEqual(
-      cascadePlacement(null, 0, 1600, 600),
+    const steps = Math.floor((600 - 78 - 76 - 160) / CASCADE_STEP_PX) + 1
+    expect(cascadePlacement(null, steps, 1600, 600, 78)).toEqual(
+      cascadePlacement(null, 0, 1600, 600, 78),
     )
   })
 
   it('stays inside the viewport width on a phone', () => {
-    const p = cascadePlacement(null, 3, 390, 844)
+    const p = cascadePlacement(null, 3, 390, 844, 78)
     expect(p.x).toBeGreaterThanOrEqual(0)
     expect(p.x + (390 - 24)).toBeLessThanOrEqual(390)
+  })
+
+  it('moves the same slot back inside after the viewport shrinks', () => {
+    const wide = cascadePlacement(null, 2, 1600, 1000, 78)
+    const phone = cascadePlacement(null, 2, 390, 844, 78)
+    expect(wide.x).toBeGreaterThan(390)
+    expect(phone.x).toBeLessThanOrEqual(390 - 366)
+  })
+
+  it('pulls a remembered origin back inside a smaller viewport', () => {
+    const p = cascadePlacement({ x: 1200, y: 900 }, 0, 390, 844, 78)
+    expect(p.x).toBeLessThanOrEqual(390 - 366)
+    expect(p.y).toBeLessThanOrEqual(844 - 78 - 160)
   })
 })
 

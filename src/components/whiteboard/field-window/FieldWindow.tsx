@@ -17,7 +17,7 @@ import {
   useRef,
   useState,
 } from 'react'
-import { MinusIcon, PinIcon, PinOffIcon, XIcon } from 'lucide-react'
+import { MinusIcon, PinIcon, XIcon } from 'lucide-react'
 import { FieldsGrid } from './FieldsGrid'
 import type { FieldsGridTable } from './FieldsGrid'
 import type {
@@ -44,6 +44,8 @@ export interface FieldWindowProps {
   pos: FieldWindowPos | null
   mode: FieldWindowMode
   onModeChange: (mode: FieldWindowMode) => void
+  /** Viewport bottom space kept free for the toolbar (px). */
+  bottomReserve?: number
   /** Windows mode: stacking order. */
   zIndex?: number
   /** Windows mode: top-left used while `pos` is null (the 24 px cascade). */
@@ -203,6 +205,7 @@ export function FieldWindow(props: FieldWindowProps) {
     onModeChange,
     zIndex,
     cascadePos,
+    bottomReserve = DEFAULT_RIGHT_PX,
     onRaise,
     onFocus,
     onCloseTable,
@@ -361,13 +364,13 @@ export function FieldWindow(props: FieldWindowProps) {
       style={{
         ...placement,
         ...layering,
-        // Same cap at the default and a dragged position, so dragging never
-        // resizes the window.
-        // A cascaded window (no dragged position) also stops above the
-        // viewport bottom: its top is lower than the default anchor.
+        // The window bottom stays above the toolbar (`bottomReserve`, measured
+        // in FieldWindows). Same cap at the default and a dragged position,
+        // so dragging never resizes the window; a cascaded window (no dragged
+        // position) is capped from its lower top.
         maxHeight: `calc(100vh - ${
           (pos === null && cascadePos ? cascadePos.y : DEFAULT_TOP_PX) +
-          DEFAULT_RIGHT_PX
+          bottomReserve
         }px)`,
       }}
       {...raiseProps}
@@ -425,20 +428,16 @@ export function FieldWindow(props: FieldWindowProps) {
             variant="ghost"
             size="icon"
             aria-label={t('whiteboard.fieldsDrawer.pin')}
-            title={t(
-              pinned
-                ? 'whiteboard.fieldsDrawer.unpin'
-                : 'whiteboard.fieldsDrawer.pin',
-            )}
+            title={t('whiteboard.fieldsDrawer.pin')}
             aria-pressed={pinned}
+            className={cn(
+              pinned &&
+                'bg-primary text-primary-foreground hover:bg-primary/90 hover:text-primary-foreground',
+            )}
             data-testid="fields-window-pin"
             onClick={onTogglePin}
           >
-            {pinned ? (
-              <PinOffIcon className="size-4" />
-            ) : (
-              <PinIcon className="size-4" />
-            )}
+            <PinIcon className="size-4" />
           </Button>
           <Button
             variant="ghost"

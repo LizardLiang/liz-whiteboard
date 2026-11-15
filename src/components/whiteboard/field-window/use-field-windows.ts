@@ -20,7 +20,7 @@ export interface FieldWindowEntry {
   pos: FieldWindowPos | null
   /** Stacking order; the highest value is in front. */
   z: number
-  /** Cascade step (24 px each) assigned when the window opens. */
+  /** Cascade step (see CASCADE_STEP_PX) assigned when the window opens. */
   slot: number
 }
 
