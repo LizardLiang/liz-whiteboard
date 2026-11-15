@@ -113,6 +113,13 @@ const config = defineConfig({
     __APP_VERSION__: JSON.stringify(version),
   },
   server: {
+    // E2E_FREEZE_SOURCE is set by playwright.config.ts for the per-worker dev
+    // stacks. A source edit during a run (a developer, or another agent in the
+    // same working tree) otherwise makes every worker's Vite server HMR-update
+    // or fully reload the open page mid-test.
+    ...(process.env.E2E_FREEZE_SOURCE
+      ? { hmr: false, watch: null }
+      : {}),
     proxy: {
       '/socket.io': {
         target: `http://localhost:${SOCKET_IO_DEV_PORT}`,

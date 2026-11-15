@@ -47,7 +47,7 @@ const SERVER_PATH = `${resolve('node_modules/.bin')}${delimiter}${process.env[PA
 function slotServer(i: number) {
   const { web, socket } = slotPorts(i)
   return {
-    command: `concurrently "vite dev --host 0.0.0.0 --port ${web} --strictPort" "dotenv -e .env.local -- bun run server.dev.ts"`,
+    command: `concurrently "vite dev --host 0.0.0.0 --port ${web} --strictPort" "dotenv -e .env.local -- bun run server.dev.ts"${process.env.E2E_SRV_LOG ? ` > ${process.env.E2E_SRV_LOG}/srv-${i}.log 2>&1` : ''}`,
     url: `http://localhost:${web}`,
     // A stale stack on a slot port would serve another database. Fail instead.
     reuseExistingServer: false,
@@ -59,6 +59,8 @@ function slotServer(i: number) {
       SOCKET_IO_DEV_PORT: String(socket),
       COLLAB_RESOURCE_URI: `http://localhost:${socket}`,
       VITE_CACHE_DIR: slotViteCacheDir(i),
+      // No HMR or file watching: a source edit mid-run must not reload pages.
+      E2E_FREEZE_SOURCE: '1',
       // board-render.spec.ts reads the same variable, default included.
       MCP_CLIENT_SECRET: process.env.MCP_CLIENT_SECRET ?? 'e2e-mcp-secret',
       // The vite process (which runs the server functions) loads no dotenv
