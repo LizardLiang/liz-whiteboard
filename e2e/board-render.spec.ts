@@ -283,19 +283,36 @@ test.describe('Board render pages (MCP board images)', () => {
   }) => {
     // Real expiry: the token lives 60 seconds, so wait it out.
     test.setTimeout(120_000)
+    const mintedAt = performance.now()
     const token = await mintRenderToken(
       request,
       'whiteboard',
       IDS.renderWhiteboard,
     )
-    // Wait on the token's own `exp` against this machine's clock rather than a
-    // fixed 62 seconds: a skewed or throttled clock would otherwise open the
-    // page while the token is still live. The server accepts an `exp` up to
+    // This host's wall clock steps ahead by about 15 s for roughly 200 ms at
+    // a time, so neither clock alone is safe. A token minted inside a step
+    // carries an `exp` 15 s further out than 60 s of real time, and a
+    // `Date.now()` read inside a step looks 15 s too late. Wait until BOTH the
+    // monotonic clock has run the token's lifetime and the wall clock has
+    // passed `exp`, with the wall-clock read confirmed 300 ms later (longer
+    // than a step). The server also accepts an `exp` up to
     // JWT_EXPIRY_LEEWAY_SECONDS in the past, so wait past that leeway too.
-    const { exp } = JSON.parse(
+    const { exp, iat } = JSON.parse(
       Buffer.from(token.split('.')[1], 'base64url').toString(),
-    ) as { exp: number }
-    while (Date.now() / 1000 < exp + JWT_EXPIRY_LEEWAY_SECONDS + 3) await page.waitForTimeout(1000)
+    ) as { exp: number; iat: number }
+    const margin = JWT_EXPIRY_LEEWAY_SECONDS + 3
+    const monotonicMs = (exp - iat + margin) * 1000
+    const wallPassed = async () => {
+      if (Date.now() / 1000 < exp + margin) return false
+      await page.waitForTimeout(300)
+      return Date.now() / 1000 >= exp + margin
+    }
+    while (
+      performance.now() - mintedAt < monotonicMs ||
+      !(await wallPassed())
+    ) {
+      await page.waitForTimeout(1000)
+    }
     await page.goto(`/render/whiteboard/${token}`)
     await expect(root(page)).toHaveAttribute(
       'data-render-error',
