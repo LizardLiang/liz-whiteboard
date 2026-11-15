@@ -35,8 +35,17 @@
 import { expect, test } from '@playwright/test'
 import { getViewportScale, tableNode } from './canvas-helpers'
 import { IDS } from './fixtures'
+import type { Page } from '@playwright/test'
 
 test.use({ viewport: { width: 1720, height: 1000 } })
+
+/** Double-click a table on its header strip. Once the first click selects a
+ * table, its relationship edge is raised above the table body and can sit on
+ * the table's centre, so a centre double-click would land on the edge, not on
+ * the table. The header strip is never crossed by an edge. */
+async function dblclickHeader(page: Page, name: string) {
+  await tableNode(page, name).dblclick({ position: { x: 40, y: 12 } })
+}
 
 test.afterEach(async ({ page }) => {
   // Guaranteed cleanup (user-approved amendment on top of the tactical
@@ -117,7 +126,7 @@ test('double-clicking table B while table A is being edited moves the overlay to
 
   const zoomBefore = await getViewportScale(page)
 
-  await tableNode(page, 'users').dblclick()
+  await dblclickHeader(page, 'users')
   await expect(page.locator('.table-header')).toHaveCount(1)
   await expect(tableNode(page, 'users')).not.toHaveAttribute(
     'data-testid',
@@ -125,7 +134,7 @@ test('double-clicking table B while table A is being edited moves the overlay to
   )
   expect(await getViewportScale(page)).toBeCloseTo(zoomBefore, 5)
 
-  await tableNode(page, 'orders').dblclick()
+  await dblclickHeader(page, 'orders')
 
   // The core "not stuck in read mode" assertion: exactly one overlay, and it moved.
   await expect(page.locator('.table-header')).toHaveCount(1)
@@ -163,7 +172,7 @@ test('committing an unchanged column value sends no column:update; a real rename
   await page.goto(`/whiteboard/${IDS.whiteboard}`)
   await expect(page.getByTestId('canvas-node-layer')).toBeVisible()
 
-  await tableNode(page, 'users').dblclick()
+  await dblclickHeader(page, 'users')
   await tableNode(page, 'users').getByText('email', { exact: true }).dblclick()
   const nameInput = page.locator('.table-columns input[type="text"]')
   await expect(nameInput).toBeVisible()
@@ -198,7 +207,7 @@ test('committing an unchanged column value sends no column:update; a real rename
   // Restore the original name so the shared board is left as found (happy
   // path — the afterEach hook above is the guaranteed fallback if anything
   // above this point throws).
-  await tableNode(page, 'users').dblclick()
+  await dblclickHeader(page, 'users')
   await tableNode(page, 'users')
     .getByText('email_tmp', { exact: true })
     .dblclick()
