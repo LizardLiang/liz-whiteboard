@@ -350,6 +350,7 @@ export const whiteboardZhTW: DeepStringRecord<typeof whiteboardEn> = {
     minimize: '最小化視窗',
     restore: '還原欄位視窗',
     closeTable: '關閉 {name}',
+    mode: '顯示方式',
     modeTabs: '分頁',
     modeWindows: '多視窗',
     moreTables: '+{count}',

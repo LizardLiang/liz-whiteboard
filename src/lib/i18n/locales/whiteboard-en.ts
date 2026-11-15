@@ -362,6 +362,7 @@ export const whiteboardEn = {
     minimize: 'Minimize window',
     restore: 'Restore fields window',
     closeTable: 'Close {name}',
+    mode: 'Display mode',
     modeTabs: 'Tabs',
     modeWindows: 'Windows',
     moreTables: '+{count}',

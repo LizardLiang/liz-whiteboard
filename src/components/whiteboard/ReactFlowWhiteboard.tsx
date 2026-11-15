@@ -38,7 +38,7 @@ import { Toolbar } from './Toolbar'
 import { WhiteboardSearch } from './WhiteboardSearch'
 import { ExternalTablePicker } from './ExternalTablePicker'
 import { AutoLayoutConfirmDialog } from './AutoLayoutConfirmDialog'
-import { FieldWindow } from './field-window/FieldWindow'
+import { FieldWindows } from './field-window/FieldWindows'
 import { useFieldWindows } from './field-window/use-field-windows'
 import { TableFocusOverlay } from './TableFocusOverlay'
 import { WhiteboardAccessDenied } from './WhiteboardAccessDenied'
@@ -4726,22 +4726,7 @@ function ReactFlowWhiteboardInner({
             </DialogContent>
           </Dialog>
 
-          <FieldWindow
-            items={fieldWindowItems}
-            activeId={fieldWindows.state.activeId}
-            pinned={fieldWindows.state.pinned}
-            minimized={fieldWindows.state.minimized}
-            pos={fieldWindows.state.pos}
-            onFocus={fieldWindowActions.focus}
-            onCloseTable={fieldWindowActions.close}
-            onCloseAll={fieldWindowActions.closeAll}
-            onTogglePin={() =>
-              fieldWindows.setPinned(!fieldWindows.state.pinned)
-            }
-            onMinimizedChange={fieldWindowActions.setMinimized}
-            onMove={fieldWindowActions.move}
-            onMoveEnd={fieldWindows.commitPos}
-          />
+          <FieldWindows fieldWindows={fieldWindows} items={fieldWindowItems} />
 
           {/* Focus View Overlay — read-only sub-canvas for the selected table + 1-hop neighbors */}
           <TableFocusOverlay

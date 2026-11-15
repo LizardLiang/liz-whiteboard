@@ -525,6 +525,237 @@ test.describe('Table fields drawer - complex data', () => {
     })
   })
 
+  test.describe('windows mode', () => {
+    test.use({ viewport: { width: 1600, height: 1000 } })
+
+    const pin = (page: Page) => page.getByTestId('fields-window-pin')
+    const modeButton = (page: Page, mode: 'tabs' | 'windows') =>
+      // The last window is the front-most when windows overlap.
+      page.getByTestId(`fields-window-mode-${mode}`).last()
+    const windows = (page: Page) => page.getByTestId('table-fields-drawer')
+    const winFor = (page: Page, name: string) =>
+      windows(page).filter({
+        has: page.getByRole('heading', { name: `Fields of ${name}` }),
+      })
+    const blocks = (page: Page) => page.getByTestId('table-fields-block')
+    const clickEmptyPane = (page: Page) =>
+      page.locator('.react-flow__pane').click({ position: { x: 120, y: 880 } })
+
+    async function box(locator: Locator) {
+      const b = await locator.boundingBox()
+      expect(b).not.toBeNull()
+      return b!
+    }
+
+    // Cascaded windows overlap, so a back window's buttons sit under the
+    // window in front. Pressing its visible top strip raises it first.
+    async function raise(page: Page, name: string) {
+      await winFor(page, name)
+        .getByRole('heading')
+        .click({ position: { x: 10, y: 4 } })
+    }
+
+    async function expectInsideViewport(page: Page) {
+      const size = page.viewportSize()!
+      const all = [
+        ...(await windows(page).all()),
+        ...(await blocks(page).all()),
+      ]
+      for (const w of all) {
+        const b = await box(w)
+        expect(b.x).toBeGreaterThanOrEqual(-0.5)
+        expect(b.y).toBeGreaterThanOrEqual(-0.5)
+        expect(b.x + b.width).toBeLessThanOrEqual(size.width + 0.5)
+        expect(b.y + b.height).toBeLessThanOrEqual(size.height + 0.5)
+      }
+    }
+
+    // Pin the window, then add three tables so the list holds three tabs.
+    async function openThreeTabs(page: Page) {
+      await openComplexBoard(page)
+      await clickTable(page, 'customers')
+      await pin(page).click()
+      await clickTable(page, 'companies')
+      await clickTable(page, 'customer_orders')
+      await expect(drawer(page).getByRole('tab')).toHaveCount(3)
+    }
+
+    async function openThreeWindows(page: Page) {
+      await openThreeTabs(page)
+      await modeButton(page, 'windows').click()
+      await expect(windows(page)).toHaveCount(3)
+    }
+
+    test('tabs to windows keeps the three tables; windows cascade by 24 px', async ({
+      page,
+    }) => {
+      await openThreeTabs(page)
+      await modeButton(page, 'windows').click()
+      await expect(modeButton(page, 'windows')).toHaveAttribute(
+        'aria-pressed',
+        'true',
+      )
+      await expect(page.getByRole('tablist')).toHaveCount(0)
+      await expect(windows(page)).toHaveCount(3)
+      for (const name of ['customers', 'companies', 'customer_orders']) {
+        await expect(winFor(page, name)).toHaveCount(1)
+      }
+      // List order = cascade order: each window sits 24 px lower than the last.
+      const tops = [
+        (await box(winFor(page, 'customers'))).y,
+        (await box(winFor(page, 'companies'))).y,
+        (await box(winFor(page, 'customer_orders'))).y,
+      ]
+      expect(tops[1] - tops[0]).toBeCloseTo(24, 0)
+      expect(tops[2] - tops[1]).toBeCloseTo(24, 0)
+      await expectInsideViewport(page)
+
+      // Back to tabs: the same three tables.
+      await modeButton(page, 'tabs').click()
+      await expect(windows(page)).toHaveCount(1)
+      await expect(drawer(page).getByRole('tab')).toHaveCount(3)
+    })
+
+    test('closing one window removes only that table from the list', async ({
+      page,
+    }) => {
+      await openThreeWindows(page)
+      await raise(page, 'companies')
+      await winFor(page, 'companies')
+        .getByRole('button', { name: 'Close fields drawer' })
+        .click()
+      await expect(windows(page)).toHaveCount(2)
+      await expect(winFor(page, 'companies')).toHaveCount(0)
+      await expect(winFor(page, 'customers')).toHaveCount(1)
+      await expect(winFor(page, 'customer_orders')).toHaveCount(1)
+
+      await modeButton(page, 'tabs').click()
+      const tabs = drawer(page).getByRole('tab')
+      await expect(tabs).toHaveCount(2)
+      await expect(tabs.nth(0)).toHaveText('customers')
+      await expect(tabs.nth(1)).toHaveText('customer_orders')
+    })
+
+    test('each window has its own pin: Esc closes only the unpinned ones', async ({
+      page,
+    }) => {
+      await openThreeWindows(page)
+      // All three started pinned (the tabs pin carried over); unpin two.
+      // customer_orders is in front; companies is reached by raising it.
+      await winFor(page, 'customer_orders')
+        .getByTestId('fields-window-pin')
+        .click()
+      await raise(page, 'companies')
+      await winFor(page, 'companies').getByTestId('fields-window-pin').click()
+      await expect(
+        winFor(page, 'customers').getByTestId('fields-window-pin'),
+      ).toHaveAttribute('aria-pressed', 'true')
+      await clickEmptyPane(page)
+      await expect(windows(page)).toHaveCount(1)
+      await expect(winFor(page, 'customers')).toHaveCount(1)
+      await page.keyboard.press('Escape')
+      await expect(winFor(page, 'customers')).toHaveCount(1)
+    })
+
+    test('pressing a window raises it above the others', async ({ page }) => {
+      await openThreeWindows(page)
+      const z = (name: string) =>
+        winFor(page, name).evaluate((el) => Number(el.style.zIndex))
+      expect(await z('customer_orders')).toBeGreaterThan(await z('customers'))
+      // Press the back window's body text (not a button) to raise it.
+      await winFor(page, 'customers')
+        .getByTestId('table-fields-header')
+        .getByRole('heading')
+        .click({ position: { x: 10, y: 8 } })
+      expect(await z('customers')).toBeGreaterThan(await z('customer_orders'))
+      expect(await z('customers')).toBeGreaterThan(await z('companies'))
+    })
+
+    test('windows minimize and drag on their own', async ({ page }) => {
+      await openThreeWindows(page)
+      const others = await box(winFor(page, 'customer_orders'))
+
+      await raise(page, 'companies')
+      await winFor(page, 'companies')
+        .getByTestId('fields-window-minimize')
+        .click()
+      await expect(blocks(page)).toHaveCount(1)
+      await expect(blocks(page)).toContainText('companies')
+      await expect(windows(page)).toHaveCount(2)
+
+      const head = winFor(page, 'customers')
+        .getByTestId('table-fields-header')
+        .getByRole('heading')
+      const h = await box(head)
+      const before = await box(winFor(page, 'customers'))
+      // Grab the top of the title: the lower part sits under the next window.
+      await page.mouse.move(h.x + 20, h.y + 4)
+      await page.mouse.down()
+      await page.mouse.move(h.x - 180, h.y + 100, { steps: 12 })
+      await page.mouse.up()
+      const after = await box(winFor(page, 'customers'))
+      expect(after.x).toBeLessThan(before.x - 100)
+      expect(after.y).toBeGreaterThan(before.y + 60)
+      const still = await box(winFor(page, 'customer_orders'))
+      expect(still.x).toBeCloseTo(others.x, 0)
+      expect(still.y).toBeCloseTo(others.y, 0)
+
+      await blocks(page).getByRole('button', { name: 'Restore' }).click()
+      await expect(blocks(page)).toHaveCount(0)
+      await expect(windows(page)).toHaveCount(3)
+    })
+
+    test('windows stay inside the viewport after a drag past the edge and a resize', async ({
+      page,
+    }) => {
+      await openThreeWindows(page)
+      const head = winFor(page, 'customer_orders')
+        .getByTestId('table-fields-header')
+        .getByRole('heading')
+      const h = await box(head)
+      await page.mouse.move(h.x + 20, h.y + h.height / 2)
+      await page.mouse.down()
+      await page.mouse.move(1590, 990, { steps: 12 })
+      await page.mouse.up()
+      await expectInsideViewport(page)
+
+      await page.setViewportSize({ width: 1000, height: 700 })
+      await expect
+        .poll(async () => {
+          const size = page.viewportSize()!
+          for (const w of await windows(page).all()) {
+            const b = await w.boundingBox()
+            if (!b) return false
+            if (b.x < -0.5 || b.x + b.width > size.width + 0.5) return false
+          }
+          return true
+        })
+        .toBe(true)
+    })
+
+    test('reload remembers windows mode and opens no window', async ({
+      page,
+    }) => {
+      await openThreeWindows(page)
+      await page.reload()
+      await expect(tableNode(page, 'customers').first()).toBeVisible()
+      await expect(windows(page)).toHaveCount(0)
+      await clickTable(page, 'customers')
+      await expect(windows(page)).toHaveCount(1)
+      await expect(modeButton(page, 'windows')).toHaveAttribute(
+        'aria-pressed',
+        'true',
+      )
+      await expect(page.getByRole('tablist')).toHaveCount(0)
+      // Put the default back for the specs that follow.
+      await modeButton(page, 'tabs').click()
+      await expect(modeButton(page, 'tabs')).toHaveAttribute(
+        'aria-pressed',
+        'true',
+      )
+    })
+  })
+
   test.describe('deleting a listed table', () => {
     test.use({ viewport: { width: 1600, height: 1000 } })
 
@@ -606,6 +837,45 @@ test.describe('Table fields drawer - complex data', () => {
       expect(win!.x).toBeGreaterThanOrEqual(0)
       expect(win!.x + win!.width).toBeLessThanOrEqual(390.5)
       expect(win!.y + win!.height).toBeLessThanOrEqual(844.5)
+    })
+
+    test('windows mode: two windows stay inside the phone viewport', async ({
+      page,
+    }) => {
+      await openComplexBoard(page)
+      const node = (name: string) =>
+        page
+          .locator(`.react-flow__node:has([data-table-name="${name}"])`)
+          .first()
+      await node('customers').click()
+      await expect(drawer(page)).toBeVisible()
+      await page.getByTestId('fields-window-pin').click()
+      // On a phone the window covers the canvas: minimize it to reach the
+      // next table, then restore.
+      await page.getByTestId('fields-window-minimize').click()
+      await node('companies').click()
+      await page
+        .getByTestId('table-fields-block')
+        .getByRole('button', { name: 'Restore' })
+        .click()
+      await expect(drawer(page).getByRole('tab')).toHaveCount(2)
+
+      await page.getByTestId('fields-window-mode-windows').click()
+      const all = page.getByTestId('table-fields-drawer')
+      await expect(all).toHaveCount(2)
+      for (const w of await all.all()) {
+        const b = (await w.boundingBox())!
+        expect(b.x).toBeGreaterThanOrEqual(-0.5)
+        expect(b.x + b.width).toBeLessThanOrEqual(390.5)
+        expect(b.y + b.height).toBeLessThanOrEqual(844.5)
+      }
+      expect(
+        await page.evaluate(() => document.documentElement.scrollWidth),
+      ).toBeLessThanOrEqual(390)
+
+      // Put the default back for the specs that follow.
+      await page.getByTestId('fields-window-mode-tabs').last().click()
+      await expect(drawer(page).getByRole('tab')).toHaveCount(2)
     })
   })
 })

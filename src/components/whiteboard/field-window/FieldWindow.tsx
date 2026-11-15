@@ -1,11 +1,14 @@
 // src/components/whiteboard/field-window/FieldWindow.tsx
-// Floating, non-modal field window. It renders through a portal to <body>
-// with `position: fixed`, so its position is in viewport coordinates and no
-// transformed ancestor (the React Flow viewport, zen mode) can shift it.
+// Floating, non-modal field window. It uses `position: fixed` inside the
+// portal layer of FieldWindows.tsx, so its position is in viewport
+// coordinates and no transformed ancestor (the React Flow viewport, zen mode)
+// can shift it.
 // A plain fixed panel rather than shadcn Sheet: Sheet is a modal Radix Dialog
 // whose overlay blocks the canvas, and the user must be able to click another
 // table while this stays open.
-// Tabs mode: one window, one tab per listed table.
+// Tabs mode: one window, one tab per listed table. Windows mode: one window
+// per table (items holds one entry), placed by the cascade when it has no
+// dragged position.
 
 import {
   useCallback,
@@ -14,16 +17,16 @@ import {
   useRef,
   useState,
 } from 'react'
-import { createPortal } from 'react-dom'
 import { MinusIcon, PinIcon, PinOffIcon, XIcon } from 'lucide-react'
 import { FieldsGrid } from './FieldsGrid'
 import type { FieldsGridTable } from './FieldsGrid'
 import type {
+  CSSProperties,
   KeyboardEvent as ReactKeyboardEvent,
   PointerEvent as ReactPointerEvent,
   RefObject,
 } from 'react'
-import type { FieldWindowPos } from './use-field-window-prefs'
+import type { FieldWindowMode, FieldWindowPos } from './use-field-window-prefs'
 import { Button } from '@/components/ui/button'
 import { useI18n } from '@/lib/i18n/use-t'
 import { cn } from '@/lib/utils'
@@ -39,6 +42,14 @@ export interface FieldWindowProps {
   pinned: boolean
   minimized: boolean
   pos: FieldWindowPos | null
+  mode: FieldWindowMode
+  onModeChange: (mode: FieldWindowMode) => void
+  /** Windows mode: stacking order. */
+  zIndex?: number
+  /** Windows mode: top-left used while `pos` is null (the 24 px cascade). */
+  cascadePos?: FieldWindowPos
+  /** Windows mode: pressing the window brings it to the front. */
+  onRaise?: () => void
   onFocus: (id: string) => void
   onCloseTable: (id: string) => void
   onCloseAll: () => void
@@ -188,6 +199,11 @@ export function FieldWindow(props: FieldWindowProps) {
     pinned,
     minimized,
     pos,
+    mode,
+    onModeChange,
+    zIndex,
+    cascadePos,
+    onRaise,
     onFocus,
     onCloseTable,
     onCloseAll,
@@ -250,12 +266,17 @@ export function FieldWindow(props: FieldWindowProps) {
     onTap: minimized ? restore : undefined,
   })
 
-  if (!active || typeof document === 'undefined') return null
+  if (!active) return null
 
-  const effective = live ?? pos
-  const placement = effective
+  const effective = live ?? pos ?? cascadePos ?? null
+  const placement: CSSProperties = effective
     ? { left: effective.x, top: effective.y }
     : { right: DEFAULT_RIGHT_PX, top: DEFAULT_TOP_PX }
+  const layering: CSSProperties = zIndex === undefined ? {} : { zIndex }
+  const raiseProps = {
+    'data-field-window': '',
+    onPointerDownCapture: onRaise,
+  }
 
   const minimize = () => {
     if (!pos && ref.current) {
@@ -284,7 +305,7 @@ export function FieldWindow(props: FieldWindowProps) {
   }
 
   if (minimized) {
-    return createPortal(
+    return (
       <div
         ref={ref as RefObject<HTMLDivElement>}
         role="group"
@@ -292,8 +313,9 @@ export function FieldWindow(props: FieldWindowProps) {
           name: active.table.name,
         })}
         data-testid="table-fields-block"
-        style={placement}
-        className="fixed z-40 flex max-w-[calc(100vw-1.5rem)] cursor-grab touch-none items-center gap-1 rounded-lg border bg-background py-1 pr-1 pl-2 text-foreground shadow-lg select-none"
+        style={{ ...placement, ...layering }}
+        {...raiseProps}
+        className="pointer-events-auto fixed z-40 flex max-w-[calc(100vw-1.5rem)] cursor-grab touch-none items-center gap-1 rounded-lg border bg-background py-1 pr-1 pl-2 text-foreground shadow-lg select-none"
         {...handlers}
       >
         <button
@@ -326,12 +348,11 @@ export function FieldWindow(props: FieldWindowProps) {
         >
           <XIcon className="size-4" />
         </Button>
-      </div>,
-      document.body,
+      </div>
     )
   }
 
-  return createPortal(
+  return (
     <aside
       ref={ref}
       role="complementary"
@@ -339,11 +360,18 @@ export function FieldWindow(props: FieldWindowProps) {
       data-testid="table-fields-drawer"
       style={{
         ...placement,
+        ...layering,
         // Same cap at the default and a dragged position, so dragging never
         // resizes the window.
-        maxHeight: `calc(100vh - ${DEFAULT_TOP_PX + DEFAULT_RIGHT_PX}px)`,
+        // A cascaded window (no dragged position) also stops above the
+        // viewport bottom: its top is lower than the default anchor.
+        maxHeight: `calc(100vh - ${
+          (pos === null && cascadePos ? cascadePos.y : DEFAULT_TOP_PX) +
+          DEFAULT_RIGHT_PX
+        }px)`,
       }}
-      className="fixed z-40 flex w-[min(48rem,calc(100vw-1.5rem))] flex-col rounded-lg border bg-background text-foreground shadow-lg"
+      {...raiseProps}
+      className="pointer-events-auto fixed z-40 flex w-[min(48rem,calc(100vw-1.5rem))] flex-col rounded-lg border bg-background text-foreground shadow-lg"
     >
       <header
         tabIndex={0}
@@ -366,6 +394,33 @@ export function FieldWindow(props: FieldWindowProps) {
           </p>
         </div>
         <div className="flex shrink-0 items-center gap-0.5">
+          <div
+            role="group"
+            aria-label={t('whiteboard.fieldsDrawer.mode')}
+            className="mr-1 flex rounded-md border p-0.5"
+          >
+            {(['tabs', 'windows'] as const).map((m) => (
+              <button
+                key={m}
+                type="button"
+                aria-pressed={mode === m}
+                data-testid={`fields-window-mode-${m}`}
+                className={cn(
+                  'rounded px-2 py-0.5 text-xs focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-none',
+                  mode === m
+                    ? 'bg-muted font-semibold'
+                    : 'text-muted-foreground hover:text-foreground',
+                )}
+                onClick={() => onModeChange(m)}
+              >
+                {t(
+                  m === 'tabs'
+                    ? 'whiteboard.fieldsDrawer.modeTabs'
+                    : 'whiteboard.fieldsDrawer.modeWindows',
+                )}
+              </button>
+            ))}
+          </div>
           <Button
             variant="ghost"
             size="icon"
@@ -463,7 +518,6 @@ export function FieldWindow(props: FieldWindowProps) {
       >
         <FieldsGrid table={active.table} />
       </div>
-    </aside>,
-    document.body,
+    </aside>
   )
 }

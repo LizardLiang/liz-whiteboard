@@ -14,6 +14,7 @@ import {
   setFieldWindowPinned,
   setFieldWindowPos,
 } from './use-field-window-prefs'
+import { cascadePlacement } from './FieldWindows'
 import type { FieldWindowsAction, FieldWindowsState } from './use-field-windows'
 
 function run(
@@ -149,6 +150,211 @@ describe('fieldWindowsReducer', () => {
     )
     expect(s.pos).toEqual({ x: 10, y: 20 })
     expect(s.tableIds).toEqual(['a'])
+  })
+})
+
+describe('fieldWindowsReducer - windows mode', () => {
+  const windowsState = (pinned = false) =>
+    createFieldWindowsState({ mode: 'windows', pinned })
+
+  it('switching tabs to windows keeps the list and gives each table a cascade slot', () => {
+    let s = run(
+      pinnedState(),
+      { type: 'plainClick', id: 'a' },
+      { type: 'plainClick', id: 'b' },
+      { type: 'plainClick', id: 'c' },
+    )
+    s = reduce(s, { type: 'setMode', mode: 'windows' })
+    expect(s.mode).toBe('windows')
+    expect(s.tableIds).toEqual(['a', 'b', 'c'])
+    expect(Object.keys(s.windows)).toEqual(['a', 'b', 'c'])
+    expect(s.windows.a.slot).toBe(0)
+    expect(s.windows.c.slot).toBe(2)
+    expect(s.windows.a.pinned).toBe(true)
+    // The active tab ends in front.
+    expect(s.activeId).toBe('c')
+    expect(s.windows.c.z).toBeGreaterThan(s.windows.b.z)
+  })
+
+  it('switching back to tabs keeps the list, takes the front window position, pins if any was pinned', () => {
+    let s = run(
+      windowsState(),
+      { type: 'toggle', id: 'a' },
+      { type: 'toggle', id: 'b' },
+      { type: 'setWindowPinned', id: 'a', pinned: true },
+      { type: 'moveWindow', id: 'b', pos: { x: 30, y: 40 } },
+    )
+    s = reduce(s, { type: 'setMode', mode: 'tabs' })
+    expect(s.mode).toBe('tabs')
+    expect(s.tableIds).toEqual(['a', 'b'])
+    expect(s.windows).toEqual({})
+    expect(s.activeId).toBe('b')
+    expect(s.pinned).toBe(true)
+    expect(s.pos).toEqual({ x: 30, y: 40 })
+    expect(reduce(s, { type: 'setMode', mode: 'tabs' })).toBe(s)
+  })
+
+  it('an explicit frontPos wins over the window position', () => {
+    const s = run(
+      windowsState(),
+      { type: 'toggle', id: 'a' },
+      { type: 'setMode', mode: 'tabs', frontPos: { x: 1, y: 2 } },
+    )
+    expect(s.pos).toEqual({ x: 1, y: 2 })
+  })
+
+  it('close removes one window and leaves the others', () => {
+    let s = run(
+      windowsState(),
+      { type: 'toggle', id: 'a' },
+      { type: 'toggle', id: 'b' },
+      { type: 'toggle', id: 'c' },
+    )
+    s = reduce(s, { type: 'close', id: 'b' })
+    expect(s.tableIds).toEqual(['a', 'c'])
+    expect(Object.keys(s.windows)).toEqual(['a', 'c'])
+    expect(s.activeId).toBe('c')
+  })
+
+  it('closing the front window activates the next front window', () => {
+    let s = run(
+      windowsState(),
+      { type: 'toggle', id: 'a' },
+      { type: 'toggle', id: 'b' },
+      { type: 'toggle', id: 'c' },
+      { type: 'focus', id: 'a' },
+    )
+    expect(s.activeId).toBe('a')
+    s = reduce(s, { type: 'close', id: 'a' })
+    expect(s.activeId).toBe('c')
+  })
+
+  it('plain click keeps pinned windows, replaces unpinned ones and opens the new table', () => {
+    let s = run(
+      windowsState(),
+      { type: 'toggle', id: 'a' },
+      { type: 'toggle', id: 'b' },
+      { type: 'setWindowPinned', id: 'a', pinned: true },
+    )
+    s = reduce(s, { type: 'plainClick', id: 'c' })
+    expect(s.tableIds).toEqual(['a', 'c'])
+    expect(s.windows.c.pinned).toBe(false)
+    expect(s.activeId).toBe('c')
+  })
+
+  it('plain click on a listed window raises it without recreating it', () => {
+    let s = run(
+      windowsState(),
+      { type: 'toggle', id: 'a' },
+      { type: 'toggle', id: 'b' },
+    )
+    const slotOfB = s.windows.b.slot
+    s = reduce(s, { type: 'plainClick', id: 'b' })
+    expect(s.tableIds).toEqual(['b'])
+    expect(s.windows.b.slot).toBe(slotOfB)
+    expect(s.activeId).toBe('b')
+  })
+
+  it('a new set starts with the remembered pin; later windows do not', () => {
+    let s = reduce(windowsState(true), { type: 'plainClick', id: 'a' })
+    expect(s.windows.a.pinned).toBe(true)
+    s = reduce(s, { type: 'plainClick', id: 'b' })
+    expect(s.tableIds).toEqual(['a', 'b'])
+    expect(s.windows.b.pinned).toBe(false)
+  })
+
+  it('each window owns its pin, minimize and position', () => {
+    const s = run(
+      windowsState(),
+      { type: 'toggle', id: 'a' },
+      { type: 'toggle', id: 'b' },
+      { type: 'setWindowPinned', id: 'a', pinned: true },
+      { type: 'setWindowMinimized', id: 'b', minimized: true },
+      { type: 'moveWindow', id: 'a', pos: { x: 5, y: 6 } },
+    )
+    expect(s.windows.a).toMatchObject({
+      pinned: true,
+      minimized: false,
+      pos: { x: 5, y: 6 },
+    })
+    expect(s.windows.b).toMatchObject({
+      pinned: false,
+      minimized: true,
+      pos: null,
+    })
+  })
+
+  it('dismissUnpinned closes only the unpinned windows', () => {
+    let s = run(
+      windowsState(),
+      { type: 'toggle', id: 'a' },
+      { type: 'toggle', id: 'b' },
+      { type: 'setWindowPinned', id: 'a', pinned: true },
+    )
+    s = reduce(s, { type: 'dismissUnpinned' })
+    expect(s.tableIds).toEqual(['a'])
+    expect(reduce(s, { type: 'dismissUnpinned' })).toBe(s)
+  })
+
+  it('focus raises a window above the others; raising the front one is a no-op', () => {
+    let s = run(
+      windowsState(),
+      { type: 'toggle', id: 'a' },
+      { type: 'toggle', id: 'b' },
+    )
+    s = reduce(s, { type: 'focus', id: 'a' })
+    expect(s.windows.a.z).toBeGreaterThan(s.windows.b.z)
+    expect(reduce(s, { type: 'focus', id: 'a' })).toBe(s)
+  })
+
+  it('prune drops the deleted table window', () => {
+    let s = run(
+      windowsState(),
+      { type: 'toggle', id: 'a' },
+      { type: 'toggle', id: 'b' },
+    )
+    s = reduce(s, { type: 'prune', existingIds: new Set(['a']) })
+    expect(s.tableIds).toEqual(['a'])
+    expect(Object.keys(s.windows)).toEqual(['a'])
+  })
+
+  it('closeAll empties the set', () => {
+    const s = run(
+      windowsState(),
+      { type: 'toggle', id: 'a' },
+      { type: 'closeAll' },
+    )
+    expect(s.tableIds).toEqual([])
+    expect(s.windows).toEqual({})
+  })
+})
+
+describe('cascadePlacement', () => {
+  it('steps left and down by 24 px from the default anchor', () => {
+    const p0 = cascadePlacement(null, 0, 1600, 1000)
+    const p2 = cascadePlacement(null, 2, 1600, 1000)
+    expect(p0).toEqual({ x: 1600 - 12 - 768, y: 76 })
+    expect(p2).toEqual({ x: p0.x - 48, y: 76 + 48 })
+  })
+
+  it('steps right and down from a remembered position', () => {
+    expect(cascadePlacement({ x: 100, y: 100 }, 1, 1600, 1000)).toEqual({
+      x: 124,
+      y: 124,
+    })
+  })
+
+  it('wraps to the start when a step would leave the viewport', () => {
+    const steps = Math.floor((600 - 76 - 160) / 24) + 1
+    expect(cascadePlacement(null, steps, 1600, 600)).toEqual(
+      cascadePlacement(null, 0, 1600, 600),
+    )
+  })
+
+  it('stays inside the viewport width on a phone', () => {
+    const p = cascadePlacement(null, 3, 390, 844)
+    expect(p.x).toBeGreaterThanOrEqual(0)
+    expect(p.x + (390 - 24)).toBeLessThanOrEqual(390)
   })
 })
 
