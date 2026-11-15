@@ -17,6 +17,7 @@
 import { execFileSync } from 'node:child_process'
 import { expect, test } from '@playwright/test'
 import { IDS } from './fixtures'
+import { JWT_EXPIRY_LEEWAY_SECONDS } from '../src/lib/oauth/jwt-leeway'
 import type { APIRequestContext, Page } from '@playwright/test'
 
 const MCP_CLIENT_ID = process.env.MCP_CLIENT_ID ?? 'mcp-server'
@@ -289,11 +290,12 @@ test.describe('Board render pages (MCP board images)', () => {
     )
     // Wait on the token's own `exp` against this machine's clock rather than a
     // fixed 62 seconds: a skewed or throttled clock would otherwise open the
-    // page while the token is still live.
+    // page while the token is still live. The server accepts an `exp` up to
+    // JWT_EXPIRY_LEEWAY_SECONDS in the past, so wait past that leeway too.
     const { exp } = JSON.parse(
       Buffer.from(token.split('.')[1], 'base64url').toString(),
     ) as { exp: number }
-    while (Date.now() / 1000 < exp + 2) await page.waitForTimeout(1000)
+    while (Date.now() / 1000 < exp + JWT_EXPIRY_LEEWAY_SECONDS + 3) await page.waitForTimeout(1000)
     await page.goto(`/render/whiteboard/${token}`)
     await expect(root(page)).toHaveAttribute(
       'data-render-error',
