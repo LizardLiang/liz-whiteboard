@@ -339,9 +339,9 @@ export function FieldWindow(props: FieldWindowProps) {
       data-testid="table-fields-drawer"
       style={{
         ...placement,
-        maxHeight: effective
-          ? 'calc(100vh - 2rem)'
-          : `calc(100vh - ${DEFAULT_TOP_PX + DEFAULT_RIGHT_PX}px)`,
+        // Same cap at the default and a dragged position, so dragging never
+        // resizes the window.
+        maxHeight: `calc(100vh - ${DEFAULT_TOP_PX + DEFAULT_RIGHT_PX}px)`,
       }}
       className="fixed z-40 flex w-[min(48rem,calc(100vw-1.5rem))] flex-col rounded-lg border bg-background text-foreground shadow-lg"
     >
