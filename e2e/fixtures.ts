@@ -104,6 +104,10 @@ export const IDS = {
   adInvoicesId: '80000000-0000-4000-8000-000000000006',
   adAuditId: '80000000-0000-4000-8000-000000000007',
 
+  // Complex-data board for the table fields drawer suite, seeded by
+  // e2e/seed-fields-drawer.ts (its tables/columns use ids a000xxxx/a001xxxx).
+  fdWhiteboard: '80000000-0000-4000-8000-0000000000f1',
+
   // Dedicated boards for the cross-file reference suite (LizMeter #83). TWO
   // boards, because the whole feature is about pointing from one file at
   // another: `trLocal` holds the reference node, `trSource` owns the table it
