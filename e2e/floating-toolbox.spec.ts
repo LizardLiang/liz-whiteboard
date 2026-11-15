@@ -355,8 +355,15 @@ test.describe('Lock canvas', () => {
       `[data-handleid="${IDS.ordersTable}__${IDS.ordersId}__left__target"]`,
     )
     // The source handle only takes pointer events while its row is hovered.
-    await page.mouse.move(from.x - 80, from.y)
-    await page.mouse.move(from.x - 20, from.y)
+    // Hover the row biased to its right edge, then step straight onto the
+    // handle dot (outside the row): the canvas safe corridor commits to the
+    // right side on that exit and arms the DOM handle. Same sequence as
+    // canvas-handle-visibility.spec.ts.
+    const usersBox = (await tableNode(page, 'users').first().boundingBox())!
+    const rowX = usersBox.x + usersBox.width * 0.85
+    await page.mouse.move(rowX, from.y)
+    await page.mouse.move(rowX, from.y)
+    await page.mouse.move(from.x, from.y)
     await page.mouse.move(from.x, from.y)
     await page.mouse.down()
     await page.mouse.move((from.x + to.x) / 2, (from.y + to.y) / 2, {
