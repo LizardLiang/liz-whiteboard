@@ -1,13 +1,29 @@
 import { memo, useCallback, useEffect, useMemo, useRef, useState } from 'react'
-import { EdgeLabelRenderer, Position, getSmoothStepPath } from '@xyflow/react'
+import { createPortal } from 'react-dom'
+import {
+  EdgeLabelRenderer,
+  Position,
+  getSmoothStepPath,
+  useStore,
+} from '@xyflow/react'
 import { Trash2 } from 'lucide-react'
-import type { EdgeProps } from '@xyflow/react'
+import { selectEdgeLabelTopLayer } from './EdgeLabelTopLayer'
+import type { ReactElement } from 'react'
+import type { EdgeProps, ReactFlowState } from '@xyflow/react'
 import type { RelationshipEdgeType } from '@/lib/react-flow/types'
+import type { Rect } from '@/lib/react-flow/edge-label-placement'
 import { Z_INDEX } from '@/lib/react-flow/types'
 import {
   clampSameSideLabelX,
+  computeLabelPillHeight,
   computeLabelPillWidth,
 } from '@/lib/auto-layout/d3-force-layout'
+import {
+  LABEL_OBSTACLE_MARGIN,
+  flattenSmoothPath,
+  nodeObstacleRect,
+  placeEdgeLabel,
+} from '@/lib/react-flow/edge-label-placement'
 import { useT } from '@/lib/i18n/use-t'
 
 // ── Layout constants ──
@@ -273,6 +289,67 @@ function indicatorExtent(isMany: boolean): number {
   return multExt + OPT_GAP + CIRCLE_R
 }
 
+// Label box = pill + flex gap (4) + delete button slot (24, always in the DOM).
+const LABEL_BUTTON_SLOT = 28
+const LABEL_BUTTON_SIZE = 24
+const NO_OBSTACLES: ReadonlyArray<Rect> = []
+
+function rectsEqual(a: ReadonlyArray<Rect>, b: ReadonlyArray<Rect>): boolean {
+  if (a === b) return true
+  if (a.length !== b.length) return false
+  for (let i = 0; i < a.length; i++) {
+    if (
+      a[i].x !== b[i].x ||
+      a[i].y !== b[i].y ||
+      a[i].width !== b[i].width ||
+      a[i].height !== b[i].height
+    ) {
+      return false
+    }
+  }
+  return true
+}
+
+/** Rect the cardinality symbols occupy at one end, outward from the handle. */
+function markerRect(
+  x: number,
+  y: number,
+  position: Position,
+  extent: number,
+): Rect {
+  const reach = extent + TABLE_INSET
+  switch (position) {
+    case Position.Right:
+      return {
+        x: x - TABLE_INSET,
+        y: y - BAR_HALF,
+        width: reach,
+        height: 2 * BAR_HALF,
+      }
+    case Position.Left:
+      return {
+        x: x - extent,
+        y: y - BAR_HALF,
+        width: reach,
+        height: 2 * BAR_HALF,
+      }
+    case Position.Top:
+      return {
+        x: x - BAR_HALF,
+        y: y - extent,
+        width: 2 * BAR_HALF,
+        height: reach,
+      }
+    case Position.Bottom:
+      return {
+        x: x - BAR_HALF,
+        y: y - TABLE_INSET,
+        width: 2 * BAR_HALF,
+        height: reach,
+      }
+  }
+}
+
 export const RelationshipEdge = memo(
   ({
     id,
@@ -393,12 +470,120 @@ export const RelationshipEdge = memo(
       targetPosition,
     )
 
+    // Slide the label along its own line to the nearest point no table covers.
+    // The canvas layer paints tables above edge labels, so a covered label is
+    // invisible. The same-side clamp above stays as the preferred anchor: it
+    // is the existing look when nothing is in the way, and the slide only
+    // takes over when that anchor sits on a table.
+    //
+    // Perf: the obstacle list comes from a per-edge `useStore` selector with
+    // an equality function, and only for LABELLED edges. It keeps just the
+    // table rects that overlap this edge's padded bounds, so a drag frame
+    // re-renders an edge only when a table near its line moved or resized.
+    const hasLabel = !!label
+    const labelBoxWidth = labelPillWidth + LABEL_BUTTON_SLOT
+    const labelBoxHeight = Math.max(computeLabelPillHeight(), LABEL_BUTTON_SIZE)
+    const pathPoints = useMemo(
+      () => (hasLabel ? flattenSmoothPath(edgePath) : []),
+      [hasLabel, edgePath],
+    )
+    const searchBounds = useMemo(() => {
+      if (pathPoints.length === 0) return null
+      let minX = Infinity
+      let minY = Infinity
+      let maxX = -Infinity
+      let maxY = -Infinity
+      for (const p of pathPoints) {
+        minX = Math.min(minX, p.x)
+        minY = Math.min(minY, p.y)
+        maxX = Math.max(maxX, p.x)
+        maxY = Math.max(maxY, p.y)
+      }
+      const padX = labelBoxWidth / 2 + LABEL_OBSTACLE_MARGIN
+      const padY = labelBoxHeight / 2 + LABEL_OBSTACLE_MARGIN
+      return {
+        left: minX - padX,
+        top: minY - padY,
+        right: maxX + padX,
+        bottom: maxY + padY,
+      }
+    }, [pathPoints, labelBoxWidth, labelBoxHeight])
+    const tableRects = useStore(
+      useCallback(
+        (s): ReadonlyArray<Rect> => {
+          if (!searchBounds) return NO_OBSTACLES
+          const out: Array<Rect> = []
+          for (const n of s.nodeLookup.values()) {
+            const r = nodeObstacleRect(n)
+            if (
+              r &&
+              r.x < searchBounds.right &&
+              r.x + r.width > searchBounds.left &&
+              r.y < searchBounds.bottom &&
+              r.y + r.height > searchBounds.top
+            ) {
+              out.push(r)
+            }
+          }
+          return out
+        },
+        [searchBounds],
+      ),
+      rectsEqual,
+    )
+    const placement = useMemo(() => {
+      if (!hasLabel) return { x: displayLabelX, y: labelY, covered: false }
+      return placeEdgeLabel({
+        path: edgePath,
+        mid: { x: displayLabelX, y: labelY },
+        labelWidth: labelBoxWidth,
+        labelHeight: labelBoxHeight,
+        obstacles: [
+          ...tableRects,
+          markerRect(sourceX, sourceY + bundleYOff, sourcePosition, srcExt),
+          markerRect(targetX, targetY + bundleYOff, targetPosition, tgtExt),
+        ],
+      })
+    }, [
+      hasLabel,
+      edgePath,
+      displayLabelX,
+      labelY,
+      labelBoxWidth,
+      labelBoxHeight,
+      tableRects,
+      sourceX,
+      sourceY,
+      targetX,
+      targetY,
+      bundleYOff,
+      sourcePosition,
+      targetPosition,
+      srcExt,
+      tgtExt,
+    ])
+    // No point on the line is free: draw above the canvas table layer.
+    const labelPortalTarget = useStore(
+      useCallback(
+        (s: ReactFlowState) =>
+          placement.covered ? selectEdgeLabelTopLayer(s) : null,
+        [placement.covered],
+      ),
+    )
+
     const gradientId = `edge-gradient-${id}`
     const glowFilterId = `edge-glow-${id}`
 
     const cardinalityColor = getCardinalityColor(cardinality)
     const color = isActive ? 'var(--rf-edge-stroke-selected)' : cardinalityColor
     const sw = isActive ? 1.6 : 1.2
+
+    const renderLabel = (node: ReactElement) =>
+      labelPortalTarget ? (
+        createPortal(node, labelPortalTarget)
+      ) : (
+        <EdgeLabelRenderer>{node}</EdgeLabelRenderer>
+      )
 
     return (
       <>
@@ -529,14 +714,16 @@ export const RelationshipEdge = memo(
         )}
 
         {/* Label + delete button — flex row, no overlap */}
-        <EdgeLabelRenderer>
+        {renderLabel(
           <div
             className="nodrag nopan"
             style={{
               position: 'absolute',
-              transform: `translate(-50%, -50%) translate(${displayLabelX}px,${labelY}px)`,
+              transform: `translate(-50%, -50%) translate(${placement.x}px,${placement.y}px)`,
               pointerEvents: 'all',
               zIndex: Z_INDEX.EDGE_LABEL,
+              // The top layer has zero width; without this the pill wraps per word.
+              whiteSpace: 'nowrap',
               display: 'inline-flex',
               alignItems: 'center',
               gap: '4px',
@@ -691,8 +878,8 @@ export const RelationshipEdge = memo(
                 <Trash2 size={12} strokeWidth={2.5} aria-hidden="true" />
               </button>
             </div>
-          </div>
-        </EdgeLabelRenderer>
+          </div>,
+        )}
       </>
     )
   },

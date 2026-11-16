@@ -24,6 +24,7 @@ import { CardinalityMarkerDefs } from './CardinalityMarkerDefs'
 import { ConnectorMarkerDefs } from './ConnectorMarkerDefs'
 import { ShapeDrawOverlay } from './ShapeDrawOverlay'
 import { CanvasNodeLayer } from './CanvasNodeLayer'
+import { EdgeLabelTopLayer } from './EdgeLabelTopLayer'
 import type { MouseEvent as ReactMouseEvent } from 'react'
 import type {
   FitViewOptions,
@@ -2214,6 +2215,7 @@ export function ReactFlowCanvas({
               enabled={canvasMode}
               editingTableId={editingTableId}
             />
+            <EdgeLabelTopLayer enabled={canvasMode} />
             {showControls && <Controls showInteractive={false} />}
             {showBackground && (
               <Background color="var(--rf-background-pattern)" gap={16} />
