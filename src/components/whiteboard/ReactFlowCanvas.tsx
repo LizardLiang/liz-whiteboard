@@ -816,7 +816,7 @@ export function ReactFlowCanvas({
   // target changed" and could re-suppress/re-fire the effect below.
   const initialFocusTableIdRef = useRef(initialFocusTableId)
   // One-shot guard for the initial-focus effect below — fires at most once
-  // per mount, mirroring `hasReRoutedAfterMeasureRef`'s pattern just below.
+  // per mount.
   const initialFocusAppliedRef = useRef(false)
 
   // Canvas edit overlay (tactical plan Phase 3, "In-place DOM edit
@@ -1016,7 +1016,20 @@ export function ReactFlowCanvas({
 
   // React Flow instance — used by the search-palette focus request below to
   // pan/zoom the viewport (shares the store with the container's instance).
-  const { fitView, setCenter, getZoom, screenToFlowPosition } = useReactFlow()
+  const { fitView, setCenter, getZoom, screenToFlowPosition, getInternalNode } =
+    useReactFlow()
+
+  // Edge side routing needs each table's RENDERED width. Node objects from
+  // props never carry it, and `nodes` state loses it whenever it is replaced
+  // from props; React Flow's internal store always has the last measurement.
+  const withMeasured = useCallback(
+    <T extends TableNodeType>(n: T): T => {
+      if (n.measured?.width) return n
+      const measured = getInternalNode(n.id)?.measured
+      return measured?.width ? { ...n, measured } : n
+    },
+    [getInternalNode],
+  )
 
   // GH #138 / LizMeter #83 — the shared "landing cue": persistent
   // active-highlight plus a one-shot `jump-pulse` DOM class toggle. Extracted
@@ -1072,7 +1085,7 @@ export function ReactFlowCanvas({
   // Track whether React Flow has measured all nodes; used for one-shot
   // post-measure edge re-routing inside the overlay (Enhancement 2).
   const nodesInitialized = useNodesInitialized()
-  const hasReRoutedAfterMeasureRef = useRef(false)
+  const lastRoutedWidthKeyRef = useRef<string | null>(null)
 
   // Keep a ref to the latest edges so the highlighting effect can read current
   // edges without adding them to its dependency array (which would cause an
@@ -1285,10 +1298,18 @@ export function ReactFlowCanvas({
 
     // Reference nodes route like tables — pass them in, or an edge to one
     // keeps the default right→left handles no matter where the node sits.
+    //
+    // The props carry no rendered size, so the side choice would fall back to
+    // DEFAULT_NODE_WIDTH. A wide table then "ends" far left of where it
+    // really does, and an edge to a table that sits just right of it leaves
+    // from the wrong side and runs behind the table, hiding its label. This
+    // effect re-runs on every edge or node prop change (drag stop, label edit,
+    // reconnect, refetch) long after the one-shot post-measure pass, so take
+    // the measured size from React Flow's store whenever it has one.
     const routableNodes = [
       ...initialNodes,
       ...(externalTableNodes as unknown as Array<TableNodeType>),
-    ]
+    ].map(withMeasured)
     const allNodeIds = new Set(routableNodes.map((n) => n.id))
     // Handle sides and bundle offsets both derive from the node positions, so
     // page load, peer re-sync and Auto Layout all land on the same fan-out.
@@ -1304,38 +1325,70 @@ export function ReactFlowCanvas({
     externalTableNodes,
     externalColumnIds,
     setEdges,
+    withMeasured,
   ])
 
-  // Reset the one-shot re-routing guard whenever the node set changes (e.g.
-  // overlay re-opened with a different focal table).
+  // Forget the last routed widths whenever the node set changes (drag stop,
+  // peer update, overlay re-opened with a different focal table): the props
+  // pass above may have routed with default widths, so the next measurement
+  // must re-route even when the widths come back the same.
   useEffect(() => {
-    hasReRoutedAfterMeasureRef.current = false
+    lastRoutedWidthKeyRef.current = null
   }, [initialNodes])
 
-  // One-shot re-route after React Flow measures nodes. The internal `nodes`
-  // value carries `measured` widths at this point, giving accurate handle-side
-  // choices. On the main canvas this is a harmless no-op (same handles already
-  // chosen by drag routing). On the overlay it corrects the initial pass which
-  // ran with DEFAULT_NODE_WIDTH fallbacks.
+  // Re-route after React Flow measures nodes, and again whenever a measured
+  // width changes. Side choice needs each table's RENDERED width; without it
+  // routing falls back to DEFAULT_NODE_WIDTH and a wide table "ends" far left
+  // of its real right edge.
+  //
+  // Not a one-shot: every time the props sync replaces `nodes` (drag stop,
+  // peer update, refetch), the new node objects carry no `measured`, and React
+  // Flow re-measures them a frame later. A one-shot fired in that window —
+  // `nodesInitialized` still true from the last render — and routed with
+  // default widths, then never ran again: an edge between a wide table and one
+  // just right of it left from the wrong side, ran behind the table and hid
+  // its label. So: skip while any width is missing, and route once per
+  // distinct set of widths (drags move positions, not widths, so this does not
+  // run per drag frame).
   //
   // `nodes` is React Flow state, where an area member's position is RELATIVE
   // to its area. Edge routing compares positions across tables, so it must get
   // ABSOLUTE ones: fed the relative x, a member of an area far left of the
   // origin looked like it sat right of its partner, and its edge left from the
   // wrong side and looped around both tables. Reference nodes are never nested.
+  const measuredWidthKey = useMemo(() => {
+    let key = ''
+    for (const n of nodes) {
+      const w = n.measured?.width
+      if (!w) return null
+      key += `${n.id}:${w}|`
+    }
+    for (const n of externalTableNodesState) {
+      const w = n.measured?.width
+      if (!w) return null
+      key += `${n.id}:${w}|`
+    }
+    return key
+  }, [nodes, externalTableNodesState])
+  const routeAfterMeasureRef = useRef({ nodes, externalTableNodesState })
+  routeAfterMeasureRef.current = { nodes, externalTableNodesState }
+
   useEffect(() => {
-    if (!nodesInitialized || hasReRoutedAfterMeasureRef.current) return
-    hasReRoutedAfterMeasureRef.current = true
+    if (!nodesInitialized || measuredWidthKey === null) return
+    if (lastRoutedWidthKeyRef.current === measuredWidthKey) return
+    lastRoutedWidthKeyRef.current = measuredWidthKey
+    const { nodes: liveNodes, externalTableNodesState: liveExternal } =
+      routeAfterMeasureRef.current
     setEdges((prevEdges) => {
       if (prevEdges.length === 0) return prevEdges
       const measured = [
-        ...toAbsoluteNodes(nodes, parentIndex),
-        ...(externalTableNodesState as unknown as typeof nodes),
+        ...toAbsoluteNodes(liveNodes, parentIndex),
+        ...(liveExternal as unknown as typeof liveNodes),
       ]
       const allIds = new Set(measured.map((n) => n.id))
       return recalculateEdgeRouting(prevEdges, measured, allIds)
     })
-  }, [nodesInitialized, nodes, externalTableNodesState, parentIndex, setEdges])
+  }, [nodesInitialized, measuredWidthKey, parentIndex, setEdges])
 
   // Apply NODE highlighting when selection/relations-preview changes (GH
   // #121 perf, opt #1). Deliberately keyed on [activeTableId,
@@ -1478,12 +1531,12 @@ export function ReactFlowCanvas({
       return toAbsoluteNodes(
         nodes.map((n) => {
           const updated = updatedPositions.get(n.id)
-          return updated ? { ...n, position: updated } : n
+          return withMeasured(updated ? { ...n, position: updated } : n)
         }),
         parentIndex,
       )
     },
-    [nodes, parentIndex],
+    [nodes, parentIndex, withMeasured],
   )
 
   // rAF-throttle drag-frame edge recalculation (GH #121 perf, opt #5).
