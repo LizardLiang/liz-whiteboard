@@ -3,8 +3,9 @@
  * Uses Radix ContextMenu (via shadcn) for accessibility and portal-based positioning
  */
 
-import { MessageCircle, StickyNote } from 'lucide-react'
+import { History, MessageCircle, StickyNote } from 'lucide-react'
 import { useWhiteboardPermissions } from './whiteboard-permissions-context'
+import { useOpenTableHistory } from './table-history-context'
 import type { Dialect } from '@/lib/ddl-generator'
 import {
   ContextMenu,
@@ -30,6 +31,8 @@ export interface TableNodeContextMenuProps {
   areas?: Array<{ id: string; name: string; memberTableIds: Array<string> }>
   /** This table's id — used to compute + toggle area membership */
   tableId?: string
+  /** This table's name — the filter "View history" opens the Changes tab on */
+  tableName?: string
   /** Add this table to an area */
   onAddToArea?: (tableId: string, areaId: string) => void
   /** Remove this table from an area */
@@ -59,6 +62,7 @@ export function TableNodeContextMenu({
   disabled,
   areas,
   tableId,
+  tableName,
   onAddToArea,
   onRemoveFromArea,
   onOpenNote,
@@ -66,6 +70,7 @@ export function TableNodeContextMenu({
 }: TableNodeContextMenuProps) {
   const t = useT()
   const { canEdit } = useWhiteboardPermissions()
+  const openTableHistory = useOpenTableHistory()
   return (
     <ContextMenu>
       <ContextMenuTrigger asChild>{children}</ContextMenuTrigger>
@@ -114,6 +119,19 @@ export function TableNodeContextMenu({
           >
             <StickyNote className="mr-2 h-4 w-4" />
             {t('whiteboard.contextMenu.note')}
+          </ContextMenuItem>
+        )}
+        {/* View history — viewer+ (the route only provides the opener to a
+            signed-in member), opens the Changes tab filtered to this table. */}
+        {openTableHistory && tableName && (
+          <ContextMenuItem
+            onSelect={() => {
+              openTableHistory(tableName)
+            }}
+            disabled={disabled}
+          >
+            <History className="mr-2 h-4 w-4" />
+            {t('whiteboard.contextMenu.viewHistory')}
           </ContextMenuItem>
         )}
         <ContextMenuSub>

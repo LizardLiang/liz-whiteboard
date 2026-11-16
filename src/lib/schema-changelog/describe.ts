@@ -166,6 +166,7 @@ export function describeEvent(event: ChangeEventDto, t: TFunction): string {
 /** "1 table created, 2 columns created" for a batch's counts. */
 function describeCounts(batch: BatchSummaryDto, t: TFunction): string {
   return batch.counts
+    .filter((c) => c.entityType !== 'board')
     .map((c) =>
       t(`${CHANGES}.countPart`, {
         count: c.count,

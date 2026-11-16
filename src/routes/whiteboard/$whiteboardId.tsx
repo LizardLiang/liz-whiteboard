@@ -12,10 +12,12 @@ import type { ZoomControls } from '@/components/whiteboard/Toolbar'
 import type { CommentActions } from '@/components/whiteboard/ReactFlowWhiteboard'
 import type { CommentWithAuthor } from '@/data/models'
 import type { ShowMode } from '@/lib/react-flow/types'
+import type { TableHistoryRequest } from '@/components/whiteboard/WhiteboardChangesTab'
 import { ReactFlowWhiteboard } from '@/components/whiteboard/ReactFlowWhiteboard'
 import { BoardChip, BoardNavFallback } from '@/components/layout/BoardChip'
 import { WhiteboardAccessDenied } from '@/components/whiteboard/WhiteboardAccessDenied'
 import { WhiteboardHistoryPanel } from '@/components/whiteboard/WhiteboardHistoryPanel'
+import { TableHistoryProvider } from '@/components/whiteboard/table-history-context'
 import { WhiteboardCommentsPanel } from '@/components/whiteboard/WhiteboardCommentsPanel'
 import { useCollaboration } from '@/hooks/use-collaboration'
 import { useSqlImport } from '@/hooks/use-sql-import'
@@ -83,6 +85,23 @@ function WhiteboardEditor() {
   // ReactFlowWhiteboard, and rendering the panel from within
   // ReactFlowWhiteboard/Toolbar would create a circular import.
   const [historyOpen, setHistoryOpen] = useState(false)
+  // Table menu "View history": open the panel on its Changes tab, filtered to
+  // the table. `seq` re-applies the filter when the same table is asked twice while the
+  // panel stays open.
+  const [tableHistoryRequest, setTableHistoryRequest] =
+    useState<TableHistoryRequest | null>(null)
+  const openTableHistory = useCallback((tableName: string) => {
+    setTableHistoryRequest((prev) => ({
+      tableName,
+      seq: (prev?.seq ?? 0) + 1,
+    }))
+    setHistoryOpen(true)
+  }, [])
+  // Closing the panel drops the request, so the next open starts unfiltered.
+  const handleHistoryOpenChange = useCallback((open: boolean) => {
+    setHistoryOpen(open)
+    if (!open) setTableHistoryRequest(null)
+  }, [])
   // Canvas comments (GH #110) — panel + header badge state owned here for
   // the same circular-import reason as historyOpen above. `comments`/
   // `commentActions` are fed from ReactFlowWhiteboard's onCommentsChange/
@@ -594,40 +613,42 @@ function WhiteboardEditor() {
               connectionState={connectionState}
             />
           )}
-          <ReactFlowWhiteboard
-            // S3 (Hermes code review): `key` forces a full remount on
-            // board switch (client-side navigation reuses this route
-            // component across different `whiteboardId`s) rather than
-            // letting `useWhiteboardShapes`'s local state carry the
-            // PREVIOUS board's shapes/connectors across the switch — the
-            // cache-sync effect added for FR-035a would otherwise write
-            // that stale data into the NEW board's `['shapes', newId]`
-            // query cache for one render cycle before its own fetch
-            // resolves. Self-healing either way (confirmed by Hermes),
-            // but eliminating the possibility outright is cheap and
-            // correct: a different `whiteboardId` is a materially
-            // different canvas, not a prop update to an existing one.
-            key={whiteboardId}
-            whiteboardId={whiteboardId}
-            userId={userId}
-            showMinimap={whiteboard.tables.length > 0}
-            // The dock carries zoom; zen mode hides the dock, so React Flow's
-            // own controls take over there.
-            showControls={isZenMode}
-            nodesDraggable={canEdit}
-            focusTableId={focusTable}
-            viewerRole={viewerRole}
-            onCreateTable={handleCreateTable}
-            onCreateRelationship={handleCreateRelationship}
-            onImportSql={handleImportSql}
-            onDisplayModeReady={handleDisplayModeReady}
-            onZoomControlsReady={handleZoomControlsReady}
-            onZoomChange={handleZoomChange}
-            onOpenHistory={() => setHistoryOpen(true)}
-            onOpenComments={() => setCommentsOpen(true)}
-            onCommentsChange={setComments}
-            onCommentActionsReady={setCommentActions}
-          />
+          <TableHistoryProvider value={openTableHistory}>
+            <ReactFlowWhiteboard
+              // S3 (Hermes code review): `key` forces a full remount on
+              // board switch (client-side navigation reuses this route
+              // component across different `whiteboardId`s) rather than
+              // letting `useWhiteboardShapes`'s local state carry the
+              // PREVIOUS board's shapes/connectors across the switch — the
+              // cache-sync effect added for FR-035a would otherwise write
+              // that stale data into the NEW board's `['shapes', newId]`
+              // query cache for one render cycle before its own fetch
+              // resolves. Self-healing either way (confirmed by Hermes),
+              // but eliminating the possibility outright is cheap and
+              // correct: a different `whiteboardId` is a materially
+              // different canvas, not a prop update to an existing one.
+              key={whiteboardId}
+              whiteboardId={whiteboardId}
+              userId={userId}
+              showMinimap={whiteboard.tables.length > 0}
+              // The dock carries zoom; zen mode hides the dock, so React Flow's
+              // own controls take over there.
+              showControls={isZenMode}
+              nodesDraggable={canEdit}
+              focusTableId={focusTable}
+              viewerRole={viewerRole}
+              onCreateTable={handleCreateTable}
+              onCreateRelationship={handleCreateRelationship}
+              onImportSql={handleImportSql}
+              onDisplayModeReady={handleDisplayModeReady}
+              onZoomControlsReady={handleZoomControlsReady}
+              onZoomChange={handleZoomChange}
+              onOpenHistory={() => setHistoryOpen(true)}
+              onOpenComments={() => setCommentsOpen(true)}
+              onCommentsChange={setComments}
+              onCommentActionsReady={setCommentActions}
+            />
+          </TableHistoryProvider>
         </div>
       </div>
 
@@ -638,7 +659,8 @@ function WhiteboardEditor() {
         whiteboardId={whiteboardId}
         viewerRole={viewerRole}
         open={historyOpen}
-        onOpenChange={setHistoryOpen}
+        onOpenChange={handleHistoryOpenChange}
+        tableRequest={tableHistoryRequest}
       />
 
       {/* Canvas comments panel (GH #110) */}

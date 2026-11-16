@@ -3,10 +3,13 @@
 // snapshots. Mirrors src/components/project/ProjectSharePanel.tsx's shadcn
 // Sheet + TanStack Query pattern.
 
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { toast } from 'sonner'
 import { ReactFlowWhiteboard } from './ReactFlowWhiteboard'
+import { WhiteboardChangesTab } from './WhiteboardChangesTab'
+import { TableHistoryProvider } from './table-history-context'
+import type { TableHistoryRequest } from './WhiteboardChangesTab'
 import type { EffectiveRole } from '@/data/permission'
 import type { TFunction } from '@/lib/i18n/translate'
 import {
@@ -38,6 +41,7 @@ import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { Badge } from '@/components/ui/badge'
+import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import { hasMinimumRole } from '@/lib/auth/permissions'
 import { classifyQueryFailure } from '@/lib/auth/errors'
 import {
@@ -68,6 +72,11 @@ interface WhiteboardHistoryPanelProps {
   viewerRole: EffectiveRole | null
   open: boolean
   onOpenChange: (open: boolean) => void
+  /**
+   * Set by the table menu's "View history": opens the Changes tab filtered to
+   * the table. A new `seq` re-applies the request.
+   */
+  tableRequest?: TableHistoryRequest | null
 }
 
 /** Label the server stores on the automatic version made before a restore. */
@@ -118,10 +127,18 @@ export function WhiteboardHistoryPanel({
   viewerRole,
   open,
   onOpenChange,
+  tableRequest = null,
 }: WhiteboardHistoryPanelProps) {
   const { t, locale } = useI18n()
   const queryClient = useQueryClient()
   const canEdit = hasMinimumRole(viewerRole, 'EDITOR')
+
+  const [tab, setTab] = useState<'versions' | 'changes'>(
+    tableRequest ? 'changes' : 'versions',
+  )
+  useEffect(() => {
+    if (tableRequest) setTab('changes')
+  }, [tableRequest])
 
   const [newLabel, setNewLabel] = useState('')
   const [previewSnapshotId, setPreviewSnapshotId] = useState<string | null>(
@@ -250,93 +267,128 @@ export function WhiteboardHistoryPanel({
             </SheetDescription>
           </SheetHeader>
 
-          <div className="flex-1 space-y-6 overflow-y-auto px-6 pt-2 pb-6">
-            {canEdit && (
-              <div className="space-y-2">
-                <Label className="text-sm font-medium">
-                  {t('whiteboard.history.saveCurrent')}
-                </Label>
-                <div className="flex gap-2">
-                  <Input
-                    placeholder={t('whiteboard.history.labelPlaceholder')}
-                    value={newLabel}
-                    onChange={(e) => setNewLabel(e.target.value)}
-                    aria-label={t('whiteboard.history.labelAria')}
-                  />
-                  <Button
-                    size="sm"
-                    disabled={saveMutation.isPending}
-                    onClick={() => saveMutation.mutate()}
-                  >
-                    {saveMutation.isPending
-                      ? t('whiteboard.history.saving')
-                      : t('whiteboard.history.saveVersion')}
-                  </Button>
-                </div>
-              </div>
-            )}
-
-            <div>
-              <Label className="text-sm font-medium">
-                {t('whiteboard.history.versions')}
-              </Label>
-              {isLoading ? (
-                <p className="mt-2 text-sm text-muted-foreground">
-                  {t('whiteboard.history.loading')}
-                </p>
-              ) : isSnapshotsError ? (
-                <p className="mt-2 text-sm text-destructive">
-                  {classifyQueryFailure({ error: snapshotsError }) ===
-                  'forbidden'
-                    ? t('whiteboard.history.noAccess')
-                    : t('whiteboard.history.loadFailed')}
-                </p>
-              ) : (
-                <ul
-                  className="mt-2 space-y-2"
-                  aria-label={t('whiteboard.history.list')}
-                >
-                  {snapshots.map((snapshot) => (
-                    <li key={snapshot.id}>
-                      <button
-                        type="button"
-                        className="w-full rounded-md border px-3 py-2 text-left text-sm hover:bg-muted"
-                        onClick={() => setPreviewSnapshotId(snapshot.id)}
-                      >
-                        <div className="flex items-center justify-between gap-2">
-                          <span className="font-medium">
-                            {formatSnapshotName(
-                              snapshot.label,
-                              snapshot.createdAt,
-                              t,
-                              locale,
-                              snapshot.isAuto,
-                            )}
-                          </span>
-                          {snapshot.isAuto && (
-                            <Badge variant="secondary">
-                              {t('whiteboard.history.auto')}
-                            </Badge>
-                          )}
-                        </div>
-                        <div className="mt-1 text-xs text-muted-foreground">
-                          {new Date(snapshot.createdAt).toLocaleString(locale)}
-                          {snapshot.authorName
-                            ? ` · ${snapshot.authorName}`
-                            : ''}
-                        </div>
-                      </button>
-                    </li>
-                  ))}
-                  {snapshots.length === 0 && (
-                    <li className="py-2 text-sm text-muted-foreground">
-                      {t('whiteboard.history.empty')}
-                    </li>
-                  )}
-                </ul>
-              )}
+          <Tabs
+            value={tab}
+            onValueChange={(next) => setTab(next as 'versions' | 'changes')}
+            className="flex min-h-0 flex-1 flex-col gap-0"
+          >
+            <div className="px-6 pb-2">
+              <TabsList
+                className="grid w-full grid-cols-2"
+                aria-label={t('whiteboard.history.tabs.ariaLabel')}
+              >
+                <TabsTrigger value="versions">
+                  {t('whiteboard.history.tabs.versions')}
+                </TabsTrigger>
+                <TabsTrigger value="changes">
+                  {t('whiteboard.history.tabs.changes')}
+                </TabsTrigger>
+              </TabsList>
             </div>
-          </div>
+
+            <TabsContent
+              value="versions"
+              className="mt-0 flex-1 space-y-6 overflow-y-auto px-6 pt-2 pb-6"
+            >
+              {canEdit && (
+                <div className="space-y-2">
+                  <Label className="text-sm font-medium">
+                    {t('whiteboard.history.saveCurrent')}
+                  </Label>
+                  <div className="flex gap-2">
+                    <Input
+                      placeholder={t('whiteboard.history.labelPlaceholder')}
+                      value={newLabel}
+                      onChange={(e) => setNewLabel(e.target.value)}
+                      aria-label={t('whiteboard.history.labelAria')}
+                    />
+                    <Button
+                      size="sm"
+                      disabled={saveMutation.isPending}
+                      onClick={() => saveMutation.mutate()}
+                    >
+                      {saveMutation.isPending
+                        ? t('whiteboard.history.saving')
+                        : t('whiteboard.history.saveVersion')}
+                    </Button>
+                  </div>
+                </div>
+              )}
+
+              <div>
+                <Label className="text-sm font-medium">
+                  {t('whiteboard.history.versions')}
+                </Label>
+                {isLoading ? (
+                  <p className="mt-2 text-sm text-muted-foreground">
+                    {t('whiteboard.history.loading')}
+                  </p>
+                ) : isSnapshotsError ? (
+                  <p className="mt-2 text-sm text-destructive">
+                    {classifyQueryFailure({ error: snapshotsError }) ===
+                    'forbidden'
+                      ? t('whiteboard.history.noAccess')
+                      : t('whiteboard.history.loadFailed')}
+                  </p>
+                ) : (
+                  <ul
+                    className="mt-2 space-y-2"
+                    aria-label={t('whiteboard.history.list')}
+                  >
+                    {snapshots.map((snapshot) => (
+                      <li key={snapshot.id}>
+                        <button
+                          type="button"
+                          className="w-full rounded-md border px-3 py-2 text-left text-sm hover:bg-muted"
+                          onClick={() => setPreviewSnapshotId(snapshot.id)}
+                        >
+                          <div className="flex items-center justify-between gap-2">
+                            <span className="font-medium">
+                              {formatSnapshotName(
+                                snapshot.label,
+                                snapshot.createdAt,
+                                t,
+                                locale,
+                                snapshot.isAuto,
+                              )}
+                            </span>
+                            {snapshot.isAuto && (
+                              <Badge variant="secondary">
+                                {t('whiteboard.history.auto')}
+                              </Badge>
+                            )}
+                          </div>
+                          <div className="mt-1 text-xs text-muted-foreground">
+                            {new Date(snapshot.createdAt).toLocaleString(
+                              locale,
+                            )}
+                            {snapshot.authorName
+                              ? ` · ${snapshot.authorName}`
+                              : ''}
+                          </div>
+                        </button>
+                      </li>
+                    ))}
+                    {snapshots.length === 0 && (
+                      <li className="py-2 text-sm text-muted-foreground">
+                        {t('whiteboard.history.empty')}
+                      </li>
+                    )}
+                  </ul>
+                )}
+              </div>
+            </TabsContent>
+
+            <TabsContent
+              value="changes"
+              className="mt-0 flex-1 overflow-y-auto px-6 pt-2 pb-6"
+            >
+              <WhiteboardChangesTab
+                whiteboardId={whiteboardId}
+                request={tableRequest}
+              />
+            </TabsContent>
+          </Tabs>
         </SheetContent>
       </Sheet>
 
@@ -373,38 +425,40 @@ export function WhiteboardHistoryPanel({
                 </p>
               </div>
             ) : previewValid ? (
-              <ReactFlowWhiteboard
-                whiteboardId={previewData.whiteboardId}
-                userId={HISTORY_PREVIEW_USER_ID}
-                isPublic
-                data={{
-                  tables: previewData.tables.map((table) => ({
-                    ...reviveDates(table),
-                    columns: table.columns.map(reviveDates),
-                    outgoingRelationships:
-                      table.outgoingRelationships.map(reviveDates),
-                    incomingRelationships:
-                      table.incomingRelationships.map(reviveDates),
-                  })),
-                  relationships: previewData.relationships.map((rel) => ({
-                    ...reviveDates(rel),
-                    sourceTable: {
-                      ...reviveDates(rel.sourceTable),
-                      columns: rel.sourceTable.columns.map(reviveDates),
-                    },
-                    targetTable: {
-                      ...reviveDates(rel.targetTable),
-                      columns: rel.targetTable.columns.map(reviveDates),
-                    },
-                    sourceColumn: reviveDates(rel.sourceColumn),
-                    targetColumn: reviveDates(rel.targetColumn),
-                  })),
-                }}
-                showMinimap={previewData.tables.length > 0}
-                showControls={true}
-                nodesDraggable={false}
-                viewerRole={null}
-              />
+              <TableHistoryProvider value={null}>
+                <ReactFlowWhiteboard
+                  whiteboardId={previewData.whiteboardId}
+                  userId={HISTORY_PREVIEW_USER_ID}
+                  isPublic
+                  data={{
+                    tables: previewData.tables.map((table) => ({
+                      ...reviveDates(table),
+                      columns: table.columns.map(reviveDates),
+                      outgoingRelationships:
+                        table.outgoingRelationships.map(reviveDates),
+                      incomingRelationships:
+                        table.incomingRelationships.map(reviveDates),
+                    })),
+                    relationships: previewData.relationships.map((rel) => ({
+                      ...reviveDates(rel),
+                      sourceTable: {
+                        ...reviveDates(rel.sourceTable),
+                        columns: rel.sourceTable.columns.map(reviveDates),
+                      },
+                      targetTable: {
+                        ...reviveDates(rel.targetTable),
+                        columns: rel.targetTable.columns.map(reviveDates),
+                      },
+                      sourceColumn: reviveDates(rel.sourceColumn),
+                      targetColumn: reviveDates(rel.targetColumn),
+                    })),
+                  }}
+                  showMinimap={previewData.tables.length > 0}
+                  showControls={true}
+                  nodesDraggable={false}
+                  viewerRole={null}
+                />
+              </TableHistoryProvider>
             ) : (
               <div className="flex h-full items-center justify-center">
                 <p className="text-sm text-muted-foreground">

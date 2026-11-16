@@ -855,6 +855,7 @@ export const TableNode = memo(
           onPreviewRelations={() => onPreviewRelations?.(table.id)}
           areas={areas}
           tableId={table.id}
+          tableName={table.name}
           onAddToArea={onAddToArea}
           onRemoveFromArea={onRemoveFromArea}
           // Note/Comment (tactical plan: canvas-table-affordances) — restore
@@ -1131,6 +1132,7 @@ export const TableNode = memo(
         onPreviewRelations={() => onPreviewRelations?.(table.id)}
         areas={areas}
         tableId={table.id}
+        tableName={table.name}
         onAddToArea={onAddToArea}
         onRemoveFromArea={onRemoveFromArea}
       >
